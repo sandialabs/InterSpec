@@ -128,6 +128,7 @@ WT_DECLARE_WT_MEMBER
     width = Math.round(width);
     height = Math.round(height);
 
+
     if( format === "svg" )
     {
       // For SVG, base64-encode the markup directly
@@ -1559,27 +1560,6 @@ void D3SpectrumDisplayDiv::setPeaksToClient( const SpecUtils::SpectrumType spect
 
 
 
-void D3SpectrumDisplayDiv::schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
-{
-  switch( spectrum_type )
-  {
-    case SpecUtils::SpectrumType::Foreground:
-      m_renderFlags |= UpdateForegroundPeaks;
-      break;
-      
-    case SpecUtils::SpectrumType::SecondForeground:
-      m_renderFlags |= UpdateSecondaryPeaks;
-      break;
-      
-    case SpecUtils::SpectrumType::Background:
-      m_renderFlags |= UpdateBackgroundPeaks;
-      break;
-  }//switch( spectrum_type )
-  
-  scheduleRender();
-}//void schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
-
-
 void D3SpectrumDisplayDiv::setRoiData( const std::string &peak_json,
                                        const SpecUtils::SpectrumType spectrum_type )
 {
@@ -1603,6 +1583,27 @@ void D3SpectrumDisplayDiv::setRoiData( const std::string &peak_json,
     scheduleRender();
   }
 }//void setRoiData(...)
+
+
+void D3SpectrumDisplayDiv::schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
+{
+  switch( spectrum_type )
+  {
+    case SpecUtils::SpectrumType::Foreground:
+      m_renderFlags |= UpdateForegroundPeaks;
+      break;
+      
+    case SpecUtils::SpectrumType::SecondForeground:
+      m_renderFlags |= UpdateSecondaryPeaks;
+      break;
+      
+    case SpecUtils::SpectrumType::Background:
+      m_renderFlags |= UpdateBackgroundPeaks;
+      break;
+  }//switch( spectrum_type )
+  
+  scheduleRender();
+}//void schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
 
 
 void D3SpectrumDisplayDiv::setData( std::shared_ptr<const Measurement> data_hist, const bool keep_curent_xrange )
@@ -2474,7 +2475,7 @@ void D3SpectrumDisplayDiv::saveChartToImg( const std::string &filename, const bo
     return;
 
   const std::string format = asPng ? "png" : "svg";
-  captureChartImage( format, 0, {}, {},
+  captureChartImage( format, 0, {}, {}, {},
     boost::bind( &D3SpectrumDisplayDiv::handleChartImageForDownload, this, filename,
                  boost::placeholders::_1, boost::placeholders::_2,
                  boost::placeholders::_3, boost::placeholders::_4 ) );
@@ -2486,6 +2487,17 @@ void D3SpectrumDisplayDiv::handleImageCaptured( std::string base64, std::string 
 {
   ImageCaptureCallback cb;
   std::swap( cb, m_pendingImageCallback );
+
+  // Issue the next queued capture (if any) before invoking the callback, so a capture requested
+  //  from within the callback still queues correctly behind the ones already waiting.
+  if( !m_imageCaptureQueue.empty() )
+  {
+    std::pair<std::string,ImageCaptureCallback> next = std::move( m_imageCaptureQueue.front() );
+    m_imageCaptureQueue.pop_front();
+    m_pendingImageCallback = std::move( next.second );
+    doJavaScript( next.first );
+  }
+
   if( cb )
     cb( std::move( base64 ), std::move( mimeType ), w, h );
 }//void handleImageCaptured(...)
@@ -2531,6 +2543,7 @@ void D3SpectrumDisplayDiv::handleChartImageForDownload( const std::string &filen
 void D3SpectrumDisplayDiv::captureChartImage( const std::string &format, int maxLongestSide,
                                                std::optional<std::pair<double,double>> energyRange,
                                                std::optional<bool> yAxisLog,
+                                               std::optional<bool> backgroundSubtract,
                                                ImageCaptureCallback callback )
 {
   if( !callback )
@@ -2550,16 +2563,15 @@ void D3SpectrumDisplayDiv::captureChartImage( const std::string &format, int max
        boost::placeholders::_3, boost::placeholders::_4 ) );
   }//if( !m_imageCapturedJS )
 
-  m_pendingImageCallback = std::move( callback );
-
   LOAD_JAVASCRIPT(wApp, "src/D3SpectrumDisplayDiv.cpp", "D3SpectrumDisplayDiv", wtjsChartToImageData);
 
   const std::string emitJs = m_imageCapturedJS->createCall( "b64", "mime", "w", "h" );
 
-  // Build a single JS block that optionally zooms/changes y-scale, captures via
-  //  requestAnimationFrame, and restores
+  // Build a single JS block that optionally zooms/changes y-scale/toggles background
+  //  subtraction, captures via requestAnimationFrame, and restores
   const bool changeRange = energyRange.has_value();
   const bool changeYScale = yAxisLog.has_value();
+  const bool changeBgSub = backgroundSubtract.has_value();
 
   std::string js;
   js += "(function(){";
@@ -2572,13 +2584,21 @@ void D3SpectrumDisplayDiv::captureChartImage( const std::string &format, int max
     js += "chart.setXAxisRange(" + std::to_string(energyRange->first) + "," + std::to_string(energyRange->second) + ",false,true);";
   }
 
+  // Capture the persistent state to restore to from the C++-tracked members (NOT from a runtime
+  //  read of chart.options, which can be transiently wrong if another capture is mid-toggle).
+  const std::string restoreYScale = m_yAxisIsLog ? "log" : "lin";
+  const bool restoreBgSub = m_backgroundSubtract;
+
   if( changeYScale )
-  {
-    js += "var savedYScale=chart.options.yscale;";
     js += std::string("chart.") + (*yAxisLog ? "setLogY" : "setLinearY") + "();";
+
+  if( changeBgSub )
+  {
+    // setBackgroundSubtract() triggers its own redraw; only has effect if a background is loaded.
+    js += "chart.setBackgroundSubtract(" + jsbool(*backgroundSubtract) + ");";
   }
 
-  if( changeRange || changeYScale )
+  if( changeRange || changeYScale || changeBgSub )
   {
     js += "chart.redraw()();";
     if( changeRange )
@@ -2599,11 +2619,17 @@ void D3SpectrumDisplayDiv::captureChartImage( const std::string &format, int max
 
   if( changeYScale )
   {
-    // Restore original y-axis scale
-    js += "chart.setYAxisType(savedYScale);";
+    // Restore the persistent y-axis scale (member function triggers the actual axis change).
+    js += "chart.setYAxisType('" + restoreYScale + "');";
   }
 
-  if( changeRange || changeYScale )
+  if( changeBgSub )
+  {
+    // Restore the persistent background-subtract state (member function triggers the redraw).
+    js += "chart.setBackgroundSubtract(" + jsbool(restoreBgSub) + ");";
+  }
+
+  if( changeRange || changeYScale || changeBgSub )
   {
     js += "chart.redraw()();";
     if( changeRange )
@@ -2615,7 +2641,17 @@ void D3SpectrumDisplayDiv::captureChartImage( const std::string &format, int max
   js += "});";  // end requestAnimationFrame
   js += "})();"; // end IIFE
 
-  doJavaScript( js );
+  // Serialize captures: a capture temporarily mutates the shared chart's zoom/y-scale/background-
+  //  subtract state, and the single m_imageCapturedJS signal can only carry one result at a time.
+  //  If a capture is already in flight, queue this one; it will be issued when the current completes.
+  if( m_pendingImageCallback )
+  {
+    m_imageCaptureQueue.emplace_back( std::move( js ), std::move( callback ) );
+  }else
+  {
+    m_pendingImageCallback = std::move( callback );
+    doJavaScript( js );
+  }
 }//void captureChartImage(...)
 
 
@@ -3537,6 +3573,20 @@ void D3SpectrumDisplayDiv::yAxisTypeChangedCallback( const std::string &type )
 
 D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()
 {
+  // Resolve any outstanding image-capture callbacks with an empty result so blocked callers
+  //  (e.g. an MCP get_spectrum_image awaiting on a future) get an error rather than hanging forever.
+  if( m_pendingImageCallback )
+  {
+    ImageCaptureCallback cb;
+    std::swap( cb, m_pendingImageCallback );
+    try{ cb( std::string(), std::string(), 0, 0 ); }catch(...){}
+  }
+  for( auto &js_cb : m_imageCaptureQueue )
+  {
+    try{ if( js_cb.second ) js_cb.second( std::string(), std::string(), 0, 0 ); }catch(...){}
+  }
+  m_imageCaptureQueue.clear();
+
   // The below false lets the JS run before load
   wApp->doJavaScript( "try{" + m_jsgraph + ".destroy();}catch(e){console.log('Failed to cleanup:',e);}", false );
   

@@ -52,6 +52,9 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
 
+#if( USE_LLM_INTERFACE )
+#include "InterSpec/LlmConversationHistory.h"
+#endif
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -457,6 +460,17 @@ void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
     }
   }
 #endif //#if( USE_REL_ACT_TOOL )
+
+#if( USE_LLM_INTERFACE )
+  if( lhs.m_llmConversationHistory != rhs.m_llmConversationHistory )
+  {
+    stringstream msg;
+    msg << "The LlmConversationHistory of the LHS does not exactly match RHS;"
+    " LHS has " << lhs.m_llmConversationHistory.size() << " sample sets with history,"
+    " RHS has " << rhs.m_llmConversationHistory.size() << " sample sets with history";
+    throw runtime_error( msg.str() );
+  }
+#endif //#if( USE_LLM_INTERFACE )
 }//void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
 #endif //#if( PERFORM_DEVELOPER_CHECKS )
 
@@ -549,6 +563,10 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
   {
     m_relActAutoGuiState.reset();
   }
+#endif
+
+#if( USE_LLM_INTERFACE )
+  m_llmConversationHistory = rhs.m_llmConversationHistory;
 #endif
   
   m_fileWasFromInterSpec = rhs.m_fileWasFromInterSpec;
@@ -1189,6 +1207,77 @@ void SpecMeas::setRelActAutoGuiState( const RelActCalcAuto::RelActAutoGuiState *
 
 #endif //#if( USE_REL_ACT_TOOL )
 
+
+#if( USE_LLM_INTERFACE )
+std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> SpecMeas::llmConversationHistory( const std::set<int> &samplenums ) const
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+
+  auto pos = m_llmConversationHistory.find( samplenums );
+  if( pos != m_llmConversationHistory.end() )
+    return pos->second;
+
+  return nullptr;
+}
+
+
+void SpecMeas::setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> history )
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  
+  bool is_diff = true;
+  
+  auto pos = m_llmConversationHistory.find( samplenums );
+  if( pos != m_llmConversationHistory.end() && !modified_ )
+  {
+    // Check if the history is actually different
+    is_diff = (pos->second != history);
+  }
+  
+  m_llmConversationHistory[samplenums] = history;
+  
+  if( is_diff )
+    modified_ = modifiedSinceDecode_ = true;
+}
+
+
+void SpecMeas::removeLlmConversationHistory( const std::set<int> &samplenums )
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  
+  auto pos = m_llmConversationHistory.find( samplenums );
+  if( pos != m_llmConversationHistory.end() )
+  {
+    m_llmConversationHistory.erase( pos );
+    modified_ = modifiedSinceDecode_ = true;
+  }
+}
+
+
+std::set<std::set<int>> SpecMeas::sampleNumsWithLlmHistory() const
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  
+  std::set<std::set<int>> sample_sets;
+  for( const auto &entry : m_llmConversationHistory )
+    sample_sets.insert( entry.first );
+  
+  return sample_sets;
+}
+
+
+void SpecMeas::removeAllLlmConversationHistory()
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  
+  if( !m_llmConversationHistory.empty() )
+  {
+    m_llmConversationHistory.clear();
+    modified_ = modifiedSinceDecode_ = true;
+  }
+}
+
+#endif //#if( USE_LLM_INTERFACE )
 
 bool SpecMeas::write_2006_N42( std::ostream &ostr ) const
 {
@@ -1848,6 +1937,49 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   }
 #endif
 
+#if( USE_LLM_INTERFACE )
+  // Clear any existing LLM history
+  m_llmConversationHistory.clear();
+  
+  // Look for all LlmConversationHistory nodes
+  XML_FOREACH_CHILD(node, interspecnode, "LlmConversationHistory")
+  {
+    try
+    {
+      // Get sample numbers from attribute
+      std::set<int> samplenums;
+      rapidxml::xml_attribute<char> *samplesAttr = node->first_attribute( "samples" );
+      if( samplesAttr && samplesAttr->value() )
+      {
+        std::vector<int> sampleVec;
+        if( SpecUtils::split_to_ints( samplesAttr->value(), samplesAttr->value_size(), sampleVec ) )
+        {
+          samplenums.insert( sampleVec.begin(), sampleVec.end() );
+        }
+      }
+      
+      if( samplenums.empty() )
+      {
+        parse_warnings_.push_back( "Found LLM conversation history with no valid sample numbers - skipping" );
+        continue;
+      }
+      
+      // Parse conversations for this sample set
+      std::vector<std::shared_ptr<LlmInteraction>> conversations;
+
+      // Use the static fromXml function from LlmConversationHistory
+      LlmConversationHistory::fromXml( node, conversations );
+
+      if( !conversations.empty() )
+        m_llmConversationHistory[samplenums] = make_shared<vector<shared_ptr<LlmInteraction>>>( conversations );
+    }catch( std::exception &e )
+    {
+      parse_warnings_.push_back( "Could not decode InterSpec specific LLM conversation history in N42 file: "
+                                + std::string(e.what()) );
+    }
+  }
+#endif
+
   node = interspecnode->first_node( "FileName", 8 );
   if( node )
   {
@@ -1984,6 +2116,42 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
     auto modelnode = doc->allocate_node( node_element );
     interspec_node->append_node( modelnode );
     clone_node_deep( m_relActAutoGuiState->first_node(), modelnode );
+  }
+#endif
+
+#if( USE_LLM_INTERFACE )
+  if( !m_llmConversationHistory.empty() )
+  {
+    // Serialize LLM conversation history for each set of sample numbers
+    for( const auto &entry : m_llmConversationHistory )
+    {
+      const std::set<int> &samplenums = entry.first;
+      const std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> &conversations = entry.second;
+
+      if( conversations->empty() )
+        continue;
+
+      // Create a container node for this sample set's history
+      auto sampleHistoryNode = doc->allocate_node( node_element, "LlmConversationHistory" );
+      interspec_node->append_node( sampleHistoryNode );
+
+      // Add sample numbers as an attribute
+      stringstream samplesStream;
+      bool first = true;
+      for( int sample : samplenums )
+      {
+        if( !first ) samplesStream << " ";
+        samplesStream << sample;
+        first = false;
+      }
+      const string samplesStr = samplesStream.str();
+      const char *samplesAttr = doc->allocate_string( samplesStr.c_str() );
+      auto samplesAttribute = doc->allocate_attribute( "samples", samplesAttr );
+      sampleHistoryNode->append_attribute( samplesAttribute );
+
+      // Use the static toXml function from LlmConversationHistory
+      LlmConversationHistory::toXml( *conversations, sampleHistoryNode, doc );
+    }
   }
 #endif
 
@@ -2381,6 +2549,63 @@ std::set<std::set<int>> SpecMeas::sampleNumsWithAutomatedSearchPeaks() const
   }
   return answer;
 }//std::set<std::set<int> > sampleNumsWithAutomatedSearchPeaks() const
+
+
+SpecMeas::AutoSearchPeaksFuture
+SpecMeas::reserveAutomatedSearchPeaks( const std::set<int> &samplenums,
+                                       std::shared_ptr<AutoSearchPeaksPromise> &out_promise )
+{
+  out_promise = nullptr;
+
+  std::lock_guard<std::mutex> lock( m_autoSearchMutex );
+
+  // (a) Cache hit -> a ready future.  Note automatedSearchPeaks() locks the inherited mutex_,
+  //     giving the lock order m_autoSearchMutex -> mutex_ (this is the ONLY place both are held,
+  //     and never in the reverse order, so no deadlock cycle can form).
+  const std::shared_ptr<const PeakDeque> cached = automatedSearchPeaks( samplenums );
+  if( cached )
+  {
+    AutoSearchPeaksPromise ready;
+    ready.set_value( cached );
+    return ready.get_future().share();
+  }
+
+  // (b) A search is already in-flight for these sample numbers -> coalesce onto it.
+  const std::map<std::set<int>, AutoSearchPeaksFuture>::const_iterator pos
+                                                = m_autoSearchInFlight.find( samplenums );
+  if( pos != m_autoSearchInFlight.end() )
+    return pos->second;
+
+  // (c) Nothing cached or running -> register a new in-flight entry; caller must fulfill it.
+  out_promise = std::make_shared<AutoSearchPeaksPromise>();
+  const AutoSearchPeaksFuture fut = out_promise->get_future().share();
+  m_autoSearchInFlight[samplenums] = fut;
+
+  return fut;
+}//reserveAutomatedSearchPeaks(...)
+
+
+void SpecMeas::clearInFlightAutomatedSearch( const std::set<int> &samplenums )
+{
+  std::lock_guard<std::mutex> lock( m_autoSearchMutex );
+  m_autoSearchInFlight.erase( samplenums );
+}//clearInFlightAutomatedSearch(...)
+
+
+bool SpecMeas::hasRecoveredBackgroundForForeground( const std::set<int> &foreground_samplenums,
+                                                    const std::set<int> &background_samplenums ) const
+{
+  std::lock_guard<std::mutex> lock( m_autoSearchMutex );
+  return (m_bgRecoveredForForeground.count( std::make_pair(foreground_samplenums, background_samplenums) ) > 0);
+}//hasRecoveredBackgroundForForeground(...)
+
+
+void SpecMeas::markBackgroundRecoveredForForeground( const std::set<int> &foreground_samplenums,
+                                                     const std::set<int> &background_samplenums )
+{
+  std::lock_guard<std::mutex> lock( m_autoSearchMutex );
+  m_bgRecoveredForForeground.insert( std::make_pair(foreground_samplenums, background_samplenums) );
+}//markBackgroundRecoveredForForeground(...)
 
 
 std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >

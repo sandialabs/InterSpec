@@ -195,6 +195,84 @@ are concave upwards or downwards after fitting).
 
 </p>
 
+<h3>Automated trend interpretation</h3>
+<p>
+To help make the judgements described above, <b>InterSpec</b> automatically fits a smooth trend
+to the &chi;-chart points and, when warranted, shows a short one-line interpretation just beneath
+the chart.  This appears only after you <b>Perform Model Fit</b>; while you are editing the model
+by hand (for example changing an atomic number without re-fitting) the dashed trend curve keeps
+updating, but the text is hidden, because the interpretation is only meaningful once the activity
+and shielding have actually been optimized.
+</p>
+
+<div style="padding-top: 10px; text-align: center;">
+<img src="InterSpec_resources/static_text/images/act_shield_trend_line.jpg" class="imageBorder" style="max-width: 70%;" align="middle" />
+<div style="clear: both; text-align: left; padding-left: 20px; padding-right: 20px;">
+The dashed curve is the fitted trend through the peak residuals, and the italic text below the
+chart is the automated interpretation (here, a concave-downward trend indicating the modeled
+effective atomic number is too low).  The <b>Mult.</b>/<b>&chi;</b> toggle at the right switches the
+chart style; the trend curve is only drawn in the <b>&chi;</b> style.
+</div>
+</div>
+
+<p><b>How the trend is fit.</b>
+Under a correct model each residual is an independent draw from a unit-normal distribution, so a
+plain (unit-weight) least-squares fit of the residuals versus log(energy) is used.  When more than
+one nuclide is present a single <em>joint</em> fit is performed: a separate offset (intercept) is
+allowed for each nuclide &mdash; since each nuclide&apos;s activity is fit independently, its
+residuals already average to about zero &mdash; while the <em>slope</em> and <em>curvature</em> are
+shared across all nuclides, because every peak sees the same shielding.  A quadratic is fit first;
+if its curvature term is not statistically justified it falls back to a straight line, and if the
+slope is not justified either, no trend is drawn.
+</p>
+
+<p><b>What the shape means.</b>
+The <em>slope</em> reflects the amount of shielding, and the <em>curvature</em> reflects its
+effective atomic number:
+<ul>
+  <li>rising with energy &rarr; the model has <b>too little</b> shielding; falling &rarr; <b>too much</b>;</li>
+  <li>concave downward (&#8745;) &rarr; the effective atomic number is <b>too low</b>; concave upward (&#8746;) &rarr; <b>too high</b>.</li>
+</ul>
+Which of these is reported depends on what you let the fit vary.  If a shielding thickness or areal
+density was fit, the amount is already optimal, so a residual shape is attributed to the atomic
+number.  If both the atomic number and areal density of a generic shielding were fit, neither can be
+blamed and any remaining trend is reported as a general inconsistency (suggesting distance, geometry,
+source age, or detector response).  Self-attenuating and trace sources are not interpreted.
+</p>
+
+<p><b>Uncertainties and confidence.</b>
+Only the statistical uncertainty of each fit peak is used (the same as for the chart itself).  Real
+peak fits are, however, somewhat over-dispersed relative to pure counting statistics, so the
+uncertainty on the fitted slope and curvature is scaled by the square root of the reduced
+&chi;<sup>2</sup> of the residuals about the trend.  This keeps the significance
+(<em>t</em>&nbsp;=&nbsp;coefficient&nbsp;/&nbsp;its&nbsp;uncertainty) well-scaled, and importantly it
+down-weights poorly-converged fits that could otherwise masquerade as a strong
+trend.  The wording of the message reflects the magnitude of <em>t</em>:
+<ul>
+  <li><b>possibly</b> (|t|&nbsp;&ge;&nbsp;1.5) &mdash; a soft advisory; expect a fair number of these to be statistical flukes,</li>
+  <li><b>may</b> (|t|&nbsp;&ge;&nbsp;2.5), <b>probably</b> (|t|&nbsp;&ge;&nbsp;4), <b>strongly</b> (|t|&nbsp;&ge;&nbsp;6) &mdash; progressively firmer.</li>
+</ul>
+</p>
+
+<p><b>Can the data even tell? (atomic-number power).</b>
+Above roughly 250&nbsp;keV the attenuation of all elements has nearly the same <em>shape</em> versus
+energy (differing only in overall magnitude, which the fitted areal density absorbs); the
+atomic-number signal lives almost entirely in the lower-energy peaks.  So before making any
+atomic-number call, <b>InterSpec</b> computes a <em>discrimination power</em>: the curvature
+significance that a reference-sized atomic-number error (a factor of about 1.5 in effective Z) would
+produce for your particular set of peaks and shielding.  If that power is too low &mdash; typically
+because the shielding has removed the low-energy peaks, or there were no low energy peaks available &mdash; the atomic-number direction is not
+asserted (and a &quot;silent&quot; result is noted in the calculation log as
+&quot;cannot resolve Z&quot; rather than implying the atomic number is fine).  This is common for
+heavily shielded sources, where the amount of shielding can still be judged but its composition
+cannot.
+</p>
+
+<p>
+Further detail about each peak, including these statistics, is available in the calculation log
+(the log icon on the tool).
+</p>
+
 <h2>Options</h2>
 <ul>
 <li><b>Multiple nuclides contribute to peak</b>: Currently in <b>InterSpec</b>

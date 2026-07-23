@@ -4,6 +4,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <deque>
 #include <tuple>
 #include <chrono>
 #include <memory>
@@ -466,11 +467,15 @@ public:
                       Original range is restored after capture.
    @param yAxisLog If set, force log (true) or linear (false) y-axis; nullopt = no change.
                    Original scale is restored after capture.
+   @param backgroundSubtract If set, force background-subtract on (true) or off (false) before
+                   capture; nullopt = no change.  Only has visible effect if a background spectrum
+                   is loaded.  Original state is restored after capture.
    @param callback Called with the base64 image data, mime type, and dimensions when capture completes
    */
   void captureChartImage( const std::string &format, int maxLongestSide,
                           std::optional<std::pair<double,double>> energyRange,
                           std::optional<bool> yAxisLog,
+                          std::optional<bool> backgroundSubtract,
                           ImageCaptureCallback callback );
 
   void setThumbnailMode();
@@ -615,7 +620,13 @@ protected:
   std::unique_ptr<Wt::JSignal<bool> > m_sliderDisplayed;
   std::unique_ptr<Wt::JSignal<std::string> > m_yAxisTypeChanged;
   std::unique_ptr<Wt::JSignal<std::string, std::string, int, int> > m_imageCapturedJS;
+  // Image captures are serialized: only one capture JS is in flight at a time (it manipulates the
+  //  shared chart's zoom/y-scale/background-subtract state), so concurrent captures would both
+  //  clobber each other's display state AND overwrite the single pending callback.  m_pendingImageCallback
+  //  holds the in-flight capture's callback; any further captures requested while one is in flight are
+  //  queued here (their fully-built JS + callback) and issued one at a time as each completes.
   ImageCaptureCallback m_pendingImageCallback;
+  std::deque<std::pair<std::string,ImageCaptureCallback>> m_imageCaptureQueue;
   Wt::WMemoryResource *m_downloadResource;
 
   /** Handler for the JSignal from JS when image capture completes. */

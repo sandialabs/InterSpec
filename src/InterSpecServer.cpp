@@ -70,6 +70,12 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
+
+#if( USE_LLM_INTERFACE )
+#include "InterSpec/LlmConfig.h"
+#include "InterSpec/LlmMcpResource.h"
+#endif
+
 using namespace std;
 
 // Namespace to track allowed sessions and not
@@ -129,6 +135,14 @@ namespace InterSpecServer
 #if( !BUILD_AS_UNIT_TEST_SUITE )
   Wt::WServer *ns_server = nullptr;
   std::mutex ns_servermutex;
+#endif
+  
+#if( USE_LLM_INTERFACE )
+  std::mutex ns_llm_config_mutex;
+  std::shared_ptr<const LlmConfig> ns_llm_config;
+  
+  std::mutex ns_mcp_mutex;
+  std::unique_ptr<LlmMcpResource> ns_mcp_resource;
 #endif
   
   
@@ -488,6 +502,56 @@ void startWebServer( string name,
   }
       
   cout << "Started server at " << this_url << endl;
+      
+#if( USE_LLM_INTERFACE )
+  static_assert( !BUILD_FOR_WEB_DEPLOYMENT, "MCP interface can not be enabled for web deployment." );
+      
+  try
+  {
+    shared_ptr<const LlmConfig> config = llm_config();
+      
+    if( config && config->mcpServer.enabled )
+    {
+      std::lock_guard<std::mutex> mcp_lock( ns_mcp_mutex );
+        
+      if( !ns_mcp_resource )
+      {
+#if( MCP_ENABLE_AUTH )
+        assert( config->mcpServer.bearerToken != LlmConfig::McpServer::sm_invalid_bearer_token );
+        if( config->mcpServer.bearerToken == LlmConfig::McpServer::sm_invalid_bearer_token )
+          throw runtime_error( "MCP bearer token is invalid" );
+        if( config->mcpServer.bearerToken.empty() )
+          std::cerr << "WARNING: MCP bearer token not specified - not requiring authentication!" << std::endl;
+#endif
+        
+        ns_mcp_resource = std::make_unique<LlmMcpResource>( config ); //Throws exception if there is trouble setting up the tool calls
+          
+        // Add the resource to the existing server at /mcp-api
+        ns_server->addResource( ns_mcp_resource.get(), "/mcp-api");
+      }//if( !ns_mcp_resource )
+        
+      std::cout << "\n=== MCP Interface Enabled ===" << std::endl;
+      std::cout << "MCP Server URL: " << InterSpecServer::urlBeingServedOn() << "/mcp-api" << std::endl;
+      std::cout << "In your tool, set MCP Host to: http://127.0.0.1:" << port << "/mcp-api" << std::endl;
+#if( MCP_ENABLE_AUTH )
+      if( !config->mcpServer.bearerToken.empty() )
+        std::cout << "Bearer Token Required: " << config->mcpServer.bearerToken << std::endl;
+      else
+        std::cout << "Authentication: None required" << std::endl;
+      
+#else
+      std::cout << "Authentication: Disabled" << std::endl;
+#endif
+      std::cout << "=============================" << std::endl << std::endl;
+    }//if( config.mcpServer.enabled )
+  }catch( std::exception &e )
+  {
+    std::cerr << "Exception setting up LLM/MCP interface: " << e.what() << std::endl;
+#if( BUILD_AS_LOCAL_SERVER )
+    // TODO: maybe should shutdown server, etc?
+#endif
+  }//try / catch
+#endif //USE_LLM_INTERFACE
 }//startWebServer(...)
 
 
@@ -1273,6 +1337,103 @@ void download_to_native_save( const std::string &url )
       
     return config;
   }//
+#endif
+
+#if( USE_LLM_INTERFACE )
+std::shared_ptr<const LlmConfig> llm_config()
+{
+  std::lock_guard<std::mutex> llm_config_lock( ns_llm_config_mutex );
+  if( !ns_llm_config.get() )
+    ns_llm_config = LlmConfig::load(); //Throws exception if invalid config file, returns null if no config file
+  return ns_llm_config;
+}
+
+#if( !BUILD_AS_UNIT_TEST_SUITE )
+/** Bring the running MCP server resource into line with `config`.
+
+ The MCP resource captures its enabled/token/registry state at construction, so a change is applied
+ by tearing the resource down and (if still enabled) rebuilding it.  We only do so when something
+ relevant actually changed, to avoid disrupting in-flight MCP requests on unrelated config edits.
+
+ Caller must NOT hold ns_mcp_mutex.  `tokenChanged` is true when the bearer token differs from the
+ currently-applied one (forces a restart even if it stays enabled).
+ */
+static void reconcile_mcp_resource( const std::shared_ptr<const LlmConfig> &config, const bool tokenChanged )
+{
+  std::lock_guard<std::mutex> mcp_lock( ns_mcp_mutex );
+
+  const bool wantEnabled = config && config->mcpServer.enabled;
+  const bool haveResource = (ns_mcp_resource != nullptr);
+
+  // Rebuild only on a real change: start/stop, or a token change while it stays enabled.
+  const bool needRebuild = (wantEnabled != haveResource) || (wantEnabled && tokenChanged);
+  if( !needRebuild )
+    return;
+
+  // Tear down the current resource: remove the route first so no new request can be dispatched to
+  // it, then delete it (WResource::beingDeleted() guards any in-flight handler).
+  if( ns_mcp_resource )
+  {
+    if( ns_server )
+      ns_server->removeEntryPoint( "/mcp-api" );
+    ns_mcp_resource.reset();
+  }
+
+  if( !wantEnabled )
+  {
+    std::cout << "MCP server stopped (disabled in the updated LLM configuration)." << std::endl;
+    return;
+  }
+
+#if( MCP_ENABLE_AUTH )
+  if( config->mcpServer.bearerToken == LlmConfig::McpServer::sm_invalid_bearer_token )
+  {
+    std::cerr << "MCP server not (re)started: bearer token is still the placeholder"
+                 " 'INVALID-BEARER-TOKEN'." << std::endl;
+    return;
+  }
+#endif
+
+  if( !ns_server )
+    return;
+
+  try
+  {
+    ns_mcp_resource = std::make_unique<LlmMcpResource>( config );
+    ns_server->addResource( ns_mcp_resource.get(), "/mcp-api" );
+    std::cout << "MCP server (re)started at " << InterSpecServer::urlBeingServedOn()
+              << "/mcp-api" << std::endl;
+  }catch( const std::exception &e )
+  {
+    std::cerr << "Failed to (re)start MCP server: " << e.what() << std::endl;
+    ns_mcp_resource.reset();
+  }
+}//reconcile_mcp_resource(...)
+#endif // !BUILD_AS_UNIT_TEST_SUITE
+
+
+void set_llm_config( std::shared_ptr<const LlmConfig> config )
+{
+  std::shared_ptr<const LlmConfig> previous;
+  {
+    std::lock_guard<std::mutex> llm_config_lock( ns_llm_config_mutex );
+    previous = ns_llm_config;
+    ns_llm_config = config;
+  }
+
+#if( !BUILD_AS_UNIT_TEST_SUITE )
+  // Apply MCP server changes live (the LLM assistant already reads the swapped pointer above).
+  bool tokenChanged = false;
+#if( MCP_ENABLE_AUTH )
+  const std::string oldTok = previous ? previous->mcpServer.bearerToken : std::string();
+  const std::string newTok = config ? config->mcpServer.bearerToken : std::string();
+  tokenChanged = (oldTok != newTok);
+#endif
+  reconcile_mcp_resource( config, tokenChanged );
+#else
+  (void)previous;
+#endif
+}
 #endif
 }//namespace InterSpecServer
 

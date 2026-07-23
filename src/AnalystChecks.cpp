@@ -31,7 +31,10 @@
 #include <limits>
 #include <algorithm>
 
+#include "Eigen/Dense"
+
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/EnergyCalibration.h"
 
 #include "InterSpec/AnalystChecks.h"
 #include "InterSpec/InterSpec.h"
@@ -41,6 +44,7 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/ReferencePhotopeakDisplay.h"
 #include "InterSpec/IsotopeId.h"
@@ -55,9 +59,117 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include <Wt/WServer>
+#include <Wt/WIOService>
 #include <Wt/WApplication>
 
 using namespace std;
+
+namespace
+{
+  /** Decay series a NORM line belongs to, used for the chain-consistency (secular-equilibrium) rescue
+   of borderline peaks in detected_peaks. */
+  enum class NormSeries : int { None = 0, K40, Th232, U238Ra, Annih };
+
+  struct NormLine { double energy_kev; NormSeries series; };
+
+  /** Well-known NORM / ubiquitous environmental-background gamma-ray lines (keV), tagged by decay
+   series.
+
+   A foreground peak matching one of these is held to a stricter elevation bar before being reported
+   as "elevated over background" (see detected_peaks), since these lines are expected to be present -
+   and to fluctuate - in any background, so a small foreground excess is usually noise rather than a
+   real foreground source.  Covers K-40; the Th-232 chain (Ac-228, Pb-212, Bi-212, Tl-208); the
+   U-238/Ra-226 chain (Th-234, Pa-234m, Ra-226, Pb-214, Bi-214); and the 511 keV annihilation line.
+   */
+  const NormLine sk_norm_lines[] = {
+    // U-238 / Ra-226 chain
+    {  63.29, NormSeries::U238Ra }, {  92.58, NormSeries::U238Ra }, { 186.21, NormSeries::U238Ra },
+    { 240.99, NormSeries::U238Ra }, { 242.00, NormSeries::U238Ra }, { 295.22, NormSeries::U238Ra },
+    { 351.93, NormSeries::U238Ra }, { 609.32, NormSeries::U238Ra }, { 768.36, NormSeries::U238Ra },
+    { 934.06, NormSeries::U238Ra }, {1001.03, NormSeries::U238Ra }, {1120.29, NormSeries::U238Ra },
+    {1155.19, NormSeries::U238Ra }, {1238.11, NormSeries::U238Ra }, {1280.96, NormSeries::U238Ra },
+    {1377.67, NormSeries::U238Ra }, {1401.50, NormSeries::U238Ra }, {1407.98, NormSeries::U238Ra },
+    {1509.23, NormSeries::U238Ra }, {1661.28, NormSeries::U238Ra }, {1729.60, NormSeries::U238Ra },
+    {1764.49, NormSeries::U238Ra }, {1847.42, NormSeries::U238Ra }, {2118.55, NormSeries::U238Ra },
+    {2204.21, NormSeries::U238Ra }, {2447.86, NormSeries::U238Ra },
+    // Th-232 chain
+    { 238.63, NormSeries::Th232 }, { 300.09, NormSeries::Th232 }, { 338.32, NormSeries::Th232 },
+    { 463.00, NormSeries::Th232 }, { 510.77, NormSeries::Th232 }, { 583.19, NormSeries::Th232 },
+    { 727.33, NormSeries::Th232 }, { 785.37, NormSeries::Th232 }, { 794.95, NormSeries::Th232 },
+    { 860.56, NormSeries::Th232 }, { 911.20, NormSeries::Th232 }, { 964.77, NormSeries::Th232 },
+    { 968.97, NormSeries::Th232 }, {1588.20, NormSeries::Th232 }, {1620.50, NormSeries::Th232 },
+    {1630.63, NormSeries::Th232 }, {2614.51, NormSeries::Th232 },
+    // K-40
+    {1460.82, NormSeries::K40 },
+    // Positron annihilation
+    { 511.00, NormSeries::Annih }
+  };
+
+  /** Returns the NORM decay series `energy_kev` falls in (NormSeries::None if not a known NORM line),
+   choosing the closest table entry within `tolerance_kev`. */
+  NormSeries norm_series_for_energy( const double energy_kev, const double tolerance_kev )
+  {
+    NormSeries best = NormSeries::None;
+    double bestDE = tolerance_kev;
+    for( const NormLine &l : sk_norm_lines )
+    {
+      const double de = fabs( energy_kev - l.energy_kev );
+      if( de <= bestDE ) { bestDE = de; best = l.series; }
+    }
+    return best;
+  }//norm_series_for_energy(...)
+
+  /** Returns true if `energy_kev` is within `tolerance_kev` of a known NORM/background line. */
+  bool is_known_norm_energy( const double energy_kev, const double tolerance_kev )
+  {
+    return norm_series_for_energy( energy_kev, tolerance_kev ) != NormSeries::None;
+  }//is_known_norm_energy(...)
+
+  /** "Seed" gamma-ray lines (keV): Cs-137 (661.66) and Na-22 (511, 1274.53).
+
+   On low-resolution (NaI) field detectors these nuclides are sometimes embedded as a stabilization/
+   energy-calibration "seed", so the background spectrum also contains these peaks.  Unlike NORM,
+   a seed's intensity is fixed (it does not vary by hours or ~10 ft of distance), so even a small but
+   statistically-significant foreground excess indicates a genuine added foreground source.  Such peaks
+   therefore get only a significance test - no blanket percent-elevation floor.
+   */
+  const double sk_seed_energies_kev[] = { 511.00, 661.66, 1274.53 };
+
+  /** Returns true if `energy_kev` is within `tolerance_kev` of a known seed line (Cs-137 / Na-22). */
+  bool is_seed_energy( const double energy_kev, const double tolerance_kev )
+  {
+    for( const double e : sk_seed_energies_kev )
+    {
+      if( fabs( energy_kev - e ) <= tolerance_kev )
+        return true;
+    }
+    return false;
+  }//is_seed_energy(...)
+
+  /** Estimate the net (continuum-subtracted) counts a peak-sized feature would have in `hist` at the
+   given `mean`/`fwhm`, using a simple linear side-band continuum.  Used to gauge whether a foreground
+   peak at a known NORM energy is genuinely elevated over the background *data* in the case where the
+   background auto-search did not fit a peak there (a weak background NORM line may simply have been
+   too small to fit).  Returns 0 if the histogram/fwhm are unusable. */
+  double estimate_net_counts_in_hist( const std::shared_ptr<const SpecUtils::Measurement> &hist,
+                                      const double mean, const double fwhm )
+  {
+    if( !hist || (fwhm <= 0.0) )
+      return 0.0;
+
+    const double half = 1.25 * fwhm;            // peak window half-width
+    const double lo = mean - half, hi = mean + half;
+    const double side = fwhm;                   // side-band width on each side
+    const double gross = hist->gamma_integral( static_cast<float>(lo), static_cast<float>(hi) );
+    const double left  = hist->gamma_integral( static_cast<float>(lo - side), static_cast<float>(lo) );
+    const double right = hist->gamma_integral( static_cast<float>(hi), static_cast<float>(hi + side) );
+    const double cont_per_kev = (left + right) / (2.0 * side);   // continuum counts per keV
+    const double continuum = cont_per_kev * (hi - lo);
+    return gross - continuum;                   // net counts under the peak window
+  }//estimate_net_counts_in_hist(...)
+}//anonymous namespace
+
 
 namespace AnalystChecks
 {
@@ -98,21 +210,18 @@ namespace AnalystChecks
           + " spectrum");
     }
     
-    shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks = meas->automatedSearchPeaks(sample_nums);
     shared_ptr<const deque<shared_ptr<const PeakDef>>> user_peaks = meas->peaks(sample_nums);
-    
-    if (!auto_peaks) {
-      // Search for peaks
-      const bool singleThreaded = false;
-      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
-      const auto det = meas->detector();
-      const vector<shared_ptr<const PeakDef>> found_auto_peaks
-                = ExperimentalAutomatedPeakSearch::search_for_peaks(spectrum, det, user_peaks, singleThreaded, isHPGe);
-        
-      auto autopeaksdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>(begin(found_auto_peaks), end(found_auto_peaks));
-      auto_peaks = autopeaksdeque;
-      meas->setAutomatedSearchPeaks(sample_nums, autopeaksdeque);
-    }
+
+    // Whether the detector is high-resolution (HPGe); used for the peak search and recovery below.
+    const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+
+    // Obtain the automated-search peaks through the shared, de-duplicated accessor - this launches
+    // at most one search per (SpecMeas, sample numbers) and coalesces with any concurrent search
+    // (GUI hint-peak search, other tools), instead of each caller running its own.  We are on the
+    // GUI thread here, so the accessor may snapshot meas->peaks() itself for the search seed.
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks
+        = PeakSearchGuiUtils::get_or_launch_automated_search_peaks( meas, sample_nums, spectrum,
+                                                                    meas->detector(), isHPGe ).get();
 
     vector<shared_ptr<const PeakDef>> all_peaks;
     vector<shared_ptr<const PeakDef>> user_analysis_peaks;
@@ -263,26 +372,22 @@ namespace AnalystChecks
         throw std::logic_error( "Somehow lost background spectrum being loaded?" );
       const set<int> background_sample_nums = interspec->displayedSamples(SpecUtils::SpectrumType::Background);
 
-      // Get or search for background auto peaks
-      shared_ptr<const deque<shared_ptr<const PeakDef>>> background_auto_peaks = background_meas->automatedSearchPeaks(background_sample_nums);
+      // Ensure the background's automated-search peaks include any real NORM peaks recovered from
+      // underneath the foreground peaks, so non-elevated background lines that the background
+      // auto-search may have missed are not mis-flagged as elevated.  This obtains both foreground
+      // and background auto-search peaks via the shared accessor, runs recovery, and persists the
+      // augmented background set (guarded to run once per foreground/background pairing).  We are on
+      // the GUI thread, where blocking on the search/recovery is acceptable (matches prior behavior).
+      PeakSearchGuiUtils::ensure_background_peaks_recovered( meas, sample_nums, spectrum,
+                                                            background_meas, background_sample_nums,
+                                                            background_spectrum, isHPGe );
 
-      if( !background_auto_peaks && background_spectrum )
-      {
-        const bool singleThreaded = false;
-        const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
-        const auto det = background_meas->detector();
-        
-        shared_ptr<const deque<shared_ptr<const PeakDef>>> background_user_peaks;
-        if( background_meas->sampleNumsWithPeaks().count(background_sample_nums) )
-          background_user_peaks = background_meas->peaks(background_sample_nums);
-        
-        const vector<shared_ptr<const PeakDef>> found_background_auto_peaks
-                    = ExperimentalAutomatedPeakSearch::search_for_peaks(background_spectrum, det, background_user_peaks, singleThreaded, isHPGe);
-
-        auto background_autopeaksdeque = make_shared<deque<shared_ptr<const PeakDef>>>(begin(found_background_auto_peaks), end(found_background_auto_peaks));
-        background_auto_peaks = background_autopeaksdeque;
-        background_meas->setAutomatedSearchPeaks(background_sample_nums, background_autopeaksdeque);
-      }
+      // Fetch the (now recovered/augmented) background auto peaks via the shared, de-duplicated
+      // accessor - a cache hit after the call above.
+      const shared_ptr<const deque<shared_ptr<const PeakDef>>> background_auto_peaks
+          = PeakSearchGuiUtils::get_or_launch_automated_search_peaks( background_meas,
+                          background_sample_nums, background_spectrum,
+                          background_meas->detector(), isHPGe ).get();
 
       // Filter foreground peaks based on background
       vector<shared_ptr<const PeakDef>> filtered_peaks;
@@ -290,25 +395,77 @@ namespace AnalystChecks
       const double foreground_live_time = (spectrum->live_time() > 0.0f) ? spectrum->live_time() : 1.0f;
       const double background_live_time = (background_spectrum->live_time() > 0.0f ? background_spectrum->live_time() : 1.0f);
 
+#if( PERFORM_DEVELOPER_CHECKS )
+      // Debug dump of the foreground candidate peaks and the (recovered) background auto-search peaks,
+      // to aid tuning of the elevated-above-background logic.  Per-peak KEEP/drop decisions follow below.
+      {
+        cerr << "=== detected_peaks: elevated-above-background debug (fg live=" << foreground_live_time
+             << "s, bg live=" << background_live_time << "s) ===" << endl;
+        cerr << " Background auto-search peaks ("
+             << (background_auto_peaks ? background_auto_peaks->size() : size_t(0)) << "):" << endl;
+        if( background_auto_peaks )
+        {
+          for( const shared_ptr<const PeakDef> &bp : *background_auto_peaks )
+            cerr << "  bg E=" << bp->mean() << " keV  amp=" << bp->amplitude()
+                 << " cps=" << (bp->amplitude()/background_live_time) << endl;
+        }
+        cerr << " Foreground candidate peaks (" << all_peaks.size() << "):" << endl;
+      }
+#endif
+
+      // Two-pass elevated-above-background filter.  Pass 1 makes the clear accept/reject decisions and
+      // *defers* borderline NORM peaks (a known NORM line that fails the 4-sigma bar but is still above
+      // 2 sigma).  Pass 2 rescues a borderline NORM peak only if another line of the SAME decay series
+      // is already accepted and this peak's foreground/background ratio to the nearest such line is
+      // consistent with them being the same chain (secular equilibrium) - otherwise it stays dropped.
+      struct FgPeakDecision {
+        shared_ptr<const PeakDef> peak;
+        bool include = false;
+        bool is_user = false;
+        bool is_seed = false;
+        bool borderline_norm = false;   // deferred to pass 2
+        NormSeries series = NormSeries::None;
+        double mean = 0.0;
+        double fg_cps = 0.0;
+        double bg_cps = 0.0;            // >0 only when a matching background peak was found
+      };
+
+      const double norm_min_sigma = 4.0;         // net-significance bar for known NORM lines
+      const double norm_borderline_sigma = 2.0;  // below this a NORM peak is simply background
+      const double seed_min_sigma = 2.25;
+
+      vector<FgPeakDecision> decisions;
+      decisions.reserve( all_peaks.size() );
+
+      // --- Pass 1: per-peak decision (deferring borderline NORM peaks) ---
       for( const shared_ptr<const PeakDef> &fg_peak : all_peaks )
       {
+        FgPeakDecision dec;
+        dec.peak = fg_peak;
+        dec.mean = fg_peak->mean();
+        dec.fg_cps = fg_peak->amplitude() / foreground_live_time;
+        dec.is_user = (std::find(user_analysis_peaks.begin(), user_analysis_peaks.end(), fg_peak) != user_analysis_peaks.end());
+
+        // Known NORM/background lines are held to a stricter bar (they are expected in any background
+        // and fluctuate).  Seed nuclides (Cs-137/Na-22) on low-res detectors get only a significance
+        // test (stable background intensity).  Tolerance scales with resolution (peak FWHM).
+        const double norm_tol = std::max( 2.0, 0.5 * fg_peak->fwhm() );
+        dec.series = norm_series_for_energy( fg_peak->mean(), norm_tol );
+        const bool is_norm = (dec.series != NormSeries::None);
+        dec.is_seed = (!isHPGe && is_seed_energy( fg_peak->mean(), norm_tol ));
+
         bool include_peak = true;
 
-        // Check if there is a corresponding background peak
         if( background_auto_peaks )
         {
           // Find the closest matching background peak
           shared_ptr<const PeakDef> closest_bg_peak;
           double smallest_energy_diff = std::numeric_limits<double>::infinity();
-
           for( const shared_ptr<const PeakDef> &bg_peak : *background_auto_peaks )
           {
             assert( fg_peak != bg_peak );
-            
-            // Check if peaks are at roughly the same energy (within their widths)
             const double energy_diff = fabs(fg_peak->mean() - bg_peak->mean());
             const double avg_fwhm = 0.75 * (fg_peak->fwhm() + bg_peak->fwhm()) / 2.0;
-
             if( (energy_diff < avg_fwhm) && (energy_diff < smallest_energy_diff) )
             {
               closest_bg_peak = bg_peak;
@@ -316,62 +473,127 @@ namespace AnalystChecks
             }
           }
 
-          // If we found a matching background peak, compare CPS
           if( closest_bg_peak )
           {
-            const double fg_cps = (fg_peak->amplitude() / foreground_live_time);
+            const double fg_cps = dec.fg_cps;
             const double bg_cps = (closest_bg_peak->amplitude() / background_live_time);
+            dec.bg_cps = bg_cps;
+            const double fg_amp_uncert = fg_peak->amplitudeUncert();
+            const double bg_amp_uncert = closest_bg_peak->amplitudeUncert();
+            const bool have_uncert = (fg_amp_uncert > 0.0) && (bg_amp_uncert > 0.0);
 
-            // Check if foreground peak is elevated by at least 20% relative to background
-            const double elevation_threshold = 1.20;
-            if( fg_cps > (bg_cps * elevation_threshold) )
+            double sigma_elevation = 0.0;
+            if( have_uncert )
             {
-              include_peak = true;
+              const double fg_cps_uncert = fg_amp_uncert / foreground_live_time;
+              const double bg_cps_uncert = bg_amp_uncert / background_live_time;
+              const double combined_uncert = sqrt(fg_cps_uncert*fg_cps_uncert + bg_cps_uncert*bg_cps_uncert);
+              if( combined_uncert > 0.0 )
+                sigma_elevation = ((fg_cps - bg_cps) / combined_uncert);
+            }
 
-              // Foreground is elevated by >20%, now check statistical significance if uncertainties are available
-              const double fg_amp_uncert = fg_peak->amplitudeUncert();
-              const double bg_amp_uncert = closest_bg_peak->amplitudeUncert();
-
-              if( (fg_amp_uncert > 0.0) && (bg_amp_uncert > 0.0) )
+            if( dec.is_seed )
+            {
+              // Seed nuclide on a low-res detector: significance test only, no percent floor.
+              include_peak = have_uncert ? (sigma_elevation > seed_min_sigma) : (fg_cps > (bg_cps * 1.20));
+            }else if( is_norm )
+            {
+              // NORM: strict 4-sigma bar; 2-4 sigma is deferred to the pass-2 chain-consistency check;
+              // below 2 sigma is background.  (Flat 20% ratio dropped - meaningless at low counts.)
+              if( have_uncert )
               {
-                // Calculate CPS uncertainties
-                const double fg_cps_uncert = fg_amp_uncert / foreground_live_time;
-                const double bg_cps_uncert = bg_amp_uncert / background_live_time;
-
-                // Calculate combined uncertainty
-                const double combined_uncert = sqrt(fg_cps_uncert*fg_cps_uncert + bg_cps_uncert*bg_cps_uncert);
-
-                // Check if foreground is elevated by at least 2.25 sigma
-                const double min_sigma = 2.25;
-                const double sigma_elevation = ((fg_cps - bg_cps) / combined_uncert);
-                include_peak = (sigma_elevation > min_sigma);
+                if( sigma_elevation > norm_min_sigma )
+                  include_peak = true;
+                else if( sigma_elevation > norm_borderline_sigma )
+                { include_peak = false; dec.borderline_norm = true; }
+                else
+                  include_peak = false;
+              }else
+              {
+                include_peak = (fg_cps > (bg_cps * 1.75));
               }
             }else
             {
-              // Foreground peak is not elevated by 20% - exclude it
-              include_peak = false;
-            }//if( fg_cps > (bg_cps * elevation_threshold) ) / else
+              // Non-NORM, non-seed: original behavior - >20% elevated, then >2.25 sigma if available.
+              const double elevation_threshold = 1.20;
+              if( fg_cps > (bg_cps * elevation_threshold) )
+                include_peak = have_uncert ? (sigma_elevation > 2.25) : true;
+              else
+                include_peak = false;
+            }//if( is_seed ) / else if( is_norm ) / else
           }else
           {
-            // If we didnt detect the peak in the background, but this is a pretty insignificant peak that
-            //  could be a background peak, then dont include it
-            if( (fg_peak->amplitude() < 100) && (fg_peak->amplitudeUncert() > 0.0) )
+            // No matching background peak.  Non-NORM (and seed) energies keep the existing behavior:
+            // the background recovery (run above) already fit-tested here and found nothing, so treat
+            // the foreground peak as a real source (include_peak stays true).  For a known NORM energy,
+            // do NOT auto-pass - require it to be clearly elevated over the background *data* counts in
+            // the peak region (a weak background NORM line may simply have been too small to fit).
+            if( is_norm && !dec.is_seed )
             {
-              // TODO: check if peak potentually lines up with a background peak, and if so, estimate the amplitude we would expect for it in the background spectrum, and if we wouldnt totally expect to detect it in the background spectrum, and the foreground peak significance isnt that high or its amplitude is consistent with what is expected from other confirmed background peaks of the same series, then dont include it.
+              const double bg_net = estimate_net_counts_in_hist( background_spectrum, fg_peak->mean(), fg_peak->fwhm() );
+              const double bg_net_cps = std::max( 0.0, bg_net ) / background_live_time;
+              const double fg_net_cps = fg_peak->amplitude() / foreground_live_time;
+              const double fg_cps_uncert = fg_peak->amplitudeUncert() / foreground_live_time;
+              const double bg_net_uncert_cps = sqrt( std::max( fabs(bg_net), 1.0 ) ) / background_live_time;
+              const double combined = sqrt( fg_cps_uncert*fg_cps_uncert + bg_net_uncert_cps*bg_net_uncert_cps );
+              const double sigma_vs_data = (combined > 0.0) ? ((fg_net_cps - bg_net_cps) / combined) : 0.0;
+              include_peak = (sigma_vs_data > norm_min_sigma);
             }
           }//if( closest_bg_peak )
         }//if( background_auto_peaks )
 
-        if( include_peak )
-        {
-          filtered_peaks.push_back(fg_peak);
+        dec.include = include_peak;
+        decisions.push_back( std::move(dec) );
+      }//for( fg_peak : all_peaks ) - pass 1
 
-          // Check if this peak is also in the user_analysis_peaks
-          const bool is_user_peak = std::find(user_analysis_peaks.begin(), user_analysis_peaks.end(), fg_peak) != user_analysis_peaks.end();
-          if( is_user_peak )
-            filtered_analysis_peaks.push_back(fg_peak);
+      // --- Pass 2: rescue borderline NORM peaks consistent with an accepted same-series line ---
+      for( FgPeakDecision &dec : decisions )
+      {
+        if( !dec.borderline_norm || (dec.bg_cps <= 0.0) )
+          continue;   // no way to form a ratio => stays rejected
+
+        // Nearest PASS-1-accepted peak of the same series that also has a background counterpart.
+        const FgPeakDecision *ref = nullptr;
+        double bestDE = std::numeric_limits<double>::infinity();
+        for( const FgPeakDecision &other : decisions )
+        {
+          if( (&other == &dec) || !other.include || other.borderline_norm )
+            continue;
+          if( (other.series != dec.series) || (other.bg_cps <= 0.0) || (other.fg_cps <= 0.0) )
+            continue;
+          const double de = fabs( other.mean - dec.mean );
+          if( de < bestDE ) { bestDE = de; ref = &other; }
         }
-      }//for( const shared_ptr<const PeakDef> &fg_peak : all_peaks )
+
+        if( ref )
+        {
+          // If this peak's foreground/background ratio to the accepted line is consistent with them
+          // being the same chain, keep it; if it is under-represented in the foreground relative to
+          // that line, it's a background fluctuation and is dropped.
+          const double R_fg = dec.fg_cps / ref->fg_cps;
+          const double R_bg = dec.bg_cps / ref->bg_cps;
+          const double consistency = (R_bg > 0.0) ? (R_fg / R_bg) : 0.0;
+          dec.include = (consistency >= 0.5) && (consistency <= 3.0);
+        }
+        // else: no same-series accepted reference => stays rejected.
+      }//for( pass 2 )
+
+      // --- Emit results (+ optional debug dump) ---
+      for( const FgPeakDecision &dec : decisions )
+      {
+#if( PERFORM_DEVELOPER_CHECKS )
+        cerr << "  fg E=" << dec.mean << " keV  amp=" << dec.peak->amplitude() << " cps=" << dec.fg_cps
+             << (dec.is_seed ? "  [SEED]" : ((dec.series != NormSeries::None) ? "  [NORM]" : "        "))
+             << (dec.borderline_norm ? " (borderline)" : "")
+             << "  -> " << (dec.include ? "KEEP" : "drop (background)") << endl;
+#endif
+        if( dec.include )
+        {
+          filtered_peaks.push_back( dec.peak );
+          if( dec.is_user )
+            filtered_analysis_peaks.push_back( dec.peak );
+        }
+      }//for( emit results )
 
       all_peaks = std::move(filtered_peaks);
       user_analysis_peaks = std::move(filtered_analysis_peaks);
@@ -638,8 +860,306 @@ namespace AnalystChecks
 
     return result;
   }//FitPeakStatus fit_user_peak( const FitPeakOptions &options, InterSpec *interspec );
-  
-  
+
+
+  void fit_user_peak_async( const FitPeakOptions &options, InterSpec *interspec,
+                             FitPeakCallback callback )
+  {
+    assert( callback );
+    assert( interspec );
+    assert( wApp );
+
+    if( !interspec )
+    {
+      callback( string("No InterSpec session available") );
+      return;
+    }
+
+#if( BUILD_AS_UNIT_TEST_SUITE )
+    // The unit-test build has no GUI event loop to pump the WServer-posted work back through, so
+    //  run the fit synchronously and invoke the callback inline.  This lets the LLM tool test
+    //  suites exercise the async peak-fitting tools through the normal executeTool() path.
+    try
+    {
+      const FitPeakStatus result = fit_user_peak( options, interspec );
+      callback( result );
+    }catch( const std::exception &e )
+    {
+      callback( string("Error in fit_user_peak: ") + e.what() );
+    }
+    return;
+#endif
+
+    Wt::WServer *server = Wt::WServer::instance();
+    if( !server )
+    {
+      callback( string("No WServer instance available") );
+      return;
+    }
+
+    // Stage A (GUI thread): capture all data needed for background computation
+    try
+    {
+      shared_ptr<SpecMeas> meas = interspec->measurment( options.specType );
+      if( !meas )
+        throw runtime_error( "No measurement loaded for "
+          + string(SpecUtils::descriptionText(options.specType)) + " spectrum" );
+
+      const set<int> sample_nums = interspec->displayedSamples( options.specType );
+      if( sample_nums.empty() )
+        throw runtime_error( "No samples displayed for "
+          + string(SpecUtils::descriptionText(options.specType)) + " spectrum" );
+
+      shared_ptr<const SpecUtils::Measurement> data = interspec->displayedHistogram( options.specType );
+      if( !data )
+        throw runtime_error( "No spectrum displayed for "
+          + string(SpecUtils::descriptionText(options.specType)) + " spectrum" );
+
+      shared_ptr<const DetectorPeakResponse> det = meas->detector();
+
+      shared_ptr<deque<shared_ptr<const PeakDef>>> meas_peaks = meas->peaks( sample_nums );
+      assert( meas_peaks );
+      if( !meas_peaks )
+        throw runtime_error( "Unexpected error getting existing peak list" );
+
+      shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_search_peaks = meas->automatedSearchPeaks( sample_nums );
+      const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
+
+      vector<shared_ptr<const PeakDef>> origPeaks;
+      for( const shared_ptr<const PeakDef> &p : *meas_peaks )
+      {
+        if( p->gausPeak() )
+          origPeaks.push_back( p );
+        else if( (options.energy >= p->lowerX()) && (options.energy <= p->upperX()) )
+          throw runtime_error( "Can not fit a peak within the ROI of a data-defined peak." );
+      }
+
+      // Make a copy of spectrum data for the background thread
+      shared_ptr<SpecUtils::Measurement> data_copy = make_shared<SpecUtils::Measurement>( *data );
+      weak_ptr<const SpecUtils::Measurement> weak_data = data;
+
+      const string sessionid = wApp->sessionId();
+      const double energy = options.energy;
+      const string source = options.source.has_value() ? options.source.value() : ""s;
+      const bool doNotAddToAnalysisPeaks = options.doNotAddToAnalysisPeaks;
+      const SpecUtils::SpectrumType specType = options.specType;
+
+      // Capture meas_peaks by value (shared_ptr copy) for Stage C
+      const shared_ptr<deque<shared_ptr<const PeakDef>>> captured_meas_peaks = meas_peaks;
+
+      using PeakPairResult = pair<vector<shared_ptr<const PeakDef>>, vector<shared_ptr<const PeakDef>>>;
+      shared_ptr<PeakPairResult> found_peaks_result = make_shared<PeakPairResult>();
+      shared_ptr<string> bg_error = make_shared<string>();
+
+      // Stage B (background thread): run the expensive peak search
+      server->ioService().boost::asio::io_service::post( std::bind( [=](){
+        try
+        {
+          double pixelPerKev = -1.0; // Triggers "automed" peak fit
+          *found_peaks_result = searchForPeakFromUser( energy, pixelPerKev, data_copy, origPeaks, det, auto_search_peaks, isHPGe );
+        }catch( const exception &e )
+        {
+          *bg_error = string("Peak search failed: ") + e.what();
+        }catch( ... )
+        {
+          *bg_error = "Peak search failed with unknown error";
+        }
+
+        // Stage C (GUI thread): post-process results and call callback
+        Wt::WServer::instance()->post( sessionid, std::bind( [=](){
+          InterSpec *viewer = InterSpec::instance();
+          if( !wApp || !viewer )
+            return;
+
+          // Check for background thread error
+          if( !bg_error->empty() )
+          {
+            callback( *bg_error );
+            return;
+          }
+
+          // Stale check
+          shared_ptr<const SpecUtils::Measurement> current_data = weak_data.lock();
+          if( !current_data || viewer->displayedHistogram( specType ) != current_data )
+          {
+            callback( string("Spectrum changed while fitting peak - results discarded") );
+            return;
+          }
+
+          vector<shared_ptr<const PeakDef>> peaks_to_add_in = found_peaks_result->first;
+          const vector<shared_ptr<const PeakDef>> &peaks_to_remove = found_peaks_result->second;
+
+          if( peaks_to_add_in.empty() )
+          {
+            bool within_existing_roi = false;
+            for( const shared_ptr<const PeakDef> &p : origPeaks )
+            {
+              if( (energy >= p->lowerX()) && (energy <= p->upperX()) )
+              {
+                within_existing_roi = true;
+                break;
+              }
+            }
+
+            string error_msg = "Could not fit peak at " + SpecUtils::printCompact(energy, 4) + " keV";
+            if( within_existing_roi )
+              error_msg += " - the energy is within the ROI of an existing peak, so maybe the peak you wanted already exists in the analysis peak list, or another peak just cant be fit in the same ROI";
+            else
+              error_msg += " - please try a different energy";
+            error_msg += ".";
+
+            callback( error_msg );
+            return;
+          }
+
+          // Find the newly fit peak (the one without a source assigned)
+          shared_ptr<const PeakDef> fit_peak;
+          for( const shared_ptr<const PeakDef> &peak : peaks_to_add_in )
+          {
+            if( peak->parentNuclide() || peak->xrayElement() || peak->reaction() )
+              continue;
+
+            const double diff = fabs( peak->mean() - energy );
+            if( !fit_peak || (diff < fabs( fit_peak->mean() - energy )) )
+              fit_peak = peak;
+          }
+
+          assert( fit_peak );
+          if( !fit_peak )
+          {
+            callback( string("Could not identify newly fit peak.") );
+            return;
+          }
+
+          // Assign source if specified
+          if( source.empty() )
+          {
+            // Nothing to do
+          }else if( SpecUtils::icontains(source, "unknown") || SpecUtils::istarts_with(source, "unk") )
+          {
+            shared_ptr<PeakDef> new_fit_peak = make_shared<PeakDef>( *fit_peak );
+            new_fit_peak->setUserLabel( "UNKNOWN" );
+            fit_peak = new_fit_peak;
+          }else
+          {
+            shared_ptr<PeakDef> new_fit_peak = make_shared<PeakDef>( *fit_peak );
+
+            PeakModel::SetGammaSource res = PeakModel::setNuclideXrayReaction( *new_fit_peak, source, 4.0 );
+            if( res == PeakModel::SetGammaSource::FailedSourceChange )
+            {
+              callback( string("Peak was fit, but source string '") + source + "' was not valid to set source." );
+              return;
+            }
+
+            bool replaced_peak = false;
+            for( size_t index = 0; index < peaks_to_add_in.size(); ++index )
+            {
+              if( peaks_to_add_in[index] == fit_peak )
+              {
+                replaced_peak = true;
+                fit_peak = new_fit_peak;
+                peaks_to_add_in[index] = new_fit_peak;
+                break;
+              }
+            }
+            assert( replaced_peak );
+
+            // Assign color from existing peaks or reference lines
+            vector<Wt::WColor> src_colors;
+            vector<shared_ptr<const PeakDef>> other_src_peaks;
+            for( const shared_ptr<const PeakDef> &srcPeak : origPeaks )
+            {
+              if( (srcPeak->parentNuclide() || srcPeak->xrayElement() || srcPeak->reaction())
+                  && srcPeak->parentNuclide()==new_fit_peak->parentNuclide()
+                  && srcPeak->xrayElement()==new_fit_peak->xrayElement()
+                  && srcPeak->reaction()==new_fit_peak->reaction() )
+              {
+                other_src_peaks.push_back( srcPeak );
+                if( !srcPeak->lineColor().isDefault()
+                   && (find( begin(src_colors), end(src_colors), srcPeak->lineColor()) == end(src_colors)) )
+                {
+                  src_colors.push_back( srcPeak->lineColor() );
+                }
+              }
+            }
+
+            if( src_colors.size() == 1 )
+            {
+              new_fit_peak->setLineColor( src_colors[0] );
+            }else if( other_src_peaks.empty() )
+            {
+              ReferencePhotopeakDisplay *ref_lines = viewer->referenceLinesWidget();
+              if( ref_lines )
+              {
+                string src_name;
+                if( new_fit_peak->parentNuclide() )
+                  src_name = new_fit_peak->parentNuclide()->symbol;
+                else if( new_fit_peak->xrayElement() )
+                  src_name = new_fit_peak->xrayElement()->symbol;
+                else if( new_fit_peak->reaction() )
+                  src_name = new_fit_peak->reaction()->name();
+
+                Wt::WColor c = ref_lines->suggestColorForSource( src_name );
+                if( c.isDefault() && !src_name.empty() )
+                {
+                  c = ref_lines->nextGenericSourceColor();
+                  if( !c.isDefault() )
+                    ref_lines->updateColorCacheForSource( src_name, c );
+                }
+                new_fit_peak->setLineColor( c );
+              }
+            }
+          }//if( source assignment )
+
+          // Update PeakModel
+          PeakModel *pmodel = viewer->peakModel();
+          assert( pmodel );
+          if( !doNotAddToAnalysisPeaks && pmodel )
+          {
+            if( specType == SpecUtils::SpectrumType::Foreground )
+            {
+              pmodel->removePeaks( peaks_to_remove );
+              pmodel->addPeaks( peaks_to_add_in );
+            }else
+            {
+              shared_ptr<deque<shared_ptr<const PeakDef>>> new_deque
+                = make_shared<deque<shared_ptr<const PeakDef>>>( *captured_meas_peaks );
+              deque<shared_ptr<const PeakDef>> &peak_deque = *new_deque;
+
+              for( const shared_ptr<const PeakDef> &old : peaks_to_remove )
+              {
+                auto pos = find( begin(peak_deque), end(peak_deque), old );
+                assert( pos != end(peak_deque) );
+                if( pos != end(peak_deque) )
+                  peak_deque.erase( pos );
+              }
+
+              for( const shared_ptr<const PeakDef> &new_peak : peaks_to_add_in )
+                peak_deque.push_back( new_peak );
+              sort( begin(peak_deque), end(peak_deque), &PeakDef::lessThanByMeanShrdPtr );
+
+              pmodel->setPeaks( peak_deque, specType );
+            }
+          }//if( !doNotAddToAnalysisPeaks )
+
+          FitPeakStatus result;
+          result.fitPeak = fit_peak;
+          result.peaksInRoi = peaks_to_add_in;
+
+          callback( result );
+
+          wApp->triggerUpdate();
+        } ) );//Stage C post
+      } ) );//Stage B post
+
+    }catch( const exception &e )
+    {
+      // Stage A failed
+      callback( string("Error in fit_user_peak: ") + e.what() );
+    }
+  }//void fit_user_peak_async(...)
+
+
   GetUserPeakStatus get_user_peaks( const GetUserPeakOptions &options, InterSpec *interspec )
   {
     if (!interspec)
@@ -1046,6 +1566,9 @@ namespace AnalystChecks
 
       for( const string &src : options.sources )
       {
+        if( SpecUtils::iequals_ascii( src, "null" ) )
+          continue;
+
         RelActCalcAuto::SrcVariant source = RelActCalcAuto::source_from_string(src);
 
         if( RelActCalcAuto::is_null(source) )
@@ -1060,7 +1583,9 @@ namespace AnalystChecks
         sources.push_back( source );
       }//for( const string &src : options.sources )
 
-      if( sources.empty() )
+      const bool fit_norm_peaks = options.fitSrcPeaksOptions.testFlag( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks )
+                                  || options.fitSrcPeaksOptions.testFlag( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse );
+      if( sources.empty() && !fit_norm_peaks )
         throw runtime_error( "No sources specified" );
 
       GetUserPeakOptions user_peak_options;
@@ -1132,6 +1657,9 @@ namespace AnalystChecks
         result.fitPeaks.push_back( sp );
       }//for( const PeakDef &p : fit_results.observable_peaks )
 
+      if( result.fitPeaks.empty() )
+        result.noObservablePeaksFit = true;
+
       result.peaksToRemove = fit_results.original_peaks_to_remove;
 
       // If doNotAddPeaksToUserSession is false, update the peak model using setPeaks
@@ -1201,6 +1729,269 @@ namespace AnalystChecks
 
     return result;
   }//FitPeaksForNuclideStatus fit_peaks_for_nuclides( const FitPeaksForNuclideOptions &options, InterSpec *interspec )
+
+
+  void fit_peaks_for_nuclides_async( const FitPeaksForNuclideOptions &options, InterSpec *interspec,
+                                      FitPeaksCallback callback )
+  {
+    assert( callback );
+    assert( interspec );
+    assert( wApp );
+
+    if( !interspec )
+    {
+      callback( string("No InterSpec session available") );
+      return;
+    }
+
+#if( BUILD_AS_UNIT_TEST_SUITE )
+    // See fit_user_peak_async: run synchronously in the unit-test build (no GUI event loop) so the
+    //  async tool can be driven through the normal executeTool() path.
+    try
+    {
+      const FitPeaksForNuclideStatus result = fit_peaks_for_nuclides( options, interspec );
+      callback( result );
+    }catch( const std::exception &e )
+    {
+      callback( string("Error in fit_peaks_for_nuclides: ") + e.what() );
+    }
+    return;
+#endif
+
+    Wt::WServer *server = Wt::WServer::instance();
+    if( !server )
+    {
+      callback( string("No WServer instance available") );
+      return;
+    }
+
+    // Stage A (GUI thread): capture all data needed for background computation
+    try
+    {
+      const SpecUtils::SpectrumType specType = options.specType;
+
+      shared_ptr<SpecMeas> meas = interspec->measurment( specType );
+      if( !meas )
+        throw runtime_error( string("No ") + SpecUtils::descriptionText(specType) + " measurement available" );
+
+      shared_ptr<const SpecUtils::Measurement> target_spectrum = interspec->displayedHistogram( specType );
+      if( !target_spectrum )
+        throw runtime_error( string("No ") + SpecUtils::descriptionText(specType) + " spectrum available" );
+
+      shared_ptr<const SpecUtils::Measurement> background;
+      if( specType == SpecUtils::SpectrumType::Foreground )
+        background = interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
+
+      shared_ptr<const DetectorPeakResponse> drf = meas->detector();
+      if( !drf && (specType != SpecUtils::SpectrumType::Foreground) )
+      {
+        shared_ptr<SpecMeas> fg_meas = interspec->measurment( SpecUtils::SpectrumType::Foreground );
+        if( fg_meas )
+          drf = fg_meas->detector();
+      }
+      const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
+
+      DetectedPeaksOptions det_peaks_options;
+      det_peaks_options.specType = specType;
+      det_peaks_options.nonBackgroundPeaksOnly = false;
+      const DetectedPeakStatus detected_peaks = AnalystChecks::detected_peaks( det_peaks_options, interspec );
+      const vector<shared_ptr<const PeakDef>> auto_search_peaks = detected_peaks.peaks;
+
+      vector<RelActCalcAuto::SrcVariant> sources;
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      if( !db )
+        throw runtime_error( "No decay database available" );
+
+      for( const string &src : options.sources )
+      {
+        if( SpecUtils::iequals_ascii( src, "null" ) )
+          continue;
+
+        RelActCalcAuto::SrcVariant source = RelActCalcAuto::source_from_string( src );
+        if( RelActCalcAuto::is_null( source ) )
+          throw runtime_error( "Unrecognized source '" + src + "'" );
+
+        const bool is_duplicate = any_of( sources.begin(), sources.end(),
+          [&source]( const RelActCalcAuto::SrcVariant &s ){ return s == source; } );
+        if( is_duplicate )
+          continue;
+
+        sources.push_back( source );
+      }
+
+      const bool fit_norm_peaks = options.fitSrcPeaksOptions.testFlag( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaks )
+                                  || options.fitSrcPeaksOptions.testFlag( FitPeaksForNuclides::FitSrcPeaksOptions::FitNormBkgrndPeaksDontUse );
+      if( sources.empty() && !fit_norm_peaks )
+        throw runtime_error( "No sources specified" );
+
+      GetUserPeakOptions user_peak_options;
+      user_peak_options.specType = specType;
+      const GetUserPeakStatus user_peaks_status = AnalystChecks::get_user_peaks( user_peak_options, interspec );
+      const vector<shared_ptr<const PeakDef>> user_peaks = user_peaks_status.peaks;
+
+      const Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> fit_options = options.fitSrcPeaksOptions;
+      FitPeaksForNuclides::PeakFitForNuclideConfig fit_config = FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( isHPGe );
+
+      // Make copies of spectra for the background thread (same pattern as FitPeaksForNuclidesGui.cpp)
+      shared_ptr<SpecUtils::Measurement> target_copy = make_shared<SpecUtils::Measurement>( *target_spectrum );
+      shared_ptr<SpecUtils::Measurement> bg_copy = background
+                                    ? make_shared<SpecUtils::Measurement>( *background ) : nullptr;
+
+      weak_ptr<const SpecUtils::Measurement> weak_target = target_spectrum;
+      const string sessionid = wApp->sessionId();
+      const bool doNotAddPeaksToUserSession = options.doNotAddPeaksToUserSession;
+
+      // Stage B (background thread): run the expensive peak fitting
+      shared_ptr<FitPeaksForNuclides::PeakFitResult> fit_result
+        = make_shared<FitPeaksForNuclides::PeakFitResult>();
+
+      server->ioService().boost::asio::io_service::post( std::bind( [=](){
+        fit_result->status = RelActCalcAuto::RelActAutoSolution::Status::Success;
+        fit_result->error_message.clear();
+
+        try
+        {
+          *fit_result = FitPeaksForNuclides::fit_peaks_for_nuclides(
+            auto_search_peaks, target_copy, sources, user_peaks, bg_copy, drf, fit_options, fit_config, isHPGe
+          );
+        }catch( const exception &e )
+        {
+          fit_result->status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
+          fit_result->error_message = string("Fit failed: ") + e.what();
+        }catch( ... )
+        {
+          fit_result->status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
+          fit_result->error_message = "Fit failed with unknown error";
+        }
+
+        // Stage C (GUI thread): post-process results and call callback
+        Wt::WServer::instance()->post( sessionid, std::bind( [=](){
+          InterSpec *viewer = InterSpec::instance();
+          if( !wApp || !viewer )
+          {
+            // Session is gone; silently discard results
+            return;
+          }
+
+          // Stale check: if the spectrum has changed, discard results
+          shared_ptr<const SpecUtils::Measurement> current_target = weak_target.lock();
+          if( !current_target || viewer->displayedHistogram( specType ) != current_target )
+          {
+            callback( string("Spectrum changed while fitting peaks - results discarded") );
+            return;
+          }
+
+          // Check fit status
+          switch( fit_result->status )
+          {
+            case RelActCalcAuto::RelActAutoSolution::Status::Success:
+              break;
+            case RelActCalcAuto::RelActAutoSolution::Status::NotInitiated:
+              callback( string("Failed to initialize peak fit")
+                + (fit_result->error_message.empty() ? "" : ("; error: " + fit_result->error_message)) );
+              return;
+            case RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem:
+              callback( string("Failed to setup peak fit")
+                + (fit_result->error_message.empty() ? "" : ("; error: " + fit_result->error_message)) );
+              return;
+            case RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem:
+              callback( string("Failed to solve peak fit")
+                + (fit_result->error_message.empty() ? "" : ("; error: " + fit_result->error_message)) );
+              return;
+            case RelActCalcAuto::RelActAutoSolution::Status::UserCanceled:
+              callback( string("Peak fit failed")
+                + (fit_result->error_message.empty() ? "" : ("; error: " + fit_result->error_message)) );
+              return;
+          }//switch( fit_result->status )
+
+          // Build FitPeaksForNuclideStatus from results
+          FitPeaksForNuclideStatus result;
+          result.warnings = fit_result->warnings;
+
+          ReferencePhotopeakDisplay * const ref_lines = viewer->referenceLinesWidget();
+
+          for( const PeakDef &p : fit_result->observable_peaks )
+          {
+            shared_ptr<PeakDef> sp = make_shared<PeakDef>( p );
+
+            string src_str;
+            if( sp->parentNuclide() )
+              src_str = sp->parentNuclide()->symbol;
+            else if( sp->xrayElement() )
+              src_str = sp->xrayElement()->symbol;
+            else if( sp->reaction() )
+              src_str = sp->reaction()->name();
+
+            if( ref_lines && !src_str.empty() )
+            {
+              Wt::WColor color = ref_lines->suggestColorForSource( src_str );
+              if( color.isDefault() )
+              {
+                color = ref_lines->nextGenericSourceColor();
+                ref_lines->updateColorCacheForSource( src_str, color );
+              }
+              sp->setLineColor( color );
+            }
+
+            result.fitPeaks.push_back( sp );
+          }
+
+          if( result.fitPeaks.empty() )
+          {
+            result.noObservablePeaksFit = true;
+            const string lost_rois_warning = "Lost all ROIs while iterationing to refine solution - stopped early.";
+            result.warnings.erase(
+              remove( result.warnings.begin(), result.warnings.end(), lost_rois_warning ),
+              result.warnings.end()
+            );
+          }
+
+          result.peaksToRemove = fit_result->original_peaks_to_remove;
+
+          if( !doNotAddPeaksToUserSession && !result.fitPeaks.empty() )
+          {
+            PeakModel * const pmodel = viewer->peakModel();
+            if( pmodel )
+            {
+              shared_ptr<const deque<shared_ptr<const PeakDef>>> existing_peaks
+                = pmodel->peaks( specType );
+
+              deque<shared_ptr<const PeakDef>> combined_peaks;
+
+              if( existing_peaks )
+              {
+                for( const shared_ptr<const PeakDef> &p : *existing_peaks )
+                {
+                  const bool should_remove = any_of( result.peaksToRemove.begin(),
+                    result.peaksToRemove.end(),
+                    [&p]( const shared_ptr<const PeakDef> &rm ) -> bool { return rm == p; } );
+
+                  if( !should_remove )
+                    combined_peaks.push_back( p );
+                }
+              }
+
+              for( const shared_ptr<const PeakDef> &p : result.fitPeaks )
+                combined_peaks.push_back( p );
+
+              pmodel->setPeaks( combined_peaks, specType );
+              result.peaksWereRemovedFromSession = true;
+            }
+          }//if( !doNotAddPeaksToUserSession && !result.fitPeaks.empty() )
+
+          callback( result );
+
+          wApp->triggerUpdate();
+        } ) );//Stage C post
+      } ) );//Stage B post
+
+    }catch( const exception &e )
+    {
+      // Stage A failed; call callback with error synchronously
+      callback( string("Error in fit_peaks_for_nuclides: ") + e.what() );
+    }
+  }//void fit_peaks_for_nuclides_async(...)
+
 
   std::vector<std::variant<const SandiaDecay::Nuclide *, const SandiaDecay::Element *, const ReactionGamma::Reaction *>>
   get_characteristics_near_energy( const double energy, InterSpec *interspec )
@@ -1274,25 +2065,25 @@ namespace AnalystChecks
   }//get_characteristics_near_energy(...)
   
   
-  float get_expected_fwhm( const double energy, InterSpec *interspec )
+  std::function<float(double)> make_expected_fwhm_fcn( InterSpec *interspec )
   {
     if( !interspec )
       throw std::runtime_error("No InterSpec session available");
-    
+
     shared_ptr<SpecMeas> meas = interspec->measurment(SpecUtils::SpectrumType::Foreground);
     shared_ptr<const SpecUtils::Measurement> spectrum = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     if( !meas || !spectrum )
       throw std::runtime_error("No foreground loaded");
-    
-    float fwhm = -1.0;
-    
+
     // Try the currently loaded peak detector response
+    shared_ptr<const DetectorPeakResponse> res_drf;
     if( meas->detector() && meas->detector()->hasResolutionInfo() )
-      fwhm = meas->detector()->peakResolutionFWHM( static_cast<float>(energy) );
-    
-    // Estimate the FWHM response using detected peaks...
+      res_drf = meas->detector();
+
+    // Otherwise, estimate the FWHM response by fitting the detected peaks (once, up front)...
     shared_ptr<deque<shared_ptr<const PeakDef>>> peak_deque;
-    if( fwhm <= 0.0 )
+    shared_ptr<DetectorPeakResponse> fit_drf;
+    if( !res_drf )
     {
       try
       {
@@ -1300,129 +2091,360 @@ namespace AnalystChecks
         opts.specType = SpecUtils::SpectrumType::Foreground;
         const DetectedPeakStatus peaks = detected_peaks( opts, interspec );
         peak_deque = make_shared<deque<shared_ptr<const PeakDef>>>( begin(peaks.peaks), end(peaks.peaks) );
-        
-        DetectorPeakResponse drf;
-        drf.setIntrinsicEfficiencyFormula( "1.0", 2.54*PhysicalUnits::cm, PhysicalUnits::keV,
+
+        fit_drf = make_shared<DetectorPeakResponse>();
+        fit_drf->setIntrinsicEfficiencyFormula( "1.0", 2.54*PhysicalUnits::cm, PhysicalUnits::keV,
                                                0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic);
-        
-        drf.fitResolution( peak_deque, spectrum, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
-        
-        fwhm = drf.peakResolutionFWHM( static_cast<float>(energy) );
+
+        fit_drf->fitResolution( peak_deque, spectrum, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
       }catch( std::exception & )
       {
+        fit_drf.reset();
       }
-    }//if( fwhm <= 0.0 )
-    
-    // Find nearest peak, and if within 20% of the energy, use it.
-    if( (fwhm <= 0.0) && peak_deque )
-    {
-      double smallest_energy_diff = std::numeric_limits<double>::max();
-      double nearest_fwhm = 0.0;
-      for( const auto &peak : *peak_deque )
-      {
-        double energy_diff = std::abs(peak->mean() - energy);
-        if( energy_diff < smallest_energy_diff )
-        {
-          smallest_energy_diff = energy_diff;
-          nearest_fwhm = peak->fwhm();
-        }
-      }
+    }//if( !res_drf )
 
-      if( smallest_energy_diff < 0.2*energy )
-        fwhm = nearest_fwhm;
-    }//if( (fwhm <= 0.0) && peak_deque )
-    
-    // Finally, a wag based on detection type.
-    if( fwhm <= 0.0 )
+    // GADRAS-parameter wag by detection type, as the final fallback.
+    const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
+    const vector<float> wag_pars = isHPGe ? vector<float>{ 1.54f, 0.264f, 0.33f } : vector<float>{ -6.5f, 7.5f, 0.55f };
+
+    return [res_drf, fit_drf, peak_deque, wag_pars]( const double energy ) -> float
     {
-      const bool isHPGe = PeakFitUtils::is_likely_high_res(interspec);
-      const vector<float> pars = isHPGe ? vector<float>{ 1.54f, 0.264f, 0.33f } : vector<float>{ -6.5f, 7.5f, 0.55f };
-      fwhm = DetectorPeakResponse::peakResolutionFWHM( energy, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, pars );
-    }
+      float fwhm = -1.0f;
+
+      if( res_drf )
+        fwhm = res_drf->peakResolutionFWHM( static_cast<float>(energy) );
+
+      if( (fwhm <= 0.0f) && fit_drf )
+        fwhm = fit_drf->peakResolutionFWHM( static_cast<float>(energy) );
+
+      // Find nearest peak, and if within 20% of the energy, use it.
+      if( (fwhm <= 0.0f) && peak_deque )
+      {
+        double smallest_energy_diff = std::numeric_limits<double>::max();
+        double nearest_fwhm = 0.0;
+        for( const auto &peak : *peak_deque )
+        {
+          double energy_diff = std::abs(peak->mean() - energy);
+          if( energy_diff < smallest_energy_diff )
+          {
+            smallest_energy_diff = energy_diff;
+            nearest_fwhm = peak->fwhm();
+          }
+        }
+
+        if( smallest_energy_diff < 0.2*energy )
+          fwhm = static_cast<float>( nearest_fwhm );
+      }//if( (fwhm <= 0.0) && peak_deque )
+
+      if( fwhm <= 0.0f )
+        fwhm = DetectorPeakResponse::peakResolutionFWHM( energy, DetectorPeakResponse::ResolutionFnctForm::kGadrasResolutionFcn, wag_pars );
+
+      return fwhm;
+    };
+  }//make_expected_fwhm_fcn(...)
+
+
+  float get_expected_fwhm( const double energy, InterSpec *interspec )
+  {
+    const std::function<float(double)> fwhm_fcn = make_expected_fwhm_fcn( interspec );
+
+    const float fwhm = fwhm_fcn( energy );
 
     if( fwhm <= 0.0 )
       throw std::runtime_error("Could not determine FWHM for energy " + std::to_string(energy) );
-    
+
     return fwhm;
   }//get_expected_fwhm(...)
   
   
-  SpectrumCountsInEnergyRange get_counts_in_energy_range( double lower_energy, double upper_energy, InterSpec *interspec )
+  /** Helper to combine channel counts by summing every `factor` channels.
+   * Input `counts` must have size divisible by `factor` (or the last bin covers fewer channels).
+   */
+  static vector<float> combine_channels( const vector<float> &counts, const size_t factor )
+  {
+    assert( factor >= 1 );
+    if( factor <= 1 )
+      return counts;
+
+    const size_t ncombined = (counts.size() + factor - 1) / factor;
+    vector<float> result( ncombined, 0.0f );
+    for( size_t i = 0; i < counts.size(); ++i )
+      result[i / factor] += counts[i];
+
+    return result;
+  }//combine_channels(...)
+
+
+  /** Helper to extract every `factor`-th lower-edge energy from the sub-range energies.
+   * `sub_energies` has (raw_num_channels + 1) entries (lower edges + final upper edge).
+   * Returns just the lower-edge of each combined bin (ncombined entries).
+   */
+  static vector<float> combine_energies( const vector<float> &sub_energies, const size_t factor )
+  {
+    assert( factor >= 1 );
+    assert( sub_energies.size() >= 2 );
+
+    const size_t raw_count = sub_energies.size() - 1; // number of raw channels
+    const size_t ncombined = (raw_count + factor - 1) / factor;
+
+    vector<float> result( ncombined );
+    for( size_t i = 0; i < ncombined; ++i )
+      result[i] = sub_energies[i * factor];
+
+    return result;
+  }//combine_energies(...)
+
+
+  /** Helper to fill in BackgroundSecondaryInfo for a comparison spectrum.
+   *
+   * @param comp The comparison spectrum (background or secondary)
+   * @param foreground The foreground spectrum
+   * @param fore_counts Total foreground counts in the energy range
+   * @param first_channel First foreground channel index of the range
+   * @param last_channel Last foreground channel index of the range (inclusive)
+   * @param factor The 2^N combining factor
+   * @param include_channels Whether to include per-channel data
+   */
+  static SpectrumCountsInEnergyRange::BackgroundSecondaryInfo
+  fill_comparison_info( const shared_ptr<const SpecUtils::Measurement> &comp,
+                        const shared_ptr<const SpecUtils::Measurement> &foreground,
+                        const double fore_counts,
+                        const size_t first_channel,
+                        const size_t last_channel,
+                        const size_t factor,
+                        const bool include_channels )
+  {
+    assert( comp && foreground );
+
+    SpectrumCountsInEnergyRange::BackgroundSecondaryInfo info;
+
+    // Determine live-time scale factor; default to 1.0 if either is invalid
+    const float fore_lt = foreground->live_time();
+    const float comp_lt = comp->live_time();
+    const double lt_sf = ( (fore_lt > 0.0f) && (comp_lt > 0.0f) )
+                          ? (static_cast<double>(fore_lt) / static_cast<double>(comp_lt))
+                          : 1.0;
+    info.live_time_scale_factor = lt_sf;
+
+    // Determine if we need to rebin the comparison spectrum to foreground calibration
+    const shared_ptr<const SpecUtils::EnergyCalibration> fore_cal = foreground->energy_calibration();
+    const shared_ptr<const SpecUtils::EnergyCalibration> comp_cal = comp->energy_calibration();
+
+    const bool same_cal = ( fore_cal && comp_cal && (*fore_cal == *comp_cal) );
+
+    // Get the comparison channel counts aligned to foreground channels
+    vector<float> comp_sub_counts;
+    if( same_cal )
+    {
+      // Same calibration: extract directly from same channel indices
+      const shared_ptr<const vector<float>> &comp_counts = comp->gamma_counts();
+      if( comp_counts && (comp_counts->size() > last_channel) )
+      {
+        comp_sub_counts.assign( comp_counts->begin() + first_channel,
+                                comp_counts->begin() + last_channel + 1 );
+      }
+    }
+    else
+    {
+      // Different calibration: rebin entire comparison spectrum into foreground channels,
+      // then extract sub-range.  We rebin the full spectrum because rebin_by_lower_edge
+      // requires at least 4 channels in both inputs.
+      const shared_ptr<const vector<float>> &comp_counts = comp->gamma_counts();
+      const shared_ptr<const vector<float>> &comp_energies = comp->gamma_channel_energies();
+      const shared_ptr<const vector<float>> &fore_energies = foreground->gamma_channel_energies();
+
+      if( comp_counts && comp_energies && fore_energies
+          && (comp_energies->size() >= 4) && (fore_energies->size() >= 4) )
+      {
+        vector<float> rebinned;
+        SpecUtils::rebin_by_lower_edge( *comp_energies, *comp_counts, *fore_energies, rebinned );
+
+        if( rebinned.size() > last_channel )
+        {
+          comp_sub_counts.assign( rebinned.begin() + first_channel,
+                                  rebinned.begin() + last_channel + 1 );
+        }
+      }//if( valid calibration data for rebinning )
+    }//if( same_cal ) / else
+
+    // Compute total comparison counts in range
+    double comp_total = 0.0;
+    for( const float c : comp_sub_counts )
+      comp_total += std::max( c, 0.0f );
+
+    info.counts = comp_total;
+    info.cps = (comp_lt > 0.0f) ? (comp_total / static_cast<double>(comp_lt)) : std::numeric_limits<double>::quiet_NaN();
+
+    // Statistical significance (Poisson)
+    const double scaled_comp = comp_total * lt_sf;
+    const double comp_sigma = sqrt( comp_total );
+    const double fore_sigma = sqrt( std::max(fore_counts, 0.0) );
+    const double scaled_comp_sigma = lt_sf * comp_sigma;
+    const double total_sigma = sqrt( scaled_comp_sigma * scaled_comp_sigma + fore_sigma * fore_sigma );
+    info.num_sigma_rel_foreground = (total_sigma > 0.0) ? ((fore_counts - scaled_comp) / total_sigma) : 0.0;
+
+    // Per-channel data
+    if( include_channels && !comp_sub_counts.empty() )
+    {
+      // Combine channels if needed
+      vector<float> combined = combine_channels( comp_sub_counts, factor );
+
+      // Scale by live-time ratio
+      for( float &val : combined )
+        val = static_cast<float>( static_cast<double>(val) * lt_sf );
+
+      info.channel_counts = std::move( combined );
+    }
+
+    return info;
+  }//fill_comparison_info(...)
+
+
+  SpectrumCountsInEnergyRange get_counts_in_energy_range( double lower_energy, double upper_energy,
+                                                          int max_channels, InterSpec *interspec )
   {
     if( !interspec )
-      throw std::runtime_error("No InterSpec session available");
+      throw std::runtime_error( "No InterSpec session available" );
 
-    shared_ptr<const SpecUtils::Measurement> foreground = interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+    const shared_ptr<const SpecUtils::Measurement> foreground
+      = interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
     if( !foreground )
       throw runtime_error( "get_counts_in_energy_range: no foreground loaded." );
 
     if( lower_energy > upper_energy )
       std::swap( lower_energy, upper_energy );
 
-    SpectrumCountsInEnergyRange answer;
-    answer.lower_energy = lower_energy;
-    answer.upper_energy = upper_energy;
+    const shared_ptr<const vector<float>> &channel_energies = foreground->gamma_channel_energies();
+    const shared_ptr<const vector<float>> &gamma_counts = foreground->gamma_counts();
+    const size_t num_channels = foreground->num_gamma_channels();
 
-    answer.foreground_counts = foreground->gamma_integral( static_cast<float>(lower_energy), static_cast<float>(upper_energy) );
-    if( foreground->live_time() > 0.0 )
+    if( !channel_energies || !gamma_counts || (num_channels < 2) || (channel_energies->size() < 3) )
+      throw runtime_error( "get_counts_in_energy_range: foreground has no valid channel data." );
+
+    // channel_energies has (num_channels + 1) entries: lower edge of each channel + final upper edge
+    assert( channel_energies->size() == (num_channels + 1) );
+
+    // Snap to channel boundaries
+    size_t first_channel = foreground->find_gamma_channel( static_cast<float>(lower_energy) );
+    size_t last_channel = foreground->find_gamma_channel( static_cast<float>(upper_energy) );
+
+    // Make sure we include at least one channel
+    if( last_channel < first_channel )
+      last_channel = first_channel;
+
+    SpectrumCountsInEnergyRange answer;
+    answer.lower_energy = (*channel_energies)[first_channel];
+    answer.upper_energy = (*channel_energies)[last_channel + 1];
+
+    // Compute foreground total for the range
+    answer.foreground_counts = foreground->gamma_channels_sum( first_channel, last_channel );
+    if( foreground->live_time() > 0.0f )
       answer.foreground_cps = answer.foreground_counts / foreground->live_time();
-    else 
+    else
       answer.foreground_cps = std::numeric_limits<double>::quiet_NaN();
-    
-    shared_ptr<const SpecUtils::Measurement> background = interspec->displayedHistogram(SpecUtils::SpectrumType::Background);
+
+    // Treat max_channels <= 1 as a request for just gross counts (single bin)
+    if( max_channels < 1 )
+      max_channels = 1;
+
+    const bool include_channels = (max_channels > 1);
+
+    if( include_channels )
+    {
+      size_t raw_count = last_channel - first_channel + 1;
+
+      // Find smallest 2^N combining factor so output has <= max_channels bins
+      size_t factor = 1;
+      while( (raw_count / factor) > static_cast<size_t>(max_channels) )
+        factor *= 2;
+
+      // Expand range so raw_count is divisible by factor
+      if( (factor > 1) && ((raw_count % factor) != 0) )
+      {
+        const size_t deficit = factor - (raw_count % factor);
+        size_t expand_low = deficit / 2;
+        size_t expand_high = deficit - expand_low;
+
+        // Apply low expansion with clamping
+        const size_t actual_expand_low = std::min( expand_low, first_channel );
+        first_channel -= actual_expand_low;
+        const size_t leftover_low = expand_low - actual_expand_low;
+
+        // Apply high expansion (absorb leftover from low side)
+        const size_t total_expand_high = expand_high + leftover_low;
+        const size_t max_expand_high = (num_channels - 1) - last_channel;
+        const size_t actual_expand_high = std::min( total_expand_high, max_expand_high );
+        last_channel += actual_expand_high;
+        const size_t leftover_high = total_expand_high - actual_expand_high;
+
+        // If there's still leftover (pinned at upper boundary), try expanding low more
+        if( leftover_high > 0 )
+        {
+          const size_t extra_low = std::min( leftover_high, first_channel );
+          first_channel -= extra_low;
+        }
+
+        // Update raw_count and actual energies
+        raw_count = last_channel - first_channel + 1;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+        if( (first_channel > 0) && ((last_channel + 1) < num_channels) )
+        {
+          // If we're not pinned at both boundaries, divisibility should hold
+          if( (raw_count % factor) != 0 )
+          {
+            const string msg = "get_counts_in_energy_range: raw_count=" + std::to_string(raw_count)
+                               + " not divisible by factor=" + std::to_string(factor)
+                               + " (first_channel=" + std::to_string(first_channel)
+                               + ", last_channel=" + std::to_string(last_channel)
+                               + ", num_channels=" + std::to_string(num_channels) + ")";
+            log_developer_error( __func__, msg.c_str() );
+          }
+        }
+#endif
+      }//if( need to expand for divisibility )
+
+      answer.lower_energy = (*channel_energies)[first_channel];
+      answer.upper_energy = (*channel_energies)[last_channel + 1];
+      answer.channel_combine_factor = factor;
+
+      // Recompute foreground total for the (possibly expanded) range
+      answer.foreground_counts = foreground->gamma_channels_sum( first_channel, last_channel );
+      if( foreground->live_time() > 0.0f )
+        answer.foreground_cps = answer.foreground_counts / foreground->live_time();
+
+      // Extract sub-vectors for the range
+      const vector<float> sub_energies( channel_energies->begin() + first_channel,
+                                        channel_energies->begin() + last_channel + 2 );
+      const vector<float> sub_counts( gamma_counts->begin() + first_channel,
+                                      gamma_counts->begin() + last_channel + 1 );
+
+      answer.channel_lower_energies = combine_energies( sub_energies, factor );
+      answer.foreground_channel_counts = combine_channels( sub_counts, factor );
+    }//if( include_channels )
+
+    // Handle background
+    const shared_ptr<const SpecUtils::Measurement> background
+      = interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
     if( background )
     {
-      SpectrumCountsInEnergyRange::CountsWithComparisonToForeground back;
+      answer.background_info = fill_comparison_info( background, foreground,
+        answer.foreground_counts, first_channel, last_channel,
+        include_channels ? answer.channel_combine_factor : 1, include_channels );
+    }
 
-      back.counts = background->gamma_integral( static_cast<float>(lower_energy), static_cast<float>(upper_energy) );
-      if( background->live_time() > 0.0 )
-        back.cps = back.counts / background->live_time();
-      else
-        back.cps = std::numeric_limits<double>::quiet_NaN();
-
-      const double backSF = foreground->live_time() / background->live_time();
-      const double nfore = answer.foreground_counts;
-      const double nback = back.counts;
-      const double scaleback = nback * backSF;
-      const double backsigma = sqrt(nback);
-      const double forsigma = sqrt(nfore);
-      const double backscalesigma = backSF * backsigma;
-      const double total_back_fore_sigma = sqrt(backscalesigma*backscalesigma + forsigma*forsigma);
-      const double nsigma = (nfore - scaleback) / total_back_fore_sigma;
-
-      back.num_sigma_rel_foreground = nsigma;
-
-      answer.background_info = std::move( back );
-    }//if( background )
-
-    shared_ptr<const SpecUtils::Measurement> secondary = interspec->displayedHistogram(SpecUtils::SpectrumType::SecondForeground);
+    // Handle secondary
+    const shared_ptr<const SpecUtils::Measurement> secondary
+      = interspec->displayedHistogram( SpecUtils::SpectrumType::SecondForeground );
     if( secondary )
     {
-      SpectrumCountsInEnergyRange::CountsWithComparisonToForeground sec;
-
-      sec.counts = secondary->gamma_integral( static_cast<float>(lower_energy), static_cast<float>(upper_energy) );
-      if( secondary->live_time() > 0.0 )
-        sec.cps = sec.counts / secondary->live_time();
-      else
-        sec.cps = std::numeric_limits<double>::quiet_NaN();
-
-      const double secSF = foreground->live_time() / secondary->live_time();
-      const double nfore = answer.foreground_counts;
-      const double nsec = sec.counts;
-      const double scalesec = nsec * secSF;
-      const double secsigma = sqrt(nsec);
-      const double forsigma = sqrt(nfore);
-      const double secscalesigma = secSF * secsigma;
-      const double total_sec_fore_sigma = sqrt(secscalesigma*secscalesigma + forsigma*forsigma);
-      const double nsigma = (nfore - scalesec) / total_sec_fore_sigma;
-
-      sec.num_sigma_rel_foreground = nsigma;
-
-      answer.secondary_info = std::move( sec );
-    }//if( secondary )
+      answer.secondary_info = fill_comparison_info( secondary, foreground,
+        answer.foreground_counts, first_channel, last_channel,
+        include_channels ? answer.channel_combine_factor : 1, include_channels );
+    }
 
     return answer;
-  }//SpectrumCountsInEnergyRange get_counts_in_energy_range( const double lower_energy, const double upper_energy, InterSpec *interspec )
+  }//get_counts_in_energy_range(...)
 
 
   const char* to_string( EscapePeakType type )
@@ -1451,61 +2473,38 @@ namespace AnalystChecks
   }//const char* to_string( SumPeakType type )
 
 
-  const char* to_string( EditPeakAction action )
+  const char *to_string( EditPeakStructuralAction action )
   {
     switch( action )
     {
-      case EditPeakAction::SetEnergy:                    return "SetEnergy";
-      case EditPeakAction::SetFwhm:                      return "SetFwhm";
-      case EditPeakAction::SetAmplitude:                 return "SetAmplitude";
-      case EditPeakAction::SetEnergyUncertainty:         return "SetEnergyUncertainty";
-      case EditPeakAction::SetFwhmUncertainty:           return "SetFwhmUncertainty";
-      case EditPeakAction::SetAmplitudeUncertainty:      return "SetAmplitudeUncertainty";
-      case EditPeakAction::SetRoiLower:                  return "SetRoiLower";
-      case EditPeakAction::SetRoiUpper:                  return "SetRoiUpper";
-      case EditPeakAction::SetSkewType:                  return "SetSkewType";
-      case EditPeakAction::SetContinuumType:             return "SetContinuumType";
-      case EditPeakAction::SetSource:                    return "SetSource";
-      case EditPeakAction::SetColor:                     return "SetColor";
-      case EditPeakAction::SetUserLabel:                 return "SetUserLabel";
-      case EditPeakAction::SetUseForEnergyCalibration:   return "SetUseForEnergyCalibration";
-      case EditPeakAction::SetUseForShieldingSourceFit:  return "SetUseForShieldingSourceFit";
-      case EditPeakAction::SetUseForManualRelEff:        return "SetUseForManualRelEff";
-      case EditPeakAction::DeletePeak:                   return "DeletePeak";
-      case EditPeakAction::SplitFromRoi:                 return "SplitFromRoi";
-      case EditPeakAction::MergeWithLeft:                return "MergeWithLeft";
-      case EditPeakAction::MergeWithRight:               return "MergeWithRight";
-    }//switch( action )
-
-    throw runtime_error( "Invalid EditPeakAction value" );
-  }//const char* to_string( EditPeakAction action )
+      case EditPeakStructuralAction::DeletePeak:    return "DeletePeak";
+      case EditPeakStructuralAction::SplitFromRoi:  return "SplitFromRoi";
+      case EditPeakStructuralAction::MergeWithLeft:  return "MergeWithLeft";
+      case EditPeakStructuralAction::MergeWithRight: return "MergeWithRight";
+    }
+    throw runtime_error( "Invalid EditPeakStructuralAction value" );
+  }//to_string( EditPeakStructuralAction )
 
 
-  EditPeakAction edit_peak_action_from_string( const std::string &str )
+  EditPeakStructuralAction structural_action_from_string( const std::string &str )
   {
-    if( str == "SetEnergy" )                   return EditPeakAction::SetEnergy;
-    if( str == "SetFwhm" )                     return EditPeakAction::SetFwhm;
-    if( str == "SetAmplitude" )                return EditPeakAction::SetAmplitude;
-    if( str == "SetEnergyUncertainty" )        return EditPeakAction::SetEnergyUncertainty;
-    if( str == "SetFwhmUncertainty" )          return EditPeakAction::SetFwhmUncertainty;
-    if( str == "SetAmplitudeUncertainty" )     return EditPeakAction::SetAmplitudeUncertainty;
-    if( str == "SetRoiLower" )                 return EditPeakAction::SetRoiLower;
-    if( str == "SetRoiUpper" )                 return EditPeakAction::SetRoiUpper;
-    if( str == "SetSkewType" )                 return EditPeakAction::SetSkewType;
-    if( str == "SetContinuumType" )            return EditPeakAction::SetContinuumType;
-    if( str == "SetSource" )                   return EditPeakAction::SetSource;
-    if( str == "SetColor" )                    return EditPeakAction::SetColor;
-    if( str == "SetUserLabel" )                return EditPeakAction::SetUserLabel;
-    if( str == "SetUseForEnergyCalibration" )  return EditPeakAction::SetUseForEnergyCalibration;
-    if( str == "SetUseForShieldingSourceFit" ) return EditPeakAction::SetUseForShieldingSourceFit;
-    if( str == "SetUseForManualRelEff" )       return EditPeakAction::SetUseForManualRelEff;
-    if( str == "DeletePeak" )                  return EditPeakAction::DeletePeak;
-    if( str == "SplitFromRoi" )                return EditPeakAction::SplitFromRoi;
-    if( str == "MergeWithLeft" )               return EditPeakAction::MergeWithLeft;
-    if( str == "MergeWithRight" )              return EditPeakAction::MergeWithRight;
+    if( str == "DeletePeak" )    return EditPeakStructuralAction::DeletePeak;
+    if( str == "SplitFromRoi" )  return EditPeakStructuralAction::SplitFromRoi;
+    if( str == "MergeWithLeft" ) return EditPeakStructuralAction::MergeWithLeft;
+    if( str == "MergeWithRight" )return EditPeakStructuralAction::MergeWithRight;
+    throw runtime_error( "Invalid structural action: " + str );
+  }//structural_action_from_string(...)
 
-    throw runtime_error( "Invalid edit action: " + str );
-  }//EditPeakAction edit_peak_action_from_string( const std::string &str )
+
+  /** Helper to parse a continuum type string, with "None" as an alias for "NoOffset". */
+  PeakContinuum::OffsetType parse_continuum_type_str( const std::string &str )
+  {
+    if( str == "None" || str == "NoOffset" )
+      return PeakContinuum::OffsetType::NoOffset;
+
+    // str_to_offset_type_str expects a char* and length; it handles the standard names
+    return PeakContinuum::str_to_offset_type_str( str.c_str(), str.size() );
+  }//parse_continuum_type_str(...)
 
 
   EditAnalysisPeakStatus edit_analysis_peak( const EditAnalysisPeakOptions &options, InterSpec *interspec )
@@ -1513,7 +2512,6 @@ namespace AnalystChecks
     if( !interspec )
       throw runtime_error( "edit_analysis_peak: No InterSpec session available" );
 
-    // Get the PeakModel for the specified spectrum type
     PeakModel *peakModel = interspec->peakModel();
     if( !peakModel )
       throw runtime_error( "edit_analysis_peak: No peak model available" );
@@ -1524,432 +2522,578 @@ namespace AnalystChecks
     {
       return EditAnalysisPeakStatus{
         false,
-        "No peak found near " + std::to_string(options.energy) + " keV",
+        "No peak found near " + std::to_string( options.energy ) + " keV",
+        false,
         std::nullopt,
         {}
       };
-    }//if( !peak )
+    }
 
     // Validate peak is within 1 FWHM of requested energy
-    const double fwhm = get_expected_fwhm( options.energy, interspec );
+    const double expected_fwhm = get_expected_fwhm( options.energy, interspec );
     const double energy_diff = std::fabs( peak->mean() - options.energy );
-    if( energy_diff > fwhm )
+    if( energy_diff > expected_fwhm )
     {
       return EditAnalysisPeakStatus{
         false,
-        "Nearest peak at " + std::to_string(peak->mean()) + " keV is more than 1 FWHM ("
-          + std::to_string(fwhm) + " keV) away from requested " + std::to_string(options.energy) + " keV",
+        "Nearest peak at " + std::to_string( peak->mean() ) + " keV is more than 1 FWHM ("
+          + std::to_string( expected_fwhm ) + " keV) away from requested "
+          + std::to_string( options.energy ) + " keV",
+        false,
         std::nullopt,
         {}
       };
-    }//if( energy_diff > fwhm )
+    }
 
-    // Handle delete action separately since it doesn't need a modified peak
-    if( options.editAction == EditPeakAction::DeletePeak )
+    // ---- Handle structural actions ----
+    if( options.structuralAction.has_value() )
     {
-      peakModel->removePeak( peak );
-      return EditAnalysisPeakStatus{
-        true,
-        "Deleted peak at " + std::to_string(peak->mean()) + " keV",
-        std::nullopt,
-        {}
-      };
-    }//if( DeletePeak )
+      const EditPeakStructuralAction action = *options.structuralAction;
 
-    // Create a modified copy of the peak.
-    //  Note: PeakDef copy shares the same PeakContinuum pointer, so we must create a new
-    //  independent continuum.  If other peaks share the original continuum (i.e., are in the
-    //  same ROI), we need to copy those peaks too and point them to the new continuum, so the
-    //  ROI remains intact but fully independent from the originals.
-    PeakDef modifiedPeak = *peak;
-
-    // Collect all peaks sharing the same ROI continuum as the original peak
-    const std::shared_ptr<const PeakContinuum> originalContinuum = peak->continuum();
-    vector<shared_ptr<const PeakDef>> roiSiblings; // other peaks in same ROI (not including the target peak)
-    {
-      shared_ptr<const deque<shared_ptr<const PeakDef>>> all_peaks_ptr = peakModel->peaks();
-      if( all_peaks_ptr )
+      if( action == EditPeakStructuralAction::DeletePeak )
       {
-        for( const shared_ptr<const PeakDef> &p : *all_peaks_ptr )
+        peakModel->removePeak( peak );
+        return EditAnalysisPeakStatus{
+          true,
+          "Deleted peak at " + std::to_string( peak->mean() ) + " keV",
+          false,
+          std::nullopt,
+          {}
+        };
+      }//if( DeletePeak )
+
+      const std::shared_ptr<const PeakContinuum> originalContinuum = peak->continuum();
+
+      if( action == EditPeakStructuralAction::SplitFromRoi )
+      {
+        // Create independent copy with its own continuum; siblings keep original continuum.
+        PeakDef modifiedPeak = *peak;
+        modifiedPeak.makeUniqueNewContinuum();
+        peakModel->updatePeak( peak, modifiedPeak );
+
+        return EditAnalysisPeakStatus{
+          true,
+          "Split peak at " + std::to_string( peak->mean() ) + " keV into its own ROI",
+          false,
+          make_shared<const PeakDef>( modifiedPeak ),
+          { make_shared<const PeakDef>( modifiedPeak ) }
+        };
+      }//if( SplitFromRoi )
+
+      // MergeWithLeft / MergeWithRight
+      {
+        shared_ptr<const deque<shared_ptr<const PeakDef>>> all_peaks_ptr = peakModel->peaks();
+        if( !all_peaks_ptr )
+          throw runtime_error( "No peaks available in model" );
+
+        const deque<shared_ptr<const PeakDef>> &all_peaks = *all_peaks_ptr;
+
+        assert( std::is_sorted( all_peaks.begin(), all_peaks.end(),
+          []( const shared_ptr<const PeakDef> &a, const shared_ptr<const PeakDef> &b ){
+            return a->mean() < b->mean();
+          } ) );
+
+        const deque<shared_ptr<const PeakDef>>::const_iterator peak_iter
+          = find( all_peaks.begin(), all_peaks.end(), peak );
+        if( peak_iter == all_peaks.end() )
+          throw runtime_error( "Could not find peak in model" );
+
+        shared_ptr<const PeakDef> adjacent_peak;
+        if( action == EditPeakStructuralAction::MergeWithLeft )
         {
-          if( (p != peak) && (p->continuum() == originalContinuum) )
-            roiSiblings.push_back( p );
+          if( peak_iter == all_peaks.begin() )
+            throw runtime_error( "No peak to the left to merge with" );
+          adjacent_peak = *(peak_iter - 1);
         }
-      }
-    }//end collect ROI siblings
+        else
+        {
+          if( (peak_iter + 1) == all_peaks.end() )
+            throw runtime_error( "No peak to the right to merge with" );
+          adjacent_peak = *(peak_iter + 1);
+        }
 
-    // Create a new independent continuum for the modified peak
-    modifiedPeak.makeUniqueNewContinuum();
+        const shared_ptr<const PeakContinuum> adjContinuum = adjacent_peak->continuum();
+        if( adjContinuum == originalContinuum )
+          throw runtime_error( "Adjacent peak already shares the same ROI" );
 
-    // Perform the edit based on action
+        // Collect peaks from both ROIs
+        vector<shared_ptr<const PeakDef>> oldPeaksToRemove;
+        for( const shared_ptr<const PeakDef> &p : all_peaks )
+        {
+          if( (p->continuum() == originalContinuum) || (p->continuum() == adjContinuum) )
+            oldPeaksToRemove.push_back( p );
+        }
+
+        // Create merged continuum with union of ranges
+        std::shared_ptr<PeakContinuum> mergedContinuum
+          = make_shared<PeakContinuum>( *originalContinuum );
+        const double newLower = (std::min)( originalContinuum->lowerEnergy(),
+                                            adjContinuum->lowerEnergy() );
+        const double newUpper = (std::max)( originalContinuum->upperEnergy(),
+                                            adjContinuum->upperEnergy() );
+        mergedContinuum->setRange( newLower, newUpper );
+
+        vector<PeakDef> mergedPeaks;
+        for( const shared_ptr<const PeakDef> &p : oldPeaksToRemove )
+        {
+          PeakDef peakCopy = *p;
+          peakCopy.setContinuum( mergedContinuum );
+          mergedPeaks.push_back( peakCopy );
+        }
+
+        // Refit the merged ROI
+        const shared_ptr<const SpecUtils::Measurement> data
+          = interspec->displayedHistogram( options.specType );
+        shared_ptr<SpecMeas> meas = interspec->measurment( options.specType );
+        const shared_ptr<const DetectorPeakResponse> det = meas ? meas->detector() : nullptr;
+
+        bool used_refit = false;
+        if( data )
+        {
+          vector<shared_ptr<const PeakDef>> peaksToFit;
+          for( const PeakDef &p : mergedPeaks )
+            peaksToFit.push_back( make_shared<const PeakDef>( p ) );
+
+          const vector<shared_ptr<const PeakDef>> refitResult
+            = refitPeaksThatShareROI( data, det, peaksToFit,
+                                      Wt::WFlags<PeakFitLM::PeakFitLMOptions>( 0 ) );
+
+          if( refitResult.size() == mergedPeaks.size() )
+          {
+            mergedPeaks.clear();
+            for( const shared_ptr<const PeakDef> &p : refitResult )
+              mergedPeaks.push_back( *p );
+            used_refit = true;
+          }
+        }//if( data )
+
+        peakModel->updatePeaks( oldPeaksToRemove, mergedPeaks );
+
+        // Collect results
+        const std::shared_ptr<const PeakContinuum> resultContinuum
+          = mergedPeaks.empty() ? mergedContinuum : mergedPeaks.front().continuum();
+
+        vector<shared_ptr<const PeakDef>> peaks_in_roi;
+        shared_ptr<const PeakDef> updated_peak;
+
+        all_peaks_ptr = peakModel->peaks();
+        if( all_peaks_ptr )
+        {
+          for( const shared_ptr<const PeakDef> &p : *all_peaks_ptr )
+          {
+            if( p->continuum() == resultContinuum )
+            {
+              peaks_in_roi.push_back( p );
+              if( !updated_peak && fabs( p->mean() - peak->mean() ) < 0.5 )
+                updated_peak = p;
+            }
+          }
+        }
+
+        if( !updated_peak && !peaks_in_roi.empty() )
+          updated_peak = peaks_in_roi.front();
+
+        string msg = "Merged ROIs into combined region [" + std::to_string( newLower )
+          + ", " + std::to_string( newUpper ) + "] keV with "
+          + std::to_string( peaks_in_roi.size() ) + " peaks";
+
+        if( used_refit )
+          msg += " (refit to data)";
+        else
+          msg += ". Warning: refit failed or peaks became insignificant; un-fit parameters used.";
+
+        const double avg_fwhm = 0.5 * (peak->fwhm() + adjacent_peak->fwhm());
+        const double peak_separation = fabs( peak->mean() - adjacent_peak->mean() );
+        if( peak_separation > 6.0 * avg_fwhm )
+        {
+          msg += " Warning: peaks are " + std::to_string( peak_separation / avg_fwhm )
+            + " FWHM apart; merging may not be appropriate.";
+        }
+
+        return EditAnalysisPeakStatus{
+          true,
+          msg,
+          used_refit,
+          updated_peak,
+          peaks_in_roi
+        };
+      }//MergeWithLeft / MergeWithRight
+    }//if( structuralAction )
+
+
+    // ---- Property-based editing ----
     try
     {
-      switch( options.editAction )
+      // Create modified copy and collect ROI siblings
+      PeakDef modifiedPeak = *peak;
+      const std::shared_ptr<const PeakContinuum> originalContinuum = peak->continuum();
+
+      vector<shared_ptr<const PeakDef>> roiSiblings;
       {
-        case EditPeakAction::SetEnergy:
+        shared_ptr<const deque<shared_ptr<const PeakDef>>> all_peaks_ptr = peakModel->peaks();
+        if( all_peaks_ptr )
         {
-          if( !options.doubleValue )
-            throw runtime_error( "SetEnergy requires doubleValue parameter" );
-          modifiedPeak.setMean( *options.doubleValue );
-          break;
-        }
-
-        case EditPeakAction::SetFwhm:
-        {
-          if( !options.doubleValue )
-            throw runtime_error( "SetFwhm requires doubleValue parameter" );
-          // Convert FWHM to sigma (sigma = FWHM / 2.35482)
-          modifiedPeak.setSigma( (*options.doubleValue) / 2.35482 );
-          break;
-        }
-
-        case EditPeakAction::SetAmplitude:
-        {
-          if( !options.doubleValue )
-            throw runtime_error( "SetAmplitude requires doubleValue parameter" );
-          modifiedPeak.setAmplitude( *options.doubleValue );
-          break;
-        }
-
-        case EditPeakAction::SetEnergyUncertainty:
-        {
-          if( !options.doubleValue )
-            throw runtime_error( "SetEnergyUncertainty requires doubleValue parameter" );
-          modifiedPeak.setMeanUncert( *options.doubleValue );
-          break;
-        }
-
-        case EditPeakAction::SetFwhmUncertainty:
-        {
-          if( !options.doubleValue )
-            throw runtime_error( "SetFwhmUncertainty requires doubleValue parameter" );
-          // Convert FWHM uncertainty to sigma uncertainty
-          modifiedPeak.setSigmaUncert( (*options.doubleValue) / 2.35482 );
-          break;
-        }
-
-        case EditPeakAction::SetAmplitudeUncertainty:
-        {
-          if( !options.doubleValue )
-            throw runtime_error( "SetAmplitudeUncertainty requires doubleValue parameter" );
-          modifiedPeak.setAmplitudeUncert( *options.doubleValue );
-          break;
-        }
-
-        case EditPeakAction::SetRoiLower:
-        case EditPeakAction::SetRoiUpper:
-        {
-          if( !options.doubleValue )
-            throw runtime_error( string(to_string(options.editAction)) + " requires doubleValue parameter" );
-
-          shared_ptr<PeakContinuum> continuum = modifiedPeak.getContinuum();
-          const double current_lower = continuum->lowerEnergy();
-          const double current_upper = continuum->upperEnergy();
-
-          const double new_lower = (options.editAction == EditPeakAction::SetRoiLower)
-                                    ? *options.doubleValue : current_lower;
-          const double new_upper = (options.editAction == EditPeakAction::SetRoiUpper)
-                                    ? *options.doubleValue : current_upper;
-
-          if( new_lower >= new_upper )
-            throw runtime_error( "ROI lower energy must be less than upper energy" );
-
-          continuum->setRange( new_lower, new_upper );
-          break;
-        }
-
-        case EditPeakAction::SetSkewType:
-        {
-          if( !options.stringValue )
-            throw runtime_error( "SetSkewType requires stringValue parameter" );
-
-          // Parse skew type string
-          PeakDef::SkewType skew_type;
-          const string &skew_str = *options.stringValue;
-          if( skew_str == "NoSkew" )                      skew_type = PeakDef::SkewType::NoSkew;
-          else if( skew_str == "Bortel" )                 skew_type = PeakDef::SkewType::Bortel;
-          else if( skew_str == "GaussExp" )               skew_type = PeakDef::SkewType::GaussExp;
-          else if( skew_str == "CrystalBall" )            skew_type = PeakDef::SkewType::CrystalBall;
-          else if( skew_str == "ExpGaussExp" )            skew_type = PeakDef::SkewType::ExpGaussExp;
-          else if( skew_str == "DoubleSidedCrystalBall" ) skew_type = PeakDef::SkewType::DoubleSidedCrystalBall;
-          else throw runtime_error( "Invalid skew type: " + skew_str );
-
-          modifiedPeak.setSkewType( skew_type );
-          break;
-        }
-
-        case EditPeakAction::SetContinuumType:
-        {
-          if( !options.stringValue )
-            throw runtime_error( "SetContinuumType requires stringValue parameter" );
-
-          // Parse continuum type string
-          PeakContinuum::OffsetType continuum_type;
-          const string &cont_str = *options.stringValue;
-          if( cont_str == "None" )           continuum_type = PeakContinuum::OffsetType::NoOffset;
-          else if( cont_str == "Constant" )  continuum_type = PeakContinuum::OffsetType::Constant;
-          else if( cont_str == "Linear" )    continuum_type = PeakContinuum::OffsetType::Linear;
-          else if( cont_str == "Quadratic" ) continuum_type = PeakContinuum::OffsetType::Quadratic;
-          else if( cont_str == "Cubic" )     continuum_type = PeakContinuum::OffsetType::Cubic;
-          else if( cont_str == "FlatStep" )  continuum_type = PeakContinuum::OffsetType::FlatStep;
-          else if( cont_str == "LinearStep" )continuum_type = PeakContinuum::OffsetType::LinearStep;
-          else if( cont_str == "BiLinearStep" )continuum_type = PeakContinuum::OffsetType::BiLinearStep;
-          else if( cont_str == "FlatStepCDF" )continuum_type = PeakContinuum::OffsetType::FlatStepCDF;
-          else if( cont_str == "LinearStepCDF" )continuum_type = PeakContinuum::OffsetType::LinearStepCDF;
-          else if( cont_str == "BiLinearStepCDF" )continuum_type = PeakContinuum::OffsetType::BiLinearStepCDF;
-          else if( cont_str == "External" )  continuum_type = PeakContinuum::OffsetType::External;
-          else throw runtime_error( "Invalid continuum type: " + cont_str );
-
-          shared_ptr<PeakContinuum> continuum = modifiedPeak.getContinuum();
-          continuum->setType( continuum_type );
-          break;
-        }
-
-        case EditPeakAction::SetSource:
-        {
-          if( !options.stringValue )
-            throw runtime_error( "SetSource requires stringValue parameter" );
-
-          // Use PeakModel::setNuclideXrayReaction to parse and set the source
-          PeakModel::SetGammaSource result = PeakModel::setNuclideXrayReaction( modifiedPeak, *options.stringValue, 4.0 );
-          if( result == PeakModel::SetGammaSource::FailedSourceChange )
-            throw runtime_error( "Failed to set source: " + *options.stringValue );
-          break;
-        }
-
-        case EditPeakAction::SetColor:
-        {
-          if( !options.stringValue )
-            throw runtime_error( "SetColor requires stringValue parameter" );
-
-          // Parse CSS color string to Wt::WColor
-          Wt::WColor color( *options.stringValue );
-          modifiedPeak.setLineColor( color );
-          break;
-        }
-
-        case EditPeakAction::SetUserLabel:
-        {
-          if( !options.stringValue )
-            throw runtime_error( "SetUserLabel requires stringValue parameter" );
-
-          modifiedPeak.setUserLabel( *options.stringValue );
-          break;
-        }
-
-        case EditPeakAction::SetUseForEnergyCalibration:
-        {
-          if( !options.boolValue )
-            throw runtime_error( "SetUseForEnergyCalibration requires boolValue parameter" );
-
-          modifiedPeak.useForEnergyCalibration( *options.boolValue );
-          break;
-        }
-
-        case EditPeakAction::SetUseForShieldingSourceFit:
-        {
-          if( !options.boolValue )
-            throw runtime_error( "SetUseForShieldingSourceFit requires boolValue parameter" );
-
-          modifiedPeak.useForShieldingSourceFit( *options.boolValue );
-          break;
-        }
-
-        case EditPeakAction::SetUseForManualRelEff:
-        {
-          if( !options.boolValue )
-            throw runtime_error( "SetUseForManualRelEff requires boolValue parameter" );
-
-          modifiedPeak.useForManualRelEff( *options.boolValue );
-          break;
-        }
-
-        case EditPeakAction::SplitFromRoi:
-        {
-          // Make the peak have its own unique continuum, separate from the ROI.
-          //  We already called makeUniqueNewContinuum() above, so we just need to make sure the
-          //  sibling peaks are NOT updated to share the new continuum - they should keep
-          //  their original shared continuum.
-          roiSiblings.clear();
-          break;
-        }
-
-        case EditPeakAction::MergeWithLeft:
-        case EditPeakAction::MergeWithRight:
-        {
-          // Merging two ROIs: create a new combined ROI whose energy range is the union of
-          //  the two original ROIs, copy all peaks from both ROIs into the new continuum,
-          //  then refit the combined ROI to the data.
-
-          shared_ptr<const deque<shared_ptr<const PeakDef>>> all_peaks_ptr = peakModel->peaks();
-          if( !all_peaks_ptr )
-            throw runtime_error( "No peaks available in model" );
-
-          const deque<shared_ptr<const PeakDef>> &all_peaks = *all_peaks_ptr;
-
-          // PeakModel::peaks() returns peaks sorted by mean energy
-          assert( std::is_sorted( all_peaks.begin(), all_peaks.end(),
-            []( const shared_ptr<const PeakDef> &a, const shared_ptr<const PeakDef> &b ){
-              return a->mean() < b->mean();
-            } ) );
-
-          // Find the adjacent peak to merge with
-          const deque<shared_ptr<const PeakDef>>::const_iterator peak_iter
-            = find( all_peaks.begin(), all_peaks.end(), peak );
-          if( peak_iter == all_peaks.end() )
-            throw runtime_error( "Could not find peak in model" );
-
-          shared_ptr<const PeakDef> adjacent_peak;
-          if( options.editAction == EditPeakAction::MergeWithLeft )
+          for( const shared_ptr<const PeakDef> &p : *all_peaks_ptr )
           {
-            if( peak_iter == all_peaks.begin() )
-              throw runtime_error( "No peak to the left to merge with" );
-            adjacent_peak = *(peak_iter - 1);
+            if( (p != peak) && (p->continuum() == originalContinuum) )
+              roiSiblings.push_back( p );
           }
-          else // MergeWithRight
+        }
+      }
+
+      modifiedPeak.makeUniqueNewContinuum();
+
+      // Track whether shape-affecting values changed (for auto-refit determination)
+      bool shapeValueChanged = false;
+      bool typeChanged = false; // skew or continuum type changed (triggers full refit)
+
+      // ---- Apply skew type ----
+      if( options.skewType.has_value() )
+      {
+        const PeakDef::SkewType skew_type = PeakDef::skew_from_string( *options.skewType );
+        modifiedPeak.setSkewType( skew_type );
+        typeChanged = true;
+      }
+
+      // ---- Apply skew parameter values ----
+      const std::optional<double> *skew_pars[] = {
+        &options.skewPar0, &options.skewPar1, &options.skewPar2, &options.skewPar3
+      };
+      const PeakDef::CoefficientType skew_coef_types[] = {
+        PeakDef::CoefficientType::SkewPar0, PeakDef::CoefficientType::SkewPar1,
+        PeakDef::CoefficientType::SkewPar2, PeakDef::CoefficientType::SkewPar3
+      };
+      const size_t num_skew = PeakDef::num_skew_parameters( modifiedPeak.skewType() );
+
+      for( size_t i = 0; i < 4; ++i )
+      {
+        if( skew_pars[i]->has_value() )
+        {
+          if( i >= num_skew )
           {
-            if( (peak_iter + 1) == all_peaks.end() )
-              throw runtime_error( "No peak to the right to merge with" );
-            adjacent_peak = *(peak_iter + 1);
+            throw runtime_error( "skewPar" + std::to_string( i ) + " is not valid for skew type "
+              + string( PeakDef::to_string( modifiedPeak.skewType() ) )
+              + " (has " + std::to_string( num_skew ) + " parameters)" );
+          }
+          modifiedPeak.set_coefficient( *(*skew_pars[i]), skew_coef_types[i] );
+          shapeValueChanged = true;
+        }
+      }
+
+      // ---- Apply skew fit-for flags ----
+      const std::optional<bool> *skew_fit_flags[] = {
+        &options.fitForSkewPar0, &options.fitForSkewPar1,
+        &options.fitForSkewPar2, &options.fitForSkewPar3
+      };
+      for( size_t i = 0; i < 4; ++i )
+      {
+        if( skew_fit_flags[i]->has_value() )
+        {
+          if( i >= num_skew )
+          {
+            throw runtime_error( "fitForSkewPar" + std::to_string( i )
+              + " is not valid for skew type "
+              + string( PeakDef::to_string( modifiedPeak.skewType() ) ) );
+          }
+          modifiedPeak.setFitFor( skew_coef_types[i], *(*skew_fit_flags[i]) );
+        }
+      }
+
+      // ---- Apply continuum type ----
+      shared_ptr<PeakContinuum> continuum = modifiedPeak.getContinuum();
+
+      if( options.continuumType.has_value() )
+      {
+        const PeakContinuum::OffsetType cont_type = parse_continuum_type_str( *options.continuumType );
+        continuum->setType( cont_type );
+        typeChanged = true;
+      }
+
+      // ---- Apply continuum coefficient values ----
+      const std::optional<double> *cont_coefs[] = {
+        &options.continuumCoef0, &options.continuumCoef1,
+        &options.continuumCoef2, &options.continuumCoef3
+      };
+      const size_t num_cont_pars = PeakContinuum::num_parameters( continuum->type() );
+
+      for( size_t i = 0; i < 4; ++i )
+      {
+        if( cont_coefs[i]->has_value() )
+        {
+          if( i >= num_cont_pars )
+          {
+            throw runtime_error( "continuumCoef" + std::to_string( i )
+              + " is not valid for continuum type "
+              + string( PeakContinuum::offset_type_str( continuum->type() ) )
+              + " (has " + std::to_string( num_cont_pars ) + " parameters)" );
+          }
+          continuum->setPolynomialCoef( i, *(*cont_coefs[i]) );
+          shapeValueChanged = true;
+        }
+      }
+
+      // ---- Apply continuum fit-for flags ----
+      const std::optional<bool> *cont_fit_flags[] = {
+        &options.fitForContinuumCoef0, &options.fitForContinuumCoef1,
+        &options.fitForContinuumCoef2, &options.fitForContinuumCoef3
+      };
+      for( size_t i = 0; i < 4; ++i )
+      {
+        if( cont_fit_flags[i]->has_value() )
+        {
+          if( i >= num_cont_pars )
+          {
+            throw runtime_error( "fitForContinuumCoef" + std::to_string( i )
+              + " is not valid for continuum type "
+              + string( PeakContinuum::offset_type_str( continuum->type() ) ) );
+          }
+          continuum->setPolynomialCoefFitFor( i, *(*cont_fit_flags[i]) );
+        }
+      }
+
+      // ---- Apply ROI bounds ----
+      if( options.roiLowerEnergy.has_value() || options.roiUpperEnergy.has_value() )
+      {
+        const double new_lower = options.roiLowerEnergy.value_or( continuum->lowerEnergy() );
+        const double new_upper = options.roiUpperEnergy.value_or( continuum->upperEnergy() );
+
+        if( new_lower >= new_upper )
+          throw runtime_error( "ROI lower energy must be less than upper energy" );
+
+        continuum->setRange( new_lower, new_upper );
+        shapeValueChanged = true;
+      }
+
+      // ---- Apply Gaussian properties ----
+      if( options.meanEnergy.has_value() )
+      {
+        modifiedPeak.setMean( *options.meanEnergy );
+        shapeValueChanged = true;
+      }
+
+      if( options.fwhm.has_value() )
+      {
+        modifiedPeak.setSigma( (*options.fwhm) / 2.35482 );
+        shapeValueChanged = true;
+      }
+
+      if( options.amplitude.has_value() )
+      {
+        modifiedPeak.setAmplitude( *options.amplitude );
+        shapeValueChanged = true;
+      }
+
+      // ---- Apply Gaussian fit-for flags ----
+      if( options.fitForMean.has_value() )
+        modifiedPeak.setFitFor( PeakDef::CoefficientType::Mean, *options.fitForMean );
+      if( options.fitForFwhm.has_value() )
+        modifiedPeak.setFitFor( PeakDef::CoefficientType::Sigma, *options.fitForFwhm );
+      if( options.fitForAmplitude.has_value() )
+        modifiedPeak.setFitFor( PeakDef::CoefficientType::GaussAmplitude, *options.fitForAmplitude );
+
+      // ---- Apply uncertainties ----
+      if( options.meanUncertainty.has_value() )
+        modifiedPeak.setMeanUncert( *options.meanUncertainty );
+      if( options.fwhmUncertainty.has_value() )
+        modifiedPeak.setSigmaUncert( (*options.fwhmUncertainty) / 2.35482 );
+      if( options.amplitudeUncertainty.has_value() )
+        modifiedPeak.setAmplitudeUncert( *options.amplitudeUncertainty );
+
+      // ---- Apply metadata ----
+      if( options.source.has_value() )
+      {
+        PeakModel::SetGammaSource result
+          = PeakModel::setNuclideXrayReaction( modifiedPeak, *options.source, 4.0 );
+        if( result == PeakModel::SetGammaSource::FailedSourceChange )
+          throw runtime_error( "Failed to set source: " + *options.source );
+      }
+
+      if( options.color.has_value() )
+        modifiedPeak.setLineColor( Wt::WColor( *options.color ) );
+
+      if( options.userLabel.has_value() )
+        modifiedPeak.setUserLabel( *options.userLabel );
+
+      // ---- Apply usage flags ----
+      if( options.useForEnergyCalibration.has_value() )
+        modifiedPeak.useForEnergyCalibration( *options.useForEnergyCalibration );
+      if( options.useForShieldingSourceFit.has_value() )
+        modifiedPeak.useForShieldingSourceFit( *options.useForShieldingSourceFit );
+      if( options.useForManualRelEff.has_value() )
+        modifiedPeak.useForManualRelEff( *options.useForManualRelEff );
+
+
+      // ---- Determine whether to refit ----
+      bool doRefit = false;
+      if( options.refit.has_value() )
+        doRefit = *options.refit;
+      else
+        doRefit = shapeValueChanged || typeChanged;
+
+      bool refitPerformed = false;
+      string refitWarning;
+
+      if( doRefit )
+      {
+        const shared_ptr<const SpecUtils::Measurement> data
+          = interspec->displayedHistogram( options.specType );
+        shared_ptr<SpecMeas> meas = interspec->measurment( options.specType );
+        const shared_ptr<const DetectorPeakResponse> det = meas ? meas->detector() : nullptr;
+
+        if( data )
+        {
+          // Build vector of all peaks in the ROI for refitting
+          vector<shared_ptr<const PeakDef>> peaksToFit;
+          peaksToFit.push_back( make_shared<const PeakDef>( modifiedPeak ) );
+
+          const std::shared_ptr<PeakContinuum> newContinuum = modifiedPeak.getContinuum();
+          for( const shared_ptr<const PeakDef> &sibling : roiSiblings )
+          {
+            PeakDef siblingCopy = *sibling;
+            siblingCopy.setContinuum( newContinuum );
+            peaksToFit.push_back( make_shared<const PeakDef>( siblingCopy ) );
           }
 
-          const shared_ptr<const PeakContinuum> adjContinuum = adjacent_peak->continuum();
+          // Use full refit for type changes or when explicitly forced with no shape changes.
+          // Use medium refinement when parameter values were explicitly set (to stay close to them).
+          Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+          if( !typeChanged && shapeValueChanged )
+            fit_options |= PeakFitLM::PeakFitLMOptions::MediumRefinementOnly;
 
-          if( adjContinuum == originalContinuum )
-            throw runtime_error( "Adjacent peak already shares the same ROI" );
+          const vector<shared_ptr<const PeakDef>> refitResult
+            = refitPeaksThatShareROI( data, det, peaksToFit, fit_options );
 
-          // Collect all peaks from both ROIs (original and adjacent)
-          vector<shared_ptr<const PeakDef>> oldPeaksToRemove;
-          for( const shared_ptr<const PeakDef> &p : all_peaks )
+          if( refitResult.size() == peaksToFit.size() )
           {
-            if( (p->continuum() == originalContinuum) || (p->continuum() == adjContinuum) )
-              oldPeaksToRemove.push_back( p );
-          }
-
-          // Create new continuum whose range is the union of both ROIs
-          std::shared_ptr<PeakContinuum> mergedContinuum
-            = make_shared<PeakContinuum>( *originalContinuum );
-          const double newLower = (std::min)( originalContinuum->lowerEnergy(),
-                                            adjContinuum->lowerEnergy() );
-          const double newUpper = (std::max)( originalContinuum->upperEnergy(),
-                                            adjContinuum->upperEnergy() );
-          mergedContinuum->setRange( newLower, newUpper );
-
-          // Copy all peaks from both ROIs, pointing them to the new merged continuum
-          vector<PeakDef> mergedPeaks;
-          for( const shared_ptr<const PeakDef> &p : oldPeaksToRemove )
-          {
-            PeakDef peakCopy = *p;
-            peakCopy.setContinuum( mergedContinuum );
-            mergedPeaks.push_back( peakCopy );
-          }
-
-          // Try to refit the combined ROI to the data
-          const shared_ptr<const SpecUtils::Measurement> data
-            = interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
-          shared_ptr<SpecMeas> meas = interspec->measurment( SpecUtils::SpectrumType::Foreground );
-          const shared_ptr<const DetectorPeakResponse> det = meas ? meas->detector() : nullptr;
-
-          bool used_refit = false;
-          if( data )
-          {
-            vector<shared_ptr<const PeakDef>> peaksToFit;
-            for( const PeakDef &p : mergedPeaks )
-              peaksToFit.push_back( make_shared<const PeakDef>( p ) );
-
-            const vector<shared_ptr<const PeakDef>> refitResult
-              = refitPeaksThatShareROI( data, det, peaksToFit,
-                                        Wt::WFlags<PeakFitLM::PeakFitLMOptions>(0) );
-
-            // Only use refit result if no peaks were lost (e.g., became insignificant)
-            if( refitResult.size() == mergedPeaks.size() )
+            // Refit succeeded — find the target peak and siblings in the result
+            for( const shared_ptr<const PeakDef> &p : refitResult )
             {
-              mergedPeaks.clear();
-              for( const shared_ptr<const PeakDef> &p : refitResult )
-                mergedPeaks.push_back( *p );
-              used_refit = true;
+              if( fabs( p->mean() - modifiedPeak.mean() ) < 0.5 )
+                modifiedPeak = *p;
             }
-          }//if( data )
 
-          // Replace old peaks from both ROIs with the new merged set
-          peakModel->updatePeaks( oldPeaksToRemove, mergedPeaks );
-
-          // Collect the resulting peaks from the model for the return value.
-          //  The mergedPeaks all share a common continuum (either mergedContinuum, or the
-          //  refit's continuum), so we can identify them by matching that pointer.
-          const std::shared_ptr<const PeakContinuum> resultContinuum
-            = mergedPeaks.empty() ? mergedContinuum : mergedPeaks.front().continuum();
-
-          vector<shared_ptr<const PeakDef>> peaks_in_roi;
-          shared_ptr<const PeakDef> updated_peak;
-
-          all_peaks_ptr = peakModel->peaks();
-          if( all_peaks_ptr )
-          {
-            for( const shared_ptr<const PeakDef> &p : *all_peaks_ptr )
+            // Update roiSiblings with refitted versions
+            roiSiblings.clear();
+            for( const shared_ptr<const PeakDef> &p : refitResult )
             {
-              if( p->continuum() == resultContinuum )
+              if( fabs( p->mean() - modifiedPeak.mean() ) >= 0.5 )
               {
-                peaks_in_roi.push_back( p );
-                if( !updated_peak && fabs( p->mean() - peak->mean() ) < 0.5 )
-                  updated_peak = p;
+                // These are siblings — we need shared_ptr<const PeakDef> for updatePeaks
+                // We'll rebuild them below when updating the model
               }
             }
-          }
 
-          if( !updated_peak && !peaks_in_roi.empty() )
-            updated_peak = peaks_in_roi.front();
+            // All refit peaks share the same continuum — use them directly
+            // Rebuild the modified peak and sibling list from refitResult
+            vector<shared_ptr<const PeakDef>> oldPeaks;
+            vector<PeakDef> newPeaks;
 
-          // Build the result message with any relevant warnings
-          string msg = "Merged ROIs into combined region [" + std::to_string( newLower )
-            + ", " + std::to_string( newUpper ) + "] keV with "
-            + std::to_string( peaks_in_roi.size() ) + " peaks";
+            oldPeaks.push_back( peak );
+            // Find our target peak in refitResult
+            bool found_target = false;
+            for( const shared_ptr<const PeakDef> &p : refitResult )
+            {
+              if( !found_target && fabs( p->mean() - peak->mean() ) < 0.5 )
+              {
+                modifiedPeak = *p;
+                newPeaks.push_back( *p );
+                found_target = true;
+              }
+            }
+            if( !found_target )
+            {
+              // Shouldn't happen, but fall back to our un-refit peak
+              newPeaks.push_back( modifiedPeak );
+            }
 
-          if( used_refit )
-          {
-            msg += " (refit to data)";
+            // Now handle siblings
+            // Build a map of original sibling peaks to their refit versions
+            shared_ptr<const deque<shared_ptr<const PeakDef>>> all_peaks_ptr = peakModel->peaks();
+            if( all_peaks_ptr )
+            {
+              for( const shared_ptr<const PeakDef> &origSibling : *all_peaks_ptr )
+              {
+                if( (origSibling != peak) && (origSibling->continuum() == originalContinuum) )
+                {
+                  oldPeaks.push_back( origSibling );
+
+                  // Find matching refit peak for this sibling
+                  bool found_sibling = false;
+                  for( const shared_ptr<const PeakDef> &refitPeak : refitResult )
+                  {
+                    if( fabs( refitPeak->mean() - origSibling->mean() ) < 0.5
+                        && fabs( refitPeak->mean() - modifiedPeak.mean() ) >= 0.01 )
+                    {
+                      newPeaks.push_back( *refitPeak );
+                      found_sibling = true;
+                      break;
+                    }
+                  }
+
+                  if( !found_sibling )
+                  {
+                    // Fall back: copy sibling with new continuum
+                    PeakDef siblingCopy = *origSibling;
+                    siblingCopy.setContinuum( modifiedPeak.getContinuum() );
+                    newPeaks.push_back( siblingCopy );
+                  }
+                }
+              }
+            }
+
+            peakModel->updatePeaks( oldPeaks, newPeaks );
+            refitPerformed = true;
+
+            // Build return value
+            vector<shared_ptr<const PeakDef>> peaks_in_roi;
+            shared_ptr<const PeakDef> updated_peak;
+            const std::shared_ptr<const PeakContinuum> resultCont = modifiedPeak.continuum();
+
+            all_peaks_ptr = peakModel->peaks();
+            if( all_peaks_ptr )
+            {
+              for( const shared_ptr<const PeakDef> &p : *all_peaks_ptr )
+              {
+                if( p->continuum() == resultCont )
+                {
+                  peaks_in_roi.push_back( p );
+                  if( !updated_peak && fabs( p->mean() - modifiedPeak.mean() ) < 0.01 )
+                    updated_peak = p;
+                }
+              }
+            }
+
+            if( !updated_peak )
+              updated_peak = make_shared<const PeakDef>( modifiedPeak );
+
+            return EditAnalysisPeakStatus{
+              true,
+              "Edited and refit peak at " + std::to_string( modifiedPeak.mean() ) + " keV",
+              true,
+              updated_peak,
+              peaks_in_roi
+            };
           }
           else
           {
-            msg += ". Warning: the combined ROI could not be refit to the data because"
-                   " one or more peaks became insignificant during the fit; the un-fit"
-                   " peak parameters were used instead.";
+            // Refit returned different number of peaks — fall back to un-refit
+            refitWarning = " Warning: refit was attempted but one or more peaks became"
+              " insignificant; un-refit parameters were used instead.";
           }
-
-          // Warn if the peak being merged is far from the adjacent peak
-          const double avg_fwhm = 0.5 * (peak->fwhm() + adjacent_peak->fwhm());
-          const double peak_separation = fabs( peak->mean() - adjacent_peak->mean() );
-          if( peak_separation > 6.0 * avg_fwhm )
-          {
-            msg += " Warning: the peak at " + std::to_string( peak->mean() )
-              + " keV is " + std::to_string( peak_separation / avg_fwhm )
-              + " FWHM away from the adjacent peak at "
-              + std::to_string( adjacent_peak->mean() )
-              + " keV; merging peaks this far apart may not be appropriate.";
-          }
-
-          return EditAnalysisPeakStatus{
-            true,
-            msg,
-            updated_peak,
-            peaks_in_roi
-          };
         }
+        else
+        {
+          refitWarning = " Warning: no spectrum data available for refitting.";
+        }
+      }//if( doRefit )
 
-        case EditPeakAction::DeletePeak:
-          // Already handled above
-          assert( false );
-          break;
-      }//switch( options.editAction )
 
-      // Update the peak(s) in the model.
-      //  If there are sibling peaks that shared the original continuum, we need to copy them
-      //  to share the new continuum, so the ROI remains intact but fully independent from the
-      //  originals.
+      // ---- Update peaks in model (no refit, or refit failed) ----
       if( roiSiblings.empty() )
       {
         peakModel->updatePeak( peak, modifiedPeak );
-      }else
+      }
+      else
       {
         vector<shared_ptr<const PeakDef>> oldPeaks;
         vector<PeakDef> newPeaks;
@@ -1970,34 +3114,37 @@ namespace AnalystChecks
         peakModel->updatePeaks( oldPeaks, newPeaks );
       }
 
-      // Get all peaks in the same ROI for the return value
+      // ---- Build return value ----
       vector<shared_ptr<const PeakDef>> peaks_in_roi;
       shared_ptr<const PeakDef> updated_peak;
-      shared_ptr<const deque<shared_ptr<const PeakDef>>> all_peaks_ptr = peakModel->peaks();
-      if( all_peaks_ptr )
       {
-        const deque<shared_ptr<const PeakDef>> &all_peaks = *all_peaks_ptr;
-        const std::shared_ptr<const PeakContinuum> continuum = modifiedPeak.continuum();
-
-        for( const shared_ptr<const PeakDef> &p : all_peaks )
+        shared_ptr<const deque<shared_ptr<const PeakDef>>> all_peaks_ptr = peakModel->peaks();
+        if( all_peaks_ptr )
         {
-          if( p->continuum() == continuum )
+          const std::shared_ptr<const PeakContinuum> resultCont = modifiedPeak.continuum();
+          for( const shared_ptr<const PeakDef> &p : *all_peaks_ptr )
           {
-            peaks_in_roi.push_back( p );
-            // Find the updated peak by comparing energies
-            if( !updated_peak && fabs( p->mean() - modifiedPeak.mean() ) < 0.01 )
-              updated_peak = p;
+            if( p->continuum() == resultCont )
+            {
+              peaks_in_roi.push_back( p );
+              if( !updated_peak && fabs( p->mean() - modifiedPeak.mean() ) < 0.01 )
+                updated_peak = p;
+            }
           }
         }
       }
 
-      // If we couldn't find the updated peak in the model, use our local copy
       if( !updated_peak )
         updated_peak = make_shared<const PeakDef>( modifiedPeak );
 
+      string msg = "Edited peak at " + std::to_string( modifiedPeak.mean() ) + " keV";
+      if( !refitWarning.empty() )
+        msg += refitWarning;
+
       return EditAnalysisPeakStatus{
         true,
-        "Successfully performed " + string(to_string(options.editAction)) + " on peak at " + std::to_string(modifiedPeak.mean()) + " keV",
+        msg,
+        refitPerformed,
         updated_peak,
         peaks_in_roi
       };
@@ -2006,11 +3153,12 @@ namespace AnalystChecks
     {
       return EditAnalysisPeakStatus{
         false,
-        string("Error performing ") + to_string(options.editAction) + ": " + e.what(),
+        string( "Error editing peak: " ) + e.what(),
+        false,
         std::nullopt,
         {}
       };
-    }//try / catch
+    }
   }//EditAnalysisPeakStatus edit_analysis_peak( const EditAnalysisPeakOptions &options, InterSpec *interspec )
 
 
@@ -3026,19 +4174,39 @@ namespace AnalystChecks
     result.confidence = overall;
     result.type = best.type;
 
-    char label_buf[160];
-    if( parent->parentNuclide() )
+    char label_buf[180] = { '\0' };
+    if( (overall != ComptonScatterConfidence::No) && (best.type != ComptonScatterType::None) )
     {
-      snprintf( label_buf, sizeof(label_buf), "Compton scatter from %s %.2f keV peak",
-                parent->parentNuclide()->symbol.c_str(), parent->mean() );
-    }else if( parent->reaction() )
-    {
-      snprintf( label_buf, sizeof(label_buf), "Compton scatter from %s %.2f keV peak",
-                parent->reaction()->name().c_str(), parent->mean() );
-    }else
-    {
-      snprintf( label_buf, sizeof(label_buf), "Compton scatter from %.2f keV peak", parent->mean() );
-    }
+      string type_str;
+      switch( best.type )
+      {
+        case ComptonScatterType::None:
+          break;
+
+        case ComptonScatterType::ComptonPeak:
+          type_str = "Compton backscatter peak";
+          break;
+        case ComptonScatterType::ComptonEdge:
+          type_str = "Compton edge";
+          break;
+        case ComptonScatterType::ComptonPeakOrEdge:
+          type_str = "Compton backscatter or edge";
+          break;
+      }//switch( best.type )
+
+      if( parent->parentNuclide() )
+      {
+        snprintf( label_buf, sizeof(label_buf), "%s from %s %.2f keV peak",
+                 type_str.c_str(), parent->parentNuclide()->symbol.c_str(), parent->mean() );
+      }else if( parent->reaction() )
+      {
+        snprintf( label_buf, sizeof(label_buf), "%s from %s %.2f keV peak",
+                 type_str.c_str(), parent->reaction()->name().c_str(), parent->mean() );
+      }else
+      {
+        snprintf( label_buf, sizeof(label_buf), "%s from %.2f keV peak", type_str.c_str(), parent->mean() );
+      }
+    }//if( (overall != ComptonScatterConfidence::No) && (best.type != ComptonScatterType::None) )
 
     ComptonScatterParentInfo pinfo;
     pinfo.parentPeak = parent;
@@ -3074,15 +4242,25 @@ namespace AnalystChecks
     if( !peak_model )
       return ComptonPeakCheckStatus{};
 
-    const shared_ptr<const deque<shared_ptr<const PeakDef>>> user_peaks
-                                                  = peak_model->peaks( options.specType );
-    if( !user_peaks || user_peaks->empty() )
+    // We will get the combination of user and auto-fit peaks to match against.
+    //  In principle we might want to try and get the candidate peak from the users peak first, and then fall back to
+    //  "all" peaks
+    DetectedPeaksOptions detectable_peaks_options;
+    detectable_peaks_options.specType = SpecUtils::SpectrumType::Foreground;
+    detectable_peaks_options.nonBackgroundPeaksOnly = false;
+    detectable_peaks_options.lowerEnergy = std::nullopt;
+    detectable_peaks_options.upperEnergy = std::nullopt;
+    const DetectedPeakStatus detectable_peaks = detected_peaks(detectable_peaks_options, interspec);
+
+    if( detectable_peaks.peaks.empty() )
       return ComptonPeakCheckStatus{};
+
+    auto all_peaks = make_shared<const deque<shared_ptr<const PeakDef>>>( std::begin(detectable_peaks.peaks), std::end(detectable_peaks.peaks) );
 
     // Find the candidate peak: nearest user peak to options.energy.
     shared_ptr<const PeakDef> candidate;
     double smallest_diff = std::numeric_limits<double>::max();
-    for( const shared_ptr<const PeakDef> &p : *user_peaks )
+    for( const shared_ptr<const PeakDef> &p : *all_peaks )
     {
       if( !p || !p->gausPeak() )
         continue;
@@ -3108,10 +4286,849 @@ namespace AnalystChecks
       return empty;
     }
 
-    ComptonPeakCheckStatus result = compton_peak_check( candidate, user_peaks, spectrum,
+    ComptonPeakCheckStatus result = compton_peak_check( candidate, all_peaks, spectrum,
                                                         meas->detector() );
     result.searchWindow = tol;
     return result;
   }//ComptonPeakCheckStatus compton_peak_check( const ComptonPeakCheckOptions &options, InterSpec *interspec )
+
+
+  // ---------------------------------------------------------------------------------------------
+  // beta_continuum_check: deterministic pure-beta-emitter (bremsstrahlung) continuum analysis.
+  //
+  // Thresholds below were tuned against the ~800-spectrum injected benchmark (35 detector configs,
+  // NaI through HPGe; P-32/Sr-90/Tl-204/Y-90 vs shielded-gamma negatives and background nulls);
+  // kept as named file-locals so future tuning is a one-line change.
+  // ---------------------------------------------------------------------------------------------
+  static constexpr double sk_beta_coarse_bin_kev      = 24.0;   // coarse analysis bin width
+  static constexpr double sk_beta_xray_max_kev        = 120.0;  // peaks below this are reported as x-rays, and dont veto
+  static constexpr double sk_beta_analysis_max_kev    = 3000.0; // upper end of analysis range
+  static constexpr double sk_beta_mode_max_kev        = 1500.0; // continuum hump mode must be below this
+  static constexpr double sk_beta_min_elevation_sigma = 8.0;    // below this: NoContinuumElevation
+  static constexpr double sk_beta_peak_veto_sigma     = 5.0;    // gamma-peak elevation bar for the veto
+  static constexpr double sk_beta_term_ratio_max      = 0.05;   // cliff detector: intensity at termination / max
+  static constexpr double sk_beta_echar_max_kev       = 350.0;  // max brem-like characteristic (1/e) energy
+  static constexpr double sk_beta_term_max_kev        = 2450.0; // max plausible beta endpoint (Y-90 is 2280 keV)
+  static constexpr double sk_beta_seg_resid_max_sigma = 8.0;    // smoothness: max |segment residual|
+  static constexpr double sk_beta_outlier_frac_max    = 0.25;   // smoothness: max fit-outlier fraction
+  static constexpr double sk_beta_sys_frac            = 0.03;   // fractional systematic floor on the model
+  static constexpr double sk_beta_511_dominant_sigma  = 8.0;    // 511 significance for the positron demotion
+  static constexpr double sk_beta_max_fwhm_frac       = 0.12;   // cap on expectedFwhm(E)/E - protects against a
+                                                                //  garbage resolution fit (e.g. from two spurious
+                                                                //  peaks) blowing up the exclusion regions
+  static constexpr double sk_beta_fit_count_quantile  = 0.99;   // shape fitting/gating is bounded at this net-count
+                                                                //  quantile; a trace tail beyond it (commonly random
+                                                                //  summing / pile-up) is reported but must not drive
+                                                                //  the verdict or the endpoint lower bound
+  static constexpr double sk_beta_cliff_meaningful_sigma = 9.0; // a cliff-like termination ratio is categorical
+                                                                //  evidence only when the smoothed intensity at the
+                                                                //  termination is this many sigma above zero (3x the
+                                                                //  3-sigma detection floor); otherwise termination is
+                                                                //  statistics-limited and the ratio is inconclusive
+  static constexpr double sk_beta_endpoint_slop_frac  = 0.05;   // candidate-nuclide matching slop, as a fraction of
+                                                                //  the termination energy - resolution smearing and
+                                                                //  residual summing can push the observed termination
+                                                                //  slightly past the true endpoint (e.g. Y-90 phantom
+                                                                //  terminating at ~2390 vs the 2280 keV endpoint)
+
+  /** (Nearly) pure beta-minus emitters considered as consistency candidates; endpoints are pulled
+   from SandiaDecay at runtime (including in-equilibrium daughters, e.g. Sr90 -> Y90). */
+  static const char * const sk_pure_beta_nuclide_names[] = {
+    "H3", "C14", "P32", "S35", "Cl36", "Ca45", "Ni63", "Sr89", "Sr90", "Y90",
+    "Tc99", "Ru106", "Pm147", "Tl204", "Bi210"
+  };
+
+  /** One coarse bin of the live-time-normalized, background-subtracted continuum. */
+  struct BetaCoarseBin
+  {
+    double center = 0.0;    // keV
+    double net = 0.0;       // foreground - scaled background, counts
+    double var = 0.0;       // variance of net
+    bool excluded = false;  // below the x-ray floor, or inside a peak-exclusion region
+  };//struct BetaCoarseBin
+
+  /** Max beta endpoint (keV) over `nuc` and any descendants with half-life shorter than the
+   parent (i.e., nuclides that reach equilibrium with it); `note` names the descendant when
+   the endpoint comes from one.  Returns 0 if no beta branch found. */
+  static double max_equilibrium_beta_endpoint( const SandiaDecay::Nuclide * const nuc, std::string &note )
+  {
+    note.clear();
+    if( !nuc )
+      return 0.0;
+
+    double best_kev = 0.0;
+    const SandiaDecay::Nuclide *best_nuc = nullptr;
+
+    const vector<const SandiaDecay::Nuclide *> descendants = nuc->descendants();
+    for( const SandiaDecay::Nuclide * const d : descendants )
+    {
+      if( !d || ((d != nuc) && (d->halfLife > nuc->halfLife)) )
+        continue;
+
+      for( const SandiaDecay::Transition * const trans : d->decaysToChildren )
+      {
+        if( !trans )
+          continue;
+
+        for( const SandiaDecay::RadParticle &particle : trans->products )
+        {
+          // For beta particles, RadParticle::energy is the endpoint energy (in SandiaDecay units of keV)
+          if( (particle.type == SandiaDecay::BetaParticle) && (particle.energy > best_kev) )
+          {
+            best_kev = particle.energy;
+            best_nuc = d;
+          }
+        }//for( particles )
+      }//for( transitions )
+    }//for( descendants )
+
+    if( best_nuc && (best_nuc != nuc) )
+      note = "endpoint is from in-equilibrium daughter " + best_nuc->symbol;
+
+    return best_kev;
+  }//max_equilibrium_beta_endpoint(...)
+
+
+  /** Rebin `meas` onto the uniform grid given by `edges` (channel lower energies in keV, plus the
+   final upper edge); returns per-bin counts (clamped non-negative). */
+  static vector<double> beta_rebin_counts( const shared_ptr<const SpecUtils::Measurement> &meas,
+                                           const vector<float> &edges )
+  {
+    assert( meas && (edges.size() > 1) );
+
+    const shared_ptr<const vector<float>> &counts = meas->gamma_counts();
+    const shared_ptr<const vector<float>> &energies = meas->gamma_channel_energies();
+
+    // rebin_by_lower_edge requires at least 4 channels in both inputs.
+    if( !counts || !energies || (counts->size() < 4) || (energies->size() < 4) )
+      throw runtime_error( "beta_continuum_check: spectrum has too few channels" );
+
+    vector<float> rebinned;
+    SpecUtils::rebin_by_lower_edge( *energies, *counts, edges, rebinned );
+
+    vector<double> result( edges.size() - 1, 0.0 );
+    const size_t nfill = std::min( result.size(), rebinned.size() );
+    for( size_t i = 0; i < nfill; ++i )
+      result[i] = std::max( 0.0, static_cast<double>(rebinned[i]) );
+
+    return result;
+  }//beta_rebin_counts(...)
+
+
+  /** A [lower,upper] keV interval excluded from continuum-shape analysis (peak regions, 511). */
+  struct BetaExclusionInterval
+  {
+    double lower = 0.0;
+    double upper = 0.0;
+  };//struct BetaExclusionInterval
+
+  /** Builds the merged, sorted peak-exclusion intervals: +-2 FWHM around every foreground peak,
+   plus the 511 keV annihilation region.
+
+   Background-only peaks are deliberately NOT excluded: the analysis runs on the live-time
+   normalized net spectrum, where background lines cancel (their statistical residual is already
+   in the per-bin variance), and any background line that does not cancel will have been found as
+   a foreground peak anyway.  Excluding background peaks would tile most of a low-resolution
+   spectrum with exclusions (wide NORM peaks every few hundred keV), blinding the tail analysis.
+   */
+  static vector<BetaExclusionInterval> beta_exclusion_intervals(
+                                  const vector<shared_ptr<const PeakDef>> &fore_peaks,
+                                  const std::function<float(double)> &fwhm_fcn )
+  {
+    vector<BetaExclusionInterval> intervals;
+
+    const auto add_peak = [&intervals, &fwhm_fcn]( const shared_ptr<const PeakDef> &p ){
+      if( !p )
+        return;
+      const double mean = p->mean();
+      double fwhm = p->gausPeak() ? p->fwhm() : 0.0;
+      if( fwhm <= 0.0 )
+        fwhm = std::max( 1.0, std::min( static_cast<double>(fwhm_fcn( mean )),
+                                        sk_beta_max_fwhm_frac*mean ) );
+      intervals.push_back( { mean - 2.0*fwhm, mean + 2.0*fwhm } );
+    };
+
+    for( const shared_ptr<const PeakDef> &p : fore_peaks )
+      add_peak( p );
+
+    // Always exclude the annihilation region - 511 is allowed for a beta source (pair production
+    // of high-energy brems, or a small beta+ branch), so it must not distort the shape fit.
+    const double fwhm511 = std::max( 1.0, std::min( static_cast<double>(fwhm_fcn( 511.0 )),
+                                                    sk_beta_max_fwhm_frac*511.0 ) );
+    const double half511 = std::max( 2.0*fwhm511, 10.0 );
+    intervals.push_back( { 511.0 - half511, 511.0 + half511 } );
+
+    std::sort( begin(intervals), end(intervals),
+               []( const BetaExclusionInterval &a, const BetaExclusionInterval &b ){
+                 return a.lower < b.lower;
+               } );
+
+    vector<BetaExclusionInterval> merged;
+    for( const BetaExclusionInterval &iv : intervals )
+    {
+      if( merged.empty() || (iv.lower > merged.back().upper) )
+        merged.push_back( iv );
+      else
+        merged.back().upper = std::max( merged.back().upper, iv.upper );
+    }
+
+    return merged;
+  }//beta_exclusion_intervals(...)
+
+
+  /** Result of the iterative outlier-robust weighted polynomial fit of ln(net) vs energy. */
+  struct BetaLogFitResult
+  {
+    bool valid = false;
+    double chi2Dof = 0.0;
+    double outlierFraction = 0.0;
+    double maxSegmentResidual = 0.0;      // max |summed residual| over 5 segments, in sigma
+    double slopePerKev = 0.0;             // d ln(net) / dE at the requested midpoint energy
+  };//struct BetaLogFitResult
+
+  /** Iterative (3-sigma rejection) weighted cubic (quadratic if few bins) fit of ln(net) vs
+   energy over `fit_indices` of `bins`; residuals are normalized with a `sk_beta_sys_frac`
+   fractional systematic floor added in quadrature, so high-statistics spectra are not
+   penalized for percent-level wiggles. */
+  static BetaLogFitResult beta_robust_log_fit( const vector<BetaCoarseBin> &bins,
+                                               const vector<size_t> &fit_indices,
+                                               const double emid_kev )
+  {
+    BetaLogFitResult result;
+
+    const size_t nfit = fit_indices.size();
+    if( nfit < 6 )
+      return result;
+
+    const int order = (nfit >= 10) ? 3 : 2;
+
+    // Energies are scaled to MeV in the design matrix for conditioning.
+    const auto poly_ln = [order]( const Eigen::VectorXd &coefs, const double e_kev ) -> double {
+      const double x = e_kev / 1000.0;
+      double ln_val = 0.0, xk = 1.0;
+      for( int k = 0; k <= order; ++k, xk *= x )
+        ln_val += coefs[k] * xk;
+      return std::max( -50.0, std::min( 50.0, ln_val ) );
+    };
+
+    vector<char> live( bins.size(), 0 );
+    for( const size_t idx : fit_indices )
+      live[idx] = 1;
+
+    Eigen::VectorXd coefs;
+
+    for( int iter = 0; iter < 5; ++iter )
+    {
+      vector<size_t> pts;
+      for( const size_t idx : fit_indices )
+      {
+        if( live[idx] )
+          pts.push_back( idx );
+      }
+
+      if( pts.size() < 6 )
+        break;  //keep coefficients from the previous iteration
+
+      Eigen::MatrixXd design( pts.size(), order + 1 );
+      Eigen::VectorXd rhs( pts.size() );
+      for( size_t row = 0; row < pts.size(); ++row )
+      {
+        const BetaCoarseBin &bin = bins[pts[row]];
+        // Weight of ln(net): sigma_ln = sqrt(var)/net, so sqrt(weight) = net/sqrt(var)
+        const double sqrt_w = bin.net / std::sqrt( std::max( bin.var, 1.0e-9 ) );
+        const double x = bin.center / 1000.0;
+        double xk = 1.0;
+        for( int k = 0; k <= order; ++k, xk *= x )
+          design(row, k) = sqrt_w * xk;
+        rhs[row] = sqrt_w * std::log( bin.net );
+      }
+
+      coefs = design.colPivHouseholderQr().solve( rhs );
+
+      bool changed = false;
+      for( const size_t idx : fit_indices )
+      {
+        if( !live[idx] )
+          continue;  //once rejected, stays rejected
+        const BetaCoarseBin &bin = bins[idx];
+        const double model = std::exp( poly_ln( coefs, bin.center ) );
+        const double sig_eff = std::sqrt( bin.var + std::pow( sk_beta_sys_frac * model, 2.0 ) );
+        if( std::fabs( (bin.net - model) / sig_eff ) > 3.0 )
+        {
+          live[idx] = 0;
+          changed = true;
+        }
+      }//for( fit_indices )
+
+      if( !changed )
+        break;
+    }//for( iter )
+
+    if( coefs.size() != (order + 1) )
+      return result;
+
+    result.valid = true;
+
+    // chi2/dof over surviving bins, outlier fraction, and segment systematics over all fit bins.
+    size_t nlive = 0;
+    double chi2 = 0.0;
+    for( const size_t idx : fit_indices )
+    {
+      if( !live[idx] )
+        continue;
+      const BetaCoarseBin &bin = bins[idx];
+      const double model = std::exp( poly_ln( coefs, bin.center ) );
+      const double sig_eff = std::sqrt( bin.var + std::pow( sk_beta_sys_frac * model, 2.0 ) );
+      chi2 += std::pow( (bin.net - model) / sig_eff, 2.0 );
+      nlive += 1;
+    }
+    result.chi2Dof = chi2 / std::max( 1.0, static_cast<double>(nlive) - order - 1.0 );
+    result.outlierFraction = 1.0 - (static_cast<double>(nlive) / static_cast<double>(nfit));
+
+    // Max |summed residual| over 5 contiguous segments - catches broad systematic structure
+    // (Compton bumps, backscatter humps) that per-bin outlier rejection can miss.
+    const size_t nseg = 5;
+    for( size_t seg = 0; seg < nseg; ++seg )
+    {
+      const size_t seg_begin = (seg * nfit) / nseg;
+      const size_t seg_end = ((seg + 1) * nfit) / nseg;
+      double sum_resid = 0.0, sum_var = 0.0;
+      for( size_t i = seg_begin; i < seg_end; ++i )
+      {
+        const BetaCoarseBin &bin = bins[fit_indices[i]];
+        const double model = std::exp( poly_ln( coefs, bin.center ) );
+        sum_resid += (bin.net - model);
+        sum_var += bin.var + std::pow( sk_beta_sys_frac * model, 2.0 );
+      }
+      if( sum_var > 0.0 )
+        result.maxSegmentResidual = std::max( result.maxSegmentResidual,
+                                              std::fabs( sum_resid ) / std::sqrt( sum_var ) );
+    }//for( segments )
+
+    // Local slope of ln(net) at the fit-range midpoint (per keV).
+    const double xmid = emid_kev / 1000.0;
+    double slope_per_mev = 0.0, xk = 1.0;
+    for( int k = 1; k <= order; ++k, xk *= xmid )
+      slope_per_mev += k * coefs[k] * xk;
+    result.slopePerKev = slope_per_mev / 1000.0;
+
+    return result;
+  }//beta_robust_log_fit(...)
+
+
+  const char *to_string( const BetaContinuumVerdict verdict )
+  {
+    switch( verdict )
+    {
+      case BetaContinuumVerdict::BackgroundNotLoaded:    return "BackgroundNotLoaded";
+      case BetaContinuumVerdict::NoContinuumElevation:   return "NoContinuumElevation";
+      case BetaContinuumVerdict::BremLike:               return "BremLike";
+      case BetaContinuumVerdict::Ambiguous:              return "Ambiguous";
+      case BetaContinuumVerdict::NotBremLike:            return "NotBremLike";
+      case BetaContinuumVerdict::AnnihilationDominated:  return "AnnihilationDominated";
+    }
+    assert( 0 );
+    return "InvalidBetaContinuumVerdict";
+  }//to_string( BetaContinuumVerdict )
+
+
+  BetaContinuumCheckStatus beta_continuum_check( const BetaContinuumCheckInput &input )
+  {
+    BetaContinuumCheckStatus status;
+
+    const shared_ptr<const SpecUtils::Measurement> &fore = input.foreground;
+    if( !fore || !fore->gamma_counts() || (fore->num_gamma_channels() < 4) )
+      throw runtime_error( "beta_continuum_check: no usable foreground spectrum" );
+
+    if( !input.expectedFwhm )
+      throw runtime_error( "beta_continuum_check: no expected-FWHM function provided" );
+
+    const shared_ptr<const SpecUtils::Measurement> &back = input.background;
+    if( !back || !back->gamma_counts() || (back->num_gamma_channels() < 4) )
+    {
+      status.verdict = BetaContinuumVerdict::BackgroundNotLoaded;
+      status.warnings.push_back( "A background spectrum is required to test for a beta-emitter"
+                                 " (bremsstrahlung) continuum; please load a background measurement"
+                                 " taken with the same detector." );
+      return status;
+    }
+
+    const std::function<float(double)> &fwhm_fcn = input.expectedFwhm;
+
+    const double fore_lt = (fore->live_time() > 0.0f) ? fore->live_time() : 1.0;
+    const double back_lt = (back->live_time() > 0.0f) ? back->live_time() : 1.0;
+    const double lt_sf = fore_lt / back_lt;
+
+    // ---- Classify foreground peaks: x-ray region / annihilation / gamma-source evidence ----
+    // FWHM capped at a physical fraction of energy, in case the resolution estimate is garbage
+    // (e.g. fit through only a couple spurious wide peaks).
+    const double fwhm511 = std::max( 1.0, std::min( static_cast<double>(fwhm_fcn( 511.0 )),
+                                                    sk_beta_max_fwhm_frac*511.0 ) );
+    double sig511 = 0.0;
+
+    for( const shared_ptr<const PeakDef> &peak : input.foregroundPeaks )
+    {
+      if( !peak || !peak->gausPeak() )
+        continue;
+
+      const double mean = peak->mean();
+      const double fg_cps = peak->amplitude() / fore_lt;
+
+      // Elevation significance over the closest matching background peak (if any); same matching
+      // and arithmetic as detected_peaks, but with the fractional systematic floor included so
+      // huge-statistics spectra dont produce meaninglessly-large sigmas.
+      shared_ptr<const PeakDef> closest_bg;
+      double smallest_de = std::numeric_limits<double>::infinity();
+      for( const shared_ptr<const PeakDef> &bg_peak : input.backgroundPeaks )
+      {
+        if( !bg_peak || !bg_peak->gausPeak() )
+          continue;
+        const double de = fabs( mean - bg_peak->mean() );
+        const double avg_fwhm = 0.75 * (peak->fwhm() + bg_peak->fwhm()) / 2.0;
+        if( (de < avg_fwhm) && (de < smallest_de) )
+        {
+          closest_bg = bg_peak;
+          smallest_de = de;
+        }
+      }//for( background peaks )
+
+      const double bg_cps = closest_bg ? (closest_bg->amplitude() / back_lt) : 0.0;
+      const double fg_cps_uncert = (peak->amplitudeUncert() > 0.0)
+                                     ? (peak->amplitudeUncert() / fore_lt)
+                                     : (std::sqrt( std::max( peak->amplitude(), 1.0 ) ) / fore_lt);
+      const double bg_cps_uncert = (closest_bg && (closest_bg->amplitudeUncert() > 0.0))
+                                     ? (closest_bg->amplitudeUncert() / back_lt)
+                                     : (closest_bg ? (std::sqrt( std::max( closest_bg->amplitude(), 1.0 ) ) / back_lt) : 0.0);
+      const double combined_uncert = std::sqrt( fg_cps_uncert*fg_cps_uncert
+                                                + bg_cps_uncert*bg_cps_uncert
+                                                + std::pow( sk_beta_sys_frac * fg_cps, 2.0 ) );
+      const double sigma_elev = (combined_uncert > 0.0) ? ((fg_cps - bg_cps) / combined_uncert) : 0.0;
+
+      BetaContinuumPeakInfo info;
+      info.energy = mean;
+      info.amplitude = peak->amplitude();
+      info.numSigmaElevated = sigma_elev;
+      info.isAnnihilation = (fabs( mean - 511.0 ) < 1.5*fwhm511);
+
+      if( info.isAnnihilation )
+        sig511 = std::max( sig511, sigma_elev );
+      else if( mean <= sk_beta_xray_max_kev )
+        status.xrayRegionPeaks.push_back( info );
+      else if( sigma_elev > sk_beta_peak_veto_sigma )
+        status.elevatedGammaPeaks.push_back( info );
+    }//for( foreground peaks )
+
+    // ---- Coarse net-continuum grid, with peak regions excluded ----
+    const double upper_kev = std::min( sk_beta_analysis_max_kev,
+                                       static_cast<double>(fore->gamma_energy_max()) );
+    if( upper_kev < (sk_beta_xray_max_kev + 10.0*sk_beta_coarse_bin_kev) )
+      throw runtime_error( "beta_continuum_check: spectrum energy range (up to "
+                           + std::to_string( static_cast<int>(upper_kev) )
+                           + " keV) is too small to analyze the continuum shape" );
+
+    const size_t nbins = static_cast<size_t>( std::floor( upper_kev / sk_beta_coarse_bin_kev ) );
+    vector<float> edges( nbins + 1 );
+    for( size_t i = 0; i <= nbins; ++i )
+      edges[i] = static_cast<float>( i * sk_beta_coarse_bin_kev );
+
+    const vector<double> fore_binned = beta_rebin_counts( fore, edges );
+    const vector<double> back_binned = beta_rebin_counts( back, edges );
+
+    const vector<BetaExclusionInterval> exclusions
+        = beta_exclusion_intervals( input.foregroundPeaks, fwhm_fcn );
+
+    vector<BetaCoarseBin> bins( nbins );
+    for( size_t i = 0; i < nbins; ++i )
+    {
+      BetaCoarseBin &bin = bins[i];
+      bin.center = (i + 0.5) * sk_beta_coarse_bin_kev;
+      bin.net = fore_binned[i] - lt_sf*back_binned[i];
+      bin.var = std::max( fore_binned[i], 1.0 ) + lt_sf*lt_sf*std::max( back_binned[i], 1.0 );
+      bin.excluded = (bin.center <= sk_beta_xray_max_kev);
+      for( size_t j = 0; !bin.excluded && (j < exclusions.size()); ++j )
+        bin.excluded = ((bin.center >= exclusions[j].lower) && (bin.center <= exclusions[j].upper));
+    }//for( coarse bins )
+
+    // ---- Total continuum-elevation significance ----
+    double sum_net = 0.0, sum_var = 0.0;
+    for( const BetaCoarseBin &bin : bins )
+    {
+      if( bin.excluded )
+        continue;
+      sum_net += bin.net;
+      sum_var += bin.var;
+    }
+    status.continuumElevationSigma = sum_net / std::sqrt( std::max( sum_var, 1.0e-9 ) );
+
+    if( status.continuumElevationSigma < sk_beta_min_elevation_sigma )
+    {
+      status.verdict = BetaContinuumVerdict::NoContinuumElevation;
+      return status;
+    }
+
+    // ---- Smoothed profile: hump mode, termination energy, termination (cliff) ratio ----
+    vector<double> smooth( nbins, 0.0 ), smooth_var( nbins, 0.0 );
+    for( size_t i = 0; i < nbins; ++i )
+    {
+      const size_t lo = (i >= 2) ? (i - 2) : size_t(0);
+      const size_t hi = std::min( i + 2, nbins - 1 );
+      const double cnt = static_cast<double>( hi - lo + 1 );
+      for( size_t j = lo; j <= hi; ++j )
+      {
+        smooth[i] += bins[j].net / cnt;
+        smooth_var[i] += bins[j].var / (cnt*cnt);
+      }
+    }//for( coarse bins )
+
+    size_t imode = nbins;
+    for( size_t i = 0; i < nbins; ++i )
+    {
+      if( bins[i].excluded || (bins[i].center >= sk_beta_mode_max_kev) )
+        continue;
+      if( (imode == nbins) || (smooth[i] > smooth[imode]) )
+        imode = i;
+    }
+
+    if( imode == nbins )
+    {
+      status.verdict = BetaContinuumVerdict::Ambiguous;
+      status.warnings.push_back( "Continuum is elevated, but no usable (non-peak) region was found"
+                                 " to locate the continuum maximum - too many peak regions?" );
+      return status;
+    }
+
+    status.modeEnergy = bins[imode].center;
+
+    size_t iterm_raw = imode;
+    for( size_t i = imode + 1; i < nbins; ++i )
+    {
+      if( !bins[i].excluded && (smooth[i] > 3.0*std::sqrt( std::max( smooth_var[i], 1.0e-9 ) )) )
+        iterm_raw = i;
+    }
+
+    // Bound the shape analysis at the sk_beta_fit_count_quantile net-count quantile: a trace
+    // high-energy tail (random-summing/pile-up, or tiny residuals) can be statistically
+    // significant while holding <1% of the counts, and letting it stretch the fit range makes
+    // the shape gates grade the tail instead of the continuum the counts are actually in.
+    double total_pos_net = 0.0;
+    for( const BetaCoarseBin &bin : bins )
+    {
+      if( !bin.excluded )
+        total_pos_net += std::max( bin.net, 0.0 );
+    }
+    size_t iquant = iterm_raw;
+    double cum_net = 0.0;
+    for( size_t i = 0; i < nbins; ++i )
+    {
+      if( bins[i].excluded )
+        continue;
+      cum_net += std::max( bins[i].net, 0.0 );
+      if( cum_net >= sk_beta_fit_count_quantile*total_pos_net )
+      {
+        iquant = i;
+        break;
+      }
+    }//for( coarse bins )
+
+    // ---- Two-pass shape evaluation ----
+    // The raw (last-significant-bin) termination is tried first, preserving full-range grading
+    // for clean spectra where the high tail is simply more continuum.  When a weak tail extends
+    // past the count-quantile bound, a second, clamped pass is tried: a trace tail (commonly
+    // random-summing/pile-up) can be statistically significant while holding <1% of the counts,
+    // and letting it stretch the fit range makes the gates grade the tail instead of the
+    // continuum the counts are actually in.  The better verdict wins.
+    struct BetaRangeEval
+    {
+      bool valid = false;
+      int rank = -1;   // 2 = BremLike, 1 = Ambiguous, 0 = NotBremLike
+      BetaContinuumVerdict verdict = BetaContinuumVerdict::NotBremLike;
+      size_t iterm = 0;
+      double termRatio = 0.0;
+      std::optional<double> eChar;
+      BetaLogFitResult fit;
+      bool echarOk = false;
+    };//struct BetaRangeEval
+
+    const bool gate_peaks = status.elevatedGammaPeaks.empty();
+
+    const auto evaluate_range = [&]( size_t iterm_eval ) -> BetaRangeEval {
+      BetaRangeEval eval;
+      while( (iterm_eval > imode) && bins[iterm_eval].excluded )
+        iterm_eval -= 1;
+      if( iterm_eval <= (imode + 3) )
+        return eval;  //too little range beyond the maximum to analyze
+
+      eval.iterm = iterm_eval;
+      eval.termRatio = std::max( smooth[iterm_eval], 0.0 ) / std::max( smooth[imode], 1.0e-9 );
+
+      vector<size_t> fit_indices;
+      for( size_t i = imode + 1; i <= iterm_eval; ++i )
+      {
+        if( !bins[i].excluded && (bins[i].net > 0.0) )
+          fit_indices.push_back( i );
+      }
+
+      const double emid_kev = 0.5*(bins[imode].center + bins[iterm_eval].center);
+      eval.fit = beta_robust_log_fit( bins, fit_indices, emid_kev );
+      if( !eval.fit.valid )
+        return eval;
+
+      eval.valid = true;
+      if( eval.fit.slopePerKev < 0.0 )
+        eval.eChar = -1.0 / eval.fit.slopePerKev;
+
+      // A large termination ratio only counts as a hard (photopeak/Compton-edge style) cliff
+      // when the intensity at termination is well above the detection floor; for weak spectra
+      // the 3-sigma termination is statistics-limited and the ratio is meaningless.
+      const bool cliff_bad = (eval.termRatio >= sk_beta_term_ratio_max);
+      const bool cliff_meaningful = (smooth[iterm_eval] > (sk_beta_cliff_meaningful_sigma
+                          * std::sqrt( std::max( smooth_var[iterm_eval], 1.0e-9 ) )));
+
+      const bool gate_term = (bins[iterm_eval].center < sk_beta_term_max_kev);
+      const bool gate_falling = eval.eChar.has_value();
+      eval.echarOk = gate_falling && (*eval.eChar < sk_beta_echar_max_kev);
+      const bool gate_smooth = (eval.fit.maxSegmentResidual < sk_beta_seg_resid_max_sigma)
+                               && (eval.fit.outlierFraction < sk_beta_outlier_frac_max);
+
+      // Hard gates are categorical evidence AGAINST a beta source (gamma peaks, a real cliff,
+      // termination beyond any plausible beta endpoint, a non-falling continuum); any failure
+      // => NotBremLike.  Soft gates are shape-quality evidence (how exponential-clean the fall
+      // is); a failure only demotes to Ambiguous - heavily scattered/hardened but genuine beta
+      // continua (e.g. Y-90 in a body phantom) fail these without being gamma-like.
+      const bool hard_ok = gate_peaks && gate_term && gate_falling
+                           && !(cliff_bad && cliff_meaningful);
+      const bool soft_ok = eval.echarOk && gate_smooth && !cliff_bad;
+
+      if( !hard_ok )
+      {
+        eval.verdict = BetaContinuumVerdict::NotBremLike;
+        eval.rank = 0;
+      }else if( soft_ok )
+      {
+        eval.verdict = BetaContinuumVerdict::BremLike;
+        eval.rank = 2;
+      }else
+      {
+        eval.verdict = BetaContinuumVerdict::Ambiguous;
+        eval.rank = 1;
+      }
+
+      return eval;
+    };//evaluate_range lambda
+
+    const BetaRangeEval full_eval = evaluate_range( iterm_raw );
+
+    const size_t iterm_clamped = std::min( iterm_raw, std::max( iquant, imode + 4 ) );
+    BetaRangeEval clamped_eval;
+    if( (iterm_clamped + 2) < iterm_raw )
+      clamped_eval = evaluate_range( iterm_clamped );
+
+    const bool use_clamped = clamped_eval.valid
+                             && (!full_eval.valid || (clamped_eval.rank > full_eval.rank));
+    const BetaRangeEval &chosen = use_clamped ? clamped_eval : full_eval;
+
+    if( !chosen.valid )
+    {
+      status.verdict = BetaContinuumVerdict::Ambiguous;
+      status.warnings.push_back( "Continuum is elevated, but extends too little beyond its"
+                                 " maximum (or has too few usable bins) to analyze its shape." );
+      return status;
+    }
+
+    status.terminationEnergy = bins[chosen.iterm].center;
+    status.terminationRatio = chosen.termRatio;
+    status.fitChi2Dof = chosen.fit.chi2Dof;
+    status.fitOutlierFraction = chosen.fit.outlierFraction;
+    status.fitMaxSegmentResidual = chosen.fit.maxSegmentResidual;
+    status.characteristicEnergy = chosen.eChar;
+    status.verdict = chosen.verdict;
+
+    // Report (but dont grade on) the weak tail beyond the fitted range, when clamping mattered.
+    if( use_clamped && (iterm_raw > (chosen.iterm + 2)) )
+    {
+      double tail_net = 0.0, tail_var = 0.0;
+      for( size_t i = chosen.iterm + 1; i <= iterm_raw; ++i )
+      {
+        if( bins[i].excluded )
+          continue;
+        tail_net += bins[i].net;
+        tail_var += bins[i].var;
+      }
+      const double tail_sigma = tail_net / std::sqrt( std::max( tail_var, 1.0e-9 ) );
+      if( tail_sigma > 2.0 )
+      {
+        status.highEnergyTailUpperEnergy = bins[iterm_raw].center;
+        status.highEnergyTailSigma = tail_sigma;
+
+        const double dead_time_frac = ((fore->real_time() > 0.0f) && (fore->live_time() > 0.0f)
+                                       && (fore->real_time() > fore->live_time()))
+                    ? (1.0 - fore->live_time()/fore->real_time()) : 0.0;
+        char buffer[512];
+        snprintf( buffer, sizeof(buffer),
+                  "A weak high-energy net tail (%.1f sigma, <%.0f%% of net counts) extends beyond"
+                  " the fitted continuum, up to ~%.0f keV.  It was not used for shape grading or"
+                  " the beta-endpoint lower bound; such a tail is commonly random-summing"
+                  " (pile-up)%s.",
+                  tail_sigma, 100.0*(1.0 - sk_beta_fit_count_quantile),
+                  bins[iterm_raw].center,
+                  (dead_time_frac > 0.005) ? " - consistent with the foreground dead time" : "" );
+        status.warnings.push_back( buffer );
+      }//if( tail is significant )
+    }//if( clamped pass chosen and a tail extends beyond it )
+
+    if( (status.verdict == BetaContinuumVerdict::Ambiguous) && !chosen.echarOk )
+      status.warnings.push_back( "The continuum falls more slowly than typical unshielded-beta"
+                                 " bremsstrahlung; this can be a heavily scattered/shielded hard"
+                                 " beta source (e.g. Y-90 through a person or thick shielding),"
+                                 " but also a peak-less scattered gamma continuum." );
+
+    // 511-dominance: a strong annihilation peak with the continuum dying just above it suggests
+    // a positron source (e.g. F-18) whose "continuum" is 511-scatter, not beta-minus brems.
+    status.annihilationDominant = (sig511 > sk_beta_511_dominant_sigma)
+                                  && (*status.terminationEnergy < (511.0 + 5.0*fwhm511));
+    if( status.annihilationDominant && (status.verdict == BetaContinuumVerdict::BremLike) )
+      status.verdict = BetaContinuumVerdict::AnnihilationDominated;
+
+    // ---- Candidate pure-beta nuclides consistent with the observed termination energy ----
+    if( (status.verdict == BetaContinuumVerdict::BremLike)
+        || (status.verdict == BetaContinuumVerdict::Ambiguous)
+        || (status.verdict == BetaContinuumVerdict::AnnihilationDominated) )
+    {
+      const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+      if( db )
+      {
+        for( const char * const name : sk_pure_beta_nuclide_names )
+        {
+          const SandiaDecay::Nuclide * const nuc = db->nuclide( name );
+          std::string note;
+          const double endpoint = max_equilibrium_beta_endpoint( nuc, note );
+          // terminationEnergy is a lower bound on the endpoint, but resolution smearing and
+          // residual summing can push it slightly past the true endpoint - allow proportional slop.
+          const double slop = std::max( sk_beta_coarse_bin_kev,
+                                        sk_beta_endpoint_slop_frac * (*status.terminationEnergy) );
+          if( nuc && (endpoint >= (*status.terminationEnergy - slop)) )
+          {
+            BetaContinuumCandidateNuclide candidate;
+            candidate.nuclide = nuc->symbol;
+            candidate.betaEndpoint = endpoint;
+            candidate.note = note;
+            status.candidateNuclides.push_back( candidate );
+          }
+        }//for( candidate nuclide names )
+
+        std::sort( begin(status.candidateNuclides), end(status.candidateNuclides),
+                   []( const BetaContinuumCandidateNuclide &a, const BetaContinuumCandidateNuclide &b ){
+                     return a.betaEndpoint < b.betaEndpoint;
+                   } );
+      }//if( db )
+    }//if( verdict allows candidates )
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    // Consistency of the emitted verdict with the stored metrics.
+    {
+      assert( status.modeEnergy.has_value() && status.terminationEnergy.has_value() );
+      assert( *status.modeEnergy <= *status.terminationEnergy );
+      assert( status.continuumElevationSigma >= sk_beta_min_elevation_sigma );
+      // A BremLike verdict must be fully consistent with the reported metrics; the Ambiguous /
+      // NotBremLike distinction additionally depends on range-internal quantities (cliff
+      // meaningfulness, which of the two evaluation ranges won), so it isnt re-derivable from
+      // the status alone.
+      if( (status.verdict == BetaContinuumVerdict::BremLike)
+          || (status.verdict == BetaContinuumVerdict::AnnihilationDominated) )
+      {
+        assert( status.elevatedGammaPeaks.empty() );
+        assert( *status.terminationRatio < sk_beta_term_ratio_max );
+        assert( *status.terminationEnergy < sk_beta_term_max_kev );
+        assert( status.characteristicEnergy.has_value()
+                && (*status.characteristicEnergy < sk_beta_echar_max_kev) );
+      }
+      assert( (status.verdict != BetaContinuumVerdict::AnnihilationDominated)
+              || status.annihilationDominant );
+      assert( (status.verdict != BetaContinuumVerdict::BackgroundNotLoaded)
+              && (status.verdict != BetaContinuumVerdict::NoContinuumElevation) );
+    }
+#endif //PERFORM_DEVELOPER_CHECKS
+
+    return status;
+  }//beta_continuum_check( const BetaContinuumCheckInput &input )
+
+
+  BetaContinuumCheckStatus beta_continuum_check( const BetaContinuumCheckOptions &options,
+                                                 InterSpec *interspec )
+  {
+    if( !interspec )
+      throw runtime_error( "beta_continuum_check: No InterSpec session available" );
+
+    if( options.specType == SpecUtils::SpectrumType::Background )
+      throw runtime_error( "beta_continuum_check: the Background spectrum cannot be the candidate"
+                           " spectrum - it is the subtraction baseline" );
+
+    shared_ptr<SpecMeas> meas = interspec->measurment( options.specType );
+    if( !meas )
+      throw runtime_error( "beta_continuum_check: No measurement loaded for "
+                          + string(SpecUtils::descriptionText(options.specType))
+                          + " spectrum" );
+
+    shared_ptr<const SpecUtils::Measurement> spectrum = interspec->displayedHistogram( options.specType );
+    if( !spectrum )
+      throw runtime_error( "beta_continuum_check: No spectrum displayed for "
+                          + string(SpecUtils::descriptionText(options.specType))
+                          + " spectrum" );
+
+    const set<int> sample_nums = interspec->displayedSamples( options.specType );
+
+    BetaContinuumCheckInput input;
+    input.foreground = spectrum;
+
+    // Without a displayed background we cannot analyze - the natural background continuum is
+    // itself a smooth falling curve, so a no-subtraction shape analysis has an unacceptable
+    // false-positive rate (empirically verified) - return the clear status instead of throwing.
+    shared_ptr<SpecMeas> back_meas = interspec->measurment( SpecUtils::SpectrumType::Background );
+    shared_ptr<const SpecUtils::Measurement> back_spectrum
+        = interspec->displayedHistogram( SpecUtils::SpectrumType::Background );
+    if( !back_meas || !back_spectrum )
+    {
+      BetaContinuumCheckStatus status;
+      status.verdict = BetaContinuumVerdict::BackgroundNotLoaded;
+      status.warnings.push_back( "A background spectrum is required to test for a beta-emitter"
+                                 " (bremsstrahlung) continuum; please load a background measurement"
+                                 " taken with the same detector." );
+      return status;
+    }
+
+    const bool isHPGe = PeakFitUtils::is_likely_high_res( interspec );
+
+    // Foreground user + auto-search peaks, de-duplicated - same set detected_peaks reports.
+    DetectedPeaksOptions fg_opts;
+    fg_opts.specType = options.specType;
+    fg_opts.nonBackgroundPeaksOnly = false;
+    fg_opts.lowerEnergy = std::nullopt;
+    fg_opts.upperEnergy = std::nullopt;
+    const DetectedPeakStatus fg_peaks = detected_peaks( fg_opts, interspec );
+    input.foregroundPeaks = fg_peaks.peaks;
+
+    // Background peaks: recover NORM peaks hidden under foreground peaks first, then fetch the
+    // (augmented) auto-search peaks - the same sequence detected_peaks uses; we are on the GUI
+    // thread, where blocking on the searches is acceptable (they are cached/coalesced).
+    const set<int> back_samples = interspec->displayedSamples( SpecUtils::SpectrumType::Background );
+    PeakSearchGuiUtils::ensure_background_peaks_recovered( meas, sample_nums, spectrum,
+                                                          back_meas, back_samples,
+                                                          back_spectrum, isHPGe );
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> back_auto_peaks
+        = PeakSearchGuiUtils::get_or_launch_automated_search_peaks( back_meas, back_samples,
+                                back_spectrum, back_meas->detector(), isHPGe ).get();
+    if( back_auto_peaks )
+      input.backgroundPeaks.insert( end(input.backgroundPeaks),
+                                    begin(*back_auto_peaks), end(*back_auto_peaks) );
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> back_user_peaks = back_meas->peaks( back_samples );
+    if( back_user_peaks )
+      input.backgroundPeaks.insert( end(input.backgroundPeaks),
+                                    begin(*back_user_peaks), end(*back_user_peaks) );
+
+    input.background = back_spectrum;
+    input.expectedFwhm = make_expected_fwhm_fcn( interspec );
+
+    return beta_continuum_check( input );
+  }//beta_continuum_check( const BetaContinuumCheckOptions &options, InterSpec *interspec )
 
 } // namespace AnalystChecks

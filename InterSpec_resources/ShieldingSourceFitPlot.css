@@ -73,6 +73,13 @@ CSS variables InterSpec will define for colors:
   fill: var(--d3spec-text-color, black);
 }
 
+.ShieldingSourceFitPlot .trendline {
+  fill: none;
+  stroke-width: 1.5;
+  stroke-dasharray: 6,3;
+  opacity: 0.75;
+}
+
 div.ShieldingSourceFitPlotTooltip {
   position: fixed;
   padding: 6px;

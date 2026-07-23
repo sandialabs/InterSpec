@@ -120,6 +120,9 @@ set(LEAFLET_MAPS_KEY "n/a" CACHE STRING "Leaflet maps api key.")
 
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
+option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
+
+
 
 if(BUILD_FOR_WEB_DEPLOYMENT)
     set(TRY_TO_STATIC_LINK OFF)
@@ -246,6 +249,7 @@ set(sources
     src/ShieldingSourceDisplay.cpp
     src/ShieldingSourceDiagram.cpp
     src/ShieldingSourceFitCalc.cpp
+    src/ShieldSourcePullTrend.cpp
     src/ShieldingSelect.cpp
     src/GammaXsGui.cpp
     src/ReferenceLineInfo.cpp
@@ -370,6 +374,7 @@ set(headers
     InterSpec/ShieldingSourceDisplay.h
     InterSpec/ShieldingSourceDiagram.h
     InterSpec/ShieldingSourceFitCalc.h
+    InterSpec/ShieldSourcePullTrend.h
     InterSpec/ShieldingSelect.h
     InterSpec/GammaXsGui.h
     InterSpec/ReferenceLineInfo.h
@@ -631,6 +636,20 @@ elseif( APPLE AND BUILD_AS_WX_WIDGETS_APP )
   list( APPEND headers target/osx/macOsUtils.h )
 endif()
 
+if( USE_LLM_INTERFACE )
+  list( APPEND sources src/LlmMcpResource.cpp src/LlmInterface.cpp src/LlmApiProtocol.cpp src/LlmToolRegistry.cpp src/LlmDeepResearchAgent.cpp src/LlmIsotopicsTool.cpp src/LlmActivityFitTool.cpp src/LlmRelActManualTool.cpp src/LlmConfig.cpp src/LlmPromptTemplate.cpp src/LlmConfigWindow.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp src/LlmJsSandboxBridge.cpp src/LlmInteractionDisplay.cpp src/LlmSubAgentFollowup.cpp src/LlmBenchmarkRunner.cpp )
+  list( APPEND headers InterSpec/LlmMcpResource.h InterSpec/LlmInterface.h InterSpec/LlmApiProtocol.h InterSpec/LlmToolRegistry.h InterSpec/LlmDeepResearchAgent.h InterSpec/LlmIsotopicsTool.h InterSpec/LlmActivityFitTool.h InterSpec/LlmRelActManualTool.h InterSpec/LlmConfig.h InterSpec/LlmPromptTemplate.h InterSpec/LlmConfigWindow.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h InterSpec/LlmJsSandboxBridge.h InterSpec/LlmInteractionDisplay.h InterSpec/LlmSubAgentFollowup.h InterSpec/LlmBenchmarkRunner.h )
+  list( APPEND OTHER_InterSpec_SUPPORT_FILES InterSpec_resources/LlmJsSandbox.js )
+  list( APPEND OTHER_InterSpec_SUPPORT_FILES data/llm_config.xml data/llm_tools_config.xml
+    data/llm_agent_MainAgent.xml data/llm_agent_NuclideId.xml data/llm_agent_ActivityFit.xml
+    data/llm_agent_Isotopics.xml data/llm_agent_DeepResearch.xml data/llm_agent_EnergyCalibration.xml
+    data/llm_agent_SpectrumTimeHistory.xml
+  )
+  
+  if( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
+    MESSAGE(FATAL_ERROR "MCP server can not be enabled for web or mobile builds")
+  endif( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
+endif( USE_LLM_INTERFACE )
 
 #Copy D3 resources into InterSpec_resources directory at compile time
 include(cmake/DeployJsAndCss.cmake)

@@ -1436,7 +1436,7 @@
       shipped in
       <a target="_blank" href="https://github.com/sandialabs/InterSpec/tree/master/data/rel_act">data/rel_act/</a>
       (for example
-      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/rel_act/HPGe%20Pu%20(120-420%20KeV).xml">HPGe Pu (120-420 KeV).xml</a>).
+      <a target="_blank" href="https://github.com/sandialabs/InterSpec/blob/master/data/rel_act/HPGe%20Pu%20(120-420%20keV).xml">HPGe Pu (120-420 keV).xml</a>).
       The built-in entries cover HPGe plutonium and uranium analyses across a few
       common energy ranges, each pre-configured with reasonable nuclides, ages,
       energy ranges, and rel-eff / FWHM options.
