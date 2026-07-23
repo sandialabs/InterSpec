@@ -243,9 +243,9 @@ color: #E0F5FF;
 
 .EnergyCalTool .CalSpecMenu .itemselected a, .EnergyCalTool .CalSpecMenu .itemselected a:hover {
   background-position: 0%;
-  /* If the parent background isnt white, then the below will have a white line in it... TODO: fix */
+  /* Mask the tab bar's bottom border using the current theme background. */
   background-color: inherit;
-  border-color: #e1e1e1 #e1e1e1 #EEEEEE #e1e1e1;
+  border-color: #e1e1e1 #e1e1e1 var(--interspec-background-color, white) #e1e1e1;
 }
 
 .EnergyCalTool .CalSpecMenu a {
@@ -274,9 +274,9 @@ color: #E0F5FF;
 }
 
 
-.EnergyCalTool .CalSpecMenu .itemselected a:focus, .Wt-tabs .itemselected a:hover {
+.EnergyCalTool .CalSpecMenu .itemselected a:focus, .EnergyCalTool .CalSpecMenu .itemselected a:hover {
   /* Get rid of line on selected tab when you mouse over it */
-  border-bottom: 1px solid white;
+  border-bottom: 1px solid var(--interspec-background-color, white);
 }
 
 
@@ -544,6 +544,5 @@ color: #E0F5FF;
 {
   background: red;
 }
-
 
 
