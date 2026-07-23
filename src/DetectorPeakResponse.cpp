@@ -4403,23 +4403,25 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
       assert( PhysicalUnits::keV == 1.0 );
       
       /*
-       // 20231223: a updated straight-forward translation from the fortran is:
-       const float &resolutionOffset = pars[0];
-       const float &resolution661 = pars[1];
-       const float &resolutionPower = pars[2];
-       energy = std::max( 1.0f, energy );
-       if( energy > 661.0f )
-         return 6.61f * resolution661 * std::pow( energy/661.0f, resolutionPower );
-       
-       if( resolutionOffset >= 0.0 )
+       TODO: 20260723 - should update to instead use the belo
+       const double resolutionOffset = pars[0];
+       const double resolution661 = pars[1];
+       const double resolutionPower = pars[2];
+
+       const double E = std::max(1.0, energy);
+       if( E > 661 )
+         return static_cast<float>( 6.61 * resolution661 * pow((E / 661.), resolutionPower) );
+
+       if( resolutionOffset >= 0 )
        {
-         const float ZeroLimit = std::max( 0.0f, fabs(resolutionOffset)*(661.0f - energy)/661.0f );
-         const float FWHM = 6.61f * resolution661 * std::pow( energy/661.0f, resolutionPower );
-         return std::sqrt( ZeroLimit*ZeroLimit + FWHM*FWHM );
+          double ZeroLimit = std::max(0., std::abs(resolutionOffset) * (661. - E) / 661.);
+          double FWHM = 6.61 * resolution661 * pow((E / 661.), resolutionPower);
+          return sqrt(pow(ZeroLimit, 2) + pow(FWHM, 2));
        }
-       
-       const float p = std::pow(resolutionPower, (1.0f/std::log(1.0f - resolutionOffset)) );
-       return 6.61f * resolution661 * std::pow(std::max(30.0f,energy)/661.0f, p );
+
+
+        double p = pow(resolutionPower, (1. / log(1. - resolutionOffset)));
+        return 6.61 * resolution661 * pow((std::max(30., E) / 661.), P);
        */
       
       const double a = pars[0];
