@@ -160,7 +160,7 @@ public:
   //scoreAllTests(): XXX - untested, doesnt actually work yet
   void scoreAllTests();
   
-  void doScorring( TestType type );
+  void doScorring( TestType type, Wt::WContainerWidget *container );
   Score doTest( TestType type );
   
   void updateOverview();

@@ -285,8 +285,14 @@ public:
   
 protected:
 #if( USE_OSX_NATIVE_MENU )
+  // Keep the native cache synchronized when an ancestor widget enables/disables this item.
+  virtual void propagateSetEnabled( bool enabled ) override;
+
   void *m_nsmenu;
   void *m_nsmenuitem;
+  // Opaque, thread-safe bridge retained by both this item and the native NSMenuItem. Keeping it
+  //  separately lets the Wt session thread invalidate/update state without messaging AppKit.
+  void *m_nsmenuitemtarget;
   friend class PopupDivMenu;
 #endif
 };//class PopupDivMenuItem
