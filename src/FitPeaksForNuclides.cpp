@@ -11601,7 +11601,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
               RelActCalcAuto::FloatingPeak fp;
               fp.energy = p->mean();
               fp.release_fwhm = false;
-              fp.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::ObservedInSpectrum;
+              // Known (not ObservedInSpectrum) so the bystander tracks the fitted energy-cal
+              //  adjustment like the source peaks - see the ExistingPeaksAsFreePeak path below.
+              fp.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::Known;
               options.floating_peaks.push_back( fp );
 
               default_mode_bystander_peaks.emplace_back( p, p->mean() );
@@ -12121,7 +12123,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           RelActCalcAuto::FloatingPeak fp;
           fp.energy = peak_energy;
           fp.release_fwhm = false;
-          fp.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::ObservedInSpectrum;
+          // Existing bystanders use their observed mean as a Known reference energy so they track
+          // the fitted energy-cal adjustment with source peaks instead of forming a shifted doublet.
+          fp.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::Known;
           options.floating_peaks.push_back( fp );
         }
         existing_peaks_added_as_floating.emplace_back( peak, peak_energy );
@@ -12948,9 +12952,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
                 std::begin(augmented_options.floating_peaks),
                 std::end(augmented_options.floating_peaks),
                 [&]( const RelActCalcAuto::FloatingPeak &peak ) {
-                  return (peak.energy_origin
-                            == RelActCalcAuto::FloatingPeak::EnergyType::ObservedInSpectrum)
-                      && (std::fabs(peak.energy - photon.energy) < line_fwhm);
+                  return std::fabs( peak.energy - photon.energy ) < line_fwhm;
                 } );
             } );
           if( parent_duplicates_floating_peak )
@@ -12964,9 +12966,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
               std::begin(augmented_options.floating_peaks),
               std::end(augmented_options.floating_peaks),
               [&]( const RelActCalcAuto::FloatingPeak &peak ) {
-                return (peak.energy_origin
-                          == RelActCalcAuto::FloatingPeak::EnergyType::ObservedInSpectrum)
-                    && (std::fabs(peak.energy - energy) < line_fwhm);
+                return std::fabs( peak.energy - energy ) < line_fwhm;
               } );
             if( duplicates_floating_peak )
               continue;
