@@ -39,17 +39,19 @@ void *addOsxMenu( PopupDivMenu *menu, const char *name );
 //  'parent' is the pointer to the NSMenu to add the sub menu to.
 void *addOsxSubMenu( void *parent, PopupDivMenu *item, const char *name );
 
-//insertOsxMenuItem(): returns NSMenuItem pointer of item added.
+//insertOsxMenuItem(): returns NSMenuItem pointer of item added and writes its thread-safe Target
+//  bridge to 'target'. 'target' must not be null.
 //  'menu' is the pointer to the NSMenu to add to
 //  If positionIndex is negative, then item will be appended.
-void *insertOsxMenuItem( void *menu, PopupDivMenuItem *item, int positionIndex );
+void *insertOsxMenuItem( void *menu, PopupDivMenuItem *item, int positionIndex, void **target );
 
-//addOsxCheckableMenuItem(): returns NSMenuItem pointer of item added.
+//addOsxCheckableMenuItem(): returns NSMenuItem pointer of item added and writes its thread-safe
+//  Target bridge to 'target'. 'target' must not be null.
 //  'menu' is the pointer to the NSMenu to add to
 //  The PopupDivMenuItem pointer is necassarry in order for the triggered()
 //  signal to be sent.
 void *addOsxCheckableMenuItem( void *menu, Wt::WCheckBox *cb,
-                               PopupDivMenuItem *item );
+                               PopupDivMenuItem *item, void **target );
 
 //addOsxSeparator(): Add separator to the NSMenu 'voidmenu' passed in.
 void *addOsxSeparator( void *voidmenu );
@@ -65,16 +67,16 @@ void removeOsxMenuItem( void *item, void *menu );
 //setOsxMenuItemHidden(): sets the NSMenuItem passed in to hidden.
 void setOsxMenuItemHidden( void *item, bool hidden );
 
-//invalidateOsxMenuItemTarget(): clears the raw Wt pointers cached in the NSMenuItem's Target so the
-//  Target (which is read on the AppKit main thread by validateMenuItem/clicked/toggleChecked) can no
-//  longer dereference a destroyed PopupDivMenuItem/WCheckBox.  MUST be called from the owning
-//  PopupDivMenuItem's destructor (on the session thread) before the widget memory is freed.
-void invalidateOsxMenuItemTarget( void *item );
+//invalidateOsxMenuItemTarget(): marks the native item's Wt-bound callbacks invalid, clears their
+//  session-thread ownership, disables its cached state, and relinquishes the PopupDivMenuItem's
+//  ownership of the bridge. MUST be called exactly once from the owning PopupDivMenuItem before the
+//  widget memory is freed or when replacing the native item.
+void invalidateOsxMenuItemTarget( void *target );
 
 //setOsxMenuItemTargetEnabled(): updates the cached enabled flag that validateMenuItem reads on the
 //  AppKit thread (so it never has to dereference the Wt widget).  Call from the session thread when
 //  the PopupDivMenuItem's enabled state changes.
-void setOsxMenuItemTargetEnabled( void *item, bool enabled );
+void setOsxMenuItemTargetEnabled( void *target, bool enabled );
 
 //addOsxMenuItemToolTip(): adds tool tip to the NSMenuItem
 void addOsxMenuItemToolTip( void *item, const char *tooltip );
