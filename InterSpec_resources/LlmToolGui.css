@@ -17,11 +17,12 @@
   height: 100%;
 }
 
-/* Menu icon positioned in upper-right corner */
+/* Menu icon positioned in upper-right corner.  Reserve room for Windows' native vertical
+   scrollbar, which occupies layout space and can otherwise cover the right edge of the button. */
 .LlmMenuIcon {
   position: absolute;
   top: 2px;
-  right: 2px;
+  right: 20px;
   z-index: 100;
 }
 
@@ -30,7 +31,7 @@
   width: 100%;
   height: 100%;
   overflow-y: auto;
-  background-color: #ffffff;
+  background-color: var(--interspec-background-color, #ffffff);
 }
 
 /* Container holding all interaction displays */
@@ -45,7 +46,7 @@
 
 .llm-input-edit.disabled {
   opacity: 0.6;
-  background-color: #f5f5f5;
+  background-color: var(--interspec-input-background, #f5f5f5);
   cursor: not-allowed;
 }
 
@@ -56,8 +57,15 @@
 
 .llm-send-button.disabled {
   opacity: 0.6;
-  background-color: #f5f5f5;
+  background-color: var(--interspec-button-background, #f5f5f5);
   cursor: not-allowed;
+}
+
+/* The dark theme has a global disabled-button rule; keep assistant controls tied to the active theme. */
+.LlmToolGui button[disabled] {
+  color: var(--interspec-button-text-color, white);
+  background-color: var(--interspec-button-background, #888888);
+  border-color: var(--interspec-button-border-color, #e1e1e1);
 }
 
 /* ============================================ */
@@ -66,17 +74,17 @@
 
 .LlmInteractionDisplay {
   margin-bottom: 15px;
-  border: 1px solid #d0d0d0;
+  border: 1px solid var(--interspec-border-color, #d0d0d0);
   border-radius: 6px;
-  background-color: #fafafa;
+  background-color: var(--interspec-input-background, #fafafa);
 }
 
 .LlmInteractionDisplay.Wt-panel > .titlebar {
-  background-color: #e8f4f8;
-  border-bottom: 1px solid #b8d4dc;
+  background-color: var(--interspec-input-background, #e8f4f8) !important;
+  border-bottom: 1px solid var(--interspec-border-color, #b8d4dc);
   padding: 10px 12px;
   font-weight: 600;
-  color: #2c3e50;
+  color: var(--interspec-text-color, #2c3e50);
   display: flex;
   /* justify-content: space-between; */
   align-items: center;
@@ -94,24 +102,24 @@
 
 .LlmInteractionDisplay.Wt-panel > .body {
   padding: 12px;
-  background-color: #ffffff;
+  background-color: var(--interspec-input-background, #ffffff);
 }
 
 /* Status indicator in title */
 .LlmStatusIndicator {
   font-weight: normal;
   font-size: 13px;
-  color: #666;
+  color: var(--interspec-label-color, #666);
   margin-left: 8px;
 }
 
 /* Summary section at top of interaction */
 .LlmInteractionSummary {
   padding: 8px 12px;
-  background-color: #f8f9fa;
-  border-bottom: 1px solid #dee2e6;
+  background-color: var(--interspec-background-color, #f8f9fa);
+  border-bottom: 1px solid var(--interspec-border-color, #dee2e6);
   font-size: 12px;
-  color: #6c757d;
+  color: var(--interspec-label-color, #6c757d);
   margin-bottom: 10px;
 }
 
@@ -124,7 +132,7 @@
 .LlmSubAgentNesting {
   margin-left: 20px;
   margin-top: 10px;
-  border-left: 3px solid #6c757d;
+  border-left: 3px solid var(--interspec-border-color, #6c757d);
 }
 
 .LlmUserQuestion {
@@ -158,16 +166,16 @@
 
 .LlmInteractionTurnDisplay {
   margin-bottom: 10px;
-  border: 1px solid #e0e0e0;
+  border: 1px solid var(--interspec-border-color, #e0e0e0);
   border-radius: 4px;
-  background-color: #ffffff;
+  background-color: var(--interspec-input-background, #ffffff);
 }
 
 .LlmInteractionTurnDisplay.Wt-panel > .titlebar {
-  background-color: #f5f5f5;
+  background-color: var(--interspec-background-color, #f5f5f5) !important;
   padding: 8px 10px;
   font-size: 14px;
-  color: #495057;
+  color: var(--interspec-text-color, #495057);
   display: flex;
   /* justify-content: space-between; */
   align-items: center;
@@ -195,8 +203,9 @@
 /* ============================================ */
 
 .LlmFinalResponseDisplay.Wt-panel > .titlebar {
-  background-color: #e7f3e7;
-  border-bottom: 1px solid #c3e6cb;
+  background-color: var(--interspec-background-color, #e7f3e7) !important;
+  border-bottom: 1px solid var(--interspec-border-color, #c3e6cb);
+  color: var(--interspec-text-color, #212529);
 }
 
 .LlmResponseContent {
@@ -204,15 +213,15 @@
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   font-size: 14px;
   line-height: 1.6;
-  color: #212529;
+  color: var(--interspec-text-color, #212529);
   margin-bottom: 12px;
 }
 
 .LlmMetadata {
   font-size: 12px;
-  color: #6c757d;
+  color: var(--interspec-label-color, #6c757d);
   padding-top: 8px;
-  border-top: 1px solid #e9ecef;
+  border-top: 1px solid var(--interspec-border-color, #e9ecef);
 }
 
 .LlmTimestamp, .LlmDuration, .LlmTokenUsage {
@@ -223,20 +232,20 @@
 .LlmThinkingContent {
   margin-top: 12px;
   padding: 10px;
-  background-color: #fff3cd;
+  background-color: var(--interspec-background-color, #fff3cd);
   border-left: 3px solid #ffc107;
   border-radius: 4px;
 }
 
 .LlmThinkingLabel {
   font-weight: 600;
-  color: #856404;
+  color: var(--interspec-text-color, #856404);
   display: block;
   margin-bottom: 6px;
 }
 
 .LlmThinkingContent > .Wt-text {
-  color: #856404;
+  color: var(--interspec-text-color, #856404);
   font-size: 13px;
 }
 
@@ -245,27 +254,28 @@
 /* ============================================ */
 
 .LlmToolRequestDisplay.Wt-panel > .titlebar {
-  background-color: #e8f0fe;
-  border-bottom: 1px solid #c5d9f1;
+  background-color: var(--interspec-background-color, #e8f0fe) !important;
+  border-bottom: 1px solid var(--interspec-border-color, #c5d9f1);
+  color: var(--interspec-text-color, #212529);
 }
 
 .LlmToolCallItem {
   margin-bottom: 12px;
   padding: 10px;
-  background-color: #f8f9fa;
-  border-left: 3px solid #007bff;
+  background-color: var(--interspec-background-color, #f8f9fa);
+  border-left: 3px solid var(--interspec-link-color, #007bff);
   border-radius: 4px;
 }
 
 .LlmToolName {
   font-size: 14px;
-  color: #0056b3;
+  color: var(--interspec-link-color, #0056b3);
   font-weight: 600;
 }
 
 .LlmInvocationId {
   font-size: 12px;
-  color: #6c757d;
+  color: var(--interspec-label-color, #6c757d);
   font-family: "Courier New", monospace;
 }
 
@@ -275,14 +285,15 @@
   margin-bottom: 4px;
   font-weight: 600;
   font-size: 13px;
-  color: #495057;
+  color: var(--interspec-text-color, #495057);
 }
 
 .LlmToolParams {
   font-family: "Courier New", monospace;
   font-size: 12px;
-  background-color: #ffffff;
-  border: 1px solid #ced4da;
+  background-color: var(--interspec-input-background, #ffffff);
+  border: 1px solid var(--interspec-border-color, #ced4da);
+  color: var(--interspec-text-color, #212529);
   padding: 8px;
   border-radius: 3px;
   width: 100%;
@@ -293,21 +304,22 @@
 /* ============================================ */
 
 .LlmToolResultsDisplay.Wt-panel > .titlebar {
-  background-color: #f0e8ff;
-  border-bottom: 1px solid #d4c5f1;
+  background-color: var(--interspec-background-color, #f0e8ff) !important;
+  border-bottom: 1px solid var(--interspec-border-color, #d4c5f1);
+  color: var(--interspec-text-color, #212529);
 }
 
 .LlmToolResultItem {
   margin-bottom: 12px;
   padding: 10px;
-  background-color: #f8f9fa;
-  border-left: 3px solid #6f42c1;
+  background-color: var(--interspec-background-color, #f8f9fa);
+  border-left: 3px solid var(--interspec-link-color, #6f42c1);
   border-radius: 4px;
 }
 
 /* Error state for tool results */
 .LlmToolResultItem.LlmToolResultError {
-  background-color: #fff5f5;
+  background-color: var(--interspec-background-color, #fff5f5);
   border-left: 3px solid #dc3545;
 }
 
@@ -330,14 +342,15 @@
   margin-bottom: 4px;
   font-weight: 600;
   font-size: 13px;
-  color: #495057;
+  color: var(--interspec-text-color, #495057);
 }
 
 .LlmToolResult {
   font-family: "Courier New", monospace;
   font-size: 12px;
-  background-color: #ffffff;
-  border: 1px solid #ced4da;
+  background-color: var(--interspec-input-background, #ffffff);
+  border: 1px solid var(--interspec-border-color, #ced4da);
+  color: var(--interspec-text-color, #212529);
   padding: 8px;
   border-radius: 3px;
   width: 100%;
@@ -349,7 +362,7 @@
 
 .LlmToolVisual {
   margin-top: 8px;
-  border: 1px solid #ddd;
+  border: 1px solid var(--interspec-border-color, #ddd);
   border-radius: 4px;
   overflow: hidden;
 }
@@ -359,18 +372,18 @@
   font-weight: bold;
   font-size: 0.85em;
   padding: 4px 8px;
-  background: #f5f5f5;
-  border-bottom: 1px solid #ddd;
-  color: #495057;
+  background: var(--interspec-background-color, #f5f5f5);
+  border-bottom: 1px solid var(--interspec-border-color, #ddd);
+  color: var(--interspec-text-color, #495057);
 }
 
 .LlmToolVisualDesc {
   display: block;
   font-size: 0.8em;
   padding: 2px 8px 4px 8px;
-  color: #6c757d;
-  background: #f5f5f5;
-  border-bottom: 1px solid #ddd;
+  color: var(--interspec-label-color, #6c757d);
+  background: var(--interspec-background-color, #f5f5f5);
+  border-bottom: 1px solid var(--interspec-border-color, #ddd);
 }
 
 .LlmToolVisualChart {
@@ -390,7 +403,7 @@
   margin-bottom: 6px;
   font-weight: 600;
   font-size: 13px;
-  color: #495057;
+  color: var(--interspec-text-color, #495057);
 }
 
 /* ============================================ */
@@ -398,14 +411,14 @@
 /* ============================================ */
 
 .LlmErrorDisplay.Wt-panel > .titlebar {
-  background-color: #f8d7da;
-  border-bottom: 1px solid #f5c6cb;
-  color: #721c24;
+  background-color: var(--interspec-background-color, #f8d7da) !important;
+  border-bottom: 1px solid var(--interspec-border-color, #f5c6cb);
+  color: var(--interspec-text-color, #721c24);
 }
 
 .LlmErrorMessage {
-  color: #721c24;
-  background-color: #fff5f5;
+  color: var(--interspec-text-color, #721c24);
+  background-color: var(--interspec-input-background, #fff5f5);
   border-left: 4px solid #dc3545;
   border-radius: 4px;
   margin-bottom: 12px;
@@ -420,7 +433,7 @@
 
 .LlmRetryButton {
   background-color: #dc3545;
-  color: white;
+  color: var(--interspec-button-text-color, white);
   cursor: pointer;
   margin-right: 8px;
 }
@@ -430,18 +443,19 @@
 }
 
 .LlmContinueButton {
-  background-color: #6c757d;
-  color: white;
+  background-color: var(--interspec-button-background, #6c757d);
+  border-color: var(--interspec-button-border-color, #6c757d);
+  color: var(--interspec-button-text-color, white);
   cursor: pointer;
 }
 
 .LlmContinueButton:hover {
-  background-color: #5a6268;
+  background-color: var(--interspec-button-background, #5a6268);
 }
 
 .LlmErrorRetryInfo {
-  color: #856404;
-  background-color: #fff3cd;
+  color: var(--interspec-text-color, #856404);
+  background-color: var(--interspec-background-color, #fff3cd);
   padding: 8px 10px;
   border-left: 3px solid #ffc107;
   border-radius: 4px;
@@ -450,7 +464,7 @@
 }
 
 .LlmErrorHelpText {
-  color: #6c757d;
+  color: var(--interspec-label-color, #6c757d);
   font-size: 13px;
   margin-top: 12px;
   font-style: italic;
@@ -464,8 +478,9 @@
   font-family: "Courier New", "Consolas", monospace;
   font-size: 12px;
   line-height: 1.4;
-  background-color: #f8f9fa;
-  border: 1px solid #ced4da;
+  background-color: var(--interspec-input-background, #f8f9fa);
+  border: 1px solid var(--interspec-border-color, #ced4da);
+  color: var(--interspec-text-color, #212529);
   padding: 10px;
   width: 100%;
   max-width: 800px;
@@ -476,7 +491,7 @@
 /* ============================================ */
 
 .LlmEmptyMessage {
-  color: #6c757d;
+  color: var(--interspec-label-color, #6c757d);
   font-style: italic;
   font-size: 13px;
 }
@@ -485,21 +500,19 @@
 /* Welcome / getting-started panel               */
 /* ============================================ */
 
-/* Shown in the (otherwise empty) conversation area before the first message.  The conversation
-   area has a fixed light background in both themes, so text stays dark; only the link follows the
-   active color theme (via the global --interspec-link-color variable). */
+/* Shown in the otherwise empty conversation area before the first message. */
 .LlmWelcome {
   max-width: 640px;
   margin: 24px auto;
   padding: 4px 8px;
-  color: #495057;
+  color: var(--interspec-text-color, #495057);
 }
 
 .LlmWelcomeTitle {
   display: block;
   font-size: 18px;
   font-weight: 600;
-  color: #2c3e50;
+  color: var(--interspec-text-color, #2c3e50);
   margin-bottom: 10px;
 }
 
@@ -515,73 +528,6 @@
   cursor: pointer;
   color: var(--interspec-link-color, #0d6efd);
 }
-
-/* ============================================ */
-/* Dark theme support */
-/* ============================================ */
-
-/* Override for dark theme if needed */
-body.dark-theme .LlmInteractionDisplay {
-  background-color: #2d2d2d;
-  border-color: #444;
-}
-
-body.dark-theme .LlmInteractionDisplay.Wt-panel > .titlebar {
-  background-color: #3a3a3a;
-  border-bottom-color: #555;
-  color: #e0e0e0;
-}
-
-body.dark-theme .LlmInteractionDisplay.Wt-panel > .body {
-  background-color: #2a2a2a;
-}
-
-body.dark-theme .LlmResponseContent {
-  color: #e0e0e0;
-}
-
-body.dark-theme .LlmToolCallItem,
-body.dark-theme .LlmToolResultItem {
-  background-color: #333;
-}
-
-body.dark-theme .LlmToolResultItem.LlmToolResultError {
-  background-color: #3d2020;
-  border-left-color: #dc3545;
-}
-
-body.dark-theme .LlmToolStatusError {
-  color: #ff6b6b;
-}
-
-body.dark-theme .LlmToolStatusPending {
-  color: #ffd43b;
-}
-
-body.dark-theme .LlmToolParams,
-body.dark-theme .LlmToolResult,
-body.dark-theme .LlmJsonDisplay {
-  background-color: #1e1e1e;
-  border-color: #555;
-  color: #e0e0e0;
-}
-
-body.dark-theme .LlmToolVisual {
-  border-color: #555;
-}
-
-body.dark-theme .LlmToolVisualTitle {
-  background: #333;
-  border-bottom-color: #555;
-  color: #e0e0e0;
-}
-
-body.dark-theme .LlmToolVisualDesc {
-  background: #333;
-  border-bottom-color: #555;
-  color: #aaa;
-}
-
 
 /* ============================================ */
 /* Staged Image Preview Strip                    */
@@ -601,8 +547,8 @@ body.dark-theme .LlmToolVisualDesc {
   align-items: center;
   padding: 3px 4px;
   gap: 4px;
-  background-color: #f0f4f8;
-  border: 1px solid #d0d8e0;
+  background-color: var(--interspec-background-color, #f0f4f8);
+  border: 1px solid var(--interspec-border-color, #d0d8e0);
   border-radius: 4px;
   margin-bottom: 4px;
 }
@@ -612,7 +558,7 @@ body.dark-theme .LlmToolVisualDesc {
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  background-color: #e8ecf0;
+  background-color: var(--interspec-input-background, #e8ecf0);
   border-radius: 3px;
   padding: 2px 4px;
 }
@@ -622,12 +568,12 @@ body.dark-theme .LlmToolVisualDesc {
   max-height: 40px;
   border-radius: 2px;
   object-fit: cover;
-  border: 1px solid #ccc;
+  border: 1px solid var(--interspec-border-color, #ccc);
 }
 
 .LlmStagedImageName {
   font-size: 11px;
-  color: #495057;
+  color: var(--interspec-text-color, #495057);
   max-width: 80px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -637,7 +583,7 @@ body.dark-theme .LlmToolVisualDesc {
 .LlmStagedImageRemove {
   background: none;
   border: none;
-  color: #999;
+  color: var(--interspec-label-color, #999);
   font-size: 14px;
   cursor: pointer;
   padding: 0 3px;
@@ -647,33 +593,6 @@ body.dark-theme .LlmToolVisualDesc {
 .LlmStagedImageRemove:hover {
   color: #dc3545;
 }
-
-/* Dark theme overrides */
-body.dark-theme .LlmStagedImagePreview {
-  background-color: #333;
-  border-color: #555;
-}
-
-body.dark-theme .LlmStagedImageEntry {
-  background-color: #3a3a3a;
-}
-
-body.dark-theme .LlmStagedImageThumb {
-  border-color: #555;
-}
-
-body.dark-theme .LlmStagedImageName {
-  color: #ccc;
-}
-
-body.dark-theme .LlmStagedImageRemove {
-  color: #888;
-}
-
-body.dark-theme .LlmStagedImageRemove:hover {
-  color: #ff6b6b;
-}
-
 
 /* ============================================ */
 /* User Question Image Thumbnails               */
@@ -691,15 +610,10 @@ body.dark-theme .LlmStagedImageRemove:hover {
   max-width: 120px;
   max-height: 120px;
   border-radius: 4px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--interspec-border-color, #ccc);
   object-fit: contain;
   cursor: pointer;
 }
-
-body.dark-theme .LlmUserQuestionImageThumb {
-  border-color: #555;
-}
-
 
 /* ============================================ */
 /* Tool Result Image Preview                     */
@@ -710,12 +624,8 @@ body.dark-theme .LlmUserQuestionImageThumb {
   max-width: 300px;
   max-height: 200px;
   border-radius: 4px;
-  border: 1px solid #ccc;
+  border: 1px solid var(--interspec-border-color, #ccc);
   object-fit: contain;
   margin-top: 6px;
   margin-bottom: 4px;
-}
-
-body.dark-theme .LlmToolResultImageThumb {
-  border-color: #555;
 }
