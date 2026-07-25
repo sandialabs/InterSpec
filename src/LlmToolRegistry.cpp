@@ -37,6 +37,7 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
+#include "InterSpec/D3TimeChart.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/InterSpecApp.h"
@@ -85,6 +86,26 @@ using namespace std;
 using json = nlohmann::json;
 
 namespace {
+  /** Deadline for the chart-image tools (SharedTool::asyncTimeoutMs).
+
+   These are browser round-trips rather than computation, so a capture that has actually started resolves
+   in well under a second.  What this must cover is *queueing*: D3SpectrumDisplayDiv serializes captures,
+   so a request can wait behind up to sm_max_queued_captures others before its own capture even starts,
+   each bounded by sm_image_capture_timeout_ms.  Derived from those constants (rather than hard-coded) so
+   a capture is never falsely reported as timed out merely for having waited its turn.
+   */
+  const int sm_spectrum_image_tool_timeout_ms
+      = static_cast<int>( D3SpectrumDisplayDiv::sm_max_queued_captures + 1 )
+        * (D3SpectrumDisplayDiv::sm_image_capture_timeout_ms      // each capture's own window, plus
+           + D3SpectrumDisplayDiv::sm_image_capture_poll_ms)      //  the granularity it is polled at
+        + 5000;  // slack for the round-trips either side of the capture itself
+
+  /** The time chart does not queue captures - a second request supersedes the first - so its bound is
+   just one capture window, not the spectrum chart's (queue depth + 1).
+   */
+  const int sm_time_chart_image_tool_timeout_ms
+      = D3TimeChart::sm_image_capture_timeout_ms + 5000;
+
   // JSON conversion for SpecUtils::SpectrumType enum
   NLOHMANN_JSON_SERIALIZE_ENUM(SpecUtils::SpectrumType, {
       {SpecUtils::SpectrumType::Foreground, "Foreground"},
@@ -2457,6 +2478,10 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       };
     }else if( toolName == "get_spectrum_image" )
     {
+      // A chart capture is a single browser round-trip, not computation, so it should never take long.
+      // Captures are serialized behind at most sm_max_queued_captures others, and each of those is
+      // itself bounded by the chart's own capture timer, so this covers the worst-case queued wait.
+      tool.asyncTimeoutMs = sm_spectrum_image_tool_timeout_ms;
       tool.asyncExecutor = [](const json& params, InterSpec* interspec,
           shared_ptr<LlmInteraction> convo, LlmConversationHistory* history,
           SharedTool::AsyncCallback callback) {
@@ -2479,6 +2504,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       };
     }else if( toolName == "get_time_chart_image" )
     {
+      tool.asyncTimeoutMs = sm_time_chart_image_tool_timeout_ms;  // browser round-trip, never queued
       tool.asyncExecutor = [](const json& params, InterSpec* interspec,
           shared_ptr<LlmInteraction> convo, LlmConversationHistory* history,
           SharedTool::AsyncCallback callback) {

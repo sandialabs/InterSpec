@@ -68,6 +68,13 @@ struct SharedTool {
         std::shared_ptr<LlmInteraction>, LlmConversationHistory*,
         AsyncCallback)> asyncExecutor;
 
+    /** How long the consumer should wait for asyncExecutor's callback before giving up and reporting a
+     tool error, in milliseconds; 0 means use the consumer's default
+     (LlmInterface::sm_async_tool_timeout_ms).  Set a short value for tools whose work is a browser
+     round-trip rather than computation, so a lost round-trip is recovered from quickly.
+     */
+    int asyncTimeoutMs = 0;
+
     bool isAsync() const { return static_cast<bool>( asyncExecutor ); }
 
     // Agent-specific configurations
