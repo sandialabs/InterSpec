@@ -567,16 +567,11 @@ nlohmann::json buildObsEffArray( const std::vector<RelActCalcAuto::RelActAutoSol
 
   json effs_array = json::array();
 
-  for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff : obs_effs )
+  for( RelActCalcAuto::RelActAutoSolution::ObsEff obs_eff : obs_effs )
   {
-    // Apply RelEffChart filtering criteria
-    if( (obs_eff.observed_efficiency <= 0.0)
-       || (obs_eff.num_sigma_significance <= 2.5)
-       || (obs_eff.fraction_roi_counts <= 0.05)
-       || !obs_eff.within_roi )
-    {
+    // Same criteria as the rel. eff. chart uses to decide which points are trustworthy enough to show.
+    if( !RelActCalcAuto::RelActAutoSolution::show_obs_eff_point( obs_eff ) )
       continue;
-    }
 
     json eff_obj;
     eff_obj["energy_kev"] = obs_eff.energy;
@@ -585,10 +580,14 @@ nlohmann::json buildObsEffArray( const std::vector<RelActCalcAuto::RelActAutoSol
     eff_obj["observed_rel_eff"] = obs_eff.observed_efficiency;
     //eff_obj["observed_rel_eff_uncert"] = obs_eff.observed_efficiency_uncert;
     eff_obj["fit_amp_over_solution_amp"] = obs_eff.observed_scale_factor;
-    eff_obj["significance_num_sigma"] = obs_eff.num_sigma_significance;
+    eff_obj["significance_num_sigma"] = obs_eff.curve_num_sigma_significance;
     eff_obj["fit_amplitude"] = obs_eff.fit_clustered_peak_amplitude;
     eff_obj["fit_amplitude_uncert"] = obs_eff.fit_clustered_peak_amplitude_uncert;
     eff_obj["fraction_of_roi"] = obs_eff.fraction_roi_counts;
+    // When more than one rel. eff. curve has gammas in this cluster, the split between them is a model
+    //  assumption, not a measurement - `curve_model_fraction` says how much of it this curve is assigned.
+    eff_obj["curve_fraction_of_cluster"] = obs_eff.curve_model_fraction;
+    eff_obj["neighbor_tail_leak_fraction"] = obs_eff.neighbor_leak_fraction;
 
     // Calculate how many sigma the observed amplitude differs from the solution amplitude
     // This shows the deviation between the freely-fit peak area and the rel-eff solution peak area
@@ -1169,7 +1168,9 @@ nlohmann::json executePerformIsotopics(
       "This comparison is statistical only, and not systematic, so values may be a little larger than a strict interpretation (e.g., 4 or 5 sigma off is not that big of a deal). "
       "Sometimes peaks that are only a fraction of the ROI total peak area (see the fraction_of_roi field) can be hugely off from expected "
       "without indicating a catastrophic issue; this can be caused for reasons like peak tailing not being modeled correctly - so a very large peak next to the given peak can throw it off. "
-      "However, peaks that are a substantial portion of the ROI peak area (fraction_of_roi values closer to 1) are much more important for judging quality of solution.";
+      "However, peaks that are a substantial portion of the ROI peak area (fraction_of_roi values closer to 1) are much more important for judging quality of solution. "
+      "The neighbor_tail_leak_fraction field says how much of the peak counts under a peak come from neighboring peaks' tails, rather than the peak itself - values closer to 1 mean the value is more sensitive to peak-shape modeling. "
+      "When more than one relative efficiency curve is fit, curve_fraction_of_cluster gives how much of the peak this curve is assigned; the split between curves is a model assumption rather than a measurement, so values well below 1 mean that point says little about this curve on its own.";
 
     if( solution.m_obs_eff_for_each_curve.size() == 1 )
     {
