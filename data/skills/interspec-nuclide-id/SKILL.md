@@ -28,6 +28,8 @@ Do not assign peaks to short-lived daughters. Report the actual source — usual
 
 But do NOT climb past the source: only assign to a higher parent if that parent's presence is actually supported by the data. A produced, milked, or medical isotope IS the source — e.g. report **Ac-225** (milked from Th-229), NOT Th-229; report Tc-99m / I-131 etc. themselves, not their generators. Only assign to the daughter if there is evidence of chemical separation.
 
+Decide parent vs. daughter from the gamma lines: if the parent's diagnostic **upstream** lines are present → report the parent (equilibrium); if those upstream lines are **absent** → separated, report the specific **daughter** observed; if **no** lines can differentiate them (observable lines common to both, nothing upstream resolvable) → report the daughter observed and note it is most likely from the parent (don't force a parent call the data can't support). E.g. Bi-213 (440.4 keV) with no Fr-221 218 keV → **Bi-213** (separated); with the upstream lines present → **Ac-225**.
+
 ## Workflow
 
 ### Step 1: Assess Spectrum State
@@ -140,7 +142,7 @@ Before finalizing, check for radiation signatures that do not manifest as discre
 
 **Neutron checks (MANDATORY — always do 1 and 2; do not conclude "no sources" without them):**
 1. Check `get_spectrum_info` for `neutronCPS` field. If background is loaded, check `neutronCPS_excess_sigma` (>2 indicates significant neutron excess).
-2. **Always** check the continuum **ABOVE 2614.5 keV** with `get_counts_in_energy_range` (~2640-3000 keV, and ~3000-4000 keV if present) and compare the sigma elevation to background. A significant excess above 2614.5 keV — **even with no discrete peaks** — indicates neutrons / a neutron source and must be reported. This is the primary way to detect a bare neutron source (e.g. Cf-252) whose own gammas are not identifiable. (Note: this is the region ABOVE 2614 keV — do not confuse it with the beta-continuum broad-band check at 100-2000 keV below.) Caveat: less diagnostic if Co-56 or similar high-energy emitters are identified.
+2. **Always** check the continuum **ABOVE 2614.5 keV** with `get_counts_in_energy_range` (~2640-3000 keV, and ~3000-4000 keV if present) and compare the sigma elevation to background. A significant excess above 2614.5 keV — **even with no discrete peaks** — indicates neutrons / a neutron source and must be reported. This is the primary way to detect a bare neutron source (e.g. Cf-252) whose own gammas are not identifiable. (Note: this is the region ABOVE 2614 keV — do not confuse it with the beta-continuum broad-band check at 100-2000 keV below.) **Neutron vs. beta-bremsstrahlung:** both give a smooth high-energy continuum, but beta ends near its endpoint (typically < ~3–3.5 MeV); a net excess continuing well above 2614 keV into the multi-MeV region indicates a **neutron/spontaneous-fission** source — classify it as neutron/fission, and this takes precedence even if `beta_continuum_check` returns BremLike. Caveat: less diagnostic if Co-56 or similar high-energy emitters are identified.
 3. Look for neutron reaction peaks among identified sources: H(n,g) 2223.2 keV, Fe(n,n') 846.8 keV, B-10(n,a) 477.6 keV, Ge(n,n') inelastic scatter.
 4. If 477 keV region shows excess, use `get_spectrum_image` (430-530 keV) to check for Doppler-broadened triangular B-10 feature.
 5. If spectrum extends above 4 MeV, check 4.2-4.7 MeV range for alpha-Be (AmBe/PuBe) signature using `get_counts_in_energy_range` and `get_spectrum_image`.
