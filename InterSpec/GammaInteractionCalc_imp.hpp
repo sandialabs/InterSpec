@@ -497,12 +497,15 @@ T cylinder_line_intersection_imp( const T &radius, const T &half_length,
   //  of the circles radius.  This will prevent the case where the infinite line would intersect
   //  the cylinder, but not between source and detector (which we should return zero for)
   const T src_rad = sqrt( source[0]*source[0] + source[1]*source[1] );
-  if( src_rad >= radius )
+  const T det_rad = sqrt( detector[0]*detector[0] + detector[1]*detector[1] );
+
+  // A detector on the cylinder axis is never "on the same side" as the source, so this check does
+  //  not apply to it (and the direction it is in is undefined).
+  if( (src_rad >= radius) && (det_rad > 0.0) )
   {
     const T src_unit_x = source[0] / src_rad;
     const T src_unit_y = source[1] / src_rad;
 
-    const T det_rad = sqrt( detector[0]*detector[0] + detector[1]*detector[1] );
     const T det_unit_x = detector[0] / det_rad;
     const T det_unit_y = detector[1] / det_rad;
 
@@ -515,128 +518,74 @@ T cylinder_line_intersection_imp( const T &radius, const T &half_length,
       return handle_line_outside_volume();
   }//if( src_rad > radius )
 
-  T x_exit, y_exit, z_exit;  //intersection in the direction of detector
+  // Find where the ray crosses the infinite cylinder (x^2 + y^2 = radius^2), parameterizing the ray
+  //  as P(t) = source + t*(detector - source).  So t==0 is the source, t==1 is the detector, and t
+  //  increases monotonically toward the detector - which makes the "toward detector" crossing
+  //  unambiguously the larger t, and "away from detector" the smaller one.
+  //
+  // Note: do *not* order the two crossings by their distance to the detector.  For end-on geometry
+  //  the detector lies on the cylinder axis, so both crossings are exactly equidistant from it, and
+  //  the pick becomes a rounding-noise coin flip that sends the ray out the wrong end cap.
+  const T dx = detector[0] - source[0];
+  const T dy = detector[1] - source[1];
+  const T dz = detector[2] - source[2];
 
-  if( detector[0] != source[0] )
-  {
-    T other_x_exit;
+  // Substituting P(t) into x^2 + y^2 = radius^2 gives the quadratic a*t^2 + b*t + c = 0.
+  //  a > 0 here, since the parallel-to-z case was already handled above.
+  const T a = dx*dx + dy*dy;
+  const T b = 2.0*(source[0]*dx + source[1]*dy);
+  const T c = source[0]*source[0] + source[1]*source[1] - radius*radius;
 
-    {// begin scope to solve for x,y of intersection
-      // Line parametrically: P(t) = source + t*(detector-source); substitute into
-      //  the circle equation x^2 + y^2 = r^2 and solve the resulting quadratic.
-      const T dx = detector[0] - source[0];
-      const T dy = detector[1] - source[1];
+  const T discriminant = b*b - 4.0*a*c;
 
-      const T a = dx*dx + dy*dy;
-      const T b = 2.0*(source[0]*dx + source[1]*dy);
-      const T c = source[0]*source[0] + source[1]*source[1] - radius*radius;
+  if( discriminant < 0.0 )
+    return handle_line_outside_volume();
 
-      const T discriminant = b*b - 4.0*a*c;
+  // Use the numerically stable form of the quadratic formula; the textbook form loses precision in
+  //  one of the two roots when |b| ~ sqrt(discriminant), i.e. for rays that just glance the cylinder.
+  //  `q` itself flips sign across b==0, but the {t_root_a, t_root_b} pair - and hence the sorted
+  //  t_near/t_far - is continuous there, so this is safe for Jet derivatives.
+  const T sqrt_disc = sqrt( discriminant );
+  const T q = -0.5*(b + ((b < 0.0) ? -sqrt_disc : sqrt_disc));
+  const T t_root_a = q / a;
+  const T t_root_b = (q != 0.0) ? (c / q) : t_root_a; //q is only zero when b and discriminant are
+  const T t_near = (t_root_a < t_root_b) ? t_root_a : t_root_b;
+  const T t_far  = (t_root_a < t_root_b) ? t_root_b : t_root_a;
 
-      if( discriminant < 0 )
-        return handle_line_outside_volume();
+  const bool toward_det = (direction == CylExitDir::TowardDetector);
+  const T t_exit  = toward_det ? t_far  : t_near;
+  const T t_other = toward_det ? t_near : t_far;
 
-      const T sqrt_discriminant = sqrt(discriminant);
-      const T t1 = (-b - sqrt_discriminant) / (2.0*a);
-      const T t2 = (-b + sqrt_discriminant) / (2.0*a);
+  T x_exit = source[0] + t_exit*dx;
+  T y_exit = source[1] + t_exit*dy;
+  T z_exit = source[2] + t_exit*dz;
 
-      const T point1[2] = {source[0] + t1*dx, source[1] + t1*dy};
-      const T point2[2] = {source[0] + t2*dx, source[1] + t2*dy};
-
-      // Pick the solution towards/away-from the detector.
-      //  The line parameter t increases from source (t=0) toward the detector (t=1), so the
-      //  intersection with the larger t (always t2, since a > 0) is the one toward the detector.
-      //  (Comparing xy-distances to the detector is an exact floating-point tie when the
-      //  detector is on the cylinder axis, so must not be used here.)
-      switch( direction )
-      {
-        case CylExitDir::TowardDetector:
-          x_exit       = point2[0];
-          y_exit       = point2[1];
-          other_x_exit = point1[0];
-          break;
-
-        case CylExitDir::AwayFromDetector:
-          x_exit       = point1[0];
-          y_exit       = point1[1];
-          other_x_exit = point2[0];
-          break;
-      }//switch( direction )
-    }// end scope to solve for x,y of intersection
-
-    // Now find the z corresponding to {x_exit, y_exit}.
-    const T m_zx = unit[2] / unit[0];
-    const T c_zx = source[2] - m_zx*source[0];
-    z_exit = m_zx*x_exit + c_zx;
-
-    // If the z_exit is past the half_length, lets check that the other intersection to the
-    //  infinite cylinder happens either in the volume, or on the other side of our volume
-    if( abs(z_exit) > half_length )
-    {
-      const T other_z_exit = m_zx*other_x_exit + c_zx;
-      if( (abs(other_z_exit) > half_length)
-          && (std::signbit(scalar_of(z_exit)) == std::signbit(scalar_of(other_z_exit))) )
-        return handle_line_outside_volume();
-    }//if( abs(z_exit) > half_length )
-  }else
-  {
-    // The x coordinate of the source and detector location are the same.
-    if( detector[0] > radius )
-      return handle_line_outside_volume();
-
-    x_exit = detector[0];
-
-    y_exit = sqrt(radius*radius - x_exit*x_exit);
-
-    switch( direction )
-    {
-      case CylExitDir::TowardDetector:   break;
-      case CylExitDir::AwayFromDetector: y_exit *= -1.0; break;
-    }//switch( direction )
-
-    if( unit[1] < 0.0 )
-      y_exit *= -1.0;
-
-    // If detector and source x and y are the same, the line is parallel to the z-axis,
-    //  which was already dealt with above.
-    const T m_zy = unit[2] / unit[1];
-    const T c_zy = source[2] - m_zy*source[1];
-    z_exit = m_zy*y_exit + c_zy;
-
-    if( abs(z_exit) > half_length )
-    {
-      const T other_y_exit = -y_exit;
-      const T other_z_exit = m_zy*other_y_exit + c_zy;
-
-      if( (abs(other_z_exit) > half_length)
-          && (std::signbit(scalar_of(z_exit)) == std::signbit(scalar_of(other_z_exit))) )
-        return handle_line_outside_volume();
-    }//if( abs(z_exit) > half_length )
-  }//if( detector[0] != source[0] ) / else
-
-  // If we are here, we are guaranteed the line does go through our volume
-
-  // If we are exiting the cylinder on the ends, we need to figure out where on those disks we exit
+  // If z_exit is past the half-length, then for the ray to intersect our *finite* cylinder at all,
+  //  the other crossing of the infinite cylinder must be either inside the volume, or on its far
+  //  side; if it is past the same end, the ray misses us entirely.
   if( abs(z_exit) > half_length )
   {
-    const T z = ((z_exit < 0.0) ? -half_length : half_length);
+    const T other_z_exit = source[2] + t_other*dz;
 
-    // Just solve for x and y as a function of z, and fill those in
-    const T m_xz = unit[0] / unit[2];
-    const T c_xz = source[0] - m_xz*source[2];
+    if( (abs(other_z_exit) > half_length)
+        && (std::signbit(scalar_of(z_exit)) == std::signbit(scalar_of(other_z_exit))) )
+      return handle_line_outside_volume();
 
-    const T m_yz = unit[1] / unit[2];
-    const T c_yz = source[1] - m_yz*source[2];
+    // We leave through one of the end caps - solve for where on that disk.
+    assert( scalar_of(dz) != 0.0 );
 
-    x_exit = m_xz*z + c_xz;
-    y_exit = m_yz*z + c_yz;
-    z_exit = z;
+    const T z_cap = ((z_exit < 0.0) ? -half_length : half_length);
+    const T t_cap = (z_cap - source[2]) / dz;
+
+    x_exit = source[0] + t_cap*dx;
+    y_exit = source[1] + t_cap*dy;
+    z_exit = z_cap;
   }//if( abs(z_exit) > half_length )
 
-  const T dx = (source[0] - x_exit);
-  const T dy = (source[1] - y_exit);
-  const T dz = (source[2] - z_exit);
-  const T dist_scaler = sqrt( dx*dx + dy*dy + dz*dz );
+  const T exit_dx = (source[0] - x_exit);
+  const T exit_dy = (source[1] - y_exit);
+  const T exit_dz = (source[2] - z_exit);
+  const T dist_scaler = sqrt( exit_dx*exit_dx + exit_dy*exit_dy + exit_dz*exit_dz );
 
   exit_point[0] = x_exit;
   exit_point[1] = y_exit;
