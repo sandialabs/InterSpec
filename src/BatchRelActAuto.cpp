@@ -127,6 +127,19 @@ shared_ptr<RelActCalcAuto::RelActAutoGuiState>
                         + "': " + e.what() );
   }
 
+  // Normalize the FwhmForm/FwhmEstimationMethod pairing the same way the GUI does on load:
+  //  `solve()` requires FwhmForm::NotApplicable if-and-only-if FixedToDetectorEfficiency, but some
+  //  older config files (e.g. past versions of the "HPGe U inside U" preset) pair NotApplicable with
+  //  another estimation method, which the GUI silently coerces but headless use would reject.
+  RelActCalcAuto::Options &options = state->options;
+  if( options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
+  {
+    options.fwhm_form = RelActCalcAuto::FwhmForm::NotApplicable;
+  }else if( options.fwhm_form == RelActCalcAuto::FwhmForm::NotApplicable )
+  {
+    options.fwhm_form = RelActCalcAuto::FwhmForm::SqrtEnergyPlusInverse; //the GUI combo default
+  }
+
   return state;
 }//load_state_from_xml_file(...)
 

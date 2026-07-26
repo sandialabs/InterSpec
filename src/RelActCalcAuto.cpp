@@ -6259,44 +6259,94 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const double ad_identity = RelActCalc::ns_ad_ceres_offset;  // AD = 0 g/cm^2
       const vector<RelActCalcAuto::RelEffCurveInput> &curves = cost_functor->m_options.rel_eff_curves;
 
-      // 1) empirical-correction coefficients of every physical-model curve that uses one.
+      // For multi-curve fits, each curve's correction function / external attenuators are also offered as
+      //  their own candidates, ahead of the all-curves versions: a two-curve fit where only one curve's
+      //  DOF is degenerate could not be simplified by an all-curves candidate (review 2026-07, M5).  The
+      //  all-curves candidates are kept as final fallbacks (they are Skipped when the per-curve ones were
+      //  all accepted, and by the time they run other accepted removals may have changed the landscape).
+      //  Single-curve fits emit exactly the same candidate list as before this change.
+      const bool multi_curve = (curves.size() > 1);
+
+      // The (parameter index, identity)s that remove curve i's empirical correction; empty if it has none.
+      const auto corr_fixes_for_curve = [&]( const size_t i ) -> vector<pair<size_t,double>> {
+        vector<pair<size_t,double>> fixes;
+        if( (curves[i].rel_eff_eqn_type == RelEffEqnForm::FramPhysicalModel) && curves[i].uses_phys_model_correction() )
+        {
+          const size_t b_index = cost_functor->rel_eff_eqn_start_parameter(i) + 2 + 2*curves[i].phys_model_external_atten.size();
+          fixes.push_back( { b_index,   b_identity } );
+          fixes.push_back( { b_index+1, c_identity } );
+        }
+        return fixes;
+      };
+
+      // The identity-fixes that remove curve i's fitted external-attenuator areal densities.
+      const auto ext_atten_fixes_for_curve = [&]( const size_t i ) -> vector<pair<size_t,double>> {
+        vector<pair<size_t,double>> fixes;
+        if( curves[i].rel_eff_eqn_type != RelEffEqnForm::FramPhysicalModel )
+          return fixes;
+        const size_t start = cost_functor->rel_eff_eqn_start_parameter(i);
+        for( size_t e = 0; e < curves[i].phys_model_external_atten.size(); ++e )
+        {
+          const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &sh = curves[i].phys_model_external_atten[e];
+          // Only offer removal (AD->0) when the user permits AD down to zero; a positive lower bound means
+          //  the user requires this attenuator, and the post-solve AD clamp would push it back off zero.
+          if( sh && sh->fit_areal_density && (sh->lower_fit_areal_density <= 0.0) )
+            fixes.push_back( { start + 2 + 2*e + 1, ad_identity } );
+        }
+        return fixes;
+      };
+
+      // 1a) per-curve empirical corrections (multi-curve only).  With `same_corr_fcn_for_all_rel_eff_curves`
+      //     a single b/c pair (owned by the first physical curve) removes the correction for every curve at
+      //     once, so no per-curve split exists.
+      if( multi_curve && !cost_functor->m_options.same_corr_fcn_for_all_rel_eff_curves )
+      {
+        for( size_t i = 0; i < curves.size(); ++i )
+        {
+          vector<pair<size_t,double>> fixes = corr_fixes_for_curve( i );
+          if( !fixes.empty() )
+            candidates.push_back( { "empirical correction function of rel-eff curve " + std::to_string(i),
+                                    std::move(fixes) } );
+        }
+      }//if( multi-curve, per-curve corrections )
+
+      // 1b) per-curve external attenuators (multi-curve only; same reasoning as 1a for the shared case).
+      if( multi_curve && !cost_functor->m_options.same_external_shielding_for_all_rel_eff_curves )
+      {
+        for( size_t i = 0; i < curves.size(); ++i )
+        {
+          vector<pair<size_t,double>> fixes = ext_atten_fixes_for_curve( i );
+          if( !fixes.empty() )
+            candidates.push_back( { "external attenuator(s) of rel-eff curve " + std::to_string(i),
+                                    std::move(fixes) } );
+        }
+      }//if( multi-curve, per-curve external attenuators )
+
+      // 2) empirical-correction coefficients of every physical-model curve that uses one.
       {
         vector<pair<size_t,double>> fixes;
         for( size_t i = 0; i < curves.size(); ++i )
         {
-          if( (curves[i].rel_eff_eqn_type == RelEffEqnForm::FramPhysicalModel) && curves[i].uses_phys_model_correction() )
-          {
-            const size_t b_index = cost_functor->rel_eff_eqn_start_parameter(i) + 2 + 2*curves[i].phys_model_external_atten.size();
-            fixes.push_back( { b_index,   b_identity } );
-            fixes.push_back( { b_index+1, c_identity } );
-          }
+          const vector<pair<size_t,double>> curve_fixes = corr_fixes_for_curve( i );
+          fixes.insert( end(fixes), begin(curve_fixes), end(curve_fixes) );
         }
         if( !fixes.empty() )
           candidates.push_back( { "empirical correction function", std::move(fixes) } );
       }
 
-      // 2) fitted external-attenuator areal densities of every physical-model curve.
+      // 3) fitted external-attenuator areal densities of every physical-model curve.
       {
         vector<pair<size_t,double>> fixes;
         for( size_t i = 0; i < curves.size(); ++i )
         {
-          if( curves[i].rel_eff_eqn_type != RelEffEqnForm::FramPhysicalModel )
-            continue;
-          const size_t start = cost_functor->rel_eff_eqn_start_parameter(i);
-          for( size_t e = 0; e < curves[i].phys_model_external_atten.size(); ++e )
-          {
-            const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &sh = curves[i].phys_model_external_atten[e];
-            // Only offer removal (AD->0) when the user permits AD down to zero; a positive lower bound means
-            //  the user requires this attenuator, and the post-solve AD clamp would push it back off zero.
-            if( sh && sh->fit_areal_density && (sh->lower_fit_areal_density <= 0.0) )
-              fixes.push_back( { start + 2 + 2*e + 1, ad_identity } );
-          }
+          const vector<pair<size_t,double>> curve_fixes = ext_atten_fixes_for_curve( i );
+          fixes.insert( end(fixes), begin(curve_fixes), end(curve_fixes) );
         }
         if( !fixes.empty() )
           candidates.push_back( { "external attenuator(s)", std::move(fixes) } );
       }
 
-      // 3) highest-order term of each non-physical (polynomial/empirical) rel-eff curve.
+      // 4) highest-order term of each non-physical (polynomial/empirical) rel-eff curve.
       for( size_t i = 0; i < curves.size(); ++i )
       {
         if( (curves[i].rel_eff_eqn_type != RelEffEqnForm::FramPhysicalModel) && (curves[i].rel_eff_eqn_order >= 2) )
@@ -6380,13 +6430,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
       // Priority chain: most-degenerate / least-physical first, stopping at the first DOF the data
       //  won't give up (it does not skip to a lower-priority candidate).
+      //  Multi-curve fits try every candidate independently instead: the single-curve nesting argument
+      //  ("if the most-degenerate DOF is needed, so are the rest") does not hold across curves - one
+      //  curve refusing to give up its correction says nothing about the other curve's attenuator.
       for( const AutoSimplifyCandidate &cand : candidates )
       {
-        if( try_remove( cand ) == RemoveResult::Refused )
+        if( (try_remove( cand ) == RemoveResult::Refused) && !multi_curve )
           break;  // the most-degenerate remaining DOF is needed -> stop
       }//for( each candidate, in priority order )
 
-      // 4) peak skew.  Independent of the rel-eff degeneracy chain above (skew is a peak-shape nuisance
+      // 5) peak skew.  Independent of the rel-eff degeneracy chain above (skew is a peak-shape nuisance
       //    parameter, not part of the efficiency model), so it is evaluated on its own regardless of
       //    whether the chain stopped early.  GaussExp/CrystalBall reach "no skew" only as the parameter
       //    approaches a bound (a finite proxy for skew->inf), so an unwanted skew otherwise just pins
@@ -11639,7 +11692,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       {
 #ifndef NDEBUG
         const size_t nresiduals = number_residuals();
-        const size_t calced_nresiduals = residual_index + m_peak_ranges_with_uncert.size() + 1;
+        const size_t calced_nresiduals = residual_index + m_peak_ranges_with_uncert.size()
+                                         + m_phys_model_param_priors.size() + 1;
         assert( (rel_eff_index != (m_options.rel_eff_curves.size() - 1)) || (calced_nresiduals == nresiduals) );
 #endif
         // Note: see `USE_RESIDUAL_TO_BREAK_DEGENERACY` in the manual solution for a slight amount more info
