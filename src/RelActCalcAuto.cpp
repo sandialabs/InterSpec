@@ -5803,6 +5803,15 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     ceres_options.max_solver_time_in_seconds = 120.0;
 #endif
 
+    // Multiple rel-eff curve problems navigate a cross-curve normalization ridge that takes many more
+    //  L-M iterations than single-curve problems (see RelActCalcAuto_multicurve_review_2026-07.md,
+    //  finding M2: a two-curve problem that does converge needed ~155k evaluations / ~160 s in Release,
+    //  where the single-curve versions of the same data finish in seconds - and hitting the cap turns
+    //  a usable in-progress answer into a hard NO_CONVERGENCE failure).  Single-curve problems are
+    //  unaffected by this scaling.
+    if( cost_functor->m_options.rel_eff_curves.size() > 1 )
+      ceres_options.max_solver_time_in_seconds *= 5.0;
+
     // Changing function_tolerance from 1e-9 to 1e-7, and using initial_trust_region_radius=1E5, and use_nonmonotonic_steps=false
     //  - 52.88% enrich, 261 function calls, 64 iterations, Chi2=0.664167 (terminate due to function tol reached)
     // Decreasing from 1e-7 to 1e9 increases number of calls/time by about 30%, for one example problem, but solution is better.
