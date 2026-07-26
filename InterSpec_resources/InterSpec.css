@@ -1431,15 +1431,15 @@ a:hover { color:#E88400; border-bottom:none; }
   
   .Wt-tabs .itemselected a, .Wt-tabs .itemselected a:hover {
     background-position: 0%;
-    /* If the parent background isnt white, then the below will have a white line in it... TODO: fix */
-    border-color: grey grey white grey;
+    /* Mask the tab bar's bottom border using the current theme background. */
+    border-color: grey grey var(--interspec-background-color, white) grey;
     background-color: inherit;
   }
   
   
-  .Wt-popup .Wt-tabs .itemselected a, .Wt-tabs .itemselected a:hover {
-    /* Fix for the white-line when in a AuxWindow */
-    border-color: grey grey #EEEEEE grey;
+  .Wt-popup .Wt-tabs .itemselected a, .Wt-popup .Wt-tabs .itemselected a:hover {
+    /* Keep selected tabs open to their contents in an AuxWindow. */
+    border-color: grey grey var(--interspec-background-color, white) grey;
   }
   
   .Wt-tabs a {
@@ -1470,12 +1470,12 @@ a:hover { color:#E88400; border-bottom:none; }
   
   .Wt-tabs .itemselected a:focus, .Wt-tabs .itemselected a:hover {
     /* Get rid of line on selected tab when you mouse over it */
-    border-bottom: 1px solid white;
+    border-bottom: 1px solid var(--interspec-background-color, white);
   }
   
   .Wt-popup .Wt-tabs .itemselected a:focus, .Wt-popup .Wt-tabs .itemselected a:hover {
     /* For AuxWindow, get rid of line on selected tab when you mouse over it */
-    border-bottom: 1px solid #EEEEEE;
+    border-bottom: 1px solid var(--interspec-background-color, white);
   }
   
   .Wt-tabs .Wt-closable a {

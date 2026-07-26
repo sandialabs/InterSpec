@@ -1390,32 +1390,95 @@ struct RelActAutoSolution
    */
   struct ObsEff
   {
+    /** Why a point is not trustworthy enough to plot; set by `show_obs_eff_point(...)`.
+
+     The user-facing wording of each reason lives in "InterSpec_resources/app_text/RelEffChart.xml",
+     under the ids "obs-eff-excl-...", and is shown in the chart's "omitted points" panel:
+      - NoCountsForCurve: this rel. eff. curve has no gammas in this cluster.
+      - NonPositiveEff:   the free amplitude fit went negative, so there is no efficiency to plot.
+      - Insignificant:    this curve's share of the fit area is not significant compared to its uncertainty.
+      - TailLeakage:      most of the counts under this point come from neighboring peaks' tails and the
+                          continuum, so a small peak-shape (skew) mismatch would dominate the value.
+      - OutsideRoi:       the peak is not fully contained within the ROI, so its area is not fully measured.
+     */
+    enum class ExclusionReason : int
+    {
+      NotExcluded,
+      NoCountsForCurve,
+      NonPositiveEff,
+      Insignificant,
+      TailLeakage,
+      OutsideRoi
+    };//enum class ExclusionReason
+
     /** The effective mean of all the peaks clutered. */
-    double energy;
+    double energy = 0.0;
     /** The relative efficiency, as determined by the full solution to the problem. */
-    double orig_solution_eff;
+    double orig_solution_eff = 0.0;
     /** The relative efficiency from the amplitude-unconstrained fit. */
-    double observed_efficiency;
-    double observed_efficiency_uncert;
+    double observed_efficiency = 0.0;
+    /** Uncertainty on #observed_efficiency; includes both the free-fit area uncertainty, and (when more than one
+     rel. eff. curve contributes to this cluster) the uncertainty from the unmeasurable split between curves -
+     see #curve_model_fraction.
+     */
+    double observed_efficiency_uncert = 0.0;
     /** The scale factor to multiply the peak amplitude fit in the solution, to get what was freely fit for. */
-    double observed_scale_factor;
-    /** The unconstrained fit peak area, over its uncertainty.  Should be about 4, before we bother showing on chart */
-    double num_sigma_significance;
-    double cluster_lower_energy, cluster_upper_energy;
-    double roi_lower_energy, roi_upper_energy;
+    double observed_scale_factor = 0.0;
+    /** The unconstrained fit peak area, over its uncertainty.  This is a cluster-wide (all rel. eff. curves)
+     quantity; use #curve_num_sigma_significance to decide if _this_ curve's point should be shown.
+     */
+    double num_sigma_significance = 0.0;
+    double cluster_lower_energy = 0.0, cluster_upper_energy = 0.0;
+    double roi_lower_energy = 0.0, roi_upper_energy = 0.0;
     /** The unconstrained fit peak amplitude.  This amplitude includes contributions from all peaks, and all relative efficiency curves. */
-    double fit_clustered_peak_amplitude;
-    double fit_clustered_peak_amplitude_uncert;
+    double fit_clustered_peak_amplitude = 0.0;
+    double fit_clustered_peak_amplitude_uncert = 0.0;
     /** The starting amplitude */
-    double initial_clustered_peak_amplitude;
-    /** The effective sigma, after clustering all the input peaks together that are within 1.5 sigma of each other. */
-    double effective_sigma;
-    double fraction_roi_counts;
+    double initial_clustered_peak_amplitude = 0.0;
+    /** The effective sigma, after clustering all the input peaks together that are within 1.5 sigma of each other.
+     This is a second moment (it includes the spread of the clustered peak means), so it is the width used to fit a
+     single Gaussian to the blend - it is _not_ the detector resolution; see #resolution_sigma for that.
+     */
+    double effective_sigma = 0.0;
+    /** The amplitude-weighted mean of the clustered peaks' sigmas - i.e., the detector resolution at this energy,
+     without the spread of the clustered means folded in.  Used to decide if the peak is contained in the ROI.
+     */
+    double resolution_sigma = 0.0;
+    /** This clusters fraction of all the fit peak counts in the ROI; informational only (see #neighbor_leak_fraction
+     for the criteria actually used to reject tail-riding peaks).  A cluster-wide (all curves) quantity.
+     */
+    double fraction_roi_counts = 0.0;
+    /** This rel. eff. curves model share of the cluster: (this curves model counts)/(all curves model counts).
+
+     Will be 1.0 when this curve owns the cluster outright, and smaller when another curve also has gammas here.
+     The per-point split between curves is _not_ measurable (co-located lines are perfectly degenerate in the fit),
+     so this fraction comes from the model, and is what the blend term of #observed_efficiency_uncert is based on.
+     */
+    double curve_model_fraction = 1.0;
+    /** This curve's share of the freely-fit cluster area: `curve_model_fraction*fit_clustered_peak_amplitude`. */
+    double curve_fit_amplitude = 0.0;
+    /** #curve_fit_amplitude over its uncertainty (including the blend term).  Should be at least a few, before
+     we bother showing this curves point on the chart.
+     */
+    double curve_num_sigma_significance = 0.0;
+    /** Fraction of the _peak_ counts over this clusters mean +- 1.5*#resolution_sigma that come from neighboring
+     fit peaks (their tails), rather than from this cluster; i.e. leak/(own + leak).
+
+     Near 1.0 means the "peak" is mostly somebody else's tail, so a tiny peak-shape (skew) mismatch would swamp
+     its area - these are the points we do not want to plot.
+
+     Note the continuum is deliberately _not_ counted as leakage: a well measured peak sitting on a large Compton
+     continuum is still a good measurement, and the continuums uncertainty is already carried by
+     #fit_clustered_peak_amplitude_uncert, and so by #curve_num_sigma_significance.
+     */
+    double neighbor_leak_fraction = 0.0;
     /* The mean +- 1-sigma is fully within the ROI */
-    bool within_roi;
+    bool within_roi = false;
+    /** Why this point is not shown; set by `RelActAutoSolution::show_obs_eff_point(...)`. */
+    ExclusionReason exclusion_reason = ExclusionReason::NotExcluded;
 
     /** The peaks, who have had their amplitudes scaled to the unconstrined fit value, who where clustered together.
-     Ordered by largest peak first.
+     Ordered by largest peak first.  Only the peaks belonging to this rel. eff. curve.
      */
     std::vector<PeakDef> fit_peaks;
   };//struct ObsEff
@@ -1433,6 +1496,27 @@ struct RelActAutoSolution
    These peaks are seperated by rel eff curve, do not include free-floating peaks, an are in "true" energy calibration of the spectrum.
    */
   std::vector<std::vector<ObsEff>> m_obs_eff_for_each_curve;
+
+  /** Whether an `ObsEff` point is trustworthy enough to plot on the rel. eff. chart, or include in a report.
+
+   Sets `obs_eff.exclusion_reason` to say why, when returning false.
+
+   The intent is to leave out points whose value would be dominated by something other than the peak itself -
+   most notably minor gammas riding the tail of a much larger neighboring peak, where a tiny peak-shape (skew)
+   mismatch produces a wildly wrong efficiency, ruining the scale of the chart and misleading the user.
+
+   Note: this is applied per-relative-efficiency-curve, using this curve's share of each cluster; a cluster that is
+   only a small part of its ROI, but which is well measured and not sitting on a neighbor's tail, _is_ shown.
+   */
+  static bool show_obs_eff_point( ObsEff &obs_eff );
+
+  /** The minimum `ObsEff::curve_num_sigma_significance` for a point to be plotted. */
+  static const double sm_min_obs_eff_significance;
+
+  /** The maximum `ObsEff::neighbor_leak_fraction` for a point to be plotted; above this, most of the counts under
+   the point come from neighboring peaks' tails and the continuum, rather than from the peak itself.
+   */
+  static const double sm_max_obs_eff_leak_fraction;
 
 
   /** When a ROI is #RoiRange::force_full_range is false, independent energy ranges will

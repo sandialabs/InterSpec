@@ -179,6 +179,13 @@ add_test( NAME TRelActCalcAuto_FloatingPeakFwhm
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActCalcAuto_ObsEffFilter test_RelActCalcAuto_ObsEffFilter.cpp )
+target_link_libraries( test_RelActCalcAuto_ObsEffFilter PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_ObsEffFilter
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_ObsEffFilter> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_XRayWidthServer test_XRayWidthServer.cpp )
 target_link_libraries( test_XRayWidthServer PRIVATE InterSpecLib )
 add_test( NAME TXRayWidthServer

@@ -7260,9 +7260,32 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       };//adjust_peaks lambda
       
       adjust_peaks( fit_peaks );
-      
+
       for( vector<PeakDef> &re_peaks : fit_peaks_for_each_curve )
         adjust_peaks( re_peaks );
+
+      // `translatePeaksForCalibrationChange(...)` makes a fresh `PeakContinuum` for each distinct input
+      //  continuum, per call - so calling it once per rel. eff. curve leaves each curve with its _own_
+      //  continuum object for a given ROI, breaking the cross-curve sharing that `m_fit_peaks_for_each_curve`
+      //  documents (and that `fit_free_peak_amplitudes()` relies on to gather all curves' gammas into one
+      //  cluster).  Re-share them, matched by ROI energy range.
+      map<pair<double,double>,shared_ptr<PeakContinuum>> roi_to_continuum;
+      for( vector<PeakDef> &re_peaks : fit_peaks_for_each_curve )
+      {
+        for( PeakDef &p : re_peaks )
+        {
+          const shared_ptr<PeakContinuum> cont = p.continuum();
+          if( !cont )
+            continue;
+
+          const pair<double,double> key( cont->lowerEnergy(), cont->upperEnergy() );
+          const auto pos = roi_to_continuum.find( key );
+          if( pos == end(roi_to_continuum) )
+            roi_to_continuum[key] = cont;
+          else
+            p.setContinuum( pos->second );
+        }//for( PeakDef &p : re_peaks )
+      }//for( vector<PeakDef> &re_peaks : fit_peaks_for_each_curve )
     }//if( new_cal != cost_functor->m_energy_cal )
     
     solution.m_fit_peaks = fit_peaks;
@@ -16195,22 +16218,10 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     RelEffChart::ReCurveInfo info;
 
     info.live_time = m_spectrum ? m_spectrum->live_time() : 1.0;
-    //info.obs_eff_data = m_obs_eff_for_each_curve[rel_eff_index];
+    //Note: pass _all_ the points; `RelEffChart` uses `RelActAutoSolution::show_obs_eff_point(...)` to decide
+    //  which to plot, and lists the rest (with why they were left out) in its omitted-points panel.
     if( rel_eff_index < m_obs_eff_for_each_curve.size() ) //`m_obs_eff_for_each_curve` may be empty if computation failed
-    {
-      // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4, and
-      //  having at least 5% of counts in ROI, and whose peak means+-1sigma are in the ROI.
-      for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff : m_obs_eff_for_each_curve[rel_eff_index] )
-      { 
-        if( (obs_eff.observed_efficiency > 0.0)
-           && (obs_eff.num_sigma_significance > 2.5)
-           && (obs_eff.fraction_roi_counts > 0.05)
-           && obs_eff.within_roi )
-        {
-          info.obs_eff_data.push_back( obs_eff );
-        }
-      }
-    }
+      info.obs_eff_data = m_obs_eff_for_each_curve[rel_eff_index];
 
     info.rel_acts = m_rel_activities[rel_eff_index];
     info.re_curve_name = Wt::WString::fromUTF8(rel_eff.name);
@@ -17870,13 +17881,38 @@ std::shared_ptr<SpecUtils::EnergyCalibration> RelActAutoSolution::get_adjusted_e
 }//std::shared_ptr<SpecUtils::EnergyCalibration> get_adjusted_energy_cal() const
   
   
+const double RelActAutoSolution::sm_min_obs_eff_significance = 2.5;
+const double RelActAutoSolution::sm_max_obs_eff_leak_fraction = 0.5;
+
+
+bool RelActAutoSolution::show_obs_eff_point( RelActAutoSolution::ObsEff &obs_eff )
+{
+  using ExclusionReason = RelActAutoSolution::ObsEff::ExclusionReason;
+
+  // Note: the negated (`!(a > b)`) comparisons are so a NaN excludes the point, rather than keeping it.
+  if( obs_eff.fit_peaks.empty() || !(obs_eff.curve_model_fraction > 0.0) )
+    obs_eff.exclusion_reason = ExclusionReason::NoCountsForCurve;
+  else if( !(obs_eff.observed_efficiency > 0.0) )
+    obs_eff.exclusion_reason = ExclusionReason::NonPositiveEff;
+  else if( !(obs_eff.curve_num_sigma_significance > sm_min_obs_eff_significance) )
+    obs_eff.exclusion_reason = ExclusionReason::Insignificant;
+  else if( !(obs_eff.neighbor_leak_fraction < sm_max_obs_eff_leak_fraction) )
+    obs_eff.exclusion_reason = ExclusionReason::TailLeakage;
+  else if( !obs_eff.within_roi )
+    obs_eff.exclusion_reason = ExclusionReason::OutsideRoi;
+  else
+    obs_eff.exclusion_reason = ExclusionReason::NotExcluded;
+
+  return (obs_eff.exclusion_reason == ExclusionReason::NotExcluded);
+}//show_obs_eff_point(...)
+
+
 std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
   RelActAutoSolution::fit_free_peak_amplitudes( const RelActCalcAuto::Options &options,
                                                 const RelActCalcAutoImp::RelActAutoCostFcn *cost_functor,
                                                 const std::vector<double> &parameters,
                                                 const RelActCalcAuto::RelActAutoSolution &solution )
 {
-  vector<vector<PeakDef>> refit_peaks( options.rel_eff_curves.size() );
   vector<vector<RelActCalcAuto::RelActAutoSolution::ObsEff>> obs_eff_for_each_curve( options.rel_eff_curves.size() );
 
   const size_t num_skew = PeakDef::num_skew_parameters(options.skew_type);
@@ -17946,23 +17982,55 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
     double max_peak_amp = -999.9;
     vector<double> peak_skews( num_skew, 0.0 );
 
-    vector<double> effective_means, effective_sigmas, effective_amps;
+    // `roi.lower_energy`/`roi.upper_energy` are in the spectrums _original_ energy calibration, but the peaks of
+    //  `solution.m_fit_peaks_for_each_curve` (and `solution.m_spectrum`) have been moved into the fit-adjusted
+    //  calibration.  `continuum` is the ROI the peaks were actually fit over, and is in the peaks calibration,
+    //  so use its range for every energy comparison below - otherwise everything is off by the fitted energy
+    //  calibration correction, which silently drops points near the ROI edges.
+    const double roi_lower_energy = continuum->lowerEnergy();
+    const double roi_upper_energy = continuum->upperEnergy();
+
+    const size_t num_curves = solution.m_fit_peaks_for_each_curve.size();
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    // Every curve's peaks over this ROI must share `continuum` - the clustering below selects peaks by
+    //  continuum identity, so if sharing is broken (see the re-share after `adjust_peaks` in solve_ceres)
+    //  only one curve's gammas make it into each cluster.  `effective_amps` then misses the other curves'
+    //  counts, and `scale_factor_for_cluster` is inflated by that ratio, throwing points wildly off the
+    //  rel. eff. curve while the actual fit chi2 stays fine.
+    for( size_t re_idx = 0; re_idx < num_curves; ++re_idx )
+    {
+      for( const PeakDef &p : solution.m_fit_peaks_for_each_curve[re_idx] )
+      {
+        if( !p.continuum() || (p.continuum() == continuum) )
+          continue;
+        const bool same_roi = (fabs(p.continuum()->lowerEnergy() - roi_lower_energy) < 0.001)
+                              && (fabs(p.continuum()->upperEnergy() - roi_upper_energy) < 0.001);
+        assert( !same_roi && "rel. eff. curves do not share a PeakContinuum for the same ROI" );
+      }
+    }//for( size_t re_idx = 0; re_idx < num_curves; ++re_idx )
+#endif //PERFORM_DEVELOPER_CHECKS
+
+    vector<double> effective_means, effective_sigmas, effective_res_sigmas, effective_amps;
+    vector<vector<double>> effective_curve_amps; //[cluster][rel_eff_index] -> that curves model counts in the cluster
     vector<pair<double,double>> clusters;
     vector<vector<pair<size_t,size_t>>> peak_indices; //index into solution.m_fit_peaks_for_each_curve, via `peak_indices[]`
     for( size_t range_index = 0; range_index < clustered_ranges.size(); ++range_index )
     {
       const pair<double,double> &range = clustered_ranges[range_index];
-      
+
       //If the clustered range is in the ROI at all, we will use it.
       //  TODO: peaks with means outside the ROI will contribute to the ROI, which we should fix up...
-      if( ((range.first >= roi.lower_energy) && (range.first <= roi.upper_energy))
-         || ((range.second >= roi.lower_energy) && (range.second <= roi.upper_energy))
-         || ((range.first < roi.lower_energy) && (range.second > roi.upper_energy)) )
+      if( ((range.first >= roi_lower_energy) && (range.first <= roi_upper_energy))
+         || ((range.second >= roi_lower_energy) && (range.second <= roi_upper_energy))
+         || ((range.first < roi_lower_energy) && (range.second > roi_upper_energy)) )
       {
         //cout << "Cluster: [" << range.first << "," << range.second << "], in ROI: [" << roi.lower_energy << ", " << roi.upper_energy << "]" << endl;
         size_t num_peaks_in_range = 0;
         double effective_mean = 0.0;
         double sum_weights = 0.0;
+        double sum_weighted_sigma = 0.0;
+        vector<double> curve_amps( num_curves, 0.0 );
         vector<pair<size_t,size_t>> range_peak_indices;
         vector<double> means, sigmas, amps;
         for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
@@ -17997,27 +18065,39 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
             num_peaks_in_range += 1;
             const double w = p.amplitude();
             sum_weights += w;
+            sum_weighted_sigma += w*p.sigma();
             effective_mean += w*energy;
+            curve_amps[rel_eff_index] += w;
             means.push_back( energy );
             sigmas.push_back( p.sigma() );
             amps.push_back( w );
             range_peak_indices.emplace_back( rel_eff_index, peak_index );
           }//for( const PeakDef &p : solution.m_fit_peaks_in_spectrums_cal )
         }//for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_for_each_curve.size(); ++rel_eff_index )
-        
+
+        //assert( num_peaks_in_range > 0 );
+        if( !num_peaks_in_range )
+          continue;
+
         effective_mean /= sum_weights;
+
+        // The second moment of the clustered peaks - the width of the single Gaussian that best represents the
+        //  (possibly unresolved) blend, so this is what we fit to the data below.
         double effective_sigma = 0.0;
         for( size_t i = 0; i < means.size(); ++i )
           effective_sigma += amps[i]*(sigmas[i]*sigmas[i] + std::pow(means[i] - effective_mean,2.0));
         effective_sigma = sqrt( effective_sigma / sum_weights);
-        
-        //assert( num_peaks_in_range > 0 );
-        if( !num_peaks_in_range )
-          continue;
-        
+
+        // The detector resolution at this energy, without the spread of the clustered means folded in.  Used to
+        //  decide containment in the ROI, and the window we look for neighbor-tail leakage over; `effective_sigma`
+        //  would overstate both, since it grows with how spread out the cluster is.
+        const double effective_res_sigma = sum_weighted_sigma / sum_weights;
+
         effective_means.push_back( effective_mean );
         effective_sigmas.push_back( effective_sigma );
+        effective_res_sigmas.push_back( effective_res_sigma );
         effective_amps.push_back( sum_weights );
+        effective_curve_amps.push_back( curve_amps );
         peak_indices.push_back( range_peak_indices );
         clusters.push_back( range );
       }//if( cluseter in in ROI )
@@ -18035,7 +18115,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
     vector<PeakDef> fixed_amp_peaks;
     for( const RelActCalcAuto::FloatingPeakResult &floater : solution.m_floating_peaks )
     {
-      if( (floater.energy >= roi.lower_energy) && (floater.energy <= roi.upper_energy) )
+      if( (floater.energy >= roi_lower_energy) && (floater.energy <= roi_upper_energy) )
         fixed_amp_peaks.emplace_back( floater.energy, floater.fwhm/2.35482, floater.amplitude );
     }//for( const FloatingPeakResult &floater : solution.m_floating_peaks )
     
@@ -18059,7 +18139,7 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
     const shared_ptr<const vector<float>> channel_energies_ptr = energy_cal->channel_energies();
     
     const pair<size_t,size_t> channel_range
-      = roi.channel_range( roi.lower_energy, roi.upper_energy, roi.num_channels,
+      = roi.channel_range( roi_lower_energy, roi_upper_energy, roi.num_channels,
                           solution.m_spectrum->energy_calibration() );
     
     if( !channel_energies_ptr
@@ -18163,12 +18243,63 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
 
     auto new_continuum = make_shared<PeakContinuum>( *continuum );
     new_continuum->setParameters( ref_energy, fit_continuum_coefs, fit_continuum_uncerts );
-    
+
     double total_roi_signal_counts = 0.0;
     for( size_t i = 0; i < fit_amps.size(); ++i )
       total_roi_signal_counts += std::max(0.0, fit_amps[i]);
 
     const double nan_val = std::numeric_limits<double>::quiet_NaN();
+
+    // A representative fit peak for each cluster, so we can work out how much of the counts under each cluster
+    //  actually belong to it, versus leaking in from its neighbors' tails and the continuum.  Uses the skew
+    //  fit for this ROI, which is the whole point - a minor gamma riding the tail of a much larger peak is
+    //  exactly the case where a small skew mismatch produces a wildly wrong efficiency.
+    vector<PeakDef> cluster_peaks;
+    for( size_t i = 0; i < fit_amps.size(); ++i )
+    {
+      PeakDef p( effective_means[i], effective_sigmas[i], std::max(0.0, fit_amps[i]) );
+      p.setSkewType( options.skew_type );
+      for( size_t s = 0; s < num_skew; ++s )
+      {
+        const PeakDef::CoefficientType ct
+          = static_cast<PeakDef::CoefficientType>( PeakDef::CoefficientType::SkewPar0 + s );
+        p.set_coefficient( peak_skews[s], ct );
+      }
+      p.setContinuum( new_continuum );
+      cluster_peaks.push_back( std::move(p) );
+    }//for( size_t i = 0; i < fit_amps.size(); ++i )
+
+    // Note: only _peak_ counts count as leakage here, not the continuum.  A well-measured peak sitting on a
+    //  large Compton continuum is still a good measurement - the continuum is fit, and its uncertainty already
+    //  flows into `fit_amp_uncert`, and so into the significance test.  What we are after is the case where the
+    //  counts under a minor gamma are mostly the tail of a much larger neighbor, where a small skew mismatch
+    //  swamps the peaks own area.
+    vector<double> leak_fractions( fit_amps.size(), 0.0 );
+    for( size_t i = 0; i < fit_amps.size(); ++i )
+    {
+      const double win_lower = std::max( roi_lower_energy, effective_means[i] - 1.5*effective_res_sigmas[i] );
+      const double win_upper = std::min( roi_upper_energy, effective_means[i] + 1.5*effective_res_sigmas[i] );
+      if( win_upper <= win_lower )
+      {
+        leak_fractions[i] = 1.0;
+        continue;
+      }
+
+      const double own = cluster_peaks[i].gauss_integral( win_lower, win_upper );
+
+      double leak = 0.0;
+      for( size_t j = 0; j < cluster_peaks.size(); ++j )
+      {
+        if( j != i )
+          leak += cluster_peaks[j].gauss_integral( win_lower, win_upper );
+      }
+
+      for( const PeakDef &fp : fixed_amp_peaks )
+        leak += fp.gauss_integral( win_lower, win_upper );
+
+      leak = std::max( 0.0, leak );
+      leak_fractions[i] = ((own + leak) > 0.0) ? (leak / (own + leak)) : 1.0;
+    }//for( size_t i = 0; i < fit_amps.size(); ++i )
 
     for( size_t i = 0; i < fit_amps.size(); ++i )
     {
@@ -18191,27 +18322,54 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
 
       for( size_t rel_eff_index = 0; rel_eff_index < options.rel_eff_curves.size(); rel_eff_index += 1 )
       {
+        const double curve_model_amp = (rel_eff_index < effective_curve_amps[i].size())
+                                          ? effective_curve_amps[i][rel_eff_index] : 0.0;
+
+        // Don't emit a point for a rel. eff. curve that has no gammas in this cluster.
+        if( curve_model_amp <= 0.0 )
+          continue;
+
         RelActCalcAuto::RelActAutoSolution::ObsEff eff;
         eff.energy = effective_means[i];
         eff.orig_solution_eff = cost_functor->relative_eff(eff.energy, rel_eff_index, parameters );
         eff.observed_efficiency = eff.orig_solution_eff * scale_factor_for_cluster;
         eff.observed_scale_factor = scale_factor_for_cluster;
-        eff.observed_efficiency_uncert = eff.observed_efficiency * rel_uncert;
         eff.num_sigma_significance = (fit_amp_uncert[i] != 0.0)
                                        ? (fit_amps[i] / fit_amp_uncert[i])
                                        : nan_val;
         eff.cluster_lower_energy = clusters[i].first;
-        eff.roi_upper_energy = clusters[i].second;
+        eff.cluster_upper_energy = clusters[i].second;
+        eff.roi_lower_energy = roi_lower_energy;
+        eff.roi_upper_energy = roi_upper_energy;
         eff.fit_clustered_peak_amplitude = fit_amps[i];
         eff.fit_clustered_peak_amplitude_uncert = fit_amp_uncert[i];
         eff.initial_clustered_peak_amplitude = effective_amps[i];
 
         eff.effective_sigma = effective_sigmas[i];
+        eff.resolution_sigma = effective_res_sigmas[i];
+        eff.neighbor_leak_fraction = leak_fractions[i];
         eff.fraction_roi_counts = (total_roi_signal_counts != 0.0)
                                     ? (fit_amps[i] / total_roi_signal_counts)
                                     : nan_val;
-        eff.within_roi = (((effective_means[i] - eff.effective_sigma) >= roi.lower_energy)
-                          && ((effective_means[i] + eff.effective_sigma) <= roi.upper_energy));
+        eff.within_roi = (((effective_means[i] - eff.resolution_sigma) >= roi_lower_energy)
+                          && ((effective_means[i] + eff.resolution_sigma) <= roi_upper_energy));
+
+        // Only the _total_ area of the cluster is measured; how that total divides between rel. eff. curves is
+        //  degenerate (co-located gammas are indistinguishable in the fit), so the split has to come from the
+        //  model.  Fold that assumption into the uncertainty: a cluster this curve owns outright gets no extra
+        //  term, while a 50/50 blend gets ~50% - i.e., on its own that point says almost nothing about this curve.
+        eff.curve_model_fraction = (effective_amps[i] > 0.0) ? (curve_model_amp / effective_amps[i]) : 1.0;
+        eff.curve_fit_amplitude = eff.curve_model_fraction * fit_amps[i];
+
+        const double area_rel_uncert = std::isfinite(rel_uncert) ? rel_uncert : 0.0;
+        const double blend_rel_uncert = 1.0 - eff.curve_model_fraction;
+        const double total_rel_uncert = sqrt( area_rel_uncert*area_rel_uncert
+                                              + blend_rel_uncert*blend_rel_uncert );
+
+        eff.observed_efficiency_uncert = eff.observed_efficiency * total_rel_uncert;
+        eff.curve_num_sigma_significance = (total_rel_uncert > 0.0)
+                                             ? (eff.curve_fit_amplitude / (fabs(eff.curve_fit_amplitude)*total_rel_uncert))
+                                             : nan_val;
 
         //TODO: store peak indices better than `range_peak_indices` (its an artifact of prev code)
         for( const pair<size_t,size_t> &re_peak_ind : range_peak_indices )
@@ -18226,16 +18384,17 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
           new_peak.setAmplitude( new_peak.amplitude() * peak_scale );
           new_peak.setAmplitudeUncert( peak_rel_uncert * new_peak.amplitude() );
           new_peak.setContinuum( new_continuum );
-          eff.fit_peaks.push_back( new_peak );
+          eff.fit_peaks.push_back( std::move(new_peak) );
+        }//for( const pair<size_t,size_t> &re_peak_ind : range_peak_indices )
 
-          refit_peaks[rel_eff_index].push_back( std::move(new_peak) );
-        }//for( size_t rel_eff_index = 0; rel_eff_index < solution.m_fit_peaks_in_spectrums_cal_for_each_curve.size(); ++rel_eff_index )
-        
         // Order `eff.fit_peaks` by largest peak first.
         std::sort( begin(eff.fit_peaks), end(eff.fit_peaks), []( const PeakDef &lhs, const PeakDef &rhs ){
           return lhs.amplitude() > rhs.amplitude();
         } );
-        
+
+        // Records `eff.exclusion_reason`, so the chart can tell the user which points were left off, and why.
+        RelActAutoSolution::show_obs_eff_point( eff );
+
         obs_eff_for_each_curve[rel_eff_index].push_back( std::move(eff) );
       }//for( size_t rel_eff_index = 0; rel_eff_index < options.rel_eff_curves.size(); rel_eff_index += 1 )
     }//for( size_t i = 0; i < fit_amps.size(); ++i )

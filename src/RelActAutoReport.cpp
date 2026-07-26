@@ -138,20 +138,10 @@ namespace
       RelEffChart::ReCurveInfo info;
       info.live_time = sol.m_spectrum ? sol.m_spectrum->live_time() : 1.0;
 
+      //Note: pass _all_ the points; `RelEffChart` uses `RelActAutoSolution::show_obs_eff_point(...)` to decide
+      //  which to plot, and lists the rest (with why they were left out) in its omitted-points panel.
       if( rel_eff_index < sol.m_obs_eff_for_each_curve.size() )
-      {
-        for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff
-             : sol.m_obs_eff_for_each_curve[rel_eff_index] )
-        {
-          if( obs_eff.observed_efficiency > 0.0
-              && obs_eff.num_sigma_significance > 2.5
-              && obs_eff.fraction_roi_counts > 0.05
-              && obs_eff.within_roi )
-          {
-            info.obs_eff_data.push_back( obs_eff );
-          }
-        }
-      }
+        info.obs_eff_data = sol.m_obs_eff_for_each_curve[rel_eff_index];
 
       info.rel_acts = sol.m_rel_activities[rel_eff_index];
       info.re_curve_name = Wt::WString::fromUTF8( rel_eff.name );
