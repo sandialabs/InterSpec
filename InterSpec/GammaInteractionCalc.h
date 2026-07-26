@@ -216,8 +216,13 @@ double exit_point_of_sphere_z( const double source_point[3],
                                bool postiveSolution = true );
 
 /** An enum to to tell #cylinder_line_intersection which exit point from sphere you want.
- 
+
  A better name would be CylinderIntersectionDirection, but thats too long.
+
+ Defined in terms of the ray parameter: writing the ray as P(t) = source + t*(detector - source), t
+ increases monotonically toward the detector, so #TowardDetector is the larger-t crossing and
+ #AwayFromDetector the smaller-t one.  For a source inside the volume this means #AwayFromDetector is
+ behind the source (t < 0); for a source outside it is the point the ray enters the volume.
  */
 enum class CylExitDir
 {

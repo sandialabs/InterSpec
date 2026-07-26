@@ -1128,12 +1128,14 @@ void DistributedSrcCalc::eval_single_cyl_end_on( const double xx[], const int *n
   trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det + m_detectorSetback );
 
 
-  // For debug builds, also check against the more general transport
+  // For debug builds, also check against the more general transport.  The two should agree to
+  //  rounding: they use the same dV, solid angle, and air path, and the in-source path lengths
+  //  differ only by a `cos^2 + sin^2` round-trip.
 #ifndef NDEBUG
   double test_ff[1];
   eval_cylinder( xx, ndimptr, test_ff, ncompptr );
   const double this_answer = trans * dV;
-  //assert( fabs(test_ff[0] - this_answer) < 1.0E-6*std::max(0.001,std::max( fabs(test_ff[0]), fabs(this_answer))) );
+  assert( fabs(test_ff[0] - this_answer) < 1.0E-6*std::max(0.001,std::max( fabs(test_ff[0]), fabs(this_answer))) );
 #endif
 
   if( m_normalizeByVolume )
@@ -1283,20 +1285,23 @@ double cylinder_line_intersection( const double radius, const double half_length
   //  the cylinder, but not between source and detector (which we should return zero for)
   // TODO: get rid of these sqrts, and also probably other ones throughout this function
   const double src_rad = sqrt( source[0]*source[0] + source[1]*source[1] );
-  if( src_rad >= radius )
+  const double det_rad = sqrt( detector[0]*detector[0] + detector[1]*detector[1] );
+
+  // A detector on the cylinder axis is never "on the same side" as the source, so this check does
+  //  not apply to it (and the direction it is in is undefined).
+  if( (src_rad >= radius) && (det_rad > 0.0) )
   {
     //There is probably a better way to check if source and detector are within 90 degrees of each
     //  other
     const double src_unit_x = source[0] / src_rad;
     const double src_unit_y = source[1] / src_rad;
-    
-    const double det_rad = sqrt( detector[0]*detector[0] + detector[1]*detector[1] );
+
     const double det_unit_x = detector[0] / det_rad;
     const double det_unit_y = detector[1] / det_rad;
-    
+
     const double unit_dx = src_unit_x - det_unit_x;
     const double unit_dy = src_unit_y - det_unit_y;
-    
+
     const double unit_dist_2 = unit_dx*unit_dx + unit_dy*unit_dy;
 
     // TODO: for radius=1, half_length=1, source={1,-1,0}, detector{1,1,0}, because of numerical
@@ -1308,224 +1313,73 @@ double cylinder_line_intersection( const double radius, const double half_length
   }//if( src_rad > radius )
   
   
-  // Using the x-y component of unit, find where it intersects with the radius, which could be
-  //  well after the half-length
-  // x2 + y2 = r2
-  // y = mx + c
-  
-  double x_exit, y_exit, z_exit;  //intersection in the direction of detector
-  
-  // Lets find x, y, and z
-  if( detector[0] != source[0] )
-  {
-    //The original implementation of finding the x,y intersection is, I believe, less numerically stable than
-    //  the newer one (20250719).  And actually, the original implementation is a little upgraded for one
-    //  egrogiously unstable aspect where previous to 20250709, the `y_exit` computation used what is
-    //  now used for `y_exit_direct` - and was quite bad for some test cases where lines just glanced the circle.
-#define USE_ORIG_CYL_INTERSECT 0
-    
-#if( USE_ORIG_CYL_INTERSECT )
-    //(1 + m2)x2 + 2cmx + c2 – r2 = 0
-    const double m = unit[1] / unit[0];
-    assert( fabs( m - ((detector[1] - source[1]) / (detector[0] - source[0])) ) < std::max(1.0E-6,1.0E-6 * m) );
-    const double c = source[1] - m*source[0];
-    double other_x_exit;
-    
-    {// begin scope to solve for x of intersection
-      const double a_q = 1 + m*m;
-      const double b_q = 2.0 * c * m;
-      const double c_q = c*c - radius*radius;
-      
-      if( 4.0*a_q*c_q > b_q*b_q )
-        return handle_line_outside_volume();
-      
-      const double sqrt_quantity = sqrt(b_q*b_q -4.0*a_q*c_q);
-      
-      const double x_sol_1 = 0.5*(-b_q + sqrt_quantity) / a_q;
-      const double x_sol_2 = 0.5*(-b_q - sqrt_quantity) / a_q;
-      
-      // Pick the solution towards/away-from the detector
-      const bool sol_1_toward = (fabs(x_sol_1 - detector[0]) < fabs(x_sol_2 - detector[0]));
-      
-      switch( direction )
-      {
-        case CylExitDir::TowardDetector:
-          x_exit       = sol_1_toward ? x_sol_1 : x_sol_2;
-          other_x_exit = sol_1_toward ? x_sol_2 : x_sol_1;
-          break;
-            
-        case CylExitDir::AwayFromDetector:
-          x_exit       = sol_1_toward ? x_sol_2 : x_sol_1;
-          other_x_exit = sol_1_toward ? x_sol_1 : x_sol_2;
-          break;
-      }//switch( direction )
-    }// end scope to solve for x of intersection
-    
-    
-    y_exit = sqrt( radius*radius - x_exit*x_exit );
-    // y_exit could need multiplying by -1
-    const double y_exit_direct = m*x_exit + c; //This can be numerically quite unstable for lines just glancing the cylinder
-    // Choose the sign that matches the expected direction
-    if( y_exit_direct < 0.0 )
-      y_exit = -y_exit;
-#else
-    double other_x_exit;
-    
-    {// begin scope to solve for x,y of intersection
-      // Line parametrically: P(t) = source + t*(detector-source)
-      // x = source.x + t*(detector.x - source.x)
-      // y = source.y + t*(detector.y - source.y)
-      
-      const double dx = detector[0] - source[0];
-      const double dy = detector[1] - source[1];
-      
-      // Substitute into circle equation x² + y² = r²:
-      // (source.x + t*dx)² + (source.y + t*dy)² = r²
-      //
-      // Expanding and rearranging into quadratic form: at² + bt + c = 0
-      const double a = dx*dx + dy*dy;
-      const double b = 2.0*(source[0]*dx + source[1]*dy);
-      const double c = source[0]*source[0] + source[1]*source[1] - radius*radius;
-      
-      // Calculate discriminant
-      const double discriminant = b*b - 4.0*a*c;
-      
-      if( discriminant < 0 )
-        return handle_line_outside_volume();
-      
-      // Calculate the parameter values for intersection points
-      const double sqrt_discriminant = sqrt(discriminant);
-      const double t1 = (-b - sqrt_discriminant) / (2.0*a);
-      const double t2 = (-b + sqrt_discriminant) / (2.0*a);
-      
-      // Calculate intersection points
-      const double point1[2] = {source[0] + t1*dx, source[1] + t1*dy};
-      const double point2[2] = {source[0] + t2*dx, source[1] + t2*dy};
+  // Find where the ray crosses the infinite cylinder (x^2 + y^2 = radius^2), parameterizing the ray
+  //  as P(t) = source + t*(detector - source).  So t==0 is the source, t==1 is the detector, and t
+  //  increases monotonically toward the detector - which makes the "toward detector" crossing
+  //  unambiguously the larger t, and "away from detector" the smaller one.
+  //
+  // Note: do *not* order the two crossings by their distance to the detector.  For end-on geometry
+  //  the detector lies on the cylinder axis, so both crossings are exactly equidistant from it, and
+  //  the pick becomes a rounding-noise coin flip that sends the ray out the wrong end cap.
+  const double dx = detector[0] - source[0];
+  const double dy = detector[1] - source[1];
+  const double dz = detector[2] - source[2];
 
-      // Pick the solution towards/away-from the detector.
-      //  The line parameter t increases from source (t=0) toward the detector (t=1), so the
-      //  intersection with the larger t (always t2, since a > 0) is the one toward the detector.
-      //  Note: previous to 20260611 this choice compared the Euclidean xy-distances of the two
-      //  intersections to the detector - mathematically equivalent, but when the detector is on
-      //  the cylinder axis (end-on geometry) the two distances are exactly equal and the choice
-      //  was decided by floating-point noise, sometimes picking the away-side exit (and
-      //  consequently the wrong end-cap).
-      switch( direction )
-      {
-        case CylExitDir::TowardDetector:
-          x_exit       = point2[0];
-          y_exit       = point2[1];
-          other_x_exit = point1[0];
-          break;
+  // Substituting P(t) into x^2 + y^2 = radius^2 gives the quadratic a*t^2 + b*t + c = 0.
+  //  a > 0 here, since the parallel-to-z case was already handled above.
+  const double a = dx*dx + dy*dy;
+  const double b = 2.0*(source[0]*dx + source[1]*dy);
+  const double c = source[0]*source[0] + source[1]*source[1] - radius*radius;
 
-        case CylExitDir::AwayFromDetector:
-          x_exit       = point1[0];
-          y_exit       = point1[1];
-          other_x_exit = point2[0];
-          break;
-      }//switch( direction )
-    }// end scope to solve for x,y of intersection
-#endif //if USE_ORIG_CYL_INTERSECT / else
-    
-    
-    // Now find the z corresponding to {x_exit, y_exit}.
-    // We'll make the z-equation as a function of x, and then plug in.
-    const double m_zx = unit[2] / unit[0];
-    assert( fabs( m_zx - ((detector[2] - source[2]) / (detector[0] - source[0])) ) < std::max(1.0E-6,1.0E-6 * m_zx) );
-    
-    const double c_zx = source[2] - m_zx*source[0];
-    z_exit = m_zx*x_exit + c_zx;
-    
-    // If the z_exit is past the half_length, lets check that the other intersection to the
-    //  infinite cylinder happens either in the volume, or on the other side of our volume
-    if( fabs(z_exit) > half_length )
-    {
-      const double other_z_exit = m_zx*other_x_exit + c_zx;
-      if( (fabs(other_z_exit) > half_length) && (signbit(z_exit) == signbit(other_z_exit)) )
-        return handle_line_outside_volume();
-    }//if( fabs(z_exit) > half_length )
-  
-  }else
-  {
-    // If we are here, the x coordinate of the source and detector location are the same.
-    // x2 + y2 = r2
-    
-    assert( detector[0] == source[0] );
-    
-    //if( x is outside of cylinder - there is no way we would intersect cylinder )
-    if( detector[0] > radius )
-      return handle_line_outside_volume();
-    
-    x_exit = detector[0];
-    
-    y_exit = sqrt(radius*radius - x_exit*x_exit);
-    
-    switch( direction )
-    {
-      case CylExitDir::TowardDetector:   break;
-      case CylExitDir::AwayFromDetector: y_exit *= -1.0; break;
-    }//switch( direction )
-    
-    if( unit[1] < 0.0 )
-      y_exit *= -1.0;
-    
-    // If detector and source x and y are the same, that means is parallel to z-axis, which we've
-    //  already dealt with that case
-    assert( detector[1] != source[1] );
-    
-    const double m_zy = unit[2] / unit[1];
-    assert( fabs( m_zy - ((detector[2] - source[2]) / (detector[1] - source[1])) ) < std::max(1.0E-6,1.0E-6 * m_zy) );
-    
-    const double c_zy = source[2] - m_zy*source[1];
-    z_exit = m_zy*y_exit + c_zy;
-    
-    // If the z_exit is past the half_length, lets check that the other intersection to the
-    //  infinite cylinder happens either in the volume, or on the other side of our volume
-    if( fabs(z_exit) > half_length )
-    {
-      const double other_y_exit = -y_exit;
-      const double other_z_exit = m_zy*other_y_exit + c_zy;
-      
-      if( (fabs(other_z_exit) > half_length) && (signbit(z_exit) == signbit(other_z_exit)) )
-        return handle_line_outside_volume();
-    }//if( fabs(z_exit) > half_length )
-  }//if( detector[0] != source[0] ) / else
-  
-  // If we are here, we are guaranteed the line does go through our volume
-  
-  // If we are exiting the cylinder on the ends, we need to figure out where on those disks we exit
+  const double discriminant = b*b - 4.0*a*c;
+
+  if( discriminant < 0.0 )
+    return handle_line_outside_volume();
+
+  // Use the numerically stable form of the quadratic formula; the textbook form loses precision in
+  //  one of the two roots when |b| ~ sqrt(discriminant), i.e. for rays that just glance the cylinder.
+  const double sqrt_disc = sqrt( discriminant );
+  const double q = -0.5*(b + ((b < 0.0) ? -sqrt_disc : sqrt_disc));
+  const double t_root_a = q / a;
+  const double t_root_b = (q != 0.0) ? (c / q) : t_root_a; //q is only zero when b and discriminant are
+  const double t_near = (t_root_a < t_root_b) ? t_root_a : t_root_b;
+  const double t_far  = (t_root_a < t_root_b) ? t_root_b : t_root_a;
+
+  const bool toward_det = (direction == CylExitDir::TowardDetector);
+  const double t_exit  = toward_det ? t_far  : t_near;
+  const double t_other = toward_det ? t_near : t_far;
+
+  double x_exit = source[0] + t_exit*dx;
+  double y_exit = source[1] + t_exit*dy;
+  double z_exit = source[2] + t_exit*dz;
+
+  // If z_exit is past the half-length, then for the ray to intersect our *finite* cylinder at all,
+  //  the other crossing of the infinite cylinder must be either inside the volume, or on its far
+  //  side; if it is past the same end, the ray misses us entirely.
   if( fabs(z_exit) > half_length )
   {
-    assert( detector[2] != source[2] );
-    
-    const double z = ((z_exit < 0.0) ? -half_length : half_length);
-    
-    // Just solve for x and y as a function of z, and fill those in
-    const double m_xz = unit[0] / unit[2];
-    assert( fabs( m_xz - ((detector[0] - source[0]) / (detector[2] - source[2])) ) < std::max(1.0E-6,1.0E-6 * m_xz) );
-    const double c_xz = source[0] - m_xz*source[2];
-    
-    const double m_yz = unit[1] / unit[2];
-    assert( fabs( m_yz - ((detector[1] - source[1]) / (detector[2] - source[2])) ) < std::max(1.0E-6,1.0E-6 * m_yz) );
-    const double c_yz = source[1] - m_yz*source[2];
-    
-    // A sanity check that we get source x and y locations correct, when evaluating a source z
-    //  location
-    assert( fabs((m_xz*source[2] + c_xz) - source[0]) < std::max(1.0,fabs(source[0])) );
-    assert( fabs((m_yz*source[2] + c_yz) - source[1]) < 1.0E-6*std::max(1.0,fabs(source[1])) );
-    
-    x_exit = m_xz*z + c_xz;
-    y_exit = m_yz*z + c_yz;
-    z_exit = z;
-  }else
-  {
-    // nothing to do here, we know we are exiting along the cylinder
-  }//if( fabs(z_exit) > half_length ) / else
+    const double other_z_exit = source[2] + t_other*dz;
+
+    if( (fabs(other_z_exit) > half_length) && (signbit(z_exit) == signbit(other_z_exit)) )
+      return handle_line_outside_volume();
+
+    // We leave through one of the end caps - solve for where on that disk.
+    assert( dz != 0.0 );
+
+    const double z_cap = ((z_exit < 0.0) ? -half_length : half_length);
+    const double t_cap = (z_cap - source[2]) / dz;
+
+    x_exit = source[0] + t_cap*dx;
+    y_exit = source[1] + t_cap*dy;
+    z_exit = z_cap;
+  }//if( fabs(z_exit) > half_length )
+
+  // If we are here, we are guaranteed the line does go through our volume
   
-  const double dx = (source[0] - x_exit);
-  const double dy = (source[1] - y_exit);
-  const double dz = (source[2] - z_exit);
-  const double dist_scaler = sqrt( dx*dx + dy*dy + dz*dz );
+  const double exit_dx = (source[0] - x_exit);
+  const double exit_dy = (source[1] - y_exit);
+  const double exit_dz = (source[2] - z_exit);
+  const double dist_scaler = sqrt( exit_dx*exit_dx + exit_dy*exit_dy + exit_dz*exit_dz );
   
   exit_point[0] = x_exit;
   exit_point[1] = y_exit;
@@ -1749,6 +1603,7 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   if( m_attenuateForAir )
   {
     const double air_dist = distance( exit_point, detector_pos );
+
     trans *= exp( -m_airTransLenCoef * air_dist );
   }//if( m_attenuateForAir )
   

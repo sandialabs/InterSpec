@@ -22,13 +22,18 @@
  */
 #include "InterSpec_config.h"
 
+#include <array>
 #include <cmath>
+#include <tuple>
+#include <cstdio>
+#include <limits>
+#include <random>
 #include <string>
+#include <vector>
+#include <utility>
 #include <iostream>
 #include <algorithm>
-#include <cstdio>
 #include <stdexcept>
-#include <utility>
 
 #include "ceres/jet.h"
 
@@ -188,6 +193,80 @@ namespace
       return std::make_pair(point2, point1);
     }
   }
+
+  /** An independent reference implementation of #cylinder_line_intersection, done in long double.
+
+   The cylinder is centered at the origin and oriented along z.  Parameterizing the ray as
+   P(t) = source + t*(detector - source), t increases monotonically toward the detector, so the
+   t-interval inside the volume is the intersection of the infinite-cylinder interval with the
+   |z| <= half_length slab interval; "toward detector" is that interval's high end, and "away from
+   detector" its low end.
+
+   Only valid for a source strictly inside the cylinder - which is the case the volumetric-source
+   integrands exercise, and the one where the answer is unambiguous.
+
+   @returns Whether the ray intersects the cylinder at all.
+   */
+  bool reference_cyl_exit( const double radius, const double half_length,
+                          const double source[3], const double detector[3],
+                          const bool toward_detector,
+                          double exit_point[3], double &dist )
+  {
+    typedef long double ld;
+
+    const ld inf = std::numeric_limits<ld>::infinity();
+    const ld rad = radius, half_z = half_length;
+    const ld sx = source[0], sy = source[1], sz = source[2];
+    const ld dx = ld(detector[0]) - sx, dy = ld(detector[1]) - sy, dz = ld(detector[2]) - sz;
+
+    // The t-interval inside the infinite cylinder
+    ld t_cyl_lo = -inf, t_cyl_hi = inf;
+    const ld a = dx*dx + dy*dy;
+    if( a > 0.0L )
+    {
+      const ld b = 2.0L*(sx*dx + sy*dy);
+      const ld c = sx*sx + sy*sy - rad*rad;
+      const ld disc = b*b - 4.0L*a*c;
+
+      if( disc < 0.0L )
+        return false;
+
+      const ld sqrt_disc = sqrtl( disc );
+      t_cyl_lo = (-b - sqrt_disc) / (2.0L*a);
+      t_cyl_hi = (-b + sqrt_disc) / (2.0L*a);
+    }else if( (sx*sx + sy*sy) > rad*rad )
+    {
+      return false;  //parallel to z, and outside the radius
+    }
+
+    // The t-interval inside the |z| <= half_length slab
+    ld t_slab_lo = -inf, t_slab_hi = inf;
+    if( dz != 0.0L )
+    {
+      const ld t_a = (-half_z - sz) / dz;
+      const ld t_b = ( half_z - sz) / dz;
+      t_slab_lo = (std::min)( t_a, t_b );
+      t_slab_hi = (std::max)( t_a, t_b );
+    }else if( fabsl(sz) > half_z )
+    {
+      return false;  //perpendicular to z, and past an end cap
+    }
+
+    const ld t_lo = (std::max)( t_cyl_lo, t_slab_lo );
+    const ld t_hi = (std::min)( t_cyl_hi, t_slab_hi );
+
+    if( t_lo > t_hi )
+      return false;
+
+    const ld t = toward_detector ? t_hi : t_lo;
+
+    exit_point[0] = static_cast<double>( sx + t*dx );
+    exit_point[1] = static_cast<double>( sy + t*dy );
+    exit_point[2] = static_cast<double>( sz + t*dz );
+    dist = static_cast<double>( fabsl(t) * sqrtl(dx*dx + dy*dy + dz*dz) );
+
+    return true;
+  }//reference_cyl_exit(...)
 }
 
 
@@ -564,6 +643,261 @@ BOOST_AUTO_TEST_CASE( CylinderLineIntersection )
   BOOST_CHECK_SMALL( exit_point[2] - half_length, 1.0E-9*(std::max)(1.0,half_length) ); //exit on end
 }
 
+BOOST_AUTO_TEST_CASE( CylinderEndOnExitCap )
+{
+  // For end-on geometry the detector sits on the cylinder axis, so the detector's xy-projection is
+  //  the circle's *center*, and both crossings of the infinite cylinder are exactly equidistant from
+  //  it.  Ordering the crossings by that distance (which #cylinder_line_intersection used to do) is
+  //  therefore a rounding-noise coin flip, and when it flips the ray is sent out the wrong end cap.
+  //  Every case below has an analytic answer, so this pins the ordering down.
+
+  const double radius = 2.0;
+  const double half_length = 0.15;
+  const double det_dist = 100.0;
+  const double detector[3] = { 0.0, 0.0, det_dist };
+
+  const double radial_fracs[] = { 0.0, 0.01, 0.3, 0.7, 0.999 };
+  const double z_fracs[] = { -0.99, -0.5, 0.0, 0.5, 0.99 };
+  const size_t num_theta = 72;
+
+  for( const double r_frac : radial_fracs )
+  {
+    const double r = r_frac * radius;
+
+    for( const double z_frac : z_fracs )
+    {
+      const double z = z_frac * half_length;
+
+      for( size_t theta_index = 0; theta_index < num_theta; ++theta_index )
+      {
+        const double theta = (2.0 * PhysicalUnits::pi * theta_index) / num_theta;
+        const double source[3] = { r*cos(theta), r*sin(theta), z };
+
+        // Heading toward an on-axis detector the ray's radius only shrinks, so it always leaves
+        //  through the +half_length cap.
+        const double t_toward = (half_length - z) / (det_dist - z);
+        const double expected_toward[3] = {
+          source[0]*(1.0 - t_toward), source[1]*(1.0 - t_toward), half_length
+        };
+        const double expected_toward_dist = sqrt( (r*t_toward)*(r*t_toward)
+                                                 + (half_length - z)*(half_length - z) );
+
+        double exit_toward[3];
+        const double dist_toward = cylinder_line_intersection( radius, half_length, source, detector,
+                                                        CylExitDir::TowardDetector, exit_toward );
+
+        BOOST_CHECK_SMALL( exit_toward[0] - expected_toward[0], 1.0E-12*radius );
+        BOOST_CHECK_SMALL( exit_toward[1] - expected_toward[1], 1.0E-12*radius );
+        BOOST_CHECK_SMALL( exit_toward[2] - expected_toward[2], 1.0E-12*half_length );
+        BOOST_CHECK_SMALL( dist_toward - expected_toward_dist, 1.0E-12*(std::max)(1.0,expected_toward_dist) );
+
+        // Going away from the detector the ray leaves either through the -half_length cap, or - if
+        //  it reaches the radius first - through the side wall.  The crossings of the infinite
+        //  cylinder are at t = 1 -+ radius/r (for an on-axis detector), so the backward one is
+        //  1 - radius/r; whichever of that and the -half_length cap comes first (largest t, since
+        //  both are negative) is where we leave.
+        const double t_cap_away = (-half_length - z) / (det_dist - z);
+        const double t_side_away = (r > 0.0) ? (1.0 - radius/r)
+                                             : -std::numeric_limits<double>::infinity();
+        const double t_away = (std::max)( t_cap_away, t_side_away );
+
+        const double expected_away[3] = {
+          source[0]*(1.0 - t_away), source[1]*(1.0 - t_away), z + t_away*(det_dist - z)
+        };
+        const double expected_away_dist = fabs(t_away) * sqrt( r*r + (det_dist - z)*(det_dist - z) );
+
+        double exit_away[3];
+        const double dist_away = cylinder_line_intersection( radius, half_length, source, detector,
+                                                        CylExitDir::AwayFromDetector, exit_away );
+
+        BOOST_CHECK_SMALL( exit_away[0] - expected_away[0], 1.0E-12*radius );
+        BOOST_CHECK_SMALL( exit_away[1] - expected_away[1], 1.0E-12*radius );
+        BOOST_CHECK_SMALL( exit_away[2] - expected_away[2], 1.0E-12*half_length );
+        BOOST_CHECK_SMALL( dist_away - expected_away_dist, 1.0E-12*(std::max)(1.0,expected_away_dist) );
+
+        // Both exit points must be on the surface, and on opposite sides of the source, so the two
+        //  distances must add up to the chord between them.
+        const double chord = GammaInteractionCalc::distance( exit_toward, exit_away );
+        BOOST_CHECK_SMALL( (dist_toward + dist_away) - chord, 1.0E-11*(std::max)(1.0,chord) );
+      }//for( loop over theta )
+    }//for( loop over z )
+  }//for( loop over radius )
+}//BOOST_AUTO_TEST_CASE( CylinderEndOnExitCap )
+
+
+BOOST_AUTO_TEST_CASE( CylinderIntersectionRotationalInvariance )
+{
+  // With the detector on the cylinder axis the whole problem is symmetric about z, so rotating the
+  //  source about the axis must not change the exit radius, exit z, or path length at all.  This is
+  //  the cleanest statement of the coin-flip bug: it used to hold for only ~2/3 of the angles.
+
+  const double radius = 6.35;
+  const double half_length = 106.68;
+  const double det_dist = 269.24;
+  const double detector[3] = { 0.0, 0.0, det_dist };
+
+  const double sources_r_z[][2] = {
+    { 0.1*radius, 0.0 }, { 0.5*radius, 0.9*half_length }, { 0.99*radius, -0.5*half_length },
+    { 0.25*radius, 0.999*half_length }, { 0.75*radius, -0.999*half_length }
+  };
+
+  for( const auto &r_and_z : sources_r_z )
+  {
+    const double r = r_and_z[0], z = r_and_z[1];
+
+    for( const CylExitDir dir : { CylExitDir::TowardDetector, CylExitDir::AwayFromDetector } )
+    {
+      double ref_rad = -1.0, ref_z = 0.0, ref_dist = 0.0;
+
+      for( size_t theta_index = 0; theta_index < 128; ++theta_index )
+      {
+        const double theta = (2.0 * PhysicalUnits::pi * theta_index) / 128;
+        const double source[3] = { r*cos(theta), r*sin(theta), z };
+
+        double exit_point[3];
+        const double dist = cylinder_line_intersection( radius, half_length, source, detector,
+                                                       dir, exit_point );
+        const double exit_rad = sqrt( exit_point[0]*exit_point[0] + exit_point[1]*exit_point[1] );
+
+        if( theta_index == 0 )
+        {
+          ref_rad = exit_rad;
+          ref_z = exit_point[2];
+          ref_dist = dist;
+        }else
+        {
+          BOOST_CHECK_SMALL( exit_rad - ref_rad, 1.0E-12*(std::max)(1.0,ref_rad) );
+          BOOST_CHECK_SMALL( exit_point[2] - ref_z, 1.0E-12*(std::max)(1.0,fabs(ref_z)) );
+          BOOST_CHECK_SMALL( dist - ref_dist, 1.0E-12*(std::max)(1.0,ref_dist) );
+        }
+
+        // The azimuth of the exit point must also be preserved (the ray stays in the plane
+        //  containing the axis and the source)
+        BOOST_CHECK_SMALL( exit_point[0]*sin(theta) - exit_point[1]*cos(theta),
+                          1.0E-11*(std::max)(1.0,ref_rad) );
+      }//for( loop over theta )
+    }//for( loop over direction )
+  }//for( loop over source r,z )
+}//BOOST_AUTO_TEST_CASE( CylinderIntersectionRotationalInvariance )
+
+
+BOOST_AUTO_TEST_CASE( CylinderIntersectionReferenceSweep )
+{
+  // Compare against an independent long-double t-interval tracer, for sources strictly inside the
+  //  cylinder (so both crossings always exist, and neither of the "line misses the volume"
+  //  early-outs applies).  Covers end-on, side-on, and off-axis detector placements.
+
+  std::mt19937 rng( 20260726 );
+  std::uniform_real_distribution<double> uniform( 0.0, 1.0 );
+
+  const double cyl_dims[][2] = { {2.0, 0.15}, {6.35, 106.68}, {225000.0, 1000.0}, {0.5, 0.5} };
+
+  for( const auto &dims : cyl_dims )
+  {
+    const double radius = dims[0], half_length = dims[1];
+    const double det_dist = 20.0 * (std::max)( radius, half_length );
+
+    for( size_t iter = 0; iter < 2000; ++iter )
+    {
+      // Sources strictly inside; the 0.999 keeps us off the exact boundary, where the "on the
+      //  surface counts as outside" convention is still not nailed down (see the TODO in
+      //  cylinder_line_intersection).
+      const double r = 0.999 * radius * uniform(rng);
+      const double theta = 2.0 * PhysicalUnits::pi * uniform(rng);
+      const double source[3] = { r*cos(theta), r*sin(theta), 0.999*half_length*(2.0*uniform(rng) - 1.0) };
+
+      double detector[3];
+      switch( iter % 3 )
+      {
+        case 0:  //end-on: detector on the axis
+          detector[0] = 0.0; detector[1] = 0.0; detector[2] = det_dist;
+          break;
+
+        case 1:  //side-on: detector on the x-axis
+          detector[0] = det_dist; detector[1] = 0.0; detector[2] = 0.0;
+          break;
+
+        default: //arbitrary direction
+        {
+          const double det_theta = 2.0 * PhysicalUnits::pi * uniform(rng);
+          const double det_phi = PhysicalUnits::pi * uniform(rng);
+          detector[0] = det_dist * sin(det_phi) * cos(det_theta);
+          detector[1] = det_dist * sin(det_phi) * sin(det_theta);
+          detector[2] = det_dist * cos(det_phi);
+          break;
+        }
+      }//switch( iter % 3 )
+
+      for( const bool toward : { true, false } )
+      {
+        const CylExitDir dir = toward ? CylExitDir::TowardDetector : CylExitDir::AwayFromDetector;
+
+        double ref_exit[3], ref_dist;
+        BOOST_REQUIRE( reference_cyl_exit( radius, half_length, source, detector, toward,
+                                          ref_exit, ref_dist ) );
+
+        double exit_point[3];
+        const double dist = cylinder_line_intersection( radius, half_length, source, detector,
+                                                       dir, exit_point );
+
+        const double scale = (std::max)( radius, half_length );
+        BOOST_CHECK_SMALL( exit_point[0] - ref_exit[0], 1.0E-9*scale );
+        BOOST_CHECK_SMALL( exit_point[1] - ref_exit[1], 1.0E-9*scale );
+        BOOST_CHECK_SMALL( exit_point[2] - ref_exit[2], 1.0E-9*scale );
+        BOOST_CHECK_SMALL( dist - ref_dist, 1.0E-9*(std::max)(scale,ref_dist) );
+      }//for( loop over direction )
+    }//for( loop over random configurations )
+  }//for( loop over cylinder dimensions )
+}//BOOST_AUTO_TEST_CASE( CylinderIntersectionReferenceSweep )
+
+
+BOOST_AUTO_TEST_CASE( CylinderThinOuterShellPathLength )
+{
+  // The symptom that made this matter: for a multi-layer end-on cylinder, `eval_cylinder` walks the
+  //  ray out of the source cylinder and then charges each outer shell whatever
+  //  #cylinder_line_intersection returns for it.  When the toward/away pick flipped, a shell only a
+  //  micron thicker than the source got charged the *full stack length*.
+
+  const double radius = 2.0 * PhysicalUnits::cm;
+  const double half_length = 0.15 * PhysicalUnits::cm;
+  const double shell_thickness = 1.0E-4 * PhysicalUnits::cm;  //1 micron
+  const double det_dist = 100.0 * PhysicalUnits::cm;
+  const double detector[3] = { 0.0, 0.0, det_dist };
+
+  for( size_t theta_index = 0; theta_index < 64; ++theta_index )
+  {
+    const double theta = (2.0 * PhysicalUnits::pi * theta_index) / 64;
+
+    for( const double r_frac : { 0.0, 0.05, 0.5, 0.95 } )
+    {
+      for( const double z_frac : { -0.9, 0.0, 0.9 } )
+      {
+        const double r = r_frac * radius;
+        const double source[3] = { r*cos(theta), r*sin(theta), z_frac*half_length };
+
+        double src_exit[3];
+        const double dist_in_src = cylinder_line_intersection( radius, half_length, source, detector,
+                                                             CylExitDir::TowardDetector, src_exit );
+        BOOST_CHECK_GT( dist_in_src, 0.0 );
+        BOOST_CHECK_SMALL( src_exit[2] - half_length, 1.0E-12*half_length );
+
+        double shell_exit[3];
+        const double dist_in_shell = cylinder_line_intersection( radius + shell_thickness,
+                                                    half_length + shell_thickness, src_exit,
+                                                    detector, CylExitDir::TowardDetector, shell_exit );
+
+        // The ray is near-normal to the cap (radius/det_dist ~ 0.02), so the path through the shell
+        //  must be the shell thickness to well within a percent - not the ~2*half_length it became
+        //  when the ray was sent out the wrong end cap.
+        BOOST_CHECK_SMALL( dist_in_shell - shell_thickness, 0.01*shell_thickness );
+        BOOST_CHECK_SMALL( shell_exit[2] - (half_length + shell_thickness),
+                          1.0E-9*(half_length + shell_thickness) );
+      }//for( loop over z )
+    }//for( loop over radius )
+  }//for( loop over theta )
+}//BOOST_AUTO_TEST_CASE( CylinderThinOuterShellPathLength )
+
+
 BOOST_AUTO_TEST_CASE( RectangularIntersections )
 {
   bool intersected;
@@ -908,3 +1242,188 @@ BOOST_AUTO_TEST_CASE( FracAtomicNumberAttenuationCoef )
     }
   }//for( loop over energies )
 }//BOOST_AUTO_TEST_CASE( FracAtomicNumberAttenuationCoef )
+
+
+namespace
+{
+  /** Sets up a `CylinderEndOn` distributed source: a U cylinder of the given dimensions, optionally
+   wrapped in an Fe shell of thickness `shell_thickness` (pass <= 0 for no shell).
+
+   The source material is always the inner-most shell, e.g. `m_materialIndex` is 0.
+   */
+  DistributedSrcCalc make_end_on_cylinder( const double energy, const double radius,
+                                          const double half_length, const double shell_thickness,
+                                          const double obs_dist )
+  {
+    const std::shared_ptr<const MaterialDB> materialdb = MaterialDB::instance();
+    BOOST_REQUIRE( materialdb );
+
+    DistributedSrcCalc calc;
+    calc.m_geometry = GeometryType::CylinderEndOn;
+    calc.m_materialIndex = 0;
+    calc.m_attenuateForAir = false;
+    calc.m_airTransLenCoef = 0.0;
+    calc.m_isInSituExponential = false;
+    calc.m_inSituRelaxationLength = 0.0;
+    calc.m_detectorRadius = 2.0 * PhysicalUnits::cm;
+    calc.m_detectorSetback = 0.0;
+    calc.m_observationDist = obs_dist;
+    calc.m_energy = energy;
+    calc.m_nuclide = nullptr;
+    calc.m_srcVolumetricActivity = 1.0;
+    calc.integral = 0.0;
+
+    const std::shared_ptr<const Material> uranium = materialdb->material( "U" );
+    BOOST_REQUIRE( uranium );
+    const double u_coef = GammaInteractionCalc::transmition_length_coefficient( uranium.get(), energy );
+    calc.m_dimensionsTransLenAndType.push_back( { {radius, half_length, 0.0}, u_coef,
+                                                  DistributedSrcCalc::ShellType::Material } );
+
+    if( shell_thickness > 0.0 )
+    {
+      const std::shared_ptr<const Material> iron = materialdb->material( "Fe" );
+      BOOST_REQUIRE( iron );
+      const double fe_coef = GammaInteractionCalc::transmition_length_coefficient( iron.get(), energy );
+      calc.m_dimensionsTransLenAndType.push_back( { {radius + shell_thickness,
+                                                     half_length + shell_thickness, 0.0}, fe_coef,
+                                                    DistributedSrcCalc::ShellType::Material } );
+    }//if( shell_thickness > 0.0 )
+
+    return calc;
+  }//make_end_on_cylinder(...)
+
+
+  /** Cuhre-integrates a #DistributedSrcCalc using the general cylindrical integrand. */
+  double integrate_cylindrical( const DistributedSrcCalc &calc, const int ndim )
+  {
+    void * const userdata = (void *)&calc;
+    const double epsrel = 1e-6, epsabs = -1.0;
+    const int mineval = 0, maxeval = 5000000;
+
+    int nregions, neval, fail;
+    double integral, error, prob;
+
+    Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_cylindrical, userdata, epsrel,
+                              epsabs, Integrate::LastImportanceFcnt, mineval, maxeval, nregions,
+                              neval, fail, integral, error, prob );
+
+    BOOST_REQUIRE_EQUAL( fail, 0 );
+
+    return integral;
+  }//integrate_cylindrical(...)
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( CylinderEndOnSingleVsGeneralIntegrand )
+{
+  // For a single shielding, end-on cylinders are integrated with the closed-form
+  //  `eval_single_cyl_end_on`, which never calls #cylinder_line_intersection.  The general
+  //  `eval_cylinder` must give the same answer point-for-point; it is the discrepancy between the
+  //  two that the (previously commented out) assert in `eval_single_cyl_end_on` checks for.
+  set_data_dir();
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
+
+  const double radius = 2.0 * PhysicalUnits::cm;
+  const double half_length = 0.15 * PhysicalUnits::cm;
+  const double obs_dist = 100.0 * PhysicalUnits::cm;
+
+  for( const double energy : { 60.0*PhysicalUnits::keV, 186.0*PhysicalUnits::keV, 2614.0*PhysicalUnits::keV } )
+  {
+    for( const bool attenuate_air : { false, true } )
+    {
+      DistributedSrcCalc calc = make_end_on_cylinder( energy, radius, half_length, -1.0, obs_dist );
+      calc.m_attenuateForAir = attenuate_air;
+      calc.m_airTransLenCoef = attenuate_air ? 1.0E-4 : 0.0;
+
+      const int two_dim = 2, three_dim = 3;
+
+      for( size_t i = 0; i <= 8; ++i )
+      {
+        for( size_t j = 0; j <= 8; ++j )
+        {
+          double xx_2d[2] = { i/8.0, j/8.0 };  //{r, z}
+
+          double single_ff[1] = { 0.0 }, general_ff[1] = { 0.0 };
+          calc.eval_single_cyl_end_on( xx_2d, &two_dim, single_ff, nullptr );
+          calc.eval_cylinder( xx_2d, &two_dim, general_ff, nullptr );
+
+          const double scale = (std::max)( fabs(single_ff[0]), fabs(general_ff[0]) );
+          BOOST_CHECK_SMALL( single_ff[0] - general_ff[0], 1.0E-9*(std::max)(1.0E-12,scale) );
+
+          // End-on is symmetric about the cylinder axis, so the 3-dimensional integrand must give
+          //  the same value at every theta as the theta-collapsed 2-dimensional one.
+          for( size_t k = 0; k <= 8; ++k )
+          {
+            double xx_3d[3] = { i/8.0, k/8.0, j/8.0 };  //{r, theta, z}
+
+            double three_dim_ff[1] = { 0.0 };
+            calc.eval_cylinder( xx_3d, &three_dim, three_dim_ff, nullptr );
+
+            BOOST_CHECK_SMALL( single_ff[0] - three_dim_ff[0], 1.0E-9*(std::max)(1.0E-12,scale) );
+          }//for( loop over theta )
+        }//for( loop over z )
+      }//for( loop over r )
+    }//for( loop over whether to attenuate for air )
+  }//for( loop over energy )
+}//BOOST_AUTO_TEST_CASE( CylinderEndOnSingleVsGeneralIntegrand )
+
+
+BOOST_AUTO_TEST_CASE( CylinderEndOnMultiShellTransport )
+{
+  // A multi-layer end-on cylinder routes to `eval_cylinder`, which is where the toward/away pick
+  //  mattered.  A thin outer shell must attenuate by (essentially) exp(-mu*thickness); previously
+  //  rays were charged the full stack length instead, biasing these integrals low by 3-36%.
+  set_data_dir();
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
+
+  const std::shared_ptr<const MaterialDB> materialdb = MaterialDB::instance();
+  BOOST_REQUIRE( materialdb );
+  const std::shared_ptr<const Material> iron = materialdb->material( "Fe" );
+  BOOST_REQUIRE( iron );
+
+  const double radius = 2.0 * PhysicalUnits::cm;
+  const double half_length = 0.15 * PhysicalUnits::cm;
+  const double obs_dist = 100.0 * PhysicalUnits::cm;
+
+  // The rays are near-normal to the end cap (radius/obs_dist ~ 0.02), so the path through the shell
+  //  is its thickness to within ~0.02%; allow a bit of slop on top of the integration accuracy.
+  const double max_obliquity = sqrt( 1.0 + (radius/(obs_dist - half_length))*(radius/(obs_dist - half_length)) );
+
+  for( const double energy : { 60.0*PhysicalUnits::keV, 2614.0*PhysicalUnits::keV } )
+  {
+    const double fe_coef = GammaInteractionCalc::transmition_length_coefficient( iron.get(), energy );
+
+    const DistributedSrcCalc bare = make_end_on_cylinder( energy, radius, half_length, -1.0, obs_dist );
+    const double bare_integral = integrate_cylindrical( bare, 2 );
+    BOOST_REQUIRE_GT( bare_integral, 0.0 );
+
+    double prev_ratio = 1.0;
+
+    for( const double thickness : { 1.0E-4, 1.0E-2, 0.1, 0.5 } )  //cm; first is 1 micron
+    {
+      const double shell_thickness = thickness * PhysicalUnits::cm;
+      const DistributedSrcCalc shielded = make_end_on_cylinder( energy, radius, half_length,
+                                                              shell_thickness, obs_dist );
+      const double shielded_integral = integrate_cylindrical( shielded, 2 );
+      const double ratio = shielded_integral / bare_integral;
+
+      const double expected_hi = exp( -fe_coef * shell_thickness );
+      const double expected_lo = exp( -fe_coef * shell_thickness * max_obliquity );
+
+      BOOST_CHECK_MESSAGE( (ratio <= (1.0 + 1.0E-6)) && (ratio >= (expected_lo - 1.0E-3)),
+        "Fe shell of " << thickness << " cm at " << energy/PhysicalUnits::keV << " keV attenuated by "
+        << ratio << ", but expected within [" << expected_lo << ", " << expected_hi << "]" );
+
+      // The shell is the only difference between the two integrals, so their ratio is just the
+      //  (near-normal-incidence) slab attenuation through it.
+      BOOST_CHECK_CLOSE( ratio, expected_hi, 0.1 );
+
+      BOOST_CHECK_LE( ratio, prev_ratio + 1.0E-9 );  //more shielding can only attenuate more
+      prev_ratio = ratio;
+    }//for( loop over shell thickness )
+  }//for( loop over energy )
+}//BOOST_AUTO_TEST_CASE( CylinderEndOnMultiShellTransport )
