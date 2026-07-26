@@ -27,6 +27,7 @@
 
 #include <map>
 #include <atomic>
+#include <chrono>
 #include <future>
 #include <memory>
 #include <string>
@@ -102,6 +103,8 @@ private:
    For sync tools, holds the WApplication::UpdateLock throughout execution.
    For async tools, releases the lock before blocking on the result future,
    to avoid deadlock with the async callback which re-acquires the lock via WServer::post.
+   The wait is bounded by LlmTools::effective_async_timeout_ms(), so a tool whose callback never
+   arrives throws rather than parking this HTTP worker thread forever.
 
    @param userSessionId  Session ID or external token to find. Empty = most recent session.
    @param toolName       Name of the tool to execute.
@@ -126,20 +129,41 @@ private:
     std::shared_ptr<std::promise<std::variant<nlohmann::json, std::string>>> prom;
     std::shared_ptr<std::future<std::variant<nlohmann::json, std::string>>> fut;
     std::atomic<bool> tool_complete{false};
+
+    /** The tool being waited on, and the deadline applied to it, so that
+     `handle_sse_continuation()` can give up rather than re-suspending forever when the tool's
+     callback never arrives.  The deadline is `LlmTools::effective_async_timeout_ms()` from the
+     moment the async executor was dispatched.
+     */
+    std::string tool_name;
+    int timeout_ms = 0;
+    std::chrono::steady_clock::time_point deadline;
   };
 
   /** Handles continuation re-entries for SSE streaming of async tool results.
-   Writes a keepalive comment if the tool is still running, or the final
-   JSON-RPC response if the tool has completed.
+   Writes a keepalive comment if the tool is still running, the final JSON-RPC response if the
+   tool has completed, or a JSON-RPC error if the tool blew its deadline.
    */
   void handle_sse_continuation( const Wt::Http::Request &request,
                                 Wt::Http::Response &response );
 
-  /** Schedules a single keepalive timer (~10s) that calls `haveMoreData()` to
-   wake any waiting SSE continuations, so they can write a `:keepalive` comment
-   and prevent client-side timeouts.
+  /** Interval between `:keepalive` comments written to a waiting SSE stream; short enough to keep
+   clients and intermediaries from timing the connection out.
    */
-  void schedule_sse_keepalive();
+  static constexpr int sm_sse_keepalive_ms = 10000;
+
+  /** Schedules a single timer that calls `haveMoreData()` to wake any waiting SSE continuations, so
+   they can write a `:keepalive` comment (preventing client-side timeouts) or notice that their tool
+   has blown its deadline.
+
+   @param delay_ms  When to wake, defaulting to the keepalive cadence.  Callers pass a shorter delay
+          when a deadline falls sooner, so a timeout is reported when it expires rather than at the
+          next keepalive; floored at `sm_min_sse_wake_ms` so a nearly-expired deadline cannot spin.
+   */
+  void schedule_sse_keepalive( const int delay_ms = sm_sse_keepalive_ms );
+
+  /** Floor for `schedule_sse_keepalive()`s delay. */
+  static constexpr int sm_min_sse_wake_ms = 100;
 
   const std::shared_ptr<const LlmConfig> llm_config_;
   const std::unique_ptr<const LlmTools::ToolRegistry> tool_registry_;

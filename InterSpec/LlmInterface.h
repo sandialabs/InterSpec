@@ -355,12 +355,13 @@ private:
   };
   std::map<int, DeferredToolResult> m_deferredToolResults; // Key is the requestId the tool round came from
 
-  /** Default deadline for an async tool call, used when the tool does not set its own
-   (LlmTools::SharedTool::asyncTimeoutMs).  Generous enough for a slow peak fit, but well under
-   sm_watchdog_timeout_ms so a stuck async tool is reported as a tool error - and the conversation
-   continues - long before the watchdog would fail the whole turn.
-   */
-  static constexpr int sm_async_tool_timeout_ms = 300000;  // 5 minutes
+  // The deadline for an async tool call is not owned here: it comes from
+  // LlmTools::effective_async_timeout_ms(), i.e. the tool's own LlmTools::SharedTool::asyncTimeoutMs
+  // falling back to LlmTools::sm_default_async_timeout_ms, so that every consumer of asyncExecutor
+  // (this class' deferred-round sweep, LlmMcpResource) applies the same deadline to a given tool.
+  // That default is well under sm_watchdog_timeout_ms - static_assert'ed where it is applied - so a
+  // stuck async tool is reported as a tool error, and the conversation continues, long before the
+  // watchdog would fail the whole turn.
 
   /** How often m_deferredSweepTimer checks for overdue async calls. */
   static constexpr int sm_deferred_sweep_interval_ms = 5000;

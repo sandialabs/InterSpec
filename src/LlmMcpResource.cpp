@@ -2,10 +2,12 @@
 #include "InterSpec/LlmMcpResource.h"
 
 #include <map>
+#include <chrono>
 #include <future>
 #include <string>
 #include <variant>
 #include <iostream>
+#include <algorithm>
 
 #include <Wt/WServer>
 #include <Wt/WResource>
@@ -443,6 +445,14 @@ void LlmMcpResource::handle_jsonrpc( const Wt::Http::Request &request, Wt::Http:
 
           state->actual_session_id = targetApp->sessionId();
 
+          // Bound the wait: a tool whose callback never arrives must not leave the client reading
+          // keepalives forever.  Deadline runs from dispatch, and uses the same per-tool value that
+          // LlmInterface's deferred-round sweep applies.
+          state->tool_name = tool_name;
+          state->timeout_ms = LlmTools::effective_async_timeout_ms( *tool );
+          state->deadline = std::chrono::steady_clock::now()
+                            + std::chrono::milliseconds( state->timeout_ms );
+
           // Start async operation. The callback captures the shared state and
           // wakes the SSE continuation when the tool finishes.
           std::weak_ptr<std::atomic<bool>> weak_alive = m_alive;
@@ -475,7 +485,9 @@ void LlmMcpResource::handle_jsonrpc( const Wt::Http::Request &request, Wt::Http:
         cont->setData( state );
         cont->waitForMoreData();
 
-        schedule_sse_keepalive();
+        // As on the re-entry path, do not sleep past the deadline: a tool with a short
+        // asyncTimeoutMs must report its timeout when it expires, not at the keepalive cadence.
+        schedule_sse_keepalive( std::min( state->timeout_ms, sm_sse_keepalive_ms ) );
 
         return;
       }//if( async tool with SSE-capable client )
@@ -647,8 +659,15 @@ json LlmMcpResource::executeWithSession( const std::string &userSessionId,
     // Async path: acquire lock for Stage A (data capture), then release before blocking.
     // The async callback is delivered via WServer::post() which re-acquires the lock,
     // so we must NOT hold it while waiting — otherwise deadlock.
-    std::promise<std::variant<json, std::string>> prom;
-    std::future<std::variant<json, std::string>> fut = prom.get_future();
+    //
+    // The promise is shared, not on the stack: the wait below is bounded, so a callback can arrive
+    // after we have given up and returned, and must still have a live promise to write into.  The
+    // future may stay on the stack — destroying it while the promise lives is fine, and a set_value()
+    // with no future left to read it is well defined.  (This relies on asyncExecutor's documented
+    // contract of calling back exactly once; a second call would still throw std::future_error.)
+    const std::shared_ptr<std::promise<std::variant<json, std::string>>> prom
+                        = std::make_shared<std::promise<std::variant<json, std::string>>>();
+    std::future<std::variant<json, std::string>> fut = prom->get_future();
 
     {
       Wt::WApplication::UpdateLock lock( targetApp );
@@ -665,9 +684,9 @@ json LlmMcpResource::executeWithSession( const std::string &userSessionId,
       // The callback will be called on the GUI thread (via WServer::post) after
       // Stages B (background computation) and C (result post-processing) complete.
       tool->asyncExecutor( params, viewer, nullptr, nullptr,
-        [&prom]( std::variant<json, std::string> result )
+        [prom]( std::variant<json, std::string> result )
         {
-          prom.set_value( std::move( result ) );
+          prom->set_value( std::move( result ) );
         }
       );
 
@@ -676,7 +695,19 @@ json LlmMcpResource::executeWithSession( const std::string &userSessionId,
       targetApp->triggerUpdate();
     } // UpdateLock released — Stages B and C can now proceed
 
-    // Block until the async operation completes
+    // Block until the async operation completes, or until its deadline — an unbounded wait here
+    // would park this Wt HTTP worker thread forever if the callback never arrives.  Uses the same
+    // per-tool deadline that LlmInterface's deferred-round sweep applies.
+    const int timeout_ms = LlmTools::effective_async_timeout_ms( *tool );
+    if( fut.wait_for( std::chrono::milliseconds( timeout_ms ) ) != std::future_status::ready )
+    {
+      std::cerr << "MCP async tool '" << toolName << "' did not return within " << (timeout_ms/1000)
+                << "s; abandoning the call so the worker thread is released." << std::endl;
+
+      // handle_jsonrpc()'s catch( std::exception ) turns this into a JSON-RPC -32603 error.
+      throw std::runtime_error( LlmTools::async_timeout_error_message( toolName, timeout_ms ) );
+    }
+
     std::variant<json, std::string> result_or_error = fut.get();
 
     if( const std::string *err = std::get_if<std::string>( &result_or_error ) )
@@ -730,16 +761,50 @@ void LlmMcpResource::handle_sse_continuation( const Wt::Http::Request &request,
 
   if( !state->tool_complete.load() )
   {
-    // Tool still running: send a keepalive comment and re-suspend.
-    response.out() << ": keepalive\n\n";
+    const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
 
-    Wt::Http::ResponseContinuation *cont = response.createContinuation();
-    cont->setData( state );
-    cont->waitForMoreData();
+    if( now < state->deadline )
+    {
+      // Tool still running, within its deadline: send a keepalive comment and re-suspend.  Wake at
+      // the deadline instead of the usual cadence if that comes first, so a timeout is reported
+      // when it expires rather than up to a keepalive interval later.
+      response.out() << ": keepalive\n\n";
 
-    schedule_sse_keepalive();
-    return;
-  }
+      Wt::Http::ResponseContinuation *cont = response.createContinuation();
+      cont->setData( state );
+      cont->waitForMoreData();
+
+      const long long to_deadline_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                                              state->deadline - now ).count();
+      schedule_sse_keepalive( (to_deadline_ms < sm_sse_keepalive_ms)
+                              ? static_cast<int>( to_deadline_ms ) : sm_sse_keepalive_ms );
+      return;
+    }//if( still within the deadline )
+
+    // Deadline blown.  Re-check once: a result landing in this same instant should win over the
+    // timeout, since we have it in hand and reporting a failure for it would be simply wrong.
+    if( !state->tool_complete.load() )
+    {
+      std::cerr << "MCP async tool '" << state->tool_name << "' did not return within "
+                << (state->timeout_ms / 1000) << "s; abandoning the call and ending the SSE stream."
+                << std::endl;
+
+      // Written as a normal event, and no continuation is created, so Wt sends ResponseDone and the
+      // stream ends.  A callback arriving later still finds `state` alive (the executor's lambda
+      // holds it), so it sets its promise harmlessly; nothing is waiting to read it.
+      const json rpc_error = json{
+        {"jsonrpc", "2.0"},
+        {"id", state->request_id},
+        {"error", {
+          {"code", -32603},
+          {"message", LlmTools::async_timeout_error_message( state->tool_name, state->timeout_ms )}
+        }}
+      };
+
+      response.out() << "event: message\ndata: " << rpc_error.dump() << "\n\n";
+      return;
+    }//if( still not complete )
+  }//if( !state->tool_complete.load() )
 
   // Tool is complete: send the final JSON-RPC response as an SSE event.
   std::variant<json, std::string> result_or_error = state->fut->get();
@@ -787,7 +852,7 @@ void LlmMcpResource::handle_sse_continuation( const Wt::Http::Request &request,
 }//handle_sse_continuation(...)
 
 
-void LlmMcpResource::schedule_sse_keepalive()
+void LlmMcpResource::schedule_sse_keepalive( const int delay_ms )
 {
   Wt::WServer *server = Wt::WServer::instance();
   if( !server )
@@ -795,7 +860,7 @@ void LlmMcpResource::schedule_sse_keepalive()
 
   std::weak_ptr<std::atomic<bool>> weak_alive = m_alive;
 
-  server->ioService().schedule( 10000, [this, weak_alive](){
+  server->ioService().schedule( std::max( delay_ms, sm_min_sse_wake_ms ), [this, weak_alive](){
     const std::shared_ptr<std::atomic<bool>> alive = weak_alive.lock();
     if( alive && alive->load() )
       this->haveMoreData();

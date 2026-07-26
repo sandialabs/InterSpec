@@ -106,6 +106,18 @@ namespace {
   const int sm_time_chart_image_tool_timeout_ms
       = D3TimeChart::sm_image_capture_timeout_ms + 5000;
 
+  /** Deadline for assistant_submit_prompt (SharedTool::asyncTimeoutMs).
+
+   Unlike every other async tool, this one waits on an entire assistant turn - many model round-trips,
+   tool calls and possibly sub-agents - which is legitimately open-ended; a full-spectrum analysis can
+   easily run 15 minutes while working perfectly.  So this is sized as a backstop against a *lost*
+   callback, not as a budget for the work, and must not be derived from LlmInterface's watchdog: that
+   is an *inactivity* timer, restarted at every request/response/async step (see armWatchdog()), so it
+   never bounds how long a busy turn may take.  LlmInterface gives its own sub-agent leg no deadline
+   at all for the same reason; MCP cannot do that without parking an HTTP worker thread forever.
+   */
+  const int sm_assistant_prompt_tool_timeout_ms = 3600000;  // 1 hour
+
   // JSON conversion for SpecUtils::SpectrumType enum
   NLOHMANN_JSON_SERIALIZE_ENUM(SpecUtils::SpectrumType, {
       {SpecUtils::SpectrumType::Foreground, "Foreground"},
@@ -1930,6 +1942,22 @@ namespace {
 namespace LlmTools
 {
 
+int effective_async_timeout_ms( const SharedTool &tool )
+{
+  return (tool.asyncTimeoutMs > 0) ? tool.asyncTimeoutMs : sm_default_async_timeout_ms;
+}//effective_async_timeout_ms(...)
+
+
+std::string async_timeout_error_message( const std::string &toolName, const int timeoutMs )
+{
+  return "Tool call failed: '" + toolName + "' did not return a result within "
+         + std::to_string( timeoutMs / 1000 ) + " seconds, so it was abandoned."
+         " It was not cancelled and may still complete in the background, so if it"
+         " modifies state, re-check with a read tool before relying on this result."
+         " This tool is not responding - prefer another approach over retrying it.";
+}//async_timeout_error_message(...)
+
+
 ToolRegistry::ToolRegistry( const LlmConfig &config )
   : m_supportsImages( config.llmApi.supportsImages() )
 {
@@ -2662,6 +2690,11 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
         "required": ["prompt"]
       })");
     submitTool.availableForAgents = { AgentType::McpServer };
+
+    // A turn is legitimately open-ended, so this needs a far larger deadline than a normal tool -
+    // see sm_assistant_prompt_tool_timeout_ms for why it cannot be derived from the watchdog.
+    submitTool.asyncTimeoutMs = sm_assistant_prompt_tool_timeout_ms;
+
     submitTool.asyncExecutor = [](const json& params, InterSpec* interspec,
         shared_ptr<LlmInteraction>, LlmConversationHistory*,
         SharedTool::AsyncCallback callback) {

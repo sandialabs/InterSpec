@@ -692,16 +692,10 @@ void LlmInterface::onDeferredSweep()
       LlmToolCall * const pendingResult = findPendingToolResult( convo, call.second, &owningToolResults );
       if( pendingResult )
       {
-        // Steer the model, rather than just stating the failure: a bare "abandoned" reads as transient
-        // and invites an immediate retry of a tool that is not responding.  Also warn about the
-        // divergence this creates - we stopped waiting, but the tool was not cancelled, so a mutating
-        // tool (e.g. a peak fit) may still land and leave the model believing state it can see.
+        // Shared with the MCP resource so a stuck tool reads the same however it was called; see
+        // LlmTools::async_timeout_error_message() for why the wording steers rather than just states.
         nlohmann::json errJson;
-        errJson["error"] = "Tool call failed: '" + toolName + "' did not return a result within "
-                           + std::to_string( timeout_s ) + " seconds, so it was abandoned."
-                           " It was not cancelled and may still complete in the background, so if it"
-                           " modifies state, re-check with a read tool before relying on this result."
-                           " This tool is not responding - prefer another approach over retrying it.";
+        errJson["error"] = LlmTools::async_timeout_error_message( toolName, call_pos->second.timeoutMs );
         errJson["success"] = false;
         pendingResult->status = LlmToolCall::CallStatus::Error;
         pendingResult->content = errJson.dump();
@@ -3029,10 +3023,13 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
 
             // Remember this call by id so the round can be resolved exactly-once, and give it a deadline
             // so a tool that never calls back cannot pin the round (see onDeferredSweep()).
+            static_assert( LlmTools::sm_default_async_timeout_ms < sm_watchdog_timeout_ms,
+              "The async-tool deadline must fire before the watchdog, so a stuck tool is reported as"
+              " a tool error rather than failing the whole turn." );
+
             DeferredToolResult::PendingAsyncCall pendingCall;
             pendingCall.toolName = toolName;
-            pendingCall.timeoutMs = (tool->asyncTimeoutMs > 0) ? tool->asyncTimeoutMs
-                                                               : sm_async_tool_timeout_ms;
+            pendingCall.timeoutMs = LlmTools::effective_async_timeout_ms( *tool );
             pendingCall.deadline = std::chrono::steady_clock::now()
                                    + std::chrono::milliseconds( pendingCall.timeoutMs );
             asyncCalls[callId] = pendingCall;
