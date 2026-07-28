@@ -27,6 +27,13 @@
   <message id="lcw-fmt-openai-chat">OpenAI Chat</message>
   <message id="lcw-fmt-openai-responses">OpenAI Responses</message>
   <message id="lcw-fmt-anthropic">Anthropic</message>
+  <message id="lcw-http-transport">HTTP transport</message>
+  <message id="lcw-http-auto">Auto (inherit)</message>
+  <message id="lcw-http-browser">Browser</message>
+  <message id="lcw-http-native">Native (C++)</message>
+  <message id="lcw-http-backend-avail">native backend: {1}</message>
+  <message id="lcw-http-backend-unavail">native backend unavailable ({1}) &#8212; will fall back to the browser</message>
+  <message id="lcw-http-transport-tip">Requests normally go through the browser, which brings the system trust store, proxy settings and PAC/WPAD with it. Switch a provider to Native only if its CORS policy blocks the browser.</message>
   <message id="lcw-bearer-token">Bearer token</message>
   <message id="lcw-token-ph">sk-&#8230;</message>
   <message id="lcw-show">Show</message>

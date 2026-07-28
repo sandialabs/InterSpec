@@ -321,6 +321,13 @@ namespace
 
 void LlmInterface::failInFlightConversations( const std::string &reason, const bool recordErrorTurn )
 {
+#if( USE_NATIVE_HTTP_CLIENT )
+  // Every teardown path comes through here (cancel, watchdog, destructor, resetWithConfig), so
+  //  this is the one place that reliably stops native traffic.  Without it a config change would
+  //  leave an in-flight request carrying the previous bearer token to the previous endpoint.
+  cancelNativeRequests();
+#endif
+
   // Finalize a conversation (and its nested sub-agents) exactly once.  The finishTime check both
   // skips already-finished conversations and de-duplicates a conversation that appears in more than
   // one of the maps below.
@@ -379,6 +386,10 @@ void LlmInterface::cancelAll()
   if( Wt::WApplication *app = Wt::WApplication::instance() )
     app->doJavaScript( "if(window.llmAbortAllRequests) window.llmAbortAllRequests('" + m_instanceId + "');" );
 
+#if( USE_NATIVE_HTTP_CLIENT )
+  cancelNativeRequests();
+#endif
+
   // Finalize the affected conversations (adds a display-only "cancelled" error turn, clears the
   // pending/deferred/summarization-queue maps).  This covers conversations awaiting an async tool
   // result as well as those with an in-flight HTTP request.  Any late abort response or async tool
@@ -431,6 +442,10 @@ void LlmInterface::onWatchdogTimeout()
   // Abort any in-flight browser fetch(es) so they stop consuming time/tokens (mirrors cancelAll()).
   if( Wt::WApplication *app = Wt::WApplication::instance() )
     app->doJavaScript( "if(window.llmAbortAllRequests) window.llmAbortAllRequests('" + m_instanceId + "');" );
+
+#if( USE_NATIVE_HTTP_CLIENT )
+  cancelNativeRequests();
+#endif
 
   // Reuse the orphan-cleanup path: finalizes every in-flight conversation (and nested sub-agents)
   // with an error turn and clears the pending/deferred/summarization bookkeeping.  Defensive
@@ -2116,9 +2131,27 @@ std::string LlmInterface::makeApiCallWithId(const nlohmann::json& requestJson, i
 
   // Build the per-format HTTP headers object (auth scheme, version header, etc.) for this provider.
   const std::string endpoint = m_config->llmApi.apiEndpoint();
+  const std::vector<std::pair<std::string,std::string>> headerList
+                              = m_protocol->headers( endpoint, m_config->llmApi.bearerToken() );
   nlohmann::json headersJson = nlohmann::json::object();
-  for( const std::pair<std::string,std::string> &kv : m_protocol->headers( endpoint, m_config->llmApi.bearerToken() ) )
+  for( const std::pair<std::string,std::string> &kv : headerList )
     headersJson[kv.first] = kv.second;
+
+#if( USE_NATIVE_HTTP_CLIENT )
+  // A provider whose CORS policy blocks the browser goes out through the platform HTTP stack
+  //  instead.  Everything downstream of the response is identical either way - the native path
+  //  accumulates the body and hands it to handleJavaScriptResponse() just as the browser does.
+  if( useNativeHttpBackend() )
+  {
+    startNativeRequest( endpoint, headerList, requestStr, requestId, 0, 0 );
+
+    if( m_debug_stream )
+      (*m_debug_stream) << "Native HTTP request with ID " << requestId << " initiated ("
+                        << NativeHttp::backendName() << ")..." << endl;
+
+    return requestStr;
+  }//if( using the native transport )
+#endif //USE_NATIVE_HTTP_CLIENT
 
   // Use Wt::WWebWidget::jsStringLiteral to properly escape the strings for JavaScript.  The endpoint
   // comes from user config and must be escaped too (a stray quote/backslash would otherwise break
@@ -4836,9 +4869,372 @@ void LlmInterface::setupJavaScriptBridge() {
     "};";
 
   app->doJavaScript( callbackJs );
-  
+
   //cout << "JavaScript bridge setup complete" << endl;
 }
+
+
+#if( USE_NATIVE_HTTP_CLIENT )
+namespace
+{
+// These mirror the constants in the browser bridge above, so that a provider behaves the same
+//  whichever transport carried the request.  Kept deliberately in step with the JS values at
+//  LlmInterface.cpp ~4531: MAX_RATE_LIMIT_RETRIES / DEFAULT_RATE_LIMIT_WAIT_MS /
+//  MAX_RATE_LIMIT_WAIT_MS, and the single 100 ms network retry.
+const int sm_max_rate_limit_retries = 6;
+const int sm_default_rate_limit_wait_ms = 5000;
+const int sm_max_rate_limit_wait_ms = 120000;
+const int sm_network_retry_delay_ms = 100;
+
+
+/** Case-insensitive header lookup. */
+std::string find_header( const std::vector<std::pair<std::string,std::string>> &headers,
+                        const std::string &name )
+{
+  for( const std::pair<std::string,std::string> &kv : headers )
+  {
+    if( SpecUtils::iequals_ascii( kv.first, name ) )
+      return kv.second;
+  }
+  return std::string();
+}//find_header(...)
+
+
+/** Whether a response should be retried as a rate-limit, mirroring the browser path: an HTTP 429,
+ or a body carrying error.code == "rate_limit_exceeded". */
+bool is_rate_limited( int status, const std::string &body )
+{
+  if( status == 429 )
+    return true;
+
+  try
+  {
+    const nlohmann::json parsed = nlohmann::json::parse( body );
+    if( parsed.contains("error") && parsed["error"].is_object() )
+      return (parsed["error"].value("code", std::string()) == "rate_limit_exceeded");
+  }catch( const std::exception & )
+  {
+    // Not JSON, so not a structured rate-limit error.
+  }
+
+  return false;
+}//is_rate_limited(...)
+
+
+/** How long to wait before a rate-limit retry.
+
+ Prefers the Retry-After header, then a "try again in 3.363s" / "in 242ms" phrase in the error
+ message (several providers only report the delay there), then a default.  Clamped, then padded,
+ because the API-reported figure is a minimum.
+ */
+int rate_limit_wait_ms( const std::string &retryAfterHeader, const std::string &body )
+{
+  int waitMs = sm_default_rate_limit_wait_ms;
+
+  if( !retryAfterHeader.empty() )
+  {
+    try
+    {
+      const double seconds = std::stod( retryAfterHeader );
+      if( seconds > 0.0 )
+        waitMs = static_cast<int>( std::ceil( seconds * 1000.0 ) );
+    }catch( const std::exception & )
+    {
+      // Retry-After may be an HTTP-date rather than a delta; fall through to the default.
+    }
+  }//if( a Retry-After header was sent )
+
+  try
+  {
+    const nlohmann::json parsed = nlohmann::json::parse( body );
+    std::string msg;
+    if( parsed.contains("error") && parsed["error"].is_object() )
+      msg = parsed["error"].value( "message", std::string() );
+
+    if( !msg.empty() )
+    {
+      std::smatch m;
+      const std::regex msRe( R"(try again in (\d+\.?\d*)\s*ms)", std::regex::icase );
+      const std::regex secRe( R"(try again in (\d+\.?\d*)\s*s)", std::regex::icase );
+
+      if( std::regex_search( msg, m, msRe ) )
+      {
+        const int parsedMs = static_cast<int>( std::ceil( std::stod(m[1].str()) ) );
+        if( parsedMs > 0 )
+          waitMs = parsedMs;
+      }else if( std::regex_search( msg, m, secRe ) )
+      {
+        const int parsedMs = static_cast<int>( std::ceil( std::stod(m[1].str()) * 1000.0 ) );
+        if( parsedMs > 0 )
+          waitMs = parsedMs;
+      }
+    }//if( there was an error message to scan )
+  }catch( const std::exception & )
+  {
+    // Non-JSON body, or an unparsable number; keep whatever we have.
+  }
+
+  if( waitMs > sm_max_rate_limit_wait_ms )
+    waitMs = sm_max_rate_limit_wait_ms;
+
+  return waitMs + 1500;
+}//rate_limit_wait_ms(...)
+
+
+/** Wrap a non-2xx response that carries no recognizable error object.
+
+ Without this, a provider returning something like {"detail":...} or an HTML error page for a
+ 500 would fall through to the success parser and be shown as an empty but successful turn.
+ Mirrors the browser path at LlmInterface.cpp ~4715.
+ */
+std::string normalize_http_error( int status, const std::string &body )
+{
+  if( status < 400 )
+    return body;
+
+  bool hasStdError = false;
+  try
+  {
+    const nlohmann::json parsed = nlohmann::json::parse( body );
+    hasStdError = (parsed.contains("error")
+                   || (parsed.contains("choices") && parsed["choices"].is_array()
+                       && !parsed["choices"].empty() && parsed["choices"][0].contains("error")));
+  }catch( const std::exception & )
+  {
+    // Non-JSON body - definitely not a standard error object.
+  }
+
+  if( hasStdError )
+    return body;
+
+  nlohmann::json wrapped;
+  wrapped["error"]["type"] = "http_error";
+  wrapped["error"]["code"] = status;
+  wrapped["error"]["message"] = "HTTP " + std::to_string(status) + " error from LLM endpoint";
+  wrapped["error"]["body"] = body;
+  return wrapped.dump();
+}//normalize_http_error(...)
+
+
+/** Turn a transport failure into the same {error:{...}} envelope the response parser expects.
+
+ The `type` and `retry_attempted` fields are not cosmetic: LlmInterface maps them onto
+ ErrorType::Timeout vs ::Network and onto setRetryAttempted(), which the interaction display
+ renders differently.  Reporting everything as an un-retried network error would make the native
+ path describe failures differently from the browser path.
+ */
+std::string transport_error_body( const NativeHttp::Completion &result, const bool retried )
+{
+  const bool timedOut = (result.ec == NativeHttp::Error::Timeout)
+                        || (result.ec == NativeHttp::Error::IdleTimeout);
+
+  nlohmann::json wrapped;
+  wrapped["error"]["type"] = timedOut ? "timeout_error" : "network_error";
+  wrapped["error"]["retry_attempted"] = retried;
+  wrapped["error"]["code"] = result.ec.value();
+  wrapped["error"]["message"] = result.ec.message()
+                                + (result.detail.empty() ? std::string() : ("  " + result.detail));
+  wrapped["error"]["backend"] = NativeHttp::backendName();
+  return wrapped.dump();
+}//transport_error_body(...)
+
+}//namespace
+
+
+bool LlmInterface::useNativeHttpBackend() const
+{
+  if( !m_config )
+    return false;
+
+  const LlmConfig::LlmApi::HttpBackend configured = m_config->llmApi.httpTransport();
+  if( configured != LlmConfig::LlmApi::HttpBackend::Native )
+    return false;
+
+  if( NativeHttp::available() )
+    return true;
+
+  // Asked for, but not built in (or built without TLS support).  Falling back to the browser is
+  //  better than failing outright - it is what the user had before - but say so, because for a
+  //  provider that blocks CORS the browser attempt will fail in a much less obvious way.
+  static bool warned = false;
+  if( !warned )
+  {
+    warned = true;
+    cerr << "LLM config asks for the native HTTP transport, but this build has none usable ("
+         << NativeHttp::backendName() << "); falling back to the browser." << endl;
+  }
+
+  return false;
+}//LlmInterface::useNativeHttpBackend()
+
+
+void LlmInterface::startNativeRequest( const std::string &endpoint,
+                                      const std::vector<std::pair<std::string,std::string>> &headers,
+                                      const std::string &requestStr,
+                                      const int requestId,
+                                      const int attempt,
+                                      const int rateLimitRetry )
+{
+  Wt::WApplication * const app = Wt::WApplication::instance();
+  const std::string sessionId = app ? app->sessionId() : std::string();
+
+  NativeHttp::Request req;
+  req.url = endpoint;
+  req.method = "POST";
+  req.body = requestStr;
+  // Content-Type first, so a provider that sets its own overrides it - the browser path builds the
+  //  header object the same way round (default, then merge the C++-supplied headers over it).
+  req.headers.emplace_back( "Content-Type", "application/json" );
+  for( const std::pair<std::string,std::string> &kv : headers )
+  {
+    const std::vector<std::pair<std::string,std::string>>::iterator pos
+        = std::find_if( begin(req.headers), end(req.headers),
+                        [&kv]( const std::pair<std::string,std::string> &existing ){
+                          return SpecUtils::iequals_ascii( existing.first, kv.first );
+                        } );
+    if( pos == end(req.headers) )
+      req.headers.push_back( kv );
+    else
+      pos->second = kv.second;
+  }
+
+  // The browser path caps a request at 300 s; keep that, and add an idle timeout so a connection
+  //  silently reaped by a proxy is noticed rather than waited out.  Both stay under the 600 s
+  //  conversation watchdog, so a transport failure is reported as one.
+  req.idleTimeout = std::chrono::seconds( 120 );
+  req.totalTimeout = std::chrono::seconds( 300 );
+
+  const LlmConfig::LlmApi &api = m_config->llmApi;
+  req.proxyUrl = api.httpProxyUrl;
+  req.caBundlePath = api.httpCaBundlePath;
+  req.disableCertVerification = api.httpDisableCertCheck;
+
+  // Accumulated on the session thread (callbacks are marshalled there), so no locking needed.
+  const std::shared_ptr<std::string> body = std::make_shared<std::string>();
+  const std::shared_ptr<std::vector<std::pair<std::string,std::string>>> respHeaders
+      = std::make_shared<std::vector<std::pair<std::string,std::string>>>();
+
+  NativeHttp::StreamHandler handler;
+  handler.onHeaders = [respHeaders]( int, const NativeHttp::HeaderList &hdrs ){
+    *respHeaders = hdrs;   // kept for Retry-After on a rate-limit retry
+  };
+
+  handler.onChunk = [body]( std::string_view chunk ){
+    body->append( chunk.data(), chunk.size() );
+    return true;
+  };
+
+  handler.onComplete = [this, body, respHeaders, endpoint, headers, requestStr, requestId, attempt,
+                        rateLimitRetry]( const NativeHttp::Completion &result ){
+    // Safe to destroy the Call from inside its own completion handler: the executing
+    //  std::function is a copy owned by the posted event, and the shared request state is kept
+    //  alive by that same event, so neither is freed out from under us here.  Any retry timer
+    //  left over from a previous attempt goes at the same time - by now it has finished firing.
+    m_nativeCalls.erase( requestId );
+    m_nativeRetryTimers.erase( requestId );
+
+    // A request that is no longer pending was cancelled or cleared; nothing to deliver.
+    if( m_pendingRequests.find(requestId) == m_pendingRequests.end() )
+      return;
+
+    const bool transportFailed = static_cast<bool>( result.ec );
+
+    // A cancellation is the one outcome we deliberately do not report, because whoever asked for
+    //  it has already finalized the conversation.  But only trust that when the request is also
+    //  gone from m_pendingRequests, which is what every cancellation path clears - a backend that
+    //  merely *reports* Cancelled must still be surfaced, or the conversation would sit
+    //  "pending" until the 600 s watchdog with nothing shown to the user.
+    const bool reportsCancelled = (result.ec == NativeHttp::Error::Cancelled)
+                                  || (result.ec == NativeHttp::Error::AbortedByHandler);
+    if( reportsCancelled )
+    {
+      cerr << "LLM native request " << requestId << " reported cancelled without having been"
+              " cancelled here (" << result.detail << ") - treating as a transport failure"
+           << endl;
+    }
+
+    if( !transportFailed && is_rate_limited( result.status, *body )
+       && (rateLimitRetry < sm_max_rate_limit_retries) )
+    {
+      const std::string retryAfter = find_header( *respHeaders, "Retry-After" );
+      const int waitMs = rate_limit_wait_ms( retryAfter, *body );
+
+      cerr << "LLM rate limited (id " << requestId << "); retry "
+           << (rateLimitRetry + 1) << "/" << sm_max_rate_limit_retries
+           << " in " << (waitMs / 1000.0) << "s" << endl;
+
+      scheduleNativeRetry( endpoint, headers, requestStr, requestId, attempt,
+                          rateLimitRetry + 1, waitMs );
+      return;
+    }//if( rate limited and retries remain )
+
+    // One automatic retry on a transport failure, matching the browser path.  Deliberately not
+    //  retried for a certificate or proxy-auth problem: those are configuration, not transience,
+    //  and retrying only delays a message the user needs to see.
+    const bool worthRetrying = transportFailed
+        && (result.ec != NativeHttp::Error::TlsCertificateUntrusted)
+        && (result.ec != NativeHttp::Error::ProxyAuthRequired)
+        && (result.ec != NativeHttp::Error::OptionUnsupported)
+        && (result.ec != NativeHttp::Error::BackendUnavailable)
+        && (result.ec != NativeHttp::Error::ResponseTooLarge);
+
+    if( worthRetrying && (attempt == 0) )
+    {
+      cerr << "LLM native request " << requestId << " failed (" << result.ec.message()
+           << "); retrying once" << endl;
+      scheduleNativeRetry( endpoint, headers, requestStr, requestId, attempt + 1,
+                          rateLimitRetry, sm_network_retry_delay_ms );
+      return;
+    }//if( worth one more try )
+
+    const std::string deliver = transportFailed ? transport_error_body( result, (attempt > 0) )
+                                                : normalize_http_error( result.status, *body );
+
+    handleJavaScriptResponse( deliver, requestId );
+  };
+
+  m_nativeCalls[requestId] = NativeHttp::start( req, handler, sessionId );
+}//LlmInterface::startNativeRequest(...)
+
+
+void LlmInterface::scheduleNativeRetry( const std::string &endpoint,
+                                       const std::vector<std::pair<std::string,std::string>> &headers,
+                                       const std::string &requestStr,
+                                       const int requestId,
+                                       const int attempt,
+                                       const int rateLimitRetry,
+                                       const int delayMs )
+{
+  std::unique_ptr<Wt::WTimer> timer( new Wt::WTimer() );
+  timer->setSingleShot( true );
+  timer->setInterval( delayMs );
+  timer->timeout().connect( std::bind( [this, endpoint, headers, requestStr, requestId, attempt,
+                                        rateLimitRetry](){
+    // Deliberately NOT erasing the timer here: it would destroy this WTimer from inside its own
+    //  timeout signal, while that signal is still being emitted.  The entry is reaped instead by
+    //  the next onComplete for this request id, or by cancelNativeRequests().
+
+    // The request may have been cancelled or cleared while the retry was pending.
+    if( m_pendingRequests.find(requestId) == m_pendingRequests.end() )
+      return;
+
+    startNativeRequest( endpoint, headers, requestStr, requestId, attempt, rateLimitRetry );
+  } ) );
+
+  timer->start();
+  m_nativeRetryTimers[requestId] = std::move( timer );
+}//LlmInterface::scheduleNativeRetry(...)
+
+
+void LlmInterface::cancelNativeRequests()
+{
+  // Destroying a Call cancels it silently, which is what teardown wants - the conversation has
+  //  already been finalized by whoever asked for the cancel.
+  m_nativeCalls.clear();
+  m_nativeRetryTimers.clear();
+}//LlmInterface::cancelNativeRequests()
+#endif //USE_NATIVE_HTTP_CLIENT
+
 
 void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
 {

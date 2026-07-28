@@ -232,6 +232,31 @@ public:
      */
     static ApiFormat detectApiFormat( const std::string &endpoint );
 
+
+    /** Which HTTP transport carries a provider's API calls.
+
+     Requests normally go out through the browser's `fetch()`, which gives us the system trust
+     store, proxy configuration, PAC/WPAD and often SSO for free.  That only works for providers
+     returning permissive CORS headers though - Ask Sage, for one, does not - so a provider can
+     be pinned to the native C++ client instead.
+
+     Which providers need it is expressed here as data rather than as a hostname list compiled
+     into C++, exactly as `apiFormat` is.
+     */
+    enum class HttpBackend
+    {
+      Auto,     ///< Defer: use the per-provider setting, else Browser.
+      Browser,  ///< The browser's fetch(); the default, and the better client where it works.
+      Native    ///< The platform HTTP stack; requires a USE_NATIVE_HTTP_CLIENT build.
+    };//enum class HttpBackend
+
+    /** Map a `httpBackend` attribute string to a HttpBackend; throws std::runtime_error if
+     unknown.  Accepts "auto", "browser" and "native". */
+    static HttpBackend parseHttpBackend( const std::string &str );
+
+    /** The canonical attribute string for a HttpBackend (returns a static literal). */
+    static const char *httpBackendToString( HttpBackend backend );
+
     /** Per-model configuration within an ApiProvider. */
     struct ModelInfo
     {
@@ -291,6 +316,11 @@ public:
        */
       std::optional<ApiFormat> apiFormat;
 
+      /** Which transport this provider's calls go out on.  Empty means "inherit the
+       `<HttpBackend>` setting on `LlmApi`".  Parsed from an optional `httpBackend` attribute on
+       the `<ApiProvider>` element; purely additive, so the `LlmApi` version was not bumped. */
+      std::optional<HttpBackend> httpBackend;
+
       std::vector<ModelInfo> models;
       size_t activeModelIndex = 0;  // Index of the active model; resolved at parse time
     };//struct ApiProvider
@@ -330,6 +360,36 @@ public:
      */
     std::string debug_file;
 
+    /** Default transport for providers that do not set their own `httpBackend`.
+
+     Empty (or `Auto`) means browser `fetch()`, which is the proven path and stays the default.
+     Setting this to `Native` or `Browser` forces every provider one way, which is what the
+     "force" options in the settings UI are for when diagnosing a network problem.
+     */
+    std::optional<HttpBackend> httpBackend;
+
+    /** Explicit proxy for native-transport requests, e.g. "http://proxy.corp:8080".
+
+     Empty means use the system proxy configuration, which is nearly always right - the system
+     settings are what a managed machine configures, including PAC/WPAD.  This exists for the
+     cases where that discovery does not work.
+     */
+    std::string httpProxyUrl;
+
+    /** A PEM bundle (file or directory) to trust in addition to the system certificate store.
+
+     For a TLS-inspecting proxy whose root certificate has not been installed machine-wide.
+     Ignored by backends that validate against the OS store (Windows).
+     */
+    std::string httpCaBundlePath;
+
+    /** Accept any server certificate on native-transport requests.
+
+     A last-resort escape hatch that disables the protection TLS exists to provide; the settings
+     UI warns prominently before it can be turned on.
+     */
+    bool httpDisableCertCheck = false;
+
     std::vector<ApiProvider> providers;
     size_t activeProviderIndex = 0;  // Index of the active provider; resolved at parse time
 
@@ -355,6 +415,25 @@ public:
     {
       const ApiProvider &p = activeProvider();
       return p.apiFormat.value_or( detectApiFormat( p.apiEndpoint ) );
+    }
+
+    /** The resolved transport for the active provider: its own `httpBackend` if set, else the
+     `LlmApi`-level default, else `Browser`.
+
+     Never returns `Auto` - it resolves it.  Note this is the *configured* answer; whether a
+     native backend is actually compiled in and usable is a separate question the caller still
+     has to ask (see `NativeHttp::available()`).
+     */
+    HttpBackend httpTransport() const
+    {
+      const ApiProvider &p = activeProvider();
+      if( p.httpBackend.has_value() && (p.httpBackend.value() != HttpBackend::Auto) )
+        return p.httpBackend.value();
+
+      if( httpBackend.has_value() && (httpBackend.value() != HttpBackend::Auto) )
+        return httpBackend.value();
+
+      return HttpBackend::Browser;
     }
   };//struct LlmApi
 

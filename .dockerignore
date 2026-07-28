@@ -1,0 +1,11 @@
+# Keep the Docker build context to the source tree.  Without this the local build directories
+# alone are ~20 GB, which has to be transferred to the daemon on every build.
+build*/
+scratch/
+test_results/
+.git/
+*.dylib
+*.o
+*.a
+InterSpecUserData.db
+developer_errors.log

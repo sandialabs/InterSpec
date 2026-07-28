@@ -59,6 +59,10 @@
 #include "InterSpec/InterSpecServer.h"
 #include "InterSpec/LlmConfigWindow.h"
 
+#if( USE_NATIVE_HTTP_CLIENT )
+#include "InterSpec/NativeHttpClient.h"
+#endif
+
 using namespace std;
 using namespace Wt;
 
@@ -572,6 +576,71 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
     updateValidation();
     refreshPreview();
   } ) );
+
+#if( USE_NATIVE_HTTP_CLIENT )
+  // HTTP transport row.  Deliberately shaped like the wire-format row above: a badge saying what
+  //  is actually in effect, plus an override combo.  Only shown when a native client was compiled
+  //  in, because otherwise there is nothing to choose between.
+  WLabel *transportLbl = new WLabel( WString::tr("lcw-http-transport"), bodyc );
+  transportLbl->addStyleClass( "LcwFieldLabel" );
+  WContainerWidget *transportRow = new WContainerWidget( bodyc );
+  transportRow->addStyleClass( "LcwFormatRow" );
+
+  const LlmConfig::LlmApi::HttpBackend effectiveTransport
+      = (pi == m_working.llmApi.activeProviderIndex)
+        ? m_working.llmApi.httpTransport()
+        : (prov.httpBackend.value_or( m_working.llmApi.httpBackend
+                                        .value_or(LlmConfig::LlmApi::HttpBackend::Browser) ));
+
+  const bool nativeUsable = NativeHttp::available();
+  WText *transportBadge = new WText( (effectiveTransport == LlmConfig::LlmApi::HttpBackend::Native)
+                                       ? WString::tr("lcw-http-native")
+                                       : WString::tr("lcw-http-browser"), transportRow );
+  transportBadge->addStyleClass( "LcwBadge" );
+
+  // Which backend is compiled in, and whether it can actually be used, is the first thing wanted
+  //  in any report of a network problem - so show it rather than making the user ask.
+  WText *transportInfo = new WText( WString::tr( nativeUsable ? "lcw-http-backend-avail"
+                                                             : "lcw-http-backend-unavail" )
+                                      .arg( WString::fromUTF8(NativeHttp::backendName()) ),
+                                    transportRow );
+  transportInfo->addStyleClass( "LcwSubtle" );
+
+  WContainerWidget *transportWrap = new WContainerWidget( transportRow );
+  transportWrap->addStyleClass( "LcwOverrideWrap" );
+  new WText( WString::tr("lcw-override"), transportWrap );
+  WComboBox *transportCombo = new WComboBox( transportWrap );
+  transportCombo->addStyleClass( "LcwSelect" );
+  transportCombo->addItem( WString::tr("lcw-http-auto") );    // 0 -> nullopt (inherit)
+  transportCombo->addItem( WString::tr("lcw-http-browser") ); // 1 -> Browser
+  transportCombo->addItem( WString::tr("lcw-http-native") );  // 2 -> Native
+
+  int transportIdx = 0;
+  if( prov.httpBackend.has_value() )
+  {
+    switch( prov.httpBackend.value() )
+    {
+      case LlmConfig::LlmApi::HttpBackend::Auto:    transportIdx = 0; break;
+      case LlmConfig::LlmApi::HttpBackend::Browser: transportIdx = 1; break;
+      case LlmConfig::LlmApi::HttpBackend::Native:  transportIdx = 2; break;
+    }
+  }
+  transportCombo->setCurrentIndex( transportIdx );
+  transportCombo->activated().connect( std::bind( [this,pi,transportCombo](){
+    if( pi >= m_working.llmApi.providers.size() )
+      return;
+    ApiProvider &p = m_working.llmApi.providers[pi];
+    switch( transportCombo->currentIndex() )
+    {
+      case 1:  p.httpBackend = LlmConfig::LlmApi::HttpBackend::Browser; break;
+      case 2:  p.httpBackend = LlmConfig::LlmApi::HttpBackend::Native;  break;
+      default: p.httpBackend.reset();                                   break;
+    }
+    rebuildProviders();
+    updateValidation();
+    refreshPreview();
+  } ) );
+#endif //USE_NATIVE_HTTP_CLIENT
 
   // Bearer token row
   WLabel *tokLbl = new WLabel( WString::tr("lcw-bearer-token"), bodyc );

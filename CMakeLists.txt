@@ -122,6 +122,14 @@ option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
 option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
 
+# LLM API calls are normally made by the browser via fetch(), which gets us the system trust
+#  store, proxy configuration, PAC/WPAD and often SSO for free.  That only works for providers
+#  sending permissive CORS headers though; for one that does not, we need to make the HTTPS
+#  request from C++.  This enables a small transport backed by the platform's own HTTP stack
+#  (WinHTTP / NSURLSession / Wt::Http::Client) - see InterSpec/NativeHttpClient.h.
+#  Which backend is used is decided by platform, not by the user.
+option(USE_NATIVE_HTTP_CLIENT "Enables a native per-platform HTTPS client for LLM API calls" OFF)
+
 
 
 if(BUILD_FOR_WEB_DEPLOYMENT)
@@ -645,11 +653,61 @@ if( USE_LLM_INTERFACE )
     data/llm_agent_Isotopics.xml data/llm_agent_DeepResearch.xml data/llm_agent_EnergyCalibration.xml
     data/llm_agent_SpectrumTimeHistory.xml
   )
-  
+
+  # The native HTTPS transport: one platform-independent file, plus (once written) exactly one
+  #  backend chosen by platform.  Until a platforms backend exists, NativeHttpClient.cpp
+  #  supplies a stub that reports Error::BackendUnavailable, so this option always builds and
+  #  always links - it just does not do anything useful yet.
+  if( USE_NATIVE_HTTP_CLIENT )
+    list( APPEND sources src/NativeHttpClient.cpp )
+    list( APPEND headers InterSpec/NativeHttpClient.h InterSpec/NativeHttpClientImpl.h )
+
+    # Testing knob: build the Wt::Http::Client backend even where a platform-native one exists, so
+    #  the Linux/Android path can be exercised on a development machine.  Needs a dependency
+    #  prefix built with BUILD_OPENSSL=ON, or Wt cannot do https at all.
+    option( NATIVE_HTTP_FORCE_WT_BACKEND
+            "Use the Wt::Http::Client HTTP backend even on platforms with a native one (testing)"
+            OFF )
+    mark_as_advanced( NATIVE_HTTP_FORCE_WT_BACKEND )
+
+    if( APPLE AND NOT NATIVE_HTTP_FORCE_WT_BACKEND )
+      # One .mm serves both macOS and iOS.  ARC is set per-file because the projects other .mm
+      #  files predate it and are written for manual retain/release.
+      list( APPEND sources src/NativeHttpClient_apple.mm )
+      set_source_files_properties( src/NativeHttpClient_apple.mm
+                                   PROPERTIES COMPILE_OPTIONS "-fobjc-arc" )
+      set( NATIVE_HTTP_HAVE_BACKEND ON )
+    elseif( UNIX OR NATIVE_HTTP_FORCE_WT_BACKEND )
+      # NOTE: Windows lands in the "no backend" case below - the WinHTTP backend is not written
+      #  yet, so a Windows build falls back to the browser rather than linking winhttp.lib for
+      #  nothing.
+      list( APPEND sources src/NativeHttpClient_wt.cpp )
+      set( NATIVE_HTTP_HAVE_BACKEND ON )
+      set( NATIVE_HTTP_WT_BACKEND ON )
+    endif()
+
+    if( NATIVE_HTTP_HAVE_BACKEND )
+      # Suppresses the "no backend" stub at the bottom of NativeHttpClient.cpp.
+      set_source_files_properties( src/NativeHttpClient.cpp
+                                   PROPERTIES COMPILE_DEFINITIONS "NATIVE_HTTP_HAVE_BACKEND=1" )
+    else()
+      MESSAGE( WARNING "USE_NATIVE_HTTP_CLIENT is enabled, but there is no native HTTP backend"
+               " for this platform yet; LLM requests will report BackendUnavailable if routed"
+               " to it." )
+    endif( NATIVE_HTTP_HAVE_BACKEND )
+  endif( USE_NATIVE_HTTP_CLIENT )
+
   if( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
     MESSAGE(FATAL_ERROR "MCP server can not be enabled for web or mobile builds")
   endif( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
 endif( USE_LLM_INTERFACE )
+
+# A native HTTP client with no LLM interface to use it would be a silent no-op, so say so.
+if( USE_NATIVE_HTTP_CLIENT AND NOT USE_LLM_INTERFACE )
+  MESSAGE(FATAL_ERROR "USE_NATIVE_HTTP_CLIENT is enabled but USE_LLM_INTERFACE is not; the native"
+          " HTTP client exists only to serve LLM API calls.  Enable USE_LLM_INTERFACE, or set"
+          " USE_NATIVE_HTTP_CLIENT to OFF." )
+endif( USE_NATIVE_HTTP_CLIENT AND NOT USE_LLM_INTERFACE )
 
 #Copy D3 resources into InterSpec_resources directory at compile time
 include(cmake/DeployJsAndCss.cmake)
@@ -905,6 +963,39 @@ if( BUILD_AS_OSX_APP OR (APPLE AND BUILD_AS_WX_WIDGETS_APP) )
 
   target_link_libraries( InterSpecLib PUBLIC ${COCOA_LIBRARY} ${APPKIT_LIBRARY} ${COREDATA_LIBRARY} ${FOUNDATION_LIBRARY} )
 endif()
+
+# The native HTTP backends need frameworks/libs the blocks above do not necessarily provide -
+#  Foundation is only linked for the app-bundle and wxWidgets builds, which misses the plain
+#  BUILD_AS_LOCAL_SERVER build used during development.  (FIND_LIBRARY caches, so asking again
+#  for something already found above is free.)
+if( USE_NATIVE_HTTP_CLIENT )
+  if( APPLE )
+    FIND_LIBRARY( FOUNDATION_LIBRARY Foundation )  # NSURLSession
+    FIND_LIBRARY( SECURITY_LIBRARY Security )      # SecTrust*, for the custom-CA escape hatch
+    FIND_LIBRARY( CFNETWORK_LIBRARY CFNetwork )    # kCFNetworkProxies*, for the proxy override
+    MARK_AS_ADVANCED( FOUNDATION_LIBRARY SECURITY_LIBRARY CFNETWORK_LIBRARY )
+    target_link_libraries( InterSpecLib PUBLIC ${FOUNDATION_LIBRARY} ${SECURITY_LIBRARY}
+                                               ${CFNETWORK_LIBRARY} )
+  endif()
+
+  # The Wt::Http::Client backend reaches into OpenSSL directly to classify TLS errors (and Wt
+  #  itself is a static library, so its own SSL symbols are not resolved until this final link).
+  #  These must be the OpenSSL built into the dependency prefix - never the system one.
+  if( NATIVE_HTTP_WT_BACKEND )
+    find_library( NATIVE_HTTP_SSL_LIB    NAMES ssl    PATHS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES lib NO_DEFAULT_PATH )
+    find_library( NATIVE_HTTP_CRYPTO_LIB NAMES crypto PATHS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES lib NO_DEFAULT_PATH )
+    mark_as_advanced( NATIVE_HTTP_SSL_LIB NATIVE_HTTP_CRYPTO_LIB )
+
+    if( NATIVE_HTTP_SSL_LIB AND NATIVE_HTTP_CRYPTO_LIB )
+      message( STATUS "Native HTTP: Wt backend linking ${NATIVE_HTTP_SSL_LIB}" )
+      target_link_libraries( InterSpecLib PUBLIC ${NATIVE_HTTP_SSL_LIB} ${NATIVE_HTTP_CRYPTO_LIB} )
+    else()
+      message( WARNING "Native HTTP: the Wt::Http::Client backend is selected, but no OpenSSL was"
+               " found in the dependency prefix.  Rebuild it with BUILD_OPENSSL=ON, or https"
+               " requests through the native transport will not work." )
+    endif()
+  endif( NATIVE_HTTP_WT_BACKEND )
+endif( USE_NATIVE_HTTP_CLIENT )
 
 if( BUILD_AS_OSX_APP )
   if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )

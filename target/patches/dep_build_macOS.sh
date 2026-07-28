@@ -71,6 +71,19 @@ export MACOSX_DEPLOYMENT_TARGET=10.13 # MacOS High Sierra (2017, supported throu
 export MY_WT_PREFIX=$install_directory
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
+# Build a static OpenSSL into the prefix and enable Wt's SSL support, so Wt::Http::Client can do
+#  https:// - which is what the USE_NATIVE_HTTP_CLIENT backend needs on Linux.
+#
+# Default OFF on macOS: the native transport here is NSURLSession, which needs none of this.  Turn
+#  it on with `BUILD_OPENSSL=ON ./dep_build_macOS.sh ...` only to exercise the Wt::Http::Client
+#  path locally before it ships on Linux.
+#
+# Note this must be OpenSSL from the prefix, never the system one: macOS ships an ancient
+#  LibreSSL shim, and a system OpenSSL would make the built binaries unportable.
+BUILD_OPENSSL=${BUILD_OPENSSL:-OFF}
+OPENSSL_VERSION=3.5.4
+echo "BUILD_OPENSSL: ${BUILD_OPENSSL}"
+
 
 # Define a function to download a file and check its hash
 download_file() {
@@ -287,6 +300,70 @@ fi #if libharu.installe exists / else
 cd "${working_directory}"
 
 
+## Build a static OpenSSL, if asked for (see BUILD_OPENSSL near the top of this file)
+if [ "${BUILD_OPENSSL}" != "ON" ]; then
+  echo "BUILD_OPENSSL is not ON - skipping OpenSSL, and Wt will be built without SSL support."
+elif [ -f "${working_directory}/openssl.installed" ]; then
+  echo "OpenSSL already installed (as indicated by existance of openssl.installed file) - skipping."
+else
+  file_url="https://github.com/openssl/openssl/releases/download/openssl-${OPENSSL_VERSION}/openssl-${OPENSSL_VERSION}.tar.gz"
+  file_name="openssl-${OPENSSL_VERSION}.tar.gz"
+  expected_sha256="967311f84955316969bdb1d8d4b983718ef42338639c621ec4c34fddef355e99"
+  src_dir="openssl-${OPENSSL_VERSION}"
+
+  download_file "${file_url}" "${file_name}" "${expected_sha256}"
+
+  if [ -d "${src_dir}" ]; then
+    echo "OpenSSL already unzipped, not doing again."
+  else
+    tar -xzf "${file_name}"
+  fi
+
+  cd "${src_dir}"
+
+  # OpenSSL's Configure does not do universal binaries, so build each arch separately and lipo
+  #  them together - the same approach this script already uses for Boost and libpng.
+  for arch in arm64 x86_64; do
+    if [ "${arch}" = "arm64" ]; then
+      ossl_target="darwin64-arm64-cc"
+    else
+      ossl_target="darwin64-x86_64-cc"
+    fi
+
+    make clean > /dev/null 2>&1 || true
+
+    # no-shared: static only, so nothing extra has to ship alongside InterSpec.
+    # --openssldir: where OpenSSL will look for certificates at runtime.  It gets compiled into
+    #   the library and points into this build prefix, which will not exist on a user's machine -
+    #   which is exactly why the Wt backend must call setSslVerifyPath() explicitly rather than
+    #   relying on OpenSSL's defaults.
+    ./Configure "${ossl_target}" no-shared no-tests no-docs no-legacy \
+      --prefix="${working_directory}/openssl-${arch}" \
+      --openssldir="${MY_WT_PREFIX}/ssl" \
+      -mmacosx-version-min=${MACOSX_DEPLOYMENT_TARGET}
+
+    make -j$(sysctl -n hw.ncpu)
+    make install_sw
+  done
+
+  # Stitch the two architectures into the universal libraries Wt and InterSpec will link against.
+  mkdir -p "${MY_WT_PREFIX}/lib" "${MY_WT_PREFIX}/include"
+  lipo -create "${working_directory}/openssl-arm64/lib/libssl.a" \
+               "${working_directory}/openssl-x86_64/lib/libssl.a" \
+       -output "${MY_WT_PREFIX}/lib/libssl.a"
+  lipo -create "${working_directory}/openssl-arm64/lib/libcrypto.a" \
+               "${working_directory}/openssl-x86_64/lib/libcrypto.a" \
+       -output "${MY_WT_PREFIX}/lib/libcrypto.a"
+  cp -R "${working_directory}/openssl-arm64/include/openssl" "${MY_WT_PREFIX}/include/"
+
+  cd "${working_directory}"
+  touch "${working_directory}/openssl.installed"
+fi #if BUILD_OPENSSL / openssl.installed exists / else
+
+
+cd "${working_directory}"
+
+
 ## Build Wt 3.7.1
 if [ -f "${working_directory}/wt.installed" ]; then
     echo "Wt already installed (as indicated by existance of wt.installed file) - skipping."
@@ -324,7 +401,17 @@ else
   mkdir build
   cd build
 
-  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DHARU_PREFIX="${MY_WT_PREFIX}" -DHARU_LIB="${MY_WT_PREFIX}/lib/libhpdfs.a" -DENABLE_SSL=OFF -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++17" -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -S ..
+  # Wt 3.7.1 finds OpenSSL with its own cmake/WtFindSsl.txt, keyed on SSL_PREFIX - NOT with
+  #  find_package(OpenSSL), so OPENSSL_ROOT_DIR would be silently ignored here.  The patch applied
+  #  above also fixes that file to link libcrypto.a out of the prefix instead of emitting a bare
+  #  "-lcrypto", which would otherwise pull in the *system* libcrypto alongside our static libssl.
+  if [ "${BUILD_OPENSSL}" = "ON" ]; then
+    WT_SSL_ARGS="-DENABLE_SSL=ON -DSSL_PREFIX=${MY_WT_PREFIX}"
+  else
+    WT_SSL_ARGS="-DENABLE_SSL=OFF"
+  fi
+
+  cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET}" -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DBoost_INCLUDE_DIR="${MY_WT_PREFIX}/include" -DBOOST_PREFIX="${MY_WT_PREFIX}" -DSHARED_LIBS=OFF -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DHARU_PREFIX="${MY_WT_PREFIX}" -DHARU_LIB="${MY_WT_PREFIX}/lib/libhpdfs.a" ${WT_SSL_ARGS} -DCONNECTOR_FCGI=OFF -DBUILD_EXAMPLES=OFF -DBUILD_TESTS=OFF -DENABLE_MYSQL=OFF -DENABLE_POSTGRES=OFF -DENABLE_PANGO=OFF -DINSTALL_FINDWT_CMAKE_FILE=ON -DHTTP_WITH_ZLIB=OFF -DWT_CPP_11_MODE="-std=c++17" -DCONFIGURATION=data/config/wt_config_osx.xml -DWTHTTP_CONFIGURATION=data/config/wthttpd -DCONFIGDIR="${MY_WT_PREFIX}/etc/wt" -DCMAKE_OSX_ARCHITECTURES="x86_64;arm64" -S ..
   make -j$(sysctl -n hw.ncpu) install
   touch "${working_directory}/wt.installed"
 fi #if wt.installed exists / else
