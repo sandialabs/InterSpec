@@ -264,6 +264,12 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
   // LlmInterface is a Wt::Signals::trackable (not a WObject), so connect a functor rather than the
   // (target,method) overload, which would pick the WObject fast-path and fail to compile.
   m_watchdogTimer->timeout().connect( std::bind( &LlmInterface::onWatchdogTimeout, this ) );
+
+  // Repeating sweep that force-fails async tool calls past their deadline; only runs while a tool round
+  // is outstanding (see updateDeferredSweepTimer()).
+  m_deferredSweepTimer.reset( new Wt::WTimer() );
+  m_deferredSweepTimer->setInterval( sm_deferred_sweep_interval_ms );
+  m_deferredSweepTimer->timeout().connect( std::bind( &LlmInterface::onDeferredSweep, this ) );
 }
 
 LlmInterface::~LlmInterface()
@@ -333,7 +339,7 @@ void LlmInterface::failInFlightConversations( const std::string &reason, const b
   if( m_history )
   {
     for( const std::pair<const int, DeferredToolResult> &dr : m_deferredToolResults )
-      finalize( m_history->findConversationByConversationId( dr.second.conversationId ) );
+      finalize( conversationForRound( dr.second ) );
   }
 
   // User messages queued behind an in-flight summarization were never sent - finalize them as well.
@@ -349,6 +355,7 @@ void LlmInterface::failInFlightConversations( const std::string &reason, const b
   // outstanding to rescue.  Keeps "exactly one disarm per terminal transition" true and stops a
   // stale timer from surviving a reset.  (The normal success path emits and does not call this.)
   disarmWatchdog();
+  updateDeferredSweepTimer();
 }//failInFlightConversations(...)
 
 
@@ -415,6 +422,12 @@ void LlmInterface::onWatchdogTimeout()
     (*m_debug_stream) << "LLM watchdog fired after " << (sm_watchdog_timeout_ms/1000)
        << "s with no terminal signal; forcing conversation failure." << endl;
 
+  // Reaching here means something outside the sweep's reach pinned a round (most likely a sub-agent
+  // leg, which has no deadline) - so record exactly what was outstanding.  This is the diagnostic's
+  // most valuable call site: the other one only runs when an API response arrives, which is precisely
+  // what does not happen in that case.
+  logOutstandingDeferred( "watchdog" );
+
   // Abort any in-flight browser fetch(es) so they stop consuming time/tokens (mirrors cancelAll()).
   if( Wt::WApplication *app = Wt::WApplication::instance() )
     app->doJavaScript( "if(window.llmAbortAllRequests) window.llmAbortAllRequests('" + m_instanceId + "');" );
@@ -436,6 +449,306 @@ void LlmInterface::onWatchdogTimeout()
 
   emitResponseError();
 }//onWatchdogTimeout()
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+void LlmInterface::assertDeferredInvariants() const
+{
+  for( const std::pair<const int, DeferredToolResult> &dr : m_deferredToolResults )
+  {
+    // An entry with nothing outstanding must have been erased and its results sent; leaving one behind
+    // is exactly the orphan that blocks the terminal signal forever.
+    assert( !dr.second.pendingAsyncCalls.empty() || !dr.second.subAgentToolCallIds.empty() );
+    assert( !dr.second.conversationId.empty() );
+    // NOTE: deliberately no assert that the invocation ids are non-empty.  They come from the
+    // provider's response, and a provider that omits tool-call ids is bad input, not a programming
+    // error.  Such a round collapses to a single map entry and can finalize early - the same input
+    // already breaks matching results to calls elsewhere, so it is not made worse here.
+  }
+}//assertDeferredInvariants()
+#endif //PERFORM_DEVELOPER_CHECKS
+
+
+void LlmInterface::logOutstandingDeferred( const char * const context ) const
+{
+  if( !m_debug_stream || m_deferredToolResults.empty() )
+    return;
+
+  const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+
+  for( const std::pair<const int, DeferredToolResult> &dr : m_deferredToolResults )
+  {
+    (*m_debug_stream) << "  " << context << ": deferred round requestId=" << dr.first
+      << " convo=" << dr.second.conversationId
+      << ", " << dr.second.subAgentToolCallIds.size() << " sub-agent(s), "
+      << dr.second.pendingAsyncCalls.size() << " async call(s)";
+
+    for( const std::pair<const std::string,DeferredToolResult::PendingAsyncCall> &pa : dr.second.pendingAsyncCalls )
+    {
+      // Negative once the call is overdue, i.e. waiting to be reaped by the next sweep.
+      const long long to_deadline_s = std::chrono::duration_cast<std::chrono::seconds>(
+                                        pa.second.deadline - now ).count();
+      (*m_debug_stream) << "; [" << pa.second.toolName << " callId=" << pa.first
+        << " deadline in " << to_deadline_s << "s]";
+    }
+
+    (*m_debug_stream) << endl;
+  }//for( each outstanding round )
+}//logOutstandingDeferred(...)
+
+
+void LlmInterface::updateDeferredSweepTimer()
+{
+  if( !m_deferredSweepTimer )
+    return;
+
+  // Only async calls have deadlines, so a round waiting solely on a sub-agent gives the timer nothing
+  // to do - and a sub-agent turn can run for minutes.  Do not poll the client for it.
+  bool want_running = false;
+  for( const std::pair<const int, DeferredToolResult> &dr : m_deferredToolResults )
+    want_running = (want_running || !dr.second.pendingAsyncCalls.empty());
+
+  if( want_running == m_deferredSweepTimer->isActive() )
+    return;
+
+  if( want_running )
+    m_deferredSweepTimer->start();
+  else
+    m_deferredSweepTimer->stop();
+}//updateDeferredSweepTimer()
+
+
+bool LlmInterface::isAsyncCallOutstanding( const int parentRequestId, const std::string &callId ) const
+{
+  const std::map<int, DeferredToolResult>::const_iterator pos = m_deferredToolResults.find( parentRequestId );
+  if( pos == end(m_deferredToolResults) )
+    return false;
+
+  return (pos->second.pendingAsyncCalls.count( callId ) > 0);
+}//isAsyncCallOutstanding(...)
+
+
+std::shared_ptr<LlmInteraction> LlmInterface::conversationForRound( const DeferredToolResult &round ) const
+{
+  // Prefer the held weak_ptr: a sub-agent conversation is only reachable through the parent's tool
+  // calls, so the history lookup below cannot find it.  Fall back to the id for a conversation that
+  // outlived the weak_ptr (e.g. one rebuilt/reloaded into history).
+  const std::shared_ptr<LlmInteraction> convo = round.conversation.lock();
+  if( convo )
+    return convo;
+
+  return m_history ? m_history->findConversationByConversationId( round.conversationId ) : nullptr;
+}//conversationForRound(...)
+
+
+void LlmInterface::maybeEmitTerminalSignal()
+{
+  if( m_pendingRequests.empty() && m_deferredToolResults.empty() )
+  {
+    if( m_debug_stream )
+      (*m_debug_stream) << "No pending requests or deferred tools, emitting response received signal" << endl;
+    emitConversationFinished();
+  }
+}//maybeEmitTerminalSignal()
+
+
+void LlmInterface::finalizeDeferredIfReady( std::map<int, DeferredToolResult>::iterator pos )
+{
+  assert( pos != end(m_deferredToolResults) );
+  if( pos == end(m_deferredToolResults) )
+    return;
+
+  if( !pos->second.pendingAsyncCalls.empty() || !pos->second.subAgentToolCallIds.empty() )
+  {
+    assertDeferredInvariants();
+    return;  // still waiting on something from this round
+  }
+
+  // Take what we need before erasing, so a resolution arriving from any driver (async callback,
+  // sub-agent completion, sweep) works the same.
+  const std::string conversationId = pos->second.conversationId;
+  const std::shared_ptr<LlmInteraction> convo = conversationForRound( pos->second );
+  m_deferredToolResults.erase( pos );
+  updateDeferredSweepTimer();
+  assertDeferredInvariants();
+
+  if( !convo )
+  {
+    // The conversation is gone (cleared/reset/cancelled), so there is nothing to send it back to - but
+    // the turn must still terminate rather than sit "Working..." forever.
+    if( m_debug_stream )
+      (*m_debug_stream) << "Deferred tool round complete, but conversation " << conversationId
+        << " no longer exists - not sending results" << endl;
+
+    maybeEmitTerminalSignal();
+    return;
+  }//if( !convo )
+
+  if( m_debug_stream )
+    (*m_debug_stream) << "All async/sub-agent tools complete - sending results to LLM" << endl;
+
+  // The round has already been erased, so a throw here (e.g. buildMessagesArray on a history that
+  // will not serialize) would leave nothing outstanding and no signal emitted - and the watchdog
+  // deliberately ignores that state (hasActiveRequests() is false), so the turn would never end.
+  try
+  {
+    sendToolResultsToLLM( convo );
+  }catch( const std::exception &e )
+  {
+    cerr << "Failed to send deferred tool results: " << e.what() << endl;
+    if( m_debug_stream )
+      (*m_debug_stream) << "Failed to send deferred tool results: " << e.what() << endl;
+
+    if( m_history )
+      m_history->addErrorMessage( string("Failed to send tool results: ") + e.what(), "", convo,
+                                  LlmInteractionError::ErrorType::Unknown );
+    emitResponseError();
+  }//try / catch
+}//finalizeDeferredIfReady(...)
+
+
+void LlmInterface::resolveAsyncToolCall( const int parentRequestId, const std::string &callId )
+{
+  const std::map<int, DeferredToolResult>::iterator pos = m_deferredToolResults.find( parentRequestId );
+  if( pos == end(m_deferredToolResults) )
+  {
+    // Legitimate: the round was already finalized, or cleared by an error/reset/cancel.
+    if( m_debug_stream )
+      (*m_debug_stream) << "Async resolve: no deferred round for parentRequestId=" << parentRequestId
+        << " (callId=" << callId << ") - already resolved or cleared" << endl;
+    return;
+  }//if( no such round )
+
+  const std::map<std::string,DeferredToolResult::PendingAsyncCall>::iterator call_pos
+                                                     = pos->second.pendingAsyncCalls.find( callId );
+  if( call_pos == end(pos->second.pendingAsyncCalls) )
+  {
+    // Exactly-once guard: a duplicate callback, or one arriving after the deadline sweep already
+    // force-failed this call.  Resolving again would double-send the round's results.
+    if( m_debug_stream )
+      (*m_debug_stream) << "Async resolve: callId=" << callId << " is not outstanding on round "
+        << parentRequestId << " - ignoring duplicate/late resolution" << endl;
+    return;
+  }//if( call id not outstanding )
+
+  const std::string toolName = call_pos->second.toolName;
+  pos->second.pendingAsyncCalls.erase( call_pos );
+
+  // An async tool just made progress; restart the watchdog so a single long-running async tool/sub-agent
+  // step cannot trip the inactivity window on its own.
+  armWatchdog();
+
+  if( m_debug_stream )
+    (*m_debug_stream) << "Async tool complete: " << toolName
+      << ", remaining async=" << pos->second.pendingAsyncCalls.size()
+      << ", remaining sub-agents=" << pos->second.subAgentToolCallIds.size() << endl;
+
+  finalizeDeferredIfReady( pos );
+}//resolveAsyncToolCall(...)
+
+
+void LlmInterface::onDeferredSweep()
+{
+  const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+
+  // Collect first, then resolve: resolveAsyncToolCall() can erase entries from m_deferredToolResults
+  // (and re-enter through sendToolResultsToLLM), so we must not hold iterators across it.
+  std::vector<std::pair<int,std::string>> overdue;
+  for( const std::pair<const int, DeferredToolResult> &dr : m_deferredToolResults )
+  {
+    for( const std::pair<const std::string,DeferredToolResult::PendingAsyncCall> &pa : dr.second.pendingAsyncCalls )
+    {
+      if( pa.second.deadline <= now )
+        overdue.emplace_back( dr.first, pa.first );
+    }
+  }//for( each outstanding round )
+
+  for( const std::pair<int,std::string> &call : overdue )
+  {
+    const std::map<int, DeferredToolResult>::const_iterator pos = m_deferredToolResults.find( call.first );
+    if( pos == end(m_deferredToolResults) )
+      continue;  // round finalized by an earlier iteration of this loop
+
+    const std::map<std::string,DeferredToolResult::PendingAsyncCall>::const_iterator call_pos
+                                                       = pos->second.pendingAsyncCalls.find( call.second );
+    if( call_pos == end(pos->second.pendingAsyncCalls) )
+      continue;
+
+    const std::string toolName = call_pos->second.toolName;
+    const int timeout_s = (call_pos->second.timeoutMs / 1000);
+    const std::shared_ptr<LlmInteraction> convo = conversationForRound( pos->second );
+
+    cerr << "LLM async tool '" << toolName << "' (callId=" << call.second << ") did not return within "
+         << timeout_s << "s; reporting it to the model as a tool error." << endl;
+    if( m_debug_stream )
+      (*m_debug_stream) << "Async tool deadline exceeded: " << toolName << " (callId=" << call.second
+        << ", round=" << call.first << ") - force-failing so the turn can continue" << endl;
+
+    // Turn the still-Pending placeholder into an error result, exactly as a real error callback would,
+    // so the model gets a normal tool error instead of the conversation stalling.
+    if( convo )
+    {
+      LlmToolResults *owningToolResults = nullptr;
+      LlmToolCall * const pendingResult = findPendingToolResult( convo, call.second, &owningToolResults );
+      if( pendingResult )
+      {
+        // Shared with the MCP resource so a stuck tool reads the same however it was called; see
+        // LlmTools::async_timeout_error_message() for why the wording steers rather than just states.
+        nlohmann::json errJson;
+        errJson["error"] = LlmTools::async_timeout_error_message( toolName, call_pos->second.timeoutMs );
+        errJson["success"] = false;
+        pendingResult->status = LlmToolCall::CallStatus::Error;
+        pendingResult->content = errJson.dump();
+
+        if( owningToolResults )
+          owningToolResults->asyncToolCompleted().emit( call.second );
+      }//if( pendingResult )
+    }//if( convo )
+
+    // Finalizes the round if this was its last outstanding call, and (when there is no conversation
+    // left to send results to) emits the terminal signal itself - so no extra emit is done here.  A
+    // second maybeEmitTerminalSignal() would double-fire conversationFinished, which consumers treat
+    // as two completed turns (the MCP prompt queue would resolve the next prompt with this turn's
+    // answer, and the benchmark runner would skip a sequence step).
+    resolveAsyncToolCall( call.first, call.second );
+  }//for( each overdue call )
+
+  updateDeferredSweepTimer();
+}//onDeferredSweep()
+
+
+LlmToolCall *LlmInterface::findPendingToolResult( const std::shared_ptr<LlmInteraction> &convo,
+                                                  const std::string &callId,
+                                                  LlmToolResults **owner )
+{
+  if( owner )
+    *owner = nullptr;
+
+  if( !convo )
+    return nullptr;
+
+  for( const shared_ptr<LlmInteractionTurn> &resp : convo->responses )
+  {
+    if( resp->type() != LlmInteractionTurn::Type::ToolResult )
+      continue;
+
+    LlmToolResults * const toolResResp = dynamic_cast<LlmToolResults *>( resp.get() );
+    if( !toolResResp )
+      continue;
+
+    for( LlmToolCall &tc : toolResResp->toolCalls() )
+    {
+      if( tc.invocationId == callId )
+      {
+        if( owner )
+          *owner = toolResResp;
+        return &tc;
+      }
+    }//for( each tool call in this result turn )
+  }//for( each response )
+
+  return nullptr;
+}//findPendingToolResult(...)
 
 
 void LlmInterface::emitConversationFinished()
@@ -2184,8 +2497,11 @@ void LlmInterface::handleApiResponse( const std::string &response,
   }else
   {
     if( m_debug_stream )
+    {
       (*m_debug_stream) << "Still have " << m_pendingRequests.size() << " pending requests"
         << " and " << m_deferredToolResults.size() << " deferred tool results, not emitting signal yet" << endl;
+      logOutstandingDeferred( "waiting" );
+    }
   }
 }//void handleApiResponse(...)
 
@@ -2251,7 +2567,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
   // Track executed tool calls for follow-up
   std::vector<std::string> executedToolCallIds;
   vector<int> subAgentRequestIds;
-  size_t asyncToolCount = 0;  // Number of async tool calls dispatched to background threads
+  // Async tool calls dispatched to background threads, keyed by invocation id (see DeferredToolResult).
+  std::map<std::string,DeferredToolResult::PendingAsyncCall> asyncCalls;
 
   // Collect all tool call requests for batching
   std::vector<LlmToolCall> toolCallRequests;
@@ -2631,7 +2948,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
 
           // No assert here: the deferred entry can legitimately be gone (e.g. an unrelated error
           // response or resetWithConfig() cleared the map) by the time a sub-agent finishes.
-          const auto defered_pos = interface->m_deferredToolResults.find(parentRequestId);
+          const std::map<int, DeferredToolResult>::iterator defered_pos
+                                       = interface->m_deferredToolResults.find( parentRequestId );
           if( defered_pos == end(interface->m_deferredToolResults) )
           {
             if( interface->m_debug_stream )
@@ -2642,17 +2960,17 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
           
           DeferredToolResult &deffered_result = defered_pos->second;
           vector<int> &subAgentToolCallIds = deffered_result.subAgentToolCallIds;
-          const auto pos = std::find( begin(subAgentToolCallIds), end(subAgentToolCallIds), subAgentRequestId );
+          const std::vector<int>::iterator pos
+            = std::find( begin(subAgentToolCallIds), end(subAgentToolCallIds), subAgentRequestId );
           assert( pos != end(subAgentToolCallIds) );
+          if( pos == end(subAgentToolCallIds) )
+            return;  // already resolved; resolving again would double-send the round's results
+
           subAgentToolCallIds.erase( pos );
-          if( subAgentToolCallIds.empty() && (deffered_result.pendingAsyncToolCount == 0) )
-          {
-            // No more agent calls or async tools pending, lets cleanup the results
-            interface->m_deferredToolResults.erase( defered_pos );
-            if( interface->m_debug_stream )
-              (*interface->m_debug_stream) << "=== Sending parent conversation with sub-agent results back to LLM!" << endl;
-            interface->sendToolResultsToLLM( parent_conv );
-          }
+
+          // Shared with the async-tool and deadline-sweep drivers, so whichever of them finishes last
+          // finalizes the round.
+          interface->finalizeDeferredIfReady( defered_pos );
         };//sub_agent_convo->conversation_completion_handler
 
         if( m_debug_stream )
@@ -2703,7 +3021,18 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
             toolResult.content = R"({"status": "pending"})";
             toolCallResults.push_back( std::move(toolResult) );
 
-            asyncToolCount++;
+            // Remember this call by id so the round can be resolved exactly-once, and give it a deadline
+            // so a tool that never calls back cannot pin the round (see onDeferredSweep()).
+            static_assert( LlmTools::sm_default_async_timeout_ms < sm_watchdog_timeout_ms,
+              "The async-tool deadline must fire before the watchdog, so a stuck tool is reported as"
+              " a tool error rather than failing the whole turn." );
+
+            DeferredToolResult::PendingAsyncCall pendingCall;
+            pendingCall.toolName = toolName;
+            pendingCall.timeoutMs = LlmTools::effective_async_timeout_ms( *tool );
+            pendingCall.deadline = std::chrono::steady_clock::now()
+                                   + std::chrono::milliseconds( pendingCall.timeoutMs );
+            asyncCalls[callId] = pendingCall;
 
             const string capturedCallId = callId;
             const string capturedToolName = toolName;
@@ -2729,16 +3058,8 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
               {
                 // Runs on the GUI thread, on a later event-loop iteration than dispatch, so the
                 // deferred-result entry and placeholder tool-result are guaranteed to be in place.
-                shared_ptr<LlmInterface> self = weakSelf.lock();
+                const shared_ptr<LlmInterface> self = weakSelf.lock();
                 if( !self )
-                  return;
-
-                shared_ptr<LlmInteraction> convo = weakConvo.lock();
-                if( !convo )
-                  return;
-
-                InterSpec *viewer = InterSpec::instance();
-                if( !wApp || !viewer )
                   return;
 
                 const auto exec_end = std::chrono::steady_clock::now();
@@ -2748,38 +3069,41 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                   (*self->m_debug_stream) << "Async tool callback for: " << capturedToolName
                     << " (callId=" << capturedCallId << ", duration=" << exec_duration.count() << "ms)" << endl;
 
-                // Find the Pending tool result in the conversation and update it
-                LlmToolCall *pendingResult = nullptr;
+                // Whether this call still counts towards its round.  If not, the round was either
+                // already finalized, force-failed by the deadline sweep, or cleared by the error path.
+                const bool outstanding = self->isAsyncCallOutstanding( capturedParentRequestId,
+                                                                       capturedCallId );
+
+                // Apply the result to the placeholder if we still can.  Everything from here to the
+                // resolveAsyncToolCall() below is best-effort: the bookkeeping MUST be resolved even
+                // when the conversation/session is gone, or the round is orphaned and the turn hangs.
+                const shared_ptr<LlmInteraction> convo = weakConvo.lock();
                 LlmToolResults *owningToolResults = nullptr;
-                for( shared_ptr<LlmInteractionTurn> &resp : convo->responses )
-                {
-                  if( resp->type() != LlmInteractionTurn::Type::ToolResult )
-                    continue;
+                LlmToolCall * const pendingResult = (convo && wApp && InterSpec::instance())
+                            ? findPendingToolResult( convo, capturedCallId, &owningToolResults )
+                            : nullptr;
 
-                  LlmToolResults *toolResResp = dynamic_cast<LlmToolResults *>( resp.get() );
-                  if( !toolResResp )
-                    continue;
+                // A placeholder that is no longer Pending has already had its outcome decided AND sent
+                // to the model - normally, or as an error by the deadline sweep.  Rewriting it would
+                // leave stored history disagreeing with what was transmitted (and invalidate the
+                // provider's cached prefix), so a late result is dropped and the earlier outcome
+                // stands.  A still-Pending placeholder was never reported, so filling it in is both
+                // safe and necessary: otherwise a tool that actually succeeded is stranded reading
+                // "pending" forever in the UI, and is sent to the model as such on a Continue-anyway.
+                const bool applyResult = pendingResult
+                                  && (pendingResult->status == LlmToolCall::CallStatus::Pending);
 
-                  for( LlmToolCall &tc : toolResResp->toolCalls() )
-                  {
-                    if( tc.invocationId == capturedCallId )
-                    {
-                      pendingResult = &tc;
-                      owningToolResults = toolResResp;
-                      break;
-                    }
-                  }
-                  if( pendingResult )
-                    break;
-                }//for( each response )
-
-                if( !pendingResult )
+                if( !applyResult )
                 {
                   if( self->m_debug_stream )
-                    (*self->m_debug_stream) << "Async callback: could not find pending result for callId="
-                      << capturedCallId << " - discarding" << endl;
+                    (*self->m_debug_stream) << "Async callback: not applying result for callId="
+                      << capturedCallId << " (" << (pendingResult ? "outcome already reported"
+                                                                  : "no placeholder found") << ")" << endl;
+
+                  if( outstanding )
+                    self->resolveAsyncToolCall( capturedParentRequestId, capturedCallId );
                   return;
-                }
+                }//if( !applyResult )
 
                 if( const string *error = std::get_if<string>( &result_or_error ) )
                 {
@@ -2887,38 +3211,12 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                 if( owningToolResults )
                   owningToolResults->asyncToolCompleted().emit( capturedCallId );
 
-                // Decrement pending count; send results when all async tools are done
-                auto defPos = self->m_deferredToolResults.find( capturedParentRequestId );
-                if( defPos == self->m_deferredToolResults.end() )
-                {
-                  if( self->m_debug_stream )
-                    (*self->m_debug_stream) << "Async callback: no deferred entry for parentRequestId="
-                      << capturedParentRequestId << " - discarding" << endl;
-                  return;
-                }
-
-                assert( defPos->second.pendingAsyncToolCount > 0 );
-                defPos->second.pendingAsyncToolCount--;
-
-                // An async tool just made progress; restart the watchdog so a single long-running
-                // async tool/sub-agent step cannot trip the inactivity window on its own.
-                self->armWatchdog();
-
-                if( self->m_debug_stream )
-                  (*self->m_debug_stream) << "Async tool complete: " << capturedToolName
-                    << ", remaining async=" << defPos->second.pendingAsyncToolCount
-                    << ", remaining sub-agents=" << defPos->second.subAgentToolCallIds.size() << endl;
-
-                if( defPos->second.pendingAsyncToolCount == 0
-                    && defPos->second.subAgentToolCallIds.empty() )
-                {
-                  self->m_deferredToolResults.erase( defPos );
-
-                  if( self->m_debug_stream )
-                    (*self->m_debug_stream) << "All async/sub-agent tools complete - sending results to LLM" << endl;
-
-                  self->sendToolResultsToLLM( convo );
-                }
+                // Resolve the round's bookkeeping (exactly-once) and send the results if this was the
+                // last outstanding sub-agent/async call.  Skipped when the call no longer counts
+                // towards a round (its round was cleared), where the result above was still worth
+                // recording but there is nothing left to finalize.
+                if( outstanding )
+                  self->resolveAsyncToolCall( capturedParentRequestId, capturedCallId );
               };//rawCallback
 
             // Marshal the completion body onto a later iteration of THIS session's GUI event loop,
@@ -2944,10 +3242,10 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
             }catch( const std::exception &e )
             {
               // The asyncExecutor threw synchronously (e.g., during argument parsing)
-              // before establishing the async callback.  asyncToolCount was already
-              // incremented and a Pending result was pushed, but the callback will
-              // never fire, so we must handle the error here.
-              asyncToolCount--;
+              // before establishing the async callback.  The call was already registered
+              // and a Pending result was pushed, but the callback will never fire, so we
+              // must drop the registration and handle the error here.
+              asyncCalls.erase( callId );
 
               if( m_debug_stream )
                 (*m_debug_stream) << "Async tool threw synchronously: " << e.what() << endl;
@@ -3251,22 +3549,36 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
   }
 
   // If we have sub-agent invocations or async tool calls, defer sending results
-  if( !subAgentRequestIds.empty() || (asyncToolCount > 0) )
+  if( !subAgentRequestIds.empty() || !asyncCalls.empty() )
   {
     if( m_debug_stream )
     {
       (*m_debug_stream) << "Deferring tool results - "
         << subAgentRequestIds.size() << " sub-agent(s), "
-        << asyncToolCount << " async tool(s) pending" << endl;
+        << asyncCalls.size() << " async tool(s) pending" << endl;
     }
+
+    // A round id is used once, so an existing entry here would mean we are about to drop an
+    // outstanding round on the floor - which would hang the conversation.
+    assert( m_deferredToolResults.find( parentRequestId ) == end(m_deferredToolResults) );
 
     DeferredToolResult deferred;
     deferred.conversationId = convo->conversationId;
-    deferred.toolCallIds = executedToolCallIds;
+    deferred.conversation = convo;
     deferred.subAgentToolCallIds = subAgentRequestIds;
-    deferred.pendingAsyncToolCount = asyncToolCount;
+    deferred.pendingAsyncCalls = std::move( asyncCalls );
 
-    m_deferredToolResults[parentRequestId] = deferred;
+    // Re-stamp the deadlines now, at registration.  They were set when each tool was dispatched, but
+    // nothing can observe a call until this entry exists and the sweep starts - and the rest of this
+    // batch runs on the GUI thread, so a slow synchronous tool alongside an async one would silently
+    // eat the async call's window.  A deadline should measure the time we were actually able to watch.
+    const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+    for( std::pair<const std::string,DeferredToolResult::PendingAsyncCall> &pa : deferred.pendingAsyncCalls )
+      pa.second.deadline = now + std::chrono::milliseconds( pa.second.timeoutMs );
+
+    m_deferredToolResults[parentRequestId] = std::move( deferred );
+    updateDeferredSweepTimer();
+    assertDeferredInvariants();
 
     // Don't send results yet - wait for sub-agent and/or async tools
   }else
@@ -4724,9 +5036,14 @@ void LlmInterface::handleJavaScriptResponse(std::string response, int requestId)
             ++it;
           }
         }
-        if( cleared && m_debug_stream )
-          (*m_debug_stream) << "Error response - cleared " << cleared
-            << " orphaned deferred tool result(s) for this conversation" << endl;
+        if( cleared )
+        {
+          updateDeferredSweepTimer();
+          assertDeferredInvariants();
+          if( m_debug_stream )
+            (*m_debug_stream) << "Error response - cleared " << cleared
+              << " orphaned deferred tool result(s) for this conversation" << endl;
+        }
       }
 
       // If the FAILED request was the compaction/summarization request, don't strand the user's

@@ -34,6 +34,7 @@ class RefLineDynamic;
 
 namespace Wt
 {
+  class WTimer;
   class WCssTextRule;
   class WMemoryResource;
 }//namespace Wt
@@ -470,13 +471,27 @@ public:
    @param backgroundSubtract If set, force background-subtract on (true) or off (false) before
                    capture; nullopt = no change.  Only has visible effect if a background spectrum
                    is loaded.  Original state is restored after capture.
-   @param callback Called with the base64 image data, mime type, and dimensions when capture completes
+   @param callback Called with the base64 image data, mime type, and dimensions when capture completes.
+                   Guaranteed to be called exactly once, with empty data meaning the capture failed:
+                   if the browser never answers, a guard timer fails it after
+                   sm_image_capture_timeout_ms, and a request arriving when sm_max_queued_captures are
+                   already waiting is failed immediately rather than queued behind an unbounded wait.
    */
   void captureChartImage( const std::string &format, int maxLongestSide,
                           std::optional<std::pair<double,double>> energyRange,
                           std::optional<bool> yAxisLog,
                           std::optional<bool> backgroundSubtract,
                           ImageCaptureCallback callback );
+
+  /** How long a single in-flight capture is given before it is failed, how often that deadline is
+   checked, and how many further captures may wait behind it.  Public because together they define the
+   worst-case latency a captureChartImage() caller can see -
+   (sm_max_queued_captures + 1) * (sm_image_capture_timeout_ms + sm_image_capture_poll_ms) - which
+   consumers that impose their own deadline (e.g. LlmTools::SharedTool::asyncTimeoutMs) must exceed.
+   */
+  static constexpr int sm_image_capture_timeout_ms = 15000;
+  static constexpr int sm_image_capture_poll_ms = 2000;
+  static constexpr size_t sm_max_queued_captures = 2;
 
   void setThumbnailMode();
 protected:
@@ -619,7 +634,8 @@ protected:
   
   std::unique_ptr<Wt::JSignal<bool> > m_sliderDisplayed;
   std::unique_ptr<Wt::JSignal<std::string> > m_yAxisTypeChanged;
-  std::unique_ptr<Wt::JSignal<std::string, std::string, int, int> > m_imageCapturedJS;
+  // The trailing int is the capture id (see m_activeCaptureId).
+  std::unique_ptr<Wt::JSignal<std::string, std::string, int, int, int> > m_imageCapturedJS;
   // Image captures are serialized: only one capture JS is in flight at a time (it manipulates the
   //  shared chart's zoom/y-scale/background-subtract state), so concurrent captures would both
   //  clobber each other's display state AND overwrite the single pending callback.  m_pendingImageCallback
@@ -629,8 +645,38 @@ protected:
   std::deque<std::pair<std::string,ImageCaptureCallback>> m_imageCaptureQueue;
   Wt::WMemoryResource *m_downloadResource;
 
+  /** Guard against the browser never answering a capture (a JS error, a `requestAnimationFrame` that
+   never fires because the window is hidden/occluded, or JS lost across a reload).  Without this a
+   single lost round-trip leaves m_pendingImageCallback set forever, so every later capture queues
+   behind it and never runs - which stalls every subsequent get_spectrum_image tool call.
+
+   Deliberately a REPEATING timer checked against m_activeCaptureDeadline, rather than a single-shot
+   timer re-armed from its own handler: WTimer connects its internal gotTimeout slot lazily on the
+   first start(), and for a single-shot timer that slot calls stop().  Whether it runs before or after
+   our handler then decides whether a timer we re-armed for the next queued capture survives - so a
+   re-armed single-shot guard silently does not fire.  Polling a deadline is immune to that ordering.
+   */
+  std::unique_ptr<Wt::WTimer> m_imageCaptureTimer;
+  std::chrono::steady_clock::time_point m_activeCaptureDeadline;
+
+  /** Identifies the in-flight capture, so a result that arrives after its guard timer already fired is
+   discarded rather than being delivered to whichever capture is in flight by then - which would
+   silently mis-pair every subsequent image with the wrong requester.  0 means "no capture in flight",
+   which no real capture id ever takes.
+   */
+  int m_activeCaptureId = 0;
+  int m_nextCaptureId = 1;
+
   /** Handler for the JSignal from JS when image capture completes. */
-  void handleImageCaptured( std::string base64, std::string mimeType, int w, int h );
+  void handleImageCaptured( std::string base64, std::string mimeType, int w, int h, int captureId );
+
+  /** Issues the next queued capture, or clears the in-flight state if there is none. */
+  void issueNextQueuedCapture();
+
+  /** Guard-timer tick: if the in-flight capture is past its deadline, fails it and moves on to the
+   next queued one.  A no-op while the capture is still within its window.
+   */
+  void checkImageCaptureDeadline();
 
   /** Handles downloading an image captured by captureChartImage, for saveChartToImg. */
   void handleChartImageForDownload( const std::string &filename,

@@ -274,6 +274,8 @@ A refit may adjust values you set; to lock a value, also set its fitFor flag to 
 Use when: fine-tuning peak shape - changing the skew model, fixing continuum coefficients, or overriding fitted uncertainties.
 For everyday edits (delete, refit, ROI bounds, source assignment, labels, usage flags) use 'edit_analysis_peak' instead.
 
+Refit behavior: changing the skew/continuum model or its parameter values automatically refits the shared ROI. Use "refit": true to force a refit without changing values, or "refit": false to suppress automatic refitting.
+
 A refit may adjust values you set; to lock a value, also set its fitFor flag to false (e.g., skewPar0: 1.5, fitForSkewPar0: false).
 
 Skew types (number of parameters, and their meaning):

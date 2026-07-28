@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <chrono>
 #include <string>
 #include <memory>
 #include <utility>
@@ -324,15 +325,125 @@ private:
   // Track current conversation being processed (for tool execution context)
   std::weak_ptr<LlmInteraction> m_currentConversation;
 
-  // Deferred tool results (for sub-agent invocations that need to pause main agent)
+  /** A tool round whose results cannot be sent back to the LLM yet, because one or more sub-agent
+   invocations and/or async tool calls from that round are still outstanding.  The round finalizes - the
+   entry is erased and the results are sent - when the last of them resolves, whichever that is.
+
+   Async calls are tracked by invocation id rather than by a bare count so that resolution is
+   *identity-based and exactly-once*: a callback that arrives twice, or arrives after the deadline sweep
+   already reported the call as timed out, is recognized and dropped instead of double-resolving; and a
+   callback that is skipped cannot silently pin the entry (the sweep reaps it by id).  An orphaned entry
+   here blocks the terminal conversation signal, so this bookkeeping must be airtight.
+   */
   struct DeferredToolResult {
     std::string conversationId;
-    std::vector<std::string> toolCallIds;  // Tool call IDs to send back when sub-agent completes (does not include sub-agent calls)
+    /** The conversation this round belongs to.  Held as well as the id because sub-agent conversations
+     are NOT in LlmConversationHistory's top-level list (they hang off LlmToolCall::sub_agent_conversation),
+     so findConversationByConversationId() cannot find them - resolving a sub-agent's round by id alone
+     would silently never send its results.  The id remains the fallback if the weak_ptr has expired.
+     */
+    std::weak_ptr<LlmInteraction> conversation;
     std::vector<int> subAgentToolCallIds;  // The invoke_sub_agent tool call ID to update with summary
-    size_t pendingAsyncToolCount = 0;      // Number of async tool calls still running in background threads
+
+    /** An async tool call dispatched from this round and not yet resolved. */
+    struct PendingAsyncCall {
+      std::string toolName;
+      int timeoutMs = 0;                               // the deadline that was applied, for messages
+      std::chrono::steady_clock::time_point deadline;  // when onDeferredSweep() force-fails this call
+    };
+    std::map<std::string,PendingAsyncCall> pendingAsyncCalls;  // key is the tool-call invocation id
   };
-  std::map<int, DeferredToolResult> m_deferredToolResults; // Key is sub-agent requestId
-  
+  std::map<int, DeferredToolResult> m_deferredToolResults; // Key is the requestId the tool round came from
+
+  // The deadline for an async tool call is not owned here: it comes from
+  // LlmTools::effective_async_timeout_ms(), i.e. the tool's own LlmTools::SharedTool::asyncTimeoutMs
+  // falling back to LlmTools::sm_default_async_timeout_ms, so that every consumer of asyncExecutor
+  // (this class' deferred-round sweep, LlmMcpResource) applies the same deadline to a given tool.
+  // That default is well under sm_watchdog_timeout_ms - static_assert'ed where it is applied - so a
+  // stuck async tool is reported as a tool error, and the conversation continues, long before the
+  // watchdog would fail the whole turn.
+
+  /** How often m_deferredSweepTimer checks for overdue async calls. */
+  static constexpr int sm_deferred_sweep_interval_ms = 5000;
+
+  /** Repeating timer, running while any tool round has an outstanding async call, that force-resolves
+   async tool calls which blew their deadline.  This - not the watchdog - is what makes a round with a
+   stuck ASYNC TOOL finalize: the watchdog is an *inactivity* timer that is re-armed by every request,
+   response and async step, so it never fires while the model keeps working around a stuck entry.
+
+   NOTE: this covers `pendingAsyncCalls` only.  A round's `subAgentToolCallIds` leg has no deadline -
+   a sub-agent turn is legitimately open-ended - so it is still resolved solely by the sub-agent's
+   conversation_completion_handler (or, failing that, the watchdog).  A sub-agent whose own request
+   ends in an API error therefore still pins its parent's round, since the error path pauses that
+   conversation for the user to retry rather than completing it.
+   */
+  std::unique_ptr<Wt::WTimer> m_deferredSweepTimer;
+
+  /** True if `callId` is still an outstanding async call of the tool round `parentRequestId`.
+
+   Used to drop a *late* async result: once the deadline sweep has reported the call as an error, that
+   error has already been sent to the model, so applying the late result would leave the stored history
+   disagreeing with what was actually transmitted (and invalidate the provider's cached prefix).
+   */
+  bool isAsyncCallOutstanding( const int parentRequestId, const std::string &callId ) const;
+
+  /** The single resolution point for an async tool call; idempotent.
+
+   No-ops (with a debug log) when the round or the call id is not outstanding, so a duplicate or late
+   callback cannot double-resolve.  Otherwise drops the call from the round's bookkeeping and, if that
+   was the last outstanding sub-agent/async call, finalizes the round.
+   */
+  void resolveAsyncToolCall( const int parentRequestId, const std::string &callId );
+
+  /** Sends the round's tool results back to the LLM and erases the entry, if nothing is outstanding.
+
+   Shared by all three drivers (async callback, sub-agent completion, deadline sweep) so "who finished
+   last" does not matter.  If the conversation no longer exists there is nothing to send, so the
+   terminal signal is re-evaluated instead - the turn is never left stranded.
+   */
+  void finalizeDeferredIfReady( std::map<int, DeferredToolResult>::iterator pos );
+
+  /** The conversation a deferred round belongs to, or nullptr if it no longer exists.
+
+   Must be used instead of a bare findConversationByConversationId(): sub-agent conversations are not
+   in the history's top-level list, so an id-only lookup silently fails for them.
+   */
+  std::shared_ptr<LlmInteraction> conversationForRound( const DeferredToolResult &round ) const;
+
+  /** Emits conversationFinished if no requests and no deferred tool rounds remain.
+
+   The success-path emit gate in handleApiResponse() only runs when an API response arrives; this lets
+   the paths that reap a deferred entry outside of a response still terminate the turn.
+   */
+  void maybeEmitTerminalSignal();
+
+  /** Starts/stops m_deferredSweepTimer to match whether any tool round is outstanding. */
+  void updateDeferredSweepTimer();
+
+  /** Force-fails async tool calls past their deadline, then re-evaluates the terminal signal. */
+  void onDeferredSweep();
+
+  /** Finds the Pending placeholder result for `callId` in `convo`, or nullptr.
+
+   `owner` (optional) receives the LlmToolResults turn holding it, needed to emit asyncToolCompleted().
+   */
+  static LlmToolCall *findPendingToolResult( const std::shared_ptr<LlmInteraction> &convo,
+                                             const std::string &callId,
+                                             LlmToolResults **owner );
+
+  /** Writes a short human-readable description of every outstanding deferred round (request id,
+   conversation, and each pending async call's id/tool/age) to the debug stream.  Turns a recurrence of
+   the orphaned-deferred-result hang into a one-line diagnosis.
+   */
+  void logOutstandingDeferred( const char * const context ) const;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  /** Asserts the invariants of m_deferredToolResults; call after every mutation of the map. */
+  void assertDeferredInvariants() const;
+#else
+  void assertDeferredInvariants() const {}
+#endif
+
   // Context summarization support.  A queue (not a single slot) so a second user message arriving
   // while summarization is in flight is not silently dropped.
   std::vector<std::weak_ptr<LlmInteraction>> m_summarizationPendingConvos;

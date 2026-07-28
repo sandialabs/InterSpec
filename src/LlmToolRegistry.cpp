@@ -37,6 +37,7 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
+#include "InterSpec/D3TimeChart.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/InterSpecApp.h"
@@ -85,6 +86,38 @@ using namespace std;
 using json = nlohmann::json;
 
 namespace {
+  /** Deadline for the chart-image tools (SharedTool::asyncTimeoutMs).
+
+   These are browser round-trips rather than computation, so a capture that has actually started resolves
+   in well under a second.  What this must cover is *queueing*: D3SpectrumDisplayDiv serializes captures,
+   so a request can wait behind up to sm_max_queued_captures others before its own capture even starts,
+   each bounded by sm_image_capture_timeout_ms.  Derived from those constants (rather than hard-coded) so
+   a capture is never falsely reported as timed out merely for having waited its turn.
+   */
+  const int sm_spectrum_image_tool_timeout_ms
+      = static_cast<int>( D3SpectrumDisplayDiv::sm_max_queued_captures + 1 )
+        * (D3SpectrumDisplayDiv::sm_image_capture_timeout_ms      // each capture's own window, plus
+           + D3SpectrumDisplayDiv::sm_image_capture_poll_ms)      //  the granularity it is polled at
+        + 5000;  // slack for the round-trips either side of the capture itself
+
+  /** The time chart does not queue captures - a second request supersedes the first - so its bound is
+   just one capture window, not the spectrum chart's (queue depth + 1).
+   */
+  const int sm_time_chart_image_tool_timeout_ms
+      = D3TimeChart::sm_image_capture_timeout_ms + 5000;
+
+  /** Deadline for assistant_submit_prompt (SharedTool::asyncTimeoutMs).
+
+   Unlike every other async tool, this one waits on an entire assistant turn - many model round-trips,
+   tool calls and possibly sub-agents - which is legitimately open-ended; a full-spectrum analysis can
+   easily run 15 minutes while working perfectly.  So this is sized as a backstop against a *lost*
+   callback, not as a budget for the work, and must not be derived from LlmInterface's watchdog: that
+   is an *inactivity* timer, restarted at every request/response/async step (see armWatchdog()), so it
+   never bounds how long a busy turn may take.  LlmInterface gives its own sub-agent leg no deadline
+   at all for the same reason; MCP cannot do that without parking an HTTP worker thread forever.
+   */
+  const int sm_assistant_prompt_tool_timeout_ms = 3600000;  // 1 hour
+
   // JSON conversion for SpecUtils::SpectrumType enum
   NLOHMANN_JSON_SERIALIZE_ENUM(SpecUtils::SpectrumType, {
       {SpecUtils::SpectrumType::Foreground, "Foreground"},
@@ -1909,6 +1942,22 @@ namespace {
 namespace LlmTools
 {
 
+int effective_async_timeout_ms( const SharedTool &tool )
+{
+  return (tool.asyncTimeoutMs > 0) ? tool.asyncTimeoutMs : sm_default_async_timeout_ms;
+}//effective_async_timeout_ms(...)
+
+
+std::string async_timeout_error_message( const std::string &toolName, const int timeoutMs )
+{
+  return "Tool call failed: '" + toolName + "' did not return a result within "
+         + std::to_string( timeoutMs / 1000 ) + " seconds, so it was abandoned."
+         " It was not cancelled and may still complete in the background, so if it"
+         " modifies state, re-check with a read tool before relying on this result."
+         " This tool is not responding - prefer another approach over retrying it.";
+}//async_timeout_error_message(...)
+
+
 ToolRegistry::ToolRegistry( const LlmConfig &config )
   : m_supportsImages( config.llmApi.supportsImages() )
 {
@@ -2457,6 +2506,10 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       };
     }else if( toolName == "get_spectrum_image" )
     {
+      // A chart capture is a single browser round-trip, not computation, so it should never take long.
+      // Captures are serialized behind at most sm_max_queued_captures others, and each of those is
+      // itself bounded by the chart's own capture timer, so this covers the worst-case queued wait.
+      tool.asyncTimeoutMs = sm_spectrum_image_tool_timeout_ms;
       tool.asyncExecutor = [](const json& params, InterSpec* interspec,
           shared_ptr<LlmInteraction> convo, LlmConversationHistory* history,
           SharedTool::AsyncCallback callback) {
@@ -2479,6 +2532,7 @@ SharedTool ToolRegistry::createToolWithExecutor( const std::string &toolName )
       };
     }else if( toolName == "get_time_chart_image" )
     {
+      tool.asyncTimeoutMs = sm_time_chart_image_tool_timeout_ms;  // browser round-trip, never queued
       tool.asyncExecutor = [](const json& params, InterSpec* interspec,
           shared_ptr<LlmInteraction> convo, LlmConversationHistory* history,
           SharedTool::AsyncCallback callback) {
@@ -2636,6 +2690,11 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
         "required": ["prompt"]
       })");
     submitTool.availableForAgents = { AgentType::McpServer };
+
+    // A turn is legitimately open-ended, so this needs a far larger deadline than a normal tool -
+    // see sm_assistant_prompt_tool_timeout_ms for why it cannot be derived from the watchdog.
+    submitTool.asyncTimeoutMs = sm_assistant_prompt_tool_timeout_ms;
+
     submitTool.asyncExecutor = [](const json& params, InterSpec* interspec,
         shared_ptr<LlmInteraction>, LlmConversationHistory*,
         SharedTool::AsyncCallback callback) {

@@ -68,12 +68,46 @@ struct SharedTool {
         std::shared_ptr<LlmInteraction>, LlmConversationHistory*,
         AsyncCallback)> asyncExecutor;
 
+    /** How long the consumer should wait for asyncExecutor's callback before giving up and reporting a
+     tool error, in milliseconds; 0 means use `sm_default_async_timeout_ms`.  Set a short value for
+     tools whose work is a browser round-trip rather than computation, so a lost round-trip is
+     recovered from quickly.  Resolve via `effective_async_timeout_ms()` rather than reading directly.
+     */
+    int asyncTimeoutMs = 0;
+
     bool isAsync() const { return static_cast<bool>( asyncExecutor ); }
 
     // Agent-specific configurations
     std::vector<AgentType> availableForAgents;  // List of agent types that can use this tool (empty = all agents)
     std::map<AgentType, std::string> roleDescriptions;  // Role-specific descriptions (AgentType -> description)
 };
+
+
+/** Deadline applied to an async tool call whose `SharedTool::asyncTimeoutMs` is 0.
+
+ Generous enough for a slow peak fit, but well under LlmInterface::sm_watchdog_timeout_ms so a stuck
+ async tool is reported as a tool error - and the conversation continues - long before the watchdog
+ would fail the whole turn.
+ */
+constexpr int sm_default_async_timeout_ms = 300000;  // 5 minutes
+
+/** The deadline a consumer should apply when waiting on `tool`s async callback: the tools own
+ `asyncTimeoutMs`, or `sm_default_async_timeout_ms` when it does not set one.
+
+ Every consumer of `asyncExecutor` (LlmInterface's deferred-round sweep, the MCP resource) resolves
+ its deadline through here, so there is one timeout policy rather than one per transport.
+ */
+int effective_async_timeout_ms( const SharedTool &tool );
+
+/** The error message reported when an async tool blew its deadline.
+
+ Steers the model rather than just stating the failure: a bare "abandoned" reads as transient and
+ invites an immediate retry of a tool that is not responding.  Also warns about the divergence this
+ creates - we stopped waiting, but the tool was not cancelled, so a mutating tool (e.g. a peak fit)
+ may still land and leave the model believing state it can see.
+ */
+std::string async_timeout_error_message( const std::string &toolName, const int timeoutMs );
+
 
 /** Central registry for LLM tools that can be shared between LlmInterface and LlmMcpResource.
  

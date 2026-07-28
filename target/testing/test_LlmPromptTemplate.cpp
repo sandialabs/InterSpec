@@ -32,6 +32,9 @@
 
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
+
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/LlmPromptTemplate.h"
 
@@ -69,6 +72,37 @@ namespace
     cfg.mcpServer.enabled = false;
     return cfg;
   }//make_config(...)
+
+
+  /** Locate the shipped `data` directory, from `--datadir=` or by searching upward. */
+  string data_dir()
+  {
+    const int argc = boost::unit_test::framework::master_test_suite().argc;
+    char ** const argv = boost::unit_test::framework::master_test_suite().argv;
+
+    string datadir;
+    for( int i = 1; i < argc; ++i )
+    {
+      const string arg = argv[i];
+      if( SpecUtils::istarts_with( arg, "--datadir=" ) )
+        datadir = arg.substr( 10 );
+    }
+    SpecUtils::ireplace_all( datadir, "%20", " " );
+
+    if( datadir.empty() )
+    {
+      for( const char * const d : { "data", "../data", "../../data", "../../../data" } )
+      {
+        if( SpecUtils::is_file( SpecUtils::append_path( d, "llm_agent_NuclideId.xml" ) ) )
+        {
+          datadir = d;
+          break;
+        }
+      }
+    }//if( datadir.empty() )
+
+    return datadir;
+  }//data_dir()
 }//namespace
 
 
@@ -111,6 +145,48 @@ BOOST_AUTO_TEST_CASE( RendersModelVariableAndConditionals )
   const string real = "{% if model.supports_images %}You can view the spectrum image.{% endif %}";
   BOOST_CHECK( LlmPromptTemplate::render( real, imgCtx ).find( "spectrum image" ) != string::npos );
   BOOST_CHECK( LlmPromptTemplate::render( real, noImgCtx ).find( "spectrum image" ) == string::npos );
+}
+
+
+// The shipped NuclideId VALIDATE_CANDIDATE guidance carries a vision-only instruction to visually
+// verify sub-50 keV peaks (they are easily faked by the detector turn-on edge, or by Ge/NaI x-ray
+// escape peaks).  Render the real file so an unbalanced {% if %} or a stray raw '<' is caught here.
+BOOST_AUTO_TEST_CASE( NuclideIdLowEnergyGuidanceIsVisionGated )
+{
+  const string datadir = data_dir();
+  const string agent_file = SpecUtils::append_path( datadir, "llm_agent_NuclideId.xml" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( agent_file ),
+                         "llm_agent_NuclideId.xml not at '" << agent_file << "'" );
+
+  vector<LlmConfig::AgentConfig> agents;
+  BOOST_REQUIRE_NO_THROW( agents = LlmConfig::loadAgentsFromFile( agent_file ) );
+  BOOST_REQUIRE( !agents.empty() );
+  BOOST_REQUIRE( agents[0].state_machine );
+  BOOST_REQUIRE( agents[0].state_machine->hasState( "VALIDATE_CANDIDATE" ) );
+
+  const string guidance
+      = agents[0].state_machine->getStateDefinition( "VALIDATE_CANDIDATE" ).prompt_guidance;
+  BOOST_REQUIRE( guidance.find( "{% if model.supports_images %}" ) != string::npos );
+
+  const json imgCtx = LlmPromptTemplate::buildContext(
+      make_config( true, Verbosity::Normal ), Surface::Agent, AgentType::NuclideId );
+  const json noImgCtx = LlmPromptTemplate::buildContext(
+      make_config( false, Verbosity::Normal ), Surface::Agent, AgentType::NuclideId );
+
+  const string withImages = LlmPromptTemplate::render( guidance, imgCtx );
+  const string withoutImages = LlmPromptTemplate::render( guidance, noImgCtx );
+
+  BOOST_CHECK( withImages.find( "Peaks below ~50 keV" ) != string::npos );
+  BOOST_CHECK( withImages.find( "get_spectrum_image" ) != string::npos );
+  BOOST_CHECK( withoutImages.find( "Peaks below ~50 keV" ) == string::npos );
+  BOOST_CHECK( withoutImages.find( "get_spectrum_image" ) == string::npos );
+
+  // Neither rendering may leave template markers behind, and the guidance that is not gated
+  // (e.g. the Ultimate Parent rule) must survive in both.
+  BOOST_CHECK( withImages.find( "{%" ) == string::npos );
+  BOOST_CHECK( withoutImages.find( "{%" ) == string::npos );
+  BOOST_CHECK( withImages.find( "Ultimate Parent Rule" ) != string::npos );
+  BOOST_CHECK( withoutImages.find( "Ultimate Parent Rule" ) != string::npos );
 }
 
 
