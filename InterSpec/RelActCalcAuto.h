@@ -1714,6 +1714,192 @@ struct RelActAutoSolution
    -1.0 if it could not be computed (the SVD failed). */
   double m_jacobian_condition_number = -1.0;
 
+  //-------------------------------------------------------------------------------------------
+  // BEGIN: members and functions for MULTIPLE relative-efficiency curves only
+  //
+  // Everything between here and the "END multi-curve-only" marker below exists solely to describe
+  // how well a fit with MORE THAN ONE rel-eff curve separates those curves from each other (the
+  // object-inside-an-object case).  For the usual single-curve fit none of it applies:
+  // `m_curve_separation_status` stays `NotApplicable`, the vectors stay empty,
+  // `m_merged_single_curve_comparison` stays unset, and no separation text is produced on any
+  // surface.  If you only care about single-curve relative efficiency, skip to "END
+  // multi-curve-only" below.
+  //-------------------------------------------------------------------------------------------
+
+  /** How well the data separates the multiple relative-efficiency curves from each other - i.e.
+   whether per-curve quantities (activities, enrichments) are individually meaningful, or only their
+   combination is.  Decided from the combination of `m_num_rank_deficient_dirs`,
+   `m_jacobian_condition_number`, `m_cross_curve_max_corr`, the minimum entry of
+   `m_evidence_purity`, and the `m_merged_single_curve_comparison` likelihood-ratio result (a merged
+   single curve fitting the data about as well is the most direct "the data does not demand multiple
+   curves" signal) - see `finalize_curve_separation_status()` for the exact rule.
+
+   IMPORTANT (2026-07 review grid lesson): high cross-curve correlation ALONE must not be read as
+   non-separation - stacked same-nuclide problems show max|corr| >= 0.94 even when the within-curve
+   ratios (enrichments) are well determined; the correlation measures the normalization trade, which
+   the (already-widened) uncertainties account for. */
+  enum class CurveSeparationStatus : int
+  {
+    /** Single-curve fit, or the metrics could not be computed. */
+    NotApplicable,
+
+    /** The curves are constrained relatively independently; per-curve quantities are usable with
+     their reported uncertainties.  Includes the "detected distinct" case (max z >= 3, or - for
+     disjoint-nuclide configs with no z table - a decisively large merged-curve delta-chi2) and the
+     benign "a single curve would also describe the data, but per-curve values are individually
+     anchored" case (see `curve_separation_verdict()`, which words each). */
+    WellSeparated,
+
+    /** Some per-curve values are model-mediated: blended evidence (purity < 0.3), and/or a
+     normalization trade on a rank-deficient fit.  NOTE: strong detection evidence (z >= 3) routes
+     here, never to Degenerate - the verdict must not contradict the detection tier.  The
+     apportionment of shared peaks follows from the fitted attenuation physics / curve shapes; no
+     statistical prior is involved (the only priors, the opt-in "Bias AD" pulls, are off by
+     default). */
+    PoorlySeparated,
+
+    /** The data does not distinguish the curves: the merged single curve fits about as well AND the
+     split between curves is unmeasured (rank-deficiency, blended evidence, or |corr| > 0.95); or,
+     when the merged comparison is unavailable, rank-deficiency together with blended evidence.
+     For stacked geometries this is the expected signature of a single material of one enrichment
+     (homogeneous slab self-attenuation composes exactly, so stacked same-material layers are
+     identical to one thicker layer) - reported as "consistent with a single curve", not as an
+     error.  Unreachable when detection evidence is strong. */
+    Degenerate,
+  };//enum class CurveSeparationStatus
+
+  CurveSeparationStatus m_curve_separation_status = CurveSeparationStatus::NotApplicable;
+
+  /** One cross-curve parameter correlation: between the activities of a source present on two curves,
+   or between two curves' shielding areal-density parameters, computed from the off-diagonal blocks of
+   `m_covariance` (which nothing previously read).
+
+   Interpretation of |correlation| (also in `compute_curve_separation_metrics()`):
+     - < 0.7      : well-separated.
+     - 0.7 - 0.95 : caution - quote joint quantities, not per-curve ones.
+     - > 0.95     : effectively one normalization degree of freedom between the curves; per-curve
+                    activities are not independently meaningful (within-curve *ratios* may still be
+                    constrained - see the class doc of `CurveSeparationStatus`). */
+  struct CrossCurveCorrelation
+  {
+    size_t curve_a = 0, curve_b = 0;
+    std::string param_a, param_b;  ///< e.g. "Act(U238)", "SelfAttenAD", "ExtAttenAD[0]"
+    double correlation = 0.0;      ///< Pearson rho, in [-1,+1]
+  };//struct CrossCurveCorrelation
+
+  /** All computed cross-curve correlation pairs (empty for single-curve fits, or if covariance
+   was not available). */
+  std::vector<CrossCurveCorrelation> m_cross_curve_correlations;
+
+  /** The entry of `m_cross_curve_correlations` with the largest |correlation| (unset when none). */
+  std::optional<CrossCurveCorrelation> m_cross_curve_max_corr;
+
+  /** Evidence purity, per (curve, source): the model-counts-weighted mean of the energy-cluster
+   ownership fraction (`ObsEff::curve_model_fraction`) over ALL clusters the source contributes model
+   counts to - including clusters excluded from the rel-eff chart (an excluded shared cluster is
+   exactly the "no independent evidence" situation this must reflect).
+
+   Interpretation (same ranges in `compute_curve_separation_metrics()`):
+     - > 0.8     : the source has its own resolved evidence on this curve.
+     - 0.3 - 0.8 : partially blended with other curves' sources.
+     - < 0.3     : this curve's value for the source rests on model-attributed shares of blended
+                   clusters (plus the model's attenuation shape), not on resolvable peaks.
+   Empty for single-curve fits or when `m_obs_eff_for_each_curve` was not filled. */
+  std::vector<std::map<SrcVariant,double>> m_evidence_purity;
+
+  /** Detection statistic: for each nuclide present on two curves, the significance of the difference
+   of its mass-enrichment fraction between the curves, z = |e_a - e_b| / sqrt(sigma_a^2 + sigma_b^2)
+   (sigmas are the D2/D3-widened ones, which the 2026-07 review grid showed are honest).
+   z >= ~3 : the data clearly supports the curves having different isotopic compositions;
+   1.5 - 3 : marginal;  < 1.5 : not distinguished (which is also the honest answer when a curve's
+   enrichment is simply unconstrained - the huge sigma drives z to ~0). */
+  struct EnrichmentDiffZ
+  {
+    size_t curve_a = 0, curve_b = 0;
+    SrcVariant nuclide;
+    double enrichment_a = 0.0, enrichment_b = 0.0;  ///< mass fractions, in [0,1]
+    double sigma_a = 0.0, sigma_b = 0.0;            ///< 1-sigma uncertainties of the above
+    double z = 0.0;
+
+    /** False when either fitted enrichment is pinned essentially at the 0 or 1 limit: a bound-pinned
+     value carries an understated sigma (Ceres' covariance ignores active bounds), so its z can be
+     wildly inflated - e.g. a trace isotope fit to ~1e-10 +- 3e-10 against a well-measured 0.2 %
+     produced z = 93 on data where the true compositions were identical.  Unreliable entries are
+     shown in the z table (annotated) but never drive `curves_detected_distinct()` or the verdict. */
+    bool reliable = true;
+  };//struct EnrichmentDiffZ
+
+  std::vector<EnrichmentDiffZ> m_enrichment_diff_z;
+
+  /** Result of automatically re-fitting the same data/ROIs with all sources merged onto a single
+   rel-eff curve, as a likelihood-ratio-style check of whether the data actually demands multiple
+   curves: `delta_chi2 = merged_chi2_data - multi_chi2_data` gained by the multi-curve model's
+   `extra_dof_of_multi` additional effective parameters.  Rough reading: delta_chi2 >> extra_dof
+   (e.g. by several times sqrt(2*extra_dof)) - the data clearly supports multiple curves;
+   delta_chi2 ~ extra_dof or less - a single curve describes the data as well.
+   Both chi2 are the data-only chi2 over identical fixed ROIs, so they are directly comparable. */
+  struct MergedCurveComparison
+  {
+    bool valid = false;      ///< merged model built, solved to Success, and chi2/DOF comparable
+    std::string message;     ///< why not valid, and/or notes (e.g. constraints dropped in the merge)
+    double multi_chi2_data = 0.0, merged_chi2_data = 0.0;
+    size_t multi_dof_data = 0, merged_dof_data = 0;
+    double delta_chi2 = 0.0;
+    int extra_dof_of_multi = 0;
+
+    /** True when `delta_chi2` is within statistical expectation of the multi-curve model's extra
+     effective parameters, i.e. a single merged curve describes the data about as well.  The
+     comparison threshold is scaled by max(1, multi chi2/dof) - the same model-error inflation the
+     covariance rescale applies - so a fit sitting on an irreducible model-error floor is not
+     misread as demanding multiple curves.  Set by `finalize_curve_separation_status()`; only
+     meaningful when `valid`.  (Note: for stacked same-material objects a single summed-areal-density
+     slab is EXACTLY equivalent - homogeneous slab attenuation composes - so this being true there
+     means "consistent with a single homogeneous object/enrichment".) */
+    bool single_curve_adequate = false;
+  };//struct MergedCurveComparison
+
+  /** Only attempted for multi-curve fits that reach Status::Success; unset otherwise. */
+  std::optional<MergedCurveComparison> m_merged_single_curve_comparison;
+
+  /** Computes `m_cross_curve_correlations`/`m_cross_curve_max_corr`, `m_evidence_purity`, and
+   `m_enrichment_diff_z` from the already-filled `m_covariance`, `m_obs_eff_for_each_curve`, and
+   layout accessors; called at the end of `solve_ceres` for multi-curve fits (a no-op for
+   single-curve).  The combined status is decided later, by `finalize_curve_separation_status()`. */
+  void compute_curve_separation_metrics();
+
+  /** Decides `m_curve_separation_status` from the metrics above plus (when available)
+   `m_merged_single_curve_comparison`, and appends the user-facing warning to `m_warnings` when the
+   status is PoorlySeparated or Degenerate.  Idempotent (removes its own previous warning first);
+   `solve(...)` invokes it on every return path, after the merged single-curve comparison was
+   attempted. */
+  void finalize_curve_separation_status();
+
+  /** True when the detection tier clearly shows the curves differ: the largest entry of
+   `m_enrichment_diff_z` is >= 3, or - for configurations with no shared nuclide (empty z table) -
+   the merged single-curve fit is decisively worse (delta-chi2 above ~5 sigma of the extra-DOF
+   expectation, scaled by max(1, chi2/dof)).  This evidence takes priority in the separation
+   verdict: it can never be contradicted by an "indistinguishable" headline. */
+  bool curves_detected_distinct() const;
+
+  /** Short display label for `m_curve_separation_status`, chosen so the equal-enrichment /
+   single-material outcome does not read as an error: "Separated", "Distinct curves - blended
+   evidence", "Poorly separated", "Not distinguished (consistent with a single curve)", or
+   "NotApplicable". */
+  const char *curve_separation_display() const;
+
+  /** The tier-1 plain-language separation verdict - the SINGLE source of the verdict wording for
+   `print_summary`, the in-code HTML report, and the report templates (exported by
+   RelActAutoReport as `curve_separation_verdict`/`_html`).  Data-driven: names the triggering
+   source/number, distinguishes stacked ("consistent with a single material of one enrichment -
+   stacked layers of the same material are identical to one thicker layer") from side-by-side
+   geometry, and always disambiguates "the model" (the fitted attenuation physics / curve shapes -
+   never a statistical prior; none is applied unless a shield's opt-in "Bias AD" is checked). */
+  std::string curve_separation_verdict( const bool html ) const;
+
+  //-------------------------------------------------------------------------------------------
+  // END: multi-curve-only members and functions
+  //-------------------------------------------------------------------------------------------
+
   /** A struct to hold information about the Physical Model result of the fit. */
   struct PhysicalModelFitInfo
   {
@@ -1777,7 +1963,7 @@ struct RelActAutoSolution
   
   /** This is the total time spent in the `eval(...)` function. */
   int m_num_microseconds_in_eval;
-};//struct RelEffSolution
+};//struct RelActAutoSolution
 
 
 /**

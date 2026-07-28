@@ -464,6 +464,124 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
     }
   }
 
+  // ---- Multi-curve separation diagnostics ----
+  // Same quantities as the "Rel. eff. curve separation" block of print_summary(); see the doc
+  //  comments on RelActAutoSolution::CurveSeparationStatus / m_cross_curve_correlations /
+  //  m_evidence_purity / m_enrichment_diff_z / MergedCurveComparison for meanings + healthy ranges.
+  //  All empty/"NotApplicable"/null for single-curve fits.
+  {
+    const char *status_str = "NotApplicable";
+    switch( sol.m_curve_separation_status )
+    {
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::NotApplicable:                                  break;
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::WellSeparated:   status_str = "WellSeparated";   break;
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::PoorlySeparated: status_str = "PoorlySeparated"; break;
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::Degenerate:      status_str = "Degenerate";      break;
+    }
+    data["curve_separation_status"] = string(status_str);
+    // Display label + composed tier-1 verdict, single-sourced on the solution so every surface
+    //  (results tab, in-code HTML report, these templates) words the verdict identically.
+    data["curve_separation_display"] = string( sol.curve_separation_display() );
+    data["curve_separation_verdict"] = sol.curve_separation_verdict( false );
+    data["curve_separation_verdict_html"] = sol.curve_separation_verdict( true );
+
+    const auto corr_to_json = []( const RelActCalcAuto::RelActAutoSolution::CrossCurveCorrelation &corr ) -> json {
+      json entry;
+      entry["curve_a"] = static_cast<int64_t>(corr.curve_a);
+      entry["curve_b"] = static_cast<int64_t>(corr.curve_b);
+      entry["param_a"] = corr.param_a;
+      entry["param_b"] = corr.param_b;
+      entry["correlation"] = corr.correlation;
+      char buf[64] = { '\0' };
+      snprintf( buf, sizeof(buf), "%.3G", corr.correlation );
+      entry["correlation_str"] = string(buf);
+      return entry;
+    };
+
+    data["cross_curve_max_corr"] = nullptr;
+    if( sol.m_cross_curve_max_corr.has_value() )
+      data["cross_curve_max_corr"] = corr_to_json( *sol.m_cross_curve_max_corr );
+
+    data["cross_curve_correlations"] = json::array();
+    for( const RelActCalcAuto::RelActAutoSolution::CrossCurveCorrelation &corr : sol.m_cross_curve_correlations )
+      data["cross_curve_correlations"].push_back( corr_to_json(corr) );
+
+    data["evidence_purity"] = json::array();
+    for( size_t re = 0; re < sol.m_evidence_purity.size(); ++re )
+    {
+      json curve_purity = json::array();
+      for( const auto &src_purity : sol.m_evidence_purity[re] )
+      {
+        json entry;
+        entry["source"] = RelActCalcAuto::to_name( src_purity.first );
+        entry["purity"] = src_purity.second;
+        char buf[64] = { '\0' };
+        snprintf( buf, sizeof(buf), "%.2G", src_purity.second );
+        entry["purity_str"] = string(buf);
+        curve_purity.push_back( entry );
+      }
+      data["evidence_purity"].push_back( curve_purity );
+    }
+
+    data["enrichment_diff_z"] = json::array();
+    for( const RelActCalcAuto::RelActAutoSolution::EnrichmentDiffZ &diff : sol.m_enrichment_diff_z )
+    {
+      json entry;
+      entry["nuclide"] = RelActCalcAuto::to_name( diff.nuclide );
+      entry["curve_a"] = static_cast<int64_t>(diff.curve_a);
+      entry["curve_b"] = static_cast<int64_t>(diff.curve_b);
+      entry["enrichment_a"] = diff.enrichment_a;  //mass fraction, [0,1]
+      entry["enrichment_b"] = diff.enrichment_b;
+      entry["sigma_a"] = diff.sigma_a;
+      entry["sigma_b"] = diff.sigma_b;
+      entry["z"] = diff.z;
+      entry["reliable"] = diff.reliable;  //false: a value pinned at a limit; z not used for the verdict
+      char buf[128] = { '\0' };
+      snprintf( buf, sizeof(buf), "%.3G", diff.z );
+      entry["z_str"] = string(buf);
+      // Same rule as print_summary/print_html_report: an enrichment is a mass fraction in [0,1], so
+      //  a sigma spanning that whole range carries no information - printing "± 1219 wt%" reads as
+      //  a bug.  (`!(sigma < 1.0)` so NaN takes the unconstrained branch too.)
+      const auto enrich_str = []( const double enrich, const double sigma ) -> string {
+        char b[128] = { '\0' };
+        if( !(sigma < 1.0) )
+          snprintf( b, sizeof(b), "%.3G wt%% (uncertainty unconstrained)", 100.0*enrich );
+        else
+          snprintf( b, sizeof(b), "%.3G ± %.2G wt%%", 100.0*enrich, 100.0*sigma );
+        return string(b);
+      };
+      entry["enrichment_a_str"] = enrich_str( diff.enrichment_a, diff.sigma_a );
+      entry["enrichment_b_str"] = enrich_str( diff.enrichment_b, diff.sigma_b );
+      data["enrichment_diff_z"].push_back( entry );
+    }
+
+    data["merged_curve_comparison"] = nullptr;
+    if( sol.m_merged_single_curve_comparison.has_value() )
+    {
+      const RelActCalcAuto::RelActAutoSolution::MergedCurveComparison &merged = *sol.m_merged_single_curve_comparison;
+      json entry;
+      entry["valid"] = merged.valid;
+      entry["message"] = merged.message;
+      entry["multi_chi2"] = merged.multi_chi2_data;
+      entry["multi_dof"] = static_cast<int64_t>(merged.multi_dof_data);
+      entry["merged_chi2"] = merged.merged_chi2_data;
+      entry["merged_dof"] = static_cast<int64_t>(merged.merged_dof_data);
+      entry["delta_chi2"] = merged.delta_chi2;
+      entry["extra_dof_of_multi"] = static_cast<int64_t>(merged.extra_dof_of_multi);
+      entry["single_curve_adequate"] = merged.single_curve_adequate;
+      // A negative delta-chi2 means the merged (more constrained) model fit better, which cannot
+      //  happen at a proper solution - the multi-curve fit is not at its own optimum.  Templates
+      //  need the flag plus an unsigned magnitude so they can word "raises"/"lowers" correctly.
+      entry["merged_fits_better"] = (merged.delta_chi2 < 0.0);
+      char buf[64] = { '\0' };
+      snprintf( buf, sizeof(buf), "%.4G", merged.delta_chi2 );
+      entry["delta_chi2_str"] = string(buf);
+      snprintf( buf, sizeof(buf), "%.4G", std::fabs(merged.delta_chi2) );
+      entry["delta_chi2_abs_str"] = string(buf);
+      data["merged_curve_comparison"] = entry;
+    }
+  }
+
   // ---- Warnings ----
   data["warnings"] = json::array();
   data["warnings_html"] = json::array();

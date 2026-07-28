@@ -187,6 +187,14 @@
   <div>
     &chi;<sup>2</sup>={{ file.chi2_str }} and there were {{ file.dof }} DOF (&chi;<sup>2</sup>/dof={{ file.chi2_per_dof_str }})
   </div>
+  <div title="Weighted coefficient of determination (&gt;0.999 excellent, 0.99-0.999 good, &lt;0.99 the model is missing structure) and condition number of the fit Jacobian (&lt;~1e4 well-conditioned; &gt;~1e7 some parameter direction is nearly unconstrained).">
+    R<sup>2</sup>={{ file.r2_str }}, &kappa;(J)={{ file.condition_number_str }}
+  </div>
+{% if file.curve_separation_status != "NotApplicable" %}
+  <div title="How well the data separates the multiple rel-eff curves.  Detection evidence (enrichment-difference z, single-vs-multi-curve &Delta;&chi;&sup2;) takes priority over degeneracy flags; 'Not distinguished' means the data is consistent with a single curve (for stacked geometry: a single material/enrichment), which is not by itself an error.  See the individual file's report for the full details.">
+    Rel. eff. curve separation: {{ file.curve_separation_display }}{% if file.cross_curve_max_corr %} (max cross-curve &rho; = {{ file.cross_curve_max_corr.correlation_str }}){% endif %}
+  </div>
+{% endif %}
 
   <div class="charts-row" id="chartsdiv_{{ loop.index }}">
 {% if not file.spectrum_chart.have_spectrum %}

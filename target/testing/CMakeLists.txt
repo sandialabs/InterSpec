@@ -186,6 +186,13 @@ add_test( NAME TRelActCalcAuto_ObsEffFilter
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActCalcAuto_MultiCurve test_RelActCalcAuto_MultiCurve.cpp )
+target_link_libraries( test_RelActCalcAuto_MultiCurve PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_MultiCurve
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_MultiCurve> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_XRayWidthServer test_XRayWidthServer.cpp )
 target_link_libraries( test_XRayWidthServer PRIVATE InterSpecLib )
 add_test( NAME TXRayWidthServer

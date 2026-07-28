@@ -21,6 +21,45 @@ Warning: {{ w }}
 {% endif %}
 {% if status.success %}
 
+Goodness of fit: chi2/dof = {{ chi2_str }}/{{ dof }} = {{ chi2_per_dof_str }}; R2 = {{ r2_str }}; kappa(J) = {{ condition_number_str }}
+{% if curve_separation_status != "NotApplicable" %}
+
+Rel. eff. curve separation: {{ curve_separation_display }}
+  {{ curve_separation_verdict }}
+{% if enrichment_diff_z %}
+  Enrichment-difference detection (z>=3 clearly different; 1.5-3 marginal; <1.5 not distinguished):
+{% for d in enrichment_diff_z %}
+    {{ d.nuclide }}: curve {{ d.curve_a }} = {{ d.enrichment_a_str }}, curve {{ d.curve_b }} = {{ d.enrichment_b_str }} -> z = {{ d.z_str }}{% if not d.reliable %}  [NOT USABLE: a value is pinned at a limit, so this z is inflated and is not used for the verdict]{% endif %}
+{% endfor %}
+{% endif %}
+{% if merged_curve_comparison %}
+{% if merged_curve_comparison.valid %}
+{% if merged_curve_comparison.merged_fits_better %}
+  Single-curve comparison: merging all sources onto one curve LOWERS chi2 by {{ merged_curve_comparison.delta_chi2_abs_str }} for {{ merged_curve_comparison.extra_dof_of_multi }} fewer effective parameters (merging only removes freedom, so the multi-curve fit is not at its own optimum).
+{% else %}
+  Single-curve comparison: merging all sources onto one curve raises chi2 by {{ merged_curve_comparison.delta_chi2_str }} for {{ merged_curve_comparison.extra_dof_of_multi }} fewer effective parameters ({% if merged_curve_comparison.single_curve_adequate %}comparable to the dof difference: a single curve describes this data about as well{% else %}much larger than the dof difference: one merged curve cannot describe this data - this says more than one curve is needed, not that the per-curve split is well determined{% endif %}).
+{% endif %}
+{% if merged_curve_comparison.message %}
+    Note: {{ merged_curve_comparison.message }}
+{% endif %}
+{% else %}
+  Single-curve comparison: not available ({{ merged_curve_comparison.message }}).
+{% endif %}
+{% endif %}
+{% if cross_curve_correlations %}
+  Cross-curve correlations (|rho|<0.7 separated; 0.7-0.95 caution; >0.95 one normalization DOF):
+{% for c in cross_curve_correlations %}
+    {{ c.param_a }} of curve {{ c.curve_a }} x {{ c.param_b }} of curve {{ c.curve_b }}: rho = {{ c.correlation_str }}
+{% endfor %}
+{% endif %}
+{% if evidence_purity %}
+  Evidence purity per (curve, source) (>0.8 own evidence; 0.3-0.8 partially blended; <0.3 model-split only):
+{% for curve_purity in evidence_purity %}
+    curve {{ loop.index }}: {% for p in curve_purity %}{% if not loop.is_first %}, {% endif %}{{ p.source }} = {{ p.purity_str }}{% endfor %}
+{% endfor %}
+{% endif %}
+{% endif %}
+
 {% for curve in rel_eff_curves %}
 Rel. Eff. Eqn.{% if have_multiple_rel_eff %} {{ curve.index }}{% endif %}: y = {{ curve.equation_text }}
 {% endfor %}
