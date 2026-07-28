@@ -29,7 +29,7 @@ Rel. eff. curve separation: {{ curve_separation_display }}
 {% if enrichment_diff_z %}
   Enrichment-difference detection (z>=3 clearly different; 1.5-3 marginal; <1.5 not distinguished):
 {% for d in enrichment_diff_z %}
-    {{ d.nuclide }}: curve {{ d.curve_a }} = {{ d.enrichment_a_str }}, curve {{ d.curve_b }} = {{ d.enrichment_b_str }} -> z = {{ d.z_str }}{% if not d.reliable %}  [NOT USABLE: a value is pinned at a limit, so this z is inflated and is not used for the verdict]{% endif %}
+    {{ d.nuclide }}: curve {{ d.curve_a }} = {{ d.enrichment_a_str }}, curve {{ d.curve_b }} = {{ d.enrichment_b_str }} -> z = {{ d.z_str }}{{ d.not_usable_note }}
 {% endfor %}
 {% endif %}
 {% if merged_curve_comparison %}

@@ -15676,20 +15676,13 @@ std::string RelActAutoSolution::rel_eff_txt( const bool html_format, const size_
 }//std::string RelActAutoSolution::rel_eff_txt()
 
 
-/** Suffix for an enrichment-difference z that `EnrichmentDiffZ::reliable` marks unusable (a value
- sits at a bound, so its uncertainty is understated and the z is inflated).  Bracketed rather than
- parenthetical because the number next to it can be huge (z of 90+ has been seen) and the eye lands
- on the number; the same wording is used by print_html_report and by the report templates
- (`std_rel_eff_summary.tmplt.{html,txt}`) so no surface shows a bare inflated z.
- */
-static const char * const sm_z_not_usable_txt = "  [NOT USABLE: a value is pinned at a limit, so"
-                                                " this z is inflated and is not used for the verdict]";
 
-/** Above this chi2/dof the fit does not describe the data, so per-curve results cannot be called
- individually usable no matter how clean the separation metrics look.  Set far above any healthy fit
- (the enrichment-grid fits run chi2/dof 4-20) so it only catches an already-failed fit.
+/** Below this weighted R^2 the model is not reproducing the data's structure, so no confident
+ statement about the curves is supportable.  R^2 is used rather than chi2/dof because chi2/dof grows
+ with counts (a hotter measurement of the same source is not a worse fit), while R^2 is scale-free.
+ Healthy fits here run 0.99+; the value that motivated this check was about -4e22.
  */
-static constexpr double sm_max_chi2_dof_for_usable_curves = 100.0;
+static constexpr double sm_min_r2_for_usable_curves = 0.9;
 
 
 std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
@@ -15793,7 +15786,7 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
             << enrich_txt(diff.enrichment_a, diff.sigma_a) << ", curve " << diff.curve_b << " = "
             << enrich_txt(diff.enrichment_b, diff.sigma_b) << " → z = "
             << SpecUtils::printCompact(diff.z, 3)
-            << (diff.reliable ? "" : sm_z_not_usable_txt)
+            << z_row_annotation(diff)
             << "\n";
     }
 
@@ -16365,7 +16358,7 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
             << diff.curve_a << " = " << enrich_html(diff.enrichment_a, diff.sigma_a) << ", curve "
             << diff.curve_b << " = " << enrich_html(diff.enrichment_b, diff.sigma_b) << " &rarr; z = "
             << SpecUtils::printCompact(diff.z, 3)
-            << (diff.reliable ? "" : sm_z_not_usable_txt)
+            << z_row_annotation(diff)
             << "</li>\n";
         results_html << "</ul></div>\n";
       }//if( have enrichment-difference z )
@@ -16676,9 +16669,15 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
           results_html << "<td>" << (100.0*enrich_frac.first) << "%</td>";
           if( enrich_frac.second.has_value() )
           {
-            const double minus_2sigma = 100.0*(enrich_frac.first - 2.0*enrich_frac.second.value());
-            const double plus_2sigma = 100.0*(enrich_frac.first + 2.0*enrich_frac.second.value());
-            results_html << "<td>" << minus_2sigma << "%, " << plus_2sigma << "%</td>";
+            // An enrichment is a mass fraction: clip the displayed interval to the physical
+            //  range and say so, rather than printing e.g. "101.689%" or a negative lower bound.
+            const double raw_minus = 100.0*(enrich_frac.first - 2.0*enrich_frac.second.value());
+            const double raw_plus = 100.0*(enrich_frac.first + 2.0*enrich_frac.second.value());
+            const bool clipped = (raw_minus < 0.0) || (raw_plus > 100.0);
+            const double minus_2sigma = (std::max)( 0.0, raw_minus );
+            const double plus_2sigma = (std::min)( 100.0, raw_plus );
+            results_html << "<td>" << minus_2sigma << "%, " << plus_2sigma << "%"
+                         << (clipped ? " (clipped)" : "") << "</td>";
           }else
           {
             results_html << "<td>--</td>";
@@ -17323,25 +17322,34 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
 
 
 
-bool RelActAutoSolution::sensitivity_rides_on_bound( const std::vector<double> &jacobian ) const
+/** True when a significant fraction of `jacobian`'s sensitivity rides on parameters pinned at a fit
+ bound (whose variance Ceres reports as ~0, since bounds are invisible to the covariance).
+
+ File-static, and only meaningful in combination with an "uncertainty looks implausibly small" gate:
+ used alone as a trustworthiness test it flags almost every fit, because a mass-fraction-constrained
+ problem always has its mass-fraction-sum parameter sitting at a bound by construction and every
+ enrichment depends on it.
+ */
+static bool sensitivity_rides_on_bound( const std::vector<double> &jacobian,
+                                        const std::vector<char> &param_at_bound )
 {
   //  Fraction of the quantity's sensitivity (by squared-Jacobian) that must ride on bound-pinned
   //  parameters before we call the reported uncertainty untrustworthy.
   static constexpr double sm_bound_sensitivity_frac = 0.25;
 
-  if( m_param_at_bound.empty() || (jacobian.size() != m_param_at_bound.size()) )
+  if( param_at_bound.empty() || (jacobian.size() != param_at_bound.size()) )
     return false;
 
   double jac_norm2 = 0.0, at_bound2 = 0.0;
   for( size_t i = 0; i < jacobian.size(); ++i )
   {
     jac_norm2 += jacobian[i]*jacobian[i];
-    if( m_param_at_bound[i] )
+    if( param_at_bound[i] )
       at_bound2 += jacobian[i]*jacobian[i];
   }
 
   return (jac_norm2 > 0.0) && (at_bound2 > sm_bound_sensitivity_frac*jac_norm2);
-}//bool sensitivity_rides_on_bound( const std::vector<double> &jacobian ) const
+}//bool sensitivity_rides_on_bound( jacobian, param_at_bound )
 
 
 double RelActAutoSolution::reliability_floored_uncert( const double value, const double uncert,
@@ -17362,7 +17370,14 @@ double RelActAutoSolution::reliability_floored_uncert( const double value, const
   //  this quantity's information.  This protects well-determined fits (e.g. high-enrichment files whose
   //  enrichment is genuinely tight) from being widened just because some unrelated parameter sits on a
   //  bound.  `plausibility_scale` matters for complementary quantities - see the header doc.
-  const double scale = (plausibility_scale > 0.0) ? plausibility_scale : std::fabs(value);
+  //  ...but never let that scale collapse to nothing.  For a mass fraction sitting at 1.0 the
+  //  distance to the bound is zero, which would switch the whole check OFF at the single most
+  //  pathological value there is - the opposite of what is wanted.  Floor it at a small fraction of
+  //  |value| so a genuinely absurd uncertainty is still caught for a nearly-pure component.
+  static constexpr double sm_min_plausibility_scale_frac = 1.0e-2;
+  const double raw_scale = (plausibility_scale > 0.0) ? plausibility_scale : std::fabs(value);
+  const double scale = (std::max)( raw_scale, sm_min_plausibility_scale_frac*std::fabs(value) );
+
   if( (scale == 0.0) || (std::fabs(uncert) >= sm_implausible_rel_uncert*scale) )
     return uncert;
 
@@ -17370,13 +17385,17 @@ double RelActAutoSolution::reliability_floored_uncert( const double value, const
   //  pathology that explains it: the fit is rank-deficient (a near-degenerate direction was dropped
   //  from the covariance, zeroing this quantity's variance), or a significant fraction of this
   //  quantity's sensitivity rides on a parameter pinned at a bound (whose variance Ceres reports as ~0).
-  const bool pathology = (m_num_rank_deficient_dirs > 0) || sensitivity_rides_on_bound( jacobian );
+  const bool pathology = (m_num_rank_deficient_dirs > 0)
+                          || sensitivity_rides_on_bound( jacobian, m_param_at_bound );
 
   if( !pathology )
     return uncert;
 
+  //  Floor against the same scale the gate used, not against |value|.  For a nearly-pure component
+  //  those differ enormously, and flooring to |value| emits the very band this is meant to avoid:
+  //  a fit reporting 99.76 wt% would be widened to +- 99.76 wt%, i.e. -0.24 % to 199.5 %.
   m_enrichment_uncert_unreliable = true;
-  return (std::max)( uncert, sm_unreliable_uncert_floor_frac*std::fabs(value) );
+  return (std::max)( uncert, sm_unreliable_uncert_floor_frac*scale );
 }//reliability_floored_uncert(...)
 
 
@@ -18133,13 +18152,20 @@ void RelActAutoSolution::compute_curve_separation_metrics()
     };
 
     // What propagates to the rest of a curve is deliberately narrower than what disqualifies a single
-    //  row.  A MAJOR component pinned at 1 leaves nothing for its siblings, and a sigma spanning the
-    //  whole [0,1] range means that curve's composition simply was not measured - both make every
-    //  other isotope of that curve untrustworthy too.  A TRACE isotope resting near zero does not:
-    //  U234 at ~1e-6 is the ordinary state of affairs, and propagating from it would suppress a
-    //  perfectly good U235 detection (95.5 +- 6 wt% vs 0.204 +- 0.0043 wt%, z = 16).
-    const auto poisons_whole_curve = []( const double enrichment, const double sigma ) -> bool {
-      return (enrichment > (1.0 - 1.0E-6)) || !(sigma < 1.0);
+    //  row.  Two things make every other isotope of a curve untrustworthy: a sigma spanning the whole
+    //  [0,1] range (that curve's composition was simply not measured), and a value pinned at a limit
+    //  that the fit could not otherwise place - there the bound, not the data, is setting the answer,
+    //  and mass-fraction closure pushes that onto the siblings.
+    //
+    //  A TRACE isotope resting near zero must NOT propagate: U234 at ~1e-6 with a small sigma is the
+    //  ordinary state of affairs, and propagating from it suppresses a perfectly good U235 detection
+    //  (95.5 +- 6 wt% vs 0.204 +- 0.0043 wt%, z = 16).  Hence the sigma condition rather than a test
+    //  on the value alone.  Testing "the complement is at ~1" instead does not work: any real
+    //  uranium config has trace isotopes above 1 ppm, so a curve with U235 pinned at 0 carries
+    //  U238 = 0.9999986, which fails a `> 1 - 1e-6` test and leaves the complement unflagged.
+    static constexpr double sm_unplaced_pin_sigma = 0.01;  //1 wt% - a pin the data did not resolve
+    const auto poisons_whole_curve = [&at_limit]( const double enrichment, const double sigma ) -> bool {
+      return !(sigma < 1.0) || (at_limit(enrichment) && (sigma >= sm_unplaced_pin_sigma));
     };
 
     std::set<size_t> unreliable_curves;
@@ -18162,6 +18188,97 @@ void RelActAutoSolution::compute_curve_separation_metrics()
   // The combined status + warning is decided in finalize_curve_separation_status(), once the merged
   //  single-curve comparison (computed later, in solve()) is available to fold in.
 }//void compute_curve_separation_metrics()
+
+
+bool RelActAutoSolution::poor_fit_quality() const
+{
+  return (!std::isnan(m_r2) && (m_r2 < sm_min_r2_for_usable_curves));
+}//bool poor_fit_quality() const
+
+
+bool RelActAutoSolution::z_detection_vetoed_by_merged() const
+{
+  if( !merged_overrules_z_detection() )
+    return false;
+
+  for( const EnrichmentDiffZ &diff : m_enrichment_diff_z )
+  {
+    if( diff.reliable && (diff.z >= 3.0) )
+      return true;
+  }
+  return false;
+}//bool z_detection_vetoed_by_merged() const
+
+
+std::string RelActAutoSolution::z_row_annotation( const EnrichmentDiffZ &diff ) const
+{
+  if( !diff.reliable )
+  {
+    // Name the actual reason.  A single generic sentence was wrong for two of the three states: an
+    //  unconstrained composition is not "pinned at a limit", and its z is DEFLATED by the huge
+    //  sigma rather than inflated.
+    const bool unconstrained = !(diff.sigma_a < 1.0) || !(diff.sigma_b < 1.0);
+    if( unconstrained )
+      return "  [NOT USABLE: this curve's composition is unconstrained (uncertainty spans the whole"
+             " range), so this z is meaninglessly small]";
+    return "  [NOT USABLE: a value is pinned at a limit, so its uncertainty is understated and this"
+           " z is inflated]";
+  }
+
+  if( (diff.z >= 3.0) && merged_overrules_z_detection() )
+    return "  [not treated as a detection: a single merged curve fits this data about as well, so"
+           " the data does not require distinct curves - see the single-curve comparison below]";
+
+  return string();
+}//std::string z_row_annotation( const EnrichmentDiffZ &diff ) const
+
+
+std::string RelActAutoSolution::curve_separation_trigger_text() const
+{
+  double min_purity = std::numeric_limits<double>::infinity();
+  string min_purity_label;
+  for( size_t re = 0; re < m_evidence_purity.size(); ++re )
+  {
+    for( const auto &src_purity : m_evidence_purity[re] )
+    {
+      if( src_purity.second < min_purity )
+      {
+        min_purity = src_purity.second;
+        min_purity_label = RelActCalcAuto::to_name(src_purity.first) + " of "
+                           + ((re < m_options.rel_eff_curves.size())
+                               && !m_options.rel_eff_curves[re].name.empty()
+                                 ? ("'" + m_options.rel_eff_curves[re].name + "'")
+                                 : ("curve " + std::to_string(re)));
+      }
+    }
+  }
+
+  if( poor_fit_quality() )
+    return "the fit does not describe the data (weighted R" + string("\xc2\xb2") + " = "
+           + SpecUtils::printCompact(m_r2, 3) + "), so no per-curve result from it is meaningful -"
+           " fix the fit before reading anything below";
+
+  if( !std::isinf(min_purity) && (min_purity < 0.3) )
+    return "the evidence for " + min_purity_label + " is almost entirely peaks blended with the"
+           " other curve (purity " + SpecUtils::printCompact(min_purity, 2)
+           + "; below 0.3 means no individually resolved peaks)";
+
+  if( m_cross_curve_max_corr.has_value() )
+  {
+    const auto curve_name = [this]( const size_t index ) -> string {
+      if( (index < m_options.rel_eff_curves.size()) && !m_options.rel_eff_curves[index].name.empty() )
+        return "'" + m_options.rel_eff_curves[index].name + "'";
+      return "curve " + std::to_string(index);
+    };
+    return "their normalizations trade against each other (correlation "
+           + SpecUtils::printCompact(m_cross_curve_max_corr->correlation, 3) + " between "
+           + m_cross_curve_max_corr->param_a + " of " + curve_name(m_cross_curve_max_corr->curve_a)
+           + " and " + m_cross_curve_max_corr->param_b + " of "
+           + curve_name(m_cross_curve_max_corr->curve_b) + ") on a rank-deficient/ill-conditioned fit";
+  }
+
+  return "the fit is rank-deficient/ill-conditioned across the curves";
+}//std::string curve_separation_trigger_text() const
 
 
 std::string RelActAutoSolution::curve_split_basis_text( const bool sentence_start ) const
@@ -18241,8 +18358,13 @@ void RelActAutoSolution::finalize_curve_separation_status()
     const double extra_dof = (std::max)( m_merged_single_curve_comparison->extra_dof_of_multi, 1 );
     const double model_error_scale = (m_dof_data > 0)
               ? (std::max)( 1.0, m_chi2_data / static_cast<double>(m_dof_data) ) : 1.0;
-    single_curve_adequate = (m_merged_single_curve_comparison->delta_chi2
-                    <= model_error_scale*(extra_dof + 3.0*std::sqrt(2.0*extra_dof)) );
+    //  A negative delta-chi2 is NOT "a single curve does as well": merging only removes freedom, so
+    //  it cannot genuinely fit better, and a negative value means the multi-curve fit never reached
+    //  its own optimum.  Treating it as sameness turned a failed fit into an affirmative "consistent
+    //  with the sources sharing a single efficiency curve" for a shielded + unshielded pair.
+    single_curve_adequate = (m_merged_single_curve_comparison->delta_chi2 >= 0.0)
+                    && (m_merged_single_curve_comparison->delta_chi2
+                          <= model_error_scale*(extra_dof + 3.0*std::sqrt(2.0*extra_dof)) );
     m_merged_single_curve_comparison->single_curve_adequate = single_curve_adequate;
   }
 
@@ -18251,9 +18373,13 @@ void RelActAutoSolution::finalize_curve_separation_status()
                              && m_merged_single_curve_comparison->valid);
 
   // Detection tier FIRST: when the data clearly shows the curves differ (enrichment-difference
-  //  z >= 3, or - for disjoint-nuclide configs with no z table - a decisively worse merged fit),
-  //  the verdict must never read "indistinguishable"; Degenerate is unreachable by construction, so
-  //  the headline can never contradict the report's own detection lines.
+  //  z >= 3 that the merged-curve comparison does not overrule, or - for disjoint-nuclide configs
+  //  with no z table - a decisively worse merged fit), the verdict must never read
+  //  "indistinguishable".
+  //  NOTE Degenerate IS reachable with a large z on the table, when `merged_overrules_z_detection()`
+  //  fires.  That is why every surface annotates such rows via `z_row_annotation()`: an unmarked
+  //  z = 4.85 under a "not distinguished" headline, three lines below a legend saying "z >= 3 clearly
+  //  different", is precisely the contradiction this reporting exists to prevent.
   if( curves_detected_distinct() )
   {
     m_curve_separation_status = (low_purity || gauge_flag)
@@ -18281,20 +18407,18 @@ void RelActAutoSolution::finalize_curve_separation_status()
       m_curve_separation_status = CurveSeparationStatus::WellSeparated;
   }
 
-  // A fit that does not describe the data cannot support "per-curve results can be used with their
-  //  reported uncertainties", however clean its purity and correlations look.  Without this, a fit
-  //  with no nuclide shared between curves has neither the z test nor the merged comparison to object,
-  //  and reaches WellSeparated on purity alone: an overlapping-line pair (Sb124 + Eu154, near-identical
-  //  722.8/723.3 keV) did exactly that at chi2/dof ~1e7 with R2 ~ -4e22.  The bar is deliberately far
-  //  above any healthy fit - the enrichment grid runs 4-20 - so this only ever catches a fit that has
-  //  already failed, and it only downgrades.
-  const double chi2_per_dof = (m_dof_data > 0)
-                    ? (m_chi2_data / static_cast<double>(m_dof_data)) : 0.0;
-  if( (m_curve_separation_status == CurveSeparationStatus::WellSeparated)
-      && (chi2_per_dof > sm_max_chi2_dof_for_usable_curves) )
-  {
+  // A fit that does not describe the data cannot support ANY confident statement about the curves -
+  //  neither "per-curve results can be used with their reported uncertainties" nor "consistent with a
+  //  single material of one enrichment".  Without this, a pair with no nuclide in common has neither
+  //  the z test nor the merged comparison to object and reaches WellSeparated on purity alone: an
+  //  overlapping-line pair (Sb124 + Eu154, near-identical 722.8/723.3 keV) did exactly that.
+  //
+  //  The metric is weighted R^2, NOT chi2/dof: chi2/dof scales with counts, so a hard cut on it flags
+  //  a measurement purely for being hotter (the same fit at 50x activity ran chi2/dof 4.4 -> 208 with
+  //  identical fractional model error).  R^2 is scale-free - it asks whether the model reproduces the
+  //  data's structure - and was ~-4e22 on the genuinely broken fit above.
+  if( poor_fit_quality() && (m_curve_separation_status != CurveSeparationStatus::NotApplicable) )
     m_curve_separation_status = CurveSeparationStatus::PoorlySeparated;
-  }
 
   // The warning is the compact version of curve_separation_verdict(); both name the actual trigger
   //  and both disambiguate "the model" (fitted attenuation physics / curve shapes - never a
@@ -18328,12 +18452,9 @@ void RelActAutoSolution::finalize_curve_separation_status()
       else
         warning += "not well separated by this data (";
 
-      if( low_purity )
-        warning += "the evidence for " + min_purity_label + " is almost entirely peaks blended with"
-                   " the other curve, purity " + SpecUtils::printCompact(min_purity, 2);
-      else
-        warning += "their normalizations trade against each other, correlation "
-                   + SpecUtils::printCompact(max_corr, 3) + ", on a rank-deficient/ill-conditioned fit";
+      // Same trigger the verdict names - one source, so the warning cannot blame something else (it
+      //  once reported "correlation 0" while the verdict reported a failed fit).
+      warning += curve_separation_trigger_text();
 
       warning += ")." + split_means + " The reported (already widened) uncertainties are the measure"
                  " of how much this matters - see the curve-separation section of the result summary.";
@@ -18368,6 +18489,35 @@ void RelActAutoSolution::finalize_curve_separation_status()
 }//void finalize_curve_separation_status()
 
 
+/** Does the single-vs-merged comparison overrule a z >= 3 composition detection?
+
+ The test is "the merged model is not rejected": `delta_chi2 <= extra_dof + 3*sqrt(2*extra_dof)`,
+ i.e. within ~3 sigma of the chi2 a nested model gains by chance from the extra freedom.
+
+ Note what is deliberately ABSENT: the `max(1, chi2/dof)` model-error factor that
+ `single_curve_adequate` applies.  That factor is right for wording a fit sitting on a model-error
+ floor, but wrong in a veto - it would scale the bar with counts, raising the effective detection
+ threshold from 3 sigma to 6-16 sigma on exactly the fits where chi2/dof is large, and the covariance
+ is ALREADY rescaled by chi2/dof, so the same model error would be counted twice.  Dropping the
+ factor entirely (bar = extra_dof) is too strict in the other direction: two identical stacked disks
+ give delta_chi2 = 5.5 for 2 dof, which is p ~ 0.07 - not evidence of a difference - and would sail
+ past a bare `<= 2`.
+
+ A negative delta_chi2 never overrules anything: it means the multi-curve fit did not reach its own
+ optimum (merging only removes freedom), so the comparison is evidence of a bad fit, not of sameness.
+ */
+bool RelActAutoSolution::merged_overrules_z_detection() const
+{
+  if( !m_merged_single_curve_comparison.has_value() || !m_merged_single_curve_comparison->valid )
+    return false;
+
+  const double delta_chi2 = m_merged_single_curve_comparison->delta_chi2;
+  const double extra_dof = (std::max)( m_merged_single_curve_comparison->extra_dof_of_multi, 1 );
+
+  return (delta_chi2 >= 0.0) && (delta_chi2 <= (extra_dof + 3.0*std::sqrt(2.0*extra_dof)));
+}//bool merged_overrules_z_detection() const
+
+
 bool RelActAutoSolution::curves_detected_distinct() const
 {
   // See the header doc: max z >= 3, or (empty z table) a decisively worse merged single-curve fit.
@@ -18384,18 +18534,7 @@ bool RelActAutoSolution::curves_detected_distinct() const
   }
 
   if( have_reliable_z && (max_z >= 3.0) )
-  {
-    // A per-curve composition difference cannot be called a detection when the more direct test says
-    //  one curve describes the data about as well: if a single merged curve suffices, the data does
-    //  not require distinct curves, and the difference is coming from the model's split of shared
-    //  peaks (with a sigma that does not know a shape parameter collapsed onto a bound).  Two
-    //  genuinely identical stacked disks reported "clearly different compositions" at z = 4.9 this
-    //  way, while the merged null fit them just as well (delta-chi2 = 5.5 for 2 parameters).
-    //  The reverse case is untouched: a real difference makes the merged fit decisively worse.
-    return !(m_merged_single_curve_comparison.has_value()
-             && m_merged_single_curve_comparison->valid
-             && m_merged_single_curve_comparison->single_curve_adequate);
-  }
+    return !merged_overrules_z_detection();
 
   if( have_reliable_z )
     return false;
@@ -18446,12 +18585,9 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
     return "curve " + std::to_string(index);
   };
 
-  bool any_physical = false, stacked = false;
+  bool stacked = false;
   for( const RelActCalcAuto::RelEffCurveInput &curve : m_options.rel_eff_curves )
-  {
-    any_physical = (any_physical || (curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel));
     stacked = (stacked || !curve.shielded_by_other_phys_model_curve_shieldings.empty());
-  }
 
   const string split_means = curve_split_basis_text( false );
 
@@ -18619,27 +18755,7 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
     case CurveSeparationStatus::PoorlySeparated:
     {
       string verdict;
-      const double chi2_per_dof = (m_dof_data > 0)
-                      ? (m_chi2_data / static_cast<double>(m_dof_data)) : 0.0;
-      const bool bad_fit = (chi2_per_dof > sm_max_chi2_dof_for_usable_curves);
-
-      // A failed fit is the trigger whenever it applies - saying "the curves trade against each
-      //  other" would describe a subtlety of a fit that does not describe the data at all.
-      const string trigger = bad_fit
-          ? ("the fit does not describe the data (" + string(chi2_txt) + "/dof = "
-             + SpecUtils::printCompact(chi2_per_dof, 3) + "), so no per-curve result from it is"
-             " meaningful - fix the fit before reading anything below")
-          : low_purity
-          ? ("the evidence for " + min_purity_label + " is almost entirely peaks blended with the"
-             " other curve (purity " + SpecUtils::printCompact(min_purity, 2)
-             + "; below 0.3 means no individually resolved peaks)")
-          : (m_cross_curve_max_corr.has_value()
-              ? ("their normalizations trade against each other (correlation "
-                 + SpecUtils::printCompact(m_cross_curve_max_corr->correlation, 3) + " between "
-                 + m_cross_curve_max_corr->param_a + " of " + curve_label(m_cross_curve_max_corr->curve_a)
-                 + " and " + m_cross_curve_max_corr->param_b + " of "
-                 + curve_label(m_cross_curve_max_corr->curve_b) + ") on a rank-deficient/ill-conditioned fit")
-              : string("the fit is rank-deficient/ill-conditioned across the curves"));
+      const string trigger = curve_separation_trigger_text();
 
       if( curves_detected_distinct() )
       {

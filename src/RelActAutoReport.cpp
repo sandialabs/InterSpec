@@ -535,7 +535,11 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
       entry["sigma_a"] = diff.sigma_a;
       entry["sigma_b"] = diff.sigma_b;
       entry["z"] = diff.z;
-      entry["reliable"] = diff.reliable;  //false: a value pinned at a limit; z not used for the verdict
+      entry["reliable"] = diff.reliable;  //false: this z is not usable - see not_usable_note
+      // The reason differs (pinned at a limit -> inflated z; unconstrained composition ->
+      //  deflated z; overruled by the merged-curve comparison), so ship the composed note
+      //  rather than leaving each template to invent one.  Empty when the z is used as-is.
+      entry["not_usable_note"] = sol.z_row_annotation( diff );
       char buf[128] = { '\0' };
       snprintf( buf, sizeof(buf), "%.3G", diff.z );
       entry["z_str"] = string(buf);
@@ -711,8 +715,14 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
           {
             nuc_info["has_enrichment_uncert"]   = true;
             nuc_info["enrichment_uncert"]       = *enr.second;
-            nuc_info["enrichment_minus_2sigma"] = enr.first - 2.0 * (*enr.second);
-            nuc_info["enrichment_plus_2sigma"]  = enr.first + 2.0 * (*enr.second);
+            // Clipped to the physical [0,1] mass-fraction range - an unclipped band prints as
+            //  e.g. 101.7 % or a negative enrichment.  `enrichment_2sigma_clipped` says when the
+            //  raw interval ran outside, so a template can flag it.
+            const double raw_minus = enr.first - 2.0 * (*enr.second);
+            const double raw_plus  = enr.first + 2.0 * (*enr.second);
+            nuc_info["enrichment_2sigma_clipped"] = ((raw_minus < 0.0) || (raw_plus > 1.0));
+            nuc_info["enrichment_minus_2sigma"] = (std::max)( 0.0, raw_minus );
+            nuc_info["enrichment_plus_2sigma"]  = (std::min)( 1.0, raw_plus );
           }else
           {
             nuc_info["has_enrichment_uncert"] = false;

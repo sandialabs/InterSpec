@@ -1189,15 +1189,6 @@ struct RelActAutoSolution
                                      const double plausibility_scale = -1.0 ) const;
 
 
-  /** True when a significant fraction of `jacobian`'s sensitivity rides on parameters pinned at a fit
-   bound (whose variance Ceres reports as ~0, since bounds are invisible to the covariance).
-
-   NOTE this is only meaningful in combination with an "uncertainty looks implausibly small" gate:
-   used alone as a trustworthiness test it flags almost every fit, because a mass-fraction-constrained
-   problem always has its mass-fraction-sum parameter sitting at a bound by construction, and every
-   enrichment depends on it.
-   */
-  bool sensitivity_rides_on_bound( const std::vector<double> &jacobian ) const;
 
 
   /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
@@ -1923,6 +1914,40 @@ struct RelActAutoSolution
    @param sentence_start capitalizes the leading word; callers supply surrounding punctuation.
    */
   std::string curve_split_basis_text( const bool sentence_start ) const;
+
+  /** Names why the curves are not cleanly separated (blended evidence / trading normalizations /
+   rank deficiency / a fit that does not describe the data).  Shared by the warning text and
+   `curve_separation_verdict()` for the same anti-drift reason as `curve_split_basis_text()`.
+   */
+  std::string curve_separation_trigger_text() const;
+
+  /** True when the model is not reproducing the data's structure (weighted R^2 below a floor), so no
+   confident statement about the curves is supportable.  Uses R^2 rather than chi2/dof because
+   chi2/dof grows with counts - a hotter measurement of the same source is not a worse fit.
+   */
+  bool poor_fit_quality() const;
+
+  /** True when a usable z >= 3 exists but the single-vs-merged comparison says one curve describes
+   the data about as well, so `curves_detected_distinct()` does not claim a detection.
+
+   Surfaces MUST annotate the affected rows: the z table's own legend says "z >= 3 clearly
+   different", so leaving a large z unmarked under a "not distinguished" headline reproduces exactly
+   the headline-versus-evidence contradiction this reporting exists to prevent.
+   */
+  bool z_detection_vetoed_by_merged() const;
+
+  /** True when the single-vs-merged comparison is good enough to overrule a z >= 3 composition
+   detection.  Deliberately stricter than `MergedCurveComparison::single_curve_adequate` (which is a
+   wording flag) - see the implementation comment.
+   */
+  bool merged_overrules_z_detection() const;
+
+  /** The bracketed note to print after a z value, or empty when the z is used as-is.  Explains the
+   ACTUAL reason (pinned at a limit -> understated sigma and inflated z; unconstrained composition ->
+   deflated z; overruled by the merged-curve comparison), since one generic sentence for all three
+   states a false reason for two of them.
+   */
+  std::string z_row_annotation( const EnrichmentDiffZ &diff ) const;
 
   //-------------------------------------------------------------------------------------------
   // END: multi-curve-only members and functions

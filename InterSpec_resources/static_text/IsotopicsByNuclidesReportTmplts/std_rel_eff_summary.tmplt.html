@@ -161,7 +161,7 @@ R<sup>2</sup>={{ r2_str }}, &kappa;(J)={{ condition_number_str }}</div>
   <div title="z &ge; 3: the curves clearly have different compositions; 1.5-3 marginal; &lt;1.5 not distinguished.">Enrichment-difference detection:
     <ul>
 {% for d in enrichment_diff_z %}
-      <li>{{ d.nuclide }}: curve {{ d.curve_a }} = {{ d.enrichment_a_str }}, curve {{ d.curve_b }} = {{ d.enrichment_b_str }} &rarr; z = {{ d.z_str }}{% if not d.reliable %}  [NOT USABLE: a value is pinned at a limit, so this z is inflated and is not used for the verdict]{% endif %}</li>
+      <li>{{ d.nuclide }}: curve {{ d.curve_a }} = {{ d.enrichment_a_str }}, curve {{ d.curve_b }} = {{ d.enrichment_b_str }} &rarr; z = {{ d.z_str }}{{ d.not_usable_note }}</li>
 {% endfor %}
     </ul>
   </div>
