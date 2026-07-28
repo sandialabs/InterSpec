@@ -953,6 +953,26 @@ target_link_libraries(
 )
 
 
+# GNU ld scans each static archive once, in command-line order, pulling only the members that
+#  resolve symbols seen so far - so an archive has to appear *after* everything that references
+#  it.  Wt's SocketNotifier.C references boost::thread, but CMake emits the Boost imported
+#  targets ahead of the Wt libraries and de-duplicates the later mention of them above, leaving
+#  ~22 "undefined reference to boost::thread::..." at link time on Linux.
+#
+# Repeating them here by file path fixes the order: a plain path is not de-duplicated against the
+#  imported target it came from, so these really do land at the end of the link line.
+#
+# Not needed on Apple (ld64 resolves across all inputs regardless of order) or MSVC (same), and
+#  linking an archive twice is harmless everywhere, so this is scoped to where it is required.
+if( (NOT APPLE) AND (NOT MSVC) )
+  foreach( _boost_comp thread date_time system filesystem program_options regex random )
+    if( TARGET Boost::${_boost_comp} )
+      target_link_libraries( InterSpecLib PUBLIC "$<TARGET_FILE:Boost::${_boost_comp}>" )
+    endif()
+  endforeach()
+endif()
+
+
 if( BUILD_AS_OSX_APP OR (APPLE AND BUILD_AS_WX_WIDGETS_APP) )
   FIND_LIBRARY(COCOA_LIBRARY Cocoa)
   FIND_LIBRARY(COREDATA_LIBRARY CoreData)

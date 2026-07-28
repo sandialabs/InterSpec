@@ -32,6 +32,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         patch \
         perl \
         unzip \
+        socat \
         libsuitesparse-dev \
     && rm -rf /var/lib/apt/lists/*
 
@@ -53,21 +54,11 @@ RUN grep -q "^#define WT_WITH_SSL" /work/prefix/include/Wt/WConfig.h \
 # check whether a build failure is attributable to it.
 ARG native_http=ON
 
-# KNOWN PRE-EXISTING FAILURE (not caused by the native HTTP transport):
-#
-# The final link of InterSpec fails here with ~22 "undefined reference to boost::thread::..."
-# from Wt's SocketNotifier.C.  Building this same image with --build-arg native_http=OFF fails
-# identically, so it is not attributable to USE_NATIVE_HTTP_CLIENT.
-#
-# Cause: CMakeLists.txt has two byte-identical target_link_libraries() blocks for InterSpecLib
-# (currently ~836-857 and ~933-953), both listing Boost::thread.  CMake de-duplicates them and
-# keeps the first, which sits *before* the Wt libraries are added (~928).  GNU ld resolves static
-# archives in one pass, so Wt's references to boost::thread go unresolved.  macOS does not hit
-# this because ld64 is not order-sensitive in the same way.
-#
-# Everything up to the link is verified working on Linux: the static OpenSSL builds, Wt builds
-# with SSL support (the WT_WITH_SSL assertion above passes), and both NativeHttpClient.cpp and
-# NativeHttpClient_wt.cpp compile.  Fixing the link ordering is a separate change.
+# Note: this build is also what surfaced a pre-existing Linux link failure - ~22 "undefined
+# reference to boost::thread::..." out of Wt's SocketNotifier.C, reproducible with
+# --build-arg native_http=OFF, so not attributable to the native transport.  CMake emitted the
+# Boost archives only *ahead* of the Wt ones, and GNU ld scans each archive once in order.  Fixed
+# by repeating the Boost archives after Wt in CMakeLists.txt; see the comment there.
 
 RUN cmake -G Ninja -S /work/InterSpec -B /work/build \
       -DCMAKE_BUILD_TYPE=Release \
@@ -89,5 +80,9 @@ EXPOSE 8078
 VOLUME /data
 
 WORKDIR /work/build
-CMD ["./InterSpec", "--docroot", ".", "--http-address", "0.0.0.0", "--http-port", "8078", \
-     "--userdatadir", "/data", "-c", "./data/config/wt_config_localweb.xml"]
+# InterSpec only offers --http-address in BUILD_FOR_WEB_DEPLOYMENT builds, and that option is
+# mutually exclusive with USE_LLM_INTERFACE (CMakeLists FATAL_ERRORs on the combination).  So the
+# server necessarily binds container-localhost, which the host cannot reach - forward it.
+CMD ["/bin/sh", "-c", \
+     "./InterSpec --docroot . --http-port 8079 --userdatadir /data --config ./data/config/wt_config_localweb.xml & \
+      exec socat TCP-LISTEN:8078,fork,reuseaddr TCP:127.0.0.1:8079"]
