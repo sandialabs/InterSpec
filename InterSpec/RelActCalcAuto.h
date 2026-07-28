@@ -1175,9 +1175,29 @@ struct RelActAutoSolution
    @param uncert    Its linearized 1-sigma from `J^T Cov J` (already non-negative).
    @param jacobian  d(value)/d(parameter) in the full/ambient parameter space (same index space as
                     `m_final_parameters` and `m_param_at_bound`).
+   @param plausibility_scale  The magnitude an "implausibly small" uncertainty is judged against;
+                    <= 0 means use `fabs(value)`.  Needed for quantities whose information content is
+                    not proportional to their own value: an enrichment is a mass fraction, so for a
+                    nearly-pure component (value ~ 1) the informative scale is the distance to the
+                    bound, `1 - value`.  Judging it against `value` instead makes the SAME absolute
+                    uncertainty "implausible" for the major isotope while being accepted for the
+                    minor one, even though the two are complementary - which produced a fit reporting
+                    U238 = 99.3 +- 99 wt% beside U235 = 0.69 +- 0.0089 wt%.
    */
   double reliability_floored_uncert( const double value, const double uncert,
-                                     const std::vector<double> &jacobian ) const;
+                                     const std::vector<double> &jacobian,
+                                     const double plausibility_scale = -1.0 ) const;
+
+
+  /** True when a significant fraction of `jacobian`'s sensitivity rides on parameters pinned at a fit
+   bound (whose variance Ceres reports as ~0, since bounds are invisible to the covariance).
+
+   NOTE this is only meaningful in combination with an "uncertainty looks implausibly small" gate:
+   used alone as a trustworthiness test it flags almost every fit, because a mass-fraction-constrained
+   problem always has its mass-fraction-sum parameter sitting at a bound by construction, and every
+   enrichment depends on it.
+   */
+  bool sensitivity_rides_on_bound( const std::vector<double> &jacobian ) const;
 
 
   /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
@@ -1895,6 +1915,14 @@ struct RelActAutoSolution
    geometry, and always disambiguates "the model" (the fitted attenuation physics / curve shapes -
    never a statistical prior; none is applied unless a shield's opt-in "Bias AD" is checked). */
   std::string curve_separation_verdict( const bool html ) const;
+
+  /** The shared "what the per-curve split actually rests on" clause, used by both the warning text
+   and `curve_separation_verdict()`.  One function so the two cannot drift: they were separate copies
+   once, and only one of them got the stacked-vs-co-located distinction.
+
+   @param sentence_start capitalizes the leading word; callers supply surrounding punctuation.
+   */
+  std::string curve_split_basis_text( const bool sentence_start ) const;
 
   //-------------------------------------------------------------------------------------------
   // END: multi-curve-only members and functions
