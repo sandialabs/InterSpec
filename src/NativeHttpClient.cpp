@@ -308,7 +308,9 @@ std::unique_ptr<Call> start( const Request &req, StreamHandler handler,
 
   if( (req.url.compare(0, 7, "http://") != 0) && (req.url.compare(0, 8, "https://") != 0) )
   {
-    state->deliverComplete( Error::Unknown, "Endpoint URL is not http(s): " + req.url );
+    state->deliverComplete( Error::Unknown,
+                            "Endpoint URL is not http(s) - check the provider's endpoint"
+                            " in the LLM settings" );
     return call;
   }//if( not an http(s) URL )
 

@@ -679,8 +679,10 @@ if( USE_LLM_INTERFACE )
       set( NATIVE_HTTP_HAVE_BACKEND ON )
     elseif( WIN32 AND NOT USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND )
       list( APPEND sources src/NativeHttpClient_winhttp.cpp )
-      target_link_libraries( InterSpecLib PUBLIC winhttp )
       set( NATIVE_HTTP_HAVE_BACKEND ON )
+      # NOTE: winhttp is linked further down, after add_library() - target_link_libraries() here
+      #  would be a configure error, since InterSpecLib does not exist yet at this point.
+      set( NATIVE_HTTP_WINHTTP_BACKEND ON )
     elseif( UNIX OR USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND )
       list( APPEND sources src/NativeHttpClient_wt.cpp )
       set( NATIVE_HTTP_HAVE_BACKEND ON )
@@ -990,6 +992,9 @@ if( USE_NATIVE_HTTP_CLIENT )
     MARK_AS_ADVANCED( FOUNDATION_LIBRARY SECURITY_LIBRARY CFNETWORK_LIBRARY )
     target_link_libraries( InterSpecLib PUBLIC ${FOUNDATION_LIBRARY} ${SECURITY_LIBRARY}
                                                ${CFNETWORK_LIBRARY} )
+  elseif( NATIVE_HTTP_WINHTTP_BACKEND )
+    # Ships with every Windows install; no third-party dependency.
+    target_link_libraries( InterSpecLib PUBLIC winhttp )
   endif()
 
 endif( USE_NATIVE_HTTP_CLIENT )

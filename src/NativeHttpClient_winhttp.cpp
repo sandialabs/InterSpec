@@ -34,6 +34,13 @@
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
 #endif
+// Without this, windows.h defines min/max as macros and any later <algorithm>/<chrono> use breaks.
+//  It survives a mingw build only because the standard headers above happen to come first there;
+//  MSVC's transitive include set differs, which is exactly the class of break a cross-compile
+//  check cannot catch.
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
 #include <windows.h>
 #include <winhttp.h>
 
@@ -59,10 +66,21 @@ static_assert( USE_NATIVE_HTTP_CLIENT,
    here: requests are seconds-to-minutes of mostly-idle waiting, and there are only ever a
    handful outstanding.
 
- - **Cancellation closes the handle.**  A synchronous `WinHttpReceiveResponse` /
-   `WinHttpReadData` cannot be interrupted any other way; closing the request handle from another
-   thread makes the in-flight call fail with `ERROR_WINHTTP_OPERATION_CANCELLED`, which the
-   worker recognizes.  Everything touching the handle therefore goes through `m_mutex`.
+ - **Cancellation is cooperative, not a handle close.**  It is tempting to close the request
+   handle from another thread to break a blocked `WinHttpReadData`, and it usually appears to
+   work - but Microsoft documents it as invalid: "An application should never call
+   WinHttpCloseHandle on a synchronous request.  This can create a race condition", and separately
+   "these HINTERNET handles cannot be closed while an API call using the handle is in progress".
+   A mutex around the *handle variable* does not help, because the hazard is the *call* holding
+   it.  So the worker polls `shouldStop()` at each chunk boundary and unwinds itself, and the
+   handles are only ever touched by the thread that owns them.
+
+   The cost is that a cancel arriving while the worker is blocked waiting for bytes is not acted
+   on until the next chunk arrives, or the receive timeout expires.  That is not a user-visible
+   hang: `Call::cancel()` delivers `onComplete` itself and `~Call()` is silent by design, so the
+   conversation is finalized immediately either way - only the worker lingers, holding nothing the
+   caller can see.  The public interface already promises no better than next-chunk-boundary
+   teardown for the handler-abort case, for the same reason.
 
  - Everything in the API is UTF-16, so `widen()`/`narrow()` are used at every boundary.
 
@@ -206,11 +224,13 @@ Error map_win_error( const DWORD code )
     case ERROR_WINHTTP_SECURE_CHANNEL_ERROR:
       return Error::TlsHandshakeFailed;
 
+    // Deliberately NOT ProxyAuthRequired: this covers a *server* 401 as well as a proxy 407, and
+    //  telling someone with a stale API key to go ask IT about the proxy wastes their afternoon.
     case ERROR_WINHTTP_LOGIN_FAILURE:
-      return Error::ProxyAuthRequired;
+      return Error::Unknown;
 
-    case ERROR_WINHTTP_UNRECOGNIZED_SCHEME:
-    case ERROR_WINHTTP_INVALID_URL:
+    case ERROR_WINHTTP_SHUTDOWN:
+    case ERROR_WINHTTP_INTERNAL_ERROR:
       return Error::Unknown;
 
     default:
@@ -221,42 +241,27 @@ Error map_win_error( const DWORD code )
 }//map_win_error(...)
 
 
-/** The handles for one in-flight request, plus the worker thread running it.
+/** The handles for one in-flight request.
 
- `m_mutex` guards the handles specifically so that `cancelBackendRequest`, running on the session
- thread, can close the request handle out from under a blocking call on the worker thread without
- racing the worker's own close.
+ Touched only by the worker thread that created them - see the note on cancellation in the file
+ header for why nothing else is allowed near them.  The worker is detached at creation rather than
+ stored, so there is no `std::thread` here whose destructor could be reached from the worker
+ itself.
  */
 struct WinHttpRequestData
 {
-  std::mutex m_mutex;
   HINTERNET m_session = nullptr;
   HINTERNET m_connect = nullptr;
   HINTERNET m_request = nullptr;
-  std::thread m_worker;
 
   ~WinHttpRequestData()
   {
-    // The worker owns the handles' lifetime; by the time it has been joined they are closed.
-    if( m_worker.joinable() )
-      m_worker.detach();
+    closeAll();
   }
 
-  /** Close the request handle to interrupt a blocking WinHTTP call on the worker thread.  Safe
-   to call from any thread, and safe if the worker has already closed it. */
-  void cancel()
-  {
-    std::lock_guard<std::mutex> lock( m_mutex );
-    if( m_request )
-    {
-      WinHttpCloseHandle( m_request );
-      m_request = nullptr;
-    }
-  }
-
+  /** Only ever called on the worker thread. */
   void closeAll()
   {
-    std::lock_guard<std::mutex> lock( m_mutex );
     if( m_request ){ WinHttpCloseHandle( m_request ); m_request = nullptr; }
     if( m_connect ){ WinHttpCloseHandle( m_connect ); m_connect = nullptr; }
     if( m_session ){ WinHttpCloseHandle( m_session ); m_session = nullptr; }
@@ -339,8 +344,20 @@ void run_request( std::shared_ptr<NativeHttp::Detail::RequestState> state,
     return;
   }
 
-  const std::wstring host( parts.lpszHostName, parts.dwHostNameLength );
-  std::wstring path( parts.lpszUrlPath, parts.dwUrlPathLength );
+  const std::wstring host = parts.dwHostNameLength
+                              ? std::wstring( parts.lpszHostName, parts.dwHostNameLength )
+                              : std::wstring();
+  if( host.empty() )
+  {
+    fail( Error::Unknown, "The endpoint URL has no host" );
+    return;
+  }
+
+  // Guarded: for "https://host" with no path WinHttpCrackUrl returns length 0 and may hand back a
+  //  null pointer, and std::wstring(nullptr, 0) is undefined behaviour.
+  std::wstring path = parts.dwUrlPathLength
+                        ? std::wstring( parts.lpszUrlPath, parts.dwUrlPathLength )
+                        : std::wstring();
   if( parts.dwExtraInfoLength )
     path.append( parts.lpszExtraInfo, parts.dwExtraInfoLength );
   if( path.empty() )
@@ -355,8 +372,18 @@ void run_request( std::shared_ptr<NativeHttp::Detail::RequestState> state,
   std::wstring proxyName;
   if( !req.proxyUrl.empty() )
   {
+    // WINHTTP_ACCESS_TYPE_NAMED_PROXY wants "[scheme://]server[:port]" with no path, but someone
+    //  typing a proxy into a settings box will produce "http://proxy:8080/".  Trim rather than
+    //  reject: the trailing slash is not a mistake worth failing over.
+    std::string proxy = req.proxyUrl;
+    const size_t schemeEnd = proxy.find( "://" );
+    const size_t pathStart = proxy.find( '/', (schemeEnd == std::string::npos) ? 0
+                                                                              : (schemeEnd + 3) );
+    if( pathStart != std::string::npos )
+      proxy.erase( pathStart );
+
     accessType = WINHTTP_ACCESS_TYPE_NAMED_PROXY;
-    proxyName = widen( req.proxyUrl );
+    proxyName = widen( proxy );
   }
 
   HINTERNET session = WinHttpOpen( L"InterSpec", accessType,
@@ -378,10 +405,7 @@ void run_request( std::shared_ptr<NativeHttp::Detail::RequestState> state,
     return;
   }
 
-  {
-    std::lock_guard<std::mutex> lock( data->m_mutex );
-    data->m_session = session;
-  }
+  data->m_session = session;
 
   // WinHTTP's timeouts are per-phase.  Map the idle timeout onto the send/receive phases, which
   //  is the closest equivalent to "no progress for this long", and leave resolve/connect on
@@ -397,10 +421,7 @@ void run_request( std::shared_ptr<NativeHttp::Detail::RequestState> state,
     return;
   }
 
-  {
-    std::lock_guard<std::mutex> lock( data->m_mutex );
-    data->m_connect = connect;
-  }
+  data->m_connect = connect;
 
   const DWORD requestFlags = (https ? WINHTTP_FLAG_SECURE : 0)
                              | WINHTTP_FLAG_ESCAPE_DISABLE_QUERY;
@@ -414,17 +435,43 @@ void run_request( std::shared_ptr<NativeHttp::Detail::RequestState> state,
     return;
   }
 
+  data->m_request = request;
+
+  // WinHttpSetTimeouts does NOT bound the wait for response headers; that is this separate
+  //  option, and its default is 90 seconds.  Leaving it would cap time-to-first-byte at 90 s -
+  //  which is exactly the case Request::idleTimeout exists to allow, since a non-streaming LLM
+  //  emits no headers until the whole completion is ready.
   {
-    std::lock_guard<std::mutex> lock( data->m_mutex );
-    data->m_request = request;
+    DWORD headerWaitMs = (req.idleTimeout.count() > 0)
+                           ? static_cast<DWORD>(req.idleTimeout.count() * 1000) : 300000;
+    if( (req.totalTimeout.count() > 0)
+       && (static_cast<DWORD>(req.totalTimeout.count() * 1000) > headerWaitMs) )
+      headerWaitMs = static_cast<DWORD>(req.totalTimeout.count() * 1000);
+
+    if( !WinHttpSetOption( request, WINHTTP_OPTION_RECEIVE_RESPONSE_TIMEOUT,
+                           &headerWaitMs, sizeof(headerWaitMs) ) )
+    {
+      std::cerr << "NativeHttp: could not raise the response-header timeout ("
+                << win_error_message( GetLastError() ) << "); slow completions may time out"
+                << std::endl;
+    }
   }
 
   // Redirects: WinHTTP follows them by default, so turn that off unless asked for - the other
   //  backends do not follow, and an LLM endpoint that redirects is usually a misconfiguration.
+  //  The return value is checked because failing open here would replay the bearer token to
+  //  whatever the redirect points at.
   if( !req.followRedirects )
   {
     DWORD policy = WINHTTP_DISABLE_REDIRECTS;
-    WinHttpSetOption( request, WINHTTP_OPTION_DISABLE_FEATURE, &policy, sizeof(policy) );
+    if( !WinHttpSetOption( request, WINHTTP_OPTION_DISABLE_FEATURE, &policy, sizeof(policy) ) )
+    {
+      const DWORD code = GetLastError();
+      fail( Error::OptionUnsupported,
+            "Could not disable HTTP redirects, and following one would send the API key to the"
+            " redirect target: " + win_error_message(code) );
+      return;
+    }
   }
 
   if( req.disableCertVerification )
@@ -448,7 +495,19 @@ void run_request( std::shared_ptr<NativeHttp::Detail::RequestState> state,
 
   std::wstring headerBlock;
   for( const std::pair<std::string,std::string> &kv : req.headers )
+  {
+    // Reject rather than sanitize: a CR or LF in a name or value would splice extra headers into
+    //  the request, and these come from user-editable configuration.  Silently stripping would
+    //  hide a broken config; failing names it.
+    if( (kv.first.find_first_of("\r\n") != std::string::npos)
+       || (kv.second.find_first_of("\r\n") != std::string::npos) )
+    {
+      fail( Error::Unknown, "Request header '" + kv.first + "' contains a line break" );
+      return;
+    }
+
     headerBlock += widen( kv.first ) + L": " + widen( kv.second ) + L"\r\n";
+  }
 
   if( state->shouldStop() )
   {
@@ -457,7 +516,36 @@ void run_request( std::shared_ptr<NativeHttp::Detail::RequestState> state,
     return;
   }
 
-  BOOL ok = WinHttpSendRequest( request,
+  // Send / receive, driving the authentication handshake.
+  //
+  // WinHTTP does not authenticate on its own.  The autologon policy set above only governs
+  //  *whether default credentials may be used* once the application drives the loop; the loop
+  //  itself - see a 401/407, ask which schemes are offered, set credentials, resend on the same
+  //  handle - is the application's job, and without it a Negotiate/NTLM proxy simply fails on the
+  //  first challenge.  This follows the pattern in Microsoft's "Authentication in WinHTTP".
+  //
+  // Bounded because a misconfigured proxy can otherwise challenge indefinitely.
+  DWORD statusCode = 0;
+  const int maxAuthAttempts = 5;
+
+  for( int attempt = 0; ; ++attempt )
+  {
+    if( attempt >= maxAuthAttempts )
+    {
+      fail( Error::ProxyAuthRequired,
+            "The network proxy kept asking for credentials that could not be supplied"
+            " automatically.  Ask IT whether this machine is expected to authenticate to the"
+            " proxy." );
+      return;
+    }
+
+    if( state->shouldStop() )
+    {
+      data->closeAll();
+      return;   // whoever set the flag owns the completion; see startBackendRequest
+    }
+
+    const BOOL sent = WinHttpSendRequest( request,
                                 headerBlock.empty() ? WINHTTP_NO_ADDITIONAL_HEADERS
                                                     : headerBlock.c_str(),
                                 headerBlock.empty() ? 0 : static_cast<DWORD>(-1),
@@ -465,38 +553,60 @@ void run_request( std::shared_ptr<NativeHttp::Detail::RequestState> state,
                                                  : const_cast<char *>(req.body.data()),
                                 static_cast<DWORD>(req.body.size()),
                                 static_cast<DWORD>(req.body.size()), 0 );
-  if( !ok )
-  {
-    failWin( "Could not send the request", GetLastError() );
-    return;
-  }
+    if( !sent )
+    {
+      failWin( "Could not send the request", GetLastError() );
+      return;
+    }
 
-  if( !WinHttpReceiveResponse( request, nullptr ) )
-  {
-    failWin( "No response from the server", GetLastError() );
-    return;
-  }
+    if( !WinHttpReceiveResponse( request, nullptr ) )
+    {
+      const DWORD code = GetLastError();
+      // Documented on both SendRequest and ReceiveResponse: the handshake needs another round
+      //  trip on this same handle.
+      if( code == ERROR_WINHTTP_RESEND_REQUEST )
+        continue;
+      failWin( "No response from the server", code );
+      return;
+    }
 
-  DWORD statusCode = 0, statusSize = sizeof(statusCode);
-  if( !WinHttpQueryHeaders( request,
-                            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-                            WINHTTP_HEADER_NAME_BY_INDEX, &statusCode, &statusSize,
-                            WINHTTP_NO_HEADER_INDEX ) )
-  {
-    failWin( "Could not read the response status", GetLastError() );
-    return;
-  }
+    DWORD statusSize = sizeof(statusCode);
+    if( !WinHttpQueryHeaders( request,
+                              WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
+                              WINHTTP_HEADER_NAME_BY_INDEX, &statusCode, &statusSize,
+                              WINHTTP_NO_HEADER_INDEX ) )
+    {
+      failWin( "Could not read the response status", GetLastError() );
+      return;
+    }
 
-  // A 407 that got this far means WinHTTP could not satisfy the proxy challenge automatically -
-  //  i.e. the SSO path above did not apply.  Say so specifically; "HTTP 407" on its own sends
-  //  people looking in the wrong place.
-  if( statusCode == HTTP_STATUS_PROXY_AUTH_REQ )
-  {
-    fail( Error::ProxyAuthRequired,
-          "The network proxy requires credentials that Windows could not supply automatically."
-          " Ask IT whether this machine is expected to authenticate to the proxy." );
-    return;
-  }
+    if( (statusCode != HTTP_STATUS_PROXY_AUTH_REQ) && (statusCode != HTTP_STATUS_DENIED) )
+      break;   // a real response - including a 401 the caller should see, once we stop retrying
+
+    // Which scheme to answer with, and whether we can answer at all.
+    DWORD supported = 0, first = 0, target = 0;
+    if( !WinHttpQueryAuthSchemes( request, &supported, &first, &target ) )
+      break;   // nothing offered we can act on; let the caller see the 401/407 body
+
+    // Preference order: Negotiate (Kerberos, then NTLM) is what a domain proxy uses, and is the
+    //  only one that can succeed without prompting.  Basic/Digest would need credentials we do
+    //  not have and must never invent, so they fall through to the caller as a plain 401/407.
+    DWORD scheme = 0;
+    if( supported & WINHTTP_AUTH_SCHEME_NEGOTIATE )
+      scheme = WINHTTP_AUTH_SCHEME_NEGOTIATE;
+    else if( supported & WINHTTP_AUTH_SCHEME_NTLM )
+      scheme = WINHTTP_AUTH_SCHEME_NTLM;
+
+    if( !scheme )
+      break;
+
+    // Null credentials = "use the logged-on user's", which is what the autologon policy gates.
+    if( !WinHttpSetCredentials( request, target, scheme, nullptr, nullptr, nullptr ) )
+    {
+      failWin( "Could not use this machine's credentials for the proxy", GetLastError() );
+      return;
+    }
+  }//for( send / authenticate )
 
   NativeHttp::HeaderList headers;
   {
@@ -522,10 +632,22 @@ void run_request( std::shared_ptr<NativeHttp::Detail::RequestState> state,
   // Body: WinHttpQueryDataAvailable / WinHttpReadData hand back de-chunked bytes, so what comes
   //  out here is the decoded entity body.
   std::vector<char> buffer;
+  const std::chrono::steady_clock::time_point deadline
+      = std::chrono::steady_clock::now() + req.totalTimeout;
+
   for( ; ; )
   {
     if( state->shouldStop() )
       break;
+
+    // WinHTTP has no wall-clock ceiling of its own - its timeouts are all per-phase - so enforce
+    //  Request::totalTimeout here, between reads.
+    if( (req.totalTimeout.count() > 0) && (std::chrono::steady_clock::now() > deadline) )
+    {
+      fail( Error::Timeout, "The response did not finish within "
+                            + std::to_string(req.totalTimeout.count()) + " seconds" );
+      return;
+    }
 
     DWORD available = 0;
     if( !WinHttpQueryDataAvailable( request, &available ) )
@@ -624,9 +746,14 @@ void startBackendRequest( const std::shared_ptr<RequestState> &state )
 
   // One thread per request, synchronous WinHTTP inside it.  startBackendRequest must not block,
   //  and the results are marshalled onto the session thread by dispatch() either way.
+  //
+  // Detached immediately rather than stored: keeping the std::thread inside `data` would close a
+  //  cycle (state -> backendData -> data -> thread callable -> state), and when the owning Call
+  //  goes first the worker ends up running ~WinHttpRequestData - and hence its own std::thread's
+  //  destructor - from inside itself.
   try
   {
-    data->m_worker = std::thread( [state, data](){
+    std::thread( [state, data](){
       try
       {
         run_request( state, data );
@@ -640,7 +767,14 @@ void startBackendRequest( const std::shared_ptr<RequestState> &state )
         data->closeAll();
         state->deliverComplete( Error::Unknown, "Unexpected failure in the HTTP worker" );
       }
-    } );
+
+      // Break the cycle deterministically, and drop the request body - which carries the bearer
+      //  token - as soon as the transfer is over rather than whenever the Call happens to die.
+      {
+        std::lock_guard<std::mutex> lock( state->backendMutex );
+        state->backendData.reset();
+      }
+    } ).detach();
   }catch( const std::exception &e )
   {
     // Thread creation failed; nothing will ever report, so report here.
@@ -650,24 +784,16 @@ void startBackendRequest( const std::shared_ptr<RequestState> &state )
 }//startBackendRequest(...)
 
 
-void cancelBackendRequest( const std::shared_ptr<RequestState> &state )
+void cancelBackendRequest( const std::shared_ptr<RequestState> & )
 {
-  std::shared_ptr<WinHttpRequestData> data;
-
-  {
-    std::lock_guard<std::mutex> lock( state->backendMutex );
-    data = std::static_pointer_cast<WinHttpRequestData>( state->backendData );
-  }
-
-  if( !data )
-    return;
-
-  // Closing the request handle is the only way to interrupt a blocking WinHTTP call; the worker
-  //  sees ERROR_WINHTTP_OPERATION_CANCELLED (or notices stopRequested) and unwinds.  Deliberately
-  //  not joining the worker: this runs on the session thread, and blocking it on a socket that
-  //  may take moments to unwind would stall the UI.  The worker holds its own shared_ptr to both
-  //  the state and the handles, so letting it finish on its own is safe.
-  data->cancel();
+  // Nothing to do.  `stopRequested` is already set by the caller, and the worker polls
+  //  `shouldStop()` at each chunk boundary and unwinds itself.
+  //
+  // Deliberately does NOT reach in and close the request handle: Microsoft documents that as a
+  //  race on a synchronous request (see the note in this file's header), and a mutex cannot fix
+  //  it because the hazard is the in-flight call, not the variable.  Nor does it join the worker
+  //  - this runs on the session thread, and the completion has already been delivered by
+  //  Call::cancel(), so there is nothing to wait for.
 }//cancelBackendRequest(...)
 
 }//namespace Detail

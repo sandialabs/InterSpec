@@ -58,10 +58,13 @@ static_assert( USE_NATIVE_HTTP_CLIENT,
  | Linux        | `Wt::Http::Client` | system trust only, no proxy support       |
  | Android      | `Wt::Http::Client` | system trust only, no proxy support       |
 
- A caveat on the Windows row: that backend was written without a Windows machine to develop on.
- It is verified to compile and link for both x64 and x86 (cross-checked with mingw-w64, which
- ships the same WinHTTP headers and import library), but its runtime behaviour has not been
- exercised.  Treat it as needing a pass on real hardware before it is relied on.
+ Two caveats on the Windows row.  It was written without a Windows machine to develop on: it is
+ verified to compile and link for x64 and x86 (mingw-w64 ships the same WinHTTP headers and
+ import library), and its request/response, cancellation, size-cap and error-mapping paths have
+ been exercised under CrossOver - but Wine reimplements WinHTTP, so that says nothing about
+ Schannel, proxy discovery, or SSO.  And the Negotiate/NTLM handshake in particular is
+ implemented per Microsoft's documented pattern but has never been run against a real proxy,
+ because nothing here can host one.  Treat the whole row as needing a pass on real hardware.
 
  Nothing above this header knows which backend is in use, and no platform `#ifdef` reaches
  above it.  Not supporting proxies on Linux/Android is a deliberate, accepted limitation.

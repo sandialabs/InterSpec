@@ -481,7 +481,9 @@ void startBackendRequest( const std::shared_ptr<RequestState> &state )
     NSURL * const url = [NSURL URLWithString:urlStr];
     if( !url )
     {
-      state->deliverComplete( Error::Unknown, "Could not parse endpoint URL: " + req.url );
+      state->deliverComplete( Error::Unknown,
+                              "Could not parse the endpoint URL; check the provider's"
+                              " endpoint in the LLM settings" );
       return;
     }
 
@@ -518,7 +520,8 @@ void startBackendRequest( const std::shared_ptr<RequestState> &state )
       NSDictionary * const proxyDict = make_proxy_dictionary( req.proxyUrl );
       if( !proxyDict )
       {
-        state->deliverComplete( Error::Unknown, "Could not parse proxy URL: " + req.proxyUrl );
+        state->deliverComplete( Error::Unknown,
+                                "Could not parse the proxy URL in the LLM network settings" );
         return;
       }
       [config setConnectionProxyDictionary:proxyDict];
