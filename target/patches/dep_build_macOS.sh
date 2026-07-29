@@ -84,6 +84,31 @@ BUILD_OPENSSL=${BUILD_OPENSSL:-OFF}
 OPENSSL_VERSION=3.5.4
 echo "BUILD_OPENSSL: ${BUILD_OPENSSL}"
 
+# Guard against two stale-sentinel traps that would silently produce a broken prefix:
+#
+#  - `wt.installed` from an earlier BUILD_OPENSSL=OFF run makes the Wt block below a no-op, so Wt
+#    keeps ENABLE_SSL=OFF while the prefix now *does* contain libssl.a - which looks like success
+#    to InterSpec's cmake, but leaves https dead at runtime.
+#  - `wt-3.7.1/wt.patched` from before this script gained the WtFindSsl.txt hunk means that hunk is
+#    never applied, so Wt links a bare "-lcrypto" (the system one) against our static libssl.a.
+#
+# Both are silent, so refuse rather than guess.
+if [ "${BUILD_OPENSSL}" = "ON" ] && [ -f "${working_directory}/wt.installed" ]; then
+  if [ ! -f "${MY_WT_PREFIX}/include/Wt/WConfig.h" ] \
+     || ! grep -q "^#define WT_WITH_SSL" "${MY_WT_PREFIX}/include/Wt/WConfig.h"; then
+    echo ""
+    echo "ERROR: BUILD_OPENSSL=ON, but this working directory already has a Wt built WITHOUT SSL."
+    echo "       Wt will not be rebuilt while its sentinel exists, so the result would silently"
+    echo "       have no https support.  Remove these and re-run:"
+    echo "         rm ${working_directory}/wt.installed"
+    echo "         rm -rf ${working_directory}/wt-3.7.1"
+    echo "       (deleting the extracted Wt source also drops its 'wt.patched' marker, so the"
+    echo "        WtFindSsl.txt fix gets applied)"
+    echo ""
+    exit 1
+  fi
+fi
+
 
 # Define a function to download a file and check its hash
 download_file() {
@@ -362,6 +387,7 @@ fi #if BUILD_OPENSSL / openssl.installed exists / else
 
 
 cd "${working_directory}"
+
 
 
 ## Build Wt 3.7.1

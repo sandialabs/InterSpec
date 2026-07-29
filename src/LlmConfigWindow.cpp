@@ -170,6 +170,11 @@ LlmConfigWindow::LlmConfigWindow( InterSpec *viewer,
     m_providersArea( nullptr ),
     m_mcpEnable( nullptr ),
     m_mcpDetail( nullptr ),
+#if( MCP_ENABLE_AUTH )
+    m_mcpToken( nullptr ),
+    m_mcpTokenShow( nullptr ),
+    m_mcpTokenWarn( nullptr ),
+#endif
 #if( USE_NATIVE_HTTP_CLIENT )
     m_netOverride( nullptr ),
     m_netDetail( nullptr ),
@@ -177,11 +182,6 @@ LlmConfigWindow::LlmConfigWindow( InterSpec *viewer,
     m_netCaBundle( nullptr ),
     m_netNoVerify( nullptr ),
     m_netNoVerifyWarn( nullptr ),
-#endif
-#if( MCP_ENABLE_AUTH )
-    m_mcpToken( nullptr ),
-    m_mcpTokenShow( nullptr ),
-    m_mcpTokenWarn( nullptr ),
 #endif
     m_validationSummary( nullptr ),
     m_acceptBtn( nullptr ),
@@ -437,9 +437,25 @@ void LlmConfigWindow::buildUi()
   m_netProxy->addStyleClass( "LcwInput LcwMono" );
   m_netProxy->setEmptyText( WString::tr("lcw-net-proxy-ph") );
   m_netProxy->setText( WString::fromUTF8( m_working.llmApi.httpProxyUrl ) );
-  m_netProxy->setToolTip( WString::tr("lcw-net-proxy-tip"), Wt::XHTMLText );
+
+  // Not every backend can honour an explicit proxy - Wt::Http::Client has no proxy support at
+  //  all, and NativeHttp::start() rejects the request outright rather than ignoring the setting.
+  //  Offering an editable field there would let a user break every CORS-fix provider in one
+  //  keystroke, so disable it and say why.
+  if( NativeHttp::supportsProxyOverride() )
+  {
+    m_netProxy->setToolTip( WString::tr("lcw-net-proxy-tip"), Wt::XHTMLText );
+  }else
+  {
+    m_netProxy->setEnabled( false );
+    m_netProxy->setEmptyText( WString::tr("lcw-net-proxy-unsupported-ph") );
+    m_netProxy->setToolTip( WString::tr("lcw-net-proxy-unsupported")
+                              .arg( WString::fromUTF8(NativeHttp::backendName()) ), Wt::XHTMLText );
+  }
+
   m_netProxy->changed().connect( std::bind( [this](){
     m_working.llmApi.httpProxyUrl = m_netProxy->text().toUTF8();
+    updateValidation();
     refreshPreview();
   } ) );
 
@@ -695,10 +711,11 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
                           .arg( WString::fromUTF8(NativeHttp::backendName()) ), Wt::XHTMLText );
   }else
   {
-    // Compiled out, or compiled in but unusable (a Wt built without SSL cannot do https at all).
-    //  Leave it visible but disabled, so the reason is discoverable rather than the option just
-    //  being mysteriously absent on one platform.
-    corsCb->setEnabled( false );
+    // Compiled in, but not usable - a Wt built without SSL cannot do https at all.  Leave the
+    //  box visible so the reason is discoverable, but only lock it when it is not already ticked:
+    //  a config carrying httpBackend="native" must stay correctable from here.
+    //  (When the option is compiled out entirely this whole row is absent, not disabled.)
+    corsCb->setEnabled( corsCb->isChecked() );
     corsCb->setToolTip( WString::tr("lcw-cors-fix-unavail")
                           .arg( WString::fromUTF8(NativeHttp::backendName()) ), Wt::XHTMLText );
   }
@@ -1174,6 +1191,18 @@ void LlmConfigWindow::updateValidation()
      && (m_working.mcpServer.bearerToken == LlmConfig::McpServer::sm_invalid_bearer_token) )
   {
     warnings.push_back( WString::tr("lcw-warn-mcp-token") );
+
+#if( USE_NATIVE_HTTP_CLIENT )
+  // A bad path here otherwise surfaces only as a TLS failure at request time, with nothing
+  //  pointing back at the setting that caused it.
+  if( !m_working.llmApi.httpCaBundlePath.empty()
+     && !SpecUtils::is_file( m_working.llmApi.httpCaBundlePath )
+     && !SpecUtils::is_directory( m_working.llmApi.httpCaBundlePath ) )
+    warnings.push_back( WString::tr("lcw-warn-ca-missing") );
+
+  if( !m_working.llmApi.httpProxyUrl.empty() && !NativeHttp::supportsProxyOverride() )
+    warnings.push_back( WString::tr("lcw-warn-proxy-unsupported") );
+#endif
   }
   if( m_mcpTokenWarn )
     m_mcpTokenWarn->setHidden( m_working.mcpServer.bearerToken != LlmConfig::McpServer::sm_invalid_bearer_token );

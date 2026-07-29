@@ -76,9 +76,13 @@ namespace Detail
     /** Latch making `onComplete` fire exactly once, however many paths race to report it. */
     std::atomic<bool> completed{ false };
 
-    /** Serializes handler invocation for the empty-sessionId case, where several backend
-     threads could otherwise overlap.  Not needed when marshalling to a session (the Wt strand
-     already serializes), but harmless there. */
+    /** Guards the `detached` re-check on the inline (empty-sessionId) path.
+
+     Deliberately NOT held across the handler call: a handler that cancelled its own request would
+     deadlock on it, since that routes back through deliverComplete() -> dispatch().  Handler
+     invocations are therefore serialized only by the backend delivering them in order - which
+     both real backends do (Wt emits on its strand, and the Apple delegate queue is forced
+     serial).  A backend that delivered concurrently would need to serialize itself. */
     std::mutex handlerMutex;
 
     /** Bytes accumulated so far, for enforcing `Request::maxResponseSize` ourselves.  Atomic

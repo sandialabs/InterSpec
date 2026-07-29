@@ -683,7 +683,6 @@ if( USE_LLM_INTERFACE )
       #  nothing.
       list( APPEND sources src/NativeHttpClient_wt.cpp )
       set( NATIVE_HTTP_HAVE_BACKEND ON )
-      set( NATIVE_HTTP_WT_BACKEND ON )
     endif()
 
     if( NATIVE_HTTP_HAVE_BACKEND )
@@ -930,44 +929,38 @@ endif(WIN32)
 
 
 
-target_link_libraries(
-    InterSpecLib
-    PUBLIC
-    Threads::Threads
-    SpecUtils
-    SandiaDecay
-    Minuit2::Minuit2
-    Cuba-3.0
-    muparserx
-    Boost::thread
-    Boost::date_time
-    Boost::system
-    Boost::filesystem
-    Boost::program_options
-    Boost::regex
-    Boost::random
-    ZLIB::ZLIB
-    Eigen3::Eigen
-    Ceres::ceres
-    ${CMAKE_DL_LIBS}
-)
+# NOTE: there used to be a second, near-identical target_link_libraries() block here, repeating
+#  the Boost targets after Wt.  It had no effect - CMake de-duplicates repeated mentions of an
+#  imported target and keeps the first - while looking like it performed the ordering fix below.
+#  Removed so the real fix is the only thing claiming to do the job.
 
 
 # GNU ld scans each static archive once, in command-line order, pulling only the members that
 #  resolve symbols seen so far - so an archive has to appear *after* everything that references
-#  it.  Wt's SocketNotifier.C references boost::thread, but CMake emits the Boost imported
-#  targets ahead of the Wt libraries and de-duplicates the later mention of them above, leaving
-#  ~22 "undefined reference to boost::thread::..." at link time on Linux.
+#  it.  Wt's SocketNotifier.C references boost::thread, but the Boost imported targets are linked
+#  well above the Wt libraries, leaving ~22 "undefined reference to boost::thread::..." at link
+#  time on Linux.  Simply naming the Boost targets again after Wt does not help: CMake keeps only
+#  the first mention of an imported target.
 #
 # Repeating them here by file path fixes the order: a plain path is not de-duplicated against the
 #  imported target it came from, so these really do land at the end of the link line.
 #
 # Not needed on Apple (ld64 resolves across all inputs regardless of order) or MSVC (same), and
 #  linking an archive twice is harmless everywhere, so this is scoped to where it is required.
-if( (NOT APPLE) AND (NOT MSVC) )
+#
+# Also not needed - and not possible - in a FetchContent build: there Wt is a real CMake target
+#  carrying its own INTERFACE_LINK_LIBRARIES, so CMake already orders Boost after it.  And several
+#  boostorg components (system, regex, ...) are header-only INTERFACE libraries there, for which
+#  $<TARGET_FILE:> is a hard generate-time error rather than something if(TARGET) screens out.
+if( (NOT APPLE) AND (NOT MSVC) AND (NOT InterSpec_FETCH_DEPENDENCIES) )
   foreach( _boost_comp thread date_time system filesystem program_options regex random )
     if( TARGET Boost::${_boost_comp} )
-      target_link_libraries( InterSpecLib PUBLIC "$<TARGET_FILE:Boost::${_boost_comp}>" )
+      # An INTERFACE library has no file to point at; belt-and-braces alongside the guard above,
+      #  since a header-only component contributes no symbols to order anyway.
+      get_target_property( _boost_comp_type Boost::${_boost_comp} TYPE )
+      if( NOT _boost_comp_type STREQUAL "INTERFACE_LIBRARY" )
+        target_link_libraries( InterSpecLib PUBLIC "$<TARGET_FILE:Boost::${_boost_comp}>" )
+      endif()
     endif()
   endforeach()
 endif()
@@ -998,24 +991,36 @@ if( USE_NATIVE_HTTP_CLIENT )
                                                ${CFNETWORK_LIBRARY} )
   endif()
 
-  # The Wt::Http::Client backend reaches into OpenSSL directly to classify TLS errors (and Wt
-  #  itself is a static library, so its own SSL symbols are not resolved until this final link).
-  #  These must be the OpenSSL built into the dependency prefix - never the system one.
-  if( NATIVE_HTTP_WT_BACKEND )
-    find_library( NATIVE_HTTP_SSL_LIB    NAMES ssl    PATHS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES lib NO_DEFAULT_PATH )
-    find_library( NATIVE_HTTP_CRYPTO_LIB NAMES crypto PATHS ${CMAKE_PREFIX_PATH} PATH_SUFFIXES lib NO_DEFAULT_PATH )
-    mark_as_advanced( NATIVE_HTTP_SSL_LIB NATIVE_HTTP_CRYPTO_LIB )
-
-    if( NATIVE_HTTP_SSL_LIB AND NATIVE_HTTP_CRYPTO_LIB )
-      message( STATUS "Native HTTP: Wt backend linking ${NATIVE_HTTP_SSL_LIB}" )
-      target_link_libraries( InterSpecLib PUBLIC ${NATIVE_HTTP_SSL_LIB} ${NATIVE_HTTP_CRYPTO_LIB} )
-    else()
-      message( WARNING "Native HTTP: the Wt::Http::Client backend is selected, but no OpenSSL was"
-               " found in the dependency prefix.  Rebuild it with BUILD_OPENSSL=ON, or https"
-               " requests through the native transport will not work." )
-    endif()
-  endif( NATIVE_HTTP_WT_BACKEND )
 endif( USE_NATIVE_HTTP_CLIENT )
+
+
+# If the Wt we are linking against was built with SSL, we have to supply OpenSSL at this final
+#  link, whatever else is enabled: Wt links it PRIVATE into a static libwt.a, and InterSpecServer
+#  already pulls in Wt/Http/Client, so Client.o - and its OpenSSL references - is always present.
+#  Deliberately NOT gated on USE_NATIVE_HTTP_CLIENT: a prefix built with BUILD_OPENSSL=ON would
+#  otherwise fail to link any build that has the native transport switched off.
+#
+#  WConfig.h is the authoritative signal; the presence of libssl.a in the prefix is not, since a
+#  prefix can contain OpenSSL while its Wt was configured without it.
+if( EXISTS "${Wt_INCLUDE_DIR}/Wt/WConfig.h" )
+  file( READ "${Wt_INCLUDE_DIR}/Wt/WConfig.h" _wt_config_contents )
+  string( REGEX MATCH "\n#define WT_WITH_SSL" _wt_has_ssl "${_wt_config_contents}" )
+
+  if( _wt_has_ssl )
+    find_library( INTERSPEC_SSL_LIB    NAMES ssl    HINTS ${CMAKE_PREFIX_PATH} ${Wt_INCLUDE_DIR}/../lib PATH_SUFFIXES lib )
+    find_library( INTERSPEC_CRYPTO_LIB NAMES crypto HINTS ${CMAKE_PREFIX_PATH} ${Wt_INCLUDE_DIR}/../lib PATH_SUFFIXES lib )
+    mark_as_advanced( INTERSPEC_SSL_LIB INTERSPEC_CRYPTO_LIB )
+
+    if( INTERSPEC_SSL_LIB AND INTERSPEC_CRYPTO_LIB )
+      message( STATUS "Wt was built with SSL; linking ${INTERSPEC_SSL_LIB}" )
+      target_link_libraries( InterSpecLib PUBLIC ${INTERSPEC_SSL_LIB} ${INTERSPEC_CRYPTO_LIB} )
+    else()
+      message( FATAL_ERROR "Wt was built with SSL support (WT_WITH_SSL is defined in its"
+               " WConfig.h), but no OpenSSL could be found to link against.  Point"
+               " CMAKE_PREFIX_PATH at the dependency prefix that Wt was built into." )
+    endif()
+  endif( _wt_has_ssl )
+endif()
 
 if( BUILD_AS_OSX_APP )
   if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )

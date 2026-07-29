@@ -165,6 +165,7 @@ private:
 #if( USE_NATIVE_HTTP_CLIENT )
   // Network card - escape hatches for the native ("CORS fix") transport only.  Hidden behind a
   //  checkbox; unchecking it clears them, so a stale override cannot lurk out of sight.
+  //  Declared here, after the MCP members, to match the constructor's initializer order.
   Wt::WCheckBox *m_netOverride;
   Wt::WContainerWidget *m_netDetail;
   Wt::WLineEdit *m_netProxy;

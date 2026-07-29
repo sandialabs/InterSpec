@@ -37,6 +37,8 @@
   <message id="lcw-net-proxy">Proxy</message>
   <message id="lcw-net-proxy-ph">use this computer&#8217;s proxy settings</message>
   <message id="lcw-net-proxy-tip"><![CDATA[Leave empty unless told otherwise: InterSpec already follows the proxy configured in your system settings, including automatic (PAC/WPAD) discovery.<br/><br/>Set it only if that discovery does not work, e.g. <code>http://proxy.example.com:8080</code>.]]></message>
+  <message id="lcw-net-proxy-unsupported-ph">not supported on this platform</message>
+  <message id="lcw-net-proxy-unsupported"><![CDATA[This platform&#8217;s HTTP client ({1}) cannot be pointed at a specific proxy.<br/><br/>Set the proxy in your system settings instead, or ask your IT department whether one is required.]]></message>
   <message id="lcw-net-ca">Extra certificates</message>
   <message id="lcw-net-ca-ph">use this computer&#8217;s certificate store</message>
   <message id="lcw-net-ca-tip"><![CDATA[A PEM file, or a folder of them, to trust <em>in addition to</em> the ones this computer already trusts.<br/><br/>Needed on networks that inspect encrypted traffic, where your organization&#8217;s certificate has not been installed system-wide. Your IT department can supply the file.]]></message>
@@ -125,6 +127,8 @@
   <message id="lcw-warn-model-empty">Active model name is empty.</message>
   <message id="lcw-warn-anthropic-max">Active model: Anthropic requires Max tokens.</message>
   <message id="lcw-warn-mcp-token">MCP is enabled with the default bearer token.</message>
+  <message id="lcw-warn-ca-missing">Network settings: the extra-certificates path does not exist.</message>
+  <message id="lcw-warn-proxy-unsupported">Network settings: a proxy is set, but this platform&#8217;s HTTP client cannot use one.</message>
 
   <!-- Used by the LLM assistant when not configured (LlmToolGui) -->
   <message id="lcw-configure-menu">Configure LLM Provider&#8230;</message>

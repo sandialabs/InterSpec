@@ -37,13 +37,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /work
-COPY . /work/InterSpec
+
+# Copy ONLY what the dependency build reads, so that editing a source file does not invalidate the
+#  30-60 minute prefix layer below.  dep_build_linux.sh touches nothing outside target/patches.
+COPY target/patches /work/InterSpec/target/patches
 
 # Build the dependency prefix, with a static OpenSSL and Wt SSL support turned on.  Everything
 #  lands in /work/prefix; nothing links against the distribution's OpenSSL.
 RUN _ncore=$(nproc) BUILD_OPENSSL=ON \
       bash /work/InterSpec/target/patches/dep_build_linux.sh \
         /work/InterSpec /work/deps /work/prefix
+
+COPY . /work/InterSpec
 
 # Fail early and loudly if Wt did not actually come out with SSL support - otherwise the failure
 #  would not surface until a request was made at runtime.
@@ -72,9 +77,13 @@ RUN cmake -G Ninja -S /work/InterSpec -B /work/build \
 
 # Confirm the binary is not linked against the distribution's OpenSSL - the whole point of
 #  building it into the prefix statically.
-RUN ldd /work/build/InterSpec | grep -E "libssl|libcrypto" \
-    && (echo "ERROR: linked against a shared OpenSSL" && exit 1) \
-    || echo "No shared OpenSSL linkage, as intended"
+RUN if ldd /work/build/InterSpec | grep -qE "libssl|libcrypto"; then \
+      echo "ERROR: linked against a shared OpenSSL:"; \
+      ldd /work/build/InterSpec | grep -E "libssl|libcrypto"; \
+      exit 1; \
+    else \
+      echo "No shared OpenSSL linkage, as intended"; \
+    fi
 
 EXPOSE 8078
 VOLUME /data

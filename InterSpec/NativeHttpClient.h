@@ -159,8 +159,11 @@ namespace NativeHttp
 
     /** Cap on the accumulated response body; zero means unlimited.
 
-     Enforced by this transport, not by the backend - `Wt::Http::Client` needs
-     `setMaximumResponseSize(0)` to stream at all, which also disables its own guard.
+     Enforced by this transport rather than being handed to the backend, because the backends do
+     not agree on what a cap means.  Note in particular that `Wt::Http::Client` must NOT be given
+     `setMaximumResponseSize(0)`: that stops it accumulating the body, and its "response complete"
+     test is `body().size() >= contentLength_`, so a Content-Length response would never be seen
+     as finished and every successful request would hang until the idle timeout.
      */
     std::size_t maxResponseSize = 64 * 1024 * 1024;
 
