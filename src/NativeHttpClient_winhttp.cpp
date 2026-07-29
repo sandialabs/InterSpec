@@ -372,15 +372,38 @@ void run_request( std::shared_ptr<NativeHttp::Detail::RequestState> state,
   std::wstring proxyName;
   if( !req.proxyUrl.empty() )
   {
-    // WINHTTP_ACCESS_TYPE_NAMED_PROXY wants "[scheme://]server[:port]" with no path, but someone
-    //  typing a proxy into a settings box will produce "http://proxy:8080/".  Trim rather than
-    //  reject: the trailing slash is not a mistake worth failing over.
+    // Normalize to a bare "server[:port]".
+    //
+    // Microsoft's grammar for WINHTTP_ACCESS_TYPE_NAMED_PROXY reads
+    //  "([<scheme>=][<scheme>"://"]<server>[":"<port>])", i.e. the scheme parts are optional -
+    //  but they are only optional in the sense that leaving them off always works.  Testing under
+    //  Wine, "http://127.0.0.1:3129" failed immediately with ERROR_WINHTTP_NAME_NOT_RESOLVED and
+    //  never reached the proxy at all, while "127.0.0.1:3129" tunnelled correctly (confirmed in
+    //  the proxy's own access log).  Whether stock Windows is more forgiving is untested; the
+    //  bare form is valid on both, so there is no reason to find out the hard way.
+    //
+    // This matters because "http://proxy.example.com:8080" is exactly the shape the settings
+    //  tooltip tells the user to enter, and the shape anyone copying a proxy URL will paste.
     std::string proxy = req.proxyUrl;
+
     const size_t schemeEnd = proxy.find( "://" );
-    const size_t pathStart = proxy.find( '/', (schemeEnd == std::string::npos) ? 0
-                                                                              : (schemeEnd + 3) );
+    if( schemeEnd != std::string::npos )
+      proxy.erase( 0, schemeEnd + 3 );
+
+    // Drop any path/query, and any "user@" - credentials cannot be passed this way.
+    const size_t pathStart = proxy.find_first_of( "/?" );
     if( pathStart != std::string::npos )
       proxy.erase( pathStart );
+
+    const size_t atPos = proxy.rfind( '@' );
+    if( atPos != std::string::npos )
+      proxy.erase( 0, atPos + 1 );
+
+    if( proxy.empty() )
+    {
+      fail( Error::Unknown, "The proxy setting does not contain a server name" );
+      return;
+    }
 
     accessType = WINHTTP_ACCESS_TYPE_NAMED_PROXY;
     proxyName = widen( proxy );
