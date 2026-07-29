@@ -665,19 +665,19 @@ if( USE_LLM_INTERFACE )
     # Testing knob: build the Wt::Http::Client backend even where a platform-native one exists, so
     #  the Linux/Android path can be exercised on a development machine.  Needs a dependency
     #  prefix built with BUILD_OPENSSL=ON, or Wt cannot do https at all.
-    option( NATIVE_HTTP_FORCE_WT_BACKEND
+    option( USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND
             "Use the Wt::Http::Client HTTP backend even on platforms with a native one (testing)"
             OFF )
-    mark_as_advanced( NATIVE_HTTP_FORCE_WT_BACKEND )
+    mark_as_advanced( USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND )
 
-    if( APPLE AND NOT NATIVE_HTTP_FORCE_WT_BACKEND )
+    if( APPLE AND NOT USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND )
       # One .mm serves both macOS and iOS.  ARC is set per-file because the projects other .mm
       #  files predate it and are written for manual retain/release.
       list( APPEND sources src/NativeHttpClient_apple.mm )
       set_source_files_properties( src/NativeHttpClient_apple.mm
                                    PROPERTIES COMPILE_OPTIONS "-fobjc-arc" )
       set( NATIVE_HTTP_HAVE_BACKEND ON )
-    elseif( UNIX OR NATIVE_HTTP_FORCE_WT_BACKEND )
+    elseif( UNIX OR USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND )
       # NOTE: Windows lands in the "no backend" case below - the WinHTTP backend is not written
       #  yet, so a Windows build falls back to the browser rather than linking winhttp.lib for
       #  nothing.
