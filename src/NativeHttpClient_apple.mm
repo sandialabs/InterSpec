@@ -29,6 +29,7 @@
 
 #import <Foundation/Foundation.h>
 #import <Security/Security.h>
+#import <CFNetwork/CFNetwork.h>
 
 #include "InterSpec/NativeHttpClient.h"
 #include "InterSpec/NativeHttpClientImpl.h"
@@ -87,6 +88,28 @@ std::string to_std_string( NSString * const str )
  */
 NativeHttp::Error map_ns_error( NSError * const error )
 {
+  // Proxy failures arrive in CFNetwork's domain rather than NSURLErrorDomain, so they have to be
+  //  matched separately - otherwise an unreachable or unauthenticated proxy is reported as an
+  //  "unrecognized network error", which tells the one user who most needs a hint nothing at all.
+  if( [[error domain] isEqualToString:(NSString *)kCFErrorDomainCFNetwork] )
+  {
+    switch( [error code] )
+    {
+      case kCFErrorHTTPProxyConnectionFailure:
+      case kCFErrorHTTPSProxyConnectionFailure:
+      case kCFStreamErrorHTTPSProxyFailureUnexpectedResponseToCONNECTMethod:
+      case kCFErrorPACFileError:
+        return NativeHttp::Error::ProxyUnreachable;
+
+      case kCFErrorHTTPBadProxyCredentials:
+      case kCFErrorPACFileAuth:
+        return NativeHttp::Error::ProxyAuthRequired;
+
+      default:
+        break;
+    }//switch( [error code] )
+  }//if( a CFNetwork-domain error )
+
   if( ![[error domain] isEqualToString:NSURLErrorDomain] )
     return NativeHttp::Error::Unknown;
 
@@ -177,9 +200,12 @@ NSArray *load_pem_certificates( const std::string &path )
     NSScanner * const scanner = [NSScanner scannerWithString:contents];
     while( ![scanner isAtEnd] )
     {
+      // NB: scanUpToString returns NO when the target is already AT the scan location - which is
+      //  the normal case for a PEM file that begins with the BEGIN marker.  Treating that as "no
+      //  more certificates" parses zero certificates out of a perfectly good bundle, so its
+      //  result is deliberately ignored; only scanString failing means we are done.
       NSString *body = nil;
-      if( ![scanner scanUpToString:@"-----BEGIN CERTIFICATE-----" intoString:nil] )
-        break;
+      [scanner scanUpToString:@"-----BEGIN CERTIFICATE-----" intoString:nil];
       if( ![scanner scanString:@"-----BEGIN CERTIFICATE-----" intoString:nil] )
         break;
       if( ![scanner scanUpToString:@"-----END CERTIFICATE-----" intoString:&body] )
@@ -381,11 +407,27 @@ didReceiveChallenge:(NSURLAuthenticationChallenge *)challenge
 
   if( ![method isEqualToString:NSURLAuthenticationMethodServerTrust] )
   {
-    // Everything that is not server-trust - notably proxy authentication - goes to CFNetwork's
-    //  default handling.  On a domain-bound Mac that lets it attempt SPNEGO against the Heimdal
-    //  credential cache, giving single-sign-on against an intranet proxy for free.  Treat that
-    //  as a bonus rather than a promised feature; it is not something we can test here.
-    completionHandler( NSURLSessionAuthChallengePerformDefaultHandling, nil );
+    // Default handling is what lets CFNetwork attempt SPNEGO against the Heimdal credential cache
+    //  on a domain-bound Mac, giving single-sign-on against an intranet proxy for free.  But it
+    //  is only worth asking for where it can actually succeed silently.
+    //
+    // For Basic/Digest - a proxy wanting a username and password - default handling makes macOS
+    //  put a system-modal "Proxy Authentication Required" dialog in front of the user.  That is
+    //  the wrong thing to do for a background request the user did not initiate, and it cannot
+    //  help anyway: InterSpec has no credentials to offer and deliberately does not collect any.
+    //  Declining instead surfaces our own ProxyAuthRequired error, which says what to do.
+    //
+    // A non-zero previousFailureCount means the credentials we could offer have already been
+    //  rejected once; retrying only produces the same prompt.
+    const bool canSucceedSilently =
+        ([method isEqualToString:NSURLAuthenticationMethodNegotiate]
+         || [method isEqualToString:NSURLAuthenticationMethodNTLM]
+         || [method isEqualToString:NSURLAuthenticationMethodClientCertificate]);
+
+    if( canSucceedSilently && ([challenge previousFailureCount] == 0) )
+      completionHandler( NSURLSessionAuthChallengePerformDefaultHandling, nil );
+    else
+      completionHandler( NSURLSessionAuthChallengeRejectProtectionSpace, nil );
     return;
   }
 

@@ -76,7 +76,13 @@ public:
                " traffic, the inspecting proxy's root certificate needs to be installed in this"
                " machine's trust store, or given as a custom CA bundle in the LLM settings";
       case NativeHttp::Error::ProxyUnreachable:
-        return "The configured proxy server could not be reached";
+        // Deliberately covers both causes.  macOS reports a proxy that is down and a proxy that
+        //  answered 407 with the same CFNetwork code (kCFErrorHTTPSProxyConnectionFailure), so
+        //  naming only one of them would send half of these users looking the wrong way.
+        return "Could not get through the proxy server.  It may be unreachable, or it may require"
+               " a username and password - which InterSpec cannot supply.  Check the proxy in the"
+               " LLM network settings, or ask your IT department whether the proxy needs"
+               " credentials";
       case NativeHttp::Error::ProxyAuthRequired:
         return "The proxy server requires authentication that could not be provided"
                " automatically";
