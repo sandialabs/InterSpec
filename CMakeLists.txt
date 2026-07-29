@@ -677,10 +677,11 @@ if( USE_LLM_INTERFACE )
       set_source_files_properties( src/NativeHttpClient_apple.mm
                                    PROPERTIES COMPILE_OPTIONS "-fobjc-arc" )
       set( NATIVE_HTTP_HAVE_BACKEND ON )
+    elseif( WIN32 AND NOT USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND )
+      list( APPEND sources src/NativeHttpClient_winhttp.cpp )
+      target_link_libraries( InterSpecLib PUBLIC winhttp )
+      set( NATIVE_HTTP_HAVE_BACKEND ON )
     elseif( UNIX OR USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND )
-      # NOTE: Windows lands in the "no backend" case below - the WinHTTP backend is not written
-      #  yet, so a Windows build falls back to the browser rather than linking winhttp.lib for
-      #  nothing.
       list( APPEND sources src/NativeHttpClient_wt.cpp )
       set( NATIVE_HTTP_HAVE_BACKEND ON )
     endif()

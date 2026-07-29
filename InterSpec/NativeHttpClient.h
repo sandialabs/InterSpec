@@ -51,17 +51,17 @@ static_assert( USE_NATIVE_HTTP_CLIENT,
  Hence one narrow interface with a per-platform backend behind it, each delegating to the
  system stack rather than to a bundled TLS/HTTP library:
 
- | Platform     | Backend            | Corporate coverage                  |
- |--------------|--------------------|-------------------------------------|
- | macOS + iOS  | NSURLSession       | full except SSO (best effort)       |
- | Linux        | `Wt::Http::Client` | system trust only, no proxy support |
- | Android      | `Wt::Http::Client` | system trust only, no proxy support |
- | Windows      | *not yet written*  | `available()` is false; see below   |
+ | Platform     | Backend            | Corporate coverage                        |
+ |--------------|--------------------|-------------------------------------------|
+ | Windows      | WinHTTP            | full, including Negotiate/NTLM SSO        |
+ | macOS + iOS  | NSURLSession       | full except SSO (best effort)             |
+ | Linux        | `Wt::Http::Client` | system trust only, no proxy support       |
+ | Android      | `Wt::Http::Client` | system trust only, no proxy support       |
 
- Windows is intended to use WinHTTP - which brings proxy discovery, PAC evaluation and
- Negotiate/NTLM single-sign-on - but that backend has not been written yet.  Until it is, a
- Windows build gets no native transport: `available()` returns false and callers fall back to the
- browser, so a provider that CORS blocks stays unreachable there.
+ A caveat on the Windows row: that backend was written without a Windows machine to develop on.
+ It is verified to compile and link for both x64 and x86 (cross-checked with mingw-w64, which
+ ships the same WinHTTP headers and import library), but its runtime behaviour has not been
+ exercised.  Treat it as needing a pass on real hardware before it is relied on.
 
  Nothing above this header knows which backend is in use, and no platform `#ifdef` reaches
  above it.  Not supporting proxies on Linux/Android is a deliberate, accepted limitation.
