@@ -322,10 +322,23 @@ unprivileged user namespaces. How each artifact copes:
 
 Note that `app.commandLine.appendSwitch('no-sandbox')` from `main.js` does **not** work on Linux:
 Chromium initializes the sandbox and forks the zygote before the JS entry point is evaluated, so
-the switch only counts if it is on the real argv. `main.js` therefore does not try, and instead
-detects a renderer that dies before the session loads and relaunches once via `app.relaunch()`
-with `--no-sandbox`, recording that in a `no_sandbox` marker file in the user-data directory
-(delete it to try the sandbox again).
+the switch only counts if it is on the real argv. `main.js` therefore does not try. Instead it
+detects a renderer death that is attributable to the sandbox and relaunches once via
+`app.relaunch()` with `--no-sandbox` on the real argv.
+
+"Attributable to the sandbox" is deliberately narrow, because the relaunch calls `app.exit()`,
+which takes the whole application down without running `before-quit` or the window close handlers
+— so a false positive discards unsaved work. It requires all of: the **first** window of the
+launch (a later window's renderer dying means an established session is open), a death **within
+60 s** of that window being created (a broken sandbox fails immediately), and a `reason` of
+`launch-failed`, `crashed`, or `abnormal-exit` — explicitly **not** `oom` or `killed`, since
+InterSpec can legitimately exhaust memory on a large file and that is not a sandbox problem.
+
+Failures are counted in `sandbox_failures.json` in the user-data directory. It takes **two
+consecutive** failed sandboxed launches before InterSpec stops attempting one, so a single
+one-off crash cannot silently disable the sandbox; and any successful sandboxed session deletes
+the file, so the state self-heals once the underlying cause is gone. Delete it by hand to retry
+immediately.
 
 As of Electron 41 the sandbox is broken on Ubuntu 24.04+ even *with* the AppArmor profile - the
 renderer dies on `/dev/shm` access - which appears to be an upstream Chromium regression

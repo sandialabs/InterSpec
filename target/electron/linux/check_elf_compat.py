@@ -56,9 +56,11 @@ ALLOWED_NEEDED = {
 # over-link: zlib is compiled from source by FetchContent and linked statically (the addon
 # defines deflate/inflate/zlibVersion itself and imports no zlib symbol), but Wt ran its own
 # find_package(ZLIB) against /usr - before our static target existed - and put the system shared
-# library into wthttp's link interface.  Setting HTTP_WITH_ZLIB=OFF in
-# cmake/FetchInterSpecDeps.cmake stops that at the source.  If libz.so.1 reappears, something is
-# genuinely linking the system zlib and that deserves a look rather than an allowlist entry.
+# library into wthttp's link interface.  cmake/FetchInterSpecDeps.cmake sets HTTP_WITH_ZLIB=OFF
+# for the packaged (non-web-deployment) builds, which stops that at the source; web-deployment
+# builds keep compression and are not checked by this script.  If libz.so.1 reappears here,
+# something is genuinely linking the system zlib and that deserves a look rather than an
+# allowlist entry.
 
 # Must be dynamically linked, not absorbed into the binary - this is the issue #51 guard.
 REQUIRED_NEEDED = { "libstdc++.so.6" }

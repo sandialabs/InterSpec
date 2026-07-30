@@ -97,6 +97,7 @@ endif()
 
 set( ELECTRON_SUPPORT_FILES
   app/main.js
+  app/sandbox_fallback.js
   app/loading.html
   README.md
   package.json
@@ -118,9 +119,12 @@ install( FILES ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/InterSpec_resources/d3.v
         ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/InterSpec_resources/SpectrumChartD3.js
          DESTINATION ${PROJECT_BINARY_DIR}/app/InterSpec_resources/ )
 install( DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../example_spectra DESTINATION ${PROJECT_BINARY_DIR}/app/ )
+# Every .js main.js require()s has to be installed here too, or the packaged app dies at startup
+#  with MODULE_NOT_FOUND.
 install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/app/loading.html
         ${CMAKE_CURRENT_SOURCE_DIR}/app/main.js
-        DESTINATION ${PROJECT_BINARY_DIR}/app/ 
+        ${CMAKE_CURRENT_SOURCE_DIR}/app/sandbox_fallback.js
+        DESTINATION ${PROJECT_BINARY_DIR}/app/
 )
 
 #Need to get {d3.v3.min.js, SpectrumChartD3.js, SpectrumChartD3.css} and related into InterSpec_resources as well.

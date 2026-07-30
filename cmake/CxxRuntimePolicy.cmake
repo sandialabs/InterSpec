@@ -2,10 +2,16 @@
 #
 # This is deliberately the single place the policy is expressed.  It used to live as a
 # `--CDCMAKE_SHARED_LINKER_FLAGS="-static-libgcc -static-libstdc++"` string inside
-# target/electron/build_linux_app_from_docker.sh, which was invisible to CMake, applied only
-# to SHARED link lines (not EXE or MODULE), and left every other Linux consumer - the
-# target/docker container builds, the plain BUILD_AS_LOCAL_SERVER build, a distro packager -
-# on a different policy.
+# target/electron/build_linux_app_from_docker.sh, which applied only to SHARED link lines (not
+# EXE or MODULE) and left every other Linux consumer - the target/docker container builds, the
+# plain BUILD_AS_LOCAL_SERVER build, a distro packager - on a different policy.
+#
+# Note `--CD<VAR>` becomes a `-D<VAR>` *cache* entry, so simply dropping the flag from the build
+# script does not undo it in an existing build directory.  CI restores its build directory from
+# a cache, so the first run after that change reconfigured on top of a CMakeCache.txt that still
+# had the flag, statically linked libstdc++ again, and reproduced issue #51 - caught only by
+# check_elf_compat.py.  Hence the sanitizing block below: this file has to *enforce* the policy,
+# not merely express a default.
 #
 # The default is now to link libstdc++ DYNAMICALLY, which fixes
 # https://github.com/sandialabs/InterSpec/issues/51: every Electron 41 Linux build segfaulted
@@ -32,21 +38,45 @@ option( INTERSPEC_STATIC_CXX_RUNTIME
         "Statically link libstdc++/libgcc into InterSpec (see comment in cmake/CxxRuntimePolicy.cmake)"
         OFF )
 
-# A fully-static build supplies its own runtime wholesale via CMAKE_EXE_LINKER_FLAGS, so it
-# does not need - and must not duplicate - these flags.
-if( CONTAINER_MUSL )
-  set( INTERSPEC_STATIC_CXX_RUNTIME OFF )
-endif( CONTAINER_MUSL )
-
-if( INTERSPEC_STATIC_CXX_RUNTIME
-    AND UNIX AND NOT APPLE AND NOT ANDROID
+if( UNIX AND NOT APPLE AND NOT ANDROID
     AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang" )
-  # PUBLIC on the static InterSpecLib is what makes this consistent: the options propagate
-  # through INTERFACE_LINK_OPTIONS to every consumer - InterSpecAddOn.node, InterSpecExe,
-  # InterSpec_batch, the unit tests - whatever their link type.  add_link_options() would not
-  # work here, because target/electron/CMakeLists.txt is the *parent* scope of this project
-  # (it does add_subdirectory(../..)), so directory-scoped options set here would never reach
-  # the InterSpecAddOn target.
-  target_link_options( InterSpecLib PUBLIC -static-libgcc -static-libstdc++ )
-  message( STATUS "InterSpec: statically linking libstdc++/libgcc" )
+
+  if( CONTAINER_MUSL )
+    # A fully-static build owns its runtime linkage wholesale via CMAKE_EXE_LINKER_FLAGS (set in
+    # the top-level CMakeLists.txt), so leave it entirely alone - both the option below and the
+    # sanitizing, which would otherwise strip flags that build genuinely wants.
+    message( STATUS "InterSpec: CONTAINER_MUSL - leaving C++ runtime linkage to the static build" )
+  elseif( INTERSPEC_STATIC_CXX_RUNTIME )
+    # PUBLIC on the static InterSpecLib is what makes this consistent: the options propagate
+    # through INTERFACE_LINK_OPTIONS to every consumer - InterSpecAddOn.node, InterSpecExe,
+    # InterSpec_batch, the unit tests - whatever their link type.  add_link_options() would not
+    # work here, because target/electron/CMakeLists.txt is the *parent* scope of this project
+    # (it does add_subdirectory(../..)), so directory-scoped options set here would never reach
+    # the InterSpecAddOn target.
+    target_link_options( InterSpecLib PUBLIC -static-libgcc -static-libstdc++ )
+    message( STATUS "InterSpec: statically linking libstdc++/libgcc" )
+  else()
+    # Actively strip the flags rather than just not adding them, so an inherited value - a
+    # restored CI cache, a stale local build dir, a packager's environment - cannot silently
+    # re-introduce issue #51.  Warn loudly, because it means something upstream disagrees with
+    # this policy and we are overriding it.
+    foreach( _flag_var IN ITEMS CMAKE_EXE_LINKER_FLAGS CMAKE_SHARED_LINKER_FLAGS
+                                CMAKE_MODULE_LINKER_FLAGS CMAKE_CXX_FLAGS )
+      if( "${${_flag_var}}" MATCHES "-static-lib(stdc\\+\\+|gcc)" )
+        string( REGEX REPLACE "-static-libstdc\\+\\+" "" _cleaned "${${_flag_var}}" )
+        string( REGEX REPLACE "-static-libgcc" "" _cleaned "${_cleaned}" )
+        string( STRIP "${_cleaned}" _cleaned )
+
+        get_property( _doc CACHE ${_flag_var} PROPERTY HELPSTRING )
+        set( ${_flag_var} "${_cleaned}" CACHE STRING "${_doc}" FORCE )
+        set( ${_flag_var} "${_cleaned}" )
+
+        message( WARNING
+          "InterSpec: removed -static-libstdc++/-static-libgcc from ${_flag_var}."
+          "  Statically linking libstdc++ into the Electron addon causes the startup crash in"
+          "  issue #51.  Set INTERSPEC_STATIC_CXX_RUNTIME=ON if you really want it." )
+      endif()
+    endforeach()
+  endif()
+
 endif()

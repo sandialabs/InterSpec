@@ -191,21 +191,28 @@ jobs:
           path: ${{ github.workspace }}/InterSpec_code
           submodules: true # Recursively checkout submodules
 
+      # The `-v2-` salt is load-bearing.  The previous keys hashed paths that did not exist, so
+      # hashFiles returned "" and every run saved under the bare prefix (e.g. "Linux-build-cpp-").
+      # Once the keys were fixed, the new hashed key missed and `restore-keys` prefix-matched
+      # those old caches - restoring a CMakeCache.txt that still carried
+      # `-static-libgcc -static-libstdc++` and bringing issue #51 straight back.  Bumping the salt
+      # makes pre-fix caches unreachable; bump it again after any change that could poison a
+      # cached build directory.
       - name: Cache npm dependencies
         uses: actions/cache@v4
         with:
           path: ${{runner.temp}}/build_linux_working_dir
-          key: ${{ runner.os }}-build-npm-${{ hashFiles('InterSpec_code/target/electron/package.json') }}
+          key: ${{ runner.os }}-build-npm-v2-${{ hashFiles('InterSpec_code/target/electron/package.json') }}
           restore-keys: |
-            ${{ runner.os }}-build-npm-
+            ${{ runner.os }}-build-npm-v2-
 
       - name: Cache c++ dependencies
         uses: actions/cache@v4
         with:
           path: ${{runner.temp}}/build_linux_electron
-          key: ${{ runner.os }}-build-cpp-${{ hashFiles('InterSpec_code/cmake/FetchInterSpecDeps.cmake') }}
+          key: ${{ runner.os }}-build-cpp-v2-${{ hashFiles('InterSpec_code/cmake/FetchInterSpecDeps.cmake') }}
           restore-keys: |
-            ${{ runner.os }}-build-cpp-
+            ${{ runner.os }}-build-cpp-v2-
 
       - name: Make build directories
         shell: bash
@@ -292,6 +299,14 @@ jobs:
             "${{ runner.temp }}/build_linux_dist/InterSpec_app_Linux_x64_${VERSION}.tar.gz" \
             "$(basename "${STAGE}")"
 
+      # Pure logic, no Electron: the rules deciding whether a renderer death is a broken sandbox,
+      # and how many failures it takes before we stop attempting one.  main.js acts on these by
+      # relaunching the whole app, so over-eagerness costs the user unsaved work.
+      - name: Test the sandbox-fallback logic
+        shell: bash
+        working-directory: ${{ github.workspace }}/InterSpec_code
+        run: node target/electron/linux/test_sandbox_fallback.js
+
       - name: Validate desktop entry and AppStream metadata
         shell: bash
         run: |
@@ -316,8 +331,9 @@ jobs:
           # `timeout` is the backstop: --test-load has its own 120s timer, but a wedged child
           # process can stop Electron from exiting even after app.exit(), and a job that hangs
           # for the runner's whole time limit is worse than one that fails.
-          timeout --signal=KILL 300 \
-            xvfb-run -a "${{ runner.temp }}/InterSpec-linux-x64/interspec" --test-load
+          xvfb-run -a \
+            timeout --signal=KILL --kill-after=10 300 \
+            "${{ runner.temp }}/InterSpec-linux-x64/interspec" --test-load
           echo "Tarball launched and loaded a session successfully"
 
       # Installs the .deb into a clean Ubuntu 24.04 and launches it, which covers dependency
@@ -336,11 +352,11 @@ jobs:
             test -x /opt/InterSpec/interspec
             # Try the installed configuration first, so the log records whether the sandbox
             # worked; fall back to --no-sandbox, which is what a restricted container needs.
-            if timeout --signal=KILL 300 xvfb-run -a interspec --test-load; then
+            if xvfb-run -a timeout --signal=KILL --kill-after=10 300 interspec --test-load; then
               echo "deb launched with the sandbox enabled"
             else
               echo "sandboxed launch failed (expected in an unprivileged container); retrying"
-              timeout --signal=KILL 300 xvfb-run -a interspec --test-load --no-sandbox
+              xvfb-run -a timeout --signal=KILL --kill-after=10 300 interspec --test-load --no-sandbox
               echo "deb launched with --no-sandbox"
             fi
           '
@@ -352,20 +368,129 @@ jobs:
             set -euo pipefail
             dnf install -y -q xorg-x11-server-Xvfb /dist/InterSpec_app_*.rpm
             test -x /opt/InterSpec/interspec
-            if timeout --signal=KILL 300 xvfb-run -a interspec --test-load; then
+            if xvfb-run -a timeout --signal=KILL --kill-after=10 300 interspec --test-load; then
               echo "rpm launched with the sandbox enabled"
             else
               echo "sandboxed launch failed (expected in an unprivileged container); retrying"
-              timeout --signal=KILL 300 xvfb-run -a interspec --test-load --no-sandbox
+              xvfb-run -a timeout --signal=KILL --kill-after=10 300 interspec --test-load --no-sandbox
               echo "rpm launched with --no-sandbox"
             fi
           '
+
+      # The AppImage is otherwise built, shipped, and never launched.  --appimage-extract-and-run
+      # avoids needing FUSE, which the runner does not necessarily have.
+      - name: Smoke test the AppImage
+        shell: bash
+        run: |
+          set -euo pipefail
+          APPIMAGE=$(ls "${{ runner.temp }}"/build_linux_dist/InterSpec_app_*.AppImage)
+          chmod +x "${APPIMAGE}"
+          xvfb-run -a timeout --signal=KILL --kill-after=10 300 \
+            "${APPIMAGE}" --appimage-extract-and-run --test-load
+          echo "AppImage launched and loaded a session successfully"
+
+      # ---------------------------------------------------------------------------------------
+      # The checks below run on the runner ITSELF, not in a container.  That is the whole point:
+      # the runner is a full Ubuntu 24.04 VM with sudo and a live AppArmor, so the .deb's
+      # post-install script actually takes effect (setuid chrome-sandbox, apparmor_parser loading
+      # the profile) and the Chromium sandbox can really work.  In an unprivileged container it
+      # never can, so the container checks above can only ever exercise the --no-sandbox path.
+      #
+      # These run last, and in this order, because they modify the runner: the first installs the
+      # package system-wide, and the second deliberately breaks the sandbox afterwards.
+      # ---------------------------------------------------------------------------------------
+      - name: Install the .deb on the runner and require a SANDBOXED launch
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "### AppArmor state on this runner (so a pass is interpretable) ###"
+          sudo aa-enabled || echo "  aa-enabled reports AppArmor not enabled"
+          cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null \
+            | sed 's/^/  apparmor_restrict_unprivileged_userns=/' || echo "  sysctl not present"
+          unshare -Ur true && echo "  unprivileged userns: works" || echo "  unprivileged userns: denied"
+
+          sudo apt-get update
+          sudo apt-get install -y ./"$(basename "$(ls "${{ runner.temp }}"/build_linux_dist/InterSpec_app_*.deb)")" \
+            || sudo apt-get install -y "${{ runner.temp }}"/build_linux_dist/InterSpec_app_*.deb
+          echo "### what the postinst set up ###"
+          stat -c '  %n mode=%a owner=%U' /opt/InterSpec/chrome-sandbox
+          test -f /etc/apparmor.d/interspec \
+            && echo "  AppArmor profile installed" \
+            || echo "  AppArmor profile NOT installed (postinst skipped it)"
+
+          # Deliberately no --no-sandbox, and no fallback: --test-load suppresses the relaunch, so
+          # if the sandbox does not work this fails rather than silently degrading.  This is also
+          # the experiment that tells us whether the AppArmor profile is sufficient for Electron 41
+          # on Ubuntu 24.04 - see https://github.com/sandialabs/InterSpec/issues/51.
+          rm -f "$HOME/.config/InterSpec/sandbox_failures.json"
+          xvfb-run -a timeout --signal=KILL --kill-after=10 300 interspec --test-load
+          echo "Launched WITH the Chromium sandbox enabled"
+
+          # Prove it was not silently degraded: any fallback would have recorded a failure.
+          if [ -f "$HOME/.config/InterSpec/sandbox_failures.json" ]; then
+            echo "::error::sandboxed launch reported success but a sandbox failure was recorded"
+            cat "$HOME/.config/InterSpec/sandbox_failures.json"
+            exit 1
+          fi
+
+      # Breaks the sandbox for real, then requires the app to still come up.  Exercises the
+      # detection, the relaunch, and the single-instance-lock release/reacquire - the path whose
+      # failure mode would be an app that never starts.
+      - name: Verify the sandbox fallback recovers a genuinely broken sandbox
+        shell: bash
+        run: |
+          set -euo pipefail
+          RESULT="$HOME/.config/InterSpec/test_load_result.json"
+          rm -f "$RESULT" "$HOME/.config/InterSpec/sandbox_failures.json"
+
+          echo "### breaking the sandbox ###"
+          sudo chmod 0755 /opt/InterSpec/chrome-sandbox          # no longer setuid-root
+          if [ -f /etc/apparmor.d/interspec ]; then
+            sudo apparmor_parser -R /etc/apparmor.d/interspec || true
+            sudo rm -f /etc/apparmor.d/interspec
+          fi
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1 || true
+
+          # Our own Xvfb rather than xvfb-run: the fallback relaunch only starts once the first
+          # process exits, and xvfb-run tears the display down at that moment - which would leave
+          # the relaunched instance with no DISPLAY and make this test fail for the wrong reason.
+          Xvfb :77 -screen 0 1280x1024x24 -nolisten tcp &
+          XVFB_PID=$!
+          trap 'kill "${XVFB_PID}" 2>/dev/null || true' EXIT
+          export DISPLAY=:77
+          sleep 2
+
+          # Parent exits 0 as soon as it hands off to the relaunch, so poll for the child's result.
+          timeout --signal=KILL --kill-after=10 300 \
+            interspec --test-load --test-load-allow-sandbox-fallback || true
+
+          for _ in $(seq 1 60); do
+            [ -f "$RESULT" ] && break
+            sleep 2
+          done
+
+          if [ ! -f "$RESULT" ]; then
+            echo "::error::fallback never produced a result - the relaunched instance did not load"
+            echo "sandbox_failures.json:"; cat "$HOME/.config/InterSpec/sandbox_failures.json" 2>/dev/null || echo "  (none)"
+            exit 1
+          fi
+
+          echo "### result written by the relaunched instance ###"; cat "$RESULT"
+          node -e '
+            const r = require(process.argv[1]);
+            if( r.code !== 0 )
+              throw new Error("relaunched instance exited " + r.code);
+            if( r.sandboxed )
+              throw new Error("expected the relaunch to have added --no-sandbox");
+            console.log("Fallback recovered a broken sandbox: relaunched --no-sandbox and loaded a session");
+          ' "$RESULT"
 
       - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         id: artifact-linux-upload-step
         with:
           name: linux-build
+          if-no-files-found: error
           overwrite: true
           path: |
             ${{runner.temp}}/build_linux_dist/InterSpec_app_*.deb

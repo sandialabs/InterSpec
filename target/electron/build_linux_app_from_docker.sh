@@ -86,7 +86,12 @@ echo "Will build InterSpec code"
 #  `-static-libstdc++` here is what caused issue #51 (segfault in dl_init before main()); the
 #  gcc-toolset compiler in this image already caps the required GLIBCXX at the AlmaLinux 8
 #  base, so a dynamic link keeps the glibc-2.28 floor.
-CMAKE_BUILD_PARALLEL_LEVEL=`nproc` cmake-js --directory ${InterSpecCodePath}/target/electron  --architecture x64 --arch=x64 --CDCMAKE_BUILD_TYPE="Release" --CDInterSpec_NODE_MODULE_DIR="${WorkingDir}/node_modules" --CDInterSpec_FETCH_DEPENDENCIES=ON --CDBUILD_AS_LOCAL_SERVER=OFF --CDUSE_LEAFLET_MAP=ON --CDLEAFLET_MAPS_KEY="${LEAFLET_KEY}" --CDUSE_REL_ACT_TOOL=ON --out="${CmakeBuildDir}" --target install
+#  `--CDCMAKE_SHARED_LINKER_FLAGS=""` is passed explicitly rather than just omitted: `--CD` sets
+#  a *cache* entry, so a build directory configured back when the flag was passed keeps it
+#  forever.  CI restores its build directory from a cache, and that is exactly how issue #51 came
+#  back on the first run after the flag was dropped.  (cmake/CxxRuntimePolicy.cmake also strips
+#  these flags defensively; this is the cheaper first line of defence.)
+CMAKE_BUILD_PARALLEL_LEVEL=`nproc` cmake-js --directory ${InterSpecCodePath}/target/electron  --architecture x64 --arch=x64 --CDCMAKE_BUILD_TYPE="Release" --CDCMAKE_SHARED_LINKER_FLAGS="" --CDCMAKE_EXE_LINKER_FLAGS="" --CDCMAKE_MODULE_LINKER_FLAGS="" --CDInterSpec_NODE_MODULE_DIR="${WorkingDir}/node_modules" --CDInterSpec_FETCH_DEPENDENCIES=ON --CDBUILD_AS_LOCAL_SERVER=OFF --CDUSE_LEAFLET_MAP=ON --CDLEAFLET_MAPS_KEY="${LEAFLET_KEY}" --CDUSE_REL_ACT_TOOL=ON --out="${CmakeBuildDir}" --target install
 
 echo "ls ${CmakeBuildDir} (CmakeBuildDir)"
 ls ${CmakeBuildDir}

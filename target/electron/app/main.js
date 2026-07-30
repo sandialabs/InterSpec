@@ -444,44 +444,57 @@ if( app_options.disableGpuSandbox )
        Chromium regression (Electron 13 was fine), so we cannot package around it.
 
    Rather than give up the sandbox everywhere for the sake of the systems where it is broken, we
-   try it, and if the renderer dies before the session ever loads we relaunch once with
-   `--no-sandbox` on the real command line - which is the only place that switch has any effect
-   on Linux.  The marker file makes the decision stick, so a machine where the sandbox does not
-   work does not pay for a failed launch every time.
+   try it, and if the *first* window's renderer dies before that window ever loaded a session, we
+   relaunch once with `--no-sandbox` on the real command line - which is the only place that
+   switch has any effect on Linux.
+
+   The three qualifying conditions below all exist to keep this from firing on an ordinary crash,
+   because `app.relaunch()` + `app.exit()` takes the whole application down without running
+   `before-quit` or the window close handlers, and so discards unsaved work:
+
+     - First window only.  A later window (from "New app window") starts out with
+       appHasLoadConfirmed false as well, so keying on that alone would let a second window's
+       renderer crash kill a first window that has an hour of unsaved fitting in it.  If the
+       first window has not loaded yet, there is by definition nothing open to lose.
+     - Shortly after the window was created.  A broken sandbox kills the renderer immediately;
+       a death minutes later is a real crash.
+     - Only reasons a broken sandbox actually produces.  Notably NOT 'oom' or 'killed':
+       InterSpec can legitimately exhaust memory on a large search-mode file, and that must not
+       be misdiagnosed as a sandbox problem.
+
+   And it takes two consecutive failed launches before we stop trying, so a single one-off
+   renderer crash cannot silently disable the sandbox forever.  A successful sandboxed session
+   clears the record, so the state self-heals once the underlying problem goes away.
  */
-const noSandboxMarkerPath = path.join(userdata, "no_sandbox");
+const sandboxFallback = require('./sandbox_fallback.js');
+
+const sandboxStatePath = path.join(userdata, "sandbox_failures.json");
 
 /** Have we already relaunched this run?  Guards against a relaunch loop. */
 let hasRelaunchedWithoutSandbox = false;
 
-function sandboxKnownBroken(){
-  try{
-    return fs.existsSync(noSandboxMarkerPath);
-  }catch(e){
-    return false;
-  }
-}
+/** True when the fallback should be suppressed, so a renderer crash stays a hard failure that CI
+ * notices rather than being silently retried.  `--test-load-allow-sandbox-fallback` opts back in,
+ * so CI can also test the fallback itself (see the "sandbox fallback" step in
+ * .github/workflows/build_app.yml).
+ */
+const suppress_sandbox_fallback = is_test_load
+      && !process.argv.some( arg => (arg === '--test-load-allow-sandbox-fallback') );
 
-/** Relaunch with `--no-sandbox` once, remembering the choice.  Returns true if relaunching. */
+/** Relaunch with `--no-sandbox` once, recording the failure.  Returns true if relaunching. */
 function relaunchWithoutSandbox( reason ){
-  // Under --test-load a renderer crash must stay a failure, so CI notices it.
-  if( is_test_load || sandbox_disabled_on_cl || hasRelaunchedWithoutSandbox )
+  if( suppress_sandbox_fallback || sandbox_disabled_on_cl || hasRelaunchedWithoutSandbox )
     return false;
 
   hasRelaunchedWithoutSandbox = true;
 
-  console.error( "Renderer failed before the session loaded (" + reason + ")."
-                 + " Relaunching with --no-sandbox, and recording that in "
-                 + noSandboxMarkerPath );
+  const failures = sandboxFallback.readSandboxFailures(sandboxStatePath) + 1;
+  sandboxFallback.writeSandboxFailures( sandboxStatePath, failures, reason );
 
-  try{
-    fs.writeFileSync( noSandboxMarkerPath,
-                      "InterSpec disabled the Chromium sandbox on " + new Date().toISOString()
-                      + " because the renderer process died before the session loaded ("
-                      + reason + ").\nDelete this file to try the sandbox again.\n" );
-  }catch(e){
-    console.error( "Could not write " + noSandboxMarkerPath + ": " + e );
-  }
+  console.error( "First window's renderer failed before its session loaded (" + reason + ")."
+                 + " Relaunching with --no-sandbox.  Consecutive sandboxed-launch failures: "
+                 + failures + " of " + sandboxFallback.SANDBOX_FAILURES_BEFORE_GIVING_UP
+                 + " (recorded in " + sandboxStatePath + ")" );
 
   app.relaunch( { args: process.argv.slice(1).concat(['--no-sandbox']) } );
   app.exit(0);
@@ -489,14 +502,17 @@ function relaunchWithoutSandbox( reason ){
   return true;
 }//function relaunchWithoutSandbox
 
-/** If a previous run established the sandbox does not work here, go straight to a relaunch
- * rather than making the user watch another blank window.  Returns true if relaunching.
+/** If previous runs established the sandbox does not work here, go straight to a relaunch rather
+ * than making the user watch another blank window.  Returns true if relaunching.
  */
 function relaunchIfSandboxKnownBroken(){
-  if( sandbox_disabled_on_cl || is_test_load || !sandboxKnownBroken() )
+  if( sandbox_disabled_on_cl || suppress_sandbox_fallback
+      || !sandboxFallback.sandboxKnownBroken(sandboxStatePath) )
     return false;
 
-  console.log( "Found " + noSandboxMarkerPath + " - relaunching with --no-sandbox" );
+  console.log( "Sandboxed launch has failed "
+               + sandboxFallback.readSandboxFailures(sandboxStatePath) + " times (see "
+               + sandboxStatePath + ") - relaunching with --no-sandbox" );
   hasRelaunchedWithoutSandbox = true;
   app.relaunch( { args: process.argv.slice(1).concat(['--no-sandbox']) } );
   app.exit(0);
@@ -560,8 +576,14 @@ function createWindow() {
   // Create the new window
   let newWindow = new BrowserWindow( windowPrefs );
   
-  // Set debug windowNumber - not actually currently used
+  // Sequential window number, starting at 1.  Used for logging, and by isSandboxFailure() to
+  //  tell the first window of the launch (which may still be starting the sandbox) from later
+  //  ones (whose renderer dying is an ordinary crash).
   newWindow.windowNumber = windowNumber++;
+
+  // When this window was created, so isSandboxFailure() can distinguish "died while starting"
+  //  from "crashed later on".
+  newWindow.createdAt = Date.now();
 
   // Set an indicator if the page has loaded, as messaged to us through Electron signals
   newWindow.pageHasLoaded = false;
@@ -895,10 +917,10 @@ function createWindow() {
   newWindow.webContents.on('render-process-gone', function(event, details){
     console.log('renderer process gone: reason=' + details.reason + ', exitCode=' + details.exitCode);
 
-    // A renderer that dies before the session ever loaded is the signature of a sandbox that
-    //  does not work on this system; retry once without it.  A crash after the session has
-    //  loaded is a real crash, so leave it alone.
-    if( !newWindow.appHasLoadConfirmed && (details.reason !== 'clean-exit') )
+    // Only retry without the sandbox when this really looks like a sandbox failure - see
+    //  isSandboxFailure() and the comment block above it.  Anything else is a genuine crash and
+    //  must not take the application down with it.
+    if( sandboxFallback.isSandboxFailure( newWindow, details ) )
       relaunchWithoutSandbox( 'reason=' + details.reason + ', exitCode=' + details.exitCode );
   });
   
@@ -995,6 +1017,13 @@ function messageToNodeJs( token, msg_name, msg_data ){
     window.appHasLoadConfirmed = true;
 
     console.log( "Received SessionFinishedLoading for Token='" + token + "'" );
+
+    // A session loaded while sandboxed, so whatever made a previous launch fail is gone - forget
+    //  it, rather than letting one bad day disable the sandbox permanently.
+    if( !sandbox_disabled_on_cl
+        && sandboxFallback.clearSandboxFailures(sandboxStatePath) ){
+      console.log( "Sandboxed session loaded - cleared " + sandboxStatePath );
+    }
 
     if( is_test_load ){
       // This is the whole point of --test-load: the session came up, so we are done.
@@ -1106,6 +1135,34 @@ function finishTestLoad( code ){
   }
   console.log( "--test-load: exiting with code " + code );
 
+  /* Record the outcome to a file as well as the exit code.  Needed because the sandbox fallback
+     relaunches: app.relaunch() only starts the replacement once this process has exited, so the
+     shell sees *this* process's exit code and the relaunched instance is detached, its own exit
+     code lost.  CI therefore deletes this file, launches, and then polls for it - which is how
+     the fallback path gets tested at all.  See the "sandbox fallback" step in
+     .github/workflows/build_app.yml.
+   */
+  try{
+    fs.writeFileSync( path.join(userdata, "test_load_result.json"), JSON.stringify({
+      code: code,
+      sandboxed: !sandbox_disabled_on_cl,
+      argv: process.argv.slice(1),
+      finished: new Date().toISOString()
+    }, null, 1) );
+  }catch(e){
+    console.error( "--test-load: could not write result file: " + e );
+  }
+
+  // Arm the hard-exit backstop *first*.  Both killServer() and app.exit() can block - killServer
+  //  waits on the Wt session, and app.exit() has been seen not to terminate when a child process
+  //  is wedged (a zombie renderer, hit once while testing under CPU emulation; the process then
+  //  sat idle indefinitely).  Registering this after those calls would mean it never gets armed
+  //  in exactly the cases it exists for.  A test run that hangs is worse than one that fails.
+  setTimeout( function(){
+    console.error( "--test-load: did not terminate cleanly; forcing exit" );
+    process.exit( code );
+  }, 10000 ).unref();
+
   // Deferred, because we are usually called from inside `messageToNodeJs`, which the C++ addon
   //  invokes - exiting there would tear the process down with native frames still on the stack.
   setImmediate( function(){
@@ -1115,14 +1172,6 @@ function finishTestLoad( code ){
       // Nothing useful to do; we are exiting anyway.
     }
     app.exit( code );
-
-    // app.exit() has been seen to not actually terminate the process when a child is wedged
-    //  (a zombie renderer, hit once while testing under CPU emulation - the process then sat
-    //  idle indefinitely).  A test run that hangs is worse than one that fails, so escalate.
-    setTimeout( function(){
-      console.error( "--test-load: app.exit() did not terminate; forcing exit" );
-      process.exit( code );
-    }, 10000 ).unref();
   } );
 }//function finishTestLoad
 
