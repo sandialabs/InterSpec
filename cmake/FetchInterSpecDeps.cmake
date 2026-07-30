@@ -109,6 +109,11 @@ endif()
 FetchContent_MakeAvailable( boost )
 FetchContent_GetProperties( boost )
 
+# Keep Wt from enabling gzip responses.  Other than it probably not being needed here,
+#  we havnent build our zlib yet, so Wt will try to link against system zlib, causing
+#  hassles trying to package things on Linux.
+set( HTTP_WITH_ZLIB OFF CACHE BOOL "Wt httpd zlib compression - off; see comment above" FORCE )
+
 # Check for local Wt
 set(LOCAL_WT_DIR "${CMAKE_BINARY_DIR}/_deps/wt-src")
 if(EXISTS "${LOCAL_WT_DIR}/CMakeLists.txt")

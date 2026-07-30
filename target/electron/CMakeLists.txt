@@ -130,7 +130,12 @@ install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SandiaDecay/sandi
         # PERMISSIONS OWNER_READ GROUP_READ WORLD_READ
         DESTINATION ${PROJECT_BINARY_DIR}/app/data/
         RENAME sandia.decay.xml )
-install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/package_for_running.json
+# The shipped app/package.json.  Generated so its "version" - which becomes the .deb/.rpm and
+#  AppImage version - always tracks the project version rather than being edited by hand.
+configure_file( ${CMAKE_CURRENT_SOURCE_DIR}/package_for_running.json.in
+                ${CMAKE_CURRENT_BINARY_DIR}/package_for_running.json
+                @ONLY )
+install( FILES ${CMAKE_CURRENT_BINARY_DIR}/package_for_running.json
         DESTINATION ${PROJECT_BINARY_DIR}/app/
         RENAME package.json )
 install( TARGETS ${PROJECT_NAME} DESTINATION ${PROJECT_BINARY_DIR}/app/ )

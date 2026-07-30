@@ -281,10 +281,24 @@ function load_file(window, filename){
 }
 
 
-// On one computer I was getting a "GPU process launch failed: error_code=18" error when starting
-//  electron - the following line seems to fix this.
-//  Didnt investigate heavily; could be that I was running from a network drive.
-app.commandLine.appendSwitch('--no-sandbox');
+/** True when started with `--test-load`; see the handling further down.  Read here because it
+ * also has to suppress the sandbox-fallback relaunch, so CI sees a real failure rather than a
+ * silently-retried one.
+ */
+const is_test_load = process.argv.some( arg => (arg === '--test-load') );
+
+/** True when `--no-sandbox` is already on the real command line.
+ *
+ * Note we deliberately do *not* call `app.commandLine.appendSwitch('no-sandbox')` anywhere.
+ * On Linux that has no effect: Chromium initializes the sandbox and forks the zygote during
+ * its own startup, before this script is evaluated, so the switch only counts if it is on the
+ * actual argv.  (It used to be appended unconditionally here as a workaround for a
+ * "GPU process launch failed: error_code=18" error on one machine.  On Linux that accomplished
+ * nothing - users had to pass `--no-sandbox` by hand anyway - while on Windows and macOS,
+ * where the switch *is* honored from JS, it disabled a sandbox that works fine.  The narrower
+ * `DisableGpuSandbox` setting below covers that original GPU problem.)
+ */
+const sandbox_disabled_on_cl = process.argv.some( arg => arg.startsWith('--no-sandbox') );
 
 
 //File opening untested on OSX and Windows
@@ -332,6 +346,7 @@ function get_interspec_options(){
     restoreSession: true,
     requireToken: true,
     openDevTools: false,
+    disableGpuSandbox: false,
     maxUndoSteps: 250
   };
 
@@ -372,6 +387,16 @@ function get_interspec_options(){
         settings.openDevTools = config.OpenDevTools;
       }
 
+      // Escape hatch for the "GPU process launch failed: error_code=18" failure that has been
+      //  seen on the odd machine (possibly when running from a network drive).  This is much
+      //  narrower than --no-sandbox: the renderer sandbox stays on, only the GPU process's does
+      //  not.  Unlike --no-sandbox, this switch *is* honored when set from here.
+      if( config.hasOwnProperty('DisableGpuSandbox') ){
+        if( typeof config.DisableGpuSandbox !== "boolean" )
+          throw new Error("DisableGpuSandbox must be boolean");
+        settings.disableGpuSandbox = config.DisableGpuSandbox;
+      }
+
       if( config.hasOwnProperty('MaxUndoSteps') ){
         if( !Number.isInteger(config.MaxUndoSteps) )
           throw new Error("MaxUndoSteps must be an integer");
@@ -400,6 +425,84 @@ const userdata = app.getPath('userData');
 var guiOptionsPath = path.join(userdata, "init.json");
 let allowRestorePath = path.join(userdata, "do_restore");
 const app_options = get_interspec_options();
+
+if( app_options.disableGpuSandbox )
+  app.commandLine.appendSwitch('disable-gpu-sandbox');
+
+
+/* Chromium's sandbox does not work everywhere, and when it fails it does so by killing the
+   renderer, which leaves the user looking at a blank white window with nothing in the GUI to
+   explain it.  Known cases:
+     - Running from an extracted archive on Linux: `chrome-sandbox` needs to be owned by root
+       with mode 4755, which zip/tar cannot convey.  (The .deb/.rpm set this in their postinst,
+       and the tarball's launcher script probes for it.)
+     - Ubuntu 23.10+ sets kernel.apparmor_restrict_unprivileged_userns=1, which blocks the
+       namespace sandbox for binaries with no AppArmor profile.
+     - Even with an AppArmor profile granting `userns`, Electron 41 on Ubuntu 24.04+ still
+       fails, with the renderer dying on /dev/shm access - see
+       https://github.com/sandialabs/InterSpec/issues/51.  That one looks like an upstream
+       Chromium regression (Electron 13 was fine), so we cannot package around it.
+
+   Rather than give up the sandbox everywhere for the sake of the systems where it is broken, we
+   try it, and if the renderer dies before the session ever loads we relaunch once with
+   `--no-sandbox` on the real command line - which is the only place that switch has any effect
+   on Linux.  The marker file makes the decision stick, so a machine where the sandbox does not
+   work does not pay for a failed launch every time.
+ */
+const noSandboxMarkerPath = path.join(userdata, "no_sandbox");
+
+/** Have we already relaunched this run?  Guards against a relaunch loop. */
+let hasRelaunchedWithoutSandbox = false;
+
+function sandboxKnownBroken(){
+  try{
+    return fs.existsSync(noSandboxMarkerPath);
+  }catch(e){
+    return false;
+  }
+}
+
+/** Relaunch with `--no-sandbox` once, remembering the choice.  Returns true if relaunching. */
+function relaunchWithoutSandbox( reason ){
+  // Under --test-load a renderer crash must stay a failure, so CI notices it.
+  if( is_test_load || sandbox_disabled_on_cl || hasRelaunchedWithoutSandbox )
+    return false;
+
+  hasRelaunchedWithoutSandbox = true;
+
+  console.error( "Renderer failed before the session loaded (" + reason + ")."
+                 + " Relaunching with --no-sandbox, and recording that in "
+                 + noSandboxMarkerPath );
+
+  try{
+    fs.writeFileSync( noSandboxMarkerPath,
+                      "InterSpec disabled the Chromium sandbox on " + new Date().toISOString()
+                      + " because the renderer process died before the session loaded ("
+                      + reason + ").\nDelete this file to try the sandbox again.\n" );
+  }catch(e){
+    console.error( "Could not write " + noSandboxMarkerPath + ": " + e );
+  }
+
+  app.relaunch( { args: process.argv.slice(1).concat(['--no-sandbox']) } );
+  app.exit(0);
+
+  return true;
+}//function relaunchWithoutSandbox
+
+/** If a previous run established the sandbox does not work here, go straight to a relaunch
+ * rather than making the user watch another blank window.  Returns true if relaunching.
+ */
+function relaunchIfSandboxKnownBroken(){
+  if( sandbox_disabled_on_cl || is_test_load || !sandboxKnownBroken() )
+    return false;
+
+  console.log( "Found " + noSandboxMarkerPath + " - relaunching with --no-sandbox" );
+  hasRelaunchedWithoutSandbox = true;
+  app.relaunch( { args: process.argv.slice(1).concat(['--no-sandbox']) } );
+  app.exit(0);
+
+  return true;
+}//function relaunchIfSandboxKnownBroken
 
 
 let setAsMostRecentWindow = function(window){
@@ -467,8 +570,10 @@ function createWindow() {
   newWindow.appHasLoadConfirmed = false;
   
   // Only restore the previous session for the very first window of the app launch.
+  //  A --test-load run never restores, so it tests loading rather than whatever state happened
+  //  to be left behind.
   let allowRestore = false;
-  if( openWindows.length === 0 )
+  if( (openWindows.length === 0) && !is_test_load )
   {
     try
     {
@@ -789,6 +894,12 @@ function createWindow() {
  
   newWindow.webContents.on('render-process-gone', function(event, details){
     console.log('renderer process gone: reason=' + details.reason + ', exitCode=' + details.exitCode);
+
+    // A renderer that dies before the session ever loaded is the signature of a sandbox that
+    //  does not work on this system; retry once without it.  A crash after the session has
+    //  loaded is a real crash, so leave it alone.
+    if( !newWindow.appHasLoadConfirmed && (details.reason !== 'clean-exit') )
+      relaunchWithoutSandbox( 'reason=' + details.reason + ', exitCode=' + details.exitCode );
   });
   
   
@@ -884,14 +995,21 @@ function messageToNodeJs( token, msg_name, msg_data ){
     window.appHasLoadConfirmed = true;
 
     console.log( "Received SessionFinishedLoading for Token='" + token + "'" );
-    
+
+    if( is_test_load ){
+      // This is the whole point of --test-load: the session came up, so we are done.
+      console.log( "--test-load: session loaded successfully" );
+      finishTestLoad( 0 );
+      return;
+    }
+
     try{
       fs.writeFileSync(allowRestorePath, ""+Date.now() );
       console.log( 'Wrote reload file: ' + allowRestorePath );
     }catch(e){
       console.log( "Error writing allow reload file " );
     }
-    
+
     if( initial_file_to_open )
     {
       load_file(window,initial_file_to_open);
@@ -964,7 +1082,59 @@ function browseForDirectory( token, title, msg ){
   return (dirs.length<1) ? '' : dirs[0];
 };//function browseForDirectory
 
-// Check if we only want to run 
+/* `--test-load` starts the app, waits for the session to report itself loaded, then exits - so
+   CI can tell whether a packaged build actually runs.  The Windows wxWidgets target has had this
+   for a while (see InterSpecWxApp.cpp); this is the Electron equivalent, and the exit codes are
+   the same values, just positive, since POSIX exit codes are unsigned:
+     0  - session loaded
+     11 - timed out waiting for the session
+     12 - the InterSpec server would not start
+ */
+const TEST_LOAD_TIMEOUT_MS = 120000;
+let test_load_timer = null;
+let test_load_finished = false;
+
+function finishTestLoad( code ){
+  // `SessionFinishedLoading` can arrive more than once for a session, so make this idempotent.
+  if( test_load_finished )
+    return;
+  test_load_finished = true;
+
+  if( test_load_timer ){
+    clearTimeout( test_load_timer );
+    test_load_timer = null;
+  }
+  console.log( "--test-load: exiting with code " + code );
+
+  // Deferred, because we are usually called from inside `messageToNodeJs`, which the C++ addon
+  //  invokes - exiting there would tear the process down with native frames still on the stack.
+  setImmediate( function(){
+    try{
+      interspec.killServer();
+    }catch(e){
+      // Nothing useful to do; we are exiting anyway.
+    }
+    app.exit( code );
+
+    // app.exit() has been seen to not actually terminate the process when a child is wedged
+    //  (a zombie renderer, hit once while testing under CPU emulation - the process then sat
+    //  idle indefinitely).  A test run that hangs is worse than one that fails, so escalate.
+    setTimeout( function(){
+      console.error( "--test-load: app.exit() did not terminate; forcing exit" );
+      process.exit( code );
+    }, 10000 ).unref();
+  } );
+}//function finishTestLoad
+
+if( is_test_load ){
+  console.log( "--test-load: will wait up to " + (TEST_LOAD_TIMEOUT_MS/1000) + "s for the session to load" );
+  test_load_timer = setTimeout( function(){
+    console.error( "--test-load: timed out waiting for the session to load" );
+    finishTestLoad( 11 );
+  }, TEST_LOAD_TIMEOUT_MS );
+}
+
+// Check if we only want to run
 for( let path_string of process.argv ) {
   if( path_string.startsWith("--batch") || path_string.startsWith("/batch") ) {
     console.log( "Will run batch");
@@ -975,10 +1145,12 @@ for( let path_string of process.argv ) {
       has_userdata = (has_userdata || str.startsWith('--userdatadir'));
     }
 
+    // These are passed straight through to the C++ option parser, not through a shell, so
+    //  quoting the values would make the quotes part of the path.
     if( !has_docroot )
-      process.argv.push( "--docroot=\'" + path.dirname(require.main.filename) + "'");
+      process.argv.push( "--docroot=" + path.dirname(require.main.filename) );
     if( !has_userdata )
-      process.argv.push( "--userdatadir=\'" + userdata + "'")
+      process.argv.push( "--userdatadir=" + userdata );
 
     const rcode = interspec.runBatchAnalysis( process.argv );
 
@@ -994,6 +1166,10 @@ for( let path_string of process.argv ) {
 // initialization and is ready to create browser windows.
 // Some APIs can only be used after this event occurs.
 app.on('ready', function(){
+  // Do this before anything else, so we do not start the server just to throw it away.
+  if( relaunchIfSandboxKnownBroken() )
+    return;
+
   // On Windows, the default Electron application menu activates when the user presses Alt,
   // stealing focus from the web content.  The Alt key is used as a modifier for spectrum
   // interactions (e.g., Alt + double-click to fit a peak in the background spectrum),
@@ -1024,8 +1200,14 @@ app.on('ready', function(){
   try 
   {
     portnum = interspec.startServingInterSpec( process_name, userdata, basedir, xml_config_path, portnum );
-  }catch( e ) 
+  }catch( e )
   {
+    if( is_test_load ){
+      console.error( "--test-load: could not start the InterSpec server: " + e.message );
+      finishTestLoad( 12 );
+      return;
+    }
+
     let window = createWindow();
     var html = [
       "<body>",

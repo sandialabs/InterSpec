@@ -1,5 +1,13 @@
  cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
+# CMake 4.0 made `cmake_minimum_required` below 3.5 a hard error.  Several projects we build as
+#  sub-projects still declare less than that - the fetched Wt 3.7.1 and zlib 1.2.12, plus
+#  vendored/submoduled Cuba-3.0, muparserx and SandiaDecay - so configuring with CMake 4 fails
+#  without this.  Raising the floor to 3.5 for those sub-projects is what the variable is for,
+#  and lets us fix it in one place rather than patching each dependency (some are submodules we
+#  cannot change from here).  The variable is new in CMake 3.31 and simply ignored before that.
+set( CMAKE_POLICY_VERSION_MINIMUM 3.5 )
+
 project(InterSpec VERSION 1.0.14)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -722,6 +730,10 @@ add_subdirectory(external_libs/VoigtDistribution)
 
 add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers} )
 
+# How libstdc++/libgcc get linked, in one place, for every consumer of InterSpecLib.
+#  Must come after InterSpecLib exists, since the policy is attached to that target.
+include( ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CxxRuntimePolicy.cmake )
+
 # If we are the top-level project, we'll build the local-server exe
 if( NOT hasParent)
   add_executable(InterSpecExe main.cpp)
@@ -992,7 +1004,7 @@ if(TRY_TO_STATIC_LINK)
         find_library( RT_LIB rt REQUIRES )
         target_link_libraries(InterSpecLib PUBLIC ${RT_LIB})
 
-        #target_link_libraries( InterSpecExe -static-libgcc -static-libstdc++)
+        # libstdc++/libgcc linkage is handled by cmake/CxxRuntimePolicy.cmake
         #Next line statically links to pthread, copying whole archive into exe
         #set(CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS} "-static -pthread -Wl,--whole-archive -lpthread -Wl,--no-whole-archive")
     endif(("${CMAKE_SYSTEM}" MATCHES "Linux") AND (NOT ANDROID))

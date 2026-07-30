@@ -180,29 +180,33 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest # Use the latest Ubuntu environment
 
+    # The C++ is compiled inside the manylinux container, because that is how we get binaries
+    # that run on a glibc 2.28 distro.  Everything after that - packaging into .deb/.rpm/AppImage/
+    # tar.gz, and the install-and-launch smoke tests - happens on the runner itself, where dpkg,
+    # rpm, fakeroot, xvfb and a current Node are already available.
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           path: ${{ github.workspace }}/InterSpec_code
           submodules: true # Recursively checkout submodules
 
       - name: Cache npm dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{runner.temp}}/build_linux_working_dir
-          key: ${{ runner.os }}-build-npm-${{ hashFiles('target/electron/package.json') }}
+          key: ${{ runner.os }}-build-npm-${{ hashFiles('InterSpec_code/target/electron/package.json') }}
           restore-keys: |
             ${{ runner.os }}-build-npm-
 
       - name: Cache c++ dependencies
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: ${{runner.temp}}/build_linux_electron
-          key: ${{ runner.os }}-build-cpp-${{ hashFiles('cmake/FetchInterSpecDeps.txt') }}
+          key: ${{ runner.os }}-build-cpp-${{ hashFiles('InterSpec_code/cmake/FetchInterSpecDeps.cmake') }}
           restore-keys: |
             ${{ runner.os }}-build-cpp-
-      
+
       - name: Make build directories
         shell: bash
         working-directory: ${{runner.temp}}
@@ -210,7 +214,11 @@ jobs:
           mkdir -p build_linux_electron
           mkdir -p build_linux_working_dir
 
-      - name: Configure and build in Docker
+      # Compiles the C++ and leaves the app payload in /build_app/app.  Also runs
+      # target/electron/linux/check_elf_compat.py, which fails the build if the binaries would
+      # need a newer glibc/libstdc++ than we advertise, or if libstdc++ got statically linked
+      # again (the cause of https://github.com/sandialabs/InterSpec/issues/51).
+      - name: Compile in Docker
         shell: bash
         env:
           LEAFLET_KEY: ${{ secrets.LEAFLET_KEY }}
@@ -222,14 +230,148 @@ jobs:
             -e LEAFLET_KEY \
             quay.io/pypa/manylinux_2_28_x86_64 \
             bash -lc 'echo "Running Script from within docker"; /interspec/target/electron/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir'
-      
-      - name: Upload Linux artifact
+          # The container runs as root, so everything it wrote to the bind mounts is root-owned.
+          # Later steps (writing the SBOM into the app dir, saving the cache) run as the runner
+          # user and would otherwise hit permission errors.
+          sudo chown -R "$(id -u):$(id -g)" \
+            "${{ runner.temp }}/build_linux_electron" \
+            "${{ runner.temp }}/build_linux_working_dir"
+
+      - name: Set up Node for packaging
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Generate SBOM
+        shell: bash
+        working-directory: ${{ github.workspace }}/InterSpec_code
+        run: |
+          python3 target/wxWidgets/sbom/make_sbom.py \
+            --repo "$PWD" \
+            --git-sha "${{ github.sha }}" \
+            --timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --output "${{ runner.temp }}/build_linux_electron/app/InterSpec_sbom.cdx.json"
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends rpm fakeroot desktop-file-utils appstream xvfb
+
+      - name: Package with electron-builder
+        shell: bash
+        working-directory: ${{ github.workspace }}/InterSpec_code/target/electron
+        run: |
+          # --ignore-scripts matters: package.json has an `install` script of `cmake-js compile`,
+          # which would try to build the C++ here on the runner (the compile already happened in
+          # the container).  It also skips electron's binary download, which electron-builder
+          # does not use - it fetches its own copy - while still leaving
+          # node_modules/electron/package.json for it to read the version from.
+          npm install --ignore-scripts
+          npx electron-builder --linux \
+            -c.directories.app="${{ runner.temp }}/build_linux_electron/app" \
+            -c.directories.output="${{ runner.temp }}/build_linux_dist"
+          echo "Produced:"
+          ls -la "${{ runner.temp }}/build_linux_dist"
+
+      # electron-builder's `dir` target gives us the unpacked tree; add the launcher that probes
+      # for a usable Chromium sandbox before falling back to --no-sandbox, then tar it up.  A
+      # tarball has no install step, so nothing else can make chrome-sandbox setuid-root.
+      - name: Build tarball with sandbox-probing launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNPACKED="${{ runner.temp }}/build_linux_dist/linux-unpacked"
+          VERSION=$(node -p "require('${{ runner.temp }}/build_linux_electron/app/package.json').version")
+          mv "${UNPACKED}/interspec" "${UNPACKED}/interspec-bin"
+          cp "${{ github.workspace }}/InterSpec_code/target/electron/linux/interspec-launcher.sh" "${UNPACKED}/interspec"
+          chmod +x "${UNPACKED}/interspec"
+          STAGE="${{ runner.temp }}/tarball/InterSpec-linux-x64"
+          mkdir -p "$(dirname "${STAGE}")"
+          cp -a "${UNPACKED}" "${STAGE}"
+          tar -C "$(dirname "${STAGE}")" -czf \
+            "${{ runner.temp }}/build_linux_dist/InterSpec_app_Linux_x64_${VERSION}.tar.gz" \
+            "$(basename "${STAGE}")"
+
+      - name: Validate desktop entry and AppStream metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHECK="${{ runner.temp }}/deb_check"
+          # The .desktop file electron-builder generated is inside the .deb; pull it out to check.
+          mkdir -p "${CHECK}"
+          dpkg-deb -x "${{ runner.temp }}"/build_linux_dist/InterSpec_app_*.deb "${CHECK}"
+          desktop-file-validate "${CHECK}"/usr/share/applications/*.desktop
+          appstreamcli validate "${CHECK}/usr/share/metainfo/gov.sandia.InterSpec.metainfo.xml"
+          test -f "${CHECK}/usr/share/mime/packages/gov.sandia.InterSpec.xml"
+          test -n "$(ls -A "${CHECK}"/usr/share/icons/hicolor/512x512/apps/)"
+          echo "Desktop integration files all present and valid"
+
+      # Does the tarball actually start?  This is the check that was missing when the
+      # Electron 41 builds shipped segfaulting for months.
+      - name: Smoke test the tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -C "${{ runner.temp }}" -xzf "${{ runner.temp }}"/build_linux_dist/InterSpec_app_Linux_x64_*.tar.gz
+          # `timeout` is the backstop: --test-load has its own 120s timer, but a wedged child
+          # process can stop Electron from exiting even after app.exit(), and a job that hangs
+          # for the runner's whole time limit is worse than one that fails.
+          timeout --signal=KILL 300 \
+            xvfb-run -a "${{ runner.temp }}/InterSpec-linux-x64/interspec" --test-load
+          echo "Tarball launched and loaded a session successfully"
+
+      # Installs the .deb into a clean Ubuntu 24.04 and launches it, which covers dependency
+      # resolution, the /opt layout and the /usr/bin symlink.
+      # NOTE: this does *not* exercise the AppArmor path - a container does not enforce the
+      # host's kernel.apparmor_restrict_unprivileged_userns - so the sandbox behaviour on a real
+      # Ubuntu 24.04+ desktop still needs a manual check.  --no-sandbox is passed here because
+      # the container is unprivileged.
+      - name: Install and launch the .deb on Ubuntu 24.04
+        shell: bash
+        run: |
+          docker run --rm -v "${{ runner.temp }}/build_linux_dist:/dist" ubuntu:24.04 bash -lc '
+            set -euo pipefail
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xvfb /dist/InterSpec_app_*.deb
+            test -x /opt/InterSpec/interspec
+            # Try the installed configuration first, so the log records whether the sandbox
+            # worked; fall back to --no-sandbox, which is what a restricted container needs.
+            if timeout --signal=KILL 300 xvfb-run -a interspec --test-load; then
+              echo "deb launched with the sandbox enabled"
+            else
+              echo "sandboxed launch failed (expected in an unprivileged container); retrying"
+              timeout --signal=KILL 300 xvfb-run -a interspec --test-load --no-sandbox
+              echo "deb launched with --no-sandbox"
+            fi
+          '
+
+      - name: Install and launch the .rpm on Fedora
+        shell: bash
+        run: |
+          docker run --rm -v "${{ runner.temp }}/build_linux_dist:/dist" fedora:latest bash -lc '
+            set -euo pipefail
+            dnf install -y -q xorg-x11-server-Xvfb /dist/InterSpec_app_*.rpm
+            test -x /opt/InterSpec/interspec
+            if timeout --signal=KILL 300 xvfb-run -a interspec --test-load; then
+              echo "rpm launched with the sandbox enabled"
+            else
+              echo "sandboxed launch failed (expected in an unprivileged container); retrying"
+              timeout --signal=KILL 300 xvfb-run -a interspec --test-load --no-sandbox
+              echo "rpm launched with --no-sandbox"
+            fi
+          '
+
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         id: artifact-linux-upload-step
         with:
           name: linux-build
           overwrite: true
-          path: ${{runner.temp}}/build_linux_working_dir/InterSpec_app_Linux_Electron_latest_*.zip
+          path: |
+            ${{runner.temp}}/build_linux_dist/InterSpec_app_*.deb
+            ${{runner.temp}}/build_linux_dist/InterSpec_app_*.rpm
+            ${{runner.temp}}/build_linux_dist/InterSpec_app_*.AppImage
+            ${{runner.temp}}/build_linux_dist/InterSpec_app_*.tar.gz
 
   macos-build:
     uses: ./.github/workflows/build_macos.yml
@@ -305,7 +447,23 @@ jobs:
           fail_on_unmatched_files: true
           tag_name: "bleeding-edge"
           name: "Development Build"
-          body: "An automated, and untested build of the latest code pushed to the repository.<br />Windows version requires Windows 10 or 11, but may work on Windows 7 with the Edge browser runtime installed.<br />Linux version requires `glibc >=2.28` based distro (e.g., Ubuntu 21.04+, RHEL 9+, Debian 11+, Fedora 34+).<br />macOS version requires macOS 10.15 (Catalina) or later."
+          body: |
+            An automated, and untested build of the latest code pushed to the repository.
+
+            **Windows** requires Windows 10 or 11, but may work on Windows 7 with the Edge browser runtime installed.
+
+            **macOS** requires macOS 10.15 (Catalina) or later.
+
+            **Linux** requires a `glibc >= 2.28` distro with `libstdc++6 >= 8` (Ubuntu 20.04+, RHEL 8+, Debian 11+, Fedora 30+). Pick one:
+
+            | Asset | Use it when |
+            | --- | --- |
+            | `.deb` | Debian, Ubuntu, Mint. Installs to `/opt/InterSpec`, adds it to the applications menu, and registers spectrum-file and `interspec://` associations. Recommended. |
+            | `.rpm` | Fedora, RHEL, openSUSE. Same as above. |
+            | `.AppImage` | Any distro, no install and no root needed. Runs with the Chromium sandbox disabled, since an AppImage mount cannot carry a setuid helper. |
+            | `.tar.gz` | Portable/manual install. Extract and run `./interspec`, which enables the sandbox if it can and otherwise starts without it. |
+
+            Installing the `.deb` or `.rpm` is preferred: those are the only formats that can set up the Chromium sandbox properly.
           draft: false
           generate_release_notes: false
           prerelease: true
