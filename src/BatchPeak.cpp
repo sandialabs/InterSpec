@@ -1418,7 +1418,14 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         {
           try
           {
-            propagate_energy_cal( new_cal, spec, results.measurement, {} );
+            // Must pass the sample numbers being fit - `propagate_energy_cal` only updates the
+            //  measurements of the samples given to it, so an empty set updates nothing, and the
+            //  written out N42 would keep the original calibration, while the peaks in it were fit
+            //  at the new calibration.  Sample numbers chosen same as the `setPeaks(...)` below.
+            const set<int> cal_sample_nums = (options.background_subtract_file.empty()
+                                              && !options.cached_background_subtract_spec)
+                                             ? used_sample_nums : results.measurement->sample_numbers();
+            propagate_energy_cal( new_cal, spec, results.measurement, cal_sample_nums );
           }catch( std::exception &e )
           {
             results.warnings.push_back( "Failed to propagate fit energy calibration in '" + filename + "'." );

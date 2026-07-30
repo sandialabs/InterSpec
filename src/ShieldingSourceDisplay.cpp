@@ -463,6 +463,94 @@ void ShieldingSourceDisplay::ShieldingSourceDisplayState::deSerialize( const rap
 }
 
 
+ShieldingSourceDisplay::ShieldingSourceDisplayState
+  ShieldingSourceDisplay::ShieldingSourceDisplayState::fromFitResults(
+                                        const ShieldingSourceFitCalc::ModelFitResults &results )
+{
+  // Keep this function in sync with `ShieldingSourceDisplay::serialize()`, which does the
+  //  equivalent thing, but from the GUI widgets.
+  ShieldingSourceDisplayState state;
+  state.versionMajor = ShieldingSourceDisplay::sm_xmlSerializationMajorVersion;
+  state.versionMinor = ShieldingSourceDisplay::sm_xmlSerializationMinorVersion;
+  state.showChiOnChart = true;  //A display preference; fit results have no equivalent of this.
+
+  shared_ptr<GammaInteractionCalc::ShieldSourceConfig> config
+                                  = make_shared<GammaInteractionCalc::ShieldSourceConfig>();
+  config->distance = results.distance;
+  config->geometry = results.geometry;
+  config->options = results.options;
+
+  // `FitShieldingInfo` derives from `ShieldingInfo`, and only the base-class information is
+  //  serialized - i.e., the fit dimension and mass-fraction uncertainties are not preserved.
+  config->shieldings.assign( begin(results.final_shieldings), end(results.final_shieldings) );
+
+  // Generic (AN/AD) shieldings have no geometry; the fit results stamp the models geometry onto
+  //  every shielding, but both `ShieldingSelect::toShieldingInfo()` and `ShieldingInfo::deSerialize`
+  //  use `NumGeometryType` for them - so normalize, or we wouldnt round-trip.
+  for( ShieldingSourceFitCalc::ShieldingInfo &shield : config->shieldings )
+  {
+    if( shield.m_isGenericMaterial )
+      shield.m_geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
+  }
+
+  config->sources = results.fit_src_info;
+  state.config = config;
+
+  // `results.foreground_peaks` are the peaks actually used in the fit (already filtered down to
+  //  peaks with `useForShieldingSourceFit()` set) - we'll apply the same additional guard the GUI
+  //  applies when serializing.
+  for( const PeakDef &peak : results.foreground_peaks )
+  {
+    const SandiaDecay::Nuclide * const nuclide = peak.parentNuclide();
+    const SandiaDecay::RadParticle * const particle = peak.decayParticle();
+    const bool annhilation = (peak.sourceGammaType() == PeakDef::AnnihilationGamma);
+
+    if( nuclide && (particle || annhilation) )
+    {
+      ShieldingSourceDisplayState::Peak state_peak;
+      state_peak.use = true;
+      state_peak.nuclideSymbol = nuclide->symbol;
+      state_peak.energy = peak.gammaParticleEnergy();
+      state.peaks.push_back( state_peak );
+    }//if( peak is usable in the fit )
+  }//for( const PeakDef &peak : results.foreground_peaks )
+
+  if( results.peak_comparisons && !results.peak_comparisons->empty() )
+  {
+    ShieldingSourceDisplayState::Chi2Elements chi_state;
+    double chi2 = 0.0;
+    chi_state.evalPoints.reserve( results.peak_comparisons->size() );
+
+    for( const GammaInteractionCalc::PeakResultPlotInfo &p : *results.peak_comparisons )
+    {
+      ShieldingSourceDisplayState::Chi2EvalPoint point;
+      point.energy = p.energy;
+      point.chi = p.numSigmaOff;
+      point.scale = p.observedOverExpected;
+      point.colorCss = p.peakColor.isDefault() ? "" : p.peakColor.cssText();
+      point.scaleUncert = p.observedOverExpectedUncert;
+      if( !IsInf(point.chi) && !IsNan(point.chi) )
+        chi2 += point.chi * point.chi;
+      chi_state.evalPoints.push_back( point );
+    }//for( loop over peak comparisons )
+
+    chi_state.chi2 = chi2;
+
+    // `Chi2Elements::numParametersFit` is the number of free fit parameters, but `ModelFitResults`
+    //  only keeps the DOF (number of peaks, minus number of free parameters, floored at zero), so
+    //  we back the parameter count out of it.  This value is only used for display, and will only
+    //  be approximate for the degenerate case of more free parameters than peaks.
+    const size_t npeaks = results.foreground_peaks.size();
+    chi_state.numParametersFit = static_cast<unsigned int>( (npeaks > results.numDOF)
+                                                            ? (npeaks - results.numDOF) : npeaks );
+
+    state.chi2Elements = chi_state;
+  }//if( we have per-peak comparisons to the model )
+
+  return state;
+}//ShieldingSourceDisplayState fromFitResults( const ModelFitResults & )
+
+
 typedef std::shared_ptr<const PeakDef> PeakShrdPtr;
 
 const int ShieldingSourceDisplay::sm_xmlSerializationMajorVersion = 0;

@@ -23,6 +23,7 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <memory>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -56,6 +57,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/ShieldingSourceDisplay.h"
 
 
 using namespace std;
@@ -549,15 +551,13 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     if( options.write_n42_with_results && fit_results.m_peak_fit_results
        && fit_results.m_peak_fit_results->measurement )
     {
-      // TODO: need to have `fit_activities_in_file` add peaks and shielding model to a file,
-      //       perhaps in `fit_results.m_peak_fit_results->measurement`, or maybe better yet,
-      //       create whole new std::shared_ptr<SpecMeas> in BatchActivityFitResult
-      const string message = "Written N42 file does not currently have Act/Shielding model"
-      " written to it, only fit peaks, sorry - will.";
-      cerr << message << endl;
-      if( std::find(begin(warnings), end(warnings), message) == end(warnings) )
-        warnings.push_back( message );
-      
+      // `fit_activities_in_file` has already set the fit peaks, the fit Act/Shielding model, and
+      //  the DRF used, into `m_peak_fit_results->measurement` - but the model and DRF are only set
+      //  if the minimizer reached `FitStatus::Final`.  Note the input file may itself have had a
+      //  Act/Shielding model in it, which we leave alone if we didnt fit one.
+      const bool wrote_fit_model = (fit_results.m_fit_results
+              && (fit_results.m_fit_results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final));
+
       const BatchPeak::BatchPeakFitResult &peak_fit_results = *fit_results.m_peak_fit_results;
       assert( peak_fit_results.measurement );
       
@@ -574,7 +574,8 @@ void fit_activities_in_files( const std::string &exemplar_filename,
         if( !peak_fit_results.measurement->save2012N42File( outn42 ) )
           warnings.push_back( "Failed to write '" + outn42 + "'.");
         else
-          cout << "Have written '" << outn42 << "' with peaks" << endl;
+          cout << "Have written '" << outn42 << "' with peaks"
+               << (wrote_fit_model ? ", Act/Shielding model, and DRF" : "") << endl;
       }
     }//if( options.write_n42_with_results )
     
@@ -1541,7 +1542,34 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
       }//if( !found_in_output )
     }//for( const ShieldingSourceFitCalc::SourceFitDef insrc : src_definitions )
     
-    // TODO: create an output file that has peaks, drf, and the fit model.  This will mean creating the XML that represents the fit model then turning it into a string
+    // Save the fit model, and the DRF it was fit with, into the file we may write out as a N42, so
+    //  the results can be re-opened in InterSpec, or used as the exemplar of a later batch fit.
+    //  Note the peaks have already been set into this file by `BatchPeak::fit_peaks_in_file(...)`.
+    //  We only get here if the minimizer reached `FitStatus::Final`, but the result code may still
+    //  be `DidNotFitAllSources` - the model is still worth saving in that case.
+    const shared_ptr<SpecMeas> &out_meas = foreground_peak_fit_result.measurement;
+    assert( out_meas );
+    assert( detector );  //we returned above if we didnt have a DRF to fit with
+    if( out_meas )
+    {
+      try
+      {
+        const ShieldingSourceDisplay::ShieldingSourceDisplayState state
+             = ShieldingSourceDisplay::ShieldingSourceDisplayState::fromFitResults( *fit_results );
+
+        unique_ptr<rapidxml::xml_document<char>> model_xml( new rapidxml::xml_document<char>() );
+        state.serialize( model_xml.get() );
+        out_meas->setShieldingSourceModel( std::move(model_xml) );
+
+        // Without the DRF used for the fit, the model in the file isnt re-fittable.
+        if( out_meas->detector() != detector )
+          out_meas->setDetector( make_shared<DetectorPeakResponse>( *detector ) );
+      }catch( std::exception &e )
+      {
+        result.m_warnings.push_back( "Failed to save the Act/Shielding model into the output"
+                                     " file: " + string(e.what()) );
+      }//try / catch
+    }//if( out_meas )
   }catch( std::exception &e )
   {
     result.m_error_msg = e.what();

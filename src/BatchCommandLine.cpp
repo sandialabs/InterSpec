@@ -238,8 +238,11 @@ int run_batch_command( int argc, char **argv )
        "'peak-stat-threshold' requirement."
        )
       ("write-n42-with-results", po::value<bool>(&write_n42_with_results)->implicit_value(true)->default_value(false),
-       "Adds the fit peaks to the input spectrum file , and then saves as a N42."
-       " You must specify 'output_path' if you specify this option; also, will refuse to overwrite"
+       "Adds the fit peaks to the input spectrum file, and then saves as a N42."
+       " For activity/shielding fits, the fit source/shielding model, and the detector response"
+       " function used, are also added, so the file can be opened in InterSpec, or used as the"
+       " exemplar of a later batch fit."
+       " You must specify 'out-dir' if you specify this option; also, will refuse to overwrite"
        " existing files."
        )
       ("overwrite-output-files", po::value<bool>(&overwrite_output_files)->implicit_value(true)->default_value(false),

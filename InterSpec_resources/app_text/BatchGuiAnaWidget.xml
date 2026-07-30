@@ -93,7 +93,7 @@
 If refit-energy-cal is specified true, then the exemplar energy cal will be used for initial fit, and then refined and peaks refit.
   </message>
 
-  <message id="bgw-write-n42-with-results-tt">Adds the fit peaks to the input spectrum file, and then saves as a N42. You must specify 'output_path' if you specify this option; also, will refuse to overwrite existing files.</message>
+  <message id="bgw-write-n42-with-results-tt">Adds the fit peaks to the input spectrum file, and then saves as a N42. For activity/shielding fits, the fit source/shielding model, and the detector response function used, are also added, so the file can be opened in InterSpec, or used as the exemplar of a later batch fit. You must specify an output directory if you specify this option; also, will refuse to overwrite existing files.</message>
   
   <message id="bgw-show-nonfit-peaks-tt">Include peaks that are not fit into the output CSV peak results; these peaks will have a zero amplitude set.</message>
   
