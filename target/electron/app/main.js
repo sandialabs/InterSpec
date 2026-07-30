@@ -448,6 +448,16 @@ if( app_options.disableGpuSandbox )
    relaunch once with `--no-sandbox` on the real command line - which is the only place that
    switch has any effect on Linux.
 
+   Scope, because it is narrower than it looks: this only covers failures where the browser process
+   is already up and a *renderer* dies - the /dev/shm case above being the example.  It cannot
+   cover a sandbox that is misconfigured at startup: given a non-setuid chrome-sandbox and no
+   usable user namespace, Chromium aborts with
+     FATAL:sandbox/linux/suid/client/setuid_sandbox_host.cc: The SUID sandbox helper binary was
+     found, but is not configured correctly
+   before any JavaScript is evaluated, so nothing here ever runs.  That case is the packaging's
+   responsibility: the .deb/.rpm post-install sets up chrome-sandbox and installs the AppArmor
+   profile, and the tarball ships linux/interspec-launcher.sh, which probes before exec'ing.
+
    The three qualifying conditions below all exist to keep this from firing on an ordinary crash,
    because `app.relaunch()` + `app.exit()` takes the whole application down without running
    `before-quit` or the window close handlers, and so discards unsaved work:

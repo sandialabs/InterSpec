@@ -162,14 +162,25 @@ module.exports = {
     },
   },
 
+  /* `afterInstall` REPLACES electron-builder's own post-install template rather than appending to
+   * it (app-builder-lib/out/targets/FpmTarget.js), so linux/fpm-after-install.sh is a fork of that
+   * template.  It differs in exactly one place - how it decides whether chrome-sandbox needs to be
+   * setuid-root - because upstream probes `unshare --user true` while running as root at install
+   * time, and the Ubuntu 23.10+ userns restriction exempts root.  See the comment in that file.
+   *
+   * The "Check electron-builder postinst template drift" CI step fails the build when upstream's
+   * template changes, so this fork gets re-synced deliberately instead of quietly rotting.
+   */
   deb: {
     depends: debDepends,
     fpm: systemFiles,
+    afterInstall: 'linux/fpm-after-install.sh',
   },
 
   rpm: {
     depends: rpmDepends,
     fpm: systemFiles,
+    afterInstall: 'linux/fpm-after-install.sh',
   },
 
   appImage: {

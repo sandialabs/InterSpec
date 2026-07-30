@@ -274,6 +274,25 @@ jobs:
           # does not use - it fetches its own copy - while still leaving
           # node_modules/electron/package.json for it to read the version from.
           npm install --ignore-scripts
+
+          # target/electron/linux/fpm-after-install.sh is a fork of electron-builder's own
+          # post-install template (afterInstall replaces it rather than appending), differing only
+          # in how it decides whether chrome-sandbox must be setuid-root.  Upstream probes as root,
+          # which the Ubuntu 23.10+ userns restriction exempts, so it can leave a machine with
+          # neither sandbox mechanism.  Fail loudly if upstream's template changes, so the fork is
+          # re-synced deliberately rather than silently missing their fixes.
+          UPSTREAM_TPL=node_modules/app-builder-lib/templates/linux/after-install.tpl
+          EXPECTED=$(cat linux/upstream-after-install.tpl.sha256)
+          ACTUAL=$(sha256sum "$UPSTREAM_TPL" | cut -d' ' -f1)
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::electron-builder's after-install.tpl changed (expected $EXPECTED, got $ACTUAL)."
+            echo "Re-sync target/electron/linux/fpm-after-install.sh with it, keeping the chrome-sandbox"
+            echo "deviation, then update linux/upstream-after-install.tpl.sha256.  Their diff:"
+            diff -u linux/fpm-after-install.sh "$UPSTREAM_TPL" || true
+            exit 1
+          fi
+          echo "electron-builder postinst template unchanged - fork is in sync"
+
           # --publish never belts-and-braces the `publish: null` in electron-builder.js:
           # electron-builder enables publishing on its own when it detects CI, and then fails for
           # a missing GH_TOKEN after having already built every package.
@@ -436,27 +455,37 @@ jobs:
             exit 1
           fi
 
-      # Breaks the sandbox for real, then requires the app to still come up.  Exercises the
-      # detection, the relaunch, and the single-instance-lock release/reacquire - the path whose
-      # failure mode would be an app that never starts.
-      - name: Verify the sandbox fallback recovers a genuinely broken sandbox
+      # Exercises the fallback machinery: reading the persisted failure count, app.relaunch(), the
+      # single-instance-lock release/reacquire, and the relaunched instance actually loading.
+      #
+      # It plants the failure count rather than inducing a real sandbox failure, and that is a
+      # deliberate correction.  An earlier version of this step broke the sandbox for real (removed
+      # the AppArmor profile so the namespace sandbox was denied, leaving a non-setuid
+      # chrome-sandbox).  Chromium's response to that is
+      #   FATAL:sandbox/linux/suid/client/setuid_sandbox_host.cc:166] The SUID sandbox helper
+      #   binary was found, but is not configured correctly.
+      # - it aborts the browser process during startup, before any JavaScript is evaluated.  No
+      # in-app fallback can observe that, so the test was asserting something the mechanism cannot
+      # do.  Startup-time sandbox misconfiguration is the packaging's job (setuid chrome-sandbox
+      # and the AppArmor profile for .deb/.rpm, the launcher script for the tarball); the in-app
+      # fallback covers renderer-level failures such as the /dev/shm crash in issue #51, where the
+      # browser process is up and `render-process-gone` fires.
+      - name: Verify the sandbox fallback relaunches and recovers
         shell: bash
         run: |
           set -euo pipefail
-          RESULT="$HOME/.config/InterSpec/test_load_result.json"
-          rm -f "$RESULT" "$HOME/.config/InterSpec/sandbox_failures.json"
+          CFG="$HOME/.config/InterSpec"
+          RESULT="$CFG/test_load_result.json"
+          mkdir -p "$CFG"
+          rm -f "$RESULT"
 
-          echo "### breaking the sandbox ###"
-          sudo chmod 0755 /opt/InterSpec/chrome-sandbox          # no longer setuid-root
-          if [ -f /etc/apparmor.d/interspec ]; then
-            sudo apparmor_parser -R /etc/apparmor.d/interspec || true
-            sudo rm -f /etc/apparmor.d/interspec
-          fi
-          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=1 || true
+          # Two consecutive failures is the "stop trying the sandbox" threshold, so the next launch
+          # should go straight to a --no-sandbox relaunch instead of attempting one first.
+          printf '{"failures":2,"lastReason":"planted by CI"}' > "$CFG/sandbox_failures.json"
 
-          # Our own Xvfb rather than xvfb-run: the fallback relaunch only starts once the first
+          # Our own Xvfb rather than xvfb-run: the relaunched instance only starts once the first
           # process exits, and xvfb-run tears the display down at that moment - which would leave
-          # the relaunched instance with no DISPLAY and make this test fail for the wrong reason.
+          # the relaunch with no DISPLAY and make this fail for the wrong reason.
           Xvfb :77 -screen 0 1280x1024x24 -nolisten tcp &
           XVFB_PID=$!
           trap 'kill "${XVFB_PID}" 2>/dev/null || true' EXIT
@@ -474,7 +503,7 @@ jobs:
 
           if [ ! -f "$RESULT" ]; then
             echo "::error::fallback never produced a result - the relaunched instance did not load"
-            echo "sandbox_failures.json:"; cat "$HOME/.config/InterSpec/sandbox_failures.json" 2>/dev/null || echo "  (none)"
+            echo "sandbox_failures.json:"; cat "$CFG/sandbox_failures.json" 2>/dev/null || echo "  (none)"
             exit 1
           fi
 
