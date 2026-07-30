@@ -16,6 +16,12 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
   endif()
   message(STATUS "Using CMAKE_MSVC_RUNTIME_LIBRARY ${CMAKE_MSVC_RUNTIME_LIBRARY}")
+
+  # <windows.h> defines function-like min(a,b)/max(a,b) macros unless NOMINMAX is defined first,
+  #  which turns any later `std::max( a, b )`, `std::numeric_limits<T>::max()` or even `obj.max()`
+  #  into MSVC error C2589.  This seems to affect the unit tests mostly, so we will take the 
+  #  heavy-handed approach of adding it to the compiler command line.
+  add_compile_definitions( NOMINMAX )
 endif()
 
 enable_testing()

@@ -600,7 +600,7 @@ namespace
     BOOST_REQUIRE( back_meas->load_file( path, SpecUtils::ParserType::Auto, path ) );
 
     int fore_sample = -999, short_bkg_sample = -999, long_bkg_sample = -999;
-    float short_bkg_lt = std::numeric_limits<float>::max(), long_bkg_lt = -1.0f;
+    float short_bkg_lt = (std::numeric_limits<float>::max)(), long_bkg_lt = -1.0f;
     for( size_t i = 0; i < fore_meas->num_measurements(); ++i )
     {
       const shared_ptr<const SpecUtils::Measurement> m = fore_meas->measurement_at_index( static_cast<int>(i) );
@@ -803,7 +803,7 @@ namespace
       return std::stoi( selector );
 
     int best_sample = -999, best_any_sample = -999;
-    float best_lt = prefer_long ? -1.0f : std::numeric_limits<float>::max();
+    float best_lt = prefer_long ? -1.0f : (std::numeric_limits<float>::max)();
     float best_any_lt = best_lt;
 
     for( size_t i = 0; i < meas->num_measurements(); ++i )
