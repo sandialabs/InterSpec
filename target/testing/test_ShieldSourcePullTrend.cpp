@@ -27,6 +27,11 @@
 #include <vector>
 
 #ifdef _WIN32
+// NOMINMAX must come before Windows.h, or it defines function-like min(a,b)/max(a,b) macros that
+//  turn any later `std::max( a, b )` into MSVC error C2589.  This TU includes Windows.h itself,
+//  ahead of anything (e.g. a boost/asio chain) that would otherwise define NOMINMAX for us - which
+//  is what made it the one test to hit this.  See the "Windows min/max macros" note in CLAUDE.md.
+#define NOMINMAX
 #include "winsock2.h"
 #include "Windows.h"
 #endif
@@ -276,7 +281,9 @@ BOOST_AUTO_TEST_CASE( JointSharedSlope )
                      static_cast<int>(ShieldSourcePullTrend::TrendModel::Linear) );
   // Each nuclide keeps its own intercept: one near +2, one near -2 (order not guaranteed).
   const double i0 = tr.nuclideTrends[0].intercept, i1 = tr.nuclideTrends[1].intercept;
-  const double hi = std::max(i0,i1), lo = std::min(i0,i1);
+  // Parenthesized so MSVC does not expand the min/max macros that <Windows.h> defines - see the
+  //  "Windows min/max macros" note in CLAUDE.md.
+  const double hi = (std::max)(i0,i1), lo = (std::min)(i0,i1);
   BOOST_CHECK( std::fabs( hi - 2.0 ) < 0.8 );
   BOOST_CHECK( std::fabs( lo + 2.0 ) < 0.8 );
 }

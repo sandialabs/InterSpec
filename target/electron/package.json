@@ -14,10 +14,10 @@
   "scripts": {
     "install": "cmake-js compile",
     "start": "electron ./build_macOS/app/",
-    "package-mac": "electron-builder --mac -c.directories.app=./build_macos/app",
-    "package-win": "electron-builder --win -c.directories.app=./build_win/app",
-    "package-linux": "electron-builder --linux -c.directories.app=./build_linux/app",
-    "package-manylinux": "electron-builder --linux -c.directories.app=./build_manylinux_electron/app"
+    "package-mac": "electron-builder --publish never --mac -c.directories.app=./build_macos/app",
+    "package-win": "electron-builder --publish never --win -c.directories.app=./build_win/app",
+    "package-linux": "electron-builder --publish never --linux -c.directories.app=./build_linux/app",
+    "package-manylinux": "electron-builder --publish never --linux -c.directories.app=./build_manylinux_electron/app"
   },
   "author": {
     "name": "William Johnson",

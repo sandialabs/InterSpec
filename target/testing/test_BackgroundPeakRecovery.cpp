@@ -153,8 +153,8 @@ namespace
     for( float &c : *counts )
       c = static_cast<float>( c * factor );
 
-    const float lt = static_cast<float>( std::max( 1.0, orig->live_time() * factor ) );
-    const float rt = static_cast<float>( std::max( 1.0, orig->real_time() * factor ) );
+    const float lt = static_cast<float>( (std::max)( 1.0, orig->live_time() * factor ) );
+    const float rt = static_cast<float>( (std::max)( 1.0, orig->real_time() * factor ) );
     out->set_gamma_counts( counts, lt, rt );
     return out;
   }//scaled_low_stats_copy(...)
@@ -420,8 +420,8 @@ BOOST_AUTO_TEST_CASE( RecoveryHandlesMultiPeakRoi )
   vector<double> target_energies;
   for( const shared_ptr<const PeakDef> &p : roi )
   {
-    roi_lo = std::min( roi_lo, p->mean() );
-    roi_hi = std::max( roi_hi, p->mean() );
+    roi_lo = (std::min)( roi_lo, p->mean() );
+    roi_hi = (std::max)( roi_hi, p->mean() );
     if( has_peak_near( fg_peaks, p->mean(), 0.75*p->fwhm() ) )
       target_energies.push_back( p->mean() );
   }

@@ -80,6 +80,18 @@ module.exports = {
   npmRebuild: false,
   nodeGypRebuild: false,
 
+  /* Never let electron-builder publish.  When it detects CI it otherwise turns publishing on by
+   * itself ("Implicit publishing triggered by CI detection"), infers a GitHub provider from the
+   * repository URL, and then fails the build with
+   *   ⨯ GitHub Personal Access Token is not set, neither programmatically, nor using env "GH_TOKEN"
+   * - which is exactly what happened on the first green Linux build, *after* all the packages had
+   * been produced.  It does not reproduce locally, because `CI` is not set there.
+   *
+   * Release assets are uploaded by the `release` job in .github/workflows/build_app.yml, not from
+   * here.  This also stops the pointless latest-linux.yml auto-update metadata being generated.
+   */
+  publish: null,
+
   directories: {
     // `app` is supplied on the command line, pointing at the CMake-produced app directory.
     output: 'dist',

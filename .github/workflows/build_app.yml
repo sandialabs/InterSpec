@@ -274,7 +274,10 @@ jobs:
           # does not use - it fetches its own copy - while still leaving
           # node_modules/electron/package.json for it to read the version from.
           npm install --ignore-scripts
-          npx electron-builder --linux \
+          # --publish never belts-and-braces the `publish: null` in electron-builder.js:
+          # electron-builder enables publishing on its own when it detects CI, and then fails for
+          # a missing GH_TOKEN after having already built every package.
+          npx electron-builder --linux --publish never \
             -c.directories.app="${{ runner.temp }}/build_linux_electron/app" \
             -c.directories.output="${{ runner.temp }}/build_linux_dist"
           echo "Produced:"
