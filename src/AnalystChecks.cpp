@@ -2752,6 +2752,28 @@ namespace AnalystChecks
       {
         const PeakDef::SkewType skew_type = PeakDef::skew_from_string( *options.skewType );
         modifiedPeak.setSkewType( skew_type );
+
+        // `setSkewType` doesnt touch the coefficients, so the peak keeps the previous skew types
+        //  values - which are often invalid for the new type (e.g. the 0 left over from a type with
+        //  no skew parameters is below GaussExp's 0.15 lower limit), giving a degenerate peak shape
+        //  that the fit and distribution code then have to cope with.  Keep a value thats valid for
+        //  the new type, otherwise seed the types default; this is what #PeakEdit does when the
+        //  user changes skew type.  An explicitly requested `skewParN`, below, overrides this.
+        const size_t num_skew_par = PeakDef::num_skew_parameters( skew_type );
+        for( size_t i = 0; i < num_skew_par; ++i )
+        {
+          const PeakDef::CoefficientType ct
+                          = PeakDef::CoefficientType( PeakDef::CoefficientType::SkewPar0 + i );
+
+          double lower, upper, starting_val, step_size;
+          if( PeakDef::skew_parameter_range( skew_type, ct, lower, upper, starting_val, step_size ) )
+          {
+            const double val = modifiedPeak.coefficient( ct );
+            if( std::isnan(val) || std::isinf(val) || (val < lower) || (val > upper) )
+              modifiedPeak.set_coefficient( starting_val, ct );
+          }
+        }//for( each skew parameter of the new skew type )
+
         typeChanged = true;
       }
 

@@ -657,13 +657,16 @@ void crystal_ball_integral( const T peak_mean,
 
       // Post the cancellation-free rewrite the templated and scalar forms are algebraically
       //  identical (both via crystal_ball_tail_indefinite_t), so they agree to ~1e-12.  Keep the
-      //  absolute `diff` escape hatch for the near-cancelling alpha=0.5 / n->1.05 tail corner.
-      if( !((frac_diff < 1.0E-6) || (diff < 1.0E-12)) )
+      //  absolute `diff` escape hatch for the near-cancelling alpha=0.5 / n->1.05 tail corner, and
+      //  for channels far enough out in the tail that the relative measure is meaningless - e.g. a
+      //  6.6 sigma channel of a 17400 count peak integrates to 3.4e-7, where the two routes differ
+      //  by 1.3e-12 (4 ppm relative), which is just double-precision noise, not a real mismatch.
+      if( !((frac_diff < 1.0E-6) || (diff < 1.0E-10)) )
         cerr << "crystal_ball_integral assert fail: peak_mean=" << peak_mean << " peak_sigma=" << peak_sigma
              << " alpha=" << alpha << " power_law=" << power_law
              << " lower_energy=" << lower_energy << " upper_energy=" << upper_energy
              << " val=" << val << " simple_answer=" << simple_answer << " diff=" << diff << " frac_diff=" << frac_diff << endl;
-      assert( (frac_diff < 1.0E-6) || (diff < 1.0E-12) );
+      assert( (frac_diff < 1.0E-6) || (diff < 1.0E-10) );
     }
 #endif //PERFORM_DEVELOPER_CHECKS
     

@@ -2124,10 +2124,19 @@ void LinearProblemSubSolveChi2Fcn::addSkewParameters( ROOT::Minuit2::MnUserParam
     
     if( fit_parameter[skew_index] )
     {
+      // Keep the fit near the peaks current value, but floor the window at a quarter of the
+      //  parameters full range: scaling only by the starting value collapses the range to a point
+      //  when that value is zero - which is what a peak just switched to a new skew type has, since
+      //  #PeakDef::setSkewType doesnt seed the coefficients.  Minuit asserts on min == max (and
+      //  makes the parameter NaN in release builds, via its sin-transform of a zero-width range).
+      const double par_range = upper_values[skew_index] - lower_values[skew_index];
       const double lower = std::max( lower_values[skew_index], 0.5*starting_val );
-      const double upper = std::min( upper_values[skew_index], 1.5*fabs(starting_val) );
+      const double upper = std::min( upper_values[skew_index],
+                                     std::max( 1.5*fabs(starting_val), 0.25*par_range ) );
       const double step = std::max( step_sizes[skew_index], 0.1*starting_val );
-      
+
+      assert( lower < upper );
+
       pars.Add( name, starting_val, step, lower, upper );
     }else
     {
