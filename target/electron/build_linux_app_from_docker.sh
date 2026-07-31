@@ -233,6 +233,33 @@ echo "Checking the built binaries against the runtime floor we advertise"
 python3 "${InterSpecCodePath}/target/electron/linux/check_elf_compat.py" "${CmakeBuildDir}/app"
 
 
+# Nothing we link statically may be left undefined in the addon.
+#
+# check_elf_compat.py reads ELF headers; it cannot tell a correctly linked module from one with
+#  unresolved symbols, because undefined symbols are legal in a shared object.  They only bite when
+#  Electron dlopen()s the module, so the failure surfaces at the tarball smoke test, ~20 minutes
+#  after the cause.  That is exactly what happened when Boost was ordered before Wt on the link
+#  line (see the comment in the top-level CMakeLists.txt): `undefined symbol:
+#  _ZTIN5boost6detail16thread_data_baseE`.
+#
+#  We cannot simply demand "no undefined symbols" - napi_*/node_* are supplied by Electron at load
+#  time and are undefined by design.  So look only for the libraries we bundle: any boost:: or Wt::
+#  symbol left undefined means an archive was missed or mis-ordered.
+#  (`grep -c ... || true` rather than `grep -q`: grep -q exits at the first match, nm then dies of
+#  SIGPIPE, and that would be the pipeline's status.)
+echo "Checking no statically-linked symbols were left undefined"
+_undef=$(nm -D -u "${CmakeBuildDir}/app/InterSpecAddOn.node" 2>/dev/null | grep -cE "5boost|2Wt" || true)
+if [ "${_undef:-0}" -ne 0 ]; then
+  echo "Error: InterSpecAddOn.node has ${_undef} undefined boost/Wt symbol(s); it will fail to"
+  echo "  load with 'undefined symbol: ...' as soon as Electron dlopen()s it."
+  echo "  This normally means a static archive was left off the link line, or was listed before"
+  echo "  the library that references it (GNU ld scans each archive only once, in order)."
+  nm -D -u "${CmakeBuildDir}/app/InterSpecAddOn.node" 2>/dev/null | grep -E "5boost|2Wt" | head -20
+  exit 1
+fi
+echo "  no undefined boost/Wt symbols - the addon will load"
+
+
 # What actually got compiled.  This is the check that the dependency prefix is doing its job: with
 #  a prefix there must be no boost_*/wt/wthttp/wtdbo*/zlib/ceres rows here at all, because those
 #  targets do not exist in this build tree.  (Caching the *build directory* used to leave all 875
