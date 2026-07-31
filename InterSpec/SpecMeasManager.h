@@ -450,7 +450,16 @@ public:
                        Wt::WApplication *app );
 
 #if( USE_BATCH_GUI_TOOLS )
+  /** Shows the batch analysis dialog; wired to the batch drag-n-drop resource. */
   void showBatchDialog();
+
+  /** Shows the batch analysis dialog with `meas` already in the "Input Files" area, and offering
+   the option of adding other files currently open in InterSpec.
+
+   If the dialog is already showing, `meas` is added to it (adding the same file twice is a no-op).
+   */
+  void showBatchDialogForFile( std::shared_ptr<SpecMeas> meas );
+
   void handleBatchDialogFinished();
 #endif
 

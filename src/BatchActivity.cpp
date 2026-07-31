@@ -52,6 +52,7 @@
 #include "InterSpec/BatchInfoLog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/BatchActivity.h"
+#include "InterSpec/BatchSampleSelect.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -348,7 +349,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   if( !exemplar_sample_nums.empty() )
     summary_json["ExemplarSampleNumbers"] = vector<int>{begin(exemplar_sample_nums), end(exemplar_sample_nums)};
   summary_json["InputFiles"] = files;
-  
+
   if( summary_results )
   {
     summary_results->options = options;
@@ -358,16 +359,48 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   }//if( summary_results )
 
 
-  for( size_t file_index = 0; file_index < files.size(); ++file_index )
+  // Records for the optional concatenated N42; accumulated as we go, so the option works whether
+  //  or not the caller asked for the full per-file results to be retained.
+  vector<BatchPeak::ConcatRecord> concat_records;
+
+  // Each input file becomes one or more work items; more than one when the user has asked for a
+  //  file holding several foreground records to be analyzed record-by-record.  The expansion is
+  //  done a file at a time so that only one input file is held parsed in memory at once.
+  size_t num_analyses = 0;
+
+  for( size_t input_index = 0; input_index < files.size(); ++input_index )
   {
-    const string filename = files[file_index];
-    string leaf_name = SpecUtils::filename(filename);
-    const shared_ptr<SpecMeas> cached_file = optional_cached_files.empty() ? nullptr : optional_cached_files[file_index];
+   const shared_ptr<SpecMeas> input_cached_file
+             = optional_cached_files.empty() ? nullptr : optional_cached_files[input_index];
+   vector<BatchSampleSelect::InputWorkItem> work_items
+      = BatchSampleSelect::expand_input_file( files[input_index], input_index, input_cached_file,
+                                              options.multi_sample_handling );
+
+   for( size_t item_index = 0; item_index < work_items.size(); ++item_index )
+   {
+    num_analyses += 1;
+    BatchSampleSelect::InputWorkItem &item = work_items[item_index];
+    const string &filename = item.filename;
+
+    // `fit_activities_in_file` modifies the file handed to it, so work items that share a parsed
+    //  file each need their own copy.  Only one copy is alive at a time.
+    shared_ptr<SpecMeas> cached_file = item.source;
+    if( item.needs_private_copy && item.source )
+    {
+      cached_file = make_shared<SpecMeas>();
+      cached_file->uniqueCopyContents( *item.source );
+    }
 
     const BatchActivityFitResult fit_results
                  = fit_activities_in_file( exemplar_filename, exemplar_sample_nums,
-                                     cached_exemplar_n42, filename, cached_file, options );
-    
+                                     cached_exemplar_n42, filename, cached_file,
+                                     item.foreground_sample_numbers, options );
+
+    // Release our reference to the parsed input file now that it has been analyzed, so that a run
+    //  over many files doesnt hold every one of them in memory at once.
+    item.source.reset();
+    cached_file.reset();
+
     if( (fit_results.m_result_code == BatchActivityFitResult::ResultCode::CouldntOpenExemplar)
        || (fit_results.m_result_code == BatchActivityFitResult::ResultCode::CouldntOpenBackgroundFile) )
       throw runtime_error( fit_results.m_error_msg );
@@ -376,8 +409,8 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       cached_exemplar_n42 = fit_results.m_exemplar_file;
     
     for( const string &warn : fit_results.m_warnings )
-      warnings.push_back( "File '" + leaf_name + "': " + warn );
-    
+      warnings.push_back( "File '" + item.label + "': " + warn );
+
     if( !set_setup_info_to_summary_json && fit_results.m_fit_results )
     {
       std::shared_ptr<const DetectorPeakResponse> drf = options.drf_override;
@@ -400,7 +433,17 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     if( !exemplar_sample_nums.empty() )
       data["ExemplarSampleNumbers"] = vector<int>{begin(exemplar_sample_nums), end(exemplar_sample_nums)};
     data["Filepath"] = filename;
-    data["Filename"] = SpecUtils::filename( filename );
+    // `Filename` identifies this analysis, and matches the output files written for it; for a file
+    //  split into per-sample analyses it carries the same "_sampleN" infix the output files do.
+    //  `SourceFilename` is always the unmodified input file leaf name.
+    data["Filename"] = item.output_base_name;
+    data["SourceFilename"] = SpecUtils::filename( filename );
+    data["AnalysisLabel"] = item.label;
+    data["IsSplitFromMultiSampleFile"] = (work_items.size() > 1);
+    // Report the samples actually used, which are known even in `Auto` mode
+    if( !fit_results.m_foreground_sample_numbers.empty() )
+      data["ForegroundSampleNumbers"] = vector<int>{ begin(fit_results.m_foreground_sample_numbers),
+                                                     end(fit_results.m_foreground_sample_numbers) };
     data["ParentDir"] = SpecUtils::parent_path( filename );
     data["HasWarnings"] = !fit_results.m_warnings.empty();
     data["Warnings"] = fit_results.m_warnings;
@@ -455,13 +498,13 @@ void fit_activities_in_files( const std::string &exemplar_filename,
                           && fit_results.m_fit_results);
     if( success )
     {
-      cout << "Success analyzing '" << filename << "'!" << endl;
+      cout << "Success analyzing '" << item.label << "'!" << endl;
       assert( fit_results.m_fit_results );
       assert( fit_results.m_peak_fit_results && fit_results.m_peak_fit_results->measurement );
     }else
     {
-      cout << "Failure analyzing '" << filename << "': " << fit_results.m_error_msg << endl;
-      warnings.push_back( "Failed in analyzing '" + filename + "': " + fit_results.m_error_msg );
+      cout << "Failure analyzing '" << item.label << "': " << fit_results.m_error_msg << endl;
+      warnings.push_back( "Failed in analyzing '" + item.label + "': " + fit_results.m_error_msg );
     }
     
     data["Success"] = success;
@@ -511,7 +554,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
         if( !options.output_dir.empty() )
         {
           const string out_file
-                    = BatchInfoLog::suggested_output_report_filename( filename, tmplt, 
+                    = BatchInfoLog::suggested_output_report_filename( item.output_base_name, tmplt,
                                   BatchInfoLog::TemplateRenderType::ActShieldIndividual, options );
           
           if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
@@ -561,8 +604,8 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       const BatchPeak::BatchPeakFitResult &peak_fit_results = *fit_results.m_peak_fit_results;
       assert( peak_fit_results.measurement );
       
-      string outn42 = SpecUtils::append_path(options.output_dir, SpecUtils::filename(filename) );
-      if( !SpecUtils::iequals_ascii(SpecUtils::file_extension(filename), ".n42") )
+      string outn42 = SpecUtils::append_path(options.output_dir, item.output_base_name );
+      if( !SpecUtils::iequals_ascii(SpecUtils::file_extension(item.output_base_name), ".n42") )
         outn42 += ".n42";
       
       if( SpecUtils::is_file(outn42) && !options.overwrite_output_files )
@@ -580,7 +623,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     }//if( options.write_n42_with_results )
     
     if( !options.output_dir.empty() && options.create_json_output )
-      BatchInfoLog::write_json( options, warnings, filename, data );
+      BatchInfoLog::write_json( options, warnings, item.output_base_name, data );
 
     if( fit_results.m_peak_fit_results )
     {
@@ -610,12 +653,13 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       
       if( !options.output_dir.empty() && options.create_csv_output )
       {
-        const string file_ext = SpecUtils::file_extension(leaf_name);
+        string csv_base_name = item.output_base_name;
+        const string file_ext = SpecUtils::file_extension(csv_base_name);
         if( !file_ext.empty() )
-          leaf_name = leaf_name.substr(0, leaf_name.size() - file_ext.size());
-        
-        string outcsv = SpecUtils::append_path(options.output_dir, leaf_name) + "_peaks.CSV";
-        
+          csv_base_name = csv_base_name.substr(0, csv_base_name.size() - file_ext.size());
+
+        string outcsv = SpecUtils::append_path(options.output_dir, csv_base_name) + "_peaks.CSV";
+
         if( SpecUtils::is_file(outcsv) && !options.overwrite_output_files )
         {
           warnings.push_back( "Not writing '" + outcsv + "', as it would overwrite a file."
@@ -634,7 +678,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
             warnings.push_back( "Failed to open '" + outcsv + "', for writing.");
           }else
           {
-            PeakModel::write_peak_csv( output_csv, leaf_name, PeakModel::PeakCsvType::Full,
+            PeakModel::write_peak_csv( output_csv, csv_base_name, PeakModel::PeakCsvType::Full,
                                       fit_peaks, peak_fit_res.spectrum );
             cout << "Have written '" << outcsv << "'" << endl;
           }
@@ -643,29 +687,43 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       
       if( options.to_stdout )
       {
-        const string leaf_name = SpecUtils::filename(filename);
-        cout << "peaks for '" << leaf_name << "':" << endl;
-        PeakModel::write_peak_csv( cout, leaf_name, PeakModel::PeakCsvType::Full,
+        cout << "peaks for '" << item.label << "':" << endl;
+        PeakModel::write_peak_csv( cout, item.output_base_name, PeakModel::PeakCsvType::Full,
                                   fit_peaks, peak_fit_res.spectrum );
         cout << endl;
       }
 
       if( summary_results )
       {
-        const string leaf_name = SpecUtils::filename(filename);
         stringstream ss;
-        PeakModel::write_peak_csv( ss, leaf_name, PeakModel::PeakCsvType::Full,
+        PeakModel::write_peak_csv( ss, item.output_base_name, PeakModel::PeakCsvType::Full,
                                       fit_peaks, peak_fit_res.spectrum );
         summary_results->file_peak_csvs.back() = ss.str();
       }
+
+      if( options.concatenate_to_n42 && !options.output_dir.empty() && peak_fit_res.spectrum )
+      {
+        BatchPeak::ConcatRecord record;
+        record.source_file_path = filename;
+        record.sample_numbers = fit_results.m_foreground_sample_numbers;
+        record.spectrum = peak_fit_res.spectrum;
+        record.peaks = fit_peaks;
+        concat_records.push_back( record );
+      }//if( options.concatenate_to_n42 ... )
     }//if( fit_results.m_peak_fit_results )
     
     for( const pair<string,string> &key_val : spec_chart_js_and_css )
       data.erase(key_val.first);
     
     summary_json["Files"].push_back( data );
-  }//for( const string filename : files )
-  
+   }//for( loop over work items of this input file )
+  }//for( loop over input files )
+
+  // `Files` holds one entry per analysis performed; with multi-sample handling this may be more
+  //  entries than there were input files.
+  summary_json["NumInputFiles"] = static_cast<int>( files.size() );
+  summary_json["NumAnalyses"] = static_cast<int>( num_analyses );
+
   // Add any encountered errors to output summary JSON
   for( const string &warn : warnings )
     summary_json["Warnings"].push_back( warn );
@@ -725,6 +783,10 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   
   if( !options.output_dir.empty() && options.create_json_output )
     BatchInfoLog::write_json( options, warnings, "", summary_json );
+
+  // Create concatenated N42 file if requested
+  if( options.concatenate_to_n42 && !options.output_dir.empty() )
+    BatchPeak::write_concatenated_n42( concat_records, options, warnings );
   
   if( !warnings.empty() )
     cerr << endl << endl;
@@ -744,6 +806,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
                           std::shared_ptr<const SpecMeas> cached_exemplar_n42,
                           const std::string &filename,
                           std::shared_ptr<SpecMeas> specfile,
+                          std::set<int> requested_fore_samples,
                           const BatchActivityFitOptions &options )
 {
   //  TODO: allow specifying, not just in the exemplar N42.  Also note InterSpec defines a URL encoding for model as well
@@ -845,90 +908,49 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   }//if( !options.background_subtract_file.empty() )
   
   
-  // Find the sample number to use for either the foreground, or background measurement
+  // Find the sample number to use for either the foreground, or background measurement.
+  //  The actual classification lives in `BatchSampleSelect`, shared with `BatchPeak` and
+  //  `BatchRelActAuto`; this just keeps the previous behaviour of throwing on a null file.
   auto find_sample = []( shared_ptr<const SpecMeas> meas, const SpecUtils::SourceType wanted ) -> int {
-    // This logic is probably repeated in a number of places throughout InterSpec now...
     assert( (wanted == SpecUtils::SourceType::Foreground)
            || (wanted == SpecUtils::SourceType::Background) );
-    
+
     if( (wanted != SpecUtils::SourceType::Foreground)
            && (wanted != SpecUtils::SourceType::Background) )
     {
       throw std::logic_error( "Invalid src type" );
     }
-    
+
     if( !meas )
       throw runtime_error( "No SpecMeas passed in." );
-    
-    const vector<string> &detectors = meas->detector_names();
-    const set<int> &sample_nums = meas->sample_numbers();
-    
-    set<int> foreground_samples, background_samples;
-    
-    for( const int sample : sample_nums )
-    {
-      bool classified_sample_num = false;
-      for( const string &det : detectors )
-      {
-        auto m = meas->measurement( sample, det );
-        if( !m )
-          continue;
-        
-        switch( m->source_type() )
-        {
-          case SpecUtils::SourceType::IntrinsicActivity:
-          case SpecUtils::SourceType::Calibration:
-            break;
-            
-          case SpecUtils::SourceType::Background:
-            classified_sample_num = true;
-            background_samples.insert(sample);
-            break;
-            
-          case SpecUtils::SourceType::Foreground:
-          case SpecUtils::SourceType::Unknown:
-            classified_sample_num = true;
-            foreground_samples.insert(sample);
-            break;
-        }//switch( m->source_type() )
-        
-        if( classified_sample_num )
-          break;
-      }//for( const string &det : detectors )
-    }//for( const int sample : sample_nums )
-    
-    const set<int> &samples = (wanted == SpecUtils::SourceType::Foreground) ? foreground_samples 
-                                                                            : background_samples;
-    
-    // If a file only has a single sample in it, and its marked background, but we are requesting
-    //  foreground, use the single sample.  This happens, for example, when fitting peaks in a
-    //  background file, where the sole spectrum has been marked as background.
-    if( samples.empty()
-       && (wanted == SpecUtils::SourceType::Foreground)
-       && (background_samples.size() == 1) )
-    {
-      return *begin(background_samples);
-    }
-    
-    if( samples.size() != 1 )
-      throw runtime_error( "Sample number to use could not be uniquely identified." );
-    
-    return *begin(samples);
+
+    return (wanted == SpecUtils::SourceType::Foreground)
+              ? BatchSampleSelect::single_foreground_sample( *meas )
+              : BatchSampleSelect::single_background_sample( *meas );
   };//int find_sample(...)
-  
-  
+
+
   shared_ptr<const SpecUtils::Measurement> foreground;
   try
   {
-    const int sample_num = find_sample( specfile, SpecUtils::SourceType::Foreground );
-    
+    set<int> fore_samples = requested_fore_samples;
+    if( fore_samples.empty() )
+      fore_samples.insert( find_sample( specfile, SpecUtils::SourceType::Foreground ) );
+
     try
     {
-      vector<shared_ptr<const SpecUtils::Measurement>> meass = specfile->sample_measurements(sample_num);
-      if( meass.size() == 1 )
-        foreground = meass[0];
-      else
-        foreground = specfile->sum_measurements( {sample_num}, specfile->detector_names(), nullptr );
+      if( fore_samples.size() == 1 )
+      {
+        vector<shared_ptr<const SpecUtils::Measurement>> meass = specfile->sample_measurements( *begin(fore_samples) );
+        if( meass.size() == 1 )
+          foreground = meass[0];
+        else
+          foreground = specfile->sum_measurements( fore_samples, specfile->detector_names(), nullptr );
+      }else
+      {
+        foreground = specfile->sum_measurements( fore_samples, specfile->detector_names(), nullptr );
+      }
+
       if( !foreground )
         throw runtime_error( "Missing measurement." );
     }catch( std::exception &e )
@@ -937,9 +959,9 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
       result.m_result_code = BatchActivityFitResult::ResultCode::ForegroundSampleNumberUnderSpecified;
       return result;
     }//Try / catch get
-    
+
     result.m_foreground = foreground;
-    result.m_foreground_sample_numbers = set<int>{ sample_num };
+    result.m_foreground_sample_numbers = fore_samples;
     assert( result.m_foreground_file );
   }catch( std::exception &e )
   {
@@ -947,6 +969,10 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     result.m_result_code = BatchActivityFitResult::ResultCode::ForegroundSampleNumberUnderSpecified;
     return result;
   }// try / catch (find foreground)
+
+  // Make sure the peak fit below uses the samples we just resolved, rather than redundantly
+  //  auto-detecting (with a slightly different ladder) on its own.
+  foreground_sample_numbers = result.m_foreground_sample_numbers;
 
   
   set<int> background_sample_nums;

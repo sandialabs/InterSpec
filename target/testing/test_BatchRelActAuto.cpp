@@ -143,6 +143,7 @@ BOOST_AUTO_TEST_CASE( exemplar_only_happy_path )
       = BatchRelActAuto::run_on_file( exemplar, /*sample_nums=*/{},
                                        /*cached_exemplar=*/nullptr,
                                        input, /*cached_file=*/nullptr,
+                                       /*requested_fore_samples=*/{},
                                        options );
 
   BOOST_CHECK_MESSAGE( result.m_result_code == BatchRelActAuto::ResultCode::Success,
@@ -188,7 +189,7 @@ BOOST_AUTO_TEST_CASE( drf_override_changes_result )
   // Baseline (exemplar's embedded DRF)
   BatchRelActAuto::Options baseline_opts;
   const BatchRelActAuto::Result baseline
-      = BatchRelActAuto::run_on_file( exemplar, {}, nullptr, input, nullptr, baseline_opts );
+      = BatchRelActAuto::run_on_file( exemplar, {}, nullptr, input, nullptr, {}, baseline_opts );
   BOOST_REQUIRE( baseline.m_result_code == BatchRelActAuto::ResultCode::Success );
   const auto base_act = first_nuclide_rel_act( baseline.m_solution );
   BOOST_REQUIRE( base_act.first > 0.0 );
@@ -213,7 +214,7 @@ BOOST_AUTO_TEST_CASE( drf_override_changes_result )
   BatchRelActAuto::Options ov_opts;
   ov_opts.drf_override = drf;
   const BatchRelActAuto::Result overridden
-      = BatchRelActAuto::run_on_file( exemplar, {}, nullptr, input, nullptr, ov_opts );
+      = BatchRelActAuto::run_on_file( exemplar, {}, nullptr, input, nullptr, {}, ov_opts );
 
   BOOST_CHECK_MESSAGE( overridden.m_result_code == BatchRelActAuto::ResultCode::Success,
                        "DRF override solve failed: "
@@ -264,7 +265,7 @@ BOOST_AUTO_TEST_CASE( state_override_replaces_state )
   BatchRelActAuto::Options options;
   options.state_override = override_state;
   const BatchRelActAuto::Result result
-      = BatchRelActAuto::run_on_file( exemplar, {}, nullptr, input, nullptr, options );
+      = BatchRelActAuto::run_on_file( exemplar, {}, nullptr, input, nullptr, {}, options );
 
   BOOST_CHECK_MESSAGE( result.m_result_code == BatchRelActAuto::ResultCode::Success,
                        "State-override solve failed: "

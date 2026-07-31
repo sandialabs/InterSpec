@@ -23,12 +23,14 @@
 
 #include "InterSpec_config.h"
 
+#include <chrono>
 #include <fstream>
 #include <iostream>
-#include <chrono>
+#include <algorithm>
 
 #include <Wt/WMenu>
 #include <Wt/WServer>
+#include <Wt/WSelectionBox>
 #include <Wt/WGroupBox>
 #include <Wt/WGridLayout>
 #include <Wt/WPushButton>
@@ -40,10 +42,15 @@
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/HelpSystem.h"
 #include "InterSpec/BatchGuiWidget.h"
+#include "InterSpec/WarningWidget.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/BatchGuiAnaWidget.h"
 #include "InterSpec/BatchGuiInputFile.h"
+#include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/DirectorySelector.h"
 #include "InterSpec/FileDragUploadResource.h"
 
@@ -52,7 +59,9 @@ using namespace Wt;
 using namespace std;
 
 
-BatchGuiDialog::BatchGuiDialog( FileDragUploadResource *uploadResource, const Wt::WString &title )
+BatchGuiDialog::BatchGuiDialog( FileDragUploadResource *uploadResource,
+                                const bool allow_adding_open_files,
+                                const Wt::WString &title )
 : SimpleDialog( title ), m_widget( nullptr ), m_processBtn( nullptr )
 {
   addStyleClass( "BatchGuiDialog" );
@@ -64,7 +73,7 @@ BatchGuiDialog::BatchGuiDialog( FileDragUploadResource *uploadResource, const Wt
 
   contents()->setLayout( layout );
 
-  m_widget = new BatchGuiWidget( uploadResource );
+  m_widget = new BatchGuiWidget( uploadResource, allow_adding_open_files );
   layout->addWidget( m_widget, 0, 0 );
 
   m_processBtn = new WPushButton( WString::tr( "bgw-analyze-button" ), footer() );
@@ -126,16 +135,19 @@ BatchGuiDialog::~BatchGuiDialog()
   // The widget will be automatically deleted by Wt
 }
 
-BatchGuiDialog *BatchGuiDialog::createDialog( FileDragUploadResource *uploadResource )
+BatchGuiDialog *BatchGuiDialog::createDialog( FileDragUploadResource *uploadResource,
+                                              const bool allow_adding_open_files )
 {
   // WString title = WString::tr("bgw-dialog-title");
   WString title;
-  BatchGuiDialog *dialog = new BatchGuiDialog( uploadResource, title );
+  BatchGuiDialog *dialog = new BatchGuiDialog( uploadResource, allow_adding_open_files, title );
 
   return dialog;
 }
 
-BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WContainerWidget *parent )
+BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource,
+                                const bool allow_adding_open_files,
+                                Wt::WContainerWidget *parent )
 : Wt::WContainerWidget( parent ),
   m_uploadResource( uploadResource ),
   m_batch_type_menu( nullptr ),
@@ -143,7 +155,10 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   m_act_shield_ana_opts( nullptr ),
   m_peak_fit_opts( nullptr ),
   m_file_convert_opts( nullptr ),
+  m_input_files_holder( nullptr ),
   m_input_files_container( nullptr ),
+  m_load_open_file_btn( nullptr ),
+  m_allow_adding_open_files( allow_adding_open_files ),
   m_output_dir( nullptr ),
   m_input_status_error( nullptr ),
   m_can_do_analysis( false ),
@@ -203,7 +218,10 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   m_batch_type_menu->select( 0 );
   m_batch_type_menu->itemSelected().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
 
-  m_input_files_container = new WGroupBox( WString::tr( "bgw-input-files-label" ), this );
+  m_input_files_holder = new WContainerWidget( this );
+  m_input_files_holder->addStyleClass( "InputFilesHolder" );
+
+  m_input_files_container = new WGroupBox( WString::tr( "bgw-input-files-label" ), m_input_files_holder );
   m_input_files_container->addStyleClass( "InputFilesContainer" );
 
   m_input_files_container->doJavaScript( "BatchInputDropUploadSetup(" + m_input_files_container->jsRef() +
@@ -211,6 +229,23 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
                                          " '" +
                                          interspec->fileManager()->batchDragNDrop()->url() + "');" );
   doJavaScript( "setupOnDragEnterDom(['" + m_input_files_container->id() + "']);" );
+
+  // A sibling of the input-files box, not a child of it: the box has a click handler that opens a
+  //  file picker, and it scrolls, so an absolutely positioned child would scroll out of view.
+  m_load_open_file_btn = new WPushButton( WString::tr( "bgw-load-open-file-btn" ), m_input_files_holder );
+  m_load_open_file_btn->addStyleClass( "LinkBtn LoadOpenFileBtn" );
+  m_load_open_file_btn->clicked().connect( this, &BatchGuiWidget::handleLoadOpenFileRequest );
+  m_load_open_file_btn->clicked().preventPropagation();
+  m_load_open_file_btn->hide();
+  HelpSystem::attachToolTipOn( m_load_open_file_btn, WString::tr( "bgw-tt-load-open-file-btn" ),
+                               UserPreferences::preferenceValue<bool>( "ShowTooltips", interspec ) );
+
+  SpectraFileModel * const file_model = interspec->fileManager() ? interspec->fileManager()->model() : nullptr;
+  if( file_model )
+  {
+    file_model->rowsInserted().connect( this, &BatchGuiWidget::updateLoadOpenFileLinkVisibility );
+    file_model->rowsRemoved().connect( this, &BatchGuiWidget::updateLoadOpenFileLinkVisibility );
+  }
 
   m_output_dir = new DirectorySelector( this );
   m_output_dir->setLabelTxt( WString::tr( "bgw-output-dir-label" ) );
@@ -253,6 +288,8 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource, Wt::WCon
   //WServer::instance()->schedule( 1, wApp->sessionId(), worker, fall_back );
 
   handleFileDrop( "", "" );
+
+  updateLoadOpenFileLinkVisibility();
 
   wApp->triggerUpdate();
 }// BatchGuiWidget constructor
@@ -305,11 +342,224 @@ void BatchGuiWidget::addInputFiles( const std::vector<std::tuple<std::string, st
   wApp->triggerUpdate();
 }// void BatchGuiWidget::addInputFiles()
 
+void BatchGuiWidget::addInMemoryFiles( const std::vector<std::tuple<std::string,std::string,std::shared_ptr<SpecMeas>>> &files )
+{
+  InterSpec * const interspec = InterSpec::instance();
+
+  // The tool state of the current foreground is only written into its `SpecMeas` when asked, so
+  //  make sure it is up-to-date before we hold onto the file.  These are no-ops for any file that
+  //  isnt the current foreground.
+  if( interspec )
+  {
+    interspec->saveShieldingSourceModelToForegroundSpecMeas();
+#if ( USE_REL_ACT_TOOL )
+    interspec->saveRelActManualStateToForegroundSpecMeas();
+    interspec->saveRelActAutoStateToForegroundSpecMeas();
+#endif
+  }//if( interspec )
+
+  vector<shared_ptr<const SpecMeas>> already_added = currentInputSpecMeas();
+
+  int num_initial_files = m_input_files_container->count();
+
+  for( const tuple<string,string,shared_ptr<SpecMeas>> &file : files )
+  {
+    const string &display_name = std::get<0>( file );
+    const string &path_to_file = std::get<1>( file );
+    const shared_ptr<SpecMeas> &spec_meas = std::get<2>( file );
+
+    if( !spec_meas )
+      continue;
+
+    // Adding the same file twice would just analyze it twice
+    if( std::find( begin(already_added), end(already_added), spec_meas ) != end(already_added) )
+      continue;
+
+    const BatchGuiInputSpectrumFile::ShowPreviewOption show_preview
+              = (num_initial_files < sm_max_spec_file_previews)
+                    ? BatchGuiInputSpectrumFile::ShowPreviewOption::Show
+                    : BatchGuiInputSpectrumFile::ShowPreviewOption::DontShow;
+
+    BatchGuiInputSpectrumFile *input_file =
+      new BatchGuiInputSpectrumFile( display_name, path_to_file, spec_meas, show_preview,
+                                     m_input_files_container );
+    input_file->preview_created_signal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
+    input_file->remove_self_request().connect(
+      boost::bind( &BatchGuiWidget::handle_remove_input_file, this, boost::placeholders::_1 ) );
+
+    already_added.push_back( spec_meas );
+    num_initial_files += 1;
+  }//for( loop over files to add )
+
+  updateCanDoAnalysis();
+  updateLoadOpenFileLinkVisibility();
+
+  wApp->triggerUpdate();
+}// void BatchGuiWidget::addInMemoryFiles(...)
+
+
+std::vector<std::shared_ptr<const SpecMeas>> BatchGuiWidget::currentInputSpecMeas() const
+{
+  vector<shared_ptr<const SpecMeas>> answer;
+
+  for( Wt::WWidget *child : m_input_files_container->children() )
+  {
+    BatchGuiInputSpectrumFile * const input_file = dynamic_cast<BatchGuiInputSpectrumFile *>( child );
+    const shared_ptr<const SpecMeas> meas = input_file ? input_file->spec_meas() : nullptr;
+    if( meas )
+      answer.push_back( meas );
+  }//for( Wt::WWidget *child : m_input_files_container->children() )
+
+  return answer;
+}// std::vector<std::shared_ptr<const SpecMeas>> BatchGuiWidget::currentInputSpecMeas() const
+
+
+void BatchGuiWidget::setMultiSampleHandling( const BatchSampleSelect::MultiSampleHandling handling )
+{
+  for( int index = 0; index < m_options_stack->count(); ++index )
+  {
+    BatchGuiAnaWidget * const ana_widget = dynamic_cast<BatchGuiAnaWidget *>( m_options_stack->widget(index) );
+    if( ana_widget )
+      ana_widget->setMultiSampleHandling( handling );
+  }
+}// void BatchGuiWidget::setMultiSampleHandling(...)
+
+
+size_t BatchGuiWidget::numAddableOpenFiles() const
+{
+  InterSpec * const interspec = InterSpec::instance();
+  SpecMeasManager * const manager = interspec ? interspec->fileManager() : nullptr;
+  SpectraFileModel * const model = manager ? manager->model() : nullptr;
+  if( !model )
+    return 0;
+
+  const vector<shared_ptr<const SpecMeas>> already_added = currentInputSpecMeas();
+
+  size_t nadd = 0;
+  for( int row = 0; row < model->rowCount(); ++row )
+  {
+    const shared_ptr<SpectraFileHeader> header = model->fileHeader( row );
+    if( !header )
+      continue;
+
+    // A file thats been flushed from memory cant be one we are holding a pointer to, so we dont
+    //  need to re-parse it just to answer this.
+    const shared_ptr<SpecMeas> meas = header->measurementIfInMemory();
+    if( meas && (std::find( begin(already_added), end(already_added), meas ) != end(already_added)) )
+      continue;
+
+    nadd += 1;
+  }//for( int row = 0; row < model->rowCount(); ++row )
+
+  return nadd;
+}// size_t BatchGuiWidget::numAddableOpenFiles() const
+
+
+void BatchGuiWidget::updateLoadOpenFileLinkVisibility()
+{
+  if( !m_load_open_file_btn )
+    return;
+
+  m_load_open_file_btn->setHidden( !m_allow_adding_open_files || (numAddableOpenFiles() == 0) );
+}// void BatchGuiWidget::updateLoadOpenFileLinkVisibility()
+
+
+void BatchGuiWidget::handleLoadOpenFileRequest()
+{
+  InterSpec * const interspec = InterSpec::instance();
+  SpecMeasManager * const manager = interspec ? interspec->fileManager() : nullptr;
+  SpectraFileModel * const model = manager ? manager->model() : nullptr;
+  if( !model )
+    return;
+
+  const vector<shared_ptr<const SpecMeas>> already_added = currentInputSpecMeas();
+
+  SimpleDialog *dialog = new SimpleDialog( WString::tr( "bgw-pick-open-file-title" ) );
+  dialog->addStyleClass( "BatchOpenFilePickerDialog" );
+
+  // The headers themselves, parallel to the entries of the selection box.  Holding these rather
+  //  than model row indices means a file being closed while the picker is up cant shift the rows
+  //  out from under us.
+  auto headers = make_shared<vector<shared_ptr<SpectraFileHeader>>>();
+
+  WSelectionBox *selection = new WSelectionBox( dialog->contents() );
+  selection->addStyleClass( "BatchOpenFilePicker" );
+  selection->setSelectionMode( Wt::ExtendedSelection );
+  selection->setVerticalSize( 8 );
+
+  for( int row = 0; row < model->rowCount(); ++row )
+  {
+    const shared_ptr<SpectraFileHeader> header = model->fileHeader( row );
+    if( !header )
+      continue;
+
+    const shared_ptr<SpecMeas> meas = header->measurementIfInMemory();
+    if( meas && (std::find( begin(already_added), end(already_added), meas ) != end(already_added)) )
+      continue;
+
+    selection->addItem( header->displayName() );
+    headers->push_back( header );
+  }//for( int row = 0; row < model->rowCount(); ++row )
+
+  if( headers->empty() )
+  {
+    delete selection;
+    new WText( WString::tr( "bgw-pick-open-file-none" ), dialog->contents() );
+    dialog->addButton( WString::tr( "Okay" ) );
+    return;
+  }//if( headers->empty() )
+
+  new WText( WString::tr( "bgw-pick-open-file-msg" ), dialog->contents() );
+
+  dialog->addButton( WString::tr( "Cancel" ) );
+  WPushButton *add_btn = dialog->addButton( WString::tr( "bgw-pick-open-file-add" ) );
+  add_btn->clicked().connect( boost::bind( &BatchGuiWidget::handleAddOpenFiles, this,
+                                           selection, headers ) );
+}// void BatchGuiWidget::handleLoadOpenFileRequest()
+
+
+void BatchGuiWidget::handleAddOpenFiles( Wt::WSelectionBox *selection,
+                                         std::shared_ptr<std::vector<std::shared_ptr<SpectraFileHeader>>> headers )
+{
+  if( !selection || !headers )
+    return;
+
+  vector<tuple<string,string,shared_ptr<SpecMeas>>> to_add;
+
+  const set<int> selected = selection->selectedIndexes();
+  for( const int index : selected )
+  {
+    if( (index < 0) || (index >= static_cast<int>(headers->size())) )
+      continue;
+
+    const shared_ptr<SpectraFileHeader> header = (*headers)[index];
+    if( !header )
+      continue;
+
+    try
+    {
+      // May re-read the file from disk, if it has been flushed from memory.
+      const shared_ptr<SpecMeas> meas = header->parseFile();
+      if( meas )
+        to_add.push_back( make_tuple( header->displayName().toUTF8(), string(), meas ) );
+    }catch( std::exception &e )
+    {
+      passMessage( WString::tr( "bgw-pick-open-file-err" ).arg( header->displayName() ).arg( e.what() ),
+                   WarningWidget::WarningMsgHigh );
+    }//try / catch
+  }//for( const int index : selected )
+
+  if( !to_add.empty() )
+    addInMemoryFiles( to_add );
+}// void BatchGuiWidget::handleAddOpenFiles(...)
+
+
 void BatchGuiWidget::handle_remove_input_file( BatchGuiInputSpectrumFile *input )
 {
   delete input;
 
   updateCanDoAnalysis();
+  updateLoadOpenFileLinkVisibility();
 }// void handle_remove_input_file( BatchGuiInputSpectrumFile *input )
 
 void BatchGuiWidget::updateCanDoAnalysis()

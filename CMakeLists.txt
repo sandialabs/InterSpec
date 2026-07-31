@@ -363,6 +363,7 @@ set(sources
     src/BatchPeak.cpp
     src/BatchActivity.cpp
     src/BatchInfoLog.cpp
+    src/BatchSampleSelect.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -489,6 +490,7 @@ set(headers
     InterSpec/BatchPeak.h
     InterSpec/BatchActivity.h
     InterSpec/BatchInfoLog.h
+    InterSpec/BatchSampleSelect.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)
