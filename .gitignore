@@ -57,6 +57,11 @@ XcodeFiles
 build
 build_*
 build-*
+# ...but the checked-in build scripts share that prefix.  Without this exception a new
+#  target/electron/build_*.sh is silently left out of commits, and CI then fails somewhere far
+#  from the cause.  (The existing ones only survive because they were tracked before the rule.)
+!target/**/build_*.sh
+!target/**/build_*.bat
 release-builds*
 package-lock.json
 node_modules

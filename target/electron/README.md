@@ -135,15 +135,25 @@ cd dist/linux-unpacked/
 
 
 ## Using Docker to build Electron-based InterSpec package
-These are the instructions for building the Electron-based InterSpec package for Linux, using the Python Many Linux docker image, and the `FetchContent` option of the CMake build system to compile boost and Wt.
+These are the instructions for building the Electron-based InterSpec package for Linux, using the Python Many Linux docker image.
 
-The work is split in two, which is also what CI does (see `.github/workflows/build_app.yml`):
+The work is split in three, which is also what CI does (see `.github/workflows/build_app.yml`):
 
-1. **Compile inside the manylinux container.** That image exists only because we need to build
-   against an old glibc; it is not a good place to build Debian/RPM packages.
-2. **Package on a normal Linux host**, where `dpkg`, `rpm`, `fakeroot` and a current Node are easy
+1. **Build a dependency prefix inside the manylinux container.** boost, zlib, Wt, Eigen and Ceres
+   are compiled once and installed into a prefix directory. It must be built in the same container
+   the app is compiled in, because everything in it is linked into `InterSpecAddOn.node` and so has
+   to come from the same gcc-toolset / glibc-2.28 world.
+2. **Compile inside the manylinux container**, against that prefix. The image exists only because
+   we need to build against an old glibc; it is not a good place to build Debian/RPM packages.
+3. **Package on a normal Linux host**, where `dpkg`, `rpm`, `fakeroot` and a current Node are easy
    to get. electron-builder downloads the prebuilt Electron runtime itself, so the container does
    not need it.
+
+Step 1 is optional: pass three arguments instead of four to step 2 and CMake's `FetchContent` will
+download and build the dependencies into the build directory instead. That needs no prior setup but
+adds roughly 25 minutes to *every* build, whereas a prefix is built once and reused. CI caches the
+prefix, which is why it caches nothing else about the C++ build — see the comments in
+`build_app.yml` for why caching the *build directory* turned out to be worthless.
 
 ### Building using script with manylinux container
 ```bash
@@ -154,12 +164,20 @@ cd build_interspec
 git clone --recursive git@github.com:sandialabs/InterSpec.git ./InterSpec_code
 mkdir build_electron
 mkdir build_working_dir
+mkdir deps_build
+mkdir deps_prefix
 
-# Step 1: compile.  Leaves the app payload in build_electron/app, and fails the build if the
+# Step 1: build the dependency prefix.  Only needed once - re-use `deps_prefix` for later builds,
+#  and delete `deps_build` afterwards (it is several GB of scratch).  Note the `bash -lc`: a login
+#  shell is what puts gcc-toolset-14 on PATH in this image.
+docker run --rm -it -v `pwd`/InterSpec_code:/interspec -v `pwd`/deps_build:/deps_build -v `pwd`/deps_prefix:/deps_prefix quay.io/pypa/manylinux_2_28_x86_64:latest bash -lc '/interspec/target/electron/build_linux_deps_from_docker.sh /interspec /deps_build /deps_prefix'
+
+# Step 2: compile.  Leaves the app payload in build_electron/app, and fails the build if the
 #  binaries would need a newer glibc/libstdc++ than we support (see check_elf_compat.py).
-docker run --rm -it -v `pwd`/InterSpec_code:/interspec -v `pwd`/build_electron/:/build_app -v `pwd`/build_working_dir:/build_working_dir quay.io/pypa/manylinux_2_28_x86_64:latest /interspec/target/electron/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir
+#  Drop the trailing `/deps_prefix` argument to use FetchContent instead of the prefix.
+docker run --rm -it -v `pwd`/InterSpec_code:/interspec -v `pwd`/build_electron/:/build_app -v `pwd`/build_working_dir:/build_working_dir -v `pwd`/deps_prefix:/deps_prefix quay.io/pypa/manylinux_2_28_x86_64:latest /interspec/target/electron/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir /deps_prefix
 
-# Step 2: package.  Needs dpkg-deb, rpmbuild and fakeroot available.
+# Step 3: package.  Needs dpkg-deb, rpmbuild and fakeroot available.
 cd InterSpec_code/target/electron
 npm install --ignore-scripts
 npx electron-builder --linux -c.directories.app=/tmp/build_interspec/build_electron/app
@@ -168,6 +186,14 @@ npx electron-builder --linux -c.directories.app=/tmp/build_interspec/build_elect
 
 Note the `--ignore-scripts`: `package.json` has an `install` script of `cmake-js compile`, which
 would otherwise try to build the C++ again on the host.
+
+`build_linux_deps_from_docker.sh` is a thin wrapper: it checks the container has the toolchain it
+expects (it deliberately installs nothing, so a missing tool is an error rather than a silently
+different compiler), runs `target/patches/dep_build_linux.sh`, then verifies the resulting prefix
+and writes a `.interspec_deps_complete` sentinel recording what built it. Step 2 refuses a prefix
+without that sentinel. If you want a prefix outside a container — for ordinary development rather
+than for building a redistributable package — run `target/patches/dep_build_linux.sh` directly; see
+`target/patches/README.md`.
 
 ### Building manually using a manylinux container
 ```bash

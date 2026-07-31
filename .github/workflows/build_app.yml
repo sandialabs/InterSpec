@@ -184,6 +184,14 @@ jobs:
     # that run on a glibc 2.28 distro.  Everything after that - packaging into .deb/.rpm/AppImage/
     # tar.gz, and the install-and-launch smoke tests - happens on the runner itself, where dpkg,
     # rpm, fakeroot, xvfb and a current Node are already available.
+    env:
+      # One place, used by both `docker run`s and by the dependency cache key.  Everything in the
+      # cached prefix gets linked into InterSpecAddOn.node, so the prefix is ABI-bound to this
+      # image's gcc-toolset - which is why the image reference is part of the key.  The tag floats
+      # today; pinning a dated tag here would make the prefix reproducible, and since the string is
+      # in the key, changing it rebuilds rather than silently reusing.
+      MANYLINUX_IMAGE: quay.io/pypa/manylinux_2_28_x86_64
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -191,58 +199,169 @@ jobs:
           path: ${{ github.workspace }}/InterSpec_code
           submodules: true # Recursively checkout submodules
 
-      # The `-v2-` salt is load-bearing.  The previous keys hashed paths that did not exist, so
-      # hashFiles returned "" and every run saved under the bare prefix (e.g. "Linux-build-cpp-").
-      # Once the keys were fixed, the new hashed key missed and `restore-keys` prefix-matched
-      # those old caches - restoring a CMakeCache.txt that still carried
-      # `-static-libgcc -static-libstdc++` and bringing issue #51 straight back.  Bumping the salt
-      # makes pre-fix caches unreachable; bump it again after any change that could poison a
-      # cached build directory.
-      - name: Cache npm dependencies
-        uses: actions/cache@v4
-        with:
-          path: ${{runner.temp}}/build_linux_working_dir
-          key: ${{ runner.os }}-build-npm-v2-${{ hashFiles('InterSpec_code/target/electron/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-build-npm-v2-
-
-      - name: Cache c++ dependencies
-        uses: actions/cache@v4
-        with:
-          path: ${{runner.temp}}/build_linux_electron
-          key: ${{ runner.os }}-build-cpp-v2-${{ hashFiles('InterSpec_code/cmake/FetchInterSpecDeps.cmake') }}
-          restore-keys: |
-            ${{ runner.os }}-build-cpp-v2-
-
-      - name: Make build directories
+      - name: Define build paths
         shell: bash
-        working-directory: ${{runner.temp}}
         run: |
-          mkdir -p build_linux_electron
-          mkdir -p build_linux_working_dir
+          {
+            echo "DEPS_BUILD_DIR=${RUNNER_TEMP}/linux_deps_build"
+            echo "DEPS_PREFIX_DIR=${RUNNER_TEMP}/linux_deps_prefix"
+            echo "CCACHE_HOST_DIR=${RUNNER_TEMP}/linux_ccache"
+          } >> "${GITHUB_ENV}"
+
+      - name: Prepare directories
+        shell: bash
+        run: |
+          mkdir -p "${DEPS_BUILD_DIR}" "${DEPS_PREFIX_DIR}" "${CCACHE_HOST_DIR}" \
+                   "${{ runner.temp }}/build_linux_electron" \
+                   "${{ runner.temp }}/build_linux_working_dir"
+
+      # ------------------------------------------------------------------------------------------
+      # We cache the dependency *prefix*, not a build directory.
+      # ------------------------------------------------------------------------------------------
+      - name: Compute the dependency cache key
+        id: deps-key
+        shell: bash
+        env:
+          DEPS_HASH: ${{ hashFiles('InterSpec_code/target/patches/dep_build_linux.sh', 'InterSpec_code/target/patches/wt/3.7.1/NormalBuild/wt_3.7.1_git.patch', 'InterSpec_code/target/electron/build_linux_deps_from_docker.sh') }}
+        run: |
+          set -euo pipefail
+          # hashFiles() silently ignores patterns that match nothing, so check each file exists.
+          # This list must stay in sync with the DEPS_HASH patterns above.
+          for f in target/patches/dep_build_linux.sh \
+                   target/patches/wt/3.7.1/NormalBuild/wt_3.7.1_git.patch \
+                   target/electron/build_linux_deps_from_docker.sh ; do
+            if [ ! -f "${GITHUB_WORKSPACE}/InterSpec_code/${f}" ]; then
+              echo "::error::${f} does not exist, so the cache key does not cover what it claims to."
+              exit 1
+            fi
+          done
+          if [ -z "${DEPS_HASH}" ]; then
+            echo "::error::hashFiles() matched nothing; the dependency cache key would be constant."
+            exit 1
+          fi
+          KEY="linux-deps-v1-manylinux_2_28_x86_64-${DEPS_HASH}"
+          echo "key=${KEY}" >> "${GITHUB_OUTPUT}"
+          echo "Dependency cache key: ${KEY}"
+
+      - name: Restore the dependency prefix
+        id: cache-linux-deps
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DEPS_PREFIX_DIR }}
+          key: ${{ steps.deps-key.outputs.key }}
+          # Deliberately no restore-keys - see rule 2 above.
+
+      - name: Build the dependency prefix in Docker
+        if: steps.cache-linux-deps.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "${{ github.workspace }}/InterSpec_code:/interspec:ro" \
+            -v "${DEPS_BUILD_DIR}:/deps_build" \
+            -v "${DEPS_PREFIX_DIR}:/deps_prefix" \
+            "${MANYLINUX_IMAGE}" \
+            bash -lc '/interspec/target/electron/build_linux_deps_from_docker.sh /interspec /deps_build /deps_prefix'
+          # The container runs as root; both the cache save and the compile step's bind mount need
+          # the runner user to own this.
+          sudo chown -R "$(id -u):$(id -g)" "${DEPS_PREFIX_DIR}"
+
+      # Runs on a cache hit as well as a miss, so a bad *restore* is caught too - the one thing
+      # gating the save cannot do for us.  Also prints the prefix's provenance (git sha, compiler,
+      # cmake version, script hashes), so "which prefix am I linking against?" is answerable from
+      # the run log.
+      - name: Verify the dependency prefix
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f "${DEPS_PREFIX_DIR}/.interspec_deps_complete" ]; then
+            echo "::error::${DEPS_PREFIX_DIR} has no completion sentinel - it is not a usable prefix."
+            ls -la "${DEPS_PREFIX_DIR}" || true
+            exit 1
+          fi
+          echo "### prefix provenance ###"
+          cat "${DEPS_PREFIX_DIR}/.interspec_deps_complete"
+          du -sh "${DEPS_PREFIX_DIR}"
+
+      - name: Save the dependency prefix
+        # Implicitly `if: success()`, so a failed dependency build or a failed verification never
+        # gets committed to the cache.
+        if: steps.cache-linux-deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DEPS_PREFIX_DIR }}
+          key: ${{ steps.deps-key.outputs.key }}
+
+      # Several GB of boost/Wt/Ceres build trees that nothing downstream reads.  electron-builder
+      # and the .deb/.rpm/AppImage smoke tests later in this job want the disk back.
+      - name: Reclaim the dependency build directory
+        if: always() && steps.cache-linux-deps.outputs.cache-hit != 'true'
+        shell: bash
+        run: sudo rm -rf "${DEPS_BUILD_DIR}"
+
+      # ccache covers only InterSpec's own objects, and based on file contents hash, not modification dates like make
+      - name: Restore ccache
+        id: cache-linux-ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CCACHE_HOST_DIR }}
+          key: linux-ccache-v1-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            linux-ccache-v1-${{ github.sha }}-
+            linux-ccache-v1-
 
       # Compiles the C++ and leaves the app payload in /build_app/app.  Also runs
       # target/electron/linux/check_elf_compat.py, which fails the build if the binaries would
       # need a newer glibc/libstdc++ than we advertise, or if libstdc++ got statically linked
       # again (the cause of https://github.com/sandialabs/InterSpec/issues/51).
+      #
+      # The prefix is mounted read-only, and at the same container path (/deps_prefix) it was built
+      # at, so nothing here can mutate the cached artifact and no absolute path baked into it can
+      # dangle.
       - name: Compile in Docker
+        id: compile
         shell: bash
         env:
           LEAFLET_KEY: ${{ secrets.LEAFLET_KEY }}
         run: |
+          set -euo pipefail
           docker run --rm \
             -v "${{ github.workspace }}/InterSpec_code:/interspec" \
             -v "${{ runner.temp }}/build_linux_electron:/build_app" \
             -v "${{ runner.temp }}/build_linux_working_dir:/build_working_dir" \
+            -v "${DEPS_PREFIX_DIR}:/deps_prefix:ro" \
+            -v "${CCACHE_HOST_DIR}:/ccache" \
             -e LEAFLET_KEY \
-            quay.io/pypa/manylinux_2_28_x86_64 \
-            bash -lc 'echo "Running Script from within docker"; /interspec/target/electron/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir'
-          # The container runs as root, so everything it wrote to the bind mounts is root-owned.
-          # Later steps (writing the SBOM into the app dir, saving the cache) run as the runner
-          # user and would otherwise hit permission errors.
+            -e CCACHE_DIR=/ccache \
+            -e CCACHE_MAXSIZE=1500M \
+            -e CCACHE_COMPILERCHECK=content \
+            "${MANYLINUX_IMAGE}" \
+            bash -lc 'echo "Running Script from within docker"; /interspec/target/electron/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir /deps_prefix'
+
+      # The container runs as root, so everything it wrote to the bind mounts is root-owned.  Later
+      # steps (writing the SBOM into the app dir, saving the ccache) run as the runner user and
+      # would otherwise hit permission errors.  This is its own `always()` step rather than a line
+      # at the end of the compile: when the compile fails is precisely when we still want to save
+      # the ccache, and that cannot read a root-owned directory.
+      - name: Take ownership of what the container wrote
+        if: always() && steps.compile.outcome != 'skipped'
+        shell: bash
+        run: |
           sudo chown -R "$(id -u):$(id -g)" \
             "${{ runner.temp }}/build_linux_electron" \
-            "${{ runner.temp }}/build_linux_working_dir"
+            "${{ runner.temp }}/build_linux_working_dir" \
+            "${CCACHE_HOST_DIR}"
+
+      # Save even when the compile failed: a ccache is content-addressed, so whatever it managed to
+      # cache is still valid and makes the retry cheap.  But only if the compile actually ran - an
+      # empty ccache saved after an earlier failure would be the newest match for the
+      # `linux-ccache-v1-` restore-key and would shadow a good one on the next run.
+      - name: Save ccache
+        if: always() && steps.compile.outcome != 'skipped'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CCACHE_HOST_DIR }}
+          key: linux-ccache-v1-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
 
       - name: Set up Node for packaging
         uses: actions/setup-node@v4
