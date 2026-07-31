@@ -12,7 +12,8 @@ InterSpec can also be built as a stand-alone (e.g., no Internet connection neces
 
 # Getting Started
 For executable installation:
-- Windows, Linux, macOS: download from the [releases tab](https://github.com/sandialabs/interspec/releases)
+- Windows, macOS: download from the [releases tab](https://github.com/sandialabs/interspec/releases)
+- Linux: download from the [releases tab](https://github.com/sandialabs/interspec/releases) - install the `.deb` (Debian/Ubuntu/Mint) or `.rpm` (Fedora/RHEL/openSUSE) if you can, since those add InterSpec to your applications menu and register spectrum-file and `interspec://` associations. The `.AppImage` needs no install or root, and the `.tar.gz` is there for manual/portable installs. Requires `glibc >= 2.28` and `libstdc++6 >= 8` (Ubuntu 20.04+, RHEL 8+, Debian 11+, Fedora 30+).
 - iPhone/iPad: [iOS App Store](https://itunes.apple.com/us/app/interspec-radiation-analysis/id1447080767?ls=1&mt=8)
 - Android phones and tablets: [Android Google Play Store](https://play.google.com/store/apps/details?id=gov.sandia.interspec)
 - From source: see the [Building From Source](https://github.com/sandialabs/InterSpec#building-from-source).

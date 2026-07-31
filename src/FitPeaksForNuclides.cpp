@@ -5694,7 +5694,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
               RelActCalcAuto::FloatingPeak fp;
               fp.energy = p->mean();
               fp.release_fwhm = false;
-              fp.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::ObservedInSpectrum;
+              // Known (not ObservedInSpectrum) so the bystander tracks the fitted energy-cal
+              //  adjustment like the source peaks - see the ExistingPeaksAsFreePeak path below.
+              fp.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::Known;
               options.floating_peaks.push_back( fp );
 
               default_mode_bystander_peaks.emplace_back( p, p->mean() );
@@ -6155,10 +6157,18 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       }else
       {
         // Bystander peak: add as a FloatingPeak so the fit can account for it.
+        // Mark it Known (not ObservedInSpectrum) so its mean tracks the energy-cal adjustment the
+        //  same way the source peaks do.  ObservedInSpectrum peaks are pinned in the original
+        //  calibration and skip the adjustment during fitting, but the fitted peaks are still
+        //  translated back to the original cal afterwards - so when the fit finds a non-zero
+        //  energy-cal shift the bystander desyncs from the source peaks by that shift, splitting a
+        //  strong line into an overlapping (individually-insignificant) doublet.  Using the
+        //  observed mean as the Known reference energy keeps it aligned (the adjustment applied to
+        //  observed-vs-true differs only to second order).
         RelActCalcAuto::FloatingPeak fp;
         fp.energy = peak_energy;
         fp.release_fwhm = false;
-        fp.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::ObservedInSpectrum;
+        fp.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::Known;
         options.floating_peaks.push_back( fp );
 
         existing_peaks_added_as_floating.emplace_back( peak, peak_energy );

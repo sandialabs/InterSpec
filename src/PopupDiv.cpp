@@ -1060,8 +1060,14 @@ PopupDivMenuItem *PopupDivMenu::addWidget( Wt::WWidget *widget,
     WCheckBox *cb = static_cast<WCheckBox *>( widget );
     if( cb )
     {
+      // The ordinary native item is removed asynchronously. Invalidate its target before losing
+      // our bridge pointer so it cannot validate/click against this Wt item in the interim.
+      if( item->m_nsmenuitemtarget )
+        invalidateOsxMenuItemTarget( item->m_nsmenuitemtarget );
       removeOsxMenuItem( item->m_nsmenuitem, m_nsmenu );
-      item->m_nsmenuitem = addOsxCheckableMenuItem( m_nsmenu, cb, item );
+      item->m_nsmenuitemtarget = nullptr;
+      item->m_nsmenuitem = addOsxCheckableMenuItem( m_nsmenu, cb, item,
+                                                    &item->m_nsmenuitemtarget );
     }else
     {
       cerr << "PopupDivMenu::addWidget: Unsuppored Widget type on OS X" << endl;
@@ -1121,7 +1127,8 @@ PopupDivMenuItem *PopupDivMenu::insertMenuItem( const int index,
 #if(USE_OSX_NATIVE_MENU)
   if( m_nsmenu )
   {
-    item->m_nsmenuitem = insertOsxMenuItem( m_nsmenu, item, index );
+    item->m_nsmenuitem = insertOsxMenuItem( m_nsmenu, item, index,
+                                           &item->m_nsmenuitemtarget );
     item->m_nsmenu = m_nsmenu;
     item->setData( item->m_nsmenuitem );
   }
@@ -1252,6 +1259,7 @@ PopupDivMenuItem::PopupDivMenuItem( const Wt::WString &text,
 #if( USE_OSX_NATIVE_MENU )
    , m_nsmenu( 0 )
    , m_nsmenuitem( 0 )
+   , m_nsmenuitemtarget( 0 )
 #endif
 {
   WAnchor *a = anchor();
@@ -1266,6 +1274,10 @@ PopupDivMenuItem::PopupDivMenuItem( const Wt::WString &text,
 PopupDivMenuItem::~PopupDivMenuItem()
 {
 #if( USE_OSX_NATIVE_MENU )
+  // Invalidate the NSMenuItem's Wt-bound callbacks synchronously, BEFORE this widget's memory is
+  // freed, so validation/actions safely no-op while AppKit removes the native item asynchronously.
+  if( m_nsmenuitemtarget )
+    invalidateOsxMenuItemTarget( m_nsmenuitemtarget );
   if( m_nsmenu && m_nsmenuitem )
     removeOsxMenuItem( m_nsmenuitem, m_nsmenu );
 #endif
@@ -1291,6 +1303,22 @@ void PopupDivMenuItem::setHidden( bool hidden, const Wt::WAnimation &animation )
   WMenuItem::setHidden( hidden, animation );
   if( m_nsmenuitem )
     setOsxMenuItemHidden( m_nsmenuitem, hidden );
+}
+
+void PopupDivMenuItem::setDisabled( bool disabled )
+{
+  WMenuItem::setDisabled( disabled );
+  // Push the new enabled state to the native menu item's Target so validateMenuItem (AppKit thread)
+  // reflects it without having to dereference this widget.
+  if( m_nsmenuitemtarget )
+    setOsxMenuItemTargetEnabled( m_nsmenuitemtarget, isEnabled() );
+}
+
+void PopupDivMenuItem::propagateSetEnabled( bool enabled )
+{
+  WMenuItem::propagateSetEnabled( enabled );
+  if( m_nsmenuitemtarget )
+    setOsxMenuItemTargetEnabled( m_nsmenuitemtarget, isEnabled() );
 }
 #endif //USE_OSX_NATIVE_MENU
 
@@ -1360,6 +1388,3 @@ Wt::WAnchor *PopupDivMenuItem::anchor()
 
   return 0;
 }//Wt::WAnchor *PopupDivMenuItem::anchor()
-
-
-

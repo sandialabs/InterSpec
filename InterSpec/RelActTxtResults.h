@@ -33,7 +33,7 @@
 
 namespace RelActCalcAuto
 {
-  class RelActAutoSolution;
+  struct RelActAutoSolution;  //declared `struct` to match its definition (MSVC C4099 otherwise)
 }
 
 class RelActTxtResults : public Wt::WContainerWidget

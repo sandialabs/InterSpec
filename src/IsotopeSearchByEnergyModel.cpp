@@ -41,6 +41,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/IsotopeId.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -1289,22 +1290,24 @@ void IsotopeSearchByEnergyModel::setSearchEnergies(
       //iOS/Android may not have auto-search peaks yet.  Also recently loaded
       //  spectra and it looks like sometimes when previous states were loaded
       const auto data = workingspace->displayed_measurement;
-      auto userpeaksdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>( begin(user_peaks), end(user_peaks) );
-      const bool singleThreaded = false;
       const bool isHPGe = workingspace->isHPGe;
-      // Grab the SpecMeas's persistent peak-search cancel token so this worker
-      //  can be interrupted on shutdown.  See `SpecMeas::peak_search_cancel_flag`.
-      std::shared_ptr<const std::atomic<bool>> cancel_flag
-        = workingspace->foreground->peak_search_cancel_flag();
-      auto_peaks = ExperimentalAutomatedPeakSearch::search_for_peaks( data, workingspace->detector_response_function, userpeaksdeque, singleThreaded, isHPGe, cancel_flag );
-      
-      std::shared_ptr<SpecMeas> foreground = workingspace->foreground;
-      const set<int> samplenums = workingspace->foreground_samplenums;
-      auto autopeaksdeque = make_shared<std::deque<std::shared_ptr<const PeakDef>>>( begin(auto_peaks), end(auto_peaks) );
-      
-      WServer::instance()->post( appid, std::bind( [foreground,samplenums,autopeaksdeque](){
-        foreground->setAutomatedSearchPeaks( samplenums, autopeaksdeque );
-      }) );
+
+      // We are on an ioService worker thread here (NOT the GUI thread), so we supply our own
+      // pre-made copy of the user peaks as the search seed rather than letting the shared accessor
+      // snapshot SpecMeas::peaks().  The accessor runs the search on a dedicated thread (so blocking
+      // on .get() here is deadlock-free), caches the result thread-safely, and coalesces with any
+      // concurrent search for the same sample numbers.  Cancellation is handled inside the accessor
+      // via SpecMeas::peak_search_cancel_flag().
+      const auto userpeaksdeque
+        = make_shared<const std::deque<std::shared_ptr<const PeakDef>>>( begin(user_peaks), end(user_peaks) );
+
+      const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> found
+        = PeakSearchGuiUtils::get_or_launch_automated_search_peaks( workingspace->foreground,
+                        workingspace->foreground_samplenums, data,
+                        workingspace->detector_response_function, isHPGe, userpeaksdeque ).get();
+
+      if( found )
+        auto_peaks.assign( found->begin(), found->end() );
     }//
     
     const auto &meas = workingspace->displayed_measurement;

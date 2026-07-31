@@ -1,7 +1,12 @@
 include(FindPackageHandleStandardArgs)
 
 if(NOT UglifyJS_EXECUTABLE)
-    find_program(UglifyJS_EXECUTABLE terser uglifyjs)
+    # NAMES is required to search for more than one program.  In find_program's short signature,
+    #  `find_program(<VAR> name1 [path1 ...])`, only the first token is a name and the rest are
+    #  taken as search *paths* - so without NAMES this looked for `terser` alone and treated
+    #  `uglifyjs` as a directory, silently shipping un-minified JS wherever only uglify-js is
+    #  installed (which is what target/electron/build_linux_app_from_docker.sh installs).
+    find_program(UglifyJS_EXECUTABLE NAMES terser uglifyjs)
 endif()
 
 find_package_handle_standard_args(UglifyJS DEFAULT_MSG UglifyJS_EXECUTABLE)

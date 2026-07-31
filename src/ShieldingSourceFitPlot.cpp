@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <cmath>
 #include <string>
 #include <vector>
 #include <sstream>
@@ -42,6 +43,7 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/ColorTheme.h"
+#include "InterSpec/ShieldSourcePullTrend.h"
 #include "InterSpec/ShieldingSourceFitPlot.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -221,25 +223,30 @@ std::string ShieldingSourceFitPlot::jsonForData( const ShieldingSourceFitCalc::M
 
   const size_t npoints = std::min( peak_comparisons->size(), peak_details->size() );
 
+  // nlohmann::json::dump() throws on NaN/Inf, which would abort the whole chart update; a
+  //  degenerate fit (e.g. a peak with zero uncertainty) can yield non-finite chi/mult values, so
+  //  sanitize every numeric field to a finite number before serializing.
+  const auto fin = []( const double v ) -> double { return std::isfinite(v) ? v : 0.0; };
+
   for( size_t i = 0; i < npoints; ++i )
   {
     const GammaInteractionCalc::PeakResultPlotInfo &comparison = (*peak_comparisons)[i];
     const GammaInteractionCalc::PeakDetail &detail = (*peak_details)[i];
 
     nlohmann::json point;
-    point["energy"] = comparison.energy;
-    point["chi"] = comparison.numSigmaOff;
-    point["mult"] = comparison.observedOverExpected;
-    point["mult_uncert"] = comparison.observedOverExpectedUncert;
+    point["energy"] = fin( comparison.energy );
+    point["chi"] = fin( comparison.numSigmaOff );
+    point["mult"] = fin( comparison.observedOverExpected );
+    point["mult_uncert"] = fin( comparison.observedOverExpectedUncert );
     point["color"] = comparison.peakColor.cssText(false);
     point["nuclide"] = detail.assignedNuclide;
-    point["numForeground"] = comparison.foregroundCounts;
-    point["numForegroundUncert"] = comparison.foregroundUncert;
-    point["numObserved"] = comparison.observedCounts;
-    point["numObservedUncert"] = comparison.observedUncert;
-    point["numExpected"] = comparison.expectedCounts;
-    point["numBackground"] = comparison.backgroundCounts;
-    point["numBackgroundUncert"] = comparison.backgroundUncert;
+    point["numForeground"] = fin( comparison.foregroundCounts );
+    point["numForegroundUncert"] = fin( comparison.foregroundUncert );
+    point["numObserved"] = fin( comparison.observedCounts );
+    point["numObservedUncert"] = fin( comparison.observedUncert );
+    point["numExpected"] = fin( comparison.expectedCounts );
+    point["numBackground"] = fin( comparison.backgroundCounts );
+    point["numBackgroundUncert"] = fin( comparison.backgroundUncert );
 
     // Add source contributions
     point["sources"] = nlohmann::json::array();
@@ -258,15 +265,49 @@ std::string ShieldingSourceFitPlot::jsonForData( const ShieldingSourceFitCalc::M
 
       nlohmann::json source;
       source["nuclide"] = nuclideSymbol;
-      source["fraction"] = fraction;
-      source["counts"] = src.modelContribToPeak;
-      source["br"] = src.br;
-      source["energy"] = src.energy;
+      source["fraction"] = fin( fraction );
+      source["counts"] = fin( src.modelContribToPeak );
+      source["br"] = fin( src.br );
+      source["energy"] = fin( src.energy );
       point["sources"].push_back( source );
     }
 
     json_obj["data_points"].push_back( point );
   }
+
+  // Add the fitted pull-trend curve(s), when a model was determined.  Sampled curve points
+  //  (not coefficients) are sent so the JS stays agnostic to the regressor basis.  These are
+  //  only meaningful in Chi mode; the JS draws them only then.
+  const ShieldSourcePullTrend::TrendResult * const trend = results.pull_trend.get();
+  if( trend && (trend->model != ShieldSourcePullTrend::TrendModel::None) )
+  {
+    json_obj["trend_lines"] = nlohmann::json::array();
+    for( const ShieldSourcePullTrend::NuclideTrend &nt : trend->nuclideTrends )
+    {
+      if( nt.curve.empty() )
+        continue;
+
+      nlohmann::json line;
+      line["nuclide"] = nt.nuclide;
+      line["color"] = nt.cssColor;
+      line["is_quadratic"] = (trend->model == ShieldSourcePullTrend::TrendModel::Quadratic);
+      line["points"] = nlohmann::json::array();
+      for( const std::pair<double,double> &pt : nt.curve )
+      {
+        nlohmann::json p;
+        p["energy"] = pt.first;
+        p["chi"] = pt.second;
+        line["points"].push_back( p );
+      }
+      json_obj["trend_lines"].push_back( line );
+    }//for( loop over nuclide trends )
+
+    nlohmann::json stats;
+    stats["model"] = (trend->model == ShieldSourcePullTrend::TrendModel::Quadratic) ? "quadratic" : "linear";
+    stats["slope_t"] = trend->slopeT;
+    stats["curvature_t"] = trend->curvatureT;
+    json_obj["trend"] = stats;
+  }//if( have a trend model )
 
   return json_obj.dump();
 }

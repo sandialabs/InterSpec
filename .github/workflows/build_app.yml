@@ -34,8 +34,14 @@ jobs:
         with:
           submodules: 'true'
 
-      - name: Setup Dev Env 
+      - name: Setup Dev Env
         uses: ./.github/actions/setup_dev_env
+
+      # Fail fast if the curated SBOM component list has drifted from the pinned dependency
+      # versions (target/patches/dep_build_msvc2022.bat) or a listed submodule/vendored path.
+      - name: Validate SBOM component list
+        shell: pwsh
+        run: python "${{ github.workspace }}/target/wxWidgets/sbom/make_sbom.py" --check --repo "${{ github.workspace }}"
 
       - name: Cache wxWidgets config/build
         id: cache-wx-build
@@ -57,7 +63,7 @@ jobs:
           #cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DCMAKE_INSTALL_PREFIX=InterSpec_app_${{runner.os}}_WebView_latest -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache "${{github.workspace}}/target/wxWidgets"
           $prefix = "${{runner.temp}}/install"
           $install_dir = "InterSpec_app_Windows_WebView_latest"
-          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DUSE_LEAFLET_MAP=ON -DLEAFLET_MAPS_KEY="$env:LEAFLET_KEY" -DUSE_REMOTE_RID=ON -DUSE_REL_ACT_TOOL=ON -DUSE_DETECTION_LIMIT_TOOL=ON -DCMAKE_INSTALL_PREFIX="$install_dir" -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DwxWidgets_ROOT_DIR="$prefix" -DwxWidgets_LIB_DIR="$prefix/lib/vc_x64_lib" -DwxWidgets_CONFIGURATION="msw" -DCMAKE_BUILD_TYPE="Release" -DCMAKE_CONFIGURATION_TYPES="Release" -DCMAKE_CONFIGURATION_TYPES="Release" -G "Ninja" "${{github.workspace}}/target/wxWidgets"
+          cmake -DInterSpec_FETCH_DEPENDENCIES=OFF -DUSE_LEAFLET_MAP=ON -DLEAFLET_MAPS_KEY="$env:LEAFLET_KEY" -DUSE_REMOTE_RID=ON -DUSE_REL_ACT_TOOL=ON -DUSE_DETECTION_LIMIT_TOOL=ON -DUSE_LLM_INTERFACE=ON -DCMAKE_INSTALL_PREFIX="$install_dir" -DCMAKE_PREFIX_PATH="${{runner.temp}}\install" -DNO_CMAKE_SYSTEM_PATH=ON -DCMAKE_FIND_USE_CMAKE_SYSTEM_PATH=OFF -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DwxWidgets_ROOT_DIR="$prefix" -DwxWidgets_LIB_DIR="$prefix/lib/vc_x64_lib" -DwxWidgets_CONFIGURATION="msw" -DCMAKE_BUILD_TYPE="Release" -DCMAKE_CONFIGURATION_TYPES="Release" -DCMAKE_CONFIGURATION_TYPES="Release" -G "Ninja" "${{github.workspace}}/target/wxWidgets"
 
 # The build -j1 is needed for debug builds to avoid error  "fatal error C1041: cannot open program database...", which I think is happening, not because of the "/FS" flag, but because of multiple targets sharing an intermediate directory - maybe
       - name: wxWidgets app build
@@ -73,6 +79,13 @@ jobs:
           echo "No testing has been performed on this build." >> $notes
           echo "InterSpec code git has SHA: ${{ github.sha }}" >> $notes
           echo "The Edge browser runtime is required to be installed to run; this will typically already be installed on Windows 10, and may be installed on Windows 7, but this hasnt been tested." >> $notes
+          # Generate a CycloneDX SBOM into the install dir so it ships inside the .zip (and the
+          # uploaded install-dir artifact), and thus flows to the "Development Build" release.
+          python "${{ github.workspace }}/target/wxWidgets/sbom/make_sbom.py" `
+            --repo "${{ github.workspace }}" `
+            --git-sha "${{ github.sha }}" `
+            --timestamp "$(Get-Date -AsUTC -Format o)" `
+            --output "InterSpec_app_${{ runner.os }}_WebView_latest/InterSpec_sbom.cdx.json"
           echo "Before zipping, files present for the bbuild are:"
           ls
           Get-ChildItem InterSpec_app_${{ runner.os }}_WebView_latest*.zip | foreach { Remove-Item -Path $_.FullName }
@@ -167,56 +180,474 @@ jobs:
   build-linux:
     runs-on: ubuntu-latest # Use the latest Ubuntu environment
 
+    # The C++ is compiled inside the manylinux container, because that is how we get binaries
+    # that run on a glibc 2.28 distro.  Everything after that - packaging into .deb/.rpm/AppImage/
+    # tar.gz, and the install-and-launch smoke tests - happens on the runner itself, where dpkg,
+    # rpm, fakeroot, xvfb and a current Node are already available.
+    env:
+      # One place, used by both `docker run`s and by the dependency cache key.  Everything in the
+      # cached prefix gets linked into InterSpecAddOn.node, so the prefix is ABI-bound to this
+      # image's gcc-toolset - which is why the image reference is part of the key.  The tag floats
+      # today; pinning a dated tag here would make the prefix reproducible, and since the string is
+      # in the key, changing it rebuilds rather than silently reusing.
+      MANYLINUX_IMAGE: quay.io/pypa/manylinux_2_28_x86_64
+
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
         with:
           path: ${{ github.workspace }}/InterSpec_code
           submodules: true # Recursively checkout submodules
 
-      - name: Cache npm dependencies
-        uses: actions/cache@v3
-        with:
-          path: ${{runner.temp}}/build_linux_working_dir
-          key: ${{ runner.os }}-build-npm-${{ hashFiles('target/electron/package.json') }}
-          restore-keys: |
-            ${{ runner.os }}-build-npm-
-
-      - name: Cache c++ dependencies
-        uses: actions/cache@v3
-        with:
-          path: ${{runner.temp}}/build_linux_electron
-          key: ${{ runner.os }}-build-cpp-${{ hashFiles('cmake/FetchInterSpecDeps.txt') }}
-          restore-keys: |
-            ${{ runner.os }}-build-cpp-
-      
-      - name: Make build directories
+      - name: Define build paths
         shell: bash
-        working-directory: ${{runner.temp}}
         run: |
-          mkdir -p build_linux_electron
-          mkdir -p build_linux_working_dir
+          {
+            echo "DEPS_BUILD_DIR=${RUNNER_TEMP}/linux_deps_build"
+            echo "DEPS_PREFIX_DIR=${RUNNER_TEMP}/linux_deps_prefix"
+            echo "CCACHE_HOST_DIR=${RUNNER_TEMP}/linux_ccache"
+          } >> "${GITHUB_ENV}"
 
-      - name: Configure and build in Docker
+      - name: Prepare directories
+        shell: bash
+        run: |
+          mkdir -p "${DEPS_BUILD_DIR}" "${DEPS_PREFIX_DIR}" "${CCACHE_HOST_DIR}" \
+                   "${{ runner.temp }}/build_linux_electron" \
+                   "${{ runner.temp }}/build_linux_working_dir"
+
+      # ------------------------------------------------------------------------------------------
+      # We cache the dependency *prefix*, not a build directory.
+      # ------------------------------------------------------------------------------------------
+      - name: Compute the dependency cache key
+        id: deps-key
+        shell: bash
+        env:
+          DEPS_HASH: ${{ hashFiles('InterSpec_code/target/patches/dep_build_linux.sh', 'InterSpec_code/target/patches/wt/3.7.1/NormalBuild/wt_3.7.1_git.patch', 'InterSpec_code/target/electron/build_linux_deps_from_docker.sh') }}
+        run: |
+          set -euo pipefail
+          # hashFiles() silently ignores patterns that match nothing, so check each file exists.
+          # This list must stay in sync with the DEPS_HASH patterns above.
+          for f in target/patches/dep_build_linux.sh \
+                   target/patches/wt/3.7.1/NormalBuild/wt_3.7.1_git.patch \
+                   target/electron/build_linux_deps_from_docker.sh ; do
+            if [ ! -f "${GITHUB_WORKSPACE}/InterSpec_code/${f}" ]; then
+              echo "::error::${f} does not exist, so the cache key does not cover what it claims to."
+              exit 1
+            fi
+          done
+          if [ -z "${DEPS_HASH}" ]; then
+            echo "::error::hashFiles() matched nothing; the dependency cache key would be constant."
+            exit 1
+          fi
+          KEY="linux-deps-v1-manylinux_2_28_x86_64-${DEPS_HASH}"
+          echo "key=${KEY}" >> "${GITHUB_OUTPUT}"
+          echo "Dependency cache key: ${KEY}"
+
+      - name: Restore the dependency prefix
+        id: cache-linux-deps
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.DEPS_PREFIX_DIR }}
+          key: ${{ steps.deps-key.outputs.key }}
+          # Deliberately no restore-keys - see rule 2 above.
+
+      - name: Build the dependency prefix in Docker
+        if: steps.cache-linux-deps.outputs.cache-hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "${{ github.workspace }}/InterSpec_code:/interspec:ro" \
+            -v "${DEPS_BUILD_DIR}:/deps_build" \
+            -v "${DEPS_PREFIX_DIR}:/deps_prefix" \
+            "${MANYLINUX_IMAGE}" \
+            bash -lc '/interspec/target/electron/build_linux_deps_from_docker.sh /interspec /deps_build /deps_prefix'
+          # The container runs as root; both the cache save and the compile step's bind mount need
+          # the runner user to own this.
+          sudo chown -R "$(id -u):$(id -g)" "${DEPS_PREFIX_DIR}"
+
+      # Runs on a cache hit as well as a miss, so a bad *restore* is caught too - the one thing
+      # gating the save cannot do for us.  Also prints the prefix's provenance (git sha, compiler,
+      # cmake version, script hashes), so "which prefix am I linking against?" is answerable from
+      # the run log.
+      - name: Verify the dependency prefix
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -f "${DEPS_PREFIX_DIR}/.interspec_deps_complete" ]; then
+            echo "::error::${DEPS_PREFIX_DIR} has no completion sentinel - it is not a usable prefix."
+            ls -la "${DEPS_PREFIX_DIR}" || true
+            exit 1
+          fi
+          echo "### prefix provenance ###"
+          cat "${DEPS_PREFIX_DIR}/.interspec_deps_complete"
+          du -sh "${DEPS_PREFIX_DIR}"
+
+      - name: Save the dependency prefix
+        # Implicitly `if: success()`, so a failed dependency build or a failed verification never
+        # gets committed to the cache.
+        if: steps.cache-linux-deps.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.DEPS_PREFIX_DIR }}
+          key: ${{ steps.deps-key.outputs.key }}
+
+      # Several GB of boost/Wt/Ceres build trees that nothing downstream reads.  electron-builder
+      # and the .deb/.rpm/AppImage smoke tests later in this job want the disk back.
+      - name: Reclaim the dependency build directory
+        if: always() && steps.cache-linux-deps.outputs.cache-hit != 'true'
+        shell: bash
+        run: sudo rm -rf "${DEPS_BUILD_DIR}"
+
+      # ccache covers only InterSpec's own objects, and based on file contents hash, not modification dates like make
+      - name: Restore ccache
+        id: cache-linux-ccache
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ env.CCACHE_HOST_DIR }}
+          key: linux-ccache-v1-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            linux-ccache-v1-${{ github.sha }}-
+            linux-ccache-v1-
+
+      # Compiles the C++ and leaves the app payload in /build_app/app.  Also runs
+      # target/electron/linux/check_elf_compat.py, which fails the build if the binaries would
+      # need a newer glibc/libstdc++ than we advertise, or if libstdc++ got statically linked
+      # again (the cause of https://github.com/sandialabs/InterSpec/issues/51).
+      #
+      # The prefix is mounted read-only, and at the same container path (/deps_prefix) it was built
+      # at, so nothing here can mutate the cached artifact and no absolute path baked into it can
+      # dangle.
+      - name: Compile in Docker
+        id: compile
         shell: bash
         env:
           LEAFLET_KEY: ${{ secrets.LEAFLET_KEY }}
         run: |
+          set -euo pipefail
           docker run --rm \
             -v "${{ github.workspace }}/InterSpec_code:/interspec" \
             -v "${{ runner.temp }}/build_linux_electron:/build_app" \
             -v "${{ runner.temp }}/build_linux_working_dir:/build_working_dir" \
+            -v "${DEPS_PREFIX_DIR}:/deps_prefix:ro" \
+            -v "${CCACHE_HOST_DIR}:/ccache" \
             -e LEAFLET_KEY \
-            quay.io/pypa/manylinux_2_28_x86_64 \
-            bash -lc 'echo "Running Script from within docker"; /interspec/target/electron/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir'
-      
-      - name: Upload Linux artifact
+            -e CCACHE_DIR=/ccache \
+            -e CCACHE_MAXSIZE=1500M \
+            -e CCACHE_COMPILERCHECK=content \
+            "${MANYLINUX_IMAGE}" \
+            bash -lc 'echo "Running Script from within docker"; /interspec/target/electron/build_linux_app_from_docker.sh /interspec /build_app /build_working_dir /deps_prefix'
+
+      # The container runs as root, so everything it wrote to the bind mounts is root-owned.  Later
+      # steps (writing the SBOM into the app dir, saving the ccache) run as the runner user and
+      # would otherwise hit permission errors.  This is its own `always()` step rather than a line
+      # at the end of the compile: when the compile fails is precisely when we still want to save
+      # the ccache, and that cannot read a root-owned directory.
+      - name: Take ownership of what the container wrote
+        if: always() && steps.compile.outcome != 'skipped'
+        shell: bash
+        run: |
+          sudo chown -R "$(id -u):$(id -g)" \
+            "${{ runner.temp }}/build_linux_electron" \
+            "${{ runner.temp }}/build_linux_working_dir" \
+            "${CCACHE_HOST_DIR}"
+
+      # Save even when the compile failed: a ccache is content-addressed, so whatever it managed to
+      # cache is still valid and makes the retry cheap.  But only if the compile actually ran - an
+      # empty ccache saved after an earlier failure would be the newest match for the
+      # `linux-ccache-v1-` restore-key and would shadow a good one on the next run.
+      - name: Save ccache
+        if: always() && steps.compile.outcome != 'skipped'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ env.CCACHE_HOST_DIR }}
+          key: linux-ccache-v1-${{ github.sha }}-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Set up Node for packaging
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Generate SBOM
+        shell: bash
+        working-directory: ${{ github.workspace }}/InterSpec_code
+        run: |
+          python3 target/wxWidgets/sbom/make_sbom.py \
+            --repo "$PWD" \
+            --git-sha "${{ github.sha }}" \
+            --timestamp "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+            --output "${{ runner.temp }}/build_linux_electron/app/InterSpec_sbom.cdx.json"
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends rpm fakeroot desktop-file-utils appstream xvfb
+
+      - name: Package with electron-builder
+        shell: bash
+        working-directory: ${{ github.workspace }}/InterSpec_code/target/electron
+        run: |
+          # --ignore-scripts matters: package.json has an `install` script of `cmake-js compile`,
+          # which would try to build the C++ here on the runner (the compile already happened in
+          # the container).  It also skips electron's binary download, which electron-builder
+          # does not use - it fetches its own copy - while still leaving
+          # node_modules/electron/package.json for it to read the version from.
+          npm install --ignore-scripts
+
+          # target/electron/linux/fpm-after-install.sh is a fork of electron-builder's own
+          # post-install template (afterInstall replaces it rather than appending), differing only
+          # in how it decides whether chrome-sandbox must be setuid-root.  Upstream probes as root,
+          # which the Ubuntu 23.10+ userns restriction exempts, so it can leave a machine with
+          # neither sandbox mechanism.  Fail loudly if upstream's template changes, so the fork is
+          # re-synced deliberately rather than silently missing their fixes.
+          UPSTREAM_TPL=node_modules/app-builder-lib/templates/linux/after-install.tpl
+          EXPECTED=$(cat linux/upstream-after-install.tpl.sha256)
+          ACTUAL=$(sha256sum "$UPSTREAM_TPL" | cut -d' ' -f1)
+          if [ "$ACTUAL" != "$EXPECTED" ]; then
+            echo "::error::electron-builder's after-install.tpl changed (expected $EXPECTED, got $ACTUAL)."
+            echo "Re-sync target/electron/linux/fpm-after-install.sh with it, keeping the chrome-sandbox"
+            echo "deviation, then update linux/upstream-after-install.tpl.sha256.  Their diff:"
+            diff -u linux/fpm-after-install.sh "$UPSTREAM_TPL" || true
+            exit 1
+          fi
+          echo "electron-builder postinst template unchanged - fork is in sync"
+
+          # --publish never belts-and-braces the `publish: null` in electron-builder.js:
+          # electron-builder enables publishing on its own when it detects CI, and then fails for
+          # a missing GH_TOKEN after having already built every package.
+          npx electron-builder --linux --publish never \
+            -c.directories.app="${{ runner.temp }}/build_linux_electron/app" \
+            -c.directories.output="${{ runner.temp }}/build_linux_dist"
+          echo "Produced:"
+          ls -la "${{ runner.temp }}/build_linux_dist"
+
+      # electron-builder's `dir` target gives us the unpacked tree; add the launcher that probes
+      # for a usable Chromium sandbox before falling back to --no-sandbox, then tar it up.  A
+      # tarball has no install step, so nothing else can make chrome-sandbox setuid-root.
+      - name: Build tarball with sandbox-probing launcher
+        shell: bash
+        run: |
+          set -euo pipefail
+          UNPACKED="${{ runner.temp }}/build_linux_dist/linux-unpacked"
+          VERSION=$(node -p "require('${{ runner.temp }}/build_linux_electron/app/package.json').version")
+          mv "${UNPACKED}/interspec" "${UNPACKED}/interspec-bin"
+          cp "${{ github.workspace }}/InterSpec_code/target/electron/linux/interspec-launcher.sh" "${UNPACKED}/interspec"
+          chmod +x "${UNPACKED}/interspec"
+          STAGE="${{ runner.temp }}/tarball/InterSpec-linux-x64"
+          mkdir -p "$(dirname "${STAGE}")"
+          cp -a "${UNPACKED}" "${STAGE}"
+          tar -C "$(dirname "${STAGE}")" -czf \
+            "${{ runner.temp }}/build_linux_dist/InterSpec_app_Linux_x64_${VERSION}.tar.gz" \
+            "$(basename "${STAGE}")"
+
+      # Pure logic, no Electron: the rules deciding whether a renderer death is a broken sandbox,
+      # and how many failures it takes before we stop attempting one.  main.js acts on these by
+      # relaunching the whole app, so over-eagerness costs the user unsaved work.
+      - name: Test the sandbox-fallback logic
+        shell: bash
+        working-directory: ${{ github.workspace }}/InterSpec_code
+        run: node target/electron/linux/test_sandbox_fallback.js
+
+      - name: Validate desktop entry and AppStream metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          CHECK="${{ runner.temp }}/deb_check"
+          # The .desktop file electron-builder generated is inside the .deb; pull it out to check.
+          mkdir -p "${CHECK}"
+          dpkg-deb -x "${{ runner.temp }}"/build_linux_dist/InterSpec_app_*.deb "${CHECK}"
+          desktop-file-validate "${CHECK}"/usr/share/applications/*.desktop
+          appstreamcli validate "${CHECK}/usr/share/metainfo/gov.sandia.InterSpec.metainfo.xml"
+          test -f "${CHECK}/usr/share/mime/packages/gov.sandia.InterSpec.xml"
+          test -n "$(ls -A "${CHECK}"/usr/share/icons/hicolor/512x512/apps/)"
+          echo "Desktop integration files all present and valid"
+
+      # Does the tarball actually start?  This is the check that was missing when the
+      # Electron 41 builds shipped segfaulting for months.
+      - name: Smoke test the tarball
+        shell: bash
+        run: |
+          set -euo pipefail
+          tar -C "${{ runner.temp }}" -xzf "${{ runner.temp }}"/build_linux_dist/InterSpec_app_Linux_x64_*.tar.gz
+          # `timeout` is the backstop: --test-load has its own 120s timer, but a wedged child
+          # process can stop Electron from exiting even after app.exit(), and a job that hangs
+          # for the runner's whole time limit is worse than one that fails.
+          xvfb-run -a \
+            timeout --signal=KILL --kill-after=10 300 \
+            "${{ runner.temp }}/InterSpec-linux-x64/interspec" --test-load
+          echo "Tarball launched and loaded a session successfully"
+
+      # Installs the .deb into a clean Ubuntu 24.04 and launches it, which covers dependency
+      # resolution, the /opt layout and the /usr/bin symlink.
+      # NOTE: this does *not* exercise the AppArmor path - a container does not enforce the
+      # host's kernel.apparmor_restrict_unprivileged_userns - so the sandbox behaviour on a real
+      # Ubuntu 24.04+ desktop still needs a manual check.  --no-sandbox is passed here because
+      # the container is unprivileged.
+      - name: Install and launch the .deb on Ubuntu 24.04
+        shell: bash
+        run: |
+          docker run --rm -v "${{ runner.temp }}/build_linux_dist:/dist" ubuntu:24.04 bash -lc '
+            set -euo pipefail
+            apt-get update -qq
+            DEBIAN_FRONTEND=noninteractive apt-get install -y -qq xvfb /dist/InterSpec_app_*.deb
+            test -x /opt/InterSpec/interspec
+            # Try the installed configuration first, so the log records whether the sandbox
+            # worked; fall back to --no-sandbox, which is what a restricted container needs.
+            if xvfb-run -a timeout --signal=KILL --kill-after=10 300 interspec --test-load; then
+              echo "deb launched with the sandbox enabled"
+            else
+              echo "sandboxed launch failed (expected in an unprivileged container); retrying"
+              xvfb-run -a timeout --signal=KILL --kill-after=10 300 interspec --test-load --no-sandbox
+              echo "deb launched with --no-sandbox"
+            fi
+          '
+
+      - name: Install and launch the .rpm on Fedora
+        shell: bash
+        run: |
+          docker run --rm -v "${{ runner.temp }}/build_linux_dist:/dist" fedora:latest bash -lc '
+            set -euo pipefail
+            dnf install -y -q xorg-x11-server-Xvfb /dist/InterSpec_app_*.rpm
+            test -x /opt/InterSpec/interspec
+            if xvfb-run -a timeout --signal=KILL --kill-after=10 300 interspec --test-load; then
+              echo "rpm launched with the sandbox enabled"
+            else
+              echo "sandboxed launch failed (expected in an unprivileged container); retrying"
+              xvfb-run -a timeout --signal=KILL --kill-after=10 300 interspec --test-load --no-sandbox
+              echo "rpm launched with --no-sandbox"
+            fi
+          '
+
+      # The AppImage is otherwise built, shipped, and never launched.  --appimage-extract-and-run
+      # avoids needing FUSE, which the runner does not necessarily have.
+      - name: Smoke test the AppImage
+        shell: bash
+        run: |
+          set -euo pipefail
+          APPIMAGE=$(ls "${{ runner.temp }}"/build_linux_dist/InterSpec_app_*.AppImage)
+          chmod +x "${APPIMAGE}"
+          xvfb-run -a timeout --signal=KILL --kill-after=10 300 \
+            "${APPIMAGE}" --appimage-extract-and-run --test-load
+          echo "AppImage launched and loaded a session successfully"
+
+      # ---------------------------------------------------------------------------------------
+      # The checks below run on the runner ITSELF, not in a container.  That is the whole point:
+      # the runner is a full Ubuntu 24.04 VM with sudo and a live AppArmor, so the .deb's
+      # post-install script actually takes effect (setuid chrome-sandbox, apparmor_parser loading
+      # the profile) and the Chromium sandbox can really work.  In an unprivileged container it
+      # never can, so the container checks above can only ever exercise the --no-sandbox path.
+      #
+      # These run last, and in this order, because they modify the runner: the first installs the
+      # package system-wide, and the second deliberately breaks the sandbox afterwards.
+      # ---------------------------------------------------------------------------------------
+      - name: Install the .deb on the runner and require a SANDBOXED launch
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "### AppArmor state on this runner (so a pass is interpretable) ###"
+          sudo aa-enabled || echo "  aa-enabled reports AppArmor not enabled"
+          cat /proc/sys/kernel/apparmor_restrict_unprivileged_userns 2>/dev/null \
+            | sed 's/^/  apparmor_restrict_unprivileged_userns=/' || echo "  sysctl not present"
+          unshare -Ur true && echo "  unprivileged userns: works" || echo "  unprivileged userns: denied"
+
+          sudo apt-get update
+          sudo apt-get install -y ./"$(basename "$(ls "${{ runner.temp }}"/build_linux_dist/InterSpec_app_*.deb)")" \
+            || sudo apt-get install -y "${{ runner.temp }}"/build_linux_dist/InterSpec_app_*.deb
+          echo "### what the postinst set up ###"
+          stat -c '  %n mode=%a owner=%U' /opt/InterSpec/chrome-sandbox
+          test -f /etc/apparmor.d/interspec \
+            && echo "  AppArmor profile installed" \
+            || echo "  AppArmor profile NOT installed (postinst skipped it)"
+
+          # Deliberately no --no-sandbox, and no fallback: --test-load suppresses the relaunch, so
+          # if the sandbox does not work this fails rather than silently degrading.  This is also
+          # the experiment that tells us whether the AppArmor profile is sufficient for Electron 41
+          # on Ubuntu 24.04 - see https://github.com/sandialabs/InterSpec/issues/51.
+          rm -f "$HOME/.config/InterSpec/sandbox_failures.json"
+          xvfb-run -a timeout --signal=KILL --kill-after=10 300 interspec --test-load
+          echo "Launched WITH the Chromium sandbox enabled"
+
+          # Prove it was not silently degraded: any fallback would have recorded a failure.
+          if [ -f "$HOME/.config/InterSpec/sandbox_failures.json" ]; then
+            echo "::error::sandboxed launch reported success but a sandbox failure was recorded"
+            cat "$HOME/.config/InterSpec/sandbox_failures.json"
+            exit 1
+          fi
+
+      # Exercises the fallback machinery: reading the persisted failure count, app.relaunch(), the
+      # single-instance-lock release/reacquire, and the relaunched instance actually loading.
+      #
+      # It plants the failure count rather than inducing a real sandbox failure, and that is a
+      # deliberate correction.  An earlier version of this step broke the sandbox for real (removed
+      # the AppArmor profile so the namespace sandbox was denied, leaving a non-setuid
+      # chrome-sandbox).  Chromium's response to that is
+      #   FATAL:sandbox/linux/suid/client/setuid_sandbox_host.cc:166] The SUID sandbox helper
+      #   binary was found, but is not configured correctly.
+      # - it aborts the browser process during startup, before any JavaScript is evaluated.  No
+      # in-app fallback can observe that, so the test was asserting something the mechanism cannot
+      # do.  Startup-time sandbox misconfiguration is the packaging's job (setuid chrome-sandbox
+      # and the AppArmor profile for .deb/.rpm, the launcher script for the tarball); the in-app
+      # fallback covers renderer-level failures such as the /dev/shm crash in issue #51, where the
+      # browser process is up and `render-process-gone` fires.
+      - name: Verify the sandbox fallback relaunches and recovers
+        shell: bash
+        run: |
+          set -euo pipefail
+          CFG="$HOME/.config/InterSpec"
+          RESULT="$CFG/test_load_result.json"
+          mkdir -p "$CFG"
+          rm -f "$RESULT"
+
+          # Two consecutive failures is the "stop trying the sandbox" threshold, so the next launch
+          # should go straight to a --no-sandbox relaunch instead of attempting one first.
+          printf '{"failures":2,"lastReason":"planted by CI"}' > "$CFG/sandbox_failures.json"
+
+          # Our own Xvfb rather than xvfb-run: the relaunched instance only starts once the first
+          # process exits, and xvfb-run tears the display down at that moment - which would leave
+          # the relaunch with no DISPLAY and make this fail for the wrong reason.
+          Xvfb :77 -screen 0 1280x1024x24 -nolisten tcp &
+          XVFB_PID=$!
+          trap 'kill "${XVFB_PID}" 2>/dev/null || true' EXIT
+          export DISPLAY=:77
+          sleep 2
+
+          # Parent exits 0 as soon as it hands off to the relaunch, so poll for the child's result.
+          timeout --signal=KILL --kill-after=10 300 \
+            interspec --test-load --test-load-allow-sandbox-fallback || true
+
+          for _ in $(seq 1 60); do
+            [ -f "$RESULT" ] && break
+            sleep 2
+          done
+
+          if [ ! -f "$RESULT" ]; then
+            echo "::error::fallback never produced a result - the relaunched instance did not load"
+            echo "sandbox_failures.json:"; cat "$CFG/sandbox_failures.json" 2>/dev/null || echo "  (none)"
+            exit 1
+          fi
+
+          echo "### result written by the relaunched instance ###"; cat "$RESULT"
+          node -e '
+            const r = require(process.argv[1]);
+            if( r.code !== 0 )
+              throw new Error("relaunched instance exited " + r.code);
+            if( r.sandboxed )
+              throw new Error("expected the relaunch to have added --no-sandbox");
+            console.log("Fallback recovered a broken sandbox: relaunched --no-sandbox and loaded a session");
+          ' "$RESULT"
+
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v4
         id: artifact-linux-upload-step
         with:
           name: linux-build
+          if-no-files-found: error
           overwrite: true
-          path: ${{runner.temp}}/build_linux_working_dir/InterSpec_app_Linux_Electron_latest_*.zip
+          path: |
+            ${{runner.temp}}/build_linux_dist/InterSpec_app_*.deb
+            ${{runner.temp}}/build_linux_dist/InterSpec_app_*.rpm
+            ${{runner.temp}}/build_linux_dist/InterSpec_app_*.AppImage
+            ${{runner.temp}}/build_linux_dist/InterSpec_app_*.tar.gz
 
   macos-build:
     uses: ./.github/workflows/build_macos.yml
@@ -292,7 +723,23 @@ jobs:
           fail_on_unmatched_files: true
           tag_name: "bleeding-edge"
           name: "Development Build"
-          body: "An automated, and untested build of the latest code pushed to the repository.<br />Windows version requires Windows 10 or 11, but may work on Windows 7 with the Edge browser runtime installed.<br />Linux version requires `glibc >=2.28` based distro (e.g., Ubuntu 21.04+, RHEL 9+, Debian 11+, Fedora 34+).<br />macOS version requires macOS 10.15 (Catalina) or later."
+          body: |
+            An automated, and untested build of the latest code pushed to the repository.
+
+            **Windows** requires Windows 10 or 11, but may work on Windows 7 with the Edge browser runtime installed.
+
+            **macOS** requires macOS 10.15 (Catalina) or later.
+
+            **Linux** requires a `glibc >= 2.28` distro with `libstdc++6 >= 8` (Ubuntu 20.04+, RHEL 8+, Debian 11+, Fedora 30+). Pick one:
+
+            | Asset | Use it when |
+            | --- | --- |
+            | `.deb` | Debian, Ubuntu, Mint. Installs to `/opt/InterSpec`, adds it to the applications menu, and registers spectrum-file and `interspec://` associations. Recommended. |
+            | `.rpm` | Fedora, RHEL, openSUSE. Same as above. |
+            | `.AppImage` | Any distro, no install and no root needed. Runs with the Chromium sandbox disabled, since an AppImage mount cannot carry a setuid helper. |
+            | `.tar.gz` | Portable/manual install. Extract and run `./interspec`, which enables the sandbox if it can and otherwise starts without it. |
+
+            Installing the `.deb` or `.rpm` is preferred: those are the only formats that can set up the Chromium sandbox properly.
           draft: false
           generate_release_notes: false
           prerelease: true

@@ -1,0 +1,122 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- lcw- is short for LlmConfigWindow -->
+
+  <!-- Window / sections -->
+  <message id="lcw-window-title">LLM Provider Settings</message>
+  <message id="lcw-enable-llm">Enable LLM integration</message>
+  <message id="lcw-enable-llm-sub">One provider and one model are active at a time.</message>
+  <message id="lcw-active-prefix">Active: {1}</message>
+  <message id="lcw-active-fmt">{1} &#183; {2}</message>
+  <message id="lcw-active-none">none</message>
+  <message id="lcw-providers">PROVIDERS</message>
+  <message id="lcw-add-provider">+ Add provider</message>
+  <message id="lcw-new-provider">New provider</message>
+
+  <!-- Provider card -->
+  <message id="lcw-active-label">Active</message>
+  <message id="lcw-remove-provider">Remove provider</message>
+  <message id="lcw-provider-subtitle">{1} &#183; {2} models &#183; active: {3}</message>
+  <message id="lcw-api-endpoint">API endpoint</message>
+  <message id="lcw-endpoint-ph">https://&#8230;/v1/chat/completions</message>
+  <message id="lcw-wire-format">Wire format</message>
+  <message id="lcw-fmt-source-auto">(auto-detected from URL)</message>
+  <message id="lcw-fmt-source-manual">(manual override)</message>
+  <message id="lcw-override">Override</message>
+  <message id="lcw-fmt-auto">Auto-detect</message>
+  <message id="lcw-fmt-openai-chat">OpenAI Chat</message>
+  <message id="lcw-fmt-openai-responses">OpenAI Responses</message>
+  <message id="lcw-fmt-anthropic">Anthropic</message>
+  <message id="lcw-bearer-token">Bearer token</message>
+  <message id="lcw-token-ph">sk-&#8230;</message>
+  <message id="lcw-show">Show</message>
+  <message id="lcw-hide">Hide</message>
+  <message id="lcw-fetch-models">Fetch models</message>
+  <message id="lcw-fetching">Fetching&#8230;</message>
+  <message id="lcw-token-warn">Token looks unset &#8212; paste your key, or fetch / enter models manually.</message>
+
+  <!-- Fetch results -->
+  <message id="lcw-fetch-found">Found {1} models &#183; names only (capabilities not provided by the API)</message>
+  <message id="lcw-fetch-none">No models returned by the endpoint.</message>
+  <message id="lcw-fetch-http-error">Fetch failed (HTTP {1}). Enter models manually below.</message>
+  <message id="lcw-fetch-network-error">Could not reach the endpoint (network/CORS). Enter models manually below.</message>
+  <message id="lcw-fetch-parse-error">Could not parse the model list returned by the endpoint.</message>
+  <message id="lcw-fetch-need-endpoint">Set an API endpoint first.</message>
+
+  <!-- Models -->
+  <message id="lcw-models">MODELS ({1})</message>
+  <message id="lcw-add-model">+ Add model</message>
+  <message id="lcw-no-models">No models yet. Fetch from the provider or add one manually.</message>
+  <message id="lcw-remove-model">Remove model</message>
+  <message id="lcw-select-model">Pick a fetched model&#8230;</message>
+  <message id="lcw-model-name-ph">model identifier (e.g. gpt-5-mini)</message>
+  <message id="lcw-max-tokens">Max tokens</message>
+  <message id="lcw-context-limit">Context limit</message>
+  <message id="lcw-temperature">Temperature</message>
+  <message id="lcw-api-default">API default</message>
+  <message id="lcw-default">default</message>
+  <message id="lcw-supports-images">Supports images</message>
+  <message id="lcw-force-tool">Force tool use</message>
+  <message id="lcw-force-tool-tip">Force tool_choice=required in non-final state-machine states.</message>
+  <message id="lcw-reasoning">Reasoning</message>
+  <message id="lcw-reasoning-off">Off</message>
+  <message id="lcw-reasoning-on">On (boolean)</message>
+  <message id="lcw-reasoning-low">Low effort</message>
+  <message id="lcw-reasoning-medium">Medium effort</message>
+  <message id="lcw-reasoning-high">High effort</message>
+  <message id="lcw-verbosity">Instructions</message>
+  <message id="lcw-verbosity-terse">Terse</message>
+  <message id="lcw-verbosity-normal">Normal</message>
+  <message id="lcw-verbosity-verbose">Verbose</message>
+  <message id="lcw-verbosity-tip">How explicit the rendered instruction text is for this model. Weaker models benefit from Verbose; frontier models do well with Terse. Only affects instruction templates that opt in.</message>
+  <message id="lcw-anthropic-needs-max"><![CDATA[Anthropic requires <strong>Max tokens</strong> &mdash; set a value above.]]></message>
+
+  <!-- MCP -->
+  <message id="lcw-mcp-server">MCP Server</message>
+  <message id="lcw-mcp-sub">Expose InterSpec as an MCP server for other apps.</message>
+  <message id="lcw-mcp-token">MCP bearer token</message>
+  <message id="lcw-mcp-token-invalid">Change this from the default value before enabling.</message>
+
+  <!-- Footer / validation -->
+  <message id="lcw-config-valid">&#10003; Configuration valid</message>
+  <message id="lcw-to-review">&#9888; {1} to review</message>
+  <message id="lcw-preview-xml">Preview XML</message>
+  <message id="lcw-hide-xml">Hide XML</message>
+  <message id="lcw-accept">Accept</message>
+  <message id="lcw-cancel">Cancel</message>
+  <message id="lcw-ok">OK</message>
+  <message id="lcw-blocking-tip">Every provider needs at least one model before saving.</message>
+  <message id="lcw-save-unavailable">Saving is unavailable: InterSpec has no writable data directory on this platform.</message>
+  <message id="lcw-save-failed-title">Save failed</message>
+  <message id="lcw-save-failed">Could not write the configuration file to the writable data directory.</message>
+
+  <!-- Confirmation shown after Accept when there is an active conversation -->
+  <message id="lcw-apply-title">Apply LLM settings?</message>
+  <message id="lcw-apply-reset-msg"><![CDATA[These settings change the API format, so your current conversation <strong>cannot</strong> be carried over and will be <strong>cleared</strong> if you apply them now.<br/><br/>You can apply them and start fresh, or just save the file (it will take effect next time you start, or when you reset the LLM config).]]></message>
+  <message id="lcw-apply-keep-msg"><![CDATA[Your conversation will be kept.<br/><br/>Because the active model changed, the assistant may occasionally error on the next message. If that happens, clear the conversation (assistant menu &rarr; &ldquo;Reset LLM Config&rdquo;) and continue.]]></message>
+  <message id="lcw-apply-continue">Apply now</message>
+  <message id="lcw-apply-file-only">Save file only</message>
+
+  <!-- Confirmation shown when importing a config file would overwrite the existing one -->
+  <message id="lcw-overwrite-title">Overwrite LLM configuration?</message>
+  <message id="lcw-overwrite-msg"><![CDATA[You already have an LLM configuration saved. Accepting will <strong>overwrite</strong> it with this file.]]></message>
+  <message id="lcw-overwrite-confirm">Overwrite</message>
+
+  <!-- Validation warnings (shown in the footer tooltip) -->
+  <message id="lcw-warn-endpoint-empty">Active provider: endpoint is empty.</message>
+  <message id="lcw-warn-token-placeholder">Active provider: bearer token looks unset.</message>
+  <message id="lcw-warn-model-empty">Active model name is empty.</message>
+  <message id="lcw-warn-anthropic-max">Active model: Anthropic requires Max tokens.</message>
+  <message id="lcw-warn-mcp-token">MCP is enabled with the default bearer token.</message>
+
+  <!-- Used by the LLM assistant when not configured (LlmToolGui) -->
+  <message id="lcw-configure-menu">Configure LLM Provider&#8230;</message>
+  <message id="lcw-configure-btn">Configure LLM Provider</message>
+  <message id="lcw-not-configured"><![CDATA[The LLM assistant is not configured.<br/>Add an API provider, model, and key to get started.]]></message>
+
+  <!-- Getting-started / welcome panel shown in the empty conversation area (LlmToolGui) -->
+  <message id="lcw-welcome-title">InterSpec AI Assistant</message>
+  <message id="lcw-welcome-summary"><![CDATA[Ask questions about your spectrum in plain language. The assistant can identify nuclides, fit peaks, adjust energy calibration, run analyses, and explain results by driving InterSpec's tools for you.<br/><br/>Type a question below to get started. Use the menu in the upper&#8209;right to clear, compact, export, or reconfigure the conversation.]]></message>
+  <message id="lcw-welcome-learn-more">Learn more about the AI Assistant</message>
+  <message id="lcw-help-menu">Help</message>
+</messages>

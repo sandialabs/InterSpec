@@ -233,7 +233,8 @@ bool test_estimate_initial_rois_without_peaks()
     const double max_valid_energy = 2000.0;
 
     // Create test config
-    PeakFitForNuclideConfig config;
+    const bool isHPGe = true;
+    PeakFitForNuclideConfig config = PeakFitForNuclideConfig::default_config( isHPGe );
     config.auto_rel_eff_sol_max_fwhm = 12.0;
 
     // Get generic HPGe DRF
@@ -486,7 +487,7 @@ struct LocalMinimum {
 
 
 // This is development playground for `AnalystChecks::fit_peaks_for_nuclides(...)`
-void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
+void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info, const bool isHPGe )
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   assert( db );
@@ -494,7 +495,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
     throw runtime_error( "Failed to open SandiaDecayDataBase" );
 
   // Configuration for peak fitting - these values will eventually be optimized via GA
-  PeakFitForNuclideConfig config;
+  PeakFitForNuclideConfig config = PeakFitForNuclideConfig::default_config( isHPGe );
   // TODO: lets better assign FWHM form that should be used based on detector type
   // TODO: add an enum for how to handle existing ROIs here {ignore, replace_source, no_overlap}
 
@@ -643,7 +644,6 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
     const shared_ptr<const SpecUtils::Measurement> &foreground = src.src_spectra.front(); // TODO: we cold loop over all 16 of these histograms
     const shared_ptr<const SpecUtils::Measurement> &long_background = src.long_background;
 
-    const bool isHPGe = true;
     const bool singleThreaded = false;
     shared_ptr<const DetectorPeakResponse> drf = nullptr; //Probably
 

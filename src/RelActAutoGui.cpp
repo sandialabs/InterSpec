@@ -2174,8 +2174,14 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   m_fwhm_eqn_form->setHidden( fixed_to_det_eff );
   if( m_fwhm_eqn_form->label() )
     m_fwhm_eqn_form->label()->setHidden( fixed_to_det_eff );
-  if( !fixed_to_det_eff && (options.fwhm_form != RelActCalcAuto::FwhmForm::NotApplicable) )
-    setFwhmFormFromCombo( options.fwhm_form );
+  if( !fixed_to_det_eff )
+  {
+    // Stale configs pairing NotApplicable with a non-Fixed estimation method get the same concrete
+    //  form BatchRelActAuto::load_state_from_xml_file coerces to, so GUI and headless runs of the
+    //  same config XML use the same FWHM model (previously the combo silently kept its prior value).
+    setFwhmFormFromCombo( (options.fwhm_form == RelActCalcAuto::FwhmForm::NotApplicable)
+                            ? RelActCalcAuto::FwhmForm::Polynomial_2 : options.fwhm_form );
+  }//if( !fixed_to_det_eff )
   
   // First update lorentzian checkbox (before populating skew combo)
   m_lorentzian_xrays->setChecked( options.lorentzian_xrays );
@@ -5931,21 +5937,10 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   {
     RelEffChart::ReCurveInfo info;
     info.live_time = live_time;
+    //Note: pass _all_ the points; `RelEffChart` uses `RelActAutoSolution::show_obs_eff_point(...)` to decide
+    //  which to plot, and lists the rest (with why they were left out) in its omitted-points panel.
     if( i < answer->m_obs_eff_for_each_curve.size() ) //`m_obs_eff_for_each_curve` may be empty if computation failed
-    {
-      // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4, and peak
-      //  mean+-1sigma is fully within ROI
-      for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff : answer->m_obs_eff_for_each_curve[i] )
-      {
-        if( (obs_eff.observed_efficiency > 0.0)
-           && (obs_eff.num_sigma_significance > 2.5)
-           && (obs_eff.fraction_roi_counts > 0.05)
-           && obs_eff.within_roi )
-        {
-          info.obs_eff_data.push_back( obs_eff );
-        }
-      }
-    }
+      info.obs_eff_data = answer->m_obs_eff_for_each_curve[i];
     info.rel_acts = answer->m_rel_activities[i];
     try
     {
@@ -5974,6 +5969,50 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   }//for( size_t i = 0; i < answer->m_rel_activities.size(); ++i )
   
   m_rel_eff_chart->setData( info_sets );
+
+  // Multi-curve fits: append the curve-separation verdict to the status line, with the interpretation
+  //  (including the healthy ranges) in the tooltip; the full numeric details are in the Results tab's
+  //  "Rel. eff. curve separation" block.  Status decided in
+  //  RelActAutoSolution::compute_curve_separation_metrics().
+  if( answer->m_options.rel_eff_curves.size() > 1 )
+  {
+    WString sep_status, sep_tooltip;
+    switch( answer->m_curve_separation_status )
+    {
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::NotApplicable:
+        break;
+
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::WellSeparated:
+        sep_status = WString::tr( "raag-curve-sep-well" );
+        sep_tooltip = WString::tr( "raag-tt-curve-sep-well" );
+        break;
+
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::PoorlySeparated:
+        // Detection evidence takes priority in the label: a clearly-detected pair of distinct
+        //  curves with blended per-source evidence must not read the same as "nothing separated".
+        if( answer->curves_detected_distinct() )
+        {
+          sep_status = WString::tr( "raag-curve-sep-distinct" );
+          sep_tooltip = WString::tr( "raag-tt-curve-sep-distinct" );
+        }else
+        {
+          sep_status = WString::tr( "raag-curve-sep-poor" );
+          sep_tooltip = WString::tr( "raag-tt-curve-sep-poor" );
+        }
+        break;
+
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::Degenerate:
+        sep_status = WString::tr( "raag-curve-sep-degen" );
+        sep_tooltip = WString::tr( "raag-tt-curve-sep-degen" );
+        break;
+    }//switch( answer->m_curve_separation_status )
+
+    if( !sep_status.empty() )
+    {
+      chi2_title = WString("{1}; {2}").arg( chi2_title ).arg( sep_status );
+      chi2_title_tooltip = WString("{1}\n{2}").arg( chi2_title_tooltip ).arg( sep_tooltip );
+    }
+  }//if( multi-curve )
 
   m_fit_chi2_msg->setText( chi2_title );
   m_fit_chi2_msg->setToolTip( chi2_title_tooltip );

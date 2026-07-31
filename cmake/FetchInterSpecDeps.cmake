@@ -109,6 +109,18 @@ endif()
 FetchContent_MakeAvailable( boost )
 FetchContent_GetProperties( boost )
 
+# Keep Wt from enabling gzip responses.  Other than it probably not being needed here,
+#  we havnent build our zlib yet, so Wt will try to link against system zlib, causing
+#  hassles trying to package things on Linux.
+#  Web deployment is the exception: those builds serve real network clients, where HTTP
+#  compression (and WebSocket permessage-deflate, which the same define guards) is worth having,
+#  and they are not packaged as a relocatable app so a shared libz dependency is fine.
+if( BUILD_FOR_WEB_DEPLOYMENT )
+  message( STATUS "InterSpec: leaving Wt httpd zlib compression enabled for web deployment" )
+else()
+  set( HTTP_WITH_ZLIB OFF CACHE BOOL "Wt httpd zlib compression - off; see comment above" FORCE )
+endif()
+
 # Check for local Wt
 set(LOCAL_WT_DIR "${CMAKE_BINARY_DIR}/_deps/wt-src")
 if(EXISTS "${LOCAL_WT_DIR}/CMakeLists.txt")

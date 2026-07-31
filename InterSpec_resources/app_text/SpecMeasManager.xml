@@ -30,6 +30,8 @@
   <message id="smm-empty-file">File was probably an empty file - not a spectrum file.</message>
   <message id="smm-failed-reading-nonspec-file">Failed to read non-spectrum file.</message>
   <message id="smm-not-spec-file">Not a spectrum file</message>
+  <message id="smm-llm-config-invalid-title">Invalid LLM configuration file</message>
+  <message id="smm-llm-config-invalid-msg">This file looks like an LLM assistant configuration, but it could not be read. It may be malformed or from an incompatible version.</message>
   <message id="smm-image-file">Image File Selected</message>
   <message id="smm-icd2">This looks to be an N42 ICD2 file that contains analysis results
     rather than raw spectra.
@@ -365,6 +367,7 @@
   <message id="uid-err-to-large">Uploaded file was too large to try and display.</message>
   <message id="uid-err-reading-upload">Couldn't read uploaded file.</message>
   <message id="uid-embed-image-btn">Embed image in spectrum file</message>
+  <message id="uid-send-to-llm-btn">Send to AI assistant</message>
   <message id="uid-no-qr-found">QR-code not found ⓘ</message>
   <message id="uid-looking-for-qr">Looking for QR-codes.</message>
   <message id="uid-check-for-qr-btn">Check for Qr-code</message>

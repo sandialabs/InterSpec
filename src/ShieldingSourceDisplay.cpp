@@ -104,11 +104,13 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakSearchGuiUtils.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/IsotopeSelectionAids.h"
 #include "InterSpec/D3SpectrumDisplayDiv.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
+#include "InterSpec/ShieldSourcePullTrend.h"
 #include "InterSpec/ShieldingSourceDiagram.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 
@@ -459,6 +461,94 @@ void ShieldingSourceDisplay::ShieldingSourceDisplayState::deSerialize( const rap
     chi2Elements = std::move( info );
   }
 }
+
+
+ShieldingSourceDisplay::ShieldingSourceDisplayState
+  ShieldingSourceDisplay::ShieldingSourceDisplayState::fromFitResults(
+                                        const ShieldingSourceFitCalc::ModelFitResults &results )
+{
+  // Keep this function in sync with `ShieldingSourceDisplay::serialize()`, which does the
+  //  equivalent thing, but from the GUI widgets.
+  ShieldingSourceDisplayState state;
+  state.versionMajor = ShieldingSourceDisplay::sm_xmlSerializationMajorVersion;
+  state.versionMinor = ShieldingSourceDisplay::sm_xmlSerializationMinorVersion;
+  state.showChiOnChart = true;  //A display preference; fit results have no equivalent of this.
+
+  shared_ptr<GammaInteractionCalc::ShieldSourceConfig> config
+                                  = make_shared<GammaInteractionCalc::ShieldSourceConfig>();
+  config->distance = results.distance;
+  config->geometry = results.geometry;
+  config->options = results.options;
+
+  // `FitShieldingInfo` derives from `ShieldingInfo`, and only the base-class information is
+  //  serialized - i.e., the fit dimension and mass-fraction uncertainties are not preserved.
+  config->shieldings.assign( begin(results.final_shieldings), end(results.final_shieldings) );
+
+  // Generic (AN/AD) shieldings have no geometry; the fit results stamp the models geometry onto
+  //  every shielding, but both `ShieldingSelect::toShieldingInfo()` and `ShieldingInfo::deSerialize`
+  //  use `NumGeometryType` for them - so normalize, or we wouldnt round-trip.
+  for( ShieldingSourceFitCalc::ShieldingInfo &shield : config->shieldings )
+  {
+    if( shield.m_isGenericMaterial )
+      shield.m_geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
+  }
+
+  config->sources = results.fit_src_info;
+  state.config = config;
+
+  // `results.foreground_peaks` are the peaks actually used in the fit (already filtered down to
+  //  peaks with `useForShieldingSourceFit()` set) - we'll apply the same additional guard the GUI
+  //  applies when serializing.
+  for( const PeakDef &peak : results.foreground_peaks )
+  {
+    const SandiaDecay::Nuclide * const nuclide = peak.parentNuclide();
+    const SandiaDecay::RadParticle * const particle = peak.decayParticle();
+    const bool annhilation = (peak.sourceGammaType() == PeakDef::AnnihilationGamma);
+
+    if( nuclide && (particle || annhilation) )
+    {
+      ShieldingSourceDisplayState::Peak state_peak;
+      state_peak.use = true;
+      state_peak.nuclideSymbol = nuclide->symbol;
+      state_peak.energy = peak.gammaParticleEnergy();
+      state.peaks.push_back( state_peak );
+    }//if( peak is usable in the fit )
+  }//for( const PeakDef &peak : results.foreground_peaks )
+
+  if( results.peak_comparisons && !results.peak_comparisons->empty() )
+  {
+    ShieldingSourceDisplayState::Chi2Elements chi_state;
+    double chi2 = 0.0;
+    chi_state.evalPoints.reserve( results.peak_comparisons->size() );
+
+    for( const GammaInteractionCalc::PeakResultPlotInfo &p : *results.peak_comparisons )
+    {
+      ShieldingSourceDisplayState::Chi2EvalPoint point;
+      point.energy = p.energy;
+      point.chi = p.numSigmaOff;
+      point.scale = p.observedOverExpected;
+      point.colorCss = p.peakColor.isDefault() ? "" : p.peakColor.cssText();
+      point.scaleUncert = p.observedOverExpectedUncert;
+      if( !IsInf(point.chi) && !IsNan(point.chi) )
+        chi2 += point.chi * point.chi;
+      chi_state.evalPoints.push_back( point );
+    }//for( loop over peak comparisons )
+
+    chi_state.chi2 = chi2;
+
+    // `Chi2Elements::numParametersFit` is the number of free fit parameters, but `ModelFitResults`
+    //  only keeps the DOF (number of peaks, minus number of free parameters, floored at zero), so
+    //  we back the parameter count out of it.  This value is only used for display, and will only
+    //  be approximate for the degenerate case of more free parameters than peaks.
+    const size_t npeaks = results.foreground_peaks.size();
+    chi_state.numParametersFit = static_cast<unsigned int>( (npeaks > results.numDOF)
+                                                            ? (npeaks - results.numDOF) : npeaks );
+
+    state.chi2Elements = chi_state;
+  }//if( we have per-peak comparisons to the model )
+
+  return state;
+}//ShieldingSourceDisplayState fromFitResults( const ModelFitResults & )
 
 
 typedef std::shared_ptr<const PeakDef> PeakShrdPtr;
@@ -2727,6 +2817,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     m_fixedGeometryTxt( nullptr ),
     m_showChi2Text( nullptr ),
     m_chi2Plot( nullptr ),
+    m_trendTxt( nullptr ),
     m_multiIsoPerPeak( nullptr ),
     m_clusterWidth( nullptr ),
     m_attenForAir( nullptr ),
@@ -2987,7 +3078,16 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
   m_showChi2Text->hide();
 
   m_chi2Plot = new ShieldingSourceFitPlot();
-  m_chi2Plot->setContentMargins( 5, 5, 13, 5 ); //top, right, bottom, left
+  m_chi2Plot->setContentMargins( 5, 5, 4, 5 ); //top, right, bottom, left; small bottom so the
+  //  trend/toggle strip sits just under the x-axis title without a large empty gap.
+
+  // Passive, always-current interpretation of the pull-trend chart (too much/little
+  //  shielding, wrong effective atomic number).  Hidden when there is no conclusion.
+  m_trendTxt = new WText();
+  m_trendTxt->setInline( false );
+  m_trendTxt->addStyleClass( "ShieldSourceTrendMsg" );
+  m_trendTxt->setTextFormat( XHTMLText );
+  m_trendTxt->hide();
       
   // Connect to display mode change signal to update m_showChiOnChart
   m_chi2Plot->displayModeChanged().connect( boost::bind( &ShieldingSourceDisplay::handleChi2ChartDisplayModeChanged, this, boost::placeholders::_1 ) );
@@ -3231,6 +3331,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     chartLayout->addWidget( addItemMenubutton,      0, 1, AlignRight);
     chartLayout->addWidget( m_chi2Plot,             1, 0, 1, 2 );
     m_showChiOnChart->setWidth( 130 );
+    chartLayout->addWidget( m_trendTxt,             2, 0, AlignLeft | AlignMiddle );
     chartLayout->addWidget( m_showChiOnChart,       2, 1, AlignRight );
     chartLayout->addWidget( m_optionsDiv,           3, 0, 1, 2 );
     chartLayout->addWidget( m_fitModelButton,       4, 0, 1, 2, AlignCenter );
@@ -3285,15 +3386,17 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( PeakModel *peakModel,
     chartLayout->setHorizontalSpacing( 0 );
     chartLayout->setContentsMargins( 0, 0, 0, 0 );
     chartLayout->addWidget( m_chi2Plot, 0, 0 );
-    
-    //Put the switch in a <div> (which will be 0x0 px), so we can position the switch using absolute
-    WContainerWidget *switchHolder = new WContainerWidget();
-    switchHolder->addWidget( m_showChiOnChart );
-    m_showChiOnChart->setAttributeValue( "style", "position: absolute; bottom: 0px; right: 20px" );
-    switchHolder->setHeight( 0 );
-    chartLayout->addWidget( switchHolder, 1, 0, AlignRight );
+
+    // A compact strip just below the chart holding the pull-trend message (left, ellipsized) and
+    //  the Chi/Mult switch (right), inline.  It sits above the resize handle and just below the
+    //  x-axis title (rather than overlaying the chart), so the message can't cover the title.
+    WContainerWidget *belowChart = new WContainerWidget();
+    belowChart->addStyleClass( "ShieldSourceTrendRow" );
+    belowChart->addWidget( m_trendTxt );
+    belowChart->addWidget( m_showChiOnChart );
+    chartLayout->addWidget( belowChart, 1, 0 );
     chartLayout->setRowStretch( 0, 1 );
-    
+
     WGridLayout *leftLayout = new WGridLayout();
     leftLayout->addWidget( chartHolder,    0, 0 );
     leftLayout->addLayout( tablesLayout,   1, 0 );
@@ -5028,23 +5131,13 @@ bool ShieldingSourceDisplay::checkForMissingBackgroundPeaks( const bool triggere
 
   const shared_ptr<const deque<shared_ptr<const PeakDef>>> back_peaks = back_meas->peaks( back_samples );
 
-  // Get or generate auto-search peaks for the background
-  shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks
-    = back_meas->automatedSearchPeaks( back_samples );
-
-  if( !auto_peaks )
-  {
-    const bool singleThreaded = true;
-    const bool isHPGe = PeakFitUtils::is_likely_high_res( m_specViewer );
-    const shared_ptr<const DetectorPeakResponse> det = back_meas->detector();
-
-    const vector<shared_ptr<const PeakDef>> found
-      = ExperimentalAutomatedPeakSearch::search_for_peaks( back_hist, det, back_peaks, singleThreaded, isHPGe );
-
-    auto found_deque = make_shared<deque<shared_ptr<const PeakDef>>>( begin( found ), end( found ) );
-    back_meas->setAutomatedSearchPeaks( back_samples, found_deque );
-    auto_peaks = found_deque;
-  }//if( !auto_peaks )
+  // Get or generate auto-search peaks for the background via the shared, de-duplicated accessor -
+  // launches at most one search per (SpecMeas, sample numbers) and coalesces with any concurrent
+  // search instead of running its own.  We are on the GUI thread here.
+  const bool isHPGe = PeakFitUtils::is_likely_high_res( m_specViewer );
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> auto_peaks
+    = PeakSearchGuiUtils::get_or_launch_automated_search_peaks( back_meas, back_samples, back_hist,
+                                                back_meas->detector(), isHPGe ).get();
 
   if( !auto_peaks || auto_peaks->empty() )
     return false;
@@ -6054,6 +6147,59 @@ void ShieldingSourceDisplay::handleChi2ChartDisplayModeChanged( const bool showC
 }//void handleChi2ChartDisplayModeChanged( bool showChi )
 
 
+void ShieldingSourceDisplay::updateTrendMessage( const std::shared_ptr<const ShieldSourcePullTrend::TrendResult> &trend,
+                                                 const bool from_completed_fit )
+{
+  if( !m_trendTxt )
+    return;
+
+  // The pull-trend interpretation is only valid when the shielding/source model is at an actual
+  //  fit optimum.  During live editing (e.g. the user changed the atomic number but hasn't re-fit),
+  //  the model is stale - the activity/areal-density were not re-optimized - so a conclusion like
+  //  "a trend remains despite fitting shielding" is misleading.  Keep the trend CURVE updating live
+  //  (drawn from setData), but hide the interpretive TEXT until the model is re-fit.
+  const char * const key = (trend && from_completed_fit)
+                              ? ShieldSourcePullTrend::conclusion_txt_key( trend->conclusion )
+                              : nullptr;
+  if( !key )
+  {
+    m_trendTxt->hide();
+    m_trendTxt->setText( WString() );
+
+    // Even with no conclusion, note the atomic-number discrimination power in the log when it is
+    //  low - so a "silent" result reads as "could not tell" rather than "atomic number is fine".
+    if( from_completed_fit && trend && (trend->anDiscriminationT > 0.0) && !trend->anDiscriminable )
+    {
+      char buf[256];
+      snprintf( buf, sizeof(buf),
+               "Pull-trend: no conclusion; atomic-number discrimination power is low (t=%.1f) - "
+               "these peaks cannot resolve the effective atomic number (need lower-energy peaks).",
+               trend->anDiscriminationT );
+      m_calcLog.push_back( "&nbsp;" );
+      m_calcLog.push_back( buf );
+    }
+    return;
+  }
+
+  const char * const conf_key = ShieldSourcePullTrend::confidence_txt_key( trend->confidence );
+  WString msg = WString::tr(key).arg( WString::tr(conf_key) );
+  m_trendTxt->setText( msg );
+  m_trendTxt->show();
+
+  // Mirror the conclusion into the calc log (with the driving statistics and the atomic-number
+  //  discrimination power - the curvature t a reference Z error would produce for these peaks).
+  char buffer[320];
+  snprintf( buffer, sizeof(buffer),
+           "Pull-trend diagnosis: %s (slope t=%.1f, curvature t=%.1f, %zu points; "
+           "atomic-number discrimination power t=%.1f, %s)",
+           msg.toUTF8().c_str(), trend->slopeT, trend->curvatureT, trend->numPointsUsed,
+           trend->anDiscriminationT,
+           (trend->anDiscriminable ? "can resolve Z" : "cannot resolve Z - need lower-energy peaks") );
+  m_calcLog.push_back( "&nbsp;" );
+  m_calcLog.push_back( buffer );
+}//updateTrendMessage(...)
+
+
 void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const ShieldingSourceFitCalc::ModelFitResults> results )
 {
   try
@@ -6104,6 +6250,23 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
       temp_results.numDOF = ndof;
       temp_results.peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>( chis ) );
       temp_results.peak_calc_details.reset( new vector<GammaInteractionCalc::PeakDetail>( calcLog ) );
+
+      // Diagnose the pull trend from the live (interactive) fit configuration, so the trend
+      //  curve and message update as the user edits.  Uses the current fit-checkbox states.
+      try
+      {
+        const ShieldSourcePullTrend::FitConfigSummary trend_config =
+          ShieldSourcePullTrend::summarize_fit_config( chi2Fcn->initialShieldings(),
+                                                       chi2Fcn->initialSourceDefinitions() );
+        temp_results.pull_trend = make_shared<const ShieldSourcePullTrend::TrendResult>(
+          ShieldSourcePullTrend::fit_pull_trend( *temp_results.peak_comparisons,
+                                                 *temp_results.peak_calc_details,
+                                                 chi2Fcn->initialShieldings(), trend_config ) );
+      }catch( std::exception & )
+      {
+        temp_results.pull_trend = nullptr;
+      }
+
       results_to_use = &temp_results;
     }else
     {
@@ -6126,6 +6289,12 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
 
     // Pass the results directly to the new chart
     m_chi2Plot->setData( *results_to_use );
+
+    // Update the passive pull-trend interpretation text.  Only show the interpretive text when the
+    //  displayed model is a completed fit (results_to_use == the passed-in Final results); on the
+    //  live-edit path it is stale, so the text is hidden while the curve keeps updating.
+    const bool from_completed_fit = (results_to_use == results.get());
+    updateTrendMessage( results_to_use->pull_trend, from_completed_fit );
 
   }catch( std::exception &e )
   {
@@ -9088,6 +9257,8 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
     log_developer_error( __func__, ("Programming Issue - caught exception: " + string(e.what())).c_str() );
 #endif
   }//try / catch
+
+  wApp->triggerUpdate();
   
   m_currentFitFcn.reset();
 }//void updateGuiWithModelFitResults( std::vector<double> paramValues, paramErrors )

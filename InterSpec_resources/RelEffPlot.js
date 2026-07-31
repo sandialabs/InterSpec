@@ -606,8 +606,12 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
     // Remove temporary elements
     tempTexts.forEach(txt => txt.remove());
     
-    // Calculate starting position for the x-coordinate of all texts
-    const startX = parentWidth - maxTextWidth;
+    // Calculate starting position for the x-coordinate of all texts.
+    //  The equation text is right-aligned, but a long one (e.g. a physical model) can be wider than the
+    //  chart and run off the left edge - keep a gutter for the omitted-points icon, which lives in the
+    //  top-left corner, so the two never overlap (see `updateOmittedPointsInfo`).
+    const omittedIconGutter = datasets.some( d => (d.omitted_pts && d.omitted_pts.length) ) ? 20 : 0;
+    const startX = Math.max( omittedIconGutter, parentWidth - maxTextWidth );
     
     // Create the actual text elements stacked vertically
     let currentY = 5;
@@ -843,7 +847,37 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
     const sqrtNormalized = Math.sqrt(normalized);
     return 2 + sqrtNormalized * 3; // Scale from 2 to 5
   }
-  
+
+  // The color to draw a point with: the dominant nuclide's color, when a single nuclide accounts for more than
+  //  half of the counts.  Returns null otherwise, so the ".multiiso"/".noiso" CSS rules take over.
+  function pointNucColor(d) {
+    if( !d.nuc_info || (d.nuc_info.length === 0) )
+      return null;
+
+    let max_contrib = 0, sum_contrib = 0, dominant_color = null;
+    for( const el of d.nuc_info ) {
+      const contrib = el.rel_act * el.br;
+      sum_contrib += contrib;
+      if( contrib > max_contrib ) {
+        max_contrib = contrib;
+        dominant_color = el.color;
+      }
+    }
+
+    if( !dominant_color || (typeof dominant_color !== 'string') || (dominant_color.length === 0) )
+      return null;
+
+    return (max_contrib > 0.5*sum_contrib) ? dominant_color : null;
+  }//pointNucColor
+
+  // A point is "blended" when another relative efficiency curve also has gammas at this energy.  How the
+  //  counts divide between the curves is not measurable (co-located gammas are degenerate in the fit), so it
+  //  comes from the model - such a point is not independent evidence for this curve, and is drawn hollow.
+  const blendedThreshold = 0.9;
+  function isBlendedPoint(d) {
+    return ((typeof d.blend_frac === 'number') && (d.blend_frac < blendedThreshold));
+  }
+
   // Plot all data points across all datasets
   datasets.forEach(function(dataset, datasetIndex) {
     const data_vals = dataset.data_vals;
@@ -870,31 +904,10 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
         return isNaN(val) ? 0 : val;
       })
       .style("stroke", function(d) {
-        // Check if there's a dominant nuclide with color
-        if (d.nuc_info && d.nuc_info.length > 0) {
-          let max_contrib = 0, dominant_color = null;
-          let sum_contrib = 0;
-          
-          for (const el of d.nuc_info) {
-            const contrib = el.rel_act * el.br;
-            sum_contrib += contrib;
-            if (contrib > max_contrib) {
-              max_contrib = contrib;
-              dominant_color = el.color;
-            }
-          }
-          
-          // Use the dominant nuclide's color if it's valid and contributes >50%
-          if (dominant_color && typeof dominant_color === 'string' && 
-              dominant_color.length > 0 && (max_contrib > 0.5 * sum_contrib)) {
-            return dominant_color;
-          }
-        }
-        
         // Fall back to dataset color if no valid color from nuc_info
-        return self.getDatasetColor(datasetIndex);
+        return pointNucColor(d) || self.getDatasetColor(datasetIndex);
       });
-    
+
     // Add the data points
     self.plotGroup
       .selectAll("circle.dataset-" + datasetIndex)
@@ -911,7 +924,9 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
       })
       .attr("class", function (d) {
         let baseClass = "dataset-" + datasetIndex + " ";
-        
+        if( isBlendedPoint(d) )
+          baseClass += "blended ";
+
         if (d.nuc_info.length === 0)
           return baseClass + "noiso";
 
@@ -950,35 +965,16 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
         return baseClass + "multiiso";
       })
       .style("fill", function(d) {
-        // Check if there's a dominant nuclide with color
-        if (d.nuc_info && d.nuc_info.length > 0) {
-          let max_contrib = 0, dominant_color = null;
-          let sum_contrib = 0;
-          
-          for (const el of d.nuc_info) {
-            const contrib = el.rel_act * el.br;
-            sum_contrib += contrib;
-            if (contrib > max_contrib) {
-              max_contrib = contrib;
-              dominant_color = el.color;
-            }
-          }
+        // A null return leaves the fill to the ".RelEffPlot circle.noiso"/".multiiso" CSS rules
+        if (d.nuc_info && d.nuc_info.length > 0)
+          return pointNucColor(d);
 
-          if( !dominant_color )
-            return null;  //We will rely on CSS of ".RelEffPlot circle.noiso" to handle this
-          
-          if( max_contrib < 0.5*sum_contrib )
-            return null;  // We will rely on CSS of ".RelEffPlot circle.multiiso" to handle this
-          
-          // Use the dominant nuclide's color if it's valid and contributes >50%
-          if (dominant_color && typeof dominant_color === 'string' && 
-              dominant_color.length > 0 && (max_contrib > 0.5 * sum_contrib)) {
-            return dominant_color;
-          }
-        }
-        
-        // Fall back to dataset color if no valid color from nuc_info
+        // Fall back to dataset color if no nuc_info at all
         return self.getDatasetColor(datasetIndex);
+      })
+      .style("stroke", function(d) {
+        // Blended points are drawn as an outline (see `isBlendedPoint`), so they need a stroke of their own
+        return isBlendedPoint(d) ? (pointNucColor(d) || self.getDatasetColor(datasetIndex)) : null;
       })
       .on("mouseover", function (d, i) {
         self.tooltip.transition()
@@ -1021,7 +1017,14 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
             txt += ", RelAct=" + el.rel_act.toPrecision(4);
           txt += "</div>";
         }
-              
+
+        if( isBlendedPoint(d) ){
+          txt += "<div class=\"RelEffPlotBlendNote\">Blended: this curve is assigned "
+               + (100*d.blend_frac).toFixed(0)
+               + "% of the counts here. The split between curves is a model assumption,"
+               + " not a measurement.</div>";
+        }
+
         self.tooltip.html(txt);
 
         // Make it so tooltip doesnt extend above/below/left/right of chart area
@@ -1050,14 +1053,139 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
   
   // Auto-zoom out to show the full data extent when data is set
   this.zoomOut();
-  
+
   // Position the mouse capture rectangle to cover the chart area
   if (this.mouseCapture) {
     this.mouseCapture
       .attr("width", chartAreaWidth)
       .attr("height", chartAreaHeight);
   }
+
+  this.updateOmittedPointsInfo();
 };//RelEffPlot.prototype.setRelEffData
+
+
+/* Shows a small info icon in the lower-left of the chart whenever some data points were intentionally left
+   off it (see `RelActAutoSolution::show_obs_eff_point`), which on hover/tap lists the omitted energies and
+   why each was left off.  Without this the points just silently disappear, and the user has no way to check
+   that what was dropped is believable.
+ */
+RelEffPlot.prototype.updateOmittedPointsInfo = function () {
+  const self = this;
+
+  if( this.omittedInfoIcon ){
+    this.omittedInfoIcon.remove();
+    this.omittedInfoIcon = null;
+  }
+  if( this.omittedInfoPanel ){
+    this.omittedInfoPanel.remove();
+    this.omittedInfoPanel = null;
+  }
+
+  const datasets = this.datasets ? this.datasets : [];
+  let num_omitted = 0;
+  datasets.forEach( function(dataset){
+    if( dataset.omitted_pts && dataset.omitted_pts.length )
+      num_omitted += dataset.omitted_pts.length;
+  } );
+
+  if( num_omitted === 0 )
+    return;
+
+  // The icon/panel are absolutely positioned within the chart's container; make sure that container is
+  //  actually a positioning ancestor, otherwise they escape to whatever dialog encloses the chart.
+  if( window.getComputedStyle(this.chart).position === "static" )
+    this.chart.style.position = "relative";
+
+  const fmtCounts = function(v){
+    return ((typeof v === 'number') && isFinite(v)) ? v.toPrecision(4) : "&mdash;";
+  };
+
+  let html = "<div class=\"RelEffPlotOmittedTitle\">Points not shown (" + num_omitted + ")</div>"
+           + "<div class=\"RelEffPlotOmittedExplain\">These peaks were left off the chart because their"
+           + " measured efficiency would not be meaningful:</div><table>"
+           + "<tr class=\"RelEffPlotOmittedHeader\"><td>Energy</td><td>Source(s)</td>"
+           + "<td>Fit counts</td><td>Expected</td><td>Why not shown</td></tr>";
+  datasets.forEach( function(dataset, datasetIndex){
+    if( !dataset.omitted_pts || !dataset.omitted_pts.length )
+      return;
+
+    if( datasets.length > 1 ){
+      html += "<tr><td colspan=\"5\" class=\"RelEffPlotOmittedCurve\" style=\"color:"
+            + self.getDatasetColor(datasetIndex) + "\">"
+            + (dataset.curve_name ? dataset.curve_name : ("Curve " + (datasetIndex+1))) + "</td></tr>";
+    }
+
+    dataset.omitted_pts.forEach( function(pt){
+      html += "<tr><td>" + pt.energy.toFixed(2) + " keV</td>"
+            + "<td>" + (pt.srcs ? pt.srcs : "") + "</td>"
+            + "<td>" + fmtCounts(pt.fit_counts) + "</td>"
+            + "<td>" + fmtCounts(pt.expected_counts) + "</td>"
+            + "<td>" + (pt.reason ? pt.reason : "") + "</td></tr>";
+    } );
+  } );
+  html += "</table>";
+
+  this.omittedInfoPanel = d3.select(this.chart).append("div")
+    .attr("class", "RelEffPlotOmittedPanel")
+    .style("opacity", 0)
+    .style("visibility", "hidden")
+    .html(html);
+
+  // The panel is scrollable, so the user has to be able to move the mouse off the icon and onto it without
+  //  it vanishing: hiding is delayed, and cancelled when the pointer enters either the icon or the panel.
+  //  Clicking the icon pins the panel open (so a long list can be read without holding the mouse still).
+  let hideTimer = null, pinned = false;
+
+  const cancelHide = function(){
+    if( hideTimer ){
+      clearTimeout( hideTimer );
+      hideTimer = null;
+    }
+  };
+
+  const showPanel = function(){
+    cancelHide();
+    self.omittedInfoPanel.style("visibility", "visible").transition().duration(150).style("opacity", 1);
+  };
+
+  const hidePanel = function(){
+    cancelHide();
+    pinned = false;
+    self.omittedInfoPanel.transition().duration(200).style("opacity", 0)
+      .each("end", function(){
+        if( !pinned )
+          self.omittedInfoPanel.style("visibility", "hidden");
+      });
+  };
+
+  const scheduleHide = function(){
+    if( pinned )
+      return;
+    cancelHide();
+    hideTimer = setTimeout( function(){ hideTimer = null; hidePanel(); }, 400 );
+  };
+
+  this.omittedInfoPanel
+    .on("mouseover", cancelHide)
+    .on("mouseout", scheduleHide);
+
+  this.omittedInfoIcon = d3.select(this.chart).append("div")
+    .attr("class", "RelEffPlotOmittedIcon")
+    .attr("title", num_omitted + " data point(s) not shown - click to keep open")
+    .text("i")
+    .on("mouseover", showPanel)
+    .on("mouseout", scheduleHide)
+    .on("click", function(){
+      if( pinned ){
+        hidePanel();
+      }else{
+        pinned = true;
+        showPanel();
+      }
+      d3.event.stopPropagation();
+    });
+};//RelEffPlot.prototype.updateOmittedPointsInfo
 
 // Helper function to get colors for different datasets
 RelEffPlot.prototype.getDatasetColor = function (index, alpha) {

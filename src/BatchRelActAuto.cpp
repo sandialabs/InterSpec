@@ -127,6 +127,21 @@ shared_ptr<RelActCalcAuto::RelActAutoGuiState>
                         + "': " + e.what() );
   }
 
+  // Normalize the FwhmForm/FwhmEstimationMethod pairing the same way the GUI does on load:
+  //  `solve()` requires FwhmForm::NotApplicable if-and-only-if FixedToDetectorEfficiency, but some
+  //  older config files (e.g. past versions of the "HPGe U inside U" preset) pair NotApplicable with
+  //  another estimation method, which the GUI silently coerces but headless use would reject.
+  //  Polynomial_2 (sqrt(A0 + A1*E)) is the concrete form all the 2026-07 multi-curve review
+  //  validation ran those presets with, so stale configs keep producing the recorded results.
+  RelActCalcAuto::Options &options = state->options;
+  if( options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
+  {
+    options.fwhm_form = RelActCalcAuto::FwhmForm::NotApplicable;
+  }else if( options.fwhm_form == RelActCalcAuto::FwhmForm::NotApplicable )
+  {
+    options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_2;
+  }
+
   return state;
 }//load_state_from_xml_file(...)
 

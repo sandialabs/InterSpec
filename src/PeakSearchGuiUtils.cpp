@@ -24,8 +24,11 @@
 #include "InterSpec_config.h"
 
 #include <deque>
+#include <mutex>
 #include <string>
+#include <future>
 #include <memory>
+#include <thread>
 #include <functional>
 
 #include <Wt/WText>
@@ -2204,6 +2207,178 @@ void fit_peak_from_double_click( InterSpec *interspec, const double x, const dou
 }//void fit_peak_from_double_click(...)
 
   
+std::shared_future<std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>>>
+get_or_launch_automated_search_peaks(
+    const std::shared_ptr<SpecMeas> &meas,
+    const std::set<int> &sample_nums,
+    const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
+    const std::shared_ptr<const DetectorPeakResponse> &drf,
+    const bool isHPGe,
+    std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> origpeaks )
+{
+  typedef SpecMeas::PeakDeque PeakDeque;
+  typedef std::shared_ptr<const PeakDeque> PeakDequePtr;
+
+  // An invalid request just resolves to a ready null future.
+  if( !meas || !spectrum )
+  {
+    std::promise<PeakDequePtr> p;
+    p.set_value( nullptr );
+    return p.get_future().share();
+  }
+
+  std::shared_ptr<SpecMeas::AutoSearchPeaksPromise> promise;
+  const SpecMeas::AutoSearchPeaksFuture fut = meas->reserveAutomatedSearchPeaks( sample_nums, promise );
+
+  if( !promise )
+    return fut;  // cache hit, or coalesced onto an already in-flight search
+
+  // We are the one that must run the search.  Snapshot the canonical origpeaks (a COPY of the
+  // user peaks) if the caller didnt supply one - this MUST happen on the calling (GUI) thread, per
+  // the caution on SpecMeas::peaks(...).  Guard with sampleNumsWithPeaks() so we dont create a
+  // spurious empty user-peaks entry (the non-const peaks() inserts one) for sample sets with none.
+  if( !origpeaks && meas->sampleNumsWithPeaks().count( sample_nums ) )
+  {
+    const std::shared_ptr<const PeakDeque> live = meas->peaks( sample_nums );
+    if( live )
+      origpeaks = std::make_shared<const PeakDeque>( *live );
+  }
+
+  const std::weak_ptr<SpecMeas> weak_meas = meas;
+  const std::shared_ptr<const std::atomic<bool>> cancel_flag = meas->peak_search_cancel_flag();
+
+  // Run the search on a DEDICATED thread (not the Wt ioService pool) so that any caller may block on
+  // the future's .get() - even one already on an ioService worker - without deadlock.
+  try
+  {
+    std::thread worker( [weak_meas, sample_nums, spectrum, drf, isHPGe, origpeaks, cancel_flag, promise]()
+    {
+      PeakDequePtr result;  // stays null on cancel/failure, so waiters simply see null
+
+      try
+      {
+        const std::vector<std::shared_ptr<const PeakDef>> found
+            = ExperimentalAutomatedPeakSearch::search_for_peaks( spectrum, drf, origpeaks,
+                                                      false /*singleThreaded*/, isHPGe, cancel_flag );
+
+        const bool canceled = (cancel_flag && cancel_flag->load( std::memory_order_acquire ));
+        if( !canceled )
+        {
+          const std::shared_ptr<PeakDeque> found_deque
+                          = std::make_shared<PeakDeque>( std::begin(found), std::end(found) );
+
+          // Write the cache BEFORE erasing the in-flight entry so that a concurrent reserve()
+          // (serialized on m_autoSearchMutex) can never miss both and launch a duplicate search.
+          if( const std::shared_ptr<SpecMeas> m = weak_meas.lock() )
+          {
+            m->setAutomatedSearchPeaks( sample_nums, found_deque );
+            m->clearInFlightAutomatedSearch( sample_nums );
+          }
+
+          result = found_deque;
+        }else if( const std::shared_ptr<SpecMeas> m = weak_meas.lock() )
+        {
+          m->clearInFlightAutomatedSearch( sample_nums );  // canceled: leave cache empty, allow retry
+        }
+      }catch( std::exception &e )
+      {
+        cerr << "get_or_launch_automated_search_peaks: search threw: " << e.what() << endl;
+        if( const std::shared_ptr<SpecMeas> m = weak_meas.lock() )
+          m->clearInFlightAutomatedSearch( sample_nums );
+      }catch( ... )
+      {
+        cerr << "get_or_launch_automated_search_peaks: search threw a non-std exception" << endl;
+        if( const std::shared_ptr<SpecMeas> m = weak_meas.lock() )
+          m->clearInFlightAutomatedSearch( sample_nums );
+      }
+
+      // Always fulfill the promise so no waiter can ever hang.
+      promise->set_value( result );
+    } );
+
+    worker.detach();
+  }catch( ... )
+  {
+    // Couldnt spawn the worker thread (e.g. resource exhaustion): clear the in-flight entry we just
+    // registered and resolve the future to null, so no waiter hangs and later calls can retry.
+    meas->clearInFlightAutomatedSearch( sample_nums );
+    promise->set_value( nullptr );
+  }
+
+  return fut;
+}//get_or_launch_automated_search_peaks(...)
+
+
+bool ensure_background_peaks_recovered(
+    const std::shared_ptr<SpecMeas> &foreground_meas,
+    const std::set<int> &foreground_samples,
+    const std::shared_ptr<const SpecUtils::Measurement> &foreground_spectrum,
+    const std::shared_ptr<SpecMeas> &background_meas,
+    const std::set<int> &background_samples,
+    const std::shared_ptr<const SpecUtils::Measurement> &background_spectrum,
+    const bool isHPGe )
+{
+  typedef std::deque<std::shared_ptr<const PeakDef>> PeakDeque;
+
+  if( !foreground_meas || !background_meas || !foreground_spectrum || !background_spectrum
+     || foreground_samples.empty() || background_samples.empty() )
+    return false;
+
+  // Run-once guard (keyed by BOTH the foreground and background sample numbers we recover for, so a
+  //  change to either re-enables recovery).
+  if( background_meas->hasRecoveredBackgroundForForeground( foreground_samples, background_samples ) )
+    return false;
+
+  // Make sure both foreground and background automated-search peaks exist (coalesced/cached).
+  const std::shared_ptr<const DetectorPeakResponse> fg_drf = foreground_meas->detector();
+  const std::shared_ptr<const DetectorPeakResponse> bg_drf = background_meas->detector();
+
+  const std::shared_future<std::shared_ptr<const PeakDeque>> fg_future
+      = get_or_launch_automated_search_peaks( foreground_meas, foreground_samples,
+                                              foreground_spectrum, fg_drf, isHPGe );
+  const std::shared_future<std::shared_ptr<const PeakDeque>> bg_future
+      = get_or_launch_automated_search_peaks( background_meas, background_samples,
+                                              background_spectrum, bg_drf, isHPGe );
+
+  const std::shared_ptr<const PeakDeque> fg_peaks_deque = fg_future.get();
+  const std::shared_ptr<const PeakDeque> bg_peaks_deque = bg_future.get();
+
+  // A null result means the search was canceled or failed.  If EITHER the foreground or background
+  //  peaks are unavailable we cannot reliably recover: dont persist a partial background set and dont
+  //  mark the guard, so a later call can retry.  (A non-null but empty deque is a valid "search found
+  //  nothing" result and recovery may still run against it.)
+  if( !fg_peaks_deque || !bg_peaks_deque )
+    return false;
+
+  const std::vector<std::shared_ptr<const PeakDef>> fg_peaks( fg_peaks_deque->begin(),
+                                                              fg_peaks_deque->end() );
+
+  const std::shared_ptr<const std::atomic<bool>> cancel_flag
+                                                = background_meas->peak_search_cancel_flag();
+
+  const std::shared_ptr<const PeakDeque> augmented
+      = ExperimentalAutomatedPeakSearch::recover_background_peaks_under_foreground(
+            fg_peaks, background_spectrum, bg_peaks_deque, bg_drf, isHPGe, cancel_flag );
+
+  // If recovery was canceled part-way (e.g. teardown), dont mark the guard - allow a later retry.
+  if( cancel_flag && cancel_flag->load( std::memory_order_acquire ) )
+    return false;
+
+  // Mark the guard so we dont keep re-running the (expensive) recovery for this pairing.
+  background_meas->markBackgroundRecoveredForForeground( foreground_samples, background_samples );
+
+  if( augmented && (augmented != bg_peaks_deque) )
+  {
+    const std::shared_ptr<SpecMeas::PeakDeque> augmented_copy
+        = std::make_shared<SpecMeas::PeakDeque>( augmented->begin(), augmented->end() );
+    background_meas->setAutomatedSearchPeaks( background_samples, augmented_copy );
+    return true;
+  }
+
+  return false;
+}//ensure_background_peaks_recovered(...)
+
+
 void automated_search_for_peaks( InterSpec *viewer,
                                 const bool keep_old_peaks )
 {

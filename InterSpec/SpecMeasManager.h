@@ -137,9 +137,15 @@ public:
                     std::shared_ptr<SpecMeas> &meas_ptr );
   
   //loadFromFileSystem(...) loads a file from disk, as if it were uploaded.
-  //  Returns whether or not file was loaded
+  //  Returns whether or not file was loaded.
   bool loadFromFileSystem( const std::string &filename, SpecUtils::SpectrumType type,
                            SpecUtils::ParserType parseType = SpecUtils::ParserType::Auto );
+
+  /** Load a file from disk with control over the "Previously Stored States" dialog.
+   If checkIfPreviouslyOpened is false, the dialog will be suppressed (useful for benchmarks).
+   */
+  bool loadFromFileSystem( const std::string &filename, SpecUtils::SpectrumType type,
+                           SpecUtils::ParserType parseType, bool checkIfPreviouslyOpened );
   
   
   void selectionChanged();

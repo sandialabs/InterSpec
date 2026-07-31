@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 
+#include <set>
 #include <map>
 #include <memory>
 #include <vector>
@@ -52,6 +53,68 @@
 using namespace Wt;
 using namespace std;
 
+namespace
+{
+/** The source assigned to a peak, as a `SrcVariant`; a monostate variant if the peak has no source. */
+RelActCalcAuto::SrcVariant peak_src_variant( const PeakDef &p )
+{
+  if( const SandiaDecay::Nuclide *nuc = p.parentNuclide() )
+    return nuc;
+  if( const SandiaDecay::Element *el = p.xrayElement() )
+    return el;
+  if( const ReactionGamma::Reaction *rctn = p.reaction() )
+    return rctn;
+  return RelActCalcAuto::SrcVariant{};
+}//peak_src_variant(...)
+
+
+/** User-facing text for why a rel. eff. data point was left off the chart.
+
+ Kept in sync with `RelActCalcAuto::RelActAutoSolution::ObsEff::ExclusionReason` - see the comment on that enum.
+ Falls back to English when there is no Wt session (e.g., a batch-mode HTML report).
+ */
+WString exclusion_reason_text( const RelActCalcAuto::RelActAutoSolution::ObsEff::ExclusionReason reason )
+{
+  using ExclusionReason = RelActCalcAuto::RelActAutoSolution::ObsEff::ExclusionReason;
+
+  const char *key = "", *fallback = "";
+
+  switch( reason )
+  {
+    case ExclusionReason::NotExcluded:
+      return WString();
+
+    case ExclusionReason::NoCountsForCurve:
+      key = "rec-excl-no-counts";
+      fallback = "This relative efficiency curve has no gammas here.";
+      break;
+
+    case ExclusionReason::NonPositiveEff:
+      key = "rec-excl-non-pos-eff";
+      fallback = "The freely-fit peak area came out negative, so there is no efficiency to show.";
+      break;
+
+    case ExclusionReason::Insignificant:
+      key = "rec-excl-insignificant";
+      fallback = "Not statistically significant compared to its uncertainty.";
+      break;
+
+    case ExclusionReason::TailLeakage:
+      key = "rec-excl-tail-leakage";
+      fallback = "Most of the counts here come from neighboring peaks' tails, so a small peak-shape"
+                 " mismatch would dominate the value.";
+      break;
+
+    case ExclusionReason::OutsideRoi:
+      key = "rec-excl-outside-roi";
+      fallback = "The peak is not fully contained within its ROI, so its area is not fully measured.";
+      break;
+  }//switch( reason )
+
+  return wApp ? WString::tr(key) : WString::fromUTF8(fallback);
+}//exclusion_reason_text(...)
+}//namespace
+
 
 RelEffChart::RelEffChart( WContainerWidget *parent )
 : WContainerWidget( parent ),
@@ -74,8 +137,11 @@ RelEffChart::RelEffChart( WContainerWidget *parent )
   setCssRules();
   InterSpec *interspec = InterSpec::instance();
   if( interspec )
+  {
+    interspec->useMessageResourceBundle( "RelEffChart" );
     interspec->colorThemeChanged().connect( this, &RelEffChart::setCssRules );
-  
+  }
+
   wApp->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
   wApp->require( "InterSpec_resources/RelEffPlot.js" );
 }//RelEffChart constructor
@@ -164,14 +230,39 @@ std::string RelEffChart::jsonForData(const std::vector<ReCurveInfo> &infoSets)
     
     RelEffChartDataset dataset;
     dataset.relEffEqn = relEffEqn;
+    dataset.curveName = re_name;
     dataset.chi2_title_str = chi2_title_str;
     dataset.relEffEqnUncert = relEffUncertEqn.empty() ? "null" : relEffUncertEqn;
     
     std::vector<RelActCalcManual::GenericPeakInfo> peaks;
     map<string,pair<double,string>> relActsColors;
     
-    for(const RelActCalcAuto::RelActAutoSolution::ObsEff &obsEff : obs_eff_data)
+    for(RelActCalcAuto::RelActAutoSolution::ObsEff obsEff : obs_eff_data)
     {
+      // Decide if this point is trustworthy enough to plot; if not, record it (and why) so the chart can
+      //  show the user what was left off, rather than silently dropping it.
+      if( !RelActCalcAuto::RelActAutoSolution::show_obs_eff_point( obsEff ) )
+      {
+        RelEffChart::OmittedPoint omitted;
+        omitted.energy = obsEff.energy;
+        omitted.reason = exclusion_reason_text( obsEff.exclusion_reason );
+        omitted.fit_counts = obsEff.curve_fit_amplitude;
+        omitted.expected_counts = obsEff.curve_model_fraction * obsEff.initial_clustered_peak_amplitude;
+
+        string srcs;
+        set<string> seen_srcs;
+        for( const PeakDef &p : obsEff.fit_peaks ) //already sorted largest peak first
+        {
+          const string name = RelActCalcAuto::to_name( peak_src_variant(p) );
+          if( !name.empty() && seen_srcs.insert(name).second )
+            srcs += (srcs.empty() ? "" : ", ") + name;
+        }
+        omitted.sources = WString::fromUTF8( srcs );
+
+        dataset.omittedPoints.push_back( std::move(omitted) );
+        continue;
+      }//if( point is not shown )
+
       // Create a GenericPeakInfo from the ObsEff data
       RelActCalcManual::GenericPeakInfo peak;
       peak.m_energy = obsEff.energy;
@@ -179,24 +270,20 @@ std::string RelEffChart::jsonForData(const std::vector<ReCurveInfo> &infoSets)
       peak.m_fwhm = 2.35482 * obsEff.effective_sigma; // Convert sigma to FWHM
       peak.m_counts = 0.0;
 
-      const double frac_uncert = obsEff.fit_clustered_peak_amplitude_uncert / obsEff.fit_clustered_peak_amplitude;
+      // The fractional uncertainty of this curves share of the cluster; includes both the free-fit area
+      //  uncertainty, and (when more than one rel. eff. curve has gammas here) the unmeasurable split
+      //  between curves - see `ObsEff::curve_model_fraction`.
+      const double frac_uncert = (obsEff.observed_efficiency > 0.0)
+                                   ? (obsEff.observed_efficiency_uncert / obsEff.observed_efficiency)
+                                   : 0.0;
 
       // Process all peaks in this ObsEff to create GenericLineInfo entries
       for(const PeakDef &p : obsEff.fit_peaks)
       {
-        RelActCalcAuto::SrcVariant peak_src;
-        
-        {//Begin block to set peak_src
-          if( const SandiaDecay::Nuclide *nuc = p.parentNuclide() )
-            peak_src = nuc;
-          else if( const SandiaDecay::Element *el = p.xrayElement() )
-            peak_src = el;
-          else if( const ReactionGamma::Reaction *rctn = p.reaction() )
-            peak_src = rctn;
-          else
-            continue; // Skip free-floating peaks, although I dont think they should be here
-        }//End block to set peak_src
-        
+        const RelActCalcAuto::SrcVariant peak_src = peak_src_variant( p );
+        if( RelActCalcAuto::to_name(peak_src).empty() )
+          continue; // Skip free-floating peaks, although I dont think they should be here
+
         // Find corresponding NuclideRelAct
         const RelActCalcAuto::NuclideRelAct *nuc_info = nullptr;
         for( size_t i = 0; !nuc_info && (i < rel_acts.size()); ++i )
@@ -225,14 +312,19 @@ std::string RelEffChart::jsonForData(const std::vector<ReCurveInfo> &infoSets)
         }
         peak.m_source_gammas.push_back(line);
 
-        // Set up color mapping - all peaks for this source get same color as primary peak.
-        // p.lineColor() is set by RelActCalcAuto from NucInputInfo::peak_color_css; if that field
-        // was not populated, lineColor() will be default, relActsColors will stay empty for this
-        // source, src_counts will be 0, and the data point will be skipped with a warning.
+        // Set up the source -> (activity, color) mapping; all peaks of a source get the color of the primary
+        //  peak.  Every source must get an entry, even without a color: `jsonForDataset(...)` sums the source
+        //  activities from this map to get the denominator of the plotted efficiency, so leaving a source out
+        //  would drop its counts from the denominator but not the numerator, and the point would plot too high.
+        //  `p.lineColor()` is set by RelActCalcAuto from `NucInputInfo::peak_color_css`; when that was not
+        //  populated the color is left empty here, and the chart falls back to the curves own color.
         const string src_name = RelActCalcAuto::to_name(peak_src);
         const auto pos = relActsColors.find(src_name);
-        if( !p.lineColor().isDefault() && (pos == std::end(relActsColors)) )
-          relActsColors[src_name] = std::make_pair(nuc_info->rel_activity, p.lineColor().cssText());
+        if( pos == std::end(relActsColors) )
+        {
+          const string css_color = p.lineColor().isDefault() ? string() : p.lineColor().cssText();
+          relActsColors[src_name] = std::make_pair(nuc_info->rel_activity, css_color);
+        }
 
         peak.m_counts += p.amplitude();
       }//for(const PeakDef &p : obsEff.fit_peaks)
@@ -240,8 +332,10 @@ std::string RelEffChart::jsonForData(const std::vector<ReCurveInfo> &infoSets)
       peak.m_counts_uncert = frac_uncert * peak.m_counts;
 
       peaks.push_back( std::move(peak) );
+      dataset.peakCurveFractions.push_back( obsEff.curve_model_fraction );
     }//for(const RelActAutoSolution::ObsEff &obsEff : obs_eff_data)
 
+    assert( peaks.size() == dataset.peakCurveFractions.size() );
 
     dataset.peaks = peaks;
     dataset.relActsColors = relActsColors;
@@ -342,14 +436,19 @@ std::string RelEffChart::jsonForDataset(const RelEffChartDataset &dataset, bool 
       }else
       {
         const double rel_act = pos->second.first;
+        const string &color = pos->second.second;
         src_counts += rel_act * line.m_yield;
-        snprintf(buffer, sizeof(buffer), "%s{\"nuc\": \"%s\", \"br\": %1.6G, \"rel_act\": %1.6G, \"color\": \"%s\"}",
-                 (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(), line.m_yield, rel_act, pos->second.second.c_str() );
+        if( color.empty() ) //no color assigned to this source; the chart will use the curves own color
+          snprintf(buffer, sizeof(buffer), "%s{\"nuc\": \"%s\", \"br\": %1.6G, \"rel_act\": %1.6G}",
+                   (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(), line.m_yield, rel_act );
+        else
+          snprintf(buffer, sizeof(buffer), "%s{\"nuc\": \"%s\", \"br\": %1.6G, \"rel_act\": %1.6G, \"color\": \"%s\"}",
+                   (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(), line.m_yield, rel_act, color.c_str() );
       }
-      
+
       isotopes_json += buffer;
     }//for(const RelEff::GammaLineInfo &line : peak.m_source_gammas)
-    
+
     const double eff = peak.m_counts / src_counts;
     double eff_uncert = peak.m_counts_uncert / src_counts;
     
@@ -369,12 +468,17 @@ std::string RelEffChart::jsonForDataset(const RelEffChartDataset &dataset, bool 
       eff_uncert = 0.0;
     }
     
+    // How much of this energy's counts this curve is assigned; < 1 means another rel. eff. curve also has
+    //  gammas here, and the split between them is a model assumption rather than a measurement.
+    const double blend_frac = (index < dataset.peakCurveFractions.size())
+                                ? dataset.peakCurveFractions[index] : 1.0;
+
     snprintf(buffer, sizeof(buffer),
             "%s{\"energy\": %.2f, \"mean\": %.2f, \"counts\": %1.7g, \"counts_uncert\": %1.7g,"
-            " \"eff\": %1.6g, \"eff_uncert\": %1.6g, \"nuc_info\": ",
+            " \"eff\": %1.6g, \"eff_uncert\": %1.6g, \"blend_frac\": %1.4g, \"nuc_info\": ",
             (njson_entries ? ", " : ""), peak.m_energy, peak.m_mean, peak.m_counts, peak.m_counts_uncert,
-            eff, eff_uncert);
-    
+            eff, eff_uncert, blend_frac);
+
     rel_eff_plot_values << buffer;
     rel_eff_plot_values << "[" << isotopes_json.c_str() << "]}";
 
@@ -394,10 +498,33 @@ std::string RelEffChart::jsonForDataset(const RelEffChartDataset &dataset, bool 
   
   // Add chi2_txt to the dataset
   datasetJson << ", \"chi2_txt\": " << (dataset.chi2_title_str.empty() ? "null" : dataset.chi2_title_str.jsStringLiteral());
+
+  // The curves name; labels its section of the omitted-points panel when there is more than one curve
+  datasetJson << ", \"curve_name\": " << (dataset.curveName.empty() ? "null" : dataset.curveName.jsStringLiteral());
   
   // Add fit_uncert_fcn to the dataset
   datasetJson << ", \"fit_uncert_fcn\": " << (dataset.relEffEqnUncert.empty() ? "null" : dataset.relEffEqnUncert);
-  
+
+  // The points intentionally left off the chart, and why; the chart shows these behind an info icon, so the
+  //  user can check that what was omitted is believable, rather than the points just silently disappearing.
+  if( dataset.omittedPoints.empty() )
+  {
+    datasetJson << ", \"omitted_pts\": null";
+  }else
+  {
+    datasetJson << ", \"omitted_pts\": [";
+    for( size_t i = 0; i < dataset.omittedPoints.size(); ++i )
+    {
+      const OmittedPoint &pt = dataset.omittedPoints[i];
+      snprintf( buffer, sizeof(buffer),
+               "%s{\"energy\": %.2f, \"fit_counts\": %1.7g, \"expected_counts\": %1.7g, \"srcs\": ",
+               (i ? ", " : ""), pt.energy, pt.fit_counts, pt.expected_counts );
+      datasetJson << buffer << pt.sources.jsStringLiteral()
+                  << ", \"reason\": " << pt.reason.jsStringLiteral() << "}";
+    }
+    datasetJson << "]";
+  }//if( no omitted points ) / else
+
   // Close dataset object
   datasetJson << "}";
   
@@ -461,6 +588,85 @@ void RelEffChart::setCssRules()
                                          " pointer-events: none;"
                                          " color: #444422;" );
   
+  // Points whose counts are shared with another rel. eff. curve are drawn hollow - the split between curves
+  //  is a model assumption rather than a measurement, so such a point is not independent evidence for this
+  //  curve.  See `ObsEff::curve_model_fraction`.
+  rulename = ".RelEffPlot circle.blended";
+  if( !m_cssRules.count(rulename) )
+    m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlot circle.blended",
+                                         "fill-opacity: 0.15; stroke-width: 1.5;" );
+
+  // The "some points were left off this chart" affordance; see `RelEffPlot.prototype.updateOmittedPointsInfo`.
+  //  Note the icon/panel are positioned against this widgets div (which has class "RelEffChart"); the
+  //  "RelEffPlot" class is on the <svg> inside it, so it must not be used as the positioning ancestor.
+  rulename = "RelEffChart - position";
+  if( !m_cssRules.count(rulename) )
+    m_cssRules[rulename] = style.addRule( "#" + id(), "position: relative;" );
+
+  rulename = ".RelEffPlotOmittedIcon";
+  if( !m_cssRules.count(rulename) )
+    m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlotOmittedIcon",
+                                         "position: absolute; left: 2px; top: 2px;"
+                                         " width: 15px; height: 15px; line-height: 15px;"
+                                         " text-align: center; font: italic bold 11px serif;"
+                                         " border-radius: 50%; border: 1px solid currentColor;"
+                                         " opacity: 0.55; cursor: pointer; user-select: none;" );
+
+  rulename = ".RelEffPlotOmittedIcon:hover";
+  if( !m_cssRules.count(rulename) )
+    m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlotOmittedIcon:hover", "opacity: 1;" );
+
+  rulename = ".RelEffPlotOmittedPanel - layout";
+  if( !m_cssRules.count(rulename) )
+    m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlotOmittedPanel",
+                                         "position: absolute; left: 17px; top: 2px;" //adjoins the icon, so
+                                         //  there is no gap for the pointer to fall through on its way over
+                                         " max-width: 95%; max-height: 90%; overflow: auto; z-index: 10;"
+                                         " padding: 6px 8px; font: 11px sans-serif; border-radius: 6px;"
+                                         " border-style: solid; border-width: 1px;"
+                                         " box-shadow: 0 1px 4px rgba(0,0,0,0.25);" );
+
+  rulename = ".RelEffPlotOmittedPanel td";
+  if( !m_cssRules.count(rulename) )
+    m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlotOmittedPanel td",
+                                         "padding: 1px 6px 1px 0; vertical-align: top;" );
+
+  rulename = ".RelEffPlotOmittedHeader";
+  if( !m_cssRules.count(rulename) )
+    m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlotOmittedHeader td",
+                                         "font-weight: bold; border-bottom: 1px solid currentColor;" );
+
+  rulename = ".RelEffPlotOmittedTitle";
+  if( !m_cssRules.count(rulename) )
+    m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlotOmittedTitle",
+                                         "font-weight: bold; margin-bottom: 2px;" );
+
+  rulename = ".RelEffPlotOmittedExplain";
+  if( !m_cssRules.count(rulename) )
+    m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlotOmittedExplain",
+                                         "margin-bottom: 4px; opacity: 0.8;" );
+
+  rulename = ".RelEffPlotOmittedCurve";
+  if( !m_cssRules.count(rulename) )
+    m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlotOmittedCurve",
+                                         "font-weight: bold; padding-top: 4px;" );
+
+  rulename = ".RelEffPlotBlendNote";
+  if( !m_cssRules.count(rulename) )
+    m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlotBlendNote",
+                                         "margin-top: 3px; max-width: 260px; opacity: 0.85;" );
+
+  // The panel and icon sit over the chart, so they need colors of their own.  Use the apps global color
+  //  theme variables (set on :root by `InterSpec::applyColorTheme`), so they follow the theme like the rest
+  //  of the non-chart UI; the fallbacks are for the self-contained HTML reports, which have no variables.
+  rulename = ".RelEffPlotOmittedPanel - colors";
+  if( !m_cssRules.count(rulename) )
+    m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlotOmittedPanel, "
+                                          "#" + id() + " .RelEffPlotOmittedIcon",
+                                         "background: var(--interspec-background-color, #ffffee);"
+                                         " color: var(--interspec-text-color, #333322);"
+                                         " border-color: var(--interspec-border-color, #cccc99);" );
+
   setLineColor( theme->foregroundLine );
   setDefaultMarkerColor( theme->backgroundLine );
   setChartBackgroundColor( theme->spectrumChartBackground );
@@ -543,11 +749,11 @@ void RelEffChart::setAxisLineColor( const Wt::WColor &color )
 void RelEffChart::setChartBackgroundColor( const Wt::WColor &color )
 {
   const string c = color.isDefault() ? "rgba(0,0,0,0)" : color.cssText();
-  
+
   const string rulename = "BackgroundColor";
-  
+
   WCssStyleSheet &style = wApp->styleSheet();
-  
+
   if( color.isDefault() )
   {
     if( m_cssRules.count(rulename) )

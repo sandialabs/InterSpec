@@ -469,6 +469,39 @@ namespace ExperimentalAutomatedPeakSearch
                                 const bool singleThreaded,
                                 const bool isHPGe,
                                 std::shared_ptr<const std::atomic<bool>> cancel_flag = nullptr );
+
+
+  /** Recovers real background peaks sitting underneath foreground peaks.
+
+   For each foreground peak that has NO matching background automated-search peak, this actively
+   tests whether a statistically significant peak exists at that energy in the background
+   spectrum, and if so fits it and adds it to the background peak set.  This lets the
+   "elevated above background" comparison (see `AnalystChecks::detected_peaks`) correctly EXCLUDE
+   non-elevated NORM lines (which a low-statistics background auto-search may have missed) instead
+   of mis-flagging them as foreground sources.
+
+   Algorithm:
+     1. Collect foreground peaks whose energy has no matching background auto peak (using the same
+        ~0.75*avg_fwhm rule the elevation test uses); dedup co-located candidates.
+     2. Cheap Currie pre-screen (`DetectionLimitCalc::currie_mda_calc`) on the background at each
+        candidate energy - only candidates with a real statistical count excess proceed to a fit.
+     3. Fit each surviving candidate in parallel on the background spectrum using the same
+        automated `searchForPeakFromUser(E,-1.0,...)` machinery the whole-spectrum search uses, so
+        recovered peaks meet the same acceptance criteria.
+     4. Merge the fit results into the background set (remove superseded peaks, add the refit ROI
+        group), keeping ROI groups intact.
+
+   @returns The augmented background auto-search peak set, or `background_auto_peaks` unchanged if
+            nothing was recovered.  Never mutates the input deque (builds a fresh one when changed).
+   */
+  std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>>
+    recover_background_peaks_under_foreground(
+        const std::vector<std::shared_ptr<const PeakDef>> &foreground_peaks,
+        const std::shared_ptr<const SpecUtils::Measurement> &background_spectrum,
+        const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &background_auto_peaks,
+        const std::shared_ptr<const DetectorPeakResponse> &background_drf,
+        const bool isHPGe,
+        std::shared_ptr<const std::atomic<bool>> cancel_flag = nullptr );
 }//namespace ExperimentalAutomatedPeakSearch
 
 

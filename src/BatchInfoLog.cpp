@@ -49,6 +49,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/ShowRiidInstrumentsAna.h"
+#include "InterSpec/ShieldSourcePullTrend.h"
 #include "InterSpec/ShieldingSourceFitPlot.h"
 
 using namespace std;
@@ -868,7 +869,30 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     
     if( !results.errormsgs.empty() )
       data["ErrorMessages"] = results.errormsgs;
-    
+
+    // The automatic pull-trend interpretation (too much/little shielding, wrong effective atomic
+    //  number, ...) as a dedicated field, so a template can place it under the chi chart (like the
+    //  GUI) and/or in the warnings area.  The report always reflects a completed fit, so it's valid.
+    //  Always present (with HasConclusion) so template access is unconditionally safe.
+    {
+      auto &tj = data["PullTrend"];
+      tj["HasConclusion"] = false;
+      tj["Message"] = "";
+      if( results.pull_trend )
+      {
+        const ShieldSourcePullTrend::TrendResult &trend = *results.pull_trend;
+        const string trend_msg = ShieldSourcePullTrend::conclusion_report_text( trend );
+        tj["Message"] = trend_msg;
+        tj["HasConclusion"] = !trend_msg.empty();
+        tj["SlopeT"] = trend.slopeT;
+        tj["CurvatureT"] = trend.curvatureT;
+        tj["ReducedChi2"] = trend.redChi2;
+        tj["NumPeaksUsed"] = static_cast<int>( trend.numPointsUsed );
+        tj["AtomicNumberDiscriminationPower"] = trend.anDiscriminationT;
+        tj["AtomicNumberDiscriminable"] = trend.anDiscriminable;
+      }
+    }
+
     int num_sources = 0;
     bool hasAnyTraceSrc = false, hasAnyVolumetricSrc = false, hasFitAnyAge = false;
     if( results.source_calc_details )

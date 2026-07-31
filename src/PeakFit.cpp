@@ -68,6 +68,7 @@
 #include "InterSpec/PeakFitLM.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitChi2Fcn.h"
+#include "InterSpec/DetectionLimitCalc.h"
 #include "SpecUtils/EnergyCalibration.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -743,7 +744,230 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks(
 
   return answer;
 }
-  
+
+
+std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>>
+recover_background_peaks_under_foreground(
+    const std::vector<std::shared_ptr<const PeakDef>> &foreground_peaks,
+    const std::shared_ptr<const SpecUtils::Measurement> &background_spectrum,
+    const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> &background_auto_peaks,
+    const std::shared_ptr<const DetectorPeakResponse> &background_drf,
+    const bool isHPGe,
+    std::shared_ptr<const std::atomic<bool>> cancel_flag )
+{
+  typedef std::shared_ptr<const PeakDef> PeakConstPtr;
+  typedef std::deque<PeakConstPtr> PeakDequeT;
+
+  if( !background_spectrum || foreground_peaks.empty() )
+    return background_auto_peaks;
+
+  const size_t nchannel = background_spectrum->num_gamma_channels();
+  if( nchannel < 16 )
+    return background_auto_peaks;
+
+  const double min_energy = background_spectrum->gamma_channel_lower( 0 );
+  const double max_energy = background_spectrum->gamma_channel_upper( nchannel - 1 );
+
+  // Running background peak set we will augment (starts as a copy of the input).
+  vector<PeakConstPtr> bg_peaks;
+  if( background_auto_peaks )
+    bg_peaks.insert( bg_peaks.end(), background_auto_peaks->begin(), background_auto_peaks->end() );
+
+  // --- Step 1: collect unmatched, non-co-located foreground candidate energies, building a rough
+  //     seed peak for each on the BACKGROUND (used both for causal clustering and as a fit seed). ---
+  vector<PeakConstPtr> seeds;
+
+  for( const PeakConstPtr &fg : foreground_peaks )
+  {
+    if( !fg || !fg->gausPeak() )
+      continue;
+
+    const double energy = fg->mean();
+    const double fwhm = fg->fwhm();
+    const double sigma = fg->sigma();
+    if( (fwhm <= 0.0) || (sigma <= 0.0) || (energy <= min_energy) || (energy >= max_energy) )
+      continue;
+
+    // Skip if a background auto peak already matches (same rule the elevation test uses).
+    bool matched = false;
+    for( const PeakConstPtr &bg : bg_peaks )
+    {
+      const double ediff = fabs( energy - bg->mean() );
+      const double tol = 0.75 * 0.5 * (fwhm + bg->fwhm());
+      if( ediff < tol )
+      {
+        matched = true;
+        break;
+      }
+    }//for( const PeakConstPtr &bg : bg_peaks )
+
+    if( matched )
+      continue;
+
+    // Skip if we already have a seed essentially on top of this one.
+    bool duplicate = false;
+    for( const PeakConstPtr &s : seeds )
+    {
+      if( fabs( s->mean() - energy ) < 0.75*std::max( fwhm, s->fwhm() ) )
+      {
+        duplicate = true;
+        break;
+      }
+    }//for( const PeakConstPtr &s : seeds )
+
+    if( duplicate )
+      continue;
+
+    // Rough starting amplitude from the background gross counts over ~+-FWHM.
+    const double gross = background_spectrum->gamma_integral( static_cast<float>( energy - fwhm ),
+                                                              static_cast<float>( energy + fwhm ) );
+    seeds.push_back( make_shared<PeakDef>( energy, sigma, std::max( 1.0, 0.5*gross ) ) );
+  }//for( const PeakConstPtr &fg : foreground_peaks )
+
+  if( seeds.empty() )
+    return background_auto_peaks;
+
+  // --- Step 2: cluster seeds using the SAME causal grouping the whole-spectrum search uses (7.5
+  //     sigma), so a close doublet is reconstructed as ONE multi-peak ROI instead of two independent
+  //     single-peak fits (one of which may drop the weaker line). ---
+  const vector<vector<PeakConstPtr>> clusters = causilyDisconnectedPeaks( 7.5, true, seeds );
+
+  // --- Step 3+4: for each cluster with a real background excess (cheap Currie pre-screen over the
+  //     whole cluster span - side-bands OUTSIDE it, so a neighboring line doesnt bias the continuum
+  //     and falsely reject a real one), fit ALL its seeds together on the background as a single
+  //     multi-peak ROI, then merge into the running set (removing any superseded existing peaks so
+  //     the ROI stays consistent). ---
+  vector<PeakConstPtr> running = bg_peaks;   // running background peak set (starts as the base set)
+  bool changed = false;
+
+  for( const vector<PeakConstPtr> &cluster : clusters )
+  {
+    if( is_search_canceled( cancel_flag ) )
+      break;
+    if( cluster.empty() )
+      continue;
+
+    double span_lo = std::numeric_limits<double>::infinity();
+    double span_hi = -std::numeric_limits<double>::infinity();
+    for( const PeakConstPtr &s : cluster )
+    {
+      span_lo = std::min( span_lo, s->mean() - 1.25*s->fwhm() );
+      span_hi = std::max( span_hi, s->mean() + 1.25*s->fwhm() );
+    }
+
+    if( (span_lo <= min_energy) || (span_hi >= max_energy) )
+      continue;
+
+    try
+    {
+      // Cheap Currie pre-screen over the whole cluster span.
+      DetectionLimitCalc::CurrieMdaInput input;
+      input.spectrum = background_spectrum;
+      input.gamma_energy = static_cast<float>( 0.5*(span_lo + span_hi) );
+      input.roi_lower_energy = static_cast<float>( span_lo );
+      input.roi_upper_energy = static_cast<float>( span_hi );
+      input.num_lower_side_channels = 4;
+      input.num_upper_side_channels = 4;
+      input.detection_probability = 0.95;
+      input.additional_uncertainty = 0.0f;
+
+      const DetectionLimitCalc::CurrieMdaResult curie = DetectionLimitCalc::currie_mda_calc( input );
+      if( curie.source_counts <= curie.decision_threshold )
+        continue;  // no real background excess in this region
+
+      // Existing background peaks within the span are co-fit (and superseded) so the ROI stays whole.
+      vector<PeakConstPtr> existing_in_span;
+      for( const PeakConstPtr &p : running )
+      {
+        if( p && p->gausPeak() && (p->mean() >= span_lo) && (p->mean() <= span_hi) )
+          existing_in_span.push_back( p );
+      }
+
+      // One shared continuum for the ROI, estimated from the background side channels.
+      const shared_ptr<PeakContinuum> cont = make_shared<PeakContinuum>();
+      cont->calc_linear_continuum_eqn( background_spectrum, 0.5*(span_lo + span_hi), span_lo, span_hi, 4, 4 );
+
+      vector<PeakDef> fit_input;
+      for( const PeakConstPtr &p : existing_in_span )
+      {
+        PeakDef s = *p;
+        s.setContinuum( cont );
+        s.setFitFor( PeakDef::Mean, true );
+        s.setFitFor( PeakDef::Sigma, true );
+        s.setFitFor( PeakDef::GaussAmplitude, true );
+        fit_input.push_back( s );
+      }
+
+      for( const PeakConstPtr &seed : cluster )
+      {
+        // Skip a seed that essentially coincides with an existing peak already added above.
+        bool coincides = false;
+        for( const PeakConstPtr &p : existing_in_span )
+        {
+          if( fabs( p->mean() - seed->mean() ) < 0.5*seed->fwhm() )
+          {
+            coincides = true;
+            break;
+          }
+        }
+        if( coincides )
+          continue;
+
+        PeakDef s = *seed;
+        s.setContinuum( cont );
+        s.setFitFor( PeakDef::Mean, true );
+        s.setFitFor( PeakDef::Sigma, true );
+        s.setFitFor( PeakDef::GaussAmplitude, true );
+        fit_input.push_back( s );
+      }//for( const PeakConstPtr &seed : cluster )
+
+      if( fit_input.empty() )
+        continue;
+
+      // Fit the whole ROI on the background as one group (large ncausality keeps the cluster
+      //  together); peaks below the significance threshold are dropped.  Because the Currie
+      //  pre-screen already confirmed a real excess, a modest significance threshold is used.
+      const double ncausality = 7.5;
+      const double stat_threshold = 2.0;       // minimum area significance (LM path)
+      const double hypothesis_threshold = -1.0;
+      const vector<PeakDef> fit = fitPeaksInRange( span_lo, span_hi, ncausality, stat_threshold,
+                                        hypothesis_threshold, fit_input, background_spectrum,
+                                        Wt::WFlags<PeakFitLM::PeakFitLMOptions>(), isHPGe );
+
+      // Require netting at least one new peak beyond what was already there.
+      if( fit.size() <= existing_in_span.size() )
+        continue;
+
+      // Remove the superseded existing peaks, then add the refit ROI peaks (which share `cont`).
+      for( const PeakConstPtr &p : existing_in_span )
+      {
+        const vector<PeakConstPtr>::iterator pos = std::find( running.begin(), running.end(), p );
+        if( pos != running.end() )
+        {
+          running.erase( pos );
+          changed = true;
+        }
+      }
+
+      for( const PeakDef &p : fit )
+      {
+        running.push_back( make_shared<PeakDef>( p ) );
+        changed = true;
+      }
+    }catch( std::exception & )
+    {
+      // ROI near the spectrum edge or a fit error - just skip this cluster.
+    }
+  }//for( const vector<PeakConstPtr> &cluster : clusters )
+
+  if( !changed )
+    return background_auto_peaks;
+
+  std::sort( running.begin(), running.end(), &PeakDef::lessThanByMeanShrdPtr );
+
+  return std::make_shared<PeakDequeT>( running.begin(), running.end() );
+}//recover_background_peaks_under_foreground(...)
+
 }//namespace ExperimentalAutomatedPeakSearch
 
 

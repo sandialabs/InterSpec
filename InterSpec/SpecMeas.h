@@ -26,8 +26,10 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <map>
 #include <deque>
 #include <mutex>
+#include <future>
 #include <atomic>
 #include <memory>
 
@@ -43,6 +45,9 @@ class PeakModel;
 class MaterialDB;
 struct PeakContinuum;
 class DetectorPeakResponse;
+#if( USE_LLM_INTERFACE )
+struct LlmInteraction;
+#endif
 
 namespace RelActCalcAuto
 {
@@ -75,6 +80,19 @@ public:
   //       the peaks used dont change; so instead should use set<weak_ptr<const Measurement>> to
   //       track peak ownership.
   typedef std::map<std::set<int>, PeakDequeShrdPtr >     SampleNumsToPeakMap;
+
+  /** Shared future/promise types for the de-duplicated automated-search-peak accessor.
+   The value is the found peaks (may be null on cancel/failure).  See
+   `PeakSearchGuiUtils::get_or_launch_automated_search_peaks(...)` and
+   `reserveAutomatedSearchPeaks(...)`.
+   */
+  using AutoSearchPeaksFuture  = std::shared_future<std::shared_ptr<const PeakDeque>>;
+  using AutoSearchPeaksPromise = std::promise<std::shared_ptr<const PeakDeque>>;
+
+#if( USE_LLM_INTERFACE )
+  // Forward declaration for LLM conversation history
+  typedef std::map<std::set<int>, std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>>> SampleNumsToLlmHistoryMap;
+#endif
   
   //
   //typedef std::map<std::pair<std::set<int>,std::set<std::string>>, PeakDequeShrdPtr >     SampleNumsToPeakMap;
@@ -276,7 +294,42 @@ public:
                                 /*, std::shared_ptr< PeakDeque > intitalPeaks*/ );
   
   std::set<std::set<int> > sampleNumsWithAutomatedSearchPeaks() const;
-  
+
+  /** Reserves/coalesces an automated-search-peak computation for `samplenums`.
+
+   Atomically (under `m_autoSearchMutex`) does one of:
+     - cache hit: returns a ready future holding the cached peaks; `out_promise` is null.
+     - a search is already in-flight for these sample numbers: returns that same
+       shared_future; `out_promise` is null.
+     - nothing cached or in-flight: registers a new in-flight entry, returns its
+       (not-yet-ready) shared_future AND sets `out_promise` to the promise the caller MUST
+       fulfill once the search finishes.
+
+   Only `PeakSearchGuiUtils::get_or_launch_automated_search_peaks(...)` is expected to call
+   this; other code should go through that coordinating function.
+   */
+  AutoSearchPeaksFuture reserveAutomatedSearchPeaks(
+          const std::set<int> &samplenums,
+          std::shared_ptr<AutoSearchPeaksPromise> &out_promise );
+
+  /** Removes the in-flight entry for `samplenums` (call on search completion, AFTER
+   `setAutomatedSearchPeaks(...)`).  No-op if there is no entry.
+   */
+  void clearInFlightAutomatedSearch( const std::set<int> &samplenums );
+
+  /** Run-once guard for background-peak recovery (see
+   `recover_background_peaks_under_foreground(...)`).  `markBackgroundRecoveredForForeground`
+   records that this (background) `SpecMeas`, for the given background sample numbers, has had its
+   auto-search peaks augmented against a foreground identified by its displayed sample numbers;
+   `hasRecoveredBackgroundForForeground` queries it.  Keyed by BOTH sample-number sets so that a
+   change to either the displayed foreground or background samples re-enables recovery.  Guarded by
+   `m_autoSearchMutex`.
+   */
+  bool hasRecoveredBackgroundForForeground( const std::set<int> &foreground_samplenums,
+                                            const std::set<int> &background_samplenums ) const;
+  void markBackgroundRecoveredForForeground( const std::set<int> &foreground_samplenums,
+                                             const std::set<int> &background_samplenums );
+
   //peaksHaveBeenAdded(): marks this SpecUtils::SpecFile object as
   void setModified();
 
@@ -402,6 +455,23 @@ public:
   void setRelActAutoGuiState( const RelActCalcAuto::RelActAutoGuiState *state );
 #endif //#if( USE_REL_ACT_TOOL )
 
+#if( USE_LLM_INTERFACE )
+  /** Gets the LLM conversation history for the specified sample numbers. */
+  std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> llmConversationHistory( const std::set<int> &samplenums ) const;
+
+  /** Sets the LLM conversation history for the specified sample numbers. */
+  void setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> history );
+  
+  /** Removes LLM conversation history for the specified sample numbers. */
+  void removeLlmConversationHistory( const std::set<int> &samplenums );
+  
+  /** Gets all sample number sets that have LLM conversation history. */
+  std::set<std::set<int>> sampleNumsWithLlmHistory() const;
+  
+  /** Removes all LLM conversation history. */
+  void removeAllLlmConversationHistory();
+#endif //#if( USE_LLM_INTERFACE )
+
 protected:
   /** Changes all instances of the first sample number, to the second sample number in `m_peaks`, `m_autoSearchPeaks`, and
    `m_dbUserStateIndexes`.  DOES NOT change the sample numbers of `SpecUtils::Measurement` - see `change_sample_numbers`
@@ -446,12 +516,34 @@ protected:
   
   SampleNumsToPeakMap m_autoSearchPeaks;
 //  SampleNumsToPeakMap m_autoSearchInitialPeaks;
+
+  /** In-flight automated-search-peak computations, keyed by sample numbers, so that
+   concurrent callers coalesce onto a single search instead of each launching their own.
+   Guarded by `m_autoSearchMutex`.  See `reserveAutomatedSearchPeaks(...)`.
+
+   Note the lock ordering invariant: `m_autoSearchMutex` is always acquired BEFORE the
+   inherited `mutex_` (which guards `m_autoSearchPeaks`), never the reverse.
+   */
+  std::map<std::set<int>, AutoSearchPeaksFuture> m_autoSearchInFlight;
+
+  /** (foreground sample numbers, background sample numbers) pairings this (background) `SpecMeas`
+   has already had its auto-search peaks recovered/augmented for; the run-once guard for
+   background-peak recovery.  Guarded by `m_autoSearchMutex`.
+   */
+  std::set<std::pair<std::set<int>,std::set<int>>> m_bgRecoveredForForeground;
+
+  /** Guards `m_autoSearchInFlight` and `m_bgRecoveredForForeground`. */
+  mutable std::mutex m_autoSearchMutex;
   
   std::unique_ptr<rapidxml::xml_document<char>> m_shieldingSourceModel;
   
 #if( USE_REL_ACT_TOOL )
   std::unique_ptr<rapidxml::xml_document<char>> m_relActManualGuiState;
   std::unique_ptr<rapidxml::xml_document<char>> m_relActAutoGuiState;
+#endif
+
+#if( USE_LLM_INTERFACE )
+  SampleNumsToLlmHistoryMap m_llmConversationHistory;
 #endif
   
   Wt::Signal<> m_aboutToBeDeleted;

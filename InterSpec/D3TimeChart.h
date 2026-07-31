@@ -26,6 +26,7 @@ struct ColorTheme;
 
 namespace Wt
 {
+  class WTimer;
   class WCssTextRule;
   class WMemoryResource;
 }//namespace Wt
@@ -99,6 +100,13 @@ public:
    */
   void captureChartImage( const std::string &format, int maxLongestSide,
                           ImageCaptureCallback callback );
+
+  /** How long an in-flight capture is given before it is failed.  Public because it bounds the worst
+   case a captureChartImage() caller can see, which consumers imposing their own deadline (e.g.
+   LlmTools::SharedTool::asyncTimeoutMs) must exceed.  Unlike D3SpectrumDisplayDiv, captures here are
+   not queued - a second request supersedes the first - so this is the whole bound.
+   */
+  static constexpr int sm_image_capture_timeout_ms = 15000;
 
   /** Signal when the user clicks on the chart.
    Gives the sample numebr user clicked on and a bitwise or of Wt::KeyboardModifiers.
@@ -364,17 +372,33 @@ protected:
   std::array<int,2> m_displayedSampleNumbers;
   std::array<double,2> m_displayedTimes;
 
-  /** JSignal for receiving captured image data from JavaScript, for captureChartImage(). */
-  std::unique_ptr<Wt::JSignal<std::string, std::string, int, int>> m_imageCapturedJS;
+  /** JSignal for receiving captured image data from JavaScript, for captureChartImage().
+   The trailing int is the capture id (see m_activeCaptureId).
+   */
+  std::unique_ptr<Wt::JSignal<std::string, std::string, int, int, int>> m_imageCapturedJS;
 
   /** Pending callback for captureChartImage(). */
   ImageCaptureCallback m_pendingImageCallback;
+
+  /** Guard against the browser never answering a capture, so a lost round-trip resolves the caller
+   with a failure instead of leaving it waiting forever.  See D3SpectrumDisplayDiv for details.
+   */
+  std::unique_ptr<Wt::WTimer> m_imageCaptureTimer;
+
+  /** Identifies the in-flight capture so a result arriving after the guard timer fired is discarded
+   rather than delivered to a later capture's callback.  0 means "no capture in flight".
+   */
+  int m_activeCaptureId = 0;
+  int m_nextCaptureId = 1;
 
   /** Resource for serving chart image downloads (WResource-based for wxWidgets compatibility). */
   Wt::WMemoryResource *m_downloadResource;
 
   /** Handler for the JSignal from JS when image capture completes. */
-  void handleImageCaptured( std::string base64, std::string mimeType, int w, int h );
+  void handleImageCaptured( std::string base64, std::string mimeType, int w, int h, int captureId );
+
+  /** Guard-timer handler: resolves the in-flight capture as failed. */
+  void handleImageCaptureTimeout();
 
   /** Handles downloading an image captured by captureChartImage, for saveChartToImg. */
   void handleChartImageForDownload( const std::string &filename,

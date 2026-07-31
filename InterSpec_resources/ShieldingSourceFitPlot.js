@@ -87,7 +87,11 @@ ShieldingSourceFitPlot = function (elem, options) {
         return x.toFixed(2);
       if( Math.abs(x) <= 10.0 )
         return x.toFixed(1);
-      return x.toFixed(0);
+      if( Math.abs(x) < 1.0e5 )
+        return x.toFixed(0);
+      // Large values (e.g. Mult.-mode outliers from a degenerate fit) - keep the tick label short
+      //  (toFixed(0) yields full 17-digit precision for values >= 1e21).
+      return x.toExponential(1);
     } )
     .orient("left")
     .innerTickSize(7)
@@ -343,6 +347,16 @@ ShieldingSourceFitPlot.prototype.setData = function( data ) {
     // Ensure y=0 is visible
     min_y = Math.min(min_y, 0);
     max_y = Math.max(max_y, 0);
+
+    // Include the fitted trend curve(s) in the y-domain (Chi mode only).
+    if( data.trend_lines ) {
+      data.trend_lines.forEach(function(tl){
+        (tl.points || []).forEach(function(p){
+          min_y = Math.min(min_y, p.chi);
+          max_y = Math.max(max_y, p.chi);
+        });
+      });
+    }
   } else {
     // Mult mode: include error bars and ensure y=0 and y=1 are visible
     min_y = d3.min(data_points, d => d.mult - d.mult_uncert);
@@ -442,6 +456,25 @@ ShieldingSourceFitPlot.prototype.setData = function( data ) {
     .style("stroke", "grey")
     .style("stroke-width", 1)
     .style("stroke-dasharray", "5,5");
+
+  // Add fitted pull-trend curve(s) - Chi mode only, drawn behind the data points.
+  if( this.showChi && data.trend_lines ) {
+    const lineFcn = d3.svg.line()
+      .x(function(p){ return self.xScale(p.energy); })
+      .y(function(p){ return self.yScale(p.chi); });
+    data.trend_lines.forEach(function(tl){
+      if( !tl.points || tl.points.length < 2 )
+        return;
+      self.plotGroup.append("path")
+        .attr("class", "trendline")
+        .attr("d", lineFcn(tl.points))
+        .style("fill", "none")
+        .style("stroke", tl.color && tl.color.length ? tl.color : "steelblue")
+        .style("stroke-width", 1.5)
+        .style("stroke-dasharray", "6,3")
+        .style("opacity", 0.75);
+    });
+  }
 
   // Add error bars
   data_points.forEach(function(d) {

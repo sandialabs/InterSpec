@@ -39,6 +39,8 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/SpecFile.h"
 
+#include "SandiaDecay/SandiaDecay.h"
+
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/PeakDef.h"
@@ -1291,9 +1293,9 @@ std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_
   
   // Sort peaks by energy before returning
   sort( begin(result_peaks), end(result_peaks), &PeakDef::lessThanByMean );
-  
+
   return result_peaks;
 }
 
-  
+
 }//namespace RelActCalc

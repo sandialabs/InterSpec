@@ -153,19 +153,20 @@ cd /path/to/InterSpec/target/electron
 
 sudo apt-get install nodejs npm
 npm install -g cmake-js
-npm install --save-dev node-addon-api
-npm install electron
-npm install electron-packager
+# --ignore-scripts because package.json's `install` script is `cmake-js compile`, which we run
+#  ourselves below with the options we want
+npm install --ignore-scripts
 
 cmake-js --CDCMAKE_PREFIX_PATH=${MY_WT_PREFIX} --CDCMAKE_BUILD_TYPE="Release" --out="build_linux" --target install
 
 # To run InterSpec:
 electron build_linux/app
 
-# Or to create a self-contained package of the app
+# Or to create installable packages of the app (.deb, .rpm, .AppImage); needs dpkg-deb,
+#  rpmbuild and fakeroot on the host
 npm run package-linux
 
-#InterSpec is now in release-builds/InterSpec-linux-x64
+#InterSpec packages are now in target/electron/dist/
 
 # (note: you may need to upgrade to a newer version of npm and/or nodejs to
 #        use latest versions of electron)
