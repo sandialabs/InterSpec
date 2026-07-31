@@ -191,6 +191,30 @@ BatchGuiAnaWidget::BatchGuiAnaWidget( Wt::WContainerWidget *parent )
   interspec->useMessageResourceBundle( "BatchGuiAnaWidget" );
 }
 
+void BatchGuiAnaWidget::setMultiSampleHandling( const BatchSampleSelect::MultiSampleHandling )
+{
+  // No-op; analysis types the option applies to override this.
+}
+
+
+void BatchGuiPeakFitWidget::setMultiSampleHandling( const BatchSampleSelect::MultiSampleHandling handling )
+{
+  if( !m_multi_sample_handling )
+    return;
+
+  int index = 0;
+  switch( handling )
+  {
+    case BatchSampleSelect::MultiSampleHandling::Auto:                 index = 0; break;
+    case BatchSampleSelect::MultiSampleHandling::EachSampleSeparately: index = 1; break;
+    case BatchSampleSelect::MultiSampleHandling::SumAllSamples:        index = 2; break;
+  }//switch( handling )
+
+  m_multi_sample_handling->setCurrentIndex( index );
+  optionsChanged();
+}//void BatchGuiPeakFitWidget::setMultiSampleHandling(...)
+
+
 Wt::Signal<bool,Wt::WString> &BatchGuiAnaWidget::canDoAnalysisSignal()
 {
   return m_canDoAnalysis;
@@ -342,6 +366,20 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget( Wt::WContainerWidget *parent ) : B
   m_peak_hypothesis_threshold->setWidth( 40 );
   HelpSystem::attachToolTipOn(
     m_peak_hypothesis_threshold, WString::tr( "bgw-peak-hypothesis-threshold-tt" ), showToolTips );
+
+  m_multi_sample_container = new Wt::WContainerWidget( float_options );
+  m_multi_sample_container->addStyleClass( "ThresholdOptionContainer" );
+
+  m_multi_sample_label = new Wt::WLabel( WString::tr( "bgw-multi-sample-label" ), m_multi_sample_container );
+  m_multi_sample_label->setWordWrap( false );
+  m_multi_sample_handling = new Wt::WComboBox( m_multi_sample_container );
+  m_multi_sample_label->setBuddy( m_multi_sample_handling );
+  m_multi_sample_handling->addItem( WString::tr( "bgw-multi-sample-auto" ) );
+  m_multi_sample_handling->addItem( WString::tr( "bgw-multi-sample-each" ) );
+  m_multi_sample_handling->addItem( WString::tr( "bgw-multi-sample-sum" ) );
+  m_multi_sample_handling->setCurrentIndex( 0 );
+  m_multi_sample_handling->activated().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
+  HelpSystem::attachToolTipOn( m_multi_sample_handling, WString::tr( "bgw-multi-sample-tt" ), showToolTips );
 
 
   m_reports_container = new WGroupBox( WString::tr( "bgw-reports-grp-title" ), this );
@@ -851,6 +889,19 @@ BatchPeak::BatchPeakFitOptions BatchGuiPeakFitWidget::getPeakFitOptions() const
   answer.create_csv_output = m_create_csv_output->isChecked();
   answer.create_json_output = m_create_json_output->isChecked();
   answer.concatenate_to_n42 = m_concatenate_to_n42->isChecked();
+
+  switch( m_multi_sample_handling ? m_multi_sample_handling->currentIndex() : 0 )
+  {
+    case 1:
+      answer.multi_sample_handling = BatchSampleSelect::MultiSampleHandling::EachSampleSeparately;
+      break;
+    case 2:
+      answer.multi_sample_handling = BatchSampleSelect::MultiSampleHandling::SumAllSamples;
+      break;
+    default:
+      answer.multi_sample_handling = BatchSampleSelect::MultiSampleHandling::Auto;
+      break;
+  }//switch( m_multi_sample_handling->currentIndex() )
 
   if( m_no_background->isChecked() )
   {
@@ -1995,6 +2046,10 @@ BatchRelActAuto::Options BatchGuiIsotopicsByNuclidesWidget::getIsotopicsOptions(
   options.overwrite_output_files = m_overwrite_output_files->isChecked();
   options.write_n42_with_results = m_write_n42_with_results->isChecked();
   options.create_json_output = m_create_json_output->isChecked();
+
+  // The multi-record combo is inherited from BatchGuiPeakFitWidget, and is shown on this pane, so
+  //  it has to be carried over into our own options struct.
+  options.multi_sample_handling = getPeakFitOptions().multi_sample_handling;
 
   // Reports - default to "html" per-file + "html" summary; users with custom
   // template uploaders override by checking those checkboxes.

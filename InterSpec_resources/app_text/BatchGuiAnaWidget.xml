@@ -147,4 +147,10 @@ A zero or negative value will mean no requirement, and also no 'peak-stat-thresh
 
   <!-- Error and completion messages -->
   <message id="bgw-no-exemplar-msg">No exemplar spectrum is available. Please select a foreground spectrum or upload an exemplar file.</message>
+
+  <message id="bgw-multi-sample-label">Multi-record files:</message>
+  <message id="bgw-multi-sample-auto">Auto-detect</message>
+  <message id="bgw-multi-sample-each">Analyze each sample</message>
+  <message id="bgw-multi-sample-sum">Sum foreground samples</message>
+  <message id="bgw-multi-sample-tt">Controls what happens when an input file holds more than one candidate foreground spectrum - that is, more than one sample number not marked background, intrinsic activity, or calibration.  Passthrough/search-mode files are never affected.&lt;br /&gt;&quot;Auto-detect&quot; keeps the previous behaviour, and skips a file when which spectrum to use is ambiguous.&lt;br /&gt;&quot;Analyze each sample&quot; produces one independent result, and one set of output files suffixed &quot;_sampleN&quot;, per sample.&lt;br /&gt;&quot;Sum foreground samples&quot; sums them into a single spectrum, producing one result with output files suffixed &quot;_summed&quot;.</message>
 </messages> 

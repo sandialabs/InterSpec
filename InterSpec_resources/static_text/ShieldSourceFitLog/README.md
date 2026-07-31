@@ -167,10 +167,22 @@ stripped out (`inja` is *not* stripped) — so `my_report.tmplt.html` shows as
 
 Recommended extensions: `.tmplt.html`, `.tmplt.txt`, `.tmplt.csv`, `.tmplt.md`.
 
+Output file names are derived from the input spectrum file's leaf name.  When an input file
+holds more than one candidate foreground spectrum and `--multi-sample-handling` is used to split
+or sum it (see §3.4), an infix is added just before the extension so the results of each analysis
+land in their own files: `foo.n42` becomes `foo_sample3.n42` for each sample, or `foo_summed.n42`
+when the samples are summed.
+
 ### 3.4 Batch CLI overrides
 
 The batch CLI (`InterSpec --batch-act-fit ...` or `--batch-peak-fit ...`) accepts:
 
+- `--multi-sample-handling <auto|each|sum>` — how to treat an input file that holds more than
+  one candidate foreground spectrum (i.e., more than one sample number not marked background,
+  intrinsic activity, or calibration).  `auto` (the default) is the historical behaviour, and
+  skips such a file with a warning.  `each` analyzes every candidate foreground sample
+  separately, as if each was its own input file.  `sum` sums them into a single spectrum.
+  Passthrough / search-mode files are never affected.
 - `--file-report-template <name-or-path>` — a per-file template. May be given multiple
   times to render multiple per-file outputs. Accepted values: a template filename, an
   absolute path, or one of the built-in shorthands registered by
@@ -327,7 +339,11 @@ it does not exist in the payload.
 | Field | Type | Notes |
 |---|---|---|
 | `Filepath`                     | string  | Full path to the input spectrum file. |
-| `Filename`                     | string  | Leaf filename only. |
+| `Filename`                     | string  | Leaf name identifying this analysis, and matching the output files written for it. Equals the input file's leaf name, unless multi-sample handling split or summed the file, in which case it carries the same `_sampleN` / `_summed` infix the output files do. |
+| `SourceFilename`               | string  | The input file's leaf name, never decorated. |
+| `AnalysisLabel`                | string  | Human-readable label for this analysis, e.g. `foo.n42 (sample 3)`. |
+| `IsSplitFromMultiSampleFile`   | bool    | True when this analysis is one of several taken from a single input file. |
+| `ForegroundSampleNumbers`      | array[int] | Sample numbers used as the foreground. Only present when they were explicitly determined; more than one means they were summed. |
 | `ParentDir`                    | string  | Directory containing the input file. |
 | `Success`                      | bool    | Fit reached `Final` status (i.e. converged and not cancelled / aborted). |
 | `HasFitResults`                | bool    | At least some fit results exist (even if `Success=false`). |
@@ -946,8 +962,12 @@ See §10.8 for a wiring snippet.
 ### 5.16 Batch-mode wrapper
 
 When InterSpec runs the activity/shielding fit on N input files via `--batch-act-fit`,
-each file's per-spectrum payload above appears as element `Files[i]` of a top-level
-batch-summary JSON, which also carries aggregate fields:
+each analysis' per-spectrum payload above appears as element `Files[i]` of a top-level
+batch-summary JSON, which also carries aggregate fields.
+
+Note that `Files` holds one entry per *analysis performed*, which is normally one per input file,
+but will be more when `--multi-sample-handling each` splits a file into per-sample analyses (see
+`NumInputFiles` and `NumAnalyses`).  Do not assume `Files` and `InputFiles` are the same length.
 
 ```json
 {
@@ -956,6 +976,8 @@ batch-summary JSON, which also carries aggregate fields:
     { "Filename": "file2.n42", "Sources": [...], "Shieldings": {...}, ... }
   ],
   "InputFiles": ["file1.n42", "file2.n42"],
+  "NumInputFiles": 2,
+  "NumAnalyses": 2,
   "AnalysisTime": "...",
   "CurrentWorkingDirectory": "...",
   "InterSpecCompileDate": "...",
@@ -1015,7 +1037,11 @@ fields are detailed here.
 | Field | Type | Notes |
 |---|---|---|
 | `Filepath`              | string  | Full path to the input spectrum. |
-| `Filename`              | string  | Leaf filename. |
+| `Filename`              | string  | Leaf name identifying this analysis, and matching the output files written for it. Equals the input file's leaf name, unless multi-sample handling split or summed the file, in which case it carries the same `_sampleN` / `_summed` infix the output files do. |
+| `SourceFilename`        | string  | The input file's leaf name, never decorated. |
+| `AnalysisLabel`         | string  | Human-readable label for this analysis, e.g. `foo.n42 (sample 3)`. |
+| `IsSplitFromMultiSampleFile` | bool | True when this analysis is one of several taken from a single input file. |
+| `ForegroundSampleNumbers` | array[int] | Sample numbers used as the foreground. Only present when they were explicitly determined; more than one means they were summed. |
 | `ParentDir`             | string  | Directory. |
 | `Success`               | bool    | Fit succeeded for this file. |
 | `HasWarnings`           | bool    | |
@@ -1044,6 +1070,7 @@ fields are detailed here.
 | `CreateCsvOutput`          | bool    | Also write a per-file CSV. |
 | `CreateJsonOutput`         | bool    | Also write a per-file JSON dump. |
 | `OverwriteOutputFiles`     | bool    | Allow overwriting existing outputs. |
+| `MultiSampleHandling`      | string  | `Auto`, `EachSampleSeparately`, or `SumAllSamples`; how input files holding more than one candidate foreground spectrum were treated. |
 | `BackgroundSubFile`        | string  | Path to a background spectrum. Only present if background subtraction was requested. |
 | `BackgroundSubSamples`     | array[int] | Sample numbers from the background. Only present if used. |
 | `UsedExistingBackgroundPeak` | bool  | The background already had peaks that were reused. Only present if used. |
@@ -1056,7 +1083,10 @@ fields are detailed here.
 
 ### 6.3 Batch summary wrapper
 
-In summary mode, the per-file shape above is wrapped:
+In summary mode, the per-file shape above is wrapped.  `Files` holds one entry per *analysis
+performed* - normally one per input file, but more when `--multi-sample-handling each` splits a
+file into per-sample analyses.  `NumInputFiles` and `NumAnalyses` give both counts; do not assume
+`Files` and `InputFiles` are the same length.
 
 ```json
 {
@@ -1065,6 +1095,8 @@ In summary mode, the per-file shape above is wrapped:
     { "Filename": "f2.n42", "FitPeaks": {...}, "foreground": {...}, ... }
   ],
   "InputFiles":            ["f1.n42", "f2.n42"],
+  "NumInputFiles":         2,
+  "NumAnalyses":           2,
   "ExemplarFile":          "exemplar.n42",
   "ExemplarSampleNumbers": [1],
   "PeakFitOptions":        { ... },

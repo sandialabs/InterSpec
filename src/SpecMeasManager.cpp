@@ -4438,10 +4438,46 @@ void SpecMeasManager::showBatchDialog()
   if( m_batchDialog )
     return;
 
-  m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop );
+  m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop, false );
   m_batchDialog->finished().connect( this, &SpecMeasManager::handleBatchDialogFinished );
   wApp->triggerUpdate();
 }//void showBatchDialog()
+
+
+void SpecMeasManager::showBatchDialogForFile( std::shared_ptr<SpecMeas> meas )
+{
+  if( !m_batchDialog )
+  {
+    m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop, true );
+    m_batchDialog->finished().connect( this, &SpecMeasManager::handleBatchDialogFinished );
+
+    // The link that gets us here is only offered for files with several foreground records, which
+    //  is exactly the case the default handling refuses to analyze - so start out set to analyze
+    //  each record.
+    m_batchDialog->widget()->setMultiSampleHandling(
+                              BatchSampleSelect::MultiSampleHandling::EachSampleSeparately );
+  }else
+  {
+    m_batchDialog->show();
+  }
+
+  if( meas )
+  {
+    // Prefer the name shown everywhere else in the app for this file
+    std::string display_name = meas->filename();
+    const Wt::WModelIndex index = m_fileModel ? m_fileModel->index( meas ) : Wt::WModelIndex();
+    if( index.isValid() )
+    {
+      const std::shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( index.row() );
+      if( header && !header->displayName().empty() )
+        display_name = header->displayName().toUTF8();
+    }//if( index.isValid() )
+
+    m_batchDialog->widget()->addInMemoryFiles( { std::make_tuple( display_name, std::string(), meas ) } );
+  }//if( meas )
+
+  wApp->triggerUpdate();
+}//void showBatchDialogForFile( std::shared_ptr<SpecMeas> meas )
 
 void SpecMeasManager::handleBatchDialogFinished()
 {

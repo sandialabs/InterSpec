@@ -1129,7 +1129,8 @@ The aggregate `summary_json` that batch templates consume is built by
 | `ExemplarFile` | string | Path of the exemplar N42 (or empty if a `--rel-eff-config-file` was used instead) |
 | `ExemplarSampleNumbers` | array of int | Optional: present only when sample-number disambiguation was supplied to the batch driver |
 | `InputFiles` | array of string | Verbatim copy of the input-file list passed on the command line / dropped on the GUI |
-| `NumFiles`, `NumSucceeded`, `NumFailed` | int | Counts. Pre-computed server-side for the multi-file template's banner |
+| `NumFiles`, `NumSucceeded`, `NumFailed` | int | Counts of *analyses performed*. Pre-computed server-side for the multi-file template's banner |
+| `NumInputFiles` | int | Number of input files. Normally equals `NumFiles`, but is smaller when `--multi-sample-handling each` split a file holding several foreground records into one analysis per record. Do not assume `Files[]` and `InputFiles[]` are the same length |
 | `assets` | object | The heavy JS/CSS asset blobs (`D3_JS`, `SpectrumChart_JS`, `SpectrumChart_CSS`, `RelEffPlot_JS`, `RelEffPlot_CSS`) — **lifted out of each per-file solution and stored once at the top level** so the multi-file template can `{{ assets.D3_JS }}` etc. without duplicating hundreds of KB across N files. Mirrors the pattern used by `BatchActivity::fit_activities_in_files`. |
 | `Files` | array | One entry per input file. **Each entry's body is the per-file JSON** documented in §3 (`solution_to_json` output) — *minus* the `assets` block that was lifted up to the top level — plus the bookkeeping fields below |
 | `Warnings` | array of string | Whole-batch warnings emitted by `BatchRelActAuto::run_in_files` |
@@ -1138,7 +1139,11 @@ The aggregate `summary_json` that batch templates consume is built by
 
 | Field | Type | Notes |
 |---|---|---|
-| `Filename` | string | Basename of the input file (use this for table rows / per-file headings) |
+| `Filename` | string | Leaf name identifying this analysis, and matching the output file written for it (use this for table rows / per-file headings). Equals the input file's basename, unless multi-sample handling split or summed the file, in which case it carries the same `_sampleN` / `_summed` infix the output file does |
+| `SourceFilename` | string | The input file's basename, never decorated |
+| `AnalysisLabel` | string | Human-readable label for this analysis, e.g. `foo.n42 (sample 3)` |
+| `IsSplitFromMultiSampleFile` | bool | True when this analysis is one of several taken from a single input file |
+| `ForegroundSampleNumbers` | array[int] | Sample numbers used as the foreground; more than one means they were summed |
 | `Filepath` | string | Absolute path that was given to the batch driver |
 | `ParentDir` | string | Directory containing `Filepath` |
 | `ResultCode` | string | One of `BatchRelActAuto::ResultCode`'s names: `Success`, `NoExemplar`, `CouldntOpenExemplar`, `ExemplarMissingRelActState`, `CouldntOpenStateOverride`, `CouldntOpenInputFile`, `CouldntOpenBackgroundFile`, `ForegroundSampleNumberUnderSpecified`, `BackgroundSampleNumberUnderSpecified`, `ExemplarUsesPhysModelButNoDrf`, `FwhmMethodNeedsDrfButNoneAvailable`, `SolveFailedToSetup`, `SolveFailedToSolve`, `SolveUserCanceled`, `SolveThrewException`, `UnknownStatus` |

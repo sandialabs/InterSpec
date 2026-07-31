@@ -44,6 +44,7 @@
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/BatchInfoLog.h"
+#include "InterSpec/BatchSampleSelect.h"
 #include "InterSpec/BatchActivity.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -1585,6 +1586,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     options_obj["CreateCsvOutput"] = options.create_csv_output;
     options_obj["CreateJsonOutput"] = options.create_json_output;
     options_obj["OverwriteOutputFiles"] = options.overwrite_output_files;
+    options_obj["MultiSampleHandling"] = BatchSampleSelect::to_str( options.multi_sample_handling );
     
     if( !options.background_subtract_file.empty() || options.cached_background_subtract_spec )
     {

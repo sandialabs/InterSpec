@@ -363,6 +363,7 @@ set(sources
     src/BatchPeak.cpp
     src/BatchActivity.cpp
     src/BatchInfoLog.cpp
+    src/BatchSampleSelect.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -489,6 +490,7 @@ set(headers
     InterSpec/BatchPeak.h
     InterSpec/BatchActivity.h
     InterSpec/BatchInfoLog.h
+    InterSpec/BatchSampleSelect.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)
@@ -880,6 +882,37 @@ else(WIN32)
   endif( BUILD_AS_UNIT_TEST_SUITE )
   
   target_link_libraries(InterSpecLib PUBLIC ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY} )
+
+  # Repeat the Boost archives *after* Wt.
+  #
+  # cmake/FindWt.cmake hands us bare .a paths, not targets, so CMake has no idea Wt depends on
+  #  Boost and links Boost first (it comes from InterSpecLib's own target_link_libraries above).
+  #  GNU ld scans each archive once, left to right, pulling only members that resolve a
+  #  *currently* undefined symbol - so when it reaches libboost_thread.a, Wt has not been seen yet
+  #  and those members are skipped.  libwt.a then references them and there is no Boost archive
+  #  left to satisfy it.  The link still succeeds, because undefined symbols are permitted in a
+  #  shared object, and the failure only appears when InterSpecAddOn.node is dlopen'd:
+  #      undefined symbol: _ZTIN5boost6detail16thread_data_baseE
+  #  Measured on a real build: 18 such symbols from libboost_thread and 3 from libboost_random.
+  #
+  #  Only GNU ld behaves this way - macOS' ld64 and MSVC's linker resolve across all archives,
+  #  which is why the same prefix works there.  Listing the archives a second time is enough
+  #  because the dependency is one-way (Wt -> Boost); no --start-group is needed.  Unused archive
+  #  members are still not pulled in, so this costs nothing in the output.
+  #
+  #  Not needed when fetching dependencies: there Boost and Wt are real CMake targets, so CMake
+  #  knows the dependency and orders them itself.
+  if( UNIX AND NOT APPLE AND NOT InterSpec_FETCH_DEPENDENCIES )
+    target_link_libraries( InterSpecLib PUBLIC
+      $<TARGET_FILE:Boost::thread>
+      $<TARGET_FILE:Boost::random>
+      $<TARGET_FILE:Boost::filesystem>
+      $<TARGET_FILE:Boost::system>
+      $<TARGET_FILE:Boost::regex>
+      $<TARGET_FILE:Boost::date_time>
+      $<TARGET_FILE:Boost::program_options>
+    )
+  endif()
 endif(WIN32)
 
 
