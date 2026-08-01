@@ -523,7 +523,35 @@ BOOST_AUTO_TEST_CASE( test_read_angle_outx_file )
     BOOST_CHECK_THROW( DetectorPeakResponse::parseAngleOutxFile(ecc_input), std::exception );
   }
 
+  // The XML parser must reject oversized, attacker-controlled input before
+  // constructing a DOM or duplicating the input buffer.
+  const string oversized_xml( (10u * 1024u * 1024u) + 1u, 'x' );
+  istringstream oversized_input( oversized_xml );
+  BOOST_CHECK_THROW( DetectorPeakResponse::parseAngleOutxFile(oversized_input), std::exception );
+
   cout << "Successfully parsed ANGLE .outx file" << endl;
+}
+
+
+BOOST_AUTO_TEST_CASE( test_gammaquant_blank_separator_is_safe )
+{
+  // A blank separator is valid at this point in the format.  This truncated
+  // sample should fail with a parse exception, never by indexing cols[0] on
+  // the empty vector returned for the blank row.
+  istringstream input(
+    "Detector ID,Test Detector\n"
+    "Calibration Geometry,Point\n"
+    "Comments,Security regression\n"
+    "Far-Field Point Source Eff Cal?,Yes\n"
+    "\n" );
+
+  vector<shared_ptr<DetectorPeakResponse>> drfs;
+  vector<string> credits;
+  vector<string> warnings;
+  BOOST_CHECK_THROW(
+    DetectorPeakResponse::parseGammaQuantRelEffDrfCsv(input, drfs, credits, warnings),
+    std::exception );
+  BOOST_CHECK( drfs.empty() );
 }
 
 

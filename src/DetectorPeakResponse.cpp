@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <mutex>
+#include <array>
 #include <cmath>
 #include <ctime>
 #include <memory>
@@ -1389,6 +1390,17 @@ void DetectorPeakResponse::parseGammaQuantRelEffDrfCsv( std::istream &input,
       SpecUtils::trim( line );
       vector<string> cols;
       split_escaped_csv( cols, line );
+
+      // Blank separator rows are valid in GammaQuant exports.  Some CSV
+      // splitters represent a blank row with no columns, so handle that
+      // representation before inspecting the first column.
+      if( cols.empty() )
+      {
+        if( is_empty && expected_title.empty() )
+          return cols;
+
+        throw runtime_error( "Missing required content on line " + std::to_string(row_num) );
+      }
         
       if( !is_empty && (cols.size() != num_col) )
         throw runtime_error( "Inconsistent number of columns on line " + std::to_string(row_num)
@@ -2487,15 +2499,35 @@ tuple<shared_ptr<DetectorPeakResponse>,double,double>
 std::shared_ptr<DetectorPeakResponse>
   DetectorPeakResponse::parseAngleOutxFile( std::istream &input )
 {
-  // Read the entire stream into a string for XML parsing
-  const string xml_data( (std::istreambuf_iterator<char>(input)),
-                          std::istreambuf_iterator<char>() );
+  static const size_t max_xml_size = 10u * 1024u * 1024u;
 
-  if( xml_data.size() < 50 )
+  // rapidxml needs one mutable, null-terminated buffer.  Read directly into
+  // that buffer so the untrusted XML is not duplicated in memory, and enforce
+  // the limit while reading so non-seekable streams are bounded as well.
+  vector<char> xml_buf;
+  xml_buf.reserve( 64u * 1024u );
+  std::array<char,16u * 1024u> chunk;
+
+  while( input )
+  {
+    input.read( chunk.data(), static_cast<std::streamsize>(chunk.size()) );
+    const std::streamsize count = input.gcount();
+    if( count <= 0 )
+      break;
+
+    const size_t nread = static_cast<size_t>(count);
+    if( nread > (max_xml_size - xml_buf.size()) )
+      throw runtime_error( "parseAngleOutxFile: input exceeds 10 MiB limit." );
+
+    xml_buf.insert( xml_buf.end(), chunk.data(), chunk.data() + nread );
+  }
+
+  if( input.bad() )
+    throw runtime_error( "parseAngleOutxFile: failed reading input." );
+
+  if( xml_buf.size() < 50 )
     throw runtime_error( "parseAngleOutxFile: input too small." );
 
-  // rapidxml needs a mutable, null-terminated buffer
-  vector<char> xml_buf( xml_data.begin(), xml_data.end() );
   xml_buf.push_back( '\0' );
 
   rapidxml::xml_document<char> doc;
@@ -5337,5 +5369,4 @@ std::string DetectorPeakResponse::toJSON(float minEnergy, float maxEnergy) const
   json << "}";
   return json.str();
 }//std::string DetectorPeakResponse::toJSON(...)
-
 

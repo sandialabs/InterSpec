@@ -30,6 +30,7 @@ extern "C"{
 #include <iostream>
 #include <algorithm>
 #include <stdexcept>
+#include <limits>
 
 #include "InterSpec/ZipArchive.h"
 
@@ -45,6 +46,61 @@ using namespace std;
 
 namespace ZipArchive
 {
+
+namespace
+{
+size_t validated_member_output_limit( const ZipFileHeader &header,
+                                      const ExtractionLimits &limits )
+{
+  if( (limits.max_uncompressed_bytes == 0) || (limits.max_compression_ratio == 0) )
+    throw runtime_error( "ZipArchive: invalid extraction limits" );
+
+  const size_t uncompressed = header.uncompressed_size;
+  const size_t compressed = header.compressed_size;
+  if( uncompressed > limits.max_uncompressed_bytes )
+    throw runtime_error( "ZipArchive: member exceeds uncompressed size limit" );
+
+  if( uncompressed == 0 )
+    return 0;
+
+  if( compressed == 0 )
+    throw runtime_error( "ZipArchive: non-empty member has zero compressed size" );
+
+  const size_t quotient = uncompressed / compressed;
+  const size_t remainder = uncompressed % compressed;
+  if( (quotient > limits.max_compression_ratio)
+     || ((quotient == limits.max_compression_ratio) && (remainder != 0)) )
+    throw runtime_error( "ZipArchive: member exceeds compression ratio limit" );
+
+  size_t ratio_limit = limits.max_uncompressed_bytes;
+  if( compressed <= (std::numeric_limits<size_t>::max() / limits.max_compression_ratio) )
+    ratio_limit = std::min( ratio_limit, compressed * limits.max_compression_ratio );
+
+  return ratio_limit;
+}
+}//namespace
+
+
+void validate_archive_for_extraction( const FilenameToZipHeaderMap &headers,
+                                      const ExtractionLimits &limits,
+                                      size_t max_aggregate_uncompressed_bytes )
+{
+  if( max_aggregate_uncompressed_bytes == 0 )
+    throw runtime_error( "ZipArchive: invalid aggregate extraction limit" );
+
+  size_t aggregate = 0;
+  for( const auto &entry : headers )
+  {
+    if( !entry.second )
+      throw runtime_error( "ZipArchive: archive contains a null member header" );
+
+    validated_member_output_limit( *entry.second, limits );
+    const size_t member_size = entry.second->uncompressed_size;
+    if( member_size > (max_aggregate_uncompressed_bytes - aggregate) )
+      throw runtime_error( "ZipArchive: archive exceeds aggregate extraction limit" );
+    aggregate += member_size;
+  }
+}//validate_archive_for_extraction(...)
 
 template<class T>
 inline istream &binaryRead( istream &stream, T &x )
@@ -123,27 +179,26 @@ bool ZipFileHeader::init( istream& istream, const bool globalHeader )
 
 size_t read_file_from_zip( std::istream &instrm,
                            std::shared_ptr<const ZipFileHeader> header,
-                           std::ostream &output )
+                           std::ostream &output,
+                           const ExtractionLimits &limits )
 {
   if( !header )
     throw runtime_error( "ZipArchive: no zip file header passed in to read" );
+
+  const size_t output_limit = validated_member_output_limit( *header, limits );
   
   instrm.seekg( header->header_offset );
+  if( !instrm )
+    throw runtime_error( "ZipArchive: failed seeking to member header" );
   
-  unsigned int total_read = 0;
-  int total_uncompressed = 0;
+  size_t total_read = 0;
+  size_t total_uncompressed = 0;
   const unsigned int buffer_size = 512;
   unsigned char in[buffer_size], out[buffer_size];
   const uint16_t DEFLATE = 8;
   const uint16_t UNCOMPRESSED = 0;
     
-  z_stream strm;
-    
-  strm.zalloc   = Z_NULL;
-  strm.zfree    = Z_NULL;
-  strm.opaque   = Z_NULL;
-  strm.avail_in = 0;
-  strm.next_in  = Z_NULL;
+  z_stream strm = {};
   
 
   ZipFileHeader localheader;
@@ -154,15 +209,21 @@ size_t read_file_from_zip( std::istream &instrm,
   // initialize the inflate
   if( header->compression_type == DEFLATE ) //should maybye use localheader
   {
-    int result = inflateInit2( &strm, -MAX_WBITS );
+    const int result = inflateInit2( &strm, -MAX_WBITS );
     if( result != Z_OK )
       throw runtime_error( "ZipArchive: gzip inflateInit2 didnt return Z_OK" );
+
+    struct InflateGuard
+    {
+      z_stream *stream;
+      ~InflateGuard() { inflateEnd( stream ); }
+    } guard{ &strm };
     
     bool end_of_file = false;
     while( !end_of_file )
     {
-      strm.avail_out = buffer_size-4;
-      strm.next_out = (Bytef*)(out+4);
+      strm.avail_out = buffer_size;
+      strm.next_out = reinterpret_cast<Bytef *>(out);
       
       while( strm.avail_out != 0 )
       {
@@ -171,13 +232,17 @@ size_t read_file_from_zip( std::istream &instrm,
           if( header->compressed_size <= total_read )
             throw runtime_error( "ZipArchive: read size error" );
           
-          const unsigned int nToRead = std::min( buffer_size,
-                                        header->compressed_size - total_read );
+          const size_t nToRead = std::min<size_t>( buffer_size,
+                                                   header->compressed_size - total_read );
              
-          instrm.read( (char*)in, nToRead );
-          strm.avail_in = static_cast<unsigned int>( instrm.gcount() );
+          instrm.read( reinterpret_cast<char *>(in), static_cast<std::streamsize>(nToRead) );
+          const std::streamsize count = instrm.gcount();
+          if( count <= 0 )
+            throw runtime_error( "ZipArchive: truncated compressed member" );
+
+          strm.avail_in = static_cast<unsigned int>(count);
           total_read += strm.avail_in;
-          strm.next_in = (Bytef*)in;
+          strm.next_in = reinterpret_cast<Bytef *>(in);
         }//if( strm.avail_in == 0 )
         
         const int ret = inflate( &strm, Z_NO_FLUSH ); // decompress
@@ -191,6 +256,8 @@ size_t read_file_from_zip( std::istream &instrm,
           case Z_MEM_ERROR:
             throw runtime_error( "ZipArchive: gzip error "
                                  + string(strm.msg ? strm.msg : "(no msg)") );
+          case Z_BUF_ERROR:
+            throw runtime_error( "ZipArchive: gzip made no decompression progress" );
           default:
             break;
         }//switch( ret )
@@ -202,14 +269,22 @@ size_t read_file_from_zip( std::istream &instrm,
         }
       }//while( strm.avail_out != 0 )
       
-      const int unzip_count = buffer_size - strm.avail_out - 4;
-      
-      output.write( (const char *) (out + 4), unzip_count );
-      
-      total_uncompressed += unzip_count;
+      const size_t unzip_count = buffer_size - strm.avail_out;
+      if( unzip_count > (output_limit - total_uncompressed) )
+        throw runtime_error( "ZipArchive: inflated member exceeds extraction limit" );
+
+      if( unzip_count )
+      {
+        output.write( reinterpret_cast<const char *>(out),
+                      static_cast<std::streamsize>(unzip_count) );
+        if( !output )
+          throw runtime_error( "ZipArchive: failed writing extracted member" );
+        total_uncompressed += unzip_count;
+      }
     }
-    
-    inflateEnd( &strm );
+
+    if( total_uncompressed != header->uncompressed_size )
+      throw runtime_error( "ZipArchive: uncompressed size does not match archive header" );
     return total_uncompressed;
   }else if( (header->compression_type == UNCOMPRESSED)
            && (header->compressed_size == header->uncompressed_size) )
@@ -221,13 +296,24 @@ size_t read_file_from_zip( std::istream &instrm,
       const size_t nread = std::min( buffer_size, static_cast<const unsigned int>(num_bytes) );
       instrm.read( (char *)in, nread );
       std::streamsize bytes_read = instrm.gcount();  // Get the number of bytes actually read
+      if( bytes_read <= 0 )
+        throw runtime_error( "ZipArchive: truncated uncompressed member" );
+
+      if( static_cast<size_t>(bytes_read) > (output_limit - num_written) )
+        throw runtime_error( "ZipArchive: stored member exceeds extraction limit" );
+
       output.write( (const char *)in, bytes_read );
+      if( !output )
+        throw runtime_error( "ZipArchive: failed writing extracted member" );
       num_bytes -= std::min( bytes_read, static_cast<std::streamsize>(num_bytes) );
       num_written += bytes_read;
 
       if( bytes_read < static_cast<std::streamsize>(nread) )
-        break;
+        throw runtime_error( "ZipArchive: truncated uncompressed member" );
     }//while( num_bytes > 0 )
+
+    if( num_written != header->uncompressed_size )
+      throw runtime_error( "ZipArchive: uncompressed size does not match archive header" );
     
     return num_written;
   }else
@@ -315,4 +401,3 @@ std::map<std::string, std::shared_ptr<const ZipFileHeader> >
   return answer;
 }
 }//namespace ZipArchive
-

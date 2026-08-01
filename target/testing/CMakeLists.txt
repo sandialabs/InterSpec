@@ -299,6 +299,20 @@ add_test( NAME TDetectorPeakResponse
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_ZipArchive test_ZipArchive.cpp )
+target_link_libraries( test_ZipArchive PRIVATE InterSpecLib )
+add_test( NAME TZipArchive
+  COMMAND $<TARGET_FILE:test_ZipArchive> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_SecurityHardening test_SecurityHardening.cpp )
+target_link_libraries( test_SecurityHardening PRIVATE InterSpecLib )
+add_test( NAME TSecurityHardening
+  COMMAND $<TARGET_FILE:test_SecurityHardening> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_PeakFitLM test_PeakFitLM.cpp )
 target_link_libraries( test_PeakFitLM PRIVATE InterSpecLib )
 add_test( NAME TPeakFitLM
@@ -339,4 +353,3 @@ endif( CMAKE_GENERATOR STREQUAL "Xcode" )
 # target/fuzzing/ - they cannot be mixed with the unit-test build because the
 # sanitizer-instrumented InterSpecLib does not link cleanly with un-instrumented
 # test binaries.  See target/fuzzing/README.md.
-

@@ -30,6 +30,7 @@
 #include <sstream>
 #include <fstream>
 #include <numeric>
+#include <limits>
 #include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
@@ -190,6 +191,25 @@ SpectrumType typeFromInt( int id ){ return SpectrumType(id); }
 
 namespace
 {
+  struct ZipSecurityLimits
+  {
+    ZipArchive::ExtractionLimits member;
+    size_t aggregate;
+  };
+
+  ZipSecurityLimits zip_security_limits()
+  {
+#if( defined(MAX_SPECTRUM_MEMMORY_SIZE_MB) && (MAX_SPECTRUM_MEMMORY_SIZE_MB > 0) )
+    const size_t member_limit = size_t(MAX_SPECTRUM_MEMMORY_SIZE_MB) * 1024u * 1024u;
+#else
+    const size_t member_limit = 256u * 1024u * 1024u;
+#endif
+    const size_t aggregate_limit = (member_limit > (std::numeric_limits<size_t>::max() / 2u))
+                                   ? std::numeric_limits<size_t>::max()
+                                   : (2u * member_limit);
+    return { {member_limit, 100u}, aggregate_limit };
+  }
+
 #if( USE_DB_TO_STORE_SPECTRA )
   class PreviousDbEntry : public WContainerWidget
   {
@@ -1734,6 +1754,11 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
     
     const string tmppath = SpecUtils::temp_dir();
     string tmpfile = SpecUtils::temp_file_name( "", tmppath );
+    BOOST_SCOPE_EXIT(&tmpfile)
+    {
+      if( !tmpfile.empty() )
+        SpecUtils::remove_file( tmpfile );
+    } BOOST_SCOPE_EXIT_END
     
     ifstream zipfilestrm( spoolName.c_str(), ios::in | ios::binary );
     
@@ -1743,8 +1768,6 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
     if( !headers.count(fileInZip) )
       throw runtime_error( "Couldnt find file in zip" );
 
-    size_t nbytewritten = 0;
-    
     {
 #ifdef _WIN32
       const std::wstring wtmpfile = SpecUtils::convert_from_utf8_to_utf16(tmpfile);
@@ -1752,12 +1775,12 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
 #else
       ofstream tmpfilestrm( tmpfile.c_str(), ios::out | ios::binary );
 #endif
-      nbytewritten = read_file_from_zip( zipfilestrm, headers[fileInZip], tmpfilestrm );
+      const ZipSecurityLimits limits = zip_security_limits();
+      ZipArchive::read_file_from_zip( zipfilestrm, headers[fileInZip], tmpfilestrm, limits.member );
     }
     
     handleFileDropWorker( fileInZip, tmpfile, type, wApp );
 
-    SpecUtils::remove_file( tmpfile );
   }catch( std::exception & )
   {
     passMessage( WString::tr("smm-err-zip"), 2 );
@@ -1795,6 +1818,8 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     ifstream zipfilestrm( spoolName.c_str(), ios::in | ios::binary );
     
     ZipArchive::FilenameToZipHeaderMap headers = ZipArchive::open_zip_file( zipfilestrm );
+    const ZipSecurityLimits limits = zip_security_limits();
+    ZipArchive::validate_archive_for_extraction( headers, limits.member, limits.aggregate );
     
     
     vector<string> filenames;
@@ -7531,5 +7556,3 @@ void SpecMeasManager::browsePrevSpectraAndStatesDb()
 
 
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
-
-
