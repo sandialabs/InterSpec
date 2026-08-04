@@ -617,6 +617,14 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
     if( i < sol.m_rel_eff_coefficients.size() )
       curve["coefficients"] = sol.m_rel_eff_coefficients[i];
 
+    // The equation keys are always present (empty when unavailable) so templates can reference
+    //  them unconditionally.  A solve that failed during setup fills in `m_rel_eff_forms` but never
+    //  the coefficients, in which case these throw (they used to read out of bounds instead - see
+    //  `RelActAutoSolution::rel_eff_txt`).
+    curve["equation_text"] = string();
+    curve["equation_html"] = string();
+    curve["js_rel_eff_eqn"] = string();
+
     try
     {
       curve["equation_text"] = sol.rel_eff_txt( false, i );

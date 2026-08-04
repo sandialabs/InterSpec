@@ -274,7 +274,7 @@ Each entry has these fields (see §1.2 for what the equation forms mean):
 
 | Field | Meaning |
 |---|---|
-| `index` | Zero-based index into the per-curve arrays (`relative_activities`, `peaks[i].rel_eff_index`, etc.) |
+| `index` | Zero-based index into the per-curve arrays (`relative_activities`, `peaks[i].rel_eff_index`, etc.) — valid only when the fit succeeded; see the note below on failed solves |
 | `name` | User-supplied label for this curve (defaults to `"Curve N"`) |
 | `rel_eff_eqn_type` | See §1.2 — selects the equation family or Physical model |
 | `rel_eff_eqn_order` | Polynomial order; omitted entirely for `FRAM Physical` |
@@ -282,6 +282,21 @@ Each entry has these fields (see §1.2 for what the equation forms mean):
 | `equation_text` | Plain-text rendering of the fitted curve, suitable for monospace text reports |
 | `equation_html` | HTML-escaped rendering, with Greek letters / sub/superscript markup as appropriate |
 | `js_rel_eff_eqn` | JavaScript function literal — interpolate **raw** into a `<script>` tag (Inja does not auto-escape; this is intentional) |
+| `equation_error` | **Only present when the equation could not be built** (see below) |
+
+`equation_text`, `equation_html` and `js_rel_eff_eqn` are **always present**, so templates may
+reference them unconditionally. When a fit fails before the curve is fitted (`status.success` is
+`false`) there is no equation to show: `coefficients` is absent, `equation_error` carries the
+reason, and the three equation strings are empty (they are filled in order, so a partial failure
+can leave the earlier ones populated). Test for a failed curve with
+`{% if existsIn(curve, "equation_error") %}` — do **not** use `existsIn(curve, "equation_text")`,
+which is always true.
+
+On a failed solve the per-curve arrays can be **shorter than `rel_eff_curves`** — typically empty,
+since `rel_eff_curves` is emitted as soon as the curve *definitions* are known but
+`relative_activities`, `peaks`, etc. only exist once a fit produced results. So `curve.index` is
+not necessarily a valid index into them; guard with `status.success` (or `equation_error`) before
+pairing a curve up with its activities.
 
 For Physical-model curves, `equation_text` / `equation_html` are the only human-readable view
 of the fitted self/external attenuators and Hoerl coefficients (see §1.2.2). The numeric
@@ -290,8 +305,10 @@ template.
 
 ### 3.3 `relative_activities[i]` (per curve)
 
-One entry per rel-eff curve. Each entry holds the per-nuclide fit results for that curve, plus
-a nested `pu` block (Pu fits only) and a nested `ratios` block (when the curve has ≥2 nuclides).
+One entry per rel-eff curve that produced fit results — so on a successful fit this is parallel to
+`rel_eff_curves`, but on a failed one it can be shorter (usually empty). Each entry holds the
+per-nuclide fit results for that curve, plus a nested `pu` block (Pu fits only) and a nested
+`ratios` block (when the curve has ≥2 nuclides).
 
 ```json
 {
@@ -1146,8 +1163,8 @@ The aggregate `summary_json` that batch templates consume is built by
 | `ForegroundSampleNumbers` | array[int] | Sample numbers used as the foreground; more than one means they were summed |
 | `Filepath` | string | Absolute path that was given to the batch driver |
 | `ParentDir` | string | Directory containing `Filepath` |
-| `ResultCode` | string | One of `BatchRelActAuto::ResultCode`'s names: `Success`, `NoExemplar`, `CouldntOpenExemplar`, `ExemplarMissingRelActState`, `CouldntOpenStateOverride`, `CouldntOpenInputFile`, `CouldntOpenBackgroundFile`, `ForegroundSampleNumberUnderSpecified`, `BackgroundSampleNumberUnderSpecified`, `ExemplarUsesPhysModelButNoDrf`, `FwhmMethodNeedsDrfButNoneAvailable`, `SolveFailedToSetup`, `SolveFailedToSolve`, `SolveUserCanceled`, `SolveThrewException`, `UnknownStatus` |
-| `ResultCodeInt` | int | Numeric form of `ResultCode` |
+| `ResultCode` | string | One of `BatchRelActAuto::ResultCode`'s names: `Success`, `NoExemplar`, `CouldntOpenExemplar`, `ExemplarMissingRelActState`, `CouldntOpenStateOverride`, `CouldntOpenInputFile`, `CouldntOpenBackgroundFile`, `ForegroundSampleNumberUnderSpecified`, `BackgroundSampleNumberUnderSpecified`, `FwhmMethodNeedsDrfButNoneAvailable`, `SolveFailedToSetup`, `SolveFailedToSolve`, `SolveUserCanceled`, `SolveThrewException`, `UnknownStatus`, `RelActStateNotUsable` |
+| `ResultCodeInt` | int | Numeric form of `ResultCode`. New codes are only ever appended, so existing values are stable; prefer matching on the `ResultCode` string |
 | `Success` | bool | Convenience: `(ResultCode == "Success")` |
 | `HasErrorMessage` | bool | True iff `ErrorMessage` is non-empty |
 | `ErrorMessage` | string | Present only when `HasErrorMessage` is true |

@@ -914,6 +914,20 @@ struct Options
    */
   void check_same_corr_fcn_and_external_shielding_specifications() const;
 
+  /** Checks the options define enough of a problem to actually be solved.
+
+   That is, at least one relative efficiency curve, at least one nuclide on each of those curves,
+   and at least one energy range.  A `RelActAutoGuiState` serialized from a freshly opened (but
+   never configured) GUI satisfies none of these, yet is a perfectly valid state to store - so
+   callers that hand options off to `solve(...)` need a cheap way to reject it up front.
+
+   @returns An empty string if the options are complete enough to run; otherwise a short
+            reason why not.  The text is untranslated English, intended for logs, reports, and
+            exception messages - GUI callers that show it to the user are interpolating it into a
+            localized wrapper, so keep it short and factual.
+   */
+  std::string why_not_usable() const;
+
   /** Version history:
    - 20250117: incremented to 1 to handle FramPhysicalModel; if not this model, will still write version 0.
    - 20250130: incremented to 2 to handle multiple rel eff curves; can read backward compatible, but not write.

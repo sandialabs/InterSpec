@@ -61,6 +61,7 @@
 
 
   <!-- Analysis progress and results -->
+  <message id="bgw-unknown-analysis-error">Unknown error performing analysis.</message>
   <message id="bgw-performing-work-title">Performing Work</message>
   <message id="bgw-performing-work-msg">Please wait while the batch analysis is performed...</message>
   <message id="bgw-error-analysis-title">Error Performing Batch Analysis</message>
@@ -143,6 +144,7 @@ A zero or negative value will mean no requirement, and also no 'peak-stat-thresh
   <message id="bgw-iso-override-skew-type">Override skew type</message>
   <message id="bgw-no-ana-iso-no-state-or-exemplar">No exemplar with stored RelActCalcAuto state, and no rel-eff config XML supplied.</message>
   <message id="bgw-no-ana-iso-no-state-in-exemplar">Exemplar has no stored RelActCalcAuto state - either use a different exemplar or supply a rel-eff config XML.</message>
+  <message id="bgw-no-ana-iso-state-not-configured">The &quot;Isotopics by nuclides&quot; configuration is incomplete: {1} Set up an isotopics analysis on the exemplar, or supply a complete rel-eff config XML.</message>
   <message id="bgw-no-ana-iso-need-drf">A detector response function is required (Physical-model rel-eff curve or DRF-seeded FWHM method) but none is available.</message>
 
   <!-- Error and completion messages -->

@@ -337,3 +337,255 @@ BOOST_AUTO_TEST_CASE( Lu177m_shielded )
 {
   do_one_fit_and_check( "ex_for_RelActAuto_report_Lu177m_Shielded.n42", "Lu177m" );
 }
+
+
+/** A solve that fails during setup returns a solution with `m_rel_eff_forms` filled in (it is
+ populated from the options before validation runs) but `m_rel_eff_coefficients` still empty.
+ Reporting on such a solution used to index one-past-the-end of `m_rel_eff_coefficients`, and the
+ resulting garbage `vector` had a bogus `size()` that sent `RelActCalc::rel_eff_eqn_text` into an
+ effectively endless string-append loop - the batch GUI just sat on "Performing Work" forever.
+ */
+BOOST_AUTO_TEST_CASE( report_of_failed_setup_solution )
+{
+  set_data_dir();
+
+  RelActCalcAuto::RelActAutoSolution sol;
+  sol.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
+  sol.m_error_message = "Error initializing problem: No energy ranges defined.";
+
+  RelActCalcAuto::RelEffCurveInput curve;
+  curve.name = "Curve 0";
+  curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnX;
+  curve.rel_eff_eqn_order = 3;
+  sol.m_options.rel_eff_curves.push_back( curve );
+
+  sol.m_rel_eff_forms.push_back( RelActCalc::RelEffEqnForm::LnX );
+  BOOST_REQUIRE( sol.m_rel_eff_coefficients.empty() );
+
+  // The accessors must refuse, rather than read out of bounds.
+  BOOST_CHECK_THROW( sol.rel_eff_txt( false, 0 ), std::exception );
+  BOOST_CHECK_THROW( sol.rel_eff_eqn_js_function( 0 ), std::exception );
+  BOOST_CHECK_THROW( sol.relative_efficiency( 186.0, 0 ), std::exception );
+
+  nlohmann::json data;
+  BOOST_REQUIRE_NO_THROW( data = RelActAutoReport::solution_to_json( sol ) );
+  BOOST_REQUIRE( data.contains("status") );
+  BOOST_CHECK( !data["status"].value("success", true) );
+
+  BOOST_REQUIRE( data.contains("rel_eff_curves") );
+  BOOST_REQUIRE_EQUAL( data["rel_eff_curves"].size(), 1 );
+  const nlohmann::json &curve_json = data["rel_eff_curves"][0];
+  BOOST_CHECK( curve_json.contains("equation_error") );
+  BOOST_CHECK( !curve_json.contains("coefficients") );
+  // The equation keys must still exist (empty), so templates can reference them unconditionally.
+  BOOST_REQUIRE( curve_json.contains("equation_text") );
+  BOOST_REQUIRE( curve_json.contains("equation_html") );
+  BOOST_CHECK( curve_json["equation_text"].get<string>().empty() );
+  BOOST_CHECK( curve_json["equation_html"].get<string>().empty() );
+
+  // A FramPhysicalModel curve builds its equation from the cost functor / phys-model results, NOT
+  //  from `m_rel_eff_coefficients` (a physical model with no correction function has nothing to put
+  //  there), so the missing-coefficients gate must not apply to it.
+  {
+    RelActCalcAuto::RelActAutoSolution phys;
+    phys.m_status = RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem;
+
+    RelActCalcAuto::RelEffCurveInput phys_curve;
+    phys_curve.name = "Phys";
+    phys_curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+    phys.m_options.rel_eff_curves.push_back( phys_curve );
+    phys.m_rel_eff_forms.push_back( RelActCalc::RelEffEqnForm::FramPhysicalModel );
+    BOOST_REQUIRE( phys.m_rel_eff_coefficients.empty() );
+
+    // With no fit results there is no equation - but the complaint must be about the missing
+    //  results, NOT about coefficients the physical model never uses.
+    for( int is_js = 0; is_js < 2; ++is_js )
+    {
+      try
+      {
+        if( is_js )
+          phys.rel_eff_eqn_js_function( 0 );
+        else
+          phys.rel_eff_txt( false, 0 );
+        BOOST_CHECK_MESSAGE( false, "Physical model with no fit results should have thrown"
+                                    " (is_js=" << is_js << ")" );
+      }catch( std::exception &e )
+      {
+        const string msg = e.what();
+        BOOST_CHECK_MESSAGE( msg.find("coefficients") == string::npos,
+                             "Physical model should not be rejected for missing rel-eff"
+                             " coefficients, but got: " << msg );
+      }
+    }//for( int is_js = 0; is_js < 2; ++is_js )
+
+    // ...and the report must report that, not print a sentinel string into the user's equation.
+    nlohmann::json phys_data;
+    BOOST_REQUIRE_NO_THROW( phys_data = RelActAutoReport::solution_to_json( phys ) );
+    BOOST_REQUIRE_EQUAL( phys_data["rel_eff_curves"].size(), 1 );
+    BOOST_CHECK( phys_data["rel_eff_curves"][0]["equation_text"].get<string>().empty() );
+    BOOST_CHECK( phys_data["rel_eff_curves"][0].contains("equation_error") );
+  }
+
+  // The report templates must still render for a failed solution.
+  inja::Environment env = RelActAutoReport::get_default_inja_env( "" );
+  for( const string &tmplt : vector<string>{ "html", "txt", "json" } )
+  {
+    string rendered, err;
+    try
+    {
+      rendered = RelActAutoReport::render_template( env, data, tmplt, "" );
+    }catch( std::exception &e )
+    {
+      err = e.what();
+    }
+    BOOST_CHECK_MESSAGE( err.empty(), "Template '" << tmplt << "' threw: " << err );
+    BOOST_CHECK_MESSAGE( !rendered.empty(), "Template '" << tmplt << "' rendered empty." );
+  }
+}//BOOST_AUTO_TEST_CASE( report_of_failed_setup_solution )
+
+
+/** End-to-end version of the above: run the real `solve(...)` with options that dont define a
+ problem, then push the returned solution through every reporting entry point.  This covers the
+ solution shape `solve` actually produces on an early setup failure (which differs from the
+ hand-built one above), and would previously hang or read out of bounds.
+
+ Note: against the unfixed code these checks HANG (an unbounded string append) rather than fail,
+ so a CI timeout here is a real regression, not flake.
+ */
+BOOST_AUTO_TEST_CASE( reporting_on_unusable_solve )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+
+  // A curve with a nuclide, but no energy ranges anywhere - i.e. the state of an "Isotopics by
+  //  nuclides" tool that was opened and given a nuclide, but never given an energy range.
+  RelActCalcAuto::Options options;
+  RelActCalcAuto::RelEffCurveInput curve;
+  curve.name = "Curve 0";
+  curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnX;
+  curve.rel_eff_eqn_order = 3;
+  RelActCalcAuto::NucInputInfo nuc;
+  nuc.source = db->nuclide( "U235" );
+  BOOST_REQUIRE( RelActCalcAuto::nuclide(nuc.source) );
+  curve.nuclides.push_back( nuc );
+  options.rel_eff_curves.push_back( curve );
+  BOOST_REQUIRE( !options.why_not_usable().empty() );
+
+  // Something to hand `solve` as a foreground; its contents dont matter, we never get that far.
+  std::shared_ptr<SpecUtils::Measurement> foreground = std::make_shared<SpecUtils::Measurement>();
+  foreground->set_gamma_counts( std::make_shared<vector<float>>( 1024, 1.0f ), 300.0f, 300.0f );
+
+  RelActCalcAuto::RelActAutoSolution sol;
+  BOOST_REQUIRE_NO_THROW( sol = RelActCalcAuto::solve( options, foreground, nullptr, nullptr,
+                                                       /*all_peaks=*/{}, /*cancel_calc=*/nullptr ) );
+  BOOST_CHECK( sol.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_CHECK( !sol.m_error_message.empty() );
+
+  // Every reporting surface must cope with the failed solution.
+  std::stringstream summary_strm;
+  BOOST_CHECK_NO_THROW( sol.print_summary( summary_strm ) );
+
+  std::stringstream html_strm;
+  BOOST_CHECK_NO_THROW( sol.print_html_report( html_strm ) );
+
+  nlohmann::json data;
+  BOOST_REQUIRE_NO_THROW( data = RelActAutoReport::solution_to_json( sol ) );
+  BOOST_CHECK( !data["status"].value("success", true) );
+
+  inja::Environment env = RelActAutoReport::get_default_inja_env( "" );
+  for( const string &tmplt : vector<string>{ "html", "txt", "json" } )
+  {
+    string rendered, err;
+    try
+    {
+      rendered = RelActAutoReport::render_template( env, data, tmplt, "" );
+    }catch( std::exception &e )
+    {
+      err = e.what();
+    }
+    BOOST_CHECK_MESSAGE( err.empty(), "Template '" << tmplt << "' threw: " << err );
+  }
+
+  // The above fails before any per-curve results are filled in, so every reporting loop is simply
+  //  empty.  The more dangerous shape is a setup failure that happens AFTER `m_rel_eff_forms` is
+  //  populated - then `m_rel_eff_forms` is non-empty while `m_rel_activities` /
+  //  `m_rel_eff_coefficients` are still empty, and any loop bounded on the wrong vector reads out
+  //  of bounds.  A zero live-time foreground fails at exactly that point.
+  {
+    RelActCalcAuto::Options ok_options = options;
+    RelActCalcAuto::RoiRange roi;
+    roi.lower_energy = 120.0;
+    roi.upper_energy = 220.0;
+    ok_options.rois.push_back( roi );
+    BOOST_REQUIRE( ok_options.why_not_usable().empty() );
+
+    std::shared_ptr<SpecUtils::Measurement> zero_lt = std::make_shared<SpecUtils::Measurement>();
+    zero_lt->set_gamma_counts( std::make_shared<vector<float>>( 1024, 1.0f ), 0.0f, 0.0f );
+
+    RelActCalcAuto::RelActAutoSolution late_fail;
+    BOOST_REQUIRE_NO_THROW( late_fail = RelActCalcAuto::solve( ok_options, zero_lt, nullptr, nullptr,
+                                                               /*all_peaks=*/{}, /*cancel_calc=*/nullptr ) );
+    BOOST_CHECK( late_fail.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success );
+    BOOST_CHECK_MESSAGE( !late_fail.m_rel_eff_forms.empty(),
+                         "Expected this failure to occur after m_rel_eff_forms was populated;"
+                         " if solve() changed, this test no longer covers what it means to." );
+    BOOST_CHECK( late_fail.m_rel_activities.empty() );
+    BOOST_CHECK( late_fail.m_rel_eff_coefficients.empty() );
+
+    std::stringstream late_summary, late_html;
+    BOOST_CHECK_NO_THROW( late_fail.print_summary( late_summary ) );
+    BOOST_CHECK_NO_THROW( late_fail.print_html_report( late_html ) );
+
+    nlohmann::json late_data;
+    BOOST_REQUIRE_NO_THROW( late_data = RelActAutoReport::solution_to_json( late_fail ) );
+    BOOST_REQUIRE_EQUAL( late_data["rel_eff_curves"].size(), 1 );
+    BOOST_CHECK( late_data["rel_eff_curves"][0].contains("equation_error") );
+
+    for( const string &tmplt : vector<string>{ "html", "txt", "json" } )
+    {
+      string err;
+      try
+      {
+        RelActAutoReport::render_template( env, late_data, tmplt, "" );
+      }catch( std::exception &e )
+      {
+        err = e.what();
+      }
+      BOOST_CHECK_MESSAGE( err.empty(), "Template '" << tmplt << "' threw on late failure: " << err );
+    }
+  }
+}//BOOST_AUTO_TEST_CASE( reporting_on_unusable_solve )
+
+
+/** `Options::why_not_usable()` is what keeps an unconfigured "Isotopics by nuclides" state from
+ being handed to `solve(...)` (and to the batch tools).
+ */
+BOOST_AUTO_TEST_CASE( options_why_not_usable )
+{
+  set_data_dir();
+
+  RelActCalcAuto::Options options;
+  BOOST_CHECK( !options.why_not_usable().empty() );  //no rel eff curves
+
+  RelActCalcAuto::RelEffCurveInput curve;
+  curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnX;
+  curve.rel_eff_eqn_order = 3;
+  options.rel_eff_curves.push_back( curve );
+  BOOST_CHECK( !options.why_not_usable().empty() );  //no nuclides
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  RelActCalcAuto::NucInputInfo nuc;
+  nuc.source = db->nuclide( "U235" );
+  BOOST_REQUIRE( RelActCalcAuto::nuclide(nuc.source) );
+  options.rel_eff_curves[0].nuclides.push_back( nuc );
+  BOOST_CHECK( !options.why_not_usable().empty() );  //no energy ranges
+
+  RelActCalcAuto::RoiRange roi;
+  roi.lower_energy = 120.0;
+  roi.upper_energy = 220.0;
+  options.rois.push_back( roi );
+  BOOST_CHECK( options.why_not_usable().empty() );
+}//BOOST_AUTO_TEST_CASE( options_why_not_usable )

@@ -1052,6 +1052,13 @@ nlohmann::json executePerformIsotopics(
     }
   }
 
+  // Make sure the config actually defines a problem before solving; tools in this file can remove
+  //  the last nuclide or clear the energy ranges, and `solve` would otherwise just report a
+  //  setup failure with a less actionable message.
+  const string why_unusable = options.why_not_usable();
+  if( !why_unusable.empty() )
+    throw runtime_error( "Cannot run the analysis: " + why_unusable );
+
   // Execute the solve
   try
   {
@@ -1795,7 +1802,13 @@ nlohmann::json executeModifyIsotopicsCurveSettings(
     if( curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
       throw runtime_error( "rel_eff_eqn_order is not applicable for FramPhysicalModel. Use shielding settings instead." );
 
-    curve.rel_eff_eqn_order = params.at( "rel_eff_eqn_order" ).get<size_t>();
+    // Same upper limit the XML deserialization enforces; an absurd order costs a huge number of
+    //  fit parameters, and makes printing the equation text arbitrarily slow.
+    const size_t eqn_order = params.at( "rel_eff_eqn_order" ).get<size_t>();
+    if( eqn_order > 12 )
+      throw runtime_error( "rel_eff_eqn_order must be 12 or less." );
+
+    curve.rel_eff_eqn_order = eqn_order;
     changes.push_back( "rel_eff_eqn_order=" + to_string( curve.rel_eff_eqn_order ) );
   }
 

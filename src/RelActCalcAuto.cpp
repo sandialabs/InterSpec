@@ -3314,10 +3314,16 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       solution.m_foreground       = foreground;
       solution.m_background       = background;
       solution.m_options          = options;
-      assert( !options.rel_eff_curves.empty() );
-      if( options.rel_eff_curves.empty() )
-        throw runtime_error( "Need at least ine relative efficiency curve" );
-      
+
+      // Reject an under-specified problem (no curves / no nuclides / no energy ranges) before we
+      //  fill in the per-curve results, so a failed solution never carries a half-populated model.
+      //  Note this is deliberately not an assert: callers can hand us such options (e.g. an
+      //  "Isotopics by nuclides" state that was never configured), and the contract is to report
+      //  `FailedToSetupProblem`, not to abort a developer build.
+      const string why_unusable = options.why_not_usable();
+      if( !why_unusable.empty() )
+        throw runtime_error( why_unusable );
+
       solution.m_fwhm_form = options.fwhm_form;
       for( const auto &rel_eff_curve : options.rel_eff_curves )
         solution.m_rel_eff_forms.push_back( rel_eff_curve.rel_eff_eqn_type );
@@ -3328,9 +3334,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       if( (foreground->live_time() < 0.01) || (foreground->real_time() < 0.01) )
         throw runtime_error( "Foreground must have non-zero live and real times." );
 
-      if( options.rois.empty() )
-        throw runtime_error( "No ROIs are defined." );
-      
       const auto check_rel_eff_form = [&]( const RelActCalcAuto::RelEffCurveInput &rel_eff_curve ){
         switch( rel_eff_curve.rel_eff_eqn_type )
         {
@@ -12824,18 +12827,10 @@ int run_test()
     }//for( size_t i = 1; i < energy_ranges.size(); ++i )
     
     
-    if( options.rois.empty() )
-      throw runtime_error( "No RoiRanges specified" );
-    
-    if( options.rel_eff_curves.empty() )
-      throw runtime_error( "No RelEffCurveInput specified" );
-    
-    for( const auto &rel_eff : options.rel_eff_curves )
-    {
-      if( rel_eff.nuclides.empty() )
-        throw runtime_error( "No nuclides specified" );
-    }//for( const auto &rel_eff : options.rel_eff_curves )
-    
+    const string why_unusable = options.why_not_usable();
+    if( !why_unusable.empty() )
+      throw runtime_error( why_unusable );
+
     
     // A helper function to print out the XML; right now just to stdout, but could be useful
     auto print_xml = [&](){
@@ -14059,6 +14054,32 @@ void Options::check_same_corr_fcn_and_external_shielding_specifications() const
     }//for( size_t rel_eff_index = 0; rel_eff_index < rel_eff_curves.size(); ++rel_eff_index
   }//if( same_external_shielding_for_all_rel_eff_curves ) / else
 }//void Options::check_same_corr_fcn_and_external_shielding_specifications() const
+
+
+string Options::why_not_usable() const
+{
+  if( rel_eff_curves.empty() )
+    return "No relative efficiency curves defined.";
+
+  for( size_t i = 0; i < rel_eff_curves.size(); ++i )
+  {
+    if( !rel_eff_curves[i].nuclides.empty() )
+      continue;
+
+    if( rel_eff_curves.size() == 1 )
+      return "No nuclides defined for the relative efficiency curve.";
+
+    // Identify the curve the way every other surface does, falling back to the index.
+    const string &name = rel_eff_curves[i].name;
+    return "No nuclides defined for relative efficiency curve "
+           + (name.empty() ? std::to_string(i) : ("'" + name + "'")) + ".";
+  }//for( loop over rel eff curves )
+
+  if( rois.empty() )
+    return "No energy ranges defined.";
+
+  return string();
+}//string Options::why_not_usable() const
 
 
 rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) const
@@ -15648,23 +15669,35 @@ RelActAutoSolution::RelActAutoSolution()
   
 std::string RelActAutoSolution::rel_eff_txt( const bool html_format, const size_t rel_eff_index ) const
 {
-  assert( m_rel_eff_forms.size() == m_rel_eff_coefficients.size() );
-  assert( m_rel_eff_forms.size() == m_options.rel_eff_curves.size() );
-  
-  assert( rel_eff_index < m_options.rel_eff_curves.size() );
-  
-  if( rel_eff_index >= m_options.rel_eff_curves.size() )
+  // A solve that failed to set up returns with `m_options` filled in but the per-curve results
+  //  (forms, coefficients, ...) empty, so these can only be checked when non-empty.
+  assert( m_rel_eff_coefficients.empty() || (m_rel_eff_forms.size() == m_rel_eff_coefficients.size()) );
+  assert( m_rel_eff_forms.empty() || (m_rel_eff_forms.size() == m_options.rel_eff_curves.size()) );
+
+  if( (rel_eff_index >= m_options.rel_eff_curves.size()) || (rel_eff_index >= m_rel_eff_forms.size()) )
     throw logic_error( "RelActAutoSolution::rel_eff_txt: invalid rel eff index" );
 
   const RelActCalc::RelEffEqnForm eqn_form = m_rel_eff_forms[rel_eff_index];
-  const vector<double> &coeffs = m_rel_eff_coefficients[rel_eff_index];
-  
-  if( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-    return RelActCalc::rel_eff_eqn_text( eqn_form, coeffs);
 
-  assert( m_cost_functor );
+  if( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    // A failed solve can leave `m_rel_eff_forms` populated while `m_rel_eff_coefficients` is still
+    //  empty; indexing past the end gives a garbage `vector` whose bogus `size()` sends
+    //  `rel_eff_eqn_text` into an effectively endless string-append loop.
+    //  (The physical model doesnt use these coefficients - its equation comes from the cost
+    //   functor and final parameters below - so this only gates the non-physical forms.)
+    if( rel_eff_index >= m_rel_eff_coefficients.size() )
+      throw logic_error( "RelActAutoSolution::rel_eff_txt: no fit rel. eff. coefficients available" );
+
+    return RelActCalc::rel_eff_eqn_text( eqn_form, m_rel_eff_coefficients[rel_eff_index] );
+  }//if( not a physical model )
+
+  // A solve that failed during setup has no cost functor, so there is no equation to build; that
+  //  is a legitimate state to report on, not a programming error.  Throwing (rather than returning
+  //  a sentinel string that would be printed into reports) matches what the non-physical branch
+  //  above does, so callers get an empty equation plus a reason either way.
   if( !m_cost_functor )
-    return "ErrorWithEqn";
+    throw logic_error( "RelActAutoSolution::rel_eff_txt: no fit results available" );
 
   const RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef<double> phys_in
                = m_cost_functor->make_phys_eqn_input( rel_eff_index, m_final_parameters );
@@ -15857,14 +15890,24 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
   //      << "," << (m_parameter_were_fit[i] ? "Fit" : "NotFit") << "}";
   //out << "]\n\n";
 
-  // Rel Eff code from RelEff
+  // Rel Eff code from RelEff.
+  //  Only successful solutions get this far (we returned above otherwise), so the per-curve vectors
+  //  are all populated; the loops below are nonetheless bounded by the vectors they actually index,
+  //  and `rel_eff_txt` called inside a try, so this stays correct if that early return is ever
+  //  relaxed (a failed solve leaves these vectors at differing lengths).
   const size_t num_rel_eff = m_options.rel_eff_curves.size();
-  for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff; ++rel_eff_index )
+  for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
   {
     out << "Rel. Eff. Eqn." << ((num_rel_eff > 1) ? (" " + std::to_string(rel_eff_index)) : string()) << ": y = ";
-    out << rel_eff_txt(false, rel_eff_index) << "\n";
+    try
+    {
+      out << rel_eff_txt(false, rel_eff_index) << "\n";
+    }catch( std::exception &e )
+    {
+      out << "<error: " << e.what() << ">\n";
+    }
   }
-  
+
   bool ene_cal_fit = false;
   for( const bool &fit : m_fit_energy_cal )
     ene_cal_fit = (ene_cal_fit || fit);
@@ -15914,7 +15957,7 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
   }//if( m_fit_energy_cal[0] || m_fit_energy_cal[1] )
   
   
-  for( size_t rel_eff_index = 0; rel_eff_index < num_rel_eff; ++rel_eff_index )
+  for( size_t rel_eff_index = 0; rel_eff_index < m_rel_activities.size(); ++rel_eff_index )
   {
     const vector<NuclideRelAct> &rel_acts = m_rel_activities[rel_eff_index];
     out << "\n";
@@ -16459,11 +16502,22 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
 
   for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_coefficients.size(); ++rel_eff_index )
   {
-    results_html << "<div class=\"releffeqn\">Rel. Eff. Eqn" 
-    << (m_rel_eff_forms.size() > 1 ? (" " + std::to_string(rel_eff_index)) : string()) 
-    << ": y = " << rel_eff_txt(true,rel_eff_index)
+    // `rel_eff_txt` throws when there are no fit results for this curve (and the physical model can
+    //  throw while formatting its shieldings) - one bad curve shouldnt sink the whole report.
+    string eqn_txt;
+    try
+    {
+      eqn_txt = rel_eff_txt( true, rel_eff_index );
+    }catch( std::exception &e )
+    {
+      eqn_txt = "&lt;error: " + string(e.what()) + "&gt;";
+    }
+
+    results_html << "<div class=\"releffeqn\">Rel. Eff. Eqn"
+    << (m_rel_eff_forms.size() > 1 ? (" " + std::to_string(rel_eff_index)) : string())
+    << ": y = " << eqn_txt
     << "</div>\n";
-  }//for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
+  }//for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_coefficients.size(); ++rel_eff_index )
 
 
   for( size_t rel_eff_index = 0; rel_eff_index < m_options.rel_eff_curves.size(); ++rel_eff_index )
@@ -16916,7 +16970,17 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
       continue; // Skip free-floating peaks
     }//if( is_null(peak_src) )
 
-    assert( (rel_eff_index >= 0) && (rel_eff_index < static_cast<int>(m_rel_eff_forms.size())) );
+    // Bound against the vectors actually indexed, not `m_rel_eff_forms` (which a failed solve can
+    //  leave populated while these are still empty - indexing past their end is undefined behavior).
+    assert( (rel_eff_index >= 0)
+            && (rel_eff_index < static_cast<int>(m_options.rel_eff_curves.size()))
+            && (rel_eff_index < static_cast<int>(m_rel_activities.size())) );
+
+    if( (rel_eff_index < 0)
+        || (rel_eff_index >= static_cast<int>(m_options.rel_eff_curves.size()))
+        || (rel_eff_index >= static_cast<int>(m_rel_activities.size())) )
+      continue;
+
     const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
     const vector<NuclideRelAct> &rel_activities = m_rel_activities[rel_eff_index];
     
@@ -17173,12 +17237,27 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
     
   vector<RelEffChart::ReCurveInfo> rel_eff_info_sets;
   
-  assert( m_fit_peaks_for_each_curve.size() == m_rel_eff_forms.size() );
-  
+  // A failed solve fills in `m_rel_eff_forms` but leaves the per-curve results empty, so these are
+  //  only the same length once there are results at all.
+  assert( m_fit_peaks_for_each_curve.empty()
+          || (m_fit_peaks_for_each_curve.size() == m_rel_eff_forms.size()) );
+
   for( size_t rel_eff_index = 0; rel_eff_index < m_rel_eff_forms.size(); ++rel_eff_index )
   {
+    // A failed solve can leave `m_rel_eff_forms` populated while the other per-curve vectors are
+    //  still empty; indexing past their end is undefined behavior (a garbage `vector` whose bogus
+    //  `size()` can hang or crash us), so stop rather than index.  Mirrors the same guard in
+    //  `RelActAutoReport::make_rel_eff_info_sets`.
+    if( (rel_eff_index >= m_options.rel_eff_curves.size())
+        || (rel_eff_index >= m_rel_activities.size())
+        || (rel_eff_index >= m_rel_eff_coefficients.size()) )
+    {
+      assert( m_status != Status::Success );
+      break;
+    }
+
     const RelEffCurveInput &rel_eff = m_options.rel_eff_curves[rel_eff_index];
-  
+
     RelEffChart::ReCurveInfo info;
 
     info.live_time = m_spectrum ? m_spectrum->live_time() : 1.0;
@@ -18899,7 +18978,7 @@ double RelActAutoSolution::activity_ratio_uncertainty( SrcVariant numerator, siz
   if( m_phys_units_cov.empty() || m_final_parameters.empty() || !m_cost_functor )
     throw std::logic_error( "activity_ratio_uncertainty: covariance matrix or parameters not available" );
 
-  assert( m_rel_eff_forms.size() == m_rel_eff_coefficients.size() );
+  assert( m_rel_eff_coefficients.empty() || (m_rel_eff_forms.size() == m_rel_eff_coefficients.size()) );
   assert( m_rel_eff_covariance.empty() || (m_rel_eff_covariance.size() == m_rel_eff_coefficients.size()) );
 
   assert( numerator_rel_eff_index < m_rel_eff_forms.size() );
@@ -19160,7 +19239,7 @@ pair<double,double> RelActAutoSolution::rel_activity_with_uncert( const SrcVaria
   if( m_phys_units_cov.empty() || m_final_parameters.empty() || !m_cost_functor )
     throw std::logic_error( "rel_activity_with_uncert: covariance matrix or parameters not available" );
 
-  assert( m_rel_eff_forms.size() == m_rel_eff_coefficients.size() );
+  assert( m_rel_eff_coefficients.empty() || (m_rel_eff_forms.size() == m_rel_eff_coefficients.size()) );
   assert( m_rel_eff_covariance.empty() || (m_rel_eff_covariance.size() == m_rel_eff_coefficients.size()) );
 
   assert( rel_eff_index < m_rel_eff_forms.size() );
@@ -19305,18 +19384,25 @@ double RelActAutoSolution::nuclide_counts( const SrcVariant &src, const size_t r
 
 double RelActAutoSolution::relative_efficiency( const double energy, const size_t rel_eff_index ) const
 {
-  assert( m_rel_eff_forms.size() == m_rel_eff_coefficients.size() );
+  assert( m_rel_eff_coefficients.empty() || (m_rel_eff_forms.size() == m_rel_eff_coefficients.size()) );
   
   assert( rel_eff_index < m_rel_eff_forms.size() );
   if( rel_eff_index >= m_rel_eff_forms.size() )
-    throw std::logic_error( "relative_efficiency: invalid rel eff index" ); 
-    
+    throw std::logic_error( "relative_efficiency: invalid rel eff index" );
+
   const RelActCalc::RelEffEqnForm eqn_form = m_rel_eff_forms[rel_eff_index];
-  const vector<double> &coeffs = m_rel_eff_coefficients[rel_eff_index];
-  
+
   if( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-    return RelActCalc::eval_eqn( energy, eqn_form, coeffs );
-    
+  {
+    // See note in `rel_eff_txt`: a failed solve can leave the forms populated but no coefficients.
+    //  The physical model uses `m_phys_model_results` below instead, so it isnt gated on this.
+    if( rel_eff_index >= m_rel_eff_coefficients.size() )
+      throw std::logic_error( "relative_efficiency: no fit rel. eff. coefficients available" );
+
+    return RelActCalc::eval_eqn( energy, eqn_form, m_rel_eff_coefficients[rel_eff_index] );
+  }//if( not a physical model )
+
+
   if( rel_eff_index >= m_phys_model_results.size() )
     throw std::logic_error( "relative_efficiency: invalid rel eff index" );
   
@@ -19370,7 +19456,7 @@ double RelActAutoSolution::relative_efficiency( const double energy, const size_
 pair<double,double> RelActAutoSolution::relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index ) const
 {
   typedef ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size> Jet;
-  assert( m_rel_eff_forms.size() == m_rel_eff_coefficients.size() );
+  assert( m_rel_eff_coefficients.empty() || (m_rel_eff_forms.size() == m_rel_eff_coefficients.size()) );
   assert( m_rel_eff_covariance.empty() || (m_rel_eff_covariance.size() == m_rel_eff_coefficients.size()) );
   
   assert( rel_eff_index < m_rel_eff_forms.size() );
@@ -19491,22 +19577,29 @@ size_t RelActAutoSolution::nuclide_index( const SrcVariant &src, const size_t re
 
 string RelActAutoSolution::rel_eff_eqn_js_function( const size_t rel_eff_index ) const
 {
-  assert( m_cost_functor );
-  assert( m_rel_activities.size() == m_rel_eff_forms.size() );
-  assert( m_rel_eff_coefficients.size() == m_rel_eff_forms.size() );
-  
+  // Note: a solve that failed during setup has no cost functor, no activities, and no
+  //  coefficients, yet still has `m_rel_eff_forms` - the checks below handle that, so dont assert.
+  assert( m_rel_activities.empty() || (m_rel_activities.size() == m_rel_eff_forms.size()) );
+  assert( m_rel_eff_coefficients.empty() || (m_rel_eff_forms.size() == m_rel_eff_coefficients.size()) );
+
   assert( rel_eff_index < m_rel_eff_forms.size() );
   if( rel_eff_index >= m_rel_eff_forms.size() )
     throw std::logic_error( "rel_eff_eqn_js_function: invalid rel eff index" );
 
+  const RelActCalc::RelEffEqnForm eqn_form = m_rel_eff_forms[rel_eff_index];
+
+  if( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    // See note in `rel_eff_txt`: a failed solve can leave the forms populated but no coefficients.
+    //  The physical model builds its function from the cost functor below instead.
+    if( rel_eff_index >= m_rel_eff_coefficients.size() )
+      throw std::logic_error( "rel_eff_eqn_js_function: no fit rel. eff. coefficients available" );
+
+    return RelActCalc::rel_eff_eqn_js_function( eqn_form, m_rel_eff_coefficients[rel_eff_index] );
+  }//if( not a physical model )
+
   if( !m_cost_functor )
     throw std::logic_error( "rel_eff_eqn_js_function: invalid cost functor pointer" );
-
-  const RelActCalc::RelEffEqnForm eqn_form = m_rel_eff_forms[rel_eff_index];
-  const vector<double> &coeffs = m_rel_eff_coefficients[rel_eff_index];
-  
-  if( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
-    return RelActCalc::rel_eff_eqn_js_function( eqn_form, coeffs );
 
   const RelActCalcAutoImp::RelActAutoCostFcn::PhysModelRelEqnDef input
                                     = m_cost_functor->make_phys_eqn_input( rel_eff_index, m_final_parameters );

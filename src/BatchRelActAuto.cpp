@@ -61,6 +61,7 @@ const char *to_str( const ResultCode code )
     case ResultCode::NoExemplar:                           return "NoExemplar";
     case ResultCode::CouldntOpenExemplar:                  return "CouldntOpenExemplar";
     case ResultCode::ExemplarMissingRelActState:           return "ExemplarMissingRelActState";
+    case ResultCode::RelActStateNotUsable:                 return "RelActStateNotUsable";
     case ResultCode::CouldntOpenStateOverride:             return "CouldntOpenStateOverride";
     case ResultCode::CouldntOpenInputFile:                 return "CouldntOpenInputFile";
     case ResultCode::CouldntOpenBackgroundFile:            return "CouldntOpenBackgroundFile";
@@ -338,6 +339,17 @@ Result run_on_file( const std::string &exemplar_filename,
     state->options.skew_type = *options.skew_type;
   if( options.background_subtract )
     state->background_subtract = *options.background_subtract;
+
+  // A state serialized from an "Isotopics by nuclides" tool that was opened but never configured
+  //  is perfectly valid XML, yet defines no problem to solve; reject it here rather than letting
+  //  `solve` fail deep inside setup.
+  const string why_state_unusable = state->options.why_not_usable();
+  if( !why_state_unusable.empty() )
+  {
+    result.m_error_msg = "The RelActCalcAuto state is not usable: " + why_state_unusable;
+    result.m_result_code = ResultCode::RelActStateNotUsable;
+    return result;
+  }
 
   // ---- 4. Load foreground spectrum ------------------------------------------
   shared_ptr<SpecMeas> specfile = cached_file;
@@ -663,8 +675,25 @@ void run_in_files( const std::string &exemplar_filename,
     for( const string &w : file_result.m_warnings )
       warnings.push_back( "File '" + item.label + "': " + w );
 
-    // Build per-file JSON via RelActAutoReport, then add bookkeeping for templates.
-    nlohmann::json file_json = RelActAutoReport::solution_to_json( file_result.m_solution );
+    // Build per-file JSON via RelActAutoReport, then add bookkeeping for templates.  A failure to
+    //  serialize one file must not take the whole batch down, so fall back to a minimal object and
+    //  let the bookkeeping below record the error.
+    nlohmann::json file_json;
+    try
+    {
+      file_json = RelActAutoReport::solution_to_json( file_result.m_solution );
+    }catch( std::exception &e )
+    {
+      file_json = nlohmann::json::object();
+      const string msg = "Failed to create JSON of results: " + string(e.what());
+      warnings.push_back( "File '" + item.label + "': " + msg );
+      file_result.m_warnings.push_back( msg );
+      if( file_result.m_error_msg.empty() )
+        file_result.m_error_msg = msg;
+      if( file_result.m_result_code == ResultCode::Success )
+        file_result.m_result_code = ResultCode::UnknownStatus;
+    }//try / catch
+
     file_json["Filepath"] = fname;
     // `Filename` identifies this analysis, and matches the output files written for it; for a file
     //  split into per-sample analyses it carries the same "_sampleN" infix the output files do.
