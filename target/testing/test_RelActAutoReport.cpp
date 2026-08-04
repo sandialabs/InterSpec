@@ -126,6 +126,32 @@ static void set_data_dir()
 }//void set_data_dir()
 
 
+/** `RelActAutoSolution::print_html_report()` pulls its HTML template, plus the spectrum and
+ rel-eff chart JS/CSS, out of `InterSpec_resources/` - relative to the Wt docroot, which with no
+ `WApplication` is the CWD.  Non-Windows builds get a symlink to that directory in the build dir
+ from CMake, but Windows builds do not (and the deployed `d3.v3.min.js`/`SpectrumChartD3.*` are
+ only ever written into the binary dir), so there the HTML report simply cannot be generated.
+ Returns whether every file `print_html_report()` needs is reachable, so that surface can be
+ skipped rather than fail on an unrelated missing file.
+ */
+static bool html_report_resources_available()
+{
+  const char * const needed[] = {
+    "static_text/auto_rel_act_report.tmplt.html",
+    "d3.v3.min.js", "SpectrumChartD3.js", "SpectrumChartD3.css",
+    "RelEffPlot.js", "RelEffPlot.css"
+  };
+
+  for( const char * const filename : needed )
+  {
+    if( !SpecUtils::is_file( SpecUtils::append_path( "InterSpec_resources", filename ) ) )
+      return false;
+  }
+
+  return true;
+}//bool html_report_resources_available()
+
+
 // Returns true if any nuclide in any rel-eff curve of `sol` has a name containing `needle`.
 static bool solution_has_nuclide_named( const RelActCalcAuto::RelActAutoSolution &sol,
                                         const string &needle )
@@ -487,8 +513,14 @@ BOOST_AUTO_TEST_CASE( reporting_on_unusable_solve )
   std::stringstream summary_strm;
   BOOST_CHECK_NO_THROW( sol.print_summary( summary_strm ) );
 
-  std::stringstream html_strm;
-  BOOST_CHECK_NO_THROW( sol.print_html_report( html_strm ) );
+  if( html_report_resources_available() )
+  {
+    std::stringstream html_strm;
+    BOOST_CHECK_NO_THROW( sol.print_html_report( html_strm ) );
+  }else
+  {
+    BOOST_TEST_MESSAGE( "Skipping print_html_report(): 'InterSpec_resources' is not in the CWD." );
+  }
 
   nlohmann::json data;
   BOOST_REQUIRE_NO_THROW( data = RelActAutoReport::solution_to_json( sol ) );
@@ -536,7 +568,8 @@ BOOST_AUTO_TEST_CASE( reporting_on_unusable_solve )
 
     std::stringstream late_summary, late_html;
     BOOST_CHECK_NO_THROW( late_fail.print_summary( late_summary ) );
-    BOOST_CHECK_NO_THROW( late_fail.print_html_report( late_html ) );
+    if( html_report_resources_available() )
+      BOOST_CHECK_NO_THROW( late_fail.print_html_report( late_html ) );
 
     nlohmann::json late_data;
     BOOST_REQUIRE_NO_THROW( late_data = RelActAutoReport::solution_to_json( late_fail ) );
