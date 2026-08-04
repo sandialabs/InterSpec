@@ -121,8 +121,6 @@ Une valeur zéro ou négative signifiera aucune exigence, et aussi aucune exigen
   
   <message id="bgw-reports-write-custom-per-file-tooltip">Un ou plusieurs fichiers modèles de rapport de spectre - pour chaque fichier d'entrée, un rapport sera produit avec chaque modèle spécifié.</message>
 
-  <message id="bgw-reports-write-custom-summary-tooltip">Un ou plusieurs fichiers modèles utilisés pour fournir un résumé de tous les fichiers d'entrée.</message>
-
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Utiliser unités Bq</message>
   <message id="bgw-hard-background-sub">Soustraction dure bruit de fond</message>

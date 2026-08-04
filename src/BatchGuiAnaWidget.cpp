@@ -1789,6 +1789,13 @@ BatchGuiIsotopicsByNuclidesWidget::BatchGuiIsotopicsByNuclidesWidget( Wt::WConta
 {
   addStyleClass( "BatchGuiIsotopicsByNuclidesWidget" );
 
+  // Make clear these options are for the "Isotopics by nuclides" tool, and not "Isotopics by peaks".
+  //  The base-class ctor has already added its widgets to `this`, so insert at the front.
+  WText *title = new WText( WString::tr( "bgw-iso-by-nucs-title" ) );
+  title->setInline( false );
+  title->addStyleClass( "IsotopicsOptsTitle" );
+  insertWidget( 0, title );
+
   // Hide peak-fit-only controls that don't apply to RelActCalcAuto.
   m_fit_all_peaks->setChecked( false );
   m_fit_all_peaks->hide();

@@ -121,8 +121,6 @@
   
   <message id="bgw-reports-write-custom-per-file-tooltip">ملف أو أكثر من ملفات قالب تقرير الطيف - لكل ملف إدخال، سيتم إنتاج تقرير مع كل قالب محدد.</message>
 
-  <message id="bgw-reports-write-custom-summary-tooltip">ملف أو أكثر من ملفات القوالب المستخدمة لتوفير ملخص لجميع ملفات الإدخال.</message>
-
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">استخدام وحدات Bq</message>
   <message id="bgw-hard-background-sub">طرح الخلفية الثابت</message>
