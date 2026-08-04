@@ -1061,16 +1061,23 @@ void LlmToolGui::exportConversationJson()
   const string jsonStr = conversationsJson.dump(2);  // Pretty print with 2-space indent
 #endif  //LLM_EXPORT_FULL_API_JSON
 
-  // Create memory resource for download
-  WMemoryResource *resource = new WMemoryResource( "application/json" );
+  // Present the download as an anchor the user clicks, rather than redirecting the page to the
+  //  resource - a redirect just navigates away from the app in the native (WKWebView) builds.
+  SimpleDialog *dialog = new SimpleDialog( "Export Conversation" );
+
+  // Resource is parented to the dialog, so it lives as long as the download link does.
+  WMemoryResource *resource = new WMemoryResource( "application/json", dialog );
   resource->setData( reinterpret_cast<const unsigned char*>(jsonStr.data()), jsonStr.size() );
   resource->suggestFileName( "llm_conversation.json" );
   resource->setDispositionType( WResource::Attachment );
 
-  // Trigger download
-  WApplication::instance()->redirect( resource->url() );
+  WAnchor *download = new WAnchor( WLink(resource), dialog->contents() );
+  download->setTarget( AnchorTarget::TargetNewWindow );
+  download->setStyleClass( "LinkBtn DownloadLink" );
+  download->setText( "Download conversation JSON" );
 
-  // Resource will auto-delete after download
+  WPushButton *closeBtn = dialog->addButton( "Close" );
+  closeBtn->clicked().connect( dialog, &SimpleDialog::accept );
 }
 
 void LlmToolGui::handleClearConversation()
