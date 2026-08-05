@@ -138,11 +138,21 @@ RelEffPlot.prototype.setupMouseInteractions = function() {
     .style("fill", "none")
     .style("pointer-events", "all")
     .on("mousedown", function() {
+      // Only a plain left-button drag starts a zoom; right/middle clicks (and ctrl-click on macOS,
+      //  which opens a context menu whose mouseup we never see) would otherwise leave the zoom
+      //  state machine stuck half-started.
+      if (d3.event.button !== 0)
+        return;
+
+      // Remove any zoom box orphaned by a mouseup we never received (released outside the
+      //  webview, context menu, etc.) - it sits above the data points and swallows events.
+      self.chartArea.selectAll(".zoom-box, .zoom-text").remove();
+
       const mouse = d3.mouse(this);
       self.leftMouseDown = mouse;
       self.zoomStartX = self.xScale.invert(mouse[0]);
       d3.event.preventDefault();
-      
+
       // Add document listeners for mouse move and up
       d3.select(document)
         .on("mousemove.releffzoom", function() { self.handleMouseMove(); })
@@ -402,27 +412,33 @@ RelEffPlot.prototype.redrawData = function() {
   this.chartArea.selectAll("path.line").remove();
   this.chartArea.selectAll("path.RelEffPlotErrorBounds").remove();
   
-  // Redraw fit lines and uncertainty bounds
+  // Redraw fit lines and uncertainty bounds.
+  //  Append into plotGroup (clipped, and BELOW the data-point circles and mouse-capture rect in
+  //  hit-test order), and with pointer-events disabled on the line - otherwise the 2px curve
+  //  stroke sits on top of the zoom-capture rect and the circles, silently eating the mousedown
+  //  that starts a drag-zoom and the mouseover that shows a point's tooltip (this regressed in a
+  //  merge once already; keep this consistent with the identical code in setRelEffData).
   this.datasets.forEach(function(dataset, index) {
     if (dataset.fit_eqn && dataset.fit_eqn_points && dataset.fit_eqn_points.length > 0) {
       // Create path for fit line
       const valueline = d3.svg.line()
         .x(function(d) { return self.xScale(d.energy); })
         .y(function(d) { return self.yScale(d.eff); });
-        
-      const path = self.chartArea.append("path")
+
+      const path = self.plotGroup.append("path")
         .attr("class", "line dataset-" + index)
         .attr("d", valueline(dataset.fit_eqn_points))
-        .style("stroke", self.getDatasetColor(index));
-        
+        .style("stroke", self.getDatasetColor(index))
+        .style("pointer-events", "none");
+
       // Create path for uncertainty bounds if available
       if (dataset.fit_uncert_fcn) {
         const area = d3.svg.area()
           .x(function(d) { return self.xScale(d.energy); })
           .y0(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff - 2*d.eff_uncert) : null; })
           .y1(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff + 2*d.eff_uncert) : null; });
-          
-        const path_uncert = self.chartArea.append("path")
+
+        const path_uncert = self.plotGroup.append("path")
           .attr("class", "RelEffPlotErrorBounds dataset-" + index)
           .attr("d", area(dataset.fit_eqn_points))
           .style("fill", self.getDatasetColor(index, 0.1))
@@ -461,11 +477,11 @@ RelEffPlot.prototype.setMargins = function( margins ){
     
   if( typeof margins.top === "number" )
     this.options.margins.top = margins.top;
-  if( typeof margins.right !== "number" )
+  if( typeof margins.right === "number" )
     this.options.margins.right = margins.right;
-  if( typeof margins.bottom !== "number" )
+  if( typeof margins.bottom === "number" )
     this.options.margins.bottom = margins.bottom;
-  if( typeof margins.left !== "number" )
+  if( typeof margins.left === "number" )
     this.options.margins.left = margins.left;
     
   this.handleResize();
@@ -663,7 +679,7 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
   let all_fit_eqn_points = [];
 
   // Process all datasets to find limits and collect fit data
-  datasets.forEach(function(dataset) {
+  datasets.forEach(function(dataset, datasetIndex) {
     const data_vals = dataset.data_vals;
     const fit_eqn = dataset.fit_eqn;
     const fit_uncert_fcn = dataset.fit_uncert_fcn;
@@ -684,6 +700,9 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
       all_fit_eqn_points.push({
         fit_eqn: fit_eqn,
         fit_uncert_fcn: fit_uncert_fcn,
+        dataset_index: datasetIndex, // TRUE dataset index - this array skips datasets without a
+                                     //  fit_eqn, so the forEach position must not be used for
+                                     //  colors/classes (curve 1 used to get curve 0's color)
         points: dataset.fit_eqn_points // Reference to array we'll fill later
       });
     }
@@ -792,7 +811,8 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
   this.plotGroup.selectAll("path.RelEffPlotErrorBounds").remove();
   
   // For each dataset with fit equation, create the fit line and uncertainty bounds
-  all_fit_eqn_points.forEach(function(fit_data, index) {
+  all_fit_eqn_points.forEach(function(fit_data) {
+    const index = fit_data.dataset_index;  //NOT the forEach position - see dataset_index above
     // Create path for fit line
     const valueline = d3.svg.line()
       .x(function(d) { return self.xScale(d.energy); })
@@ -824,6 +844,10 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
   //  With later versions of D3 there is a .merge() function that is maybe relevant
   this.plotGroup.selectAll("circle").remove();
   this.plotGroup.selectAll("line.errorbar").remove();
+
+  // Also drop any zoom box orphaned by a never-delivered mouseup - it paints above the data
+  //  points and would otherwise block hover/drag in its slab until the next click.
+  this.chartArea.selectAll(".zoom-box, .zoom-text").remove();
     
   // Calculate min and max counts across all datasets for radius scaling
   let minCounts = Number.MAX_VALUE;
@@ -870,9 +894,10 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
     return (max_contrib > 0.5*sum_contrib) ? dominant_color : null;
   }//pointNucColor
 
-  // A point is "blended" when another relative efficiency curve also has gammas at this energy.  How the
-  //  counts divide between the curves is not measurable (co-located gammas are degenerate in the fit), so it
-  //  comes from the model - such a point is not independent evidence for this curve, and is drawn hollow.
+  // A point is in a "shared region" when another relative efficiency curve also has gammas at this energy.
+  //  How the counts divide between the curves is not resolved by this peak itself (co-located gammas are
+  //  degenerate locally); the division is fitted through the attenuation physics / curve shapes, constrained
+  //  by the rest of the spectrum - such a point is not independent evidence for this curve, and is drawn hollow.
   const blendedThreshold = 0.9;
   function isBlendedPoint(d) {
     return ((typeof d.blend_frac === 'number') && (d.blend_frac < blendedThreshold));
@@ -927,7 +952,10 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
         if( isBlendedPoint(d) )
           baseClass += "blended ";
 
-        if (d.nuc_info.length === 0)
+        // Guard nuc_info: if this callback throws for a single datum, d3 never attaches the
+        //  mouseover/mouseout handlers to ANY circle (operators apply selection-wide in order),
+        //  killing every tooltip on the chart.
+        if (!d.nuc_info || (d.nuc_info.length === 0))
           return baseClass + "noiso";
 
         //Return the dominant nuclide, if no nuclide is over 50%, we'll use color defined by CSS "multiiso"
@@ -1019,23 +1047,30 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
         }
 
         if( isBlendedPoint(d) ){
-          txt += "<div class=\"RelEffPlotBlendNote\">Blended: this curve is assigned "
+          txt += "<div class=\"RelEffPlotBlendNote\">Shared region: the fit attributes "
                + (100*d.blend_frac).toFixed(0)
-               + "% of the counts here. The split between curves is a model assumption,"
-               + " not a measurement.</div>";
+               + "% of the counts here to this curve. The division between curves is fitted"
+               + " through the attenuation physics / curve shapes, constrained by the rest of"
+               + " the spectrum - not resolved by this peak alone.</div>";
         }
 
         self.tooltip.html(txt);
 
-        // Make it so tooltip doesnt extend above/below/left/right of chart area
+        // Make it so tooltip doesnt extend above/below/left/right of chart area.
+        //  The tooltip is position:fixed, i.e. viewport coordinates - so use clientX/clientY
+        //  (pageX/pageY differ by the document scroll), and clamp to the viewport: a tall tooltip
+        //  (e.g. multi-curve shared-region notes with several nuclide lines) near the window top
+        //  used to get a negative `top` and render entirely off-screen.
         const svg_location = d3.mouse(self.chartArea.node());
         const svg_bb = self.chartArea.node().getBoundingClientRect();
         const tt_bb = self.tooltip.node().getBoundingClientRect();
         const render_right = ((svg_location[0] + tt_bb.width + 10 + 15) < svg_bb.width);
         const render_top = (svg_location[1] + tt_bb.height + 4 + 15 > svg_bb.height);
-        const x_offset = render_right ? d3.event.pageX + 10 : d3.event.pageX - 10 - tt_bb.width;
-        const y_offset = render_top ? d3.event.pageY - 10 - tt_bb.height : d3.event.pageY + 4;
-          
+        let x_offset = render_right ? d3.event.clientX + 10 : d3.event.clientX - 10 - tt_bb.width;
+        let y_offset = render_top ? d3.event.clientY - 10 - tt_bb.height : d3.event.clientY + 4;
+        x_offset = Math.max( 2, Math.min( x_offset, window.innerWidth - tt_bb.width - 2 ) );
+        y_offset = Math.max( 2, Math.min( y_offset, window.innerHeight - tt_bb.height - 2 ) );
+
         self.tooltip
           .style("left", x_offset + "px")
           .style("top", y_offset + "px");
@@ -1130,6 +1165,7 @@ RelEffPlot.prototype.updateOmittedPointsInfo = function () {
     .attr("class", "RelEffPlotOmittedPanel")
     .style("opacity", 0)
     .style("visibility", "hidden")
+    .style("pointer-events", "none")
     .html(html);
 
   // The panel is scrollable, so the user has to be able to move the mouse off the icon and onto it without
@@ -1146,13 +1182,18 @@ RelEffPlot.prototype.updateOmittedPointsInfo = function () {
 
   const showPanel = function(){
     cancelHide();
-    self.omittedInfoPanel.style("visibility", "visible").transition().duration(150).style("opacity", 1);
+    self.omittedInfoPanel.style("visibility", "visible").style("pointer-events", "auto")
+      .transition().duration(150).style("opacity", 1);
   };
 
   const hidePanel = function(){
     cancelHide();
     pinned = false;
-    self.omittedInfoPanel.transition().duration(200).style("opacity", 0)
+    // Stop blocking the chart immediately: if the fade-out transition is interrupted, the "end"
+    //  callback never runs and the panel would stay visibility:visible at opacity 0 - an invisible
+    //  near-full-chart overlay eating every hover and drag underneath.
+    self.omittedInfoPanel.style("pointer-events", "none")
+      .transition().duration(200).style("opacity", 0)
       .each("end", function(){
         if( !pinned )
           self.omittedInfoPanel.style("visibility", "hidden");
@@ -1267,15 +1308,9 @@ RelEffPlot.prototype.handleResize = function () {
     this.setRelEffData(this.data_vals, this.fit_eqn, chi2_txt, this.fit_uncert_fcn);
   }
   
-  // Update mouse capture rectangle size if it exists
-  if (this.mouseCapture) {
-    const parentWidth = this.chart.clientWidth;
-    const parentHeight = this.chart.clientHeight;
-    const chartAreaWidth = Math.max( 0, parentWidth - this.options.margins.left - this.options.margins.right );
-    const chartAreaHeight = Math.max( 0, parentHeight - this.options.margins.top - this.options.margins.bottom );
-
-    this.mouseCapture
-      .attr("width", chartAreaWidth)
-      .attr("height", chartAreaHeight);
-  }
+  // Note: the mouse-capture rect is sized at the end of setRelEffData (which both branches above
+  //  call) using the real plot-area size - axis tick/title space and the chi2-line padding
+  //  subtracted.  A margins-only re-size here used to override that with a rect ~40px wider/taller
+  //  than (and offset from) the plot area, so the capture geometry differed depending on whether
+  //  the last call was setData or a resize.
 };//RelEffPlot.prototype.handleResize

@@ -316,3 +316,95 @@ BOOST_AUTO_TEST_CASE( bad_state_file_throws )
                      std::runtime_error );
   SpecUtils::remove_file( tmp2 );
 }
+
+
+// Test 5: a state that is valid XML, but doesnt define a problem to solve (what you get from an
+//  "Isotopics by nuclides" tool that was opened but never configured), must be rejected up front
+//  rather than being handed to `solve(...)`.
+BOOST_AUTO_TEST_CASE( unconfigured_state_rejected )
+{
+  set_data_dir();
+
+  const string exemplar = SpecUtils::append_path( g_eu152_dir, "exemplar.n42" );
+  const string input    = SpecUtils::append_path( g_eu152_dir, "other_eu152_shielded.n42" );
+  BOOST_REQUIRE( SpecUtils::is_file(exemplar) );
+  BOOST_REQUIRE( SpecUtils::is_file(input) );
+
+  // Start from the (good) bundled state, then strip it back down to "opened, never configured".
+  const string state_xml = SpecUtils::append_path( g_eu152_dir,
+                                                   "isotopics_by_nuclides_Eu152_Unshielded_releff.xml" );
+  shared_ptr<RelActCalcAuto::RelActAutoGuiState> state;
+  BOOST_REQUIRE_NO_THROW( state = BatchRelActAuto::load_state_from_xml_file( state_xml ) );
+  BOOST_REQUIRE( state );
+  BOOST_REQUIRE( !state->options.rel_eff_curves.empty() );
+  BOOST_REQUIRE( state->options.why_not_usable().empty() );
+
+  // No energy ranges
+  {
+    shared_ptr<RelActCalcAuto::RelActAutoGuiState> no_rois
+        = make_shared<RelActCalcAuto::RelActAutoGuiState>( *state );
+    no_rois->options.rois.clear();
+    BOOST_CHECK( !no_rois->options.why_not_usable().empty() );
+
+    BatchRelActAuto::Options options;
+    options.state_override = no_rois;
+    const BatchRelActAuto::Result result
+        = BatchRelActAuto::run_on_file( exemplar, {}, nullptr, input, nullptr, {}, options );
+    BOOST_CHECK_MESSAGE( result.m_result_code == BatchRelActAuto::ResultCode::RelActStateNotUsable,
+                         "Expected RelActStateNotUsable, got "
+                         << BatchRelActAuto::to_str(result.m_result_code)
+                         << " (msg='" << result.m_error_msg << "')" );
+    BOOST_CHECK( !result.m_error_msg.empty() );
+  }
+
+  // No nuclides
+  {
+    shared_ptr<RelActCalcAuto::RelActAutoGuiState> no_nucs
+        = make_shared<RelActCalcAuto::RelActAutoGuiState>( *state );
+    for( RelActCalcAuto::RelEffCurveInput &curve : no_nucs->options.rel_eff_curves )
+      curve.nuclides.clear();
+    BOOST_CHECK( !no_nucs->options.why_not_usable().empty() );
+
+    BatchRelActAuto::Options options;
+    options.state_override = no_nucs;
+    const BatchRelActAuto::Result result
+        = BatchRelActAuto::run_on_file( exemplar, {}, nullptr, input, nullptr, {}, options );
+    BOOST_CHECK_MESSAGE( result.m_result_code == BatchRelActAuto::ResultCode::RelActStateNotUsable,
+                         "Expected RelActStateNotUsable, got "
+                         << BatchRelActAuto::to_str(result.m_result_code)
+                         << " (msg='" << result.m_error_msg << "')" );
+  }
+
+  // And `run_in_files` must complete - actually rendering the reports, which is where the hang
+  //  used to happen - rather than leaving the caller waiting forever.
+  {
+    shared_ptr<RelActCalcAuto::RelActAutoGuiState> no_rois
+        = make_shared<RelActCalcAuto::RelActAutoGuiState>( *state );
+    no_rois->options.rois.clear();
+
+    BatchRelActAuto::Options options;
+    options.state_override = no_rois;
+    options.report_templates = vector<string>{ "html", "txt", "json" };
+    // Note "txt" is a per-file template only; for the summary just "html" (which maps to the
+    //  multi-file "html-summary") and "json" walk the multi-file JSON.
+    options.summary_report_templates = vector<string>{ "html", "json" };
+
+    BatchRelActAuto::Summary summary;
+    BOOST_REQUIRE_NO_THROW(
+      BatchRelActAuto::run_in_files( exemplar, nullptr, {}, {input}, {}, options, &summary )
+    );
+    BOOST_REQUIRE_EQUAL( summary.file_results.size(), 1 );
+    BOOST_CHECK( summary.file_results[0].m_result_code
+                 == BatchRelActAuto::ResultCode::RelActStateNotUsable );
+
+    // The per-file and summary reports must have actually rendered for the failed file.
+    BOOST_REQUIRE_EQUAL( summary.file_reports.size(), 1 );
+    BOOST_CHECK_EQUAL( summary.file_reports[0].size(), 3 );
+    for( const string &report : summary.file_reports[0] )
+      BOOST_CHECK( !report.empty() );
+    BOOST_CHECK_EQUAL( summary.summary_reports.size(), 2 );
+    for( const string &report : summary.summary_reports )
+      BOOST_CHECK( !report.empty() );
+    BOOST_CHECK( !summary.summary_json.empty() );
+  }
+}

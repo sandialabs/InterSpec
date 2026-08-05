@@ -124,7 +124,16 @@ namespace BatchRelActAuto
     SolveFailedToSolve,
     SolveUserCanceled,
     SolveThrewException,
-    UnknownStatus
+    UnknownStatus,
+
+    /** The exemplar / state-override held a `<RelActCalcAuto>` state, but it doesnt define enough
+     of a problem to solve (no rel-eff curves, no nuclides, or no energy ranges) - e.g., the state
+     of an "Isotopics by nuclides" tool that was opened but never configured.
+
+     Note: new codes must be appended here, never inserted - the integer value is written into
+     reports as `ResultCodeInt`, which user templates may compare against.
+     */
+    RelActStateNotUsable
   };//enum class ResultCode
 
   InterSpec_API const char *to_str( const ResultCode code );

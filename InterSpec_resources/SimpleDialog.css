@@ -86,7 +86,10 @@ dialog
 }
 
 
-.simple-dialog .footer button
+/* Anchors are used instead of buttons for downloads on macOS/iOS (see e.g. LlmInteractionDisplay),
+   so they need the same footer chrome as a button. */
+.simple-dialog .footer button,
+.simple-dialog .footer a.simple-dialog-btn
 {
   align-items: flex-start;
   text-align: center;
@@ -126,12 +129,14 @@ dialog
 }
 
 /* Get rid of border on the right of the very last button */
-.simple-dialog .footer button:last-child
+.simple-dialog .footer button:last-child,
+.simple-dialog .footer a.simple-dialog-btn:last-child
 {
   border-right: none;
 }
 
-.simple-dialog .footer button:hover
+.simple-dialog .footer button:hover,
+.simple-dialog .footer a.simple-dialog-btn:hover
 {
-  color: rgb(99, 161, 236);  
+  color: rgb(99, 161, 236);
 }

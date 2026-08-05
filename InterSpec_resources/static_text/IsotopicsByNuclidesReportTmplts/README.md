@@ -228,7 +228,9 @@ with the heaviest blobs elided for readability.
 | `curve_separation_verdict`, `curve_separation_verdict_html` | string | The composed tier-1 plain-language verdict (text / HTML-entity flavors), single-sourced with `print_summary` and the in-code HTML report via `RelActAutoSolution::curve_separation_verdict()` |
 | `cross_curve_max_corr` | object\|null | The largest-\|ρ\| cross-curve correlation pair: `curve_a`, `curve_b` (int), `param_a`, `param_b` (string), `correlation`, `correlation_str`.  \|ρ\|<0.7 separated; 0.7–0.95 caution; >0.95 one normalization DOF |
 | `cross_curve_correlations` | array | All computed pairs, same object shape as `cross_curve_max_corr` |
-| `evidence_purity` | array of array | Per curve, per source: `source` (string), `purity`, `purity_str`.  >0.8 own evidence; 0.3–0.8 partially blended; <0.3 model-attributed only |
+| `evidence_purity` | array of array | Per curve, per source: `source` (string), `curve_label` (string, same for every entry of a row — e.g. `'Inner'` or `curve 0`), `purity`, `purity_str`, `model_counts` (number; the source's total modeled peak counts on this curve — absent when not computed).  `purity` is the historical key name for the **attributed share**: the counts-weighted fraction of the source's peak regions the fit assigns to this curve.  >0.8 own resolved peaks; 0.3–0.8 peak regions shared; <0.3 no individually resolved peaks — the value follows from the fitted physics |
+| `source_count_attribution` | array | Per source present on ≥2 curves: `source` (string), `total_counts` (number), `curves` (array of `curve` (int), `curve_label` (string, e.g. `'Inner'` or `curve 0`), `fraction`, `fraction_str`, `percent_str`).  How the fit divides the source's **detected** peak counts (counts in the measured spectrum — after attenuation and detector efficiency, not emitted source counts) between the curves; fractions sum to 1.  No uncertainty is quoted on the fractions |
+| `curves_distinct_basis` | string | Which evidence tier established the curves as genuinely distinct: `"none"`, `"z"` (a reliable z ≥ 3), `"z_plus_merged"` (marginal z ≥ 1.5 corroborated by the single-curve fit being rejected), or `"merged_only"` (single-curve fit decisively worse, no corroborating z) — see `RelActAutoSolution::curves_distinct_basis()` |
 | `enrichment_diff_z` | array | Per shared nuclide + curve pair: `nuclide`, `curve_a/b`, `enrichment_a/b` (mass fraction), `sigma_a/b`, `z` + `_str` variants.  z≥3 clearly different compositions; 1.5–3 marginal.  **`reliable`** (bool) is false when a value sits at a bound — its uncertainty is then understated and the z is inflated (values of 90+ occur), so it is NOT used for the verdict: a template rendering `z_str` must also render a "not usable" note when `reliable` is false.  The `enrichment_*_str` strings read "(uncertainty unconstrained)" instead of a ± when σ spans the whole [0,100] wt% range |
 | `merged_curve_comparison` | object\|null | Single-vs-multi-curve Δχ² check: `valid` (bool), `message`, `multi_chi2`/`multi_dof`, `merged_chi2`/`merged_dof`, `delta_chi2` (+`_str`, and `delta_chi2_abs_str` = magnitude), `extra_dof_of_multi`, `single_curve_adequate` (bool), `merged_fits_better` (bool).  Δχ² ≫ extra DOF ⇒ more than one curve is needed — this does NOT mean the per-curve split is well determined.  `merged_fits_better` (Δχ² < 0) cannot happen at a proper solution, since merging only removes freedom: it means the multi-curve fit is not at its own optimum.  `message` is meaningful in the valid branch too (e.g. a dropped constraint) and should be rendered there |
 | `rel_eff_curves` | array | Per-curve equation info (see §3.2) |
@@ -274,7 +276,7 @@ Each entry has these fields (see §1.2 for what the equation forms mean):
 
 | Field | Meaning |
 |---|---|
-| `index` | Zero-based index into the per-curve arrays (`relative_activities`, `peaks[i].rel_eff_index`, etc.) |
+| `index` | Zero-based index into the per-curve arrays (`relative_activities`, `peaks[i].rel_eff_index`, etc.) — valid only when the fit succeeded; see the note below on failed solves |
 | `name` | User-supplied label for this curve (defaults to `"Curve N"`) |
 | `rel_eff_eqn_type` | See §1.2 — selects the equation family or Physical model |
 | `rel_eff_eqn_order` | Polynomial order; omitted entirely for `FRAM Physical` |
@@ -282,6 +284,21 @@ Each entry has these fields (see §1.2 for what the equation forms mean):
 | `equation_text` | Plain-text rendering of the fitted curve, suitable for monospace text reports |
 | `equation_html` | HTML-escaped rendering, with Greek letters / sub/superscript markup as appropriate |
 | `js_rel_eff_eqn` | JavaScript function literal — interpolate **raw** into a `<script>` tag (Inja does not auto-escape; this is intentional) |
+| `equation_error` | **Only present when the equation could not be built** (see below) |
+
+`equation_text`, `equation_html` and `js_rel_eff_eqn` are **always present**, so templates may
+reference them unconditionally. When a fit fails before the curve is fitted (`status.success` is
+`false`) there is no equation to show: `coefficients` is absent, `equation_error` carries the
+reason, and the three equation strings are empty (they are filled in order, so a partial failure
+can leave the earlier ones populated). Test for a failed curve with
+`{% if existsIn(curve, "equation_error") %}` — do **not** use `existsIn(curve, "equation_text")`,
+which is always true.
+
+On a failed solve the per-curve arrays can be **shorter than `rel_eff_curves`** — typically empty,
+since `rel_eff_curves` is emitted as soon as the curve *definitions* are known but
+`relative_activities`, `peaks`, etc. only exist once a fit produced results. So `curve.index` is
+not necessarily a valid index into them; guard with `status.success` (or `equation_error`) before
+pairing a curve up with its activities.
 
 For Physical-model curves, `equation_text` / `equation_html` are the only human-readable view
 of the fitted self/external attenuators and Hoerl coefficients (see §1.2.2). The numeric
@@ -290,8 +307,10 @@ template.
 
 ### 3.3 `relative_activities[i]` (per curve)
 
-One entry per rel-eff curve. Each entry holds the per-nuclide fit results for that curve, plus
-a nested `pu` block (Pu fits only) and a nested `ratios` block (when the curve has ≥2 nuclides).
+One entry per rel-eff curve that produced fit results — so on a successful fit this is parallel to
+`rel_eff_curves`, but on a failed one it can be shorter (usually empty). Each entry holds the
+per-nuclide fit results for that curve, plus a nested `pu` block (Pu fits only) and a nested
+`ratios` block (when the curve has ≥2 nuclides).
 
 ```json
 {
@@ -1146,8 +1165,8 @@ The aggregate `summary_json` that batch templates consume is built by
 | `ForegroundSampleNumbers` | array[int] | Sample numbers used as the foreground; more than one means they were summed |
 | `Filepath` | string | Absolute path that was given to the batch driver |
 | `ParentDir` | string | Directory containing `Filepath` |
-| `ResultCode` | string | One of `BatchRelActAuto::ResultCode`'s names: `Success`, `NoExemplar`, `CouldntOpenExemplar`, `ExemplarMissingRelActState`, `CouldntOpenStateOverride`, `CouldntOpenInputFile`, `CouldntOpenBackgroundFile`, `ForegroundSampleNumberUnderSpecified`, `BackgroundSampleNumberUnderSpecified`, `ExemplarUsesPhysModelButNoDrf`, `FwhmMethodNeedsDrfButNoneAvailable`, `SolveFailedToSetup`, `SolveFailedToSolve`, `SolveUserCanceled`, `SolveThrewException`, `UnknownStatus` |
-| `ResultCodeInt` | int | Numeric form of `ResultCode` |
+| `ResultCode` | string | One of `BatchRelActAuto::ResultCode`'s names: `Success`, `NoExemplar`, `CouldntOpenExemplar`, `ExemplarMissingRelActState`, `CouldntOpenStateOverride`, `CouldntOpenInputFile`, `CouldntOpenBackgroundFile`, `ForegroundSampleNumberUnderSpecified`, `BackgroundSampleNumberUnderSpecified`, `FwhmMethodNeedsDrfButNoneAvailable`, `SolveFailedToSetup`, `SolveFailedToSolve`, `SolveUserCanceled`, `SolveThrewException`, `UnknownStatus`, `RelActStateNotUsable` |
+| `ResultCodeInt` | int | Numeric form of `ResultCode`. New codes are only ever appended, so existing values are stable; prefer matching on the `ResultCode` string |
 | `Success` | bool | Convenience: `(ResultCode == "Success")` |
 | `HasErrorMessage` | bool | True iff `ErrorMessage` is non-empty |
 | `ErrorMessage` | string | Present only when `HasErrorMessage` is true |

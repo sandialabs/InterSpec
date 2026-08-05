@@ -31,6 +31,7 @@
 #include <Wt/WText>
 #include <Wt/WLabel>
 #include <Wt/WPanel>
+#include <Wt/WAnchor>
 #include <Wt/WServer>
 #include <Wt/WTextArea>
 #include <Wt/WResource>
@@ -355,8 +356,8 @@ void LlmInteractionTurnDisplay::showJsonDialog( const WString &title,
 
   if( allowDownload )
   {
-    // Create memory resource for download
-    WMemoryResource *resource = new WMemoryResource( "application/json" );
+    // Create memory resource for download; parented to the dialog so it gets cleaned up with it.
+    WMemoryResource *resource = new WMemoryResource( "application/json", dialog );
     resource->setData( reinterpret_cast<const unsigned char*>(formattedJson.data()),
                       static_cast<int>(formattedJson.size()) );
 
@@ -369,10 +370,21 @@ void LlmInteractionTurnDisplay::showJsonDialog( const WString &title,
     resource->suggestFileName( filename );
     resource->setDispositionType( WResource::Attachment );
 
-    WPushButton *downloadBtn = dialog->addButton( "Download" );
+    // On macOS/iOS only clicks on real anchors trigger a download; the `window.open(...)` a
+    //  WPushButton link emits is silently dropped by the WKWebView.
+    // Note: we deliberately do not use `SimpleDialog::addButton(...)` here - it closes the dialog
+    //  on click, which would destroy `resource` (its child) before the browser has fetched it.
+#if( BUILD_AS_OSX_APP || IOS )
+    WAnchor *downloadBtn = new WAnchor( WLink(resource), dialog->footer() );
+    downloadBtn->setTarget( AnchorTarget::TargetNewWindow );
+    downloadBtn->setStyleClass( "simple-dialog-btn DownloadLink" );
+    downloadBtn->setText( "Download" );
+#else
+    WPushButton *downloadBtn = new WPushButton( "Download", dialog->footer() );
     downloadBtn->setIcon( "InterSpec_resources/images/download_small.svg" );
     downloadBtn->setLink( WLink(resource) );
     downloadBtn->setLinkTarget( Wt::TargetNewWindow );
+#endif
   }
 
   WPushButton *closeBtn = dialog->addButton( "Close" );
@@ -2102,8 +2114,8 @@ void LlmInteractionDisplay::showJsonDialog( const WString &title,
   // Add download button if allowed
   if( allowDownload )
   {
-    // Create a memory resource for the JSON
-    WMemoryResource *resource = new WMemoryResource( "application/json" );
+    // Create a memory resource for the JSON; parented to the dialog so it is cleaned up with it.
+    WMemoryResource *resource = new WMemoryResource( "application/json", dialog );
     resource->setData( reinterpret_cast<const unsigned char*>(jsonStr.c_str()),
                       static_cast<int>(jsonStr.length()) );
 
@@ -2130,10 +2142,19 @@ void LlmInteractionDisplay::showJsonDialog( const WString &title,
     resource->suggestFileName( filename );
     resource->setDispositionType( WResource::Attachment );
 
+    // On macOS/iOS only clicks on real anchors trigger a download; the `window.open(...)` a
+    //  WPushButton link emits is silently dropped by the WKWebView.
+#if( BUILD_AS_OSX_APP || IOS )
+    WAnchor *downloadBtn = new WAnchor( WLink(resource), dialog->footer() );
+    downloadBtn->setTarget( AnchorTarget::TargetNewWindow );
+    downloadBtn->setStyleClass( "simple-dialog-btn DownloadLink" );
+    downloadBtn->setText( "Download" );
+#else
     WPushButton *downloadBtn = new WPushButton( "Download", dialog->footer() );
     downloadBtn->setIcon( "InterSpec_resources/images/download_small.svg" );
     downloadBtn->setLink( WLink(resource) );
     downloadBtn->setLinkTarget( Wt::TargetNewWindow );
+#endif
   }
 
   // Add copy button
@@ -2148,9 +2169,6 @@ void LlmInteractionDisplay::showJsonDialog( const WString &title,
   closeBtn->clicked().connect( dialog, &WDialog::accept );
 
   dialog->show();
-  dialog->finished().connect( std::bind( [dialog]() {
-    delete dialog;
-  }));
 }//showJsonDialog(...)
 
 

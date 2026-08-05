@@ -349,6 +349,11 @@ std::string rel_eff_eqn_js_function( const RelEffEqnForm eqn_form, const std::ve
 
 double eval_eqn( const double energy, const RelEffEqnForm eqn_form, const vector<double> &coeffs )
 {
+  // `&(coeffs[0])` would be UB on an empty vector, and an equation with no coefficients is
+  //  meaningless anyway.
+  if( coeffs.empty() )
+    throw runtime_error( "eval_eqn: no relative efficiency coefficients provided." );
+
   return eval_eqn( energy, eqn_form, &(coeffs[0]), coeffs.size() );
 }
 

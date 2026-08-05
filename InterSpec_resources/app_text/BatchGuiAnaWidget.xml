@@ -61,6 +61,7 @@
 
 
   <!-- Analysis progress and results -->
+  <message id="bgw-unknown-analysis-error">Unknown error performing analysis.</message>
   <message id="bgw-performing-work-title">Performing Work</message>
   <message id="bgw-performing-work-msg">Please wait while the batch analysis is performed...</message>
   <message id="bgw-error-analysis-title">Error Performing Batch Analysis</message>
@@ -121,8 +122,6 @@ A zero or negative value will mean no requirement, and also no 'peak-stat-thresh
   
   <message id="bgw-reports-write-custom-per-file-tooltip">One or more spectrum report template files - for each input file, a report will be produced with each template specified.</message>
 
-  <message id="bgw-reports-write-custom-summary-tooltip">One or more template files used to provide a summary of all input files.</message>
-
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Use Bq units</message>
   <message id="bgw-hard-background-sub">Hard background subtract</message>
@@ -136,6 +135,7 @@ A zero or negative value will mean no requirement, and also no 'peak-stat-thresh
   <message id="bgw-distance-label">Distance:</message>
   
   <!-- Isotopics-by-nuclides analysis strings -->
+  <message id="bgw-iso-by-nucs-title">Batch options for &quot;Isotopics by nuclides&quot;</message>
   <message id="bgw-rel-eff-config-label">Rel. Eff. Config Override</message>
   <message id="bgw-use-rel-eff-config-override">Use custom rel-eff config (XML)</message>
   <message id="bgw-iso-override-energy-cal">Override energy-cal type</message>
@@ -143,6 +143,7 @@ A zero or negative value will mean no requirement, and also no 'peak-stat-thresh
   <message id="bgw-iso-override-skew-type">Override skew type</message>
   <message id="bgw-no-ana-iso-no-state-or-exemplar">No exemplar with stored RelActCalcAuto state, and no rel-eff config XML supplied.</message>
   <message id="bgw-no-ana-iso-no-state-in-exemplar">Exemplar has no stored RelActCalcAuto state - either use a different exemplar or supply a rel-eff config XML.</message>
+  <message id="bgw-no-ana-iso-state-not-configured">The &quot;Isotopics by nuclides&quot; configuration is incomplete: {1} Set up an isotopics analysis on the exemplar, or supply a complete rel-eff config XML.</message>
   <message id="bgw-no-ana-iso-need-drf">A detector response function is required (Physical-model rel-eff curve or DRF-seeded FWHM method) but none is available.</message>
 
   <!-- Error and completion messages -->

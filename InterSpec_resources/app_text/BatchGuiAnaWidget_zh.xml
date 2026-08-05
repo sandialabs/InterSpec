@@ -121,8 +121,6 @@
   
   <message id="bgw-reports-write-custom-per-file-tooltip">一个或多个谱报告模板文件 - 对于每个输入文件，将使用指定的每个模板生成报告。</message>
 
-  <message id="bgw-reports-write-custom-summary-tooltip">一个或多个模板文件用于提供所有输入文件的汇总。</message>
-
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">使用Bq单位</message>
   <message id="bgw-hard-background-sub">硬本底减除</message>

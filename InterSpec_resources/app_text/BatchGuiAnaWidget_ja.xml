@@ -121,8 +121,6 @@ InterSpecからのピークがスペクトルファイルに存在する必要�
   
   <message id="bgw-reports-write-custom-per-file-tooltip">一つまたは複数のスペクトルレポートテンプレートファイル - 各入力ファイルに対して、指定された各テンプレートでレポートが生成されます。</message>
 
-  <message id="bgw-reports-write-custom-summary-tooltip">全入力ファイルのサマリーを提供する一つまたは複数のテンプレートファイル。</message>
-
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Bq単位を使用</message>
   <message id="bgw-hard-background-sub">ハードバックグラウンド減算</message>

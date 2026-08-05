@@ -253,6 +253,12 @@
 }
 
 
+.BatchGuiWidget .BatchGuiIsotopicsByNuclidesWidget .IsotopicsOptsTitle
+{
+  font-weight: bold;
+  text-align: center;
+}
+
 .FileConvertOptsOptions .FileConvertOptsTitle
 {
   text-align: center;

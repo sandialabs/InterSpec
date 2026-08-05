@@ -121,8 +121,6 @@ InterSpec से पीक स्पेक्ट्रम फ़ाइल मे
 
   <message id="bgw-reports-write-custom-per-file-tooltip">एक या अधिक स्पेक्ट्रम रिपोर्ट टेम्पलेट फ़ाइलें - प्रत्येक इनपुट फ़ाइल के लिए, निर्दिष्ट प्रत्येक टेम्पलेट के साथ एक रिपोर्ट तैयार की जाएगी।</message>
 
-  <message id="bgw-reports-write-custom-summary-tooltip">सभी इनपुट फ़ाइलों का सारांश प्रदान करने के लिए उपयोग की जाने वाली एक या अधिक टेम्पलेट फ़ाइलें।</message>
-
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Bq इकाइयां उपयोग करें</message>
   <message id="bgw-hard-background-sub">हार्ड background घटाव</message>

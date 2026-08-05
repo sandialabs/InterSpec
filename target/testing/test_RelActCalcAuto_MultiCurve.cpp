@@ -238,6 +238,32 @@ BOOST_AUTO_TEST_CASE( two_disk_default_seeding_reaches_truth )
   BOOST_CHECK_EQUAL( sol.m_evidence_purity.size(), size_t(2) );
   BOOST_CHECK( !sol.m_enrichment_diff_z.empty() );
 
+  // The per-source model counts (weight denominators of the attributed shares) are filled alongside,
+  //  and the cross-curve count-attribution fractions sum to 1 per shared source.
+  BOOST_CHECK_EQUAL( sol.m_source_model_counts.size(), size_t(2) );
+  const vector<RelActCalcAuto::RelActAutoSolution::SourceCountAttribution> attribs
+                                                                = sol.source_count_attributions();
+  BOOST_CHECK( !attribs.empty() );
+  for( const RelActCalcAuto::RelActAutoSolution::SourceCountAttribution &attrib : attribs )
+  {
+    BOOST_CHECK( attrib.total_counts > 0.0 );
+    double frac_sum = 0.0;
+    for( const pair<size_t,double> &curve_frac : attrib.curve_fractions )
+      frac_sum += curve_frac.second;
+    BOOST_CHECK_MESSAGE( std::fabs(frac_sum - 1.0) < 1.0E-9,
+                         RelActCalcAuto::to_name(attrib.source) << " fractions sum to " << frac_sum );
+  }
+
+  // Retired jargon must not reach any user-facing separation text.
+  const string verdict = sol.curve_separation_verdict( false );
+  BOOST_CHECK_MESSAGE( (verdict.find("purity") == string::npos)
+                        && (verdict.find("blended") == string::npos),
+                       "verdict: " << verdict );
+  for( const string &warning : sol.m_warnings )
+    BOOST_CHECK_MESSAGE( (warning.find("purity") == string::npos)
+                          && (warning.find("blended") == string::npos),
+                         "warning: " << warning );
+
   // The two enrichments differ hugely, so the detection statistic must see it (review: z ~ 28).
   double max_z = 0.0;
   for( const RelActCalcAuto::RelActAutoSolution::EnrichmentDiffZ &diff : sol.m_enrichment_diff_z )
@@ -321,3 +347,317 @@ BOOST_AUTO_TEST_CASE( mixed_physical_and_empirical_curves_with_ad_prior )
   BOOST_CHECK( sol.m_status != RelActCalcAuto::RelActAutoSolution::Status::NotInitiated );
   BOOST_CHECK( sol.m_status != RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem );
 }//BOOST_AUTO_TEST_CASE( mixed_physical_and_empirical_curves_with_ad_prior )
+
+
+// ---------------------------------------------------------------------------------------------
+// Synthetic-solution tests of the curve-separation classification (no fits needed): populate the
+//  metric members directly, run finalize_curve_separation_status(), and assert on the status /
+//  detection basis / wording.  The baseline numbers replicate a real enriched-U-inside-lower-
+//  enriched-U measurement (2026-08): both enrichment-difference z's ~2 (marginal), merged
+//  single-curve comparison delta-chi2 = 15.17 for 2 extra DOF at chi2/dof = 571/383, inner-curve
+//  U235 fully absorbed by the outer shell (attributed share 0.011) but inner U238 partially
+//  resolved (share 0.46).
+// ---------------------------------------------------------------------------------------------
+namespace
+{
+  using RelActCalcAuto::RelActAutoSolution;
+
+  RelActAutoSolution make_u_inside_u_like_solution()
+  {
+    set_data_dir();
+    const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+    const SandiaDecay::Nuclide * const u235 = db->nuclide( "U235" );
+    const SandiaDecay::Nuclide * const u238 = db->nuclide( "U238" );
+    BOOST_REQUIRE( u235 && u238 );
+
+    RelActAutoSolution sol;
+    sol.m_options.rel_eff_curves.resize( 2 );
+    sol.m_options.rel_eff_curves[0].name = "Inner";
+    sol.m_options.rel_eff_curves[1].name = "Outer";
+
+    sol.m_chi2_data = 571.0;
+    sol.m_dof_data = 383;
+    sol.m_r2 = 0.999;
+    sol.m_num_rank_deficient_dirs = 0;
+    sol.m_jacobian_condition_number = 148.0;
+
+    // Inner U235 is fully absorbed by the outer shell (expected physics); inner U238 is anchored.
+    sol.m_evidence_purity.assign( 2, {} );
+    sol.m_evidence_purity[0][u235] = 0.011;
+    sol.m_evidence_purity[0][u238] = 0.46;
+    sol.m_evidence_purity[1][u235] = 0.94;
+    sol.m_evidence_purity[1][u238] = 0.54;
+
+    sol.m_source_model_counts.assign( 2, {} );
+    sol.m_source_model_counts[0][u235] = 500.0;
+    sol.m_source_model_counts[0][u238] = 30000.0;
+    sol.m_source_model_counts[1][u235] = 45000.0;
+    sol.m_source_model_counts[1][u238] = 35000.0;
+
+    RelActAutoSolution::CrossCurveCorrelation corr;
+    corr.curve_a = 0;
+    corr.curve_b = 1;
+    corr.param_a = corr.param_b = "Act(U235)";
+    corr.correlation = 0.5;
+    sol.m_cross_curve_correlations.push_back( corr );
+    sol.m_cross_curve_max_corr = corr;
+
+    RelActAutoSolution::EnrichmentDiffZ u235_diff;
+    u235_diff.curve_a = 0;
+    u235_diff.curve_b = 1;
+    u235_diff.nuclide = RelActCalcAuto::SrcVariant( u235 );
+    u235_diff.enrichment_a = 0.775;
+    u235_diff.sigma_a = 0.18;
+    u235_diff.enrichment_b = 0.00896;
+    u235_diff.sigma_b = 0.33;
+    u235_diff.z = std::fabs( u235_diff.enrichment_a - u235_diff.enrichment_b )
+                  / std::sqrt( u235_diff.sigma_a*u235_diff.sigma_a + u235_diff.sigma_b*u235_diff.sigma_b );
+    u235_diff.reliable = true;
+
+    RelActAutoSolution::EnrichmentDiffZ u238_diff = u235_diff;
+    u238_diff.nuclide = RelActCalcAuto::SrcVariant( u238 );
+    u238_diff.enrichment_a = 0.217;
+    u238_diff.enrichment_b = 0.991;
+    u238_diff.z = std::fabs( u238_diff.enrichment_a - u238_diff.enrichment_b )
+                  / std::sqrt( u238_diff.sigma_a*u238_diff.sigma_a + u238_diff.sigma_b*u238_diff.sigma_b );
+
+    sol.m_enrichment_diff_z.push_back( u235_diff );
+    sol.m_enrichment_diff_z.push_back( u238_diff );
+
+    RelActAutoSolution::MergedCurveComparison merged;
+    merged.valid = true;
+    merged.multi_chi2_data = 571.0;
+    merged.multi_dof_data = 383;
+    merged.merged_chi2_data = 571.0 + 15.17;
+    merged.merged_dof_data = 385;
+    merged.delta_chi2 = 15.17;
+    merged.extra_dof_of_multi = 2;
+    sol.m_merged_single_curve_comparison = merged;
+
+    return sol;
+  }//make_u_inside_u_like_solution()
+
+  bool contains( const string &haystack, const string &needle )
+  {
+    return (haystack.find(needle) != string::npos);
+  }
+}//namespace
+
+
+// The motivating real-world case: two marginal z's (~2) plus a decisive single-curve rejection
+//  (delta-chi2 = 15.17 >> the 3-sigma-scaled bar of ~11.9) must count as detected-distinct via the
+//  corroborated tier, and the expected-physics blocked inner U235 must NOT drive the headline to
+//  "Poorly separated" - it becomes a per-nuclide caveat.
+BOOST_AUTO_TEST_CASE( marginal_z_corroborated_by_merged_rejection_is_detected )
+{
+  RelActAutoSolution sol = make_u_inside_u_like_solution();
+  sol.finalize_curve_separation_status();
+
+  BOOST_CHECK( sol.curves_distinct_basis()
+               == RelActAutoSolution::CurveDistinctBasis::ZCorroboratedByMerged );
+  BOOST_CHECK( sol.curves_detected_distinct() );
+  BOOST_CHECK( sol.m_curve_separation_status
+               == RelActAutoSolution::CurveSeparationStatus::WellSeparated );
+  BOOST_CHECK_EQUAL( string(sol.curve_separation_display()), string("Separated") );
+
+  BOOST_REQUIRE( sol.m_merged_single_curve_comparison.has_value() );
+  BOOST_CHECK( !sol.m_merged_single_curve_comparison->single_curve_adequate );
+
+  const string verdict = sol.curve_separation_verdict( false );
+  BOOST_CHECK_MESSAGE( contains( verdict, "genuinely different" ), "verdict: " << verdict );
+  // The blocked inner U235 gets the per-nuclide caveat, with the count attribution...
+  BOOST_CHECK_MESSAGE( contains( verdict, "peaks of its own" ), "verdict: " << verdict );
+  BOOST_CHECK_MESSAGE( contains( verdict, "'Inner'" ), "verdict: " << verdict );
+  // ...and the retired jargon stays retired.
+  BOOST_CHECK_MESSAGE( !contains( verdict, "purity" ), "verdict: " << verdict );
+  BOOST_CHECK_MESSAGE( !contains( verdict, "blended" ), "verdict: " << verdict );
+  BOOST_CHECK_MESSAGE( !contains( verdict, "NOT well separated" ), "verdict: " << verdict );
+
+  for( const string &warning : sol.m_warnings )
+  {
+    BOOST_CHECK_MESSAGE( !contains( warning, "purity" ) && !contains( warning, "blended" ),
+                         "warning: " << warning );
+  }
+}//BOOST_AUTO_TEST_CASE( marginal_z_corroborated_by_merged_rejection_is_detected )
+
+
+// S1 guard (2026-07 validation): an inflated z = 4.85 on genuinely identical stacked disks, with
+//  the merged fit doing about as well (delta-chi2 = 5.5 for 2 DOF), must stay vetoed - removing the
+//  old have-reliable-z early-out must not resurrect it through the new tiers.
+BOOST_AUTO_TEST_CASE( s1_inflated_z_still_vetoed_by_adequate_merged_fit )
+{
+  RelActAutoSolution sol = make_u_inside_u_like_solution();
+  sol.m_chi2_data = 100.0;
+  sol.m_dof_data = 100;
+  sol.m_enrichment_diff_z.resize( 1 );
+  sol.m_enrichment_diff_z[0].z = 4.85;
+  sol.m_merged_single_curve_comparison->delta_chi2 = 5.5;
+  // Everything blended, as in the S1 collapse minimum.
+  for( auto &curve_shares : sol.m_evidence_purity )
+    for( auto &src_share : curve_shares )
+      src_share.second = 0.016;
+
+  sol.finalize_curve_separation_status();
+
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+  BOOST_CHECK( !sol.curves_detected_distinct() );
+  BOOST_CHECK( sol.z_detection_vetoed_by_merged() );
+  BOOST_CHECK( sol.m_curve_separation_status
+               == RelActAutoSolution::CurveSeparationStatus::Degenerate );
+
+  // The z table row must carry the veto annotation (headline-vs-evidence consistency, S8).
+  const string annotation = sol.z_row_annotation( sol.m_enrichment_diff_z[0] );
+  BOOST_CHECK_MESSAGE( contains( annotation, "not treated as a detection" ),
+                       "annotation: " << annotation );
+}//BOOST_AUTO_TEST_CASE( s1_inflated_z_still_vetoed_by_adequate_merged_fit )
+
+
+// A marginal z with the merged fit adequate (delta-chi2 within the 3-sigma-scaled bar) is NOT a
+//  detection; same just below the bar.
+BOOST_AUTO_TEST_CASE( marginal_z_without_merged_rejection_is_not_detected )
+{
+  {
+    RelActAutoSolution sol = make_u_inside_u_like_solution();
+    sol.m_chi2_data = 100.0;
+    sol.m_dof_data = 100;
+    sol.m_merged_single_curve_comparison->delta_chi2 = 7.0;  //bar is 2 + 3*sqrt(4) = 8
+    sol.finalize_curve_separation_status();
+    BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+    BOOST_CHECK( sol.m_merged_single_curve_comparison->single_curve_adequate );
+  }
+
+  {
+    // Boundary: just below the bar still fails.
+    RelActAutoSolution sol = make_u_inside_u_like_solution();
+    sol.m_chi2_data = 100.0;
+    sol.m_dof_data = 100;
+    sol.m_merged_single_curve_comparison->delta_chi2 = 7.99;
+    sol.finalize_curve_separation_status();
+    BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::None );
+  }
+}//BOOST_AUTO_TEST_CASE( marginal_z_without_merged_rejection_is_not_detected )
+
+
+// The pre-existing fallback: no reliable z at all, delta-chi2 above the 5-sigma-scaled bar
+//  (2 + 5*sqrt(4) = 12 at chi2/dof <= 1) detects as MergedOnly.
+BOOST_AUTO_TEST_CASE( merged_only_detection_without_z_table )
+{
+  RelActAutoSolution sol = make_u_inside_u_like_solution();
+  sol.m_chi2_data = 100.0;
+  sol.m_dof_data = 100;
+  sol.m_enrichment_diff_z.clear();
+  sol.m_merged_single_curve_comparison->delta_chi2 = 13.0;
+  sol.finalize_curve_separation_status();
+
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::MergedOnly );
+  BOOST_CHECK( sol.curves_detected_distinct() );
+}//BOOST_AUTO_TEST_CASE( merged_only_detection_without_z_table )
+
+
+// A decisive merged rejection with only a tiny z (< 1.5) detects the CURVES as distinct, but the
+//  verdict must say plainly the compositions themselves are not distinguished.
+BOOST_AUTO_TEST_CASE( decisive_merged_with_tiny_z_detects_curves_not_composition )
+{
+  RelActAutoSolution sol = make_u_inside_u_like_solution();
+  sol.m_chi2_data = 100.0;
+  sol.m_dof_data = 100;
+  for( RelActAutoSolution::EnrichmentDiffZ &diff : sol.m_enrichment_diff_z )
+    diff.z = 1.0;
+  sol.m_merged_single_curve_comparison->delta_chi2 = 20.0;
+  sol.finalize_curve_separation_status();
+
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::MergedOnly );
+  const string verdict = sol.curve_separation_verdict( false );
+  BOOST_CHECK_MESSAGE( contains( verdict, "NOT distinguished" ), "verdict: " << verdict );
+}//BOOST_AUTO_TEST_CASE( decisive_merged_with_tiny_z_detects_curves_not_composition )
+
+
+// A whole curve with no resolved evidence (every attributed share < 0.3) still downgrades a
+//  detected pair to PoorlySeparated, with the unanchored-curve trigger text.
+BOOST_AUTO_TEST_CASE( unanchored_curve_downgrades_detected_pair )
+{
+  RelActAutoSolution sol = make_u_inside_u_like_solution();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide * const u238 = db->nuclide( "U238" );
+  sol.m_evidence_purity[0][u238] = 0.05;  //now NO source on 'Inner' reaches 0.3
+  for( RelActAutoSolution::EnrichmentDiffZ &diff : sol.m_enrichment_diff_z )
+    diff.z = 5.0;  //clear Tier-1 detection (delta-chi2 = 15.17 is above the veto bar of 8)
+  sol.finalize_curve_separation_status();
+
+  BOOST_CHECK( sol.curves_distinct_basis() == RelActAutoSolution::CurveDistinctBasis::ZScore );
+  BOOST_CHECK( sol.m_curve_separation_status
+               == RelActAutoSolution::CurveSeparationStatus::PoorlySeparated );
+  BOOST_CHECK_EQUAL( string(sol.curve_separation_display()),
+                     string("Distinct curves - see per-nuclide notes") );
+
+  const string trigger = sol.curve_separation_trigger_text();
+  BOOST_CHECK_MESSAGE( contains( trigger, "no nuclide on 'Inner' has individually resolved peaks" ),
+                       "trigger: " << trigger );
+
+  BOOST_REQUIRE( !sol.m_warnings.empty() );
+  bool warning_names_trigger = false;
+  for( const string &warning : sol.m_warnings )
+    warning_names_trigger = (warning_names_trigger || contains( warning, "individually resolved" ));
+  BOOST_CHECK( warning_names_trigger );
+}//BOOST_AUTO_TEST_CASE( unanchored_curve_downgrades_detected_pair )
+
+
+// S4 guard: a fit that does not describe the data (R^2 below the floor) can never claim more than
+//  PoorlySeparated, regardless of detection evidence.
+BOOST_AUTO_TEST_CASE( poor_fit_quality_overrides_detection )
+{
+  RelActAutoSolution sol = make_u_inside_u_like_solution();
+  sol.m_r2 = 0.5;
+  sol.finalize_curve_separation_status();
+
+  BOOST_CHECK( sol.poor_fit_quality() );
+  BOOST_CHECK( sol.m_curve_separation_status
+               == RelActAutoSolution::CurveSeparationStatus::PoorlySeparated );
+  const string trigger = sol.curve_separation_trigger_text();
+  BOOST_CHECK_MESSAGE( contains( trigger, "does not describe the data" ), "trigger: " << trigger );
+
+  // A failed fit forfeits the "distinct" label/verdict even though a detection basis exists - the
+  //  evidence comes from the same fit the verdict declares meaningless.  The verdict is the failed-
+  //  fit trigger alone, with no "genuinely different" claim and no endorsement of uncertainties.
+  BOOST_CHECK_EQUAL( string(sol.curve_separation_display()), string("Poorly separated") );
+  const string verdict = sol.curve_separation_verdict( false );
+  BOOST_CHECK_MESSAGE( contains( verdict, "does not describe the data" ), "verdict: " << verdict );
+  BOOST_CHECK_MESSAGE( !contains( verdict, "genuinely" ) && !contains( verdict, "uncertainties" ),
+                       "verdict: " << verdict );
+  bool have_cannot_assess_warning = false;
+  for( const string &warning : sol.m_warnings )
+    have_cannot_assess_warning = (have_cannot_assess_warning
+                                  || contains( warning, "cannot be assessed" ));
+  BOOST_CHECK( have_cannot_assess_warning );
+}//BOOST_AUTO_TEST_CASE( poor_fit_quality_overrides_detection )
+
+
+// The per-source count-attribution accessor: fractions per source sum to 1, only shared sources
+//  are reported, and the fractions match the model counts.
+BOOST_AUTO_TEST_CASE( source_count_attributions_fractions )
+{
+  RelActAutoSolution sol = make_u_inside_u_like_solution();
+  const vector<RelActAutoSolution::SourceCountAttribution> attribs = sol.source_count_attributions();
+  BOOST_REQUIRE_EQUAL( attribs.size(), size_t(2) );  //U235 and U238, each on both curves
+
+  for( const RelActAutoSolution::SourceCountAttribution &attrib : attribs )
+  {
+    BOOST_REQUIRE_EQUAL( attrib.curve_fractions.size(), size_t(2) );
+    double frac_sum = 0.0;
+    for( const pair<size_t,double> &curve_frac : attrib.curve_fractions )
+      frac_sum += curve_frac.second;
+    BOOST_CHECK_MESSAGE( std::fabs(frac_sum - 1.0) < 1.0E-9, "fractions sum to " << frac_sum );
+  }
+
+  // U235: 500 of 45500 total on 'Inner' (index 0).
+  const RelActAutoSolution::SourceCountAttribution &u235_attrib = attribs[0];
+  BOOST_CHECK_EQUAL( RelActCalcAuto::to_name(u235_attrib.source), string("U235") );
+  BOOST_CHECK_MESSAGE( std::fabs(u235_attrib.total_counts - 45500.0) < 1.0E-6,
+                       "U235 total = " << u235_attrib.total_counts );
+  for( const pair<size_t,double> &curve_frac : u235_attrib.curve_fractions )
+  {
+    if( curve_frac.first == 0 )
+      BOOST_CHECK_MESSAGE( std::fabs(curve_frac.second - 500.0/45500.0) < 1.0E-9,
+                           "Inner U235 fraction = " << curve_frac.second );
+  }
+}//BOOST_AUTO_TEST_CASE( source_count_attributions_fractions )

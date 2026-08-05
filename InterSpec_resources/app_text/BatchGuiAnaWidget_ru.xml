@@ -121,8 +121,6 @@
   
   <message id="bgw-reports-write-custom-per-file-tooltip">Один или несколько файлов шаблонов отчетов спектра - для каждого входного файла будет создан отчет с каждым указанным шаблоном.</message>
 
-  <message id="bgw-reports-write-custom-summary-tooltip">Один или несколько файлов шаблонов, используемых для создания сводки всех входных файлов.</message>
-
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Использовать единицы Бк</message>
   <message id="bgw-hard-background-sub">Жесткое вычитание фона</message>
