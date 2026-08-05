@@ -622,3 +622,132 @@ BOOST_AUTO_TEST_CASE( options_why_not_usable )
   options.rois.push_back( roi );
   BOOST_CHECK( options.why_not_usable().empty() );
 }//BOOST_AUTO_TEST_CASE( options_why_not_usable )
+
+
+/** The bundled `std_rel_eff_summary` templates' multi-curve separation block is skipped for every
+ solution the file-based cases above produce (single-curve fits have `curve_separation_status`
+ "NotApplicable"), so its inja was previously never executed by tests - and this inja errors on
+ unknown keys.  Render it against a synthetic multi-curve solution: the separation metrics are
+ public members, so no fit is needed (numbers replicate the 2026-08 enriched-U-inside-lower-
+ enriched-U case: marginal z's ~2 corroborated by a decisive merged-fit rejection).
+ */
+BOOST_AUTO_TEST_CASE( multi_curve_separation_block_renders )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide * const u235 = db->nuclide( "U235" );
+  const SandiaDecay::Nuclide * const u238 = db->nuclide( "U238" );
+  BOOST_REQUIRE( u235 && u238 );
+
+  RelActCalcAuto::RelActAutoSolution sol;
+  sol.m_status = RelActCalcAuto::RelActAutoSolution::Status::Success;
+  sol.m_options.rel_eff_curves.resize( 2 );
+  sol.m_options.rel_eff_curves[0].name = "Inner";
+  sol.m_options.rel_eff_curves[1].name = "Outer";
+  sol.m_chi2_data = 571.0;
+  sol.m_dof_data = 383;
+  sol.m_r2 = 0.999;
+  sol.m_jacobian_condition_number = 148.0;
+
+  sol.m_evidence_purity.assign( 2, {} );
+  sol.m_evidence_purity[0][u235] = 0.011;
+  sol.m_evidence_purity[0][u238] = 0.46;
+  sol.m_evidence_purity[1][u235] = 0.94;
+  sol.m_evidence_purity[1][u238] = 0.54;
+
+  sol.m_source_model_counts.assign( 2, {} );
+  sol.m_source_model_counts[0][u235] = 500.0;
+  sol.m_source_model_counts[0][u238] = 30000.0;
+  sol.m_source_model_counts[1][u235] = 45000.0;
+  sol.m_source_model_counts[1][u238] = 35000.0;
+
+  RelActCalcAuto::RelActAutoSolution::CrossCurveCorrelation corr;
+  corr.curve_a = 0;
+  corr.curve_b = 1;
+  corr.param_a = corr.param_b = "Act(U235)";
+  corr.correlation = 0.5;
+  sol.m_cross_curve_correlations.push_back( corr );
+  sol.m_cross_curve_max_corr = corr;
+
+  RelActCalcAuto::RelActAutoSolution::EnrichmentDiffZ diff;
+  diff.curve_a = 0;
+  diff.curve_b = 1;
+  diff.nuclide = RelActCalcAuto::SrcVariant( u235 );
+  diff.enrichment_a = 0.775;
+  diff.sigma_a = 0.18;
+  diff.enrichment_b = 0.00896;
+  diff.sigma_b = 0.33;
+  diff.z = 2.05;
+  diff.reliable = true;
+  sol.m_enrichment_diff_z.push_back( diff );
+
+  RelActCalcAuto::RelActAutoSolution::MergedCurveComparison merged;
+  merged.valid = true;
+  merged.multi_chi2_data = 571.0;
+  merged.multi_dof_data = 383;
+  merged.merged_chi2_data = 586.17;
+  merged.merged_dof_data = 385;
+  merged.delta_chi2 = 15.17;
+  merged.extra_dof_of_multi = 2;
+  sol.m_merged_single_curve_comparison = merged;
+
+  sol.finalize_curve_separation_status();
+  BOOST_REQUIRE( sol.curves_detected_distinct() );
+
+  const nlohmann::json data = RelActAutoReport::solution_to_json( sol );
+
+  // The new additive keys.
+  BOOST_REQUIRE( data.contains( "curves_distinct_basis" ) );
+  BOOST_CHECK_EQUAL( data["curves_distinct_basis"].get<string>(), string("z_plus_merged") );
+  BOOST_REQUIRE( data.contains( "source_count_attribution" ) );
+  BOOST_CHECK_EQUAL( data["source_count_attribution"].size(), size_t(2) );
+  BOOST_REQUIRE( data.contains( "evidence_purity" ) );
+  BOOST_REQUIRE_EQUAL( data["evidence_purity"].size(), size_t(2) );
+  BOOST_REQUIRE( !data["evidence_purity"][0].empty() );
+  BOOST_CHECK( data["evidence_purity"][0][0].contains( "purity_str" ) );   //pre-existing key kept
+  BOOST_CHECK( data["evidence_purity"][0][0].contains( "curve_label" ) );
+  BOOST_CHECK( data["evidence_purity"][0][0].contains( "model_counts" ) );
+
+  // Locate the bundled templates directory relative to the test-data dir (repo layout), with CWD
+  //  fallbacks for running by hand from the build directory.
+  string tmplt_dir;
+  const string candidates[] = {
+    SpecUtils::append_path( g_test_file_dir, "../../../InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts" ),
+    "InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts",
+    "../../InterSpec_resources/static_text/IsotopicsByNuclidesReportTmplts",
+  };
+  for( const string &candidate : candidates )
+  {
+    if( SpecUtils::is_file( SpecUtils::append_path( candidate, "std_rel_eff_summary.tmplt.txt" ) ) )
+    {
+      tmplt_dir = candidate;
+      break;
+    }
+  }
+  BOOST_REQUIRE_MESSAGE( !tmplt_dir.empty(), "Could not locate IsotopicsByNuclidesReportTmplts dir" );
+
+  inja::Environment env = RelActAutoReport::get_default_inja_env( "" );
+  for( const string tmplt : { string("std_rel_eff_summary.tmplt.txt"),
+                              string("std_rel_eff_summary.tmplt.html") } )
+  {
+    string rendered, err;
+    try
+    {
+      rendered = RelActAutoReport::render_template( env, data, tmplt, tmplt_dir );
+    }catch( std::exception &e )
+    {
+      err = e.what();
+    }
+    BOOST_REQUIRE_MESSAGE( err.empty(), "Template '" << tmplt << "' threw: " << err );
+
+    BOOST_CHECK_MESSAGE( rendered.find( "Peak-count attribution per nuclide" ) != string::npos,
+                         "Template '" << tmplt << "' missing attribution table" );
+    BOOST_CHECK_MESSAGE( rendered.find( "'Inner'" ) != string::npos,
+                         "Template '" << tmplt << "' missing curve label" );
+    BOOST_CHECK_MESSAGE( rendered.find( "Attributed share" ) != string::npos,
+                         "Template '" << tmplt << "' missing attributed-share legend" );
+    BOOST_CHECK_MESSAGE( rendered.find( "Evidence purity" ) == string::npos,
+                         "Template '" << tmplt << "' still says 'Evidence purity'" );
+  }
+}//BOOST_AUTO_TEST_CASE( multi_curve_separation_block_renders )

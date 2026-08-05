@@ -584,8 +584,10 @@ nlohmann::json buildObsEffArray( const std::vector<RelActCalcAuto::RelActAutoSol
     eff_obj["fit_amplitude"] = obs_eff.fit_clustered_peak_amplitude;
     eff_obj["fit_amplitude_uncert"] = obs_eff.fit_clustered_peak_amplitude_uncert;
     eff_obj["fraction_of_roi"] = obs_eff.fraction_roi_counts;
-    // When more than one rel. eff. curve has gammas in this cluster, the split between them is a model
-    //  assumption, not a measurement - `curve_model_fraction` says how much of it this curve is assigned.
+    // When more than one rel. eff. curve has gammas in this cluster, the split between them is not
+    //  resolved by this cluster itself - it is fitted through the attenuation physics / curve shapes,
+    //  constrained by the rest of the spectrum.  `curve_model_fraction` says how much of it this
+    //  curve is assigned.
     eff_obj["curve_fraction_of_cluster"] = obs_eff.curve_model_fraction;
     eff_obj["neighbor_tail_leak_fraction"] = obs_eff.neighbor_leak_fraction;
 
@@ -1177,7 +1179,7 @@ nlohmann::json executePerformIsotopics(
       "without indicating a catastrophic issue; this can be caused for reasons like peak tailing not being modeled correctly - so a very large peak next to the given peak can throw it off. "
       "However, peaks that are a substantial portion of the ROI peak area (fraction_of_roi values closer to 1) are much more important for judging quality of solution. "
       "The neighbor_tail_leak_fraction field says how much of the peak counts under a peak come from neighboring peaks' tails, rather than the peak itself - values closer to 1 mean the value is more sensitive to peak-shape modeling. "
-      "When more than one relative efficiency curve is fit, curve_fraction_of_cluster gives how much of the peak this curve is assigned; the split between curves is a model assumption rather than a measurement, so values well below 1 mean that point says little about this curve on its own.";
+      "When more than one relative efficiency curve is fit, curve_fraction_of_cluster gives how much of the peak this curve is assigned; the division between curves is fitted through the attenuation physics / curve shapes (constrained by the rest of the spectrum) rather than resolved by the peak itself, so values well below 1 mean that point says little about this curve on its own.";
 
     if( solution.m_obs_eff_for_each_curve.size() == 1 )
     {

@@ -485,6 +485,18 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
     data["curve_separation_verdict"] = sol.curve_separation_verdict( false );
     data["curve_separation_verdict_html"] = sol.curve_separation_verdict( true );
 
+    // Which evidence tier established the curves as distinct (see
+    //  RelActAutoSolution::curves_distinct_basis()): "none", "z", "z_plus_merged", or "merged_only".
+    const char *basis_str = "none";
+    switch( sol.curves_distinct_basis() )
+    {
+      case RelActCalcAuto::RelActAutoSolution::CurveDistinctBasis::None:                                              break;
+      case RelActCalcAuto::RelActAutoSolution::CurveDistinctBasis::ZScore:                basis_str = "z";            break;
+      case RelActCalcAuto::RelActAutoSolution::CurveDistinctBasis::ZCorroboratedByMerged: basis_str = "z_plus_merged"; break;
+      case RelActCalcAuto::RelActAutoSolution::CurveDistinctBasis::MergedOnly:            basis_str = "merged_only";  break;
+    }
+    data["curves_distinct_basis"] = string(basis_str);
+
     const auto corr_to_json = []( const RelActCalcAuto::RelActAutoSolution::CrossCurveCorrelation &corr ) -> json {
       json entry;
       entry["curve_a"] = static_cast<int64_t>(corr.curve_a);
@@ -514,13 +526,47 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
       {
         json entry;
         entry["source"] = RelActCalcAuto::to_name( src_purity.first );
+        entry["curve_label"] = sol.curve_label( re );  //same value for every entry of this row
+        // "purity" is the historical key name; rendered text calls this the "attributed share" -
+        //  the counts-weighted fraction of the source's peak regions the fit assigns to this curve.
         entry["purity"] = src_purity.second;
         char buf[64] = { '\0' };
         snprintf( buf, sizeof(buf), "%.2G", src_purity.second );
         entry["purity_str"] = string(buf);
+        // The source's total modeled peak counts on this curve (the share's weight denominator).
+        if( (re < sol.m_source_model_counts.size())
+            && sol.m_source_model_counts[re].count(src_purity.first) )
+          entry["model_counts"] = sol.m_source_model_counts[re].find(src_purity.first)->second;
         curve_purity.push_back( entry );
       }
       data["evidence_purity"].push_back( curve_purity );
+    }
+
+    // The fit's division of each shared source's modeled peak counts between the curves (sources
+    //  on >= 2 curves only; fractions sum to 1).  No uncertainty is quoted on the fractions - see
+    //  RelActAutoSolution::SourceCountAttribution.
+    data["source_count_attribution"] = json::array();
+    for( const RelActCalcAuto::RelActAutoSolution::SourceCountAttribution &attrib
+                                                              : sol.source_count_attributions() )
+    {
+      json entry;
+      entry["source"] = RelActCalcAuto::to_name( attrib.source );
+      entry["total_counts"] = attrib.total_counts;
+      entry["curves"] = json::array();
+      for( const pair<size_t,double> &curve_frac : attrib.curve_fractions )
+      {
+        json curve_entry;
+        curve_entry["curve"] = static_cast<int64_t>(curve_frac.first);
+        curve_entry["curve_label"] = sol.curve_label( curve_frac.first );
+        curve_entry["fraction"] = curve_frac.second;
+        char buf[64] = { '\0' };
+        snprintf( buf, sizeof(buf), "%.3G", curve_frac.second );
+        curve_entry["fraction_str"] = string(buf);
+        snprintf( buf, sizeof(buf), "%.3G%%", 100.0*curve_frac.second );
+        curve_entry["percent_str"] = string(buf);
+        entry["curves"].push_back( curve_entry );
+      }
+      data["source_count_attribution"].push_back( entry );
     }
 
     data["enrichment_diff_z"] = json::array();

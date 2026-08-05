@@ -5981,8 +5981,9 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
 
       case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::PoorlySeparated:
         // Detection evidence takes priority in the label: a clearly-detected pair of distinct
-        //  curves with blended per-source evidence must not read the same as "nothing separated".
-        if( answer->curves_detected_distinct() )
+        //  curves must not read the same as "nothing separated".  Except on a failed fit (R^2
+        //  floor) - the detection evidence comes from that same meaningless fit.
+        if( answer->curves_detected_distinct() && !answer->poor_fit_quality() )
         {
           sep_status = WString::tr( "raag-curve-sep-distinct" );
           sep_tooltip = WString::tr( "raag-tt-curve-sep-distinct" );

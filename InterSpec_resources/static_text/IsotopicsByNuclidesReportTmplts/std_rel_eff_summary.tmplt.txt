@@ -53,9 +53,15 @@ Rel. eff. curve separation: {{ curve_separation_display }}
 {% endfor %}
 {% endif %}
 {% if evidence_purity %}
-  Evidence purity per (curve, source) (>0.8 own evidence; 0.3-0.8 partially blended; <0.3 model-split only):
+  Attributed share per (curve, nuclide) - the fraction of the counts in each nuclide's peak regions the fit assigns to this curve (>0.8 own resolved peaks; 0.3-0.8 peak regions shared; <0.3 no individually resolved peaks - value follows from the fitted physics):
 {% for curve_purity in evidence_purity %}
-    curve {{ loop.index }}: {% for p in curve_purity %}{% if not loop.is_first %}, {% endif %}{{ p.source }} = {{ p.purity_str }}{% endfor %}
+    {% if curve_purity %}{{ curve_purity.0.curve_label }}{% else %}curve {{ loop.index }}{% endif %}: {% for p in curve_purity %}{% if not loop.is_first %}, {% endif %}{{ p.source }} = {{ p.purity_str }}{% endfor %}
+{% endfor %}
+{% endif %}
+{% if source_count_attribution %}
+  Peak-count attribution per nuclide (how the fit divides each nuclide's detected peak counts - counts in the measured spectrum, after attenuation and detector efficiency, not emitted source counts - between the curves):
+{% for a in source_count_attribution %}
+    {{ a.source }}: {% for c in a.curves %}{% if not loop.is_first %}, {% endif %}{{ c.curve_label }} {{ c.percent_str }}{% endfor %}
 {% endfor %}
 {% endif %}
 {% endif %}

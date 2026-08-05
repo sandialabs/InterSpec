@@ -15815,8 +15815,9 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
     {
       out << "  Enrichment-difference detection (z≥3 clearly different; 1.5-3 marginal; <1.5 not distinguished):\n";
       for( const EnrichmentDiffZ &diff : m_enrichment_diff_z )
-        out << "    " << RelActCalcAuto::to_name(diff.nuclide) << ": curve " << diff.curve_a << " = "
-            << enrich_txt(diff.enrichment_a, diff.sigma_a) << ", curve " << diff.curve_b << " = "
+        out << "    " << RelActCalcAuto::to_name(diff.nuclide) << ": " << curve_label(diff.curve_a)
+            << " = " << enrich_txt(diff.enrichment_a, diff.sigma_a) << ", "
+            << curve_label(diff.curve_b) << " = "
             << enrich_txt(diff.enrichment_b, diff.sigma_b) << " → z = "
             << SpecUtils::printCompact(diff.z, 3)
             << z_row_annotation(diff)
@@ -15856,19 +15857,22 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
       out << "  Cross-curve correlations (|ρ|<0.7 separated; 0.7-0.95 caution; >0.95 one normalization DOF"
              " - high ρ alone is accounted for by the widened uncertainties):\n";
       for( const CrossCurveCorrelation &corr : m_cross_curve_correlations )
-        out << "    " << corr.param_a << " of curve " << corr.curve_a << " × " << corr.param_b
-            << " of curve " << corr.curve_b << ": ρ = " << SpecUtils::printCompact(corr.correlation, 3) << "\n";
+        out << "    " << corr.param_a << " of " << curve_label(corr.curve_a) << " × " << corr.param_b
+            << " of " << curve_label(corr.curve_b) << ": ρ = " << SpecUtils::printCompact(corr.correlation, 3) << "\n";
     }
 
     if( !m_evidence_purity.empty() )
     {
-      out << "  Evidence purity per (curve, source) (>0.8 own resolved evidence; 0.3-0.8 partially"
-             " blended; <0.3 rests on the model's split of blended peaks):\n";
+      // Same definition + ranges as the m_evidence_purity doc-comment in RelActCalcAuto.h.
+      out << "  Attributed share per (curve, nuclide) - the fraction of the counts in each"
+             " nuclide's peak regions the fit assigns to this curve (>0.8 own resolved peaks;"
+             " 0.3-0.8 peak regions shared with the other curve(s); <0.3 no individually resolved"
+             " peaks - the value follows from the fitted physics):\n";
       for( size_t re = 0; re < m_evidence_purity.size(); ++re )
       {
         if( m_evidence_purity[re].empty() )
           continue;
-        out << "    curve " << re << ": ";
+        out << "    " << curve_label(re) << ": ";
         bool first = true;
         for( const auto &src_purity : m_evidence_purity[re] )
         {
@@ -15878,7 +15882,30 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
         }
         out << "\n";
       }
-    }//if( have purity )
+    }//if( have attributed shares )
+
+    {
+      // The fit's division of each shared nuclide's modeled peak counts between the curves.
+      const vector<SourceCountAttribution> attribs = source_count_attributions();
+      if( !attribs.empty() )
+      {
+        out << "  Peak-count attribution per nuclide (how the fit divides each nuclide's detected"
+               " peak counts - counts in the measured spectrum, after attenuation and detector"
+               " efficiency, not emitted source counts - between the curves):\n";
+        for( const SourceCountAttribution &attrib : attribs )
+        {
+          out << "    " << RelActCalcAuto::to_name(attrib.source) << ": ";
+          bool first = true;
+          for( const pair<size_t,double> &curve_frac : attrib.curve_fractions )
+          {
+            out << (first ? "" : ", ") << curve_label(curve_frac.first) << " "
+                << SpecUtils::printCompact(100.0*curve_frac.second, 3) << "%";
+            first = false;
+          }
+          out << "\n";
+        }
+      }
+    }//peak-count attribution
 
     out << "\n";
   }//if( multi-curve: print separation block )
@@ -16397,9 +16424,9 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
         results_html << "<div title=\"z &ge; 3: the curves clearly have different compositions;"
           " 1.5-3 marginal; &lt;1.5 not distinguished.\">Enrichment-difference detection:<ul>\n";
         for( const EnrichmentDiffZ &diff : m_enrichment_diff_z )
-          results_html << "<li>" << RelActCalcAuto::to_name(diff.nuclide) << ": curve "
-            << diff.curve_a << " = " << enrich_html(diff.enrichment_a, diff.sigma_a) << ", curve "
-            << diff.curve_b << " = " << enrich_html(diff.enrichment_b, diff.sigma_b) << " &rarr; z = "
+          results_html << "<li>" << RelActCalcAuto::to_name(diff.nuclide) << ": "
+            << curve_label(diff.curve_a) << " = " << enrich_html(diff.enrichment_a, diff.sigma_a) << ", "
+            << curve_label(diff.curve_b) << " = " << enrich_html(diff.enrichment_b, diff.sigma_b) << " &rarr; z = "
             << SpecUtils::printCompact(diff.z, 3)
             << z_row_annotation(diff)
             << "</li>\n";
@@ -16445,22 +16472,25 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
           " effectively one normalization degree of freedom (high &rho; alone is accounted for by"
           " the widened uncertainties).\">Cross-curve correlations:<ul>\n";
         for( const CrossCurveCorrelation &corr : m_cross_curve_correlations )
-          results_html << "<li>" << corr.param_a << " of curve " << corr.curve_a << " &times; "
-            << corr.param_b << " of curve " << corr.curve_b << ": &rho; = "
+          results_html << "<li>" << corr.param_a << " of " << curve_label(corr.curve_a) << " &times; "
+            << corr.param_b << " of " << curve_label(corr.curve_b) << ": &rho; = "
             << SpecUtils::printCompact(corr.correlation, 3) << "</li>\n";
         results_html << "</ul></div>\n";
       }//if( have cross-curve correlations )
 
       if( !m_evidence_purity.empty() )
       {
-        results_html << "<div title=\"Model-counts-weighted cluster-ownership per (curve, source):"
-          " &gt;0.8 own resolved evidence; 0.3-0.8 partially blended; &lt;0.3 rests on the model's"
-          " split of blended peaks.\">Evidence purity:<ul>\n";
+        // Same definition + ranges as the m_evidence_purity doc-comment in RelActCalcAuto.h.
+        results_html << "<div title=\"For each energy region containing a nuclide's peaks, the"
+          " fraction of that region's counts the fit assigns to this curve, averaged weighted by"
+          " counts.  &gt;0.8 own resolved peaks; 0.3-0.8 peak regions shared with the other"
+          " curve(s); &lt;0.3 no individually resolved peaks - the value follows from the fitted"
+          " physics.\">Attributed share per (curve, nuclide):<ul>\n";
         for( size_t re = 0; re < m_evidence_purity.size(); ++re )
         {
           if( m_evidence_purity[re].empty() )
             continue;
-          results_html << "<li>curve " << re << ": ";
+          results_html << "<li>" << curve_label(re) << ": ";
           bool first = true;
           for( const auto &src_purity : m_evidence_purity[re] )
           {
@@ -16471,7 +16501,32 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
           results_html << "</li>\n";
         }
         results_html << "</ul></div>\n";
-      }//if( have purity )
+      }//if( have attributed shares )
+
+      {
+        const vector<SourceCountAttribution> attribs = source_count_attributions();
+        if( !attribs.empty() )
+        {
+          results_html << "<div title=\"How the fit divides each nuclide's detected peak counts"
+            " (counts in the measured spectrum - after attenuation and detector efficiency, not"
+            " emitted source counts) between the curves.  The division is fitted through the"
+            " attenuation physics / curve shapes, constrained by the whole"
+            " spectrum.\">Peak-count attribution per nuclide:<ul>\n";
+          for( const SourceCountAttribution &attrib : attribs )
+          {
+            results_html << "<li>" << RelActCalcAuto::to_name(attrib.source) << ": ";
+            bool first = true;
+            for( const pair<size_t,double> &curve_frac : attrib.curve_fractions )
+            {
+              results_html << (first ? "" : ", ") << curve_label(curve_frac.first) << " "
+                           << SpecUtils::printCompact(100.0*curve_frac.second, 3) << "%";
+              first = false;
+            }
+            results_html << "</li>\n";
+          }
+          results_html << "</ul></div>\n";
+        }
+      }//peak-count attribution
 
       results_html << "</div>\n";
     }//if( multi-curve separation block )
@@ -17992,17 +18047,23 @@ void RelActAutoSolution::compute_curve_separation_metrics()
   //   - |corr| ranges: <0.7 well-separated; 0.7-0.95 caution; >0.95 one normalization DOF.  High corr
   //     ALONE must not trigger a warning - stacked same-nuclide problems reach |corr|>=0.94 even when
   //     enrichments are well determined.
-  //   - purity ranges: >0.8 own evidence; 0.3-0.8 partially blended; <0.3 model-attributed only.
-  //   - Degenerate: rank-deficient directions >= 1 AND some source's purity < 0.3 (the model, not the
-  //     measurement, is dividing activity between the curves - cf. the summed identical-shape pole,
-  //     where chi2/dof = 0.65 looked perfect while per-curve enrichments were meaningless).
-  //   - PoorlySeparated: some source's purity < 0.3, or |corr| > 0.95 together with rank-deficiency /
+  //   - attributed-share ranges: >0.8 own resolved peaks; 0.3-0.8 shared regions; <0.3 no
+  //     individually resolved peaks.  Two flags at different granularity (see
+  //     finalize_curve_separation_status()): `blended_source` = ANY (curve,source) share < 0.3
+  //     (feeds the Degenerate conditions and the per-source caveat); `unanchored_curve` = some
+  //     curve whose MAX share < 0.3 (drives the PoorlySeparated headline - a single blocked source
+  //     on an otherwise-anchored curve is expected physics and does not downgrade).
+  //   - Degenerate: single-curve-adequate merged fit (or rank-deficiency) together with blended
+  //     evidence (cf. the summed identical-shape pole, where chi2/dof = 0.65 looked perfect while
+  //     per-curve enrichments were meaningless).
+  //   - PoorlySeparated: an unanchored curve, or |corr| > 0.95 together with rank-deficiency /
   //     kappa >= 1e9.
   //   - z ranges: >=3 clearly different compositions; 1.5-3 marginal; <1.5 not distinguished.
   m_curve_separation_status = CurveSeparationStatus::NotApplicable;
   m_cross_curve_correlations.clear();
   m_cross_curve_max_corr.reset();
   m_evidence_purity.clear();
+  m_source_model_counts.clear();
   m_enrichment_diff_z.clear();
 
   const vector<RelActCalcAuto::RelEffCurveInput> &curves = m_options.rel_eff_curves;
@@ -18127,10 +18188,12 @@ void RelActAutoSolution::compute_curve_separation_metrics()
     }
   }//if( have_cov )
 
-  // --- Evidence purity, from the obs-eff clusters (ALL clusters, including excluded ones) ---
+  // --- Attributed share ("evidence purity"), from the obs-eff clusters (ALL clusters, including
+  //     excluded ones), plus the per-source modeled peak counts the shares are weighted by ---
   if( m_obs_eff_for_each_curve.size() == num_curves )
   {
     m_evidence_purity.assign( num_curves, {} );
+    m_source_model_counts.assign( num_curves, {} );
     for( size_t re = 0; re < num_curves; ++re )
     {
       map<SrcVariant,pair<double,double>> sums;  //source -> {sum amp*cmf, sum amp}
@@ -18158,7 +18221,10 @@ void RelActAutoSolution::compute_curve_separation_metrics()
       for( const auto &src_sums : sums )
       {
         if( src_sums.second.second > 0.0 )
+        {
           m_evidence_purity[re][src_sums.first] = src_sums.second.first / src_sums.second.second;
+          m_source_model_counts[re][src_sums.first] = src_sums.second.second;
+        }
       }
     }//for( each curve )
   }//if( obs-eff info available )
@@ -18269,6 +18335,51 @@ void RelActAutoSolution::compute_curve_separation_metrics()
 }//void compute_curve_separation_metrics()
 
 
+std::vector<RelActAutoSolution::SourceCountAttribution> RelActAutoSolution::source_count_attributions() const
+{
+  // Collect, per source, the modeled peak counts on each curve; report only sources on >= 2 curves.
+  map<SrcVariant,vector<pair<size_t,double>>> counts_by_src;
+  for( size_t re = 0; re < m_source_model_counts.size(); ++re )
+  {
+    for( const auto &src_counts : m_source_model_counts[re] )
+      counts_by_src[src_counts.first].push_back( {re, src_counts.second} );
+  }
+
+  vector<SourceCountAttribution> answer;
+  for( const auto &src_entry : counts_by_src )
+  {
+    if( src_entry.second.size() < 2 )
+      continue;
+
+    SourceCountAttribution attrib;
+    attrib.source = src_entry.first;
+    for( const pair<size_t,double> &curve_counts : src_entry.second )
+      attrib.total_counts += curve_counts.second;
+    if( attrib.total_counts <= 0.0 )
+      continue;
+    for( const pair<size_t,double> &curve_counts : src_entry.second )
+      attrib.curve_fractions.push_back( {curve_counts.first, curve_counts.second / attrib.total_counts} );
+    answer.push_back( std::move(attrib) );
+  }
+
+  std::sort( begin(answer), end(answer),
+    []( const SourceCountAttribution &lhs, const SourceCountAttribution &rhs ) -> bool {
+      return RelActCalcAuto::to_name(lhs.source) < RelActCalcAuto::to_name(rhs.source);
+  } );
+
+  return answer;
+}//source_count_attributions() const
+
+
+std::string RelActAutoSolution::curve_label( const size_t rel_eff_index ) const
+{
+  if( (rel_eff_index < m_options.rel_eff_curves.size())
+      && !m_options.rel_eff_curves[rel_eff_index].name.empty() )
+    return "'" + m_options.rel_eff_curves[rel_eff_index].name + "'";
+  return "curve " + std::to_string(rel_eff_index);
+}//std::string curve_label( const size_t rel_eff_index ) const
+
+
 bool RelActAutoSolution::poor_fit_quality() const
 {
   return (!std::isnan(m_r2) && (m_r2 < sm_min_r2_for_usable_curves));
@@ -18314,46 +18425,37 @@ std::string RelActAutoSolution::z_row_annotation( const EnrichmentDiffZ &diff ) 
 
 std::string RelActAutoSolution::curve_separation_trigger_text() const
 {
-  double min_purity = std::numeric_limits<double>::infinity();
-  string min_purity_label;
-  for( size_t re = 0; re < m_evidence_purity.size(); ++re )
-  {
-    for( const auto &src_purity : m_evidence_purity[re] )
-    {
-      if( src_purity.second < min_purity )
-      {
-        min_purity = src_purity.second;
-        min_purity_label = RelActCalcAuto::to_name(src_purity.first) + " of "
-                           + ((re < m_options.rel_eff_curves.size())
-                               && !m_options.rel_eff_curves[re].name.empty()
-                                 ? ("'" + m_options.rel_eff_curves[re].name + "'")
-                                 : ("curve " + std::to_string(re)));
-      }
-    }
-  }
-
   if( poor_fit_quality() )
     return "the fit does not describe the data (weighted R" + string("\xc2\xb2") + " = "
            + SpecUtils::printCompact(m_r2, 3) + "), so no per-curve result from it is meaningful -"
            " fix the fit before reading anything below";
 
-  if( !std::isinf(min_purity) && (min_purity < 0.3) )
-    return "the evidence for " + min_purity_label + " is almost entirely peaks blended with the"
-           " other curve (purity " + SpecUtils::printCompact(min_purity, 2)
-           + "; below 0.3 means no individually resolved peaks)";
+  // An unanchored curve: no source on it has attributed share >= 0.3 (see the header docs of
+  //  m_evidence_purity).  A single low-share source on an otherwise-anchored curve does not reach
+  //  here - it gets the blended_source_caveat_text() note instead.
+  for( size_t re = 0; re < m_evidence_purity.size(); ++re )
+  {
+    if( m_evidence_purity[re].empty() )
+      continue;
+    double max_share = 0.0;
+    for( const auto &src_purity : m_evidence_purity[re] )
+      max_share = (std::max)( max_share, src_purity.second );
+    if( max_share < 0.3 )
+      return "no nuclide on " + curve_label(re) + " has individually resolved peaks - averaged over"
+             " the energy regions where " + curve_label(re) + " contributes, the fit attributes"
+             " most of the counts to the other curve(s) (largest attributed share "
+             + SpecUtils::printCompact(max_share, 2) + "; 0.3 or more would mean at least partially"
+             " resolved peaks) - so its results rest entirely on the fitted attenuation physics /"
+             " curve shapes";
+  }
 
   if( m_cross_curve_max_corr.has_value() )
   {
-    const auto curve_name = [this]( const size_t index ) -> string {
-      if( (index < m_options.rel_eff_curves.size()) && !m_options.rel_eff_curves[index].name.empty() )
-        return "'" + m_options.rel_eff_curves[index].name + "'";
-      return "curve " + std::to_string(index);
-    };
     return "their normalizations trade against each other (correlation "
            + SpecUtils::printCompact(m_cross_curve_max_corr->correlation, 3) + " between "
-           + m_cross_curve_max_corr->param_a + " of " + curve_name(m_cross_curve_max_corr->curve_a)
+           + m_cross_curve_max_corr->param_a + " of " + curve_label(m_cross_curve_max_corr->curve_a)
            + " and " + m_cross_curve_max_corr->param_b + " of "
-           + curve_name(m_cross_curve_max_corr->curve_b) + ") on a rank-deficient/ill-conditioned fit";
+           + curve_label(m_cross_curve_max_corr->curve_b) + ") on a rank-deficient/ill-conditioned fit";
   }
 
   return "the fit is rank-deficient/ill-conditioned across the curves";
@@ -18372,23 +18474,93 @@ std::string RelActAutoSolution::curve_split_basis_text( const bool sentence_star
   // "which curve shields which" only means something for a stacked geometry; for co-located or
   //  side-by-side objects nothing shields anything, and that phrasing describes a geometry the user
   //  did not set up.
+  //  Wording note: the division IS a fit result (a perfectly valid one, constrained by the rest of
+  //  the spectrum) - never call it an "assumption"; the point is only that it is not resolved by
+  //  the shared peaks themselves.
   return string(sentence_start ? "The" : "the")
-      + " apportionment of shared peaks follows from the fitted "
+      + " division of shared peaks between the curves is fitted through the "
       + (any_physical ? (stacked ? "attenuation physics (which curve shields which, and the fitted"
                                    " areal densities)"
                                  : "attenuation physics (each object's own fitted areal density)")
                       : "efficiency-curve shapes")
-      + ", not from individually resolved peaks; no statistical prior pushes the curves together or"
+      + " rather than resolved peak-by-peak; no statistical prior pushes the curves together or"
         " apart"
       + (any_physical ? " (none is applied unless a shield's opt-in 'Bias AD' option is checked)" : "");
 }//std::string curve_split_basis_text( const bool sentence_start ) const
 
 
+std::string RelActAutoSolution::blended_source_caveat_text( const bool /*html*/ ) const
+{
+  // Per-source note for the expected-physics case: a source with attributed share < 0.3 on a curve
+  //  that is otherwise anchored (some other source on it reaches share 0.3).  A whole unanchored
+  //  curve is the headline's business (curve_separation_trigger_text()), not this note's.
+  const vector<SourceCountAttribution> attribs = source_count_attributions();
+
+  bool stacked = false;
+  for( const RelActCalcAuto::RelEffCurveInput &curve : m_options.rel_eff_curves )
+    stacked = (stacked || !curve.shielded_by_other_phys_model_curve_shieldings.empty());
+
+  string answer;
+  for( size_t re = 0; re < m_evidence_purity.size(); ++re )
+  {
+    if( m_evidence_purity[re].empty() )
+      continue;
+
+    double max_share = 0.0;
+    for( const auto &src_share : m_evidence_purity[re] )
+      max_share = (std::max)( max_share, src_share.second );
+    if( max_share < 0.3 )
+      continue;
+
+    for( const auto &src_share : m_evidence_purity[re] )
+    {
+      if( src_share.second >= 0.3 )
+        continue;
+
+      // The fit's share of this source's total modeled peak counts on this curve, when available.
+      string counts_frac_txt;
+      for( const SourceCountAttribution &attrib : attribs )
+      {
+        if( !(attrib.source == src_share.first) )
+          continue;
+        for( const pair<size_t,double> &curve_frac : attrib.curve_fractions )
+        {
+          if( curve_frac.first == re )
+            counts_frac_txt = SpecUtils::printCompact( 100.0*curve_frac.second, 2 );
+        }
+      }
+
+      answer += (answer.empty() ? "" : "  ");
+      answer += "Note: the " + RelActCalcAuto::to_name(src_share.first) + " result for "
+                + curve_label(re) + " is not determined from peaks of its own: the other curve(s)"
+                " dominate the energy regions where its " + RelActCalcAuto::to_name(src_share.first)
+                + " peaks fall (attributed share " + SpecUtils::printCompact(src_share.second, 2)
+                + ", counts-weighted)";
+      if( !counts_frac_txt.empty() )
+        answer += ", with only " + counts_frac_txt + "% of all detected "
+                  + RelActCalcAuto::to_name(src_share.first) + " peak counts assigned to "
+                  + curve_label(re);
+      answer += " - so its value follows from the fitted attenuation physics and the curve's other"
+                " nuclides.";
+    }//for( each source on this curve )
+  }//for( each curve )
+
+  if( !answer.empty() )
+    answer += (stacked ? "  This is expected when an inner object's lower-energy gammas are"
+                         " absorbed by the material around it; the reported uncertainties already"
+                         " account for it."
+                       : "  The reported uncertainties already account for this.");
+
+  return answer;
+}//std::string blended_source_caveat_text( const bool html ) const
+
+
 void RelActAutoSolution::finalize_curve_separation_status()
 {
   // Decision rule (grid-tuned; see the CurveSeparationStatus doc-comment in RelActCalcAuto.h for
-  //  the ranges): correlation alone never triggers; blended evidence (purity < 0.3), rank-deficiency,
-  //  and - the most powerful signal - the single-vs-multi-curve delta-chi2 combine into the verdict.
+  //  the ranges): correlation alone never triggers; an unanchored curve (no source with attributed
+  //  share >= 0.3), rank-deficiency, and - the most powerful signal - the single-vs-multi-curve
+  //  delta-chi2 combine into the verdict.
   m_curve_separation_status = CurveSeparationStatus::NotApplicable;
 
   // Idempotency: this may run more than once on a solution (e.g. once at the end of solve_ceres and
@@ -18405,25 +18577,33 @@ void RelActAutoSolution::finalize_curve_separation_status()
   if( m_cross_curve_correlations.empty() && m_evidence_purity.empty() && m_enrichment_diff_z.empty() )
     return;  //metrics were not computable (e.g. failed fit)
 
-  double min_purity = std::numeric_limits<double>::infinity();
-  string min_purity_label;
+  // Two distinct share-based flags, deliberately at different granularity:
+  //  - `blended_source`: SOME (curve, source) has attributed share < 0.3.  A single such source on
+  //    an otherwise-anchored curve is expected physics (e.g. an inner object's low-energy U235
+  //    lines absorbed by the outer object - the ordinary state of affairs for U-inside-U), so it
+  //    only earns the per-source caveat in the verdict, but it still counts toward the Degenerate
+  //    conditions: in a genuinely degenerate pole everything is blended, so keeping the global rule
+  //    there preserves the conservative behavior the 2026-07 validation drove.
+  //  - `unanchored_curve`: some curve where NO source reaches share 0.3 - nothing on that curve has
+  //    even partially resolved evidence, so its normalization rests entirely on the fitted physics.
+  //    This is what downgrades the headline status.
+  bool blended_source = false, unanchored_curve = false;
   for( size_t re = 0; re < m_evidence_purity.size(); ++re )
   {
+    if( m_evidence_purity[re].empty() )
+      continue;
+    double max_share = 0.0;
     for( const auto &src_purity : m_evidence_purity[re] )
     {
-      if( src_purity.second < min_purity )
-      {
-        min_purity = src_purity.second;
-        min_purity_label = RelActCalcAuto::to_name(src_purity.first) + " of curve " + std::to_string(re);
-      }
+      blended_source = (blended_source || (src_purity.second < 0.3));
+      max_share = (std::max)( max_share, src_purity.second );
     }
+    unanchored_curve = (unanchored_curve || (max_share < 0.3));
   }
 
-  const bool have_purity = !std::isinf( min_purity );
   const double max_corr = m_cross_curve_max_corr.has_value() ? fabs(m_cross_curve_max_corr->correlation) : 0.0;
   const bool rank_deficient = (m_num_rank_deficient_dirs >= 1);
   const bool huge_kappa = (m_jacobian_condition_number >= 1.0E9);
-  const bool low_purity = (have_purity && (min_purity < 0.3));
 
   // Does the likelihood-ratio comparison say a single merged curve describes the data about as well?
   //  (delta-chi2 within ~3 sigma of the chi2 gained by chance from the extra DOF.)  The threshold is
@@ -18461,26 +18641,26 @@ void RelActAutoSolution::finalize_curve_separation_status()
   //  different", is precisely the contradiction this reporting exists to prevent.
   if( curves_detected_distinct() )
   {
-    m_curve_separation_status = (low_purity || gauge_flag)
+    m_curve_separation_status = (unanchored_curve || gauge_flag)
                                   ? CurveSeparationStatus::PoorlySeparated
                                   : CurveSeparationStatus::WellSeparated;
   }else if( merged_valid )
   {
-    if( single_curve_adequate && (gauge_flag || low_purity || (max_corr > 0.95)) )
+    if( single_curve_adequate && (gauge_flag || blended_source || (max_corr > 0.95)) )
       m_curve_separation_status = CurveSeparationStatus::Degenerate;
-    else if( low_purity || (gauge_flag && (max_corr > 0.95)) )
+    else if( unanchored_curve || (gauge_flag && (max_corr > 0.95)) )
       m_curve_separation_status = CurveSeparationStatus::PoorlySeparated;
     else
       m_curve_separation_status = CurveSeparationStatus::WellSeparated;
-    // Note: `single_curve_adequate` with clean purity/conditioning stays WellSeparated - per-curve
+    // Note: `single_curve_adequate` with clean shares/conditioning stays WellSeparated - per-curve
     //  values are individually anchored; the "consistent with a single curve" answer is carried as
     //  a note in curve_separation_verdict(), not as a downgraded status.
   }else
   {
     // Merged comparison unavailable: the pre-comparison fallback rule.
-    if( rank_deficient && low_purity )
+    if( rank_deficient && blended_source )
       m_curve_separation_status = CurveSeparationStatus::Degenerate;
-    else if( low_purity || ((max_corr > 0.95) && gauge_flag) )
+    else if( unanchored_curve || ((max_corr > 0.95) && gauge_flag) )
       m_curve_separation_status = CurveSeparationStatus::PoorlySeparated;
     else
       m_curve_separation_status = CurveSeparationStatus::WellSeparated;
@@ -18523,13 +18703,40 @@ void RelActAutoSolution::finalize_curve_separation_status()
 
     case CurveSeparationStatus::PoorlySeparated:
     {
+      // A fit that does not describe the data supports no statement about the curves - not even a
+      //  detection backed by its own delta-chi2/z (S4): the trigger is the whole message, with no
+      //  endorsement of the uncertainties.
+      if( poor_fit_quality() )
+      {
+        m_warnings.push_back( "The relative-efficiency curves cannot be assessed: "
+                              + curve_separation_trigger_text() + "." );
+        break;
+      }
+
       string warning = "The relative-efficiency curves are ";
-      if( curves_detected_distinct() && max_z_entry )
-        warning += "clearly distinct (z = " + SpecUtils::printCompact(max_z_entry->z, 3) + " for "
-                   + RelActCalcAuto::to_name(max_z_entry->nuclide)
-                   + "), but per-curve values partly rest on the model's split of shared peaks (";
-      else
-        warning += "not well separated by this data (";
+      switch( curves_distinct_basis() )
+      {
+        case CurveDistinctBasis::None:
+          warning += "not well separated by this data (";
+          break;
+
+        case CurveDistinctBasis::ZScore:
+          // max_z_entry is guaranteed non-null here (the tier requires a reliable z >= 3).
+          warning += "genuinely distinct (z = "
+                     + (max_z_entry ? SpecUtils::printCompact(max_z_entry->z, 3) : string("?"))
+                     + (max_z_entry ? (" for " + RelActCalcAuto::to_name(max_z_entry->nuclide)) : string())
+                     + "), but per-curve values partly rest on the fit's division of shared peaks (";
+          break;
+
+        case CurveDistinctBasis::ZCorroboratedByMerged:
+        case CurveDistinctBasis::MergedOnly:
+          warning += "genuinely distinct (a single merged curve fits this data significantly worse";
+          if( (curves_distinct_basis() == CurveDistinctBasis::ZCorroboratedByMerged) && max_z_entry )
+            warning += ", supported by z = " + SpecUtils::printCompact(max_z_entry->z, 3) + " for "
+                       + RelActCalcAuto::to_name(max_z_entry->nuclide);
+          warning += "), but per-curve values partly rest on the fit's division of shared peaks (";
+          break;
+      }//switch( curves_distinct_basis() )
 
       // Same trigger the verdict names - one source, so the warning cannot blame something else (it
       //  once reported "correlation 0" while the verdict reported a failed fit).
@@ -18547,7 +18754,8 @@ void RelActAutoSolution::finalize_curve_separation_status()
       if( merged_valid )
         warning += "a single merged curve fits essentially as well";
       else
-        warning += "rank-deficient fit directions with only blended evidence";
+        warning += "rank-deficient fit directions, with no individually resolved peaks to divide"
+                   " the curves";
       if( max_z_entry )
         warning += ", and the fitted compositions are statistically indistinguishable, z = "
                    + SpecUtils::printCompact(max_z_entry->z, 3) + " for "
@@ -18597,11 +18805,11 @@ bool RelActAutoSolution::merged_overrules_z_detection() const
 }//bool merged_overrules_z_detection() const
 
 
-bool RelActAutoSolution::curves_detected_distinct() const
+RelActAutoSolution::CurveDistinctBasis RelActAutoSolution::curves_distinct_basis() const
 {
-  // See the header doc: max z >= 3, or (empty z table) a decisively worse merged single-curve fit.
-  //  The delta-chi2 thresholds are scaled by max(1, chi2/dof), mirroring the covariance rescale, so
-  //  model-error-floor fits are not misread (see finalize_curve_separation_status()).
+  // See the header doc for the three-tier rule.  The delta-chi2 thresholds are scaled by
+  //  max(1, chi2/dof), mirroring the covariance rescale, so model-error-floor fits are not misread
+  //  (see finalize_curve_separation_status()).
   double max_z = 0.0;
   bool have_reliable_z = false;
   for( const EnrichmentDiffZ &diff : m_enrichment_diff_z )
@@ -18612,24 +18820,42 @@ bool RelActAutoSolution::curves_detected_distinct() const
     max_z = (std::max)( max_z, diff.z );
   }
 
-  if( have_reliable_z && (max_z >= 3.0) )
-    return !merged_overrules_z_detection();
+  // Tier 1: a clear composition detection on its own.
+  if( have_reliable_z && (max_z >= 3.0) && !merged_overrules_z_detection() )
+    return CurveDistinctBasis::ZScore;
 
-  if( have_reliable_z )
-    return false;
-  //No reliable z entry (none at all, or all pinned at a limit): fall through to the merged
-  // comparison, the same as configurations with no shared nuclide.
+  if( !m_merged_single_curve_comparison.has_value() || !m_merged_single_curve_comparison->valid )
+    return CurveDistinctBasis::None;
 
-  if( m_merged_single_curve_comparison.has_value() && m_merged_single_curve_comparison->valid )
-  {
-    const double extra_dof = (std::max)( m_merged_single_curve_comparison->extra_dof_of_multi, 1 );
-    const double model_error_scale = (m_dof_data > 0)
-              ? (std::max)( 1.0, m_chi2_data / static_cast<double>(m_dof_data) ) : 1.0;
-    return (m_merged_single_curve_comparison->delta_chi2
-              >= model_error_scale*(extra_dof + 5.0*std::sqrt(2.0*extra_dof)) );
-  }
+  const double delta_chi2 = m_merged_single_curve_comparison->delta_chi2;
+  const double extra_dof = (std::max)( m_merged_single_curve_comparison->extra_dof_of_multi, 1 );
+  const double model_error_scale = (m_dof_data > 0)
+            ? (std::max)( 1.0, m_chi2_data / static_cast<double>(m_dof_data) ) : 1.0;
 
-  return false;
+  // Tier 2: single-curve model rejected (the same 3-sigma-scaled bar `single_curve_adequate` uses,
+  //  computed here so this function does not depend on finalize_curve_separation_status() having
+  //  run) AND a reliable-but-marginal z pointing the same way.  Note a z >= 3 vetoed by
+  //  `merged_overrules_z_detection()` cannot re-enter here: the veto requires delta_chi2 at or
+  //  below the UNSCALED 3-sigma bar, which is <= the scaled bar demanded here.
+  const bool merged_rejected = (delta_chi2 >= 0.0)
+            && (delta_chi2 > model_error_scale*(extra_dof + 3.0*std::sqrt(2.0*extra_dof)));
+  if( have_reliable_z && (max_z >= 1.5) && merged_rejected )
+    return CurveDistinctBasis::ZCorroboratedByMerged;
+
+  // Tier 3: the merged fit is decisively worse on its own (~5 sigma of the extra-DOF expectation);
+  //  with no corroborating z this bar is deliberately higher, since delta-chi2 is then the only
+  //  evidence (e.g. configurations with no shared nuclide).
+  if( (delta_chi2 >= 0.0)
+      && (delta_chi2 >= model_error_scale*(extra_dof + 5.0*std::sqrt(2.0*extra_dof))) )
+    return CurveDistinctBasis::MergedOnly;
+
+  return CurveDistinctBasis::None;
+}//CurveDistinctBasis curves_distinct_basis() const
+
+
+bool RelActAutoSolution::curves_detected_distinct() const
+{
+  return (curves_distinct_basis() != CurveDistinctBasis::None);
 }//bool curves_detected_distinct()
 
 
@@ -18640,7 +18866,10 @@ const char *RelActAutoSolution::curve_separation_display() const
     case CurveSeparationStatus::NotApplicable:   return "NotApplicable";
     case CurveSeparationStatus::WellSeparated:   return "Separated";
     case CurveSeparationStatus::PoorlySeparated:
-      return curves_detected_distinct() ? "Distinct curves - blended evidence" : "Poorly separated";
+      // A failed fit (R^2 floor, S4) forfeits the "distinct" label even when detection evidence
+      //  exists - that evidence comes from the same fit the verdict declares meaningless.
+      return (curves_detected_distinct() && !poor_fit_quality())
+               ? "Distinct curves - see per-nuclide notes" : "Poorly separated";
     case CurveSeparationStatus::Degenerate:      return "Not distinguished (consistent with a single curve)";
   }
   return "NotApplicable";
@@ -18657,12 +18886,6 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
   const char * const sigma_txt = html ? "&sigma;" : "σ";
   const char * const pm_txt = html ? " &plusmn; " : " ± ";
   const char * const arrow_txt = html ? " &rarr; " : " → ";
-
-  const auto curve_label = [this]( const size_t index ) -> string {
-    if( (index < m_options.rel_eff_curves.size()) && !m_options.rel_eff_curves[index].name.empty() )
-      return "'" + m_options.rel_eff_curves[index].name + "'";
-    return "curve " + std::to_string(index);
-  };
 
   bool stacked = false;
   for( const RelActCalcAuto::RelEffCurveInput &curve : m_options.rel_eff_curves )
@@ -18719,55 +18942,83 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
          + " fewer effective parameters")
       : string();
 
+  const CurveDistinctBasis distinct_basis = curves_distinct_basis();
+
   const auto detect_sentence = [&]() -> string {
-    if( max_z_entry && (max_z_entry->z >= 3.0) )
+    switch( distinct_basis )
     {
-      string txt = "The data clearly shows the curves have different compositions: "
-             + RelActCalcAuto::to_name(max_z_entry->nuclide) + " = "
-             + enrich_txt(max_z_entry->enrichment_a, max_z_entry->sigma_a) + " on "
-             + curve_label(max_z_entry->curve_a) + " vs "
-             + enrich_txt(max_z_entry->enrichment_b, max_z_entry->sigma_b) + " on "
-             + curve_label(max_z_entry->curve_b) + " (z = "
-             + SpecUtils::printCompact(max_z_entry->z, 3) + "; z"
-             + (html ? " &ge; " : " ≥ ") + "3 is a clear detection).";
+      case CurveDistinctBasis::None:
+        break;
 
-      // Never let this sentence stand alone when the more direct test disagrees: if one merged
-      //  curve fits the same data about as well, the data does not actually demand distinct curves,
-      //  and a large z usually means a parameter the composition depends on is sitting at a bound
-      //  (its uncertainty is then understated).  Seen on two genuinely identical stacked disks,
-      //  which reported "clearly different compositions" at z = 4.9.
-      if( merged_adequate )
-        txt += "  CAUTION: this conflicts with the single-curve comparison below - one merged curve"
-               " describes this data about as well (" + merged_numbers + "), so the data does not"
-               " actually require distinct curves.  A z can be inflated when a parameter the"
-               " composition depends on sits at a bound; treat the composition difference as"
-               " unproven until the fit is checked (are any parameters at their limits?).";
-      return txt;
-    }//if( a clear z detection )
-    if( merged_valid )
-    {
-      string txt = string("The data clearly requires distinct efficiency curves: merging all sources"
-             " onto one curve raises ") + chi2_txt + " by "
-             + SpecUtils::printCompact(m_merged_single_curve_comparison->delta_chi2, 4) + " for "
-             + std::to_string(m_merged_single_curve_comparison->extra_dof_of_multi)
-             + " fewer effective parameters.";
+      case CurveDistinctBasis::ZScore:
+      {
+        // max_z_entry is guaranteed non-null for this tier (a reliable z >= 3 exists).
+        string txt = "The data clearly shows the curves have different compositions: "
+               + RelActCalcAuto::to_name(max_z_entry->nuclide) + " = "
+               + enrich_txt(max_z_entry->enrichment_a, max_z_entry->sigma_a) + " on "
+               + curve_label(max_z_entry->curve_a) + " vs "
+               + enrich_txt(max_z_entry->enrichment_b, max_z_entry->sigma_b) + " on "
+               + curve_label(max_z_entry->curve_b) + " (z = "
+               + SpecUtils::printCompact(max_z_entry->z, 3) + "; z"
+               + (html ? " &ge; " : " ≥ ") + "3 is a clear detection).";
 
-      // Guard the likely misreading: this sentence is about the efficiency CURVES, not about
-      //  composition.  Objects of equal enrichment that differ only by a trace isotope (or only by
-      //  how they are shielded) legitimately land here, so say plainly when the compositions
-      //  themselves are not distinguished.
-      if( max_z_entry && (max_z_entry->z < 1.5) )
-        txt += "  The fitted compositions themselves are NOT distinguished (largest usable z = "
-               + SpecUtils::printCompact(max_z_entry->z, 3) + " for "
-               + RelActCalcAuto::to_name(max_z_entry->nuclide) + "), so the curves differ in"
-               " something other than the quoted composition - for example a trace isotope present"
-               " on only one of them, or their shielding.";
-      else if( !max_z_entry && !m_enrichment_diff_z.empty() )
-        txt += "  This does not by itself say the compositions differ: no shared nuclide here has a"
-               " usable composition comparison (each has a value pinned at a limit), so the curves"
-               " may differ only in a trace isotope or in shielding.";
-      return txt;
-    }//if( merged_valid )
+        // Never let this sentence stand alone when the more direct test disagrees: if one merged
+        //  curve fits the same data about as well, the data does not actually demand distinct
+        //  curves, and a large z usually means a parameter the composition depends on is sitting at
+        //  a bound (its uncertainty is then understated).  Seen on two genuinely identical stacked
+        //  disks, which reported "clearly different compositions" at z = 4.9.
+        if( merged_adequate )
+          txt += "  CAUTION: this conflicts with the single-curve comparison below - one merged"
+                 " curve describes this data about as well (" + merged_numbers + "), so the data"
+                 " does not actually require distinct curves.  A z can be inflated when a parameter"
+                 " the composition depends on sits at a bound; treat the composition difference as"
+                 " unproven until the fit is checked (are any parameters at their limits?).";
+        return txt;
+      }//case CurveDistinctBasis::ZScore
+
+      case CurveDistinctBasis::ZCorroboratedByMerged:
+      {
+        // Both pieces of evidence are guaranteed here: the merged fit is rejected at the
+        //  3-sigma-scaled bar, and max_z_entry is a reliable z >= 1.5 pointing the same way.
+        return "The data indicates the curves are genuinely different: forcing all sources onto a"
+               " single curve fits significantly worse (" + merged_numbers + " - more than the"
+               " extra freedom explains, even after allowing for overall model error), and the"
+               " fitted compositions differ consistently ("
+               + RelActCalcAuto::to_name(max_z_entry->nuclide) + " = "
+               + enrich_txt(max_z_entry->enrichment_a, max_z_entry->sigma_a) + " on "
+               + curve_label(max_z_entry->curve_a) + " vs "
+               + enrich_txt(max_z_entry->enrichment_b, max_z_entry->sigma_b) + " on "
+               + curve_label(max_z_entry->curve_b) + ", z = "
+               + SpecUtils::printCompact(max_z_entry->z, 3) + " - marginal on its own, but"
+               " consistent with the single-curve rejection).";
+      }//case CurveDistinctBasis::ZCorroboratedByMerged
+
+      case CurveDistinctBasis::MergedOnly:
+      {
+        string txt = string("The data clearly requires distinct efficiency curves: merging all"
+               " sources onto one curve raises ") + chi2_txt + " by "
+               + SpecUtils::printCompact(m_merged_single_curve_comparison->delta_chi2, 4) + " for "
+               + std::to_string(m_merged_single_curve_comparison->extra_dof_of_multi)
+               + " fewer effective parameters.";
+
+        // Guard the likely misreading: this sentence is about the efficiency CURVES, not about
+        //  composition.  Objects of equal enrichment that differ only by a trace isotope (or only
+        //  by how they are shielded) legitimately land here, so say plainly when the compositions
+        //  themselves are not distinguished.  (A reliable z >= 1.5 cannot reach this tier - it
+        //  would have been caught by ZCorroboratedByMerged, whose delta-chi2 bar is lower.)
+        if( max_z_entry && (max_z_entry->z < 1.5) )
+          txt += "  The fitted compositions themselves are NOT distinguished (largest usable z = "
+                 + SpecUtils::printCompact(max_z_entry->z, 3) + " for "
+                 + RelActCalcAuto::to_name(max_z_entry->nuclide) + "), so the curves differ in"
+                 " something other than the quoted composition - for example a trace isotope"
+                 " present on only one of them, or their shielding.";
+        else if( !max_z_entry && !m_enrichment_diff_z.empty() )
+          txt += "  This does not by itself say the compositions differ: no shared nuclide here has"
+                 " a usable composition comparison (each has a value pinned at a limit), so the"
+                 " curves may differ only in a trace isotope or in shielding.";
+        return txt;
+      }//case CurveDistinctBasis::MergedOnly
+    }//switch( distinct_basis )
 
     return string();
   };
@@ -18828,6 +19079,10 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
       if( merged_fits_better )
         verdict += nonoptimal_note;
 
+      const string caveat = blended_source_caveat_text( html );
+      if( !caveat.empty() )
+        verdict += "  " + caveat;
+
       return verdict;
     }
 
@@ -18836,17 +19091,27 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
       string verdict;
       const string trigger = curve_separation_trigger_text();
 
+      // A fit that does not describe the data supports no statement about the curves - not even a
+      //  detection backed by its own delta-chi2/z (S4) - so the failed-fit trigger IS the whole
+      //  verdict, with no endorsement of the uncertainties.
+      if( poor_fit_quality() )
+      {
+        verdict = trigger + ".";
+        verdict[0] = 'T';  //capitalize the leading "the ..."
+        return verdict;
+      }
+
       if( curves_detected_distinct() )
       {
         verdict = detect_sentence();
-        if( max_z_entry && merged_valid && !merged_adequate )
+        if( (distinct_basis == CurveDistinctBasis::ZScore) && merged_valid && !merged_adequate )
           verdict += "  A single merged curve also fits decisively worse (" + merged_numbers + ").";
         verdict += "  However, " + trigger + ": " + split_means + ".  The (already widened)"
                    " per-curve uncertainties are the measure of how much this matters.";
       }else
       {
         verdict = "The curves are NOT well separated by this data: " + trigger + ".  Per-curve"
-                  " activities lean on the model's split of shared peaks - " + split_means + "."
+                  " activities lean on the fit's division of shared peaks - " + split_means + "."
                   "  Prefer joint/summed quantities; within-curve ratios (e.g. enrichment) may still"
                   " be constrained, and the (already widened) uncertainties carry the rest.";
         if( max_z_entry && (max_z_entry->z >= 1.5) && (max_z_entry->z < 3.0) )
@@ -18854,6 +19119,11 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
                      + SpecUtils::printCompact(max_z_entry->z, 3) + " for "
                      + RelActCalcAuto::to_name(max_z_entry->nuclide) + "; not conclusive).";
       }
+
+      const string caveat = blended_source_caveat_text( html );
+      if( !caveat.empty() )
+        verdict += "  " + caveat;
+
       return verdict;
     }
 
@@ -18878,8 +19148,9 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
                      + SpecUtils::printCompact(m_jacobian_condition_number, 3);
         verdict += ")";
         if( low_purity )
-          verdict += " and the evidence for " + min_purity_label + " is almost entirely blended"
-                     " peaks (purity " + SpecUtils::printCompact(min_purity, 2) + ")";
+          verdict += " and " + min_purity_label + " has no individually resolved peaks (attributed"
+                     " share " + SpecUtils::printCompact(min_purity, 2) + " - the other curve(s)"
+                     " dominate the energy regions where its peaks fall)";
         verdict += ".";
       }
 
@@ -18895,8 +19166,8 @@ std::string RelActAutoSolution::curve_separation_verdict( const bool html ) cons
         verdict += nonoptimal_note;
 
       verdict += "  Quote combined/summed quantities; the division between the curves is not"
-                 " measured by this data - the reported split follows from the fitted model with"
-                 " correspondingly large uncertainties, and " + split_means + ".";
+                 " independently determined by this data - the reported split follows from the"
+                 " fitted model with correspondingly large uncertainties, and " + split_means + ".";
       return verdict;
     }
   }//switch( m_curve_separation_status )
