@@ -143,6 +143,13 @@ add_test( NAME TBatchSampleSelect
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_BatchPeakMda test_BatchPeakMda.cpp )
+target_link_libraries( test_BatchPeakMda PRIVATE InterSpecLib )
+add_test( NAME TBatchPeakMda
+  COMMAND $<TARGET_FILE:test_BatchPeakMda> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_BatchRelActAuto test_BatchRelActAuto.cpp )
 target_link_libraries( test_BatchRelActAuto PRIVATE InterSpecLib )
 add_test( NAME TBatchRelActAuto

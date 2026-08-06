@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <deque>
 #include <memory>
 #include <vector>
 #include <utility>
@@ -34,6 +35,7 @@
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
 // Forward declarations
+class PeakDef;
 class SpecMeas;
 class DetectorPeakResponse;
 
@@ -56,6 +58,7 @@ namespace GammaInteractionCalc
 
 namespace BatchPeak
 {
+  struct NotFitPeakMda;
   struct BatchPeakFitResult;
   struct BatchPeakFitOptions;
 }
@@ -205,8 +208,38 @@ namespace BatchInfoLog
   void add_peak_fit_options_to_json( nlohmann::basic_json<> &data, const BatchPeak::BatchPeakFitOptions &options );
   
   void add_peak_fit_results_to_json( nlohmann::basic_json<> &data, const BatchPeak::BatchPeakFitResult &fit_results );
-  
-  
+
+  /** Fills out `json` with the "Continua", "Peaks", and "PeakSortIndex_*" entries for `peaks`.
+
+   @param mdas If non-null, then each peak gets a "HasMda" entry, and if it has a matching entry
+          (matched by pointer), an "Mda" object.  Pass nullptr for collections of peaks that were
+          fit, so that reports written before detection limits were added see no change.
+   */
+  void add_peaks_to_json( nlohmann::json &json,
+                         std::deque<std::shared_ptr<const PeakDef>> peaks,
+                         const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
+                         const std::vector<BatchPeak::NotFitPeakMda> * const mdas );
+
+  /** Fills out `json` with the exemplar peaks that could not be fit, and their detection limits.
+
+   Always sets `json["HasMdas"]`, so templates can rely on it being there.
+   */
+  void add_not_fit_peaks_to_json( nlohmann::json &json,
+                                 const BatchPeak::BatchPeakFitResult &fit_results );
+
+  /** Adds the detection limit information for a single peak that could not be fit. */
+  void add_mda_to_json( nlohmann::basic_json<> &mda_json, const BatchPeak::NotFitPeakMda &mda );
+
+  /** Adds the "NotFitPeaks" and "AnyNotFitPeakMda" entries to an activity/shielding fit result.
+
+   The peak-fit results are not otherwise included in activity/shielding fit reports, so this is
+   what makes the detection limits available to those templates.
+   */
+  void add_not_fit_peaks_to_act_shield_json( nlohmann::basic_json<> &data,
+                                            const BatchPeak::BatchPeakFitResult &peak_fit_results );
+
+
+
   void write_json( const BatchPeak::BatchPeakFitOptions &options,
                   std::vector<std::string> &warnings,
                   const std::string &filename, nlohmann::json json_to_write );

@@ -95,3 +95,10 @@ Shieldings:
 {% endif %}
 {% endif %}
 {% endif %}
+
+{% if exists("NotFitPeaks") %}
+Exemplar peaks that could not be fit{% if existsIn(NotFitPeaks,"HasMdas") and NotFitPeaks.HasMdas %}, and their detection limits{% endif %}:
+## for peak in NotFitPeaks.Peaks
+    {{ printFixed(peak.PeakMean,2) }} keV{% if peak.SourceName %} ({{ peak.SourceName }}){% endif %}{% if existsIn(peak,"Mda") %}: {{ peak.Mda.Description }}{% if peak.Mda.DeconAttempted %}{% if peak.Mda.DeconComputed %}{% if peak.Mda.DeconFoundUpperLimit %}  The deconvolution method gives an upper limit of {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %} at the {{ peak.Mda.ConfidenceLevelStr }} confidence level.{% endif %}{% else %}  The deconvolution method did not give a limit: {{ peak.Mda.DeconError }}.{% endif %}{% endif %}{% endif %}
+## endfor
+{% endif %}

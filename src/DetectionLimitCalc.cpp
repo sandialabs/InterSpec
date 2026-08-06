@@ -1121,7 +1121,8 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
     {
       const float &energy = peak_info.energy;
       const float fwhm = (peak_info.fwhm > 0.0f) ? peak_info.fwhm : input.drf->peakResolutionFWHM( energy );
-      const float sigma = fwhm / 2.634;
+      // FWHM = 2*sqrt(2*ln(2))*sigma; see `PeakDef::fwhm()`.
+      const float sigma = fwhm / 2.35482f;
       const double det_eff = fixed_geom ? input.drf->intrinsicEfficiency(energy)
                                         : input.drf->efficiency( energy, input.distance );
       const double counts_4pi = peak_info.counts_per_bq_into_4pi;

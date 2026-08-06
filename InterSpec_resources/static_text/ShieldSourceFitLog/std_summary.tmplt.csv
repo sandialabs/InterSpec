@@ -31,3 +31,14 @@ Warnings:
 ## endfor
 ## endif
 ## endfor
+
+
+Exemplar peaks that could not be fit
+Filename, Energy (keV), Nuclide, Result, Lc (counts), Ld (counts), Upper limit (counts), MDA activity, MDA activity (bq), Description
+## for file in Files
+## if existsIn(file,"NotFitPeaks")
+## for peak in file.NotFitPeaks.Peaks
+{{ file.Filename }}, {{ printFixed(peak.PeakMean,2) }}, {{ peak.SourceName }}{% if existsIn(peak,"Mda") %}, {{ peak.Mda.ShortDescription }}, {% if peak.Mda.CurrieComputed %}{{ peak.Mda.DecisionThresholdStr }}, {{ peak.Mda.DetectionLimitStr }}, {{ peak.Mda.UpperLimitStr }}{% else %}, , {% endif %}, {% if peak.Mda.HasMdaActivity %}{{ peak.Mda.DetectionLimitActivity }}, {{ peak.Mda.DetectionLimitActivity_bq }}{% else %}, {% endif %},"{{ peak.Mda.Description }}"{% else %}, , , , , , , {% endif %}
+## endfor
+## endif
+## endfor

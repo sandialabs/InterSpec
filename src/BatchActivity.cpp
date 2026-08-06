@@ -63,8 +63,364 @@
 
 using namespace std;
 
+namespace
+{
+/** Returns the thickness of a shielding along the line from the source to the detector.
+
+ This is the usual 1-D through-the-center approximation the detection-limit tools use; for
+ volumetric (self-attenuating or trace) sources it is only approximate.
+
+ Returns zero for generic (atomic-number/areal-density) shieldings, which are handled separately.
+ */
+double shield_thickness_towards_detector( const ShieldingSourceFitCalc::ShieldingInfo &shield,
+                                          const GammaInteractionCalc::GeometryType geometry )
+{
+  if( shield.m_isGenericMaterial )
+    return 0.0;
+
+  switch( geometry )
+  {
+    case GammaInteractionCalc::GeometryType::Spherical:
+      return shield.m_dimensions[0];  // Thickness
+
+    case GammaInteractionCalc::GeometryType::CylinderEndOn:
+      return shield.m_dimensions[1];  // Length
+
+    case GammaInteractionCalc::GeometryType::CylinderSideOn:
+      return shield.m_dimensions[0];  // Radius
+
+    case GammaInteractionCalc::GeometryType::Rectangular:
+      return shield.m_dimensions[2];  // Depth
+
+    case GammaInteractionCalc::GeometryType::NumGeometryType:
+      break;
+  }//switch( geometry )
+
+  return 0.0;
+}//double shield_thickness_towards_detector(...)
+
+
+/** Returns the fraction of gammas of the given energy that make it through all the shieldings,
+ along with the total shielding thickness.
+ */
+std::pair<double,double> shielding_transmission( const ShieldingSourceFitCalc::ModelFitResults &fit_results,
+                                                 const double energy )
+{
+  double transmission = 1.0, total_thickness = 0.0;
+
+  for( const ShieldingSourceFitCalc::ShieldingInfo &shield : fit_results.final_shieldings )
+  {
+    if( shield.m_isGenericMaterial )
+    {
+      const float an = static_cast<float>( shield.m_dimensions[0] );
+      const float ad = static_cast<float>( shield.m_dimensions[1] );
+      if( ad > 0.0f )
+        transmission *= exp( -GammaInteractionCalc::transmition_coefficient_generic( an, ad,
+                                                          static_cast<float>(energy) ) );
+    }else if( shield.m_material )
+    {
+      const double thickness = shield_thickness_towards_detector( shield, fit_results.geometry );
+      if( thickness > 0.0 )
+      {
+        total_thickness += thickness;
+        transmission *= exp( -GammaInteractionCalc::transmition_coefficient_material(
+                                                  shield.m_material.get(),
+                                                  static_cast<float>(energy),
+                                                  static_cast<float>(thickness) ) );
+      }
+    }//if( generic ) / else if( material )
+  }//for( loop over shieldings )
+
+  return { transmission, total_thickness };
+}//std::pair<double,double> shielding_transmission(...)
+
+
+/** Returns the number of gammas emitted per decay of the parent nuclide, for the peak at
+ `energy`, summing the lines that would be within the same peak.
+
+ Returns zero if no lines are near `energy`.
+ */
+double branching_ratio_at_age( const SandiaDecay::Nuclide * const nuclide,
+                               const double age, const double energy, const double fwhm,
+                               const double cluster_sigma )
+{
+  if( !nuclide )
+    return 0.0;
+
+  const double dummy_activity = 0.001 * SandiaDecay::curie;
+  SandiaDecay::NuclideMixture mixture;
+  mixture.addAgedNuclideByActivity( nuclide, dummy_activity, age );
+
+  const vector<SandiaDecay::EnergyRatePair> photons
+        = mixture.photons( 0.0, SandiaDecay::NuclideMixture::HowToOrder::OrderByEnergy );
+
+  // Find the strongest line near the requested energy, then sum the lines that would be blended
+  //  into the same peak, using the same cluster width the activity fit used.
+  const double energy_tolerance = 1.0; //keV
+  double largest_amp = 0.0, largest_energy = energy;
+  for( const SandiaDecay::EnergyRatePair &erp : photons )
+  {
+    const double amp = erp.numPerSecond / dummy_activity;
+    if( (fabs(erp.energy - energy) < energy_tolerance) && (amp > largest_amp) )
+    {
+      largest_amp = amp;
+      largest_energy = erp.energy;
+    }
+  }//for( const SandiaDecay::EnergyRatePair &erp : photons )
+
+  if( largest_amp <= 0.0 )
+    return 0.0;
+
+  // A non-positive cluster width means only the assigned line counts
+  const double peak_window = (cluster_sigma > 0.0) ? (cluster_sigma * (fwhm / 2.35482)) : 0.0;
+  double branching_ratio = 0.0;
+  for( const SandiaDecay::EnergyRatePair &erp : photons )
+  {
+    if( fabs(erp.energy - largest_energy) <= peak_window )
+      branching_ratio += erp.numPerSecond / dummy_activity;
+  }
+
+  return branching_ratio;
+}//double branching_ratio_at_age(...)
+}//namespace
+
+
 namespace BatchActivity
 {
+
+/** Converts the counts-based detection limits of exemplar peaks that could not be fit, into
+ activities, using the shielding, distance, and source ages the fit determined.
+
+ Peaks whose nuclide was not one of the fitted sources keep their counts-based limit, and get a
+ `NotFitPeakMda::no_activity_reason` explaining why no activity limit is given.
+ */
+void add_activity_info_to_not_fit_mdas( vector<BatchPeak::NotFitPeakMda> &mdas,
+                                       const ShieldingSourceFitCalc::ModelFitResults &fit_results,
+                                       const shared_ptr<const DetectorPeakResponse> &drf,
+                                       const shared_ptr<const SpecUtils::Measurement> &foreground,
+                                       const BatchActivityFitOptions &options,
+                                       vector<string> &warnings )
+{
+  if( mdas.empty() || !drf || !drf->isValid() || !foreground )
+    return;
+
+  const bool fixed_geom = drf->isFixedGeometry();
+  const double live_time = foreground->live_time();
+  const double distance = fixed_geom ? 0.0 : fit_results.distance;
+  const string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix( drf->geometryType() );
+  const bool want_decon = (options.not_fit_peak_mda == BatchPeak::NotFitPeakMdaMethod::CurrieAndDecon);
+
+  // Sources whose activity is spread through a shielding dont have a well defined single
+  //  shielding path, so their limits are only approximate.
+  set<const SandiaDecay::Nuclide *> volumetric_srcs;
+  if( fit_results.source_calc_details )
+  {
+    for( const GammaInteractionCalc::SourceDetails &src : *fit_results.source_calc_details )
+    {
+      if( src.isSelfAttenSource || src.isTraceSource )
+        volumetric_srcs.insert( src.nuclide );
+    }
+  }//if( fit_results.source_calc_details )
+
+  for( BatchPeak::NotFitPeakMda &mda : mdas )
+  {
+    mda.use_bq = options.use_bq;
+    mda.activity_postfix = act_postfix;
+    mda.live_time = live_time;
+
+    if( !mda.currie_computed || !mda.exemplar_peak )
+    {
+      mda.no_activity_reason = "the counts-based detection limit could not be computed";
+      continue;
+    }
+
+    const PeakDef &peak = *mda.exemplar_peak;
+    const SandiaDecay::Nuclide * const nuclide = peak.parentNuclide();
+
+    if( !nuclide )
+    {
+      mda.no_activity_reason = "peak has no source nuclide assigned";
+      mda.activity_summary = "No activity limit computed: " + mda.no_activity_reason + ".";
+      BatchPeak::update_description( mda );
+      continue;
+    }
+
+    const ShieldingSourceFitCalc::SourceFitDef *fit_src = nullptr;
+    for( const ShieldingSourceFitCalc::SourceFitDef &src : fit_results.fit_src_info )
+    {
+      if( src.nuclide == nuclide )
+        fit_src = &src;
+    }
+
+    if( !fit_src )
+    {
+      mda.no_activity_reason = "nuclide " + nuclide->symbol + " is not among the fitted sources";
+      mda.activity_summary = "No activity limit computed: " + mda.no_activity_reason + ".";
+      BatchPeak::update_description( mda );
+      continue;
+    }//if( !fit_src )
+
+    mda.nuclide = nuclide;
+
+    const double energy = peak.hasSourceGammaAssigned() ? peak.gammaParticleEnergy() : peak.mean();
+    const double fwhm = peak.gausPeak() ? peak.fwhm() : (peak.upperX() - peak.lowerX())/2.5;
+
+    // Cluster the gamma lines the same way the fit itself did, so the two are on the same footing.
+    // Note: no correction is made for decay during the measurement.
+    double shield_thickness = 0.0;
+    bool attenuate_air = false;
+    try
+    {
+      mda.branching_ratio = branching_ratio_at_age( nuclide, fit_src->age, energy, fwhm,
+                                                fit_results.options.photopeak_cluster_sigma );
+
+      const pair<double,double> shielding = shielding_transmission( fit_results, energy );
+      mda.shield_transmission = shielding.first;
+      shield_thickness = shielding.second;
+
+      attenuate_air = (fit_results.options.attenuate_for_air && !fixed_geom
+                       && (distance > shield_thickness));
+      mda.air_transmission = attenuate_air
+              ? exp( -GammaInteractionCalc::transmission_coefficient_air( static_cast<float>(energy),
+                                          static_cast<float>(distance - shield_thickness) ) )
+              : 1.0;
+    }catch( std::exception &e )
+    {
+      mda.no_activity_reason = "the source-to-detector attenuation could not be computed: "
+                               + string(e.what());
+      mda.activity_summary = "No activity limit computed: " + mda.no_activity_reason + ".";
+      BatchPeak::update_description( mda );
+      continue;
+    }//try / catch
+
+    if( mda.branching_ratio <= 0.0 )
+    {
+      mda.no_activity_reason = "no " + nuclide->symbol + " gamma line was found near "
+                               + SpecUtils::printCompact(energy,5) + " keV";
+      mda.activity_summary = "No activity limit computed: " + mda.no_activity_reason + ".";
+      BatchPeak::update_description( mda );
+      continue;
+    }//if( mda.branching_ratio <= 0.0 )
+
+    try
+    {
+      mda.det_efficiency = fixed_geom ? drf->intrinsicEfficiency( static_cast<float>(energy) )
+                                      : drf->efficiency( static_cast<float>(energy), distance );
+    }catch( std::exception &e )
+    {
+      mda.no_activity_reason = "detector efficiency could not be evaluated: " + string(e.what());
+      mda.activity_summary = "No activity limit computed: " + mda.no_activity_reason + ".";
+      BatchPeak::update_description( mda );
+      continue;
+    }//try / catch
+
+    mda.gammas_per_bq = mda.branching_ratio * live_time * mda.shield_transmission
+                        * mda.air_transmission * mda.det_efficiency;
+
+    if( (mda.gammas_per_bq <= 0.0) || IsNan(mda.gammas_per_bq) || IsInf(mda.gammas_per_bq) )
+    {
+      mda.no_activity_reason = "the number of counts expected per unit activity worked out to be"
+                               " zero or invalid";
+      mda.activity_summary = "No activity limit computed: " + mda.no_activity_reason + ".";
+      BatchPeak::update_description( mda );
+      continue;
+    }
+
+    mda.has_activity = true;
+
+    const DetectionLimitCalc::CurrieMdaResult &res = mda.currie_result;
+    const bool use_curie = !options.use_bq;
+    const auto act_str = [use_curie,&act_postfix]( const double counts, const double per_bq ) -> string {
+      return PhysicalUnits::printToBestActivityUnits( counts/per_bq, 4, use_curie ) + act_postfix;
+    };
+
+    switch( mda.result_type )
+    {
+      case BatchPeak::NotFitPeakMda::MdaResultType::NotDetected:
+        mda.activity_summary = "This corresponds to an activity less than "
+                           + act_str(res.upper_limit, mda.gammas_per_bq)
+                           + ", with a minimum detectable activity (MDA) of "
+                           + act_str(res.detection_limit, mda.gammas_per_bq) + ".";
+        break;
+
+      case BatchPeak::NotFitPeakMda::MdaResultType::Detected:
+        mda.activity_summary = "This corresponds to an activity of "
+                           + act_str(res.source_counts, mda.gammas_per_bq) + " (between "
+                           + act_str(res.lower_limit, mda.gammas_per_bq) + " and "
+                           + act_str(res.upper_limit, mda.gammas_per_bq) + ").";
+        break;
+
+      case BatchPeak::NotFitPeakMda::MdaResultType::Deficit:
+        mda.activity_summary = "The minimum detectable activity (MDA) is "
+                           + act_str(res.detection_limit, mda.gammas_per_bq) + ".";
+        break;
+
+      case BatchPeak::NotFitPeakMda::MdaResultType::Error:
+        break;
+    }//switch( mda.result_type )
+
+    if( volumetric_srcs.count(nuclide) )
+      mda.caveats += string(mda.caveats.empty() ? "" : "  ")
+                     + "Note: " + nuclide->symbol + " is a volumetric source, so the shielding"
+                       " attenuation used for this limit is only approximate.";
+
+    // The fit corrects the activity for decay over the measurement, but this limit does not; for
+    //  a dwell that is an appreciable fraction of the half-life, that matters.
+    if( fit_results.options.account_for_decay_during_meas )
+      mda.caveats += string(mda.caveats.empty() ? "" : "  ")
+                     + "Note: unlike the fitted activities, this limit is not corrected for decay"
+                       " during the measurement, so it is optimistic for nuclides whose half-life"
+                       " is comparable to the measurement time.";
+
+    BatchPeak::update_description( mda );
+
+    if( !want_decon )
+      continue;
+
+    // The deconvolution-style limit; for activity/shielding fits we limit the activity directly,
+    //  rather than the peak counts, so that the shielding and detector response are folded in.
+    if( !drf->hasResolutionInfo() )
+    {
+      mda.decon_attempted = true;
+      mda.decon_quantity_is_counts = false;
+      mda.decon_error = "the detector response does not have peak width information";
+      continue;
+    }//if( !drf->hasResolutionInfo() )
+
+    DetectionLimitCalc::DeconRoiInfo roi;
+    roi.roi_start = res.input.roi_lower_energy;
+    roi.roi_end = res.input.roi_upper_energy;
+    roi.continuum_type = PeakContinuum::OffsetType::Linear;
+    roi.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::Floating;
+    roi.num_lower_side_channels = options.mda_num_side_channels;
+    roi.num_upper_side_channels = options.mda_num_side_channels;
+
+    DetectionLimitCalc::DeconRoiInfo::PeakInfo peak_info;
+    peak_info.energy = static_cast<float>( energy );
+    peak_info.fwhm = static_cast<float>( fwhm );
+    // Per `DeconRoiInfo::PeakInfo`, air attenuation and detector efficiency are applied by the
+    //  calculation itself, so they must not be included here.
+    peak_info.counts_per_bq_into_4pi = mda.branching_ratio * live_time * mda.shield_transmission;
+    roi.peak_infos.push_back( peak_info );
+
+    DetectionLimitCalc::DeconComputeInput decon_input;
+    decon_input.distance = distance;
+    decon_input.activity = 0.0;
+    decon_input.include_air_attenuation = attenuate_air;
+    decon_input.shielding_thickness = attenuate_air ? shield_thickness : 0.0;
+    decon_input.drf = drf;
+    decon_input.measurement = foreground;
+    decon_input.roi_info.push_back( roi );
+
+    BatchPeak::compute_decon_limit( mda, decon_input, mda.gammas_per_bq, false,
+                                    options.mda_confidence_level, !options.use_bq );
+
+    if( !mda.decon_computed && !mda.decon_error.empty() )
+      warnings.push_back( "Deconvolution-style detection limit failed for the "
+                          + SpecUtils::printCompact(peak.mean(),5) + " keV peak: " + mda.decon_error );
+  }//for( BatchPeak::NotFitPeakMda &mda : mdas )
+}//void add_activity_info_to_not_fit_mdas(...)
+
 
 const char *BatchActivityFitResult::to_str( const BatchActivityFitResult::ResultCode code )
 {
@@ -527,7 +883,13 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     data["HasFitResults"] = !!fit_results.m_fit_results;
     if( fit_results.m_fit_results )
       BatchInfoLog::shield_src_fit_results_to_json( *fit_results.m_fit_results, drf, use_bq, data );
-      
+
+    // Detection limits for the exemplar peaks that couldnt be fit; the peak fit results arent
+    //  otherwise included in activity/shielding reports.
+    if( fit_results.m_peak_fit_results )
+      BatchInfoLog::add_not_fit_peaks_to_act_shield_json( data, *fit_results.m_peak_fit_results );
+
+
     if( summary_results )
     {
       summary_results->file_results.push_back( fit_results );
@@ -1246,12 +1608,19 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   peak_fit_options.use_exemplar_energy_cal = false;  //We've already applied this.
   peak_fit_options.use_exemplar_energy_cal_for_background = false;
 
+  // The deconvolution-style detection limit is computed once, in activity space, after the
+  //  shielding/source fit - so dont have the peak fit compute a counts-based one as well.
+  if( peak_fit_options.not_fit_peak_mda == BatchPeak::NotFitPeakMdaMethod::CurrieAndDecon )
+    peak_fit_options.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::Currie;
+
   const BatchPeak::BatchPeakFitResult foreground_peak_fit_result
               = BatchPeak::fit_peaks_in_file( exemplar_filename, exemplar_sample_nums,
                                             cached_exemplar_n42, filename, specfile,
                                              foreground_sample_numbers, peak_fit_options );
-  
-  result.m_peak_fit_results = make_shared<BatchPeak::BatchPeakFitResult>( foreground_peak_fit_result );
+
+  const shared_ptr<BatchPeak::BatchPeakFitResult> peak_fit_results
+                      = make_shared<BatchPeak::BatchPeakFitResult>( foreground_peak_fit_result );
+  result.m_peak_fit_results = peak_fit_results;
 
   // Energy cal may have been modified - pick up these changes
   result.m_foreground = foreground_peak_fit_result.spectrum;
@@ -1320,6 +1689,10 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
       result.m_background_peak_fit_results = background_peaks;
     }else
     {
+      // Detection limits are only ever reported for the foreground, so dont spend time on them here
+      BatchPeak::BatchPeakFitOptions back_peak_fit_options = peak_fit_options;
+      back_peak_fit_options.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::None;
+
       const BatchPeak::BatchPeakFitResult background_peaks
       = BatchPeak::fit_peaks_in_file( exemplar_filename,
                                      exemplar_sample_nums,
@@ -1327,7 +1700,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
                                      options.background_subtract_file,
                                      backfile,
                                      result.m_background_sample_numbers,
-                                     peak_fit_options );
+                                     back_peak_fit_options );
       
       result.m_background_peak_fit_results = make_shared<BatchPeak::BatchPeakFitResult>( background_peaks );
       
@@ -1567,7 +1940,30 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
         result.m_result_code = BatchActivityFitResult::ResultCode::DidNotFitAllSources;
       }//if( !found_in_output )
     }//for( const ShieldingSourceFitCalc::SourceFitDef insrc : src_definitions )
-    
+
+    // Now that we know the shielding, distance, and source ages, we can turn the counts-based
+    //  detection limits of the exemplar peaks that couldnt be fit, into activities.
+    //  A failure here must not lose the fit results, so it is caught separately.
+    if( peak_fit_results && !peak_fit_results->not_fit_peak_mdas.empty() )
+    {
+      try
+      {
+        add_activity_info_to_not_fit_mdas( peak_fit_results->not_fit_peak_mdas, *fit_results,
+                                        detector, result.m_foreground, options, result.m_warnings );
+
+        // Peaks we couldnt turn into an activity still get the counts-based deconvolution limit,
+        //  rather than no limit at all.
+        if( options.not_fit_peak_mda == BatchPeak::NotFitPeakMdaMethod::CurrieAndDecon )
+          BatchPeak::add_counts_decon_limits( peak_fit_results->not_fit_peak_mdas,
+                                             result.m_foreground, detector, options );
+      }catch( std::exception &e )
+      {
+        result.m_warnings.push_back( "Failed to compute detection limits for the peaks that could"
+                                     " not be fit: " + string(e.what()) );
+      }//try / catch
+    }//if( there are detection limits to fill out )
+
+
     // Save the fit model, and the DRF it was fit with, into the file we may write out as a N42, so
     //  the results can be re-opened in InterSpec, or used as the exemplar of a later batch fit.
     //  Note the peaks have already been set into this file by `BatchPeak::fit_peaks_in_file(...)`.

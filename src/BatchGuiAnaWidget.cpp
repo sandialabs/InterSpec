@@ -43,6 +43,7 @@
 #include <Wt/WLabel>
 #include <Wt/WServer>
 #include <Wt/WCheckBox>
+#include <Wt/WSpinBox>
 #include <Wt/WComboBox>
 #include <Wt/WLineEdit>
 #include <Wt/WGroupBox>
@@ -220,6 +221,17 @@ Wt::Signal<bool,Wt::WString> &BatchGuiAnaWidget::canDoAnalysisSignal()
   return m_canDoAnalysis;
 }
 
+const std::vector<std::pair<const char *,double>> BatchGuiPeakFitWidget::sm_mda_confidence_levels{
+  { "95%", 0.95 },
+  { "99%", 0.99 },
+  { "1 σ", 0.682689492137086 },
+  { "2 σ", 0.954499736103642 },
+  { "3 σ", 0.997300203936740 },
+  { "4 σ", 0.999936657516334 },
+  { "5 σ", 0.999999426696856 }
+};
+
+
 BatchGuiPeakFitWidget::BatchGuiPeakFitWidget( Wt::WContainerWidget *parent ) : BatchGuiAnaWidget( parent )
 {
   addStyleClass( "BatchGuiPeakFitWidget" );
@@ -380,6 +392,65 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget( Wt::WContainerWidget *parent ) : B
   m_multi_sample_handling->setCurrentIndex( 0 );
   m_multi_sample_handling->activated().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
   HelpSystem::attachToolTipOn( m_multi_sample_handling, WString::tr( "bgw-multi-sample-tt" ), showToolTips );
+
+  // Detection limit ("MDA") options, for the exemplar peaks that couldnt be fit.
+  m_mda_options_container = new Wt::WContainerWidget( float_options );
+  m_mda_options_container->addStyleClass( "MdaOptionsContainer" );
+
+  m_mda_method_container = new Wt::WContainerWidget( m_mda_options_container );
+  m_mda_method_container->addStyleClass( "ThresholdOptionContainer" );
+  m_mda_method_label = new Wt::WLabel( WString::tr( "bgw-mda-method-label" ), m_mda_method_container );
+  m_mda_method_label->setWordWrap( false );
+  m_mda_method = new Wt::WComboBox( m_mda_method_container );
+  m_mda_method_label->setBuddy( m_mda_method );
+  m_mda_method->addItem( WString::tr( "bgw-mda-method-none" ) );
+  m_mda_method->addItem( WString::tr( "bgw-mda-method-currie" ) );
+  m_mda_method->addItem( WString::tr( "bgw-mda-method-currie-decon" ) );
+  m_mda_method->setCurrentIndex( 1 );  // Default to Currie, same as command line
+  m_mda_method->activated().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
+  HelpSystem::attachToolTipOn( m_mda_method, WString::tr( "bgw-mda-method-tt" ), showToolTips );
+
+  m_mda_confidence_level_container = new Wt::WContainerWidget( m_mda_options_container );
+  m_mda_confidence_level_container->addStyleClass( "ThresholdOptionContainer" );
+  m_mda_confidence_level_label = new Wt::WLabel( WString::tr( "bgw-mda-cl-label" ),
+                                                m_mda_confidence_level_container );
+  m_mda_confidence_level_label->setWordWrap( false );
+  m_mda_confidence_level = new Wt::WComboBox( m_mda_confidence_level_container );
+  m_mda_confidence_level_label->setBuddy( m_mda_confidence_level );
+  for( int i = 0; i < static_cast<int>(sm_mda_confidence_levels.size()); ++i )
+    m_mda_confidence_level->addItem( WString::fromUTF8( sm_mda_confidence_levels[i].first ) );
+  m_mda_confidence_level->setCurrentIndex( 0 );  // Default to 95%, same as command line
+  m_mda_confidence_level->activated().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
+  HelpSystem::attachToolTipOn( m_mda_confidence_level, WString::tr( "bgw-mda-cl-tt" ), showToolTips );
+
+  m_mda_side_channels_container = new Wt::WContainerWidget( m_mda_options_container );
+  m_mda_side_channels_container->addStyleClass( "ThresholdOptionContainer" );
+  m_mda_side_channels_label = new Wt::WLabel( WString::tr( "bgw-mda-side-channels-label" ),
+                                             m_mda_side_channels_container );
+  m_mda_side_channels_label->setWordWrap( false );
+  m_mda_side_channels = new Wt::WSpinBox( m_mda_side_channels_container );
+  m_mda_side_channels_label->setBuddy( m_mda_side_channels );
+  m_mda_side_channels->setRange( 1, 64 );
+  m_mda_side_channels->setValue( 4 );  // Default value from command line
+  m_mda_side_channels->setWidth( 45 );
+  m_mda_side_channels->changed().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
+  HelpSystem::attachToolTipOn( m_mda_side_channels, WString::tr( "bgw-mda-side-channels-tt" ), showToolTips );
+
+#if( ALLOW_SPECIFY_MDA_ROI_WIDTH )
+  m_mda_roi_num_fwhm_container = new Wt::WContainerWidget( m_mda_options_container );
+  m_mda_roi_num_fwhm_container->addStyleClass( "ThresholdOptionContainer" );
+  m_mda_roi_num_fwhm_label = new Wt::WLabel( WString::tr( "bgw-mda-roi-num-fwhm-label" ),
+                                            m_mda_roi_num_fwhm_container );
+  m_mda_roi_num_fwhm_label->setWordWrap( false );
+  m_mda_roi_num_fwhm = new NativeFloatSpinBox( m_mda_roi_num_fwhm_container );
+  m_mda_roi_num_fwhm_label->setBuddy( m_mda_roi_num_fwhm );
+  m_mda_roi_num_fwhm->setValue( 2.5f );  // Default value from command line
+  m_mda_roi_num_fwhm->setRange( 0.5f, 10.0f );
+  m_mda_roi_num_fwhm->setSpinnerHidden( true );
+  m_mda_roi_num_fwhm->setWidth( 40 );
+  m_mda_roi_num_fwhm->valueChanged().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
+  HelpSystem::attachToolTipOn( m_mda_roi_num_fwhm, WString::tr( "bgw-mda-roi-num-fwhm-tt" ), showToolTips );
+#endif //ALLOW_SPECIFY_MDA_ROI_WIDTH
 
 
   m_reports_container = new WGroupBox( WString::tr( "bgw-reports-grp-title" ), this );
@@ -631,6 +702,15 @@ void BatchGuiPeakFitWidget::optionsChanged()
   m_peak_stat_threshold_container->setHidden( fit_all_peaks );// Fit thresholds not currently implemented when fitting all peaks
   m_peak_hypothesis_threshold_container->setHidden( fit_all_peaks );// Fit thresholds not currently implemented when fitting all peaks
 
+  // There are no exemplar peaks to miss when fitting for all peaks, so no limits to compute
+  m_mda_options_container->setHidden( fit_all_peaks );
+  const bool no_mda = (m_mda_method->currentIndex() == 0);
+  m_mda_confidence_level_container->setHidden( no_mda );
+  m_mda_side_channels_container->setHidden( no_mda );
+#if( ALLOW_SPECIFY_MDA_ROI_WIDTH )
+  m_mda_roi_num_fwhm_container->setHidden( no_mda );
+#endif
+
   const bool use_current_fore = m_use_current_foreground->isChecked();
   m_exemplar_file_drop->setHidden( use_current_fore );
   if( !use_current_fore )
@@ -871,12 +951,30 @@ BatchPeak::BatchPeakFitOptions BatchGuiPeakFitWidget::getPeakFitOptions() const
   {
     answer.refit_energy_cal = false;
     answer.show_nonfit_peaks = false;
+    // No exemplar peaks to miss, so there are no detection limits to compute
+    answer.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::None;
   } else
   {
     answer.refit_energy_cal = m_refit_energy_cal->isChecked();
     answer.show_nonfit_peaks = m_show_nonfit_peaks->isChecked();
     answer.peak_stat_threshold = m_peak_stat_threshold->value();
     answer.peak_hypothesis_threshold = m_peak_hypothesis_threshold->value();
+
+    switch( m_mda_method->currentIndex() )
+    {
+      case 0:  answer.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::None;           break;
+      case 2:  answer.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::CurrieAndDecon; break;
+      default: answer.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::Currie;         break;
+    }//switch( m_mda_method->currentIndex() )
+
+    const int cl_index = m_mda_confidence_level->currentIndex();
+    if( (cl_index >= 0) && (cl_index < static_cast<int>(sm_mda_confidence_levels.size())) )
+      answer.mda_confidence_level = sm_mda_confidence_levels[cl_index].second;
+
+    answer.mda_num_side_channels = static_cast<size_t>( m_mda_side_channels->value() );
+#if( ALLOW_SPECIFY_MDA_ROI_WIDTH )
+    answer.mda_roi_num_fwhm = m_mda_roi_num_fwhm->value();
+#endif
   }
 
   tuple<shared_ptr<const SpecMeas>, string, set<int>> exemplar_info = get_exemplar();
@@ -1807,6 +1905,8 @@ BatchGuiIsotopicsByNuclidesWidget::BatchGuiIsotopicsByNuclidesWidget( Wt::WConta
   m_use_exemplar_energy_cal_for_background->hide();
   m_show_nonfit_peaks->setChecked( false );
   m_show_nonfit_peaks->hide();
+  m_mda_method->setCurrentIndex( 0 );
+  m_mda_options_container->hide();
   m_create_csv_output->setChecked( false );
   m_create_csv_output->hide();
   m_concatenate_to_n42->setChecked( false );
@@ -2269,6 +2369,8 @@ void BatchGuiIsotopicsByNuclidesWidget::optionsChanged()
   m_create_csv_output->hide();
   m_concatenate_to_n42->hide();
   m_use_existing_background_peaks->hide();
+  if( m_mda_options_container )
+    m_mda_options_container->hide();
   if( m_peak_stat_threshold_container )
     m_peak_stat_threshold_container->hide();
   if( m_peak_hypothesis_threshold_container )

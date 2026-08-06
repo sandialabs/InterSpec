@@ -1610,23 +1610,580 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     options_obj["ReportSummaryTemplates"] = options.summary_report_templates;
     options_obj["PeakStatThreshold"] = options.peak_stat_threshold;
     options_obj["PeakShapeThreshold"] = options.peak_hypothesis_threshold;
+    options_obj["NotFitPeakMdaMethod"] = BatchPeak::to_str( options.not_fit_peak_mda );
+    options_obj["MdaConfidenceLevel"] = options.mda_confidence_level;
+    options_obj["MdaConfidenceLevelPercent"] = 100.0*options.mda_confidence_level;
+    options_obj["MdaConfidenceLevelStr"] = BatchPeak::confidence_level_str( options.mda_confidence_level );
+    options_obj["MdaNumSideChannels"] = static_cast<int>( options.mda_num_side_channels );
+#if( ALLOW_SPECIFY_MDA_ROI_WIDTH )
+    options_obj["MdaRoiNumFwhm"] = options.mda_roi_num_fwhm;
+    options_obj["MdaSignalFractionInRoi"] = BatchPeak::gaussian_fraction_in_roi( options.mda_roi_num_fwhm );
+#endif
   }//add_peak_fit_options_to_json(...)
   
   
+  void add_mda_to_json( nlohmann::basic_json<> &mda_json, const BatchPeak::NotFitPeakMda &mda )
+  {
+    const DetectionLimitCalc::CurrieMdaResult &res = mda.currie_result;
+
+    mda_json["ConfidenceLevel"] = res.input.detection_probability;
+    mda_json["ConfidenceLevelPercent"] = 100.0*res.input.detection_probability;
+    mda_json["ConfidenceLevelStr"] = BatchPeak::confidence_level_str( res.input.detection_probability );
+    mda_json["NumSideChannels"] = static_cast<int>( res.input.num_lower_side_channels );
+    mda_json["SignalFractionInRoi"] = mda.signal_fraction_in_roi;
+    mda_json["ShortDescription"] = mda.short_description;
+    mda_json["Description"] = mda.description;
+    mda_json["ResultSummary"] = mda.result_summary;
+    mda_json["ActivitySummary"] = mda.activity_summary;
+    mda_json["Caveats"] = mda.caveats;
+    mda_json["HasCaveats"] = !mda.caveats.empty();
+    mda_json["OverlapsFitPeak"] = mda.overlaps_fit_peak;
+    mda_json["OverlapsOtherNotFitPeak"] = mda.overlaps_other_unfit_peak;
+
+    switch( mda.result_type )
+    {
+      case BatchPeak::NotFitPeakMda::MdaResultType::NotDetected: mda_json["ResultType"] = "NotDetected"; break;
+      case BatchPeak::NotFitPeakMda::MdaResultType::Detected:    mda_json["ResultType"] = "Detected";    break;
+      case BatchPeak::NotFitPeakMda::MdaResultType::Deficit:     mda_json["ResultType"] = "Deficit";     break;
+      case BatchPeak::NotFitPeakMda::MdaResultType::Error:       mda_json["ResultType"] = "Error";       break;
+    }//switch( mda.result_type )
+
+    mda_json["CurrieComputed"] = mda.currie_computed;
+    if( !mda.currie_computed )
+      mda_json["CurrieError"] = mda.currie_error;
+
+    if( mda.currie_computed )
+    {
+      mda_json["DecisionThreshold_counts"] = res.decision_threshold;
+      mda_json["DetectionLimit_counts"] = res.detection_limit;
+      mda_json["SourceCounts"] = res.source_counts;
+      mda_json["UpperLimit_counts"] = res.upper_limit;
+      mda_json["LowerLimit_counts"] = res.lower_limit;
+      mda_json["PeakRegionCounts"] = res.peak_region_counts_sum;
+      mda_json["ContinuumCounts"] = res.estimated_peak_continuum_counts;
+      mda_json["ContinuumCountsUncert"] = res.estimated_peak_continuum_uncert;
+
+      mda_json["DecisionThresholdStr"] = SpecUtils::printCompact( res.decision_threshold, 4 );
+      mda_json["DetectionLimitStr"] = SpecUtils::printCompact( res.detection_limit, 4 );
+      mda_json["UpperLimitStr"] = SpecUtils::printCompact( res.upper_limit, 4 );
+      mda_json["SourceCountsStr"] = SpecUtils::printCompact( res.source_counts, 4 );
+
+      mda_json["RoiLowerEnergy"] = res.input.roi_lower_energy;
+      mda_json["RoiUpperEnergy"] = res.input.roi_upper_energy;
+      mda_json["RoiWidth_keV"] = (res.input.roi_upper_energy - res.input.roi_lower_energy);
+      mda_json["RoiLowerChannel"] = static_cast<int>( res.first_peak_region_channel );
+      mda_json["RoiUpperChannel"] = static_cast<int>( res.last_peak_region_channel );
+    }//if( mda.currie_computed )
+
+    mda_json["HasMdaActivity"] = mda.has_activity;
+    if( !mda.has_activity )
+    {
+      if( !mda.no_activity_reason.empty() )
+        mda_json["NoMdaActivityReason"] = mda.no_activity_reason;
+    }else
+    {
+      const bool use_curie = !mda.use_bq;
+      const string &postfix = mda.activity_postfix;
+
+      /** Adds an activity, in a handful of units, under `<prefix>`, `<prefix>_bq`, etc. */
+      const auto add_activity = [&mda_json,use_curie,&postfix]( const string &prefix, const double activity ){
+        mda_json[prefix] = PhysicalUnits::printToBestActivityUnits(activity,4,use_curie) + postfix;
+        mda_json[prefix + "_bq"] = activity / PhysicalUnits::bq;
+        mda_json[prefix + "_kBq"] = activity / PhysicalUnits::kBq;
+        mda_json[prefix + "_MBq"] = activity / PhysicalUnits::MBq;
+        mda_json[prefix + "_ci"] = activity / PhysicalUnits::ci;
+        mda_json[prefix + "_mCi"] = activity / PhysicalUnits::mCi;
+        mda_json[prefix + "_uCi"] = activity / PhysicalUnits::microCi;
+      };//add_activity lambda
+
+      mda_json["Nuclide"] = mda.nuclide ? mda.nuclide->symbol : string();
+      mda_json["BranchingRatio"] = mda.branching_ratio;
+      mda_json["ShieldingTransmission"] = mda.shield_transmission;
+      mda_json["AirTransmission"] = mda.air_transmission;
+      mda_json["DetectorEff"] = mda.det_efficiency;
+      mda_json["LiveTime_s"] = mda.live_time;
+      mda_json["GammasPerBq"] = mda.gammas_per_bq;
+      mda_json["ActivityPostFix"] = postfix;
+
+      // "MdaActivity" is the minimum detectable activity, i.e. Ld - the same quantity as
+      //  "DetectionLimitActivity", which is spelled out to match the counts fields.
+      add_activity( "MdaActivity", res.detection_limit / mda.gammas_per_bq );
+      add_activity( "DetectionLimitActivity", res.detection_limit / mda.gammas_per_bq );
+      add_activity( "DecisionThresholdActivity", res.decision_threshold / mda.gammas_per_bq );
+
+      // The upper limit, and the observed activity, are meaningless when fewer counts were seen
+      //  than the continuum predicts - they would come out negative.
+      if( mda.result_type != BatchPeak::NotFitPeakMda::MdaResultType::Deficit )
+        add_activity( "UpperLimitActivity", res.upper_limit / mda.gammas_per_bq );
+
+      if( mda.result_type == BatchPeak::NotFitPeakMda::MdaResultType::Detected )
+      {
+        add_activity( "ObservedActivity", res.source_counts / mda.gammas_per_bq );
+        add_activity( "ObservedActivityLower", res.lower_limit / mda.gammas_per_bq );
+        add_activity( "ObservedActivityUpper", res.upper_limit / mda.gammas_per_bq );
+      }//if( detected )
+    }//if( !mda.has_activity ) / else
+
+    mda_json["DeconAttempted"] = mda.decon_attempted;
+    if( mda.decon_attempted )
+    {
+      mda_json["DeconComputed"] = mda.decon_computed;
+      mda_json["DeconQuantityIsCounts"] = mda.decon_quantity_is_counts;
+
+      if( !mda.decon_computed )
+        mda_json["DeconError"] = mda.decon_error;
+
+      if( mda.decon_computed && mda.decon_result )
+      {
+        const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &decon = *mda.decon_result;
+
+        mda_json["DeconFoundUpperLimit"] = decon.foundUpperCl;
+        mda_json["MethodsDisagree"] = mda.methods_disagree;
+        if( mda.decon_over_currie_ratio > 0.0 )
+          mda_json["DeconOverCurrieRatio"] = mda.decon_over_currie_ratio;
+        mda_json["DeconBestChi2"] = decon.overallBestChi2;
+        mda_json["DeconLimitChi2"] = decon.upperLimitChi2;
+        mda_json["DeconBestQuantity"] = decon.overallBestQuantity;
+
+        if( decon.foundUpperCl )
+        {
+          if( mda.decon_quantity_is_counts )
+          {
+            mda_json["DeconUpperLimit_counts"] = decon.upperLimit;
+            mda_json["DeconUpperLimitStr"] = SpecUtils::printCompact( decon.upperLimit, 4 );
+          }else
+          {
+            const bool use_curie = !mda.use_bq;
+            mda_json["DeconUpperLimit"] = PhysicalUnits::printToBestActivityUnits(decon.upperLimit,4,use_curie)
+                                          + mda.activity_postfix;
+            mda_json["DeconUpperLimit_bq"] = decon.upperLimit / PhysicalUnits::bq;
+            mda_json["DeconUpperLimit_ci"] = decon.upperLimit / PhysicalUnits::ci;
+            mda_json["DeconUpperLimit_uCi"] = decon.upperLimit / PhysicalUnits::microCi;
+
+            // These strings contain HTML, so are only suitable for HTML reports.
+            mda_json["DeconLimitText"] = decon.limitText;
+            mda_json["DeconBestChi2Text"] = decon.bestCh2Text;
+          }//if( counts ) / else( activity )
+        }//if( decon.foundUpperCl )
+      }//if( mda.decon_computed && mda.decon_result )
+    }//if( mda.decon_attempted )
+  }//void add_mda_to_json(...)
+
+
+  void add_peaks_to_json( nlohmann::json &json,
+                          deque<shared_ptr<const PeakDef>> peaks,
+                          const shared_ptr<const SpecUtils::Measurement> &spectrum,
+                          const vector<BatchPeak::NotFitPeakMda> * const mdas )
+  {
+    // We will write down the peaks and continua in separate arrays, and give an index to link
+    //  them.  By default the peaks and continua are sorted by energy, but we'll also through
+    //  in some arrays of indexes so we can sort them in other orders when templating
+    
+    std::sort( begin(peaks), end(peaks), &PeakDef::lessThanByMeanShrdPtr );
+    
+    vector<shared_ptr<const PeakContinuum>> continua;
+    for( const auto &p : peaks )
+    {
+      if( std::find(begin(continua), end(continua), p->continuum()) == end(continua) )
+        continua.push_back( p->continuum() );
+    }
+    
+    auto sorted_indices = [&peaks, spectrum]( Wt::SortOrder order, PeakModel::Columns column )
+     -> vector<int> {
+      deque<shared_ptr<const PeakDef>> peaks_copy = peaks;
+      
+      boost::function<bool(const shared_ptr<const PeakDef> &, const shared_ptr<const PeakDef> &)> sortfcn;
+      sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
+                            column, order, spectrum );
+      stable_sort( begin(peaks_copy), end(peaks_copy), sortfcn );
+      
+      vector<int> indices;
+      for( const shared_ptr<const PeakDef> &p : peaks )
+      {
+        const auto pos = std::find( begin(peaks_copy), end(peaks_copy), p );
+        assert( pos != end(peaks_copy) );
+        indices.push_back( static_cast<int>(pos - begin(peaks_copy)) );
+      }
+      return indices;
+     };//sorted_indices lamda
+    
+    using So = Wt::SortOrder;
+    using Col = PeakModel::Columns;
+    json["PeakSortIndex_Energy_Ascend"] = sorted_indices( So::AscendingOrder, Col::kMean );
+    json["PeakSortIndex_Energy_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kMean );
+    
+    json["PeakSortIndex_Isotope_Ascend"] = sorted_indices( So::AscendingOrder, Col::kIsotope );
+    json["PeakSortIndex_Isotope_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kIsotope );
+    
+    json["PeakSortIndex_Mean_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kMean );
+    json["PeakSortIndex_Mean_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kMean );
+    
+    json["PeakSortIndex_Amp_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kAmplitude );
+    json["PeakSortIndex_Amp_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kAmplitude );
+    
+    json["PeakSortIndex_Fwhm_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kFwhm );
+    json["PeakSortIndex_Fwhm_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kFwhm );
+    
+    json["PeakSortIndex_SrcEnergy_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kPhotoPeakEnergy );
+    json["PeakSortIndex_SrcEnergy_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kPhotoPeakEnergy );
+    
+    json["PeakSortIndex_RoiCounts_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kRoiCounts );
+    json["PeakSortIndex_RoiCounts_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kRoiCounts );
+    
+    json["PeakSortIndex_DistSrcEnergyToMean_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kDifference );
+    json["PeakSortIndex_DistSrcEnergyToMean_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kDifference );
+    
+    json["PeakSortIndex_UseForActivity_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kUseForShieldingSourceFit );
+    json["PeakSortIndex_UseForActivity_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kUseForShieldingSourceFit );
+    
+    json["PeakSortIndex_UseForEnergyCal_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kUseForCalibration );
+    json["PeakSortIndex_UseForEnergyCal_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kUseForCalibration );
+    
+    
+    for( int cont_index = 0; cont_index < static_cast<int>(continua.size()); ++cont_index )
+    {
+      const shared_ptr<const PeakContinuum> &cont = continua[cont_index];
+      assert( cont );
+      vector<int> peaks_with_cont;
+      for( int peak_index = 0; peak_index < peaks.size(); ++peak_index )
+      {
+        if( peaks[peak_index]->continuum() == cont )
+          peaks_with_cont.push_back( static_cast<int>(peak_index) );
+      }
+     
+      json["Continua"].push_back( {} );
+      auto &cont_json = json["Continua"].back();
+      cont_json["PeakIndexes"] = peaks_with_cont;
+      cont_json["ContinuumIndex"] = static_cast<int>( cont_index );
+       
+      const PeakContinuum::OffsetType type = cont->type();
+      cont_json["ContinuumType"] = PeakContinuum::offset_type_str( type );
+      const size_t npar = PeakContinuum::num_parameters( type );
+      cont_json["NumberParameters"] = static_cast<int>( npar );
+      cont_json["IsStepContinuum"] = PeakContinuum::is_step_continuum( type );
+      cont_json["IsPolynomial"] = cont->isPolynomial();
+      
+      cont_json["IsEnergyRangeDefined"] = cont->energyRangeDefined();
+      
+      cont_json["LowerEnergy"] = cont->lowerEnergy();
+      cont_json["UpperEnergy"] = cont->upperEnergy();
+      
+      assert( spectrum );
+      if( spectrum && spectrum->energy_calibration() && spectrum->energy_calibration()->valid() )
+      {
+        const auto cal = spectrum->energy_calibration();
+        const double lower_channel = cal->channel_for_energy( cont->lowerEnergy() );
+        const double upper_channel = cal->channel_for_energy( cont->upperEnergy() );
+        const int lower_channel_int = static_cast<int>( std::round(lower_channel) );
+        const int upper_channel_int = static_cast<int>( std::round(upper_channel - 0.5) );
+        const int num_channel = std::max( 0, 1 + upper_channel_int - lower_channel_int );
+        
+        cont_json["HasChannelRange"] = true;
+        cont_json["LowerChannel"] = lower_channel;
+        cont_json["UpperChannel"] = upper_channel;
+        cont_json["LowerChannelInt"] = lower_channel_int;
+        cont_json["UpperChannelInt"] = upper_channel_int;
+        cont_json["NumberChannels"] = upper_channel - lower_channel;
+        cont_json["NumberChannelsInt"] = num_channel;
+        
+        vector<int> channel_numbers( num_channel );
+        vector<double> cont_area( num_channel, 0.0 ), channel_energies( num_channel + 1 );
+        for( int i = lower_channel_int; i <= upper_channel_int; ++i )
+        {
+          const int index = i - lower_channel_int;
+          const double channel_lower = cal->energy_for_channel( i );
+          const double channel_upper = cal->energy_for_channel( i + 1 );
+          
+          channel_numbers[index] = i;
+          channel_energies[index] = channel_lower;
+          channel_energies[index + 1] = channel_upper;
+          
+          try
+          {
+            {
+              vector<shared_ptr<const PeakDef>> roi_peaks;
+              for( const int pi : peaks_with_cont )
+                roi_peaks.push_back( peaks[pi] );
+              cont_area[index] = cont->offset_integral( channel_lower, channel_upper, spectrum, roi_peaks );
+            }
+          }catch( std::exception & )
+          {
+            assert( 0 );
+          }
+        }//for( int i = lower_channel_int; i <= upper_channel_int; ++i )
+        
+        cont_json["ChannelNumbers"] = channel_numbers;
+        cont_json["ChannelEnergies"] = channel_energies;
+        cont_json["ChannelContinuumArea"] = cont_area;
+      }else
+      {
+        cont_json["HasChannelRange"] = false;
+        cont_json["LowerChannel"] = 0.0;
+        cont_json["UpperChannel"] = 0.0;
+        cont_json["NumberChannel"] = 0.0;
+        cont_json["NumberChannelInt"] = 0;
+        cont_json["LowerChannelInt"] = 0;
+        cont_json["UpperChannelInt"] = 0;
+      }
+      
+      try
+      {
+        {
+          vector<shared_ptr<const PeakDef>> roi_peaks;
+          for( const int pi : peaks_with_cont )
+            roi_peaks.push_back( peaks[pi] );
+          cont_json["ContinuumArea"] = cont->offset_integral( cont->lowerEnergy(), cont->upperEnergy(), spectrum, roi_peaks );
+        }
+      }catch( std::exception &e )
+      {
+        cont_json["ContinuumArea"] = 0.0;
+        cont_json["Warnings"].push_back( "Error computing total integral area: " + string(e.what()) );
+      }
+      
+      cont_json["ParameterReferenceEnergy"] = cont->referenceEnergy();
+      cont_json["Parameters"] = cont->parameters();
+      cont_json["ParameterUncertainties"] = cont->uncertainties();
+      cont_json["ParameterIsForFitting"] = cont->fitForParameter();
+    }//for( const shared_ptr<const PeakContinuum> &cont : continua )
+    
+    
+    for( int peak_index = 0; peak_index < static_cast<int>(peaks.size()); ++peak_index )
+    {
+      const shared_ptr<const PeakDef> &p = peaks[peak_index];
+      const auto cont_pos = std::find( begin(continua), end(continua), p->continuum() );
+      assert( cont_pos != end(continua) );
+      const auto continuum_index = cont_pos - begin(continua);
+      assert( (continuum_index >= 0) && (continuum_index < continua.size()) );
+      
+      json["Peaks"].push_back( {} );
+      auto &peak_json = json["Peaks"].back();
+      
+      peak_json["ContinuumIndex"] = static_cast<int>( continuum_index );
+      
+      peak_json["SkewType"] = PeakDef::to_string( p->skewType() );
+      peak_json["NumSkewParameters"] = PeakDef::num_skew_parameters( p->skewType() );
+      
+      peak_json["PeakMean"] = p->mean();
+      peak_json["PeakMeanUncert"] = p->meanUncert();
+      
+      peak_json["PeakAmplitude"] = p->amplitude();
+      peak_json["PeakAmplitudeUncert"] = p->amplitudeUncert();
+      
+      peak_json["DataDefined"] = !p->gausPeak();
+      peak_json["GaussianDefined"] = p->gausPeak();
+      
+      peak_json["Chi2Dof"] = p->chi2dof();
+      peak_json["HasChi2Dof"] = p->chi2Defined();
+      
+      // Put peak info
+      switch( p->type() )
+      {
+        case PeakDef::DefintionType::GaussianDefined:
+        {
+          peak_json["PeakSigma"] = p->sigma();
+          peak_json["PeakSigmaUncert"] = p->sigmaUncert();
+          peak_json["PeakFwhm"] = p->fwhm();
+          peak_json["PeakFwhmUncert"] = 2.35482*p->sigmaUncert();
+          
+          break;
+        }//case DefintionType::GaussianDefined:
+          
+        case PeakDef::DefintionType::DataDefined:
+        {
+          // We'll add in placeholders for sigma and FWHM, so templates that expect these values wont be messed up
+          peak_json["PeakSigma"] = 0.0;
+          peak_json["PeakSigmaUncert"] = 0.0;
+          peak_json["PeakFwhm"] = 0.0;
+          peak_json["PeakFwhmUncert"] = 0.0;
+          break;
+        }//case DefintionType::DataDefined:
+      }//switch( p->type() )
+      
+      
+      peak_json["LowerEnergy"] = p->lowerX();
+      peak_json["UpperEnergy"] = p->upperX();
+      peak_json["RoiWidth"] = p->roiWidth();
+
+      
+      if( spectrum && spectrum->energy_calibration() && spectrum->energy_calibration()->valid() )
+      {
+        peak_json["HasChannelRange"] = true;
+        const auto cal = spectrum->energy_calibration();
+        const double lower_channel = cal->channel_for_energy( p->lowerX() );
+        const double upper_channel = cal->channel_for_energy( p->upperX() );
+        const int lower_channel_int = static_cast<int>( std::round(lower_channel) );
+        const int upper_channel_int = static_cast<int>( std::round(upper_channel - 0.5) );
+        const int num_channel = std::max( 0, 1 + upper_channel_int - lower_channel_int );
+        
+        peak_json["LowerChannel"] = lower_channel;
+        peak_json["UpperChannel"] = upper_channel;
+        peak_json["LowerChannelInt"] = lower_channel_int;
+        peak_json["UpperChannelInt"] = upper_channel_int;
+        peak_json["NumberChannels"] = upper_channel - lower_channel;
+        peak_json["NumberChannelsInt"] = num_channel;
+
+        // Peak mean & widths expressed in channel numbers (channel-unit equivalents of the
+        //  keV PeakMean / PeakSigma / PeakFwhm fields above).  Widths are converted by mapping
+        //  the mean-centered energy interval of that width to a channel count, which stays
+        //  correct for non-linear energy calibrations.
+        try
+        {
+          const double mean = p->mean();
+          peak_json["PeakMeanChannel"] = cal->channel_for_energy( mean );
+
+          // Maps a keV width, centered on the peak mean, to a width in channels.
+          const auto width_to_channels = [cal,mean]( const double width_kev ) -> double {
+            return cal->channel_for_energy( mean + 0.5*width_kev )
+                   - cal->channel_for_energy( mean - 0.5*width_kev );
+          };
+
+          peak_json["PeakMeanUncertChannel"] = width_to_channels( p->meanUncert() );
+
+          if( p->gausPeak() )
+          {
+            peak_json["PeakSigmaChannel"]       = width_to_channels( p->sigma() );
+            peak_json["PeakSigmaUncertChannel"] = width_to_channels( p->sigmaUncert() );
+            peak_json["PeakFwhmChannel"]        = width_to_channels( p->fwhm() );
+            peak_json["PeakFwhmUncertChannel"]  = width_to_channels( 2.35482*p->sigmaUncert() );
+          }else
+          {
+            peak_json["PeakSigmaChannel"]       = 0.0;
+            peak_json["PeakSigmaUncertChannel"] = 0.0;
+            peak_json["PeakFwhmChannel"]        = 0.0;
+            peak_json["PeakFwhmUncertChannel"]  = 0.0;
+          }
+        }catch( std::exception & )
+        {
+          // channel_for_energy can throw (lower-channel-edge cal, energy out of range);
+          //  not expected in practice, so just emit sentinels.
+          peak_json["PeakMeanChannel"]        = -1.0;
+          peak_json["PeakMeanUncertChannel"]  = -1.0;
+          peak_json["PeakSigmaChannel"]       = -1.0;
+          peak_json["PeakSigmaUncertChannel"] = -1.0;
+          peak_json["PeakFwhmChannel"]        = -1.0;
+          peak_json["PeakFwhmUncertChannel"]  = -1.0;
+        }
+
+        // TODO: put in arrays of gaussian integrals, data counts, and continuum integral
+        //double gauss_integral( const double x0, const double x1 ) const;
+        //void gauss_integral( const float *energies, double *channels, const size_t nchannel ) const;
+      }else
+      {
+        peak_json["HasChannelRange"] = false;
+      }
+      
+    
+      peak_json["AreaBetweenContinuumAndData"] = p->areaFromData( spectrum );
+      peak_json["UseForEnergyCal"] = p->useForEnergyCalibration();
+      peak_json["UseForActivityFit"] = p->useForShieldingSourceFit();
+      peak_json["UseForIsotopicsFromPeaks"] = p->useForManualRelEff();
+      peak_json["UseForDetEffFit"] = p->useForDrfIntrinsicEffFit();
+      peak_json["UseForDetFwhmFit"] = p->useForDrfFwhmFit();
+      peak_json["HasPeakUserLabel"] = !p->userLabel().empty();
+      peak_json["PeakUserLabel"] = p->userLabel();
+      peak_json["HasSourceAssigned"] = p->hasSourceGammaAssigned();
+
+      peak_json["SourceEnergy"] = p->hasSourceGammaAssigned() ? p->gammaParticleEnergy() : 0.0f;
+      if( p->parentNuclide() )
+      {
+        peak_json["SourceType"] = "Nuclide";
+        peak_json["SourceName"] = p->parentNuclide()->symbol;
+        
+        const SandiaDecay::Transition *trans = p->nuclearTransition();
+        if( trans && trans->parent )
+          peak_json["SourceGammaParent"] = trans->parent->symbol;
+        if( trans && trans->child )
+          peak_json["SourceGammaChild"] = trans->child->symbol;
+      }else if( p->xrayElement() )
+      {
+        peak_json["SourceType"] = "X-Ray";
+        peak_json["SourceName"] = p->xrayElement()->name + " x-ray";
+      }else if( p->reaction() )
+      {
+        peak_json["SourceType"] = "Reaction";
+        peak_json["SourceName"] = p->reaction()->name();
+      }else
+      {
+        peak_json["SourceType"] = "";
+        peak_json["SourceName"] = "";
+      }
+    
+      
+      vector<string> coef_names;
+      for( PeakDef::CoefficientType c = PeakDef::CoefficientType(0);
+          c < PeakDef::CoefficientType::NumCoefficientTypes;
+          c = PeakDef::CoefficientType( c + 1 ) )
+      {
+        coef_names.push_back( PeakDef::to_string(c) );
+      }
+      
+      peak_json["CoefficientValues"] = vector<double>( p->coefficients(), p->coefficients() + PeakDef::CoefficientType::NumCoefficientTypes );
+      peak_json["CoefficientUncerts"] = vector<double>( p->uncertainties(), p->uncertainties() + PeakDef::CoefficientType::NumCoefficientTypes );
+      peak_json["CoefficientFit"] = vector<bool>( p->fitFors(), p->fitFors() + PeakDef::CoefficientType::NumCoefficientTypes );
+      peak_json["CoefficientNames"] = coef_names;
+      
+      const Wt::WColor &color = p->lineColor();
+      peak_json["PeakColor"] = color.cssText();
+
+      // Detection limit ("MDA") info; only present for peaks that could not be fit, and only
+      //  when limits were computed.  Never added for peaks that were fit, so that templates
+      //  written before this existed see no change.
+      if( mdas )
+      {
+        const BatchPeak::NotFitPeakMda *mda = nullptr;
+        for( size_t i = 0; !mda && (i < mdas->size()); ++i )
+        {
+          if( (*mdas)[i].exemplar_peak == p )
+            mda = &((*mdas)[i]);
+        }
+
+        peak_json["HasMda"] = !!mda;
+        if( mda )
+          add_mda_to_json( peak_json["Mda"], *mda );
+      }//if( mdas )
+    }//for( const shared_ptr<const PeakDef> &p : peaks )
+  }//void add_peaks_to_json(...)
+
+
+  /** Fills out `json` with the peaks that could not be fit, and their detection limits.
+
+   Always sets `json["HasMdas"]`, so templates can use it without an `existsIn` guard.
+   */
+  void add_not_fit_peaks_to_json( nlohmann::json &json,
+                                 const BatchPeak::BatchPeakFitResult &fit_results )
+  {
+    deque<shared_ptr<const PeakDef>> peaks( begin(fit_results.unfit_exemplar_peaks),
+                                            end(fit_results.unfit_exemplar_peaks) );
+
+    const vector<BatchPeak::NotFitPeakMda> &mdas = fit_results.not_fit_peak_mdas;
+
+    add_peaks_to_json( json, peaks, fit_results.spectrum, mdas.empty() ? nullptr : &mdas );
+
+    bool any_mda = false;
+    for( const shared_ptr<const PeakDef> &p : peaks )
+    {
+      for( const BatchPeak::NotFitPeakMda &mda : mdas )
+        any_mda = (any_mda || (mda.exemplar_peak == p));
+    }
+
+    json["HasMdas"] = any_mda;
+  }//void add_not_fit_peaks_to_json(...)
+
+
   void add_peak_fit_results_to_json( nlohmann::basic_json<> &data,
                                     const BatchPeak::BatchPeakFitResult &fit_results )
   {
     data["Success"] = fit_results.success;
     data["Warnings"] = fit_results.warnings;
     data["HasWarnings"] = !fit_results.warnings.empty();
-    
+
     data["HasSpectrum"] = !!fit_results.spectrum;
     if( fit_results.spectrum )
     {
       fit_results.spectrum->set_title( SpecUtils::filename(fit_results.file_path) );
-      
+
       auto &spec_obj = data["foreground"];
-      
+
       add_hist_to_json( spec_obj, true, 1.0,
                        fit_results.spectrum,
                        fit_results.measurement,
@@ -1634,393 +2191,36 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
                        SpecUtils::filename(fit_results.file_path),
                        &(fit_results.fit_peaks) );
     }//if( fit_results.spectrum )
-    
-    
+
+
     const bool successful_ene_refit = (fit_results.original_energy_cal && fit_results.refit_energy_cal);
     data["EnergyCalIsRefit"] = successful_ene_refit;
-    
+
     if( successful_ene_refit )
     {
       auto &ene_cal_json = data["EnergyCalRefitResult"];
-      
+
       if( fit_results.original_energy_cal )
         add_energy_cal_json( ene_cal_json["Original"], fit_results.original_energy_cal );
-      
+
       if( fit_results.refit_energy_cal )
         add_energy_cal_json( ene_cal_json["Refit"], fit_results.refit_energy_cal );
     }//if( successful_ene_refit )
-    
-    
-    auto add_peaks = []( nlohmann::json &json, deque<shared_ptr<const PeakDef>> peaks, const shared_ptr<const SpecUtils::Measurement> &spectrum ) {
-      
-      // We will write down the peaks and continua in separate arrays, and give an index to link
-      //  them.  By default the peaks and continua are sorted by energy, but we'll also through
-      //  in some arrays of indexes so we can sort them in other orders when templating
-      
-      std::sort( begin(peaks), end(peaks), &PeakDef::lessThanByMeanShrdPtr );
-      
-      vector<shared_ptr<const PeakContinuum>> continua;
-      for( const auto &p : peaks )
-      {
-        if( std::find(begin(continua), end(continua), p->continuum()) == end(continua) )
-          continua.push_back( p->continuum() );
-      }
-      
-      auto sorted_indices = [&peaks, spectrum]( Wt::SortOrder order, PeakModel::Columns column )
-       -> vector<int> {
-        deque<shared_ptr<const PeakDef>> peaks_copy = peaks;
-        
-        boost::function<bool(const shared_ptr<const PeakDef> &, const shared_ptr<const PeakDef> &)> sortfcn;
-        sortfcn = boost::bind( &PeakModel::compare, boost::placeholders::_1, boost::placeholders::_2,
-                              column, order, spectrum );
-        stable_sort( begin(peaks_copy), end(peaks_copy), sortfcn );
-        
-        vector<int> indices;
-        for( const shared_ptr<const PeakDef> &p : peaks )
-        {
-          const auto pos = std::find( begin(peaks_copy), end(peaks_copy), p );
-          assert( pos != end(peaks_copy) );
-          indices.push_back( static_cast<int>(pos - begin(peaks_copy)) );
-        }
-        return indices;
-       };//sorted_indices lamda
-      
-      using So = Wt::SortOrder;
-      using Col = PeakModel::Columns;
-      json["PeakSortIndex_Energy_Ascend"] = sorted_indices( So::AscendingOrder, Col::kMean );
-      json["PeakSortIndex_Energy_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kMean );
-      
-      json["PeakSortIndex_Isotope_Ascend"] = sorted_indices( So::AscendingOrder, Col::kIsotope );
-      json["PeakSortIndex_Isotope_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kIsotope );
-      
-      json["PeakSortIndex_Mean_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kMean );
-      json["PeakSortIndex_Mean_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kMean );
-      
-      json["PeakSortIndex_Amp_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kAmplitude );
-      json["PeakSortIndex_Amp_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kAmplitude );
-      
-      json["PeakSortIndex_Fwhm_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kFwhm );
-      json["PeakSortIndex_Fwhm_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kFwhm );
-      
-      json["PeakSortIndex_SrcEnergy_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kPhotoPeakEnergy );
-      json["PeakSortIndex_SrcEnergy_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kPhotoPeakEnergy );
-      
-      json["PeakSortIndex_RoiCounts_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kRoiCounts );
-      json["PeakSortIndex_RoiCounts_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kRoiCounts );
-      
-      json["PeakSortIndex_DistSrcEnergyToMean_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kDifference );
-      json["PeakSortIndex_DistSrcEnergyToMean_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kDifference );
-      
-      json["PeakSortIndex_UseForActivity_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kUseForShieldingSourceFit );
-      json["PeakSortIndex_UseForActivity_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kUseForShieldingSourceFit );
-      
-      json["PeakSortIndex_UseForEnergyCal_Ascend"] = sorted_indices( Wt::SortOrder::AscendingOrder, PeakModel::Columns::kUseForCalibration );
-      json["PeakSortIndex_UseForEnergyCal_Descend"] = sorted_indices( Wt::SortOrder::DescendingOrder, PeakModel::Columns::kUseForCalibration );
-      
-      
-      for( int cont_index = 0; cont_index < static_cast<int>(continua.size()); ++cont_index )
-      {
-        const shared_ptr<const PeakContinuum> &cont = continua[cont_index];
-        assert( cont );
-        vector<int> peaks_with_cont;
-        for( int peak_index = 0; peak_index < peaks.size(); ++peak_index )
-        {
-          if( peaks[peak_index]->continuum() == cont )
-            peaks_with_cont.push_back( static_cast<int>(peak_index) );
-        }
-       
-        json["Continua"].push_back( {} );
-        auto &cont_json = json["Continua"].back();
-        cont_json["PeakIndexes"] = peaks_with_cont;
-        cont_json["ContinuumIndex"] = static_cast<int>( cont_index );
-         
-        const PeakContinuum::OffsetType type = cont->type();
-        cont_json["ContinuumType"] = PeakContinuum::offset_type_str( type );
-        const size_t npar = PeakContinuum::num_parameters( type );
-        cont_json["NumberParameters"] = static_cast<int>( npar );
-        cont_json["IsStepContinuum"] = PeakContinuum::is_step_continuum( type );
-        cont_json["IsPolynomial"] = cont->isPolynomial();
-        
-        cont_json["IsEnergyRangeDefined"] = cont->energyRangeDefined();
-        
-        cont_json["LowerEnergy"] = cont->lowerEnergy();
-        cont_json["UpperEnergy"] = cont->upperEnergy();
-        
-        assert( spectrum );
-        if( spectrum && spectrum->energy_calibration() && spectrum->energy_calibration()->valid() )
-        {
-          const auto cal = spectrum->energy_calibration();
-          const double lower_channel = cal->channel_for_energy( cont->lowerEnergy() );
-          const double upper_channel = cal->channel_for_energy( cont->upperEnergy() );
-          const int lower_channel_int = static_cast<int>( std::round(lower_channel) );
-          const int upper_channel_int = static_cast<int>( std::round(upper_channel - 0.5) );
-          const int num_channel = std::max( 0, 1 + upper_channel_int - lower_channel_int );
-          
-          cont_json["HasChannelRange"] = true;
-          cont_json["LowerChannel"] = lower_channel;
-          cont_json["UpperChannel"] = upper_channel;
-          cont_json["LowerChannelInt"] = lower_channel_int;
-          cont_json["UpperChannelInt"] = upper_channel_int;
-          cont_json["NumberChannels"] = upper_channel - lower_channel;
-          cont_json["NumberChannelsInt"] = num_channel;
-          
-          vector<int> channel_numbers( num_channel );
-          vector<double> cont_area( num_channel, 0.0 ), channel_energies( num_channel + 1 );
-          for( int i = lower_channel_int; i <= upper_channel_int; ++i )
-          {
-            const int index = i - lower_channel_int;
-            const double channel_lower = cal->energy_for_channel( i );
-            const double channel_upper = cal->energy_for_channel( i + 1 );
-            
-            channel_numbers[index] = i;
-            channel_energies[index] = channel_lower;
-            channel_energies[index + 1] = channel_upper;
-            
-            try
-            {
-              {
-                vector<shared_ptr<const PeakDef>> roi_peaks;
-                for( const int pi : peaks_with_cont )
-                  roi_peaks.push_back( peaks[pi] );
-                cont_area[index] = cont->offset_integral( channel_lower, channel_upper, spectrum, roi_peaks );
-              }
-            }catch( std::exception & )
-            {
-              assert( 0 );
-            }
-          }//for( int i = lower_channel_int; i <= upper_channel_int; ++i )
-          
-          cont_json["ChannelNumbers"] = channel_numbers;
-          cont_json["ChannelEnergies"] = channel_energies;
-          cont_json["ChannelContinuumArea"] = cont_area;
-        }else
-        {
-          cont_json["HasChannelRange"] = false;
-          cont_json["LowerChannel"] = 0.0;
-          cont_json["UpperChannel"] = 0.0;
-          cont_json["NumberChannel"] = 0.0;
-          cont_json["NumberChannelInt"] = 0;
-          cont_json["LowerChannelInt"] = 0;
-          cont_json["UpperChannelInt"] = 0;
-        }
-        
-        try
-        {
-          {
-            vector<shared_ptr<const PeakDef>> roi_peaks;
-            for( const int pi : peaks_with_cont )
-              roi_peaks.push_back( peaks[pi] );
-            cont_json["ContinuumArea"] = cont->offset_integral( cont->lowerEnergy(), cont->upperEnergy(), spectrum, roi_peaks );
-          }
-        }catch( std::exception &e )
-        {
-          cont_json["ContinuumArea"] = 0.0;
-          cont_json["Warnings"].push_back( "Error computing total integral area: " + string(e.what()) );
-        }
-        
-        cont_json["ParameterReferenceEnergy"] = cont->referenceEnergy();
-        cont_json["Parameters"] = cont->parameters();
-        cont_json["ParameterUncertainties"] = cont->uncertainties();
-        cont_json["ParameterIsForFitting"] = cont->fitForParameter();
-      }//for( const shared_ptr<const PeakContinuum> &cont : continua )
-      
-      
-      for( int peak_index = 0; peak_index < static_cast<int>(peaks.size()); ++peak_index )
-      {
-        const shared_ptr<const PeakDef> &p = peaks[peak_index];
-        const auto cont_pos = std::find( begin(continua), end(continua), p->continuum() );
-        assert( cont_pos != end(continua) );
-        const auto continuum_index = cont_pos - begin(continua);
-        assert( (continuum_index >= 0) && (continuum_index < continua.size()) );
-        
-        json["Peaks"].push_back( {} );
-        auto &peak_json = json["Peaks"].back();
-        
-        peak_json["ContinuumIndex"] = static_cast<int>( continuum_index );
-        
-        peak_json["SkewType"] = PeakDef::to_string( p->skewType() );
-        peak_json["NumSkewParameters"] = PeakDef::num_skew_parameters( p->skewType() );
-        
-        peak_json["PeakMean"] = p->mean();
-        peak_json["PeakMeanUncert"] = p->meanUncert();
-        
-        peak_json["PeakAmplitude"] = p->amplitude();
-        peak_json["PeakAmplitudeUncert"] = p->amplitudeUncert();
-        
-        peak_json["DataDefined"] = !p->gausPeak();
-        peak_json["GaussianDefined"] = p->gausPeak();
-        
-        peak_json["Chi2Dof"] = p->chi2dof();
-        peak_json["HasChi2Dof"] = p->chi2Defined();
-        
-        // Put peak info
-        switch( p->type() )
-        {
-          case PeakDef::DefintionType::GaussianDefined:
-          {
-            peak_json["PeakSigma"] = p->sigma();
-            peak_json["PeakSigmaUncert"] = p->sigmaUncert();
-            peak_json["PeakFwhm"] = p->fwhm();
-            peak_json["PeakFwhmUncert"] = 2.35482*p->sigmaUncert();
-            
-            break;
-          }//case DefintionType::GaussianDefined:
-            
-          case PeakDef::DefintionType::DataDefined:
-          {
-            // We'll add in placeholders for sigma and FWHM, so templates that expect these values wont be messed up
-            peak_json["PeakSigma"] = 0.0;
-            peak_json["PeakSigmaUncert"] = 0.0;
-            peak_json["PeakFwhm"] = 0.0;
-            peak_json["PeakFwhmUncert"] = 0.0;
-            break;
-          }//case DefintionType::DataDefined:
-        }//switch( p->type() )
-        
-        
-        peak_json["LowerEnergy"] = p->lowerX();
-        peak_json["UpperEnergy"] = p->upperX();
-        peak_json["RoiWidth"] = p->roiWidth();
 
-        
-        if( spectrum && spectrum->energy_calibration() && spectrum->energy_calibration()->valid() )
-        {
-          peak_json["HasChannelRange"] = true;
-          const auto cal = spectrum->energy_calibration();
-          const double lower_channel = cal->channel_for_energy( p->lowerX() );
-          const double upper_channel = cal->channel_for_energy( p->upperX() );
-          const int lower_channel_int = static_cast<int>( std::round(lower_channel) );
-          const int upper_channel_int = static_cast<int>( std::round(upper_channel - 0.5) );
-          const int num_channel = std::max( 0, 1 + upper_channel_int - lower_channel_int );
-          
-          peak_json["LowerChannel"] = lower_channel;
-          peak_json["UpperChannel"] = upper_channel;
-          peak_json["LowerChannelInt"] = lower_channel_int;
-          peak_json["UpperChannelInt"] = upper_channel_int;
-          peak_json["NumberChannels"] = upper_channel - lower_channel;
-          peak_json["NumberChannelsInt"] = num_channel;
 
-          // Peak mean & widths expressed in channel numbers (channel-unit equivalents of the
-          //  keV PeakMean / PeakSigma / PeakFwhm fields above).  Widths are converted by mapping
-          //  the mean-centered energy interval of that width to a channel count, which stays
-          //  correct for non-linear energy calibrations.
-          try
-          {
-            const double mean = p->mean();
-            peak_json["PeakMeanChannel"] = cal->channel_for_energy( mean );
-
-            // Maps a keV width, centered on the peak mean, to a width in channels.
-            const auto width_to_channels = [cal,mean]( const double width_kev ) -> double {
-              return cal->channel_for_energy( mean + 0.5*width_kev )
-                     - cal->channel_for_energy( mean - 0.5*width_kev );
-            };
-
-            peak_json["PeakMeanUncertChannel"] = width_to_channels( p->meanUncert() );
-
-            if( p->gausPeak() )
-            {
-              peak_json["PeakSigmaChannel"]       = width_to_channels( p->sigma() );
-              peak_json["PeakSigmaUncertChannel"] = width_to_channels( p->sigmaUncert() );
-              peak_json["PeakFwhmChannel"]        = width_to_channels( p->fwhm() );
-              peak_json["PeakFwhmUncertChannel"]  = width_to_channels( 2.35482*p->sigmaUncert() );
-            }else
-            {
-              peak_json["PeakSigmaChannel"]       = 0.0;
-              peak_json["PeakSigmaUncertChannel"] = 0.0;
-              peak_json["PeakFwhmChannel"]        = 0.0;
-              peak_json["PeakFwhmUncertChannel"]  = 0.0;
-            }
-          }catch( std::exception & )
-          {
-            // channel_for_energy can throw (lower-channel-edge cal, energy out of range);
-            //  not expected in practice, so just emit sentinels.
-            peak_json["PeakMeanChannel"]        = -1.0;
-            peak_json["PeakMeanUncertChannel"]  = -1.0;
-            peak_json["PeakSigmaChannel"]       = -1.0;
-            peak_json["PeakSigmaUncertChannel"] = -1.0;
-            peak_json["PeakFwhmChannel"]        = -1.0;
-            peak_json["PeakFwhmUncertChannel"]  = -1.0;
-          }
-
-          // TODO: put in arrays of gaussian integrals, data counts, and continuum integral
-          //double gauss_integral( const double x0, const double x1 ) const;
-          //void gauss_integral( const float *energies, double *channels, const size_t nchannel ) const;
-        }else
-        {
-          peak_json["HasChannelRange"] = false;
-        }
-        
-      
-        peak_json["AreaBetweenContinuumAndData"] = p->areaFromData( spectrum );
-        peak_json["UseForEnergyCal"] = p->useForEnergyCalibration();
-        peak_json["UseForActivityFit"] = p->useForShieldingSourceFit();
-        peak_json["UseForIsotopicsFromPeaks"] = p->useForManualRelEff();
-        peak_json["UseForDetEffFit"] = p->useForDrfIntrinsicEffFit();
-        peak_json["UseForDetFwhmFit"] = p->useForDrfFwhmFit();
-        peak_json["HasPeakUserLabel"] = !p->userLabel().empty();
-        peak_json["PeakUserLabel"] = p->userLabel();
-        peak_json["HasSourceAssigned"] = p->hasSourceGammaAssigned();
-
-        peak_json["SourceEnergy"] = p->hasSourceGammaAssigned() ? p->gammaParticleEnergy() : 0.0f;
-        if( p->parentNuclide() )
-        {
-          peak_json["SourceType"] = "Nuclide";
-          peak_json["SourceName"] = p->parentNuclide()->symbol;
-          
-          const SandiaDecay::Transition *trans = p->nuclearTransition();
-          if( trans && trans->parent )
-            peak_json["SourceGammaParent"] = trans->parent->symbol;
-          if( trans && trans->child )
-            peak_json["SourceGammaChild"] = trans->child->symbol;
-        }else if( p->xrayElement() )
-        {
-          peak_json["SourceType"] = "X-Ray";
-          peak_json["SourceName"] = p->xrayElement()->name + " x-ray";
-        }else if( p->reaction() )
-        {
-          peak_json["SourceType"] = "Reaction";
-          peak_json["SourceName"] = p->reaction()->name();
-        }else
-        {
-          peak_json["SourceType"] = "";
-          peak_json["SourceName"] = "";
-        }
-      
-        
-        vector<string> coef_names;
-        for( PeakDef::CoefficientType c = PeakDef::CoefficientType(0);
-            c < PeakDef::CoefficientType::NumCoefficientTypes;
-            c = PeakDef::CoefficientType( c + 1 ) )
-        {
-          coef_names.push_back( PeakDef::to_string(c) );
-        }
-        
-        peak_json["CoefficientValues"] = vector<double>( p->coefficients(), p->coefficients() + PeakDef::CoefficientType::NumCoefficientTypes );
-        peak_json["CoefficientUncerts"] = vector<double>( p->uncertainties(), p->uncertainties() + PeakDef::CoefficientType::NumCoefficientTypes );
-        peak_json["CoefficientFit"] = vector<bool>( p->fitFors(), p->fitFors() + PeakDef::CoefficientType::NumCoefficientTypes );
-        peak_json["CoefficientNames"] = coef_names;
-        
-        const Wt::WColor &color = p->lineColor();
-        peak_json["PeakColor"] = color.cssText();
-      }//for( const shared_ptr<const PeakDef> &p : peaks )
-    };//add_peaks( lambda )
-    
     data["FitAnyPeak"] = !fit_results.fit_peaks.empty();
     if( !fit_results.fit_peaks.empty() )
-      add_peaks( data["FitPeaks"], fit_results.fit_peaks, fit_results.spectrum );
-    
+      add_peaks_to_json( data["FitPeaks"], fit_results.fit_peaks, fit_results.spectrum, nullptr );
+
     data["FitAllPeaks"] = fit_results.unfit_exemplar_peaks.empty();
+    data["AnyNotFitPeakMda"] = !fit_results.not_fit_peak_mdas.empty();
     if( !fit_results.unfit_exemplar_peaks.empty() )
-    {
-      deque<shared_ptr<const PeakDef>> peaks( begin(fit_results.unfit_exemplar_peaks),
-                                                   end(fit_results.unfit_exemplar_peaks) );
-      add_peaks( data["NotFitPeaks"], peaks, fit_results.spectrum );
-    }//
-    
+      add_not_fit_peaks_to_json( data["NotFitPeaks"], fit_results );
+
     data["ExemplarHasPeaks"] = !fit_results.exemplar_peaks.empty();
     if( !fit_results.exemplar_peaks.empty() )
-      add_peaks( data["ExemplarPeaks"], fit_results.exemplar_peaks, fit_results.exemplar_spectrum );
-    
+      add_peaks_to_json( data["ExemplarPeaks"], fit_results.exemplar_peaks, fit_results.exemplar_spectrum, nullptr );
+
     
     // For peak searches, background subtraction are always a hard channel-by-channel subtraction,
     //  and `fit_results.spectrum` is after the subtraction
@@ -2035,8 +2235,19 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
      //std::shared_ptr<const SpecUtils::Measurement> exemplar_spectrum;
      //std::vector<std::shared_ptr<const PeakDef>> unfit_exemplar_peaks;  //Exemplar peaks not found in the spectrum
   }//void add_peak_fit_results_to_json(...)
-  
-  
+
+
+  void add_not_fit_peaks_to_act_shield_json( nlohmann::basic_json<> &data,
+                                            const BatchPeak::BatchPeakFitResult &peak_fit_results )
+  {
+    data["AnyNotFitPeakMda"] = !peak_fit_results.not_fit_peak_mdas.empty();
+
+    if( !peak_fit_results.unfit_exemplar_peaks.empty() )
+      add_not_fit_peaks_to_json( data["NotFitPeaks"], peak_fit_results );
+  }//void add_not_fit_peaks_to_act_shield_json(...)
+
+
+
   void write_json( const BatchPeak::BatchPeakFitOptions &options,
                   vector<string> &warnings,
                   const string &filename,

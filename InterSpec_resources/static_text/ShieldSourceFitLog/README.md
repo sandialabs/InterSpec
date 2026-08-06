@@ -105,6 +105,9 @@ input files; for each input file the tool:
 4. Optionally subtracts a background spectrum's peaks.
 5. Records which peaks did *not* converge (visible in templates as `NotFitPeaks.Peaks[]`)
    versus those that did (`FitPeaks.Peaks[]`).
+6. Computes a detection limit ("MDA") for each peak that did not converge, at
+   `NotFitPeaks.Peaks[].Mda` — see §6.6.1. Activity/shielding fits get the same section, with
+   the limits also expressed as activities.
 
 The exemplar's original peak set is also exposed for reference at `ExemplarPeaks.Peaks[]`.
 
@@ -323,6 +326,10 @@ it does not exist in the payload.
   "Shieldings": { ... },            // §5.9
   "PeaksUsedForActivityFitting": { "Peaks": [ ... ] },  // §5.12
   "PeakToModelComparison": { "UsedPeaks": [ ... ] },    // §5.13
+  "AnyNotFitPeakMda": true,
+  "NotFitPeaks": { ... },                               // §6.4 (exemplar peaks that did not
+                                                        //  converge, with their detection
+                                                        //  limits - §6.6.1)
   "D3_JS": "<minified d3.v3.js>",                       // §5.14
   "SpectrumChart_JS": "...",
   "SpectrumChart_CSS": "...",
@@ -1018,6 +1025,7 @@ fields are detailed here.
   },
   "FitAnyPeak":      true,
   "FitAllPeaks":     true,
+  "AnyNotFitPeakMda": false,
   "ExemplarHasPeaks": true,
   "foreground":  { ... },       // §5.4
   "background":  { ... },       // §5.4 (only if a background was loaded)
@@ -1051,7 +1059,8 @@ fields are detailed here.
 | `EnergyCalRefitResult.Original` | object | The original `EnergyCal` (§5.5). Only present if `EnergyCalIsRefit`. |
 | `EnergyCalRefitResult.Refit`    | object | The refit `EnergyCal` (§5.5). Only present if `EnergyCalIsRefit`. |
 | `FitAnyPeak`            | bool    | At least one exemplar peak converged in this file. |
-| `FitAllPeaks`           | bool    | Every exemplar peak converged. |
+| `FitAllPeaks`           | bool    | Every exemplar peak converged. When false, `NotFitPeaks` is present. |
+| `AnyNotFitPeakMda`      | bool    | Detection limits were computed for at least one peak that did not converge. |
 | `ExemplarHasPeaks`      | bool    | The exemplar had any peaks at all. |
 | `ExemplarFile`          | string  | Path to the exemplar file. |
 | `ExemplarSampleNumbers` | array[int] | Sample numbers used from the exemplar. |
@@ -1080,6 +1089,13 @@ fields are detailed here.
 | `ReportSummaryTemplates`   | array[string] | Summary template names requested on the CLI. |
 | `PeakStatThreshold`        | number  | Statistical-significance threshold for accepting peaks. |
 | `PeakShapeThreshold`       | number  | Shape (χ²) threshold for accepting peaks. |
+| `NotFitPeakMdaMethod`      | string  | `none`, `currie`, or `currie-and-decon`; how detection limits were computed for exemplar peaks that did not converge (§6.6.1). |
+| `MdaConfidenceLevel`       | number  | Confidence level used for those limits, as a fraction; e.g. `0.95`. |
+| `MdaConfidenceLevelPercent`| number  | The same, in percent; e.g. `95.0`. |
+| `MdaConfidenceLevelStr`    | string  | Display form; e.g. `"95%"`, or `"1-5.7E-07"` for very high levels. |
+| `MdaNumSideChannels`       | int     | Channels on each side of the peak region used to estimate the continuum. |
+| `MdaRoiNumFwhm`            | number  | Width of the peak region, in multiples of the peak FWHM. **Only present in builds with `ALLOW_SPECIFY_MDA_ROI_WIDTH` enabled**, which is off by default; otherwise the width is fixed at 2.5 (the ISO 11929:2010 recommendation of mean ±1.25 FWHM, and what the GUI detection-limit tools use). The width actually used is always available per-peak as `Mda.RoiWidth_keV`. |
+| `MdaSignalFractionInRoi`   | number  | Fraction of a Gaussian peak inside a region that wide. Same presence rule as `MdaRoiNumFwhm`; the per-peak `Mda.SignalFractionInRoi` is always present. |
 
 ### 6.3 Batch summary wrapper
 
@@ -1142,6 +1158,9 @@ orderings like "by source-energy" or "by distance-from-source-energy").
 
 Each `PeakSortIndex_*` is an array of zero-based indices into `Peaks[]`, sorted by the
 named criterion in the named direction.
+
+`NotFitPeaks` additionally has `"HasMdas"` (bool) — whether detection limits were computed
+for the peaks it holds; see §6.6.1. `FitPeaks` and `ExemplarPeaks` never have it.
 
 ### 6.5 `Continua[]` element
 
@@ -1236,6 +1255,125 @@ The `Peak*Channel` fields are the channel-number equivalents of the keV `PeakMea
 calibration. They are emitted only when `HasChannelRange` is true; the width fields are
 obtained by mapping the mean-centered energy interval to a channel count, so they remain
 correct under non-linear calibrations.
+
+### 6.6.1 `Peaks[].Mda` — detection limits for peaks that were not fit
+
+When limits were computed, peaks inside `NotFitPeaks` carry a `HasMda` bool and — when there is
+a limit for that particular peak — an `Mda` object. With `--not-fit-peak-mda none` **neither key
+is present at all**, so guard with `existsIn(peak,"Mda")` rather than `peak.HasMda`, or check
+`NotFitPeaks.HasMdas` (always present) first. Peaks inside `FitPeaks` and `ExemplarPeaks` never
+have either key, so templates written before this existed are unaffected.
+
+The limit answers "if this exemplar peak really isn't there, how much *could* be there and
+still have escaped the fit?". The counts quantities are present whenever `CurrieComputed` is
+true; the activity quantities only for activity/shielding fits whose nuclide was one of the
+fitted sources (§6.6.2).
+
+```
+{% if existsIn(peak,"Mda") %}{{ peak.Mda.ShortDescription }} — {{ peak.Mda.Description }}{% endif %}
+```
+
+Two ready-made English strings are provided: `ShortDescription` is a brief phrase for a table
+cell (`"Less than Lc"`), and `Description` is a complete report-ready paragraph. Prefer them over
+assembling your own from the numbers. Branch on `ResultType`, which is a stable token, rather
+than on either string.
+
+| Field | Type | Notes |
+|---|---|---|
+| `ResultType`               | string  | `NotDetected` (below the decision threshold — an upper limit only), `Detected` (signal is above the decision threshold even though no peak converged), `Deficit` (significantly fewer counts than the continuum predicts), or `Error` (the limit could not be computed). |
+| `ShortDescription`         | string  | Brief phrase for the result, short enough for a table cell: `"Less than Lc"`, `"Greater than Lc"`, `"Fewer counts than expected"`, or `"Not computed"`. |
+| `Description`              | string  | Ready-to-include English summary: the result, then the activity statement when applicable, then any caveats. Equals `ResultSummary` + `ActivitySummary` + `Caveats`, joined by two spaces. |
+| `ResultSummary`            | string  | Just the counts statement — the first part of `Description`. |
+| `ActivitySummary`          | string  | Just the activity statement, or why there isn't one; empty for plain peak fits. |
+| `Caveats`                  | string  | Just the caveats — anything making the limit less reliable. Empty when there are none. |
+| `HasCaveats`               | bool    | Whether `Caveats` is non-empty. The shipped HTML templates use this to render the caveats in a `.MdaCaveat` span, set apart from the result; do the same rather than burying a warning mid-paragraph. |
+| `ConfidenceLevel`          | number  | Confidence level as a fraction; e.g. `0.95`. |
+| `ConfidenceLevelPercent`   | number  | The same, in percent. |
+| `ConfidenceLevelStr`       | string  | Display form; e.g. `"95%"`. |
+| `NumSideChannels`          | int     | Channels each side of the peak region used for the continuum estimate. |
+| `SignalFractionInRoi`      | number  | Fraction of the peak that lies inside the peak region; `0.9968` at the default region width. **The limit is not corrected for the signal outside the region**, so it is optimistic by roughly this factor. Negligible at the default, but a 1.0 FWHM wide region holds only 76% of the peak. When this drops below 0.99, `Description` says so in words. |
+| `CurrieComputed`           | bool    | Whether the Currie-style limit succeeded. |
+| `CurrieError`              | string  | Why it failed. Only present when `CurrieComputed` is false. |
+| `OverlapsFitPeak`          | bool    | A peak that *was* fit falls in the evaluated region, so the limit may be biased. |
+| `OverlapsOtherNotFitPeak`  | bool    | Another not-fit exemplar peak falls in the evaluated region. |
+
+The remaining counts fields are present only when `CurrieComputed` is true:
+
+| Field | Type | Notes |
+|---|---|---|
+| `DecisionThreshold_counts` | number  | Currie's critical level L<sub>c</sub>: net counts above which a signal may be reliably called detected. |
+| `DetectionLimit_counts`    | number  | Currie's detection limit L<sub>d</sub>: the true net signal that may be expected to lead to detection. This is the "MDA" in counts. |
+| `SourceCounts`             | number  | Nominal net counts observed above the continuum; may be negative. |
+| `UpperLimit_counts`        | number  | Upper bound on the true signal counts, at the confidence level. |
+| `LowerLimit_counts`        | number  | Lower bound; may be negative. |
+| `PeakRegionCounts`         | number  | Gross counts in the peak region. |
+| `ContinuumCounts`          | number  | Continuum counts estimated to be under the peak region. |
+| `ContinuumCountsUncert`    | number  | Uncertainty on that estimate. |
+| `DecisionThresholdStr`, `DetectionLimitStr`, `UpperLimitStr`, `SourceCountsStr` | string | The above, pre-formatted to 4 significant figures. |
+| `RoiLowerEnergy`, `RoiUpperEnergy` | number | Peak region bounds, in keV. |
+| `RoiWidth_keV`             | number  | Width of the peak region, in keV (Inja cannot subtract, so this is pre-computed). |
+| `RoiLowerChannel`, `RoiUpperChannel` | int  | The same, as channel numbers. |
+
+### 6.6.2 `Peaks[].Mda` — activity fields
+
+`HasMdaActivity` is always present. When it is false and an activity/shielding fit tried and
+failed to convert this peak, `NoMdaActivityReason` says why (no source nuclide assigned, the
+nuclide was not one of the fitted sources, no gamma line near the peak energy, and so on).
+Plain peak-fit reports have `HasMdaActivity` false with **no** `NoMdaActivityReason`, since
+there is no source model to convert with — so guard it with `existsIn(peak.Mda,"NoMdaActivityReason")`.
+When `HasMdaActivity` is true, these are present:
+
+| Field | Type | Notes |
+|---|---|---|
+| `Nuclide`                  | string  | The peak's parent nuclide. |
+| `DetectionLimitActivity`   | string  | Formatted L<sub>d</sub> activity — the minimum detectable activity — including any fixed-geometry postfix. |
+| `MdaActivity`              | string  | Synonym for `DetectionLimitActivity`. |
+| `DecisionThresholdActivity`| string  | Formatted L<sub>c</sub> activity. |
+| `UpperLimitActivity`       | string  | Upper bound on the activity actually present, at the confidence level. **Absent** when `ResultType` is `Deficit`, where it would be negative. |
+| `ObservedActivity`, `ObservedActivityLower`, `ObservedActivityUpper` | string | Only when `ResultType` is `Detected`. |
+| `<any of the above>_bq`, `_kBq`, `_MBq`, `_ci`, `_mCi`, `_uCi` | number | Numeric forms of each activity above; e.g. `DetectionLimitActivity_bq`. |
+| `ActivityPostFix`          | string  | Postfix for fixed-geometry detector responses; e.g. `"/cm2"`. Usually empty. |
+| `GammasPerBq`              | number  | Counts expected per becquerel: `activity = counts / GammasPerBq`. |
+| `BranchingRatio`           | number  | Gammas of this energy per decay, at the fitted age. |
+| `ShieldingTransmission`    | number  | Fraction through the fitted shielding, in (0,1]. |
+| `AirTransmission`          | number  | Fraction through the intervening air; 1.0 if not modelled. |
+| `DetectorEff`              | number  | Detector efficiency at the fit distance. |
+| `LiveTime_s`               | number  | Spectrum live time, in seconds. |
+
+The shielding attenuation is computed along the single line from the source through the
+center of each shielding, so for self-attenuating or trace sources it is an approximation;
+`Description` notes when that is the case. No correction is made for decay during the
+measurement.
+
+### 6.6.3 `Peaks[].Mda` — deconvolution fields
+
+`DeconAttempted` is always present, and is true only when the `currie-and-decon` method was
+selected. This method fits the expected peak shape at a range of source strengths, rather
+than just summing counts in a box.
+
+| Field | Type | Notes |
+|---|---|---|
+| `DeconComputed`        | bool    | Whether it succeeded. |
+| `DeconError`           | string  | Why it failed. Only present when `DeconComputed` is false. |
+| `DeconQuantityIsCounts`| bool    | True for plain peak fits (the limit is peak counts); false for activity/shielding fits (the limit is source activity). |
+| `DeconFoundUpperLimit` | bool    | Whether an upper limit was bracketed. Only when `DeconComputed` is true. |
+| `DeconBestChi2`, `DeconLimitChi2`, `DeconBestQuantity` | number | χ² at the best fit, χ² at the limit, and the best-fit source strength. Only when `DeconComputed` is true. |
+| `DeconUpperLimit_counts` / `DeconUpperLimitStr` | number / string | The limit, in counts. Only when `DeconFoundUpperLimit` is true **and** `DeconQuantityIsCounts` is true. |
+| `DeconUpperLimit`, `DeconUpperLimit_bq`, `_ci`, `_uCi` | string / number | The limit, as an activity. Only when `DeconFoundUpperLimit` is true **and** `DeconQuantityIsCounts` is false. |
+| `DeconLimitText`, `DeconBestChi2Text` | string | Pre-formatted summaries that **contain HTML** — use them only in HTML reports. Same presence rule as `DeconUpperLimit` (activity mode). |
+| `MethodsDisagree`      | bool    | The two limits differ by more than a factor of two. Only when `DeconComputed` is true. |
+| `DeconOverCurrieRatio` | number  | The deconvolution limit divided by the Currie-style limit. Present only when both are usable. |
+
+The two methods look at the same data, so a large disagreement says something about the data
+rather than about the methods — most often a curved continuum under the peak, or an interfering
+peak in the region, i.e. exactly where the gross-counts assumption breaks down. When
+`MethodsDisagree` is true the reason is also appended to `Caveats` (and therefore `Description`),
+so simply rendering those picks it up.
+
+Every field above other than `DeconAttempted` needs a guard; the safe pattern is
+`{% if peak.Mda.DeconAttempted %}{% if peak.Mda.DeconComputed %}{% if peak.Mda.DeconFoundUpperLimit %}…`.
+In an activity/shielding report, peaks that could not be converted to an activity fall back to the
+counts-based limit, so `DeconQuantityIsCounts` can differ from peak to peak within one report.
 
 ### 6.7 Reused common objects
 
@@ -1660,7 +1798,7 @@ and fail (see §8.6).
 {% if existsIn(NotFitPeaks, "Peaks") and length(NotFitPeaks.Peaks) > 0 %}
 {{ "## " }}Peaks that did not converge
 {% for p in NotFitPeaks.Peaks %}
-- {{ printFixed(p.PeakMean, 2) }} keV (exemplar)
+- {{ printFixed(p.PeakMean, 2) }} keV (exemplar){% if existsIn(p, "Mda") %} — {{ p.Mda.Description }}{% endif %}
 {% endfor %}
 {% endif %}
 
