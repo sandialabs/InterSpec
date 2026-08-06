@@ -2549,10 +2549,13 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   const set<int> samplesToUse = currentlySelectedSamples();
   const vector<string> detsToUse = currentlySelectedDetectors();
 
-  const bool is_cnf_format = (save_type == SpecUtils::SaveSpectrumAsType::Cnf);
-  m_genieCnfOptions->setHidden( !is_cnf_format );
-  if( is_cnf_format )
-    m_genieCnfOptions->updateForFile( spec, samplesToUse );
+  if( m_genieCnfOptions )
+  {
+    const bool is_cnf_format = (save_type == SpecUtils::SaveSpectrumAsType::Cnf);
+    m_genieCnfOptions->setHidden( !is_cnf_format );
+    if( is_cnf_format )
+      m_genieCnfOptions->updateForFile( spec, samplesToUse );
+  }
 
   size_t num_sample_showing = 0, num_option_showing = 0;
   for( const auto w : m_samplesHolder->children() )
