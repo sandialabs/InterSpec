@@ -421,6 +421,13 @@ add_test( NAME TExportSpecFile
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_ExportCAM test_ExportCAM.cpp )
+target_link_libraries( test_ExportCAM PRIVATE InterSpecLib )
+add_test( NAME TExportCAM
+  COMMAND $<TARGET_FILE:test_ExportCAM> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 
 #            debug "${Wt_TEST_DEBUG_LIBRARY}"

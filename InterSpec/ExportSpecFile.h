@@ -33,6 +33,7 @@
 
 #include <Wt/WContainerWidget>
 
+#include "SpecUtils/CAMIO.h"
 #include "InterSpec/SimpleDialog.h"
 
 class SpecMeas;
@@ -60,6 +61,11 @@ namespace SpecUtils
 namespace ExportSpecFileTool_imp
 {
   class DownloadSpectrumResource;
+}
+
+namespace ExportSpecFileCAM
+{
+  class GenieCnfOptionsWidget;
 }
 
 /**
@@ -215,7 +221,13 @@ public:
    most info, but if we are saving to N42, then we'll be a bit more careful and remove more at export time.
    */
   bool removeInterSpecInfo() const;
-  
+
+  /** Returns the GENIE nuclide-library/FWHM/efficiency/energy-cal data the user has configured
+   in the CNF-only options panel; returns a default-constructed (empty) `CnfGenieExtras` unless
+   the CNF format is currently selected.
+   */
+  CAMInputOutput::CnfGenieExtras currentGenieExtras() const;
+
   /** Generates the final spectrums file, ready to be given to the user.
 
    E.g., if user selected, all detectors will be summed, or samples numbers, etc.
@@ -323,6 +335,7 @@ protected:
   Wt::WContainerWidget *m_detectorFilterCbs;
   
   Wt::WContainerWidget *m_optionsHolder;
+  ExportSpecFileCAM::GenieCnfOptionsWidget *m_genieCnfOptions;
   Wt::WCheckBox *m_sumAllToSingleRecord;
   Wt::WCheckBox *m_sumForeToSingleRecord;
   Wt::WCheckBox *m_sumBackToSingleRecord;

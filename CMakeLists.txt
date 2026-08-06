@@ -350,6 +350,7 @@ set(sources
     src/UndoRedoManager.cpp
     src/AppUtils.cpp
     src/ExportSpecFile.cpp
+    src/ExportSpecFileCAM.cpp
     src/EnterAppUrlWindow.cpp
     src/ExternalRidResult.cpp
     src/NuclideSourceEnter.cpp
@@ -476,6 +477,7 @@ set(headers
     InterSpec/AppUtils.h
     InterSpec/BersteinPolynomial.hpp
     InterSpec/ExportSpecFile.h
+    InterSpec/ExportSpecFileCAM.h
     InterSpec/ExternalRidResult.h
     InterSpec/EnterAppUrlWindow.h
     InterSpec/NuclideSourceEnter.h
