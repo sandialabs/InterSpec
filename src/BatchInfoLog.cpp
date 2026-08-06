@@ -1637,6 +1637,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     mda_json["ActivitySummary"] = mda.activity_summary;
     mda_json["Caveats"] = mda.caveats;
     mda_json["HasCaveats"] = !mda.caveats.empty();
+    mda_json["RegionIsEmpty"] = mda.region_is_empty;
     mda_json["OverlapsFitPeak"] = mda.overlaps_fit_peak;
     mda_json["OverlapsOtherNotFitPeak"] = mda.overlaps_other_unfit_peak;
 
@@ -1685,8 +1686,17 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       const bool use_curie = !mda.use_bq;
       const string &postfix = mda.activity_postfix;
 
-      /** Adds an activity, in a handful of units, under `<prefix>`, `<prefix>_bq`, etc. */
+      /** Adds an activity, in a handful of units, under `<prefix>`, `<prefix>_bq`, etc.
+
+       Nothing is added for a non-positive activity: `PhysicalUnits::printToBestActivityUnits`
+       renders those as an unreadable string of femtocuries, and an activity that works out
+       negative (a deficit of counts, or a lower limit below zero) is not a number to put in a
+       report.  Templates must guard with `existsIn(...)`.
+       */
       const auto add_activity = [&mda_json,use_curie,&postfix]( const string &prefix, const double activity ){
+        if( (activity <= 0.0) || IsNan(activity) || IsInf(activity) )
+          return;
+
         mda_json[prefix] = PhysicalUnits::printToBestActivityUnits(activity,4,use_curie) + postfix;
         mda_json[prefix + "_bq"] = activity / PhysicalUnits::bq;
         mda_json[prefix + "_kBq"] = activity / PhysicalUnits::kBq;
@@ -1711,10 +1721,9 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       add_activity( "DetectionLimitActivity", res.detection_limit / mda.gammas_per_bq );
       add_activity( "DecisionThresholdActivity", res.decision_threshold / mda.gammas_per_bq );
 
-      // The upper limit, and the observed activity, are meaningless when fewer counts were seen
-      //  than the continuum predicts - they would come out negative.
-      if( mda.result_type != BatchPeak::NotFitPeakMda::MdaResultType::Deficit )
-        add_activity( "UpperLimitActivity", res.upper_limit / mda.gammas_per_bq );
+      // `add_activity` drops any of these that work out non-positive - e.g. the upper limit for
+      //  a deficit of counts, or a lower limit that falls below zero.
+      add_activity( "UpperLimitActivity", res.upper_limit / mda.gammas_per_bq );
 
       if( mda.result_type == BatchPeak::NotFitPeakMda::MdaResultType::Detected )
       {

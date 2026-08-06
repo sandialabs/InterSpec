@@ -267,6 +267,15 @@ namespace BatchPeak
     bool overlaps_fit_peak = false;
     bool overlaps_other_unfit_peak = false;
 
+    /** Whether the peak region and its side channels hold essentially no counts, so the Gaussian
+     statistics the Currie-style calculation uses have broken down.
+
+     When true, the decision threshold and the upper limit are both zero and mean nothing; only
+     the detection limit (which tends to k^2) is quoted.  The result is always reported as not
+     detected, so a single stray count cannot read as a detection.
+     */
+    bool region_is_empty = false;
+
     /** The fraction of a Gaussian peak that lies inside the peak region the limit was computed
      over; 0.997 at the default region width of 2.5 FWHM.
 

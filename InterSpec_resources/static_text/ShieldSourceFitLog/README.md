@@ -1296,6 +1296,7 @@ than on either string.
 | `CurrieError`              | string  | Why it failed. Only present when `CurrieComputed` is false. |
 | `OverlapsFitPeak`          | bool    | A peak that *was* fit falls in the evaluated region, so the limit may be biased. |
 | `OverlapsOtherNotFitPeak`  | bool    | Another not-fit exemplar peak falls in the evaluated region. |
+| `RegionIsEmpty`            | bool    | The peak region and its side channels hold essentially no counts, so the Gaussian statistics the method uses have broken down. `ResultType` is forced to `NotDetected` (a single stray count must not read as a detection), and only `DetectionLimit_counts` is meaningful — `DecisionThreshold_counts` and `UpperLimit_counts` are both zero. |
 
 The remaining counts fields are present only when `CurrieComputed` is true:
 
@@ -1329,8 +1330,11 @@ When `HasMdaActivity` is true, these are present:
 | `DetectionLimitActivity`   | string  | Formatted L<sub>d</sub> activity — the minimum detectable activity — including any fixed-geometry postfix. |
 | `MdaActivity`              | string  | Synonym for `DetectionLimitActivity`. |
 | `DecisionThresholdActivity`| string  | Formatted L<sub>c</sub> activity. |
-| `UpperLimitActivity`       | string  | Upper bound on the activity actually present, at the confidence level. **Absent** when `ResultType` is `Deficit`, where it would be negative. |
-| `ObservedActivity`, `ObservedActivityLower`, `ObservedActivityUpper` | string | Only when `ResultType` is `Detected`. |
+| `UpperLimitActivity`       | string  | Upper bound on the activity actually present, at the confidence level. **Absent whenever it would not be positive** — a `Deficit` result, or an empty region. |
+| `ObservedActivity`, `ObservedActivityLower`, `ObservedActivityUpper` | string | Only when `ResultType` is `Detected`. `ObservedActivityLower` is additionally absent when the lower limit falls below zero, which a `Detected` result does not preclude. |
+
+Any activity that works out non-positive is omitted rather than printed, so **every** key in this
+table needs an `existsIn(peak.Mda, "…")` guard, not just a `HasMdaActivity` check.
 | `<any of the above>_bq`, `_kBq`, `_MBq`, `_ci`, `_mCi`, `_uCi` | number | Numeric forms of each activity above; e.g. `DetectionLimitActivity_bq`. |
 | `ActivityPostFix`          | string  | Postfix for fixed-geometry detector responses; e.g. `"/cm2"`. Usually empty. |
 | `GammasPerBq`              | number  | Counts expected per becquerel: `activity = counts / GammasPerBq`. |
@@ -1362,7 +1366,7 @@ than just summing counts in a box.
 | `DeconUpperLimit`, `DeconUpperLimit_bq`, `_ci`, `_uCi` | string / number | The limit, as an activity. Only when `DeconFoundUpperLimit` is true **and** `DeconQuantityIsCounts` is false. |
 | `DeconLimitText`, `DeconBestChi2Text` | string | Pre-formatted summaries that **contain HTML** — use them only in HTML reports. Same presence rule as `DeconUpperLimit` (activity mode). |
 | `MethodsDisagree`      | bool    | The two limits differ by more than a factor of two. Only when `DeconComputed` is true. |
-| `DeconOverCurrieRatio` | number  | The deconvolution limit divided by the Currie-style limit. Present only when both are usable. |
+| `DeconOverCurrieRatio` | number  | The deconvolution upper limit divided by the **Currie upper limit** (`UpperLimit_counts`, not L<sub>d</sub>). Present only when both are usable. |
 
 The two methods look at the same data, so a large disagreement says something about the data
 rather than about the methods — most often a curved continuum under the peak, or an interfering

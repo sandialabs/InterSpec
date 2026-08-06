@@ -337,17 +337,26 @@ void add_activity_info_to_not_fit_mdas( vector<BatchPeak::NotFitPeakMda> &mdas,
     switch( mda.result_type )
     {
       case BatchPeak::NotFitPeakMda::MdaResultType::NotDetected:
-        mda.activity_summary = "This corresponds to an activity less than "
-                           + act_str(res.upper_limit, mda.gammas_per_bq)
-                           + ", with a minimum detectable activity (MDA) of "
-                           + act_str(res.detection_limit, mda.gammas_per_bq) + ".";
+        // With an empty region the upper limit is zero and means nothing; quote only the MDA
+        if( mda.region_is_empty )
+          mda.activity_summary = "The minimum detectable activity (MDA) is "
+                             + act_str(res.detection_limit, mda.gammas_per_bq) + ".";
+        else
+          mda.activity_summary = "This corresponds to an activity less than "
+                             + act_str(res.upper_limit, mda.gammas_per_bq)
+                             + ", with a minimum detectable activity (MDA) of "
+                             + act_str(res.detection_limit, mda.gammas_per_bq) + ".";
         break;
 
       case BatchPeak::NotFitPeakMda::MdaResultType::Detected:
+        // Being above the decision threshold does not stop the lower limit falling below zero
         mda.activity_summary = "This corresponds to an activity of "
-                           + act_str(res.source_counts, mda.gammas_per_bq) + " (between "
-                           + act_str(res.lower_limit, mda.gammas_per_bq) + " and "
-                           + act_str(res.upper_limit, mda.gammas_per_bq) + ").";
+                           + act_str(res.source_counts, mda.gammas_per_bq)
+                           + ((res.lower_limit > 0.0f)
+                                ? (" (between " + act_str(res.lower_limit, mda.gammas_per_bq)
+                                    + " and " + act_str(res.upper_limit, mda.gammas_per_bq) + ")")
+                                : (" (less than " + act_str(res.upper_limit, mda.gammas_per_bq) + ")"))
+                           + ".";
         break;
 
       case BatchPeak::NotFitPeakMda::MdaResultType::Deficit:
@@ -379,21 +388,20 @@ void add_activity_info_to_not_fit_mdas( vector<BatchPeak::NotFitPeakMda> &mdas,
 
     // The deconvolution-style limit; for activity/shielding fits we limit the activity directly,
     //  rather than the peak counts, so that the shielding and detector response are folded in.
+    // Leave `decon_attempted` false so `add_counts_decon_limits(...)` still gives this peak the
+    //  counts-based limit - that path builds its own peak widths from the exemplar peaks, so it
+    //  does not need the detector response to have resolution information.
     if( !drf->hasResolutionInfo() )
-    {
-      mda.decon_attempted = true;
-      mda.decon_quantity_is_counts = false;
-      mda.decon_error = "the detector response does not have peak width information";
       continue;
-    }//if( !drf->hasResolutionInfo() )
 
     DetectionLimitCalc::DeconRoiInfo roi;
     roi.roi_start = res.input.roi_lower_energy;
     roi.roi_end = res.input.roi_upper_energy;
     roi.continuum_type = PeakContinuum::OffsetType::Linear;
     roi.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::Floating;
-    roi.num_lower_side_channels = options.mda_num_side_channels;
-    roi.num_upper_side_channels = options.mda_num_side_channels;
+    const size_t num_side_channels = std::max( size_t(1), options.mda_num_side_channels );
+    roi.num_lower_side_channels = num_side_channels;
+    roi.num_upper_side_channels = num_side_channels;
 
     DetectionLimitCalc::DeconRoiInfo::PeakInfo peak_info;
     peak_info.energy = static_cast<float>( energy );

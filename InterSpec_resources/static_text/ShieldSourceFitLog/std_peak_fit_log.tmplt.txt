@@ -22,6 +22,6 @@ Mean, Amplitude, FWHM, LowerEnergy, UpperEnergy, LowerChannel, UpperChannel, Con
 Exemplar peaks that could not be fit{% if existsIn(NotFitPeaks,"HasMdas") and NotFitPeaks.HasMdas %}, and their detection limits{% endif %}:
 Mean, FWHM, SourceName, SourceEnergy{% if existsIn(NotFitPeaks,"HasMdas") and NotFitPeaks.HasMdas %}, Result, Lc (counts), Ld (counts), Upper limit (counts){% if exists("PeaksUsedForActivityFitting") %}, MDA activity{% endif %}, Description{% endif %}
 ## for peak in NotFitPeaks.Peaks
-{{ printFixed(peak.PeakMean,2) }}, {{ printFixed(peak.PeakFwhm,2) }}, {{ peak.SourceName }}, {{ peak.SourceEnergy }}{% if existsIn(peak,"Mda") %}, {{ peak.Mda.ShortDescription }}, {% if peak.Mda.CurrieComputed %}{{ peak.Mda.DecisionThresholdStr }}, {{ peak.Mda.DetectionLimitStr }}, {{ peak.Mda.UpperLimitStr }}{% else %}, , {% endif %}{% if exists("PeaksUsedForActivityFitting") %}, {% if peak.Mda.HasMdaActivity %}{{ peak.Mda.DetectionLimitActivity }}{% endif %}{% endif %}, {{ peak.Mda.Description }}{% endif %}
+{{ printFixed(peak.PeakMean,2) }}, {{ printFixed(peak.PeakFwhm,2) }}, {{ peak.SourceName }}, {{ peak.SourceEnergy }}{% if existsIn(peak,"Mda") %}, {{ peak.Mda.ShortDescription }}, {% if peak.Mda.CurrieComputed %}{{ peak.Mda.DecisionThresholdStr }}, {{ peak.Mda.DetectionLimitStr }}, {{ peak.Mda.UpperLimitStr }}{% else %}, , {% endif %}{% if exists("PeaksUsedForActivityFitting") %}, {% if peak.Mda.HasMdaActivity %}{{ peak.Mda.DetectionLimitActivity }}{% endif %}{% endif %},"{{ peak.Mda.Description }}"{% endif %}
 ## endfor
 {% endif %}

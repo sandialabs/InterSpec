@@ -971,7 +971,10 @@ BatchPeak::BatchPeakFitOptions BatchGuiPeakFitWidget::getPeakFitOptions() const
     if( (cl_index >= 0) && (cl_index < static_cast<int>(sm_mda_confidence_levels.size())) )
       answer.mda_confidence_level = sm_mda_confidence_levels[cl_index].second;
 
-    answer.mda_num_side_channels = static_cast<size_t>( m_mda_side_channels->value() );
+    // Wt 3.7.1's WSpinBox does not clamp typed-in text to setRange(), and a negative value would
+    //  wrap around when cast to size_t, so clamp here.
+    const int side_channels = std::max( 1, std::min( 64, m_mda_side_channels->value() ) );
+    answer.mda_num_side_channels = static_cast<size_t>( side_channels );
 #if( ALLOW_SPECIFY_MDA_ROI_WIDTH )
     answer.mda_roi_num_fwhm = m_mda_roi_num_fwhm->value();
 #endif

@@ -173,7 +173,10 @@ vector<string> split_csv_line( const string &line )
   for( size_t i = 0; i < line.size(); ++i )
   {
     const char c = line[i];
-    if( c == '"' )
+    // RFC 4180: a quote only opens a quoted field when it immediately follows the delimiter.
+    //  A quote preceded by anything else (e.g. a space) is a literal character, and the field is
+    //  NOT quoted - which is exactly the mistake this helper exists to catch.
+    if( (c == '"') && (in_quote || current.empty()) )
       in_quote = !in_quote;
     else if( (c == ',') && !in_quote )
     {
@@ -486,6 +489,12 @@ BOOST_AUTO_TEST_CASE( DeconLimitInCounts )
   BOOST_CHECK_MESSAGE( !mda.methods_disagree,
                       "Methods flagged as disagreeing on a clean, isolated peak: decon/currie = "
                       << mda.decon_over_currie_ratio << " (" << mda.caveats << ")" );
+
+  // Pin the absolute value.  The spectrum is deterministic and the peak width is exactly known,
+  //  so this catches a change to the FWHM<->sigma conversion inside `decon_compute_peaks`
+  //  (`sigma = fwhm/2.35482`); the loose ratio band above does not - reverting that constant to
+  //  the old, wrong 2.634 moves this number by ~11% but keeps the ratio inside the band.
+  BOOST_CHECK_CLOSE( decon_limit, 101.6, 3.0 );
 }//BOOST_AUTO_TEST_CASE( DeconLimitInCounts )
 
 
@@ -739,6 +748,86 @@ BOOST_AUTO_TEST_CASE( SummaryCsvIsWellFormed )
                       "Expected " << result.not_fit_peak_mdas.size() << " CSV rows, got " << num_rows
                       << " - rows may have run together onto one line." );
 }//BOOST_AUTO_TEST_CASE( SummaryCsvIsWellFormed )
+
+
+BOOST_AUTO_TEST_CASE( CsvSplitterMatchesRfc4180 )
+{
+  // The helper `SummaryCsvIsWellFormed` relies on must treat a field whose quote does not
+  //  immediately follow the delimiter as UNQUOTED - that leading space is exactly the mistake the
+  //  test exists to catch, and a lenient splitter would pass either way.
+  BOOST_CHECK_EQUAL( split_csv_line("a,b,c").size(), 3 );
+  BOOST_CHECK_EQUAL( split_csv_line("a,b,\"x, y\"").size(), 3 );          //correctly quoted
+  BOOST_CHECK_MESSAGE( split_csv_line("a,b, \"x, y\"").size() == 4,       //space before the quote
+                      "The splitter treats ', \"x, y\"' as a quoted field, so it cannot catch the"
+                      " CSV-quoting bug it was written to guard against." );
+}//BOOST_AUTO_TEST_CASE( CsvSplitterMatchesRfc4180 )
+
+
+BOOST_AUTO_TEST_CASE( EmptyPeakRegion )
+{
+  set_data_dir();
+
+  // A peak region holding no counts makes the Gaussian statistics degenerate: Lc and the upper
+  //  limit both collapse to zero.  Left unguarded that reports "less than 0 counts", and a single
+  //  stray count reads as a detection.
+  BatchPeak::BatchPeakFitOptions options = default_options();
+  options.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::Currie;
+
+  // Counts below 1000 keV, nothing above it - so the 661 keV peak fits normally while the
+  //  1173 keV region is empty.  (An entirely empty spectrum instead trips a pre-existing Minuit
+  //  assertion in the peak fitter, which is a separate issue.)
+  auto counts = make_shared<vector<float>>( sm_num_channels, 0.0f );
+  auto cal = make_shared<SpecUtils::EnergyCalibration>();
+  cal->set_polynomial( sm_num_channels, { 0.0f, sm_channel_width }, {} );
+
+  const double sigma = sm_fwhm / 2.35482;
+  for( size_t i = 0; i < sm_num_channels; ++i )
+  {
+    const double lower = cal->energy_for_channel( i );
+    const double upper = cal->energy_for_channel( i + 1 );
+    if( upper > 1000.0 )
+      break;
+
+    const double frac = 0.5*( erf( (upper - 661.0)/(sqrt(2.0)*sigma) )
+                              - erf( (lower - 661.0)/(sqrt(2.0)*sigma) ) );
+    (*counts)[i] = sm_continuum_cps*sm_live_time + static_cast<float>( 5000.0*frac );
+  }
+
+  auto m = make_shared<SpecUtils::Measurement>();
+  m->set_gamma_counts( counts, sm_live_time, sm_live_time );
+  m->set_energy_calibration( cal );
+  m->set_sample_number( 1 );
+  m->set_detector_name( "Det1" );
+  m->set_source_type( SpecUtils::SourceType::Foreground );
+
+  auto measurement = make_shared<SpecMeas>();
+  measurement->add_measurement( m, false );
+  measurement->cleanup_after_load();
+
+  const shared_ptr<SpecMeas> exemplar = make_exemplar( {661.0, 1173.0} );
+  const BatchPeak::BatchPeakFitResult result
+        = BatchPeak::fit_peaks_in_file( "exemplar.n42", {}, exemplar, "empty.n42", measurement,
+                                        {}, options );
+
+  BOOST_REQUIRE( result.success );
+  BOOST_REQUIRE( !result.not_fit_peak_mdas.empty() );
+
+  for( const BatchPeak::NotFitPeakMda &mda : result.not_fit_peak_mdas )
+  {
+    BOOST_REQUIRE( mda.currie_computed );
+    BOOST_CHECK_MESSAGE( mda.region_is_empty,
+                        "Empty region not flagged at " << mda.exemplar_peak->mean() << " keV" );
+
+    // Never a detection, whatever the classification arithmetic says
+    BOOST_CHECK( mda.result_type == BatchPeak::NotFitPeakMda::MdaResultType::NotDetected );
+    BOOST_CHECK_EQUAL( mda.short_description, string("No counts in region") );
+
+    // Must not claim "less than 0 counts"; Ld is still meaningful and should be quoted
+    BOOST_CHECK( mda.description.find("less than 0 counts") == string::npos );
+    BOOST_CHECK( mda.description.find("Minimum reliably detectable") != string::npos );
+    BOOST_CHECK( mda.currie_result.detection_limit > 0.0f );
+  }//for( const BatchPeak::NotFitPeakMda &mda : result.not_fit_peak_mdas )
+}//BOOST_AUTO_TEST_CASE( EmptyPeakRegion )
 
 
 BOOST_AUTO_TEST_CASE( OptionsReportedEvenWhenLimitFails )

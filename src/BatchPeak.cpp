@@ -544,8 +544,17 @@ vector<NotFitPeakMda> compute_not_fit_peak_mdas(
 
     const DetectionLimitCalc::CurrieMdaResult &res = mda.currie_result;
 
+    // With (essentially) no counts anywhere in the region, the decision threshold and the upper
+    //  limit both collapse to zero - the Gaussian statistics the calculation uses have broken
+    //  down.  Left alone, that makes a single stray count read as a detection, and reports an
+    //  upper limit of "less than 0 counts".  Ld does not degenerate (it tends to k^2, which is
+    //  the right order for a zero-background Poisson limit), so fall back to quoting just that.
+    mda.region_is_empty = (res.decision_threshold <= 0.0f);
+
     // Classify the result, using the same criteria as the GUI detection limit tools.
-    if( res.source_counts > res.decision_threshold )
+    if( mda.region_is_empty )
+      mda.result_type = NotFitPeakMda::MdaResultType::NotDetected;
+    else if( res.source_counts > res.decision_threshold )
       mda.result_type = NotFitPeakMda::MdaResultType::Detected;
     else if( res.upper_limit < 0.0f )
       mda.result_type = NotFitPeakMda::MdaResultType::Deficit;
@@ -569,6 +578,15 @@ vector<NotFitPeakMda> compute_not_fit_peak_mdas(
     switch( mda.result_type )
     {
       case NotFitPeakMda::MdaResultType::NotDetected:
+        if( mda.region_is_empty )
+        {
+          mda.short_description = "No counts in region";
+          mda.result_summary = "Not detected; the peak region contains essentially no counts."
+                               "  Minimum reliably detectable signal (Ld) is "
+                               + SpecUtils::printCompact(res.detection_limit, 4) + " counts.";
+          break;
+        }//if( mda.region_is_empty )
+
         mda.short_description = "Less than Lc";
         mda.result_summary = "Not detected.  Observed signal is below the decision threshold"
                           " (Lc = " + SpecUtils::printCompact(res.decision_threshold, 4) + " counts);"
