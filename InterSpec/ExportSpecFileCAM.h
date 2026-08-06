@@ -50,6 +50,8 @@ class DetectorPeakResponse;
 namespace Wt
 {
   class WText;
+  class WLabel;
+  class WLineEdit;
   class WCheckBox;
   class WComboBox;
   class WPushButton;
@@ -156,9 +158,14 @@ namespace ExportSpecFileCAM
           of each identified source above `yield_threshold_percent`.
    @param yield_threshold_percent Only used when `mode == AllLinesAboveThreshold`; only lines
           with yield at least this percent of the source's most intense line are included.
-   @param combine_unresolvable_lines If true, lines within about 0.5 keV of each other (within
-          a source) are merged into a single yield-weighted line, mirroring how the GENIE
-          Library Editor (and the "Peak-Map" tool) combine unresolvable lines.
+   @param combine_unresolvable_lines If true, lines a detector with `fwhm_coeffs` resolution
+          could not tell apart (within a source) are merged into a single yield-weighted line,
+          mirroring how the GENIE Library Editor (and the "Peak-Map" tool) combine unresolvable
+          lines.  See `sm_cluster_num_sigma` for the clustering criterion.
+   @param fwhm_coeffs The `{A0, A1}` of `FWHM = A0 + A1*sqrt(energy)` used to decide which lines
+          are unresolvable; this should be the same shape calibration being written into the CNF
+          file, so the library matches what Genie itself will be able to resolve.  Only used when
+          `combine_unresolvable_lines` is true.
    @param nuclide_ages Optional per-nuclide age overrides (in seconds) to use when computing
           line yields, honored only for nuclides where `!PeakDef::ageFitNotAllowed(nuclide)`; a
           nuclide not present in this map (or where `ageFitNotAllowed(nuclide)`) uses
@@ -174,8 +181,16 @@ namespace ExportSpecFileCAM
                                   const GenieLibraryLineMode mode,
                                   const double yield_threshold_percent,
                                   const bool combine_unresolvable_lines,
+                                  const std::pair<float,float> &fwhm_coeffs,
                                   const std::map<const SandiaDecay::Nuclide *, double> &nuclide_ages = {},
                                   std::vector<std::string> *warnings = nullptr );
+
+  /** How many peak sigma apart two gamma lines have to be before they are treated as separately
+   resolvable; matches the `photopeak_cluster_sigma` default that
+   `ShieldingSourceFitCalc::ShieldingSourceFitOptions` (and hence the Activity/Shielding fit and
+   the manual rel-eff calculations) use to decide which lines contribute to the same peak.
+   */
+  static constexpr double sm_cluster_num_sigma = 1.25;
 
   /** Flattens the checked (`included`) sources/lines of `sources` into the line-list that
    `SpecUtils::SpecFile::write_cnf(...)`'s `CnfGenieExtras` expects.
@@ -192,14 +207,19 @@ namespace ExportSpecFileCAM
    */
   std::pair<float,float> fit_genie_fwhm_from_drf( const DetectorPeakResponse &drf );
 
-  /** The default `{FWHMOFF, FWHMSLOPE}` Genie itself uses for HPGe or NaI detectors (see the
-   Genie 2000 Customization Tools Manual's detector-type-dependent initial parameters table).
+  /** A default `{FWHMOFF, FWHMSLOPE}` for `FWHM = FWHMOFF + FWHMSLOPE*sqrt(energy)`, for when
+   no better information is available.
+
+   For HPGe this is the same Ge default `CAMIO::AddDetectorType(...)` writes.  For everything
+   else it is a least-squares fit of the Genie equation form to `PeakFitUtils::nai_fwhm_fcn(...)`
+   (InterSpec's nominal "NaI 3x3" resolution), which tracks a real NaI detector much better than
+   the Genie manual's own NaI defaults do at low energy.
    */
   std::pair<float,float> default_genie_fwhm( const bool is_hpge );
 
 
-  /** The result of converting a `DetectorPeakResponse`'s intrinsic efficiency function into
-   the closest available Genie efficiency model.
+  /** The result of converting a `DetectorPeakResponse`'s efficiency function into the closest
+   available Genie efficiency model.
 
    Note: `CAMIO`'s GEOM-block write support (see `AddEfficiencyPoint(s)`) only writes tabulated
    (energy, efficiency) points - not persisted polynomial coefficients (the Genie 2000
@@ -214,18 +234,29 @@ namespace ExportSpecFileCAM
     std::vector<CAMInputOutput::EfficiencyPoint> points;
   };//struct GenieEfficiencyResult
 
-  /** Converts a DetectorPeakResponse's intrinsic efficiency into the closest available Genie
-   efficiency model, writing out sampled (energy, efficiency) points in all cases (see note on
+  /** Converts a DetectorPeakResponse's efficiency into the closest available Genie efficiency
+   model, writing out sampled (energy, efficiency) points in all cases (see note on
    `GenieEfficiencyResult`), tagged with the best-matching Genie model name:
-   - `kEnergyEfficiencyPairs` -> `SPLINE`, using the DRF's own tabulated points directly.
+   - `kEnergyEfficiencyPairs` -> `SPLINE`, using the DRF's own tabulated point energies.
    - `kExpOfLogPowerSeries` -> `DUAL`, Genie's own default model form for Ge/NaI detectors, and
      algebraically the same functional family (points are sampled from the exact formula).
    - `kFunctialEfficienyForm` -> points are sampled across the DRF's valid range, and tagged
      `DUAL` if a ln(eff)-vs-ln(energy) polynomial fits those points well, else `SPLINE`.
 
+   Genie's efficiency curve is an *absolute* full-energy-peak efficiency - counts recorded per
+   gamma emitted by the source, at the geometry the calibration was taken at - not InterSpec's
+   intrinsic efficiency (per gamma striking the detector face).  So for a far-field DRF the
+   points written are `drf.efficiency(energy, distance)`, and the caller must supply the source
+   distance the resulting CNF file is meant to describe.  For a fixed-geometry DRF the intrinsic
+   efficiency already *is* the absolute efficiency, and `distance` is ignored.
+
+   @param distance Source-to-detector distance (in InterSpec's internal length units) at which to
+          evaluate the absolute efficiency; ignored when `drf.isFixedGeometry()`.  Must be > 0 for
+          a far-field DRF, or an exception is thrown.
    @param warnings If non-null, human-readable warnings are appended here.
    */
   GenieEfficiencyResult convert_efficiency_to_genie( const DetectorPeakResponse &drf,
+                                                     const double distance,
                                                      std::vector<std::string> *warnings = nullptr );
 
 
@@ -314,7 +345,24 @@ namespace ExportSpecFileCAM
     bool writeLibrary() const;
     bool writeFwhm() const;
     bool writeEfficiency() const;
+
+    /** Whether the energy calibration should be written.
+
+     Always true while a spectrum is being written (the option is hidden then - channel counts
+     are not interpretable without it); only then does the user's checkbox decide.
+     */
     bool writeEnergyCal() const;
+
+    /** The `{FWHMOFF, FWHMSLOPE}` the current options would write; also what the library
+     line-clustering uses, so the library only distinguishes lines Genie could resolve.
+     Falls back to `default_genie_fwhm(...)` when the user has turned FWHM writing off.
+     */
+    std::pair<float,float> currentFwhmCoefficients() const;
+
+    /** The distance entered in the efficiency distance field, in InterSpec's internal length
+     units; returns a negative value if the field is empty, hidden, or unparseable.
+     */
+    double currentEfficiencyDistance() const;
 
     /** Builds the `CnfGenieExtras` reflecting the current widget state (checked library
      sources/lines, chosen FWHM source, whether to include efficiency/energy-cal), for the
@@ -330,13 +378,26 @@ namespace ExportSpecFileCAM
     void handleFitFwhmFromPeaksClicked();
     void handleFwhmFitFromToolUpdated( std::shared_ptr<DetectorPeakResponse> new_drf );
 
+    /** Shows/hides the efficiency distance field, and validates what is in it.  Also serves to
+     force a round-trip, so the checkbox state actually reaches the server before the
+     (link-based, and hence non-round-tripping) "Export" button is followed.
+     */
+    void handleEfficiencyOrEnergyCalChanged();
+
     InterSpec *m_interspec;
-    std::weak_ptr<const SpecMeas> m_spec;
+
+    /** The spectrum last passed to `updateForFile(...)`.
+     Note: a `shared_ptr`, not a `weak_ptr` - `ExportSpecFileTool::currentlySelectedFile()` can
+     return a freshly-created `SpecMeas` (e.g. the "foreground + background" combination) that
+     nothing else holds a reference to.
+     */
+    std::shared_ptr<const SpecMeas> m_spec;
     std::set<int> m_samples;
     std::map<const SandiaDecay::Nuclide *, double> m_nuclide_ages;
 
     Wt::WCheckBox *m_writeLibraryCb;
     Wt::WComboBox *m_libraryModeCb;
+    Wt::WLabel *m_thresholdLabel;
     NativeFloatSpinBox *m_thresholdEdit;
     Wt::WCheckBox *m_combineLinesCb;
     RowStretchTreeView *m_libraryTable;
@@ -349,6 +410,10 @@ namespace ExportSpecFileCAM
     std::pair<float,float> m_manual_fwhm_coeffs;
 
     Wt::WCheckBox *m_writeEfficiencyCb;
+    /** Only shown for a non-fixed-geometry DRF, where an absolute efficiency needs a distance. */
+    Wt::WLabel *m_effDistanceLabel;
+    Wt::WLineEdit *m_effDistanceEdit;
+
     Wt::WCheckBox *m_writeEnergyCalCb;
 
     Wt::WText *m_warningsTxt;

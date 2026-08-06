@@ -302,3 +302,72 @@
   float: none;
   border: 1px solid blue !important;
 }
+
+
+/* CNF-only GENIE options panel (see ExportSpecFileCAM.cpp).
+   The panel shares the dialog's third column with "Samples to Include"/"Options", so it is laid
+   out as a column that can scroll on its own - otherwise the library table pushes the FWHM and
+   efficiency controls out of the dialog entirely. */
+.ExportSpecFileTool .GenieCnfOptions
+{
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid #e1e1e1;
+}
+
+.ExportSpecFileTool .GenieCnfOptions > *
+{
+  flex: 0 0 auto;
+  margin-bottom: 4px;
+}
+
+.ExportSpecFileTool .GenieCnfOptions > select
+{
+  max-width: 100%;
+}
+
+/* A label and its input, kept on one line so hiding the pair leaves no stray gap. */
+.ExportSpecFileTool .GenieCnfRow
+{
+  display: flex;
+  align-items: center;
+  column-gap: 5px;
+}
+
+.ExportSpecFileTool .GenieCnfRow > input
+{
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.ExportSpecFileTool .GenieEffDistance
+{
+  max-width: 90px;
+}
+
+/* Dont use setHeight()/resize() on a RowStretchTreeView (see its header) - size it with CSS. */
+.ExportSpecFileTool .GenieLibraryTable
+{
+  width: 100%;
+  height: 140px;
+  min-height: 140px;
+  flex: 0 0 auto;
+}
+
+.ExportSpecFileTool .GenieCnfWarnings
+{
+  font-size: x-small;
+  color: #b35c00;
+}
+
+.ExportSpecFileTool .GenieCnfOptions input.InvalidInput
+{
+  background: #ffe8e8;
+  border: 1px solid #d00;
+}
