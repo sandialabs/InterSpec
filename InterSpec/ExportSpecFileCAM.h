@@ -32,6 +32,7 @@
 #include <memory>
 #include <utility>
 #include <deque>
+#include <optional>
 
 #include <Wt/WSignal>
 #include <Wt/WModelIndex>
@@ -63,6 +64,11 @@ namespace SandiaDecay
   struct Nuclide;
 }
 
+namespace SpecUtils
+{
+  struct EnergyCalibration;
+}
+
 /** Logic (independent of the GUI) for building a GENIE nuclide library, FWHM shape
  calibration, and efficiency curve to write into an exported CNF file.
 
@@ -89,7 +95,12 @@ namespace ExportSpecFileCAM
     /** Negative if not known (Genie will estimate an uncertainty from the value itself). */
     float energy_uncert = -1.0f;
 
-    /** Yield, in photons/xrays per decay (i.e., a value from 0 to 1, not a percent). */
+    /** Yield, in photons/xrays per decay of the parent nuclide - a fraction, not a percent (it is
+     converted to the percent GENIE wants in `to_library_lines(...)`).
+
+     Usually 0 to 1, but can exceed 1: annihilation lines get a contribution from every positron,
+     so e.g. Na22's 511 keV yield is about 1.8.
+     */
     float yield = 0.0f;
     /** Negative if not known (Genie will estimate an uncertainty from the value itself). */
     float yield_uncert = -1.0f;
@@ -166,6 +177,9 @@ namespace ExportSpecFileCAM
           are unresolvable; this should be the same shape calibration being written into the CNF
           file, so the library matches what Genie itself will be able to resolve.  Only used when
           `combine_unresolvable_lines` is true.
+   @param energy_range The `{lower, upper}` energy (keV) the spectrum covers; lines outside it are
+          left out, since Genie could never match a peak to them.  Pass `{0,0}` to disable.  Only
+          used when `mode == AllLinesAboveThreshold`.
    @param nuclide_ages Optional per-nuclide age overrides (in seconds) to use when computing
           line yields, honored only for nuclides where `!PeakDef::ageFitNotAllowed(nuclide)`; a
           nuclide not present in this map (or where `ageFitNotAllowed(nuclide)`) uses
@@ -182,6 +196,7 @@ namespace ExportSpecFileCAM
                                   const double yield_threshold_percent,
                                   const bool combine_unresolvable_lines,
                                   const std::pair<float,float> &fwhm_coeffs,
+                                  const std::pair<float,float> &energy_range,
                                   const std::map<const SandiaDecay::Nuclide *, double> &nuclide_ages = {},
                                   std::vector<std::string> *warnings = nullptr );
 
@@ -190,7 +205,7 @@ namespace ExportSpecFileCAM
    `ShieldingSourceFitCalc::ShieldingSourceFitOptions` (and hence the Activity/Shielding fit and
    the manual rel-eff calculations) use to decide which lines contribute to the same peak.
    */
-  static constexpr double sm_cluster_num_sigma = 1.25;
+  inline constexpr double sm_cluster_num_sigma = 1.25;
 
   /** Flattens the checked (`included`) sources/lines of `sources` into the line-list that
    `SpecUtils::SpecFile::write_cnf(...)`'s `CnfGenieExtras` expects.
@@ -200,8 +215,10 @@ namespace ExportSpecFileCAM
 
 
   /** Fits `FWHM = a + b*sqrt(energy)` (Genie's FWHM equation form) to the given DRF's FWHM
-   function, sampled at points across its valid energy range (or 59-2614 keV, if the DRF
-   doesn't specify a valid range) using an unweighted linear least-squares fit.
+   function, sampled log-spaced across its valid energy range (or 59-2614 keV, if the DRF doesn't
+   specify one), minimizing *relative* error.
+
+   Throws if the DRF's FWHM cannot be fit to this form.
 
    @returns {a, b}
    */
@@ -233,6 +250,45 @@ namespace ExportSpecFileCAM
     CAMInputOutput::CAMIO::EfficiencyModel model = CAMInputOutput::CAMIO::EfficiencyModel::Unknown;
     std::vector<CAMInputOutput::EfficiencyPoint> points;
   };//struct GenieEfficiencyResult
+
+  /** The GENIE low-tail parameter `T` (in keV) equivalent to a peak's skew, or a negative value
+   if the peak has no skew this maps onto.
+
+   GENIE's low tail is the same function as InterSpec's `GaussExp` skew, with `T = skew*sigma`;
+   `ExpGaussExp`'s lower-side parameter uses the same convention.  Other skew forms are different
+   functions and are reported as "no tail" rather than approximated.
+   */
+  double genie_low_tail( const PeakDef &peak );
+
+  /** Fits GENIE's low-tail calibration `T(E) = B2 + B3*E` to whichever of `peaks` have a tail
+   (see `genie_low_tail(...)`); returns nothing when none do, in which case no low-tail
+   calibration should be written.
+   */
+  std::optional<std::pair<float,float>> fit_genie_low_tail_cal(
+                              const std::deque<std::shared_ptr<const PeakDef>> &peaks );
+
+
+  /** Converts InterSpec's fitted peaks into the `CAMInputOutput::Peak` records
+   `SpecUtils::SpecFile::write_cnf(...)` writes into a CNF file's PEAK block.
+
+   Only Gaussian peaks are converted - a "data defined" peak has no centroid or width to report.
+   Channel numbers and the centroid come from `energy_cal`; if it is null or invalid, the
+   channel-based fields are left zero.
+
+   Note: see `CAMIO::AddPeak(...)` - the PEAK write path is experimental and its per-field
+   layout has not been validated against real GENIE software.
+
+   @param peaks The fitted peaks to convert.
+   @param energy_cal The energy calibration of the spectrum being written, used to convert
+          energies to channel numbers.
+   @param live_time_s Live time in seconds, used for the count-rate fields; count rates are left
+          zero if this is not positive.
+   */
+  std::vector<CAMInputOutput::Peak> to_cam_peaks(
+              const std::deque<std::shared_ptr<const PeakDef>> &peaks,
+              const std::shared_ptr<const SpecUtils::EnergyCalibration> &energy_cal,
+              const float live_time_s );
+
 
   /** Converts a DetectorPeakResponse's efficiency into the closest available Genie efficiency
    model, writing out sampled (energy, efficiency) points in all cases (see note on
@@ -270,7 +326,7 @@ namespace ExportSpecFileCAM
   public:
     enum class Column : int
     {
-      /** Nuclide name (source rows) or energy in keV (line rows). */
+      /** Nuclide name (source rows) or energy, in keV, (line rows) - the header carries the unit. */
       Name,
       /** Half-life (source rows) or yield/key-line/x-ray info (line rows). */
       Info,
@@ -289,6 +345,9 @@ namespace ExportSpecFileCAM
     void setSources( std::vector<GenieLibrarySource> sources );
 
     const std::vector<GenieLibrarySource> &sources() const { return m_sources; }
+
+    /** Whether any source's age can actually be edited; if not, the Age column is hidden. */
+    bool anySourceIsAgeable() const;
 
     virtual Wt::WModelIndex index( int row, int column, const Wt::WModelIndex &parent = Wt::WModelIndex() ) const override;
     virtual Wt::WModelIndex parent( const Wt::WModelIndex &index ) const override;
@@ -343,6 +402,8 @@ namespace ExportSpecFileCAM
     void updateForFile( const std::shared_ptr<const SpecMeas> &spec, const std::set<int> &samples );
 
     bool writeLibrary() const;
+    /** Whether the fitted peaks should be written into the file's PEAK block. */
+    bool writePeaks() const;
     bool writeFwhm() const;
     bool writeEfficiency() const;
 
@@ -364,6 +425,26 @@ namespace ExportSpecFileCAM
      */
     double currentEfficiencyDistance() const;
 
+    /** Whether the spectrum itself should be written.  When false the result is a
+     nuclide-library/calibration-only CAM file, and the "write energy calibration" option becomes
+     meaningful (and is shown).
+     */
+    bool writeSpectrum() const;
+
+    /** Whether the current combination of options can actually produce a file.
+
+     False when the options as set would write nothing at all, or when an input needed by a
+     checked option is missing/invalid (e.g. an unparseable efficiency distance).  `reason`, if
+     non-null, is set to a localized explanation.
+     */
+    bool canExport( Wt::WString *reason = nullptr ) const;
+
+    /** Emitted when `canExport()` may have changed. */
+    Wt::Signal<> &exportableChanged();
+
+    /** The `GenieFwhmSource` currently selected in the combo (which only offers usable ones). */
+    GenieFwhmSource currentFwhmSource() const;
+
     /** Builds the `CnfGenieExtras` reflecting the current widget state (checked library
      sources/lines, chosen FWHM source, whether to include efficiency/energy-cal), for the
      spectrum/samples last passed to `updateForFile(...)`.
@@ -384,6 +465,23 @@ namespace ExportSpecFileCAM
      */
     void handleEfficiencyOrEnergyCalChanged();
 
+    void handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> drf );
+    void handleSourceExpanded( const Wt::WModelIndex &index );
+    void handleSourceCollapsed( const Wt::WModelIndex &index );
+
+    /** Shows/hides the options that only make sense for one of spectrum / library-only output. */
+    void handleWriteSpectrumChanged();
+
+    /** Re-populates the FWHM-source combo with only the sources that can actually produce a
+     shape calibration right now, and updates the warning text.
+     */
+    void updateAvailableFwhmSources();
+
+    /** Updates `m_warningsTxt` from the library warnings plus any "this option cannot be
+     honored" message, and emits `exportableChanged()`.
+     */
+    void updateWarningsAndExportable();
+
     InterSpec *m_interspec;
 
     /** The spectrum last passed to `updateForFile(...)`.
@@ -395,6 +493,30 @@ namespace ExportSpecFileCAM
     std::set<int> m_samples;
     std::map<const SandiaDecay::Nuclide *, double> m_nuclide_ages;
 
+    /** Whether the current spectrum has an energy calibration that can be written at all. */
+    bool m_energy_cal_ok = false;
+
+    /** Names of the sources the user has expanded in the table, so expansion survives a rebuild. */
+    std::set<std::string> m_expanded_sources;
+
+    /** Warnings from the last `build_genie_library(...)`, kept so they can be re-combined with
+     option-level warnings without rebuilding.
+     */
+    std::vector<std::string> m_library_warnings;
+
+    /** Which `GenieFwhmSource` each entry of `m_fwhmSourceCb` corresponds to.  The combo only
+     offers sources that can actually produce a shape calibration right now, so its index is not
+     the enum value.
+     */
+    std::vector<GenieFwhmSource> m_available_fwhm_sources;
+
+    /** Emitted when whether the current options can actually be exported changes; the owning
+     `ExportSpecFileTool` uses this to enable/disable its "Export" button.
+     */
+    Wt::Signal<> m_exportableChanged;
+
+    Wt::WCheckBox *m_writeSpectrumCb;
+    Wt::WCheckBox *m_writePeaksCb;
     Wt::WCheckBox *m_writeLibraryCb;
     Wt::WComboBox *m_libraryModeCb;
     Wt::WLabel *m_thresholdLabel;
@@ -406,6 +528,8 @@ namespace ExportSpecFileCAM
     Wt::WCheckBox *m_writeFwhmCb;
     Wt::WComboBox *m_fwhmSourceCb;
     Wt::WPushButton *m_fitFwhmFromPeaksBtn;
+    /** Shows the coefficients a completed "From peaks..." fit produced. */
+    Wt::WText *m_fwhmFitTxt;
     bool m_have_manual_fwhm;
     std::pair<float,float> m_manual_fwhm_coeffs;
 

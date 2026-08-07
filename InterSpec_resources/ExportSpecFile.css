@@ -304,6 +304,13 @@
 }
 
 
+/* When the CNF format is selected the GENIE options share the "Samples to Include" column, and
+   need more room than the plain sample checkboxes do. */
+.ExportSpecFileTool.ExportSpecFileToolCnf .ExportSpecSamples
+{
+  min-width: 345px;
+}
+
 /* CNF-only GENIE options panel (see ExportSpecFileCAM.cpp).
    The panel shares the dialog's third column with "Samples to Include"/"Options", so it is laid
    out as a column that can scroll on its own - otherwise the library table pushes the FWHM and
@@ -355,8 +362,8 @@
 .ExportSpecFileTool .GenieLibraryTable
 {
   width: 100%;
-  height: 140px;
-  min-height: 140px;
+  height: 150px;
+  min-height: 150px;
   flex: 0 0 auto;
 }
 
@@ -364,6 +371,13 @@
 {
   font-size: x-small;
   color: #b35c00;
+  white-space: normal;
+}
+
+.ExportSpecFileTool .GenieCnfFitResult
+{
+  font-size: x-small;
+  font-family: monospace;
 }
 
 .ExportSpecFileTool .GenieCnfOptions input.InvalidInput

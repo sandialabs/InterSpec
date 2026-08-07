@@ -29,6 +29,7 @@
 #include <string>
 #include <vector>
 #include <algorithm>
+#include <optional>
 #include <functional>
 
 #include <Wt/WText>
@@ -44,12 +45,14 @@
 #include "Eigen/Dense"
 
 #include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/EnergyCalibration.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/HelpSystem.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -134,14 +137,19 @@ namespace
         continue;
       }
 
-      double energy_var_num = 0.0;
+      // Weighted sample standard deviation of the merged energies.  For reliability weights the
+      //  unbiased denominator is `V1 - V2/V1` (V1 = sum of weights, V2 = sum of squared weights);
+      //  the `(n-1)/n * V1` form used before over-states the variance by 2x for a two-line merge.
+      double energy_var_num = 0.0, weight_sq_sum = 0.0;
       for( size_t i = index; i < group_end; ++i )
+      {
         energy_var_num += lines[i].yield * std::pow( lines[i].energy - mean_energy, 2.0 );
+        weight_sq_sum += std::pow( static_cast<double>(lines[i].yield), 2.0 );
+      }
 
-      const size_t n = group_end - index;
-      const double energy_unc = (yield_sum > 0.0)
-                          ? std::sqrt( energy_var_num / (((static_cast<double>(n) - 1.0) / static_cast<double>(n)) * yield_sum) )
-                          : 0.0;
+      const double denom = yield_sum - (weight_sq_sum / yield_sum);
+      const double energy_unc = ((yield_sum > 0.0) && (denom > 0.0))
+                                 ? std::sqrt( energy_var_num / denom ) : 0.0;
 
       ExportSpecFileCAM::GenieLibraryLine merged;
       merged.energy = static_cast<float>( mean_energy );
@@ -271,6 +279,7 @@ vector<GenieLibrarySource> build_genie_library(
                                 const double yield_threshold_percent,
                                 const bool combine_unresolvable_lines,
                                 const pair<float,float> &fwhm_coeffs,
+                                const pair<float,float> &energy_range,
                                 const map<const SandiaDecay::Nuclide *, double> &nuclide_ages,
                                 vector<string> *warnings )
 {
@@ -282,6 +291,19 @@ vector<GenieLibrarySource> build_genie_library(
   {
     if( !peak || !peak->hasSourceGammaAssigned() )
       continue;
+
+    // Escape peaks sit at E-511/E-1022, which is not where the nuclide emits anything - writing
+    //  that energy into a library would attribute a real yield to an energy the source has no
+    //  line at, so skip them rather than let the energy match find some unrelated neighbour.
+    const PeakDef::SourceGammaType src_type = peak->sourceGammaType();
+    if( (src_type == PeakDef::SourceGammaType::SingleEscapeGamma)
+       || (src_type == PeakDef::SourceGammaType::DoubleEscapeGamma) )
+    {
+      if( warnings )
+        warnings->push_back( WString::tr("esfcam-warn-escape-peak")
+                             .arg( SpecUtils::printCompact(peak->mean(), 5) ).toUTF8() );
+      continue;
+    }
 
     const SandiaDecay::Nuclide *nuc = peak->parentNuclide();
     if( nuc )
@@ -299,11 +321,15 @@ vector<GenieLibrarySource> build_genie_library(
       continue;
     }
 
+    // A peak assigned to a bare element (fluorescence x-ray) has no nuclide and hence no
+    //  half-life, so it cannot be a Genie library entry.  Decay x-rays - which DO have a parent
+    //  nuclide - are handled above, along with that nuclide's gammas.
     if( peak->xrayElement() )
     {
       if( warnings )
-        warnings->push_back( WString::tr("esfcam-warn-orphan-xray-peak")
-                             .arg( SpecUtils::printCompact(peak->mean(), 5) ).toUTF8() );
+        warnings->push_back( WString::tr("esfcam-warn-fluorescence-xray-peak")
+                             .arg( SpecUtils::printCompact(peak->mean(), 5) )
+                             .arg( peak->xrayElement()->symbol ).toUTF8() );
       continue;
     }
   }//for( loop over peaks )
@@ -341,6 +367,23 @@ vector<GenieLibrarySource> build_genie_library(
     const vector<SandiaDecay::EnergyRatePair> photons
                     = mixture.photons( age, SandiaDecay::NuclideMixture::OrderByEnergy );
 
+    // `addNuclideByActivity(...)` sets the parent to 1 Bq at t=0, so `numPerSecond` at `age` is
+    //  photons per second per *initial* becquerel - it still carries the parent's decay factor.
+    //  A Genie library wants photons per decay of the parent, so divide the parent's activity at
+    //  `age` back out.  (This is the same `age_sf` correction
+    //  `GammaInteractionCalc::ShieldingSourceChi2Fcn::cluster_peak_activities(...)` makes; without
+    //  it, e.g. Cs137 at its default age comes out 5.66x too low, and any nuclide whose default
+    //  age is 7 half-lives comes out 128x too low.)
+    const double parent_activity = mixture.activity( age, nuc );
+    if( parent_activity <= 0.0 )
+    {
+      if( warnings )
+        warnings->push_back( WString::tr("esfcam-warn-decayed-away").arg( source.name ).toUTF8() );
+      continue;
+    }
+
+    const double yield_sf = 1.0 / parent_activity;
+
     double max_yield = 0.0;
     for( const SandiaDecay::EnergyRatePair &p : photons )
       max_yield = std::max( max_yield, p.numPerSecond );
@@ -349,8 +392,11 @@ vector<GenieLibrarySource> build_genie_library(
     {
       for( const shared_ptr<const PeakDef> &peak : nuc_peaks.second )
       {
+        // Note: use `gammaParticleEnergy()` for x-rays too.  `PeakDef::setNuclearTransition(...)`
+        //  zeroes `m_xrayEnergy` whenever a transition is set, so `xrayEnergy()` is always 0 for a
+        //  decay x-ray that has a parent nuclide - which is every peak that reaches here.
         const bool is_xray = (peak->sourceGammaType() == PeakDef::SourceGammaType::XrayGamma);
-        const float energy = is_xray ? peak->xrayEnergy() : peak->gammaParticleEnergy();
+        const float energy = peak->gammaParticleEnergy();
 
         const double yield = find_yield_near( photons, energy );
         if( yield <= 0.0 )
@@ -362,9 +408,20 @@ vector<GenieLibrarySource> build_genie_library(
           continue;
         }
 
+        // Two peaks can be assigned to the same gamma (e.g. in different sample sets, or a
+        //  mis-assignment); writing the line twice would double its yield once the duplicates get
+        //  merged as "unresolvable", making Genie report half the true activity.
+        const bool already_have = std::any_of( begin(source.lines), end(source.lines),
+                                    [energy]( const GenieLibraryLine &l ){
+          return (std::fabs(l.energy - energy) < 0.001f);
+        } );
+
+        if( already_have )
+          continue;
+
         GenieLibraryLine line;
         line.energy = energy;
-        line.yield = static_cast<float>( yield );
+        line.yield = static_cast<float>( yield_sf * yield );
         line.is_xray = is_xray;
         line.included = true;
         source.lines.push_back( line );
@@ -384,6 +441,12 @@ vector<GenieLibrarySource> build_genie_library(
         if( p.numPerSecond < threshold )
           continue;
 
+        // Lines outside the measurement's energy range cannot correspond to a peak Genie could
+        //  ever find, and just add noise to the library.
+        if( (energy_range.second > energy_range.first)
+           && ((p.energy < energy_range.first) || (p.energy > energy_range.second)) )
+          continue;
+
         const bool is_xray = std::any_of( begin(xrays), end(xrays),
                                           [&p]( const SandiaDecay::EnergyRatePair &x ){
           return std::fabs(x.energy - p.energy) < 0.001;
@@ -391,7 +454,7 @@ vector<GenieLibrarySource> build_genie_library(
 
         GenieLibraryLine line;
         line.energy = static_cast<float>( p.energy );
-        line.yield = static_cast<float>( p.numPerSecond );
+        line.yield = static_cast<float>( yield_sf * p.numPerSecond );
         line.is_xray = is_xray;
         line.included = true;
         source.lines.push_back( line );
@@ -438,9 +501,15 @@ vector<CAMInputOutput::CnfGenieExtras::LibraryLine>
       ll.half_life_uncert_seconds = source.half_life_uncert_seconds;
       ll.energy = line.energy;
       ll.energy_uncert = line.energy_uncert;
-      ll.yield = line.yield;
-      ll.yield_uncert = line.yield_uncert;
+      // GENIE library abundances are PERCENT, not a fraction - real Genie-produced libraries hold
+      //  e.g. 85.6 for Ni57's 122 keV line.  `GenieLibraryLine::yield` is a fraction, so convert
+      //  here, at the boundary.
+      ll.yield = 100.0f * line.yield;
+      ll.yield_uncert = (line.yield_uncert < 0.0f) ? -1.0f : (100.0f * line.yield_uncert);
       ll.no_weight_mean = line.is_xray;
+      // Pass our key-line choice explicitly, so what the user previewed is what gets written
+      //  (`CAMIO::AssignKeyLines()` would otherwise pick its own, and could disagree).
+      ll.is_key_line = line.is_key_line;
       answer.push_back( ll );
     }//for( loop over source's lines )
   }//for( loop over sources )
@@ -486,6 +555,181 @@ namespace
 }//namespace
 
 
+double genie_low_tail( const PeakDef &peak )
+{
+  // Genie's low tail is a Gaussian core stitched to an exponential below `centroid - T`:
+  //    P(x) = H*exp(-0.5*u^2)                       for u >= -T/sigma
+  //    P(x) = H*exp(0.5*(T/sigma)^2 + (T/sigma)*u)  for u <  -T/sigma,   u = (x-mean)/sigma
+  // which is exactly `PeakDists::gauss_exp_pdf(...)` with `skew == T/sigma`.  So a peak fit with
+  // InterSpec's GaussExp skew converts exactly, and ExpGaussExp's lower-side parameter uses the
+  // same convention.  Other skew forms (Bortel, Crystal Ball, ...) are different functions, and a
+  // fitted-but-wrong tail would be worse for Genie than none, so those report no tail.
+  //
+  // T shares units with sigma (the tail exponent has to be dimensionless), and the CAM peak
+  // record's FWHM is in keV - so T is in keV too.
+  const double sigma = peak.sigma();
+  if( sigma <= 0.0 )
+    return -1.0;
+
+  double skew = 0.0;   //T/sigma
+  switch( peak.skewType() )
+  {
+    case PeakDef::SkewType::GaussExp:
+    case PeakDef::SkewType::ExpGaussExp:
+      skew = peak.coefficient( PeakDef::CoefficientType::SkewPar0 );
+      break;
+
+    default:
+      break;
+  }//switch( peak.skewType() )
+
+  return (skew > 0.0) ? (skew * sigma) : -1.0;
+}//genie_low_tail(...)
+
+
+std::optional<pair<float,float>> fit_genie_low_tail_cal(
+                                const deque<shared_ptr<const PeakDef>> &peaks )
+{
+  // Genie carries a low-tail curve `T(E) = B2 + B3*E` alongside the FWHM shape calibration, and
+  //  uses it when fitting peaks itself.  Derive it from whichever peaks actually have a tail, so
+  //  the curve agrees with the per-peak T values written into the PEAK block.
+  vector<pair<double,double>> energy_tail;  //{energy, T}
+  for( const shared_ptr<const PeakDef> &peak : peaks )
+  {
+    if( !peak || !peak->gausPeak() )
+      continue;
+
+    const double tail = genie_low_tail( *peak );
+    if( tail > 0.0 )
+      energy_tail.emplace_back( peak->mean(), tail );
+  }
+
+  if( energy_tail.empty() )
+    return {};   //no tails - leave the calibration at zero, which is what "no tail" looks like
+
+  if( energy_tail.size() == 1 )
+    return make_pair( static_cast<float>(energy_tail[0].second), 0.0f );
+
+  // Unweighted linear least squares of T against energy.
+  double sum_e = 0.0, sum_t = 0.0, sum_ee = 0.0, sum_et = 0.0;
+  for( const pair<double,double> &et : energy_tail )
+  {
+    sum_e += et.first;
+    sum_t += et.second;
+    sum_ee += et.first * et.first;
+    sum_et += et.first * et.second;
+  }
+
+  const double n = static_cast<double>( energy_tail.size() );
+  const double denom = (n*sum_ee) - (sum_e*sum_e);
+  if( !(std::fabs(denom) > 0.0) )
+    return make_pair( static_cast<float>(sum_t/n), 0.0f );
+
+  const double slope = ((n*sum_et) - (sum_e*sum_t)) / denom;
+  const double offset = (sum_t - (slope*sum_e)) / n;
+
+  if( !std::isfinite(offset) || !std::isfinite(slope) )
+    return {};
+
+  return make_pair( static_cast<float>(offset), static_cast<float>(slope) );
+}//fit_genie_low_tail_cal(...)
+
+
+vector<CAMInputOutput::Peak> to_cam_peaks(
+                        const deque<shared_ptr<const PeakDef>> &peaks,
+                        const shared_ptr<const SpecUtils::EnergyCalibration> &energy_cal,
+                        const float live_time_s )
+{
+  vector<CAMInputOutput::Peak> answer;
+
+  const bool have_cal = !!energy_cal && energy_cal->valid();
+  const bool have_lt = (live_time_s > 0.0f);
+
+  for( const shared_ptr<const PeakDef> &peak : peaks )
+  {
+    // A "data defined" peak has no fitted centroid or width to report.
+    if( !peak || !peak->gausPeak() )
+      continue;
+
+    CAMInputOutput::Peak p{};
+
+    p.Energy = static_cast<float>( peak->mean() );
+    p.FullWidthAtHalfMaximum = static_cast<float>( peak->fwhm() );
+    p.Area = static_cast<float>( peak->peakArea() );
+    p.AreaUncertainty = static_cast<float>( peak->peakAreaUncert() );
+    // Genie's low tail is a Gaussian core stitched to an exponential below `centroid - T`:
+    //    P(x) = H*exp(-0.5*u^2)              for u >= -T/sigma
+    //    P(x) = H*exp(0.5*(T/sigma)^2 + (T/sigma)*u)  for u <  -T/sigma,   u = (x-mean)/sigma
+    // which is exactly `PeakDists::gauss_exp_pdf(...)` with `skew == T/sigma`.  So a peak fit with
+    // InterSpec's GaussExp skew converts exactly; ExpGaussExp's lower-side parameter uses the same
+    // convention.  Other skew forms (Bortel, Crystal Ball, ...) are different functions, and a
+    // fitted-but-wrong tail would be worse for Genie than none, so those get the "no tail" value.
+    p.LowTail = CAMInputOutput::Peak::sm_no_low_tail;
+
+    const double low_tail = genie_low_tail( *peak );
+    if( low_tail > 0.0 )
+      p.LowTail = static_cast<float>( low_tail );  //T, in keV (see CAMInputOutput::Peak::LowTail)
+
+    p.CriticalLevel = 0.0f; //left for Genie to determine
+
+    if( have_cal )
+    {
+      const double centroid_channel = energy_cal->channel_for_energy( peak->mean() );
+      p.Centroid = static_cast<float>( centroid_channel );
+
+      // Convert the mean's uncertainty to channels using the local gain.
+      const double sigma_energy = peak->meanUncert();
+      if( sigma_energy > 0.0 )
+      {
+        const double lower = energy_cal->channel_for_energy( peak->mean() - sigma_energy );
+        const double upper = energy_cal->channel_for_energy( peak->mean() + sigma_energy );
+        p.CentroidUncertainty = static_cast<float>( 0.5*std::fabs(upper - lower) );
+      }
+
+      const double left_channel = energy_cal->channel_for_energy( peak->lowerX() );
+      const double right_channel = energy_cal->channel_for_energy( peak->upperX() );
+      p.LeftChannel = static_cast<int>( std::floor(std::max(0.0, left_channel)) );
+      p.RightChannel = static_cast<int>( std::ceil(std::max(0.0, right_channel)) );
+      if( p.RightChannel < p.LeftChannel )
+        p.RightChannel = p.LeftChannel;
+    }//if( have_cal )
+
+    // Counts in the continuum under the peak's ROI.
+    const shared_ptr<const PeakContinuum> continuum = peak->continuum();
+    if( continuum )
+    {
+      try
+      {
+        p.Continuum = static_cast<float>( continuum->offset_integral( peak->lowerX(), peak->upperX(),
+                                                    std::shared_ptr<const SpecUtils::Measurement>{},
+                                                    std::vector<std::shared_ptr<const PeakDef>>{} ) );
+      }catch( std::exception & )
+      {
+        p.Continuum = 0.0f;
+      }
+    }//if( continuum )
+
+    if( have_lt )
+      p.CountRate = static_cast<float>( peak->peakArea() / live_time_s );
+
+    // Note: this field is a RELATIVE uncertainty, as a percent - not counts per second (verified
+    //  against a real Genie file; see `CAMInputOutput::Peak`).
+    if( peak->peakArea() > 0.0 )
+      p.CountRateUncertainty = static_cast<float>( 100.0 * peak->peakAreaUncert() / peak->peakArea() );
+
+    answer.push_back( p );
+  }//for( loop over peaks )
+
+  // Genie peak lists are energy ordered.
+  std::sort( begin(answer), end(answer),
+            []( const CAMInputOutput::Peak &lhs, const CAMInputOutput::Peak &rhs ){
+    return lhs.Energy < rhs.Energy;
+  } );
+
+  return answer;
+}//to_cam_peaks(...)
+
+
 pair<float,float> default_genie_fwhm( const bool is_hpge )
 {
   // For HPGe, use the same Ge default `CAMIO::AddDetectorType(...)` writes, so an export with
@@ -496,10 +740,13 @@ pair<float,float> default_genie_fwhm( const bool is_hpge )
   // The Genie manual's own NaI defaults ({-7.0, 2.0}) go negative below ~12 keV and noticeably
   //  under-predict the width at low energy, so instead fit the Genie equation form to
   //  InterSpec's nominal "NaI 3x3" resolution over the range NaI spectra are actually used over.
+  //  Fit from 20 keV (not 60) so the low-energy end is interpolated rather than extrapolated -
+  //  fitting only 60-2614 keV drove the offset far enough negative that the equation went
+  //  negative below ~18 keV and was ~50% low at 30 keV, which is worse than Genie's own default.
   static const pair<float,float> s_nai_coeffs
         = fit_genie_fwhm( []( const double energy ) -> double {
             return PeakFitUtils::nai_fwhm_fcn( static_cast<float>(energy) );
-          }, 60.0, 2614.0 );
+          }, 20.0, 2614.0 );
 
   return s_nai_coeffs;
 }//default_genie_fwhm(...)
@@ -515,9 +762,22 @@ pair<float,float> fit_genie_fwhm_from_drf( const DetectorPeakResponse &drf )
     upper_energy = 2614.0;
   }
 
-  return fit_genie_fwhm( [&drf]( const double energy ) -> double {
+  // A DRF can legitimately report a lower energy of 0 (it is the default, and can also come from
+  //  a tabulated efficiency whose first point is at 0 keV).  `fit_genie_fwhm` samples
+  //  logarithmically, so a zero lower bound would make every sample energy 0*inf = NaN, and the
+  //  NaN coefficients would go straight into the file.
+  lower_energy = std::max( lower_energy, 10.0 );
+  upper_energy = std::max( upper_energy, lower_energy + 1.0 );
+
+  const pair<float,float> answer = fit_genie_fwhm( [&drf]( const double energy ) -> double {
     return drf.peakResolutionFWHM( static_cast<float>(energy) );
   }, lower_energy, upper_energy );
+
+  if( !std::isfinite(answer.first) || !std::isfinite(answer.second) )
+    throw runtime_error( "fit_genie_fwhm_from_drf: the detector response function's FWHM could not"
+                         " be fit to Genie's FWHM = A0 + A1*sqrt(energy) form." );
+
+  return answer;
 }//fit_genie_fwhm_from_drf(...)
 
 
@@ -575,6 +835,13 @@ GenieEfficiencyResult convert_efficiency_to_genie( const DetectorPeakResponse &d
 {
   GenieEfficiencyResult answer;
 
+  // Points below this are dropped rather than clamped: a clamped point is a fabricated efficiency,
+  //  and Genie would happily interpolate it and report activities orders of magnitude too high.
+  const double min_useful_eff = 1.0E-9;
+  // Two points is the minimum an interpolated curve needs; a DRF's own tabulated efficiency can
+  //  legitimately have only a handful.
+  const size_t min_useful_points = 2;
+
   // Genie wants absolute (per gamma emitted at the source) efficiency; InterSpec's
   //  `intrinsicEfficiency(...)` is per gamma striking the detector face, so for a far-field DRF
   //  the solid angle has to be folded back in - this is the same
@@ -596,17 +863,35 @@ GenieEfficiencyResult convert_efficiency_to_genie( const DetectorPeakResponse &d
   if( form == DetectorPeakResponse::EfficiencyFnctForm::kEnergyEfficiencyPairs )
   {
     answer.model = CAMInputOutput::CAMIO::EfficiencyModel::SPLINE;
-    for( const DetectorPeakResponse::EnergyEfficiencyPair &pt : drf.getEnergyEfficiencyPair() )
+
+    const vector<DetectorPeakResponse::EnergyEfficiencyPair> &pairs = drf.getEnergyEfficiencyPair();
+    size_t num_dropped = 0;
+    for( const DetectorPeakResponse::EnergyEfficiencyPair &pt : pairs )
     {
+      // Note: use the DRF's own tabulated energies, but go back through the DRF for the value, so
+      //  the solid-angle (and any absolute-to-intrinsic) correction is applied consistently.
+      const double eff = absolute_eff( pt.energy );
+      if( !(eff > min_useful_eff) )
+      {
+        num_dropped += 1;
+        continue;
+      }
+
       CAMInputOutput::EfficiencyPoint eff_pt;
       eff_pt.Index = static_cast<int>( answer.points.size() );
       eff_pt.Energy = pt.energy;
-      // Note: use the DRF's own tabulated energies, but go back through the DRF for the value, so
-      //  the solid-angle (and any absolute-to-intrinsic) correction is applied consistently.
-      eff_pt.Efficiency = static_cast<float>( absolute_eff( pt.energy ) );
+      eff_pt.Efficiency = static_cast<float>( eff );
       eff_pt.EfficiencyUncertainty = 0.0f;
       answer.points.push_back( eff_pt );
-    }
+    }//for( loop over the DRF's tabulated points )
+
+    if( num_dropped && warnings )
+      warnings->push_back( WString::tr("esfcam-warn-eff-points-dropped")
+                           .arg( static_cast<int>(num_dropped) ).toUTF8() );
+
+    if( answer.points.size() < min_useful_points )
+      throw runtime_error( "convert_efficiency_to_genie: too few usable efficiency points" );
+
     return answer;
   }//if( kEnergyEfficiencyPairs )
 
@@ -628,16 +913,37 @@ GenieEfficiencyResult convert_efficiency_to_genie( const DetectorPeakResponse &d
   }
   lower_energy = std::max( lower_energy, 10.0 ); //avoid ln(0)/negative energies
 
-  const int num_points = 15;
-  vector<double> energies( num_points ), effs( num_points );
-  for( int i = 0; i < num_points; ++i )
+  const int num_samples = 15;
+  vector<double> energies, effs;
+  size_t num_dropped = 0;
+  for( int i = 0; i < num_samples; ++i )
   {
-    const double frac = static_cast<double>(i) / (num_points - 1);
+    const double frac = static_cast<double>(i) / (num_samples - 1);
     // log-spaced points, since efficiency curves are typically fit in log-log space
     const double energy = lower_energy * std::pow( upper_energy/lower_energy, frac );
-    energies[i] = energy;
-    effs[i] = std::max<double>( absolute_eff( energy ), 1.0E-9 );
-  }
+    const double eff = absolute_eff( energy );
+
+    // Drop, dont clamp - see `min_useful_eff`.
+    if( !(eff > min_useful_eff) )
+    {
+      num_dropped += 1;
+      continue;
+    }
+
+    energies.push_back( energy );
+    effs.push_back( eff );
+  }//for( loop over sample energies )
+
+  if( num_dropped && warnings )
+    warnings->push_back( WString::tr("esfcam-warn-eff-points-dropped")
+                         .arg( static_cast<int>(num_dropped) ).toUTF8() );
+
+  // For the sampled branch we also know how many points we *tried* - if most of the range is
+  //  negligible the curve is not worth writing, whatever the absolute count.
+  if( (energies.size() < min_useful_points) || (energies.size() < (num_samples / 2)) )
+    throw runtime_error( "convert_efficiency_to_genie: the detector response function's absolute"
+                         " efficiency is negligible over much of its energy range at this"
+                         " distance." );
 
   bool use_dual = is_exact_log_power_series;
   if( !is_exact_log_power_series )
@@ -696,6 +1002,13 @@ void GenieLibraryModel::setSources( vector<GenieLibrarySource> sources )
 }//void setSources(...)
 
 
+bool GenieLibraryModel::anySourceIsAgeable() const
+{
+  return std::any_of( begin(m_sources), end(m_sources),
+                      []( const GenieLibrarySource &s ){ return s.is_ageable; } );
+}//anySourceIsAgeable()
+
+
 WModelIndex GenieLibraryModel::index( int row, int column, const WModelIndex &parent ) const
 {
   if( (column < 0) || (column >= static_cast<int>(Column::NumColumns)) || (row < 0) )
@@ -714,6 +1027,9 @@ WModelIndex GenieLibraryModel::index( int row, int column, const WModelIndex &pa
 
   const int source_index = parent.row();
   if( (source_index < 0) || (source_index >= static_cast<int>(m_sources.size())) )
+    return WModelIndex();
+
+  if( !m_sources[source_index].included ) //see rowCount(...)
     return WModelIndex();
 
   if( row >= static_cast<int>(m_sources[source_index].lines.size()) )
@@ -743,6 +1059,11 @@ int GenieLibraryModel::rowCount( const WModelIndex &parent ) const
 
   const int source_index = parent.row();
   if( (source_index < 0) || (source_index >= static_cast<int>(m_sources.size())) )
+    return 0;
+
+  // A source that isnt being written has no lines to show - leaving them visible (and checked)
+  //  would tell the user lines are going into the file when they are not.
+  if( !m_sources[source_index].included )
     return 0;
 
   return static_cast<int>( m_sources[source_index].lines.size() );
@@ -777,10 +1098,10 @@ boost::any GenieLibraryModel::data( const WModelIndex &index, int role ) const
         return boost::any( WString::fromUTF8(source.name) );
 
       case Column::Info:
+        //  Just the time - the column header says what it is.
         if( role != Wt::DisplayRole )
           return boost::any();
-        return boost::any( WString::tr("esfcam-half-life-value")
-                             .arg( PhysicalUnits::printToBestTimeUnits(source.half_life_seconds) ) );
+        return boost::any( WString::fromUTF8( PhysicalUnits::printToBestTimeUnits(source.half_life_seconds) ) );
 
       case Column::Age:
         if( !source.is_ageable || ((role != Wt::DisplayRole) && (role != Wt::EditRole)) )
@@ -811,9 +1132,10 @@ boost::any GenieLibraryModel::data( const WModelIndex &index, int role ) const
       if( role != Wt::DisplayRole )
         return boost::any();
       {
+        //  Just the number - the column header carries the "keV".
         char buffer[32];
         snprintf( buffer, sizeof(buffer), "%.2f", line.energy );
-        return boost::any( WString::tr("esfcam-line-energy-value").arg(buffer) );
+        return boost::any( WString::fromUTF8(buffer) );
       }
 
     case Column::Info:
@@ -866,13 +1188,42 @@ bool GenieLibraryModel::setData( const WModelIndex &index, const boost::any &val
       {
         if( role != Wt::CheckStateRole )
           return false;
+
         const bool checked = boost::any_cast<bool>( value );
+        if( checked == source.included )
+          return true;
+
+        const int num_lines = static_cast<int>( source.lines.size() );
+
+        // Unchecking a source hides its lines entirely (see `rowCount(...)`), so the rows have to
+        //  be removed/inserted properly rather than just repainted.
+        //  Note: the parent index handed to begin{Remove,Insert}Rows has to be the source row's
+        //  COLUMN 0 index - that is what `parent()` returns and what the view has registered as
+        //  the parent node.  Passing this column's index (Include) silently does nothing.
+        const WModelIndex source_row = this->index( index.row(), 0 );
+
+        if( !checked && (num_lines > 0) )
+          beginRemoveRows( source_row, 0, num_lines - 1 );
+        else if( checked && (num_lines > 0) )
+          beginInsertRows( source_row, 0, num_lines - 1 );
+
         source.included = checked;
-        for( GenieLibraryLine &line : source.lines )
-          line.included = checked;
-        const WModelIndex last_line = this->index( static_cast<int>(source.lines.size()) - 1,
-                                                    static_cast<int>(Column::Include), index );
-        dataChanged().emit( index, source.lines.empty() ? index : last_line );
+        if( checked )
+        {
+          // Re-checking a source brings all of its lines back, checked.
+          for( GenieLibraryLine &line : source.lines )
+            line.included = true;
+        }
+
+        if( num_lines > 0 )
+        {
+          if( checked )
+            endInsertRows();
+          else
+            endRemoveRows();
+        }
+
+        dataChanged().emit( index, index );
         return true;
       }
 
@@ -947,7 +1298,7 @@ boost::any GenieLibraryModel::headerData( int section, Orientation orientation, 
   switch( Column(section) )
   {
     case Column::Name:        return boost::any( WString::tr("esfcam-col-source-energy") );
-    case Column::Info:        return boost::any( WString::tr("esfcam-col-hl-yield") );
+    case Column::Info:        return boost::any( WString::tr("esfcam-col-halflife") );
     case Column::Age:         return boost::any( WString::tr("esfcam-col-age") );
     case Column::Include:     return boost::any( WString::tr("esfcam-col-write") );
     case Column::NumColumns:  break;
@@ -966,6 +1317,8 @@ Wt::Signal<const SandiaDecay::Nuclide *, double> &GenieLibraryModel::ageEdited()
 GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidget *parent )
   : WContainerWidget( parent ),
     m_interspec( viewer ),
+    m_writeSpectrumCb( nullptr ),
+    m_writePeaksCb( nullptr ),
     m_writeLibraryCb( nullptr ),
     m_libraryModeCb( nullptr ),
     m_thresholdLabel( nullptr ),
@@ -976,6 +1329,7 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
     m_writeFwhmCb( nullptr ),
     m_fwhmSourceCb( nullptr ),
     m_fitFwhmFromPeaksBtn( nullptr ),
+    m_fwhmFitTxt( nullptr ),
     m_have_manual_fwhm( false ),
     m_manual_fwhm_coeffs( 0.0f, 0.0f ),
     m_writeEfficiencyCb( nullptr ),
@@ -986,15 +1340,42 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
 {
   assert( m_interspec );
   if( m_interspec )
+  {
     m_interspec->useMessageResourceBundle( "ExportSpecFile" );
+
+    // The DRF can change while this dialog is open (the "Fit from peaks..." tool can even create
+    //  one), which decides whether an efficiency curve can be written at all.
+    m_interspec->detectorChanged().connect( this, &GenieCnfOptionsWidget::handleDetectorChanged );
+    m_interspec->detectorModified().connect( this, &GenieCnfOptionsWidget::handleDetectorChanged );
+  }//if( m_interspec )
 
   addStyleClass( "GenieCnfOptions" );
 
   WText *title = new WText( WString::tr("esfcam-title"), this );
   title->addStyleClass( "ExportColTitle" );
 
+  // --- What to write ---
+  m_writeSpectrumCb = new WCheckBox( WString::tr("esfcam-write-spectrum"), this );
+  m_writeSpectrumCb->addStyleClass( "CbNoLineBreak" );
+  m_writeSpectrumCb->setChecked( true );
+  HelpSystem::attachToolTipOn( m_writeSpectrumCb, WString::tr("esfcam-write-spectrum-tt"),
+                               true, HelpSystem::ToolTipPosition::Right,
+                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
+  m_writeSpectrumCb->checked().connect( this, &GenieCnfOptionsWidget::handleWriteSpectrumChanged );
+  m_writeSpectrumCb->unChecked().connect( this, &GenieCnfOptionsWidget::handleWriteSpectrumChanged );
+
+  m_writePeaksCb = new WCheckBox( WString::tr("esfcam-write-peaks"), this );
+  m_writePeaksCb->addStyleClass( "CbNoLineBreak" );
+  HelpSystem::attachToolTipOn( m_writePeaksCb, WString::tr("esfcam-write-peaks-tt"),
+                               true, HelpSystem::ToolTipPosition::Right,
+                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
+  m_writePeaksCb->changed().connect( this, &GenieCnfOptionsWidget::handleEfficiencyOrEnergyCalChanged );
+
   // --- Nuclide library ---
   m_writeLibraryCb = new WCheckBox( WString::tr("esfcam-write-library"), this );
+  HelpSystem::attachToolTipOn( m_writeLibraryCb, WString::tr("esfcam-write-library-tt"),
+                               true, HelpSystem::ToolTipPosition::Right,
+                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_writeLibraryCb->addStyleClass( "CbNoLineBreak" );
   m_writeLibraryCb->checked().connect( this, &GenieCnfOptionsWidget::handleLibraryOptionsChanged );
   m_writeLibraryCb->unChecked().connect( this, &GenieCnfOptionsWidget::handleLibraryOptionsChanged );
@@ -1018,7 +1399,9 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
   m_combineLinesCb = new WCheckBox( WString::tr("esfcam-combine-lines"), this );
   m_combineLinesCb->addStyleClass( "CbNoLineBreak" );
   m_combineLinesCb->setChecked( true );
-  m_combineLinesCb->setToolTip( WString::tr("esfcam-combine-lines-tt") );
+  HelpSystem::attachToolTipOn( m_combineLinesCb, WString::tr("esfcam-combine-lines-tt"),
+                               true, HelpSystem::ToolTipPosition::Right,
+                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_combineLinesCb->checked().connect( this, &GenieCnfOptionsWidget::handleLibraryOptionsChanged );
   m_combineLinesCb->unChecked().connect( this, &GenieCnfOptionsWidget::handleLibraryOptionsChanged );
 
@@ -1027,12 +1410,27 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
 
   m_libraryTable = new RowStretchTreeView( this );
   m_libraryTable->setRootIsDecorated( true );
+  //  Sorting is not useful here (the rows are already energy ordered within each source), and the
+  //  sort indicators eat header width we need for the column labels.
+  m_libraryTable->setSortingEnabled( false );
   m_libraryTable->addStyleClass( "GenieLibraryTable" );
   m_libraryTable->setModel( m_libraryModel );
-  m_libraryTable->setColumnWidth( static_cast<int>(GenieLibraryModel::Column::Name), 140 );
-  m_libraryTable->setColumnWidth( static_cast<int>(GenieLibraryModel::Column::Info), 160 );
-  m_libraryTable->setColumnWidth( static_cast<int>(GenieLibraryModel::Column::Age), 90 );
-  m_libraryTable->setColumnWidth( static_cast<int>(GenieLibraryModel::Column::Include), 50 );
+  // These have to add up to less than the dialog column the panel lives in (widened to ~340px by
+  //  the `ExportSpecFileToolCnf` style class), or the "Write" checkbox column - the whole point of
+  //  the table - ends up off-screen behind a scrollbar the user is unlikely to find.
+  m_libraryTable->setColumnWidth( static_cast<int>(GenieLibraryModel::Column::Name), 120 );
+  m_libraryTable->setColumnWidth( static_cast<int>(GenieLibraryModel::Column::Info), 75 );
+  m_libraryTable->setColumnWidth( static_cast<int>(GenieLibraryModel::Column::Age), 65 );
+  m_libraryTable->setColumnWidth( static_cast<int>(GenieLibraryModel::Column::Include), 45 );
+  m_libraryTable->expanded().connect( this, &GenieCnfOptionsWidget::handleSourceExpanded );
+  m_libraryTable->collapsed().connect( this, &GenieCnfOptionsWidget::handleSourceCollapsed );
+
+  //  Directly under the table, so warnings and "why you cannot export" messages are next to what
+  //  they are about, rather than at the bottom of a panel the user has to scroll to reach.
+  m_warningsTxt = new WText( this );
+  m_warningsTxt->addStyleClass( "GenieCnfWarnings" );
+  m_warningsTxt->setTextAlignment( Wt::AlignmentFlag::AlignLeft );
+  m_warningsTxt->hide();
   // Note: dont call `setHeight(...)`/`resize(...)` on a RowStretchTreeView (see its header) - the
   //  table's height comes from the `.GenieLibraryTable` rule in ExportSpecFile.css.
 
@@ -1042,13 +1440,16 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
   m_writeFwhmCb->checked().connect( this, &GenieCnfOptionsWidget::handleFwhmSourceChanged );
   m_writeFwhmCb->unChecked().connect( this, &GenieCnfOptionsWidget::handleFwhmSourceChanged );
 
+  //  Contents are filled in by `updateAvailableFwhmSources()`, so only sources that can actually
+  //  produce a shape calibration for the current spectrum are ever offered.
   m_fwhmSourceCb = new WComboBox( this );
-  m_fwhmSourceCb->addItem( WString::tr("esfcam-fwhm-none") );
-  m_fwhmSourceCb->addItem( WString::tr("esfcam-fwhm-default-hpge") );
-  m_fwhmSourceCb->addItem( WString::tr("esfcam-fwhm-default-nai") );
-  m_fwhmSourceCb->addItem( WString::tr("esfcam-fwhm-from-drf") );
-  m_fwhmSourceCb->addItem( WString::tr("esfcam-fwhm-from-peaks") );
   m_fwhmSourceCb->activated().connect( this, &GenieCnfOptionsWidget::handleFwhmSourceChanged );
+
+  //  Above the button, so the equation that will actually be written is visible right where the
+  //  user picks/fits it.
+  m_fwhmFitTxt = new WText( this );
+  m_fwhmFitTxt->addStyleClass( "GenieCnfFitResult" );
+  m_fwhmFitTxt->hide();
 
   m_fitFwhmFromPeaksBtn = new WPushButton( WString::tr("esfcam-fit-from-peaks-btn"), this );
   m_fitFwhmFromPeaksBtn->addStyleClass( "LightButton" );
@@ -1062,6 +1463,9 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
   //  still be un-sent when the file gets written.
   m_writeEfficiencyCb = new WCheckBox( WString::tr("esfcam-write-eff"), this );
   m_writeEfficiencyCb->addStyleClass( "CbNoLineBreak" );
+  HelpSystem::attachToolTipOn( m_writeEfficiencyCb, WString::tr("esfcam-write-eff-tt"),
+                               true, HelpSystem::ToolTipPosition::Right,
+                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_writeEfficiencyCb->changed().connect( this, &GenieCnfOptionsWidget::handleEfficiencyOrEnergyCalChanged );
 
   // Genie efficiency curves are absolute, so a far-field DRF needs the source distance the
@@ -1072,7 +1476,9 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
   m_effDistanceEdit = new WLineEdit( "1 m", effDistRow );
   m_effDistanceEdit->addStyleClass( "GenieEffDistance" );
   m_effDistanceLabel->setBuddy( m_effDistanceEdit );
-  m_effDistanceEdit->setToolTip( WString::tr("esfcam-eff-distance-tt") );
+  HelpSystem::attachToolTipOn( m_effDistanceEdit, WString::tr("esfcam-eff-distance-tt"),
+                               true, HelpSystem::ToolTipPosition::Right,
+                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
   WRegExpValidator *distValidator
               = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, m_effDistanceEdit );
@@ -1087,13 +1493,13 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
   m_writeEnergyCalCb = new WCheckBox( WString::tr("esfcam-write-energy-cal"), this );
   m_writeEnergyCalCb->addStyleClass( "CbNoLineBreak" );
   m_writeEnergyCalCb->setChecked( true );
+  HelpSystem::attachToolTipOn( m_writeEnergyCalCb, WString::tr("esfcam-write-energy-cal-tt"),
+                               true, HelpSystem::ToolTipPosition::Right,
+                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_writeEnergyCalCb->changed().connect( this, &GenieCnfOptionsWidget::handleEfficiencyOrEnergyCalChanged );
 
-  m_warningsTxt = new WText( this );
-  m_warningsTxt->addStyleClass( "GenieCnfWarnings" );
-  m_warningsTxt->setTextAlignment( Wt::AlignmentFlag::AlignLeft );
-  m_warningsTxt->hide();
-
+  updateAvailableFwhmSources();
+  handleWriteSpectrumChanged();
   handleLibraryOptionsChanged();
   handleFwhmSourceChanged();
   handleEfficiencyOrEnergyCalChanged();
@@ -1106,11 +1512,28 @@ void GenieCnfOptionsWidget::updateForFile( const shared_ptr<const SpecMeas> &spe
   //  the export dialog, so bail early when nothing we care about actually changed - otherwise we
   //  would throw away the user's FWHM/age selections, and their per-source/line library choices,
   //  every time they touched an unrelated option.
-  if( (spec == m_spec) && (samples == m_samples) )
+  //
+  //  Note: compare *contents*, not the `shared_ptr` - `currentlySelectedFile()` builds a brand new
+  //  `SpecMeas` on every call when the "+ Back." combination is selected, so pointer identity
+  //  never holds there and everything would reset constantly.
+  const bool same_spectrum = (spec == m_spec)
+        || (spec && m_spec
+             && (spec->filename() == m_spec->filename())
+             && (spec->uuid() == m_spec->uuid())
+             && (spec->detector() == m_spec->detector())
+             && (spec->num_measurements() == m_spec->num_measurements()));
+
+  if( same_spectrum && (samples == m_samples) )
+  {
+    // Peaks or the DRF can still have changed under us; keep the options consistent with them.
+    m_spec = spec;
+    updateAvailableFwhmSources();
     return;
+  }
 
   m_spec = spec;
   m_samples = samples;
+  m_expanded_sources.clear();
   m_nuclide_ages.clear();
   m_have_manual_fwhm = false;
 
@@ -1150,22 +1573,24 @@ void GenieCnfOptionsWidget::updateForFile( const shared_ptr<const SpecMeas> &spe
     }//for( loop over measurements, looking for one with a usable energy cal )
   }//if( spec )
 
-  // `SpecUtils::SpecFile::write_cnf(...)` always writes the summed spectrum, and channel counts
-  //  are not interpretable without their energy calibration - so whenever a spectrum is being
-  //  written the calibration goes with it unconditionally, and there is no choice to offer.
-  //  The option is only meaningful for a spectrum-less CNF (e.g. a library-only export), which
-  //  this dialog cannot currently produce; see `writeEnergyCal()`.
-  const bool writing_spectrum = true;
-  m_writeEnergyCalCb->setHidden( writing_spectrum || !energy_cal_ok );
+  m_energy_cal_ok = energy_cal_ok;
   m_writeEnergyCalCb->setChecked( energy_cal_ok );
 
-  // Pick a reasonable default FWHM source: from the DRF if it has resolution info, else
-  // Default HPGe/NaI based on the spectrum's resolution.
-  const int fwhm_index = have_drf && drf->hasResolutionInfo()
-                          ? static_cast<int>(GenieFwhmSource::FromDrf)
-                          : (is_hpge ? static_cast<int>(GenieFwhmSource::DefaultHPGe)
-                                     : static_cast<int>(GenieFwhmSource::DefaultNaI));
-  m_fwhmSourceCb->setCurrentIndex( fwhm_index );
+  // Only offer the FWHM sources that can actually produce a shape calibration for this spectrum.
+  updateAvailableFwhmSources();
+
+  // Pick a reasonable default: from the DRF if it can be fit, else HPGe/NaI by resolution.
+  const GenieFwhmSource preferred = (have_drf && drf->hasResolutionInfo())
+                                      ? GenieFwhmSource::FromDrf
+                                      : (is_hpge ? GenieFwhmSource::DefaultHPGe
+                                                 : GenieFwhmSource::DefaultNaI);
+  for( size_t i = 0; i < m_available_fwhm_sources.size(); ++i )
+  {
+    if( m_available_fwhm_sources[i] == preferred )
+      m_fwhmSourceCb->setCurrentIndex( static_cast<int>(i) );
+  }
+
+  handleWriteSpectrumChanged();
   handleFwhmSourceChanged();
   handleEfficiencyOrEnergyCalChanged();
 
@@ -1177,35 +1602,87 @@ void GenieCnfOptionsWidget::rebuildLibraryTable()
 {
   const shared_ptr<const SpecMeas> spec = m_spec;
   m_libraryModel->setSources( {} );
-  m_warningsTxt->hide();
+  m_library_warnings.clear();
 
   if( !spec )
+  {
+    updateWarningsAndExportable();
     return;
+  }
 
   const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = spec->peaks( m_samples );
   if( !peaks || peaks->empty() )
+  {
+    m_library_warnings.push_back( WString::tr("esfcam-warn-no-peaks").toUTF8() );
+    updateWarningsAndExportable();
     return;
+  }
 
   const GenieLibraryLineMode mode = (m_libraryModeCb->currentIndex() == 0)
                                     ? GenieLibraryLineMode::PeakLinesOnly
                                     : GenieLibraryLineMode::AllLinesAboveThreshold;
 
+  // Remember what the user had un-checked, so changing an unrelated option (the mode, the
+  //  threshold, an age, the FWHM source, ...) doesn't silently re-check everything.
+  map<string,bool> prev_source_included;
+  map<pair<string,int>,bool> prev_line_included;
+  for( const GenieLibrarySource &src : m_libraryModel->sources() )
+  {
+    prev_source_included[src.name] = src.included;
+    for( const GenieLibraryLine &line : src.lines )
+      prev_line_included[ {src.name, static_cast<int>(std::round(100.0*line.energy))} ] = line.included;
+  }
+
+  pair<float,float> energy_range{ 0.0f, 0.0f };
+  for( const shared_ptr<const SpecUtils::Measurement> &m : spec->measurements() )
+  {
+    if( m && m->energy_calibration() && m->energy_calibration()->valid() )
+    {
+      energy_range.first = m->gamma_energy_min();
+      energy_range.second = m->gamma_energy_max();
+      break;
+    }
+  }
+
   vector<string> warnings;
   vector<GenieLibrarySource> sources = build_genie_library( *peaks, mode, m_thresholdEdit->value(),
                                                             m_combineLinesCb->isChecked(),
-                                                            currentFwhmCoefficients(),
+                                                            currentFwhmCoefficients(), energy_range,
                                                             m_nuclide_ages, &warnings );
+
+  for( GenieLibrarySource &src : sources )
+  {
+    const auto src_pos = prev_source_included.find( src.name );
+    if( src_pos != end(prev_source_included) )
+      src.included = src_pos->second;
+
+    for( GenieLibraryLine &line : src.lines )
+    {
+      const auto line_pos = prev_line_included.find( {src.name, static_cast<int>(std::round(100.0*line.energy))} );
+      if( line_pos != end(prev_line_included) )
+        line.included = line_pos->second;
+    }
+  }//for( restore the user's selections )
 
   m_libraryModel->setSources( sources );
 
-  if( !warnings.empty() )
+  // Nothing in this library can be aged (e.g. every source is a Cs137-like "age doesn't matter"
+  //  nuclide), so the Age column is dead space.
+  m_libraryTable->setColumnHidden( static_cast<int>(GenieLibraryModel::Column::Age),
+                                   !m_libraryModel->anySourceIsAgeable() );
+
+  // `setSources()` resets the model, which drops WTreeView's expanded set - re-expand what the
+  //  user had open.
+  for( int row = 0; row < m_libraryModel->rowCount(); ++row )
   {
-    string txt;
-    for( const string &w : warnings )
-      txt += (txt.empty() ? "" : "<br />") + w;
-    m_warningsTxt->setText( WString::fromUTF8(txt) );
-    m_warningsTxt->show();
+    const WModelIndex index = m_libraryModel->index( row, 0 );
+    const GenieLibrarySource &src = m_libraryModel->sources()[row];
+    if( m_expanded_sources.count(src.name) )
+      m_libraryTable->expand( index );
   }
+
+  m_library_warnings = warnings;
+  updateWarningsAndExportable();
 }//void rebuildLibraryTable()
 
 
@@ -1222,7 +1699,190 @@ void GenieCnfOptionsWidget::handleLibraryOptionsChanged()
 
   if( write_library )
     rebuildLibraryTable();
+  else
+    updateWarningsAndExportable();
 }//void handleLibraryOptionsChanged()
+
+
+void GenieCnfOptionsWidget::handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> /*drf*/ )
+{
+  const shared_ptr<const DetectorPeakResponse> drf = m_spec ? m_spec->detector() : nullptr;
+  const bool have_drf = !!drf && drf->isValid();
+
+  m_writeEfficiencyCb->setEnabled( have_drf );
+  if( !have_drf )
+    m_writeEfficiencyCb->setChecked( false );
+
+  updateAvailableFwhmSources();
+  handleFwhmSourceChanged();
+  handleEfficiencyOrEnergyCalChanged();
+}//handleDetectorChanged(...)
+
+
+void GenieCnfOptionsWidget::handleSourceExpanded( const Wt::WModelIndex &index )
+{
+  if( index.isValid() && (index.internalId() == 0)
+     && (index.row() < static_cast<int>(m_libraryModel->sources().size())) )
+    m_expanded_sources.insert( m_libraryModel->sources()[index.row()].name );
+}//handleSourceExpanded(...)
+
+
+void GenieCnfOptionsWidget::handleSourceCollapsed( const Wt::WModelIndex &index )
+{
+  if( index.isValid() && (index.internalId() == 0)
+     && (index.row() < static_cast<int>(m_libraryModel->sources().size())) )
+    m_expanded_sources.erase( m_libraryModel->sources()[index.row()].name );
+}//handleSourceCollapsed(...)
+
+
+void GenieCnfOptionsWidget::handleWriteSpectrumChanged()
+{
+  // Writing the spectrum always writes its energy calibration - channel counts are meaningless
+  //  without it - so the option is only offered for a library/calibration-only file.
+  const bool writing_spectrum = writeSpectrum();
+  m_writeEnergyCalCb->setHidden( writing_spectrum || !m_energy_cal_ok );
+
+  updateWarningsAndExportable();
+}//handleWriteSpectrumChanged()
+
+
+void GenieCnfOptionsWidget::updateAvailableFwhmSources()
+{
+  const shared_ptr<const DetectorPeakResponse> drf = m_spec ? m_spec->detector() : nullptr;
+
+  // Only offer sources that can actually produce a `FWHM = A0 + A1*sqrt(E)` right now.
+  vector<GenieFwhmSource> available{ GenieFwhmSource::DefaultHPGe, GenieFwhmSource::DefaultNaI };
+
+  if( drf && drf->isValid() && drf->hasResolutionInfo() )
+  {
+    // ...and only if it can actually be fit to Genie's equation form.
+    try
+    {
+      fit_genie_fwhm_from_drf( *drf );
+      available.push_back( GenieFwhmSource::FromDrf );
+    }catch( std::exception & )
+    {
+    }
+  }//if( the DRF has usable resolution info )
+
+  // "From peaks..." needs peaks to fit to.
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks
+                            = m_spec ? m_spec->peaks( m_samples ) : nullptr;
+  if( peaks && !peaks->empty() )
+    available.push_back( GenieFwhmSource::FromPeaks );
+
+  if( available == m_available_fwhm_sources )
+    return;
+
+  // Keep the user's choice if it is still available, else fall back to a sensible default.
+  GenieFwhmSource wanted = GenieFwhmSource::None;
+  const int current = m_fwhmSourceCb->currentIndex();
+  if( (current >= 0) && (current < static_cast<int>(m_available_fwhm_sources.size())) )
+    wanted = m_available_fwhm_sources[current];
+
+  m_available_fwhm_sources = available;
+  m_fwhmSourceCb->clear();
+
+  int wanted_index = -1;
+  for( size_t i = 0; i < m_available_fwhm_sources.size(); ++i )
+  {
+    switch( m_available_fwhm_sources[i] )
+    {
+      case GenieFwhmSource::DefaultHPGe:
+        m_fwhmSourceCb->addItem( WString::tr("esfcam-fwhm-default-hpge") );  break;
+      case GenieFwhmSource::DefaultNaI:
+        m_fwhmSourceCb->addItem( WString::tr("esfcam-fwhm-default-nai") );   break;
+      case GenieFwhmSource::FromDrf:
+        m_fwhmSourceCb->addItem( WString::tr("esfcam-fwhm-from-drf") );      break;
+      case GenieFwhmSource::FromPeaks:
+        m_fwhmSourceCb->addItem( WString::tr("esfcam-fwhm-from-peaks") );    break;
+      case GenieFwhmSource::None:
+        continue;
+    }//switch( source )
+
+    if( m_available_fwhm_sources[i] == wanted )
+      wanted_index = static_cast<int>( i );
+  }//for( fill the combo )
+
+  m_fwhmSourceCb->setCurrentIndex( (wanted_index >= 0) ? wanted_index : 0 );
+}//updateAvailableFwhmSources()
+
+
+void GenieCnfOptionsWidget::updateWarningsAndExportable()
+{
+  vector<string> messages = m_library_warnings;
+
+  WString reason;
+  if( !canExport( &reason ) && !reason.empty() )
+    messages.push_back( reason.toUTF8() );
+
+  if( messages.empty() )
+  {
+    m_warningsTxt->hide();
+  }else
+  {
+    string txt;
+    for( const string &m : messages )
+      txt += (txt.empty() ? "" : "<br />") + m;
+    m_warningsTxt->setText( WString::fromUTF8(txt) );
+    m_warningsTxt->show();
+  }
+
+  m_exportableChanged.emit();
+}//updateWarningsAndExportable()
+
+
+bool GenieCnfOptionsWidget::writeSpectrum() const
+{
+  return !m_writeSpectrumCb || m_writeSpectrumCb->isChecked();
+}//writeSpectrum()
+
+
+bool GenieCnfOptionsWidget::canExport( WString *reason ) const
+{
+  // A file has to contain *something*.
+  if( !writeSpectrum() && !writeLibrary() && !writePeaks() && !writeFwhm() && !writeEfficiency() )
+  {
+    if( reason )
+      *reason = WString::tr("esfcam-err-nothing-to-write");
+    return false;
+  }
+
+  // A checked option whose input is missing/invalid must not be silently dropped.
+  const shared_ptr<const DetectorPeakResponse> drf = m_spec ? m_spec->detector() : nullptr;
+  if( writeEfficiency() && drf && drf->isValid() && !drf->isFixedGeometry()
+     && (currentEfficiencyDistance() <= 0.0) )
+  {
+    if( reason )
+      *reason = WString::tr("esfcam-err-bad-distance");
+    return false;
+  }
+
+  if( writeLibrary() && m_libraryModel->sources().empty() )
+  {
+    if( reason )
+      *reason = WString::tr("esfcam-err-no-library-lines");
+    return false;
+  }
+
+  // "From peaks..." with no fit yet would silently fall back to the detector-type default rather
+  //  than write what the user asked for.
+  if( m_writeFwhmCb->isChecked() && (currentFwhmSource() == GenieFwhmSource::FromPeaks)
+     && !m_have_manual_fwhm )
+  {
+    if( reason )
+      *reason = WString::tr("esfcam-err-fwhm-not-fit");
+    return false;
+  }
+
+  return true;
+}//canExport(...)
+
+
+Wt::Signal<> &GenieCnfOptionsWidget::exportableChanged()
+{
+  return m_exportableChanged;
+}
 
 
 void GenieCnfOptionsWidget::handleEfficiencyOrEnergyCalChanged()
@@ -1233,6 +1893,14 @@ void GenieCnfOptionsWidget::handleEfficiencyOrEnergyCalChanged()
 
   // A distance is only needed to turn the DRF's intrinsic efficiency into the absolute
   //  efficiency Genie wants; a fixed-geometry DRF is already absolute.
+  // No peaks fitted means nothing to write; dont offer the option.
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> fit_peaks
+                              = m_spec ? m_spec->peaks( m_samples ) : nullptr;
+  const bool have_peaks = !!fit_peaks && !fit_peaks->empty();
+  m_writePeaksCb->setEnabled( have_peaks );
+  if( !have_peaks )
+    m_writePeaksCb->setChecked( false );
+
   const bool need_distance = writeEfficiency() && have_drf && !drf->isFixedGeometry();
   m_effDistanceLabel->setHidden( !need_distance );
   m_effDistanceEdit->setHidden( !need_distance );
@@ -1241,6 +1909,8 @@ void GenieCnfOptionsWidget::handleEfficiencyOrEnergyCalChanged()
     m_effDistanceEdit->addStyleClass( "InvalidInput" );
   else
     m_effDistanceEdit->removeStyleClass( "InvalidInput" );
+
+  updateWarningsAndExportable();
 }//void handleEfficiencyOrEnergyCalChanged()
 
 
@@ -1258,19 +1928,52 @@ void GenieCnfOptionsWidget::handleFwhmSourceChanged()
   const bool write_fwhm = m_writeFwhmCb->isChecked();
   m_fwhmSourceCb->setHidden( !write_fwhm );
 
-  const GenieFwhmSource source = static_cast<GenieFwhmSource>( m_fwhmSourceCb->currentIndex() );
+  const GenieFwhmSource source = currentFwhmSource();
   m_fitFwhmFromPeaksBtn->setHidden( !write_fwhm || (source != GenieFwhmSource::FromPeaks) );
+
+  // Show the equation that will actually be written, for whichever source is selected - the user
+  //  should not have to guess what "Default NaI" or a peak fit amounts to.
+  m_fwhmFitTxt->setHidden( !write_fwhm );
+  if( write_fwhm )
+  {
+    if( (source == GenieFwhmSource::FromPeaks) && !m_have_manual_fwhm )
+    {
+      m_fwhmFitTxt->setText( WString::tr("esfcam-fwhm-not-fit-yet") );
+    }else
+    {
+      const pair<float,float> coeffs = currentFwhmCoefficients();
+
+      // Build the equation itself in code so the sign reads correctly; the surrounding sentence
+      //  stays localizable.
+      const string a0 = SpecUtils::printCompact( coeffs.first, 4 );
+      const string a1 = SpecUtils::printCompact( std::fabs(coeffs.second), 4 );
+      const string sign = (coeffs.second < 0.0f) ? " - " : " + ";
+      const string eqn = a0 + sign + a1 + "\xE2\x88\x9A" "E";  //U+221A SQUARE ROOT
+
+      m_fwhmFitTxt->setText( WString::tr("esfcam-fwhm-equation").arg( WString::fromUTF8(eqn) ) );
+    }
+  }//if( write_fwhm )
 
   // The library's line clustering uses the FWHM being written, so it has to be re-done.
   if( m_writeLibraryCb->isChecked() && m_combineLinesCb->isChecked() )
     rebuildLibraryTable();
+
+  updateWarningsAndExportable();
 }//void handleFwhmSourceChanged()
 
 
 void GenieCnfOptionsWidget::handleFitFwhmFromPeaksClicked()
 {
-  MakeFwhmForDrfWindow *window = new MakeFwhmForDrfWindow( true );
-  MakeFwhmForDrf *tool = window->tool();
+  // Go through InterSpec rather than `new MakeFwhmForDrfWindow(...)` directly: it guards against
+  //  opening a second window, hides the window once a fit is accepted, and - crucially - connects
+  //  `finished()` so the window is actually deleted.  `AuxWindow::setHidden()` does not call
+  //  `WDialog::setHidden()`, so without that connection Wt never pops the modal dialog cover and
+  //  the whole application becomes unclickable once this window is closed.
+  if( !m_interspec )
+    return;
+
+  MakeFwhmForDrfWindow *window = m_interspec->fwhmFromForegroundWindow( true );
+  MakeFwhmForDrf *tool = window ? window->tool() : nullptr;
   if( !tool )
     return;
 
@@ -1291,9 +1994,22 @@ void GenieCnfOptionsWidget::handleFwhmFitFromToolUpdated( shared_ptr<DetectorPea
   m_manual_fwhm_coeffs = make_pair( coefs[0], coefs[1] );
   m_have_manual_fwhm = true;
 
+  // Show the newly fit equation, and let the export become possible now that we have one.
+  handleFwhmSourceChanged();
+
   if( m_writeLibraryCb->isChecked() && m_combineLinesCb->isChecked() )
     rebuildLibraryTable();
 }//void handleFwhmFitFromToolUpdated(...)
+
+
+/** The `GenieFwhmSource` currently selected in the (dynamically populated) combo. */
+GenieFwhmSource GenieCnfOptionsWidget::currentFwhmSource() const
+{
+  const int index = m_fwhmSourceCb->currentIndex();
+  if( (index < 0) || (index >= static_cast<int>(m_available_fwhm_sources.size())) )
+    return GenieFwhmSource::None;
+  return m_available_fwhm_sources[index];
+}//currentFwhmSource()
 
 
 bool GenieCnfOptionsWidget::writeLibrary() const
@@ -1302,10 +2018,15 @@ bool GenieCnfOptionsWidget::writeLibrary() const
 }
 
 
+bool GenieCnfOptionsWidget::writePeaks() const
+{
+  return m_writePeaksCb->isEnabled() && m_writePeaksCb->isChecked();
+}
+
+
 bool GenieCnfOptionsWidget::writeFwhm() const
 {
-  return m_writeFwhmCb->isChecked()
-         && (static_cast<GenieFwhmSource>(m_fwhmSourceCb->currentIndex()) != GenieFwhmSource::None);
+  return m_writeFwhmCb->isChecked() && (currentFwhmSource() != GenieFwhmSource::None);
 }
 
 
@@ -1317,9 +2038,12 @@ bool GenieCnfOptionsWidget::writeEfficiency() const
 
 bool GenieCnfOptionsWidget::writeEnergyCal() const
 {
-  // Hidden means a spectrum is being written, and then the calibration always goes with it;
-  //  see `updateForFile(...)`.
-  return m_writeEnergyCalCb->isHidden() || m_writeEnergyCalCb->isChecked();
+  // Writing the spectrum always writes its calibration; only a library/calibration-only file
+  //  gives the user a choice (and the checkbox is only shown in that case).
+  if( writeSpectrum() )
+    return true;
+
+  return m_writeEnergyCalCb->isChecked();
 }
 
 
@@ -1327,9 +2051,8 @@ pair<float,float> GenieCnfOptionsWidget::currentFwhmCoefficients() const
 {
   const shared_ptr<const DetectorPeakResponse> drf = m_spec ? m_spec->detector() : nullptr;
 
-  const GenieFwhmSource source = m_writeFwhmCb->isChecked()
-                    ? static_cast<GenieFwhmSource>( m_fwhmSourceCb->currentIndex() )
-                    : GenieFwhmSource::None;
+  const GenieFwhmSource source = m_writeFwhmCb->isChecked() ? currentFwhmSource()
+                                                            : GenieFwhmSource::None;
 
   switch( source )
   {
@@ -1383,24 +2106,26 @@ CAMInputOutput::CnfGenieExtras GenieCnfOptionsWidget::currentExtras() const
 
   const shared_ptr<const SpecMeas> spec = m_spec;
 
+  extras.omit_spectrum = !writeSpectrum();
   extras.omit_energy_calibration = !writeEnergyCal();
+
+  // If the peaks carry a low-energy tail, tell GENIE about it - both as the per-peak `T` values
+  //  (in `to_cam_peaks(...)`) and as the shape calibration's low-tail curve.
+  if( spec )
+  {
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = spec->peaks( m_samples );
+    if( peaks && !peaks->empty() )
+      extras.low_tail_cal = fit_genie_low_tail_cal( *peaks );
+  }
 
   if( writeFwhm() )
   {
-    const pair<float,float> coeffs = currentFwhmCoefficients();
-    const GenieFwhmSource source = static_cast<GenieFwhmSource>( m_fwhmSourceCb->currentIndex() );
-
-    // `currentFwhmCoefficients()` falls back to a default when the chosen source cant supply
-    //  coefficients (e.g. "From peaks..." before a fit has been made); only write a shape
-    //  calibration when the user's actual choice produced one.
-    const bool have_coeffs = (source == GenieFwhmSource::DefaultHPGe)
-                             || (source == GenieFwhmSource::DefaultNaI)
-                             || ((source == GenieFwhmSource::FromDrf)
-                                  && spec && spec->detector() && spec->detector()->isValid()
-                                  && spec->detector()->hasResolutionInfo())
-                             || ((source == GenieFwhmSource::FromPeaks) && m_have_manual_fwhm);
-    if( have_coeffs )
-      extras.shape_cal = coeffs;
+    // The combo only offers sources that can produce coefficients (see
+    //  `updateAvailableFwhmSources()`), and "From peaks..." is only exportable once a fit has been
+    //  made (see `canExport()`), so this always has something real to write.
+    const GenieFwhmSource source = currentFwhmSource();
+    if( (source != GenieFwhmSource::FromPeaks) || m_have_manual_fwhm )
+      extras.shape_cal = currentFwhmCoefficients();
   }//if( writeFwhm() )
 
   if( writeEfficiency() && spec )
@@ -1410,24 +2135,42 @@ CAMInputOutput::CnfGenieExtras GenieCnfOptionsWidget::currentExtras() const
     {
       // Genie efficiency curves are absolute, so a far-field DRF needs the user's distance;
       //  silently skipping is better than writing an efficiency that is wrong by the solid angle.
+      //  `canExport()` refuses the export when a far-field DRF has no usable distance, so by the
+      //  time we get here the distance is either irrelevant (fixed geometry) or valid.
       const double distance = drf->isFixedGeometry() ? 1.0 : currentEfficiencyDistance();
-      if( drf->isFixedGeometry() || (distance > 0.0) )
-      {
-        try
-        {
-          const GenieEfficiencyResult eff = convert_efficiency_to_genie( *drf, distance );
-          extras.eff_model = eff.model;
-          extras.eff_points = eff.points;
-        }catch( std::exception & )
-        {
-          //Leave the efficiency out rather than write something meaningless.
-        }
-      }//if( we have a usable geometry )
+      const GenieEfficiencyResult eff = convert_efficiency_to_genie( *drf, distance );
+      extras.eff_model = eff.model;
+      extras.eff_points = eff.points;
     }//if( drf && drf->isValid() )
   }//if( writeEfficiency() )
 
   if( writeLibrary() )
     extras.library_lines = to_library_lines( m_libraryModel->sources() );
+
+  if( writePeaks() && spec )
+  {
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = spec->peaks( m_samples );
+    if( peaks && !peaks->empty() )
+    {
+      // Use the calibration and live time of the record actually being written.
+      shared_ptr<const SpecUtils::EnergyCalibration> cal;
+      float live_time = 0.0f;
+      for( const int sample : m_samples )
+      {
+        for( const string &det : spec->detector_names() )
+        {
+          const shared_ptr<const SpecUtils::Measurement> m = spec->measurement( sample, det );
+          if( !m )
+            continue;
+          if( !cal && m->energy_calibration() && m->energy_calibration()->valid() )
+            cal = m->energy_calibration();
+          live_time += m->live_time();
+        }
+      }//for( find the calibration and total live time )
+
+      extras.peaks = to_cam_peaks( *peaks, cal, live_time );
+    }//if( there are peaks )
+  }//if( writePeaks() )
 
   return extras;
 }//currentExtras(...)

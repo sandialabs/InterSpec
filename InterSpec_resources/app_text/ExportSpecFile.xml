@@ -122,8 +122,16 @@
   <!-- esfcam- is short for ExportSpecFileCAM: the CNF-only GENIE options panel -->
   <message id="esfcam-title">GENIE Options</message>
 
+  <!-- What to write -->
+  <message id="esfcam-write-spectrum">Write spectrum</message>
+  <message id="esfcam-write-spectrum-tt">Write the channel counts into the file.  Un-check to produce a nuclide-library / calibration-only CAM file, of the same kind GENIE&apos;s Library Editor makes.  The energy calibration is always written along with a spectrum, so it only becomes a separate option when this is un-checked.</message>
+
+  <message id="esfcam-write-peaks">Write peaks</message>
+  <message id="esfcam-write-peaks-tt">Write the fitted peaks (energy, centroid, FWHM, area and continuum) into the file&apos;s peak block, so GENIE sees the same peaks InterSpec fitted.  Only Gaussian peaks are written.  Note: this write path has not been verified against real GENIE software.</message>
+
   <!-- Nuclide library -->
   <message id="esfcam-write-library">Write nuclide library</message>
+  <message id="esfcam-write-library-tt">Write a GENIE nuclide library built from the identified peaks in the selected samples, so GENIE can search for the same nuclides.</message>
   <message id="esfcam-lines-from-peaks">Lines from identified peaks</message>
   <message id="esfcam-lines-above-thresh">All lines above yield threshold</message>
   <message id="esfcam-threshold-label">Threshold %:</message>
@@ -131,34 +139,45 @@
   <message id="esfcam-combine-lines-tt">Merge gamma lines that are too close together for the detector to tell apart into a single yield-weighted line, so the library only distinguishes lines GENIE could actually resolve.</message>
 
   <!-- Nuclide library table -->
-  <message id="esfcam-col-source-energy">Source / Energy</message>
-  <message id="esfcam-col-hl-yield">Half-Life / Yield</message>
+  <message id="esfcam-col-source-energy">Src / keV</message>
+  <message id="esfcam-col-halflife">T&#189;</message>
   <message id="esfcam-col-age">Age</message>
   <message id="esfcam-col-write">Write</message>
-  <message id="esfcam-half-life-value">T&#189; = {1}</message>
-  <message id="esfcam-line-energy-value">{1} keV</message>
   <message id="esfcam-line-yield-value">yield={1}%</message>
   <message id="esfcam-line-is-xray">, x-ray</message>
   <message id="esfcam-line-is-key">, key line</message>
 
   <!-- FWHM (shape calibration) -->
   <message id="esfcam-write-fwhm">Write FWHM</message>
-  <message id="esfcam-fwhm-none">None</message>
   <message id="esfcam-fwhm-default-hpge">Default HPGe</message>
   <message id="esfcam-fwhm-default-nai">Default NaI</message>
   <message id="esfcam-fwhm-from-drf">From detector response function</message>
   <message id="esfcam-fwhm-from-peaks">From peaks...</message>
   <message id="esfcam-fit-from-peaks-btn">Fit from peaks...</message>
+  <message id="esfcam-fwhm-equation">Will write: FWHM = {1} keV</message>
+  <message id="esfcam-fwhm-not-fit-yet">No fit yet - click &quot;Fit from peaks...&quot; to determine the FWHM equation.</message>
 
   <!-- Efficiency and energy calibration -->
   <message id="esfcam-write-eff">Write efficiency</message>
+  <message id="esfcam-write-eff-tt">Write the detector response function&apos;s full-energy-peak efficiency curve, converted to the absolute (per gamma emitted at the source) efficiency GENIE expects.</message>
   <message id="esfcam-eff-distance-label">At distance:</message>
   <message id="esfcam-eff-distance-tt">GENIE efficiency curves are absolute (counts per gamma emitted by the source), so the source-to-detector distance the exported curve should describe is needed.  Not used for fixed-geometry detector response functions, which are already absolute.</message>
   <message id="esfcam-write-energy-cal">Write energy calibration</message>
+  <message id="esfcam-write-energy-cal-tt">Write the energy calibration into the file.  Only offered when no spectrum is being written - a spectrum always carries its calibration, since channel counts are meaningless without it.</message>
+
+  <!-- Reasons the current options cannot be exported -->
+  <message id="esfcam-err-nothing-to-write">Nothing is selected to write - choose at least one of the spectrum, nuclide library, FWHM or efficiency.</message>
+  <message id="esfcam-err-bad-distance">Enter a valid source-to-detector distance for the efficiency curve (e.g. &quot;1 m&quot; or &quot;50 cm&quot;).</message>
+  <message id="esfcam-err-fwhm-not-fit">The FWHM has not been fit from the peaks yet - click &quot;Fit from peaks...&quot;, or choose a different FWHM source.</message>
+  <message id="esfcam-err-no-library-lines">No nuclide library lines to write - the selected samples have no peaks identified to a nuclide.</message>
 
   <!-- Warnings -->
+  <message id="esfcam-warn-no-peaks">No peaks are identified to a nuclide in the selected samples, so no nuclide library can be built.</message>
   <message id="esfcam-warn-reaction-peak">Peak at {1} keV is assigned to reaction &apos;{2}&apos;, which GENIE nuclide libraries cannot represent, and will not be included.</message>
-  <message id="esfcam-warn-orphan-xray-peak">Peak at {1} keV is assigned to an x-ray with no parent nuclide, so has no half-life to report, and will not be included in the GENIE library.</message>
+  <message id="esfcam-warn-fluorescence-xray-peak">Peak at {1} keV is assigned to a {2} fluorescence x-ray, which has no parent nuclide and so no half-life to report; it will not be included in the GENIE library.  (Decay x-rays, which do have a parent nuclide, are included.)</message>
+  <message id="esfcam-warn-escape-peak">Peak at {1} keV is an escape peak, which is not an energy the source actually emits, so it will not be included in the GENIE library.</message>
+  <message id="esfcam-warn-decayed-away">{1} has completely decayed away at the age used, so no line yields could be computed for it.</message>
+  <message id="esfcam-warn-eff-points-dropped">{1} efficiency point(s) were left out because the absolute efficiency there is negligible at the given distance.</message>
   <message id="esfcam-warn-no-yield">Could not determine the yield of the {1} line at {2} keV; it will not be included.</message>
   <message id="esfcam-warn-eff-not-dual">The detector response function&apos;s efficiency formula could not be well-represented by GENIE&apos;s DUAL curve form; writing the sampled efficiency points for GENIE to interpolate between instead.</message>
 </messages>

@@ -1425,6 +1425,7 @@ void ExportSpecFileTool::init()
   //  `refreshSampleAndDetectorOptions()`, only shown when the CNF format is selected.
   m_genieCnfOptions = new ExportSpecFileCAM::GenieCnfOptionsWidget( m_interspec, m_samplesHolder );
   m_genieCnfOptions->hide();
+  m_genieCnfOptions->exportableChanged().connect( this, &ExportSpecFileTool::updateExportEnabled );
 
   WContainerWidget *footer = new WContainerWidget( this );
   footer->addStyleClass( "ExportSpecFileFooter" );
@@ -1495,8 +1496,16 @@ void ExportSpecFileTool::emitDone( const bool exported )
 
 void ExportSpecFileTool::updateExportEnabled()
 {
-  const bool disable = ((m_fileSelect && (m_fileSelect->currentIndex() < 0))
-                        && (!m_forePlusBack || m_forePlusBack->isHidden() || !m_forePlusBack->isChecked()));
+  bool disable = ((m_fileSelect && (m_fileSelect->currentIndex() < 0))
+                  && (!m_forePlusBack || m_forePlusBack->isHidden() || !m_forePlusBack->isChecked()));
+
+  // The CNF GENIE options can be in a state that cannot produce a file (nothing selected to
+  //  write, or an unparseable efficiency distance).  The "Export" button is a plain link to a
+  //  `WResource`, so there is no opportunity to refuse the request once it is clicked - disable
+  //  it instead of silently writing a file that is missing what the user asked for.
+  if( m_genieCnfOptions && !m_genieCnfOptions->isHidden() && !m_genieCnfOptions->canExport() )
+    disable = true;
+
   m_export_btn->setDisabled( disable );
 #if( USE_QR_CODES )
   m_show_qr_btn->setDisabled( disable );
@@ -2553,8 +2562,11 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   {
     const bool is_cnf_format = (save_type == SpecUtils::SaveSpectrumAsType::Cnf);
     m_genieCnfOptions->setHidden( !is_cnf_format );
+    //  The GENIE panel needs a wider column than the plain sample checkboxes do.
+    toggleStyleClass( "ExportSpecFileToolCnf", is_cnf_format );
     if( is_cnf_format )
       m_genieCnfOptions->updateForFile( spec, samplesToUse );
+    updateExportEnabled();
   }
 
   size_t num_sample_showing = 0, num_option_showing = 0;
@@ -2569,6 +2581,11 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     auto cb = dynamic_cast<WCheckBox *>( w );
     num_option_showing += (cb && cb->isVisible());
   }
+
+  // The GENIE panel is a container of options, not a checkbox, so count it explicitly - otherwise
+  //  "None Available" is shown directly above a full panel of options.
+  if( m_genieCnfOptions && m_genieCnfOptions->isVisible() )
+    num_option_showing += 1;
   
   m_sampleSelectNotAppTxt->setHidden( num_sample_showing );
   m_optionsNotAppTxt->setHidden( num_option_showing );
