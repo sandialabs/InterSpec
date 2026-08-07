@@ -320,6 +320,10 @@ namespace ExportSpecFileCAM
    in the CNF export options: top-level rows are `GenieLibrarySource`s, and their children are
    that source's `GenieLibraryLine`s.  Each row (source or line) has a checkbox in the
    `Column::Include` column; checking/unchecking a source checks/unchecks all its lines.
+
+   Line rows additionally have a `Column::Key` checkbox.  Exactly one included line of each source
+   is the key line, so that column behaves like a radio group: checking a line moves the key line
+   off whatever line held it, and unchecking the key line is refused.
    */
   class GenieLibraryModel : public Wt::WAbstractItemModel
   {
@@ -328,10 +332,12 @@ namespace ExportSpecFileCAM
     {
       /** Nuclide name (source rows) or energy, in keV, (line rows) - the header carries the unit. */
       Name,
-      /** Half-life (source rows) or yield/key-line/x-ray info (line rows). */
+      /** Half-life (source rows) or yield percent (line rows). */
       Info,
       /** Editable age (source rows of ageable nuclides only; blank/unused otherwise). */
       Age,
+      /** Key-line checkbox; line rows of included lines only (blank on source rows). */
+      Key,
       Include,
       NumColumns
     };//enum class Column
@@ -365,6 +371,12 @@ namespace ExportSpecFileCAM
     Wt::Signal<const SandiaDecay::Nuclide *, double> &ageEdited();
 
   private:
+    /** Makes exactly one *included* line of the given source the key line, keeping the current
+     one if it is still included, and otherwise falling back to the highest-yield included line.
+     Sources with no included lines are left with no key line.  Returns whether anything changed.
+     */
+    bool ensureSingleKeyLine( const int source_index );
+
     std::vector<GenieLibrarySource> m_sources;
     Wt::Signal<const SandiaDecay::Nuclide *, double> m_ageEdited;
   };//class GenieLibraryModel

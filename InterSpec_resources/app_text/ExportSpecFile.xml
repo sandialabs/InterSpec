@@ -139,13 +139,14 @@
   <message id="esfcam-combine-lines-tt">Merge gamma lines that are too close together for the detector to tell apart into a single yield-weighted line, so the library only distinguishes lines GENIE could actually resolve.</message>
 
   <!-- Nuclide library table -->
-  <message id="esfcam-col-source-energy">Src / keV</message>
-  <message id="esfcam-col-halflife">T&#189;</message>
+  <message id="esfcam-col-source-energy">Nuc / Line</message>
+  <message id="esfcam-col-halflife">T&#189; / Yield</message>
   <message id="esfcam-col-age">Age</message>
+  <message id="esfcam-col-key">Key</message>
+  <message id="esfcam-col-key-tt">The nuclide's key line - the one line GENIE uses to identify and quantify the nuclide.  Exactly one line per nuclide is the key line; checking a different line moves it.</message>
   <message id="esfcam-col-write">Write</message>
-  <message id="esfcam-line-yield-value">yield={1}%</message>
-  <message id="esfcam-line-is-xray">, x-ray</message>
-  <message id="esfcam-line-is-key">, key line</message>
+  <message id="esfcam-line-yield-value">{1}%</message>
+  <message id="esfcam-line-is-xray"> (x-ray)</message>
 
   <!-- FWHM (shape calibration) -->
   <message id="esfcam-write-fwhm">Write FWHM</message>

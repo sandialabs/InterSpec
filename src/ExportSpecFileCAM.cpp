@@ -1108,6 +1108,9 @@ boost::any GenieLibraryModel::data( const WModelIndex &index, int role ) const
           return boost::any();
         return boost::any( WString::fromUTF8( PhysicalUnits::printToBestTimeUnits(source.age_seconds) ) );
 
+      case Column::Key: //the key line belongs to a line row, not the source row
+        return boost::any();
+
       case Column::Include:
         if( role != Wt::CheckStateRole )
           return boost::any();
@@ -1147,13 +1150,18 @@ boost::any GenieLibraryModel::data( const WModelIndex &index, int role ) const
       WString answer = WString::tr("esfcam-line-yield-value").arg(buffer);
       if( line.is_xray )
         answer += WString::tr("esfcam-line-is-xray");
-      if( line.is_key_line )
-        answer += WString::tr("esfcam-line-is-key");
       return boost::any( answer );
     }
 
     case Column::Age:
       return boost::any();
+
+    case Column::Key:
+      //  A line that isnt being written cannot be the key line, so it gets no checkbox at all
+      //  rather than an unchecked one the user could click to no effect.
+      if( (role != Wt::CheckStateRole) || !line.included )
+        return boost::any();
+      return boost::any( line.is_key_line );
 
     case Column::Include:
       if( role != Wt::CheckStateRole )
@@ -1255,15 +1263,89 @@ bool GenieLibraryModel::setData( const WModelIndex &index, const boost::any &val
   if( (line_index < 0) || (line_index >= static_cast<int>(source.lines.size())) )
     return false;
 
+  const int num_lines = static_cast<int>( source.lines.size() );
+
   if( (Column(index.column()) == Column::Include) && (role == Wt::CheckStateRole) )
   {
     source.lines[line_index].included = boost::any_cast<bool>( value );
-    dataChanged().emit( index, index );
+
+    // Un-writing the key line (or bringing a line back when the source has none) has to move the
+    //  key line, so the whole source is repainted rather than just this row.
+    if( ensureSingleKeyLine( source_index ) )
+      dataChanged().emit( this->index( 0, 0, index.parent() ),
+                          this->index( num_lines - 1, static_cast<int>(Column::NumColumns) - 1, index.parent() ) );
+    else
+      dataChanged().emit( index, index );
+
     return true;
   }
 
+  if( (Column(index.column()) == Column::Key) && (role == Wt::CheckStateRole) )
+  {
+    GenieLibraryLine &line = source.lines[line_index];
+    if( !line.included )
+      return false;
+
+    // Every nuclide needs exactly one key line, so this column is a radio group: unchecking the
+    //  current key line is refused (repainted back to checked), and checking a line moves the key
+    //  line off of whichever line held it.
+    if( !boost::any_cast<bool>( value ) )
+    {
+      dataChanged().emit( index, index );
+      return true;
+    }
+
+    for( GenieLibraryLine &l : source.lines )
+      l.is_key_line = false;
+    line.is_key_line = true;
+
+    dataChanged().emit( this->index( 0, static_cast<int>(Column::Key), index.parent() ),
+                        this->index( num_lines - 1, static_cast<int>(Column::Key), index.parent() ) );
+    return true;
+  }//if( key-line checkbox )
+
   return false;
 }//setData(...)
+
+
+bool GenieLibraryModel::ensureSingleKeyLine( const int source_index )
+{
+  if( (source_index < 0) || (source_index >= static_cast<int>(m_sources.size())) )
+    return false;
+
+  vector<GenieLibraryLine> &lines = m_sources[source_index].lines;
+
+  int current_key = -1, best_included = -1;
+  bool changed = false;
+  for( size_t i = 0; i < lines.size(); ++i )
+  {
+    if( lines[i].is_key_line )
+    {
+      if( lines[i].included && (current_key < 0) )
+      {
+        current_key = static_cast<int>( i );
+      }else
+      {
+        lines[i].is_key_line = false; //drop duplicates, and key lines that arent being written
+        changed = true;
+      }
+    }
+
+    if( lines[i].included
+       && ((best_included < 0) || (lines[i].yield > lines[best_included].yield)) )
+    {
+      best_included = static_cast<int>( i );
+    }
+  }//for( size_t i = 0; i < lines.size(); ++i )
+
+  if( (current_key < 0) && (best_included >= 0) )
+  {
+    lines[best_included].is_key_line = true;
+    changed = true;
+  }
+
+  return changed;
+}//ensureSingleKeyLine(...)
 
 
 WFlags<ItemFlag> GenieLibraryModel::flags( const WModelIndex &index ) const
@@ -1275,6 +1357,18 @@ WFlags<ItemFlag> GenieLibraryModel::flags( const WModelIndex &index ) const
 
   if( Column(index.column()) == Column::Include )
     return WFlags<ItemFlag>( ItemFlag::ItemIsUserCheckable );
+
+  if( !is_source_row && (Column(index.column()) == Column::Key) )
+  {
+    const int source_index = static_cast<int>( index.internalId() - 1 );
+    const int line_index = index.row();
+    if( (source_index >= 0) && (source_index < static_cast<int>(m_sources.size()))
+       && (line_index >= 0) && (line_index < static_cast<int>(m_sources[source_index].lines.size()))
+       && m_sources[source_index].lines[line_index].included )
+    {
+      return WFlags<ItemFlag>( ItemFlag::ItemIsUserCheckable );
+    }
+  }//if( a line rows key-line checkbox )
 
   if( is_source_row && (Column(index.column()) == Column::Age) )
   {
@@ -1292,7 +1386,17 @@ WFlags<ItemFlag> GenieLibraryModel::flags( const WModelIndex &index ) const
 
 boost::any GenieLibraryModel::headerData( int section, Orientation orientation, int role ) const
 {
-  if( (orientation != Horizontal) || (role != Wt::DisplayRole) )
+  if( orientation != Horizontal )
+    return WAbstractItemModel::headerData( section, orientation, role );
+
+  if( role == Wt::ToolTipRole )
+  {
+    if( Column(section) == Column::Key )
+      return boost::any( WString::tr("esfcam-col-key-tt") );
+    return boost::any();
+  }
+
+  if( role != Wt::DisplayRole )
     return WAbstractItemModel::headerData( section, orientation, role );
 
   switch( Column(section) )
@@ -1300,6 +1404,7 @@ boost::any GenieLibraryModel::headerData( int section, Orientation orientation, 
     case Column::Name:        return boost::any( WString::tr("esfcam-col-source-energy") );
     case Column::Info:        return boost::any( WString::tr("esfcam-col-halflife") );
     case Column::Age:         return boost::any( WString::tr("esfcam-col-age") );
+    case Column::Key:         return boost::any( WString::tr("esfcam-col-key") );
     case Column::Include:     return boost::any( WString::tr("esfcam-col-write") );
     case Column::NumColumns:  break;
   }
@@ -1418,9 +1523,10 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
   // These have to add up to less than the dialog column the panel lives in (widened to ~340px by
   //  the `ExportSpecFileToolCnf` style class), or the "Write" checkbox column - the whole point of
   //  the table - ends up off-screen behind a scrollbar the user is unlikely to find.
-  m_libraryTable->setColumnWidth( static_cast<int>(GenieLibraryModel::Column::Name), 120 );
+  m_libraryTable->setColumnWidth( static_cast<int>(GenieLibraryModel::Column::Name), 95 );
   m_libraryTable->setColumnWidth( static_cast<int>(GenieLibraryModel::Column::Info), 75 );
   m_libraryTable->setColumnWidth( static_cast<int>(GenieLibraryModel::Column::Age), 65 );
+  m_libraryTable->setColumnWidth( static_cast<int>(GenieLibraryModel::Column::Key), 35 );
   m_libraryTable->setColumnWidth( static_cast<int>(GenieLibraryModel::Column::Include), 45 );
   m_libraryTable->expanded().connect( this, &GenieCnfOptionsWidget::handleSourceExpanded );
   m_libraryTable->collapsed().connect( this, &GenieCnfOptionsWidget::handleSourceCollapsed );

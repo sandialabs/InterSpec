@@ -1238,6 +1238,114 @@ BOOST_AUTO_TEST_CASE( peakBlockRoundTrips )
 }//BOOST_AUTO_TEST_CASE( peakBlockRoundTrips )
 
 
+/** Our own reader will happily round-trip a PEAK block that GENIE ignores, so this pins the
+ written block against a real Genie-produced one (CNFreader's cs137.CNF): the block header must
+ match it word for word apart from the block's own address, and the common area must carry the
+ analysis-engine names and per-record markers Genie writes.  Peaks written without those were
+ silently ignored by GENIE.
+ */
+BOOST_AUTO_TEST_CASE( peakBlockMatchesRealGenieLayout )
+{
+  set_data_dir();
+
+  SpecUtils::SpecFile spec;
+  auto m = make_shared<SpecUtils::Measurement>();
+  m->set_gamma_counts( make_shared<vector<float>>( 1024, 10.0f ), 100.0f, 110.0f );
+  auto cal = make_shared<SpecUtils::EnergyCalibration>();
+  cal->set_polynomial( 1024, {0.0f, 3.0f}, {} );
+  m->set_energy_calibration( cal );
+  m->set_start_time( std::chrono::system_clock::from_time_t( 1600000000 ) );
+  spec.add_measurement( m, true );
+
+  CAMInputOutput::CnfGenieExtras extras;
+  CAMInputOutput::Peak p{};
+  p.Energy = 661.657f;
+  p.Centroid = 220.5f;
+  p.FullWidthAtHalfMaximum = 2.5f;
+  p.Area = 12345.0f;
+  p.AreaUncertainty = 150.0f;
+  p.CountRate = 123.45f;
+  p.LeftChannel = 210;
+  p.RightChannel = 232;
+  extras.peaks.push_back( p );
+
+  stringstream ss;
+  BOOST_REQUIRE( spec.write_cnf( ss, {}, {}, &extras ) );
+  const string filedata = ss.str();
+  const vector<uint8_t> ours( begin(filedata), end(filedata) );
+
+  vector<uint8_t> genie;
+  {
+    const string path = SpecUtils::append_path( g_test_file_dir, "CamLibrary/cs137.CNF" );
+    ifstream f( path.c_str(), ios::binary );
+    if( !f.is_open() )
+    {
+      BOOST_TEST_MESSAGE( "Skipping: no real Genie peak file at " << path );
+      return;
+    }
+    genie.assign( (istreambuf_iterator<char>(f)), istreambuf_iterator<char>() );
+  }
+
+  const auto u16 = []( const vector<uint8_t> &d, const size_t o ) -> uint16_t {
+    BOOST_REQUIRE( (o + 2) <= d.size() );
+    uint16_t v; memcpy( &v, &d[o], 2 ); return v;
+  };
+
+  const auto peak_block = []( const vector<uint8_t> &d ) -> size_t {
+    for( size_t i = 0; i < 28; ++i )  //the block directory holds at most 28 entries
+    {
+      const size_t h = 0x70 + i*0x30;
+      if( (h + 0x30) > d.size() ) break;
+      uint32_t id, loc;
+      memcpy( &id, &d[h], 4 );
+      memcpy( &loc, &d[h+0x0A], 4 );
+      if( id == 0x12006 ) return loc;
+    }
+    return 0;
+  };
+
+  const size_t our_pos = peak_block( ours ), genie_pos = peak_block( genie );
+  BOOST_REQUIRE( our_pos && genie_pos );
+
+  // Every header word but the block's own address (0x0A-0x0D) must match.
+  for( size_t o = 0; o < 0x30; o += 2 )
+  {
+    if( (o == 0x0A) || (o == 0x0C) )
+      continue;
+    BOOST_CHECK_MESSAGE( u16(ours,our_pos+o) == u16(genie,genie_pos+o),
+        "PEAK header word 0x" << std::hex << o << ": wrote 0x" << u16(ours,our_pos+o)
+        << ", real Genie file has 0x" << u16(genie,genie_pos+o) << std::dec );
+  }
+
+  const auto has_string = []( const vector<uint8_t> &d, const size_t o, const char *str ){
+    return (o + strlen(str)) <= d.size() && (memcmp( &d[o], str, strlen(str) ) == 0);
+  };
+  //  Offsets and names below are literals on purpose - they are what the real file has,
+  //  so the test would still catch a change made to both writer and its constants.
+  BOOST_CHECK( has_string( ours, our_pos + 0x3C, "2nd Diff" ) );
+  BOOST_CHECK( has_string( ours, our_pos + 0x9D, "NLSQ Fit" ) );
+  BOOST_CHECK( has_string( genie, genie_pos + 0x3C, "2nd Diff" ) );
+  BOOST_CHECK( has_string( genie, genie_pos + 0x9D, "NLSQ Fit" ) );
+
+  for( const size_t offset : { size_t(0x8D), size_t(0xB9) } )
+  {
+    uint64_t ticks = 0;
+    memcpy( &ticks, &ours[our_pos + offset], sizeof(ticks) );
+    BOOST_CHECK_MESSAGE( ticks != 0, "Analysis timestamp at PEAK+0x" << std::hex << offset
+                                      << std::dec << " was left zero" );
+  }
+
+  // Each record starts with a 0x01 marker, the field values one byte further in.
+  const uint16_t headSize = u16( ours, our_pos + 0x10 );
+  const uint16_t recSize = u16( ours, our_pos + 0x20 );
+  const uint16_t recOffset = u16( ours, our_pos + 0x22 );
+  const uint16_t numRec = u16( ours, our_pos + 0x1E );
+  BOOST_REQUIRE_EQUAL( numRec, 1 );
+  for( size_t i = 0; i < numRec; ++i )
+    BOOST_CHECK_EQUAL( int(ours[our_pos + headSize + recOffset + i*recSize]), 1 );
+}//BOOST_AUTO_TEST_CASE( peakBlockMatchesRealGenieLayout )
+
+
 BOOST_AUTO_TEST_CASE( realGenieFileFormatAnchors )
 {
   set_data_dir();
