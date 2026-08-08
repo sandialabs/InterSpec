@@ -330,6 +330,9 @@ it does not exist in the payload.
   "NotFitPeaks": { ... },                               // §6.4 (exemplar peaks that did not
                                                         //  converge, with their detection
                                                         //  limits - §6.6.1)
+  "SupplementalPeakInfo": { ... },                      // §5.17 (per-peak detection-limit checks,
+                                                        //  and the activities implied by peaks
+                                                        //  not used in the fit)
   "D3_JS": "<minified d3.v3.js>",                       // §5.14
   "SpectrumChart_JS": "...",
   "SpectrumChart_CSS": "...",
@@ -1000,6 +1003,126 @@ A template that should work in both modes can dispatch with
 implicit, so `exists("...")` checks for a key on the root) and refer to per-file
 fields as `file.Filename`, `at(file.Sources, i).Activity_uCi`, etc.
 
+### 5.17 `SupplementalPeakInfo`
+
+Per-peak information that supplements the fit itself: a detection-limit check of every peak, and,
+for peaks that were fit but **not** used to determine the activities and shielding, the activity
+each would imply on its own.
+
+Both come from evaluating the fitted model held at its nominal answer, using the same forward model
+that produced the fit — so interference between sources, self-attenuating and trace source geometry,
+and decay during the measurement are all accounted for.
+
+This object is produced by the activity/shielding computation itself, so it appears in **both** the
+GUI's calculation log and the batch reports.  It is **absent entirely** when there is nothing to
+report — when the fit did not converge, or when the computation is turned off (batch:
+`--not-fit-peak-mda none`).  Guard with `exists("SupplementalPeakInfo")` at the top level, or
+`existsIn(file,"SupplementalPeakInfo")` inside a batch-summary `Files` loop.
+
+Two questions are answered, and they are worth keeping apart:
+
+- **"Is there a detectable signal in this peak's region?"** — a Currie-style (ISO 11929
+  gross-counts) check, made for *every* peak.  For a peak that was fit this is a quality check: a
+  peak can pass the peak-fit significance tests and still sit below the level at which a signal can
+  be reliably claimed.  Those show a `ShortDescription` of `"Fit, but less than Lc"`.
+- **"What activity would this peak imply on its own?"** — only for peaks that were fit and were not
+  used in the fit.  The useful reading is whether the unused peaks agree with the answer the used
+  peaks gave; a systematic offset across all of them means something different (efficiency,
+  shielding, branching ratio) than scatter does.
+
+| Field | Type | Notes |
+|---|---|---|
+| `HasCurrieChecks`      | bool | Always present.  True if at least one peak's detection-limit check was computed. |
+| `HasNominalActivities` | bool | Always present.  True if at least one peak has an implied activity. |
+| `AnyPeakNotUsedForFit` | bool | Always present.  True if at least one fit peak was not used by the model. |
+| `AllPeaks`             | object | Only present when the object itself is.  Has a `Peaks[]` array with **every** peak given to the fit. |
+| `PeaksNotUsedForFit`   | object | Only present when the object itself is.  Has a `Peaks[]` array holding the subset of `AllPeaks.Peaks[]` that were fit but not used by the model.  Empty array when `AnyPeakNotUsedForFit` is false. |
+
+Both `Peaks[]` arrays hold the same element shape (§5.17.1); the entries in
+`PeaksNotUsedForFit.Peaks[]` are copies of the corresponding `AllPeaks.Peaks[]` entries, provided
+separately so a report can show "peaks that disagree with the answer" without filtering in the
+template.
+
+#### 5.17.1 `SupplementalPeakInfo.*.Peaks[]` element
+
+Peak identification — always present:
+
+| Field | Type | Notes |
+|---|---|---|
+| `PeakMean`, `PeakMeanUncert`  | double | Fit peak mean and its uncertainty, keV. |
+| `PeakMeanStr`                 | string | `PeakMean` pre-formatted to 5 significant figures. |
+| `PeakFwhm`                    | double | FWHM in keV; for a "data defined" peak, the ROI width. |
+| `PeakAmplitude`, `PeakAmplitudeUncert` | double | Observed peak area (counts) and its uncertainty. |
+| `PeakAmplitudeStr`, `PeakAmplitudeUncertStr` | string | The two above, pre-formatted to 4 significant figures. |
+| `HasSourceAssigned`           | bool | Whether a specific source gamma is assigned to the peak. |
+| `SourceType`                  | string | `"Nuclide"`, `"X-Ray"`, `"Reaction"`, or `""`. |
+| `SourceName`                  | string | E.g. `"Cs137"`; empty string if no source is assigned. |
+| `SourceEnergy`                | double | Energy of the assigned source gamma, keV; `0.0` when `HasSourceAssigned` is false. |
+| `SourceGammaParent`, `SourceGammaChild` | string | Decay parent/child symbols.  Only present for a nuclide source whose nuclear transition is known. |
+| `UsedForFit`                  | bool | Whether this peak was used to determine the activities and shielding. |
+| `IsSyntheticPeak`             | bool | True for a peak that stands in for one that was never observed — batch adds the exemplar peaks it could not fit, so the model will predict the counts each would have received.  Their `PeakAmplitude` is meaningless, and they never get an implied activity. |
+
+Detection-limit check — always present:
+
+| Field | Type | Notes |
+|---|---|---|
+| `HasCurrieCheck` | bool | Whether `CurrieCheck` holds a completed calculation.  Mirrors `CurrieCheck.CurrieComputed`. |
+| `CurrieCheck`    | object | Always present.  Same shape as `Peaks[].Mda`'s counts fields — see §6.6.1 for the full key list and their presence rules. |
+
+Model evaluation — always present:
+
+| Field | Type | Notes |
+|---|---|---|
+| `ModelEvaluated`      | bool | Whether the fitted model was evaluated for this peak.  False when the peak has no nuclide assigned, its nuclide was not one of the fitted sources, it has no specific gamma assigned, or the evaluation failed. |
+| `NotEvaluatedReason`  | string | Only present when `ModelEvaluated` is false.  A sentence fragment, e.g. `"Cs137 was not one of the fitted sources"`. |
+
+Present **only when `ModelEvaluated` is true**:
+
+| Field | Type | Notes |
+|---|---|---|
+| `ExpectedCounts`             | double | Counts the model predicts for this peak, from all fitted sources together. |
+| `ExpectedCountsStr`          | string | The above, pre-formatted to 4 significant figures. |
+| `NuclideExpectedCounts`      | double | The part of `ExpectedCounts` this peak's own nuclide contributes. |
+| `OtherSourcesExpectedCounts` | double | The part all other fitted sources contribute.  This is removed before deriving an implied activity — the interference correction. |
+| `SharedWithOtherSources`     | bool | Whether another fitted source contributes to this peak at all. |
+| `CountsPerBq`                | double | Counts this peak receives per becquerel of its nuclide's activity.  Accounts for branching ratio at the fitted age, live time, shielding and air attenuation, detector efficiency, source geometry, and decay during the measurement. |
+| `DetectorEff`                | double | Detector efficiency at this energy.  For a volumetric source, an effective value averaged over the source. |
+| `ShieldingTransmission`      | double | Fraction of gammas transmitted through all shieldings. |
+| `AirTransmission`            | double | Fraction transmitted through the air between the shielding and the detector; `1.0` when air attenuation is off or the geometry is fixed. |
+| `IsVolumetricSource`         | bool | Whether this peak's nuclide is a self-attenuating or trace source. |
+
+Descriptions — always present:
+
+| Field | Type | Notes |
+|---|---|---|
+| `ShortDescription` | string | Table-cell sized; e.g. `"1.05x fitted"`.  Empty when no implied activity was derived. |
+| `ResultSummary`    | string | A sentence with the numbers in it.  Empty when no implied activity was derived. |
+| `Caveats`          | string | Notes about anything that makes the comparison less reliable; may be empty. |
+| `HasCaveats`       | bool | Whether `Caveats` is non-empty.  Render caveats in their own `.MdaCaveat` span rather than burying them in the paragraph. |
+| `Description`      | string | `ResultSummary` followed by `Caveats`, joined with two spaces — the caveats stay last.  Use this when you want one ready-to-print paragraph. |
+
+Implied activity — present **only when `HasNominalActivity` is true**, which requires the peak to
+have been fit, not used in the fit, and its nuclide to have a non-zero fitted activity:
+
+| Field | Type | Notes |
+|---|---|---|
+| `HasNominalActivity`         | bool | Always present.  Guard every field below with it. |
+| `ImpliedActivity`            | string | The activity this peak alone implies, formatted with units and any fixed-geometry postfix (e.g. `"1.23 uCi"`). |
+| `ImpliedActivityUncert`      | string | Its uncertainty, likewise formatted. |
+| `FitActivity`                | string | The fitted activity of this peak's nuclide, for comparison. |
+| `FitActivityUncert`          | string | Its uncertainty. |
+| `<any of the above>_bq`, `_kBq`, `_MBq`, `_ci`, `_mCi`, `_uCi` | double | The same activity as a plain number in that unit — e.g. `ImpliedActivity_bq`.  Use these for arithmetic and for CSV columns. |
+| `ActivityPostFix`            | string | Postfix carried by the formatted strings for fixed-geometry detector responses, e.g. `"/cm2"`.  Empty in the usual case. |
+| `RatioToFitActivity`         | double | Observed counts divided by the counts the model predicts.  1.0 means perfect agreement. |
+| `RatioToFitActivityUncert`   | double | Its uncertainty. |
+| `RatioToFitActivityStr`      | string | `RatioToFitActivity` pre-formatted to 4 significant figures. |
+| `NumSigmaOff`                | double | How many standard deviations the observed counts sit from the model prediction. |
+| `NumSigmaOffStr`             | string | The above, pre-formatted to 3 significant figures. |
+
+Note that an activity family member is **omitted entirely** when the value works out non-positive —
+`printToBestActivityUnits` renders those as an unreadable string of femtocuries.  Guard individual
+members with `existsIn(peak,"ImpliedActivityUncert")` when a zero uncertainty is possible.
+
 ## 6. JSON data model — batch peak-fit
 
 This section describes the JSON object built by
@@ -1258,16 +1381,26 @@ correct under non-linear calibrations.
 
 ### 6.6.1 `Peaks[].Mda` — detection limits for peaks that were not fit
 
-When limits were computed, peaks inside `NotFitPeaks` carry a `HasMda` bool and — when there is
-a limit for that particular peak — an `Mda` object. With `--not-fit-peak-mda none` **neither key
-is present at all**, so guard with `existsIn(peak,"Mda")` rather than `peak.HasMda`, or check
-`NotFitPeaks.HasMdas` (always present) first. Peaks inside `FitPeaks` and `ExemplarPeaks` never
-have either key, so templates written before this existed are unaffected.
+When limits were computed, peaks inside `NotFitPeaks` and `ExemplarPeaks` carry a `HasMda` bool
+and — when there is a limit for that particular peak — an `Mda` object. With
+`--not-fit-peak-mda none` **neither key is present at all**, so guard with
+`existsIn(peak,"Mda")` rather than `peak.HasMda`, or check the collection's `HasMdas` (always
+present) first. Peaks inside `FitPeaks` never have either key, so templates written before this
+existed are unaffected.
 
-The limit answers "if this exemplar peak really isn't there, how much *could* be there and
-still have escaped the fit?". The counts quantities are present whenever `CurrieComputed` is
-true; the activity quantities only for activity/shielding fits whose nuclide was one of the
-fitted sources (§6.6.2).
+`NotFitPeaks` holds only the exemplar peaks that could **not** be fit; `ExemplarPeaks` holds
+**every** exemplar peak, so its limits include the peaks that were fit. Use `Mda.PeakWasFit` to
+tell the two cases apart, and note that a peak that was fit never gets a deconvolution limit
+(§6.6.3) — for it you already have a measured area with an uncertainty.
+
+For a peak that was not fit, the limit answers "if this exemplar peak really isn't there, how much
+*could* be there and still have escaped the fit?". For a peak that **was** fit it is a quality
+check: a peak can pass the peak-fit significance tests and still sit below the level at which a
+signal can be reliably claimed, which shows up as a `ShortDescription` of
+`"Fit, but less than Lc"`.
+
+The counts quantities are present whenever `CurrieComputed` is true; the activity quantities only
+for activity/shielding fits whose nuclide was one of the fitted sources (§6.6.2).
 
 ```
 {% if existsIn(peak,"Mda") %}{{ peak.Mda.ShortDescription }} — {{ peak.Mda.Description }}{% endif %}
@@ -1281,7 +1414,7 @@ than on either string.
 | Field | Type | Notes |
 |---|---|---|
 | `ResultType`               | string  | `NotDetected` (below the decision threshold — an upper limit only), `Detected` (signal is above the decision threshold even though no peak converged), `Deficit` (significantly fewer counts than the continuum predicts), or `Error` (the limit could not be computed). |
-| `ShortDescription`         | string  | Brief phrase for the result, short enough for a table cell: `"Less than Lc"`, `"Greater than Lc"`, `"Fewer counts than expected"`, or `"Not computed"`. |
+| `ShortDescription`         | string  | Brief phrase for the result, short enough for a table cell: `"Less than Lc"`, `"Fit, but less than Lc"`, `"Greater than Lc"`, `"Fewer counts than expected"`, `"No counts in region"`, or `"Not computed"`. |
 | `Description`              | string  | Ready-to-include English summary: the result, then the activity statement when applicable, then any caveats. Equals `ResultSummary` + `ActivitySummary` + `Caveats`, joined by two spaces. |
 | `ResultSummary`            | string  | Just the counts statement — the first part of `Description`. |
 | `ActivitySummary`          | string  | Just the activity statement, or why there isn't one; empty for plain peak fits. |
@@ -1296,6 +1429,9 @@ than on either string.
 | `CurrieError`              | string  | Why it failed. Only present when `CurrieComputed` is false. |
 | `OverlapsFitPeak`          | bool    | A peak that *was* fit falls in the evaluated region, so the limit may be biased. |
 | `OverlapsOtherNotFitPeak`  | bool    | Another not-fit exemplar peak falls in the evaluated region. |
+| `PeakWasFit`               | bool    | Whether this exemplar peak was actually fit in the spectrum. Always false inside `NotFitPeaks`; either value inside `ExemplarPeaks`. A deconvolution limit is never computed when true. |
+| `FitPeakMean`, `FitPeakFwhm`, `FitPeakArea`, `FitPeakAreaUncert` | double | The matched fit peak's mean (keV), FWHM (keV), area (counts), and area uncertainty. **Only present when `PeakWasFit` is true.** The limit is evaluated at this peak's mean and width, rather than the exemplar's, since re-fitting the energy calibration can shift the mean. |
+| `FitPeakMeanStr`, `FitPeakAreaStr`, `FitPeakAreaUncertStr` | string | The above pre-formatted (5, 4, and 4 significant figures). **Only present when `PeakWasFit` is true.** |
 | `RegionIsEmpty`            | bool    | The peak region and its side channels hold essentially no counts, so the Gaussian statistics the method uses have broken down. `ResultType` is forced to `NotDetected` (a single stray count must not read as a detection), and only `DetectionLimit_counts` is meaningful — `DecisionThreshold_counts` and `UpperLimit_counts` are both zero. |
 
 The remaining counts fields are present only when `CurrieComputed` is true:
@@ -1317,37 +1453,42 @@ The remaining counts fields are present only when `CurrieComputed` is true:
 
 ### 6.6.2 `Peaks[].Mda` — activity fields
 
-`HasMdaActivity` is always present. When it is false and an activity/shielding fit tried and
-failed to convert this peak, `NoMdaActivityReason` says why (no source nuclide assigned, the
-nuclide was not one of the fitted sources, no gamma line near the peak energy, and so on).
-Plain peak-fit reports have `HasMdaActivity` false with **no** `NoMdaActivityReason`, since
-there is no source model to convert with — so guard it with `existsIn(peak.Mda,"NoMdaActivityReason")`.
-When `HasMdaActivity` is true, these are present:
+`HasActivity` is always present. When it is false and an activity/shielding fit tried and
+failed to convert this peak, `NoActivityReason` says why (no source nuclide assigned, the
+nuclide was not one of the fitted sources, the model attributes no counts to the peak, and so on).
+Plain peak-fit reports have `HasActivity` false with **no** `NoActivityReason`, since
+there is no source model to convert with — so guard it with `existsIn(peak.Mda,"NoActivityReason")`.
+When `HasActivity` is true, these are present:
+
+Each activity below is the activity form of the like-named counts field in §6.6.1, so
+`DetectionLimitActivity` pairs with `DetectionLimit_counts`, and so on.  The minimum detectable
+activity ("MDA") is `DetectionLimitActivity`.
 
 | Field | Type | Notes |
 |---|---|---|
 | `Nuclide`                  | string  | The peak's parent nuclide. |
-| `DetectionLimitActivity`   | string  | Formatted L<sub>d</sub> activity — the minimum detectable activity — including any fixed-geometry postfix. |
-| `MdaActivity`              | string  | Synonym for `DetectionLimitActivity`. |
+| `DetectionLimitActivity`   | string  | Formatted L<sub>d</sub> activity — the minimum detectable activity (MDA) — including any fixed-geometry postfix. |
 | `DecisionThresholdActivity`| string  | Formatted L<sub>c</sub> activity. |
 | `UpperLimitActivity`       | string  | Upper bound on the activity actually present, at the confidence level. **Absent whenever it would not be positive** — a `Deficit` result, or an empty region. |
 | `ObservedActivity`, `ObservedActivityLower`, `ObservedActivityUpper` | string | Only when `ResultType` is `Detected`. `ObservedActivityLower` is additionally absent when the lower limit falls below zero, which a `Detected` result does not preclude. |
-
-Any activity that works out non-positive is omitted rather than printed, so **every** key in this
-table needs an `existsIn(peak.Mda, "…")` guard, not just a `HasMdaActivity` check.
 | `<any of the above>_bq`, `_kBq`, `_MBq`, `_ci`, `_mCi`, `_uCi` | number | Numeric forms of each activity above; e.g. `DetectionLimitActivity_bq`. |
 | `ActivityPostFix`          | string  | Postfix for fixed-geometry detector responses; e.g. `"/cm2"`. Usually empty. |
 | `GammasPerBq`              | number  | Counts expected per becquerel: `activity = counts / GammasPerBq`. |
-| `BranchingRatio`           | number  | Gammas of this energy per decay, at the fitted age. |
 | `ShieldingTransmission`    | number  | Fraction through the fitted shielding, in (0,1]. |
 | `AirTransmission`          | number  | Fraction through the intervening air; 1.0 if not modelled. |
 | `DetectorEff`              | number  | Detector efficiency at the fit distance. |
 | `LiveTime_s`               | number  | Spectrum live time, in seconds. |
 
-The shielding attenuation is computed along the single line from the source through the
-center of each shielding, so for self-attenuating or trace sources it is an approximation;
-`Description` notes when that is the case. No correction is made for decay during the
-measurement.
+Any activity that works out non-positive is omitted rather than printed, so **every** activity key
+in this table needs an `existsIn(peak.Mda, "…")` guard, not just a `HasActivity` check.
+
+`GammasPerBq` comes from evaluating the fitted shielding/source model at this peak's energy — the
+same forward model that produced the fit — so it accounts for interference between sources,
+volumetric source geometry, and decay during the measurement.  `ShieldingTransmission`,
+`AirTransmission` and `DetectorEff` are the pieces of that conversion, reported for transparency;
+for a volumetric source they are effective values averaged over the source rather than a single
+line of sight, and `Description` notes when that is the case.  §5.17.1's `CountsPerBq` is the same
+quantity, reported per peak rather than per limit.
 
 ### 6.6.3 `Peaks[].Mda` — deconvolution fields
 
@@ -1358,7 +1499,7 @@ than just summing counts in a box.
 | Field | Type | Notes |
 |---|---|---|
 | `DeconComputed`        | bool    | Whether it succeeded. |
-| `DeconError`           | string  | Why it failed. Only present when `DeconComputed` is false. |
+| `DeconError`           | string  | Why no upper limit was produced. Present when computation fails or the scan does not bracket an upper limit. |
 | `DeconQuantityIsCounts`| bool    | True for plain peak fits (the limit is peak counts); false for activity/shielding fits (the limit is source activity). |
 | `DeconFoundUpperLimit` | bool    | Whether an upper limit was bracketed. Only when `DeconComputed` is true. |
 | `DeconBestChi2`, `DeconLimitChi2`, `DeconBestQuantity` | number | χ² at the best fit, χ² at the limit, and the best-fit source strength. Only when `DeconComputed` is true. |
@@ -1869,14 +2010,20 @@ For LLMs that have web access, the authoritative source for everything above is 
   all JSON-population functions (`shield_src_fit_results_to_json`,
   `add_peak_fit_results_to_json`, `add_basic_src_details`, `add_basic_peak_info`,
   `add_gamma_info_for_peak`, `add_hist_to_json`, `add_energy_cal_json`,
-  `add_exe_info_to_json`, `add_act_shield_fit_options_to_json`, `get_default_inja_env`).
+  `add_exe_info_to_json`, `add_act_shield_fit_options_to_json`, `get_default_inja_env`,
+  `add_mda_to_json`, `add_currie_check_to_json`, `add_supplemental_peak_info_to_json`).
 - [`InterSpec/BatchInfoLog.h`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/InterSpec/BatchInfoLog.h) —
   public interfaces.
 - [`src/ShieldingSourceDisplay.cpp`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/src/ShieldingSourceDisplay.cpp) —
   `showCalcLog()` (the GUI-side renderer; also where the writable directory is scanned).
 - [`InterSpec/ShieldingSourceFitCalc.h`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/InterSpec/ShieldingSourceFitCalc.h) —
-  the `ModelFitResults` / `SourceFitDef` / `ShieldingInfo` data structures that the
-  JSON payload mirrors.
+  the `ModelFitResults` / `SourceFitDef` / `ShieldingInfo` / `SupplementalPeakInfo` data
+  structures that the JSON payload mirrors.
+- [`src/ShieldingSourceFitCalc.cpp`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/src/ShieldingSourceFitCalc.cpp) —
+  `compute_supplemental_peak_info()`, which produces §5.17 for both the GUI and batch.
+- [`InterSpec/DetectionLimitCalc.h`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/InterSpec/DetectionLimitCalc.h) —
+  `PeakCurrieCheck` and `currie_check_for_peak()`, the shared per-peak detection-limit check
+  behind both `Mda` (§6.6.1) and `CurrieCheck` (§5.17.1).
 - [`src/BatchPeak.cpp`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/src/BatchPeak.cpp) —
   the batch peak-fit driver and `Files[]` wrapping.
 - [`InterSpec/BatchPeak.h`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/InterSpec/BatchPeak.h) —

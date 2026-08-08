@@ -958,7 +958,7 @@ CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input )
   // TODO: The calculation of result.detection_limit is using the simplified form requiring k_alpha == k_beta.
   //       If this is not the case it is an iterative solution (see eqn 129 on pg 47 of AQ-48)
   const double add_uncert = input.additional_uncertainty;
-  if( k*k*add_uncert >= 1.0 )
+  if( k*k*add_uncert*add_uncert >= 1.0 )
   {
     result.detection_limit = -999; //TODO: indicate non-applicability better
   }else
@@ -1007,6 +1007,214 @@ CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input )
   
   return result;
 };//mda_counts_calc
+
+
+const char *to_str( const PeakCurrieCheck::ResultType type )
+{
+  switch( type )
+  {
+    case PeakCurrieCheck::ResultType::NotDetected: return "NotDetected";
+    case PeakCurrieCheck::ResultType::Detected:    return "Detected";
+    case PeakCurrieCheck::ResultType::Deficit:     return "Deficit";
+    case PeakCurrieCheck::ResultType::Error:       return "Error";
+  }//switch( type )
+
+  assert( 0 );
+  return "Error";
+}//const char *to_str( const PeakCurrieCheck::ResultType )
+
+
+double peak_width_for_currie_check( const PeakDef &peak )
+{
+  if( peak.gausPeak() && (peak.fwhm() > 0.0) )
+    return peak.fwhm();
+
+  const double roi_width = peak.upperX() - peak.lowerX();
+
+  return (roi_width > 0.0) ? (roi_width / 2.5) : 0.0;
+}//double peak_width_for_currie_check( const PeakDef & )
+
+
+double gaussian_fraction_in_roi( const double num_fwhm )
+{
+  if( num_fwhm <= 0.0 )
+    return 0.0;
+
+  // Half-width, in units of sigma, is 0.5*num_fwhm*2.35482; the fraction within +-x sigma of the
+  //  mean is erf( x / sqrt(2) ).
+  const double half_width_sigma = 0.5 * num_fwhm * 2.35482;
+
+  return erf( half_width_sigma / sqrt(2.0) );
+}//double gaussian_fraction_in_roi( const double )
+
+
+std::string confidence_level_str( const double confidence_level )
+{
+  char buffer[64] = { '\0' };
+
+  if( confidence_level < 0.999 )
+    snprintf( buffer, sizeof(buffer), "%.4g%%", 100.0*confidence_level );
+  else
+    snprintf( buffer, sizeof(buffer), "1-%.2G", (1.0 - confidence_level) );
+
+  return buffer;
+}//std::string confidence_level_str( const double )
+
+
+std::pair<double,double> currie_check_energy_range( const CurrieMdaResult &result )
+{
+  const std::shared_ptr<const SpecUtils::Measurement> &spec = result.input.spectrum;
+  assert( spec && spec->energy_calibration() );
+  if( !spec || !spec->energy_calibration() )
+    return { 0.0, 0.0 };
+
+  const size_t first_channel = (result.input.num_lower_side_channels > 0)
+                                  ? result.first_lower_continuum_channel
+                                  : result.first_peak_region_channel;
+  const size_t last_channel = (result.input.num_upper_side_channels > 0)
+                                  ? result.last_upper_continuum_channel
+                                  : result.last_peak_region_channel;
+
+  return { spec->gamma_channel_lower(first_channel), spec->gamma_channel_upper(last_channel) };
+}//std::pair<double,double> currie_check_energy_range( const CurrieMdaResult & )
+
+
+PeakCurrieCheck currie_check_for_peak( const PeakDef &peak,
+                                      const shared_ptr<const SpecUtils::Measurement> &spectrum,
+                                      const PeakCurrieCheckOptions &options,
+                                      const bool peak_was_fit )
+{
+  PeakCurrieCheck answer;
+
+  // A side-channel count of zero puts `currie_mda_calc` into its "the spectrum is asserted to be
+  //  background" mode, which is a different calculation than we are documenting here.
+  const size_t num_side_channels = std::max( size_t(1), options.num_side_channels );
+
+  // Record the options used up front, so they are still reported for peaks whose limit cant be
+  //  computed.
+  answer.result.input.detection_probability = options.confidence_level;
+  answer.result.input.num_lower_side_channels = num_side_channels;
+  answer.result.input.num_upper_side_channels = num_side_channels;
+  answer.signal_fraction_in_roi = gaussian_fraction_in_roi( options.roi_num_fwhm );
+
+  if( !spectrum || (spectrum->num_gamma_channels() < 4) )
+  {
+    answer.error_message = "no spectrum to evaluate the peak region in";
+    answer.short_description = "Not computed";
+    answer.result_summary = "Detection limit could not be computed: " + answer.error_message + ".";
+    return answer;
+  }//if( no usable spectrum )
+
+  const double mean = peak.mean();
+  const double fwhm = peak_width_for_currie_check( peak );
+
+  CurrieMdaInput input;
+  input.spectrum = spectrum;
+  input.gamma_energy = static_cast<float>( mean );
+
+  if( fwhm > 0.0 )
+  {
+    const double half_width = 0.5 * options.roi_num_fwhm * fwhm;
+    input.roi_lower_energy = static_cast<float>( mean - half_width );
+    input.roi_upper_energy = static_cast<float>( mean + half_width );
+  }else
+  {
+    input.roi_lower_energy = static_cast<float>( peak.lowerX() );
+    input.roi_upper_energy = static_cast<float>( peak.upperX() );
+  }
+
+  input.num_lower_side_channels = num_side_channels;
+  input.num_upper_side_channels = num_side_channels;
+  input.detection_probability = options.confidence_level;
+  input.additional_uncertainty = 0.0f;
+
+  try
+  {
+    answer.result = currie_mda_calc( input );
+    answer.computed = true;
+  }catch( std::exception &e )
+  {
+    // Keep the input around, so the options actually used are still reported for this peak
+    answer.result.input = input;
+    answer.error_message = e.what();
+    answer.result_type = PeakCurrieCheck::ResultType::Error;
+    answer.short_description = "Not computed";
+    answer.result_summary = "Detection limit could not be computed: " + answer.error_message + ".";
+    return answer;
+  }//try / catch
+
+  const CurrieMdaResult &res = answer.result;
+  const string cl_str = confidence_level_str( options.confidence_level );
+
+  // With (essentially) no counts anywhere in the region, the decision threshold and the upper
+  //  limit both collapse to zero - the Gaussian statistics the calculation uses have broken
+  //  down.  Left alone, that makes a single stray count read as a detection, and reports an
+  //  upper limit of "less than 0 counts".  Ld does not degenerate (it tends to k^2, which is
+  //  the right order for a zero-background Poisson limit), so fall back to quoting just that.
+  answer.region_is_empty = (res.decision_threshold <= 0.0f);
+
+  // Classify the result, using the same criteria as the GUI detection limit tools.
+  if( answer.region_is_empty )
+    answer.result_type = PeakCurrieCheck::ResultType::NotDetected;
+  else if( res.source_counts > res.decision_threshold )
+    answer.result_type = PeakCurrieCheck::ResultType::Detected;
+  else if( res.upper_limit < 0.0f )
+    answer.result_type = PeakCurrieCheck::ResultType::Deficit;
+  else
+    answer.result_type = PeakCurrieCheck::ResultType::NotDetected;
+
+  switch( answer.result_type )
+  {
+    case PeakCurrieCheck::ResultType::NotDetected:
+      if( answer.region_is_empty )
+      {
+        answer.short_description = "No counts in region";
+        answer.result_summary = "Not detected; the peak region contains essentially no counts."
+                                "  Minimum reliably detectable signal (Ld) is "
+                                + SpecUtils::printCompact(res.detection_limit, 4) + " counts.";
+        break;
+      }//if( answer.region_is_empty )
+
+      // A peak that was fit, yet sits below the decision threshold, passed the peak-fit
+      //  significance tests but cannot be claimed as a detection - worth saying plainly.
+      answer.short_description = peak_was_fit ? "Fit, but less than Lc" : "Less than Lc";
+      answer.result_summary = (peak_was_fit
+                    ? string("A peak was fit here, but the signal is below the decision threshold")
+                    : string("Not detected.  Observed signal is below the decision threshold"))
+                    + " (Lc = " + SpecUtils::printCompact(res.decision_threshold, 4) + " counts);"
+                    " signal is less than " + SpecUtils::printCompact(res.upper_limit, 4)
+                    + " counts at the " + cl_str + " confidence level."
+                    "  Minimum reliably detectable signal (Ld) is "
+                    + SpecUtils::printCompact(res.detection_limit, 4) + " counts.";
+      break;
+
+    case PeakCurrieCheck::ResultType::Detected:
+      answer.short_description = "Greater than Lc";
+      answer.result_summary = (peak_was_fit
+                    ? string("Signal present: observed ")
+                    : string("Signal present but peak not fit: observed "))
+                    + SpecUtils::printCompact(res.source_counts, 4) + " counts is above the"
+                    " decision threshold (Lc = "
+                    + SpecUtils::printCompact(res.decision_threshold, 4) + " counts); signal"
+                    " is between " + SpecUtils::printCompact(res.lower_limit, 4) + " and "
+                    + SpecUtils::printCompact(res.upper_limit, 4) + " counts at the "
+                    + cl_str + " confidence level.";
+      break;
+
+    case PeakCurrieCheck::ResultType::Deficit:
+      answer.short_description = "Fewer counts than expected";
+      answer.result_summary = "Fewer counts than expected from the neighboring continuum; observed"
+                    " signal is consistent with less than 0 counts at the " + cl_str
+                    + " confidence level.";
+      break;
+
+    case PeakCurrieCheck::ResultType::Error:
+      assert( 0 );
+      break;
+  }//switch( answer.result_type )
+
+  return answer;
+}//PeakCurrieCheck currie_check_for_peak(...)
 
 
 DeconRoiInfo::DeconRoiInfo()
@@ -1122,7 +1330,7 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
       const float &energy = peak_info.energy;
       const float fwhm = (peak_info.fwhm > 0.0f) ? peak_info.fwhm : input.drf->peakResolutionFWHM( energy );
       // FWHM = 2*sqrt(2*ln(2))*sigma; see `PeakDef::fwhm()`.
-      const float sigma = fwhm / 2.35482f;
+      const float sigma = fwhm / PhysicalUnits::fwhm_nsigma;
       const double det_eff = fixed_geom ? input.drf->intrinsicEfficiency(energy)
                                         : input.drf->efficiency( energy, input.distance );
       const double counts_4pi = peak_info.counts_per_bq_into_4pi;
@@ -1294,10 +1502,16 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
     double chi2, dof;
     get_chi2_and_dof_for_roi( chi2, dof, input.measurement, peakptrs );
 
+    // FixedByFullRange solves the continuum from these same ROI channels and then marks the
+    // coefficients fixed before this DOF helper is called.  Account for those fitted nuisance
+    // parameters explicitly; FixedByEdges is conditional on independent side-channel estimates.
+    if( cont_norm_method == DeconContinuumNorm::FixedByFullRange )
+      dof = std::max( 1.0, dof - static_cast<double>(peak_continuum->parameters().size()) );
+
     total_chi2 += chi2;
     total_DOF += dof;
 
-    const double chi2_dof = total_chi2 / ((total_DOF > 0.0) ? total_DOF : 1.0);
+    const double chi2_dof = chi2 / ((dof > 0.0) ? dof : 1.0);
     for( PeakDef &p : roi_peaks )
       p.set_coefficient(chi2_dof, PeakDef::CoefficientType::Chi2DOF );
 
@@ -1321,6 +1535,7 @@ DeconActivityOrDistanceLimitResult::DeconActivityOrDistanceLimitResult()
     limitText(),
     quantityLimitStr(),
     bestCh2Text(),
+    errorMessage(),
     overallBestChi2( 0.0 ),
     overallBestQuantity( 0.0 ),
     overallBestResults( nullptr ),
@@ -1347,9 +1562,11 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
                       const double max_search_quantity,
                       const bool useCurie )
 {
-  assert( base_input );
   if( !base_input )
     throw runtime_error( "get_activity_or_distance_limits: invalid base input." );
+
+  if( !(wantedCl > 0.5f) || !(wantedCl < 1.0f) )
+    throw runtime_error( "get_activity_or_distance_limits: confidence level must be between 0.5 and 1." );
   
   DeconActivityOrDistanceLimitResult result;
   result.isDistanceLimit = is_dist_limit;
@@ -1361,16 +1578,19 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
   
   const double yrange = 15;
   
-  // TODO: we are scanning activity or distance, which is a single degree of freedom - but does it matter that
-  //       we are marginalizing over (i.e., fitting for) the nuisance parameters of the peaks and
-  //       stuff?  I dont *think* so.
+  // Activity or distance is the one parameter of interest.  For a floating continuum,
+  // `decon_compute_peaks(...)` re-fits its nuisance parameters at every trial value, which is the
+  // profile construction for which a one-DOF delta chi-square is the appropriate asymptotic
+  // approximation.
   const boost::math::chi_squared chi_squared_dist( 1.0 );
-  
-  // We want interval corresponding to 95%, where the quantile will give us CDF up to that
-  //  point, so we actually want the quantile that covers 97.5% of cases.
-  const float twoSidedCl = 0.5 + 0.5*wantedCl;
-  
-  const double cl_chi2_delta = boost::math::quantile( chi_squared_dist, twoSidedCl );
+
+  // A chi-square(1) variate is the square of a two-tailed standard-normal variate, so its CDF
+  // already folds both normal tails together.  For a one-sided upper limit matching the Currie
+  // calculation, z_CL^2 therefore has chi-square probability 2*CL - 1.  Applying the normal
+  // two-sided conversion 0.5 + 0.5*CL here would count the two-sidedness twice.
+  const double one_sided_chi2_probability = 2.0*static_cast<double>(wantedCl) - 1.0;
+  const double cl_chi2_delta
+                       = boost::math::quantile( chi_squared_dist, one_sided_chi2_probability );
   
   const size_t nchi2 = 25;  //approx num chi2 to compute
   static_assert( nchi2 > 2, "We need at least two chi2" );
@@ -1623,7 +1843,7 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
         }catch( std::exception &e )
         {
           const double delta_act = std::max( 0.1*fabs(upperLimit - overallBestQuantity), 0.01*fabs(max_search_quantity - upperLimit) );
-          for( quantityRangeMax = upperLimit; quantityRangeMax < max_search_quantity; quantityRangeMax -= delta_act )
+          for( quantityRangeMax = upperLimit; quantityRangeMax < max_search_quantity; quantityRangeMax += delta_act )
           {
             const double this_chi2 = chi2ForQuantity(quantityRangeMax);
             if( this_chi2 >= (overallBestChi2 + yrange) )
@@ -1660,9 +1880,10 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
           const auto effective_upper_val = boost::math::tools::bisect( chi2ForMinDelta, min_search_quantity, overallBestQuantity, tolerance, max_iter );
           upperLimit = 0.5*(effective_upper_val.first + effective_upper_val.second);
           quantityRangeMax = upperLimit;
-        }catch( std::exception &e )
+        }catch( std::exception & )
         {
-          assert( 0 );
+          // A flat distance profile has no useful display crossing.  Preserve the explicit
+          // `foundUpperDisplay == false` result rather than aborting a Debug batch calculation.
         }
         //overallBestQuantity
       }//if( is_dist_limit )
@@ -1675,13 +1896,11 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
   
   cout << "Found best chi2 and ranges with num_iterations=" << std::dec << num_iterations.load() << endl;
   
-  assert( quantityRangeMin <= quantityRangeMax );
   if( quantityRangeMax < quantityRangeMin )
     std::swap( quantityRangeMin, quantityRangeMax );
   
   if( quantityRangeMax == quantityRangeMin )
   {
-    assert( !foundLowerCl && !foundUpperCl );
     quantityRangeMin = 0.9*quantityRangeMin;
     quantityRangeMax = 1.1*quantityRangeMin;
   }
@@ -1763,6 +1982,15 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
   
   // TODO: put all below computations into another thread
   string limit_str;
+  bool inconsistent_recomputation = false;
+  const auto chi2_recomputation_matches = []( const double first, const double second )
+  {
+    if( !std::isfinite(first) || !std::isfinite(second) )
+      return false;
+    const double difference = fabs( first - second );
+    return (difference < 0.01)
+           || (difference < 0.01*(std::max)(fabs(first), fabs(second)));
+  };
   if( foundLowerCl && foundUpperCl )
   {
     double lowerQuantityChi2 = -999.9, upperQuantityChi2 = -999.9;
@@ -1777,8 +2005,10 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
       result.upperLimitResults = localComputeForActivity( upperLimit, other_quantity, upperQuantityChi2, numDOF );
     }
     
-    assert( lowerQuantityChi2 == lowerLimitChi2 ); // TODO: check logic to make sure this is definitely true, then remove above computation
-    assert( upperQuantityChi2 == upperLimitChi2 ); // TODO: check logic to make sure this is definitely true, then remove above computation
+    inconsistent_recomputation = !chi2_recomputation_matches( lowerQuantityChi2,
+                                                               lowerLimitChi2 )
+                                 || !chi2_recomputation_matches( upperQuantityChi2,
+                                                                 upperLimitChi2 );
     
     limit_str = print_quantity( overallBestQuantity, 3 );
     const string lower_limit_str = print_quantity( lowerLimit, 2 );
@@ -1813,7 +2043,8 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
       double lowerQuantityChi2 = -999.9;
       result.lowerLimitResults = localComputeForActivity( other_quantity, lowerLimit, lowerQuantityChi2, numDOF );
       
-      assert( lowerQuantityChi2 == lowerLimitChi2 ); // TODO: check logic to make sure this is definitely true, then remove above computation
+      inconsistent_recomputation = !chi2_recomputation_matches( lowerQuantityChi2,
+                                                                 lowerLimitChi2 );
       
       limit_str = print_quantity( lowerLimit, 3 );
       const string print_limit_str = print_quantity( lowerLimit, 2 );
@@ -1827,19 +2058,20 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
                print_limit_str.c_str(), 0.1*std::round(1000.0*wantedCl), lowerQuantityChi2 );
     }else
     {
-      assert( 0 );
-      //double lowerQuantityChi2 = -999.9;
-      //result.lowerLimitResults = localComputeForActivity( lowerLimit, other_quantity, peaks, lowerQuantityChi2, numDOF );
+      result.errorMessage = "The activity scan found a lower crossing but did not bracket an upper limit.";
       snprintf( buffer, sizeof(buffer), "Error: Didn't find %.1f%% CL activity",
                0.1*std::round(1000.0*wantedCl));
     }
   }else
   {
-    assert( foundUpperCl );
-    
-    if( is_dist_limit )
+    if( !foundUpperCl )
     {
-      assert( 0 );
+      result.errorMessage = "The profile scan did not bracket an upper confidence limit within the search range.";
+      snprintf( buffer, sizeof(buffer), "Error: Didn't find %.1f%% CL upper limit",
+                0.1*std::round(1000.0*wantedCl) );
+    }else if( is_dist_limit )
+    {
+      result.errorMessage = "The distance scan found an upper crossing but did not bracket a lower limit.";
       snprintf( buffer, sizeof(buffer), "Error: Didn't find %.1f%% CL det. distance",
                0.1*std::round(1000.0*wantedCl) );
     }else
@@ -1847,11 +2079,9 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
       double upperQuantityChi2 = -999.9;
       result.upperLimitResults = localComputeForActivity( upperLimit, other_quantity, upperQuantityChi2, numDOF );
       
-      // TODO: check logic to make sure this is definitely true, then remove above computation
-      //  I think these quantities should be really close, but there may be a small amount of rounding
       cout << "upperQuantityChi2=" << upperQuantityChi2 << ", upperLimitChi2=" << upperLimitChi2 << endl;
-      assert( (fabs(upperQuantityChi2 - upperLimitChi2) < 0.01)
-             || (fabs(upperQuantityChi2 - upperLimitChi2) < 0.01*std::max(upperQuantityChi2,upperLimitChi2)) );
+      inconsistent_recomputation = !chi2_recomputation_matches( upperQuantityChi2,
+                                                                 upperLimitChi2 );
       
       limit_str = print_quantity(upperLimit,3);
       const string print_limit_str = print_quantity( upperLimit, 2 );
@@ -1860,6 +2090,17 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
       snprintf( buffer, sizeof(buffer), "Less than %s at %.1f%% CL, &chi;<sup>2</sup>=%.1f",
                print_limit_str.c_str(), 0.1*std::round(1000.0*wantedCl), upperQuantityChi2 );
     }//if( is_dist_limit ) / else
+  }
+
+  if( inconsistent_recomputation )
+  {
+    foundLowerCl = false;
+    foundUpperCl = false;
+    result.lowerLimitResults.reset();
+    result.upperLimitResults.reset();
+    result.errorMessage = "The profile scan was not reproducible when its confidence crossing was recomputed.";
+    limit_str = print_quantity( overallBestQuantity, 3 );
+    snprintf( buffer, sizeof(buffer), "Error: profile scan confidence crossing was inconsistent" );
   }
   
   pool.join();
@@ -1880,6 +2121,9 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const float 
   result.foundLowerCl = foundLowerCl;
   result.foundLowerDisplay = foundLowerDisplay;
   result.lowerDisplayRange = quantityRangeMin;
+
+  if( !foundUpperCl && result.errorMessage.empty() )
+    result.errorMessage = "The profile scan did not bracket an upper confidence limit within the search range.";
   
   
   if( is_dist_limit )
@@ -1952,4 +2196,3 @@ scale_spectrum_for_dwell( const shared_ptr<const SpecUtils::Measurement> &input,
 
 
 }//namespace DetectionLimitCalc
-

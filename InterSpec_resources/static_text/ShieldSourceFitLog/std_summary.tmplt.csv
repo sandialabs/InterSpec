@@ -38,7 +38,29 @@ Filename, Energy (keV), Nuclide, Result, Lc (counts), Ld (counts), Upper limit (
 ## for file in Files
 ## if existsIn(file,"NotFitPeaks")
 ## for peak in file.NotFitPeaks.Peaks
-{{ file.Filename }}, {{ printFixed(peak.PeakMean,2) }}, {{ peak.SourceName }}{% if existsIn(peak,"Mda") %}, {{ peak.Mda.ShortDescription }}, {% if peak.Mda.CurrieComputed %}{{ peak.Mda.DecisionThresholdStr }}, {{ peak.Mda.DetectionLimitStr }}, {{ peak.Mda.UpperLimitStr }}{% else %}, , {% endif %}, {% if peak.Mda.HasMdaActivity %}{{ peak.Mda.DetectionLimitActivity }}, {{ peak.Mda.DetectionLimitActivity_bq }}{% else %}, {% endif %},"{{ peak.Mda.Description }}"{% else %}, , , , , , , {% endif %}
+{{ file.Filename }}, {{ printFixed(peak.PeakMean,2) }}, {{ peak.SourceName }}{% if existsIn(peak,"Mda") %}, {{ peak.Mda.ShortDescription }}, {% if peak.Mda.CurrieComputed %}{{ peak.Mda.DecisionThresholdStr }}, {{ peak.Mda.DetectionLimitStr }}, {{ peak.Mda.UpperLimitStr }}{% else %}, , {% endif %}, {% if peak.Mda.HasActivity %}{{ peak.Mda.DetectionLimitActivity }}, {{ peak.Mda.DetectionLimitActivity_bq }}{% else %}, {% endif %},"{{ peak.Mda.Description }}"{% else %}, , , , , , , {% endif %}
+## endfor
+## endif
+## endfor
+
+
+Peaks that were fit but not used for the activity fit
+Filename, Energy (keV), Nuclide, Observed counts, Model counts, Implied activity, Implied activity (bq), Implied activity uncert (bq), Ratio to fit, Num sigma, Description
+## for file in Files
+## if existsIn(file,"SupplementalPeakInfo")
+## for peak in file.SupplementalPeakInfo.PeaksNotUsedForFit.Peaks
+{{ file.Filename }}, {{ printFixed(peak.PeakMean,2) }}, {{ peak.SourceName }}, {{ peak.PeakAmplitudeStr }}, {% if peak.ModelEvaluated %}{{ peak.ExpectedCountsStr }}{% endif %}, {% if peak.HasNominalActivity %}{{ peak.ImpliedActivity }}, {{ peak.ImpliedActivity_bq }}, {% if existsIn(peak,"ImpliedActivityUncert_bq") %}{{ peak.ImpliedActivityUncert_bq }}{% endif %}, {{ peak.RatioToFitActivityStr }}, {{ peak.NumSigmaOffStr }}{% else %}, , , , {% endif %},"{{ peak.Description }}"
+## endfor
+## endif
+## endfor
+
+
+Detection-limit check of each peak
+Filename, Energy (keV), Nuclide, Used in fit, Result, Lc (counts), Ld (counts), Net counts, Description
+## for file in Files
+## if existsIn(file,"SupplementalPeakInfo")
+## for peak in file.SupplementalPeakInfo.AllPeaks.Peaks
+{{ file.Filename }}, {{ printFixed(peak.PeakMean,2) }}, {{ peak.SourceName }}, {% if peak.UsedForFit %}yes{% else %}no{% endif %},"{{ peak.CurrieCheck.ShortDescription }}", {% if peak.CurrieCheck.CurrieComputed %}{{ peak.CurrieCheck.DecisionThresholdStr }}, {{ peak.CurrieCheck.DetectionLimitStr }}, {{ peak.CurrieCheck.SourceCountsStr }}{% else %}, , {% endif %},"{{ peak.CurrieCheck.ResultSummary }}"
 ## endfor
 ## endif
 ## endfor

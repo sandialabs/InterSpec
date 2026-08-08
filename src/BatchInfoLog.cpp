@@ -1319,6 +1319,10 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       }
     }//if( results.peak_comparisons )
 
+    // The per-peak detection limit checks, and the activities implied by peaks that were fit but
+    //  not used by the model.  Done here so the GUIs fit log and the batch reports both get it.
+    add_supplemental_peak_info_to_json( data, results.supplemental_peak_info, drf, useBq );
+
     // Add ShieldingSourceFitPlot chart data
     const string plot_json_str = ShieldingSourceFitPlot::jsonForData( results );
     try
@@ -1613,74 +1617,252 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     options_obj["NotFitPeakMdaMethod"] = BatchPeak::to_str( options.not_fit_peak_mda );
     options_obj["MdaConfidenceLevel"] = options.mda_confidence_level;
     options_obj["MdaConfidenceLevelPercent"] = 100.0*options.mda_confidence_level;
-    options_obj["MdaConfidenceLevelStr"] = BatchPeak::confidence_level_str( options.mda_confidence_level );
+    options_obj["MdaConfidenceLevelStr"] = DetectionLimitCalc::confidence_level_str( options.mda_confidence_level );
     options_obj["MdaNumSideChannels"] = static_cast<int>( options.mda_num_side_channels );
 #if( ALLOW_SPECIFY_MDA_ROI_WIDTH )
     options_obj["MdaRoiNumFwhm"] = options.mda_roi_num_fwhm;
-    options_obj["MdaSignalFractionInRoi"] = BatchPeak::gaussian_fraction_in_roi( options.mda_roi_num_fwhm );
+    options_obj["MdaSignalFractionInRoi"] = DetectionLimitCalc::gaussian_fraction_in_roi( options.mda_roi_num_fwhm );
 #endif
   }//add_peak_fit_options_to_json(...)
   
   
+  void add_peak_source_info_to_json( const PeakDef &peak, nlohmann::basic_json<> &peak_json )
+  {
+    peak_json["HasSourceAssigned"] = peak.hasSourceGammaAssigned();
+    peak_json["SourceEnergy"] = peak.hasSourceGammaAssigned() ? peak.gammaParticleEnergy() : 0.0f;
+
+    if( peak.parentNuclide() )
+    {
+      peak_json["SourceType"] = "Nuclide";
+      peak_json["SourceName"] = peak.parentNuclide()->symbol;
+
+      const SandiaDecay::Transition *trans = peak.nuclearTransition();
+      if( trans && trans->parent )
+        peak_json["SourceGammaParent"] = trans->parent->symbol;
+      if( trans && trans->child )
+        peak_json["SourceGammaChild"] = trans->child->symbol;
+    }else if( peak.xrayElement() )
+    {
+      peak_json["SourceType"] = "X-Ray";
+      peak_json["SourceName"] = peak.xrayElement()->name + " x-ray";
+    }else if( peak.reaction() )
+    {
+      peak_json["SourceType"] = "Reaction";
+      peak_json["SourceName"] = peak.reaction()->name();
+    }else
+    {
+      peak_json["SourceType"] = "";
+      peak_json["SourceName"] = "";
+    }
+  }//void add_peak_source_info_to_json(...)
+
+  void add_peak_identity_to_json( const PeakDef &peak, nlohmann::basic_json<> &peak_json )
+  {
+    peak_json["PeakMean"] = peak.mean();
+    peak_json["PeakMeanUncert"] = peak.meanUncert();
+    peak_json["PeakFwhm"] = peak.gausPeak() ? peak.fwhm() : (peak.upperX() - peak.lowerX());
+    peak_json["PeakAmplitude"] = peak.amplitude();
+    peak_json["PeakAmplitudeUncert"] = peak.amplitudeUncert();
+    peak_json["PeakMeanStr"] = SpecUtils::printCompact( peak.mean(), 5 );
+    peak_json["PeakAmplitudeStr"] = SpecUtils::printCompact( peak.amplitude(), 4 );
+    peak_json["PeakAmplitudeUncertStr"] = SpecUtils::printCompact( peak.amplitudeUncert(), 4 );
+
+    add_peak_source_info_to_json( peak, peak_json );
+  }//void add_peak_identity_to_json(...)
+
+
+
+  void add_currie_check_to_json( nlohmann::basic_json<> &json,
+                                 const DetectionLimitCalc::PeakCurrieCheck &check )
+  {
+    const DetectionLimitCalc::CurrieMdaResult &res = check.result;
+
+    json["ConfidenceLevel"] = res.input.detection_probability;
+    json["ConfidenceLevelPercent"] = 100.0*res.input.detection_probability;
+    json["ConfidenceLevelStr"] = DetectionLimitCalc::confidence_level_str( res.input.detection_probability );
+    json["NumSideChannels"] = static_cast<int>( res.input.num_lower_side_channels );
+    json["SignalFractionInRoi"] = check.signal_fraction_in_roi;
+    json["ShortDescription"] = check.short_description;
+    json["ResultSummary"] = check.result_summary;
+    json["RegionIsEmpty"] = check.region_is_empty;
+    json["ResultType"] = DetectionLimitCalc::to_str( check.result_type );
+
+    json["CurrieComputed"] = check.computed;
+    if( !check.computed )
+    {
+      json["CurrieError"] = check.error_message;
+      return;
+    }
+
+    json["DecisionThreshold_counts"] = res.decision_threshold;
+    json["DetectionLimit_counts"] = res.detection_limit;
+    json["SourceCounts"] = res.source_counts;
+    json["UpperLimit_counts"] = res.upper_limit;
+    json["LowerLimit_counts"] = res.lower_limit;
+    json["PeakRegionCounts"] = res.peak_region_counts_sum;
+    json["ContinuumCounts"] = res.estimated_peak_continuum_counts;
+    json["ContinuumCountsUncert"] = res.estimated_peak_continuum_uncert;
+
+    json["DecisionThresholdStr"] = SpecUtils::printCompact( res.decision_threshold, 4 );
+    json["DetectionLimitStr"] = SpecUtils::printCompact( res.detection_limit, 4 );
+    json["UpperLimitStr"] = SpecUtils::printCompact( res.upper_limit, 4 );
+    json["SourceCountsStr"] = SpecUtils::printCompact( res.source_counts, 4 );
+
+    json["RoiLowerEnergy"] = res.input.roi_lower_energy;
+    json["RoiUpperEnergy"] = res.input.roi_upper_energy;
+    json["RoiWidth_keV"] = (res.input.roi_upper_energy - res.input.roi_lower_energy);
+    json["RoiLowerChannel"] = static_cast<int>( res.first_peak_region_channel );
+    json["RoiUpperChannel"] = static_cast<int>( res.last_peak_region_channel );
+  }//void add_currie_check_to_json(...)
+
+
+  void add_supplemental_peak_info_to_json( nlohmann::basic_json<> &data,
+                    const std::vector<ShieldingSourceFitCalc::SupplementalPeakInfo> &supp_info,
+                    const std::shared_ptr<const DetectorPeakResponse> &drf,
+                    const bool useBq )
+  {
+    if( supp_info.empty() )
+      return;
+
+    const DetectorPeakResponse::EffGeometryType eff_type = drf ? drf->geometryType()
+                                          : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
+    const bool use_curie = !useBq;
+    const string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix( eff_type );
+
+    nlohmann::basic_json<> &obj = data["SupplementalPeakInfo"];
+
+    size_t num_currie_checks = 0, num_nominal_activities = 0, num_not_used = 0;
+
+    for( const ShieldingSourceFitCalc::SupplementalPeakInfo &info : supp_info )
+    {
+      if( !info.peak )
+        continue;
+
+      num_currie_checks += info.currie.computed;
+
+      // The peaks that were fit but not used by the model; the synthetic peaks stand in for peaks
+      //  that were never observed, so they are not "peaks not used", they are not peaks at all.
+      const bool is_not_used = (!info.used_for_fit && !info.synthetic);
+      num_not_used += is_not_used;
+
+      nlohmann::basic_json<> peak_json;
+      add_peak_identity_to_json( *info.peak, peak_json );
+
+      peak_json["UsedForFit"] = info.used_for_fit;
+      peak_json["IsSyntheticPeak"] = info.synthetic;
+      peak_json["HasCurrieCheck"] = info.currie.computed;
+      add_currie_check_to_json( peak_json["CurrieCheck"], info.currie );
+
+      peak_json["ModelEvaluated"] = info.model_evaluated;
+      if( !info.model_evaluated )
+      {
+        peak_json["NotEvaluatedReason"] = info.not_evaluated_reason;
+      }else
+      {
+        peak_json["ExpectedCounts"] = info.expected_counts;
+        peak_json["ExpectedCountsStr"] = SpecUtils::printCompact( info.expected_counts, 4 );
+        peak_json["NuclideExpectedCounts"] = info.nuclide_expected_counts;
+        peak_json["OtherSourcesExpectedCounts"] = info.other_srcs_expected_counts;
+        peak_json["SharedWithOtherSources"] = info.shared_with_other_sources;
+        peak_json["CountsPerBq"] = info.counts_per_bq;
+        peak_json["DetectorEff"] = info.det_efficiency;
+        peak_json["ShieldingTransmission"] = info.shield_transmission;
+        peak_json["AirTransmission"] = info.air_transmission;
+        peak_json["IsVolumetricSource"] = info.is_volumetric_source;
+      }//if( !info.model_evaluated ) / else
+
+      peak_json["ShortDescription"] = info.short_description;
+      peak_json["Description"] = info.description;
+      peak_json["ResultSummary"] = info.result_summary;
+      peak_json["Caveats"] = info.caveats;
+      peak_json["HasCaveats"] = !info.caveats.empty();
+
+      peak_json["HasNominalActivity"] = info.has_implied_activity;
+      if( info.has_implied_activity )
+      {
+        num_nominal_activities += 1;
+
+        /** Adds an activity, in a handful of units, under `<prefix>`, `<prefix>_bq`, etc.
+
+         Follows the same conventions as `add_mda_to_json`: nothing is added for a non-positive
+         activity, since `printToBestActivityUnits` renders those as an unreadable string of
+         femtocuries.  Templates must guard with `existsIn(...)`.
+         */
+        const auto add_activity = [&peak_json,use_curie,&act_postfix]( const string &prefix,
+                                                                       const double activity ){
+          if( (activity <= 0.0) || IsNan(activity) || IsInf(activity) )
+            return;
+
+          peak_json[prefix] = PhysicalUnits::printToBestActivityUnits(activity,4,use_curie) + act_postfix;
+          peak_json[prefix + "_bq"] = activity / PhysicalUnits::bq;
+          peak_json[prefix + "_kBq"] = activity / PhysicalUnits::kBq;
+          peak_json[prefix + "_MBq"] = activity / PhysicalUnits::MBq;
+          peak_json[prefix + "_ci"] = activity / PhysicalUnits::ci;
+          peak_json[prefix + "_mCi"] = activity / PhysicalUnits::mCi;
+          peak_json[prefix + "_uCi"] = activity / PhysicalUnits::microCi;
+        };//add_activity lambda
+
+        add_activity( "ImpliedActivity", info.implied_activity );
+        add_activity( "ImpliedActivityUncert", info.implied_activity_uncert );
+        add_activity( "FitActivity", info.fit_activity );
+        add_activity( "FitActivityUncert", info.fit_activity_uncert );
+
+        peak_json["ActivityPostFix"] = act_postfix;
+        peak_json["RatioToFitActivity"] = info.ratio_to_fit;
+        peak_json["RatioToFitActivityUncert"] = info.ratio_to_fit_uncert;
+        peak_json["RatioToFitActivityStr"] = SpecUtils::printCompact( info.ratio_to_fit, 4 );
+        peak_json["NumSigmaOff"] = info.num_sigma_off;
+        peak_json["NumSigmaOffStr"] = SpecUtils::printCompact( info.num_sigma_off, 3 );
+      }//if( info.has_implied_activity )
+
+      obj["AllPeaks"]["Peaks"].push_back( peak_json );
+
+      if( is_not_used )
+        obj["PeaksNotUsedForFit"]["Peaks"].push_back( peak_json );
+    }//for( const SupplementalPeakInfo &info : supp_info )
+
+    obj["HasCurrieChecks"] = (num_currie_checks > 0);
+    obj["HasNominalActivities"] = (num_nominal_activities > 0);
+    obj["AnyPeakNotUsedForFit"] = (num_not_used > 0);
+
+    // Always present, so a template can loop without an `existsIn` guard on the array itself.
+    if( !obj.contains("AllPeaks") )
+      obj["AllPeaks"]["Peaks"] = nlohmann::json::array();
+    if( !obj.contains("PeaksNotUsedForFit") )
+      obj["PeaksNotUsedForFit"]["Peaks"] = nlohmann::json::array();
+  }//void add_supplemental_peak_info_to_json(...)
+
+
   void add_mda_to_json( nlohmann::basic_json<> &mda_json, const BatchPeak::NotFitPeakMda &mda )
   {
-    const DetectionLimitCalc::CurrieMdaResult &res = mda.currie_result;
+    const DetectionLimitCalc::CurrieMdaResult &res = mda.currie.result;
 
-    mda_json["ConfidenceLevel"] = res.input.detection_probability;
-    mda_json["ConfidenceLevelPercent"] = 100.0*res.input.detection_probability;
-    mda_json["ConfidenceLevelStr"] = BatchPeak::confidence_level_str( res.input.detection_probability );
-    mda_json["NumSideChannels"] = static_cast<int>( res.input.num_lower_side_channels );
-    mda_json["SignalFractionInRoi"] = mda.signal_fraction_in_roi;
-    mda_json["ShortDescription"] = mda.short_description;
+    add_currie_check_to_json( mda_json, mda.currie );
+
     mda_json["Description"] = mda.description;
-    mda_json["ResultSummary"] = mda.result_summary;
     mda_json["ActivitySummary"] = mda.activity_summary;
     mda_json["Caveats"] = mda.caveats;
     mda_json["HasCaveats"] = !mda.caveats.empty();
-    mda_json["RegionIsEmpty"] = mda.region_is_empty;
     mda_json["OverlapsFitPeak"] = mda.overlaps_fit_peak;
     mda_json["OverlapsOtherNotFitPeak"] = mda.overlaps_other_unfit_peak;
+    mda_json["PeakWasFit"] = mda.peak_was_fit;
 
-    switch( mda.result_type )
+    if( mda.peak_was_fit && mda.fit_peak )
     {
-      case BatchPeak::NotFitPeakMda::MdaResultType::NotDetected: mda_json["ResultType"] = "NotDetected"; break;
-      case BatchPeak::NotFitPeakMda::MdaResultType::Detected:    mda_json["ResultType"] = "Detected";    break;
-      case BatchPeak::NotFitPeakMda::MdaResultType::Deficit:     mda_json["ResultType"] = "Deficit";     break;
-      case BatchPeak::NotFitPeakMda::MdaResultType::Error:       mda_json["ResultType"] = "Error";       break;
-    }//switch( mda.result_type )
+      mda_json["FitPeakMean"] = mda.fit_peak->mean();
+      mda_json["FitPeakFwhm"] = mda.fit_peak->fwhm();
+      mda_json["FitPeakArea"] = mda.fit_peak->peakArea();
+      mda_json["FitPeakAreaUncert"] = mda.fit_peak->peakAreaUncert();
+      mda_json["FitPeakMeanStr"] = SpecUtils::printCompact( mda.fit_peak->mean(), 5 );
+      mda_json["FitPeakAreaStr"] = SpecUtils::printCompact( mda.fit_peak->peakArea(), 4 );
+      mda_json["FitPeakAreaUncertStr"] = SpecUtils::printCompact( mda.fit_peak->peakAreaUncert(), 4 );
+    }//if( mda.peak_was_fit && mda.fit_peak )
 
-    mda_json["CurrieComputed"] = mda.currie_computed;
-    if( !mda.currie_computed )
-      mda_json["CurrieError"] = mda.currie_error;
-
-    if( mda.currie_computed )
-    {
-      mda_json["DecisionThreshold_counts"] = res.decision_threshold;
-      mda_json["DetectionLimit_counts"] = res.detection_limit;
-      mda_json["SourceCounts"] = res.source_counts;
-      mda_json["UpperLimit_counts"] = res.upper_limit;
-      mda_json["LowerLimit_counts"] = res.lower_limit;
-      mda_json["PeakRegionCounts"] = res.peak_region_counts_sum;
-      mda_json["ContinuumCounts"] = res.estimated_peak_continuum_counts;
-      mda_json["ContinuumCountsUncert"] = res.estimated_peak_continuum_uncert;
-
-      mda_json["DecisionThresholdStr"] = SpecUtils::printCompact( res.decision_threshold, 4 );
-      mda_json["DetectionLimitStr"] = SpecUtils::printCompact( res.detection_limit, 4 );
-      mda_json["UpperLimitStr"] = SpecUtils::printCompact( res.upper_limit, 4 );
-      mda_json["SourceCountsStr"] = SpecUtils::printCompact( res.source_counts, 4 );
-
-      mda_json["RoiLowerEnergy"] = res.input.roi_lower_energy;
-      mda_json["RoiUpperEnergy"] = res.input.roi_upper_energy;
-      mda_json["RoiWidth_keV"] = (res.input.roi_upper_energy - res.input.roi_lower_energy);
-      mda_json["RoiLowerChannel"] = static_cast<int>( res.first_peak_region_channel );
-      mda_json["RoiUpperChannel"] = static_cast<int>( res.last_peak_region_channel );
-    }//if( mda.currie_computed )
-
-    mda_json["HasMdaActivity"] = mda.has_activity;
+    mda_json["HasActivity"] = mda.has_activity;
     if( !mda.has_activity )
     {
       if( !mda.no_activity_reason.empty() )
-        mda_json["NoMdaActivityReason"] = mda.no_activity_reason;
+        mda_json["NoActivityReason"] = mda.no_activity_reason;
     }else
     {
       const bool use_curie = !mda.use_bq;
@@ -1707,7 +1889,6 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       };//add_activity lambda
 
       mda_json["Nuclide"] = mda.nuclide ? mda.nuclide->symbol : string();
-      mda_json["BranchingRatio"] = mda.branching_ratio;
       mda_json["ShieldingTransmission"] = mda.shield_transmission;
       mda_json["AirTransmission"] = mda.air_transmission;
       mda_json["DetectorEff"] = mda.det_efficiency;
@@ -1715,9 +1896,8 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       mda_json["GammasPerBq"] = mda.gammas_per_bq;
       mda_json["ActivityPostFix"] = postfix;
 
-      // "MdaActivity" is the minimum detectable activity, i.e. Ld - the same quantity as
-      //  "DetectionLimitActivity", which is spelled out to match the counts fields.
-      add_activity( "MdaActivity", res.detection_limit / mda.gammas_per_bq );
+      // Each of these is the activity form of the like-named counts field above; the minimum
+      //  detectable activity ("MDA") is `DetectionLimitActivity`, i.e. Ld.
       add_activity( "DetectionLimitActivity", res.detection_limit / mda.gammas_per_bq );
       add_activity( "DecisionThresholdActivity", res.decision_threshold / mda.gammas_per_bq );
 
@@ -1725,7 +1905,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       //  a deficit of counts, or a lower limit that falls below zero.
       add_activity( "UpperLimitActivity", res.upper_limit / mda.gammas_per_bq );
 
-      if( mda.result_type == BatchPeak::NotFitPeakMda::MdaResultType::Detected )
+      if( mda.currie.result_type == DetectionLimitCalc::PeakCurrieCheck::ResultType::Detected )
       {
         add_activity( "ObservedActivity", res.source_counts / mda.gammas_per_bq );
         add_activity( "ObservedActivityLower", res.lower_limit / mda.gammas_per_bq );
@@ -1739,7 +1919,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       mda_json["DeconComputed"] = mda.decon_computed;
       mda_json["DeconQuantityIsCounts"] = mda.decon_quantity_is_counts;
 
-      if( !mda.decon_computed )
+      if( !mda.decon_error.empty() )
         mda_json["DeconError"] = mda.decon_error;
 
       if( mda.decon_computed && mda.decon_result )
@@ -2090,32 +2270,7 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       peak_json["UseForDetFwhmFit"] = p->useForDrfFwhmFit();
       peak_json["HasPeakUserLabel"] = !p->userLabel().empty();
       peak_json["PeakUserLabel"] = p->userLabel();
-      peak_json["HasSourceAssigned"] = p->hasSourceGammaAssigned();
-
-      peak_json["SourceEnergy"] = p->hasSourceGammaAssigned() ? p->gammaParticleEnergy() : 0.0f;
-      if( p->parentNuclide() )
-      {
-        peak_json["SourceType"] = "Nuclide";
-        peak_json["SourceName"] = p->parentNuclide()->symbol;
-        
-        const SandiaDecay::Transition *trans = p->nuclearTransition();
-        if( trans && trans->parent )
-          peak_json["SourceGammaParent"] = trans->parent->symbol;
-        if( trans && trans->child )
-          peak_json["SourceGammaChild"] = trans->child->symbol;
-      }else if( p->xrayElement() )
-      {
-        peak_json["SourceType"] = "X-Ray";
-        peak_json["SourceName"] = p->xrayElement()->name + " x-ray";
-      }else if( p->reaction() )
-      {
-        peak_json["SourceType"] = "Reaction";
-        peak_json["SourceName"] = p->reaction()->name();
-      }else
-      {
-        peak_json["SourceType"] = "";
-        peak_json["SourceName"] = "";
-      }
+      add_peak_source_info_to_json( *p, peak_json );
     
       
       vector<string> coef_names;
@@ -2228,7 +2383,19 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
 
     data["ExemplarHasPeaks"] = !fit_results.exemplar_peaks.empty();
     if( !fit_results.exemplar_peaks.empty() )
-      add_peaks_to_json( data["ExemplarPeaks"], fit_results.exemplar_peaks, fit_results.exemplar_spectrum, nullptr );
+    {
+      // Every exemplar peak gets a detection limit, whether or not it was fit; for a peak that was
+      //  fit this is a quality check.  Entries carry "PeakWasFit" to tell the two cases apart.
+      const vector<BatchPeak::NotFitPeakMda> * const mdas
+              = fit_results.exemplar_peak_mdas.empty() ? nullptr : &fit_results.exemplar_peak_mdas;
+
+      add_peaks_to_json( data["ExemplarPeaks"], fit_results.exemplar_peaks,
+                         fit_results.exemplar_spectrum, mdas );
+
+      data["ExemplarPeaks"]["HasMdas"] = !!mdas;
+    }//if( !fit_results.exemplar_peaks.empty() )
+
+    data["AnyExemplarPeakMda"] = !fit_results.exemplar_peak_mdas.empty();
 
     
     // For peak searches, background subtraction are always a hard channel-by-channel subtraction,

@@ -30,18 +30,26 @@
 #define BOOST_TEST_MODULE BatchPeakMda_suite
 #include <boost/test/included/unit_test.hpp>
 
+#include "Minuit2/MnUserParameters.h"
+
 #include "SpecUtils/SpecFile.h"
-#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/EnergyCalibration.h"
+
+#include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
-#include "InterSpec/InterSpec.h"
 #include "InterSpec/BatchPeak.h"
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/BatchInfoLog.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectionLimitCalc.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/DetectorPeakResponse.h"
+#include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/ShieldingSourceFitCalc.h"
 
 using namespace std;
 using namespace boost::unit_test;
@@ -99,14 +107,15 @@ double peak_fwhm(){ return sm_fwhm; }
 
 
 /** Builds a spectrum with a flat continuum, and Gaussian peaks of the requested areas. */
-shared_ptr<SpecMeas> make_spec_meas( const vector<pair<double,double>> &energy_and_area )
+shared_ptr<SpecMeas> make_spec_meas( const vector<pair<double,double>> &energy_and_area,
+                                     const double fwhm = sm_fwhm )
 {
   auto counts = make_shared<vector<float>>( sm_num_channels, sm_continuum_cps*sm_live_time );
 
   auto cal = make_shared<SpecUtils::EnergyCalibration>();
   cal->set_polynomial( sm_num_channels, { 0.0f, sm_channel_width }, {} );
 
-  const double sigma = sm_fwhm / 2.35482;
+  const double sigma = fwhm / PhysicalUnits::fwhm_nsigma;
 
   for( const pair<double,double> &ea : energy_and_area )
   {
@@ -146,7 +155,7 @@ shared_ptr<SpecMeas> make_exemplar( const vector<double> &energies )
 
   shared_ptr<SpecMeas> answer = make_spec_meas( energy_and_area );
 
-  const double sigma = sm_fwhm / 2.35482;
+  const double sigma = sm_fwhm / PhysicalUnits::fwhm_nsigma;
 
   deque<shared_ptr<const PeakDef>> peaks;
   for( const double energy : energies )
@@ -222,10 +231,12 @@ BatchPeak::BatchPeakFitOptions default_options()
  */
 BatchPeak::BatchPeakFitResult run_fit( const vector<double> &exemplar_energies,
                                        const vector<pair<double,double>> &present_energies,
-                                       const BatchPeak::BatchPeakFitOptions &options )
+                                       const BatchPeak::BatchPeakFitOptions &options,
+                                       const double measurement_fwhm = sm_fwhm )
 {
   const shared_ptr<SpecMeas> exemplar = make_exemplar( exemplar_energies );
-  const shared_ptr<SpecMeas> measurement = make_spec_meas( present_energies );
+  const shared_ptr<SpecMeas> measurement
+                              = make_spec_meas( present_energies, measurement_fwhm );
 
   return BatchPeak::fit_peaks_in_file( "exemplar.n42", {}, exemplar, "input.n42", measurement,
                                        {}, options );
@@ -292,8 +303,8 @@ BOOST_AUTO_TEST_CASE( CurrieLimitMatchesDirectCalculation )
 
   const BatchPeak::NotFitPeakMda &mda = result.not_fit_peak_mdas.front();
   BOOST_CHECK( mda.exemplar_peak == result.unfit_exemplar_peaks.front() );
-  BOOST_REQUIRE( mda.currie_computed );
-  BOOST_CHECK( mda.result_type == BatchPeak::NotFitPeakMda::MdaResultType::NotDetected );
+  BOOST_REQUIRE( mda.currie.computed );
+  BOOST_CHECK( mda.currie.result_type == DetectionLimitCalc::PeakCurrieCheck::ResultType::NotDetected );
 
   // There should be no activity information for a plain peak fit
   BOOST_CHECK( !mda.has_activity );
@@ -312,14 +323,14 @@ BOOST_AUTO_TEST_CASE( CurrieLimitMatchesDirectCalculation )
 
   const DetectionLimitCalc::CurrieMdaResult expected = DetectionLimitCalc::currie_mda_calc( input );
 
-  BOOST_CHECK_CLOSE( mda.currie_result.decision_threshold, expected.decision_threshold, 0.01 );
-  BOOST_CHECK_CLOSE( mda.currie_result.detection_limit, expected.detection_limit, 0.01 );
-  BOOST_CHECK_CLOSE( mda.currie_result.upper_limit, expected.upper_limit, 0.01 );
+  BOOST_CHECK_CLOSE( mda.currie.result.decision_threshold, expected.decision_threshold, 0.01 );
+  BOOST_CHECK_CLOSE( mda.currie.result.detection_limit, expected.detection_limit, 0.01 );
+  BOOST_CHECK_CLOSE( mda.currie.result.upper_limit, expected.upper_limit, 0.01 );
 
   // A flat continuum of 150 counts/channel over ~10 channels; the limit should be a few hundred
   //  counts - a sanity check that we are not off by orders of magnitude.
-  BOOST_CHECK( mda.currie_result.detection_limit > 10.0f );
-  BOOST_CHECK( mda.currie_result.detection_limit < 1000.0f );
+  BOOST_CHECK( mda.currie.result.detection_limit > 10.0f );
+  BOOST_CHECK( mda.currie.result.detection_limit < 1000.0f );
 
   // The description should be usable directly in a report
   BOOST_CHECK( mda.description.find("Not detected") != string::npos );
@@ -327,7 +338,7 @@ BOOST_AUTO_TEST_CASE( CurrieLimitMatchesDirectCalculation )
   BOOST_CHECK( mda.description.find("95%") != string::npos );
 
   // ...and there should be a brief phrase, short enough for a table cell
-  BOOST_CHECK_EQUAL( mda.short_description, string("Less than Lc") );
+  BOOST_CHECK_EQUAL( mda.currie.short_description, string("Less than Lc") );
 }//BOOST_AUTO_TEST_CASE( CurrieLimitMatchesDirectCalculation )
 
 
@@ -345,10 +356,10 @@ BOOST_AUTO_TEST_CASE( ConfidenceLevelAndSideChannelsAreUsed )
   BOOST_REQUIRE_EQUAL( result.not_fit_peak_mdas.size(), 1 );
   const BatchPeak::NotFitPeakMda &mda = result.not_fit_peak_mdas.front();
 
-  BOOST_REQUIRE( mda.currie_computed );
-  BOOST_CHECK_CLOSE( mda.currie_result.input.detection_probability, 0.99, 1.0E-6 );
-  BOOST_CHECK_EQUAL( mda.currie_result.input.num_lower_side_channels, 8 );
-  BOOST_CHECK_EQUAL( mda.currie_result.input.num_upper_side_channels, 8 );
+  BOOST_REQUIRE( mda.currie.computed );
+  BOOST_CHECK_CLOSE( mda.currie.result.input.detection_probability, 0.99, 1.0E-6 );
+  BOOST_CHECK_EQUAL( mda.currie.result.input.num_lower_side_channels, 8 );
+  BOOST_CHECK_EQUAL( mda.currie.result.input.num_upper_side_channels, 8 );
   BOOST_CHECK( mda.description.find("99%") != string::npos );
 
   // A higher confidence level must give a larger limit
@@ -358,11 +369,11 @@ BOOST_AUTO_TEST_CASE( ConfidenceLevelAndSideChannelsAreUsed )
         = run_fit( {661.0, 1173.0}, {{661.0, 5000.0}}, ninety_five );
 
   BOOST_REQUIRE_EQUAL( result_95.not_fit_peak_mdas.size(), 1 );
-  BOOST_CHECK( result_95.not_fit_peak_mdas.front().currie_result.detection_limit
-               < mda.currie_result.detection_limit );
+  BOOST_CHECK( result_95.not_fit_peak_mdas.front().currie.result.detection_limit
+               < mda.currie.result.detection_limit );
 
-  BOOST_CHECK( BatchPeak::confidence_level_str(0.95) == "95%" );
-  BOOST_CHECK( BatchPeak::confidence_level_str(0.99) == "99%" );
+  BOOST_CHECK( DetectionLimitCalc::confidence_level_str(0.95) == "95%" );
+  BOOST_CHECK( DetectionLimitCalc::confidence_level_str(0.99) == "99%" );
 }//BOOST_AUTO_TEST_CASE( ConfidenceLevelAndSideChannelsAreUsed )
 
 
@@ -371,10 +382,10 @@ BOOST_AUTO_TEST_CASE( RoiWidthOption )
   set_data_dir();
 
   // The fraction of a Gaussian inside a region of the given width, in FWHM
-  BOOST_CHECK_CLOSE( BatchPeak::gaussian_fraction_in_roi(2.5), 0.996755, 0.01 );
-  BOOST_CHECK_CLOSE( BatchPeak::gaussian_fraction_in_roi(2.0), 0.981468, 0.01 );
-  BOOST_CHECK_CLOSE( BatchPeak::gaussian_fraction_in_roi(1.0), 0.760968, 0.01 );
-  BOOST_CHECK( BatchPeak::gaussian_fraction_in_roi(0.0) == 0.0 );
+  BOOST_CHECK_CLOSE( DetectionLimitCalc::gaussian_fraction_in_roi(2.5), 0.996755, 0.01 );
+  BOOST_CHECK_CLOSE( DetectionLimitCalc::gaussian_fraction_in_roi(2.0), 0.981468, 0.01 );
+  BOOST_CHECK_CLOSE( DetectionLimitCalc::gaussian_fraction_in_roi(1.0), 0.760968, 0.01 );
+  BOOST_CHECK( DetectionLimitCalc::gaussian_fraction_in_roi(0.0) == 0.0 );
 
   BatchPeak::BatchPeakFitOptions wide = default_options();
   wide.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::Currie;
@@ -393,29 +404,29 @@ BOOST_AUTO_TEST_CASE( RoiWidthOption )
 
   const BatchPeak::NotFitPeakMda &w = wide_result.not_fit_peak_mdas.front();
   const BatchPeak::NotFitPeakMda &n = narrow_result.not_fit_peak_mdas.front();
-  BOOST_REQUIRE( w.currie_computed && n.currie_computed );
+  BOOST_REQUIRE( w.currie.computed && n.currie.computed );
 
   // The peak region should be the requested number of FWHM wide, centered on the peak
   const double fwhm = peak_fwhm();
-  BOOST_CHECK_CLOSE( w.currie_result.input.roi_upper_energy - w.currie_result.input.roi_lower_energy,
+  BOOST_CHECK_CLOSE( w.currie.result.input.roi_upper_energy - w.currie.result.input.roi_lower_energy,
                     2.5*fwhm, 0.1 );
-  BOOST_CHECK_CLOSE( n.currie_result.input.roi_upper_energy - n.currie_result.input.roi_lower_energy,
+  BOOST_CHECK_CLOSE( n.currie.result.input.roi_upper_energy - n.currie.result.input.roi_lower_energy,
                     1.0*fwhm, 0.1 );
 
   // Less continuum in the region means a smaller limit...
-  BOOST_CHECK( n.currie_result.detection_limit < w.currie_result.detection_limit );
+  BOOST_CHECK( n.currie.result.detection_limit < w.currie.result.detection_limit );
 
   // ...but the narrow region only holds part of the peak, which must be reported
-  BOOST_CHECK_CLOSE( w.signal_fraction_in_roi, 0.996755, 0.01 );
-  BOOST_CHECK_CLOSE( n.signal_fraction_in_roi, 0.760968, 0.01 );
+  BOOST_CHECK_CLOSE( w.currie.signal_fraction_in_roi, 0.996755, 0.01 );
+  BOOST_CHECK_CLOSE( n.currie.signal_fraction_in_roi, 0.760968, 0.01 );
   BOOST_CHECK_MESSAGE( n.description.find("holds only") != string::npos,
                       "Narrow-region caveat missing from: " << n.description );
   BOOST_CHECK_MESSAGE( w.description.find("holds only") == string::npos,
                       "Caveat should not appear at the default width: " << w.description );
 
   // Caveats belong at the end of the paragraph, after the result and any activity information
-  BOOST_CHECK( n.description == (n.result_summary + "  " + n.caveats) );
-  BOOST_CHECK( n.short_description == "Less than Lc" );
+  BOOST_CHECK( n.description == (n.currie.result_summary + "  " + n.caveats) );
+  BOOST_CHECK( n.currie.short_description == "Less than Lc" );
 
   // The width used, and the fraction of the peak it holds, must reach templates
   nlohmann::json data;
@@ -449,11 +460,11 @@ BOOST_AUTO_TEST_CASE( PeakOffSpectrumGivesErrorResult )
   BOOST_REQUIRE_EQUAL( result.not_fit_peak_mdas.size(), 1 );
 
   const BatchPeak::NotFitPeakMda &mda = result.not_fit_peak_mdas.front();
-  BOOST_CHECK( !mda.currie_computed );
-  BOOST_CHECK( mda.result_type == BatchPeak::NotFitPeakMda::MdaResultType::Error );
-  BOOST_CHECK( !mda.currie_error.empty() );
+  BOOST_CHECK( !mda.currie.computed );
+  BOOST_CHECK( mda.currie.result_type == DetectionLimitCalc::PeakCurrieCheck::ResultType::Error );
+  BOOST_CHECK( !mda.currie.error_message.empty() );
   BOOST_CHECK( mda.description.find("could not be computed") != string::npos );
-  BOOST_CHECK_EQUAL( mda.short_description, string("Not computed") );
+  BOOST_CHECK_EQUAL( mda.currie.short_description, string("Not computed") );
 }//BOOST_AUTO_TEST_CASE( PeakOffSpectrumGivesErrorResult )
 
 
@@ -476,8 +487,10 @@ BOOST_AUTO_TEST_CASE( DeconLimitInCounts )
   BOOST_REQUIRE( mda.decon_result->foundUpperCl );
 
   // The two methods should agree to within a factor of a few
-  const double currie_limit = mda.currie_result.upper_limit;
+  const double currie_limit = mda.currie.result.upper_limit;
   const double decon_limit = mda.decon_result->upperLimit;
+  cout << "DECON_DIAGNOSTIC_CASE,clean_flat," << currie_limit << ',' << decon_limit << ','
+       << mda.decon_over_currie_ratio << ',' << mda.methods_disagree << '\n';
   BOOST_CHECK_MESSAGE( (decon_limit > 0.2*currie_limit) && (decon_limit < 5.0*currie_limit),
                       "Deconvolution limit of " << decon_limit << " counts is not comparable to the"
                       " Currie limit of " << currie_limit << " counts." );
@@ -492,10 +505,55 @@ BOOST_AUTO_TEST_CASE( DeconLimitInCounts )
 
   // Pin the absolute value.  The spectrum is deterministic and the peak width is exactly known,
   //  so this catches a change to the FWHM<->sigma conversion inside `decon_compute_peaks`
-  //  (`sigma = fwhm/2.35482`); the loose ratio band above does not - reverting that constant to
+  //  (`sigma = fwhm/PhysicalUnits::fwhm_nsigma`); the loose ratio band above does not - reverting
+  //  that constant to
   //  the old, wrong 2.634 moves this number by ~11% but keeps the ratio inside the band.
-  BOOST_CHECK_CLOSE( decon_limit, 101.6, 3.0 );
+  BOOST_CHECK_CLOSE( decon_limit, 74.51, 3.0 );
 }//BOOST_AUTO_TEST_CASE( DeconLimitInCounts )
+
+
+BOOST_AUTO_TEST_CASE( DeconDiagnosticFlagsNonidealSpectra )
+{
+  set_data_dir();
+
+  BatchPeak::BatchPeakFitOptions options = default_options();
+  options.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::CurrieAndDecon;
+  options.peak_stat_threshold = 1.0E9;
+  options.peak_hypothesis_threshold = 1.0E9;
+
+  struct Case
+  {
+    const char *name;
+    double energy;
+    double area;
+    double fwhm;
+  };
+
+  // A broad hump is a reproducible curved-continuum surrogate; the displaced narrow peak is an
+  // unmodelled interference.  Both are deliberately kept out of the accepted peak fit so the
+  // batch detection-limit diagnostic sees them.
+  const Case cases[] = {
+    { "curved_continuum", 1173.0, 12000.0, 60.0 },
+    { "interfering_peak", 1181.0, 6000.0, sm_fwhm }
+  };
+
+  for( const Case &test : cases )
+  {
+    const BatchPeak::BatchPeakFitResult result
+                     = run_fit( {1173.0}, {{test.energy, test.area}}, options, test.fwhm );
+    BOOST_REQUIRE_MESSAGE( result.success, "Batch fit failed for " << test.name );
+    BOOST_REQUIRE_EQUAL( result.not_fit_peak_mdas.size(), 1 );
+    const BatchPeak::NotFitPeakMda &mda = result.not_fit_peak_mdas.front();
+    BOOST_REQUIRE_MESSAGE( mda.decon_computed, test.name << ": " << mda.decon_error );
+    BOOST_REQUIRE( mda.decon_result && mda.decon_result->foundUpperCl );
+    cout << "DECON_DIAGNOSTIC_CASE," << test.name << ',' << mda.currie.result.upper_limit << ','
+         << mda.decon_result->upperLimit << ',' << mda.decon_over_currie_ratio << ','
+         << mda.methods_disagree << '\n';
+    BOOST_CHECK_MESSAGE( mda.methods_disagree,
+                         test.name << " did not trigger the diagnostic; decon/currie="
+                                   << mda.decon_over_currie_ratio );
+  }
+}//BOOST_AUTO_TEST_CASE( DeconDiagnosticFlagsNonidealSpectra )
 
 
 BOOST_AUTO_TEST_CASE( DetectedButNotFitPeak )
@@ -517,10 +575,10 @@ BOOST_AUTO_TEST_CASE( DetectedButNotFitPeak )
   BOOST_REQUIRE_EQUAL( result.not_fit_peak_mdas.size(), 1 );
 
   const BatchPeak::NotFitPeakMda &mda = result.not_fit_peak_mdas.front();
-  BOOST_REQUIRE( mda.currie_computed );
-  BOOST_CHECK( mda.result_type == BatchPeak::NotFitPeakMda::MdaResultType::Detected );
+  BOOST_REQUIRE( mda.currie.computed );
+  BOOST_CHECK( mda.currie.result_type == DetectionLimitCalc::PeakCurrieCheck::ResultType::Detected );
   BOOST_CHECK( mda.description.find("Signal present but peak not fit") != string::npos );
-  BOOST_CHECK_EQUAL( mda.short_description, string("Greater than Lc") );
+  BOOST_CHECK_EQUAL( mda.currie.short_description, string("Greater than Lc") );
 }//BOOST_AUTO_TEST_CASE( DetectedButNotFitPeak )
 
 
@@ -552,20 +610,35 @@ BOOST_AUTO_TEST_CASE( JsonHasMdaOnlyForNotFitPeaks )
   BOOST_CHECK_EQUAL( mda["ShortDescription"].get<string>(), string("Less than Lc") );
   BOOST_CHECK_EQUAL( mda["HasCaveats"].get<bool>(), false );
   BOOST_CHECK_EQUAL( mda["CurrieComputed"].get<bool>(), true );
-  BOOST_CHECK_EQUAL( mda["HasMdaActivity"].get<bool>(), false );
+  BOOST_CHECK_EQUAL( mda["HasActivity"].get<bool>(), false );
+
+  // "MdaActivity" was a duplicate of "DetectionLimitActivity"; only the latter is emitted, so it
+  //  pairs with the "DetectionLimit_counts" field the way every other activity key does.
+  BOOST_CHECK( !mda.contains("MdaActivity") );
+  BOOST_CHECK( !mda.contains("HasMdaActivity") );
   BOOST_CHECK_EQUAL( mda["DeconAttempted"].get<bool>(), false );
   BOOST_CHECK_EQUAL( mda["ConfidenceLevelStr"].get<string>(), string("95%") );
   BOOST_CHECK_EQUAL( mda["NumSideChannels"].get<int>(), 4 );
   BOOST_CHECK( mda["DetectionLimit_counts"].get<double>() > 0.0 );
   BOOST_CHECK( !mda["Description"].get<string>().empty() );
 
-  // Peaks that were fit must not gain any new entries, so that reports written before detection
-  //  limits existed see no change at all.
+  // The `FitPeaks` collection must not gain any new entries, so that reports written before
+  //  detection limits existed see no change at all.
   BOOST_REQUIRE( data.contains("FitPeaks") );
   BOOST_CHECK( !data["FitPeaks"].contains("HasMdas") );
   BOOST_CHECK( !data["FitPeaks"]["Peaks"][0].contains("HasMda") );
   BOOST_CHECK( !data["FitPeaks"]["Peaks"][0].contains("Mda") );
-  BOOST_CHECK( !data["ExemplarPeaks"]["Peaks"][0].contains("HasMda") );
+
+  // `ExemplarPeaks`, by contrast, carries a limit for *every* exemplar peak - including the ones
+  //  that were fit, where the limit is a quality check.  `PeakWasFit` tells the cases apart.
+  BOOST_REQUIRE( data.contains("ExemplarPeaks") );
+  BOOST_CHECK( data["ExemplarPeaks"]["HasMdas"].get<bool>() );
+  for( const nlohmann::json &exemplar_peak : data["ExemplarPeaks"]["Peaks"] )
+  {
+    BOOST_REQUIRE( exemplar_peak.contains("HasMda") );
+    BOOST_REQUIRE( exemplar_peak.contains("Mda") );
+    BOOST_CHECK( exemplar_peak["Mda"].contains("PeakWasFit") );
+  }
 
   // The options used must be available to templates
   const nlohmann::json &opts = data["PeakFitOptions"];
@@ -574,6 +647,29 @@ BOOST_AUTO_TEST_CASE( JsonHasMdaOnlyForNotFitPeaks )
   BOOST_CHECK_CLOSE( opts["MdaConfidenceLevel"].get<double>(), 0.95, 1.0E-6 );
   BOOST_CHECK_CLOSE( opts["MdaConfidenceLevelPercent"].get<double>(), 95.0, 1.0E-6 );
 }//BOOST_AUTO_TEST_CASE( JsonHasMdaOnlyForNotFitPeaks )
+
+
+BOOST_AUTO_TEST_CASE( UnbracketedDeconLimitIsReported )
+{
+  BatchPeak::NotFitPeakMda mda;
+  mda.decon_attempted = true;
+  mda.decon_computed = true;
+  mda.decon_quantity_is_counts = true;
+  mda.decon_error = "the profile scan did not bracket an upper confidence limit";
+  shared_ptr<DetectionLimitCalc::DeconActivityOrDistanceLimitResult> decon
+                      = make_shared<DetectionLimitCalc::DeconActivityOrDistanceLimitResult>();
+  decon->foundUpperCl = false;
+  decon->overallBestChi2 = 1.0;
+  decon->overallBestQuantity = 2.0;
+  mda.decon_result = decon;
+
+  nlohmann::json json;
+  BatchInfoLog::add_mda_to_json( json, mda );
+  BOOST_CHECK( json["DeconComputed"].get<bool>() );
+  BOOST_CHECK( !json["DeconFoundUpperLimit"].get<bool>() );
+  BOOST_REQUIRE( json.contains("DeconError") );
+  BOOST_CHECK_EQUAL( json["DeconError"].get<string>(), mda.decon_error );
+}//BOOST_AUTO_TEST_CASE( UnbracketedDeconLimitIsReported )
 
 
 BOOST_AUTO_TEST_CASE( DefaultTemplatesRender )
@@ -780,7 +876,7 @@ BOOST_AUTO_TEST_CASE( EmptyPeakRegion )
   auto cal = make_shared<SpecUtils::EnergyCalibration>();
   cal->set_polynomial( sm_num_channels, { 0.0f, sm_channel_width }, {} );
 
-  const double sigma = sm_fwhm / 2.35482;
+  const double sigma = sm_fwhm / PhysicalUnits::fwhm_nsigma;
   for( size_t i = 0; i < sm_num_channels; ++i )
   {
     const double lower = cal->energy_for_channel( i );
@@ -814,18 +910,18 @@ BOOST_AUTO_TEST_CASE( EmptyPeakRegion )
 
   for( const BatchPeak::NotFitPeakMda &mda : result.not_fit_peak_mdas )
   {
-    BOOST_REQUIRE( mda.currie_computed );
-    BOOST_CHECK_MESSAGE( mda.region_is_empty,
+    BOOST_REQUIRE( mda.currie.computed );
+    BOOST_CHECK_MESSAGE( mda.currie.region_is_empty,
                         "Empty region not flagged at " << mda.exemplar_peak->mean() << " keV" );
 
     // Never a detection, whatever the classification arithmetic says
-    BOOST_CHECK( mda.result_type == BatchPeak::NotFitPeakMda::MdaResultType::NotDetected );
-    BOOST_CHECK_EQUAL( mda.short_description, string("No counts in region") );
+    BOOST_CHECK( mda.currie.result_type == DetectionLimitCalc::PeakCurrieCheck::ResultType::NotDetected );
+    BOOST_CHECK_EQUAL( mda.currie.short_description, string("No counts in region") );
 
     // Must not claim "less than 0 counts"; Ld is still meaningful and should be quoted
     BOOST_CHECK( mda.description.find("less than 0 counts") == string::npos );
     BOOST_CHECK( mda.description.find("Minimum reliably detectable") != string::npos );
-    BOOST_CHECK( mda.currie_result.detection_limit > 0.0f );
+    BOOST_CHECK( mda.currie.result.detection_limit > 0.0f );
   }//for( const BatchPeak::NotFitPeakMda &mda : result.not_fit_peak_mdas )
 }//BOOST_AUTO_TEST_CASE( EmptyPeakRegion )
 
@@ -843,7 +939,7 @@ BOOST_AUTO_TEST_CASE( OptionsReportedEvenWhenLimitFails )
 
   const BatchPeak::BatchPeakFitResult result = run_fit( {2.0, 661.0}, {{661.0, 5000.0}}, options );
   BOOST_REQUIRE_EQUAL( result.not_fit_peak_mdas.size(), 1 );
-  BOOST_REQUIRE( !result.not_fit_peak_mdas.front().currie_computed );
+  BOOST_REQUIRE( !result.not_fit_peak_mdas.front().currie.computed );
 
   nlohmann::json data;
   BatchInfoLog::add_peak_fit_results_to_json( data, result );
@@ -870,3 +966,452 @@ BOOST_AUTO_TEST_CASE( MdaMethodStringRoundTrip )
 
   BOOST_CHECK_THROW( BatchPeak::not_fit_peak_mda_method_from_str("bogus"), std::exception );
 }//BOOST_AUTO_TEST_CASE( MdaMethodStringRoundTrip )
+
+
+BOOST_AUTO_TEST_CASE( FitPeakGetsCurrieCheck )
+{
+  set_data_dir();
+
+  // Both exemplar peaks are present in the spectrum, so both are fit.  Every exemplar peak should
+  //  still get a Currie-style limit - for a peak that was fit it is a quality check.
+  BatchPeak::BatchPeakFitOptions options = default_options();
+  options.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::CurrieAndDecon;
+
+  const BatchPeak::BatchPeakFitResult result = run_fit( {661.0, 1173.0},
+                                                        {{661.0, 5000.0}, {1173.0, 4000.0}},
+                                                        options );
+
+  BOOST_REQUIRE( result.success );
+  BOOST_CHECK( result.unfit_exemplar_peaks.empty() );
+  BOOST_CHECK( result.not_fit_peak_mdas.empty() );
+
+  BOOST_REQUIRE_EQUAL( result.exemplar_peak_mdas.size(), 2 );
+
+  for( const BatchPeak::NotFitPeakMda &mda : result.exemplar_peak_mdas )
+  {
+    BOOST_CHECK( mda.peak_was_fit );
+    BOOST_REQUIRE( mda.fit_peak );
+    BOOST_REQUIRE( mda.currie.computed );
+
+    // Strong peaks on a modest continuum must land above the decision threshold
+    BOOST_CHECK( mda.currie.result_type == DetectionLimitCalc::PeakCurrieCheck::ResultType::Detected );
+    BOOST_CHECK_EQUAL( mda.currie.short_description, string("Greater than Lc") );
+
+    // The deconvolution scan answers the "what can be excluded" question, which only makes sense
+    //  for a peak that was not fit - and it is the expensive path.  Never run for a fit peak,
+    //  and it must not leave a spurious error behind either.
+    BOOST_CHECK_MESSAGE( !mda.decon_attempted,
+              "Deconvolution should never be attempted for a peak that was fit." );
+    BOOST_CHECK( mda.decon_error.empty() );
+
+    // The limit is evaluated at the fit peaks mean, not the exemplars
+    BOOST_CHECK_CLOSE( mda.currie.result.input.gamma_energy, mda.fit_peak->mean(), 0.01 );
+  }//for( const BatchPeak::NotFitPeakMda &mda : result.exemplar_peak_mdas )
+}//BOOST_AUTO_TEST_CASE( FitPeakGetsCurrieCheck )
+
+
+BOOST_AUTO_TEST_CASE( ExemplarMdasIncludeNotFitSubset )
+{
+  set_data_dir();
+
+  // 661 keV is present, 1173 keV is not.
+  BatchPeak::BatchPeakFitOptions options = default_options();
+  options.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::Currie;
+
+  const BatchPeak::BatchPeakFitResult result = run_fit( {661.0, 1173.0}, {{661.0, 5000.0}}, options );
+
+  BOOST_REQUIRE( result.success );
+  BOOST_REQUIRE_EQUAL( result.not_fit_peak_mdas.size(), 1 );
+  BOOST_REQUIRE_EQUAL( result.exemplar_peak_mdas.size(), 2 );
+
+  const BatchPeak::NotFitPeakMda &not_fit = result.not_fit_peak_mdas.front();
+
+  // The full-set list must reuse the not-fit entry verbatim, so the two lists agree, and so the
+  //  limit is not computed twice.
+  const BatchPeak::NotFitPeakMda *matched = nullptr;
+  for( const BatchPeak::NotFitPeakMda &mda : result.exemplar_peak_mdas )
+  {
+    if( mda.exemplar_peak == not_fit.exemplar_peak )
+      matched = &mda;
+  }
+
+  BOOST_REQUIRE( matched );
+  BOOST_CHECK( !matched->peak_was_fit );
+  BOOST_CHECK_EQUAL( matched->currie.short_description, not_fit.currie.short_description );
+  BOOST_CHECK_EQUAL( matched->description, not_fit.description );
+  BOOST_CHECK_CLOSE( matched->currie.result.upper_limit, not_fit.currie.result.upper_limit, 1.0E-6 );
+
+  // ...and the other entry is for the peak that was fit
+  size_t num_fit = 0;
+  for( const BatchPeak::NotFitPeakMda &mda : result.exemplar_peak_mdas )
+    num_fit += mda.peak_was_fit;
+  BOOST_CHECK_EQUAL( num_fit, 1 );
+}//BOOST_AUTO_TEST_CASE( ExemplarMdasIncludeNotFitSubset )
+
+
+BOOST_AUTO_TEST_CASE( ExemplarPeakMdasInJson )
+{
+  set_data_dir();
+
+  BatchPeak::BatchPeakFitOptions options = default_options();
+  options.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::Currie;
+
+  const BatchPeak::BatchPeakFitResult result = run_fit( {661.0, 1173.0}, {{661.0, 5000.0}}, options );
+  BOOST_REQUIRE( result.success );
+
+  nlohmann::json data;
+  BatchInfoLog::add_peak_fit_results_to_json( data, result );
+
+  BOOST_REQUIRE( data.contains("ExemplarPeaks") );
+  BOOST_REQUIRE( data["ExemplarPeaks"].contains("HasMdas") );
+  BOOST_CHECK( data["ExemplarPeaks"]["HasMdas"].get<bool>() );
+  BOOST_CHECK( data.contains("AnyExemplarPeakMda") );
+  BOOST_CHECK( data["AnyExemplarPeakMda"].get<bool>() );
+
+  const nlohmann::json &exemplar_peaks = data["ExemplarPeaks"]["Peaks"];
+  BOOST_REQUIRE_EQUAL( exemplar_peaks.size(), 2 );
+
+  size_t num_was_fit = 0;
+  for( const nlohmann::json &peak : exemplar_peaks )
+  {
+    BOOST_REQUIRE( peak.contains("HasMda") );
+    BOOST_REQUIRE( peak.contains("Mda") );
+    BOOST_REQUIRE( peak["Mda"].contains("PeakWasFit") );
+
+    if( peak["Mda"]["PeakWasFit"].get<bool>() )
+    {
+      num_was_fit += 1;
+
+      // A fit peak carries its fit area alongside the limit, so a report can show both
+      BOOST_CHECK( peak["Mda"].contains("FitPeakMean") );
+      BOOST_CHECK( peak["Mda"].contains("FitPeakArea") );
+      BOOST_CHECK( peak["Mda"].contains("FitPeakAreaStr") );
+    }else
+    {
+      BOOST_CHECK( !peak["Mda"].contains("FitPeakMean") );
+    }
+  }//for( const nlohmann::json &peak : exemplar_peaks )
+
+  BOOST_CHECK_EQUAL( num_was_fit, 1 );
+
+  // Peaks that were fit are reported through `FitPeaks` without limits, exactly as before
+  BOOST_REQUIRE( data.contains("FitPeaks") );
+  BOOST_CHECK( !data["FitPeaks"].contains("HasMdas") );
+  for( const nlohmann::json &peak : data["FitPeaks"]["Peaks"] )
+  {
+    BOOST_CHECK( !peak.contains("HasMda") );
+    BOOST_CHECK( !peak.contains("Mda") );
+  }
+}//BOOST_AUTO_TEST_CASE( ExemplarPeakMdasInJson )
+
+
+namespace
+{
+/** Assigns the strongest gamma of `nuclide` within 1 keV of `energy` to `peak`. */
+void assign_nuclide_gamma( PeakDef &peak, const SandiaDecay::Nuclide * const parent,
+                           const SandiaDecay::Nuclide * const emitter, const double energy )
+{
+  BOOST_REQUIRE( parent && emitter );
+
+  int rad_particle = -1;
+  const SandiaDecay::Transition *transition = nullptr;
+
+  for( size_t i = 0; !transition && (i < emitter->decaysToChildren.size()); ++i )
+  {
+    const SandiaDecay::Transition * const trans = emitter->decaysToChildren[i];
+    for( size_t j = 0; !transition && (j < trans->products.size()); ++j )
+    {
+      if( (trans->products[j].type == SandiaDecay::GammaParticle)
+         && (fabs(trans->products[j].energy - energy) < 1.0) )
+      {
+        transition = trans;
+        rad_particle = static_cast<int>( j );
+      }
+    }
+  }//for( loop over decays )
+
+  BOOST_REQUIRE_MESSAGE( transition && (rad_particle >= 0),
+                         "Could not find a " << energy << " keV gamma for " << emitter->symbol );
+
+  peak.setNuclearTransition( parent, transition, rad_particle, PeakDef::SourceGammaType::NormalGamma );
+}//void assign_nuclide_gamma(...)
+
+
+/** Builds a Co60 activity/shielding fit where the 1173 keV peak is used, and the 1332 keV peak is
+ fit but not used - the case the nominal-activity computation exists for.
+
+ Peak areas are constructed from a known activity through the same efficiency and branching ratio
+ the model uses, so the fit, and the activity the unused peak implies, both have a known answer.
+ */
+struct NominalActivityFixture
+{
+  const SandiaDecay::SandiaDecayDataBase *db = nullptr;
+  const SandiaDecay::Nuclide *co60 = nullptr;
+  const SandiaDecay::Nuclide *cs137 = nullptr;
+  double distance = 100*PhysicalUnits::cm;
+  double live_time = 100*PhysicalUnits::second;
+  double true_activity = 5.0*PhysicalUnits::microCi;
+  shared_ptr<DetectorPeakResponse> detector;
+  shared_ptr<SpecUtils::Measurement> foreground;
+  deque<shared_ptr<const PeakDef>> foreground_peaks;
+  shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results;
+  shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2_fcn;
+
+  /** @param extra_unused_cs137_peak Adds a 661 keV peak assigned to Cs137, which is not one of the
+             fitted sources - it must be reported, but excluded from the evaluation.
+   */
+  void run( const bool extra_unused_cs137_peak )
+  {
+    db = DecayDataBaseServer::database();
+    BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+
+    co60 = db->nuclide( "Co60" );
+    cs137 = db->nuclide( "Cs137" );
+    BOOST_REQUIRE( co60 && cs137 );
+
+    detector = make_shared<DetectorPeakResponse>();
+    detector->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, distance, 5*PhysicalUnits::cm,
+                                       PhysicalUnits::keV, 0, 3000*PhysicalUnits::keV,
+                                       DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+
+    foreground = make_shared<SpecUtils::Measurement>();
+    auto spec = make_shared<vector<float>>( 128, 1.0f );
+    foreground->set_gamma_counts( spec, live_time, live_time );
+
+    // Co60 emits both gammas essentially once per decay
+    const double br_1173 = 0.9985, br_1332 = 0.999826;
+    const double eff = detector->efficiency( 1173.0f, distance );
+
+    const double area_1173 = true_activity * br_1173 * live_time * eff;
+    const double area_1332 = true_activity * br_1332 * live_time
+                             * detector->efficiency( 1332.0f, distance );
+
+    {// The peak the fit uses
+      auto peak = make_shared<PeakDef>( 1173.228, 10.0, area_1173 );
+      peak->setPeakAreaUncert( sqrt(area_1173) );
+      assign_nuclide_gamma( *peak, co60, co60, 1173.228 );
+      peak->useForShieldingSourceFit( true );
+      foreground_peaks.push_back( peak );
+    }
+
+    {// The peak that is fit, but not used by the model
+      auto peak = make_shared<PeakDef>( 1332.492, 10.0, area_1332 );
+      peak->setPeakAreaUncert( sqrt(area_1332) );
+      assign_nuclide_gamma( *peak, co60, co60, 1332.492 );
+      peak->useForShieldingSourceFit( false );
+      foreground_peaks.push_back( peak );
+    }
+
+    if( extra_unused_cs137_peak )
+    {
+      const double area = 1000.0;
+      auto peak = make_shared<PeakDef>( 661.657, 10.0, area );
+      peak->setPeakAreaUncert( sqrt(area) );
+      assign_nuclide_gamma( *peak, cs137, db->nuclide("Ba137m"), 661.657 );
+      peak->useForShieldingSourceFit( false );
+      foreground_peaks.push_back( peak );
+    }//if( extra_unused_cs137_peak )
+
+    ShieldingSourceFitCalc::SourceFitDef co60_src;
+    co60_src.nuclide = co60;
+    co60_src.activity = 2.0*true_activity;   //deliberately off, so the fit has to work
+    co60_src.fitActivity = true;
+    co60_src.age = 0.0;
+    co60_src.fitAge = false;
+    co60_src.ageDefiningNuc = nullptr;
+    co60_src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+    ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+    options.attenuate_for_air = false;
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+    chi_input.config.distance = distance;
+    chi_input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+    chi_input.config.sources = { co60_src };
+    chi_input.config.options = options;
+    chi_input.detector = detector;
+    chi_input.foreground = foreground;
+    chi_input.foreground_peaks = foreground_peaks;
+
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters>
+                fcn_pars = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+
+    chi2_fcn = fcn_pars.first;
+
+    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+    *inputPrams = fcn_pars.second;
+
+    auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+    results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+
+    bool finished = false;
+    ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress,
+                                       [](){}, results, [&finished](){ finished = true; } );
+
+    BOOST_REQUIRE( finished );
+    BOOST_REQUIRE( results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final );
+  }//void run( const bool )
+
+  /** Returns the supplemental entry for the peak at `energy`, or null. */
+  const ShieldingSourceFitCalc::SupplementalPeakInfo *entry_for( const double energy ) const
+  {
+    for( const ShieldingSourceFitCalc::SupplementalPeakInfo &info : results->supplemental_peak_info )
+    {
+      if( info.peak && (fabs(info.peak->mean() - energy) < 1.0) )
+        return &info;
+    }
+    return nullptr;
+  }//entry_for(...)
+};//struct NominalActivityFixture
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( NominalActivityRoundTrip )
+{
+  set_data_dir();
+
+  NominalActivityFixture fixture;
+  fixture.run( false );
+
+  // The fit should recover the activity the peak areas were built from
+  BOOST_REQUIRE_EQUAL( fixture.results->fit_src_info.size(), 1 );
+  const double fit_activity = fixture.results->fit_src_info[0].activity;
+  BOOST_CHECK_CLOSE( fit_activity, fixture.true_activity, 0.5 );
+
+  // One entry per peak given to the fit
+  BOOST_REQUIRE_EQUAL( fixture.results->supplemental_peak_info.size(), 2 );
+
+  const ShieldingSourceFitCalc::SupplementalPeakInfo * const used = fixture.entry_for( 1173.228 );
+  const ShieldingSourceFitCalc::SupplementalPeakInfo * const unused = fixture.entry_for( 1332.492 );
+  BOOST_REQUIRE( used && unused );
+
+  BOOST_CHECK( used->used_for_fit );
+  BOOST_CHECK( !unused->used_for_fit );
+  BOOST_CHECK( !used->synthetic && !unused->synthetic );
+
+  // A used peak already contributed its answer, so it gets no implied activity
+  BOOST_CHECK( !used->has_implied_activity );
+
+  BOOST_REQUIRE_MESSAGE( unused->model_evaluated,
+                         "The 1332 keV peak was not evaluated: " << unused->not_evaluated_reason );
+  BOOST_REQUIRE( unused->has_implied_activity );
+
+  // The strongest available check that the evaluation is consistent with the nominal answer: a
+  //  peak that agrees with the model must reproduce the fitted activity.
+  BOOST_CHECK_MESSAGE( fabs(unused->implied_activity - fit_activity) < 0.01*fit_activity,
+        "Implied activity ("
+        << PhysicalUnits::printToBestActivityUnits(unused->implied_activity,6)
+        << ") did not reproduce the fitted activity ("
+        << PhysicalUnits::printToBestActivityUnits(fit_activity,6) << ")" );
+
+  BOOST_CHECK_CLOSE( unused->ratio_to_fit, 1.0, 1.0 );
+  BOOST_CHECK( fabs(unused->num_sigma_off) < 3.0 );
+  BOOST_CHECK( unused->counts_per_bq > 0.0 );
+  BOOST_CHECK( !unused->shared_with_other_sources );
+  BOOST_CHECK( !unused->is_volumetric_source );
+  BOOST_CHECK( !unused->description.empty() );
+  BOOST_CHECK( !unused->short_description.empty() );
+
+  // Adding the unused peak must not change what the model predicts for the peaks the fit used;
+  //  if it did, the gamma lines got re-clustered and the numbers above are not the nominal answer.
+  BOOST_REQUIRE( fixture.results->peak_calc_details );
+  BOOST_REQUIRE_EQUAL( fixture.results->peak_calc_details->size(), 1 );
+  BOOST_CHECK_CLOSE( used->expected_counts,
+                     fixture.results->peak_calc_details->front().expectedCounts, 1.0E-4 );
+
+  // ...which is also what `compute_supplemental_peak_info` warns about, so there should be no
+  //  warnings at all for this well separated pair.
+  BOOST_CHECK_MESSAGE( fixture.results->warnings.empty(),
+                       "Unexpected warning: "
+                       << (fixture.results->warnings.empty() ? string() : fixture.results->warnings.front()) );
+
+  // Every peak gets a detection-limit check, even though there is no real spectrum behind these
+  //  peaks - it must fail cleanly rather than throw.
+  for( const ShieldingSourceFitCalc::SupplementalPeakInfo &info : fixture.results->supplemental_peak_info )
+    BOOST_CHECK( info.currie.computed || !info.currie.error_message.empty() );
+}//BOOST_AUTO_TEST_CASE( NominalActivityRoundTrip )
+
+
+BOOST_AUTO_TEST_CASE( NuclideNotFittedExcluded )
+{
+  set_data_dir();
+
+  NominalActivityFixture fixture;
+  fixture.run( true );  //adds a Cs137 peak, and Cs137 is not a fitted source
+
+  BOOST_REQUIRE_EQUAL( fixture.results->supplemental_peak_info.size(), 3 );
+
+  const ShieldingSourceFitCalc::SupplementalPeakInfo * const cs137 = fixture.entry_for( 661.657 );
+  BOOST_REQUIRE( cs137 );
+
+  // Adding a peak with a nuclide the fit does not have would shift every fit parameter, so it must
+  //  be excluded from the evaluation - but still reported, with the reason.
+  BOOST_CHECK( !cs137->model_evaluated );
+  BOOST_CHECK( !cs137->has_implied_activity );
+  BOOST_CHECK_MESSAGE( cs137->not_evaluated_reason.find("Cs137") != string::npos,
+                       "Expected the reason to name Cs137, got: " << cs137->not_evaluated_reason );
+
+  // ...and its presence must not disturb the peak that can be evaluated
+  const ShieldingSourceFitCalc::SupplementalPeakInfo * const unused = fixture.entry_for( 1332.492 );
+  BOOST_REQUIRE( unused );
+  BOOST_REQUIRE( unused->has_implied_activity );
+
+  const double fit_activity = fixture.results->fit_src_info[0].activity;
+  BOOST_CHECK( fabs(unused->implied_activity - fit_activity) < 0.01*fit_activity );
+}//BOOST_AUTO_TEST_CASE( NuclideNotFittedExcluded )
+
+
+BOOST_AUTO_TEST_CASE( SupplementalPeakInfoJson )
+{
+  set_data_dir();
+
+  NominalActivityFixture fixture;
+  fixture.run( false );
+
+  nlohmann::json data;
+  BatchInfoLog::shield_src_fit_results_to_json( *fixture.results, fixture.detector, false, data );
+
+  BOOST_REQUIRE( data.contains("SupplementalPeakInfo") );
+  const nlohmann::json &supp = data["SupplementalPeakInfo"];
+
+  // Every conditional key has a `Has*` sibling that is always present
+  BOOST_REQUIRE( supp.contains("HasCurrieChecks") );
+  BOOST_REQUIRE( supp.contains("HasNominalActivities") );
+  BOOST_REQUIRE( supp.contains("AnyPeakNotUsedForFit") );
+  BOOST_CHECK( supp["HasNominalActivities"].get<bool>() );
+  BOOST_CHECK( supp["AnyPeakNotUsedForFit"].get<bool>() );
+
+  BOOST_REQUIRE( supp.contains("AllPeaks") );
+  BOOST_REQUIRE( supp["AllPeaks"].contains("Peaks") );
+  BOOST_CHECK_EQUAL( supp["AllPeaks"]["Peaks"].size(), 2 );
+
+  BOOST_REQUIRE( supp.contains("PeaksNotUsedForFit") );
+  BOOST_REQUIRE_EQUAL( supp["PeaksNotUsedForFit"]["Peaks"].size(), 1 );
+
+  const nlohmann::json &unused = supp["PeaksNotUsedForFit"]["Peaks"][0];
+  BOOST_REQUIRE( unused.contains("HasNominalActivity") );
+  BOOST_REQUIRE( unused["HasNominalActivity"].get<bool>() );
+  BOOST_CHECK( unused.contains("ImpliedActivity") );
+  BOOST_CHECK( unused.contains("ImpliedActivity_bq") );
+  BOOST_CHECK( unused.contains("ImpliedActivity_uCi") );
+  BOOST_CHECK( unused.contains("FitActivity_bq") );
+  BOOST_CHECK( unused.contains("RatioToFitActivityStr") );
+  BOOST_CHECK( unused.contains("NumSigmaOffStr") );
+  BOOST_CHECK( unused.contains("CountsPerBq") );
+  BOOST_CHECK( unused.contains("HasCaveats") );
+  BOOST_CHECK( unused.contains("UsedForFit") );
+  BOOST_CHECK( !unused["UsedForFit"].get<bool>() );
+  BOOST_CHECK( unused.contains("SourceName") );
+  BOOST_CHECK_EQUAL( unused["SourceName"].get<string>(), string("Co60") );
+
+  // The whole object is absent when there is nothing to report, so reports written before this
+  //  existed render unchanged.
+  nlohmann::json empty_data;
+  ShieldingSourceFitCalc::ModelFitResults no_supp;
+  no_supp.successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final;
+  no_supp.distance = fixture.distance;
+  no_supp.geometry = GammaInteractionCalc::GeometryType::Spherical;
+  BatchInfoLog::add_supplemental_peak_info_to_json( empty_data, no_supp.supplemental_peak_info,
+                                                    fixture.detector, false );
+  BOOST_CHECK( !empty_data.contains("SupplementalPeakInfo") );
+}//BOOST_AUTO_TEST_CASE( SupplementalPeakInfoJson )

@@ -235,73 +235,45 @@ namespace BatchPeak
    */
   struct InterSpec_API NotFitPeakMda
   {
-    /** The exemplar peak this limit is for; an entry of `BatchPeakFitResult::unfit_exemplar_peaks`. */
+    /** The exemplar peak this limit is for; an entry of `BatchPeakFitResult::exemplar_peaks`. */
     std::shared_ptr<const PeakDef> exemplar_peak;
 
-    /** Classification of the Currie-style result; the same classification used by the GUI
-     detection-limit tools.
+    /** Whether `exemplar_peak` was actually fit in the spectrum being analyzed.
+
+     Limits are computed for every exemplar peak: for a peak that could not be fit the limit is the
+     answer, and for a peak that was fit it is a quality check - a peak can pass the peak-fit
+     significance tests and still sit below the level at which a signal can be reliably claimed.
+
+     Deconvolution-style limits are only ever computed for peaks that were _not_ fit; for a peak
+     that was fit you already have a measured area with an uncertainty.
      */
-    enum class MdaResultType : int
-    {
-      /** Signal is below the decision threshold (L_c) - only an upper limit can be given. */
-      NotDetected,
+    bool peak_was_fit = false;
 
-      /** Signal is above the decision threshold, even though a peak could not be fit. */
-      Detected,
+    /** The peak that was fit and matched to `exemplar_peak`; only non-null when `peak_was_fit`.
 
-      /** Significantly fewer counts observed than the neighboring continuum predicts. */
-      Deficit,
+     The limit is evaluated at this peaks mean and width, rather than the exemplars, since
+     re-fitting the energy calibration can shift the mean.
+     */
+    std::shared_ptr<const PeakDef> fit_peak;
 
-      /** The limit could not be computed; see #currie_error. */
-      Error
-    };//enum class MdaResultType
+    /** The Currie-style detection limit check; all the counts-space quantities and their wording. */
+    DetectionLimitCalc::PeakCurrieCheck currie;
 
-    bool currie_computed = false;
-    std::string currie_error;
-    DetectionLimitCalc::CurrieMdaResult currie_result;
-    MdaResultType result_type = MdaResultType::Error;
+    /** Whether another peak falls within the energy range used to estimate the continuum - in
+     either case the limit may be biased.
 
-    /** Whether a peak that _was_ fit, or another exemplar peak that was not fit, falls within the
-     energy range used to estimate the continuum - in either case the limit may be biased.
+     `overlaps_fit_peak` never counts this entrys own `fit_peak`.
      */
     bool overlaps_fit_peak = false;
     bool overlaps_other_unfit_peak = false;
 
-    /** Whether the peak region and its side channels hold essentially no counts, so the Gaussian
-     statistics the Currie-style calculation uses have broken down.
-
-     When true, the decision threshold and the upper limit are both zero and mean nothing; only
-     the detection limit (which tends to k^2) is quoted.  The result is always reported as not
-     detected, so a single stray count cannot read as a detection.
-     */
-    bool region_is_empty = false;
-
-    /** The fraction of a Gaussian peak that lies inside the peak region the limit was computed
-     over; 0.997 at the default region width of 2.5 FWHM.
-
-     The Currie-style calculation assumes the entire peak is inside the region, so the limits are
-     optimistic by roughly this factor.  At the default width the effect is negligible, but it
-     grows quickly for narrower regions - e.g., a 1.0 FWHM wide region holds only 76% of the peak.
-     \sa BatchPeakFitOptions::mda_roi_num_fwhm
-     */
-    double signal_fraction_in_roi = 1.0;
-
-    /** A brief English phrase for the result, short enough for a table cell; e.g. "Less than Lc".
-
-     Use `result_type` to branch on in templates, and this to display.
-     */
-    std::string short_description;
-
     /** A ready-to-include-in-a-report English description of the result; e.g., "Not detected...".
 
-     Assembled from the three parts below by `update_description(...)`; set that way rather than
-     appended to directly, so the caveats stay at the end of the paragraph even though the
-     activity information is filled in later, by the activity/shielding fit.
+     Assembled from `currie.result_summary` and the two parts below by `update_description(...)`;
+     set that way rather than appended to directly, so the caveats stay at the end of the paragraph
+     even though the activity information is filled in later, by the activity/shielding fit.
      */
     std::string description;
-
-    /** What the limit is, in counts. */
-    std::string result_summary;
 
     /** What the limit is as an activity, or why there isnt one; empty for plain peak fits. */
     std::string activity_summary;
@@ -340,13 +312,18 @@ namespace BatchPeak
     bool has_activity = false;
     std::string no_activity_reason;
     const SandiaDecay::Nuclide *nuclide = nullptr;
-    double branching_ratio = 0.0;
     double shield_transmission = 1.0;
     double air_transmission = 1.0;
     double det_efficiency = 0.0;
     double live_time = 0.0;
 
-    /** Counts observed per becquerel of source activity; `activity = counts / gammas_per_bq`. */
+    /** Counts observed per becquerel of source activity; `activity = counts / gammas_per_bq`.
+
+     This comes from evaluating the fitted shielding/source model at this peaks energy - the same
+     forward model that produced the fit - so it accounts for interference between sources,
+     volumetric source geometry, and decay during the measurement.
+     \sa ShieldingSourceFitCalc::SupplementalPeakInfo::counts_per_bq
+     */
     double gammas_per_bq = 0.0;
 
     /** Whether activities should be displayed in becquerel, rather than curie. */
@@ -376,6 +353,18 @@ namespace BatchPeak
      is `None`, all exemplar peaks were fit, or the fit failed.
      */
     std::vector<NotFitPeakMda> not_fit_peak_mdas;
+
+    /** Detection limits for each entry of `exemplar_peaks`, in the same order - i.e., for every
+     exemplar peak, whether or not it was fit.
+
+     The entries for peaks that were not fit are copies of `not_fit_peak_mdas`; an activity/shielding
+     fit re-syncs them after filling in the activity information.  Entries for peaks that _were_
+     fit have `NotFitPeakMda::peak_was_fit` set, and never have a deconvolution limit.
+
+     Empty when `BatchPeakFitOptions::not_fit_peak_mda` is `None`, or `fit_all_peaks` is set (in
+     which case there are no exemplar peaks to speak of).
+     */
+    std::vector<NotFitPeakMda> exemplar_peak_mdas;
 
     std::shared_ptr<SpecMeas> measurement;
     std::shared_ptr<SpecUtils::Measurement> spectrum;
@@ -480,8 +469,8 @@ namespace BatchPeak
    the deconvolution-style limit, also in counts, is computed as well.
 
    Never throws; a peak whose limit could not be computed (e.g., its region falls off the end of
-   the spectrum) is returned with `NotFitPeakMda::result_type` of `Error`, and the reason in
-   `NotFitPeakMda::currie_error`.
+   the spectrum) is returned with `NotFitPeakMda::currie.result_type` of `Error`, and the reason in
+   `NotFitPeakMda::currie.error_message`.
 
    @param unfit_exemplar_peaks The exemplar peaks that could not be fit; the returned vector has
           one entry per peak, in the same order.
@@ -498,6 +487,33 @@ namespace BatchPeak
                           const std::deque<std::shared_ptr<const PeakDef>> &fit_peaks,
                           const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
                           const std::shared_ptr<const DetectorPeakResponse> &exemplar_drf,
+                          const BatchPeakFitOptions &options );
+
+  /** Computes the Currie-style detection limit for _every_ exemplar peak, whether or not it was fit.
+
+   For an exemplar peak that could not be fit, the entry from `not_fit_peak_mdas` is reused as-is,
+   so the limit is not computed twice, and the two lists agree.  For an exemplar peak that _was_
+   fit, a Currie-style limit is computed at the fit peaks mean and width; this is a quality check,
+   since a peak can pass the peak-fit significance tests and still sit below the level at which a
+   signal can be reliably claimed.  Deconvolution limits are never computed here.
+
+   Never throws.
+
+   @param exemplar_peaks Every exemplar peak; the returned vector has one entry per peak, in the
+          same order.
+   @param not_fit_peak_mdas The already computed limits for the exemplar peaks that were not fit.
+   @param fit_peak_exemplar_parents The exemplar peak each entry of `fit_peaks` was matched to;
+          parallel to `fit_peaks`, and null where no exemplar peak matched.
+   @param fit_peaks The peaks that were fit.
+   @param spectrum The spectrum that was analyzed.
+   @param options The options for the analysis.
+   */
+  InterSpec_API std::vector<NotFitPeakMda> compute_exemplar_peak_mdas(
+                          const std::deque<std::shared_ptr<const PeakDef>> &exemplar_peaks,
+                          const std::vector<NotFitPeakMda> &not_fit_peak_mdas,
+                          const std::vector<std::shared_ptr<const PeakDef>> &fit_peak_exemplar_parents,
+                          const std::deque<std::shared_ptr<const PeakDef>> &fit_peaks,
+                          const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
                           const BatchPeakFitOptions &options );
 
   /** Runs the deconvolution-style detection limit calculation, and stores the outcome into `mda`.
@@ -523,22 +539,16 @@ namespace BatchPeak
                           const double confidence_level,
                           const bool use_curie );
 
-  /** Formats a confidence level as a string for display; e.g., 0.95 -> "95%", and
-   0.999999426696856 -> "1-5.7E-07".
-   */
-  InterSpec_API std::string confidence_level_str( const double confidence_level );
-
-  /** Returns the fraction of a Gaussian peak that lies within a region centered on the peak, and
-   `num_fwhm` FWHMs wide; e.g., 2.5 -> 0.99676.
-   */
-  InterSpec_API double gaussian_fraction_in_roi( const double num_fwhm );
-
   /** Computes the deconvolution-style detection limit, in counts, for each entry that does not
    already have one.
 
    Entries whose `decon_attempted` is already true are left alone, so an activity/shielding fit can
    compute the (better) activity-space limit first, and then use this to fill in the peaks it could
    not convert to an activity - rather than leaving them with no limit at all.
+
+   Entries whose `peak_was_fit` is true are skipped entirely, and left with `decon_attempted` false:
+   for a peak that was fit you already have a measured area with an uncertainty, and the
+   deconvolution scan answers the not-detected question.  It is also the expensive path.
 
    Never throws; per-entry failures are recorded in `NotFitPeakMda::decon_error`.
    */

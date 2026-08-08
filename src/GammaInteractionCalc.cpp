@@ -1986,7 +1986,19 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> answer;
   answer.reset( new GammaInteractionCalc::ShieldingSourceChi2Fcn( distance, liveTime, realTime,
                                                     peaks, detector, shieldings, geom, options ) );
-  
+
+  // Hold onto the input verbatim, so the per-peak supplemental information can be computed after
+  //  the fit; see `ShieldingSourceChi2Fcn::SupplementalInfoOptions`.
+  answer->m_create_input = input;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Synthetic peaks stand in for peaks that werent actually observed, so they must not be fit to.
+  for( const shared_ptr<const PeakDef> &p : input.synthetic_peaks )
+  {
+    assert( p && !p->useForShieldingSourceFit() );
+  }
+#endif
+
   //I think num_fit_params will end up same as inputPrams.VariableParameters()
   size_t num_fit_params = 0;
   
@@ -4362,7 +4374,25 @@ double ShieldingSourceChi2Fcn::distance() const
 {
   return m_distance;
 }
-  
+
+
+double ShieldingSourceChi2Fcn::liveTime() const
+{
+  return m_liveTime;
+}
+
+
+double ShieldingSourceChi2Fcn::realTime() const
+{
+  return m_realTime;
+}
+
+
+const ShieldingSourceChi2Fcn::ShieldSourceInput &ShieldingSourceChi2Fcn::createInput() const
+{
+  return m_create_input;
+}
+
 
 const std::shared_ptr<const DetectorPeakResponse> &ShieldingSourceChi2Fcn::detector() const
 {

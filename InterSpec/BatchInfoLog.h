@@ -43,7 +43,13 @@ class DetectorPeakResponse;
 namespace ShieldingSourceFitCalc
 {
   struct ModelFitResults;
+  struct SupplementalPeakInfo;
   struct ShieldingSourceFitOptions;
+}
+
+namespace DetectionLimitCalc
+{
+  struct PeakCurrieCheck;
 }
 
 namespace GammaInteractionCalc
@@ -229,6 +235,29 @@ namespace BatchInfoLog
 
   /** Adds the detection limit information for a single peak that could not be fit. */
   void add_mda_to_json( nlohmann::basic_json<> &mda_json, const BatchPeak::NotFitPeakMda &mda );
+
+  /** Adds the energy, width, area, and assigned source of a peak. */
+  void add_peak_identity_to_json( const PeakDef &peak, nlohmann::basic_json<> &peak_json );
+
+  /** Adds the assigned source ("SourceType", "SourceName", "SourceEnergy", ...) of a peak. */
+  void add_peak_source_info_to_json( const PeakDef &peak, nlohmann::basic_json<> &peak_json );
+
+  /** Adds the counts-space quantities of a Currie-style detection limit check. */
+  void add_currie_check_to_json( nlohmann::basic_json<> &json,
+                                const DetectionLimitCalc::PeakCurrieCheck &check );
+
+  /** Adds the "SupplementalPeakInfo" object to an activity/shielding fit result: the per-peak
+   detection limit checks, and the activities implied by peaks that were fit but not used in the
+   model.
+
+   Called by `shield_src_fit_results_to_json(...)`, so the GUIs fit log and the batch reports both
+   get it.  Emits nothing at all when `supp_info` is empty, so reports written before this existed
+   render unchanged.
+   */
+  void add_supplemental_peak_info_to_json( nlohmann::basic_json<> &data,
+                  const std::vector<ShieldingSourceFitCalc::SupplementalPeakInfo> &supp_info,
+                  const std::shared_ptr<const DetectorPeakResponse> &drf,
+                  const bool useBq );
 
   /** Adds the "NotFitPeaks" and "AnyNotFitPeakMda" entries to an activity/shielding fit result.
 

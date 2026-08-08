@@ -74,41 +74,6 @@ namespace
     return template_path.substr( 0, pos );
   }
 
-  /** Returns the FWHM to use for an exemplar peak; for peaks that arent Gaussian (i.e., "data
-   defined" peaks), the ROI is assumed to be the usual 2.5 FWHM wide.
-
-   Returns zero if a width could not be determined.
-   */
-  double exemplar_peak_fwhm( const PeakDef &peak )
-  {
-    if( peak.gausPeak() && (peak.fwhm() > 0.0) )
-      return peak.fwhm();
-
-    const double roi_width = peak.upperX() - peak.lowerX();
-
-    return (roi_width > 0.0) ? (roi_width / 2.5) : 0.0;
-  }//double exemplar_peak_fwhm( const PeakDef & )
-
-
-  /** Returns the energy range the Currie-style limit used, including the side channels used to
-   estimate the continuum.
-   */
-  std::pair<double,double> currie_energy_range( const DetectionLimitCalc::CurrieMdaResult &result )
-  {
-    const std::shared_ptr<const SpecUtils::Measurement> &spec = result.input.spectrum;
-    assert( spec && spec->energy_calibration() );
-
-    const size_t first_channel = (result.input.num_lower_side_channels > 0)
-                                    ? result.first_lower_continuum_channel
-                                    : result.first_peak_region_channel;
-    const size_t last_channel = (result.input.num_upper_side_channels > 0)
-                                    ? result.last_upper_continuum_channel
-                                    : result.last_peak_region_channel;
-
-    return { spec->gamma_channel_lower(first_channel), spec->gamma_channel_upper(last_channel) };
-  }//std::pair<double,double> currie_energy_range(...)
-
-
   /** Creates a fixed-geometry detector response with unity intrinsic efficiency, so that the
    "activity" limited by `DetectionLimitCalc::get_activity_or_distance_limits` is simply the
    number of peak counts.
@@ -165,7 +130,7 @@ namespace
       std::vector<float> fwhms;
       for( const std::shared_ptr<const PeakDef> &p : exemplar_peaks )
       {
-        const double fwhm = p ? exemplar_peak_fwhm(*p) : 0.0;
+        const double fwhm = p ? DetectionLimitCalc::peak_width_for_currie_check(*p) : 0.0;
         if( fwhm > 0.0 )
           fwhms.push_back( static_cast<float>(fwhm) );
       }
@@ -233,7 +198,7 @@ NotFitPeakMdaMethod not_fit_peak_mda_method_from_str( const string &str )
 
 void update_description( NotFitPeakMda &mda )
 {
-  mda.description = mda.result_summary;
+  mda.description = mda.currie.result_summary;
 
   if( !mda.activity_summary.empty() )
     mda.description += "  " + mda.activity_summary;
@@ -241,32 +206,6 @@ void update_description( NotFitPeakMda &mda )
   if( !mda.caveats.empty() )
     mda.description += "  " + mda.caveats;
 }//void update_description( NotFitPeakMda & )
-
-
-double gaussian_fraction_in_roi( const double num_fwhm )
-{
-  if( num_fwhm <= 0.0 )
-    return 0.0;
-
-  // Half-width, in units of sigma, is 0.5*num_fwhm*2.35482; the fraction within +-x sigma of the
-  //  mean is erf( x / sqrt(2) ).
-  const double half_width_sigma = 0.5 * num_fwhm * 2.35482;
-
-  return erf( half_width_sigma / sqrt(2.0) );
-}//double gaussian_fraction_in_roi( const double )
-
-
-string confidence_level_str( const double confidence_level )
-{
-  char buffer[64] = { '\0' };
-
-  if( confidence_level < 0.999 )
-    snprintf( buffer, sizeof(buffer), "%.4g%%", 100.0*confidence_level );
-  else
-    snprintf( buffer, sizeof(buffer), "1-%.2G", (1.0 - confidence_level) );
-
-  return buffer;
-}//string confidence_level_str( const double )
 
 
 void compute_decon_limit( NotFitPeakMda &mda,
@@ -281,7 +220,7 @@ void compute_decon_limit( NotFitPeakMda &mda,
   mda.decon_computed = false;
   mda.decon_result = nullptr;
 
-  if( !mda.currie_computed )
+  if( !mda.currie.computed )
   {
     mda.decon_error = "the Currie-style limit, used to seed the search range, was not computed";
     return;
@@ -293,7 +232,7 @@ void compute_decon_limit( NotFitPeakMda &mda,
     return;
   }
 
-  const DetectionLimitCalc::CurrieMdaResult &res = mda.currie_result;
+  const DetectionLimitCalc::CurrieMdaResult &res = mda.currie.result;
 
   // Exaggerate the range implied by the Currie-style limit, so we can be confident of bracketing
   //  the answer; the multiple is arbitrary, and matches what the GUI "Simple MDA" tool uses.
@@ -339,6 +278,11 @@ void compute_decon_limit( NotFitPeakMda &mda,
     mda.decon_result = make_shared<const DetectionLimitCalc::DeconActivityOrDistanceLimitResult>( result );
     mda.decon_computed = true;
 
+    if( !result.foundUpperCl )
+      mda.decon_error = result.errorMessage.empty()
+                        ? "the profile scan did not bracket an upper confidence limit"
+                        : result.errorMessage;
+
     // The two methods look at the same data, so a large disagreement says something about the
     //  data, rather than about the methods - most often a curved continuum, or an interfering
     //  peak in the region.  Worth telling the user, rather than quietly reporting two numbers.
@@ -346,8 +290,13 @@ void compute_decon_limit( NotFitPeakMda &mda,
     if( result.foundUpperCl && (currie_limit > 0.0) && (result.upperLimit > 0.0) )
     {
       mda.decon_over_currie_ratio = result.upperLimit / currie_limit;
-      mda.methods_disagree = ((mda.decon_over_currie_ratio > 2.0)
-                              || (mda.decon_over_currie_ratio < 0.5));
+      // Calibrated in log-ratio space on the clean synthetic counting-statistics grid and
+      // isolated saved peaks in the bundled Ba-133 spectrum.  The empirical 99% endpoints,
+      // expanded outward by 10%, are 0.60 and 1.87 after the one-sided threshold correction.
+      constexpr double minimum_agreement_ratio = 0.60;
+      constexpr double maximum_agreement_ratio = 1.87;
+      mda.methods_disagree = (mda.decon_over_currie_ratio > maximum_agreement_ratio)
+                             || (mda.decon_over_currie_ratio < minimum_agreement_ratio);
 
       if( mda.methods_disagree )
       {
@@ -380,7 +329,10 @@ void add_counts_decon_limits( vector<NotFitPeakMda> &mdas,
   vector<shared_ptr<const PeakDef>> peaks;
   for( const NotFitPeakMda &mda : mdas )
   {
-    if( !mda.decon_attempted && mda.exemplar_peak )
+    // A peak that was fit already has a measured area with an uncertainty; the deconvolution
+    //  scan answers the "what can be excluded" question, which is the not-detected question.  It
+    //  is also the expensive path, so it is never run for a peak that was fit.
+    if( !mda.decon_attempted && !mda.peak_was_fit && mda.exemplar_peak )
       peaks.push_back( mda.exemplar_peak );
   }
 
@@ -396,13 +348,13 @@ void add_counts_decon_limits( vector<NotFitPeakMda> &mdas,
 
   for( NotFitPeakMda &mda : mdas )
   {
-    if( mda.decon_attempted || !mda.exemplar_peak )
+    if( mda.decon_attempted || mda.peak_was_fit || !mda.exemplar_peak )
       continue;
 
     mda.decon_attempted = true;
     mda.decon_quantity_is_counts = true;
 
-    const double fwhm = exemplar_peak_fwhm( *mda.exemplar_peak );
+    const double fwhm = DetectionLimitCalc::peak_width_for_currie_check( *mda.exemplar_peak );
 
     if( !unity_drf )
     {
@@ -416,22 +368,22 @@ void add_counts_decon_limits( vector<NotFitPeakMda> &mdas,
       continue;
     }
 
-    if( !mda.currie_computed )
+    if( !mda.currie.computed )
     {
       mda.decon_error = "the peak region could not be determined";
       continue;
     }
 
     DetectionLimitCalc::DeconRoiInfo roi;
-    roi.roi_start = mda.currie_result.input.roi_lower_energy;
-    roi.roi_end = mda.currie_result.input.roi_upper_energy;
+    roi.roi_start = mda.currie.result.input.roi_lower_energy;
+    roi.roi_end = mda.currie.result.input.roi_upper_energy;
     roi.continuum_type = PeakContinuum::OffsetType::Linear;
     roi.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::Floating;
     roi.num_lower_side_channels = num_side_channels;
     roi.num_upper_side_channels = num_side_channels;
 
     DetectionLimitCalc::DeconRoiInfo::PeakInfo peak_info;
-    peak_info.energy = mda.currie_result.input.gamma_energy;
+    peak_info.energy = mda.currie.result.input.gamma_energy;
     peak_info.fwhm = static_cast<float>( fwhm );
     // With a unity-efficiency fixed-geometry DRF, a "counts per bq" of one makes the quantity
     //  being limited be the number of peak counts.
@@ -452,6 +404,100 @@ void add_counts_decon_limits( vector<NotFitPeakMda> &mdas,
 }//void add_counts_decon_limits(...)
 
 
+namespace
+{
+  /** Adds the caveats that apply to a limit, and rebuilds its description.
+
+   The caveats go at the end of the description, after any activity information the
+   activity/shielding fit may fill in later, so this is done as its own pass.
+   */
+  void add_limit_caveats( BatchPeak::NotFitPeakMda &mda )
+  {
+    if( mda.overlaps_fit_peak )
+      mda.caveats += string(mda.caveats.empty() ? "" : "  ")
+                     + "Note: a fit peak overlaps the region used to estimate the continuum, so"
+                       " this limit may be unreliable.";
+
+    if( mda.overlaps_other_unfit_peak )
+      mda.caveats += string(mda.caveats.empty() ? "" : "  ")
+                     + "Note: another exemplar peak that was not fit lies within the evaluated"
+                       " region.";
+
+    // The calculation assumes the whole peak is inside the peak region, so a narrow region gives
+    //  a limit on the counts within it, rather than on the peaks total area.  Negligible at the
+    //  default region width, but worth saying once it is not.
+    if( mda.currie.computed && (mda.currie.signal_fraction_in_roi < 0.99) )
+    {
+      char buffer[256] = { '\0' };
+      snprintf( buffer, sizeof(buffer),
+               "Note: the peak region holds only %.0f%% of the peak, and the limit is not"
+               " corrected for the signal outside it, so it is optimistic by about %.0f%%.",
+               100.0*mda.currie.signal_fraction_in_roi,
+               100.0*(1.0/mda.currie.signal_fraction_in_roi - 1.0) );
+      mda.caveats += string(mda.caveats.empty() ? "" : "  ") + buffer;
+    }//if( a meaningful part of the peak is outside the region )
+
+    BatchPeak::update_description( mda );
+  }//void add_limit_caveats( NotFitPeakMda & )
+
+
+  /** Fills out the Currie-style limit for a single peak, along with the flags for neighboring
+   peaks that may contaminate the continuum estimate.
+
+   @param exemplar_peak The exemplar peak the limit is for; recorded on the result.
+   @param eval_peak The peak whose mean and width define the region evaluated.  For a peak that was
+          fit this is the fit peak, since re-fitting the energy calibration can shift the mean.
+   @param fit_peak The fit peak matched to `exemplar_peak`, or nullptr if it was not fit.  Never
+          counts towards `overlaps_fit_peak` - a peak always overlaps itself.
+   */
+  BatchPeak::NotFitPeakMda currie_limit_for_peak(
+                        const shared_ptr<const PeakDef> &exemplar_peak,
+                        const PeakDef &eval_peak,
+                        const shared_ptr<const PeakDef> &fit_peak,
+                        const deque<shared_ptr<const PeakDef>> &fit_peaks,
+                        const vector<shared_ptr<const PeakDef>> &unfit_exemplar_peaks,
+                        const shared_ptr<const SpecUtils::Measurement> &spectrum,
+                        const BatchPeak::BatchPeakFitOptions &options )
+  {
+    BatchPeak::NotFitPeakMda mda;
+    mda.exemplar_peak = exemplar_peak;
+    mda.fit_peak = fit_peak;
+    mda.peak_was_fit = !!fit_peak;
+
+    DetectionLimitCalc::PeakCurrieCheckOptions check_opts;
+    check_opts.confidence_level = options.mda_confidence_level;
+    check_opts.num_side_channels = options.mda_num_side_channels;
+    check_opts.roi_num_fwhm = options.mda_roi_num_fwhm;
+
+    mda.currie = DetectionLimitCalc::currie_check_for_peak( eval_peak, spectrum, check_opts,
+                                                            mda.peak_was_fit );
+
+    if( !mda.currie.computed )
+      return mda;
+
+    // Flag limits whose continuum estimate may be contaminated by a neighboring peak.
+    const pair<double,double> energy_range
+                        = DetectionLimitCalc::currie_check_energy_range( mda.currie.result );
+
+    for( const shared_ptr<const PeakDef> &p : fit_peaks )
+    {
+      if( p && (p != fit_peak)
+         && (p->upperX() > energy_range.first) && (p->lowerX() < energy_range.second) )
+        mda.overlaps_fit_peak = true;
+    }
+
+    for( const shared_ptr<const PeakDef> &p : unfit_exemplar_peaks )
+    {
+      if( p && (p != exemplar_peak)
+         && (p->mean() > energy_range.first) && (p->mean() < energy_range.second) )
+        mda.overlaps_other_unfit_peak = true;
+    }
+
+    return mda;
+  }//NotFitPeakMda currie_limit_for_peak(...)
+}//namespace
+
+
 vector<NotFitPeakMda> compute_not_fit_peak_mdas(
                           const vector<shared_ptr<const PeakDef>> &unfit_exemplar_peaks,
                           const deque<shared_ptr<const PeakDef>> &fit_peaks,
@@ -469,189 +515,29 @@ vector<NotFitPeakMda> compute_not_fit_peak_mdas(
     return answer;
   }
 
-  const string cl_str = confidence_level_str( options.mda_confidence_level );
   const bool want_decon = (options.not_fit_peak_mda == NotFitPeakMdaMethod::CurrieAndDecon);
-
-  // A side-channel count of zero puts `currie_mda_calc` into its "the spectrum is asserted to be
-  //  background" mode, which is a different calculation than we are documenting here.
-  const size_t num_side_channels = std::max( size_t(1), options.mda_num_side_channels );
 
   for( const shared_ptr<const PeakDef> &peak : unfit_exemplar_peaks )
   {
-    NotFitPeakMda mda;
-    mda.exemplar_peak = peak;
-
-    // Record the options used up front, so they are still reported for peaks whose limit cant
-    //  be computed.
-    mda.currie_result.input.detection_probability = options.mda_confidence_level;
-    mda.currie_result.input.num_lower_side_channels = num_side_channels;
-    mda.currie_result.input.num_upper_side_channels = num_side_channels;
-    mda.signal_fraction_in_roi = gaussian_fraction_in_roi( options.mda_roi_num_fwhm );
-
     if( !peak )
     {
       assert( 0 );
-      mda.currie_error = "invalid peak";
-      mda.short_description = "Not computed";
-      mda.result_summary = "Detection limit could not be computed: invalid peak.";
+
+      NotFitPeakMda mda;
+      mda.currie.error_message = "invalid peak";
+      mda.currie.short_description = "Not computed";
+      mda.currie.result_summary = "Detection limit could not be computed: invalid peak.";
       update_description( mda );
       answer.push_back( mda );
       continue;
     }//if( !peak )
 
-    const double mean = peak->mean();
-    const double fwhm = exemplar_peak_fwhm( *peak );
-
-    DetectionLimitCalc::CurrieMdaInput input;
-    input.spectrum = spectrum;
-    input.gamma_energy = static_cast<float>( mean );
-
-    if( fwhm > 0.0 )
-    {
-      // The default region width of 2.5 FWHM (i.e., +-1.25 FWHM) is what ISO 11929:2010
-      //  recommends.  For peaks that arent Gaussian, `exemplar_peak_fwhm(...)` gives back a width
-      //  such that the default reproduces the peaks own ROI width.
-      const double half_width = 0.5 * options.mda_roi_num_fwhm * fwhm;
-      input.roi_lower_energy = static_cast<float>( mean - half_width );
-      input.roi_upper_energy = static_cast<float>( mean + half_width );
-    }else
-    {
-      input.roi_lower_energy = static_cast<float>( peak->lowerX() );
-      input.roi_upper_energy = static_cast<float>( peak->upperX() );
-    }
-
-    input.num_lower_side_channels = num_side_channels;
-    input.num_upper_side_channels = num_side_channels;
-    input.detection_probability = options.mda_confidence_level;
-    input.additional_uncertainty = 0.0f;
-
-    try
-    {
-      mda.currie_result = DetectionLimitCalc::currie_mda_calc( input );
-      mda.currie_computed = true;
-    }catch( std::exception &e )
-    {
-      // Keep the input around, so the options actually used are still reported for this peak
-      mda.currie_result.input = input;
-      mda.currie_error = e.what();
-      mda.result_type = NotFitPeakMda::MdaResultType::Error;
-      mda.short_description = "Not computed";
-      mda.result_summary = "Detection limit could not be computed: " + mda.currie_error + ".";
-      update_description( mda );
-      answer.push_back( mda );
-      continue;
-    }//try / catch
-
-    const DetectionLimitCalc::CurrieMdaResult &res = mda.currie_result;
-
-    // With (essentially) no counts anywhere in the region, the decision threshold and the upper
-    //  limit both collapse to zero - the Gaussian statistics the calculation uses have broken
-    //  down.  Left alone, that makes a single stray count read as a detection, and reports an
-    //  upper limit of "less than 0 counts".  Ld does not degenerate (it tends to k^2, which is
-    //  the right order for a zero-background Poisson limit), so fall back to quoting just that.
-    mda.region_is_empty = (res.decision_threshold <= 0.0f);
-
-    // Classify the result, using the same criteria as the GUI detection limit tools.
-    if( mda.region_is_empty )
-      mda.result_type = NotFitPeakMda::MdaResultType::NotDetected;
-    else if( res.source_counts > res.decision_threshold )
-      mda.result_type = NotFitPeakMda::MdaResultType::Detected;
-    else if( res.upper_limit < 0.0f )
-      mda.result_type = NotFitPeakMda::MdaResultType::Deficit;
-    else
-      mda.result_type = NotFitPeakMda::MdaResultType::NotDetected;
-
-    // Flag limits whose continuum estimate may be contaminated by a neighboring peak.
-    const pair<double,double> energy_range = currie_energy_range( res );
-    for( const shared_ptr<const PeakDef> &p : fit_peaks )
-    {
-      if( p && (p->upperX() > energy_range.first) && (p->lowerX() < energy_range.second) )
-        mda.overlaps_fit_peak = true;
-    }
-
-    for( const shared_ptr<const PeakDef> &p : unfit_exemplar_peaks )
-    {
-      if( p && (p != peak) && (p->mean() > energy_range.first) && (p->mean() < energy_range.second) )
-        mda.overlaps_other_unfit_peak = true;
-    }
-
-    switch( mda.result_type )
-    {
-      case NotFitPeakMda::MdaResultType::NotDetected:
-        if( mda.region_is_empty )
-        {
-          mda.short_description = "No counts in region";
-          mda.result_summary = "Not detected; the peak region contains essentially no counts."
-                               "  Minimum reliably detectable signal (Ld) is "
-                               + SpecUtils::printCompact(res.detection_limit, 4) + " counts.";
-          break;
-        }//if( mda.region_is_empty )
-
-        mda.short_description = "Less than Lc";
-        mda.result_summary = "Not detected.  Observed signal is below the decision threshold"
-                          " (Lc = " + SpecUtils::printCompact(res.decision_threshold, 4) + " counts);"
-                          " signal is less than " + SpecUtils::printCompact(res.upper_limit, 4)
-                          + " counts at the " + cl_str + " confidence level."
-                          "  Minimum reliably detectable signal (Ld) is "
-                          + SpecUtils::printCompact(res.detection_limit, 4) + " counts.";
-        break;
-
-      case NotFitPeakMda::MdaResultType::Detected:
-        mda.short_description = "Greater than Lc";
-        mda.result_summary = "Signal present but peak not fit: observed "
-                          + SpecUtils::printCompact(res.source_counts, 4) + " counts is above the"
-                          " decision threshold (Lc = "
-                          + SpecUtils::printCompact(res.decision_threshold, 4) + " counts); signal"
-                          " is between " + SpecUtils::printCompact(res.lower_limit, 4) + " and "
-                          + SpecUtils::printCompact(res.upper_limit, 4) + " counts at the "
-                          + cl_str + " confidence level.";
-        break;
-
-      case NotFitPeakMda::MdaResultType::Deficit:
-        mda.short_description = "Fewer counts than expected";
-        mda.result_summary = "Fewer counts than expected from the neighboring continuum; observed"
-                          " signal is consistent with less than 0 counts at the " + cl_str
-                          + " confidence level.";
-        break;
-
-      case NotFitPeakMda::MdaResultType::Error:
-        assert( 0 );
-        break;
-    }//switch( mda.result_type )
-
-    answer.push_back( mda );
+    answer.push_back( currie_limit_for_peak( peak, *peak, nullptr, fit_peaks, unfit_exemplar_peaks,
+                                             spectrum, options ) );
   }//for( const shared_ptr<const PeakDef> &peak : unfit_exemplar_peaks )
 
-  // The caveats apply to both limits, and go at the end of the description, after any activity
-  //  information the activity/shielding fit may fill in later.
   for( NotFitPeakMda &mda : answer )
-  {
-    if( mda.overlaps_fit_peak )
-      mda.caveats += string(mda.caveats.empty() ? "" : "  ")
-                     + "Note: a fit peak overlaps the region used to estimate the continuum, so"
-                       " this limit may be unreliable.";
-
-    if( mda.overlaps_other_unfit_peak )
-      mda.caveats += string(mda.caveats.empty() ? "" : "  ")
-                     + "Note: another exemplar peak that was not fit lies within the evaluated"
-                       " region.";
-
-    // The calculation assumes the whole peak is inside the peak region, so a narrow region gives
-    //  a limit on the counts within it, rather than on the peaks total area.  Negligible at the
-    //  default region width, but worth saying once it is not.
-    if( mda.currie_computed && (mda.signal_fraction_in_roi < 0.99) )
-    {
-      char buffer[256] = { '\0' };
-      snprintf( buffer, sizeof(buffer),
-               "Note: the peak region holds only %.0f%% of the peak, and the limit is not"
-               " corrected for the signal outside it, so it is optimistic by about %.0f%%.",
-               100.0*mda.signal_fraction_in_roi,
-               100.0*(1.0/mda.signal_fraction_in_roi - 1.0) );
-      mda.caveats += string(mda.caveats.empty() ? "" : "  ") + buffer;
-    }//if( a meaningful part of the peak is outside the region )
-
-    update_description( mda );
-  }//for( NotFitPeakMda &mda : answer )
+    add_limit_caveats( mda );
 
   // Done after the caveats above, so any note the comparison of the two methods adds goes last
   if( want_decon )
@@ -659,6 +545,93 @@ vector<NotFitPeakMda> compute_not_fit_peak_mdas(
 
   return answer;
 }//compute_not_fit_peak_mdas(...)
+
+
+vector<NotFitPeakMda> compute_exemplar_peak_mdas(
+                    const deque<shared_ptr<const PeakDef>> &exemplar_peaks,
+                    const vector<NotFitPeakMda> &not_fit_peak_mdas,
+                    const vector<shared_ptr<const PeakDef>> &fit_peak_exemplar_parents,
+                    const deque<shared_ptr<const PeakDef>> &fit_peaks,
+                    const shared_ptr<const SpecUtils::Measurement> &spectrum,
+                    const BatchPeakFitOptions &options )
+{
+  vector<NotFitPeakMda> answer;
+
+  if( exemplar_peaks.empty()
+     || (options.not_fit_peak_mda == NotFitPeakMdaMethod::None)
+     || !spectrum
+     || (spectrum->num_gamma_channels() < 4) )
+  {
+    return answer;
+  }
+
+  assert( fit_peak_exemplar_parents.size() == fit_peaks.size() );
+
+  // The peaks that were not fit; needed to flag limits whose region holds another such peak.
+  vector<shared_ptr<const PeakDef>> unfit_exemplar_peaks;
+  for( const NotFitPeakMda &mda : not_fit_peak_mdas )
+  {
+    if( mda.exemplar_peak )
+      unfit_exemplar_peaks.push_back( mda.exemplar_peak );
+  }
+
+  for( const shared_ptr<const PeakDef> &exemplar : exemplar_peaks )
+  {
+    if( !exemplar )
+    {
+      assert( 0 );
+      continue;
+    }
+
+    // A peak that could not be fit already has its limit computed; reuse it so the two lists agree,
+    //  and so the (expensive) deconvolution limit is not computed twice.
+    bool was_not_fit = false;
+    for( const NotFitPeakMda &mda : not_fit_peak_mdas )
+    {
+      if( mda.exemplar_peak == exemplar )
+      {
+        answer.push_back( mda );
+        was_not_fit = true;
+        break;
+      }
+    }//for( const NotFitPeakMda &mda : not_fit_peak_mdas )
+
+    if( was_not_fit )
+      continue;
+
+    // Find the peak that was fit for this exemplar peak; the limit is evaluated there, since
+    //  re-fitting the energy calibration can shift the mean.
+    shared_ptr<const PeakDef> fit_peak;
+    for( size_t i = 0; !fit_peak && (i < fit_peak_exemplar_parents.size()); ++i )
+    {
+      if( fit_peak_exemplar_parents[i] == exemplar )
+        fit_peak = fit_peaks[i];
+    }
+
+    if( !fit_peak )
+    {
+      // Neither in the not-fit list, nor matched to a fit peak; shouldnt happen, but report the
+      //  peak rather than silently dropping it from the full-set list.
+      assert( 0 );
+
+      NotFitPeakMda mda;
+      mda.exemplar_peak = exemplar;
+      mda.currie.error_message = "the peak was neither fit nor reported as not fit";
+      mda.currie.short_description = "Not computed";
+      mda.currie.result_summary = "Detection limit could not be computed: "
+                                  + mda.currie.error_message + ".";
+      update_description( mda );
+      answer.push_back( mda );
+      continue;
+    }//if( !fit_peak )
+
+    answer.push_back( currie_limit_for_peak( exemplar, *fit_peak, fit_peak, fit_peaks,
+                                             unfit_exemplar_peaks, spectrum, options ) );
+    add_limit_caveats( answer.back() );
+  }//for( const shared_ptr<const PeakDef> &exemplar : exemplar_peaks )
+
+  return answer;
+}//compute_exemplar_peak_mdas(...)
 
 
 void propagate_energy_cal( const shared_ptr<const SpecUtils::EnergyCalibration> &energy_cal,
@@ -1889,6 +1862,12 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     deque<shared_ptr<const PeakDef>> fit_peaks_ptrs;
     set<shared_ptr<const PeakDef>> unused_exemplar_peaks;
 
+    /** The exemplar peak each entry of `fit_peaks_ptrs` was matched to; parallel to it, and null
+     where no exemplar peak matched.  Used to evaluate each exemplar peaks detection limit at the
+     mean and width it was actually fit with.
+     */
+    vector<shared_ptr<const PeakDef>> fit_peak_exemplar_parents;
+
     if( options.fit_all_peaks )
     {
       std::shared_ptr<const DetectorPeakResponse> det;
@@ -2167,6 +2146,10 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
                                      " corresponding to peak fit with mean=" + std::to_string( p.mean() ) + " keV." );
           //cout << "\tmean=" << p.mean() << ", FWHM=" << p.fwhm() << ", area=" << p.amplitude() << endl;
         }//if( exemplar_parent ) / else
+
+        // Kept parallel to `fit_peaks`, and hence to `fit_peaks_ptrs`, which is filled in below
+        //  from `fit_peaks` in this same order.
+        fit_peak_exemplar_parents.push_back( exemplar_parent );
       }//for( PeakDef &p: fit_peaks )
 
       //cout << endl << endl;
@@ -2203,19 +2186,27 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     std::sort( begin(results.unfit_exemplar_peaks), end(results.unfit_exemplar_peaks),
               &PeakDef::lessThanByMeanShrdPtr );
 
-    if( !options.fit_all_peaks
-       && (options.not_fit_peak_mda != NotFitPeakMdaMethod::None)
-       && !results.unfit_exemplar_peaks.empty() )
+    if( !options.fit_all_peaks && (options.not_fit_peak_mda != NotFitPeakMdaMethod::None) )
     {
       const shared_ptr<const DetectorPeakResponse> exemplar_drf = exemplar_n42 ? exemplar_n42->detector()
                                                                                : nullptr;
-      results.not_fit_peak_mdas = compute_not_fit_peak_mdas( results.unfit_exemplar_peaks,
+
+      if( !results.unfit_exemplar_peaks.empty() )
+        results.not_fit_peak_mdas = compute_not_fit_peak_mdas( results.unfit_exemplar_peaks,
                                                      results.fit_peaks, spec, exemplar_drf, options );
-    }//if( we should compute detection limits for the peaks that were not fit )
+
+      // Every exemplar peak also gets a limit, whether or not it was fit; for a peak that was fit
+      //  this is a quality check, since a peak can pass the significance tests and still sit below
+      //  the level at which a signal can be reliably claimed.
+      assert( fit_peak_exemplar_parents.size() == results.fit_peaks.size() );
+      if( fit_peak_exemplar_parents.size() == results.fit_peaks.size() )
+        results.exemplar_peak_mdas = compute_exemplar_peak_mdas( results.exemplar_peaks,
+                                              results.not_fit_peak_mdas, fit_peak_exemplar_parents,
+                                              results.fit_peaks, spec, options );
+    }//if( we should compute detection limits )
   }
   
   return results;
 }//fit_peaks_in_file(...)
   
 }//namespace BatchPeak
-

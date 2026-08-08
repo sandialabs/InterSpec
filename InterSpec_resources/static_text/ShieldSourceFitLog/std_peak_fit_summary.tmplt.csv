@@ -24,7 +24,7 @@ Filename, Mean, FWHM, SourceName, SourceEnergy, Result, Lc (counts), Ld (counts)
 ## for file in Files
 ## if existsIn(file,"NotFitPeaks")
 ## for peak in file.NotFitPeaks.Peaks
-{{ file.Filename }}, {{ printFixed(peak.PeakMean,2) }}, {{ printFixed(peak.PeakFwhm,2) }}, {{ peak.SourceName }}, {{ peak.SourceEnergy }}{% if existsIn(peak,"Mda") %}, {{ peak.Mda.ShortDescription }}, {% if peak.Mda.CurrieComputed %}{{ peak.Mda.DecisionThresholdStr }}, {{ peak.Mda.DetectionLimitStr }}, {{ peak.Mda.UpperLimitStr }}{% else %}, , {% endif %}, {% if peak.Mda.HasMdaActivity %}{{ peak.Mda.DetectionLimitActivity }}{% endif %},"{{ peak.Mda.Description }}"{% else %}, , , , , , {% endif %}
+{{ file.Filename }}, {{ printFixed(peak.PeakMean,2) }}, {{ printFixed(peak.PeakFwhm,2) }}, {{ peak.SourceName }}, {{ peak.SourceEnergy }}{% if existsIn(peak,"Mda") %}, {{ peak.Mda.ShortDescription }}, {% if peak.Mda.CurrieComputed %}{{ peak.Mda.DecisionThresholdStr }}, {{ peak.Mda.DetectionLimitStr }}, {{ peak.Mda.UpperLimitStr }}{% else %}, , {% endif %}, {% if peak.Mda.HasActivity %}{{ peak.Mda.DetectionLimitActivity }}{% endif %},"{{ peak.Mda.Description }}"{% else %}, , , , , , {% endif %}
 ## endfor
 ## endif
 ## endfor

@@ -1670,7 +1670,6 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
           fit_peaks = result.overallBestResults->fit_peaks;
       }else if( result.foundLowerCl )
       {
-        assert( 0 );
         display_activity = 0.0; //result.foundLowerCl
         const string cl_txt = "Error: Didn't find " + cl_str + " CL activity";
         const string sum_txt = "Error: Didn't find " + cl_str + " CL activity";
@@ -1681,7 +1680,7 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
         //fit_peaks = result.lowerLimitResults.fit_peaks;
       }else if( result.foundUpperCl )
       {
-        display_activity = result.foundUpperCl;
+        display_activity = result.upperLimit;
         
         if( !m_currentNuclide )
         {
@@ -3013,5 +3012,4 @@ std::string DetectionLimitSimple::encodeStateToUrl() const
 
   return answer;
 }//std::string encodeStateToUrl() const;
-
 

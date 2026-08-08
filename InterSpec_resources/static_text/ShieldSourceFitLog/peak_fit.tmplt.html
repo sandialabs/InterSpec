@@ -372,6 +372,8 @@
 {% if peak.Mda.DeconAttempted %}
 {% if peak.Mda.DeconComputed %}{% if peak.Mda.DeconFoundUpperLimit %}
               The deconvolution method gives an upper limit of {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %} at the {{ peak.Mda.ConfidenceLevelStr }} confidence level (&chi;<sup>2</sup>={{ printFixed(peak.Mda.DeconLimitChi2,2) }}).
+{% else %}
+              The deconvolution method did not give a limit: {{ peak.Mda.DeconError }}.
 {% endif %}{% else %}
               The deconvolution method did not give a limit: {{ peak.Mda.DeconError }}.
 {% endif %}
@@ -433,4 +435,3 @@
 
 </body>
 <html>
-

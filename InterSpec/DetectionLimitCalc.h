@@ -26,7 +26,9 @@
 #include "InterSpec_config.h"
 
 #include <memory>
+#include <string>
 #include <ostream>
+#include <utility>
 
 #include "InterSpec/PeakDef.h"
 
@@ -264,10 +266,144 @@ std::pair<size_t,size_t> round_roi_to_channels( std::shared_ptr<const SpecUtils:
   
 
 /** Performs the simple gross-counts in regions style calculation.
- 
+
  Will throw exception if input is invalid, or runs into any errors.
  */
 CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input );
+
+
+/** Options for the Currie-style detection limit check made for a single peak.
+
+ \sa currie_check_for_peak
+ */
+struct PeakCurrieCheckOptions
+{
+  /** Confidence level of the limits; e.g., 0.95 for 95%.  Must be greater than 0.5 and less than 1. */
+  double confidence_level = 0.95;
+
+  /** Number of channels on each side of the peak region used to estimate the continuum.
+
+   A value of zero puts `currie_mda_calc(...)` into its "the spectrum is asserted to be background"
+   mode, which is a different calculation than this check performs, so zero is treated as one.
+   */
+  size_t num_side_channels = 4;
+
+  /** The width of the peak region, in multiples of the peak FWHM.
+   The default of 2.5 (i.e., mean +-1.25 FWHM) is what ISO 11929:2010 recommends.
+   */
+  double roi_num_fwhm = 2.5;
+};//struct PeakCurrieCheckOptions
+
+
+/** The outcome of a Currie-style detection limit check made for a single peak.
+
+ This is the "is there a detectable signal here, and how much could be hiding" question, asked of a
+ peak region of the spectrum.  It is meaningful both for a peak that could not be fit (where the
+ limit is the answer), and for a peak that was fit (where it is a quality check - a peak can be fit,
+ yet still sit below the level at which a signal can be reliably claimed).
+
+ \sa currie_check_for_peak
+ */
+struct PeakCurrieCheck
+{
+  /** How the observed counts in the peak region compare to what the continuum predicts. */
+  enum class ResultType : int
+  {
+    /** Signal is below the decision threshold (L_c); only an upper limit can be quoted. */
+    NotDetected,
+
+    /** Signal is above the decision threshold (L_c). */
+    Detected,
+
+    /** Fewer counts observed than the neighboring continuum predicts; even the upper limit is
+     less than zero counts.  Usually means the continuum estimate is poor.
+     */
+    Deficit,
+
+    /** The check could not be performed; see `error_message`. */
+    Error
+  };//enum class ResultType
+
+  /** Whether `result` holds a valid calculation; when false see `error_message`. */
+  bool computed = false;
+
+  /** Why the check could not be made; only non-empty when `computed` is false. */
+  std::string error_message;
+
+  /** The underlying calculation.  When `computed` is false, only `result.input` is meaningful, and
+   only to report the options that were attempted.
+   */
+  CurrieMdaResult result;
+
+  ResultType result_type = ResultType::Error;
+
+  /** True when the peak region holds essentially no counts, so that the Gaussian statistics the
+   calculation uses have broken down (the decision threshold and upper limit both collapse to
+   zero, which would make a single stray count read as a detection).
+   */
+  bool region_is_empty = false;
+
+  /** The fraction of a Gaussian peak that falls inside the peak region; see
+   `gaussian_fraction_in_roi(...)`.  The limit is on the counts within the region, and is not
+   corrected for the signal outside it, so a value meaningfully below 1 makes the limit optimistic.
+   */
+  double signal_fraction_in_roi = 1.0;
+
+  /** A table-cell sized summary; e.g., "Less than Lc". */
+  std::string short_description;
+
+  /** A sentence or two describing the outcome, with the numbers in it. */
+  std::string result_summary;
+};//struct PeakCurrieCheck
+
+
+/** Returns a short, stable string for the result type; e.g. "NotDetected". */
+const char *to_str( const PeakCurrieCheck::ResultType type );
+
+
+/** Performs a Currie-style detection limit check for a single peak.
+
+ The peak region is `peak.mean()` +- half of `options.roi_num_fwhm` FWHM, with the continuum
+ estimated from `options.num_side_channels` channels on each side.  Does not throw; failures are
+ reported through `PeakCurrieCheck::computed` and `error_message`.
+
+ @param peak The peak to evaluate; its mean and width define the region.  For "data defined" peaks,
+        see `peak_width_for_currie_check(...)` for how the width is determined.
+ @param spectrum The spectrum to evaluate the peak region in.
+ @param options See `PeakCurrieCheckOptions`.
+ @param peak_was_fit Whether this peak was actually fit in `spectrum`.  Only affects the wording of
+        `short_description` and `result_summary` - the numbers are the same either way.
+ */
+PeakCurrieCheck currie_check_for_peak( const PeakDef &peak,
+                              const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
+                              const PeakCurrieCheckOptions &options,
+                              const bool peak_was_fit );
+
+
+/** Returns the FWHM to use for a peaks detection limit check; for peaks that arent Gaussian (i.e.,
+ "data defined" peaks), the ROI is assumed to be the usual 2.5 FWHM wide, so that the default
+ `PeakCurrieCheckOptions::roi_num_fwhm` reproduces the peaks own ROI width.
+
+ Returns zero if a width could not be determined.
+ */
+double peak_width_for_currie_check( const PeakDef &peak );
+
+
+/** Returns the fraction of a Gaussian peak that lies within +-(num_fwhm/2) FWHM of its mean.
+
+ E.g., 2.5 gives 0.9968, and 1.0 gives 0.7610.  Returns zero for non-positive input.
+ */
+double gaussian_fraction_in_roi( const double num_fwhm );
+
+
+/** Formats a confidence level for display; e.g., 0.95 becomes "95%", and 0.9999 becomes "1-1E-04". */
+std::string confidence_level_str( const double confidence_level );
+
+
+/** Returns the energy range a Currie-style limit used, including the side channels used to estimate
+ the continuum.  Useful for detecting that a neighboring peak may contaminate the continuum.
+ */
+std::pair<double,double> currie_check_energy_range( const CurrieMdaResult &result );
 
 
 /** How the continuum for peaks should be normalized.
@@ -457,6 +593,8 @@ struct DeconActivityOrDistanceLimitResult
   std::string limitText;
   std::string quantityLimitStr;
   std::string bestCh2Text;
+  /** Non-empty when the scan completed but could not bracket the requested limit. */
+  std::string errorMessage;
   
   double overallBestChi2;
   double overallBestQuantity;
