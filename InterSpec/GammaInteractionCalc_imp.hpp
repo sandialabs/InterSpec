@@ -56,6 +56,7 @@
 #include <cfloat>
 #include <limits>
 #include <memory>
+#include <string>
 #include <vector>
 #include <cassert>
 #include <utility>
@@ -91,6 +92,23 @@ inline double scalar_of( const T &val )
   else
     return val.a;
 }
+
+
+#if( DEBUG_RAYTRACE_CALCS )
+/** Shared lock so concurrently-traced rays dont interleave their stdout.
+
+ A function-local static in an inline function, so there is exactly one instance across all
+ translation units.  (This was a file-static in GammaInteractionCalc.cpp before the ray-trace
+ tracing moved into the templates below, so that it covers the Ceres/Jet path too.)  It is
+ recursive because DistributedSrcCalc::eval_single_cyl_end_on holds it while calling into
+ #cylinder_line_intersection_imp.
+ */
+inline std::recursive_mutex &raytrace_debug_mutex()
+{
+  static std::recursive_mutex s_mutex;
+  return s_mutex;
+}
+#endif //DEBUG_RAYTRACE_CALCS
 
 
 /** Volumetric trace-source normalization variant (TotalActivity / in-situ
@@ -178,6 +196,24 @@ inline T distance_imp( const T a[3], const T b[3] )
 
   return sqrt( dx*dx + dy*dy + dz*dz );
 }//distance_imp(...)
+
+
+#ifndef NDEBUG
+/** Distance between two (possibly ceres::Jet) points, evaluated on the scalar parts only.
+
+ For the contract asserts in the ray-tracing routines below, so a development check costs no
+ derivative arithmetic.  Debug builds only.
+ */
+template<typename T>
+inline double scalar_distance_( const T a[3], const T b[3] )
+{
+  const double dx = scalar_of(a[0]) - scalar_of(b[0]);
+  const double dy = scalar_of(a[1]) - scalar_of(b[1]);
+  const double dz = scalar_of(a[2]) - scalar_of(b[2]);
+
+  return std::sqrt( dx*dx + dy*dy + dz*dz );
+}//scalar_distance_(...)
+#endif //NDEBUG
 
 
 /** Templated equivalent of DetectorPeakResponse::fractionalSolidAngle(diam,dist). */
@@ -330,9 +366,13 @@ T exit_point_of_sphere_z_imp( const T source_point[3],
   const T b = source_point[1];
   const T c = source_point[2];
 
+  // The offending values are carried in the exception message rather than printed to cerr (which is
+  //  what the retired double implementation did), so they reach whoever catches this.
   const T r = sqrt( a*a + b*b + c*c );
   if( observation_dist < sphere_rad )
-    throw std::runtime_error( "exit_point_of_sphere_z_imp(...): obs_dist < sphere_rad" );
+    throw std::runtime_error( "exit_point_of_sphere_z_imp(...): obs_dist < sphere_rad (obs_dist="
+                              + std::to_string( scalar_of(observation_dist) ) + ", sphere_rad="
+                              + std::to_string( scalar_of(sphere_rad) ) + ")" );
 
   if( r > sphere_rad )
   {
@@ -344,7 +384,9 @@ T exit_point_of_sphere_z_imp( const T source_point[3],
       return T(0.0);
     }//if( this is just a rounding error )
 
-    throw std::runtime_error( "exit_point_of_sphere_z_imp(...): r > sphere_rad" );
+    throw std::runtime_error( "exit_point_of_sphere_z_imp(...): r > sphere_rad (r="
+                              + std::to_string( scalar_of(r) ) + ", sphere_rad="
+                              + std::to_string( scalar_of(sphere_rad) ) + ")" );
   }//if( r > sphere_rad )
 
   // Source is inside the sphere and the radius is bounded > 0 here, so forward to the radius-scaled
@@ -432,19 +474,37 @@ T cylinder_line_intersection_imp( const T &radius, const T &half_length,
   using namespace std;
   using namespace ceres;
 
+// When debugging we will grab a static mutex so we dont get jumbled stdout
+#if( DEBUG_RAYTRACE_CALCS )
+  std::lock_guard<std::recursive_mutex> scoped_lock( raytrace_debug_mutex() );
+#endif
+
   assert( scalar_of(radius) >= 0.0 );
   assert( scalar_of(half_length) >= 0.0 );
+  assert( (direction == CylExitDir::TowardDetector)
+          || (direction == CylExitDir::AwayFromDetector) );
 
   // A convenience function for handling case where the line never enters our volume.
   auto handle_line_outside_volume = [&exit_point,&source]() -> T {
     exit_point[0] = source[0];
     exit_point[1] = source[1];
     exit_point[2] = source[2];
+
+#if( DEBUG_RAYTRACE_CALCS )
+    cout << "\tDoes not intersect volume" << endl << endl;
+#endif
+
     return T(0.0);
   };//handle_line_outside_volume lamda
 
   if( (radius <= 0.0) || (half_length <= 0.0) )
     return handle_line_outside_volume();
+
+#if( DEBUG_RAYTRACE_CALCS )
+  cout << "Rad=" << scalar_of(radius) << ", half-z=" << scalar_of(half_length)
+       << ", src={" << scalar_of(source[0]) << "," << scalar_of(source[1]) << "," << scalar_of(source[2]) << "}"
+       << ", det={" << scalar_of(detector[0]) << "," << scalar_of(detector[1]) << "," << scalar_of(detector[2]) << "}" << endl;
+#endif
 
   // Get unit direction vector from source to final position
   T unit[3] = { detector[0] - source[0], detector[1] - source[1], detector[2] - source[2] };
@@ -459,6 +519,8 @@ T cylinder_line_intersection_imp( const T &radius, const T &half_length,
   // Check if parallel to z-axis
   if( (abs(unit[0]) < DBL_EPSILON) && (abs(unit[1]) < DBL_EPSILON) )
   {
+    assert( std::fabs(scalar_of(unit[2])) > DBL_EPSILON );
+
     const T r = sqrt(source[0]*source[0] + source[1]*source[1]);
 
     if( r > radius )
@@ -480,6 +542,12 @@ T cylinder_line_intersection_imp( const T &radius, const T &half_length,
     exit_point[0] = source[0];
     exit_point[1] = source[1];
     exit_point[2] = exit_z;
+
+#if( DEBUG_RAYTRACE_CALCS )
+    cout << "\tParrallel on z\n"
+         << "\tExit={" << scalar_of(exit_point[0]) << "," << scalar_of(exit_point[1]) << "," << scalar_of(exit_point[2]) << "}\n"
+         << "\tDistance=" << scalar_of(dist) << endl << endl;
+#endif
 
     return dist;
   }//if( (abs(unit[0]) < DBL_EPSILON) && (abs(unit[1]) < DBL_EPSILON) )
@@ -591,6 +659,12 @@ T cylinder_line_intersection_imp( const T &radius, const T &half_length,
   exit_point[1] = y_exit;
   exit_point[2] = z_exit;
 
+#if( DEBUG_RAYTRACE_CALCS )
+  cout << "\tCylInter={" << scalar_of(x_exit) << "," << scalar_of(y_exit) << "," << scalar_of(z_exit) << "}" << endl
+       << "\tExit={" << scalar_of(exit_point[0]) << "," << scalar_of(exit_point[1]) << "," << scalar_of(exit_point[2]) << "}\n"
+       << "\tDistance=" << scalar_of(dist_scaler) << endl << endl;
+#endif
+
   return dist_scaler;
 }//cylinder_line_intersection_imp(...)
 
@@ -673,6 +747,32 @@ T rectangle_exit_location_imp( const T &half_width, const T &half_height,
   using namespace std;
   using namespace ceres;
 
+  // Contract checks ported from the retired double #rectangle_exit_location, with the half-extents
+  //  taken in absolute value.  The double version asserted each half-extent was strictly positive,
+  //  which this function must not: #center_ray_exit_distance deliberately calls it with a zero (or
+  //  all-zero) box for a vanishing shield dimension, and the dimension-limit probes
+  //  (test_ShieldingDimLimit) sweep a thickness down *through* zero to a small negative to check the
+  //  derivative is continuous there.  This formulation is well-defined across all of that - it only
+  //  ever divides by a ray-direction component - so the sign of a half-extent is not a contract
+  //  violation, and only the "source is within the box" relation is worth checking.
+  assert( std::fabs(scalar_of(source[0])) <= (std::fabs(scalar_of(half_width))  + 1.0E-12) );
+  assert( std::fabs(scalar_of(source[1])) <= (std::fabs(scalar_of(half_height)) + 1.0E-12) );
+  assert( std::fabs(scalar_of(source[2])) <= (std::fabs(scalar_of(half_depth))  + 1.0E-12) );
+
+  // The detector is normally outside the box, but the point-source attenuation path can pass a
+  //  detector that sits inside a (degenerate) over-thick shield; in that case the plane-intersection
+  //  logic below still returns the far-surface exit (t > source-detector distance), which the caller
+  //  caps at the true detector distance.  So we do not assert the detector is outside here.
+
+  assert( !((scalar_of(source[0]) == scalar_of(detector[0]))
+            && (scalar_of(source[1]) == scalar_of(detector[1]))
+            && (scalar_of(source[2]) == scalar_of(detector[2]))) );
+
+#ifndef NDEBUG
+  // `exit_point` may alias `source`, so snapshot the source for the post-checks below.
+  const double src_copy[3] = { scalar_of(source[0]), scalar_of(source[1]), scalar_of(source[2]) };
+#endif
+
   T norm[3] = { detector[0] - source[0], detector[1] - source[1], detector[2] - source[2] };
 
   const T total_dist = sqrt( norm[0]*norm[0] + norm[1]*norm[1] + norm[2]*norm[2] );
@@ -694,12 +794,27 @@ T rectangle_exit_location_imp( const T &half_width, const T &half_height,
   const T t_intersect_z = (norm[2] == 0.0) ? T(DBL_MAX)
                           : ( ((norm[2] >= 0.0) ? half_depth : -half_depth) - source[2] ) / norm[2];
 
+  // The post-checks below take the half-extent AND the returned ray parameter in absolute value, and
+  //  use max(|half_extent|, |t|) as the length scale, rather than the raw values (which is what the
+  //  retired double version did).  A negative half-extent yields a negative t, and it is |t| that is
+  //  the source-to-exit distance.  With a legal zero half-extent the original form demands `0 < 0`, and with the small
+  //  negative one the dimension-limit probes sweep through it demands `x < negative` - either would
+  //  fire on every Debug build.
   if( (t_intersect_x <= t_intersect_y) && (t_intersect_x <= t_intersect_z) )
   {
     // We are exiting through the plane perpendicular to x-axis
     exit_point[0] = ((norm[0] >= 0.0) ? half_width : -half_width);
     exit_point[1] = source[1] + (t_intersect_x * norm[1]);
     exit_point[2] = source[2] + (t_intersect_x * norm[2]);
+
+#ifndef NDEBUG
+    const double exit_x_dbl[3] = { scalar_of(exit_point[0]), scalar_of(exit_point[1]), scalar_of(exit_point[2]) };
+    assert( std::fabs( std::fabs(src_copy[0] + scalar_of(t_intersect_x)*scalar_of(norm[0]))
+                       - std::fabs(scalar_of(half_width)) )
+            <= 1.0E-9*std::max( std::fabs(scalar_of(half_width)), std::fabs(scalar_of(t_intersect_x)) ) );
+    assert( std::fabs( std::fabs(scalar_of(t_intersect_x)) - scalar_distance_( src_copy, exit_x_dbl ) )
+            < 1.0E-9*std::max( 1.0, std::fabs(scalar_of(t_intersect_x)) ) );
+#endif
 
     return t_intersect_x;
   }else if( t_intersect_y <= t_intersect_z )
@@ -709,6 +824,15 @@ T rectangle_exit_location_imp( const T &half_width, const T &half_height,
     exit_point[1] = ((norm[1] >= 0.0) ? half_height : -half_height);
     exit_point[2] = source[2] + (t_intersect_y * norm[2]);
 
+#ifndef NDEBUG
+    const double exit_y_dbl[3] = { scalar_of(exit_point[0]), scalar_of(exit_point[1]), scalar_of(exit_point[2]) };
+    assert( std::fabs( std::fabs(src_copy[1] + scalar_of(t_intersect_y)*scalar_of(norm[1]))
+                       - std::fabs(scalar_of(half_height)) )
+            <= 1.0E-9*std::max( std::fabs(scalar_of(half_height)), std::fabs(scalar_of(t_intersect_y)) ) );
+    assert( std::fabs( std::fabs(scalar_of(t_intersect_y)) - scalar_distance_( src_copy, exit_y_dbl ) )
+            < 1.0E-9*std::max( 1.0, std::fabs(scalar_of(t_intersect_y)) ) );
+#endif
+
     return t_intersect_y;
   }else
   {
@@ -716,6 +840,15 @@ T rectangle_exit_location_imp( const T &half_width, const T &half_height,
     exit_point[0] = source[0] + (t_intersect_z * norm[0]);
     exit_point[1] = source[1] + (t_intersect_z * norm[1]);
     exit_point[2] = ((norm[2] >= 0.0) ? half_depth : -half_depth);
+
+#ifndef NDEBUG
+    const double exit_z_dbl[3] = { scalar_of(exit_point[0]), scalar_of(exit_point[1]), scalar_of(exit_point[2]) };
+    assert( std::fabs( std::fabs(src_copy[2] + scalar_of(t_intersect_z)*scalar_of(norm[2]))
+                       - std::fabs(scalar_of(half_depth)) )
+            <= 1.0E-9*std::max( std::fabs(scalar_of(half_depth)), std::fabs(scalar_of(t_intersect_z)) ) );
+    assert( std::fabs( std::fabs(scalar_of(t_intersect_z)) - scalar_distance_( src_copy, exit_z_dbl ) )
+            < 1.0E-9*std::max( 1.0, std::fabs(scalar_of(t_intersect_z)) ) );
+#endif
 
     return t_intersect_z;
   }// if / else figure out where we are exiting.
@@ -738,12 +871,37 @@ bool rectangle_intersections_imp( const T &half_width, const T &half_height,
   using namespace std;
   using namespace ceres;
 
+  // Contract checks ported from the retired double #rectangle_intersections.  Unlike
+  //  #rectangle_exit_location_imp these keep the strict `> 0` half-extent requirement: the one
+  //  production caller (DistributedSrcCalc::eval_rect) always has a real box, and this function has
+  //  *not* received the zero-extent fix (see the TODO below), so the strict contract is the honest one.
+  assert( (scalar_of(half_width) > 0.0) && (scalar_of(half_height) > 0.0)
+          && (scalar_of(half_depth) > 0.0) );
+
+  // Dev test that both the source and detector points are outside of the box
+  assert( (std::fabs(scalar_of(source[0])) >= (scalar_of(half_width) - 1.0E-12))
+          || (std::fabs(scalar_of(source[1])) >= (scalar_of(half_height) - 1.0E-12))
+          || (std::fabs(scalar_of(source[2])) >= (scalar_of(half_depth) - 1.0E-12)) );
+  assert( (std::fabs(scalar_of(detector[0])) >= (scalar_of(half_width) - 1.0E-12))
+          || (std::fabs(scalar_of(detector[1])) >= (scalar_of(half_height) - 1.0E-12))
+          || (std::fabs(scalar_of(detector[2])) >= (scalar_of(half_depth) - 1.0E-12)) );
+
+  // Make sure detector and source arent in same position.
+  assert( (scalar_of(detector[0]) != scalar_of(source[0]))
+          || (scalar_of(detector[1]) != scalar_of(source[1]))
+          || (scalar_of(detector[2]) != scalar_of(source[2])) );
+
   T norm[3] = { detector[0] - source[0], detector[1] - source[1], detector[2] - source[2] };
   const T total_dist = sqrt( norm[0]*norm[0] + norm[1]*norm[1] + norm[2]*norm[2] );
   norm[0] /= total_dist;
   norm[1] /= total_dist;
   norm[2] /= total_dist;
 
+  // TODO: this still uses the `t = (intersect - source)*(1/norm)` form that
+  //       #rectangle_exit_location_imp was fixed away from - with a zero half-extent (or a source
+  //       exactly on a face the ray runs parallel to) it evaluates 0*DBL_MAX == 0 and wrongly picks
+  //       the degenerate plane.  Harmless today because the sole caller always passes a real box
+  //       with both endpoints well outside it, but it should get the same treatment if that changes.
   const T inv_slope_x = (norm[0] == 0.0) ? T(DBL_MAX) : (1.0 / norm[0]);
   const T x_intersect = (inv_slope_x >= 0.0) ? half_width : -half_width;
   const T t_intersect_x_det = (x_intersect - source[0])*inv_slope_x;
@@ -777,12 +935,19 @@ bool rectangle_intersections_imp( const T &half_width, const T &half_height,
     if( (abs(src_intersect_y) > half_height)
        || (abs(src_intersect_z) > half_depth) )
     {
+      assert( std::min( std::min(scalar_of(t_intersect_x_src),scalar_of(t_intersect_y_src)),
+                        scalar_of(t_intersect_z_src) )
+              <= (std::min( std::min(scalar_of(t_intersect_x_det),scalar_of(t_intersect_y_det)),
+                            scalar_of(t_intersect_z_det) ) + 1.0E-9) );
       return false;
     }
 
     enter_point[0] = src_intersect_x;
     enter_point[1] = src_intersect_y;
     enter_point[2] = src_intersect_z;
+
+    assert( std::fabs( std::fabs(scalar_of(source[0]) + scalar_of(t_intersect_x_src)*scalar_of(norm[0]))
+                       - scalar_of(half_width) ) < scalar_of(half_width)*1.0E-9 );
   }else if( intersects_y_src && y_before_z_src )
   {
     // We are entering through the plane perpendicular to y-axis
@@ -793,12 +958,19 @@ bool rectangle_intersections_imp( const T &half_width, const T &half_height,
     if( (abs(src_intersect_x) > half_width)
        || (abs(src_intersect_z) > half_depth) )
     {
+      assert( std::min( std::min(scalar_of(t_intersect_x_src),scalar_of(t_intersect_y_src)),
+                        scalar_of(t_intersect_z_src) )
+              <= (std::min( std::min(scalar_of(t_intersect_x_det),scalar_of(t_intersect_y_det)),
+                            scalar_of(t_intersect_z_det) ) + 1.0E-9) );
       return false;
     }
 
     enter_point[0] = src_intersect_x;
     enter_point[1] = src_intersect_y;
     enter_point[2] = src_intersect_z;
+
+    assert( std::fabs( std::fabs(scalar_of(source[1]) + scalar_of(t_intersect_y_src)*scalar_of(norm[1]))
+                       - scalar_of(half_height) ) < scalar_of(half_height)*1.0E-9 );
   }else if( intersects_z_src )
   {
     // We are entering through the plane perpendicular to z-axis
@@ -809,12 +981,19 @@ bool rectangle_intersections_imp( const T &half_width, const T &half_height,
     if( (abs(src_intersect_x) > half_width)
        || (abs(src_intersect_y) > half_height) )
     {
+      assert( std::min( std::min(scalar_of(t_intersect_x_src),scalar_of(t_intersect_y_src)),
+                        scalar_of(t_intersect_z_src) )
+              <= (std::min( std::min(scalar_of(t_intersect_x_det),scalar_of(t_intersect_y_det)),
+                            scalar_of(t_intersect_z_det) ) + 1.0E-9) );
       return false;
     }
 
     enter_point[0] = src_intersect_x;
     enter_point[1] = src_intersect_y;
     enter_point[2] = src_intersect_z;
+
+    assert( std::fabs( std::fabs(scalar_of(source[2]) + scalar_of(t_intersect_z_src)*scalar_of(norm[2]))
+                       - scalar_of(half_depth) ) < scalar_of(half_depth)*1.0E-9 );
   }else
   {
     return false;
@@ -833,20 +1012,37 @@ bool rectangle_intersections_imp( const T &half_width, const T &half_height,
     exit_point[0] = ((norm[0] >= 0.0) ? half_width : -half_width);
     exit_point[1] = source[1] + (t_intersect_x_det * norm[1]);
     exit_point[2] = source[2] + (t_intersect_x_det * norm[2]);
+
+    assert( std::fabs( std::fabs(scalar_of(source[0]) + scalar_of(t_intersect_x_det)*scalar_of(norm[0]))
+                       - scalar_of(half_width) ) < scalar_of(half_width)*1.0E-9 );
   }else if( intersects_y_det && y_before_z_det )
   {
     exit_point[0] = source[0] + (t_intersect_y_det * norm[0]);
     exit_point[1] = ((norm[1] >= 0.0) ? half_height : -half_height);
     exit_point[2] = source[2] + (t_intersect_y_det * norm[2]);
+
+    assert( std::fabs( std::fabs(scalar_of(source[1]) + scalar_of(t_intersect_y_det)*scalar_of(norm[1]))
+                       - scalar_of(half_height) ) < scalar_of(half_height)*1.0E-9 );
   }else if( intersects_z_det )
   {
     exit_point[0] = source[0] + (t_intersect_z_det * norm[0]);
     exit_point[1] = source[1] + (t_intersect_z_det * norm[1]);
     exit_point[2] = ((norm[2] >= 0.0) ? half_depth : -half_depth);
+
+    assert( std::fabs( std::fabs(scalar_of(source[2]) + scalar_of(t_intersect_z_det)*scalar_of(norm[2]))
+                       - scalar_of(half_depth) ) < scalar_of(half_depth)*1.0E-9 );
   }else
   {
     assert( 0 );
   }// if / else figure out where we are exiting.
+
+  assert( std::fabs(scalar_of(enter_point[0])) <= (scalar_of(half_width)  + 1.0E-9) );
+  assert( std::fabs(scalar_of(enter_point[1])) <= (scalar_of(half_height) + 1.0E-9) );
+  assert( std::fabs(scalar_of(enter_point[2])) <= (scalar_of(half_depth)  + 1.0E-9) );
+
+  assert( std::fabs(scalar_of(exit_point[0])) <= (scalar_of(half_width)  + 1.0E-9) );
+  assert( std::fabs(scalar_of(exit_point[1])) <= (scalar_of(half_height) + 1.0E-9) );
+  assert( std::fabs(scalar_of(exit_point[2])) <= (scalar_of(half_depth)  + 1.0E-9) );
 
   return true;
 }//rectangle_intersections_imp(...)

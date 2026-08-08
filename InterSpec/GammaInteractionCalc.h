@@ -196,11 +196,6 @@ int DistributedSrcCalc_integrand_rectangular( const int *ndim, const double xx[]
                                                    const int *ncomp, double ff[], void *userdata );
 
 
-//point_to_line_dist(...): calculates the distance from 'point' to the line
-//  passing through 'l0' and 'l1'
-double point_to_line_dist( const double point[3],
-                           const double l0[3], const double l1[3] );
-
 //exit_point_of_sphere_z(...): Makes exit_point[3]=<x1,y1,z1> be the point of
 //  intersection of a sphere or radius 'sphere_rad' centered at the origin, with
 //  the line pointing from source_point[3]=<x0,y0,z0> towards

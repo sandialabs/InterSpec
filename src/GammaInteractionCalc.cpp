@@ -93,7 +93,8 @@ using namespace std;
 
 #if( DEBUG_RAYTRACE_CALCS )
 #include <mutex>
-static std::recursive_mutex s_stdout_raytrace_mutex;
+// The stdout lock now lives with the tracing, in GammaInteractionCalc_imp.hpp
+//  (#raytrace_debug_mutex), so the templated/Ceres path traces through the same lock.
 
 #  ifdef NDEBUG
 static_assert( 0, "Disable DEBUG_RAYTRACE_CALCS for release builds" );
@@ -577,80 +578,28 @@ double exit_point_of_sphere_z( const double source_point[3],
                                double observation_dist,
                                bool postiveSolution )
 {
-  /*
-   *Makes x0,y0,z0 be the point of intersection of a sphere or radius
-   *'sphere_rad' centered at the origin, with the line pointing from <x0,y0,z0>
-   *towards <0,0,observation_dist>
-   *Note: CAN be used with a 2-dimensional integral which holds phi constant
-   */
-
-  using namespace std;
-
-  const double a = source_point[0];
-  const double b = source_point[1];
-  const double c = source_point[2];
-  const double &S = sphere_rad;
-  const double &R = observation_dist;
-
-  const double r = sqrt( a*a + b*b + c*c );
-  if( observation_dist < sphere_rad )
-  {
-    cerr << "observation_dist=" << observation_dist
-         << ", sphere_rad=" << sphere_rad << endl;
-    throw runtime_error( "exit_point_of_sphere_z(...): obs_dist < sphere_rad" );
-  }//if( observation_dist < sphere_rad )
-
-  if( r > sphere_rad )
-  {
-    if( ((r-sphere_rad)/sphere_rad) < 0.0001 )
-    {
-      exit_point[0] = source_point[0];
-      exit_point[1] = source_point[1];
-      exit_point[2] = source_point[2];
-      return 0.0;
-    }//if( this is just a rounding error )
-    
-    cerr << "sphere_rad=" << sphere_rad << ", r=" << r << endl;
-    throw runtime_error( "exit_point_of_sphere_z(...): r > sphere_rad" );
-  }//if( r > sphere_rad )
-
-  //TODO: factor the math below to save CPU time
-  if( postiveSolution )
-  {
-    exit_point[0] =-(a*sqrt((R*R-2*c*R+c*c+b*b+a*a)*S*S+(-b*b-a*a)*R*R)-a*R*R+a*c*R)/(R*R-2*c*R+c*c+b*b+a*a);
-    exit_point[1] =(-b*sqrt(R*R*S*S-2*c*R*S*S+c*c*S*S+b*b*S*S+a*a*S*S-b*b*R*R-a*a*R*R)+b*R*R-b*c*R)/(R*R-2*c*R+c*c+b*b+a*a);
-    exit_point[2] =(R*(sqrt(R*R*S*S-2*c*R*S*S+c*c*S*S+b*b*S*S+a*a*S*S-b*b*R*R-a*a*R*R)+b*b+a*a)-c*sqrt(R*R*S*S-2*c*R*S*S+c*c*S*S+b*b*S*S+a*a*S*S-b*b*R*R-a*a*R*R))/(R*R-2*c*R+c*c+b*b+a*a);
-    
-    //  const double factor_1 = R*R-2*c*R+c*c+b*b+a*a;
-    //  const double factor_2 = R*R*S*S-2*c*R*S*S+c*c*S*S+b*b*S*S+a*a*S*S-b*b*R*R-a*a*R*R;
-    //  const double x_pos_new =-(a*sqrt((factor_1)*S*S+(-b*b-a*a)*R*R)-a*R*R+a*c*R)/factor_1;
-    //  const double y_pos_new =(-b*sqrt(factor_2)+b*R*R-b*c*R)/factor_1;
-    //  const double z_pos_new =(R*(sqrt(factor_2)+b*b+a*a)-c*sqrt(factor_2))/(R*R-2*c*R+c*c+b*b+a*a);
-    //  assert( x_pos_new == exit_point[0] );
-    //  assert( y_pos_new == exit_point[1] );
-    //  assert( z_pos_new == exit_point[2] );
-  }else
-  {
-    exit_point[0] = (a*sqrt((R*R-2*c*R+c*c+b*b+a*a)*S*S+(-b*b-a*a)*R*R)+a*R*R-a*c*R)/(R*R-2*c*R+c*c+b*b+a*a);
-    exit_point[1] = (b*sqrt(R*R*S*S-2*c*R*S*S+c*c*S*S+b*b*S*S+a*a*S*S-b*b*R*R-a*a*R*R)+b*R*R-b*c*R)/(R*R-2*c*R+c*c+b*b+a*a);
-    exit_point[2] = (c*sqrt(R*R*S*S-2*c*R*S*S+c*c*S*S+b*b*S*S+a*a*S*S-b*b*R*R-a*a*R*R)+R*(-sqrt(R*R*S*S-2*c*R*S*S+c*c*S*S+b*b*S*S+a*a*S*S-b*b*R*R-a*a*R*R)+b*b+a*a))/(R*R-2*c*R+c*c+b*b+a*a);
-  }//if( postiveSolution ) / else
-
-  const double dx = a - exit_point[0];
-  const double dy = b - exit_point[1];
-  const double dz = c - exit_point[2];
-
-  return sqrt( dx*dx + dy*dy + dz*dz );
+  // Thin forwarder to the shared templated implementation, so the double (Minuit/Cuhre) path and the
+  //  Ceres autodiff path cannot drift apart.  The templated form factors the radius out of the
+  //  intersection discriminant (see #sphere_exit_distance_scaled), which is what keeps the
+  //  ceres::Jet derivative finite as the radius -> 0; it also carries the offending values in its
+  //  exception message rather than printing them to cerr.
+  //
+  // It is NOT more accurate than the hand-expanded closed form that used to live here: near the
+  //  shell surface the two trade wins, and both land within ~1e-13 of the sphere radius.  See the
+  //  measured comparison and the explanation in test_GeometryLegacyParity.cpp
+  //  (SphereExitNearSurfaceAccuracy), which also notes the one-line change that would make the
+  //  templated form strictly better if that ever matters.
+  //
+  // The pre-refactor body is frozen in target/testing/LegacyGeometryRef.h, and
+  //  test_GeometryLegacyParity.cpp checks the two against an independent reference.
+  return exit_point_of_sphere_z_imp<double>( source_point, exit_point, sphere_rad,
+                                             observation_dist, postiveSolution );
 }//exit_point_of_sphere_z
 
 
 double distance( const double a[3], const double b[3] )
 {
-  const double dx = a[0]-b[0];
-  const double dy = a[1]-b[1];
-  const double dz = a[2]-b[2];
-
-  return sqrt( dx*dx + dy*dy + dz*dz );
+  return distance_imp<double>( a, b );
 }//double distance( const double a[3], b[3] )
   
 
@@ -730,35 +679,6 @@ DistributedSrcCalc::DistributedSrcCalc()
   m_normalizeByVolume = false;
   m_nuclide = NULL;
 }//DistributedSrcCalc()
-
-  
-  
-double point_to_line_dist( const double point[3],
-                           const double p0[3], const double p1[3] )
-{
-  double distsqrd = 0.0;
-  double v[3], w[3];
-  for( int i = 0; i < 3; ++i )
-  {
-    v[i] = p1[i] - p0[i];
-    w[i] = point[i] - p0[i];
-  }
-  
-  const double d1 = w[0]*v[0] + w[1]*v[1] + w[2]*v[2];
-  const double d2 = v[0]*v[0] + v[1]*v[1] + v[2]*v[2];
-  const double frac = d1 / d2;
-  
-  for( int i = 0; i < 3; ++i )
-  {
-    const double t = point[i] - (p0[i] + frac*v[i]);
-    distsqrd += t*t;
-  }
-  
-  return sqrt( distsqrd );
-}//double point_to_line_dist(...)
-  
-  
-
 void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
                         double ff[], const int *ncompptr ) const
 {
@@ -1034,7 +954,7 @@ void DistributedSrcCalc::eval_single_cyl_end_on( const double xx[], const int *n
                                           double ff[], const int *ncompptr ) const noexcept
 {
 #if( DEBUG_RAYTRACE_CALCS )
-  std::lock_guard<std::recursive_mutex> scoped_lock( s_stdout_raytrace_mutex );
+  std::lock_guard<std::recursive_mutex> scoped_lock( raytrace_debug_mutex() );
 #endif
 
   assert( m_materialIndex == 0 );
@@ -1176,222 +1096,13 @@ double cylinder_line_intersection( const double radius, const double half_length
                               const CylExitDir direction,
                               double exit_point[3] ) noexcept
 {
-  // TODO: this function should be broken into two separate functions.  One to handle finding the exit
-  //  point when you know the source is inside the volume.  And one to find both intersection points
-  //  (if any) of external points.  This would both increase the efficiency of the function, and also
-  //  make the use cleaner/easier.
-  
-  // TODO: need to clearly define what happens for points exactly on boundary, or just over or
-  //       whatever (I think things are set up so equality is counted as being inside volume,
-  //       but there may be edge cases (pun realized) that dont obey this.
-  
-// When debugging we will grab a static mutex so we dont get jumbled stdout  
-#if( DEBUG_RAYTRACE_CALCS )
-  std::lock_guard<std::recursive_mutex> scoped_lock( s_stdout_raytrace_mutex );
-#endif
-  
-  
-  assert( radius >= 0.0 );
-  assert( half_length >= 0.0 );
-  assert( (direction == CylExitDir::TowardDetector)
-          || (direction == CylExitDir::AwayFromDetector) );
-  
-  // A convenience function for handling case where the line never enters our volume.
-  auto handle_line_outside_volume = [&exit_point,&source]() -> double {
-    exit_point[0] = source[0];
-    exit_point[1] = source[1];
-    exit_point[2] = source[2];
-    
-#if( DEBUG_RAYTRACE_CALCS )
-    cout << "\tDoes not intersect volume" << endl << endl;
-#endif
-    
-    return 0.0;
-  };//handle_line_outside_volume lamda
-  
-  
-  if( (radius <= 0.0) || (half_length <= 0.0) )
-    return handle_line_outside_volume();
-  
-#if( DEBUG_RAYTRACE_CALCS )
-  cout << "Rad=" << radius << ", half-z=" << half_length
-       << ", src={" << source[0] << "," << source[1] << "," << source[2] << "}"
-       << ", det={" << detector[0] << "," << detector[1] << "," << detector[2] << "}" << endl;
-#endif
-  
-
-  // Get unit direction vector from source to final position
-  double unit[3] = { detector[0] - source[0], detector[1] - source[1], detector[2] - source[2] };
-  
-  {// begin scope on norm
-    const double norm = sqrt( unit[0]*unit[0] + unit[1]*unit[1] + unit[2]*unit[2] );
-    unit[0] /= norm;
-    unit[1] /= norm;
-    unit[2] /= norm;
-  }// end scope on norm
-  
-  // Check if parallel to z-axis
-  //  We should probably compare to DBL_MIN, but realistically anything less than DBL_EPSILON
-  //  is close enough to zero for our purposes (the DRF will fail far before this assumption fails)
-  if( (fabs(unit[0]) < DBL_EPSILON) && (fabs(unit[1]) < DBL_EPSILON) )
-  {
-    assert( fabs(unit[2]) > DBL_EPSILON );
-    
-    const double r = sqrt(source[0]*source[0] + source[1]*source[1]);
-    
-    if( r > radius )
-      return handle_line_outside_volume();
-    
-    double exit_z = (unit[2] > 0.0) ? half_length : -half_length;
-    switch( direction )
-    {
-      case CylExitDir::TowardDetector:
-        break;
-        
-      case CylExitDir::AwayFromDetector:
-        exit_z *= -1.0;
-        break;
-    }//switch( direction )
-    
-   
-    const double distance = fabs( exit_z - source[2] );
-    
-    exit_point[0] = source[0];
-    exit_point[1] = source[1];
-    exit_point[2] = exit_z;
-    
-#if( DEBUG_RAYTRACE_CALCS )
-    cout << "\tParrallel on z\n"
-         << "\tExit={" << exit_point[0] << "," << exit_point[1] << "," << exit_point[2] << "}\n"
-         << "\tDistance=" << distance << endl << endl;
-#endif
-    
-    return distance;
-  }//if( (fabs(unit[0]) < DBL_EPSILON) && (fabs(unit[1]) < DBL_EPSILON) )
-  
-  
-  // Make sure both source and detector z-coordinates are not on the same end of the cylinder,
-  //  and larger than the half length.
-  if( (signbit(source[2]) == signbit(detector[2]))
-     && (fabs(source[2]) > half_length)
-     && (fabs(detector[2]) > half_length) )
-  {
-    return handle_line_outside_volume();
-  }
-  
-  
-  // Check that the source point isnt on the same side of the circle as the detector, but outside
-  //  of the circles radius.  This will prevent the case where the infinite line would intersect
-  //  the cylinder, but not between source and detector (which we should return zero for)
-  // TODO: get rid of these sqrts, and also probably other ones throughout this function
-  const double src_rad = sqrt( source[0]*source[0] + source[1]*source[1] );
-  const double det_rad = sqrt( detector[0]*detector[0] + detector[1]*detector[1] );
-
-  // A detector on the cylinder axis is never "on the same side" as the source, so this check does
-  //  not apply to it (and the direction it is in is undefined).
-  if( (src_rad >= radius) && (det_rad > 0.0) )
-  {
-    //There is probably a better way to check if source and detector are within 90 degrees of each
-    //  other
-    const double src_unit_x = source[0] / src_rad;
-    const double src_unit_y = source[1] / src_rad;
-
-    const double det_unit_x = detector[0] / det_rad;
-    const double det_unit_y = detector[1] / det_rad;
-
-    const double unit_dx = src_unit_x - det_unit_x;
-    const double unit_dy = src_unit_y - det_unit_y;
-
-    const double unit_dist_2 = unit_dx*unit_dx + unit_dy*unit_dy;
-
-    // TODO: for radius=1, half_length=1, source={1,-1,0}, detector{1,1,0}, because of numerical
-    //       rounding (unit_dist_2 = (2 - 4E-16) - i.e. 2*DBL_EPSILON) we will return in this next
-    //       statement, which we probably shouldnt since it is an exact intersection.  So we should
-    //       probably implement a check that accounts for these rounding errors
-    if( unit_dist_2 <= 2.0 )
-      return handle_line_outside_volume();
-  }//if( src_rad > radius )
-  
-  
-  // Find where the ray crosses the infinite cylinder (x^2 + y^2 = radius^2), parameterizing the ray
-  //  as P(t) = source + t*(detector - source).  So t==0 is the source, t==1 is the detector, and t
-  //  increases monotonically toward the detector - which makes the "toward detector" crossing
-  //  unambiguously the larger t, and "away from detector" the smaller one.
-  //
-  // Note: do *not* order the two crossings by their distance to the detector.  For end-on geometry
-  //  the detector lies on the cylinder axis, so both crossings are exactly equidistant from it, and
-  //  the pick becomes a rounding-noise coin flip that sends the ray out the wrong end cap.
-  const double dx = detector[0] - source[0];
-  const double dy = detector[1] - source[1];
-  const double dz = detector[2] - source[2];
-
-  // Substituting P(t) into x^2 + y^2 = radius^2 gives the quadratic a*t^2 + b*t + c = 0.
-  //  a > 0 here, since the parallel-to-z case was already handled above.
-  const double a = dx*dx + dy*dy;
-  const double b = 2.0*(source[0]*dx + source[1]*dy);
-  const double c = source[0]*source[0] + source[1]*source[1] - radius*radius;
-
-  const double discriminant = b*b - 4.0*a*c;
-
-  if( discriminant < 0.0 )
-    return handle_line_outside_volume();
-
-  // Use the numerically stable form of the quadratic formula; the textbook form loses precision in
-  //  one of the two roots when |b| ~ sqrt(discriminant), i.e. for rays that just glance the cylinder.
-  const double sqrt_disc = sqrt( discriminant );
-  const double q = -0.5*(b + ((b < 0.0) ? -sqrt_disc : sqrt_disc));
-  const double t_root_a = q / a;
-  const double t_root_b = (q != 0.0) ? (c / q) : t_root_a; //q is only zero when b and discriminant are
-  const double t_near = (t_root_a < t_root_b) ? t_root_a : t_root_b;
-  const double t_far  = (t_root_a < t_root_b) ? t_root_b : t_root_a;
-
-  const bool toward_det = (direction == CylExitDir::TowardDetector);
-  const double t_exit  = toward_det ? t_far  : t_near;
-  const double t_other = toward_det ? t_near : t_far;
-
-  double x_exit = source[0] + t_exit*dx;
-  double y_exit = source[1] + t_exit*dy;
-  double z_exit = source[2] + t_exit*dz;
-
-  // If z_exit is past the half-length, then for the ray to intersect our *finite* cylinder at all,
-  //  the other crossing of the infinite cylinder must be either inside the volume, or on its far
-  //  side; if it is past the same end, the ray misses us entirely.
-  if( fabs(z_exit) > half_length )
-  {
-    const double other_z_exit = source[2] + t_other*dz;
-
-    if( (fabs(other_z_exit) > half_length) && (signbit(z_exit) == signbit(other_z_exit)) )
-      return handle_line_outside_volume();
-
-    // We leave through one of the end caps - solve for where on that disk.
-    assert( dz != 0.0 );
-
-    const double z_cap = ((z_exit < 0.0) ? -half_length : half_length);
-    const double t_cap = (z_cap - source[2]) / dz;
-
-    x_exit = source[0] + t_cap*dx;
-    y_exit = source[1] + t_cap*dy;
-    z_exit = z_cap;
-  }//if( fabs(z_exit) > half_length )
-
-  // If we are here, we are guaranteed the line does go through our volume
-  
-  const double exit_dx = (source[0] - x_exit);
-  const double exit_dy = (source[1] - y_exit);
-  const double exit_dz = (source[2] - z_exit);
-  const double dist_scaler = sqrt( exit_dx*exit_dx + exit_dy*exit_dy + exit_dz*exit_dz );
-  
-  exit_point[0] = x_exit;
-  exit_point[1] = y_exit;
-  exit_point[2] = z_exit;
-  
-#if( DEBUG_RAYTRACE_CALCS )
-  cout << "\tCylInter={" << x_exit << "," << y_exit << "," << z_exit << "}" << endl
-       << "\tExit={" << exit_point[0] << "," << exit_point[1] << "," << exit_point[2] << "}\n"
-       << "\tDistance=" << dist_scaler << endl << endl;
-#endif
-  
-  return dist_scaler;
+  // See #exit_point_of_sphere_z for why these are forwarders.  #cylinder_line_intersection_imp is a
+  //  line-for-line match of the body that used to be here - the contract asserts and the
+  //  DEBUG_RAYTRACE_CALCS tracing moved with it - so this is bit-identical for T=double.  It
+  //  contains no throw expressions, so the noexcept contract still holds (a noexcept function may
+  //  call a non-noexcept callee; the only consequence would be terminate() if one ever threw).
+  return cylinder_line_intersection_imp<double>( radius, half_length, source, detector,
+                                                 direction, exit_point );
 }//double cylinder_line_intersection(...)
 
 
@@ -1660,111 +1371,14 @@ double rectangle_exit_location( const double half_width, const double half_heigh
                                const double detector[3],
                                double exit_point[3] ) noexcept
 {
-  assert( half_width > 0.0 );
-  assert( half_height > 0.0 );
-  assert( half_depth > 0.0 );
-  
-  assert( fabs(source[0]) <= (half_width + 1.0E-12) );
-  assert( fabs(source[1]) <= (half_height + 1.0E-12) );
-  assert( fabs(source[2]) <= (half_depth + 1.0E-12) );
-
-  // The detector is normally outside the box, but the point-source attenuation path can
-  //  pass a detector that sits inside a (degenerate) over-thick shield; in that case the
-  //  plane-intersection logic below still returns the far-surface exit (t > source-detector
-  //  distance), which the caller caps at the true detector distance.  So we do not assert
-  //  the detector is outside here.
-
-  assert( !((source[0] == detector[0])
-             && (source[1] == detector[1])
-             && (source[2] == detector[2])) );
-  
-#ifndef NDEBUG
-  // We only get here for debug builds - source and exit_point may be same array, so we'll make a
-  //  copy for development checks
-  const double src_copy[3] = { source[0], source[1], source[2] };
-#endif
-
-  
-  double norm[3] = { detector[0] - source[0], detector[1] - source[1], detector[2] - source[2] };
-  
-  // Currently (20211126) the detector will be [0.0,0.0,m_observationDist], so we know which face
-  //  of the detector the ray will exit, so we could first check for this case with this commented
-  //  out code, and then return an answer efficiently; need to benchmark before bothering to
-  //  uncomment this special case.
-  //if( (fabs(detector[0]) <= half_width) && (fabs(detector[1]) <= half_height) )
-  //{
-  //  const double z_frac_inside = fabs( (half_depth - source[2]) / (detector[2] - source[2]) );
-  //  exit_point[0] = source[0] + z_frac_inside * norm[0];
-  //  exit_point[1] = source[1] + z_frac_inside * norm[1];
-  //  exit_point[2] = ((detector[2] > 0.0) ? half_depth : -half_depth); //std::copysign(half_depth,detector[2]);
-  //
-  //  return distance( source, exit_point );
-  //}//if( we know ray is exiting the face on positive/negative z )
-  
-  
-  const double total_dist = sqrt( norm[0]*norm[0] + norm[1]*norm[1] + norm[2]*norm[2] );
-  norm[0] /= total_dist;
-  norm[1] /= total_dist;
-  norm[2] /= total_dist;
-  
-  // We'll find the intersection of all the possible planes, and then choose the one that
-  //  is the closest to source
-  // Recall equation of a line in three-space is:
-  //   x = x_0 + t*a --> source[0] + (t * norm[0])
-  //   y = z_0 + t*b --> source[1] + (t * norm[1])
-  //   z = z_0 + t*c --> source[2] + (t * norm[2])
-  
-  const double inv_slope_x = (norm[0] == 0.0) ? DBL_MAX : (1.0 / norm[0]);
-  const double x_intersect = (inv_slope_x >= 0.0) ? half_width : -half_width;
-  const double t_intersect_x = (x_intersect - source[0])*inv_slope_x;
-  
-  const double inv_slope_y = (norm[1] == 0.0) ? DBL_MAX : (1.0 / norm[1]);
-  const double y_intersect = (inv_slope_y >= 0.0) ? half_height : -half_height;
-  const double t_intersect_y = (y_intersect - source[1])*inv_slope_y;
-  
-  const double inv_slope_z = (norm[2] == 0.0) ? DBL_MAX : (1.0 / norm[2]);
-  const double z_intersect = (inv_slope_z >= 0.0) ? half_depth : -half_depth;
-  const double t_intersect_z = (z_intersect - source[2])*inv_slope_z;
-  
-  if( (t_intersect_x <= t_intersect_y) && (t_intersect_x <= t_intersect_z) )
-  {
-    // We are exiting through the plane perpendicular to x-axis
-    exit_point[0] = ((norm[0] >= 0.0) ? half_width : -half_width);
-    exit_point[1] = source[1] + (t_intersect_x * norm[1]);
-    exit_point[2] = source[2] + (t_intersect_x * norm[2]);
-    
-    assert( fabs( fabs((src_copy[0] + (t_intersect_x * norm[0]))) - half_width ) < half_width*1.0E-9 );
-    assert( fabs(t_intersect_x - distance(src_copy, exit_point)) < 1.0E-9*std::max(1.0,t_intersect_x) );
-    
-    return t_intersect_x;
-  }else if( t_intersect_y <= t_intersect_z )
-  {
-    // We are exiting through the plane perpendicular to y-axis
-    exit_point[0] = source[0] + (t_intersect_y * norm[0]);
-    exit_point[1] = ((norm[1] >= 0.0) ? half_height : -half_height);
-    exit_point[2] = source[2] + (t_intersect_y * norm[2]);
-    
-    assert( fabs( fabs((src_copy[1] + (t_intersect_y * norm[1]))) - half_height ) < half_height*1.0E-9 );
-    assert( fabs(t_intersect_y - distance(src_copy, exit_point)) < 1.0E-9*std::max(1.0,t_intersect_y) );
-    
-    return t_intersect_y;
-  }else
-  {
-    // We are exiting through the plane perpendicular to z-axis
-    
-    exit_point[0] = source[0] + (t_intersect_z * norm[0]);
-    exit_point[1] = source[1] + (t_intersect_z * norm[1]);
-    exit_point[2] = ((norm[2] >= 0.0) ? half_depth : -half_depth);
-    
-    assert( fabs( fabs((src_copy[2] + (t_intersect_z * norm[2]))) - half_depth ) < half_depth*1.0E-9 );
-    assert( (fabs(t_intersect_z - distance(src_copy, exit_point)) < 1.0E-9*std::max(1.0,t_intersect_z)) );
-    
-    return t_intersect_z;
-  }// if / else figure out where we are exiting.
-  
-  assert( 0 );
-  
-  return 0.0;
+  // See #exit_point_of_sphere_z for why these are forwarders.  Note this is a behavior *change*, not
+  //  just a de-duplication: #rectangle_exit_location_imp short-circuits a ray-parallel face to
+  //  +DBL_MAX instead of forming (intersect-source)*(1/norm), which fixes the two cases where the
+  //  old body evaluated 0*DBL_MAX == 0 and returned a spurious zero chord - a zero half-extent, and
+  //  a source sitting exactly on a face the ray runs parallel to.  Both are pinned in
+  //  test_GeometryLegacyParity.cpp.  Throw-free, so the noexcept contract still holds.
+  return rectangle_exit_location_imp<double>( half_width, half_height, half_depth,
+                                              source, detector, exit_point );
 }//rectangle_exit_location(...)
 
 
@@ -1776,172 +1390,12 @@ bool rectangle_intersections( const double half_width, const double half_height,
                              double enter_point[3],
                              double exit_point[3] ) noexcept
 {
-  // Only checking inputs sanity on debug builds since this is a hot-path function, and is only
-  //  called from one spot, so it should be good to only check inputs on development builds.
-  
-  // Make sure we arent passing garbage dimensions in ever
-  assert( (half_width > 0.0) && (half_height > 0.0) && (half_depth > 0.0) );
-  
-  // Dev test that both the source and detector points are outside of the box; only checking on
-  //  debug builds because this should really be the case
-  assert( (fabs(source[0]) >= (half_width - 1.0E-12))
-          || (fabs(source[1]) >= (half_height - 1.0E-12))
-          || (fabs(source[2]) >= (half_depth - 1.0E-12)) );
-  assert( (fabs(detector[0]) >= (half_width - 1.0E-12))
-         || (fabs(detector[1]) >= (half_height - 1.0E-12))
-         || (fabs(detector[2]) >= (half_depth - 1.0E-12)) );
-  
-  // Make sure detector and source arent in same position.
-  assert( (detector[0] != source[0])
-         || (detector[1] != source[1])
-         || (detector[2] != source[2]) );
-  
-  // See notes in #rectangle_exit_location about
-  
-  double norm[3] = { detector[0] - source[0], detector[1] - source[1], detector[2] - source[2] };
-  const double total_dist = sqrt( norm[0]*norm[0] + norm[1]*norm[1] + norm[2]*norm[2] );
-  norm[0] /= total_dist;
-  norm[1] /= total_dist;
-  norm[2] /= total_dist;
-  
-  const double inv_slope_x = (norm[0] == 0.0) ? DBL_MAX : (1.0 / norm[0]);
-  const double x_intersect = (inv_slope_x >= 0.0) ? half_width : -half_width;
-  const double t_intersect_x_det = (x_intersect - source[0])*inv_slope_x;
-  const double t_intersect_x_src = (-x_intersect - source[0])*inv_slope_x;
-  
-  
-  const double inv_slope_y = (norm[1] == 0.0) ? DBL_MAX : (1.0 / norm[1]);
-  const double y_intersect = (inv_slope_y >= 0.0) ? half_height : -half_height;
-  const double t_intersect_y_det = (y_intersect - source[1])*inv_slope_y;
-  const double t_intersect_y_src = (-y_intersect - source[1])*inv_slope_y;
-  
-  const double inv_slope_z = (norm[2] == 0.0) ? DBL_MAX : (1.0 / norm[2]);
-  const double z_intersect = (inv_slope_z >= 0.0) ? half_depth : -half_depth;
-  const double t_intersect_z_det = (z_intersect - source[2])*inv_slope_z;
-  const double t_intersect_z_src = (-z_intersect - source[2])*inv_slope_z;
-  
-  const bool intersects_x_src = (t_intersect_x_src >= 0.0);
-  const bool intersects_y_src = (t_intersect_y_src >= 0.0);
-  const bool intersects_z_src = (t_intersect_z_src >= 0.0);
-  
-  const bool x_before_y_src = (!intersects_y_src || (t_intersect_x_src <= t_intersect_y_src));
-  const bool x_before_z_src = (!intersects_z_src || (t_intersect_x_src <= t_intersect_z_src));
-  const bool y_before_z_src = (!intersects_z_src || (t_intersect_y_src <= t_intersect_z_src));
-  
-  if( intersects_x_src && x_before_y_src && x_before_z_src )
-  {
-    // We are exiting through the plane perpendicular to x-axis
-    const double src_intersect_x = ((norm[0] >= 0.0) ? -half_width : half_width);
-    const double src_intersect_y = source[1] + (t_intersect_x_src * norm[1]);
-    const double src_intersect_z = source[2] + (t_intersect_x_src * norm[2]);
-      
-    if( (fabs(src_intersect_y) > half_height)
-       || (fabs(src_intersect_z) > half_depth) )
-    {
-      assert( std::min(std::min(t_intersect_x_src,t_intersect_y_src),t_intersect_z_src)
-             <= (std::min(std::min(t_intersect_x_det,t_intersect_y_det),t_intersect_z_det)+1.0E-9) );
-      return false;
-    }
-    
-    enter_point[0] = src_intersect_x;
-    enter_point[1] = src_intersect_y;
-    enter_point[2] = src_intersect_z;
-    
-    assert( fabs( fabs((source[0] + (t_intersect_x_src * norm[0]))) - half_width ) < half_width*1.0E-9 );
-  }else if( intersects_y_src && y_before_z_src )
-  {
-    // We are exiting through the plane perpendicular to y-axis
-    const double src_intersect_x = source[0] + (t_intersect_y_src * norm[0]);
-    const double src_intersect_y = ((norm[1] >= 0.0) ? -half_height : half_height);
-    const double src_intersect_z = source[2] + (t_intersect_y_src * norm[2]);
-    
-    if( (fabs(src_intersect_x) > half_width)
-       || (fabs(src_intersect_z) > half_depth) )
-    {
-      assert( std::min(std::min(t_intersect_x_src,t_intersect_y_src),t_intersect_z_src)
-             <= (std::min(std::min(t_intersect_x_det,t_intersect_y_det),t_intersect_z_det)+1.0E-9) );
-      return false;
-    }
-    
-    enter_point[0] = src_intersect_x;
-    enter_point[1] = src_intersect_y;
-    enter_point[2] = src_intersect_z;
-    
-    assert( fabs( fabs((source[1] + (t_intersect_y_src * norm[1]))) - half_height ) < half_height*1.0E-9 );
-  }else if( intersects_z_src )
-  {
-    // We are exiting through the plane perpendicular to z-axis
-    const double src_intersect_x = source[0] + (t_intersect_z_src * norm[0]);
-    const double src_intersect_y = source[1] + (t_intersect_z_src * norm[1]);
-    const double src_intersect_z = ((norm[2] >= 0.0) ? -half_depth : half_depth);
-    
-    if( (fabs(src_intersect_x) > half_width)
-       || (fabs(src_intersect_y) > half_height) )
-    {
-      assert( std::min(std::min(t_intersect_x_src,t_intersect_y_src),t_intersect_z_src)
-             <= (std::min(std::min(t_intersect_x_det,t_intersect_y_det),t_intersect_z_det)+1.0E-9) );
-      return false;
-    }
-    
-    enter_point[0] = src_intersect_x;
-    enter_point[1] = src_intersect_y;
-    enter_point[2] = src_intersect_z;
-    
-    assert( fabs( fabs((source[2] + (t_intersect_z_src * norm[2]))) - half_depth ) < half_depth*1.0E-9 );
-  }else
-  {
-    return false;
-  }// if / else figure out where we are exiting.
-  
-  const bool intersects_x_det = (t_intersect_x_det >= 0.0);
-  const bool intersects_y_det = (t_intersect_y_det >= 0.0);
-  const bool intersects_z_det = (t_intersect_z_det >= 0.0);
-  
-  const bool x_before_y_det = (!intersects_y_det || (t_intersect_x_det <= t_intersect_y_det));
-  const bool x_before_z_det = (!intersects_z_det || (t_intersect_x_det <= t_intersect_z_det));
-  const bool y_before_z_det = (!intersects_z_det || (t_intersect_y_det <= t_intersect_z_det));
-  
-  
-  
-  if( intersects_x_det && x_before_y_det && x_before_z_det )
-  {
-    // We are exiting through the plane perpendicular to x-axis
-    exit_point[0] = ((norm[0] >= 0.0) ? half_width : -half_width);
-    exit_point[1] = source[1] + (t_intersect_x_det * norm[1]);
-    exit_point[2] = source[2] + (t_intersect_x_det * norm[2]);
-    
-    assert( fabs( fabs((source[0] + (t_intersect_x_det * norm[0]))) - half_width ) < half_width*1.0E-9 );
-  }else if( intersects_y_det && y_before_z_det )
-  {
-    // We are exiting through the plane perpendicular to y-axis
-    exit_point[0] = source[0] + (t_intersect_y_det * norm[0]);
-    exit_point[1] = ((norm[1] >= 0.0) ? half_height : -half_height);
-    exit_point[2] = source[2] + (t_intersect_y_det * norm[2]);
-    
-    assert( fabs( fabs((source[1] + (t_intersect_y_det * norm[1]))) - half_height ) < half_height*1.0E-9 );
-  }else if( intersects_z_det )
-  {
-    // We are exiting through the plane perpendicular to z-axis
-    exit_point[0] = source[0] + (t_intersect_z_det * norm[0]);
-    exit_point[1] = source[1] + (t_intersect_z_det * norm[1]);
-    exit_point[2] = ((norm[2] >= 0.0) ? half_depth : -half_depth);
-    
-    assert( fabs( fabs((source[2] + (t_intersect_z_det * norm[2]))) - half_depth ) < half_depth*1.0E-9 );
-  }else
-  {
-    assert( 0 );
-  }// if / else figure out where we are exiting.
-  
-
-  assert( fabs(enter_point[0]) <= (half_width + 1.0E-9) );
-  assert( fabs(enter_point[1]) <= (half_height + 1.0E-9) );
-  assert( fabs(enter_point[2]) <= (half_depth + 1.0E-9) );
-  
-  assert( fabs(exit_point[0]) <= (half_width + 1.0E-9) );
-  assert( fabs(exit_point[1]) <= (half_height + 1.0E-9) );
-  assert( fabs(exit_point[2]) <= (half_depth + 1.0E-9) );
-  
-  return true;
+  // See #exit_point_of_sphere_z for why these are forwarders.  #rectangle_intersections_imp is an
+  //  algorithmically identical transcription of the body that used to be here (it did NOT receive
+  //  the zero-extent fix its sibling did - see the TODO on it), so this is bit-identical for
+  //  T=double.  Throw-free, so the noexcept contract still holds.
+  return rectangle_intersections_imp<double>( half_width, half_height, half_depth,
+                                              source, detector, enter_point, exit_point );
 }//rectangle_intersections( ... )
 
 
@@ -5712,14 +5166,20 @@ vector<PeakResultPlotInfo>
   //The attenuation is along the ray from the assembly center to the (possibly
   //  off-axis) detector; on-axis the per-layer chord is exactly the layer thickness.
   const double trueDist = trueSourceToDetectorDistance();
-  const bool is_side_on_pt = (m_geometry == GeometryType::CylinderSideOn);
-  const double det_pos_pt[3] = {
-    (is_side_on_pt ? m_distance : -m_sourceOffsets[0]),
-    (is_side_on_pt ? -m_sourceOffsets[0] : -m_sourceOffsets[1]),
-    (is_side_on_pt ? -m_sourceOffsets[1] : m_distance)
-  };
-  const double origin_pt[3] = { 0.0, 0.0, 0.0 };
-  double cumulative_dims_pt[3] = { 0.0, 0.0, 0.0 };
+
+  // Same detector placement and same chord helper the templated driver uses
+  //  (#expected_peak_counts_imp, and the double instantiation in #compute_effective_shielding), so
+  //  the Minuit/Cuhre and Ceres paths cannot drift.  detector_geom_from_config reproduces exactly the
+  //  {-offset_x,-offset_y,distance} (side-on: {distance,-offset_x,-offset_y}) position this used to
+  //  build by hand.  The radius/setback are unused by #center_ray_exit_distance - passed only so the
+  //  call sites read identically.
+  const double det_radius_pt = (m_detector ? 0.5*m_detector->detectorDiameter() : 0.5*PhysicalUnits::cm);
+  const double det_setback_pt = (m_detector ? m_detector->detectorSetback() : 0.0);
+  const DetectorGeomT<double> det_geom_pt = detector_geom_from_config<double>( m_geometry, m_distance,
+                                      det_radius_pt, det_setback_pt,
+                                      m_sourceOffsets[0], m_sourceOffsets[1] );
+
+  std::array<double,3> cumulative_dims_pt = { 0.0, 0.0, 0.0 };
   double shield_outer_rad = 0.0;  //distance along the ray to the outer shielding surface
   const size_t nMaterials = m_initial_shieldings.size();
   
@@ -5755,43 +5215,35 @@ vector<PeakResultPlotInfo>
       };
     }else
     {
-      double exit_dist = 0.0, exit_point[3];
       switch( m_geometry )
       {
         case GeometryType::Spherical:
           cumulative_dims_pt[0] += sphericalThickness(materialN,x);
-          exit_dist = cumulative_dims_pt[0];  //radial - independent of direction
           break;
-          
+
         case GeometryType::CylinderEndOn:
         case GeometryType::CylinderSideOn:
           cumulative_dims_pt[0] += cylindricalRadiusThickness(materialN,x);
           cumulative_dims_pt[1] += cylindricalLengthThickness(materialN,x);
-          exit_dist = cylinder_line_intersection( cumulative_dims_pt[0], cumulative_dims_pt[1],
-                                        origin_pt, det_pos_pt, CylExitDir::TowardDetector, exit_point );
           break;
-          
+
         case GeometryType::Rectangular:
-        {
           cumulative_dims_pt[0] += rectangularWidthThickness(materialN,x);
           cumulative_dims_pt[1] += rectangularHeightThickness(materialN,x);
           cumulative_dims_pt[2] += rectangularDepthThickness(materialN,x);
-          // Nudge any zero half-extent strictly positive so the source sits inside the box and the
-          //  along-ray dimension sets the chord (matches the templated center_ray_exit_distance);
-          //  rectangle_exit_location requires a positive box (it asserts / divides otherwise).
-          const double tiny = 1.0E-6 * PhysicalUnits::mm;
-          const double w = (cumulative_dims_pt[0] > 0.0) ? cumulative_dims_pt[0] : tiny;
-          const double h = (cumulative_dims_pt[1] > 0.0) ? cumulative_dims_pt[1] : tiny;
-          const double d = (cumulative_dims_pt[2] > 0.0) ? cumulative_dims_pt[2] : tiny;
-          exit_dist = rectangle_exit_location( w, h, d, origin_pt, det_pos_pt, exit_point );
           break;
-        }
-          
+
         case GeometryType::NumGeometryType:
           assert( 0 );
           break;
       }//switch( m_geometry )
-      
+
+      // #center_ray_exit_distance handles the degenerate cases exactly, so no dimension nudging is
+      //  needed here: a zero transverse dimension leaves the along-ray dimension setting the chord,
+      //  where the old inline switch had to fake a 1e-6 mm box for the rectangular case and got a
+      //  spurious *zero* chord from the cylinder intersector when either cylinder dimension vanished.
+      double exit_dist = center_ray_exit_distance( m_geometry, cumulative_dims_pt, det_geom_pt );
+
       // A shielding layer can't attenuate past where the detector sits; cap a degenerate
       //  over-thick layer at the detector (keeps the chord and the air gap physical).
       if( exit_dist > trueDist )

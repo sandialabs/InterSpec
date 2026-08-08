@@ -287,10 +287,23 @@ add_test( NAME TMakeDrfSrcDef
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
-add_executable( test_GammaInteractionCalc test_GammaInteractionCalc.cpp )
+add_executable( test_GammaInteractionCalc test_GammaInteractionCalc.cpp GeometryReference.h )
 target_link_libraries( test_GammaInteractionCalc PRIVATE InterSpecLib )
 add_test( NAME TGammaInteractionCalc
   COMMAND $<TARGET_FILE:test_GammaInteractionCalc> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+# Proves the double ray-tracing primitives, now thin `_imp<double>` wrappers, still agree with the
+#  frozen pre-refactor bodies (LegacyGeometryRef.h) everywhere except the three documented bug
+#  fixes, and that those fixes agree with independent references (GeometryReference.h).
+#  Pure arithmetic - needs no static data - so it is fast enough to use as an inner loop.
+#  Retires together with LegacyGeometryRef.h once the migration has shipped a release cycle.
+add_executable( test_GeometryLegacyParity test_GeometryLegacyParity.cpp
+                LegacyGeometryRef.h GeometryReference.h )
+target_link_libraries( test_GeometryLegacyParity PRIVATE InterSpecLib )
+add_test( NAME TGeometryLegacyParity
+  COMMAND $<TARGET_FILE:test_GeometryLegacyParity> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 

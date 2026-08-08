@@ -50,6 +50,8 @@
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/MassAttenuationTool_imp.hpp"
 
+#include "GeometryReference.h"
+
 //#define BOOST_TEST_DYN_LINK
 #define BOOST_TEST_MODULE GammaInteractionCalc_suite
 //#include <boost/test/unit_test.hpp>
@@ -194,79 +196,9 @@ namespace
     }
   }
 
-  /** An independent reference implementation of #cylinder_line_intersection, done in long double.
-
-   The cylinder is centered at the origin and oriented along z.  Parameterizing the ray as
-   P(t) = source + t*(detector - source), t increases monotonically toward the detector, so the
-   t-interval inside the volume is the intersection of the infinite-cylinder interval with the
-   |z| <= half_length slab interval; "toward detector" is that interval's high end, and "away from
-   detector" its low end.
-
-   Only valid for a source strictly inside the cylinder - which is the case the volumetric-source
-   integrands exercise, and the one where the answer is unambiguous.
-
-   @returns Whether the ray intersects the cylinder at all.
-   */
-  bool reference_cyl_exit( const double radius, const double half_length,
-                          const double source[3], const double detector[3],
-                          const bool toward_detector,
-                          double exit_point[3], double &dist )
-  {
-    typedef long double ld;
-
-    const ld inf = std::numeric_limits<ld>::infinity();
-    const ld rad = radius, half_z = half_length;
-    const ld sx = source[0], sy = source[1], sz = source[2];
-    const ld dx = ld(detector[0]) - sx, dy = ld(detector[1]) - sy, dz = ld(detector[2]) - sz;
-
-    // The t-interval inside the infinite cylinder
-    ld t_cyl_lo = -inf, t_cyl_hi = inf;
-    const ld a = dx*dx + dy*dy;
-    if( a > 0.0L )
-    {
-      const ld b = 2.0L*(sx*dx + sy*dy);
-      const ld c = sx*sx + sy*sy - rad*rad;
-      const ld disc = b*b - 4.0L*a*c;
-
-      if( disc < 0.0L )
-        return false;
-
-      const ld sqrt_disc = sqrtl( disc );
-      t_cyl_lo = (-b - sqrt_disc) / (2.0L*a);
-      t_cyl_hi = (-b + sqrt_disc) / (2.0L*a);
-    }else if( (sx*sx + sy*sy) > rad*rad )
-    {
-      return false;  //parallel to z, and outside the radius
-    }
-
-    // The t-interval inside the |z| <= half_length slab
-    ld t_slab_lo = -inf, t_slab_hi = inf;
-    if( dz != 0.0L )
-    {
-      const ld t_a = (-half_z - sz) / dz;
-      const ld t_b = ( half_z - sz) / dz;
-      t_slab_lo = (std::min)( t_a, t_b );
-      t_slab_hi = (std::max)( t_a, t_b );
-    }else if( fabsl(sz) > half_z )
-    {
-      return false;  //perpendicular to z, and past an end cap
-    }
-
-    const ld t_lo = (std::max)( t_cyl_lo, t_slab_lo );
-    const ld t_hi = (std::min)( t_cyl_hi, t_slab_hi );
-
-    if( t_lo > t_hi )
-      return false;
-
-    const ld t = toward_detector ? t_hi : t_lo;
-
-    exit_point[0] = static_cast<double>( sx + t*dx );
-    exit_point[1] = static_cast<double>( sy + t*dy );
-    exit_point[2] = static_cast<double>( sz + t*dz );
-    dist = static_cast<double>( fabsl(t) * sqrtl(dx*dx + dy*dy + dz*dz) );
-
-    return true;
-  }//reference_cyl_exit(...)
+  // The independent long-double reference for #cylinder_line_intersection lives in
+  //  GeometryReference.h now, so test_GeometryLegacyParity.cpp can share it - see
+  //  GeomRef::reference_cyl_exit.
 }
 
 
@@ -833,7 +765,7 @@ BOOST_AUTO_TEST_CASE( CylinderIntersectionReferenceSweep )
         const CylExitDir dir = toward ? CylExitDir::TowardDetector : CylExitDir::AwayFromDetector;
 
         double ref_exit[3], ref_dist;
-        BOOST_REQUIRE( reference_cyl_exit( radius, half_length, source, detector, toward,
+        BOOST_REQUIRE( GeomRef::reference_cyl_exit( radius, half_length, source, detector, toward,
                                           ref_exit, ref_dist ) );
 
         double exit_point[3];
