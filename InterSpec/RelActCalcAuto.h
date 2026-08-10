@@ -914,6 +914,20 @@ struct Options
    */
   void check_same_corr_fcn_and_external_shielding_specifications() const;
 
+  /** Checks the options define enough of a problem to actually be solved.
+
+   That is, at least one relative efficiency curve, at least one nuclide on each of those curves,
+   and at least one energy range.  A `RelActAutoGuiState` serialized from a freshly opened (but
+   never configured) GUI satisfies none of these, yet is a perfectly valid state to store - so
+   callers that hand options off to `solve(...)` need a cheap way to reject it up front.
+
+   @returns An empty string if the options are complete enough to run; otherwise a short
+            reason why not.  The text is untranslated English, intended for logs, reports, and
+            exception messages - GUI callers that show it to the user are interpolating it into a
+            localized wrapper, so keep it short and factual.
+   */
+  std::string why_not_usable() const;
+
   /** Version history:
    - 20250117: incremented to 1 to handle FramPhysicalModel; if not this model, will still write version 0.
    - 20250130: incremented to 2 to handle multiple rel eff curves; can read backward compatible, but not write.
@@ -1175,9 +1189,20 @@ struct RelActAutoSolution
    @param uncert    Its linearized 1-sigma from `J^T Cov J` (already non-negative).
    @param jacobian  d(value)/d(parameter) in the full/ambient parameter space (same index space as
                     `m_final_parameters` and `m_param_at_bound`).
+   @param plausibility_scale  The magnitude an "implausibly small" uncertainty is judged against;
+                    <= 0 means use `fabs(value)`.  Needed for quantities whose information content is
+                    not proportional to their own value: an enrichment is a mass fraction, so for a
+                    nearly-pure component (value ~ 1) the informative scale is the distance to the
+                    bound, `1 - value`.  Judging it against `value` instead makes the SAME absolute
+                    uncertainty "implausible" for the major isotope while being accepted for the
+                    minor one, even though the two are complementary - which produced a fit reporting
+                    U238 = 99.3 +- 99 wt% beside U235 = 0.69 +- 0.0089 wt%.
    */
   double reliability_floored_uncert( const double value, const double uncert,
-                                     const std::vector<double> &jacobian ) const;
+                                     const std::vector<double> &jacobian,
+                                     const double plausibility_scale = -1.0 ) const;
+
+
 
 
   /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
@@ -1729,8 +1754,10 @@ struct RelActAutoSolution
   /** How well the data separates the multiple relative-efficiency curves from each other - i.e.
    whether per-curve quantities (activities, enrichments) are individually meaningful, or only their
    combination is.  Decided from the combination of `m_num_rank_deficient_dirs`,
-   `m_jacobian_condition_number`, `m_cross_curve_max_corr`, the minimum entry of
-   `m_evidence_purity`, and the `m_merged_single_curve_comparison` likelihood-ratio result (a merged
+   `m_jacobian_condition_number`, `m_cross_curve_max_corr`, the per-curve aggregation of
+   `m_evidence_purity` (a curve is "unanchored" when NO source on it has attributed share >= 0.3 -
+   a single blocked source on an otherwise-anchored curve is expected physics and only earns a
+   per-source note), and the `m_merged_single_curve_comparison` likelihood-ratio result (a merged
    single curve fitting the data about as well is the most direct "the data does not demand multiple
    curves" signal) - see `finalize_curve_separation_status()` for the exact rule.
 
@@ -1744,18 +1771,19 @@ struct RelActAutoSolution
     NotApplicable,
 
     /** The curves are constrained relatively independently; per-curve quantities are usable with
-     their reported uncertainties.  Includes the "detected distinct" case (max z >= 3, or - for
-     disjoint-nuclide configs with no z table - a decisively large merged-curve delta-chi2) and the
-     benign "a single curve would also describe the data, but per-curve values are individually
-     anchored" case (see `curve_separation_verdict()`, which words each). */
+     their reported uncertainties.  Includes the "detected distinct" cases (any tier of
+     `curves_distinct_basis()`: a clear z >= 3, a marginal z corroborated by the merged single-curve
+     fit being rejected, or a decisively large merged-curve delta-chi2 alone) and the benign "a
+     single curve would also describe the data, but per-curve values are individually anchored"
+     case (see `curve_separation_verdict()`, which words each). */
     WellSeparated,
 
-    /** Some per-curve values are model-mediated: blended evidence (purity < 0.3), and/or a
-     normalization trade on a rank-deficient fit.  NOTE: strong detection evidence (z >= 3) routes
-     here, never to Degenerate - the verdict must not contradict the detection tier.  The
-     apportionment of shared peaks follows from the fitted attenuation physics / curve shapes; no
-     statistical prior is involved (the only priors, the opt-in "Bias AD" pulls, are off by
-     default). */
+    /** Some per-curve values are model-mediated: an unanchored curve (no source on it with
+     attributed share >= 0.3), and/or a normalization trade on a rank-deficient fit.  NOTE: strong
+     detection evidence routes here, never to Degenerate - the verdict must not contradict the
+     detection tier.  The apportionment of shared peaks follows from the fitted attenuation
+     physics / curve shapes; no statistical prior is involved (the only priors, the opt-in
+     "Bias AD" pulls, are off by default). */
     PoorlySeparated,
 
     /** The data does not distinguish the curves: the merged single curve fits about as well AND the
@@ -1794,18 +1822,53 @@ struct RelActAutoSolution
   /** The entry of `m_cross_curve_correlations` with the largest |correlation| (unset when none). */
   std::optional<CrossCurveCorrelation> m_cross_curve_max_corr;
 
-  /** Evidence purity, per (curve, source): the model-counts-weighted mean of the energy-cluster
-   ownership fraction (`ObsEff::curve_model_fraction`) over ALL clusters the source contributes model
-   counts to - including clusters excluded from the rel-eff chart (an excluded shared cluster is
-   exactly the "no independent evidence" situation this must reflect).
+  /** The "attributed share" per (curve, source): the model-counts-weighted mean of the
+   energy-cluster ownership fraction (`ObsEff::curve_model_fraction`) over ALL clusters the source
+   contributes model counts to - including clusters excluded from the rel-eff chart (an excluded
+   shared cluster is exactly the "no independent evidence" situation this must reflect).
 
-   Interpretation (same ranges in `compute_curve_separation_metrics()`):
-     - > 0.8     : the source has its own resolved evidence on this curve.
-     - 0.3 - 0.8 : partially blended with other curves' sources.
-     - < 0.3     : this curve's value for the source rests on model-attributed shares of blended
-                   clusters (plus the model's attenuation shape), not on resolvable peaks.
+   User-facing wording (keep tooltips/legends verbatim with this): for each energy region containing
+   the source's peaks, the fraction of that region's counts the fit assigns to this curve, averaged
+   weighted by counts.
+     - > 0.8     : this source has peaks that are effectively its own on this curve.
+     - 0.3 - 0.8 : its peak regions are shared with the other curve(s).
+     - < 0.3     : the other curve(s) dominate the regions where this source's peaks fall
+                   (counts-weighted), so its amount is determined by the fitted attenuation
+                   physics / curve shapes rather than by individually resolved peaks.
+   (Same ranges in `compute_curve_separation_metrics()`.  The member keeps its historical name -
+   "evidence purity" - for source/JSON compatibility; user-facing text says "attributed share".)
    Empty for single-curve fits or when `m_obs_eff_for_each_curve` was not filled. */
   std::vector<std::map<SrcVariant,double>> m_evidence_purity;
+
+  /** Total modeled peak counts per (curve, source): the sum, over ALL of this curve's obs-eff
+   energy clusters, of the source's fit-scaled model peak amplitudes (the weight denominator of
+   `m_evidence_purity`).  These are DETECTED counts - peak areas in the measured spectrum, i.e.
+   after attenuation and detector efficiency - NOT emitted source counts: two objects emitting
+   U238 equally, one shielded by the other, do NOT attribute 50/50; the shielded one gets the
+   smaller share, reflecting its actual contribution to the spectrum (source-side quantities are
+   the relative activities, reported elsewhere).  For a source present on multiple curves,
+   `counts[re] / sum_over_curves(counts)` is the fit's apportionment of that source's detected
+   peak counts between the curves - see `source_count_attributions()`.  Same fill conditions as
+   `m_evidence_purity`. */
+  std::vector<std::map<SrcVariant,double>> m_source_model_counts;
+
+  /** The fit's apportionment of one source's modeled peak counts between the curves it appears on.
+
+   TODO: no uncertainty is quoted on the fractions yet.  A first-order estimate is derivable from
+   the cross-curve activity covariance (delta method on f = c_a/(c_a+c_b)), but the counts also
+   depend on the shielding/curve-shape parameters, so an honest number needs the full Jacobian
+   rows - deferred. */
+  struct SourceCountAttribution
+  {
+    SrcVariant source;
+    double total_counts = 0.0;  ///< summed modeled peak counts of the source over all curves
+    /** {rel-eff curve index, fraction of `total_counts` on that curve}; fractions sum to 1. */
+    std::vector<std::pair<size_t,double>> curve_fractions;
+  };//struct SourceCountAttribution
+
+  /** The per-source count apportionment table, from `m_source_model_counts` - only sources present
+   on two or more curves (empty otherwise).  Ordered by source name for stable output. */
+  std::vector<SourceCountAttribution> source_count_attributions() const;
 
   /** Detection statistic: for each nuclide present on two curves, the significance of the difference
    of its mass-enrichment fraction between the curves, z = |e_a - e_b| / sqrt(sigma_a^2 + sigma_b^2)
@@ -1874,18 +1937,52 @@ struct RelActAutoSolution
    attempted. */
   void finalize_curve_separation_status();
 
-  /** True when the detection tier clearly shows the curves differ: the largest entry of
-   `m_enrichment_diff_z` is >= 3, or - for configurations with no shared nuclide (empty z table) -
-   the merged single-curve fit is decisively worse (delta-chi2 above ~5 sigma of the extra-DOF
-   expectation, scaled by max(1, chi2/dof)).  This evidence takes priority in the separation
-   verdict: it can never be contradicted by an "indistinguishable" headline. */
+  /** Which evidence tier established that the curves are genuinely distinct (None when not
+   established).  See `curves_distinct_basis()` for the three-tier rule. */
+  enum class CurveDistinctBasis : int
+  {
+    None,                   ///< distinctness not established by the data
+    ZScore,                 ///< a reliable enrichment-difference z >= 3 (not overruled by the merged fit)
+    ZCorroboratedByMerged,  ///< marginal z (>= 1.5) + single-curve fit rejected at the 3-sigma-scaled bar
+    MergedOnly,             ///< single-curve fit decisively worse (5-sigma-scaled bar); z table silent or absent
+  };//enum class CurveDistinctBasis
+
+  /** The detection tier showing the curves differ; drives `curves_detected_distinct()` and the
+   verdict wording (single source, so headline and details cannot disagree):
+     - `ZScore`: max reliable `m_enrichment_diff_z` >= 3, unless `merged_overrules_z_detection()`.
+     - `ZCorroboratedByMerged`: the merged single-curve fit is rejected (delta-chi2 above the same
+       3-sigma-scaled bar `single_curve_adequate` uses) AND a reliable z >= 1.5 points the same way.
+       The merged fit forces one curve and one composition, so its delta-chi2 is the proper
+       likelihood-ratio combination of all the evidence; the marginal z confirms the direction.
+       (Multiple marginal z's are deliberately NOT combined: enrichment z's of the same curve pair
+       are strongly anti-correlated - one signal, not several.)
+     - `MergedOnly`: delta-chi2 above ~5 sigma of the extra-DOF expectation (scaled by
+       max(1, chi2/dof)) with no corroborating z - e.g. configurations with no shared nuclide.
+   This evidence takes priority in the separation verdict: it can never be contradicted by an
+   "indistinguishable" headline. */
+  CurveDistinctBasis curves_distinct_basis() const;
+
+  /** Convenience: `curves_distinct_basis() != CurveDistinctBasis::None`. */
   bool curves_detected_distinct() const;
 
   /** Short display label for `m_curve_separation_status`, chosen so the equal-enrichment /
-   single-material outcome does not read as an error: "Separated", "Distinct curves - blended
-   evidence", "Poorly separated", "Not distinguished (consistent with a single curve)", or
+   single-material outcome does not read as an error: "Separated", "Distinct curves - see
+   per-nuclide notes", "Poorly separated", "Not distinguished (consistent with a single curve)", or
    "NotApplicable". */
   const char *curve_separation_display() const;
+
+  /** Display name for a rel-eff curve: the user-assigned quoted name (e.g. "'Inner'") when one is
+   set, else "curve N".  Single source for every surface, so warnings/summaries/verdicts all name
+   curves the same way. */
+  std::string curve_label( const size_t rel_eff_index ) const;
+
+  /** The per-source caveat for sources whose attributed share is < 0.3 while their curve is still
+   anchored by another source's resolved evidence - the expected-physics case (e.g. an inner
+   object's low-energy U235 lines absorbed by the outer object).  Names each such source, its
+   attributed share, and the fit's count apportionment; empty when no such source exists (or when a
+   whole curve is unanchored - then `curve_separation_trigger_text()` carries the message instead).
+   Appended by `curve_separation_verdict()`; shared so surfaces cannot drift. */
+  std::string blended_source_caveat_text( const bool html ) const;
 
   /** The tier-1 plain-language separation verdict - the SINGLE source of the verdict wording for
    `print_summary`, the in-code HTML report, and the report templates (exported by
@@ -1895,6 +1992,48 @@ struct RelActAutoSolution
    geometry, and always disambiguates "the model" (the fitted attenuation physics / curve shapes -
    never a statistical prior; none is applied unless a shield's opt-in "Bias AD" is checked). */
   std::string curve_separation_verdict( const bool html ) const;
+
+  /** The shared "what the per-curve split actually rests on" clause, used by both the warning text
+   and `curve_separation_verdict()`.  One function so the two cannot drift: they were separate copies
+   once, and only one of them got the stacked-vs-co-located distinction.
+
+   @param sentence_start capitalizes the leading word; callers supply surrounding punctuation.
+   */
+  std::string curve_split_basis_text( const bool sentence_start ) const;
+
+  /** Names why the curves are not cleanly separated (blended evidence / trading normalizations /
+   rank deficiency / a fit that does not describe the data).  Shared by the warning text and
+   `curve_separation_verdict()` for the same anti-drift reason as `curve_split_basis_text()`.
+   */
+  std::string curve_separation_trigger_text() const;
+
+  /** True when the model is not reproducing the data's structure (weighted R^2 below a floor), so no
+   confident statement about the curves is supportable.  Uses R^2 rather than chi2/dof because
+   chi2/dof grows with counts - a hotter measurement of the same source is not a worse fit.
+   */
+  bool poor_fit_quality() const;
+
+  /** True when a usable z >= 3 exists but the single-vs-merged comparison says one curve describes
+   the data about as well, so `curves_detected_distinct()` does not claim a detection.
+
+   Surfaces MUST annotate the affected rows: the z table's own legend says "z >= 3 clearly
+   different", so leaving a large z unmarked under a "not distinguished" headline reproduces exactly
+   the headline-versus-evidence contradiction this reporting exists to prevent.
+   */
+  bool z_detection_vetoed_by_merged() const;
+
+  /** True when the single-vs-merged comparison is good enough to overrule a z >= 3 composition
+   detection.  Deliberately stricter than `MergedCurveComparison::single_curve_adequate` (which is a
+   wording flag) - see the implementation comment.
+   */
+  bool merged_overrules_z_detection() const;
+
+  /** The bracketed note to print after a z value, or empty when the z is used as-is.  Explains the
+   ACTUAL reason (pinned at a limit -> understated sigma and inflated z; unconstrained composition ->
+   deflated z; overruled by the merged-curve comparison), since one generic sentence for all three
+   states a false reason for two of them.
+   */
+  std::string z_row_annotation( const EnrichmentDiffZ &diff ) const;
 
   //-------------------------------------------------------------------------------------------
   // END: multi-curve-only members and functions

@@ -45,6 +45,7 @@
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/BatchInfoLog.h"
+#include "InterSpec/BatchSampleSelect.h"
 #include "InterSpec/DecayDataBaseServer.h"
 
 
@@ -343,6 +344,100 @@ void fit_energy_cal_from_fit_peaks( shared_ptr<SpecUtils::Measurement> &raw, vec
 }//void fit_energy_cal_from_fit_peaks(...)
 
   
+std::shared_ptr<SpecMeas> write_concatenated_n42( const std::vector<ConcatRecord> &records,
+                                                  const BatchPeakFitOptions &options,
+                                                  std::vector<std::string> &warnings )
+{
+  if( records.empty() || options.output_dir.empty() )
+    return nullptr;
+
+  try
+  {
+    auto concatenated_spec = make_shared<SpecMeas>();
+    int current_sample = 0;
+
+    // Add remarks to indicate when this file was created
+    auto now = chrono::system_clock::now();
+    auto time_t = chrono::system_clock::to_time_t(now);
+    stringstream time_str;
+    time_str << put_time(localtime(&time_t), "%Y-%m-%d %H:%M:%S");
+    concatenated_spec->add_remark( "Concatenated N42 file created on " + time_str.str() );
+
+    // Only input files that produced more than one analysis need their sample numbers spelled out
+    //  in the record title; adding it unconditionally would change the output of runs that arent
+    //  using multi-sample handling at all.
+    map<string,size_t> analyses_per_input;
+    for( const ConcatRecord &record : records )
+      analyses_per_input[record.source_file_path] += 1;
+
+    for( const ConcatRecord &record : records )
+    {
+      if( !record.spectrum )
+        continue;
+
+      // Create a copy of the spectrum measurement
+      auto new_meas = make_shared<SpecUtils::Measurement>( *record.spectrum );
+      current_sample += 1;
+      new_meas->set_sample_number( current_sample );
+
+      // Add source file name to the measurement title.  When one input file was split into several
+      //  analyses, include the sample numbers so the records stay distinguishable.
+      string source_filename = SpecUtils::filename( record.source_file_path );
+      if( analyses_per_input[record.source_file_path] > 1 )
+      {
+        string samples;
+        for( const int sample : record.sample_numbers )
+          samples += (samples.empty() ? "" : ",") + std::to_string( sample );
+        if( !samples.empty() )
+          source_filename += " (sample" + string(record.sample_numbers.size() > 1 ? "s " : " ") + samples + ")";
+      }//if( this input file produced more than one analysis )
+
+      // Note the summed spectrum often already carries the source file name as its title (see
+      //  `SpecFile::sum_measurements`), so only append it when it actually adds something.
+      const string original_title = new_meas->title();
+      if( original_title.empty() || (original_title == SpecUtils::filename(record.source_file_path)) )
+        new_meas->set_title( source_filename );
+      else
+        new_meas->set_title( source_filename + " - " + original_title );
+
+      concatenated_spec->add_measurement( new_meas, false );
+
+      if( !record.peaks.empty() )
+      {
+        const set<int> sample_nums = { current_sample };
+        deque<shared_ptr<const PeakDef>> peaks_copy;
+        for( const shared_ptr<const PeakDef> &peak : record.peaks )
+          peaks_copy.push_back( peak );
+        concatenated_spec->setPeaks( peaks_copy, sample_nums );
+      }//if( !record.peaks.empty() )
+    }//for( const ConcatRecord &record : records )
+
+    concatenated_spec->cleanup_after_load( SpecUtils::SpecFile::ReorderSamplesByTime );
+
+    const string concatenated_file = SpecUtils::append_path( options.output_dir, "concatenated.n42" );
+
+    if( SpecUtils::is_file( concatenated_file ) && !options.overwrite_output_files )
+    {
+      warnings.push_back( "Not writing '" + concatenated_file + "', as it would overwrite a file."
+                         " See the '--overwrite-output-files' option to force writing." );
+    }else
+    {
+      if( !concatenated_spec->save2012N42File( concatenated_file ) )
+        warnings.push_back( "Failed to write concatenated N42 file '" + concatenated_file + "'." );
+      else
+        cout << "Have written concatenated N42 file '" << concatenated_file << "'" << endl;
+    }//if( would overwrite ) / else
+
+    return concatenated_spec;
+  }catch( const std::exception &e )
+  {
+    warnings.push_back( "Error creating concatenated N42 file: " + string(e.what()) );
+  }//try / catch
+
+  return nullptr;
+}//std::shared_ptr<SpecMeas> write_concatenated_n42(...)
+
+
 void fit_peaks_in_files( const std::string &exemplar_filename,
                         std::shared_ptr<const SpecMeas> cached_exemplar_n42,
                           const std::set<int> &exemplar_sample_nums,
@@ -395,31 +490,65 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
   for( const pair<string,string> &key_val : spec_chart_js_and_css )
     summary_json[key_val.first] = key_val.second;
 
-  // Resize per-file results to match the input file size
-  if( results )
-  {
-    results->file_results.resize( files.size() );
-    results->file_json.resize( files.size() );
-    results->file_peak_csvs.resize( files.size() );
-    results->file_reports.resize( files.size() );
-  }//if( results )
+  // Records for the optional concatenated N42; accumulated as we go, rather than pulled out of
+  //  `results` afterwards, so `--concatenate-to-n42` works even when the caller doesnt ask for the
+  //  full per-file results to be retained (which the command line doesnt).
+  vector<ConcatRecord> concat_records;
 
-  for( size_t file_index = 0; file_index < files.size(); file_index += 1 )
-  {
-    const string filename = files[file_index];
+  // Each input file becomes one or more work items; more than one when the user has asked for a
+  //  file holding several foreground records to be analyzed record-by-record.  The expansion is
+  //  done a file at a time so that only one input file is held parsed in memory at once.
+  size_t file_index = 0;  //index of the analysis, which is not the input file index when splitting
 
-    std::shared_ptr<SpecMeas> cached_file;
-    if( file_index < cached_files.size() )
-      cached_file = cached_files[file_index];
+  for( size_t input_index = 0; input_index < files.size(); input_index += 1 )
+  {
+   const shared_ptr<SpecMeas> input_cached_file
+                      = (input_index < cached_files.size()) ? cached_files[input_index] : nullptr;
+   vector<BatchSampleSelect::InputWorkItem> work_items
+      = BatchSampleSelect::expand_input_file( files[input_index], input_index, input_cached_file,
+                                              options.multi_sample_handling );
+
+   for( size_t item_index = 0; item_index < work_items.size(); item_index += 1, file_index += 1 )
+   {
+    BatchSampleSelect::InputWorkItem &item = work_items[item_index];
+    const string &filename = item.filename;
+
+    if( results )
+    {
+      results->file_results.resize( file_index + 1 );
+      results->file_json.resize( file_index + 1 );
+      results->file_peak_csvs.resize( file_index + 1 );
+      results->file_reports.resize( file_index + 1 );
+    }//if( results )
+
+    // `fit_peaks_in_file` modifies the file handed to it, so work items that share a parsed file
+    //  each need their own copy.  Only one copy is alive at a time.
+    std::shared_ptr<SpecMeas> cached_file = item.source;
+    if( item.needs_private_copy && item.source )
+    {
+      cached_file = make_shared<SpecMeas>();
+      cached_file->uniqueCopyContents( *item.source );
+    }
 
     const BatchPeak::BatchPeakFitResult fit_results
                  = fit_peaks_in_file( exemplar_filename, exemplar_sample_nums,
-                                     cached_exemplar_n42, filename, cached_file, {}, options );
-    
+                                     cached_exemplar_n42, filename, cached_file,
+                                     item.foreground_sample_numbers, options );
+
+    // Release our reference to the parsed input file now that it has been analyzed, so that a run
+    //  over many files doesnt hold every one of them in memory at once.
+    item.source.reset();
+    cached_file.reset();
+
     if( !cached_exemplar_n42 )
       cached_exemplar_n42 = fit_results.exemplar;
-    warnings.insert(end(warnings), begin(fit_results.warnings), end(fit_results.warnings) );
-    
+
+    // Only label the warnings when the input file was split or summed, so that output for the
+    //  default handling stays exactly as it was.
+    const bool label_warnings = (item.output_base_name != SpecUtils::filename(filename));
+    for( const string &warn : fit_results.warnings )
+      warnings.push_back( label_warnings ? ("File '" + item.label + "': " + warn) : warn );
+
     nlohmann::json data;
     BatchInfoLog::add_exe_info_to_json( data );
     BatchInfoLog::add_peak_fit_options_to_json( data, options );
@@ -427,9 +556,19 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     if( !exemplar_sample_nums.empty() )
       data["ExemplarSampleNumbers"] = vector<int>{begin(exemplar_sample_nums), end(exemplar_sample_nums)};
     data["Filepath"] = filename;
-    data["Filename"] = SpecUtils::filename( filename );
+    // `Filename` identifies this analysis, and matches the output files written for it; for a file
+    //  split into per-sample analyses it carries the same "_sampleN" infix the output files do.
+    //  `SourceFilename` is always the unmodified input file leaf name.
+    data["Filename"] = item.output_base_name;
+    data["SourceFilename"] = SpecUtils::filename( filename );
+    data["AnalysisLabel"] = item.label;
+    data["IsSplitFromMultiSampleFile"] = (work_items.size() > 1);
+    // Report the samples actually used, which are known even in `Auto` mode
+    if( !fit_results.sample_numbers.empty() )
+      data["ForegroundSampleNumbers"] = vector<int>{ begin(fit_results.sample_numbers),
+                                                     end(fit_results.sample_numbers) };
     data["ParentDir"] = SpecUtils::parent_path( filename );
-    
+
     BatchInfoLog::add_peak_fit_results_to_json( data, fit_results );
     
     summary_json["Files"].push_back( data );
@@ -463,7 +602,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
         if( !options.output_dir.empty() )
         {
           const string out_file
-                    = BatchInfoLog::suggested_output_report_filename( filename, tmplt_name,
+                    = BatchInfoLog::suggested_output_report_filename( item.output_base_name, tmplt_name,
                                   BatchInfoLog::TemplateRenderType::PeakFitIndividual, options );
 
           if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
@@ -500,7 +639,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     }//for( const string &tmplt : options.report_templates )
     
     if( !options.output_dir.empty() && options.create_json_output )
-      BatchInfoLog::write_json( options, warnings, filename, data );
+      BatchInfoLog::write_json( options, warnings, item.output_base_name, data );
     
     if( !fit_results.success )
       continue;
@@ -509,8 +648,8 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     
     if( options.write_n42_with_results && fit_results.measurement )
     {
-      string outn42 = SpecUtils::append_path(options.output_dir, SpecUtils::filename(filename) );
-      if( !SpecUtils::iequals_ascii(SpecUtils::file_extension(filename), ".n42") )
+      string outn42 = SpecUtils::append_path(options.output_dir, item.output_base_name );
+      if( !SpecUtils::iequals_ascii(SpecUtils::file_extension(item.output_base_name), ".n42") )
         outn42 += ".n42";
       
       if( SpecUtils::is_file( outn42 ) && !options.overwrite_output_files )
@@ -552,7 +691,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     
     if( !options.output_dir.empty() && options.create_csv_output )
     {
-      const string leaf_name = SpecUtils::filename(filename);
+      const string &leaf_name = item.output_base_name;
       string outcsv = SpecUtils::append_path(options.output_dir, leaf_name) + ".CSV";
       
       if( SpecUtils::is_file(outcsv) && !options.overwrite_output_files )
@@ -583,20 +722,36 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     if( results )
     {
       stringstream out_csv;
-      PeakModel::write_peak_csv( out_csv, SpecUtils::filename(filename),
+      PeakModel::write_peak_csv( out_csv, item.output_base_name,
                                 PeakModel::PeakCsvType::Full, fit_peaks, fit_results.spectrum );
       results->file_peak_csvs[file_index] = out_csv.str();
     }
 
+    if( options.concatenate_to_n42 && !options.output_dir.empty() && fit_results.spectrum )
+    {
+      ConcatRecord record;
+      record.source_file_path = filename;
+      record.sample_numbers = fit_results.sample_numbers;
+      record.spectrum = fit_results.spectrum;
+      record.peaks = fit_peaks;
+      concat_records.push_back( record );
+    }//if( options.concatenate_to_n42 ... )
+
     if( options.to_stdout )
     {
-      const string leaf_name = SpecUtils::filename(filename);
-      cout << "peaks for '" << leaf_name << "':" << endl;
+      const string &leaf_name = item.output_base_name;
+      cout << "peaks for '" << item.label << "':" << endl;
       PeakModel::write_peak_csv( cout, leaf_name, PeakModel::PeakCsvType::Full,
                                 fit_peaks, fit_results.spectrum );
       cout << endl;
     }
-  }//for( size_t file_index = 0; file_index < files.size(); file_index += 1 )
+   }//for( loop over work items of this input file )
+  }//for( loop over input files )
+
+  // `Files` holds one entry per analysis performed; with multi-sample handling this may be more
+  //  entries than there were input files.
+  summary_json["NumInputFiles"] = static_cast<int>( files.size() );
+  summary_json["NumAnalyses"] = static_cast<int>( file_index );
 
   // Add any encountered errors to output summary JSON
   for( const string &warn : warnings )
@@ -662,83 +817,12 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     BatchInfoLog::write_json( options, warnings, "", summary_json );
   
   // Create concatenated N42 file if requested
-  if( options.concatenate_to_n42 && !options.output_dir.empty() && results )
+  if( options.concatenate_to_n42 && !options.output_dir.empty() )
   {
-    try
-    {
-      auto concatenated_spec = make_shared<SpecMeas>();
-      int current_sample = 0;
-      
-      // Add remarks to indicate when this file was created
-      auto now = chrono::system_clock::now();
-      auto time_t = chrono::system_clock::to_time_t(now);
-      stringstream time_str;
-      time_str << put_time(localtime(&time_t), "%Y-%m-%d %H:%M:%S");
-      concatenated_spec->add_remark("Concatenated N42 file created on " + time_str.str());
-      
-      for( const auto &fit_result : results->file_results )
-      {
-        if( !fit_result.success || !fit_result.spectrum )
-          continue;
-          
-        // Create a copy of the spectrum measurement
-        auto new_meas = make_shared<SpecUtils::Measurement>( *fit_result.spectrum );
-        current_sample += 1;
-        new_meas->set_sample_number( current_sample );
-        
-        // Add source file name to the measurement title
-        string source_filename = SpecUtils::filename( fit_result.file_path );
-        string original_title = new_meas->title();
-        if( original_title.empty() )
-        {
-          new_meas->set_title( source_filename );
-        }
-        else
-        {
-          new_meas->set_title( source_filename + " - " + original_title );
-        }
-        
-        // Add the measurement to the concatenated SpecMeas
-        concatenated_spec->add_measurement( new_meas, false );
-        
-        // Add the peaks for this measurement
-        if( !fit_result.fit_peaks.empty() )
-        {
-          set<int> sample_nums = { current_sample };
-          deque<shared_ptr<const PeakDef>> peaks_copy;
-          for( const auto &peak : fit_result.fit_peaks )
-            peaks_copy.push_back( peak );
-          concatenated_spec->setPeaks( peaks_copy, sample_nums );
-        }
-      }
-
-      // Clean up the SpecMeas after adding all measurements
-      concatenated_spec->cleanup_after_load( SpecUtils::SpecFile::ReorderSamplesByTime ); 
-
-      // Save the concatenated file
-      const string concatenated_file = SpecUtils::append_path( options.output_dir, "concatenated.n42" );
-      
-      if( SpecUtils::is_file( concatenated_file ) && !options.overwrite_output_files )
-      {
-        warnings.push_back( "Not writing '" + concatenated_file + "', as it would overwrite a file."
-                           " See the '--overwrite-output-files' option to force writing." );
-      }
-      else
-      {
-        if( !concatenated_spec->save2012N42File( concatenated_file ) )
-          warnings.push_back( "Failed to write concatenated N42 file '" + concatenated_file + "'." );
-        else
-          cout << "Have written concatenated N42 file '" << concatenated_file << "'" << endl;
-      }
-      
-      // Store the concatenated results
-      results->concatenated_results = concatenated_spec;
-    }
-    catch( const std::exception &e )
-    {
-      warnings.push_back( "Error creating concatenated N42 file: " + string(e.what()) );
-    }
-  }
+    shared_ptr<SpecMeas> concatenated = write_concatenated_n42( concat_records, options, warnings );
+    if( results )
+      results->concatenated_results = concatenated;
+  }//if( options.concatenate_to_n42 && !options.output_dir.empty() )
   
   if( !warnings.empty() )
     cerr << endl << endl;
@@ -999,33 +1083,17 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         spec = specfile->sum_measurements( used_sample_nums, det_names, nullptr );
       }else
       {
-        set<int> foregroundSamples, backgroundSamples, unknownSamples, otherSamples;
-        for( const int sample_num : specfile->sample_numbers() )
-        {
-          for( const string det_name : det_names )
-          {
-            auto m = specfile->measurement( sample_num, det_name );
-            if( !m )
-              continue;
-            switch( m->source_type() )
-            {
-              case SpecUtils::SourceType::IntrinsicActivity:
-              case SpecUtils::SourceType::Calibration:
-                otherSamples.insert( sample_num );
-                break;
-              case SpecUtils::SourceType::Background:
-                backgroundSamples.insert( sample_num );
-                break;
-              case SpecUtils::SourceType::Foreground:
-                foregroundSamples.insert( sample_num );
-                break;
-              case SpecUtils::SourceType::Unknown:
-                unknownSamples.insert( sample_num );
-                break;
-            }//switch( m->source_type() )
-          }//for( const string det_name : det_names )
-        }//for( const int sample_num : specfile.sample_numbers() )
-        
+        // Note: this ladder is deliberately more permissive than the one `BatchActivity` and
+        //  `BatchRelActAuto` use - Foreground and Unknown are kept separate, and a lone
+        //  calibration/intrinsic spectrum is accepted, since fitting peaks in one is a sensible
+        //  thing to do even though fitting an activity to one is not.
+        const BatchSampleSelect::SampleBuckets buckets
+                                                = BatchSampleSelect::classify_samples( *specfile );
+        const set<int> &foregroundSamples = buckets.foreground;
+        const set<int> &backgroundSamples = buckets.background;
+        const set<int> &unknownSamples = buckets.unknown;
+        const set<int> &otherSamples = buckets.other;
+
         if( foregroundSamples.size() == 1 )
         {
           used_sample_nums = foregroundSamples;
@@ -1418,7 +1486,14 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         {
           try
           {
-            propagate_energy_cal( new_cal, spec, results.measurement, {} );
+            // Must pass the sample numbers being fit - `propagate_energy_cal` only updates the
+            //  measurements of the samples given to it, so an empty set updates nothing, and the
+            //  written out N42 would keep the original calibration, while the peaks in it were fit
+            //  at the new calibration.  Sample numbers chosen same as the `setPeaks(...)` below.
+            const set<int> cal_sample_nums = (options.background_subtract_file.empty()
+                                              && !options.cached_background_subtract_spec)
+                                             ? used_sample_nums : results.measurement->sample_numbers();
+            propagate_energy_cal( new_cal, spec, results.measurement, cal_sample_nums );
           }catch( std::exception &e )
           {
             results.warnings.push_back( "Failed to propagate fit energy calibration in '" + filename + "'." );

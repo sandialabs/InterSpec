@@ -1,5 +1,13 @@
  cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
+# CMake 4.0 made `cmake_minimum_required` below 3.5 a hard error.  Several projects we build as
+#  sub-projects still declare less than that - the fetched Wt 3.7.1 and zlib 1.2.12, plus
+#  vendored/submoduled Cuba-3.0, muparserx and SandiaDecay - so configuring with CMake 4 fails
+#  without this.  Raising the floor to 3.5 for those sub-projects is what the variable is for,
+#  and lets us fix it in one place rather than patching each dependency (some are submodules we
+#  cannot change from here).  The variable is new in CMake 3.31 and simply ignored before that.
+set( CMAKE_POLICY_VERSION_MINIMUM 3.5 )
+
 project(InterSpec VERSION 1.0.14)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -363,6 +371,7 @@ set(sources
     src/BatchPeak.cpp
     src/BatchActivity.cpp
     src/BatchInfoLog.cpp
+    src/BatchSampleSelect.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -489,6 +498,7 @@ set(headers
     InterSpec/BatchPeak.h
     InterSpec/BatchActivity.h
     InterSpec/BatchInfoLog.h
+    InterSpec/BatchSampleSelect.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)
@@ -782,6 +792,10 @@ add_subdirectory(external_libs/VoigtDistribution)
 
 add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers} )
 
+# How libstdc++/libgcc get linked, in one place, for every consumer of InterSpecLib.
+#  Must come after InterSpecLib exists, since the policy is attached to that target.
+include( ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CxxRuntimePolicy.cmake )
+
 # If we are the top-level project, we'll build the local-server exe
 if( NOT hasParent)
   add_executable(InterSpecExe main.cpp)
@@ -928,6 +942,9 @@ else(WIN32)
   endif( BUILD_AS_UNIT_TEST_SUITE )
   
   target_link_libraries(InterSpecLib PUBLIC ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY} )
+
+  # NOTE: the Boost archives have to be repeated *after* these Wt libraries on the link line; that
+  #  is done in one place further down, just below the InterSpecLib link block.
 endif(WIN32)
 
 
@@ -940,13 +957,23 @@ endif(WIN32)
 
 # GNU ld scans each static archive once, in command-line order, pulling only the members that
 #  resolve symbols seen so far - so an archive has to appear *after* everything that references
-#  it.  Wt's SocketNotifier.C references boost::thread, but the Boost imported targets are linked
-#  well above the Wt libraries, leaving ~22 "undefined reference to boost::thread::..." at link
-#  time on Linux.  Simply naming the Boost targets again after Wt does not help: CMake keeps only
-#  the first mention of an imported target.
+#  it.  cmake/FindWt.cmake hands us bare .a paths rather than targets, so CMake has no idea Wt
+#  depends on Boost and links Boost first (from InterSpecLib's own target_link_libraries above).
+#  Wt's SocketNotifier.C references boost::thread, so by the time ld reaches libwt.a there is no
+#  Boost archive left to satisfy it, leaving ~22 "undefined reference to boost::thread::..." at
+#  link time on Linux.  Simply naming the Boost targets again after Wt does not help: CMake keeps
+#  only the first mention of an imported target.
+#
+#  When InterSpecLib is a shared object the link does not even fail, since undefined symbols are
+#  permitted there - the breakage only shows up when InterSpecAddOn.node is dlopen'd:
+#      undefined symbol: _ZTIN5boost6detail16thread_data_baseE
+#  Measured on a real build: 18 such symbols from libboost_thread and 3 from libboost_random.
 #
 # Repeating them here by file path fixes the order: a plain path is not de-duplicated against the
-#  imported target it came from, so these really do land at the end of the link line.
+#  imported target it came from, so these really do land at the end of the link line.  Listing the
+#  archives a second time is enough because the dependency is one-way (Wt -> Boost); no
+#  --start-group is needed, and unused archive members are still not pulled in, so this costs
+#  nothing in the output.
 #
 # Not needed on Apple (ld64 resolves across all inputs regardless of order) or MSVC (same), and
 #  linking an archive twice is harmless everywhere, so this is scoped to where it is required.
@@ -1114,7 +1141,7 @@ if(TRY_TO_STATIC_LINK)
         find_library( RT_LIB rt REQUIRES )
         target_link_libraries(InterSpecLib PUBLIC ${RT_LIB})
 
-        #target_link_libraries( InterSpecExe -static-libgcc -static-libstdc++)
+        # libstdc++/libgcc linkage is handled by cmake/CxxRuntimePolicy.cmake
         #Next line statically links to pthread, copying whole archive into exe
         #set(CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS} "-static -pthread -Wl,--whole-archive -lpthread -Wl,--no-whole-archive")
     endif(("${CMAKE_SYSTEM}" MATCHES "Linux") AND (NOT ANDROID))

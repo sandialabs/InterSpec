@@ -161,7 +161,7 @@ R<sup>2</sup>={{ r2_str }}, &kappa;(J)={{ condition_number_str }}</div>
   <div title="z &ge; 3: the curves clearly have different compositions; 1.5-3 marginal; &lt;1.5 not distinguished.">Enrichment-difference detection:
     <ul>
 {% for d in enrichment_diff_z %}
-      <li>{{ d.nuclide }}: curve {{ d.curve_a }} = {{ d.enrichment_a_str }}, curve {{ d.curve_b }} = {{ d.enrichment_b_str }} &rarr; z = {{ d.z_str }}{% if not d.reliable %}  [NOT USABLE: a value is pinned at a limit, so this z is inflated and is not used for the verdict]{% endif %}</li>
+      <li>{{ d.nuclide }}: curve {{ d.curve_a }} = {{ d.enrichment_a_str }}, curve {{ d.curve_b }} = {{ d.enrichment_b_str }} &rarr; z = {{ d.z_str }}{{ d.not_usable_note }}</li>
 {% endfor %}
     </ul>
   </div>
@@ -190,10 +190,19 @@ R<sup>2</sup>={{ r2_str }}, &kappa;(J)={{ condition_number_str }}</div>
   </div>
 {% endif %}
 {% if evidence_purity %}
-  <div title="Model-counts-weighted cluster-ownership per (curve, source): &gt;0.8 own resolved evidence; 0.3-0.8 partially blended; &lt;0.3 rests on the model's split of blended peaks.">Evidence purity:
+  <div title="For each energy region containing a nuclide's peaks, the fraction of that region's counts the fit assigns to this curve, averaged weighted by counts.  &gt;0.8 own resolved peaks; 0.3-0.8 peak regions shared with the other curve(s); &lt;0.3 no individually resolved peaks - the value follows from the fitted physics.">Attributed share per (curve, nuclide):
     <ul>
 {% for curve_purity in evidence_purity %}
-      <li>curve {{ loop.index }}: {% for p in curve_purity %}{% if not loop.is_first %}, {% endif %}{{ p.source }} = {{ p.purity_str }}{% endfor %}</li>
+      <li>{% if curve_purity %}{{ curve_purity.0.curve_label }}{% else %}curve {{ loop.index }}{% endif %}: {% for p in curve_purity %}{% if not loop.is_first %}, {% endif %}{{ p.source }} = {{ p.purity_str }}{% endfor %}</li>
+{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+{% if source_count_attribution %}
+  <div title="How the fit divides each nuclide's detected peak counts (counts in the measured spectrum - after attenuation and detector efficiency, not emitted source counts) between the curves.  The division is fitted through the attenuation physics / curve shapes, constrained by the whole spectrum.">Peak-count attribution per nuclide:
+    <ul>
+{% for a in source_count_attribution %}
+      <li>{{ a.source }}: {% for c in a.curves %}{% if not loop.is_first %}, {% endif %}{{ c.curve_label }} {{ c.percent_str }}{% endfor %}</li>
 {% endfor %}
     </ul>
   </div>

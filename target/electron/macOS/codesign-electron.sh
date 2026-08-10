@@ -26,7 +26,7 @@
 #                                  (default: "interspec-notary")
 #
 # The `npm run package-mac` script invokes signing+notarization inline via
-# @electron/packager flags using the same keychain profile; this script is
+# electron-builder's signing config using the same keychain profile; this script is
 # provided for re-signing an existing .app bundle out of band (e.g., after
 # a manual edit).
 

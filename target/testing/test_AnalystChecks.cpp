@@ -585,7 +585,7 @@ BOOST_FIXTURE_TEST_CASE( test_sum_peak_check, InterSpecTestFixture )
 
 namespace
 {
-  /** Loads `filename` (in AnalystTests/) as both displayed Foreground and Background: the
+  /** Loads `filename` (relative to AnalystTests/) as both displayed Foreground and Background: the
    non-"Background" record becomes the foreground (or the short background record, when
    `background_as_foreground`), and the longest-live-time "Background" record the background. */
   void load_pcf_fore_and_back( InterSpec * const interspec, const std::string &filename,
@@ -600,7 +600,7 @@ namespace
     BOOST_REQUIRE( back_meas->load_file( path, SpecUtils::ParserType::Auto, path ) );
 
     int fore_sample = -999, short_bkg_sample = -999, long_bkg_sample = -999;
-    float short_bkg_lt = std::numeric_limits<float>::max(), long_bkg_lt = -1.0f;
+    float short_bkg_lt = (std::numeric_limits<float>::max)(), long_bkg_lt = -1.0f;
     for( size_t i = 0; i < fore_meas->num_measurements(); ++i )
     {
       const shared_ptr<const SpecUtils::Measurement> m = fore_meas->measurement_at_index( static_cast<int>(i) );
@@ -639,7 +639,7 @@ namespace
 
 BOOST_FIXTURE_TEST_CASE( test_beta_continuum_sr90_hpge, InterSpecTestFixture )
 {
-  load_pcf_fore_and_back( m_interspec, "BetaCheck_Sr90_Unsh_DetectiveX_300s.pcf" );
+  load_pcf_fore_and_back( m_interspec, "BetaCheck/detx_sr90_unshielded.pcf" );
 
   const AnalystChecks::BetaContinuumCheckOptions options;
   const AnalystChecks::BetaContinuumCheckStatus result
@@ -667,7 +667,7 @@ BOOST_FIXTURE_TEST_CASE( test_beta_continuum_sr90_hpge, InterSpecTestFixture )
 
 BOOST_FIXTURE_TEST_CASE( test_beta_continuum_sr90_nai, InterSpecTestFixture )
 {
-  load_pcf_fore_and_back( m_interspec, "BetaCheck_Sr90_Unsh_SamEagleNaI3x3_300s.pcf" );
+  load_pcf_fore_and_back( m_interspec, "BetaCheck/nai3x3_sr90_unshielded.pcf" );
 
   const AnalystChecks::BetaContinuumCheckOptions options;
   const AnalystChecks::BetaContinuumCheckStatus result
@@ -693,7 +693,7 @@ BOOST_FIXTURE_TEST_CASE( test_beta_continuum_sr90_nai, InterSpecTestFixture )
 
 BOOST_FIXTURE_TEST_CASE( test_beta_continuum_cs137_not_brem, InterSpecTestFixture )
 {
-  load_pcf_fore_and_back( m_interspec, "BetaCheck_Cs137_Sh_DetectiveX_300s.pcf" );
+  load_pcf_fore_and_back( m_interspec, "BetaCheck/detx_cs137_shielded.pcf" );
 
   const AnalystChecks::BetaContinuumCheckOptions options;
   const AnalystChecks::BetaContinuumCheckStatus result
@@ -715,7 +715,7 @@ BOOST_FIXTURE_TEST_CASE( test_beta_continuum_cs137_not_brem, InterSpecTestFixtur
 BOOST_FIXTURE_TEST_CASE( test_beta_continuum_background_as_foreground, InterSpecTestFixture )
 {
   // The short "Background" record as foreground, the long one as background: nothing is elevated.
-  load_pcf_fore_and_back( m_interspec, "BetaCheck_Cs137_Sh_DetectiveX_300s.pcf", true );
+  load_pcf_fore_and_back( m_interspec, "BetaCheck/detx_cs137_shielded.pcf", true );
 
   const AnalystChecks::BetaContinuumCheckOptions options;
   const AnalystChecks::BetaContinuumCheckStatus result
@@ -733,7 +733,7 @@ BOOST_FIXTURE_TEST_CASE( test_beta_continuum_background_as_foreground, InterSpec
 BOOST_FIXTURE_TEST_CASE( test_beta_continuum_tl204_xrays, InterSpecTestFixture )
 {
   // Tl-204's EC branch gives Hg K x-rays (~69-83 keV); these are reported but must not veto.
-  load_pcf_fore_and_back( m_interspec, "BetaCheck_Tl204_Unsh_SamEagleNaI3x3_300s.pcf" );
+  load_pcf_fore_and_back( m_interspec, "BetaCheck/nai3x3_tl204_unshielded.pcf" );
 
   const AnalystChecks::BetaContinuumCheckOptions options;
   const AnalystChecks::BetaContinuumCheckStatus result
@@ -759,7 +759,7 @@ BOOST_FIXTURE_TEST_CASE( test_beta_continuum_no_background, InterSpecTestFixture
   // Direct test of the worker-safe overload: null background must yield BackgroundNotLoaded,
   // and the check must be deterministic (identical results for identical inputs).
   const string path = SpecUtils::append_path( g_test_file_dir,
-                                    "AnalystTests/BetaCheck_Sr90_Unsh_DetectiveX_300s.pcf" );
+                                    "AnalystTests/BetaCheck/detx_sr90_unshielded.pcf" );
   BOOST_REQUIRE( SpecUtils::is_file(path) );
 
   shared_ptr<SpecMeas> meas = make_shared<SpecMeas>();
@@ -803,7 +803,7 @@ namespace
       return std::stoi( selector );
 
     int best_sample = -999, best_any_sample = -999;
-    float best_lt = prefer_long ? -1.0f : std::numeric_limits<float>::max();
+    float best_lt = prefer_long ? -1.0f : (std::numeric_limits<float>::max)();
     float best_any_lt = best_lt;
 
     for( size_t i = 0; i < meas->num_measurements(); ++i )
@@ -875,7 +875,7 @@ BOOST_FIXTURE_TEST_CASE( test_beta_continuum_case_manifest, InterSpecTestFixture
   std::ifstream manifest( manifest_path.c_str() );
   BOOST_REQUIRE( manifest.is_open() );
 
-  size_t num_cases = 0;
+  size_t num_cases = 0, num_skipped = 0;
   string line;
   while( std::getline( manifest, line ) )
   {
@@ -890,7 +890,6 @@ BOOST_FIXTURE_TEST_CASE( test_beta_continuum_case_manifest, InterSpecTestFixture
     const string &back_file = fields[2], &back_sel = fields[3];
     const string &allowed = fields[4], &min_term = fields[5], &max_term = fields[6];
     const string &note = fields[7];
-    num_cases += 1;
 
     const auto resolve_path = [&]( const string &f ) -> string {
       if( SpecUtils::is_file(f) )
@@ -898,11 +897,26 @@ BOOST_FIXTURE_TEST_CASE( test_beta_continuum_case_manifest, InterSpecTestFixture
       return SpecUtils::append_path( g_test_file_dir, "AnalystTests/" + f );
     };
 
+    const string fore_path = resolve_path( fore_file );
+    const string back_path = resolve_path( back_file );
+
+    // Rows may reference spectra outside this repository (e.g. the benchmark dataset repo), which
+    //  are not available on CI or a fresh checkout - skip those rows instead of failing.
+    if( !SpecUtils::is_file(fore_path) || !SpecUtils::is_file(back_path) )
+    {
+      num_skipped += 1;
+      BOOST_TEST_MESSAGE( "[beta manifest] skipping '" << note << "': spectrum file not available ("
+                          << (SpecUtils::is_file(fore_path) ? back_file : fore_file) << ")" );
+      continue;
+    }
+
+    num_cases += 1;
+
     shared_ptr<SpecMeas> fore_meas = make_shared<SpecMeas>();
-    BOOST_REQUIRE_MESSAGE( fore_meas->load_file( resolve_path(fore_file), SpecUtils::ParserType::Auto, fore_file ),
+    BOOST_REQUIRE_MESSAGE( fore_meas->load_file( fore_path, SpecUtils::ParserType::Auto, fore_file ),
                            "Failed to load " << fore_file );
     shared_ptr<SpecMeas> back_meas = make_shared<SpecMeas>();
-    BOOST_REQUIRE_MESSAGE( back_meas->load_file( resolve_path(back_file), SpecUtils::ParserType::Auto, back_file ),
+    BOOST_REQUIRE_MESSAGE( back_meas->load_file( back_path, SpecUtils::ParserType::Auto, back_file ),
                            "Failed to load " << back_file );
 
     // Foreground 'auto-bkg' means the shortest-live-time background record (null tests).
@@ -956,6 +970,7 @@ BOOST_FIXTURE_TEST_CASE( test_beta_continuum_case_manifest, InterSpecTestFixture
     }
   }//while( manifest rows )
 
-  BOOST_TEST_MESSAGE( "[beta manifest] ran " << num_cases << " cases" );
+  BOOST_TEST_MESSAGE( "[beta manifest] ran " << num_cases << " cases (" << num_skipped
+                      << " skipped for missing spectrum files)" );
   BOOST_CHECK_GT( num_cases, 0 );
 }//test_beta_continuum_case_manifest

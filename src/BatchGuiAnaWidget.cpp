@@ -191,6 +191,30 @@ BatchGuiAnaWidget::BatchGuiAnaWidget( Wt::WContainerWidget *parent )
   interspec->useMessageResourceBundle( "BatchGuiAnaWidget" );
 }
 
+void BatchGuiAnaWidget::setMultiSampleHandling( const BatchSampleSelect::MultiSampleHandling )
+{
+  // No-op; analysis types the option applies to override this.
+}
+
+
+void BatchGuiPeakFitWidget::setMultiSampleHandling( const BatchSampleSelect::MultiSampleHandling handling )
+{
+  if( !m_multi_sample_handling )
+    return;
+
+  int index = 0;
+  switch( handling )
+  {
+    case BatchSampleSelect::MultiSampleHandling::Auto:                 index = 0; break;
+    case BatchSampleSelect::MultiSampleHandling::EachSampleSeparately: index = 1; break;
+    case BatchSampleSelect::MultiSampleHandling::SumAllSamples:        index = 2; break;
+  }//switch( handling )
+
+  m_multi_sample_handling->setCurrentIndex( index );
+  optionsChanged();
+}//void BatchGuiPeakFitWidget::setMultiSampleHandling(...)
+
+
 Wt::Signal<bool,Wt::WString> &BatchGuiAnaWidget::canDoAnalysisSignal()
 {
   return m_canDoAnalysis;
@@ -342,6 +366,20 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget( Wt::WContainerWidget *parent ) : B
   m_peak_hypothesis_threshold->setWidth( 40 );
   HelpSystem::attachToolTipOn(
     m_peak_hypothesis_threshold, WString::tr( "bgw-peak-hypothesis-threshold-tt" ), showToolTips );
+
+  m_multi_sample_container = new Wt::WContainerWidget( float_options );
+  m_multi_sample_container->addStyleClass( "ThresholdOptionContainer" );
+
+  m_multi_sample_label = new Wt::WLabel( WString::tr( "bgw-multi-sample-label" ), m_multi_sample_container );
+  m_multi_sample_label->setWordWrap( false );
+  m_multi_sample_handling = new Wt::WComboBox( m_multi_sample_container );
+  m_multi_sample_label->setBuddy( m_multi_sample_handling );
+  m_multi_sample_handling->addItem( WString::tr( "bgw-multi-sample-auto" ) );
+  m_multi_sample_handling->addItem( WString::tr( "bgw-multi-sample-each" ) );
+  m_multi_sample_handling->addItem( WString::tr( "bgw-multi-sample-sum" ) );
+  m_multi_sample_handling->setCurrentIndex( 0 );
+  m_multi_sample_handling->activated().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
+  HelpSystem::attachToolTipOn( m_multi_sample_handling, WString::tr( "bgw-multi-sample-tt" ), showToolTips );
 
 
   m_reports_container = new WGroupBox( WString::tr( "bgw-reports-grp-title" ), this );
@@ -852,6 +890,19 @@ BatchPeak::BatchPeakFitOptions BatchGuiPeakFitWidget::getPeakFitOptions() const
   answer.create_json_output = m_create_json_output->isChecked();
   answer.concatenate_to_n42 = m_concatenate_to_n42->isChecked();
 
+  switch( m_multi_sample_handling ? m_multi_sample_handling->currentIndex() : 0 )
+  {
+    case 1:
+      answer.multi_sample_handling = BatchSampleSelect::MultiSampleHandling::EachSampleSeparately;
+      break;
+    case 2:
+      answer.multi_sample_handling = BatchSampleSelect::MultiSampleHandling::SumAllSamples;
+      break;
+    default:
+      answer.multi_sample_handling = BatchSampleSelect::MultiSampleHandling::Auto;
+      break;
+  }//switch( m_multi_sample_handling->currentIndex() )
+
   if( m_no_background->isChecked() )
   {
     answer.use_existing_background_peaks = false;
@@ -976,6 +1027,9 @@ void BatchGuiPeakFitWidget::performAnalysis(
   // We need to do the work off the main GUI thread, so we need to post the work to the server.
   const string sessionid = Wt::WApplication::instance()->sessionId();
   auto error_msg = make_shared<string>();
+  // Resolve now, on the session thread: the worker below runs without a `WApplication`, where
+  //  `WString::tr(...)` cannot resolve and would yield the literal "??key??".
+  const string unknown_error_msg = WString::tr( "bgw-unknown-analysis-error" ).toUTF8();
   auto results = make_shared<BatchPeak::BatchPeakFitSummary>();
 
   SimpleDialog *waiting_dialog =
@@ -1050,6 +1104,27 @@ void BatchGuiPeakFitWidget::performAnalysis(
     wApp->triggerUpdate();
   };// update_gui_fcn lambda
 
+  // Parsing the results JSON or rendering the report template can throw; the waiting dialog is
+  //  closed by then, so without this the user would be left with nothing at all.
+  std::function<void( void )> guarded_update_gui_fcn
+      = [update_gui_fcn, error_msg, show_error_dialog, unknown_error_msg]()
+  {
+    try
+    {
+      update_gui_fcn();
+    }catch( const std::exception &e )
+    {
+      *error_msg = e.what();
+      show_error_dialog();
+    }catch( ... )
+    {
+      // As with `do_work_fcn` below: this runs from a posted handler, so anything not derived from
+      //  `std::exception` escaping here would leave the modal dialog up forever.
+      *error_msg = unknown_error_msg;
+      show_error_dialog();
+    }
+  };// guarded_update_gui_fcn lambda
+
 
   std::function<void( void )> do_work_fcn = [exemplar_filename,
                                              exemplar,
@@ -1059,7 +1134,8 @@ void BatchGuiPeakFitWidget::performAnalysis(
                                              options,
                                              results,
                                              error_msg,
-                                             update_gui_fcn,
+                                             guarded_update_gui_fcn,
+                                             unknown_error_msg,
                                              show_error_dialog,
                                              sessionid]()
   {
@@ -1068,10 +1144,16 @@ void BatchGuiPeakFitWidget::performAnalysis(
       BatchPeak::fit_peaks_in_files(
         exemplar_filename, exemplar, exemplar_samples, file_names, spec_files, options, results.get() );
 
-      WServer::instance()->post( sessionid, update_gui_fcn );
-    } catch( std::exception &e )
+      WServer::instance()->post( sessionid, guarded_update_gui_fcn );
+    } catch( const std::exception &e )
     {
       *error_msg = e.what();
+      WServer::instance()->post( sessionid, show_error_dialog );
+    } catch( ... )
+    {
+      // Anything not derived from `std::exception` would otherwise escape this asio handler, and
+      //  the modal "performing work" dialog would stay up forever.
+      *error_msg = unknown_error_msg;
       WServer::instance()->post( sessionid, show_error_dialog );
     }
   };// do_work_fcn lambda
@@ -1313,6 +1395,9 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
   // We need to do the work off the main GUI thread, so we need to post the work to the server.
   const string sessionid = Wt::WApplication::instance()->sessionId();
   auto error_msg = make_shared<string>();
+  // Resolve now, on the session thread: the worker below runs without a `WApplication`, where
+  //  `WString::tr(...)` cannot resolve and would yield the literal "??key??".
+  const string unknown_error_msg = WString::tr( "bgw-unknown-analysis-error" ).toUTF8();
 
   SimpleDialog *waiting_dialog =
     new SimpleDialog( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
@@ -1373,6 +1458,27 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
     wApp->triggerUpdate();
   };// update_gui_fcn lambda
 
+  // Parsing the results JSON or rendering the report template can throw; the waiting dialog is
+  //  closed by then, so without this the user would be left with nothing at all.
+  std::function<void( void )> guarded_update_gui_fcn
+      = [update_gui_fcn, error_msg, show_error_dialog, unknown_error_msg]()
+  {
+    try
+    {
+      update_gui_fcn();
+    }catch( const std::exception &e )
+    {
+      *error_msg = e.what();
+      show_error_dialog();
+    }catch( ... )
+    {
+      // As with `do_work_fcn` below: this runs from a posted handler, so anything not derived from
+      //  `std::exception` escaping here would leave the modal dialog up forever.
+      *error_msg = unknown_error_msg;
+      show_error_dialog();
+    }
+  };// guarded_update_gui_fcn lambda
+
   std::function<void( void )> do_work_fcn = [exemplar_filename,
                                              exemplar,
                                              exemplar_samples,
@@ -1381,7 +1487,8 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
                                              options,
                                              summary_results,
                                              error_msg,
-                                             update_gui_fcn,
+                                             guarded_update_gui_fcn,
+                                             unknown_error_msg,
                                              show_error_dialog,
                                              sessionid]()
   {
@@ -1389,10 +1496,16 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
     {
       BatchActivity::fit_activities_in_files(
         exemplar_filename, exemplar, exemplar_samples, file_names, input_files_meas, options, summary_results.get() );
-      WServer::instance()->post( sessionid, update_gui_fcn );
-    } catch( std::exception &e )
+      WServer::instance()->post( sessionid, guarded_update_gui_fcn );
+    } catch( const std::exception &e )
     {
       *error_msg = e.what();
+      WServer::instance()->post( sessionid, show_error_dialog );
+    } catch( ... )
+    {
+      // Anything not derived from `std::exception` would otherwise escape this asio handler, and
+      //  the modal "performing work" dialog would stay up forever.
+      *error_msg = unknown_error_msg;
       WServer::instance()->post( sessionid, show_error_dialog );
     }
   };// do_work_fcn lambda
@@ -1675,6 +1788,13 @@ BatchGuiIsotopicsByNuclidesWidget::BatchGuiIsotopicsByNuclidesWidget( Wt::WConta
 : BatchGuiPeakFitWidget( parent )
 {
   addStyleClass( "BatchGuiIsotopicsByNuclidesWidget" );
+
+  // Make clear these options are for the "Isotopics by nuclides" tool, and not "Isotopics by peaks".
+  //  The base-class ctor has already added its widgets to `this`, so insert at the front.
+  WText *title = new WText( WString::tr( "bgw-iso-by-nucs-title" ) );
+  title->setInline( false );
+  title->addStyleClass( "IsotopicsOptsTitle" );
+  insertWidget( 0, title );
 
   // Hide peak-fit-only controls that don't apply to RelActCalcAuto.
   m_fit_all_peaks->setChecked( false );
@@ -1996,6 +2116,10 @@ BatchRelActAuto::Options BatchGuiIsotopicsByNuclidesWidget::getIsotopicsOptions(
   options.write_n42_with_results = m_write_n42_with_results->isChecked();
   options.create_json_output = m_create_json_output->isChecked();
 
+  // The multi-record combo is inherited from BatchGuiPeakFitWidget, and is shown on this pane, so
+  //  it has to be carried over into our own options struct.
+  options.multi_sample_handling = getPeakFitOptions().multi_sample_handling;
+
   // Reports - default to "html" per-file + "html" summary; users with custom
   // template uploaders override by checking those checkboxes.
   if( m_html_report->isChecked() )
@@ -2066,18 +2190,35 @@ std::pair<bool,Wt::WString> BatchGuiIsotopicsByNuclidesWidget::canDoAnalysis() c
   // — they carry a stored `<RelActCalcAuto>` state instead.
 
   // Either an exemplar with a stored state OR an uploaded rel-eff config XML.
+  //  `get_exemplar()` deep-copies the foreground `SpecMeas` (and re-serializes the tool states into
+  //  it), and we are called on every `optionsChanged()`, so resolve the state exactly once.
   const bool have_state_override = (m_use_rel_eff_config_override->isChecked()
                                     && m_uploaded_rel_eff_config);
-  if( !have_state_override )
+  shared_ptr<RelActCalcAuto::RelActAutoGuiState> resolved_state;
+  if( have_state_override )
+  {
+    resolved_state = m_uploaded_rel_eff_config;
+  }else
   {
     const tuple<shared_ptr<SpecMeas>, string, set<int>> exemplar_info = get_exemplar();
     const shared_ptr<SpecMeas> &exemplar = std::get<0>( exemplar_info );
     if( !exemplar )
       return { false, WString::tr("bgw-no-ana-iso-no-state-or-exemplar") };
+
     unique_ptr<RelActCalcAuto::RelActAutoGuiState> state = exemplar->getRelActAutoGuiState();
     if( !state )
       return { false, WString::tr("bgw-no-ana-iso-no-state-in-exemplar") };
-  }
+
+    resolved_state.reset( state.release() );
+  }//if( have_state_override ) / else
+
+  // Having a state isnt enough - it must actually define a problem.  Just opening the "Isotopics
+  //  by nuclides" tool (without configuring it) stores a state with no nuclides and no energy
+  //  ranges, and that would otherwise sail through to a doomed batch analysis.
+  assert( resolved_state );
+  const string why_state_unusable = resolved_state->options.why_not_usable();
+  if( !why_state_unusable.empty() )
+    return { false, WString::tr("bgw-no-ana-iso-state-not-configured").arg( why_state_unusable ) };
 
   // Background: must have a usable choice (no-background, current background,
   // or an uploaded background file).  Mirrors the relevant slice of
@@ -2100,32 +2241,13 @@ std::pair<bool,Wt::WString> BatchGuiIsotopicsByNuclidesWidget::canDoAnalysis() c
   if( !back_okay )
     return { false, WString::tr("bgw-no-ana-peak-fit-bad-background") };
 
-  // Physical-model rel-eff curve requires a DRF.
-  shared_ptr<RelActCalcAuto::RelActAutoGuiState> resolved_state;
-  if( have_state_override )
-  {
-    resolved_state = m_uploaded_rel_eff_config;
-  }else
-  {
-    const tuple<shared_ptr<SpecMeas>, string, set<int>> exemplar_info = get_exemplar();
-    const shared_ptr<SpecMeas> &exemplar = std::get<0>( exemplar_info );
-    if( exemplar )
-    {
-      unique_ptr<RelActCalcAuto::RelActAutoGuiState> tmp = exemplar->getRelActAutoGuiState();
-      if( tmp )
-        resolved_state.reset( tmp.release() );
-    }
-  }
+  // A DRF-seeded FWHM method requires a DRF.
+  const RelActCalcAuto::FwhmEstimationMethod fwhm_m = resolved_state->options.fwhm_estimation_method;
+  const bool needs_drf = ( ( fwhm_m == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
+                           || ( fwhm_m == RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency ) );
 
-  if( resolved_state )
-  {
-    const RelActCalcAuto::FwhmEstimationMethod fwhm_m = resolved_state->options.fwhm_estimation_method;
-    const bool needs_drf = ( ( fwhm_m == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
-                             || ( fwhm_m == RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency ) );
-
-    if( needs_drf && !detector() )
-      return { false, WString::tr("bgw-no-ana-iso-need-drf") };
-  }
+  if( needs_drf && !detector() )
+    return { false, WString::tr("bgw-no-ana-iso-need-drf") };
 
   return { true, WString() };
 }
@@ -2202,6 +2324,9 @@ void BatchGuiIsotopicsByNuclidesWidget::performAnalysis(
 
   const string sessionid = Wt::WApplication::instance()->sessionId();
   auto error_msg = make_shared<string>();
+  // Resolve now, on the session thread: the worker below runs without a `WApplication`, where
+  //  `WString::tr(...)` cannot resolve and would yield the literal "??key??".
+  const string unknown_error_msg = WString::tr( "bgw-unknown-analysis-error" ).toUTF8();
 
   SimpleDialog *waiting_dialog = new SimpleDialog( WString::tr("bgw-performing-work-title"),
                                                     WString::tr("bgw-performing-work-msg") );
@@ -2265,19 +2390,47 @@ void BatchGuiIsotopicsByNuclidesWidget::performAnalysis(
     wApp->triggerUpdate();
   };
 
+  // Parsing the results JSON or rendering the report template can throw; the waiting dialog is
+  //  closed by then, so without this the user would be left with nothing at all.
+  std::function<void(void)> guarded_update_gui_fcn
+      = [update_gui_fcn, error_msg, show_error_dialog, unknown_error_msg]()
+  {
+    try
+    {
+      update_gui_fcn();
+    }catch( const std::exception &e )
+    {
+      *error_msg = e.what();
+      show_error_dialog();
+    }catch( ... )
+    {
+      // As with `do_work_fcn` below: this runs from a posted handler, so anything not derived from
+      //  `std::exception` escaping here would leave the modal dialog up forever.
+      *error_msg = unknown_error_msg;
+      show_error_dialog();
+    }
+  };
+
   std::function<void(void)> do_work_fcn
       = [exemplar_filename, exemplar, exemplar_samples, file_names, input_files_meas,
-         options, summary_results, error_msg, update_gui_fcn, show_error_dialog, sessionid]()
+         options, summary_results, error_msg, guarded_update_gui_fcn, show_error_dialog,
+         unknown_error_msg, sessionid]()
   {
     try
     {
       BatchRelActAuto::run_in_files( exemplar_filename, exemplar, exemplar_samples,
                                      file_names, input_files_meas, options,
                                      summary_results.get() );
-      WServer::instance()->post( sessionid, update_gui_fcn );
-    }catch( std::exception &e )
+      WServer::instance()->post( sessionid, guarded_update_gui_fcn );
+    }catch( const std::exception &e )
     {
       *error_msg = e.what();
+      WServer::instance()->post( sessionid, show_error_dialog );
+    }catch( ... )
+    {
+      // Anything not derived from `std::exception` would otherwise escape this asio handler, and
+      //  the modal "performing work" dialog would stay up forever.
+      *error_msg = unknown_error_msg;
       WServer::instance()->post( sessionid, show_error_dialog );
     }
   };

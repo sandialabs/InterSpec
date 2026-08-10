@@ -166,8 +166,12 @@ void RelEffChart::defineJavaScript()
   
   setJavaScriptMember( "chart", "new RelEffPlot(" + jsRef() + ", " + options + ");");
   
+  // ResizeObserver is Safari 13.1+; on a 13.0 WKWebView an unguarded `new ResizeObserver` throws,
+  //  killing the rest of this script block - including the pending setRelEffData flush below - so
+  //  the chart would render empty with dead interactions.  Degrading to no resize handling there
+  //  is the acceptable fallback.
   setJavaScriptMember( "resizeObserver",
-    "new ResizeObserver(entries => {"
+    "(typeof ResizeObserver === 'undefined') ? null : new ResizeObserver(entries => {"
       "for (let entry of entries) {"
         "if( entry.target && (entry.target.id === '" + id() + "') ){"
           // When we "Clear Session", jsRef() will give a null result temporarily, so we'll protect against that
@@ -178,8 +182,8 @@ void RelEffChart::defineJavaScript()
       "}"
     "});"
   );
-  
-  callJavaScriptMember( "resizeObserver.observe", jsRef() );
+
+  doJavaScript( "{const c=" + jsRef() + "; if(c && c.resizeObserver) c.resizeObserver.observe(c);}" );
   
   // Set dataset colors after chart is initialized
   setRelEffCurveColors();
@@ -411,7 +415,15 @@ std::string RelEffChart::jsonForData(const std::vector<RelEffChartDataset> &data
 std::string RelEffChart::jsonForDataset(const RelEffChartDataset &dataset, bool isFirstDataset)
 {
   char buffer[512] = { '\0' };
-  
+
+  // printf's %g/%f render NaN/Inf as bare `nan`/`inf` tokens - not valid JavaScript - and a single
+  //  such token makes the whole `...setRelEffData(...)` statement a SyntaxError, silently dropping
+  //  the entire chart update (stale/empty chart, and on a first render a dead drag-zoom because
+  //  the mouse-capture rect never gets sized).  So every numeric field goes through this.
+  const auto finite_or = []( const double val, const double fallback ) -> double {
+    return (IsNan(val) || IsInf(val)) ? fallback : val;
+  };
+
   // Start dataset object
   stringstream datasetJson;
   datasetJson << "{";
@@ -432,18 +444,21 @@ std::string RelEffChart::jsonForDataset(const RelEffChartDataset &dataset, bool 
       if(pos == end(dataset.relActsColors))
       {
         snprintf(buffer, sizeof(buffer), "%s{\"nuc\": \"%s\", \"br\": %1.6G}",
-                (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(), line.m_yield);
+                (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(),
+                finite_or(line.m_yield, 0.0));
       }else
       {
-        const double rel_act = pos->second.first;
+        const double rel_act = finite_or( pos->second.first, 0.0 );
         const string &color = pos->second.second;
-        src_counts += rel_act * line.m_yield;
+        src_counts += rel_act * finite_or( line.m_yield, 0.0 );
         if( color.empty() ) //no color assigned to this source; the chart will use the curves own color
           snprintf(buffer, sizeof(buffer), "%s{\"nuc\": \"%s\", \"br\": %1.6G, \"rel_act\": %1.6G}",
-                   (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(), line.m_yield, rel_act );
+                   (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(),
+                   finite_or(line.m_yield, 0.0), rel_act );
         else
           snprintf(buffer, sizeof(buffer), "%s{\"nuc\": \"%s\", \"br\": %1.6G, \"rel_act\": %1.6G, \"color\": \"%s\"}",
-                   (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(), line.m_yield, rel_act, color.c_str() );
+                   (isotopes_json.empty() ? "" : ", "), line.m_isotope.c_str(),
+                   finite_or(line.m_yield, 0.0), rel_act, color.c_str() );
       }
 
       isotopes_json += buffer;
@@ -469,14 +484,16 @@ std::string RelEffChart::jsonForDataset(const RelEffChartDataset &dataset, bool 
     }
     
     // How much of this energy's counts this curve is assigned; < 1 means another rel. eff. curve also has
-    //  gammas here, and the split between them is a model assumption rather than a measurement.
+    //  gammas here, and the split between them is fitted through the attenuation physics / curve shapes
+    //  (constrained by the rest of the spectrum) rather than resolved by this peak itself.
     const double blend_frac = (index < dataset.peakCurveFractions.size())
-                                ? dataset.peakCurveFractions[index] : 1.0;
+                                ? finite_or( dataset.peakCurveFractions[index], 1.0 ) : 1.0;
 
     snprintf(buffer, sizeof(buffer),
             "%s{\"energy\": %.2f, \"mean\": %.2f, \"counts\": %1.7g, \"counts_uncert\": %1.7g,"
             " \"eff\": %1.6g, \"eff_uncert\": %1.6g, \"blend_frac\": %1.4g, \"nuc_info\": ",
-            (njson_entries ? ", " : ""), peak.m_energy, peak.m_mean, peak.m_counts, peak.m_counts_uncert,
+            (njson_entries ? ", " : ""), finite_or(peak.m_energy, 0.0), finite_or(peak.m_mean, 0.0),
+            finite_or(peak.m_counts, 0.0), finite_or(peak.m_counts_uncert, 0.0),
             eff, eff_uncert, blend_frac);
 
     rel_eff_plot_values << buffer;
@@ -518,7 +535,8 @@ std::string RelEffChart::jsonForDataset(const RelEffChartDataset &dataset, bool 
       const OmittedPoint &pt = dataset.omittedPoints[i];
       snprintf( buffer, sizeof(buffer),
                "%s{\"energy\": %.2f, \"fit_counts\": %1.7g, \"expected_counts\": %1.7g, \"srcs\": ",
-               (i ? ", " : ""), pt.energy, pt.fit_counts, pt.expected_counts );
+               (i ? ", " : ""), finite_or(pt.energy, 0.0), finite_or(pt.fit_counts, 0.0),
+               finite_or(pt.expected_counts, 0.0) );
       datasetJson << buffer << pt.sources.jsStringLiteral()
                   << ", \"reason\": " << pt.reason.jsStringLiteral() << "}";
     }
@@ -564,11 +582,13 @@ void RelEffChart::setCssRules()
   InterSpec *interspec = InterSpec::instance();
   assert( interspec );
   std::shared_ptr<const ColorTheme> theme = interspec ? interspec->getColorTheme() : nullptr;
-  
+
   assert( theme );
-  if( !theme )
-    return;
-  
+  // NOTE: a null theme must NOT skip the structural rules below (the app does not load
+  //  RelEffPlot.css) - without e.g. the tooltip's `position: fixed; pointer-events: none;` the
+  //  tooltip lays out in-flow inside an overflow:hidden div and hover appears broken until a
+  //  colorThemeChanged() re-runs this.  Only the theme-color calls at the end need the theme.
+
   WCssStyleSheet &style = wApp->styleSheet();
   
   //m_cssRules[".RelEffPlot"] = style.addRule( ".RelEffPlot", "" );
@@ -589,8 +609,8 @@ void RelEffChart::setCssRules()
                                          " color: #444422;" );
   
   // Points whose counts are shared with another rel. eff. curve are drawn hollow - the split between curves
-  //  is a model assumption rather than a measurement, so such a point is not independent evidence for this
-  //  curve.  See `ObsEff::curve_model_fraction`.
+  //  is fitted through the attenuation physics / curve shapes rather than resolved by the peak itself, so
+  //  such a point is not independent evidence for this curve.  See `ObsEff::curve_model_fraction`.
   rulename = ".RelEffPlot circle.blended";
   if( !m_cssRules.count(rulename) )
     m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlot circle.blended",
@@ -667,14 +687,17 @@ void RelEffChart::setCssRules()
                                          " color: var(--interspec-text-color, #333322);"
                                          " border-color: var(--interspec-border-color, #cccc99);" );
 
-  setLineColor( theme->foregroundLine );
-  setDefaultMarkerColor( theme->backgroundLine );
-  setChartBackgroundColor( theme->spectrumChartBackground );
-  setAxisLineColor( theme->spectrumAxisLines );
-  setTextColor( theme->spectrumChartText );
-  
-  // Update dataset colors when theme changes
-  setRelEffCurveColors();
+  if( theme )
+  {
+    setLineColor( theme->foregroundLine );
+    setDefaultMarkerColor( theme->backgroundLine );
+    setChartBackgroundColor( theme->spectrumChartBackground );
+    setAxisLineColor( theme->spectrumAxisLines );
+    setTextColor( theme->spectrumChartText );
+
+    // Update dataset colors when theme changes
+    setRelEffCurveColors();
+  }//if( theme )
 }//void setCssRules()
 
 

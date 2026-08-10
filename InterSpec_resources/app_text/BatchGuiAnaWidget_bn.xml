@@ -121,8 +121,6 @@ InterSpec থেকে পিকগুলি স্পেকট্রাম ফ�
 
   <message id="bgw-reports-write-custom-per-file-tooltip">এক বা একাধিক স্পেকট্রাম রিপোর্ট টেমপ্লেট ফাইল - প্রতিটি ইনপুট ফাইলের জন্য, নির্দিষ্ট প্রতিটি টেমপ্লেট দিয়ে একটি রিপোর্ট তৈরি করা হবে।</message>
 
-  <message id="bgw-reports-write-custom-summary-tooltip">সমস্ত ইনপুট ফাইলের সারাংশ প্রদান করতে ব্যবহৃত এক বা একাধিক টেমপ্লেট ফাইল।</message>
-
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Bq ইউনিট ব্যবহার করুন</message>
   <message id="bgw-hard-background-sub">হার্ড ব্যাকগ্রাউন্ড বিয়োগ</message>

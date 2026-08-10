@@ -121,8 +121,6 @@ Nilai nol atau negatif berarti tidak ada persyaratan, dan juga tidak ada persyar
   
   <message id="bgw-reports-write-custom-per-file-tooltip">Satu atau lebih file templat laporan spektrum - untuk setiap file input, laporan akan diproduksi dengan setiap templat yang ditentukan.</message>
 
-  <message id="bgw-reports-write-custom-summary-tooltip">Satu atau lebih file templat yang digunakan untuk memberikan ringkasan dari semua file input.</message>
-
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Gunakan satuan Bq</message>
   <message id="bgw-hard-background-sub">Pengurangan latar belakang keras</message>

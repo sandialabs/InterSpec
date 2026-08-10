@@ -11528,9 +11528,12 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 
   if( (spec_type == SpecUtils::SpectrumType::Foreground) && previous && (previous != meas) )
   {
-#if( USE_DB_TO_STORE_SPECTRA )
+#if( USE_DB_TO_STORE_SPECTRA && !BUILD_AS_UNIT_TEST_SUITE )
+    // Not done for the unit-test suite: this posts the DB save to the session on a 25 ms timer, but
+    //  test fixtures destroy the session as soon as the test body returns, so the timer instead
+    //  hits the "session dead" fallback (which asserts).
     saveStateAtForegroundChange( true ); //This function will check "AutoSaveSpectraToDb" pref
-#endif //#if( USE_DB_TO_STORE_SPECTRA )
+#endif //#if( USE_DB_TO_STORE_SPECTRA && !BUILD_AS_UNIT_TEST_SUITE )
     
     // Close Shielding/Source fit Window
     if( m_shieldingSourceFitWindow )

@@ -3,6 +3,9 @@
 # Add a spectrum file (any format SpecUtils reads) and a row here to extend coverage -
 # e.g. known brem spectra, heavily-shielded gamma sources, or x-ray generator spectra.
 #
+# All spectra should live in this repository so CI can run every row; rows whose files are not
+# found are skipped (with a note in the test output) rather than failing the test.
+#
 # Columns (comma separated, '#' starts a comment line):
 #   fore_file        - spectrum file; absolute path, or relative to test_data/AnalystTests/
 #   fore_sample      - integer sample number, 'auto' (first record NOT titled "Background"),
@@ -18,17 +21,19 @@
 #   must_contain     - (optional 9th column) a nuclide symbol that must appear in ConsistentPureBetaNuclides ('-' or absent to skip)
 #
 # fore_file, fore_sample, back_file, back_sample, allowed_verdicts, min_term_keV, max_term_keV, note
-BetaCheck_Sr90_Unsh_DetectiveX_300s.pcf,    auto,     BetaCheck_Sr90_Unsh_DetectiveX_300s.pcf,    auto-bkg, BremLike,             500, 2450, Sr-90 unshielded on HPGe
-BetaCheck_Sr90_Unsh_SamEagleNaI3x3_300s.pcf,auto,     BetaCheck_Sr90_Unsh_SamEagleNaI3x3_300s.pcf,auto-bkg, BremLike,             500, 2450, Sr-90 unshielded on 3x3 NaI
-BetaCheck_Tl204_Unsh_SamEagleNaI3x3_300s.pcf,auto,    BetaCheck_Tl204_Unsh_SamEagleNaI3x3_300s.pcf,auto-bkg, BremLike|Ambiguous,   -,   950,  Tl-204 (Hg K x-rays must not veto; endpoint 763.7)
-BetaCheck_Cs137_Sh_DetectiveX_300s.pcf,     auto,     BetaCheck_Cs137_Sh_DetectiveX_300s.pcf,     auto-bkg, NotBremLike,          -,   -,    Shielded Cs-137: 661.7 peak + Compton structure
-BetaCheck_Cs137_Sh_DetectiveX_300s.pcf,     auto-bkg, BetaCheck_Cs137_Sh_DetectiveX_300s.pcf,     auto-bkg, NoContinuumElevation, -,   -,    Null: background record as foreground
+# 300s .pcf cases; each file holds its own "Background" record(s) alongside the source record.
+BetaCheck/detx_sr90_unshielded.pcf,   auto,     BetaCheck/detx_sr90_unshielded.pcf,   auto-bkg, BremLike,             500, 2450, Sr-90 unshielded on HPGe
+BetaCheck/nai3x3_sr90_unshielded.pcf, auto,     BetaCheck/nai3x3_sr90_unshielded.pcf, auto-bkg, BremLike,             500, 2450, Sr-90 unshielded on 3x3 NaI
+BetaCheck/nai3x3_tl204_unshielded.pcf,auto,     BetaCheck/nai3x3_tl204_unshielded.pcf,auto-bkg, BremLike|Ambiguous,   -,   950,  Tl-204 (Hg K x-rays must not veto; endpoint 763.7)
+BetaCheck/detx_cs137_shielded.pcf,    auto,     BetaCheck/detx_cs137_shielded.pcf,    auto-bkg, NotBremLike,          -,   -,    Shielded Cs-137: 661.7 peak + Compton structure
+BetaCheck/detx_cs137_shielded.pcf,    auto-bkg, BetaCheck/detx_cs137_shielded.pcf,    auto-bkg, NoContinuumElevation, -,   -,    Null: background record as foreground
 #
-# DetectiveX_300s repo-benchmark n42 cases (separate fg/bkg files; see scratch/beta_check_failing_cases.md):
-# question_128/214 were tool false-negatives before the count-quantile fit bound - a trace pile-up
-# tail beyond the beta endpoint was stretching the shape gates.
-../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/question_128.n42, auto, ../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/background.n42, auto-bkg, BremLike,           -, 2450, P-32 shielded (pile-up tail must not veto), P32
-../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/question_214.n42, auto, ../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/background.n42, auto-bkg, BremLike|Ambiguous, -, -,    Y-90 phantom (hard scattered continuum; ambiguous acceptable), Y90
-../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/question_129.n42, auto, ../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/background.n42, auto-bkg, BremLike,           -, 2450, P-32 unshielded
-../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/question_167.n42, auto, ../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/background.n42, auto-bkg, BremLike,           -, 2450, Sr-90 shielded, Sr90
-../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/question_168.n42, auto, ../../../../test_datasets/nuclide_ID/CommonNuclides/DetectiveX_300s/background.n42, auto-bkg, BremLike,           -, 2450, Sr-90 unshielded
+# Detective-X 300s cases, from the nuclide-ID benchmark set (separate fg/bkg files; spectra copied
+# into BetaCheck/, originally question_{128,214,129,167,168}.n42 + background.n42).
+# The P-32 shielded and Y-90 cases were tool false-negatives before the count-quantile fit bound -
+# a trace pile-up tail beyond the beta endpoint was stretching the shape gates.
+BetaCheck/detx_p32_shielded.n42,   auto, BetaCheck/detx_background.n42, auto-bkg, BremLike,           -, 2450, P-32 shielded (pile-up tail must not veto), P32
+BetaCheck/detx_y90_phantom.n42,    auto, BetaCheck/detx_background.n42, auto-bkg, BremLike|Ambiguous, -, -,    Y-90 phantom (hard scattered continuum; ambiguous acceptable), Y90
+BetaCheck/detx_p32_unshielded.n42, auto, BetaCheck/detx_background.n42, auto-bkg, BremLike,           -, 2450, P-32 unshielded
+BetaCheck/detx_sr90_shielded.n42,  auto, BetaCheck/detx_background.n42, auto-bkg, BremLike,           -, 2450, Sr-90 shielded, Sr90
+BetaCheck/detx_sr90_unshielded.n42,auto, BetaCheck/detx_background.n42, auto-bkg, BremLike,           -, 2450, Sr-90 unshielded (benchmark set; independent of the .pcf case above)

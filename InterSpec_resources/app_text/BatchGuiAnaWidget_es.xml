@@ -121,8 +121,6 @@ Un valor cero o negativo significará sin requerimiento, y tampoco requerimiento
   
   <message id="bgw-reports-write-custom-per-file-tooltip">Uno o más archivos de plantilla de reporte de espectro - para cada archivo de entrada, se producirá un reporte con cada plantilla especificada.</message>
 
-  <message id="bgw-reports-write-custom-summary-tooltip">Uno o más archivos de plantilla usados para proporcionar un resumen de todos los archivos de entrada.</message>
-
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Usar unidades Bq</message>
   <message id="bgw-hard-background-sub">Sustracción dura de fondo</message>

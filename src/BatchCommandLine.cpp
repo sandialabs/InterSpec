@@ -33,6 +33,7 @@
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/BatchPeak.h"
+#include "InterSpec/BatchSampleSelect.h"
 #include "InterSpec/BatchActivity.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/UserPreferences.h"
@@ -177,6 +178,7 @@ int run_batch_command( int argc, char **argv )
       double peak_stat_threshold = 0.0, peak_hypothesis_threshold = 0.0;
       vector<std::string> input_files, report_templates, summary_report_templates;
       string ini_file_path, exemplar_path, output_path, exemplar_samples, background_sub_file, background_samples, template_include_dir;
+      string multi_sample_handling_str;
       
       po::options_description peak_cl_desc("Allowed batch peak-fit, and activity-fit options", term_width, min_description_length);
       peak_cl_desc.add_options()
@@ -238,8 +240,11 @@ int run_batch_command( int argc, char **argv )
        "'peak-stat-threshold' requirement."
        )
       ("write-n42-with-results", po::value<bool>(&write_n42_with_results)->implicit_value(true)->default_value(false),
-       "Adds the fit peaks to the input spectrum file , and then saves as a N42."
-       " You must specify 'output_path' if you specify this option; also, will refuse to overwrite"
+       "Adds the fit peaks to the input spectrum file, and then saves as a N42."
+       " For activity/shielding fits, the fit source/shielding model, and the detector response"
+       " function used, are also added, so the file can be opened in InterSpec, or used as the"
+       " exemplar of a later batch fit."
+       " You must specify 'out-dir' if you specify this option; also, will refuse to overwrite"
        " existing files."
        )
       ("overwrite-output-files", po::value<bool>(&overwrite_output_files)->implicit_value(true)->default_value(false),
@@ -253,6 +258,17 @@ int run_batch_command( int argc, char **argv )
        )
       ("concatenate-to-n42", po::value<bool>(&concatenate_to_n42)->implicit_value(true)->default_value(false),
        "Create a N42 file that has spectra and peaks fit from all input files."
+       )
+      ("multi-sample-handling", po::value<string>(&multi_sample_handling_str)->default_value("auto"),
+       "How to handle input files that contain more than one candidate foreground spectrum"
+       " (i.e., more than one sample number not marked background, intrinsic activity, or"
+       " calibration).  Passthrough/search-mode files are never affected.\n\t"
+       "\"auto\" - (default) previous behaviour; a file is skipped with a warning if which"
+       " spectrum to use is ambiguous.\n\t"
+       "\"each\" - analyze every candidate foreground sample separately, as if each was its own"
+       " input file; output file names gain a \"_sampleN\" suffix.\n\t"
+       "\"sum\" - sum all candidate foreground samples into a single spectrum and perform one"
+       " analysis; output file names gain a \"_summed\" suffix."
        )
       ("print", po::value<bool>(&output_stdout)->implicit_value(true)->default_value(false),
        "Print results to stdout."
@@ -524,6 +540,8 @@ int run_batch_command( int argc, char **argv )
       options.create_csv_output = create_csv_output;
       options.create_json_output = create_json_output;
       options.concatenate_to_n42 = concatenate_to_n42;
+      options.multi_sample_handling
+                = BatchSampleSelect::multi_sample_handling_from_str( multi_sample_handling_str );
       options.output_dir = output_path;
       options.background_subtract_file = background_sub_file;
       options.background_subtract_samples = background_sample_nums;
@@ -572,6 +590,7 @@ int run_batch_command( int argc, char **argv )
       string background_subtract_str;
       vector<string> input_files, report_templates, summary_report_templates;
       bool to_stdout, write_n42_with_results, overwrite_output_files, create_json_output;
+      string iso_multi_sample_handling_str;
 
       po::options_description iso_cl_desc("Allowed batch isotopics-by-nuclides options", term_width, min_description_length);
       iso_cl_desc.add_options()
@@ -597,6 +616,16 @@ int run_batch_command( int argc, char **argv )
         "Write the JSON used by the report templates to a file.")
       ("print", po::value<bool>(&to_stdout)->implicit_value(true)->default_value(false),
         "Print non-HTML rendered report templates to stdout.")
+      ("multi-sample-handling", po::value<string>(&iso_multi_sample_handling_str)->default_value("auto"),
+        "How to handle input files that contain more than one candidate foreground spectrum"
+        " (i.e., more than one sample number not marked background, intrinsic activity, or"
+        " calibration).  Passthrough/search-mode files are never affected.\n\t"
+        "\"auto\" - (default) previous behaviour; a file is skipped with a warning if which"
+        " spectrum to use is ambiguous.\n\t"
+        "\"each\" - analyze every candidate foreground sample separately, as if each was its own"
+        " input file; output file names gain a \"_sampleN\" suffix.\n\t"
+        "\"sum\" - sum all candidate foreground samples into a single spectrum and perform one"
+        " analysis; output file names gain a \"_summed\" suffix.")
       ("back-sub-file", po::value<string>(&background_sub_file)->default_value(""),
         "Path to a background spectrum file.  Overrides any background stored in the exemplar"
         " and forces background subtraction on.")
@@ -743,6 +772,8 @@ int run_batch_command( int argc, char **argv )
       options.template_include_dir = template_include_dir;
       options.background_subtract_file = background_sub_file;
       options.background_subtract_samples = background_sample_nums;
+      options.multi_sample_handling
+            = BatchSampleSelect::multi_sample_handling_from_str( iso_multi_sample_handling_str );
 
       // DRF override (loaded via the same helper used by batch-act-fit)
       options.drf_override = BatchActivity::init_drf_from_name( drf_file, drf_name );

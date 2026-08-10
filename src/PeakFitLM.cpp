@@ -1342,8 +1342,14 @@ struct PeakFitDiffCostFunction
 
       if( fit_parameter[skew_index] )
       {
+        // Floor the window at a quarter of the parameters full range, so a zero starting value
+        //  doesnt collapse it to a point - see `LinearProblemSubSolveChi2Fcn::addSkewParameters`.
+        const double par_range = upper_values[skew_index] - lower_values[skew_index];
         lower_bounds[par_index] = std::max( lower_values[skew_index], 0.5*starting_value[skew_index] );
-        upper_bounds[par_index] = std::min( upper_values[skew_index], 1.5*fabs(starting_value[skew_index]) );
+        upper_bounds[par_index] = std::min( upper_values[skew_index],
+                              std::max( 1.5*fabs(starting_value[skew_index]), 0.25*par_range ) );
+
+        assert( lower_bounds[par_index] < upper_bounds[par_index] );
       }else
       {
         constant_parameters.push_back( static_cast<int>(par_index) );

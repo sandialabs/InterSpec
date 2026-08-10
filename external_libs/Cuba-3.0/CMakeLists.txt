@@ -35,6 +35,11 @@ set( CUBA_CUHRE_SRCS src/cuhre/Cuhre.c src/common/WorkerIni.c )
 SET_SOURCE_FILES_PROPERTIES( ${CUBA_CUHRE_SRCS} PROPERTIES LANGUAGE C)
 add_library(Cuba-3.0 STATIC ${CUBA_CUHRE_SRCS})
 set_target_properties( Cuba-3.0 PROPERTIES COMPILE_FLAGS ${BUILD_FLAGS})
+
+# GCC 15 (and Clang 19+) default to C23, where `bool`, `true` and `false` are keywords, so the
+#  `typedef enum { false, true } bool;` in src/common/stddecl.h no longer compiles.  Pin the
+#  standard on this target so the vendored code does not depend on the compiler default.
+set_target_properties( Cuba-3.0 PROPERTIES C_STANDARD 17 C_STANDARD_REQUIRED YES C_EXTENSIONS ON )
 target_include_directories( Cuba-3.0 PUBLIC ${CMAKE_CURRENT_SOURCE_DIR} PRIVATE src/common src/cuhre )
 
 
