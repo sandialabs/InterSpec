@@ -2221,7 +2221,11 @@ CAMInputOutput::CnfGenieExtras GenieCnfOptionsWidget::currentExtras() const
   {
     const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = spec->peaks( m_samples );
     if( peaks && !peaks->empty() )
-      extras.low_tail_cal = fit_genie_low_tail_cal( *peaks );
+    {
+      const std::optional<pair<float,float>> tail_cal = fit_genie_low_tail_cal( *peaks );
+      if( tail_cal )
+        extras.low_tail_cal.set( tail_cal->first, tail_cal->second );
+    }
   }
 
   if( writeFwhm() )
@@ -2231,7 +2235,10 @@ CAMInputOutput::CnfGenieExtras GenieCnfOptionsWidget::currentExtras() const
     //  made (see `canExport()`), so this always has something real to write.
     const GenieFwhmSource source = currentFwhmSource();
     if( (source != GenieFwhmSource::FromPeaks) || m_have_manual_fwhm )
-      extras.shape_cal = currentFwhmCoefficients();
+    {
+      const pair<float,float> coefs = currentFwhmCoefficients();
+      extras.shape_cal.set( coefs.first, coefs.second );
+    }
   }//if( writeFwhm() )
 
   if( writeEfficiency() && spec )
