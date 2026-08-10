@@ -1098,9 +1098,12 @@ double cylinder_line_intersection( const double radius, const double half_length
 {
   // See #exit_point_of_sphere_z for why these are forwarders.  #cylinder_line_intersection_imp is a
   //  line-for-line match of the body that used to be here - the contract asserts and the
-  //  DEBUG_RAYTRACE_CALCS tracing moved with it - so this is bit-identical for T=double.  It
-  //  contains no throw expressions, so the noexcept contract still holds (a noexcept function may
-  //  call a non-noexcept callee; the only consequence would be terminate() if one ever threw).
+  //  DEBUG_RAYTRACE_CALCS tracing moved with it - so this is bit-identical for T=double.  Outside
+  //  that tracing it is pure arithmetic with no throw expressions, so the noexcept contract holds (a
+  //  noexcept function may call a non-noexcept callee; the only consequence would be terminate() if
+  //  one ever threw).  A DEBUG_RAYTRACE_CALCS build is the exception: it locks a mutex and writes to
+  //  cout in there, either of which can in principle throw - acceptable, since that switch
+  //  static_asserts against NDEBUG and is developer-only.
   return cylinder_line_intersection_imp<double>( radius, half_length, source, detector,
                                                  direction, exit_point );
 }//double cylinder_line_intersection(...)
@@ -1376,7 +1379,10 @@ double rectangle_exit_location( const double half_width, const double half_heigh
   //  +DBL_MAX instead of forming (intersect-source)*(1/norm), which fixes the two cases where the
   //  old body evaluated 0*DBL_MAX == 0 and returned a spurious zero chord - a zero half-extent, and
   //  a source sitting exactly on a face the ray runs parallel to.  Both are pinned in
-  //  test_GeometryLegacyParity.cpp.  Throw-free, so the noexcept contract still holds.
+  //  test_GeometryLegacyParity.cpp.  Note it is also one rounding different from the retired body
+  //  everywhere else - `(intersect - source)/norm` rather than `(intersect - source)*(1/norm)` -
+  //  which moves every rectangular chord by at most 1 ulp.  Throw-free, so the noexcept contract
+  //  still holds.
   return rectangle_exit_location_imp<double>( half_width, half_height, half_depth,
                                               source, detector, exit_point );
 }//rectangle_exit_location(...)
@@ -1393,7 +1399,7 @@ bool rectangle_intersections( const double half_width, const double half_height,
   // See #exit_point_of_sphere_z for why these are forwarders.  #rectangle_intersections_imp is an
   //  algorithmically identical transcription of the body that used to be here (it did NOT receive
   //  the zero-extent fix its sibling did - see the TODO on it), so this is bit-identical for
-  //  T=double.  Throw-free, so the noexcept contract still holds.
+  //  T=double.  Pure arithmetic, so the noexcept contract still holds.
   return rectangle_intersections_imp<double>( half_width, half_height, half_depth,
                                               source, detector, enter_point, exit_point );
 }//rectangle_intersections( ... )

@@ -50,6 +50,10 @@
      before producing any comparison.
    - The `#if( DEBUG_RAYTRACE_CALCS )` tracing blocks and the stdout mutex dropped.
    - `CylExitDir` qualified as `GammaInteractionCalc::CylExitDir`.
+   - Two pieces of dead code in `rectangle_exit_location` that existed only to serve the removed
+     asserts: the `#ifndef NDEBUG const double src_copy[3] = {...}; #endif` snapshot (otherwise
+     unused once the asserts are comments), and the trailing `assert(0); return 0.0;` after the
+     if/else-if/else (unreachable - every branch returns).  Neither carries arithmetic.
  Every other line, including the TODOs, is verbatim - they are part of the frozen record.
 
  `distance` is not copied (it is a trivially identical three-subtraction Euclidean norm), and

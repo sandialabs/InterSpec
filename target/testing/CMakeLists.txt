@@ -435,11 +435,6 @@ add_test( NAME TGadrasShieldScatter
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
-# Standalone driver: dump GADRAS shield transmission + scatter continuum for a
-# list of (energy, Z, areal-density) requests (cascade-summing shield benchmark).
-add_executable( gadras_shield_dump gadras_shield_dump.cpp )
-target_link_libraries( gadras_shield_dump PRIVATE InterSpecLib )
-
 # ./test_offlineAnalysis.cpp
 #target_link_libraries(test_offlineAnalysis PUBLIC 
 #            debug "${Wt_TEST_DEBUG_LIBRARY}"

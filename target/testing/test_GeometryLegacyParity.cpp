@@ -48,6 +48,12 @@
  `switch` in ShieldingSourceChi2Fcn::energy_chi_contributions being replaced by
  detector_geom_from_config + center_ray_exit_distance).
 
+ Case 9 instantiates the templates at `ceres::Jet` and requires the scalar lane to reproduce the
+ double answer - the whole premise of collapsing the two copies is that both types run the same
+ code, and nothing else here exercises that.  Case 10 covers the two caller contracts no sweep
+ reaches: passing the same array as source and exit point, and exit_point_of_sphere_z's
+ input-validation exits.
+
  There is deliberately no golden-value file here: every number is either an agreement between two
  independent implementations or an assertion about a geometric invariant, so nothing needs
  re-recording when a compiler changes.
@@ -668,13 +674,21 @@ BOOST_AUTO_TEST_CASE( SphereExitBothVsReference )
 //  vanishing radius.
 //
 //  A CORRECTION TO THE MIGRATION'S ORIGINAL PREMISE, measured here rather than assumed: the
-//  radius-scaled solver is NOT more accurate than the legacy closed form in this regime - for a
-//  transverse near-surface source it is consistently 1-2 orders of magnitude LESS accurate.  The
-//  reason is that #exit_point_of_sphere_z_imp forms `q = source/sphere_rad` first and the scaled
-//  solver then evaluates `G = (q.u)^2 + 1 - |q|^2`; as |q| -> 1 the `1 - |q|^2` term cancels exactly
-//  as badly as the `S^2 - r^2` it replaced, and the information was already lost in the division.
-//  (Factoring it as `(S-r)*(S+r)` - what GeomRef::reference_sphere_exit does - is what actually
-//  avoids the cancellation, and neither production formulation does that.)
+//  radius-scaled solver is NOT more accurate than the legacy closed form in this regime - but it is
+//  not meaningfully worse either.  The two trade wins across the grid below (legacy is the more
+//  accurate one perhaps twice as often), and their *worst* errors are within a few percent of each
+//  other: both ~1e-13 of the sphere radius.  The worst case for either is a transverse near-surface
+//  source, where the loser is a small multiple - not orders of magnitude - worse.  The
+//  BOOST_TEST_MESSAGE at the end of this case prints the measured numbers; read them rather than
+//  trusting this paragraph.
+//
+//  Neither formulation avoids the cancellation that sets that floor.  #exit_point_of_sphere_z_imp
+//  forms `q = source/sphere_rad` first and the scaled solver then evaluates
+//  `G = (q.u)^2 + 1 - |q|^2`; as |q| -> 1 the `1 - |q|^2` term cancels just as badly as the
+//  `S^2 - r^2` it replaced, and some of the information was already lost in the division.  Factoring
+//  it as `(S-r)*(S+r)` - what GeomRef::reference_sphere_exit does - is what actually avoids the
+//  cancellation, which is why that reference is ~100x more accurate than either production form even
+//  though `long double` is only binary64 here.
 //
 //  The migration is still right, because what the scaled form was written for is the ceres::Jet
 //  DERIVATIVE staying finite as sphere_rad -> 0 (see its comment in GammaInteractionCalc_imp.hpp,
@@ -925,3 +939,192 @@ BOOST_AUTO_TEST_CASE( CenterRayChordVsHandBuiltDetector )
         " to still return 0 for a zero-radius cylinder." );
   }
 }//BOOST_AUTO_TEST_CASE( CenterRayChordVsHandBuiltDetector )
+
+
+// ------------------------------------------------------------------------------------------------
+//  Case 9 - the `T = ceres::Jet` instantiation.  The point of collapsing the double bodies onto the
+//  templates is that both types run the *same* code, so the contract asserts and the
+//  DEBUG_RAYTRACE_CALCS tracing now cover the Ceres path too.  Nothing above actually instantiates
+//  a template at Jet, so this case does: the scalar lane must reproduce the double answer, and the
+//  derivative lane must stay finite.  (On a Debug build this is also what runs the newly-ported
+//  asserts against Jet arguments.)
+// ------------------------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE( TemplatesAgreeAtJetAndDouble )
+{
+  typedef ceres::Jet<double,1> Jet1;
+
+  auto seeded = []( const double v ) -> Jet1 { Jet1 j(v); j.v[0] = 1.0; return j; };
+  auto plain  = []( const double v ) -> Jet1 { return Jet1(v); };
+
+  Mismatch mm;
+  int num_checked = 0;
+
+  // --- cylinder ---
+  {
+    const double radius = 6.35, half_len = 106.68;
+    const double src[3] = { 2.0, -1.5, 20.0 };
+    const double det[3] = { 30.0, -40.0, 500.0 };
+
+    const Jet1 j_src[3] = { plain(src[0]), plain(src[1]), plain(src[2]) };
+    const Jet1 j_det[3] = { plain(det[0]), plain(det[1]), plain(det[2]) };
+
+    for( const CylExitDir dir : { CylExitDir::TowardDetector, CylExitDir::AwayFromDetector } )
+    {
+      double d_pt[3];
+      const double d_dist = cylinder_line_intersection( radius, half_len, src, det, dir, d_pt );
+
+      Jet1 j_pt[3];
+      const Jet1 j_dist = cylinder_line_intersection_imp<Jet1>( seeded(radius), plain(half_len),
+                                                                j_src, j_det, dir, j_pt );
+
+      const std::string ctx = std::string("jet cyl ")
+                              + ((dir == CylExitDir::TowardDetector) ? "toward" : "away");
+      const double j_pt_a[3] = { j_pt[0].a, j_pt[1].a, j_pt[2].a };
+      mm.check_ray( d_dist, d_pt, j_dist.a, j_pt_a, sm_bitwise_tol, ctx );
+      BOOST_CHECK_MESSAGE( std::isfinite( j_dist.v[0] ),
+                           ctx << ": d(dist)/d(radius) is not finite (" << j_dist.v[0] << ")" );
+      ++num_checked;
+    }//for( each direction )
+  }
+
+  // --- rectangle exit ---
+  {
+    const double half[3] = { 2.54, 2.54, 15.24 };
+    const double src[3] = { 0.5, -1.0, 3.0 };
+    const double det[3] = { 0.0, 0.0, 100.0 };
+
+    const Jet1 j_src[3] = { plain(src[0]), plain(src[1]), plain(src[2]) };
+    const Jet1 j_det[3] = { plain(det[0]), plain(det[1]), plain(det[2]) };
+
+    double d_pt[3];
+    const double d_dist = rectangle_exit_location( half[0], half[1], half[2], src, det, d_pt );
+
+    Jet1 j_pt[3];
+    const Jet1 j_dist = rectangle_exit_location_imp<Jet1>( plain(half[0]), plain(half[1]),
+                                                seeded(half[2]), j_src, j_det, j_pt );
+
+    const double j_pt_a[3] = { j_pt[0].a, j_pt[1].a, j_pt[2].a };
+    mm.check_ray( d_dist, d_pt, j_dist.a, j_pt_a, sm_bitwise_tol, "jet rect-exit" );
+
+    // The ray leaves through the +z face, so the chord is t = (half_depth - source_z)/norm_z and the
+    //  derivative w.r.t. the half-depth is exactly 1/norm_z.  (It is 1 only for a ray exactly along
+    //  z - i.e. the on-axis center ray center_ray_exit_distance uses - and this source is off-axis,
+    //  which is the point: it checks the derivative actually flows through the division.)
+    const double ray[3] = { det[0]-src[0], det[1]-src[1], det[2]-src[2] };
+    const double ray_len = std::sqrt( ray[0]*ray[0] + ray[1]*ray[1] + ray[2]*ray[2] );
+    BOOST_CHECK_CLOSE( j_dist.v[0], ray_len/ray[2], 1.0E-9 );
+    ++num_checked;
+  }
+
+  // --- sphere ---
+  {
+    const double S = 100.0, R = 2000.0;
+    const double src[3] = { 10.0, -20.0, 30.0 };
+    const Jet1 j_src[3] = { plain(src[0]), plain(src[1]), plain(src[2]) };
+
+    for( const bool positive : { true, false } )
+    {
+      double d_pt[3];
+      const double d_dist = exit_point_of_sphere_z( src, d_pt, S, R, positive );
+
+      Jet1 j_pt[3];
+      const Jet1 j_dist = exit_point_of_sphere_z_imp<Jet1>( j_src, j_pt, seeded(S), plain(R),
+                                                            positive );
+
+      const std::string ctx = std::string("jet sphere ") + (positive ? "forward" : "backward");
+      const double j_pt_a[3] = { j_pt[0].a, j_pt[1].a, j_pt[2].a };
+      mm.check_ray( d_dist, d_pt, j_dist.a, j_pt_a, sm_bitwise_tol, ctx );
+      BOOST_CHECK_MESSAGE( std::isfinite( j_dist.v[0] ),
+                           ctx << ": d(dist)/d(radius) is not finite (" << j_dist.v[0] << ")" );
+      ++num_checked;
+    }//for( each root )
+  }
+
+  BOOST_TEST_MESSAGE( "TemplatesAgreeAtJetAndDouble: " << num_checked << " double/Jet pairs" );
+  BOOST_CHECK_EQUAL( mm.count, 0 );
+}//BOOST_AUTO_TEST_CASE( TemplatesAgreeAtJetAndDouble )
+
+
+// ------------------------------------------------------------------------------------------------
+//  Case 10 - the two contracts the production callers rely on but no sweep above exercises: passing
+//  the same array as source and exit point (DistributedSrcCalc::eval_spherical and eval_rect both
+//  do this), and exit_point_of_sphere_z's three input-validation exits.
+// ------------------------------------------------------------------------------------------------
+BOOST_AUTO_TEST_CASE( AliasingAndValidationContracts )
+{
+  // --- exit_point == source.  eval_spherical does exit_point_of_sphere_z(src,src,...) and
+  //     eval_rect does rectangle_exit_location(...,exit_point,det,exit_point). ---
+  {
+    const double S = 100.0, R = 2000.0;
+    const double src[3] = { 10.0, -20.0, 30.0 };
+
+    double sep_pt[3];
+    const double sep_d = exit_point_of_sphere_z( src, sep_pt, S, R );
+
+    double alias[3] = { src[0], src[1], src[2] };
+    const double alias_d = exit_point_of_sphere_z( alias, alias, S, R );
+
+    BOOST_CHECK_EQUAL( alias_d, sep_d );
+    for( int i = 0; i < 3; ++i )
+      BOOST_CHECK_EQUAL( alias[i], sep_pt[i] );
+  }
+
+  {
+    const double half[3] = { 2.54, 2.54, 15.24 };
+    const double src[3] = { 0.5, -1.0, 3.0 };
+    const double det[3] = { 0.0, 0.0, 100.0 };
+
+    double sep_pt[3];
+    const double sep_d = rectangle_exit_location( half[0], half[1], half[2], src, det, sep_pt );
+
+    double alias[3] = { src[0], src[1], src[2] };
+    const double alias_d = rectangle_exit_location( half[0], half[1], half[2], alias, det, alias );
+
+    BOOST_CHECK_EQUAL( alias_d, sep_d );
+    for( int i = 0; i < 3; ++i )
+      BOOST_CHECK_EQUAL( alias[i], sep_pt[i] );
+  }
+
+  // --- exit_point_of_sphere_z input validation.  The refactor moved these into the template and
+  //     folded the offending values into the exception message instead of printing them to cerr. ---
+  {
+    const double src[3] = { 0.0, 0.0, 1.0 };
+    double pt[3];
+
+    // Detector inside the sphere.
+    BOOST_CHECK_THROW( exit_point_of_sphere_z( src, pt, 10.0, 5.0 ), std::runtime_error );
+
+    // The values reach whoever catches it (this is what replaced the cerr diagnostics).
+    try
+    {
+      exit_point_of_sphere_z( src, pt, 10.0, 5.0 );
+      BOOST_ERROR( "exit_point_of_sphere_z(obs_dist < sphere_rad) did not throw" );
+    }catch( const std::runtime_error &e )
+    {
+      const std::string msg = e.what();
+      BOOST_CHECK_MESSAGE( msg.find("obs_dist=") != std::string::npos, "message lacks obs_dist: " << msg );
+      BOOST_CHECK_MESSAGE( msg.find("sphere_rad=") != std::string::npos, "message lacks sphere_rad: " << msg );
+    }
+
+    // Source outside the sphere by more than the rounding tolerance.
+    const double way_out[3] = { 0.0, 0.0, 20.0 };
+    BOOST_CHECK_THROW( exit_point_of_sphere_z( way_out, pt, 10.0, 100.0 ), std::runtime_error );
+
+    // ...but a source *just* outside is treated as a rounding error: zero chord, exit == source.
+    const double S = 10.0;
+    const double just_out[3] = { 0.0, 0.0, S*(1.0 + 1.0E-8) };
+    double near_pt[3] = { -1.0, -1.0, -1.0 };
+    const double near_d = exit_point_of_sphere_z( just_out, near_pt, S, 100.0 );
+    BOOST_CHECK_EQUAL( near_d, 0.0 );
+    for( int i = 0; i < 3; ++i )
+      BOOST_CHECK_EQUAL( near_pt[i], just_out[i] );
+  }
+
+  // --- the distance() forwarder, which nothing else covers ---
+  {
+    const double a[3] = { 1.0, 2.0, 3.0 };
+    const double b[3] = { 4.0, 6.0, 3.0 };
+    BOOST_CHECK_EQUAL( distance( a, b ), 5.0 );
+    BOOST_CHECK_EQUAL( distance( a, a ), 0.0 );
+  }
+}//BOOST_AUTO_TEST_CASE( AliasingAndValidationContracts )

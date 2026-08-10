@@ -1053,6 +1053,18 @@ bool rectangle_intersections_imp( const T &half_width, const T &half_height,
 
  Reduces exactly to the on-axis layer dimension (radius / half-length / half-depth)
  when the detector is on the geometrys axis.
+
+ PRECONDITION: `outer_dims` are non-negative.  The result is deliberately *signed and linear*
+ through zero rather than clamped - that is exactly what keeps the ceres::Jet derivative alive at
+ the `dimLowerBound = 0` bound the optimizer is allowed to sit on, and test_ShieldingDimLimit's
+ chord cases sweep a dimension down through 0 to a small negative to pin it (they require
+ d(chord)/d(dim) == 1 at and just past zero, so a `max(0,...)` here would be a regression, not a
+ fix).  The cost is that a negative along-ray dimension yields a negative chord, and a caller that
+ turns the chord into `exp(-mu*chord)` would get amplification instead of attenuation.  That is
+ unreachable from the application - shielding dimension inputs validate against a positive-only
+ regex (PhysicalUnits::sm_distanceUncertaintyUnitsOptionalRegex), and fitted dimensions are bounded
+ to [dimLowerBound >= 0, dim_fit_upper] - so the guard belongs at any *new* caller that cannot make
+ that promise, not here.
  */
 template<typename T>
 T center_ray_exit_distance( const GeometryType geometry,
