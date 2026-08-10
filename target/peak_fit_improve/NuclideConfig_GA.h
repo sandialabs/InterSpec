@@ -141,7 +141,7 @@ constexpr double sm_background_fit_penalty_per_spectrum_cap = 30.0;
  it was impossible.  It is now scored just above the total-miss ceiling (a small premium so an
  outright error is still ranked slightly worse than a graceful empty).  Failure RATE is not lost:
  the per-spectrum TSV emits the status enum, so a failure-prone config stays visible without a cliff
- that swamps the accuracy signal (the two-axis view of GrossScoring_Review.md R2).
+ that swamps the accuracy signal (the two-axis view of scratch/peak_fit_improve/GrossScoring_Review.md R2).
  TODO: normalize per-spectrum costs by expected-peak count so multi-line spectra do not dominate the
  summed objective; the failure penalty would then move to that normalized scale.
  [gross-scoring review R2, 2026-07-18] */

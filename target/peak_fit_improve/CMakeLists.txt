@@ -82,16 +82,3 @@ if( CMAKE_GENERATOR STREQUAL "Xcode" )
     XCODE_SCHEME_WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
   )
 endif( CMAKE_GENERATOR STREQUAL "Xcode" )
-
-
-add_executable( Eu152BackgroundDebug Eu152BackgroundDebug.cpp )
-target_link_libraries( Eu152BackgroundDebug PRIVATE InterSpecLib )
-target_include_directories( Eu152BackgroundDebug PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" )
-
-add_executable( NuclideFitDebug NuclideFitDebug.cpp )
-target_link_libraries( NuclideFitDebug PRIVATE InterSpecLib )
-target_include_directories( NuclideFitDebug PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" )
-
-add_executable( SnipContinuumPlots SnipContinuumPlots.cpp )
-target_link_libraries( SnipContinuumPlots PRIVATE InterSpecLib )
-target_include_directories( SnipContinuumPlots PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" )

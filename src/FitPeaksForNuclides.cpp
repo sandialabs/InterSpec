@@ -4991,7 +4991,7 @@ std::vector<InterfererCandidate> find_strong_unmodeled_interferers(
       for( const StrongNormGammaLine &line : sk_strong_norm_gamma_lines )
         check_interferer_line( es, src_single_line, line.energy, line.parent_symbol );
       // NOTE: ambient (Cs137/Co60) sweep temporarily disabled - it destabilized the {K40,Eu152}
-      // joint fit (0 peaks); under investigation.  See below and REVIEW_FINDINGS.md.
+      // joint fit (0 peaks); under investigation.  See below and scratch/peak_fit_improve/REVIEW_FINDINGS.md.
       // for( const StrongNormGammaLine &line : sk_ambient_interferer_lines )
       //   check_interferer_line( es, src_single_line, line.energy, line.parent_symbol );
     }
