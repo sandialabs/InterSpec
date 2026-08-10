@@ -2095,3 +2095,1011 @@ Final verification on this exact build:
 - full `test_fitPeaksForSources` with developer checks: 47/47 passed, `No errors detected`
   (`/private/tmp/shielded-source-recovery-roi-final13/full_tests.out` and `full_tests.err`);
 - `git diff --check`: clean; nothing staged or committed.
+
+## Near-empty Pu/U source-only investigation (ac3b8e27, 2026-07-21)
+
+This is an evidence-only investigation.  No production code change was retained.  All new artifacts
+are under `/private/tmp/near-empty-pu-u-ac3b8e27/`; no artifact was added to Git.
+
+### Frozen reproduction
+
+The starting tracked commit was `ac3b8e276cdb4a3a1612e6e6f8c7aefd79b4886d`.
+`target/peak_fit_improve/build_vscode` was rebuilt before evaluation.  The source-only evaluator used
+the frozen E000R HPGe genes
+`HPGE-DETX-BAL-300-BG-R6OFF-E000R-EXTENT/diagnostic/HPGe_default_genes.tsv`
+(SHA-256 `39b51471d5cad9c33afdc10999a4c21ba934806eea70b21242527b495bae7538`), one evaluator
+thread, supplied compact long background, `--rel-eff-chi2-cap-mode fixed --rel-eff-chi2-cap-value 25`,
+and explicit `--disable-auto-interferer-fit`.
+
+The five-case result was byte-identical on two independent evaluator runs and reproduced the frozen
+full-corpus rows exactly:
+
+| spectrum | definite misses | fitted / observable | max ROI FWHM | scalar cost |
+| --- | ---: | ---: | ---: | ---: |
+| `Pu239_Sh_100g` | 18 | 2 / 0 | 9.24 | 5.000 |
+| `Pu238_Sh` | 5 | 2 / 2 | 2.88 | 0.730 |
+| `U235_Unsh_0200` | 3 | 3 / 1 | 8.94 | 4.871 |
+| `U235_Unsh_0300` | 2 | 5 / 2 | 7.97 | -0.687 |
+| `U235_Unsh_1000` | 2 | 11 / 4 | 9.48 | -4.295 |
+
+Focused gallery and TSV: `baseline/five_gallery/gallery.html` and `results.tsv`.  The gallery explicitly
+labels supplied long-background subtraction and R6-disabled source-only mode.  Its representation audit
+and the detailed traces show that the nominal `Success` values are practical failures; scalar reward and
+one/few retained peaks do not imply representative requested-source coverage.
+
+### Trace evidence and loss stage
+
+Per-spectrum default-config debug traces are in `traces/`; an exact frozen-E000R, one-thread trace for
+all five is `exact_traces/Pu239_Sh_100g/exact_trace.out`.  A temporary debug-only bridge was used to
+emit that trace from `NuclideConfigEval`, then removed before this record was written.  The existing
+`NuclideFitDebug` was also run independently for Pu239, Pu238, and U235 with supplied compact background
+and `--disable-interferer`; it intentionally uses `default_config(High)`, so it was used to inspect the
+same mechanics, not to substitute for the frozen-gene reproduction.
+
+The common mechanism is not absence of measured structure or supplied-background scaling.  Manual
+matching finds data-supported requested-source anchors, but the rel-eff/activity solve can collapse after
+initial fitting.  The next clustering pass then predicts effectively zero counts for the requested isotope:
+the same lines fail both the 15-count rail and the significance test, which removes their ROIs and makes
+the collapse self-reinforcing.  For `Pu239_Sh_100g`, the final solved relative activities include
+`Pu239=0.002865` (activity for clustering `0.8594` over 300 s) while a generic Pu component is
+`7.641e4` (activity for clustering `2.292e7`).  Thus the visible requested Pu239 structure is pruned
+as zero-prediction lines.  The trace records 18 definite misses, two public fitted peaks, and zero
+observable peaks; it is not a legitimate empty.
+
+The U cases exhibit the same unstable low-energy extrapolation: their final fitted relative-efficiency
+curves are extreme log-polynomial forms, rank-deficiency/pinned-parameter warnings are present, and
+requested-source structure is lost at refinement/observable stages despite positive data at low-energy
+lines.  `U235_Unsh_1000` in particular loses the requested 94.65 and 98.43-keV structure while the trace
+shows data-supported low-energy peaks.  The reporter's background contribution remains zero for all five;
+the compact long background is supplied and scaled, so this is not evidence of a background-normalization
+or spectroscopic-extent suppression defect.
+
+ROI geometry worsens the effect but is downstream: the exact trace constructs predicted-transition
+components as wide as 50.7, 56.6, 61.0, 81.4, and 87.2 keV before refinement.  Existing whole-component
+H0/Hs/Hf transactions are attempted and rolled back when the enclosing solve does not improve.  They do
+not provide a safe recovery for an activity-zero model, and changing their geometry policy would not cure
+the demonstrated admission loss.
+
+### Existing source-clean transaction: measured rejected alternative
+
+E007's contaminant-pruned source-clean challenger fires in the collapse cases.  On the Pu239 case it
+improves preserved requested anchors from `0` to `15` and fitted requested anchors from `0` to `15`, but
+the common-channel AICc guard rejects it.  Temporary debug-only instrumentation (also removed) measured
+the two immutable common-anchor scores:
+
+| model | Poisson deviance | common channels | total data rows | effective parameters |
+| --- | ---: | ---: | ---: | ---: |
+| incumbent | 13801.0 | 69 | 721 | 41 |
+| source-clean challenger | 66.6 | 69 | 634 | 80 |
+
+The challenger is dramatically closer on the anchors, but its 80 effective global parameters exceed the
+69 common channels, so its AICc is undefined.  Replacing the AICc/rollback guard with raw deviance would
+accept a high-dimensional, statistically unidentifiable recovery.  That violates the E007 transaction's
+common-channel evidence requirement and is rejected.  No blanket anchor protection, global threshold
+relaxation, source-name condition, new gene, or observable-refit exemption was attempted.
+
+### Sibling comparison and reporter/objective assessment
+
+The same frozen source-only evaluation was run over the evaluable Baltimore/300-second Pu/U panel
+(`siblings/baltimore/results.tsv`, `gallery.html`; 18 cases; `Pu239_Sh` is present on disk but excluded
+by the corpus loader and was not silently dropped).  The failure tracks low signal, not a unique filename:
+
+- `Pu239_Unsh` has 0 definite misses and 8 observable peaks, whereas shielded `Pu239_Sh_100g` has 18
+  misses and 0 observable peaks.
+- U235 misses are 3, 2, 1, 1, and 2 at the 200, 300, 400, 500, and 1000 series members; they become
+  0, 1, 1, 1, 1, 1, and 0 from 2000 through 9330.  The low-count members also have much narrower final
+  ROIs because the source model has already collapsed rather than because the relevant spectra lack
+  low-energy data.
+- `Pu238_Sh` has 5 misses despite two observable peaks; `Pu238_Unsh` has 1 miss and 9 observable peaks.
+  `U235_Sh` has 1 miss and 2 observable peaks.  These comparisons rule out source-name, shielding-label,
+  or filename-specific fixes.
+
+The current objective records `miss_fraction`, but its scalar can still reward a practical failure:
+`U235_Unsh_0300` scores `-0.687` and `U235_Unsh_1000` scores `-4.295` while losing requested-source
+anchors.  A reporter-only practical-coverage diagnostic is warranted: it should count independently
+data-significant requested anchors before source refinement, then report how many survive observable
+refitting and their lost-anchor fraction.  It must be truth-independent and must not simply reward raw
+fitted-peak count.  It was not retained in this pass because those pre-refinement anchor/support records
+are not yet carried in the authoritative `PeakFitResult`; introducing them needs an append-only diagnostic
+design and dedicated reporter self-tests, not an unverified objective change during this investigation.
+
+### Retention decision and residual risk
+
+No candidate cleared the required evidence gate, therefore no production source/test/reporter change was
+retained and no candidate verification ladder, full 205 rerun, legacy byte comparison, or adversarial
+review was appropriate.  The residual risk is material: a nominally successful low-count requested-source
+fit can be spectroscopically non-representative because a rel-eff/activity collapse precedes the fixed
+15-count re-clustering rail.  A future repair must make the source-clean or an equivalent recovery model
+identifiable on common data without weakening its AICc, fitted-anchor, identity, protected-geometry,
+R2, or explicit-R6 fences.
+
+### Physical-model shadow follow-up (2026-07-22)
+
+The code already has a FRAM physical-model desperation path, but only after a failed solve or reduced
+chi-square above 10.  The collapsed source fits evade that trigger because their reduced chi-square can
+look acceptable after the requested isotope has been driven to zero (for example Pu239 is about 8.1 and
+the U cases are lower).  A no-code shadow test forced the frozen E000R gene set's
+`rel_eff_eqn_type=FramPhysicalModel` (order forcibly coupled to zero) for all five spectra.  It used the
+same supplied background, source-only/R6-disabled option, one thread, and all other E000R genes unchanged.
+The all-physical run made no completion progress for several minutes and was interrupted with exit 130;
+therefore it supplies no evidence that globally replacing the curve recovers the five and is not viable
+as an automatic unconditional fallback.
+
+The physical model is still a plausible *collapse-gated challenger*: run it only after two independent
+data-significant requested anchors are lost, start from the same exact ROI transaction, and retain it only
+if it completes and improves common-channel identifiable evidence, requested-anchor prediction, final
+observable support, and continuation plausibility.  Its current chi-square-only trigger is insufficient,
+but changing it without this challenger comparison would merely broaden a costly retry path.
+
+An explicit Release rerun was subsequently allowed to complete from a fresh temporary directory.  The
+configured build was verified as `CMAKE_BUILD_TYPE=Release`; `cmake --build ... --target PeakFitImprove`
+reported no stale work.  The physical-only E000R shadow completed successfully for all five, with no
+spurious peaks or mechanical failures.  It reduces the focused definite-miss total from 30 to 12:
+
+| spectrum | E000R misses / observable | physical misses / observable | physical max ROI FWHM |
+| --- | ---: | ---: | ---: |
+| `Pu239_Sh_100g` | 18 / 0 | 5 / 15 | 15.44 |
+| `Pu238_Sh` | 5 / 2 | 5 / 1 | 28.89 |
+| `U235_Unsh_0200` | 3 / 1 | 1 / 4 | 12.30 |
+| `U235_Unsh_0300` | 2 / 2 | 1 / 4 | 7.95 |
+| `U235_Unsh_1000` | 2 / 4 | 0 / 8 | 14.45 |
+
+Thus the physical curve is a strong candidate recovery model for the demonstrated Pu239/U collapse, but
+not a safe global replacement: it fails to recover Pu238_Sh, loses one of its observable peaks, and makes
+an obviously excessive 28.89-FWHM ROI.  The completed shadow gallery and TSV are
+`/private/tmp/near-empty-pu-u-ac3b8e27/physical/five_release_retry/{gallery.html,results.tsv}`.  A retained
+change must make this a collapse-gated challenger and run the normal E007 geometry/observable/corpus
+retention gates, rather than switch every source fit to the physical form.
+
+### Pu238_Sh normal-path activity instability (2026-07-22)
+
+`Pu238_Sh` is not a simple final-activity-zero failure like `Pu239_Sh`.  Its normal E000R fit reports a
+nonzero final Pu238 relative activity of `6.612e6` (clustering activity `1.984e9` over 300 s), but that
+number is not a stable or representative solution.  The exact normal trace is
+`/private/tmp/near-empty-pu-u-ac3b8e27/exact_traces/Pu239_Sh_100g/exact_trace.out` (the first spectrum
+in the sequential five-case trace).  It establishes this sequence:
+
+- The manual ladder initially selects FRAM Physical, but has only six included matches across the four
+  Pu-family source components.  Pu238 retains 582.898 and 786.299 keV; its 1238.24 and 1764.28-keV
+  matches are discarded as `source<25% of peak`.  Hence the activity/efficiency decomposition has no
+  independent high-energy Pu238 anchor.
+- The manual result seeds Pu238 at `1.519e10` and also gives enormous Pu239/Pu241 activities, predicting
+  `111402` counts at 413.71 keV where the gross data are `83.4`.  This causes broad predicted-transition
+  components before the data fit.
+- The first automatic solve instead drives Pu238 to clustering activity `4856`; the next refinement
+  swings it to `1.984e9`.  This multi-order-of-magnitude hand-off is direct evidence of an
+  activity/relative-efficiency/source-mixture degeneracy, not a measured activity estimate.
+- Critically, the automatic final model is no longer the manual FRAM physical curve: it is the flexible
+  quadratic log-efficiency expression `exp(-31.801715 + 1.3168 ln(E) + 0.48875 ln(E)^2)`.  It can trade
+  source activity against efficiency after the clean anchors were pruned.
+- At its final re-cluster, the model predicts only 97.7 counts at 766.4, 36.3 at 1001.0, and 17.5 at
+  786.3 keV.  The fixed 15-count/data-significance admission then rejects most of the rest (for example
+  103.7 keV: 44.4 predicted but z=1.4; 851.7 keV: z=3.4 but 12.6 predicted).  Fifteen ROIs are
+  insignificant in the next refinement; 252 model peaks from 11 ROIs are filtered, and 17 full-model
+  peaks become two public peaks.
+
+The final fit is therefore nominally successful but diagnostically invalid: it is rank-deficient (6 of
+25 parameters), has ten pinned energy/width parameters, and has chi-square/dof `392.7/141 = 2.785` with
+zero p-value.  Observable refitting is not the initiating loss: both surviving public Pu238 peaks are
+retained and refit to significant observations.  The source-clean challenger sees seven anchors and
+would preserve three/fitted four, but rolls back because its common-channel AICc is undefined.  This
+attributes the Pu238 failure to sparse contaminant-pruned anchor provenance followed by an unstable
+manual-to-auto rel-eff/activity hand-off and admission pruning; it is not supported evidence for a
+background-scaling defect, nor a reason to globally force the physical curve.
+
+### RelActManual background-net and shielded-physical shadows (2026-07-23; not retained)
+
+The manual seed currently consumes foreground auto-search Gaussian areas only.  It has no background
+argument; the normal auto solve later receives the supplied long background.  `AnalystChecks` can reject
+a foreground peak when its live-time-scaled background counterpart is not sufficiently elevated, but it
+does not produce a background-net `PeakDef` area or its propagated uncertainty for the manual solver.
+
+A temporary Release-only shadow therefore matched foreground/background auto peaks within the existing
+`0.75 * mean(FWHM)` tolerance, supplied `A_fg - (t_fg/t_bg) A_bg` to RelActManual, and propagated
+`sqrt(sigma_fg^2 + (t_fg/t_bg)^2 sigma_bg^2)`.  It skipped a nonpositive net area (as the manual API
+requires).  The same shadow also let the manual FRAM physical candidate try the existing generic Fe
+attenuator, but only where the extra fitted areal-density parameter had valid AICc support.  All code was
+removed before this record was written; outputs are under
+`/private/tmp/near-empty-pu-u-ac3b8e27/shadow_bg_shield/`.
+
+The background-net portion is a powerful **Pu238 diagnostic**, but not a general repair:
+
+| spectrum | baseline misses / fitted / observable / max FWHM | background-net shadow | outcome |
+| --- | --- | --- | --- |
+| `Pu238_Sh` | 5 / 2 / 2 / 2.88 | 1 / 16 / 5 / 12.92 | Recovers supported structure, but creates an over-wide ROI. |
+| `Pu239_Sh_100g` | 18 / 2 / 0 / 9.24 | no result | Fails the atom-safe overlap checks (including 52--85 and 716--730 keV overlaps). |
+| `U235_Unsh_0200` | 3 / 3 / 1 / 8.94 | 3 / 2 / 1 / 8.64 | No recovery; loses one fitted peak. |
+| `U235_Unsh_0300` | 2 / 5 / 2 / 7.97 | 1 / 4 / 2 / 8.56 | One miss recovered, but at a wider ROI and fewer fitted lines. |
+| `U235_Unsh_1000` | 2 / 11 / 4 / 9.48 | 0 / 23 / 8 / 13.44 | Both misses recovered, but an excessive ROI is introduced. |
+
+The Pu238 result with the generic-shield challenger enabled was bit-identical at the reporter-row level to
+the background-net-only row, so the benefit measured here is not evidence for a generic shielding retry.
+Conversely, the shield-only variant (raw foreground manual areas) produced overlapping initial clusters
+before a result could be reported.  Therefore a "try physical with and without shielding and choose the
+better one" policy is not safe as an unconditional manual-ladder expansion.  It needs the existing
+atom/component transaction and common-channel geometry evidence, not just a per-seed curve score.
+
+`NuclideFitDebug` supplies an additional caution on the proposed Pu236 expansion.  With the compact
+foreground and supplied background, `Pu236` alone attributes significant residuals at 238.563 keV
+(`128.2 +/- 22.8`) and 583.442 keV (`62.2 +/- 10.1`).  However, the injected truth classifies both as
+background rather than requested-source signal.  Adding Pu236 beside Pu238 in a default-config debug run
+changes the solution from 4 fitted/4 observable to 11 fitted/5 observable, but all five observable peaks
+remain attributed to Pu238 (99.96, 152.62, 742.88, 766.41, and 786.30 keV).  That is evidence that Pu236
+is an attractive contaminant explanation/conditioning variable, not evidence that it should always be
+made an active requested source.  Any future Pu-family expansion must require independently elevated,
+background-net Pu236 lines and retain the normal final significance and truth/spurious safeguards.
+
+The useful next design experiment is therefore narrower than blanket background subtraction: preserve a
+separate background-net support record for a matched requested-source line, use it to protect only a
+data-significant anchor from the `<25% predicted/gross` contaminant judgment, and leave the gross area
+available as a competing-contaminant diagnostic.  The anchor must still pass the final LM/post-refit
+significance test.  That tests the demonstrated loss (152.7-keV Pu238 removed by a compromised seed)
+without allowing every net subtraction to alter the initial ROI topology.
+
+### Background-net RelActManual implementation and retention gate (2026-07-23; work in progress)
+
+The implemented candidate gives `estimate_initial_rois_using_relactmanual` the supplied long background,
+finds the closest background auto peak with the existing `0.75 * mean(FWHM)` match rule, and supplies
+`A_fg - (t_fg/t_bg) A_bg` with quadrature uncertainty to RelActManual.  Nonpositive net areas are omitted.
+To prevent positive background fluctuations from calibrating the manual curve, a matched net peak also
+needs the existing AnalystChecks 2.25-sigma elevation level.  The `<25% predicted/observed` contaminant
+judgment is now one-sigma uncertainty-aware: a line is excluded only when the predicted counts lie below
+the `25%` boundary by more than the propagated uncertainty of that boundary.  This is applied uniformly
+to manual candidate judgment, outlier removal, clean-anchor provenance, and tracing; it does not alter
+R2/R6, final observable significance, or caller-controlled background behavior.
+
+The frozen E000R five-spectrum Release result (`impl_bgnet_sigma/five_uncertainty/{results.tsv,gallery.html}`)
+is materially better in four cases:
+
+| spectrum | baseline misses / fitted / observable | candidate | notes |
+| --- | --- | --- | --- |
+| `Pu238_Sh` | 5 / 2 / 2 | 1 / 10 / 6 | 152-keV source support is retained; widest ROI is 7.30 FWHM. |
+| `Pu239_Sh_100g` | 18 / 2 / 0 | 0 / 48 / 23 | Strong recovery, but initial-component overlap diagnostics require review. |
+| `U235_Unsh_0200` | 3 / 3 / 1 | 3 / 1 / 1 | No recovery: 143.8, 93.4, and 84.2 keV are only 1.6, 0.8, and 0.7 sigma above local continuum. |
+| `U235_Unsh_0300` | 2 / 5 / 2 | 0 / 9 / 3 | Recovery. |
+| `U235_Unsh_1000` | 2 / 11 / 4 | 0 / 20 / 7 | Recovery; widest ROI is 12.84 FWHM. |
+
+The stable E007 11-spectrum panel is a retention blocker, so the full corpus was deliberately not run.
+Nine panel rows are substantially stable, but `U238_Sh` regresses from 0 misses and 4/2 fitted/observable
+to 1 miss and 1/1.  Its trace shows why: only 341 and 1001 keV remain as 2.25-sigma-qualified background-net
+matches; the 766-keV line is `12.0 +/- 6.0` and therefore below the calibration threshold.  The resulting
+two-point manual solve fails and the generic-DRF fallback predicts too little.  A narrowly scoped
+uncertainty-weighted third-point supplement was tried and rejected: it starts a manual solve but produces
+an implausible curve and the automatic fit still retains only 1001 keV.  Conversely, allowing every positive
+net area (`five_allnet_uncert`) restores Pu239's 18-miss/zero-observable collapse and gives 23 misses total.
+
+Thus neither blanket positive-net admission nor the sparse third-point exception is retained.  The current
+worktree holds the 2.25-sigma candidate only for further review; it has not cleared the 11-spectrum gate,
+the all-47 test suite, legacy comparison, or the 205-spectrum corpus.  The next safe design step is to
+separate a data-supported requested-source anchor from a rel-efficiency calibration point, rather than
+force a weak background-net line to identify a global curve.
+
+### Completed 2-sigma background-net candidate evaluation (2026-07-23; rejected)
+
+The candidate was tightened after the preceding intermediate result: every auto-search area used by the
+manual solution (raw foreground or propagated background-net) had to be at least 2 sigma.  A
+2.0--2.25-sigma net line could only supplement an already-matched source up to three distinct points; it
+could not admit a source or independently seed an ROI.  The `<25% predicted/observed` judgment was also
+made one-sigma uncertainty-aware consistently in candidate selection, outlier removal, and clean-anchor
+provenance.  This final exact candidate was built in Release mode and evaluated with supplied compact
+long background and explicit `DisableAutoInterfererFit`.
+
+The focused result (`/private/tmp/near-empty-pu-u-ac3b8e27/impl_bgnet_sigma/five_all2sigma/`) was:
+
+| spectrum | misses | fitted / observable | max ROI FWHM |
+| --- | ---: | ---: | ---: |
+| `Pu238_Sh` | 1 | 10 / 6 | 7.30 |
+| `Pu239_Sh_100g` | 0 | 48 / 23 | 17.18 |
+| `U235_Unsh_0200` | 3 | 1 / 1 | 3.27 |
+| `U235_Unsh_0300` | 0 | 9 / 3 | 8.74 |
+| `U235_Unsh_1000` | 0 | 20 / 7 | 12.84 |
+
+`U235_Unsh_0200` has a measured non-recoverability explanation for this candidate: its missed 143.8,
+93.4, and 84.2-keV lines are only 1.6, 0.8, and 0.7 sigma over the measured local continuum.  The stable
+11-spectrum E007 panel nevertheless improved from 3 to 2 total definite misses
+(`/private/tmp/near-empty-pu-u-ac3b8e27/impl_bgnet_sigma/panel11_all2sigma/`), while moving one
+U238 miss from unshielded to shielded.  `U238_Sh` has only two preferred net-qualified matches; its
+2.00-sigma 766-keV line can make a three-point manual solve start, but it produces an implausible
+empirical curve and still leaves only the 1001-keV peak observable.
+
+The complete comparable 205-spectrum Release evaluation completed at
+`/private/tmp/near-empty-pu-u-ac3b8e27/impl_bgnet_sigma/full_baltimore_300_all2sigma/`.  Compared with
+the frozen `shielded-source-recovery-roi-final13` baseline, it reduced definite misses from 70 to 47,
+left spurious peaks at 7, mechanical failures at 0, and legitimate empties at 5.  It also introduced
+eight definite misses in seven unrelated rows: `As72_Phantom` (+1), `Ho166m_Sh` (+2), `Pu239_Unsh` (+1),
+`U235_Unsh_0500` (+1), `U235_Unsh_2000` (+1), `U235_Unsh_9330` (+1), and `U238_Sh` (+1).  That violates
+the no-new-miss retention gate despite the strong aggregate gain.  The evaluator also emitted new
+overlap diagnostics, which is an independent geometry-retention concern.
+
+`PeakFitImproveReporterSelfTest` passed.  The worktree has no retained production source change from
+this candidate; only this evidence record remains modified.  The all-47 source-fit executable could not
+be run because this worktree has no configured `target/testing/build_xcode` directory, and creating a
+new repository build artifact was outside the temporary-artifact constraint.  A future repair should
+carry separately qualified measured source anchors through the manual-to-auto handoff, rather than use
+all significant background-net auto peaks as rel-efficiency calibration points.
+
+## Long-background automatic ROI reconciliation repair (2026-07-23)
+
+This repair is independent of the rejected background-net RelActManual candidate above; none of that
+candidate was restored.  All disposable probes, source overlays, binaries, logs, TSVs, and galleries are
+under `/private/tmp/near-empty-pu-u-ac3b8e27/cluster_reconcile_fix/`.
+
+### Call site, reproduction, and cause
+
+The background auto-search call is
+`ExperimentalAutomatedPeakSearch::search_for_peaks` in `src/PeakFit.cpp`.  It returns normally for the
+`Pu238_Sh` supplied long-background record: the disposable Release probe found 45 peaks in 43 distinct
+shared-`PeakContinuum` objects, and every peak had valid continuum ownership.  Those raw search
+continuums are not a globally disjoint ROI partition (minimum energy gap -5.878113 keV and minimum
+unused-channel count -12), and are therefore retained only as manual seeds.
+
+The reported `final_clusters overlap` diagnostic was emitted later in
+`cluster_gammas_to_rois` in `src/FitPeaksForNuclides.cpp`, during requested-source ROI construction.
+The three observed failures, measured in the long-background calibration, were:
+
+| left region (keV) | right region (keV) | energy overlap | shared channels |
+| --- | --- | ---: | ---: |
+| 567.902--752.155 | 750.686--833.958 | 1.469 keV | 3 |
+| 1095.240--1115.280 | 1112.340--1140.690 | 2.940 keV | 8 |
+| 1555.960--1578.400 | 1578.360--1611.600 | 0.040 keV | 2 |
+
+The 2.940-keV / eight-channel maximum rules out a floating-point boundary explanation.  Adaptive extent
+changes both cluster bounds after the original sort.  The policy branch then used a single adjacent
+fold.  A pair partition can minimum-width-expand its right child across the lower bound of a component
+not yet visited; the subsequent reverse-anchor decision can leave a transitive overlap.  Thus the fault
+was stale post-extent ordering plus incomplete reconciliation, not invalid initial gamma construction
+and not an overly strict developer invariant.
+
+### Retained correction
+
+Policy-mode clusters are now re-sorted after adaptive extent and materialized as fixed,
+channel-aligned atom components whose bounds contain every admitted atom core.  The complete list is
+sent through the existing automatic atom-safe transaction.  The transaction preserves atom IDs,
+gamma energy/amplitude pairs, joined-group lineage, protected geometry, continuum metadata, and the
+existing requested-source exemption when filtering unmodeled auto peaks.
+
+The normal adjacent decisions are retained, followed by a bounded globally sorted collision repair
+which splices one result and restarts until every component is channel-disjoint.  Whole-component
+over-wide partitioning is disabled in this call; the existing later collapse-gated pass remains the
+only such pass, retaining selected-partition provenance and E007 behavior.  The downstream resolver
+and private merge transaction keep their prior one-pass implementation, so the explicit R2 and
+R6/legacy fences are unchanged.
+
+Failure to converge, transaction validation failure, or orphaned atoms is now a real pre-emission
+failure: developer builds assert and Release throws with the validation reason.  The final energy and
+policy-mode channel postcondition remains exact, with no epsilon relaxation.  The later
+`previous_roi_upper` clamp remains only as a legacy defensive operation, with a developer assertion
+that policy output never needs it.
+
+The final temporary trace of the exact `Pu238_Sh` long-background/manual-seed path reported:
+
+| policy stage | regions | minimum energy gap | minimum unused channels |
+| --- | ---: | ---: | ---: |
+| initial manual | 23 | 0 keV | 0 |
+| refinement 0 | 3 | 30.3575 keV | 57 |
+| refinement 1 | 11 | 0.448799 keV | 1 |
+| refinement 2 | 4 | 31.9514 keV | 57 |
+
+Zero in the initial row means neighboring regions meet at an energy boundary and own adjacent
+channels; they do not overlap.  The search returned, ownership was valid, the fit succeeded, and no
+`final_clusters overlap`, invalid-transaction, or post-hoc-clamp diagnostic occurred.  A later,
+pre-existing `resolve_overlapping_rois` warning at approximately 713--730 keV remains in the
+background-fit trial; it is outside this initial cluster-finalization transaction and did not prevent
+Success.
+
+### Verification
+
+The exact retained Release build was:
+
+```sh
+cmake --build target/peak_fit_improve/build_vscode
+```
+
+`CMakeCache.txt` and generated configuration reported
+`CMAKE_BUILD_TYPE=Release`, `PERFORM_DEVELOPER_CHECKS=ON`, and
+`#define PERFORM_DEVELOPER_CHECKS 1`.  The focused test build and runs were:
+
+```sh
+cmake --build target/testing/build_test --target test_fitPeaksForSources
+target/testing/build_test/test_fitPeaksForSources --run_test=StatisticalDetailHelpers -- \
+  --datadir=/Users/wcjohns/coding/InterSpec_peaks_for_source_opt/data \
+  --testfiledir=/Users/wcjohns/coding/InterSpec_peaks_for_source_opt/target/testing/test_data
+target/testing/build_test/test_fitPeaksForSources \
+  --run_test=TrinititeSequential/test_eu152_interferer_matches_joint -- \
+  --datadir=/Users/wcjohns/coding/InterSpec_peaks_for_source_opt/data \
+  --testfiledir=/Users/wcjohns/coding/InterSpec_peaks_for_source_opt/target/testing/test_data
+```
+
+The 23-case `StatisticalDetailHelpers` group, including the new deterministic out-of-order
+transitive-overlap/minimum-width test, passed.  The focused R6-enabled Eu152 interferer test passed.
+The new test verifies sorted strict channel and energy disjointness, exact-once unchanged atom-ID
+ownership, core containment, protected geometry/metadata, and preservation of all modeled atoms.
+
+The full executable ran all 48 cases.  It reported four assertions in three existing cases:
+the two `test_trinitite_default_sequence` checks (Eu154 rescue and
+`original_peaks_to_remove`), missing K40 in `test_r6_raw_interferer_transaction`, and missing K40 in
+`test_multisource_strong_norm_interferer_is_stable`.  Each failing case was rerun against a disposable
+archive containing the exact `7ca96e3b` `FitPeaksForNuclides.cpp` object and reproduced identically;
+these are baseline failures, not changes caused by this repair.
+
+The final frozen-E000R, supplied-background, R6-disabled, one-thread panel command used
+`NuclideConfigEval`, the four-key file in the temporary directory, the established
+`HPGE-DETX-BAL-300-BG-R6OFF-E000R-EXTENT/diagnostic/HPGe_default_genes.tsv`, fixed rel-eff cap 25,
+`--number-threads 1`, `--disable-auto-interferer-fit`, and wrote
+`final3_four/{results.tsv,gallery.html}`.  Results were:
+
+| spectrum | status | misses | spurious | fitted / observable | ROIs |
+| --- | --- | ---: | ---: | ---: | ---: |
+| `Pu238_Sh` | Success | 5 | 0 | 2 / 1 | 1 |
+| `Pu239_Sh_100g` | Success | 18 | 0 | 3 / 0 | 2 |
+| `U235_Unsh_1000` | Success | 2 | 0 | 10 / 4 | 4 |
+| `Cs137_Unsh` | Success | 0 | 0 | 1 / 1 | 1 |
+
+The panel was 4/4 Success with zero mechanical failures, zero legitimate empties, 25 definite misses,
+and zero spurious peaks.  Compared with the captured pre-fix TSV, Success, failure/empty events,
+misses, and spurious counts were unchanged.  Geometry and fitted-count changes occurred only in the
+previously invalid Pu policy regions; requested-peak ownership remained valid.  The generated gallery
+was inspected for those four cases.  A separate one-case `--background-fit-trial` completed
+successfully with zero mechanical failures and no target reconciliation diagnostic.
+
+`git diff --check` passed.  Residual risk is that only these four focused corpus cases, one explicit
+long-background trial, the focused R6 fence, and the existing unit executable were evaluated; a broad
+corpus was not rerun.  Raw auto-search continuum objects and the later legacy overlap resolver have
+their own overlapping geometry, outside the corrected source-cluster transaction.  The full unit
+executable also retains the three documented baseline-failing cases above.
+
+## U238_Unsh: rejected 766-keV and U X-ray recovery probes (2026-07-23)
+
+The Release, supplied-background, R6-disabled diagnostic trace was captured at:
+
+`/private/tmp/near-empty-pu-u-ac3b8e27/retry_after_cluster_fix/u238_766_r2/dominant_trace.log`
+
+The recovered source-clean challenger predicts 11.8 counts at 766.4 keV, below the ordinary
+15-count admission gate. A disposable, source-clean-only R2 probe then fitted the local feature
+against a linear continuum before allowing any ROI transaction. It measured 17.5 +/- 6.1 counts
+(2.9 sigma, delta-chi2 8.2), below the ordinary 3-sigma / delta-chi2 9 acceptance criterion.
+The line therefore has suggestive but insufficient evidence for an automatic exception. The probe
+was removed: no global keep threshold, source-specific rule, or sub-threshold admission remains.
+
+The U X-ray region is different. The normal source solve admits the strong 92.3--92.8-keV group,
+but final ROI filtering evaluates its 86.47--97.95-keV region as 30 peak dof in 24 channels and
+rejects it (`chi2_reduction=7.623`, equivalent z -4.234, largest individual component 1.977 sigma).
+A disposable unresolved-multiplet gate formed a local effective component only for compact,
+same-source lines, then required an ordinary free-amplitude local fit. Its 92.5-keV component
+measured 166.1 +/- 32.7 counts (5.1 sigma, delta-chi2 25.7), and the ordinary observable refit
+produced a plausible 92.74-keV peak of 99.04 +/- 23.58 counts (4.2 sigma, chi2/dof 1.05).
+
+However, the underlying source-model representation still broadened the many individual emissions
+into a 4.178-keV-FWHM combined peak with chi2/dof 27.93. The enclosing refinement's filtered
+source-model chi2/channel worsened from 0.6043 to 1.062 and correctly rolled back the candidate.
+The same prototype also showed why a gate-only change is unsafe: an unrelated 295-keV foreground
+feature could pass an effective-template fit even while the source model assigned it only 0.1 count.
+That prototype was removed.
+
+The evidence supports a future model-level, not gate-only, change: represent a compact same-source
+unresolved emission group in the source solve as one fixed-ratio composite template with one fitted
+scale, retain only when its fitted scale is statistically compatible with the source prediction,
+and pass the resulting ordinary observable LM refit. It must be evaluated transactionally against
+the incumbent and across the full corpus before retention. No production behavior was retained
+from either probe.
+
+## Full Detective-X/Baltimore/300-second corpus rerun (2026-07-23)
+
+The Release executable (`PERFORM_DEVELOPER_CHECKS=ON`) was rebuilt and the complete comparable
+205-spectrum corpus was rerun with the frozen E000R HPGe genes, supplied background, fixed
+rel-eff chi2 cap 25, and explicit `--disable-auto-interferer-fit`.  The one-thread and eight-thread
+TSVs were byte-identical.  The eight-thread gallery and final TSV are:
+
+`/private/tmp/near-empty-pu-u-ac3b8e27/full_baltimore_300_current/gallery.html`
+
+`/private/tmp/near-empty-pu-u-ac3b8e27/full_baltimore_300_current/results_with_gallery.tsv`
+
+Compared with the frozen 205-spectrum baseline
+`/private/tmp/shielded-source-recovery-roi-final13/full_baltimore_300/results.tsv`, aggregate
+results improved: scalar cost -2881.923 -> -2939.858, area cost 259.855 -> 258.876, definite
+misses 70 -> 48, spurious peaks 7 -> 6, and mechanical failures and legitimate empties remained
+0 and 5 respectively.  The complete machine-readable comparison is under
+`/private/tmp/near-empty-pu-u-ac3b8e27/full_baltimore_300_current/comparison_final8/`.
+
+This is not a strict improvement gate.  Ten new definite misses appeared across eight spectra:
+`U235_Unsh_5000` (two misses), `Ho166m_Sh` (two), `As72_Phantom`, `U235_Unsh_9330`, `U238_Sh`,
+`U235_Unsh_0500`, `Pu239_Unsh`, and `U235_Unsh_2000`.  `U235_Unsh_5000` is the clearest adverse
+case: two new definite misses, three fewer observable peaks, and +1.228 area cost.  There were
+also area-only regressions exceeding 0.10 without an added fitted or observable peak in
+`Tl204_Unsh`, `Pd103_Sh`, `Sm153_Sh`, `Cu67_Unsh`, `Br76_Phantom`, `Xe133_Unsh`, `Gd153_Sh`,
+`U235_Unsh_9000`, `Sb124_Sh`, and `Zr89_Sh` (besides `U235_Unsh_5000`).  These require visual
+review before the background-net/provisional-anchor change can be retained as a generally safe
+improvement; the aggregate improvement alone is insufficient.
+
+## Paired 30- and 1800-second duration galleries (2026-07-23)
+
+To retain a real before/after comparison without modifying the active working tree, the `before`
+executables were built in a disposable detached worktree at the exact starting commit
+`ac3b8e276cdb4a3a1612e6e6f8c7aefd79b4886d`.  Both that Release build and the current Release
+build had `PERFORM_DEVELOPER_CHECKS=ON`.  Each paired 205-spectrum Detective-X/Baltimore run used
+the same frozen E000R HPGe genes, supplied background, fixed rel-eff chi2 cap 25, four evaluator
+threads, and explicit `--disable-auto-interferer-fit`.  No source was edited during these runs.
+
+At 30 seconds, scalar cost improved from -1326.105 to -1349.419, area cost from 190.159 to
+188.853, definite misses from 62 to 54, and the miss fraction from 0.04476 to 0.04053.  Spurious
+peaks (5), successes (194), legitimate empties (11), and mechanical failures (0) were unchanged.
+At 1800 seconds, scalar cost improved from -4315.026 to -4342.371, area cost from 397.188 to
+376.782, definite misses from 38 to 37, and the miss fraction from 0.004421 to 0.004356.  Spurious
+peaks (26), successes (200), legitimate empties (5), and mechanical failures (0) were unchanged.
+
+The before/current galleries and machine-readable comparisons are retained outside the repository:
+
+`/private/tmp/near-empty-pu-u-ac3b8e27/duration_compare/30_seconds/`
+
+`/private/tmp/near-empty-pu-u-ac3b8e27/duration_compare/1800_seconds/`
+
+These aggregate duration results are positive, but do not override the documented 300-second
+per-spectrum regressions.  The inspection queues in each duration comparison must be used before
+claiming a strict global improvement.
+
+## User review disposition — accepted working candidate (2026-07-23)
+
+The user personally reviewed the 300-second regression queue and accepts the tradeoffs in
+`227dc71b`: the area changes are attributable to newly recovered peaks, while the added misses are
+low-statistics threshold-borderline cases or cases whose prior fit was not physically convincing.
+The supplied-background net-area/manual-seed and ROI-recovery changes are therefore retained as
+the Detective-X working candidate. The next optimization stage is a focused structural diagnosis of
+the unresolved U238 X-ray multiplet/source representation, not a broad keep-threshold sweep.
+
+### U238 multiplet interpretation correction (2026-07-23)
+
+The approximately 4.18-keV FWHM returned for the 92.3--92.8-keV U238 structure is not a failed
+detector-resolution estimate.  It is the single-Gaussian, moment-matched envelope produced when
+many physically unresolved emissions are collapsed for the public representation.  The internal
+RelActAuto residual already evaluates the individual detector-width components.  The missing
+capability is instead a guarded *local scale* for a compact, same-source fixed-ratio template,
+followed by explicit composite provenance in the result/reporting path.  A valid repair therefore
+cannot merely clamp the FWHM or relax the ROI-significance threshold.  This clarification
+supersedes the earlier wording that treated the broad fitted width as an FWHM-model failure.
+
+## E008 — step-continuum trial-margin bracket (2026-07-24; rejected)
+
+Following user direction to prioritize aggregate Detective-X tuning, the U238 composite-template
+work is deferred.  E008 tested the previously untuned, equal-parameter-count step-model evidence
+margin on the frozen current-code 11-spectrum Baltimore/300-second diagnostic panel, with supplied
+background and automatic interferer fitting disabled.  The parent used
+`step_trial_chi2_margin=4`; the two arms used 2 and 6.  All runs used eight evaluator threads,
+the frozen E000R HPGe genes otherwise unchanged, and produced 11/11 Success, zero spurious peaks,
+zero mechanical failures, and three definite misses.
+
+Compared with a freshly rerun current-code parent (`-149.487565` total cost), margin 2 produced
+`-149.502485` and margin 6 produced `-149.507208`.  Both changes are wholly small area shifts;
+there were no find/candidate rewards, miss, status, or observable-count changes.  The only
+structural event was one fewer step continuum in Eu152_Sh for margin 6.  The complete parent and
+rendered galleries, gene files, cached TSVs, and strict comparisons are preserved under
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E008-STEP-MARGIN/`.
+
+The originally selected historical diagnostic parent predates `227dc71b` and was correctly
+discarded for attribution; the current-code margin-4 control was rerun before judging either arm.
+E008 is therefore rejected as a default change: its response is weak on the intended mixed
+step/continuum panel and does not justify sentinel or corpus expansion.  Next experiment:
+bracket `cont_order_aicc_penalty` (1.0 / 3.0 around the current 2.0) on the same current-code
+panel to test general ROI continuum flexibility, area bias, and wide-ROI behavior.
+
+## E009--E012 — continuum and automatic-ROI geometry probes (2026-07-24; rejected)
+
+E009 lowered `cont_order_aicc_penalty` from 2 to 1 on the frozen 11-spectrum diagnostic panel.
+It improved diagnostic cost from -149.488 to -152.621 and reduced definite misses from 3 to 2,
+but the independent fixed sentinel regressed from -240.841 to -239.987 without a correctness
+event: U238/Livermore changed Linear to Quadratic with a material area increase, while Eu152
+lost a step/observable reward.  The high arm (3) was worse than the parent.  This is diagnostic
+panel overfit, so no continuum-AICc default was retained.
+
+E010 bracketed `roi_extend_z`.  The low arm (1.5 versus 2.0) improved the diagnostic cost to
+-151.613 and recovered one Am241_Sh definite miss, but its only substantial effect was that
+dense Am241 region; the high arm (2.5) was inert.  The sentinel had no correctness event but a
+small scalar/area regression (-240.841 to -240.749).  It remains a causal observation, not a
+retained global setting: it changes an early ROI extent rather than solving the final automatic
+ROI partition problem.
+
+E011 froze a 22-spectrum geometry panel: the original diagnostic cases plus high-width and
+high-residual cases including Lu177m_Unsh, At211_Unsh, Ac225_Unsh, Np237_Unsh, Pd103_Unsh,
+Pu238_Unsh, Ra223_Phantom, U235_Unsh, Ra226_Unsh, Th232_Unsh, and Sm153_Sh.  It confirmed that
+large public ROIs are real, not a reporter artifact.  In particular, At211_Unsh has a
+38.58-FWHM 657.57--717.37-keV Linear ROI containing only the 668.55- and 687.13-keV fitted
+peaks.  Its separate 71.76--100.79-keV six-line ROI is a dense-blend control rather than an
+automatic split target.
+
+E012 temporarily enabled the existing measured-data whole-component partitioner on every
+automatic clustering pass.  The focused causal test
+`StatisticalDetailHelpers/test_whole_component_measured_partition` passed, but the 22-spectrum
+comparison was not acceptable: it reduced definite misses 7 -> 6 and total cost by 1.004, yet
+increased area cost by 2.018, widened Lu177m by 9.59 FWHM and Sm153 by 10.32 FWHM, and left the
+At211 38.58-FWHM ROI unchanged.  The implementation change was reverted immediately.
+
+The evidence identifies an inadequate parameterization/implementation boundary, not a value for
+`roi_max_num_fwhm`: the partitioner acts during initial source clustering, but later automatic
+ROI construction/refinement can create or retain wide public ROIs.  A future normal-path repair
+must operate on the final fitted automatic ROI candidates, compare each whole common-channel
+component against core-safe partitions with fit evidence, and transactionally retain the parent
+unless the local solve preserves requested-source anchors.  It must preserve the existing
+R2/R6/user/mixed-geometry isolation contracts.  Artifacts: E009
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E009-CONT-AICC/`; E010
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E010-ROI-EXTEND/`; E011
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E011-GEOMETRY-PANEL/gallery.html`; E012
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E012-GENERAL-ROI-PARTITION/comparison/`.
+
+## E023 — final fitted-ROI partition, measured-evidence arm (2026-07-24; provisional)
+
+The early predicted-line policy and the late fitted-ROI policy are now independently controlled.
+`auto_roi_final_fitted_partition` is a new default-false GA gene; it proposes only from completed
+automatic solver ROIs and its component-local replacement starts from the incumbent solver options.
+The transaction retains a proposal only if it preserves both every incumbent objective-observable
+requested peak and every significant incumbent requested fitted anchor.  This specifically protects
+the compact unresolved U238 92.3--92.8-keV multiplet, whose approximately 4.18-keV public envelope
+must remain shared.  The optional `auto_roi_partition_force_gap_fwhm` rail was also corrected to
+select the best boundary satisfying the configured core-gap requirement rather than letting an
+unrelated narrow AICc winner mask it.  The force rail was **zero** in E023.
+
+E023 compared the E011 default genes plus only `auto_roi_final_fitted_partition=1` on the same
+frozen 22-case Detective-X/Baltimore/300-second geometry panel, supplied background, R6 disabled,
+eight evaluation threads.  It produced 22/22 Success, unchanged definite misses (7), spurious
+peaks (1), empties (0), and mechanical failures (0).  The dense U238 controls were unchanged.
+It reduced At211_Unsh's maximum public ROI by 22.60 keV / 46 channels / 13.56 FWHM (the known
+657.57--717.37-keV sparse two-peak ROI), and reduced Lu177m_Unsh's maximum by 25.12 keV / 51
+channels / 14.33 FWHM.  However, scalar cost regressed by 1.2953 overall, driven by Lu177m
+(+0.7626) and Sm153_Sh (+0.6316); At211 regressed only +0.0398.  No correctness counter changed.
+Ra223 improved -0.1344 and Th232 changed only through a harmless extra ROI/step diagnostic.
+
+This is **not yet retained**: the available headless session could inspect cached ROI/truth tables
+and exact A/B diagnostics but could not capture the interactive D3 charts for the mandatory visual
+comparison.  The paired galleries and strict comparison are preserved at
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E023-FINAL-FITTED-AICC/`; inspect At211, Lu177m, Sm153,
+Ra223, and the U238 dense controls before accepting the geometry change.  Focused
+`test_whole_component_measured_partition` passed after the force-gap correction; both build trees
+rebuilt successfully.  A complete suite invocation was started and logged to E023, but the local
+harness returned before it reported completion, so it is not claimed green here.
+
+### E023 sentinel result
+
+The fixed 11-case sentinel was then evaluated with the same E023 genes and no city filter (the
+sentinel intentionally contains Baltimore, Denver, and Livermore controls).  All 11 were Success
+with zero definite misses, spurious peaks, empties, and mechanical failures, unchanged from the
+frozen sentinel parent.  Ten cases were numerically identical.  Ag110m_Sh alone changed: its
+largest ROI reduced by 4.47 keV / 9 channels / 4.18 FWHM, gained one ROI and one step continuum,
+and area cost increased 0.06176; no truth/observable event changed.  Aggregate sentinel scalar
+changed only +0.06176.  Artifacts:
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E023-FINAL-FITTED-AICC-SENTINEL/`, comparison
+`comparison/aggregate_comparison.md`.
+
+The policy diagnostics make the intended At211 action auditable: it retained the low-energy
+six-line complex as `MergeInseparableWide`, but split the sparse 656.10--720.31-keV two-line
+parent at 684.04 keV after a common-channel AICc improvement (2545.86 -> 342.36), followed by a
+component-local solve preserving every requested anchor.  This is strong structural evidence,
+but does not substitute for inspecting the plotted continuum and residuals in the E023 gallery.
+
+## E033--E036 — final fitted-ROI minimum core-gap bracket (2026-07-24; provisional retained geometry candidate)
+
+The ROI policy now exposes `auto_roi_partition_min_gap_fwhm`: a default-zero, GA-tunable minimum
+separation between adjacent modeled *cores* before a measured-data final fitted-ROI partition can
+be considered.  It is distinct from `merge_clean_gap_fwhm` and from the optional force-gap rail:
+it filters even an AICc-preferred late partition, protecting dense resolved multiplets from gaining
+extra continua merely because the more flexible model lowers training AICc.  The focused
+whole-component test verifies the gate, alongside the existing exact-once and multiline tests.
+
+E034 freshly reran the current-code, final-policy-off E011 parent and reproduced E011 exactly;
+all following comparisons therefore have a valid direct parent.  E033 (`min_gap=2`) was too low:
+it was active in some cases but did not remove the problematic Sm153 change.  E035 (`min_gap=4`)
+is the current candidate.  On the frozen 22-case geometry panel it retained only the intended
+At211 split plus a minor Lu177m adjustment: 22/22 Success; misses 7, spurious 1, empties 0, and
+failures 0 unchanged.  It reduced At211 maximum ROI width by 22.60 keV / 46 channels / 13.56
+FWHM, left both U238 dense controls and Sm153 unchanged, and changed scalar cost by only +0.08652
+(area cost only).  Lu177m changed by +0.04668 area cost while reducing maximum width 0.67 FWHM.
+
+E036 evaluated E035 on the complete fixed 11-case multi-city sentinel.  Every exported score,
+count, status, ROI metric, and diagnostic matched the parent exactly.  Focused tests
+`test_whole_component_measured_partition` and
+`test_partition_spatial_atom_reassignment_multiline` passed after rebuilding the test target;
+development build and `git diff --check` are clean.  Artifacts: E034
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E034-CURRENT-PARENT-GEOMETRY/`; E035
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E035-FINAL-MINGAP4-GEOMETRY/`; E036
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E036-FINAL-MINGAP4-SENTINEL/`.
+
+The current candidate is deliberately provisional pending direct plot review.  The next
+experiment is not a broader parameter sweep: inspect E035 versus E034 at At211 and Lu177m, then
+either retain `auto_roi_final_fitted_partition=1`,
+`auto_roi_partition_min_gap_fwhm=4`, and `auto_roi_final_partition_max_proposals=1` for a
+larger Detective-X/Baltimore/300-second gallery, or use a specific visible defect to define the
+next structural hypothesis.
+
+## E031 — bounded sparse final-partition policy (2026-07-24; provisional retained geometry arm)
+
+The first broad final-fit challenger was too expansive: ungated dense-tail evaluations did not
+finish inside the normal eight-thread evaluation window.  The implementation now exposes three
+separate GA-tunable controls, all default-safe while the final gate is false:
+
+- `auto_roi_final_fitted_partition`: independently enable the post-solve challenger;
+- `auto_roi_partition_min_gap_fwhm`: require a modeled-core separation even for an
+  AICc-preferred partition; and
+- `auto_roi_final_partition_max_proposals`: bound expensive local re-solves per refinement
+  (default one; range 0--4).
+
+The focused measured-component test now proves both rails: a 12-FWHM minimum blocks an otherwise
+AICc-preferred split, and a 2-FWHM configured force gap can admit a core-safe split when AICc
+does not.  The diagnostic reason explicitly distinguishes the latter from an AICc win.
+
+E031 used `auto_roi_final_fitted_partition=1`, `auto_roi_partition_min_gap_fwhm=5`, and the
+default one-proposal budget (early policy off, force-gap off) on E011's frozen 22-case
+Detective-X/Baltimore/300-second geometry panel.  It completed 22/22 Success at eight threads,
+with unchanged definite misses (7), spurious peaks (1), empties (0), and failures (0).  Aggregate
+cost changed only +0.03984, entirely At211 area cost.  It reduced At211_Unsh's sparse public ROI
+from 38.58 to 25.03 FWHM (123 to 77 channels) by splitting at the clean 684.04-keV boundary;
+the dense Lu177m_Unsh 39.14-FWHM / 11-peak group and Ac225_Unsh 31.08-FWHM / 18-peak group were
+preserved.  This is the desired direction: sparse separated regions become eligible while dense
+multi-peak structures remain grouped.  The remaining 25-FWHM singleton around At211 687 keV is
+an ROI-extent/continuum question, not evidence to split a dense peak group further.
+
+Artifacts: [E031 gallery](/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E031-FINAL-GATE-MINGAP5-BUDGET1-GEOMETRY/gallery.html),
+comparison `/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E031-FINAL-GATE-MINGAP5-BUDGET1-GEOMETRY/comparison_e011/`.
+E024/E027/E030 are intentionally preserved incomplete/runtimes records; E031 supersedes them.
+
+E033 applied the same E031 candidate to the 11 usable fixed sentinel cases (the original
+`sentinel.keys` includes one intentionally rejected obsolete Co60_Sh key; E032 preserves that
+pre-fit selection failure).  All 11 were Success with zero definite misses, spurious peaks,
+empties, and mechanical failures.  Against the earlier final-fit sentinel candidate, the only
+non-identical case was Ag110m_Sh: maximum ROI width increased by 4.18 FWHM, but it lost one step
+and one ROI and improved area/scalar cost by 0.06176 with no truth or observable event.  Artifact:
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E033-FINAL-GATE-MINGAP5-BUDGET1-SENTINEL/gallery.html`.
+
+### E034/E035 minimum-gap bracket
+
+E034 lowered the E031 core-gap admission rail from 5 to 4 FWHM.  It retained At211's split but
+also changed Lu177m_Unsh: one extra ROI and fitted peak, a 0.67-FWHM maximum-width reduction,
+and a continuum-family change.  No truth event improved, while area/scalar cost worsened by
+0.04668.  Therefore 4 FWHM is too permissive for the current one-proposal policy.
+
+This older bracket record was superseded by the later current-code E034 parent / E035 candidate
+comparison and the E039--E046 wide-tail confirmation below.  The current provisional candidate
+is **4 FWHM** with `auto_roi_final_fitted_partition=1` and one proposal; it is not appropriate to
+infer the retained value from this earlier E031 naming sequence.  Historical artifacts: E034
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E034-FINAL-GATE-MINGAP4-BUDGET1-GEOMETRY/`, E035
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E035-FINAL-GATE-MINGAP6-BUDGET1-GEOMETRY/gallery.html`.
+
+## E039--E046 — high-width-tail confirmation of the 4-FWHM final split gate (2026-07-24; provisional)
+
+The user clarified that the approximately 4.18-keV-FWHM U238 structure is a collapsed,
+unresolvable multiplet/envelope. It is therefore a protected dense-control case: apparent width
+alone must never make it a split candidate. The final policy operates on a clean gap between
+modeled peak cores, not ROI width, and left the U238/U235 tail cases unchanged.
+
+To avoid evaluator-window truncation hiding a result, the 27 historical high-width cases were
+run as deterministic, non-overlapping shards. E039/E040 (14 cases) changed only At211_Unsh and
+Lu177m_Unsh, exactly as on the geometry panel: no status, miss, spurious, empty, or failure
+change. E043/E044 (Sm153, Ta182, Th228, U233, and U235) had 6/6 Success and no correctness
+regression. The candidate improved total scalar cost by 1.05984: both Ta182 cases gained one
+observable fitted peak; Ta182_Sh reduced maximum ROI width by 8.16 FWHM, and Ta182_Unsh gained
+two ROIs and a plausible step-continuum candidate. E045/E046 covered the remaining seven
+U235-count variants and Uore: 7/7 Success, five pre-existing definite misses and zero spurious
+peaks unchanged, with every exported metric exactly identical.
+
+These runs support the narrow claim that the gate does not split dense collapsed structures or
+introduce broad high-width-tail regressions. They do not replace human side-by-side chart review
+of the changed At211, Lu177m, and Ta182 ROIs. Artifacts: E040 comparison
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E040-TAILA-MINGAP4/comparison/aggregate_comparison.md`;
+E044 comparison
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E044-TAILB1-MINGAP4/comparison/aggregate_comparison.md`;
+E046 comparison
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E046-TAILB2-MINGAP4/comparison/aggregate_comparison.md`.
+
+## Structural stop — ROI split materialization must preserve evidence exactly (2026-07-24)
+
+An adversarial review of the current caller paths found that the favorable E039--E046 numerical
+results are insufficient to promote the policy. In `merge_rois` and late overlap reconciliation,
+an invalid child or insufficient reconstructed model evidence can still erase a modeled group;
+some fallback paths can also merge across an explicit unmodeled-feature exclusion. Reconstructing
+ownership from a flat energy list permits duplication when ranges overlap. These are correctness
+defects, not tunable geometry trade-offs.
+
+Further corpus tuning is paused. The next implementation must carry stable modeled-line atoms
+(identity, energy, area, provenance, admission stage) through every automatic ROI operation and
+materialize a candidate transactionally. Before replacing a parent geometry it must prove: each
+admitted atom occurs exactly once; each assigned ROI contains its atom/core; child ROIs are
+channel-disjoint; unmodeled blockers and protected user/mixed geometry remain intact; and a failed
+partition restores the exact incumbent rather than dropping a group. R2 admission and R6 legacy
+geometry must remain isolated. Required causal fixtures cover boundary rounding, narrow/edge
+children, unmodeled blockers, protected overlap, and exact-once preservation.
+
+E047/E048 were created as an immutable four-spectrum visual-review pair (At211_Unsh,
+Lu177m_Unsh, Ta182_Sh, Ta182_Unsh), but deliberately not run after source changes began; they are
+not evidence and must not be overwritten.
+
+## E049--E052 — current atomic-reconciliation baseline and candidate (2026-07-24; not retained)
+
+The current worktree includes the new atom-carrying reconciliation layer. Focused exact-once,
+transitive-overlap, protected-geometry, narrow/edge child, and randomized reconciliation tests
+passed. Fresh controlled evaluation therefore replaced all pre-atomic candidate evidence.
+
+E049/E050 reran the four changed spectra on identical source code. The candidate (`final fitted
+partition=1`, `minimum core gap=4 FWHM`, one proposal, early policy/forced override off) had 4/4
+Success and no miss/spurious/empty/failure change. At211_Unsh contracted its maximum ROI by
+14.66 FWHM (22.55 keV / 46 channels); Ta182_Sh gained one observable requested peak and reduced
+width 1.17 FWHM; Ta182_Unsh was essentially numerically unchanged; Lu177m_Unsh had the known
+0.04668 area-cost regression with a 0.67-FWHM contraction and no truth event. Aggregate scalar
+improved by 0.27537. Galleries are E049
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E049-CHANGED-ROI-REVIEW-PARENT/gallery.html` and E050
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E050-CHANGED-ROI-REVIEW-MINGAP4/gallery.html`.
+
+E051/E052 reran the full frozen 22-case geometry panel. Only At211 and Lu177m changed; 22/22
+Success, seven definite misses, one spurious peak, zero empty, and zero mechanical failure were
+unchanged. At211 improved 14.66 FWHM and -0.00128 scalar; Lu177m regressed +0.04668 scalar;
+aggregate candidate-parent scalar was consequently +0.04540. Artifacts: E052 comparison
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E052-ATOMIC-MINGAP4-GEOMETRY/comparison/aggregate_comparison.md`.
+
+The full `test_fitPeaksForSources` suite was started with its required data arguments. The
+no-argument invocation failed only because its external fixture directory was unset. The
+properly configured run exposed four failures, including the existing/multisource regression
+`TrinititeSequential/test_multisource_strong_norm_interferer_is_stable` (missing required
+1460.82-keV K40 bystander). It is not acceptable to retain or review the candidate until this
+mixed existing-peak path is diagnosed; the test is direct evidence that automatic geometry has
+not yet met its compatibility contract.
+
+### Calibration-frame correction
+
+The final fitted-ROI challenger was audited against the existing solution-coordinate contract.
+It had incorrectly assigned atoms by comparing spectrum-calibration final ROI bounds with
+true-energy public `m_fit_peaks`. It now uses `m_peaks_without_back_sub`, whose means share the
+same spectrum calibration as `m_final_roi_ranges_in_spectrum_cal` and `solution.m_foreground`.
+The focused whole-component test still passes. E053/E054 freshly reran the frozen 22-case panel
+after the correction: their parent/candidate totals and per-spectrum deltas match E051/E052
+exactly (At211 contraction, only Lu177m area-only regression). This fixes an unsafe latent
+calibration issue without changing the validated Detective-X result. The R6/multisource suite
+failure remains a separate compatibility investigation; source-only evaluations continue to use
+explicit R6-off.
+
+## User visual review — Lu177m_Unsh invalidates the dense-control classification (2026-07-24)
+
+Direct review of the E035 Lu177m_Unsh plot found that the 275.9--344.5-keV, 39.1-FWHM
+eleven-peak ROI is not an acceptable dense control.  The requested non-borderline boundaries are
+near 288.2 keV, 310.1 keV, isolation of the 341.7-keV peak, and 373.5 keV; boundaries near
+324.6 and 382.4 keV are optional.  This is an ROI construction/grouping and parameterization
+defect, not a scalar-objective issue: visually clear continuum valleys are being hidden by a
+single shared linear continuum.
+
+The existing bounded final challenger cannot represent this judgement.  With the 4-FWHM core-gap
+arm its sole two-child AICc winner was an inappropriate 278.851-keV split.  With the provisional
+6-FWHM core-gap arm, every candidate in the Lu parent was rejected before measured-data scoring.
+The hard modeled-core-gap rail and first-in-energy one-proposal budget therefore conflate two
+different questions: whether a boundary has sufficient observed/SNIP continuum support, and how
+many independent sparse valleys occur in one broad fitted ROI.  The 6-FWHM setting is no longer a
+candidate default.  The next structural experiment will qualify boundaries with the existing
+tail-subtracted, global-SNIP-aware `find_clean_gap_between` evidence and permit a bounded,
+ranked multi-boundary partition only through the existing transactional local re-solve and
+requested-anchor preservation checks.  R2, R6, and protected user/mixed geometry remain out of
+scope for this change.
+
+### E039--E040 — clean-valley override causal check (rejected)
+
+E039 added an opt-in, default-off clean-window override to the hard partition core-gap rail.  It
+uses the existing tail-subtracted `find_clean_gap_between` calculation and the shared global SNIP
+continuum when available; the focused measured-component regression test proves that the hard
+rail still blocks by default and that an explicitly clean valley can override it.  E039 also
+showed an independent implementation defect: accepted final challengers were taken in energy
+order, so low-energy components consumed all three refinement passes before Lu177m was reached.
+
+E040 ranked every eligible final fitted-ROI challenger by common-channel measured-data AICc
+improvement before spending the per-pass budget.  On the single frozen Lu177m_Unsh case it then
+selected the broad 260.80--346.18-keV component first, but split it at **302.757 keV**.  That is
+not the visually requested 288.2/310.1/341.7 structure.  The next-pass child challenges rolled
+back transactionally, and the 373-keV candidate was never attempted under the one-proposal
+budget.  Thus neither E039 nor E040 is a candidate configuration.  This is evidence that a
+binary, globally best two-child AICc challenger is inadequate: its largest numerical gain can be
+an arbitrary central cut rather than a physically meaningful valley.  The replacement must score
+and rank multiple candidate valleys independently, preserve the local-solve anchor contract, and
+carry more than one selected boundary when a broad ROI has several resolved subgroups.  Artifacts:
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E039-LU-CLEAN-VALLEY/` and
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E040-LU-CLEAN-VALLEY-RANKED/`.
+### Dense-envelope admission rail and broad-shard follow-up (2026-07-24)
+
+User review clarified that the approximately 4.18-keV-FWHM feature is an intentionally collapsed,
+unresolvable multiplet. It must remain a shared ROI; it is not evidence for further partitioning.
+The late fitted-ROI challenger therefore now has an explicit, GA-visible sparse-ROI admission rail,
+`auto_roi_final_partition_max_atoms` (default 12; zero disables that rail). It records a
+`MergeInseparableWide` diagnostic and skips measured partition scoring when a fitted component
+contains more modeled atoms than the configured limit. This is distinct from the modeled-core
+gap and clean-valley parameters: it expresses the physical/model-complexity limit on using the
+late sparse-structure challenger at all.
+
+Development and testing builds completed after this change. Focused exact-once/component tests
+`test_whole_component_measured_partition` and `test_reconcile_randomized_exact_once` passed.
+E061 reran the previously incomplete 26-case broad-B candidate shard with explicit
+`auto_roi_final_partition_max_atoms=12`; it again reached 25/26 promptly but did not finish in
+the bounded diagnostic wait, so it is retained as an incomplete runtime artifact rather than a
+comparison result. The suspected dense uranium envelope was isolated in E062 and completed in
+about one second with a bit-for-bit identical TSV row to E059's parent: Success, one definite
+miss, zero spurious peaks, one ROI of 3.819 FWHM, and unchanged scalar cost 2.16973015. Zr95
+also completed rapidly in E063. Therefore U238's collapsed multiplet is neither split nor the
+remaining broad-shard runtime outlier. No geometry setting is accepted from E061; the next
+investigation must identify the one remaining slow spectrum before interpreting the broad-B
+candidate as a performance regression. Artifacts: E061
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E061-BROAD-B-MINGAP4-MAXATOMS12/`, E062
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E062-U238-MINGAP4-MAXATOMS12/`, and E063
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E063-ZR95-MINGAP4-MAXATOMS12/`.
+
+### E064--E069 — isolate the remaining sparse-wide-ROI limitation (2026-07-24)
+
+E064 used the existing `PEAKFIT_PERSPEC_TSV` progress diagnostic on the incomplete 26-case
+broad-B candidate shard. It identified `Pu238_Sh` as the 26th outstanding evaluation, rather
+than the dense U238 envelope. E065 established that Pu238 is intrinsically slow even under its
+unchanged parent configuration (approximately 90 seconds for the one-spectrum parent evaluation),
+so the incomplete broad run is not evidence that the late ROI policy created a performance
+regression. E066 did not complete in the bounded candidate diagnostic window and wrote no result;
+it is deliberately not interpreted as a fit comparison.
+
+E068 tested the specific visually bad Lu177m_Unsh 275.924--344.469-keV, 39.1-FWHM, eleven-peak
+ROI with the clean-gap override and three final proposals. It retained five component transactions
+elsewhere, but left the 39.1-FWHM ROI intact (12 ROIs total, 46 fitted/37 observable peaks,
+no misses or spurious peaks, scalar -72.13185). This directly demonstrates that a global ranking
+by two-continuum AICc can spend a bounded proposal budget on unrelated, smaller ROIs rather than
+the visually pathological wide range.
+
+To make that pressure tunable independently, a default-off GA gene
+`auto_roi_final_partition_min_width_fwhm` was added. It raises only late-challenger eligibility
+above the ordinary `auto_rel_eff_sol_max_fwhm` rail, without changing early automatic geometry.
+It is serialized, parsed backward-compatibly, clamped to 0--80 FWHM, mutated/crossed over, and
+applied before the expensive final partition scorer. E069 set it to 20 FWHM with the E068 clean
+multi-pass settings. It prevented unrelated smaller proposals but still left the target ROI intact;
+the result exactly matched E054 (12 ROIs, max 39.14 FWHM, scalar -72.14811). The current binary
+challenger therefore cannot express the necessary multi-boundary selection even when the right
+wide ROI is isolated. The next structural work must score admissible clean valleys as a bounded
+multi-boundary partition for one component, then pass all children through the existing local
+transaction/anchor-preservation contract. Artifacts: E064
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E064-BROAD-B-PERCASE/`, E065
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E065-PU238-PARENT/`, E068
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E068-LU-CLEAN-MULTIPASS/`, and E069
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E069-LU-WIDTH20-CLEAN-MULTIPASS/`.
+
+### E070--E074 — late challenger reaches its transaction, but the binary Lu cut is unsafe (2026-07-24)
+
+E070--E073 exercised the new bounded clean-valley multi-child controls on the frozen
+Lu177m_Unsh case. E070 retained the E054 result: the target 275.924--344.469-keV ROI remained
+39.14 FWHM. E071--E073 permitted a weaker 0.5-FWHM clean window, up to four children, and up to
+20 sparse atoms. They all produced the same rejected transaction: scalar -71.55406 versus
+-72.14811 parent, area cost 1.39568, 13 ROIs, and a still unacceptable 42.15-FWHM / 11-peak ROI.
+Those configurations are rejected. The one-channel/min-core-gap changes did not alter that
+outcome, so boundary rounding is not the active limitation.
+
+E074 fixed a late-path control-flow defect: when ordinary re-clustering was unchanged, the
+convergence exit occurred before an explicit final fitted-ROI partition could reach its isolated
+component transaction. The exit now remains available for ordinary convergence but is bypassed
+when `selected_component_partitions` is nonempty. Release/development and shared-test builds
+passed; `StatisticalDetailHelpers/test_whole_component_measured_partition` passed. With the same
+focused Lu genes, the 288.695-keV binary proposal now *does* reach the transaction and is rolled
+back by strict requested-anchor preservation. The final result is intentionally unchanged
+(Success; scalar -72.14811; 0 definite misses/spurious; 39.14-FWHM target ROI). This proves the
+remaining issue is not an inert setting or skipped challenger: a single binary cut does not retain
+the required requested-source evidence. Do not weaken the anchor contract merely to reduce width.
+The next redesign must create bounded multi-boundary children with adequate sidebands and test
+them as one local transaction; dense U238 remains an explicit no-split control. Artifact:
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E074-LU-LATE-TRANSACTION/`.
+
+### E075--E083 — late-only residual-valley policy (provisional) (2026-07-24)
+
+Added `auto_roi_partition_residual_valley_max_excess_z`, a default-off, GA-visible 0--8 sigma
+late-challenger rail. It admits a candidate only when the shared SNIP continuum plus modeled
+Gaussian tails explain the valley within the configured positive-excess bound. It does not relax
+ordinary merging. An initial propagation error let it alter early geometry; that was corrected so
+only the final fitted-ROI challenger receives this setting. The old 0.5-FWHM clean-gap experiment
+remains rejected, independently of this feature.
+
+E079 demonstrated the intended causal effect on Lu177m_Unsh: a bounded multi-child local
+transaction reduced the worst ROI from 39.14 to 27.32 FWHM, with no definite misses or spurious
+peaks. E080's U238_Unsh TSV is byte-identical to its frozen parent, confirming the dense
+unresolved envelope remains untouched. E081 exposed a new Sm153 spurious peak at a 20-FWHM
+late-width floor, so that setting is rejected. Raising the floor to 30 FWHM avoids that regression.
+
+E082 then exposed another structural bug: an accepted component transaction could be overwritten
+by the next ordinary re-clustering iteration. Accepted component transactions are now terminal for
+that fit pass; all selected components have already been applied locally, and later global
+reclustering has no ownership of the transaction geometry. E083 is the resulting 22-spectrum
+geometry-panel candidate: all 22 succeed, miss/spurious counts remain 7/1 (unchanged), and Lu
+retains the 27.32-FWHM maximum. Its aggregate scalar is 0.786 higher, primarily area/find reward
+movement caused by the intended split. This candidate is provisional pending plot-level review of
+Lu and At211, not a default. Artifacts: E079
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E079-LU-LATE-RESIDUAL-ONLY/`, E080
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E080-U238-LATE-RESIDUAL-ONLY/`, and E083
+`/private/tmp/HPGE-DETX-BAL-300-BG-R6OFF-E083-GEOMETRY-LATE-RESIDUAL-W30-TERMINAL/`.

@@ -359,6 +359,23 @@ namespace detail
     double continuum_aicc_penalty = 2.0;
     double peak_core_num_fwhm = 1.0;
     double max_width_fwhm = 12.0;
+    // Optional admission rail for a proposed split.  Unlike force_partition_gap_fwhm, this
+    // filters even AICc-preferred boundaries so dense resolved multiplets do not fan out merely
+    // because two continua have more flexibility.
+    double minimum_partition_gap_fwhm = 0.0;
+    // Permit a tail-subtracted continuum-anchoring window to override the hard modeled-core
+    // gap rail.  This is opt-in because core spacing alone cannot distinguish a visible valley
+    // from a dense resolved multiplet, while the clean-window test can.
+    bool allow_clean_gap_partition_override = false;
+    // A final sparse-ROI challenger may instead use a residual valley: no statistically
+    // significant unmodeled excess above the shared SNIP continuum and modeled Gaussian tails.
+    // Zero disables it, preserving the stricter tail-clean window rule.
+    double residual_valley_max_excess_z = 0.0;
+    // Maximum children from one measured whole-component partition.  Two preserves the original
+    // binary challenger; larger values are admitted only when clean-gap mode is explicitly on.
+    size_t max_partition_children = 2;
+    const GlobalContinuumEstimate *global_continuum = nullptr;
+    double force_partition_gap_fwhm = 0.0;
     /** Permit an over-wide recovery component to continue past the ordinary overlapping-core
      short-circuit and seek a scored boundary.  False preserves the initial atom-safe policy. */
     bool allow_overwide_overlap_partition = false;
@@ -895,6 +912,37 @@ struct PeakFitForNuclideConfig
   double auto_roi_core_num_fwhm = 1.5;    // Always-included ROI half-extent beyond outermost gamma
   double auto_rel_eff_sol_max_fwhm = 12.0;  // Tighter constraint as solution improves
   double auto_rel_eff_sol_min_fwhm_roi = 1.25;
+  // Permit the automatic late-geometry reconciler to score a core-safe partition of an
+  // over-wide component.  Disabled by default while detector-specific evidence is gathered.
+  bool auto_roi_partition_overwide = false;
+  // Separately admit a partition proposed from a completed solver ROI.  This path has more
+  // complete peak evidence than the early predicted-gamma reconciler, so it must be tuned and
+  // validated independently rather than being an implicit consequence of the early policy.
+  bool auto_roi_final_fitted_partition = false;
+  // Minimum modeled-core separation required before a final automatic ROI can be partitioned.
+  // Zero retains the established AICc-only behavior.
+  double auto_roi_partition_min_gap_fwhm = 0.0;
+  // When enabled, a global-SNIP-aware clean continuum window may admit a partition below the
+  // core-gap rail.  Disabled by default so existing configurations retain their geometry.
+  bool auto_roi_partition_allow_clean_gap_override = false;
+  // Opt-in residual-SNIP valley admission for late sparse-ROI partitions. Zero disables it.
+  // This is deliberately distinct from merge_tail_z: it never changes ordinary ROI merging.
+  double auto_roi_partition_residual_valley_max_excess_z = 0.0;
+  // Limit expensive post-solve local challengers per refinement.  The normal solver can revisit
+  // geometry on later refinement passes; this prevents dense spectra from multiplying solves.
+  size_t auto_roi_final_partition_max_proposals = 1;
+  // Late partitions are intended for sparse, visibly separated fitted structures.  A dense
+  // collapsed multiplet is both physically inappropriate to split and expensive to score.
+  // Zero disables this atom-count admission rail.
+  size_t auto_roi_final_partition_max_atoms = 12;
+  // Optional lower width threshold for the late fitted-ROI challenger.  Zero retains the normal
+  // auto_rel_eff_sol_max_fwhm admission threshold; a larger value targets only genuinely broad
+  // fitted ROIs without spending the bounded proposal budget on ordinary borderline ranges.
+  double auto_roi_final_partition_min_width_fwhm = 0.0;
+  // Maximum children a clean-valley whole-component challenger may propose in one transaction.
+  // Two retains the original binary behavior.
+  size_t auto_roi_partition_max_children = 2;
+  double auto_roi_partition_force_gap_fwhm = 0.0;
 
   // Adaptive ROI sideband extension (shared between manual and auto stages): block-consistency z
   // and extension cap in FWHM beyond the outermost gamma.  See detail::extend_roi_by_sidebands.

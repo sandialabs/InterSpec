@@ -2990,6 +2990,61 @@ BOOST_AUTO_TEST_CASE( test_whole_component_measured_partition )
   BOOST_CHECK_GT( split.components[1].first_channel,
                   split.components[0].last_channel );
 
+  // The minimum-gap rail applies before AICc selection: it can keep a dense or only modestly
+  // resolved group intact even when separate continua would win the flexible measured-data fit.
+  settings.minimum_partition_gap_fwhm = 12.0;
+  const AutomaticRoiComponentPartitionResult minimum_gap_blocked
+    = partition_overwide_automatic_component( {wide}, foreground, fwhm_at,
+        {}, settings, constraints );
+  BOOST_REQUIRE( minimum_gap_blocked.valid );
+  BOOST_CHECK( !minimum_gap_blocked.changed );
+  BOOST_CHECK( minimum_gap_blocked.diagnostic.decision
+               == AutomaticRoiDecision::MergeInseparableWide );
+  check_exact_once( {wide}, minimum_gap_blocked.components, {} );
+  // A visually clean continuum window is distinct evidence from modeled-core spacing.  The
+  // override is explicit: it may admit this sparse valley without weakening the hard rail for
+  // dense multiplets where the clean-window test fails.
+  settings.allow_clean_gap_partition_override = true;
+  const AutomaticRoiComponentPartitionResult clean_gap_override
+    = partition_overwide_automatic_component( {wide}, foreground, fwhm_at,
+        {}, settings, constraints );
+  BOOST_REQUIRE( clean_gap_override.valid );
+  BOOST_CHECK( clean_gap_override.changed );
+  check_exact_once( {wide}, clean_gap_override.components, {} );
+  settings.allow_clean_gap_partition_override = false;
+  settings.minimum_partition_gap_fwhm = 0.0;
+
+  // A clean core gap is an explicit, separately tunable escape hatch for a final fitted ROI.
+  // A deliberately high continuum-complexity penalty makes the otherwise valid two-ROI model
+  // lose AICc; the default must retain that union.  Enabling the configured gap admits the same
+  // atom-safe partition and labels it truthfully, rather than silently presenting it as an AICc
+  // win.
+  const auto close_peak_data = make_synthetic_spectrum( 240, 0.0f, 1.0f,
+      []( const double ){ return 15.0; },
+      { {100.0, sigma, 50.0}, {108.0, sigma, 60.0} } );
+  const AutomaticRoiComponent unsupported_wide = mk_component( 94.0, 114.0,
+      close_peak_data, { mk_atom(100.0, 50.0), mk_atom(108.0, 60.0) } );
+  settings.continuum_aicc_penalty = 25.0;
+  const AutomaticRoiComponentPartitionResult unsupported_default
+    = partition_overwide_automatic_component( {unsupported_wide}, close_peak_data, fwhm_at,
+        {}, settings, constraints );
+  BOOST_REQUIRE( unsupported_default.valid );
+  BOOST_CHECK( !unsupported_default.changed );
+  BOOST_CHECK_GE( unsupported_default.diagnostic.two_roi_aicc,
+                  unsupported_default.diagnostic.one_roi_aicc );
+  settings.force_partition_gap_fwhm = 2.0;
+  const AutomaticRoiComponentPartitionResult unsupported_forced
+    = partition_overwide_automatic_component( {unsupported_wide}, close_peak_data, fwhm_at,
+        {}, settings, constraints );
+  BOOST_REQUIRE( unsupported_forced.valid );
+  BOOST_CHECK( unsupported_forced.changed );
+  BOOST_CHECK( unsupported_forced.diagnostic.decision == AutomaticRoiDecision::KeepSeparate );
+  BOOST_CHECK( unsupported_forced.diagnostic.reason.find( "configured clean core gap" )
+               != std::string::npos );
+  check_exact_once( {unsupported_wide}, unsupported_forced.components, {} );
+  settings.force_partition_gap_fwhm = 0.0;
+  settings.continuum_aicc_penalty = 2.0;
+
   // A three-anchor component still produces the explicitly-scored two-continuum challenger, not
   // an unreported multi-segment DP result, and owns every atom exactly once.
   const auto three_peak_data = make_synthetic_spectrum( 240, 0.0f, 1.0f,
@@ -3314,8 +3369,90 @@ BOOST_AUTO_TEST_CASE( test_reconcile_overlapping_ownership_exact_once )
   BOOST_CHECK_EQUAL( unowned.size(), 1u );         // the 200 keV atom is outside both ROIs
 }
 
+// Test G2: adaptive-style bound changes can leave an out-of-order, transitively overlapping list.
+// The whole-list reconciliation must restore order, honor nonzero child-width expansion, preserve
+// protected geometry, and retain every modeled atom exactly once.
+BOOST_AUTO_TEST_CASE( test_reconcile_out_of_order_transitive_overlap )
+{
+  using FitPeaksForNuclides::detail::reconcile_automatic_components;
+  const double fwhm = 2.0;
+  const double sigma = fwhm / 2.35482;
+  const auto fwhm_at = [fwhm]( const double ){ return fwhm; };
+  const auto density = []( const double ){ return 10.0; };
+  const auto fg = make_synthetic_spectrum( 240, 0.0f, 1.0f, density,
+      { {50.0, sigma, 3000.0}, {100.0, sigma, 4000.0}, {140.0, sigma, 3500.0},
+        {160.0, sigma, 4500.0}, {130.0, sigma, 1200.0}, {150.0, sigma, 1200.0} } );
+  const auto snip = make_synthetic_spectrum( 240, 0.0f, 1.0f, density );
+  GlobalContinuumEstimate global = mk_global( fg, snip );
 
-// Test G2: a wide ROI whose only atom is nearer a narrow overlapping ROI's midpoint is fully
+  AutomaticRoiComponent protected_component = mk_component(
+      40.0, 60.0, fg, { mk_atom(50.0,3000.0) }, true );
+  protected_component.continuum_type = PeakContinuum::OffsetType::Quadratic;
+  protected_component.range_limits_type
+      = RelActCalcAuto::RoiRange::RangeLimitsType::CanExpandForFwhm;
+  const AutomaticRoiComponent left = mk_component(
+      92.0, 150.0, fg, { mk_atom(100.0,4000.0) } );
+  const AutomaticRoiComponent high = mk_component(
+      110.0, 180.0, fg, { mk_atom(160.0,4500.0) } );
+  const AutomaticRoiComponent middle = mk_component(
+      120.0, 170.0, fg, { mk_atom(140.0,3500.0) } );
+  const std::shared_ptr<const PeakDef> unmodeled_left
+      = std::make_shared<const PeakDef>( 130.0, sigma, 1200.0 );
+  const std::shared_ptr<const PeakDef> unmodeled_right
+      = std::make_shared<const PeakDef>( 150.0, sigma, 1200.0 );
+
+  AutomaticRoiPartitionConstraints cons;
+  cons.lowest_energy = 0.0;
+  cons.highest_energy = 240.0;
+  cons.left_barrier = -std::numeric_limits<double>::infinity();
+  cons.min_width_fwhm = 6.0;
+  cons.peak_core_num_fwhm = 1.0;
+
+  // Deliberately place the high-energy component first.  After the first pair is split, its right
+  // child starts above the still-unprocessed middle component's lower bound; the former left fold
+  // then merged those two in reverse anchor order and enlarged them back across the first child.
+  std::vector<AutomaticRoiComponent> components
+      = { high, protected_component, left, middle };
+  const std::vector<AutomaticRoiComponent> before = components;
+  const AutomaticRoiReconcileResult res = reconcile_automatic_components(
+      components, fg, &global, fwhm_at, { unmodeled_left, unmodeled_right },
+      default_policy_settings(), cons, nullptr );
+
+  BOOST_REQUIRE_MESSAGE( res.valid, res.failure_reason );
+  BOOST_CHECK( res.orphaned_atoms.empty() );
+  check_exact_once( before, res.components, res.orphaned_atoms );
+  BOOST_CHECK_EQUAL( atom_ids(before).size(), 4u );
+  BOOST_CHECK_EQUAL( atom_ids(res.components).size(), 4u );
+
+  for( size_t index = 1; index < res.components.size(); ++index )
+  {
+    BOOST_CHECK_GE( res.components[index].lower, res.components[index - 1].upper );
+    BOOST_CHECK_GT( res.components[index].first_channel,
+                    res.components[index - 1].last_channel );
+  }
+  for( const AutomaticRoiComponent &component : res.components )
+  {
+    if( !component.protected_geometry )
+      BOOST_CHECK_GE( component.upper - component.lower, cons.min_width_fwhm*fwhm - 1.0e-6 );
+    for( const RoiAtom &atom : component.atoms )
+    {
+      BOOST_CHECK_LE( component.lower, atom.energy - cons.peak_core_num_fwhm*fwhm + 1.0e-6 );
+      BOOST_CHECK_GE( component.upper, atom.energy + cons.peak_core_num_fwhm*fwhm - 1.0e-6 );
+    }
+  }
+
+  const auto protected_after = std::find_if(
+      std::begin(res.components), std::end(res.components),
+      []( const AutomaticRoiComponent &component ){ return component.protected_geometry; } );
+  BOOST_REQUIRE( protected_after != std::end(res.components) );
+  BOOST_CHECK_EQUAL( protected_after->lower, protected_component.lower );
+  BOOST_CHECK_EQUAL( protected_after->upper, protected_component.upper );
+  BOOST_CHECK( protected_after->continuum_type == protected_component.continuum_type );
+  BOOST_CHECK( protected_after->range_limits_type == protected_component.range_limits_type );
+}
+
+
+// Test G3: a wide ROI whose only atom is nearer a narrow overlapping ROI's midpoint is fully
 // "starved" by exact-once assignment, leaving it atom-empty.  The reconciler must keep the atom
 // (in the narrow ROI) and never drop it via the zero-atom rejection.  (Regression: the zero-atom
 // branch previously continue-dropped the non-empty side.)

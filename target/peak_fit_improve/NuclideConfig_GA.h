@@ -401,6 +401,16 @@ struct NuclideConfigSolution
   double roi_max_num_fwhm;          // extension cap beyond outermost gamma (shared)
   double auto_rel_eff_sol_max_fwhm;
   double auto_rel_eff_sol_min_fwhm_roi;
+  int auto_roi_partition_overwide;  // 0/1: admit measured-data partition of over-wide components
+  int auto_roi_final_fitted_partition;  // 0/1: admit a separately validated final fitted-ROI partition
+  double auto_roi_partition_min_gap_fwhm;
+  int auto_roi_partition_allow_clean_gap_override;
+  double auto_roi_partition_residual_valley_max_excess_z;
+  int auto_roi_final_partition_max_proposals;
+  int auto_roi_final_partition_max_atoms;
+  double auto_roi_final_partition_min_width_fwhm;
+  int auto_roi_partition_max_children;
+  double auto_roi_partition_force_gap_fwhm;
 
   // --- RelActAuto model parameters ---
   int rel_eff_eqn_type;   // RelActCalc::RelEffEqnForm (0..4, excluding FramPhysicalModel=4 is fine to include)

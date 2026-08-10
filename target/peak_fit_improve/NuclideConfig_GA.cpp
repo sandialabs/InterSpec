@@ -739,6 +739,16 @@ std::string NuclideConfigSolution::to_string( const std::string &separator ) con
       << "roi_max_num_fwhm=" << roi_max_num_fwhm << separator
       << "auto_rel_eff_sol_max_fwhm=" << auto_rel_eff_sol_max_fwhm << separator
       << "auto_rel_eff_sol_min_fwhm_roi=" << auto_rel_eff_sol_min_fwhm_roi << separator
+      << "auto_roi_partition_overwide=" << auto_roi_partition_overwide << separator
+      << "auto_roi_final_fitted_partition=" << auto_roi_final_fitted_partition << separator
+      << "auto_roi_partition_min_gap_fwhm=" << auto_roi_partition_min_gap_fwhm << separator
+      << "auto_roi_partition_allow_clean_gap_override=" << auto_roi_partition_allow_clean_gap_override << separator
+      << "auto_roi_partition_residual_valley_max_excess_z=" << auto_roi_partition_residual_valley_max_excess_z << separator
+      << "auto_roi_final_partition_max_proposals=" << auto_roi_final_partition_max_proposals << separator
+      << "auto_roi_final_partition_max_atoms=" << auto_roi_final_partition_max_atoms << separator
+      << "auto_roi_final_partition_min_width_fwhm=" << auto_roi_final_partition_min_width_fwhm << separator
+      << "auto_roi_partition_max_children=" << auto_roi_partition_max_children << separator
+      << "auto_roi_partition_force_gap_fwhm=" << auto_roi_partition_force_gap_fwhm << separator
       << "rel_eff_eqn_type=" << rel_eff_eqn_type << separator
       << "rel_eff_eqn_order=" << rel_eff_eqn_order << separator
       << "desperation_phys_model_atomic_number=" << desperation_phys_model_atomic_number << separator
@@ -809,6 +819,104 @@ bool NuclideConfigSolution::from_string( const std::string &line, const std::str
   getD( "roi_max_num_fwhm", out.roi_max_num_fwhm );
   getD( "auto_rel_eff_sol_max_fwhm", out.auto_rel_eff_sol_max_fwhm );
   getD( "auto_rel_eff_sol_min_fwhm_roi", out.auto_rel_eff_sol_min_fwhm_roi );
+  const auto overwide_partition = kv.find( "auto_roi_partition_overwide" );
+  if( overwide_partition == std::end(kv) )
+  {
+    // Existing gene files predate this structural control and retain the conservative behavior.
+    out.auto_roi_partition_overwide = 0;
+  }else
+  {
+    try{ out.auto_roi_partition_overwide = std::stoi( overwide_partition->second ); }
+    catch( ... ){ ok = false; }
+  }
+  const auto final_fitted_partition = kv.find( "auto_roi_final_fitted_partition" );
+  if( final_fitted_partition == std::end(kv) )
+  {
+    // Existing files retain the established early-policy-only behavior.
+    out.auto_roi_final_fitted_partition = 0;
+  }else
+  {
+    try{ out.auto_roi_final_fitted_partition = std::stoi( final_fitted_partition->second ); }
+    catch( ... ){ ok = false; }
+  }
+  const auto force_partition_gap = kv.find( "auto_roi_partition_force_gap_fwhm" );
+  const auto min_partition_gap = kv.find( "auto_roi_partition_min_gap_fwhm" );
+  const auto clean_gap_partition_override
+    = kv.find( "auto_roi_partition_allow_clean_gap_override" );
+  const auto residual_valley_max_excess
+    = kv.find( "auto_roi_partition_residual_valley_max_excess_z" );
+  const auto final_partition_proposals = kv.find( "auto_roi_final_partition_max_proposals" );
+  const auto final_partition_atoms = kv.find( "auto_roi_final_partition_max_atoms" );
+  const auto final_partition_min_width = kv.find( "auto_roi_final_partition_min_width_fwhm" );
+  const auto partition_max_children = kv.find( "auto_roi_partition_max_children" );
+  if( min_partition_gap == std::end(kv) )
+  {
+    out.auto_roi_partition_min_gap_fwhm = 0.0;
+  }else
+  {
+    try{ out.auto_roi_partition_min_gap_fwhm = std::stod( min_partition_gap->second ); }
+    catch( ... ){ ok = false; }
+  }
+  if( clean_gap_partition_override == std::end(kv) )
+  {
+    out.auto_roi_partition_allow_clean_gap_override = 0;
+  }else
+  {
+    try{ out.auto_roi_partition_allow_clean_gap_override
+      = std::stoi( clean_gap_partition_override->second ); }
+    catch( ... ){ ok = false; }
+  }
+  if( residual_valley_max_excess == std::end(kv) )
+  {
+    out.auto_roi_partition_residual_valley_max_excess_z = 0.0;
+  }else
+  {
+    try{ out.auto_roi_partition_residual_valley_max_excess_z
+      = std::stod( residual_valley_max_excess->second ); }
+    catch( ... ){ ok = false; }
+  }
+  if( final_partition_proposals == std::end(kv) )
+  {
+    out.auto_roi_final_partition_max_proposals = 1;
+  }else
+  {
+    try{ out.auto_roi_final_partition_max_proposals = std::stoi( final_partition_proposals->second ); }
+    catch( ... ){ ok = false; }
+  }
+  if( final_partition_atoms == std::end(kv) )
+  {
+    out.auto_roi_final_partition_max_atoms = 12;
+  }else
+  {
+    try{ out.auto_roi_final_partition_max_atoms = std::stoi( final_partition_atoms->second ); }
+    catch( ... ){ ok = false; }
+  }
+  if( final_partition_min_width == std::end(kv) )
+  {
+    out.auto_roi_final_partition_min_width_fwhm = 0.0;
+  }else
+  {
+    try{ out.auto_roi_final_partition_min_width_fwhm = std::stod( final_partition_min_width->second ); }
+    catch( ... ){ ok = false; }
+  }
+  if( partition_max_children == std::end(kv) )
+  {
+    out.auto_roi_partition_max_children = 2;
+  }else
+  {
+    try{ out.auto_roi_partition_max_children = std::stoi( partition_max_children->second ); }
+    catch( ... ){ ok = false; }
+  }
+  if( force_partition_gap == std::end(kv) )
+  {
+    // The force-gap experiment is newer than the existing ROI-policy gene files.  Its absence
+    // means disabled, so established configurations remain directly reproducible.
+    out.auto_roi_partition_force_gap_fwhm = 0.0;
+  }else
+  {
+    try{ out.auto_roi_partition_force_gap_fwhm = std::stod( force_partition_gap->second ); }
+    catch( ... ){ ok = false; }
+  }
   getI( "rel_eff_eqn_type", out.rel_eff_eqn_type );
   getI( "rel_eff_eqn_order", out.rel_eff_eqn_order );
   getD( "desperation_phys_model_atomic_number", out.desperation_phys_model_atomic_number );
@@ -884,6 +992,22 @@ PeakFitForNuclideConfig genes_to_settings( const NuclideConfigSolution &p )
   config.roi_max_num_fwhm = p.roi_max_num_fwhm;
   config.auto_rel_eff_sol_max_fwhm = p.auto_rel_eff_sol_max_fwhm;
   config.auto_rel_eff_sol_min_fwhm_roi = p.auto_rel_eff_sol_min_fwhm_roi;
+  config.auto_roi_partition_overwide = (p.auto_roi_partition_overwide != 0);
+  config.auto_roi_final_fitted_partition = (p.auto_roi_final_fitted_partition != 0);
+  config.auto_roi_partition_min_gap_fwhm = p.auto_roi_partition_min_gap_fwhm;
+  config.auto_roi_partition_allow_clean_gap_override
+    = (p.auto_roi_partition_allow_clean_gap_override != 0);
+  config.auto_roi_partition_residual_valley_max_excess_z = std::clamp(
+      p.auto_roi_partition_residual_valley_max_excess_z, 0.0, 8.0 );
+  config.auto_roi_final_partition_max_proposals = static_cast<size_t>( std::clamp(
+      p.auto_roi_final_partition_max_proposals, 0, 4 ) );
+  config.auto_roi_final_partition_max_atoms = static_cast<size_t>( std::clamp(
+      p.auto_roi_final_partition_max_atoms, 0, 64 ) );
+  config.auto_roi_final_partition_min_width_fwhm = std::clamp(
+      p.auto_roi_final_partition_min_width_fwhm, 0.0, 80.0 );
+  config.auto_roi_partition_max_children = static_cast<size_t>( std::clamp(
+      p.auto_roi_partition_max_children, 2, 6 ) );
+  config.auto_roi_partition_force_gap_fwhm = p.auto_roi_partition_force_gap_fwhm;
 
   // RelEffEqnForm: 0=LnX, 1=LnY, 2=LnXLnY, 3=FramEmpirical, 4=FramPhysicalModel
   config.rel_eff_eqn_type = static_cast<RelActCalc::RelEffEqnForm>(
@@ -948,6 +1072,20 @@ NuclideConfigSolution settings_to_genes( const PeakFitForNuclideConfig &config )
   p.roi_max_num_fwhm = config.roi_max_num_fwhm;
   p.auto_rel_eff_sol_max_fwhm = config.auto_rel_eff_sol_max_fwhm;
   p.auto_rel_eff_sol_min_fwhm_roi = config.auto_rel_eff_sol_min_fwhm_roi;
+  p.auto_roi_partition_overwide = config.auto_roi_partition_overwide ? 1 : 0;
+  p.auto_roi_final_fitted_partition = config.auto_roi_final_fitted_partition ? 1 : 0;
+  p.auto_roi_partition_min_gap_fwhm = config.auto_roi_partition_min_gap_fwhm;
+  p.auto_roi_partition_allow_clean_gap_override
+    = config.auto_roi_partition_allow_clean_gap_override ? 1 : 0;
+  p.auto_roi_partition_residual_valley_max_excess_z
+    = config.auto_roi_partition_residual_valley_max_excess_z;
+  p.auto_roi_final_partition_max_proposals = static_cast<int>(
+      config.auto_roi_final_partition_max_proposals );
+  p.auto_roi_final_partition_max_atoms = static_cast<int>(
+      config.auto_roi_final_partition_max_atoms );
+  p.auto_roi_final_partition_min_width_fwhm = config.auto_roi_final_partition_min_width_fwhm;
+  p.auto_roi_partition_max_children = static_cast<int>( config.auto_roi_partition_max_children );
+  p.auto_roi_partition_force_gap_fwhm = config.auto_roi_partition_force_gap_fwhm;
 
   p.rel_eff_eqn_type = static_cast<int>( config.rel_eff_eqn_type );
   p.rel_eff_eqn_order = static_cast<int>( config.rel_eff_eqn_order );
@@ -1014,6 +1152,16 @@ void init_genes( NuclideConfigSolution &p, const std::function<double(void)> &rn
   p.roi_max_num_fwhm = 2.0 + 6.0 * rnd01();
   p.auto_rel_eff_sol_max_fwhm = 4.0 + 21.0 * rnd01();
   p.auto_rel_eff_sol_min_fwhm_roi = 0.5 + 2.5 * rnd01();
+  p.auto_roi_partition_overwide = rnd01() < 0.5 ? 0 : 1;
+  p.auto_roi_final_fitted_partition = rnd01() < 0.5 ? 0 : 1;
+  p.auto_roi_partition_min_gap_fwhm = 0.0;
+  p.auto_roi_partition_allow_clean_gap_override = 0;
+  p.auto_roi_partition_residual_valley_max_excess_z = 0.0;
+  p.auto_roi_final_partition_max_proposals = 1;
+  p.auto_roi_final_partition_max_atoms = 12;
+  p.auto_roi_final_partition_min_width_fwhm = 0.0;
+  p.auto_roi_partition_max_children = 2;
+  p.auto_roi_partition_force_gap_fwhm = 0.0;
 
   // RelActAuto model
   // RelEffEqnForm: 0..4 (LnX, LnY, LnXLnY, FramEmpirical, FramPhysicalModel)
@@ -1163,6 +1311,16 @@ NuclideConfigSolution mutate( const NuclideConfigSolution &X_base,
     MUTATE_DOUBLE( roi_max_num_fwhm, 2.0, 8.0 )
     MUTATE_DOUBLE( auto_rel_eff_sol_max_fwhm, 4.0, 25.0 )
     MUTATE_DOUBLE( auto_rel_eff_sol_min_fwhm_roi, 0.5, 3.0 )
+    MUTATE_BOOL( auto_roi_partition_overwide )
+    MUTATE_BOOL( auto_roi_final_fitted_partition )
+    MUTATE_DOUBLE( auto_roi_partition_min_gap_fwhm, 0.0, 12.0 )
+    MUTATE_BOOL( auto_roi_partition_allow_clean_gap_override )
+    MUTATE_DOUBLE( auto_roi_partition_residual_valley_max_excess_z, 0.0, 8.0 )
+    MUTATE_INT( auto_roi_final_partition_max_proposals, 0, 4 )
+    MUTATE_INT( auto_roi_final_partition_max_atoms, 0, 64 )
+    MUTATE_DOUBLE( auto_roi_final_partition_min_width_fwhm, 0.0, 80.0 )
+    MUTATE_INT( auto_roi_partition_max_children, 2, 6 )
+    MUTATE_DOUBLE( auto_roi_partition_force_gap_fwhm, 0.0, 12.0 )
 
     // RelActAuto model
     MUTATE_INT( rel_eff_eqn_type, 0, 4 )
@@ -1257,6 +1415,16 @@ NuclideConfigSolution crossover( const NuclideConfigSolution &X1,
   CROSSOVER_DOUBLE( roi_max_num_fwhm )
   CROSSOVER_DOUBLE( auto_rel_eff_sol_max_fwhm )
   CROSSOVER_DOUBLE( auto_rel_eff_sol_min_fwhm_roi )
+  CROSSOVER_INT( auto_roi_partition_overwide )
+  CROSSOVER_INT( auto_roi_final_fitted_partition )
+  CROSSOVER_DOUBLE( auto_roi_partition_min_gap_fwhm )
+  CROSSOVER_INT( auto_roi_partition_allow_clean_gap_override )
+  CROSSOVER_DOUBLE( auto_roi_partition_residual_valley_max_excess_z )
+  CROSSOVER_INT( auto_roi_final_partition_max_proposals )
+  CROSSOVER_INT( auto_roi_final_partition_max_atoms )
+  CROSSOVER_DOUBLE( auto_roi_final_partition_min_width_fwhm )
+  CROSSOVER_INT( auto_roi_partition_max_children )
+  CROSSOVER_DOUBLE( auto_roi_partition_force_gap_fwhm )
 
   // RelActAuto model
   CROSSOVER_INT( rel_eff_eqn_type )
@@ -2093,6 +2261,24 @@ void write_cached_manual_review_report(
     if( summary.rois.empty() )
       html << "<tr><td colspan=\"11\">No public fitted ROIs. The measured chart and truth table remain available for review.</td></tr>";
     html << "</table>";
+
+    html << "<details><summary>Automatic ROI policy diagnostics</summary><table><tr><th>Stage</th><th>Decision</th><th>Bounds</th><th>Width pressure</th><th>One ROI AICc</th><th>Two ROI AICc</th><th>Boundary</th><th>Reason</th></tr>";
+    if( fit )
+    {
+      for( const FitPeaksForNuclides::AutomaticRoiDecisionDiagnostic &diag
+           : fit->automatic_roi_diagnostics )
+      {
+        html << "<tr><td>" << ReportDetail::html_escape(diag.stage) << "</td><td>"
+             << ReportDetail::html_escape(FitPeaksForNuclides::automatic_roi_decision_name(diag.decision))
+             << "</td><td>" << diag.left_lower << "–" << std::max(diag.left_upper, diag.right_upper)
+             << "</td><td>" << diag.width_pressure << "</td><td>" << diag.one_roi_aicc
+             << "</td><td>" << diag.two_roi_aicc << "</td><td>" << diag.boundary_energy
+             << "</td><td>" << ReportDetail::html_escape(diag.reason) << "</td></tr>";
+      }
+    }
+    if( !fit || fit->automatic_roi_diagnostics.empty() )
+      html << "<tr><td colspan=\"8\">No automatic policy decisions recorded.</td></tr>";
+    html << "</table></details>";
 
     html << "<h3>Fitted peaks</h3><p>This table uses combined public <code>fit_peaks</code>. Observable association is a report-only nearest-position association to <code>observable_peaks</code>; the objective itself uses the observable vector directly.</p>"
          << "<table><tr><th>Peak</th><th>Source/provenance</th><th>Mean</th><th>Mean uncert</th><th>Area</th><th>Area uncert</th><th>Significance</th><th>ROI</th><th>Observable</th></tr>";
