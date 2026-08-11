@@ -55,6 +55,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">{1} की ऊपरी सीमा के लिए पीक @{2} CL</message>
   <message id="dls-results-txt-upper-bound-act">{1} से कम @{2} CL</message>
+  <message id="dls-results-txt-predicted-act">पूर्वानुमानित संवेदनशीलता: {3} के मापन हेतु {2} वि.स्तर पर {1} से कम</message>
+  <message id="dls-results-txt-predicted-counts">पूर्वानुमानित संवेदनशीलता: {3} के मापन हेतु {2} वि.स्तर पर {1} संकेत गणनाओं से कम</message>
+  <message id="dls-chart-title-predicted-act">{1} की पूर्वानुमानित संवेदनशीलता के लिए पीक @{2} CL</message>
+  <message id="dls-chart-title-predicted-counts">{1} गणनाओं की पूर्वानुमानित संवेदनशीलता के लिए पीक @{2} CL</message>
   <message id="dls-chart-title-upper-bound-counts">{1} गणनाओं की ऊपरी सीमा के लिए पीक @{2} CL</message>
   <message id="dls-results-txt-upper-bound-counts">{1} संकेत गणनाओं से कम उपस्थित @{2} CL</message>
   <message id="dls-err-no-meas">कोई माप उपलब्ध नहीं</message>
@@ -81,7 +85,7 @@
   <message id="dls-err-no-fwhm-info">डिटेक्टर दक्षता फ़ंक्शन में FWHM जानकारी नहीं है - कृपया FWHM के लिए फिट करें, या डिटेक्टर बदलें।</message>
   <message id="dls-is-background-spectrum-cb-short">पृष्ठभूमि?</message>
   <message id="dls-num-side-channel-label-short">पार्श्व चै.:</message>
-  <message id="dls-result-scaled-postfix"> (जीवंत समय={1})</message>
+  <message id="dls-result-projected-band"> (आमतौर पर इस मान का {1}&ndash;{2}&times;)</message>
   <message id="dls-roi-lower-label-short">निम्न:</message>
   <message id="dls-roi-upper-label-short">उच्च:</message>
   <message id="dls-scale-more-info-note">

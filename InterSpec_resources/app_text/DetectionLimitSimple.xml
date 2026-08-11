@@ -23,7 +23,13 @@
       The option to choose side-channels adjacent to the peak-region becomes no-longer relevant, so will be hidden.
     </p>
   </message>
-  <message id="dls-result-scaled-postfix"> (LT={1})</message>
+
+  <!-- The predicted spread of a projected limit.  A projection is a prediction about a measurement
+       nobody has taken, and its median alone hides how much the answer can move; the band is what
+       makes the number usable for planning.  Measured to cover at its nominal rate on a real
+       background - see `ProjectedMeasurementMonteCarlo`. -->
+  <message id="dls-result-projected-band"> (typically {1}&ndash;{2}&times; this)</message>
+
   <message id="dls-scale-more-info-note">
     Scaled to real time {1} (live time {2}, ratio &times;{3} of measurement real time {4}).
   </message>
@@ -63,6 +69,13 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">Peak for upper bound of {1} @{2} CL</message>
   <message id="dls-results-txt-upper-bound-act">Less than {1} @{2} CL</message>
+  <!-- A background-reference result describes a measurement nobody has taken, so it must not
+       be worded as a bound on the loaded spectrum.  Same distinction the Detection Confidence
+       Tool makes with dl-limit-predicted. -->
+  <message id="dls-results-txt-predicted-act">Predicted sensitivity: less than {1} @{2} CL for a {3} measurement</message>
+  <message id="dls-results-txt-predicted-counts">Predicted sensitivity: less than {1} signal counts @{2} CL for a {3} measurement</message>
+  <message id="dls-chart-title-predicted-act">Peak for predicted sensitivity of {1} @{2} CL</message>
+  <message id="dls-chart-title-predicted-counts">Peak for predicted sensitivity of {1} counts @{2} CL</message>
   <message id="dls-chart-title-upper-bound-counts">Peak for upper bound of {1} counts @{2} CL</message>
   <message id="dls-results-txt-upper-bound-counts">Less than {1} signal counts present @{2} CL</message>
   <message id="dls-err-no-meas">No measurement available</message>

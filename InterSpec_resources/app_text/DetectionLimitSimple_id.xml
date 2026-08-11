@@ -55,6 +55,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">Puncak untuk batas atas {1} @{2} CL</message>
   <message id="dls-results-txt-upper-bound-act">Kurang dari {1} @{2} CL</message>
+  <message id="dls-results-txt-predicted-act">Sensitivitas terprediksi: kurang dari {1} pada T.K. {2} untuk pengukuran {3}</message>
+  <message id="dls-results-txt-predicted-counts">Sensitivitas terprediksi: kurang dari {1} cacahan sinyal pada T.K. {2} untuk pengukuran {3}</message>
+  <message id="dls-chart-title-predicted-act">Puncak untuk sensitivitas terprediksi {1} @{2} CL</message>
+  <message id="dls-chart-title-predicted-counts">Puncak untuk sensitivitas terprediksi {1} cacahan @{2} CL</message>
   <message id="dls-chart-title-upper-bound-counts">Puncak untuk batas atas {1} cacahan @{2} CL</message>
   <message id="dls-results-txt-upper-bound-counts">Kurang dari {1} cacahan sinyal ada @{2} CL</message>
   <message id="dls-err-no-meas">Tidak ada pengukuran yang tersedia</message>
@@ -81,7 +85,7 @@
   <message id="dls-err-no-fwhm-info">Fungsi efisiensi detektor tidak memiliki info FWHM - harap fit untuk FWHM, atau ubah detektor.</message>
   <message id="dls-is-background-spectrum-cb-short">Latar?</message>
   <message id="dls-num-side-channel-label-short">Jml kanal sisi:</message>
-  <message id="dls-result-scaled-postfix"> (waktu hidup={1})</message>
+  <message id="dls-result-projected-band"> (biasanya {1}&ndash;{2}&times; nilai ini)</message>
   <message id="dls-roi-lower-label-short">Bawah:</message>
   <message id="dls-roi-upper-label-short">Atas:</message>
   <message id="dls-scale-more-info-note">

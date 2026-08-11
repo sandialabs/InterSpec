@@ -243,7 +243,9 @@ add_test( NAME test_DetectionLimit
 )
 
 add_executable( test_DetectionLimitState test_DetectionLimitState.cpp )
-target_link_libraries( test_DetectionLimitState PRIVATE InterSpecLib )
+# Needs Wt::Test as well: the state round-trip cases drive the real tool widgets, which is the
+#  only level at which a control missing from `encodeStateToUrl()` is visible.
+target_link_libraries( test_DetectionLimitState PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
 add_test( NAME TDetectionLimitState
   COMMAND $<TARGET_FILE:test_DetectionLimitState> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"

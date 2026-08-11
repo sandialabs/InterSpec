@@ -55,6 +55,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">{1} @{2} CLの上限ピーク</message>
   <message id="dls-results-txt-upper-bound-act">{1}未満 @{2} CL</message>
+  <message id="dls-results-txt-predicted-act">予測感度: {3} の測定に対し、信頼度 {2} で {1} 未満</message>
+  <message id="dls-results-txt-predicted-counts">予測感度: {3} の測定に対し、信頼度 {2} で {1} 信号カウント未満</message>
+  <message id="dls-chart-title-predicted-act">{1} @{2} CLの予測感度ピーク</message>
+  <message id="dls-chart-title-predicted-counts">{1}カウント @{2} CLの予測感度ピーク</message>
   <message id="dls-chart-title-upper-bound-counts">{1}カウント @{2} CLの上限ピーク</message>
   <message id="dls-results-txt-upper-bound-counts">{1}信号カウント未満が@{2} CLで存在</message>
   <message id="dls-err-no-meas">利用可能な測定がありません</message>
@@ -81,7 +85,7 @@
   <message id="dls-err-no-fwhm-info">検出器効率関数にはFWHM情報がありません - FWHMをフィットするか、検出器を変更してください。</message>
   <message id="dls-is-background-spectrum-cb-short">背景?</message>
   <message id="dls-num-side-channel-label-short">側方ch数:</message>
-  <message id="dls-result-scaled-postfix"> (ライブタイム={1})</message>
+  <message id="dls-result-projected-band"> (通常この値の{1}&ndash;{2}&times;)</message>
   <message id="dls-roi-lower-label-short">下限:</message>
   <message id="dls-roi-upper-label-short">上限:</message>
   <message id="dls-scale-more-info-note">

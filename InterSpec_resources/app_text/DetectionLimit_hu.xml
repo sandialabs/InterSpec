@@ -76,7 +76,7 @@
     <p>
       A háttér-referenciás eredmény <b>előrejelzett érzékenység</b>, nem pedig a kézben lévő
       spektrumra vonatkozó korlát, és így is jelenik meg.  Medián várakozás: nincs megfigyelhető
-      jövőbeli mérés, ezért az előrejelzés a várt beütésszámoknál készül.
+      jövőbeli mérés, ezért az előrejelzés a várt beütésszámoknál készül.  Ez addig áll, amíg a megadott idő e spektruméhoz hasonló vagy rövidebb; sokkal tovább nyúlva az eredmény optimistának bizonyul, 16-szorosnál nagyjából egyharmaddal, mert a tartomány valódi háttérgörbéje és a rá illesztett egyenes közti bármely eltérés az expozícióval nő, míg a számlálási zaj csak annak négyzetgyökével.
     </p>
   </message>
   <message id="dl-model-backref-tt">
@@ -121,8 +121,7 @@
   <message id="dl-plan-time-cb-short">Mérés 🕐</message>
   <message id="dl-plan-time-empty-text">pl. 5 perc</message>
   <message id="dl-plan-time-tt">
-    Az az időtartam, amelyről kérdez.  Egyetlen vezérlő, de két különböző módon jut el a
-    számításhoz:
+    Az az időtartam, amelyről kérdez.  Egyetlen vezérlő, de két különböző módon jut el a számításhoz:
     <ul>
       <li>A Currie-módszernél, valamint amikor a határérték a betöltött spektrumra vonatkozik, a
       spektrum csatornánkénti beütéseit erre a valós időre vetítjük (és az élő időt ugyanilyen
@@ -132,9 +131,21 @@
       statisztikája bekerül a válaszba, ahelyett hogy eltűnne.</li>
     </ul>
     <p>
-      A spektrum vetítése rövidebb vagy hasonló időtartamra a legpontosabb; sokkal hosszabbra az
-      eredmény optimista, mert a beütésráta becslési bizonytalansága ekkor meghaladja a vetített
-      Poisson-zajt.  A háttér-referenciás útnak nincs ilyen problémája.
+      A spektrum vetítése jól előrejelzi az új mérés <b>tipikus</b> határértékét; amit alábecsül, az
+      a körülötte lévő <b>szórás</b>.  A felskálázott beütéseket Poisson-eloszlásúnak tekintjük, a
+      felskálázott beütésszámmal egyenlő szórásnégyzettel, ami azt állítja, hogy a betöltött
+      spektrum beütésrátája pontosan ismert; valójában a vetítés örökli e spektrum saját
+      számlálási zaját.  Egy valódi, 11,5 órás háttérből vett méréseken mérve a mediánra vetített
+      Currie-határérték 64-szeres tartományon belül 4%-on belül volt ahhoz képest, amit a mérés
+      valóban adott, míg a körülötte lévő tényleges szórás k&#160;=&#160;1-nél mintegy 1,6&#215;,
+      k&#160;=&#160;16-nál pedig mintegy 4&#215; szélesebb volt a sugalltnál, ahol k a megadott idő
+      osztva a betöltött spektruméval.  Így k nagyjából 1-ig biztonságos; azon túl tervezési
+      becslésként kezelje a számot, ne korlátként.
+    </p>
+    <p>
+      A háttér-referenciás út nem skálázza a beütéseket, így nála nincs ilyen probléma - viszont csak
+      a dekonvolúciós határértékre vonatkozik.  A mellette megjelenített bármely Currie-határérték
+      továbbra is vetített, és a fenti figyelmeztetés érvényes rá.
     </p>
   </message>
   <message id="dl-err-bad-plan-time">Érvénytelen mérési idő - valami ilyesmi várt: '5 perc', '300 s' vagy '00:05:00'.</message>

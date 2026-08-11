@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <thread>
 #include <vector>
 #include <sstream>
 
@@ -531,11 +532,19 @@ void DetectionLimitSimple::init()
   m_planTimeCb = new WCheckBox( WString::tr(isPhone ? "dl-plan-time-cb-short" : "dl-plan-time-cb"), generalInput );
   m_planTimeCb->addStyleClass( "CbNoLineBreak GridFourthCol GridSeventhRow GridVertCenter" );
   m_planTimeCb->setWordWrap( false );
+
+  // These two hide under the deconvolution method until the spectrum is called a background
+  //  reference.  Hiding them outright drops them out of the grid, and since the line edit is taller
+  //  than the checkbox sharing the row, the row - and everything below it - jumps as the background
+  //  checkbox is toggled.  Keeping the geometry reserves the cells either way, so only the contents
+  //  appear and disappear.
+  m_planTimeCb->setHiddenKeepsGeometry( true );
   m_planTimeCb->checked().connect( this, &DetectionLimitSimple::handlePlanTimeChanged );
   m_planTimeCb->unChecked().connect( this, &DetectionLimitSimple::handlePlanTimeChanged );
 
   m_planTimeDiv = new WContainerWidget( generalInput );
   m_planTimeDiv->addStyleClass( "ScaleEntryDiv GridFifthCol GridSeventhRow GridVertCenter" );
+  m_planTimeDiv->setHiddenKeepsGeometry( true );   // the taller of the two - see above
   m_planTimeEdit = new WLineEdit( m_planTimeDiv );
   m_planTimeEdit->setEmptyText( WString::tr("dl-plan-time-empty-text") );
   m_planTimeEdit->setDisabled( true );
@@ -1753,19 +1762,46 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
       }else if( result.foundUpperCl )
       {
         display_activity = result.upperLimit;
-        
+
+        // A background-reference scan is a statement about a measurement nobody has taken, so it
+        //  must not be worded as a bound on the loaded spectrum - the Detection Confidence Tool
+        //  says "Predicted sensitivity: ..." for the same result, and this tool used to say "Less
+        //  than X @95% CL", which reads as a bound on the spectrum in hand.
+        //  \sa DetectionLimitCalc::DeconMeasurementModel::BackgroundReference
+        const bool predicted = result.is_predicted_sensitivity;
+        const string dwell = (result.sampleRealTime > 0.0)
+              ? PhysicalUnits::printToBestTimeUnits( result.sampleRealTime, 2 )
+              : string();
+
         if( !m_currentNuclide )
         {
           const double upper_limit_counts = peak_counts( result.upperLimitResults );
           const string upperstr = SpecUtils::printCompact(upper_limit_counts, 4);
-          
-          chart_title = WString::tr("dls-chart-title-upper-bound-counts").arg(upperstr).arg(cl_str);
-          result_txt = WString::tr("dls-results-txt-upper-bound-counts").arg(upperstr).arg(cl_str);
+
+          if( predicted && !dwell.empty() )
+          {
+            chart_title = WString::tr("dls-chart-title-predicted-counts").arg(upperstr).arg(cl_str);
+            result_txt = WString::tr("dls-results-txt-predicted-counts")
+                            .arg(upperstr).arg(cl_str).arg(dwell);
+          }else
+          {
+            chart_title = WString::tr("dls-chart-title-upper-bound-counts").arg(upperstr).arg(cl_str);
+            result_txt = WString::tr("dls-results-txt-upper-bound-counts").arg(upperstr).arg(cl_str);
+          }
         }else
         {
           const string upperstr = PhysicalUnits::printToBestActivityUnits(result.upperLimit, 3, use_curie);
-          chart_title = WString::tr("dls-chart-title-upper-bound-act").arg(upperstr).arg(cl_str);
-          result_txt = WString::tr("dls-results-txt-upper-bound-act").arg(upperstr).arg(cl_str);
+
+          if( predicted && !dwell.empty() )
+          {
+            chart_title = WString::tr("dls-chart-title-predicted-act").arg(upperstr).arg(cl_str);
+            result_txt = WString::tr("dls-results-txt-predicted-act")
+                            .arg(upperstr).arg(cl_str).arg(dwell);
+          }else
+          {
+            chart_title = WString::tr("dls-chart-title-upper-bound-act").arg(upperstr).arg(cl_str);
+            result_txt = WString::tr("dls-results-txt-upper-bound-act").arg(upperstr).arg(cl_str);
+          }
         }//if( !m_currentNuclide ) / else
         
         assert( result.upperLimitResults );
@@ -1799,20 +1835,36 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
     }//if( no valid result
   }//if( currently doing Currie-style limit ) / else
 
-  // If a scale factor is active, tip the user off via a small live-time marker
-  //  appended to the result text - so it's not silently using a different dwell.
-  if( m_planTimeCb && m_planTimeCb->isChecked() && !m_planTimeCb->isHidden()
-     && (m_currentCurrieResults || m_currentDeconResults) )
-  {
-    shared_ptr<const SpecUtils::Measurement> scaled;
-    try { scaled = currentEffectiveForeground().currie; } catch( std::exception & ){}
+  // The projected live time used to be appended here as a "(LT=...)" marker.  It cost a line of a
+  //  three-line box that only has room for two, for something the user can already see: they typed
+  //  the real time into the field beside the result, and the derived live time - with the ratio and
+  //  the original dwell - is spelled out in the "further details" dialog.  \sa dls-scale-more-info-note
 
-    if( scaled && (scaled->live_time() > 0.0f) )
+  // A background-reference result is a prediction even with no measurement time entered - no time
+  //  means "another measurement just like this one" - so the band applies there too.
+  {
+    // A projected limit is a prediction about a measurement nobody has taken.  Quoting only its
+    //  middle hides how far the answer can move, and by more than a plain scaling suggests - the
+    //  predictive spread grows as sqrt(1+k) in the projection factor, where a scaling's does not
+    //  grow at all.  So the band goes on screen beside the number.
+    // Given as a multiple of the quoted limit rather than in counts or activity.  Counts and
+    //  activity differ by a constant factor, so a fraction of the median is the same number in
+    //  either - which keeps this correct without plumbing the conversion into this scope, and
+    //  anchors the band on the figure actually on screen.
+    string low_multiple, high_multiple;
+    if( DetectionLimitCalc::projected_band_endpoints( m_currentProjectedLimit,
+                                                      low_multiple, high_multiple ) )
     {
-      const WString postfix = WString::tr("dls-result-scaled-postfix")
-          .arg( PhysicalUnits::printToBestTimeUnits( scaled->live_time(), 3 ) );
-      m_resultTxt->setText( m_resultTxt->text() + postfix );
-    }
+      const WString band = WString::tr("dls-result-projected-band")
+          .arg( low_multiple )
+          .arg( high_multiple );
+
+      // Deliberately no tooltip here: this runs on every result update, and `attachToolTipOn`
+      //  re-runs its qTip setup each call (and on mobile connects another `clicked()` handler),
+      //  so attaching from an update path accumulates.  What the band means is explained in the
+      //  help page's "Measurement time" section instead.
+      m_resultTxt->setText( m_resultTxt->text() + band );
+    }//if( a projected band was computed )
   }
 }//void updateSpectrumDecorationsAndResultText()
 
@@ -2313,7 +2365,8 @@ void DetectionLimitSimple::updateResult()
   
   m_currentCurrieInput.reset();
   m_currentCurrieResults.reset();
-  
+  m_currentProjectedLimit = DetectionLimitCalc::ProjectedLimit{};
+
   try
   {
     m_fitFwhmBtn->hide();
@@ -2371,6 +2424,26 @@ void DetectionLimitSimple::updateResult()
     m_currentCurrieInput = currie_input;
     const DetectionLimitCalc::CurrieMdaResult currie_result = DetectionLimitCalc::currie_mda_calc( *currie_input );
     m_currentCurrieResults = make_shared<DetectionLimitCalc::CurrieMdaResult>( currie_result );
+
+    // How far the answer could move for a measurement nobody has taken yet.  Only meaningful when
+    //  a dwell other than this spectrum's is being asked about, and only for the Currie method
+    //  here - the deconvolution branch below computes its own, since it is the one whose limit is
+    //  a profile scan rather than arithmetic.
+    //  The region is drawn from the *unprojected* foreground: the Monte Carlo does the projecting,
+    //  and handing it an already-scaled spectrum would project twice.
+    const shared_ptr<const SpecUtils::Measurement> unprojected
+                      = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+
+    if( currieMethod && (eff.planned_real_time > 0.0) && unprojected )
+    {
+      DetectionLimitCalc::CurrieMdaInput reference_input = *currie_input;
+      reference_input.spectrum = unprojected;
+
+      // A few hundred realisations keeps the Monte Carlo's own sampling error well under a percent
+      //  of the band, and the Currie limit is closed-form arithmetic, so this costs milliseconds.
+      m_currentProjectedLimit = DetectionLimitCalc::currie_projected_limit( reference_input,
+                                                          eff.planned_real_time, 1024 );
+    }
     
     
     // Calculating the deconvolution-style limit is fairly CPU intensive, so we will only computer
@@ -2608,6 +2681,37 @@ void DetectionLimitSimple::updateResult()
                                                                       min_act, max_act, use_curie );
     
       m_currentDeconResults = make_shared<DetectionLimitCalc::DeconActivityOrDistanceLimitResult>( decon_result );
+
+      // A background-reference result is a prediction about a measurement nobody has taken - and it
+      //  is one whether or not a measurement time was entered, since no time entered means "another
+      //  measurement just like this one".  Reporting only its middle says nothing about how far the
+      //  answer could land from it, so the spread goes beside it.
+      //
+      //  Scored `JointWithReference` because that is what this mode reports: the reference and the
+      //  sample against one continuum.  A sample-only prediction would be a different, looser
+      //  quantity.  \sa DetectionLimitCalc::ProjectedLimitScoring
+      if( (convo_input->measurement_model
+             == DetectionLimitCalc::DeconMeasurementModel::BackgroundReference)
+         && convo_input->measurement && (convo_input->measurement->real_time() > 0.0f) )
+      {
+        // Users enter, and results quote, a REAL time.
+        const double planned_real = (eff.planned_real_time > 0.0)
+                       ? eff.planned_real_time
+                       : static_cast<double>( convo_input->measurement->real_time() );
+
+        // 128 realisations costs about half a second across the available cores for this tool's
+        //  single region; the deconvolution limit itself is already the slow part of this path.
+        //  The Detection Confidence Tool computes one of these per gamma line, so it does not run
+        //  them inline.
+        const unsigned hardware_threads = std::thread::hardware_concurrency();
+        const size_t num_threads = (std::max)( 1u, hardware_threads ? hardware_threads : 4u );
+
+        m_currentProjectedLimit = DetectionLimitCalc::decon_projected_limit( convo_input,
+                                      confidenceLevel, planned_real, max_act, use_curie,
+                                      DetectionLimitCalc::DeconLimitType::OneSidedUpperLimit,
+                                      DetectionLimitCalc::ProjectedLimitScoring::JointWithReference,
+                                      128, num_threads );
+      }//if( a background-reference prediction )
     }//if( calc Currie-style limit ) / else
     
     m_chartErrMsgStack->setCurrentIndex( 1 );

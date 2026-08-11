@@ -163,4 +163,7 @@
   <message id="dlt-err-distance-zero-negative">距離はゼロまたは負の値にできません</message>
   <message id="dlt-qr-tool-state-title">検出信頼度ツールの状態</message>
   <message id="dlt-qr-tool-state-txt">検出信頼度ツールの現在の状態です。</message>
+  <message id="dlt-estimating-spread">ばらつきを計算中…</message>
+  <message id="dlt-spread-band">(通常この値の{1}&ndash;{2}&times;)</message>
+  <message id="dlt-spread-unavailable">ばらつきを推定できませんでした。</message>
 </messages>

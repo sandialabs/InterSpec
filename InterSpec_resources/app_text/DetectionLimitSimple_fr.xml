@@ -53,6 +53,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">Pic pour la limite supérieure de {1} @{2} NC</message>
   <message id="dls-results-txt-upper-bound-act">Moins de {1} @{2} NC</message>
+  <message id="dls-results-txt-predicted-act">Sensibilité prédite : moins de {1} à un N.C. de {2} pour une mesure de {3}</message>
+  <message id="dls-results-txt-predicted-counts">Sensibilité prédite : moins de {1} comptes de signal à un N.C. de {2} pour une mesure de {3}</message>
+  <message id="dls-chart-title-predicted-act">Pic pour la sensibilité prédite de {1} @{2} NC</message>
+  <message id="dls-chart-title-predicted-counts">Pic pour la sensibilité prédite de {1} comptes @{2} NC</message>
   <message id="dls-chart-title-upper-bound-counts">Pic pour la limite supérieure de {1} comptes @{2} NC</message>
   <message id="dls-results-txt-upper-bound-counts">Moins de {1} comptes de signal présents @{2} NC</message>
   <message id="dls-err-no-meas">Aucune mesure disponible</message>
@@ -79,7 +83,7 @@
   <message id="dls-err-no-fwhm-info">La fonction d'efficacité du détecteur ne contient pas d'informations sur la FWHM - veuillez ajuster la FWHM ou changer de détecteur.</message>
   <message id="dls-is-background-spectrum-cb-short">Fond ?</message>
   <message id="dls-num-side-channel-label-short">Nb can. lat. :</message>
-  <message id="dls-result-scaled-postfix"> (t. actif={1})</message>
+  <message id="dls-result-projected-band"> (typiquement {1}&ndash;{2}&times; cette valeur)</message>
   <message id="dls-roi-lower-label-short">Inférieur :</message>
   <message id="dls-roi-upper-label-short">Supérieur :</message>
   <message id="dls-scale-more-info-note">

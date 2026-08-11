@@ -26,6 +26,8 @@
 #include "InterSpec_config.h"
 
 #include <tuple>
+#include <atomic>
+#include <memory>
 #include <vector>
 #include <functional>
 
@@ -33,6 +35,9 @@
 #include <Wt/WContainerWidget>
 
 #include "InterSpec/AuxWindow.h"
+// Used in the interface below (DeconComputeInput, DeconLimitType, ProjectedLimit); this header used
+//  to rely on its includers pulling it in first, which broke whenever they were sorted differently.
+#include "InterSpec/DetectionLimitCalc.h"
 
 /** TODO:
  - [x] Every update seems to trigger a layout resize that causes the chart to grow.
@@ -515,7 +520,65 @@ protected:
   Wt::WContainerWidget *m_chi2Chart;
   Wt::WText *m_bestChi2Act;
   Wt::WText *m_upperLimit;
-  
+
+  /** Shows the predicted spread of a background-reference limit, beneath the limit itself.
+
+   Filled in by a background calculation started automatically once the limit is known - a few
+   hundred profile scans, which is far too slow to do on the GUI thread but fine off it.  Shows a
+   placeholder while that runs.  \sa startBandCalculation
+   */
+  Wt::WText *m_bandTxt;
+
+  /** Everything `DetectionLimitCalc::decon_projected_limit` needs, captured on the GUI thread the
+   moment the limit is computed.
+
+   The worker runs on a background thread and must not touch a widget, so it gets a snapshot rather
+   than a pointer back into the tool.
+   */
+  struct BandCalcInput
+  {
+    std::shared_ptr<const DetectionLimitCalc::DeconComputeInput> input;
+    double wantedCl = 0.95;
+    double planned_real_time = 0.0;
+    double max_search_quantity = 0.0;
+    bool useCurie = true;
+    DetectionLimitCalc::DeconLimitType limit_type
+                       = DetectionLimitCalc::DeconLimitType::OneSidedUpperLimit;
+    bool valid = false;
+  };//struct BandCalcInput
+
+  BandCalcInput m_bandInput;
+
+  /** Which band calculation the displayed result belongs to.
+
+   Incremented every time one is started.  A result arriving from a superseded run carries the old
+   number and is dropped, so a slow calculation cannot overwrite the answer to a newer question.
+   Same guard `RelActAutoGui` uses.
+   */
+  size_t m_bandCalcNumber;
+
+  /** Set true to tell an in-flight band calculation to stop; also identifies the run, since a
+   result whose flag is not the current one is stale by definition.
+   */
+  std::shared_ptr<std::atomic_bool> m_bandCancel;
+
+  /** Starts the band calculation on a background thread.  Returns immediately. */
+  void startBandCalculation();
+
+  /** Stops any in-flight band calculation and clears what is shown; called whenever the inputs
+   change, so a band never sits beside a limit it was not computed for.
+   */
+  void cancelBandCalculation();
+
+  /** Applies a finished band to the GUI.  Only ever called on the GUI thread, via `wApp->bind`. */
+  void updateBandFromCalc( std::shared_ptr<DetectionLimitCalc::ProjectedLimit> result,
+                           std::shared_ptr<std::atomic_bool> cancel_flag,
+                           const size_t calc_number );
+
+  /** Reports a band calculation that threw.  Same staleness guard as the success path. */
+  void handleBandCalcError( std::shared_ptr<std::string> message,
+                            std::shared_ptr<std::atomic_bool> cancel_flag );
+
   Wt::WText *m_errorMsg;
 
   /** Notes that qualify a limit that WAS produced - overlapping regions of interest combined, a

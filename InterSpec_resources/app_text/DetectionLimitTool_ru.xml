@@ -163,4 +163,7 @@
   <message id="dlt-err-distance-zero-negative">Расстояние не может быть нулём или отрицательным</message>
   <message id="dlt-qr-tool-state-title">Состояние Инструмента доверия обнаружения</message>
   <message id="dlt-qr-tool-state-txt">Текущее состояние инструмента доверия обнаружения.</message>
+  <message id="dlt-estimating-spread">Расчёт разброса…</message>
+  <message id="dlt-spread-band">(обычно {1}&ndash;{2}&times; этого значения)</message>
+  <message id="dlt-spread-unavailable">Не удалось оценить разброс.</message>
 </messages>

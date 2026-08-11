@@ -353,6 +353,16 @@ protected:
   
   std::shared_ptr<const DetectionLimitCalc::DeconComputeInput> m_currentDeconInput;
   std::shared_ptr<const DetectionLimitCalc::DeconActivityOrDistanceLimitResult> m_currentDeconResults;
+
+  /** The predicted spread of the limit, when a measurement time other than the spectrum's is being
+   asked about; invalid otherwise.
+
+   In counts, matching the limit the active method reports.  A projection is a prediction about a
+   measurement nobody has taken, and quoting only its middle hides how far the answer can move - by
+   about `sqrt(1+k)` more than a plain scaling implies, `k` being the projection factor.
+   \sa DetectionLimitCalc::currie_projected_limit, DetectionLimitCalc::decon_projected_limit
+   */
+  DetectionLimitCalc::ProjectedLimit m_currentProjectedLimit;
 };//class DoseCalcWidget
 
 #endif //DetectionLimitSimple_h

@@ -55,6 +55,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">Csúcs a(z) {1} felső határához @{2} CL</message>
   <message id="dls-results-txt-upper-bound-act">Kevesebb mint {1} @{2} CL</message>
+  <message id="dls-results-txt-predicted-act">Előrejelzett érzékenység: kevesebb mint {1} {2} konfidencián egy {3} hosszú mérésre</message>
+  <message id="dls-results-txt-predicted-counts">Előrejelzett érzékenység: kevesebb mint {1} jelimpulzus {2} konfidencián egy {3} hosszú mérésre</message>
+  <message id="dls-chart-title-predicted-act">Csúcs a(z) {1} előrejelzett érzékenységéhez @{2} CL</message>
+  <message id="dls-chart-title-predicted-counts">Csúcs a(z) {1} impulzus előrejelzett érzékenységéhez @{2} CL</message>
   <message id="dls-chart-title-upper-bound-counts">Csúcs a(z) {1} impulzus felső határához @{2} CL</message>
   <message id="dls-results-txt-upper-bound-counts">Kevesebb mint {1} jelimpulzus van jelen @{2} CL</message>
   <message id="dls-err-no-meas">Nincs elérhető mérés</message>
@@ -81,7 +85,7 @@
   <message id="dls-err-no-fwhm-info">A detector hatásfok függvény nem rendelkezik FWHM információval - kérjük, illessze az FWHM-et, vagy válasszon másik detektort.</message>
   <message id="dls-is-background-spectrum-cb-short">Háttér?</message>
   <message id="dls-num-side-channel-label-short">Oldalcsat.:</message>
-  <message id="dls-result-scaled-postfix"> (élő idő={1})</message>
+  <message id="dls-result-projected-band"> (jellemzően ennek {1}&ndash;{2}&times; szerese)</message>
   <message id="dls-roi-lower-label-short">Alsó:</message>
   <message id="dls-roi-upper-label-short">Felső:</message>
   <message id="dls-scale-more-info-note">

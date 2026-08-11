@@ -163,4 +163,7 @@
   <message id="dlt-err-distance-zero-negative">لا يمكن أن تكون المسافة صفراً أو سالبة</message>
   <message id="dlt-qr-tool-state-title">حالة أداة ثقة الكشف</message>
   <message id="dlt-qr-tool-state-txt">الحالة الراهنة لأداة ثقة الكشف.</message>
+  <message id="dlt-estimating-spread">جارٍ حساب التشتت…</message>
+  <message id="dlt-spread-band">(عادةً {1}&ndash;{2}&times; من هذه القيمة)</message>
+  <message id="dlt-spread-unavailable">تعذّر تقدير التشتت.</message>
 </messages>

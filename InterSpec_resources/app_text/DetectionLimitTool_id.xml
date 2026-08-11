@@ -163,4 +163,7 @@
   <message id="dlt-err-distance-zero-negative">Jarak tidak boleh nol atau negatif</message>
   <message id="dlt-qr-tool-state-title">Status Alat Kepercayaan Deteksi</message>
   <message id="dlt-qr-tool-state-txt">Status terkini alat kepercayaan deteksi.</message>
+  <message id="dlt-estimating-spread">Menghitung sebaran…</message>
+  <message id="dlt-spread-band">(biasanya {1}&ndash;{2}&times; nilai ini)</message>
+  <message id="dlt-spread-unavailable">Sebaran tidak dapat diperkirakan.</message>
 </messages>

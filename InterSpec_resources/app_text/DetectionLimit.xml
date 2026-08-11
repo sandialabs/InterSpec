@@ -81,7 +81,11 @@
     <p>
       A background-reference result is a <b>predicted sensitivity</b>, not a bound on the spectrum
       in hand, and is reported as such.  It is a median expectation: there is no future measurement
-      to observe, so the prediction is made at the expected counts.
+      to observe, so the prediction is made at the expected counts.  That holds while the entered
+      time is around this spectrum's or shorter; reaching much further it reads optimistic, by
+      about a third at 16 times, because any mismatch between the region's true continuum and the
+      straight line fitted to it grows with exposure while the counting noise only grows as its
+      square root.
     </p>
   </message>
   <message id="dl-model-backref-tt">
@@ -136,9 +140,21 @@
       own counting statistics are carried into the answer instead of being wished away.</li>
     </ul>
     <p>
-      Projecting the spectrum is most accurate for a shorter or comparable dwell; for a much longer
-      one the result is optimistic, since the rate-estimate uncertainty then exceeds the projected
-      Poisson noise.  The background-reference route does not have that problem.
+      Projecting the spectrum predicts the <b>typical</b> limit of the new measurement well - it is
+      the <b>spread</b> around that prediction which is understated.  Scaled counts are treated as
+      Poisson with variance equal to the scaled count, which asserts the loaded spectrum's count
+      rate is known exactly; in reality the projection inherits that spectrum's own counting noise.
+      Measured against real measurements drawn from an 11.5 hour background, the median projected
+      Currie limit landed within 4% of what the dwell delivered over a 64-fold span of dwells, while
+      the actual scatter about it was about 1.6&#215; wider than implied at k&#160;=&#160;1, and
+      about 4&#215; wider at k&#160;=&#160;16, where k is the entered time divided by the loaded
+      spectrum's.  So k up to roughly 1 is safe; beyond that treat the number as a planning
+      estimate, not a bound.
+    </p>
+    <p>
+      The background-reference route does not scale counts and so does not have that problem - but
+      it covers only the deconvolution limit.  Any Currie limit shown beside it is still projected,
+      and the caveat above still applies to it.
     </p>
   </message>
   <message id="dl-err-bad-plan-time">Invalid measurement time - expected something like '5 min', '300 s', or '00:05:00'.</message>

@@ -76,7 +76,7 @@
     <p>
       Um resultado de referência de fundo é uma <b>sensibilidade prevista</b>, não um limite sobre o
       espetro em mãos, e é comunicado como tal.  É uma expectativa mediana: não há medição futura
-      para observar, pelo que a previsão é feita nas contagens esperadas.
+      para observar, pelo que a previsão é feita nas contagens esperadas.  Isso vale enquanto o tempo informado for próximo ao deste espectro ou menor; indo muito além, o resultado fica otimista, cerca de um terço em 16 vezes, porque qualquer descasamento entre o contínuo verdadeiro da região e a reta ajustada a ele cresce com a exposição, enquanto o ruído de contagem só cresce como sua raiz quadrada.
     </p>
   </message>
   <message id="dl-model-backref-tt">
@@ -122,21 +122,32 @@
   <message id="dl-plan-time-cb-short">Med. 🕐</message>
   <message id="dl-plan-time-empty-text">p. ex. 5 min</message>
   <message id="dl-plan-time-tt">
-    A duração sobre a qual está a perguntar.  Um único controlo, mas chega ao cálculo por duas vias
-    diferentes:
+    A duração sobre a qual você está perguntando.  Um único controle, mas ele chega ao cálculo por
+    dois caminhos diferentes:
     <ul>
-      <li>Para o método de Currie, e quando o limite descreve o espetro carregado, as contagens por
-      canal do espetro são projetadas para este tempo real (e o tempo vivo na mesma proporção, de
-      modo que a fração de tempo morto é preservada).</li>
-      <li>Quando o espetro é uma <b>referência de fundo</b>, as contagens da referência são deixadas
-      intactas e este passa a ser a exposição da medição futura que está a ser prevista - assim, a
-      própria estatística de contagem da referência é propagada para a resposta em vez de ser
-      ignorada.</li>
+      <li>Para o método de Currie, e quando o limite descreve o espectro carregado, as contagens por
+      canal do espectro são projetadas para este tempo real (e o tempo vivo na mesma razão, de modo
+      que a fração de tempo morto se preserva).</li>
+      <li>Quando o espectro é uma <b>referência de fundo</b>, as contagens da referência ficam
+      intactas e isto passa a ser a exposição da medição futura prevista - assim a própria
+      estatística de contagem da referência é levada para a resposta em vez de ser ignorada.</li>
     </ul>
     <p>
-      Projetar o espetro é mais exato para uma duração menor ou comparável; para uma muito mais longa
-      o resultado é otimista, uma vez que a incerteza da estimativa da taxa excede então o ruído de
-      Poisson projetado.  A via da referência de fundo não tem esse problema.
+      Projetar o espectro prevê bem o limite <b>típico</b> da nova medição; o que fica subestimado é
+      a <b>dispersão</b> em torno dele.  As contagens escalonadas são tratadas como Poisson com
+      variância igual à contagem escalonada, o que afirma que a taxa do espectro carregado é
+      conhecida exatamente; na realidade a projeção herda também o ruído de contagem desse espectro.
+      Medido contra medições reais extraídas de um fundo de 11,5 horas, a mediana do limite de
+      Currie projetado ficou dentro de 4% do que a medição de fato entregou ao longo de uma faixa de
+      64 vezes, enquanto a dispersão real em torno dela foi cerca de 1,6&#215; mais larga que a
+      implícita em k&#160;=&#160;1 e cerca de 4&#215; mais larga em k&#160;=&#160;16, onde k é o
+      tempo informado dividido pelo do espectro carregado.  Portanto k até cerca de 1 é seguro;
+      além disso, trate o número como estimativa de planejamento, não como um limite.
+    </p>
+    <p>
+      O caminho da referência de fundo não escalona contagens e por isso não tem esse problema - mas
+      cobre apenas o limite por deconvolução.  Qualquer limite de Currie mostrado ao lado continua
+      projetado, e a ressalva acima se aplica a ele.
     </p>
   </message>
   <message id="dl-err-bad-plan-time">Tempo de medição inválido - esperava-se algo como '5 min', '300 s' ou '00:05:00'.</message>

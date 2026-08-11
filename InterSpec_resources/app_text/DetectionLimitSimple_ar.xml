@@ -55,6 +55,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">القمة للحد الأعلى لـ {1} @{2} CL</message>
   <message id="dls-results-txt-upper-bound-act">أقل من {1} @{2} CL</message>
+  <message id="dls-results-txt-predicted-act">حساسية متوقَّعة: أقل من {1} عند ثقة {2} لقياس مدته {3}</message>
+  <message id="dls-results-txt-predicted-counts">حساسية متوقَّعة: أقل من {1} عدد إشارة عند ثقة {2} لقياس مدته {3}</message>
+  <message id="dls-chart-title-predicted-act">القمة للحساسية المتوقَّعة لـ {1} @{2} CL</message>
+  <message id="dls-chart-title-predicted-counts">القمة للحساسية المتوقَّعة لـ {1} عدد @{2} CL</message>
   <message id="dls-chart-title-upper-bound-counts">القمة للحد الأعلى لـ {1} عدد @{2} CL</message>
   <message id="dls-results-txt-upper-bound-counts">أقل من {1} عدد إشارة موجود @{2} CL</message>
   <message id="dls-err-no-meas">لا يوجد قياس متاح</message>
@@ -81,7 +85,7 @@
   <message id="dls-err-no-fwhm-info">دالة كفاءة الكاشف لا تحتوي على معلومات FWHM - يرجى ملائمة FWHM، أو تغيير الكاشف.</message>
   <message id="dls-is-background-spectrum-cb-short">خلفية؟</message>
   <message id="dls-num-side-channel-label-short">قنوات جانبية:</message>
-  <message id="dls-result-scaled-postfix"> (زمن حي={1})</message>
+  <message id="dls-result-projected-band"> (عادةً {1}&ndash;{2}&times; من هذه القيمة)</message>
   <message id="dls-roi-lower-label-short">الأدنى:</message>
   <message id="dls-roi-upper-label-short">الأعلى:</message>
   <message id="dls-scale-more-info-note">

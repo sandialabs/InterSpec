@@ -163,4 +163,7 @@
   <message id="dlt-err-distance-zero-negative">দূরত্ব শূন্য বা নেতিবাচক হতে পারে না</message>
   <message id="dlt-qr-tool-state-title">সনাক্তকরণ আস্থা সরঞ্জামের অবস্থা</message>
   <message id="dlt-qr-tool-state-txt">সনাক্তকরণ আস্থা সরঞ্জামের বর্তমান অবস্থা।</message>
+  <message id="dlt-estimating-spread">বিস্তার গণনা করা হচ্ছে…</message>
+  <message id="dlt-spread-band">(সাধারণত এই মানের {1}&ndash;{2}&times;)</message>
+  <message id="dlt-spread-unavailable">বিস্তার অনুমান করা যায়নি।</message>
 </messages>

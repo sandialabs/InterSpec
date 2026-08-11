@@ -24,6 +24,10 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <mutex>
+#include <cstdint>
+#include <cstdlib>
+#include <cstring>
 #include <vector>
 #include <cassert>
 #include <limits>
@@ -33,7 +37,10 @@
 #include <algorithm>
 #include <stdexcept>
 
+#include <boost/asio/post.hpp>
+#include <boost/asio/thread_pool.hpp>
 #include <boost/math/tools/roots.hpp>
+#include <boost/math/constants/constants.hpp>
 #include <boost/math/tools/minima.hpp>
 #include <boost/math/distributions/normal.hpp>
 #include <boost/math/distributions/chi_squared.hpp>
@@ -251,14 +258,6 @@ void batch_test()
       const CurrieMdaResult result = DetectionLimitCalc::currie_mda_calc( mda_input );
       
       const double counts_per_bq = det_eff * shield_trans * gammas_per_bq_per_sec * live_time;
-      
-      // result.detection_limit is: Estimate of the true number of signal counts, where we would
-      //  reliably detect a signal above the decision threshold.
-      const double det_limit_act = result.detection_limit / counts_per_bq;
-      
-      // result.detection_limit: This is the number of counts in the peak region, _above_ the
-      //  predicted continuum number of counts, at which point we will consider signal to be present.
-      const double decision_threshold_act = result.detection_limit / counts_per_bq;
       
       // Since we dont know if we are right next to, or overlapping, a peak or something, we'll
       //  just require an excess of observed counts in the region
@@ -876,7 +875,10 @@ CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input )
   
   if( input.num_upper_side_channels == 0 )
   {
-    peak_cont_sum = result.peak_region_counts_sum;
+    // Clamped for the same reason the fitted branch below is: a processed spectrum (background
+    //  subtracted, or a corrected export) can hold negative channel counts, and `peak_cont_sigma`
+    //  further down takes the square root of this.  Without it the limit comes out "nan".
+    peak_cont_sum = (std::max)( 0.0, static_cast<double>(result.peak_region_counts_sum) );
     peak_cont_sum_uncert = sqrt( peak_cont_sum );
     
     const double peak_area_width = spec->gamma_channel_upper(result.last_peak_region_channel)
@@ -892,52 +894,121 @@ CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input )
     const double upper_cont_width = spec->gamma_channel_upper(result.last_upper_continuum_channel)
                                     - spec->gamma_channel_lower(result.first_upper_continuum_channel);
     
-    const double lower_cont_density = lower_cont_counts / lower_cont_width;
-    const double lower_cont_density_uncert = ((lower_cont_counts <= 0.0) ? 0.0 : (lower_cont_density / sqrt(lower_cont_counts)));
-    
-    const double upper_cont_density = upper_cont_counts / upper_cont_width;
-    const double upper_cont_density_uncert = ((upper_cont_counts <= 0.0) ? 0.0 : (upper_cont_density / sqrt(upper_cont_counts)));
-    
-    const double peak_cont_density = 0.5*(lower_cont_density + upper_cont_density);
-    const double peak_cont_density_uncert = 0.5*sqrt( upper_cont_density_uncert*upper_cont_density_uncert
-                                                     + lower_cont_density_uncert*lower_cont_density_uncert );
-    const double peak_cont_frac_uncert = ((peak_cont_density > 0.0) ? (peak_cont_density_uncert / peak_cont_density) : 1.0);
-    
-    const double peak_area_width = spec->gamma_channel_upper(result.last_peak_region_channel)
-                                    - spec->gamma_channel_lower(result.first_peak_region_channel);
-    
-    peak_cont_sum = peak_cont_density * peak_area_width;
-    peak_cont_sum_uncert = peak_cont_sum * peak_cont_frac_uncert;
-    
-    // The equation is centered around the input.gamma_energy with the density of counts at normal
-    //  value at that point.  The Slope will be through the midpoints of each continuum.
-    // TODO: should do a proper least-squares fit to the continuum; I think this will give us a slightly true-er answer
-    
-    const double lower_cont_mid_energy = spec->gamma_channel_lower(result.first_lower_continuum_channel) + 0.5*lower_cont_width;
-    const double upper_cont_mid_energy = spec->gamma_channel_lower(result.first_upper_continuum_channel) + 0.5*upper_cont_width;
-    
-    result.continuum_eqn[1] = (upper_cont_density - lower_cont_density) / (upper_cont_mid_energy - lower_cont_mid_energy);
-    result.continuum_eqn[0] = lower_cont_density - result.continuum_eqn[1]*(lower_cont_mid_energy - input.gamma_energy);
-    
+    // A width-weighted least-squares line through the side-band channels.
+    //
+    // The continuum is a density in counts/keV, so a channel of width `w` whose midpoint sits `x`
+    //  from `input.gamma_energy` expects `w*(c0 + c1*x)` counts.  Weighting by 1/w - the Poisson
+    //  variance of a slowly varying density - makes the normal equations pure moment matching,
+    //  `sum(n) == sum(mu)` and `sum(n*x) == sum(mu*x)`.  Those are unbiased estimating equations for
+    //  any binning and any count level, need no iteration, and never divide by an empty channel.
+    //  Weighting by 1/n instead would bias the continuum low at low counts, which is the wrong
+    //  direction for a detection limit; `decon_compute_peaks` documents the same trap for the
+    //  sideband constraint of `DeconContinuumNorm::FixedByEdges`.
+    //
+    // This replaces averaging the two side-band *densities*, which equals the fitted line at the
+    //  region centre only when the bands span equal energy.  The bands hold an equal number of
+    //  *channels*, so any non-uniform binning biased the continuum by
+    //  `slope*(upper_width - lower_width)/4*peak_width`: -256 counts, or -0.9 sigma of the
+    //  continuum's own Poisson noise, on the 81 keV line of the bundled Ba-133 NaI spectrum, whose
+    //  deviation pairs make the two bands 11.5 and 12.9 keV wide.  Projecting a dwell scales the
+    //  bias by the projection factor while the noise only grows as its square root.
+
+    // Walks the two side bands, handing each channel its width, its midpoint relative to
+    //  `input.gamma_energy`, and its counts.
+    const auto for_each_side_channel = [&]( auto &&fn ){
+      const size_t bands[2][2] = {
+        { result.first_lower_continuum_channel, result.last_lower_continuum_channel },
+        { result.first_upper_continuum_channel, result.last_upper_continuum_channel }
+      };
+
+      for( const size_t (&band)[2] : bands )
+      {
+        for( size_t channel = band[0]; channel <= band[1]; ++channel )
+        {
+          const double lower = spec->gamma_channel_lower( channel );
+          const double upper = spec->gamma_channel_upper( channel );
+          fn( upper - lower, 0.5*(lower + upper) - input.gamma_energy,
+             static_cast<double>( spec->gamma_channel_content(channel) ) );
+        }
+      }
+    };//for_each_side_channel
+
+    // Taken from the band totals rather than re-summed, so the fit and the reported per-band
+    //  numbers cannot disagree.
+    const double sum_w = lower_cont_width + upper_cont_width;
+    const double sum_n = lower_cont_counts + upper_cont_counts;
+
+    double sum_wx = 0.0;
+    for_each_side_channel( [&sum_wx]( const double w, const double x, const double ){
+      sum_wx += w*x;
+    } );
+
+    // The width-weighted centroid of the two bands.  Solving about it decouples the two
+    //  coefficients, so there is no 2x2 system and no conditioning worry.  For uniform channels and
+    //  an equal number of side channels each side it is exactly the peak region's centre, which is
+    //  what collapses everything below to the mean-of-densities value this replaces.
+    const double x_bar = (sum_w > 0.0) ? (sum_wx / sum_w) : 0.0;
+
+    double sum_wuu = 0.0, sum_wuuu = 0.0, sum_nu = 0.0;
+    for_each_side_channel( [&]( const double w, const double x, const double n ){
+      const double u = x - x_bar;
+      sum_wuu  += w*u*u;
+      sum_wuuu += w*u*u*u;
+      sum_nu   += n*u;
+    } );
+
+    // `sum_wuu` can only vanish if every side channel shares one midpoint, which cannot happen;
+    //  the guard is for a corrupted calibration rather than a reachable case.
+    const double cont_density_at_centroid = (sum_w > 0.0) ? (sum_n / sum_w) : 0.0;
+    const double cont_slope = (sum_wuu > 0.0) ? (sum_nu / sum_wuu) : 0.0;
+
+    const double peak_area_lower = spec->gamma_channel_lower(result.first_peak_region_channel);
+    const double peak_area_upper = spec->gamma_channel_upper(result.last_peak_region_channel);
+    const double peak_area_width = peak_area_upper - peak_area_lower;
+
+    // How far the peak region's centre sits from the band centroid; zero for uniform binning.
+    const double delta = 0.5*(peak_area_lower + peak_area_upper) - input.gamma_energy - x_bar;
+
+    // Integrating a line over the peak region is its value at the region's centre times the width.
+    const double peak_cont_integral = peak_area_width*(cont_density_at_centroid + cont_slope*delta);
+
+    // Clamped because a fitted line can go negative where a mean of two densities could not, and
+    //  `peak_cont_sigma` below takes the square root of this.
+    peak_cont_sum = (std::max)( 0.0, peak_cont_integral );
+
+    // The sandwich covariance `M^-1 (B^T V B) M^-1`, with V the per-channel Poisson variances taken
+    //  at the fitted expectation.  In the centred basis it is three scalars.  Note the normal
+    //  equations make `sum(mu) == sum(n)` and `sum(mu*u) == sum(n*u)` hold exactly, so a fitted and
+    //  an observed variance estimate can only differ in the u^2 term.
+    const double sum_mu_uu = cont_density_at_centroid*sum_wuu + cont_slope*sum_wuuu;
+    const double var_density = (sum_w > 0.0) ? (sum_n / (sum_w*sum_w)) : 0.0;
+    const double cov_density_slope = ((sum_w > 0.0) && (sum_wuu > 0.0))
+                                       ? (sum_nu / (sum_w*sum_wuu)) : 0.0;
+    const double var_slope = (sum_wuu > 0.0) ? (sum_mu_uu / (sum_wuu*sum_wuu)) : 0.0;
+    const double var_peak_density = var_density + 2.0*delta*cov_density_slope
+                                     + delta*delta*var_slope;
+
+    peak_cont_sum_uncert = peak_area_width*sqrt( (std::max)( 0.0, var_peak_density ) );
+
+    // `continuum_eqn` is written about `input.gamma_energy`, so shift the fit off the centroid.
+    result.continuum_eqn[1] = cont_slope;
+    result.continuum_eqn[0] = cont_density_at_centroid - cont_slope*x_bar;
+
 #if( PERFORM_DEVELOPER_CHECKS )
     {// begin sanity check on continuum eqn
-      const double peak_start_eq = spec->gamma_channel_lower(result.first_peak_region_channel) - input.gamma_energy;
-      const double peak_end_eq = spec->gamma_channel_upper(result.last_peak_region_channel) - input.gamma_energy;
-      
+      // Now an algebraic identity rather than an approximation: the reported continuum counts *are*
+      //  the reported continuum equation integrated over the peak region.  The previous check
+      //  needed a 1E-3 fudge, and blamed "really bad numerical accuracy ... for NaI systems" - that
+      //  was the unequal-band-width bias described above, not numerics, and it aborted Debug builds
+      //  on the one non-linearly-calibrated spectrum in the test suite.
+      const double peak_start_eq = peak_area_lower - input.gamma_energy;
+      const double peak_end_eq = peak_area_upper - input.gamma_energy;
+
       const double peak_cont_eq_integral = result.continuum_eqn[0] * (peak_end_eq - peak_start_eq)
       + result.continuum_eqn[1] * 0.5 * (peak_end_eq*peak_end_eq - peak_start_eq*peak_start_eq);
-      const double upper_cont_eq = result.continuum_eqn[0] + (upper_cont_mid_energy - input.gamma_energy)*result.continuum_eqn[1];
-      
-      // Precision tests, for development - if we go down to a precision of 1E-4, instead of 1E-3,
-      //  then these tests fail for NaI systems - I'm not sure if its something actually wrong, or
-      //  just really bad numerical accuracy (although its hard to imagine going down to only 4
-      //  or so, significant figures)
-      const double eq_dens = fabs(peak_cont_eq_integral - peak_cont_sum);
-      assert( (eq_dens < 0.1)
-             || (eq_dens < 1.0E-3*std::max(peak_cont_eq_integral, peak_cont_sum)) );
-      
-      const double eq_diff = fabs(peak_cont_eq_integral - peak_cont_sum);
-      assert( eq_diff < 0.1 || eq_diff < 1.0E-3*std::max(peak_cont_eq_integral, peak_cont_sum) );
+
+      const double eq_diff = fabs( peak_cont_eq_integral - peak_cont_integral );
+      assert( eq_diff <= 1.0E-8*(std::max)( 1.0, fabs(peak_cont_integral) ) );
     }// end sanity check on continuum eqn
 #endif //PERFORM_DEVELOPER_CHECKS
   }//if( input.num_upper_side_channels == 0 ) / else
@@ -2471,6 +2542,30 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   double total_chi2 = 0.0, total_DOF = 0.0;
   vector<PeakDef> inputPeaks, fittedPeaks;
 
+  // A sample that has actually been measured replaces the expected-counts block; only meaningful under a
+  //  background reference, and ignored (rather than quietly changing the answer) otherwise.  Its
+  //  channels are read at the reference's channel indices, so the two must share a binning.
+  const shared_ptr<const SpecUtils::Measurement> observed_sample
+      = (input.measurement_model == DeconMeasurementModel::BackgroundReference)
+          ? input.observed_sample : nullptr;
+
+  if( observed_sample )
+  {
+    if( observed_sample->num_gamma_channels() != input.measurement->num_gamma_channels() )
+      throw runtime_error( "decon_compute_peaks: observed sample and reference have different"
+                          " numbers of channels" );
+
+    const shared_ptr<const SpecUtils::EnergyCalibration> sample_cal
+                                                    = observed_sample->energy_calibration();
+    if( !sample_cal || !sample_cal->valid()
+       || ((*sample_cal) != (*input.measurement->energy_calibration())) )
+      throw runtime_error( "decon_compute_peaks: observed sample and reference have different"
+                          " energy calibrations" );
+
+    if( !(observed_sample->live_time() > 0.0f) )
+      throw runtime_error( "decon_compute_peaks: observed sample has no live time" );
+  }//if( observed_sample )
+
   // Depends only on the input, so it is settled here rather than inside the region loop: an empty
   //  region list, or a region with no peaks, would otherwise leave the field reading 1.0 under a
   //  background reference and quietly mislead anything that consumes it for something other than
@@ -2478,11 +2573,14 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   double overall_exposure_ratio = 1.0;
   if( (input.measurement_model == DeconMeasurementModel::BackgroundReference)
      && input.measurement
-     && (input.measurement->live_time() > 0.0f)
-     && (input.sample_exposure > 0.0) )
+     && (input.measurement->live_time() > 0.0f) )
   {
-    overall_exposure_ratio = input.sample_exposure
-                             / static_cast<double>( input.measurement->live_time() );
+    // A measured sample carries its own exposure, which then supersedes `sample_exposure` - the
+    //  latter describes a measurement that has not been taken.
+    const double sample_live = observed_sample ? static_cast<double>( observed_sample->live_time() )
+                                               : input.sample_exposure;
+    if( sample_live > 0.0 )
+      overall_exposure_ratio = sample_live / static_cast<double>( input.measurement->live_time() );
   }
 
   // Resolve the ROIs onto channel boundaries once, and combine any that share channels, so that no
@@ -2534,10 +2632,10 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
     const bool background_reference
                 = (input.measurement_model == DeconMeasurementModel::BackgroundReference);
 
-    // Exposure of the measurement being predicted, relative to the one that was loaded.  A
+    // Exposure of the sample measurement, relative to the reference that was loaded.  A
     //  non-positive `sample_exposure` means "the same length again", giving a ratio of one.
     //  `PeakInfo::counts_per_bq_into_4pi` already carries the loaded spectrum's live time, so the
-    //  trial signal has to be rescaled by this to describe the future measurement.
+    //  trial signal has to be rescaled by this to describe the sample measurement.
     const double reference_exposure = static_cast<double>( input.measurement->live_time() );
     double exposure_ratio = 1.0;
     if( background_reference )
@@ -2545,8 +2643,13 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
       if( !(reference_exposure > 0.0) )
         throw runtime_error( "decon_compute_peaks: background reference spectrum has no live time" );
 
-      if( input.sample_exposure > 0.0 )
-        exposure_ratio = input.sample_exposure / reference_exposure;
+      // A sample that has been measured carries its own exposure; `sample_exposure` describes one
+      //  that has not been taken, so the real thing supersedes it.
+      const double sample_exposure = observed_sample
+                                       ? static_cast<double>( observed_sample->live_time() )
+                                       : input.sample_exposure;
+      if( sample_exposure > 0.0 )
+        exposure_ratio = sample_exposure / reference_exposure;
 
       if( !(exposure_ratio > 0.0) || IsInf(exposure_ratio) )
         throw runtime_error( "decon_compute_peaks: invalid sample exposure" );
@@ -2721,51 +2824,62 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
 
     if( background_reference )
     {
-      // The reference spectrum is real data; the sample has not been measured, so it is taken at
-      //  its Asimov (median) expectation under the null.  Solving that null once, here, keeps the
-      //  Asimov data fixed across the whole activity scan - it describes the measurement being
-      //  predicted, not the activity being tested.
       const vector<PoissonChannel> roi_reference
             = measurement_channels( input.measurement, lower_channel, upper_channel, {}, 1.0 );
 
       // The sidebands are channels of the reference spectrum too, so they join the reference
-      //  block.  (The future sample would have its own sidebands, but it has not been measured
-      //  and they are not modelled; leaving them out only makes the prediction conservative.)
+      //  block.  (The sample would have its own sidebands; they are not modelled either way, which
+      //  only makes the answer conservative.)
       vector<PoissonChannel> reference = roi_reference;
       reference.insert( end(reference), begin(sidebands), end(sidebands) );
 
-      const PoissonContinuumFit null_fit
-          = fit_continuum_poisson( reference.data(), reference.size(), num_coefficients,
-                                  reference_energy, initial_coefficients );
-
-      if( !null_fit.converged )
-        throw runtime_error( "decon_compute_peaks: background reference fit failed - "
-                            + null_fit.error );
-
-      result.num_continuum_iterations += null_fit.num_iterations;
-      result.num_continuum_restarts += null_fit.num_restarts;
-
-      const Eigen::MatrixXd basis = continuum_basis( roi_reference.data(), nbin, num_coefficients,
-                                                    reference_energy );
-
       channels = reference;
       channels.reserve( reference.size() + nbin );
-      for( size_t i = 0; i < nbin; ++i )
+
+      if( observed_sample )
       {
-        double continuum_counts = 0.0;
-        for( size_t k = 0; k < num_coefficients; ++k )
-          continuum_counts += null_fit.coefficients[k] * basis( static_cast<Eigen::Index>(i),
-                                                               static_cast<Eigen::Index>(k) );
+        // The sample has actually been measured, so the second block is its real counts and the
+        //  two blocks are a genuine joint likelihood.  No expected-counts step, and so no null fit.
+        const vector<PoissonChannel> roi_sample
+              = measurement_channels( observed_sample, lower_channel, upper_channel,
+                                     peak_channel_counts, exposure_ratio );
+        channels.insert( end(channels), begin(roi_sample), end(roi_sample) );
+      }else
+      {
+        // The sample has not been measured, so it is taken at the counts it expects, with no measurement noise under
+        //  the null.  Solving that null once, here, keeps the expected-counts data fixed across the whole
+        //  activity scan - it describes the measurement being predicted, not the activity tested.
+        const PoissonContinuumFit null_fit
+            = fit_continuum_poisson( reference.data(), reference.size(), num_coefficients,
+                                    reference_energy, initial_coefficients );
 
-        PoissonChannel sample = roi_reference[i];
-        sample.observed = (std::max)( 0.0, exposure_ratio*continuum_counts );
-        sample.fixed_signal = peak_channel_counts[i];
-        sample.continuum_scale = exposure_ratio;
-        channels.push_back( sample );
-      }//for( size_t i = 0; i < nbin; ++i )
+        if( !null_fit.converged )
+          throw runtime_error( "decon_compute_peaks: background reference fit failed - "
+                              + null_fit.error );
 
-      if( initial_coefficients.empty() )
-        initial_coefficients = null_fit.coefficients;
+        result.num_continuum_iterations += null_fit.num_iterations;
+        result.num_continuum_restarts += null_fit.num_restarts;
+
+        const Eigen::MatrixXd basis = continuum_basis( roi_reference.data(), nbin, num_coefficients,
+                                                      reference_energy );
+
+        for( size_t i = 0; i < nbin; ++i )
+        {
+          double continuum_counts = 0.0;
+          for( size_t k = 0; k < num_coefficients; ++k )
+            continuum_counts += null_fit.coefficients[k] * basis( static_cast<Eigen::Index>(i),
+                                                                 static_cast<Eigen::Index>(k) );
+
+          PoissonChannel sample = roi_reference[i];
+          sample.observed = (std::max)( 0.0, exposure_ratio*continuum_counts );
+          sample.fixed_signal = peak_channel_counts[i];
+          sample.continuum_scale = exposure_ratio;
+          channels.push_back( sample );
+        }//for( size_t i = 0; i < nbin; ++i )
+
+        if( initial_coefficients.empty() )
+          initial_coefficients = null_fit.coefficients;
+      }//if( observed_sample ) / else
     }else
     {
       channels = measurement_channels( input.measurement, lower_channel, upper_channel,
@@ -2869,7 +2983,7 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
     //
     //  With the sidebands now entering the likelihood as ordinary observations this needs no
     //  special case: FixedByEdges simply has more channels.  The one exclusion is the background
-    //  reference's projected-sample block, which is Asimov pseudo-data built from the reference -
+    //  reference's projected-sample block, which is expected-counts pseudo-data built from the reference -
     //  counting it would inflate the DOF and pin chi2/dof near 0.5, because that block contributes
     //  ~zero deviance by construction.
     const size_t real_observations = background_reference ? (nbin + sidebands.size())
@@ -3174,14 +3288,53 @@ DeconLimitTextKind decon_limit_text_kind( const bool is_dist_limit,
 }//decon_limit_text_kind(...)
 
 
+namespace
+{
+/** Whether to print the profile-scan trace, and the lock that makes printing it safe.
+
+ These writes used to be unconditional.  `decon_projected_limit` calls this scan from several
+ threads at once, so they raced on whatever streambuf the caller had installed - a
+ `std::ostringstream` in the tests, which is not thread-safe - and that reproduced as an
+ intermittent SIGBUS in about one run in twenty-five.
+
+ Off by default, for two reasons: a few hundred scans' worth of trace is noise during a Monte
+ Carlo, and a library function should not write to the console uninvited.  The logs are still
+ *built* either way - they cost a couple of `ostringstream`s and are exactly what you want when a
+ scan misbehaves - so turning this on gives the same output as before.  The mutex keeps it safe if
+ you do.
+ */
+bool log_decon_scan()
+{
+  // Function-local static: initialized exactly once, thread-safely, on first use.
+  static const bool enabled = [](){
+    const char * const value = getenv( "INTERSPEC_LOG_DECON_SCAN" );
+    return value && (string(value) == "1");
+  }();
+
+  return enabled;
+}//log_decon_scan()
+
+
+std::mutex &decon_scan_log_mutex()
+{
+  static std::mutex mutex;
+  return mutex;
+}//decon_scan_log_mutex()
+
+}//anonymous namespace
+
+
 DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const double wantedCl,
                       const shared_ptr<const DetectionLimitCalc::DeconComputeInput> base_input,
                       const bool is_dist_limit,
                       const double min_search_quantity,
                       const double max_search_quantity,
                       const bool useCurie,
-                      const DeconLimitType limit_type )
+                      const DeconLimitType limit_type,
+                      const DeconLimitDetail detail )
 {
+  const bool limit_only = (detail == DeconLimitDetail::LimitOnly);
+
   if( !base_input )
     throw runtime_error( "get_activity_or_distance_limits: invalid base input." );
 
@@ -3203,19 +3356,33 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const double
   // A background-reference scan answers "what could a future measurement detect?", not "how much
   //  signal could be in this spectrum?".  Recording it on the result means no display or report
   //  has to infer it, and it is what forbids a lower limit below.
+  //
+  // Unless the sample has actually been measured: `observed_sample` makes the two blocks a genuine
+  //  joint likelihood over observed data, so the answer is an ordinary bound on that sample - which
+  //  may legitimately have a lower limit - and must not be worded as a prediction.
   const bool predicted_sensitivity
-        = (base_input->measurement_model == DeconMeasurementModel::BackgroundReference);
+        = (base_input->measurement_model == DeconMeasurementModel::BackgroundReference)
+          && !base_input->observed_sample;
   result.is_predicted_sensitivity = predicted_sensitivity;
-  if( predicted_sensitivity && base_input->measurement )
+  if( (base_input->measurement_model == DeconMeasurementModel::BackgroundReference)
+     && base_input->measurement )
   {
-    const double ref_real = (base_input->measurement->real_time() > 0.0f)
-                              ? static_cast<double>(base_input->measurement->real_time())
-                              : static_cast<double>(base_input->measurement->live_time());
-    const double ref_live = (base_input->measurement->live_time() > 0.0f)
-                              ? static_cast<double>(base_input->measurement->live_time()) : ref_real;
+    // The sample's own times when it exists, otherwise the reference's dead-time fraction applied
+    //  to the exposure being asked about.
+    const shared_ptr<const SpecUtils::Measurement> times_from
+        = base_input->observed_sample ? base_input->observed_sample : base_input->measurement;
 
-    result.sampleExposure = (base_input->sample_exposure > 0.0)
-                            ? base_input->sample_exposure : ref_live;
+    const double ref_real = (times_from->real_time() > 0.0f)
+                              ? static_cast<double>(times_from->real_time())
+                              : static_cast<double>(times_from->live_time());
+    const double ref_live = (times_from->live_time() > 0.0f)
+                              ? static_cast<double>(times_from->live_time()) : ref_real;
+
+    if( base_input->observed_sample )
+      result.sampleExposure = ref_live;
+    else
+      result.sampleExposure = (base_input->sample_exposure > 0.0)
+                              ? base_input->sample_exposure : ref_live;
 
     // Reported in REAL time, which is what the user entered.  A detector reporting only one of the
     //  two times is taken to have zero dead time, so the conversion is the identity there.
@@ -3424,12 +3591,16 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const double
     + DetectorPeakResponse::det_eff_geom_type_postfix(det_geom);
   };//print_quantity
   
-  cout << "Found min X2=" << overallBestChi2 << " with activity "
-  << print_quantity(overallBestQuantity)
-  << " and it took " << std::dec << num_iterations.load() << " iterations; searched from "
-  << print_quantity(min_search_quantity)
-  << " to " << print_quantity(search_max)
-  << endl;
+  if( log_decon_scan() )
+  {
+    std::lock_guard<std::mutex> lock( decon_scan_log_mutex() );
+    cout << "Found min X2=" << overallBestChi2 << " with activity "
+    << print_quantity(overallBestQuantity)
+    << " and it took " << std::dec << num_iterations.load() << " iterations; searched from "
+    << print_quantity(min_search_quantity)
+    << " to " << print_quantity(search_max)
+    << endl;
+  }
   
   //boost::math::tools::bracket_and_solve_root(...)
   auto chi2ForRangeLimit = [&chi2ForQuantity, overallBestChi2, yrange]( double const &quantity ) -> double {
@@ -3636,15 +3807,23 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const double
     pool.join();
   }catch( ... )
   {
-    cout << lower_log.str() << upper_log.str();
+    if( log_decon_scan() )
+    {
+      std::lock_guard<std::mutex> lock( decon_scan_log_mutex() );
+      cout << lower_log.str() << upper_log.str();
+    }
     throw;
   }
 
-  cout << lower_log.str() << upper_log.str();
+  if( log_decon_scan() )
+  {
+    std::lock_guard<std::mutex> lock( decon_scan_log_mutex() );
+    cout << lower_log.str() << upper_log.str();
+    cout << "Found best chi2 and ranges with num_iterations=" << std::dec
+         << num_iterations.load() << endl;
+  }
 
-  cout << "Found best chi2 and ranges with num_iterations=" << std::dec << num_iterations.load() << endl;
-
-  // The projected sample is taken at its Asimov (median) expectation, so by construction it holds
+  // The projected sample is taken at the counts it expects, with no measurement noise, so by construction it holds
   //  no excess over the null: there is nothing for a lower bound to exclude zero with, and any
   //  crossing found on that side is numerical noise rather than a detection.
   //
@@ -3703,6 +3882,7 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const double
   //  inside it.  Including the pre-scan means the drawn profile shows the same structure the root
   //  search actually saw - in particular a second basin, or an extra threshold crossing, cannot be
   //  present in the search but missing from the chart.
+  if( !limit_only )
   {
     const double quantity_delta = fabs(quantityRangeMax - quantityRangeMin) / nchi2;
     vector<double> quantities;
@@ -3734,11 +3914,17 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const double
   const double activity = is_dist_limit ? base_input->activity : upperLimit;
   const double other_quantity = is_dist_limit ? activity : distance;
   
-  const auto localComputeForActivity = [base_input]( const double activity, const double distance,
+  const auto localComputeForActivity = [base_input,limit_only]( const double activity,
+                                              const double distance,
                                               double &chi2, int &numDOF )
       -> std::shared_ptr<const DetectionLimitCalc::DeconComputeResults> {
     chi2 = 0.0;
     numDOF = 0;
+
+    // Under `DeconLimitDetail::LimitOnly` the returned peak sets are never read, and each of these
+    //  is a full `decon_compute_peaks`.  Returning early is most of the saving.
+    if( limit_only )
+      return nullptr;
     std::vector<PeakDef> peaks;
     
     shared_ptr<DetectionLimitCalc::DeconComputeInput> input = make_shared<DetectionLimitCalc::DeconComputeInput>( *base_input );
@@ -3759,14 +3945,17 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const double
   const string quantity_str = print_quantity(overallBestQuantity, 3);
   char buffer[256];
 
-  pool.post( [&result,is_dist_limit,&localComputeForActivity,other_quantity,overallBestQuantity](){
-    double dummy_chi2;
-    int dummy_numDOF;
-    if( is_dist_limit )
-      result.overallBestResults = localComputeForActivity( other_quantity, overallBestQuantity, dummy_chi2, dummy_numDOF );
-    else
-      result.overallBestResults = localComputeForActivity( overallBestQuantity, other_quantity, dummy_chi2, dummy_numDOF );
-  } );
+  if( !limit_only )
+  {
+    pool.post( [&result,is_dist_limit,&localComputeForActivity,other_quantity,overallBestQuantity](){
+      double dummy_chi2;
+      int dummy_numDOF;
+      if( is_dist_limit )
+        result.overallBestResults = localComputeForActivity( other_quantity, overallBestQuantity, dummy_chi2, dummy_numDOF );
+      else
+        result.overallBestResults = localComputeForActivity( overallBestQuantity, other_quantity, dummy_chi2, dummy_numDOF );
+    } );
+  }//if( !limit_only )
   
   // TODO: put all below computations into another thread
   string limit_str;
@@ -3814,8 +4003,9 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const double
         result.upperLimitResults = localComputeForActivity( upperLimit, other_quantity, upperQuantityChi2, scratch_dof );
       }
 
-      inconsistent_recomputation = !chi2_recomputation_matches( lowerQuantityChi2, lowerLimitChi2 )
-                                   || !chi2_recomputation_matches( upperQuantityChi2, upperLimitChi2 );
+      inconsistent_recomputation = !limit_only
+                                   && (!chi2_recomputation_matches( lowerQuantityChi2, lowerLimitChi2 )
+                                       || !chi2_recomputation_matches( upperQuantityChi2, upperLimitChi2 ));
 
       limit_str = print_quantity( overallBestQuantity, 3 );
       const string lower_limit_str = print_quantity( lowerLimit, 2 );
@@ -3853,7 +4043,8 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const double
       double lowerQuantityChi2 = -999.9;
       result.lowerLimitResults = localComputeForActivity( other_quantity, lowerLimit, lowerQuantityChi2, scratch_dof );
 
-      inconsistent_recomputation = !chi2_recomputation_matches( lowerQuantityChi2, lowerLimitChi2 );
+      inconsistent_recomputation = !limit_only
+                                   && !chi2_recomputation_matches( lowerQuantityChi2, lowerLimitChi2 );
 
       limit_str = print_quantity( lowerLimit, 3 );
       const string print_limit_str = print_quantity( lowerLimit, 2 );
@@ -3871,7 +4062,8 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const double
       double upperQuantityChi2 = -999.9;
       result.upperLimitResults = localComputeForActivity( upperLimit, other_quantity, upperQuantityChi2, scratch_dof );
 
-      inconsistent_recomputation = !chi2_recomputation_matches( upperQuantityChi2, upperLimitChi2 );
+      inconsistent_recomputation = !limit_only
+                                   && !chi2_recomputation_matches( upperQuantityChi2, upperLimitChi2 );
 
       limit_str = print_quantity( upperLimit, 3 );
       const string print_limit_str = print_quantity( upperLimit, 2 );
@@ -3993,6 +4185,516 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const double
 };//get_activity_or_distance_limits(...).
 
 
+namespace
+{
+/** Portable samplers for the projection Monte Carlo.
+
+ `std::poisson_distribution` and `std::gamma_distribution` are implementation-defined, so the same
+ seed gives different numbers on libstdc++, libc++ and MSVC.  A reported detection limit must not
+ depend on which platform computed it, so the algorithms are fixed here.
+
+ The same algorithms appear in `test_DetectionLimit.cpp`'s study helpers.  They are deliberately not
+ shared: those are pinned to the seeds of studies already published in the review, and coupling them
+ would mean any change here silently moved every one of those numbers.
+ */
+double projection_uniform( std::mt19937 &generator )
+{
+  // Straight from the engine's specified 32-bit output; `std::generate_canonical` is free to
+  //  consume a different number of words on different standard libraries.
+  return ( static_cast<double>( generator() ) + 0.5 ) / 4294967296.0;
+}
+
+
+double projection_normal( std::mt19937 &generator )
+{
+  const double u1 = projection_uniform( generator );
+  const double u2 = projection_uniform( generator );
+  return std::sqrt( -2.0*std::log(u1) ) * std::cos( 2.0*boost::math::constants::pi<double>()*u2 );
+}
+
+
+/** Gamma(shape,1) by Marsaglia-Tsang (2000), with their `shape < 1` boost. */
+double projection_gamma( const double shape, std::mt19937 &generator )
+{
+  if( !(shape > 0.0) )
+    return 0.0;
+
+  if( shape < 1.0 )
+  {
+    // Both factors draw from `generator`, and the operands of `*` are unsequenced in C++17, so
+    //  written as a single expression the compiler is free to choose which draws first - making the
+    //  random stream, and so the reported limit, depend on the compiler.  That is precisely what
+    //  these hand-rolled samplers exist to prevent, and this branch is the common one: a channel
+    //  that recorded zero counts has shape `0 + alpha` < 1, which is most channels in the low-count
+    //  regime a detection limit lives in.  Sequenced explicitly.
+    const double boosted = projection_gamma( shape + 1.0, generator );
+    const double uniform = projection_uniform( generator );
+    return boosted * std::pow( uniform, 1.0/shape );
+  }
+
+  const double d = shape - 1.0/3.0;
+  const double c = 1.0 / std::sqrt( 9.0*d );
+
+  for( size_t iteration = 0; iteration < 1000; ++iteration )
+  {
+    double x = 0.0, v = 0.0;
+    do
+    {
+      x = projection_normal( generator );
+      v = 1.0 + c*x;
+    }while( v <= 0.0 );
+
+    v = v*v*v;
+    const double u = projection_uniform( generator );
+    const double x2 = x*x;
+
+    if( u < (1.0 - 0.0331*x2*x2) )
+      return d*v;
+    if( std::log(u) < (0.5*x2 + d*(1.0 - v + std::log(v))) )
+      return d*v;
+  }
+
+  return d;
+}//projection_gamma(...)
+
+
+/** Knuth's product method below 10, Hoermann's PTRS transformed rejection above it.  Both exact;
+ the second because the first is O(mean) and channels can hold thousands of counts.
+ */
+double projection_poisson( const double mean, std::mt19937 &generator )
+{
+  if( !(mean > 0.0) )
+    return 0.0;
+
+  if( mean < 10.0 )
+  {
+    const double limit = std::exp( -mean );
+    double product = 1.0;
+    int count = 0;
+    for( ; count < 10000; ++count )
+    {
+      product *= projection_uniform( generator );
+      if( product <= limit )
+        break;
+    }
+    return count;
+  }//if( mean < 10.0 )
+
+  const double b = 0.931 + 2.53*std::sqrt( mean );
+  const double a = -0.059 + 0.02483*b;
+  const double inverse_alpha = 1.1239 + 1.1328/( b - 3.4 );
+  const double v_r = 0.9277 - 3.6224/( b - 2.0 );
+
+  for( size_t iteration = 0; iteration < 10000; ++iteration )
+  {
+    const double u = projection_uniform( generator ) - 0.5;
+    const double v = projection_uniform( generator );
+    const double us = 0.5 - std::fabs( u );
+    const double k = std::floor( (2.0*a/us + b)*u + mean + 0.43 );
+
+    if( (us >= 0.07) && (v <= v_r) )
+      return k;
+
+    if( (k < 0.0) || ((us < 0.013) && (v > us)) )
+      continue;
+
+    if( std::log( v*inverse_alpha/(a/(us*us) + b) )
+       <= (-mean + k*std::log(mean) - std::lgamma(k + 1.0)) )
+    {
+      return k;
+    }
+  }//for( bounded rejection loop )
+
+  return mean;
+}//projection_poisson(...)
+
+
+/** A seed derived from the inputs, so the same spectrum and the same settings always give the same
+ predicted limit.  A reported MDA that moves when nothing moved is worse than one that is slightly
+ wrong, and a Monte Carlo median carries a few percent of sampling error however many trials it
+ runs.
+ */
+uint32_t projection_seed( const shared_ptr<const SpecUtils::Measurement> &reference,
+                          const double planned_real_time,
+                          const size_t first_channel, const size_t last_channel )
+{
+  uint64_t hash = 14695981039346656037ull;
+  const uint64_t prime = 1099511628211ull;
+
+  const auto mix = [&hash,prime]( const double value ){
+    // Bit pattern of the value, so the hash sees the whole mantissa rather than a rounded string.
+    uint64_t bits = 0;
+    static_assert( sizeof(bits) == sizeof(value), "double is not 64 bits" );
+    memcpy( &bits, &value, sizeof(bits) );
+    for( size_t byte = 0; byte < sizeof(bits); ++byte )
+    {
+      hash ^= ( (bits >> (8*byte)) & 0xFF );
+      hash *= prime;
+    }
+  };
+
+  mix( planned_real_time );
+  mix( static_cast<double>( reference ? reference->live_time() : 0.0f ) );
+  mix( static_cast<double>( reference ? reference->real_time() : 0.0f ) );
+  mix( static_cast<double>( first_channel ) );
+  mix( static_cast<double>( last_channel ) );
+
+  const shared_ptr<const vector<float>> counts = reference ? reference->gamma_counts() : nullptr;
+  if( counts )
+  {
+    for( size_t i = first_channel; (i <= last_channel) && (i < counts->size()); ++i )
+      mix( static_cast<double>( (*counts)[i] ) );
+  }
+
+  return 20260810u + static_cast<uint32_t>( hash ^ (hash >> 32) );
+}//projection_seed(...)
+
+
+/** Median and the 16th/84th percentiles of \p values, which is sorted in place. */
+void projection_quantiles( vector<double> &values, ProjectedLimit &answer )
+{
+  std::sort( begin(values), end(values) );
+
+  const auto at = [&values]( const double quantile ) -> double {
+    const size_t index = (std::min)( values.size() - 1,
+                    static_cast<size_t>( quantile*static_cast<double>(values.size()) ) );
+    return values[index];
+  };
+
+  answer.median = at( 0.50 );
+  answer.lower = at( 0.16 );
+  answer.upper = at( 0.84 );
+}//projection_quantiles(...)
+
+}//anonymous namespace
+
+
+double projected_limit_prior_strength()
+{
+  // Jeffreys.  See `draw_projected_measurement` for what the two neighbouring choices cost.
+  return 0.5;
+}
+
+
+shared_ptr<const SpecUtils::Measurement>
+draw_projected_measurement( const shared_ptr<const SpecUtils::Measurement> &reference,
+                            const float new_real_time,
+                            const size_t first_channel,
+                            const size_t last_channel,
+                            std::mt19937 &generator )
+{
+  if( !reference )
+    throw runtime_error( "draw_projected_measurement: null reference." );
+
+  const float reference_real = (reference->real_time() > 0.0f) ? reference->real_time()
+                                                               : reference->live_time();
+  if( !(reference_real > 0.0f) )
+    throw runtime_error( "draw_projected_measurement: reference has non-positive real time." );
+  if( !(new_real_time > 0.0f) )
+    throw runtime_error( "draw_projected_measurement: new real time must be > 0." );
+
+  const shared_ptr<const vector<float>> observed = reference->gamma_counts();
+  if( !observed || observed->empty() )
+    throw runtime_error( "draw_projected_measurement: reference has no gamma counts." );
+
+  if( (last_channel < first_channel) || (last_channel >= observed->size()) )
+    throw runtime_error( "draw_projected_measurement: invalid channel window." );
+
+  const shared_ptr<const SpecUtils::EnergyCalibration> cal = reference->energy_calibration();
+  if( cal && cal->num_channels() && (observed->size() != cal->num_channels()) )
+    throw runtime_error( "draw_projected_measurement: gamma_counts size does not match calibration." );
+
+  const double ratio = static_cast<double>(new_real_time) / static_cast<double>(reference_real);
+  const double alpha = projected_limit_prior_strength();
+
+  auto counts = make_shared<vector<float>>( observed->size() );
+
+  // Outside the window the expectation is written straight in: no caller looks there, and drawing
+  //  a full 16k-channel spectrum costs ~200x what the limit itself does.
+  for( size_t i = 0; i < observed->size(); ++i )
+    counts->at(i) = static_cast<float>( ratio * (std::max)( 0.0, static_cast<double>((*observed)[i]) ) );
+
+  for( size_t i = first_channel; i <= last_channel; ++i )
+  {
+    const double n = (std::max)( 0.0, static_cast<double>( (*observed)[i] ) );
+    const double rate = projection_gamma( n + alpha, generator );
+    counts->at(i) = static_cast<float>( projection_poisson( ratio*rate, generator ) );
+  }
+
+  auto scaled = make_shared<SpecUtils::Measurement>( *reference );
+
+  const float reference_live = (reference->live_time() > 0.0f) ? reference->live_time()
+                                                               : reference_real;
+  scaled->set_gamma_counts( counts, static_cast<float>( reference_live*ratio ), new_real_time );
+
+  return scaled;
+}//draw_projected_measurement(...)
+
+
+ProjectedLimit currie_projected_limit( const CurrieMdaInput &input,
+                                       const double planned_real_time,
+                                       const size_t num_trials )
+{
+  ProjectedLimit answer;
+
+  if( !input.spectrum || !(planned_real_time > 0.0) || (num_trials < 8) )
+    return answer;
+
+  // The window the calculation reads: the peak region plus its side channels, and a channel of
+  //  slack at each end so rounding cannot leave an undrawn channel inside it.
+  size_t first_channel = 0, last_channel = 0;
+  try
+  {
+    const pair<size_t,size_t> region = round_roi_to_channels( input.spectrum,
+                                          input.roi_lower_energy, input.roi_upper_energy );
+    const size_t below = input.num_lower_side_channels + 1;
+    first_channel = (region.first > below) ? (region.first - below) : 0;
+    last_channel = region.second + input.num_upper_side_channels + 1;
+
+    const size_t nchannel = input.spectrum->num_gamma_channels();
+    if( !nchannel )
+      return answer;
+    last_channel = (std::min)( last_channel, nchannel - 1 );
+  }catch( std::exception & )
+  {
+    return answer;
+  }
+
+  std::mt19937 generator( projection_seed( input.spectrum, planned_real_time,
+                                          first_channel, last_channel ) );
+
+  vector<double> limits;
+  limits.reserve( num_trials );
+
+  for( size_t trial = 0; trial < num_trials; ++trial )
+  {
+    ++answer.num_attempted;
+
+    try
+    {
+      CurrieMdaInput trial_input = input;
+      trial_input.spectrum = draw_projected_measurement( input.spectrum,
+                                static_cast<float>(planned_real_time),
+                                first_channel, last_channel, generator );
+
+      // `detection_limit` (the MDA), NOT `upper_limit`.  These are different quantities with very
+      //  different spreads: the MDA depends only on the background level, while `upper_limit`
+      //  carries the region's own observed fluctuation and swings several-fold between repeats.
+      //  Both callers print this band beside the "minimum reliably detectable activity" line, so
+      //  quantiling `upper_limit` attached a factor-of-three spread to a number that moves by a
+      //  couple of percent.  The MDA is also the quantity a projection is *for*: planning against
+      //  what a future dwell could detect.
+      const CurrieMdaResult result = currie_mda_calc( trial_input );
+      if( !IsNan(result.detection_limit) && !IsInf(result.detection_limit)
+         && (result.detection_limit > 0.0) )
+      {
+        limits.push_back( result.detection_limit );
+      }
+    }catch( std::exception & )
+    {
+      // A realisation that cannot be evaluated is dropped and counted, not substituted for.
+    }
+  }//for( loop over trials )
+
+  if( limits.size() < (num_trials/2) )
+    return answer;
+
+  answer.num_used = limits.size();
+  projection_quantiles( limits, answer );
+  answer.valid = true;
+
+  return answer;
+}//currie_projected_limit(...)
+
+
+ProjectedLimit decon_projected_limit( const shared_ptr<const DeconComputeInput> &base_input,
+                                      const double wantedCl,
+                                      const double planned_real_time,
+                                      const double max_search_quantity,
+                                      const bool useCurie,
+                                      const DeconLimitType limit_type,
+                                      const ProjectedLimitScoring scoring,
+                                      const size_t num_trials,
+                                      const size_t num_threads,
+                                      const shared_ptr<std::atomic_bool> &cancel )
+{
+  ProjectedLimit answer;
+
+  if( !base_input || !base_input->measurement || !(planned_real_time > 0.0) || (num_trials < 8) )
+    return answer;
+
+  // Scoring each realisation against the reference only means anything if the reference is one.
+  if( (scoring == ProjectedLimitScoring::JointWithReference)
+     && (base_input->measurement_model != DeconMeasurementModel::BackgroundReference) )
+  {
+    return answer;
+  }
+
+  // Every channel any region reads, plus its side channels.
+  const size_t nchannel = base_input->measurement->num_gamma_channels();
+  if( !nchannel )
+    return answer;
+
+  size_t first_channel = nchannel, last_channel = 0;
+  for( const DeconRoiInfo &roi : base_input->roi_info )
+  {
+    try
+    {
+      const pair<size_t,size_t> region = round_roi_to_channels( base_input->measurement,
+                                                               roi.roi_start, roi.roi_end );
+      const size_t below = roi.num_lower_side_channels + 1;
+      first_channel = (std::min)( first_channel,
+                                 (region.first > below) ? (region.first - below) : size_t(0) );
+      last_channel = (std::max)( last_channel,
+                        (std::min)( nchannel - 1,
+                                   region.second + roi.num_upper_side_channels + 1 ) );
+    }catch( std::exception & )
+    {
+      continue;
+    }
+  }//for( const DeconRoiInfo &roi : base_input->roi_info )
+
+  if( first_channel > last_channel )
+    return answer;
+
+  // Drawn up front, single threaded, so the realisations do not depend on how many threads happen
+  //  to be available - the same input must give the same limit on every machine.
+  std::mt19937 generator( projection_seed( base_input->measurement, planned_real_time,
+                                          first_channel, last_channel ) );
+
+  vector<shared_ptr<const SpecUtils::Measurement>> draws;
+  draws.reserve( num_trials );
+  for( size_t trial = 0; trial < num_trials; ++trial )
+  {
+    // Each draw copies a whole Measurement, so on a 16k-channel spectrum this loop allocates and
+    //  fills tens of megabytes before any scan starts; a superseded run should not sit through it.
+    if( cancel && cancel->load() )
+      return answer;
+
+    try
+    {
+      draws.push_back( draw_projected_measurement( base_input->measurement,
+                          static_cast<float>(planned_real_time),
+                          first_channel, last_channel, generator ) );
+    }catch( std::exception & )
+    {
+      break;
+    }
+  }
+
+  if( draws.size() < (num_trials/2) )
+    return answer;
+
+  if( cancel && cancel->load() )
+    return answer;
+
+  answer.num_attempted = draws.size();
+
+  // Each realisation is an independent profile scan, which is what makes this worth threading:
+  //  one scan is milliseconds, and a few hundred of them would otherwise be a visible pause.
+  vector<double> results( draws.size(), std::numeric_limits<double>::quiet_NaN() );
+  const size_t threads = (std::max)( size_t(1), (std::min)( num_threads, draws.size() ) );
+
+  {
+    // A *private* pool, deliberately not `SpecUtilsAsync::ThreadPool`.  On every build except
+    //  Apple/Android, `SpecUtils_USE_WT_THREADPOOL` is ON and that class submits into the same
+    //  `WServer` io service that serves every request for every session - so a few hundred
+    //  realisations would stall the whole application, which is exactly what running this off the
+    //  GUI thread was meant to avoid.  Owning our own threads costs one io-service thread (the
+    //  caller's) and no more.  The scans run with `DeconLimitDetail::LimitOnly`, so they do not
+    //  nest a pool of their own either.
+    //
+    //  The scans' diagnostic trace is off unless INTERSPEC_LOG_DECON_SCAN is set, and locked when
+    //  it is - see `log_decon_scan()` - so nothing here writes to a shared stream.
+    boost::asio::thread_pool pool( threads );
+
+    for( size_t thread = 0; thread < threads; ++thread )
+    {
+      boost::asio::post( pool, [&draws,&results,base_input,thread,threads,wantedCl,
+                                max_search_quantity,useCurie,limit_type,scoring,cancel](){
+        for( size_t i = thread; i < draws.size(); i += threads )
+        {
+          // Checked per realisation rather than only at the end: a superseded run would otherwise
+          //  hold a thread for its full few hundred scans before anyone looked at the flag.
+          if( cancel && cancel->load() )
+            return;
+
+          try
+          {
+            auto trial_input = make_shared<DeconComputeInput>( *base_input );
+
+            if( scoring == ProjectedLimitScoring::JointWithReference )
+            {
+              // The reference stays the measurement and the realisation joins it as the observed
+              //  sample, so this predicts exactly what `BackgroundReference` reports.
+              //  `counts_per_bq_into_4pi` is quoted against the reference's live time, which is
+              //  still the measurement, so it is left alone - `decon_compute_peaks` applies the
+              //  exposure ratio itself.
+              trial_input->observed_sample = draws[i];
+            }else
+            {
+              // The realisation *is* the future measurement, so it is scored on its own: no
+              //  reference block, no expected-counts step, no exposure ratio.
+              trial_input->measurement = draws[i];
+              trial_input->measurement_model = DeconMeasurementModel::CurrentSpectrum;
+              trial_input->sample_exposure = 0.0;
+              trial_input->observed_sample = nullptr;
+
+              for( DeconRoiInfo &roi : trial_input->roi_info )
+              {
+                for( DeconRoiInfo::PeakInfo &peak : roi.peak_infos )
+                {
+                  // `counts_per_bq_into_4pi` carries the exposure of the spectrum it came from, so
+                  //  it has to move with the realisation or the activity axis changes meaning.
+                  if( (base_input->measurement->live_time() > 0.0f) && (draws[i]->live_time() > 0.0f) )
+                    peak.counts_per_bq_into_4pi *= ( draws[i]->live_time()
+                                                    / base_input->measurement->live_time() );
+                }
+              }
+            }//if( JointWithReference ) / else
+
+            // `LimitOnly`: this reads `upperLimit` and nothing else, so the chi2 display grid and
+            //  the three result peak fits - well over half a scan's work - are skipped, and the
+            //  scan does not spin up a nested pool.
+            const DeconActivityOrDistanceLimitResult limit
+                = get_activity_or_distance_limits( wantedCl, trial_input, false, 0.0,
+                                                  max_search_quantity, useCurie, limit_type,
+                                                  DeconLimitDetail::LimitOnly );
+            if( limit.foundUpperCl && !IsNan(limit.upperLimit) && !IsInf(limit.upperLimit) )
+              results[i] = limit.upperLimit;
+          }catch( std::exception & )
+          {
+            // Dropped and counted below, not substituted for.
+          }
+        }//for( this thread's realisations )
+      } );
+    }//for( loop over threads )
+
+    pool.join();
+  }
+
+  if( cancel && cancel->load() )
+    return answer;
+
+  vector<double> limits;
+  limits.reserve( results.size() );
+  for( const double value : results )
+  {
+    if( !IsNan(value) )
+      limits.push_back( value );
+  }
+
+  if( limits.size() < (answer.num_attempted/2) )
+    return answer;
+
+  answer.num_used = limits.size();
+  projection_quantiles( limits, answer );
+  answer.valid = true;
+
+  return answer;
+}//decon_projected_limit(...)
+
+
 shared_ptr<const SpecUtils::Measurement>
 scale_spectrum_for_dwell( const shared_ptr<const SpecUtils::Measurement> &input,
                           const float new_real_time )
@@ -4092,6 +4794,29 @@ PlannedMeasurement plan_measurement( const shared_ptr<const SpecUtils::Measureme
 
   return answer;
 }//plan_measurement(...)
+
+
+bool projected_band_endpoints( const ProjectedLimit &limit,
+                               string &lower_multiple,
+                               string &upper_multiple )
+{
+  if( !limit.valid || !(limit.median > 0.0) )
+    return false;
+
+  char lower_buffer[32] = { '\0' }, upper_buffer[32] = { '\0' };
+  snprintf( lower_buffer, sizeof(lower_buffer), "%.2f", limit.lower/limit.median );
+  snprintf( upper_buffer, sizeof(upper_buffer), "%.2f", limit.upper/limit.median );
+
+  // A band whose two ends print the same tells the user nothing they cannot see from the number
+  //  itself, so it is left off rather than shown as "1.00 to 1.00".
+  if( strcmp( lower_buffer, upper_buffer ) == 0 )
+    return false;
+
+  lower_multiple = lower_buffer;
+  upper_multiple = upper_buffer;
+
+  return true;
+}//projected_band_endpoints(...)
 
 
 }//namespace DetectionLimitCalc

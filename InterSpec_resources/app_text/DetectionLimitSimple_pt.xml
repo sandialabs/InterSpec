@@ -55,6 +55,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">Pico para limite superior de {1} @{2} NC</message>
   <message id="dls-results-txt-upper-bound-act">Menos de {1} @{2} NC</message>
+  <message id="dls-results-txt-predicted-act">Sensibilidade prevista: menos de {1} a {2} N.C. para uma medição de {3}</message>
+  <message id="dls-results-txt-predicted-counts">Sensibilidade prevista: menos de {1} contagens de sinal a {2} N.C. para uma medição de {3}</message>
+  <message id="dls-chart-title-predicted-act">Pico para sensibilidade prevista de {1} @{2} NC</message>
+  <message id="dls-chart-title-predicted-counts">Pico para sensibilidade prevista de {1} contagens @{2} NC</message>
   <message id="dls-chart-title-upper-bound-counts">Pico para limite superior de {1} contagens @{2} NC</message>
   <message id="dls-results-txt-upper-bound-counts">Menos de {1} contagens de sinal presentes @{2} NC</message>
   <message id="dls-err-no-meas">Nenhuma medição disponível</message>
@@ -81,7 +85,7 @@
   <message id="dls-err-no-fwhm-info">Função de eficiência do detector não tem informação de FWHM - por favor, ajuste para FWHM, ou mude o detector.</message>
   <message id="dls-is-background-spectrum-cb-short">Fundo?</message>
   <message id="dls-num-side-channel-label-short">N.º can. lat.:</message>
-  <message id="dls-result-scaled-postfix"> (t. vivo={1})</message>
+  <message id="dls-result-projected-band"> (tipicamente {1}&ndash;{2}&times; este valor)</message>
   <message id="dls-roi-lower-label-short">Inferior:</message>
   <message id="dls-roi-upper-label-short">Superior:</message>
   <message id="dls-scale-more-info-note">

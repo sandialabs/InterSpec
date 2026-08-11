@@ -163,4 +163,7 @@
   <message id="dlt-err-distance-zero-negative">A távolság nem lehet nulla vagy negatív</message>
   <message id="dlt-qr-tool-state-title">A Detektálási megbízhatósági eszköz állapota</message>
   <message id="dlt-qr-tool-state-txt">A detektálási megbízhatósági eszköz jelenlegi állapota.</message>
+  <message id="dlt-estimating-spread">Szórás számítása…</message>
+  <message id="dlt-spread-band">(jellemzően ennek {1}&ndash;{2}&times; szerese)</message>
+  <message id="dlt-spread-unavailable">A szórást nem sikerült megbecsülni.</message>
 </messages>

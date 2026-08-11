@@ -78,7 +78,7 @@
     <p>
       Hasil referensi latar adalah <b>sensitivitas terprediksi</b>, bukan batas atas untuk spektrum
       yang ada di tangan, dan dilaporkan sebagaimana adanya.  Ini adalah harapan median: tidak ada
-      pengukuran mendatang yang dapat diamati, sehingga prediksi dibuat pada cacahan yang diharapkan.
+      pengukuran mendatang yang dapat diamati, sehingga prediksi dibuat pada cacahan yang diharapkan.  Itu berlaku selama waktu yang dimasukkan sekitar sama dengan spektrum ini atau lebih pendek; jauh melampaui itu hasilnya terbaca optimistis, sekitar sepertiga pada 16 kali, karena setiap ketidakcocokan antara kontinum sebenarnya di daerah itu dan garis lurus yang dicocokkan padanya tumbuh seiring paparan, sedangkan derau pencacahan hanya tumbuh sebagai akarnya.
     </p>
   </message>
   <message id="dl-model-backref-tt">
@@ -136,9 +136,21 @@
       referensi itu sendiri ikut dirambatkan ke dalam jawaban alih-alih diabaikan.</li>
     </ul>
     <p>
-      Memproyeksikan spektrum paling akurat untuk lama pencacahan yang lebih pendek atau setara; untuk
-      yang jauh lebih panjang hasilnya optimistis, karena ketidakpastian penaksiran laju cacah lalu
-      melampaui derau Poisson yang diproyeksikan.  Jalur referensi latar tidak punya masalah itu.
+      Memproyeksikan spektrum memprediksi batas <b>tipikal</b> pengukuran baru dengan baik; yang
+      diremehkan adalah <b>sebaran</b> di sekitarnya.  Cacahan hasil penskalaan diperlakukan sebagai
+      Poisson dengan ragam sama dengan cacahan tersebut, yang berarti menganggap laju cacah spektrum
+      yang dimuat diketahui secara persis; kenyataannya proyeksi juga mewarisi derau pencacahan
+      spektrum itu.  Diukur terhadap pengukuran nyata yang diambil dari latar 11,5 jam, median batas
+      Currie terproyeksi berada dalam 4% dari apa yang diberikan pencacahan sebenarnya pada rentang
+      64 kali lipat, sementara sebaran sebenarnya sekitar 1,6&#215; lebih lebar dari yang tersirat
+      pada k&#160;=&#160;1 dan sekitar 4&#215; lebih lebar pada k&#160;=&#160;16, dengan k adalah
+      waktu yang dimasukkan dibagi waktu spektrum yang dimuat.  Jadi k sampai sekitar 1 aman; di
+      atas itu perlakukan angkanya sebagai perkiraan perencanaan, bukan batas.
+    </p>
+    <p>
+      Jalur referensi latar tidak menskalakan cacahan sehingga tidak punya masalah itu - tetapi hanya
+      mencakup batas dekonvolusi.  Batas Currie mana pun yang ditampilkan di sebelahnya tetap
+      terproyeksi, dan peringatan di atas berlaku untuknya.
     </p>
   </message>
   <message id="dl-err-bad-plan-time">Waktu pengukuran tidak valid - diharapkan sesuatu seperti '5 menit', '300 s', atau '00:05:00'.</message>

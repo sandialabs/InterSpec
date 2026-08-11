@@ -31,16 +31,29 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <memory>
 #include <vector>
 #include <iostream>
 
 #define BOOST_TEST_MODULE TestDetectionLimitState
 #include <boost/test/included/unit_test.hpp>
 
+#include <Wt/WApplication>
+#include <Wt/Test/WTestEnvironment>
+
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
+#include "InterSpec/PeakDef.h"
+#include "InterSpec/SpecMeas.h"
+#include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DetectionLimitCalc.h"
+#include "InterSpec/DetectionLimitTool.h"
+#include "InterSpec/DetectionLimitSimple.h"
 
 using namespace std;
 using namespace boost::unit_test;
@@ -251,3 +264,232 @@ BOOST_AUTO_TEST_CASE( ComboIndexMappingIsGuarded )
   BOOST_CHECK_EQUAL( index_from_limit_type( DeconLimitType::CentralInterval ), 1 );
   BOOST_CHECK_THROW( limit_type_from_index(2), std::exception );
 }//BOOST_AUTO_TEST_CASE( ComboIndexMappingIsGuarded )
+
+
+namespace
+{
+/** Points InterSpec at its data directory; the round-trip cases below need a real session, and a
+ session needs the decay database.  Same `--datadir=` convention the other test targets use.
+ */
+void set_state_test_data_dir()
+{
+  static bool s_have_set = false;
+  if( s_have_set )
+    return;
+  s_have_set = true;
+
+  const int argc = boost::unit_test::framework::master_test_suite().argc;
+  char ** const argv = boost::unit_test::framework::master_test_suite().argv;
+
+  string datadir;
+  for( int i = 1; i < argc; ++i )
+  {
+    const string arg = argv[i];
+    if( SpecUtils::istarts_with( arg, "--datadir=" ) )
+      datadir = arg.substr( 10 );
+  }
+
+  SpecUtils::ireplace_all( datadir, "%20", " " );
+
+  if( datadir.empty() )
+  {
+    for( const char * const d : { "data", "../data", "../../data", "../../../data" } )
+    {
+      if( SpecUtils::is_file( SpecUtils::append_path(d, "sandia.decay.xml") ) )
+      {
+        datadir = d;
+        break;
+      }
+    }
+  }//if( datadir.empty() )
+
+  const string decay_file = SpecUtils::append_path( datadir, "sandia.decay.xml" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(decay_file),
+                        "sandia.decay.xml not at '" << decay_file << "'" );
+  BOOST_REQUIRE_NO_THROW( InterSpec::setStaticDataDirectory( datadir ) );
+}//set_state_test_data_dir()
+}//namespace
+
+
+/** The tools' own URI round trip, which is what undo/redo actually rides on.
+
+ The cases above test the pure token helpers.  They cannot see the thing that breaks undo/redo in
+ practice: a control whose value `encodeStateToUrl()` does not write, or writes but
+ `handleAppUrl()` does not read.  Either way the two states encode to the same string, so
+ `render()`'s `sameAsPrev` check records no undo step and the change simply cannot be undone - and
+ nothing fails loudly, which is why it needs a test rather than a review.
+
+ The invariant checked is `encode -> decode -> encode` stability, plus, for each control, that
+ changing it changes the URI.  Both need a real widget, hence a Wt test session.
+ */
+namespace
+{
+/** A minimal InterSpec session with a spectrum loaded, enough to build the two tools. */
+class ToolSessionFixture
+{
+public:
+  std::unique_ptr<Wt::Test::WTestEnvironment> m_env;
+  InterSpecApp *m_app = nullptr;
+  std::unique_ptr<Wt::WApplication::UpdateLock> m_lock;
+  InterSpec *m_interspec = nullptr;
+
+  ToolSessionFixture()
+  {
+    set_state_test_data_dir();
+
+    string app_root = SpecUtils::append_path( InterSpec::staticDataDirectory(), ".." );
+    app_root = SpecUtils::lexically_normalize_path( app_root );
+
+    m_env.reset( new Wt::Test::WTestEnvironment( "", "", Wt::Application ) );
+    m_env->setAppRoot( app_root );
+    m_app = new InterSpecApp( *m_env );
+    m_lock.reset( new Wt::WApplication::UpdateLock(m_app) );
+    m_interspec = m_app->viewer();
+    BOOST_REQUIRE( m_interspec );
+
+    // Both tools need a foreground before they will compute anything.
+    const string spec = SpecUtils::append_path( InterSpec::staticDataDirectory(),
+                    "reference_spectra/Common_Field_Nuclides/Detective X/Br82_Unshielded.txt" );
+    BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(spec), "test spectrum not at '" << spec << "'" );
+
+    auto meas = std::make_shared<SpecMeas>();
+    BOOST_REQUIRE( meas->load_file( spec, SpecUtils::ParserType::Auto, spec ) );
+    BOOST_REQUIRE( meas->num_measurements() > 0 );
+    const std::shared_ptr<const SpecUtils::Measurement> m = meas->measurement_at_index( 0 );
+    BOOST_REQUIRE( !!m );
+
+    // The Detection Confidence Tool builds one row per gamma line, and it needs a detector response
+    //  with resolution information to give each row a region of interest.  Without one there are no
+    //  rows at all, and the per-row half of the state round trip would go untested.
+    auto drf = std::make_shared<DetectorPeakResponse>();
+    drf->setIntrinsicEfficiencyFormula( "exp(-343.63 + 269.10*log(x) - 83.80*log(x)^2"
+                                        " + 12.44*log(x)^3 - 0.708*log(x)^4)",
+                                        2.54f*PhysicalUnits::cm, PhysicalUnits::keV,
+                                        0.0f, 0.0f,
+                                        DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    drf->setFwhmCoefficients( std::vector<float>{ 1.5f, 0.035f },
+                             DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+    BOOST_REQUIRE( drf->isValid() && drf->hasResolutionInfo() );
+    meas->setDetector( drf );
+
+    m_interspec->setSpectrum( meas, {m->sample_number()}, SpecUtils::SpectrumType::Foreground, 0 );
+  }
+
+  ~ToolSessionFixture()
+  {
+    // `m_app` is owned by the environment - deleting it here as well crashes during teardown,
+    //  after the test body has already passed, which reads confusingly as a product failure.
+    m_lock.reset();
+    m_env.reset();
+    m_interspec = nullptr;
+    m_app = nullptr;
+  }
+};//class ToolSessionFixture
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( SimpleMdaStateRoundTrips )
+{
+  ToolSessionFixture fixture;
+
+  DetectionLimitSimpleWindow * const window = fixture.m_interspec->showSimpleMdaWindow();
+  BOOST_REQUIRE( window && window->tool() );
+  DetectionLimitSimple * const tool = window->tool();
+
+  // A state exercising every control the tool serializes, including the ones this increment
+  //  touched: the measurement model, the continuum type, and the planned measurement time.
+  const string uri = "DECON?VER=2&NUC=Cs137&ENERGY=661.657&DIST=100 cm&LROI=640&UROI=680"
+                     "&CL=95&NSIDE=4&MODEL=BACKREF&CONTNORM=FLOAT&CONTTYPE=QUAD&SCALE=1800s";
+
+  BOOST_REQUIRE_NO_THROW( tool->handleAppUrl( uri ) );
+
+  const string once = tool->encodeStateToUrl();
+  BOOST_REQUIRE( !once.empty() );
+
+  // Decoding what we just encoded, then encoding again, must give the same string.  Anything the
+  //  encoder writes but the decoder drops (or vice versa) shows up right here.
+  BOOST_REQUIRE_NO_THROW( tool->handleAppUrl( once ) );
+  const string twice = tool->encodeStateToUrl();
+
+  BOOST_CHECK_MESSAGE( once == twice,
+                      "Simple MDA state did not survive a round trip:\n  first:  " << once
+                      << "\n  second: " << twice );
+
+  // And the settings this increment cares about have to actually be in there - a round trip is
+  //  stable if a field is dropped by *both* halves, so stability alone is not enough.
+  BOOST_CHECK_MESSAGE( once.find("MODEL=BACKREF") != string::npos,
+                      "measurement model missing from encoded state: " << once );
+  BOOST_CHECK_MESSAGE( once.find("CONTTYPE=QUAD") != string::npos,
+                      "continuum type missing from encoded state: " << once );
+  BOOST_CHECK_MESSAGE( once.find("SCALE=") != string::npos,
+                      "planned measurement time missing from encoded state: " << once );
+  BOOST_CHECK_MESSAGE( SpecUtils::istarts_with(once, "DECON"),
+                      "calculation method missing from encoded state: " << once );
+
+  // Changing a setting must change the URI, or `render()` sees `sameAsPrev` and records no undo
+  //  step.  Flipping the measurement model is the one this increment added behaviour to.
+  const string backref_uri = tool->encodeStateToUrl();
+  string current_uri = backref_uri;
+  SpecUtils::ireplace_all( current_uri, "MODEL=BACKREF", "MODEL=CUR" );
+  BOOST_REQUIRE( current_uri != backref_uri );
+
+  BOOST_REQUIRE_NO_THROW( tool->handleAppUrl( current_uri ) );
+  const string after_current = tool->encodeStateToUrl();
+  BOOST_CHECK_MESSAGE( after_current != backref_uri,
+                      "switching the measurement model left the encoded state unchanged, so the"
+                      " change cannot be undone" );
+  BOOST_CHECK_MESSAGE( after_current.find("MODEL=CUR") != string::npos,
+                      "measurement model did not switch: " << after_current );
+}// BOOST_AUTO_TEST_CASE( SimpleMdaStateRoundTrips )
+
+
+BOOST_AUTO_TEST_CASE( DetectionLimitToolStateRoundTrips )
+{
+  ToolSessionFixture fixture;
+
+  DetectionLimitWindow * const window = fixture.m_interspec->createDetectionLimitTool();
+  BOOST_REQUIRE( window && window->tool() );
+  DetectionLimitTool * const tool = window->tool();
+
+  // Includes a per-row entry that deviates from the row defaults on every axis the encoder tests
+  //  (used-for-likelihood, side channels, continuum type), because rows at their defaults are
+  //  deliberately *not* emitted - that is a URL-size optimization, not a gap.
+  const string uri = "VER=1&NUC=Cs137&AGE=20y&LIM=ACT&DIST=100 cm&CL=95&AIRATTN=1"
+                     "&MODEL=BACKREF&LIMTYPE=UPPER&SCALE=1800s"
+                     "&ROW0=E:661.657,U:1,L:650,H:670,N:8,CN:FLOAT,CT:QUAD";
+
+  BOOST_REQUIRE_NO_THROW( tool->handleAppUrl( uri ) );
+
+  const string once = tool->encodeStateToUrl();
+  BOOST_REQUIRE( !once.empty() );
+
+  BOOST_REQUIRE_NO_THROW( tool->handleAppUrl( once ) );
+  const string twice = tool->encodeStateToUrl();
+
+  BOOST_CHECK_MESSAGE( once == twice,
+                      "Detection Confidence Tool state did not survive a round trip:\n  first:  "
+                      << once << "\n  second: " << twice );
+
+  BOOST_CHECK_MESSAGE( once.find("MODEL=") != string::npos,
+                      "measurement model missing from encoded state: " << once );
+  BOOST_CHECK_MESSAGE( once.find("LIMTYPE=") != string::npos,
+                      "limit type missing from encoded state: " << once );
+
+  // Per-row settings have no equivalent in the Simple MDA tool and are where a dropped field would
+  //  be least obvious.  A row is only emitted when it deviates from its defaults, so the input
+  //  above deviates deliberately; if the session produced no rows at all (no detector response,
+  //  so no gamma lines to make rows from) there is nothing to assert and saying so beats a
+  //  vacuous pass.
+  //  The fixture installs a detector response with resolution info precisely so rows exist, so
+  //  "no rows" is the regression worth failing on rather than skipping past.
+  BOOST_REQUIRE_MESSAGE( once.find("ROW") != string::npos,
+                        "no per-row state encoded, so the row round trip is untested: " << once );
+  {
+    BOOST_CHECK_MESSAGE( once.find("U:1") != string::npos,
+                        "row's use-for-likelihood flag lost: " << once );
+    BOOST_CHECK_MESSAGE( once.find("N:8") != string::npos,
+                        "row's side-channel count lost: " << once );
+    BOOST_CHECK_MESSAGE( once.find("CT:QUAD") != string::npos,
+                        "row's continuum type lost: " << once );
+  }
+}// BOOST_AUTO_TEST_CASE( DetectionLimitToolStateRoundTrips )

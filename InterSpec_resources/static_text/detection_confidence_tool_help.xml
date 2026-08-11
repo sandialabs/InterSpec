@@ -34,7 +34,9 @@ what a <em>future</em> measurement of the entered length could detect.  The
 reference counts and the projected measurement are scored together, sharing one
 continuum, so the reference's own counting statistics are carried into the answer
 rather than wished away.  The result is a <b>predicted median sensitivity</b>,
-not a bound on the loaded spectrum, and never worded as one.
+not a bound on the loaded spectrum, and never worded as one.  It is a good median
+while the entered time is around the reference's or shorter; reaching much further
+it reads optimistic, for the reason given under &quot;Measurement time&quot; below.
 </li>
 <li><b>Limit</b> &mdash; <em>which quantity to report</em>.  <b>Upper limit</b>
 is a one-sided bound: &quot;less than U at this confidence&quot;.  <b>Central
@@ -78,7 +80,9 @@ Gaussian.  Floating is the stricter test of &quot;is that actually a peak?&quot;
 <p>
 <b>The failure modes are not symmetric.</b>  Floating errs toward <em>wider</em>
 limits &mdash; it can quietly absorb real signal into the continuum, so it may
-understate a detection, but it rarely overstates your confidence.  Anchoring errs
+understate a detection.  That holds while the continuum model fits; where it cannot &mdash; a
+curved background across a wide region &mdash; Floating overstates your confidence instead, and
+the paragraph below explains when.  Anchoring errs
 toward <em>wrong</em> limits in either direction if its assumption fails: a
 neighbouring line, a Compton edge, a step, or curvature across the window biases the
 shoulders, and the limit moves with them.
@@ -97,13 +101,23 @@ actually looked at the shoulders rather than trusting them, and the extra
 sensitivity is worth the assertion.  Never anchor with an interfering line within a
 few FWHM: that is exactly the case where the shoulders mislead and the method cannot
 notice.  Note also that anchoring forces a linear continuum, since four-plus-four
-side channels barely determine an offset and a slope, so a visibly curved continuum
-is a modelling error Floating would have avoided.
+side channels barely determine an offset and a slope.  Floating does not escape that by
+itself &mdash; its default continuum is a straight line too &mdash; but Floating can be given a
+quadratic continuum, which is the option to reach for when the region visibly curves.
 </p>
 <p>
 Anchoring is <b>not</b> a &quot;fixed&quot; continuum: the shoulders' own counting
 uncertainty is carried in the likelihood, so a weak anchor honestly widens the limit
 rather than pretending the continuum is known.
+</p>
+
+<p>
+The deconvolution method models the background under the peak as a <b>straight line</b> by default.
+Where the true background curves noticeably across the region &mdash; wide regions, and so
+lower-resolution detectors &mdash; a straight line cannot follow it, and the limit comes out
+<b>optimistic</b>; the effect grows with counting time.  For HPGe, regions are narrow enough that
+this is negligible.  If the background visibly curves across your region, select the
+<b>Quadratic</b> continuum type, or narrow the region.
 </p>
 
 <h3>Measurement time</h3>
@@ -114,6 +128,45 @@ and this becomes the exposure of the predicted future measurement, so a short
 background gives a correspondingly weaker prediction.  The per-row Currie limits
 are projected to the same dwell, so the two numbers on screen always describe the
 same planned measurement.
+</p>
+<p>
+The two get there by different routes, though, and only one of them scales counts.
+Writing k for the entered time divided by the loaded spectrum's, the projected
+<b>Currie</b> limits predict the typical future limit well &mdash; within 4% of
+what the dwell delivered, measured across a 64-fold span of k on a real 11.5&nbsp;hour
+background &mdash; but understate the <em>spread</em> around that prediction,
+because scaling counts asserts the background's rate is known exactly.  The
+measured scatter ran about 1.6&times; wider than implied at k&nbsp;=&nbsp;1 and
+about 4&times; wider at k&nbsp;=&nbsp;16.
+</p>
+<p>
+The deconvolution prediction does not scale counts and carries the reference's
+statistics honestly, but the future measurement has not been taken, so it stands
+in a spectrum holding exactly the counts it expects &mdash; perfectly smooth, with
+no measurement noise at all.  Measured against the same calculation re-run with a
+real future measurement in place of that stand-in, the stand-in itself is sound:
+where the continuum under the region really is the straight line the model fits,
+the two agree to a few percent with no trend in k, over four decades of counts
+under the peak.
+</p>
+<p>
+On a real region that agreement holds while k is around one or below &mdash; on an
+11.5&nbsp;hour background it measured 1.04 at k&nbsp;=&nbsp;0.25 and 0.96 at
+k&nbsp;=&nbsp;1 &mdash; and then falls away, to 0.70 at k&nbsp;=&nbsp;4 and 0.63 at
+k&nbsp;=&nbsp;16, the prediction reading tighter than the real analysis by that
+factor.  That is not the stand-in; it is the continuum, described next, and the
+reason the wording below is worth acting on when a long dwell is being planned.
+</p>
+<p>
+Where a predicted sensitivity and a real analysis of the same region <em>do</em>
+disagree, the usual cause is the <b>continuum</b>.  A region whose true shape the
+straight line cannot follow &mdash; noticeable curvature, or an unmodelled line
+inside the region &mdash; drives the limit <em>tighter</em> than it should be, and
+more so the longer the measurement, because the mis-fit grows with counting time
+while the counting noise only grows as its square root.  This affects an ordinary
+single-spectrum limit just as much as a prediction.  If a region looks
+suspiciously sensitive, check that the continuum under the peak is actually
+straight over the width you have chosen, and narrow the region if it is not.
 </p>
 
 <h3>Confidence levels</h3>

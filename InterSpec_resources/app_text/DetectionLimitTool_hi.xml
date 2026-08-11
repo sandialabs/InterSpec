@@ -163,4 +163,7 @@
   <message id="dlt-err-distance-zero-negative">दूरी शून्य या नकारात्मक नहीं हो सकती</message>
   <message id="dlt-qr-tool-state-title">पता लगाने का विश्वास उपकरण की स्थिति</message>
   <message id="dlt-qr-tool-state-txt">पता लगाने का विश्वास उपकरण की वर्तमान स्थिति।</message>
+  <message id="dlt-estimating-spread">प्रसार की गणना…</message>
+  <message id="dlt-spread-band">(आमतौर पर इस मान का {1}&ndash;{2}&times;)</message>
+  <message id="dlt-spread-unavailable">प्रसार का अनुमान नहीं लगाया जा सका।</message>
 </messages>

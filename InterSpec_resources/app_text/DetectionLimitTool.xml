@@ -165,4 +165,10 @@
   <message id="dlt-err-upper-limit-negative">Upper limit of counts is less than zero, but counts observed is greater than L_d.</message>
   <message id="dlt-err-activity-zero-negative">Activity cant be zero or negative</message>
   <message id="dlt-err-distance-zero-negative">Distance cant be zero or negative</message>
+  <!-- Predicted spread of a background-reference limit, computed on demand: it is a few
+       hundred profile scans per gamma line, so it is not run on every input change.
+       Same sentence the Simple MDA tool uses, so the two tools do not word it differently. -->
+  <message id="dlt-estimating-spread">Calculating spread…</message>
+  <message id="dlt-spread-band">(typically {1}&ndash;{2}&times; this)</message>
+  <message id="dlt-spread-unavailable">Spread could not be estimated.</message>
 </messages>

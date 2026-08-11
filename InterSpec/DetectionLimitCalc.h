@@ -25,7 +25,9 @@
 
 #include "InterSpec_config.h"
 
+#include <atomic>
 #include <memory>
+#include <random>
 #include <string>
 #include <vector>
 #include <ostream>
@@ -740,11 +742,29 @@ enum class DeconMeasurementModel : int
    The reference counts and the projected sample are scored jointly, sharing one continuum, so the
    reference's finite counting statistics propagate into the answer; as the reference exposure
    grows the result converges to the ideal known-background case.  Because there is no future
-   sample to observe, the sample is taken at its Asimov (median) expectation, making the result a
+   sample to observe, the sample is taken at the counts it expects, with no measurement noise, making the result a
    *predicted median sensitivity* rather than an observed bound.
 
    The result is therefore not an upper limit on signal in the loaded spectrum, and must not be
    presented as one - `DeconActivityOrDistanceLimitResult::is_predicted_sensitivity` records this.
+
+   **How good the expected-counts step is, measured.**  Setting #observed_sample re-scores this same two-block
+   likelihood with a real sample in place of the expected-counts block, which is the estimand the prediction is
+   supposed to be the median of.  `PredictedSampleBiasParameterSweep` compares the two over 64 cells - four
+   sample-to-reference exposure ratios `k`, four continuum levels and four peak widths, spanning
+   region background counts from 0.5 to 4000.
+
+   The expected-counts step holds up: **no trend in `k` at all** (medians 1.02 / 1.02 / 0.98 / 0.99 at
+   `k` = 0.25 / 1 / 4 / 16), and every cell whose region holds more than ~5 counts lands within
+   0.70-1.35.  Below that the median of a limit is not a stable quantity and the ratio scatters from
+   0.21 to 1.51, which is small-number noise rather than bias.
+
+   What does *not* hold up is the continuum model, and it is not specific to this measurement model:
+   see `ContinuumMisspecificationCollapsesLimit`, where a `Linear` continuum fitted to a truth it cannot
+   represent collapses the limit by up to 7x - on the ordinary `CurrentSpectrum` path just as much as
+   here.  A `BackgroundReference` prediction that disagrees with a real analysis of the same region is
+   far more likely to be telling you the region's continuum is not linear than that the expected-counts step
+   failed.
    */
   BackgroundReference = 1
 };//enum class DeconMeasurementModel
@@ -936,10 +956,28 @@ struct DeconComputeInput
   /** Live time, in seconds, of the future measurement that
    `DeconMeasurementModel::BackgroundReference` predicts.
 
-   Ignored by `DeconMeasurementModel::CurrentSpectrum`.  Zero or negative means "the same exposure
-   as #measurement", which is the natural default and makes the reference-to-sample ratio one.
+   Ignored by `DeconMeasurementModel::CurrentSpectrum`, and superseded by #observed_sample when that
+   is set.  Zero or negative means "the same exposure as #measurement", which is the natural default
+   and makes the reference-to-sample ratio one.
    */
   double sample_exposure = 0.0;
+
+  /** The sample measurement, once it has actually been taken.
+
+   Only meaningful under `DeconMeasurementModel::BackgroundReference`, and ignored otherwise.  Null -
+   the default - leaves that model predicting: the sample block of the two-block likelihood is the
+   counts it expects under the null, with no measurement noise, and the answer is a *predicted* sensitivity.
+
+   Setting it replaces that expected-counts block with the sample's real counts, so #measurement and this are
+   scored as a genuine joint likelihood against one continuum.  The answer is then a bound on the
+   signal in this sample, informed by the reference, rather than a prediction.  #sample_exposure is
+   ignored: the sample's own live time is the exposure.
+
+   Must have the same number of channels and the same energy calibration as #measurement, and a
+   positive live time; `decon_compute_peaks` throws otherwise.  The two spectra's channels are
+   paired by index.
+   */
+  std::shared_ptr<const SpecUtils::Measurement> observed_sample;
 
   /** Default constructor just zeros things out. */
   DeconComputeInput();
@@ -1080,7 +1118,7 @@ enum class DeconLimitTextKind : int
  nothing, and returns #None.
 
  Consequence worth knowing: `DeconMeasurementModel::BackgroundReference` forces `found_lower_cl`
- false (the Asimov null has no excess), so a *distance* limit under that model can never be
+ false (the null expectation has no excess), so a *distance* limit under that model can never be
  reported.  The combination is therefore not offered in the UI.
  */
 DeconLimitTextKind decon_limit_text_kind( const bool is_dist_limit,
@@ -1109,7 +1147,7 @@ struct DeconActivityOrDistanceLimitResult
    `DeconMeasurementModel::BackgroundReference`.
 
    Exists so that no display or report can call this an upper limit on the current spectrum.  When
-   true, #foundLowerCl is always false: the Asimov null has no excess to exclude zero with.
+   true, #foundLowerCl is always false: the null expectation has no excess to exclude zero with.
    */
   bool is_predicted_sensitivity = false;
 
@@ -1203,13 +1241,39 @@ struct DeconActivityOrDistanceLimitResult
         every caller wanted before this parameter existed, so the default does not change any
         previously reported number.
  */
+/** How much of a scan's output the caller actually needs.
+
+ A scan does considerably more than find the limit: it also fills a ~26-point chi2 display grid and
+ three more full peak fits (best / lower / upper), each of which is a complete `decon_compute_peaks`
+ call.  That is well over half the work, and a caller that only reads `upperLimit` pays for all of
+ it.  \sa get_activity_or_distance_limits
+ */
+enum class DeconLimitDetail
+{
+  /** The limit, the chi2 display grid, and the best/lower/upper peak fits - everything a GUI needs
+   to draw its chart.  The default, and what every interactive caller wants.
+   */
+  Full,
+
+  /** The limit and nothing else: no display grid, no result peak fits.
+
+   Also runs its internal searches serially rather than on a `SpecUtilsAsync::ThreadPool`.  The only
+   caller is the projection Monte Carlo, which runs hundreds of these and supplies its own
+   parallelism a level up; nesting a second pool there both wastes threads and, on builds where
+   `SpecUtilsAsync` submits into the Wt io service, competes with request handling.
+   */
+  LimitOnly
+};//enum class DeconLimitDetail
+
+
 DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const double wantedCl,
                         const std::shared_ptr<const DeconComputeInput> base_input,
                         const bool is_dist_limit,
                         const double min_search_quantity,
                         const double max_search_quantity,
                         const bool useCurie,
-                        const DeconLimitType limit_type = DeconLimitType::OneSidedUpperLimit );
+                        const DeconLimitType limit_type = DeconLimitType::OneSidedUpperLimit,
+                        const DeconLimitDetail detail = DeconLimitDetail::Full );
 
 
 /** Returns a copy of `input` whose channel counts, live_time, and real_time are linearly
@@ -1219,8 +1283,24 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const double
 
  Used by the MDA / detection-confidence tools to answer "what would the limit be if my
  spectrum had been taken for a different dwell time?".  Counts are scaled to the expected
- value at the new dwell; the calc downstream treats them as Poisson with variance equal
- to the (scaled) count, which is appropriate for projecting a fresh measurement.
+ value at the new dwell; the calc downstream then treats them as Poisson with variance equal
+ to the (scaled) count.
+
+ That gets the *median* right and the *spread* wrong, and the two should not be confused.  Variance
+ equal to the scaled count asserts \p input's own rate is known exactly, when in fact the projection
+ inherits \p input's counting noise: the projected limit's relative scatter goes as one over the
+ root of the counts \p input holds, while the future limit's goes as one over the root of the counts
+ the future measurement will hold.  With `k = new_real_time / input->real_time()` those differ by
+ about `sqrt(k)`, so the honest predictive spread is about `sqrt(1 + k)` times what the projection
+ implies.
+
+ Measured by `RealSpectrumDwellProjectionAccuracy` on an 11.5 hour real background, on the
+ detection limit - the quantity the tools quote when a measurement time is entered: the median
+ projected Currie limit was within 4% of what the dwell actually delivered over k from 0.25 to 16
+ (ratios 1.037 / 1.010 / 0.995 / 1.011), while the measured spread understatement ran
+ 1.1 / 1.6 / 1.7 / 4.0 over the same k.  Immaterial up to about `k = 1`; a planning estimate rather
+ than a bound past it.  This is what `dl-plan-time-tt` and the two help pages tell the user, in the
+ same terms.
 
  Some detectors report only one of the two times, so a non-positive `real_time()` falls back to
  `live_time()` - treating that as zero dead time rather than refusing to project.
@@ -1231,6 +1311,168 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const double
 std::shared_ptr<const SpecUtils::Measurement>
 scale_spectrum_for_dwell( const std::shared_ptr<const SpecUtils::Measurement> &input,
                           const float new_real_time );
+
+
+/** The prior strength added to each channel's observed count before its rate is drawn, in
+ `draw_projected_measurement`.  Jeffreys, and not an arbitrary choice - see that function.
+ */
+double projected_limit_prior_strength();
+
+
+/** One Monte Carlo realisation of what a measurement of \p new_real_time *would* record, given that
+ \p reference recorded what it did.
+
+ Where `scale_spectrum_for_dwell` multiplies the counts by `k` and hands back the expectation, this
+ draws an actual future measurement, per channel, in two stages:
+
+ \code
+   rate  ~ Gamma( n + alpha, 1 )    // the channel's true rate, given it recorded n
+   counts ~ Poisson( k * rate )     // what a dwell of k times the reference then records
+ \endcode
+
+ The two stages are the two things a projection has to account for and a plain scaling accounts for
+ neither: we do not know the rate, and the future measurement will fluctuate around it.  Together
+ they give `Var = k(n+alpha)(1+k)` against the `k*n` a scaling asserts - the `sqrt(1+k)` the
+ user-facing text describes.
+
+ \p alpha is Jeffreys (0.5), and the value matters more than it looks.  At `alpha = 0` this is a
+ plain Poisson-of-Poisson with exactly the right mean, but a channel that happened to record zero
+ is then locked at zero in every realisation, which is most channels in the low-count regime a
+ detection limit lives in.  At `alpha = 1` (flat prior) nothing locks, but a whole count is added to
+ *every* channel, and a region holding a couple of counts per channel is inflated by tens of
+ percent, which the limit inherits as its square root.  Measured over 400 reference/future pairs on
+ a real background, the median predicted Currie limit ran 0.93 -> 1.18 across `k` at `alpha = 0` and
+ 1.04 -> 1.25 at `alpha = 1`, against 1.06 / 1.01 / 1.09 / 1.09 at Jeffreys.
+ \sa ProjectedMeasurementMonteCarlo
+
+ Only channels in `[first_channel, last_channel]` are drawn; every other channel is given its
+ expectation `k*n`.  Callers must therefore pass a window covering every channel the limit will
+ read - the regions of interest and their side channels.  Drawing all of a 16k-channel spectrum
+ costs about 200x what the limit itself does, so this is what makes the Monte Carlo affordable at
+ all rather than an optimisation.
+
+ \p generator is advanced; callers wanting a reproducible limit must seed it deterministically from
+ the input (a reported MDA that changes when nothing changed is worse than one that is slightly
+ wrong).
+
+ Throws on the same conditions as `scale_spectrum_for_dwell`, plus an out-of-range channel window.
+ */
+std::shared_ptr<const SpecUtils::Measurement>
+draw_projected_measurement( const std::shared_ptr<const SpecUtils::Measurement> &reference,
+                            const float new_real_time,
+                            const size_t first_channel,
+                            const size_t last_channel,
+                            std::mt19937 &generator );
+
+
+/** A limit predicted for a measurement that has not been taken, as a distribution rather than a
+ point.
+
+ \sa currie_projected_limit, decon_projected_limit
+ */
+struct ProjectedLimit
+{
+  /** Whether #median and the band below are usable at all. */
+  bool valid = false;
+
+  /** The median over Monte Carlo realisations.
+
+   Both tools use this as the *scale* for the band rather than as the reported limit: they show
+   `lower/median` and `upper/median` as multipliers on the limit they already computed directly.
+   Quoting #median itself would make the displayed number jitter with the draw seed, for a
+   difference the measurement puts at a few percent - see `RealSpectrumDwellProjectionAccuracy`.
+   The consequence, which the help text states, is that the displayed band is centred on the
+   directly computed limit and not exactly on this median.
+   */
+  double median = 0.0;
+
+  /** The 16th and 84th percentiles over realisations: what the dwell could plausibly deliver.
+   Measured to cover near their nominal rate on a real background - 0.65-0.74 against 0.68, and
+   0.88-0.94 against 0.90 for the 5th-95th - for both methods and over a 64-fold span of dwell
+   ratios.  \sa ProjectedMeasurementMonteCarlo
+   */
+  double lower = 0.0;
+  double upper = 0.0;
+
+  /** Realisations that produced a limit, and those attempted.  A cell where many trials failed is
+   reported rather than silently averaged over the survivors.
+   */
+  size_t num_used = 0;
+  size_t num_attempted = 0;
+};//struct ProjectedLimit
+
+
+/** The Currie limit for a measurement of \p planned_real_time, as a predicted distribution.
+
+ \p input describes the region on the *reference* spectrum (`input.spectrum` is the reference); each
+ realisation redraws the region and its side channels and recomputes `currie_mda_calc`.  Cheap - the
+ calculation is closed-form arithmetic, so a few hundred realisations cost milliseconds.
+
+ Scores `CurrieMdaResult::detection_limit`, because that is what the tools quote when a measurement
+ time is entered.  Scoring `upper_limit` instead would describe a different and wider distribution,
+ since that one also carries the observed peak-region excess of each realisation.
+
+ Note this differs from `decon_projected_limit`, which scores the profile *upper* limit - and it
+ differs for the same reason, that each band describes the number displayed beside it.  The visible
+ consequence is that the two bands move in opposite directions as the dwell grows: this one narrows
+ towards the floor set by the reference's own counting statistics, while the deconvolution band
+ widens, because the excess it carries grows with the exposure being predicted.  That is not an
+ inconsistency between the two; it is the difference between "how well do I know my sensitivity"
+ and "how much could the measurement come back saying".
+
+ Returns an invalid result rather than throwing if too few realisations produced a limit.
+ */
+ProjectedLimit currie_projected_limit( const CurrieMdaInput &input,
+                                       const double planned_real_time,
+                                       const size_t num_trials );
+
+
+/** Which limit each Monte Carlo realisation is scored as.  These are different questions, and a
+ prediction is only meaningful against the one the caller will actually go on to compute.
+ \sa decon_projected_limit
+ */
+enum class ProjectedLimitScoring
+{
+  /** Each realisation analysed on its own, as an analyst does with a single loaded spectrum.
+   Predicts what `DeconMeasurementModel::CurrentSpectrum` will return for that measurement.
+   */
+  SampleOnly,
+
+  /** Each realisation scored jointly with the reference, sharing one continuum.  Predicts what
+   `DeconMeasurementModel::BackgroundReference` describes - so this is the one to use when giving a
+   spread for that mode, and it is legitimately tighter than #SampleOnly because the reference
+   contributes information.
+   */
+  JointWithReference
+};//enum class ProjectedLimitScoring
+
+
+/** The deconvolution limit for a measurement of \p planned_real_time, as a predicted distribution.
+
+ Each realisation is a full profile scan, so this is orders of magnitude more expensive than the
+ Currie equivalent and is run across \p num_threads threads.  \p base_input carries the reference
+ spectrum; whether each realisation is then scored alone or together with that reference is
+ \p scoring, and the two answer different questions - see `ProjectedLimitScoring`.
+
+ The realisations are drawn up front on the calling thread and written back by index, so the result
+ does not depend on \p num_threads: one thread and eight give the same numbers.
+
+ Set \p cancel to abandon the work: it is checked between realisations, so a caller that starts one
+ of these on every input change does not leave superseded runs burning a thread to completion.  A
+ cancelled run returns an invalid result.
+
+ Returns an invalid result rather than throwing if too few realisations produced a limit.
+ */
+ProjectedLimit decon_projected_limit( const std::shared_ptr<const DeconComputeInput> &base_input,
+                                      const double wantedCl,
+                                      const double planned_real_time,
+                                      const double max_search_quantity,
+                                      const bool useCurie,
+                                      const DeconLimitType limit_type,
+                                      const ProjectedLimitScoring scoring,
+                                      const size_t num_trials,
+                                      const size_t num_threads,
+                                      const std::shared_ptr<std::atomic_bool> &cancel = nullptr );
 
 
 /** What one user-entered "planned measurement time" resolves to for each calculation.
@@ -1298,6 +1540,22 @@ struct PlannedMeasurement
 PlannedMeasurement plan_measurement( const std::shared_ptr<const SpecUtils::Measurement> &reference,
                                      const double planned_real_time_s,
                                      const DeconMeasurementModel model );
+
+
+/** The two band endpoints of \p limit, as multiples of its median, ready to put on screen.
+
+ Both tools show the band as a multiplier on the limit they display, so this is the one place that
+ decides how it reads.  Fixed decimals rather than significant figures, because the two endpoints
+ have to be on the same scale to be read as a pair: a +0.4% band formatted to two significant
+ figures gives "0.99 to 1", which looks like a bound at exactly one rather than the tight band it
+ is.  Two decimals gives "0.99 to 1.00", and stays legible for wide bands too ("0.61 to 1.72").
+
+ Returns false, leaving the strings untouched, when \p limit is unusable or when both endpoints
+ render identically - a band of "1.00 to 1.00" carries no information and only adds clutter.
+ */
+bool projected_band_endpoints( const ProjectedLimit &limit,
+                               std::string &lower_multiple,
+                               std::string &upper_multiple );
 
 }//namespace DetectionLimitCalc
 

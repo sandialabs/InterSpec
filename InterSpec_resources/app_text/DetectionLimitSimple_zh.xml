@@ -55,6 +55,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">在{2} CL处{1}上限的峰</message>
   <message id="dls-results-txt-upper-bound-act">在{2} CL处少于{1}</message>
+  <message id="dls-results-txt-predicted-act">预测灵敏度：对于 {3} 的测量，在 {2} 置信度下小于 {1}</message>
+  <message id="dls-results-txt-predicted-counts">预测灵敏度：对于 {3} 的测量，在 {2} 置信度下小于 {1} 信号计数</message>
+  <message id="dls-chart-title-predicted-act">在{2} CL处{1}预测灵敏度的峰</message>
+  <message id="dls-chart-title-predicted-counts">在{2} CL处{1}计数预测灵敏度的峰</message>
   <message id="dls-chart-title-upper-bound-counts">在{2} CL处{1}计数上限的峰</message>
   <message id="dls-results-txt-upper-bound-counts">在{2} CL处存在少于{1}信号计数</message>
   <message id="dls-err-no-meas">无可用测量</message>
@@ -81,7 +85,7 @@
   <message id="dls-err-no-fwhm-info">探测器效率函数没有FWHM信息 - 请拟合FWHM或更改探测器。</message>
   <message id="dls-is-background-spectrum-cb-short">本底?</message>
   <message id="dls-num-side-channel-label-short">旁侧道数:</message>
-  <message id="dls-result-scaled-postfix"> (活时间={1})</message>
+  <message id="dls-result-projected-band"> (通常为该值的 {1}&ndash;{2}&times;)</message>
   <message id="dls-roi-lower-label-short">下限:</message>
   <message id="dls-roi-upper-label-short">上限:</message>
   <message id="dls-scale-more-info-note">

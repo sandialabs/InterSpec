@@ -55,6 +55,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">Пик для верхней границы {1} @{2} CL</message>
   <message id="dls-results-txt-upper-bound-act">Менее чем {1} @{2} CL</message>
+  <message id="dls-results-txt-predicted-act">Предсказанная чувствительность: менее {1} при Д.У. {2} для измерения длительностью {3}</message>
+  <message id="dls-results-txt-predicted-counts">Предсказанная чувствительность: менее {1} сигнальных отсчетов при Д.У. {2} для измерения длительностью {3}</message>
+  <message id="dls-chart-title-predicted-act">Пик для предсказанной чувствительности {1} @{2} CL</message>
+  <message id="dls-chart-title-predicted-counts">Пик для предсказанной чувствительности {1} отсчетов @{2} CL</message>
   <message id="dls-chart-title-upper-bound-counts">Пик для верхней границы {1} отсчетов @{2} CL</message>
   <message id="dls-results-txt-upper-bound-counts">Менее чем {1} сигнальных отсчетов присутствует @{2} CL</message>
   <message id="dls-err-no-meas">Измерение недоступно</message>
@@ -81,7 +85,7 @@
   <message id="dls-err-no-fwhm-info">Функция эффективности детектора не содержит информации FWHM - пожалуйста, фитируйте FWHM или измените детектор.</message>
   <message id="dls-is-background-spectrum-cb-short">Фон?</message>
   <message id="dls-num-side-channel-label-short">Бок. каналы:</message>
-  <message id="dls-result-scaled-postfix"> (жив. время={1})</message>
+  <message id="dls-result-projected-band"> (обычно {1}&ndash;{2}&times; этого значения)</message>
   <message id="dls-roi-lower-label-short">Нижняя:</message>
   <message id="dls-roi-upper-label-short">Верхняя:</message>
   <message id="dls-scale-more-info-note">

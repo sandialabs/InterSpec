@@ -55,6 +55,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">{1}-এর উপরের সীমার জন্য পিক @{2} CL</message>
   <message id="dls-results-txt-upper-bound-act">{1}-এর কম @{2} CL</message>
+  <message id="dls-results-txt-predicted-act">পূর্বাভাসিত সংবেদনশীলতা: {3} সময়ের পরিমাপের জন্য {2} আ.স্তরে {1} এর চেয়ে কম</message>
+  <message id="dls-results-txt-predicted-counts">পূর্বাভাসিত সংবেদনশীলতা: {3} সময়ের পরিমাপের জন্য {2} আ.স্তরে {1} সিগন্যাল কাউন্টের কম</message>
+  <message id="dls-chart-title-predicted-act">{1}-এর পূর্বাভাসিত সংবেদনশীলতার জন্য পিক @{2} CL</message>
+  <message id="dls-chart-title-predicted-counts">{1} কাউন্টের পূর্বাভাসিত সংবেদনশীলতার জন্য পিক @{2} CL</message>
   <message id="dls-chart-title-upper-bound-counts">{1} কাউন্টের উপরের সীমার জন্য পিক @{2} CL</message>
   <message id="dls-results-txt-upper-bound-counts">{1} সিগন্যাল কাউন্টের কম উপস্থিত @{2} CL</message>
   <message id="dls-err-no-meas">কোনো পরিমাপ উপলব্ধ নেই</message>
@@ -81,7 +85,7 @@
   <message id="dls-err-no-fwhm-info">ডিটেক্টর দক্ষতা ফাংশনে FWHM তথ্য নেই - অনুগ্রহ করে FWHM-এর জন্য ফিট করুন, বা ডিটেক্টর পরিবর্তন করুন।</message>
   <message id="dls-is-background-spectrum-cb-short">পটভূমি?</message>
   <message id="dls-num-side-channel-label-short">পার্শ্ব চ্যা.:</message>
-  <message id="dls-result-scaled-postfix"> (জীবিত সময়={1})</message>
+  <message id="dls-result-projected-band"> (সাধারণত এই মানের {1}&ndash;{2}&times;)</message>
   <message id="dls-roi-lower-label-short">নিম্ন:</message>
   <message id="dls-roi-upper-label-short">ঊর্ধ্ব:</message>
   <message id="dls-scale-more-info-note">

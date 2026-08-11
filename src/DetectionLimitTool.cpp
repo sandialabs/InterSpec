@@ -25,8 +25,10 @@
 
 #include <mutex>
 #include <atomic>
+#include <thread>
 #include <iostream>
 
+#include <boost/bind/bind.hpp>
 #include <boost/math/tools/roots.hpp>
 #include <boost/math/tools/minima.hpp>
 #include <boost/math/distributions/chi_squared.hpp>
@@ -36,9 +38,11 @@
 #include <Wt/WImage>
 #include <Wt/WLabel>
 #include <Wt/WTable>
+#include <Wt/WServer>
 #include <Wt/WComboBox>
 #include <Wt/WCheckBox>
 #include <Wt/WLineEdit>
+#include <Wt/WIOService>
 #include <Wt/WTableCell>
 #include <Wt/WPushButton>
 #include <Wt/WApplication>
@@ -1060,6 +1064,10 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
     m_chi2Chart( nullptr ),
     m_bestChi2Act( nullptr ),
     m_upperLimit( nullptr ),
+    m_bandTxt( nullptr ),
+    m_bandInput{},
+    m_bandCalcNumber( 0 ),
+    m_bandCancel( nullptr ),
     m_errorMsg( nullptr ),
     m_warningMsg( nullptr ),
     m_fitFwhmBtn( nullptr ),
@@ -1419,6 +1427,11 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   m_upperLimit = new WText( "&nbsp;", m_results );
   m_upperLimit->setInline( false );
   m_upperLimit->addStyleClass( "MdaResultTxt" );
+
+  m_bandTxt = new WText( "&nbsp;", m_results );
+  m_bandTxt->setInline( false );
+  m_bandTxt->addStyleClass( "MdaResultTxt" );
+  m_bandTxt->hide();
   
   m_errorMsg = new WText("&nbsp;", this );
   m_errorMsg->addStyleClass( "MdaErrMsg" );
@@ -1544,6 +1557,11 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer,
   
 DetectionLimitTool::~DetectionLimitTool()
 {
+  // Tell any in-flight band calculation to stop.  `wApp->bind` already stops the callback firing
+  //  into a destroyed tool, but without this the work itself runs to completion.
+  if( m_bandCancel )
+    m_bandCancel->store( true );
+
 }
 
 
@@ -4095,8 +4113,194 @@ void DetectionLimitTool::handleAppUrl( std::string query_str )
 }//void DetectionLimitTool::handleAppUrl( std::string query_str )
 
 
+void DetectionLimitTool::cancelBandCalculation()
+{
+  // Bumping the number is what makes an in-flight result stale; the flag lets the worker give up
+  //  early rather than finish work nobody will look at.
+  m_bandCalcNumber += 1;
+
+  if( m_bandCancel )
+    m_bandCancel->store( true );
+  m_bandCancel = nullptr;
+
+  if( m_bandTxt )
+  {
+    m_bandTxt->setText( "&nbsp;" );
+    m_bandTxt->hide();
+  }
+
+}//void DetectionLimitTool::cancelBandCalculation()
+
+
+void DetectionLimitTool::startBandCalculation()
+{
+  if( !m_bandInput.valid || !m_bandInput.input )
+    return;
+
+  // Supersede anything already running, then take this run's identity.
+  cancelBandCalculation();
+
+  const size_t calc_number = m_bandCalcNumber;
+  auto cancel_calc = make_shared<std::atomic_bool>( false );
+  m_bandCancel = cancel_calc;
+
+  // Set after the last early return below, so a bail-out cannot strand the placeholder on screen.
+
+  // Everything the worker needs, by value: it runs off the GUI thread and must not read a widget
+  //  or a member, either of which the user could change while it works.
+  const BandCalcInput job = m_bandInput;
+
+  // Hundreds of profile scans, each of which is milliseconds; enough realisations that the
+  //  percentiles are stable, and the deterministic seed means the same inputs give the same band.
+  const size_t num_trials = 128;
+
+  // Sized over *realisations* - that is what `decon_projected_limit` parallelizes over; all regions
+  //  of interest are handled inside a single scan, so the region count is not the relevant bound.
+  //  The pool it creates is private, so these threads do not come out of the Wt io service.
+  const unsigned hardware_threads = std::thread::hardware_concurrency();
+  const size_t num_threads = (std::min)( num_trials,
+                                static_cast<size_t>( (std::max)( 4u, hardware_threads ) ) );
+
+  auto result = make_shared<DetectionLimitCalc::ProjectedLimit>();
+  auto error_msg = make_shared<string>();
+
+  WApplication * const app = WApplication::instance();
+  assert( app );
+  if( !app )
+    return;
+  const string sessionId = app->sessionId();
+
+  m_bandTxt->setText( WString::tr("dlt-estimating-spread") );
+  m_bandTxt->show();
+
+  // `wApp->bind` is what makes these safe to call from the posted event: it ties the callback to
+  //  this widget's lifetime, so a tool closed while the calculation ran does not get called back
+  //  into a destroyed object.
+  auto gui_update_callback = app->bind( boost::bind( &DetectionLimitTool::updateBandFromCalc, this,
+                                                    result, cancel_calc, calc_number ) );
+  auto error_callback = app->bind( boost::bind( &DetectionLimitTool::handleBandCalcError, this,
+                                               error_msg, cancel_calc ) );
+
+  auto worker = [=](){
+    try
+    {
+      const DetectionLimitCalc::ProjectedLimit answer
+          = DetectionLimitCalc::decon_projected_limit( job.input, job.wantedCl,
+                                job.planned_real_time, job.max_search_quantity, job.useCurie,
+                                job.limit_type,
+                                DetectionLimitCalc::ProjectedLimitScoring::JointWithReference,
+                                num_trials, num_threads, cancel_calc );
+
+      if( cancel_calc->load() )
+        return;
+
+      WServer::instance()->post( sessionId, [=](){
+        WApplication * const inner_app = WApplication::instance();
+        if( !inner_app )
+        {
+          cerr << "Failed to get WApplication::instance() for DetectionLimitTool band worker" << endl;
+          assert( 0 );
+          return;
+        }
+
+        *result = answer;
+        gui_update_callback();
+        inner_app->triggerUpdate();
+      } );
+    }catch( std::exception &e )
+    {
+      const string msg = e.what();
+
+      WServer::instance()->post( sessionId, [=](){
+        WApplication * const inner_app = WApplication::instance();
+        if( !inner_app )
+        {
+          cerr << "Failed to get WApplication::instance() for DetectionLimitTool band worker" << endl;
+          assert( 0 );
+          return;
+        }
+
+        *error_msg = msg;
+        error_callback();
+        inner_app->triggerUpdate();
+      } );
+    }//try / catch
+  };//auto worker
+
+  WServer::instance()->ioService().boost::asio::io_service::post( worker );
+}//void DetectionLimitTool::startBandCalculation()
+
+
+void DetectionLimitTool::updateBandFromCalc( shared_ptr<DetectionLimitCalc::ProjectedLimit> result,
+                                             shared_ptr<std::atomic_bool> cancel_flag,
+                                             const size_t calc_number )
+{
+  // Writing widgets from a computation can trip signal handlers that would otherwise record undo
+  //  steps the user never took.
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+
+  // Three ways a result can be stale, and all three are cheap to check: a newer run replaced the
+  //  flag, this run was cancelled, or the number moved on.
+  if( !result || (cancel_flag != m_bandCancel) )
+    return;
+  if( cancel_flag && cancel_flag->load() )
+    return;
+  if( calc_number != m_bandCalcNumber )
+    return;
+
+  m_bandCancel = nullptr;
+
+  // As a multiple of the quoted limit: counts and activity differ by a constant factor, so the
+  //  fraction is the same number in either, and it anchors the band on the figure on screen.
+  string low_multiple, high_multiple;
+  if( !DetectionLimitCalc::projected_band_endpoints( *result, low_multiple, high_multiple ) )
+  {
+    if( result->valid && (result->median > 0.0) )
+    {
+      // A band too tight to print at two decimals.  A limit that firm needs no caveat, so the line
+      //  goes away entirely rather than sitting there empty.
+      m_bandTxt->setText( "&nbsp;" );
+      m_bandTxt->hide();
+    }else
+    {
+      m_bandTxt->setText( WString::tr("dlt-spread-unavailable") );
+      m_bandTxt->show();
+    }
+
+    return;
+  }
+
+  m_bandTxt->setText( WString::tr("dlt-spread-band")
+                        .arg( low_multiple )
+                        .arg( high_multiple ) );
+  m_bandTxt->show();
+}//void DetectionLimitTool::updateBandFromCalc(...)
+
+
+void DetectionLimitTool::handleBandCalcError( shared_ptr<string> message,
+                                              shared_ptr<std::atomic_bool> cancel_flag )
+{
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+
+  if( cancel_flag != m_bandCancel )
+    return;
+
+  m_bandCancel = nullptr;
+
+  cerr << "DetectionLimitTool band calculation failed: " << (message ? *message : string("?")) << endl;
+
+  m_bandTxt->setText( WString::tr("dlt-spread-unavailable") );
+  m_bandTxt->show();
+}//void DetectionLimitTool::handleBandCalcError(...)
+
+
 void DetectionLimitTool::doCalc()
 {
+  // Every exit from here must leave the band consistent with what is displayed - including the
+  //  early returns below, which used to skip this and leave a superseded run working.
+  cancelBandCalculation();
+  m_bandInput = BandCalcInput{};
+
   try
   {
     const bool useCurie = use_curie_units();
@@ -4250,6 +4454,35 @@ void DetectionLimitTool::doCalc()
     // TODO: This `m_upperLimit` text could be moved to where the warnings is, ot the title area where the "Gamma lines to use" is
     //       This would give us more room, and maybe be more obvious to the user
     m_upperLimit->setText( limitResultText( result, format_quantity ) );
+
+    // Snapshot what a band calculation would need, while everything is in hand and on the GUI
+    //  thread.  Offered only for a background reference: that is the mode whose whole output is a
+    //  prediction about a measurement nobody has taken, so it is the one where a single number
+    //  says nothing about how far the answer could land from it.
+    // (already cancelled and cleared at the top of doCalc)
+    if( !is_dist_limit
+       && (base_input->measurement_model
+             == DetectionLimitCalc::DeconMeasurementModel::BackgroundReference)
+       && base_input->measurement
+       && (base_input->measurement->real_time() > 0.0f)
+       && result.foundUpperCl )
+    {
+      m_bandInput.input = base_input;
+      m_bandInput.wantedCl = wantedCl;
+      m_bandInput.planned_real_time = (result.sampleRealTime > 0.0)
+                        ? result.sampleRealTime
+                        : static_cast<double>( base_input->measurement->real_time() );
+      m_bandInput.max_search_quantity = max_search_quantity;
+      m_bandInput.useCurie = useCurie;
+      m_bandInput.limit_type = currentLimitType();
+      m_bandInput.valid = true;
+    }//if( a background-reference limit that a band would describe )
+
+    // Started automatically: the limit on its own says nothing about how far a real measurement of
+    //  that length could land from it, and the user should not have to ask.  Runs off the GUI
+    //  thread, and supersedes any calculation still running for an older set of inputs.
+    if( m_bandInput.valid )
+      startBandCalculation();
 
     if( is_dist_limit )
       m_displayDistance->setText( WString::fromUTF8(result.quantityLimitStr) );

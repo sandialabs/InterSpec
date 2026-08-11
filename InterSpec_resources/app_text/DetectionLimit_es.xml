@@ -77,7 +77,7 @@
     <p>
       Un resultado de referencia de fondo es una <b>sensibilidad predicha</b>, no una cota sobre el
       espectro en mano, y se comunica como tal.  Es una expectativa mediana: no hay una medición
-      futura que observar, así que la predicción se hace con los conteos esperados.
+      futura que observar, así que la predicción se hace con los conteos esperados.  Eso vale mientras el tiempo introducido sea parecido al de este espectro o menor; al ir mucho más lejos el resultado se lee optimista, en torno a un tercio a 16 veces, porque cualquier desajuste entre el continuo verdadero de la región y la recta que se le ajusta crece con la exposición mientras que el ruido de conteo solo crece como su raíz cuadrada.
     </p>
   </message>
   <message id="dl-model-backref-tt">
@@ -122,21 +122,31 @@
   <message id="dl-plan-time-cb-short">Med. 🕐</message>
   <message id="dl-plan-time-empty-text">p. ej. 5 min</message>
   <message id="dl-plan-time-tt">
-    La duración por la que usted pregunta.  Es un solo control, pero llega al cálculo por dos vías
-    distintas:
+    La duración sobre la que pregunta.  Un solo control, pero llega al cálculo por dos vías distintas:
     <ul>
-      <li>Para el método de Currie, y cuando el límite describe el espectro cargado, los conteos por
-      canal del espectro se proyectan a este tiempo real (y el tiempo vivo en la misma proporción,
-      de modo que se conserva la fracción de tiempo muerto).</li>
-      <li>Cuando el espectro es una <b>referencia de fondo</b>, los conteos de la referencia se
-      dejan intactos y este pasa a ser la exposición de la medición futura que se predice, así que
-      la propia estadística de conteo de la referencia se propaga al resultado en lugar de
-      ignorarse.</li>
+      <li>Para el método Currie, y cuando el límite describe el espectro cargado, las cuentas por
+      canal del espectro se proyectan a este tiempo real (y el tiempo vivo en la misma razón, de modo
+      que se conserva la fracción de tiempo muerto).</li>
+      <li>Cuando el espectro es una <b>referencia de fondo</b>, las cuentas de la referencia se dejan
+      intactas y esto pasa a ser la exposición de la medición futura predicha - así la propia
+      estadística de conteo de la referencia se traslada a la respuesta en lugar de ignorarse.</li>
     </ul>
     <p>
-      Proyectar el espectro es más exacto para una duración menor o comparable; para una mucho más
-      larga el resultado es optimista, ya que entonces la incertidumbre de la estimación de la tasa
-      supera al ruido de Poisson proyectado.  La vía de referencia de fondo no tiene ese problema.
+      Proyectar el espectro predice bien el límite <b>típico</b> de la nueva medición; lo que se
+      subestima es la <b>dispersión</b> a su alrededor.  Las cuentas escaladas se tratan como Poisson
+      con varianza igual a la cuenta escalada, lo que afirma que la tasa del espectro cargado se
+      conoce exactamente; en realidad la proyección hereda también el ruido de conteo de ese
+      espectro.  Medido frente a mediciones reales extraídas de un fondo de 11,5 horas, la mediana
+      del límite Currie proyectado quedó dentro del 4% de lo que entregó la medición a lo largo de un
+      rango de 64 veces, mientras que la dispersión real a su alrededor fue unas 1,6&#215; más ancha
+      que la implícita en k&#160;=&#160;1 y unas 4&#215; más ancha en k&#160;=&#160;16, donde k es el
+      tiempo introducido dividido por el del espectro cargado.  Así que k hasta aproximadamente 1 es
+      seguro; más allá, trate el número como una estimación de planificación, no como una cota.
+    </p>
+    <p>
+      La vía de referencia de fondo no escala cuentas y por eso no tiene ese problema - pero solo
+      cubre el límite por deconvolución.  Cualquier límite Currie mostrado a su lado sigue estando
+      proyectado, y la advertencia anterior le aplica.
     </p>
   </message>
   <message id="dl-err-bad-plan-time">Tiempo de medición no válido - se esperaba algo como '5 min', '300 s' o '00:05:00'.</message>

@@ -967,6 +967,62 @@ double study_uniform( mt19937 &generator )
 }// study_uniform(...)
 
 
+/** A standard normal deviate, portable for the same reason `study_poisson` is.
+
+ Box-Muller from two engine uniforms; no cached second variate, so a call consumes exactly two
+ words of the stream whatever the standard library.
+ */
+double study_normal( mt19937 &generator )
+{
+  const double u1 = study_uniform( generator );
+  const double u2 = study_uniform( generator );
+  return std::sqrt( -2.0*std::log( u1 ) ) * std::cos( 2.0*3.14159265358979323846*u2 );
+}// study_normal(...)
+
+
+/** A Gamma(shape, 1) deviate, portable, for any shape > 0.
+
+ Marsaglia-Tsang (2000) squeeze method, with their `shape < 1` boost.  Needed because
+ `std::gamma_distribution` is as implementation-defined as `std::poisson_distribution`.
+ */
+double study_gamma( const double shape, mt19937 &generator )
+{
+  if( !(shape > 0.0) )
+    return 0.0;
+
+  if( shape < 1.0 )
+  {
+    // Gamma(a) == Gamma(a+1) * U^(1/a)
+    const double g = study_gamma( shape + 1.0, generator );
+    return g * std::pow( study_uniform( generator ), 1.0/shape );
+  }
+
+  const double d = shape - 1.0/3.0;
+  const double c = 1.0 / std::sqrt( 9.0*d );
+
+  for( size_t iteration = 0; iteration < 1000; ++iteration )
+  {
+    double x = 0.0, v = 0.0;
+    do
+    {
+      x = study_normal( generator );
+      v = 1.0 + c*x;
+    }while( v <= 0.0 );
+
+    v = v*v*v;
+    const double u = study_uniform( generator );
+    const double x2 = x*x;
+
+    if( u < (1.0 - 0.0331*x2*x2) )
+      return d*v;
+    if( std::log(u) < (0.5*x2 + d*(1.0 - v + std::log(v))) )
+      return d*v;
+  }
+
+  return d;   // unreachable in practice; keeps the function total
+}// study_gamma(...)
+
+
 /** A Poisson deviate with a fixed, portable algorithm.
 
  `std::poisson_distribution` may use any algorithm, and libstdc++, libc++ and MSVC do use different
@@ -1414,7 +1470,7 @@ BOOST_AUTO_TEST_CASE( PoissonContinuumIterationBudget )
 
   // Every continuum treatment is covered, not just Floating: FixedByEdges runs the optimizer a
   // second time per trial to fit its side channels, and BackgroundReference runs it a second time
-  // to solve the null the Asimov sample is built from.  Both of those are per-activity costs in a
+  // to solve the null the expected-counts sample is built from.  Both of those are per-activity costs in a
   // scan that evaluates a few hundred activities, so they are worth watching.
   const pair<const char *, DetectionLimitCalc::DeconContinuumNorm> norms[] = {
     { "Floating", DetectionLimitCalc::DeconContinuumNorm::Floating },
@@ -2259,6 +2315,1402 @@ BOOST_AUTO_TEST_CASE( SidebandConstraintWidensLimit )
 }// BOOST_AUTO_TEST_CASE( SidebandConstraintWidensLimit )
 
 
+/** The production projection Monte Carlo: the properties a caller relies on.
+
+ The statistical validation - that the median tracks and the band covers - is
+ `ProjectedMeasurementMonteCarlo`, which is opt-in because it costs minutes.  This pins the
+ contract that has to hold on every run.
+ */
+BOOST_AUTO_TEST_CASE( ProjectedLimitApi )
+{
+  using namespace DetectionLimitCalc;
+
+  set_data_dir();
+
+  const size_t num_channels = 1024;
+  auto cal = make_shared<SpecUtils::EnergyCalibration>();
+  cal->set_polynomial( num_channels, { 0.0f, 2.0f }, {} );
+
+  auto counts = make_shared<vector<float>>( num_channels, 20.0f );
+  auto reference = make_shared<SpecUtils::Measurement>();
+  reference->set_gamma_counts( counts, 100.0f, 125.0f );   // real dead time, live != real
+  reference->set_energy_calibration( cal );
+
+  const size_t first_channel = 480, last_channel = 520;
+
+  // --- draw_projected_measurement -------------------------------------------------------------
+  {
+    mt19937 generator( 12345 );
+    const shared_ptr<const SpecUtils::Measurement> drawn
+        = draw_projected_measurement( reference, 400.0f, first_channel, last_channel, generator );
+
+    BOOST_REQUIRE( drawn );
+
+    // The dwell is entered as a REAL time and the counts scale by the ratio of REAL times, the same
+    //  convention `scale_spectrum_for_dwell` uses - not the ratio of live times.  The reference here
+    //  has genuine dead time (100 s live in 125 s real) precisely so the two cannot be confused.
+    const double ratio = 400.0/125.0;
+    BOOST_CHECK_CLOSE_FRACTION( drawn->real_time(), 400.0f, 1.0E-5 );
+    BOOST_CHECK_CLOSE_FRACTION( drawn->live_time(), static_cast<float>(100.0*ratio), 1.0E-5 );
+    BOOST_CHECK_EQUAL( drawn->num_gamma_channels(), num_channels );
+    BOOST_REQUIRE( drawn->energy_calibration() );
+    BOOST_CHECK( (*drawn->energy_calibration()) == (*cal) );
+
+    // Outside the window the expectation is written straight in.
+    const double expected = ratio*20.0;
+    BOOST_CHECK_CLOSE_FRACTION( drawn->gamma_channel_content( 10 ),
+                               static_cast<float>(expected), 1.0E-4 );
+    BOOST_CHECK_CLOSE_FRACTION( drawn->gamma_channel_content( 900 ),
+                               static_cast<float>(expected), 1.0E-4 );
+
+    // Inside it, the counts are drawn - so they must not all sit exactly on the expectation.
+    size_t num_differing = 0;
+    for( size_t i = first_channel; i <= last_channel; ++i )
+      num_differing += ( fabs( drawn->gamma_channel_content(i) - expected ) > 1.0E-3 );
+    BOOST_CHECK_MESSAGE( num_differing > (last_channel - first_channel)/2,
+                        "only " << num_differing << " channels in the window were actually drawn" );
+
+    // A channel that recorded zero must be able to come out non-zero - the whole reason the rate
+    //  is drawn from a Gamma rather than the count from a Poisson.  \sa projected_limit_prior_strength
+    auto zero_counts = make_shared<vector<float>>( num_channels, 0.0f );
+    auto zero_ref = make_shared<SpecUtils::Measurement>();
+    zero_ref->set_gamma_counts( zero_counts, 100.0f, 100.0f );
+    zero_ref->set_energy_calibration( cal );
+
+    size_t num_nonzero = 0;
+    for( size_t trial = 0; trial < 40; ++trial )
+    {
+      const shared_ptr<const SpecUtils::Measurement> z
+          = draw_projected_measurement( zero_ref, 1000.0f, first_channel, last_channel, generator );
+      for( size_t i = first_channel; i <= last_channel; ++i )
+        num_nonzero += ( z->gamma_channel_content(i) > 0.0f );
+    }
+    BOOST_CHECK_MESSAGE( num_nonzero > 0,
+                        "an all-zero reference produced no counts in any of 40 realisations,"
+                        " which means the rate draw is locked at zero" );
+
+    BOOST_CHECK_THROW( draw_projected_measurement( reference, -1.0f, first_channel, last_channel,
+                                                  generator ), std::exception );
+    BOOST_CHECK_THROW( draw_projected_measurement( reference, 400.0f, 10, num_channels + 5,
+                                                  generator ), std::exception );
+    BOOST_CHECK_THROW( draw_projected_measurement( nullptr, 400.0f, 0, 10, generator ),
+                      std::exception );
+  }
+
+  // --- currie_projected_limit -----------------------------------------------------------------
+  CurrieMdaInput input;
+  input.spectrum = reference;
+  input.gamma_energy = 1000.0f;
+  input.roi_lower_energy = 988.0f;
+  input.roi_upper_energy = 1012.0f;
+  input.num_lower_side_channels = 4;
+  input.num_upper_side_channels = 4;
+  input.detection_probability = 0.95;
+  input.additional_uncertainty = 0.0f;
+
+  const ProjectedLimit projected = currie_projected_limit( input, 400.0, 400 );
+  BOOST_REQUIRE_MESSAGE( projected.valid, "no projected Currie limit" );
+  BOOST_CHECK_EQUAL( projected.num_attempted, 400 );
+  BOOST_CHECK_GT( projected.num_used, 350 );
+
+  // A band, in the right order, and actually a band rather than a point.
+  BOOST_CHECK_LE( projected.lower, projected.median );
+  BOOST_CHECK_LE( projected.median, projected.upper );
+  BOOST_CHECK_MESSAGE( (projected.upper - projected.lower) > 0.02*projected.median,
+                      "the 68% band is " << (projected.upper - projected.lower)
+                      << " wide about a median of " << projected.median );
+
+  // Deterministic: the same input must give the same number, or a displayed MDA jitters for no
+  //  reason the user can see.
+  const ProjectedLimit repeat = currie_projected_limit( input, 400.0, 400 );
+  BOOST_CHECK_EQUAL( repeat.median, projected.median );
+  BOOST_CHECK_EQUAL( repeat.lower, projected.lower );
+  BOOST_CHECK_EQUAL( repeat.upper, projected.upper );
+
+  // Four times the dwell must give a smaller limit *rate*; in counts it grows about as its root.
+  const ProjectedLimit longer = currie_projected_limit( input, 1600.0, 400 );
+  BOOST_REQUIRE( longer.valid );
+  BOOST_CHECK_MESSAGE( longer.median > projected.median,
+                      "a longer dwell gave fewer limit counts: " << longer.median
+                      << " against " << projected.median );
+  BOOST_CHECK_MESSAGE( (longer.median/projected.median) < 4.0,
+                      "limit counts grew by " << (longer.median/projected.median)
+                      << "x for a 4x dwell, which is faster than counting statistics allow" );
+
+  // What the band has to do as the dwell grows, and it is not "get wider".
+  //
+  //  The detection limit goes about as the root of the region counts B, so its relative spread is
+  //  about half B's.  Under the predictive draw `Var(B) = k(n+alpha)(1+k)` about a mean of `k*n`,
+  //  so B's relative spread is `sqrt((1+k)/(k*n))` and the band goes as `sqrt((1+k)/k)`.  That
+  //  *falls* with k, towards the floor `sqrt(1/n)` set by how well the reference pins the rate:
+  //  a longer projection is built on more counts and so is better determined, relatively.
+  //
+  //  A plain scaling instead claims `Var(B) = k*n`, giving `sqrt(1/(k*n))` - the same floor-free
+  //  `1/sqrt(k)` decay all the way down.  So the test is that the band decays *slower* than that:
+  //  quadrupling the dwell must not come close to halving it.  Here k goes 3.2 -> 12.8, for a
+  //  predicted ratio of sqrt(1.078/1.3125) = 0.91 against the 0.50 a plain scaling implies.
+  const double near_band = (projected.upper - projected.lower)/projected.median;
+  const double far_band = (longer.upper - longer.lower)/longer.median;
+  BOOST_CHECK_MESSAGE( far_band < near_band,
+                      "relative band did not tighten with dwell: " << near_band << " -> "
+                      << far_band );
+  BOOST_CHECK_MESSAGE( far_band > 0.75*near_band,
+                      "relative band fell from " << near_band << " to " << far_band << " for a 4x"
+                      " dwell - close to the 0.5 of a plain scaling, so the reference's own rate"
+                      " uncertainty is not reaching the band" );
+
+  BOOST_CHECK( !currie_projected_limit( input, -1.0, 400 ).valid );
+  BOOST_CHECK( !currie_projected_limit( input, 400.0, 2 ).valid );
+}// BOOST_AUTO_TEST_CASE( ProjectedLimitApi )
+
+
+/** The threaded deconvolution projection: the answer must not depend on the thread count.
+
+ The realisations are drawn up front, single threaded, and written back by index precisely so that
+ a machine with four cores and a machine with one produce the same limit.  A Monte Carlo whose
+ result depended on how the work happened to be split would be indefensible in a report.
+ */
+BOOST_AUTO_TEST_CASE( DeconProjectedLimitThreading )
+{
+  using namespace DetectionLimitCalc;
+
+  set_data_dir();
+
+  // 100 counts/channel of flat continuum over a 1 s reference, and no signal.
+  const shared_ptr<const DeconComputeInput> base = make_decon_input( 0.0, 100.0 );
+  BOOST_REQUIRE( base && base->measurement );
+
+  const size_t trials = 48;
+
+  ProjectedLimit one, four;
+  {
+    ScopedCoutSilence silence;
+    one = decon_projected_limit( base, 0.95, 4.0, 5000.0, true,
+                                DeconLimitType::OneSidedUpperLimit,
+                                ProjectedLimitScoring::SampleOnly, trials, 1 );
+    four = decon_projected_limit( base, 0.95, 4.0, 5000.0, true,
+                                 DeconLimitType::OneSidedUpperLimit,
+                                 ProjectedLimitScoring::SampleOnly, trials, 4 );
+  }
+
+  BOOST_REQUIRE_MESSAGE( one.valid, "single-threaded projection gave no limit" );
+  BOOST_REQUIRE_MESSAGE( four.valid, "four-threaded projection gave no limit" );
+
+  // The whole point: identical, not merely close.
+  BOOST_CHECK_EQUAL( one.median, four.median );
+  BOOST_CHECK_EQUAL( one.lower, four.lower );
+  BOOST_CHECK_EQUAL( one.upper, four.upper );
+  BOOST_CHECK_EQUAL( one.num_used, four.num_used );
+
+  BOOST_CHECK_LE( one.lower, one.median );
+  BOOST_CHECK_LE( one.median, one.upper );
+  BOOST_CHECK_MESSAGE( (one.upper - one.lower) > 0.0,
+                      "the projected deconvolution limit has no spread at all" );
+  BOOST_CHECK_GT( one.num_used, trials/2 );
+
+  BOOST_CHECK( !decon_projected_limit( base, 0.95, -1.0, 5000.0, true,
+                                      DeconLimitType::OneSidedUpperLimit,
+                                      ProjectedLimitScoring::SampleOnly, trials, 4 ).valid );
+  BOOST_CHECK( !decon_projected_limit( nullptr, 0.95, 4.0, 5000.0, true,
+                                      DeconLimitType::OneSidedUpperLimit,
+                                      ProjectedLimitScoring::SampleOnly, trials, 4 ).valid );
+
+  // Joint scoring only means something against an actual background reference, so asking for it on
+  //  a current-spectrum input is refused rather than silently answered with the wrong estimand.
+  BOOST_CHECK( !decon_projected_limit( base, 0.95, 4.0, 5000.0, true,
+                                      DeconLimitType::OneSidedUpperLimit,
+                                      ProjectedLimitScoring::JointWithReference, trials, 4 ).valid );
+
+  // --- joint scoring, against a real background reference ------------------------------------
+  const shared_ptr<const DeconComputeInput> backref
+      = make_background_reference_input( 100.0, 4.0, 4.0 );
+  BOOST_REQUIRE( backref );
+
+  ProjectedLimit joint_one, joint_four;
+  {
+    ScopedCoutSilence silence;
+    joint_one = decon_projected_limit( backref, 0.95, 8.0, 5000.0, true,
+                                      DeconLimitType::OneSidedUpperLimit,
+                                      ProjectedLimitScoring::JointWithReference, trials, 1 );
+    joint_four = decon_projected_limit( backref, 0.95, 8.0, 5000.0, true,
+                                       DeconLimitType::OneSidedUpperLimit,
+                                       ProjectedLimitScoring::JointWithReference, trials, 4 );
+  }
+
+  BOOST_REQUIRE_MESSAGE( joint_one.valid, "joint-scored projection gave no limit" );
+  BOOST_CHECK_EQUAL( joint_one.median, joint_four.median );
+  BOOST_CHECK_EQUAL( joint_one.lower, joint_four.lower );
+  BOOST_CHECK_EQUAL( joint_one.upper, joint_four.upper );
+
+  BOOST_CHECK_LE( joint_one.lower, joint_one.median );
+  BOOST_CHECK_LE( joint_one.median, joint_one.upper );
+  BOOST_CHECK_MESSAGE( (joint_one.upper - joint_one.lower) > 0.0,
+                      "the joint-scored projection has no spread at all" );
+
+  // The point of the mode: a spread where `BackgroundReference` alone reports a single number.
+  ProjectedLimit sample_only;
+  {
+    ScopedCoutSilence silence;
+    sample_only = decon_projected_limit( backref, 0.95, 8.0, 5000.0, true,
+                                        DeconLimitType::OneSidedUpperLimit,
+                                        ProjectedLimitScoring::SampleOnly, trials, 4 );
+  }
+  BOOST_REQUIRE( sample_only.valid );
+
+  // Scoring with the reference can only add information, so the joint median must not be the
+  //  looser of the two by any margin worth speaking of.
+  BOOST_CHECK_MESSAGE( joint_one.median < 1.15*sample_only.median,
+                      "joint median " << joint_one.median << " against sample-only "
+                      << sample_only.median << "; more data cannot loosen the limit" );
+}// BOOST_AUTO_TEST_CASE( DeconProjectedLimitThreading )
+
+
+/** Does the *joint* projection cover?  The one that would give `BackgroundReference` a spread.
+
+ `ProjectedMeasurementMonteCarlo` validates `ProjectedLimitScoring::SampleOnly` - each realisation
+ analysed on its own.  `BackgroundReference` reports something else: the reference and the sample
+ scored together, sharing one continuum, which is legitimately tighter.  Its coverage does not
+ follow from the sample-only result and has to be measured separately, which is what this does.
+
+ Unlike the sweep, this calls the production `decon_projected_limit` rather than re-drawing here, so
+ what is validated is the function a caller would actually use.
+ */
+BOOST_AUTO_TEST_CASE( JointProjectedLimitCoverage )
+{
+  using namespace DetectionLimitCalc;
+
+  set_data_dir();
+
+  const char * const enabled = getenv( "INTERSPEC_RUN_DECON_MC_PROJECTION" );
+  if( !enabled || ( string( enabled ) != "1" ) )
+  {
+    BOOST_TEST_MESSAGE( "Set INTERSPEC_RUN_DECON_MC_PROJECTION=1 to run the joint projection"
+                       " coverage check." );
+    return;
+  }
+
+  const string path = SpecUtils::append_path( g_test_file_dir,
+                                             "FitPeaksForSource/trinitite_sample_b_background.n42" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( path ), "Background spectrum not at '" << path << "'" );
+
+  SpecMeas file;
+  BOOST_REQUIRE( file.load_N42_file( path ) );
+
+  shared_ptr<const SpecUtils::Measurement> truth_rate;
+  for( const shared_ptr<const SpecUtils::Measurement> &candidate : file.measurements() )
+  {
+    if( candidate && (candidate->num_gamma_channels() > 1024) && (candidate->live_time() > 0.0f) )
+    {
+      truth_rate = candidate;
+      break;
+    }
+  }
+  BOOST_REQUIRE( truth_rate );
+
+  const double source_live = truth_rate->live_time();
+  const double live_over_real = truth_rate->live_time() / truth_rate->real_time();
+
+  auto drf = make_shared<DetectorPeakResponse>();
+  drf->setIntrinsicEfficiencyFormula( "1.0", 2.54f*PhysicalUnits::cm, PhysicalUnits::keV,
+                                     0.0f, 0.0f,
+                                     DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
+  drf->setFwhmCoefficients( vector<float>{ 4.0f, 0.02f },
+                           DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+
+  const float peak_energy = 1000.0f;
+  const float fwhm = static_cast<float>( drf->peakResolutionFWHM( peak_energy ) );
+
+  const auto draw_truth = [&]( const double live_seconds, mt19937 &generator )
+        -> shared_ptr<const SpecUtils::Measurement> {
+    const shared_ptr<const vector<float>> rate = truth_rate->gamma_counts();
+    auto counts = make_shared<vector<float>>( rate->size(), 0.0f );
+    const double scale = live_seconds / source_live;
+    for( size_t i = 0; i < rate->size(); ++i )
+      counts->at(i) = static_cast<float>( study_poisson( (std::max)(0.0, scale*rate->at(i)),
+                                                        generator ) );
+    auto m = make_shared<SpecUtils::Measurement>();
+    m->set_gamma_counts( counts, static_cast<float>(live_seconds),
+                        static_cast<float>(live_seconds/live_over_real) );
+    m->set_energy_calibration( truth_rate->energy_calibration() );
+    return m;
+  };
+
+  const auto make_backref_input = [&]( const shared_ptr<const SpecUtils::Measurement> &reference,
+                                       const double sample_live )
+        -> shared_ptr<DeconComputeInput> {
+    DeconRoiInfo roi;
+    roi.roi_start = peak_energy - 1.25f*fwhm;
+    roi.roi_end = peak_energy + 1.25f*fwhm;
+    roi.continuum_type = PeakContinuum::OffsetType::Linear;
+    roi.cont_norm_method = DeconContinuumNorm::Floating;
+    roi.num_lower_side_channels = 4;
+    roi.num_upper_side_channels = 4;
+
+    DeconRoiInfo::PeakInfo peak;
+    peak.energy = peak_energy;
+    peak.fwhm = fwhm;
+    peak.counts_per_bq_into_4pi = reference->live_time();
+    roi.peak_infos.push_back( peak );
+
+    auto input = make_shared<DeconComputeInput>();
+    input->activity = 0.0;
+    input->distance = 0.0;
+    input->include_air_attenuation = false;
+    input->shielding_thickness = 0.0;
+    input->drf = drf;
+    input->measurement = reference;
+    input->roi_info.push_back( roi );
+    input->measurement_model = DeconMeasurementModel::BackgroundReference;
+    input->sample_exposure = sample_live;
+    return input;
+  };
+
+  cout << "DECON_JOINT_MC_COVERAGE,k,pairs,mc_trials,median_pred_over_actual,cover68\n";
+
+  const double reference_live = 600.0;
+  const size_t pairs = 40;
+  const size_t mc_trials = 60;
+
+  struct Row { double k, ratio, cover68; };
+  vector<Row> rows;
+
+  for( const double k : { 0.25, 1.0, 4.0, 16.0 } )
+  {
+    const double sample_live = k*reference_live;
+    mt19937 generator( study_cell_seed( "jointmc|k=" + study_number_token( k ) ) );
+
+    vector<double> ratios;
+    size_t inside68 = 0, counted = 0;
+
+    for( size_t pair = 0; pair < pairs; ++pair )
+    {
+      const shared_ptr<const SpecUtils::Measurement> reference
+            = draw_truth( reference_live, generator );
+      const shared_ptr<const SpecUtils::Measurement> future = draw_truth( sample_live, generator );
+
+      // What the joint analysis actually returns once the future measurement is in hand.
+      double actual = numeric_limits<double>::quiet_NaN();
+      try
+      {
+        ScopedCoutSilence silence;
+        const shared_ptr<DeconComputeInput> observed = make_backref_input( reference, sample_live );
+        observed->observed_sample = future;
+        const DeconActivityOrDistanceLimitResult r =
+            get_activity_or_distance_limits( 0.95f, observed, false, 0.0, 5.0, true );
+        if( r.foundUpperCl )
+          actual = r.upperLimit;
+      }catch( std::exception & ){}
+
+      if( IsNan(actual) )
+        continue;
+
+      // What the projection promised, from the reference alone.
+      ProjectedLimit predicted;
+      {
+        ScopedCoutSilence silence;
+        predicted = decon_projected_limit( make_backref_input( reference, sample_live ), 0.95,
+                                          sample_live/live_over_real, 5.0, true,
+                                          DeconLimitType::OneSidedUpperLimit,
+                                          ProjectedLimitScoring::JointWithReference,
+                                          mc_trials, 4 );
+      }
+
+      if( !predicted.valid || !(predicted.median > 0.0) )
+        continue;
+
+      ++counted;
+      ratios.push_back( predicted.median/actual );
+      // `ProjectedLimit` carries only the 16th/84th percentiles, so 68% is the one band there is
+      //  anything to check.  A wider band would need more percentiles on the struct.
+      if( (actual >= predicted.lower) && (actual <= predicted.upper) ) ++inside68;
+    }//for( loop over pairs )
+
+    BOOST_REQUIRE_MESSAGE( counted >= pairs/2,
+                          "k=" << k << ": only " << counted << " of " << pairs << " pairs usable" );
+
+    sort( begin(ratios), end(ratios) );
+    const double median_ratio = ratios[ratios.size()/2];
+    const double c68 = static_cast<double>(inside68)/static_cast<double>(counted);
+
+    cout << "DECON_JOINT_MC_COVERAGE," << k << ',' << counted << ',' << mc_trials << ','
+         << median_ratio << ',' << c68 << '\n';
+
+    rows.push_back( { k, median_ratio, c68 } );
+  }//for( loop over dwell ratios )
+
+  for( const Row &row : rows )
+  {
+    BOOST_CHECK_MESSAGE( (row.ratio > 0.75) && (row.ratio < 1.35),
+                        "k=" << row.k << ": predicted joint median is " << row.ratio
+                        << "x what the joint analysis delivered" );
+    BOOST_CHECK_MESSAGE( (row.cover68 > 0.45) && (row.cover68 < 0.90),
+                        "k=" << row.k << ": 68% band covered " << row.cover68 );
+  }
+}// BOOST_AUTO_TEST_CASE( JointProjectedLimitCoverage )
+
+
+/** Does a two-stage Monte Carlo predict a future measurement's limit, and does its band cover?
+
+ Projecting a dwell today scales the counts by `k` and treats the result as Poisson with variance
+ equal to the scaled count, which asserts the loaded spectrum's rate is known exactly.  D-21 measures
+ what that costs: the median is right but the spread is too narrow by ~sqrt(1+k).  The deconvolution
+ route instead invents the future measurement as the *fitted continuum*, which is smooth by
+ construction and so cannot show the region's real shape at all (D-23).
+
+ The alternative tested here draws the future measurement properly, per channel:
+
+     mu ~ Gamma(n + 1, 1)        // the rate, given n counts observed - flat prior posterior
+     s  ~ Poisson(k * mu)        // what a dwell of k times the reference would then record
+
+ which gives `E[s|n] = k(n+1)` and `Var[s|n] = k(n+1)(1+k)` - the predictive variance, rather than
+ the `k*n` a plain scaling asserts.  Two properties matter and both are measured below:
+
+   - drawing the *rate* rather than a count means a channel that happened to record zero is not
+     locked at zero for every trial, which matters because that is most channels in the low-count
+     regime a detection limit lives in;
+   - each trial is built from the observed counts channel by channel, so curvature and interfering
+     lines survive into the trials instead of being replaced by a straight line.
+
+ A median over trials is then a real median prediction, and the percentiles are a real band.  The
+ test is whether the band covers: over many independent (reference, future) pairs, the actual future
+ limit should fall inside the predicted 68% band about 68% of the time, and inside the 90% band about
+ 90% of the time.  A median that tracks but a band that does not cover would mean the spread is still
+ wrong, which is the whole point of the exercise.
+ */
+BOOST_AUTO_TEST_CASE( ProjectedMeasurementMonteCarlo )
+{
+  using namespace DetectionLimitCalc;
+
+  set_data_dir();
+
+  // ~25 minutes of CPU in Release: 400 pairs x 200 trials for Currie and 171 x 198 for the
+  //  deconvolution, over three prior strengths and four dwell ratios.  This is the evidence behind
+  //  the Jeffreys choice in `projected_limit_prior_strength()`, kept reproducible and opt-in.
+  //  Most of that is the deconvolution arm - see `decon_scale` below for why it is not cheaper.
+  //  The measured result, at alpha = 0.5:
+  //
+  //    method | k    | predicted centre / actual | 68% band covers | 90% band covers
+  //    Currie | 0.25 | 1.00                      | 0.74            | 0.93
+  //    Currie | 1    | 1.04                      | 0.66            | 0.89
+  //    Currie | 4    | 1.03                      | 0.66            | 0.88
+  //    Currie | 16   | 1.03                      | 0.66            | 0.89
+  //    decon  | 0.25 | 1.01                      | 0.67            | 0.89
+  //    decon  | 1    | 1.06                      | 0.65            | 0.94
+  //    decon  | 4    | 1.13                      | 0.70            | 0.91
+  //    decon  | 16   | 1.00                      | 0.70            | 0.89
+  //
+  //  Currie at 400 pairs x 200 trials, deconvolution at 171 x 198.  The Currie arm is scored on
+  //  `detection_limit` and the deconvolution arm on the profile upper limit, because those are the
+  //  quantities the two tools display the band beside - see `currie_projected_limit`.
+  const char * const enabled = getenv( "INTERSPEC_RUN_DECON_MC_PROJECTION" );
+  if( !enabled || ( string( enabled ) != "1" ) )
+  {
+    BOOST_TEST_MESSAGE( "Set INTERSPEC_RUN_DECON_MC_PROJECTION=1 to run the projection Monte Carlo"
+                       " validation." );
+    return;
+  }
+
+  const string path = SpecUtils::append_path( g_test_file_dir,
+                                             "FitPeaksForSource/trinitite_sample_b_background.n42" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( path ), "Background spectrum not at '" << path << "'" );
+
+  SpecMeas file;
+  BOOST_REQUIRE_MESSAGE( file.load_N42_file( path ), "Failed loading '" << path << "'" );
+
+  shared_ptr<const SpecUtils::Measurement> truth_rate;
+  for( const shared_ptr<const SpecUtils::Measurement> &candidate : file.measurements() )
+  {
+    if( candidate && (candidate->num_gamma_channels() > 1024) && (candidate->live_time() > 0.0f) )
+    {
+      truth_rate = candidate;
+      break;
+    }
+  }
+  BOOST_REQUIRE( truth_rate );
+
+  const double source_live = truth_rate->live_time();
+  const double live_over_real = truth_rate->live_time() / truth_rate->real_time();
+
+  auto drf = make_shared<DetectorPeakResponse>();
+  drf->setIntrinsicEfficiencyFormula( "1.0", 2.54f*PhysicalUnits::cm, PhysicalUnits::keV,
+                                     0.0f, 0.0f,
+                                     DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
+  drf->setFwhmCoefficients( vector<float>{ 4.0f, 0.02f },
+                           DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+
+  const float peak_energy = 1000.0f;
+  const float fwhm = static_cast<float>( drf->peakResolutionFWHM( peak_energy ) );
+  BOOST_REQUIRE( fwhm > 0.0f );
+
+  // A real, independent measurement of `live_seconds` drawn from the source spectrum's rate.
+  const auto draw_truth = [&]( const double live_seconds, mt19937 &generator )
+        -> shared_ptr<const SpecUtils::Measurement> {
+    const shared_ptr<const vector<float>> rate = truth_rate->gamma_counts();
+    auto counts = make_shared<vector<float>>( rate->size(), 0.0f );
+    const double scale = live_seconds / source_live;
+    for( size_t i = 0; i < rate->size(); ++i )
+      counts->at(i) = static_cast<float>( study_poisson( (std::max)(0.0, scale*rate->at(i)),
+                                                        generator ) );
+
+    auto m = make_shared<SpecUtils::Measurement>();
+    m->set_gamma_counts( counts, static_cast<float>(live_seconds),
+                        static_cast<float>(live_seconds/live_over_real) );
+    m->set_energy_calibration( truth_rate->energy_calibration() );
+    return m;
+  };
+
+  // The proposal under test: one Monte Carlo realisation of what a dwell of `k` times the
+  //  reference's would record, given only the reference.
+  //  \p alpha is the prior strength added to each channel's observed count before the rate is
+  //  drawn.  It is the whole design question: alpha=0 reproduces the plain two-stage
+  //  Poisson-of-Poisson, which has exactly the right mean but locks a channel that recorded zero at
+  //  zero forever; alpha=1 is the flat-prior posterior, which never locks but adds one count to
+  //  *every* channel - and a region holding a couple of counts per channel is then inflated by
+  //  tens of percent, which the limit inherits as its square root.  alpha=0.5 is Jeffreys.
+  //  Only the channels the limit actually reads are drawn - the region, its side channels and a
+  //  generous margin.  Everywhere else the expectation is written straight in, since no arm of this
+  //  study looks there.  Drawing all 16k channels made the Monte Carlo cost 200x what the limit
+  //  did, which capped the pair count low enough that the medians were pure noise.
+  const shared_ptr<const SpecUtils::EnergyCalibration> cal = truth_rate->energy_calibration();
+  const size_t nchannel = cal->num_channels();
+  const size_t window_lower = static_cast<size_t>( (std::max)( 0.0,
+                                 cal->channel_for_energy( peak_energy - 5.0*fwhm ) ) );
+  const size_t window_upper = (std::min)( nchannel - 1, static_cast<size_t>(
+                                 (std::max)( 0.0, cal->channel_for_energy( peak_energy + 5.0*fwhm ) ) ) );
+
+  const auto draw_projection = [&]( const shared_ptr<const SpecUtils::Measurement> &reference,
+                                    const double k, const double alpha, mt19937 &generator )
+        -> shared_ptr<const SpecUtils::Measurement> {
+    const shared_ptr<const vector<float>> observed = reference->gamma_counts();
+    auto counts = make_shared<vector<float>>( observed->size(), 0.0f );
+    for( size_t i = 0; i < observed->size(); ++i )
+      counts->at(i) = static_cast<float>( k*(std::max)( 0.0, static_cast<double>(observed->at(i)) ) );
+
+    for( size_t i = window_lower; i <= window_upper; ++i )
+    {
+      const double n = (std::max)( 0.0, static_cast<double>( observed->at(i) ) );
+      const double rate = study_gamma( n + alpha, generator );
+      counts->at(i) = static_cast<float>( study_poisson( k*rate, generator ) );
+    }
+
+    auto m = make_shared<SpecUtils::Measurement>();
+    m->set_gamma_counts( counts, static_cast<float>(k*reference->live_time()),
+                        static_cast<float>(k*reference->real_time()) );
+    m->set_energy_calibration( reference->energy_calibration() );
+    return m;
+  };
+
+  const auto make_input = [&]( const shared_ptr<const SpecUtils::Measurement> &m )
+        -> shared_ptr<DeconComputeInput> {
+    DeconRoiInfo roi;
+    roi.roi_start = peak_energy - 1.25f*fwhm;
+    roi.roi_end = peak_energy + 1.25f*fwhm;
+    roi.continuum_type = PeakContinuum::OffsetType::Linear;
+    roi.cont_norm_method = DeconContinuumNorm::Floating;
+    roi.num_lower_side_channels = 4;
+    roi.num_upper_side_channels = 4;
+
+    DeconRoiInfo::PeakInfo peak;
+    peak.energy = peak_energy;
+    peak.fwhm = fwhm;
+    peak.counts_per_bq_into_4pi = m->live_time();
+    roi.peak_infos.push_back( peak );
+
+    auto input = make_shared<DeconComputeInput>();
+    input->activity = 0.0;
+    input->distance = 0.0;
+    input->include_air_attenuation = false;
+    input->shielding_thickness = 0.0;
+    input->drf = drf;
+    input->measurement = m;
+    input->roi_info.push_back( roi );
+    input->measurement_model = DeconMeasurementModel::CurrentSpectrum;
+    return input;
+  };
+
+  // Both limits as a RATE, so measurements of different lengths compare directly.
+  //  `detection_limit` for the Currie arm, because that is what `currie_projected_limit` scores and
+  //  what the tools quote - a coverage measurement of `upper_limit` would validate a band nothing
+  //  ships.  The deconvolution arm keeps the profile upper limit, which is what its band does score.
+  const auto currie_rate = [&]( const shared_ptr<const SpecUtils::Measurement> &m ) -> double {
+    try
+    {
+      ScopedCoutSilence silence;
+      const CurrieMdaResult r = currie_for_decon_input( make_input( m ) );
+      return (m->live_time() > 0.0f) ? (r.detection_limit / m->live_time())
+                                     : numeric_limits<double>::quiet_NaN();
+    }catch( std::exception & ){ return numeric_limits<double>::quiet_NaN(); }
+  };
+
+  const auto decon_rate = [&]( const shared_ptr<const SpecUtils::Measurement> &m ) -> double {
+    try
+    {
+      ScopedCoutSilence silence;
+      const DeconActivityOrDistanceLimitResult r =
+          get_activity_or_distance_limits( 0.95f, make_input( m ), false, 0.0, 5.0, true );
+      return r.foundUpperCl ? r.upperLimit : numeric_limits<double>::quiet_NaN();
+    }catch( std::exception & ){ return numeric_limits<double>::quiet_NaN(); }
+  };
+
+  const auto quantile_of = []( vector<double> v, const double q ) -> double {
+    if( v.empty() )
+      return numeric_limits<double>::quiet_NaN();
+    sort( begin(v), end(v) );
+    const size_t index = (std::min)( v.size() - 1,
+                          static_cast<size_t>( q*static_cast<double>(v.size()) ) );
+    return v[index];
+  };
+
+  cout << "DECON_MC_PROJECTION,method,alpha,k,pairs,mc_trials,median_of_ratios,"
+          "ratio_of_centres,cover68,cover90,median_band_width_over_median\n";
+
+  const double reference_live = 600.0;
+
+  const size_t pairs = 400;      // independent (reference, future) draws per cell
+  const size_t mc_trials = 200;  // Monte Carlo realisations inside each prediction
+
+  // The deconvolution arm runs a fraction of the pairs and trials, because each of its limits is a
+  //  full profile scan.  The base fraction - a seventh of the pairs, a third of the trials - turned
+  //  out to be too coarse to gate: at 57 pairs the k = 16 cell read 1.50x, and at 171 pairs the same
+  //  cell reads 1.00x, so the deviation was sampling noise in the summary and not a bias in the
+  //  prediction.  Hence a default of 3, which is what the recorded table above was measured at, and
+  //  INTERSPEC_DECON_MC_SCALE to go finer still.  It scales only this arm: the Currie arm is
+  //  already at 400 pairs, and scaling both would cost the square of the factor for nothing.
+  double decon_scale = 3.0;
+  if( const char * const scale_env = getenv( "INTERSPEC_DECON_MC_SCALE" ) )
+    decon_scale = (std::max)( 1.0, atof( scale_env ) );
+
+  struct McRow { string method; double alpha, k, ratio, cover68, cover90; };
+  vector<McRow> rows;
+
+  for( const bool currie : { true, false } )
+  {
+   for( const double alpha : { 0.0, 0.5, 1.0 } )
+   {
+    for( const double k : { 0.25, 1.0, 4.0, 16.0 } )
+    {
+      // The deconvolution arm costs a full profile scan per Monte Carlo trial, so it runs a
+      //  coarser grid than the Currie arm, which is closed-form arithmetic.
+      // A deconvolution trial is a full profile scan where a Currie trial is arithmetic, so it
+      //  runs ~7x fewer pairs and ~3x fewer trials for a comparable wall clock.
+      const size_t trials = currie ? mc_trials
+                                   : static_cast<size_t>( (mc_trials/3)*decon_scale );
+      const size_t num_pairs = currie ? pairs
+                                      : static_cast<size_t>( (pairs/7)*decon_scale );
+
+      mt19937 generator( study_cell_seed( string("mcproj|") + (currie ? "currie" : "decon")
+                                         + "|a=" + study_number_token( alpha )
+                                         + "|k=" + study_number_token( k ) ) );
+
+      vector<double> ratio_of_medians;
+      size_t inside68 = 0, inside90 = 0, counted = 0;
+      vector<double> relative_band;
+
+      // Two summaries of the same question, kept side by side as a check on each other.  The
+      //  per-pair ratio p50/actual puts a broad random variable in a denominator, so it could in
+      //  principle drift from the ratio of the two distributions' centres; measured, it does not -
+      //  the two agree to a few percent in every cell, including the wide ones.  That agreement is
+      //  worth keeping visible, because it rules out the summary statistic as an explanation when
+      //  a cell comes out far from one.
+      vector<double> predicted_centres, actual_centres;
+
+      for( size_t pair = 0; pair < num_pairs; ++pair )
+      {
+        const shared_ptr<const SpecUtils::Measurement> reference
+              = draw_truth( reference_live, generator );
+        const shared_ptr<const SpecUtils::Measurement> future
+              = draw_truth( k*reference_live, generator );
+
+        const double actual = currie ? currie_rate( future ) : decon_rate( future );
+        if( IsNan(actual) )
+          continue;
+
+        vector<double> predicted;
+        for( size_t trial = 0; trial < trials; ++trial )
+        {
+          const shared_ptr<const SpecUtils::Measurement> projected
+                = draw_projection( reference, k, alpha, generator );
+          const double value = currie ? currie_rate( projected ) : decon_rate( projected );
+          if( !IsNan(value) )
+            predicted.push_back( value );
+        }
+
+        if( predicted.size() < (trials/2) )
+          continue;
+
+        const double p16 = quantile_of( predicted, 0.16 );
+        const double p50 = quantile_of( predicted, 0.50 );
+        const double p84 = quantile_of( predicted, 0.84 );
+        const double p05 = quantile_of( predicted, 0.05 );
+        const double p95 = quantile_of( predicted, 0.95 );
+
+        ++counted;
+        if( (actual >= p16) && (actual <= p84) ) ++inside68;
+        if( (actual >= p05) && (actual <= p95) ) ++inside90;
+        if( p50 > 0.0 )
+        {
+          ratio_of_medians.push_back( p50/actual );
+          predicted_centres.push_back( p50 );
+          actual_centres.push_back( actual );
+          relative_band.push_back( (p84 - p16)/p50 );
+        }
+      }//for( loop over independent pairs )
+
+      BOOST_REQUIRE_MESSAGE( counted >= (num_pairs/2),
+                            (currie ? "currie" : "decon") << " k=" << k << ": only " << counted
+                            << " of " << num_pairs << " pairs usable" );
+
+      const double median_ratio = quantile_of( ratio_of_medians, 0.50 );
+      const double centre_ratio = quantile_of( predicted_centres, 0.50 )
+                                    / quantile_of( actual_centres, 0.50 );
+      const double c68 = static_cast<double>(inside68)/static_cast<double>(counted);
+      const double c90 = static_cast<double>(inside90)/static_cast<double>(counted);
+
+      cout << "DECON_MC_PROJECTION," << (currie ? "currie" : "decon") << ',' << alpha << ','
+           << k << ',' << counted << ',' << trials << ',' << median_ratio << ',' << centre_ratio
+           << ',' << c68 << ',' << c90 << ',' << quantile_of( relative_band, 0.50 ) << '\n';
+
+      rows.push_back( { currie ? "currie" : "decon", alpha, k, centre_ratio, c68, c90 } );
+    }//for( loop over dwell ratios )
+   }//for( loop over prior strength )
+  }//for( Currie / deconvolution )
+
+  // What makes this usable at all: the prediction has to sit on the answer, and its band has to
+  //  mean what it says.  Deliberately loose - these are 30-60 pairs, so the coverage estimates
+  //  carry several percent of noise; the point is that they are near nominal rather than far off.
+  for( const McRow &row : rows )
+  {
+    // Gate the configuration that actually ships: `projected_limit_prior_strength()` is Jeffreys.
+    //  This used to gate alpha = 0, which is the variant the sweep exists to rule out, so the
+    //  shipped setting was measured and printed but never asserted.
+    if( row.alpha != DetectionLimitCalc::projected_limit_prior_strength() )
+      continue;   // the other prior strengths are measured and printed, not gated
+
+    // On the ratio of centres, not the median of per-pair ratios - see where they are computed.
+    BOOST_CHECK_MESSAGE( (row.ratio > 0.75) && (row.ratio < 1.35),
+                        row.method << " k=" << row.k << ": predicted centre is " << row.ratio
+                        << "x where the dwell's outcomes centre" );
+    BOOST_CHECK_MESSAGE( (row.cover68 > 0.45) && (row.cover68 < 0.90),
+                        row.method << " k=" << row.k << ": 68% band covered " << row.cover68 );
+    BOOST_CHECK_MESSAGE( (row.cover90 > 0.70) && (row.cover90 < 1.0001),
+                        row.method << " k=" << row.k << ": 90% band covered " << row.cover90 );
+  }
+}// BOOST_AUTO_TEST_CASE( ProjectedMeasurementMonteCarlo )
+
+
+/** Is the `BackgroundReference` prediction bias a function of the dwell ratio alone?
+
+ `RealSpectrumDwellProjectionAccuracy` measures it at one continuum level, one region and one
+ reference length, and finds it unbiased to ~4% for `k = T_sample/T_reference` up to 1 and about a
+ third optimistic at 4 and 16.  If that curve depends only on `k`, it can be calibrated once and
+ applied for free; if it also moves with how many counts are under the peak, a correction would need
+ a Monte Carlo per limit, which costs ~0.5 s of CPU per region and is not viable interactively.
+
+ So this sweeps `k` against the two things that set the counts under the peak - the continuum level
+ and the peak width - independently, which lets the two hypotheses be told apart:
+
+   - bias is a function of `k` alone: every cell at a given `k` agrees within noise;
+   - bias is a function of `(k, B)`: cells at a given `k` spread systematically with `B`, the
+     region's background counts, and continuum and FWHM enter only through their product.
+
+ `B` is varied over four decades here (0.5 to 4000 counts) by moving continuum and FWHM in ways that
+ sometimes agree and sometimes cancel, so the two are separable rather than confounded.
+ */
+BOOST_AUTO_TEST_CASE( PredictedSampleBiasParameterSweep )
+{
+  using namespace DetectionLimitCalc;
+
+  set_data_dir();
+
+  // 64 cells of 150 realisations, two profile scans each: ~5.5 minutes of CPU in Release and far
+  //  more in Debug, so it is opt-in like the coverage study rather than part of every run.  Its
+  //  conclusion is recorded in the register (D-17) and the always-on
+  //  `ContinuumMisspecificationCollapsesLimit` covers the finding that came out of it.
+  const char * const enabled = getenv( "INTERSPEC_RUN_DECON_PREDICTION_SWEEP" );
+  if( !enabled || ( string( enabled ) != "1" ) )
+  {
+    BOOST_TEST_MESSAGE( "Set INTERSPEC_RUN_DECON_PREDICTION_SWEEP=1 to run the expected-counts-bias sweep." );
+    return;
+  }
+
+  const size_t num_channels = 1024;
+  const float channel_width = 2.0f;
+  const float peak_energy = 1173.0f;
+
+  auto calibration = make_shared<SpecUtils::EnergyCalibration>();
+  calibration->set_polynomial( num_channels, { 0.0f, channel_width }, {} );
+
+  auto drf = make_shared<DetectorPeakResponse>();
+  drf->setIntrinsicEfficiencyFormula( "1.0", 2.54f*PhysicalUnits::cm, PhysicalUnits::keV,
+                                     0.0f, 0.0f,
+                                     DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
+  drf->setFwhmCoefficients( vector<float>{ 64.0f, 0.0f },
+                           DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+
+  // Draws a flat-continuum spectrum of mean `counts_per_channel`, at exposure `live`.
+  const auto draw = [&]( const double counts_per_channel, const double live, mt19937 &generator )
+        -> shared_ptr<const SpecUtils::Measurement> {
+    auto counts = make_shared<vector<float>>( num_channels, 0.0f );
+    for( size_t c = 0; c < num_channels; ++c )
+      counts->at(c) = static_cast<float>( study_poisson( counts_per_channel, generator ) );
+
+    auto m = make_shared<SpecUtils::Measurement>();
+    m->set_gamma_counts( counts, static_cast<float>(live), static_cast<float>(live) );
+    m->set_energy_calibration( calibration );
+    return m;
+  };
+
+  const auto make_input = [&]( const shared_ptr<const SpecUtils::Measurement> &reference,
+                               const double fwhm ) -> shared_ptr<DeconComputeInput> {
+    DeconRoiInfo roi;
+    roi.roi_start = static_cast<float>( peak_energy - 1.25*fwhm );
+    roi.roi_end = static_cast<float>( peak_energy + 1.25*fwhm );
+    roi.continuum_type = PeakContinuum::OffsetType::Linear;
+    roi.cont_norm_method = DeconContinuumNorm::Floating;
+    roi.num_lower_side_channels = 4;
+    roi.num_upper_side_channels = 4;
+
+    DeconRoiInfo::PeakInfo peak;
+    peak.energy = peak_energy;
+    peak.fwhm = static_cast<float>( fwhm );
+    // Reference live time, so "activity" reads as counts at the reference exposure and the ratio
+    //  this case reports is independent of the normalisation.
+    peak.counts_per_bq_into_4pi = reference->live_time();
+    roi.peak_infos.push_back( peak );
+
+    auto input = make_shared<DeconComputeInput>();
+    input->activity = 0.0;
+    input->distance = 0.0;
+    input->include_air_attenuation = false;
+    input->shielding_thickness = 0.0;
+    input->drf = drf;
+    input->measurement = reference;
+    input->roi_info.push_back( roi );
+    input->measurement_model = DeconMeasurementModel::BackgroundReference;
+    return input;
+  };
+
+  const auto limit_of = [&]( const shared_ptr<const DeconComputeInput> &input,
+                             const double max_search ) -> double {
+    try
+    {
+      ScopedCoutSilence silence;
+      const DeconActivityOrDistanceLimitResult r =
+          get_activity_or_distance_limits( 0.95f, input, false, 0.0, max_search, true );
+      return r.foundUpperCl ? r.upperLimit : numeric_limits<double>::quiet_NaN();
+    }catch( std::exception & )
+    {
+      return numeric_limits<double>::quiet_NaN();
+    }
+  };
+
+  const auto median_of = []( vector<double> v ) -> double {
+    if( v.empty() )
+      return numeric_limits<double>::quiet_NaN();
+    const size_t mid = v.size()/2;
+    nth_element( v.begin(), v.begin() + mid, v.end() );
+    return v[mid];
+  };
+
+  cout << "DECON_PREDICTION_SWEEP,k,continuum_per_channel,fwhm_keV,roi_channels,"
+          "roi_background_counts,reps,attempted,predicted,joint_actual,predicted_over_joint\n";
+
+  const double reference_live = 1.0;
+  const size_t reps = 150;
+  // Wall-clock guard: the low-continuum cells are the slow ones (D-18), and a cell truncated by its
+  //  slice must report how many reps it actually ran rather than assert on noise.
+  const double seconds_per_cell = 12.0;
+
+  struct SweepRow
+  {
+    double k, continuum, fwhm, background, ratio;
+    size_t reps;
+  };
+  vector<SweepRow> rows;
+
+  for( const double k : { 0.25, 1.0, 4.0, 16.0 } )
+  {
+    for( const double continuum : { 0.1, 1.0, 10.0, 100.0 } )
+    {
+      for( const double fwhm : { 4.0, 8.0, 16.0, 32.0 } )
+      {
+        // The "asimov" token is the old name for the expected-counts step, kept because this string
+        //  *is* the seed: changing a character changes every draw, and so every number this study
+        //  published.  It is an opaque token, not a description.
+        const string cell = "asimov|k=" + study_number_token( k )
+                            + "|c=" + study_number_token( continuum )
+                            + "|f=" + study_number_token( fwhm );
+        mt19937 generator( study_cell_seed( cell ) );
+
+        const size_t roi_channels
+              = static_cast<size_t>( std::round( 2.5*fwhm / channel_width ) );
+        const double background = continuum * static_cast<double>( roi_channels );
+
+        // Comfortably above the limit's own scale, so the scan brackets it without wasting grid
+        //  points: a 95% bound sits near 3.3*sqrt(B_sample) counts, which is
+        //  3.3*sqrt(B/k) once expressed at the reference exposure.
+        const double max_search = 50.0 * ( 3.3*sqrt( (std::max)(background,1.0)/k ) + 2.0 );
+
+        vector<double> prediction, joint;
+        size_t attempted = 0;
+        const std::chrono::steady_clock::time_point started = std::chrono::steady_clock::now();
+
+        for( size_t rep = 0; rep < reps; ++rep )
+        {
+          const std::chrono::duration<double> elapsed = std::chrono::steady_clock::now() - started;
+          if( (rep > 8) && (elapsed.count() > seconds_per_cell) )
+            break;
+          ++attempted;
+
+          const shared_ptr<const SpecUtils::Measurement> reference
+                = draw( continuum, reference_live, generator );
+          const shared_ptr<const SpecUtils::Measurement> sample
+                = draw( continuum*k, reference_live*k, generator );
+
+          const shared_ptr<DeconComputeInput> predictive = make_input( reference, fwhm );
+          predictive->sample_exposure = reference_live*k;
+          const double p = limit_of( predictive, max_search );
+
+          const shared_ptr<DeconComputeInput> observed = make_input( reference, fwhm );
+          observed->observed_sample = sample;
+          const double j = limit_of( observed, max_search );
+
+          if( !IsNan(p) && !IsNan(j) )
+          {
+            prediction.push_back( p );
+            joint.push_back( j );
+          }
+        }//for( loop over repetitions )
+
+        const double mp = median_of( prediction );
+        const double mj = median_of( joint );
+        const double ratio = (mj > 0.0) ? (mp/mj) : numeric_limits<double>::quiet_NaN();
+
+        cout << "DECON_PREDICTION_SWEEP," << k << ',' << continuum << ',' << fwhm << ','
+             << roi_channels << ',' << background << ',' << prediction.size() << ','
+             << attempted << ',' << mp << ',' << mj << ',' << ratio << '\n';
+
+        // Only cells with enough successful pairs to have a meaningful median are carried into the
+        //  hypothesis test below; the row is still printed either way.
+        if( (prediction.size() >= 40) && !IsNan(ratio) )
+          rows.push_back( { k, continuum, fwhm, background, ratio, prediction.size() } );
+      }//for( loop over FWHM )
+    }//for( loop over continuum )
+  }//for( loop over dwell ratio )
+
+  BOOST_REQUIRE_MESSAGE( rows.size() >= 40,
+                        "only " << rows.size() << " of 64 cells produced a usable median" );
+
+  // The question this case exists to answer: at fixed k, does the bias hold still as the counts
+  //  under the peak move over four decades?  Reported as the spread of the ratio within each k.
+  cout << "DECON_PREDICTION_SWEEP_BY_K,k,cells,min_ratio,median_ratio,max_ratio,spread,"
+          "min_background,max_background\n";
+
+  for( const double k : { 0.25, 1.0, 4.0, 16.0 } )
+  {
+    vector<double> ratios;
+    double min_b = numeric_limits<double>::max(), max_b = 0.0;
+    for( const SweepRow &row : rows )
+    {
+      if( row.k != k )
+        continue;
+      ratios.push_back( row.ratio );
+      min_b = (std::min)( min_b, row.background );
+      max_b = (std::max)( max_b, row.background );
+    }
+
+    if( ratios.size() < 4 )
+      continue;
+
+    sort( begin(ratios), end(ratios) );
+    const double lo = ratios.front(), hi = ratios.back();
+    const double mid = median_of( ratios );
+
+    cout << "DECON_PREDICTION_SWEEP_BY_K," << k << ',' << ratios.size() << ',' << lo << ',' << mid
+         << ',' << hi << ',' << (hi - lo) << ',' << min_b << ',' << max_b << '\n';
+  }//for( loop over dwell ratio )
+
+  // The measured answer, pinned so it cannot quietly drift: on a continuum the model can represent,
+  //  the expected-counts step is close to unbiased at every dwell ratio and over four decades of counts.
+  //  What bias there is on real spectra is the continuum *model*, not the noise-free idealisation - see
+  //  `ContinuumMisspecificationCollapsesLimit`.
+  //
+  //  Cells whose reference region holds fewer than ~5 counts are excluded rather than gated: below
+  //  that the median of a limit is not a stable quantity, and the ratio there ranges 0.21 to 1.51
+  //  in this very sweep.  They are still printed, and the register records them.
+  size_t gated = 0;
+  for( const SweepRow &row : rows )
+  {
+    if( row.background < 5.0 )
+      continue;
+
+    ++gated;
+    BOOST_CHECK_MESSAGE( (row.ratio > 0.70) && (row.ratio < 1.35),
+                        "k=" << row.k << " continuum=" << row.continuum << " fwhm=" << row.fwhm
+                        << " (B=" << row.background << "): expected-counts/joint is " << row.ratio
+                        << ", outside the band a correctly specified continuum gives" );
+  }
+
+  BOOST_CHECK_MESSAGE( gated >= 40, "only " << gated << " cells had enough counts to gate" );
+}// BOOST_AUTO_TEST_CASE( PredictedSampleBiasParameterSweep )
+
+
+/** Is the `BackgroundReference` bias the expected-counts step, or the continuum model being wrong?
+
+ `PredictedSampleBiasParameterSweep` finds essentially no bias on a *flat* continuum at any dwell ratio, once
+ the region holds more than a few counts — yet `RealSpectrumDwellProjectionAccuracy` finds 0.70 and
+ 0.63 at `k` = 4 and 16 on a real background whose region holds ~140 counts. Something other than
+ the noise-free idealisation is doing the work.
+
+ The candidate is misspecification. The expected-counts sample block is built from the continuum *fitted to
+ the reference*, so it matches the fitted model exactly, by construction — it cannot show curvature
+ or structure the model lacks. A real sample can, and does. That mismatch contributes counts the fit
+ must absorb or attribute to signal, and it grows **linearly** with exposure while Poisson noise
+ grows as its square root, so it is invisible at short dwells and dominates at long ones. Which is
+ the shape the real spectrum shows.
+
+ Four truths, all analysed with the same `Linear` continuum:
+   - flat, and sloped: both exactly representable, so the model is *correct* — the control;
+   - curved: a quadratic the line cannot follow;
+   - bump: a flat continuum with a small unmodelled Gaussian off to one side of the region, which is
+     the interference case a real background presents.
+
+ If misspecification is the mechanism, the two correct-model truths stay near 1 at every `k` and the
+ two wrong-model truths fall away above `k = 1`.
+ */
+BOOST_AUTO_TEST_CASE( ContinuumMisspecificationCollapsesLimit )
+{
+  using namespace DetectionLimitCalc;
+
+  set_data_dir();
+
+  const size_t num_channels = 1024;
+  const float channel_width = 2.0f;
+  const float peak_energy = 1173.0f;
+  const double fwhm = 32.0;                 // 40 channels across the region
+  const double continuum_level = 10.0;      // counts/channel at the reference exposure
+  const double roi_half_width = 1.25*fwhm;
+
+  auto calibration = make_shared<SpecUtils::EnergyCalibration>();
+  calibration->set_polynomial( num_channels, { 0.0f, channel_width }, {} );
+
+  auto drf = make_shared<DetectorPeakResponse>();
+  drf->setIntrinsicEfficiencyFormula( "1.0", 2.54f*PhysicalUnits::cm, PhysicalUnits::keV,
+                                     0.0f, 0.0f,
+                                     DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
+  drf->setFwhmCoefficients( vector<float>{ 64.0f, 0.0f },
+                           DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+
+  struct Shape
+  {
+    const char *name;
+    // Mean counts in a channel whose centre sits `dE` from the peak, at unit exposure.
+    std::function<double(double)> mean;
+    bool model_is_correct;
+  };
+
+  const double bump_offset = 0.75*roi_half_width;   // inside the region, off to one side
+  const double bump_sigma = fwhm / PhysicalUnits::fwhm_nsigma;
+
+  const vector<Shape> shapes = {
+    { "flat",   []( const double ){ return 10.0; }, true },
+    { "sloped", [&]( const double dE ){ return continuum_level*(1.0 + 0.30*dE/roi_half_width); }, true },
+    // ~5% peak-to-line deviation across the region; a line fitted to a parabola is high at the ends
+    //  and low in the middle, and no linear continuum can remove it.
+    { "curved", [&]( const double dE ){
+        const double u = dE/roi_half_width;
+        return continuum_level*(1.0 + 0.15*u*u);
+      }, false },
+    // A 4% unmodelled line sitting off-centre in the region.
+    { "bump",   [&]( const double dE ){
+        const double z = (dE - bump_offset)/bump_sigma;
+        return continuum_level*(1.0 + 0.60*exp( -0.5*z*z ));
+      }, false },
+  };
+
+  const auto draw = [&]( const Shape &shape, const double exposure, mt19937 &generator )
+        -> shared_ptr<const SpecUtils::Measurement> {
+    auto counts = make_shared<vector<float>>( num_channels, 0.0f );
+    for( size_t c = 0; c < num_channels; ++c )
+    {
+      const double centre = 0.5*( calibration->energy_for_channel(c)
+                                 + calibration->energy_for_channel(c+1) );
+      const double dE = centre - peak_energy;
+      // Only shape the region and its surroundings; far away it is flat, which keeps the fixture's
+      //  total counts from depending on the shape.
+      const double mean = (fabs(dE) <= 2.0*roi_half_width) ? shape.mean( dE ) : continuum_level;
+      counts->at(c) = static_cast<float>( study_poisson( exposure*mean, generator ) );
+    }
+
+    auto m = make_shared<SpecUtils::Measurement>();
+    m->set_gamma_counts( counts, static_cast<float>(exposure), static_cast<float>(exposure) );
+    m->set_energy_calibration( calibration );
+    return m;
+  };
+
+  const auto make_input = [&]( const shared_ptr<const SpecUtils::Measurement> &reference )
+        -> shared_ptr<DeconComputeInput> {
+    DeconRoiInfo roi;
+    roi.roi_start = static_cast<float>( peak_energy - roi_half_width );
+    roi.roi_end = static_cast<float>( peak_energy + roi_half_width );
+    roi.continuum_type = PeakContinuum::OffsetType::Linear;
+    roi.cont_norm_method = DeconContinuumNorm::Floating;
+    roi.num_lower_side_channels = 4;
+    roi.num_upper_side_channels = 4;
+
+    DeconRoiInfo::PeakInfo peak;
+    peak.energy = peak_energy;
+    peak.fwhm = static_cast<float>( fwhm );
+    peak.counts_per_bq_into_4pi = reference->live_time();
+    roi.peak_infos.push_back( peak );
+
+    auto input = make_shared<DeconComputeInput>();
+    input->activity = 0.0;
+    input->distance = 0.0;
+    input->include_air_attenuation = false;
+    input->shielding_thickness = 0.0;
+    input->drf = drf;
+    input->measurement = reference;
+    input->roi_info.push_back( roi );
+    input->measurement_model = DeconMeasurementModel::BackgroundReference;
+    return input;
+  };
+
+  const auto limit_of = [&]( const shared_ptr<const DeconComputeInput> &input ) -> double {
+    try
+    {
+      ScopedCoutSilence silence;
+      const DeconActivityOrDistanceLimitResult r =
+          get_activity_or_distance_limits( 0.95f, input, false, 0.0, 20000.0, true );
+      return r.foundUpperCl ? r.upperLimit : numeric_limits<double>::quiet_NaN();
+    }catch( std::exception & )
+    {
+      return numeric_limits<double>::quiet_NaN();
+    }
+  };
+
+  const auto median_of = []( vector<double> v ) -> double {
+    if( v.empty() )
+      return numeric_limits<double>::quiet_NaN();
+    const size_t mid = v.size()/2;
+    nth_element( v.begin(), v.begin() + mid, v.end() );
+    return v[mid];
+  };
+
+  cout << "DECON_SHAPE_SENSITIVITY,shape,model_is_correct,k,reps,rms_misspecification_frac,"
+          "predicted,joint_actual,predicted_over_joint,sample_only,sample_only_over_flat_expectation\n";
+
+  const double reference_live = 1.0;
+  // Enough to resolve the effect - which is a factor of several, not a few percent - while keeping
+  //  this always-on rather than opt-in.  The ratio of two medians carries ~5% noise at this count,
+  //  which is why the correct-model gate below is a 20% band.
+  const size_t reps = 60;
+
+  struct ShapeRow { string shape; bool correct; double k, ratio; };
+  vector<ShapeRow> rows;
+
+  for( const Shape &shape : shapes )
+  {
+    // How far the truth sits from the best straight line through it, over the region, as a fraction
+    //  of the continuum level.  This is the quantity the mechanism says should predict the bias.
+    double sum_w = 0.0, sum_x = 0.0, sum_y = 0.0, sum_xx = 0.0, sum_xy = 0.0;
+    vector<pair<double,double>> region;
+    for( size_t c = 0; c < num_channels; ++c )
+    {
+      const double centre = 0.5*( calibration->energy_for_channel(c)
+                                 + calibration->energy_for_channel(c+1) );
+      const double dE = centre - peak_energy;
+      if( fabs(dE) > roi_half_width )
+        continue;
+      const double y = shape.mean( dE );
+      region.emplace_back( dE, y );
+      sum_w += 1.0; sum_x += dE; sum_y += y; sum_xx += dE*dE; sum_xy += dE*y;
+    }
+    const double denominator = sum_w*sum_xx - sum_x*sum_x;
+    const double slope = (fabs(denominator) > 0.0) ? ((sum_w*sum_xy - sum_x*sum_y)/denominator) : 0.0;
+    const double intercept = (sum_y - slope*sum_x)/sum_w;
+    double sum_sq = 0.0;
+    for( const pair<double,double> &p : region )
+    {
+      const double residual = p.second - (intercept + slope*p.first);
+      sum_sq += residual*residual;
+    }
+    const double rms_frac = sqrt( sum_sq/region.size() ) / continuum_level;
+
+    for( const double k : { 0.25, 1.0, 4.0, 16.0 } )
+    {
+      mt19937 generator( study_cell_seed( string("shape|") + shape.name
+                                         + "|k=" + study_number_token( k ) ) );
+
+      vector<double> prediction, joint, sample_only;
+      for( size_t rep = 0; rep < reps; ++rep )
+      {
+        const shared_ptr<const SpecUtils::Measurement> reference
+              = draw( shape, reference_live, generator );
+        const shared_ptr<const SpecUtils::Measurement> sample
+              = draw( shape, reference_live*k, generator );
+
+        const shared_ptr<DeconComputeInput> predictive = make_input( reference );
+        predictive->sample_exposure = reference_live*k;
+        const double p = limit_of( predictive );
+
+        const shared_ptr<DeconComputeInput> observed = make_input( reference );
+        observed->observed_sample = sample;
+        const double j = limit_of( observed );
+
+        // The control that decides whether any collapse below belongs to the joint path this
+        //  increment added, or to the ordinary single-spectrum path the tools have always shipped.
+        //  Same misspecified truth, no reference block, no expected-counts step - just `CurrentSpectrum`.
+        const shared_ptr<DeconComputeInput> alone = make_input( sample );
+        alone->measurement_model = DeconMeasurementModel::CurrentSpectrum;
+        alone->sample_exposure = 0.0;
+        const double s = limit_of( alone );
+
+        if( !IsNan(p) && !IsNan(j) )
+        {
+          prediction.push_back( p );
+          joint.push_back( j );
+        }
+        if( !IsNan(s) )
+          sample_only.push_back( s );
+      }//for( loop over repetitions )
+
+      BOOST_REQUIRE_MESSAGE( prediction.size() > reps/2,
+                            shape.name << " k=" << k << ": only " << prediction.size()
+                            << " of " << reps << " pairs gave both limits" );
+
+      const double mp = median_of( prediction );
+      const double mj = median_of( joint );
+      const double ms = median_of( sample_only );
+      const double ratio = mp/mj;
+
+      cout << "DECON_SHAPE_SENSITIVITY," << shape.name << ',' << (shape.model_is_correct ? 1 : 0)
+           << ',' << k << ',' << prediction.size() << ',' << rms_frac << ',' << mp << ',' << mj
+           << ',' << ratio << ',' << ms << ',' << (mp > 0.0 ? ms/mp : 0.0) << '\n';
+
+      rows.push_back( { shape.name, shape.model_is_correct, k, ratio } );
+    }//for( loop over dwell ratio )
+  }//for( loop over continuum shapes )
+
+  // The control has to hold: where the continuum model can represent the truth, nothing here moves
+  //  by a factor, at any dwell ratio.  The band is the one `PredictedSampleBiasParameterSweep` measured over
+  //  64 flat-continuum cells rather than a tighter one picked here, so the two cases agree on what
+  //  "no effect" means.
+  //
+  //  Note `sloped` at k=16 sits near the top of it - 1.16 at 150 realisations, 1.22 at 60 - where
+  //  `flat` at the same k is 1.02.  That is a real residual and it is not explained: a slope is
+  //  exactly representable by the Linear continuum, so misspecification cannot be the cause.  It is
+  //  an order of magnitude below the effect this case exists to show, and is recorded rather than
+  //  chased.
+  for( const ShapeRow &row : rows )
+  {
+    if( row.correct )
+      BOOST_CHECK_MESSAGE( (row.ratio > 0.70) && (row.ratio < 1.35),
+                          row.shape << " k=" << row.k << ": ratio " << row.ratio
+                          << ", outside the band a correctly specified continuum gives" );
+  }
+
+  // The finding this case exists to surface, stated rather than asserted - asserting it would turn
+  //  a future fix into a test failure.  Where the `Linear` continuum cannot represent the truth,
+  //  the limit collapses, and it does so on the *ordinary* single-spectrum path as much as on the
+  //  prediction path, so this is not a property of the background-reference model.  Every coverage
+  //  cell in this suite runs on a flat continuum and so cannot see it.
+  for( const ShapeRow &row : rows )
+  {
+    if( !row.correct && (row.k >= 4.0) && (row.ratio > 2.0) )
+      BOOST_TEST_MESSAGE( "Continuum misspecification (" << row.shape << ", k=" << row.k
+                         << "): expected-counts/joint = " << row.ratio
+                         << " - driven by the joint and single-spectrum limits collapsing, not by"
+                            " the expected-counts prediction, which barely moves.  See DECON_SHAPE_SENSITIVITY." );
+  }
+}// BOOST_AUTO_TEST_CASE( ContinuumMisspecificationCollapsesLimit )
+
+
+/** `DeconComputeInput::observed_sample` turns the background-reference prediction into an ordinary
+ joint analysis of a sample that has actually been taken.
+
+ Pins the three things that must change with it, and the one that must not:
+   - unset, every number is bit-identical to what the prediction always gave;
+   - set, the result is *not* a predicted sensitivity and must not be worded as one;
+   - set, the sample's own live time supersedes `sample_exposure`;
+   - set, the answer bounds the sample rather than predicting - so with a sample that really does
+     hold signal, zero can be excluded, which an null expectation can never do.
+ */
+BOOST_AUTO_TEST_CASE( ObservedSampleMakesBackgroundReferenceJoint )
+{
+  set_data_dir();
+
+  const double continuum_per_second = 100.0;
+  const double reference_seconds = 4.0;
+  const double sample_seconds = 4.0;
+
+  const shared_ptr<const DetectionLimitCalc::DeconComputeInput> predictive
+      = make_background_reference_input( continuum_per_second, reference_seconds, sample_seconds );
+
+  const auto limits_of = []( const shared_ptr<const DetectionLimitCalc::DeconComputeInput> &in ){
+    ScopedCoutSilence silence;
+    return DetectionLimitCalc::get_activity_or_distance_limits( 0.95f, in, false, 0.0, 5000.0, true );
+  };
+
+  const DetectionLimitCalc::DeconActivityOrDistanceLimitResult predicted = limits_of( predictive );
+  BOOST_REQUIRE( predicted.foundUpperCl );
+  BOOST_CHECK( predicted.is_predicted_sensitivity );
+
+  // A sample drawn from the same flat continuum, with a deliberate excess in the peak region so
+  //  that the joint fit has something to find.
+  const size_t nchannel = predictive->measurement->num_gamma_channels();
+  auto sample_counts = make_shared<vector<float>>( *predictive->measurement->gamma_counts() );
+  BOOST_REQUIRE_EQUAL( sample_counts->size(), nchannel );
+
+  const float peak_energy = predictive->roi_info.front().peak_infos.front().energy;
+  const size_t peak_channel = predictive->measurement->find_gamma_channel( peak_energy );
+  for( size_t i = (peak_channel > 3 ? peak_channel - 3 : 0);
+      (i <= peak_channel + 3) && (i < nchannel); ++i )
+  {
+    sample_counts->at(i) += 400.0f;
+  }
+
+  auto sample = make_shared<SpecUtils::Measurement>();
+  sample->set_gamma_counts( sample_counts, static_cast<float>(sample_seconds),
+                           static_cast<float>(sample_seconds) );
+  sample->set_energy_calibration( predictive->measurement->energy_calibration() );
+
+  auto joint = make_shared<DetectionLimitCalc::DeconComputeInput>( *predictive );
+  joint->observed_sample = sample;
+  // Deliberately wrong, to prove the sample's own live time is what gets used.
+  joint->sample_exposure = 1000.0*sample_seconds;
+
+  const DetectionLimitCalc::DeconActivityOrDistanceLimitResult observed = limits_of( joint );
+  BOOST_REQUIRE_MESSAGE( observed.foundUpperCl, "no joint limit: " << observed.errorMessage );
+
+  BOOST_CHECK_MESSAGE( !observed.is_predicted_sensitivity,
+                      "a joint analysis of a measured sample is a bound, not a prediction" );
+  BOOST_CHECK_CLOSE_FRACTION( observed.sampleExposure, sample_seconds, 1.0E-6 );
+  BOOST_CHECK_MESSAGE( observed.foundLowerCl,
+                      "a sample holding a real excess must be able to exclude zero, which the"
+                      " null expectation never can" );
+
+  // Leaving `observed_sample` null must change nothing at all about the prediction.
+  auto unchanged = make_shared<DetectionLimitCalc::DeconComputeInput>( *predictive );
+  unchanged->observed_sample = nullptr;
+  const DetectionLimitCalc::DeconActivityOrDistanceLimitResult again = limits_of( unchanged );
+  BOOST_REQUIRE( again.foundUpperCl );
+  BOOST_CHECK_EQUAL( again.upperLimit, predicted.upperLimit );
+  BOOST_CHECK_EQUAL( again.is_predicted_sensitivity, predicted.is_predicted_sensitivity );
+  BOOST_CHECK_EQUAL( again.sampleExposure, predicted.sampleExposure );
+
+  // A sample that cannot be paired channel-for-channel with the reference is rejected rather than
+  //  silently mis-indexed.
+  auto mismatched = make_shared<SpecUtils::Measurement>();
+  mismatched->set_gamma_counts( make_shared<vector<float>>( nchannel/2, 1.0f ),
+                               static_cast<float>(sample_seconds),
+                               static_cast<float>(sample_seconds) );
+  auto bad = make_shared<DetectionLimitCalc::DeconComputeInput>( *predictive );
+  bad->observed_sample = mismatched;
+  BOOST_CHECK_THROW( DetectionLimitCalc::decon_compute_peaks( *bad ), std::exception );
+}// BOOST_AUTO_TEST_CASE( ObservedSampleMakesBackgroundReferenceJoint )
+
+
 BOOST_AUTO_TEST_CASE( BackgroundReferenceApproachesIdeal )
 {
   set_data_dir();
@@ -2290,7 +3742,7 @@ BOOST_AUTO_TEST_CASE( BackgroundReferenceApproachesIdeal )
     BOOST_CHECK_MESSAGE( result.is_predicted_sensitivity,
                         "a background-reference result must be flagged as a prediction" );
     BOOST_CHECK_MESSAGE( !result.foundLowerCl,
-                        "the Asimov null holds no excess, so zero can never be excluded" );
+                        "the null expectation holds no excess, so zero can never be excluded" );
     limits.push_back( result.upperLimit );
   }
 
@@ -2784,18 +4236,139 @@ BOOST_AUTO_TEST_CASE( DeconCurrieCleanSpectrumGrid )
   }
 }// BOOST_AUTO_TEST_CASE( DeconCurrieCleanSpectrumGrid )
 
+/** `currie_check_for_peak` on a spectrum whose channels are not uniformly wide.
+
+ This is the entry point `ShieldingSourceFitCalc::fit_model` calls for every peak, so its numbers
+ reach the activity/shielding fit report and, through it, the batch output - see
+ `BatchActivity.cpp` and `BatchInfoLog.cpp`.  It had no test of its own, and the batch tests that do
+ exist build a uniform 2 keV/channel polynomial with no deviation pairs, which is exactly the case
+ where the width-weighted continuum fit reduces to the mean of the two side-band densities it
+ replaced.  So nothing exercised this path on the binning the fix actually changes.
+
+ The Ba-133 spectrum's deviation pairs make the two side bands span unequal energy, which is what
+ used to bias the continuum - by -0.9 sigma at the 81 keV line, in the direction that manufactures
+ signal that is not there.  `Detected` is decided by `source_counts > decision_threshold`, so that
+ bias moved detection decisions and not just a displayed number.  \sa CurrieContinuumNonUniformBinning
+ */
+BOOST_AUTO_TEST_CASE( CurrieCheckForPeakNonUniformBinning )
+{
+  set_data_dir();
+
+  const string path = SpecUtils::append_path( g_test_file_dir, "PeakFitLM/Ba133_Unshielded.n42" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( path ), "Ba-133 test spectrum not at '" << path << "'" );
+
+  SpecMeas file;
+  BOOST_REQUIRE_MESSAGE( file.load_N42_file( path ), "Failed loading '" << path << "'" );
+  const set<set<int>> peak_sample_sets = file.sampleNumsWithAutomatedSearchPeaks();
+  BOOST_REQUIRE( !peak_sample_sets.empty() );
+  const set<int> &peak_samples = *begin( peak_sample_sets );
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks
+                                                    = file.automatedSearchPeaks( peak_samples );
+  BOOST_REQUIRE( peaks && !peaks->empty() );
+
+  shared_ptr<const SpecUtils::Measurement> measurement;
+  for( const shared_ptr<const SpecUtils::Measurement> &candidate : file.measurements() )
+  {
+    if( candidate && (candidate->num_gamma_channels() > 16)
+       && peak_samples.count( candidate->sample_number() ) )
+    {
+      measurement = candidate;
+      break;
+    }
+  }
+  BOOST_REQUIRE( measurement );
+
+  // The premise of the case: without deviation pairs this spectrum would not distinguish the two
+  //  continuum estimators at all, and every assertion below would pass vacuously.
+  const shared_ptr<const SpecUtils::EnergyCalibration> cal = measurement->energy_calibration();
+  BOOST_REQUIRE( cal && cal->valid() );
+  BOOST_REQUIRE_MESSAGE( !cal->deviation_pairs().empty(),
+                        "this spectrum no longer has deviation pairs, so it does not test"
+                        " non-uniform binning and this case is vacuous" );
+
+  DetectionLimitCalc::PeakCurrieCheckOptions options;
+  options.confidence_level = 0.95;
+  options.num_side_channels = 4;
+  options.roi_num_fwhm = 2.5;
+
+  size_t checked = 0;
+  cout << "CURRIE_CHECK_PEAK,energy_keV,result_type,continuum_counts,continuum_from_eqn,"
+          "rel_diff,source_counts,decision_threshold\n";
+
+  for( const shared_ptr<const PeakDef> &peak : *peaks )
+  {
+    if( !peak || !peak->gausPeak() || (peak->fwhm() <= 0.0) )
+      continue;
+
+    const DetectionLimitCalc::PeakCurrieCheck check
+                    = DetectionLimitCalc::currie_check_for_peak( *peak, measurement, options, true );
+
+    BOOST_REQUIRE_MESSAGE( check.computed,
+                          "no Currie check at " << peak->mean() << " keV: " << check.error_message );
+
+    const DetectionLimitCalc::CurrieMdaResult &res = check.result;
+
+    // Integrate the continuum line this check reports over the peak region it reports.  Under the
+    //  old estimator these two disagreed on this spectrum - the drawn continuum and the counted
+    //  continuum were different numbers - and the agreement is now an algebraic identity, so it
+    //  holds on any binning rather than only on uniform binning.
+    //
+    //  Over the region's *channel edges*, not `input.roi_lower_energy`/`roi_upper_energy`: the
+    //  requested ROI is snapped outwards to whole channels, and on this spectrum's widening
+    //  channels the two differ by enough to fail this check by up to 14% if you use the request.
+    const double lower = measurement->gamma_channel_lower( res.first_peak_region_channel );
+    const double upper = measurement->gamma_channel_upper( res.last_peak_region_channel );
+    const double x0 = lower - res.input.gamma_energy;
+    const double x1 = upper - res.input.gamma_energy;
+    const double from_eqn = res.continuum_eqn[0]*(x1 - x0)
+                              + 0.5*res.continuum_eqn[1]*(x1*x1 - x0*x0);
+
+    const double scale = (std::max)( 1.0, static_cast<double>(res.estimated_peak_continuum_counts) );
+    const double rel_diff = fabs( from_eqn - res.estimated_peak_continuum_counts ) / scale;
+
+    cout << "CURRIE_CHECK_PEAK," << peak->mean() << ',' << static_cast<int>(check.result_type) << ','
+         << res.estimated_peak_continuum_counts << ',' << from_eqn << ',' << rel_diff << ','
+         << res.source_counts << ',' << res.decision_threshold << '\n';
+
+    BOOST_CHECK_MESSAGE( rel_diff < 1.0E-5,
+                        "at " << peak->mean() << " keV the reported continuum counts ("
+                        << res.estimated_peak_continuum_counts << ") disagree with the integral of"
+                        " the reported continuum equation (" << from_eqn << ")" );
+
+    // A continuum estimate cannot be negative, and the detection decision has to be the one the
+    //  reported numbers imply - not an independently computed flag that can drift from them.
+    BOOST_CHECK_GE( res.estimated_peak_continuum_counts, 0.0f );
+
+    if( check.result_type == DetectionLimitCalc::PeakCurrieCheck::ResultType::Detected )
+      BOOST_CHECK_MESSAGE( res.source_counts > res.decision_threshold,
+                          "at " << peak->mean() << " keV the check says Detected, but its own"
+                          " source counts " << res.source_counts << " do not exceed the decision"
+                          " threshold " << res.decision_threshold );
+    else if( check.result_type == DetectionLimitCalc::PeakCurrieCheck::ResultType::NotDetected )
+      BOOST_CHECK_MESSAGE( res.source_counts <= res.decision_threshold,
+                          "at " << peak->mean() << " keV the check says NotDetected, but its own"
+                          " source counts " << res.source_counts << " exceed the decision"
+                          " threshold " << res.decision_threshold );
+
+    ++checked;
+  }//for( loop over the fit peaks )
+
+  BOOST_REQUIRE_MESSAGE( checked >= 4,
+                        "only " << checked << " peaks were checked; this spectrum should offer"
+                        " several, so the case is not covering what it claims" );
+}// BOOST_AUTO_TEST_CASE( CurrieCheckForPeakNonUniformBinning )
+
+
 BOOST_AUTO_TEST_CASE( DeconCurrieBundledSpectrumGrid )
 {
   set_data_dir();
 
-#ifndef NDEBUG
-  // `currie_mda_calc(...)` has an existing developer-only assertion that assumes equally spaced
-  // side regions.  The Ba-133 spectrum uses a nonlinear energy calibration, so collect these
-  // empirical ratios in the requested Release study rather than aborting the Debug suite.
-  BOOST_TEST_MESSAGE(
-    "Bundled-spectrum ratio study runs in Release because of the Currie nonlinear-calibration assertion" );
-  return;
-#endif
+  // This used to bail out of Debug builds: `currie_mda_calc(...)` estimated the peak-region
+  //  continuum as the mean of the two side-band densities, which its own developer assertion
+  //  contradicts whenever the bands span unequal energy - and the Ba-133 spectrum's deviation pairs
+  //  make them unequal.  The estimate is now a width-weighted least-squares fit, so the assertion
+  //  is an identity and the suite's only real spectrum runs in both configurations.
+  //  \sa CurrieContinuumNonUniformBinning
 
   const string path = SpecUtils::append_path( g_test_file_dir, "PeakFitLM/Ba133_Unshielded.n42" );
   BOOST_REQUIRE_MESSAGE( SpecUtils::is_file( path ), "Ba-133 test spectrum not at '" << path << "'" );
@@ -2945,14 +4518,33 @@ BOOST_AUTO_TEST_CASE( DeconCurrieBundledSpectrumGrid )
  Two projections are compared, because the tools offer both:
    - Currie: `scale_spectrum_for_dwell` multiplies the reference's counts up to `T_s` and takes an
      ordinary limit.  The scaled counts are then treated as Poisson with variance equal to the
-     scaled count, which asserts the rate is known exactly - so this is expected to be optimistic,
-     and increasingly so as `T_s/T_ref` grows.
+     scaled count, which asserts the reference's rate is known exactly.
    - Deconvolution `BackgroundReference`: the reference and the projected sample share one
      continuum in a joint likelihood, so the reference's own counting error propagates.
 
  Taking the real spectrum's observed counts as the rate model makes the "truth" only as good as
- that spectrum's own statistics, but that error is common to all three arms, so the comparison
- between them is unaffected.
+ that spectrum's own statistics, but that error is common to all arms, so the comparison between
+ them is unaffected.
+
+ Two things beyond the medians are measured here, both of which the first revision of this case
+ could not see:
+
+ **D-17 / D-20 - what the background-reference optimism is made of.**  Comparing the prediction to
+ a limit taken on the future measurement *alone* mixes two effects: the expected-counts step evaluating at
+ unfluctuated data, and the joint model legitimately knowing more than a sample-only analysis.
+ `DeconComputeInput::observed_sample` re-scores the same two-block likelihood with the future
+ measurement's real counts, which splits the ratio into those two factors:
+
+     prediction/sample-only  ==  (prediction/joint) * (joint/sample-only)
+
+ the first factor being the prediction calibration D-17 asks for, the second the information the
+ reference genuinely adds.
+
+ **D-21 - the spread of the Currie projection, not just its median.**  Projecting `k = T_s/T_ref`
+ makes the prediction inherit the *reference's* counting noise: the projected limit's relative
+ scatter goes as `1/sqrt(counts at T_ref)` where the future limit's goes as `1/sqrt(counts at T_s)`,
+ so their ratio should be about `sqrt(k)` and the honest predictive spread is understated by about
+ `sqrt(1 + k)`.  Both are measured against `sqrt(k)` below rather than asserted.
  */
 BOOST_AUTO_TEST_CASE( RealSpectrumDwellProjectionAccuracy )
 {
@@ -3048,6 +4640,18 @@ BOOST_AUTO_TEST_CASE( RealSpectrumDwellProjectionAccuracy )
     return input;
   };
 
+  // The same two-block joint likelihood the background-reference prediction uses, but with the
+  //  future measurement's real counts in place of the expected-counts sample block.  This is the estimand
+  //  the prediction is supposed to be the median of, and nothing measured it before.
+  const auto make_joint_input = [&]( const shared_ptr<const SpecUtils::Measurement> &reference,
+                                     const shared_ptr<const SpecUtils::Measurement> &sample )
+        -> shared_ptr<DeconComputeInput> {
+    const shared_ptr<DeconComputeInput> input
+        = make_input( reference, DeconMeasurementModel::BackgroundReference, sample->live_time() );
+    input->observed_sample = sample;
+    return input;
+  };
+
   const auto limit_of = [&]( const shared_ptr<const DeconComputeInput> &input ) -> double {
     try
     {
@@ -3062,13 +4666,17 @@ BOOST_AUTO_TEST_CASE( RealSpectrumDwellProjectionAccuracy )
   };
 
   // A Currie limit on `m`, as a rate, so it is directly comparable with the profile limits above.
+  //  `detection_limit` and not `upper_limit`, because the detection limit is what the tools quote
+  //  when a measurement time is entered, and so is what the projection's spread has to describe.
+  //  The two scatter differently: `upper_limit` also carries the observed peak-region excess, while
+  //  `detection_limit` is a function of the continuum estimate alone.
   const auto currie_rate_of = [&]( const shared_ptr<const SpecUtils::Measurement> &m ) -> double {
     try
     {
       ScopedCoutSilence silence;
       const CurrieMdaResult r = currie_for_decon_input(
                                   make_input( m, DeconMeasurementModel::CurrentSpectrum, 0.0 ) );
-      return (m->live_time() > 0.0f) ? (r.upper_limit / m->live_time())
+      return (m->live_time() > 0.0f) ? (r.detection_limit / m->live_time())
                                      : numeric_limits<double>::quiet_NaN();
     }catch( std::exception & )
     {
@@ -3080,12 +4688,36 @@ BOOST_AUTO_TEST_CASE( RealSpectrumDwellProjectionAccuracy )
           "decon_actual,decon_backref_pred,decon_scaled_pred,currie_actual,currie_scaled_pred,"
           "backref_over_actual,scaled_decon_over_actual,currie_scaled_over_currie_actual\n";
 
+  // D-17: does the expected-counts prediction sit at the median of the *same* joint procedure run on real
+  //  sample counts?  And how much of the prediction-vs-sample-only ratio is that, against the
+  //  information the reference legitimately adds?
+  cout << "DECON_PREDICTION_CALIBRATION,ratio,pairs,predicted,joint_actual,sample_only_actual,"
+          "predicted_over_joint,joint_over_sample_only,predicted_over_sample_only,product_check\n";
+
+  // D-21: the projected Currie limit inherits the reference's counting noise, so its scatter should
+  //  exceed the future limit's by about sqrt(k) - which makes the honest predictive spread about
+  //  sqrt(1+k) wider than the projection implies.
+  cout << "DECON_PROJECTION_SPREAD,ratio,pairs,currie_actual_rel_iqr,currie_projected_rel_iqr,"
+          "spread_ratio,sqrt_k,implied_spread_understatement\n";
+
   const auto median_of = []( vector<double> v ) -> double {
     if( v.empty() )
       return numeric_limits<double>::quiet_NaN();
     const size_t mid = v.size()/2;
     nth_element( v.begin(), v.begin() + mid, v.end() );
     return v[mid];
+  };
+
+  // Interquartile range over the median: a scatter measure that a handful of failed scans or a
+  //  fat tail cannot dominate, which matters at 80 realisations.
+  const auto relative_iqr = []( vector<double> v ) -> double {
+    if( v.size() < 8 )
+      return numeric_limits<double>::quiet_NaN();
+    sort( begin(v), end(v) );
+    const double q1 = v[v.size()/4];
+    const double q2 = v[v.size()/2];
+    const double q3 = v[(3*v.size())/4];
+    return (q2 > 0.0) ? ((q3 - q1)/q2) : numeric_limits<double>::quiet_NaN();
   };
 
   const double reference_live = 600.0;
@@ -3096,7 +4728,12 @@ BOOST_AUTO_TEST_CASE( RealSpectrumDwellProjectionAccuracy )
     const double sample_live = ratio * reference_live;
     mt19937 generator( study_cell_seed( "dwell|ratio=" + study_number_token( ratio ) ) );
 
-    vector<double> actual, backref, scaled_decon, currie_actual, currie_scaled;
+    vector<double> actual, backref, scaled_decon, currie_actual, currie_scaled, joint;
+
+    // The three-way decomposition has to be taken over the realisations where *all three* arms
+    //  gave a limit, or the ratio of medians would be a ratio over different sub-samples.
+    vector<double> paired_actual, paired_backref, paired_joint;
+
     for( size_t rep = 0; rep < reps; ++rep )
     {
       const shared_ptr<const SpecUtils::Measurement> reference = draw( reference_live, generator );
@@ -3108,6 +4745,10 @@ BOOST_AUTO_TEST_CASE( RealSpectrumDwellProjectionAccuracy )
       // What a background reference predicted for it, beforehand.
       const double b = limit_of( make_input( reference, DeconMeasurementModel::BackgroundReference,
                                              sample_live ) );
+
+      // And what the *same joint model* gives once the future measurement is in hand - the estimand
+      //  the expected-counts prediction `b` is meant to be the median of.  \sa D-17
+      const double f = limit_of( make_joint_input( reference, future ) );
 
       // What scaling the reference up to the future dwell predicted, beforehand - by both methods.
       //  The entered time is a REAL time, hence the division by the live/real fraction.
@@ -3132,6 +4773,14 @@ BOOST_AUTO_TEST_CASE( RealSpectrumDwellProjectionAccuracy )
       if( !IsNan(c) ) scaled_decon.push_back( c );
       if( !IsNan(d) ) currie_actual.push_back( d );
       if( !IsNan(e) ) currie_scaled.push_back( e );
+      if( !IsNan(f) ) joint.push_back( f );
+
+      if( !IsNan(a) && !IsNan(b) && !IsNan(f) )
+      {
+        paired_actual.push_back( a );
+        paired_backref.push_back( b );
+        paired_joint.push_back( f );
+      }
     }//for( loop over repetitions )
 
     BOOST_REQUIRE_MESSAGE( actual.size() > reps/2,
@@ -3148,6 +4797,47 @@ BOOST_AUTO_TEST_CASE( RealSpectrumDwellProjectionAccuracy )
          << actual.size() << ',' << ma << ',' << mb << ',' << mc << ',' << md << ',' << me << ','
          << (ma > 0.0 ? mb/ma : 0.0) << ',' << (ma > 0.0 ? mc/ma : 0.0) << ','
          << (md > 0.0 ? me/md : 0.0) << '\n';
+
+    // D-17 / D-20: split the prediction-vs-sample-only ratio into the expected-counts step and the joint
+    //  model's genuine information advantage.  All three medians over the same realisations.
+    BOOST_REQUIRE_MESSAGE( paired_joint.size() > reps/2,
+                          "ratio " << ratio << ": only " << paired_joint.size() << " of " << reps
+                          << " realisations gave all three of prediction, joint and sample-only" );
+
+    const double pa = median_of( paired_actual );
+    const double pb = median_of( paired_backref );
+    const double pf = median_of( paired_joint );
+
+    const double predicted_over_joint = (pf > 0.0) ? (pb/pf) : 0.0;
+    const double joint_over_sample = (pa > 0.0) ? (pf/pa) : 0.0;
+    const double predicted_over_sample = (pa > 0.0) ? (pb/pa) : 0.0;
+
+    cout << "DECON_PREDICTION_CALIBRATION," << ratio << ',' << paired_joint.size() << ','
+         << pb << ',' << pf << ',' << pa << ',' << predicted_over_joint << ',' << joint_over_sample
+         << ',' << predicted_over_sample << ','
+         << (predicted_over_joint*joint_over_sample) << '\n';
+
+    // The decomposition is arithmetic, not a new estimand: the two factors must multiply back to
+    //  the ratio already published.  A failure here means the medians were taken over different
+    //  sub-samples, not that the physics changed.
+    BOOST_CHECK_CLOSE_FRACTION( predicted_over_joint*joint_over_sample, predicted_over_sample, 1.0E-9 );
+
+    // The joint model sees the sample *and* the reference, so it cannot be the looser of the two by
+    //  any margin worth speaking of.  Deliberately loose - this catches the joint arm being wired
+    //  up wrongly, not a subtle bias; the printed factors are the actual result.
+    BOOST_CHECK_MESSAGE( joint_over_sample < 1.1,
+                        "ratio " << ratio << ": joint limit " << pf << " is looser than the"
+                        " sample-only limit " << pa << ", which more data cannot make it" );
+
+    // D-21: how much wider the projected Currie limit's own scatter is than the future limit's.
+    //  Expected about sqrt(k), which implies the predictive spread is understated by sqrt(1 + k).
+    const double actual_spread = relative_iqr( currie_actual );
+    const double projected_spread = relative_iqr( currie_scaled );
+    const double spread_ratio = (actual_spread > 0.0) ? (projected_spread/actual_spread) : 0.0;
+
+    cout << "DECON_PROJECTION_SPREAD," << ratio << ',' << currie_scaled.size() << ','
+         << actual_spread << ',' << projected_spread << ',' << spread_ratio << ','
+         << sqrt(ratio) << ',' << sqrt( 1.0 + spread_ratio*spread_ratio ) << '\n';
 
     // A prediction used for planning has to be in the right ballpark of what the dwell delivers;
     //  a factor of two either way would make it useless.  Deliberately loose - the point of the
@@ -3339,8 +5029,8 @@ struct StudyResult
   size_t legacy_failures = 0;
 
   bool have_backref = false;
-  size_t asimov_above = 0;
-  size_t asimov_pairs = 0;
+  size_t prediction_above = 0;
+  size_t prediction_pairs = 0;
   double backref_ratio_median = 0.0;
   double backref_naive_ratio = 0.0;
 
@@ -3626,7 +5316,7 @@ void run_coverage_cell( StudyResult &out, const size_t audit_production, const b
  measurement.
 
  There is no "coverage" to measure here: the mode reports a *predicted median sensitivity* built
- from an Asimov sample, not an interval over observed data.
+ from an expected-counts sample, not an interval over observed data.
 
  What this block measures is the coarser of the two available questions - whether the prediction
  still describes what the analyst gets if they take the future measurement and analyse it **on its
@@ -3639,12 +5329,12 @@ void run_coverage_cell( StudyResult &out, const size_t audit_production, const b
  tighter, by an amount that grows as the reference shortens.  The measured ratio below (roughly
  0.8 at moderate count rates) is that effect, and reading it as an error would be a mistake.
 
- The sharper question - whether the Asimov prediction sits at the *median* of what the same joint
+ The sharper question - whether the expected-counts prediction sits at the *median* of what the same joint
  procedure returns when the sample is really observed - needs the sample block re-scored with `n`
  in place of its expectation, over the identical two-block channel list.  There is no production
  entry point that does that and this harness does not build one yet, so that calibration is
  **not measured**.  It is the first thing the next increment should add; until then nothing here
- licenses a claim that the Asimov step is unbiased.
+ licenses a claim that the expected-counts step is unbiased.
  */
 void run_background_reference_cell( StudyResult &out )
 {
@@ -3722,8 +5412,8 @@ void run_background_reference_cell( StudyResult &out )
       continue;
     }
 
-    ++out.asimov_pairs;
-    out.asimov_above += ( sample_limit.upper > prediction ) ? 1 : 0;
+    ++out.prediction_pairs;
+    out.prediction_above += ( sample_limit.upper > prediction ) ? 1 : 0;
     predicted.push_back( prediction );
     naive.push_back( sample_limit.upper );
   }//for( loop over paired draws )
@@ -3771,13 +5461,13 @@ void study_report_cell( const StudyResult &out )
   const bool zero_truth = !is_backref && !(out.truth > 0.0);
 
   const double statistic = is_backref
-        ? ( out.asimov_pairs ? static_cast<double>( out.asimov_above )
-                                 / static_cast<double>( out.asimov_pairs )
+        ? ( out.prediction_pairs ? static_cast<double>( out.prediction_above )
+                                 / static_cast<double>( out.prediction_pairs )
                              : numeric_limits<double>::quiet_NaN() )
         : ( zero_truth ? detection_rate : coverage_strict );
   const double statistic_target = is_backref ? 0.50 : ( zero_truth ? 0.05 : 0.95 );
   const pair<double,double> interval = is_backref
-        ? wilson_interval( out.asimov_above, (std::max)( size_t(1), out.asimov_pairs ) )
+        ? wilson_interval( out.prediction_above, (std::max)( size_t(1), out.prediction_pairs ) )
         : ( zero_truth ? wilson_interval( out.found_lower, (std::max)( size_t(1), bracketed ) )
                        : wilson_interval( out.covered, (std::max)( size_t(1), out.trials ) ) );
 
@@ -3860,8 +5550,8 @@ void study_report_cell( const StudyResult &out )
                        << out.backref_naive_ratio );
 
     // What *would* be a defect is failing to produce a prediction at all.
-    BOOST_CHECK_MESSAGE( out.asimov_pairs > (out.trials/2),
-                        what << ": only " << out.asimov_pairs << " of " << out.trials
+    BOOST_CHECK_MESSAGE( out.prediction_pairs > (out.trials/2),
+                        what << ": only " << out.prediction_pairs << " of " << out.trials
                         << " pairs produced both a prediction and a sample limit" );
     return;
   }//if( is_backref )
@@ -4129,7 +5819,7 @@ BOOST_AUTO_TEST_CASE( DeconCoverageStudy )
     }
   }
 
-  // ---- backref: is the Asimov prediction really the median? ------------------------------------
+  // ---- backref: is the expected-counts prediction really the median? ------------------------------------
   for( const double continuum : continua )
   {
     for( const double ratio : { 0.25, 1.0, 4.0, 20.0 } )
@@ -4281,6 +5971,138 @@ BOOST_AUTO_TEST_CASE( BasicCurrieMda )
   BOOST_REQUIRE_NO_THROW( result = currie_mda_calc( input ) );
   BOOST_CHECK_EQUAL( result.detection_limit, -999.0f );
 }// BOOST_AUTO_TEST_CASE( BasicCurrieMda )
+
+
+/** The Currie peak-region continuum, on binning whose channel widths change across the region.
+
+ `currie_mda_calc` used to estimate the continuum as the mean of the two side-band *densities*.
+ That equals the fitted continuum at the region centre only when the two bands span equal energy,
+ and the bands hold an equal number of *channels* - so any deviation-pair or lower-channel-edge
+ calibration biased it by `slope*(w_upper - w_lower)/4*w_peak`.  Measured at -0.9 sigma of the
+ continuum's own Poisson noise on the 81 keV line of the bundled Ba-133 NaI spectrum, whose
+ deviation pairs make the two bands 11.5 and 12.9 keV wide.
+
+ Fed the *exact* integrals of a known linear continuum, so there is a right answer to hit rather
+ than a tolerance to negotiate: a width-weighted least-squares line through the side bands
+ reproduces that continuum exactly, whatever the binning.
+ */
+BOOST_AUTO_TEST_CASE( CurrieContinuumNonUniformBinning )
+{
+  using namespace DetectionLimitCalc;
+
+  set_data_dir();
+
+  const size_t num_channels = 256;
+  const size_t first_peak_channel = 108, last_peak_channel = 127;
+  const size_t num_side = 4;
+
+  // The continuum the channels are filled from, as a density in counts/keV about `reference_energy`.
+  const double reference_energy = 100.0;
+  const double density_at_ref = 100.0;
+  const double density_slope = -5.0;
+  const auto density = [&]( const double energy ) -> double {
+    return density_at_ref + density_slope*(energy - reference_energy);
+  };
+
+  // Two calibrations over the same channels: one whose widths grow across the region (the case
+  //  under test), and a uniform one that has to keep giving bit-for-bit what it always did.
+  const auto run = [&]( const bool non_uniform ) -> CurrieMdaResult {
+    vector<float> edges( num_channels + 1, 0.0f );
+    for( size_t c = 0; c <= num_channels; ++c )
+    {
+      const double ch = static_cast<double>( c );
+      // 0.5 keV/channel, with a quadratic term that widens channels by ~13% across the region.
+      edges[c] = static_cast<float>( non_uniform ? (0.5*ch + 0.002*ch*ch) : (0.5*ch) );
+    }
+
+    auto cal = make_shared<SpecUtils::EnergyCalibration>();
+    cal->set_lower_channel_energy( num_channels, edges );
+
+    // Exactly the integral of `density` over each channel; for a linear density that is its value
+    //  at the channel midpoint times the channel width, with no quadrature error at all.
+    auto counts = make_shared<vector<float>>( num_channels, 0.0f );
+    for( size_t c = 0; c < num_channels; ++c )
+    {
+      const double lower = edges[c], upper = edges[c+1];
+      counts->at(c) = static_cast<float>( density( 0.5*(lower + upper) ) * (upper - lower) );
+    }
+
+    auto spectrum = make_shared<SpecUtils::Measurement>();
+    spectrum->set_gamma_counts( counts, 1.0f, 1.0f );
+    spectrum->set_energy_calibration( cal );
+
+    CurrieMdaInput input;
+    input.spectrum = spectrum;
+    input.roi_lower_energy = edges[first_peak_channel];
+    input.roi_upper_energy = edges[last_peak_channel + 1];
+    // Deliberately off the region's centre, so the shift of `continuum_eqn` off the band centroid
+    //  is exercised rather than cancelling.
+    input.gamma_energy = static_cast<float>( input.roi_lower_energy
+                            + 0.4*(input.roi_upper_energy - input.roi_lower_energy) );
+    input.num_lower_side_channels = num_side;
+    input.num_upper_side_channels = num_side;
+    input.detection_probability = 0.95;
+    input.additional_uncertainty = 0.0;
+
+    CurrieMdaResult result;
+    BOOST_REQUIRE_NO_THROW( result = currie_mda_calc( input ) );
+    BOOST_REQUIRE_EQUAL( result.first_peak_region_channel, first_peak_channel );
+    BOOST_REQUIRE_EQUAL( result.last_peak_region_channel, last_peak_channel );
+
+    const double peak_lower = spectrum->gamma_channel_lower( first_peak_channel );
+    const double peak_upper = spectrum->gamma_channel_upper( last_peak_channel );
+    const double peak_width = peak_upper - peak_lower;
+
+    // What the continuum actually puts in the peak region: a line integrated over a range is its
+    //  value at the range's centre times the width.
+    const double analytic = density( 0.5*(peak_lower + peak_upper) ) * peak_width;
+
+    // What averaging the two side-band densities would have given.
+    const double lower_width = spectrum->gamma_channel_upper( result.last_lower_continuum_channel )
+                               - spectrum->gamma_channel_lower( result.first_lower_continuum_channel );
+    const double upper_width = spectrum->gamma_channel_upper( result.last_upper_continuum_channel )
+                               - spectrum->gamma_channel_lower( result.first_upper_continuum_channel );
+    const double mean_of_densities = 0.5*( (result.lower_continuum_counts_sum / lower_width)
+                                          + (result.upper_continuum_counts_sum / upper_width) )
+                                     * peak_width;
+
+    BOOST_TEST_MESSAGE( (non_uniform ? "non-uniform" : "uniform")
+        << " binning: lower band " << lower_width << " keV, upper band " << upper_width << " keV;"
+        << " analytic " << analytic << ", fit " << result.estimated_peak_continuum_counts
+        << ", mean-of-densities " << mean_of_densities
+        << " (" << 100.0*(mean_of_densities - analytic)/analytic << "%)" );
+
+    // The fit has to land on the continuum it was given, whatever the binning.
+    BOOST_CHECK_CLOSE_FRACTION( static_cast<double>(result.estimated_peak_continuum_counts),
+                               analytic, 1.0E-4 );
+
+    // And `continuum_eqn` has to be the same line - it is what the MDA chart draws under the peak,
+    //  and the two used to disagree with each other on exactly this binning.
+    const double eqn_at_peak_mid = result.continuum_eqn[0]
+        + result.continuum_eqn[1]*(0.5*(peak_lower + peak_upper) - input.gamma_energy);
+    BOOST_CHECK_CLOSE_FRACTION( eqn_at_peak_mid*peak_width, analytic, 1.0E-4 );
+
+    if( non_uniform )
+    {
+      // States the size of the defect this case pins: the bands differ in width by more than 10%,
+      //  and the old estimator was wrong by more than 0.2% of the continuum because of it.
+      BOOST_CHECK_GT( upper_width/lower_width, 1.10 );
+      BOOST_CHECK_GT( fabs(mean_of_densities - analytic)/analytic, 2.0E-3 );
+    }else
+    {
+      // The reduction property: with uniform channels and an equal number of side channels each
+      //  side, the fit *is* the mean of the two densities.  Every production caller is in this
+      //  case, so nothing about the change may move here.
+      BOOST_CHECK_CLOSE_FRACTION( static_cast<double>(result.estimated_peak_continuum_counts),
+                                 mean_of_densities, 1.0E-6 );
+    }
+
+    return result;
+  };//run(...)
+
+  run( true );
+  run( false );
+}// BOOST_AUTO_TEST_CASE( CurrieContinuumNonUniformBinning )
 
 
 BOOST_AUTO_TEST_CASE( Table16OfAQ48 )

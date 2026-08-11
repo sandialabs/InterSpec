@@ -163,4 +163,7 @@
   <message id="dlt-err-distance-zero-negative">La distance ne peut pas être zéro ou négative</message>
   <message id="dlt-qr-tool-state-title">État de l'Outil de confiance de détection</message>
   <message id="dlt-qr-tool-state-txt">État actuel de l'outil de confiance de détection.</message>
+  <message id="dlt-estimating-spread">Calcul de la dispersion…</message>
+  <message id="dlt-spread-band">(typiquement {1}&ndash;{2}&times; cette valeur)</message>
+  <message id="dlt-spread-unavailable">La dispersion n'a pas pu être estimée.</message>
 </messages>

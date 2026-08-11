@@ -31,7 +31,10 @@
   margin-left: 10px;
   margin-right: 10px;
   
-  height: 41px;
+  /* Two lines of 14px text at the usual width, but the projected-band suffix can push a long
+     result to three - so grow rather than clip what the user came here to read. */
+  height: auto;
+  min-height: 41px;
   
   font-size: 14px;
   font-weight: 500;
@@ -165,13 +168,8 @@
 }
 
 
-/* Phone-only: shrink inputs, let DetectorDisplay take its own row, allow the
-   result text to grow when it wraps instead of clipping at 41px. */
-.IsPhone .DetectionLimitSimple .ResultsTxtArea {
-  height: auto;
-  min-height: 41px;
-}
-
+/* Phone-only: shrink inputs, and let DetectorDisplay take its own row.  The result text growing
+   rather than clipping is no longer phone-specific - see `.ResultsTxtArea` above. */
 .IsPhone .DetectionLimitSimple .GeneralInput > input { width: 75px; }
 .IsPhone .DetectionLimitSimple .GeneralInput > select { width: 80px; }
 .IsPhone .DetectionLimitSimple .GeneralInput input.Wt-spinbox { width: 55px; }
