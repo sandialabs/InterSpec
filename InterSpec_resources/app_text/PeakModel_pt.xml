@@ -23,7 +23,6 @@
   <message id="pm-hdr-up-energy">Energia Superior</message>
   <message id="pm-hdr-roi-counts">Contagens ROI</message>
 
-
   <message id="pm-hdr-tt-mean">Energia Média</message>
   <message id="pm-hdr-tt-fwhm">Largura Total à Meia Altura</message>
   <message id="pm-hdr-tt-amp">Área do Pico</message>
@@ -34,6 +33,5 @@
   <message id="pm-hdr-tt-color">Cor do pico</message>
   <message id="pm-hdr-tt-label">Rótulo especificado pelo usuário</message>
   <message id="pm-hdr-tt-roi-counts">Integral das contagens gama sobre a região de interesse</message>
-  <message id="pm-hdr-tt-"></message>
 
 </messages>

@@ -5,8 +5,6 @@
   <message id="dls-fit-fwhm-btn">Fit FWHM...</message>
   <message id="dls-select-drf-btn">Select detector...</message>
   <message id="dls-further-details-link">further details...</message>
-  <message id="dls-conf-level-label">Confidence Level:</message>
-  <message id="dls-conf-level-label-short">C.L.:</message>
   <message id="dls-roi-lower-label">ROI Lower:</message>
   <message id="dls-roi-lower-label-short">Lower:</message>
   <message id="dls-roi-upper-label">ROI Upper:</message>
@@ -25,29 +23,16 @@
       The option to choose side-channels adjacent to the peak-region becomes no-longer relevant, so will be hidden.
     </p>
   </message>
-  <message id="dls-scale-spectrum-cb">Scale Time:</message>
-  <message id="dls-scale-spectrum-cb-short">Scale 🕐</message>
-  <message id="dls-scale-spectrum-empty-text">e.g. 5 min</message>
-  <message id="dls-scale-spectrum-tt">
-    Compute the limit you would expect from a measurement of the entered real time, treating the
-    current spectrum as a per-second rate estimate.  When checked, channel counts are scaled by
-    (entered real time) / (current spectrum real time), and the live time is scaled by the same
-    ratio so the dead-time fraction is preserved.
-    <p>
-      Most accurate when scaling to a shorter or comparable dwell time; for much longer dwells
-      the result is optimistic, since the rate-estimate uncertainty exceeds the projected
-      Poisson noise.
-    </p>
-  </message>
-  <message id="dls-err-bad-scale-time">Invalid scale time - expected something like '5 min', '300 s', or '00:05:00'.</message>
-  <message id="dls-err-zero-realtime">Cannot scale: foreground spectrum has zero real time.</message>
-  <message id="dls-result-scaled-postfix"> (LT={1})</message>
+
+  <!-- The predicted spread of a projected limit.  A projection is a prediction about a measurement
+       nobody has taken, and its median alone hides how much the answer can move; the band is what
+       makes the number usable for planning.  Measured to cover at its nominal rate on a real
+       background - see `ProjectedMeasurementMonteCarlo`. -->
+  <message id="dls-result-projected-band"> (typically {1}&ndash;{2}&times; this)</message>
+
   <message id="dls-scale-more-info-note">
     Scaled to real time {1} (live time {2}, ratio &times;{3} of measurement real time {4}).
   </message>
-  <message id="dls-cont-norm-unknown">Floating</message>
-  <message id="dls-cont-norm-not-present">As no signal</message>
-  <message id="dls-cont-norm-fixed-by-sides">From sides</message>
   <message id="dls-roi-changed-no-gamma">Changing the ROI excluded primary gamma - not changing</message>
   <message id="dls-suggest-fwhm">Detector FWHM: {1} keV</message>
   <message id="dls-rough-est-fwhm">Rough Est. FWHM: {1} keV</message>
@@ -84,6 +69,13 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">Peak for upper bound of {1} @{2} CL</message>
   <message id="dls-results-txt-upper-bound-act">Less than {1} @{2} CL</message>
+  <!-- A background-reference result describes a measurement nobody has taken, so it must not
+       be worded as a bound on the loaded spectrum.  Same distinction the Detection Confidence
+       Tool makes with dl-limit-predicted. -->
+  <message id="dls-results-txt-predicted-act">Predicted sensitivity: less than {1} @{2} CL for a {3} measurement</message>
+  <message id="dls-results-txt-predicted-counts">Predicted sensitivity: less than {1} signal counts @{2} CL for a {3} measurement</message>
+  <message id="dls-chart-title-predicted-act">Peak for predicted sensitivity of {1} @{2} CL</message>
+  <message id="dls-chart-title-predicted-counts">Peak for predicted sensitivity of {1} counts @{2} CL</message>
   <message id="dls-chart-title-upper-bound-counts">Peak for upper bound of {1} counts @{2} CL</message>
   <message id="dls-results-txt-upper-bound-counts">Less than {1} signal counts present @{2} CL</message>
   <message id="dls-err-no-meas">No measurement available</message>
@@ -108,7 +100,4 @@
   <message id="dls-err-select-det">Please select a detector efficiency function.</message>
   <message id="dls-err-neg-distance">Distance can't be negative.</message>
   <message id="dls-err-no-fwhm-info">Detector efficiency function does not have FWHM info - please fit for FWHM, or change detector.</message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
 </messages>

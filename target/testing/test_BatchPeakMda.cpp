@@ -508,7 +508,13 @@ BOOST_AUTO_TEST_CASE( DeconLimitInCounts )
   //  (`sigma = fwhm/PhysicalUnits::fwhm_nsigma`); the loose ratio band above does not - reverting
   //  that constant to
   //  the old, wrong 2.634 moves this number by ~11% but keeps the ratio inside the band.
-  BOOST_CHECK_CLOSE( decon_limit, 74.51, 3.0 );
+  //
+  // 2026-08: moved from 74.51 to 81.51 when the deconvolution profile changed from a
+  //  modified-Neyman chi-square (whose observed-count weights bias fitted counts low, and whose
+  //  continuum was solved against a different, clipped objective) to a Poisson/Cash likelihood
+  //  with the continuum profiled against that same likelihood.  The limit loosens by 9.4%, and
+  //  decon/Currie moves from 0.780 to 0.853.
+  BOOST_CHECK_CLOSE( decon_limit, 81.51, 3.0 );
 }//BOOST_AUTO_TEST_CASE( DeconLimitInCounts )
 
 
@@ -669,7 +675,120 @@ BOOST_AUTO_TEST_CASE( UnbracketedDeconLimitIsReported )
   BOOST_CHECK( !json["DeconFoundUpperLimit"].get<bool>() );
   BOOST_REQUIRE( json.contains("DeconError") );
   BOOST_CHECK_EQUAL( json["DeconError"].get<string>(), mda.decon_error );
+
+  // The statistic keys keep these exact names.  They are a published template contract, and the
+  //  deliberate decision is to keep labelling the Cash statistic "chi2" for users - so a rename
+  //  here would silently break every existing report template.
+  BOOST_REQUIRE( json.contains("DeconBestChi2") );
+  BOOST_REQUIRE( json.contains("DeconLimitChi2") );
+  BOOST_CHECK_CLOSE( json["DeconBestChi2"].get<double>(), 1.0, 1.0E-6 );
 }//BOOST_AUTO_TEST_CASE( UnbracketedDeconLimitIsReported )
+
+
+/** The semantic keys added in Increment C: without them a report cannot tell an upper bound on the
+ measured spectrum from a predicted sensitivity for a future one.
+ */
+BOOST_AUTO_TEST_CASE( DeconLimitSemanticsAreReported )
+{
+  using namespace DetectionLimitCalc;
+
+  const auto make_mda = []( const DeconMeasurementModel model, const DeconLimitType limit_type,
+                            const bool predicted, const double sample_exposure )
+                                                          -> BatchPeak::NotFitPeakMda {
+    BatchPeak::NotFitPeakMda mda;
+    mda.decon_attempted = true;
+    mda.decon_computed = true;
+    mda.decon_quantity_is_counts = true;
+
+    auto decon = make_shared<DeconActivityOrDistanceLimitResult>();
+    decon->foundUpperCl = true;
+    decon->upperLimit = 42.0;
+    decon->upperLimitChi2 = 3.5;
+    decon->overallBestChi2 = 1.0;
+    decon->overallBestQuantity = 2.0;
+    decon->limitType = limit_type;
+    decon->is_predicted_sensitivity = predicted;
+
+    // Deliberately different values.  `sampleExposure` is the LIVE time the likelihood used and
+    //  `sampleRealTime` is what the user entered; reports must quote the latter, and setting them
+    //  apart is what makes this test able to tell.  A 5% dead-time fraction here.
+    decon->sampleExposure = 0.95 * sample_exposure;
+    decon->sampleRealTime = sample_exposure;
+    decon->baseInput.measurement_model = model;
+
+    DeconRoiInfo roi;
+    roi.cont_norm_method = DeconContinuumNorm::FixedByEdges;
+    decon->baseInput.roi_info.push_back( roi );
+
+    auto best = make_shared<DeconComputeResults>();
+    best->statistic_name = "Cash";
+    best->num_continuum_iterations = 7;
+    best->num_continuum_restarts = 0;
+    decon->overallBestResults = best;
+
+    mda.decon_result = decon;
+    return mda;
+  };//make_mda lambda
+
+  // An ordinary one-sided upper limit on the spectrum in hand.
+  {
+    const BatchPeak::NotFitPeakMda mda = make_mda( DeconMeasurementModel::CurrentSpectrum,
+                                                  DeconLimitType::OneSidedUpperLimit, false, 0.0 );
+    nlohmann::json json;
+    BatchInfoLog::add_mda_to_json( json, mda );
+
+    BOOST_CHECK_EQUAL( json["DeconContinuumNorm"].get<string>(), "FixedByEdges" );
+    BOOST_CHECK_EQUAL( json["DeconMeasurementModel"].get<string>(), "CurrentSpectrum" );
+    BOOST_CHECK_EQUAL( json["DeconLimitType"].get<string>(), "OneSidedUpperLimit" );
+    BOOST_CHECK( !json["DeconIsPredictedSensitivity"].get<bool>() );
+    BOOST_CHECK_EQUAL( json["DeconStatisticName"].get<string>(), "Cash" );
+    BOOST_CHECK_EQUAL( json["DeconOptimizerIterations"].get<size_t>(), 7 );
+    BOOST_CHECK_EQUAL( json["DeconOptimizerRestarts"].get<size_t>(), 0 );
+
+    // Absent, not zero: a template testing for its presence must not see an exposure for a limit
+    //  that describes no future measurement.
+    BOOST_CHECK( !json.contains("DeconSampleExposure_s") );
+  }
+
+  // A predicted sensitivity for a future measurement.
+  {
+    const BatchPeak::NotFitPeakMda mda = make_mda( DeconMeasurementModel::BackgroundReference,
+                                                  DeconLimitType::OneSidedUpperLimit, true, 300.0 );
+    nlohmann::json json;
+    BatchInfoLog::add_mda_to_json( json, mda );
+
+    BOOST_CHECK_EQUAL( json["DeconMeasurementModel"].get<string>(), "BackgroundReference" );
+    BOOST_CHECK( json["DeconIsPredictedSensitivity"].get<bool>() );
+    // The real time, not the live time the likelihood used - matching the GUI and every result
+    //  string.  Quoting `sampleExposure` here would give 285.
+    BOOST_REQUIRE( json.contains("DeconSampleExposure_s") );
+    BOOST_CHECK_CLOSE( json["DeconSampleExposure_s"].get<double>(), 300.0, 1.0E-6 );
+  }
+
+  // A central interval, which is a different product from a one-sided bound.
+  {
+    const BatchPeak::NotFitPeakMda mda = make_mda( DeconMeasurementModel::CurrentSpectrum,
+                                                  DeconLimitType::CentralInterval, false, 0.0 );
+    nlohmann::json json;
+    BatchInfoLog::add_mda_to_json( json, mda );
+    BOOST_CHECK_EQUAL( json["DeconLimitType"].get<string>(), "CentralInterval" );
+  }
+
+  // Regions of interest that disagree are reported as "mixed" rather than an arbitrary one.
+  {
+    BatchPeak::NotFitPeakMda mda = make_mda( DeconMeasurementModel::CurrentSpectrum,
+                                             DeconLimitType::OneSidedUpperLimit, false, 0.0 );
+    auto decon = make_shared<DeconActivityOrDistanceLimitResult>( *mda.decon_result );
+    DeconRoiInfo other;
+    other.cont_norm_method = DeconContinuumNorm::Floating;
+    decon->baseInput.roi_info.push_back( other );
+    mda.decon_result = decon;
+
+    nlohmann::json json;
+    BatchInfoLog::add_mda_to_json( json, mda );
+    BOOST_CHECK_EQUAL( json["DeconContinuumNorm"].get<string>(), "mixed" );
+  }
+}//BOOST_AUTO_TEST_CASE( DeconLimitSemanticsAreReported )
 
 
 BOOST_AUTO_TEST_CASE( DefaultTemplatesRender )
@@ -686,13 +805,19 @@ BOOST_AUTO_TEST_CASE( DefaultTemplatesRender )
   BatchPeak::BatchPeakFitOptions without_mda = with_mda;
   without_mda.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::None;
 
+  // The deconvolution blocks in the templates were never exercised by any test, so a wrong key name
+  //  inside one of their `{% if %}`s would not have been caught.  One not-fit peak, so the scan is
+  //  a single region of interest and stays cheap.
+  BatchPeak::BatchPeakFitOptions with_decon = with_mda;
+  with_decon.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::CurrieAndDecon;
+
   const string tmplt_dir = BatchInfoLog::template_include_dir( with_mda );
   BOOST_REQUIRE_MESSAGE( SpecUtils::is_directory(tmplt_dir),
                         "Report template directory not at '" << tmplt_dir << "'" );
 
   inja::Environment env = BatchInfoLog::get_default_inja_env( tmplt_dir );
 
-  for( const BatchPeak::BatchPeakFitOptions &options : { with_mda, without_mda } )
+  for( const BatchPeak::BatchPeakFitOptions &options : { with_mda, without_mda, with_decon } )
   {
     const BatchPeak::BatchPeakFitResult result
           = run_fit( {661.0, 1173.0}, {{661.0, 5000.0}}, options );
@@ -769,6 +894,27 @@ BOOST_AUTO_TEST_CASE( DefaultTemplatesRender )
 
       const string summary_html = render( "html", BatchInfoLog::TemplateRenderType::PeakFitSummary, summary );
       BOOST_CHECK( summary_html.find("Not detected") != string::npos );
+
+      // The deconvolution blocks are guarded on `DeconAttempted`, so they only render for the
+      //  `currie-and-decon` method.  Check the wording actually names which quantity it is - a
+      //  limit reported without saying whether it bounds this spectrum or predicts a future one is
+      //  exactly the ambiguity Increment C removes.
+      if( options.not_fit_peak_mda == BatchPeak::NotFitPeakMdaMethod::CurrieAndDecon )
+      {
+        const string act_html = render( "html", BatchInfoLog::TemplateRenderType::ActShieldIndividual,
+                                        act_data );
+        BOOST_CHECK_MESSAGE( act_html.find("The deconvolution method") != string::npos,
+                            "Deconvolution block missing from activity report:\n" << act_html );
+
+        // Either it produced a limit and said which kind, or it said why it could not.
+        const bool describes_limit = (act_html.find("one-sided upper limit") != string::npos)
+                                     || (act_html.find("central-interval") != string::npos)
+                                     || (act_html.find("predicts a sensitivity") != string::npos);
+        const bool explains_absence = (act_html.find("did not give a limit") != string::npos);
+        BOOST_CHECK_MESSAGE( describes_limit || explains_absence,
+                            "Deconvolution block named neither the limit kind nor a reason:\n"
+                            << act_html );
+      }//if( the deconvolution method was used )
     }//if( limits were computed )
   }//for( const BatchPeak::BatchPeakFitOptions &options : { with_mda, without_mda } )
 }//BOOST_AUTO_TEST_CASE( DefaultTemplatesRender )

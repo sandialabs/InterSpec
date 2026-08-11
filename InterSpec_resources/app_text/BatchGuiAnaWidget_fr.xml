@@ -43,7 +43,6 @@
   <message id="bgw-reports-write-csv">CSV résumé</message>
   <message id="bgw-reports-write-csv-tooltip">Écrire un fichier CSV résumé avec les résultats d'analyse de tous les fichiers d'entrée.</message>
   <message id="bgw-reports-write-custom-per-file">Personnalisé par fichier</message>
-  <message id="bgw-reports-write-custom-per-file-tooltip">Télécharger un modèle de rapport personnalisé à utiliser pour chaque fichier.</message>
   <message id="bgw-reports-write-custom-summary">Résumé personnalisé</message>
   <message id="bgw-reports-write-custom-summary-tooltip">Un ou plusieurs fichiers modèles utilisés pour fournir un résumé de tous les fichiers d'entrée.</message>
 
@@ -58,7 +57,6 @@
   <message id="bgw-no-ana-act-shield-invalid-background">Bruit de fond invalide</message>
   <message id="bgw-no-ana-no-input-files">Aucun fichier d'entrée.</message>
   <message id="bgw-no-ana-invalid-output-path">Veuillez sélectionner un répertoire de sortie valide.</message>
-
 
   <!-- Analysis progress and results -->
   <message id="bgw-performing-work-title">Exécution du travail</message>

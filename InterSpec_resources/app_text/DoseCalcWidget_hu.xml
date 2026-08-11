@@ -36,7 +36,6 @@
   <message id="dcw-generic-shield-invalid">Hiba a dózis számításánál, érvénytelen árnyékolás, sajnáljuk :{</message>
   <message id="dcw-dist-invalid">A távolság érvénytelen.</message>
   <message id="dcw-err-other">Hiba a forrásdózis számításánál, sajnáljuk :{</message>
-  <message id="dcw-invalid-src-dose">Érvénytelen forrásdózis.</message>
   <message id="dcw-invalid-src-act">Érvénytelen forrásaktivitás.</message>
   <message id="dcw-invalid-src-dose">Érvénytelen forrásdózis.</message>
   <message id="dcw-failed-find-lower-dist">Nem sikerült megtalálni az alsó határoló távolságot, {1} cm-nél.</message>

@@ -9,25 +9,6 @@
   <message id="dlt-roi-lower-label">ROI निचला:</message>
   <message id="dlt-roi-upper-label">ROI ऊपरी:</message>
   <message id="dlt-continuum-label">कंटीन्यूअम</message>
-  <message id="dlt-cont-norm-label">कंट. नॉर्म</message>
-  <message id="dlt-cont-norm-floating">फ्लोटिंग</message>
-  <message id="dlt-cont-norm-fixed-edges">किनारों पर निश्चित</message>
-  <message id="dlt-cont-norm-fixed-full-roi">पूर्ण ROI निश्चित</message>
-  <message id="dlt-cont-norm-tt">
-    कंटीन्यूअम सामान्यीकरण कैसे निर्धारित किया जाना चाहिए:
-    <ul><li><b>फ्लोटिंग</b>: बहुपदीय कंटीन्यूअम प्रत्येक दी गई गतिविधि के लिए फिट किया जाता है -
-    गतिविधि कंटीन्यूअम को प्रभावित करती है।</li>
-    <li><b>किनारों पर निश्चित</b>: ROI के दोनों ओर के चैनलों का उपयोग एक
-    रैखिक कंटीन्यूअम निर्धारित करने के लिए किया जाता है जो निश्चित है, और न्यूक्लाइड की गतिविधि से प्रभावित नहीं होता है।</li>
-    <li><b>पूर्ण ROI निश्चित</b>: कंटीन्यूअम ROI की पूरी ऊर्जा सीमा का उपयोग करके फिट किया जाता है,
-    शून्य गाउसियन आयाम मानते हुए; बाद में, पीक का गाउसियन घटक
-    इस निश्चित कंटीन्यूअम के शीर्ष पर बैठेगा।<br/>
-    यह प्रभावी रूप से दावा कर रहा है कि आप जानते हैं कि डेटा में कोई सिग्नल पीक मौजूद नहीं है।
-    कंटीन्यूअम न्यूक्लाइड गतिविधि मान से प्रभावित नहीं होगा, और गाउसियन
-    पीक का घटक मूल्यांकन करते समय इस निश्चित कंटीन्यूअम के शीर्ष पर बैठेगा
-    &chi;<sup>2</sup>।</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">एकल पीक क्यूरी सीमा</message>
   <message id="dlt-num-side-channels-label">पार्श्व चैनल संख्या</message>
   <message id="dlt-further-details-link">अधिक विवरण...</message>
@@ -66,14 +47,6 @@
   <message id="dlt-distance-limit">दूरी सीमा</message>
   <message id="dlt-peaks-disp-act-label">पीक प्रदर्शन गतिविधि:</message>
   <message id="dlt-peaks-disp-dist-label">पीक प्रदर्शन दूरी:</message>
-  <message id="dlt-conf-level-label">आत्मविश्वास स्तर:</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68.2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95.4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99.7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">उपयोग करने के लिए गामा लाइनें</message>
   <message id="dlt-min-rel-intensity-label">न्यूनतम सापेक्ष तीव्रता:</message>
   <message id="dlt-fit-fwhm-btn">FWHM फिट करें...</message>
@@ -188,4 +161,9 @@
   <message id="dlt-err-upper-limit-negative">काउंट्स की ऊपरी सीमा शून्य से कम है, लेकिन देखे गए काउंट्स L_d से अधिक हैं।</message>
   <message id="dlt-err-activity-zero-negative">गतिविधि शून्य या नकारात्मक नहीं हो सकती</message>
   <message id="dlt-err-distance-zero-negative">दूरी शून्य या नकारात्मक नहीं हो सकती</message>
+  <message id="dlt-qr-tool-state-title">पता लगाने का विश्वास उपकरण की स्थिति</message>
+  <message id="dlt-qr-tool-state-txt">पता लगाने का विश्वास उपकरण की वर्तमान स्थिति।</message>
+  <message id="dlt-estimating-spread">प्रसार की गणना…</message>
+  <message id="dlt-spread-band">(आमतौर पर इस मान का {1}&ndash;{2}&times;)</message>
+  <message id="dlt-spread-unavailable">प्रसार का अनुमान नहीं लगाया जा सका।</message>
 </messages>

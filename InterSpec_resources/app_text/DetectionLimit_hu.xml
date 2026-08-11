@@ -1,0 +1,190 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- A DetectionLimit.xml fordítása -->
+
+  <message id="dl-conf-95">95%</message>
+  <message id="dl-conf-99">99%</message>
+  <message id="dl-conf-1sigma">68,27%</message>
+  <message id="dl-conf-2sigma">95,45%</message>
+  <message id="dl-conf-3sigma">99,73%</message>
+  <message id="dl-conf-4sigma">99,9937%</message>
+  <message id="dl-conf-5sigma">99,999943%</message>
+  <message id="dl-conf-level-one-sided">Egyoldali konf. szint:</message>
+  <message id="dl-conf-level-central">Centrális konf. szint:</message>
+  <message id="dl-conf-level-one-sided-short">Egyold. k.sz.:</message>
+  <message id="dl-conf-level-tt">
+    A konfidenciaszint, amelyen a határértéket megadjuk.
+    <p>
+      Az öt nem kerek érték az 1&sigma; és 5&sigma; közötti centrális normális valószínűség
+      (68,27%, 95,45%, 99,73%, 99,9937%, 99,999943%), itt azonban <b>egyoldali</b>
+      konfidenciaszintként alkalmazzuk őket.  Egy &quot;1&sigma;&quot; választás tehát nem egyszigmás
+      egyoldali korlát - ezek azért szerepelnek, mert ismerős számok, nem pedig azért, mert a
+      határérték bármely szigma többszöröse volna.
+    </p>
+  </message>
+
+  <!-- A háttérgörbe kezelése -->
+  <message id="dl-cont-norm-label">Kont. norm.:</message>
+  <message id="dl-cont-norm-floating">Lebegő</message>
+  <message id="dl-cont-norm-edges">Oldalcsatornákhoz rögzítve</message>
+  <message id="dl-cont-norm-edges-short">Oldalakról</message>
+  <message id="dl-cont-norm-tt">
+    Honnan származik a csúcs alatti háttérre vonatkozó ismeret - és így mit is állít Ön.  Ez külön
+    kérdés attól, hogy a határérték <i>melyik mérésre</i> vonatkozik; lásd a mérés beállítást.
+    <ul>
+      <li><b>Lebegő</b>: a kontinuumot ugyanazokból a csatornákból következtetjük ki, amelyek a jelet
+      tartalmazhatják, így semmit nem feltételezünk a környezetről.  A széles vagy egyenletes
+      többletet elnyeli a kontinuum, így csak a valóban csúcs alakú többlet számít jelnek - ez a
+      szigorúbb próbája annak, hogy &quot;valóban csúcs-e az ott?&quot;.  Ez az alapértelmezés, és ez
+      a legjobban validált.</li>
+      <li><b>Oldalcsatornákhoz rögzítve</b>: a hátteret a tartomány melletti csatornákban mérjük és
+      visszük be, ami azt állítja, hogy ezek a vállak nem tartalmaznak jelet, és hogy a kontinuum
+      egyenesen halad át rajtuk.  Egy egyszerűen a válloknál magasabban fekvő tartomány mostantól
+      jelnek számít, akár csúcs alakú, akár nem.  Lineáris kontinuumot igényel: négy plusz négy
+      oldalcsatorna éppen csak meghatároz egy tengelymetszetet és egy meredekséget.</li>
+    </ul>
+    <p>
+      A rögzítés információt ad hozzá, ezért általában szűkebb határértéket ad - de a szűkebb szám nem
+      automatikusan jobb.  A lebegő mód a <em>tágabb</em> határértékek felé téved; a rögzítés a
+      <em>hibás</em> határértékek felé, bármelyik irányban, ha egy szomszédos vonal, egy lépcső vagy a
+      görbület miatt a vállak nem reprezentatívak.  Alapértelmezésben a lebegőt használja, az
+      oldalcsatornákat pedig akkor, ha a tartomány mindkét oldalon több FWHM-en át tiszta, és a
+      többletérzékenység megéri az állítást.
+    </p>
+    <p>
+      Vegye figyelembe, hogy a vállak saját számlálási bizonytalansága is bekerül a likelihoodba, így
+      a gyenge rögzítés őszintén kitágítja a határértéket ahelyett, hogy ismertnek tettetné a
+      kontinuumot.
+    </p>
+  </message>
+
+  <!-- Mérési modell -->
+  <message id="dl-model-label">Mérés:</message>
+  <message id="dl-model-current">Jelenlegi spektrum</message>
+  <message id="dl-model-backref">Háttér-referencia</message>
+  <message id="dl-model-backref-cb">Háttér-referencia</message>
+  <message id="dl-model-tt">
+    Melyik mérésről szól a határérték.
+    <ul>
+      <li><b>Jelenlegi spektrum</b>: mennyi jel rejtőzhet a rendelkezésre álló spektrumban.  A
+      szokásos eset.</li>
+      <li><b>Háttér-referencia</b>: a betöltött spektrumról azt állítjuk, hogy nem tartalmaz jelet, és
+      ezzel jósoljuk meg, mit tudna kimutatni egy <i>jövőbeli</i> mérés.  A referencia beütéseit és a
+      vetített mérést együtt értékeljük, közös kontinuummal, így a referencia saját számlálási
+      statisztikája bekerül a válaszba, nem pedig eltűnik.</li>
+    </ul>
+    <p>
+      A háttér-referenciás eredmény <b>előrejelzett érzékenység</b>, nem pedig a kézben lévő
+      spektrumra vonatkozó korlát, és így is jelenik meg.  Medián várakozás: nincs megfigyelhető
+      jövőbeli mérés, ezért az előrejelzés a várt beütésszámoknál készül.  Ez addig áll, amíg a megadott idő e spektruméhoz hasonló vagy rövidebb; sokkal tovább nyúlva az eredmény optimistának bizonyul, 16-szorosnál nagyjából egyharmaddal, mert a tartomány valódi háttérgörbéje és a rá illesztett egyenes közti bármely eltérés az expozícióval nő, míg a számlálási zaj csak annak négyzetgyökével.
+    </p>
+  </message>
+  <message id="dl-model-backref-tt">
+    Azt állítja, hogy ez a spektrum nem tartalmaz jelet, és ezzel jósolja meg, mit tudna kimutatni egy
+    jövőbeli mérés.
+    <p>
+      Az eredmény a tervezett idejű mérésre vonatkozó <b>előrejelzett érzékenység</b>, nem pedig felső
+      határ erre a spektrumra.  A referencia saját számlálási statisztikája bekerül a válaszba, így a
+      rövid háttér ennek megfelelően gyengébb előrejelzést ad.
+    </p>
+  </message>
+
+  <!-- Határérték típusa -->
+  <message id="dl-limittype-label">Határérték:</message>
+  <message id="dl-limittype-upper">Felső korlát</message>
+  <message id="dl-limittype-central">Centrális intervallum</message>
+  <message id="dl-limittype-tt">
+    Melyik mennyiséget jelentsük.  Ezek különböző termékek, és eltérő küszöböt használnak a
+    statisztikán, ezért a választás kifejezett, nem pedig kitalált.
+    <ul>
+      <li><b>Felső korlát</b>: egyoldali korlát - &quot;az aktivitás kisebb mint U ezen a
+      konfidenciaszinten&quot;.  Szinte mindig ez a kívánt.</li>
+      <li><b>Centrális intervallum</b>: kétoldali intervallum - &quot;az aktivitás L és U között van
+      ezen a konfidenciaszinten&quot;.</li>
+    </ul>
+    <p>
+      Vegye figyelembe, hogy az egyoldali küszöbnél talált két gyök <b>nem</b> alkot centrális
+      intervallumot: együtt csak nagyjából 2&times;k.sz.&minus;1 lefedettséget adnak, így két 95%-os
+      egyoldali korlát körülbelül 90%-os centrális intervallumot ad.  Ha ez történik, az eredmény ezt
+      ki is mondja, nem nevezi intervallumnak.
+    </p>
+    <p>
+      Jel nélküli spektrumon a centrális intervallum rendszerint beleütközik a nullánál lévő fizikai
+      korlátba, így csak a felső végpont létezik; ilyenkor &quot;0 és U között&quot; alakban
+      jelenik meg.  Ez <b>nem</b> ugyanaz, mint egy azonos konfidenciájú egyoldali felső korlát - a
+      végpont magasabb küszöbön van, ami (1+k.sz.)/2 szintű egyoldali korláttá teszi.
+    </p>
+  </message>
+
+  <!-- Tervezett mérési idő -->
+  <message id="dl-plan-time-cb">Mérési idő:</message>
+  <message id="dl-plan-time-cb-short">Mérés 🕐</message>
+  <message id="dl-plan-time-empty-text">pl. 5 perc</message>
+  <message id="dl-plan-time-tt">
+    Az az időtartam, amelyről kérdez.  Egyetlen vezérlő, de két különböző módon jut el a számításhoz:
+    <ul>
+      <li>A Currie-módszernél, valamint amikor a határérték a betöltött spektrumra vonatkozik, a
+      spektrum csatornánkénti beütéseit erre a valós időre vetítjük (és az élő időt ugyanilyen
+      arányban, így a holtidő-hányad megmarad).</li>
+      <li>Amikor a spektrum <b>háttér-referencia</b>, a referencia beütéseit érintetlenül hagyjuk, és
+      ez lesz az előrejelzett jövőbeli mérés expozíciója - így a referencia saját számlálási
+      statisztikája bekerül a válaszba, ahelyett hogy eltűnne.</li>
+    </ul>
+    <p>
+      A spektrum vetítése jól előrejelzi az új mérés <b>tipikus</b> határértékét; amit alábecsül, az
+      a körülötte lévő <b>szórás</b>.  A felskálázott beütéseket Poisson-eloszlásúnak tekintjük, a
+      felskálázott beütésszámmal egyenlő szórásnégyzettel, ami azt állítja, hogy a betöltött
+      spektrum beütésrátája pontosan ismert; valójában a vetítés örökli e spektrum saját
+      számlálási zaját.  Egy valódi, 11,5 órás háttérből vett méréseken mérve a mediánra vetített
+      Currie-határérték 64-szeres tartományon belül 4%-on belül volt ahhoz képest, amit a mérés
+      valóban adott, míg a körülötte lévő tényleges szórás k&#160;=&#160;1-nél mintegy 1,6&#215;,
+      k&#160;=&#160;16-nál pedig mintegy 4&#215; szélesebb volt a sugalltnál, ahol k a megadott idő
+      osztva a betöltött spektruméval.  Így k nagyjából 1-ig biztonságos; azon túl tervezési
+      becslésként kezelje a számot, ne korlátként.
+    </p>
+    <p>
+      A háttér-referenciás út nem skálázza a beütéseket, így nála nincs ilyen probléma - viszont csak
+      a dekonvolúciós határértékre vonatkozik.  A mellette megjelenített bármely Currie-határérték
+      továbbra is vetített, és a fenti figyelmeztetés érvényes rá.
+    </p>
+  </message>
+  <message id="dl-err-bad-plan-time">Érvénytelen mérési idő - valami ilyesmi várt: '5 perc', '300 s' vagy '00:05:00'.</message>
+
+  <!-- Az eredmény szövege -->
+  <message id="dl-limit-upper">Kevesebb mint {1} {2} konfidencián (egyoldali felső korlát), &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-predicted">Előrejelzett érzékenység: kevesebb mint {1} {2} konfidencián egy {3} hosszú mérésre, &chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central">{1} és {2} között {3} centrális konfidencián, &chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central-upper">0 és {1} között {2} centrális konfidencián, &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-two-one-sided">Két egyoldali {1} korlát: {2} és {3} között (~{4} centrális lefedettség), &chi;<sup>2</sup>={5}</message>
+  <message id="dl-limit-distance-lower">Távolság &ge;{1} {2} konfidencián (egyoldali alsó korlát), &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-none">Nincs határérték: {1}</message>
+  <message id="dl-best-stat">Legjobb &chi;<sup>2</sup>: {1} itt: {2}, {3} szabadsági fok</message>
+  <message id="dl-best-stat-flat">&chi;<sup>2</sup> értéke {1} nagy távolságban, {2} szabadsági fok</message>
+
+  <message id="dl-stat-is-cash-tt">
+    Az itt &chi;<sup>2</sup>-ként jelölt mennyiség a <b>{1} statisztika</b> - Poisson-devianciája,
+    2&middot;&sum;(E &minus; n + n&middot;ln(n/E)), csatornánként egyszer összegezve (Cash 1979).
+    Gauss-féle &chi;<sup>2</sup> helyett azért használjuk, mert nincs benne a módosított Neyman-féle
+    szóráshiba, és nem igényel szóráskorlátot az üres csatornákhoz.
+    <p>
+      Csak a próbaaktivitások közötti <em>különbségek</em> értelmesek; a különbség ugyanazt az
+      aszimptotikus &chi;<sup>2</sup> eloszlást követi, mint egy Gauss-féle, és éppen ez határozza meg
+      a konfidenciaküszöböt.  Az abszolút értéke <b>nem</b> az illesztés jóságát méri:
+      E[statisztika] nem egyenlő (csatornák &minus; paraméterek) értékkel, így az egymás mellett
+      megjelenített két számból képzett &chi;<sup>2</sup>/szabadsági fok <b>nem</b> illesztésjósági
+      mérőszám, és nem is szabad annak olvasni.
+    </p>
+  </message>
+
+  <!-- Diagram -->
+  <message id="dl-chart-y-axis-chi2">χ²</message>
+  <message id="dl-chart-threshold-label">{1} küszöb (Δχ²={2})</message>
+  <message id="dl-migrate-nosig-notice">
+    A mentett állapot a visszavont &quot;feltételezzük, hogy nincs jelen jel&quot; kontinuumbeállítást
+    használta.  Ez azt állította, hogy a spektrum nem tartalmaz jelet, majd figyelmen kívül hagyta
+    ennek az állításnak a bizonytalanságát, ami körülbelül 40%-os lefedettséget adott ott, ahol 95%
+    volt meghirdetve.  Az állapot lebegő kontinuumként, háttér-referenciás mérésként lett újratöltve -
+    erre törekedett az eredeti beállítás is.  A mérési idő mostantól az előrejelzett jövőbeli mérés
+    hosszát jelenti, nem pedig e spektrum átskálázását - ellenőrizze, mielőtt a számra hagyatkozik.
+  </message>
+</messages>

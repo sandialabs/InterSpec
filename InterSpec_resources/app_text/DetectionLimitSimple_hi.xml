@@ -5,7 +5,6 @@
   <message id="dls-fit-fwhm-btn">FWHM फिट करें...</message>
   <message id="dls-select-drf-btn">डिटेक्टर चुनें...</message>
   <message id="dls-further-details-link">अधिक विवरण...</message>
-  <message id="dls-conf-level-label">विश्वास स्तर:</message>
   <message id="dls-roi-lower-label">ROI निचली:</message>
   <message id="dls-roi-upper-label">ROI ऊपरी:</message>
   <message id="dls-num-side-channel-label">साइड चैनल संख्या:</message>
@@ -20,9 +19,6 @@
       पीक-क्षेत्र के आसन्न साइड-चैनल चुनने का विकल्प अब प्रासंगिक नहीं रहेगा, इसलिए छिपाया जाएगा।
     </p>
   </message>
-  <message id="dls-cont-norm-unknown">फ्लोटिंग</message>
-  <message id="dls-cont-norm-not-present">कोई संकेत नहीं के रूप में</message>
-  <message id="dls-cont-norm-fixed-by-sides">पक्षों से</message>
   <message id="dls-roi-changed-no-gamma">ROI बदलने से प्राथमिक गामा बाहर हो गया - नहीं बदल रहा</message>
   <message id="dls-suggest-fwhm">डिटेक्टर FWHM: {1} keV</message>
   <message id="dls-rough-est-fwhm">मोटा अनुमान FWHM: {1} keV</message>
@@ -59,6 +55,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">{1} की ऊपरी सीमा के लिए पीक @{2} CL</message>
   <message id="dls-results-txt-upper-bound-act">{1} से कम @{2} CL</message>
+  <message id="dls-results-txt-predicted-act">पूर्वानुमानित संवेदनशीलता: {3} के मापन हेतु {2} वि.स्तर पर {1} से कम</message>
+  <message id="dls-results-txt-predicted-counts">पूर्वानुमानित संवेदनशीलता: {3} के मापन हेतु {2} वि.स्तर पर {1} संकेत गणनाओं से कम</message>
+  <message id="dls-chart-title-predicted-act">{1} की पूर्वानुमानित संवेदनशीलता के लिए पीक @{2} CL</message>
+  <message id="dls-chart-title-predicted-counts">{1} गणनाओं की पूर्वानुमानित संवेदनशीलता के लिए पीक @{2} CL</message>
   <message id="dls-chart-title-upper-bound-counts">{1} गणनाओं की ऊपरी सीमा के लिए पीक @{2} CL</message>
   <message id="dls-results-txt-upper-bound-counts">{1} संकेत गणनाओं से कम उपस्थित @{2} CL</message>
   <message id="dls-err-no-meas">कोई माप उपलब्ध नहीं</message>
@@ -83,7 +83,12 @@
   <message id="dls-err-select-det">कृपया डिटेक्टर दक्षता फ़ंक्शन चुनें।</message>
   <message id="dls-err-neg-distance">दूरी ऋणात्मक नहीं हो सकती।</message>
   <message id="dls-err-no-fwhm-info">डिटेक्टर दक्षता फ़ंक्शन में FWHM जानकारी नहीं है - कृपया FWHM के लिए फिट करें, या डिटेक्टर बदलें।</message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
+  <message id="dls-is-background-spectrum-cb-short">पृष्ठभूमि?</message>
+  <message id="dls-num-side-channel-label-short">पार्श्व चै.:</message>
+  <message id="dls-result-projected-band"> (आमतौर पर इस मान का {1}&ndash;{2}&times;)</message>
+  <message id="dls-roi-lower-label-short">निम्न:</message>
+  <message id="dls-roi-upper-label-short">उच्च:</message>
+  <message id="dls-scale-more-info-note">
+    {1} वास्तविक समय पर मापित (जीवंत समय {2}, मापन के वास्तविक समय {4} का &times;{3} अनुपात)।
+  </message>
 </messages>

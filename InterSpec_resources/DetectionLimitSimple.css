@@ -31,7 +31,10 @@
   margin-left: 10px;
   margin-right: 10px;
   
-  height: 41px;
+  /* Two lines of 14px text at the usual width, but the projected-band suffix can push a long
+     result to three - so grow rather than clip what the user came here to read. */
+  height: auto;
+  min-height: 41px;
   
   font-size: 14px;
   font-weight: 500;
@@ -165,19 +168,14 @@
 }
 
 
-/* Phone-only: shrink inputs, let DetectorDisplay take its own row, allow the
-   result text to grow when it wraps instead of clipping at 41px. */
-.IsPhone .DetectionLimitSimple .ResultsTxtArea {
-  height: auto;
-  min-height: 41px;
-}
-
+/* Phone-only: shrink inputs, and let DetectorDisplay take its own row.  The result text growing
+   rather than clipping is no longer phone-specific - see `.ResultsTxtArea` above. */
 .IsPhone .DetectionLimitSimple .GeneralInput > input { width: 75px; }
 .IsPhone .DetectionLimitSimple .GeneralInput > select { width: 80px; }
 .IsPhone .DetectionLimitSimple .GeneralInput input.Wt-spinbox { width: 55px; }
 
 /* On phone we insert a dedicated row 3 for the DetectorDisplay, on the right side,
-   and shift everything else in rows 3-9 down by one row to make room. */
+   and shift everything else in rows 3-10 down by one row to make room. */
 .IsPhone .DetectionLimitSimple .GeneralInput .GridThirdRow { grid-row-start: 4; }
 .IsPhone .DetectionLimitSimple .GeneralInput .GridFourthRow { grid-row-start: 5; }
 .IsPhone .DetectionLimitSimple .GeneralInput .GridFifthRow { grid-row-start: 6; }
@@ -185,6 +183,7 @@
 .IsPhone .DetectionLimitSimple .GeneralInput .GridSeventhRow { grid-row-start: 8; }
 .IsPhone .DetectionLimitSimple .GeneralInput .GridEighthRow { grid-row-start: 9; }
 .IsPhone .DetectionLimitSimple .GeneralInput .GridNinthRow { grid-row-start: 10; }
+.IsPhone .DetectionLimitSimple .GeneralInput .GridTenthRow { grid-row-start: 11; }
 
 /* Pin the DetectorDisplay back to row 3 (overrides the GridThirdRow shift above).
    It spans every column to claim the whole row, but min-width:0 + overflow:hidden
@@ -230,4 +229,12 @@
   box-sizing: content-box;
   padding-top: 8px;
   margin-bottom: 15px;
+}
+
+/* Soft warnings qualify a limit that WAS produced; hard errors (.ErrMsg) mean there is no limit.
+   Duplicated from DetectionLimitTool.css because this widget loads only its own stylesheet.
+   The dark-theme colour lives in themes/dark/dark.css. */
+.DetectionLimitSimple .MdaWarnMsg {
+  display: block;
+  color: #9a6400;
 }

@@ -224,11 +224,14 @@ Wt::Signal<bool,Wt::WString> &BatchGuiAnaWidget::canDoAnalysisSignal()
 const std::vector<std::pair<const char *,double>> BatchGuiPeakFitWidget::sm_mda_confidence_levels{
   { "95%", 0.95 },
   { "99%", 0.99 },
-  { "1 σ", 0.682689492137086 },
-  { "2 σ", 0.954499736103642 },
-  { "3 σ", 0.997300203936740 },
-  { "4 σ", 0.999936657516334 },
-  { "5 σ", 0.999999426696856 }
+  // Plain percentages rather than a sigma claim: these are the central-normal probabilities for
+  //  1-5 sigma, but they are applied as ONE-SIDED confidence levels, so a "1 sigma" label would
+  //  describe a bound this is not.  Values unchanged.
+  { "68.27%", 0.682689492137086 },
+  { "95.45%", 0.954499736103642 },
+  { "99.73%", 0.997300203936740 },
+  { "99.9937%", 0.999936657516334 },
+  { "99.999943%", 0.999999426696856 }
 };
 
 

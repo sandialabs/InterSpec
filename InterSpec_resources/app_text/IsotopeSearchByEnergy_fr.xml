@@ -61,8 +61,6 @@
   <message id="isbe-category-nuc-xray-rctn-desc">Tous les nucléides, rayons X (désintégration et fluorescence) et réactions</message>
   <message id="isbe-category-xray">Rayons X de fluorescence</message>
   <message id="isbe-category-xray-desc">Rayons X de fluorescence uniquement</message>
-  <message id="isbe-category-reactions">Réactions</message>
-  <message id="isbe-category-reactions-desc">Réactions uniquement</message>
   <message id="isbe-category-medical">Nucléides médicaux</message>
   <message id="isbe-category-medical-desc">Nucléides médicaux courants</message>
   <message id="isbe-category-industrial">Nucléides industriels</message>

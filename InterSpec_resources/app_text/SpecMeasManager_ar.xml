@@ -49,15 +49,6 @@
   </message>
   <message id="smm-unsupported-document">يبدو أن هذا الملف ملف وثيقة، وغير مدعوم من InterSpec.</message>
   <message id="smm-invalid-peak-csv">الملف المرفوع بدا وكأنه ملف Peak CSV، لكنه كان غير صالح.</message>
-  <message id="smm-file-is-drf">
-    <p style="white-space: nowrap;">
-      يبدو أن هذا الملف دالة استجابة كاشف.
-    </p>
-    <p style="text-align: left; white-space: nowrap;">
-      الاسم: {1}
-    </p>
-   <p>هل تريد استخدام DRF هذا؟</p>
-  </message>
   <message id="smm-saved-drf-conf">
     تم حفظ '{1}' للاستخدام لاحقًا، وسيكون متاحًا في
     جزء "<em>الكفاءة النسبية</em>" من أداة "<em>اختيار دالة استجابة الكاشف</em>".
@@ -254,7 +245,6 @@
     استخدم <b>مدير الملفات</b> لتغيير هذا.
   </message>
 
-
   <!-- The visual components of the Spectrum Measurement Manager GUI -->
   <message id="smm-selected-spec-label">الطيف المختار: </message>
   <message id="smm-disp-as-btn">عرض كـ</message>
@@ -267,7 +257,6 @@
   <message id="smm-export-btn">تصدير...</message>
   <message id="smm-unload-btn">إلغاء تحميل</message>
   <message id="smm-unassign-label">إلغاء تخصيص: </message>
-
 
   <message id="smm-prev-states-window-title">الحالات المخزنة مسبقًا</message>
   <message id="smm-err-prev-state-unexpected">مشكلة غير متوقعة في عرض الحالات المحفوظة المتاحة: {1}</message>
@@ -327,9 +316,7 @@
   <message id="musd-err-decoding-url">خطأ في فك تشفير URL: {1}</message>
   <message id="musd-received-urls-list">تم استلام urls {1} من {2}.<p>في انتظار المزيد من URLS/رموز QR</p></message>
 
-
   <message id="uid-qr-code-pic">صورة رمز QR</message>
-  <message id="uid-no-qr-found">لم يتم العثور على رموز QR ⓘ</message>
   <message id="uid-no-qr-found-title">لم يتم العثور على رمز QR</message>
   <message id="uid-no-qr-content">
     <p>

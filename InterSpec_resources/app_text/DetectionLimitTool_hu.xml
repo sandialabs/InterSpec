@@ -9,25 +9,6 @@
   <message id="dlt-roi-lower-label">ROI alsó:</message>
   <message id="dlt-roi-upper-label">ROI felső:</message>
   <message id="dlt-continuum-label">Kontinuum</message>
-  <message id="dlt-cont-norm-label">Kont. norm.</message>
-  <message id="dlt-cont-norm-floating">Lebegő</message>
-  <message id="dlt-cont-norm-fixed-edges">Széleken rögzített</message>
-  <message id="dlt-cont-norm-fixed-full-roi">Teljes ROI rögzített</message>
-  <message id="dlt-cont-norm-tt">
-    A kontinuum normalizálás meghatározásának módja:
-    <ul><li><b>Lebegő</b>: A polinomiális kontinuumot minden adott aktivitásnál illesztjük -
-    az aktivitás befolyásolja a kontinuumot.</li>
-    <li><b>Széleken rögzített</b>: A ROI mindkét oldalán lévő csatornákat használjuk egy
-    lineáris kontinuum meghatározásához, amely rögzített, és nem függ a nuklid aktivitásától.</li>
-    <li><b>Teljes ROI rögzített</b>: A kontinuumot a ROI teljes energiatartományára illesztjük,
-    nulla Gauss-amplitúdót feltételezve; ezután a csúcs Gauss-komponense
-    erre a rögzített kontinuumra kerül.<br/>
-    Ez gyakorlatilag azt jelenti, hogy nincs jelcsúcs jelen az adatokban.
-    A kontinuumot nem befolyásolja a nuklid aktivitás értéke, és a csúcs Gauss-komponense
-    erre a rögzített kontinuumra kerül a
-    &chi;<sup>2</sup> kiértékelésekor.</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">Egycsúcsos Currie-határ</message>
   <message id="dlt-num-side-channels-label">Oldalsó csatornák száma</message>
   <message id="dlt-further-details-link">további részletek...</message>
@@ -66,14 +47,6 @@
   <message id="dlt-distance-limit">Távolság határ</message>
   <message id="dlt-peaks-disp-act-label">Csúcsok megj. akt.:</message>
   <message id="dlt-peaks-disp-dist-label">Csúcsok megj. táv.:</message>
-  <message id="dlt-conf-level-label">Megbízhatósági szint:</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68,2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95,4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99,7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">Használandó gamma-vonalak</message>
   <message id="dlt-min-rel-intensity-label">Min. relatív intenzitás:</message>
   <message id="dlt-fit-fwhm-btn">FWHM illesztés...</message>
@@ -188,4 +161,9 @@
   <message id="dlt-err-upper-limit-negative">Az impulzusszám felső határa kisebb, mint nulla, de a megfigyelt impulzusszám nagyobb, mint L_d.</message>
   <message id="dlt-err-activity-zero-negative">Az aktivitás nem lehet nulla vagy negatív</message>
   <message id="dlt-err-distance-zero-negative">A távolság nem lehet nulla vagy negatív</message>
+  <message id="dlt-qr-tool-state-title">A Detektálási megbízhatósági eszköz állapota</message>
+  <message id="dlt-qr-tool-state-txt">A detektálási megbízhatósági eszköz jelenlegi állapota.</message>
+  <message id="dlt-estimating-spread">Szórás számítása…</message>
+  <message id="dlt-spread-band">(jellemzően ennek {1}&ndash;{2}&times; szerese)</message>
+  <message id="dlt-spread-unavailable">A szórást nem sikerült megbecsülni.</message>
 </messages>

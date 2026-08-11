@@ -9,25 +9,6 @@
   <message id="dlt-roi-lower-label">ROI 下限:</message>
   <message id="dlt-roi-upper-label">ROI 上限:</message>
   <message id="dlt-continuum-label">連続体</message>
-  <message id="dlt-cont-norm-label">連続体正規化</message>
-  <message id="dlt-cont-norm-floating">浮動</message>
-  <message id="dlt-cont-norm-fixed-edges">端で固定</message>
-  <message id="dlt-cont-norm-fixed-full-roi">ROI全体で固定</message>
-  <message id="dlt-cont-norm-tt">
-    連続体の正規化を決定する方法：
-    <ul><li><b>浮動</b>：多項式連続体は、各与えられた活動に対して適合されます -
-    活動は連続体に影響します。</li>
-    <li><b>端で固定</b>：ROIの両側のチャンネルを使用して、
-    固定され、核種の活動の影響を受けない線形連続体を決定します。</li>
-    <li><b>ROI全体で固定</b>：連続体は、ROIの全エネルギー範囲を使用して適合され、
-    ガウス振幅がゼロであると仮定します。後で、ピークのガウス成分は
-    この固定連続体の上に配置されます。<br/>
-    これは、データに信号ピークが存在しないことを知っていることを実質的に主張しています。
-    連続体は核種の活動値の影響を受けず、ピークのガウス成分は
-    評価時にこの固定連続体の上に配置されます
-    &chi;<sup>2</sup>。</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">単一ピークカリー限界</message>
   <message id="dlt-num-side-channels-label">側チャンネル数</message>
   <message id="dlt-further-details-link">詳細...</message>
@@ -66,14 +47,6 @@
   <message id="dlt-distance-limit">距離限界</message>
   <message id="dlt-peaks-disp-act-label">ピーク表示 活動:</message>
   <message id="dlt-peaks-disp-dist-label">ピーク表示 距離:</message>
-  <message id="dlt-conf-level-label">信頼水準:</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68.2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95.4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99.7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">使用するガンマ線</message>
   <message id="dlt-min-rel-intensity-label">最小相対強度:</message>
   <message id="dlt-fit-fwhm-btn">FWHMを適合...</message>
@@ -188,4 +161,9 @@
   <message id="dlt-err-upper-limit-negative">カウントの上限がゼロ未満ですが、観測されたカウントはL_dより大きいです。</message>
   <message id="dlt-err-activity-zero-negative">活動はゼロまたは負の値にできません</message>
   <message id="dlt-err-distance-zero-negative">距離はゼロまたは負の値にできません</message>
+  <message id="dlt-qr-tool-state-title">検出信頼度ツールの状態</message>
+  <message id="dlt-qr-tool-state-txt">検出信頼度ツールの現在の状態です。</message>
+  <message id="dlt-estimating-spread">ばらつきを計算中…</message>
+  <message id="dlt-spread-band">(通常この値の{1}&ndash;{2}&times;)</message>
+  <message id="dlt-spread-unavailable">ばらつきを推定できませんでした。</message>
 </messages>

@@ -1499,15 +1499,32 @@ than just summing counts in a box.
 | Field | Type | Notes |
 |---|---|---|
 | `DeconComputed`        | bool    | Whether it succeeded. |
-| `DeconError`           | string  | Why no upper limit was produced. Present when computation fails or the scan does not bracket an upper limit. |
+| `DeconError`           | string  | Why the limit is qualified or absent. Present whenever the calculation recorded a problem — a failed computation, a scan that did not bracket an upper limit, **or** a scan whose confidence crossing did not reproduce when it was recomputed. Not restricted to `DeconComputed` being false. |
 | `DeconQuantityIsCounts`| bool    | True for plain peak fits (the limit is peak counts); false for activity/shielding fits (the limit is source activity). |
-| `DeconFoundUpperLimit` | bool    | Whether an upper limit was bracketed. Only when `DeconComputed` is true. |
-| `DeconBestChi2`, `DeconLimitChi2`, `DeconBestQuantity` | number | χ² at the best fit, χ² at the limit, and the best-fit source strength. Only when `DeconComputed` is true. |
+| `DeconFoundUpperLimit` | bool    | Whether an upper limit was bracketed. Present when `DeconComputed` is true **and** a result object was retained (in practice the same thing). |
+| `DeconBestChi2`, `DeconBestQuantity` | number | The statistic at the best fit, and the best-fit source strength. Only when `DeconComputed` is true. |
+| `DeconLimitChi2`       | number  | The statistic at the limit. Present whenever `DeconComputed` is true, but **only meaningful when `DeconFoundUpperLimit` is true** — otherwise it holds a stale or sentinel value. Guard on `DeconFoundUpperLimit` before printing it. |
+| `DeconContinuumNorm`   | string  | How the continuum under the peak was determined: `Floating`, `FixedByEdges`, the deprecated `FixedByFullRange`, `mixed` if regions of interest disagree, or `""` if there were no regions of interest at all. Only when `DeconComputed` is true. |
+| `DeconMeasurementModel`| string  | `CurrentSpectrum` (a bound on the spectrum that was measured) or `BackgroundReference` (a prediction for a future measurement). Only when `DeconComputed` is true. |
+| `DeconLimitType`       | string  | `OneSidedUpperLimit` or `CentralInterval` — different products with different thresholds. Only when `DeconComputed` is true. |
+| `DeconIsPredictedSensitivity` | bool | True when the number describes a *future* measurement rather than the one in hand. **Must not be worded as an upper limit on the measured spectrum.** Only when `DeconComputed` is true. |
+| `DeconSampleExposure_s`| number  | **Real** time, in seconds, of the predicted future measurement — the dwell as a user enters and reads it. Only when `DeconIsPredictedSensitivity` is true **and** the exposure is positive, so it can be absent even inside a predicted-sensitivity branch; guard with `existsIn`, not on `DeconIsPredictedSensitivity` alone. |
+| `DeconOptimizerIterations`, `DeconOptimizerRestarts` | number | Continuum-optimizer health diagnostics; iterations are normally small and restarts normally zero. Only when `DeconComputed` is true and best-fit results were retained. |
+| `DeconStatisticName`   | string  | Names the statistic in the χ² fields; currently always `Cash`. Same presence rule as `DeconOptimizerIterations`. |
+| `DeconWarnings`        | array of string | Notes that qualify the limit without preventing it — most often that overlapping regions of interest were combined, or that the profile crossed the threshold more than twice. Each changes how the number should be read, so render them alongside the limit. Present only when non-empty. |
 | `DeconUpperLimit_counts` / `DeconUpperLimitStr` | number / string | The limit, in counts. Only when `DeconFoundUpperLimit` is true **and** `DeconQuantityIsCounts` is true. |
 | `DeconUpperLimit`, `DeconUpperLimit_bq`, `_ci`, `_uCi` | string / number | The limit, as an activity. Only when `DeconFoundUpperLimit` is true **and** `DeconQuantityIsCounts` is false. |
 | `DeconLimitText`, `DeconBestChi2Text` | string | Pre-formatted summaries that **contain HTML** — use them only in HTML reports. Same presence rule as `DeconUpperLimit` (activity mode). |
-| `MethodsDisagree`      | bool    | The two limits differ by more than a factor of two. Only when `DeconComputed` is true. |
+| `MethodsDisagree`      | bool    | `DeconOverCurrieRatio` falls outside the empirical agreement window of [0.66, 1.23]. A model-discrepancy warning (usually a curved continuum, or an interfering peak in the region), not a statistical test. Only when `DeconComputed` is true. |
 | `DeconOverCurrieRatio` | number  | The deconvolution upper limit divided by the **Currie upper limit** (`UpperLimit_counts`, not L<sub>d</sub>). Present only when both are usable. |
+
+> **The χ² fields are not chi-squares.** `DeconBestChi2` and `DeconLimitChi2` hold the **Cash
+> statistic** — a Poisson deviance, `2·Σ(E − n + n·ln(n/E))`, summed once per channel (Cash 1979).
+> The name is kept for continuity with the display and with older reports. Only *differences* of it
+> between trial source strengths are meaningful; a difference follows the same asymptotic χ² law a
+> Gaussian one would, which is what sets the confidence threshold. Its absolute value does **not**
+> test goodness of fit: E[statistic] is not (channels − parameters), so a χ²/DOF built from these
+> is not a fit-quality measure and should not be presented as one.
 
 The two methods look at the same data, so a large disagreement says something about the data
 rather than about the methods — most often a curved continuum under the peak, or an interfering
@@ -1517,6 +1534,15 @@ so simply rendering those picks it up.
 
 Every field above other than `DeconAttempted` needs a guard; the safe pattern is
 `{% if peak.Mda.DeconAttempted %}{% if peak.Mda.DeconComputed %}{% if peak.Mda.DeconFoundUpperLimit %}…`.
+That pattern is **not sufficient on its own** for a key carrying an extra presence condition —
+notably `DeconSampleExposure_s`, which also requires a positive exposure. Referencing an absent key
+is a hard `RenderError` that aborts the **entire** report, not just that sentence, so wrap it in
+`{% if existsIn(peak.Mda,"DeconSampleExposure_s") %}`. The bundled templates do this.
+
+**Times are reported in real time.** A user enters a dwell as a real time and every reported time is
+a real time; the likelihood works internally in live time. A detector reporting only one of the two
+times is taken to have zero dead time, making them equal.
+
 In an activity/shielding report, peaks that could not be converted to an activity fall back to the
 counts-based limit, so `DeconQuantityIsCounts` can differ from peak to peak within one report.
 
@@ -1535,7 +1561,10 @@ payload — refer back rather than re-document them here:
 ## 7. Inja syntax — what works
 
 Inja 3.5.0 (vendored at `external_libs/SpecUtils/3rdparty/inja/`). The features below
-are confirmed to work against the bundled templates. `set_trim_blocks(true)` is on, so
+are confirmed to work against the bundled templates.  Two of them the detection-limit blocks now
+rely on: **`{% else if %}`** (chained else-if, spelled with a space; one `{% endif %}` closes the
+whole chain, not one per arm) and **string equality** (`{% if x == "SomeValue" %}` against a
+literal). `set_trim_blocks(true)` is on, so
 the first newline after a block is dropped.
 
 ```jinja

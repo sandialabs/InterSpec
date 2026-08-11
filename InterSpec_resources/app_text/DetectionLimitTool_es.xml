@@ -9,25 +9,6 @@
   <message id="dlt-roi-lower-label">ROI Inferior:</message>
   <message id="dlt-roi-upper-label">ROI Superior:</message>
   <message id="dlt-continuum-label">Continuo</message>
-  <message id="dlt-cont-norm-label">Norm. Cont.</message>
-  <message id="dlt-cont-norm-floating">Flotante</message>
-  <message id="dlt-cont-norm-fixed-edges">Fijo en bordes</message>
-  <message id="dlt-cont-norm-fixed-full-roi">Fijo ROI completo</message>
-  <message id="dlt-cont-norm-tt">
-    Cómo debe determinarse la normalización del continuo:
-    <ul><li><b>Flotante</b>: El continuo polinomial se ajusta, para cada actividad dada -
-    la actividad afecta el continuo.</li>
-    <li><b>Fijo en bordes</b>: Los canales a cada lado del ROI se usan para determinar un
-    continuo lineal que está fijo, y no se ve afectado por la actividad de los nucleidos.</li>
-    <li><b>Fijo ROI completo</b>: El continuo se ajusta usando todo el rango de energía del ROI,
-    asumiendo una amplitud gaussiana de cero; más tarde, el componente gaussiano del pico
-    se sentará sobre este continuo fijo.<br/>
-    Esto efectivamente afirma que sabes que no hay un pico de señal presente en los datos.
-    El continuo no se verá afectado por el valor de actividad del nucleido, y el componente
-    gaussiano del pico se sentará sobre este continuo fijo al evaluar el
-    &chi;<sup>2</sup>.</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">Límite Currie pico único</message>
   <message id="dlt-num-side-channels-label">Núm. canales laterales</message>
   <message id="dlt-further-details-link">más detalles...</message>
@@ -66,14 +47,6 @@
   <message id="dlt-distance-limit">Límite de distancia</message>
   <message id="dlt-peaks-disp-act-label">Picos disp. act.:</message>
   <message id="dlt-peaks-disp-dist-label">Picos disp. dist.:</message>
-  <message id="dlt-conf-level-label">Nivel de confianza:</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68,2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95,4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99,7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">Líneas gamma a usar</message>
   <message id="dlt-min-rel-intensity-label">Intensidad relativa mín.:</message>
   <message id="dlt-fit-fwhm-btn">Ajustar FWHM...</message>
@@ -188,4 +161,9 @@
   <message id="dlt-err-upper-limit-negative">El límite superior de conteos es menor que cero, pero los conteos observados son mayores que L_d.</message>
   <message id="dlt-err-activity-zero-negative">La actividad no puede ser cero o negativa</message>
   <message id="dlt-err-distance-zero-negative">La distancia no puede ser cero o negativa</message>
+  <message id="dlt-qr-tool-state-title">Estado de la Herramienta de confianza de detección</message>
+  <message id="dlt-qr-tool-state-txt">Estado actual de la herramienta de confianza de detección.</message>
+  <message id="dlt-estimating-spread">Calculando dispersión…</message>
+  <message id="dlt-spread-band">(típicamente {1}&ndash;{2}&times; este valor)</message>
+  <message id="dlt-spread-unavailable">No se pudo estimar la dispersión.</message>
 </messages>

@@ -9,25 +9,6 @@
   <message id="dlt-roi-lower-label">ROI 下限:</message>
   <message id="dlt-roi-upper-label">ROI 上限:</message>
   <message id="dlt-continuum-label">连续谱</message>
-  <message id="dlt-cont-norm-label">连续谱归一化</message>
-  <message id="dlt-cont-norm-floating">浮动</message>
-  <message id="dlt-cont-norm-fixed-edges">边缘固定</message>
-  <message id="dlt-cont-norm-fixed-full-roi">完整ROI固定</message>
-  <message id="dlt-cont-norm-tt">
-    应如何确定连续谱归一化：
-    <ul><li><b>浮动</b>：多项式连续谱在每个给定活度下进行拟合 -
-    活度影响连续谱。</li>
-    <li><b>边缘固定</b>：使用ROI两侧的通道来确定
-    固定的线性连续谱，不受核素活度的影响。</li>
-    <li><b>完整ROI固定</b>：使用ROI的整个能量范围拟合连续谱，
-    假设高斯幅度为零；随后，峰的高斯分量将
-    位于此固定连续谱之上。<br/>
-    这实际上是在断言您知道数据中不存在信号峰。
-    连续谱不会受到核素活度值的影响，并且高斯
-    峰分量在评估时将位于此固定连续谱之上
-    &chi;<sup>2</sup>。</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">单峰柯里限值</message>
   <message id="dlt-num-side-channels-label">侧通道数</message>
   <message id="dlt-further-details-link">更多详情...</message>
@@ -66,14 +47,6 @@
   <message id="dlt-distance-limit">距离限值</message>
   <message id="dlt-peaks-disp-act-label">峰显示 活度:</message>
   <message id="dlt-peaks-disp-dist-label">峰显示 距离:</message>
-  <message id="dlt-conf-level-label">置信水平:</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68.2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95.4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99.7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">要使用的伽马线</message>
   <message id="dlt-min-rel-intensity-label">最小相对强度:</message>
   <message id="dlt-fit-fwhm-btn">拟合FWHM...</message>
@@ -188,4 +161,9 @@
   <message id="dlt-err-upper-limit-negative">计数上限小于零，但观察到的计数大于L_d。</message>
   <message id="dlt-err-activity-zero-negative">活度不能为零或负数</message>
   <message id="dlt-err-distance-zero-negative">距离不能为零或负数</message>
+  <message id="dlt-qr-tool-state-title">检测置信度工具状态</message>
+  <message id="dlt-qr-tool-state-txt">检测置信度工具的当前状态。</message>
+  <message id="dlt-estimating-spread">正在计算离散度…</message>
+  <message id="dlt-spread-band">(通常为该值的 {1}&ndash;{2}&times;)</message>
+  <message id="dlt-spread-unavailable">无法估计离散度。</message>
 </messages>
