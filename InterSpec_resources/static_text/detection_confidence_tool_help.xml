@@ -1,19 +1,164 @@
-
-<!-- SAND2020-XXX -->
-
 <div align="center">
   <h1 id="detection-confidence-tool"><b>Detection Confidence Tool</b></h1>
+<hr />
 </div>
 
 <div align="left">
-<img src="InterSpec_resources/static_text/images/flux_tool_overview.png" class="imageBorder" style="max-width:60%;float:left;display:block;margin-right:20px;"/>
 <p>
-some introductory text
+The <b>Detection Confidence Tool</b> answers, for a nuclide and a shielding
+configuration, either &quot;how much activity could be present without my having
+seen it?&quot; or &quot;how far away could the source be and still be
+detected?&quot;.  Unlike the <b>Simple MDA</b> tool, which looks at a single
+gamma line, this tool can combine several lines of the same nuclide into one
+limit, and it lets you fit shielding alongside.
 </p>
 <p>
-blah blah blah
+Each gamma line gets its own row showing a <b>Currie</b>-style limit computed
+from the counts in that region alone.  Ticking &quot;Use for multi-peak&quot; on
+a row adds that line to the combined <b>deconvolution</b> limit, which fits peaks
+of the expected shape at a range of trial activities and finds where the fit
+becomes inconsistent with the data.  The chart shows that scan.
 </p>
 
+<h3>Three separate questions</h3>
+<p>Three options sound similar and are routinely confused; they answer different
+questions and are chosen independently.</p>
+<ul>
+<li><b>Cont. Norm</b> (per row) &mdash; <em>where the knowledge of the background
+under that peak comes from</em>.  Covered in detail below.
+</li>
+<li><b>Measurement</b> &mdash; <em>which measurement the limit describes</em>.
+<b>Current spectrum</b> bounds the signal in the spectrum you have.
+<b>Background reference</b> asserts this spectrum is signal-free and predicts
+what a <em>future</em> measurement of the entered length could detect.  The
+reference counts and the projected measurement are scored together, sharing one
+continuum, so the reference's own counting statistics are carried into the answer
+rather than wished away.  The result is a <b>predicted median sensitivity</b>,
+not a bound on the loaded spectrum, and never worded as one.
+</li>
+<li><b>Limit</b> &mdash; <em>which quantity to report</em>.  <b>Upper limit</b>
+is a one-sided bound: &quot;less than U at this confidence&quot;.  <b>Central
+interval</b> is two-sided: &quot;between L and U&quot;.  They use different
+thresholds on the statistic, so the choice is explicit rather than guessed.  Note
+the two roots found at a one-sided threshold do <em>not</em> form a central
+interval &mdash; together they cover only about 2&times;CL&minus;1, so two 95%
+one-sided bounds make roughly a 90% central interval.  When that happens the
+result says so instead of calling it an interval.  And on a spectrum with no signal a central
+interval usually runs into the physical boundary at zero, leaving only the upper endpoint; that is
+reported as &quot;between 0 and U&quot;, which is <em>not</em> a one-sided upper limit at the same
+confidence &mdash; the endpoint sits at a higher threshold.
+</li>
+</ul>
+<h3>Choosing the continuum treatment</h3>
+<p>
+The mechanical difference is small; the difference in what you are <em>claiming</em>
+is not.  It comes down to where the knowledge of the background comes from.
+</p>
+<ul>
+<li><b>Floating</b> infers the background from <em>the same channels that might
+contain the signal</em>.  You assert nothing about the neighbourhood.  The question
+it answers is: &quot;given only this window, and no prior knowledge of where the
+continuum sits, how much signal is consistent with the data?&quot;
+</li>
+<li><b>Anchored by side channels</b> <em>measures the background next door and
+imports it</em>.  You assert that the shoulders contain no signal and that the
+continuum runs straight through them into the region.  The question becomes:
+&quot;given the continuum is what the neighbours say it is, how much signal is
+consistent with the region?&quot;
+</li>
+</ul>
+<p>
+That leads to a difference worth knowing: <b>Floating responds to peak
+<em>shape</em>, while anchoring also responds to <em>level</em>.</b>  Under
+Floating a broad or uniform elevation across the region is absorbed into the
+continuum, so only genuinely peak-shaped excess counts as signal.  When anchored, a
+region that simply sits higher than its shoulders is signal, whether or not it looks
+Gaussian.  Floating is the stricter test of &quot;is that actually a peak?&quot;
+</p>
+<p>
+<b>The failure modes are not symmetric.</b>  Floating errs toward <em>wider</em>
+limits &mdash; it can quietly absorb real signal into the continuum, so it may
+understate a detection, but it rarely overstates your confidence.  Anchoring errs
+toward <em>wrong</em> limits in either direction if its assumption fails: a
+neighbouring line, a Compton edge, a step, or curvature across the window biases the
+shoulders, and the limit moves with them.
+</p>
+<p>
+Adding signal-free channels can only add information, so anchoring reliably has the
+smaller <em>uncertainty</em> &mdash; but not necessarily the smaller limit, since
+the central value moves too, depending on whether the shoulders happen to sit high
+or low.  A narrower number is not automatically a better one.
+</p>
+<p>
+<b>In practice:</b> default to Floating &mdash; it is the best-validated mode and
+the defensible number when someone asks what you assumed.  Reach for the side
+channels when the region is clean and smooth for several FWHM either side, you have
+actually looked at the shoulders rather than trusting them, and the extra
+sensitivity is worth the assertion.  Never anchor with an interfering line within a
+few FWHM: that is exactly the case where the shoulders mislead and the method cannot
+notice.  Note also that anchoring forces a linear continuum, since four-plus-four
+side channels barely determine an offset and a slope, so a visibly curved continuum
+is a modelling error Floating would have avoided.
+</p>
+<p>
+Anchoring is <b>not</b> a &quot;fixed&quot; continuum: the shoulders' own counting
+uncertainty is carried in the likelihood, so a weak anchor honestly widens the limit
+rather than pretending the continuum is known.
+</p>
+
+<h3>Measurement time</h3>
+<p>
+The <b>Meas. time</b> control is the dwell you are asking about, and appears when
+the measurement is a background reference.  The reference counts are left alone
+and this becomes the exposure of the predicted future measurement, so a short
+background gives a correspondingly weaker prediction.  The per-row Currie limits
+are projected to the same dwell, so the two numbers on screen always describe the
+same planned measurement.
+</p>
+
+<h3>Confidence levels</h3>
+<p>
+The confidence levels offered include the central-normal probabilities for
+1&sigma; through 5&sigma; &mdash; 68.27%, 95.45%, 99.73%, 99.9937%, 99.999943%
+&mdash; but they are applied as <b>one-sided</b> confidence levels unless you
+select a central interval.  They are offered because they are familiar numbers,
+not because the limit is a multiple of any sigma.  The label above the selector
+says which of the two is in force.
+</p>
+
+<h3>The quantity labelled &chi;<sup>2</sup></h3>
+<p>
+The chart's vertical axis, and the &quot;best &chi;<sup>2</sup>&quot; line below
+it, show a quantity labelled &chi;<sup>2</sup>.  That name is kept for
+continuity, but the quantity is the <b>Cash statistic</b> &mdash; a Poisson
+deviance, 2&middot;&sum;(E &minus; n + n&middot;ln(n/E)), summed once per channel
+(Cash 1979).  It is a genuine likelihood ratio, not a Pearson or modified-Neyman
+&chi;<sup>2</sup>, and it is used because it has no variance bias and needs no
+variance floor for empty channels &mdash; exactly the regime a detection limit
+lives in.
+</p>
+<p>
+Only <em>differences</em> of it between trial activities are meaningful; the
+difference is what the confidence threshold is applied to.  Its absolute value
+does <b>not</b> test goodness of fit: E[statistic] is not (channels &minus;
+parameters), so a &chi;<sup>2</sup>/DOF formed from the two
+numbers displayed beside each other is <b>not</b> a fit-quality measure and should not be read as
+one.
+</p>
+
+<h3>What is not implemented here</h3>
+<p>
+The per-row Currie limits include a <b>decision threshold</b> (L<sub>c</sub>, the
+count above which a detection would be declared) and a <b>detection limit</b>
+(L<sub>d</sub>, the activity that would reliably be detected).  The combined
+deconvolution scan reports <b>neither</b>: doing so properly requires the null
+distribution to be calibrated by Monte Carlo at low counts rather than assumed,
+and that is not yet implemented.  The deconvolution result is an upper limit, a
+central interval, or a predicted sensitivity &mdash; and it says which.
+</p>
+<p>
+Uncertainties come from counting statistics, and from the finite statistics of a
+background reference where one is used.  Detector-response and shielding-model
+uncertainties are not propagated.
+</p>
 </div>
-
-

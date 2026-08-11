@@ -9,25 +9,6 @@
   <message id="dlt-roi-lower-label">ROI নিম্ন:</message>
   <message id="dlt-roi-upper-label">ROI উচ্চ:</message>
   <message id="dlt-continuum-label">কন্টিনুয়াম</message>
-  <message id="dlt-cont-norm-label">কন্ট. নর্ম</message>
-  <message id="dlt-cont-norm-floating">ভাসমান</message>
-  <message id="dlt-cont-norm-fixed-edges">প্রান্তে স্থির</message>
-  <message id="dlt-cont-norm-fixed-full-roi">সম্পূর্ণ ROI স্থির</message>
-  <message id="dlt-cont-norm-tt">
-    কন্টিনুয়াম স্বাভাবিকীকরণ কীভাবে নির্ধারণ করা উচিত:
-    <ul><li><b>ভাসমান</b>: বহুপদী কন্টিনুয়াম প্রতিটি প্রদত্ত কার্যকলাপের জন্য ফিট করা হয় -
-    কার্যকলাপ কন্টিনুয়ামকে প্রভাবিত করে।</li>
-    <li><b>প্রান্তে স্থির</b>: ROI-এর উভয় পাশের চ্যানেলগুলি একটি
-    রৈখিক কন্টিনুয়াম নির্ধারণ করতে ব্যবহৃত হয় যা স্থির, এবং নিউক্লাইডের কার্যকলাপ দ্বারা প্রভাবিত হয় না।</li>
-    <li><b>সম্পূর্ণ ROI স্থির</b>: কন্টিনুয়াম ROI-এর সম্পূর্ণ শক্তি পরিসর ব্যবহার করে ফিট করা হয়,
-    শূন্য গাউসিয়ান প্রশস্ততা ধরে নিয়ে; পরে, পিকের গাউসিয়ান উপাদান
-    এই স্থির কন্টিনুয়ামের উপরে বসবে।<br/>
-    এটি কার্যকরভাবে দাবি করছে যে আপনি জানেন যে ডেটায় কোনও সংকেত পিক নেই।
-    কন্টিনুয়াম নিউক্লাইড কার্যকলাপ মান দ্বারা প্রভাবিত হবে না, এবং গাউসিয়ান
-    পিকের উপাদান মূল্যায়ন করার সময় এই স্থির কন্টিনুয়ামের উপরে বসবে
-    &chi;<sup>2</sup>।</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">একক পিক কারি সীমা</message>
   <message id="dlt-num-side-channels-label">পার্শ্ব চ্যানেল সংখ্যা</message>
   <message id="dlt-further-details-link">আরও বিবরণ...</message>
@@ -66,14 +47,6 @@
   <message id="dlt-distance-limit">দূরত্ব সীমা</message>
   <message id="dlt-peaks-disp-act-label">পিক প্রদর্শন কার্যকলাপ:</message>
   <message id="dlt-peaks-disp-dist-label">পিক প্রদর্শন দূরত্ব:</message>
-  <message id="dlt-conf-level-label">আস্থা স্তর:</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68.2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95.4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99.7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">ব্যবহারের জন্য গামা লাইন</message>
   <message id="dlt-min-rel-intensity-label">ন্যূনতম আপেক্ষিক তীব্রতা:</message>
   <message id="dlt-fit-fwhm-btn">FWHM ফিট করুন...</message>
@@ -188,4 +161,6 @@
   <message id="dlt-err-upper-limit-negative">গণনার উচ্চ সীমা শূন্যের চেয়ে কম, কিন্তু পর্যবেক্ষিত গণনা L_d-এর চেয়ে বেশি।</message>
   <message id="dlt-err-activity-zero-negative">কার্যকলাপ শূন্য বা নেতিবাচক হতে পারে না</message>
   <message id="dlt-err-distance-zero-negative">দূরত্ব শূন্য বা নেতিবাচক হতে পারে না</message>
+  <message id="dlt-qr-tool-state-title">সনাক্তকরণ আস্থা সরঞ্জামের অবস্থা</message>
+  <message id="dlt-qr-tool-state-txt">সনাক্তকরণ আস্থা সরঞ্জামের বর্তমান অবস্থা।</message>
 </messages>

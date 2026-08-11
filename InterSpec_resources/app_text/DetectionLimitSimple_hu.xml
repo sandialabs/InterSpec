@@ -5,7 +5,6 @@
   <message id="dls-fit-fwhm-btn">FWHM illesztés...</message>
   <message id="dls-select-drf-btn">Detektor választás...</message>
   <message id="dls-further-details-link">további részletek...</message>
-  <message id="dls-conf-level-label">Megbízhatósági szint:</message>
   <message id="dls-roi-lower-label">ROI alsó:</message>
   <message id="dls-roi-upper-label">ROI felső:</message>
   <message id="dls-num-side-channel-label">Oldalsó csatornák:</message>
@@ -20,9 +19,6 @@
       A csúcsrégió melletti oldalsó csatornák választási lehetősége már nem releváns, így el lesz rejtve.
     </p>
   </message>
-  <message id="dls-cont-norm-unknown">Lebegő</message>
-  <message id="dls-cont-norm-not-present">Mint nincs jel</message>
-  <message id="dls-cont-norm-fixed-by-sides">Oldalakból</message>
   <message id="dls-roi-changed-no-gamma">Az ROI módosítása kizárta az elsődleges gammát - nem változtatunk</message>
   <message id="dls-suggest-fwhm">Detektor FWHM: {1} keV</message>
   <message id="dls-rough-est-fwhm">Durva becslés FWHM: {1} keV</message>
@@ -83,7 +79,12 @@
   <message id="dls-err-select-det">Kérjük, válasszon detector hatásfok függvényt.</message>
   <message id="dls-err-neg-distance">A távolság nem lehet negatív.</message>
   <message id="dls-err-no-fwhm-info">A detector hatásfok függvény nem rendelkezik FWHM információval - kérjük, illessze az FWHM-et, vagy válasszon másik detektort.</message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
+  <message id="dls-is-background-spectrum-cb-short">Háttér?</message>
+  <message id="dls-num-side-channel-label-short">Oldalcsat.:</message>
+  <message id="dls-result-scaled-postfix"> (élő idő={1})</message>
+  <message id="dls-roi-lower-label-short">Alsó:</message>
+  <message id="dls-roi-upper-label-short">Felső:</message>
+  <message id="dls-scale-more-info-note">
+    {1} valós időre skálázva (élő idő {2}, a mérés {4} valós idejének &times;{3} szorosa).
+  </message>
 </messages>

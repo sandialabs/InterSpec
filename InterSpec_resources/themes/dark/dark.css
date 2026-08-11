@@ -148,3 +148,9 @@ ul.HeavyNavMenu > li.item:hover  {
 .app-titlebar.inactive, .app-titlebar.inactive button {
   background-color: rgb(50,50,51) !important;
 }
+
+/* Soft warnings on the detection-limit tools; the light-theme colour is too dark to read here.
+   See `.MdaWarnMsg` in DetectionLimitTool.css and DetectionLimitSimple.css. */
+.MdaWarnMsg {
+  color: #e0a640;
+}

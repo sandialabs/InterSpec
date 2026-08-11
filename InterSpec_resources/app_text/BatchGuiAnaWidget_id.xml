@@ -43,7 +43,6 @@
   <message id="bgw-reports-write-csv">Ringkasan CSV</message>
   <message id="bgw-reports-write-csv-tooltip">Tulis file CSV ringkasan dengan hasil analisis dari semua file input.</message>
   <message id="bgw-reports-write-custom-per-file">Kustom Per-File</message>
-  <message id="bgw-reports-write-custom-per-file-tooltip">Unggah templat laporan kustom untuk digunakan pada setiap file.</message>
   <message id="bgw-reports-write-custom-summary">Ringkasan Kustom</message>
   <message id="bgw-reports-write-custom-summary-tooltip">Satu atau lebih file templat yang digunakan untuk memberikan ringkasan dari semua file input.</message>
 
@@ -58,7 +57,6 @@
   <message id="bgw-no-ana-act-shield-invalid-background">Latar belakang tidak valid</message>
   <message id="bgw-no-ana-no-input-files">Tidak ada file input.</message>
   <message id="bgw-no-ana-invalid-output-path">Silakan pilih direktori output yang valid.</message>
-
 
   <!-- Analysis progress and results -->
   <message id="bgw-performing-work-title">Melakukan Pekerjaan</message>

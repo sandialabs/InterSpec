@@ -69,8 +69,6 @@
   <message id="isbe-category-nuc-xray-rctn-desc">全ての核種、X線（崩壊および蛍光）、反応</message>
   <message id="isbe-category-xray">蛍光X線</message>
   <message id="isbe-category-xray-desc">蛍光X線のみ</message>
-  <message id="isbe-category-reactions">反応</message>
-  <message id="isbe-category-reactions-desc">反応のみ</message>
   <message id="isbe-category-medical">医用核種</message>
   <message id="isbe-category-medical-desc">一般的な医用核種</message>
   <message id="isbe-category-industrial">工業核種</message>

@@ -1,0 +1,181 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Tradução de DetectionLimit.xml -->
+
+  <message id="dl-conf-95">95%</message>
+  <message id="dl-conf-99">99%</message>
+  <message id="dl-conf-1sigma">68,27%</message>
+  <message id="dl-conf-2sigma">95,45%</message>
+  <message id="dl-conf-3sigma">99,73%</message>
+  <message id="dl-conf-4sigma">99,9937%</message>
+  <message id="dl-conf-5sigma">99,999943%</message>
+  <message id="dl-conf-level-one-sided">N.C. unilateral:</message>
+  <message id="dl-conf-level-central">N.C. central:</message>
+  <message id="dl-conf-level-one-sided-short">N.C. unilat.:</message>
+  <message id="dl-conf-level-tt">
+    O nível de confiança em que o limite é indicado.
+    <p>
+      Os cinco valores não redondos são as probabilidades normais centrais de 1&sigma; a 5&sigma;
+      (68,27%, 95,45%, 99,73%, 99,9937%, 99,999943%), mas aqui são aplicados como níveis de
+      confiança <b>unilaterais</b>.  Uma escolha de &quot;1&sigma;&quot; não é, portanto, um limite
+      unilateral de um sigma - estes valores são oferecidos por serem números familiares, não porque
+      o limite seja um múltiplo de qualquer sigma.
+    </p>
+  </message>
+
+  <!-- Tratamento do contínuo -->
+  <message id="dl-cont-norm-label">Norm. Cont.:</message>
+  <message id="dl-cont-norm-floating">Flutuante</message>
+  <message id="dl-cont-norm-edges">Ancorado pelos canais laterais</message>
+  <message id="dl-cont-norm-edges-short">Pelos lados</message>
+  <message id="dl-cont-norm-tt">
+    De onde vem o conhecimento do fundo sob o pico - e, portanto, o que você está a afirmar.  Esta é
+    uma questão distinta de <i>qual medição</i> o limite descreve; veja a opção de medição.
+    <ul>
+      <li><b>Flutuante</b>: o contínuo é inferido dos mesmos canais que podem conter o sinal, de modo
+      que nada é assumido sobre a vizinhança.  Um excesso largo ou uniforme é absorvido pelo
+      contínuo, portanto apenas um excesso genuinamente com forma de pico conta como sinal - este é
+      o teste mais rigoroso de &quot;aquilo é mesmo um pico?&quot;.  A opção por omissão, e a melhor
+      validada.</li>
+      <li><b>Ancorado pelos canais laterais</b>: o fundo é medido nos canais junto à região e
+      transportado para dentro dela, o que afirma que esses ombros não contêm sinal e que o contínuo
+      os atravessa em linha reta.  Uma região que esteja simplesmente mais alta do que os seus ombros
+      passa agora a contar como sinal, tenha ou não forma de pico.  Requer um contínuo linear: quatro
+      mais quatro canais laterais mal determinam uma ordenada e um declive.</li>
+    </ul>
+    <p>
+      Ancorar acrescenta informação, pelo que normalmente dá um limite mais estreito - mas um número
+      mais estreito não é automaticamente melhor.  O modo flutuante erra para limites <em>mais
+      largos</em>; a ancoragem erra para limites <em>errados</em>, em qualquer dos sentidos, se uma
+      linha vizinha, um degrau ou uma curvatura tornarem os ombros não representativos.  Use
+      Flutuante por omissão, e os canais laterais quando a região estiver limpa ao longo de várias
+      FWHM de ambos os lados e a sensibilidade adicional compensar a afirmação.
+    </p>
+    <p>
+      Note que a incerteza de contagem dos próprios ombros é propagada na verosimilhança, pelo que
+      uma ancoragem fraca alarga honestamente o limite em vez de fingir que o contínuo é conhecido.
+    </p>
+  </message>
+
+  <!-- Modelo de medição -->
+  <message id="dl-model-label">Medição:</message>
+  <message id="dl-model-current">Espetro atual</message>
+  <message id="dl-model-backref">Referência de fundo</message>
+  <message id="dl-model-backref-cb">Referência de fundo</message>
+  <message id="dl-model-tt">
+    Sobre qual medição o limite é uma afirmação.
+    <ul>
+      <li><b>Espetro atual</b>: quanto sinal poderia estar escondido no espetro que você tem.  O
+      caso comum.</li>
+      <li><b>Referência de fundo</b>: afirma-se que o espetro carregado não contém sinal, e ele é
+      usado para prever o que uma medição <i>futura</i> conseguiria detetar.  As contagens da
+      referência e a medição projetada são avaliadas em conjunto, partilhando um mesmo contínuo, de
+      modo que a própria estatística de contagem da referência é propagada para a resposta em vez de
+      ser ignorada.</li>
+    </ul>
+    <p>
+      Um resultado de referência de fundo é uma <b>sensibilidade prevista</b>, não um limite sobre o
+      espetro em mãos, e é comunicado como tal.  É uma expectativa mediana: não há medição futura
+      para observar, pelo que a previsão é feita nas contagens esperadas.
+    </p>
+  </message>
+  <message id="dl-model-backref-tt">
+    Afirma que este espetro não contém sinal, e usa-o para prever o que uma medição futura
+    conseguiria detetar.
+    <p>
+      O resultado é uma <b>sensibilidade prevista</b> para uma medição do tempo planeado, não um
+      limite superior sobre este espetro.  A própria estatística de contagem da referência é
+      propagada para a resposta, pelo que um fundo curto dá uma previsão correspondentemente mais
+      fraca.
+    </p>
+  </message>
+
+  <!-- Tipo de limite -->
+  <message id="dl-limittype-label">Limite:</message>
+  <message id="dl-limittype-upper">Limite superior</message>
+  <message id="dl-limittype-central">Intervalo central</message>
+  <message id="dl-limittype-tt">
+    Qual grandeza reportar.  São produtos diferentes e usam limiares diferentes sobre a estatística,
+    pelo que a escolha é explícita em vez de adivinhada.
+    <ul>
+      <li><b>Limite superior</b>: um limite unilateral - &quot;a atividade é menor do que U com esta
+      confiança&quot;.  O que se pretende quase sempre.</li>
+      <li><b>Intervalo central</b>: um intervalo bilateral - &quot;a atividade está entre L e U com
+      esta confiança&quot;.</li>
+    </ul>
+    <p>
+      Note que as duas raízes encontradas num limiar unilateral <b>não</b> formam um intervalo
+      central: juntas cobrem apenas cerca de 2&times;N.C.&minus;1, pelo que dois limites unilaterais
+      de 95% formam aproximadamente um intervalo central de 90%.  Quando isso acontece, o resultado
+      di-lo em vez de lhe chamar intervalo.
+    </p>
+    <p>
+      Num espetro sem sinal, um intervalo central normalmente esbarra na fronteira física em zero,
+      pelo que só existe o extremo superior; é então reportado como &quot;entre 0 e U&quot;.  Isso
+      <b>não</b> é o mesmo que um limite superior unilateral com a mesma confiança - o extremo
+      situa-se num limiar mais alto, tornando-o um limite unilateral de (1+N.C.)/2.
+    </p>
+  </message>
+
+  <!-- Tempo de medição planeado -->
+  <message id="dl-plan-time-cb">Tempo med.:</message>
+  <message id="dl-plan-time-cb-short">Med. 🕐</message>
+  <message id="dl-plan-time-empty-text">p. ex. 5 min</message>
+  <message id="dl-plan-time-tt">
+    A duração sobre a qual está a perguntar.  Um único controlo, mas chega ao cálculo por duas vias
+    diferentes:
+    <ul>
+      <li>Para o método de Currie, e quando o limite descreve o espetro carregado, as contagens por
+      canal do espetro são projetadas para este tempo real (e o tempo vivo na mesma proporção, de
+      modo que a fração de tempo morto é preservada).</li>
+      <li>Quando o espetro é uma <b>referência de fundo</b>, as contagens da referência são deixadas
+      intactas e este passa a ser a exposição da medição futura que está a ser prevista - assim, a
+      própria estatística de contagem da referência é propagada para a resposta em vez de ser
+      ignorada.</li>
+    </ul>
+    <p>
+      Projetar o espetro é mais exato para uma duração menor ou comparável; para uma muito mais longa
+      o resultado é otimista, uma vez que a incerteza da estimativa da taxa excede então o ruído de
+      Poisson projetado.  A via da referência de fundo não tem esse problema.
+    </p>
+  </message>
+  <message id="dl-err-bad-plan-time">Tempo de medição inválido - esperava-se algo como '5 min', '300 s' ou '00:05:00'.</message>
+
+  <!-- Texto do resultado -->
+  <message id="dl-limit-upper">Menos de {1} a {2} N.C. (limite superior unilateral), &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-predicted">Sensibilidade prevista: menos de {1} a {2} N.C. para uma medição de {3}, &chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central">Entre {1} e {2} a {3} N.C. central, &chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central-upper">Entre 0 e {1} a {2} N.C. central, &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-two-one-sided">Dois limites unilaterais de {1}: {2} a {3} (cobertura central ~{4}), &chi;<sup>2</sup>={5}</message>
+  <message id="dl-limit-distance-lower">Distância &ge;{1} a {2} N.C. (limite inferior unilateral), &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-none">Sem limite: {1}</message>
+  <message id="dl-best-stat">Melhor &chi;<sup>2</sup> de {1} em {2}, {3} G.L.</message>
+  <message id="dl-best-stat-flat">&chi;<sup>2</sup> é {1} a grande distância, {2} G.L.</message>
+
+  <message id="dl-stat-is-cash-tt">
+    A grandeza aqui rotulada &chi;<sup>2</sup> é a <b>estatística {1}</b> - um desvio de Poisson,
+    2&middot;&sum;(E &minus; n + n&middot;ln(n/E)), somado uma vez por canal (Cash 1979).  É usada em
+    vez de um &chi;<sup>2</sup> gaussiano porque não tem o enviesamento de variância de Neyman
+    modificado e não precisa de um limiar mínimo de variância para canais vazios.
+    <p>
+      Apenas as <em>diferenças</em> entre atividades de teste são significativas; uma diferença segue
+      a mesma lei assintótica &chi;<sup>2</sup> que uma gaussiana seguiria, e é isso que define o
+      limiar de confiança.  O seu valor absoluto <b>não</b> testa a qualidade do ajuste:
+      E[estatística] não é (canais &minus; parâmetros), pelo que um &chi;<sup>2</sup>/G.L. formado a
+      partir dos dois números mostrados lado a lado <b>não</b> é uma medida de qualidade de ajuste e
+      não deve ser lido como tal.
+    </p>
+  </message>
+
+  <!-- Gráfico -->
+  <message id="dl-chart-y-axis-chi2">χ²</message>
+  <message id="dl-chart-threshold-label">Limiar de {1} (Δχ²={2})</message>
+  <message id="dl-migrate-nosig-notice">
+    O estado guardado usava a opção de contínuo retirada &quot;assumir que não há sinal
+    presente&quot;.  Essa opção afirmava que o espetro não contém sinal e depois ignorava a incerteza
+    dessa afirmação, o que mediu cerca de 40% de cobertura onde 95% era declarado.  Foi recarregada
+    como um contínuo flutuante sobre uma medição de referência de fundo, que é o que pretendia ser.
+    O tempo de medição significa agora a duração da medição futura que está a ser prevista, em vez de
+    um reescalonamento deste espetro - verifique-o antes de confiar no número.
+  </message>
+</messages>

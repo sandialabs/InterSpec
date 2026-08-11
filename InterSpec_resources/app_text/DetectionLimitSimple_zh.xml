@@ -5,7 +5,6 @@
   <message id="dls-fit-fwhm-btn">拟合FWHM...</message>
   <message id="dls-select-drf-btn">选择探测器...</message>
   <message id="dls-further-details-link">详细信息...</message>
-  <message id="dls-conf-level-label">置信水平：</message>
   <message id="dls-roi-lower-label">ROI下限：</message>
   <message id="dls-roi-upper-label">ROI上限：</message>
   <message id="dls-num-side-channel-label">侧道数：</message>
@@ -20,9 +19,6 @@
       选择峰区域相邻的侧道的选项将不再相关，因此将被隐藏。
     </p>
   </message>
-  <message id="dls-cont-norm-unknown">浮动</message>
-  <message id="dls-cont-norm-not-present">作为无信号</message>
-  <message id="dls-cont-norm-fixed-by-sides">从侧面</message>
   <message id="dls-roi-changed-no-gamma">更改ROI排除了主伽马 - 不更改</message>
   <message id="dls-suggest-fwhm">探测器FWHM：{1} keV</message>
   <message id="dls-rough-est-fwhm">粗略估计FWHM：{1} keV</message>
@@ -83,8 +79,13 @@
   <message id="dls-err-select-det">请选择探测器效率函数。</message>
   <message id="dls-err-neg-distance">距离不能为负。</message>
   <message id="dls-err-no-fwhm-info">探测器效率函数没有FWHM信息 - 请拟合FWHM或更改探测器。</message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
+  <message id="dls-is-background-spectrum-cb-short">本底?</message>
+  <message id="dls-num-side-channel-label-short">旁侧道数:</message>
+  <message id="dls-result-scaled-postfix"> (活时间={1})</message>
+  <message id="dls-roi-lower-label-short">下限:</message>
+  <message id="dls-roi-upper-label-short">上限:</message>
+  <message id="dls-scale-more-info-note">
+    已折算到实时间 {1} (活时间 {2}，为测量实时间 {4} 的 &times;{3} 倍)。
+  </message>
 </messages>
 

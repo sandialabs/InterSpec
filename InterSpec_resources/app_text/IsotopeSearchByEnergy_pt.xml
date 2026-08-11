@@ -69,8 +69,6 @@
   <message id="isbe-category-nuc-xray-rctn-desc">Todos os nuclídeos, raios x (decaimento e fluorescência), e reações</message>
   <message id="isbe-category-xray">Raios x de fluorescência</message>
   <message id="isbe-category-xray-desc">Apenas raios x de fluorescência</message>
-  <message id="isbe-category-reactions">Reações</message>
-  <message id="isbe-category-reactions-desc">Apenas Reações</message>
   <message id="isbe-category-medical">Nuclídeos Médicos</message>
   <message id="isbe-category-medical-desc">Nuclídeos médicos comuns</message>
   <message id="isbe-category-industrial">Nuclídeos Industriais</message>

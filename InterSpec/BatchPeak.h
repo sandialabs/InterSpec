@@ -303,7 +303,11 @@ namespace BatchPeak
      */
     double decon_over_currie_ratio = 0.0;
 
-    /** Whether the two limits differ by more than a factor of two. */
+    /** Whether #decon_over_currie_ratio falls outside the empirically calibrated agreement window.
+
+     The window is currently [0.66, 1.23]; see `BatchPeak.cpp` for how it was calibrated and when
+     it last moved.  It is a model-discrepancy warning, not a statistical test.
+     */
     bool methods_disagree = false;
 
     /** The counts-to-activity conversion; only filled out by `BatchActivity`, and only when the

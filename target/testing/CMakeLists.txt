@@ -242,6 +242,37 @@ add_test( NAME test_DetectionLimit
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_DetectionLimitState test_DetectionLimitState.cpp )
+target_link_libraries( test_DetectionLimitState PRIVATE InterSpecLib )
+add_test( NAME TDetectionLimitState
+  COMMAND $<TARGET_FILE:test_DetectionLimitState> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+# The deconvolution coverage study is a report, not a gate: it is opt-in, it is held to a
+#  wall-clock budget rather than a fixed trial count, and `DeconCoverageGate` inside
+#  test_DetectionLimit is what actually guards against regressions on every build.
+option( INTERSPEC_ENABLE_DECON_COVERAGE_TEST
+        "Register the opt-in deconvolution coverage study as a ctest (runs about an hour)" OFF )
+if( INTERSPEC_ENABLE_DECON_COVERAGE_TEST )
+  add_test( NAME TDeconCoverageStudy
+    COMMAND $<TARGET_FILE:test_DetectionLimit> --run_test=DeconCoverageStudy
+            ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+  set_tests_properties( TDeconCoverageStudy PROPERTIES
+    TIMEOUT 7200
+    LABELS "long"
+    ENVIRONMENT "INTERSPEC_RUN_DECON_COVERAGE=1" )
+endif()
+
+add_executable( test_AppTextBundles test_AppTextBundles.cpp )
+target_link_libraries( test_AppTextBundles PRIVATE InterSpecLib )
+add_test( NAME TAppTextBundles
+  COMMAND $<TARGET_FILE:test_AppTextBundles> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_ShieldSourcePullTrend test_ShieldSourcePullTrend.cpp )
 target_link_libraries( test_ShieldSourcePullTrend PRIVATE InterSpecLib )
 add_test( NAME TShieldSourcePullTrend

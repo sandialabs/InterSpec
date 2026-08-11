@@ -31,7 +31,6 @@
   <message id="dcw-generic-shield-invalid">计算剂量时出错，屏蔽无效，抱歉 :{</message>
   <message id="dcw-dist-invalid">距离无效。</message>
   <message id="dcw-err-other">从源计算剂量时出错，抱歉 :{</message>
-  <message id="dcw-invalid-src-dose">源剂量无效。</message>
   <message id="dcw-invalid-src-act">源活度无效。</message>
   <message id="dcw-invalid-src-dose">源剂量无效。</message>
   <message id="dcw-failed-find-lower-dist">在{1} cm处找不到下限距离。</message>

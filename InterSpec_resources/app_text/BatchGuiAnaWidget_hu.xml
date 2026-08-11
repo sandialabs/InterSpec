@@ -35,7 +35,6 @@
   <message id="bgw-concatenate-all-to-single">Összes fájl összefűzése egyetlen fájlba</message>
   <message id="bgw-info-will-convert-file-type">A fájlok a kiválasztott típusra lesznek konvertálva.</message>
 
-
   <!-- Reports group -->
   <message id="bgw-reports-grp-title">Készítendő jelentések</message>
   <message id="bgw-reports-write-html">HTML</message>
@@ -43,7 +42,6 @@
   <message id="bgw-reports-write-csv">Összefoglaló CSV</message>
   <message id="bgw-reports-write-csv-tooltip">Összefoglaló CSV fájl készítése az összes bemeneti fájl elemzési eredményeivel.</message>
   <message id="bgw-reports-write-custom-per-file">Egyéni fájlonkénti</message>
-  <message id="bgw-reports-write-custom-per-file-tooltip">Egyéni jelentéssablon feltöltése minden egyes fájlhoz.</message>
   <message id="bgw-reports-write-custom-summary">Egyéni összefoglaló</message>
   <message id="bgw-reports-write-custom-summary-tooltip">Egy vagy több sablonfájl az összes bemeneti fájl összefoglalójához.</message>
 
@@ -58,7 +56,6 @@
   <message id="bgw-no-ana-act-shield-invalid-background">Érvénytelen háttér</message>
   <message id="bgw-no-ana-no-input-files">Nincsenek bemeneti fájlok.</message>
   <message id="bgw-no-ana-invalid-output-path">Kérjük, válasszon érvényes kimeneti könyvtárat.</message>
-
 
   <!-- Analysis progress and results -->
   <message id="bgw-performing-work-title">Feldolgozás folyamatban</message>

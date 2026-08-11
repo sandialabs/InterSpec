@@ -1833,6 +1833,39 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
   }//void add_supplemental_peak_info_to_json(...)
 
 
+  /** Names the continuum treatment used by a deconvolution limit, for the report.
+
+   The treatment is per region of interest.  A batch limit uses one region per peak, but rather than
+   report an arbitrary one if that ever stops being true, disagreement is reported as "mixed".
+   `FixedByFullRange` is deprecated and unreachable from the UI, but a saved state can still carry
+   it, so it is named rather than silently folded in with the others.
+   */
+  string decon_continuum_norm_str( const vector<DetectionLimitCalc::DeconRoiInfo> &roi_info )
+  {
+    if( roi_info.empty() )
+      return "";
+
+    const auto norm_name = []( const DetectionLimitCalc::DeconContinuumNorm norm ) -> string {
+      switch( norm )
+      {
+        case DetectionLimitCalc::DeconContinuumNorm::Floating:         return "Floating";
+        case DetectionLimitCalc::DeconContinuumNorm::FixedByEdges:     return "FixedByEdges";
+        case DetectionLimitCalc::DeconContinuumNorm::FixedByFullRange: return "FixedByFullRange";
+      }
+      return "";
+    };
+
+    const string first = norm_name( roi_info.front().cont_norm_method );
+    for( size_t i = 1; i < roi_info.size(); ++i )
+    {
+      if( norm_name( roi_info[i].cont_norm_method ) != first )
+        return "mixed";
+    }
+
+    return first;
+  }//string decon_continuum_norm_str(...)
+
+
   void add_mda_to_json( nlohmann::basic_json<> &mda_json, const BatchPeak::NotFitPeakMda &mda )
   {
     const DetectionLimitCalc::CurrieMdaResult &res = mda.currie.result;
@@ -1933,6 +1966,42 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         mda_json["DeconBestChi2"] = decon.overallBestChi2;
         mda_json["DeconLimitChi2"] = decon.upperLimitChi2;
         mda_json["DeconBestQuantity"] = decon.overallBestQuantity;
+
+        // Which of the several distinct quantities this number is.  Without these a report cannot
+        //  tell an upper bound on the loaded spectrum from a predicted sensitivity for a future
+        //  one, and the two must never be worded the same way.
+        mda_json["DeconContinuumNorm"] = decon_continuum_norm_str( decon.baseInput.roi_info );
+        mda_json["DeconMeasurementModel"]
+              = (decon.baseInput.measurement_model
+                     == DetectionLimitCalc::DeconMeasurementModel::BackgroundReference)
+                  ? "BackgroundReference" : "CurrentSpectrum";
+        mda_json["DeconLimitType"]
+              = (decon.limitType == DetectionLimitCalc::DeconLimitType::CentralInterval)
+                  ? "CentralInterval" : "OneSidedUpperLimit";
+        mda_json["DeconIsPredictedSensitivity"] = decon.is_predicted_sensitivity;
+        // The REAL time, matching what the user entered and what every result string and the GUI
+        //  quote.  `sampleExposure` is the live time the likelihood used, and quoting that here
+        //  made batch and GUI disagree about the same calculation by the dead-time fraction.
+        if( decon.is_predicted_sensitivity && (decon.sampleRealTime > 0.0) )
+          mda_json["DeconSampleExposure_s"] = decon.sampleRealTime;
+
+        if( decon.overallBestResults )
+        {
+          // Numerical-health diagnostics; iterations are normally small and restarts normally zero.
+          mda_json["DeconOptimizerIterations"] = decon.overallBestResults->num_continuum_iterations;
+          mda_json["DeconOptimizerRestarts"] = decon.overallBestResults->num_continuum_restarts;
+          mda_json["DeconStatisticName"] = decon.overallBestResults->statistic_name;
+        }
+
+        // Things that qualify the limit without preventing it - most often that overlapping
+        //  regions of interest were combined, or that the search range had to be extended.  These
+        //  change how the number should be read, so they belong in the report.
+        if( !decon.warnings.empty() )
+        {
+          nlohmann::json &warnings_json = mda_json["DeconWarnings"];
+          for( const string &warning : decon.warnings )
+            warnings_json.push_back( warning );
+        }
 
         if( decon.foundUpperCl )
         {

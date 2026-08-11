@@ -61,8 +61,6 @@
   <message id="isbe-category-nuc-xray-rctn-desc">جميع النويدات والأشعة السينية (التحلل والتفلور) والتفاعلات</message>
   <message id="isbe-category-xray">أشعة سينية فلورية</message>
   <message id="isbe-category-xray-desc">أشعة سينية فلورية فقط</message>
-  <message id="isbe-category-reactions">تفاعلات</message>
-  <message id="isbe-category-reactions-desc">تفاعلات فقط</message>
   <message id="isbe-category-medical">نويدات طبية</message>
   <message id="isbe-category-medical-desc">نويدات طبية شائعة</message>
   <message id="isbe-category-industrial">نويدات صناعية</message>

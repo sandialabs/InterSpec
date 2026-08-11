@@ -290,11 +290,20 @@ void compute_decon_limit( NotFitPeakMda &mda,
     if( result.foundUpperCl && (currie_limit > 0.0) && (result.upperLimit > 0.0) )
     {
       mda.decon_over_currie_ratio = result.upperLimit / currie_limit;
-      // Calibrated in log-ratio space on the clean synthetic counting-statistics grid and
-      // isolated saved peaks in the bundled Ba-133 spectrum.  The empirical 99% endpoints,
-      // expanded outward by 10%, are 0.60 and 1.87 after the one-sided threshold correction.
-      constexpr double minimum_agreement_ratio = 0.60;
-      constexpr double maximum_agreement_ratio = 1.87;
+      // Calibrated in log-ratio space on the clean synthetic counting-statistics grid and the
+      // isolated saved peaks of the bundled Ba-133 spectrum (16 observations in total), by taking
+      // the empirical range and expanding each endpoint outward by 10%.
+      //
+      // 2026-08: retightened from [0.60, 1.87] to [0.66, 1.23] when the deconvolution profile
+      // moved to a Poisson/Cash likelihood.  The old window had to be wide mainly because of one
+      // artifact: at 0.1 counts/channel the modified-Neyman variance floor pushed the ratio to
+      // 1.69.  With a Poisson statistic that cell sits at 1.05, and the whole empirical range
+      // narrows from [0.663, 1.694] to [0.731, 1.117], so the diagnostic can be more sensitive.
+      //
+      // This is an empirical warning band, not a statistical test; recalibrate it when an
+      // operational clean-spectrum corpus is available.
+      constexpr double minimum_agreement_ratio = 0.66;
+      constexpr double maximum_agreement_ratio = 1.23;
       mda.methods_disagree = (mda.decon_over_currie_ratio > maximum_agreement_ratio)
                              || (mda.decon_over_currie_ratio < minimum_agreement_ratio);
 

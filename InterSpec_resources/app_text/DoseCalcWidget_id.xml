@@ -36,7 +36,6 @@
   <message id="dcw-generic-shield-invalid">Kesalahan menghitung dosis, perisai tidak valid, maaf :{</message>
   <message id="dcw-dist-invalid">Jarak tidak valid.</message>
   <message id="dcw-err-other">Kesalahan menghitung dosis dari sumber, maaf :{</message>
-  <message id="dcw-invalid-src-dose">Dosis sumber tidak valid.</message>
   <message id="dcw-invalid-src-act">Aktivitas sumber tidak valid.</message>
   <message id="dcw-invalid-src-dose">Dosis sumber tidak valid.</message>
   <message id="dcw-failed-find-lower-dist">Gagal menemukan jarak pembatas bawah, pada {1} cm.</message>

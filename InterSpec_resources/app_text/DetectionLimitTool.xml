@@ -13,25 +13,6 @@
   <message id="dlt-roi-lower-label">ROI Lower:</message>
   <message id="dlt-roi-upper-label">ROI Upper:</message>
   <message id="dlt-continuum-label">Continuum</message>
-  <message id="dlt-cont-norm-label">Cont. Norm</message>
-  <message id="dlt-cont-norm-floating">Floating</message>
-  <message id="dlt-cont-norm-fixed-edges">Fixed at edges</message>
-  <message id="dlt-cont-norm-fixed-full-roi">Fixed full ROI</message>
-  <message id="dlt-cont-norm-tt">
-    How the continuum normalization should be determined:
-    <ul><li><b>Floating</b>: The polynomial continuum is fit for, at each given activity -
-    the activity affects the continuum.</li>
-    <li><b>Fixed at edges</b>: The channels on either side of the ROI are used to determine a
-    linear continuum that is fixed, and not affected by the nuclides activity.</li>
-    <li><b>Fixed full ROI</b>: The continuum is fit using the entire energy range of the ROI,
-    assuming a Gaussian amplitude of zero; later, the Gaussian component of the peak will
-    sit on top of this fixed continuum.<br/>
-    This is effectively asserting that you know there is no signal peak present in the data.
-    The continuum will not be affected by the nuclide activity value, and the Gaussian
-    component of the peak will sit on top of this fixed continuum when evaluating the
-    &chi;<sup>2</sup>.</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">Single peak Currie Limit</message>
   <message id="dlt-num-side-channels-label">Num Side Channels</message>
   <message id="dlt-further-details-link">further details...</message>
@@ -65,34 +46,11 @@
     </div>
   </message>
   <message id="dlt-attenuate-for-air">Attenuate for air</message>
-  <message id="dlt-scale-spectrum-cb">Scale Time:</message>
-  <message id="dlt-scale-spectrum-empty-text">e.g. 5 min</message>
-  <message id="dlt-scale-spectrum-tt">
-    Compute the limit you would expect from a measurement of the entered real time, treating the
-    current spectrum as a per-second rate estimate.  Channel counts are scaled by
-    (entered real time) / (current spectrum real time), and the live time is scaled by the same
-    ratio so the dead-time fraction is preserved.
-    <p>
-      Most accurate when scaling to a shorter or comparable dwell time; for much longer dwells
-      the result is optimistic, since the rate-estimate uncertainty exceeds the projected
-      Poisson noise.
-    </p>
-  </message>
-  <message id="dlt-err-bad-scale-time">Invalid scale time - expected something like '5 min', '300 s', or '00:05:00'.</message>
-  <message id="dlt-err-zero-realtime">Cannot scale: foreground spectrum has zero real time.</message>
   <message id="dlt-shield-empty-text">shielding material</message>
   <message id="dlt-activity-limit">Activity Limit</message>
   <message id="dlt-distance-limit">Distance Limit</message>
   <message id="dlt-peaks-disp-act-label">Peaks disp. act.:</message>
   <message id="dlt-peaks-disp-dist-label">Peaks disp. dist.:</message>
-  <message id="dlt-conf-level-label">Confidence Level:</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68.2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95.4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99.7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">Gamma lines to use</message>
   <message id="dlt-min-rel-intensity-label">Min relative intensity:</message>
   <message id="dlt-fit-fwhm-btn">Fit FWHM...</message>

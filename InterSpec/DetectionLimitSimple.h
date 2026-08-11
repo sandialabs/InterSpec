@@ -176,17 +176,31 @@ protected:
   void handleNoSignalPresentChanged();
   void handleDeconContinuumTypeChange();
 
-  /** Toggles enabled state of the scale time input, repopulates the field with
+  /** Toggles enabled state of the planned-measurement-time input, repopulates the field with
    the current foreground real time when the checkbox is off OR when the field is
    empty (so the displayed value is always meaningful), and schedules a recompute. */
-  void handleScaleSpectrumChanged();
+  void handlePlanTimeChanged();
 
-  /** Returns the foreground (or scaled foreground if Scale is active and the
-   time string parses to a positive value).  Returns the raw foreground if
-   `m_scaleSpectrumCb` is null/unchecked, the spectrum has no real time, or the
-   field is empty / whitespace-only.  Throws only if Scale is enabled and the
-   field contains a non-empty but unparseable / non-positive value. */
-  std::shared_ptr<const SpecUtils::Measurement> currentEffectiveForeground() const;
+  /** The planned measurement time, in seconds, or zero when none was requested.
+
+   Zero when the control is hidden or unchecked, or the field is blank - all of which mean "not
+   asked for".  Throws only when the control is active and the field holds a non-empty but
+   unparseable or non-positive value. */
+  double currentPlanTimeSeconds() const;
+
+  /** Which measurement the deconvolution limit describes.
+
+   The "background spectrum" checkbox means the same assertion for both methods, but drives
+   different machinery: zero Currie side channels, or this measurement model.  Always
+   `CurrentSpectrum` under the Currie method, which has no notion of a future measurement. */
+  DetectionLimitCalc::DeconMeasurementModel currentMeasurementModel() const;
+
+  /** The spectra and exposure bookkeeping the current method / model combination needs.
+
+   Thin wrapper over `DetectionLimitCalc::plan_measurement`, which is where the subtlety lives:
+   under a background reference the deconvolution must see the UNSCALED spectrum with the planned
+   time carried as an exposure, or the projection is applied twice. */
+  DetectionLimitCalc::PlannedMeasurement currentEffectiveForeground() const;
   
   void updateSpectrumDecorationsAndResultText();
   
@@ -289,13 +303,26 @@ protected:
   Wt::WLabel *m_continuumTypeLabel;
   Wt::WComboBox *m_continuumType;
 
-  /** "Scale to dwell" controls.  When checked, calculations and chart use the
-   foreground spectrum scaled to `m_scaleSpectrumTime`'s value (parsed as a
-   real-time duration via `PhysicalUnits::stringToTimeDuration`).  When
-   unchecked, `m_scaleSpectrumTime` shows the current foreground's real time
-   for reference and is disabled. */
-  Wt::WCheckBox        *m_scaleSpectrumCb;
-  Wt::WLineEdit        *m_scaleSpectrumTime;
+  /** The planned measurement time (T_s) - the dwell being asked about.
+
+   Under the Currie method, and under the deconvolution method describing the current spectrum, the
+   spectrum's counts are projected to this real time.  Under a background reference the spectrum is
+   left alone and this becomes the exposure of the predicted future measurement.  Hidden for
+   deconvolution + current spectrum, where projecting the spectrum in hand and then bounding signal
+   in it is circular.  When unchecked, `m_planTimeEdit` shows the current foreground's real time for
+   reference and is disabled.  \sa DetectionLimitCalc::plan_measurement */
+  Wt::WCheckBox        *m_planTimeCb;
+  Wt::WLineEdit        *m_planTimeEdit;
+  Wt::WContainerWidget *m_planTimeDiv;
+
+  /** The help icon beside the background checkbox; its tooltip is swapped by method, because the
+   checkbox means the same assertion but drives different machinery for each. */
+  Wt::WImage           *m_isBackgroundHelpImg;
+
+  /** Notes that qualify a limit that WAS produced.  A sibling of `m_resultTxt` rather than a third
+   page of `m_chartErrMsgStack`, which is either-or: an error page OR the chart, with nowhere to
+   put a warning beside a successful result.  These were dropped entirely before Increment C. */
+  Wt::WText            *m_warningTxt;
   
   SimpleDialog *m_moreInfoWindow;
   

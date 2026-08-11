@@ -43,7 +43,6 @@
   <message id="bgw-reports-write-csv">Summary CSV</message>
   <message id="bgw-reports-write-csv-tooltip">Write a summary CSV file with analysis results from all input files.</message>
   <message id="bgw-reports-write-custom-per-file">Custom Per-File</message>
-  <message id="bgw-reports-write-custom-per-file-tooltip">Upload a custom report template to use for each file.</message>
   <message id="bgw-reports-write-custom-summary">Custom Summary</message>
   <message id="bgw-reports-write-custom-summary-tooltip">One or more template files used to provide a summary of all input files.</message>
 
@@ -58,7 +57,6 @@
   <message id="bgw-no-ana-act-shield-invalid-background">Invalid background</message>
   <message id="bgw-no-ana-no-input-files">No input files.</message>
   <message id="bgw-no-ana-invalid-output-path">Please select a valid output directory.</message>
-
 
   <!-- Analysis progress and results -->
   <message id="bgw-unknown-analysis-error">Unknown error performing analysis.</message>

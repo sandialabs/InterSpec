@@ -9,25 +9,6 @@
   <message id="dlt-roi-lower-label">ROI Inférieur :</message>
   <message id="dlt-roi-upper-label">ROI Supérieur :</message>
   <message id="dlt-continuum-label">Continuum</message>
-  <message id="dlt-cont-norm-label">Norm. Cont.</message>
-  <message id="dlt-cont-norm-floating">Flottant</message>
-  <message id="dlt-cont-norm-fixed-edges">Fixe aux bords</message>
-  <message id="dlt-cont-norm-fixed-full-roi">Fixe ROI complet</message>
-  <message id="dlt-cont-norm-tt">
-    Comment la normalisation du continuum doit être déterminée :
-    <ul><li><b>Flottant</b> : Le continuum polynomial est ajusté, pour chaque activité donnée -
-    l'activité affecte le continuum.</li>
-    <li><b>Fixe aux bords</b> : Les canaux de chaque côté du ROI sont utilisés pour déterminer un
-    continuum linéaire qui est fixe, et non affecté par l'activité des nucléides.</li>
-    <li><b>Fixe ROI complet</b> : Le continuum est ajusté en utilisant toute la plage d'énergie du ROI,
-    en supposant une amplitude gaussienne de zéro ; plus tard, la composante gaussienne du pic
-    sera placée au-dessus de ce continuum fixe.<br/>
-    Cela affirme effectivement que vous savez qu'il n'y a pas de pic de signal présent dans les données.
-    Le continuum ne sera pas affecté par la valeur d'activité du nucléide, et la composante
-    gaussienne du pic sera placée au-dessus de ce continuum fixe lors de l'évaluation du
-    &chi;<sup>2</sup>.</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">Limite Currie pic unique</message>
   <message id="dlt-num-side-channels-label">Nb canaux latéraux</message>
   <message id="dlt-further-details-link">détails supplémentaires...</message>
@@ -66,14 +47,6 @@
   <message id="dlt-distance-limit">Limite de distance</message>
   <message id="dlt-peaks-disp-act-label">Pics aff. act. :</message>
   <message id="dlt-peaks-disp-dist-label">Pics aff. dist. :</message>
-  <message id="dlt-conf-level-label">Niveau de confiance :</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68,2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95,4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99,7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">Lignes gamma à utiliser</message>
   <message id="dlt-min-rel-intensity-label">Intensité relative min. :</message>
   <message id="dlt-fit-fwhm-btn">Ajuster FWHM...</message>
@@ -188,4 +161,6 @@
   <message id="dlt-err-upper-limit-negative">La limite supérieure de comptages est inférieure à zéro, mais les comptages observés sont supérieurs à L_d.</message>
   <message id="dlt-err-activity-zero-negative">L'activité ne peut pas être zéro ou négative</message>
   <message id="dlt-err-distance-zero-negative">La distance ne peut pas être zéro ou négative</message>
+  <message id="dlt-qr-tool-state-title">État de l'Outil de confiance de détection</message>
+  <message id="dlt-qr-tool-state-txt">État actuel de l'outil de confiance de détection.</message>
 </messages>

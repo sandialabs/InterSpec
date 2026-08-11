@@ -1,0 +1,191 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dl- is short for DetectionLimit.  Shared by DetectionLimitSimple and DetectionLimitTool, so
+       the two tools cannot describe the same statistical choice in different words.
+  -->
+
+  <!-- Confidence level.  The values are unchanged; only the labels are.  The five non-round ones
+       were shown as "1σ (68.2%)" ... "5σ", which claims a sigma multiple the limit is not, and
+       rendered 4σ and 5σ with no percentage at all. -->
+  <message id="dl-conf-95">95%</message>
+  <message id="dl-conf-99">99%</message>
+  <message id="dl-conf-1sigma">68.27%</message>
+  <message id="dl-conf-2sigma">95.45%</message>
+  <message id="dl-conf-3sigma">99.73%</message>
+  <message id="dl-conf-4sigma">99.9937%</message>
+  <message id="dl-conf-5sigma">99.999943%</message>
+  <message id="dl-conf-level-one-sided">One-sided C.L.:</message>
+  <message id="dl-conf-level-central">Central C.L.:</message>
+  <message id="dl-conf-level-one-sided-short">1-sided C.L.:</message>
+  <message id="dl-conf-level-tt">
+    The confidence level the limit is quoted at.
+    <p>
+      The five non-round values are the central-normal probabilities for 1&sigma; through 5&sigma;
+      (68.27%, 95.45%, 99.73%, 99.9937%, 99.999943%), but they are applied here as
+      <b>one-sided</b> confidence levels.  A &quot;1&sigma;&quot; choice is therefore not a
+      one-sigma one-sided bound - these are offered because they are familiar numbers, not because
+      the limit is a multiple of any sigma.
+    </p>
+  </message>
+
+  <!-- Continuum treatment -->
+  <message id="dl-cont-norm-label">Cont. Norm:</message>
+  <message id="dl-cont-norm-floating">Floating</message>
+  <message id="dl-cont-norm-edges">Anchored by side channels</message>
+  <message id="dl-cont-norm-edges-short">From sides</message>
+  <message id="dl-cont-norm-tt">
+    Where the knowledge of the background under the peak comes from - and so what you are
+    asserting.  This is a separate question from <i>which measurement</i> the limit describes;
+    see the measurement option.
+    <ul>
+      <li><b>Floating</b>: the continuum is inferred from the same channels that might contain the
+      signal, so nothing is assumed about the neighbourhood.  A broad or uniform excess is absorbed
+      into the continuum, so only genuinely peak-shaped excess counts as signal - this is the
+      stricter test of &quot;is that actually a peak?&quot;.  The default, and the best
+      validated.</li>
+      <li><b>Anchored by side channels</b>: the background is measured in the channels beside the
+      region and carried in, which asserts those shoulders contain no signal and that the continuum
+      runs straight through them.  A region simply sitting higher than its shoulders now counts as
+      signal, whether or not it is peak-shaped.  Requires a linear continuum: four-plus-four side
+      channels barely determine an offset and a slope.</li>
+    </ul>
+    <p>
+      Anchoring adds information, so it usually gives a narrower limit - but a narrower number is
+      not automatically a better one.  Floating errs toward <em>wider</em> limits; anchoring errs
+      toward <em>wrong</em> limits, in either direction, if a neighbouring line, a step, or
+      curvature makes the shoulders unrepresentative.  Default to Floating, and use the side
+      channels when the region is clean for several FWHM either side and the extra sensitivity is
+      worth the assertion.
+    </p>
+    <p>
+      Note the shoulders' own counting uncertainty is carried in the likelihood, so a weak anchor
+      honestly widens the limit rather than pretending the continuum is known.
+    </p>
+  </message>
+
+  <!-- Measurement model -->
+  <message id="dl-model-label">Measurement:</message>
+  <message id="dl-model-current">Current spectrum</message>
+  <message id="dl-model-backref">Background reference</message>
+  <message id="dl-model-backref-cb">Background reference</message>
+  <message id="dl-model-tt">
+    Which measurement the limit is a statement about.
+    <ul>
+      <li><b>Current spectrum</b>: how much signal could be hiding in the spectrum you have.  The
+      ordinary case.</li>
+      <li><b>Background reference</b>: the loaded spectrum is asserted to contain no signal, and is
+      used to predict what a <i>future</i> measurement would be able to detect.  The reference
+      counts and the projected measurement are scored together, sharing one continuum, so the
+      reference's own counting statistics are carried into the answer rather than wished away.</li>
+    </ul>
+    <p>
+      A background-reference result is a <b>predicted sensitivity</b>, not a bound on the spectrum
+      in hand, and is reported as such.  It is a median expectation: there is no future measurement
+      to observe, so the prediction is made at the expected counts.
+    </p>
+  </message>
+  <message id="dl-model-backref-tt">
+    Asserts this spectrum contains no signal, and uses it to predict what a future measurement
+    could detect.
+    <p>
+      The result is a <b>predicted sensitivity</b> for a measurement of the planned time, not an
+      upper limit on this spectrum.  The reference's own counting statistics are carried into the
+      answer, so a short background gives a correspondingly weaker prediction.
+    </p>
+  </message>
+
+  <!-- Limit type -->
+  <message id="dl-limittype-label">Limit:</message>
+  <message id="dl-limittype-upper">Upper limit</message>
+  <message id="dl-limittype-central">Central interval</message>
+  <message id="dl-limittype-tt">
+    Which quantity to report.  These are different products and they use different thresholds on the
+    statistic, so the choice is explicit rather than guessed.
+    <ul>
+      <li><b>Upper limit</b>: a one-sided bound - &quot;the activity is less than U at this
+      confidence&quot;.  What is wanted almost always.</li>
+      <li><b>Central interval</b>: a two-sided interval - &quot;the activity is between L and U at
+      this confidence&quot;.</li>
+    </ul>
+    <p>
+      Note the two roots found at a one-sided threshold do <b>not</b> form a central interval:
+      together they cover only about 2&times;CL&minus;1, so two 95% one-sided bounds make roughly a
+      90% central interval.  When that happens the result says so rather than calling it an
+      interval.
+    </p>
+    <p>
+      On a spectrum with no signal a central interval usually runs into the physical boundary at
+      zero, so only the upper endpoint exists; it is then reported as &quot;between 0 and U&quot;.
+      That is <b>not</b> the same as a one-sided upper limit at the same confidence - the endpoint
+      sits at a higher threshold, making it a (1+CL)/2 one-sided bound.
+    </p>
+  </message>
+
+  <!-- Planned measurement time (formerly "Scale Time") -->
+  <message id="dl-plan-time-cb">Meas. time:</message>
+  <message id="dl-plan-time-cb-short">Meas. 🕐</message>
+  <message id="dl-plan-time-empty-text">e.g. 5 min</message>
+  <message id="dl-plan-time-tt">
+    The dwell you are asking about.  One control, but it reaches the calculation two different ways:
+    <ul>
+      <li>For the Currie method, and when the limit describes the loaded spectrum, the spectrum's
+      channel counts are projected to this real time (and the live time by the same ratio, so the
+      dead-time fraction is preserved).</li>
+      <li>When the spectrum is a <b>background reference</b>, the reference counts are left alone
+      and this becomes the exposure of the future measurement being predicted - so the reference's
+      own counting statistics are carried into the answer instead of being wished away.</li>
+    </ul>
+    <p>
+      Projecting the spectrum is most accurate for a shorter or comparable dwell; for a much longer
+      one the result is optimistic, since the rate-estimate uncertainty then exceeds the projected
+      Poisson noise.  The background-reference route does not have that problem.
+    </p>
+  </message>
+  <message id="dl-err-bad-plan-time">Invalid measurement time - expected something like '5 min', '300 s', or '00:05:00'.</message>
+
+  <!-- Result wording.  Localized counterparts of DeconActivityOrDistanceLimitResult::limitText,
+       driven by the same DeconLimitTextKind so the two cannot say different things. -->
+  <message id="dl-limit-upper">Less than {1} at {2} CL (one-sided upper limit), &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-predicted">Predicted sensitivity: less than {1} at {2} CL for a {3} measurement, &chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central">Between {1} and {2} at {3} central CL, &chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central-upper">Between 0 and {1} at {2} central CL, &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-two-one-sided">Two one-sided {1} bounds: {2} to {3} (~{4} central coverage), &chi;<sup>2</sup>={5}</message>
+  <message id="dl-limit-distance-lower">Distance &ge;{1} at {2} CL (one-sided lower limit), &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-none">No limit: {1}</message>
+  <message id="dl-best-stat">Best &chi;<sup>2</sup> of {1} at {2}, {3} DOF</message>
+  <message id="dl-best-stat-flat">&chi;<sup>2</sup> is {1} at large distance, {2} DOF</message>
+
+  <!-- The one place the "chi2 is really Cash" point is made in the UI; attached wherever a chi2
+       value or the chi2 axis is shown.  Same wording as the header doc comments. -->
+  <message id="dl-stat-is-cash-tt">
+    The quantity labelled &chi;<sup>2</sup> here is the <b>{1} statistic</b> - a Poisson deviance,
+    2&middot;&sum;(E &minus; n + n&middot;ln(n/E)), summed once per channel (Cash 1979).  It is used
+    instead of a Gaussian &chi;<sup>2</sup> because it has no modified-Neyman variance bias and
+    needs no variance floor for empty channels.
+    <p>
+      Only <em>differences</em> of it between trial activities are meaningful; a difference follows
+      the same asymptotic &chi;<sup>2</sup> law a Gaussian one would, which is what sets the
+      confidence threshold.  Its absolute value does <b>not</b> test goodness of fit:
+      E[statistic] is not (channels &minus; parameters), so a &chi;<sup>2</sup>/DOF formed from the
+      two numbers displayed beside each other is <b>not</b> a goodness-of-fit measure and should not
+      be read as one.
+    </p>
+  </message>
+
+  <!-- Chart.  The threshold line is the level the reported limit is read off at, so without it the
+       curve gives no way to see how sharply the limit is determined. -->
+  <message id="dl-chart-y-axis-chi2">χ²</message>
+  <!-- Plain text with literal characters, no entities or markup: this string is handed to d3's
+       .text(), which sets textContent, so "&Delta;" would appear on the chart verbatim. -->
+  <message id="dl-chart-threshold-label">{1} threshold (Δχ²={2})</message>
+  <!-- Shown when a saved state or URL carrying the retired continuum option is loaded.  Never
+       reinterpret such a state silently. -->
+  <message id="dl-migrate-nosig-notice">
+    The saved state used the retired &quot;assume no signal is present&quot; continuum option.  That
+    option asserted the spectrum contains no signal and then ignored the uncertainty of that
+    assertion, which measured about 40% coverage where 95% was claimed.  It has been reloaded as a
+    floating continuum on a background-reference measurement, which is what it was reaching for.
+    The measurement time now means the dwell of the future measurement being predicted, rather than
+    a rescaling of this spectrum - check it before relying on the number.
+  </message>
+</messages>

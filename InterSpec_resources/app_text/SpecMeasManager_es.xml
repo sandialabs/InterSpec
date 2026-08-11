@@ -49,15 +49,6 @@
   </message>
   <message id="smm-unsupported-document">Este archivo parece ser un archivo de documento, y no es soportado por InterSpec.</message>
   <message id="smm-invalid-peak-csv">El archivo subido parecía ser un archivo CSV de picos, pero era inválido.</message>
-  <message id="smm-file-is-drf">
-    <p style="white-space: nowrap;">
-      Este archivo parece ser una función de respuesta del detector.
-    </p>
-    <p style="text-align: left; white-space: nowrap;">
-      Nombre: {1}
-    </p>
-   <p>¿Le gustaría usar este DRF?</p>
-  </message>
   <message id="smm-saved-drf-conf">
     Se guardó '{1}' para uso posterior, y estará disponible en la
     porción "<em>Ef. rel.</em>" de la herramienta "<em>Selección función respuesta detector</em>".
@@ -254,7 +245,6 @@
     Use el <b>Gestor archivos</b> para cambiar esto.
   </message>
 
-
   <!-- The visual components of the Spectrum Measurement Manager GUI -->
   <message id="smm-selected-spec-label">Espectro seleccionado: </message>
   <message id="smm-disp-as-btn">Mostrar como</message>
@@ -267,7 +257,6 @@
   <message id="smm-export-btn">Exportar...</message>
   <message id="smm-unload-btn">Descargar</message>
   <message id="smm-unassign-label">Desasignar: </message>
-
 
   <message id="smm-prev-states-window-title">Estados almacenados previamente</message>
   <message id="smm-err-prev-state-unexpected">Problema inesperado mostrando estados guardados disponibles: {1}</message>
@@ -327,9 +316,7 @@
   <message id="musd-err-decoding-url">Error decodificando URL: {1}</message>
   <message id="musd-received-urls-list">Se recibieron urls {1} de {2}.<p>Esperando más URL/códigos QR</p></message>
 
-
   <message id="uid-qr-code-pic">Imagen código QR</message>
-  <message id="uid-no-qr-found">No se encontraron códigos QR ⓘ</message>
   <message id="uid-no-qr-found-title">No se encontró código QR</message>
   <message id="uid-no-qr-content">
     <p>
@@ -391,5 +378,4 @@
   <message id="sfm-col-loaded">Cargado</message>
   <message id="sfm-col-file-rid">RID archivo</message>
 </messages>
-
 

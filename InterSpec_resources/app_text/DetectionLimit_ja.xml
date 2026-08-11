@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- DetectionLimit.xml の翻訳 -->
+
+  <message id="dl-conf-95">95%</message>
+  <message id="dl-conf-99">99%</message>
+  <message id="dl-conf-1sigma">68.27%</message>
+  <message id="dl-conf-2sigma">95.45%</message>
+  <message id="dl-conf-3sigma">99.73%</message>
+  <message id="dl-conf-4sigma">99.9937%</message>
+  <message id="dl-conf-5sigma">99.999943%</message>
+  <message id="dl-conf-level-one-sided">片側信頼水準:</message>
+  <message id="dl-conf-level-central">中央信頼水準:</message>
+  <message id="dl-conf-level-one-sided-short">片側C.L.:</message>
+  <message id="dl-conf-level-tt">
+    この上限値を示す際の信頼水準です。
+    <p>
+      端数のある5つの値は 1&sigma; から 5&sigma; に対応する正規分布の中央確率
+      (68.27%、95.45%、99.73%、99.9937%、99.999943%) ですが、ここでは<b>片側</b>信頼水準として
+      適用されます。したがって &quot;1&sigma;&quot; を選んでも 1 シグマの片側限界にはなりません。
+      これらは馴染みのある数値だから用意されているのであって、上限値が何らかのシグマの倍数だから
+      ではありません。
+    </p>
+  </message>
+
+  <!-- 連続成分の扱い -->
+  <message id="dl-cont-norm-label">連続体正規化:</message>
+  <message id="dl-cont-norm-floating">浮動</message>
+  <message id="dl-cont-norm-edges">側方チャンネルで固定</message>
+  <message id="dl-cont-norm-edges-short">側方から</message>
+  <message id="dl-cont-norm-tt">
+    ピーク下のバックグラウンドに関する知識をどこから得るか、つまり何を仮定しているかです。これは
+    上限値が<i>どの測定</i>を記述しているかとは別の問題です。測定オプションを参照してください。
+    <ul>
+      <li><b>浮動</b>: 連続成分は信号を含みうるチャンネル自身から推定されるため、周囲について何も
+      仮定しません。幅広い、あるいは一様な超過分は連続成分に吸収されるので、真にピーク形状をした
+      超過分だけが信号として数えられます。&quot;本当にピークなのか?&quot; を問う、より厳しい検定
+      です。既定値であり、最もよく検証されています。</li>
+      <li><b>側方チャンネルで固定</b>: 関心領域の両脇のチャンネルでバックグラウンドを測定して
+      持ち込みます。これは、その肩の部分に信号が含まれず、連続成分がそこを直線的に通ることを仮定
+      することになります。単に肩より高いだけの領域も、ピーク形状かどうかに関わらず信号として
+      数えられるようになります。線形の連続成分が必要です。左右4点ずつの側方チャンネルでは、切片と
+      傾きをようやく決められる程度だからです。</li>
+    </ul>
+    <p>
+      固定は情報を追加するため、通常はより狭い上限値を与えます。しかし狭い数値が自動的に良い数値
+      だとは限りません。浮動は<em>広め</em>の上限値へ、固定は隣接する線・段差・曲率によって肩が
+      代表的でなくなった場合に、どちらの向きにも<em>誤った</em>上限値へと外れます。既定では浮動を
+      使い、領域が左右数FWHMにわたって清浄で、感度の向上がその仮定に見合う場合に側方チャンネルを
+      使ってください。
+    </p>
+    <p>
+      なお、肩自身の計数の不確かさも尤度の中で伝播されるため、弱い固定は連続成分が既知であるかの
+      ように装うのではなく、正直に上限値を広げます。
+    </p>
+  </message>
+
+  <!-- 測定モデル -->
+  <message id="dl-model-label">測定:</message>
+  <message id="dl-model-current">現在のスペクトル</message>
+  <message id="dl-model-backref">バックグラウンド参照</message>
+  <message id="dl-model-backref-cb">バックグラウンド参照</message>
+  <message id="dl-model-tt">
+    この上限値がどの測定についての主張であるかを指定します。
+    <ul>
+      <li><b>現在のスペクトル</b>: 手元のスペクトルにどれだけの信号が隠れうるか。通常の場合です。</li>
+      <li><b>バックグラウンド参照</b>: 読み込んだスペクトルには信号が含まれないと仮定し、それを
+      用いて<i>将来の</i>測定が何を検出できるかを予測します。参照の計数と予測される測定は、1つの
+      連続成分を共有して同時に評価されるため、参照自身の計数統計が無視されずに結果へ伝播します。</li>
+    </ul>
+    <p>
+      バックグラウンド参照の結果は<b>予測感度</b>であり、手元のスペクトルに対する上限ではありません。
+      そのように報告されます。これは中央値としての期待であり、観測すべき将来の測定は存在しないため、
+      期待計数において予測が行われます。
+    </p>
+  </message>
+  <message id="dl-model-backref-tt">
+    このスペクトルには信号が含まれないと仮定し、将来の測定が何を検出できるかを予測します。
+    <p>
+      結果は計画された測定時間に対する<b>予測感度</b>であり、このスペクトルの上限値ではありません。
+      参照自身の計数統計が結果へ伝播するため、バックグラウンドが短いとそれに応じて予測も弱くなります。
+    </p>
+  </message>
+
+  <!-- 上限の種類 -->
+  <message id="dl-limittype-label">上限:</message>
+  <message id="dl-limittype-upper">上限値</message>
+  <message id="dl-limittype-central">中央区間</message>
+  <message id="dl-limittype-tt">
+    どの量を報告するかです。これらは別種の結果であり、統計量に対して異なるしきい値を用いるため、
+    推測ではなく明示的に選択します。
+    <ul>
+      <li><b>上限値</b>: 片側の限界、すなわち &quot;この信頼度で放射能は U より小さい&quot;。
+      ほとんどの場合はこれが求められます。</li>
+      <li><b>中央区間</b>: 両側の区間、すなわち &quot;この信頼度で放射能は L と U の間にある&quot;。</li>
+    </ul>
+    <p>
+      片側のしきい値で見つかった2つの根は中央区間には<b>なりません</b>。両者を合わせても被覆確率は
+      およそ 2&times;C.L.&minus;1 にすぎず、95% 片側の限界を2つ並べてもおよそ 90% の中央区間にしか
+      なりません。そのような場合、結果は区間と称さずにその旨を明記します。
+    </p>
+    <p>
+      信号のないスペクトルでは、中央区間は通常ゼロという物理的境界に達するため上端しか存在せず、
+      &quot;0 から U の間&quot; として報告されます。これは同じ信頼度の片側上限値とは<b>異なります</b>。
+      その端点はより高いしきい値にあり、(1+C.L.)/2 の片側限界に相当します。
+    </p>
+  </message>
+
+  <!-- 計画測定時間 -->
+  <message id="dl-plan-time-cb">測定時間:</message>
+  <message id="dl-plan-time-cb-short">測定 🕐</message>
+  <message id="dl-plan-time-empty-text">例: 5 分</message>
+  <message id="dl-plan-time-tt">
+    問い合わせたい測定時間です。操作は1つですが、計算には2通りの経路で反映されます。
+    <ul>
+      <li>Currie 法の場合、および上限値が読み込んだスペクトルを記述する場合は、スペクトルの
+      チャンネル計数がこの実時間へ換算されます (ライブタイムも同じ比率で換算されるため、
+      デッドタイム比は保たれます)。</li>
+      <li>スペクトルが<b>バックグラウンド参照</b>の場合、参照の計数はそのまま保たれ、この値が
+      予測される将来の測定の露出時間になります。したがって参照自身の計数統計が無視されずに
+      結果へ伝播します。</li>
+    </ul>
+    <p>
+      スペクトルの換算は、より短いか同程度の測定時間に対して最も正確です。はるかに長い時間に対しては
+      計数率推定の不確かさが換算後のポアソン雑音を上回るため、結果は楽観的になります。
+      バックグラウンド参照の経路にはこの問題はありません。
+    </p>
+  </message>
+  <message id="dl-err-bad-plan-time">測定時間が不正です - '5 分'、'300 s'、'00:05:00' のような形式を想定しています。</message>
+
+  <!-- 結果の文言 -->
+  <message id="dl-limit-upper">信頼度 {2} で {1} 未満 (片側上限値)、&chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-predicted">予測感度: {3} の測定に対し、信頼度 {2} で {1} 未満、&chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central">中央信頼度 {3} で {1} から {2} の間、&chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central-upper">中央信頼度 {2} で 0 から {1} の間、&chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-two-one-sided">{1} の片側限界2つ: {2} から {3} (中央被覆はおよそ {4})、&chi;<sup>2</sup>={5}</message>
+  <message id="dl-limit-distance-lower">信頼度 {2} で距離 &ge;{1} (片側下限値)、&chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-none">上限値なし: {1}</message>
+  <message id="dl-best-stat">最良の &chi;<sup>2</sup> は {2} で {1}、自由度 {3}</message>
+  <message id="dl-best-stat-flat">遠距離では &chi;<sup>2</sup> は {1}、自由度 {2}</message>
+
+  <message id="dl-stat-is-cash-tt">
+    ここで &chi;<sup>2</sup> と表示されている量は<b>{1} 統計量</b>です。すなわちポアソン逸脱度
+    2&middot;&sum;(E &minus; n + n&middot;ln(n/E)) を1チャンネルにつき1回加算したものです
+    (Cash 1979)。ガウス型の &chi;<sup>2</sup> ではなくこれを用いるのは、修正 Neyman 法の分散
+    バイアスがなく、空のチャンネルに対して分散の下限値を必要としないためです。
+    <p>
+      意味を持つのは試行放射能どうしの<em>差</em>だけです。差はガウス型の場合と同じ漸近的
+      &chi;<sup>2</sup> 分布に従い、それが信頼度のしきい値を決めます。絶対値は適合度を検定
+      <b>しません</b>。E[統計量] は (チャンネル数 &minus; パラメータ数) と等しくないため、
+      並べて表示されている2つの数値から作った &chi;<sup>2</sup>/自由度 は適合度の指標では
+      <b>なく</b>、そのように読むべきではありません。
+    </p>
+  </message>
+
+  <!-- グラフ -->
+  <message id="dl-chart-y-axis-chi2">χ²</message>
+  <message id="dl-chart-threshold-label">{1} しきい値 (Δχ²={2})</message>
+  <message id="dl-migrate-nosig-notice">
+    保存された状態では、廃止された &quot;信号が存在しないと仮定する&quot; という連続成分オプションが
+    使われていました。このオプションはスペクトルに信号が含まれないと仮定したうえで、その仮定の
+    不確かさを無視するもので、95% と称しながら実測の被覆確率は約 40% でした。本来意図されていた
+    構成である、バックグラウンド参照測定における浮動連続成分として読み込み直しました。測定時間は
+    このスペクトルの再スケーリングではなく、予測される将来の測定の測定時間を意味するようになりました。
+    数値を利用する前に確認してください。
+  </message>
+</messages>
