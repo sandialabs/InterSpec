@@ -178,7 +178,7 @@ static void check_dose( const string &nuclabel,
 
   // 2% tolerance, computed relative to the larger of the two values to match
   // the in-app runtime_sanity_checks convention.
-  const double denom = std::max( std::abs( computed ), std::abs( expected_dose ) );
+  const double denom = (std::max)( std::abs( computed ), std::abs( expected_dose ) );
   const double rel_diff = ( denom > 0.0 ) ? std::abs( computed - expected_dose ) / denom : 0.0;
 
   BOOST_CHECK_MESSAGE( rel_diff <= 0.02,

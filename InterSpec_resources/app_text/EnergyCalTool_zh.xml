@@ -27,9 +27,16 @@
   <message id="ect-export-CALp-msg">您以后可以通过将CALp文件拖放到InterSpec上，将此CALp文件应用于不同的谱。</message>
   <message id="ect-fit-coeff-btn">拟合系数</message>
   <message id="ect-tt-fit-coeff-btn">
-    使用与拟合峰相关联的光峰的预期能量来拟合能量系数。
-    如果未选择要拟合的系数，或者选择的峰少于系数，则此按钮被禁用。
+    使用前景谱中已拟合峰对应光电峰的期望能量，来拟合所选的能量刻度系数。
+    更改的效果随后会传播到“应用更改到”下选中的所有谱、样本和探测器：它们的能量刻度会做等效调整，使更改前在能量上对齐的数据在更改后（在新能量处）仍然对齐——即使它们的刻度系数或类型不同。
+    如果此按钮被禁用，原因会显示在其左侧。
   </message>
+  <message id="ect-fit-hint-fore-deselected">拟合已禁用：“应用更改到”中未选中“前景”</message>
+  <message id="ect-fit-hint-no-peaks">没有标记用于能量刻度的峰</message>
+  <message id="ect-fit-hint-not-fore-cal">拟合使用前景的能量刻度</message>
+  <message id="ect-fit-hint-no-coefs">未选择要拟合的系数</message>
+  <message id="ect-fit-hint-few-peaks">选中的峰少于要拟合的系数</message>
+  <message id="ect-tt-fit-cb-disabled">系数拟合始终使用前景显示的“拟合”选择；这些复选框只是与其保持同步。</message>
   <message id="ect-apply-changes-to">应用更改到</message>
   <message id="ect-disp-dets">显示的探测器</message>
   <message id="ect-all-dets">所有探测器</message>
@@ -76,6 +83,7 @@
   <message id="ect-no-coeff-selected">您必须至少选择一个系数进行拟合。</message>
   <message id="ect-fail-min">ErrorMsg 使用矩阵和迭代方法拟合能量刻度失败</message>
   <message id="ect-fit-successful">能量刻度已从拟合中更新。</message>
+  <message id="ect-fit-successful-detail">能量刻度已从拟合中更新；{1} 个所用峰与其真实能量的平均偏差从 {2} keV 变为 {3} keV。</message>
   <message id="ect-fail-fit">通过拟合峰均值进行刻度失败。{1}</message>
   <message id="ect-del-graphical-msg">如果您通过在谱的另一部分上ALT+CTRL+拖动再次重新刻度，您将可以选择保留此刻度的效果。</message>
   <message id="ect-lc-disp-dets">显示的探测器</message>

@@ -16,6 +16,12 @@ if(MSVC)
     set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
   endif()
   message(STATUS "Using CMAKE_MSVC_RUNTIME_LIBRARY ${CMAKE_MSVC_RUNTIME_LIBRARY}")
+
+  # <windows.h> defines function-like min(a,b)/max(a,b) macros unless NOMINMAX is defined first,
+  #  which turns any later `std::max( a, b )`, `std::numeric_limits<T>::max()` or even `obj.max()`
+  #  into MSVC error C2589.  This seems to affect the unit tests mostly, so we will take the 
+  #  heavy-handed approach of adding it to the compiler command line.
+  add_compile_definitions( NOMINMAX )
 endif()
 
 enable_testing()
@@ -130,6 +136,13 @@ add_test( NAME TRelActAutoReport
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_BatchSampleSelect test_BatchSampleSelect.cpp )
+target_link_libraries( test_BatchSampleSelect PRIVATE InterSpecLib )
+add_test( NAME TBatchSampleSelect
+  COMMAND $<TARGET_FILE:test_BatchSampleSelect> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_BatchRelActAuto test_BatchRelActAuto.cpp )
 target_link_libraries( test_BatchRelActAuto PRIVATE InterSpecLib )
 add_test( NAME TBatchRelActAuto
@@ -179,6 +192,20 @@ add_test( NAME TRelActCalcAuto_FloatingPeakFwhm
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActCalcAuto_ObsEffFilter test_RelActCalcAuto_ObsEffFilter.cpp )
+target_link_libraries( test_RelActCalcAuto_ObsEffFilter PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_ObsEffFilter
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_ObsEffFilter> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_MultiCurve test_RelActCalcAuto_MultiCurve.cpp )
+target_link_libraries( test_RelActCalcAuto_MultiCurve PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_MultiCurve
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_MultiCurve> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_XRayWidthServer test_XRayWidthServer.cpp )
 target_link_libraries( test_XRayWidthServer PRIVATE InterSpecLib )
 add_test( NAME TXRayWidthServer
@@ -205,6 +232,13 @@ add_executable( test_DetectionLimit test_DetectionLimit.cpp )
 target_link_libraries( test_DetectionLimit PRIVATE InterSpecLib )
 add_test( NAME test_DetectionLimit
   COMMAND $<TARGET_FILE:test_DetectionLimit> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_ShieldSourcePullTrend test_ShieldSourcePullTrend.cpp )
+target_link_libraries( test_ShieldSourcePullTrend PRIVATE InterSpecLib )
+add_test( NAME TShieldSourcePullTrend
+  COMMAND $<TARGET_FILE:test_ShieldSourcePullTrend> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
@@ -301,6 +335,71 @@ add_test( NAME TFitPeaksForSources
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_BackgroundPeakRecovery test_BackgroundPeakRecovery.cpp )
+target_link_libraries( test_BackgroundPeakRecovery PRIVATE InterSpecLib )
+add_test( NAME TBackgroundPeakRecovery
+  COMMAND $<TARGET_FILE:test_BackgroundPeakRecovery> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+if( USE_LLM_INTERFACE )
+  add_executable( test_LlmToolRegistry test_LlmToolRegistry.cpp )
+  target_link_libraries( test_LlmToolRegistry PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmToolRegistry
+    COMMAND $<TARGET_FILE:test_LlmToolRegistry> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmPromptTemplate test_LlmPromptTemplate.cpp )
+  target_link_libraries( test_LlmPromptTemplate PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmPromptTemplate
+    COMMAND $<TARGET_FILE:test_LlmPromptTemplate> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmIsotopicsTool test_LlmIsotopicsTool.cpp )
+  target_link_libraries( test_LlmIsotopicsTool PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmIsotopicsTool
+    COMMAND $<TARGET_FILE:test_LlmIsotopicsTool> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmActivityFitTool test_LlmActivityFitTool.cpp )
+  target_link_libraries( test_LlmActivityFitTool PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmActivityFitTool
+    COMMAND $<TARGET_FILE:test_LlmActivityFitTool> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmRelActManualTool test_LlmRelActManualTool.cpp )
+  target_link_libraries( test_LlmRelActManualTool PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmRelActManualTool
+    COMMAND $<TARGET_FILE:test_LlmRelActManualTool> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmInterface test_LlmInterface.cpp )
+  target_link_libraries( test_LlmInterface PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmInterface
+    COMMAND $<TARGET_FILE:test_LlmInterface> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_AnalystChecks test_AnalystChecks.cpp )
+  target_link_libraries( test_AnalystChecks PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TAnalystChecks
+    COMMAND $<TARGET_FILE:test_AnalystChecks> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+
+  add_executable( test_LlmTimeHistoryTools test_LlmTimeHistoryTools.cpp )
+  target_link_libraries( test_LlmTimeHistoryTools PRIVATE InterSpecLib ${Wt_TEST_LIBRARY} )
+  add_test( NAME TLlmTimeHistoryTools
+    COMMAND $<TARGET_FILE:test_LlmTimeHistoryTools> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+endif( USE_LLM_INTERFACE )
+
 add_executable( test_DetectorPeakResponse test_DetectorPeakResponse.cpp )
 target_link_libraries( test_DetectorPeakResponse PRIVATE InterSpecLib )
 add_test( NAME TDetectorPeakResponse
@@ -326,6 +425,13 @@ add_executable( test_GadrasShieldScatter test_GadrasShieldScatter.cpp )
 target_link_libraries( test_GadrasShieldScatter PRIVATE InterSpecLib )
 add_test( NAME TGadrasShieldScatter
   COMMAND $<TARGET_FILE:test_GadrasShieldScatter> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_ExportSpecFile test_ExportSpecFile.cpp )
+target_link_libraries( test_ExportSpecFile PRIVATE InterSpecLib )
+add_test( NAME TExportSpecFile
+  COMMAND $<TARGET_FILE:test_ExportSpecFile> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 

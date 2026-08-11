@@ -25,6 +25,7 @@
 
 #include "InterSpec_config.h"
 
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
@@ -46,6 +47,7 @@ namespace Wt
 {
   class WText;
   class WCheckBox;
+  class WMenuItem;
   class WGridLayout;
   class WPushButton;
   class WStackedWidget;
@@ -161,6 +163,23 @@ struct MeasToApplyCoefChangeTo
 };//struct MeasToApplyCoefChangeTo
 
 
+/** Tracks the ORIGINAL channel energies of a lower-channel-energy defined calibration, together
+ with the cumulative {offset, gain} adjustment that has been applied to it this session, so that
+ re-calibrating these calibrations is always done relative to the original channel energies (and
+ not just the current ones).  See #EnergyCal::adjust_lower_channel_energy_cal for the meaning of
+ offset and gain.
+
+ Once the file is unloaded/re-loaded (or exported), the adjusted calibration becomes the new
+ nominal calibration - which is fine.
+ */
+struct LowerChanCalOriginal
+{
+  std::shared_ptr<const SpecUtils::EnergyCalibration> original;
+  double offset = 0.0;  //keV; E_new = offset + gain*E_orig
+  double gain = 1.0;    //dimensionless, nominal 1.0 (identity)
+};//struct LowerChanCalOriginal
+
+
 
 class EnergyCalTool : public Wt::WContainerWidget
 {
@@ -178,7 +197,16 @@ public:
   void deleteGraphicalRecalConfirmWindow();
   
   void updateFitButtonStatus();
-  
+
+  /** Called when the user toggles a per-coefficient "Fit" checkbox on `display`.
+
+   The selection of which coefficient orders to fit is a property of the fit itself - not of any
+   one detector - since the fit result gets propagated to all applicable detectors; so this
+   function keeps the "Fit" checkboxes in sync across all displays, then updates the fit button
+   status.
+   */
+  void fitCheckboxChanged( EnergyCalImp::CalDisplay *display );
+
 #if( !IMP_CALp_BTN_NEAR_COEFS )
   void updateCALpButtonsStatus();
 #endif
@@ -254,6 +282,22 @@ public:
    what options the user has chosen.
    */
   std::vector<MeasToApplyCoefChangeTo> measurementsToApplyCoeffChangeTo();
+
+  /** Returns the original channel energies, and cumulative {offset, gain} adjustment, of a
+   (possibly already adjusted) lower-channel-energy calibration; if `cal` hasnt been adjusted this
+   session, returns {cal, 0.0, 0.0} - i.e., the passed in calibration is the original.
+   */
+  LowerChanCalOriginal lowerChannelOriginal(
+                        const std::shared_ptr<const SpecUtils::EnergyCalibration> &cal ) const;
+
+  /** Registers `new_cal` as being `info.original`, adjusted by the cumulative {info.offset,
+   info.gain}, so future adjustments of `new_cal` stay relative to the true original channel
+   energies.  `info.original` should be the resolved original (i.e., from
+   #lowerChannelOriginal), not just the previous calibration.
+   */
+  void registerLowerChannelAdjustment(
+                        const std::shared_ptr<const SpecUtils::EnergyCalibration> &new_cal,
+                        const LowerChanCalOriginal &info );
   
   
   
@@ -302,12 +346,40 @@ protected:
   
   
   void doRefreshFromFiles();
-  
+
+  /** Creates #m_specTypeMenu, #m_specTypeMenuStack, #m_calInfoDisplayStack, and all three
+   #m_detectorMenu entries.  Called once per layout (Wide/Tall) from #doRefreshFromFiles; after
+   that the menu contents are only diffed/updated in place.
+   */
+  void createCalDisplayWidgets();
+
   void specTypeToDisplayForChanged();
   
   void fitCoefficients();
-  bool canDoEnergyFit();
-  
+
+  /** Whether the "Fit Coeffs" button should be enabled, or the reason it shouldnt be. */
+  enum class CanFitCoefStatus : int
+  {
+    CanFit,
+    ForegroundNotApplied,  //"Foreground" unchecked in "Apply Changes To"
+    NoPeaksToUse,          //no peaks, or none marked to use for energy calibration
+    NotForegroundCal,      //shown display isnt showing the foregrounds displayed calibration
+    InvalidCalType,        //InvalidEquationType - no hint shown; the convert-to-poly msg covers it
+    NoCoefSelected,        //no "Fit" checkbox checked on the fit-source display
+    MorePeaksNeeded,       //more coefficients selected to fit than peaks marked to use
+    InternalError          //null stack/display/cal - no hint shown
+  };//enum class CanFitCoefStatus
+
+  CanFitCoefStatus canDoEnergyFit();
+
+  /** Returns the foreground CalDisplay of a displayed detector - the display whose "Fit"
+   checkboxes are consulted when fitting coefficients - or nullptr if there is none.
+   Optionally also gives the menu number and menu item, so the caller can select the display
+   in the GUI.
+   */
+  EnergyCalImp::CalDisplay *foregroundFitDisplay( int *menunum = nullptr,
+                                                  Wt::WMenuItem **item = nullptr );
+
   /** Have #refreshGuiFromFiles only ever get called from #render to avoid current situation
    of calling refreshGuiFromFiles multiple times for a single render (the looping over files can
    get expensive probably)
@@ -370,8 +442,12 @@ protected:
   
   /** The menus that let you select which detector to show calibration info for.
    These menues are held in the #m_specTypeMenuStack stack.
-   
-   These entries will be nullptr if there is not a SpecFile for its respective {for, back, sec}
+
+   All three menus are created (in #createCalDisplayWidgets) even if there is not a SpecFile for
+   the respective {for, back, sec} - in that case the menu is just empty, and its item in
+   #m_specTypeMenu hidden.  When every displayed file has no more than one detector, all entries
+   go in the foreground menu (labeled "Foreground"/"Background"/"Secondary"), and the other two
+   menus are empty.
    */
   Wt::WMenu *m_detectorMenu[3];
   
@@ -415,6 +491,14 @@ protected:
   
   std::shared_ptr<SpecMeas> m_currentSpecMeas[3];
   std::set<int> m_currentSampleNumbers[3];
+
+  /** Map from a session-adjusted lower-channel-energy calibration, to its original channel
+   energies and the cumulative adjustment applied; see #LowerChanCalOriginal.  Weak keys stay
+   resolvable while the measurements (or the undo/redo history) hold the calibrations; expired
+   entries are lazily pruned in #doRefreshFromFiles.
+   */
+  std::map<std::weak_ptr<const SpecUtils::EnergyCalibration>, LowerChanCalOriginal,
+           std::owner_less<std::weak_ptr<const SpecUtils::EnergyCalibration>>> m_lowerChanOrigCals;
   
   EnergyCalAddActionsWindow *m_addActionWindow;
   

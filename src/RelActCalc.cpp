@@ -41,6 +41,8 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/SpecFile.h"
 
+#include "SandiaDecay/SandiaDecay.h"
+
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
 #include "InterSpec/PeakDef.h"
@@ -367,6 +369,11 @@ std::string rel_eff_eqn_js_function( const RelEffEqnForm eqn_form, const std::ve
 
 double eval_eqn( const double energy, const RelEffEqnForm eqn_form, const vector<double> &coeffs )
 {
+  // `&(coeffs[0])` would be UB on an empty vector, and an equation with no coefficients is
+  //  meaningless anyway.
+  if( coeffs.empty() )
+    throw runtime_error( "eval_eqn: no relative efficiency coefficients provided." );
+
   return eval_eqn( energy, eqn_form, &(coeffs[0]), coeffs.size() );
 }
 
@@ -1296,9 +1303,9 @@ std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_
   
   // Sort peaks by energy before returning
   sort( begin(result_peaks), end(result_peaks), &PeakDef::lessThanByMean );
-  
+
   return result_peaks;
 }
 
-  
+
 }//namespace RelActCalc

@@ -13,6 +13,8 @@
   </message>
 
   <message id='cfm-norm-btn'>Normalize</message>
+  <message id='cfm-batch-tool-btn'>batch tool</message>
+  <message id='cfm-tt-batch-tool-btn'>Opens the Batch Analysis tool with this file loaded, so each measurement in it can be analyzed separately.</message>
   <message id='cfm-more-info-btn'>further info</message>
   <message id='cfm-show-rid-result-btn'>RID results</message>
   <message id='cfm-show-image-btn'>embedded image</message>

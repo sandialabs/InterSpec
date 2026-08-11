@@ -1,5 +1,13 @@
  cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
+# CMake 4.0 made `cmake_minimum_required` below 3.5 a hard error.  Several projects we build as
+#  sub-projects still declare less than that - the fetched Wt 3.7.1 and zlib 1.2.12, plus
+#  vendored/submoduled Cuba-3.0, muparserx and SandiaDecay - so configuring with CMake 4 fails
+#  without this.  Raising the floor to 3.5 for those sub-projects is what the variable is for,
+#  and lets us fix it in one place rather than patching each dependency (some are submodules we
+#  cannot change from here).  The variable is new in CMake 3.31 and simply ignored before that.
+set( CMAKE_POLICY_VERSION_MINIMUM 3.5 )
+
 project(InterSpec VERSION 1.0.14)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -120,6 +128,17 @@ set(LEAFLET_MAPS_KEY "n/a" CACHE STRING "Leaflet maps api key.")
 
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
+option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
+
+# LLM API calls are normally made by the browser via fetch(), which gets us the system trust
+#  store, proxy configuration, PAC/WPAD and often SSO for free.  That only works for providers
+#  sending permissive CORS headers though; for one that does not, we need to make the HTTPS
+#  request from C++.  This enables a small transport backed by the platform's own HTTP stack
+#  (WinHTTP / NSURLSession / Wt::Http::Client) - see InterSpec/NativeHttpClient.h.
+#  Which backend is used is decided by platform, not by the user.
+option(USE_NATIVE_HTTP_CLIENT "Enables a native per-platform HTTPS client for LLM API calls" OFF)
+
+
 
 if(BUILD_FOR_WEB_DEPLOYMENT)
     set(TRY_TO_STATIC_LINK OFF)
@@ -246,6 +265,7 @@ set(sources
     src/ShieldingSourceDisplay.cpp
     src/ShieldingSourceDiagram.cpp
     src/ShieldingSourceFitCalc.cpp
+    src/ShieldSourcePullTrend.cpp
     src/ShieldingSelect.cpp
     src/GammaXsGui.cpp
     src/ReferenceLineInfo.cpp
@@ -321,6 +341,8 @@ set(sources
     src/EnergyCalTool.cpp
     src/EnergyCal.cpp
     src/EnergyCalGraphical.cpp
+    src/EnergyCalUndoRedo.cpp
+    src/EnergyCalDevPairWidget.cpp
     src/EnergyCalAddActions.cpp
     src/EnergyCalPreserveWindow.cpp
     src/EnergyCalMultiFile.cpp
@@ -353,6 +375,7 @@ set(sources
     src/BatchPeak.cpp
     src/BatchActivity.cpp
     src/BatchInfoLog.cpp
+    src/BatchSampleSelect.cpp
     js/SpectrumChart.js
     js/InterSpec.js
 )
@@ -372,6 +395,7 @@ set(headers
     InterSpec/ShieldingSourceDisplay.h
     InterSpec/ShieldingSourceDiagram.h
     InterSpec/ShieldingSourceFitCalc.h
+    InterSpec/ShieldSourcePullTrend.h
     InterSpec/ShieldingSelect.h
     InterSpec/GammaXsGui.h
     InterSpec/ReferenceLineInfo.h
@@ -447,6 +471,8 @@ set(headers
     InterSpec/EnergyCalTool.h
     InterSpec/EnergyCal.h
     InterSpec/EnergyCalGraphical.h
+    InterSpec/EnergyCalUndoRedo.h
+    InterSpec/EnergyCalDevPairWidget.h
     InterSpec/EnergyCalAddActions.h
     InterSpec/EnergyCalPreserveWindow.h
     InterSpec/EnergyCalMultiFile.h
@@ -479,6 +505,7 @@ set(headers
     InterSpec/BatchPeak.h
     InterSpec/BatchActivity.h
     InterSpec/BatchInfoLog.h
+    InterSpec/BatchSampleSelect.h
 )
 
 if(USE_DB_TO_STORE_SPECTRA)
@@ -634,6 +661,72 @@ elseif( APPLE AND BUILD_AS_WX_WIDGETS_APP )
   list( APPEND headers target/osx/macOsUtils.h )
 endif()
 
+if( USE_LLM_INTERFACE )
+  list( APPEND sources src/LlmMcpResource.cpp src/LlmInterface.cpp src/LlmApiProtocol.cpp src/LlmToolRegistry.cpp src/LlmDeepResearchAgent.cpp src/LlmIsotopicsTool.cpp src/LlmActivityFitTool.cpp src/LlmRelActManualTool.cpp src/LlmConfig.cpp src/LlmPromptTemplate.cpp src/LlmConfigWindow.cpp src/LlmConversationHistory.cpp src/LlmToolGui.cpp src/LlmJsSandboxBridge.cpp src/LlmInteractionDisplay.cpp src/LlmSubAgentFollowup.cpp src/LlmBenchmarkRunner.cpp )
+  list( APPEND headers InterSpec/LlmMcpResource.h InterSpec/LlmInterface.h InterSpec/LlmApiProtocol.h InterSpec/LlmToolRegistry.h InterSpec/LlmDeepResearchAgent.h InterSpec/LlmIsotopicsTool.h InterSpec/LlmActivityFitTool.h InterSpec/LlmRelActManualTool.h InterSpec/LlmConfig.h InterSpec/LlmPromptTemplate.h InterSpec/LlmConfigWindow.h InterSpec/LlmConversationHistory.h InterSpec/LlmToolGui.h InterSpec/LlmJsSandboxBridge.h InterSpec/LlmInteractionDisplay.h InterSpec/LlmSubAgentFollowup.h InterSpec/LlmBenchmarkRunner.h )
+  list( APPEND OTHER_InterSpec_SUPPORT_FILES InterSpec_resources/LlmJsSandbox.js )
+  list( APPEND OTHER_InterSpec_SUPPORT_FILES data/llm_config.xml data/llm_tools_config.xml
+    data/llm_agent_MainAgent.xml data/llm_agent_NuclideId.xml data/llm_agent_ActivityFit.xml
+    data/llm_agent_Isotopics.xml data/llm_agent_DeepResearch.xml data/llm_agent_EnergyCalibration.xml
+    data/llm_agent_SpectrumTimeHistory.xml
+  )
+
+  # The native HTTPS transport: one platform-independent file, plus (once written) exactly one
+  #  backend chosen by platform.  Until a platforms backend exists, NativeHttpClient.cpp
+  #  supplies a stub that reports Error::BackendUnavailable, so this option always builds and
+  #  always links - it just does not do anything useful yet.
+  if( USE_NATIVE_HTTP_CLIENT )
+    list( APPEND sources src/NativeHttpClient.cpp )
+    list( APPEND headers InterSpec/NativeHttpClient.h InterSpec/NativeHttpClientImpl.h )
+
+    # Testing knob: build the Wt::Http::Client backend even where a platform-native one exists, so
+    #  the Linux/Android path can be exercised on a development machine.  Needs a dependency
+    #  prefix built with BUILD_OPENSSL=ON, or Wt cannot do https at all.
+    option( USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND
+            "Use the Wt::Http::Client HTTP backend even on platforms with a native one (testing)"
+            OFF )
+    mark_as_advanced( USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND )
+
+    if( APPLE AND NOT USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND )
+      # One .mm serves both macOS and iOS.  ARC is set per-file because the projects other .mm
+      #  files predate it and are written for manual retain/release.
+      list( APPEND sources src/NativeHttpClient_apple.mm )
+      set_source_files_properties( src/NativeHttpClient_apple.mm
+                                   PROPERTIES COMPILE_OPTIONS "-fobjc-arc" )
+      set( NATIVE_HTTP_HAVE_BACKEND ON )
+    elseif( WIN32 AND NOT USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND )
+      list( APPEND sources src/NativeHttpClient_winhttp.cpp )
+      set( NATIVE_HTTP_HAVE_BACKEND ON )
+      # NOTE: winhttp is linked further down, after add_library() - target_link_libraries() here
+      #  would be a configure error, since InterSpecLib does not exist yet at this point.
+      set( NATIVE_HTTP_WINHTTP_BACKEND ON )
+    elseif( UNIX OR USE_LLM_FORCED_NATIVE_WT_HTTP_BACKEND )
+      list( APPEND sources src/NativeHttpClient_wt.cpp )
+      set( NATIVE_HTTP_HAVE_BACKEND ON )
+    endif()
+
+    if( NATIVE_HTTP_HAVE_BACKEND )
+      # Suppresses the "no backend" stub at the bottom of NativeHttpClient.cpp.
+      set_source_files_properties( src/NativeHttpClient.cpp
+                                   PROPERTIES COMPILE_DEFINITIONS "NATIVE_HTTP_HAVE_BACKEND=1" )
+    else()
+      MESSAGE( WARNING "USE_NATIVE_HTTP_CLIENT is enabled, but there is no native HTTP backend"
+               " for this platform yet; LLM requests will report BackendUnavailable if routed"
+               " to it." )
+    endif( NATIVE_HTTP_HAVE_BACKEND )
+  endif( USE_NATIVE_HTTP_CLIENT )
+
+  if( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
+    MESSAGE(FATAL_ERROR "MCP server can not be enabled for web or mobile builds")
+  endif( BUILD_FOR_WEB_DEPLOYMENT OR IOS OR ANDROID )
+endif( USE_LLM_INTERFACE )
+
+# A native HTTP client with no LLM interface to use it would be a silent no-op, so say so.
+if( USE_NATIVE_HTTP_CLIENT AND NOT USE_LLM_INTERFACE )
+  MESSAGE(FATAL_ERROR "USE_NATIVE_HTTP_CLIENT is enabled but USE_LLM_INTERFACE is not; the native"
+          " HTTP client exists only to serve LLM API calls.  Enable USE_LLM_INTERFACE, or set"
+          " USE_NATIVE_HTTP_CLIENT to OFF." )
+endif( USE_NATIVE_HTTP_CLIENT AND NOT USE_LLM_INTERFACE )
 
 #Copy D3 resources into InterSpec_resources directory at compile time
 include(cmake/DeployJsAndCss.cmake)
@@ -705,6 +798,10 @@ add_subdirectory(external_libs/muparserx-4.0.7)
 add_subdirectory(external_libs/VoigtDistribution)
 
 add_library(InterSpecLib ${INTERSPEC_LIB_TYPE} ${sources} ${headers} )
+
+# How libstdc++/libgcc get linked, in one place, for every consumer of InterSpecLib.
+#  Must come after InterSpecLib exists, since the policy is attached to that target.
+include( ${CMAKE_CURRENT_SOURCE_DIR}/cmake/CxxRuntimePolicy.cmake )
 
 # If we are the top-level project, we'll build the local-server exe
 if( NOT hasParent)
@@ -852,31 +949,58 @@ else(WIN32)
   endif( BUILD_AS_UNIT_TEST_SUITE )
   
   target_link_libraries(InterSpecLib PUBLIC ${Wt_LIBRARY} ${Wt_DBO_LIBRARY} ${Wt_DBOSQLITE3_LIBRARY} )
+
+  # NOTE: the Boost archives have to be repeated *after* these Wt libraries on the link line; that
+  #  is done in one place further down, just below the InterSpecLib link block.
 endif(WIN32)
 
 
 
-target_link_libraries(
-    InterSpecLib
-    PUBLIC
-    Threads::Threads
-    SpecUtils
-    SandiaDecay
-    Minuit2::Minuit2
-    Cuba-3.0
-    muparserx
-    Boost::thread
-    Boost::date_time
-    Boost::system
-    Boost::filesystem
-    Boost::program_options
-    Boost::regex
-    Boost::random
-    ZLIB::ZLIB
-    Eigen3::Eigen
-    Ceres::ceres
-    ${CMAKE_DL_LIBS}
-)
+# NOTE: there used to be a second, near-identical target_link_libraries() block here, repeating
+#  the Boost targets after Wt.  It had no effect - CMake de-duplicates repeated mentions of an
+#  imported target and keeps the first - while looking like it performed the ordering fix below.
+#  Removed so the real fix is the only thing claiming to do the job.
+
+
+# GNU ld scans each static archive once, in command-line order, pulling only the members that
+#  resolve symbols seen so far - so an archive has to appear *after* everything that references
+#  it.  cmake/FindWt.cmake hands us bare .a paths rather than targets, so CMake has no idea Wt
+#  depends on Boost and links Boost first (from InterSpecLib's own target_link_libraries above).
+#  Wt's SocketNotifier.C references boost::thread, so by the time ld reaches libwt.a there is no
+#  Boost archive left to satisfy it, leaving ~22 "undefined reference to boost::thread::..." at
+#  link time on Linux.  Simply naming the Boost targets again after Wt does not help: CMake keeps
+#  only the first mention of an imported target.
+#
+#  When InterSpecLib is a shared object the link does not even fail, since undefined symbols are
+#  permitted there - the breakage only shows up when InterSpecAddOn.node is dlopen'd:
+#      undefined symbol: _ZTIN5boost6detail16thread_data_baseE
+#  Measured on a real build: 18 such symbols from libboost_thread and 3 from libboost_random.
+#
+# Repeating them here by file path fixes the order: a plain path is not de-duplicated against the
+#  imported target it came from, so these really do land at the end of the link line.  Listing the
+#  archives a second time is enough because the dependency is one-way (Wt -> Boost); no
+#  --start-group is needed, and unused archive members are still not pulled in, so this costs
+#  nothing in the output.
+#
+# Not needed on Apple (ld64 resolves across all inputs regardless of order) or MSVC (same), and
+#  linking an archive twice is harmless everywhere, so this is scoped to where it is required.
+#
+# Also not needed - and not possible - in a FetchContent build: there Wt is a real CMake target
+#  carrying its own INTERFACE_LINK_LIBRARIES, so CMake already orders Boost after it.  And several
+#  boostorg components (system, regex, ...) are header-only INTERFACE libraries there, for which
+#  $<TARGET_FILE:> is a hard generate-time error rather than something if(TARGET) screens out.
+if( (NOT APPLE) AND (NOT MSVC) AND (NOT InterSpec_FETCH_DEPENDENCIES) )
+  foreach( _boost_comp thread date_time system filesystem program_options regex random )
+    if( TARGET Boost::${_boost_comp} )
+      # An INTERFACE library has no file to point at; belt-and-braces alongside the guard above,
+      #  since a header-only component contributes no symbols to order anyway.
+      get_target_property( _boost_comp_type Boost::${_boost_comp} TYPE )
+      if( NOT _boost_comp_type STREQUAL "INTERFACE_LIBRARY" )
+        target_link_libraries( InterSpecLib PUBLIC "$<TARGET_FILE:Boost::${_boost_comp}>" )
+      endif()
+    endif()
+  endforeach()
+endif()
 
 
 if( BUILD_AS_OSX_APP OR (APPLE AND BUILD_AS_WX_WIDGETS_APP) )
@@ -888,6 +1012,54 @@ if( BUILD_AS_OSX_APP OR (APPLE AND BUILD_AS_WX_WIDGETS_APP) )
   MARK_AS_ADVANCED( COCOA_LIBRARY COREDATA_LIBRARY APPKIT_LIBRARY FOUNDATION_LIBRARY )
 
   target_link_libraries( InterSpecLib PUBLIC ${COCOA_LIBRARY} ${APPKIT_LIBRARY} ${COREDATA_LIBRARY} ${FOUNDATION_LIBRARY} )
+endif()
+
+# The native HTTP backends need frameworks/libs the blocks above do not necessarily provide -
+#  Foundation is only linked for the app-bundle and wxWidgets builds, which misses the plain
+#  BUILD_AS_LOCAL_SERVER build used during development.  (FIND_LIBRARY caches, so asking again
+#  for something already found above is free.)
+if( USE_NATIVE_HTTP_CLIENT )
+  if( APPLE )
+    FIND_LIBRARY( FOUNDATION_LIBRARY Foundation )  # NSURLSession
+    FIND_LIBRARY( SECURITY_LIBRARY Security )      # SecTrust*, for the custom-CA escape hatch
+    FIND_LIBRARY( CFNETWORK_LIBRARY CFNetwork )    # kCFNetworkProxies*, for the proxy override
+    MARK_AS_ADVANCED( FOUNDATION_LIBRARY SECURITY_LIBRARY CFNETWORK_LIBRARY )
+    target_link_libraries( InterSpecLib PUBLIC ${FOUNDATION_LIBRARY} ${SECURITY_LIBRARY}
+                                               ${CFNETWORK_LIBRARY} )
+  elseif( NATIVE_HTTP_WINHTTP_BACKEND )
+    # Ships with every Windows install; no third-party dependency.
+    target_link_libraries( InterSpecLib PUBLIC winhttp )
+  endif()
+
+endif( USE_NATIVE_HTTP_CLIENT )
+
+
+# If the Wt we are linking against was built with SSL, we have to supply OpenSSL at this final
+#  link, whatever else is enabled: Wt links it PRIVATE into a static libwt.a, and InterSpecServer
+#  already pulls in Wt/Http/Client, so Client.o - and its OpenSSL references - is always present.
+#  Deliberately NOT gated on USE_NATIVE_HTTP_CLIENT: a prefix built with BUILD_OPENSSL=ON would
+#  otherwise fail to link any build that has the native transport switched off.
+#
+#  WConfig.h is the authoritative signal; the presence of libssl.a in the prefix is not, since a
+#  prefix can contain OpenSSL while its Wt was configured without it.
+if( EXISTS "${Wt_INCLUDE_DIR}/Wt/WConfig.h" )
+  file( READ "${Wt_INCLUDE_DIR}/Wt/WConfig.h" _wt_config_contents )
+  string( REGEX MATCH "\n#define WT_WITH_SSL" _wt_has_ssl "${_wt_config_contents}" )
+
+  if( _wt_has_ssl )
+    find_library( INTERSPEC_SSL_LIB    NAMES ssl    HINTS ${CMAKE_PREFIX_PATH} ${Wt_INCLUDE_DIR}/../lib PATH_SUFFIXES lib )
+    find_library( INTERSPEC_CRYPTO_LIB NAMES crypto HINTS ${CMAKE_PREFIX_PATH} ${Wt_INCLUDE_DIR}/../lib PATH_SUFFIXES lib )
+    mark_as_advanced( INTERSPEC_SSL_LIB INTERSPEC_CRYPTO_LIB )
+
+    if( INTERSPEC_SSL_LIB AND INTERSPEC_CRYPTO_LIB )
+      message( STATUS "Wt was built with SSL; linking ${INTERSPEC_SSL_LIB}" )
+      target_link_libraries( InterSpecLib PUBLIC ${INTERSPEC_SSL_LIB} ${INTERSPEC_CRYPTO_LIB} )
+    else()
+      message( FATAL_ERROR "Wt was built with SSL support (WT_WITH_SSL is defined in its"
+               " WConfig.h), but no OpenSSL could be found to link against.  Point"
+               " CMAKE_PREFIX_PATH at the dependency prefix that Wt was built into." )
+    endif()
+  endif( _wt_has_ssl )
 endif()
 
 if( BUILD_AS_OSX_APP )
@@ -976,7 +1148,7 @@ if(TRY_TO_STATIC_LINK)
         find_library( RT_LIB rt REQUIRES )
         target_link_libraries(InterSpecLib PUBLIC ${RT_LIB})
 
-        #target_link_libraries( InterSpecExe -static-libgcc -static-libstdc++)
+        # libstdc++/libgcc linkage is handled by cmake/CxxRuntimePolicy.cmake
         #Next line statically links to pthread, copying whole archive into exe
         #set(CMAKE_EXE_LINKER_FLAGS ${CMAKE_EXE_LINKER_FLAGS} "-static -pthread -Wl,--whole-archive -lpthread -Wl,--no-whole-archive")
     endif(("${CMAKE_SYSTEM}" MATCHES "Linux") AND (NOT ANDROID))

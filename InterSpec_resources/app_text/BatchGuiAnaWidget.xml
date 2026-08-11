@@ -61,6 +61,7 @@
 
 
   <!-- Analysis progress and results -->
+  <message id="bgw-unknown-analysis-error">Unknown error performing analysis.</message>
   <message id="bgw-performing-work-title">Performing Work</message>
   <message id="bgw-performing-work-msg">Please wait while the batch analysis is performed...</message>
   <message id="bgw-error-analysis-title">Error Performing Batch Analysis</message>
@@ -93,7 +94,7 @@
 If refit-energy-cal is specified true, then the exemplar energy cal will be used for initial fit, and then refined and peaks refit.
   </message>
 
-  <message id="bgw-write-n42-with-results-tt">Adds the fit peaks to the input spectrum file, and then saves as a N42. You must specify 'output_path' if you specify this option; also, will refuse to overwrite existing files.</message>
+  <message id="bgw-write-n42-with-results-tt">Adds the fit peaks to the input spectrum file, and then saves as a N42. For activity/shielding fits, the fit source/shielding model, and the detector response function used, are also added, so the file can be opened in InterSpec, or used as the exemplar of a later batch fit. You must specify an output directory if you specify this option; also, will refuse to overwrite existing files.</message>
   
   <message id="bgw-show-nonfit-peaks-tt">Include peaks that are not fit into the output CSV peak results; these peaks will have a zero amplitude set.</message>
   
@@ -121,8 +122,6 @@ A zero or negative value will mean no requirement, and also no 'peak-stat-thresh
   
   <message id="bgw-reports-write-custom-per-file-tooltip">One or more spectrum report template files - for each input file, a report will be produced with each template specified.</message>
 
-  <message id="bgw-reports-write-custom-summary-tooltip">One or more template files used to provide a summary of all input files.</message>
-
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Use Bq units</message>
   <message id="bgw-hard-background-sub">Hard background subtract</message>
@@ -136,6 +135,7 @@ A zero or negative value will mean no requirement, and also no 'peak-stat-thresh
   <message id="bgw-distance-label">Distance:</message>
   
   <!-- Isotopics-by-nuclides analysis strings -->
+  <message id="bgw-iso-by-nucs-title">Batch options for &quot;Isotopics by nuclides&quot;</message>
   <message id="bgw-rel-eff-config-label">Rel. Eff. Config Override</message>
   <message id="bgw-use-rel-eff-config-override">Use custom rel-eff config (XML)</message>
   <message id="bgw-iso-override-energy-cal">Override energy-cal type</message>
@@ -143,8 +143,15 @@ A zero or negative value will mean no requirement, and also no 'peak-stat-thresh
   <message id="bgw-iso-override-skew-type">Override skew type</message>
   <message id="bgw-no-ana-iso-no-state-or-exemplar">No exemplar with stored RelActCalcAuto state, and no rel-eff config XML supplied.</message>
   <message id="bgw-no-ana-iso-no-state-in-exemplar">Exemplar has no stored RelActCalcAuto state - either use a different exemplar or supply a rel-eff config XML.</message>
+  <message id="bgw-no-ana-iso-state-not-configured">The &quot;Isotopics by nuclides&quot; configuration is incomplete: {1} Set up an isotopics analysis on the exemplar, or supply a complete rel-eff config XML.</message>
   <message id="bgw-no-ana-iso-need-drf">A detector response function is required (Physical-model rel-eff curve or DRF-seeded FWHM method) but none is available.</message>
 
   <!-- Error and completion messages -->
   <message id="bgw-no-exemplar-msg">No exemplar spectrum is available. Please select a foreground spectrum or upload an exemplar file.</message>
+
+  <message id="bgw-multi-sample-label">Multi-record files:</message>
+  <message id="bgw-multi-sample-auto">Auto-detect</message>
+  <message id="bgw-multi-sample-each">Analyze each sample</message>
+  <message id="bgw-multi-sample-sum">Sum foreground samples</message>
+  <message id="bgw-multi-sample-tt">Controls what happens when an input file holds more than one candidate foreground spectrum - that is, more than one sample number not marked background, intrinsic activity, or calibration.  Passthrough/search-mode files are never affected.&lt;br /&gt;&quot;Auto-detect&quot; keeps the previous behaviour, and skips a file when which spectrum to use is ambiguous.&lt;br /&gt;&quot;Analyze each sample&quot; produces one independent result, and one set of output files suffixed &quot;_sampleN&quot;, per sample.&lt;br /&gt;&quot;Sum foreground samples&quot; sums them into a single spectrum, producing one result with output files suffixed &quot;_summed&quot;.</message>
 </messages> 

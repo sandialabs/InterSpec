@@ -88,6 +88,61 @@ struct DoWorkOnDestruct
 #define USE_RESIDUAL_TO_BREAK_DEGENERACY 0
 
   
+/** Computes the linear-least-squares parameter covariance `C = (A^T A)^{-1}` from the (thin) SVD of
+ `A = U*S*V^T`, using the numerically-stable pseudo-inverse `C = V * S^{-2} * V^T`.  Singular values
+ below `tol*sigma_max` are dropped (treated as 1/s^2 -> 0), so this avoids forming `A^T A` (which
+ squares the condition number) and yields a finite, minimum-norm covariance for rank-deficient `A`
+ instead of a blow-up or a slightly-negative diagonal.
+
+ The covariance is only ever needed in double precision: the auto-differentiation (`ceres::Jet`)
+ residual path passes a null covariance pointer (it is unused there, and a Jet matrix pseudo-inverse
+ would be expensive and is not needed).  The `static_assert` makes that a compile-time requirement for
+ any future caller. */
+template<typename T>
+Eigen::MatrixX<T> lls_covariance_from_svd( const Eigen::MatrixX<T> &V,
+                                           const Eigen::VectorX<T> &singular_values,
+                                           const Eigen::Index num_rows )
+{
+  static_assert( std::is_same_v<T, double>,
+    "lls_covariance_from_svd: covariance is computed in double precision only.  The auto-diff"
+    " (ceres::Jet) path passes a null covariance pointer (it is unused there); the SVD pseudo-inverse"
+    " is neither needed nor implemented for Jet types." );
+
+  const Eigen::Index p = V.rows();          // parameter dimension (covariance is p x p)
+  const Eigen::Index num_sv = singular_values.size();
+
+  // Eigen returns singular values in descending order, so element 0 is the largest.
+  const double sigma_max = (num_sv > 0) ? singular_values(0) : 0.0;
+  const double tol = std::numeric_limits<double>::epsilon()
+                       * static_cast<double>( std::max<Eigen::Index>( num_rows, p ) )
+                       * sigma_max;
+
+  Eigen::MatrixX<T> C = Eigen::MatrixX<T>::Zero( p, p );
+  for( Eigen::Index k = 0; k < num_sv; ++k )
+  {
+    const double s = singular_values(k);
+    if( s > tol )
+      C.noalias() += (1.0 / (s*s)) * (V.col(k) * V.col(k).transpose());
+  }//for( loop over singular values )
+
+  return C;
+}//lls_covariance_from_svd(...)
+
+
+/** Smooth, gradient-preserving lower bound: ~`value` for `value >> floor_val`, ~`floor_val` for
+ `value << floor_val`, with slope always in (0,1).  Used to keep a quantity strictly positive before
+ a log()/division without zeroing a `ceres::Jet` derivative (a hard clamp `value = floor_val` would
+ zero it, re-creating the bound-trap the physical-model AD code avoids). */
+template<typename T>
+T smooth_lower_bound( const T &value, const double floor_val )
+{
+  using namespace std;
+  using namespace ceres;
+  const T d = value - floor_val;
+  return floor_val + 0.5*( d + sqrt( d*d + floor_val*floor_val ) );
+}//smooth_lower_bound(...)
+
+
 template<typename T>
 void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
                               const size_t order,
@@ -192,7 +247,7 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
           //y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...
           // and
           //ln(y) = a + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ...
-          A(row,col) = pow(log(energy), static_cast<T>(col)) / uncertainty;
+          A(row,col) = pow(log(energy), static_cast<double>(col)) / uncertainty;
           break;
           
         case RelActCalc::RelEffEqnForm::LnY:
@@ -241,26 +296,34 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
   // Only compute covariance if it is wanted
   if( covariance )
   {
-    // TODO: I'm sure Eigen::BDCSVD has the uncertainty matrix in it somewhere already computed, but
-    //       for the moment (See pg 796 in Numerical Recipes for hint - probably has something to do
-    //       with bdc.singularValues(), bdc.matrixV(), or bdc.matrixU()) we'll just be dumb and do
-    //       extra (unstable?) work.
-    const Eigen::MatrixX<T> A_transpose = A.transpose();
-    const Eigen::MatrixX<T> alpha = Eigen::Product<Eigen::MatrixX<T>,Eigen::MatrixX<T>>( A_transpose, A ); //A_transpose * A;
-    const Eigen::MatrixX<T> C = alpha.inverse();
-    
-    assert( C.rows() == solution.size() );
-    assert( C.cols() == solution.size() );
-    
-    covariance->resize( solution.size() );
-    
-    for( size_t i = 0; i <= order; ++i )
+    if constexpr ( std::is_same_v<T, double> )
     {
-      vector<T> &row = (*covariance)[i];
-      row.resize( solution.size() );
-      for( size_t j = 0; j <= order; ++j )
-        row[j] = C(i,j);
-    }//for( loop over coefficients index )
+      // Covariance C = (A^T A)^{-1}, computed as the SVD pseudo-inverse V*S^{-2}*V^T (see helper);
+      //  this avoids forming A^T A (which squares the condition number) and stays finite for
+      //  rank-deficient A.
+      const Eigen::MatrixX<T> C = lls_covariance_from_svd<T>( bdc.matrixV(), bdc.singularValues(),
+                                                            static_cast<Eigen::Index>(num_peaks) );
+
+      assert( C.rows() == solution.size() );
+      assert( C.cols() == solution.size() );
+
+      covariance->resize( solution.size() );
+
+      for( size_t i = 0; i <= order; ++i )
+      {
+        vector<T> &row = (*covariance)[i];
+        row.resize( solution.size() );
+        for( size_t j = 0; j <= order; ++j )
+          row[j] = C(i,j);
+      }//for( loop over coefficients index )
+    }else
+    {
+      // The auto-diff (ceres::Jet) residual path passes covariance==nullptr (it is unused there),
+      //  so this is unreachable; we never want to differentiate through a matrix pseudo-inverse.
+      assert( 0 );
+      throw std::logic_error( "fit_rel_eff_eqn_lls_imp: covariance output is not supported for"
+                              " ceres::Jet types - pass a null covariance pointer." );
+    }//if constexpr( T is double ) / else
   }//if( covariance )
 }//fit_rel_eff_eqn_lls_imp(...)
 
@@ -341,15 +404,33 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
 
     T measured_rel_eff = counts / raw_rel_counts;
     T measured_rel_eff_uncert = counts_uncert / raw_rel_counts;
-    
-    // We will clamp rel eff to zero or above ... this is a workaround since Eigens LM doesnt
-    //  seem to allow constraining parameter ranges.
-    if( (measured_rel_eff <= static_cast<double>(numeric_limits<float>::epsilon()))
-       || isinf(measured_rel_eff)
-       || isinf(measured_rel_eff) )
+
+    // Keep rel-eff in a usable range (workaround since Eigen's LM doesn't constrain parameter ranges).
+    //  The log-based forms take log(measured_rel_eff) and divide by it downstream, so a non-positive
+    //  or non-finite value poisons the fit; use a smooth, gradient-preserving floor for those (a hard
+    //  clamp to a constant would zero the ceres::Jet derivative w.r.t. the activities - the same
+    //  bound-trap the physical-model AD code deliberately avoids).  LnX uses rel-eff linearly, so a
+    //  hard clamp to zero remains valid there.
+    const double rel_eff_floor = static_cast<double>(numeric_limits<float>::epsilon());
+    const bool log_form = (fcn_form == RelActCalc::RelEffEqnForm::LnY)
+                          || (fcn_form == RelActCalc::RelEffEqnForm::LnXLnY)
+                          || (fcn_form == RelActCalc::RelEffEqnForm::FramEmpirical);
+
+    if( log_form )
+    {
+      if( isnan(measured_rel_eff) || isinf(measured_rel_eff) )
+      {
+        // raw_rel_counts ~ 0: no usable measurement (no meaningful derivative either) - floor and down-weight.
+        measured_rel_eff = T( rel_eff_floor );
+        measured_rel_eff_uncert = T( 1.0 );
+      }else
+      {
+        measured_rel_eff = smooth_lower_bound( measured_rel_eff, rel_eff_floor );
+      }
+    }else if( (measured_rel_eff <= rel_eff_floor) || isinf(measured_rel_eff) || isnan(measured_rel_eff) )
     {
       measured_rel_eff = T( 0.0 );
-      if( peak.m_base_rel_eff_uncert > static_cast<double>(numeric_limits<float>::epsilon()) )
+      if( peak.m_base_rel_eff_uncert > rel_eff_floor )
         measured_rel_eff_uncert = T( 0.0 );
       else
         measured_rel_eff_uncert = T( 1.0 );
@@ -695,7 +776,46 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
 
   /** Warnings from setting up the problem - does not include problems evaluating things. */
   std::vector<std::string> m_setup_warnings;
-  
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+  /** Per-element sigma-block for mass-fraction constraints - the Manual mirror of
+   RelActCalcAutoImp::RelActAutoCostFcn::MassFracBlock, sharing the exact decode in
+   RelActCalc_imp.hpp (RelActCalc::decode_mass_frac_block; this replaced the former soft-cap).
+
+   The CARRIER (first range-constrained isotope, roster order) parameter holds `t in [0,1]`
+   (Manual parameters use offset 0.5, i.e. bounds [0.5, 1.5]) mapping to the range-constrained
+   TOTAL fraction `sigma`; remaining range slots hold the `g_k` distribution values.  When every
+   isotope of the element is constrained, `sigma` is constant and the carrier slot instead holds
+   the elements total relative mass (`scale_multiple * x`, `x >= 0`).
+   */
+  struct ManualMassFracBlock
+  {
+    RelActCalc::MassFracBlockSpec spec;
+
+    /** Index into m_isotopes (== parameter index) of the carrier; max() when no carrier is
+     needed (a fixed-only element that still has unconstrained isotopes). */
+    size_t carrier_index = std::numeric_limits<size_t>::max();
+
+    /** Parameter indices of the g_k distribution values (range isotopes 1..). */
+    std::vector<size_t> dist_indices;
+
+    /** Range-constrained isotopes, in block order (carrier first; parallel to spec.lower/upper). */
+    std::vector<std::string> range_isos;
+
+    /** Fixed (lower == upper) constrained isotopes, and their pinned fractions. */
+    std::vector<std::string> fixed_isos;
+    std::vector<double> fixed_fractions;
+
+    /** The elements isotope roster: isotope -> specific activity (from the constraints). */
+    std::map<std::string,double> specific_activities;
+
+    /** For `spec.all_constrained` only: element total rel mass per unit of x[carrier_index]. */
+    double scale_multiple = 1.0;
+  };//struct ManualMassFracBlock
+
+  std::vector<ManualMassFracBlock> m_mass_frac_blocks;
+#endif //USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
+
   /** just for debug purposes, we'll keep track of how many times the eval function gets called. */
   mutable std::atomic<size_t> m_ncalls;
   
@@ -945,16 +1065,13 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     vector<double> mod_activities;
 
 #if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
-      //TODO: To model mass-fraction constraints, should switch to a paramter that gives total RelAct of an element, and then use a ceres::Manifold to make all the nuclides of the element add up to 1.0 (eg, on a surface).
+      // Mass-fraction constraints solve through the per-element sigma-block (see
+      //  #ManualMassFracBlock and RelActCalc::decode_mass_frac_block) - the fit itself handles
+      //  fixed and range constraints exactly, including all-constrained elements.  This PRE-fit
+      //  estimate stays simpler: range-constrained isotopes are fit freely (their windows are
+      //  ignored for the start), and fixed ones are excluded below.
       if( !m_input.mass_fraction_constraints.empty() )
       {
-        m_setup_warnings.push_back( "Mass fraction constraints have only barely been tested, and the implementation is less than ideal." );
-
-        std::cerr << "\n\nWarning: ManualGenericRelActFunctor: mass fraction constraints have not been tested, and the implementation is less than ideal.\n\n\n";
-        
-        //TODO: This is less than ideal, but well fit just the activities of the non-mass-fraction constrained isotopes.
-        //  To do it properly, we would need to do a non-linear fit for the activities of the constrained isotopes,
-        //  which is maybe a bit beyond this initial go.
         for( const RelActCalcManual::MassFractionConstraint &constraint : m_input.mass_fraction_constraints )
         {
           // If we are not fixing the mass-fraction to a certain value, then we will freely fit things, totally
@@ -984,17 +1101,24 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
       }//if( !m_input.mass_fraction_constraints.empty() )
 #endif  //USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
 
-      if( est_eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      // Every isotope may have been excluded from the free pre-fit (e.g., an all-FIXED
+      //  mass-fraction-constrained element, where only the element total is fit) - then there is
+      //  nothing to estimate here, and the LLS below would reduce an empty matrix; the norms
+      //  simply fall back to 1.0 in the loop below.
+      if( !mod_isotopes.empty() )
       {
-        RelActCalcManual::fit_act_to_phys_rel_eff( m_input, mod_isotopes, mod_peaks,
-                            mod_activities, dummy_rel_act_norm_uncerts );
-      }else
-      {
-        const vector<double> flat_rel_eff_coefs{ (est_eqn_form==RelActCalc::RelEffEqnForm::LnX ? 1.0 : 0.0), 0.0 };
-        RelActCalcManual::fit_act_to_rel_eff( est_eqn_form, flat_rel_eff_coefs,
-                           mod_isotopes, mod_peaks,
-                           mod_activities, dummy_rel_act_norm_uncerts );
-      }
+        if( est_eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        {
+          RelActCalcManual::fit_act_to_phys_rel_eff( m_input, mod_isotopes, mod_peaks,
+                              mod_activities, dummy_rel_act_norm_uncerts );
+        }else
+        {
+          const vector<double> flat_rel_eff_coefs{ (est_eqn_form==RelActCalc::RelEffEqnForm::LnX ? 1.0 : 0.0), 0.0 };
+          RelActCalcManual::fit_act_to_rel_eff( est_eqn_form, flat_rel_eff_coefs,
+                             mod_isotopes, mod_peaks,
+                             mod_activities, dummy_rel_act_norm_uncerts );
+        }
+      }//if( !mod_isotopes.empty() )
 
       assert( mod_activities.size() == mod_isotopes.size() );
       m_rel_act_norms.resize( m_isotopes.size() );
@@ -1044,6 +1168,70 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     }//if( !m_input.act_ratio_constraints.empty() )
 
     assert( m_isotopes.size() == m_rel_act_norms.size() );
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+    // Group the mass-fraction constraints into per-element sigma-blocks (see #ManualMassFracBlock).
+    //  The roster (m_specific_activities) identifies an element; check_nuclide_constraints() already
+    //  validated the rosters are consistent and the windows feasible.
+    for( const RelActCalcManual::MassFractionConstraint &constraint : m_input.mass_fraction_constraints )
+    {
+      const auto already_pos = std::find_if( begin(m_mass_frac_blocks), end(m_mass_frac_blocks),
+        [&constraint]( const ManualMassFracBlock &b ) -> bool {
+          return b.specific_activities.count( constraint.m_nuclide );
+        } );
+      if( already_pos != end(m_mass_frac_blocks) )
+        continue; //this constraints element already has its block
+
+      ManualMassFracBlock block;
+      block.specific_activities = constraint.m_specific_activities;
+
+      size_t num_constrained = 0;
+      std::vector<std::pair<double,double>> windows;
+      for( const std::map<std::string,double>::value_type &iso_sa : block.specific_activities )
+      {
+        const string &iso = iso_sa.first;
+        const auto c_pos = std::find_if( begin(m_input.mass_fraction_constraints), end(m_input.mass_fraction_constraints),
+          [&iso]( const RelActCalcManual::MassFractionConstraint &c ) -> bool { return c.m_nuclide == iso; } );
+        if( c_pos == end(m_input.mass_fraction_constraints) )
+          continue;
+
+        num_constrained += 1;
+        if( c_pos->m_mass_fraction_lower == c_pos->m_mass_fraction_upper )
+        {
+          block.fixed_isos.push_back( iso );
+          block.fixed_fractions.push_back( c_pos->m_mass_fraction_lower );
+        }else
+        {
+          block.range_isos.push_back( iso );
+          windows.push_back( {c_pos->m_mass_fraction_lower, c_pos->m_mass_fraction_upper} );
+        }
+      }//for( const auto &iso_sa : block.specific_activities )
+
+      double fixed_sum = 0.0;
+      for( const double f : block.fixed_fractions )
+        fixed_sum += f;
+
+      const bool all_constrained = (num_constrained >= block.specific_activities.size());
+
+      block.spec = RelActCalc::make_mass_frac_block_spec( windows, fixed_sum, all_constrained );
+
+      if( block.range_isos.empty() )
+      {
+        assert( !block.fixed_isos.empty() );
+        if( all_constrained )
+          block.carrier_index = iso_index( block.fixed_isos[0] );
+      }else
+      {
+        block.carrier_index = iso_index( block.range_isos[0] );
+        for( size_t k = 1; k < block.range_isos.size(); ++k )
+          block.dist_indices.push_back( iso_index( block.range_isos[k] ) );
+      }
+
+      // TODO: for all-constrained elements a better `scale_multiple` (element rel mass) start
+      //  could come from the pre-fit activities; the solver refines it from 1.0 fine so far.
+      m_mass_frac_blocks.push_back( std::move(block) );
+    }//for( const RelActCalcManual::MassFractionConstraint &constraint : ... )
+#endif //USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
 
     size_t num_fit_activities = 0;
     for( size_t i = 0; i < m_rel_act_norms.size(); ++i )
@@ -1128,127 +1316,95 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     }//if( constraint_index >= 0 )
 
 #if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
-    for( const RelActCalcManual::MassFractionConstraint &constraint : m_input.mass_fraction_constraints )
+    for( const ManualMassFracBlock &block : m_mass_frac_blocks )
     {
-      if( constraint.m_nuclide == iso )
+      // Is `iso` one of this blocks constrained isotopes (fixed or range)?
+      int range_pos = -1;
+      bool is_fixed = false;
+      T this_frac( 0.0 );
+
+      for( size_t i = 0; !is_fixed && (i < block.fixed_isos.size()); ++i )
       {
-        // Now what we need to do is get the mass fraction of the non mass-fraction-constrained isotopes.
-        const std::map<std::string, double> &specific_activities_for_el = constraint.m_specific_activities;
-        const auto this_nuc_pos = specific_activities_for_el.find( iso );
-        assert( this_nuc_pos != end(specific_activities_for_el) );
-        if( this_nuc_pos == end(specific_activities_for_el) )
-          throw std::logic_error( "ManualGenericRelActFunctor: missing nuclide in constraint.m_specific_activities???" );
-
-        // Next we'll check that the sum of mass fractions for this element is less than 1.0
-        T el_constrained_sum( 0.0 );
-        for( const map<std::string, double>::value_type &nucs_sa : specific_activities_for_el )
+        if( block.fixed_isos[i] == iso )
         {
-          const string &inner_nuc = nucs_sa.first;
-          const RelActCalcManual::MassFractionConstraint *inner_constraint = nullptr;
-          for( const RelActCalcManual::MassFractionConstraint &constraint : m_input.mass_fraction_constraints )
-          {
-            if( constraint.m_nuclide == inner_nuc )
-            {
-              inner_constraint = &(constraint);
-              break;
-            }
-          }//for( loop over m_input.mass_fraction_constraints )
+          is_fixed = true;
+          this_frac = T( block.fixed_fractions[i] ); //fixed constraints decode to exactly their pinned fraction
+        }
+      }//for( loop over fixed-constrained isotopes )
 
-          if( !inner_constraint )
-            continue;
+      for( size_t i = 0; !is_fixed && (range_pos < 0) && (i < block.range_isos.size()); ++i )
+      {
+        if( block.range_isos[i] == iso )
+          range_pos = static_cast<int>( i );
+      }
 
-          const double &lower_frac = inner_constraint->m_mass_fraction_lower;
-          const double &upper_frac = inner_constraint->m_mass_fraction_upper;
+      if( !is_fixed && (range_pos < 0) )
+        continue; //`iso` is not part of this elements block
 
-          if( lower_frac == upper_frac )
-          {
-            el_constrained_sum += lower_frac;
-          }else
-          {
-            const size_t inner_index = iso_index( inner_nuc );
-            const T frac = x[inner_index] - 0.5;
-            assert( (frac > -0.0002) && (frac < 1.0001) );
-            el_constrained_sum += lower_frac + frac*(upper_frac - lower_frac);
-          }//if( inner_constraint->m_mass_fraction_lower == inner_constraint->m_mass_fraction_upper )
-        }//for( const map<std::string, double>::value_type &nucs_sa : specific_activities_for_el )
+      const auto this_sa_pos = block.specific_activities.find( iso );
+      assert( this_sa_pos != end(block.specific_activities) );
+      if( this_sa_pos == end(block.specific_activities) )
+        throw std::logic_error( "ManualGenericRelActFunctor: missing nuclide in constraint.m_specific_activities???" );
 
-        if( (el_constrained_sum < 0.0) || (el_constrained_sum > 1.0) )
-          throw runtime_error( "Invalid paramaters - mass-fraction sum over 1." );
+      const size_t num_range = block.range_isos.size();
 
-        // Sum the relative masses of the other nuclides of this element
-        // and sum the mass-constrained portion of this element.
-        T sum_unconstrained_rel_mass_of_el( 0.0 ); //Note this is rel act divide by specific activity, and does not add up to one
-        T sum_constrained_frac_rel_mass_of_el( 0.0 ); // This will include `constraint.m_nuclide`, and be less than 1.0
+      // The range-constrained total mass fraction, from the carrier parameter; a hard box bound
+      //  keeps `fixed_sum + sigma <= 1 - delta` (this replaced the former soft-cap decode, whose
+      //  0.95-of-budget knee compressed the top of every window - see RelActCalc::MassFracBlockSpec).
+      T sigma( block.spec.sig_lo );
+      if( block.spec.all_constrained )
+      {
+        sigma = T( block.spec.sig_hi ); //== 1 - fixed_sum; the carrier slot holds the element scale instead
+      }else if( num_range > 0 )
+      {
+        const T t = x[block.carrier_index] - 0.5; //box-bounded to [0.5, 1.5]
+        assert( (t > -0.02) && (t < 1.02) ); //leave some room for numerical differentiation
+        sigma = block.spec.sig_lo + t*(block.spec.sig_hi - block.spec.sig_lo);
+      }
 
-
-        for( const std::map<std::string, double>::value_type &iso_act : specific_activities_for_el )
+      if( range_pos >= 0 )
+      {
+        // Decode all the blocks range fractions through the shared exact sigma-block decode.
+        vector<T> gs( (num_range > 1) ? (num_range - 1) : size_t(0), T(0.0) );
+        vector<T> fractions( num_range, T(0.0) );
+        for( size_t k = 1; k < num_range; ++k )
         {
-          const string &iso = iso_act.first;
-          const double specific_act = iso_act.second;
-
-          auto constraint_pos = std::find_if( begin(m_input.mass_fraction_constraints), end(m_input.mass_fraction_constraints),
-            [&iso]( const RelActCalcManual::MassFractionConstraint &c ) -> bool {
-              return c.m_nuclide == iso;
-            } );
-
-          if( constraint_pos == end(m_input.mass_fraction_constraints) )
-          {
-            // `iso` is not mass-constrained
-            sum_unconstrained_rel_mass_of_el += (relative_activity( iso, x ) / specific_act);
-          }else
-          {
-            // `iso` is mass-constrained
-            const size_t src_index = iso_index( iso );
-
-            T mass_fraction;
-            assert( constraint_pos->m_mass_fraction_lower >= 0.0 );
-            assert( constraint_pos->m_mass_fraction_lower <= 1.0 );
-            assert( constraint_pos->m_mass_fraction_upper >= 0.0 );
-            assert( constraint_pos->m_mass_fraction_upper <= 1.0 );
-
-            const double &lower_frac = constraint_pos->m_mass_fraction_lower;
-            const double &upper_frac = constraint_pos->m_mass_fraction_upper;
-
-            if( lower_frac == upper_frac )
-            {
-              assert( abs(x[src_index] - -1.0) < 1.0E-6 );
-              mass_fraction = T(lower_frac);
-            }else
-            {
-              const T dist = x[src_index] - 0.5;
-              assert( (dist > -0.02) && (dist < 1.02) ); //should be between 0 and 1, but will leave some room for numerical diff
-              mass_fraction = lower_frac + dist*(upper_frac - lower_frac);
-            }
-            sum_constrained_frac_rel_mass_of_el += mass_fraction;
-          }
-        }//for( [ const string &iso, const double &activity] : element_specific_activities )
-          
-
-        assert( sum_constrained_frac_rel_mass_of_el <= 1.00001 );
-        assert( sum_constrained_frac_rel_mass_of_el >= -0.00001 );
-        assert( sum_constrained_frac_rel_mass_of_el == el_constrained_sum );
-        const T unconstrained_rel_mass_frac_of_el = 1.0 - sum_constrained_frac_rel_mass_of_el;
-
-        T iso_mass_fraction;
-        if( constraint.m_mass_fraction_lower == constraint.m_mass_fraction_upper )
-        {
-          assert( abs(x[index] - -1.0) < 1.0E-6 );
-          iso_mass_fraction = T(constraint.m_mass_fraction_lower);
-        }else
-        {
-          const T dist = x[index] - 0.5;
-          assert( (dist > -0.02) && (dist < 1.02) ); //should be between 0 and 1, but will leave some room for numerical diff
-          iso_mass_fraction = constraint.m_mass_fraction_lower
-               + dist * (constraint.m_mass_fraction_upper - constraint.m_mass_fraction_lower);
+          gs[k-1] = x[ block.dist_indices[k-1] ] - 0.5; //box-bounded to [0.5, 1.5]
+          assert( (gs[k-1] > -0.02) && (gs[k-1] < 1.02) );
         }
 
-        const T total_rel_mass = sum_unconstrained_rel_mass_of_el / unconstrained_rel_mass_frac_of_el;
-        const T this_rel_mass = total_rel_mass * iso_mass_fraction;
-        const T this_rel_act = this_rel_mass * this_nuc_pos->second;
+        RelActCalc::decode_mass_frac_block( block.spec, sigma, gs.data(), fractions.data() );
+        this_frac = fractions[range_pos];
+      }//if( range_pos >= 0 )
 
-        return this_rel_act;
-      }//if( constraint.m_nuclide == iso )
-    }//for( const RelActCalcManual::MassFractionConstraint &constraint : m_input.mass_fraction_constraints )
+      if( block.spec.all_constrained )
+      {
+        // Every isotope of the element is constrained: no unconstrained isotopes carry the
+        //  elements absolute scale, so the carrier slot holds the total relative mass (x >= 0).
+        const T el_rel_mass = block.scale_multiple * x[block.carrier_index];
+        return el_rel_mass * this_frac * this_sa_pos->second;
+      }//if( block.spec.all_constrained )
+
+      // Sum the relative masses of the elements unconstrained isotopes (rel act / specific
+      //  activity); together they make up the `1 - sum_constrained` remainder of the element
+      //  mass - strictly positive, by the hard bound on the carrier.
+      const T sum_constrained = T(block.spec.fixed_sum) + sigma;
+      T sum_unconstrained_rel_mass_of_el( 0.0 );
+      for( const std::map<std::string, double>::value_type &iso_sa : block.specific_activities )
+      {
+        if( std::count( begin(block.fixed_isos), end(block.fixed_isos), iso_sa.first )
+            || std::count( begin(block.range_isos), end(block.range_isos), iso_sa.first ) )
+          continue; //constrained isotopes are folded into sum_constrained
+
+        sum_unconstrained_rel_mass_of_el += (relative_activity( iso_sa.first, x ) / iso_sa.second);
+      }//for( const auto &iso_sa : block.specific_activities )
+
+      const T unconstrained_rel_mass_frac_of_el = 1.0 - sum_constrained;
+      const T total_rel_mass = sum_unconstrained_rel_mass_of_el / unconstrained_rel_mass_frac_of_el;
+      const T this_rel_mass = total_rel_mass * this_frac;
+
+      return this_rel_mass * this_sa_pos->second;
+    }//for( const ManualMassFracBlock &block : m_mass_frac_blocks )
 #endif
 
 
@@ -1439,15 +1595,16 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     }
 
     vector<T> eqn_coefficients;
-    vector<vector<T>> eqn_cov;
+    // Note: we deliberately pass nullptr for the covariance: it is unused here, and requesting it
+    //  would force a (ceres::Jet) matrix pseudo-inverse on every residual evaluation.  The final
+    //  covariance is computed once, in double precision, where the solution is extracted.
     fit_rel_eff_eqn_lls_imp<T>( m_input.eqn_form, m_input.eqn_order,
                                 m_isotopes,
                                 rel_activities,
                                 m_input.peaks,
-                                eqn_coefficients, &eqn_cov );
-    
+                                eqn_coefficients, nullptr );
+
     assert( eqn_coefficients.size() == (m_input.eqn_order + 1) );
-    assert( eqn_cov.size() == (m_input.eqn_order + 1) );
     
     
     std::function<T(double)> rel_eff_curve = make_rel_eff_fcn<T>( eqn_coefficients );
@@ -1570,7 +1727,12 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         }else if( m_input.phys_model_self_atten->fit_atomic_number )
         {
           T an = x[par_num] * RelActCalc::ns_an_ceres_mult;
-          att.atomic_number = fmin( fmax(an, 1.0), 98.0);
+          // Do NOT clamp `an` with fmin/fmax: that zeroes the ceres::Jet derivative at the [1,98]
+          //  bound, re-creating the bound-trap the areal-density AD path deliberately avoids (see
+          //  RelActCalc_imp.hpp).  The AN parameter is already Ceres-bounded (to [lower_an,upper_an]/
+          //  ns_an_ceres_mult), and get_atten_coef_for_an interpolates smoothly - keeping the gradient
+          //  non-zero - for the tiny margin the optimizer can reach past the bound.
+          att.atomic_number = an;
           par_num += 1;
         }else
         {
@@ -1611,7 +1773,12 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         }else if( ext_atten->fit_atomic_number )
         {
           T an = x[par_num] * RelActCalc::ns_an_ceres_mult;
-          att.atomic_number = fmin( fmax(an, 1.0), 98.0);
+          // Do NOT clamp `an` with fmin/fmax: that zeroes the ceres::Jet derivative at the [1,98]
+          //  bound, re-creating the bound-trap the areal-density AD path deliberately avoids (see
+          //  RelActCalc_imp.hpp).  The AN parameter is already Ceres-bounded (to [lower_an,upper_an]/
+          //  ns_an_ceres_mult), and get_atten_coef_for_an interpolates smoothly - keeping the gradient
+          //  non-zero - for the tiny margin the optimizer can reach past the bound.
+          att.atomic_number = an;
           par_num += 1;
         }else
         {
@@ -1688,7 +1855,7 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         if( ((rel_src_counts < 1.0E-8) && (rel_src_counts < (1.0E-6*peak.m_counts)))
            || (rel_src_counts < numeric_limits<T>::epsilon()) )
         {
-          rel_src_counts = exp(T{}) * 1.0E-6 * peak.m_counts;
+          rel_src_counts = T(1.0E-6) * peak.m_counts;
         }
         
         residuals[index] = (peak.m_counts / rel_src_counts) - curve_val;
@@ -2521,24 +2688,28 @@ void fit_act_to_rel_eff( const std::function<double(double)> &eff_fcn,
     
     if( IsNan(rel_eff) || IsInf(rel_eff) )
       throw runtime_error( "fit_act_to_rel_eff: invalid rel eff at " + to_string(energy) + " keV." );
-    
-    const double rel_act = (counts / rel_eff);
-    const double rel_act_uncert = rel_act * (counts_uncert / counts);
-    
-    b(row) = rel_act / rel_act_uncert;
-    
-    
+
+    if( counts_uncert <= 0.0 )
+      throw runtime_error( "fit_act_to_rel_eff: peak counts uncertainty must be > 0 at "
+                          + to_string(energy) + " keV." );
+
+    // The per-peak weighted least-squares row is (sum_iso yield*rel_eff*act - counts)/counts_uncert.
+    //  Writing b and A directly - instead of via rel_act = counts/rel_eff and
+    //  rel_act_uncert = rel_act*counts_uncert/counts - avoids dividing by rel_eff and by counts; the
+    //  algebra is identical (b = counts/counts_uncert, A = yield*rel_eff/counts_uncert), so the
+    //  solution and covariance are unchanged, but a zero rel_eff or zero counts no longer produce NaN.
+    b(row) = counts / counts_uncert;
+
     for( const GenericLineInfo &info : peak.m_source_gammas )
     {
       const auto pos = std::find( begin(isotopes), end(isotopes), info.m_isotope );
       assert( pos != end(isotopes) ); //we already checked this.
-      
+
       const int column = static_cast<int>( pos - begin(isotopes) );
       assert( (column >= 0) && (column < static_cast<int>(isotopes.size())) ); //sometimes re-assurance is good
-      
-      // rel efficiency is just something like cps/rel_act
+
       assert( A(row,column) == 0.0 );
-      A(row,column) = info.m_yield / rel_act_uncert;
+      A(row,column) = (info.m_yield * rel_eff) / counts_uncert;
     }//for( const GenericLineInfo &info : peak.m_source_gammas )
   }//for( size_t row = 0; row < num_peaks; ++row )
   
@@ -2556,21 +2727,18 @@ void fit_act_to_rel_eff( const std::function<double(double)> &eff_fcn,
   
   assert( solution.size() == num_isotopes );
   
-  // TODO: I'm sure Eigen::BDCSVD has the uncertainty matrix in it somewhere already computed, but
-  //       for the moment (See pg 796 in Numerical Recipes for hint - probably has something to do
-  //       with bdc.singularValues(), bdc.matrixV(), or bdc.matrixU()) we'll just be dumb and do
-  //       extra (unstable?) work.
-  const Eigen::MatrixX<double> A_transpose = A.transpose();
-  const Eigen::MatrixX<double> alpha = Eigen::Product<Eigen::MatrixX<double>,Eigen::MatrixX<double>>( A_transpose, A ); //A_transpose * A;
-  const Eigen::MatrixX<double> C = alpha.inverse();
-  
+  // Covariance C = (A^T A)^{-1} via the SVD pseudo-inverse V*S^{-2}*V^T (see helper): avoids forming
+  //  A^T A (which squares the condition number) and stays finite for rank-deficient A.
+  const Eigen::MatrixX<double> C = lls_covariance_from_svd<double>( bdc.matrixV(), bdc.singularValues(),
+                                                            static_cast<Eigen::Index>(num_peaks) );
+
   fit_rel_acts.resize( solution.size() );
   fit_uncerts.resize( solution.size() );
-  
+
   for( size_t i = 0; i < num_isotopes; ++i )
   {
     fit_rel_acts[i] = solution(i);
-    fit_uncerts[i] = std::sqrt( C(i,i) );
+    fit_uncerts[i] = std::sqrt( std::max( 0.0, C(i,i) ) );
   }
 }//fit_act_to_rel_eff(...)
 
@@ -2781,10 +2949,12 @@ void RelEffInput::check_nuclide_constraints() const
     }//for( const RelActCalcManual::MassFractionConstraint &other_constraint : mass_fraction_constraints )
 
 
-    // Check that there is at least one nuclide in `constraint.m_specific_activities` that is not mass-fraction-constrained.
-    // Check that the summ of mass-fraction-constrained nuclides for this element is less than 1.0
+    // Feasibility of the elements constrained windows: with unconstrained isotopes remaining, the
+    //  constrained lower bounds must leave them a positive mass remainder; an all-constrained
+    //  element (supported via the sigma-block element-scale parameter) instead needs its windows
+    //  able to sum to exactly 1.  (Mirrors RelActCalcAuto::RelEffCurveInput::check_nuclide_constraints.)
     size_t num_not_mass_frac_constrained = 0;
-    double sum_lower_mass_frac_constrained = 0.0;
+    double sum_lower_mass_frac_constrained = 0.0, sum_upper_mass_frac_constrained = 0.0;
     for( const auto &specific_activity : constraint.m_specific_activities )
     {
       const auto mass_frac_pos = std::find_if( begin(mass_fraction_constraints), end(mass_fraction_constraints),
@@ -2792,18 +2962,31 @@ void RelEffInput::check_nuclide_constraints() const
         {
           return mfc.m_nuclide == specific_activity.first;
         } );
-        
-      if( mass_frac_pos == end(mass_fraction_constraints) )
-        ++num_not_mass_frac_constrained;
-      else
-        sum_lower_mass_frac_constrained += mass_frac_pos->m_mass_fraction_lower;
-    }//for( const auto &specific_activity : constraint.m_specific_activities )
-    
-    if( num_not_mass_frac_constrained == 0 )
-      throw logic_error( "RelEffInput: There is no elements nuclide that is not mass fraction constrainted." );
 
-    if( sum_lower_mass_frac_constrained >= 1.0 )
-      throw logic_error( "RelEffInput: The sum of lower mass fraction constraints is greater than 1.0." );
+      if( mass_frac_pos == end(mass_fraction_constraints) )
+      {
+        ++num_not_mass_frac_constrained;
+      }else
+      {
+        sum_lower_mass_frac_constrained += mass_frac_pos->m_mass_fraction_lower;
+        sum_upper_mass_frac_constrained += mass_frac_pos->m_mass_fraction_upper;
+      }
+    }//for( const auto &specific_activity : constraint.m_specific_activities )
+
+    if( num_not_mass_frac_constrained == 0 )
+    {
+      if( (sum_lower_mass_frac_constrained > (1.0 + 1.0E-6))
+          || (sum_upper_mass_frac_constrained < (1.0 - 1.0E-6)) )
+        throw logic_error( "RelEffInput: All of an elements isotopes are mass-fraction constrained,"
+                           " but the windows can not sum to exactly 1 (sum of lower limits="
+                           + std::to_string(sum_lower_mass_frac_constrained) + ", sum of upper limits="
+                           + std::to_string(sum_upper_mass_frac_constrained) + ")." );
+    }else
+    {
+      if( sum_lower_mass_frac_constrained >= (1.0 - 1.0E-6) )
+        throw logic_error( "RelEffInput: The sum of lower mass fraction constraints leaves no mass"
+                           " for the elements unconstrained isotopes." );
+    }//if( all-constrained element ) / else
   }//for( const RelActCalcManual::MassFractionConstraint &constraint : mass_fraction_constraints )
 
 #endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
@@ -3121,6 +3304,19 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
     throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', "
                         + std::to_string(num_sigma) + "): nuclide not in solution set" );
   
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+  // A FIXED (lower == upper) mass-fraction constraint pins this nuclides fraction by construction
+  //  (the elements scale cancels out of the fraction), so its mass fraction carries no +-num_sigma
+  //  variation - and its parameter slot may hold something else entirely (the element total, when
+  //  every isotope of the element is constrained), so the per-parameter variation scheme below
+  //  does not apply to it.
+  for( const MassFractionConstraint &mfc : m_input.mass_fraction_constraints )
+  {
+    if( (mfc.m_nuclide == nuclide) && (mfc.m_mass_fraction_lower == mfc.m_mass_fraction_upper) )
+      return mass_fraction( nuclide );
+  }
+#endif
 
 // If this nuclide was constrained, then we need to find the ultimate controlling nuclide.
   double nuc_mult = 1.0;
@@ -4995,9 +5191,19 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       {
         if( constraint.m_nuclide == cost_functor->m_isotopes[i] )
         {
-          assert( std::find( begin(constant_parameters), end(constant_parameters), i ) == end(constant_parameters) );
-          constant_parameters.push_back( i );
-          pars[i] = -1.0; //so we can assert on this later to make sure things are reasonable
+          // Fixed constraints decode to their pinned fraction, so the slot is constant - EXCEPT
+          //  when it is an all-constrained elements carrier, which holds the element scale (a
+          //  live parameter; see #ManualMassFracBlock) - configured in the bounds loop below.
+          bool is_all_const_carrier = false;
+          for( const auto &block : cost_functor->m_mass_frac_blocks )
+            is_all_const_carrier |= (block.spec.all_constrained && (block.carrier_index == static_cast<size_t>(i)));
+
+          if( !is_all_const_carrier )
+          {
+            assert( std::find( begin(constant_parameters), end(constant_parameters), i ) == end(constant_parameters) );
+            constant_parameters.push_back( i );
+            pars[i] = -1.0; //so we can assert on this later to make sure things are reasonable
+          }
           break;
         }
       }//for( int i = 0; i < static_cast<int>(num_nuclides); ++i )
@@ -5025,8 +5231,24 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     }
 
 #if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+    // An all-constrained elements carrier holds the element total-rel-mass scale: start 1.0,
+    //  bounded below by 0, no upper bound (regardless of whether its own constraint is fixed).
+    for( const auto &block : cost_functor->m_mass_frac_blocks )
+    {
+      if( block.spec.all_constrained && (block.carrier_index == i) )
+      {
+        pars[i] = 1.0;
+        is_mass_frac_constrained = true;
+        problem.SetParameterLowerBound( pars, static_cast<int>(i), 0.0 );
+        break;
+      }
+    }//for( const auto &block : cost_functor->m_mass_frac_blocks )
+
     for( const auto &constraint : input.mass_fraction_constraints )
     {
+      if( is_mass_frac_constrained )
+        break;
+
       if( constraint.m_nuclide == cost_functor->m_isotopes[i] )
       {
         if( constraint.m_mass_fraction_lower == constraint.m_mass_fraction_upper )
@@ -5034,6 +5256,8 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
           is_fixed = true;
         }else
         {
+          // A sigma-block `t` (carrier) or `g_k` (distribution) value - box [0.5, 1.5], start at
+          //  the midpoint (t = g = 0.5).
           pars[i] = 1.0;
           is_mass_frac_constrained = true;
           problem.SetParameterLowerBound( pars, static_cast<int>(i), 0.5 );
@@ -5394,7 +5618,26 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
         {
           if( mass_frac_constraint->m_mass_fraction_lower == mass_frac_constraint->m_mass_fraction_upper )
           {
-            rel_act.m_rel_activity_uncert = 0.0; //TODO: is there maybe somehow some actual uncert here?
+            // The FRACTION is pinned, but the rel act still scales with the elements total: when
+            //  every isotope of the element is constrained, that total is the free carrier
+            //  parameter (rel act linear in it), so propagate its variance; otherwise the fixed
+            //  slot is constant and 0 is kept.
+            //  TODO: for a mixed element, the total also varies (through the unconstrained
+            //        isotopes and sigma) - propagating that needs the full-parameter Jacobian.
+            rel_act.m_rel_activity_uncert = 0.0;
+            for( const auto &block : cost_functor->m_mass_frac_blocks )
+            {
+              if( block.spec.all_constrained
+                  && std::count( begin(block.fixed_isos), end(block.fixed_isos), iso )
+                  && (parameters[block.carrier_index] > 0.0) )
+              {
+                const double carrier_uncert = std::sqrt( std::max( 0.0,
+                              solution.m_nonlin_covariance[block.carrier_index][block.carrier_index] ) );
+                rel_act.m_rel_activity_uncert = rel_act.m_rel_activity * carrier_uncert
+                                                / parameters[block.carrier_index];
+                break;
+              }
+            }//for( const auto &block : cost_functor->m_mass_frac_blocks )
           }else
           {
             // `m_nonlin_covariance` elements have already been multiplied by the derivative RelAct wrt RelAct parameter

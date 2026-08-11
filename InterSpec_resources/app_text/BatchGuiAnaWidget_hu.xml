@@ -121,8 +121,6 @@ Nulla vagy negatív érték esetén nincs követelmény, és a 'peak-stat-thresh
 
   <message id="bgw-reports-write-custom-per-file-tooltip">Egy vagy több spektrumjelentés-sablon fájl - minden bemeneti fájlhoz az összes megadott sablonnal készül jelentés.</message>
 
-  <message id="bgw-reports-write-custom-summary-tooltip">Egy vagy több sablonfájl az összes bemeneti fájl összefoglalójához.</message>
-
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Bq egységek használata</message>
   <message id="bgw-hard-background-sub">Kemény háttérkivonás</message>

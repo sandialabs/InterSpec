@@ -67,6 +67,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/ShieldSourcePullTrend.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
 
@@ -2448,19 +2449,23 @@ void fit_model( const std::string wtsession,
       
       if( shield.m_isGenericMaterial )
       {
-        const double adUnits = PhysicalUnits::gram / PhysicalUnits::cm2;
+        // Note: `ShieldingInfo::m_dimensions[1]` holds the areal density in InterSpec internal
+        //  units - this is the convention used by `ShieldingSelect::toShieldingInfo()`,
+        //  `ShieldingInfo::serialize()`/`deSerialize()`, `ShieldingInfo::encodeStateToUrl()`, and
+        //  `ShieldingSourceChi2Fcn::create()` (which seeds the fit parameter from it).  So do not
+        //  convert to g/cm2 here, or consumers of `final_shieldings` are off by ~62415x.
         const double an = chi2Fcn->atomicNumber( shielding_index, params );
-        const double ad = chi2Fcn->arealDensity( shielding_index, params ) / adUnits;
-        
+        const double ad = chi2Fcn->arealDensity( shielding_index, params );
+
         shield.m_dimensions[0] = an;
         shield.m_fitDimensions[0] = initial_shield.m_fitDimensions[0];
         if( shield.m_fitDimensions[0] )
           shield.m_dimensionUncerts[0] = chi2Fcn->atomicNumber( shielding_index, errors );
-        
+
         shield.m_dimensions[1] = ad;
         shield.m_fitDimensions[1] = initial_shield.m_fitDimensions[1];
         if( shield.m_fitDimensions[1] )
-          shield.m_dimensionUncerts[1] = chi2Fcn->arealDensity( shielding_index, errors ) / adUnits;
+          shield.m_dimensionUncerts[1] = chi2Fcn->arealDensity( shielding_index, errors );
         
         // There looks to be a bug in Minuit that IsFixed() doesnt work
         //assert( shield.m_fitDimensions[0] != fitParams.Parameter(shield_start_par).IsFixed() );
@@ -2623,8 +2628,24 @@ void fit_model( const std::string wtsession,
       
       results->peak_calc_details = std::move(peak_calc_details);
       results->peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>(peak_comparisons) );
-      
-      
+
+      // Diagnose the per-peak pull trend vs energy (never let a diagnostic fail the fit).
+      try
+      {
+        const vector<ShieldingSourceFitCalc::ShieldingInfo> shield_bases(
+                        results->final_shieldings.begin(), results->final_shieldings.end() );
+        const ShieldSourcePullTrend::FitConfigSummary trend_config =
+          ShieldSourcePullTrend::summarize_fit_config( shield_bases, results->fit_src_info );
+        results->pull_trend = make_shared<const ShieldSourcePullTrend::TrendResult>(
+          ShieldSourcePullTrend::fit_pull_trend( *results->peak_comparisons,
+                                                 *results->peak_calc_details,
+                                                 shield_bases, trend_config ) );
+      }catch( std::exception & )
+      {
+        results->pull_trend = nullptr;
+      }
+
+
       if( !results->peak_calc_log.empty() )
       {
         char buffer[64];

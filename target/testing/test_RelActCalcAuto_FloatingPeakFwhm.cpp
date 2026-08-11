@@ -40,6 +40,7 @@
 
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -187,7 +188,8 @@ BOOST_AUTO_TEST_CASE( floating_peak_fwhm_reported_in_kev )
     opts.floating_peaks.push_back( fp );
 
     RelActCalcAuto::RelActAutoSolution sol;
-    BOOST_REQUIRE_NO_THROW( sol = RelActCalcAuto::solve( opts, foreground, background, det, {}, nullptr ) );
+    BOOST_REQUIRE_NO_THROW( sol = RelActCalcAuto::solve( opts, foreground, background, det, {},
+                                            PeakFitUtils::coarse_det_type( foreground, nullptr ), nullptr ) );
     BOOST_REQUIRE_MESSAGE( sol.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success,
                            "solve (release_fwhm=" << release << ") failed: status="
                            << static_cast<int>(sol.m_status) << ", error='" << sol.m_error_message << "'" );

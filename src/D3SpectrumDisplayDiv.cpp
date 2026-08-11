@@ -29,6 +29,7 @@
 
 #include <Wt/Utils>
 #include <Wt/WPoint>
+#include <Wt/WTimer>
 #include <Wt/WServer>
 #include <Wt/WLength>
 #include <Wt/WIOService>
@@ -114,6 +115,27 @@ WT_DECLARE_WT_MEMBER
 (ChartToImageData, Wt::JavaScriptFunction, "ChartToImageData",
  function(chart, format, maxSize, callback)
 {
+  /* The callback must fire exactly once, whatever happens: the C++ side has a capture in flight until
+     it does, and (before the guard timer existed) a lost callback wedged every later capture.
+     Failure is signalled with EMPTY strings, never null: JSignal marshals arguments through
+     encodeURIComponent(), so a null would reach C++ as the literal text "null" - which is not empty,
+     and would be forwarded to the model as a successful image whose data is the word "null". */
+  var done = false;
+  var finish = function(b64,mime,w,h){
+    if( done )
+      return;
+    done = true;
+    clearTimeout( fallback );
+    callback( b64, mime, w, h );
+  };
+
+  /* Backstop for a path that returns without calling back at all (e.g. an image that never fires
+     either onload or onerror).  This MUST stay comfortably below the C++ guard
+     (D3SpectrumDisplayDiv::sm_image_capture_timeout_ms, 15 s): the chart-state restore steps run in
+     the callback below, so if C++ gives up first it issues the NEXT queued capture and this one's
+     late restore would then be applied on top of that capture's display state. */
+  var fallback = setTimeout( function(){ finish('','',0,0); }, 12000 );
+
   try
   {
     var svgMarkup = chart.getStaticSvg();
@@ -130,10 +152,11 @@ WT_DECLARE_WT_MEMBER
     width = Math.round(width);
     height = Math.round(height);
 
+
     if( format === "svg" )
     {
       // For SVG, base64-encode the markup directly
-      callback( btoa(unescape(encodeURIComponent(svgMarkup))), "image/svg+xml", width, height );
+      finish( btoa(unescape(encodeURIComponent(svgMarkup))), "image/svg+xml", width, height );
       return;
     }
 
@@ -166,29 +189,38 @@ WT_DECLARE_WT_MEMBER
       console.log( 'ChartToImageData img.error: ' );
       console.log(e);
       window.URL.revokeObjectURL(url);
-      callback( null, null, 0, 0 );
+      finish( '', '', 0, 0 );
     };
 
+    /* This runs asynchronously, so the outer try/catch does NOT cover it - a throwing toDataURL()
+       (e.g. a tainted or oversized canvas) would otherwise escape and lose the callback entirely. */
     img.onload = function() {
-      // Draw at target size (may be scaled down from original)
-      ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
-      window.URL.revokeObjectURL(url);
+      try
+      {
+        // Draw at target size (may be scaled down from original)
+        ctx.drawImage(img, 0, 0, targetWidth, targetHeight);
+        window.URL.revokeObjectURL(url);
 
-      var mimeType = (format === "jpeg") ? "image/jpeg" : "image/png";
-      var quality = (format === "jpeg") ? 0.85 : undefined;
-      var dataUrl = canvas.toDataURL(mimeType, quality);
-      canvas.remove();
+        var mimeType = (format === "jpeg") ? "image/jpeg" : "image/png";
+        var quality = (format === "jpeg") ? 0.85 : undefined;
+        var dataUrl = canvas.toDataURL(mimeType, quality);
+        canvas.remove();
 
-      // Strip the "data:<mime>;base64," prefix to get raw base64
-      var base64 = dataUrl.replace(/^data:[^;]+;base64,/, '');
-      callback( base64, mimeType, targetWidth, targetHeight );
+        // Strip the "data:<mime>;base64," prefix to get raw base64
+        var base64 = dataUrl.replace(/^data:[^;]+;base64,/, '');
+        finish( base64, mimeType, targetWidth, targetHeight );
+      }catch(e){
+        console.log( 'ChartToImageData img.onload error: ' );
+        console.log( e );
+        finish( '', '', 0, 0 );
+      }
     };
 
     img.src = url;
   }catch(e){
     console.log( 'ChartToImageData error: ' );
     console.log( e );
-    callback( null, null, 0, 0 );
+    finish( '', '', 0, 0 );
   }
 }
 );
@@ -1561,27 +1593,6 @@ void D3SpectrumDisplayDiv::setPeaksToClient( const SpecUtils::SpectrumType spect
 
 
 
-void D3SpectrumDisplayDiv::schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
-{
-  switch( spectrum_type )
-  {
-    case SpecUtils::SpectrumType::Foreground:
-      m_renderFlags |= UpdateForegroundPeaks;
-      break;
-      
-    case SpecUtils::SpectrumType::SecondForeground:
-      m_renderFlags |= UpdateSecondaryPeaks;
-      break;
-      
-    case SpecUtils::SpectrumType::Background:
-      m_renderFlags |= UpdateBackgroundPeaks;
-      break;
-  }//switch( spectrum_type )
-  
-  scheduleRender();
-}//void schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
-
-
 void D3SpectrumDisplayDiv::setRoiData( const std::string &peak_json,
                                        const SpecUtils::SpectrumType spectrum_type )
 {
@@ -1605,6 +1616,27 @@ void D3SpectrumDisplayDiv::setRoiData( const std::string &peak_json,
     scheduleRender();
   }
 }//void setRoiData(...)
+
+
+void D3SpectrumDisplayDiv::schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
+{
+  switch( spectrum_type )
+  {
+    case SpecUtils::SpectrumType::Foreground:
+      m_renderFlags |= UpdateForegroundPeaks;
+      break;
+      
+    case SpecUtils::SpectrumType::SecondForeground:
+      m_renderFlags |= UpdateSecondaryPeaks;
+      break;
+      
+    case SpecUtils::SpectrumType::Background:
+      m_renderFlags |= UpdateBackgroundPeaks;
+      break;
+  }//switch( spectrum_type )
+  
+  scheduleRender();
+}//void schedulePeakRedraw( const SpecUtils::SpectrumType spectrum_type )
 
 
 void D3SpectrumDisplayDiv::setData( std::shared_ptr<const Measurement> data_hist, const bool keep_curent_xrange )
@@ -2476,18 +2508,91 @@ void D3SpectrumDisplayDiv::saveChartToImg( const std::string &filename, const bo
     return;
 
   const std::string format = asPng ? "png" : "svg";
-  captureChartImage( format, 0, {}, {},
+  captureChartImage( format, 0, {}, {}, {},
     boost::bind( &D3SpectrumDisplayDiv::handleChartImageForDownload, this, filename,
                  boost::placeholders::_1, boost::placeholders::_2,
                  boost::placeholders::_3, boost::placeholders::_4 ) );
 }//void saveChartToImg( const std::string &name, const bool asPng )
 
 
-void D3SpectrumDisplayDiv::handleImageCaptured( std::string base64, std::string mimeType,
-                                                 int w, int h )
+void D3SpectrumDisplayDiv::issueNextQueuedCapture()
 {
+  if( m_imageCaptureQueue.empty() )
+  {
+    m_activeCaptureId = 0;  // nothing in flight; any further late result cannot match
+    if( m_imageCaptureTimer )
+      m_imageCaptureTimer->stop();
+    return;
+  }
+
+  std::pair<std::string,ImageCaptureCallback> next = std::move( m_imageCaptureQueue.front() );
+  m_imageCaptureQueue.pop_front();
+  m_pendingImageCallback = std::move( next.second );
+  m_activeCaptureId = m_nextCaptureId++;
+  m_activeCaptureDeadline = std::chrono::steady_clock::now()
+                            + std::chrono::milliseconds( sm_image_capture_timeout_ms );
+
+  // The queued JS was built with a "%CAPTUREID%" placeholder, since the id is only known now.
+  const std::string idStr = std::to_string( m_activeCaptureId );
+  std::string js = std::move( next.first );
+  SpecUtils::ireplace_all( js, "%CAPTUREID%", idStr.c_str() );
+  doJavaScript( js );
+
+  if( m_imageCaptureTimer && !m_imageCaptureTimer->isActive() )
+    m_imageCaptureTimer->start();
+}//void issueNextQueuedCapture()
+
+
+void D3SpectrumDisplayDiv::checkImageCaptureDeadline()
+{
+  if( m_activeCaptureId == 0 )
+  {
+    if( m_imageCaptureTimer )
+      m_imageCaptureTimer->stop();
+    return;
+  }
+
+  if( std::chrono::steady_clock::now() < m_activeCaptureDeadline )
+    return;  // still within its window
+
+  cerr << "D3SpectrumDisplayDiv: chart image capture " << m_activeCaptureId
+       << " did not complete within " << (sm_image_capture_timeout_ms/1000)
+       << "s; failing it so queued captures can proceed." << endl;
+
   ImageCaptureCallback cb;
   std::swap( cb, m_pendingImageCallback );
+
+  // Invalidate the in-flight id first, so a result that shows up later is recognized as stale.  Then
+  //  start the next queued capture, so one lost round-trip cannot wedge the whole queue.
+  m_activeCaptureId = 0;
+  issueNextQueuedCapture();
+
+  // Empty data is this API's "capture failed" signal (see executeGetSpectrumImageAsync).
+  if( cb )
+    cb( std::string(), std::string(), 0, 0 );
+}//void checkImageCaptureDeadline()
+
+
+void D3SpectrumDisplayDiv::handleImageCaptured( std::string base64, std::string mimeType,
+                                                 int w, int h, int captureId )
+{
+  // Discard a result whose capture we already gave up on (its guard timer fired and its caller has
+  //  been told the capture failed).  Without this check the stale result would be handed to whichever
+  //  capture is in flight now, permanently mis-pairing every subsequent image with the wrong caller.
+  if( (captureId != m_activeCaptureId) || (m_activeCaptureId == 0) )
+  {
+    cerr << "D3SpectrumDisplayDiv: ignoring stale chart image (captureId=" << captureId
+         << ", in-flight=" << m_activeCaptureId << ")" << endl;
+    return;
+  }
+
+  ImageCaptureCallback cb;
+  std::swap( cb, m_pendingImageCallback );
+
+  // Issue the next queued capture (if any) before invoking the callback, so a capture requested
+  //  from within the callback still queues correctly behind the ones already waiting.
+  issueNextQueuedCapture();
+
   if( cb )
     cb( std::move( base64 ), std::move( mimeType ), w, h );
 }//void handleImageCaptured(...)
@@ -2533,6 +2638,7 @@ void D3SpectrumDisplayDiv::handleChartImageForDownload( const std::string &filen
 void D3SpectrumDisplayDiv::captureChartImage( const std::string &format, int maxLongestSide,
                                                std::optional<std::pair<double,double>> energyRange,
                                                std::optional<bool> yAxisLog,
+                                               std::optional<bool> backgroundSubtract,
                                                ImageCaptureCallback callback )
 {
   if( !callback )
@@ -2543,25 +2649,43 @@ void D3SpectrumDisplayDiv::captureChartImage( const std::string &format, int max
 
   assert( !energyRange || (energyRange->first >= 0.0 && energyRange->second > energyRange->first) );
 
-  // Initialize the JSignal on first use
+  // Too many captures already waiting: fail this one immediately rather than queueing it behind a
+  //  wait we cannot bound.  Reported through the callback (empty data == failure) rather than by
+  //  throwing, so every consumer handles it the same way - a consumer that only watches the callback
+  //  would otherwise wait forever for a call that threw.
+  if( m_imageCaptureQueue.size() >= sm_max_queued_captures )
+  {
+    cerr << "captureChartImage: " << m_imageCaptureQueue.size()
+         << " captures already queued - failing this request" << endl;
+    callback( std::string(), std::string(), 0, 0 );
+    return;
+  }
+
+  // Initialize the JSignal and guard timer on first use
   if( !m_imageCapturedJS )
   {
-    m_imageCapturedJS.reset( new Wt::JSignal<std::string, std::string, int, int>( this, "imageCaptured", true ) );
+    m_imageCapturedJS.reset( new Wt::JSignal<std::string, std::string, int, int, int>( this, "imageCaptured", true ) );
     m_imageCapturedJS->connect( boost::bind( &D3SpectrumDisplayDiv::handleImageCaptured, this,
        boost::placeholders::_1, boost::placeholders::_2,
-       boost::placeholders::_3, boost::placeholders::_4 ) );
-  }//if( !m_imageCapturedJS )
+       boost::placeholders::_3, boost::placeholders::_4, boost::placeholders::_5 ) );
 
-  m_pendingImageCallback = std::move( callback );
+    // Repeating (not single-shot) and checked against a deadline - see m_imageCaptureTimer.
+    m_imageCaptureTimer.reset( new Wt::WTimer() );
+    m_imageCaptureTimer->setInterval( sm_image_capture_poll_ms );
+    m_imageCaptureTimer->timeout().connect( this, &D3SpectrumDisplayDiv::checkImageCaptureDeadline );
+  }//if( !m_imageCapturedJS )
 
   LOAD_JAVASCRIPT(wApp, "src/D3SpectrumDisplayDiv.cpp", "D3SpectrumDisplayDiv", wtjsChartToImageData);
 
-  const std::string emitJs = m_imageCapturedJS->createCall( "b64", "mime", "w", "h" );
+  // The capture id is only known when the JS is actually issued (a queued capture gets its id then),
+  //  so emit with a placeholder that issueNextQueuedCapture()/this function substitutes.
+  const std::string emitJs = m_imageCapturedJS->createCall( "b64", "mime", "w", "h", "%CAPTUREID%" );
 
-  // Build a single JS block that optionally zooms/changes y-scale, captures via
-  //  requestAnimationFrame, and restores
+  // Build a single JS block that optionally zooms/changes y-scale/toggles background
+  //  subtraction, captures via requestAnimationFrame, and restores
   const bool changeRange = energyRange.has_value();
   const bool changeYScale = yAxisLog.has_value();
+  const bool changeBgSub = backgroundSubtract.has_value();
 
   std::string js;
   js += "(function(){";
@@ -2574,21 +2698,32 @@ void D3SpectrumDisplayDiv::captureChartImage( const std::string &format, int max
     js += "chart.setXAxisRange(" + std::to_string(energyRange->first) + "," + std::to_string(energyRange->second) + ",false,true);";
   }
 
+  // Capture the persistent state to restore to from the C++-tracked members (NOT from a runtime
+  //  read of chart.options, which can be transiently wrong if another capture is mid-toggle).
+  const std::string restoreYScale = m_yAxisIsLog ? "log" : "lin";
+  const bool restoreBgSub = m_backgroundSubtract;
+
   if( changeYScale )
-  {
-    js += "var savedYScale=chart.options.yscale;";
     js += std::string("chart.") + (*yAxisLog ? "setLogY" : "setLinearY") + "();";
+
+  if( changeBgSub )
+  {
+    // setBackgroundSubtract() triggers its own redraw; only has effect if a background is loaded.
+    js += "chart.setBackgroundSubtract(" + jsbool(*backgroundSubtract) + ");";
   }
 
-  if( changeRange || changeYScale )
+  if( changeRange || changeYScale || changeBgSub )
   {
     js += "chart.redraw()();";
     if( changeRange )
       js += "chart.updateFeatureMarkers(-1);";
   }
 
-  // Use requestAnimationFrame so the chart re-renders before we capture
-  js += "requestAnimationFrame(function(){";
+  // Use requestAnimationFrame so the chart re-renders before we capture.  rAF does not fire at all
+  //  while the window is hidden/occluded/minimized, so race it against a timeout and take whichever
+  //  comes first - otherwise an unattended session simply never captures.  `started` keeps the body
+  //  to exactly one run, since the restore steps below are not idempotent.
+  js += "var started=false;var go=function(){if(started)return;started=true;";
   js += "Wt.WT.ChartToImageData(chart,'" + format + "'," + std::to_string(maxLongestSide)
       + ",function(b64,mime,w,h){";
 
@@ -2601,11 +2736,17 @@ void D3SpectrumDisplayDiv::captureChartImage( const std::string &format, int max
 
   if( changeYScale )
   {
-    // Restore original y-axis scale
-    js += "chart.setYAxisType(savedYScale);";
+    // Restore the persistent y-axis scale (member function triggers the actual axis change).
+    js += "chart.setYAxisType('" + restoreYScale + "');";
   }
 
-  if( changeRange || changeYScale )
+  if( changeBgSub )
+  {
+    // Restore the persistent background-subtract state (member function triggers the redraw).
+    js += "chart.setBackgroundSubtract(" + jsbool(restoreBgSub) + ");";
+  }
+
+  if( changeRange || changeYScale || changeBgSub )
   {
     js += "chart.redraw()();";
     if( changeRange )
@@ -2614,10 +2755,29 @@ void D3SpectrumDisplayDiv::captureChartImage( const std::string &format, int max
 
   js += emitJs + ";";
   js += "});";  // end ChartToImageData callback
-  js += "});";  // end requestAnimationFrame
+  js += "};";   // end go()
+  js += "requestAnimationFrame(go);setTimeout(go,250);";
   js += "})();"; // end IIFE
 
-  doJavaScript( js );
+  // Serialize captures: a capture temporarily mutates the shared chart's zoom/y-scale/background-
+  //  subtract state, and the single m_imageCapturedJS signal can only carry one result at a time.
+  //  If a capture is already in flight, queue this one; it will be issued when the current completes.
+  if( m_pendingImageCallback )
+  {
+    m_imageCaptureQueue.emplace_back( std::move( js ), std::move( callback ) );
+  }else
+  {
+    m_pendingImageCallback = std::move( callback );
+    m_activeCaptureId = m_nextCaptureId++;
+    m_activeCaptureDeadline = std::chrono::steady_clock::now()
+                              + std::chrono::milliseconds( sm_image_capture_timeout_ms );
+    const std::string idStr = std::to_string( m_activeCaptureId );
+    SpecUtils::ireplace_all( js, "%CAPTUREID%", idStr.c_str() );
+    doJavaScript( js );
+
+    if( m_imageCaptureTimer && !m_imageCaptureTimer->isActive() )
+      m_imageCaptureTimer->start();
+  }
 }//void captureChartImage(...)
 
 
@@ -3598,6 +3758,24 @@ void D3SpectrumDisplayDiv::yAxisTypeChangedCallback( const std::string &type )
 
 D3SpectrumDisplayDiv::~D3SpectrumDisplayDiv()
 {
+  // Resolve any outstanding image-capture callbacks with an empty result so blocked callers
+  //  (e.g. an MCP get_spectrum_image awaiting on a future) get an error rather than hanging forever.
+  if( m_imageCaptureTimer )
+    m_imageCaptureTimer->stop();
+  m_activeCaptureId = 0;
+
+  if( m_pendingImageCallback )
+  {
+    ImageCaptureCallback cb;
+    std::swap( cb, m_pendingImageCallback );
+    try{ cb( std::string(), std::string(), 0, 0 ); }catch(...){}
+  }
+  for( auto &js_cb : m_imageCaptureQueue )
+  {
+    try{ if( js_cb.second ) js_cb.second( std::string(), std::string(), 0, 0 ); }catch(...){}
+  }
+  m_imageCaptureQueue.clear();
+
   // The below false lets the JS run before load
   wApp->doJavaScript( "try{" + m_jsgraph + ".destroy();}catch(e){console.log('Failed to cleanup:',e);}", false );
   

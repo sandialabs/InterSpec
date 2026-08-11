@@ -208,7 +208,7 @@ group_by_continuum( const vector<shared_ptr<const PeakDef>> &peaks )
 BOOST_AUTO_TEST_CASE( refitOverlappingROIs )
 {
   const LoadedSpectrum spec = load_ba133();
-  const bool isHPGe = PeakFitUtils::is_high_res( spec.data );
+  const PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::coarse_det_type( spec.data, nullptr );
 
   const vector<vector<shared_ptr<const PeakDef>>> rois = group_by_continuum( spec.peaks );
 
@@ -237,7 +237,7 @@ BOOST_AUTO_TEST_CASE( refitOverlappingROIs )
     //  residuals are written, which is exactly the code path issue #1 broke.  Under
     //  PERFORM_DEVELOPER_CHECKS the prox_resid_index asserts fire here on any index regression.
     vector<shared_ptr<const PeakDef>> fit;
-    BOOST_REQUIRE_NO_THROW( fit = PeakFitLM::fit_peaks_in_roi_LM( roi_peaks, spec.data, isHPGe ) );
+    BOOST_REQUIRE_NO_THROW( fit = PeakFitLM::fit_peaks_in_roi_LM( roi_peaks, spec.data, det_type ) );
 
     BOOST_CHECK_MESSAGE( fit.size() == roi_peaks.size(),
                          "Refit returned " << fit.size() << " peaks for a " << roi_peaks.size()
@@ -400,7 +400,7 @@ BOOST_AUTO_TEST_CASE( statInsigPunishmentLifted )
     return roi;
   };
 
-  const bool isHPGe = false;
+  const PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::CoarseResolutionType::Low;
   // Pass the flag directly; Wt::WFlags<PeakFitLMOptions> is implicitly constructible from it.
   const PeakFitLM::PeakFitLMOptions stat_insig = PeakFitLM::PeakFitLMOptions::PunishForPeakBeingStatInsig;
 
@@ -411,8 +411,8 @@ BOOST_AUTO_TEST_CASE( statInsigPunishmentLifted )
     shared_ptr<SpecUtils::Measurement> data = make_data( mp );
 
     vector<shared_ptr<const PeakDef>> fit_off, fit_on;
-    BOOST_REQUIRE_NO_THROW( fit_off = PeakFitLM::fit_peaks_in_roi_LM( make_roi(mp,231.0,281.0), data, isHPGe, 0 ) );
-    BOOST_REQUIRE_NO_THROW( fit_on  = PeakFitLM::fit_peaks_in_roi_LM( make_roi(mp,231.0,281.0), data, isHPGe, stat_insig ) );
+    BOOST_REQUIRE_NO_THROW( fit_off = PeakFitLM::fit_peaks_in_roi_LM( make_roi(mp,231.0,281.0), data, det_type, 0 ) );
+    BOOST_REQUIRE_NO_THROW( fit_on  = PeakFitLM::fit_peaks_in_roi_LM( make_roi(mp,231.0,281.0), data, det_type, stat_insig ) );
 
     BOOST_REQUIRE_EQUAL( fit_off.size(), size_t(1) );
     BOOST_REQUIRE_EQUAL( fit_on.size(),  size_t(1) );
@@ -447,8 +447,8 @@ BOOST_AUTO_TEST_CASE( statInsigPunishmentLifted )
     shared_ptr<SpecUtils::Measurement> data = make_data( mp );
 
     vector<shared_ptr<const PeakDef>> fit_off, fit_on;
-    BOOST_REQUIRE_NO_THROW( fit_off = PeakFitLM::fit_peaks_in_roi_LM( make_roi(mp,231.0,281.0), data, isHPGe, 0 ) );
-    BOOST_REQUIRE_NO_THROW( fit_on  = PeakFitLM::fit_peaks_in_roi_LM( make_roi(mp,231.0,281.0), data, isHPGe, stat_insig ) );
+    BOOST_REQUIRE_NO_THROW( fit_off = PeakFitLM::fit_peaks_in_roi_LM( make_roi(mp,231.0,281.0), data, det_type, 0 ) );
+    BOOST_REQUIRE_NO_THROW( fit_on  = PeakFitLM::fit_peaks_in_roi_LM( make_roi(mp,231.0,281.0), data, det_type, stat_insig ) );
     BOOST_REQUIRE_EQUAL( fit_off.size(), size_t(1) );
     BOOST_REQUIRE_EQUAL( fit_on.size(),  size_t(1) );
 
@@ -480,7 +480,7 @@ BOOST_AUTO_TEST_CASE( statInsigPunishmentLifted )
     const double lo = mp.front().first - 8*sigma, hi = mp.back().first + 8*sigma;
 
     vector<shared_ptr<const PeakDef>> fit;
-    BOOST_REQUIRE_NO_THROW( fit = PeakFitLM::fit_peaks_in_roi_LM( make_roi(mp,lo,hi), data, isHPGe, stat_insig ) );
+    BOOST_REQUIRE_NO_THROW( fit = PeakFitLM::fit_peaks_in_roi_LM( make_roi(mp,lo,hi), data, det_type, stat_insig ) );
     BOOST_CHECK_EQUAL( fit.size(), npeaks );
     for( const shared_ptr<const PeakDef> &p : fit )
     {

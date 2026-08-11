@@ -835,6 +835,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_clearLines( NULL ),
     //m_fitPeaks( NULL ),
     m_fitSourcesBtn( nullptr ),
+    m_fitSourcesMenu( nullptr ),
     m_fitSourcesAdvancedDialog( nullptr ),
     m_showGammas( NULL ),
     m_options_icon( NULL ),
@@ -1304,6 +1305,7 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     fit_menu = new WPopupMenu();
   else
     fit_menu = new PopupDivMenu( nullptr, PopupDivMenu::MenuType::TransientMenu );
+  m_fitSourcesMenu = fit_menu;
   m_fitSourcesBtn->setMenu( fit_menu );
   
   WMenuItem *automatic_item = fit_menu->addItem( WString::tr("rpd-fit-sources-menu-auto") );
@@ -1364,6 +1366,12 @@ ReferencePhotopeakDisplay::~ReferencePhotopeakDisplay()
   programmaticallyCloseFitSourcesAdvancedDialog();
   if( m_nuclideSuggest )
     delete m_nuclideSuggest;
+
+  // The fit-sources menu is owned by the session domRoot, not m_fitSourcesBtn, so it must be
+  //  manually deleted (guard against session teardown having already freed domRoot).
+  if( m_fitSourcesMenu && wApp && wApp->domRoot() )
+    delete m_fitSourcesMenu;
+  m_fitSourcesMenu = nullptr;
 }//~ReferencePhotopeakDisplay()
 
 

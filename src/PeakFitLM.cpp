@@ -1523,13 +1523,19 @@ struct PeakFitDiffCostFunction
       {
         if( restrict_skew_range )
         {
+          // Floor the window at a quarter of the parameters full range, so a zero starting value
+          //  doesnt collapse it to a point - see `LinearProblemSubSolveChi2Fcn::addSkewParameters`.
+          const double par_range = upper_values[skew_index] - lower_values[skew_index];
           lower_bounds[skew_index] = std::max( lower_values[skew_index], 0.5*starting_value[skew_index] );
-          upper_bounds[skew_index] = std::min( upper_values[skew_index], 1.5*fabs(starting_value[skew_index]) );
+          upper_bounds[skew_index] = std::min( upper_values[skew_index],
+                                std::max( 1.5*fabs(starting_value[skew_index]), 0.25*par_range ) );
         }else
         {
           lower_bounds[skew_index] = lower_values[skew_index];
           upper_bounds[skew_index] = upper_values[skew_index];
         }
+
+        assert( lower_bounds[skew_index] < upper_bounds[skew_index] );
       }
       else
       {
@@ -1894,13 +1900,19 @@ struct PeakFitDiffCostFunction
           {
             if( restrict_skew_range )
             {
+              // Floor the window at a quarter of the parameters full range, so a zero starting
+              //  value doesnt collapse it to a point.
+              const double par_range = upper_values[skew_index] - lower_values[skew_index];
               lower_bounds[abs_idx] = std::max( lower_values[skew_index], 0.5*starting_value[skew_index] );
-              upper_bounds[abs_idx] = std::min( upper_values[skew_index], 1.5*fabs(starting_value[skew_index]) );
+              upper_bounds[abs_idx] = std::min( upper_values[skew_index],
+                                    std::max( 1.5*fabs(starting_value[skew_index]), 0.25*par_range ) );
             }else
             {
               lower_bounds[abs_idx] = lower_values[skew_index];
               upper_bounds[abs_idx] = upper_values[skew_index];
             }
+
+            assert( lower_bounds[abs_idx] < upper_bounds[abs_idx] );
           }
           else
           {

@@ -71,6 +71,7 @@ namespace Wt
   class WLineEdit;
   class WTreeView;
   class WGridLayout;
+  class WPopupMenu;
   class WPushButton;
   class WDoubleSpinBox;
   class WSplitButton;
@@ -467,6 +468,9 @@ protected:
   //Wt::WPushButton *m_fitPeaks;
   
   Wt::WSplitButton *m_fitSourcesBtn;
+  /** The fit-sources menu attached to m_fitSourcesBtn; owned by the session domRoot (not
+      this widget), so it must be manually deleted in the destructor. */
+  Wt::WPopupMenu *m_fitSourcesMenu;
   SimpleDialog *m_fitSourcesAdvancedDialog;
 
   Wt::WPushButton *m_options_icon;

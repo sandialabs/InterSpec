@@ -193,11 +193,19 @@ struct ManualActRatioConstraint
 };//struct ManualActRatioConstraint
 
 
-// As of 20250509 using MassFractionConstraint has not been tested at all, beyond that it compiles - so I'll leave this flag here to help rember to check it out.
+// Mass-fraction constraints solve through a per-element "sigma-block" (an exact reparameterization
+//  shared with RelActCalcAuto - see RelActCalc::MassFracBlockSpec in RelActCalc_imp.hpp), and are
+//  exercised by the RelActCalcAuto mass-fraction tests (every constrained Auto solve pre-solves
+//  through this Manual path).  The flag is kept only to make the feature easy to locate/disable.
 #define USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT 1
 
 #if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
-/** A constraint on the mass fraction of an element in a sample.
+/** A constraint on the mass fraction of a nuclide within its element.
+
+ Fixed (lower == upper) constraints pin the fraction exactly; range constraints fit it within
+ [lower, upper].  An element may have every one of its nuclides constrained, in which case the
+ windows must be able to sum to exactly 1, and the elements total (relative mass) is fit instead
+ of any individual activity.
  */
 struct MassFractionConstraint
 {
@@ -549,12 +557,15 @@ struct RelEffSolution
    */
   double m_chi2 = 0.0;
   
-  /** An estimate for the number of degrees of freedom in the fit for equation parameters.
+  /** The number of degrees of freedom in the fit.
    
-   Note: right now just have as just the number of peaks used minus number of equation parameters fit for, minus one less than the
-   number of isotopes - probably off by one, or more - need to think on this and come back to it.
+   For empirical rel-eff equations: num_peaks - (eqn_order + 1) - (num_isotopes - 1).
+   The (num_isotopes - 1) reflects the normalization degeneracy between the overall activity
+   scale and the rel-eff curve normalization.
    
-   For Physical Model, this estimate is totally not valid, and can even be negative.
+   For Physical Model: num_peaks - num_parameters, where num_parameters counts all free
+   parameters (isotope activities, shield areal densities, atomic numbers, Hoerl b/c).
+   The Physical Model has no normalization degeneracy since the DRF provides an absolute scale.
    */
   int m_dof = 0;
 

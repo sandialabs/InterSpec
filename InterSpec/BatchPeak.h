@@ -31,6 +31,8 @@
 #include <string>
 #include <vector>
 
+#include "InterSpec/BatchSampleSelect.h"
+
 // Forward declarations
 class PeakDef;
 class SpecMeas;
@@ -73,6 +75,13 @@ namespace BatchPeak
     bool create_csv_output;
     bool create_json_output;
     bool concatenate_to_n42;
+
+    /** How to treat an input file that holds more than one candidate foreground spectrum.
+     Defaults to the historical behaviour, so a caller that doesnt set it is unaffected.
+     */
+    BatchSampleSelect::MultiSampleHandling multi_sample_handling
+                                    = BatchSampleSelect::MultiSampleHandling::Auto;
+
     std::string output_dir;
     std::string background_subtract_file;
     std::set<int> background_subtract_samples;
@@ -171,7 +180,9 @@ namespace BatchPeak
     std::shared_ptr<const SpecMeas> exemplar;
     std::set<int> exemplar_sample_nums;
 
-    /** Each of these next four `file_*` variables will have the same number of entries, as the input number of files. */
+    /** Each of these next four `file_*` variables will have the same number of entries as the number
+     of analyses performed; this equals the number of input files, unless
+     `BatchPeakFitOptions::multi_sample_handling` split an input file into per-sample analyses. */
     std::vector<BatchPeakFitResult> file_results;
     std::vector<std::string> file_json;
     std::vector<std::string> file_peak_csvs;
@@ -234,6 +245,40 @@ namespace BatchPeak
                           std::set<int> foreground_sample_numbers,
                           const BatchPeakFitOptions &options );
   
+  /** One analysis' contribution to the concatenated N42 file.
+   \sa write_concatenated_n42
+   */
+  struct InterSpec_API ConcatRecord
+  {
+    /** The input file this record came from; used for the record title, and to detect input files
+     that produced more than one analysis. */
+    std::string source_file_path;
+
+    /** Sample numbers analyzed; only spelled out in the title when the input file was split. */
+    std::set<int> sample_numbers;
+
+    std::shared_ptr<const SpecUtils::Measurement> spectrum;
+    std::deque<std::shared_ptr<const PeakDef>> peaks;
+  };//struct ConcatRecord
+
+
+  /** Writes `<output_dir>/concatenated.n42` holding the spectrum and fit peaks of every analysis.
+
+   Records are accumulated by the caller as it goes, rather than taken from a
+   `BatchPeakFitSummary`, so that this works whether or not the caller asked for the full results
+   to be retained.
+
+   Does nothing if `records` is empty.  Any problem is reported by appending to `warnings` rather
+   than throwing.
+
+   @returns The concatenated file, or nullptr if nothing was written.
+   */
+  InterSpec_API std::shared_ptr<SpecMeas>
+    write_concatenated_n42( const std::vector<ConcatRecord> &records,
+                            const BatchPeakFitOptions &options,
+                            std::vector<std::string> &warnings );
+
+
   /** Function that applies the energy calibration from the exemplar spectrum, to a spectrum from a different file.
    
    @param energy_cal The energy calibration to apply to `to_spectrum`, and optionally `to_specfile`

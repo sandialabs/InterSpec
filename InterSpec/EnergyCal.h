@@ -27,6 +27,7 @@
 
 #include <deque>
 #include <memory>
+#include <string>
 #include <vector>
 #include <utility>
 
@@ -89,8 +90,50 @@ double fit_energy_cal_frf( const std::vector<EnergyCal::RecalPeakInfo> &peakinfo
                            std::vector<float> &coefs,
                            std::vector<float> &coefs_uncert );
 
-/// \TODO: we could probably make a fit_energy_cal_lower_channel_energies that adjusts the offset
-///        and gain equivalents for lower channel energy defined calibrations.
+/** Returns a new lower-channel-energy calibration, with each of the original channel energies
+ transformed as:
+   E_new[i] = offset + gain * E_orig[i]
+ That is, `offset` shifts every channel edge by the same amount (in keV), while `gain` is a
+ dimensionless multiplicative scaling of the energy axis with nominal value 1.0 (e.g., gain = 2.0
+ doubles the energy of every channel edge).  offset = 0, gain = 1 is the identity.
+
+ @param orig The original lower channel energy calibration; must be a valid
+        #SpecUtils::EnergyCalType::LowerChannelEdge calibration.
+ @param offset The energy, in keV, to add to every channel edge (applied after the gain scaling).
+ @param gain The dimensionless multiplicative scaling of the original channel energies (nominal
+        1.0).
+
+ Throws exception if `orig` isnt a valid lower-channel-energy calibration, or if the result would
+ not be monotonically increasing (e.g., a non-positive `gain`).
+ */
+std::shared_ptr<const SpecUtils::EnergyCalibration>
+adjust_lower_channel_energy_cal( const std::shared_ptr<const SpecUtils::EnergyCalibration> &orig,
+                                 const double offset, const double gain );
+
+
+/** Fits the {offset, gain} adjustment of a lower-channel-energy calibration (see
+ #adjust_lower_channel_energy_cal for their definitions) using peaks with assigned
+ nuclide-photopeaks, relative to the ORIGINAL (pre-adjustment) channel energies.
+
+ Note that `peakinfos` channel numbers (RecalPeakInfo::peakMeanBinNumber) should be computed from
+ the calibration currently in effect - which shares channel numbers with `orig_cal` - and the
+ returned {offset, gain} are then the new *cumulative* adjustments, relative to `orig_cal`.
+
+ @param peakinfos Relevant information collected from peaks.
+ @param orig_cal The original lower-channel-energy calibration adjustments are relative to.
+ @param fitfor Which of {offset, gain} to fit; must have exactly 2 entries, at least one true.
+ @param coefs The fit {offset, gain}; an entry not being fit provides its fixed value on input,
+        in which case this vector must have 2 entries on input.
+ @param coefs_uncert The uncertainties of the fit {offset, gain}.
+ @returns Chi2 of the found solution.
+
+ Throws exception on error.
+ */
+double fit_energy_cal_lower_channel( const std::vector<EnergyCal::RecalPeakInfo> &peakinfos,
+                            const std::shared_ptr<const SpecUtils::EnergyCalibration> &orig_cal,
+                                     const std::vector<bool> &fitfor,
+                                     std::vector<float> &coefs,
+                                     std::vector<float> &coefs_uncert );
 
 
 /** Given the lower channel energies, will determine the best polynomial coeffcients to reproduce
@@ -123,41 +166,78 @@ double fit_full_range_fraction_from_channel_energies( const size_t ncoeffs,
                                              std::vector<float> &coefs );
 
 
-/** Uses Minuit2 to fit for calibration coefficients.
- 
- 
- Throws exception on error.
- 
- @param peakinfos Relevant information collected from peaks.
- @param fitfor Whether to fit for each coefficient.  This vector must be sized
-        for the number of coefficients in the calabration equation (e.g.,
-        calibration order).  A true value for an index indicates fit for the
-        coefficient.  If any value is false (i.e. dont fit for that parameter)
-        then the 'coefs' parameter must be exactly the same size as this vector
-        and the value at the corresponding index will be used for that parameter.
- @param nchannels The number of gamma channels in the spectrum the calibration is being evaluated
-        for.  Must be at least 7.
- @param eqnType The type of energy calibration being fit for; must be either polynomial or FRF.
- @param startingCoefs The starting value of energy coefficients - must be same size as 'fitfor'.
- @param dev_pairs The non-linear deviation pairs.
- @param coefs Provides the fit coeficients for the energy calibration.
- @param coefs_uncert The uncertainties on the fit parameters.
- @param warning_msg If warnings were encountered (like it isnt a great fit), they will be placed
-        here.  Will be empty if all looks good.
- @returns Chi2 of the found solution.
- 
- \deprecated Please use #fit_energy_cal_poly.  This function is around while #fit_energy_cal_poly
-             continues to be tested.
+/** Setup for #fit_energy_cal_ceres.
+
+ The fit parameters are the calibration coefficients (for #SpecUtils::EnergyCalType::LowerChannelEdge
+ these are the {offset, gain} adjustments relative to the original channel energies - see
+ #adjust_lower_channel_energy_cal), plus, optionally, the offsets of individual deviation pairs.
  */
-double fit_energy_cal_iterative( const std::vector<EnergyCal::RecalPeakInfo> &peakInfo,
-                                 const size_t nchannels,
-                                 const SpecUtils::EnergyCalType eqnType,
-                                 const std::vector<bool> fitfor,
-                                 std::vector<float> &startingCoefs,
-                                 const std::vector<std::pair<float,float>> &devpair,
-                                 std::vector<float> &coefs,
-                                 std::vector<float> &coefs_uncert,
-                                 std::string &warning_msg );
+struct EnergyCalCeresFitSetup
+{
+  /** Must be Polynomial, UnspecifiedUsingDefaultPolynomial, FullRangeFraction, or
+   LowerChannelEdge. */
+  SpecUtils::EnergyCalType cal_type;
+
+  size_t num_channels = 0;
+
+  /** Which coefficients to fit; for LowerChannelEdge must have exactly 2 ({offset, gain})
+   entries.  At least one entry (of this and/or fit_dev_pair_offsets) must be true. */
+  std::vector<bool> fitfor;
+
+  /** Starting (and fixed, where not fit) coefficient values; same size as `fitfor`. */
+  std::vector<float> starting_coefs;
+
+  /** The ORIGINAL lower channel energies (num_channels+1 entries); only used, and required, for
+   LowerChannelEdge. */
+  std::vector<float> lower_channel_energies;
+
+  /** The current deviation pairs; may be empty.  Must be empty for LowerChannelEdge. */
+  std::vector<std::pair<float,float>> dev_pairs;
+
+  /** Which deviation pair *offsets* to fit; either empty (fit none), or `dev_pairs.size()`
+   entries.  The deviation pair energies are never altered. */
+  std::vector<bool> fit_dev_pair_offsets;
+};//struct EnergyCalCeresFitSetup
+
+
+/** Results of #fit_energy_cal_ceres. */
+struct EnergyCalCeresFitResult
+{
+  /** The fit (and passed-through fixed) coefficients, and their uncertainties (zero for fixed
+   coefficients, or if the covariance computation failed). */
+  std::vector<float> coefs;
+  std::vector<float> coef_uncerts;
+
+  /** The deviation pairs: energies unchanged from the input, offsets re-fit where requested.
+   Note: if any offsets were fit, and only a single input pair was given, an implicit fixed
+   {0,0} pair is prepended (matching the convention SpecUtils applies). */
+  std::vector<std::pair<float,float>> dev_pairs;
+
+  /** Uncertainties of the fit deviation pair offsets (zero where not fit); same size as
+   `dev_pairs`. */
+  std::vector<float> dev_pair_offset_uncerts;
+
+  double chi2 = 0.0;
+
+  /** Non-fatal quality warnings (e.g., the minimizer failed to fully converge, or the fit looks
+   under-determined); empty if all looks good. */
+  std::string warning_msg;
+};//struct EnergyCalCeresFitResult
+
+
+/** Fits energy calibration coefficients - and optionally deviation pair offsets - to the peaks,
+ using a Ceres (Levenberg-Marquardt, auto-differentiated) fit.
+
+ This is the non-linear counterpart of #fit_energy_cal_poly / #fit_energy_cal_frf /
+ #fit_energy_cal_lower_channel: those linear fits should be preferred when applicable (they are
+ exact), with this function used as the fallback when they fail, or when deviation pair offsets
+ are being fit (which the linear fits cant do).
+
+ Throws exception on invalid input, or if the minimization hard-fails; a fit that converges only
+ approximately is returned, with `warning_msg` set.
+ */
+EnergyCalCeresFitResult fit_energy_cal_ceres( const std::vector<RecalPeakInfo> &peakinfos,
+                                              const EnergyCalCeresFitSetup &setup );
 
 
 
@@ -194,9 +274,9 @@ translatePeaksForCalibrationChange( const std::deque<std::shared_ptr<const PeakD
  corresponds to the same energy of channel 999 of spectrum two, etc).  That is what this function
  does.
  
- Throws exception if any input #SpecUtils::EnergyCalibration is null, invalid, or if 'orig_cal'
- or 'new_cal' are not polynomial or full range fraction, or if applying the difference causes
- 'other_cal' to become invalid.
+ Throws exception if any input #SpecUtils::EnergyCalibration is null or invalid, or if applying
+ the difference causes 'other_cal' to become invalid.  'orig_cal' and 'new_cal' should be of the
+ same calibration type (polynomial, full range fraction, or lower channel energy).
  
  @returns a valid #SpecUtils::EnergyCalibration pointer that is the same calibration type, and same
           number of channels as 'other_cal'.

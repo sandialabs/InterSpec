@@ -52,6 +52,9 @@
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/SpecMeas.h"
 
+#if( USE_LLM_INTERFACE )
+#include "InterSpec/LlmConversationHistory.h"
+#endif
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/RelActCalcAuto.h"
@@ -458,6 +461,17 @@ void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
     }
   }
 #endif //#if( USE_REL_ACT_TOOL )
+
+#if( USE_LLM_INTERFACE )
+  if( lhs.m_llmConversationHistory != rhs.m_llmConversationHistory )
+  {
+    stringstream msg;
+    msg << "The LlmConversationHistory of the LHS does not exactly match RHS;"
+    " LHS has " << lhs.m_llmConversationHistory.size() << " sample sets with history,"
+    " RHS has " << rhs.m_llmConversationHistory.size() << " sample sets with history";
+    throw runtime_error( msg.str() );
+  }
+#endif //#if( USE_LLM_INTERFACE )
 }//void SpecMeas::equalEnough( const SpecMeas &lhs, const SpecMeas &rhs )
 #endif //#if( PERFORM_DEVELOPER_CHECKS )
 
@@ -553,6 +567,10 @@ void SpecMeas::uniqueCopyContents( const SpecMeas &rhs )
   {
     m_relActAutoGuiState.reset();
   }
+#endif
+
+#if( USE_LLM_INTERFACE )
+  m_llmConversationHistory = rhs.m_llmConversationHistory;
 #endif
   
   m_fileWasFromInterSpec = rhs.m_fileWasFromInterSpec;
@@ -1193,6 +1211,77 @@ void SpecMeas::setRelActAutoGuiState( const RelActCalcAuto::RelActAutoGuiState *
 
 #endif //#if( USE_REL_ACT_TOOL )
 
+
+#if( USE_LLM_INTERFACE )
+std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> SpecMeas::llmConversationHistory( const std::set<int> &samplenums ) const
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+
+  auto pos = m_llmConversationHistory.find( samplenums );
+  if( pos != m_llmConversationHistory.end() )
+    return pos->second;
+
+  return nullptr;
+}
+
+
+void SpecMeas::setLlmConversationHistory( const std::set<int> &samplenums, std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> history )
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  
+  bool is_diff = true;
+  
+  auto pos = m_llmConversationHistory.find( samplenums );
+  if( pos != m_llmConversationHistory.end() && !modified_ )
+  {
+    // Check if the history is actually different
+    is_diff = (pos->second != history);
+  }
+  
+  m_llmConversationHistory[samplenums] = history;
+  
+  if( is_diff )
+    modified_ = modifiedSinceDecode_ = true;
+}
+
+
+void SpecMeas::removeLlmConversationHistory( const std::set<int> &samplenums )
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  
+  auto pos = m_llmConversationHistory.find( samplenums );
+  if( pos != m_llmConversationHistory.end() )
+  {
+    m_llmConversationHistory.erase( pos );
+    modified_ = modifiedSinceDecode_ = true;
+  }
+}
+
+
+std::set<std::set<int>> SpecMeas::sampleNumsWithLlmHistory() const
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  
+  std::set<std::set<int>> sample_sets;
+  for( const auto &entry : m_llmConversationHistory )
+    sample_sets.insert( entry.first );
+  
+  return sample_sets;
+}
+
+
+void SpecMeas::removeAllLlmConversationHistory()
+{
+  std::lock_guard<std::recursive_mutex> scoped_lock( mutex_ );
+  
+  if( !m_llmConversationHistory.empty() )
+  {
+    m_llmConversationHistory.clear();
+    modified_ = modifiedSinceDecode_ = true;
+  }
+}
+
+#endif //#if( USE_LLM_INTERFACE )
 
 bool SpecMeas::write_2006_N42( std::ostream &ostr ) const
 {
@@ -1871,6 +1960,49 @@ void SpecMeas::decodeSpecMeasStuffFromXml( const ::rapidxml::xml_node<char> *int
   }
 #endif
 
+#if( USE_LLM_INTERFACE )
+  // Clear any existing LLM history
+  m_llmConversationHistory.clear();
+  
+  // Look for all LlmConversationHistory nodes
+  XML_FOREACH_CHILD(node, interspecnode, "LlmConversationHistory")
+  {
+    try
+    {
+      // Get sample numbers from attribute
+      std::set<int> samplenums;
+      rapidxml::xml_attribute<char> *samplesAttr = node->first_attribute( "samples" );
+      if( samplesAttr && samplesAttr->value() )
+      {
+        std::vector<int> sampleVec;
+        if( SpecUtils::split_to_ints( samplesAttr->value(), samplesAttr->value_size(), sampleVec ) )
+        {
+          samplenums.insert( sampleVec.begin(), sampleVec.end() );
+        }
+      }
+      
+      if( samplenums.empty() )
+      {
+        parse_warnings_.push_back( "Found LLM conversation history with no valid sample numbers - skipping" );
+        continue;
+      }
+      
+      // Parse conversations for this sample set
+      std::vector<std::shared_ptr<LlmInteraction>> conversations;
+
+      // Use the static fromXml function from LlmConversationHistory
+      LlmConversationHistory::fromXml( node, conversations );
+
+      if( !conversations.empty() )
+        m_llmConversationHistory[samplenums] = make_shared<vector<shared_ptr<LlmInteraction>>>( conversations );
+    }catch( std::exception &e )
+    {
+      parse_warnings_.push_back( "Could not decode InterSpec specific LLM conversation history in N42 file: "
+                                + std::string(e.what()) );
+    }
+  }
+#endif
+
   node = interspecnode->first_node( "FileName", 8 );
   if( node )
   {
@@ -1943,7 +2075,14 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
 {
   using namespace rapidxml;
   rapidxml::xml_document<char> *doc = RadInstrumentData->document();
-  
+
+  // Declare the "DHS" namespace prefix used by the <DHS:InterSpec> extension node below.
+  //  Without this declaration strict XML parsers (e.g. lxml/libxml2) reject the exported
+  //  N42 file with "Namespace prefix DHS on InterSpec is not defined".  The URI is an
+  //  opaque identifier (never network-resolved) and does not affect reading the file back.
+  RadInstrumentData->append_attribute(
+      doc->allocate_attribute( "xmlns:DHS", "https://github.com/sandialabs/InterSpec" ) );
+
   xml_node<char> *interspec_node = doc->allocate_node( node_element, "DHS:InterSpec" );
   RadInstrumentData->append_node( interspec_node );
   
@@ -2003,6 +2142,42 @@ rapidxml::xml_node<char> *SpecMeas::appendDisplayedDetectorsToXml(
     auto modelnode = doc->allocate_node( node_element );
     interspec_node->append_node( modelnode );
     clone_node_deep( m_relActAutoGuiState->first_node(), modelnode );
+  }
+#endif
+
+#if( USE_LLM_INTERFACE )
+  if( !m_llmConversationHistory.empty() )
+  {
+    // Serialize LLM conversation history for each set of sample numbers
+    for( const auto &entry : m_llmConversationHistory )
+    {
+      const std::set<int> &samplenums = entry.first;
+      const std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> &conversations = entry.second;
+
+      if( conversations->empty() )
+        continue;
+
+      // Create a container node for this sample set's history
+      auto sampleHistoryNode = doc->allocate_node( node_element, "LlmConversationHistory" );
+      interspec_node->append_node( sampleHistoryNode );
+
+      // Add sample numbers as an attribute
+      stringstream samplesStream;
+      bool first = true;
+      for( int sample : samplenums )
+      {
+        if( !first ) samplesStream << " ";
+        samplesStream << sample;
+        first = false;
+      }
+      const string samplesStr = samplesStream.str();
+      const char *samplesAttr = doc->allocate_string( samplesStr.c_str() );
+      auto samplesAttribute = doc->allocate_attribute( "samples", samplesAttr );
+      sampleHistoryNode->append_attribute( samplesAttribute );
+
+      // Use the static toXml function from LlmConversationHistory
+      LlmConversationHistory::toXml( *conversations, sampleHistoryNode, doc );
+    }
   }
 #endif
 
@@ -2421,6 +2596,63 @@ std::set<std::set<int>> SpecMeas::sampleNumsWithAutomatedSearchPeaks() const
 }//std::set<std::set<int> > sampleNumsWithAutomatedSearchPeaks() const
 
 
+SpecMeas::AutoSearchPeaksFuture
+SpecMeas::reserveAutomatedSearchPeaks( const std::set<int> &samplenums,
+                                       std::shared_ptr<AutoSearchPeaksPromise> &out_promise )
+{
+  out_promise = nullptr;
+
+  std::lock_guard<std::mutex> lock( m_autoSearchMutex );
+
+  // (a) Cache hit -> a ready future.  Note automatedSearchPeaks() locks the inherited mutex_,
+  //     giving the lock order m_autoSearchMutex -> mutex_ (this is the ONLY place both are held,
+  //     and never in the reverse order, so no deadlock cycle can form).
+  const std::shared_ptr<const PeakDeque> cached = automatedSearchPeaks( samplenums );
+  if( cached )
+  {
+    AutoSearchPeaksPromise ready;
+    ready.set_value( cached );
+    return ready.get_future().share();
+  }
+
+  // (b) A search is already in-flight for these sample numbers -> coalesce onto it.
+  const std::map<std::set<int>, AutoSearchPeaksFuture>::const_iterator pos
+                                                = m_autoSearchInFlight.find( samplenums );
+  if( pos != m_autoSearchInFlight.end() )
+    return pos->second;
+
+  // (c) Nothing cached or running -> register a new in-flight entry; caller must fulfill it.
+  out_promise = std::make_shared<AutoSearchPeaksPromise>();
+  const AutoSearchPeaksFuture fut = out_promise->get_future().share();
+  m_autoSearchInFlight[samplenums] = fut;
+
+  return fut;
+}//reserveAutomatedSearchPeaks(...)
+
+
+void SpecMeas::clearInFlightAutomatedSearch( const std::set<int> &samplenums )
+{
+  std::lock_guard<std::mutex> lock( m_autoSearchMutex );
+  m_autoSearchInFlight.erase( samplenums );
+}//clearInFlightAutomatedSearch(...)
+
+
+bool SpecMeas::hasRecoveredBackgroundForForeground( const std::set<int> &foreground_samplenums,
+                                                    const std::set<int> &background_samplenums ) const
+{
+  std::lock_guard<std::mutex> lock( m_autoSearchMutex );
+  return (m_bgRecoveredForForeground.count( std::make_pair(foreground_samplenums, background_samplenums) ) > 0);
+}//hasRecoveredBackgroundForForeground(...)
+
+
+void SpecMeas::markBackgroundRecoveredForForeground( const std::set<int> &foreground_samplenums,
+                                                     const std::set<int> &background_samplenums )
+{
+  std::lock_guard<std::mutex> lock( m_autoSearchMutex );
+  m_bgRecoveredForForeground.insert( std::make_pair(foreground_samplenums, background_samplenums) );
+}//markBackgroundRecoveredForForeground(...)
+
+
 std::shared_ptr< std::deque< std::shared_ptr<const PeakDef> > >
                              SpecMeas::peaks( const std::set<int> &samplenums )
 {
@@ -2584,10 +2816,24 @@ void SpecMeas::cleanup_after_load( const unsigned int flags )
   }//if( !has_specific_info && m_autoSearchPeaks )
 
 
-  if( m_fileWasFromInterSpec && !(flags & SpecFile::ReorderSamplesByTime) )
-  {
-    SpecFile::cleanup_after_load( (flags | SpecFile::DontChangeOrReorderSamples) );
-  }if( has_specific_info )
+  // For files InterSpec previously wrote, keep the sample numbers as-is (unless explicitly
+  //  asked to reorder by time): the InterSpec-specific info (peaks, etc) is keyed off sample
+  //  numbers, and may not have been parsed from the file yet when this cleanup runs.
+  //  Note: prior to 20260714 a missing `else` here caused a second, non-sample-number-preserving
+  //  cleanup to also run, so InterSpec-written N42s with sample numbers not starting near 1
+  //  got renumbered while their peaks stayed keyed to the original sample numbers (orphaning
+  //  the peaks, and causing exceptions when those sample numbers were used).  That bug also
+  //  meant `DontChangeOrReorderSamples` never actually took effect for these files, so note
+  //  the trade-off it brings: `SpecFile::cleanup_after_load` uses that same flag to gate
+  //  `merge_neutron_meas_into_gamma_meas()`, so neutron-only records in an InterSpec-written
+  //  N42 will no longer be merged into their gamma records.  This is accepted: the file we
+  //  wrote was itself already merged (or merging had bailed), so the exposure is limited,
+  //  and preserving sample numbers - hence the users peaks - matters more.
+  const unsigned int use_flags = (m_fileWasFromInterSpec && !(flags & SpecFile::ReorderSamplesByTime))
+                                  ? (flags | SpecFile::DontChangeOrReorderSamples)
+                                  : flags;
+
+  if( has_specific_info )
   {
     // Grab a mapping from Measurement* to sample numbers.
     vector<pair<int,shared_ptr<const SpecUtils::Measurement>>> orig_sample_nums;
@@ -2596,7 +2842,7 @@ void SpecMeas::cleanup_after_load( const unsigned int flags )
       orig_sample_nums.emplace_back( m->sample_number_, m );
 
     // Do cleanup - which _could_ change some of the Measurements sample numbers
-    SpecFile::cleanup_after_load( flags );
+    SpecFile::cleanup_after_load( use_flags );
 
     // Now fixup m_peaks, m_autoSearchPeaks, and m_dbUserStateIndexes to use the newly assigned sample numbers
     vector<pair<int,int>> from_to_sample_nums;
@@ -2610,7 +2856,7 @@ void SpecMeas::cleanup_after_load( const unsigned int flags )
       change_sample_numbers_spec_meas_stuff( from_to_sample_nums );
   }else
   {
-    SpecFile::cleanup_after_load( flags );
+    SpecFile::cleanup_after_load( use_flags );
   }
 }//void SpecMeas::cleanup_after_load()
 

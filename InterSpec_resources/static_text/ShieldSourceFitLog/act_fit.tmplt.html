@@ -109,6 +109,12 @@
     {% endif %}
   </div>
 
+  {% if exists("PullTrend") and PullTrend.HasConclusion %}
+  <div id="pull-trend-note" style="text-align: center; font-style: italic; color: #444; margin: -8px auto 16px auto; width: 90vw;">
+    {{ PullTrend.Message }}
+  </div>
+  {% endif %}
+
   <div id="results" style="margin-top: 15px">
 
 

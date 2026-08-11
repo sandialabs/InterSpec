@@ -1,8 +1,15 @@
 #ifndef PeakFit_imp_h
 #define PeakFit_imp_h
 
+#include <cmath>
+#include <atomic>
+#include <cstdio>
 #include <vector>
+#include <cassert>
+#include <cstdint>
+#include <cstdlib>
 #include <exception>
+#include <type_traits>
 
 #include "Eigen/Dense"
 
@@ -13,6 +20,36 @@
 
 namespace PeakFit
 {
+
+/** Half-width, in units of the channel uncertainty, of the smooth one-sided floor applied to the
+ continuum-fit target `y = max(data - peaks, 0)/uncert` in #fit_continuum.
+
+ The old hard `(data > peaks) ? (data - peaks)/uncert : 0` branch fired in EVERY empty channel
+ carrying any model peak mass (`peaks >= 0` always, and at `data == 0` the uncertainty floors to
+ 1), so its zero-gradient side was the COMMON case in sparse spectra - deforming the autodiff
+ Jacobian (AD-vs-finite-difference disagreements at converged fits traced here).  The quadratic
+ hinge keeps the same intent (dont let overshooting peaks drag the continuum negative) while making
+ the target C1: values differ from the old clamp by at most `hinge/4` (= this constant / 4, in
+ sigma units) inside the +-hinge blend zone, and are exactly equal outside it.
+ */
+static const double ns_cont_target_hinge_nsigma = 0.25;
+
+/** C1 smooth `max(x, 0)` with compact support (exact outside |x| >= r; quadratic blend inside;
+ `>= max(x,0)` everywhere with excess <= r/4).  A local copy of RelActCalc::qmax_hinge (kept
+ header-local to avoid layering PeakFit on RelActCalc) - keep the two in sync.
+ */
+template<typename T>
+T smooth_max_zero( const T &x, const double r )
+{
+  assert( r > 0.0 );
+
+  if( x >= r )
+    return x;
+  if( x <= -r )
+    return T(0.0);
+  return (x + r)*(x + r) / (4.0*r);
+}//smooth_max_zero(...)
+
 
 /** Converts unit-area peak PDF-per-channel integrals to CDF values at channel centers.
 
@@ -37,8 +74,15 @@ inline void unit_pdf_to_cdf( const T *unit_area_pdf_integrals, T *cdf_at_centers
 
 /** This function fits the polynomial continuum for a region with a number of fixed amplitude peaks.
  *
- * Note that when ScalarType is a `ceres::Jet<>`, and peaks SkewType is not PeakDef::SkewType::NoSkew,
- * then some of the derivative values may become NaN during the `svd.solve(y)` step
+ * When `ScalarType` is a `ceres::Jet<>` and the design matrix does not depend on the fit
+ * parameters (all non-peak-CDF continua, with a derivative-free `ref_energy` - e.g. RelActCalcAuto
+ * with its fixed ROI channel ranges), the matrix is factored in plain `double` and the
+ * factorization applied to the Jet-valued right-hand side.  The LLS solution is linear in the RHS,
+ * so this is mathematically identical to solving in Jet arithmetic, but ~an order of magnitude
+ * cheaper (a Jet<double,32> multiply costs ~33 double multiplies), and it sidesteps the NaN
+ * derivative values the Jet-valued `svd.solve(y)` could produce for peaks with a skew.
+ * The peak-CDF step continua build the design matrix from the peaks themselves, so they always
+ * use the Jet-valued solve.
  */
 template<typename PeakType, typename ScalarType>
 void fit_continuum( const float * const x,
@@ -74,11 +118,10 @@ void fit_continuum( const float * const x,
   // For BiLinearStepCDF, all 4 polynomial params are already in num_poly_terms
   const Eigen::Index num_lls_terms = cdf_step_coeff ? (num_poly_terms + 1) : num_poly_terms;
 
-  Eigen::MatrixX<ScalarType> A( static_cast<Eigen::Index>(nbin), num_lls_terms );
   Eigen::VectorX<ScalarType> y( static_cast<Eigen::Index>(nbin) );
-  Eigen::VectorX<ScalarType> uncerts( static_cast<Eigen::Index>(nbin) );
+  std::vector<double> uncerts( nbin, 1.0 );
 
-  double roi_data_sum = 0.0, step_cumulative_data = 0.0;
+  double roi_data_sum = 0.0;
 
 #if( PEAK_CONTINUUM_DATA_STEP_SUBTRACT )
   double min_data_val = static_cast<double>( data[0] );
@@ -243,114 +286,176 @@ void fit_continuum( const float * const x,
     }
   }//if( cdf_step )
 
-  for( size_t row = 0; row < nbin; ++row )
+  // Fills the LLS right-hand-side `y` (and `uncerts`), plus the design matrix `A_mat`.
+  //  `A_mat`s scalar type is plain `double` when the design matrix does not depend on the fit
+  //  parameters (see the function doc-comment), and `ScalarType` otherwise: the design-matrix
+  //  entries depend on the fit parameters only through `ref_e` and - for the peak-CDF step
+  //  continua - the peak amplitudes/shapes; the channel edges, data, and uncertainties are
+  //  all constants.
+  const auto fill_design_and_rhs = [&]( auto &A_mat, const auto ref_e )
   {
-    const double data_counts = data[row];
-    const double data_counts_uncert = data_uncert ? data_uncert[row] : sqrt(data[row]);
-    const double x0 = x[row];
-    const double x1 = x[row+1];
-    const ScalarType x0_rel = x0 - ref_energy;
-    const ScalarType x1_rel = x1 - ref_energy;
+    // RT is `double` when the design matrix is parameter-independent, and `ScalarType` otherwise
+    using RT = std::decay_t<decltype(ref_e)>;
 
-    const double uncert = (data_counts_uncert > MIN_CHANNEL_UNCERT) ? data_counts_uncert : 1.0;
+    double step_cumulative_data = 0.0;
 
-    uncerts(row) = ScalarType(uncert);
-
-    if( step_continuum && !cdf_step )
-      step_cumulative_data += (data_counts - min_data_val);
-
-    y(row) = (data_counts > peak_counts[row]) ? (data_counts - peak_counts[row])/uncert : ScalarType(0.0);
-
-    for( Eigen::Index col = 0; col < num_poly_terms; ++col )
+    for( size_t row = 0; row < nbin; ++row )
     {
-      const double exp = col + 1.0;
+      const double data_counts = data[row];
+      const double data_counts_uncert = data_uncert ? data_uncert[row] : sqrt(data[row]);
+      const double x0 = x[row];
+      const double x1 = x[row+1];
+      const RT x0_rel = x0 - ref_e;
+      const RT x1_rel = x1 - ref_e;
 
-      if( !cdf_step && step_continuum
-          && ((num_polynomial_terms == 2) || (num_polynomial_terms == 3))
-          && (col == (num_polynomial_terms - 1)) )
-      {
-        // This logic mirrors that of PeakContinuum::offset_integral(...), and code
-        // If you change it in one place - change it in here, below, and in offset_integral.
-        const double frac_data = (roi_data_sum > 0.0)
-            ? (step_cumulative_data - 0.5*(data_counts - min_data_val)) / roi_data_sum : 0.5;
-        const double contribution = frac_data * (x1 - x0);
+      const double uncert = (data_counts_uncert > MIN_CHANNEL_UNCERT) ? data_counts_uncert : 1.0;
 
-        A(row,col) = ScalarType(contribution / uncert);
+      uncerts[row] = uncert;
 
-        check_jet_for_NaN( A(row,col) );
-      }else if( !cdf_step && step_continuum && (num_polynomial_terms == 4) )
-      {
-        const double frac_data = (roi_data_sum > 0.0)
-            ? (step_cumulative_data - 0.5*(data_counts - min_data_val)) / roi_data_sum : 0.5;
+      if( step_continuum && !cdf_step )
+        step_cumulative_data += (data_counts - min_data_val);
 
-        ScalarType contrib( 0.0 );
-        switch( col )
+      // Smooth one-sided floor on the fit target - C1 in the peak parameters, same intent as the
+      //  old hard `(data > peaks) ? (data - peaks)/uncert : 0` clamp (see ns_cont_target_hinge_nsigma).
+      const ScalarType target_deficit = data_counts - peak_counts[row];
+      y(row) = smooth_max_zero( target_deficit, ns_cont_target_hinge_nsigma*uncert ) / uncert;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+      {// Opt-in activation statistics for the (former) clamp - how often the floored side is hit.
+        static const bool s_clamp_stats = ( std::getenv("RELACT_CONT_CLAMP_STATS") != nullptr );
+        if( s_clamp_stats )
         {
-          case 0: contrib = (1.0 - frac_data) * (x1_rel - x0_rel);                     break;
-          case 1: contrib = 0.5 * (1.0 - frac_data) * (x1_rel*x1_rel - x0_rel*x0_rel); break;
-          case 2: contrib = frac_data * (x1_rel - x0_rel);                             break;
-          case 3: contrib = 0.5 * frac_data * (x1_rel*x1_rel - x0_rel*x0_rel);         break;
-          default: assert( 0 ); break;
-        }//switch( col )
-
-        A(row,col) = contrib / uncert;
-
-        check_jet_for_NaN( contrib );
-        check_jet_for_NaN( uncert );
-        check_jet_for_NaN( A(row,col) );
-      }else if( bilinear_cdf )
-      {
-        // BiLinearStepCDF: 4 columns using CDF fraction for left/right interpolation
-        const ScalarType frac_cdf = cdf_frac_per_channel[row];
-
-        ScalarType contrib( 0.0 );
-        switch( col )
-        {
-          case 0: contrib = (1.0 - frac_cdf) * (x1_rel - x0_rel);                     break;
-          case 1: contrib = 0.5 * (1.0 - frac_cdf) * (x1_rel*x1_rel - x0_rel*x0_rel); break;
-          case 2: contrib = frac_cdf * (x1_rel - x0_rel);                              break;
-          case 3: contrib = 0.5 * frac_cdf * (x1_rel*x1_rel - x0_rel*x0_rel);          break;
-          default: assert( 0 ); break;
-        }//switch( col )
-
-        A(row,col) = contrib / uncert;
-
-        check_jet_for_NaN( contrib );
-        check_jet_for_NaN( uncert );
-        check_jet_for_NaN( A(row,col) );
-      }else
-      {
-        const ScalarType contribution = (1.0/exp) * (pow(x1_rel,exp) - pow(x0_rel,exp));
-
-        A(row,col) = contribution / uncert;
-
-        check_jet_for_NaN( contribution );
-        check_jet_for_NaN( uncert );
-        check_jet_for_NaN( A(row,col) );
+          static std::atomic<uint64_t> s_num_channels{ 0 }, s_num_floored{ 0 };
+          double deficit_val;
+          if constexpr ( std::is_same_v<ScalarType,double> )
+            deficit_val = target_deficit;
+          else
+            deficit_val = target_deficit.a;
+          if( deficit_val <= 0.0 )
+            s_num_floored += 1;
+          const uint64_t nchan = ++s_num_channels;
+          if( (nchan & 0x3FFFF) == 0 )  //print every ~262k channels
+            fprintf( stderr, "RELACT_CONT_CLAMP_STATS: %llu of %llu channels (%.2f%%) on the floored side\n",
+                     static_cast<unsigned long long>(s_num_floored.load()),
+                     static_cast<unsigned long long>(nchan),
+                     (100.0*s_num_floored.load())/nchan );
+        }//if( s_clamp_stats )
       }
-    }//for( int order = 0; order < maxorder; ++order )
+#endif //PERFORM_DEVELOPER_CHECKS
 
-    // For FlatStepCDF/LinearStepCDF, add the step_coeff column (last column in LLS)
-    // BiLinearStepCDF doesn't have a separate step_coeff - CDF is embedded in the 4 poly columns
-    if( cdf_step_coeff )
-    {
-      A(row, num_poly_terms) = cdf_step_basis[row] / uncert;
-    }
-  }//for( size_t row = 0; row < nbin; ++row )
+      for( Eigen::Index col = 0; col < num_poly_terms; ++col )
+      {
+        const double exp = col + 1.0;
+
+        if( !cdf_step && step_continuum
+            && ((num_polynomial_terms == 2) || (num_polynomial_terms == 3))
+            && (col == (num_polynomial_terms - 1)) )
+        {
+          // This logic mirrors that of PeakContinuum::offset_integral(...), and code
+          // If you change it in one place - change it in here, below, and in offset_integral.
+          const double frac_data = (roi_data_sum > 0.0)
+              ? (step_cumulative_data - 0.5*(data_counts - min_data_val)) / roi_data_sum : 0.5;
+          const double contribution = frac_data * (x1 - x0);
+
+          A_mat(row,col) = RT(contribution / uncert);
+
+          check_jet_for_NaN( A_mat(row,col) );
+        }else if( !cdf_step && step_continuum && (num_polynomial_terms == 4) )
+        {
+          const double frac_data = (roi_data_sum > 0.0)
+              ? (step_cumulative_data - 0.5*(data_counts - min_data_val)) / roi_data_sum : 0.5;
+
+          RT contrib( 0.0 );
+          switch( col )
+          {
+            case 0: contrib = (1.0 - frac_data) * (x1_rel - x0_rel);                     break;
+            case 1: contrib = 0.5 * (1.0 - frac_data) * (x1_rel*x1_rel - x0_rel*x0_rel); break;
+            case 2: contrib = frac_data * (x1_rel - x0_rel);                             break;
+            case 3: contrib = 0.5 * frac_data * (x1_rel*x1_rel - x0_rel*x0_rel);         break;
+            default: assert( 0 ); break;
+          }//switch( col )
+
+          A_mat(row,col) = contrib / uncert;
+
+          check_jet_for_NaN( contrib );
+          check_jet_for_NaN( uncert );
+          check_jet_for_NaN( A_mat(row,col) );
+        }else if( bilinear_cdf )
+        {
+          // BiLinearStepCDF: 4 columns using CDF fraction for left/right interpolation.
+          //  The CDF fraction is built from the peaks themselves, so this continuum type never
+          //  takes the constant-design (RT == double) path.
+          if constexpr ( std::is_same_v<RT,ScalarType> )
+          {
+            const ScalarType frac_cdf = cdf_frac_per_channel[row];
+
+            ScalarType contrib( 0.0 );
+            switch( col )
+            {
+              case 0: contrib = (1.0 - frac_cdf) * (x1_rel - x0_rel);                     break;
+              case 1: contrib = 0.5 * (1.0 - frac_cdf) * (x1_rel*x1_rel - x0_rel*x0_rel); break;
+              case 2: contrib = frac_cdf * (x1_rel - x0_rel);                              break;
+              case 3: contrib = 0.5 * frac_cdf * (x1_rel*x1_rel - x0_rel*x0_rel);          break;
+              default: assert( 0 ); break;
+            }//switch( col )
+
+            A_mat(row,col) = contrib / uncert;
+
+            check_jet_for_NaN( contrib );
+            check_jet_for_NaN( uncert );
+            check_jet_for_NaN( A_mat(row,col) );
+          }else
+          {
+            assert( 0 ); //A peak-CDF continuum implies a parameter-dependent design matrix
+          }
+        }else
+        {
+          const RT contribution = (1.0/exp) * (pow(x1_rel,exp) - pow(x0_rel,exp));
+
+          A_mat(row,col) = contribution / uncert;
+
+          check_jet_for_NaN( contribution );
+          check_jet_for_NaN( uncert );
+          check_jet_for_NaN( A_mat(row,col) );
+        }
+      }//for( int order = 0; order < maxorder; ++order )
+
+      // For FlatStepCDF/LinearStepCDF, add the step_coeff column (last column in LLS)
+      // BiLinearStepCDF doesn't have a separate step_coeff - CDF is embedded in the 4 poly columns
+      if( cdf_step_coeff )
+      {
+        if constexpr ( std::is_same_v<RT,ScalarType> )
+        {
+          A_mat(row, num_poly_terms) = cdf_step_basis[row] / uncert;
+        }else
+        {
+          assert( 0 ); //A peak-CDF continuum implies a parameter-dependent design matrix
+        }
+      }
+    }//for( size_t row = 0; row < nbin; ++row )
+  };//fill_design_and_rhs lambda
 
 
-  try
+  Eigen::VectorX<ScalarType> coeffs;    //The solved continuum coefficients (num_lls_terms of them)
+  Eigen::VectorX<ScalarType> cont_vals; //The continuum counts, divided by `uncerts` (i.e., A*coeffs), per channel
+
+  // The reference solve: build the design matrix in `ScalarType` and solve the LLS problem in
+  //  that arithmetic (i.e., through `ceres::Jet` when auto-differentiating).
+  const auto solve_generic = [&]()
   {
+    Eigen::MatrixX<ScalarType> A( static_cast<Eigen::Index>(nbin), num_lls_terms );
+
+    fill_design_and_rhs( A, ref_energy );
+
 #if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
     const Eigen::JacobiSVD<Eigen::MatrixX<ScalarType>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
 #else
     const Eigen::BDCSVD<Eigen::MatrixX<ScalarType>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
 #endif
 
-    const Eigen::VectorX<ScalarType> coeffs = svd.solve(y); // coeffs will contain [c_0, c_1, c_2, c_3]
+    coeffs = svd.solve(y); // coeffs will contain [c_0, c_1, c_2, c_3]
 
     check_jet_array_for_NaN( coeffs.data(), coeffs.size() );
-
 
     //If time is a real issue, we could try other methods, like:
     //Eigen::VectorX<ScalarType> coeffs = A.colPivHouseholderQr().solve(y);
@@ -372,6 +477,116 @@ void fit_continuum( const float * const x,
     //  }
     //}
 
+    cont_vals = A * coeffs;
+  };//solve_generic lambda
+
+  try
+  {
+    bool solved_with_const_design = false;
+
+#if( defined(CERES_PUBLIC_JET_H_) )
+    if constexpr ( !std::is_same_v<ScalarType,double> )
+    {
+      static_assert( std::is_same_v<ScalarType,ceres::Jet<double,ScalarType::DIMENSION>>,
+                    "fit_continuum: a non-double ScalarType must be ceres::Jet<double,N>" );
+
+      // The design matrix depends on the fit parameters only through `ref_energy` (for the
+      //  non-peak-CDF continua), so when `ref_energy` carries no derivative information we can
+      //  factor the matrix in plain doubles, and solve for the value and every derivative
+      //  direction of the Jet RHS through that one factorization - see the function doc-comment.
+      bool design_is_const = !cdf_step;
+      for( int i = 0; design_is_const && (i < ScalarType::DIMENSION); ++i )
+        design_is_const = (ref_energy.v[i] == 0.0);
+
+      if( design_is_const )
+      {
+        constexpr int num_deriv = ScalarType::DIMENSION;
+
+        Eigen::MatrixXd A_d( static_cast<Eigen::Index>(nbin), num_lls_terms );
+
+        fill_design_and_rhs( A_d, ref_energy.a );
+
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+        const Eigen::JacobiSVD<Eigen::MatrixXd,Eigen::ComputeThinU | Eigen::ComputeThinV> svd( A_d );
+#else
+        const Eigen::BDCSVD<Eigen::MatrixXd> svd( A_d, Eigen::ComputeThinU | Eigen::ComputeThinV );
+#endif
+
+        // Solve the value column and each derivative column with the same (thresholded)
+        //  pseudo-inverse, so the derivative parts are the exact derivatives of the value part.
+        Eigen::MatrixXd rhs( static_cast<Eigen::Index>(nbin), 1 + num_deriv );
+        for( size_t row = 0; row < nbin; ++row )
+        {
+          rhs(row,0) = y(row).a;
+          for( int j = 0; j < num_deriv; ++j )
+            rhs(row,1+j) = y(row).v[j];
+        }
+
+        const Eigen::MatrixXd solved = svd.solve( rhs );  // num_lls_terms x (1 + num_deriv)
+        const Eigen::MatrixXd predicted = A_d * solved;   // nbin x (1 + num_deriv)
+
+        coeffs.resize( num_lls_terms );
+        for( Eigen::Index i = 0; i < num_lls_terms; ++i )
+        {
+          coeffs(i).a = solved(i,0);
+          for( int j = 0; j < num_deriv; ++j )
+            coeffs(i).v[j] = solved(i,1+j);
+        }
+
+        cont_vals.resize( static_cast<Eigen::Index>(nbin) );
+        for( size_t row = 0; row < nbin; ++row )
+        {
+          cont_vals(row).a = predicted(row,0);
+          for( int j = 0; j < num_deriv; ++j )
+            cont_vals(row).v[j] = predicted(row,1+j);
+        }
+
+        check_jet_array_for_NaN( coeffs.data(), coeffs.size() );
+
+        solved_with_const_design = true;
+
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+        // Cross-check the double-factorization against the Jet-valued SVD solve; opt-in via
+        //  environment variable, since it roughly doubles the cost of every continuum fit.
+        static const bool s_check_const_design_lls = ( std::getenv("RELACT_CHECK_CONT_LLS") != nullptr );
+        if( s_check_const_design_lls )
+        {
+          const Eigen::VectorX<ScalarType> fast_coeffs = coeffs;
+          const Eigen::VectorX<ScalarType> fast_cont_vals = cont_vals;
+
+          solve_generic(); //overwrites `coeffs` and `cont_vals` with the Jet-SVD reference values
+
+          for( Eigen::Index i = 0; i < num_lls_terms; ++i )
+          {
+            // The Jet-valued SVD can produce NaN derivatives (see doc-comment); the double
+            //  factorization is exact there, so only compare where the reference is finite.
+            if( std::isfinite(coeffs(i).a) && std::isfinite(fast_coeffs(i).a) )
+            {
+              const double tol = 1.0E-6 * (std::max)( 1.0, (std::max)( fabs(coeffs(i).a), fabs(fast_coeffs(i).a) ) );
+              assert( fabs(coeffs(i).a - fast_coeffs(i).a) < tol );
+            }
+
+            for( int j = 0; j < num_deriv; ++j )
+            {
+              if( std::isfinite(coeffs(i).v[j]) && std::isfinite(fast_coeffs(i).v[j]) )
+              {
+                const double tol = 1.0E-4 * (std::max)( 1.0, (std::max)( fabs(coeffs(i).v[j]), fabs(fast_coeffs(i).v[j]) ) );
+                assert( fabs(coeffs(i).v[j] - fast_coeffs(i).v[j]) < tol );
+              }
+            }
+          }//for( loop over coefficients )
+
+          coeffs = fast_coeffs;       //keep the fast-path values, so behavior doesnt
+          cont_vals = fast_cont_vals; //  depend on the environment variable
+        }//if( s_check_const_design_lls )
+#endif //PERFORM_DEVELOPER_CHECKS && !NDEBUG
+      }//if( design_is_const )
+    }//if constexpr( ScalarType is a ceres::Jet )
+#endif //defined(CERES_PUBLIC_JET_H_)
+
+    if( !solved_with_const_design )
+      solve_generic();
+
     assert( coeffs.size() == num_lls_terms );
     assert( coeffs.rows() == num_lls_terms );
 
@@ -389,11 +604,14 @@ void fit_continuum( const float * const x,
       continuum_coeffs[num_poly_terms] = coeffs(num_poly_terms);
     }
 
-    const Eigen::VectorX<ScalarType> cont_vals = (A * coeffs).array() * uncerts.array();
-
     for( size_t bin = 0; bin < nbin; ++bin )
     {
-      ScalarType y_continuum = cont_vals(bin);
+      // NOTE: smoothing this hard clamp with the same hinge as the fit-target floor was tried
+      //  (2026-07) and REVERTED: the idb_enrichment_check gate showed constrained shallow-surface
+      //  fits reshuffling into worse basins (one file chi2 +135), while the unconstrained corpus
+      //  slightly improved - net not neutral-or-better.  The zero-gradient side here is also far
+      //  rarer than the fit-target floors was (the fitted continuum seldom dips negative).
+      ScalarType y_continuum = cont_vals(bin) * uncerts[bin];
       if( y_continuum < 0.0 )
         y_continuum = ScalarType(0.0);
       peak_counts[bin] += y_continuum;

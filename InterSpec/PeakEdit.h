@@ -47,6 +47,7 @@ namespace Wt
   class WComboBox;
   class WCheckBox;
   class WLineEdit;
+  class WPopupMenu;
   class WPushButton;
   class WSplitButton;
   class WSuggestionPopup;
@@ -240,7 +241,10 @@ protected:
   Wt::WPushButton *m_accept;
   Wt::WPushButton *m_cancel;
   Wt::WSplitButton *m_refit;
-  
+  /** The refit-options menu attached to m_refit; owned by the session domRoot (not this
+      widget), so it must be manually deleted in the destructor. */
+  Wt::WPopupMenu *m_refitMenu;
+
   Wt::WContainerWidget *m_otherPeaksDiv;
   Wt::WText *m_otherPeakTxt;
   Wt::WPushButton *m_prevPeakInRoi;

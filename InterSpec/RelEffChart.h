@@ -77,10 +77,38 @@ protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
 private:
+  /** A data point that was left off the chart, and why; shown in the charts omitted-points panel. */
+  struct OmittedPoint
+  {
+    double energy = 0.0;
+    /** This rel. eff. curves share of the freely-fit peak area (`ObsEff::curve_fit_amplitude`) - what was
+     measured.  Shown next to `expected_counts` so the user can judge how far off the point actually was.
+     */
+    double fit_counts = 0.0;
+    /** This rel. eff. curves share of the peak area the fit solution predicts here - what was expected. */
+    double expected_counts = 0.0;
+    /** Comma separated list of the sources contributing to this point, largest peak first. */
+    Wt::WString sources;
+    /** User-facing text for the `ObsEff::ExclusionReason`. */
+    Wt::WString reason;
+  };//struct OmittedPoint
+
   /** Helper struct for dataset information */
   struct RelEffChartDataset
   {
     std::vector<RelActCalcManual::GenericPeakInfo> peaks;
+    /** How much of each entry of `peaks` this rel. eff. curve is assigned, when more than one curve has gammas
+     at that energy; parallel to `peaks`, and 1.0 (or empty, for the "manual" tool) when there is no blending.
+     The split between curves is a model assumption rather than a measurement, so blended points are drawn
+     differently, and carry a larger uncertainty.
+     */
+    std::vector<double> peakCurveFractions;
+    /** The points not shown on the chart, and why. */
+    std::vector<OmittedPoint> omittedPoints;
+    /** The rel. eff. curves name (e.g. "Inner"/"Outer"); labels this curves section of the omitted-points
+     panel when there is more than one curve.  May be empty.
+     */
+    Wt::WString curveName;
     std::map<std::string, std::pair<double, std::string>> relActsColors;
     std::string relEffEqn;
     Wt::WString chi2_title_str;

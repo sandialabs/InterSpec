@@ -210,18 +210,20 @@ std::shared_ptr<const Material> RelEffShieldWidget::material( const std::string 
     //material wasnt in the database
   }
 
-  //See if 'text' is a chemical formula, if so add it to possible suggestions
+  //See if 'text' is a chemical formula, and if so add it to the suggestions so the user
+  //  doesn't have to retype it next time.
   try
   {
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
     std::shared_ptr<const Material> mat = MaterialDB::materialFromChemicalFormula( text, db );
 
-    // Update the material suggestions widget, if we are in an InterSpec
+    // Update the material suggestions widget, if we are in an InterSpec.  Only add a non-empty
+    //  name we don't already have: an empty suggestion is poison for Wt's WSuggestionPopup
+    //  (it matches any input and renders as the literal text "undefined").
     InterSpec *interspec = InterSpec::instance();
     Wt::WSuggestionPopup *suggester = interspec ? interspec->shieldingSuggester() : nullptr;
-    if( suggester )
+    if( mat && suggester && !mat->name.empty() )
     {
-      // Check if this suggestion already exists before adding
       Wt::WAbstractItemModel *mdl = suggester->model();
       const Wt::WString suggName = Wt::WString::fromUTF8( mat->name );
       bool alreadyHave = false;
@@ -230,6 +232,7 @@ std::shared_ptr<const Material> RelEffShieldWidget::material( const std::string 
       if( !alreadyHave )
         suggester->addSuggestion( mat->name, mat->name );
     }
+
     return mat;
   }catch(...)
   {

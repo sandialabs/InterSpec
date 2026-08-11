@@ -147,6 +147,11 @@
 #include "InterSpec/RelActAutoGui.h"
 #endif
 
+#if( USE_LLM_INTERFACE )
+#include "InterSpec/LlmConfig.h"
+#include "InterSpec/LlmToolGui.h"
+#endif
+
 #if( USE_QR_CODES )
 #include "rapidxml/rapidxml_print.hpp"
 
@@ -930,6 +935,9 @@ protected:
   WText *m_qrCodeStatusTxt;
   
   JSignal<int,std::string> m_qrDecodeSignal;
+#if( USE_LLM_INTERFACE )
+  JSignal<std::string, std::string, int, int> m_resizedImageForLlmSignal;
+#endif
   boost::function<void()> m_close_parent_dialog;
   
   /** We'll make some (lifetime safe) cleanup function to delete sub-dialogs
@@ -1184,9 +1192,58 @@ protected:
   {
     LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrUsingCanvas);
     wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
-    
+
     this->doJavaScript( "Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + ", 5);" );
   }//void check_for_qr_from_canvas()
+
+
+#if( USE_LLM_INTERFACE )
+  void sendToLlm()
+  {
+    if( !m_image || !m_resource )
+      return;
+
+    // JavaScript: draw image to canvas at reduced size (max 2048px), export as base64
+    const string js =
+      "(function(){"
+      "  var img = " + m_image->jsRef() + ";"
+      "  if(!img) return;"
+      "  var canvas = document.createElement('canvas');"
+      "  var maxSize = 2048;"
+      "  var w = img.naturalWidth, h = img.naturalHeight;"
+      "  if(w > maxSize || h > maxSize){"
+      "    var scale = maxSize / Math.max(w, h);"
+      "    w = Math.round(w * scale);"
+      "    h = Math.round(h * scale);"
+      "  }"
+      "  canvas.width = w;"
+      "  canvas.height = h;"
+      "  var ctx = canvas.getContext('2d');"
+      "  ctx.drawImage(img, 0, 0, w, h);"
+      "  var mime = '" + m_mimetype + "';"
+      "  var outMime = (mime === 'image/png') ? 'image/png' : 'image/jpeg';"
+      "  var quality = (outMime === 'image/jpeg') ? 0.85 : undefined;"
+      "  var dataUrl = canvas.toDataURL(outMime, quality);"
+      "  var base64 = dataUrl.split(',')[1];"
+      "  " + m_resizedImageForLlmSignal.createCall( "base64", "outMime",
+                                                     "w", "h" ) + ";"
+      "})();";
+
+    doJavaScript( js );
+  }//void sendToLlm()
+
+
+  void handleResizedImageForLlm( const string &base64, const string &mime,
+                                  int w, int h )
+  {
+    LlmToolGui *llmTool = m_viewer->currentLlmTool();
+    if( llmTool )
+    {
+      llmTool->stageImage( base64, mime, m_display_name, w, h );
+      m_close_parent_dialog();
+    }
+  }//void handleResizedImageForLlm(...)
+#endif
   
   
   void embed_in_n42()
@@ -1254,6 +1311,9 @@ public:
   m_checkForQrCodeBtn( nullptr ),
   m_qrCodeStatusTxt( nullptr ),
   m_qrDecodeSignal( this, "QrDecodedFromImg", false)
+#if( USE_LLM_INTERFACE )
+  , m_resizedImageForLlmSignal( this, "ResizedImageForLlm", false )
+#endif
   {
     m_close_parent_dialog = wApp->bind( boost::bind( &SimpleDialog::done, dialog, Wt::WDialog::DialogCode::Accepted ) );
     
@@ -1338,6 +1398,23 @@ public:
       embedbtn->setStyleClass( "LinkBtn NonSpecEmbedBtn" );
       embedbtn->clicked().connect( this, &UploadedImgDisplay::embed_in_n42 );
     }//if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
+
+#if( USE_LLM_INTERFACE )
+    {
+      LlmToolGui *llmTool = m_viewer->currentLlmTool();
+      if( llmTool && llmTool->canAcceptImages() )
+      {
+        m_resizedImageForLlmSignal.connect(
+          boost::bind( &UploadedImgDisplay::handleResizedImageForLlm, this,
+                      boost::placeholders::_1, boost::placeholders::_2,
+                      boost::placeholders::_3, boost::placeholders::_4 ) );
+
+        WPushButton *sendToLlmBtn = new WPushButton( WString::tr("uid-send-to-llm-btn"), btn_div );
+        sendToLlmBtn->setStyleClass( "LinkBtn NonSpecSendToLlmBtn" );
+        sendToLlmBtn->clicked().connect( this, &UploadedImgDisplay::sendToLlm );
+      }
+    }
+#endif
   }//UploadedImgDisplay constructor
   
   
@@ -2540,7 +2617,31 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
   {
     return true;
   }
-  
+
+#if( USE_LLM_INTERFACE )
+  // Check if this is an `llm_config.xml` for the LLM assistant.  Open the provider settings window
+  //  pre-loaded with it (the user installs it by accepting), instead of the generic message dialog.
+  if( header_contains( "<LlmConfig" ) )
+  {
+    delete dialog;  // we present our own window/dialog instead of the generic non-spectrum one
+
+    try
+    {
+      LlmConfig::loadApiAndMcpConfigs( fileLocation );  // validate it parses before opening the window
+    }catch( std::exception & )
+    {
+      SimpleDialog *errdialog = new SimpleDialog( WString::tr("smm-llm-config-invalid-title") );
+      new WText( WString::tr("smm-llm-config-invalid-msg"), errdialog->contents() );
+      errdialog->addButton( WString::tr("Close") );
+      return true;
+    }//try / catch
+
+    m_viewer->openLlmConfigForImport( fileLocation );
+    return true;
+  }//if( an LLM assistant config file )
+#endif //USE_LLM_INTERFACE
+
+
 #if( USE_REL_ACT_TOOL )
   if( currdata
      && header_contains( "<RelActCalcAuto " )
@@ -4392,10 +4493,46 @@ void SpecMeasManager::showBatchDialog()
   if( m_batchDialog )
     return;
 
-  m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop );
+  m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop, false );
   m_batchDialog->finished().connect( this, &SpecMeasManager::handleBatchDialogFinished );
   wApp->triggerUpdate();
 }//void showBatchDialog()
+
+
+void SpecMeasManager::showBatchDialogForFile( std::shared_ptr<SpecMeas> meas )
+{
+  if( !m_batchDialog )
+  {
+    m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop, true );
+    m_batchDialog->finished().connect( this, &SpecMeasManager::handleBatchDialogFinished );
+
+    // The link that gets us here is only offered for files with several foreground records, which
+    //  is exactly the case the default handling refuses to analyze - so start out set to analyze
+    //  each record.
+    m_batchDialog->widget()->setMultiSampleHandling(
+                              BatchSampleSelect::MultiSampleHandling::EachSampleSeparately );
+  }else
+  {
+    m_batchDialog->show();
+  }
+
+  if( meas )
+  {
+    // Prefer the name shown everywhere else in the app for this file
+    std::string display_name = meas->filename();
+    const Wt::WModelIndex index = m_fileModel ? m_fileModel->index( meas ) : Wt::WModelIndex();
+    if( index.isValid() )
+    {
+      const std::shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( index.row() );
+      if( header && !header->displayName().empty() )
+        display_name = header->displayName().toUTF8();
+    }//if( index.isValid() )
+
+    m_batchDialog->widget()->addInMemoryFiles( { std::make_tuple( display_name, std::string(), meas ) } );
+  }//if( meas )
+
+  wApp->triggerUpdate();
+}//void showBatchDialogForFile( std::shared_ptr<SpecMeas> meas )
 
 void SpecMeasManager::handleBatchDialogFinished()
 {
@@ -6980,6 +7117,14 @@ int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload )
 bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::SpectrumType type,
                                          SpecUtils::ParserType parseType )
 {
+  return loadFromFileSystem( name, type, parseType, true );
+}
+
+
+bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::SpectrumType type,
+                                         SpecUtils::ParserType parseType,
+                                         bool checkIfPreviouslyOpened )
+{
   if( m_previousStatesDialog )
     handleCancelPreviousStatesDialog( m_previousStatesDialog );
   
@@ -6996,8 +7141,7 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
     WModelIndexSet selected;
     WModelIndex index = m_fileModel->index( row, 0 );
     selected.insert( index );
-    m_treeView->setSelectedIndexes( WModelIndexSet() );    
-//    passMessage( "Successfully uploaded file.", 0 );
+    m_treeView->setSelectedIndexes( WModelIndexSet() );
 
     displayFile( row, measurement, type, true, true, 
               SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );

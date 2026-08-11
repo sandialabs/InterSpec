@@ -121,8 +121,6 @@ Um valor zero ou negativo significará nenhum requisito, e também nenhum requis
 
   <message id="bgw-reports-write-custom-per-file-tooltip">Um ou mais arquivos de modelo de relatório de espectro - para cada arquivo de entrada, um relatório será produzido com cada modelo especificado.</message>
 
-  <message id="bgw-reports-write-custom-summary-tooltip">Um ou mais arquivos de modelo usados para fornecer um resumo de todos os arquivos de entrada.</message>
-
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Usar unidades Bq</message>
   <message id="bgw-hard-background-sub">Subtração rígida de fundo</message>

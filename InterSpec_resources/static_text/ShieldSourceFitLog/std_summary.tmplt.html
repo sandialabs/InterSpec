@@ -139,6 +139,12 @@
     {% endif %}
   </div>
 
+  {% if existsIn(file, "PullTrend") and file.PullTrend.HasConclusion %}
+  <div style="text-align: center; font-style: italic; color: #444; margin: -8px auto 16px auto; width: 90vw;">
+    {{ file.PullTrend.Message }}
+  </div>
+  {% endif %}
+
   <script>
     let spec_chart_{{loop.index1}} = new SpectrumChartD3( 'specchart_{{loop.index1}}',  {
     'title': '', 'xlabel' : 'Energy (keV)', 'ylabel': 'Counts'

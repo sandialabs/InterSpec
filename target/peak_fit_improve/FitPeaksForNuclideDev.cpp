@@ -183,7 +183,6 @@ struct LocalMinimum {
  @param long_background Long background spectrum (can be nullptr)
  @param drf Detector response function (can be nullptr, will use generic if needed)
  @param config Configuration for peak fitting parameters
- @param isHPGe Whether this is an HPGe detector
  @return PeakFitResult with status, error message, fit peaks, and solution
  */
 // fit_peaks_for_nuclides is now defined in FitPeaksForNuclides namespace

@@ -38,6 +38,7 @@
 
 #include <Wt/Utils>
 #include <Wt/WLabel>
+#include <Wt/WTimer>
 #include <Wt/WServer>
 #include <Wt/WCheckBox>
 #include <Wt/WPushButton>
@@ -1074,6 +1075,19 @@ void D3TimeChart::init()
 D3TimeChart::~D3TimeChart()
 {
   // Do we need to cleanup any JS objects here?
+
+  // Resolve an outstanding image-capture callback with an empty result, so a blocked caller (e.g. an
+  //  MCP get_time_chart_image awaiting on a future) gets an error rather than hanging forever.
+  if( m_imageCaptureTimer )
+    m_imageCaptureTimer->stop();
+  m_activeCaptureId = 0;
+
+  if( m_pendingImageCallback )
+  {
+    ImageCaptureCallback cb;
+    std::swap( cb, m_pendingImageCallback );
+    try{ cb( std::string(), std::string(), 0, 0 ); }catch(...){}
+  }
 }
 
 #if( OPTIMIZE_D3TimeChart_HIDDEN_LOAD )
@@ -2142,9 +2156,36 @@ void D3TimeChart::saveChartToImg( const std::string &filename, const bool asPng 
 }//void saveChartToImg( const std::string &filename, const bool asPng )
 
 
-void D3TimeChart::handleImageCaptured( std::string base64, std::string mimeType,
-                                        int w, int h )
+void D3TimeChart::handleImageCaptureTimeout()
 {
+  cerr << "D3TimeChart: chart image capture " << m_activeCaptureId << " did not complete within "
+       << (sm_image_capture_timeout_ms/1000) << "s; failing it." << endl;
+
+  ImageCaptureCallback cb;
+  std::swap( cb, m_pendingImageCallback );
+  m_activeCaptureId = 0;
+
+  if( cb )
+    cb( std::string(), std::string(), 0, 0 );
+}//void handleImageCaptureTimeout()
+
+
+void D3TimeChart::handleImageCaptured( std::string base64, std::string mimeType,
+                                        int w, int h, int captureId )
+{
+  // Discard a result whose capture we already gave up on, rather than handing it to whatever capture
+  //  is in flight now (which would pair the image with the wrong caller).
+  if( (captureId != m_activeCaptureId) || (m_activeCaptureId == 0) )
+  {
+    cerr << "D3TimeChart: ignoring stale chart image (captureId=" << captureId
+         << ", in-flight=" << m_activeCaptureId << ")" << endl;
+    return;
+  }
+
+  if( m_imageCaptureTimer )
+    m_imageCaptureTimer->stop();
+  m_activeCaptureId = 0;
+
   ImageCaptureCallback cb;
   std::swap( cb, m_pendingImageCallback );
   if( cb )
@@ -2200,19 +2241,40 @@ void D3TimeChart::captureChartImage( const std::string &format, int maxLongestSi
     throw std::runtime_error( "captureChartImage: chart is not initialized" );
 #endif
 
-  // Initialize the JSignal on first use
+  // Initialize the JSignal and guard timer on first use
   if( !m_imageCapturedJS )
   {
-    m_imageCapturedJS.reset( new Wt::JSignal<std::string, std::string, int, int>(
+    m_imageCapturedJS.reset( new Wt::JSignal<std::string, std::string, int, int, int>(
       this, "timeChartImageCaptured", true ) );
     m_imageCapturedJS->connect( boost::bind( &D3TimeChart::handleImageCaptured, this,
        boost::placeholders::_1, boost::placeholders::_2,
-       boost::placeholders::_3, boost::placeholders::_4 ) );
+       boost::placeholders::_3, boost::placeholders::_4, boost::placeholders::_5 ) );
+
+    // Single-shot is safe HERE only because handleImageCaptureTimeout() never re-arms the timer (there
+    //  is no capture queue on this chart).  D3SpectrumDisplayDiv deliberately does NOT use this
+    //  pattern - re-arming a single-shot WTimer from its own handler silently cancels the re-arm, see
+    //  the comment on its m_imageCaptureTimer.  Do not copy this without checking that property holds.
+    m_imageCaptureTimer.reset( new Wt::WTimer() );
+    m_imageCaptureTimer->setSingleShot( true );
+    m_imageCaptureTimer->setInterval( sm_image_capture_timeout_ms );
+    m_imageCaptureTimer->timeout().connect( this, &D3TimeChart::handleImageCaptureTimeout );
   }//if( !m_imageCapturedJS )
 
-  m_pendingImageCallback = std::move( callback );
+  // Captures are not queued here (unlike the spectrum chart), so a second request supersedes the
+  //  first - but the first caller must still be resolved, or it waits forever.
+  if( m_pendingImageCallback )
+  {
+    ImageCaptureCallback superseded;
+    std::swap( superseded, m_pendingImageCallback );
+    cerr << "D3TimeChart::captureChartImage: superseding an in-flight capture" << endl;
+    superseded( std::string(), std::string(), 0, 0 );
+  }
 
-  const std::string emitJs = m_imageCapturedJS->createCall( "b64", "mime", "w", "h" );
+  m_pendingImageCallback = std::move( callback );
+  m_activeCaptureId = m_nextCaptureId++;
+
+  const std::string emitJs = m_imageCapturedJS->createCall( "b64", "mime", "w", "h",
+                                                           std::to_string(m_activeCaptureId) );
 
   // The Wt.WT.ChartToImageData function is normally defined in D3SpectrumDisplayDiv.cpp,
   //  but may not be loaded yet. We define it inline if not already present.
@@ -2222,6 +2284,17 @@ void D3TimeChart::captureChartImage( const std::string &format, int maxLongestSi
   // Define ChartToImageData if not already available
   js += "if(!Wt.WT.ChartToImageData){";
   js += "Wt.WT.ChartToImageData=function(chart,format,maxSize,callback){";
+  // NOTE: this is a hand-built duplicate of the wtjsChartToImageData member defined in
+  //  D3SpectrumDisplayDiv.cpp, and only ever runs when THAT one has not been loaded yet (see the
+  //  `if(!Wt.WT.ChartToImageData)` guard above).  Which copy runs therefore depends on which chart
+  //  captured first in the session, so the two MUST stay behaviourally identical.  (Worth collapsing
+  //  into one shared loader; WT_DECLARE_WT_MEMBER emits into an anonymous namespace, so exposing the
+  //  spectrum chart's copy needs a small static loader function.)
+  // The callback must fire exactly once, whatever happens, and signals failure with EMPTY strings
+  //  rather than null (a null marshals to the literal text "null") - see D3SpectrumDisplayDiv's copy.
+  js += "var done=false;";
+  js += "var finish=function(b64,mime,w,h){if(done)return;done=true;clearTimeout(fallback);callback(b64,mime,w,h);};";
+  js += "var fallback=setTimeout(function(){finish('','',0,0);},12000);";
   js += "try{";
   js += "var svgMarkup=chart.getStaticSvg();";
   js += "var height=chart.svg.attr('height');";
@@ -2229,32 +2302,40 @@ void D3TimeChart::captureChartImage( const std::string &format, int maxLongestSi
   js += "if(chart.sliderChart&&chart.size&&chart.size.sliderChartHeight)height-=chart.size.sliderChartHeight;";
   js += "if(chart.scalerWidget)width-=chart.scalerWidget.node().getBBox().width;";
   js += "width=Math.round(width);height=Math.round(height);";
-  js += "if(format==='svg'){callback(btoa(unescape(encodeURIComponent(svgMarkup))),'image/svg+xml',width,height);return;}";
+  js += "if(format==='svg'){finish(btoa(unescape(encodeURIComponent(svgMarkup))),'image/svg+xml',width,height);return;}";
   js += "var tw=width,th=height;";
   js += "if(maxSize>0&&(width>maxSize||height>maxSize)){var s=maxSize/Math.max(width,height);tw=Math.round(width*s);th=Math.round(height*s);}";
   js += "var canvas=document.createElement('canvas');canvas.width=tw;canvas.height=th;";
   js += "var ctx=canvas.getContext('2d');ctx.fillStyle='white';ctx.fillRect(0,0,canvas.width,canvas.height);";
   js += "var img=new Image();var svgBlob=new Blob([svgMarkup],{type:'image/svg+xml'});var url=window.URL.createObjectURL(svgBlob);";
-  js += "img.onerror=function(e){window.URL.revokeObjectURL(url);callback(null,null,0,0);};";
-  js += "img.onload=function(){ctx.drawImage(img,0,0,tw,th);window.URL.revokeObjectURL(url);";
+  js += "img.onerror=function(e){window.URL.revokeObjectURL(url);finish('','',0,0);};";
+  // onload runs asynchronously, so the outer try/catch does not cover it - a throwing toDataURL()
+  //  would otherwise escape and lose the callback entirely.
+  js += "img.onload=function(){try{ctx.drawImage(img,0,0,tw,th);window.URL.revokeObjectURL(url);";
   js += "var mimeType=(format==='jpeg')?'image/jpeg':'image/png';var quality=(format==='jpeg')?0.85:undefined;";
   js += "var dataUrl=canvas.toDataURL(mimeType,quality);canvas.remove();";
-  js += "var base64=dataUrl.replace(/^data:[^;]+;base64,/,'');callback(base64,mimeType,tw,th);};";
+  js += "var base64=dataUrl.replace(/^data:[^;]+;base64,/,'');finish(base64,mimeType,tw,th);";
+  js += "}catch(e){console.log('ChartToImageData onload error:',e);finish('','',0,0);}};";
   js += "img.src=url;";
-  js += "}catch(e){console.log('ChartToImageData error:',e);callback(null,null,0,0);}";
+  js += "}catch(e){console.log('ChartToImageData error:',e);finish('','',0,0);}";
   js += "};"; // end function definition
   js += "}";  // end if(!Wt.WT.ChartToImageData)
 
   js += "var chart=" + m_jsgraph + ";";
-  js += "requestAnimationFrame(function(){";
+  // rAF never fires while the window is hidden/occluded, so race it against a timeout.
+  js += "var started=false;var go=function(){if(started)return;started=true;";
   js += "Wt.WT.ChartToImageData(chart,'" + format + "',"
       + std::to_string( maxLongestSide ) + ",function(b64,mime,w,h){";
   js += emitJs + ";";
   js += "});";  // end ChartToImageData callback
-  js += "});";  // end requestAnimationFrame
+  js += "};";   // end go()
+  js += "requestAnimationFrame(go);setTimeout(go,250);";
   js += "})();"; // end IIFE
 
   doJavaScript( js );
+
+  if( m_imageCaptureTimer )
+    m_imageCaptureTimer->start();
 }//void captureChartImage(...)
 
 

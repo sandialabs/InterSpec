@@ -79,6 +79,11 @@ namespace GammaInteractionCalc
   class ShieldingSourceChi2Fcn;
 }//namespace GammaInteractionCalc
 
+namespace ShieldSourcePullTrend
+{
+  struct TrendResult;
+}//namespace ShieldSourcePullTrend
+
 
 /** This namespace is structs that represent the data users input in the `ShieldingSelect` class, and the inputs of
  ShieldingSourceDisplay.h/.cpp
@@ -372,7 +377,13 @@ namespace ShieldingSourceFitCalc
     std::vector<ShieldingSourceFitCalc::SourceFitDef> fit_src_info;
     
     std::unique_ptr<const std::vector<GammaInteractionCalc::PeakResultPlotInfo>> peak_comparisons;
-    
+
+    /** Diagnosis of the per-peak pull ("chi") trend vs energy - fitted trend curve(s) and an
+     interpretation (too much/little shielding, wrong effective atomic number).  May be null if
+     the analysis could not be run.  See ShieldSourcePullTrend.h.
+     */
+    std::shared_ptr<const ShieldSourcePullTrend::TrendResult> pull_trend;
+
     std::vector<std::string> peak_calc_log;
     std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> peak_calc_details;
     std::unique_ptr<const std::vector<GammaInteractionCalc::ShieldingDetails>> shield_calc_details;

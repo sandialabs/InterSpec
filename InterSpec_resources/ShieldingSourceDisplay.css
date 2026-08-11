@@ -160,3 +160,35 @@
 {
   padding-left: 17px;
 }
+
+/* Compact strip below the chi chart: pull-trend message (left) inline with the Chi/Mult switch. */
+.ShieldingSourceDisplay .ShieldSourceTrendRow
+{
+  display: flex;
+  align-items: center;
+  column-gap: 8px;
+  padding: 0px 20px 0px 8px;
+}
+
+/* Passive pull-trend interpretation text; ellipsized so it stays on one line.  Nudged up so it
+   sits right under the x-axis title rather than centered in the (taller) switch-height strip. */
+.ShieldingSourceDisplay .ShieldSourceTrendMsg
+{
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin-top: -8px;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--d3spec-text-color, #444);
+  opacity: 0.9;
+}
+
+/* Keep the switch pinned to the right even when the message is hidden. */
+.ShieldingSourceDisplay .ShieldSourceTrendRow .SwitchCheckbox
+{
+  margin-left: auto;
+  flex: 0 0 auto;
+}

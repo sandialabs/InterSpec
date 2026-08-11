@@ -9,6 +9,7 @@
   <message id="ftw-hdr-flux-on-det">Fluxo no Det. (ɣ/s)</message>
   <message id="ftw-hdr-flux-cm">Fluxo (ɣ/cm²/s)</message>
   <message id="ftw-hdr-flux-4pi">ɣ/4π/s</message>
+  <message id="ftw-hdr-use">Usar</message>
   <message id="ftw-tt-distance">
     Distância do centro da fonte até a face do detector. O número deve ser
     seguido por unidades; unidades válidas são: meters, m, cm, mm, km, feet,
@@ -21,6 +22,14 @@
   <message id="ftw-more">Mais</message>
   <message id="ftw-copy-btn">Copiar para Área de Transferência</message>
   <message id="ftw-copy-btn-narrow">Copiar</message>
+  <message id="ftw-select-rows">Selecionar linhas</message>
+  <message id="ftw-select-rows-narrow">Selecionar</message>
+  <message id="ftw-tt-select-rows">
+      Adiciona uma caixa de seleção a cada linha da tabela, para que possa escolher quais
+    linhas são copiadas para a área de transferência ou exportadas para CSV.  As linhas
+    começam marcadas; desmarque as que não quiser na saída.  Quando esta opção está
+    desmarcada, todas as linhas são copiadas/exportadas.
+  </message>
   <message id="ftw-invalid-dist">Distância Inválida</message>
   <message id="ftw-no-drf">Nenhuma Função de Resposta do Detector Escolhida</message>
   <message id="ftw-no-foreground">Nenhum espectro de primeiro plano carregado</message>

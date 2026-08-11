@@ -87,6 +87,11 @@ public:
 
   virtual void optionsChanged() = 0;
 
+  /** Sets how input files holding more than one candidate foreground spectrum should be treated.
+   Default implementation is a no-op, for the analysis types the option doesnt apply to.
+   */
+  virtual void setMultiSampleHandling( const BatchSampleSelect::MultiSampleHandling handling );
+
   /** Gives if analysis can proceed, and if it cant, an explanation as to why not. */
   Wt::Signal<bool,Wt::WString> &canDoAnalysisSignal();
 };
@@ -131,6 +136,11 @@ protected:
   Wt::WLabel *m_peak_hypothesis_threshold_label = nullptr;
   NativeFloatSpinBox *m_peak_hypothesis_threshold = nullptr;
 
+  /** How to treat input files with more than one candidate foreground spectrum. */
+  Wt::WContainerWidget *m_multi_sample_container = nullptr;
+  Wt::WLabel *m_multi_sample_label = nullptr;
+  Wt::WComboBox *m_multi_sample_handling = nullptr;
+
   Wt::WContainerWidget *m_reports_container = nullptr;
   Wt::WCheckBox *m_html_report = nullptr;
   
@@ -163,6 +173,8 @@ public:
   void useNoBackgroundChanged();
 
   virtual void optionsChanged() override;
+
+  virtual void setMultiSampleHandling( const BatchSampleSelect::MultiSampleHandling handling ) override;
 
   std::tuple<std::shared_ptr<SpecMeas>, std::string, std::set<int>> get_exemplar() const;
   std::tuple<std::shared_ptr<const SpecMeas>, std::string, std::set<int>> get_background() const;

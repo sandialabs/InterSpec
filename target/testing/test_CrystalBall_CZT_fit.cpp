@@ -147,9 +147,10 @@ shared_ptr<const PeakDef> fit_skew_peak( const shared_ptr<const SpecUtils::Measu
   cont->setType( cont_type );
   cont->setRange( roi_lower, roi_upper );
 
-  const bool isHPGe = PeakFitUtils::is_high_res( data );  // false for the low-channel CZT spectrum
+  // Low resolution for the low-channel CZT spectrum.
+  const PeakFitUtils::CoarseResolutionType det_type = PeakFitUtils::coarse_det_type( data, nullptr );
   const vector<shared_ptr<const PeakDef>> input{ peak };
-  const vector<shared_ptr<const PeakDef>> fit = PeakFitLM::fit_peaks_in_roi_LM( input, data, isHPGe );
+  const vector<shared_ptr<const PeakDef>> fit = PeakFitLM::fit_peaks_in_roi_LM( input, data, det_type );
 
   BOOST_REQUIRE_MESSAGE( fit.size() == 1, "Expected 1 fitted peak, got " << fit.size()
                          << " for skew " << PeakDef::to_string(skew_type) );
