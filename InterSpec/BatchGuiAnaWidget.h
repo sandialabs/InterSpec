@@ -41,6 +41,7 @@
 
 namespace Wt
 {
+  class WSpinBox;
   class WComboBox;
 }
 
@@ -140,6 +141,33 @@ protected:
   Wt::WContainerWidget *m_multi_sample_container = nullptr;
   Wt::WLabel *m_multi_sample_label = nullptr;
   Wt::WComboBox *m_multi_sample_handling = nullptr;
+
+  /** Detection limit ("MDA") options for exemplar peaks that could not be fit; hidden when all
+   peaks are being fit for (as then there are no exemplar peaks to miss).
+   */
+  Wt::WContainerWidget *m_mda_options_container = nullptr;
+  Wt::WContainerWidget *m_mda_method_container = nullptr;
+  Wt::WLabel *m_mda_method_label = nullptr;
+  Wt::WComboBox *m_mda_method = nullptr;
+
+  Wt::WContainerWidget *m_mda_confidence_level_container = nullptr;
+  Wt::WLabel *m_mda_confidence_level_label = nullptr;
+  Wt::WComboBox *m_mda_confidence_level = nullptr;
+
+  Wt::WContainerWidget *m_mda_side_channels_container = nullptr;
+  Wt::WLabel *m_mda_side_channels_label = nullptr;
+  Wt::WSpinBox *m_mda_side_channels = nullptr;
+
+#if( ALLOW_SPECIFY_MDA_ROI_WIDTH )
+  Wt::WContainerWidget *m_mda_roi_num_fwhm_container = nullptr;
+  Wt::WLabel *m_mda_roi_num_fwhm_label = nullptr;
+  NativeFloatSpinBox *m_mda_roi_num_fwhm = nullptr;
+#endif
+
+  /** The confidence levels offered for the detection limits, and their display names; the same
+   choices the "Detection Confidence Tool" offers.
+   */
+  static const std::vector<std::pair<const char *,double>> sm_mda_confidence_levels;
 
   Wt::WContainerWidget *m_reports_container = nullptr;
   Wt::WCheckBox *m_html_report = nullptr;

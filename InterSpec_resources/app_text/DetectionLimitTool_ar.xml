@@ -9,25 +9,6 @@
   <message id="dlt-roi-lower-label">ROI السفلي:</message>
   <message id="dlt-roi-upper-label">ROI العلوي:</message>
   <message id="dlt-continuum-label">الطيف المستمر</message>
-  <message id="dlt-cont-norm-label">تطبيع المستمر</message>
-  <message id="dlt-cont-norm-floating">عائم</message>
-  <message id="dlt-cont-norm-fixed-edges">ثابت عند الحواف</message>
-  <message id="dlt-cont-norm-fixed-full-roi">ثابت ROI كامل</message>
-  <message id="dlt-cont-norm-tt">
-    كيف يجب تحديد تطبيع الطيف المستمر:
-    <ul><li><b>عائم</b>: يتم ملاءمة الطيف المستمر متعدد الحدود، لكل نشاط معطى -
-    يؤثر النشاط على الطيف المستمر.</li>
-    <li><b>ثابت عند الحواف</b>: تُستخدم القنوات على جانبي ROI لتحديد
-    طيف مستمر خطي ثابت، ولا يتأثر بنشاط النويدات.</li>
-    <li><b>ثابت ROI كامل</b>: يتم ملاءمة الطيف المستمر باستخدام نطاق الطاقة الكامل لـ ROI،
-    بافتراض سعة غاوسية صفر؛ لاحقاً، سيكون مكون غاوس للذروة
-    فوق هذا الطيف المستمر الثابت.<br/>
-    هذا يؤكد بشكل فعال أنك تعلم أنه لا يوجد ذروة إشارة موجودة في البيانات.
-    لن يتأثر الطيف المستمر بقيمة نشاط النويدة، ومكون
-    غاوس للذروة سيكون فوق هذا الطيف المستمر الثابت عند تقييم
-    &chi;<sup>2</sup>.</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">حد كوري للذروة الواحدة</message>
   <message id="dlt-num-side-channels-label">عدد القنوات الجانبية</message>
   <message id="dlt-further-details-link">تفاصيل إضافية...</message>
@@ -66,14 +47,6 @@
   <message id="dlt-distance-limit">حد المسافة</message>
   <message id="dlt-peaks-disp-act-label">الذروات عرض النشاط:</message>
   <message id="dlt-peaks-disp-dist-label">الذروات عرض المسافة:</message>
-  <message id="dlt-conf-level-label">مستوى الثقة:</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68.2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95.4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99.7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">خطوط جاما للاستخدام</message>
   <message id="dlt-min-rel-intensity-label">الحد الأدنى للشدة النسبية:</message>
   <message id="dlt-fit-fwhm-btn">ملاءمة FWHM...</message>
@@ -188,4 +161,9 @@
   <message id="dlt-err-upper-limit-negative">الحد الأعلى للعد أقل من الصفر، لكن العد المرصود أكبر من L_d.</message>
   <message id="dlt-err-activity-zero-negative">لا يمكن أن يكون النشاط صفراً أو سالباً</message>
   <message id="dlt-err-distance-zero-negative">لا يمكن أن تكون المسافة صفراً أو سالبة</message>
+  <message id="dlt-qr-tool-state-title">حالة أداة ثقة الكشف</message>
+  <message id="dlt-qr-tool-state-txt">الحالة الراهنة لأداة ثقة الكشف.</message>
+  <message id="dlt-estimating-spread">جارٍ حساب التشتت…</message>
+  <message id="dlt-spread-band">(عادةً {1}&ndash;{2}&times; من هذه القيمة)</message>
+  <message id="dlt-spread-unavailable">تعذّر تقدير التشتت.</message>
 </messages>

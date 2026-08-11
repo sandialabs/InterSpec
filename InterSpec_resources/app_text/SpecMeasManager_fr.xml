@@ -43,15 +43,6 @@
   </message>
   <message id="smm-unsupported-document">Ce fichier semble être un fichier de document et n'est pas pris en charge par InterSpec.</message>
   <message id="smm-invalid-peak-csv">Le fichier téléchargé ressemblait à un fichier CSV de pics, mais était invalide.</message>
-  <message id="smm-file-is-drf">
-    <p style="white-space: nowrap;">
-      Ce fichier semble être une fonction de réponse du détecteur (DRF).
-    </p>
-    <p style="text-align: left; white-space: nowrap;">
-      Nom : {1}
-    </p>
-   <p>Souhaitez-vous utiliser cette DRF ?</p>
-  </message>
   <message id="smm-saved-drf-conf">
     '{1}' a été enregistré pour une utilisation ultérieure et sera disponible dans la section
     "<em>Eff. Rel.</em>" de l'outil "<em>Sélection de la fonction de réponse du détecteur</em>".
@@ -240,7 +231,6 @@
     Utilisez le <b>Gestionnaire de fichiers</b> pour modifier cela.
   </message>
 
-
   <message id="smm-selected-spec-label">Spectre sélectionné : </message>
   <message id="smm-disp-as-btn">Afficher comme</message>
   <message id="smm-to-new-file">Vers un nouveau fichier</message>
@@ -253,13 +243,16 @@
   <message id="smm-unload-btn">Décharger</message>
   <message id="smm-unassign-label">Dissocier : </message>
 
-
   <message id="smm-prev-states-window-title">États précédemment enregistrés</message>
   <message id="smm-err-prev-state-unexpected">Problème inattendu lors de l'affichage des états de sauvegarde disponibles : {1}</message>
   <message id="smm-tab-saved-states">États enregistrés</message>
   <message id="smm-tab-auto-saved">Spectres enregistrés automatiquement</message>
   <message id="smm-auto-check-prev-cb">Vérifier automatiquement le travail précédent.</message>
-  <message id="smm-cant-save">Impossible d'enregistrer ce fichier dans la base de données. {1}</message>
+  <message id="smm-cant-save">
+    Ce fichier de spectre est trop volumineux pour être enregistré dans la base de données interne.<br />
+    Par conséquent, votre travail ne sera pas enregistré automatiquement dans la base de données interne, et vous ne pourrez pas reprendre là où vous vous étiez arrêté au prochain chargement du fichier.
+    <p>La taille de ce fichier est de {1}, alors que le maximum pouvant être enregistré est de {2}.</p>
+  </message>
   <message id="smm-max-file-to-large">Le fichier tenté est trop volumineux ; la taille maximale est de {1} ko, vous avez essayé de télécharger {2} ko.</message>
   <message id="smm-must-specify-name">Vous devez spécifier un nom</message>
   <message id="smm-save-spectype-as-window-title">Enregistrer le spectre {1} sous</message>
@@ -309,9 +302,7 @@
   <message id="musd-err-decoding-url">Erreur lors du décodage de l'URL : {1}</message>
   <message id="musd-received-urls-list">URLs {1} de {2} reçues.<p>En attente d'autres URL/codes QR</p></message>
 
-
   <message id="uid-qr-code-pic">Image du code QR</message>
-  <message id="uid-no-qr-found">Aucun code QR trouvé ⓘ</message>
   <message id="uid-no-qr-found-title">Aucun code QR trouvé</message>
   <message id="uid-no-qr-content">
     <p>

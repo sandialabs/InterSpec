@@ -27,6 +27,25 @@
   <message id="lcw-fmt-openai-chat">OpenAI Chat</message>
   <message id="lcw-fmt-openai-responses">OpenAI Responses</message>
   <message id="lcw-fmt-anthropic">Anthropic</message>
+  <message id="lcw-cors-fix">CORS fix</message>
+  <message id="lcw-cors-fix-tip"><![CDATA[Tick this if the assistant cannot reach this provider even though the endpoint and key are correct.<br/><br/>Requests normally go out through your browser, which is usually the better choice &#8212; it already knows your proxy settings, your organization&#8217;s certificates, and your sign-in. But some providers refuse requests made that way (a browser rule called CORS), and the only symptom is a network error.<br/><br/>With this ticked, InterSpec makes the request itself instead, using {1}. Leave it off for providers that work.]]></message>
+  <message id="lcw-cors-fix-unavail"><![CDATA[Not available in this build &#8212; {1}.<br/><br/>Requests to this provider will go through the browser, so if it refuses them (CORS), it cannot be reached from this installation.]]></message>
+
+  <!-- Network card: applies only to CORS-fix requests -->
+  <message id="lcw-net-title">Network settings</message>
+  <message id="lcw-net-sub">Only needed if a CORS-fix provider cannot get through your network.</message>
+  <message id="lcw-net-proxy">Proxy</message>
+  <message id="lcw-net-proxy-ph">use this computer&#8217;s proxy settings</message>
+  <message id="lcw-net-proxy-tip"><![CDATA[Leave empty unless told otherwise: InterSpec already follows the proxy configured in your system settings, including automatic (PAC/WPAD) discovery.<br/><br/>Set it only if that discovery does not work, e.g. <code>http://proxy.example.com:8080</code>.]]></message>
+  <message id="lcw-net-proxy-unsupported-ph">not supported on this platform</message>
+  <message id="lcw-net-proxy-unsupported"><![CDATA[This platform&#8217;s HTTP client ({1}) cannot be pointed at a specific proxy.<br/><br/>Set the proxy in your system settings instead, or ask your IT department whether one is required.]]></message>
+  <message id="lcw-net-ca">Extra certificates</message>
+  <message id="lcw-net-ca-ph">use this computer&#8217;s certificate store</message>
+  <message id="lcw-net-ca-tip"><![CDATA[A PEM file, or a folder of them, to trust <em>in addition to</em> the ones this computer already trusts.<br/><br/>Needed on networks that inspect encrypted traffic, where your organization&#8217;s certificate has not been installed system-wide. Your IT department can supply the file.]]></message>
+  <message id="lcw-net-noverify">Do not check certificates</message>
+  <message id="lcw-net-noverify-tip"><![CDATA[Turns off verification of the server&#8217;s identity, so the connection can no longer be trusted to reach the real provider.<br/><br/>Use only to confirm a certificate problem is the cause, then add the certificate above instead.]]></message>
+  <message id="lcw-net-noverify-warn">Anyone on the network can read or alter these requests, including your API key.</message>
+
   <message id="lcw-bearer-token">Bearer token</message>
   <message id="lcw-token-ph">sk-&#8230;</message>
   <message id="lcw-show">Show</message>
@@ -108,6 +127,8 @@
   <message id="lcw-warn-model-empty">Active model name is empty.</message>
   <message id="lcw-warn-anthropic-max">Active model: Anthropic requires Max tokens.</message>
   <message id="lcw-warn-mcp-token">MCP is enabled with the default bearer token.</message>
+  <message id="lcw-warn-ca-missing">Network settings: the extra-certificates path does not exist.</message>
+  <message id="lcw-warn-proxy-unsupported">Network settings: a proxy is set, but this platform&#8217;s HTTP client cannot use one.</message>
 
   <!-- Used by the LLM assistant when not configured (LlmToolGui) -->
   <message id="lcw-configure-menu">Configure LLM Provider&#8230;</message>

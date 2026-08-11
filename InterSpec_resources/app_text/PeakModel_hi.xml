@@ -23,7 +23,6 @@
   <message id="pm-hdr-up-energy">उच्च ऊर्जा</message>
   <message id="pm-hdr-roi-counts">ROI गणना</message>
 
-
   <message id="pm-hdr-tt-mean">औसत ऊर्जा</message>
   <message id="pm-hdr-tt-fwhm">आधी अधिकतम पर पूर्ण चौड़ाई</message>
   <message id="pm-hdr-tt-amp">शिखर क्षेत्रफल</message>
@@ -34,6 +33,5 @@
   <message id="pm-hdr-tt-color">शिखर रंग</message>
   <message id="pm-hdr-tt-label">उपयोगकर्ता द्वारा निर्दिष्ट लेबल</message>
   <message id="pm-hdr-tt-roi-counts">रुचि के क्षेत्र पर गामा गणना का समाकलन</message>
-  <message id="pm-hdr-tt-"></message>
 
 </messages>

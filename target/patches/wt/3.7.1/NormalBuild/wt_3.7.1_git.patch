@@ -69,3 +69,57 @@ index 5a15b09f..6994b461 100644
  #else //WT_HAVE_POSIX_FILEIO
  #include <sys/types.h>
  #include <sys/stat.h>
+diff --git a/cmake/WtFindSsl.txt b/cmake/WtFindSsl.txt
+--- a/cmake/WtFindSsl.txt
++++ b/cmake/WtFindSsl.txt
+@@ -121,6 +121,15 @@
+       /usr/local/lib
+     NO_DEFAULT_PATH
+   )
++  FIND_LIBRARY(SSL_CRYPTO_LIB
++    NAMES
++      crypto
++    PATHS
++      ${SSL_PREFIX}/lib
++      /usr/lib
++      /usr/local/lib
++    NO_DEFAULT_PATH
++  )
+ ELSE (WIN32)
+   FIND_LIBRARY(SSL_LIB
+     NAMES
+@@ -131,6 +140,14 @@
+       /usr/lib
+       /usr/local/lib
+   )
++  FIND_LIBRARY(SSL_CRYPTO_LIB
++    NAMES
++      crypto
++    PATHS
++      ${SSL_PREFIX}/lib
++      /usr/lib
++      /usr/local/lib
++  )
+ ENDIF (WIN32)
+ 
+ IF(SSL_LIB
+@@ -144,7 +161,18 @@
+     ENDIF(SSL_TOO_LIB)
+   ELSE(WIN32)
+     SET(SSL_FOUND true)
+-    SET(SSL_LIBRARIES ${SSL_LIB} -lcrypto)
++    # Use the libcrypto found alongside libssl rather than a bare "-lcrypto" linker flag.  The
++    # bare flag resolves against the *system* libcrypto, which silently pairs a static libssl.a
++    # from SSL_PREFIX with a different, dynamically-linked crypto library.
++    IF(SSL_CRYPTO_LIB)
++      SET(SSL_LIBRARIES ${SSL_LIB} ${SSL_CRYPTO_LIB})
++    ELSE(SSL_CRYPTO_LIB)
++      SET(SSL_LIBRARIES ${SSL_LIB} -lcrypto)
++    ENDIF(SSL_CRYPTO_LIB)
++    # A statically linked OpenSSL 3 needs these; harmless when linking the shared one.
++    IF(NOT APPLE)
++      SET(SSL_LIBRARIES ${SSL_LIBRARIES} dl pthread)
++    ENDIF(NOT APPLE)
+   ENDIF(WIN32)
+ ENDIF(SSL_LIB
+     AND SSL_INCLUDE_DIRS)

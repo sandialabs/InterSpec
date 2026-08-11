@@ -1,0 +1,196 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Traduction de DetectionLimit.xml -->
+
+  <message id="dl-conf-95">95%</message>
+  <message id="dl-conf-99">99%</message>
+  <message id="dl-conf-1sigma">68,27%</message>
+  <message id="dl-conf-2sigma">95,45%</message>
+  <message id="dl-conf-3sigma">99,73%</message>
+  <message id="dl-conf-4sigma">99,9937%</message>
+  <message id="dl-conf-5sigma">99,999943%</message>
+  <message id="dl-conf-level-one-sided">N.C. unilatéral :</message>
+  <message id="dl-conf-level-central">N.C. central :</message>
+  <message id="dl-conf-level-one-sided-short">N.C. unilat. :</message>
+  <message id="dl-conf-level-tt">
+    Le niveau de confiance auquel la limite est donnée.
+    <p>
+      Les cinq valeurs non rondes sont les probabilités normales centrales de 1&sigma; à 5&sigma;
+      (68,27%, 95,45%, 99,73%, 99,9937%, 99,999943%), mais elles sont appliquées ici comme des
+      niveaux de confiance <b>unilatéraux</b>.  Un choix &quot;1&sigma;&quot; n'est donc pas une
+      borne unilatérale à un sigma : ces valeurs sont proposées parce qu'elles sont familières, non
+      parce que la limite serait un multiple d'un quelconque sigma.
+    </p>
+  </message>
+
+  <!-- Traitement du continuum -->
+  <message id="dl-cont-norm-label">Norm. Cont. :</message>
+  <message id="dl-cont-norm-floating">Flottant</message>
+  <message id="dl-cont-norm-edges">Ancré par les canaux latéraux</message>
+  <message id="dl-cont-norm-edges-short">Par les côtés</message>
+  <message id="dl-cont-norm-tt">
+    D'où vient la connaissance du fond sous le pic, et donc ce que vous affirmez.  C'est une question
+    distincte de <i>quelle mesure</i> la limite décrit ; voyez l'option de mesure.
+    <ul>
+      <li><b>Flottant</b> : le continuum est déduit des mêmes canaux que ceux pouvant contenir le
+      signal, donc rien n'est supposé sur le voisinage.  Un excès large ou uniforme est absorbé dans
+      le continuum, si bien que seul un excès réellement en forme de pic compte comme signal - c'est
+      le test le plus strict de &quot;est-ce vraiment un pic ?&quot;.  L'option par défaut, et la
+      mieux validée.</li>
+      <li><b>Ancré par les canaux latéraux</b> : le fond est mesuré dans les canaux voisins de la
+      région et reporté sous celle-ci, ce qui affirme que ces épaulements ne contiennent pas de
+      signal et que le continuum les traverse en ligne droite.  Une région simplement plus haute que
+      ses épaulements compte désormais comme signal, qu'elle ait ou non la forme d'un pic.  Exige un
+      continuum linéaire : quatre plus quatre canaux latéraux déterminent tout juste une ordonnée à
+      l'origine et une pente.</li>
+    </ul>
+    <p>
+      L'ancrage ajoute de l'information et donne donc généralement une limite plus étroite - mais un
+      nombre plus étroit n'est pas automatiquement meilleur.  Le mode flottant penche vers des
+      limites <em>plus larges</em> ; l'ancrage penche vers des limites <em>fausses</em>, dans un sens
+      ou dans l'autre, si une raie voisine, une marche ou une courbure rend les épaulements non
+      représentatifs.  Utilisez Flottant par défaut, et les canaux latéraux lorsque la région est
+      propre sur plusieurs FWHM de part et d'autre et que le gain de sensibilité justifie
+      l'affirmation.
+    </p>
+    <p>
+      Notez que l'incertitude de comptage des épaulements eux-mêmes est propagée dans la
+      vraisemblance : un ancrage faible élargit donc honnêtement la limite au lieu de faire comme si
+      le continuum était connu.
+    </p>
+  </message>
+
+  <!-- Modèle de mesure -->
+  <message id="dl-model-label">Mesure :</message>
+  <message id="dl-model-current">Spectre actuel</message>
+  <message id="dl-model-backref">Référence de fond</message>
+  <message id="dl-model-backref-cb">Référence de fond</message>
+  <message id="dl-model-tt">
+    De quelle mesure la limite parle.
+    <ul>
+      <li><b>Spectre actuel</b> : quelle quantité de signal pourrait se cacher dans le spectre dont
+      vous disposez.  Le cas ordinaire.</li>
+      <li><b>Référence de fond</b> : on affirme que le spectre chargé ne contient pas de signal, et
+      on l'utilise pour prédire ce qu'une mesure <i>future</i> pourrait détecter.  Les comptages de
+      la référence et la mesure projetée sont évalués ensemble, en partageant un même continuum, si
+      bien que la statistique de comptage propre à la référence est propagée dans le résultat plutôt
+      qu'ignorée.</li>
+    </ul>
+    <p>
+      Un résultat en référence de fond est une <b>sensibilité prédite</b>, non une borne sur le
+      spectre en main, et il est présenté comme tel.  C'est une espérance médiane : il n'y a pas de
+      mesure future à observer, la prédiction est donc faite aux comptages attendus.  Cela tient tant que le temps saisi est voisin de celui de ce spectre ou plus court ; en allant bien au-delà le résultat devient optimiste, d'environ un tiers à 16 fois, car tout écart entre le vrai continuum de la région et la droite qui lui est ajustée croît avec l'exposition alors que le bruit de comptage ne croît que comme sa racine carrée.
+    </p>
+  </message>
+  <message id="dl-model-backref-tt">
+    Affirme que ce spectre ne contient pas de signal, et l'utilise pour prédire ce qu'une mesure
+    future pourrait détecter.
+    <p>
+      Le résultat est une <b>sensibilité prédite</b> pour une mesure de la durée planifiée, non une
+      limite supérieure sur ce spectre.  La statistique de comptage propre à la référence est
+      propagée dans le résultat : un fond court donne donc une prédiction d'autant plus faible.
+    </p>
+  </message>
+
+  <!-- Type de limite -->
+  <message id="dl-limittype-label">Limite :</message>
+  <message id="dl-limittype-upper">Limite supérieure</message>
+  <message id="dl-limittype-central">Intervalle central</message>
+  <message id="dl-limittype-tt">
+    Quelle grandeur rapporter.  Ce sont des produits différents qui utilisent des seuils différents
+    sur la statistique ; le choix est donc explicite plutôt que deviné.
+    <ul>
+      <li><b>Limite supérieure</b> : une borne unilatérale - &quot;l'activité est inférieure à U à
+      ce niveau de confiance&quot;.  Ce que l'on veut presque toujours.</li>
+      <li><b>Intervalle central</b> : un intervalle bilatéral - &quot;l'activité est comprise entre
+      L et U à ce niveau de confiance&quot;.</li>
+    </ul>
+    <p>
+      Notez que les deux racines trouvées à un seuil unilatéral ne forment <b>pas</b> un intervalle
+      central : ensemble elles ne couvrent qu'environ 2&times;N.C.&minus;1, si bien que deux bornes
+      unilatérales à 95% font à peu près un intervalle central à 90%.  Lorsque cela se produit, le
+      résultat le dit au lieu de parler d'intervalle.
+    </p>
+    <p>
+      Sur un spectre sans signal, un intervalle central bute généralement sur la frontière physique
+      à zéro, si bien que seule la borne supérieure existe ; il est alors rapporté comme
+      &quot;entre 0 et U&quot;.  Ce n'est <b>pas</b> la même chose qu'une limite supérieure
+      unilatérale au même niveau de confiance : la borne se situe à un seuil plus élevé, ce qui en
+      fait une borne unilatérale à (1+N.C.)/2.
+    </p>
+  </message>
+
+  <!-- Durée de mesure planifiée -->
+  <message id="dl-plan-time-cb">Durée mes. :</message>
+  <message id="dl-plan-time-cb-short">Mes. 🕐</message>
+  <message id="dl-plan-time-empty-text">p. ex. 5 min</message>
+  <message id="dl-plan-time-tt">
+    La durée sur laquelle porte votre question.  Un seul contrôle, mais il atteint le calcul par deux
+    voies différentes :
+    <ul>
+      <li>Pour la méthode Currie, et quand la limite décrit le spectre chargé, les comptes par canal
+      du spectre sont projetés à ce temps réel (et le temps vivant dans le même rapport, de sorte que
+      la fraction de temps mort est conservée).</li>
+      <li>Quand le spectre est une <b>référence de fond</b>, les comptes de la référence sont laissés
+      tels quels et ceci devient l'exposition de la mesure future prédite - la statistique de comptage
+      propre à la référence est ainsi reportée dans la réponse au lieu d'être ignorée.</li>
+    </ul>
+    <p>
+      Projeter le spectre prédit bien la limite <b>typique</b> de la nouvelle mesure ; ce qui est
+      sous-estimé, c'est la <b>dispersion</b> autour d'elle.  Les comptes mis à l'échelle sont
+      traités comme poissonniens de variance égale au compte mis à l'échelle, ce qui revient à
+      affirmer que le taux du spectre chargé est connu exactement ; en réalité la projection hérite
+      aussi du bruit de comptage de ce spectre.  Mesurée face à de vraies mesures tirées d'un fond de
+      11,5 heures, la médiane de la limite Currie projetée est restée à moins de 4% de ce qu'a donné
+      la mesure sur une plage d'un facteur 64, tandis que la dispersion réelle autour d'elle était
+      environ 1,6&#215; plus large que celle sous-entendue à k&#160;=&#160;1 et environ 4&#215; plus
+      large à k&#160;=&#160;16, où k est le temps saisi divisé par celui du spectre chargé.  Donc
+      jusqu'à k voisin de 1 c'est sans conséquence ; au-delà, lisez le nombre comme une estimation de
+      planification, pas comme une borne.
+    </p>
+    <p>
+      La voie de référence de fond ne met pas les comptes à l'échelle et n'a donc pas ce problème -
+      mais elle ne couvre que la limite par déconvolution.  Toute limite Currie affichée à côté reste
+      projetée, et l'avertissement ci-dessus s'y applique.
+    </p>
+  </message>
+  <message id="dl-err-bad-plan-time">Durée de mesure invalide - attendu quelque chose comme '5 min', '300 s' ou '00:05:00'.</message>
+
+  <!-- Formulation du résultat -->
+  <message id="dl-limit-upper">Moins de {1} à un N.C. de {2} (limite supérieure unilatérale), &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-predicted">Sensibilité prédite : moins de {1} à un N.C. de {2} pour une mesure de {3}, &chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central">Entre {1} et {2} à un N.C. central de {3}, &chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central-upper">Entre 0 et {1} à un N.C. central de {2}, &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-two-one-sided">Deux bornes unilatérales à {1} : {2} à {3} (couverture centrale ~{4}), &chi;<sup>2</sup>={5}</message>
+  <message id="dl-limit-distance-lower">Distance &ge;{1} à un N.C. de {2} (limite inférieure unilatérale), &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-none">Pas de limite : {1}</message>
+  <message id="dl-best-stat">Meilleur &chi;<sup>2</sup> de {1} à {2}, {3} DDL</message>
+  <message id="dl-best-stat-flat">&chi;<sup>2</sup> vaut {1} à grande distance, {2} DDL</message>
+
+  <message id="dl-stat-is-cash-tt">
+    La grandeur étiquetée ici &chi;<sup>2</sup> est la <b>statistique {1}</b> - une déviance de
+    Poisson, 2&middot;&sum;(E &minus; n + n&middot;ln(n/E)), sommée une fois par canal (Cash 1979).
+    Elle est employée à la place d'un &chi;<sup>2</sup> gaussien parce qu'elle n'a pas le biais de
+    variance de Neyman modifié et ne nécessite aucun plancher de variance pour les canaux vides.
+    <p>
+      Seules les <em>différences</em> entre activités d'essai sont significatives ; une différence
+      suit la même loi asymptotique en &chi;<sup>2</sup> qu'une différence gaussienne, et c'est ce
+      qui fixe le seuil de confiance.  Sa valeur absolue ne teste <b>pas</b> la qualité de
+      l'ajustement : E[statistique] n'est pas (canaux &minus; paramètres), donc un
+      &chi;<sup>2</sup>/DDL formé à partir des deux nombres affichés côte à côte n'est <b>pas</b>
+      une mesure de qualité d'ajustement et ne doit pas être lu comme telle.
+    </p>
+  </message>
+
+  <!-- Graphique -->
+  <message id="dl-chart-y-axis-chi2">χ²</message>
+  <message id="dl-chart-threshold-label">Seuil {1} (Δχ²={2})</message>
+  <message id="dl-migrate-nosig-notice">
+    L'état enregistré utilisait l'option de continuum retirée &quot;supposer qu'aucun signal n'est
+    présent&quot;.  Cette option affirmait que le spectre ne contient pas de signal, puis ignorait
+    l'incertitude de cette affirmation, ce qui a donné une couverture mesurée d'environ 40% là où 95%
+    était annoncé.  Elle a été rechargée comme un continuum flottant sur une mesure en référence de
+    fond, ce qu'elle cherchait à faire.  La durée de mesure désigne désormais celle de la mesure
+    future prédite, et non un rééchelonnage de ce spectre - vérifiez-la avant de vous fier au nombre.
+  </message>
+</messages>

@@ -9,25 +9,6 @@
   <message id="dlt-roi-lower-label">ROI Bawah:</message>
   <message id="dlt-roi-upper-label">ROI Atas:</message>
   <message id="dlt-continuum-label">Kontinuum</message>
-  <message id="dlt-cont-norm-label">Norm. Kont.</message>
-  <message id="dlt-cont-norm-floating">Mengambang</message>
-  <message id="dlt-cont-norm-fixed-edges">Tetap di tepi</message>
-  <message id="dlt-cont-norm-fixed-full-roi">Tetap ROI penuh</message>
-  <message id="dlt-cont-norm-tt">
-    Bagaimana normalisasi kontinuum harus ditentukan:
-    <ul><li><b>Mengambang</b>: Kontinuum polinomial disesuaikan, pada setiap aktivitas yang diberikan -
-    aktivitas mempengaruhi kontinuum.</li>
-    <li><b>Tetap di tepi</b>: Saluran di kedua sisi ROI digunakan untuk menentukan
-    kontinuum linier yang tetap, dan tidak terpengaruh oleh aktivitas nuklida.</li>
-    <li><b>Tetap ROI penuh</b>: Kontinuum disesuaikan menggunakan seluruh rentang energi ROI,
-    dengan asumsi amplitudo Gaussian nol; kemudian, komponen Gaussian dari puncak akan
-    berada di atas kontinuum tetap ini.<br/>
-    Ini secara efektif menyatakan bahwa Anda tahu tidak ada puncak sinyal yang ada dalam data.
-    Kontinuum tidak akan terpengaruh oleh nilai aktivitas nuklida, dan komponen
-    Gaussian dari puncak akan berada di atas kontinuum tetap ini saat mengevaluasi
-    &chi;<sup>2</sup>.</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">Batas Currie Puncak Tunggal</message>
   <message id="dlt-num-side-channels-label">Jumlah Saluran Samping</message>
   <message id="dlt-further-details-link">detail lebih lanjut...</message>
@@ -66,14 +47,6 @@
   <message id="dlt-distance-limit">Batas Jarak</message>
   <message id="dlt-peaks-disp-act-label">Puncak tampil. akt.:</message>
   <message id="dlt-peaks-disp-dist-label">Puncak tampil. jarak:</message>
-  <message id="dlt-conf-level-label">Tingkat Kepercayaan:</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68,2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95,4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99,7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">Garis gamma yang akan digunakan</message>
   <message id="dlt-min-rel-intensity-label">Intensitas relatif min.:</message>
   <message id="dlt-fit-fwhm-btn">Sesuaikan FWHM...</message>
@@ -188,4 +161,9 @@
   <message id="dlt-err-upper-limit-negative">Batas atas hitungan kurang dari nol, tetapi hitungan yang diamati lebih besar dari L_d.</message>
   <message id="dlt-err-activity-zero-negative">Aktivitas tidak boleh nol atau negatif</message>
   <message id="dlt-err-distance-zero-negative">Jarak tidak boleh nol atau negatif</message>
+  <message id="dlt-qr-tool-state-title">Status Alat Kepercayaan Deteksi</message>
+  <message id="dlt-qr-tool-state-txt">Status terkini alat kepercayaan deteksi.</message>
+  <message id="dlt-estimating-spread">Menghitung sebaran…</message>
+  <message id="dlt-spread-band">(biasanya {1}&ndash;{2}&times; nilai ini)</message>
+  <message id="dlt-spread-unavailable">Sebaran tidak dapat diperkirakan.</message>
 </messages>

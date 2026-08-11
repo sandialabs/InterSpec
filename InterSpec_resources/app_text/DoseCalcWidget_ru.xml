@@ -36,7 +36,6 @@
   <message id="dcw-generic-shield-invalid">Ошибка вычисления дозы, недействительное экранирование, извините :{</message>
   <message id="dcw-dist-invalid">Расстояние недействительно.</message>
   <message id="dcw-err-other">Ошибка вычисления дозы от источника, извините :{</message>
-  <message id="dcw-invalid-src-dose">Недействительная доза источника.</message>
   <message id="dcw-invalid-src-act">Недействительная активность источника.</message>
   <message id="dcw-invalid-src-dose">Недействительная доза источника.</message>
   <message id="dcw-failed-find-lower-dist">Не удалось найти нижнее граничное расстояние в {1} см.</message>

@@ -43,7 +43,6 @@
   <message id="bgw-reports-write-csv">CSV resumen</message>
   <message id="bgw-reports-write-csv-tooltip">Escribir un archivo CSV resumen con resultados del análisis de todos los archivos de entrada.</message>
   <message id="bgw-reports-write-custom-per-file">Personalizado por archivo</message>
-  <message id="bgw-reports-write-custom-per-file-tooltip">Subir una plantilla de reporte personalizada para usar con cada archivo.</message>
   <message id="bgw-reports-write-custom-summary">Resumen personalizado</message>
   <message id="bgw-reports-write-custom-summary-tooltip">Uno o más archivos de plantilla usados para proporcionar un resumen de todos los archivos de entrada.</message>
 
@@ -58,7 +57,6 @@
   <message id="bgw-no-ana-act-shield-invalid-background">Fondo inválido</message>
   <message id="bgw-no-ana-no-input-files">Sin archivos de entrada.</message>
   <message id="bgw-no-ana-invalid-output-path">Por favor seleccione un directorio de salida válido.</message>
-
 
   <!-- Analysis progress and results -->
   <message id="bgw-performing-work-title">Realizando trabajo</message>
@@ -136,5 +134,4 @@ Un valor cero o negativo significará sin requerimiento, y tampoco requerimiento
   <!-- Error and completion messages -->
   <message id="bgw-no-exemplar-msg">Sin espectro ejemplar disponible. Por favor seleccione un espectro de primer plano o suba un archivo ejemplar.</message>
 </messages>
-
 

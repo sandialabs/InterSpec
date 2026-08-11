@@ -82,7 +82,6 @@
   <message id="rpd-tbl-hdr-tt-trans">Nucléide réel qui s'est désintégré pour donner cette particule.</message>
   <message id="rpd-tbl-hdr-tt-trans-mode">Mode de désintégration du nucléide parent, qui a produit cette particule.</message>
   <message id="rpd-tbl-hdr-tt-type">Le type de particule produite</message>
-  <message id="rpd-tbl-hdr-tt-"></message>
 
   <!-- Fit Sources (peak fitting from displayed reference lines) -->
   <message id="rpd-fit-source">Ajuster la source</message>

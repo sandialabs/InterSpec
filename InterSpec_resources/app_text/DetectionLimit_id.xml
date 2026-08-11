@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Terjemahan DetectionLimit.xml -->
+
+  <message id="dl-conf-95">95%</message>
+  <message id="dl-conf-99">99%</message>
+  <message id="dl-conf-1sigma">68,27%</message>
+  <message id="dl-conf-2sigma">95,45%</message>
+  <message id="dl-conf-3sigma">99,73%</message>
+  <message id="dl-conf-4sigma">99,9937%</message>
+  <message id="dl-conf-5sigma">99,999943%</message>
+  <message id="dl-conf-level-one-sided">T.K. satu sisi:</message>
+  <message id="dl-conf-level-central">T.K. sentral:</message>
+  <message id="dl-conf-level-one-sided-short">T.K. 1-sisi:</message>
+  <message id="dl-conf-level-tt">
+    Tingkat kepercayaan yang digunakan untuk menyatakan batas ini.
+    <p>
+      Lima nilai yang tidak bulat adalah probabilitas normal sentral untuk 1&sigma; sampai 5&sigma;
+      (68,27%, 95,45%, 99,73%, 99,9937%, 99,999943%), tetapi di sini diterapkan sebagai tingkat
+      kepercayaan <b>satu sisi</b>.  Karena itu pilihan &quot;1&sigma;&quot; bukanlah batas satu sisi
+      sebesar satu sigma - nilai-nilai ini disediakan karena angkanya sudah dikenal, bukan karena
+      batasnya merupakan kelipatan sigma tertentu.
+    </p>
+  </message>
+
+  <!-- Perlakuan kontinum -->
+  <message id="dl-cont-norm-label">Norm. Kont.:</message>
+  <message id="dl-cont-norm-floating">Mengambang</message>
+  <message id="dl-cont-norm-edges">Ditambatkan oleh kanal samping</message>
+  <message id="dl-cont-norm-edges-short">Dari samping</message>
+  <message id="dl-cont-norm-tt">
+    Dari mana pengetahuan tentang latar di bawah puncak berasal - dan dengan demikian apa yang Anda
+    nyatakan.  Ini pertanyaan yang berbeda dari <i>pengukuran mana</i> yang digambarkan oleh batas
+    tersebut; lihat opsi pengukuran.
+    <ul>
+      <li><b>Mengambang</b>: kontinum disimpulkan dari kanal-kanal yang sama yang mungkin memuat
+      sinyal, sehingga tidak ada asumsi tentang daerah sekitarnya.  Kelebihan yang lebar atau seragam
+      terserap ke dalam kontinum, sehingga hanya kelebihan yang benar-benar berbentuk puncak yang
+      dihitung sebagai sinyal - inilah uji yang lebih ketat untuk &quot;apakah itu benar-benar
+      puncak?&quot;.  Pilihan bawaan, dan yang paling tervalidasi.</li>
+      <li><b>Ditambatkan oleh kanal samping</b>: latar diukur pada kanal-kanal di samping wilayah lalu
+      dibawa masuk, yang menyatakan bahwa bahu-bahu tersebut tidak memuat sinyal dan bahwa kontinum
+      melewatinya secara lurus.  Wilayah yang sekadar lebih tinggi daripada bahunya kini terhitung
+      sebagai sinyal, berbentuk puncak atau tidak.  Membutuhkan kontinum linear: empat tambah empat
+      kanal samping nyaris tidak cukup menentukan sebuah titik potong dan kemiringan.</li>
+    </ul>
+    <p>
+      Penambatan menambah informasi, sehingga biasanya memberi batas yang lebih sempit - tetapi angka
+      yang lebih sempit tidak otomatis lebih baik.  Mode mengambang cenderung salah ke arah batas yang
+      <em>lebih lebar</em>; penambatan cenderung salah ke arah batas yang <em>keliru</em>, ke arah
+      mana pun, jika garis tetangga, undakan, atau kelengkungan membuat bahu tidak representatif.
+      Gunakan Mengambang secara bawaan, dan gunakan kanal samping bila wilayahnya bersih sepanjang
+      beberapa FWHM di kedua sisi dan tambahan sensitivitasnya sepadan dengan pernyataan itu.
+    </p>
+    <p>
+      Perhatikan bahwa ketidakpastian pencacahan bahu itu sendiri ikut dirambatkan dalam likelihood,
+      sehingga penambatan yang lemah secara jujur melebarkan batas alih-alih berpura-pura kontinumnya
+      sudah diketahui.
+    </p>
+  </message>
+
+  <!-- Model pengukuran -->
+  <message id="dl-model-label">Pengukuran:</message>
+  <message id="dl-model-current">Spektrum saat ini</message>
+  <message id="dl-model-backref">Referensi latar</message>
+  <message id="dl-model-backref-cb">Referensi latar</message>
+  <message id="dl-model-tt">
+    Pengukuran mana yang dinyatakan oleh batas ini.
+    <ul>
+      <li><b>Spektrum saat ini</b>: seberapa banyak sinyal yang mungkin tersembunyi dalam spektrum
+      yang Anda miliki.  Kasus yang biasa.</li>
+      <li><b>Referensi latar</b>: spektrum yang dimuat dinyatakan tidak memuat sinyal, dan dipakai
+      untuk memprediksi apa yang dapat dideteksi oleh pengukuran <i>mendatang</i>.  Cacahan referensi
+      dan pengukuran yang diproyeksikan dinilai bersama-sama, berbagi satu kontinum, sehingga
+      statistik pencacahan referensi itu sendiri ikut dirambatkan ke dalam jawaban alih-alih
+      diabaikan.</li>
+    </ul>
+    <p>
+      Hasil referensi latar adalah <b>sensitivitas terprediksi</b>, bukan batas atas untuk spektrum
+      yang ada di tangan, dan dilaporkan sebagaimana adanya.  Ini adalah harapan median: tidak ada
+      pengukuran mendatang yang dapat diamati, sehingga prediksi dibuat pada cacahan yang diharapkan.  Itu berlaku selama waktu yang dimasukkan sekitar sama dengan spektrum ini atau lebih pendek; jauh melampaui itu hasilnya terbaca optimistis, sekitar sepertiga pada 16 kali, karena setiap ketidakcocokan antara kontinum sebenarnya di daerah itu dan garis lurus yang dicocokkan padanya tumbuh seiring paparan, sedangkan derau pencacahan hanya tumbuh sebagai akarnya.
+    </p>
+  </message>
+  <message id="dl-model-backref-tt">
+    Menyatakan bahwa spektrum ini tidak memuat sinyal, dan memakainya untuk memprediksi apa yang dapat
+    dideteksi oleh pengukuran mendatang.
+    <p>
+      Hasilnya adalah <b>sensitivitas terprediksi</b> untuk pengukuran selama waktu yang direncanakan,
+      bukan batas atas untuk spektrum ini.  Statistik pencacahan referensi itu sendiri ikut
+      dirambatkan ke dalam jawaban, sehingga latar yang singkat memberi prediksi yang setimpal lebih
+      lemah.
+    </p>
+  </message>
+
+  <!-- Jenis batas -->
+  <message id="dl-limittype-label">Batas:</message>
+  <message id="dl-limittype-upper">Batas atas</message>
+  <message id="dl-limittype-central">Selang sentral</message>
+  <message id="dl-limittype-tt">
+    Besaran mana yang dilaporkan.  Keduanya produk yang berbeda dan memakai ambang yang berbeda pada
+    statistiknya, sehingga pilihannya dinyatakan secara eksplisit, bukan ditebak.
+    <ul>
+      <li><b>Batas atas</b>: batas satu sisi - &quot;aktivitasnya kurang dari U pada tingkat
+      kepercayaan ini&quot;.  Hampir selalu inilah yang diinginkan.</li>
+      <li><b>Selang sentral</b>: selang dua sisi - &quot;aktivitasnya antara L dan U pada tingkat
+      kepercayaan ini&quot;.</li>
+    </ul>
+    <p>
+      Perhatikan bahwa dua akar yang ditemukan pada ambang satu sisi <b>tidak</b> membentuk selang
+      sentral: bersama-sama keduanya hanya mencakup sekitar 2&times;T.K.&minus;1, sehingga dua batas
+      satu sisi 95% membentuk kira-kira selang sentral 90%.  Bila hal itu terjadi, hasilnya
+      menyatakan demikian alih-alih menyebutnya selang.
+    </p>
+    <p>
+      Pada spektrum tanpa sinyal, selang sentral biasanya menabrak batas fisik di nol, sehingga hanya
+      ujung atasnya yang ada; hasilnya lalu dilaporkan sebagai &quot;antara 0 dan U&quot;.  Itu
+      <b>bukan</b> hal yang sama dengan batas atas satu sisi pada kepercayaan yang sama - ujung
+      tersebut berada pada ambang yang lebih tinggi, sehingga menjadikannya batas satu sisi
+      (1+T.K.)/2.
+    </p>
+  </message>
+
+  <!-- Waktu pengukuran yang direncanakan -->
+  <message id="dl-plan-time-cb">Waktu ukur:</message>
+  <message id="dl-plan-time-cb-short">Ukur 🕐</message>
+  <message id="dl-plan-time-empty-text">mis. 5 menit</message>
+  <message id="dl-plan-time-tt">
+    Lama pencacahan yang Anda tanyakan.  Satu kendali, tetapi masuk ke perhitungan lewat dua cara yang
+    berbeda:
+    <ul>
+      <li>Untuk metode Currie, dan ketika batas menggambarkan spektrum yang dimuat, cacahan tiap kanal
+      pada spektrum diproyeksikan ke waktu nyata ini (dan waktu hidup dengan rasio yang sama, sehingga
+      fraksi waktu mati tetap terjaga).</li>
+      <li>Ketika spektrum berupa <b>referensi latar</b>, cacahan referensi dibiarkan apa adanya dan
+      nilai ini menjadi paparan pengukuran mendatang yang diprediksi - sehingga statistik pencacahan
+      referensi itu sendiri ikut dirambatkan ke dalam jawaban alih-alih diabaikan.</li>
+    </ul>
+    <p>
+      Memproyeksikan spektrum memprediksi batas <b>tipikal</b> pengukuran baru dengan baik; yang
+      diremehkan adalah <b>sebaran</b> di sekitarnya.  Cacahan hasil penskalaan diperlakukan sebagai
+      Poisson dengan ragam sama dengan cacahan tersebut, yang berarti menganggap laju cacah spektrum
+      yang dimuat diketahui secara persis; kenyataannya proyeksi juga mewarisi derau pencacahan
+      spektrum itu.  Diukur terhadap pengukuran nyata yang diambil dari latar 11,5 jam, median batas
+      Currie terproyeksi berada dalam 4% dari apa yang diberikan pencacahan sebenarnya pada rentang
+      64 kali lipat, sementara sebaran sebenarnya sekitar 1,6&#215; lebih lebar dari yang tersirat
+      pada k&#160;=&#160;1 dan sekitar 4&#215; lebih lebar pada k&#160;=&#160;16, dengan k adalah
+      waktu yang dimasukkan dibagi waktu spektrum yang dimuat.  Jadi k sampai sekitar 1 aman; di
+      atas itu perlakukan angkanya sebagai perkiraan perencanaan, bukan batas.
+    </p>
+    <p>
+      Jalur referensi latar tidak menskalakan cacahan sehingga tidak punya masalah itu - tetapi hanya
+      mencakup batas dekonvolusi.  Batas Currie mana pun yang ditampilkan di sebelahnya tetap
+      terproyeksi, dan peringatan di atas berlaku untuknya.
+    </p>
+  </message>
+  <message id="dl-err-bad-plan-time">Waktu pengukuran tidak valid - diharapkan sesuatu seperti '5 menit', '300 s', atau '00:05:00'.</message>
+
+  <!-- Kalimat hasil -->
+  <message id="dl-limit-upper">Kurang dari {1} pada T.K. {2} (batas atas satu sisi), &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-predicted">Sensitivitas terprediksi: kurang dari {1} pada T.K. {2} untuk pengukuran {3}, &chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central">Antara {1} dan {2} pada T.K. sentral {3}, &chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central-upper">Antara 0 dan {1} pada T.K. sentral {2}, &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-two-one-sided">Dua batas satu sisi {1}: {2} sampai {3} (cakupan sentral ~{4}), &chi;<sup>2</sup>={5}</message>
+  <message id="dl-limit-distance-lower">Jarak &ge;{1} pada T.K. {2} (batas bawah satu sisi), &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-none">Tidak ada batas: {1}</message>
+  <message id="dl-best-stat">&chi;<sup>2</sup> terbaik {1} pada {2}, {3} DK</message>
+  <message id="dl-best-stat-flat">&chi;<sup>2</sup> bernilai {1} pada jarak besar, {2} DK</message>
+
+  <message id="dl-stat-is-cash-tt">
+    Besaran yang diberi label &chi;<sup>2</sup> di sini adalah <b>statistik {1}</b> - sebuah deviance
+    Poisson, 2&middot;&sum;(E &minus; n + n&middot;ln(n/E)), dijumlahkan sekali per kanal (Cash 1979).
+    Besaran ini dipakai menggantikan &chi;<sup>2</sup> Gauss karena tidak memiliki bias ragam
+    Neyman-termodifikasi dan tidak memerlukan batas bawah ragam untuk kanal kosong.
+    <p>
+      Hanya <em>selisih</em> antar aktivitas uji yang bermakna; sebuah selisih mengikuti hukum
+      asimtotik &chi;<sup>2</sup> yang sama seperti selisih Gauss, dan itulah yang menetapkan ambang
+      kepercayaan.  Nilai mutlaknya <b>tidak</b> menguji kecocokan model: E[statistik] tidak sama
+      dengan (kanal &minus; parameter), sehingga &chi;<sup>2</sup>/DK yang dibentuk dari dua angka
+      yang ditampilkan bersebelahan <b>bukan</b> ukuran kecocokan model dan tidak boleh dibaca
+      demikian.
+    </p>
+  </message>
+
+  <!-- Grafik -->
+  <message id="dl-chart-y-axis-chi2">χ²</message>
+  <message id="dl-chart-threshold-label">Ambang {1} (Δχ²={2})</message>
+  <message id="dl-migrate-nosig-notice">
+    Keadaan yang tersimpan memakai opsi kontinum yang sudah ditarik, &quot;anggap tidak ada sinyal&quot;.
+    Opsi itu menyatakan bahwa spektrum tidak memuat sinyal lalu mengabaikan ketidakpastian pernyataan
+    tersebut, yang terukur memberi cakupan sekitar 40% padahal 95% yang diklaim.  Keadaan itu telah
+    dimuat ulang sebagai kontinum mengambang pada pengukuran referensi latar, yang memang menjadi
+    tujuannya.  Waktu pengukuran kini berarti lama pengukuran mendatang yang diprediksi, bukan
+    penskalaan ulang spektrum ini - periksa dulu sebelum mengandalkan angkanya.
+  </message>
+</messages>

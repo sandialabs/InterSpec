@@ -5,7 +5,6 @@
   <message id="dls-fit-fwhm-btn">Ajustar FWHM...</message>
   <message id="dls-select-drf-btn">Seleccionar detector...</message>
   <message id="dls-further-details-link">más detalles...</message>
-  <message id="dls-conf-level-label">Nivel de confianza:</message>
   <message id="dls-roi-lower-label">ROI inferior:</message>
   <message id="dls-roi-upper-label">ROI superior:</message>
   <message id="dls-num-side-channel-label">Núm. canales lat.:</message>
@@ -20,9 +19,6 @@
       La opción de elegir canales laterales adyacentes a la región del pico ya no es relevante, así que se ocultará.
     </p>
   </message>
-  <message id="dls-cont-norm-unknown">Flotante</message>
-  <message id="dls-cont-norm-not-present">Como sin señal</message>
-  <message id="dls-cont-norm-fixed-by-sides">De los lados</message>
   <message id="dls-roi-changed-no-gamma">Cambiar la ROI excluyó el gamma primario - no se cambia</message>
   <message id="dls-suggest-fwhm">FWHM del detector: {1} keV</message>
   <message id="dls-rough-est-fwhm">Est. aprox. FWHM: {1} keV</message>
@@ -59,6 +55,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">Pico para límite superior de {1} @{2} CL</message>
   <message id="dls-results-txt-upper-bound-act">Menos de {1} @{2} CL</message>
+  <message id="dls-results-txt-predicted-act">Sensibilidad predicha: menos de {1} con N.C. {2} para una medición de {3}</message>
+  <message id="dls-results-txt-predicted-counts">Sensibilidad predicha: menos de {1} cuentas de señal con N.C. {2} para una medición de {3}</message>
+  <message id="dls-chart-title-predicted-act">Pico para sensibilidad predicha de {1} @{2} CL</message>
+  <message id="dls-chart-title-predicted-counts">Pico para sensibilidad predicha de {1} cuentas @{2} CL</message>
   <message id="dls-chart-title-upper-bound-counts">Pico para límite superior de {1} cuentas @{2} CL</message>
   <message id="dls-results-txt-upper-bound-counts">Menos de {1} cuentas de señal presentes @{2} CL</message>
   <message id="dls-err-no-meas">Sin medición disponible</message>
@@ -83,9 +83,13 @@
   <message id="dls-err-select-det">Por favor seleccione una función de eficiencia del detector.</message>
   <message id="dls-err-neg-distance">La distancia no puede ser negativa.</message>
   <message id="dls-err-no-fwhm-info">La función de eficiencia del detector no tiene información FWHM - por favor ajuste para FWHM, o cambie detector.</message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
+  <message id="dls-is-background-spectrum-cb-short">¿Fondo?</message>
+  <message id="dls-num-side-channel-label-short">N.º can. lat.:</message>
+  <message id="dls-result-projected-band"> (típicamente {1}&ndash;{2}&times; este valor)</message>
+  <message id="dls-roi-lower-label-short">Inferior:</message>
+  <message id="dls-roi-upper-label-short">Superior:</message>
+  <message id="dls-scale-more-info-note">
+    Escalado a un tiempo real de {1} (tiempo vivo {2}, proporción &times;{3} del tiempo real de la medición {4}).
+  </message>
 </messages>
-
 
