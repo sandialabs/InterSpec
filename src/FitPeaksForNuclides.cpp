@@ -12049,6 +12049,13 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
   std::vector<double> interferer_guard_energies;
   std::vector<detail::InterfererCandidate> interferer_candidates;
 
+  // Energies (original spectrum cal) of existing user peaks carried into the fit as bystander
+  // FloatingPeaks.  Their identity is reported by the bystander itself after the solve (either the
+  // FloatingPeakResult-updated copy we append to `observable_peaks`, or the users untouched
+  // original when it could not be updated), so the corresponding unassigned model peak must not
+  // ALSO be reported - see `is_carried_bystander_float` in the result-filter block.
+  std::vector<double> carried_bystander_float_energies;
+
   // Create RelActAuto options from config
   RelActCalcAuto::Options options;
   if( !rel_eff_curve.nuclides.empty() )
@@ -12254,6 +12261,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
               options.floating_peaks.push_back( fp );
 
               default_mode_bystander_peaks.emplace_back( p, p->mean() );
+              carried_bystander_float_energies.push_back( p->mean() );
             }
           }
 
@@ -12774,6 +12782,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           // the fitted energy-cal adjustment with source peaks instead of forming a shifted doublet.
           fp.energy_origin = RelActCalcAuto::FloatingPeak::EnergyType::Known;
           options.floating_peaks.push_back( fp );
+          carried_bystander_float_energies.push_back( peak_energy );
         }
         existing_peaks_added_as_floating.emplace_back( peak, peak_energy );
       }
@@ -15895,6 +15904,26 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       return false;
     };//is_auto_interferer lambda
 
+    /** True if `peak` is just the model's stand-in for an existing user peak we carried into the
+     fit as a bystander FloatingPeak.  Such a peak has no source assigned (the fit does not know
+     what the bystander was), and the bystander is reported separately - with its source, color and
+     label intact - by the bystander blocks further below.  Reporting both would put two peaks a
+     fraction of a FWHM apart into the user's peak list for one physical line.
+     */
+    const auto is_carried_bystander_float = [&]( const PeakDef &peak ) -> bool {
+      if( peak.hasSourceGammaAssigned() )
+        return false;
+      // Wide enough to cover the fitted mean drifting off the enrolled energy, but still well
+      //  inside one peak width, at any detector resolution.
+      const double tol = std::max( 1.0, 0.5*peak.fwhm() );
+      for( const double energy : carried_bystander_float_energies )
+      {
+        if( std::fabs(peak.mean() - energy) < tol )
+          return true;
+      }
+      return false;
+    };//is_carried_bystander_float lambda
+
     const auto is_rescued_source_peak = [&]( const PeakDef &peak ) -> bool {
       if( !is_input_source(peak) )
         return false;
@@ -16119,6 +16148,13 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     result.uncombined_fit_peaks = public_peaks_only( full_uncombined_peaks );
     result.fit_peaks = public_peaks_only( full_combined_peaks );
     result.observable_peaks = public_peaks_only( full_observable_peaks );
+
+    // Drop the model stand-ins for carried bystanders; the bystander blocks below append the real
+    //  thing (or deliberately leave the user's original peak in place).
+    result.observable_peaks.erase(
+      std::remove_if( std::begin(result.observable_peaks), std::end(result.observable_peaks),
+                      is_carried_bystander_float ),
+      std::end(result.observable_peaks) );
 
     // Sort observable_peaks by mean energy for deterministic ordering.
     // compute_observable_peaks processes ROIs via a map keyed by continuum
