@@ -127,7 +127,7 @@
   <message id="esfcam-write-spectrum-tt">Write the channel counts into the file.  Un-check to produce a nuclide-library / calibration-only CAM file, of the same kind GENIE&apos;s Library Editor makes.  The energy calibration is always written along with a spectrum, so it only becomes a separate option when this is un-checked.</message>
 
   <message id="esfcam-write-peaks">Write peaks</message>
-  <message id="esfcam-write-peaks-tt">Write the fitted peaks (energy, centroid, FWHM, area and continuum) into the file&apos;s peak block, so GENIE sees the same peaks InterSpec fitted.  Only Gaussian peaks are written.  Note: this write path has not been verified against real GENIE software.</message>
+  <message id="esfcam-write-peaks-tt">Write the fitted peaks (energy, centroid, FWHM, area and continuum) into the file&apos;s peak block, so GENIE sees the same peaks InterSpec fitted.  Only Gaussian peaks are written.</message>
 
   <!-- Nuclide library -->
   <message id="esfcam-write-library">Write nuclide library</message>
@@ -180,5 +180,5 @@
   <message id="esfcam-warn-decayed-away">{1} has completely decayed away at the age used, so no line yields could be computed for it.</message>
   <message id="esfcam-warn-eff-points-dropped">{1} efficiency point(s) were left out because the absolute efficiency there is negligible at the given distance.</message>
   <message id="esfcam-warn-no-yield">Could not determine the yield of the {1} line at {2} keV; it will not be included.</message>
-  <message id="esfcam-warn-eff-not-dual">The detector response function&apos;s efficiency formula could not be well-represented by GENIE&apos;s DUAL curve form; writing the sampled efficiency points for GENIE to interpolate between instead.</message>
+  <message id="esfcam-warn-eff-not-fit">The detector response function&apos;s efficiency could not be well-represented by GENIE&apos;s fitted curve form; writing the efficiency points for GENIE to interpolate between instead.</message>
 </messages>

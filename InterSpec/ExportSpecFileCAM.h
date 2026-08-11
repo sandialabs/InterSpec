@@ -238,18 +238,58 @@ namespace ExportSpecFileCAM
   /** The result of converting a `DetectorPeakResponse`'s efficiency function into the closest
    available Genie efficiency model.
 
-   Note: `CAMIO`'s GEOM-block write support (see `AddEfficiencyPoint(s)`) only writes tabulated
-   (energy, efficiency) points - not persisted polynomial coefficients (the Genie 2000
-   Customization Tools Manual describes coefficient parameters like `CAM_F_DHCALFAC1`, but their
-   on-disk layout isn't known to this code, and `CAMIO`'s read-side implementation of
-   `GetEfficiencyPoints()` only ever extracts points too) - so regardless of `model`, Genie is
-   expected to (re)derive its internal fit from `points` using the algorithm named by `model`.
+   Genie derives its own efficiency fit from the calibration points, weighting each by
+   `1/sigma_rel^2`, so `points` always carries a non-zero uncertainty (see
+   `genie_default_eff_uncertainty(...)`) - with zero uncertainties that fit is undefined and Genie
+   can only offer its "Interpolated" model.  `fit_coeffs` is that same fit, written into the file
+   so the curve is there whether or not Genie recomputes it; see `CAMIO::AddEfficiencyFit(...)`.
    */
   struct GenieEfficiencyResult
   {
     CAMInputOutput::CAMIO::EfficiencyModel model = CAMInputOutput::CAMIO::EfficiencyModel::Unknown;
     std::vector<CAMInputOutput::EfficiencyPoint> points;
+
+    /** Coefficients of `ln(eff) = sum_i{ fit_coeffs[i] * ln(energy/keV)^i }`; empty when the
+     points could not be fit well, in which case `model` is `INTERPOL`.
+     */
+    std::vector<float> fit_coeffs;
+    /** `E0` the fit's Empirical display form is expressed about; see
+     `CAMIO::sm_geom_default_fit_ref_energy`.
+     */
+    float fit_reference_energy = 0.0f;
+    /** Reduced chi-square of that fit. */
+    float fit_chi_square = 1.0f;
+    /** Name of the detector response the curve came from; GENIE keeps a description alongside its
+     own efficiency calibrations.
+     */
+    std::string detector_name;
   };//struct GenieEfficiencyResult
+
+
+  /** The relative efficiency uncertainty to report for a calibration point at `energy` (keV),
+   when the detector response function does not carry one of its own (none currently do).
+
+   Genie weights its efficiency fit by `1/sigma_rel^2`, so these do more than document precision -
+   they set the shape of the curve Genie fits, and a zero would make that fit undefined.  The
+   steps track what Genie itself carries in a real efficiency calibration: 15% below 55 keV, then
+   10%, 8%, 6% and 4% as energy rises.
+   */
+  float genie_default_eff_uncertainty( const float energy );
+
+
+  /** Fits `ln(eff) = sum_i{ coeffs[i]*ln(energy)^i }` to efficiency calibration points, weighted
+   by `1/rel_uncerts^2` - the curve GENIE derives from the points of its own GEOM block, and what
+   `CAMIO::AddEfficiencyFit(...)` writes.
+
+   @param energies Point energies, in keV.
+   @param efficiencies Absolute efficiencies at those energies; all must be > 0.
+   @param rel_uncerts Relative uncertainty of each efficiency; pass empty for an unweighted fit.
+   @param order Polynomial order; there must be at least `order+1` points.
+   */
+  std::vector<double> fit_genie_efficiency_curve( const std::vector<double> &energies,
+                                                  const std::vector<double> &efficiencies,
+                                                  const std::vector<double> &rel_uncerts,
+                                                  const size_t order );
 
   /** The GENIE low-tail parameter `T` (in keV) equivalent to a peak's skew, or a negative value
    if the peak has no skew this maps onto.
@@ -275,29 +315,47 @@ namespace ExportSpecFileCAM
    Channel numbers and the centroid come from `energy_cal`; if it is null or invalid, the
    channel-based fields are left zero.
 
-   Note: see `CAMIO::AddPeak(...)` - the PEAK write path is experimental and its per-field
-   layout has not been validated against real GENIE software.
+   Note: see `CAMIO::AddPeak(...)` - real GENIE reads the regions of interest out of files written
+   this way, but what the per-peak values look like in its own peak report has not been checked.
 
    @param peaks The fitted peaks to convert.
    @param energy_cal The energy calibration of the spectrum being written, used to convert
           energies to channel numbers.
    @param live_time_s Live time in seconds, used for the count-rate fields; count rates are left
           zero if this is not positive.
+   @param efficiency The efficiency curve being written into the same file, if any; each peak
+          records the curve's value at its energy, exactly as GENIE does.  Pass null when no
+          efficiency is being written, and those fields are left zero - which is also what a
+          GENIE file without an efficiency calibration has.
+   @param data The spectrum the peaks were fit to.  A stepped continuum's area cannot be computed
+          without it (`PeakContinuum::offset_integral(...)` throws), so ROIs with a stepped
+          continuum are written with a continuum area of zero when this is null.
    */
   std::vector<CAMInputOutput::Peak> to_cam_peaks(
               const std::deque<std::shared_ptr<const PeakDef>> &peaks,
               const std::shared_ptr<const SpecUtils::EnergyCalibration> &energy_cal,
-              const float live_time_s );
+              const float live_time_s,
+              const GenieEfficiencyResult * const efficiency = nullptr,
+              const std::shared_ptr<const SpecUtils::Measurement> &data = nullptr );
+
+
+  /** Evaluates the efficiency curve `convert_efficiency_to_genie(...)` produced, at `energy` (keV):
+   from its fitted coefficients when it has them, otherwise by interpolating its points in log-log
+   space (which is what GENIE's "Interpolated" model does).  Returns 0 outside the points' range,
+   or if there is nothing to evaluate.
+   */
+  double genie_efficiency_at( const GenieEfficiencyResult &efficiency, const double energy );
 
 
   /** Converts a DetectorPeakResponse's efficiency into the closest available Genie efficiency
-   model, writing out sampled (energy, efficiency) points in all cases (see note on
-   `GenieEfficiencyResult`), tagged with the best-matching Genie model name:
-   - `kEnergyEfficiencyPairs` -> `SPLINE`, using the DRF's own tabulated point energies.
-   - `kExpOfLogPowerSeries` -> `DUAL`, Genie's own default model form for Ge/NaI detectors, and
-     algebraically the same functional family (points are sampled from the exact formula).
-   - `kFunctialEfficienyForm` -> points are sampled across the DRF's valid range, and tagged
-     `DUAL` if a ln(eff)-vs-ln(energy) polynomial fits those points well, else `SPLINE`.
+   model, writing out (energy, efficiency, uncertainty) points in all cases, plus the fitted
+   curve when the points support one:
+   - `kEnergyEfficiencyPairs` -> the DRF's own tabulated point energies.
+   - `kExpOfLogPowerSeries` and `kFunctialEfficienyForm` -> points sampled log-spaced across the
+     DRF's valid range.
+   In every case a weighted ln(eff)-vs-ln(energy) polynomial is fit to the points; if it describes
+   them well the model is tagged `EMPIRICAL` and its coefficients are written, otherwise the model
+   is `INTERPOL` and Genie interpolates between the points.
 
    Genie's efficiency curve is an *absolute* full-energy-peak efficiency - counts recorded per
    gamma emitted by the source, at the geometry the calibration was taken at - not InterSpec's
