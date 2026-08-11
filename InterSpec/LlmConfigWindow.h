@@ -117,6 +117,12 @@ private:
   /** Resolved wire format for a provider: explicit apiFormat, else auto-detected from the endpoint. */
   LlmConfig::LlmApi::ApiFormat resolvedFormat( size_t providerIndex ) const;
 
+#if( USE_NATIVE_HTTP_CLIENT )
+  /** Resolved HTTP transport for a provider: its own setting, else the `LlmApi`-level default,
+   else Browser.  Mirrors `LlmApi::httpTransport()`, which only answers for the active provider. */
+  LlmConfig::LlmApi::HttpBackend resolvedTransport( size_t providerIndex ) const;
+#endif
+
   // "Fetch models" browser-fetch + JSignal round-trip
   void installFetchJs();
   void requestFetchModels( size_t providerIndex );
@@ -154,6 +160,18 @@ private:
   Wt::WLineEdit *m_mcpToken;
   Wt::WPushButton *m_mcpTokenShow;
   Wt::WText *m_mcpTokenWarn;
+#endif
+
+#if( USE_NATIVE_HTTP_CLIENT )
+  // Network card - escape hatches for the native ("CORS fix") transport only.  Hidden behind a
+  //  checkbox; unchecking it clears them, so a stale override cannot lurk out of sight.
+  //  Declared here, after the MCP members, to match the constructor's initializer order.
+  Wt::WCheckBox *m_netOverride;
+  Wt::WContainerWidget *m_netDetail;
+  Wt::WLineEdit *m_netProxy;
+  Wt::WLineEdit *m_netCaBundle;
+  Wt::WCheckBox *m_netNoVerify;
+  Wt::WText *m_netNoVerifyWarn;
 #endif
 
   // Footer + XML preview

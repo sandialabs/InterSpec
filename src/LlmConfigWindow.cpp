@@ -59,6 +59,10 @@
 #include "InterSpec/InterSpecServer.h"
 #include "InterSpec/LlmConfigWindow.h"
 
+#if( USE_NATIVE_HTTP_CLIENT )
+#include "InterSpec/NativeHttpClient.h"
+#endif
+
 using namespace std;
 using namespace Wt;
 
@@ -170,6 +174,14 @@ LlmConfigWindow::LlmConfigWindow( InterSpec *viewer,
     m_mcpToken( nullptr ),
     m_mcpTokenShow( nullptr ),
     m_mcpTokenWarn( nullptr ),
+#endif
+#if( USE_NATIVE_HTTP_CLIENT )
+    m_netOverride( nullptr ),
+    m_netDetail( nullptr ),
+    m_netProxy( nullptr ),
+    m_netCaBundle( nullptr ),
+    m_netNoVerify( nullptr ),
+    m_netNoVerifyWarn( nullptr ),
 #endif
     m_validationSummary( nullptr ),
     m_acceptBtn( nullptr ),
@@ -396,6 +408,112 @@ void LlmConfigWindow::buildUi()
   } ) );
   m_mcpDetail->setHidden( !m_working.mcpServer.enabled );
 
+#if( USE_NATIVE_HTTP_CLIENT )
+  // --- Network card ---
+  // Only meaningful for CORS-fix (native) requests: anything going out through the browser already
+  //  uses the system proxy and trust store, and we could not override those if we wanted to.
+  //  Collapsed behind a checkbox because the overwhelming majority of users must never touch it -
+  //  the defaults are "whatever this machine is configured to do", which is nearly always right.
+  WContainerWidget *netCard = new WContainerWidget( body );
+  netCard->addStyleClass( "LcwCard LcwMcpCard" );
+
+  WContainerWidget *netTop = new WContainerWidget( netCard );
+  netTop->addStyleClass( "LcwEnableRow" );
+  m_netOverride = new WCheckBox( WString(), netTop );
+  m_netOverride->addStyleClass( "LcwCheck" );
+  WContainerWidget *netText = new WContainerWidget( netTop );
+  netText->addStyleClass( "LcwLabelStack" );
+  WText *netTitle = new WText( WString::tr("lcw-net-title"), netText );
+  netTitle->addStyleClass( "LcwTitle" );
+  WText *netSub = new WText( WString::tr("lcw-net-sub"), netText );
+  netSub->addStyleClass( "LcwSubtle" );
+
+  m_netDetail = new WContainerWidget( netCard );
+  m_netDetail->addStyleClass( "LcwMcpDetail" );
+
+  WLabel *proxyLbl = new WLabel( WString::tr("lcw-net-proxy"), m_netDetail );
+  proxyLbl->addStyleClass( "LcwFieldLabel" );
+  m_netProxy = new WLineEdit( m_netDetail );
+  m_netProxy->addStyleClass( "LcwInput LcwMono" );
+  m_netProxy->setEmptyText( WString::tr("lcw-net-proxy-ph") );
+  m_netProxy->setText( WString::fromUTF8( m_working.llmApi.httpProxyUrl ) );
+
+  // Not every backend can honour an explicit proxy - Wt::Http::Client has no proxy support at
+  //  all, and NativeHttp::start() rejects the request outright rather than ignoring the setting.
+  //  Offering an editable field there would let a user break every CORS-fix provider in one
+  //  keystroke, so disable it and say why.
+  if( NativeHttp::supportsProxyOverride() )
+  {
+    m_netProxy->setToolTip( WString::tr("lcw-net-proxy-tip"), Wt::XHTMLText );
+  }else
+  {
+    m_netProxy->setEnabled( false );
+    m_netProxy->setEmptyText( WString::tr("lcw-net-proxy-unsupported-ph") );
+    m_netProxy->setToolTip( WString::tr("lcw-net-proxy-unsupported")
+                              .arg( WString::fromUTF8(NativeHttp::backendName()) ), Wt::XHTMLText );
+  }
+
+  m_netProxy->changed().connect( std::bind( [this](){
+    m_working.llmApi.httpProxyUrl = m_netProxy->text().toUTF8();
+    updateValidation();
+    refreshPreview();
+  } ) );
+
+  WLabel *caLbl = new WLabel( WString::tr("lcw-net-ca"), m_netDetail );
+  caLbl->addStyleClass( "LcwFieldLabel" );
+  m_netCaBundle = new WLineEdit( m_netDetail );
+  m_netCaBundle->addStyleClass( "LcwInput LcwMono" );
+  m_netCaBundle->setEmptyText( WString::tr("lcw-net-ca-ph") );
+  m_netCaBundle->setText( WString::fromUTF8( m_working.llmApi.httpCaBundlePath ) );
+  m_netCaBundle->setToolTip( WString::tr("lcw-net-ca-tip"), Wt::XHTMLText );
+  m_netCaBundle->changed().connect( std::bind( [this](){
+    m_working.llmApi.httpCaBundlePath = m_netCaBundle->text().toUTF8();
+    updateValidation();
+    refreshPreview();
+  } ) );
+
+  m_netNoVerify = new WCheckBox( WString::tr("lcw-net-noverify"), m_netDetail );
+  m_netNoVerify->addStyleClass( "LcwCheck" );
+  m_netNoVerify->setChecked( m_working.llmApi.httpDisableCertCheck );
+  m_netNoVerify->setToolTip( WString::tr("lcw-net-noverify-tip"), Wt::XHTMLText );
+  m_netNoVerifyWarn = new WText( WString::tr("lcw-net-noverify-warn"), m_netDetail );
+  m_netNoVerifyWarn->addStyleClass( "LcwError" );
+  m_netNoVerifyWarn->setHidden( !m_working.llmApi.httpDisableCertCheck );
+
+  m_netNoVerify->changed().connect( std::bind( [this](){
+    m_working.llmApi.httpDisableCertCheck = m_netNoVerify->isChecked();
+    // Only warn when the protection is actually off - a red banner sitting there permanently is
+    //  one people stop reading.
+    m_netNoVerifyWarn->setHidden( !m_netNoVerify->isChecked() );
+    updateValidation();
+    refreshPreview();
+  } ) );
+
+  m_netOverride->changed().connect( std::bind( [this](){
+    m_netDetail->setHidden( !m_netOverride->isChecked() );
+    if( !m_netOverride->isChecked() )
+    {
+      // Collapsing means "go back to the system defaults" - leaving a stale proxy or a disabled
+      //  certificate check hidden behind a closed panel would be a nasty surprise.
+      m_working.llmApi.httpProxyUrl.clear();
+      m_working.llmApi.httpCaBundlePath.clear();
+      m_working.llmApi.httpDisableCertCheck = false;
+      m_netProxy->setText( "" );
+      m_netCaBundle->setText( "" );
+      m_netNoVerify->setChecked( false );
+      m_netNoVerifyWarn->setHidden( true );
+    }
+    updateValidation();
+    refreshPreview();
+  } ) );
+
+  const bool anyNetOverride = !m_working.llmApi.httpProxyUrl.empty()
+                              || !m_working.llmApi.httpCaBundlePath.empty()
+                              || m_working.llmApi.httpDisableCertCheck;
+  m_netOverride->setChecked( anyNetOverride );
+  m_netDetail->setHidden( !anyNetOverride );
+#endif //USE_NATIVE_HTTP_CLIENT
+
   // --- XML preview (hidden until toggled) ---
   m_previewContainer = new WContainerWidget( body );
   m_previewContainer->addStyleClass( "LcwXmlPreview" );
@@ -572,6 +690,59 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
     updateValidation();
     refreshPreview();
   } ) );
+
+#if( USE_NATIVE_HTTP_CLIENT )
+  // "CORS fix" - one checkbox rather than a transport picker.  Which HTTP stack carries the
+  //  request is an implementation detail; what the user has to decide is whether this provider is
+  //  one the browser refuses to talk to.  The tooltip carries the explanation, including which
+  //  backend would actually be used, so the row stays quiet until someone needs it.
+  const bool nativeUsable = NativeHttp::available();
+
+  WContainerWidget *corsRow = new WContainerWidget( bodyc );
+  corsRow->addStyleClass( "LcwFormatRow" );
+
+  WCheckBox *corsCb = new WCheckBox( WString::tr("lcw-cors-fix"), corsRow );
+  corsCb->addStyleClass( "LcwCheck" );
+  corsCb->setChecked( resolvedTransport(pi) == LlmConfig::LlmApi::HttpBackend::Native );
+
+  if( nativeUsable )
+  {
+    corsCb->setToolTip( WString::tr("lcw-cors-fix-tip")
+                          .arg( WString::fromUTF8(NativeHttp::backendName()) ), Wt::XHTMLText );
+  }else
+  {
+    // Compiled in, but not usable - a Wt built without SSL cannot do https at all.  Leave the
+    //  box visible so the reason is discoverable, but only lock it when it is not already ticked:
+    //  a config carrying httpBackend="native" must stay correctable from here.
+    //  (When the option is compiled out entirely this whole row is absent, not disabled.)
+    corsCb->setEnabled( corsCb->isChecked() );
+    corsCb->setToolTip( WString::tr("lcw-cors-fix-unavail")
+                          .arg( WString::fromUTF8(NativeHttp::backendName()) ), Wt::XHTMLText );
+  }
+
+  corsCb->changed().connect( std::bind( [this,pi,corsCb](){
+    if( pi >= m_working.llmApi.providers.size() )
+      return;
+    ApiProvider &p = m_working.llmApi.providers[pi];
+
+    if( corsCb->isChecked() )
+    {
+      p.httpBackend = LlmConfig::LlmApi::HttpBackend::Native;
+    }else if( m_working.llmApi.httpBackend.value_or(LlmConfig::LlmApi::HttpBackend::Browser)
+              == LlmConfig::LlmApi::HttpBackend::Native )
+    {
+      // An <HttpBackend>native</HttpBackend> default would otherwise re-enable it behind the
+      //  user's back, leaving the box unchecked but the behaviour on.  Pin it off explicitly.
+      p.httpBackend = LlmConfig::LlmApi::HttpBackend::Browser;
+    }else
+    {
+      p.httpBackend.reset();   // inherit; keeps the file free of redundant attributes
+    }
+
+    updateValidation();
+    refreshPreview();
+  } ) );
+#endif //USE_NATIVE_HTTP_CLIENT
 
   // Bearer token row
   WLabel *tokLbl = new WLabel( WString::tr("lcw-bearer-token"), bodyc );
@@ -849,6 +1020,25 @@ LlmConfig::LlmApi::ApiFormat LlmConfigWindow::resolvedFormat( const size_t pi ) 
 }//resolvedFormat()
 
 
+#if( USE_NATIVE_HTTP_CLIENT )
+LlmConfig::LlmApi::HttpBackend LlmConfigWindow::resolvedTransport( const size_t pi ) const
+{
+  // Same precedence as LlmApi::httpTransport(), but for an arbitrary provider rather than the
+  //  active one - the settings dialog shows every provider's state at once.
+  const ApiProvider &p = m_working.llmApi.providers[pi];
+  if( p.httpBackend.has_value()
+     && (p.httpBackend.value() != LlmConfig::LlmApi::HttpBackend::Auto) )
+    return p.httpBackend.value();
+
+  if( m_working.llmApi.httpBackend.has_value()
+     && (m_working.llmApi.httpBackend.value() != LlmConfig::LlmApi::HttpBackend::Auto) )
+    return m_working.llmApi.httpBackend.value();
+
+  return LlmConfig::LlmApi::HttpBackend::Browser;
+}//resolvedTransport()
+#endif //USE_NATIVE_HTTP_CLIENT
+
+
 void LlmConfigWindow::addProvider()
 {
   ApiProvider prov;
@@ -1001,6 +1191,18 @@ void LlmConfigWindow::updateValidation()
      && (m_working.mcpServer.bearerToken == LlmConfig::McpServer::sm_invalid_bearer_token) )
   {
     warnings.push_back( WString::tr("lcw-warn-mcp-token") );
+
+#if( USE_NATIVE_HTTP_CLIENT )
+  // A bad path here otherwise surfaces only as a TLS failure at request time, with nothing
+  //  pointing back at the setting that caused it.
+  if( !m_working.llmApi.httpCaBundlePath.empty()
+     && !SpecUtils::is_file( m_working.llmApi.httpCaBundlePath )
+     && !SpecUtils::is_directory( m_working.llmApi.httpCaBundlePath ) )
+    warnings.push_back( WString::tr("lcw-warn-ca-missing") );
+
+  if( !m_working.llmApi.httpProxyUrl.empty() && !NativeHttp::supportsProxyOverride() )
+    warnings.push_back( WString::tr("lcw-warn-proxy-unsupported") );
+#endif
   }
   if( m_mcpTokenWarn )
     m_mcpTokenWarn->setHidden( m_working.mcpServer.bearerToken != LlmConfig::McpServer::sm_invalid_bearer_token );

@@ -94,6 +94,36 @@ const char *LlmConfig::LlmApi::apiFormatToString( ApiFormat fmt )
 }//LlmConfig::LlmApi::apiFormatToString(...)
 
 
+LlmConfig::LlmApi::HttpBackend LlmConfig::LlmApi::parseHttpBackend( const std::string &str )
+{
+  if( SpecUtils::iequals_ascii( str, "auto" ) )
+    return HttpBackend::Auto;
+
+  if( SpecUtils::iequals_ascii( str, "browser" )
+     || SpecUtils::iequals_ascii( str, "fetch" ) )
+    return HttpBackend::Browser;
+
+  if( SpecUtils::iequals_ascii( str, "native" )
+     || SpecUtils::iequals_ascii( str, "cpp" ) )
+    return HttpBackend::Native;
+
+  throw std::runtime_error( "Invalid httpBackend value: '" + str + "'."
+    " Valid values are 'auto', 'browser', or 'native'." );
+}//LlmConfig::LlmApi::parseHttpBackend(...)
+
+
+const char *LlmConfig::LlmApi::httpBackendToString( HttpBackend backend )
+{
+  switch( backend )
+  {
+    case HttpBackend::Auto:    return "auto";
+    case HttpBackend::Browser: return "browser";
+    case HttpBackend::Native:  return "native";
+  }
+  throw std::invalid_argument( "Unknown HttpBackend" );
+}//LlmConfig::LlmApi::httpBackendToString(...)
+
+
 LlmConfig::LlmApi::ApiFormat LlmConfig::LlmApi::detectApiFormat( const std::string &endpoint )
 {
   // Strip any query string / fragment, then any trailing slash, to get a clean path for the
@@ -418,6 +448,14 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
           if( !api_fmt_str.empty() )
             provider.apiFormat = LlmApi::parseApiFormat( api_fmt_str );  // throws on invalid value
 
+          // Optional "httpBackend" attribute: pins this provider to the browser or the native
+          // C++ HTTP client.  Absent means inherit the <HttpBackend> element on <LlmApi>.
+          const rapidxml::xml_attribute<char> * const backendAttr = XML_FIRST_ATTRIB( provNode, "httpBackend" );
+          string backend_str = SpecUtils::xml_value_str( backendAttr );
+          SpecUtils::trim( backend_str );
+          if( !backend_str.empty() )
+            provider.httpBackend = LlmApi::parseHttpBackend( backend_str );  // throws on invalid value
+
           bool foundActiveModel = false;
 
           for( const rapidxml::xml_node<char> *modelNode = XML_FIRST_NODE( provNode, "Model" );
@@ -560,6 +598,32 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
       value_str = SpecUtils::xml_value_str( debugFileNode );
       SpecUtils::trim( value_str );
       llmApi.debug_file = value_str;
+
+      // Optional HTTP transport settings.  All absent-means-default, so older config files load
+      //  unchanged and keep using the browser fetch() path.
+      const rapidxml::xml_node<char> * const httpBackendNode = XML_FIRST_NODE( llmApiNode, "HttpBackend" );
+      value_str = SpecUtils::xml_value_str( httpBackendNode );
+      SpecUtils::trim( value_str );
+      if( !value_str.empty() )
+        llmApi.httpBackend = LlmApi::parseHttpBackend( value_str );  // throws on invalid value
+
+      const rapidxml::xml_node<char> * const httpProxyNode = XML_FIRST_NODE( llmApiNode, "HttpProxy" );
+      value_str = SpecUtils::xml_value_str( httpProxyNode );
+      SpecUtils::trim( value_str );
+      llmApi.httpProxyUrl = value_str;
+
+      const rapidxml::xml_node<char> * const httpCaNode = XML_FIRST_NODE( llmApiNode, "HttpCaBundle" );
+      value_str = SpecUtils::xml_value_str( httpCaNode );
+      SpecUtils::trim( value_str );
+      llmApi.httpCaBundlePath = value_str;
+
+      const rapidxml::xml_node<char> * const httpNoVerifyNode = XML_FIRST_NODE( llmApiNode, "HttpDisableCertCheck" );
+      value_str = SpecUtils::xml_value_str( httpNoVerifyNode );
+      SpecUtils::trim( value_str );
+      llmApi.httpDisableCertCheck = (value_str == "true") || (value_str == "1");
+      if( llmApi.httpDisableCertCheck )
+        cerr << "Warning: LLM config has HttpDisableCertCheck set - TLS certificates will NOT be"
+                " validated on native HTTP requests." << endl;
     }// End load LLM API settings
 
     {// Begin load MCP server settings
@@ -661,6 +725,11 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
       provNode->append_attribute( doc.allocate_attribute( "apiFormat",
                                     LlmApi::apiFormatToString( prov.apiFormat.value() ) ) );
 
+    // Likewise httpBackend: absent means "inherit the <HttpBackend> element".
+    if( prov.httpBackend.has_value() )
+      provNode->append_attribute( doc.allocate_attribute( "httpBackend",
+                                    LlmApi::httpBackendToString( prov.httpBackend.value() ) ) );
+
     // Attach to the tree before appending child element nodes - XmlUtils::append_*_node() requires
     // base_node->document() to be resolvable, which is only true once the node has a parent chain.
     llmApi->append_node( provNode );
@@ -742,6 +811,31 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
 
   if( !config.llmApi.debug_file.empty() )
     XmlUtils::append_string_node( llmApi, "DebugFile", config.llmApi.debug_file );
+
+  // HTTP transport settings.  Only written when set to something other than the default, so a
+  //  config that never touched them round-trips byte-identical.
+  append_comment( llmApi,
+    " HTTP transport.  Requests normally go out through the browser's fetch(), which brings the\n"
+    "         system trust store, proxy settings and PAC/WPAD with it.  A provider whose CORS policy\n"
+    "         blocks the browser can be pinned to the native client with httpBackend=\"native\" on its\n"
+    "         <ApiProvider> element.\n"
+    "         <HttpBackend>          - \"auto\" (default; per-provider, else browser), \"browser\", or \"native\".\n"
+    "         <HttpProxy>            - explicit proxy URL; empty uses the system proxy configuration.\n"
+    "         <HttpCaBundle>         - extra PEM bundle/directory to trust, for a TLS-inspecting proxy.\n"
+    "         <HttpDisableCertCheck> - \"true\" disables certificate validation entirely.  Last resort. " );
+
+  if( config.llmApi.httpBackend.has_value() )
+    XmlUtils::append_string_node( llmApi, "HttpBackend",
+                                  LlmApi::httpBackendToString( config.llmApi.httpBackend.value() ) );
+
+  if( !config.llmApi.httpProxyUrl.empty() )
+    XmlUtils::append_string_node( llmApi, "HttpProxy", config.llmApi.httpProxyUrl );
+
+  if( !config.llmApi.httpCaBundlePath.empty() )
+    XmlUtils::append_string_node( llmApi, "HttpCaBundle", config.llmApi.httpCaBundlePath );
+
+  if( config.llmApi.httpDisableCertCheck )
+    XmlUtils::append_bool_node( llmApi, "HttpDisableCertCheck", true );
 
   // NOTE: Agents and tools are saved separately in their own files, not in llm_config.xml.
 

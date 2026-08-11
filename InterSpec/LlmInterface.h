@@ -38,6 +38,10 @@
 
 #include "InterSpec/LlmConversationHistory.h"
 
+#if( USE_NATIVE_HTTP_CLIENT )
+#include "InterSpec/NativeHttpClient.h"
+#endif
+
 static_assert( USE_LLM_INTERFACE, "You should not include this library unless USE_LLM_INTERFACE is enabled" );
 
 
@@ -218,7 +222,11 @@ public:
    */
   int sendToolResultsToLLM( std::shared_ptr<LlmInteraction> convo );
 
-  /** JavaScript callback to handle LLM response */
+  /** JavaScript callback to handle LLM response.
+
+   Also the entry point used by the native HTTP transport, which accumulates the whole response
+   body and then hands it over here - so both transports converge on one response path.
+   */
   void handleJavaScriptResponse(std::string response, int requestId);
 
   /** When true, tool calls will not be executed; instead an error result is
@@ -321,6 +329,54 @@ private:
   };//struct PendingRequest
   
   std::map<int, PendingRequest> m_pendingRequests;
+
+#if( USE_NATIVE_HTTP_CLIENT )
+  /** Whether this request should go out through the native C++ HTTP client rather than the
+   browser's fetch(), given the active provider's configured transport and whether a usable
+   native backend was actually compiled in.  Logs once if native was asked for but is
+   unavailable, then falls back to the browser. */
+  bool useNativeHttpBackend() const;
+
+  /** Issue `requestStr` to `endpoint` via the native transport.
+
+   Accumulates the whole response body (the native path is deliberately non-streaming, matching
+   the browser path), then delivers it to handleJavaScriptResponse() on the session thread.
+   Mirrors the browser path's rate-limit and network retries, and its normalization of non-JSON
+   HTTP failures, so that behaviour does not depend on which transport carried the request.
+
+   @param attempt Zero for the first try; incremented by the internal retry logic.
+   @param rateLimitRetry How many rate-limit retries have already been made.
+   */
+  void startNativeRequest( const std::string &endpoint,
+                          const std::vector<std::pair<std::string,std::string>> &headers,
+                          const std::string &requestStr,
+                          int requestId,
+                          int attempt,
+                          int rateLimitRetry );
+
+  /** Re-issue a native request after `delayMs`, for a rate-limit or network retry.  The timer is
+   owned per request id so that a retry still pending at teardown cannot fire into a destroyed
+   interface. */
+  void scheduleNativeRetry( const std::string &endpoint,
+                           const std::vector<std::pair<std::string,std::string>> &headers,
+                           const std::string &requestStr,
+                           int requestId,
+                           int attempt,
+                           int rateLimitRetry,
+                           int delayMs );
+
+  /** Abandon every in-flight native request and pending retry.  Silent by design: whoever asked
+   for the cancel has already finalized the affected conversations. */
+  void cancelNativeRequests();
+
+  /** Live native requests, keyed by request id; erased when a request finishes or is cancelled.
+   Destroying an entry cancels its transfer silently, which is what teardown wants. */
+  std::map<int, std::unique_ptr<NativeHttp::Call>> m_nativeCalls;
+
+  /** Timers backing the native path's retry delays.  Kept per request id so a retry that is
+   pending when the interface is torn down does not fire into a destroyed object. */
+  std::map<int, std::unique_ptr<Wt::WTimer>> m_nativeRetryTimers;
+#endif //USE_NATIVE_HTTP_CLIENT
 
   // Track current conversation being processed (for tool execution context)
   std::weak_ptr<LlmInteraction> m_currentConversation;
