@@ -2565,7 +2565,7 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     //  The GENIE panel needs a wider column than the plain sample checkboxes do.
     toggleStyleClass( "ExportSpecFileToolCnf", is_cnf_format );
     if( is_cnf_format )
-      m_genieCnfOptions->updateForFile( spec, samplesToUse );
+      m_genieCnfOptions->updateForFile( spec, samplesToUse, detsToUse );
     updateExportEnabled();
   }
 

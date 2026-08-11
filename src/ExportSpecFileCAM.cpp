@@ -640,12 +640,23 @@ vector<CAMInputOutput::Peak> to_cam_peaks(
                         const shared_ptr<const SpecUtils::EnergyCalibration> &energy_cal,
                         const float live_time_s,
                         const GenieEfficiencyResult * const efficiency,
-                        const shared_ptr<const SpecUtils::Measurement> &data )
+                        const shared_ptr<const SpecUtils::Measurement> &data,
+                        vector<string> *warnings )
 {
   vector<CAMInputOutput::Peak> answer;
 
   const bool have_cal = !!energy_cal && energy_cal->valid();
   const bool have_lt = (live_time_s > 0.0f);
+  size_t num_outside_efficiency = 0;
+
+  // Every value here ends up as a 4-byte float in the file.  Converting a double that overflows
+  //  `float` is undefined behavior, not merely lossy, and a NaN would be written verbatim for
+  //  GENIE to divide by - so nothing reaches a field without coming through here.
+  const auto as_float = []( const double value ) -> float {
+    if( !std::isfinite(value) || (std::fabs(value) > std::numeric_limits<float>::max()) )
+      return 0.0f;
+    return static_cast<float>( value );
+  };
 
   for( const shared_ptr<const PeakDef> &peak : peaks )
   {
@@ -655,10 +666,10 @@ vector<CAMInputOutput::Peak> to_cam_peaks(
 
     CAMInputOutput::Peak p{};
 
-    p.Energy = static_cast<float>( peak->mean() );
-    p.FullWidthAtHalfMaximum = static_cast<float>( peak->fwhm() );
-    p.Area = static_cast<float>( peak->peakArea() );
-    p.AreaUncertainty = static_cast<float>( peak->peakAreaUncert() );
+    p.Energy = as_float( peak->mean() );
+    p.FullWidthAtHalfMaximum = as_float( peak->fwhm() );
+    p.Area = as_float( peak->peakArea() );
+    p.AreaUncertainty = as_float( peak->peakAreaUncert() );
     // Genie's low tail is a Gaussian core stitched to an exponential below `centroid - T`:
     //    P(x) = H*exp(-0.5*u^2)              for u >= -T/sigma
     //    P(x) = H*exp(0.5*(T/sigma)^2 + (T/sigma)*u)  for u <  -T/sigma,   u = (x-mean)/sigma
@@ -674,27 +685,48 @@ vector<CAMInputOutput::Peak> to_cam_peaks(
 
     if( have_cal )
     {
-      const double centroid_channel = energy_cal->channel_for_energy( peak->mean() );
-      p.Centroid = static_cast<float>( centroid_channel );
-
-      // Convert the mean's uncertainty to channels using the local gain.
-      const double sigma_energy = peak->meanUncert();
-      if( sigma_energy > 0.0 )
+      // `channel_for_energy(...)` throws for energies outside the calibrated range - always for a
+      //  lower-channel-edge calibration, and for some polynomial ones - so a single peak whose ROI
+      //  reaches the last channel would otherwise take the whole export down with it.  Leaving the
+      //  channel fields zero for that peak is what the contract on this function promises for a
+      //  calibration it cannot use.
+      try
       {
-        const double lower = energy_cal->channel_for_energy( peak->mean() - sigma_energy );
-        const double upper = energy_cal->channel_for_energy( peak->mean() + sigma_energy );
-        p.CentroidUncertainty = static_cast<float>( 0.5*std::fabs(upper - lower) );
-      }
+        p.Centroid = as_float( energy_cal->channel_for_energy( peak->mean() ) );
 
-      const double left_channel = energy_cal->channel_for_energy( peak->lowerX() );
-      const double right_channel = energy_cal->channel_for_energy( peak->upperX() );
-      p.LeftChannel = static_cast<int>( std::floor(std::max(0.0, left_channel)) );
-      p.RightChannel = static_cast<int>( std::ceil(std::max(0.0, right_channel)) );
-      if( p.RightChannel < p.LeftChannel )
-        p.RightChannel = p.LeftChannel;
+        // Convert the mean's uncertainty to channels using the local gain.
+        const double sigma_energy = peak->meanUncert();
+        if( sigma_energy > 0.0 )
+        {
+          const double lower = energy_cal->channel_for_energy( peak->mean() - sigma_energy );
+          const double upper = energy_cal->channel_for_energy( peak->mean() + sigma_energy );
+          p.CentroidUncertainty = as_float( 0.5*std::fabs(upper - lower) );
+        }
+
+        const double left_channel = energy_cal->channel_for_energy( peak->lowerX() );
+        const double right_channel = energy_cal->channel_for_energy( peak->upperX() );
+        const double max_channel = static_cast<double>( std::numeric_limits<int>::max() );
+        p.LeftChannel = static_cast<int>( std::min(max_channel, std::floor(std::max(0.0, left_channel))) );
+        p.RightChannel = static_cast<int>( std::min(max_channel, std::ceil(std::max(0.0, right_channel))) );
+        if( p.RightChannel < p.LeftChannel )
+          p.RightChannel = p.LeftChannel;
+      }catch( std::exception &e )
+      {
+        cerr << "to_cam_peaks: the peak at " << peak->mean() << " keV is outside the energy"
+                " calibration's range, so its channel numbers are left zero: " << e.what() << endl;
+        p.Centroid = p.CentroidUncertainty = 0.0f;
+        p.LeftChannel = p.RightChannel = 0;
+      }//try / catch
     }//if( have_cal )
 
-    // Counts in the continuum under the peak's ROI.
+    // Counts in the continuum under THIS peak, not under its whole ROI.
+    //
+    // `PeakDef::lowerX()/upperX()` return the continuum's range, so integrating between them gave
+    //  every peak of a multiplet the identical, full-ROI area - and with it an identical,
+    //  over-stated `BackgroundSigma` and `CriticalLevel`.  Genie's own values differ peak to peak
+    //  within a ROI (e.g. 80.2 and 64.2 for the doublet at channels 975-998 of Ba-133.cnf), so
+    //  integrate over the peak's own +-3 sigma footprint, clipped to the ROI.  For a peak fitted
+    //  alone the two are the same to within the ROI's own margins.
     //
     // A stepped continuum's shape comes from the data, and a CDF-step's also from the other peaks
     //  sharing the ROI, so both have to be supplied: `offset_integral` throws without the spectrum,
@@ -709,10 +741,14 @@ vector<CAMInputOutput::Peak> to_cam_peaks(
           roi_peaks.push_back( other );
       }
 
+      const double nsigma = 3.0;
+      const double lower = std::max( peak->lowerX(), peak->mean() - nsigma*peak->sigma() );
+      const double upper = std::min( peak->upperX(), peak->mean() + nsigma*peak->sigma() );
+
       try
       {
-        p.Continuum = static_cast<float>( continuum->offset_integral( peak->lowerX(), peak->upperX(),
-                                                                      data, roi_peaks ) );
+        if( upper > lower )
+          p.Continuum = as_float( continuum->offset_integral( lower, upper, data, roi_peaks ) );
       }catch( std::exception &e )
       {
         // Only reachable for a stepped continuum with no usable spectrum; a zero continuum area is
@@ -724,17 +760,17 @@ vector<CAMInputOutput::Peak> to_cam_peaks(
     }//if( continuum )
 
     if( have_lt )
-      p.CountRate = static_cast<float>( peak->peakArea() / live_time_s );
+      p.CountRate = as_float( peak->peakArea() / live_time_s );
 
     // Note: this field is a RELATIVE uncertainty, as a percent - not counts per second (verified
     //  against a real Genie file; see `CAMInputOutput::Peak`).
     if( peak->peakArea() > 0.0 )
-      p.CountRateUncertainty = static_cast<float>( 100.0 * peak->peakAreaUncert() / peak->peakArea() );
+      p.CountRateUncertainty = as_float( 100.0 * peak->peakAreaUncert() / peak->peakArea() );
 
     // What Genie's report prints as "Peak significance"; see `CAMInputOutput::Peak` for why this
     //  is Area/AreaUncertainty rather than the peak-search statistic Genie itself puts here.
     if( peak->peakAreaUncert() > 0.0 )
-      p.Significance = static_cast<float>( peak->peakArea() / peak->peakAreaUncert() );
+      p.Significance = as_float( peak->peakArea() / peak->peakAreaUncert() );
 
     // Poisson sigma of the continuum counts under the peak, and the Currie decision limit built
     //  on it.  Genie's own files have `CriticalLevel/BackgroundSigma` around 2.13; 2.33 is the
@@ -752,14 +788,23 @@ vector<CAMInputOutput::Peak> to_cam_peaks(
       const double eff = genie_efficiency_at( *efficiency, peak->mean() );
       if( eff > 0.0 )
       {
-        p.Efficiency = static_cast<float>( eff );
+        p.Efficiency = as_float( eff );
         p.EfficiencyUncertainty
-              = static_cast<float>( eff * genie_default_eff_uncertainty( static_cast<float>(peak->mean()) ) );
+              = as_float( eff * genie_default_eff_uncertainty( static_cast<float>(peak->mean()) ) );
+      }else
+      {
+        // A zero here is not a harmless default when the file *does* carry an efficiency curve:
+        //  Genie divides the peak area by it.  Say so rather than let it pass silently.
+        num_outside_efficiency += 1;
       }
     }//if( efficiency )
 
     answer.push_back( p );
   }//for( loop over peaks )
+
+  if( num_outside_efficiency && warnings )
+    warnings->push_back( WString::tr("esfcam-warn-peaks-outside-eff")
+                         .arg( static_cast<int>(num_outside_efficiency) ).toUTF8() );
 
   // Genie peak lists are energy ordered.
   std::sort( begin(answer), end(answer),
@@ -903,8 +948,21 @@ vector<double> fit_genie_efficiency_curve( const vector<double> &energies,
   if( energies.size() != efficiencies.size() )
     throw runtime_error( "fit_genie_efficiency_curve: energy and efficiency counts differ." );
 
+  // Not just an assert: `fit_log_log_polynomial` indexes `rel_uncerts[row]` for every row, so a
+  //  short-but-non-empty vector is an out-of-bounds read in a release build.
+  if( !rel_uncerts.empty() && (rel_uncerts.size() != energies.size()) )
+    throw runtime_error( "fit_genie_efficiency_curve: uncertainty count differs from energy count." );
+
   if( energies.size() < (order + 1) )
     throw runtime_error( "fit_genie_efficiency_curve: fewer points than coefficients." );
+
+  // The fit takes the log of both, so both must be positive - otherwise the caller gets NaN
+  //  coefficients back with no indication anything went wrong.
+  for( size_t i = 0; i < energies.size(); ++i )
+  {
+    if( !(energies[i] > 0.0) || !(efficiencies[i] > 0.0) )
+      throw runtime_error( "fit_genie_efficiency_curve: energies and efficiencies must be > 0." );
+  }
 
   return fit_log_log_polynomial( energies, efficiencies, rel_uncerts, order );
 }//fit_genie_efficiency_curve(...)
@@ -912,22 +970,34 @@ vector<double> fit_genie_efficiency_curve( const vector<double> &energies,
 
 double genie_efficiency_at( const GenieEfficiencyResult &efficiency, const double energy )
 {
-  if( !(energy > 0.0) )
+  const vector<CAMInputOutput::EfficiencyPoint> &pts = efficiency.points;
+
+  if( !(energy > 0.0) || pts.empty() )
+    return 0.0;
+
+  // Outside the calibrated range there is nothing to say, whichever model was written.  The
+  //  polynomial would happily be evaluated out there - and a degree-5 log-log polynomial
+  //  extrapolates viciously, several-fold wrong within a decade and eventually past FLT_MAX (where
+  //  narrowing it to the float the file stores would be undefined behavior).  Genie leaves a peak's
+  //  efficiency zero rather than extrapolating; so do we, in both branches.
+  if( (energy < pts.front().Energy) || (energy > pts.back().Energy) )
     return 0.0;
 
   if( !efficiency.fit_coeffs.empty() )
   {
     const vector<double> coeffs( begin(efficiency.fit_coeffs), end(efficiency.fit_coeffs) );
     const double eff = eval_log_log_polynomial( coeffs, energy );
-    return std::isfinite(eff) ? std::max( 0.0, eff ) : 0.0;
+
+    // An efficiency above 1 is not physical, and would come from a fit gone wrong rather than
+    //  from the DRF; treat it the same as no answer.
+    if( !std::isfinite(eff) || !(eff > 0.0) || (eff > 1.0) )
+      return 0.0;
+    return eff;
   }//if( we wrote a fitted curve )
 
-  // No fit, so do what Genie's "Interpolated" model does with the points we did write.  They are
-  //  energy ordered (see `convert_efficiency_to_genie(...)`), and outside their range there is
-  //  nothing to interpolate - Genie leaves the peak's efficiency zero there rather than
-  //  extrapolating, and so do we.
-  const vector<CAMInputOutput::EfficiencyPoint> &pts = efficiency.points;
-  if( (pts.size() < 2) || (energy < pts.front().Energy) || (energy > pts.back().Energy) )
+  // No fit, so do what Genie's "Interpolated" model does with the points we did write; they are
+  //  energy ordered (see `convert_efficiency_to_genie(...)`).
+  if( pts.size() < 2 )
     return 0.0;
 
   for( size_t i = 1; i < pts.size(); ++i )
@@ -1009,7 +1079,11 @@ GenieEfficiencyResult convert_efficiency_to_genie( const DetectorPeakResponse &d
     {
       // Note: use the DRF's own tabulated energies, but go back through the DRF for the value, so
       //  the solid-angle (and any absolute-to-intrinsic) correction is applied consistently.
-      const double eff = absolute_eff( pt.energy );
+      //
+      // A tabulated efficiency may legitimately start at 0 keV (see `fit_genie_fwhm_from_drf`),
+      //  and the fit takes the log of the energy - so drop non-positive energies rather than let
+      //  `log(0)` turn the whole fit into NaN and silently downgrade the model to INTERPOL.
+      const double eff = (pt.energy > 0.0f) ? absolute_eff( pt.energy ) : 0.0;
       if( !(eff > min_useful_eff) )
       {
         num_dropped += 1;
@@ -1773,7 +1847,8 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
 }//GenieCnfOptionsWidget constructor
 
 
-void GenieCnfOptionsWidget::updateForFile( const shared_ptr<const SpecMeas> &spec, const set<int> &samples )
+void GenieCnfOptionsWidget::updateForFile( const shared_ptr<const SpecMeas> &spec, const set<int> &samples,
+                                           const vector<string> &detectors )
 {
   // `ExportSpecFileTool::refreshSampleAndDetectorOptions()` calls this on nearly every change in
   //  the export dialog, so bail early when nothing we care about actually changed - otherwise we
@@ -1790,7 +1865,7 @@ void GenieCnfOptionsWidget::updateForFile( const shared_ptr<const SpecMeas> &spe
              && (spec->detector() == m_spec->detector())
              && (spec->num_measurements() == m_spec->num_measurements()));
 
-  if( same_spectrum && (samples == m_samples) )
+  if( same_spectrum && (samples == m_samples) && (detectors == m_detectors) )
   {
     // Peaks or the DRF can still have changed under us; keep the options consistent with them.
     m_spec = spec;
@@ -1800,6 +1875,7 @@ void GenieCnfOptionsWidget::updateForFile( const shared_ptr<const SpecMeas> &spe
 
   m_spec = spec;
   m_samples = samples;
+  m_detectors = detectors;
   m_expanded_sources.clear();
   m_nuclide_ages.clear();
   m_have_manual_fwhm = false;
@@ -2078,6 +2154,9 @@ void GenieCnfOptionsWidget::updateAvailableFwhmSources()
 void GenieCnfOptionsWidget::updateWarningsAndExportable()
 {
   vector<string> messages = m_library_warnings;
+
+  const vector<string> eff_warnings = efficiencyWarnings();
+  messages.insert( end(messages), begin(eff_warnings), end(eff_warnings) );
 
   WString reason;
   if( !canExport( &reason ) && !reason.empty() )
@@ -2367,7 +2446,35 @@ double GenieCnfOptionsWidget::currentEfficiencyDistance() const
 }//currentEfficiencyDistance()
 
 
-CAMInputOutput::CnfGenieExtras GenieCnfOptionsWidget::currentExtras() const
+vector<string> GenieCnfOptionsWidget::efficiencyWarnings() const
+{
+  vector<string> warnings;
+
+  const shared_ptr<const SpecMeas> spec = m_spec;
+  if( !writeEfficiency() || !spec )
+    return warnings;
+
+  const shared_ptr<const DetectorPeakResponse> drf = spec->detector();
+  if( !drf || !drf->isValid() )
+    return warnings;
+
+  const double distance = drf->isFixedGeometry() ? 1.0 : currentEfficiencyDistance();
+  if( !drf->isFixedGeometry() && !(distance > 0.0) )
+    return warnings;  //`canExport()` already refuses this case, with its own message
+
+  try
+  {
+    convert_efficiency_to_genie( *drf, distance, &warnings );
+  }catch( std::exception &e )
+  {
+    warnings.push_back( WString::tr("esfcam-warn-no-eff-written").arg( e.what() ).toUTF8() );
+  }
+
+  return warnings;
+}//efficiencyWarnings()
+
+
+CAMInputOutput::CnfGenieExtras GenieCnfOptionsWidget::currentExtras( vector<string> *warnings ) const
 {
   CAMInputOutput::CnfGenieExtras extras;
 
@@ -2415,13 +2522,29 @@ CAMInputOutput::CnfGenieExtras GenieCnfOptionsWidget::currentExtras() const
       //  `canExport()` refuses the export when a far-field DRF has no usable distance, so by the
       //  time we get here the distance is either irrelevant (fixed geometry) or valid.
       const double distance = drf->isFixedGeometry() ? 1.0 : currentEfficiencyDistance();
-      efficiency.reset( new GenieEfficiencyResult( convert_efficiency_to_genie(*drf, distance) ) );
-      extras.eff_model = efficiency->model;
-      extras.eff_points = efficiency->points;
-      extras.eff_fit_coeffs = efficiency->fit_coeffs;
-      extras.eff_fit_reference_energy = efficiency->fit_reference_energy;
-      extras.eff_fit_chi_square = efficiency->fit_chi_square;
-      extras.eff_detector_name = efficiency->detector_name;
+
+      // `convert_efficiency_to_genie(...)` throws when the absolute efficiency is negligible over
+      //  the DRF's range - reachable just by entering a large distance, which `canExport()` does
+      //  not check for - and its warnings say when the curve written is not the one asked for
+      //  (points dropped, or the fit rejected and the file falling back to INTERPOL).  Both used
+      //  to be lost: the throw took the whole export down, and the warnings went nowhere.
+      try
+      {
+        efficiency.reset( new GenieEfficiencyResult(
+                            convert_efficiency_to_genie(*drf, distance, warnings) ) );
+        extras.eff_model = efficiency->model;
+        extras.eff_points = efficiency->points;
+        extras.eff_fit_coeffs = efficiency->fit_coeffs;
+        extras.eff_fit_reference_energy = efficiency->fit_reference_energy;
+        extras.eff_fit_chi_square = efficiency->fit_chi_square;
+        extras.eff_detector_name = efficiency->detector_name;
+      }catch( std::exception &e )
+      {
+        efficiency.reset();
+        cerr << "currentExtras: no efficiency curve written: " << e.what() << endl;
+        if( warnings )
+          warnings->push_back( WString::tr("esfcam-warn-no-eff-written").arg( e.what() ).toUTF8() );
+      }//try / catch
     }//if( drf && drf->isValid() )
   }//if( writeEfficiency() )
 
@@ -2433,12 +2556,17 @@ CAMInputOutput::CnfGenieExtras GenieCnfOptionsWidget::currentExtras() const
     const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = spec->peaks( m_samples );
     if( peaks && !peaks->empty() )
     {
-      // Use the calibration and live time of the record actually being written.
+      // Use the calibration and live time of the record actually being written - which covers
+      //  only the detectors the export keeps.  Summing over every detector instead made the count
+      //  rates (and the continuum areas below) disagree with the spectrum in the same file by the
+      //  ratio of kept to total detectors.
+      const vector<string> dets = m_detectors.empty() ? spec->detector_names() : m_detectors;
+
       shared_ptr<const SpecUtils::EnergyCalibration> cal;
       float live_time = 0.0f;
       for( const int sample : m_samples )
       {
-        for( const string &det : spec->detector_names() )
+        for( const string &det : dets )
         {
           const shared_ptr<const SpecUtils::Measurement> m = spec->measurement( sample, det );
           if( !m )
@@ -2454,14 +2582,14 @@ CAMInputOutput::CnfGenieExtras GenieCnfOptionsWidget::currentExtras() const
       shared_ptr<const SpecUtils::Measurement> data;
       try
       {
-        data = spec->sum_measurements( m_samples, spec->detector_names(), nullptr );
+        data = spec->sum_measurements( m_samples, dets, nullptr );
       }catch( std::exception &e )
       {
         cerr << "currentExtras: could not sum the spectrum for the peak continuum areas: "
              << e.what() << endl;
       }
 
-      extras.peaks = to_cam_peaks( *peaks, cal, live_time, efficiency.get(), data );
+      extras.peaks = to_cam_peaks( *peaks, cal, live_time, efficiency.get(), data, warnings );
     }//if( there are peaks )
   }//if( writePeaks() )
 

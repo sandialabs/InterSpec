@@ -179,6 +179,8 @@
   <message id="esfcam-warn-escape-peak">Peak at {1} keV is an escape peak, which is not an energy the source actually emits, so it will not be included in the GENIE library.</message>
   <message id="esfcam-warn-decayed-away">{1} has completely decayed away at the age used, so no line yields could be computed for it.</message>
   <message id="esfcam-warn-eff-points-dropped">{1} efficiency point(s) were left out because the absolute efficiency there is negligible at the given distance.</message>
+  <message id="esfcam-warn-no-eff-written">No efficiency curve could be written for this detector response and distance: {1}</message>
+  <message id="esfcam-warn-peaks-outside-eff">{1} peak(s) are outside the energy range of the efficiency curve; their efficiency is written as zero, and GENIE will not be able to report an activity for them.</message>
   <message id="esfcam-warn-no-yield">Could not determine the yield of the {1} line at {2} keV; it will not be included.</message>
   <message id="esfcam-warn-eff-not-fit">The detector response function&apos;s efficiency could not be well-represented by GENIE&apos;s fitted curve form; writing the efficiency points for GENIE to interpolate between instead.</message>
 </messages>

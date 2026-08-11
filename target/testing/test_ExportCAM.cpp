@@ -696,6 +696,375 @@ BOOST_AUTO_TEST_CASE( efficiencyExpOfLogsConvertsToEmpiricalExactly )
 }//BOOST_AUTO_TEST_CASE( efficiencyExpOfLogsConvertsToEmpiricalExactly )
 
 
+/** Three things a code review turned up in the GEOM/PEAK write paths that no other test covered. */
+BOOST_AUTO_TEST_CASE( writtenBlocksAreSelfConsistent )
+{
+  set_data_dir();
+
+  const auto write_with_points = []( const size_t num_points ) -> vector<uint8_t> {
+    CAMInputOutput::CAMIO cam;
+    for( size_t i = 0; i < num_points; ++i )
+      cam.AddEfficiencyPoint( 50.0f + 100.0f*i, 1.0E-3f, 1.0E-4f );
+    cam.AddEfficiencyFit( {-19.7f, 4.38f}, 1260.0f );
+    cam.AddEnergyCalibration( {0.0f, 3.0f} );
+    cam.AddSpectrum( vector<uint32_t>( 256, 5 ) );
+    return cam.CreateFile();
+  };
+
+  // (1) A block must contain the record its own header declares.  Sizing the GEOM block from its
+  //  entry count alone left the declared record running past the end of the block - and past the
+  //  end of the file when GEOM was the last block - for any curve with fewer than ~70 points.
+  for( const size_t num_points : { size_t(1), size_t(2), size_t(20), size_t(80) } )
+  {
+    const vector<uint8_t> data = write_with_points( num_points );
+    const uint32_t geom = find_block_location( data, 0x00012002 );
+    BOOST_REQUIRE_MESSAGE( geom != 0, "No GEOM block for " << num_points << " points" );
+
+    uint32_t block_size = 0;
+    uint16_t rec_size = 0, rec_offset = 0;
+    memcpy( &block_size, &data[geom + 0x06], sizeof(uint32_t) );
+    memcpy( &rec_size, &data[geom + 0x20], sizeof(uint16_t) );
+    memcpy( &rec_offset, &data[geom + 0x22], sizeof(uint16_t) );
+
+    const size_t declared_end = 0x30 + rec_offset + rec_size;
+    BOOST_CHECK_MESSAGE( block_size >= declared_end,
+        num_points << " points: GEOM block is " << block_size << " bytes but its header declares a "
+        << rec_size << "-byte record at offset " << rec_offset << ", ending at " << declared_end );
+    BOOST_CHECK_MESSAGE( (geom + block_size) <= data.size(),
+        num_points << " points: GEOM block runs past the end of the file" );
+    BOOST_CHECK_EQUAL( block_size % 512, 0u );
+  }
+
+  // (2) A fit with no points must not be silently dropped - it used to produce no GEOM block at
+  //  all, and no error, because the block was only emitted when points existed.
+  {
+    CAMInputOutput::CAMIO cam;
+    cam.AddEfficiencyModel( CAMInputOutput::CAMIO::EfficiencyModel::EMPIRICAL );
+    cam.AddEfficiencyFit( {-19.7f, 4.38f}, 1260.0f );
+    cam.AddEnergyCalibration( {0.0f, 3.0f} );
+    cam.AddSpectrum( vector<uint32_t>( 256, 5 ) );
+    const vector<uint8_t> data = cam.CreateFile();
+    BOOST_CHECK_MESSAGE( find_block_location( data, 0x00012002 ) != 0,
+        "A fit added with no efficiency points produced no GEOM block" );
+  }
+
+  // (3) PEAK and DISP must describe the same channel range for a peak, however silly its channel
+  //  numbers are - PEAK used to write the left channel unclamped while DISP saturated it.
+  {
+    CAMInputOutput::CAMIO cam;
+    CAMInputOutput::Peak p{};
+    p.Energy = 661.7f;
+    p.Centroid = 220.0f;
+    p.FullWidthAtHalfMaximum = 2.0f;
+    p.Area = 1000.0f;
+    p.AreaUncertainty = 40.0f;
+    p.LeftChannel = -5;      //nonsense, but must not make the two blocks disagree
+    p.RightChannel = 5;
+    cam.AddPeak( p );
+    cam.AddEnergyCalibration( {0.0f, 3.0f} );
+    cam.AddSpectrum( vector<uint32_t>( 256, 5 ) );
+    const vector<uint8_t> data = cam.CreateFile();
+
+    const uint32_t peak_loc = find_block_location( data, 0x00012006 );
+    const uint32_t disp_loc = find_block_location( data, 0x00012004 );
+    BOOST_REQUIRE( peak_loc && disp_loc );
+
+    uint16_t rec_offset = 0;
+    memcpy( &rec_offset, &data[peak_loc + 0x22], sizeof(uint16_t) );
+    const size_t rec = peak_loc + 0x30 + rec_offset + 1;
+
+    uint32_t peak_left = 0;
+    uint16_t peak_width = 0;
+    memcpy( &peak_left, &data[rec + 0x06], sizeof(uint32_t) );
+    memcpy( &peak_width, &data[rec + 0x0A], sizeof(uint16_t) );
+
+    const size_t disp_rec = disp_loc + 0x30 + 0x019C;
+    uint16_t disp_left = 0, disp_right = 0;
+    memcpy( &disp_left, &data[disp_rec + 0x04], sizeof(uint16_t) );
+    memcpy( &disp_right, &data[disp_rec + 0x06], sizeof(uint16_t) );
+
+    BOOST_CHECK_EQUAL( peak_left, disp_left );
+    BOOST_CHECK_MESSAGE( (peak_left + peak_width - 1) == disp_right,
+        "PEAK says channels " << peak_left << "-" << (peak_left + peak_width - 1)
+        << " but DISP says " << disp_left << "-" << disp_right );
+
+    // ...and a lone peak must still be flagged a singlet, which the mismatched clamping broke.
+    BOOST_CHECK_EQUAL( data[rec + 0x29], 0x10 );
+  }
+}//BOOST_AUTO_TEST_CASE( writtenBlocksAreSelfConsistent )
+
+
+/** `GetPeaks()` used to append to its cache on every call, so a second call returned each peak
+ twice - the same bug this class already had, and fixed, in `GetLines()`.
+ */
+BOOST_AUTO_TEST_CASE( getPeaksIsIdempotent )
+{
+  set_data_dir();
+
+  CAMInputOutput::CAMIO cam;
+  for( int i = 0; i < 3; ++i )
+  {
+    CAMInputOutput::Peak p{};
+    p.Energy = 100.0f*(i+1);
+    p.Centroid = p.Energy/3.0f;
+    p.FullWidthAtHalfMaximum = 2.0f;
+    p.Area = 1000.0f;
+    p.AreaUncertainty = 40.0f;
+    p.LeftChannel = static_cast<int>(p.Centroid) - 5;
+    p.RightChannel = static_cast<int>(p.Centroid) + 5;
+    cam.AddPeak( p );
+  }
+  cam.AddEnergyCalibration( {0.0f, 3.0f} );
+  cam.AddSpectrum( vector<uint32_t>( 512, 5 ) );
+  const vector<uint8_t> data = cam.CreateFile();
+
+  CAMInputOutput::CAMIO reader;
+  BOOST_REQUIRE_NO_THROW( reader.ReadFile( data ) );
+  const size_t first = reader.GetPeaks().size();
+  const size_t second = reader.GetPeaks().size();
+  BOOST_CHECK_EQUAL( first, 3 );
+  BOOST_CHECK_MESSAGE( second == first,
+      "GetPeaks() returned " << first << " peaks and then " << second );
+}//BOOST_AUTO_TEST_CASE( getPeaksIsIdempotent )
+
+
+/** `to_cam_peaks(...)` had no test at all, despite being where InterSpec's numbers turn into the
+ numbers GENIE reports.  These cover the cases a code review found it getting wrong.
+ */
+BOOST_AUTO_TEST_CASE( toCamPeaksHandlesAwkwardInputs )
+{
+  set_data_dir();
+
+  const size_t nchannel = 1024;
+  const float live_time = 300.0f;
+
+  auto poly_cal = make_shared<SpecUtils::EnergyCalibration>();
+  poly_cal->set_polynomial( nchannel, {0.0f, 1.0f}, {} );
+
+  auto data = make_shared<SpecUtils::Measurement>();
+  data->set_gamma_counts( make_shared<vector<float>>( nchannel, 100.0f ), live_time, live_time+10.0f );
+  data->set_energy_calibration( poly_cal );
+
+  // A two-peak ROI on a linear continuum, plus a singlet.
+  const auto make_peaks = []() -> deque<shared_ptr<const PeakDef>> {
+    auto roi = make_shared<PeakContinuum>();
+    roi->setType( PeakContinuum::OffsetType::Linear );
+    roi->setRange( 590.0, 640.0 );
+    roi->setParameters( 590.0, vector<double>{ 100.0, 0.0 }, vector<double>{} );
+
+    deque<shared_ptr<const PeakDef>> peaks;
+    for( const double mean : { 605.0, 625.0 } )
+    {
+      auto p = make_shared<PeakDef>( mean, 3.0, 1000.0 );
+      p->setContinuum( roi );
+      p->setAmplitudeUncert( 50.0 );
+      peaks.push_back( p );
+    }
+
+    auto single_roi = make_shared<PeakContinuum>();
+    single_roi->setType( PeakContinuum::OffsetType::Linear );
+    single_roi->setRange( 780.0, 820.0 );
+    single_roi->setParameters( 780.0, vector<double>{ 100.0, 0.0 }, vector<double>{} );
+    auto single = make_shared<PeakDef>( 800.0, 3.0, 2000.0 );
+    single->setContinuum( single_roi );
+    single->setAmplitudeUncert( 60.0 );
+    peaks.push_back( single );
+
+    return peaks;
+  };
+
+  const deque<shared_ptr<const PeakDef>> peaks = make_peaks();
+
+  // --- Each peak of a multiplet gets its own continuum area, not the whole ROI's.  Genie's own
+  //     files differ peak to peak within a ROI; ours used to be identical and over-stated, and so
+  //     were the BackgroundSigma and CriticalLevel built on them.
+  {
+    const vector<CAMInputOutput::Peak> cam
+                    = ExportSpecFileCAM::to_cam_peaks( peaks, poly_cal, live_time, nullptr, data );
+    BOOST_REQUIRE_EQUAL( cam.size(), 3 );
+
+    // The ROI spans 590-640 on a flat 100 counts/keV continuum, so its total is ~5000; a single
+    //  peak's +-3 sigma window is 18 keV of it, i.e. ~1800.
+    for( size_t i = 0; i < 2; ++i )
+    {
+      BOOST_CHECK_MESSAGE( cam[i].Continuum > 0.0f,
+          "Peak " << i << " has no continuum area" );
+      BOOST_CHECK_MESSAGE( cam[i].Continuum < 3000.0f,
+          "Peak " << i << " got continuum " << cam[i].Continuum
+          << ", which looks like the whole ROI rather than the peak's own share" );
+    }
+
+    for( const CAMInputOutput::Peak &p : cam )
+    {
+      BOOST_CHECK_CLOSE( p.BackgroundSigma, std::sqrt(p.Continuum), 0.1 );
+      BOOST_CHECK_CLOSE( p.CriticalLevel, 2.33f*p.BackgroundSigma, 0.1 );
+      BOOST_CHECK( std::isfinite(p.Area) && std::isfinite(p.CountRate) );
+      BOOST_CHECK_CLOSE( p.CountRate, p.Area/live_time, 0.1 );
+      BOOST_CHECK_CLOSE( p.CountRateUncertainty, 100.0f*p.AreaUncertainty/p.Area, 0.1 );
+      BOOST_CHECK_CLOSE( p.Significance, p.Area/p.AreaUncertainty, 0.1 );
+    }
+  }
+
+  // --- A lower-channel-edge calibration throws from `channel_for_energy()` for anything outside
+  //     its range.  One such peak used to take the entire export down with it.
+  {
+    vector<float> edges;
+    for( size_t i = 0; i <= nchannel; ++i )
+      edges.push_back( static_cast<float>(i) );
+    auto edge_cal = make_shared<SpecUtils::EnergyCalibration>();
+    edge_cal->set_lower_channel_energy( nchannel, std::move(edges) );
+    BOOST_REQUIRE( edge_cal->valid() );
+
+    auto far_roi = make_shared<PeakContinuum>();
+    far_roi->setType( PeakContinuum::OffsetType::Linear );
+    far_roi->setRange( 1010.0, 1400.0 );   //upper end is past the calibration's last channel
+    far_roi->setParameters( 1010.0, vector<double>{ 10.0, 0.0 }, vector<double>{} );
+    auto far_peak = make_shared<PeakDef>( 1200.0, 3.0, 500.0 );
+    far_peak->setContinuum( far_roi );
+
+    deque<shared_ptr<const PeakDef>> with_far = peaks;
+    with_far.push_back( far_peak );
+
+    vector<CAMInputOutput::Peak> cam;
+    BOOST_REQUIRE_NO_THROW( cam = ExportSpecFileCAM::to_cam_peaks( with_far, edge_cal, live_time,
+                                                                  nullptr, data ) );
+    BOOST_CHECK_EQUAL( cam.size(), with_far.size() );
+
+    // The in-range peaks still get real channel numbers...
+    BOOST_CHECK_MESSAGE( cam.front().Centroid > 0.0f,
+        "An in-range peak lost its centroid because another peak was out of range" );
+    // ...and the out-of-range one is written with zeroed channel fields rather than killing us.
+    BOOST_CHECK_SMALL( cam.back().Centroid, 1.0E-6f );
+  }
+
+  // --- No energy calibration at all: the channel fields are zero, the rest still written.
+  {
+    const vector<CAMInputOutput::Peak> cam
+              = ExportSpecFileCAM::to_cam_peaks( peaks, nullptr, live_time, nullptr, data );
+    BOOST_REQUIRE_EQUAL( cam.size(), 3 );
+    for( const CAMInputOutput::Peak &p : cam )
+    {
+      BOOST_CHECK_SMALL( p.Centroid, 1.0E-6f );
+      BOOST_CHECK_EQUAL( p.LeftChannel, 0 );
+      BOOST_CHECK( p.Area > 0.0f );
+    }
+  }
+
+  // --- Zero live time leaves the count rate zero rather than dividing by it.
+  {
+    const vector<CAMInputOutput::Peak> cam
+              = ExportSpecFileCAM::to_cam_peaks( peaks, poly_cal, 0.0f, nullptr, data );
+    for( const CAMInputOutput::Peak &p : cam )
+      BOOST_CHECK_SMALL( p.CountRate, 1.0E-6f );
+  }
+
+  // --- A peak outside the efficiency curve's range gets a zero efficiency and, crucially, a
+  //     warning: GENIE divides the peak area by that field.
+  {
+    ExportSpecFileCAM::GenieEfficiencyResult eff;
+    eff.model = CAMInputOutput::CAMIO::EfficiencyModel::EMPIRICAL;
+    for( const float energy : { 700.0f, 800.0f, 900.0f } )
+    {
+      CAMInputOutput::EfficiencyPoint pt;
+      pt.Index = static_cast<int>( eff.points.size() );
+      pt.Energy = energy;
+      pt.Efficiency = 1.0E-3f;
+      pt.EfficiencyUncertainty = 1.0E-4f;
+      eff.points.push_back( pt );
+    }
+    eff.fit_coeffs = { -6.9f, 0.0f };   //a flat 1e-3 in log-log space
+    eff.fit_reference_energy = 1260.0f;
+
+    // 605 and 625 keV are below the curve's 700 keV lower point; 800 is inside it.
+    vector<string> warnings;
+    const vector<CAMInputOutput::Peak> cam
+              = ExportSpecFileCAM::to_cam_peaks( peaks, poly_cal, live_time, &eff, data, &warnings );
+    BOOST_REQUIRE_EQUAL( cam.size(), 3 );
+
+    BOOST_CHECK_MESSAGE( cam[0].Efficiency == 0.0f && cam[1].Efficiency == 0.0f,
+        "A peak below the efficiency curve's range was given an extrapolated efficiency" );
+    BOOST_CHECK_MESSAGE( cam[2].Efficiency > 0.0f,
+        "The peak inside the curve's range has no efficiency" );
+    BOOST_CHECK_MESSAGE( !warnings.empty(),
+        "Peaks fell outside the efficiency curve and nothing was said about it" );
+  }
+}//BOOST_AUTO_TEST_CASE( toCamPeaksHandlesAwkwardInputs )
+
+
+/** The fitted branch of `genie_efficiency_at(...)` used to extrapolate without bound, contradicting
+ its own documented contract and the interpolated branch beside it.  A degree-5 log-log polynomial
+ taken a decade past its data is wrong by multiples, and GENIE turns that straight into an activity.
+ */
+BOOST_AUTO_TEST_CASE( efficiencyLookupDoesNotExtrapolate )
+{
+  set_data_dir();
+
+  ExportSpecFileCAM::GenieEfficiencyResult eff;
+  for( const float energy : { 100.0f, 500.0f, 1000.0f } )
+  {
+    CAMInputOutput::EfficiencyPoint pt;
+    pt.Index = static_cast<int>( eff.points.size() );
+    pt.Energy = energy;
+    pt.Efficiency = 1.0E-3f;
+    pt.EfficiencyUncertainty = 1.0E-4f;
+    eff.points.push_back( pt );
+  }
+
+  // Inside the range both branches must agree with the points; outside, both must give nothing.
+  for( const bool with_fit : { false, true } )
+  {
+    eff.fit_coeffs = with_fit ? vector<float>{ -6.907755f, 0.0f } : vector<float>{};
+
+    BOOST_CHECK_MESSAGE( ExportSpecFileCAM::genie_efficiency_at( eff, 500.0 ) > 0.0,
+        "with_fit=" << with_fit << ": no efficiency inside the calibrated range" );
+
+    for( const double energy : { 1.0, 10.0, 99.9, 1000.1, 5000.0, 1.0E6 } )
+    {
+      BOOST_CHECK_MESSAGE( ExportSpecFileCAM::genie_efficiency_at( eff, energy ) == 0.0,
+          "with_fit=" << with_fit << ": extrapolated to " << energy << " keV, giving "
+          << ExportSpecFileCAM::genie_efficiency_at( eff, energy ) );
+    }
+  }
+
+  BOOST_CHECK_EQUAL( ExportSpecFileCAM::genie_efficiency_at( eff, -1.0 ), 0.0 );
+  BOOST_CHECK_EQUAL( ExportSpecFileCAM::genie_efficiency_at( eff, 0.0 ), 0.0 );
+
+  // A fit that produces a non-physical efficiency must not be written either.
+  eff.fit_coeffs = { 50.0f, 0.0f };   //exp(50) - nonsense
+  BOOST_CHECK_EQUAL( ExportSpecFileCAM::genie_efficiency_at( eff, 500.0 ), 0.0 );
+}//BOOST_AUTO_TEST_CASE( efficiencyLookupDoesNotExtrapolate )
+
+
+/** `fit_genie_efficiency_curve(...)` is a public function that documented requirements it did not
+ check - a short `rel_uncerts` was an out-of-bounds read once asserts were compiled out.
+ */
+BOOST_AUTO_TEST_CASE( efficiencyCurveFitValidatesItsInputs )
+{
+  const vector<double> energies{ 100.0, 200.0, 400.0, 800.0 };
+  const vector<double> effs{ 1.0E-3, 9.0E-4, 7.0E-4, 5.0E-4 };
+  const vector<double> uncerts{ 0.1, 0.1, 0.1, 0.1 };
+
+  BOOST_CHECK_NO_THROW( ExportSpecFileCAM::fit_genie_efficiency_curve( energies, effs, uncerts, 2 ) );
+  BOOST_CHECK_NO_THROW( ExportSpecFileCAM::fit_genie_efficiency_curve( energies, effs, {}, 2 ) );
+
+  // Short (but non-empty) uncertainties would have been read out of bounds.
+  BOOST_CHECK_THROW( ExportSpecFileCAM::fit_genie_efficiency_curve( energies, effs, {0.1,0.1}, 2 ),
+                     std::exception );
+  BOOST_CHECK_THROW( ExportSpecFileCAM::fit_genie_efficiency_curve( energies, {1.0E-3}, uncerts, 2 ),
+                     std::exception );
+  BOOST_CHECK_THROW( ExportSpecFileCAM::fit_genie_efficiency_curve( energies, effs, uncerts, 8 ),
+                     std::exception );
+
+  // log() of a non-positive energy or efficiency used to return NaN coefficients silently.
+  BOOST_CHECK_THROW( ExportSpecFileCAM::fit_genie_efficiency_curve( {0.0,200.0,400.0,800.0},
+                                                                    effs, uncerts, 2 ),
+                     std::exception );
+  BOOST_CHECK_THROW( ExportSpecFileCAM::fit_genie_efficiency_curve( energies,
+                                                    {0.0,9.0E-4,7.0E-4,5.0E-4}, uncerts, 2 ),
+                     std::exception );
+}//BOOST_AUTO_TEST_CASE( efficiencyCurveFitValidatesItsInputs )
+
+
 BOOST_AUTO_TEST_CASE( genieDefaultEffUncertaintySteps )
 {
   // The step function these tests pin is what Genie itself carries in a real efficiency

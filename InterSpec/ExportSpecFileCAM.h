@@ -330,13 +330,17 @@ namespace ExportSpecFileCAM
    @param data The spectrum the peaks were fit to.  A stepped continuum's area cannot be computed
           without it (`PeakContinuum::offset_integral(...)` throws), so ROIs with a stepped
           continuum are written with a continuum area of zero when this is null.
+   @param warnings If non-null, human-readable warnings are appended here - notably when a peak
+          falls outside the efficiency curve's energy range, where its efficiency is written as
+          zero and GENIE would divide the peak area by it.
    */
   std::vector<CAMInputOutput::Peak> to_cam_peaks(
               const std::deque<std::shared_ptr<const PeakDef>> &peaks,
               const std::shared_ptr<const SpecUtils::EnergyCalibration> &energy_cal,
               const float live_time_s,
               const GenieEfficiencyResult * const efficiency = nullptr,
-              const std::shared_ptr<const SpecUtils::Measurement> &data = nullptr );
+              const std::shared_ptr<const SpecUtils::Measurement> &data = nullptr,
+              std::vector<std::string> *warnings = nullptr );
 
 
   /** Evaluates the efficiency curve `convert_efficiency_to_genie(...)` produced, at `energy` (keV):
@@ -469,7 +473,12 @@ namespace ExportSpecFileCAM
     /** Call whenever the selected file/samples change, so the library table (and FWHM/efficiency
      defaults) can be rebuilt/updated from the (possibly new) peaks and detector response.
      */
-    void updateForFile( const std::shared_ptr<const SpecMeas> &spec, const std::set<int> &samples );
+    /** @param detectors The detector names the export will actually write.  The live time, count
+     rates and continuum areas are all computed over these, so passing the wrong set makes those
+     numbers disagree with the spectrum in the same file.  Pass empty for all detectors.
+     */
+    void updateForFile( const std::shared_ptr<const SpecMeas> &spec, const std::set<int> &samples,
+                        const std::vector<std::string> &detectors = {} );
 
     bool writeLibrary() const;
     /** Whether the fitted peaks should be written into the file's PEAK block. */
@@ -519,7 +528,15 @@ namespace ExportSpecFileCAM
      sources/lines, chosen FWHM source, whether to include efficiency/energy-cal), for the
      spectrum/samples last passed to `updateForFile(...)`.
      */
-    CAMInputOutput::CnfGenieExtras currentExtras() const;
+    CAMInputOutput::CnfGenieExtras currentExtras( std::vector<std::string> *warnings = nullptr ) const;
+
+    /** The warnings writing the efficiency curve would produce for the current options - points
+     dropped as negligible, a fit rejected in favour of plain interpolation, or no curve at all.
+
+     Recomputed whenever the efficiency options change so the dialog can show them *before* the
+     user exports; the conversion is a couple of dozen samples and one small fit.
+     */
+    std::vector<std::string> efficiencyWarnings() const;
 
   protected:
     void rebuildLibraryTable();
@@ -561,6 +578,9 @@ namespace ExportSpecFileCAM
      */
     std::shared_ptr<const SpecMeas> m_spec;
     std::set<int> m_samples;
+
+    /** The detectors the export will write; empty means all of them.  See `updateForFile(...)`. */
+    std::vector<std::string> m_detectors;
     std::map<const SandiaDecay::Nuclide *, double> m_nuclide_ages;
 
     /** Whether the current spectrum has an energy calibration that can be written at all. */
