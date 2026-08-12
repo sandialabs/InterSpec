@@ -134,8 +134,11 @@
   <message id="esfcam-write-library-tt">Write a GENIE nuclide library built from the identified peaks in the selected samples, so GENIE can search for the same nuclides.</message>
   <message id="esfcam-lines-from-peaks">Lines from identified peaks</message>
   <message id="esfcam-lines-above-thresh">All lines above yield threshold</message>
+  <message id="esfcam-interference-lines">Interference lines</message>
+  <message id="esfcam-interference-lines-tt">Also write the lines the other nuclides in this library emit within 1.5 FWHM of a peak&apos;s line, so GENIE can share that peak between the nuclides instead of giving all of it to the one nuclide the library mentions.  Only nuclides that already have a peak of their own are used, and only their lines above the yield threshold are added.</message>
   <message id="esfcam-threshold-label">Threshold %:</message>
-  <message id="esfcam-combine-lines">Combine unresolvable lines</message>
+  <message id="esfcam-threshold-tt">The minimum yield a line must have to be written, as a percent of the strongest line of the <b>same</b> nuclide.  So 1% keeps every line of a nuclide with at least a hundredth the intensity of that nuclide&apos;s own most intense line.  It is not a percent of any other nuclide, nor of the peak an interference line sits under.</message>
+  <message id="esfcam-combine-lines">Merge unresolvable lines</message>
   <message id="esfcam-combine-lines-tt">Merge gamma lines that are too close together for the detector to tell apart into a single yield-weighted line, so the library only distinguishes lines GENIE could actually resolve.</message>
 
   <!-- Nuclide library table -->
@@ -147,6 +150,7 @@
   <message id="esfcam-col-write">Write</message>
   <message id="esfcam-line-yield-value">{1}%</message>
   <message id="esfcam-line-is-xray"> (x-ray)</message>
+  <message id="esfcam-line-is-interference"> (interference)</message>
 
   <!-- FWHM (shape calibration) -->
   <message id="esfcam-write-fwhm">Write FWHM</message>

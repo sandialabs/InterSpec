@@ -334,8 +334,12 @@
   margin-bottom: 4px;
 }
 
+/* The panel stretches its children, which would leave a combo as wide as the whole column; these
+   should only be as wide as their longest entry. */
 .ExportSpecFileTool .GenieCnfOptions > select
 {
+  align-self: flex-start;
+  width: auto;
   max-width: 100%;
 }
 
@@ -343,18 +347,40 @@
 .ExportSpecFileTool .GenieCnfRow
 {
   display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
   align-items: center;
-  column-gap: 5px;
+  padding-left: 12px;
+}
+
+/* This panel lives inside the "Samples to include" column, whose `.ExportSpecSamples label` rule
+   makes every label a block-level flex container - which would put the input on its own line.
+   Note also that Safari 13 has no flexbox `column-gap`, so the pair is spaced with a margin. */
+.ExportSpecFileTool .GenieCnfRow > label
+{
+  display: inline-block;
+  flex: 0 0 auto;
+  width: auto;
+  white-space: nowrap;
+  margin: 0 5px 0 0;
 }
 
 .ExportSpecFileTool .GenieCnfRow > input
 {
-  flex: 1 1 auto;
+  flex: 0 1 auto;
   min-width: 0;
+  width: 5em;
+}
+
+/* The library options that only qualify the checkbox above them, indented to show that. */
+.ExportSpecFileTool .GenieCnfSubOption
+{
+  margin-left: 5px;
 }
 
 .ExportSpecFileTool .GenieEffDistance
 {
+  width: 90px;
   max-width: 90px;
 }
 

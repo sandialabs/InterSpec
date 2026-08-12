@@ -114,6 +114,8 @@ namespace
       double energy_num = lines[index].energy * static_cast<double>(lines[index].yield);
       double mean_energy = lines[index].energy;
       bool any_xray = lines[index].is_xray;
+      // A merged line is only "interference" if nothing a peak was actually fit to went into it.
+      bool all_interference = lines[index].is_interference;
 
       size_t group_end = index + 1;
       while( group_end < lines.size() )
@@ -126,6 +128,7 @@ namespace
         energy_num += candidate_energy * static_cast<double>(lines[group_end].yield);
         mean_energy = (yield_sum > 0.0) ? (energy_num / yield_sum) : candidate_energy;
         any_xray = any_xray || lines[group_end].is_xray;
+        all_interference = all_interference && lines[group_end].is_interference;
 
         ++group_end;
       }//while( grow the cluster )
@@ -157,6 +160,7 @@ namespace
       merged.yield = static_cast<float>( yield_sum );
       merged.yield_uncert = -1.0f; //let Genie estimate it
       merged.is_xray = any_xray;
+      merged.is_interference = all_interference;
       merged.included = true;
 
       answer.push_back( merged );
@@ -174,6 +178,9 @@ namespace
    falls within `key_line_intf_limit_kev` of it.  (`AssignKeyLines()` only actually checks the
    immediately-adjacent lines in a single, globally energy-sorted list, so this is not a
    byte-for-byte match, but should agree in the common case.)
+
+   Interference lines (which by construction sit on top of another source's line, and which no peak
+   was fit to) are only considered when a source has nothing else to offer.
    */
   void assign_key_lines( vector<ExportSpecFileCAM::GenieLibrarySource> &sources,
                          const float key_line_intf_limit_kev = 2.0f )
@@ -211,8 +218,20 @@ namespace
         continue;
       }
 
-      vector<size_t> order( source.lines.size() );
-      std::iota( begin(order), end(order), size_t(0) );
+      // Only fall back to interference lines if this source has no line of its own.
+      vector<size_t> order;
+      for( size_t l = 0; l < source.lines.size(); ++l )
+      {
+        if( !source.lines[l].is_interference )
+          order.push_back( l );
+      }
+
+      if( order.empty() )
+      {
+        order.resize( source.lines.size() );
+        std::iota( begin(order), end(order), size_t(0) );
+      }
+
       std::sort( begin(order), end(order), [&source,&score]( const size_t lhs, const size_t rhs ){
         return score(source.lines[lhs]) > score(source.lines[rhs]);
       } );
@@ -267,6 +286,121 @@ namespace
     }
     return best_yield;
   }//find_yield_near(...)
+
+
+  /** The decayed-photon data `build_genie_library(...)` already computed for a source, kept so the
+   interference pass can look up another source's lines without redoing the decay calculation.
+   */
+  struct SourceDecayData
+  {
+    vector<SandiaDecay::EnergyRatePair> photons;
+    vector<SandiaDecay::EnergyRatePair> xrays;
+
+    /** Converts a `numPerSecond` into photons per decay of the parent; see `build_genie_library(...)`. */
+    double yield_sf = 1.0;
+
+    /** The `numPerSecond` of this source's most intense line; the yield threshold is relative to it. */
+    double max_yield = 0.0;
+  };//struct SourceDecayData
+
+
+  /** Adds, to each source, the lines it emits within `sm_interference_num_fwhm` FWHM of a line
+   *another* source has a fitted peak at.
+
+   Without these, the library says only one nuclide emits at that energy, and Genie hands it the
+   whole peak area rather than splitting it - so both nuclides' activities come out wrong.
+
+   Only the lines already in `sources` (i.e. the peak-assigned ones) seed the search, so an added
+   line never pulls in further lines of its own.  `yield_threshold_percent` is relative to each
+   source's own most intense line, which keeps a decay chain's hundreds of trace lines out.
+   */
+  void add_interference_lines( vector<ExportSpecFileCAM::GenieLibrarySource> &sources,
+                               const vector<SourceDecayData> &decay_data,
+                               const pair<float,float> &fwhm_coeffs,
+                               const double yield_threshold_percent )
+  {
+    assert( sources.size() == decay_data.size() );
+    if( (sources.size() < 2) || (sources.size() != decay_data.size()) )
+      return;
+
+    const vector<float> coefs{ fwhm_coeffs.first, fwhm_coeffs.second };
+
+    // Genie's FWHM equation can go negative at low energy (its own NaI defaults do); clamp to a
+    //  small positive width so the search window is never zero or nonsensical.
+    const auto fwhm_at = [&coefs]( const double energy ) -> double {
+      const double fwhm = DetectorPeakResponse::peakResolutionFWHM( static_cast<float>(energy),
+                                DetectorPeakResponse::ResolutionFnctForm::kConstantPlusSqrtEnergy,
+                                coefs );
+      return (fwhm > 0.001) ? fwhm : 0.001;
+    };//fwhm_at lambda
+
+    // Snapshot the peak-assigned energies before adding anything, so the lines we add cant
+    //  themselves seed further searches.
+    vector<vector<float>> peak_energies( sources.size() );
+    for( size_t index = 0; index < sources.size(); ++index )
+    {
+      for( const ExportSpecFileCAM::GenieLibraryLine &line : sources[index].lines )
+        peak_energies[index].push_back( line.energy );
+    }
+
+    for( size_t peak_src = 0; peak_src < sources.size(); ++peak_src )
+    {
+      for( const float peak_energy : peak_energies[peak_src] )
+      {
+        const double window = ExportSpecFileCAM::sm_interference_num_fwhm * fwhm_at( peak_energy );
+
+        for( size_t other_src = 0; other_src < sources.size(); ++other_src )
+        {
+          if( other_src == peak_src )
+            continue;
+
+          ExportSpecFileCAM::GenieLibrarySource &other = sources[other_src];
+          const SourceDecayData &other_data = decay_data[other_src];
+          const double threshold = (yield_threshold_percent/100.0) * other_data.max_yield;
+
+          for( const SandiaDecay::EnergyRatePair &p : other_data.photons )
+          {
+            if( (std::fabs(p.energy - peak_energy) > window) || (p.numPerSecond < threshold) )
+              continue;
+
+            // Dont duplicate a line `other` already has - in particular one it has its own peak
+            //  at, which has to stay a normal (non-interference) line.  This also de-duplicates
+            //  against lines an earlier seed energy already added.
+            const bool already_have = std::any_of( begin(other.lines), end(other.lines),
+                                            [&p]( const ExportSpecFileCAM::GenieLibraryLine &l ){
+              return (std::fabs(l.energy - p.energy) < 0.001);
+            } );
+
+            if( already_have )
+              continue;
+
+            const bool is_xray = std::any_of( begin(other_data.xrays), end(other_data.xrays),
+                                              [&p]( const SandiaDecay::EnergyRatePair &x ){
+              return std::fabs(x.energy - p.energy) < 0.001;
+            } );
+
+            ExportSpecFileCAM::GenieLibraryLine line;
+            line.energy = static_cast<float>( p.energy );
+            line.yield = static_cast<float>( other_data.yield_sf * p.numPerSecond );
+            line.is_xray = is_xray;
+            line.is_interference = true;
+            line.included = true;
+            other.lines.push_back( line );
+          }//for( loop over the other source's photons )
+        }//for( loop over the other sources )
+      }//for( loop over this source's peak-assigned energies )
+    }//for( loop over sources )
+
+    // Leave each source's lines energy ordered, like every other path does.
+    for( ExportSpecFileCAM::GenieLibrarySource &source : sources )
+    {
+      std::sort( begin(source.lines), end(source.lines),
+                 []( const ExportSpecFileCAM::GenieLibraryLine &lhs,
+                     const ExportSpecFileCAM::GenieLibraryLine &rhs ){
+        return lhs.energy < rhs.energy;
+      } );
+    }
+  }//void add_interference_lines(...)
 }//namespace
 
 
@@ -278,11 +412,17 @@ vector<GenieLibrarySource> build_genie_library(
                                 const GenieLibraryLineMode mode,
                                 const double yield_threshold_percent,
                                 const bool combine_unresolvable_lines,
+                                const bool include_interference_lines,
                                 const pair<float,float> &fwhm_coeffs,
                                 const pair<float,float> &energy_range,
                                 const map<const SandiaDecay::Nuclide *, double> &nuclide_ages,
                                 vector<string> *warnings )
 {
+  // Interference only makes sense against lines a peak was actually fit to; in
+  //  `AllLinesAboveThreshold` mode every source already carries all its lines.
+  const bool do_interference = include_interference_lines
+                               && (mode == GenieLibraryLineMode::PeakLinesOnly);
+
   // Group the peaks that have a usable source (a nuclide) by that nuclide; peaks with a
   // reaction, or an x-ray with no parent nuclide, cant be represented in a Genie library.
   map<const SandiaDecay::Nuclide *, vector<shared_ptr<const PeakDef>>> peaks_by_nuclide;
@@ -336,6 +476,9 @@ vector<GenieLibrarySource> build_genie_library(
 
   vector<GenieLibrarySource> answer;
 
+  /** Index-aligned with `answer`; only filled in (and only needed) when adding interference lines. */
+  vector<SourceDecayData> decay_data;
+
   for( const auto &nuc_peaks : peaks_by_nuclide )
   {
     const SandiaDecay::Nuclide * const nuc = nuc_peaks.first;
@@ -388,6 +531,15 @@ vector<GenieLibrarySource> build_genie_library(
     for( const SandiaDecay::EnergyRatePair &p : photons )
       max_yield = std::max( max_yield, p.numPerSecond );
 
+    // Figure out if a line is an x-ray by checking if it's also in xrays(...); gammas()
+    // and xrays() are disjoint, and photons() is their union (plus annihilation gammas).
+    //  Not needed in peak-lines mode, where the peak itself says whether it is an x-ray - unless
+    //  we are also going to add interference lines, which have no peak to ask.
+    const bool need_xrays = do_interference
+                            || (mode == GenieLibraryLineMode::AllLinesAboveThreshold);
+    const vector<SandiaDecay::EnergyRatePair> xrays = need_xrays
+                                    ? mixture.xrays( age ) : vector<SandiaDecay::EnergyRatePair>{};
+
     if( mode == GenieLibraryLineMode::PeakLinesOnly )
     {
       for( const shared_ptr<const PeakDef> &peak : nuc_peaks.second )
@@ -432,10 +584,6 @@ vector<GenieLibrarySource> build_genie_library(
 
       const double threshold = (yield_threshold_percent/100.0) * max_yield;
 
-      // Figure out if a line is an x-ray by checking if it's also in xrays(...); gammas()
-      // and xrays() are disjoint, and photons() is their union (plus annihilation gammas).
-      const vector<SandiaDecay::EnergyRatePair> xrays = mixture.xrays( age );
-
       for( const SandiaDecay::EnergyRatePair &p : photons )
       {
         if( p.numPerSecond < threshold )
@@ -464,11 +612,30 @@ vector<GenieLibrarySource> build_genie_library(
     if( source.lines.empty() )
       continue;
 
-    if( combine_unresolvable_lines )
-      merge_unresolvable_lines( source.lines, fwhm_coeffs );
+    if( do_interference )
+    {
+      SourceDecayData decay;
+      decay.photons = photons;
+      decay.xrays = xrays;
+      decay.yield_sf = yield_sf;
+      decay.max_yield = max_yield;
+      decay_data.push_back( std::move(decay) );
+    }//if( do_interference )
 
     answer.push_back( source );
   }//for( loop over peaks_by_nuclide )
+
+  // Has to happen once every source's peak lines are known, and before they are merged - an
+  //  interference line can be close enough to a line of the source it is added to that the two
+  //  should end up as one.
+  if( do_interference )
+    add_interference_lines( answer, decay_data, fwhm_coeffs, yield_threshold_percent );
+
+  if( combine_unresolvable_lines )
+  {
+    for( GenieLibrarySource &source : answer )
+      merge_unresolvable_lines( source.lines, fwhm_coeffs );
+  }
 
   std::sort( begin(answer), end(answer), []( const GenieLibrarySource &lhs, const GenieLibrarySource &rhs ){
     return lhs.name < rhs.name;
@@ -1233,6 +1400,14 @@ void GenieLibraryModel::setSources( vector<GenieLibrarySource> sources )
 {
   layoutAboutToBeChanged().emit();
   m_sources = std::move( sources );
+
+  // Callers can hand us sources whose key line isnt one of the included lines - `rebuildLibraryTable()`
+  //  restores the user's un-checked lines onto a freshly built library, whose key lines were picked
+  //  without knowing about them.  A key line that isnt written is no key line at all (see
+  //  `to_library_lines(...)`), so move it onto a line that is.
+  for( int index = 0; index < static_cast<int>(m_sources.size()); ++index )
+    ensureSingleKeyLine( index );
+
   layoutChanged().emit();
 }//void setSources(...)
 
@@ -1385,6 +1560,8 @@ boost::any GenieLibraryModel::data( const WModelIndex &index, int role ) const
       WString answer = WString::tr("esfcam-line-yield-value").arg(buffer);
       if( line.is_xray )
         answer += WString::tr("esfcam-line-is-xray");
+      if( line.is_interference )
+        answer += WString::tr("esfcam-line-is-interference");
       return boost::any( answer );
     }
 
@@ -1661,6 +1838,7 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
     m_writePeaksCb( nullptr ),
     m_writeLibraryCb( nullptr ),
     m_libraryModeCb( nullptr ),
+    m_interferenceLinesCb( nullptr ),
     m_thresholdLabel( nullptr ),
     m_thresholdEdit( nullptr ),
     m_combineLinesCb( nullptr ),
@@ -1726,6 +1904,15 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
   m_libraryModeCb->setCurrentIndex( 0 );
   m_libraryModeCb->activated().connect( this, &GenieCnfOptionsWidget::handleLibraryOptionsChanged );
 
+  m_interferenceLinesCb = new WCheckBox( WString::tr("esfcam-interference-lines"), this );
+  m_interferenceLinesCb->addStyleClass( "CbNoLineBreak GenieCnfSubOption" );
+  m_interferenceLinesCb->setChecked( true );
+  HelpSystem::attachToolTipOn( m_interferenceLinesCb, WString::tr("esfcam-interference-lines-tt"),
+                               true, HelpSystem::ToolTipPosition::Right,
+                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
+  m_interferenceLinesCb->checked().connect( this, &GenieCnfOptionsWidget::handleLibraryOptionsChanged );
+  m_interferenceLinesCb->unChecked().connect( this, &GenieCnfOptionsWidget::handleLibraryOptionsChanged );
+
   // Keep the label and its input on one line, so hiding them together leaves no stray gap.
   WContainerWidget *thresholdRow = new WContainerWidget( this );
   thresholdRow->addStyleClass( "GenieCnfRow" );
@@ -1734,10 +1921,14 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
   m_thresholdEdit->setRange( 0.0f, 100.0f );
   m_thresholdEdit->setValue( 1.0f );
   m_thresholdLabel->setBuddy( m_thresholdEdit );
+  HelpSystem::attachToolTipOn( {m_thresholdLabel, m_thresholdEdit},
+                               WString::tr("esfcam-threshold-tt"),
+                               true, HelpSystem::ToolTipPosition::Right,
+                               HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_thresholdEdit->valueChanged().connect( this, &GenieCnfOptionsWidget::handleLibraryOptionsChanged );
 
   m_combineLinesCb = new WCheckBox( WString::tr("esfcam-combine-lines"), this );
-  m_combineLinesCb->addStyleClass( "CbNoLineBreak" );
+  m_combineLinesCb->addStyleClass( "CbNoLineBreak GenieCnfSubOption" );
   m_combineLinesCb->setChecked( true );
   HelpSystem::attachToolTipOn( m_combineLinesCb, WString::tr("esfcam-combine-lines-tt"),
                                true, HelpSystem::ToolTipPosition::Right,
@@ -1944,29 +2135,10 @@ void GenieCnfOptionsWidget::updateForFile( const shared_ptr<const SpecMeas> &spe
 void GenieCnfOptionsWidget::rebuildLibraryTable()
 {
   const shared_ptr<const SpecMeas> spec = m_spec;
-  m_libraryModel->setSources( {} );
-  m_library_warnings.clear();
-
-  if( !spec )
-  {
-    updateWarningsAndExportable();
-    return;
-  }
-
-  const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = spec->peaks( m_samples );
-  if( !peaks || peaks->empty() )
-  {
-    m_library_warnings.push_back( WString::tr("esfcam-warn-no-peaks").toUTF8() );
-    updateWarningsAndExportable();
-    return;
-  }
-
-  const GenieLibraryLineMode mode = (m_libraryModeCb->currentIndex() == 0)
-                                    ? GenieLibraryLineMode::PeakLinesOnly
-                                    : GenieLibraryLineMode::AllLinesAboveThreshold;
 
   // Remember what the user had un-checked, so changing an unrelated option (the mode, the
-  //  threshold, an age, the FWHM source, ...) doesn't silently re-check everything.
+  //  threshold, an age, the FWHM source, the interference/combine options, ...) doesn't silently
+  //  re-check everything.  Has to happen before the `setSources({})` below empties the model.
   map<string,bool> prev_source_included;
   map<pair<string,int>,bool> prev_line_included;
   for( const GenieLibrarySource &src : m_libraryModel->sources() )
@@ -1975,6 +2147,29 @@ void GenieCnfOptionsWidget::rebuildLibraryTable()
     for( const GenieLibraryLine &line : src.lines )
       prev_line_included[ {src.name, static_cast<int>(std::round(100.0*line.energy))} ] = line.included;
   }
+
+  m_libraryModel->setSources( {} );
+  m_library_warnings.clear();
+
+  if( !spec )
+  {
+    updateLibraryOptionVisibility();
+    updateWarningsAndExportable();
+    return;
+  }
+
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = spec->peaks( m_samples );
+  if( !peaks || peaks->empty() )
+  {
+    m_library_warnings.push_back( WString::tr("esfcam-warn-no-peaks").toUTF8() );
+    updateLibraryOptionVisibility();
+    updateWarningsAndExportable();
+    return;
+  }
+
+  const GenieLibraryLineMode mode = (m_libraryModeCb->currentIndex() == 0)
+                                    ? GenieLibraryLineMode::PeakLinesOnly
+                                    : GenieLibraryLineMode::AllLinesAboveThreshold;
 
   pair<float,float> energy_range{ 0.0f, 0.0f };
   for( const shared_ptr<const SpecUtils::Measurement> &m : spec->measurements() )
@@ -1990,6 +2185,7 @@ void GenieCnfOptionsWidget::rebuildLibraryTable()
   vector<string> warnings;
   vector<GenieLibrarySource> sources = build_genie_library( *peaks, mode, m_thresholdEdit->value(),
                                                             m_combineLinesCb->isChecked(),
+                                                            m_interferenceLinesCb->isChecked(),
                                                             currentFwhmCoefficients(), energy_range,
                                                             m_nuclide_ages, &warnings );
 
@@ -2025,23 +2221,53 @@ void GenieCnfOptionsWidget::rebuildLibraryTable()
   }
 
   m_library_warnings = warnings;
+  updateLibraryOptionVisibility();
   updateWarningsAndExportable();
 }//void rebuildLibraryTable()
 
 
-void GenieCnfOptionsWidget::handleLibraryOptionsChanged()
+void GenieCnfOptionsWidget::updateLibraryOptionVisibility()
 {
   const bool write_library = m_writeLibraryCb->isChecked();
   m_libraryModeCb->setHidden( !write_library );
   m_combineLinesCb->setHidden( !write_library );
   m_libraryTable->setHidden( !write_library );
 
-  const bool show_threshold = write_library && (m_libraryModeCb->currentIndex() != 0);
+  // With a single source there is nothing to interfere with, so the option is just noise.  Adding
+  //  interference lines never adds a *source*, so this count doesnt depend on the checkbox.
+  const bool peak_lines_mode = (m_libraryModeCb->currentIndex() == 0);
+  const bool show_interference = write_library && peak_lines_mode
+                                 && (m_libraryModel->rowCount() > 1);
+  m_interferenceLinesCb->setHidden( !show_interference );
+
+  // The threshold gates the "all lines" mode, and also which interference lines are worth adding.
+  const bool show_threshold = write_library
+                    && (!peak_lines_mode || (show_interference && m_interferenceLinesCb->isChecked()));
   m_thresholdLabel->setHidden( !show_threshold );
   m_thresholdEdit->setHidden( !show_threshold );
+}//void updateLibraryOptionVisibility()
 
-  if( write_library )
-    rebuildLibraryTable();
+
+bool GenieCnfOptionsWidget::libraryUsesFwhm() const
+{
+  if( !m_writeLibraryCb->isChecked() )
+    return false;
+
+  // The interference window is in FWHM, so it depends on the shape calibration just like the
+  //  unresolvable-line clustering does.
+  const bool interference = (m_libraryModeCb->currentIndex() == 0)
+                            && m_interferenceLinesCb->isChecked();
+
+  return m_combineLinesCb->isChecked() || interference;
+}//bool libraryUsesFwhm() const
+
+
+void GenieCnfOptionsWidget::handleLibraryOptionsChanged()
+{
+  updateLibraryOptionVisibility();
+
+  if( m_writeLibraryCb->isChecked() )
+    rebuildLibraryTable(); //also calls `updateLibraryOptionVisibility()`, once the source count is known
   else
     updateWarningsAndExportable();
 }//void handleLibraryOptionsChanged()
@@ -2300,8 +2526,9 @@ void GenieCnfOptionsWidget::handleFwhmSourceChanged()
     }
   }//if( write_fwhm )
 
-  // The library's line clustering uses the FWHM being written, so it has to be re-done.
-  if( m_writeLibraryCb->isChecked() && m_combineLinesCb->isChecked() )
+  // The library's line clustering and interference window both use the FWHM being written, so the
+  //  library has to be re-done.
+  if( libraryUsesFwhm() )
     rebuildLibraryTable();
 
   updateWarningsAndExportable();
@@ -2343,7 +2570,7 @@ void GenieCnfOptionsWidget::handleFwhmFitFromToolUpdated( shared_ptr<DetectorPea
   // Show the newly fit equation, and let the export become possible now that we have one.
   handleFwhmSourceChanged();
 
-  if( m_writeLibraryCb->isChecked() && m_combineLinesCb->isChecked() )
+  if( libraryUsesFwhm() )
     rebuildLibraryTable();
 }//void handleFwhmFitFromToolUpdated(...)
 

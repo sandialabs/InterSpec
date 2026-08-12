@@ -113,6 +113,12 @@ namespace ExportSpecFileCAM
      */
     bool is_key_line = false;
 
+    /** True when no peak was fit to this line, and it is only in the library because it falls
+     within `sm_interference_num_fwhm` FWHM of a line another source *does* have a peak at - so
+     Genie can correct that peak for this source's contribution.  See `build_genie_library(...)`.
+     */
+    bool is_interference = false;
+
     /** Whether this line should be written to the library; defaults to true (checked). */
     bool included = true;
   };//struct GenieLibraryLine
@@ -173,10 +179,19 @@ namespace ExportSpecFileCAM
           could not tell apart (within a source) are merged into a single yield-weighted line,
           mirroring how the GENIE Library Editor (and the "Peak-Map" tool) combine unresolvable
           lines.  See `sm_cluster_num_sigma` for the clustering criterion.
+   @param include_interference_lines Only used when `mode == PeakLinesOnly`.  If true, each source
+          additionally gets the lines it emits within `sm_interference_num_fwhm` FWHM of *another*
+          source's peak-assigned line, flagged `GenieLibraryLine::is_interference`.  Without them a
+          library says only one nuclide emits at that energy, and Genie attributes the whole peak to
+          it rather than splitting it between the two.  Only nuclides that already have a peak of
+          their own become sources, so this never adds a nuclide the user did not identify, and the
+          added lines are subject to `yield_threshold_percent` (relative to their own source's most
+          intense line) so a chain's hundreds of trace lines do not flood the library.
    @param fwhm_coeffs The `{A0, A1}` of `FWHM = A0 + A1*sqrt(energy)` used to decide which lines
-          are unresolvable; this should be the same shape calibration being written into the CNF
-          file, so the library matches what Genie itself will be able to resolve.  Only used when
-          `combine_unresolvable_lines` is true.
+          are unresolvable, and how far an interference line may be from a peak's line; this should
+          be the same shape calibration being written into the CNF file, so the library matches what
+          Genie itself will be able to resolve.  Only used when `combine_unresolvable_lines` or
+          `include_interference_lines` is true.
    @param energy_range The `{lower, upper}` energy (keV) the spectrum covers; lines outside it are
           left out, since Genie could never match a peak to them.  Pass `{0,0}` to disable.  Only
           used when `mode == AllLinesAboveThreshold`.
@@ -195,6 +210,7 @@ namespace ExportSpecFileCAM
                                   const GenieLibraryLineMode mode,
                                   const double yield_threshold_percent,
                                   const bool combine_unresolvable_lines,
+                                  const bool include_interference_lines,
                                   const std::pair<float,float> &fwhm_coeffs,
                                   const std::pair<float,float> &energy_range,
                                   const std::map<const SandiaDecay::Nuclide *, double> &nuclide_ages = {},
@@ -206,6 +222,15 @@ namespace ExportSpecFileCAM
    the manual rel-eff calculations) use to decide which lines contribute to the same peak.
    */
   inline constexpr double sm_cluster_num_sigma = 1.25;
+
+  /** How many FWHM from a peak-assigned line another source's line has to be within before it is
+   written into the library as an interference line; see `build_genie_library(...)`.
+
+   Deliberately wider than `sm_cluster_num_sigma` - lines that far apart *are* separately
+   resolvable, but they still overlap enough to bias each other's areas, which is exactly the case
+   Genie's interference correction exists for.
+   */
+  inline constexpr double sm_interference_num_fwhm = 1.5;
 
   /** Flattens the checked (`included`) sources/lines of `sources` into the line-list that
    `SpecUtils::SpecFile::write_cnf(...)`'s `CnfGenieExtras` expects.
@@ -556,6 +581,19 @@ namespace ExportSpecFileCAM
     void handleSourceExpanded( const Wt::WModelIndex &index );
     void handleSourceCollapsed( const Wt::WModelIndex &index );
 
+    /** Shows/hides the library options that only apply to some of the other options: the
+     interference checkbox (peak-lines mode, and only worth offering with more than one source),
+     and the yield threshold (which gates both the "all lines" mode and the interference lines).
+
+     Has to run after `rebuildLibraryTable()`, since the source count is only known then.
+     */
+    void updateLibraryOptionVisibility();
+
+    /** Whether the library being built depends on the FWHM shape calibration - i.e. whether
+     changing the FWHM has to trigger a `rebuildLibraryTable()`.
+     */
+    bool libraryUsesFwhm() const;
+
     /** Shows/hides the options that only make sense for one of spectrum / library-only output. */
     void handleWriteSpectrumChanged();
 
@@ -609,6 +647,8 @@ namespace ExportSpecFileCAM
     Wt::WCheckBox *m_writePeaksCb;
     Wt::WCheckBox *m_writeLibraryCb;
     Wt::WComboBox *m_libraryModeCb;
+    /** Only shown in peak-lines mode, and only when there is more than one source to interfere. */
+    Wt::WCheckBox *m_interferenceLinesCb;
     Wt::WLabel *m_thresholdLabel;
     NativeFloatSpinBox *m_thresholdEdit;
     Wt::WCheckBox *m_combineLinesCb;

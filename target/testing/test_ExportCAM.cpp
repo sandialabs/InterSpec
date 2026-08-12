@@ -320,7 +320,7 @@ BOOST_AUTO_TEST_CASE( buildLibraryPeakLinesOnly )
   vector<string> warnings;
   const vector<ExportSpecFileCAM::GenieLibrarySource> sources = ExportSpecFileCAM::build_genie_library(
                                 peaks, ExportSpecFileCAM::GenieLibraryLineMode::PeakLinesOnly,
-                                1.0, true, s_test_hpge_fwhm, s_test_energy_range, {}, &warnings );
+                                1.0, true, false, s_test_hpge_fwhm, s_test_energy_range, {}, &warnings );
 
   BOOST_REQUIRE_EQUAL( sources.size(), 1u );
   const ExportSpecFileCAM::GenieLibrarySource &src = sources[0];
@@ -366,17 +366,138 @@ BOOST_AUTO_TEST_CASE( buildLibraryAllLinesAboveThreshold )
   // Very low threshold - should end up with (at least) the two well known Co60 lines.
   vector<ExportSpecFileCAM::GenieLibrarySource> sources = ExportSpecFileCAM::build_genie_library(
                                 peaks, ExportSpecFileCAM::GenieLibraryLineMode::AllLinesAboveThreshold,
-                                1.0, false, s_test_hpge_fwhm, s_test_energy_range, {} );
+                                1.0, false, false, s_test_hpge_fwhm, s_test_energy_range, {} );
   BOOST_REQUIRE_EQUAL( sources.size(), 1u );
   BOOST_CHECK_MESSAGE( sources[0].lines.size() >= 2, "Expected at least the 1173/1332 keV lines" );
 
   // A very high threshold should exclude everything but the most intense line(s).
   sources = ExportSpecFileCAM::build_genie_library(
                                 peaks, ExportSpecFileCAM::GenieLibraryLineMode::AllLinesAboveThreshold,
-                                99.0, false, s_test_hpge_fwhm, s_test_energy_range, {} );
+                                99.0, false, false, s_test_hpge_fwhm, s_test_energy_range, {} );
   BOOST_REQUIRE_EQUAL( sources.size(), 1u );
   BOOST_CHECK_MESSAGE( sources[0].lines.size() <= 2, "A 99% threshold should leave very few lines" );
 }//BOOST_AUTO_TEST_CASE( buildLibraryAllLinesAboveThreshold )
+
+
+BOOST_AUTO_TEST_CASE( buildLibraryInterferenceLines )
+{
+  set_data_dir();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+
+  const SandiaDecay::Nuclide * const eu152 = db->nuclide( "Eu152" );
+  const SandiaDecay::Nuclide * const th232 = db->nuclide( "Th232" );
+  BOOST_REQUIRE( eu152 );
+  BOOST_REQUIRE( th232 );
+
+  // Eu152's 964.08 keV line and the Th232 chain's (Ac228) 964.77 keV line are 0.69 keV apart -
+  //  inside the 1.5 FWHM (~3.1 keV, for `s_test_hpge_fwhm`) interference window, but far enough
+  //  apart that combining is off here so the line counts stay exact.  Th232's next line up,
+  //  968.97 keV, is 4.9 keV away and must NOT be pulled in.
+  deque<shared_ptr<const PeakDef>> peaks;
+  peaks.push_back( make_peak( 964.08f, eu152 ) );
+  peaks.push_back( make_peak( 2614.5f, th232 ) );
+
+  const auto source_named = []( const vector<ExportSpecFileCAM::GenieLibrarySource> &sources,
+                                const string &name ) -> const ExportSpecFileCAM::GenieLibrarySource * {
+    for( const ExportSpecFileCAM::GenieLibrarySource &src : sources )
+    {
+      if( src.name == name )
+        return &src;
+    }
+    return nullptr;
+  };//source_named lambda
+
+  // Without the option, each source carries only the line its own peak was fit to.
+  {
+    const vector<ExportSpecFileCAM::GenieLibrarySource> sources = ExportSpecFileCAM::build_genie_library(
+                                  peaks, ExportSpecFileCAM::GenieLibraryLineMode::PeakLinesOnly,
+                                  1.0, false, false, s_test_hpge_fwhm, s_test_energy_range, {} );
+
+    BOOST_REQUIRE_EQUAL( sources.size(), 2u );
+    for( const ExportSpecFileCAM::GenieLibrarySource &src : sources )
+    {
+      BOOST_CHECK_MESSAGE( src.lines.size() == 1u, src.name << ": expected one line, got "
+                           << src.lines.size() );
+      for( const ExportSpecFileCAM::GenieLibraryLine &line : src.lines )
+        BOOST_CHECK( !line.is_interference );
+    }
+  }
+
+  // With it, Th232 additionally gets the 964.77 keV line that sits under Eu152's peak.
+  {
+    const vector<ExportSpecFileCAM::GenieLibrarySource> sources = ExportSpecFileCAM::build_genie_library(
+                                  peaks, ExportSpecFileCAM::GenieLibraryLineMode::PeakLinesOnly,
+                                  1.0, false, true, s_test_hpge_fwhm, s_test_energy_range, {} );
+
+    //  Interference never introduces a nuclide the user did not identify.
+    BOOST_REQUIRE_EQUAL( sources.size(), 2u );
+
+    const ExportSpecFileCAM::GenieLibrarySource * const th = source_named( sources, "Th232" );
+    const ExportSpecFileCAM::GenieLibrarySource * const eu = source_named( sources, "Eu152" );
+    BOOST_REQUIRE( th );
+    BOOST_REQUIRE( eu );
+
+    // Eu152 has nothing near 2614 keV, so it gains nothing.
+    BOOST_CHECK_EQUAL( eu->lines.size(), 1u );
+
+    BOOST_REQUIRE_EQUAL( th->lines.size(), 2u );
+
+    const ExportSpecFileCAM::GenieLibraryLine *interference = nullptr, *peak_line = nullptr;
+    for( const ExportSpecFileCAM::GenieLibraryLine &line : th->lines )
+    {
+      if( line.is_interference )
+        interference = &line;
+      else
+        peak_line = &line;
+    }
+
+    BOOST_REQUIRE_MESSAGE( interference, "Th232 should have gained an interference line" );
+    BOOST_REQUIRE_MESSAGE( peak_line, "Th232's 2614 keV peak line should still be a normal line" );
+
+    BOOST_CHECK_CLOSE( interference->energy, 964.77f, 0.05 );
+    BOOST_CHECK_CLOSE( peak_line->energy, 2614.53f, 0.05 );
+    BOOST_CHECK( !interference->is_xray );
+
+    //  A branching ratio, like every other line's yield; Ac228's 964.77 keV line is ~5% of the
+    //  chain, and the chain is not quite at equilibrium at Th232's 20 year default age.
+    BOOST_CHECK_MESSAGE( (interference->yield > 0.01f) && (interference->yield < 0.10f),
+                         "Unexpected interference line yield: " << interference->yield );
+
+    //  A line no peak was fit to must not become the nuclide's key line.
+    BOOST_CHECK( !interference->is_key_line );
+    BOOST_CHECK( peak_line->is_key_line );
+  }
+
+  // The yield threshold gates the added lines: Ac228's 964.77 keV line is ~12% of the chain's most
+  //  intense line, so a 50% threshold drops it.
+  {
+    const vector<ExportSpecFileCAM::GenieLibrarySource> sources = ExportSpecFileCAM::build_genie_library(
+                                  peaks, ExportSpecFileCAM::GenieLibraryLineMode::PeakLinesOnly,
+                                  50.0, false, true, s_test_hpge_fwhm, s_test_energy_range, {} );
+
+    const ExportSpecFileCAM::GenieLibrarySource * const th = source_named( sources, "Th232" );
+    BOOST_REQUIRE( th );
+    BOOST_CHECK_EQUAL( th->lines.size(), 1u );
+  }
+
+  // With a single source there is nothing to interfere with, so the option changes nothing.
+  {
+    deque<shared_ptr<const PeakDef>> one_nuc_peaks;
+    one_nuc_peaks.push_back( make_peak( 964.08f, eu152 ) );
+
+    const vector<ExportSpecFileCAM::GenieLibrarySource> without = ExportSpecFileCAM::build_genie_library(
+                                  one_nuc_peaks, ExportSpecFileCAM::GenieLibraryLineMode::PeakLinesOnly,
+                                  1.0, false, false, s_test_hpge_fwhm, s_test_energy_range, {} );
+    const vector<ExportSpecFileCAM::GenieLibrarySource> with = ExportSpecFileCAM::build_genie_library(
+                                  one_nuc_peaks, ExportSpecFileCAM::GenieLibraryLineMode::PeakLinesOnly,
+                                  1.0, false, true, s_test_hpge_fwhm, s_test_energy_range, {} );
+
+    BOOST_REQUIRE_EQUAL( without.size(), 1u );
+    BOOST_REQUIRE_EQUAL( with.size(), 1u );
+    BOOST_CHECK_EQUAL( without[0].lines.size(), with[0].lines.size() );
+  }
+}//BOOST_AUTO_TEST_CASE( buildLibraryInterferenceLines )
 
 
 BOOST_AUTO_TEST_CASE( combineUnresolvableLines )
@@ -400,10 +521,10 @@ BOOST_AUTO_TEST_CASE( combineUnresolvableLines )
 
   const vector<ExportSpecFileCAM::GenieLibrarySource> combined = ExportSpecFileCAM::build_genie_library(
                                 peaks, ExportSpecFileCAM::GenieLibraryLineMode::AllLinesAboveThreshold,
-                                0.01, true, s_test_hpge_fwhm, s_test_energy_range, {} );
+                                0.01, true, false, s_test_hpge_fwhm, s_test_energy_range, {} );
   const vector<ExportSpecFileCAM::GenieLibrarySource> uncombined = ExportSpecFileCAM::build_genie_library(
                                 peaks, ExportSpecFileCAM::GenieLibraryLineMode::AllLinesAboveThreshold,
-                                0.01, false, s_test_hpge_fwhm, s_test_energy_range, {} );
+                                0.01, false, false, s_test_hpge_fwhm, s_test_energy_range, {} );
 
   BOOST_REQUIRE_EQUAL( combined.size(), 1u );
   BOOST_REQUIRE_EQUAL( uncombined.size(), 1u );
@@ -426,7 +547,7 @@ BOOST_AUTO_TEST_CASE( toLibraryLinesRespectsIncluded )
 
   vector<ExportSpecFileCAM::GenieLibrarySource> sources = ExportSpecFileCAM::build_genie_library(
                                 peaks, ExportSpecFileCAM::GenieLibraryLineMode::PeakLinesOnly,
-                                1.0, true, s_test_hpge_fwhm, s_test_energy_range, {} );
+                                1.0, true, false, s_test_hpge_fwhm, s_test_energy_range, {} );
   BOOST_REQUIRE_EQUAL( sources.size(), 1u );
   BOOST_REQUIRE_EQUAL( sources[0].lines.size(), 2u );
 
@@ -465,7 +586,7 @@ BOOST_AUTO_TEST_CASE( writeCnfWithLibraryRoundTrips )
 
   const vector<ExportSpecFileCAM::GenieLibrarySource> sources = ExportSpecFileCAM::build_genie_library(
                                 peaks, ExportSpecFileCAM::GenieLibraryLineMode::PeakLinesOnly,
-                                1.0, true, s_test_hpge_fwhm, s_test_energy_range, {} );
+                                1.0, true, false, s_test_hpge_fwhm, s_test_energy_range, {} );
   BOOST_REQUIRE_EQUAL( sources.size(), 2u );
 
   // Build a minimal synthetic spectrum to write, along with the library.
@@ -540,7 +661,7 @@ BOOST_AUTO_TEST_CASE( fitGenieFwhmFromDrf )
   writer.AddShapeCalibration( fit.first, fit.second );
   writer.AddEnergyCalibration( {0.0f, 3.0f} );
   writer.AddSpectrum( vector<uint32_t>( 512, 10 ) );
-  vector<unsigned char> &filedata = writer.CreateFile();
+  vector<unsigned char> &filedata = writer.CreateCAMFile();
   BOOST_REQUIRE( !filedata.empty() );
 
   CAMInputOutput::CAMIO reader;
@@ -644,7 +765,7 @@ BOOST_AUTO_TEST_CASE( efficiencyPairsConvertAndRoundTrip )
     writer.AddEfficiencyFit( result.fit_coeffs, result.fit_reference_energy );
   writer.AddEnergyCalibration( {0.0f, 3.0f} );
   writer.AddSpectrum( vector<uint32_t>( 512, 10 ) );
-  vector<unsigned char> &filedata = writer.CreateFile();
+  vector<unsigned char> &filedata = writer.CreateCAMFile();
   BOOST_REQUIRE( !filedata.empty() );
 
   CAMInputOutput::CAMIO reader;
@@ -708,7 +829,7 @@ BOOST_AUTO_TEST_CASE( writtenBlocksAreSelfConsistent )
     cam.AddEfficiencyFit( {-19.7f, 4.38f}, 1260.0f );
     cam.AddEnergyCalibration( {0.0f, 3.0f} );
     cam.AddSpectrum( vector<uint32_t>( 256, 5 ) );
-    return cam.CreateFile();
+    return cam.CreateCAMFile();
   };
 
   // (1) A block must contain the record its own header declares.  Sizing the GEOM block from its
@@ -743,7 +864,7 @@ BOOST_AUTO_TEST_CASE( writtenBlocksAreSelfConsistent )
     cam.AddEfficiencyFit( {-19.7f, 4.38f}, 1260.0f );
     cam.AddEnergyCalibration( {0.0f, 3.0f} );
     cam.AddSpectrum( vector<uint32_t>( 256, 5 ) );
-    const vector<uint8_t> data = cam.CreateFile();
+    const vector<uint8_t> data = cam.CreateCAMFile();
     BOOST_CHECK_MESSAGE( find_block_location( data, 0x00012002 ) != 0,
         "A fit added with no efficiency points produced no GEOM block" );
   }
@@ -763,7 +884,7 @@ BOOST_AUTO_TEST_CASE( writtenBlocksAreSelfConsistent )
     cam.AddPeak( p );
     cam.AddEnergyCalibration( {0.0f, 3.0f} );
     cam.AddSpectrum( vector<uint32_t>( 256, 5 ) );
-    const vector<uint8_t> data = cam.CreateFile();
+    const vector<uint8_t> data = cam.CreateCAMFile();
 
     const uint32_t peak_loc = find_block_location( data, 0x00012006 );
     const uint32_t disp_loc = find_block_location( data, 0x00012004 );
@@ -816,7 +937,7 @@ BOOST_AUTO_TEST_CASE( getPeaksIsIdempotent )
   }
   cam.AddEnergyCalibration( {0.0f, 3.0f} );
   cam.AddSpectrum( vector<uint32_t>( 512, 5 ) );
-  const vector<uint8_t> data = cam.CreateFile();
+  const vector<uint8_t> data = cam.CreateCAMFile();
 
   CAMInputOutput::CAMIO reader;
   BOOST_REQUIRE_NO_THROW( reader.ReadFile( data ) );
@@ -1156,7 +1277,7 @@ BOOST_AUTO_TEST_CASE( efficiencyFitMatchesRealGenieCurve )
   writer.AddEfficiencyFit( coeffs, stored_ref_energy );
   writer.AddEnergyCalibration( {0.0f, 3.0f} );
   writer.AddSpectrum( vector<uint32_t>( 512, 10 ) );
-  const vector<uint8_t> ours = writer.CreateFile();
+  const vector<uint8_t> ours = writer.CreateCAMFile();
 
   const uint32_t our_geom = find_block_location( ours, 0x00012002 );
   BOOST_REQUIRE( our_geom != 0 );
@@ -1390,7 +1511,7 @@ BOOST_AUTO_TEST_CASE( libraryYieldsAreBranchingRatios )
     const vector<ExportSpecFileCAM::GenieLibrarySource> sources
         = ExportSpecFileCAM::build_genie_library( peaks,
               ExportSpecFileCAM::GenieLibraryLineMode::PeakLinesOnly,
-              1.0, false, s_test_hpge_fwhm, s_test_energy_range, {} );
+              1.0, false, false, s_test_hpge_fwhm, s_test_energy_range, {} );
 
     BOOST_REQUIRE_MESSAGE( sources.size() == 1u, e.nuc << ": expected one source" );
     BOOST_REQUIRE_MESSAGE( sources[0].lines.size() == 1u, e.nuc << ": expected one line" );
@@ -1419,7 +1540,7 @@ BOOST_AUTO_TEST_CASE( libraryAbundanceIsPercent )
   const vector<ExportSpecFileCAM::GenieLibrarySource> sources
       = ExportSpecFileCAM::build_genie_library( peaks,
             ExportSpecFileCAM::GenieLibraryLineMode::PeakLinesOnly,
-            1.0, false, s_test_hpge_fwhm, s_test_energy_range, {} );
+            1.0, false, false, s_test_hpge_fwhm, s_test_energy_range, {} );
   BOOST_REQUIRE_EQUAL( sources.size(), 1u );
 
   const vector<CAMInputOutput::CnfGenieExtras::LibraryLine> lines
@@ -1748,7 +1869,7 @@ BOOST_AUTO_TEST_CASE( camioIsReusableForWriting )
     cam.AddSampleTitle( title );
     cam.AddEnergyCalibration( {0.0f, gain} );
     cam.AddSpectrum( vector<uint32_t>( 256, 5 ) );
-    return cam.CreateFile();
+    return cam.CreateCAMFile();
   };
 
   const vector<uint8_t> a = write_one( 0.5f, "AAA" );
@@ -2407,7 +2528,7 @@ BOOST_AUTO_TEST_CASE( nuclideHalfLifeRoundTrips )
     BOOST_REQUIRE_NO_THROW( writer.AddNuclide( n ) );
 
   vector<uint8_t> written;
-  BOOST_REQUIRE_NO_THROW( written = writer.CreateFile() );
+  BOOST_REQUIRE_NO_THROW( written = writer.CreateCAMFile() );
 
   CAMInputOutput::CAMIO rereader;
   BOOST_REQUIRE_NO_THROW( rereader.ReadFile( written ) );
@@ -2467,7 +2588,7 @@ BOOST_AUTO_TEST_CASE( repeatedAccessorsDoNotAccumulate )
     BOOST_REQUIRE_NO_THROW( writer.AddNuclide( n ) );
 
   vector<uint8_t> written;
-  BOOST_REQUIRE_NO_THROW( written = writer.CreateFile() );
+  BOOST_REQUIRE_NO_THROW( written = writer.CreateCAMFile() );
 
   CAMInputOutput::CAMIO rereader;
   BOOST_REQUIRE_NO_THROW( rereader.ReadFile( written ) );
@@ -2485,7 +2606,7 @@ BOOST_AUTO_TEST_CASE( tooManyEnergyCalCoefficientsDoNotCorruptAcqp )
     CAMInputOutput::CAMIO cam;
     cam.AddEnergyCalibration( coefs );
     cam.AddSpectrum( vector<uint32_t>( 128, 5 ) );
-    return cam.CreateFile();
+    return cam.CreateCAMFile();
   };
 
   const vector<float> four = { 1.0f, 3.0f, 0.001f, 0.0f };
