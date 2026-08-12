@@ -21,6 +21,9 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+// Need to make sure we have M_PI, etc
+#define _USE_MATH_DEFINES
+
 #include "InterSpec_config.h"
 
 #include <set>
@@ -28,6 +31,7 @@
 #include <cmath>
 #include <cstring>
 #include <string>
+#include <chrono>
 #include <memory>
 #include <vector>
 #include <fstream>
@@ -1975,7 +1979,9 @@ BOOST_AUTO_TEST_CASE( peakBlockMatchesRealGenieLayout )
   auto cal = make_shared<SpecUtils::EnergyCalibration>();
   cal->set_polynomial( 1024, {0.0f, 3.0f}, {} );
   m->set_energy_calibration( cal );
-  m->set_start_time( std::chrono::system_clock::from_time_t( 1600000000 ) );
+  // Note: on MSVC system_clock's duration isnt microseconds, so need explicit cast
+  m->set_start_time( std::chrono::time_point_cast<std::chrono::microseconds>(
+                                      std::chrono::system_clock::from_time_t( 1600000000 ) ) );
   spec.add_measurement( m, true );
 
   CAMInputOutput::CnfGenieExtras extras;
