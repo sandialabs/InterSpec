@@ -5908,6 +5908,465 @@ BOOST_AUTO_TEST_CASE( DeconCoverageStudy )
 #endif
 
 
+BOOST_AUTO_TEST_CASE( DeconCharacteristicLimitsFisherRootAndSignedEstimate )
+{
+  using namespace DetectionLimitCalc;
+
+  DeconCharacteristicLimitInput characteristic;
+  characteristic.decon_input = *make_decon_input( 0.0, 100.0 );
+  characteristic.alpha = 0.05;
+  characteristic.beta = 0.05;
+
+  const DeconCharacteristicLimitResult result = decon_characteristic_limits( characteristic );
+  BOOST_REQUIRE_MESSAGE( result.status == DeconCharacteristicLimitStatus::Success,
+                         result.error_message );
+  BOOST_CHECK_SMALL( result.primary_activity, 2.0E-3 );
+  BOOST_CHECK_GT( result.decision_threshold, 0.0 );
+  BOOST_CHECK_GT( result.detection_limit, result.decision_threshold );
+
+  // Hand calculation of the 3x3 expected Fisher matrix for activity plus a linear continuum.
+  // The ROI is 1162--1184 keV in 2 keV channels, centred on the 1173 keV line.  Counts are exactly
+  // 100 per channel at A=0.  Schur-complementing the two continuum coefficients must give the same
+  // complete activity covariance as the artificial-spectrum calculation.
+  const double peak_energy = 1173.0;
+  const double sigma = 8.0 / PhysicalUnits::fwhm_nsigma;
+  const double reference_energy = peak_energy;
+  double information_aa = 0.0;
+  double information_ac0 = 0.0, information_ac1 = 0.0;
+  double information_c00 = 0.0, information_c01 = 0.0, information_c11 = 0.0;
+
+  for( size_t channel = 581; channel <= 591; ++channel )
+  {
+    const double lower = 2.0*static_cast<double>(channel);
+    const double upper = lower + 2.0;
+    const double signal = 0.5*( std::erf((upper - peak_energy)/(std::sqrt(2.0)*sigma))
+                                - std::erf((lower - peak_energy)/(std::sqrt(2.0)*sigma)) );
+    const double basis0 = upper - lower;
+    const double x0 = lower - reference_energy;
+    const double x1 = upper - reference_energy;
+    const double basis1 = 0.5*(x1*x1 - x0*x0);
+    const double inverse_expected = 1.0 / 100.0;
+
+    information_aa += signal*signal*inverse_expected;
+    information_ac0 += signal*basis0*inverse_expected;
+    information_ac1 += signal*basis1*inverse_expected;
+    information_c00 += basis0*basis0*inverse_expected;
+    information_c01 += basis0*basis1*inverse_expected;
+    information_c11 += basis1*basis1*inverse_expected;
+  }
+
+  const double continuum_determinant
+          = information_c00*information_c11 - information_c01*information_c01;
+  const double nuisance_projection
+          = ( information_ac0*information_ac0*information_c11
+              - 2.0*information_ac0*information_ac1*information_c01
+              + information_ac1*information_ac1*information_c00 ) / continuum_determinant;
+  const double hand_uncertainty = 1.0 / std::sqrt( information_aa - nuisance_projection );
+  BOOST_CHECK_CLOSE_FRACTION( result.uncertainty_at_zero, hand_uncertainty, 2.0E-5 );
+
+  const double k = 1.6448536269514722;
+  BOOST_CHECK_CLOSE_FRACTION( result.decision_threshold,
+                              k*result.uncertainty_at_zero, 2.0E-8 );
+  BOOST_CHECK_CLOSE_FRACTION( result.detection_limit,
+                              result.decision_threshold
+                                + k*result.uncertainty_at_detection_limit, 2.0E-8 );
+
+  characteristic.decon_input = *make_decon_input( -12.0, 100.0 );
+  const DeconCharacteristicLimitResult negative = decon_characteristic_limits( characteristic );
+  BOOST_REQUIRE_MESSAGE( negative.status == DeconCharacteristicLimitStatus::Success,
+                         negative.error_message );
+  BOOST_CHECK_LT( negative.primary_activity, 0.0 );
+  BOOST_CHECK_CLOSE_FRACTION( negative.primary_activity, -12.0, 2.0E-3 );
+}//BOOST_AUTO_TEST_CASE( DeconCharacteristicLimitsFisherRootAndSignedEstimate )
+
+
+BOOST_AUTO_TEST_CASE( DeconCharacteristicLimitsIndependentProbabilitiesAndPositivity )
+{
+  using namespace DetectionLimitCalc;
+
+  DeconCharacteristicLimitInput nominal;
+  nominal.decon_input = *make_decon_input( 0.0, 10.0 );
+  nominal.alpha = 0.05;
+  nominal.beta = 0.05;
+  const DeconCharacteristicLimitResult base = decon_characteristic_limits( nominal );
+  BOOST_REQUIRE_MESSAGE( base.status == DeconCharacteristicLimitStatus::Success,
+                         base.error_message );
+
+  DeconCharacteristicLimitInput lower_alpha = nominal;
+  lower_alpha.alpha = 0.01;
+  const DeconCharacteristicLimitResult alpha_result
+                                            = decon_characteristic_limits( lower_alpha );
+  BOOST_REQUIRE_MESSAGE( alpha_result.status == DeconCharacteristicLimitStatus::Success,
+                         alpha_result.error_message );
+  BOOST_CHECK_GT( alpha_result.decision_threshold, base.decision_threshold );
+  BOOST_CHECK_GT( alpha_result.detection_limit, base.detection_limit );
+
+  DeconCharacteristicLimitInput lower_beta = nominal;
+  lower_beta.beta = 0.01;
+  const DeconCharacteristicLimitResult beta_result = decon_characteristic_limits( lower_beta );
+  BOOST_REQUIRE_MESSAGE( beta_result.status == DeconCharacteristicLimitStatus::Success,
+                         beta_result.error_message );
+  BOOST_CHECK_CLOSE_FRACTION( beta_result.decision_threshold, base.decision_threshold, 1.0E-12 );
+  BOOST_CHECK_GT( beta_result.detection_limit, base.detection_limit );
+
+  // A signed fixed component is legal.  The fitted constant continuum must offset it enough that
+  // every *total* expectation remains positive; the activity component itself is not clipped.
+  std::vector<PoissonChannel> channels( 3 );
+  for( size_t i = 0; i < channels.size(); ++i )
+  {
+    channels[i].lower_energy = static_cast<double>(i);
+    channels[i].upper_energy = static_cast<double>(i + 1);
+    channels[i].observed = 1.0;
+    channels[i].fixed_signal = (i == 1) ? -20.0 : -2.0;
+  }
+  const PoissonContinuumFit fit
+                    = fit_continuum_poisson( channels.data(), channels.size(), 1, 0.0, {} );
+  BOOST_REQUIRE_MESSAGE( fit.converged, fit.error );
+  for( const PoissonChannel &channel : channels )
+    BOOST_CHECK_GT( fit.coefficients[0]*(channel.upper_energy - channel.lower_energy)
+                      + channel.fixed_signal, 0.0 );
+
+  DeconComputeInput signed_trial = *make_decon_input( 0.0, 10.0 );
+  signed_trial.activity = -1.0;
+  BOOST_CHECK_THROW( decon_compute_peaks(signed_trial), std::runtime_error );
+  signed_trial.allow_negative_activity = true;
+  BOOST_CHECK_NO_THROW( decon_compute_peaks(signed_trial) );
+}//BOOST_AUTO_TEST_CASE( DeconCharacteristicLimitsIndependentProbabilitiesAndPositivity )
+
+
+BOOST_AUTO_TEST_CASE( DeconCharacteristicLimitsModelsAndTypedFailures )
+{
+  using namespace DetectionLimitCalc;
+
+  // Two channels and two continuum coefficients leave at most rank two for three joint
+  // parameters (activity, offset, slope), so this model has a known singular information matrix.
+  DeconCharacteristicLimitInput singular;
+  singular.decon_input = *make_decon_input( 0.0, 10.0 );
+  singular.decon_input.roi_info[0].roi_start = 1172.0f;
+  singular.decon_input.roi_info[0].roi_end = 1176.0f;
+  const DeconCharacteristicLimitResult singular_result
+                                              = decon_characteristic_limits( singular );
+  BOOST_CHECK_EQUAL( static_cast<int>(singular_result.status),
+                     static_cast<int>(DeconCharacteristicLimitStatus::SingularInformation) );
+  BOOST_CHECK( !std::isfinite(singular_result.detection_limit) );
+
+  DeconCharacteristicLimitInput unsupported;
+  unsupported.decon_input = *make_decon_input( 0.0, 10.0 );
+  unsupported.decon_input.measurement_model = DeconMeasurementModel::BackgroundReference;
+  const DeconCharacteristicLimitResult unsupported_result
+                                            = decon_characteristic_limits( unsupported );
+  BOOST_CHECK_EQUAL( static_cast<int>(unsupported_result.status),
+                     static_cast<int>(DeconCharacteristicLimitStatus::UnsupportedModel) );
+
+  DeconCharacteristicLimitInput invalid = unsupported;
+  invalid.decon_input.measurement_model = DeconMeasurementModel::CurrentSpectrum;
+  invalid.decon_input.roi_info[0].peak_infos.clear();
+  const DeconCharacteristicLimitResult invalid_result
+                                            = decon_characteristic_limits( invalid );
+  BOOST_CHECK_EQUAL( static_cast<int>(invalid_result.status),
+                     static_cast<int>(DeconCharacteristicLimitStatus::InvalidInput) );
+
+  // Exercise overlapping ROIs, multiple lines, nonuniform channels, and a quadratic FixedByEdges
+  // continuum in one identifiable model.  The sidebands remain in the joint likelihood after the
+  // overlap merge.
+  DeconCharacteristicLimitInput combined;
+  combined.decon_input
+        = *make_decon_input( 20.0, 100.0, DeconContinuumNorm::FixedByEdges );
+  combined.decon_input.roi_info[0].continuum_type = PeakContinuum::OffsetType::Quadratic;
+
+  DeconRoiInfo second = combined.decon_input.roi_info[0];
+  second.roi_start = 1170.0f;
+  second.roi_end = 1190.0f;
+  second.peak_infos.clear();
+  DeconRoiInfo::PeakInfo second_line;
+  second_line.energy = 1179.0f;
+  second_line.fwhm = 8.0f;
+  second_line.counts_per_bq_into_4pi = 0.4;
+  second.peak_infos.push_back( second_line );
+  combined.decon_input.roi_info.push_back( second );
+
+  const size_t num_channels = combined.decon_input.measurement->num_gamma_channels();
+  std::vector<float> nonuniform_edges( num_channels + 1, 0.0f );
+  for( size_t channel = 0; channel <= num_channels; ++channel )
+  {
+    const double x = static_cast<double>(channel);
+    nonuniform_edges[channel] = static_cast<float>( 2.0*x + 1.0E-6*x*x );
+  }
+  std::shared_ptr<SpecUtils::EnergyCalibration> calibration
+                                          = std::make_shared<SpecUtils::EnergyCalibration>();
+  calibration->set_lower_channel_energy( num_channels, nonuniform_edges );
+  std::shared_ptr<SpecUtils::Measurement> measurement
+                                          = std::make_shared<SpecUtils::Measurement>();
+  measurement->set_gamma_counts(
+                std::make_shared<std::vector<float>>(*combined.decon_input.measurement->gamma_counts()),
+                1.0f, 1.0f );
+  measurement->set_energy_calibration( calibration );
+  combined.decon_input.measurement = measurement;
+
+  const DeconCharacteristicLimitResult combined_result
+                                              = decon_characteristic_limits( combined );
+  BOOST_REQUIRE_MESSAGE( combined_result.status == DeconCharacteristicLimitStatus::Success,
+                         combined_result.error_message );
+  BOOST_CHECK( std::isfinite(combined_result.detection_limit) );
+  BOOST_CHECK( !combined_result.warnings.empty() );
+
+  // Two separated regions retain independent nuisance coefficients but share the one activity.
+  // The second line must add information rather than being treated as a separate activity fit.
+  DeconCharacteristicLimitInput separated;
+  separated.decon_input = *make_decon_input( 0.0, 100.0, DeconContinuumNorm::Floating );
+  const DeconCharacteristicLimitResult one_region
+                                            = decon_characteristic_limits( separated );
+  BOOST_REQUIRE_MESSAGE( one_region.status == DeconCharacteristicLimitStatus::Success,
+                         one_region.error_message );
+  DeconRoiInfo separated_roi = separated.decon_input.roi_info[0];
+  separated_roi.roi_start = 1388.0f;
+  separated_roi.roi_end = 1412.0f;
+  separated_roi.peak_infos[0].energy = 1400.0f;
+  separated.decon_input.roi_info.push_back( separated_roi );
+  const DeconCharacteristicLimitResult separated_result
+                                            = decon_characteristic_limits( separated );
+  BOOST_REQUIRE_MESSAGE( separated_result.status == DeconCharacteristicLimitStatus::Success,
+                         separated_result.error_message );
+  BOOST_CHECK_LT( separated_result.uncertainty_at_zero, one_region.uncertainty_at_zero );
+
+  // FixedByEdges at 0.1 counts/channel still produces a limit, but it is the cell the Monte Carlo
+  // excludes as outside the checked range - it measured a false-positive probability of 0.083.  A
+  // bare `Success` would present an unchecked answer as a checked one, so the caller must be
+  // warned.  A 1-count control region is inside the checked range and must not be warned about,
+  // or the warning would be noise everywhere.
+  DeconCharacteristicLimitInput sparse_edges;
+  sparse_edges.decon_input
+        = *make_decon_input( 0.0, 0.1, DeconContinuumNorm::FixedByEdges );
+  const DeconCharacteristicLimitResult sparse_result
+                                            = decon_characteristic_limits( sparse_edges );
+  BOOST_REQUIRE_MESSAGE( sparse_result.status == DeconCharacteristicLimitStatus::Success,
+                         sparse_result.error_message );
+  const auto has_control_warning = []( const DeconCharacteristicLimitResult &result ) -> bool {
+    return std::any_of( begin(result.warnings), end(result.warnings),
+                       []( const std::string &warning ){
+                         return warning.find("anchor its continuum") != std::string::npos;
+                       } );
+  };
+  BOOST_CHECK( has_control_warning(sparse_result) );
+
+  DeconCharacteristicLimitInput checked_edges;
+  checked_edges.decon_input
+        = *make_decon_input( 0.0, 1.0, DeconContinuumNorm::FixedByEdges );
+  const DeconCharacteristicLimitResult checked_result
+                                            = decon_characteristic_limits( checked_edges );
+  BOOST_REQUIRE_MESSAGE( checked_result.status == DeconCharacteristicLimitStatus::Success,
+                         checked_result.error_message );
+  BOOST_CHECK( !has_control_warning(checked_result) );
+
+  // A floating continuum is determined by the whole region rather than by a few edge channels, so
+  // it stayed calibrated at 0.1 counts/channel and must not raise the control-channel warning.
+  DeconCharacteristicLimitInput sparse_floating;
+  sparse_floating.decon_input
+        = *make_decon_input( 0.0, 0.1, DeconContinuumNorm::Floating );
+  const DeconCharacteristicLimitResult sparse_floating_result
+                                            = decon_characteristic_limits( sparse_floating );
+  BOOST_REQUIRE_MESSAGE( sparse_floating_result.status == DeconCharacteristicLimitStatus::Success,
+                         sparse_floating_result.error_message );
+  BOOST_CHECK( !has_control_warning(sparse_floating_result) );
+
+  // The user picks the sideband geometry, and the Monte Carlo only varies the counts, so the
+  // warning must key on the total control counts as well as the per-channel mean.  One channel a
+  // side at one count each is two control counts in total - fewer than the 2.4 the failing 4+4
+  // cell had - and must be warned about even though its per-channel mean is a healthy 1.0.
+  DeconCharacteristicLimitInput thin_edges;
+  thin_edges.decon_input = *make_decon_input( 0.0, 1.0, DeconContinuumNorm::FixedByEdges );
+  thin_edges.decon_input.roi_info[0].num_lower_side_channels = 1;
+  thin_edges.decon_input.roi_info[0].num_upper_side_channels = 1;
+  const DeconCharacteristicLimitResult thin_result = decon_characteristic_limits( thin_edges );
+  BOOST_REQUIRE_MESSAGE( thin_result.status == DeconCharacteristicLimitStatus::Success,
+                         thin_result.error_message );
+  BOOST_CHECK( has_control_warning(thin_result) );
+
+  // A region whose lines land outside it carries no activity information.  It must be dropped with
+  // a warning rather than failing the request, so the regions that *do* carry information still
+  // produce a limit.
+  DeconCharacteristicLimitInput signal_free;
+  signal_free.decon_input = *make_decon_input( 0.0, 100.0 );
+  DeconRoiInfo empty_roi = signal_free.decon_input.roi_info[0];
+  empty_roi.roi_start = 1388.0f;
+  empty_roi.roi_end = 1412.0f;   // its 1173 keV line is nowhere near these channels
+  signal_free.decon_input.roi_info.push_back( empty_roi );
+  const DeconCharacteristicLimitResult signal_free_result
+                                            = decon_characteristic_limits( signal_free );
+  BOOST_REQUIRE_MESSAGE( signal_free_result.status == DeconCharacteristicLimitStatus::Success,
+                         signal_free_result.error_message );
+  BOOST_CHECK( std::isfinite(signal_free_result.detection_limit) );
+  BOOST_CHECK( std::any_of( begin(signal_free_result.warnings), end(signal_free_result.warnings),
+                           []( const std::string &warning ){
+                             return warning.find("no counts inside it") != std::string::npos;
+                           } ) );
+
+  // A peak-like observation over an otherwise empty Floating region drives the signed primary
+  // fit's continuum onto its positivity boundary.  The local-normal 1/E information must be
+  // rejected explicitly; using the optimizer's tiny numerical floor as physical information would
+  // fabricate an extremely small uncertainty and threshold.
+  DeconCharacteristicLimitInput boundary;
+  boundary.decon_input = *make_decon_input( 0.0, 0.0, DeconContinuumNorm::Floating );
+  std::shared_ptr<std::vector<float>> boundary_counts
+      = std::make_shared<std::vector<float>>(
+                                  boundary.decon_input.measurement->num_gamma_channels(), 0.0f );
+  boundary_counts->at(586) = 5.0f;
+  std::shared_ptr<SpecUtils::Measurement> boundary_measurement
+                                            = std::make_shared<SpecUtils::Measurement>();
+  boundary_measurement->set_gamma_counts( boundary_counts, 1.0f, 1.0f );
+  boundary_measurement->set_energy_calibration(
+                                  boundary.decon_input.measurement->energy_calibration() );
+  boundary.decon_input.measurement = boundary_measurement;
+  const DeconCharacteristicLimitResult boundary_result
+                                            = decon_characteristic_limits( boundary );
+  BOOST_CHECK_EQUAL( static_cast<int>(boundary_result.status),
+                     static_cast<int>(DeconCharacteristicLimitStatus::ApproximationInvalid) );
+  BOOST_CHECK( std::isfinite(boundary_result.primary_activity) );
+  BOOST_CHECK( !std::isfinite(boundary_result.decision_threshold) );
+}//BOOST_AUTO_TEST_CASE( DeconCharacteristicLimitsModelsAndTypedFailures )
+
+
+BOOST_AUTO_TEST_CASE( DeconCharacteristicLimitsMonteCarlo )
+{
+  using namespace DetectionLimitCalc;
+
+  const char * const enabled = std::getenv( "INTERSPEC_RUN_DECON_CHARACTERISTIC_MC" );
+  if( !enabled || (std::string(enabled) != "1") )
+  {
+    BOOST_TEST_MESSAGE( "Set INTERSPEC_RUN_DECON_CHARACTERISTIC_MC=1 to run the Lc/Ld Monte Carlo." );
+    return;
+  }
+
+  size_t num_trials = 2000;
+  const char * const requested_trials
+                        = std::getenv( "INTERSPEC_DECON_CHARACTERISTIC_MC_TRIALS" );
+  if( requested_trials )
+    num_trials = static_cast<size_t>( std::stoul(requested_trials) );
+  BOOST_REQUIRE_GE( num_trials, size_t(100) );
+
+  std::mt19937_64 random( 0x11929D1CULL );
+  const std::pair<const char *,DeconContinuumNorm> modes[] = {
+    { "Floating", DeconContinuumNorm::Floating },
+    { "FixedByEdges", DeconContinuumNorm::FixedByEdges }
+  };
+
+  for( const std::pair<const char *,DeconContinuumNorm> &mode : modes )
+  {
+    for( const double continuum : { 0.1, 1.0, 10.0, 100.0 } )
+    {
+      // The supplied sideband geometry has only a handful of control channels.  At 0.1 expected
+      // count/channel, FixedByEdges failed the fixed-seed false-positive gate (0.083 versus 0.05),
+      // so this local-normal Lc/Ld construction has no validated claim in that cell.  Retain the
+      // 0.1-count Floating cell and validate FixedByEdges from 1 count/channel upward; callers see
+      // ApproximationInvalid when an individual fitted artificial model reaches its positivity
+      // boundary.
+      if( (mode.second == DeconContinuumNorm::FixedByEdges) && (continuum == 0.1) )
+      {
+        BOOST_TEST_MESSAGE( "FixedByEdges, 0.1 count/channel excluded: below validated "
+                            "local-normal applicability range." );
+        continue;
+      }
+
+      DeconCharacteristicLimitInput design_input;
+      design_input.decon_input = *make_decon_input( 0.0, continuum, mode.second );
+      design_input.alpha = 0.05;
+      design_input.beta = 0.05;
+      const DeconCharacteristicLimitResult design
+                                            = decon_characteristic_limits( design_input );
+      BOOST_REQUIRE_MESSAGE( design.status == DeconCharacteristicLimitStatus::Success,
+                             mode.first << " at " << continuum << ": " << design.error_message );
+
+      size_t false_positives = 0, detections_at_ld = 0, failures = 0;
+      std::map<DeconCharacteristicLimitStatus,size_t> failure_statuses;
+      std::string first_failure;
+      for( size_t truth_index = 0; truth_index < 2; ++truth_index )
+      {
+        const double truth = truth_index ? design.detection_limit : 0.0;
+        DeconComputeInput expectation = *make_decon_input( truth, continuum, mode.second );
+        const std::vector<float> &expected = *expectation.measurement->gamma_counts();
+
+        for( size_t trial = 0; trial < num_trials; ++trial )
+        {
+          std::shared_ptr<std::vector<float>> observed
+                              = std::make_shared<std::vector<float>>( expected.size(), 0.0f );
+          for( size_t channel = 0; channel < expected.size(); ++channel )
+          {
+            std::poisson_distribution<unsigned int> poisson(
+                                                (std::max)(0.0, double(expected[channel])) );
+            observed->at(channel) = static_cast<float>( poisson(random) );
+          }
+
+          // Every channel is redrawn, including both FixedByEdges sidebands; no control counts are
+          // reused between realizations.
+          std::shared_ptr<SpecUtils::Measurement> spectrum
+                                              = std::make_shared<SpecUtils::Measurement>();
+          spectrum->set_gamma_counts( observed, 1.0f, 1.0f );
+          spectrum->set_energy_calibration( expectation.measurement->energy_calibration() );
+
+          DeconCharacteristicLimitInput realization;
+          realization.decon_input = expectation;
+          realization.decon_input.measurement = spectrum;
+          realization.alpha = design_input.alpha;
+          realization.beta = design_input.beta;
+          const DeconCharacteristicLimitResult result
+                                                = decon_characteristic_limits( realization );
+          // Lc and Ld define one measurement procedure and are fixed by the artificial design
+          // spectrum above.  Recomputing Lc for every random realization would measure the random
+          // threshold A_hat > Lc(X), not the required probability P(A_hat > Lc); measured that
+          // way the false-positive probability inflates to as much as 0.15, which is why
+          // `decon_characteristic_limits` returns no detection boolean of its own.  Only the
+          // signed primary estimate is therefore taken from each realization.  A later
+          // artificial-spectrum failure (possible for sparse spectra whose fitted continuum
+          // reaches its positivity boundary once A_hat is replaced by zero) does not invalidate
+          // that already-completed primary fit.
+          if( !std::isfinite(result.primary_activity) )
+          {
+            ++failures;
+            ++failure_statuses[result.status];
+            if( first_failure.empty() )
+              first_failure = result.error_message;
+            continue;
+          }
+
+          const bool detected = (result.primary_activity > design.decision_threshold);
+          if( truth_index )
+            detections_at_ld += detected ? 1 : 0;
+          else
+            false_positives += detected ? 1 : 0;
+        }//for( each trial )
+      }//for( null and Ld truth )
+
+      BOOST_REQUIRE_MESSAGE( failures == 0,
+                             mode.first << " at " << continuum << " had " << failures
+                                        << " failed signed-primary fits; first: "
+                                        << first_failure << "; status counts: "
+                                        << [&failure_statuses]() {
+                                             std::ostringstream out;
+                                             for( const auto &entry : failure_statuses )
+                                               out << static_cast<int>(entry.first) << '='
+                                                   << entry.second << ' ';
+                                             return out.str();
+                                           }() );
+      const double false_positive_probability
+                          = static_cast<double>(false_positives) / static_cast<double>(num_trials);
+      const double detection_power
+                          = static_cast<double>(detections_at_ld) / static_cast<double>(num_trials);
+      const double false_positive_se
+                          = std::sqrt(0.05*0.95/static_cast<double>(num_trials));
+      const double power_se = false_positive_se;
+      const double false_positive_tolerance = (std::max)( 0.005, 3.0*false_positive_se );
+      const double power_tolerance = (std::max)( 0.01, 3.0*power_se );
+
+      BOOST_TEST_MESSAGE( mode.first << ", " << continuum << " counts/channel: P(false+)="
+                          << false_positive_probability << ", power(Ld)=" << detection_power );
+      BOOST_CHECK_LE( std::fabs(false_positive_probability - 0.05),
+                      false_positive_tolerance );
+      BOOST_CHECK_LE( std::fabs(detection_power - 0.95), power_tolerance );
+    }//for( continuum level )
+  }//for( continuum method )
+}//BOOST_AUTO_TEST_CASE( DeconCharacteristicLimitsMonteCarlo )
+
+
 BOOST_AUTO_TEST_CASE( BasicCurrieMda )
 {
   using namespace DetectionLimitCalc;

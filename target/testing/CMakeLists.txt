@@ -268,6 +268,26 @@ if( INTERSPEC_ENABLE_DECON_COVERAGE_TEST )
     ENVIRONMENT "INTERSPEC_RUN_DECON_COVERAGE=1" )
 endif()
 
+# ISO-style deconvolution characteristic-limit validation.  This resamples both the ROI and the
+# FixedByEdges control channels at every checked continuum level, so it is intentionally opt-in:
+# Floating at 0.1, 1, 10 and 100 counts/channel, and FixedByEdges at 1, 10 and 100.  FixedByEdges
+# at 0.1 is excluded - for the supplied 4+4 sideband geometry it measured a false-positive
+# probability of 0.083 against a nominal 0.05, outside the local-normal applicability range.
+option( INTERSPEC_ENABLE_DECON_CHARACTERISTIC_MC_TEST
+        "Register the opt-in deconvolution Lc/Ld Monte Carlo study" OFF )
+if( INTERSPEC_ENABLE_DECON_CHARACTERISTIC_MC_TEST )
+  add_test( NAME TDeconCharacteristicLimitsMonteCarlo
+    COMMAND $<TARGET_FILE:test_DetectionLimit>
+            --run_test=DeconCharacteristicLimitsMonteCarlo
+            ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+  set_tests_properties( TDeconCharacteristicLimitsMonteCarlo PROPERTIES
+    TIMEOUT 7200
+    LABELS "long"
+    ENVIRONMENT "INTERSPEC_RUN_DECON_CHARACTERISTIC_MC=1" )
+endif()
+
 add_executable( test_AppTextBundles test_AppTextBundles.cpp )
 target_link_libraries( test_AppTextBundles PRIVATE InterSpecLib )
 add_test( NAME TAppTextBundles
@@ -480,4 +500,3 @@ endif( CMAKE_GENERATOR STREQUAL "Xcode" )
 # target/fuzzing/ - they cannot be mixed with the unit-test build because the
 # sanitizer-instrumented InterSpecLib does not link cleanly with un-instrumented
 # test binaries.  See target/fuzzing/README.md.
-

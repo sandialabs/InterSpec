@@ -28,6 +28,8 @@
 #include <cstdint>
 #include <cstdlib>
 #include <cstring>
+#include <map>
+#include <set>
 #include <vector>
 #include <cassert>
 #include <limits>
@@ -2095,6 +2097,43 @@ double decon_roi_statistic( const std::vector<PoissonChannel> &channels,
   return answer;
 }//decon_roi_statistic(...)
 
+
+/** Builds the fixed peak model used by both the profiled likelihood and the characteristic-limit
+ signal derivative.  Keeping the yield, efficiency, attenuation, and width calculation here avoids
+ letting the covariance model drift from the likelihood model.
+ */
+PeakDef decon_trial_peak( const DeconComputeInput &input,
+                         const DeconRoiInfo::PeakInfo &peak_info,
+                         const double activity,
+                         const double exposure_ratio )
+{
+  const double energy = static_cast<double>( peak_info.energy );
+  const double fwhm = (peak_info.fwhm > 0.0f)
+                        ? static_cast<double>( peak_info.fwhm )
+                        : static_cast<double>( input.drf->peakResolutionFWHM(peak_info.energy) );
+  const double sigma = fwhm / PhysicalUnits::fwhm_nsigma;
+  const bool fixed_geometry = input.drf->isFixedGeometry();
+  const double efficiency = fixed_geometry ? input.drf->intrinsicEfficiency( energy )
+                                           : input.drf->efficiency( energy, input.distance );
+
+  double air_attenuation = 1.0;
+  if( input.include_air_attenuation && !fixed_geometry )
+  {
+    const double air_length = input.distance - input.shielding_thickness;
+    const double mu_air
+              = GammaInteractionCalc::transmission_coefficient_air( energy, air_length );
+    air_attenuation = std::exp( -mu_air );
+  }
+
+  const double amplitude = exposure_ratio * activity
+                           * peak_info.counts_per_bq_into_4pi * efficiency * air_attenuation;
+  if( !std::isfinite(energy) || !std::isfinite(sigma) || !(sigma > 0.0)
+     || !std::isfinite(amplitude) )
+    throw runtime_error( "decon_compute_peaks: invalid gamma-line model" );
+
+  return PeakDef( energy, sigma, amplitude );
+}//decon_trial_peak(...)
+
 }//anonymous namespace
 
 
@@ -2230,7 +2269,7 @@ PoissonContinuumFit fit_continuum_poisson( const PoissonChannel * const channels
     observed_sum += counts;
 
     const double signal = channels[i].fixed_signal;
-    if( IsNan(signal) || IsInf(signal) || (signal < 0.0) )
+    if( IsNan(signal) || IsInf(signal) )
       throw runtime_error( "fit_continuum_poisson: invalid fixed signal counts" );
     objective.m_fixed_signal( static_cast<Eigen::Index>(i) ) = signal;
     fixed_sum += signal;
@@ -2490,6 +2529,7 @@ DeconRoiInfo::PeakInfo::PeakInfo()
 DeconComputeInput::DeconComputeInput()
  : distance( 0.0 ),
    activity( 0.0 ),
+   allow_negative_activity( false ),
    include_air_attenuation( false ),
    shielding_thickness( 0.0 ),
    drf( nullptr ),
@@ -2513,8 +2553,11 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   if( (input.distance < 0.0) || IsNan(input.distance) || IsInf(input.distance) )
     throw runtime_error( "decon_compute_peaks: invalid input distance" );
   
-  // Lets sanity check input
-  if( (input.activity < 0.0) || IsNan(input.activity) || IsInf(input.activity) )
+  // Ordinary callers retain the physical non-negative activity contract.  Characteristic limits
+  // opt in explicitly because their primary estimator must retain negative fluctuations; even in
+  // that case the continuum optimizer constrains every total expected channel count to be positive.
+  if( IsNan(input.activity) || IsInf(input.activity)
+     || ((input.activity < 0.0) && !input.allow_negative_activity) )
     throw runtime_error( "decon_compute_peaks: invalid input activity" );
   
   if( input.include_air_attenuation
@@ -2537,8 +2580,6 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   if( input.roi_info.empty() )
     return result;
     
-  const bool fixed_geom = input.drf->isFixedGeometry();
-
   double total_chi2 = 0.0, total_DOF = 0.0;
   vector<PeakDef> inputPeaks, fittedPeaks;
 
@@ -2616,13 +2657,15 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
         break;
         
       case DeconContinuumNorm::FixedByEdges:
-        // Forced to Linear because the sideband constraint is only as good as the sidebands: a
-        //  typical 4+4 side channels barely determine an offset and a slope, and asking them for a
-        //  curvature term as well gives a constraint so weak that the "anchored" continuum is
-        //  effectively floating again.  The constraint code itself is generic in the number of
-        //  coefficients, so this is a defensible default rather than a limitation.
-        assert( continuum_type == PeakContinuum::OffsetType::Linear );
-        continuum_type = PeakContinuum::OffsetType::Linear;
+        // The sidebands are ordinary channels in the joint likelihood, so the same generic basis
+        // supports both Linear and Quadratic continua.  A weakly determined quadratic is reported
+        // later as singular information rather than silently changed to Linear.
+        //
+        // Note this is wider than what a user can currently ask for: both `DetectionLimitTool` and
+        // `DetectionLimitSimple` still force Linear when this treatment is selected, on the
+        // grounds that a typical 4+4 side channels barely determine an offset and a slope.  A
+        // quadratic therefore only reaches here from a batch, MCP, or test caller that builds
+        // `DeconRoiInfo` itself.
         break;
     }//switch( cont_norm_method )
     
@@ -2671,30 +2714,11 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
 
     for( const DeconRoiInfo::PeakInfo &peak_info : roi.peak_infos )
     {
-      const float &energy = peak_info.energy;
-      const float fwhm = (peak_info.fwhm > 0.0f) ? peak_info.fwhm : input.drf->peakResolutionFWHM( energy );
-      // FWHM = 2*sqrt(2*ln(2))*sigma; see `PeakDef::fwhm()`.
-      const float sigma = fwhm / PhysicalUnits::fwhm_nsigma;
-      const double det_eff = fixed_geom ? input.drf->intrinsicEfficiency(energy)
-                                        : input.drf->efficiency( energy, input.distance );
-      const double counts_4pi = peak_info.counts_per_bq_into_4pi;
-      double air_atten = 1.0;
-      
-      if( input.include_air_attenuation && !fixed_geom )
-      {
-        const double air_len = input.distance - input.shielding_thickness;
-        const double mu_air = GammaInteractionCalc::transmission_coefficient_air( energy, air_len );
-        air_atten = exp( -1.0 * mu_air );
-      }
-      
       // `counts_4pi` carries the *loaded* spectrum's live time, so predicting a measurement of a
       //  different length means rescaling the signal by the exposure ratio; it is exactly 1 for
       //  the ordinary current-spectrum case.  Scaling the peak itself, rather than only the
       //  channel counts, keeps the returned peaks describing the measurement being reported on.
-      const float amplitude
-              = static_cast<float>( exposure_ratio * input.activity * counts_4pi * det_eff * air_atten );
-
-      PeakDef peak( energy, sigma, amplitude );
+      PeakDef peak = decon_trial_peak( input, peak_info, input.activity, exposure_ratio );
       peak.setFitFor( PeakDef::CoefficientType::Mean, false );
       peak.setFitFor( PeakDef::CoefficientType::Sigma, false );
       peak.setFitFor( PeakDef::CoefficientType::GaussAmplitude, false );
@@ -3028,6 +3052,822 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
   
   return result;
 }//DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
+
+
+DeconCharacteristicLimitResult::DeconCharacteristicLimitResult()
+  : input{},
+    status( DeconCharacteristicLimitStatus::InvalidInput ),
+    error_message(),
+    warnings(),
+    primary_activity( std::numeric_limits<double>::quiet_NaN() ),
+    primary_standard_uncertainty( std::numeric_limits<double>::quiet_NaN() ),
+    uncertainty_at_zero( std::numeric_limits<double>::quiet_NaN() ),
+    decision_threshold( std::numeric_limits<double>::quiet_NaN() ),
+    detection_limit( std::numeric_limits<double>::quiet_NaN() ),
+    uncertainty_at_detection_limit( std::numeric_limits<double>::quiet_NaN() ),
+    num_profile_evaluations( 0 )
+{
+}
+
+
+namespace
+{
+/** One merged ROI in the artificial-spectrum construction used for the characteristic limits. */
+struct DeconCharacteristicRegion
+{
+  std::vector<PoissonChannel> channels;
+  std::vector<double> signal_per_activity;
+  std::vector<double> primary_continuum;
+  size_t num_coefficients = 0;
+  double reference_energy = 0.0;
+
+  /** How many leading entries of #channels are the region's own channels; the remainder are the
+   `FixedByEdges` control channels.  Equal to `channels.size()` when there are no control channels.
+   */
+  size_t num_roi_channels = 0;
+};//struct DeconCharacteristicRegion
+
+
+struct DeconUncertaintyResult
+{
+  DeconCharacteristicLimitStatus status = DeconCharacteristicLimitStatus::Success;
+  double uncertainty = std::numeric_limits<double>::quiet_NaN();
+  std::string error;
+};//struct DeconUncertaintyResult
+
+
+/** Reconstructs the fixed signal derivative and the fitted nuisance model for each merged ROI. */
+bool make_decon_characteristic_regions( const DeconComputeInput &input,
+                                       const DeconComputeResults &primary_fit,
+                                       std::vector<DeconCharacteristicRegion> &regions,
+                                       std::vector<std::string> &warnings,
+                                       std::string &error )
+{
+  // The merge warnings are already on the result, carried there from `decon_compute_peaks`, which
+  //  merged the same regions from the same input; repeating them here would only duplicate them.
+  std::vector<std::string> merge_warnings;
+  const std::vector<MergedRoi> merged_rois
+        = merge_overlapping_rois( input.roi_info, input.measurement, merge_warnings );
+
+  const std::shared_ptr<const std::vector<float>> channel_energies
+                                                        = input.measurement->channel_energies();
+  size_t fitted_peak_index = 0;
+
+  for( const MergedRoi &roi : merged_rois )
+  {
+    if( roi.peak_infos.empty() )
+      continue;
+
+    if( fitted_peak_index >= primary_fit.fit_peaks.size() )
+    {
+      error = "the primary fit did not return a continuum for every non-empty region";
+      return false;
+    }
+
+    DeconCharacteristicRegion region;
+    region.num_coefficients = PeakContinuum::num_linear_fit_pars( roi.continuum_type );
+
+    const std::shared_ptr<const PeakContinuum> continuum
+                                      = primary_fit.fit_peaks[fitted_peak_index].continuum();
+    if( !continuum || (continuum->parameters().size() < region.num_coefficients) )
+    {
+      error = "the primary fit returned an incomplete continuum model";
+      return false;
+    }
+
+    // Taken from the fitted continuum rather than re-derived from the gamma lines.  The
+    //  coefficients copied on the next line are *defined* relative to this energy, so reading both
+    //  from the same object is what makes the covariance describe the model the likelihood fitted.
+    //  Re-deriving it (as "the highest line energy in the region", which is how
+    //  `decon_compute_peaks` currently chooses it) would agree today and silently stop agreeing the
+    //  day that choice changes, with nothing to catch it - the resulting `u~` is simply wrong by a
+    //  few percent for a near-flat continuum and more for a steep one.
+    region.reference_energy = continuum->referenceEnergy();
+
+    region.primary_continuum.assign( begin(continuum->parameters()),
+                                     begin(continuum->parameters()) + region.num_coefficients );
+
+    const size_t num_roi_channels = 1 + roi.last_channel - roi.first_channel;
+    region.signal_per_activity.assign( num_roi_channels, 0.0 );
+
+    for( const DeconRoiInfo::PeakInfo &peak_info : roi.peak_infos )
+    {
+      PeakDef unit_peak = decon_trial_peak( input, peak_info, 1.0, 1.0 );
+      std::vector<double> line_counts( num_roi_channels, 0.0 );
+      unit_peak.gauss_integral( &(channel_energies->at(roi.first_channel)),
+                                line_counts.data(), num_roi_channels );
+      for( size_t channel = 0; channel < num_roi_channels; ++channel )
+        region.signal_per_activity[channel] += line_counts[channel];
+    }//for( each gamma line )
+
+    region.channels = measurement_channels( input.measurement, roi.first_channel,
+                                            roi.last_channel, {}, 1.0 );
+    region.num_roi_channels = region.channels.size();
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    // Check that the continuum picked out of `fit_peaks` really is the one fitted to *this*
+    //  region.  The two energies come from genuinely different places - these from the
+    //  measurement's channel-energy vector by channel index, the continuum's from
+    //  `PeakContinuum::setRange(roi_start, roi_end)` - so a peak-to-region index mapping that
+    //  slipped by one region shows up here as a whole ROI width, not as rounding.  Compared with
+    //  the same 0.001 keV slack `decon_compute_peaks` uses when it matches a reference energy.
+    assert( std::fabs( region.channels.front().lower_energy - continuum->lowerEnergy() ) < 0.001 );
+    assert( std::fabs( region.channels.back().upper_energy - continuum->upperEnergy() ) < 0.001 );
+#endif //PERFORM_DEVELOPER_CHECKS
+
+    if( roi.cont_norm_method == DeconContinuumNorm::FixedByEdges )
+    {
+      std::vector<std::pair<size_t,size_t>> other_roi_channels;
+      for( const MergedRoi &other : merged_rois )
+      {
+        if( (other.first_channel != roi.first_channel)
+           || (other.last_channel != roi.last_channel) )
+          other_roi_channels.emplace_back( other.first_channel, other.last_channel );
+      }
+
+      const std::vector<PoissonChannel> sidebands
+          = sideband_channels( input.measurement, roi.first_channel, roi.last_channel,
+                              roi.num_lower_side_channels, roi.num_upper_side_channels,
+                              other_roi_channels );
+      region.channels.insert( end(region.channels), begin(sidebands), end(sidebands) );
+      region.signal_per_activity.resize( region.channels.size(), 0.0 );
+    }//if( FixedByEdges )
+
+    // A region whose lines put no counts inside it - lines that sit outside their own ROI, or a
+    //  zero yield, both of which the input validation deliberately permits - carries no
+    //  information about the activity.  Drop it and say so, rather than failing the whole request:
+    //  the remaining regions determine the activity perfectly well, and `decon_compute_peaks`
+    //  accepts the same input without complaint.  Its continuum coefficients are dropped with it,
+    //  so they never enter the joint information matrix.  This mirrors how a region with no gamma
+    //  lines at all is skipped above.
+    bool has_signal_information = false;
+    for( const double signal : region.signal_per_activity )
+      has_signal_information = has_signal_information || (std::fabs(signal) > 0.0);
+
+    if( has_signal_information )
+      regions.push_back( region );
+    else
+      warnings.push_back( "The gamma lines of a region of interest put no counts inside it, so it"
+                          " was left out of the decision and detection limits." );
+
+    fitted_peak_index += roi.peak_infos.size();
+  }//for( each merged ROI )
+
+  if( fitted_peak_index != primary_fit.fit_peaks.size() )
+  {
+    error = "the primary fit returned an unexpected number of gamma lines";
+    return false;
+  }
+
+  if( regions.empty() )
+  {
+    error = "no non-empty region contributes information about activity";
+    return false;
+  }
+
+  return true;
+}//make_decon_characteristic_regions(...)
+
+
+/** Constructs the artificial expected spectrum at p assumed_activity, then obtains the complete
+ activity covariance from the joint expected-information matrix.
+ */
+DeconUncertaintyResult decon_artificial_uncertainty(
+                                      const std::vector<DeconCharacteristicRegion> &regions,
+                                      const double assumed_activity )
+{
+  DeconUncertaintyResult answer;
+
+  size_t total_parameters = 1;
+  for( const DeconCharacteristicRegion &region : regions )
+    total_parameters += region.num_coefficients;
+
+  Eigen::MatrixXd information = Eigen::MatrixXd::Zero(
+                                  static_cast<Eigen::Index>(total_parameters),
+                                  static_cast<Eigen::Index>(total_parameters) );
+  size_t continuum_offset = 1;
+
+  for( const DeconCharacteristicRegion &region : regions )
+  {
+    const size_t num_channels = region.channels.size();
+    const Eigen::MatrixXd basis = continuum_basis( region.channels.data(), num_channels,
+                                                   region.num_coefficients,
+                                                   region.reference_energy );
+
+    // Replace only the activity in the primary fitted model.  Re-profiling the observed data at A
+    // would let the continuum subtract the inserted peak and erase the activity dependence that
+    // u_tilde(A) is meant to carry.  The artificial observations equal this model exactly; in this
+    // linear-continuum Poisson problem a refit therefore has zero score at primary_continuum and is
+    // mathematically a no-op.
+    std::vector<double> expected_counts( num_channels, 0.0 );
+    double observed_sum = 0.0;
+    for( const PoissonChannel &channel : region.channels )
+      observed_sum += channel.observed;
+    const double numerical_floor
+        = min_expected_channel_counts( observed_sum / static_cast<double>(num_channels) );
+
+    for( size_t i = 0; i < num_channels; ++i )
+    {
+      double expected = assumed_activity * region.signal_per_activity[i];
+      for( size_t k = 0; k < region.num_coefficients; ++k )
+        expected += basis( static_cast<Eigen::Index>(i), static_cast<Eigen::Index>(k) )
+                    * region.primary_continuum[k];
+
+      if( !std::isfinite(expected) || !(expected > numerical_floor*(1.0 + 1.0E-6)) )
+      {
+        answer.status = DeconCharacteristicLimitStatus::ApproximationInvalid;
+        answer.error = "the artificial model reaches the positivity boundary, where the local-"
+                       "normal expected-information approximation is not applicable";
+        return answer;
+      }
+      expected_counts[i] = expected;
+    }//for( each artificial channel )
+
+    // There is deliberately no developer check here that refits the artificial spectrum.  Two were
+    //  tried and both were worse than nothing.  Refitting and comparing coefficients to 1E-6
+    //  measured the optimizer's stopping rule rather than the identity - with an empty control
+    //  channel the fit takes the log-barrier path, which leaves a uniform rescaling of order 1E-3
+    //  that grows as the solution nears the positivity boundary - so it aborted developer builds
+    //  on valid input.  Scoring `primary_continuum` against the artificial spectrum instead was
+    //  *vacuous*: both sides re-derive the expected counts from the same `region` through the same
+    //  `continuum_basis` call, so the deviance is identically +0.0 and stays there even if the
+    //  reference energy or the coefficients are wrong.
+    //
+    //  The premise that actually needed guarding - that `region` describes the model the
+    //  likelihood fitted - is now guarded where the two can differ, in
+    //  `make_decon_characteristic_regions`: the reference energy and coefficients are read from
+    //  the same fitted continuum, and that continuum's energy range is checked against the
+    //  region's channels.  The hand-calculated Fisher matrix in
+    //  `DeconCharacteristicLimitsFisherRootAndSignedEstimate` covers the arithmetic here.
+    for( size_t i = 0; i < num_channels; ++i )
+    {
+      const double expected = expected_counts[i];
+      const double inverse_expected = 1.0 / expected;
+      const double signal = region.signal_per_activity[i];
+      information(0,0) += signal*signal*inverse_expected;
+
+      for( size_t k = 0; k < region.num_coefficients; ++k )
+      {
+        const Eigen::Index global_k = static_cast<Eigen::Index>(continuum_offset + k);
+        const double basis_k = basis( static_cast<Eigen::Index>(i),
+                                      static_cast<Eigen::Index>(k) );
+        const double activity_continuum = signal*basis_k*inverse_expected;
+        information(0,global_k) += activity_continuum;
+        information(global_k,0) += activity_continuum;
+
+        for( size_t l = 0; l < region.num_coefficients; ++l )
+        {
+          const Eigen::Index global_l = static_cast<Eigen::Index>(continuum_offset + l);
+          const double basis_l = basis( static_cast<Eigen::Index>(i),
+                                        static_cast<Eigen::Index>(l) );
+          information(global_k,global_l) += basis_k*basis_l*inverse_expected;
+        }
+      }//for( continuum coefficient k )
+    }//for( each channel )
+
+    continuum_offset += region.num_coefficients;
+  }//for( each region )
+
+  if( !information.allFinite() )
+  {
+    answer.status = DeconCharacteristicLimitStatus::SingularInformation;
+    answer.error = "the joint expected-information matrix is non-finite";
+    return answer;
+  }
+
+  // Equilibrate to unit diagonal before testing rank.  This makes the decision invariant to keV
+  // units and to the large raw scales of quadratic continuum columns.
+  Eigen::VectorXd scale( static_cast<Eigen::Index>(total_parameters) );
+  for( size_t i = 0; i < total_parameters; ++i )
+  {
+    const double diagonal = information( static_cast<Eigen::Index>(i),
+                                         static_cast<Eigen::Index>(i) );
+    if( !std::isfinite(diagonal) || !(diagonal > 0.0) )
+    {
+      answer.status = DeconCharacteristicLimitStatus::SingularInformation;
+      answer.error = "the joint expected-information matrix has an empty parameter direction";
+      return answer;
+    }
+    scale( static_cast<Eigen::Index>(i) ) = 1.0 / std::sqrt(diagonal);
+  }
+
+  const Eigen::MatrixXd equilibrated = scale.asDiagonal() * information * scale.asDiagonal();
+  Eigen::FullPivLU<Eigen::MatrixXd> decomposition( equilibrated );
+  decomposition.setThreshold( 1.0E-10 );
+  if( decomposition.rank() != static_cast<Eigen::Index>(total_parameters) )
+  {
+    answer.status = DeconCharacteristicLimitStatus::SingularInformation;
+    answer.error = "the activity is confounded with one or more continuum coefficients";
+    return answer;
+  }
+
+  const Eigen::MatrixXd inverse = decomposition.inverse();
+  const double activity_variance = scale(0)*scale(0)*inverse(0,0);
+  if( !inverse.allFinite() || !std::isfinite(activity_variance) || !(activity_variance > 0.0) )
+  {
+    answer.status = DeconCharacteristicLimitStatus::SingularInformation;
+    answer.error = "the complete activity covariance could not be inverted";
+    return answer;
+  }
+
+  answer.uncertainty = std::sqrt( activity_variance );
+  return answer;
+}//decon_artificial_uncertainty(...)
+
+}//anonymous namespace
+
+
+DeconCharacteristicLimitResult
+decon_characteristic_limits( const DeconCharacteristicLimitInput &input )
+{
+  DeconCharacteristicLimitResult answer;
+  answer.input = input;
+
+  const DeconComputeInput &base = input.decon_input;
+  if( !std::isfinite(input.alpha) || !std::isfinite(input.beta)
+     || !(input.alpha > 0.0) || !(input.alpha < 0.5)
+     || !(input.beta > 0.0) || !(input.beta < 0.5) )
+  {
+    answer.status = DeconCharacteristicLimitStatus::InvalidInput;
+    answer.error_message = "alpha and beta must each be strictly between zero and 0.5";
+    return answer;
+  }
+
+  if( base.measurement_model != DeconMeasurementModel::CurrentSpectrum )
+  {
+    answer.status = DeconCharacteristicLimitStatus::UnsupportedModel;
+    answer.error_message = "characteristic limits initially support CurrentSpectrum only";
+    return answer;
+  }
+
+  if( base.roi_info.empty() )
+  {
+    answer.status = DeconCharacteristicLimitStatus::InvalidInput;
+    answer.error_message = "at least one region of interest is required";
+    return answer;
+  }
+
+  if( (base.distance < 0.0) || !std::isfinite(base.distance)
+     || (base.include_air_attenuation
+         && ((base.shielding_thickness < 0.0)
+             || !std::isfinite(base.shielding_thickness)
+             || (base.shielding_thickness >= base.distance)))
+     || !base.drf || !base.drf->isValid() || !base.drf->hasResolutionInfo()
+     || !base.measurement || (base.measurement->num_gamma_channels() < 2)
+     || !base.measurement->energy_calibration()
+     || !base.measurement->energy_calibration()->valid() )
+  {
+    answer.status = DeconCharacteristicLimitStatus::InvalidInput;
+    answer.error_message = "invalid distance, shielding, detector response, or spectrum input";
+    return answer;
+  }
+
+  for( const DeconRoiInfo &roi : base.roi_info )
+  {
+    if( (roi.cont_norm_method != DeconContinuumNorm::Floating)
+       && (roi.cont_norm_method != DeconContinuumNorm::FixedByEdges) )
+    {
+      answer.status = DeconCharacteristicLimitStatus::UnsupportedModel;
+      answer.error_message = "only Floating and FixedByEdges continua are supported";
+      return answer;
+    }
+
+    if( (roi.continuum_type != PeakContinuum::OffsetType::Linear)
+       && (roi.continuum_type != PeakContinuum::OffsetType::Quadratic) )
+    {
+      answer.status = DeconCharacteristicLimitStatus::UnsupportedModel;
+      answer.error_message = "only Linear and Quadratic continua are supported";
+      return answer;
+    }
+
+    if( roi.peak_infos.empty() )
+    {
+      answer.status = DeconCharacteristicLimitStatus::InvalidInput;
+      answer.error_message = "each region of interest must contain at least one gamma line";
+      return answer;
+    }
+
+    for( const DeconRoiInfo::PeakInfo &peak : roi.peak_infos )
+    {
+      if( !std::isfinite(peak.energy) || !std::isfinite(peak.fwhm) || (peak.fwhm < 0.0f)
+         || !std::isfinite(peak.counts_per_bq_into_4pi)
+         || (peak.counts_per_bq_into_4pi < 0.0) )
+      {
+        answer.status = DeconCharacteristicLimitStatus::InvalidInput;
+        answer.error_message = "a gamma line has an invalid energy, width, or yield";
+        return answer;
+      }
+
+      try
+      {
+        // This also validates the detector efficiency, attenuation, and derived line width used
+        // by both the primary profile and the characteristic-limit signal derivative.
+        decon_trial_peak( base, peak, 1.0, 1.0 );
+      }catch( const std::exception &e )
+      {
+        answer.status = DeconCharacteristicLimitStatus::InvalidInput;
+        answer.error_message = e.what();
+        return answer;
+      }
+    }
+  }//for( each ROI )
+
+  try
+  {
+    std::vector<std::string> validation_warnings;
+    merge_overlapping_rois( base.roi_info, base.measurement, validation_warnings );
+  }catch( const std::exception &e )
+  {
+    answer.status = DeconCharacteristicLimitStatus::InvalidInput;
+    answer.error_message = e.what();
+    return answer;
+  }
+
+  try
+  {
+    // The zero-activity fit provides a local uncertainty scale for bracketing the signed primary
+    // fit.  Its nuisance values are replaced by the signed primary fit before any reported
+    // uncertainty or characteristic limit is calculated.
+    DeconComputeInput zero_input = base;
+    zero_input.activity = 0.0;
+    zero_input.allow_negative_activity = true;
+    const DeconComputeResults zero_fit = decon_compute_peaks( zero_input );
+
+    // Carry these now rather than only after the primary fit, so that a failure between here and
+    //  there still returns the region-merge warnings the caller needs to interpret it.  The
+    //  primary fit repeats them for the same input, so it replaces rather than appends below.
+    answer.warnings = zero_fit.warnings;
+
+    std::vector<DeconCharacteristicRegion> zero_regions;
+    std::string region_error;
+    // Any region this drops it drops again for the primary fit, on the same input, so the warning
+    //  is collected there rather than duplicated from both passes.
+    std::vector<std::string> zero_region_warnings;
+    if( !make_decon_characteristic_regions( zero_input, zero_fit, zero_regions,
+                                           zero_region_warnings, region_error ) )
+    {
+      // The ROI and line structure was validated above, so disagreement between the fit and its
+      // reconstructed characteristic regions is an internal fit failure rather than bad input.
+      answer.status = DeconCharacteristicLimitStatus::FitFailed;
+      answer.error_message = region_error;
+      return answer;
+    }
+
+    const DeconUncertaintyResult scale_uncertainty
+                                      = decon_artificial_uncertainty( zero_regions, 0.0 );
+    if( scale_uncertainty.status != DeconCharacteristicLimitStatus::Success )
+    {
+      answer.status = scale_uncertainty.status;
+      answer.error_message = scale_uncertainty.error;
+      return answer;
+    }
+
+    const double initial_scale = scale_uncertainty.uncertainty;
+    std::map<double,double> profile_cache;
+    std::set<double> failed_profile_points;
+    profile_cache[0.0] = zero_fit.chi2;
+    answer.num_profile_evaluations = 1;
+    std::string last_profile_error;
+    const double profile_failure_penalty = zero_fit.chi2
+                   + 1.0E12*(std::max)( 1.0, std::fabs(zero_fit.chi2) );
+
+    const auto profile = [&base,&profile_cache,&failed_profile_points,&answer,&last_profile_error,
+                          profile_failure_penalty](
+                                                               const double activity ) -> double {
+      const std::map<double,double>::const_iterator found = profile_cache.find( activity );
+      if( found != end(profile_cache) )
+        return found->second;
+
+      double value = profile_failure_penalty;
+      try
+      {
+        DeconComputeInput trial = base;
+        trial.activity = activity;
+        trial.allow_negative_activity = true;
+        value = decon_compute_peaks( trial ).chi2;
+        if( !std::isfinite(value) )
+        {
+          value = profile_failure_penalty;
+          failed_profile_points.insert( activity );
+          last_profile_error = "the profile statistic was non-finite";
+        }
+      }catch( const std::exception &e )
+      {
+        last_profile_error = e.what();
+        failed_profile_points.insert( activity );
+      }
+
+      profile_cache[activity] = value;
+      ++answer.num_profile_evaluations;
+      return value;
+    };
+
+    double bracket_low = -initial_scale;
+    double bracket_high = initial_scale;
+    const double at_zero = zero_fit.chi2;
+    double at_low = profile( bracket_low );
+    double at_high = profile( bracket_high );
+
+    if( (at_low < at_zero) || (at_high < at_zero) )
+    {
+      const double direction = (at_high < at_low) ? 1.0 : -1.0;
+      double previous_activity = 0.0;
+      double current_activity = direction*initial_scale;
+      double current_value = (direction > 0.0) ? at_high : at_low;
+      double step = initial_scale;
+      bool bracketed = false;
+
+      for( size_t expansion = 0; expansion < 40; ++expansion )
+      {
+        step *= 2.0;
+        const double next_activity = current_activity + direction*step;
+        if( !std::isfinite(next_activity) )
+          break;
+        const double next_value = profile( next_activity );
+        if( failed_profile_points.count(next_activity) )
+        {
+          answer.status = DeconCharacteristicLimitStatus::FitFailed;
+          answer.error_message = "the signed activity profile failed during bracket expansion";
+          if( !last_profile_error.empty() )
+            answer.error_message += ": " + last_profile_error;
+          return answer;
+        }
+        if( next_value >= current_value )
+        {
+          bracket_low = (std::min)( previous_activity, next_activity );
+          bracket_high = (std::max)( previous_activity, next_activity );
+          bracketed = true;
+          break;
+        }
+
+        previous_activity = current_activity;
+        current_activity = next_activity;
+        current_value = next_value;
+      }//for( bracket expansion )
+
+      if( !bracketed )
+      {
+        answer.status = DeconCharacteristicLimitStatus::FitFailed;
+        answer.error_message = "could not bracket the signed primary activity fit";
+        if( !last_profile_error.empty() )
+          answer.error_message += ": " + last_profile_error;
+        return answer;
+      }
+    }//if( zero is not bracketed minimum )
+
+    const double final_low_value = profile( bracket_low );
+    const double final_high_value = profile( bracket_high );
+    if( failed_profile_points.count(bracket_low) || failed_profile_points.count(bracket_high)
+       || !std::isfinite(final_low_value) || !std::isfinite(final_high_value) )
+    {
+      answer.status = DeconCharacteristicLimitStatus::FitFailed;
+      answer.error_message = "could not evaluate both sides of the signed activity profile";
+      if( !last_profile_error.empty() )
+        answer.error_message += ": " + last_profile_error;
+      return answer;
+    }
+
+    boost::uintmax_t primary_iterations = 200;
+    const std::pair<double,double> primary_minimum
+          = boost::math::tools::brent_find_minima( profile, bracket_low, bracket_high,
+                                                   24, primary_iterations );
+    // A finite penalty keeps Brent's arithmetic defined, but a failed fit is never accepted as
+    // data.  Failures outside the final bracket are irrelevant (for example, a failed negative
+    // exploratory point when the likelihood is decreasing in the positive direction); any point
+    // Brent actually could have used invalidates the primary fit.
+    for( const double failed_activity : failed_profile_points )
+    {
+      if( (failed_activity >= bracket_low) && (failed_activity <= bracket_high) )
+      {
+        answer.status = DeconCharacteristicLimitStatus::FitFailed;
+        answer.error_message = "the signed activity profile could not be evaluated throughout "
+                               "its final bracket";
+        if( !last_profile_error.empty() )
+          answer.error_message += ": " + last_profile_error;
+        return answer;
+      }
+    }
+    if( !std::isfinite(primary_minimum.first) || !std::isfinite(primary_minimum.second) )
+    {
+      answer.status = DeconCharacteristicLimitStatus::FitFailed;
+      answer.error_message = "the signed primary activity fit did not converge";
+      return answer;
+    }
+
+    answer.primary_activity = primary_minimum.first;
+    DeconComputeInput primary_input = base;
+    primary_input.activity = answer.primary_activity;
+    primary_input.allow_negative_activity = true;
+    const DeconComputeResults primary_fit = decon_compute_peaks( primary_input );
+    ++answer.num_profile_evaluations;
+    answer.warnings = primary_fit.warnings;
+
+    std::vector<DeconCharacteristicRegion> regions;
+    if( !make_decon_characteristic_regions( primary_input, primary_fit, regions,
+                                           answer.warnings, region_error ) )
+    {
+      answer.status = DeconCharacteristicLimitStatus::FitFailed;
+      answer.error_message = region_error;
+      return answer;
+    }
+
+    // The local-normal Lc/Ld equations need the estimator to be approximately Gaussian, which stops
+    //  being true once the channels anchoring the continuum hold too few counts.  The Monte Carlo
+    //  in `test_DetectionLimit.cpp` measures where that happens for the supplied 4+4 sideband
+    //  geometry: at one expected count per control channel the false-positive probability is
+    //  within noise of alpha, while at 0.1 it is 0.083 against a nominal 0.05 - 66% high.  That
+    //  cell is excluded from the validated grid, so a caller who lands in it is told, rather than
+    //  handed a clean `Success` for an answer nothing has checked.
+    //
+    //  Both a per-channel and a total threshold are applied, because the Monte Carlo varies only
+    //  the counts and not the geometry, and the user picks the geometry: `DeconRoiInfo`'s side
+    //  channel counts are set from the GUI.  Keying on the per-channel mean alone would let a 1+1
+    //  sideband region at one count per channel - two control counts in total, fewer than the 2.4
+    //  the failing cell had - pass unremarked.  Keying on the total alone would miss a wide but
+    //  uniformly empty control region.  Each threshold is the geometric mean of the two measured
+    //  grid points on its own axis (0.1 and 1 count per channel; 0.8 and 8 counts in total over
+    //  the 4+4 geometry), so it sits between them rather than on either, and neither an ordinary
+    //  1-count control region nor floating-point noise in the fitted continuum trips it.
+    //
+    //  Regions with no control channels are not covered: a *floating* continuum was measured down
+    //  to 0.1 counts/channel and stayed calibrated (0.0515), because its coefficients are
+    //  determined by the whole region rather than by a handful of edge channels.
+    const double min_validated_control_counts = 0.3;
+    const double min_validated_total_control_counts = 2.5;
+    for( const DeconCharacteristicRegion &region : regions )
+    {
+      if( region.channels.size() <= region.num_roi_channels )
+        continue;
+
+      const Eigen::MatrixXd basis
+          = continuum_basis( region.channels.data(), region.channels.size(),
+                            region.num_coefficients, region.reference_energy );
+
+      const size_t num_control = region.channels.size() - region.num_roi_channels;
+      double expected_control_counts = 0.0;
+      for( size_t i = region.num_roi_channels; i < region.channels.size(); ++i )
+      {
+        for( size_t k = 0; k < region.num_coefficients; ++k )
+          expected_control_counts += basis( static_cast<Eigen::Index>(i),
+                                            static_cast<Eigen::Index>(k) )
+                                     * region.primary_continuum[k];
+      }
+
+      const double per_control_channel
+                        = expected_control_counts / static_cast<double>(num_control);
+      if( std::isfinite(per_control_channel) && std::isfinite(expected_control_counts)
+         && ((per_control_channel < min_validated_control_counts)
+             || (expected_control_counts < min_validated_total_control_counts)) )
+      {
+        answer.warnings.push_back( "The channels beside a region of interest that anchor its"
+          " continuum hold too few counts - fewer than 0.3 expected counts per channel, or fewer"
+          " than 2.5 in total.  That is below the range over which these decision and detection"
+          " limits have been checked, and the false-positive probability was measured to run high"
+          " there; treat them as indicative only." );
+        break;
+      }
+    }//for( regions: sparse control-channel warning )
+
+    const DeconUncertaintyResult primary_uncertainty
+                          = decon_artificial_uncertainty( regions, answer.primary_activity );
+    if( primary_uncertainty.status != DeconCharacteristicLimitStatus::Success )
+    {
+      answer.status = primary_uncertainty.status;
+      answer.error_message = primary_uncertainty.error;
+      return answer;
+    }
+    answer.primary_standard_uncertainty = primary_uncertainty.uncertainty;
+
+    const DeconUncertaintyResult uncertainty_zero
+                                          = decon_artificial_uncertainty( regions, 0.0 );
+    if( uncertainty_zero.status != DeconCharacteristicLimitStatus::Success )
+    {
+      answer.status = uncertainty_zero.status;
+      answer.error_message = uncertainty_zero.error;
+      return answer;
+    }
+    answer.uncertainty_at_zero = uncertainty_zero.uncertainty;
+
+    const boost::math::normal standard_normal;
+    const double k_alpha = boost::math::quantile( standard_normal, 1.0 - input.alpha );
+    const double k_beta = boost::math::quantile( standard_normal, 1.0 - input.beta );
+    answer.decision_threshold = k_alpha * answer.uncertainty_at_zero;
+
+    const auto root_value = [&regions,k_beta,&answer]( const double activity,
+                                                       double &uncertainty ) -> bool {
+      const DeconUncertaintyResult evaluated = decon_artificial_uncertainty( regions, activity );
+      if( evaluated.status != DeconCharacteristicLimitStatus::Success )
+      {
+        answer.status = evaluated.status;
+        answer.error_message = evaluated.error;
+        return false;
+      }
+      uncertainty = evaluated.uncertainty;
+      return true;
+    };
+
+    double lower = answer.decision_threshold;
+    double lower_uncertainty = 0.0;
+    if( !root_value( lower, lower_uncertainty ) )
+      return answer;
+    double lower_value = lower - answer.decision_threshold - k_beta*lower_uncertainty;
+
+    double upper = answer.decision_threshold
+                   + 2.0*k_beta*(std::max)(lower_uncertainty, answer.uncertainty_at_zero);
+    upper = (std::max)( upper, answer.decision_threshold + initial_scale );
+    const double root_scale = (std::max)( initial_scale,
+                               (std::max)(answer.decision_threshold,
+                                          answer.uncertainty_at_zero) );
+    const double root_cap = root_scale * 1.0E12;
+    double upper_uncertainty = 0.0;
+    double upper_value = std::numeric_limits<double>::quiet_NaN();
+    bool root_bracketed = false;
+
+    for( size_t expansion = 0; expansion < 60; ++expansion )
+    {
+      if( !std::isfinite(upper) || (upper > root_cap) )
+        break;
+      if( !root_value( upper, upper_uncertainty ) )
+        return answer;
+      upper_value = upper - answer.decision_threshold - k_beta*upper_uncertainty;
+      if( std::isfinite(upper_value) && (upper_value >= 0.0) )
+      {
+        root_bracketed = true;
+        break;
+      }
+      upper = answer.decision_threshold + 2.0*(upper - answer.decision_threshold);
+    }//for( root bracket expansion )
+
+    if( !root_bracketed || !(lower_value <= 0.0) )
+    {
+      answer.status = DeconCharacteristicLimitStatus::NoFiniteDetectionLimit;
+      answer.error_message = "no finite solution of Ld = Lc + k_(1-beta) u_tilde(Ld) was found";
+      return answer;
+    }
+
+    // Bisection is deliberately used after a sign-changing bracket has been established.  It does
+    // not assume a derivative or a constant uncertainty function, and every intermediate point
+    // reconstructs and evaluates the complete artificial expected spectrum.
+    bool root_converged = false;
+    for( size_t iteration = 0; iteration < 100; ++iteration )
+    {
+      const double midpoint = 0.5*(lower + upper);
+      double midpoint_uncertainty = 0.0;
+      if( !root_value( midpoint, midpoint_uncertainty ) )
+        return answer;
+      const double midpoint_value
+                  = midpoint - answer.decision_threshold - k_beta*midpoint_uncertainty;
+
+      if( midpoint_value >= 0.0 )
+      {
+        upper = midpoint;
+        upper_value = midpoint_value;
+        upper_uncertainty = midpoint_uncertainty;
+      }else
+      {
+        lower = midpoint;
+        lower_value = midpoint_value;
+        lower_uncertainty = midpoint_uncertainty;
+      }
+
+      if( (upper - lower) <= 1.0E-10*(std::max)(initial_scale, std::fabs(midpoint)) )
+      {
+        root_converged = true;
+        break;
+      }
+    }//for( bisection iterations )
+
+    if( !root_converged )
+    {
+      // Not `NoFiniteDetectionLimit`: a sign-changing bracket *was* found, so a finite root exists
+      //  and only the numerics fell short of it.  (100 halvings of a bounded bracket makes this
+      //  unreachable in practice, but reporting "there is no limit" for "I could not compute the
+      //  limit" would be a lie the caller cannot distinguish.)
+      answer.status = DeconCharacteristicLimitStatus::FitFailed;
+      answer.error_message = "the bracketed detection-limit root did not converge";
+      return answer;
+    }
+
+    answer.detection_limit = 0.5*(lower + upper);
+    const DeconUncertaintyResult uncertainty_ld
+                          = decon_artificial_uncertainty( regions, answer.detection_limit );
+    if( uncertainty_ld.status != DeconCharacteristicLimitStatus::Success )
+    {
+      answer.status = uncertainty_ld.status;
+      answer.error_message = uncertainty_ld.error;
+      return answer;
+    }
+    answer.uncertainty_at_detection_limit = uncertainty_ld.uncertainty;
+    answer.status = DeconCharacteristicLimitStatus::Success;
+    answer.error_message.clear();
+    return answer;
+  }catch( const std::exception &e )
+  {
+    answer.status = DeconCharacteristicLimitStatus::FitFailed;
+    answer.error_message = e.what();
+    return answer;
+  }
+}//decon_characteristic_limits(...)
 
   
 DeconActivityOrDistanceLimitResult::DeconActivityOrDistanceLimitResult()
