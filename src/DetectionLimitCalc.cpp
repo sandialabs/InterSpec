@@ -3486,7 +3486,9 @@ DeconActivityOrDistanceLimitResult get_activity_or_distance_limits( const double
   const size_t num_prescan = 33;
   vector<pair<double,double>> prescan;
 
-  const auto evaluate_prescan = [&prescan,&chi2ForQuantity]( const double low, const double high ){
+  // Note: MSVC requires `num_prescan` be explicitly captured, even though its use is a constant
+  //       expression, so not odr-used.
+  const auto evaluate_prescan = [&prescan,&chi2ForQuantity,num_prescan]( const double low, const double high ){
     prescan.clear();
     for( size_t i = 0; i < num_prescan; ++i )
     {
