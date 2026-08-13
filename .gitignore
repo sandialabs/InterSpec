@@ -126,5 +126,3 @@ target/wxwidgets/3rd_party
 /devcontainer_prefix/
 *.bak
 
-# Vendored CeeLo MC detector-response library - kept out of git for now
-external_libs/CeeLo/

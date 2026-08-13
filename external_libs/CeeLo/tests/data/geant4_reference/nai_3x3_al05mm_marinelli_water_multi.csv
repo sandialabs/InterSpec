@@ -1,0 +1,21 @@
+# GEANT4 11.4.0 reference — config 8: 3"x3" NaI + 0.5mm Al, Marinelli beaker
+# (water fill, 2mm PE wall). Isotropic GPS volume source confined to SrcMaterialPV
+# (= engine L-shaped source region). 32M events/energy.
+# Regenerated June 26 2026 on the CURRENT geometry/harness (detector_8.gdml + the
+# Jun-2026 toolchain). The PREVIOUS reference (the March `g4_cfg8_*_v2` runs) was
+# STALE — it predated the June source-effect/biasing/cascade work (GDML export
+# rebuilt Jun 11, harness rebuilt Jun 25) and sat +0.9% (662, total) to +6.1%
+# (59, total) ABOVE both the current MC AND a fresh G4 run on the current geometry.
+# The documented "low-E Marinelli deficit" and "-2.5% albedo-recovery FEP deficit
+# @662" were largely artifacts of that stale reference: current MC agrees with this
+# reference to <=0.7% total and <=1.1% FEP for 100-2614 keV. The one genuine residual
+# is FEP -2.1% at 59 keV (near-peak scatter: MC under-places forward Rayleigh /
+# small-angle-Compton photons in the +/-1.5 keV window; ~15% of the small scattered-FEP
+# stream eps_s). See DESIGN.md "Known Limitations".
+energy_keV,fep_efficiency,fep_uncertainty,total_efficiency,total_uncertainty,num_events
+59,0.0758673,4.68079e-05,0.151802,6.34325e-05,32000000
+100,0.0850977,4.93255e-05,0.161935,6.5123e-05,32000000
+200,0.0838119,4.89858e-05,0.153062,6.36479e-05,32000000
+662,0.0402192,3.47318e-05,0.10999,5.53095e-05,32000000
+1173,0.0255184,2.78765e-05,0.0919384,5.10777e-05,32000000
+2614,0.0129399,1.99785e-05,0.0751687,4.66095e-05,32000000

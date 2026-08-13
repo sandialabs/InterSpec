@@ -1,0 +1,62 @@
+# Build directories
+build*/
+cmake-build-*/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Compiled
+*.o
+*.a
+*.so
+*.dylib
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+.venv/
+venv/
+
+# Local scratch work and per-developer tool/editor config
+scratch/
+CLAUDE.md
+.claude/
+
+# Research / studies + planning docs (dev-only; never part of the distributed source).
+# All one-off studies, the det-response campaign, GADRAS benchmarks, and design/
+# planning docs live here. `git archive HEAD` (the InterSpec vendor payload) excludes it.
+studies/
+
+# Dev-only research output (reports, fit payloads, plots)
+docs/
+
+# Downloaded data files (large, re-downloadable)
+tools/prepare_cross_sections/data/
+
+# NOTE: the generated cross-section sources (src/cross_sections/element_data.cpp,
+# l_fluorescence_data.cpp) ARE tracked -- they are the library's compiled-in
+# physics data, and building must not require GEANT4/xraylib.
+
+# CTest scratch
+Testing/
+
+# Root-level diagnostic/comparison artifacts (regenerable)
+/diag_spectrum_*.csv
+/mc_diag_*.csv
+/our_*.csv
+/g4_*.csv
+/fep_results.txt
+/*.png
+/centroid_compare/
+
+# Profiling artifacts (regenerable); the tracked gate script in profiling/
+# is committed and unaffected by this rule.
+profiling/*.csv
+profiling/*.txt
+profiling/*.png

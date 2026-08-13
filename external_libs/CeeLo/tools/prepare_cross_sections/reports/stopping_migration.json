@@ -1,0 +1,56 @@
+{
+  "diagnosis": "Direct ESTAR agrees closely at the 12 historical correction-surface anchors; the failure is concentrated in elements formerly approximated by interpolation between anchors, especially elemental gas/solid density-effect changes.",
+  "gates_percent": {
+    "csda_range_worst": 1.0,
+    "deposited_energy_worst": 1.0,
+    "stopping_p95": 1.0,
+    "stopping_worst": 3.0
+  },
+  "historical_baseline_ref": "ab03e48",
+  "passed": false,
+  "schema_version": 1,
+  "source_lock_sha256": "1460f0d95b47c76fb08063d1f7c20a2ad1e3a534b5e36332d536ce9e7655c0ad",
+  "summaries": {
+    "collision_stopping": {
+      "count": 4876,
+      "median_percent": 0.16406066920600648,
+      "p95_percent": 2.9634693927844067,
+      "worst_case": {
+        "Z": 18,
+        "energy_keV": 20000.0
+      },
+      "worst_percent": 15.820164023218574
+    },
+    "collision_stopping_historical_anchor_elements": {
+      "count": 636,
+      "median_percent": 0.010823231727380422,
+      "p95_percent": 0.07773241274219855,
+      "worst_case": {
+        "Z": 29,
+        "energy_keV": 150.0
+      },
+      "worst_percent": 0.12863528006743508
+    },
+    "csda_range": {
+      "count": 4876,
+      "median_percent": 0.3379259521063438,
+      "p95_percent": 3.44404638488332,
+      "worst_case": {
+        "Z": 92,
+        "energy_keV": 10.0
+      },
+      "worst_percent": 10.753178640516447
+    },
+    "deterministic_deposited_energy": {
+      "count": 13524,
+      "median_percent": 0.2119326501419383,
+      "p95_percent": 2.8572965579137803,
+      "worst_case": {
+        "Z": 35,
+        "energy_keV": 20000.0,
+        "old_range_fraction": 0.1
+      },
+      "worst_percent": 15.371251435698309
+    }
+  }
+}

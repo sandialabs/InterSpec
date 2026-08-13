@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "status": "accepted",
+  "reviewer": "project maintainer (user approval)",
+  "reviewed_at": "2026-08-12",
+  "source_lock_sha256": "1460f0d95b47c76fb08063d1f7c20a2ad1e3a534b5e36332d536ce9e7655c0ad",
+  "accepted_reports": {
+    "tools/prepare_cross_sections/reports/photon_migration.json": {
+      "sha256": "c5b7103c73cddfcb7adf0fc0f26a9ac2b248dd0ae71bbb2d6487c3f87e745d85",
+      "accepted_gate": "contribution-weighted attenuation p95",
+      "rationale": "The 0.7173% p95 difference (1.6447% worst, within its 2% gate) remains the accepted change from the historical Geant4 fitted representation to direct EPICS2023 EPDL. The compressed runtime validates every native EPDL node plus 16 interior probes per interval to at most 0.1% pointwise and 0.05% integrated representation error; the small change from the pre-compression 0.6985% p95 is bounded by that independent gate. Rayleigh total cross sections now jointly refine one grid per four adjacent elements while independently closing those same per-element gates. Independent NIST XCOM spot checks continue to favor the direct EPICS values over the historical fit."
+    },
+    "tools/prepare_cross_sections/reports/stopping_migration.json": {
+      "sha256": "ef36715268a7ef11c0d575146c5732115db74158c0f663ed9c61e315da112d89",
+      "accepted_gate": "historical stopping, CSDA-range, and deterministic-deposition compatibility",
+      "rationale": "The differences are concentrated away from the 12 elements in the historical correction surface and reflect replacing cross-element interpolation, including gas/solid density-effect discontinuities, with direct all-Z NIST ESTAR tables. Historical anchor elements remain close. The per-element affine uint16 encoding adds at most 0.00195% collision and 0.00401% radiative error at the native nodes, negligible relative to both NIST's stated source precision and the accepted migration change."
+    }
+  }
+}

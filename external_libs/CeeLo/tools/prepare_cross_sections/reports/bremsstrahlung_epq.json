@@ -1,0 +1,80 @@
+{
+  "generator": "tools/prepare_cross_sections/sb_tables_epq.py",
+  "grid": {
+    "elements": 92,
+    "energy_max_keV": 20000.0,
+    "energy_min_keV": 10.0,
+    "native_incident_energy_nodes_in_runtime_range": 27,
+    "retained_incident_energy_nodes": 27,
+    "retained_kappa_nodes": 32,
+    "source_incident_energy_nodes_all": 57,
+    "source_kappa_nodes": 32
+  },
+  "packed_payload_sha256_scale_float32_then_uint16_little_endian": "a9cc58134c7f8e0b33e60337241282e7ba042c7f1589f9c28170cbdf43870c1c",
+  "passed": true,
+  "process": "bremsstrahlung_differential_scaled_chi",
+  "schema_version": 1,
+  "source": {
+    "archive_sha256": "53b442b22dd37ccf91c5e265a66c287e5fa51221a764c61bb33b92436568e27d",
+    "name": "nist_epq",
+    "table_set_sha256": "c6c92a2e92576d71a31a94ecbb435bf393c0f542dfdff6ea56b3543d33b3c804",
+    "version": "git-ce1e5895892b17854d857e596250e4ae70d6b274"
+  },
+  "source_derived_payload_sha256_float32_little_endian": "cb05e6145dd641df4d841fbd108e0a3fa34f900f821330322abd19e5c2618039",
+  "source_lock_sha256": "1460f0d95b47c76fb08063d1f7c20a2ad1e3a534b5e36332d536ce9e7655c0ad",
+  "storage": {
+    "coefficient_bytes": 158976,
+    "energy_grid_bytes": 108,
+    "kappa_grid_bytes": 128,
+    "logical_total_bytes": 159584,
+    "metadata_bytes": 372,
+    "native_coefficients_in_runtime_range": 79488,
+    "retained_coefficients": 79488,
+    "scalar_encoding": "uint16 with one float32 scale per element",
+    "source_coefficients_all_energies": 167808
+  },
+  "validation": {
+    "epq_phi_rad_output_grid_absolute_relative_error": {
+      "maximum_percent": 0.5327019702923597,
+      "median_percent": 0.008929745314084636,
+      "p95_percent": 0.08390296206385754,
+      "p99_percent": 0.2493108499747766
+    },
+    "epq_phi_rad_source_grid_absolute_relative_error": {
+      "maximum_percent": 0.048287530010759916,
+      "median_percent": 0.004429057600319197,
+      "p95_percent": 0.03081022002494493,
+      "p99_percent": 0.04275003781118936
+    },
+    "note": "phi_rad is an independent first-moment checksum and is not a row-normalization target.",
+    "uint16_packing": {
+      "gates_percent": {
+        "integrated_rate_maximum": 0.01,
+        "integrated_rate_p95": 0.005,
+        "mean_kappa_maximum": 0.01,
+        "mean_kappa_p95": 0.005,
+        "row_rms_maximum": 0.25,
+        "row_rms_p95": 0.02
+      },
+      "integrated_number_rate_difference_percent": {
+        "maximum_percent": 0.0028417271186964577,
+        "median_percent": 0.0001717970557923998,
+        "p95_percent": 0.000550846576417019,
+        "p99_percent": 0.0008292860833111224
+      },
+      "mean_kappa_difference_percent": {
+        "maximum_percent": 0.0013297101886911022,
+        "median_percent": 0.00011841999384976098,
+        "p95_percent": 0.0005313025159175973,
+        "p99_percent": 0.0007042211157024526
+      },
+      "passed": true,
+      "row_rms_percent": {
+        "maximum_percent": 0.24309168793413188,
+        "median_percent": 0.001787594680016289,
+        "p95_percent": 0.01005099208172926,
+        "p99_percent": 0.05072290448315833
+      }
+    }
+  }
+}

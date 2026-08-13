@@ -1,0 +1,9 @@
+{
+  "status": "approved",
+  "reviewer": "project maintainer (user approval)",
+  "reviewed_at": "2026-08-12",
+  "low_kappa_shift_resolved": true,
+  "endpoint_artifacts_resolved": true,
+  "material_rate_changes_resolved": true,
+  "notes": "Manually inspected the before/after/Geant4 review bundle; the bremsstrahlung spectra, shapes, endpoints, and material-dependent rates are accepted for migration."
+}

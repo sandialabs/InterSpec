@@ -1,0 +1,15 @@
+{
+  "bremsstrahlung_bytes": 159344,
+  "bremsstrahlung_coefficients": 79488,
+  "bremsstrahlung_encoding": "uint16 with one float32 scale per element",
+  "compton_profile_bytes": 16488,
+  "compton_profile_coefficients": 4122,
+  "compton_shells_max": 28,
+  "compton_shells_min": 1,
+  "epq_payload_sha256_float32_little_endian": "cb05e6145dd641df4d841fbd108e0a3fa34f900f821330322abd19e5c2618039",
+  "prohibited_g4_payloads": 0,
+  "schema_version": 1,
+  "source_lock_sha256": "1460f0d95b47c76fb08063d1f7c20a2ad1e3a534b5e36332d536ce9e7655c0ad",
+  "xraylib_source_sha256": "6ec503b1a9d2d0dc56df98c7d5581a76ab487fef9abf3116d18b64752fd4e4ab",
+  "xraylib_version": "4.2.1"
+}

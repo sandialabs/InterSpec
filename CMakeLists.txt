@@ -758,9 +758,10 @@ add_subdirectory(external_libs/VoigtDistribution)
 # CeeLo Monte-Carlo detector-response library (MC-parameterized DRFs).
 # CeeLo's CMake disables -march=native when built as a subproject, and skips
 # its own SandiaDecay add_subdirectory when the target already exists (it does
-# here).  The CeeLoCascade adapter needs the "enriched" SandiaDecay (a2/a4 +
-# level-scheme topology); external_libs/SandiaDecay carries it (dev-only,
-# uncommitted - see the submodule working tree).
+# here, since SandiaDecay is added above).  The CeeLoCascade adapter needs the
+# "enriched" SandiaDecay (a2/a4, level-scheme topology, beta level feeds);
+# external_libs/SandiaDecay carries it on its feature/cascadeDetails branch, so
+# CeeLo and InterSpec compile against one and the same decay library.
 set(CEELO_BUILD_TESTS OFF CACHE BOOL "")
 set(CEELO_BUILD_EXAMPLES OFF CACHE BOOL "")
 set(CEELO_WITH_SANDIADECAY ON CACHE BOOL "")

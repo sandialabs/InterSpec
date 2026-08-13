@@ -1,0 +1,35 @@
+# Visualization macro for CeeLo geometries
+# Usage: ceelo_g4val detector_8.gdml vis.mac /dev/null --vis
+
+# List available graphics systems (check terminal output if viewer fails)
+/vis/list
+
+# Open OpenGL viewer via Qt
+/vis/open OGL 800x600
+/vis/viewer/set/autoRefresh false
+/vis/verbose errors
+
+# Draw geometry
+/vis/drawVolume
+
+# Set viewing angle (isometric view)
+/vis/viewer/set/viewpointThetaPhi 30 30
+
+# Color volumes
+/vis/geometry/set/colour WorldLV 0 1 1 1 0.1
+/vis/geometry/set/colour active_crystal 0 0.2 0.8 0.2 1.0
+/vis/geometry/set/colour SrcMaterialLV 0 0.3 0.5 1.0 0.3
+
+# Make world volume wireframe, solids visible
+/vis/viewer/set/style surface
+/vis/geometry/set/forceWireframe WorldLV 0 true
+
+# Axes (10 cm)
+/vis/scene/add/axes 0 0 0 10 cm
+
+# Cutaway view to see internal structure (cut along Y=0 plane)
+/vis/viewer/set/cutawayMode intersection
+/vis/viewer/addCutawayPlane 0 0 0 cm 0 1 0
+
+/vis/viewer/set/autoRefresh true
+/vis/viewer/flush

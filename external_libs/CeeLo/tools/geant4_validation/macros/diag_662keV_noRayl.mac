@@ -1,0 +1,13 @@
+# Diagnostic: Config 1 at 662 keV — Rayleigh scattering disabled
+# Check if Rayleigh scattering contributes to FEP difference
+
+/process/inactivate Rayl
+
+/gps/particle gamma
+/gps/pos/type Point
+/gps/pos/centre 0.000000 0.000000 -10.000000 cm
+/gps/ang/type iso
+/gps/ene/type Mono
+/gps/ene/mono 0.662000 MeV
+
+/run/beamOn 500000

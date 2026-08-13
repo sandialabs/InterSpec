@@ -1,0 +1,12 @@
+# Diagnostic: Config 1 at 1173 keV — electron bremsstrahlung disabled
+
+/process/inactivate eBrem
+
+/gps/particle gamma
+/gps/pos/type Point
+/gps/pos/centre 0.000000 0.000000 -10.000000 cm
+/gps/ang/type iso
+/gps/ene/type Mono
+/gps/ene/mono 1.173000 MeV
+
+/run/beamOn 500000

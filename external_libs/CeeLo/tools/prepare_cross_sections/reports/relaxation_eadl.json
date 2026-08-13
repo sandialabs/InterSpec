@@ -1,0 +1,2804 @@
+{
+  "acceptance_gate_percent": 0.1,
+  "l_transport_cut_keV": 10.0,
+  "maximum_atomic_number": 99,
+  "maximum_float32_mean_emitted_energy_error_percent": 4.3679915240346645e-06,
+  "maximum_float32_yield_error_percent": 5.302432404263868e-06,
+  "maximum_lines_per_subshell": 23,
+  "p95_float32_mean_emitted_energy_error_percent": 2.792948911034543e-06,
+  "p95_float32_yield_error_percent": 3.3969981161341423e-06,
+  "passed": true,
+  "processes": {
+    "K_relaxation": {
+      "coefficient_bytes": 8624,
+      "metadata_bytes": 2400,
+      "native_coefficients": 2154,
+      "retained_coefficients": 2156
+    },
+    "L_relaxation": {
+      "coefficient_bytes": 12360,
+      "metadata_bytes": 7200,
+      "native_coefficients": 3083,
+      "retained_coefficients": 3090
+    }
+  },
+  "schema_version": 1,
+  "source": "EPICS2023 EADL MF=28 MT=533",
+  "source_lock_sha256": "1460f0d95b47c76fb08063d1f7c20a2ad1e3a534b5e36332d536ce9e7655c0ad",
+  "source_sha256": "5909058c0fdc2aedc659ba3944ca2caeaaee0c6e7ed8d72ba61c747d4956c2f0",
+  "subshells": [
+    {
+      "Z": 1,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "K",
+      "yield": 0
+    },
+    {
+      "Z": 1,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0.0
+    },
+    {
+      "Z": 1,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0.0
+    },
+    {
+      "Z": 1,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0.0
+    },
+    {
+      "Z": 2,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "K",
+      "yield": 0
+    },
+    {
+      "Z": 2,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0.0
+    },
+    {
+      "Z": 2,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0.0
+    },
+    {
+      "Z": 2,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0.0
+    },
+    {
+      "Z": 3,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "K",
+      "yield": 0
+    },
+    {
+      "Z": 3,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 3,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0.0
+    },
+    {
+      "Z": 3,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0.0
+    },
+    {
+      "Z": 4,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "K",
+      "yield": 0
+    },
+    {
+      "Z": 4,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 4,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0.0
+    },
+    {
+      "Z": 4,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0.0
+    },
+    {
+      "Z": 5,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "K",
+      "yield": 0
+    },
+    {
+      "Z": 5,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 5,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 5,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 6,
+      "line_count": 2,
+      "mean_energy_keV": 0.28202666195823284,
+      "shell": "K",
+      "yield": 0.001682088
+    },
+    {
+      "Z": 6,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 6,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 6,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 7,
+      "line_count": 2,
+      "mean_energy_keV": 0.39336331992271084,
+      "shell": "K",
+      "yield": 0.00327601
+    },
+    {
+      "Z": 7,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 7,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 7,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 8,
+      "line_count": 2,
+      "mean_energy_keV": 0.5231166314175844,
+      "shell": "K",
+      "yield": 0.00570795
+    },
+    {
+      "Z": 8,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 8,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 8,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 9,
+      "line_count": 2,
+      "mean_energy_keV": 0.671366591930548,
+      "shell": "K",
+      "yield": 0.00917584
+    },
+    {
+      "Z": 9,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 9,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 9,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 10,
+      "line_count": 2,
+      "mean_energy_keV": 0.8381798359110096,
+      "shell": "K",
+      "yield": 0.01387296
+    },
+    {
+      "Z": 10,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 10,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 10,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 11,
+      "line_count": 2,
+      "mean_energy_keV": 1.0277130530685195,
+      "shell": "K",
+      "yield": 0.01998586
+    },
+    {
+      "Z": 11,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 11,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 11,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 12,
+      "line_count": 2,
+      "mean_energy_keV": 1.238156190378002,
+      "shell": "K",
+      "yield": 0.02769217
+    },
+    {
+      "Z": 12,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 12,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 12,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 13,
+      "line_count": 4,
+      "mean_energy_keV": 1.4694742198622017,
+      "shell": "K",
+      "yield": 0.0371483244
+    },
+    {
+      "Z": 13,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 13,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 13,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 14,
+      "line_count": 4,
+      "mean_energy_keV": 1.7219930269715251,
+      "shell": "K",
+      "yield": 0.048497146000000005
+    },
+    {
+      "Z": 14,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 14,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 14,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 15,
+      "line_count": 4,
+      "mean_energy_keV": 1.995798594387053,
+      "shell": "K",
+      "yield": 0.061850469
+    },
+    {
+      "Z": 15,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 15,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 15,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 16,
+      "line_count": 4,
+      "mean_energy_keV": 2.2912547648700965,
+      "shell": "K",
+      "yield": 0.07729153
+    },
+    {
+      "Z": 16,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 16,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 16,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 17,
+      "line_count": 4,
+      "mean_energy_keV": 2.6083477557511836,
+      "shell": "K",
+      "yield": 0.09486916000000001
+    },
+    {
+      "Z": 17,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 17,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 17,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 18,
+      "line_count": 4,
+      "mean_energy_keV": 2.947379899566662,
+      "shell": "K",
+      "yield": 0.11458944
+    },
+    {
+      "Z": 18,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 18,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 18,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 19,
+      "line_count": 4,
+      "mean_energy_keV": 3.307746645019904,
+      "shell": "K",
+      "yield": 0.13641917
+    },
+    {
+      "Z": 19,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 19,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 19,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 20,
+      "line_count": 4,
+      "mean_energy_keV": 3.689573213026122,
+      "shell": "K",
+      "yield": 0.16027856000000001
+    },
+    {
+      "Z": 20,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 20,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 20,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 21,
+      "line_count": 6,
+      "mean_energy_keV": 4.092288823172888,
+      "shell": "K",
+      "yield": 0.186041595161
+    },
+    {
+      "Z": 21,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 21,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 21,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 22,
+      "line_count": 6,
+      "mean_energy_keV": 4.516494823018656,
+      "shell": "K",
+      "yield": 0.213541378615
+    },
+    {
+      "Z": 22,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 22,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 22,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 23,
+      "line_count": 6,
+      "mean_energy_keV": 4.962195797474661,
+      "shell": "K",
+      "yield": 0.24256500183000002
+    },
+    {
+      "Z": 23,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 23,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 23,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 24,
+      "line_count": 6,
+      "mean_energy_keV": 5.428891177313516,
+      "shell": "K",
+      "yield": 0.2728670109
+    },
+    {
+      "Z": 24,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 24,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 24,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 25,
+      "line_count": 6,
+      "mean_energy_keV": 5.918519878087451,
+      "shell": "K",
+      "yield": 0.30418999666
+    },
+    {
+      "Z": 25,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 25,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 25,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 26,
+      "line_count": 6,
+      "mean_energy_keV": 6.429271141219825,
+      "shell": "K",
+      "yield": 0.3362420802
+    },
+    {
+      "Z": 26,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 26,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 26,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 27,
+      "line_count": 6,
+      "mean_energy_keV": 6.961925498058645,
+      "shell": "K",
+      "yield": 0.36872688051
+    },
+    {
+      "Z": 27,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 27,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 27,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 28,
+      "line_count": 6,
+      "mean_energy_keV": 7.516498821448934,
+      "shell": "K",
+      "yield": 0.401345036
+    },
+    {
+      "Z": 28,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 28,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 28,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 29,
+      "line_count": 6,
+      "mean_energy_keV": 8.092443559721696,
+      "shell": "K",
+      "yield": 0.4338115737
+    },
+    {
+      "Z": 29,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 29,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 29,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 30,
+      "line_count": 6,
+      "mean_energy_keV": 8.692187936411154,
+      "shell": "K",
+      "yield": 0.46587239680000003
+    },
+    {
+      "Z": 30,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 30,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 30,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 31,
+      "line_count": 8,
+      "mean_energy_keV": 9.315273682945744,
+      "shell": "K",
+      "yield": 0.49728651900000004
+    },
+    {
+      "Z": 31,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 31,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 31,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 32,
+      "line_count": 8,
+      "mean_energy_keV": 9.96258358480674,
+      "shell": "K",
+      "yield": 0.5278357326
+    },
+    {
+      "Z": 32,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 32,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 32,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 33,
+      "line_count": 8,
+      "mean_energy_keV": 10.632658540522021,
+      "shell": "K",
+      "yield": 0.5573661502
+    },
+    {
+      "Z": 33,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 33,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 33,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 34,
+      "line_count": 8,
+      "mean_energy_keV": 11.327369585364892,
+      "shell": "K",
+      "yield": 0.5857069857
+    },
+    {
+      "Z": 34,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 34,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 34,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 35,
+      "line_count": 8,
+      "mean_energy_keV": 12.044965558620031,
+      "shell": "K",
+      "yield": 0.612776326
+    },
+    {
+      "Z": 35,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 35,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 35,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 36,
+      "line_count": 8,
+      "mean_energy_keV": 12.788295266356783,
+      "shell": "K",
+      "yield": 0.6384790427
+    },
+    {
+      "Z": 36,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 36,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 36,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 37,
+      "line_count": 8,
+      "mean_energy_keV": 13.555203672909135,
+      "shell": "K",
+      "yield": 0.6627845363
+    },
+    {
+      "Z": 37,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 37,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 37,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 38,
+      "line_count": 8,
+      "mean_energy_keV": 14.346625159205622,
+      "shell": "K",
+      "yield": 0.685672853
+    },
+    {
+      "Z": 38,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 38,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 38,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 39,
+      "line_count": 10,
+      "mean_energy_keV": 15.16231763588121,
+      "shell": "K",
+      "yield": 0.7071189458129999
+    },
+    {
+      "Z": 39,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 39,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 39,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 40,
+      "line_count": 10,
+      "mean_energy_keV": 16.003476623218134,
+      "shell": "K",
+      "yield": 0.72718046891
+    },
+    {
+      "Z": 40,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 40,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 40,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 41,
+      "line_count": 10,
+      "mean_energy_keV": 16.867819008047405,
+      "shell": "K",
+      "yield": 0.74588091358
+    },
+    {
+      "Z": 41,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 41,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 41,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 42,
+      "line_count": 10,
+      "mean_energy_keV": 17.755724408774835,
+      "shell": "K",
+      "yield": 0.76325992173
+    },
+    {
+      "Z": 42,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 42,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 42,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 43,
+      "line_count": 10,
+      "mean_energy_keV": 18.669599556142284,
+      "shell": "K",
+      "yield": 0.77937805235
+    },
+    {
+      "Z": 43,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 43,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 43,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 44,
+      "line_count": 10,
+      "mean_energy_keV": 19.606384270832095,
+      "shell": "K",
+      "yield": 0.7943017708
+    },
+    {
+      "Z": 44,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 44,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 44,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 45,
+      "line_count": 10,
+      "mean_energy_keV": 20.568224687158065,
+      "shell": "K",
+      "yield": 0.808089394
+    },
+    {
+      "Z": 45,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 45,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 45,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 46,
+      "line_count": 10,
+      "mean_energy_keV": 21.556542233629937,
+      "shell": "K",
+      "yield": 0.820830813
+    },
+    {
+      "Z": 46,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 46,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 46,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 47,
+      "line_count": 10,
+      "mean_energy_keV": 22.569260320057857,
+      "shell": "K",
+      "yield": 0.8325701
+    },
+    {
+      "Z": 47,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 47,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 47,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 48,
+      "line_count": 10,
+      "mean_energy_keV": 23.607533384429974,
+      "shell": "K",
+      "yield": 0.8433812253
+    },
+    {
+      "Z": 48,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 48,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 48,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 49,
+      "line_count": 12,
+      "mean_energy_keV": 24.673609638873216,
+      "shell": "K",
+      "yield": 0.8533404025
+    },
+    {
+      "Z": 49,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 49,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 49,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 50,
+      "line_count": 12,
+      "mean_energy_keV": 25.7657813544207,
+      "shell": "K",
+      "yield": 0.8625105413999999
+    },
+    {
+      "Z": 50,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 50,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 50,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 51,
+      "line_count": 12,
+      "mean_energy_keV": 26.885621248762,
+      "shell": "K",
+      "yield": 0.870929563
+    },
+    {
+      "Z": 51,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 51,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 51,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 52,
+      "line_count": 12,
+      "mean_energy_keV": 28.0323489759407,
+      "shell": "K",
+      "yield": 0.878689054
+    },
+    {
+      "Z": 52,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 52,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 52,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 53,
+      "line_count": 12,
+      "mean_energy_keV": 29.207469923869052,
+      "shell": "K",
+      "yield": 0.8858094977
+    },
+    {
+      "Z": 53,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 53,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 53,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 54,
+      "line_count": 12,
+      "mean_energy_keV": 30.410813764523052,
+      "shell": "K",
+      "yield": 0.8923700265
+    },
+    {
+      "Z": 54,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 54,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 54,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 55,
+      "line_count": 12,
+      "mean_energy_keV": 31.6405845719049,
+      "shell": "K",
+      "yield": 0.8983888062
+    },
+    {
+      "Z": 55,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 55,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 55,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 56,
+      "line_count": 12,
+      "mean_energy_keV": 32.89980739312515,
+      "shell": "K",
+      "yield": 0.9039301869999999
+    },
+    {
+      "Z": 56,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 56,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 56,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 57,
+      "line_count": 12,
+      "mean_energy_keV": 34.18658719097501,
+      "shell": "K",
+      "yield": 0.9090299620000001
+    },
+    {
+      "Z": 57,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 57,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 57,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 58,
+      "line_count": 12,
+      "mean_energy_keV": 35.50431609946486,
+      "shell": "K",
+      "yield": 0.913719414
+    },
+    {
+      "Z": 58,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 58,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 58,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 59,
+      "line_count": 12,
+      "mean_energy_keV": 36.85070760944109,
+      "shell": "K",
+      "yield": 0.9180304079999999
+    },
+    {
+      "Z": 59,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 59,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 59,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 60,
+      "line_count": 12,
+      "mean_energy_keV": 38.225755415064974,
+      "shell": "K",
+      "yield": 0.921999971
+    },
+    {
+      "Z": 60,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 60,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 60,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 61,
+      "line_count": 12,
+      "mean_energy_keV": 39.63154200015444,
+      "shell": "K",
+      "yield": 0.9256601200000001
+    },
+    {
+      "Z": 61,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 61,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 61,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 62,
+      "line_count": 12,
+      "mean_energy_keV": 41.06712088981306,
+      "shell": "K",
+      "yield": 0.929029673
+    },
+    {
+      "Z": 62,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 62,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 62,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 63,
+      "line_count": 12,
+      "mean_energy_keV": 42.53321862250025,
+      "shell": "K",
+      "yield": 0.93212983
+    },
+    {
+      "Z": 63,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 63,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 63,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 64,
+      "line_count": 12,
+      "mean_energy_keV": 44.030589356810694,
+      "shell": "K",
+      "yield": 0.934990078
+    },
+    {
+      "Z": 64,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 64,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 64,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 65,
+      "line_count": 12,
+      "mean_energy_keV": 45.558797312416736,
+      "shell": "K",
+      "yield": 0.93763011
+    },
+    {
+      "Z": 65,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 65,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 65,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 66,
+      "line_count": 12,
+      "mean_energy_keV": 47.118935909379495,
+      "shell": "K",
+      "yield": 0.94005963
+    },
+    {
+      "Z": 66,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 66,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 66,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 67,
+      "line_count": 12,
+      "mean_energy_keV": 48.71153603083258,
+      "shell": "K",
+      "yield": 0.941501233
+    },
+    {
+      "Z": 67,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 67,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 67,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 68,
+      "line_count": 12,
+      "mean_energy_keV": 50.334795987324945,
+      "shell": "K",
+      "yield": 0.943839296
+    },
+    {
+      "Z": 68,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L1",
+      "yield": 0
+    },
+    {
+      "Z": 68,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 68,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 69,
+      "line_count": 12,
+      "mean_energy_keV": 51.992561576813785,
+      "shell": "K",
+      "yield": 0.946019544
+    },
+    {
+      "Z": 69,
+      "line_count": 2,
+      "mean_energy_keV": 10.048901257989101,
+      "shell": "L1",
+      "yield": 0.0019539120000000004
+    },
+    {
+      "Z": 69,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 69,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 70,
+      "line_count": 12,
+      "mean_energy_keV": 53.684392050445666,
+      "shell": "K",
+      "yield": 0.948049059
+    },
+    {
+      "Z": 70,
+      "line_count": 6,
+      "mean_energy_keV": 10.136001077241927,
+      "shell": "L1",
+      "yield": 0.0149208452
+    },
+    {
+      "Z": 70,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L2",
+      "yield": 0
+    },
+    {
+      "Z": 70,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 71,
+      "line_count": 14,
+      "mean_energy_keV": 55.410803358522514,
+      "shell": "K",
+      "yield": 0.94995026762
+    },
+    {
+      "Z": 71,
+      "line_count": 8,
+      "mean_energy_keV": 10.508839335520067,
+      "shell": "L1",
+      "yield": 0.015546927862
+    },
+    {
+      "Z": 71,
+      "line_count": 6,
+      "mean_energy_keV": 10.16572881440073,
+      "shell": "L2",
+      "yield": 0.038324452950000004
+    },
+    {
+      "Z": 71,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 72,
+      "line_count": 14,
+      "mean_energy_keV": 57.17042649937108,
+      "shell": "K",
+      "yield": 0.9517205572499999
+    },
+    {
+      "Z": 72,
+      "line_count": 8,
+      "mean_energy_keV": 10.890204656057875,
+      "shell": "L1",
+      "yield": 0.015919307919
+    },
+    {
+      "Z": 72,
+      "line_count": 7,
+      "mean_energy_keV": 10.530460247511188,
+      "shell": "L2",
+      "yield": 0.04228755271
+    },
+    {
+      "Z": 72,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 73,
+      "line_count": 14,
+      "mean_energy_keV": 58.96716308492487,
+      "shell": "K",
+      "yield": 0.9533797312300001
+    },
+    {
+      "Z": 73,
+      "line_count": 8,
+      "mean_energy_keV": 11.28182363692451,
+      "shell": "L1",
+      "yield": 0.015601920200000001
+    },
+    {
+      "Z": 73,
+      "line_count": 7,
+      "mean_energy_keV": 10.91530924905604,
+      "shell": "L2",
+      "yield": 0.0450155376
+    },
+    {
+      "Z": 73,
+      "line_count": 0,
+      "mean_energy_keV": 0.0,
+      "shell": "L3",
+      "yield": 0
+    },
+    {
+      "Z": 74,
+      "line_count": 14,
+      "mean_energy_keV": 60.79868828988251,
+      "shell": "K",
+      "yield": 0.95386044919
+    },
+    {
+      "Z": 74,
+      "line_count": 10,
+      "mean_energy_keV": 11.541315283987435,
+      "shell": "L1",
+      "yield": 0.01680984482
+    },
+    {
+      "Z": 74,
+      "line_count": 7,
+      "mean_energy_keV": 11.309922827666444,
+      "shell": "L2",
+      "yield": 0.047876729
+    },
+    {
+      "Z": 74,
+      "line_count": 7,
+      "mean_energy_keV": 10.172184960035535,
+      "shell": "L3",
+      "yield": 0.00156767518
+    },
+    {
+      "Z": 75,
+      "line_count": 14,
+      "mean_energy_keV": 62.66794204180176,
+      "shell": "K",
+      "yield": 0.9550494872
+    },
+    {
+      "Z": 75,
+      "line_count": 11,
+      "mean_energy_keV": 10.82465290750039,
+      "shell": "L1",
+      "yield": 0.04454992955
+    },
+    {
+      "Z": 75,
+      "line_count": 8,
+      "mean_energy_keV": 10.316955546256903,
+      "shell": "L2",
+      "yield": 0.3007804452
+    },
+    {
+      "Z": 75,
+      "line_count": 11,
+      "mean_energy_keV": 10.283666125370372,
+      "shell": "L3",
+      "yield": 0.04093566044
+    },
+    {
+      "Z": 76,
+      "line_count": 14,
+      "mean_energy_keV": 64.5731790671217,
+      "shell": "K",
+      "yield": 0.956149948
+    },
+    {
+      "Z": 76,
+      "line_count": 12,
+      "mean_energy_keV": 10.854610439507107,
+      "shell": "L1",
+      "yield": 0.06867072963
+    },
+    {
+      "Z": 76,
+      "line_count": 8,
+      "mean_energy_keV": 10.682489312307071,
+      "shell": "L2",
+      "yield": 0.3143859645
+    },
+    {
+      "Z": 76,
+      "line_count": 12,
+      "mean_energy_keV": 10.58696469493813,
+      "shell": "L3",
+      "yield": 0.046020397979999995
+    },
+    {
+      "Z": 77,
+      "line_count": 14,
+      "mean_energy_keV": 66.51732926592761,
+      "shell": "K",
+      "yield": 0.9571805879999999
+    },
+    {
+      "Z": 77,
+      "line_count": 12,
+      "mean_energy_keV": 11.225035025397398,
+      "shell": "L1",
+      "yield": 0.0740881758
+    },
+    {
+      "Z": 77,
+      "line_count": 9,
+      "mean_energy_keV": 11.056622095037302,
+      "shell": "L2",
+      "yield": 0.32802804680000003
+    },
+    {
+      "Z": 77,
+      "line_count": 12,
+      "mean_energy_keV": 10.914696093703231,
+      "shell": "L3",
+      "yield": 0.04873740916
+    },
+    {
+      "Z": 78,
+      "line_count": 14,
+      "mean_energy_keV": 68.49903691685314,
+      "shell": "K",
+      "yield": 0.9581198432
+    },
+    {
+      "Z": 78,
+      "line_count": 12,
+      "mean_energy_keV": 11.606610211145819,
+      "shell": "L1",
+      "yield": 0.07746698618
+    },
+    {
+      "Z": 78,
+      "line_count": 11,
+      "mean_energy_keV": 11.410129844784935,
+      "shell": "L2",
+      "yield": 0.3490438106
+    },
+    {
+      "Z": 78,
+      "line_count": 13,
+      "mean_energy_keV": 11.249965777793513,
+      "shell": "L3",
+      "yield": 0.05157000092
+    },
+    {
+      "Z": 79,
+      "line_count": 14,
+      "mean_energy_keV": 70.52151976144089,
+      "shell": "K",
+      "yield": 0.9589999662
+    },
+    {
+      "Z": 79,
+      "line_count": 12,
+      "mean_energy_keV": 11.996585950760789,
+      "shell": "L1",
+      "yield": 0.0801122732
+    },
+    {
+      "Z": 79,
+      "line_count": 11,
+      "mean_energy_keV": 11.803708421932702,
+      "shell": "L2",
+      "yield": 0.3627030704
+    },
+    {
+      "Z": 79,
+      "line_count": 13,
+      "mean_energy_keV": 11.589715447430695,
+      "shell": "L3",
+      "yield": 0.0544714928
+    },
+    {
+      "Z": 80,
+      "line_count": 14,
+      "mean_energy_keV": 72.58190634517373,
+      "shell": "K",
+      "yield": 0.9598203422
+    },
+    {
+      "Z": 80,
+      "line_count": 12,
+      "mean_energy_keV": 12.39737244591372,
+      "shell": "L1",
+      "yield": 0.0840098088
+    },
+    {
+      "Z": 80,
+      "line_count": 11,
+      "mean_energy_keV": 12.207124172189074,
+      "shell": "L2",
+      "yield": 0.3763826624
+    },
+    {
+      "Z": 80,
+      "line_count": 13,
+      "mean_energy_keV": 11.935407192412406,
+      "shell": "L3",
+      "yield": 0.057425438759999996
+    },
+    {
+      "Z": 81,
+      "line_count": 16,
+      "mean_energy_keV": 74.6857542656184,
+      "shell": "K",
+      "yield": 0.9605905186
+    },
+    {
+      "Z": 81,
+      "line_count": 14,
+      "mean_energy_keV": 12.808289478036528,
+      "shell": "L1",
+      "yield": 0.0885041107
+    },
+    {
+      "Z": 81,
+      "line_count": 12,
+      "mean_energy_keV": 12.619602194108525,
+      "shell": "L2",
+      "yield": 0.389995414111
+    },
+    {
+      "Z": 81,
+      "line_count": 17,
+      "mean_energy_keV": 10.632824520333356,
+      "shell": "L3",
+      "yield": 0.32521972524000003
+    },
+    {
+      "Z": 82,
+      "line_count": 16,
+      "mean_energy_keV": 76.82975065108317,
+      "shell": "K",
+      "yield": 0.9613108603
+    },
+    {
+      "Z": 82,
+      "line_count": 14,
+      "mean_energy_keV": 13.230718820255316,
+      "shell": "L1",
+      "yield": 0.0950997173
+    },
+    {
+      "Z": 82,
+      "line_count": 12,
+      "mean_energy_keV": 13.043556077003982,
+      "shell": "L2",
+      "yield": 0.403659654926
+    },
+    {
+      "Z": 82,
+      "line_count": 17,
+      "mean_energy_keV": 10.936719755247905,
+      "shell": "L3",
+      "yield": 0.336075509252
+    },
+    {
+      "Z": 83,
+      "line_count": 16,
+      "mean_energy_keV": 79.01802933370108,
+      "shell": "K",
+      "yield": 0.9619792662
+    },
+    {
+      "Z": 83,
+      "line_count": 14,
+      "mean_energy_keV": 13.663576220058243,
+      "shell": "L1",
+      "yield": 0.098954948
+    },
+    {
+      "Z": 83,
+      "line_count": 12,
+      "mean_energy_keV": 13.47782850163862,
+      "shell": "L2",
+      "yield": 0.417144128779
+    },
+    {
+      "Z": 83,
+      "line_count": 18,
+      "mean_energy_keV": 11.243460823380454,
+      "shell": "L3",
+      "yield": 0.34701198291400004
+    },
+    {
+      "Z": 84,
+      "line_count": 16,
+      "mean_energy_keV": 81.25039530977861,
+      "shell": "K",
+      "yield": 0.9626208624
+    },
+    {
+      "Z": 84,
+      "line_count": 14,
+      "mean_energy_keV": 14.107555209678148,
+      "shell": "L1",
+      "yield": 0.1038757327
+    },
+    {
+      "Z": 84,
+      "line_count": 12,
+      "mean_energy_keV": 13.922519654881382,
+      "shell": "L2",
+      "yield": 0.4306176652
+    },
+    {
+      "Z": 84,
+      "line_count": 18,
+      "mean_energy_keV": 11.5563214794764,
+      "shell": "L3",
+      "yield": 0.357708448596
+    },
+    {
+      "Z": 85,
+      "line_count": 16,
+      "mean_energy_keV": 83.52662521113822,
+      "shell": "K",
+      "yield": 0.9632190951999999
+    },
+    {
+      "Z": 85,
+      "line_count": 14,
+      "mean_energy_keV": 14.562790774561615,
+      "shell": "L1",
+      "yield": 0.108158058
+    },
+    {
+      "Z": 85,
+      "line_count": 12,
+      "mean_energy_keV": 14.379390857692501,
+      "shell": "L2",
+      "yield": 0.44385653419
+    },
+    {
+      "Z": 85,
+      "line_count": 19,
+      "mean_energy_keV": 11.872620783168841,
+      "shell": "L3",
+      "yield": 0.368489847629
+    },
+    {
+      "Z": 86,
+      "line_count": 16,
+      "mean_energy_keV": 85.84924902020724,
+      "shell": "K",
+      "yield": 0.9638002859
+    },
+    {
+      "Z": 86,
+      "line_count": 14,
+      "mean_energy_keV": 15.029954546866671,
+      "shell": "L1",
+      "yield": 0.1127418577
+    },
+    {
+      "Z": 86,
+      "line_count": 12,
+      "mean_energy_keV": 14.847531427427672,
+      "shell": "L2",
+      "yield": 0.45704391362
+    },
+    {
+      "Z": 86,
+      "line_count": 20,
+      "mean_energy_keV": 12.103249396737747,
+      "shell": "L3",
+      "yield": 0.39669500677
+    },
+    {
+      "Z": 87,
+      "line_count": 16,
+      "mean_energy_keV": 88.21897174902055,
+      "shell": "K",
+      "yield": 0.9643597086
+    },
+    {
+      "Z": 87,
+      "line_count": 14,
+      "mean_energy_keV": 15.508646099888663,
+      "shell": "L1",
+      "yield": 0.1181912887
+    },
+    {
+      "Z": 87,
+      "line_count": 13,
+      "mean_energy_keV": 15.328299999861532,
+      "shell": "L2",
+      "yield": 0.4699238407
+    },
+    {
+      "Z": 87,
+      "line_count": 21,
+      "mean_energy_keV": 12.425668858126912,
+      "shell": "L3",
+      "yield": 0.40748091272
+    },
+    {
+      "Z": 88,
+      "line_count": 16,
+      "mean_energy_keV": 90.62579877122506,
+      "shell": "K",
+      "yield": 0.9648999844
+    },
+    {
+      "Z": 88,
+      "line_count": 14,
+      "mean_energy_keV": 15.998179904574574,
+      "shell": "L1",
+      "yield": 0.12076064419999999
+    },
+    {
+      "Z": 88,
+      "line_count": 13,
+      "mean_energy_keV": 15.821297364405396,
+      "shell": "L2",
+      "yield": 0.4646389199
+    },
+    {
+      "Z": 88,
+      "line_count": 21,
+      "mean_energy_keV": 12.75311038548897,
+      "shell": "L3",
+      "yield": 0.41806638622
+    },
+    {
+      "Z": 89,
+      "line_count": 16,
+      "mean_energy_keV": 93.09376337119949,
+      "shell": "K",
+      "yield": 0.9654302194
+    },
+    {
+      "Z": 89,
+      "line_count": 14,
+      "mean_energy_keV": 16.499262890536578,
+      "shell": "L1",
+      "yield": 0.1262954335
+    },
+    {
+      "Z": 89,
+      "line_count": 13,
+      "mean_energy_keV": 16.327830205796705,
+      "shell": "L2",
+      "yield": 0.47727237653
+    },
+    {
+      "Z": 89,
+      "line_count": 21,
+      "mean_energy_keV": 13.085216556904495,
+      "shell": "L3",
+      "yield": 0.42844112286
+    },
+    {
+      "Z": 90,
+      "line_count": 16,
+      "mean_energy_keV": 95.60543656619797,
+      "shell": "K",
+      "yield": 0.9659508499999999
+    },
+    {
+      "Z": 90,
+      "line_count": 14,
+      "mean_energy_keV": 17.011724603146536,
+      "shell": "L1",
+      "yield": 0.1314140415
+    },
+    {
+      "Z": 90,
+      "line_count": 13,
+      "mean_energy_keV": 16.847053903556432,
+      "shell": "L2",
+      "yield": 0.48998144592
+    },
+    {
+      "Z": 90,
+      "line_count": 21,
+      "mean_energy_keV": 13.420640214391277,
+      "shell": "L3",
+      "yield": 0.43858837438
+    },
+    {
+      "Z": 91,
+      "line_count": 16,
+      "mean_energy_keV": 98.16858638143671,
+      "shell": "K",
+      "yield": 0.966479937
+    },
+    {
+      "Z": 91,
+      "line_count": 14,
+      "mean_energy_keV": 17.53501657629152,
+      "shell": "L1",
+      "yield": 0.137346203
+    },
+    {
+      "Z": 91,
+      "line_count": 14,
+      "mean_energy_keV": 17.37897421584935,
+      "shell": "L2",
+      "yield": 0.45937719208
+    },
+    {
+      "Z": 91,
+      "line_count": 23,
+      "mean_energy_keV": 13.759832132758428,
+      "shell": "L3",
+      "yield": 0.44846380371
+    },
+    {
+      "Z": 92,
+      "line_count": 16,
+      "mean_energy_keV": 100.77826481360795,
+      "shell": "K",
+      "yield": 0.9670100829999999
+    },
+    {
+      "Z": 92,
+      "line_count": 14,
+      "mean_energy_keV": 18.070457924945394,
+      "shell": "L1",
+      "yield": 0.1453277358
+    },
+    {
+      "Z": 92,
+      "line_count": 14,
+      "mean_energy_keV": 17.924974823641776,
+      "shell": "L2",
+      "yield": 0.47092359966999997
+    },
+    {
+      "Z": 92,
+      "line_count": 23,
+      "mean_energy_keV": 14.10422017846915,
+      "shell": "L3",
+      "yield": 0.45807893321000004
+    },
+    {
+      "Z": 93,
+      "line_count": 16,
+      "mean_energy_keV": 103.43876921654449,
+      "shell": "K",
+      "yield": 0.967540574
+    },
+    {
+      "Z": 93,
+      "line_count": 14,
+      "mean_energy_keV": 18.61975840665611,
+      "shell": "L1",
+      "yield": 0.1518181466
+    },
+    {
+      "Z": 93,
+      "line_count": 14,
+      "mean_energy_keV": 18.485853633909038,
+      "shell": "L2",
+      "yield": 0.48284908615
+    },
+    {
+      "Z": 93,
+      "line_count": 23,
+      "mean_energy_keV": 14.45223738817617,
+      "shell": "L3",
+      "yield": 0.46737461144000003
+    },
+    {
+      "Z": 94,
+      "line_count": 16,
+      "mean_energy_keV": 106.15786481638878,
+      "shell": "K",
+      "yield": 0.9680999849999999
+    },
+    {
+      "Z": 94,
+      "line_count": 14,
+      "mean_energy_keV": 19.18123528644054,
+      "shell": "L1",
+      "yield": 0.1585811497
+    },
+    {
+      "Z": 94,
+      "line_count": 14,
+      "mean_energy_keV": 19.061449798210987,
+      "shell": "L2",
+      "yield": 0.49342038138
+    },
+    {
+      "Z": 94,
+      "line_count": 23,
+      "mean_energy_keV": 14.80462780100505,
+      "shell": "L3",
+      "yield": 0.4763608987
+    },
+    {
+      "Z": 95,
+      "line_count": 16,
+      "mean_energy_keV": 108.93173293438345,
+      "shell": "K",
+      "yield": 0.968669529
+    },
+    {
+      "Z": 95,
+      "line_count": 14,
+      "mean_energy_keV": 19.75807035947663,
+      "shell": "L1",
+      "yield": 0.166051184
+    },
+    {
+      "Z": 95,
+      "line_count": 14,
+      "mean_energy_keV": 19.652801294165094,
+      "shell": "L2",
+      "yield": 0.50583983061
+    },
+    {
+      "Z": 95,
+      "line_count": 23,
+      "mean_energy_keV": 15.161906638625652,
+      "shell": "L3",
+      "yield": 0.4849892784
+    },
+    {
+      "Z": 96,
+      "line_count": 16,
+      "mean_energy_keV": 111.7621074981141,
+      "shell": "K",
+      "yield": 0.969259925
+    },
+    {
+      "Z": 96,
+      "line_count": 14,
+      "mean_energy_keV": 20.34811859183254,
+      "shell": "L1",
+      "yield": 0.17297201299999998
+    },
+    {
+      "Z": 96,
+      "line_count": 14,
+      "mean_energy_keV": 20.26073638759625,
+      "shell": "L2",
+      "yield": 0.51672130387
+    },
+    {
+      "Z": 96,
+      "line_count": 23,
+      "mean_energy_keV": 15.523037481904812,
+      "shell": "L3",
+      "yield": 0.49327324094
+    },
+    {
+      "Z": 97,
+      "line_count": 16,
+      "mean_energy_keV": 114.64736864526886,
+      "shell": "K",
+      "yield": 0.970540371
+    },
+    {
+      "Z": 97,
+      "line_count": 14,
+      "mean_energy_keV": 20.953142677256324,
+      "shell": "L1",
+      "yield": 0.1805535
+    },
+    {
+      "Z": 97,
+      "line_count": 14,
+      "mean_energy_keV": 20.885256183222833,
+      "shell": "L2",
+      "yield": 0.51760603169
+    },
+    {
+      "Z": 97,
+      "line_count": 23,
+      "mean_energy_keV": 15.888720374727814,
+      "shell": "L3",
+      "yield": 0.501159781
+    },
+    {
+      "Z": 98,
+      "line_count": 16,
+      "mean_energy_keV": 117.60066648727076,
+      "shell": "K",
+      "yield": 0.97054056
+    },
+    {
+      "Z": 98,
+      "line_count": 14,
+      "mean_energy_keV": 21.573190253185235,
+      "shell": "L1",
+      "yield": 0.187601462
+    },
+    {
+      "Z": 98,
+      "line_count": 14,
+      "mean_energy_keV": 21.525910963216138,
+      "shell": "L2",
+      "yield": 0.52909633692
+    },
+    {
+      "Z": 98,
+      "line_count": 23,
+      "mean_energy_keV": 16.257348450900906,
+      "shell": "L3",
+      "yield": 0.50865172482
+    },
+    {
+      "Z": 99,
+      "line_count": 16,
+      "mean_energy_keV": 120.59836597634296,
+      "shell": "K",
+      "yield": 0.9718304990000001
+    },
+    {
+      "Z": 99,
+      "line_count": 14,
+      "mean_energy_keV": 22.2084132965063,
+      "shell": "L1",
+      "yield": 0.19511302
+    },
+    {
+      "Z": 99,
+      "line_count": 14,
+      "mean_energy_keV": 22.185892722782118,
+      "shell": "L2",
+      "yield": 0.5386853473400001
+    },
+    {
+      "Z": 99,
+      "line_count": 23,
+      "mean_energy_keV": 16.632089776059846,
+      "shell": "L3",
+      "yield": 0.5157349057
+    }
+  ],
+  "validation_definition": "For every K/L subshell, compare the float32 runtime transported-x-ray yield and probability-weighted mean energy against the same direct EADL transitions after applying the documented 10 keV L-photon transport cut."
+}

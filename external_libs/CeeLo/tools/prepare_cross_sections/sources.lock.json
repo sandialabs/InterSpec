@@ -1,0 +1,102 @@
+{
+  "schema_version": 1,
+  "generated_inputs_are_offline": true,
+  "access_date": "2026-08-11",
+  "sources": {
+    "nist_epq": {
+      "description": "NIST EPQ Berger-Seltzer bremsstrahlung tables",
+      "version": "git-ce1e5895892b17854d857e596250e4ae70d6b274",
+      "url": "https://github.com/usnistgov/EPQ/archive/ce1e5895892b17854d857e596250e4ae70d6b274.tar.gz",
+      "filename": "EPQ-ce1e5895892b17854d857e596250e4ae70d6b274.tar.gz",
+      "sha256": "53b442b22dd37ccf91c5e265a66c287e5fa51221a764c61bb33b92436568e27d",
+      "archive": "tar.gz",
+      "table_subdir": "EPQ-ce1e5895892b17854d857e596250e4ae70d6b274/src/gov/nist/microanalysis/EPQLibrary/BergerSeltzerBrem",
+      "table_glob": "pdebr??.tab",
+      "table_set_sha256": "c6c92a2e92576d71a31a94ecbb435bf393c0f542dfdff6ea56b3543d33b3c804",
+      "terms": "NIST-authored work; public domain in the United States. Retain the upstream notice. The notice also disclaims warranties and asks that derived works not imply NIST endorsement.",
+      "terms_url": "https://raw.githubusercontent.com/usnistgov/EPQ/master/LicenseFile.txt",
+      "project_url": "https://www.nist.gov/services-resources/software/nist-dtsa-ii",
+      "citation": "NIST DTSA-II/EPQ; BergerSeltzerBrem pdebr tables. The table comments trace the underlying data to Seltzer and Berger.",
+      "transformation": "For every element and native incident energy, construct the 32-node CeeLo grid uniformly: kappa=0.025 is quadratic Lagrange interpolation through EPQ kappa={0,0.05,0.1}; kappa=0.075 is cubic Lagrange interpolation through EPQ kappa={0,0.05,0.1,0.15}; all other output nodes are copied from equal-kappa EPQ nodes and EPQ kappa=0.125 is omitted. Select the 27 native energies from 10 keV through 20 MeV. No row normalization is applied; phi_rad is a validation checksum only. Quantize each element's complete table to uint16 with one float32 scale; the generator reports row, integrated-rate, and mean-kappa packing error.",
+      "provenance_caveat": "PENELOPE-2008 describes its related 32-node database as supplied by S. Seltzer. No independently redistributable copy of the later PENELOPE/Geant4 low-kappa revision is used. This general interpolation of public-domain EPQ data was validated against aggregate/numerical Geant4 behavior; it is not a transcription or fitted reproduction of G4EMLOW coefficients."
+    },
+    "epdl2023": {
+      "description": "EPICS2023 Evaluated Photon Data Library",
+      "version": "EPICS2023",
+      "url": "https://www-nds.iaea.org/epics/ENDF2023/EPDL2023.ALL",
+      "filename": "EPDL2023.ALL",
+      "sha256": "b4888d0d0e3b7672f56232f1c6ef8da369a67ad2f2d773168fc26275fac82fca",
+      "terms": "Openly distributed by the IAEA Nuclear Data Services EPICS project; retain source and evaluation citations.",
+      "terms_url": "https://www-nds.iaea.org/epics/",
+      "citation": "EPICS2023 EPDL; D.E. Cullen et al., UCRL-50400 Vol. 6 Rev. 5 and EPICS2023 release materials.",
+      "reactions": ["MF=23 MT=502 Rayleigh", "MF=23 MT=504 Compton", "MF=23 MT=516 total pair production", "MF=23 MT=522 total photoelectric", "MF=23 MT=534 K-shell photoelectric"],
+      "transformation": "Use incident energies from 10 keV through the historical 10 MeV upper bound. Retain endpoints, process thresholds, and explicit lower-flank/upper-edge pairs at duplicated absorption edges. Treat all other native EPDL nodes as mandatory validation probes rather than mandatory retained coefficients; also test 16 logarithmic positions per retained interval and adaptively insert the worst failing point. Rayleigh total cross sections use one jointly refined float32 log-energy grid for each group of four adjacent elements; every element in a group must independently pass the unchanged pointwise and integrated gates. Other photon-process coordinates are uint16 indices into one bit-exact deduplicated float32 log-coordinate pool. Encode every log-value with per-curve affine uint16 packing; compact descriptors store integer offsets rather than pointers. No decoded or contiguous raw photon-grid compatibility views are retained. The generator validates the decoded runtime representation to 0.1% pointwise and 0.05% integrated error (0.05% pointwise for pair production). The incoherent scattering-function tables retain x>=0.01 inverse angstrom and use flat offset-addressed float32 coordinate arrays and packed values. Form-factor curves are adaptively reconstructed and validated inside the generator but are not emitted as runtime lookup tables. Generate each element's 256-node normalized Rayleigh sampling CDF offline from that validated form-factor curve and store it as uint16 on one shared float32 x grid. Gate angular behavior against EPDL down to x=1e-7 at 0.25% CDF and 0.002 mean-cosine error, uint16 CDF quantization at 8e-6 absolute error, and the complete sampling representation at 0.25% against dense integration."
+    },
+    "eadl2023": {
+      "description": "EPICS2023 Evaluated Atomic Data Library",
+      "version": "EPICS2023",
+      "url": "https://www-nds.iaea.org/epics/ENDF2023/EADL2023.ALL",
+      "filename": "EADL2023.ALL",
+      "sha256": "5909058c0fdc2aedc659ba3944ca2caeaaee0c6e7ed8d72ba61c747d4956c2f0",
+      "terms": "Openly distributed by the IAEA Nuclear Data Services EPICS project; retain source and evaluation citations.",
+      "terms_url": "https://www-nds.iaea.org/epics/",
+      "citation": "EPICS2023 EADL; S.T. Perkins et al., UCRL-50400 Vol. 30.",
+      "reactions": ["MF=28 MT=533 atomic relaxation"],
+      "transformation": "Retain K, L1, L2, and L3 relaxation data through Z=99 so radioactive-decay daughters are covered beyond the Z=92 transport-table limit. Store radiative yields, line energies and normalized line probabilities in variable-length per-subshell arrays rather than fixed 24-line slots; retain Coster-Kronig L-vacancy transfer probabilities. L photons below the 10 keV transport cut are omitted and their probability is not reassigned to retained lines."
+    },
+    "eedl2023": {
+      "description": "EPICS2023 Evaluated Electron Data Library (independent bremsstrahlung validation only)",
+      "version": "EPICS2023",
+      "url": "https://www-nds.iaea.org/epics/ENDF2023/EEDL2023.ALL",
+      "filename": "EEDL2023.ALL",
+      "sha256": "1cf45f070fe31d5c0753930499f9e04b59c04285108b6e704f8693c25362ff57",
+      "terms": "Openly distributed by the IAEA Nuclear Data Services EPICS project; retain source and evaluation citations.",
+      "terms_url": "https://www-nds.iaea.org/epics/",
+      "citation": "EPICS2023 EEDL; S.T. Perkins, D.E. Cullen and S.M. Seltzer, UCRL-50400 Vol. 31.",
+      "reactions": ["MF=23 MT=527", "MF=26 MT=527"]
+    },
+    "nist_star": {
+      "description": "NIST STAR downloadable source package containing ESTAR",
+      "version": "downloaded-2026-08-11",
+      "url": "https://physics.nist.gov/PhysRefData/Star/STAR.tar.gz",
+      "filename": "STAR.tar.gz",
+      "sha256": "b8241beb0e721b6b89dd316e32b23ac6c80e9a8908bd43da1570216de51de2c6",
+      "archive": "tar.gz",
+      "terms": "NIST permits redistribution and modification of the downloadable programs and database, provided the original NIST notices are retained and modifications are clearly identified.",
+      "terms_url": "https://physics.nist.gov/PhysRefData/Star/Text/download.html",
+      "citation": "M.J. Berger et al., ESTAR/PSTAR/ASTAR, NIST Standard Reference Database 124; M.J. Berger and S.M. Seltzer, NBSIR 82-2550.",
+      "file_sha256": {
+        "ESTAR/ESTAR.f": "ed2a9f66fb4ba904490da4c6fcf297053bc28fbb07d910f8f8961b6781ef907e",
+        "ESTAR/FEDAT": "6386e421808f6438e4a5de9be31a2ffeb7bef5c27bbac34395a8985b3287383c",
+        "Readme.txt": "b64b595f92d3c1a6e28c21b16af595f62bbc24a76c5d48592f8b6edf9255985e"
+      },
+      "transformation": "The downloadable program and FEDAT database are the locked algorithm/database provenance. The generated elemental values are obtained from NIST's official ESTAR text interface, which runs the same ESTAR calculation, for every element Z=1..92. Retain all 53 standard-grid energy nodes from 10 keV through 20 MeV. Generated tables are marked as derived from NIST ESTAR; the web output is rounded by NIST to four significant figures (the upstream source says the calculation is accurate to approximately three)."
+    },
+    "nist_estar_text": {
+      "description": "Official NIST ESTAR elemental text tables generated from SRD 124",
+      "version": "retrieved-2026-08-11",
+      "url": "https://physics.nist.gov/cgi-bin/Star/e_table-t.pl",
+      "request": "POST matno=NNN&ShowDefault=on for NNN=001..092",
+      "filename_pattern": "estar-text-ZNNN.html",
+      "logical_table_sha256": "05e64bae3bd23bab0f049b35df70ec99c2771eebf857e0669f44f41049c00f30",
+      "logical_hash_definition": "For Z=1..92 in order, SHA-256 over little-endian uint16 Z followed by little-endian float64 triples (energy_MeV, collision_MeV_cm2_g, radiative_MeV_cm2_g) for the 53 rows from 0.01 through 20 MeV.",
+      "terms": "NIST permits redistribution and modification of the downloadable programs and database, provided the original NIST notices are retained and modifications are clearly identified.",
+      "terms_url": "https://physics.nist.gov/PhysRefData/Star/Text/download.html",
+      "citation": "M.J. Berger et al., ESTAR/PSTAR/ASTAR, NIST Standard Reference Database 124; M.J. Berger and S.M. Seltzer, NBSIR 82-2550.",
+      "transformation": "Parse collision and radiative mass stopping powers at every official standard-grid node from 10 keV through 20 MeV and convert energy to keV. For each element and each stopping process, take base-10 logarithms and encode the complete 53-node row with one float32 offset, one float32 scale, and uint16 coefficients. No element or energy interpolation occurs during generation. Runtime decoding precedes linear interpolation in log10(E) and log10(stopping power); the generator reports the added packing error at every native node."
+    },
+    "xraylib": {
+      "description": "xraylib Compton-profile support data",
+      "version": "4.2.1",
+      "url": "https://files.pythonhosted.org/packages/24/fd/444dc2034012ea33427c5c69d841ec7e8228ddcc7749bd4ed208ef65c638/xraylib-4.2.1.tar.gz",
+      "filename": "xraylib-4.2.1.tar.gz",
+      "sha256": "6ec503b1a9d2d0dc56df98c7d5581a76ab487fef9abf3116d18b64752fd4e4ab",
+      "archive": "tar.gz",
+      "terms": "BSD-3-Clause; retain the copyright and disclaimer notices in the upstream source distribution.",
+      "terms_url": "https://github.com/tschoonj/xraylib/blob/master/license_all.txt",
+      "project_url": "https://github.com/tschoonj/xraylib",
+      "citation": "T. Schoonjans et al., Spectrochimica Acta Part B 66 (2011) 776-784.",
+      "transformation": "For each occupied subshell, store electron occupancy, binding energy, and the per-electron partial Compton profile J(0). These drive the existing PENELOPE-style analytic impulse-approximation profile; they are independent of G4EMLOW."
+    }
+  }
+}

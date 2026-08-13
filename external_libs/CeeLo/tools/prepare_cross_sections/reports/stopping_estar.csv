@@ -1,0 +1,3 @@
+process,native_coefficients,retained_coefficients,encoding,coefficient_bytes,metadata_bytes,shared_grid_bytes,p95_error_percent,max_error_percent
+collision_stopping,4876,4876,per-element affine uint16(log10 value),9752,736,212,0.0016573593232926953,0.0019461497520634197
+radiative_stopping,4876,4876,per-element affine uint16(log10 value),9752,736,0,0.0034005350736832085,0.004002043738426941

@@ -1,0 +1,612 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CeeLo Geometry Viewer - Test</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: #1a1a1f;
+    color: #e0e0e0;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', monospace;
+    overflow: hidden;
+    height: 100vh;
+  }
+  #controls {
+    padding: 10px 16px;
+    background: #222228;
+    border-bottom: 1px solid #333;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    height: 48px;
+  }
+  #controls label { font-size: 14px; color: #aaa; }
+  #configSelect {
+    padding: 5px 10px;
+    background: #333;
+    color: #e0e0e0;
+    border: 1px solid #555;
+    border-radius: 4px;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  #configDesc {
+    font-size: 13px;
+    color: #888;
+    flex: 1;
+  }
+  #resetBtn {
+    padding: 5px 14px;
+    background: #444;
+    color: #ccc;
+    border: 1px solid #555;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 13px;
+  }
+  #resetBtn:hover { background: #555; }
+  #viewer {
+    width: 100%;
+    height: calc(100vh - 48px);
+  }
+</style>
+</head>
+<body>
+
+<div id="controls">
+  <label for="configSelect">Configuration:</label>
+  <select id="configSelect"></select>
+  <span id="configDesc"></span>
+  <button id="resetBtn" onclick="viewer.resetCamera()">Reset View</button>
+</div>
+<div id="viewer"></div>
+
+<script src="GeometryViewer3D.js"></script>
+<script>
+// ========================================================================
+// Embedded GDML configs
+// ========================================================================
+
+var CONFIGS = {
+  "1": {
+    label: 'Config 1: 3"x3" NaI bare, point 10cm on-axis',
+    source: [0, 0, -10],
+    gdml: `<?xml version="1.0" encoding="UTF-8"?>
+<gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd">
+  <define>
+    <position name="crystal_center" x="0" y="0" z="3.810000" unit="cm"/>
+    <rotation name="identity" x="0" y="0" z="0" unit="deg"/>
+  </define>
+  <materials>
+    <element name="N" formula="N" Z="7"><atom type="A" unit="g/mol" value="14.0070"/></element>
+    <element name="Na" formula="Na" Z="11"><atom type="A" unit="g/mol" value="22.9900"/></element>
+    <element name="I" formula="I" Z="53"><atom type="A" unit="g/mol" value="126.9040"/></element>
+    <material name="Vacuum" state="gas"><D type="density" unit="g/cm3" value="1.0e-25"/><fraction n="1.0" ref="N"/></material>
+    <material name="NaI" state="solid"><D type="density" unit="g/cm3" value="3.67000"/><fraction n="0.153375" ref="Na"/><fraction n="0.846625" ref="I"/></material>
+  </materials>
+  <solids>
+    <box name="WorldBox" x="32.860000" y="32.860000" z="75.720000" lunit="cm"/>
+    <tube name="CrystalOuterTube" rmin="0" rmax="3.810000" z="7.620000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+  </solids>
+  <structure>
+    <volume name="active_crystal"><materialref ref="NaI"/><solidref ref="CrystalOuterTube"/></volume>
+    <volume name="WorldLV"><materialref ref="Vacuum"/><solidref ref="WorldBox"/>
+      <physvol name="active_crystal_PV"><volumeref ref="active_crystal"/><positionref ref="crystal_center"/></physvol>
+    </volume>
+  </structure>
+  <setup name="Default" version="1.0"><world ref="WorldLV"/></setup>
+</gdml>`
+  },
+
+  "2": {
+    label: 'Config 2: 3"x3" NaI + 1mm Al, point 10cm on-axis',
+    source: [0, 0, -10],
+    gdml: `<?xml version="1.0" encoding="UTF-8"?>
+<gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd">
+  <define>
+    <position name="crystal_center" x="0" y="0" z="3.810000" unit="cm"/>
+    <position name="att0_inner_offset" x="0" y="0" z="0.050000" unit="cm"/>
+    <rotation name="identity" x="0" y="0" z="0" unit="deg"/>
+  </define>
+  <materials>
+    <element name="N" formula="N" Z="7"><atom type="A" unit="g/mol" value="14.0070"/></element>
+    <element name="Na" formula="Na" Z="11"><atom type="A" unit="g/mol" value="22.9900"/></element>
+    <element name="Al" formula="Al" Z="13"><atom type="A" unit="g/mol" value="26.9820"/></element>
+    <element name="I" formula="I" Z="53"><atom type="A" unit="g/mol" value="126.9040"/></element>
+    <material name="Vacuum" state="gas"><D type="density" unit="g/cm3" value="1.0e-25"/><fraction n="1.0" ref="N"/></material>
+    <material name="NaI" state="solid"><D type="density" unit="g/cm3" value="3.67000"/><fraction n="0.153375" ref="Na"/><fraction n="0.846625" ref="I"/></material>
+    <material name="Al" state="solid"><D type="density" unit="g/cm3" value="2.70000"/><fraction n="1.000000" ref="Al"/></material>
+  </materials>
+  <solids>
+    <box name="WorldBox" x="33.460000" y="33.460000" z="75.720000" lunit="cm"/>
+    <tube name="CrystalOuterTube" rmin="0" rmax="3.810000" z="7.620000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="AttOuterSolid0" rmin="0" rmax="3.910000" z="7.720000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="AttInnerSolid0" rmin="0" rmax="3.810000" z="7.620000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <subtraction name="AttSolid0"><first ref="AttOuterSolid0"/><second ref="AttInnerSolid0"/><positionref ref="att0_inner_offset"/></subtraction>
+  </solids>
+  <structure>
+    <volume name="active_crystal"><materialref ref="NaI"/><solidref ref="CrystalOuterTube"/></volume>
+    <volume name="AttLV0"><materialref ref="Al"/><solidref ref="AttSolid0"/></volume>
+    <volume name="WorldLV"><materialref ref="Vacuum"/><solidref ref="WorldBox"/>
+      <physvol name="active_crystal_PV"><volumeref ref="active_crystal"/><positionref ref="crystal_center"/></physvol>
+      <physvol name="AttPV0"><volumeref ref="AttLV0"/><position x="0" y="0" z="3.760000" unit="cm"/></physvol>
+    </volume>
+  </structure>
+  <setup name="Default" version="1.0"><world ref="WorldLV"/></setup>
+</gdml>`
+  },
+
+  "3": {
+    label: 'Config 3: 2"x2" LaBr3 + 0.5mm Al, point 5cm on-axis',
+    source: [0, 0, -5],
+    gdml: `<?xml version="1.0" encoding="UTF-8"?>
+<gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd">
+  <define>
+    <position name="crystal_center" x="0" y="0" z="2.540000" unit="cm"/>
+    <position name="att0_inner_offset" x="0" y="0" z="0.025000" unit="cm"/>
+    <rotation name="identity" x="0" y="0" z="0" unit="deg"/>
+  </define>
+  <materials>
+    <element name="N" formula="N" Z="7"><atom type="A" unit="g/mol" value="14.0070"/></element>
+    <element name="Al" formula="Al" Z="13"><atom type="A" unit="g/mol" value="26.9820"/></element>
+    <element name="Br" formula="Br" Z="35"><atom type="A" unit="g/mol" value="79.9040"/></element>
+    <element name="La" formula="La" Z="57"><atom type="A" unit="g/mol" value="138.9050"/></element>
+    <material name="Vacuum" state="gas"><D type="density" unit="g/cm3" value="1.0e-25"/><fraction n="1.0" ref="N"/></material>
+    <material name="LaBr3" state="solid"><D type="density" unit="g/cm3" value="5.06000"/><fraction n="0.366875" ref="La"/><fraction n="0.633125" ref="Br"/></material>
+    <material name="Al" state="solid"><D type="density" unit="g/cm3" value="2.70000"/><fraction n="1.000000" ref="Al"/></material>
+  </materials>
+  <solids>
+    <box name="WorldBox" x="25.540000" y="25.540000" z="60.480000" lunit="cm"/>
+    <tube name="CrystalOuterTube" rmin="0" rmax="2.540000" z="5.080000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="AttOuterSolid0" rmin="0" rmax="2.590000" z="5.130000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="AttInnerSolid0" rmin="0" rmax="2.540000" z="5.080000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <subtraction name="AttSolid0"><first ref="AttOuterSolid0"/><second ref="AttInnerSolid0"/><positionref ref="att0_inner_offset"/></subtraction>
+  </solids>
+  <structure>
+    <volume name="active_crystal"><materialref ref="LaBr3"/><solidref ref="CrystalOuterTube"/></volume>
+    <volume name="AttLV0"><materialref ref="Al"/><solidref ref="AttSolid0"/></volume>
+    <volume name="WorldLV"><materialref ref="Vacuum"/><solidref ref="WorldBox"/>
+      <physvol name="active_crystal_PV"><volumeref ref="active_crystal"/><positionref ref="crystal_center"/></physvol>
+      <physvol name="AttPV0"><volumeref ref="AttLV0"/><position x="0" y="0" z="2.515000" unit="cm"/></physvol>
+    </volume>
+  </structure>
+  <setup name="Default" version="1.0"><world ref="WorldLV"/></setup>
+</gdml>`
+  },
+
+  "5": {
+    label: 'Config 5: 1x1x0.5cm CZT bare, point 5cm on-axis',
+    source: [0, 0, -5],
+    gdml: `<?xml version="1.0" encoding="UTF-8"?>
+<gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd">
+  <define>
+    <position name="crystal_center" x="0" y="0" z="0.250000" unit="cm"/>
+    <rotation name="identity" x="0" y="0" z="0" unit="deg"/>
+  </define>
+  <materials>
+    <element name="N" formula="N" Z="7"><atom type="A" unit="g/mol" value="14.0070"/></element>
+    <element name="Zn" formula="Zn" Z="30"><atom type="A" unit="g/mol" value="65.3800"/></element>
+    <element name="Cd" formula="Cd" Z="48"><atom type="A" unit="g/mol" value="112.4140"/></element>
+    <element name="Te" formula="Te" Z="52"><atom type="A" unit="g/mol" value="127.6000"/></element>
+    <material name="Vacuum" state="gas"><D type="density" unit="g/cm3" value="1.0e-25"/><fraction n="1.0" ref="N"/></material>
+    <material name="CZT" state="solid"><D type="density" unit="g/cm3" value="5.78000"/><fraction n="0.429953" ref="Cd"/><fraction n="0.027785" ref="Zn"/><fraction n="0.542262" ref="Te"/></material>
+  </materials>
+  <solids>
+    <box name="WorldBox" x="14.242641" y="14.242641" z="33.000000" lunit="cm"/>
+    <box name="CrystalSolid" x="1.000000" y="1.000000" z="0.500000" lunit="cm"/>
+  </solids>
+  <structure>
+    <volume name="active_crystal"><materialref ref="CZT"/><solidref ref="CrystalSolid"/></volume>
+    <volume name="WorldLV"><materialref ref="Vacuum"/><solidref ref="WorldBox"/>
+      <physvol name="active_crystal_PV"><volumeref ref="active_crystal"/><positionref ref="crystal_center"/></physvol>
+    </volume>
+  </structure>
+  <setup name="Default" version="1.0"><world ref="WorldLV"/></setup>
+</gdml>`
+  },
+
+  "6": {
+    label: 'Config 6: 3"x3" NaI bare, off-axis 45deg 15cm',
+    source: [10.6066, 0, -10.6066],
+    gdml: `<?xml version="1.0" encoding="UTF-8"?>
+<gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd">
+  <define>
+    <position name="crystal_center" x="0" y="0" z="3.810000" unit="cm"/>
+    <rotation name="identity" x="0" y="0" z="0" unit="deg"/>
+  </define>
+  <materials>
+    <element name="N" formula="N" Z="7"><atom type="A" unit="g/mol" value="14.0070"/></element>
+    <element name="Na" formula="Na" Z="11"><atom type="A" unit="g/mol" value="22.9900"/></element>
+    <element name="I" formula="I" Z="53"><atom type="A" unit="g/mol" value="126.9040"/></element>
+    <material name="Vacuum" state="gas"><D type="density" unit="g/cm3" value="1.0e-25"/><fraction n="1.0" ref="N"/></material>
+    <material name="NaI" state="solid"><D type="density" unit="g/cm3" value="3.67000"/><fraction n="0.153375" ref="Na"/><fraction n="0.846625" ref="I"/></material>
+  </materials>
+  <solids>
+    <box name="WorldBox" x="32.860000" y="32.860000" z="75.720000" lunit="cm"/>
+    <tube name="CrystalOuterTube" rmin="0" rmax="3.810000" z="7.620000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+  </solids>
+  <structure>
+    <volume name="active_crystal"><materialref ref="NaI"/><solidref ref="CrystalOuterTube"/></volume>
+    <volume name="WorldLV"><materialref ref="Vacuum"/><solidref ref="WorldBox"/>
+      <physvol name="active_crystal_PV"><volumeref ref="active_crystal"/><positionref ref="crystal_center"/></physvol>
+    </volume>
+  </structure>
+  <setup name="Default" version="1.0"><world ref="WorldLV"/></setup>
+</gdml>`
+  },
+
+  "7": {
+    label: 'Config 7: 3"x3" NaI + Al + Pb, point 15cm on-axis',
+    source: [0, 0, -15],
+    gdml: `<?xml version="1.0" encoding="UTF-8"?>
+<gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd">
+  <define>
+    <position name="crystal_center" x="0" y="0" z="3.810000" unit="cm"/>
+    <position name="att0_inner_offset" x="0" y="0" z="0.050000" unit="cm"/>
+    <position name="att1_inner_offset" x="0" y="0" z="0.100000" unit="cm"/>
+    <rotation name="identity" x="0" y="0" z="0" unit="deg"/>
+  </define>
+  <materials>
+    <element name="N" formula="N" Z="7"><atom type="A" unit="g/mol" value="14.0070"/></element>
+    <element name="Na" formula="Na" Z="11"><atom type="A" unit="g/mol" value="22.9900"/></element>
+    <element name="Al" formula="Al" Z="13"><atom type="A" unit="g/mol" value="26.9820"/></element>
+    <element name="I" formula="I" Z="53"><atom type="A" unit="g/mol" value="126.9040"/></element>
+    <element name="Pb" formula="Pb" Z="82"><atom type="A" unit="g/mol" value="207.2000"/></element>
+    <material name="Vacuum" state="gas"><D type="density" unit="g/cm3" value="1.0e-25"/><fraction n="1.0" ref="N"/></material>
+    <material name="NaI" state="solid"><D type="density" unit="g/cm3" value="3.67000"/><fraction n="0.153375" ref="Na"/><fraction n="0.846625" ref="I"/></material>
+    <material name="Al" state="solid"><D type="density" unit="g/cm3" value="2.70000"/><fraction n="1.000000" ref="Al"/></material>
+    <material name="Pb" state="solid"><D type="density" unit="g/cm3" value="11.35000"/><fraction n="1.000000" ref="Pb"/></material>
+  </materials>
+  <solids>
+    <box name="WorldBox" x="34.660000" y="34.660000" z="75.720000" lunit="cm"/>
+    <tube name="CrystalOuterTube" rmin="0" rmax="3.810000" z="7.620000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="AttOuterSolid0" rmin="0" rmax="3.910000" z="7.720000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="AttInnerSolid0" rmin="0" rmax="3.810000" z="7.620000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <subtraction name="AttSolid0"><first ref="AttOuterSolid0"/><second ref="AttInnerSolid0"/><positionref ref="att0_inner_offset"/></subtraction>
+    <tube name="AttOuterSolid1" rmin="0" rmax="4.110000" z="7.920000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="AttInnerSolid1" rmin="0" rmax="3.910000" z="7.720000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <subtraction name="AttSolid1"><first ref="AttOuterSolid1"/><second ref="AttInnerSolid1"/><positionref ref="att1_inner_offset"/></subtraction>
+  </solids>
+  <structure>
+    <volume name="active_crystal"><materialref ref="NaI"/><solidref ref="CrystalOuterTube"/></volume>
+    <volume name="AttLV0"><materialref ref="Al"/><solidref ref="AttSolid0"/></volume>
+    <volume name="AttLV1"><materialref ref="Pb"/><solidref ref="AttSolid1"/></volume>
+    <volume name="WorldLV"><materialref ref="Vacuum"/><solidref ref="WorldBox"/>
+      <physvol name="active_crystal_PV"><volumeref ref="active_crystal"/><positionref ref="crystal_center"/></physvol>
+      <physvol name="AttPV0"><volumeref ref="AttLV0"/><position x="0" y="0" z="3.760000" unit="cm"/></physvol>
+      <physvol name="AttPV1"><volumeref ref="AttLV1"/><position x="0" y="0" z="3.660000" unit="cm"/></physvol>
+    </volume>
+  </structure>
+  <setup name="Default" version="1.0"><world ref="WorldLV"/></setup>
+</gdml>`
+  },
+
+  "8": {
+    label: 'Config 8: 3"x3" NaI + Al, Marinelli beaker (water + PE)',
+    source: null,
+    gdml: `<?xml version="1.0" encoding="UTF-8"?>
+<gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd">
+  <define>
+    <position name="crystal_center" x="0" y="0" z="3.810000" unit="cm"/>
+    <position name="att0_inner_offset" x="0" y="0" z="0.025000" unit="cm"/>
+    <rotation name="identity" x="0" y="0" z="0" unit="deg"/>
+  </define>
+  <materials>
+    <element name="H" formula="H" Z="1"><atom type="A" unit="g/mol" value="1.0080"/></element>
+    <element name="C" formula="C" Z="6"><atom type="A" unit="g/mol" value="12.0110"/></element>
+    <element name="N" formula="N" Z="7"><atom type="A" unit="g/mol" value="14.0070"/></element>
+    <element name="O" formula="O" Z="8"><atom type="A" unit="g/mol" value="15.9990"/></element>
+    <element name="Na" formula="Na" Z="11"><atom type="A" unit="g/mol" value="22.9900"/></element>
+    <element name="Al" formula="Al" Z="13"><atom type="A" unit="g/mol" value="26.9820"/></element>
+    <element name="I" formula="I" Z="53"><atom type="A" unit="g/mol" value="126.9040"/></element>
+    <material name="Vacuum" state="gas"><D type="density" unit="g/cm3" value="1.0e-25"/><fraction n="1.0" ref="N"/></material>
+    <material name="NaI" state="solid"><D type="density" unit="g/cm3" value="3.67000"/><fraction n="0.153375" ref="Na"/><fraction n="0.846625" ref="I"/></material>
+    <material name="Al" state="solid"><D type="density" unit="g/cm3" value="2.70000"/><fraction n="1.000000" ref="Al"/></material>
+    <material name="Water" state="solid"><D type="density" unit="g/cm3" value="1.00000"/><fraction n="0.111907" ref="H"/><fraction n="0.888093" ref="O"/></material>
+    <material name="Polyethylene" state="solid"><D type="density" unit="g/cm3" value="0.94000"/><fraction n="0.856277" ref="C"/><fraction n="0.143723" ref="H"/></material>
+  </materials>
+  <solids>
+    <box name="WorldBox" x="56.200000" y="56.200000" z="75.720000" lunit="cm"/>
+    <tube name="CrystalOuterTube" rmin="0" rmax="3.810000" z="7.620000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="AttOuterSolid0" rmin="0" rmax="3.860000" z="7.670000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="AttInnerSolid0" rmin="0" rmax="3.810000" z="7.620000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <subtraction name="AttSolid0"><first ref="AttOuterSolid0"/><second ref="AttInnerSolid0"/><positionref ref="att0_inner_offset"/></subtraction>
+    <tube name="SrcOuterCyl" rmin="0" rmax="7.500000" z="10.500000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="SrcWellCyl" rmin="0" rmax="4.300000" z="6.500000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <subtraction name="SrcMaterialSolid"><first ref="SrcOuterCyl"/><second ref="SrcWellCyl"/><position x="0" y="0" z="2.000000" unit="cm"/></subtraction>
+    <tube name="SrcShieldOuter0" rmin="7.500000" rmax="7.700000" z="10.500000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="SrcShieldBottom0" rmin="0" rmax="7.700000" z="0.200000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="SrcShieldWellWall0" rmin="4.100000" rmax="4.300000" z="6.500000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="SrcShieldWellBottom0" rmin="3.861000" rmax="4.100000" z="0.200000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+  </solids>
+  <structure>
+    <volume name="active_crystal"><materialref ref="NaI"/><solidref ref="CrystalOuterTube"/></volume>
+    <volume name="AttLV0"><materialref ref="Al"/><solidref ref="AttSolid0"/></volume>
+    <volume name="SrcMaterialLV"><materialref ref="Water"/><solidref ref="SrcMaterialSolid"/></volume>
+    <volume name="SrcShieldOuterLV0"><materialref ref="Polyethylene"/><solidref ref="SrcShieldOuter0"/></volume>
+    <volume name="SrcShieldBottomLV0"><materialref ref="Polyethylene"/><solidref ref="SrcShieldBottom0"/></volume>
+    <volume name="SrcShieldWellWallLV0"><materialref ref="Polyethylene"/><solidref ref="SrcShieldWellWall0"/></volume>
+    <volume name="SrcShieldWellBottomLV0"><materialref ref="Polyethylene"/><solidref ref="SrcShieldWellBottom0"/></volume>
+    <volume name="WorldLV"><materialref ref="Vacuum"/><solidref ref="WorldBox"/>
+      <physvol name="active_crystal_PV"><volumeref ref="active_crystal"/><positionref ref="crystal_center"/></physvol>
+      <physvol name="AttPV0"><volumeref ref="AttLV0"/><position x="0" y="0" z="3.785000" unit="cm"/></physvol>
+      <physvol name="SrcMaterialPV"><volumeref ref="SrcMaterialLV"/><position x="0" y="0" z="0.700000" unit="cm"/></physvol>
+      <physvol name="SrcShieldOuterPV0"><volumeref ref="SrcShieldOuterLV0"/><position x="0" y="0" z="0.700000" unit="cm"/></physvol>
+      <physvol name="SrcShieldBottomPV0"><volumeref ref="SrcShieldBottomLV0"/><position x="0" y="0" z="-4.650000" unit="cm"/></physvol>
+      <physvol name="SrcShieldWellWallPV0"><volumeref ref="SrcShieldWellWallLV0"/><position x="0" y="0" z="2.700000" unit="cm"/></physvol>
+      <physvol name="SrcShieldWellBottomPV0"><volumeref ref="SrcShieldWellBottomLV0"/><position x="0" y="0" z="6.050000" unit="cm"/></physvol>
+    </volume>
+  </structure>
+  <setup name="Default" version="1.0"><world ref="WorldLV"/></setup>
+</gdml>`
+  },
+
+  "9": {
+    label: 'Config 9: 3"x3" NaI + Al, Marinelli beaker (soil + Pyrex)',
+    source: null,
+    gdml: `<?xml version="1.0" encoding="UTF-8"?>
+<gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd">
+  <define>
+    <position name="crystal_center" x="0" y="0" z="3.810000" unit="cm"/>
+    <position name="att0_inner_offset" x="0" y="0" z="0.025000" unit="cm"/>
+    <rotation name="identity" x="0" y="0" z="0" unit="deg"/>
+  </define>
+  <materials>
+    <element name="H" formula="H" Z="1"><atom type="A" unit="g/mol" value="1.0080"/></element>
+    <element name="B" formula="B" Z="5"><atom type="A" unit="g/mol" value="10.8110"/></element>
+    <element name="N" formula="N" Z="7"><atom type="A" unit="g/mol" value="14.0070"/></element>
+    <element name="O" formula="O" Z="8"><atom type="A" unit="g/mol" value="15.9990"/></element>
+    <element name="Na" formula="Na" Z="11"><atom type="A" unit="g/mol" value="22.9900"/></element>
+    <element name="Mg" formula="Mg" Z="12"><atom type="A" unit="g/mol" value="24.3050"/></element>
+    <element name="Al" formula="Al" Z="13"><atom type="A" unit="g/mol" value="26.9820"/></element>
+    <element name="Si" formula="Si" Z="14"><atom type="A" unit="g/mol" value="28.0860"/></element>
+    <element name="K" formula="K" Z="19"><atom type="A" unit="g/mol" value="39.0980"/></element>
+    <element name="Ca" formula="Ca" Z="20"><atom type="A" unit="g/mol" value="40.0780"/></element>
+    <element name="Ti" formula="Ti" Z="22"><atom type="A" unit="g/mol" value="47.8670"/></element>
+    <element name="Fe" formula="Fe" Z="26"><atom type="A" unit="g/mol" value="55.8450"/></element>
+    <element name="I" formula="I" Z="53"><atom type="A" unit="g/mol" value="126.9040"/></element>
+    <material name="Vacuum" state="gas"><D type="density" unit="g/cm3" value="1.0e-25"/><fraction n="1.0" ref="N"/></material>
+    <material name="NaI" state="solid"><D type="density" unit="g/cm3" value="3.67000"/><fraction n="0.153375" ref="Na"/><fraction n="0.846625" ref="I"/></material>
+    <material name="Al" state="solid"><D type="density" unit="g/cm3" value="2.70000"/><fraction n="1.000000" ref="Al"/></material>
+    <material name="Soil" state="solid"><D type="density" unit="g/cm3" value="1.50000"/><fraction n="0.460000" ref="O"/><fraction n="0.276000" ref="Si"/><fraction n="0.083000" ref="Al"/><fraction n="0.050000" ref="Fe"/><fraction n="0.037000" ref="Ca"/><fraction n="0.021000" ref="Mg"/><fraction n="0.021000" ref="Na"/><fraction n="0.026000" ref="K"/><fraction n="0.006000" ref="Ti"/><fraction n="0.020000" ref="H"/></material>
+    <material name="Pyrex" state="solid"><D type="density" unit="g/cm3" value="2.23000"/><fraction n="0.539600" ref="O"/><fraction n="0.376800" ref="Si"/><fraction n="0.040400" ref="B"/><fraction n="0.029700" ref="Na"/><fraction n="0.012200" ref="Al"/><fraction n="0.001300" ref="K"/></material>
+  </materials>
+  <solids>
+    <box name="WorldBox" x="56.200000" y="56.200000" z="75.720000" lunit="cm"/>
+    <tube name="CrystalOuterTube" rmin="0" rmax="3.810000" z="7.620000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="AttOuterSolid0" rmin="0" rmax="3.860000" z="7.670000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="AttInnerSolid0" rmin="0" rmax="3.810000" z="7.620000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <subtraction name="AttSolid0"><first ref="AttOuterSolid0"/><second ref="AttInnerSolid0"/><positionref ref="att0_inner_offset"/></subtraction>
+    <tube name="SrcOuterCyl" rmin="0" rmax="7.500000" z="10.500000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="SrcWellCyl" rmin="0" rmax="4.300000" z="6.500000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <subtraction name="SrcMaterialSolid"><first ref="SrcOuterCyl"/><second ref="SrcWellCyl"/><position x="0" y="0" z="2.000000" unit="cm"/></subtraction>
+    <tube name="SrcShieldOuter0" rmin="7.500000" rmax="7.700000" z="10.500000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="SrcShieldBottom0" rmin="0" rmax="7.700000" z="0.200000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="SrcShieldWellWall0" rmin="4.100000" rmax="4.300000" z="6.500000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="SrcShieldWellBottom0" rmin="3.861000" rmax="4.100000" z="0.200000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+  </solids>
+  <structure>
+    <volume name="active_crystal"><materialref ref="NaI"/><solidref ref="CrystalOuterTube"/></volume>
+    <volume name="AttLV0"><materialref ref="Al"/><solidref ref="AttSolid0"/></volume>
+    <volume name="SrcMaterialLV"><materialref ref="Soil"/><solidref ref="SrcMaterialSolid"/></volume>
+    <volume name="SrcShieldOuterLV0"><materialref ref="Pyrex"/><solidref ref="SrcShieldOuter0"/></volume>
+    <volume name="SrcShieldBottomLV0"><materialref ref="Pyrex"/><solidref ref="SrcShieldBottom0"/></volume>
+    <volume name="SrcShieldWellWallLV0"><materialref ref="Pyrex"/><solidref ref="SrcShieldWellWall0"/></volume>
+    <volume name="SrcShieldWellBottomLV0"><materialref ref="Pyrex"/><solidref ref="SrcShieldWellBottom0"/></volume>
+    <volume name="WorldLV"><materialref ref="Vacuum"/><solidref ref="WorldBox"/>
+      <physvol name="active_crystal_PV"><volumeref ref="active_crystal"/><positionref ref="crystal_center"/></physvol>
+      <physvol name="AttPV0"><volumeref ref="AttLV0"/><position x="0" y="0" z="3.785000" unit="cm"/></physvol>
+      <physvol name="SrcMaterialPV"><volumeref ref="SrcMaterialLV"/><position x="0" y="0" z="0.700000" unit="cm"/></physvol>
+      <physvol name="SrcShieldOuterPV0"><volumeref ref="SrcShieldOuterLV0"/><position x="0" y="0" z="0.700000" unit="cm"/></physvol>
+      <physvol name="SrcShieldBottomPV0"><volumeref ref="SrcShieldBottomLV0"/><position x="0" y="0" z="-4.650000" unit="cm"/></physvol>
+      <physvol name="SrcShieldWellWallPV0"><volumeref ref="SrcShieldWellWallLV0"/><position x="0" y="0" z="2.700000" unit="cm"/></physvol>
+      <physvol name="SrcShieldWellBottomPV0"><volumeref ref="SrcShieldWellBottomLV0"/><position x="0" y="0" z="6.050000" unit="cm"/></physvol>
+    </volume>
+  </structure>
+  <setup name="Default" version="1.0"><world ref="WorldLV"/></setup>
+</gdml>`
+  },
+
+  "10": {
+    label: 'Config 10: HPGe + W collimator, in-situ soil (r=30cm shown)',
+    source: null,
+    gdml: `<?xml version="1.0" encoding="UTF-8"?>
+<gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd">
+  <define>
+    <position name="crystal_center" x="0" y="0" z="3.000000" unit="cm"/>
+    <position name="bore_center_in_crystal" x="0" y="0" z="1.000000" unit="cm"/>
+    <position name="att0_inner_offset" x="0" y="0" z="0.050000" unit="cm"/>
+    <rotation name="identity" x="0" y="0" z="0" unit="deg"/>
+  </define>
+  <materials>
+    <element name="H" formula="H" Z="1"><atom type="A" unit="g/mol" value="1.0080"/></element>
+    <element name="N" formula="N" Z="7"><atom type="A" unit="g/mol" value="14.0070"/></element>
+    <element name="O" formula="O" Z="8"><atom type="A" unit="g/mol" value="15.9990"/></element>
+    <element name="Na" formula="Na" Z="11"><atom type="A" unit="g/mol" value="22.9900"/></element>
+    <element name="Mg" formula="Mg" Z="12"><atom type="A" unit="g/mol" value="24.3050"/></element>
+    <element name="Al" formula="Al" Z="13"><atom type="A" unit="g/mol" value="26.9820"/></element>
+    <element name="Si" formula="Si" Z="14"><atom type="A" unit="g/mol" value="28.0860"/></element>
+    <element name="K" formula="K" Z="19"><atom type="A" unit="g/mol" value="39.0980"/></element>
+    <element name="Ca" formula="Ca" Z="20"><atom type="A" unit="g/mol" value="40.0780"/></element>
+    <element name="Ti" formula="Ti" Z="22"><atom type="A" unit="g/mol" value="47.8670"/></element>
+    <element name="Fe" formula="Fe" Z="26"><atom type="A" unit="g/mol" value="55.8450"/></element>
+    <element name="Ge" formula="Ge" Z="32"><atom type="A" unit="g/mol" value="72.6300"/></element>
+    <element name="W" formula="W" Z="74"><atom type="A" unit="g/mol" value="183.8400"/></element>
+    <element name="Ar" formula="Ar" Z="18"><atom type="A" unit="g/mol" value="39.9480"/></element>
+    <material name="Air" state="gas"><D type="density" unit="g/cm3" value="0.001205"/><fraction n="0.7552" ref="N"/><fraction n="0.2320" ref="O"/><fraction n="0.0128" ref="Ar"/></material>
+    <material name="Vacuum" state="gas"><D type="density" unit="g/cm3" value="1.0e-25"/><fraction n="1.0" ref="N"/></material>
+    <material name="HPGe" state="solid"><D type="density" unit="g/cm3" value="5.32300"/><fraction n="1.000000" ref="Ge"/></material>
+    <material name="Al" state="solid"><D type="density" unit="g/cm3" value="2.70000"/><fraction n="1.000000" ref="Al"/></material>
+    <material name="W" state="solid"><D type="density" unit="g/cm3" value="19.30000"/><fraction n="1.000000" ref="W"/></material>
+    <material name="Soil" state="solid"><D type="density" unit="g/cm3" value="1.50000"/><fraction n="0.460000" ref="O"/><fraction n="0.276000" ref="Si"/><fraction n="0.083000" ref="Al"/><fraction n="0.050000" ref="Fe"/><fraction n="0.037000" ref="Ca"/><fraction n="0.021000" ref="Mg"/><fraction n="0.021000" ref="Na"/><fraction n="0.026000" ref="K"/><fraction n="0.006000" ref="Ti"/><fraction n="0.020000" ref="H"/></material>
+  </materials>
+  <solids>
+    <box name="WorldBox" x="120.000000" y="120.000000" z="280.000000" lunit="cm"/>
+    <tube name="CrystalOuterTube" rmin="0" rmax="3.000000" z="6.000000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="BoreSolid" rmin="0" rmax="0.500000" z="4.000000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <subtraction name="CrystalSolid"><first ref="CrystalOuterTube"/><second ref="BoreSolid"/><positionref ref="bore_center_in_crystal"/></subtraction>
+    <tube name="AttOuterSolid0" rmin="0" rmax="3.103000" z="6.100000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="AttInnerSolid0" rmin="0" rmax="3.003000" z="6.000000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <subtraction name="AttSolid0"><first ref="AttOuterSolid0"/><second ref="AttInnerSolid0"/><positionref ref="att0_inner_offset"/></subtraction>
+    <tube name="AttSolid1" rmin="3.103000" rmax="5.103000" z="13.620000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <tube name="SrcMaterialSolid" rmin="0" rmax="30.000000" z="30.000000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+  </solids>
+  <structure>
+    <volume name="active_crystal"><materialref ref="HPGe"/><solidref ref="CrystalSolid"/>
+      <physvol><volumeref ref="BoreAirLV"/><position x="0" y="0" z="1.000000" unit="cm"/></physvol>
+    </volume>
+    <volume name="BoreAirLV"><materialref ref="Air"/><solidref ref="BoreSolid"/></volume>
+    <volume name="AttLV0"><materialref ref="Al"/><solidref ref="AttSolid0"/></volume>
+    <volume name="AttLV1"><materialref ref="W"/><solidref ref="AttSolid1"/></volume>
+    <volume name="SrcMaterialLV"><materialref ref="Soil"/><solidref ref="SrcMaterialSolid"/></volume>
+    <volume name="WorldLV"><materialref ref="Vacuum"/><solidref ref="WorldBox"/>
+      <physvol name="active_crystal_PV"><volumeref ref="active_crystal"/><positionref ref="crystal_center"/></physvol>
+      <physvol name="AttPV0"><volumeref ref="AttLV0"/><position x="0" y="0" z="2.950000" unit="cm"/></physvol>
+      <physvol name="AttPV1"><volumeref ref="AttLV1"/><position x="0" y="0" z="-0.810000" unit="cm"/></physvol>
+      <physvol name="SrcMaterialPV"><volumeref ref="SrcMaterialLV"/><position x="0" y="0" z="-115.000000" unit="cm"/></physvol>
+    </volume>
+  </structure>
+  <setup name="Default" version="1.0"><world ref="WorldLV"/></setup>
+</gdml>`
+  },
+
+  "11": {
+    label: 'Config 11: 3"x3" NaI, point source + 0.5cm Fe shield',
+    source: [0, 0, -10],
+    gdml: `<?xml version="1.0" encoding="UTF-8"?>
+<gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd">
+  <define>
+    <position name="crystal_center" x="0" y="0" z="3.810000" unit="cm"/>
+    <rotation name="identity" x="0" y="0" z="0" unit="deg"/>
+  </define>
+  <materials>
+    <element name="N" formula="N" Z="7"><atom type="A" unit="g/mol" value="14.0070"/></element>
+    <element name="Na" formula="Na" Z="11"><atom type="A" unit="g/mol" value="22.9900"/></element>
+    <element name="Fe" formula="Fe" Z="26"><atom type="A" unit="g/mol" value="55.8450"/></element>
+    <element name="I" formula="I" Z="53"><atom type="A" unit="g/mol" value="126.9040"/></element>
+    <material name="Vacuum" state="gas"><D type="density" unit="g/cm3" value="1.0e-25"/><fraction n="1.0" ref="N"/></material>
+    <material name="NaI" state="solid"><D type="density" unit="g/cm3" value="3.67000"/><fraction n="0.153375" ref="Na"/><fraction n="0.846625" ref="I"/></material>
+    <material name="Fe" state="solid"><D type="density" unit="g/cm3" value="7.87400"/><fraction n="1.000000" ref="Fe"/></material>
+  </materials>
+  <solids>
+    <box name="WorldBox" x="32.860000" y="32.860000" z="93.000000" lunit="cm"/>
+    <tube name="CrystalOuterTube" rmin="0" rmax="3.810000" z="7.620000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <sphere name="SrcShieldSolid0" rmin="0.000000" rmax="0.500000" startphi="0" deltaphi="6.2831853" starttheta="0" deltatheta="3.1415927" aunit="rad" lunit="cm"/>
+  </solids>
+  <structure>
+    <volume name="active_crystal"><materialref ref="NaI"/><solidref ref="CrystalOuterTube"/></volume>
+    <volume name="SrcShieldLV0"><materialref ref="Fe"/><solidref ref="SrcShieldSolid0"/></volume>
+    <volume name="WorldLV"><materialref ref="Vacuum"/><solidref ref="WorldBox"/>
+      <physvol name="active_crystal_PV"><volumeref ref="active_crystal"/><positionref ref="crystal_center"/></physvol>
+      <physvol name="SrcShieldPV0"><volumeref ref="SrcShieldLV0"/><position x="0" y="0" z="-10.000000" unit="cm"/></physvol>
+    </volume>
+  </structure>
+  <setup name="Default" version="1.0"><world ref="WorldLV"/></setup>
+</gdml>`
+  },
+
+  "12": {
+    label: 'Config 12: 3"x3" NaI, SS304 box + cellulose source',
+    source: null,
+    gdml: `<?xml version="1.0" encoding="UTF-8"?>
+<gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd">
+  <define>
+    <position name="crystal_center" x="0" y="0" z="3.810000" unit="cm"/>
+    <rotation name="identity" x="0" y="0" z="0" unit="deg"/>
+  </define>
+  <materials>
+    <element name="H" formula="H" Z="1"><atom type="A" unit="g/mol" value="1.0080"/></element>
+    <element name="C" formula="C" Z="6"><atom type="A" unit="g/mol" value="12.0110"/></element>
+    <element name="N" formula="N" Z="7"><atom type="A" unit="g/mol" value="14.0070"/></element>
+    <element name="O" formula="O" Z="8"><atom type="A" unit="g/mol" value="15.9990"/></element>
+    <element name="Na" formula="Na" Z="11"><atom type="A" unit="g/mol" value="22.9900"/></element>
+    <element name="Cr" formula="Cr" Z="24"><atom type="A" unit="g/mol" value="51.9960"/></element>
+    <element name="Mn" formula="Mn" Z="25"><atom type="A" unit="g/mol" value="54.9380"/></element>
+    <element name="Fe" formula="Fe" Z="26"><atom type="A" unit="g/mol" value="55.8450"/></element>
+    <element name="Ni" formula="Ni" Z="28"><atom type="A" unit="g/mol" value="58.6930"/></element>
+    <element name="I" formula="I" Z="53"><atom type="A" unit="g/mol" value="126.9040"/></element>
+    <material name="Vacuum" state="gas"><D type="density" unit="g/cm3" value="1.0e-25"/><fraction n="1.0" ref="N"/></material>
+    <material name="NaI" state="solid"><D type="density" unit="g/cm3" value="3.67000"/><fraction n="0.153375" ref="Na"/><fraction n="0.846625" ref="I"/></material>
+    <material name="Cellulose" state="solid"><D type="density" unit="g/cm3" value="0.50000"/><fraction n="0.444465" ref="C"/><fraction n="0.062168" ref="H"/><fraction n="0.493367" ref="O"/></material>
+    <material name="SS304" state="solid"><D type="density" unit="g/cm3" value="8.00000"/><fraction n="0.700000" ref="Fe"/><fraction n="0.190000" ref="Cr"/><fraction n="0.100000" ref="Ni"/><fraction n="0.010000" ref="Mn"/></material>
+  </materials>
+  <solids>
+    <box name="WorldBox" x="92.000000" y="92.000000" z="262.000000" lunit="cm"/>
+    <tube name="CrystalOuterTube" rmin="0" rmax="3.810000" z="7.620000" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm"/>
+    <box name="SrcMaterialSolid" x="10.000000" y="15.000000" z="20.000000" lunit="cm"/>
+    <box name="SrcShieldOuterSolid0" x="10.400000" y="15.400000" z="20.400000" lunit="cm"/>
+    <box name="SrcShieldInnerSolid0" x="10.000000" y="15.000000" z="20.000000" lunit="cm"/>
+    <subtraction name="SrcShieldSolid0"><first ref="SrcShieldOuterSolid0"/><second ref="SrcShieldInnerSolid0"/></subtraction>
+  </solids>
+  <structure>
+    <volume name="active_crystal"><materialref ref="NaI"/><solidref ref="CrystalOuterTube"/></volume>
+    <volume name="SrcMaterialLV"><materialref ref="Cellulose"/><solidref ref="SrcMaterialSolid"/></volume>
+    <volume name="SrcShieldLV0"><materialref ref="SS304"/><solidref ref="SrcShieldSolid0"/></volume>
+    <volume name="WorldLV"><materialref ref="Vacuum"/><solidref ref="WorldBox"/>
+      <physvol name="active_crystal_PV"><volumeref ref="active_crystal"/><positionref ref="crystal_center"/></physvol>
+      <physvol name="SrcMaterialPV"><volumeref ref="SrcMaterialLV"/><position x="0" y="0" z="-25.000000" unit="cm"/></physvol>
+      <physvol name="SrcShieldPV0"><volumeref ref="SrcShieldLV0"/><position x="0" y="0" z="-25.000000" unit="cm"/></physvol>
+    </volume>
+  </structure>
+  <setup name="Default" version="1.0"><world ref="WorldLV"/></setup>
+</gdml>`
+  }
+};
+
+// ========================================================================
+// Initialize
+// ========================================================================
+var viewer = new GeometryViewer3D(document.getElementById('viewer'), {
+  showAxes: true
+});
+
+var select = document.getElementById('configSelect');
+var descEl = document.getElementById('configDesc');
+
+Object.keys(CONFIGS).forEach(function(key) {
+  var opt = document.createElement('option');
+  opt.value = key;
+  opt.textContent = CONFIGS[key].label;
+  select.appendChild(opt);
+});
+
+function loadConfig(key) {
+  var cfg = CONFIGS[key];
+  if (!cfg) return;
+  // Set source before loading GDML so camera framing includes source position
+  if (cfg.source) {
+    viewer.sourcePosition = cfg.source.slice();
+  } else {
+    viewer.sourcePosition = null;
+  }
+  viewer.loadGDML(cfg.gdml);
+  if (cfg.source) {
+    viewer.setSourcePosition(cfg.source[0], cfg.source[1], cfg.source[2]);
+  } else {
+    viewer.setSourcePosition(null);
+  }
+  descEl.textContent = cfg.label;
+}
+
+select.addEventListener('change', function() {
+  loadConfig(this.value);
+});
+
+// Load first config
+loadConfig(select.value);
+</script>
+</body>
+</html>

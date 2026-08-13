@@ -1,0 +1,40 @@
+{
+  "elements": 92,
+  "encoding": "per-element affine uint16(log10 value)",
+  "energy_nodes": 53,
+  "energy_range_keV": [
+    10.0,
+    20000.0
+  ],
+  "generator": "generate_estar_stopping.py",
+  "logical_table_sha256": "05e64bae3bd23bab0f049b35df70ec99c2771eebf857e0669f44f41049c00f30",
+  "notes": [
+    "All 53 NIST standard-grid nodes from 10 keV through 20 MeV are retained for every Z=1..92.",
+    "The shared energy grid is counted separately and not charged to either stopping process.",
+    "NIST's text output is rounded to four significant figures; this report measures only the additional affine uint16 log-domain encoding error."
+  ],
+  "processes": {
+    "collision_stopping": {
+      "coefficient_bytes": 9752,
+      "maximum_native_representation_error_percent": 0.0019461497520634197,
+      "metadata_bytes": 736,
+      "native_coefficients": 4876,
+      "p95_native_representation_error_percent": 0.0016573593232926953,
+      "retained_coefficients": 4876
+    },
+    "radiative_stopping": {
+      "coefficient_bytes": 9752,
+      "maximum_native_representation_error_percent": 0.004002043738426941,
+      "metadata_bytes": 736,
+      "native_coefficients": 4876,
+      "p95_native_representation_error_percent": 0.0034005350736832085,
+      "retained_coefficients": 4876
+    }
+  },
+  "schema_version": 1,
+  "shared_grid": {
+    "bytes": 212,
+    "coefficients": 53
+  },
+  "source_lock_sha256": "1460f0d95b47c76fb08063d1f7c20a2ad1e3a534b5e36332d536ce9e7655c0ad"
+}

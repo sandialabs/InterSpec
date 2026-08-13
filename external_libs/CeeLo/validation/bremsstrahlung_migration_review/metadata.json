@@ -1,0 +1,135 @@
+{
+  "schema_version": 1,
+  "status": "awaiting_manual_approval",
+  "reference_type": "deterministic aggregate spectrum/rate observable from Geant4 11.4.0 G4EMLOW 8.8 model data",
+  "raw_g4_cross_section_columns_committed": false,
+  "geant4_version": "11.4.0",
+  "g4emlow_version": "8.8",
+  "simulation_seed": null,
+  "event_count": null,
+  "statistical_uncertainty": 0.0,
+  "photon_cut_keV": 10.0,
+  "histogram_bins": 64,
+  "elements": {
+    "1": "H",
+    "6": "C",
+    "13": "Al",
+    "26": "Fe",
+    "32": "Ge",
+    "48": "Cd",
+    "52": "Te",
+    "53": "I",
+    "74": "W",
+    "82": "Pb",
+    "92": "U"
+  },
+  "materials": {
+    "Ge": [
+      [
+        32,
+        1.0
+      ]
+    ],
+    "NaI": [
+      [
+        11,
+        0.1533750517032036
+      ],
+      [
+        53,
+        0.8466249482967964
+      ]
+    ],
+    "CsI": [
+      [
+        55,
+        0.5115488685919272
+      ],
+      [
+        53,
+        0.4884511314080729
+      ]
+    ],
+    "CZT": [
+      [
+        48,
+        0.4299534317621051
+      ],
+      [
+        30,
+        0.027784553692013877
+      ],
+      [
+        52,
+        0.5422620145458811
+      ]
+    ],
+    "Al": [
+      [
+        13,
+        1.0
+      ]
+    ],
+    "SS304": [
+      [
+        26,
+        0.7
+      ],
+      [
+        24,
+        0.19
+      ],
+      [
+        28,
+        0.1
+      ],
+      [
+        25,
+        0.01
+      ]
+    ],
+    "Pb": [
+      [
+        82,
+        1.0
+      ]
+    ]
+  },
+  "energies_keV": [
+    20.0,
+    50.0,
+    100.0,
+    500.0,
+    1000.0,
+    3000.0,
+    10000.0,
+    20000.0
+  ],
+  "baselines": {
+    "main": "ab03e4810c548126daced9d7c91d62b0467a3d6b",
+    "FullSpecApprox": "7e8713b517c13999a148bea2578cc3f26d99e67f",
+    "env_scatter": "4977fccff48fd26bdcc9bb873577c72ff0973183"
+  },
+  "acceptance_metrics_percent": {
+    "row_rms_percent": {
+      "median": 0.011926854308506022,
+      "p95": 0.05433417794959341,
+      "worst": 0.25203089935006145
+    },
+    "integrated_rate_difference_percent": {
+      "median": 0.009051724654463023,
+      "p95": 0.04912287570918439,
+      "worst": 0.1880683160888852
+    },
+    "mean_kappa_difference_percent": {
+      "median": 0.009052544065846213,
+      "p95": 0.04914701813780731,
+      "worst": 0.18842267944927382
+    }
+  },
+  "notes": [
+    "The G4 fixture is an observable integrated spectrum/rate, not a raw cross-section table.",
+    "A separate stochastic thin-target Geant4 fixture may be added; the deterministic reference has no seed or sampling uncertainty.",
+    "Manual approval is required before feature-branch migration."
+  ]
+}

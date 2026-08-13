@@ -1,0 +1,22 @@
+ESTAR, PSTAR, and ASTAR Documentation
+
+M. J. Berger
+
+Calculate stopping-power and range tables for electrons,
+protons, or helium ions, according to methods described
+in ICRU Reports 37 and 49.
+
+____________________________________________________
+Disclaimer:
+
+The National Institute of Standards and Technology (NIST)
+uses its best efforts to deliver a high quality copy of
+the Database and to verify that the data contained therein
+have been selected on the basis of sound scientific
+judgement. However, NIST makes no warranties to that
+effect, and NIST shall not be liable for any damage that
+may result from errors or omissions in the Database.
+
+This is the disclaimer retained from the locked STAR.tar.gz Readme.txt. CeeLo's
+generated tables are modified derivatives restricted to Z=1--92 and the 53
+standard energy nodes from 10 keV through 20 MeV, encoded as float32 logarithms.
