@@ -43,7 +43,6 @@
   <message id="bgw-reports-write-csv">Summary CSV</message>
   <message id="bgw-reports-write-csv-tooltip">Write a summary CSV file with analysis results from all input files.</message>
   <message id="bgw-reports-write-custom-per-file">Custom Per-File</message>
-  <message id="bgw-reports-write-custom-per-file-tooltip">Upload a custom report template to use for each file.</message>
   <message id="bgw-reports-write-custom-summary">Custom Summary</message>
   <message id="bgw-reports-write-custom-summary-tooltip">One or more template files used to provide a summary of all input files.</message>
 
@@ -58,7 +57,6 @@
   <message id="bgw-no-ana-act-shield-invalid-background">Invalid background</message>
   <message id="bgw-no-ana-no-input-files">No input files.</message>
   <message id="bgw-no-ana-invalid-output-path">Please select a valid output directory.</message>
-
 
   <!-- Analysis progress and results -->
   <message id="bgw-unknown-analysis-error">Unknown error performing analysis.</message>
@@ -154,4 +152,19 @@ A zero or negative value will mean no requirement, and also no 'peak-stat-thresh
   <message id="bgw-multi-sample-each">Analyze each sample</message>
   <message id="bgw-multi-sample-sum">Sum foreground samples</message>
   <message id="bgw-multi-sample-tt">Controls what happens when an input file holds more than one candidate foreground spectrum - that is, more than one sample number not marked background, intrinsic activity, or calibration.  Passthrough/search-mode files are never affected.&lt;br /&gt;&quot;Auto-detect&quot; keeps the previous behaviour, and skips a file when which spectrum to use is ambiguous.&lt;br /&gt;&quot;Analyze each sample&quot; produces one independent result, and one set of output files suffixed &quot;_sampleN&quot;, per sample.&lt;br /&gt;&quot;Sum foreground samples&quot; sums them into a single spectrum, producing one result with output files suffixed &quot;_summed&quot;.</message>
+
+  <message id="bgw-mda-method-label">Limits for peaks not fit:</message>
+  <message id="bgw-mda-method-none">None</message>
+  <message id="bgw-mda-method-currie">Currie (gross counts)</message>
+  <message id="bgw-mda-method-currie-decon">Currie + deconvolution</message>
+  <message id="bgw-mda-method-tt">How to compute the detection limit (MDA) for exemplar peaks that could not be fit in a spectrum.  The limit is reported in counts, and for activity/shielding fits, also as an activity at the shielding and distance the fit determined.&lt;br /&gt;&quot;None&quot; does not compute limits.&lt;br /&gt;&quot;Currie (gross counts)&quot; is the simple ISO 11929 method: counts in the peak region are compared to the continuum estimated from the channels on either side.  It is fast, and needs nothing but the spectrum.&lt;br /&gt;&quot;Currie + deconvolution&quot; additionally fits the expected peak shape at a range of source strengths; this gives a better limit when the peak sits on a structured continuum, but is considerably slower.&lt;br /&gt;Not applicable when fitting for all peaks, since then there are no exemplar peaks to miss.</message>
+
+  <message id="bgw-mda-cl-label">Confidence level:</message>
+  <message id="bgw-mda-cl-tt">The confidence level for the detection limits.  A higher confidence level gives a larger (more conservative) limit: at 95% the reported upper bound is the activity that would have been exceeded in only 5% of measurements.  &quot;1 σ&quot; through &quot;5 σ&quot; are 68.27%, 95.45%, 99.73%, 99.9937%, and 99.999943% respectively.  The usual choice is 95%.</message>
+
+  <message id="bgw-mda-roi-num-fwhm-label">Peak region (FWHM):</message>
+  <message id="bgw-mda-roi-num-fwhm-tt">How wide the peak region used for the detection limit is, in multiples of the peak&apos;s FWHM.  Valid range is 0.5 to 10.&lt;br /&gt;The default of 2.5 - the peak mean &#177;1.25 FWHM - is what ISO 11929:2010 recommends, and holds 99.7% of a Gaussian peak.  A narrower region takes in less continuum, and so can give a smaller (better) limit; the best value depends on how strong the continuum is under the peak.&lt;br /&gt;&lt;b&gt;Caution:&lt;/b&gt; the calculation assumes the whole peak is inside the region, so a narrow region gives a limit on the counts within it rather than on the peak&apos;s total area.  A 1.0 FWHM wide region holds only 76% of the peak, making the limit optimistic by about a third.  Reports state the fraction of the peak inside the region whenever it is below 99%.</message>
+
+  <message id="bgw-mda-side-channels-label">Side channels:</message>
+  <message id="bgw-mda-side-channels-tt">The number of channels on each side of the peak region used to estimate how many continuum counts are underneath the peak, for the Currie-style limit.  Valid range is 1 to 64; 4 is typical.  Using more channels reduces the uncertainty of the continuum estimate, and so tightens the limit, but risks biasing it if the continuum is not straight, or if a neighboring peak falls into the side regions.</message>
 </messages> 

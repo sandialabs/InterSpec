@@ -34,6 +34,16 @@
         text-align: left; /* Aligns text to the left */
       }
 
+      /* Detection-limit caveats - anything that makes a limit less reliable */
+      .MdaCaveat {
+        display: block;
+        margin-top: 3px;
+        padding-left: 6px;
+        border-left: 3px solid #e0a030;
+        color: #8a5a00;
+        font-size: 95%;
+      }
+
       .ResultTable th {
         background-color: #f2f2f2; /* adds a background color to the header cells */
       }
@@ -354,6 +364,114 @@ Mass fractions for {{ shield.Name }}:
 ##endfor
 {% endif %} <!-- existsIn(file.Shieldings, "Shields") -->
 {% endif %} <!-- if existsIn(file, "Shieldings") -->
+
+{% if existsIn(file,"NotFitPeaks") %}
+<div class="not_fit_peaks" style="margin-top: 15px">
+Exemplar peaks that could not be fit{% if existsIn(file.NotFitPeaks,"HasMdas") and file.NotFitPeaks.HasMdas %}, and their detection limits{% endif %}:
+  <table class="InfoTable">
+    <thead><tr>
+      <th>Energy (keV)</th>
+      <th>Nuclide</th>
+{% if existsIn(file.NotFitPeaks,"HasMdas") and file.NotFitPeaks.HasMdas %}
+      <th>Result</th>
+      <th title="Currie&apos;s critical level; the net counts above which a signal may be reliably recognized as detected.">L<sub>c</sub> (counts)</th>
+      <th title="Currie&apos;s detection limit; the true net signal level that may be expected to lead to detection.">L<sub>d</sub> (counts)</th>
+      <th>Upper limit (counts)</th>
+      <th>MDA activity</th>
+      <th>Detection limit</th>
+{% endif %}
+    </tr></thead>
+    <tbody>
+## for peak in file.NotFitPeaks.Peaks
+      <tr>
+        <td>{{ printFixed(peak.PeakMean,2) }}</td>
+        <td>{% if peak.HasSourceAssigned %}{{ peak.SourceName }}{% endif %}</td>
+{% if existsIn(file.NotFitPeaks,"HasMdas") and file.NotFitPeaks.HasMdas %}
+        <td>{% if existsIn(peak,"Mda") %}{{ peak.Mda.ShortDescription }}{% endif %}</td>
+        <td>{% if existsIn(peak,"Mda") %}{% if peak.Mda.CurrieComputed %}{{ peak.Mda.DecisionThresholdStr }}{% endif %}{% endif %}</td>
+        <td>{% if existsIn(peak,"Mda") %}{% if peak.Mda.CurrieComputed %}{{ peak.Mda.DetectionLimitStr }}{% endif %}{% endif %}</td>
+        <td>{% if existsIn(peak,"Mda") %}{% if peak.Mda.CurrieComputed %}{{ peak.Mda.UpperLimitStr }}{% endif %}{% endif %}</td>
+        <td>{% if existsIn(peak,"Mda") %}{% if peak.Mda.HasActivity %}{{ peak.Mda.DetectionLimitActivity }}{% else %}&mdash;{% endif %}{% endif %}</td>
+        <td>{% if existsIn(peak,"Mda") %}{{ peak.Mda.ResultSummary }}{% if peak.Mda.ActivitySummary %} {{ peak.Mda.ActivitySummary }}{% endif %}{% if peak.Mda.HasCaveats %}<span class="MdaCaveat">{{ peak.Mda.Caveats }}</span>{% endif %}{% endif %}</td>
+{% endif %}
+      </tr>
+## endfor
+    </tbody>
+  </table>
+</div>
+{% endif %} <!-- if existsIn(file,"NotFitPeaks") -->
+
+## if existsIn(file,"SupplementalPeakInfo")
+## if file.SupplementalPeakInfo.AnyPeakNotUsedForFit
+<div style="margin-top: 20px">
+  <h3>Peaks Not Used For The Activity Fit:</h3>
+  These peaks were fit, but were not used to determine the activities and shielding; the activity
+  each would imply on its own is shown.
+  <table class="ActivitySummary ResultTable">
+    <thead>
+      <tr>
+        <th>Energy (keV)</th>
+        <th>Nuclide</th>
+        <th>Observed counts</th>
+        <th>Model counts</th>
+        <th>Implied activity</th>
+        <th title="Observed counts divided by the counts the fitted model predicts.">Ratio to fit</th>
+        <th title="How many standard deviations the observed counts sit from the model prediction.">N&sigma;</th>
+        <th>Comment</th>
+      </tr>
+    </thead>
+    <tbody>
+## for peak in file.SupplementalPeakInfo.PeaksNotUsedForFit.Peaks
+      <tr>
+        <td>{{ printFixed(peak.PeakMean,2) }}</td>
+        <td>{% if peak.HasSourceAssigned %}{{ peak.SourceName }} ({{ printFixed(peak.SourceEnergy,1) }}){% endif %}</td>
+        <td>{{ peak.PeakAmplitudeStr }}</td>
+        <td>{% if peak.ModelEvaluated %}{{ peak.ExpectedCountsStr }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if peak.HasNominalActivity %}{{ peak.ImpliedActivity }}{% if existsIn(peak,"ImpliedActivityUncert") %} &plusmn; {{ peak.ImpliedActivityUncert }}{% endif %}{% else %}&mdash;{% endif %}</td>
+        <td>{% if peak.HasNominalActivity %}{{ peak.RatioToFitActivityStr }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if peak.HasNominalActivity %}{{ peak.NumSigmaOffStr }}{% else %}&mdash;{% endif %}</td>
+        <td>{% if peak.HasNominalActivity %}{{ peak.ResultSummary }}{% else %}No activity could be derived: {{ peak.NotEvaluatedReason }}.{% endif %}{% if peak.HasCaveats %} <span class="MdaCaveat">{{ peak.Caveats }}</span>{% endif %}</td>
+      </tr>
+## endfor
+    </tbody>
+  </table>
+</div>
+## endif
+## if file.SupplementalPeakInfo.HasCurrieChecks
+<div style="margin-top: 20px">
+  <h3>Detection-Limit Check Of Each Peak:</h3>
+  A peak can be fit, and still sit below the level at which a signal can be reliably claimed.
+  <table class="ActivitySummary ResultTable">
+    <thead>
+      <tr>
+        <th>Energy (keV)</th>
+        <th>Nuclide</th>
+        <th>Used in fit</th>
+        <th>Result</th>
+        <th title="Currie&apos;s critical level; the net counts above which a signal may be reliably recognized as detected.">L<sub>c</sub> (counts)</th>
+        <th title="Currie&apos;s detection limit; the true net signal level that may be expected to lead to detection.">L<sub>d</sub> (counts)</th>
+        <th title="The raw net counts above the estimated continuum; this is what the detection decision is made on, and it may be negative.">Net counts</th>
+        <th title="The ISO 11929 best estimate and its standard uncertainty: the mean of the signal distribution after the part of it sitting on impossible negative activities has been removed.  This, not the net counts, is what ISO says to quote as the measured value; the two agree once the signal is well above L_c.">Best estimate (counts)</th>
+      </tr>
+    </thead>
+    <tbody>
+## for peak in file.SupplementalPeakInfo.AllPeaks.Peaks
+      <tr>
+        <td>{{ printFixed(peak.PeakMean,2) }}</td>
+        <td>{% if peak.HasSourceAssigned %}{{ peak.SourceName }} ({{ printFixed(peak.SourceEnergy,1) }}){% endif %}</td>
+        <td>{% if peak.UsedForFit %}yes{% else %}no{% endif %}</td>
+        <td>{{ peak.CurrieCheck.ShortDescription }}</td>
+        <td>{% if peak.CurrieCheck.CurrieComputed %}{{ peak.CurrieCheck.DecisionThresholdStr }}{% endif %}</td>
+        <td>{% if peak.CurrieCheck.CurrieComputed %}{{ peak.CurrieCheck.DetectionLimitStr }}{% endif %}</td>
+        <td>{% if peak.CurrieCheck.CurrieComputed %}{{ peak.CurrieCheck.SourceCountsStr }}{% endif %}</td>
+        <td>{% if peak.CurrieCheck.CurrieComputed %}{{ peak.CurrieCheck.BestEstimateCountsStr }} &plusmn; {{ peak.CurrieCheck.BestEstimateCountsUncertStr }}{% endif %}</td>
+      </tr>
+## endfor
+    </tbody>
+  </table>
+</div>
+## endif
+## endif
 
 <div style="margin-top: 20px">
 <ul style="list-style-type: none; padding: 0; margin: 0;">

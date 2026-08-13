@@ -412,3 +412,104 @@ BOOST_AUTO_TEST_CASE( test_options_equal_enough_with_deviation_pairs )
 #endif
 }//BOOST_AUTO_TEST_CASE( test_options_equal_enough_with_deviation_pairs )
 
+
+BOOST_AUTO_TEST_CASE( test_rel_act_auto_gui_state_equality )
+{
+  // `RelActAutoGuiState::operator==` is what `RelActAutoGui` uses to decide whether a GUI change
+  //  warrants an undo/redo step, so every field that the user can change must take part in it -
+  //  a field left out means that change silently gets no undo step.
+  using namespace RelActCalcAuto;
+
+  const RelActAutoGuiState default_state;
+  BOOST_CHECK( default_state == RelActAutoGuiState{} );
+  BOOST_CHECK( !(default_state != RelActAutoGuiState{}) );
+
+  {
+    RelActAutoGuiState state;
+    state.note = "a user note";
+    BOOST_CHECK( state != default_state );
+  }
+
+  {
+    RelActAutoGuiState state;
+    state.description = "a description";
+    BOOST_CHECK( state != default_state );
+  }
+
+  {
+    RelActAutoGuiState state;
+    state.background_subtract = !default_state.background_subtract;
+    BOOST_CHECK( state != default_state );
+  }
+
+  {
+    RelActAutoGuiState state;
+    state.show_ref_lines = !default_state.show_ref_lines;
+    BOOST_CHECK( state != default_state );
+  }
+
+  {
+    // The chart zoom is part of the state (it is saved/restored with the analysis), so a zoom
+    //  must compare unequal - `RelActAutoGui` keeps its undo baseline in sync with the chart so
+    //  that a zoom does not get folded into the next edits undo step.
+    RelActAutoGuiState state;
+    state.lower_display_energy = 100.0;
+    state.upper_display_energy = 2000.0;
+    BOOST_CHECK( state != default_state );
+  }
+
+  {
+    RelActAutoGuiState state;
+    state.options.energy_cal_type = EnergyCalFitType::LinearFit;
+    BOOST_CHECK( state != default_state );
+  }
+
+  {
+    RelActAutoGuiState state;
+    state.options.skew_type = PeakDef::SkewType::CrystalBall;
+    BOOST_CHECK( state != default_state );
+  }
+
+  {
+    // ROI *order* is part of the compared state - `getRoiRanges()` walks the energy-range widgets
+    //  in display order, so re-sorting them in the GUI is a real change that needs an undo step.
+    RoiRange lower, upper;
+    lower.lower_energy = 100.0;  lower.upper_energy = 200.0;
+    upper.lower_energy = 300.0;  upper.upper_energy = 400.0;
+
+    RelActAutoGuiState ascending, descending;
+    ascending.options.rois = { lower, upper };
+    descending.options.rois = { upper, lower };
+
+    BOOST_CHECK( ascending != descending );
+    BOOST_CHECK( ascending != default_state );
+  }
+}//BOOST_AUTO_TEST_CASE( test_rel_act_auto_gui_state_equality )
+
+
+BOOST_AUTO_TEST_CASE( test_rel_act_auto_gui_state_xml_round_trip )
+{
+  using namespace RelActCalcAuto;
+
+  RelActAutoGuiState state;
+  state.note = "round trip note";
+  state.description = "round trip description";
+  state.background_subtract = true;
+  state.show_ref_lines = true;
+  state.lower_display_energy = 55.5;
+  state.upper_display_energy = 2750.25;
+  state.options.energy_cal_type = EnergyCalFitType::LinearFit;
+  state.options.skew_type = PeakDef::SkewType::CrystalBall;
+
+  rapidxml::xml_document<char> doc;
+  BOOST_REQUIRE_NO_THROW( state.serialize( &doc ) );
+
+  const rapidxml::xml_node<char> * const base_node = doc.first_node( "RelActCalcAuto" );
+  BOOST_REQUIRE( base_node );
+
+  RelActAutoGuiState loaded;
+  BOOST_REQUIRE_NO_THROW( loaded.deSerialize( base_node ) );
+
+  BOOST_CHECK( loaded == state );
+}//BOOST_AUTO_TEST_CASE( test_rel_act_auto_gui_state_xml_round_trip )
+

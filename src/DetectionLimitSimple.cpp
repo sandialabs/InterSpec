@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <thread>
 #include <vector>
 #include <sstream>
 
@@ -113,9 +114,18 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( Wt::WSuggestionPopup *ma
 
   rejectWhenEscapePressed( true );
 
+  // The dialog body is what scrolls, so contents that do not fit produce a scrollbar rather than
+  //  pushing the footer off the bottom.  The class carries both the overflow and the height cap, in
+  //  CSS, so it holds even when Wt's dialog layout has not re-measured - and on phone, where every
+  //  C++ sizing call below is a no-op.  \sa DetectionLimitSimple.css
+  contents()->addStyleClass( "SimpleMdaBody" );
+
   m_tool = new DetectionLimitSimple( materialSuggestion, viewer, contents() );
-  m_tool->setHeight( WLength(100,WLength::Percentage) );
-  
+  // Deliberately no `setHeight(100%)`: with a definite height the tool's flex column would resolve
+  //  against the squeezed body and its children would be asked to shrink, squashing the 200px chart,
+  //  instead of the body scrolling.  Content-sized is also what makes the dialog layout's
+  //  preferred-size measurement mean what we want.
+
   AuxWindow::addHelpInFooter( footer(), "simple-mda-dialog" );
 
 #if( USE_QR_CODES )
@@ -198,6 +208,7 @@ DetectionLimitSimple::DetectionLimitSimple( Wt::WSuggestionPopup *materialSugges
   m_spectrum( nullptr ),
   m_peakModel( nullptr ),
   m_resultTxt( nullptr ),
+  m_warningTxt( nullptr ),
   m_moreInfoButton( nullptr ),
   m_chartErrMsgStack( nullptr ),
   m_errMsg( nullptr ),
@@ -212,6 +223,17 @@ DetectionLimitSimple::DetectionLimitSimple( Wt::WSuggestionPopup *materialSugges
   m_detectorDisplay( nullptr ),
   m_methodGroup( nullptr ),
   m_methodDescription( nullptr ),
+  m_advancedCb( nullptr ),
+  m_advancedDiv( nullptr ),
+  m_alpha( nullptr ),
+  m_beta( nullptr ),
+  m_alphaUserSet( false ),
+  m_betaUserSet( false ),
+  m_distanceUncert( nullptr ),
+  m_prevDistanceUncert{},
+  m_effUncert( nullptr ),
+  m_advancedNote( nullptr ),
+  m_systematicNote{},
   m_numFwhmWide( 2.5f ),
   m_lowerRoi( nullptr ),
   m_upperRoi( nullptr ),
@@ -223,6 +245,10 @@ DetectionLimitSimple::DetectionLimitSimple( Wt::WSuggestionPopup *materialSugges
   m_selectDetectorBtn( nullptr ),
   m_isBackgroundDiv( nullptr ),
   m_isBackgroundSpectrum( nullptr ),
+  m_isBackgroundHelpImg( nullptr ),
+  m_planTimeCb( nullptr ),
+  m_planTimeEdit( nullptr ),
+  m_planTimeDiv( nullptr ),
   m_continuumPriorLabel( nullptr ),
   m_continuumPrior( nullptr ),
   m_continuumTypeLabel( nullptr ),
@@ -249,6 +275,9 @@ void DetectionLimitSimple::init()
 
   wApp->useStyleSheet( "InterSpec_resources/DetectionLimitSimple.css" );
   m_viewer->useMessageResourceBundle( "DetectionLimitSimple" );
+  // Wording shared with the Detection Confidence Tool, so the two describe the same statistical
+  //  choices in the same words.
+  m_viewer->useMessageResourceBundle( "DetectionLimit" );
 
   addStyleClass( "DetectionLimitSimple" );
 
@@ -299,6 +328,15 @@ void DetectionLimitSimple::init()
   m_resultTxt = new WText( "&nbsp;", resultsDiv );
   m_resultTxt->addStyleClass( "ResultsTxtArea" );
   m_resultTxt->setInline( false );
+
+  // Notes that qualify a limit that WAS produced - overlapping regions of interest combined, a
+  //  profile crossing the threshold more than twice.  A sibling of the result rather than a third
+  //  page of `m_chartErrMsgStack`, which is either-or (error page OR chart) and so has nowhere to
+  //  show a warning beside a successful answer.  These were dropped entirely before Increment C.
+  m_warningTxt = new WText( "", resultsDiv );
+  m_warningTxt->addStyleClass( "MdaWarnMsg" );
+  m_warningTxt->setInline( false );
+  m_warningTxt->hide();
   
   // Now put the "more info..." link below here and to the right
   m_moreInfoButton = new WPushButton( resultsDiv );
@@ -384,28 +422,36 @@ void DetectionLimitSimple::init()
   
   
   // Add confidence select
-  WLabel *confidenceLabel = new WLabel( WString::tr(isPhone ? "dls-conf-level-label-short" : "dls-conf-level-label"), generalInput );
+  // Simple MDA always reports a one-sided upper limit, so the label says so rather than leaving the
+  //  reader to guess which of the two products this confidence applies to.
+  WLabel *confidenceLabel = new WLabel( WString::tr(isPhone ? "dl-conf-level-one-sided-short"
+                                                            : "dl-conf-level-one-sided"), generalInput );
   confidenceLabel->addStyleClass( "GridFourthCol GridSecondRow GridVertCenter" );
   m_confidenceLevel = new WComboBox( generalInput );
   m_confidenceLevel->addStyleClass( "GridFifthCol GridSecondRow ClComboBox" );
+  HelpSystem::attachToolTipOn( {confidenceLabel, m_confidenceLevel},
+                              WString::tr("dl-conf-level-tt"), showToolTips );
   
   for( auto cl = ConfidenceLevel(0); cl < NumConfidenceLevel; cl = ConfidenceLevel(cl+1) )
   {
-    const char *txt = "";
-    
+    // The values are unchanged; only the labels are.  The old "1σ (68.2%)" ... "5σ" wording claimed
+    //  a sigma multiple these are not - they are central-normal probabilities applied as one-sided
+    //  confidence levels - and gave 4σ/5σ no percentage at all.  See `dl-conf-level-tt`.
+    const char *key = "";
+
     switch( cl )
     {
-      case ConfidenceLevel::NinetyFivePercent:  txt = "95%";        break;
-      case ConfidenceLevel::NinetyNinePercent:  txt = "99%";        break;
-      case ConfidenceLevel::OneSigma:           txt = "1σ (68.2%)"; break;
-      case ConfidenceLevel::TwoSigma:           txt = "2σ (95.4%)"; break;
-      case ConfidenceLevel::ThreeSigma:         txt = "3σ (99.7%)"; break;
-      case ConfidenceLevel::FourSigma:          txt = "4σ";         break; //1-6.3E-5
-      case ConfidenceLevel::FiveSigma:          txt = "5σ";         break; //1-5.7E-7
-      case ConfidenceLevel::NumConfidenceLevel: assert( 0 );        break;
+      case ConfidenceLevel::NinetyFivePercent:  key = "dl-conf-95";     break;
+      case ConfidenceLevel::NinetyNinePercent:  key = "dl-conf-99";     break;
+      case ConfidenceLevel::OneSigma:           key = "dl-conf-1sigma"; break;
+      case ConfidenceLevel::TwoSigma:           key = "dl-conf-2sigma"; break;
+      case ConfidenceLevel::ThreeSigma:         key = "dl-conf-3sigma"; break;
+      case ConfidenceLevel::FourSigma:          key = "dl-conf-4sigma"; break;
+      case ConfidenceLevel::FiveSigma:          key = "dl-conf-5sigma"; break;
+      case ConfidenceLevel::NumConfidenceLevel: assert( 0 );            break;
     }//switch( cl )
-    
-    m_confidenceLevel->addItem( txt );
+
+    m_confidenceLevel->addItem( WString::tr(key) );
   }//for( loop over confidence levels )
   
   m_confidenceLevel->setCurrentIndex( ConfidenceLevel::NinetyFivePercent );
@@ -485,47 +531,59 @@ void DetectionLimitSimple::init()
   m_isBackgroundSpectrum->unChecked().connect( this, &DetectionLimitSimple::handleNoSignalPresentChanged );
 
   {
+    // One checkbox, one assertion - "this spectrum has no signal in it" - but it drives different
+    //  machinery per method: zero Currie side channels, or the deconvolution's BackgroundReference
+    //  measurement model.  `handleMethodChanged()` swaps the label and tooltip to say which.
     m_isBackgroundSpectrum->setWordWrap( false );
-    WImage *img = new WImage( m_isBackgroundDiv );
-    img->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
-    img->resize( 16, 16 );  //setStyleClass("Wt-icon");
-    img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
-    WString tt = WString::tr("dls-is-background-spectrum-tt");
-    HelpSystem::attachToolTipOn( img, tt, true, HelpSystem::ToolTipPosition::Right,
+    m_isBackgroundHelpImg = new WImage( m_isBackgroundDiv );
+    m_isBackgroundHelpImg->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
+    m_isBackgroundHelpImg->resize( 16, 16 );  //setStyleClass("Wt-icon");
+    m_isBackgroundHelpImg->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+    HelpSystem::attachToolTipOn( m_isBackgroundHelpImg,
+                                WString::tr("dls-is-background-spectrum-tt"), true,
+                                HelpSystem::ToolTipPosition::Right,
                                 HelpSystem::ToolTipPrefOverride::InstantAlways );
   }
 
-  // "Scale" controls on the right side of row 7, so they coexist with both the
-  //  background checkbox (cols 1-2) and the deconvolution-only continuum controls
-  //  (cols 1-2 and 4-5).  Scale is visible regardless of method.
-  
-  m_scaleSpectrumCb = new WCheckBox( WString::tr(isPhone ? "dls-scale-spectrum-cb-short" : "dls-scale-spectrum-cb"), generalInput );
-  m_scaleSpectrumCb->addStyleClass( "CbNoLineBreak GridFourthCol GridSeventhRow GridVertCenter" );
-  m_scaleSpectrumCb->setWordWrap( false );
-  m_scaleSpectrumCb->checked().connect( this, &DetectionLimitSimple::handleScaleSpectrumChanged );
-  m_scaleSpectrumCb->unChecked().connect( this, &DetectionLimitSimple::handleScaleSpectrumChanged );
+  // Planned-measurement-time control on the right of row 7, beside the background checkbox in
+  //  cols 1-2.  The deconvolution continuum controls used to share these cells and overlapped them;
+  //  they now live on row 8.
 
-  Wt::WContainerWidget *scaleEntryDiv = new WContainerWidget( generalInput );
-  scaleEntryDiv->addStyleClass( "ScaleEntryDiv GridFifthCol GridSeventhRow GridVertCenter" );
-  m_scaleSpectrumTime = new WLineEdit( scaleEntryDiv );
-  m_scaleSpectrumTime->setEmptyText( WString::tr("dls-scale-spectrum-empty-text") );
-  m_scaleSpectrumTime->setDisabled( true );
+  m_planTimeCb = new WCheckBox( WString::tr(isPhone ? "dl-plan-time-cb-short" : "dl-plan-time-cb"), generalInput );
+  m_planTimeCb->addStyleClass( "CbNoLineBreak GridFourthCol GridSeventhRow GridVertCenter" );
+  m_planTimeCb->setWordWrap( false );
+
+  // These two hide under the deconvolution method until the spectrum is called a background
+  //  reference.  Hiding them outright drops them out of the grid, and since the line edit is taller
+  //  than the checkbox sharing the row, the row - and everything below it - jumps as the background
+  //  checkbox is toggled.  Keeping the geometry reserves the cells either way, so only the contents
+  //  appear and disappear.
+  m_planTimeCb->setHiddenKeepsGeometry( true );
+  m_planTimeCb->checked().connect( this, &DetectionLimitSimple::handlePlanTimeChanged );
+  m_planTimeCb->unChecked().connect( this, &DetectionLimitSimple::handlePlanTimeChanged );
+
+  m_planTimeDiv = new WContainerWidget( generalInput );
+  m_planTimeDiv->addStyleClass( "ScaleEntryDiv GridFifthCol GridSeventhRow GridVertCenter" );
+  m_planTimeDiv->setHiddenKeepsGeometry( true );   // the taller of the two - see above
+  m_planTimeEdit = new WLineEdit( m_planTimeDiv );
+  m_planTimeEdit->setEmptyText( WString::tr("dl-plan-time-empty-text") );
+  m_planTimeEdit->setDisabled( true );
   {
     WRegExpValidator *scaleTimeValidator
-              = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationRegex(), m_scaleSpectrumTime );
+              = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationRegex(), m_planTimeEdit );
     scaleTimeValidator->setFlags( Wt::MatchCaseInsensitive );
-    m_scaleSpectrumTime->setValidator( scaleTimeValidator );
+    m_planTimeEdit->setValidator( scaleTimeValidator );
   }
-  m_scaleSpectrumTime->changed().connect( this, &DetectionLimitSimple::handleScaleSpectrumChanged );
-  m_scaleSpectrumTime->blurred().connect( this, &DetectionLimitSimple::handleScaleSpectrumChanged );
-  m_scaleSpectrumTime->enterPressed().connect( this, &DetectionLimitSimple::handleScaleSpectrumChanged );
+  m_planTimeEdit->changed().connect( this, &DetectionLimitSimple::handlePlanTimeChanged );
+  m_planTimeEdit->blurred().connect( this, &DetectionLimitSimple::handlePlanTimeChanged );
+  m_planTimeEdit->enterPressed().connect( this, &DetectionLimitSimple::handlePlanTimeChanged );
 
   {
-    WImage *img = new WImage( scaleEntryDiv );
+    WImage *img = new WImage( m_planTimeDiv );
     img->setImageLink( Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
     img->resize( 16, 16 );
     img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
-    HelpSystem::attachToolTipOn( img, WString::tr("dls-scale-spectrum-tt"), true,
+    HelpSystem::attachToolTipOn( img, WString::tr("dl-plan-time-tt"), true,
                                 HelpSystem::ToolTipPosition::Left,
                                 HelpSystem::ToolTipPrefOverride::InstantAlways );
   }
@@ -535,21 +593,24 @@ void DetectionLimitSimple::init()
     const shared_ptr<const SpecUtils::Measurement> hist
                           = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     if( hist && (hist->real_time() > 0.0f) )
-      m_scaleSpectrumTime->setText( WString::fromUTF8(
+      m_planTimeEdit->setText( WString::fromUTF8(
           PhysicalUnits::printToBestTimeUnits( hist->real_time(), 3 ) ) );
     else
-      m_scaleSpectrumCb->setDisabled( true );
+      m_planTimeCb->setDisabled( true );
   }
   
   m_continuumPriorLabel = new WLabel( WString::tr("dls-decon-cont-norm-label"), generalInput );
-  m_continuumPriorLabel->addStyleClass( "GridFirstCol GridSeventhRow GridVertCenter" );
+  m_continuumPriorLabel->addStyleClass( "GridFirstCol GridEighthRow GridVertCenter" );
   m_continuumPrior = new WComboBox( generalInput );
-  m_continuumPrior->addItem( WString::tr("dls-cont-norm-unknown") );
-  m_continuumPrior->addItem( WString::tr("dls-cont-norm-not-present") );
-  m_continuumPrior->addItem( WString::tr("dls-cont-norm-fixed-by-sides") );
+  // Only the two selectable treatments; the "as no signal" option is deprecated - it measured about
+  //  40% coverage where 95% was claimed - and a stored state naming it is migrated to a background
+  //  reference with a visible notice.  Order must match `continuum_norm_from_index`.
+  m_continuumPrior->addItem( WString::tr("dl-cont-norm-floating") );
+  m_continuumPrior->addItem( WString::tr("dl-cont-norm-edges-short") );
+  assert( m_continuumPrior->count() == DetectionLimitCalc::num_selectable_continuum_norms() );
   m_continuumPrior->setCurrentIndex( 0 );
   m_continuumPrior->activated().connect( this, &DetectionLimitSimple::handleDeconPriorChange );
-  m_continuumPrior->addStyleClass( "ContTypeCombo GridSecondCol GridSeventhRow" );
+  m_continuumPrior->addStyleClass( "ContTypeCombo GridSecondCol GridEighthRow" );
   
   //m_continuumPriorLabel->setHiddenKeepsGeometry( true );
   //m_continuumPrior->setHiddenKeepsGeometry( true );
@@ -557,18 +618,18 @@ void DetectionLimitSimple::init()
   m_continuumPrior->hide();
   
   m_continuumTypeLabel = new WLabel( "Continuum Type:", generalInput );
-  m_continuumTypeLabel->addStyleClass( "GridFourthCol GridSeventhRow GridVertCenter" );
+  m_continuumTypeLabel->addStyleClass( "GridFourthCol GridEighthRow GridVertCenter" );
   m_continuumType = new WComboBox( generalInput );
   m_continuumType->addItem( WString::tr( PeakContinuum::offset_type_label_tr(PeakContinuum::OffsetType::Linear) ) );
   m_continuumType->addItem( WString::tr( PeakContinuum::offset_type_label_tr(PeakContinuum::OffsetType::Quadratic) ) );
   m_continuumType->setCurrentIndex( 0 );
   m_continuumType->activated().connect( this, &DetectionLimitSimple::handleDeconContinuumTypeChange );
-  m_continuumType->addStyleClass( "GridFifthCol GridSeventhRow" );
+  m_continuumType->addStyleClass( "GridFifthCol GridEighthRow" );
   m_continuumTypeLabel->setHidden( true );
   m_continuumType->setHidden( true );
   
   WContainerWidget *container = new WContainerWidget( generalInput );
-  container->addStyleClass( "MethodSelect GridFirstCol GridEighthRow GridSpanFiveCol" );
+  container->addStyleClass( "MethodSelect GridFirstCol GridNinthRow GridSpanFiveCol" );
   
   WLabel *methodLabel = new WLabel( WString::tr("dls-calc-method"), container);
   
@@ -581,10 +642,101 @@ void DetectionLimitSimple::init()
   m_methodGroup->setCheckedButton( currieBtn );
   
   m_methodGroup->checkedChanged().connect( this, &DetectionLimitSimple::handleMethodChanged );
-  
+
+  // "Advanced" goes on the far right of this row.  An auto margin in the flex row does the pushing,
+  //  so `justify-content: flex-start` can stay and the label + radios keep hugging the left edge.
+  m_advancedCb = new WCheckBox( WString::tr(isPhone ? "dl-advanced-cb-short" : "dl-advanced-cb"),
+                                container );
+  m_advancedCb->addStyleClass( "CbNoLineBreak AdvancedCb" );
+  m_advancedCb->setWordWrap( false );
+  m_advancedCb->checked().connect( this, &DetectionLimitSimple::handleAdvancedToggled );
+  m_advancedCb->unChecked().connect( this, &DetectionLimitSimple::handleAdvancedToggled );
+  HelpSystem::attachToolTipOn( m_advancedCb, WString::tr("dl-advanced-tt"), showToolTips );
+
   m_methodDescription = new WText( WString::tr("dls-currie-desc"), generalInput );
-  m_methodDescription->addStyleClass( "CalcMethodDesc GridSecondCol GridNinthRow GridSpanFourCol" );
-  
+  m_methodDescription->addStyleClass( "CalcMethodDesc GridSecondCol GridTenthRow GridSpanFourCol" );
+
+  // The advanced statistical inputs; a sibling of `generalInput` rather than an eleventh grid row -
+  //  see `m_advancedDiv`'s doc comment for why.
+  m_advancedDiv = new WContainerWidget( this );
+  m_advancedDiv->addStyleClass( "AdvancedInput" );
+  m_advancedDiv->hide();  //Deliberately NOT setHiddenKeepsGeometry: this must take up no room.
+
+  // Labels and fields are direct grid children, so the columns line up across both rows; wrapping
+  //  them in per-pair divs would let each pair size independently and lose that alignment.
+  WLabel *alphaLabel = new WLabel( WString::tr(isPhone ? "dl-alpha-label-short" : "dl-alpha-label"),
+                                   m_advancedDiv );
+  m_alpha = new NativeFloatSpinBox( m_advancedDiv );
+  m_alpha->setSpinnerHidden();
+  // A probability, not a percent.  The upper bound is 0.5 because at or above it the "threshold"
+  //  would sit at or below the expected background, and the arithmetic stops meaning what it says.
+  //  The lower bound is 1E-7 because below that the normal approximation the whole Currie
+  //  formulation rests on is not worth much - and it is under the smallest value the
+  //  confidence-level combo can produce (1 - 0.999999426696856 = 5.7E-7).
+  m_alpha->setRange( 1.0E-7f, 0.4999f );
+  m_alpha->setValue( static_cast<float>( 1.0 - currentConfidenceLevel() ) );
+  alphaLabel->setBuddy( m_alpha );
+  m_alpha->valueChanged().connect( this, &DetectionLimitSimple::handleAlphaChanged );
+  HelpSystem::attachToolTipOn( {alphaLabel, m_alpha}, WString::tr("dl-alpha-tt"), showToolTips );
+
+  WLabel *betaLabel = new WLabel( WString::tr(isPhone ? "dl-beta-label-short" : "dl-beta-label"),
+                                  m_advancedDiv );
+  m_beta = new NativeFloatSpinBox( m_advancedDiv );
+  m_beta->setSpinnerHidden();
+  m_beta->setRange( 1.0E-7f, 0.4999f );  //Same reasoning as alpha, above.
+  m_beta->setValue( static_cast<float>( 1.0 - currentConfidenceLevel() ) );
+  betaLabel->setBuddy( m_beta );
+  m_beta->valueChanged().connect( this, &DetectionLimitSimple::handleBetaChanged );
+  HelpSystem::attachToolTipOn( {betaLabel, m_beta}, WString::tr("dl-beta-tt"), showToolTips );
+
+  WLabel *distUncertLabel = new WLabel(
+            WString::tr(isPhone ? "dl-dist-uncert-label-short" : "dl-dist-uncert-label"),
+            m_advancedDiv );
+  m_distanceUncert = new WLineEdit( m_advancedDiv );
+  m_distanceUncert->setEmptyText( WString::tr("dl-dist-uncert-empty-text") );
+  distUncertLabel->setBuddy( m_distanceUncert );
+  m_distanceUncert->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_distanceUncert->setAttributeValue( "autocorrect", "off" );
+  m_distanceUncert->setAttributeValue( "spellcheck", "off" );
+#endif
+  {
+    // Same grammar as the distance field above it.  Note `PhysicalUnits::stringToDistance` requires
+    //  a unit *unless* the value is exactly "0" - which is what makes "0" the natural spelling of
+    //  "none", and stops a bare "1" being silently read as some unit.
+    WRegExpValidator *distUncertVal
+                = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
+    distUncertVal->setFlags( Wt::MatchCaseInsensitive );
+    m_distanceUncert->setValidator( distUncertVal );
+  }
+  m_distanceUncert->changed().connect( this, &DetectionLimitSimple::handleSystematicUncertChanged );
+  m_distanceUncert->enterPressed().connect( this, &DetectionLimitSimple::handleSystematicUncertChanged );
+  HelpSystem::attachToolTipOn( {distUncertLabel, m_distanceUncert},
+                              WString::tr("dl-dist-uncert-tt"), showToolTips );
+
+  WLabel *effUncertLabel = new WLabel(
+            WString::tr(isPhone ? "dl-eff-uncert-label-short" : "dl-eff-uncert-label"),
+            m_advancedDiv );
+  m_effUncert = new WLineEdit( m_advancedDiv );
+  m_effUncert->setEmptyText( WString::tr("dl-eff-uncert-empty-text") );
+  effUncertLabel->setBuddy( m_effUncert );
+  {
+    // Not mandatory, so an empty field validates - blank means "none".  The 99.9 cap is only a first
+    //  pass; the *combined* systematic is what has to stay under 100%, and
+    //  `currentSystematicUncertainty()` is where that is enforced.
+    WDoubleValidator *effUncertVal = new WDoubleValidator( 0.0, 99.9, this );
+    m_effUncert->setValidator( effUncertVal );
+  }
+  m_effUncert->changed().connect( this, &DetectionLimitSimple::handleSystematicUncertChanged );
+  m_effUncert->enterPressed().connect( this, &DetectionLimitSimple::handleSystematicUncertChanged );
+  HelpSystem::attachToolTipOn( {effUncertLabel, m_effUncert},
+                              WString::tr("dl-eff-uncert-tt"), showToolTips );
+
+  m_advancedNote = new WText( WString::tr("dls-advanced-decon-note"), m_advancedDiv );
+  m_advancedNote->addStyleClass( "AdvancedNote" );
+  m_advancedNote->setInline( false );
+  m_advancedNote->hide();  //Only shown under the Deconvolution method; \sa handleMethodChanged
+
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateDisplayedSpectrum;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   scheduleRender();
@@ -788,37 +940,18 @@ void DetectionLimitSimple::handleUserChangedFwhm()
 
 void DetectionLimitSimple::handleDeconPriorChange()
 {
-  const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
-  assert( !currieMethod );
-  
-  const bool useSideChan = (m_continuumPrior->currentIndex() == 2);
-  
-  m_numSideChannelLabel->setHidden( !currieMethod && !useSideChan );
-  m_numSideChannel->setHidden( !currieMethod && !useSideChan );
-  
-  m_continuumTypeLabel->setHidden( useSideChan );
-  m_continuumType->setHidden( useSideChan );
-  
-  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
-  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
-  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
-  scheduleRender();
+  assert( m_methodGroup->checkedId() != static_cast<int>(MethodIds::Currie) );
+
+  // One function owns the whole show/hide table; see `handleMethodChanged()`.
+  handleMethodChanged();
 }//void handleDeconPriorChange()
 
 
 void DetectionLimitSimple::handleNoSignalPresentChanged()
 {
-  const bool noSignal = m_isBackgroundSpectrum->isChecked();
-  const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
-  assert( currieMethod );
-  
-  m_numSideChannelLabel->setHidden( !currieMethod || noSignal );
-  m_numSideChannel->setHidden( !currieMethod || noSignal );
-  
-  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
-  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
-  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
-  scheduleRender();
+  // The checkbox now applies to both methods, so the whole show/hide table lives in one function
+  //  rather than being duplicated here and drifting.
+  handleMethodChanged();
 }//void handleNoSignalPresentChanged()
 
 
@@ -831,26 +964,26 @@ void DetectionLimitSimple::handleDeconContinuumTypeChange()
 }//void handleDeconContinuumTypeChange()
 
 
-void DetectionLimitSimple::handleScaleSpectrumChanged()
+void DetectionLimitSimple::handlePlanTimeChanged()
 {
-  const bool checked = m_scaleSpectrumCb->isChecked();
-  m_scaleSpectrumTime->setEnabled( checked );
+  const bool checked = m_planTimeCb->isChecked();
+  m_planTimeEdit->setEnabled( checked );
 
   // Whenever the field is empty (whitespace counts), or the checkbox is off,
   // repopulate it with the current foreground's real time so the displayed
   // value is always meaningful and `currentEffectiveForeground()` won't see an
   // empty string.
   const bool field_empty
-              = SpecUtils::trim_copy( m_scaleSpectrumTime->text().toUTF8() ).empty();
+              = SpecUtils::trim_copy( m_planTimeEdit->text().toUTF8() ).empty();
   if( !checked || field_empty )
   {
     const shared_ptr<const SpecUtils::Measurement> hist
                           = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     if( hist && (hist->real_time() > 0.0f) )
-      m_scaleSpectrumTime->setText( WString::fromUTF8(
+      m_planTimeEdit->setText( WString::fromUTF8(
           PhysicalUnits::printToBestTimeUnits( hist->real_time(), 3 ) ) );
     else if( !checked )
-      m_scaleSpectrumTime->setText( "" );
+      m_planTimeEdit->setText( "" );
   }
 
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
@@ -858,30 +991,48 @@ void DetectionLimitSimple::handleScaleSpectrumChanged()
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
   m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
   scheduleRender();
-}//void handleScaleSpectrumChanged()
+}//void handlePlanTimeChanged()
 
 
-shared_ptr<const SpecUtils::Measurement> DetectionLimitSimple::currentEffectiveForeground() const
+double DetectionLimitSimple::currentPlanTimeSeconds() const
 {
-  shared_ptr<const SpecUtils::Measurement> hist
-                          = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-  if( !hist || !m_scaleSpectrumCb || !m_scaleSpectrumCb->isChecked() )
-    return hist;
+  // Hidden, unchecked, or blank all mean "not asked for"; none of them is an error.
+  if( !m_planTimeCb || !m_planTimeEdit || m_planTimeCb->isHidden() || !m_planTimeCb->isChecked() )
+    return 0.0;
 
-  if( hist->real_time() <= 0.0f )
-    return hist;
-
-  // An empty / whitespace-only field means "no scaling requested" - return the
-  // raw foreground rather than letting stringToTimeDuration throw.
-  const string txt = SpecUtils::trim_copy( m_scaleSpectrumTime->text().toUTF8() );
+  const string txt = SpecUtils::trim_copy( m_planTimeEdit->text().toUTF8() );
   if( txt.empty() )
-    return hist;
+    return 0.0;
 
   const double t = PhysicalUnits::stringToTimeDuration( txt ); //throws on parse error
   if( t <= 0.0 )
-    throw runtime_error( WString::tr("dls-err-bad-scale-time").toUTF8() );
+    throw runtime_error( WString::tr("dl-err-bad-plan-time").toUTF8() );
 
-  return DetectionLimitCalc::scale_spectrum_for_dwell( hist, static_cast<float>(t) );
+  return t;
+}//currentPlanTimeSeconds()
+
+
+DetectionLimitCalc::DeconMeasurementModel DetectionLimitSimple::currentMeasurementModel() const
+{
+  const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
+
+  // Under Currie the checkbox means "use the peak region itself to estimate the background" (zero
+  //  side channels); there is no future-measurement model there.  Under the deconvolution method
+  //  the same assertion is what BackgroundReference is.
+  if( currieMethod || !m_isBackgroundSpectrum || !m_isBackgroundSpectrum->isChecked() )
+    return DetectionLimitCalc::DeconMeasurementModel::CurrentSpectrum;
+
+  return DetectionLimitCalc::DeconMeasurementModel::BackgroundReference;
+}//currentMeasurementModel()
+
+
+DetectionLimitCalc::PlannedMeasurement DetectionLimitSimple::currentEffectiveForeground() const
+{
+  const shared_ptr<const SpecUtils::Measurement> hist
+                          = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
+
+  return DetectionLimitCalc::plan_measurement( hist, currentPlanTimeSeconds(),
+                                               currentMeasurementModel() );
 }//currentEffectiveForeground()
 
 
@@ -894,30 +1045,70 @@ DetectionLimitSimple::~DetectionLimitSimple()
 void DetectionLimitSimple::handleMethodChanged()
 {
   const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
-  
-  m_isBackgroundDiv->setHidden( !currieMethod );
+  const bool isBackground = m_isBackgroundSpectrum->isChecked();
+
+  // The background checkbox applies to BOTH methods now - it is the same assertion either way,
+  //  "this spectrum has no signal in it" - but it drives different machinery, so only the wording
+  //  changes.  Under Currie it zeroes the side channels; under deconvolution it selects the
+  //  BackgroundReference measurement model.
+  const bool isPhone = (m_viewer && m_viewer->isPhone());
+  m_isBackgroundSpectrum->setText( WString::tr( currieMethod
+                    ? (isPhone ? "dls-is-background-spectrum-cb-short" : "dls-is-background-spectrum-cb")
+                    : "dl-model-backref-cb" ) );
+  if( m_isBackgroundHelpImg )
+  {
+    // On mobile `attachToolTipOn` connects a NEW clicked() handler rather than replacing a qTip,
+    //  and nothing disconnects the old ones - so without this every method/background change would
+    //  add another stacked dialog, each showing the text captured when it was attached.
+    HelpSystem::removeToolTipOn( m_isBackgroundHelpImg );
+    HelpSystem::attachToolTipOn( m_isBackgroundHelpImg,
+                                WString::tr( currieMethod ? "dls-is-background-spectrum-tt"
+                                                          : "dl-model-backref-tt" ),
+                                true, HelpSystem::ToolTipPosition::Right,
+                                HelpSystem::ToolTipPrefOverride::InstantAlways );
+  }
+
   m_continuumPriorLabel->setHidden( currieMethod );
   m_continuumPrior->setHidden( currieMethod );
-  
-  if( currieMethod )
-  {
-    const bool noSignal = m_isBackgroundSpectrum->isChecked();
-    m_numSideChannelLabel->setHidden( noSignal );
-    m_numSideChannel->setHidden( noSignal );
-    
-    m_continuumTypeLabel->setHidden( true );
-    m_continuumType->setHidden( true );
-  }else
-  {
-    const bool useSideChan = (m_continuumPrior->currentIndex() == 2);
-    m_numSideChannelLabel->setHidden( !useSideChan );
-    m_numSideChannel->setHidden( !useSideChan );
-    m_continuumTypeLabel->setHidden( useSideChan );
-    m_continuumType->setHidden( useSideChan );
-  }//if( currieMethod ) / else
-  
+
+  const bool useSideChan = !currieMethod
+        && (DetectionLimitCalc::continuum_norm_from_index( m_continuumPrior->currentIndex() )
+            == DetectionLimitCalc::DeconContinuumNorm::FixedByEdges);
+
+  m_numSideChannelLabel->setHidden( currieMethod ? isBackground : !useSideChan );
+  m_numSideChannel->setHidden( currieMethod ? isBackground : !useSideChan );
+  m_continuumTypeLabel->setHidden( currieMethod || useSideChan );
+  m_continuumType->setHidden( currieMethod || useSideChan );
+
+  // T_s means "the dwell I am asking about".  Under Currie that is always answerable.  Under the
+  //  deconvolution method it is only answerable once the spectrum has been asserted to be a
+  //  background reference - projecting the spectrum in hand and then bounding the signal in it is
+  //  circular.  \sa DetectionLimitCalc::DeconMeasurementModel
+  const bool planTimeApplies = currieMethod || isBackground;
+  m_planTimeCb->setHidden( !planTimeApplies );
+  m_planTimeDiv->setHidden( !planTimeApplies );
+
   m_methodDescription->setText( WString::tr(currieMethod ? "dls-currie-desc" : "dls-decon-desc") );
-  
+
+  // The advanced inputs stay visible under the deconvolution method but go disabled, with a note
+  //  saying why - hiding them would make the checkbox look broken, and the values are still part of
+  //  the state.  They are Currie-method quantities, and the deconvolution limit does not consume
+  //  them.
+  // TODO: `DetectionLimitCalc::decon_characteristic_limits()` (on the feature/DeconLdLc branch)
+  //       computes L_c/L_d for the deconvolution method from an alpha and a beta.  Wire these two
+  //       fields into it, and add a systematic term to `DeconComputeInput`, when that calculation
+  //       reaches the GUI.
+  m_alpha->setDisabled( !currieMethod );
+  m_beta->setDisabled( !currieMethod );
+  m_distanceUncert->setDisabled( !currieMethod );
+  m_effUncert->setDisabled( !currieMethod );
+  m_advancedNote->setHidden( currieMethod );
+
+  // Section visibility follows the checkbox, and is set here as well as in `handleAdvancedToggled()`
+  //  because `handleAppUrl()` drives this one function to bring all dependent visibility into line
+  //  after decoding.
+  m_advancedDiv->setHidden( !m_advancedCb->isChecked() );
+
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
@@ -982,10 +1173,12 @@ void DetectionLimitSimple::render( Wt::WFlags<Wt::RenderFlag> flags )
     shared_ptr<const SpecUtils::Measurement> hist;
     try
     {
-      hist = currentEffectiveForeground();
+      // Under a background reference this is the UNSCALED spectrum - the counts the likelihood
+      //  actually sees, with the projection carried as an exposure instead.
+      hist = currentEffectiveForeground().decon;
     }catch( std::exception & )
     {
-      // Bad scale time string; fall back to raw foreground for display.
+      // Bad planned-time string; fall back to raw foreground for display.
       hist = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     }
     m_spectrum->setData( hist, true );
@@ -1252,10 +1445,146 @@ void DetectionLimitSimple::handleDistanceChanged()
 
 void DetectionLimitSimple::handleConfidenceLevelChanged()
 {
+  // Until the user edits them, the two error rates follow the confidence level as 1 - CL.  Only the
+  //  displayed value is updated here; while un-latched the calculation still receives the sentinel,
+  //  so it uses the confidence level itself rather than this rounded-for-display copy of it.
+  const float complement = static_cast<float>( 1.0 - currentConfidenceLevel() );
+  if( !m_alphaUserSet )
+    m_alpha->setValue( complement );
+  if( !m_betaUserSet )
+    m_beta->setValue( complement );
+
   m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   scheduleRender();
 }//void handleConfidenceLevelChanged()
+
+
+void DetectionLimitSimple::handleAdvancedToggled()
+{
+  m_advancedDiv->setHidden( !m_advancedCb->isChecked() );
+
+  // Wt's dialog layout re-measures only when something schedules an adjust; a widget appearing
+  //  inside the body does not.  This is the app's established way of asking for one - and it is
+  //  `wApp`-scoped, so the tool does not need to know whether a dialog is around it.
+  wApp->doJavaScript( wApp->javaScriptClass() + ".TriggerResizeEvent();" );
+
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  scheduleRender();
+}//void handleAdvancedToggled()
+
+
+void DetectionLimitSimple::handleAlphaChanged()
+{
+  // Latching here is what stops the value following the confidence-level combo from now on, and it
+  //  is also what makes the ALPHA token appear in the state URI.
+  m_alphaUserSet = true;
+
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  scheduleRender();
+}//void handleAlphaChanged()
+
+
+void DetectionLimitSimple::handleBetaChanged()
+{
+  m_betaUserSet = true;
+
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  scheduleRender();
+}//void handleBetaChanged()
+
+
+void DetectionLimitSimple::handleSystematicUncertChanged()
+{
+  // The distance-uncertainty field takes a length string, so an invalid entry is reverted the same
+  //  way `handleDistanceChanged()` reverts the distance itself.  The efficiency field is guarded by
+  //  a `WDoubleValidator`, so it needs no equivalent.
+  const WString dist_uncert = m_distanceUncert->text();
+  if( m_distanceUncert->validate() == WValidator::State::Valid )
+    m_prevDistanceUncert = dist_uncert;
+  else
+    m_distanceUncert->setText( m_prevDistanceUncert );
+
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  scheduleRender();
+}//void handleSystematicUncertChanged()
+
+
+float DetectionLimitSimple::currentSystematicUncertainty( Wt::WString &note ) const
+{
+  // With "Advanced" off, nothing here reaches the calculation: the tool must give exactly the
+  //  answers it gave before this section existed.
+  if( !m_advancedCb || !m_advancedCb->isChecked() )
+    return 0.0f;
+
+  double dist_uncert = 0.0;
+  string txt = m_distanceUncert->text().toUTF8();
+  SpecUtils::trim( txt );
+  if( !txt.empty() )
+  {
+    try
+    {
+      dist_uncert = PhysicalUnits::stringToDistance( txt );
+    }catch( std::exception & )
+    {
+      throw runtime_error( WString::tr("dl-err-bad-dist-uncert").toUTF8() );
+    }
+  }//if( a distance uncertainty was entered )
+
+  double eff_uncert = 0.0;
+  txt = m_effUncert->text().toUTF8();
+  SpecUtils::trim( txt );
+  if( !txt.empty() )
+  {
+    if( !(stringstream(txt) >> eff_uncert) || (eff_uncert < 0.0) )
+      throw runtime_error( WString::tr("dl-err-bad-eff-uncert").toUTF8() );
+    eff_uncert /= 100.0;  //the field is a percent
+  }//if( an efficiency uncertainty was entered )
+
+  if( (dist_uncert <= 0.0) && (eff_uncert <= 0.0) )
+    return 0.0f;
+
+  // A fixed-geometry response has no distance in it, so 1/r^2 does not hold and a distance
+  //  uncertainty simply does not propagate.  Say so, rather than quietly using or ignoring it.
+  const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+  const bool inverse_square = !(drf && drf->isValid() && drf->isFixedGeometry());
+  if( (dist_uncert > 0.0) && !inverse_square )
+    note = WString::tr("dl-warn-dist-uncert-fixed-geom");
+
+  double distance = 0.0;
+  if( (dist_uncert > 0.0) && inverse_square )
+  {
+    try
+    {
+      distance = PhysicalUnits::stringToDistance( m_distance->text().toUTF8() );
+    }catch( std::exception & )
+    {
+      distance = 0.0;
+    }
+
+    // The user explicitly asked for this term, so a missing distance is an error, not a silent drop.
+    //  (The Currie limit itself does not need a distance - it is in counts - which is why this is
+    //  checked here and not with the rest of the input.)
+    if( distance <= 0.0 )
+      throw runtime_error( WString::tr("dl-err-dist-uncert-no-distance").toUTF8() );
+  }//if( a distance term applies )
+
+  const double u_rel = DetectionLimitCalc::combine_systematic_uncertainty( distance,
+                                    inverse_square ? dist_uncert : 0.0, eff_uncert, inverse_square );
+
+  // Clamping would silently change the number the user entered, so this is a hard error.  Note the
+  //  *detection limit* gives out earlier than this, at u = 1/k_beta (about 61% at beta = 0.05); that
+  //  case still yields a valid upper limit, so it is only a warning - see `updateResult()`.
+  if( u_rel >= 1.0 )
+    throw runtime_error( WString::tr("dl-err-systematic-too-large")
+                        .arg( SpecUtils::printCompact(100.0*u_rel, 3) ).toUTF8() );
+
+  return static_cast<float>( u_rel );
+}//float currentSystematicUncertainty( Wt::WString &note ) const
 
 
 void DetectionLimitSimple::handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> new_drf )
@@ -1300,7 +1629,7 @@ void DetectionLimitSimple::handleSpectrumChanged( const SpecUtils::SpectrumType 
     return;
 
   // Update Scale-input behavior to track the new foreground.
-  if( m_scaleSpectrumCb )
+  if( m_planTimeCb )
   {
     const shared_ptr<const SpecUtils::Measurement> hist
                           = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
@@ -1310,18 +1639,18 @@ void DetectionLimitSimple::handleSpectrumChanged( const SpecUtils::SpectrumType 
     {
       // Can't compute a sensible scale ratio - turn the feature off until a usable
       //  spectrum is loaded.
-      m_scaleSpectrumCb->setChecked( false );
-      m_scaleSpectrumCb->setDisabled( true );
-      m_scaleSpectrumTime->setDisabled( true );
-      m_scaleSpectrumTime->setText( "" );
+      m_planTimeCb->setChecked( false );
+      m_planTimeCb->setDisabled( true );
+      m_planTimeEdit->setDisabled( true );
+      m_planTimeEdit->setText( "" );
     }else
     {
-      m_scaleSpectrumCb->setDisabled( false );
+      m_planTimeCb->setDisabled( false );
       // Only auto-overwrite the field when the user is NOT actively scaling - otherwise
       //  preserve what they typed so they can compare the same target dwell across spectra.
-      if( !m_scaleSpectrumCb->isChecked() )
+      if( !m_planTimeCb->isChecked() )
       {
-        m_scaleSpectrumTime->setText( WString::fromUTF8(
+        m_planTimeEdit->setText( WString::fromUTF8(
             PhysicalUnits::printToBestTimeUnits( hist->real_time(), 3 ) ) );
       }
     }
@@ -1357,25 +1686,65 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
   const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
   
   m_resultTxt->setText( "---" );
+
+  // Anything that qualifies the limit without preventing it - overlapping regions of interest
+  //  combined, a profile crossing the threshold more than twice.  Each changes how the number
+  //  should be read, so none may be dropped just because the calculation succeeded.  Set here
+  //  rather than in `updateResult()`, which runs first and would have this reset wipe it.
+  m_warningTxt->setText( "" );
+  m_warningTxt->hide();
+  {
+    WString warning_text;
+
+    if( m_currentDeconResults && !m_currentDeconResults->warnings.empty() )
+    {
+      string decon_warnings;
+      for( const string &warning : m_currentDeconResults->warnings )
+        decon_warnings += (decon_warnings.empty() ? "" : "<br />") + warning;
+      warning_text = WString::fromUTF8( decon_warnings );
+    }
+
+    // A qualification raised while building the Currie input - currently only a distance uncertainty
+    //  dropped because the detector response is fixed-geometry.  \sa currentSystematicUncertainty
+    if( !m_systematicNote.empty() )
+    {
+      if( !warning_text.empty() )
+        warning_text += WString::fromUTF8( "<br />" );
+      warning_text += m_systematicNote;
+    }
+
+    // A systematic uncertainty at or above 1/k_beta leaves no finite detection limit - the true
+    //  signal cannot be separated from the scale uncertainty however long you count.  The upper
+    //  limit is unaffected, so this qualifies the answer rather than replacing it.
+    //  \sa DetectionLimitCalc::currie_mda_calc, which returns -999 for exactly this case.
+    if( m_currentCurrieResults && (m_currentCurrieResults->detection_limit <= -999.0f) )
+    {
+      if( !warning_text.empty() )
+        warning_text += WString::fromUTF8( "<br />" );
+      warning_text += WString::tr("dl-warn-no-detection-limit");
+    }
+
+    if( !warning_text.empty() )
+    {
+      m_warningTxt->setText( warning_text );
+      m_warningTxt->show();
+    }
+  }
   m_moreInfoButton->hide();
   m_peakModel->setPeaks( vector<shared_ptr<const PeakDef>>{} );
   m_spectrum->removeAllDecorativeHighlightRegions();
   
   const double confidence_level = m_currentDeconResults ? m_currentDeconResults->confidenceLevel : currentConfidenceLevel();
   
-  const string cl_str = ([confidence_level]() -> string {
-    char cl_str_buffer[64] = {'\0'};
-    if( confidence_level < 0.999 )
-      snprintf( cl_str_buffer, sizeof(cl_str_buffer), "%.1f%%", 100.0*confidence_level );
-    else
-      snprintf( cl_str_buffer, sizeof(cl_str_buffer), "1-%.2G", (1.0-confidence_level) );
-    return cl_str_buffer;
-  })();
+  const string cl_str = DetectionLimitCalc::confidence_level_pct_str( confidence_level );
   
   const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
-  
-  assert( m_isBackgroundDiv->isVisible() == currieMethod );
-  
+
+  // The background checkbox applies to BOTH methods, so it is always visible - it asserts the same
+  //  thing either way, and only the machinery behind it differs.  This used to assert it was
+  //  visible only under Currie, which is no longer the invariant.  \sa handleMethodChanged
+  assert( !m_isBackgroundDiv->isHidden() );
+
   if( currieMethod )
   {
     // Currie method limit
@@ -1513,12 +1882,18 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
         //  give the activity range.
         string lowerstr, upperstr, nomstr;
         
+        // The quoted value is the ISO 11929-1:2019 best estimate, Formula (44) - the mean of the
+        //  Gaussian after truncating at zero - not the primary result `source_counts`.  The decision
+        //  above is still made on the primary result, per clause 10; only what is reported changes.
+        //  The two agree above 4*u(y) and diverge as the signal weakens (~7% at the decision
+        //  threshold for a well populated continuum, more at low counts).  The range is unchanged:
+        //  it is already the truncated interval from the same distribution.
         if( gammas_per_bq > 0.0 )
         {
           const float lower_act = result->lower_limit / gammas_per_bq;
           const float upper_act = result->upper_limit / gammas_per_bq;
-          const float nominal_act = result->source_counts / gammas_per_bq;
-          
+          const float nominal_act = result->best_estimate / gammas_per_bq;
+
           lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, use_curie )
           + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
           upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, use_curie )
@@ -1531,8 +1906,8 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
         {
           lowerstr = SpecUtils::printCompact(result->lower_limit, 4);
           upperstr = SpecUtils::printCompact(result->upper_limit, 4);
-          nomstr = SpecUtils::printCompact(result->source_counts, 4);
-          
+          nomstr = SpecUtils::printCompact(result->best_estimate, 4);
+
           result_txt = WString::tr("dls-det-counts-with-range").arg(nomstr).arg(lowerstr).arg(upperstr).arg(cl_str);
         }
       }else if( result->upper_limit < 0 )
@@ -1566,33 +1941,39 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
         result_txt = WString::tr("dls-det-upper-bound").arg(mdastr).arg(cl_str);
       }//if( detected ) / else if( ....)
       
-      WString full_result_txt;
-      
-      if( !result )
-      {
-        full_result_txt = result_txt;
-      }else if( assertedIsBackground )
-      {
-        full_result_txt = WString( "{1}" );
-      }else
-      {
-        full_result_txt = WString( "{1}<br/>{2}" );
-        full_result_txt.arg(result_txt);
-      }//if( assertedIsBackground ) / else
-      
-      if( result && (gammas_per_bq > 0.0) )
+      // `currie_mda_calc` returns -999 when the systematic uncertainty leaves no finite detection
+      //  limit.  Formatting that sentinel gives a nonsense negative activity, so the line is dropped
+      //  entirely and `m_warningTxt` says why it is missing.  Only reachable since the "Advanced"
+      //  section let a systematic uncertainty be entered at all.
+      const bool haveDetLimit = (result && (result->detection_limit > -999.0f));
+
+      WString mda_txt;
+      if( haveDetLimit && (gammas_per_bq > 0.0) )
       {
         const double detection_act = result->detection_limit / gammas_per_bq;
         const string act = PhysicalUnits::printToBestActivityUnits( detection_act, 2, use_curie )
                           + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-        
-        full_result_txt.arg( WString::tr("dls-min-detectable-act").arg(act) );
-      }else if( result )
+
+        mda_txt = WString::tr("dls-min-detectable-act").arg(act);
+      }else if( haveDetLimit )
       {
         const string counts = SpecUtils::printCompact(result->detection_limit, 4);
-        full_result_txt.arg( WString::tr("dls-min-detectable-counts").arg( counts ) );
-      }
-      
+        mda_txt = WString::tr("dls-min-detectable-counts").arg( counts );
+      }//if( have a detection limit to report )
+
+      // A background reference describes a measurement nobody has taken, so the minimum detectable
+      //  line is the whole answer there - unless there isn't one, in which case fall back to the
+      //  result line rather than showing nothing.
+      WString full_result_txt;
+      if( !result )
+        full_result_txt = result_txt;
+      else if( assertedIsBackground )
+        full_result_txt = haveDetLimit ? mda_txt : result_txt;
+      else if( haveDetLimit )
+        full_result_txt = WString("{1}<br/>{2}").arg(result_txt).arg(mda_txt);
+      else
+        full_result_txt = result_txt;
+
       m_resultTxt->setText( full_result_txt );
       m_moreInfoButton->show();
     }//if( m_currentCurrieInput )
@@ -1624,7 +2005,20 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
       
       WString chart_title, result_txt;
       double display_activity = 0.0;
-      
+
+      // `fit_peaks` come back in the exposure of the spectrum they are drawn over, so under a
+      //  background reference their amplitudes are counts in the *reference*.  Every counts figure
+      //  quoted here describes the measurement being predicted, so it is projected back up.
+      //  Defined out here because a predicted sensitivity always has `foundLowerCl == false`
+      //  (`get_activity_or_distance_limits` forces it), so the upper-limit-only branch below is
+      //  the one that actually runs for exactly the case where the ratio is not one.
+      const auto peak_counts = []( const shared_ptr<const DetectionLimitCalc::DeconComputeResults> &r )
+        -> double {
+          if( !r || (r->fit_peaks.size() != 1) )
+            return -1.0;
+          return r->exposure_ratio * r->fit_peaks[0].amplitude();
+      };
+
       if( result.foundLowerCl && result.foundUpperCl )
       {
         display_activity = result.overallBestQuantity;
@@ -1639,15 +2033,9 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
           assert( result.upperLimitResults
                  && (result.upperLimitResults->fit_peaks.size() == 1) );
           
-          const double lower_limit_counts = (result.lowerLimitResults
-                                  && (result.lowerLimitResults->fit_peaks.size() == 1))
-                                        ? result.lowerLimitResults->fit_peaks[0].amplitude() : -1.0;
-          const double nominal_counts = (result.overallBestResults
-                                  && (result.overallBestResults->fit_peaks.size() == 1))
-                                       ? result.overallBestResults->fit_peaks[0].amplitude() : -1.0;
-          const double upper_limit_counts = (result.upperLimitResults
-                                  && (result.upperLimitResults->fit_peaks.size() == 1))
-                                        ? result.upperLimitResults->fit_peaks[0].amplitude() : -1.0;
+          const double lower_limit_counts = peak_counts( result.lowerLimitResults );
+          const double nominal_counts = peak_counts( result.overallBestResults );
+          const double upper_limit_counts = peak_counts( result.upperLimitResults );
           
           const string lowerstr = SpecUtils::printCompact(lower_limit_counts, 4);
           const string nomstr = SpecUtils::printCompact(nominal_counts, 4);
@@ -1670,7 +2058,6 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
           fit_peaks = result.overallBestResults->fit_peaks;
       }else if( result.foundLowerCl )
       {
-        assert( 0 );
         display_activity = 0.0; //result.foundLowerCl
         const string cl_txt = "Error: Didn't find " + cl_str + " CL activity";
         const string sum_txt = "Error: Didn't find " + cl_str + " CL activity";
@@ -1681,22 +2068,47 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
         //fit_peaks = result.lowerLimitResults.fit_peaks;
       }else if( result.foundUpperCl )
       {
-        display_activity = result.foundUpperCl;
-        
+        display_activity = result.upperLimit;
+
+        // A background-reference scan is a statement about a measurement nobody has taken, so it
+        //  must not be worded as a bound on the loaded spectrum - the Detection Confidence Tool
+        //  says "Predicted sensitivity: ..." for the same result, and this tool used to say "Less
+        //  than X @95% CL", which reads as a bound on the spectrum in hand.
+        //  \sa DetectionLimitCalc::DeconMeasurementModel::BackgroundReference
+        const bool predicted = result.is_predicted_sensitivity;
+        const string dwell = (result.sampleRealTime > 0.0)
+              ? PhysicalUnits::printToBestTimeUnits( result.sampleRealTime, 2 )
+              : string();
+
         if( !m_currentNuclide )
         {
-          const double upper_limit_counts = (result.upperLimitResults
-                                  && (result.upperLimitResults->fit_peaks.size() == 1))
-                                        ? result.upperLimitResults->fit_peaks[0].amplitude() : -1.0;
+          const double upper_limit_counts = peak_counts( result.upperLimitResults );
           const string upperstr = SpecUtils::printCompact(upper_limit_counts, 4);
-          
-          chart_title = WString::tr("dls-chart-title-upper-bound-counts").arg(upperstr).arg(cl_str);
-          result_txt = WString::tr("dls-results-txt-upper-bound-counts").arg(upperstr).arg(cl_str);
+
+          if( predicted && !dwell.empty() )
+          {
+            chart_title = WString::tr("dls-chart-title-predicted-counts").arg(upperstr).arg(cl_str);
+            result_txt = WString::tr("dls-results-txt-predicted-counts")
+                            .arg(upperstr).arg(cl_str).arg(dwell);
+          }else
+          {
+            chart_title = WString::tr("dls-chart-title-upper-bound-counts").arg(upperstr).arg(cl_str);
+            result_txt = WString::tr("dls-results-txt-upper-bound-counts").arg(upperstr).arg(cl_str);
+          }
         }else
         {
           const string upperstr = PhysicalUnits::printToBestActivityUnits(result.upperLimit, 3, use_curie);
-          chart_title = WString::tr("dls-chart-title-upper-bound-act").arg(upperstr).arg(cl_str);
-          result_txt = WString::tr("dls-results-txt-upper-bound-act").arg(upperstr).arg(cl_str);
+
+          if( predicted && !dwell.empty() )
+          {
+            chart_title = WString::tr("dls-chart-title-predicted-act").arg(upperstr).arg(cl_str);
+            result_txt = WString::tr("dls-results-txt-predicted-act")
+                            .arg(upperstr).arg(cl_str).arg(dwell);
+          }else
+          {
+            chart_title = WString::tr("dls-chart-title-upper-bound-act").arg(upperstr).arg(cl_str);
+            result_txt = WString::tr("dls-results-txt-upper-bound-act").arg(upperstr).arg(cl_str);
+          }
         }//if( !m_currentNuclide ) / else
         
         assert( result.upperLimitResults );
@@ -1730,20 +2142,36 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
     }//if( no valid result
   }//if( currently doing Currie-style limit ) / else
 
-  // If a scale factor is active, tip the user off via a small live-time marker
-  //  appended to the result text - so it's not silently using a different dwell.
-  if( m_scaleSpectrumCb && m_scaleSpectrumCb->isChecked()
-     && (m_currentCurrieResults || m_currentDeconResults) )
-  {
-    shared_ptr<const SpecUtils::Measurement> scaled;
-    try { scaled = currentEffectiveForeground(); } catch( std::exception & ){}
+  // The projected live time used to be appended here as a "(LT=...)" marker.  It cost a line of a
+  //  three-line box that only has room for two, for something the user can already see: they typed
+  //  the real time into the field beside the result, and the derived live time - with the ratio and
+  //  the original dwell - is spelled out in the "further details" dialog.  \sa dls-scale-more-info-note
 
-    if( scaled && (scaled->live_time() > 0.0f) )
+  // A background-reference result is a prediction even with no measurement time entered - no time
+  //  means "another measurement just like this one" - so the band applies there too.
+  {
+    // A projected limit is a prediction about a measurement nobody has taken.  Quoting only its
+    //  middle hides how far the answer can move, and by more than a plain scaling suggests - the
+    //  predictive spread grows as sqrt(1+k) in the projection factor, where a scaling's does not
+    //  grow at all.  So the band goes on screen beside the number.
+    // Given as a multiple of the quoted limit rather than in counts or activity.  Counts and
+    //  activity differ by a constant factor, so a fraction of the median is the same number in
+    //  either - which keeps this correct without plumbing the conversion into this scope, and
+    //  anchors the band on the figure actually on screen.
+    string low_multiple, high_multiple;
+    if( DetectionLimitCalc::projected_band_endpoints( m_currentProjectedLimit,
+                                                      low_multiple, high_multiple ) )
     {
-      const WString postfix = WString::tr("dls-result-scaled-postfix")
-          .arg( PhysicalUnits::printToBestTimeUnits( scaled->live_time(), 3 ) );
-      m_resultTxt->setText( m_resultTxt->text() + postfix );
-    }
+      const WString band = WString::tr("dls-result-projected-band")
+          .arg( low_multiple )
+          .arg( high_multiple );
+
+      // Deliberately no tooltip here: this runs on every result update, and `attachToolTipOn`
+      //  re-runs its qTip setup each call (and on mobile connects another `clicked()` handler),
+      //  so attaching from an update path accumulates.  What the band means is explained in the
+      //  help page's "Measurement time" section instead.
+      m_resultTxt->setText( m_resultTxt->text() + band );
+    }//if( a projected band was computed )
   }
 }//void updateSpectrumDecorationsAndResultText()
 
@@ -1874,6 +2302,12 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
       counts += peak.peakArea();
       uncert += peak.peakAreaUncert() * peak.peakAreaUncert(); //We dont actually hav an uncertainty
     }
+
+    // `fit_peaks` are in the reference spectrum's exposure, but the activity row above this one is
+    //  the projected activity, so counts are projected to match.  Two rows of the same table in
+    //  different exposures is worse than either choice on its own.  The continuum-area row further
+    //  down stays in reference counts, and says so.
+    counts *= result.exposure_ratio;
     value = SpecUtils::printCompact(counts, 5) + " counts";
     //value = PhysicalUnits::printValueWithUncertainty(counts, sqrt(uncert), 5);
     
@@ -1882,23 +2316,36 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     cell = table->elementAt( table->rowCount() - 1, 1 );
     new WText( value, cell );
     
+    // The value is a Cash statistic, not a chi-square; `statistic_name` had been set since Stage 1
+    //  and read nowhere, so this is the first place that label reaches a user.  The tooltip goes on
+    //  both this row and the DOF row, because their ratio is the thing most likely to be misread.
+    const WString stat_tt = WString::tr("dl-stat-is-cash-tt")
+          .arg( WString::fromUTF8( result.statistic_name.empty() ? string("Cash")
+                                                                 : result.statistic_name ) );
+
     label = WString("{1} &chi;<sup>2</sup>").arg(typestr);
     value = SpecUtils::printCompact(result.chi2, 4);
     cell = table->elementAt( table->rowCount(), 0 );
-    new WText( label, cell );
+    WText *stat_label = new WText( label, cell );
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    new WText( value, cell );
-    
+    WText *stat_value = new WText( value, cell );
+    HelpSystem::attachToolTipOn( {stat_label, stat_value}, stat_tt, true,
+                                HelpSystem::ToolTipPosition::Left,
+                                HelpSystem::ToolTipPrefOverride::InstantAlways );
+
     if( !is_best )
       return;
-    
+
     label = WString::tr("dls-DOF");
     value = std::to_string( result.num_degree_of_freedom );
     cell = table->elementAt( table->rowCount(), 0 );
-    new WText( label, cell );
+    WText *dof_label = new WText( label, cell );
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    new WText( value, cell );
-    
+    WText *dof_value = new WText( value, cell );
+    HelpSystem::attachToolTipOn( {dof_label, dof_value}, stat_tt, true,
+                                HelpSystem::ToolTipPosition::Left,
+                                HelpSystem::ToolTipPrefOverride::InstantAlways );
+
     if( result.fit_peaks.size() )
     {
       label = WString::tr("dls-continuum-area");
@@ -1906,7 +2353,13 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
       // CDF step types wont typically occur in detection limit context; if they do, use single peak
       const PeakDef *peak_ptr = &peak;
       const double cont_area = peak.continuum()->offset_integral( roi_start, roi_end, measurement, &peak_ptr, 1 );
+
+      // Deliberately NOT projected: the continuum belongs to the reference spectrum, which is the
+      //  one drawn on the chart beside this dialog.  Saying so keeps it from being read against the
+      //  projected counts row above.
       value = SpecUtils::printCompact(cont_area, 5);
+      if( result.exposure_ratio != 1.0 )
+        value += " (in the reference spectrum)";
       
       cell = table->elementAt( table->rowCount(), 0 );
       new WText( label, cell );
@@ -2120,12 +2573,12 @@ void DetectionLimitSimple::createMoreInfoWindow()
 
   // Make the scale factor obvious in the more-info dialog so the user knows the
   //  numbers are for the scaled-to dwell, not the literal measurement live time.
-  if( m_moreInfoWindow && m_scaleSpectrumCb && m_scaleSpectrumCb->isChecked() )
+  if( m_moreInfoWindow && m_planTimeCb && m_planTimeCb->isChecked() && !m_planTimeCb->isHidden() )
   {
     const shared_ptr<const SpecUtils::Measurement> raw_hist
                           = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     shared_ptr<const SpecUtils::Measurement> scaled;
-    try { scaled = currentEffectiveForeground(); } catch( std::exception & ){}
+    try { scaled = currentEffectiveForeground().currie; } catch( std::exception & ){}
 
     if( raw_hist && scaled && (raw_hist->real_time() > 0.0f) && (scaled->real_time() > 0.0f) )
     {
@@ -2219,21 +2672,28 @@ void DetectionLimitSimple::updateResult()
   
   m_currentCurrieInput.reset();
   m_currentCurrieResults.reset();
-  
+  m_currentProjectedLimit = DetectionLimitCalc::ProjectedLimit{};
+
+  // Parked here, rather than set on `m_warningTxt` directly, because
+  //  `updateSpectrumDecorationsAndResultText()` runs after this function and clears that text.
+  m_systematicNote = WString();
+
   try
   {
     m_fitFwhmBtn->hide();
     
-    // Route through currentEffectiveForeground() so the empty-string-as-unscaled
-    // logic stays in one place and the calc here matches what the chart shows.
-    std::shared_ptr<const SpecUtils::Measurement> hist;
+    // Route through currentEffectiveForeground() so the empty-string-as-unrequested logic stays in
+    //  one place and the calc here matches what the chart shows.  `.currie` is the projected
+    //  spectrum, `.decon` is the unscaled reference under a background-reference model.
+    DetectionLimitCalc::PlannedMeasurement eff;
     try
     {
-      hist = currentEffectiveForeground();
+      eff = currentEffectiveForeground();
     }catch( std::exception & )
     {
-      throw runtime_error( WString::tr("dls-err-bad-scale-time").toUTF8() );
+      throw runtime_error( WString::tr("dl-err-bad-plan-time").toUTF8() );
     }
+    const std::shared_ptr<const SpecUtils::Measurement> hist = eff.currie;
     if( !hist || (hist->num_gamma_channels() < 7) )
       throw runtime_error( "No foreground spectrum loaded." );
 
@@ -2270,18 +2730,60 @@ void DetectionLimitSimple::updateResult()
     }
     
     currie_input->detection_probability = confidenceLevel;
-    currie_input->additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
-    
+
+    // The two error rates and the systematic uncertainty come from the "Advanced" section, and apply
+    //  to the Currie method only - which is what the section's note tells the user.  The gate on the
+    //  method matters even though the deconvolution branch reports its own limit: it still uses this
+    //  Currie result to seed the activity search range below, so applying these here would move the
+    //  deconvolution answer, and a bad entry would abort it with an error about a field the UI says
+    //  does not apply to it.
+    //  Zero means "not specified", so the confidence level supplies all three roles - which is what
+    //  happened before the section existed.
+    if( currieMethod )
+    {
+      currie_input->alpha = m_alphaUserSet ? m_alpha->value() : 0.0;
+      currie_input->beta = m_betaUserSet ? m_beta->value() : 0.0;
+      currie_input->additional_uncertainty = currentSystematicUncertainty( m_systematicNote );
+    }else
+    {
+      currie_input->alpha = currie_input->beta = 0.0;
+      currie_input->additional_uncertainty = 0.0f;
+    }
+
     m_currentCurrieInput = currie_input;
     const DetectionLimitCalc::CurrieMdaResult currie_result = DetectionLimitCalc::currie_mda_calc( *currie_input );
     m_currentCurrieResults = make_shared<DetectionLimitCalc::CurrieMdaResult>( currie_result );
+
+    // How far the answer could move for a measurement nobody has taken yet.  Only meaningful when
+    //  a dwell other than this spectrum's is being asked about, and only for the Currie method
+    //  here - the deconvolution branch below computes its own, since it is the one whose limit is
+    //  a profile scan rather than arithmetic.
+    //  The region is drawn from the *unprojected* foreground: the Monte Carlo does the projecting,
+    //  and handing it an already-scaled spectrum would project twice.
+    const shared_ptr<const SpecUtils::Measurement> unprojected
+                      = m_viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+
+    if( currieMethod && (eff.planned_real_time > 0.0) && unprojected )
+    {
+      DetectionLimitCalc::CurrieMdaInput reference_input = *currie_input;
+      reference_input.spectrum = unprojected;
+
+      // A few hundred realisations keeps the Monte Carlo's own sampling error well under a percent
+      //  of the band, and the Currie limit is closed-form arithmetic, so this costs milliseconds.
+      m_currentProjectedLimit = DetectionLimitCalc::currie_projected_limit( reference_input,
+                                                          eff.planned_real_time, 1024 );
+    }
     
     
     // Calculating the deconvolution-style limit is fairly CPU intensive, so we will only computer
     //  it when its what the user actually wants.
     if( !currieMethod )
     {
-      const float live_time = m_currentCurrieInput->spectrum->live_time();
+      // From the DECON spectrum, not the projected Currie one: `counts_per_bq_into_4pi` carries this
+      //  live time, and `decon_compute_peaks` multiplies the trial signal by
+      //  `sample_exposure/live_time` on top of it.  Taking the projected live time here would apply
+      //  the projection twice - silently, and quadratically in the ratio.
+      const float live_time = eff.decon->live_time();
       
       //if( !m_currentNuclide )
       //  throw runtime_error( "Please enter a nuclide." );
@@ -2339,32 +2841,20 @@ void DetectionLimitSimple::updateResult()
           throw std::logic_error( "Invalid continuuuum type selected" );
       }//switch( continuumTypeIndex )
       
-      const int continuumPriorIndex = m_continuumPrior->currentIndex();
-      switch( continuumPriorIndex )
+      // Through the shared mapping rather than a local switch: this combo's indices used to run
+      //  1 -> FixedByFullRange, 2 -> FixedByEdges, the reverse of the enum, with nothing guarding
+      //  it.  `continuum_norm_from_index` is `static_assert`-backed and shared with both URL
+      //  decoders, so the order now lives in exactly one place.
+      roiInfo.cont_norm_method
+          = DetectionLimitCalc::continuum_norm_from_index( m_continuumPrior->currentIndex() );
+
+      if( roiInfo.cont_norm_method == DetectionLimitCalc::DeconContinuumNorm::FixedByEdges )
       {
-        case 0: // "Unknown or Present"
-          roiInfo.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::Floating;
-          break;
-          
-        case 1: // "Not Present"
-          roiInfo.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::FixedByFullRange;
-          break;
-          
-        case 2: // "Cont. from sides"
-          roiInfo.continuum_type = PeakContinuum::OffsetType::Linear;
-          roiInfo.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::FixedByEdges;
-          break;
-          
-        default:
-          assert( 0 );
-          throw std::logic_error( "Invalid continuuuum prior selected" );
-      }//switch( continuumPriorIndex )
-      
-      //if( assertNoSignal )
-      //  roiInfo.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::FixedByFullRange; // "Not Present"
-      //else
-      //  roiInfo.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::Floating; // "Unknown or Present"
-      
+        // Four-plus-four side channels barely determine an offset and a slope, so a quadratic is
+        //  not supportable here; the combo is disabled to match.
+        roiInfo.continuum_type = PeakContinuum::OffsetType::Linear;
+      }
+
       if( roiInfo.cont_norm_method == DetectionLimitCalc::DeconContinuumNorm::FixedByEdges )
       {
         // `roiInfo.num_*_side_channels` only used if `cont_norm_method` is `DeconContinuumNorm::FixedByEdges`.
@@ -2421,7 +2911,11 @@ void DetectionLimitSimple::updateResult()
       convo_input->activity = 0.0; //This will need to be varied
       convo_input->include_air_attenuation = true;
       convo_input->shielding_thickness = 0.0;
-      convo_input->measurement = hist;
+      // The unscaled reference under a background-reference model; the planned dwell rides along as
+      //  `sample_exposure`.  \sa DetectionLimitCalc::plan_measurement
+      convo_input->measurement = eff.decon;
+      convo_input->measurement_model = currentMeasurementModel();
+      convo_input->sample_exposure = eff.sample_exposure;
       convo_input->drf = drf;
       convo_input->roi_info.push_back( roiInfo );
       
@@ -2453,9 +2947,13 @@ void DetectionLimitSimple::updateResult()
           const double counts_per_bq_into_4pi_with_air = air_transmission * counts_per_bq_into_4pi;
           const double counts_4pi = fixed_geom ? counts_per_bq_into_4pi : counts_per_bq_into_4pi_with_air;
 
-          gammas_per_bq = counts_4pi * det_eff;
+          // The Currie result below is for the PROJECTED measurement, while `counts_per_bq_into_4pi`
+          //  is at the reference exposure.  Bring them onto the same footing before dividing, or
+          //  the seeded search range is wrong by the exposure ratio.  Exactly 1 unless a background
+          //  reference is being projected.
+          gammas_per_bq = counts_4pi * det_eff * eff.exposure_ratio;
         }//if( drf )
-        
+
         // We want the limits going into `DetectionLimitCalc::get_activity_or_distance_limits(...)`
         //  to definitely cover the entire possible activity range, so we will exaggerate the
         //  expected range from Currie-style limit
@@ -2512,6 +3010,37 @@ void DetectionLimitSimple::updateResult()
                                                                       min_act, max_act, use_curie );
     
       m_currentDeconResults = make_shared<DetectionLimitCalc::DeconActivityOrDistanceLimitResult>( decon_result );
+
+      // A background-reference result is a prediction about a measurement nobody has taken - and it
+      //  is one whether or not a measurement time was entered, since no time entered means "another
+      //  measurement just like this one".  Reporting only its middle says nothing about how far the
+      //  answer could land from it, so the spread goes beside it.
+      //
+      //  Scored `JointWithReference` because that is what this mode reports: the reference and the
+      //  sample against one continuum.  A sample-only prediction would be a different, looser
+      //  quantity.  \sa DetectionLimitCalc::ProjectedLimitScoring
+      if( (convo_input->measurement_model
+             == DetectionLimitCalc::DeconMeasurementModel::BackgroundReference)
+         && convo_input->measurement && (convo_input->measurement->real_time() > 0.0f) )
+      {
+        // Users enter, and results quote, a REAL time.
+        const double planned_real = (eff.planned_real_time > 0.0)
+                       ? eff.planned_real_time
+                       : static_cast<double>( convo_input->measurement->real_time() );
+
+        // 128 realisations costs about half a second across the available cores for this tool's
+        //  single region; the deconvolution limit itself is already the slow part of this path.
+        //  The Detection Confidence Tool computes one of these per gamma line, so it does not run
+        //  them inline.
+        const unsigned hardware_threads = std::thread::hardware_concurrency();
+        const size_t num_threads = (std::max)( 1u, hardware_threads ? hardware_threads : 4u );
+
+        m_currentProjectedLimit = DetectionLimitCalc::decon_projected_limit( convo_input,
+                                      confidenceLevel, planned_real, max_act, use_curie,
+                                      DetectionLimitCalc::DeconLimitType::OneSidedUpperLimit,
+                                      DetectionLimitCalc::ProjectedLimitScoring::JointWithReference,
+                                      128, num_threads );
+      }//if( a background-reference prediction )
     }//if( calc Currie-style limit ) / else
     
     m_chartErrMsgStack->setCurrentIndex( 1 );
@@ -2567,8 +3096,17 @@ void DetectionLimitSimple::handleAppUrl( std::string uri )
   auto qpos = values.find( "VER" );
   
   const string ver = ((qpos != end(values)) && !qpos->second.empty()) ? qpos->second : "1";
-  if( (ver != "1") && !SpecUtils::istarts_with(ver, "1.") )
+  // Accept the major version only, so a later "2.1" adding an optional token stays readable here.
+  // Major version only, so a later "2.1" adding an optional token stays readable - but "10"/"27"
+  //  are different majors, not v1/v2, so match the separator too.
+  const bool known_ver = (ver == "1") || (ver == "2")
+                         || SpecUtils::istarts_with(ver, "1.")
+                         || SpecUtils::istarts_with(ver, "2.");
+  if( !known_ver )
     throw runtime_error( "DetectionLimitSimple: invalid URI version" );
+
+  // Collected while decoding, shown once at the end - a retired option is never applied silently.
+  bool migrated_deprecated_norm = false;
   
   qpos = values.find( "NUC" );
   const SandiaDecay::Nuclide *nuc = nullptr;
@@ -2728,23 +3266,22 @@ void DetectionLimitSimple::handleAppUrl( std::string uri )
     }//if( URI had is background value )
     
     m_isBackgroundSpectrum->setChecked( noSignal );
-    m_numSideChannelLabel->setHidden( noSignal );
-    m_numSideChannel->setHidden( noSignal );
-    
-    qpos = values.find( "NSIDE" );
-    if( qpos != end(values) )
-    {
-      // In principle we shouldnt have the NSIDE argument if the "is background" checkbox is checked
-      //  but whatever.
-      assert( !noSignal );
-      
-      int nside;
-      if( (stringstream(qpos->second) >> nside) && (nside >= 1) && (nside <= 64) )
-        m_numSideChannel->setValue( nside );
-      else
-        cerr << "Invalid 'NSIDE' value: '" << qpos->second << "'" << endl;
-    }//if( URI has NSIDE )
   }//if( currieMethod )
+
+  // NSIDE is emitted for BOTH methods (the deconvolution "from sides" treatment uses it too), so it
+  //  has to be decoded for both - it used to be read only under Currie, which silently reset the
+  //  side-channel count on every reload of a deconvolution state.  No assert on the background
+  //  checkbox here: a legacy VER=1 Currie URI could legitimately carry both, and an assert that
+  //  fires in a Debug build kills the whole session.
+  qpos = values.find( "NSIDE" );
+  if( qpos != end(values) )
+  {
+    int nside;
+    if( (stringstream(qpos->second) >> nside) && (nside >= 1) && (nside <= 64) )
+      m_numSideChannel->setValue( nside );
+    else
+      cerr << "Invalid 'NSIDE' value: '" << qpos->second << "'" << endl;
+  }//if( URI has NSIDE )
   
   bool setFwhm = false;
   qpos = values.find( "FWHM" );
@@ -2767,33 +3304,50 @@ void DetectionLimitSimple::handleAppUrl( std::string uri )
     handleUserChangedFwhm();
   }
   
+  // Which measurement the limit describes.  Emitted for both methods since VER=2; a VER=1 URI says
+  //  the same thing with ISBACK (Currie) or CONTNORM=NOSIG (deconvolution).
+  qpos = values.find( "MODEL" );
+  if( qpos != end(values) )
+  {
+    if( SpecUtils::iequals_ascii(qpos->second, "BACKREF") )
+      m_isBackgroundSpectrum->setChecked( true );
+    else if( SpecUtils::iequals_ascii(qpos->second, "CUR") )
+      m_isBackgroundSpectrum->setChecked( false );
+    else
+      cerr << "Invalid 'MODEL' value: '" << qpos->second << "'" << endl;
+  }
+
   if( !currieMethod )
   {
+    // Decodes both vocabularies - the v1 UNKNOWN/NOSIG/FIXED and the v2 FLOAT/EDGES - and migrates
+    //  the retired "no signal" option onto a background-reference measurement.  Note this sets the
+    //  ENUM, then converts; the old code decoded straight into a combo index whose order was the
+    //  reverse of the enum for two of the three values.
     qpos = values.find( "CONTNORM" );
     if( qpos != end(values) )
     {
-      int priorTypeIndex = -1;
-      if( SpecUtils::istarts_with(qpos->second, "UNK") )
-        priorTypeIndex = 0;
-      else if( SpecUtils::istarts_with(qpos->second, "NOS") )
-        priorTypeIndex = 1;
-      else if( SpecUtils::istarts_with(qpos->second, "FIX") )
-        priorTypeIndex = 2;
-      else
-        cerr << "Invalid 'CONTNORM' value: '" << qpos->second << "'" << endl;
-      
-      if( priorTypeIndex >= 0 )
+      DetectionLimitCalc::DeconContinuumNorm norm = DetectionLimitCalc::DeconContinuumNorm::Floating;
+      DetectionLimitCalc::DeconMeasurementModel model
+            = DetectionLimitCalc::DeconMeasurementModel::CurrentSpectrum;
+      bool migrated = false;
+
+      if( DetectionLimitCalc::decode_continuum_norm_token( qpos->second, norm, model, migrated ) )
       {
-        m_continuumPrior->setCurrentIndex( priorTypeIndex );
-        
-        m_numSideChannelLabel->setHidden( priorTypeIndex != 2 );
-        m_numSideChannel->setHidden( priorTypeIndex != 2 );
-        
-        m_continuumTypeLabel->setHidden( priorTypeIndex == 2 );
-        m_continuumType->setHidden( priorTypeIndex == 2 );
-      }//if( prior type provided )
+        m_continuumPrior->setCurrentIndex( DetectionLimitCalc::index_from_continuum_norm(norm) );
+        if( migrated )
+        {
+          // The retired option asserted the spectrum is signal-free; that assertion is now the
+          //  background checkbox, and it must be visibly reinstated rather than dropped.
+          m_isBackgroundSpectrum->setChecked(
+                model == DetectionLimitCalc::DeconMeasurementModel::BackgroundReference );
+          migrated_deprecated_norm = true;
+        }
+      }else
+      {
+        cerr << "Invalid 'CONTNORM' value: '" << qpos->second << "'" << endl;
+      }
     }//if( continuum prior provided )
-    
+
     
     qpos = values.find( "CONTTYPE" );
     if( qpos != end(values) )
@@ -2823,7 +3377,7 @@ void DetectionLimitSimple::handleAppUrl( std::string uri )
   //  "5 min") so the targeted dwell is preserved regardless of which foreground is
   //  loaded at decode time.  Presence implies checkbox on; any failure leaves it off.
   qpos = values.find( "SCALE" );
-  if( qpos != end(values) && m_scaleSpectrumCb )
+  if( qpos != end(values) && m_planTimeCb )
   {
     bool ok = false;
     try
@@ -2831,9 +3385,9 @@ void DetectionLimitSimple::handleAppUrl( std::string uri )
       const double t = PhysicalUnits::stringToTimeDuration( qpos->second );
       if( t > 0.0 )
       {
-        m_scaleSpectrumCb->setChecked( true );
-        m_scaleSpectrumTime->setEnabled( true );
-        m_scaleSpectrumTime->setText( WString::fromUTF8(
+        m_planTimeCb->setChecked( true );
+        m_planTimeEdit->setEnabled( true );
+        m_planTimeEdit->setText( WString::fromUTF8(
             PhysicalUnits::printToBestTimeUnits( t, 4 ) ) );
         ok = true;
       }
@@ -2842,29 +3396,121 @@ void DetectionLimitSimple::handleAppUrl( std::string uri )
     if( !ok )
     {
       cerr << "Invalid 'SCALE' value: '" << qpos->second << "'" << endl;
-      m_scaleSpectrumCb->setChecked( false );
-      m_scaleSpectrumTime->setEnabled( false );
+      m_planTimeCb->setChecked( false );
+      m_planTimeEdit->setEnabled( false );
       // handleSpectrumChanged()/init() will refresh the disabled text on the next render.
     }
-  }else if( m_scaleSpectrumCb )
+  }else if( m_planTimeCb )
   {
     // No SCALE in URL - ensure the checkbox is off (and the disabled text gets repopulated).
-    m_scaleSpectrumCb->setChecked( false );
-    m_scaleSpectrumTime->setEnabled( false );
+    m_planTimeCb->setChecked( false );
+    m_planTimeEdit->setEnabled( false );
     const shared_ptr<const SpecUtils::Measurement> hist
                           = m_viewer->displayedHistogram(SpecUtils::SpectrumType::Foreground);
     if( hist && (hist->real_time() > 0.0f) )
-      m_scaleSpectrumTime->setText( WString::fromUTF8(
+      m_planTimeEdit->setText( WString::fromUTF8(
           PhysicalUnits::printToBestTimeUnits( hist->real_time(), 3 ) ) );
   }
   
+  // The advanced statistical inputs.  Reset all five to their defaults first, because for these the
+  //  *absence* of a token is meaningful: no ALPHA means "still tracking the confidence level", and a
+  //  VER=2 or VER=1 URI has none of them at all and must decode to Advanced-off.
+  m_advancedCb->setChecked( false );
+  m_alphaUserSet = m_betaUserSet = false;
+  m_alpha->setValue( static_cast<float>( 1.0 - currentConfidenceLevel() ) );
+  m_beta->setValue( static_cast<float>( 1.0 - currentConfidenceLevel() ) );
+  m_distanceUncert->setText( "" );
+  m_prevDistanceUncert = "";
+  m_effUncert->setText( "" );
+
+  qpos = values.find( "ADV" );
+  if( qpos != end(values) )
+  {
+    if( (qpos->second == "1") || SpecUtils::iequals_ascii(qpos->second, "YES")
+       || SpecUtils::iequals_ascii(qpos->second, "TRUE") )
+      m_advancedCb->setChecked( true );
+    else if( (qpos->second != "0") && !SpecUtils::iequals_ascii(qpos->second, "NO")
+            && !SpecUtils::iequals_ascii(qpos->second, "FALSE") )
+      cerr << "Invalid 'ADV' value: '" << qpos->second << "'" << endl;
+  }//if( URI has ADV )
+
+  qpos = values.find( "ALPHA" );
+  if( qpos != end(values) )
+  {
+    float alpha;
+    if( (stringstream(qpos->second) >> alpha) && (alpha > 0.0f) && (alpha < 0.5f) )
+    {
+      m_alpha->setValue( alpha );
+      m_alphaUserSet = true;
+    }else
+    {
+      cerr << "Invalid 'ALPHA' value: '" << qpos->second << "'" << endl;
+    }
+  }//if( URI has ALPHA )
+
+  qpos = values.find( "BETA" );
+  if( qpos != end(values) )
+  {
+    float beta;
+    if( (stringstream(qpos->second) >> beta) && (beta > 0.0f) && (beta < 0.5f) )
+    {
+      m_beta->setValue( beta );
+      m_betaUserSet = true;
+    }else
+    {
+      cerr << "Invalid 'BETA' value: '" << qpos->second << "'" << endl;
+    }
+  }//if( URI has BETA )
+
+  qpos = values.find( "DISTUNCERT" );
+  if( qpos != end(values) )
+  {
+    try
+    {
+      const double dist_uncert = PhysicalUnits::stringToDistance( qpos->second );
+      if( dist_uncert < 0.0 )
+        throw runtime_error( "negative" );
+      m_distanceUncert->setValueText( WString::fromUTF8(qpos->second) );
+      m_prevDistanceUncert = m_distanceUncert->text();
+    }catch( std::exception & )
+    {
+      cerr << "Invalid 'DISTUNCERT' value: '" << qpos->second << "'" << endl;
+    }
+  }//if( URI has DISTUNCERT )
+
+  qpos = values.find( "EFFUNCERT" );
+  if( qpos != end(values) )
+  {
+    double eff_uncert;
+    if( (stringstream(qpos->second) >> eff_uncert) && (eff_uncert >= 0.0) && (eff_uncert < 100.0) )
+      m_effUncert->setValueText( WString::fromUTF8(qpos->second) );
+    else
+      cerr << "Invalid 'EFFUNCERT' value: '" << qpos->second << "'" << endl;
+  }//if( URI has EFFUNCERT )
+
   // Set render flags... JIC
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateDisplayedSpectrum;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
-  
+
+  // The decode above only set widget values.  Drive the one function that owns the show/hide table
+  //  so the dependent visibility matches, rather than hand-setting it here - two copies of those
+  //  rules is exactly how they drifted before.
+  //
+  // MUST come before the `undoWasSet` clear below: `handleMethodChanged()` unconditionally re-sets
+  //  AddUndoRedoStep, so calling it afterwards silently un-does the clear and makes every URL load
+  //  - including the one an undo itself performs - insert a fresh undo step.
+  handleMethodChanged();
+
   if( !undoWasSet )
     m_renderFlags.clear(RenderActions::AddUndoRedoStep);
+
+  // A retired option was reinterpreted.  Loading it as something else without saying so would
+  //  change what a saved number means without telling anyone, so this is never silent.  Safe inside
+  //  the `BlockUndoRedoInserts` scope: `passMessage` goes to `InterSpecApp::svlog`, not to the
+  //  undo/redo manager.
+  if( migrated_deprecated_norm )
+    passMessage( WString::tr("dl-migrate-nosig-notice"), WarningWidget::WarningMsgMedium );
 }//void handleAppUrl( std::string uri )
 
 
@@ -2875,7 +3521,11 @@ std::string DetectionLimitSimple::encodeStateToUrl() const
   const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
   answer += currieMethod ? "CURRIE" : "DECON";
   
-  answer += "?VER=1";
+  // 2.1, not 3: the advanced tokens are purely additive and optional, and the version gate in
+  //  `handleAppUrl()` already accepts a "2."-prefixed minor - it was written so exactly this could
+  //  be added without breaking QR codes and stored states held by already-shipped builds.  Those
+  //  builds decode a 2.1 URI losing only the advanced fields, which is the correct degradation.
+  answer += "?VER=2.1";
   
   const SandiaDecay::Nuclide *nuc = m_nucEnterController->nuclide();
   if( nuc )
@@ -2947,7 +3597,9 @@ std::string DetectionLimitSimple::encodeStateToUrl() const
     case ConfidenceLevel::NumConfidenceLevel: assert(0);      break;
   }//switch( confidence )
   
-  const bool useSideChan = (m_continuumPrior->currentIndex() == 2);
+  const bool useSideChan
+        = (DetectionLimitCalc::continuum_norm_from_index( m_continuumPrior->currentIndex() )
+           == DetectionLimitCalc::DeconContinuumNorm::FixedByEdges);
   if( (currieMethod && !m_isBackgroundSpectrum->isChecked()) || useSideChan )
     answer += "&NSIDE=" + std::to_string(m_numSideChannel->value());
   
@@ -2960,25 +3612,18 @@ std::string DetectionLimitSimple::encodeStateToUrl() const
   if( !drf || (fabs(m_fwhm->value() - drf->peakResolutionFWHM(energy)) > 0.1) )
     answer += "&FWHM=" + m_fwhm->valueText().toUTF8();
   
-  if( currieMethod )
+  // Which measurement the limit describes.  One token for both methods since VER=2 - the checkbox
+  //  means the same assertion either way, so ISBACK and CONTNORM=NOSIG would have been two spellings
+  //  of one setting, free to contradict each other.  ISBACK is decode-only now.
+  answer += "&MODEL=" + string( m_isBackgroundSpectrum->isChecked() ? "BACKREF" : "CUR" );
+
+  if( !currieMethod )
   {
-    const bool noSignal = m_isBackgroundSpectrum->isChecked();
-    answer += "&ISBACK=" + string(noSignal ? "1" : "0");
-  }else
-  {
-    answer += "&CONTNORM=";
-    switch( m_continuumPrior->currentIndex() )
-    {
-      case 0: answer += "UNKNOWN"; break;
-      case 1: answer += "NOSIG"; break;
-      case 2: answer += "FIXED"; break;
-        
-      default:
-        assert( 0 );
-        throw logic_error( "Invalid m_continuumPrior" );
-    }//switch( m_continuumPrior->currentIndex() )
-    
-    if( m_continuumPrior->currentIndex() != 2 )
+    // Never re-emits the retired value; a state carrying it was migrated on decode.
+    answer += "&CONTNORM=" + DetectionLimitCalc::continuum_norm_token(
+          DetectionLimitCalc::continuum_norm_from_index( m_continuumPrior->currentIndex() ) );
+
+    if( !useSideChan )
     {
       answer += "&CONTTYPE=";
       switch( m_continuumType->currentIndex() )
@@ -2998,11 +3643,12 @@ std::string DetectionLimitSimple::encodeStateToUrl() const
   // Encode scale as the absolute target dwell (in seconds), so reloading the URL against
   //  a different foreground preserves "the dwell I asked about" rather than rescaling it.
   //  Use printCompact (no units) for the seconds-value to keep the URL field free of spaces.
-  if( m_scaleSpectrumCb && m_scaleSpectrumCb->isChecked() )
+  // Hidden means the calculation ignores it, so it must not be persisted either.
+  if( m_planTimeCb && m_planTimeCb->isChecked() && !m_planTimeCb->isHidden() )
   {
     try
     {
-      const double t = PhysicalUnits::stringToTimeDuration( m_scaleSpectrumTime->text().toUTF8() );
+      const double t = PhysicalUnits::stringToTimeDuration( m_planTimeEdit->text().toUTF8() );
       if( t > 0.0 )
         answer += "&SCALE=" + SpecUtils::printCompact( t / PhysicalUnits::second, 6 ) + "s";
     }catch( std::exception & )
@@ -3011,7 +3657,36 @@ std::string DetectionLimitSimple::encodeStateToUrl() const
     }
   }
 
+  // The advanced statistical inputs.  Each value is emitted independently of ADV, so unticking
+  //  "Advanced" and then undoing gets the typed values back; ADV alone records whether they apply.
+  //  The *absence* of ALPHA/BETA is how "still tracking the confidence level" is encoded - that is
+  //  what makes a decoded state respond to the confidence-level combo the way a live one does.
+  if( m_advancedCb->isChecked() )
+    answer += "&ADV=1";
+
+  if( m_alphaUserSet )
+    answer += "&ALPHA=" + SpecUtils::printCompact( m_alpha->value(), 6 );
+
+  if( m_betaUserSet )
+    answer += "&BETA=" + SpecUtils::printCompact( m_beta->value(), 6 );
+
+  if( m_distanceUncert->validate() == WValidator::State::Valid )
+  {
+    string dist_uncert = m_distanceUncert->text().toUTF8();
+    SpecUtils::trim( dist_uncert );
+    // Like DIST, distance is not localized, so the user's text can go straight into the URL.
+    if( !dist_uncert.empty() )
+      answer += "&DISTUNCERT=" + dist_uncert;
+  }
+
+  if( m_effUncert->validate() == WValidator::State::Valid )
+  {
+    string eff_uncert = m_effUncert->text().toUTF8();
+    SpecUtils::trim( eff_uncert );
+    if( !eff_uncert.empty() )
+      answer += "&EFFUNCERT=" + eff_uncert;
+  }
+
   return answer;
 }//std::string encodeStateToUrl() const;
-
 

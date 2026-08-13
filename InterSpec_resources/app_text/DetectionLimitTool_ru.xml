@@ -9,25 +9,6 @@
   <message id="dlt-roi-lower-label">ROI Нижний:</message>
   <message id="dlt-roi-upper-label">ROI Верхний:</message>
   <message id="dlt-continuum-label">Континуум</message>
-  <message id="dlt-cont-norm-label">Норм. Конт.</message>
-  <message id="dlt-cont-norm-floating">Плавающий</message>
-  <message id="dlt-cont-norm-fixed-edges">Фиксированный по краям</message>
-  <message id="dlt-cont-norm-fixed-full-roi">Фиксированный полный ROI</message>
-  <message id="dlt-cont-norm-tt">
-    Как должна определяться нормализация континуума:
-    <ul><li><b>Плавающий</b>: Полиномиальный континуум подбирается для каждой заданной активности -
-    активность влияет на континуум.</li>
-    <li><b>Фиксированный по краям</b>: Каналы по обе стороны от ROI используются для определения
-    линейного континуума, который фиксирован и не зависит от активности нуклидов.</li>
-    <li><b>Фиксированный полный ROI</b>: Континуум подбирается с использованием всего энергетического диапазона ROI,
-    предполагая гауссову амплитуду равной нулю; позже гауссова компонента пика
-    будет размещена поверх этого фиксированного континуума.<br/>
-    Это фактически утверждает, что вы знаете, что в данных нет сигнального пика.
-    Континуум не будет зависеть от значения активности нуклида, и гауссова
-    компонента пика будет размещена поверх этого фиксированного континуума при оценке
-    &chi;<sup>2</sup>.</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">Предел Керри одиночного пика</message>
   <message id="dlt-num-side-channels-label">Кол-во боковых каналов</message>
   <message id="dlt-further-details-link">дополнительные детали...</message>
@@ -39,7 +20,11 @@
   <message id="dlt-range">Диапазон:</message>
   <message id="dlt-detected-activity-tt">Обнаруженная активность, используя только эту Область Интереса,
     и наблюдаемый избыток отсчётов, а также
-    статистический доверительный интервал.</message>
+    статистический доверительный интервал.
+    Номинальное значение - это наилучшая оценка по ISO 11929: среднее распределения сигнала после
+    удаления той его части, которая приходится на невозможные отрицательные активности.  Она всегда
+    не меньше исходного избытка отсчётов, и обе величины совпадают, когда сигнал заметно превышает
+    критический уровень.</message>
   <message id="dlt-limit-lt-zero"><![CDATA[Предел: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(значительно меньше отсчётов в ROI, чем предсказано)</message>
   <message id="dlt-fewer-counts-tt">Значительно меньше отсчётов было наблюдено в
@@ -66,22 +51,12 @@
   <message id="dlt-distance-limit">Предел расстояния</message>
   <message id="dlt-peaks-disp-act-label">Пики отобр. акт.:</message>
   <message id="dlt-peaks-disp-dist-label">Пики отобр. расст.:</message>
-  <message id="dlt-conf-level-label">Уровень доверия:</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68,2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95,4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99,7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">Гамма-линии для использования</message>
   <message id="dlt-min-rel-intensity-label">Мин. относительная интенсивность:</message>
   <message id="dlt-fit-fwhm-btn">Подобрать FWHM...</message>
   <message id="dlt-log">Лог</message>
   <message id="dlt-lin">Лин</message>
   <message id="dlt-below-lc">(ниже L<sub>c</sub>)</message>
-  <message id="dlt-lt-zero-counts"><![CDATA[< 0 отсчётов]]></message>
-  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">Нет загруженных данных</message>
@@ -128,7 +103,10 @@
   
   <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
   <message id="dlt-tt-greater-than-lc">Больше &quot;критического уровня&quot;, L<sub>c</sub>,
-    отсчётов было наблюдено в области пика.</message>
+    отсчётов было наблюдено в области пика.
+    Показанное значение - наилучшая оценка сигнала по ISO 11929, учитывающая, что активность не
+    может быть отрицательной; решение о наличии сигнала принималось по исходному избытку отсчётов.
+    Для явного сигнала обе величины совпадают, а для граничного наилучшая оценка больше.</message>
   <message id="dlt-tt-activity-range">Оценка диапазона активности сигнала, до уровня доверия {1}.</message>
   <message id="dlt-tt-counts-range">Оценка диапазона отсчётов сигнала, до уровня доверия {1}.</message>
   <message id="dlt-tt-fewer-than-predicted">Значительно меньше отсчётов в области пика было наблюдено,
@@ -165,15 +143,19 @@
     источника до любого экранирования, но с учётом возраста нуклида,
     на распад родительского нуклида.</message>
   <message id="dlt-tt-below-lc-counts">Наблюдаемые отсчёты сигнала меньше &quot;критического уровня&quot;, L<sub>c</sub>,
-    поэтому обнаружение не может быть объявлено, но это избыток над ожидаемыми отсчётами.</message>
+    поэтому обнаружение не может быть объявлено, но это наилучшая оценка отсчётов сигнала по
+    ISO 11929 с учётом того, что сигнал не может быть отрицательным.  Она никогда не бывает меньше
+    нуля, даже если в области пика наблюдается меньше отсчётов, чем предсказывают соседние области.</message>
   <message id="dlt-tt-below-lc-activity">Наблюдаемая активность сигнала меньше &quot;критического уровня&quot;, L<sub>c</sub>,
-    поэтому обнаружение не может быть объявлено, но это избыток над ожидаемыми отсчётами.</message>
+    поэтому обнаружение не может быть объявлено, но это наилучшая оценка активности по ISO 11929 с
+    учётом того, что активность не может быть отрицательной.  Она никогда не бывает меньше нуля,
+    даже если в области пика наблюдается меньше отсчётов, чем предсказывают соседние области.</message>
   
   <!-- Chart strings -->
   <message id="dlt-chart-x-axis-distance">Расстояние ({1})</message>
   <message id="dlt-chart-x-axis-activity">Активность ({1})</message>
   <message id="dlt-chart-title-estimated-activity">Оценённая активность {1}.</message>
-  <message id="dlt-chart-title-excess-counts">Избыточные отсчёты {1}.</message>
+  <message id="dlt-chart-title-excess-counts">Оценка сигнала: {1} отсчётов.</message>
   <message id="dlt-chart-title-activity-lt-zero"><![CDATA[Активность < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">Данные + пик для {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">Пик для верхней границы {1} @{2} УД</message>
@@ -188,4 +170,9 @@
   <message id="dlt-err-upper-limit-negative">Верхний предел отсчётов меньше нуля, но наблюдаемые отсчёты больше L_d.</message>
   <message id="dlt-err-activity-zero-negative">Активность не может быть нулём или отрицательной</message>
   <message id="dlt-err-distance-zero-negative">Расстояние не может быть нулём или отрицательным</message>
+  <message id="dlt-qr-tool-state-title">Состояние Инструмента доверия обнаружения</message>
+  <message id="dlt-qr-tool-state-txt">Текущее состояние инструмента доверия обнаружения.</message>
+  <message id="dlt-estimating-spread">Расчёт разброса…</message>
+  <message id="dlt-spread-band">(обычно {1}&ndash;{2}&times; этого значения)</message>
+  <message id="dlt-spread-unavailable">Не удалось оценить разброс.</message>
 </messages>

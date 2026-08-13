@@ -9,25 +9,6 @@
   <message id="dlt-roi-lower-label">ROI 下限:</message>
   <message id="dlt-roi-upper-label">ROI 上限:</message>
   <message id="dlt-continuum-label">连续谱</message>
-  <message id="dlt-cont-norm-label">连续谱归一化</message>
-  <message id="dlt-cont-norm-floating">浮动</message>
-  <message id="dlt-cont-norm-fixed-edges">边缘固定</message>
-  <message id="dlt-cont-norm-fixed-full-roi">完整ROI固定</message>
-  <message id="dlt-cont-norm-tt">
-    应如何确定连续谱归一化：
-    <ul><li><b>浮动</b>：多项式连续谱在每个给定活度下进行拟合 -
-    活度影响连续谱。</li>
-    <li><b>边缘固定</b>：使用ROI两侧的通道来确定
-    固定的线性连续谱，不受核素活度的影响。</li>
-    <li><b>完整ROI固定</b>：使用ROI的整个能量范围拟合连续谱，
-    假设高斯幅度为零；随后，峰的高斯分量将
-    位于此固定连续谱之上。<br/>
-    这实际上是在断言您知道数据中不存在信号峰。
-    连续谱不会受到核素活度值的影响，并且高斯
-    峰分量在评估时将位于此固定连续谱之上
-    &chi;<sup>2</sup>。</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">单峰柯里限值</message>
   <message id="dlt-num-side-channels-label">侧通道数</message>
   <message id="dlt-further-details-link">更多详情...</message>
@@ -39,7 +20,9 @@
   <message id="dlt-range">范围:</message>
   <message id="dlt-detected-activity-tt">检测到的活度，仅使用此感兴趣区域，
     以及观察到的计数过量，以及
-    统计置信区间。</message>
+    统计置信区间。
+    标称值是 ISO 11929 的最佳估计值：在去除对应于不可能的负活度的部分之后，信号分布的均值。
+    它始终不小于原始的计数过量；当信号明显高于临界水平时，两者一致。</message>
   <message id="dlt-limit-lt-zero"><![CDATA[限值: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(ROI中的计数明显少于预测)</message>
   <message id="dlt-fewer-counts-tt">在感兴趣区域中观察到的计数
@@ -66,22 +49,12 @@
   <message id="dlt-distance-limit">距离限值</message>
   <message id="dlt-peaks-disp-act-label">峰显示 活度:</message>
   <message id="dlt-peaks-disp-dist-label">峰显示 距离:</message>
-  <message id="dlt-conf-level-label">置信水平:</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68.2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95.4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99.7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">要使用的伽马线</message>
   <message id="dlt-min-rel-intensity-label">最小相对强度:</message>
   <message id="dlt-fit-fwhm-btn">拟合FWHM...</message>
   <message id="dlt-log">对数</message>
   <message id="dlt-lin">线性</message>
   <message id="dlt-below-lc">(低于 L<sub>c</sub>)</message>
-  <message id="dlt-lt-zero-counts"><![CDATA[< 0 计数]]></message>
-  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">未加载数据</message>
@@ -128,7 +101,9 @@
   
   <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
   <message id="dlt-tt-greater-than-lc">大于&quot;临界水平&quot;，L<sub>c</sub>，
-    在峰区域中观察到计数。</message>
+    在峰区域中观察到计数。
+    显示的数值是 ISO 11929 的信号最佳估计值，它考虑了活度不能为负这一点；
+    判定存在信号所依据的是原始的计数过量。对于明显的信号，两者一致；对于临界信号，最佳估计值较大。</message>
   <message id="dlt-tt-activity-range">信号活度范围估计，达到{1}置信水平。</message>
   <message id="dlt-tt-counts-range">信号计数范围估计，达到{1}置信水平。</message>
   <message id="dlt-tt-fewer-than-predicted">在峰区域中观察到的计数明显少于
@@ -165,15 +140,17 @@
     源，在任何屏蔽之前，但考虑核素年龄，
     每个父核素衰变。</message>
   <message id="dlt-tt-below-lc-counts">观察到的信号计数小于&quot;临界水平&quot;，L<sub>c</sub>，
-    因此不能声明检测，但这是超过预期计数的过量。</message>
+    因此不能声明检测，但这是 ISO 11929 的信号计数最佳估计值，其中考虑了信号不能为负。
+    即使峰区观察到的计数少于相邻区域的预测值，它也绝不会低于零。</message>
   <message id="dlt-tt-below-lc-activity">观察到的信号活度小于&quot;临界水平&quot;，L<sub>c</sub>，
-    因此不能声明检测，但这是超过预期计数的过量。</message>
+    因此不能声明检测，但这是 ISO 11929 的活度最佳估计值，其中考虑了活度不能为负。
+    即使峰区观察到的计数少于相邻区域的预测值，它也绝不会低于零。</message>
   
   <!-- Chart strings -->
   <message id="dlt-chart-x-axis-distance">距离 ({1})</message>
   <message id="dlt-chart-x-axis-activity">活度 ({1})</message>
   <message id="dlt-chart-title-estimated-activity">估计活度 {1}。</message>
-  <message id="dlt-chart-title-excess-counts">过量计数 {1}。</message>
+  <message id="dlt-chart-title-excess-counts">估计信号 {1} 计数。</message>
   <message id="dlt-chart-title-activity-lt-zero"><![CDATA[活度 < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">数据 + 峰 {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">上限峰 {1} @{2} CL</message>
@@ -188,4 +165,9 @@
   <message id="dlt-err-upper-limit-negative">计数上限小于零，但观察到的计数大于L_d。</message>
   <message id="dlt-err-activity-zero-negative">活度不能为零或负数</message>
   <message id="dlt-err-distance-zero-negative">距离不能为零或负数</message>
+  <message id="dlt-qr-tool-state-title">检测置信度工具状态</message>
+  <message id="dlt-qr-tool-state-txt">检测置信度工具的当前状态。</message>
+  <message id="dlt-estimating-spread">正在计算离散度…</message>
+  <message id="dlt-spread-band">(通常为该值的 {1}&ndash;{2}&times;)</message>
+  <message id="dlt-spread-unavailable">无法估计离散度。</message>
 </messages>

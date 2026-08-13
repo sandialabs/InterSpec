@@ -1394,6 +1394,11 @@ namespace {
       {"decisionThreshold", result.decision_threshold},
       {"detectionLimit", result.detection_limit},
       {"sourceCounts", result.source_counts},
+      // ISO 11929-1:2019 Formula (44)/(45).  `sourceCounts` is the primary result, and is what
+      //  `peakPresentInData` is decided on; the best estimate is what ISO says to quote as the
+      //  measured value, and is what the GUI and reports show.
+      {"bestEstimateCounts", result.best_estimate},
+      {"bestEstimateCountsUncert", result.best_estimate_uncert},
       {"lowerLimit", result.lower_limit},
       {"upperLimit", result.upper_limit},
       {"peakPresentInData", (result.source_counts > result.decision_threshold)}
@@ -5611,7 +5616,9 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
       // Convert counts to activity
       if( result.source_counts > result.decision_threshold )
       {
-        // Signal detected - provide observed activity and range
+        // Signal detected - provide observed activity and range.  `observedActivity` is the ISO
+        //  primary result, kept so the decision and the number it was made from stay together;
+        //  `bestEstimateActivity` is what ISO says to quote and is what the GUI shows.
         const double nominal_act = result.source_counts / gammas_per_bq;
         result_json["observedActivity"] = round_to_sig_figs( nominal_act, 6 );
 
@@ -5625,6 +5632,10 @@ nlohmann::json ToolRegistry::executeCurrieMdaCalc(const nlohmann::json& params, 
         const double simple_mda = result.upper_limit / gammas_per_bq;
         result_json["activityUpperBound"] = round_to_sig_figs( simple_mda, 6 );
       }
+
+      // Given whether or not a detection was declared, per ISO 11929-1:2019 clause 10 NOTE 2.
+      result_json["bestEstimateActivity"] = round_to_sig_figs( result.best_estimate / gammas_per_bq, 6 );
+      result_json["bestEstimateActivityUncert"] = round_to_sig_figs( result.best_estimate_uncert / gammas_per_bq, 6 );
 
       // Always provide decision threshold and detection limit in activity
       const double decision_threshold_act = result.decision_threshold / gammas_per_bq;

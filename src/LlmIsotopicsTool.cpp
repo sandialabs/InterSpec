@@ -442,7 +442,7 @@ void saveRelActState(
 
   RelActAutoGui *gui = interspec->relActAutoWindow(false);
   if( gui )
-    gui->deSerialize( state );
+    gui->deSerializeWithUndo( state, "Set 'Isotopics by nuclides' configuration." );
 }//saveRelActState()
 
 
@@ -862,7 +862,7 @@ nlohmann::json executeResetIsotopicsConfig(
     try
     {
       RelActCalcAuto::RelActAutoGuiState empty_state;
-      gui->deSerialize( empty_state );
+      gui->deSerializeWithUndo( empty_state, "Clear 'Isotopics by nuclides' configuration." );
     }catch( std::exception &e )
     {
       cerr << "Failed to deSerialize an empty state to RelActAutoGui!  " << e.what() << endl;
@@ -979,7 +979,7 @@ nlohmann::json executeLoadIsotopicsPreset(
   {
     try
     {
-      gui->deSerialize( state );
+      gui->deSerializeWithUndo( state, "Load 'Isotopics by nuclides' preset." );
     }catch( std::exception &e )
     {
       cerr << "Failed to de-serialize preset '" << preset_name << "' to the GUI!  error: " << e.what() << endl;

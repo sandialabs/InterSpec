@@ -48,15 +48,6 @@
   </message>
   <message id="smm-unsupported-document">このファイルは文書ファイルのようで、InterSpecではサポートされていません。</message>
   <message id="smm-invalid-peak-csv">アップロードファイルはピークCSVファイルのようでしたが、無効でした。</message>
-  <message id="smm-file-is-drf">
-    <p style="white-space: nowrap;">
-      このファイルは検出器応答関数のようです。
-    </p>
-    <p style="text-align: left; white-space: nowrap;">
-      名前: {1}
-    </p>
-   <p>このDRFを使用しますか？</p>
-  </message>
   <message id="smm-saved-drf-conf">
     '{1}'を後で使用するために保存しました。「<em>検出器応答関数選択</em>」ツールの「<em>相対効率</em>」部分で利用できます。
   </message>
@@ -252,7 +243,6 @@
     <b>ファイルマネージャ</b>を使用してこれを変更してください。
   </message>
 
-
   <!-- The visual components of the Spectrum Measurement Manager GUI -->
   <message id="smm-selected-spec-label">選択されたスペクトル: </message>
   <message id="smm-disp-as-btn">表示形式</message>
@@ -265,7 +255,6 @@
   <message id="smm-export-btn">エクスポート...</message>
   <message id="smm-unload-btn">アンロード</message>
   <message id="smm-unassign-label">割り当て解除: </message>
-
 
   <message id="smm-prev-states-window-title">以前に保存された状態</message>
   <message id="smm-err-prev-state-unexpected">使用可能な保存状態の表示で予期しない問題: {1}</message>
@@ -325,9 +314,7 @@
   <message id="musd-err-decoding-url">URL復号化エラー: {1}</message>
   <message id="musd-received-urls-list">{2}のうち{1}のurlを受信しました。<p>さらなるURLs/QRコードを待機中</p></message>
 
-
   <message id="uid-qr-code-pic">QRコード画像</message>
-  <message id="uid-no-qr-found">QRコードが見つかりません ⓘ</message>
   <message id="uid-no-qr-found-title">QRコードが見つかりません</message>
   <message id="uid-no-qr-content">
     <p>

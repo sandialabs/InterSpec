@@ -31,10 +31,10 @@ ca-bundle.trust-with-zscaler.crt
 GEMINI.md
 CLAUDE.md
 AGENT.md
+scratch/
 renamed_*
 devcontainer_prefix
 *.back
-scratch
 .devcontainer 
 test_datasets/
 

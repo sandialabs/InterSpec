@@ -43,6 +43,17 @@
   gap: 5px;
 }
 
+/* Detection-limit options; grouped into one container so they can be shown and hidden together,
+   but laid out like the individual options they sit beside. */
+.BatchGuiWidget .BatchGuiPeakFitWidget .MdaOptionsContainer
+{
+  display: flex;
+  flex-direction: row;
+  gap: 5px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
 /* Threshold Option Container - Flex layout with vertical centering */
 .BatchGuiWidget .ThresholdOptionContainer
 {

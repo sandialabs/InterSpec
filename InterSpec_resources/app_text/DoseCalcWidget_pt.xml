@@ -36,7 +36,6 @@
   <message id="dcw-generic-shield-invalid">Erro ao calcular dose, blindagem inválida, desculpe :{</message>
   <message id="dcw-dist-invalid">Distância é inválida.</message>
   <message id="dcw-err-other">Erro ao calcular dose da fonte, desculpe :{</message>
-  <message id="dcw-invalid-src-dose">Dose fonte inválida.</message>
   <message id="dcw-invalid-src-act">Atividade fonte inválida.</message>
   <message id="dcw-invalid-src-dose">Dose fonte inválida.</message>
   <message id="dcw-failed-find-lower-dist">Falha ao encontrar distância de limite inferior, em {1} cm.</message>

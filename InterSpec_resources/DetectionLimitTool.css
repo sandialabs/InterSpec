@@ -118,6 +118,15 @@
   color: red;
 }
 
+/* A warning qualifies a limit that WAS produced; an error means there is no limit.  Amber rather
+   than red so a qualified answer does not read as a failure.
+   The dark-theme colour is in themes/dark/dark.css - the theme is user-selected, not OS-driven, so
+   a `prefers-color-scheme` rule here would not follow it. */
+.MdaWarnMsg
+{
+  color: #9a6400;
+}
+
 .DetectionLimitTool button.MdaFitFwhm.Wt-btn.with-label.LightButton
 {
   align-self: center;

@@ -35,7 +35,6 @@
   <message id="bgw-concatenate-all-to-single">सभी फ़ाइलों को एकल फ़ाइल में जोड़ें</message>
   <message id="bgw-info-will-convert-file-type">फ़ाइलें चयनित प्रकार में परिवर्तित की जाएंगी।</message>
 
-
   <!-- Reports group -->
   <message id="bgw-reports-grp-title">लिखने के लिए रिपोर्ट</message>
   <message id="bgw-reports-write-html">HTML</message>
@@ -43,7 +42,6 @@
   <message id="bgw-reports-write-csv">सारांश CSV</message>
   <message id="bgw-reports-write-csv-tooltip">सभी इनपुट फ़ाइलों से विश्लेषण परिणामों के साथ सारांश CSV फ़ाइल लिखें।</message>
   <message id="bgw-reports-write-custom-per-file">कस्टम प्रति-फ़ाइल</message>
-  <message id="bgw-reports-write-custom-per-file-tooltip">प्रत्येक फ़ाइल के लिए उपयोग करने हेतु कस्टम रिपोर्ट टेम्पलेट अपलोड करें।</message>
   <message id="bgw-reports-write-custom-summary">कस्टम सारांश</message>
   <message id="bgw-reports-write-custom-summary-tooltip">सभी इनपुट फ़ाइलों का सारांश प्रदान करने के लिए एक या अधिक टेम्पलेट फ़ाइलें।</message>
 
@@ -58,7 +56,6 @@
   <message id="bgw-no-ana-act-shield-invalid-background">अमान्य background</message>
   <message id="bgw-no-ana-no-input-files">कोई इनपुट फ़ाइल नहीं।</message>
   <message id="bgw-no-ana-invalid-output-path">कृपया मान्य आउटपुट निर्देशिका चुनें।</message>
-
 
   <!-- Analysis progress and results -->
   <message id="bgw-performing-work-title">कार्य निष्पादन</message>

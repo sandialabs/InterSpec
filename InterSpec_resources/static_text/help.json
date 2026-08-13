@@ -152,7 +152,7 @@
         "id":"simple-mda-dialog",
         "title": "Simple MDA",
         "help-xml":"simple_mda_help.xml",
-        "keywords":"MDA Detectable simple"
+        "keywords":"MDA Detectable simple minimum detectable activity limit Currie deconvolution Cash upper limit confidence background reference"
       },
       {
         "id":"simple-activity-calc",
@@ -196,7 +196,7 @@
         "id":"detection-confidence-tool",
         "title":"Detection Confidence Tool",
         "help-xml":"detection_confidence_tool_help.xml",
-        "keywords":"detection confidence upper limit 95 activity"
+        "keywords":"detection confidence upper limit 95 activity MDA minimum detectable Currie deconvolution Cash central interval sensitivity background reference continuum Lc Ld decision threshold"
       },
       {
         "id":"spectrum-file-query",

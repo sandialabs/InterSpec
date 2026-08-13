@@ -1962,6 +1962,414 @@ ModelFitProgress::ModelFitProgress()
 }
 
   
+namespace
+{
+  /** Rebuilds a `SupplementalPeakInfo::description` from its parts, keeping the caveats last. */
+  void update_supplemental_description( ShieldingSourceFitCalc::SupplementalPeakInfo &info )
+  {
+    info.description = info.result_summary;
+
+    if( !info.caveats.empty() )
+      info.description += string(info.description.empty() ? "" : "  ") + info.caveats;
+  }//void update_supplemental_description( SupplementalPeakInfo & )
+
+
+  /** Appends a caveat, with the usual two-space separation. */
+  void add_supplemental_caveat( ShieldingSourceFitCalc::SupplementalPeakInfo &info,
+                                const string &caveat )
+  {
+    info.caveats += string(info.caveats.empty() ? "" : "  ") + caveat;
+  }//void add_supplemental_caveat( SupplementalPeakInfo &, const string & )
+}//namespace
+
+
+vector<SupplementalPeakInfo> compute_supplemental_peak_info(
+                            const GammaInteractionCalc::ShieldingSourceChi2Fcn &chi2Fcn,
+                            const ModelFitResults &results,
+                            vector<string> &warnings )
+{
+  vector<SupplementalPeakInfo> answer;
+
+  const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput &input
+                                                                = chi2Fcn.createInput();
+  const GammaInteractionCalc::ShieldingSourceChi2Fcn::SupplementalInfoOptions &supp_options
+                                                                = input.supplemental_options;
+
+  if( !supp_options.compute
+     || (results.successful != ModelFitResults::FitStatus::Final)
+     || input.foreground_peaks.empty() )
+  {
+    return answer;
+  }
+
+  const vector<double> &params = results.paramValues;
+
+  // The nuclides the fit actually has parameters for; a peak whose nuclide is not one of these
+  //  cannot be added to the evaluation without shifting the whole parameter layout.
+  set<const SandiaDecay::Nuclide *> fit_nuclides;
+  for( size_t i = 0; i < chi2Fcn.numNuclides(); ++i )
+  {
+    const SandiaDecay::Nuclide * const nuc = chi2Fcn.nuclide( i );
+    if( nuc )
+      fit_nuclides.insert( nuc );
+  }
+
+  const set<shared_ptr<const PeakDef>> synthetic_peaks( begin(input.synthetic_peaks),
+                                                        end(input.synthetic_peaks) );
+
+  // The nuclides that are volumetric (self-attenuating or trace) sources; their attenuation and
+  //  efficiency are averaged over the source, so scaling a single peak is only approximate.
+  set<const SandiaDecay::Nuclide *> volumetric_nuclides;
+  if( results.source_calc_details )
+  {
+    for( const GammaInteractionCalc::SourceDetails &src : *results.source_calc_details )
+    {
+      if( src.nuclide && (src.isSelfAttenSource || src.isTraceSource) )
+        volumetric_nuclides.insert( src.nuclide );
+    }
+  }//if( results.source_calc_details )
+
+  DetectionLimitCalc::PeakCurrieCheckOptions check_opts;
+  check_opts.confidence_level = supp_options.confidence_level;
+  check_opts.num_side_channels = supp_options.num_side_channels;
+  check_opts.roi_num_fwhm = supp_options.roi_num_fwhm;
+
+  // One entry per peak given to `create(...)`, in that order.  The peaks that will be added to the
+  //  evaluation are collected as we go.
+  vector<size_t> to_evaluate;  //indexes into `answer`
+
+  for( const shared_ptr<const PeakDef> &peak : input.foreground_peaks )
+  {
+    SupplementalPeakInfo info;
+    info.peak = peak;
+
+    if( !peak )
+    {
+      assert( 0 );
+      info.not_evaluated_reason = "invalid peak";
+      answer.push_back( info );
+      continue;
+    }
+
+    info.used_for_fit = peak->useForShieldingSourceFit();
+    info.synthetic = (synthetic_peaks.count(peak) > 0);
+
+    // The detection-limit check is meaningful for every peak: for a peak that was fit it says
+    //  whether the signal is actually above the level at which it can be claimed.
+    info.currie = DetectionLimitCalc::currie_check_for_peak( *peak, input.foreground, check_opts,
+                                                            !info.synthetic );
+
+    const SandiaDecay::Nuclide * const nuc = peak->parentNuclide();
+    if( !nuc )
+      info.not_evaluated_reason = "the peak has no nuclide assigned";
+    else if( !fit_nuclides.count(nuc) )
+      info.not_evaluated_reason = nuc->symbol + " was not one of the fitted sources";
+    else if( !peak->hasSourceGammaAssigned() )
+      info.not_evaluated_reason = "the peak has no specific gamma assigned";
+    else
+      to_evaluate.push_back( answer.size() );
+
+    info.nuclide_expected_counts = 0.0;
+    answer.push_back( info );
+  }//for( const shared_ptr<const PeakDef> &peak : input.foreground_peaks )
+
+  if( to_evaluate.empty() )
+  {
+    for( SupplementalPeakInfo &info : answer )
+      update_supplemental_description( info );
+    return answer;
+  }
+
+  // Build the augmented peak list: same order, with the eligible not-used peaks flagged so that
+  //  `create(...)` keeps them.  Everything else is passed through untouched.
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput aug_input = input;
+  aug_input.supplemental_options.compute = false;  //dont recurse
+  aug_input.foreground_peaks.clear();
+
+  set<shared_ptr<const PeakDef>> added_peaks;
+  for( const size_t index : to_evaluate )
+  {
+    if( !answer[index].used_for_fit )
+      added_peaks.insert( answer[index].peak );
+  }
+
+  for( const shared_ptr<const PeakDef> &peak : input.foreground_peaks )
+  {
+    if( added_peaks.count(peak) )
+    {
+      auto flagged = make_shared<PeakDef>( *peak );
+      flagged->useForShieldingSourceFit( true );
+      aug_input.foreground_peaks.push_back( flagged );
+    }else
+    {
+      aug_input.foreground_peaks.push_back( peak );
+    }
+  }//for( const shared_ptr<const PeakDef> &peak : input.foreground_peaks )
+
+  vector<GammaInteractionCalc::PeakDetail> details;
+  shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> aug_fcn;
+
+  try
+  {
+    const pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>,
+               ROOT::Minuit2::MnUserParameters> fcn_pars
+            = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( aug_input );
+
+    aug_fcn = fcn_pars.first;
+
+    // Adding peaks whose nuclides are already fitted leaves the nuclide set - and therefore the
+    //  parameter layout - unchanged.  If that ever stopped being true, every parameter would
+    //  silently shift, and the numbers below would be garbage; so check before evaluating.
+    const size_t num_aug_pars = fcn_pars.second.Parameters().size();
+    const bool layout_matches = (aug_fcn->numNuclides() == chi2Fcn.numNuclides())
+                                && (num_aug_pars == params.size());
+    assert( layout_matches );
+
+    if( !layout_matches )
+    {
+      warnings.push_back( "The peaks not used in the fit could not be evaluated: adding them"
+                          " changed the fit parameter layout." );
+      for( SupplementalPeakInfo &info : answer )
+      {
+        if( info.not_evaluated_reason.empty() )
+          info.not_evaluated_reason = "the fit parameter layout could not be reproduced";
+        update_supplemental_description( info );
+      }
+      return answer;
+    }//if( !layout_matches )
+
+    // `energy_chi_contributions` requires the uncertainties to be the same length as the values,
+    //  but a fit that didnt converge clears them.
+    vector<double> errors = results.paramErrors;
+    if( errors.size() != params.size() )
+      errors.resize( params.size(), 0.0 );
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
+    aug_fcn->energy_chi_contributions( params, errors, mixcache, nullptr, &details );
+  }catch( std::exception &e )
+  {
+    warnings.push_back( "Failed to evaluate the fitted model for the peaks not used in the fit: "
+                        + string(e.what()) );
+    for( SupplementalPeakInfo &info : answer )
+    {
+      if( info.not_evaluated_reason.empty() )
+        info.not_evaluated_reason = "the model evaluation failed";
+      update_supplemental_description( info );
+    }
+    return answer;
+  }//try / catch
+
+  // `details` is in the order of the peaks `create(...)` kept, which is the order they appear in
+  //  `aug_input.foreground_peaks`, filtered on the fit flag.
+  vector<shared_ptr<const PeakDef>> evaluated_peaks;
+  for( size_t i = 0; i < aug_input.foreground_peaks.size(); ++i )
+  {
+    const shared_ptr<const PeakDef> &p = aug_input.foreground_peaks[i];
+    if( p && p->useForShieldingSourceFit() )
+      evaluated_peaks.push_back( input.foreground_peaks[i] );  //the original, un-flagged peak
+  }
+
+  assert( evaluated_peaks.size() == details.size() );
+  if( evaluated_peaks.size() != details.size() )
+  {
+    warnings.push_back( "The peaks not used in the fit could not be evaluated: the model returned"
+                        " an unexpected number of results." );
+    for( SupplementalPeakInfo &info : answer )
+    {
+      if( info.not_evaluated_reason.empty() )
+        info.not_evaluated_reason = "the model returned an unexpected number of results";
+      update_supplemental_description( info );
+    }
+    return answer;
+  }//if( evaluated_peaks.size() != details.size() )
+
+  // Adding peaks changes which peaks the models gamma lines get clustered to, and a line can in
+  //  principle be pulled away from a peak the fit used.  If that happened the numbers below are not
+  //  the nominal answer any more, so check the used peaks still get what the fit gave them.
+  double worst_used_peak_diff = 0.0;
+  if( results.peak_calc_details )
+  {
+    size_t fit_index = 0;
+    for( size_t i = 0; i < evaluated_peaks.size(); ++i )
+    {
+      const shared_ptr<const PeakDef> &p = evaluated_peaks[i];
+      if( !p || !p->useForShieldingSourceFit() )
+        continue;
+
+      if( fit_index >= results.peak_calc_details->size() )
+        break;
+
+      const double fit_expected = (*results.peak_calc_details)[fit_index].expectedCounts;
+      const double aug_expected = details[i].expectedCounts;
+      fit_index += 1;
+
+      if( fit_expected > 0.0 )
+        worst_used_peak_diff = std::max( worst_used_peak_diff,
+                                         fabs(aug_expected - fit_expected) / fit_expected );
+    }//for( size_t i = 0; i < evaluated_peaks.size(); ++i )
+  }//if( results.peak_calc_details )
+
+  // A tenth of a percent is far above the numerical noise of re-running the same calculation, and
+  //  far below any real re-clustering, which moves a whole gamma line.
+  const bool clustering_changed = (worst_used_peak_diff > 1.0E-3);
+  assert( !clustering_changed );
+  if( clustering_changed )
+  {
+    char buffer[256] = { '\0' };
+    snprintf( buffer, sizeof(buffer),
+             "Including the peaks not used in the fit changed the model prediction for the peaks"
+             " that were used, by up to %.2g%%; the implied activities below are approximate.",
+             100.0*worst_used_peak_diff );
+    warnings.push_back( buffer );
+  }//if( clustering_changed )
+
+  const bool use_curie = supp_options.use_curie;
+
+  for( size_t i = 0; i < evaluated_peaks.size(); ++i )
+  {
+    const shared_ptr<const PeakDef> &peak = evaluated_peaks[i];
+    const GammaInteractionCalc::PeakDetail &detail = details[i];
+
+    // Find this peaks entry
+    SupplementalPeakInfo *info = nullptr;
+    for( SupplementalPeakInfo &candidate : answer )
+    {
+      if( candidate.peak == peak )
+      {
+        info = &candidate;
+        break;
+      }
+    }
+
+    assert( info );
+    if( !info )
+      continue;
+
+    const SandiaDecay::Nuclide * const nuc = peak->parentNuclide();
+    assert( nuc );
+
+    // Split the model prediction between this peaks nuclide and any other fitted source that also
+    //  contributes to it; this is the interference correction.
+    double nuclide_counts = 0.0;
+    for( const GammaInteractionCalc::PeakDetailSrc &src : detail.m_sources )
+    {
+      if( src.nuclide == nuc )
+        nuclide_counts += src.modelContribToPeak;
+    }
+
+    info->model_evaluated = true;
+    info->expected_counts = detail.expectedCounts;
+    info->nuclide_expected_counts = nuclide_counts;
+    info->other_srcs_expected_counts = detail.expectedCounts - nuclide_counts;
+    info->shared_with_other_sources = (info->other_srcs_expected_counts > 1.0E-6*detail.expectedCounts);
+    info->det_efficiency = detail.detEff;
+    info->shield_transmission = detail.m_totalShieldAttenFactor;
+    info->air_transmission = detail.m_airAttenFactor;
+    info->ratio_to_fit = detail.observedOverExpected;
+    info->ratio_to_fit_uncert = detail.observedOverExpectedUncert;
+    info->num_sigma_off = detail.numSigmaOff;
+    info->is_volumetric_source = (volumetric_nuclides.count(nuc) > 0);
+
+    // The fitted activity of this peaks nuclide.
+    for( const SourceFitDef &src : results.fit_src_info )
+    {
+      if( src.nuclide == nuc )
+      {
+        info->fit_activity = src.activity;
+        info->fit_activity_uncert = src.activityUncertainty ? *src.activityUncertainty : 0.0;
+        break;
+      }
+    }
+
+    if( nuclide_counts <= 0.0 )
+    {
+      info->not_evaluated_reason = "the model attributes no " + nuc->symbol + " counts to this peak";
+      info->model_evaluated = false;
+      update_supplemental_description( *info );
+      continue;
+    }
+
+    if( info->fit_activity > 0.0 )
+      info->counts_per_bq = nuclide_counts / info->fit_activity;
+
+    if( info->is_volumetric_source )
+      add_supplemental_caveat( *info, "Note: " + nuc->symbol + " is a volumetric (self-attenuating"
+                              " or trace) source, so the attenuation and efficiency are averaged"
+                              " over the source rather than a single line of sight." );
+
+    if( clustering_changed )
+      add_supplemental_caveat( *info, "Note: including this peak changed the model prediction for"
+                              " the peaks that were used in the fit, so this comparison is"
+                              " approximate." );
+
+    // Only a peak that was actually observed, and that the fit did not use, has an activity to
+    //  imply.  A synthetic peak has no real area, and a used peak already contributed its answer.
+    if( info->used_for_fit || info->synthetic )
+    {
+      update_supplemental_description( *info );
+      continue;
+    }
+
+    if( peak->sourceGammaType() != PeakDef::SourceGammaType::NormalGamma )
+      add_supplemental_caveat( *info, "Note: this peak is assigned to a single- or double-escape"
+                              " peak, x-ray, or annihilation gamma; the comparison is less"
+                              " reliable for these." );
+
+    if( info->shared_with_other_sources )
+    {
+      char buffer[256] = { '\0' };
+      snprintf( buffer, sizeof(buffer),
+               "Note: other fitted sources contribute %.0f%% of the counts expected in this peak;"
+               " their contribution has been removed before scaling.",
+               100.0*info->other_srcs_expected_counts/detail.expectedCounts );
+      add_supplemental_caveat( *info, buffer );
+    }//if( info->shared_with_other_sources )
+
+    // Everything else is held at the nominal fitted answer, so the activity this peak implies is
+    //  just the activity that would make the models prediction match what was observed.
+    const double nuclide_observed = detail.observedCounts - info->other_srcs_expected_counts;
+
+    info->implied_activity = info->fit_activity * nuclide_observed / nuclide_counts;
+    info->implied_activity_uncert = info->fit_activity * detail.observedUncert / nuclide_counts;
+    info->has_implied_activity = (info->fit_activity > 0.0);
+
+    if( !info->has_implied_activity )
+    {
+      info->not_evaluated_reason = "the fitted activity of " + nuc->symbol + " is zero";
+      update_supplemental_description( *info );
+      continue;
+    }
+
+    const string act_str = PhysicalUnits::printToBestActivityUnits( info->implied_activity, 3,
+                                                                    use_curie );
+    const string uncert_str = PhysicalUnits::printToBestActivityUnits( info->implied_activity_uncert,
+                                                                       2, use_curie );
+
+    char short_buffer[64] = { '\0' };
+    snprintf( short_buffer, sizeof(short_buffer), "%.2fx fitted", info->ratio_to_fit );
+    info->short_description = short_buffer;
+
+    char summary_buffer[512] = { '\0' };
+    snprintf( summary_buffer, sizeof(summary_buffer),
+             "This peak alone implies a %s activity of %s +- %s, which is %.2f times the fitted"
+             " activity (%.1f sigma).",
+             nuc->symbol.c_str(), act_str.c_str(), uncert_str.c_str(),
+             info->ratio_to_fit, info->num_sigma_off );
+    info->result_summary = summary_buffer;
+
+    update_supplemental_description( *info );
+  }//for( size_t i = 0; i < evaluated_peaks.size(); ++i )
+
+  for( SupplementalPeakInfo &info : answer )
+  {
+    if( info.description.empty() )
+      update_supplemental_description( info );
+  }
+
+  return answer;
+}//vector<SupplementalPeakInfo> compute_supplemental_peak_info(...)
+
+
 void fit_model( const std::string wtsession,
                          std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
                          std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
@@ -2698,6 +3106,19 @@ void fit_model( const std::string wtsession,
         results->errormsgs.push_back( e.what() );
       }
       
+      // Per-peak detection limit checks, and the activities implied by peaks that were fit but not
+      //  used in the model.  Both the GUI and batch analyses get this from here.  A failure must
+      //  not lose the fit, so it is caught separately.
+      try
+      {
+        results->supplemental_peak_info = compute_supplemental_peak_info( *chi2Fcn, *results,
+                                                                         results->warnings );
+      }catch( std::exception &e )
+      {
+        results->warnings.push_back( "Failed to compute supplemental peak information: "
+                                     + string(e.what()) );
+      }//try / catch
+
       // Check if background subtraction is enabled, but no peaks actually background subtracted
       assert( results->peak_calc_details );
       if( results->peak_calc_details && chi2Fcn->options().background_peak_subtract )

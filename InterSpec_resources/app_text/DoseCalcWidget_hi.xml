@@ -35,7 +35,6 @@
   <message id="dcw-generic-shield-invalid">खुराक की गणना में त्रुटि, अमान्य परिरक्षण, क्षमा करें :{</message>
   <message id="dcw-dist-invalid">दूरी अमान्य है।</message>
   <message id="dcw-err-other">स्रोत से खुराक की गणना में त्रुटि, क्षमा करें :{</message>
-  <message id="dcw-invalid-src-dose">अमान्य स्रोत खुराक।</message>
   <message id="dcw-invalid-src-act">अमान्य स्रोत गतिविधि।</message>
   <message id="dcw-invalid-src-dose">अमान्य स्रोत खुराक।</message>
   <message id="dcw-failed-find-lower-dist">निचली सीमा दूरी खोजने में विफल, {1} cm पर।</message>

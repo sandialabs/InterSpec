@@ -80,7 +80,6 @@
   <message id="rpd-tbl-hdr-tt-trans">প্রকৃত নিউক্লাইড যা এই কণা দিতে ক্ষয় হয়েছে।</message>
   <message id="rpd-tbl-hdr-tt-trans-mode">মূল নিউক্লাইডের ক্ষয় মোড, যা এই কণা উৎপন্ন করেছে।</message>
   <message id="rpd-tbl-hdr-tt-type">উৎপন্ন কণার ধরন</message>
-  <message id="rpd-tbl-hdr-tt-"></message>
 
   <!-- Fit Sources (peak fitting from displayed reference lines) -->
   <message id="rpd-fit-source">উৎস ফিট করুন</message>
@@ -88,6 +87,5 @@
   <message id="rpd-fit-sources-menu-auto">স্বয়ংক্রিয়</message>
   <message id="rpd-fit-sources-menu-advanced">উন্নত</message>
   
-
 
 </messages>

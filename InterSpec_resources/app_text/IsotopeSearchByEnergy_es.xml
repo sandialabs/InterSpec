@@ -69,8 +69,6 @@
   <message id="isbe-category-nuc-xray-rctn-desc">Todos los nucleídos, rayos X (desintegración y fluorescencia), y reacciones</message>
   <message id="isbe-category-xray">Rayos X fluorescencia</message>
   <message id="isbe-category-xray-desc">Solo rayos X de fluorescencia</message>
-  <message id="isbe-category-reactions">Reacciones</message>
-  <message id="isbe-category-reactions-desc">Solo reacciones</message>
   <message id="isbe-category-medical">Nucleídos médicos</message>
   <message id="isbe-category-medical-desc">Nucleídos médicos comunes</message>
   <message id="isbe-category-industrial">Nucleídos industriales</message>
@@ -94,5 +92,4 @@
   <message id="isbe-category-no-progeny">Nucleídos sin envejecer</message>
   <message id="isbe-category-no-progeny-desc">No incluir la progenie de nucleídos. Coincide con gammas o rayos X de desintegración.</message>
 </messages>
-
 

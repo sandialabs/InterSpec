@@ -1,7 +1,301 @@
 <div align="center">
-  <h1 id="simple-mda-dialog"><b>Simple Minimum Detectable Activity Tool</b> </h1>
+  <h1 id="simple-mda-dialog"><b>Simple Minimum Detectable Activity Tool</b></h1>
 <hr />
 </div>
+
+<div align="left">
 <p>
-Not yet implemented
+The <b>Simple MDA</b> tool answers one question about one gamma line: given this
+spectrum, this detector response, and this distance, how much of the nuclide
+could be present without you having seen it?  It reports an upper limit at a
+confidence level you choose, and if there is a detectable excess it reports that
+instead.
 </p>
+
+<h3>The two methods</h3>
+<p>
+<b>Currie</b> sums the counts in a region around the peak and compares them with
+what the channels on either side predict.  It makes no assumption about peak
+shape, which makes it robust and easy to check by hand, and it is the method the
+ISO 11929 and Currie-style conventions describe.
+</p>
+<p>
+<b>Deconvolution</b> instead fits a peak of the expected shape and width at a
+range of trial source strengths, and finds the strength at which the fit becomes
+inconsistent with the data.  Because it uses the peak shape, it can do better
+where the gross-counts assumption breaks down &mdash; a sloping continuum, or a
+neighbouring peak that is itself in the fit.  It depends on the detector response
+being right, and on its own background model matching the data: the continuum is
+a straight line unless you choose otherwise.
+</p>
+<p>
+When the two disagree substantially, that usually says something about the data
+rather than about the methods: most often a curved continuum under the peak, or
+an interfering line in the region.
+</p>
+
+<h3>Two separate questions</h3>
+<p>The deconvolution method exposes two options that are easy to confuse, because
+they sound similar but answer different questions.</p>
+<ul>
+<li><b>Continuum treatment</b> (&quot;Cont. Norm&quot;) &mdash; <em>where the
+knowledge of the background under the peak comes from</em>.  Covered in detail
+below.
+</li>
+<li><b>Background reference</b> &mdash; <em>which measurement the limit is about</em>.
+Leave it unchecked and the limit bounds the signal in the spectrum you have.
+Check it and you are asserting this spectrum contains no signal, and asking what
+a <em>future</em> measurement would be able to detect.  That result is a
+<b>predicted sensitivity</b>, not a bound on the spectrum in hand, and is
+reported as such.
+</li>
+</ul>
+<h3>Choosing the continuum treatment</h3>
+<p>
+The mechanical difference is small; the difference in what you are <em>claiming</em>
+is not.  It comes down to where the knowledge of the background comes from.
+</p>
+<ul>
+<li><b>Floating</b> infers the background from <em>the same channels that might
+contain the signal</em>.  You assert nothing about the neighbourhood.  The question
+it answers is: &quot;given only this window, and no prior knowledge of where the
+continuum sits, how much signal is consistent with the data?&quot;
+</li>
+<li><b>From sides</b> <em>measures the background next door and imports it</em>.
+You assert that the shoulders contain no signal and that the continuum runs
+straight through them into the region.  The question becomes: &quot;given the
+continuum is what the neighbours say it is, how much signal is consistent with the
+region?&quot;
+</li>
+</ul>
+<p>
+That leads to a difference worth knowing: <b>Floating responds to peak
+<em>shape</em>, while From sides also responds to <em>level</em>.</b>  Under
+Floating a broad or uniform elevation across the region is absorbed into the
+continuum, so only genuinely peak-shaped excess counts as signal.  Under From
+sides, a region that simply sits higher than its shoulders is signal, whether or
+not it looks Gaussian.  Floating is the stricter test of &quot;is that actually a
+peak?&quot;
+</p>
+<p>
+<b>The failure modes are not symmetric.</b>  Floating errs toward <em>wider</em>
+limits &mdash; it can quietly absorb real signal into the continuum, so it may
+understate a detection.  That holds while the continuum model fits; where it cannot &mdash; a
+curved background across a wide region &mdash; Floating overstates your confidence instead, and
+the paragraph below explains when.  From sides errs
+toward <em>wrong</em> limits in either direction if its assumption fails: a
+neighbouring line, a Compton edge, a step, or curvature across the window biases
+the shoulders, and the limit moves with them.
+</p>
+<p>
+Adding signal-free channels can only add information, so From sides reliably has
+the smaller <em>uncertainty</em> &mdash; but not necessarily the smaller limit,
+since the central value moves too, depending on whether the shoulders happen to sit
+high or low.  A narrower number is not automatically a better one.
+</p>
+<p>
+<b>In practice:</b> default to Floating &mdash; it is the best-validated mode and
+the defensible number when someone asks what you assumed.  Reach for From sides
+when the region is clean and smooth for several FWHM either side, you have actually
+looked at the shoulders rather than trusting them, and the extra sensitivity is
+worth the assertion.  Never use From sides with an interfering line within a few
+FWHM: that is exactly the case where the shoulders mislead and the method cannot
+notice.  Note also that From sides forces a linear continuum, since four-plus-four
+side channels barely determine an offset and a slope.  Floating does not escape that by
+itself &mdash; its default continuum is a straight line too &mdash; but Floating can be given a
+quadratic continuum, which is the option to reach for when the region visibly curves.
+</p>
+<p>
+From sides is <b>not</b> a &quot;fixed&quot; continuum: the shoulders' own counting
+uncertainty is carried in the likelihood, so a weak anchor honestly widens the limit
+rather than pretending the continuum is known.
+</p>
+
+<p>
+The deconvolution method models the background under the peak as a <b>straight line</b> by default.
+Where the true background curves noticeably across the region &mdash; wide regions, and so
+lower-resolution detectors &mdash; a straight line cannot follow it, and the limit comes out
+<b>optimistic</b>; the effect grows with counting time.  For HPGe, regions are narrow enough that
+this is negligible.  If the background visibly curves across your region, select the
+<b>Quadratic</b> continuum type, or narrow the region.
+</p>
+
+<h3>Measurement time</h3>
+<p>
+The <b>Meas. time</b> control is the dwell you are asking about, entered as a <b>real</b> time.  It
+reaches the calculation two different ways:
+</p>
+<ul>
+<li>Under the <b>Currie</b> method, and under deconvolution describing the spectrum in hand, the
+spectrum's channel counts are projected to that real time (and its live time by the same ratio, so
+the dead-time fraction is preserved).
+</li>
+<li>Under a <b>background reference</b>, the spectrum is left alone and this becomes the exposure of
+the future measurement being predicted &mdash; so the reference's own counting statistics are
+carried into the answer instead of being wished away.
+</li>
+</ul>
+<p>
+Projecting the spectrum predicts the <b>typical</b> limit of the new measurement well; what it
+understates is the <b>spread</b> around that prediction.  Scaled counts are treated as Poisson with
+variance equal to the scaled count, which asserts the loaded spectrum's count rate is known exactly
+&mdash; but the projection actually inherits that spectrum's own counting noise, and does so more
+heavily the further it reaches.  Writing k for the entered time divided by the loaded spectrum's,
+measurements drawn from a real 11.5&nbsp;hour background put the median projected Currie limit
+within 4% of what the dwell delivered across a 64-fold span of k, while the scatter about it ran
+about 1.6&times; wider than implied at k&nbsp;=&nbsp;1 and about 4&times; wider at
+k&nbsp;=&nbsp;16.  Up to about k&nbsp;=&nbsp;1 that is immaterial; past it, read the projection as a
+planning estimate rather than a bound.
+</p>
+<p>
+The background-reference route does not scale counts, so it does not have that problem &mdash; but
+it covers only the deconvolution limit.  A Currie limit shown beside it is still projected, and the
+caveat above still applies to it.
+</p>
+<p>
+So when a measurement time is set, the result line also reports the range a measurement of that
+length would <b>typically</b> land in &mdash; the middle two thirds of the time.  The quoted limit
+itself is not one of those trials and is not their median; it is the direct projection described
+above, which the measurement above puts within a few percent of the median outcome for k up to
+about 1.  So expect the range to sit around the quoted number, but do not expect it to be centred
+on it exactly.  The range is obtained by
+drawing several hundred trial measurements rather than by scaling: for each one, every channel is
+given a rate it could plausibly have had, given what this spectrum recorded, and then a measurement
+of the entered length is drawn at that rate.  That accounts for the two things a plain scaling
+cannot &mdash; this spectrum does not pin the count rate exactly, and the future measurement will
+fluctuate around whatever that rate is.
+</p>
+<p>
+The range does narrow as the planned measurement gets longer, because a longer measurement
+determines its own limit better.  What it does <em>not</em> do is keep narrowing indefinitely: it
+settles onto a floor set by how well this spectrum pins the count rate, and no amount of future
+counting time can get below that.  A plain scaling has no such floor &mdash; it implies the range
+keeps shrinking as one over the root of the time, forever.  That is the difference the trials are
+there to capture, and it is why the quoted number is worth less as a bound the further it reaches.
+</p>
+<p>
+It is hidden for deconvolution describing the current spectrum, where projecting the spectrum in
+hand and then bounding the signal in it would be circular.
+</p>
+<p>
+You enter a real time and every reported time is a real time; the likelihood works internally in
+live time.  A detector that reports only one of the two times is taken to have zero dead time.
+</p>
+
+<h3>The value reported when something is detected</h3>
+<p>
+When the Currie method declares a detection, the value quoted is the ISO
+11929-1:2019 <b>best estimate</b> (its Formula 44), not the raw excess of counts
+over the estimated continuum.  The raw excess is what the detection decision is
+made on &mdash; it is compared against the decision threshold L<sub>c</sub>
+&mdash; but it is not what the standard says to report, because it takes no
+account of the fact that an activity cannot be negative.  The best estimate is
+the mean of the same distribution after the impossible negative part has been
+removed and the rest renormalized; it is the same distribution the reported
+interval already comes from, so the quoted value always lies inside that
+interval.
+</p>
+<p>
+The two agree once a signal is clear, and separate as it weakens: the difference
+is negligible above four times the uncertainty, is a few percent near the
+decision threshold for a well-populated continuum, and grows to tens of percent
+at very low counts.  Because the best estimate cannot be negative, a large
+deficit of counts is now reported as a small positive value rather than as
+&quot;less than zero&quot;, which was never a possible activity.
+</p>
+
+<h3>Confidence levels</h3>
+<p>
+The confidence levels offered include the central-normal probabilities for
+1&sigma; through 5&sigma; &mdash; 68.27%, 95.45%, 99.73%, 99.9937%, 99.999943%
+&mdash; but they are applied here as <b>one-sided</b> confidence levels.  They
+are offered because they are familiar numbers, not because the limit is a
+multiple of any sigma.
+</p>
+
+<h3>Advanced: error rates and systematic uncertainty</h3>
+<p>
+The <b>Advanced</b> checkbox on the &quot;Calc. Method&quot; line reveals four
+inputs that are otherwise left at their defaults.  They apply to the
+<b>Currie method</b>; the deconvolution limit does not consume them yet.
+</p>
+<p>
+A detection limit answers three different questions, and the tool used a single
+number for all three until now:
+</p>
+<ul>
+  <li>The <b>confidence level</b> above is the coverage of the reported interval
+  &mdash; the &quot;less than X&quot; the result line quotes.</li>
+  <li><b>&alpha;</b> is how often you are willing to call a signal present when
+  there is none.  It sets the decision threshold L<sub>c</sub>.</li>
+  <li><b>&beta;</b> is how often you are willing to miss a signal that really is
+  at the detection limit.  It sets L<sub>d</sub>.</li>
+</ul>
+<p>
+&alpha; and &beta; are entered as probabilities rather than percentages &mdash;
+0.05, not 5 &mdash; and must be above 0 and below 0.5.  Until you edit them they
+follow the confidence level as 1&nbsp;&minus;&nbsp;C.L., so leaving them alone
+reproduces the familiar behaviour exactly.  With &alpha;&nbsp;=&nbsp;&beta; the
+detection limit takes its usual closed form; with the two different it is solved
+for exactly rather than approximated.
+</p>
+<p>
+The two uncertainty fields cover everything that scales the expected counts and
+is not counting statistics.  <b>Dist. uncert.</b> is the 1&sigma; uncertainty of
+the source-to-detector distance, written like the distance itself
+(&quot;1 cm&quot;); because a point source's efficiency goes as 1/r&sup2; it
+reaches the counts with a factor of two, so a 5% distance uncertainty is a 10%
+counts uncertainty.  It is not applied for a fixed-geometry detector response,
+whose efficiency does not depend on distance; the tool says so when that happens.
+<b>Eff. uncert.</b> is a percentage covering the detector efficiency curve and
+the gamma branching ratio, which enter identically.  The two are combined in
+quadrature, and the total must stay below 100%.
+</p>
+<p>
+Note the detection limit gives out before the upper limit does: once the
+systematic uncertainty reaches 1/k<sub>&beta;</sub> &mdash; about 61% at
+&beta;&nbsp;=&nbsp;0.05 &mdash; no amount of counting separates the signal from
+the scale uncertainty, and no finite L<sub>d</sub> exists.  The upper limit
+remains valid there, and the tool warns rather than hiding the result.
+</p>
+
+<h3>The quantity labelled &chi;<sup>2</sup></h3>
+<p>
+The deconvolution method's chart and its &quot;further details&quot; table show a
+quantity labelled &chi;<sup>2</sup>.  That name is kept for continuity, but the
+quantity is the <b>Cash statistic</b> &mdash; a Poisson deviance,
+2&middot;&sum;(E &minus; n + n&middot;ln(n/E)), summed once per channel
+(Cash 1979).  It is used in place of a Gaussian &chi;<sup>2</sup> because it has
+no modified-Neyman variance bias and needs no variance floor for empty channels,
+which matters precisely in the low-count regime a detection limit lives in.
+</p>
+<p>
+Only <em>differences</em> of it between trial activities are meaningful.  A
+difference follows the same asymptotic &chi;<sup>2</sup> law a Gaussian one
+would, and that is what sets the confidence threshold.  Its absolute value does
+<b>not</b> test goodness of fit: E[statistic] is not (channels &minus;
+parameters), so a &chi;<sup>2</sup>/DOF formed from the two
+numbers displayed beside each other is <b>not</b> a fit-quality measure and should not be read as
+one.
+</p>
+
+<h3>What is not implemented here</h3>
+<p>
+This tool reports an upper limit (or a detected value with an interval).  The
+Currie method also computes a <b>decision threshold</b> L<sub>c</sub> &mdash; the
+count above which you would declare a detection &mdash; and a <b>detection
+limit</b> L<sub>d</sub>, the activity you would reliably detect.  The
+deconvolution method does <b>not</b> currently provide L<sub>c</sub> or
+L<sub>d</sub>; doing so properly needs the null distribution calibrated by Monte
+Carlo at low counts rather than assumed, and is not yet implemented.
+</p>
+<p>
+Uncertainties here come from counting statistics and, where applicable, the
+finite statistics of a background reference.  Detector-response and distance
+uncertainty are propagated only if you enter them under <b>Advanced</b>, and only
+for the Currie method &mdash; nothing is derived from the detector response
+itself, because a <code>DetectorPeakResponse</code> does not yet carry an
+uncertainty on its efficiency.  Peak positions, widths, and gamma yields are held
+fixed by both methods.
+</p>
+</div>

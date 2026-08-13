@@ -176,9 +176,14 @@ int run_batch_command( int argc, char **argv )
       bool show_nonfit_peaks, overwrite_output_files, create_csv_output, create_json_output;
       bool use_existing_background_peaks, concatenate_to_n42;
       double peak_stat_threshold = 0.0, peak_hypothesis_threshold = 0.0;
+      double mda_confidence_percent = 95.0;
+#if( ALLOW_SPECIFY_MDA_ROI_WIDTH )
+      double mda_roi_num_fwhm = BatchPeak::sm_default_mda_roi_num_fwhm;
+#endif
+      unsigned int mda_side_channels = 4;
       vector<std::string> input_files, report_templates, summary_report_templates;
       string ini_file_path, exemplar_path, output_path, exemplar_samples, background_sub_file, background_samples, template_include_dir;
-      string multi_sample_handling_str;
+      string multi_sample_handling_str, not_fit_peak_mda_str;
       
       po::options_description peak_cl_desc("Allowed batch peak-fit, and activity-fit options", term_width, min_description_length);
       peak_cl_desc.add_options()
@@ -292,6 +297,33 @@ int run_batch_command( int argc, char **argv )
       ("include-nonfit-peaks", po::value<bool>(&show_nonfit_peaks)->default_value(false),
        "Include peaks that are not fit into the output CSV peak results; these peaks will have a zero amplitude set."
        )
+      ("not-fit-peak-mda", po::value<string>(&not_fit_peak_mda_str)->default_value("currie"),
+       "How to compute the detection limit (MDA) of exemplar peaks that could not be fit.\n\t"
+       "\"none\": do not compute detection limits.\n\t"
+       "\"currie\": (default) the simple ISO 11929 gross-counts (Currie-style) limit.\n\t"
+       "\"currie-and-decon\": additionally compute the deconvolution-style limit; this is"
+       " considerably slower, as the peak shape is fit at a range of source strengths.\n"
+       "Not applicable when the 'fit-all-peaks' option is used."
+       )
+      ("mda-confidence-level", po::value<double>(&mda_confidence_percent)->default_value(95.0),
+       "The confidence level, in percent, used for the detection limits of peaks that could not"
+       " be fit; must be greater than 50 and less than 100.  Ex. 95, 99, 68.27 (i.e., one sigma)."
+       )
+      ("mda-side-channels", po::value<unsigned int>(&mda_side_channels)->default_value(4),
+       "The number of channels on each side of the peak region used to estimate the continuum,"
+       " for the Currie-style detection limit; must be between 1 and 64."
+       )
+#if( ALLOW_SPECIFY_MDA_ROI_WIDTH )
+      ("mda-roi-num-fwhm", po::value<double>(&mda_roi_num_fwhm)->default_value(BatchPeak::sm_default_mda_roi_num_fwhm),
+       "The width of the peak region used for detection limits, in multiples of the peak FWHM;"
+       " must be between 0.5 and 10.\n"
+       "The default of 2.5 (i.e., the peak mean +-1.25 FWHM) is what ISO 11929:2010 recommends,"
+       " and holds 99.7% of a Gaussian peak.  A narrower region admits less continuum, so can"
+       " give a smaller limit, but note the calculation assumes the whole peak is inside the"
+       " region - a 1.0 FWHM wide region holds only 76% of it, making the limit optimistic by"
+       " about a third.  See the 'SignalFractionInRoi' value in the reports."
+       )
+#endif //ALLOW_SPECIFY_MDA_ROI_WIDTH
       ("file-report-template", po::value<vector<string>>(&report_templates)->multitoken(),
        "One or more spectrum report template files - for each input file, a report will be produced with each template specified."
        " You can also specify \"default\" (=txt+html), \"txt\", \"html\", or \"none\"."
@@ -364,6 +396,12 @@ int run_batch_command( int argc, char **argv )
           po::store( parsed_act_opts, cl_vm );
         }//if( batch_act_fit )
         
+        // The variables bound to options arent filled out until `po::notify(...)` is called, which
+        //  cant happen until after the INI file has been read, so get the INI file path straight
+        //  out of the parsed options.
+        if( cl_vm.count("ini-file") )
+          ini_file_path = cl_vm["ini-file"].as<string>();
+
         if( ini_file_path.empty() && SpecUtils::is_file("InterSpec_batch.ini") )
           ini_file_path = "InterSpec_batch.ini";
         
@@ -549,6 +587,33 @@ int run_batch_command( int argc, char **argv )
       options.use_exemplar_energy_cal_for_background = use_exemplar_energy_cal_for_background;
       options.peak_stat_threshold = peak_stat_threshold;
       options.peak_hypothesis_threshold = peak_hypothesis_threshold;
+
+      options.not_fit_peak_mda = BatchPeak::not_fit_peak_mda_method_from_str( not_fit_peak_mda_str );
+
+      if( (mda_confidence_percent <= 50.0) || (mda_confidence_percent >= 100.0) )
+        throw runtime_error( "The 'mda-confidence-level' must be greater than 50, and less than 100." );
+
+      if( (mda_side_channels < 1) || (mda_side_channels > 64) )
+        throw runtime_error( "The 'mda-side-channels' must be between 1 and 64." );
+
+#if( ALLOW_SPECIFY_MDA_ROI_WIDTH )
+      if( (mda_roi_num_fwhm < 0.5) || (mda_roi_num_fwhm > 10.0) )
+        throw runtime_error( "The 'mda-roi-num-fwhm' must be between 0.5 and 10." );
+#endif
+
+      options.mda_confidence_level = 0.01*mda_confidence_percent;
+      options.mda_num_side_channels = mda_side_channels;
+#if( ALLOW_SPECIFY_MDA_ROI_WIDTH )
+      options.mda_roi_num_fwhm = mda_roi_num_fwhm;
+#endif
+
+      if( fit_all_peaks && (options.not_fit_peak_mda != BatchPeak::NotFitPeakMdaMethod::None) )
+      {
+        cerr << "Warning: 'not-fit-peak-mda' is not applicable when fitting for all peaks -"
+                " no detection limits will be computed." << endl;
+        options.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::None;
+      }//if( fit_all_peaks && ... )
+
       options.use_bq = use_bq;
       options.report_templates = report_templates;
       options.summary_report_templates = summary_report_templates;
@@ -673,6 +738,12 @@ int run_batch_command( int argc, char **argv )
               .options(iso_cl_desc)
               .run();
         po::store( parsed_iso_opts, cl_vm );
+
+        // The variables bound to options arent filled out until `po::notify(...)` is called, which
+        //  cant happen until after the INI file has been read, so get the INI file path straight
+        //  out of the parsed options.
+        if( cl_vm.count("ini-file") )
+          ini_file_path = cl_vm["ini-file"].as<string>();
 
         if( ini_file_path.empty() && SpecUtils::is_file("InterSpec_batch.ini") )
           ini_file_path = "InterSpec_batch.ini";

@@ -79,6 +79,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/ExportSpecFile.h"
+#include "InterSpec/ExportSpecFileCAM.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/UserPreferences.h"
@@ -632,7 +633,8 @@ namespace ExportSpecFileTool_imp
                             const std::shared_ptr<const SpecMeas> Measurement,
                             const std::set<int> &samplenums,
                             const std::vector<std::string> &detectornums,
-                            const bool strip_interspec_info );
+                            const bool strip_interspec_info,
+                            const CAMInputOutput::CnfGenieExtras *genie_extras = nullptr );
   };// class DownloadSpectrumResource
 
 
@@ -743,8 +745,10 @@ namespace ExportSpecFileTool_imp
       }//switch( type )
       
       
+      const CAMInputOutput::CnfGenieExtras genie_extras = m_tool->currentGenieExtras();
       write_file( response.out(), save_type, output,
-                 output->sample_numbers(), output->detector_names(), strip_interspec_info );
+                 output->sample_numbers(), output->detector_names(), strip_interspec_info,
+                 &genie_extras );
       
       m_download_finished.emit();
     }catch( std::exception &e )
@@ -769,7 +773,8 @@ namespace ExportSpecFileTool_imp
                          const std::shared_ptr<const SpecMeas> measurement,
                          const std::set<int> &samplenums,
                          const std::vector<std::string> &detectornames,
-                         const bool strip_interspec_info )
+                         const bool strip_interspec_info,
+                         const CAMInputOutput::CnfGenieExtras *genie_extras )
   {
     //Convert detector names to detector numbers.
     set<int> detectornums;
@@ -871,7 +876,7 @@ namespace ExportSpecFileTool_imp
         break;
         
       case SpecUtils::SaveSpectrumAsType::Cnf:
-        measurement->write_cnf( output, samplenums, detectornums );
+        measurement->write_cnf( output, samplenums, detectornums, genie_extras );
         break;
         
       case SpecUtils::SaveSpectrumAsType::Tka:
@@ -986,6 +991,7 @@ ExportSpecFileTool::ExportSpecFileTool( InterSpec *viewer, Wt::WContainerWidget 
   m_filterDetector( nullptr ),
   m_detectorFilterCbs( nullptr ),
   m_optionsHolder( nullptr ),
+  m_genieCnfOptions( nullptr ),
   m_sumAllToSingleRecord( nullptr ),
   m_sumForeToSingleRecord( nullptr ),
   m_sumBackToSingleRecord( nullptr ),
@@ -1037,6 +1043,7 @@ ExportSpecFileTool::ExportSpecFileTool( const std::shared_ptr<const SpecMeas> &s
   m_filterDetector( nullptr ),
   m_detectorFilterCbs( nullptr ),
   m_optionsHolder( nullptr ),
+  m_genieCnfOptions( nullptr ),
   m_sumAllToSingleRecord( nullptr ),
   m_sumForeToSingleRecord( nullptr ),
   m_sumBackToSingleRecord( nullptr ),
@@ -1413,7 +1420,13 @@ void ExportSpecFileTool::init()
   m_optionsNotAppTxt = new WText( WString::tr("esf-none-available") );
   m_optionsNotAppTxt->addStyleClass( "ExportNotAppTxt" );
   m_optionsHolder->insertWidget( 1, m_optionsNotAppTxt );      // Put right below title
-  
+
+  // CNF-only GENIE nuclide-library/FWHM/efficiency/energy-cal options; visibility is set in
+  //  `refreshSampleAndDetectorOptions()`, only shown when the CNF format is selected.
+  m_genieCnfOptions = new ExportSpecFileCAM::GenieCnfOptionsWidget( m_interspec, m_samplesHolder );
+  m_genieCnfOptions->hide();
+  m_genieCnfOptions->exportableChanged().connect( this, &ExportSpecFileTool::updateExportEnabled );
+
   WContainerWidget *footer = new WContainerWidget( this );
   footer->addStyleClass( "ExportSpecFileFooter" );
   
@@ -1483,8 +1496,16 @@ void ExportSpecFileTool::emitDone( const bool exported )
 
 void ExportSpecFileTool::updateExportEnabled()
 {
-  const bool disable = ((m_fileSelect && (m_fileSelect->currentIndex() < 0))
-                        && (!m_forePlusBack || m_forePlusBack->isHidden() || !m_forePlusBack->isChecked()));
+  bool disable = ((m_fileSelect && (m_fileSelect->currentIndex() < 0))
+                  && (!m_forePlusBack || m_forePlusBack->isHidden() || !m_forePlusBack->isChecked()));
+
+  // The CNF GENIE options can be in a state that cannot produce a file (nothing selected to
+  //  write, or an unparseable efficiency distance).  The "Export" button is a plain link to a
+  //  `WResource`, so there is no opportunity to refuse the request once it is clicked - disable
+  //  it instead of silently writing a file that is missing what the user asked for.
+  if( m_genieCnfOptions && !m_genieCnfOptions->isHidden() && !m_genieCnfOptions->canExport() )
+    disable = true;
+
   m_export_btn->setDisabled( disable );
 #if( USE_QR_CODES )
   m_show_qr_btn->setDisabled( disable );
@@ -2368,6 +2389,15 @@ bool ExportSpecFileTool::removeInterSpecInfo() const
 }//bool removeInterSpecInfo() const
 
 
+CAMInputOutput::CnfGenieExtras ExportSpecFileTool::currentGenieExtras() const
+{
+  if( !m_genieCnfOptions || m_genieCnfOptions->isHidden() )
+    return CAMInputOutput::CnfGenieExtras{};
+
+  return m_genieCnfOptions->currentExtras();
+}//CnfGenieExtras currentGenieExtras() const
+
+
 void ExportSpecFileTool::refreshSampleAndDetectorOptions()
 {
   scheduleAddingUndoRedo();
@@ -2528,6 +2558,17 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
   const set<int> samplesToUse = currentlySelectedSamples();
   const vector<string> detsToUse = currentlySelectedDetectors();
 
+  if( m_genieCnfOptions )
+  {
+    const bool is_cnf_format = (save_type == SpecUtils::SaveSpectrumAsType::Cnf);
+    m_genieCnfOptions->setHidden( !is_cnf_format );
+    //  The GENIE panel needs a wider column than the plain sample checkboxes do.
+    toggleStyleClass( "ExportSpecFileToolCnf", is_cnf_format );
+    if( is_cnf_format )
+      m_genieCnfOptions->updateForFile( spec, samplesToUse, detsToUse );
+    updateExportEnabled();
+  }
+
   size_t num_sample_showing = 0, num_option_showing = 0;
   for( const auto w : m_samplesHolder->children() )
   {
@@ -2540,6 +2581,11 @@ void ExportSpecFileTool::refreshSampleAndDetectorOptions()
     auto cb = dynamic_cast<WCheckBox *>( w );
     num_option_showing += (cb && cb->isVisible());
   }
+
+  // The GENIE panel is a container of options, not a checkbox, so count it explicitly - otherwise
+  //  "None Available" is shown directly above a full panel of options.
+  if( m_genieCnfOptions && m_genieCnfOptions->isVisible() )
+    num_option_showing += 1;
   
   m_sampleSelectNotAppTxt->setHidden( num_sample_showing );
   m_optionsNotAppTxt->setHidden( num_option_showing );

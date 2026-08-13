@@ -23,7 +23,6 @@
   <message id="pm-hdr-up-energy">Felső energia</message>
   <message id="pm-hdr-roi-counts">ROI impulzusok</message>
 
-
   <message id="pm-hdr-tt-mean">Átlagenergia</message>
   <message id="pm-hdr-tt-fwhm">Teljes szélesség fél maximumnál</message>
   <message id="pm-hdr-tt-amp">Csúcs terület</message>
@@ -34,6 +33,5 @@
   <message id="pm-hdr-tt-color">Csúcs szín</message>
   <message id="pm-hdr-tt-label">Felhasználó által megadott címke</message>
   <message id="pm-hdr-tt-roi-counts">Gamma impulzusok integrálja az érdeklődési régióban</message>
-  <message id="pm-hdr-tt-"></message>
 
 </messages>

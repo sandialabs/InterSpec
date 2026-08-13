@@ -579,6 +579,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer, Wt::WContainerWidget *parent )
   m_spectrum->dragCreateRoiUpdate().connect( this, &RelActAutoGui::handleCreateRoiDrag );
   m_spectrum->rightClicked().connect( this, &RelActAutoGui::handleRightClick );
   m_spectrum->shiftKeyDragged().connect( this, &RelActAutoGui::handleShiftDrag );
+  m_spectrum->xRangeChanged().connect( this, &RelActAutoGui::handleChartXRangeChange );
   m_spectrum->doubleLeftClick().connect( boost::bind( &RelActAutoGui::handleDoubleLeftClick, this,
                                                        boost::placeholders::_1,
                                                        boost::placeholders::_2,
@@ -1192,68 +1193,198 @@ RelActAutoGui::~RelActAutoGui()
 }//~RelActAutoGui();
 
 
-void RelActAutoGui::addUndoRedoStep()
+RelActAutoGui::GuiUndoState RelActAutoGui::currentUndoState() const
+{
+  GuiUndoState answer;
+
+  shared_ptr<RelActCalcAuto::RelActAutoGuiState> state = make_shared<RelActCalcAuto::RelActAutoGuiState>();
+  serialize( *state );  //may throw
+  answer.state = state;
+
+  answer.preset_index = m_current_preset_index;
+  answer.preset_items.reserve( static_cast<size_t>(m_presets->count()) );
+  for( int i = 0; i < m_presets->count(); ++i )
+    answer.preset_items.push_back( m_presets->itemText(i) );
+
+  return answer;
+}//GuiUndoState RelActAutoGui::currentUndoState() const
+
+
+void RelActAutoGui::captureGuiStateForUndo()
+{
+  try
+  {
+    m_currentGuiState = currentUndoState();
+  }catch( std::exception &e )
+  {
+    // `getCalcOptions()` throws if a rel-eff curve is in a half-built state.  Leaving the previous
+    //  baseline in place is the best we can do; the next successful render will correct it.
+    cerr << "RelActAutoGui unexpectedly caught exception capturing undo/redo state: "
+         << e.what() << endl;
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( __func__, ("Failed to capture RelActAutoGui undo state: "
+                                    + string(e.what())).c_str() );
+#endif
+  }//try / catch
+}//void RelActAutoGui::captureGuiStateForUndo()
+
+
+void RelActAutoGui::setPresetSelection( const GuiUndoState &undo_state )
+{
+  if( (undo_state.preset_index < 0) || undo_state.preset_items.empty() )
+    return;
+
+  const int num_items = static_cast<int>( undo_state.preset_items.size() );
+
+  // Any trailing entries we drop take their saved configurations with them; otherwise a later
+  //  `checkIfInUserConfigOrCreateOne(...)` could re-use the index and pick up a stale config.
+  for( int i = num_items; i < m_presets->count(); ++i )
+    m_previous_presets.erase( i );
+
+  while( m_presets->count() > num_items )
+    m_presets->removeItem( m_presets->count() - 1 );
+
+  for( int i = 0; i < num_items; ++i )
+  {
+    if( i < m_presets->count() )
+      m_presets->setItemText( i, undo_state.preset_items[i] );
+    else
+      m_presets->addItem( undo_state.preset_items[i] );
+  }
+
+  // Set `m_current_preset_index` before the combo, so that even if `changed()` were to fire,
+  //  `handlePresetChange()` would see no change and return.
+  m_current_preset_index = (undo_state.preset_index < num_items) ? undo_state.preset_index : (num_items - 1);
+  m_presets->setCurrentIndex( m_current_preset_index );
+}//void RelActAutoGui::setPresetSelection( const GuiUndoState & )
+
+
+void RelActAutoGui::restoreUndoState( const GuiUndoState &undo_state )
+{
+  if( !undo_state.state )
+    return;
+
+  // Clear before deSerialize: restoring a state is not itself a user edit.  `deSerialize` also
+  //  clears the flag, so the render it schedules records no step, and re-baselines
+  //  `m_currentGuiState` from the settled GUI via `captureGuiStateForUndo()`.
+  m_render_flags.clear( RenderActions::AddUndoRedoStep );
+  deSerialize( *undo_state.state );
+  setPresetSelection( undo_state );
+}//void RelActAutoGui::restoreUndoState( const GuiUndoState & )
+
+
+void RelActAutoGui::addUndoRedoStep( const GuiUndoState &prev, const GuiUndoState &next,
+                                     const std::string &description )
+{
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( !undoRedo || !undoRedo->canAddUndoRedoNow() || !prev.state || !next.state )
+    return;
+
+  // Go through `InterSpec::relActAutoWindow(...)` rather than capturing `this`, so the step is
+  //  still valid if the user has closed the tool since.
+  auto apply = []( const GuiUndoState &state ){
+    InterSpec *viewer = InterSpec::instance();
+    RelActAutoGui *gui = viewer ? viewer->relActAutoWindow( true ) : nullptr;
+    if( gui )
+      gui->restoreUndoState( state );
+  };
+
+  undoRedo->addUndoRedoStep( [prev,apply](){ apply(prev); },
+                             [next,apply](){ apply(next); },
+                             description );
+}//void RelActAutoGui::addUndoRedoStep( const GuiUndoState &, const GuiUndoState &, const string & )
+
+
+void RelActAutoGui::addUndoRedoStep( const GuiUndoState &baseline )
 {
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( !undoRedo || !undoRedo->canAddUndoRedoNow() )
     return;
 
-  shared_ptr<RelActCalcAuto::RelActAutoGuiState> current_state = make_shared<RelActCalcAuto::RelActAutoGuiState>();
-  try
-  {
-    serialize( *current_state );
-  }catch( std::exception &e )
-  {
-    cerr << "RelActAutoGui unexpectedly caught exception rendering to undo/redo state: " << e.what() << endl;
-    return;
-  }
-  
-  if( !m_currentGuiState )
-  {
-    // This is the first render - dont add undo/redo
-    m_currentGuiState = current_state;
-    return;
-  }
-  
-  if( *current_state == *m_currentGuiState )
+  // `baseline.state` is null only on the very first render, or if a previous serialization failed.
+  //  `m_currentGuiState` has just been refreshed by `captureGuiStateForUndo()`; if that threw, it
+  //  still holds `baseline` and the comparison below correctly finds nothing to record.
+  if( !baseline.state || !m_currentGuiState.state )
     return;
 
-  const shared_ptr<const RelActCalcAuto::RelActAutoGuiState> prev_state = m_currentGuiState;
+  // Compare only the analysis configuration.  A preset-selector change with no accompanying state
+  //  change (selecting a different preset that happens to deserialize to an identical state) is
+  //  deliberately not recorded - there is nothing for the user to get back.
+  if( *m_currentGuiState.state == *baseline.state )
+    return;
 
-  auto undo = [prev_state](){
-    InterSpec *viewer = InterSpec::instance();
-    RelActAutoGui *gui = viewer ? viewer->relActAutoWindow( true ) : nullptr;
-    if( gui && prev_state )
-    {
-      // Clear before deSerialize: satisfies the deSerialize invariant. The end of deSerialize
-      //  also clears AddUndoRedoStep, so the post-undo render will not capture a new step.
-      gui->m_render_flags.clear( RenderActions::AddUndoRedoStep );
-      gui->deSerialize( *prev_state );
-      // Because the next render will NOT call addUndoRedoStep (the flag is clear), we update
-      //  m_currentGuiState here so subsequent edits compare against the correct baseline.
-      gui->m_currentGuiState = prev_state;
-    }
-  };
-
-  auto redo = [current_state](){
-    InterSpec *viewer = InterSpec::instance();
-    RelActAutoGui *gui = viewer ? viewer->relActAutoWindow( true ) : nullptr;
-    if( gui && current_state )
-    {
-      gui->m_render_flags.clear( RenderActions::AddUndoRedoStep );
-      gui->deSerialize( *current_state );
-      gui->m_currentGuiState = current_state;
-    }
-  };
-  
-  undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "RelActAutoGui gui change." );
-  
-  m_currentGuiState = current_state;
+  addUndoRedoStep( baseline, m_currentGuiState, "RelActAutoGui gui change." );
 }//void addUndoRedoStep(...)
+
+
+void RelActAutoGui::setChartEnergyRange( const double lower_energy, const double upper_energy )
+{
+  m_spectrum->setXAxisRange( lower_energy, upper_energy );
+
+  // `D3SpectrumDisplayDiv::setXAxisRange(...)` does not emit `xRangeChanged()`, so patch the two
+  //  display-energy fields of the baseline ourselves.  Without this the baseline would think the
+  //  chart is still showing the old range, and the range change would get folded into the undo
+  //  step of whatever the user edits next.
+  //
+  // Note: the values must be stored verbatim - `RelActAutoGuiState::operator==` compares the
+  //  display energies with exact `double` equality, and `serialize()` reads them straight back
+  //  out of the chart, so any rounding here would make every state compare unequal.
+  if( m_currentGuiState.state )
+  {
+    shared_ptr<RelActCalcAuto::RelActAutoGuiState> updated
+                = make_shared<RelActCalcAuto::RelActAutoGuiState>( *m_currentGuiState.state );
+    updated->lower_display_energy = lower_energy;
+    updated->upper_display_energy = upper_energy;
+    m_currentGuiState.state = updated;
+  }//if( m_currentGuiState.state )
+}//void RelActAutoGui::setChartEnergyRange( const double, const double )
+
+
+void RelActAutoGui::handleChartXRangeChange( const double xmin, const double xmax,
+                                             const double oldXmin, const double oldXmax,
+                                             const bool user_interaction )
+{
+  // Keep the undo baseline tracking the chart, whether or not we add a step - see the comment in
+  //  `setChartEnergyRange(...)`.
+  if( m_currentGuiState.state )
+  {
+    shared_ptr<RelActCalcAuto::RelActAutoGuiState> updated
+                = make_shared<RelActCalcAuto::RelActAutoGuiState>( *m_currentGuiState.state );
+    updated->lower_display_energy = xmin;
+    updated->upper_display_energy = xmax;
+    m_currentGuiState.state = updated;
+  }//if( m_currentGuiState.state )
+
+  // Mirrors `InterSpec::handleSpectrumChartXRangeChange(...)`: only user zoom/pan is undoable, and
+  //  only a step carrying the two ranges is needed - not a whole GUI state.
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( !undoRedo || !user_interaction
+     || ((fabs(xmin - oldXmin) < 0.5) && (fabs(xmax - oldXmax) < 0.5)) )
+    return;
+
+  // `relActAutoWindow(false)`: re-creating the tool just to change a chart range would be
+  //  surprising; if the tool is gone, the step is a no-op.
+  auto set_range = []( const double lower, const double upper ){
+    InterSpec *viewer = InterSpec::instance();
+    RelActAutoGui *gui = viewer ? viewer->relActAutoWindow( false ) : nullptr;
+    if( gui )
+      gui->setChartEnergyRange( lower, upper );
+  };
+
+  undoRedo->addUndoRedoStep( [oldXmin,oldXmax,set_range](){ set_range(oldXmin,oldXmax); },
+                             [xmin,xmax,set_range](){ set_range(xmin,xmax); },
+                             "Isotopics-by-nuclides energy range change." );
+}//void RelActAutoGui::handleChartXRangeChange(...)
 
 
 void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
+  // Snapshot the undo baseline BEFORE any of the update work below: some of it mutates
+  //  `m_currentGuiState` itself (ChartToDefaultRange -> `setChartEnergyRange`), and an undo step
+  //  must revert to what the user was looking at when they acted - not to a chart range this
+  //  render just changed.
+  const GuiUndoState baseline = m_currentGuiState;
+
   if( m_render_flags.testFlag(RenderActions::UpdateSpectra) )
   {
     updateDuringRenderForSpectrumChange();
@@ -1306,9 +1437,15 @@ void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
     startUpdatingCalculation();
   }
 
-  // Capture current GUI state and add undo/redo step if flagged
-  if( m_render_flags.testFlag( RenderActions::AddUndoRedoStep ) )
-    addUndoRedoStep();
+  // Re-baseline on EVERY render - not just flagged ones - so the paths that change serialized
+  //  state without recording a step (calc write-back, spectrum change, energy-cal apply,
+  //  deSerialize) do not leave a stale baseline for the next user edit to diff against.
+  const bool add_undo_step = m_render_flags.testFlag( RenderActions::AddUndoRedoStep );
+
+  captureGuiStateForUndo();
+
+  if( add_undo_step )
+    addUndoRedoStep( baseline );
 
   m_render_flags = 0;
   m_loading_preset = false;
@@ -1319,6 +1456,11 @@ void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 
 void RelActAutoGui::handleDisplayedSpectrumChange( SpecUtils::SpectrumType type )
 {
+  // Note: deliberately no `AddUndoRedoStep` - the user changed the displayed spectrum, not this
+  //  tools configuration, and that change carries its own undo step.  The `scheduleRender()`
+  //  calls below still re-baseline the undo state (see `captureGuiStateForUndo`), which matters
+  //  because the spectrum title / file names / sample numbers are part of the serialized state.
+
   switch( type )
   {
     case SpecUtils::SpectrumType::Foreground:
@@ -1353,16 +1495,19 @@ void RelActAutoGui::handleDisplayedSpectrumChange( SpecUtils::SpectrumType type 
 
 void RelActAutoGui::checkIfInUserConfigOrCreateOne( const bool force_create )
 {
-  if( m_loading_preset )
+  // `m_loading_preset` is set by `deSerialize(...)` and not cleared until the next render, so
+  //  handlers triggered while loading a state dont each mark it as user-modified.  A
+  //  `force_create` caller is however explicitly asking us to mark the just-loaded state as
+  //  custom, so it must not be suppressed.
+  if( m_loading_preset && !force_create )
     return;
-  
-  const int index = m_presets->currentIndex();
+
   if( !force_create && (m_current_preset_index >= static_cast<int>(m_preset_paths.size())) )
   {
     // We are in a user-modified state, go ahead and return
     return;
   }
-  
+
   string name;
   if( force_create )
     name = "Custom";
@@ -1370,9 +1515,14 @@ void RelActAutoGui::checkIfInUserConfigOrCreateOne( const bool force_create )
     name = "User Created";
   else
     name = "Modified " + m_presets->itemText(m_current_preset_index).toUTF8();
-  
+
+  // Note: entries with duplicate names are possible (modify preset B, go back to B, modify again),
+  //  and are deliberately left alone.  Collapsing same-named entries onto one index would make the
+  //  second modification silently overwrite the first ones saved config in `m_previous_presets`.
+  //  Undo/redo does not grow this list: `setPresetSelection()` restores the combo contents along
+  //  with the rest of the state.
   m_presets->addItem( WString::fromUTF8(name) );
-  
+
   m_current_preset_index = m_presets->count() - 1;
   m_presets->setCurrentIndex( m_current_preset_index );
 }//void checkIfInUserConfigOrCreateOne()
@@ -2532,12 +2682,16 @@ void RelActAutoGui::serialize( RelActCalcAuto::RelActAutoGuiState &state ) const
 
 void RelActAutoGui::deSerialize( const RelActCalcAuto::RelActAutoGuiState &state )
 {
-  // m_currentGuiState is only set after the first render(), so if it is set,
-  //  we are in active use - and AddUndoRedoStep should not be set when entering deSerialize.
-  //  Callers in active use must either clear the flag before calling (e.g. undo/redo lambdas)
-  //  or set it after deSerialize returns (e.g. handlePresetChange).
-  //  During initial load (e.g., loadStateFromDb), m_currentGuiState is null, and flags may be set.
-  assert( !m_currentGuiState || !m_render_flags.testFlag( RenderActions::AddUndoRedoStep ) );
+  // Loading a state is not itself a user edit, so this function never records an undo step, and
+  //  clears the flag both on entry and on exit (`setCalcOptionsGui` below re-sets it).  Callers
+  //  that DO want a step either set AddUndoRedoStep after we return (e.g. handlePresetChange),
+  //  or use `deSerializeWithUndo`.
+#if( PERFORM_DEVELOPER_CHECKS )
+  if( m_currentGuiState.state && m_render_flags.testFlag( RenderActions::AddUndoRedoStep ) )
+    log_developer_error( __func__, "AddUndoRedoStep was set entering deSerialize - the pending"
+                                   " user edit it represents will not be recorded." );
+#endif
+  m_render_flags.clear( RenderActions::AddUndoRedoStep );
 
   // Cancel any in-progress calculation so its results dont overwrite the state we are about to restore.
   if( m_cancel_calc )
@@ -2561,7 +2715,7 @@ void RelActAutoGui::deSerialize( const RelActCalcAuto::RelActAutoGuiState &state
     //       yet, and if not, and it looks like a custom range has been set, then it wont
     //       reset the range.
 
-    m_spectrum->setXAxisRange( state.lower_display_energy, state.upper_display_energy );
+    setChartEnergyRange( state.lower_display_energy, state.upper_display_energy );
   }
 
   m_loading_preset = true;
@@ -2591,6 +2745,34 @@ void RelActAutoGui::deSerialize( const RelActCalcAuto::RelActAutoGuiState &state
   //  AddUndoRedoStep again after deSerialize returns.
   m_render_flags.clear( RenderActions::AddUndoRedoStep );
 }//void deSerialize( const RelActCalcAuto::RelActAutoGuiState &state )
+
+
+void RelActAutoGui::deSerializeWithUndo( const RelActCalcAuto::RelActAutoGuiState &state,
+                                         const std::string &undo_description )
+{
+  GuiUndoState prev;
+  try
+  {
+    prev = currentUndoState();
+  }catch( std::exception &e )
+  {
+    // The load must still happen; the user just wont be able to undo past it.
+    cerr << "RelActAutoGui::deSerializeWithUndo: failed to capture previous state: "
+         << e.what() << endl;
+  }
+
+  deSerialize( state );
+
+  if( !prev.state )
+    return;
+
+  GuiUndoState next = prev;   //keeps the preset selection, which `deSerialize` does not change
+  next.state = make_shared<RelActCalcAuto::RelActAutoGuiState>( state );
+
+  addUndoRedoStep( prev, next, undo_description );
+
+  // `deSerialize` scheduled a render, which will re-baseline `m_currentGuiState`.
+}//void RelActAutoGui::deSerializeWithUndo( const RelActAutoGuiState &, const std::string & )
 
 
 rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent_node ) const
@@ -2623,7 +2805,8 @@ std::unique_ptr<rapidxml::xml_document<char>> RelActAutoGui::guiStateToXml() con
 }//std::unique_ptr<rapidxml::xml_document<char>> guiStateToXml() const
 
 
-void RelActAutoGui::setGuiStateFromXml( const rapidxml::xml_document<char> *doc )
+void RelActAutoGui::setGuiStateFromXml( const rapidxml::xml_document<char> *doc,
+                                        const std::string &undo_description )
 {
   if( !doc )
     throw runtime_error( "RelActAutoGui::setGuiStateFromXml: nullptr passed in." );
@@ -2635,7 +2818,10 @@ void RelActAutoGui::setGuiStateFromXml( const rapidxml::xml_document<char> *doc 
   RelActCalcAuto::RelActAutoGuiState state;
   state.deSerialize( base_node );
 
-  deSerialize( state );  // Use new struct-based method
+  if( undo_description.empty() )
+    deSerialize( state );
+  else
+    deSerializeWithUndo( state, undo_description );
 }//void setGuiStateFromXml( const rapidxml::xml_node<char> *node );
 
 
@@ -2645,12 +2831,10 @@ void RelActAutoGui::handlePresetChange()
   //  check if the user is in a modified parameter set, and if so save it to memory, so it can go
   //  back to it later
   //
-  // TODO: undo/redo currently reverts the analysis state (energy ranges, nuclides, options) but
-  //  does NOT revert the preset selector itself. `RelActAutoGuiState` (RelActCalcAuto.h) does not
-  //  carry `m_current_preset_index` or the dropdown selection, so after Ctrl-Z the dropdown still
-  //  displays the newly-chosen preset name even though the underlying state has been reverted.
-  //  Fix by either adding the preset index to `RelActAutoGuiState`, or wrapping preset changes in
-  //  a custom undo step that also restores the dropdown.
+  // Note: the preset selector is restored by undo/redo via `RelActAutoGui::GuiUndoState`, which
+  //  carries the combo contents and selected index alongside the analysis state.  It is kept out
+  //  of `RelActAutoGuiState` because that struct is persisted into the `SpecMeas` and read by
+  //  headless code, where a GUI widget index has no meaning.
 
   const int index = m_presets->currentIndex();
   if( index == m_current_preset_index )
@@ -3860,7 +4044,13 @@ void RelActAutoGui::handleSortEnergyRanges()
   for( RelActAutoGuiEnergyRange *range : ranges )
     m_energy_ranges->addWidget( range );
 
-  // No need to update calculation... I think
+  // No need to update the calculation - the fit does not care about ROI order.  We do need the
+  //  undo step and the render though: `getRoiRanges()` walks the children in order, and
+  //  `Options::operator==` compares `rois` as an ordered vector, so sorting IS a state change;
+  //  without this the next user edit would record a step reaching back past the sort.
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
 }//void handleSortEnergyRanges()
 
 
@@ -4349,6 +4539,11 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
   // We will apply to currently displayed spectra; its too complicated to
   //  give the user all the options of what to apply it to, like the
   //  energy calibration tool
+  //
+  // Note: deliberately no `AddUndoRedoStep` - the energy calibration change is undone through the
+  //  energy calibration tool.  The `scheduleRender()` at the end still re-baselines the undo state
+  //  (see `captureGuiStateForUndo`), which matters because we also set `m_fit_energy_cal` to
+  //  "no fit" here, and that IS part of the serialized state.
   bool ownEnergyCal = false;
   EnergyCalTool *tool = nullptr;
   try
@@ -4540,9 +4735,14 @@ void RelActAutoGui::setPeaksToForeground()
     //  think we need to update them here
   }//if( fitting energy cal )
   
-  yes->clicked().connect( std::bind([solution_peaks, replace_or_add, refit_peaks, previous_peaks, ana_drf](){
+  yes->clicked().connect( std::bind([solution_peaks, replace_or_add, refit_peaks, ana_drf](){
+    // Must be the first thing we do: it snapshots the foreground peaks now, and records a single
+    //  undo step when it goes out of scope - without it, "Replace peaks" below would destroy the
+    //  users existing peaks irrecoverably.
+    UndoRedoManager::PeakModelChange peak_undo_creator;
+
     const bool replace_peaks = (!replace_or_add || replace_or_add->isChecked());
-    
+
     InterSpec *interpsec = InterSpec::instance();
     assert( interpsec );
     if( !interpsec )
@@ -4748,6 +4948,9 @@ void RelActAutoGui::handleDetectorChange()
   // We could sometimes get away with not updating calculations if we arent using a physical model,
   //  but I think having the detectors FWHM may slightly impact the auto-search peaks (not 100% sure),
   //  so we'll just always refresh calculations on detector changes.
+  //
+  // Note: deliberately no `AddUndoRedoStep` - the DRF is not part of the serialized state, and
+  //  changing it is undone through the detector widget itself.
 
   m_cached_drf = nullptr;
   m_cached_all_peaks.clear();
@@ -5375,7 +5578,7 @@ void RelActAutoGui::updateSpectrumToDefaultEnergyRange()
 {
   if( !m_foreground || (m_foreground->gamma_energy_max() < 1.0f) )
   {
-    m_spectrum->setXAxisRange( 0, 3000 );
+    setChartEnergyRange( 0, 3000 );
     return;
   }
   
@@ -5385,7 +5588,7 @@ void RelActAutoGui::updateSpectrumToDefaultEnergyRange()
   const vector<RelActCalcAuto::RoiRange> rois = getRoiRanges();
   if( rois.empty() )
   {
-    m_spectrum->setXAxisRange( spec_min, spec_max );
+    setChartEnergyRange( spec_min, spec_max );
     return;
   }
   
@@ -5407,10 +5610,10 @@ void RelActAutoGui::updateSpectrumToDefaultEnergyRange()
     min_energy = std::max( min_energy, spec_min );
     max_energy = std::min( max_energy, spec_max );
     
-    m_spectrum->setXAxisRange( min_energy, max_energy );
+    setChartEnergyRange( min_energy, max_energy );
   }else
   {
-    m_spectrum->setXAxisRange( spec_min, spec_max );
+    setChartEnergyRange( spec_min, spec_max );
   }
 }//void updateSpectrumToDefaultEnergyRange()
 
@@ -5818,7 +6021,19 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   //  but this is just a backup, that I dont think we need.
   if( calc_number != m_calc_number )
     return;
-  
+
+  // Everything past here mutates the GUI, and the failure branch of the status switch below
+  //  returns early, so run the wrap-up on every exit rather than only at the bottom.
+  //  We must render so the undo baseline picks up those mutations (see `captureGuiStateForUndo`)
+  //  - otherwise the next user edit records a step reaching back past them, and one Ctrl-Z
+  //  reverts more than the user did.  We must also clear AddUndoRedoStep, because the widget
+  //  mutations invoke handlers that set it, and a calculation finishing is not a user edit;
+  //  `BlockUndoRedoInserts` above only suppresses synchronous adds, not the deferred render.
+  DoWorkOnDestruct render_and_rebaseline( [this](){
+    m_render_flags.clear( RenderActions::AddUndoRedoStep );
+    scheduleRender();
+  } );
+
   m_is_calculating = false;
   m_status_indicator->hide();
 
@@ -6433,18 +6648,10 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     m_calc_failed.emit();
   
   if( any_nucs_updated )
-  {
     m_render_flags |= RenderActions::UpdateRefGammaLines;
-    scheduleRender();
-  }
 
-  // updateFromCalc invokes signal handlers (handleAddRelEffCurve/handleDelRelEffCurve, etc.)
-  //  that set AddUndoRedoStep on m_render_flags as a side-effect. A calculation finishing is
-  //  not a user edit, so we clear the flag here. The BlockUndoRedoInserts above only suppresses
-  //  synchronous adds; the deferred render fires after the blocker is destroyed, so without
-  //  this clear the render() would record a spurious undo step and break the user's history.
-  //  (Same pattern as deSerialize.)
-  m_render_flags.clear( RenderActions::AddUndoRedoStep );
+  // `render_and_rebaseline` (declared at the top of this function) does the scheduleRender() and
+  //  clears AddUndoRedoStep - here, and on the early return in the failure branch above.
 }//void updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSolution> answer )
 
 
@@ -6486,6 +6693,8 @@ void RelActAutoGui::handleCalcException( std::shared_ptr<std::string> message,
 
   // See the matching comment in updateFromCalc: clear any AddUndoRedoStep flag set as a
   //  side-effect of the widget mutations above so the deferred render does not record a
-  //  spurious undo step for a failure that the user did not initiate.
+  //  spurious undo step for a failure that the user did not initiate.  We do still want the
+  //  render, so the undo baseline picks up the widget changes `setOptionsForNoSolution()` made.
   m_render_flags.clear( RenderActions::AddUndoRedoStep );
+  scheduleRender();
 }//void handleCalcException( std::shared_ptr<std::string> message )

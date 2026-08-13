@@ -3749,6 +3749,11 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
   chi_input.foreground_peaks.assign( peaks->begin(), peaks->end() );
   chi_input.background_peaks = background_peaks;
 
+  // The per-peak detection limit checks, and the activities implied by peaks not used in the fit,
+  //  are computed by `fit_model(...)`; all that is needed here is the users activity units, so the
+  //  descriptions match the rest of the GUI.
+  chi_input.supplemental_options.use_curie
+      = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", m_specViewer );
 
   return GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 }//pair<ShieldingSourceChi2Fcn,ROOT::Minuit2::MnUserParameters> shieldingFitnessFcn()

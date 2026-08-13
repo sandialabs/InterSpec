@@ -35,7 +35,6 @@
   <message id="dcw-generic-shield-invalid">Erreur lors du calcul de la dose, blindage invalide, désolé :{</message>
   <message id="dcw-dist-invalid">La distance est invalide.</message>
   <message id="dcw-err-other">Erreur lors du calcul de la dose à partir de la source, désolé :{</message>
-  <message id="dcw-invalid-src-dose">Dose source invalide.</message>
   <message id="dcw-invalid-src-act">Activité source invalide.</message>
   <message id="dcw-invalid-src-dose">Dose source invalide.</message>
   <message id="dcw-failed-find-lower-dist">Impossible de trouver la distance limite inférieure, à {1} cm.</message>

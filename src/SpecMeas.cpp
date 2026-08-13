@@ -1651,7 +1651,28 @@ void SpecMeas::load_cnf_using_reader( CAMInputOutput::CAMIO &reader )
         if( p.AreaUncertainty > 0.0 )
           peak->setPeakAreaUncert( p.AreaUncertainty );
 
-        //p.LowTail
+        // Genie's low tail is the same "Gaussian core stitched to an exponential" function as
+        //  InterSpec's GaussExp skew, with Genie's `T` equal to the GaussExp shape parameter
+        //  times sigma (see `CAMInputOutput::Peak::LowTail`).  Genie stores an
+        //  effectively-infinite `T` to mean "no tail", so only take it when it converts to a
+        //  shape parameter InterSpec considers meaningful.
+        const double peak_sigma = p.FullWidthAtHalfMaximum / 2.35482;
+        if( (p.LowTail > 0.0f) && (peak_sigma > 0.0) )
+        {
+          const double skew = p.LowTail / peak_sigma;
+
+          double lower_val, upper_val, start_val, step_size;
+          const bool has_range = PeakDef::skew_parameter_range( PeakDef::SkewType::GaussExp,
+                                          PeakDef::CoefficientType::SkewPar0,
+                                          lower_val, upper_val, start_val, step_size );
+
+          if( has_range && (skew >= lower_val) && (skew <= upper_val) )
+          {
+            peak->setSkewType( PeakDef::SkewType::GaussExp );
+            peak->set_coefficient( skew, PeakDef::CoefficientType::SkewPar0 );
+          }
+        }//if( there might be a real low tail )
+
 
         double lower_energy, upper_energy;
         if( valid_cal )

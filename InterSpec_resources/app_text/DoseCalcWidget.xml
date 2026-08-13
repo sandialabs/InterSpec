@@ -36,7 +36,6 @@
   <message id="dcw-generic-shield-invalid">Error calculating dose, invalid shielding, sorry :{</message>
   <message id="dcw-dist-invalid">Distance is invalid.</message>
   <message id="dcw-err-other">Error calculating dose from source, sorry :{</message>
-  <message id="dcw-invalid-src-dose">Invalid source dose.</message>
   <message id="dcw-invalid-src-act">Invalid source activity.</message>
   <message id="dcw-invalid-src-dose">Invalid source dose.</message>
   <message id="dcw-failed-find-lower-dist">Failed to find lower bounding distance, at {1} cm.</message>
