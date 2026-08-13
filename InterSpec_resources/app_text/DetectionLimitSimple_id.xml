@@ -34,7 +34,7 @@
 
   <message id="dls-det-act-with-range">Terdeteksi: {1}, rentang [{2}, {3}], @{4} CL</message>
   <message id="dls-det-no-result">Maaf, tidak ada hasil</message>
-  <message id="dls-det-counts-with-range">Cacahan berlebih: {1}, rentang [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">Perkiraan sinyal: {1} cacahan, rentang [{2}, {3}], @{4} CL</message>
   <message id="dls-det-act-less-zero">Aktivitas &lt; 0 {1} (diamati cacahan signifikan lebih sedikit dari yang diharapkan).</message>
   <message id="dls-det-counts-less-zero">Cacahan berlebih &lt; 0 {2} (diamati cacahan signifikan lebih sedikit dari yang diharapkan).</message>
   <message id="dls-det-upper-bound">Kurang dari {1} ada @{2} CL.</message>

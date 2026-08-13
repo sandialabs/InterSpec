@@ -48,7 +48,7 @@
 
   <message id="dls-det-act-with-range">Detected: {1}, range [{2}, {3}], @{4} CL</message>
   <message id="dls-det-no-result">Sorry, no result</message>
-  <message id="dls-det-counts-with-range">Excess counts: {1}, range [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">Signal estimate: {1} counts, range [{2}, {3}], @{4} CL</message>
   <message id="dls-det-act-less-zero">Activity &lt; 0 {1} (observed significantly fewer counts than expected).</message>
   <message id="dls-det-counts-less-zero">Excess counts &lt; 0 {2} (observed significantly fewer counts than expected).</message>
   <message id="dls-det-upper-bound">Less than {1} present @{2} CL.</message>

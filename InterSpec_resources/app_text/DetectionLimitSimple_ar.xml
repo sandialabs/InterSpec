@@ -34,7 +34,7 @@
 
   <message id="dls-det-act-with-range">مكتشف: {1}، النطاق [{2}, {3}]، @{4} CL</message>
   <message id="dls-det-no-result">عذرًا، لا توجد نتيجة</message>
-  <message id="dls-det-counts-with-range">العدد الزائد: {1}، النطاق [{2}, {3}]، @{4} CL</message>
+  <message id="dls-det-counts-with-range">الإشارة المقدّرة: {1} عدة، النطاق [{2}, {3}]، @{4} CL</message>
   <message id="dls-det-act-less-zero">النشاط &lt; 0 {1} (لوحظ عدد أقل بكثير من المتوقع).</message>
   <message id="dls-det-counts-less-zero">العدد الزائد &lt; 0 {2} (لوحظ عدد أقل بكثير من المتوقع).</message>
   <message id="dls-det-upper-bound">أقل من {1} موجود @{2} CL.</message>

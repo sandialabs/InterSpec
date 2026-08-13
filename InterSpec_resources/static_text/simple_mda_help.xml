@@ -182,6 +182,28 @@ You enter a real time and every reported time is a real time; the likelihood wor
 live time.  A detector that reports only one of the two times is taken to have zero dead time.
 </p>
 
+<h3>The value reported when something is detected</h3>
+<p>
+When the Currie method declares a detection, the value quoted is the ISO
+11929-1:2019 <b>best estimate</b> (its Formula 44), not the raw excess of counts
+over the estimated continuum.  The raw excess is what the detection decision is
+made on &mdash; it is compared against the decision threshold L<sub>c</sub>
+&mdash; but it is not what the standard says to report, because it takes no
+account of the fact that an activity cannot be negative.  The best estimate is
+the mean of the same distribution after the impossible negative part has been
+removed and the rest renormalized; it is the same distribution the reported
+interval already comes from, so the quoted value always lies inside that
+interval.
+</p>
+<p>
+The two agree once a signal is clear, and separate as it weakens: the difference
+is negligible above four times the uncertainty, is a few percent near the
+decision threshold for a well-populated continuum, and grows to tens of percent
+at very low counts.  Because the best estimate cannot be negative, a large
+deficit of counts is now reported as a small positive value rather than as
+&quot;less than zero&quot;, which was never a possible activity.
+</p>
+
 <h3>Confidence levels</h3>
 <p>
 The confidence levels offered include the central-normal probabilities for

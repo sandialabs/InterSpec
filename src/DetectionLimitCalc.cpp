@@ -474,6 +474,7 @@ CurrieMdaResult::CurrieMdaResult()
     continuum_eqn{ 0.0f, 0.0f },
     estimated_peak_continuum_counts(0.0f), estimated_peak_continuum_uncert(0.0f),
     decision_threshold(0.0f), detection_limit(0.0f), source_counts(0.0f),
+    best_estimate(0.0f), best_estimate_uncert(0.0f),
     lower_limit(0.0f), upper_limit(0.0f)
 {
 }
@@ -634,6 +635,24 @@ void CurrieMdaResult::equal_enough( const CurrieMdaResult &test, const CurrieMda
   }
   
   
+  if( !floats_equiv_enough(test.best_estimate, expected.best_estimate) )
+  {
+    snprintf( buffer, sizeof(buffer),
+             "Test best_estimate (%.6G) does not equal expected (%.6G)",
+             test.best_estimate, expected.best_estimate );
+    errors.push_back( buffer );
+  }
+
+
+  if( !floats_equiv_enough(test.best_estimate_uncert, expected.best_estimate_uncert) )
+  {
+    snprintf( buffer, sizeof(buffer),
+             "Test best_estimate_uncert (%.6G) does not equal expected (%.6G)",
+             test.best_estimate_uncert, expected.best_estimate_uncert );
+    errors.push_back( buffer );
+  }
+
+
   if( !floats_equiv_enough(test.lower_limit, expected.lower_limit) )
   {
     snprintf( buffer, sizeof(buffer),
@@ -692,12 +711,20 @@ std::ostream &print_summary( std::ostream &strm, const CurrieMdaResult &result, 
   else
     strm << result.lower_limit << " counts" << endl;
   
-  strm << "Nominal activity estimate: ";
+  strm << "Nominal activity estimate (ISO primary result): ";
   if( w > 0.0 )
      strm << PhysicalUnits::printToBestActivityUnits(w*result.source_counts) <<" (" << result.source_counts << " counts)" << endl;
   else
     strm << result.source_counts << " counts" << endl;
-  
+
+  strm << "ISO best estimate: ";
+  if( w > 0.0 )
+    strm << PhysicalUnits::printToBestActivityUnits(w*result.best_estimate)
+         << " +- " << PhysicalUnits::printToBestActivityUnits(w*result.best_estimate_uncert)
+         << " (" << result.best_estimate << " +- " << result.best_estimate_uncert << " counts)" << endl;
+  else
+    strm << result.best_estimate << " +- " << result.best_estimate_uncert << " counts" << endl;
+
   strm << "Continuum Starting Channel: " << result.first_lower_continuum_channel << endl;
   strm << "Continuum Ending Channel: " << result.last_upper_continuum_channel + 1 << endl;
   strm << "Peak Starting Channel: " << result.first_peak_region_channel << endl;
@@ -1204,6 +1231,87 @@ CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input )
 
     result.lower_limit = static_cast<float>( lower );
     result.upper_limit = static_cast<float>( upper );
+
+
+    // The best estimate, ISO 11929-1:2019 clause 10: the mean of the same truncated, renormalized
+    //  Gaussian the interval above comes from (Formula 44), and its standard uncertainty
+    //  (Formula 45).  `lambda` is the inverse Mills ratio phi(z)/Phi(z); ISO's
+    //  `u(y)*exp(-y^2/(2*u^2(y)))/(omega*sqrt(2*pi))` is `region_sigma*lambda`.
+    //
+    //  ISO's Formula (46) - that y^ = y and u(y^) = u(y) are sufficient above 4*u(y) - is not
+    //  branched on: the exact form converges there on its own (3E-5 relative at 4*u(y), 1E-9 by
+    //  7*u(y), both well inside `float`), and a branch would leave a 1.3E-4*u(y) step at the seam.
+    const double lambda = boost::math::pdf( gaus_dist, z ) / omega;
+
+    // The same floored `z` as the interval uses, for the same reason, and the same clamp: as
+    //  z -> -inf the Mills ratio tends to -z, so `z + lambda` is a difference of two large nearly
+    //  equal numbers that tends to 0+, and anything negative here is that cancellation rather than
+    //  a result.  (Analytically y^ -> u(y)/(-z), i.e. it converges down onto the boundary.)
+    const double best = (std::max)( 0.0, region_sigma*(z + lambda) );
+
+    // ISO's `u^2(y) - (y^ - y)*y^`, which is `u^2(y)*(1 - lambda*(z + lambda))`.  Written that way
+    //  rather than as the algebraically equal `1 - z*lambda - lambda^2`, whose two terms each reach
+    //  ~74 at the z floor and cancel down to ~0.016.  Guarded at zero because for large positive z
+    //  the product underflows and the difference is then a rounding artifact of 1.
+    //
+    //  The `> 0.0` on the variance is the same NaN sink the clamps above are: `region_sigma` is the
+    //  square root of a sum that a processed spectrum (background subtracted, or a corrected export)
+    //  can make negative when there is no upper sideband, and so can itself be NaN - see the clamp
+    //  where `peak_cont_sum` is formed.  The interval reports the zero it converges to in that case,
+    //  and so must this, rather than being the one field that lets a NaN out into a report.
+    //  It also catches the 0*inf that `region_sigma == 0` with positive counts would otherwise give.
+    const double sigma_sq = region_sigma*region_sigma;
+    const double best_var = (sigma_sq > 0.0)
+                            ? (sigma_sq * (std::max)( 0.0, 1.0 - lambda*(z + lambda) ))
+                            : 0.0;
+
+    result.best_estimate = static_cast<float>( best );
+    result.best_estimate_uncert = static_cast<float>( sqrt(best_var) );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    // These two hold unconditionally, degenerate inputs included - that is what the guards above are
+    //  for, and this is the check that they work.
+    assert( !IsInf(result.best_estimate) && !IsNan(result.best_estimate) );
+    assert( !IsInf(result.best_estimate_uncert) && !IsNan(result.best_estimate_uncert) );
+    assert( result.best_estimate >= 0.0f );
+    assert( result.best_estimate_uncert >= 0.0f );
+
+    // Everything below is a relation against `region_sigma`, so it only means anything when that is
+    //  a real u(y); when it is not, both fields are reported as the zero the interval reports.
+    if( sigma_sq > 0.0 )
+    {
+      // ISO states these as strict inequalities, but the members are `float`: past about z = 5 the
+      //  true difference (2.4E-10*u(y) at the clause 6 example's z = 6.8) is far below float
+      //  resolution and the stored values are equal.  Strictness is only checked where it is
+      //  representable.
+      assert( result.best_estimate >= result.source_counts );
+      assert( result.best_estimate_uncert <= 1.000001*region_sigma );
+      assert( (z >= 4.0) || (result.best_estimate > result.source_counts) );
+      assert( (z >= 4.0) || (result.best_estimate_uncert < region_sigma) );
+
+      // u(y^) < y^ holds all the way down to the z floor (the ratio is 0.988 there), but not once
+      //  `best` has been clamped onto the boundary.
+      assert( (result.best_estimate <= 0.0f)
+              || (result.best_estimate_uncert < result.best_estimate) );
+    }//if( sigma_sq > 0.0 )
+
+    // y^ lies inside the coverage interval - but only where that is actually a relation and not an
+    //  arithmetic accident, which takes two conditions:
+    //
+    //  - The confidence level has to be at least 1 - 1/e = 0.6321.  The truncated distribution puts
+    //    its own mean at a percentile that runs from 0.5 (as z -> +inf) up to exactly 1 - 1/e (as
+    //    z -> -inf), so a one-sided upper bound asked for at a lower CL than that is legitimately
+    //    below y^.  ISO states the relation for the interval it cares about, at 1-gamma of 95%.
+    //    `mda_counts_calc` only rejects a `detection_probability` at or below 0.05, and the LLM tool
+    //    hands one through unclamped, so a 0.55 is reachable and is not an error.
+    //  - Below about z = -7.9 both endpoint probabilities hit `min_prob` and the interval collapses
+    //    onto [0,0] while y^ is still ~0.115*u(y); that is the floor's doing, not a violation.
+    const double mean_percentile_sup = 1.0 - 1.0/2.718281828459045;
+    assert( (cl < mean_percentile_sup)
+            || (omega*(1.0 - cl) <= min_prob)
+            || ((result.best_estimate >= result.lower_limit)
+                && (result.best_estimate <= result.upper_limit)) );
+#endif
   }
 
 

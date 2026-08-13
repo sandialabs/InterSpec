@@ -34,7 +34,7 @@
 
   <message id="dls-det-act-with-range">检测到：{1}，范围[{2}，{3}]，@{4} CL</message>
   <message id="dls-det-no-result">抱歉，无结果</message>
-  <message id="dls-det-counts-with-range">超额计数：{1}，范围[{2}，{3}]，@{4} CL</message>
+  <message id="dls-det-counts-with-range">信号估计：{1} 计数，范围[{2}，{3}]，@{4} CL</message>
   <message id="dls-det-act-less-zero">活度&lt; 0 {1}（观察到的计数明显少于预期）。</message>
   <message id="dls-det-counts-less-zero">超额计数&lt; 0 {2}（观察到的计数明显少于预期）。</message>
   <message id="dls-det-upper-bound">在{2} CL处存在少于{1}。</message>

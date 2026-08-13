@@ -34,7 +34,7 @@
 
   <message id="dls-det-act-with-range">সনাক্ত: {1}, পরিসর [{2}, {3}], @{4} CL</message>
   <message id="dls-det-no-result">দুঃখিত, কোনো ফলাফল নেই</message>
-  <message id="dls-det-counts-with-range">অতিরিক্ত কাউন্ট: {1}, পরিসর [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">সংকেতের অনুমান: {1} কাউন্ট, পরিসর [{2}, {3}], @{4} CL</message>
   <message id="dls-det-act-less-zero">কার্যকলাপ &lt; 0 {1} (প্রত্যাশিতের চেয়ে উল্লেখযোগ্যভাবে কম কাউন্ট পরিলক্ষিত)।</message>
   <message id="dls-det-counts-less-zero">অতিরিক্ত কাউন্ট &lt; 0 {2} (প্রত্যাশিতের চেয়ে উল্লেখযোগ্যভাবে কম কাউন্ট পরিলক্ষিত)।</message>
   <message id="dls-det-upper-bound">{1}-এর কম উপস্থিত @{2} CL।</message>

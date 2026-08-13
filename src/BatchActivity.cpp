@@ -251,9 +251,16 @@ void add_activity_info_to_not_fit_mdas( vector<BatchPeak::NotFitPeakMda> &mdas,
         break;
 
       case DetectionLimitCalc::PeakCurrieCheck::ResultType::Detected:
-        // Being above the decision threshold does not stop the lower limit falling below zero
-        mda.activity_summary = "This corresponds to an activity of "
-                           + act_str(res.source_counts, mda.gammas_per_bq)
+        // Being above the decision threshold does not stop the lower limit falling below zero.
+        //
+        // The activity quoted is the ISO 11929-1:2019 best estimate (Formula 44), not the primary
+        //  result the detection decision was made on; see `CurrieMdaResult::best_estimate`.  It is
+        //  named as such rather than said to "correspond to" the counts, because the sentence is
+        //  rendered right after `PeakCurrieCheck::result_summary`, which quotes the primary result -
+        //  the two are different quantities and a reader given both unlabelled cannot reconcile
+        //  them (they differ by ~7% at the decision threshold, and more at low counts).
+        mda.activity_summary = "The ISO 11929 best estimate of the activity is "
+                           + act_str(res.best_estimate, mda.gammas_per_bq)
                            + ((res.lower_limit > 0.0f)
                                 ? (" (between " + act_str(res.lower_limit, mda.gammas_per_bq)
                                     + " and " + act_str(res.upper_limit, mda.gammas_per_bq) + ")")

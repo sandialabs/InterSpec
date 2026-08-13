@@ -32,7 +32,7 @@
 
   <message id="dls-det-act-with-range">Détecté : {1}, plage [{2}, {3}], @{4} NC</message>
   <message id="dls-det-no-result">Désolé, aucun résultat</message>
-  <message id="dls-det-counts-with-range">Comptes en excès : {1}, plage [{2}, {3}], @{4} NC</message>
+  <message id="dls-det-counts-with-range">Signal estimé : {1} comptages, plage [{2}, {3}], @{4} NC</message>
   <message id="dls-det-act-less-zero">Activité &lt; 0 {1} (significativement moins de comptes observés que prévu).</message>
   <message id="dls-det-counts-less-zero">Comptes en excès &lt; 0 {2} (significativement moins de comptes observés que prévu).</message>
   <message id="dls-det-upper-bound">Moins de {1} présent @{2} NC.</message>

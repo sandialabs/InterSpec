@@ -74,9 +74,11 @@ Chi2 Contributions Of Peaks:
 {% if HasFitResults %}
 There were {{ NumDof }} parameters fit for
 It took {{ NumberFcnCalls }} solution trials to reach chi2={{ FitChi2 }} with an estimated distance to minumum of {{ EstimatedDistanceToMinimum }}
+## if exists("Sources")
 ## for src in Sources
 {{ src.Nuclide }} fit activity {{ src.Activity }} {% if src.ActivityIsFit %}with uncertainty {{ src.ActivityUncert }} ({{ src.ActivityUncertPercent }}) {% endif %}at {% if src.AgeIsFit %}assumed {% else %}fit {% endif %}age {{ src.Age }}
 ## endfor
+## endif
 {% if HasFitResults %}
 Geometry: {% if FixedGeometryDetector %}Fixed geometry, {{ ActShieldFitSetup.FixedGeometryType }}.
 {% else %}{{ ActShieldFitSetup.Geometry }}
@@ -114,7 +116,7 @@ Peaks that were fit, but not used for the activity fit; the activity each implie
 
 Detection-limit check of each peak:
 ## for peak in SupplementalPeakInfo.AllPeaks.Peaks
-    {{ printFixed(peak.PeakMean,2) }} keV{% if peak.SourceName %} ({{ peak.SourceName }}){% endif %}: {{ peak.CurrieCheck.ShortDescription }}{% if peak.CurrieCheck.CurrieComputed %} (Lc={{ peak.CurrieCheck.DecisionThresholdStr }}, Ld={{ peak.CurrieCheck.DetectionLimitStr }}, net={{ peak.CurrieCheck.SourceCountsStr }} counts){% endif %}
+    {{ printFixed(peak.PeakMean,2) }} keV{% if peak.SourceName %} ({{ peak.SourceName }}){% endif %}: {{ peak.CurrieCheck.ShortDescription }}{% if peak.CurrieCheck.CurrieComputed %} (Lc={{ peak.CurrieCheck.DecisionThresholdStr }}, Ld={{ peak.CurrieCheck.DetectionLimitStr }}, net={{ peak.CurrieCheck.SourceCountsStr }} counts, best est.={{ peak.CurrieCheck.BestEstimateCountsStr }} +- {{ peak.CurrieCheck.BestEstimateCountsUncertStr }} counts){% endif %}
 ## endfor
 ## endif
 ## endif

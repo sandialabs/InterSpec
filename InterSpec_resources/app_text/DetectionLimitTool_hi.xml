@@ -20,7 +20,10 @@
   <message id="dlt-range">सीमा:</message>
   <message id="dlt-detected-activity-tt">पता चली गतिविधि, केवल इस रुचि क्षेत्र का उपयोग करके,
     और देखे गए काउंट्स की अधिकता, साथ ही
-    सांख्यिकीय आत्मविश्वास अंतराल।</message>
+    सांख्यिकीय आत्मविश्वास अंतराल।
+    नाममात्र मान ISO 11929 के अनुसार सर्वोत्तम आकलन है: असंभव ऋणात्मक गतिविधियों पर स्थित भाग को
+    हटाने के बाद सिग्नल वितरण का माध्य।  यह हमेशा कच्ची काउंट्स अधिकता से कम नहीं होता, और जब
+    सिग्नल महत्वपूर्ण स्तर से काफी ऊपर हो तो दोनों समान हो जाते हैं।</message>
   <message id="dlt-limit-lt-zero"><![CDATA[सीमा: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(ROI में पूर्वानुमान से काफी कम काउंट्स)</message>
   <message id="dlt-fewer-counts-tt">रुचि क्षेत्र में काफी कम काउंट्स देखे गए,
@@ -53,8 +56,6 @@
   <message id="dlt-log">लॉग</message>
   <message id="dlt-lin">लिन</message>
   <message id="dlt-below-lc">(L<sub>c</sub> के नीचे)</message>
-  <message id="dlt-lt-zero-counts"><![CDATA[< 0 काउंट्स]]></message>
-  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">कोई डेटा लोड नहीं किया गया</message>
@@ -101,7 +102,10 @@
   
   <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
   <message id="dlt-tt-greater-than-lc">&quot;महत्वपूर्ण स्तर&quot;, L<sub>c</sub> से अधिक,
-    पीक क्षेत्र में काउंट्स देखे गए।</message>
+    पीक क्षेत्र में काउंट्स देखे गए।
+    दिखाया गया मान ISO 11929 के अनुसार सिग्नल का सर्वोत्तम आकलन है, जो इस बात को ध्यान में रखता है
+    कि गतिविधि ऋणात्मक नहीं हो सकती; सिग्नल उपस्थित होने का निर्णय कच्ची काउंट्स अधिकता पर लिया गया
+    था।  स्पष्ट सिग्नल के लिए दोनों समान होते हैं, और सीमांत सिग्नल के लिए सर्वोत्तम आकलन बड़ा होता है।</message>
   <message id="dlt-tt-activity-range">सिग्नल गतिविधि सीमा अनुमान, {1} आत्मविश्वास स्तर तक।</message>
   <message id="dlt-tt-counts-range">सिग्नल काउंट्स सीमा अनुमान, {1} आत्मविश्वास स्तर तक।</message>
   <message id="dlt-tt-fewer-than-predicted">पीक क्षेत्र में काफी कम काउंट्स देखे गए,
@@ -138,15 +142,19 @@
     स्रोत से किसी भी सुरक्षा से पहले, लेकिन न्यूक्लाइड आयु को ध्यान में रखते हुए,
     माता-पिता न्यूक्लाइड के प्रति क्षय।</message>
   <message id="dlt-tt-below-lc-counts">देखा गया सिग्नल काउंट्स &quot;महत्वपूर्ण स्तर&quot;, L<sub>c</sub> से कम है,
-    इसलिए पता लगाने की घोषणा नहीं की जा सकती, लेकिन यह अपेक्षित काउंट्स पर अधिक है।</message>
+    इसलिए पता लगाने की घोषणा नहीं की जा सकती, लेकिन यह ISO 11929 के अनुसार सिग्नल काउंट्स का
+    सर्वोत्तम आकलन है, यह देखते हुए कि सिग्नल ऋणात्मक नहीं हो सकता।  यह कभी शून्य से नीचे नहीं
+    जाता, भले ही पीक क्षेत्र में पड़ोसी क्षेत्रों के पूर्वानुमान से कम काउंट्स देखे गए हों।</message>
   <message id="dlt-tt-below-lc-activity">देखी गई सिग्नल गतिविधि &quot;महत्वपूर्ण स्तर&quot;, L<sub>c</sub> से कम है,
-    इसलिए पता लगाने की घोषणा नहीं की जा सकती, लेकिन यह अपेक्षित काउंट्स पर अधिक है।</message>
+    इसलिए पता लगाने की घोषणा नहीं की जा सकती, लेकिन यह ISO 11929 के अनुसार गतिविधि का सर्वोत्तम
+    आकलन है, यह देखते हुए कि गतिविधि ऋणात्मक नहीं हो सकती।  यह कभी शून्य से नीचे नहीं जाता, भले ही
+    पीक क्षेत्र में पड़ोसी क्षेत्रों के पूर्वानुमान से कम काउंट्स देखे गए हों।</message>
   
   <!-- Chart strings -->
   <message id="dlt-chart-x-axis-distance">दूरी ({1})</message>
   <message id="dlt-chart-x-axis-activity">गतिविधि ({1})</message>
   <message id="dlt-chart-title-estimated-activity">अनुमानित गतिविधि {1}।</message>
-  <message id="dlt-chart-title-excess-counts">अतिरिक्त काउंट्स {1}।</message>
+  <message id="dlt-chart-title-excess-counts">अनुमानित सिग्नल {1} काउंट्स।</message>
   <message id="dlt-chart-title-activity-lt-zero"><![CDATA[गतिविधि < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">डेटा + पीक {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">ऊपरी सीमा का पीक {1} @{2} CL</message>

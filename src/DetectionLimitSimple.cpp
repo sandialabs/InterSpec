@@ -1882,12 +1882,18 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
         //  give the activity range.
         string lowerstr, upperstr, nomstr;
         
+        // The quoted value is the ISO 11929-1:2019 best estimate, Formula (44) - the mean of the
+        //  Gaussian after truncating at zero - not the primary result `source_counts`.  The decision
+        //  above is still made on the primary result, per clause 10; only what is reported changes.
+        //  The two agree above 4*u(y) and diverge as the signal weakens (~7% at the decision
+        //  threshold for a well populated continuum, more at low counts).  The range is unchanged:
+        //  it is already the truncated interval from the same distribution.
         if( gammas_per_bq > 0.0 )
         {
           const float lower_act = result->lower_limit / gammas_per_bq;
           const float upper_act = result->upper_limit / gammas_per_bq;
-          const float nominal_act = result->source_counts / gammas_per_bq;
-          
+          const float nominal_act = result->best_estimate / gammas_per_bq;
+
           lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, use_curie )
           + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
           upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, use_curie )
@@ -1900,8 +1906,8 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
         {
           lowerstr = SpecUtils::printCompact(result->lower_limit, 4);
           upperstr = SpecUtils::printCompact(result->upper_limit, 4);
-          nomstr = SpecUtils::printCompact(result->source_counts, 4);
-          
+          nomstr = SpecUtils::printCompact(result->best_estimate, 4);
+
           result_txt = WString::tr("dls-det-counts-with-range").arg(nomstr).arg(lowerstr).arg(upperstr).arg(cl_str);
         }
       }else if( result->upper_limit < 0 )

@@ -20,7 +20,11 @@
   <message id="dlt-range">Rentang:</message>
   <message id="dlt-detected-activity-tt">Aktivitas terdeteksi, hanya menggunakan Daerah Minat ini,
     dan kelebihan hitungan yang diamati, serta
-    interval kepercayaan statistik.</message>
+    interval kepercayaan statistik.
+    Nilai nominal adalah estimasi terbaik menurut ISO 11929: rata-rata distribusi sinyal setelah
+    menghapus bagian yang berada pada aktivitas negatif yang tidak mungkin.  Nilainya selalu
+    setidaknya sama dengan kelebihan hitungan mentah, dan keduanya sama ketika sinyal jauh di atas
+    tingkat kritis.</message>
   <message id="dlt-limit-lt-zero"><![CDATA[Batas: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(jauh lebih sedikit hitungan di ROI daripada yang diprediksi)</message>
   <message id="dlt-fewer-counts-tt">Jauh lebih sedikit hitungan yang diamati di
@@ -53,8 +57,6 @@
   <message id="dlt-log">Log</message>
   <message id="dlt-lin">Lin</message>
   <message id="dlt-below-lc">(di bawah L<sub>c</sub>)</message>
-  <message id="dlt-lt-zero-counts"><![CDATA[< 0 hitungan]]></message>
-  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">Tidak Ada Data Dimuat</message>
@@ -101,7 +103,11 @@
   
   <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
   <message id="dlt-tt-greater-than-lc">Lebih besar dari &quot;tingkat kritis&quot;, L<sub>c</sub>,
-    hitungan diamati di wilayah puncak.</message>
+    hitungan diamati di wilayah puncak.
+    Nilai yang ditampilkan adalah estimasi terbaik sinyal menurut ISO 11929, yang memperhitungkan
+    bahwa aktivitas tidak dapat bernilai negatif; keputusan bahwa sinyal ada dibuat berdasarkan
+    kelebihan hitungan mentah.  Keduanya sama untuk sinyal yang jelas, dan estimasi terbaik adalah
+    yang lebih besar untuk sinyal marginal.</message>
   <message id="dlt-tt-activity-range">Estimasi rentang aktivitas sinyal, hingga tingkat kepercayaan {1}.</message>
   <message id="dlt-tt-counts-range">Estimasi rentang hitungan sinyal, hingga tingkat kepercayaan {1}.</message>
   <message id="dlt-tt-fewer-than-predicted">Jauh lebih sedikit hitungan di wilayah puncak yang diamati,
@@ -138,15 +144,21 @@
     radioaktif sebelum perisai apa pun, tetapi memperhitungkan usia nuklida,
     per peluruhan nuklida induk.</message>
   <message id="dlt-tt-below-lc-counts">Hitungan sinyal yang diamati kurang dari &quot;tingkat kritis&quot;, L<sub>c</sub>,
-    jadi deteksi tidak dapat dinyatakan, tetapi ini adalah kelebihan di atas hitungan yang diharapkan.</message>
+    jadi deteksi tidak dapat dinyatakan, tetapi ini adalah estimasi terbaik menurut ISO 11929 untuk
+    hitungan sinyal, mengingat sinyal tidak dapat bernilai negatif.  Nilainya tidak pernah di bawah
+    nol, bahkan ketika hitungan yang teramati di wilayah puncak lebih sedikit daripada yang
+    diperkirakan wilayah tetangga.</message>
   <message id="dlt-tt-below-lc-activity">Aktivitas sinyal yang diamati kurang dari &quot;tingkat kritis&quot;, L<sub>c</sub>,
-    jadi deteksi tidak dapat dinyatakan, tetapi ini adalah kelebihan di atas hitungan yang diharapkan.</message>
+    jadi deteksi tidak dapat dinyatakan, tetapi ini adalah estimasi terbaik menurut ISO 11929 untuk
+    aktivitas, mengingat aktivitas tidak dapat bernilai negatif.  Nilainya tidak pernah di bawah nol,
+    bahkan ketika hitungan yang teramati di wilayah puncak lebih sedikit daripada yang diperkirakan
+    wilayah tetangga.</message>
   
   <!-- Chart strings -->
   <message id="dlt-chart-x-axis-distance">Jarak ({1})</message>
   <message id="dlt-chart-x-axis-activity">Aktivitas ({1})</message>
   <message id="dlt-chart-title-estimated-activity">Aktivitas yang diperkirakan {1}.</message>
-  <message id="dlt-chart-title-excess-counts">Hitungan berlebih {1}.</message>
+  <message id="dlt-chart-title-excess-counts">Perkiraan sinyal {1} hitungan.</message>
   <message id="dlt-chart-title-activity-lt-zero"><![CDATA[Aktivitas < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">Data + puncak {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">Puncak untuk batas atas {1} @{2} CL</message>

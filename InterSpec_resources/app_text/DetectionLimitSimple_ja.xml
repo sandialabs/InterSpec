@@ -34,7 +34,7 @@
 
   <message id="dls-det-act-with-range">検出: {1}, 範囲 [{2}, {3}], @{4} CL</message>
   <message id="dls-det-no-result">すみません、結果がありません</message>
-  <message id="dls-det-counts-with-range">過剰カウント: {1}, 範囲 [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">信号推定: {1} カウント, 範囲 [{2}, {3}], @{4} CL</message>
   <message id="dls-det-act-less-zero">放射能 &lt; 0 {1} （期待値より有意に少ないカウントが観測されました）。</message>
   <message id="dls-det-counts-less-zero">過剰カウント &lt; 0 {2} （期待値より有意に少ないカウントが観測されました）。</message>
   <message id="dls-det-upper-bound">{1}未満が@{2} CLで存在。</message>

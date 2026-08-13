@@ -6226,6 +6226,308 @@ BOOST_AUTO_TEST_CASE( CurrieCoverageIntervalIsCalibrated )
 }// BOOST_AUTO_TEST_CASE( CurrieCoverageIntervalIsCalibrated )
 
 
+/** Runs a Currie calculation on a flat spectrum with \p excess counts added inside the ROI, so that
+ the net signal - and hence y/u(y), the only thing the best estimate depends on - can be dialed.
+
+ The excess goes on channels strictly interior to the ROI, so all of it lands in the peak region no
+ matter which way `round_roi_to_channels` rounds the edges.  `additional_uncertainty` is left at
+ zero, which makes u(y) exactly `sqrt(estimated_peak_continuum_uncert^2 + peak_region_counts_sum)` -
+ the same reconstruction `CurrieCoverageIntervalIsCalibrated` uses.
+ */
+DetectionLimitCalc::CurrieMdaResult currie_flat_roi_with_excess( const double bkg_per_channel,
+                                                                 const double excess,
+                                                                 const double cl )
+{
+  using namespace DetectionLimitCalc;
+
+  const size_t num_channels = 1024;
+  const float kev_per_channel = 3.0f;
+
+  auto counts = make_shared<vector<float>>( num_channels, static_cast<float>(bkg_per_channel) );
+
+  // Channels 168-173 are 504-522 keV, well inside the 500-524 keV ROI below.
+  const size_t first_excess_channel = 168, last_excess_channel = 173;
+  const double per_channel = excess/(1 + last_excess_channel - first_excess_channel);
+  for( size_t ch = first_excess_channel; ch <= last_excess_channel; ++ch )
+    (*counts)[ch] = static_cast<float>( bkg_per_channel + per_channel );
+
+  auto spec = make_shared<SpecUtils::Measurement>();
+  spec->set_gamma_counts( counts, 1.0f, 1.0f );
+
+  auto cal = make_shared<SpecUtils::EnergyCalibration>();
+  cal->set_polynomial( num_channels, { 0.0f, kev_per_channel }, {} );
+  spec->set_energy_calibration( cal );
+
+  CurrieMdaInput input;
+  input.spectrum = spec;
+  input.gamma_energy = 512.0f;
+  input.roi_lower_energy = 500.0f;
+  input.roi_upper_energy = 524.0f;
+  input.num_lower_side_channels = 4;
+  input.num_upper_side_channels = 4;
+  input.detection_probability = cl;
+  input.additional_uncertainty = 0.0f;
+
+  return currie_mda_calc( input );
+}//currie_flat_roi_with_excess(...)
+
+
+/** u(y), as `currie_mda_calc` forms it, rebuilt from the reported continuum quantities.
+
+ Only valid when `additional_uncertainty` is zero, which is the case for every caller here.
+ */
+double currie_primary_uncert( const DetectionLimitCalc::CurrieMdaResult &res )
+{
+  return sqrt( static_cast<double>(res.estimated_peak_continuum_uncert)*res.estimated_peak_continuum_uncert
+               + res.peak_region_counts_sum );
+}//currie_primary_uncert(...)
+
+
+/** The best estimate, ISO 11929-1:2019 Formula (44), and its standard uncertainty, Formula (45),
+ checked against what they are *defined* to be rather than against how they are written.
+
+ ISO's clause 10 quantities are the mean and the standard deviation of the primary result's Gaussian
+ after it has been truncated at zero and renormalized:
+
+    y^     == integral_0^inf a*N(a;y,u) da       / integral_0^inf N(a;y,u) da
+    u^2(y^) == integral_0^inf (a-y^)^2*N(a;y,u) da / integral_0^inf N(a;y,u) da
+
+ Those integrals are done here by brute-force quadrature, not by Formula (44)/(45), so the two cannot
+ agree by sharing a mistake.  This is the check that does not depend on any document.
+ */
+BOOST_AUTO_TEST_CASE( CurrieBestEstimateMatchesTruncatedGaussianMean )
+{
+  using namespace DetectionLimitCalc;
+
+  set_data_dir();
+
+  // Midpoint-rule moments of N(a;y,u) over [0,inf), returned as {mean, standard deviation}.  The
+  //  densities are unnormalized - the normalization cancels in both ratios.
+  auto truncated_moments = []( const double y, const double u ) -> pair<double,double> {
+    const size_t nstep = 200000;
+    const double hi = y + 40.0*u;   //past where the density is meaningful, and positive for all
+    const double h = hi/nstep;      // y/u used here
+    double total = 0.0, first = 0.0;
+    for( size_t i = 0; i < nstep; ++i )
+    {
+      const double a = (i + 0.5)*h;
+      const double d = exp( -0.5*(a - y)*(a - y)/(u*u) );
+      total += d;
+      first += a*d;
+    }
+
+    const double mean = first/total;
+
+    double second = 0.0;
+    for( size_t i = 0; i < nstep; ++i )
+    {
+      const double a = (i + 0.5)*h;
+      second += (a - mean)*(a - mean)*exp( -0.5*(a - y)*(a - y)/(u*u) );
+    }
+
+    return { mean, sqrt(second/total) };
+  };
+
+  const double bkg_per_channel = 100.0;
+  const double excesses[] = { -150.0, -100.0, -60.0, -30.0, 0.0, 30.0, 60.0, 120.0, 200.0, 300.0, 400.0 };
+
+  for( const double excess : excesses )
+  {
+    CurrieMdaResult res;
+    BOOST_REQUIRE_NO_THROW( res = currie_flat_roi_with_excess( bkg_per_channel, excess, 0.95 ) );
+
+    const double y = res.source_counts;
+    const double u = currie_primary_uncert( res );
+    BOOST_REQUIRE_GT( u, 0.0 );
+
+    const pair<double,double> expected = truncated_moments( y, u );
+
+    BOOST_CHECK_MESSAGE( fabs(res.best_estimate - expected.first) < 2.0E-3*expected.first,
+                        "best estimate " << res.best_estimate << " is not the truncated Gaussian's"
+                        " mean " << expected.first << " at y/u=" << (y/u) );
+    BOOST_CHECK_MESSAGE( fabs(res.best_estimate_uncert - expected.second) < 2.0E-3*expected.second,
+                        "best estimate uncertainty " << res.best_estimate_uncert << " is not the"
+                        " truncated Gaussian's standard deviation " << expected.second
+                        << " at y/u=" << (y/u) );
+  }//for( const double excess : excesses )
+}// BOOST_AUTO_TEST_CASE( CurrieBestEstimateMatchesTruncatedGaussianMean )
+
+
+/** The relations ISO 11929-1:2019 clause 10 states about the best estimate, swept across the range
+ of y/u(y) where they are meant to hold.
+
+ The one worth stating plainly is Formula (46): ISO says y^ = y and u(y^) = u(y) are "sufficient"
+ above 4*u(y).  That is not branched on here - the exact form is evaluated everywhere - so this
+ checks it converges there on its own, which is the property a branch would only have imitated.
+
+ The last case drives the net signal far enough below zero to hit the z floor the coverage interval
+ shares, which is the regime a Monte Carlo redraw in `currie_projected_limit` reaches and the one
+ the expression is numerically most exposed in.
+ */
+BOOST_AUTO_TEST_CASE( CurrieBestEstimateConvergesToPrimaryResult )
+{
+  using namespace DetectionLimitCalc;
+
+  set_data_dir();
+
+  const double bkg_per_channel = 100.0;
+  // 170 puts a sample at z = 4.04, just inside the Formula (46) gate below - without it the sweep
+  //  steps from z = 3.36 straight to 4.27 and never tests the gate where it is tightest.
+  const double excesses[] = { -100.0, -60.0, -30.0, -10.0, 0.0, 20.0, 40.0, 70.0, 100.0, 140.0,
+                              170.0, 180.0, 240.0, 300.0, 400.0 };
+
+  cout << "CURRIE_BEST_ESTIMATE,z,y,u_y,y_hat,u_y_hat,shift_rel\n";
+
+  for( const double excess : excesses )
+  {
+    CurrieMdaResult res;
+    BOOST_REQUIRE_NO_THROW( res = currie_flat_roi_with_excess( bkg_per_channel, excess, 0.95 ) );
+
+    const double y = res.source_counts;
+    const double u = currie_primary_uncert( res );
+    const double z = y/u;
+    const double y_hat = res.best_estimate;
+    const double u_hat = res.best_estimate_uncert;
+
+    cout << "CURRIE_BEST_ESTIMATE," << z << ',' << y << ',' << u << ',' << y_hat << ',' << u_hat
+         << ',' << ((y_hat - y)/u) << '\n';
+
+    // Truncating at zero can only move the mean up and can only narrow the distribution.  Stated
+    //  non-strictly because the members are `float`: past about z = 5 the true difference is
+    //  smaller than float resolution and the values come out equal.
+    BOOST_CHECK_GE( y_hat, y );
+    BOOST_CHECK_LE( u_hat, u*(1.0 + 1.0E-6) );
+    BOOST_CHECK_GT( y_hat, 0.0 );
+    BOOST_CHECK_LT( u_hat, y_hat );   //ISO: u(y^) < y^
+
+    // ...and strictly, where the difference is big enough to be representable.
+    if( z < 4.0 )
+    {
+      BOOST_CHECK_GT( y_hat, y );
+      BOOST_CHECK_LT( u_hat, u );
+    }
+
+    // ISO: the best estimate lies inside the coverage interval.
+    BOOST_CHECK_GE( y_hat, res.lower_limit );
+    BOOST_CHECK_LE( y_hat, res.upper_limit );
+
+    // Formula (46), reached rather than branched to.  The tolerance has to clear the true deviation
+    //  at the bottom of the range it is applied over, which is 1.34E-4 on y^ and 2.68E-4 on u(y^) at
+    //  exactly z = 4 - a tolerance of 1E-4 would fail for any sample landing in z = [4, 4.25), and
+    //  passed here only because the sweep happens to step over that gap.
+    if( z >= 4.0 )
+    {
+      BOOST_CHECK_MESSAGE( fabs(y_hat - y) < 1.0E-3*u,
+                          "y^ has not converged to y at y/u=" << z << ": " << (y_hat - y)/u );
+      BOOST_CHECK_MESSAGE( fabs(u_hat - u) < 1.0E-3*u,
+                          "u(y^) has not converged to u(y) at y/u=" << z << ": " << (u_hat - u)/u );
+    }
+
+    if( z >= 6.0 )
+    {
+      BOOST_CHECK_MESSAGE( fabs(y_hat - y) < 1.0E-6*u,
+                          "y^ still differs from y at y/u=" << z << ": " << (y_hat - y)/u );
+    }
+  }//for( const double excess : excesses )
+
+  // A count deficit far past the -8.5 floor on z: the analytic limit is y^ -> u(y)/(-z) -> 0+, but
+  //  the expression is a difference of two nearly equal large numbers there, so what is checked is
+  //  that it stays finite, non-negative, and pinned near the boundary rather than blowing up.
+  {
+    CurrieMdaResult res;
+    // -5900 over the six interior channels of a 1000 counts/channel background leaves them at ~17
+    //  counts each - a deep deficit, but not a negative one.
+    BOOST_REQUIRE_NO_THROW( res = currie_flat_roi_with_excess( 1000.0, -5900.0, 0.95 ) );
+
+    const double u = currie_primary_uncert( res );
+    BOOST_REQUIRE_LT( res.source_counts/u, -8.5 );   //the floor is actually engaged
+
+    BOOST_CHECK( !std::isnan(res.best_estimate) && !std::isinf(res.best_estimate) );
+    BOOST_CHECK( !std::isnan(res.best_estimate_uncert) && !std::isinf(res.best_estimate_uncert) );
+    BOOST_CHECK_GE( res.best_estimate, 0.0f );
+    BOOST_CHECK_GE( res.best_estimate_uncert, 0.0f );
+    BOOST_CHECK_MESSAGE( res.best_estimate < 0.2*u,
+                        "best estimate did not converge onto the boundary for a large deficit: "
+                        << res.best_estimate << " against u(y)=" << u );
+    BOOST_CHECK_GT( res.best_estimate, res.source_counts );
+  }
+}// BOOST_AUTO_TEST_CASE( CurrieBestEstimateConvergesToPrimaryResult )
+
+
+/** The two degenerate inputs the best estimate has to survive without producing a NaN or tripping a
+ developer check, both of which are reachable from outside the GUI.
+
+ The first is a spectrum holding negative channel counts - a background-subtracted or otherwise
+ corrected export - with no upper sideband, which is the `assertBackgroundSpectrum` path.  There
+ u(y) is the square root of a negative sum and is itself NaN; the coverage interval already reports
+ the zero it converges to for that, and the best estimate has to do the same rather than being the
+ one field that lets a NaN through into a report.
+
+ The second is a low confidence level.  The truncated distribution's own mean sits at a percentile
+ between 0,5 and 1 - 1/e = 0,6321, so a one-sided upper bound requested below that is legitimately
+ *under* the best estimate.  `mda_counts_calc` only rejects a probability at or below 0,05, and the
+ LLM tool passes a caller-supplied one straight through, so this is an input to be handled and not
+ an error.
+ */
+BOOST_AUTO_TEST_CASE( CurrieBestEstimateDegenerateInputs )
+{
+  using namespace DetectionLimitCalc;
+
+  set_data_dir();
+
+  {// begin negative counts with no upper sideband
+    const size_t num_channels = 1024;
+    auto counts = make_shared<vector<float>>( num_channels, 5.0f );
+    for( size_t ch = 165; ch <= 176; ++ch )
+      (*counts)[ch] = -20.0f;   //a background subtraction that over-subtracted
+
+    auto spec = make_shared<SpecUtils::Measurement>();
+    spec->set_gamma_counts( counts, 1.0f, 1.0f );
+    auto cal = make_shared<SpecUtils::EnergyCalibration>();
+    cal->set_polynomial( num_channels, { 0.0f, 3.0f }, {} );
+    spec->set_energy_calibration( cal );
+
+    CurrieMdaInput input;
+    input.spectrum = spec;
+    input.gamma_energy = 512.0f;
+    input.roi_lower_energy = 500.0f;
+    input.roi_upper_energy = 524.0f;
+    input.num_lower_side_channels = 0;
+    input.num_upper_side_channels = 0;   //the ROI is its own background estimate
+    input.detection_probability = 0.95;
+    input.additional_uncertainty = 0.0f;
+
+    CurrieMdaResult res;
+    BOOST_REQUIRE_NO_THROW( res = currie_mda_calc( input ) );
+
+    BOOST_CHECK( !std::isnan(res.best_estimate) && !std::isinf(res.best_estimate) );
+    BOOST_CHECK( !std::isnan(res.best_estimate_uncert) && !std::isinf(res.best_estimate_uncert) );
+    BOOST_CHECK_GE( res.best_estimate, 0.0f );
+    BOOST_CHECK_GE( res.best_estimate_uncert, 0.0f );
+  }// end negative counts with no upper sideband
+
+  {// begin confidence levels below 1 - 1/e
+    for( const double cl : { 0.10, 0.30, 0.55, 0.60, 0.6321205588, 0.68268949 } )
+    {
+      for( const double excess : { -100.0, 0.0, 30.0, 200.0 } )
+      {
+        CurrieMdaResult res;
+        BOOST_REQUIRE_NO_THROW( res = currie_flat_roi_with_excess( 100.0, excess, cl ) );
+
+        BOOST_CHECK( !std::isnan(res.best_estimate) && !std::isinf(res.best_estimate) );
+        BOOST_CHECK( !std::isnan(res.best_estimate_uncert) && !std::isinf(res.best_estimate_uncert) );
+        BOOST_CHECK_GE( res.best_estimate, 0.0f );
+
+        // The best estimate does not depend on the confidence level at all - only the interval does.
+        const CurrieMdaResult ref = currie_flat_roi_with_excess( 100.0, excess, 0.95 );
+        BOOST_CHECK_CLOSE_FRACTION( res.best_estimate, ref.best_estimate, 1.0E-6 );
+        BOOST_CHECK_CLOSE_FRACTION( res.best_estimate_uncert, ref.best_estimate_uncert, 1.0E-6 );
+      }//for( const double excess : ... )
+    }//for( const double cl : ... )
+  }// end confidence levels below 1 - 1/e
+}// BOOST_AUTO_TEST_CASE( CurrieBestEstimateDegenerateInputs )
+
+
 BOOST_AUTO_TEST_CASE( CombineSystematicUncertainty )
 {
   using namespace DetectionLimitCalc;
@@ -6617,6 +6919,18 @@ BOOST_AUTO_TEST_CASE( Iso11929Part4Example1 )
   BOOST_CHECK_CLOSE_FRACTION( u_a, 7.20, 2.0E-3 );
   BOOST_CHECK_CLOSE_FRACTION( u_a/a, 0.147, 5.0E-3 );                //relative standard uncertainty
 
+  // The best estimate, ISO Formulas (44)/(45).  This is the Formula (46) regime - the signal is at
+  //  6,8 sigma, so ISO publishes a^ and u(a^) identical to a and u(a).  The exact form is what is
+  //  evaluated (there is no branch at 4*u), so the check is that it has converged there by itself:
+  //  the shift is ~2,4E-10 of a, far below what `float` can hold, so the stored values are equal.
+  const double a_hat = counts_to_bq*result.best_estimate;
+  const double u_a_hat = counts_to_bq*result.best_estimate_uncert;
+  BOOST_CHECK_CLOSE_FRACTION( a_hat, 49.05, 1.0E-3 );                //best estimate
+  BOOST_CHECK_CLOSE_FRACTION( u_a_hat, 7.20, 2.0E-3 );               //its standard uncertainty
+  BOOST_CHECK_CLOSE_FRACTION( u_a_hat/a_hat, 0.147, 5.0E-3 );
+  BOOST_CHECK_CLOSE_FRACTION( a_hat, a, 1.0E-6 );
+  BOOST_CHECK_CLOSE_FRACTION( u_a_hat, u_a, 5.0E-3 );
+
   // How closely we actually reproduce the published numbers, rather than just "within tolerance".
   //  ISO prints these to 3-4 significant figures, so the printed value's own rounding is a floor on
   //  the achievable agreement - it is shown alongside so the two can be told apart.
@@ -6629,6 +6943,9 @@ BOOST_AUTO_TEST_CASE( Iso11929Part4Example1 )
       { "a_lower_coverage", 34.94,   a_lower,  0.005/34.94 },
       { "a_upper_coverage", 63.15,   a_upper,  0.005/63.15 },
       { "u_a",              7.20,    u_a,      0.005/7.20 },
+      { "a_hat",            49.05,   a_hat,    0.005/49.05 },
+      { "u_a_hat",          7.20,    u_a_hat,  0.005/7.20 },
+      { "u_rel_a_hat",      0.147,   u_a_hat/a_hat, 0.0005/0.147 },
     };
     for( const auto &r : rows )
       cout << "ISO11929_P4_EX1," << get<0>(r) << ',' << get<1>(r) << ',' << get<2>(r) << ','
@@ -6743,6 +7060,26 @@ BOOST_AUTO_TEST_CASE( Iso11929Part4Example2LowCounts )
   //  us, or the example is being reproduced numerically but not in its conclusion.
   BOOST_CHECK_LT( result.source_counts, result.decision_threshold );
 
+  // The best estimate, ISO Formulas (44)/(45).  This is the regime the two quantities are actually
+  //  different in - the signal is at ~1 sigma, so a^ comes out 29% above the primary result while
+  //  u(a^) comes out 21% below u(a): truncation removes the impossible negative tail, which both
+  //  raises the mean and narrows the distribution.  ISO publishes a^ even though nothing was
+  //  detected here (clause 10, NOTE 2), so it is computed unconditionally.
+  const double a_hat = counts_to_bq*result.best_estimate;
+  const double u_a_hat = counts_to_bq*result.best_estimate_uncert;
+  BOOST_CHECK_CLOSE_FRACTION( a_hat, 1.33E-2, 5.0E-3 );
+  BOOST_CHECK_CLOSE_FRACTION( u_a_hat, 8.20E-3, 5.0E-3 );
+  BOOST_CHECK_CLOSE_FRACTION( u_a_hat/a_hat, 0.62, 5.0E-3 );
+
+  // The direction of both effects, as its own statement.
+  BOOST_CHECK_GT( a_hat, a );
+  BOOST_CHECK_LT( u_a_hat, u_a );
+  BOOST_CHECK_CLOSE_FRACTION( a_hat/a, 1.29, 2.0E-2 );
+
+  // ...and that it lands inside the published coverage interval.
+  BOOST_CHECK_GT( a_hat, a_lower );
+  BOOST_CHECK_LT( a_hat, a_upper );
+
   {
     cout << "ISO11929_P4_EX2,quantity,published,ours,rel_diff,iso_print_resolution\n";
     const vector<tuple<const char *,double,double,double>> rows{
@@ -6751,6 +7088,9 @@ BOOST_AUTO_TEST_CASE( Iso11929Part4Example2LowCounts )
       { "a_pound",          3.90E-2, counts_to_bq*result.detection_limit,    0.005E-2/3.90E-2 },
       { "a_lower_coverage", 8.54E-4, a_lower,                               0.005E-4/8.54E-4 },
       { "a_upper_coverage", 3.13E-2, a_upper,                               0.005E-2/3.13E-2 },
+      { "a_hat",            1.33E-2, a_hat,                                 0.005E-2/1.33E-2 },
+      { "u_a_hat",          8.20E-3, u_a_hat,                               0.005E-3/8.20E-3 },
+      { "u_rel_a_hat",      0.62,    u_a_hat/a_hat,                         0.005/0.62 },
     };
     for( const auto &r : rows )
       cout << "ISO11929_P4_EX2," << get<0>(r) << ',' << get<1>(r) << ',' << get<2>(r) << ','

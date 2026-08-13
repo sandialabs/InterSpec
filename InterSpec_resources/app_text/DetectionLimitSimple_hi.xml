@@ -34,7 +34,7 @@
 
   <message id="dls-det-act-with-range">पता लगाया गया: {1}, सीमा [{2}, {3}], @{4} CL</message>
   <message id="dls-det-no-result">क्षमा करें, कोई परिणाम नहीं</message>
-  <message id="dls-det-counts-with-range">अतिरिक्त गणनाएं: {1}, सीमा [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">सिग्नल अनुमान: {1} काउंट्स, सीमा [{2}, {3}], @{4} CL</message>
   <message id="dls-det-act-less-zero">गतिविधि &lt; 0 {1} (अपेक्षित से काफी कम गणनाएं देखी गईं)।</message>
   <message id="dls-det-counts-less-zero">अतिरिक्त गणनाएं &lt; 0 {2} (अपेक्षित से काफी कम गणनाएं देखी गईं)।</message>
   <message id="dls-det-upper-bound">{1} से कम उपस्थित @{2} CL।</message>

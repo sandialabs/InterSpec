@@ -68,13 +68,17 @@ class Measurement;
    - Limits of the probabilistically symmetric coverage interval, which apply the prior
      knowledge that the measurand is non-negative by truncating the Gaussian at zero and
      renormalizing (`omega`)                                                               Formulas (38)-(40)
+   - The best estimate y^ and its associated standard uncertainty u(y^) - the mean and standard
+     deviation of that same truncated, renormalized Gaussian - as
+     `CurrieMdaResult::best_estimate` and `::best_estimate_uncert`.  Formula (46) (that y^ = y and
+     u(y^) = u(y) are sufficient above 4*u(y)) is reproduced by the exact form rather than branched
+     on, so there is no discontinuity at that threshold.                                   Formulas (44)-(46)
+   - y^ - not the primary result - is what the GUI, the batch reports and the LLM JSON quote as the
+     measured value, as clause 10 NOTE 1 has it.  The primary result is retained beside it (it is
+     what the decision rule uses) rather than omitted.                                     Clause 10, NOTE 1
    - alpha, beta, and the coverage probability kept as three separate quantities            Clauses 8.1, 9
 
   What does NOT conform, and must not be claimed:
-   - The best estimate y^ and its uncertainty u(y^) are NOT computed; the primary result y and u(y)
-     are reported instead.  These differ when y < 4*u(y) - in the ISO 11929-4:2020 clause 7 example,
-     y^ is 29% above y - so a marginal detection is reported at the wrong central value.
-                                                                                           Formulas (44)-(46)
    - Only the probabilistically symmetric coverage interval is offered; the shortest coverage
      interval is not.  ISO leaves the choice to the regulator, and the two differ by ~10% at low
      counts.                                                                               Formulas (42)/(43)
@@ -103,7 +107,11 @@ class Measurement;
   (`Table16OfAQ48`).  Every published value is reproduced to within the resolution ISO prints it at;
   the tests emit the measured agreement so it is recorded rather than hidden behind a tolerance.
   `CurrieCoverageIntervalIsCalibrated` additionally verifies, by numerical integration rather than by
-  the analytic form, that the coverage interval covers what it claims.
+  the analytic form, that the coverage interval covers what it claims, and
+  `CurrieBestEstimateMatchesTruncatedGaussianMean` does the same for the best estimate: it integrates
+  the truncated Gaussian's mean and variance directly, so the check cannot agree with Formulas
+  (44)/(45) by sharing a mistake.  `CurrieBestEstimateConvergesToPrimaryResult` sweeps y/u(y) and
+  checks the relations ISO states, including that Formula (46) is reached without being branched on.
   - Note AQ-48 Table 16's printed a# = 0.471705 omits the u_rel(w) = 0.0478 that the same table lists
    as an input; the error is the document's, and is not asserted against.
  - The decon path has NOT been checked against any published example.  As of 20210724 these
@@ -273,13 +281,35 @@ struct CurrieMdaResult
    */
   float detection_limit;
   
-  /** This gives the nominal (best estimate) signal counts observed in the peak region.
+  /** This gives the nominal signal counts observed in the peak region.
    E.g., the amount excess above the estimated continuum.
-   
+
    This value will be negative if a deficit of counts is observed.
+
+   This is ISO 11929-1:2019's *primary result*, y - the unconstrained net signal, and is what the
+   decision rule compares against #decision_threshold.  It is not what ISO says to quote as the
+   measured value; that is #best_estimate.
    */
   float source_counts;
-  
+
+  /** The best estimate of the signal counts, ISO 11929-1:2019 Formula (44) - the mean of the
+   Gaussian after truncation at zero and renormalization.
+
+   This, not #source_counts, is what ISO says to quote as the measured value.  The two converge as
+   the signal strengthens - they agree to about 3 parts in 1E5 at #source_counts equal to four times
+   its uncertainty, which is where ISO's Formula (46) says treating them as equal is sufficient, and
+   to better than a part in 1E9 by seven times - and diverge as it weakens.  #source_counts remains
+   the primary result and is what the decision rule compares against #decision_threshold.
+   */
+  float best_estimate;
+
+  /** Standard uncertainty of #best_estimate, ISO 11929-1:2019 Formula (45).
+
+   Never larger than the uncertainty of the primary result: truncation removes the part of the
+   distribution that sat on impossible negative activities.
+   */
+  float best_estimate_uncert;
+
   /** This gives the lower limit, in terms of counts, on the true number of counts from signal.
    E.g. corresponds to the number of expected signal counts that we can be 95% certain the true signal is greater than.
 

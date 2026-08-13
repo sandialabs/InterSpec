@@ -34,7 +34,7 @@
 
   <message id="dls-det-act-with-range">Detectado: {1}, rango [{2}, {3}], @{4} CL</message>
   <message id="dls-det-no-result">Lo siento, sin resultado</message>
-  <message id="dls-det-counts-with-range">Cuentas exceso: {1}, rango [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">Señal estimada: {1} conteos, rango [{2}, {3}], @{4} CL</message>
   <message id="dls-det-act-less-zero">Actividad &lt; 0 {1} (se observaron significativamente menos cuentas de las esperadas).</message>
   <message id="dls-det-counts-less-zero">Cuentas exceso &lt; 0 {2} (se observaron significativamente menos cuentas de las esperadas).</message>
   <message id="dls-det-upper-bound">Menos de {1} presente @{2} CL.</message>
