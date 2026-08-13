@@ -33,8 +33,6 @@
   <message id="fpn-opt-use-background">Calcular con sustracción de fondo</message>
 
   <!-- PeakFitForNuclideConfig option labels -->
-  <message id="fpn-opt-roi-min-chi2-red">Umbral de reducción chi2 de ROI</message>
-  <message id="fpn-opt-roi-min-peak-sig">Umbral de significancia de ROI</message>
   <message id="fpn-opt-obs-initial-sig">Umbral de significancia inicial del pico</message>
   <message id="fpn-opt-obs-final-sig">Umbral de significancia final del pico</message>
   <message id="fpn-opt-skew-type">Asimetría del pico</message>
@@ -49,8 +47,6 @@
   <message id="fpn-opt-tt-dont-refine-energy-cal">La calibración de energía se varía en el ajuste, pero la extensión del ROI no se actualiza según la calibración del ajuste.</message>
   <message id="fpn-opt-tt-fit-bkgnd-peaks">Ajustar picos NORM (U-238, Ra-226, U-235, Th-232, K-40) usando una segunda curva de eficiencia relativa.</message>
   <message id="fpn-opt-tt-use-background">Cuando está habilitado, el espectro de fondo se sustrae durante el ajuste de picos para determinar los ROI a usar, pero el fondo no se sustrae para el ajuste final de los picos que se devolverán. Desmarque para ajustar sin sustracción de fondo.</message>
-  <message id="fpn-opt-tt-roi-min-chi2-red">Reducción mínima total de chi2 requerida para que los picos en un ROI se consideren significativos. El chi2 con picos debe ser al menos este valor menor que el chi2 solo con continuo.</message>
-  <message id="fpn-opt-tt-roi-min-peak-sig">Significancia mínima del pico (área_del_pico / sqrt(continuo)) para que un pico se considere significativo. Si algún pico en un ROI tiene significancia por encima de este umbral, el ROI se mantiene.</message>
   <message id="fpn-opt-tt-obs-initial-sig">Umbral para el filtro de significancia inicial del pico antes del reajuste. Significancia = (amplitud_del_pico * 0.7607) / sqrt(área_de_datos_en_pm_1_fwhm).</message>
   <message id="fpn-opt-tt-obs-final-sig">Umbral para la significancia final del pico después del reajuste. Significancia = área_del_pico / incertidumbre_del_área_del_pico.</message>
   <message id="fpn-opt-tt-skew-type">Forma de asimetría aplicada a todos los picos en el ajuste. &quot;None&quot; usa una gaussiana pura. Otras opciones añaden componentes de cola de baja energía (ej. Exp*Gauss para detectores NaI/CsI, Crystal Ball para cola de recolección de carga en HPGe).</message>

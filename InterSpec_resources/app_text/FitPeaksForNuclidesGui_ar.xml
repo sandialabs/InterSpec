@@ -33,8 +33,6 @@
   <message id="fpn-opt-use-background">الحساب مع طرح الخلفية</message>
 
   <!-- PeakFitForNuclideConfig option labels -->
-  <message id="fpn-opt-roi-min-chi2-red">حد تخفيض chi2 لـ ROI</message>
-  <message id="fpn-opt-roi-min-peak-sig">حد أهمية ROI</message>
   <message id="fpn-opt-obs-initial-sig">حد الأهمية الأولية المتوقعة للقمة</message>
   <message id="fpn-opt-obs-final-sig">حد الأهمية النهائية للقمة</message>
   <message id="fpn-opt-skew-type">انحراف القمة</message>
@@ -49,8 +47,6 @@
   <message id="fpn-opt-tt-dont-refine-energy-cal">يتم تغيير معايرة الطاقة أثناء الملاءمة، لكن نطاق ROI لا يُحدَّث بناءً على المعايرة الناتجة عن الملاءمة.</message>
   <message id="fpn-opt-tt-fit-bkgnd-peaks">ملاءمة قمم NORM (U-238, Ra-226, U-235, Th-232, K-40) باستخدام منحنى كفاءة نسبية ثانٍ.</message>
   <message id="fpn-opt-tt-use-background">عند التفعيل، يُطرح طيف الخلفية أثناء ملاءمة القمم لتحديد ROI المراد استخدامها، لكن الخلفية لا تُطرح عند الملاءمة النهائية للقمم المُعادة. قم بإلغاء التحديد للملاءمة بدون طرح الخلفية.</message>
-  <message id="fpn-opt-tt-roi-min-chi2-red">الحد الأدنى لتخفيض chi2 الكلي المطلوب للقمم في ROI لاعتبارها ذات أهمية. يجب أن يكون chi2 مع القمم أقل بهذا المقدار على الأقل من chi2 مع المتصل فقط.</message>
-  <message id="fpn-opt-tt-roi-min-peak-sig">الحد الأدنى لأهمية القمة (مساحة_القمة / sqrt(المتصل)) لاعتبار القمة ذات أهمية. إذا تجاوزت أهمية أي قمة في ROI هذا الحد، يتم الاحتفاظ بـ ROI.</message>
   <message id="fpn-opt-tt-obs-initial-sig">حد مرشح الأهمية الأولية للقمة قبل إعادة الملاءمة. الأهمية = (سعة_القمة * 0.7607) / sqrt(مساحة_البيانات_في_pm_1_fwhm).</message>
   <message id="fpn-opt-tt-obs-final-sig">حد الأهمية النهائية للقمة بعد إعادة الملاءمة. الأهمية = مساحة_القمة / عدم_يقين_مساحة_القمة.</message>
   <message id="fpn-opt-tt-skew-type">شكل الانحراف المطبّق على جميع القمم في الملاءمة. &quot;None&quot; يستخدم غاوسيان صرف. الخيارات الأخرى تضيف مكوّنات ذيل الطاقة المنخفضة (مثل Exp*Gauss لكواشف NaI/CsI، أو Crystal Ball لذيل تجميع الشحنة في HPGe).</message>

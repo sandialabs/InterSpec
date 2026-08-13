@@ -33,8 +33,6 @@
   <message id="fpn-opt-use-background">Calcular com subtração de fundo</message>
 
   <!-- PeakFitForNuclideConfig option labels -->
-  <message id="fpn-opt-roi-min-chi2-red">Limiar de redução chi2 do ROI</message>
-  <message id="fpn-opt-roi-min-peak-sig">Limiar de significância do ROI</message>
   <message id="fpn-opt-obs-initial-sig">Limiar de significância inicial do pico</message>
   <message id="fpn-opt-obs-final-sig">Limiar de significância final do pico</message>
   <message id="fpn-opt-skew-type">Assimetria do pico</message>
@@ -49,8 +47,6 @@
   <message id="fpn-opt-tt-dont-refine-energy-cal">A calibração de energia é variada no ajuste, mas a extensão do ROI não é atualizada com base na calibração do ajuste.</message>
   <message id="fpn-opt-tt-fit-bkgnd-peaks">Ajustar picos NORM (U-238, Ra-226, U-235, Th-232, K-40) usando uma segunda curva de eficiência relativa.</message>
   <message id="fpn-opt-tt-use-background">Quando ativado, o espectro de fundo é subtraído durante o ajuste de picos para determinar os ROI a usar, mas o fundo não é subtraído para o ajuste final dos picos retornados. Desmarque para ajustar sem subtração de fundo.</message>
-  <message id="fpn-opt-tt-roi-min-chi2-red">Redução mínima total de chi2 necessária para que os picos em um ROI sejam considerados significativos. O chi2 com picos deve ser pelo menos este valor menor que o chi2 apenas com contínuo.</message>
-  <message id="fpn-opt-tt-roi-min-peak-sig">Significância mínima do pico (área_do_pico / sqrt(contínuo)) para que um pico seja considerado significativo. Se qualquer pico em um ROI tiver significância acima deste limiar, o ROI é mantido.</message>
   <message id="fpn-opt-tt-obs-initial-sig">Limiar para o filtro de significância inicial do pico antes do reajuste. Significância = (amplitude_do_pico * 0.7607) / sqrt(área_de_dados_em_pm_1_fwhm).</message>
   <message id="fpn-opt-tt-obs-final-sig">Limiar para a significância final do pico após o reajuste. Significância = área_do_pico / incerteza_da_área_do_pico.</message>
   <message id="fpn-opt-tt-skew-type">Forma de assimetria aplicada a todos os picos no ajuste. &quot;None&quot; usa uma gaussiana pura. Outras opções adicionam componentes de cauda de baixa energia (ex. Exp*Gauss para detectores NaI/CsI, Crystal Ball para cauda de coleta de carga em HPGe).</message>

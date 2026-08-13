@@ -3434,12 +3434,18 @@ void RelActAutoGui::handleUseFixedSkewChanged()
   }
 
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void RelActAutoGui::handleUseFixedSkewChanged()
 
 
 void RelActAutoGui::handlePeakFitDetPrefsChanged()
 {
+  // Note: deliberately no `AddUndoRedoStep` - the user changed the peak-fit preferences, not this
+  //  tools configuration, and that change carries its own undo step.  The `scheduleRender()` below
+  //  still re-baselines the undo state (see `captureGuiStateForUndo`), which matters because the
+  //  skew type we sync here is part of the serialized state.
+
   // Check if current prefs specify a non-NoSkew skew type
   shared_ptr<SpecMeas> meas = m_interspec
     ? m_interspec->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
@@ -3473,13 +3479,16 @@ void RelActAutoGui::handlePeakFitDetPrefsChanged()
   if( has_fixed && m_use_fixed_skew->isChecked() )
   {
     m_skew_type->setDisabled( true );
-
     m_render_flags |= RenderActions::UpdateCalculations;
-    scheduleRender();
   }else
   {
     m_skew_type->setDisabled( false );
   }
+
+  // Render even when the calculation does not need redoing: we may have just changed the skew type,
+  //  which is serialized state, and the undo baseline has to be refreshed so the users next edit
+  //  does not fold this change into its undo step.
+  scheduleRender();
 }//void RelActAutoGui::handlePeakFitDetPrefsChanged()
 
 

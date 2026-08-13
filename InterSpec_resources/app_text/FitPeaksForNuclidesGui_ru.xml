@@ -33,8 +33,6 @@
   <message id="fpn-opt-use-background">Вычислять с вычитанием фона</message>
 
   <!-- PeakFitForNuclideConfig option labels -->
-  <message id="fpn-opt-roi-min-chi2-red">Порог снижения chi2 ROI</message>
-  <message id="fpn-opt-roi-min-peak-sig">Порог значимости ROI</message>
   <message id="fpn-opt-obs-initial-sig">Порог начальной значимости пика</message>
   <message id="fpn-opt-obs-final-sig">Порог конечной значимости пика</message>
   <message id="fpn-opt-skew-type">Асимметрия пика</message>
@@ -49,8 +47,6 @@
   <message id="fpn-opt-tt-dont-refine-energy-cal">Калибровка энергии варьируется при фите, но диапазон ROI не обновляется на основе калибровки фита.</message>
   <message id="fpn-opt-tt-fit-bkgnd-peaks">Фит пиков NORM (U-238, Ra-226, U-235, Th-232, K-40) с использованием второй кривой относительной эффективности.</message>
   <message id="fpn-opt-tt-use-background">При включении фоновый спектр вычитается при фите пиков для определения используемых ROI, но фон не вычитается при окончательном фите возвращаемых пиков. Снимите флажок для фита без вычитания фона.</message>
-  <message id="fpn-opt-tt-roi-min-chi2-red">Минимальное общее снижение chi2, необходимое для признания пиков в ROI значимыми. Chi2 с пиками должен быть ниже chi2 только с континуумом как минимум на эту величину.</message>
-  <message id="fpn-opt-tt-roi-min-peak-sig">Минимальная значимость пика (площадь_пика / sqrt(континуум)) для признания пика значимым. Если любой пик в ROI имеет значимость выше этого порога, ROI сохраняется.</message>
   <message id="fpn-opt-tt-obs-initial-sig">Порог фильтра начальной значимости пика перед повторным фитом. Значимость = (амплитуда_пика * 0.7607) / sqrt(площадь_данных_в_pm_1_fwhm).</message>
   <message id="fpn-opt-tt-obs-final-sig">Порог конечной значимости пика после повторного фита. Значимость = площадь_пика / неопределённость_площади_пика.</message>
   <message id="fpn-opt-tt-skew-type">Форма асимметрии, применяемая ко всем пикам при фите. &quot;None&quot; использует чистый гауссиан. Другие варианты добавляют компоненты низкоэнергетического хвоста (напр. Exp*Gauss для детекторов NaI/CsI, Crystal Ball для хвоста сбора заряда в HPGe).</message>
