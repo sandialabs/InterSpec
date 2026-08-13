@@ -91,5 +91,9 @@
   <message id="dls-scale-more-info-note">
     Diskalakan ke waktu nyata {1} (waktu hidup {2}, rasio &times;{3} dari waktu nyata pengukuran {4}).
   </message>
+
+  <!-- Ditampilkan di bawah masukan lanjutan ketika metode Dekonvolusi dipilih, di mana masukan itu
+       dinonaktifkan.  Kendali yang dinonaktifkan tanpa penjelasan terbaca seperti bug. -->
+  <message id="dls-advanced-decon-note">Ini berlaku untuk metode Currie; batas dekonvolusi belum memakainya.</message>
 </messages>
 

@@ -91,4 +91,8 @@
   <message id="dls-scale-more-info-note">
     {1} valós időre skálázva (élő idő {2}, a mérés {4} valós idejének &times;{3} szorosa).
   </message>
+
+  <!-- A haladó bemenetek alatt jelenik meg, amikor a Dekonvolúció módszer van kiválasztva, ahol
+       azok le vannak tiltva.  A magyarázat nélkül letiltott vezérlő hibának tűnik. -->
+  <message id="dls-advanced-decon-note">Ezek a Currie-módszerre vonatkoznak; a dekonvolúciós határérték egyelőre nem használja őket.</message>
 </messages>

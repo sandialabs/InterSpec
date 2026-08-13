@@ -91,4 +91,8 @@
   <message id="dls-scale-more-info-note">
     Escalado para um tempo real de {1} (tempo vivo {2}, proporção &times;{3} do tempo real da medição {4}).
   </message>
+
+  <!-- Mostrado por baixo das entradas avançadas quando o método Deconvolução está selecionado, onde
+       ficam desativadas.  Um controlo desativado sem explicação parece um erro. -->
+  <message id="dls-advanced-decon-note">Aplicam-se ao método Currie; o limite por deconvolução ainda não os utiliza.</message>
 </messages>

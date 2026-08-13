@@ -91,5 +91,9 @@
   <message id="dls-scale-more-info-note">
     已折算到实时间 {1} (活时间 {2}，为测量实时间 {4} 的 &times;{3} 倍)。
   </message>
+
+  <!-- 当选择反卷积方法而这些项被禁用时，显示在高级输入项下方。
+       被禁用却没有说明的控件看起来像是缺陷。 -->
+  <message id="dls-advanced-decon-note">这些适用于 Currie 方法；反卷积限值尚未使用它们。</message>
 </messages>
 

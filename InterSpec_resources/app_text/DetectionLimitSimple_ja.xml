@@ -91,4 +91,8 @@
   <message id="dls-scale-more-info-note">
     実時間 {1} に換算 (ライブタイム {2}、測定実時間 {4} の &times;{3} 倍)。
   </message>
+
+  <!-- 逆畳み込み法が選択されていて、これらが無効化されているときに、詳細設定の下に表示される。
+       説明のない無効化された項目は不具合のように見えるため。 -->
+  <message id="dls-advanced-decon-note">これらは Currie 法に適用されます。逆畳み込みの限界ではまだ使用されません。</message>
 </messages>

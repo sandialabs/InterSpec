@@ -191,6 +191,52 @@ are offered because they are familiar numbers, not because the limit is a
 multiple of any sigma.
 </p>
 
+<h3>Advanced: error rates and systematic uncertainty</h3>
+<p>
+The <b>Advanced</b> checkbox on the &quot;Calc. Method&quot; line reveals four
+inputs that are otherwise left at their defaults.  They apply to the
+<b>Currie method</b>; the deconvolution limit does not consume them yet.
+</p>
+<p>
+A detection limit answers three different questions, and the tool used a single
+number for all three until now:
+</p>
+<ul>
+  <li>The <b>confidence level</b> above is the coverage of the reported interval
+  &mdash; the &quot;less than X&quot; the result line quotes.</li>
+  <li><b>&alpha;</b> is how often you are willing to call a signal present when
+  there is none.  It sets the decision threshold L<sub>c</sub>.</li>
+  <li><b>&beta;</b> is how often you are willing to miss a signal that really is
+  at the detection limit.  It sets L<sub>d</sub>.</li>
+</ul>
+<p>
+&alpha; and &beta; are entered as probabilities rather than percentages &mdash;
+0.05, not 5 &mdash; and must be above 0 and below 0.5.  Until you edit them they
+follow the confidence level as 1&nbsp;&minus;&nbsp;C.L., so leaving them alone
+reproduces the familiar behaviour exactly.  With &alpha;&nbsp;=&nbsp;&beta; the
+detection limit takes its usual closed form; with the two different it is solved
+for exactly rather than approximated.
+</p>
+<p>
+The two uncertainty fields cover everything that scales the expected counts and
+is not counting statistics.  <b>Dist. uncert.</b> is the 1&sigma; uncertainty of
+the source-to-detector distance, written like the distance itself
+(&quot;1 cm&quot;); because a point source's efficiency goes as 1/r&sup2; it
+reaches the counts with a factor of two, so a 5% distance uncertainty is a 10%
+counts uncertainty.  It is not applied for a fixed-geometry detector response,
+whose efficiency does not depend on distance; the tool says so when that happens.
+<b>Eff. uncert.</b> is a percentage covering the detector efficiency curve and
+the gamma branching ratio, which enter identically.  The two are combined in
+quadrature, and the total must stay below 100%.
+</p>
+<p>
+Note the detection limit gives out before the upper limit does: once the
+systematic uncertainty reaches 1/k<sub>&beta;</sub> &mdash; about 61% at
+&beta;&nbsp;=&nbsp;0.05 &mdash; no amount of counting separates the signal from
+the scale uncertainty, and no finite L<sub>d</sub> exists.  The upper limit
+remains valid there, and the tool warns rather than hiding the result.
+</p>
+
 <h3>The quantity labelled &chi;<sup>2</sup></h3>
 <p>
 The deconvolution method's chart and its &quot;further details&quot; table show a
@@ -223,7 +269,11 @@ Carlo at low counts rather than assumed, and is not yet implemented.
 </p>
 <p>
 Uncertainties here come from counting statistics and, where applicable, the
-finite statistics of a background reference.  Detector-response uncertainty is
-not propagated.
+finite statistics of a background reference.  Detector-response and distance
+uncertainty are propagated only if you enter them under <b>Advanced</b>, and only
+for the Currie method &mdash; nothing is derived from the detector response
+itself, because a <code>DetectorPeakResponse</code> does not yet carry an
+uncertainty on its efficiency.  Peak positions, widths, and gamma yields are held
+fixed by both methods.
 </p>
 </div>

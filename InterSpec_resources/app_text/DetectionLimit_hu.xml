@@ -187,4 +187,95 @@
     erre törekedett az eredeti beállítás is.  A mérési idő mostantól az előrejelzett jövőbeli mérés
     hosszát jelenti, nem pedig e spektrum átskálázását - ellenőrizze, mielőtt a számra hagyatkozik.
   </message>
+
+  <!-- Haladó statisztikai bemenetek.  Három valószínűség, amely három különböző kérdésre válaszol;
+       a súgószövegek megmondják, melyik melyik. -->
+  <message id="dl-advanced-cb">Haladó</message>
+  <message id="dl-advanced-cb-short">Hal.</message>
+  <message id="dl-advanced-tt">
+    Megmutatja a hibaarányokat és a szisztematikus bizonytalanságot, amelyekkel a határértéket
+    számoljuk.  Amíg ez nincs bejelölve, egyiket sem alkalmazzuk, és az eredmény pontosan az, ami
+    nélkülük lenne.
+  </message>
+
+  <message id="dl-alpha-label">Téves pozitív (&#945;):</message>
+  <message id="dl-alpha-label-short">Téves poz. &#945;:</message>
+  <message id="dl-alpha-tt">
+    Milyen gyakran hajlandó jelet megállapítani ott, ahol nincs - a téves pozitív arány.  Ez adja meg
+    a <b>döntési küszöböt</b> (L<sub>c</sub>): azt a becsült kontinuum feletti többletet, amelynél
+    kimutatást jelentenénk.
+    <p>
+      <b>Valószínűséget adjon meg, ne százalékot</b>: a szokásos érték 0,05.  0-nál nagyobbnak és
+      0,5-nél kisebbnek kell lennie; nagyjából 1E-7 alatt a normális közelítés, amelyen ez a
+      számítás nyugszik, már nem sokat ér.  A kisebb &#945; kevesebb téves riasztást és magasabb
+      küszöböt jelent.
+    </p>
+    <p>
+      Amíg nem módosítja, a fenti konfidenciaszintet követi 1 &#8722; k.sz. alakban.  Ez más kérdés,
+      mint maga a konfidenciaszint, amely a jelentett &quot;kisebb mint X&quot; intervallum
+      lefedettsége.
+    </p>
+  </message>
+
+  <message id="dl-beta-label">Téves negatív (&#946;):</message>
+  <message id="dl-beta-label-short">Téves neg. &#946;:</message>
+  <message id="dl-beta-tt">
+    Milyen gyakran hajlandó elszalasztani egy olyan jelet, amely valóban a kimutatási határon van - a
+    téves negatív arány.  Ez adja meg a <b>kimutatási határt</b> (L<sub>d</sub>): azt a valódi
+    jelnagyságot, amelyet megbízhatóan kimutatnánk.
+    <p>
+      <b>Valószínűséget adjon meg, ne százalékot</b>: a szokásos érték 0,05.  0-nál nagyobbnak és
+      0,5-nél kisebbnek kell lennie.  A kisebb &#946; nagyobb, óvatosabb kimutatási határt ad.
+    </p>
+    <p>
+      Amíg nem módosítja, a fenti konfidenciaszintet követi 1 &#8722; k.sz. alakban.
+      &#945;&#160;=&#160;&#946; esetén a kimutatási határ a megszokott zárt alakot ölti; ha a kettő
+      eltér, pontosan oldjuk meg, nem közelítéssel.
+    </p>
+  </message>
+
+  <message id="dl-dist-uncert-label">Táv. bizonyt.:</message>
+  <message id="dl-dist-uncert-label-short">&#177;Táv:</message>
+  <message id="dl-dist-uncert-empty-text">pl. 1 cm</message>
+  <message id="dl-dist-uncert-tt">
+    A forrás-detektor távolság 1&#963; bizonytalansága, ugyanúgy megadva, mint maga a távolság -
+    például <b>1 cm</b>.  Hagyja üresen, vagy írjon be 0-t, ha nincs.
+    <p>
+      Pontszerű forrás hatásfoka 1/r&#178; szerint változik, így ez kétszeres szorzóval jut el a várt
+      beütésszámhoz: 5% távolság-bizonytalanság 10% beütésszám-bizonytalanságot jelent.  A mellette
+      lévő hatásfok-bizonytalansággal négyzetesen adódik össze.  A távolság nagyjából 20%-át jóval
+      meghaladva az itt használt lineáris hibaterjesztés ingoványos talajra kerül.
+    </p>
+    <p>
+      Rögzített geometriájú detektorválasz esetén nem alkalmazzuk, mert annak hatásfoka egyáltalán
+      nem függ a távolságtól; ilyenkor az eszköz ezt jelzi.
+    </p>
+  </message>
+
+  <message id="dl-eff-uncert-label">Hatásfok bizonyt. (%):</message>
+  <message id="dl-eff-uncert-label-short">&#177;Hatásf. %:</message>
+  <message id="dl-eff-uncert-empty-text">pl. 5</message>
+  <message id="dl-eff-uncert-tt">
+    Az egységnyi aktivitásra várt beütésszám 1&#963; <b>relatív</b> bizonytalansága,
+    <b>százalékban</b> - például <b>5</b> az 5%-hoz.  Hagyja üresen, vagy írjon be 0-t, ha nincs.
+    <p>
+      Mindazt lefedi, ami a várt beütésszámot skálázza, és nem számlálási statisztika: a detektor
+      hatásfokgörbéjét és a gamma elágazási arányt, amelyek azonos módon lépnek be.  Ha mindkettő
+      számít, a kettő négyzetes összegét adja meg.  A detektorhatásfok bizonytalansága jellemzően
+      3&#8211;10%.
+    </p>
+    <p>
+      A távolság bizonytalanságával négyzetesen adódik össze, és az összegnek 100% alatt kell
+      maradnia.  Vegye figyelembe, hogy a <i>kimutatási határ</i> hamarabb adja fel,
+      1/k<sub>&#946;</sub>-nál - &#946;&#160;=&#160;0,05 mellett nagyjából 61%-nál -, mert azon túl
+      semennyi számlálás nem választja el a jelet a skálától.  A felső korlát érvényes marad.
+    </p>
+  </message>
+
+  <message id="dl-err-bad-dist-uncert">Nem sikerült értelmezni a távolság bizonytalanságát - valami ilyesmi várt: '1 cm', vagy üres, ha nincs.</message>
+  <message id="dl-err-bad-eff-uncert">Nem sikerült értelmezni a hatásfok bizonytalanságát - százalék várt, például '5', vagy üres, ha nincs.</message>
+  <message id="dl-err-dist-uncert-no-distance">Meg lett adva távolság-bizonytalanság, de a távolság üres vagy nem pozitív - adjon meg távolságot, vagy törölje a bizonytalanságot.</message>
+  <message id="dl-err-systematic-too-large">Az együttes szisztematikus bizonytalanság {1}%, amit a Currie-féle megfogalmazás nem tud kezelni - 100% alatt kell lennie.  Csökkentse a távolság vagy a hatásfok bizonytalanságát.</message>
+  <message id="dl-warn-dist-uncert-fixed-geom">A távolság bizonytalanságát nem alkalmaztuk: ez a detektorválasz rögzített geometriára vonatkozik, így hatásfoka nem függ a távolságtól.</message>
+  <message id="dl-warn-no-detection-limit">Ekkora szisztematikus bizonytalanság mellett nincs véges kimutatási határ - a valódi jel nem választható el a skála bizonytalanságától, bármeddig is számlálunk.  A fenti felső korlátot ez nem érinti.</message>
 </messages>

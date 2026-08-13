@@ -460,8 +460,10 @@ CurrieMdaInput::CurrieMdaInput()
   : spectrum(nullptr),
     gamma_energy(0.0f), roi_lower_energy(0.0f), roi_upper_energy(0.0f),
     num_lower_side_channels(0), num_upper_side_channels(0),
-    detection_probability(0.0f), additional_uncertainty(0.0f)
+    detection_probability(0.0f), alpha(0.0), beta(0.0), additional_uncertainty(0.0f)
 {
+  // Zero is the "not specified" sentinel for alpha/beta, so this still zeros everything out, and
+  //  still means "behaves exactly as it did before those fields existed".
 }
 
 
@@ -769,10 +771,68 @@ pair<size_t,size_t> round_roi_to_channels( shared_ptr<const SpecUtils::Measureme
   
   
   
+std::pair<double,double> currie_k_alpha_beta( const CurrieMdaInput &input )
+{
+  if( (input.detection_probability <= 0.05) || (input.detection_probability >= 1.0) )
+    throw runtime_error( "currie_k_alpha_beta: invalid detection_probability." );
+
+  // Below 1E-9 the normal approximation the whole Currie formulation rests on is not worth anything;
+  //  at or above 0.5 the "threshold" would sit at or below the expected background, and the
+  //  arithmetic stops meaning what it says.
+  if( IsNan(input.alpha) || IsInf(input.alpha) || (input.alpha >= 0.5)
+     || ((input.alpha > 0.0) && (input.alpha < 1.0E-9)) )
+    throw runtime_error( "currie_k_alpha_beta: invalid alpha." );
+
+  if( IsNan(input.beta) || IsInf(input.beta) || (input.beta >= 0.5)
+     || ((input.beta > 0.0) && (input.beta < 1.0E-9)) )
+    throw runtime_error( "currie_k_alpha_beta: invalid beta." );
+
+  typedef boost::math::policies::policy<boost::math::policies::digits10<6> > my_pol_6;
+  const boost::math::normal_distribution<double,my_pol_6> gaus_dist( 0.0, 1.0 );
+
+  // At or below zero means the caller never split the two rates out, so all three roles keep coming
+  //  from the one confidence level - which is what every caller did before these fields existed.
+  //  Note `1 - (1 - CL)` is exactly `CL` for CL >= 0.5, so a caller that writes `alpha = 1 - CL`
+  //  explicitly gets the identical double either way.
+  const double p_alpha = (input.alpha > 0.0) ? (1.0 - input.alpha) : input.detection_probability;
+  const double p_beta  = (input.beta  > 0.0) ? (1.0 - input.beta ) : input.detection_probability;
+
+  return std::make_pair( boost::math::quantile( gaus_dist, p_alpha ),
+                         boost::math::quantile( gaus_dist, p_beta ) );
+}//currie_k_alpha_beta(...)
+
+
+double combine_systematic_uncertainty( const double distance,
+                                       const double distance_uncertainty,
+                                       const double efficiency_rel_uncertainty,
+                                       const bool inverse_square )
+{
+  if( IsNan(distance) || IsInf(distance)
+     || IsNan(distance_uncertainty) || IsInf(distance_uncertainty)
+     || IsNan(efficiency_rel_uncertainty) || IsInf(efficiency_rel_uncertainty) )
+    throw runtime_error( "combine_systematic_uncertainty: non-finite argument." );
+
+  const double u_eff = (efficiency_rel_uncertainty > 0.0) ? efficiency_rel_uncertainty : 0.0;
+
+  double u_dist = 0.0;
+  if( (distance_uncertainty > 0.0) && inverse_square )
+  {
+    if( distance <= 0.0 )
+      throw runtime_error( "combine_systematic_uncertainty: distance uncertainty given without a"
+                           " positive distance." );
+
+    // The factor of two is the 1/r^2: a 5% distance uncertainty is a 10% counts uncertainty.
+    u_dist = 2.0*distance_uncertainty/distance;
+  }//if( a distance term applies )
+
+  return sqrt( u_dist*u_dist + u_eff*u_eff );
+}//combine_systematic_uncertainty(...)
+
+
 CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input )
 {
   using namespace SpecUtils;
-  
+
   const shared_ptr<const Measurement> spec = input.spectrum;
   const shared_ptr<const EnergyCalibration> cal = spec ? spec->energy_calibration() : nullptr;
   const size_t nchannel = cal ? cal->num_channels() : size_t(0);
@@ -806,7 +866,13 @@ CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input )
   
   if( input.additional_uncertainty < 0.0f || input.additional_uncertainty >= 1.0f )
     throw runtime_error( "mda_counts_calc: invalid additional_uncertainty." );
-  
+
+  // Range-checks alpha/beta and resolves their "not specified" sentinels.  Done here, with the rest
+  //  of the validation, so an out-of-range value throws before any work is done.
+  const std::pair<double,double> k_alpha_beta = currie_k_alpha_beta( input );
+  const double k_alpha = k_alpha_beta.first;
+  const double k_beta = k_alpha_beta.second;
+
   const vector<float> &gamma_counts = *spec->gamma_counts();
   const vector<float> &gamma_energies = *cal->channel_energies();
   
@@ -1021,31 +1087,69 @@ CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input )
   typedef boost::math::policies::policy<boost::math::policies::digits10<6> > my_pol_6;
   const boost::math::normal_distribution<double,my_pol_6> gaus_dist( 0.0, 1.0 );
   
-  //  TODO: If/when we start having k_alpha != k_beta, then we probably need to be more careful
-  //        around single vs double sided quantile.
-  //   Will map 0.8414->1.00023, 0.95->1.64485, 0.975->1.95996, 0.995->2.57583, ...
-  const double k = boost::math::quantile( gaus_dist, input.detection_probability );
-  
-  
+  // The reported interval keeps its own coverage: "how much could be there" is a different question
+  //  from either decision rate, and `k_alpha`/`k_beta` (resolved during validation) answer those.
+  //  Its quantiles are formed below, where the non-negativity of the measurand also enters.
+
   const double peak_cont_sigma = sqrt( peak_cont_sum_uncert*peak_cont_sum_uncert + peak_cont_sum );
-  
-  result.decision_threshold = k * peak_cont_sigma; //Note if using non-symmetric coverage, we would use k_alpha here
-  
-  // TODO: The calculation of result.detection_limit is using the simplified form requiring k_alpha == k_beta.
-  //       If this is not the case it is an iterative solution (see eqn 129 on pg 47 of AQ-48)
+
+  result.decision_threshold = k_alpha * peak_cont_sigma; //L_c
+
   const double add_uncert = input.additional_uncertainty;
-  if( k*k*add_uncert*add_uncert >= 1.0 )
+  if( k_beta*k_beta*add_uncert*add_uncert >= 1.0 )
   {
+    // No finite detection limit: past this point the systematic uncertainty alone can account for
+    //  any signal, and no amount of counting separates the two.
     result.detection_limit = -999; //TODO: indicate non-applicability better
-  }else
+  }else if( k_alpha == k_beta )
   {
+    // The historical closed form, kept verbatim rather than letting the general solution below
+    //  reduce to it, so that every answer computed before alpha/beta were separable stays
+    //  bit-for-bit what it was.
     // TODO: Using tbl 16 of AQ-48, I get a slightly high answer of 193.05 vs the expected answer of 191.906.
     //       If in the numerator I replace k*k with just k, then I get 191.983
     //       And if I plug those tables numbers into eqn 129 I get 0.474598 vs their 0.471705,
     //       so I am currently suspecting an error in the table.
-    result.detection_limit = (2.0*result.decision_threshold + k*k) / (1.0 - k*k*add_uncert*add_uncert);
-  }
-  
+    result.detection_limit = (2.0*result.decision_threshold + k_beta*k_beta)
+                             / (1.0 - k_beta*k_beta*add_uncert*add_uncert);
+  }else
+  {
+    // L_d is defined by  L_d = L_c + k_beta*sigma(L_d),  with the same variance model the branch
+    //  above uses:  sigma(L)^2 = sigma_0^2 + L + L^2 u^2  (continuum, Poisson signal, and the
+    //  relative systematic acting on the signal).  Squaring turns that into a quadratic in L:
+    //
+    //     (1 - k_b^2 u^2) L^2  -  (2 L_c + k_b^2) L  +  (L_c^2 - k_b^2 sigma_0^2)  =  0
+    //
+    //  and the larger root is the answer; the smaller is the L < L_c branch squaring introduced.
+    //  With k_alpha == k_beta the constant term is identically zero (L_c == k*sigma_0), and the
+    //  larger root is exactly the expression above - so AQ-48's note that k_alpha != k_beta needs an
+    //  iterative solution (eqn 129, pg 47) does not apply to this variance model.
+    const double a = 1.0 - k_beta*k_beta*add_uncert*add_uncert;   //> 0; checked above
+    const double b = -(2.0*result.decision_threshold + k_beta*k_beta);
+    const double c = result.decision_threshold*result.decision_threshold
+                     - k_beta*k_beta*peak_cont_sigma*peak_cont_sigma;
+
+    // Always non-negative: expanding gives
+    //   k_b^2 * ( 4 L_c + k_b^2 + 4 sigma_0^2 (1 - k_b^2 u^2) + 4 u^2 L_c^2 ),
+    //  and `a > 0` is exactly what makes the third term non-negative.
+    const double discriminant = b*b - 4.0*a*c;
+    assert( discriminant >= 0.0 );
+
+    // `-b` is positive, so this form has no cancellation, and the larger root is `q/a`.
+    const double q = 0.5*( -b + sqrt( (std::max)(0.0, discriminant) ) );
+    result.detection_limit = q / a;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    {// begin check the root actually solves the defining relation
+      const double L = result.detection_limit;
+      const double sig = sqrt( peak_cont_sigma*peak_cont_sigma + L + L*L*add_uncert*add_uncert );
+      const double resid = L - (result.decision_threshold + k_beta*sig);
+      assert( fabs(resid) <= 1.0E-6*(std::max)(1.0, fabs(L)) );
+      assert( L >= result.decision_threshold );
+    }// end check the root actually solves the defining relation
+#endif
+  }//if( no finite limit ) / else if( symmetric ) / else
+
   
   const float source_counts = result.peak_region_counts_sum - result.estimated_peak_continuum_counts;
   result.source_counts = source_counts;
@@ -1057,13 +1161,59 @@ CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input )
     region_sigma += source_counts*source_counts * add_uncert*add_uncert;
   region_sigma = sqrt( region_sigma );
   
-  result.lower_limit = source_counts - k*region_sigma;
-  result.upper_limit = source_counts + k*region_sigma;
-  
-  
+  // The limits of the coverage interval, per ISO 11929-1:2019 clause 9 - which applies the prior
+  //  knowledge that the measurand cannot be negative by truncating the Gaussian at zero and
+  //  renormalizing what is left (clause 9.1, and Annex C of ISO 11929-2).  `omega` is the fraction
+  //  of the untruncated Gaussian that survives that cut, Formula (40).
+  //
+  //  Without it, half the probability sits on activities that are physically impossible, and the
+  //  quoted confidence is overstated: at zero net signal a nominal 95% bound covers only 90%, and a
+  //  nominal 68.27% bound only 36.5%.  The correction is largest exactly where detection limits
+  //  live - at or below zero net counts - and vanishes once a signal is clearly present
+  //  (`omega -> 1`, and these reduce to the previous `source_counts +- k*region_sigma`).
+  //
+  //  Each endpoint is a one-sided bound at `detection_probability`, which is the convention the rest
+  //  of this file and both tools use; taken together they cover about 2*CL-1, not CL.  In ISO's
+  //  terms that is Formula (43) with gamma = 1 - CL - the shortest coverage interval, whose lower
+  //  limit is pinned at the physical boundary.  The truncation does that pinning for us: both
+  //  endpoints come out non-negative.
+  {
+    const double cl = input.detection_probability;
+
+    // Floored because `omega` underflows to zero below about -37 sigma, which would make the
+    //  quantiles infinite.  Anything this far below zero has essentially all of its truncated
+    //  posterior piled against the boundary, and the clamp at the end reports the zero it converges
+    //  to.
+    const double z = (std::max)( -8.5, static_cast<double>(source_counts)/region_sigma );
+    const double omega = boost::math::cdf( gaus_dist, z );
+
+    // Written as `-quantile(omega*p)` rather than `+quantile(1 - omega*p)`: the arguments stay small
+    //  and positive, so no precision is lost forming `1 - tiny`.
+    const double min_prob = 1.0E-15;
+    const double lower_prob = (std::max)( min_prob, omega*cl );
+    const double upper_prob = (std::max)( min_prob, omega*(1.0 - cl) );
+
+    double lower = source_counts - region_sigma*boost::math::quantile( gaus_dist, lower_prob );
+    double upper = source_counts - region_sigma*boost::math::quantile( gaus_dist, upper_prob );
+
+    // For a large count deficit both terms above are near -|z|*sigma and nearly cancel, so the
+    //  difference loses precision and can come out slightly negative.  The truncated posterior has
+    //  no mass below zero, so any negative value here is that numerical error, not a limit.
+    lower = (std::max)( 0.0, lower );
+    upper = (std::max)( lower, upper );
+
+    result.lower_limit = static_cast<float>( lower );
+    result.upper_limit = static_cast<float>( upper );
+  }
+
+
 #if( PERFORM_DEVELOPER_CHECKS )
   assert( !IsInf(result.lower_limit) && !IsNan(result.lower_limit) );
   assert( !IsInf(result.upper_limit) && !IsNan(result.upper_limit) );
+
+  // The truncation is what guarantees these; a negative endpoint means it was not applied.
+  assert( result.lower_limit >= -1.0E-6*(std::max)(1.0,region_sigma) );
+  assert( result.upper_limit >= result.lower_limit );
 #endif
   
   /*

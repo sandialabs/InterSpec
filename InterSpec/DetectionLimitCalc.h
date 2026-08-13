@@ -53,20 +53,64 @@ class Measurement;
  intervals.
  
  Notes on naming and methodology:
- - All calculations labeled as "currie" actually follow ISO 11929 methodologies for the simple gross-counts style calculation.
-  E.g., A peak region is defined, and then a given number of channels are used on either side of the peak region to estimate the
-  number of continuum counts inside the peak region, and variance, and then this is used to set limit from the total number or counts
-  in the peak region.
+ - All calculations labeled as "currie" follow the ISO 11929-1:2019 procedure for the simple
+  gross-counts style calculation.  E.g., A peak region is defined, and then a given number of channels are used on either side of the
+  peak region to estimate the number of continuum counts inside the peak region, and variance, and then this is used to set limit from
+  the total number or counts in the peak region.
   - Only single peak calculations, with no interferences are implemented.
+
+  What conforms, with the ISO 11929-1:2019 formula each implements:
+   - The variance model, including the calibration term y^2*u_rel^2(w)                    Formula (25)
+   - The uncertainty as a function of an assumed true value, u~(y~)                       Formulas (29)/(31)
+   - Decision threshold, y* = k_{1-alpha} * u~(0)                                          Formula (32)
+   - Detection limit, the smallest solution of y# = y* + k_{1-beta} * u~(y#)               Formula (34)
+   - Its existence condition, k_{1-beta} * u_rel(w) < 1                                    Formula (35)
+   - Limits of the probabilistically symmetric coverage interval, which apply the prior
+     knowledge that the measurand is non-negative by truncating the Gaussian at zero and
+     renormalizing (`omega`)                                                               Formulas (38)-(40)
+   - alpha, beta, and the coverage probability kept as three separate quantities            Clauses 8.1, 9
+
+  What does NOT conform, and must not be claimed:
+   - The best estimate y^ and its uncertainty u(y^) are NOT computed; the primary result y and u(y)
+     are reported instead.  These differ when y < 4*u(y) - in the ISO 11929-4:2020 clause 7 example,
+     y^ is 29% above y - so a marginal detection is reported at the wrong central value.
+                                                                                           Formulas (44)-(46)
+   - Only the probabilistically symmetric coverage interval is offered; the shortest coverage
+     interval is not.  ISO leaves the choice to the regulator, and the two differ by ~10% at low
+     counts.                                                                               Formulas (42)/(43)
+   - `CurrieMdaInput::detection_probability` is a ONE-SIDED confidence level, so selecting "95%"
+     gives ISO's gamma = 0.10 interval, not gamma = 0.05.  To reproduce an ISO two-sided 95%
+     interval, pass 0.975.
+   - The model is the ROI specialization of Y = (X1 - X2)*W; the further input quantities X3 and X4
+     (blank, shielding factor, ...) are not carried separately - all non-counting uncertainty is
+     collapsed into #CurrieMdaInput::additional_uncertainty as u_rel(w).
+   - This is the ISO 11929-1 (Gaussian) route, not the ISO 11929-2 (Bayesian/Monte Carlo) one.  The
+     two differ at very low counts; for the clause 7 example ISO publishes a# of 3,90E-2 by Part 1
+     against 3,58E-2 by Part 2.
+   - The rounding and documentation stipulations of clauses 5.3 and 11 are not implemented.
  - All calculations labeled as "decon" use a more sophisticated  "de-convoluted" method that takes into account the shape of the peak
   and better takes into account all information provided, as well as using multiple peaks of an isotope to derive limits.  This methodology
   seems to follow the intent of Annex B of ISO 11929-3:2019, but instead these calculations form a large chi2/likelihood calculation to
   co-compute everything and hopefully do a better job.
+  - It finds its limit where the profiled statistic rises by a threshold, and only ever evaluates
+   non-negative activities, so it does not use the `omega` construction above and makes no ISO
+   conformance claim.  Its measured coverage runs conservative - see `DeconCoverageStudy`.
  - Note that "Currie" is the detection-limit name, while "Curie" is the activity unit.
-  
- Note: As of 20210724, these calculations have only had cursory checks performed, and have not been verified and validated to a level
-  appropriate to use them for anything of importance.
- 
+
+ Verification status:
+ - The Currie path is checked against published worked examples: ISO 11929-4:2020 clause 6
+  (`Iso11929Part4Example1`) and clause 7 (`Iso11929Part4Example2LowCounts`), and IAEA AQ-48 Table 16
+  (`Table16OfAQ48`).  Every published value is reproduced to within the resolution ISO prints it at;
+  the tests emit the measured agreement so it is recorded rather than hidden behind a tolerance.
+  `CurrieCoverageIntervalIsCalibrated` additionally verifies, by numerical integration rather than by
+  the analytic form, that the coverage interval covers what it claims.
+  - Note AQ-48 Table 16's printed a# = 0.471705 omits the u_rel(w) = 0.0478 that the same table lists
+   as an input; the error is the document's, and is not asserted against.
+ - The decon path has NOT been checked against any published example.  As of 20210724 these
+  calculations had only had cursory checks performed; that remains true for everything outside the
+  Currie path above, which has not been verified and validated to a level appropriate to use it for
+  anything of importance.
+
  References consulted in developing calculations
  - ISO 11929-1:2019, ISO 11929-3:2019, ISO 11929-4:2020
  - IAEA /AQ /48
@@ -130,21 +174,48 @@ struct CurrieMdaInput
   /** The number of channels above #roi_upper_energy to use to estimate the continuum. */
   size_t num_upper_side_channels;
   
-  /** A value less than 1.0.  Currently used for k_alpha and k_beta.  Typically will be 0.95.
-   
-   In the future may split this up as two separate values, namely:
-   - alpha: probability of false-positive decision (saying the signal is there, when it isnt)
-   - beta: probability of false-negative decision (saying no signal, when there is signal there)
+  /** The confidence level of the reported interval; e.g., 0.95.  Must be greater than 0.05 and less
+   than 1.0.
+
+   This is the coverage of #CurrieMdaResult::lower_limit / #CurrieMdaResult::upper_limit - the
+   "less than X at Y CL" the tools report.
+
+   It is also the fallback for the two decision rates: when #alpha or #beta is left unspecified, that
+   quantile is taken from this value, which reproduces exactly the historical behavior of using one
+   number for all three roles.
+   \sa alpha, beta
    */
   double detection_probability;
-  
-  /** The additional uncertainty to include when calculating limits.
-   This would probably be from DRF and distance uncertainties.
-   
-   In AQ-48 this roughly corresponds to u_{rel}(w).
+
+  /** Probability of deciding a signal is present when there is none - the false-positive rate that
+   sets #CurrieMdaResult::decision_threshold,  L_c = k_{1-alpha} * sigma_0.
+
+   Must be less than 0.5, and at least 1.0E-9 when given.  Zero or negative means "not specified", in
+   which case `1 - detection_probability` is used - so a default-constructed #CurrieMdaInput, and
+   every caller written before this field existed, behaves exactly as before.
+   \sa currie_k_alpha_beta
+   */
+  double alpha;
+
+  /** Probability of failing to detect a signal whose true size is the detection limit - the
+   false-negative rate that sets #CurrieMdaResult::detection_limit, L_d.
+
+   Must be less than 0.5, and at least 1.0E-9 when given.  Zero or negative means "not specified", in
+   which case `1 - detection_probability` is used.
+   \sa currie_k_alpha_beta
+   */
+  double beta;
+
+  /** The relative systematic uncertainty to include when calculating limits: everything that scales
+   the expected counts and is not counting statistics - detector efficiency, gamma branching ratio,
+   and the source-to-detector distance (which enters squared, a point sources efficiency going as
+   1/r^2).
+
+   In AQ-48 this roughly corresponds to u_{rel}(w).  Must be in [0, 1).
+   \sa combine_systematic_uncertainty
    */
   float additional_uncertainty;
-  
+
   
   /** Default constructor that just zeros everything out. */
   CurrieMdaInput();
@@ -211,17 +282,25 @@ struct CurrieMdaResult
   
   /** This gives the lower limit, in terms of counts, on the true number of counts from signal.
    E.g. corresponds to the number of expected signal counts that we can be 95% certain the true signal is greater than.
-   
-   Note: may be less than zero.
-   
-   \sa CurrieMdaInput::detection_probability
+
+   Non-negative: the coverage interval applies the prior knowledge that the measurand cannot be
+   negative, per ISO 11929-1:2019 clause 9, by truncating the Gaussian at zero and renormalizing.
+   (Before that treatment was added this could come out below zero, which is not a possible activity.
+   #source_counts is the unconstrained estimate and may still be negative.)
+
+   \sa CurrieMdaInput::detection_probability, source_counts
    */
   float lower_limit;
-  
-  
+
+
   /** This gives the upper limit, in terms of counts, on the true number of counts from signal.
    E.g. corresponds to the number of expected signal counts that we can be 95% certain the true signal is less than.
-   
+
+   Also from the zero-truncated, renormalized Gaussian; see #lower_limit.  This makes the limit
+   *larger* than the plain `source_counts + k*sigma` - by about 19% at 95% and a factor of two at the
+   68.27% setting when no signal is present - because the probability that would have sat on negative
+   activities has to go somewhere, and it goes onto the positive side.
+
    \sa CurrieMdaInput::detection_probability
    */
   float upper_limit;
@@ -273,6 +352,52 @@ std::pair<size_t,size_t> round_roi_to_channels( std::shared_ptr<const SpecUtils:
  Will throw exception if input is invalid, or runs into any errors.
  */
 CurrieMdaResult currie_mda_calc( const CurrieMdaInput &input );
+
+
+/** The normal quantiles #currie_mda_calc will actually use, with the #CurrieMdaInput::alpha and
+ #CurrieMdaInput::beta "not specified" sentinels resolved against
+ #CurrieMdaInput::detection_probability.
+
+ This is the one place the sentinel is interpreted, so that a GUI showing the effective error rates
+ and the calculation using them cannot drift apart.
+
+ @returns The pair {k_alpha, k_beta}.
+
+ Throws exception if any of the three probabilities is out of range; these are exactly the checks
+ #currie_mda_calc makes on them.
+ */
+std::pair<double,double> currie_k_alpha_beta( const CurrieMdaInput &input );
+
+
+/** Combines a distance uncertainty and a relative efficiency uncertainty into the single relative
+ systematic uncertainty #CurrieMdaInput::additional_uncertainty takes.
+
+ A point sources detection efficiency goes as 1/r^2, so a relative distance uncertainty reaches the
+ expected counts with a factor of two:
+
+     u_rel = sqrt( (2*sigma_d/d)^2 + u_eff^2 )
+
+ @param distance Source to detector distance.  Only consulted when \p distance_uncertainty is
+        positive, and must then be positive.
+ @param distance_uncertainty The 1-sigma uncertainty of \p distance, in the same units.  Zero or
+        negative means none.
+ @param efficiency_rel_uncertainty The 1-sigma _relative_ uncertainty of the counts expected per unit
+        activity - detector efficiency and gamma branching ratio together, which enter identically.
+        Zero or negative means none.
+ @param inverse_square Whether the efficiency actually follows 1/r^2.  Pass false for a fixed-geometry
+        detector response (\sa DetectorPeakResponse::isFixedGeometry), where the distance does not
+        enter the efficiency at all, and the distance term must be dropped rather than scaled.
+ @returns The combined relative uncertainty; always non-negative.  May be greater than or equal to
+        one, which #currie_mda_calc rejects: that is a user-input problem, so the caller decides how
+        to report it rather than a clamp silently changing the number the user entered.
+
+ Throws exception if an argument is not finite, or if \p distance_uncertainty is positive while
+ \p distance is not.
+ */
+double combine_systematic_uncertainty( const double distance,
+                                       const double distance_uncertainty,
+                                       const double efficiency_rel_uncertainty,
+                                       const bool inverse_square );
 
 
 /** Options for the Currie-style detection limit check made for a single peak.

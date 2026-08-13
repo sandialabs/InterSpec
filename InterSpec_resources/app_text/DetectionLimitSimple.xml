@@ -100,4 +100,8 @@
   <message id="dls-err-select-det">Please select a detector efficiency function.</message>
   <message id="dls-err-neg-distance">Distance can't be negative.</message>
   <message id="dls-err-no-fwhm-info">Detector efficiency function does not have FWHM info - please fit for FWHM, or change detector.</message>
+
+  <!-- Shown under the advanced inputs while the Deconvolution method is selected, where they are
+       disabled.  A disabled control with no explanation reads as a bug. -->
+  <message id="dls-advanced-decon-note">These apply to the Currie method; the deconvolution limit does not use them yet.</message>
 </messages>

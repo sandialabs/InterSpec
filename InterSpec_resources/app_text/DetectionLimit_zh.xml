@@ -152,4 +152,85 @@
     想要表达的方式重新载入：本底参考测量下的浮动连续谱。测量时间现在指的是所预测的未来测量的时长，
     而不是对这张谱的重新标度——在依据该数值之前请先核对。
   </message>
+
+  <!-- 高级统计输入项。三个概率回答三个不同的问题；此前工具对这三者使用同一个数值，
+       因此提示中说明各自的含义。 -->
+  <message id="dl-advanced-cb">高级</message>
+  <message id="dl-advanced-cb-short">高级</message>
+  <message id="dl-advanced-tt">
+    显示计算该限值时所用的错误率与系统不确定度。未勾选时，它们都不会被应用，结果与没有它们时
+    完全相同。
+  </message>
+
+  <message id="dl-alpha-label">假阳性 (&#945;):</message>
+  <message id="dl-alpha-label-short">假阳性 &#945;:</message>
+  <message id="dl-alpha-tt">
+    您愿意在实际并无信号时把信号判为存在的频率——即假阳性率。它设定<b>判定阈值</b>
+    L<sub>c</sub>：超出所估计的连续谱多少才宣告为探测到。
+    <p>
+      请输入<b>概率而非百分数</b>：通常取 0.05。必须大于 0 且小于 0.5；低于约 1E-7 后，本计算所
+      依据的正态近似就没有多少意义了。&#945; 越小，误报越少，阈值也越高。
+    </p>
+    <p>
+      在您修改它之前，它按 1 &#8722; C.L. 跟随上面的置信水平。它与该置信水平所回答的问题不同：
+      置信水平指的是所报告的 &quot;小于 X&quot; 区间的覆盖率。
+    </p>
+  </message>
+
+  <message id="dl-beta-label">假阴性 (&#946;):</message>
+  <message id="dl-beta-label-short">假阴性 &#946;:</message>
+  <message id="dl-beta-tt">
+    您愿意漏掉一个确实处于检测限值上的信号的频率——即假阴性率。它设定<b>检测限值</b>
+    L<sub>d</sub>：能够被可靠探测到的真实信号大小。
+    <p>
+      请输入<b>概率而非百分数</b>：通常取 0.05。必须大于 0 且小于 0.5。&#946; 越小，检测限值越大、
+      越保守。
+    </p>
+    <p>
+      在您修改它之前，它按 1 &#8722; C.L. 跟随上面的置信水平。当 &#945;&#160;=&#160;&#946; 时，
+      检测限值具有人们熟悉的解析形式；两者不同时则是精确求解，而非近似。
+    </p>
+  </message>
+
+  <message id="dl-dist-uncert-label">距离不确定度:</message>
+  <message id="dl-dist-uncert-label-short">&#177;距离:</message>
+  <message id="dl-dist-uncert-empty-text">例如 1 cm</message>
+  <message id="dl-dist-uncert-tt">
+    源到探测器距离的 1&#963; 不确定度，写法与距离本身相同——例如 <b>1 cm</b>。若没有，请留空或
+    填 0。
+    <p>
+      点源的效率按 1/r&#178; 变化，因此它会以两倍的系数传到期望计数上：5% 的距离不确定度对应
+      10% 的计数不确定度。它与旁边的效率不确定度按平方和合成。一旦明显超过距离的约 20%，
+      这里所用的线性传播就不再可靠。
+    </p>
+    <p>
+      对于固定几何的探测器响应，其效率完全不依赖于距离，因此不会应用该项；出现这种情况时工具会
+      予以说明。
+    </p>
+  </message>
+
+  <message id="dl-eff-uncert-label">效率不确定度 (%):</message>
+  <message id="dl-eff-uncert-label-short">&#177;效率%:</message>
+  <message id="dl-eff-uncert-empty-text">例如 5</message>
+  <message id="dl-eff-uncert-tt">
+    单位活度所期望计数的 1&#963; <b>相对</b>不确定度，以<b>百分数</b>给出——例如 <b>5</b> 表示
+    5%。若没有，请留空或填 0。
+    <p>
+      它涵盖所有会按比例改变期望计数、而又不属于计数统计的因素：探测器效率曲线与伽马分支比，
+      二者的作用方式完全相同。若两者都重要，请输入二者按平方和合成后的值。探测器效率的不确定度
+      通常为 3&#8211;10%。
+    </p>
+    <p>
+      它与距离不确定度按平方和合成，总量必须保持在 100% 以下。请注意<i>检测限值</i>更早失效，
+      在 1/k<sub>&#946;</sub> 处——&#946;&#160;=&#160;0.05 时约为 61%——因为超过该值后，无论计数
+      多久都无法把信号与标度分离开。上限值仍然有效。
+    </p>
+  </message>
+
+  <message id="dl-err-bad-dist-uncert">无法读取距离不确定度——应为类似 '1 cm' 的值，若没有则留空。</message>
+  <message id="dl-err-bad-eff-uncert">无法读取效率不确定度——应为百分数，如 '5'，若没有则留空。</message>
+  <message id="dl-err-dist-uncert-no-distance">已输入距离不确定度，但距离为空或不是正值——请输入距离，或清除该不确定度。</message>
+  <message id="dl-err-systematic-too-large">合成后的系统不确定度为 {1}%，Currie 方法无法使用——它必须小于 100%。请减小距离或效率的不确定度。</message>
+  <message id="dl-warn-dist-uncert-fixed-geom">未应用距离不确定度：该探测器响应针对固定几何，其效率不依赖于距离。</message>
+  <message id="dl-warn-no-detection-limit">在该系统不确定度下不存在有限的检测限值——无论计数多久，真实信号都无法与标度不确定度分离开。上面的上限值不受影响。</message>
 </messages>

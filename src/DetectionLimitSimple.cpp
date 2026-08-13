@@ -114,9 +114,18 @@ DetectionLimitSimpleWindow::DetectionLimitSimpleWindow( Wt::WSuggestionPopup *ma
 
   rejectWhenEscapePressed( true );
 
+  // The dialog body is what scrolls, so contents that do not fit produce a scrollbar rather than
+  //  pushing the footer off the bottom.  The class carries both the overflow and the height cap, in
+  //  CSS, so it holds even when Wt's dialog layout has not re-measured - and on phone, where every
+  //  C++ sizing call below is a no-op.  \sa DetectionLimitSimple.css
+  contents()->addStyleClass( "SimpleMdaBody" );
+
   m_tool = new DetectionLimitSimple( materialSuggestion, viewer, contents() );
-  m_tool->setHeight( WLength(100,WLength::Percentage) );
-  
+  // Deliberately no `setHeight(100%)`: with a definite height the tool's flex column would resolve
+  //  against the squeezed body and its children would be asked to shrink, squashing the 200px chart,
+  //  instead of the body scrolling.  Content-sized is also what makes the dialog layout's
+  //  preferred-size measurement mean what we want.
+
   AuxWindow::addHelpInFooter( footer(), "simple-mda-dialog" );
 
 #if( USE_QR_CODES )
@@ -214,6 +223,17 @@ DetectionLimitSimple::DetectionLimitSimple( Wt::WSuggestionPopup *materialSugges
   m_detectorDisplay( nullptr ),
   m_methodGroup( nullptr ),
   m_methodDescription( nullptr ),
+  m_advancedCb( nullptr ),
+  m_advancedDiv( nullptr ),
+  m_alpha( nullptr ),
+  m_beta( nullptr ),
+  m_alphaUserSet( false ),
+  m_betaUserSet( false ),
+  m_distanceUncert( nullptr ),
+  m_prevDistanceUncert{},
+  m_effUncert( nullptr ),
+  m_advancedNote( nullptr ),
+  m_systematicNote{},
   m_numFwhmWide( 2.5f ),
   m_lowerRoi( nullptr ),
   m_upperRoi( nullptr ),
@@ -622,10 +642,101 @@ void DetectionLimitSimple::init()
   m_methodGroup->setCheckedButton( currieBtn );
   
   m_methodGroup->checkedChanged().connect( this, &DetectionLimitSimple::handleMethodChanged );
-  
+
+  // "Advanced" goes on the far right of this row.  An auto margin in the flex row does the pushing,
+  //  so `justify-content: flex-start` can stay and the label + radios keep hugging the left edge.
+  m_advancedCb = new WCheckBox( WString::tr(isPhone ? "dl-advanced-cb-short" : "dl-advanced-cb"),
+                                container );
+  m_advancedCb->addStyleClass( "CbNoLineBreak AdvancedCb" );
+  m_advancedCb->setWordWrap( false );
+  m_advancedCb->checked().connect( this, &DetectionLimitSimple::handleAdvancedToggled );
+  m_advancedCb->unChecked().connect( this, &DetectionLimitSimple::handleAdvancedToggled );
+  HelpSystem::attachToolTipOn( m_advancedCb, WString::tr("dl-advanced-tt"), showToolTips );
+
   m_methodDescription = new WText( WString::tr("dls-currie-desc"), generalInput );
   m_methodDescription->addStyleClass( "CalcMethodDesc GridSecondCol GridTenthRow GridSpanFourCol" );
-  
+
+  // The advanced statistical inputs; a sibling of `generalInput` rather than an eleventh grid row -
+  //  see `m_advancedDiv`'s doc comment for why.
+  m_advancedDiv = new WContainerWidget( this );
+  m_advancedDiv->addStyleClass( "AdvancedInput" );
+  m_advancedDiv->hide();  //Deliberately NOT setHiddenKeepsGeometry: this must take up no room.
+
+  // Labels and fields are direct grid children, so the columns line up across both rows; wrapping
+  //  them in per-pair divs would let each pair size independently and lose that alignment.
+  WLabel *alphaLabel = new WLabel( WString::tr(isPhone ? "dl-alpha-label-short" : "dl-alpha-label"),
+                                   m_advancedDiv );
+  m_alpha = new NativeFloatSpinBox( m_advancedDiv );
+  m_alpha->setSpinnerHidden();
+  // A probability, not a percent.  The upper bound is 0.5 because at or above it the "threshold"
+  //  would sit at or below the expected background, and the arithmetic stops meaning what it says.
+  //  The lower bound is 1E-7 because below that the normal approximation the whole Currie
+  //  formulation rests on is not worth much - and it is under the smallest value the
+  //  confidence-level combo can produce (1 - 0.999999426696856 = 5.7E-7).
+  m_alpha->setRange( 1.0E-7f, 0.4999f );
+  m_alpha->setValue( static_cast<float>( 1.0 - currentConfidenceLevel() ) );
+  alphaLabel->setBuddy( m_alpha );
+  m_alpha->valueChanged().connect( this, &DetectionLimitSimple::handleAlphaChanged );
+  HelpSystem::attachToolTipOn( {alphaLabel, m_alpha}, WString::tr("dl-alpha-tt"), showToolTips );
+
+  WLabel *betaLabel = new WLabel( WString::tr(isPhone ? "dl-beta-label-short" : "dl-beta-label"),
+                                  m_advancedDiv );
+  m_beta = new NativeFloatSpinBox( m_advancedDiv );
+  m_beta->setSpinnerHidden();
+  m_beta->setRange( 1.0E-7f, 0.4999f );  //Same reasoning as alpha, above.
+  m_beta->setValue( static_cast<float>( 1.0 - currentConfidenceLevel() ) );
+  betaLabel->setBuddy( m_beta );
+  m_beta->valueChanged().connect( this, &DetectionLimitSimple::handleBetaChanged );
+  HelpSystem::attachToolTipOn( {betaLabel, m_beta}, WString::tr("dl-beta-tt"), showToolTips );
+
+  WLabel *distUncertLabel = new WLabel(
+            WString::tr(isPhone ? "dl-dist-uncert-label-short" : "dl-dist-uncert-label"),
+            m_advancedDiv );
+  m_distanceUncert = new WLineEdit( m_advancedDiv );
+  m_distanceUncert->setEmptyText( WString::tr("dl-dist-uncert-empty-text") );
+  distUncertLabel->setBuddy( m_distanceUncert );
+  m_distanceUncert->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+  m_distanceUncert->setAttributeValue( "autocorrect", "off" );
+  m_distanceUncert->setAttributeValue( "spellcheck", "off" );
+#endif
+  {
+    // Same grammar as the distance field above it.  Note `PhysicalUnits::stringToDistance` requires
+    //  a unit *unless* the value is exactly "0" - which is what makes "0" the natural spelling of
+    //  "none", and stops a bare "1" being silently read as some unit.
+    WRegExpValidator *distUncertVal
+                = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
+    distUncertVal->setFlags( Wt::MatchCaseInsensitive );
+    m_distanceUncert->setValidator( distUncertVal );
+  }
+  m_distanceUncert->changed().connect( this, &DetectionLimitSimple::handleSystematicUncertChanged );
+  m_distanceUncert->enterPressed().connect( this, &DetectionLimitSimple::handleSystematicUncertChanged );
+  HelpSystem::attachToolTipOn( {distUncertLabel, m_distanceUncert},
+                              WString::tr("dl-dist-uncert-tt"), showToolTips );
+
+  WLabel *effUncertLabel = new WLabel(
+            WString::tr(isPhone ? "dl-eff-uncert-label-short" : "dl-eff-uncert-label"),
+            m_advancedDiv );
+  m_effUncert = new WLineEdit( m_advancedDiv );
+  m_effUncert->setEmptyText( WString::tr("dl-eff-uncert-empty-text") );
+  effUncertLabel->setBuddy( m_effUncert );
+  {
+    // Not mandatory, so an empty field validates - blank means "none".  The 99.9 cap is only a first
+    //  pass; the *combined* systematic is what has to stay under 100%, and
+    //  `currentSystematicUncertainty()` is where that is enforced.
+    WDoubleValidator *effUncertVal = new WDoubleValidator( 0.0, 99.9, this );
+    m_effUncert->setValidator( effUncertVal );
+  }
+  m_effUncert->changed().connect( this, &DetectionLimitSimple::handleSystematicUncertChanged );
+  m_effUncert->enterPressed().connect( this, &DetectionLimitSimple::handleSystematicUncertChanged );
+  HelpSystem::attachToolTipOn( {effUncertLabel, m_effUncert},
+                              WString::tr("dl-eff-uncert-tt"), showToolTips );
+
+  m_advancedNote = new WText( WString::tr("dls-advanced-decon-note"), m_advancedDiv );
+  m_advancedNote->addStyleClass( "AdvancedNote" );
+  m_advancedNote->setInline( false );
+  m_advancedNote->hide();  //Only shown under the Deconvolution method; \sa handleMethodChanged
+
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateDisplayedSpectrum;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   scheduleRender();
@@ -979,6 +1090,25 @@ void DetectionLimitSimple::handleMethodChanged()
 
   m_methodDescription->setText( WString::tr(currieMethod ? "dls-currie-desc" : "dls-decon-desc") );
 
+  // The advanced inputs stay visible under the deconvolution method but go disabled, with a note
+  //  saying why - hiding them would make the checkbox look broken, and the values are still part of
+  //  the state.  They are Currie-method quantities, and the deconvolution limit does not consume
+  //  them.
+  // TODO: `DetectionLimitCalc::decon_characteristic_limits()` (on the feature/DeconLdLc branch)
+  //       computes L_c/L_d for the deconvolution method from an alpha and a beta.  Wire these two
+  //       fields into it, and add a systematic term to `DeconComputeInput`, when that calculation
+  //       reaches the GUI.
+  m_alpha->setDisabled( !currieMethod );
+  m_beta->setDisabled( !currieMethod );
+  m_distanceUncert->setDisabled( !currieMethod );
+  m_effUncert->setDisabled( !currieMethod );
+  m_advancedNote->setHidden( currieMethod );
+
+  // Section visibility follows the checkbox, and is set here as well as in `handleAdvancedToggled()`
+  //  because `handleAppUrl()` drives this one function to bring all dependent visibility into line
+  //  after decoding.
+  m_advancedDiv->setHidden( !m_advancedCb->isChecked() );
+
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
@@ -1315,10 +1445,146 @@ void DetectionLimitSimple::handleDistanceChanged()
 
 void DetectionLimitSimple::handleConfidenceLevelChanged()
 {
+  // Until the user edits them, the two error rates follow the confidence level as 1 - CL.  Only the
+  //  displayed value is updated here; while un-latched the calculation still receives the sentinel,
+  //  so it uses the confidence level itself rather than this rounded-for-display copy of it.
+  const float complement = static_cast<float>( 1.0 - currentConfidenceLevel() );
+  if( !m_alphaUserSet )
+    m_alpha->setValue( complement );
+  if( !m_betaUserSet )
+    m_beta->setValue( complement );
+
   m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   scheduleRender();
 }//void handleConfidenceLevelChanged()
+
+
+void DetectionLimitSimple::handleAdvancedToggled()
+{
+  m_advancedDiv->setHidden( !m_advancedCb->isChecked() );
+
+  // Wt's dialog layout re-measures only when something schedules an adjust; a widget appearing
+  //  inside the body does not.  This is the app's established way of asking for one - and it is
+  //  `wApp`-scoped, so the tool does not need to know whether a dialog is around it.
+  wApp->doJavaScript( wApp->javaScriptClass() + ".TriggerResizeEvent();" );
+
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  scheduleRender();
+}//void handleAdvancedToggled()
+
+
+void DetectionLimitSimple::handleAlphaChanged()
+{
+  // Latching here is what stops the value following the confidence-level combo from now on, and it
+  //  is also what makes the ALPHA token appear in the state URI.
+  m_alphaUserSet = true;
+
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  scheduleRender();
+}//void handleAlphaChanged()
+
+
+void DetectionLimitSimple::handleBetaChanged()
+{
+  m_betaUserSet = true;
+
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  scheduleRender();
+}//void handleBetaChanged()
+
+
+void DetectionLimitSimple::handleSystematicUncertChanged()
+{
+  // The distance-uncertainty field takes a length string, so an invalid entry is reverted the same
+  //  way `handleDistanceChanged()` reverts the distance itself.  The efficiency field is guarded by
+  //  a `WDoubleValidator`, so it needs no equivalent.
+  const WString dist_uncert = m_distanceUncert->text();
+  if( m_distanceUncert->validate() == WValidator::State::Valid )
+    m_prevDistanceUncert = dist_uncert;
+  else
+    m_distanceUncert->setText( m_prevDistanceUncert );
+
+  m_renderFlags |= DetectionLimitSimple::RenderActions::AddUndoRedoStep;
+  m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
+  scheduleRender();
+}//void handleSystematicUncertChanged()
+
+
+float DetectionLimitSimple::currentSystematicUncertainty( Wt::WString &note ) const
+{
+  // With "Advanced" off, nothing here reaches the calculation: the tool must give exactly the
+  //  answers it gave before this section existed.
+  if( !m_advancedCb || !m_advancedCb->isChecked() )
+    return 0.0f;
+
+  double dist_uncert = 0.0;
+  string txt = m_distanceUncert->text().toUTF8();
+  SpecUtils::trim( txt );
+  if( !txt.empty() )
+  {
+    try
+    {
+      dist_uncert = PhysicalUnits::stringToDistance( txt );
+    }catch( std::exception & )
+    {
+      throw runtime_error( WString::tr("dl-err-bad-dist-uncert").toUTF8() );
+    }
+  }//if( a distance uncertainty was entered )
+
+  double eff_uncert = 0.0;
+  txt = m_effUncert->text().toUTF8();
+  SpecUtils::trim( txt );
+  if( !txt.empty() )
+  {
+    if( !(stringstream(txt) >> eff_uncert) || (eff_uncert < 0.0) )
+      throw runtime_error( WString::tr("dl-err-bad-eff-uncert").toUTF8() );
+    eff_uncert /= 100.0;  //the field is a percent
+  }//if( an efficiency uncertainty was entered )
+
+  if( (dist_uncert <= 0.0) && (eff_uncert <= 0.0) )
+    return 0.0f;
+
+  // A fixed-geometry response has no distance in it, so 1/r^2 does not hold and a distance
+  //  uncertainty simply does not propagate.  Say so, rather than quietly using or ignoring it.
+  const shared_ptr<const DetectorPeakResponse> drf = m_detectorDisplay->detector();
+  const bool inverse_square = !(drf && drf->isValid() && drf->isFixedGeometry());
+  if( (dist_uncert > 0.0) && !inverse_square )
+    note = WString::tr("dl-warn-dist-uncert-fixed-geom");
+
+  double distance = 0.0;
+  if( (dist_uncert > 0.0) && inverse_square )
+  {
+    try
+    {
+      distance = PhysicalUnits::stringToDistance( m_distance->text().toUTF8() );
+    }catch( std::exception & )
+    {
+      distance = 0.0;
+    }
+
+    // The user explicitly asked for this term, so a missing distance is an error, not a silent drop.
+    //  (The Currie limit itself does not need a distance - it is in counts - which is why this is
+    //  checked here and not with the rest of the input.)
+    if( distance <= 0.0 )
+      throw runtime_error( WString::tr("dl-err-dist-uncert-no-distance").toUTF8() );
+  }//if( a distance term applies )
+
+  const double u_rel = DetectionLimitCalc::combine_systematic_uncertainty( distance,
+                                    inverse_square ? dist_uncert : 0.0, eff_uncert, inverse_square );
+
+  // Clamping would silently change the number the user entered, so this is a hard error.  Note the
+  //  *detection limit* gives out earlier than this, at u = 1/k_beta (about 61% at beta = 0.05); that
+  //  case still yields a valid upper limit, so it is only a warning - see `updateResult()`.
+  if( u_rel >= 1.0 )
+    throw runtime_error( WString::tr("dl-err-systematic-too-large")
+                        .arg( SpecUtils::printCompact(100.0*u_rel, 3) ).toUTF8() );
+
+  return static_cast<float>( u_rel );
+}//float currentSystematicUncertainty( Wt::WString &note ) const
 
 
 void DetectionLimitSimple::handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> new_drf )
@@ -1427,13 +1693,42 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
   //  rather than in `updateResult()`, which runs first and would have this reset wipe it.
   m_warningTxt->setText( "" );
   m_warningTxt->hide();
-  if( m_currentDeconResults && !m_currentDeconResults->warnings.empty() )
   {
-    string warning_text;
-    for( const string &warning : m_currentDeconResults->warnings )
-      warning_text += (warning_text.empty() ? "" : "<br />") + warning;
-    m_warningTxt->setText( WString::fromUTF8(warning_text) );
-    m_warningTxt->show();
+    WString warning_text;
+
+    if( m_currentDeconResults && !m_currentDeconResults->warnings.empty() )
+    {
+      string decon_warnings;
+      for( const string &warning : m_currentDeconResults->warnings )
+        decon_warnings += (decon_warnings.empty() ? "" : "<br />") + warning;
+      warning_text = WString::fromUTF8( decon_warnings );
+    }
+
+    // A qualification raised while building the Currie input - currently only a distance uncertainty
+    //  dropped because the detector response is fixed-geometry.  \sa currentSystematicUncertainty
+    if( !m_systematicNote.empty() )
+    {
+      if( !warning_text.empty() )
+        warning_text += WString::fromUTF8( "<br />" );
+      warning_text += m_systematicNote;
+    }
+
+    // A systematic uncertainty at or above 1/k_beta leaves no finite detection limit - the true
+    //  signal cannot be separated from the scale uncertainty however long you count.  The upper
+    //  limit is unaffected, so this qualifies the answer rather than replacing it.
+    //  \sa DetectionLimitCalc::currie_mda_calc, which returns -999 for exactly this case.
+    if( m_currentCurrieResults && (m_currentCurrieResults->detection_limit <= -999.0f) )
+    {
+      if( !warning_text.empty() )
+        warning_text += WString::fromUTF8( "<br />" );
+      warning_text += WString::tr("dl-warn-no-detection-limit");
+    }
+
+    if( !warning_text.empty() )
+    {
+      m_warningTxt->setText( warning_text );
+      m_warningTxt->show();
+    }
   }
   m_moreInfoButton->hide();
   m_peakModel->setPeaks( vector<shared_ptr<const PeakDef>>{} );
@@ -1640,33 +1935,39 @@ void DetectionLimitSimple::updateSpectrumDecorationsAndResultText()
         result_txt = WString::tr("dls-det-upper-bound").arg(mdastr).arg(cl_str);
       }//if( detected ) / else if( ....)
       
-      WString full_result_txt;
-      
-      if( !result )
-      {
-        full_result_txt = result_txt;
-      }else if( assertedIsBackground )
-      {
-        full_result_txt = WString( "{1}" );
-      }else
-      {
-        full_result_txt = WString( "{1}<br/>{2}" );
-        full_result_txt.arg(result_txt);
-      }//if( assertedIsBackground ) / else
-      
-      if( result && (gammas_per_bq > 0.0) )
+      // `currie_mda_calc` returns -999 when the systematic uncertainty leaves no finite detection
+      //  limit.  Formatting that sentinel gives a nonsense negative activity, so the line is dropped
+      //  entirely and `m_warningTxt` says why it is missing.  Only reachable since the "Advanced"
+      //  section let a systematic uncertainty be entered at all.
+      const bool haveDetLimit = (result && (result->detection_limit > -999.0f));
+
+      WString mda_txt;
+      if( haveDetLimit && (gammas_per_bq > 0.0) )
       {
         const double detection_act = result->detection_limit / gammas_per_bq;
         const string act = PhysicalUnits::printToBestActivityUnits( detection_act, 2, use_curie )
                           + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-        
-        full_result_txt.arg( WString::tr("dls-min-detectable-act").arg(act) );
-      }else if( result )
+
+        mda_txt = WString::tr("dls-min-detectable-act").arg(act);
+      }else if( haveDetLimit )
       {
         const string counts = SpecUtils::printCompact(result->detection_limit, 4);
-        full_result_txt.arg( WString::tr("dls-min-detectable-counts").arg( counts ) );
-      }
-      
+        mda_txt = WString::tr("dls-min-detectable-counts").arg( counts );
+      }//if( have a detection limit to report )
+
+      // A background reference describes a measurement nobody has taken, so the minimum detectable
+      //  line is the whole answer there - unless there isn't one, in which case fall back to the
+      //  result line rather than showing nothing.
+      WString full_result_txt;
+      if( !result )
+        full_result_txt = result_txt;
+      else if( assertedIsBackground )
+        full_result_txt = haveDetLimit ? mda_txt : result_txt;
+      else if( haveDetLimit )
+        full_result_txt = WString("{1}<br/>{2}").arg(result_txt).arg(mda_txt);
+      else
+        full_result_txt = result_txt;
+
       m_resultTxt->setText( full_result_txt );
       m_moreInfoButton->show();
     }//if( m_currentCurrieInput )
@@ -2367,6 +2668,10 @@ void DetectionLimitSimple::updateResult()
   m_currentCurrieResults.reset();
   m_currentProjectedLimit = DetectionLimitCalc::ProjectedLimit{};
 
+  // Parked here, rather than set on `m_warningTxt` directly, because
+  //  `updateSpectrumDecorationsAndResultText()` runs after this function and clears that text.
+  m_systematicNote = WString();
+
   try
   {
     m_fitFwhmBtn->hide();
@@ -2419,8 +2724,26 @@ void DetectionLimitSimple::updateResult()
     }
     
     currie_input->detection_probability = confidenceLevel;
-    currie_input->additional_uncertainty = 0.0f;  // TODO: can we get the DRFs contribution to form this?
-    
+
+    // The two error rates and the systematic uncertainty come from the "Advanced" section, and apply
+    //  to the Currie method only - which is what the section's note tells the user.  The gate on the
+    //  method matters even though the deconvolution branch reports its own limit: it still uses this
+    //  Currie result to seed the activity search range below, so applying these here would move the
+    //  deconvolution answer, and a bad entry would abort it with an error about a field the UI says
+    //  does not apply to it.
+    //  Zero means "not specified", so the confidence level supplies all three roles - which is what
+    //  happened before the section existed.
+    if( currieMethod )
+    {
+      currie_input->alpha = m_alphaUserSet ? m_alpha->value() : 0.0;
+      currie_input->beta = m_betaUserSet ? m_beta->value() : 0.0;
+      currie_input->additional_uncertainty = currentSystematicUncertainty( m_systematicNote );
+    }else
+    {
+      currie_input->alpha = currie_input->beta = 0.0;
+      currie_input->additional_uncertainty = 0.0f;
+    }
+
     m_currentCurrieInput = currie_input;
     const DetectionLimitCalc::CurrieMdaResult currie_result = DetectionLimitCalc::currie_mda_calc( *currie_input );
     m_currentCurrieResults = make_shared<DetectionLimitCalc::CurrieMdaResult>( currie_result );
@@ -3083,11 +3406,87 @@ void DetectionLimitSimple::handleAppUrl( std::string uri )
           PhysicalUnits::printToBestTimeUnits( hist->real_time(), 3 ) ) );
   }
   
+  // The advanced statistical inputs.  Reset all five to their defaults first, because for these the
+  //  *absence* of a token is meaningful: no ALPHA means "still tracking the confidence level", and a
+  //  VER=2 or VER=1 URI has none of them at all and must decode to Advanced-off.
+  m_advancedCb->setChecked( false );
+  m_alphaUserSet = m_betaUserSet = false;
+  m_alpha->setValue( static_cast<float>( 1.0 - currentConfidenceLevel() ) );
+  m_beta->setValue( static_cast<float>( 1.0 - currentConfidenceLevel() ) );
+  m_distanceUncert->setText( "" );
+  m_prevDistanceUncert = "";
+  m_effUncert->setText( "" );
+
+  qpos = values.find( "ADV" );
+  if( qpos != end(values) )
+  {
+    if( (qpos->second == "1") || SpecUtils::iequals_ascii(qpos->second, "YES")
+       || SpecUtils::iequals_ascii(qpos->second, "TRUE") )
+      m_advancedCb->setChecked( true );
+    else if( (qpos->second != "0") && !SpecUtils::iequals_ascii(qpos->second, "NO")
+            && !SpecUtils::iequals_ascii(qpos->second, "FALSE") )
+      cerr << "Invalid 'ADV' value: '" << qpos->second << "'" << endl;
+  }//if( URI has ADV )
+
+  qpos = values.find( "ALPHA" );
+  if( qpos != end(values) )
+  {
+    float alpha;
+    if( (stringstream(qpos->second) >> alpha) && (alpha > 0.0f) && (alpha < 0.5f) )
+    {
+      m_alpha->setValue( alpha );
+      m_alphaUserSet = true;
+    }else
+    {
+      cerr << "Invalid 'ALPHA' value: '" << qpos->second << "'" << endl;
+    }
+  }//if( URI has ALPHA )
+
+  qpos = values.find( "BETA" );
+  if( qpos != end(values) )
+  {
+    float beta;
+    if( (stringstream(qpos->second) >> beta) && (beta > 0.0f) && (beta < 0.5f) )
+    {
+      m_beta->setValue( beta );
+      m_betaUserSet = true;
+    }else
+    {
+      cerr << "Invalid 'BETA' value: '" << qpos->second << "'" << endl;
+    }
+  }//if( URI has BETA )
+
+  qpos = values.find( "DISTUNCERT" );
+  if( qpos != end(values) )
+  {
+    try
+    {
+      const double dist_uncert = PhysicalUnits::stringToDistance( qpos->second );
+      if( dist_uncert < 0.0 )
+        throw runtime_error( "negative" );
+      m_distanceUncert->setValueText( WString::fromUTF8(qpos->second) );
+      m_prevDistanceUncert = m_distanceUncert->text();
+    }catch( std::exception & )
+    {
+      cerr << "Invalid 'DISTUNCERT' value: '" << qpos->second << "'" << endl;
+    }
+  }//if( URI has DISTUNCERT )
+
+  qpos = values.find( "EFFUNCERT" );
+  if( qpos != end(values) )
+  {
+    double eff_uncert;
+    if( (stringstream(qpos->second) >> eff_uncert) && (eff_uncert >= 0.0) && (eff_uncert < 100.0) )
+      m_effUncert->setValueText( WString::fromUTF8(qpos->second) );
+    else
+      cerr << "Invalid 'EFFUNCERT' value: '" << qpos->second << "'" << endl;
+  }//if( URI has EFFUNCERT )
+
   // Set render flags... JIC
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateLimit;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateDisplayedSpectrum;
   m_renderFlags |= DetectionLimitSimple::RenderActions::UpdateSpectrumDecorations;
-  
+
   // The decode above only set widget values.  Drive the one function that owns the show/hide table
   //  so the dependent visibility matches, rather than hand-setting it here - two copies of those
   //  rules is exactly how they drifted before.
@@ -3116,7 +3515,11 @@ std::string DetectionLimitSimple::encodeStateToUrl() const
   const bool currieMethod = (m_methodGroup->checkedId() == static_cast<int>(MethodIds::Currie));
   answer += currieMethod ? "CURRIE" : "DECON";
   
-  answer += "?VER=2";
+  // 2.1, not 3: the advanced tokens are purely additive and optional, and the version gate in
+  //  `handleAppUrl()` already accepts a "2."-prefixed minor - it was written so exactly this could
+  //  be added without breaking QR codes and stored states held by already-shipped builds.  Those
+  //  builds decode a 2.1 URI losing only the advanced fields, which is the correct degradation.
+  answer += "?VER=2.1";
   
   const SandiaDecay::Nuclide *nuc = m_nucEnterController->nuclide();
   if( nuc )
@@ -3246,6 +3649,36 @@ std::string DetectionLimitSimple::encodeStateToUrl() const
     {
       // Invalid time string - skip; result is reflected by SCALE absent from URL.
     }
+  }
+
+  // The advanced statistical inputs.  Each value is emitted independently of ADV, so unticking
+  //  "Advanced" and then undoing gets the typed values back; ADV alone records whether they apply.
+  //  The *absence* of ALPHA/BETA is how "still tracking the confidence level" is encoded - that is
+  //  what makes a decoded state respond to the confidence-level combo the way a live one does.
+  if( m_advancedCb->isChecked() )
+    answer += "&ADV=1";
+
+  if( m_alphaUserSet )
+    answer += "&ALPHA=" + SpecUtils::printCompact( m_alpha->value(), 6 );
+
+  if( m_betaUserSet )
+    answer += "&BETA=" + SpecUtils::printCompact( m_beta->value(), 6 );
+
+  if( m_distanceUncert->validate() == WValidator::State::Valid )
+  {
+    string dist_uncert = m_distanceUncert->text().toUTF8();
+    SpecUtils::trim( dist_uncert );
+    // Like DIST, distance is not localized, so the user's text can go straight into the URL.
+    if( !dist_uncert.empty() )
+      answer += "&DISTUNCERT=" + dist_uncert;
+  }
+
+  if( m_effUncert->validate() == WValidator::State::Valid )
+  {
+    string eff_uncert = m_effUncert->text().toUTF8();
+    SpecUtils::trim( eff_uncert );
+    if( !eff_uncert.empty() )
+      answer += "&EFFUNCERT=" + eff_uncert;
   }
 
   return answer;
