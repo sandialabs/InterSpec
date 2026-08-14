@@ -2276,6 +2276,12 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     m_drfTypeStack = stackOwned.get();
     m_drfTypeStack->addStyleClass( "UseInfoStack DetEditContent" );
 
+    // Wt4's WStackedWidget ctor sets an inline `overflow:hidden`, which beats the `overflow-y`
+    //  our stylesheet sets on this stack (Wt3's ctor only added the style class, so the CSS
+    //  worked).  Set it through the API so we win on specificity, else content taller than the
+    //  container is clipped with no scrollbar.
+    m_drfTypeStack->setOverflow( Overflow::Auto, Wt::Orientation::Vertical );
+
     auto menuOwned = std::make_unique<WMenu>( m_drfTypeStack );
     m_drfTypeMenu = menuOwned.get();
 

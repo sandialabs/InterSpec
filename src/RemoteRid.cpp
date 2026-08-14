@@ -615,6 +615,13 @@ public:
     m_status_stack = layout->addWidget( std::make_unique<WStackedWidget>(), 2, 0, 1, 2 );
     m_status_stack->addStyleClass( "RestRidInfoStack" );
 
+    // Wt4's WStackedWidget ctor sets an inline `overflow:hidden`, which beats the `overflow-y`
+    //  our stylesheet sets on this stack (Wt3's ctor only added the style class, so the CSS
+    //  worked).  Set it through the API so we win on specificity, else content taller than the
+    //  container is clipped with no scrollbar.
+    m_status_stack->setOverflow( Wt::Overflow::Auto, Wt::Orientation::Vertical );
+    m_status_stack->setOverflow( Wt::Overflow::Hidden, Wt::Orientation::Horizontal );
+
     m_error = m_status_stack->addNew<WText>();
     m_error->addStyleClass( "RestRidError" );
     m_error->setInline( false );

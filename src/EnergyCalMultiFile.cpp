@@ -321,13 +321,12 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
   
   if( parent )
   {
-    const int w = 600 < viewer->renderedWidth() ? 600 : viewer->renderedWidth();
-    const int h = static_cast<int>(0.8*viewer->renderedHeight());
-    parent->resizeWindow( w, h );
-  
+    // Note: deliberately no resizeWindow()/centerWindow() here.  The caller
+    //  (EnergyCalAddActionsWindow) sizes and centers the dialog itself, after adding us to its
+    //  stretcher - this widget's WGridLayout needs a definite height from the dialog, so the
+    //  dialog's size is the caller's decision.  Sizing here as well just emitted two contradictory
+    //  sizes in the same response, and left anyone reading this file believing the wrong one.
     parent->rejectWhenEscapePressed();
-
-    parent->centerWindow();
   }//if( parent )
 }//EnergyCalMultiFile constructor
 

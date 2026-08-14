@@ -65,10 +65,31 @@ void destroy_on_session_thread( std::unique_ptr<Wt::WWidget> doomed )
   if( !app || !server )
     return;
 
-  auto holder = std::make_shared<std::unique_ptr<Wt::WWidget>>( std::move(doomed) );
-  server->post( app->sessionId(), [holder](){ holder->reset(); } );
+  // Park ownership on wApp rather than inside the posted task.  If the task is never delivered -
+  //  the session dies between the post and its pickup, so WebController::handleApplicationEvent
+  //  returns without running it - asio destroys the undelivered task on an io-service thread, and
+  //  a widget owned by that task would be destroyed there.  Parked on wApp instead, the worst case
+  //  is that it lives until ~WApplication destroys it, on the session thread.
+  Wt::WWidget * const raw = doomed.get();
+  app->addChild( std::move(doomed) );
+
+  server->post( app->sessionId(), [raw](){
+    Wt::WApplication * const a = Wt::WApplication::instance();
+    if( a )
+    {
+      // Dropping the returned unique_ptr destroys `raw` here, on the session thread, under the
+      //  update lock.
+      const std::unique_ptr<Wt::WObject> owned = a->removeChild( raw );
+    }
+  } );
 }//void destroy_on_session_thread( std::unique_ptr<Wt::WWidget> )
 }//namespace
+
+
+void destroyLater( std::unique_ptr<Wt::WWidget> widget )
+{
+  destroy_on_session_thread( std::move(widget) );
+}//void destroyLater( std::unique_ptr<Wt::WWidget> )
 
 
 void removeWidgetNow( Wt::WWidget *child )

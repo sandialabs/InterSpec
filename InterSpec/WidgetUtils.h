@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <memory>
 
 namespace Wt
 {
@@ -75,6 +76,16 @@ namespace WidgetUtils
 
   /** Same as #removeWidgetLater, for when the parent is conveniently in scope. */
   void removeWidgetLater( Wt::WContainerWidget *parent, Wt::WWidget *child );
+
+  /** Take ownership of an ALREADY-DETACHED widget and destroy it on the next event-loop iteration.
+
+   For the APIs that hand you a `unique_ptr` directly - `WMenu::removeItem()`,
+   `WTabWidget::removeTab()`, `WContainerWidget::removeWidget()` - when the removal happens inside
+   the removed widget's own signal emission.  Do NOT simply capture the `unique_ptr`/`shared_ptr`
+   into a `WServer::post` lambda and let the lambda's destructor free it: asio destroys the task
+   handler on an io-service thread, so `~WWidget` would run there.
+   */
+  void destroyLater( std::unique_ptr<Wt::WWidget> widget );
 
 
   /** A handle to a widget that is safe to capture into a callback which crosses a thread boundary.

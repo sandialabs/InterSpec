@@ -256,6 +256,12 @@ EnergyCalPreserveWindow::EnergyCalPreserveWindow(
 
     auto contentstack = layout->addWidget( std::make_unique<WStackedWidget>(), 0, 1 );
     contentstack->addStyleClass( "EnergyCalPreserveStack" );
+
+    // Wt4's WStackedWidget ctor sets an inline `overflow:hidden`, which beats the `overflow-y`
+    //  our stylesheet sets on this stack (Wt3's ctor only added the style class, so the CSS
+    //  worked).  Set it through the API so we win on specificity, else content taller than the
+    //  container is clipped with no scrollbar.
+    contentstack->setOverflow( Wt::Overflow::Auto, Wt::Orientation::Vertical );
     WAnimation animation(Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200);
     contentstack->setTransitionAnimation( animation );
 

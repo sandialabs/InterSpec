@@ -1040,6 +1040,12 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
     auto nuc_stack_owner = std::make_unique<WStackedWidget>();
     m_rel_eff_nuclides_stack = nuc_stack_owner.get();
     m_rel_eff_nuclides_stack->addStyleClass( "RelEffNuclidesStack" );
+
+    // Wt4's WStackedWidget ctor sets an inline `overflow:hidden`, which beats the `overflow-y`
+    //  our stylesheet sets on this stack (Wt3's ctor only added the style class, so the CSS
+    //  worked).  Set it through the API so we win on specificity, else content taller than the
+    //  container is clipped with no scrollbar.
+    m_rel_eff_nuclides_stack->setOverflow( Wt::Overflow::Auto, Wt::Orientation::Vertical );
     m_rel_eff_nuclides_menu = nuclidesHolder->addNew<WMenu>( m_rel_eff_nuclides_stack );
     m_rel_eff_nuclides_menu->addStyleClass( "RelEffNuclidesMenu LightNavMenu" );
     nuclidesHolder->addWidget( std::move(nuc_stack_owner) );
@@ -1151,6 +1157,13 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
     auto phoneSubStackOwner = std::make_unique<WStackedWidget>();
     WStackedWidget * const phoneSubStack = phoneSubStackOwner.get();
     phoneSubStack->addStyleClass( "PhoneSubStack" );
+
+    // Wt4's WStackedWidget ctor sets an inline `overflow:hidden`, which beats the `overflow-y`
+    //  our stylesheet sets on this stack (Wt3's ctor only added the style class, so the CSS
+    //  worked).  Set it through the API so we win on specificity, else content taller than the
+    //  container is clipped with no scrollbar.
+    phoneSubStack->setOverflow( Wt::Overflow::Auto, Wt::Orientation::Vertical );
+    phoneSubStack->setOverflow( Wt::Overflow::Hidden, Wt::Orientation::Horizontal );
 
     auto optionsPanelOwner = std::make_unique<WContainerWidget>();
     WContainerWidget * const optionsPanel = optionsPanelOwner.get();
@@ -5167,8 +5180,7 @@ void RelActAutoGui::handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
   //  would free the emitting signal (use-after-free) - detach now, defer destruction past the emit.
   //  (An explicit `delete curve` would also double-free.)
   {
-    std::shared_ptr<Wt::WMenuItem> doomed( m_rel_eff_opts_menu->removeItem( item ).release() );
-    Wt::WServer::instance()->post( wApp->sessionId(), [doomed](){} );
+    WidgetUtils::destroyLater( m_rel_eff_opts_menu->removeItem( item ) );
   }
 
   WMenuItem *nuc_item = m_rel_eff_nuclides_menu->itemAt( index_to_remove );
@@ -5180,8 +5192,7 @@ void RelActAutoGui::handleDelRelEffCurve( RelActAutoGuiRelEffOptions *curve )
     // Wt4: removeItem() owns the item and its contents (nuc_content); defer its destruction too, to
     //  match the opts item above (explicit deletes would double-free).
     {
-      std::shared_ptr<Wt::WMenuItem> doomed( m_rel_eff_nuclides_menu->removeItem( nuc_item ).release() );
-      Wt::WServer::instance()->post( wApp->sessionId(), [doomed](){} );
+      WidgetUtils::destroyLater( m_rel_eff_nuclides_menu->removeItem( nuc_item ) );
     }
     nuc_item = nullptr;
   }

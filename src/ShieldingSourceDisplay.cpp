@@ -74,6 +74,7 @@
 
 #include "external_libs/SpecUtils/3rdparty/inja/inja.hpp"
 
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/SpecMeas.h"
@@ -8573,8 +8574,7 @@ void ShieldingSourceDisplay::removeShielding( ShieldingSelect *select )
       //  would free that signal while it is still emitting (use-after-free).  So detach it from the
       //  container now (so the model/UI updates immediately) but defer its destruction to the next
       //  event-loop iteration, by which time the emit has unwound.
-      std::shared_ptr<Wt::WWidget> removed( m_shieldingSelects->removeWidget( widget ).release() );
-      Wt::WServer::instance()->post( wApp->sessionId(), [removed](){ /* destroyed with this lambda */ } );
+      WidgetUtils::removeWidgetLater( m_shieldingSelects, widget );
       handleShieldingChange();
       foundShielding = true;
       break;
