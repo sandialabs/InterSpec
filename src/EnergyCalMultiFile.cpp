@@ -190,7 +190,9 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
 {
   InterSpec *viewer = InterSpec::instance();
  
-  // Note: caller (EnergyCalAddActionsWindow) adds this widget to its stretcher via make_unique/addWidget
+  // Note: the caller (EnergyCalAddActionsWindow) adds this widget to the dialogs stretcher, and
+  //  gives the dialog a definite size - the WGridLayout we put on ourselves below needs a definite
+  //  height from the parent to distribute, otherwise the bottom rows get clipped.
   
   m_model = std::make_shared<EnergyCalMultiFileModel>( cal );
 
