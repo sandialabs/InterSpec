@@ -145,7 +145,13 @@ void DevPair::setFitOffset( const bool fit )
 
 void DevPair::visuallyIndicateChanged()
 {
-  doJavaScript( "$('#" + id() + "').fadeIn(100).fadeOut(100).fadeIn(100).fadeOut(100).fadeIn(100);" );
+  // jQuery is no longer loaded by InterSpec, so the old $().fadeIn()/fadeOut() chain here just
+  //  threw "ReferenceError: $ is not defined" (and, since Wt concatenates doJavaScript statements
+  //  into one payload with no per-statement try/catch, took any later statements in that update
+  //  down with it).  Use the .interspec-flash keyframe animation instead (InterSpec.css).
+  doJavaScript( "var el=document.getElementById('" + id() + "');"
+                " el.classList.remove('interspec-flash'); void el.offsetWidth;"
+                " el.classList.add('interspec-flash');" );
 }//void visuallyIndicateChanged();
 
 
@@ -212,8 +218,12 @@ void DeviationPairDisplay::setDeviationPairs( vector< pair<float,float> > d )
       p->setDevPair( d[i] );
   }//for( rows to update in-place )
 
+  // Deferred, not immediate: setDeviationPairs() is reachable from inside a rows own
+  //  NativeFloatSpinBox::valueChanged emission (emitChanged -> userChangedDeviationPair -> a
+  //  bail-out that calls updateToGui(old_cal)), so destroying the row synchronously would free the
+  //  signal that is still emitting.  Same reasoning as #removeDevPair.
   for( size_t i = d.size(); i < complete_rows.size(); ++i )
-    WidgetUtils::removeWidgetNow( complete_rows[i] );
+    WidgetUtils::removeWidgetLater( m_pairs, complete_rows[i] );
 
   for( size_t i = complete_rows.size(); i < d.size(); ++i )
   {

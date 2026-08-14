@@ -85,9 +85,14 @@ protected:
   virtual void createMenuIcon();
 
   /** Lazily build (first open only) and show the title-bar popup menu.
-   *  PopupDivMenu registers itself as an app-global widget (Wt addGlobalWidget),
-   *  so it is NOT owned by the button or this panel; we own m_menu and delete it
-   *  in the destructor, otherwise one menu leaks per turn for the whole session.
+   *
+   *  Ownership: the menu is created with `makeButtonOwnedPopupMenu( m_menuIcon )`, which ends in
+   *  `button->addChild(std::move(menu))` - so **m_menuIcon owns it** and destroys it with this
+   *  panel.  Do NOT `delete m_menu`, and do not add a teardown to the destructor: that was a
+   *  double-free (the button's `WObject::children_` unique_ptr still pointed at it).
+   *  (The old comment here claimed the menu was app-global-owned via `addGlobalWidget` and had to
+   *  be deleted by hand.  That was true under Wt3; under Wt4 `addGlobalWidget` hands ownership
+   *  back, so a parent must own it - and here that parent is the button.)
    */
   void showMenu();
 
@@ -266,8 +271,14 @@ protected:
   void createMenuIcon();
 
   /** Lazily build (first open only) and show the title-bar popup menu.
-   *  m_menu is app-global-owned by Wt, so we own it and delete it in the
-   *  destructor to avoid leaking one menu per interaction for the whole session.
+   *
+   *  Ownership: the menu is created with `makeButtonOwnedPopupMenu( m_menuIcon )`, which ends in
+   *  `button->addChild(std::move(menu))` - so **m_menuIcon owns it** and destroys it with this
+   *  panel.  Do NOT `delete m_menu`, and do not add a teardown to the destructor: that was a
+   *  double-free (the button's `WObject::children_` unique_ptr still pointed at it).
+   *  (The old comment here claimed the menu was app-global-owned via `addGlobalWidget` and had to
+   *  be deleted by hand.  That was true under Wt3; under Wt4 `addGlobalWidget` hands ownership
+   *  back, so a parent must own it - and here that parent is the button.)
    */
   void showMenu();
 

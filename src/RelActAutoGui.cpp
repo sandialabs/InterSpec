@@ -62,6 +62,7 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/SpecMeas.h"
@@ -109,29 +110,7 @@ using namespace std;
 
 namespace
 {
-  /** Detach `child` from its parent now, but destroy it on the NEXT event-loop iteration.
-
-   Required when a widget is removed in response to its OWN signal (e.g. a row's `remove()` signal):
-   destroying it synchronously would free the emitting signal while Wt is still emitting it, which is
-   a use-after-free.  Detaching immediately keeps the model/UI in sync; the returned unique_ptr is
-   kept alive in a posted task and dropped (destroying the widget) once the emit has unwound.
-   */
-  void removeWidgetLater( Wt::WContainerWidget *parent, Wt::WWidget *child )
-  {
-    if( !parent || !child )
-      return;
-    std::shared_ptr<Wt::WWidget> doomed( parent->removeWidget(child).release() );
-    Wt::WServer::instance()->post( wApp->sessionId(), [doomed](){} );
-  }
-
-  /** Same as above, but for a widget whose parent isn't conveniently in scope. */
-  void removeWidgetLater( Wt::WWidget *child )
-  {
-    if( !child )
-      return;
-    std::shared_ptr<Wt::WWidget> doomed( child->removeFromParent().release() );
-    Wt::WServer::instance()->post( wApp->sessionId(), [doomed](){} );
-  }
+  using WidgetUtils::removeWidgetLater;
 
 
   /** Helper function to format numeric values consistently for localization.

@@ -52,6 +52,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
@@ -1070,8 +1071,7 @@ void IsotopeSearchByEnergy::removeSearchEnergy( IsotopeSearchByEnergy::SearchEne
   //  and we are inside `energy`'s own remove() signal emission - detach it now (so startSearch sees
   //  the updated set) but defer destruction until the emit unwinds, else we free the emitting signal
   //  (use-after-free).
-  std::shared_ptr<Wt::WWidget> doomed( m_searchEnergies->removeWidget( energy ).release() );
-  Wt::WServer::instance()->post( wApp->sessionId(), [doomed](){} );
+  WidgetUtils::removeWidgetLater( m_searchEnergies, energy );
   startSearch( false );
 }//void removeSearchEnergy( SearchEnergy *energy )
 

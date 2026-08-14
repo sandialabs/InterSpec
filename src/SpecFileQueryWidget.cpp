@@ -3009,6 +3009,11 @@ void SpecFileQueryWidget::doSearch( const std::string basedir,
     WServer::instance()->post( sessionid, [this, result, desc = description.str(), total_clock_time, widgetDeleted](){
       finishUpdate( result, desc, total_clock_time, true, widgetDeleted );
     } );
+
+    // Must not fall through into the completion path below: it posts a *second* finishUpdate (which
+    //  overwrites the "Search Canceled" message and commits partial results), and dereferences
+    //  `result`, which is still null if we threw before it was first assigned.
+    return;
   }
   
   const double total_clock_time = (SpecUtils::get_wall_time() - starttime);

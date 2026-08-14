@@ -1519,13 +1519,19 @@ void EnergyCalMultiFileModel::refreshData()
     newdata.push_back( peaks );
   }//for( int filenum = 0; filenum < nfile; ++filenum )
 
-  m_data.swap( newdata );
-  reset();
-  
-  //if( !newdata.empty() )
-  //{
-  //  beginInsertRows( WModelIndex(), 0, static_cast<int>(newdata.size()) -1 );
-  //  m_data.swap( newdata );
-  //  endInsertRows();
-  //}//if( newdata.size() )
+  // Deliberately NOT reset(): under Wt4 `WAbstractItemModel::reset()` -> `modelReset()` is literally
+  //  `setModel(model_)`, which re-registers every model connection (and RowStretchTreeView::setModel
+  //  appends another rowsInserted/rowsRemoved pair that is never disconnected, so they accumulate
+  //  one pair per refresh), and the header re-render it forces leaves the previous header DOM on the
+  //  client - the table visibly grows a duplicate set of column headers and rows.  Same bug that was
+  //  fixed in FluxModel::handleFluxToolWidgetUpdated().  The row signals below are sufficient.
+  if( !newdata.empty() )
+  {
+    beginInsertRows( WModelIndex(), 0, static_cast<int>(newdata.size()) - 1 );
+    m_data.swap( newdata );
+    endInsertRows();
+  }else
+  {
+    m_data.swap( newdata );
+  }//if( newdata.size() ) / else
 }//refreshData()

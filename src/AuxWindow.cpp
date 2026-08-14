@@ -22,6 +22,7 @@
  */
 #include "InterSpec_config.h"
 
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/AuxWindow.h"
 #include <Wt/WText.h>
 #include <Wt/WTheme.h>
@@ -891,19 +892,26 @@ void AuxWindow::emitReject()
   if( !app )
     return;
   const string sessionId = app->sessionId();
-  Wt::Core::observing_ptr<AuxWindow> obsThis = this;
-  WServer::instance()->post( sessionId, [obsThis, sessionId](){
-    if( !obsThis )
-      return;  // dialog already destroyed (e.g. via deleteAuxWindow before we fired)
+
+  // Only the window id crosses the thread boundary.  An observing_ptr must NOT be captured here:
+  //  WServer::post() copy-constructs the std::function (and asio later destroys its handler copy on
+  //  an io-service thread), and every copy/destroy of an observing_ptr mutates
+  //  Wt::Core::observable::observers_, which has no mutex or atomic - racing the session thread's
+  //  ~observable.  This fires on every AuxWindow close, so it is the highest-traffic instance.
+  const WidgetUtils::WidgetHandle self( this );
+  WServer::instance()->post( sessionId, [self, sessionId](){
     WApplication * const a = WApplication::instance();
     if( !a || (a->sessionId() != sessionId) )
       return;
-    obsThis->m_pendingReject = false;
-    if( obsThis->m_destructing )
+    AuxWindow * const win = self.resolve_as<AuxWindow>();
+    if( !win )
+      return;  // dialog already destroyed (e.g. via deleteAuxWindow before we fired)
+    win->m_pendingReject = false;
+    if( win->m_destructing )
       return;  // a deleteAuxWindow path raced ahead; nothing to emit
-    if( !obsThis->isHidden() )
+    if( !win->isHidden() )
       return;  // dialog was re-shown before our deferred emit; suppress stale reject
-    obsThis->finished().emit( Wt::DialogCode::Rejected );
+    win->finished().emit( Wt::DialogCode::Rejected );
     a->triggerUpdate();
   });
 }

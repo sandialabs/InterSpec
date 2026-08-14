@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <memory>
+#include <cassert>
 
 #include <Wt/WServer.h>
 #include <Wt/WWidget.h>
@@ -36,6 +37,40 @@
 namespace WidgetUtils
 {
 
+namespace
+{
+/** Destroy `doomed` on the session thread, on the next event-loop iteration.
+
+ The widget must be destroyed *inside* the posted lambda's body, not by letting the lambda's own
+ destructor drop the last reference: `WServer::post()` -> `WServer::schedule(0ms)` ->
+ `asio::post(strand_, fn)`, and asio destroys the handler on the **io-service thread** after
+ invoking it.  Letting `~WWidget` run there would be a disaster - it happens with the session lock
+ released and `WApplication::instance()` null, so `WWebWidget::repaint()` (reached from
+ `~WContainerWidget::clear()`) dereferences a null application, and `renderOk()` /
+ `EventSignalBase::prepareDestruct()` silently skip un-registering the widget from the renderers
+ update map and the applications exposed-signal map, leaving dangling entries.
+
+ Running `reset()` in the body destroys the widget on the session thread under the update lock;
+ whatever copies of the (now empty) holder asio later destroys are inert.
+ */
+void destroy_on_session_thread( std::unique_ptr<Wt::WWidget> doomed )
+{
+  if( !doomed )
+    return;
+
+  Wt::WApplication * const app = Wt::WApplication::instance();
+  Wt::WServer * const server = Wt::WServer::instance();
+
+  // No session/server to post to - destroy now, on this (session) thread, rather than leak.
+  if( !app || !server )
+    return;
+
+  auto holder = std::make_shared<std::unique_ptr<Wt::WWidget>>( std::move(doomed) );
+  server->post( app->sessionId(), [holder](){ holder->reset(); } );
+}//void destroy_on_session_thread( std::unique_ptr<Wt::WWidget> )
+}//namespace
+
+
 void removeWidgetNow( Wt::WWidget *child )
 {
   if( !child )
@@ -43,6 +78,11 @@ void removeWidgetNow( Wt::WWidget *child )
 
   // Dropping the returned unique_ptr destroys `child` exactly once.
   const std::unique_ptr<Wt::WWidget> doomed = child->removeFromParent();
+
+  // A null return means nobody owned `child` through its widget parent, so nothing was destroyed
+  //  (see the header for which parent shapes do this).  Callers of this function are meant to be
+  //  replacing a `delete child;`, so that is virtually always a bug at the call site.
+  assert( doomed );
 }//void removeWidgetNow( Wt::WWidget *child )
 
 
@@ -51,15 +91,9 @@ void removeWidgetLater( Wt::WWidget *child )
   if( !child )
     return;
 
-  Wt::WApplication * const app = Wt::WApplication::instance();
   std::unique_ptr<Wt::WWidget> doomed = child->removeFromParent();
-
-  // Without a session we cant post a task; destroy now rather than leak.
-  if( !app || !Wt::WServer::instance() )
-    return;
-
-  std::shared_ptr<Wt::WWidget> keep_alive( doomed.release() );
-  Wt::WServer::instance()->post( app->sessionId(), [keep_alive](){} );
+  assert( doomed );   //see #removeWidgetNow
+  destroy_on_session_thread( std::move(doomed) );
 }//void removeWidgetLater( Wt::WWidget *child )
 
 
@@ -68,14 +102,9 @@ void removeWidgetLater( Wt::WContainerWidget *parent, Wt::WWidget *child )
   if( !parent || !child )
     return;
 
-  Wt::WApplication * const app = Wt::WApplication::instance();
   std::unique_ptr<Wt::WWidget> doomed = parent->removeWidget( child );
-
-  if( !app || !Wt::WServer::instance() )
-    return;
-
-  std::shared_ptr<Wt::WWidget> keep_alive( doomed.release() );
-  Wt::WServer::instance()->post( app->sessionId(), [keep_alive](){} );
+  assert( doomed );   //see #removeWidgetNow
+  destroy_on_session_thread( std::move(doomed) );
 }//void removeWidgetLater( Wt::WContainerWidget *parent, Wt::WWidget *child )
 
 
@@ -91,12 +120,14 @@ Wt::WWidget *WidgetHandle::resolve() const
     return nullptr;
 
   Wt::WApplication * const app = Wt::WApplication::instance();
-  if( !app || !app->domRoot() )
+  if( !app )
     return nullptr;
 
-  // domRoot() reaches dialogs too: WDialog derives from WPopupWidget, whose ctor adds it to
-  //  domRoot_, and WContainerWidget::iterateChildren walks both children_ and the layouts widgets.
-  return app->domRoot()->findById( m_id );
+  // WApplication::findById searches domRoot_ and domRoot2_.  It reaches widgets inside dialogs
+  //  (WCompositeWidget::findById forwards to its implementation, and WTemplate::iterateChildren
+  //  walks the bound widgets) and inside layouts/WStackedWidgets (WContainerWidget::iterateChildren
+  //  walks children_ *and* layout_->iterateWidgets).
+  return app->findById( m_id );
 }
 
 }//namespace WidgetUtils

@@ -31,6 +31,7 @@
 #include <vector>
 #include <memory>
 
+#include <Wt/Core/observing_ptr.hpp>
 #include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"

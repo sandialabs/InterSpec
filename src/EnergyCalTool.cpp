@@ -1152,9 +1152,9 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
 #endif
   m_downloadCALp->setText( "CALp" );
   
-  m_downloadCALp->clicked().connect( std::bind([this](){
+  m_downloadCALp->clicked().connect( this, [this](){
     m_interspec->logMessage( WString::tr("ect-export-CALp-msg"), WarningWidget::WarningMsgInfo );
-  }) );
+  } );
   HelpSystem::attachToolTipOn( m_downloadCALp, WString::tr("ect-tt-CALp"), showToolTips );
   
   m_downloadCALp->setHidden( true );
@@ -2020,7 +2020,7 @@ void EnergyCalTool::handleRequestToUploadCALp()
   
   
   WFileUpload *upload = stretcher->addWidget( std::make_unique<WFileUpload>(), stretcher->rowCount(), 0, AlignmentFlag::Center | AlignmentFlag::Middle );
-  upload->fileTooLarge().connect( std::bind( [=](){
+  upload->fileTooLarge().connect( upload, [=](){
     dialog->contents()->clear();
     dialog->footer()->clear();
     
@@ -2029,10 +2029,10 @@ void EnergyCalTool::handleRequestToUploadCALp()
     stretcher->setContentsMargins( 0, 0, 0, 0 );
     WText *title = stretcher->addWidget( std::make_unique<WText>(WString::tr("ect-upload-CALp-to-large")), 0, 0 );
     title->addStyleClass( "title" );
-  }) );
+  } );
   
   upload->changed().connect( upload, &WFileUpload::upload );
-  upload->uploaded().connect( std::bind( [dialog,upload](){
+  upload->uploaded().connect( upload, [dialog,upload](){
     InterSpec *interspec = InterSpec::instance();
     SpecMeasManager *measmn = interspec ? interspec->fileManager() : nullptr;
     
@@ -2077,9 +2077,8 @@ void EnergyCalTool::handleRequestToUploadCALp()
       return;
     }//if( was not a valid CALp file )
     
-    //wApp->doJavaScript( "$('.Wt-dialogcover').hide();" ); // JIC
     //dialog->done( Wt::WDialog::DialogCode::Accepted );
-  } ) );
+  } );
   
   
   InterSpec *interspec = InterSpec::instance();

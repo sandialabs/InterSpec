@@ -46,9 +46,20 @@ namespace WidgetUtils
 {
   /** Detach `child` from its parent and destroy it immediately.
 
-   The Wt 4 replacement for a plain `delete child;`.  Safe to call with a null `child`, or
-   with a `child` that has no parent.  Do NOT use this while the widget being removed is
-   emitting a signal that the current call stack is inside of - use #removeWidgetLater.
+   The Wt 4 replacement for a plain `delete child;`.  Safe to call with a null `child`.  Do NOT use
+   this while the widget being removed is emitting a signal that the current call stack is inside of
+   - use #removeWidgetLater.
+
+   IMPORTANT - these rely on `WWidget::removeFromParent()`, which returns null (i.e. destroys
+   NOTHING, silently) for three parent shapes.  Asserts catch them in a developer build:
+     - the widget has no *widget* parent, e.g. it is owned only through `WObject::addChild`
+       (the "parked" Cat-C tool shape).  Use `owner->removeChild(w)` instead.
+     - the widget is a *global* widget - anything deriving from `WPopupWidget` (`WDialog`,
+       `AuxWindow`, `SimpleDialog`, `WSuggestionPopup`) or a `WPopupMenu`.  `addGlobalWidget()`
+       leaves it parented to `domRoot_` but hands ownership back, so this would unparent it
+       without destroying it.  Use `AuxWindow::deleteAuxWindow()` / the owning `removeChild()`.
+     - the widget was added with `addWidget`/`addNew` to a container that has a *layout*; the
+       layout does not manage it, so `WContainerWidget::removeWidget` finds nothing to return.
    */
   void removeWidgetNow( Wt::WWidget *child );
 
