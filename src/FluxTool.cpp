@@ -422,7 +422,13 @@ namespace FluxToolImp
         endInsertRows();
       }//
       
-      reset(); //JIC, to make sure the GUI refreshes
+      // Deliberately NO reset() here.  The remove/insert-rows signals above already refresh the
+      //  view, and under Wt4 `WAbstractItemModel::reset()` -> `WAbstractItemView::modelReset()`
+      //  is literally `setModel(model_)`: it re-connects every model signal (and
+      //  RowStretchTreeView::setModel's rowsInserted/rowsRemoved callbacks) a second time, and the
+      //  header re-render it forces leaves the *previous* header DOM behind on the client - so the
+      //  table visibly grows a duplicate set of column headers and rows on the first info-level or
+      //  "select rows" change.  (Under Wt3 this was a harmless "just in case".)
     }//void handleFluxToolWidgetUpdated()
     
     
@@ -523,8 +529,8 @@ namespace FluxToolImp
     /** Tells the view every rows checkbox may have changed.
 
      Used when selection changes from something other than a click on that checkbox (an
-     undo/redo, the "select rows" checkbox, or an app-URL), so the view redraws without the
-     full model reset() that #handleFluxToolWidgetUpdated does.
+     undo/redo, the "select rows" checkbox, or an app-URL), so the view redraws the checkboxes
+     without rebuilding every row the way #handleFluxToolWidgetUpdated does.
      */
     void notifySelectionChanged()
     {
@@ -560,10 +566,10 @@ namespace FluxToolImp
 
       // Always report the selection column, even when rows arent being selected - the view
       //  hides it instead (see FluxToolWidget::setDisplayInfoLevel).  Wt::WAbstractItemView
-      //  only truncates/appends its column list on a model reset(), and never re-initializes
-      //  the entries that survive, so a column count that changed would have its ColumnInfo
-      //  destroyed by the reset() in handleFluxToolWidgetUpdated(), then silently recreated
-      //  with default width/sorting/delegate the next time rows became selectable.
+      //  only truncates/appends its column list when the model column count changes, and never
+      //  re-initializes the entries that survive, so a varying column count would leave the
+      //  ColumnInfo silently recreated with a default width/sorting/delegate the next time rows
+      //  became selectable.
       return FluxToolWidget::sm_selectColumn + 1;
     }
     
@@ -1719,7 +1725,14 @@ void FluxToolWidget::updateCopyToClipboardText()
 {
   stringstream pastebrdtxt;
   FluxToolImp::FluxCsvResource::data_to_strm( this, pastebrdtxt, true, m_displayInfoLevel );
-  m_copyBtn->doJavaScript( "$('#" + m_copyBtn->id() + "').data('TableData','" + pastebrdtxt.str() + "');" );
+  // Must stash the text on the elements own `_isData` expando: that is what
+  //  `CopyFluxDataTextToClipboard` (top of this file) reads.  jQuery's `.data()` writes into
+  //  jQuery's internal cache instead, which the reader never looks at.
+  //  jsStringLiteral escapes the quotes/newlines the CSV payload contains.
+  m_copyBtn->doJavaScript( "var el=document.getElementById('" + m_copyBtn->id() + "');"
+                           " el._isData = el._isData || {};"
+                           " el._isData.TableData = "
+                           + Wt::WWebWidget::jsStringLiteral( pastebrdtxt.str(), '\'' ) + ";" );
 }//void updateCopyToClipboardText()
 #endif
 

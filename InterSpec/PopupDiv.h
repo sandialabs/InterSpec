@@ -68,6 +68,18 @@ PopupDivMenu *makeAppLevelMenu( Wt::WPushButton *button );
 PopupDivMenu *makePopupMenu( Wt::WPushButton *button );
 
 
+/** Like #makePopupMenu, but does NOT connect `button->clicked()` to `popup()`.
+
+ For callers that already have their own `clicked()` handler on `button` (e.g. so the menu items
+ can be built lazily on first click).  Those callers must call `menu->popup( button )` themselves;
+ going through #makePopupMenu instead would pop the menu up twice per click.
+
+ The menu is owned by `button` (via `WObject::addChild`), so it is destroyed with the button -
+ never `delete` the returned pointer.
+ */
+PopupDivMenu *makeButtonOwnedPopupMenu( Wt::WPushButton *button );
+
+
 /* We want the application-level menus (i.e., "File", "View", "Tools", and "Help")
 to appear instantly when you click on the buttons, but by default Wt needs a
 round-trip to C++ and back to JS, causing a slight (>100 ms), but perceptable delay.

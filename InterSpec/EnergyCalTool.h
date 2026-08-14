@@ -500,7 +500,7 @@ protected:
   std::map<std::weak_ptr<const SpecUtils::EnergyCalibration>, LowerChanCalOriginal,
            std::owner_less<std::weak_ptr<const SpecUtils::EnergyCalibration>>> m_lowerChanOrigCals;
   
-  EnergyCalAddActionsWindow *m_addActionWindow;
+  Wt::Core::observing_ptr<EnergyCalAddActionsWindow> m_addActionWindow;
   
   /*
    We could hook up to SpecMeas::aboutToBeDeleted() to know whene file is about to go-away, but this

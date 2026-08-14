@@ -5207,7 +5207,7 @@ void LlmInterface::scheduleNativeRetry( const std::string &endpoint,
 {
   std::unique_ptr<Wt::WTimer> timer( new Wt::WTimer() );
   timer->setSingleShot( true );
-  timer->setInterval( delayMs );
+  timer->setInterval( std::chrono::milliseconds(delayMs) );
   timer->timeout().connect( std::bind( [this, endpoint, headers, requestStr, requestId, attempt,
                                         rateLimitRetry](){
     // Deliberately NOT erasing the timer here: it would destroy this WTimer from inside its own

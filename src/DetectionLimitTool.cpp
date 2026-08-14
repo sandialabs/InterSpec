@@ -1515,8 +1515,8 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   handleUserNuclideChange();
   
   // Update the displayed activity units, when the user changes this preference.
-  viewer->preferences()->addCallbackWhenChanged( "DisplayBecquerel",
-                                        [this](){ handleInputChange(); } );
+  viewer->preferences()->addCallbackWhenChanged( "DisplayBecquerel", this,
+                                        &DetectionLimitTool::handleDisplayBecquerelChanged );
   
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -3302,6 +3302,12 @@ vector<DetectionLimitTool::GammaLineInfo> DetectionLimitTool::gammaLines() const
   
   return lines;
 }//vector<GammaLineInfo> gammaLines() const
+
+
+void DetectionLimitTool::handleDisplayBecquerelChanged( const bool becquerel )
+{
+  handleInputChange();
+}//void DetectionLimitTool::handleDisplayBecquerelChanged( const bool )
 
 
 void DetectionLimitTool::handleInputChange()

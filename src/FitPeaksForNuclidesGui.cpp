@@ -49,6 +49,7 @@
 
 #include "SandiaDecay/SandiaDecay.h"
 
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/PeakModel.h"
@@ -390,7 +391,10 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
 
   // Captured into only the session-thread completion lambda below; the
   // background worker never references the dialog.
-  Wt::Core::observing_ptr<SimpleDialog> wait_dlg_obs( wait_dlg );
+  // Only the widget id crosses the thread boundary: WServer::post() copy-constructs the
+  //  completion on the worker thread, and copying an observing_ptr there would race the session
+  //  thread on Wt::Core::observable's unsynchronized observer list.
+  const WidgetUtils::WidgetHandle wait_dlg_obs( wait_dlg );
 
   // Create copies of measurements on GUI thread for background work.
   std::shared_ptr<SpecUtils::Measurement> fg_copy = std::make_shared<SpecUtils::Measurement>( *foreground );
@@ -420,8 +424,9 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
     InterSpec *viewer_a = InterSpec::instance();
     if( !wApp || !viewer_a )
     {
-      if( wait_dlg_obs )
-        wait_dlg_obs->accept();
+      SimpleDialog * const dlg = wait_dlg_obs.resolve_as<SimpleDialog>();
+      if( dlg )
+        dlg->accept();
       ReferencePhotopeakDisplay *disp = viewer_a ? viewer_a->referenceLinesWidget() : nullptr;
       if( disp )
         disp->setFitSourcesButtonEnabled( true );
@@ -449,8 +454,9 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
       }
     }catch( std::exception &e )
     {
-      if( wait_dlg_obs )
-        wait_dlg_obs->accept();
+      SimpleDialog * const dlg = wait_dlg_obs.resolve_as<SimpleDialog>();
+      if( dlg )
+        dlg->accept();
       ReferencePhotopeakDisplay *disp = viewer_a->referenceLinesWidget();
       if( disp )
         disp->setFitSourcesButtonEnabled( true );
@@ -486,8 +492,9 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
       // Completion (session thread): dismiss wait dialog, dispatch on result.
       [result, wait_dlg_obs, weak_foreground, ref_lines_for_display]()
       {
-        if( wait_dlg_obs )
-          wait_dlg_obs->accept();
+        SimpleDialog * const dlg = wait_dlg_obs.resolve_as<SimpleDialog>();
+        if( dlg )
+          dlg->accept();
 
         InterSpec *viewer_c = InterSpec::instance();
         ReferencePhotopeakDisplay *disp = viewer_c ? viewer_c->referenceLinesWidget() : nullptr;

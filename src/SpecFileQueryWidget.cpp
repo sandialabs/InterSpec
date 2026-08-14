@@ -1536,11 +1536,11 @@ SpecFileQueryWidget::~SpecFileQueryWidget()
       c.second->stop_caching();
   }
 
-  // A PopupDivMenu is owned by the session domRoot, not this widget, so it must be
-  //  manually deleted (guard against session teardown having already freed domRoot).
-  if( m_optionsMenu && wApp && wApp->domRoot() )
-    delete m_optionsMenu;
-  m_optionsMenu = nullptr;
+  // Nothing to do for m_optionsMenu: makePopupMenu() ends in `button->addChild(std::move(menu))`,
+  //  so m_optionsBtn owns it and destroys it with the rest of our widget tree.  Deleting it here
+  //  freed it while the buttons WObject::children_ unique_ptr still pointed at it, and the base
+  //  ~WContainerWidget then destroyed it a second time -> SIGSEGV in ~WObject on closing this tool.
+  //  (Under Wt3 the menu really was app-global-owned and did need the explicit delete.)
 }//~SpecFileQueryWidget()
 
 

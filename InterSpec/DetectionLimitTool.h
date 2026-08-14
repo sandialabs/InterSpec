@@ -333,6 +333,13 @@ protected:
   
   void handleInputChange();
 
+  /** Callback for the "DisplayBecquerel" preference changing, so the displayed activity units
+   update.  Exists (rather than a lambda) so it can go through the *tracked*
+   UserPreferences::addCallbackWhenChanged overload: the untracked one connects for the whole
+   session, and this tool lives in a DetectionLimitWindow the user can close.
+   */
+  void handleDisplayBecquerelChanged( const bool becquerel );
+
   /** If the user-visible state has changed since the last call, registers a single undo/redo step
    that restores the tool's state via #encodeStateToUrl / #handleAppUrl.  Called from
    #scheduleCalcUpdate (the funnel for all input-driven recomputes - both the per-ROI MdaPeakRow

@@ -109,6 +109,7 @@
 #include "SpecUtils/UriSpectrum.h"
 
 
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/MakeDrf.h"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/DrfChart.h"
@@ -4577,10 +4578,14 @@ void SpecMeasManager::handleDataRecievedStatus( uint64_t num_bytes_recieved, uin
     m_processingUploadTimer->expires_from_now( boost::posix_time::seconds(120) );
     // Capture an observing_ptr so the deferred timer callback safely no-ops if the
     //  dialog was destroyed before the timer fires.
-    Wt::Core::observing_ptr<SimpleDialog> dialog_obs( dialog );
+    // Only the widget id crosses the thread boundary: WServer::post() copy-constructs the
+    //  completion on the worker thread, and copying an observing_ptr there would race the session
+    //  thread on Wt::Core::observable's unsynchronized observer list.
+    const WidgetUtils::WidgetHandle dialog_obs( dialog );
     m_processingUploadTimer->async_wait( [this, dialog_obs, app, sessionId, server]( const boost::system::error_code &ec ){
       if( !ec )
-        server->post( sessionId, [this, dialog_obs, app](){ checkCloseUploadDialog( dialog_obs.get(), app ); } );
+        server->post( sessionId, [this, dialog_obs, app](){
+          checkCloseUploadDialog( dialog_obs.resolve_as<SimpleDialog>(), app ); } );
     } );
   };//make_timer lamda
   
@@ -4746,7 +4751,10 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   // under the session-thread's UpdateLock.  While we hold UpdateLock the
   // destructor cannot proceed, so once the destructed-check passes, `this`
   // is safe for the rest of this call.
-  Wt::Core::observing_ptr<SimpleDialog> dialog_obs( dialog );
+  // Only the widget id crosses the thread boundary: WServer::post() copy-constructs the
+  //  completion on the worker thread, and copying an observing_ptr there would race the session
+  //  thread on Wt::Core::observable's unsynchronized observer list.
+  const WidgetUtils::WidgetHandle dialog_obs( dialog );
   Wt::WApplication * const app = wApp;
   std::shared_ptr<std::mutex> destruct_mutex = m_destructMutex;
   std::shared_ptr<bool> destructed = m_destructed;
@@ -4768,8 +4776,9 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
     },
     [dialog_obs]()
     {
-      if( dialog_obs )
-        dialog_obs->accept();
+      SimpleDialog * const dlg = dialog_obs.resolve_as<SimpleDialog>();
+      if( dlg )
+        dlg->accept();
     } );
 }//handleFileDrop(...)
 

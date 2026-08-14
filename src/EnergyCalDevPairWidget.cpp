@@ -35,6 +35,7 @@
 #include <Wt/WGridLayout.h>
 #include <Wt/WContainerWidget.h>
 
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/EnergyCalDevPairWidget.h"
 
@@ -212,7 +213,7 @@ void DeviationPairDisplay::setDeviationPairs( vector< pair<float,float> > d )
   }//for( rows to update in-place )
 
   for( size_t i = d.size(); i < complete_rows.size(); ++i )
-    delete complete_rows[i];
+    WidgetUtils::removeWidgetNow( complete_rows[i] );
 
   for( size_t i = complete_rows.size(); i < d.size(); ++i )
   {
@@ -348,7 +349,9 @@ void DeviationPairDisplay::removeDevPair( DevPair *devpair )
     auto tt = dynamic_cast<DevPair *>( t ); //dynamic_cast prob not necessary
     if( devpair == tt )
     {
-      delete devpair;
+      // Called from the rows own delete-icon clicked() signal, so the row must outlive this emit:
+      //  detach now (keeps the UI/model in sync) and destroy on the next event-loop iteration.
+      WidgetUtils::removeWidgetLater( m_pairs, devpair );
       sortDisplayOrder(false);
       emitChanged( UserFieldChanged::RemovedDeviationPair );
       return;

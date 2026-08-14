@@ -232,10 +232,9 @@ LlmInteractionTurnDisplay::LlmInteractionTurnDisplay( shared_ptr<LlmInteractionT
 
 LlmInteractionTurnDisplay::~LlmInteractionTurnDisplay()
 {
-  // PopupDivMenu is owned by the WApplication (addGlobalWidget), not by the
-  // button or this panel, so it must be explicitly deleted or it leaks.
-  delete m_menu;
-  m_menu = nullptr;
+  // Nothing to do for m_menu: it is owned by m_menuIcon (WObject::addChild), so it is destroyed
+  //  with the button.  Deleting it here would be a double-free.  (Under Wt3 the menu really was
+  //  app-global-owned and did need an explicit delete.)
 }//~LlmInteractionTurnDisplay()
 
 
@@ -273,10 +272,14 @@ void LlmInteractionTurnDisplay::showMenu()
 {
   if( !m_menu )
   {
-    m_menu = makePopupMenu( nullptr );
+    // Owned by m_menuIcon, so it dies with this panel.  Not makePopupMenu(): that also wires
+    //  m_menuIcon->clicked() to popup(), which would double up with the connection that got us
+    //  here (and we want the items built lazily, on first click).
+    m_menu = makeButtonOwnedPopupMenu( m_menuIcon );
     addMenuItems( m_menu );
   }
-  m_menu->popup( m_menuIcon );
+  m_menu->popup( m_menuIcon, Wt::Orientation::Vertical );
+  m_menu->doJavaScript( "Wt.WT.BringAboveDialogs('" + m_menu->id() + "');" );
 }//showMenu()
 
 
@@ -825,7 +828,7 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
     case LlmToolCall::VisualContent::VisualType::SpectrumChart:
     {
       // Button-only - remove the chart div and put button directly in vizDiv
-      delete chartDiv;
+      vizDiv->removeWidget( chartDiv );
       chartDiv = nullptr;
 
       const string buttonLabel = visual.title.empty()
@@ -889,7 +892,7 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
     case LlmToolCall::VisualContent::VisualType::Html:
     {
       // Button-only - remove the chart div and put button directly in vizDiv
-      delete chartDiv;
+      vizDiv->removeWidget( chartDiv );
       chartDiv = nullptr;
 
       const string buttonLabel = visual.title.empty()
@@ -1616,10 +1619,7 @@ LlmInteractionDisplay::~LlmInteractionDisplay()
 {
   stopStatusTimer();
 
-  // PopupDivMenu is app-global-owned by Wt, not owned by the button/panel, so
-  // delete it explicitly to avoid leaking one menu per interaction.
-  delete m_menu;
-  m_menu = nullptr;
+  // See ~LlmInteractionTurnDisplay(): m_menu is owned by m_menuIcon, not by us.
 }//~LlmInteractionDisplay()
 
 
@@ -2024,11 +2024,13 @@ void LlmInteractionDisplay::showMenu()
 {
   if( m_menu )
   {
-    m_menu->popup( m_menuIcon );
+    m_menu->popup( m_menuIcon, Wt::Orientation::Vertical );
+    m_menu->doJavaScript( "Wt.WT.BringAboveDialogs('" + m_menu->id() + "');" );
     return;
   }
 
-  PopupDivMenu *menu = makePopupMenu( nullptr );
+  // See LlmInteractionTurnDisplay::showMenu() for why this isnt makePopupMenu().
+  PopupDivMenu *menu = makeButtonOwnedPopupMenu( m_menuIcon );
   m_menu = menu;
 
   // Add "Show Initial Request" option

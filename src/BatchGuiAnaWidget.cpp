@@ -70,6 +70,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/EnergyCalibration.h"
 
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/BatchPeak.h"
@@ -1147,7 +1148,10 @@ void BatchGuiPeakFitWidget::performAnalysis(
     SimpleDialog::make( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
   waiting_dialog->addButton( WString::tr( "Close" ) );
   // Captured into only the completion lambda; the worker never references it.
-  Wt::Core::observing_ptr<SimpleDialog> waiting_dialog_obs( waiting_dialog );
+  // Only the widget id crosses the thread boundary: WServer::post() copy-constructs the
+  //  completion on the worker thread, and copying an observing_ptr there would race the session
+  //  thread on Wt::Core::observable's unsynchronized observer list.
+  const WidgetUtils::WidgetHandle waiting_dialog_obs( waiting_dialog );
 
   AppUtils::run_on_ioservice(
     [exemplar_filename, exemplar, exemplar_samples, file_names, spec_files, options, results, error_msg]()
@@ -1163,8 +1167,9 @@ void BatchGuiPeakFitWidget::performAnalysis(
     },
     [results, error_msg, options, waiting_dialog_obs]()
     {
-      if( waiting_dialog_obs )
-        waiting_dialog_obs->done( Wt::DialogCode::Accepted );
+      SimpleDialog * const wait_dlg = waiting_dialog_obs.resolve_as<SimpleDialog>();
+      if( wait_dlg )
+        wait_dlg->done( Wt::DialogCode::Accepted );
 
       if( !error_msg->empty() )
       {
@@ -1459,7 +1464,10 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
   SimpleDialog *waiting_dialog =
     SimpleDialog::make( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
   waiting_dialog->addButton( WString::tr( "Close" ) );
-  Wt::Core::observing_ptr<SimpleDialog> waiting_dialog_obs( waiting_dialog );
+  // Only the widget id crosses the thread boundary: WServer::post() copy-constructs the
+  //  completion on the worker thread, and copying an observing_ptr there would race the session
+  //  thread on Wt::Core::observable's unsynchronized observer list.
+  const WidgetUtils::WidgetHandle waiting_dialog_obs( waiting_dialog );
 
   AppUtils::run_on_ioservice(
     [exemplar_filename, exemplar, exemplar_samples, file_names, input_files_meas, options,
@@ -1477,8 +1485,9 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
     },
     [summary_results, error_msg, options, waiting_dialog_obs]()
     {
-      if( waiting_dialog_obs )
-        waiting_dialog_obs->done( Wt::DialogCode::Accepted );
+      SimpleDialog * const wait_dlg = waiting_dialog_obs.resolve_as<SimpleDialog>();
+      if( wait_dlg )
+        wait_dlg->done( Wt::DialogCode::Accepted );
 
       if( !error_msg->empty() )
       {
@@ -2345,7 +2354,10 @@ void BatchGuiIsotopicsByNuclidesWidget::performAnalysis(
   SimpleDialog *waiting_dialog = SimpleDialog::make( WString::tr("bgw-performing-work-title"),
                                                       WString::tr("bgw-performing-work-msg") );
   waiting_dialog->addButton( WString::tr("Close") );
-  Wt::Core::observing_ptr<SimpleDialog> waiting_dialog_obs( waiting_dialog );
+  // Only the widget id crosses the thread boundary: WServer::post() copy-constructs the
+  //  completion on the worker thread, and copying an observing_ptr there would race the session
+  //  thread on Wt::Core::observable's unsynchronized observer list.
+  const WidgetUtils::WidgetHandle waiting_dialog_obs( waiting_dialog );
 
   AppUtils::run_on_ioservice(
     [exemplar_filename, exemplar, exemplar_samples, file_names, input_files_meas,
@@ -2363,8 +2375,9 @@ void BatchGuiIsotopicsByNuclidesWidget::performAnalysis(
     },
     [summary_results, error_msg, waiting_dialog_obs]()
     {
-      if( waiting_dialog_obs )
-        waiting_dialog_obs->done( Wt::DialogCode::Accepted );
+      SimpleDialog * const wait_dlg = waiting_dialog_obs.resolve_as<SimpleDialog>();
+      if( wait_dlg )
+        wait_dlg->done( Wt::DialogCode::Accepted );
 
       if( !error_msg->empty() )
       {

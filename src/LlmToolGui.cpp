@@ -206,7 +206,7 @@ void LlmToolGui::updateWelcomeMessage()
   {
     if( m_welcomeMessage )
     {
-      delete m_welcomeMessage;
+      m_conversationContainer->removeWidget( m_welcomeMessage );
       m_welcomeMessage = nullptr;
     }
   }else if( !m_welcomeMessage )
@@ -239,7 +239,10 @@ void LlmToolGui::resetRoot()
 
   if( m_root )
   {
-    delete m_root;   // detaches from the layout and deletes all child widgets
+    // m_root is layout-managed, so its owning unique_ptr lives in the layouts WWidgetItem;
+    //  removeWidget() hands it back and destroying it here takes all child widgets with it.
+    //  (`delete m_root` would be a double-free.)
+    const std::unique_ptr<WWidget> doomed = m_root->removeFromParent();
     m_root = nullptr;
   }
 
@@ -1545,15 +1548,11 @@ void LlmToolGui::handleStartBenchmark( const string &xmlPath )
   }
 
   // Clean up any previous runner
-  if( m_benchmarkRunner )
-  {
-    delete m_benchmarkRunner;
-    m_benchmarkRunner = nullptr;
-  }
+  m_benchmarkRunner.reset();
 
   cout << "[LlmBenchmark] Starting benchmark: " << xmlPath << endl;
 
-  m_benchmarkRunner = new LlmBenchmarkRunner( m_viewer, this );
+  m_benchmarkRunner = std::make_unique<LlmBenchmarkRunner>( m_viewer, this );
   m_benchmarkRunner->startBenchmark( xmlPath );
 }
 

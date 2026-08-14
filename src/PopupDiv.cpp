@@ -780,6 +780,21 @@ PopupDivMenu *makePopupMenu( Wt::WPushButton *button )
 }//PopupDivMenu *makePopupMenu(...)
 
 
+PopupDivMenu *makeButtonOwnedPopupMenu( Wt::WPushButton *button )
+{
+  assert( button );
+  if( !button )
+    return nullptr;
+
+  auto menu = std::make_unique<PopupDivMenu>();
+  menu->setAutoHide( true, 500 );
+
+  // Note: deliberately no `button->clicked()` connection here (see header) - the caller pops the
+  //  menu up from its own click handler.
+  return button->addChild( std::move(menu) );
+}//PopupDivMenu *makeButtonOwnedPopupMenu(...)
+
+
 
 PopupDivMenu::~PopupDivMenu()
 {

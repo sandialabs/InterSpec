@@ -217,7 +217,9 @@ LlmConfigWindow::LlmConfigWindow( InterSpec *viewer,
   updateSummary();
   updateValidation();
 
-  finished().connect( std::bind( &AuxWindow::deleteAuxWindow, this ) );
+  // NOTE: deliberately no finished() -> deleteAuxWindow() here.  The owner (LlmToolGui, which holds
+  //  us in an observing_ptr) connects its own teardown handler; two handlers on one signal is a
+  //  double-teardown waiting to happen the moment either side changes.
 
   const int w = m_interspec->renderedWidth();
   const int h = m_interspec->renderedHeight();

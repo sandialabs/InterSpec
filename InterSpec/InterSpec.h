@@ -1765,6 +1765,11 @@ protected:
   /** LLM tool widget for user interaction; it lives in the tools tab strip (a Cat-C reparenting
    tool), so whichever parent currently holds it owns it - hence the observing_ptr. */
   Wt::Core::observing_ptr<LlmToolGui> m_llmTool;
+
+  /** Holds m_llmTool when there is no tool-tab strip to dock it into (same role
+   #m_terminalWindow plays for m_terminal).  Null while the tool is docked in the tab strip.
+   */
+  Wt::Core::observing_ptr<AuxWindow> m_llmToolWindow;
 #endif
   
 #if( USE_SEARCH_MODE_3D_CHART )

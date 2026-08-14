@@ -52,6 +52,7 @@
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/PeakFit.h"
 #include "InterSpec/AppUtils.h"
@@ -2456,7 +2457,10 @@ void automated_search_for_peaks( InterSpec *viewer,
   // Captured into only the completion lambda (session thread).  The worker
   // never references the dialog, so it is fine for the user to dismiss the
   // wait dialog mid-search.
-  Wt::Core::observing_ptr<SimpleDialog> msg_obs( msg );
+  // Only the widget id crosses the thread boundary: WServer::post() copy-constructs the
+  //  completion on the worker thread, and copying an observing_ptr there would race the session
+  //  thread on Wt::Core::observable's unsynchronized observer list.
+  const WidgetUtils::WidgetHandle msg_obs( msg );
 
   //Make it so users cant keep clicking the search button
   viewer->automatedPeakSearchStarted();
@@ -2515,8 +2519,9 @@ void automated_search_for_peaks( InterSpec *viewer,
     // dismiss the wait dialog if it still exists, then dispatch results.
     [viewer, displayed, searchresults, dataPtr, originalPeaks, msg_obs]()
     {
-      if( msg_obs )
-        msg_obs->accept();
+      SimpleDialog * const msg_dlg = msg_obs.resolve_as<SimpleDialog>();
+      if( msg_dlg )
+        msg_dlg->accept();
       set_peaks_from_search( viewer, displayed, searchresults, dataPtr, originalPeaks );
     } );
 }//void automated_search_for_peaks( InterSpec *interspec, const bool keep_old_peaks )

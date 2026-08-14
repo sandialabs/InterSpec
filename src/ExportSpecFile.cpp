@@ -70,6 +70,7 @@
 #include "SpecUtils/UriSpectrum.h"
 #include "SpecUtils/D3SpectrumExport.h"
 
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/InterSpec.h"
@@ -3830,8 +3831,16 @@ void ExportSpecFileTool::render( Wt::WFlags<Wt::RenderFlag> flags )
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( undoRedo && !undoRedo->isInUndoOrRedo() )
   {
+    // Wt3's wApp->bind() guaranteed the target was still alive; WServer::schedule only guarantees
+    //  the *session* is.  This tool is destroyed with its (self-destructing) ExportSpecFileWindow,
+    //  which can happen well inside 25 ms - so resolve `this` back by id when the task runs.
     WServer *server = WServer::instance();
-    auto worker = [this](){ updateUndoRedo(); };
+    const WidgetUtils::WidgetHandle self( this );
+    auto worker = [self](){
+      ExportSpecFileTool * const tool = self.resolve_as<ExportSpecFileTool>();
+      if( tool )
+        tool->updateUndoRedo();
+    };
     server->schedule( std::chrono::milliseconds(25), wApp->sessionId(), worker );
   }
 }//void render( Wt::WFlags<Wt::RenderFlag> flags )

@@ -222,7 +222,13 @@ private:
   Wt::Signals::connection m_spectrumChangedConnection;
 
   /** Benchmark runner (created on demand, nullable). */
-  LlmBenchmarkRunner *m_benchmarkRunner;
+  /** Owns the benchmark runner so it is destroyed with this tool.
+
+   It holds a raw back-pointer to us and stays connected to InterSpec::displayedSpectrumChanged()
+   (a signal that outlives this tool), so leaking it would leave those slots firing into freed
+   memory once the "LLM Assistant" tab is closed.
+   */
+  std::unique_ptr<LlmBenchmarkRunner> m_benchmarkRunner;
 
   /** Hidden child container that bridges to the sandboxed JS iframe used
    by the `run_javascript` LLM tool.  May be null if construction failed. */

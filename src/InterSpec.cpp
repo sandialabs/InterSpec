@@ -513,6 +513,7 @@ InterSpec::InterSpec()
 #if( USE_LLM_INTERFACE )
   m_llmToolMenuItem( nullptr ),
   m_llmTool( nullptr ),
+  m_llmToolWindow( nullptr ),
 #endif
 #if( USE_SEARCH_MODE_3D_CHART )
   m_3dViewWindow( nullptr ),
@@ -7164,6 +7165,29 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     }
 #endif
     
+#if( USE_LLM_INTERFACE )
+    // If the assistant was showing in its own window (no tab strip), dock it back into the strip.
+    if( m_llmTool )
+    {
+      std::unique_ptr<WWidget> llm_widget;
+      if( m_llmToolWindow )
+      {
+        llm_widget = m_llmToolWindow->stretcher()->removeWidget( m_llmTool.get() );
+        AuxWindow::deleteAuxWindow( m_llmToolWindow.get() );
+      }else
+      {
+        llm_widget = removeChild( m_llmTool.get() );
+      }
+      assert( llm_widget );
+      if( llm_widget )
+      {
+        WMenuItem *llmTab = m_toolsTabs->addTab( std::move(llm_widget),
+                                                 WString::tr(LlmAssistantTabTitleKey), TabLoadPolicy );
+        llmTab->setCloseable( true );
+      }
+    }//if( m_llmTool )
+#endif
+
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     // If `m_currentToolsTab` is for `m_peakInfoDisplay`, and the floating peak info display
     //  window was showing when the user toggled to show tool tabs, then we get an exception:
@@ -7226,6 +7250,20 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       if( m_terminalMenuItem )
         m_terminalMenuItem->enable();
     }
+#endif
+
+#if( USE_LLM_INTERFACE )
+    if( m_llmTool )
+    {
+      // Must persist the conversation *before* the widget goes away.  Otherwise m_toolsTabs (and
+      //  with it m_llmTool) is destroyed by the setLayout() below - Wt4's setLogicalLayout() calls
+      //  clear() first - handleLlmToolClose() never runs, and the whole in-tool conversation is
+      //  silently discarded instead of being written back to the SpecMeas.
+      syncLlmHistoryToSpecMeas();
+      safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
+      if( m_llmToolMenuItem )
+        m_llmToolMenuItem->enable();
+    }//if( m_llmTool )
 #endif
 
     m_nuclideSearch->clearSearchEnergiesOnClient();
@@ -10490,8 +10528,8 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
 #if( USE_LLM_INTERFACE )
   // Always offer the LLM Assistant; if it is not yet configured, opening it shows a panel with a
   // button to configure the provider/model (see LlmToolGui).
-  m_llmToolMenuItem = popup->addMenuItem( WString::fromUTF8("LLM Assistant") );
-  HelpSystem::attachToolTipOn( m_llmToolMenuItem, WString::fromUTF8("Open the Large Language Model assistant for spectrum analysis help"), showToolTips );
+  m_llmToolMenuItem = popup->addMenuItem( WString::tr(LlmAssistantTabTitleKey) );
+  HelpSystem::attachToolTipOn( m_llmToolMenuItem, WString::tr("app-mi-tt-tools-llm"), showToolTips );
   m_llmToolMenuItem->triggered().connect( this, &InterSpec::createLlmTool );
 #endif
   
@@ -14146,20 +14184,39 @@ void InterSpec::createLlmTool()
 
     if( m_toolsTabs )
     {
-      WMenuItem *item = m_toolsTabs->addTab( std::move(llmTool), WString::fromUTF8("LLM Assistant") );
+      WMenuItem *item = m_toolsTabs->addTab( std::move(llmTool), WString::tr(LlmAssistantTabTitleKey) );
       item->setCloseable( true );
       m_toolsTabs->setCurrentWidget( m_llmTool.get() );
       const int index = m_toolsTabs->currentIndex();
-      m_toolsTabs->setTabToolTip( index, WString::fromUTF8("Chat with the Large Language Model assistant for spectrum analysis help") );
+      m_toolsTabs->setTabToolTip( index, WString::tr("app-tab-tt-llm-assistant") );
 
       // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
       //  handleToolTabClosed(), which will delete m_llmTool when the user closes the tab.
     }else
     {
-      // No tool-tab strip to dock into; park ownership on this InterSpec (same slot
-      //  setToolTabsVisible() uses for the other Cat-C tools) so the widget stays alive.
-      addChild( std::move(llmTool) );
-    }
+      // No tool-tab strip to dock into, so show the tool in its own window - otherwise the widget
+      //  would be parked with addChild(), which gives it no widget parent and hence no DOM element,
+      //  leaving the tool invisible *and* (since we disable the menu item below) unreachable.
+      m_llmToolWindow = AuxWindow::make( WString::tr(LlmAssistantTabTitleKey),
+                                        (AuxWindowProperties::SetCloseable
+                                         | AuxWindowProperties::EnableResize
+                                         | AuxWindowProperties::TabletNotFullScreen) );
+
+      WPushButton *closeButton = m_llmToolWindow->addCloseButtonToFooter();
+      closeButton->clicked().connect( m_llmToolWindow.get(), &AuxWindow::hide );
+
+      m_llmToolWindow->rejectWhenEscapePressed();
+      m_llmToolWindow->finished().connect( this, &InterSpec::handleLlmToolClose );
+
+      m_llmToolWindow->show();
+      if( (m_renderedWidth > 100) && (m_renderedHeight > 100) && !isPhone() )
+      {
+        m_llmToolWindow->resizeWindow( 0.6*m_renderedWidth, 0.8*m_renderedHeight );
+        m_llmToolWindow->centerWindow();
+      }
+
+      m_llmToolWindow->stretcher()->addWidget( std::move(llmTool), 0, 0 );
+    }//if( m_toolsTabs ) / else
 
     m_llmToolMenuItem->disable();
   }catch( const std::exception &e )
@@ -14237,16 +14294,21 @@ void InterSpec::handleLlmToolClose()
   //  Wt4 WMenuItem::removeContents() bug that leaves eager tab content in the internal stack.
   //  Guarded by indexOf() so it stays idempotent with the docking path, which already removed
   //  the tab before calling this.
-  if( m_toolsTabs && (m_toolsTabs->indexOf(m_llmTool.get()) >= 0) )
+  if( m_llmToolWindow )
+  {
+    // The tool lives in the window's stretcher, so tearing the window down destroys it too.
+    AuxWindow::deleteAuxWindow( m_llmToolWindow.get() );
+  }else if( m_toolsTabs && (m_toolsTabs->indexOf(m_llmTool.get()) >= 0) )
   {
     safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
     m_toolsTabs->setCurrentIndex( 2 );
   }else if( m_llmTool )
   {
-    removeChild( m_llmTool.get() );   // parked via addChild when there is no tab strip
+    removeChild( m_llmTool.get() );   // parked via addChild (legacy path)
   }
 
-  assert( !m_llmTool );   // observing_ptr auto-clears when the widget is destroyed
+  assert( !m_llmTool );         // observing_ptr auto-clears when the widget is destroyed
+  assert( !m_llmToolWindow );
 }
 #endif // USE_LLM_INTERFACE
 

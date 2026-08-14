@@ -85,21 +85,20 @@ namespace
   //DeleteOnClosePopupMenu is a PopupDivMenu that deletes itself on close.
   //  Necassary because (with Wt 3.3.4 at least) using the aboutToHide() signal
   //  to delete the menu causes a crash.
+  /** A right-click popup menu that is owned by the widget that pops it up.
+
+   Note: this deliberately has no `delete this` on hide any more.  Under Wt3 the menu was an
+   ownerless app-global widget and had to self-destruct; under Wt4 `makePopupMenu`-style menus are
+   owned by a parent (`addChild`), so `delete this` would double-free.  Callers instead own the menu
+   and drop it from an `aboutToHide()` handler, deferred through `WServer::post` so the menu
+   outlives its own signal emission - see the right-click handlers in this file.
+   */
   class DeleteOnClosePopupMenu : public PopupDivMenu
   {
-    bool m_deleteWhenHidden;
   public:
-    DeleteOnClosePopupMenu()
-    : PopupDivMenu(), m_deleteWhenHidden( false ) {}
+    DeleteOnClosePopupMenu() : PopupDivMenu() {}
     virtual ~DeleteOnClosePopupMenu(){}
-    void markForDelete(){ m_deleteWhenHidden = true; }
-    virtual void setHidden( bool hidden, const WAnimation &a = WAnimation() )
-    {
-      PopupDivMenu::setHidden( hidden, a );
-      if( hidden && m_deleteWhenHidden )
-        delete this;
-    }
-  };//class PeakRangePopupMenu
+  };//class DeleteOnClosePopupMenu
   
 }//namespace
 

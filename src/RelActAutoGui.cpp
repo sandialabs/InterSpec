@@ -165,21 +165,20 @@ namespace
   };//struct DoWorkOnDestruct
 
   //DeleteOnClosePopupMenu - same class as from D3SpectrumDisplayDiv... should refactor
+  /** A right-click popup menu that is owned by the widget that pops it up.
+
+   Note: this deliberately has no `delete this` on hide any more.  Under Wt3 the menu was an
+   ownerless app-global widget and had to self-destruct; under Wt4 `makePopupMenu`-style menus are
+   owned by a parent (`addChild`), so `delete this` would double-free.  Callers instead own the menu
+   and drop it from an `aboutToHide()` handler, deferred through `WServer::post` so the menu
+   outlives its own signal emission - see the right-click handlers in this file.
+   */
   class DeleteOnClosePopupMenu : public PopupDivMenu
   {
-    bool m_deleteWhenHidden;
   public:
-    DeleteOnClosePopupMenu()
-      : PopupDivMenu(), m_deleteWhenHidden( false ) {}
+    DeleteOnClosePopupMenu() : PopupDivMenu() {}
     virtual ~DeleteOnClosePopupMenu(){}
-    void markForDelete(){ m_deleteWhenHidden = true; }
-    virtual void setHidden( bool hidden, const WAnimation &a = WAnimation() )
-    {
-      PopupDivMenu::setHidden( hidden, a );
-      if( hidden && m_deleteWhenHidden )
-        delete this;
-    }
-  };//class PeakRangePopupMenu
+  };//class DeleteOnClosePopupMenu
 
 
   class RelActAutoReportResource : public Wt::WResource
@@ -2303,8 +2302,21 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   }//if( failed to find continuum )
   
   
-  DeleteOnClosePopupMenu *menu = new DeleteOnClosePopupMenu();
-  menu->aboutToHide().connect( menu, &DeleteOnClosePopupMenu::markForDelete );
+  // Wt4: own the menu via this widget (addChild) so it can't leak as an ownerless global widget,
+  //  and remove it (deferred, routed through the owner) when it hides.  DeleteOnClosePopupMenu's
+  //  own `markForDelete` + `delete this` cannot be used: WPopupWidget's ctor hands ownership back
+  //  to nobody, and WPopupMenu::done() hides *before* emitting aboutToHide(), so the flag is set
+  //  after the only setHidden(true) and the delete never fires.  Same fix as in
+  //  D3SpectrumDisplayDiv::  (see its right-click "Peaks To Keep In ROI" menu).
+  DeleteOnClosePopupMenu *menu = addChild( std::make_unique<DeleteOnClosePopupMenu>() );
+  const string menuownerid = id();
+  menu->aboutToHide().connect( menu, [menuownerid, menu](){
+    WServer::instance()->post( wApp->sessionId(), [menuownerid, menu](){
+      RelActAutoGui *owner = dynamic_cast<RelActAutoGui *>( wApp->domRoot() ? wApp->domRoot()->findById(menuownerid) : nullptr );
+      if( owner )
+        owner->removeChild( menu );  // owner alive => menu (its child) alive; frees it exactly once
+    } );
+  } );
   menu->setPositionScheme( Wt::PositionScheme::Absolute );
   
   PopupDivMenuItem *item = nullptr;

@@ -58,6 +58,7 @@
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
@@ -406,8 +407,7 @@ public:
     btndiv->addStyleClass( "CalCoefsBtnDiv" );
   
 #if( IMP_CALp_BTN_NEAR_COEFS )
-    
-    WResource *csv = m_model->peakCsvResource();
+
 #if( BUILD_AS_OSX_APP || IOS )
     {
       WLink calpLink( m_tool->calpResources() );
@@ -720,7 +720,7 @@ public:
 #endif
         if( m_convertMsg )
         {
-          delete m_convertMsg;
+          WidgetUtils::removeWidgetNow( m_convertMsg );
           m_convertMsg = nullptr;
         }
         break;
@@ -734,7 +734,7 @@ public:
 #endif
         if( m_convertMsg )
         {
-          delete m_convertMsg;
+          WidgetUtils::removeWidgetNow( m_convertMsg );
           m_convertMsg = nullptr;
         }
         break;
@@ -786,8 +786,8 @@ public:
       {
         if( coefnum >= num_coef_disp )
         {
-          m_coefficients->removeWidget( existing[i] );
-          delete existing[i];
+          // Wt4: removeWidget() hands back ownership; the unique_ptr destroys it here.
+          const std::unique_ptr<WWidget> doomed = m_coefficients->removeWidget( existing[i] );
         }else
         {
           assert( coefnum < coef_disps.size() );
@@ -981,7 +981,16 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   }else
   {
     addStyleClass( "TallEnergyCal" );
-    // setLayout below replaces (and destroys) any existing layout - no explicit delete.
+
+    // We must drop any layout we already have on `this` BEFORE adding m_tallLayoutContent:
+    //  WContainerWidget renders only its layout's widgets when a layout is set, so a plain child
+    //  added while the wide layout is still installed would never get a DOM element (and the stale
+    //  wide widgets would keep rendering, wired to the same handlers).
+    //  setLayout(nullptr) -> setLogicalLayout() -> clear(), which destroys the old layout and all
+    //  the widgets it managed exactly once.
+    setLayout( std::unique_ptr<WLayout>() );
+    m_layout = nullptr;
+
     m_tallLayoutContent = addNew<WContainerWidget>();
     m_layout = m_tallLayoutContent->setLayout( std::make_unique<WGridLayout>() );
   }//if( wide ) / else
@@ -4524,9 +4533,10 @@ void EnergyCalTool::doRefreshFromFiles()
   map< pair<SpecUtils::SpectrumType,string>, set<size_t> > set_fit_for_cbs;
 
   // First pass: remove the CalDisplays that are no longer wanted in their menu.
-  //  Note: with the PreLoading policy a menu items contents (the CalDisplay) is owned by the
-  //  (shared) contents stack, not the menu item, so we have to delete the contents explicitly,
-  //  after removing the item.
+  //  Note: Wt4's WMenu::removeItem() pulls the (Eager) contents back out of the shared contents
+  //  stack and into the item, then hands us the owning unique_ptr for the item - so dropping that
+  //  unique_ptr destroys both the WMenuItem and its CalDisplay.  Deleting either explicitly is a
+  //  double-free.
   for( int menu_index = 0; menu_index < 3; ++menu_index )
   {
     WMenu * const detMenu = m_detectorMenu[menu_index];
@@ -4563,9 +4573,7 @@ void EnergyCalTool::doRefreshFromFiles()
         }
       }//for( loop over the other menus )
 
-      detMenu->removeItem( item );
-      delete item;
-      delete display;
+      const std::unique_ptr<WMenuItem> doomed = detMenu->removeItem( item );
     }//for( loop backwards over the menus items )
   }//for( int menu_index = 0; menu_index < 3; ++menu_index )
 
@@ -4923,8 +4931,8 @@ void EnergyCalTool::moreActionBtnClicked( const MoreActionsIndex index )
 
   if( m_addActionWindow )
   {
-    AuxWindow::deleteAuxWindow( m_addActionWindow );
-    m_addActionWindow = nullptr;
+    AuxWindow::deleteAuxWindow( m_addActionWindow.get() );
+    assert( !m_addActionWindow );   //observing_ptr auto-clears
   }
   
   m_addActionWindow = AuxWindow::make<EnergyCalAddActionsWindow>( index, measToChange, this );
@@ -4956,8 +4964,8 @@ void EnergyCalTool::cancelMoreActionWindow()
 {
   if( m_addActionWindow )
   {
-    AuxWindow::deleteAuxWindow( m_addActionWindow );
-    m_addActionWindow = nullptr;
+    AuxWindow::deleteAuxWindow( m_addActionWindow.get() );
+    assert( !m_addActionWindow );   //observing_ptr auto-clears
   }
 }//void cancelMoreActionWindow()
 

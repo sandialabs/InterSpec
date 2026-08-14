@@ -531,7 +531,7 @@ void BatchGuiWidget::handleLoadOpenFileRequest()
 
   if( headers->empty() )
   {
-    delete selection;
+    dialog->contents()->removeWidget( selection );
     dialog->contents()->addNew<WText>( WString::tr( "bgw-pick-open-file-none" ) );
     dialog->addButton( WString::tr( "Okay" ) );
     return;

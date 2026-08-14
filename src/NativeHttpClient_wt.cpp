@@ -324,7 +324,7 @@ void startBackendRequest( const std::shared_ptr<RequestState> &state )
   //  There is no Wt equivalent of totalTimeout; the transport-level guard here is the idle one,
   //  and the caller's conversation watchdog backstops the rest.
   if( req.idleTimeout.count() > 0 )
-    client->setTimeout( static_cast<int>(req.idleTimeout.count()) );
+    client->setTimeout( req.idleTimeout );   //Wt4 takes a std::chrono duration (Wt3 took int seconds)
 
   // Wt does follow redirects when asked, but only for GET (Client.C:1079-1082), so say so rather
   //  than silently not following a redirected POST.

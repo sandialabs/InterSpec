@@ -318,6 +318,7 @@ set(sources
     src/XRayWidthServer.cpp
     src/SpectraFileModel.cpp
     src/AuxWindow.cpp
+    src/WidgetUtils.cpp
     src/PeakFitChi2Fcn.cpp
     src/PeakModel.cpp
     src/PeakInfoDisplay.cpp
@@ -450,6 +451,7 @@ set(headers
     InterSpec/XRayWidthServer.h
     InterSpec/SpectraFileModel.h
     InterSpec/AuxWindow.h
+    InterSpec/WidgetUtils.h
     InterSpec/PeakFitChi2Fcn.h
     InterSpec/PeakModel.h
     InterSpec/PeakInfoDisplay.h
