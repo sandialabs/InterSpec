@@ -33,6 +33,7 @@
 #include <functional>
 
 #include <Wt/WContainerWidget.h>
+#include <Wt/Core/observable.hpp>
 
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
@@ -65,8 +66,7 @@ namespace Wt {
   class WTimer;
   class WResource;
 
-  template <typename A1, typename A2, typename A3, typename A4, typename A5, typename A6>
-  class JSignal;
+  template <typename... A> class JSignal;
 }
 
 /** Main LLM interface class that handles communication with OpenAI-compatible API endpoints.
@@ -77,7 +77,7 @@ namespace Wt {
  - Conversation history management  
  - Integration with InterSpec session
  */
-class LlmInterface : public Wt::Signals::trackable,
+class LlmInterface : public Wt::Core::observable,
                      public std::enable_shared_from_this<LlmInterface>
 {
 public:

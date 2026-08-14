@@ -1039,7 +1039,7 @@ nlohmann::json executePerformIsotopics(
   shared_ptr<const DetectorPeakResponse> drf = spec->detector();
 
   // Get peaks
-  PeakModel *peakModel = interspec->peakModel();
+  const std::shared_ptr<PeakModel> peakModel = interspec->peakModel();
   vector<shared_ptr<const PeakDef>> all_peaks;
 
   if( peakModel )

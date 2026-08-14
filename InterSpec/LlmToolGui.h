@@ -39,6 +39,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <Wt/WSignal.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WContainerWidget.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "SpecUtils/SpecFile.h"
 
@@ -76,7 +77,7 @@ public:
    * @param viewer The InterSpec instance this tool belongs to
    * @param parent The parent widget (optional)
    */
-  LlmToolGui(InterSpec *viewer, Wt::WContainerWidget *parent = nullptr);
+  LlmToolGui(InterSpec *viewer);
   ~LlmToolGui();
   
   /** Returns if the user has added a `llm_config.xml` file, and enabled the `LlmApi`, and this was read in when the
@@ -199,7 +200,9 @@ private:
   Wt::WContainerWidget *m_root;
 
   /** The open provider-settings window (nullptr if none), so it can be cleaned up. */
-  LlmConfigWindow *m_configWindow;
+  /** Cat-A style singleton dialog: created with AuxWindow::make() (owned by wApp) and torn down
+   with AuxWindow::deleteAuxWindow(); the observing_ptr auto-clears when it goes. */
+  Wt::Core::observing_ptr<LlmConfigWindow> m_configWindow;
 
   Wt::WContainerWidget *m_conversationContainer;  ///< Container holding LlmInteractionDisplay widgets
 
@@ -216,7 +219,7 @@ private:
   bool m_isRequestPending;                 ///< Whether a request is currently pending
 
   /** Stored connection for spectrum change signal, so it can be disconnected/reconnected. */
-  boost::signals2::connection m_spectrumChangedConnection;
+  Wt::Signals::connection m_spectrumChangedConnection;
 
   /** Benchmark runner (created on demand, nullable). */
   LlmBenchmarkRunner *m_benchmarkRunner;

@@ -330,7 +330,7 @@ void DetectionLimitSimple::init()
   //  profile crossing the threshold more than twice.  A sibling of the result rather than a third
   //  page of `m_chartErrMsgStack`, which is either-or (error page OR chart) and so has nowhere to
   //  show a warning beside a successful answer.  These were dropped entirely before Increment C.
-  m_warningTxt = new WText( "", resultsDiv );
+  m_warningTxt = resultsDiv->addNew<WText>( "" );
   m_warningTxt->addStyleClass( "MdaWarnMsg" );
   m_warningTxt->setInline( false );
   m_warningTxt->hide();
@@ -418,8 +418,8 @@ void DetectionLimitSimple::init()
   // Add confidence select
   // Simple MDA always reports a one-sided upper limit, so the label says so rather than leaving the
   //  reader to guess which of the two products this confidence applies to.
-  WLabel *confidenceLabel = new WLabel( WString::tr(isPhone ? "dl-conf-level-one-sided-short"
-                                                            : "dl-conf-level-one-sided"), generalInput );
+  WLabel *confidenceLabel = generalInput->addNew<WLabel>( WString::tr(isPhone ? "dl-conf-level-one-sided-short"
+                                                            : "dl-conf-level-one-sided") );
   confidenceLabel->addStyleClass( "GridFourthCol GridSecondRow GridVertCenter" );
   m_confidenceLevel = generalInput->addNew<WComboBox>();
   m_confidenceLevel->addStyleClass( "GridFifthCol GridSecondRow ClComboBox" );
@@ -529,20 +529,20 @@ void DetectionLimitSimple::init()
     //  machinery per method: zero Currie side channels, or the deconvolution's BackgroundReference
     //  measurement model.  `handleMethodChanged()` swaps the label and tooltip to say which.
     m_isBackgroundSpectrum->setWordWrap( false );
-    m_isBackgroundHelpImg = new WImage( m_isBackgroundDiv );
+    m_isBackgroundHelpImg = m_isBackgroundDiv->addNew<WImage>();
     m_isBackgroundHelpImg->setImageLink(Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
     m_isBackgroundHelpImg->resize( 16, 16 );  //setStyleClass("Wt-icon");
-    m_isBackgroundHelpImg->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+    m_isBackgroundHelpImg->decorationStyle().setCursor( Wt::Cursor::WhatsThis );
     HelpSystem::attachToolTipOn( m_isBackgroundHelpImg,
                                 WString::tr("dls-is-background-spectrum-tt"), true,
-                                HelpSystem::ToolTipPrefOverride::InstantAlways );
+                                HelpSystem::ToolTipPrefOverride::AlwaysShow );
   }
 
   // Planned-measurement-time control on the right of row 7, beside the background checkbox in
   //  cols 1-2.  The deconvolution continuum controls used to share these cells and overlapped them;
   //  they now live on row 8.
 
-  m_planTimeCb = new WCheckBox( WString::tr(isPhone ? "dl-plan-time-cb-short" : "dl-plan-time-cb"), generalInput );
+  m_planTimeCb = generalInput->addNew<WCheckBox>( WString::tr(isPhone ? "dl-plan-time-cb-short" : "dl-plan-time-cb") );
   m_planTimeCb->addStyleClass( "CbNoLineBreak GridFourthCol GridSeventhRow GridVertCenter" );
   m_planTimeCb->setWordWrap( false );
 
@@ -555,16 +555,15 @@ void DetectionLimitSimple::init()
   m_planTimeCb->checked().connect( this, &DetectionLimitSimple::handlePlanTimeChanged );
   m_planTimeCb->unChecked().connect( this, &DetectionLimitSimple::handlePlanTimeChanged );
 
-  m_planTimeDiv = new WContainerWidget( generalInput );
+  m_planTimeDiv = generalInput->addNew<WContainerWidget>();
   m_planTimeDiv->addStyleClass( "ScaleEntryDiv GridFifthCol GridSeventhRow GridVertCenter" );
   m_planTimeDiv->setHiddenKeepsGeometry( true );   // the taller of the two - see above
-  m_planTimeEdit = new WLineEdit( m_planTimeDiv );
-  m_planTimeEdit->setEmptyText( WString::tr("dl-plan-time-empty-text") );
+  m_planTimeEdit = m_planTimeDiv->addNew<WLineEdit>();
+  m_planTimeEdit->setPlaceholderText( WString::tr("dl-plan-time-empty-text") );
   m_planTimeEdit->setDisabled( true );
   {
-    WRegExpValidator *scaleTimeValidator
-              = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationRegex(), m_planTimeEdit );
-    scaleTimeValidator->setFlags( Wt::MatchCaseInsensitive );
+    auto scaleTimeValidator = std::make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationRegex() );
+    scaleTimeValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
     m_planTimeEdit->setValidator( scaleTimeValidator );
   }
   m_planTimeEdit->changed().connect( this, &DetectionLimitSimple::handlePlanTimeChanged );
@@ -572,12 +571,12 @@ void DetectionLimitSimple::init()
   m_planTimeEdit->enterPressed().connect( this, &DetectionLimitSimple::handlePlanTimeChanged );
 
   {
-    WImage *img = new WImage( m_planTimeDiv );
+    WImage *img = m_planTimeDiv->addNew<WImage>();
     img->setImageLink( Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
     img->resize( 16, 16 );
-    img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+    img->decorationStyle().setCursor( Wt::Cursor::WhatsThis );
     HelpSystem::attachToolTipOn( img, WString::tr("dl-plan-time-tt"), true,
-                                HelpSystem::ToolTipPrefOverride::InstantAlways );
+                                HelpSystem::ToolTipPrefOverride::AlwaysShow );
   }
 
   // Pre-fill the disabled input with the current foreground's real time.
@@ -591,9 +590,9 @@ void DetectionLimitSimple::init()
       m_planTimeCb->setDisabled( true );
   }
   
-  m_continuumPriorLabel = new WLabel( WString::tr("dls-decon-cont-norm-label"), generalInput );
+  m_continuumPriorLabel = generalInput->addNew<WLabel>( WString::tr("dls-decon-cont-norm-label") );
   m_continuumPriorLabel->addStyleClass( "GridFirstCol GridEighthRow GridVertCenter" );
-  m_continuumPrior = new WComboBox( generalInput );
+  m_continuumPrior = generalInput->addNew<WComboBox>();
   // Only the two selectable treatments; the "as no signal" option is deprecated - it measured about
   //  40% coverage where 95% was claimed - and a stored state naming it is migrated to a background
   //  reference with a visible notice.  Order must match `continuum_norm_from_index`.
@@ -609,9 +608,9 @@ void DetectionLimitSimple::init()
   m_continuumPriorLabel->hide();
   m_continuumPrior->hide();
   
-  m_continuumTypeLabel = new WLabel( "Continuum Type:", generalInput );
+  m_continuumTypeLabel = generalInput->addNew<WLabel>( "Continuum Type:" );
   m_continuumTypeLabel->addStyleClass( "GridFourthCol GridEighthRow GridVertCenter" );
-  m_continuumType = new WComboBox( generalInput );
+  m_continuumType = generalInput->addNew<WComboBox>();
   m_continuumType->addItem( WString::tr( PeakContinuum::offset_type_label_tr(PeakContinuum::OffsetType::Linear) ) );
   m_continuumType->addItem( WString::tr( PeakContinuum::offset_type_label_tr(PeakContinuum::OffsetType::Quadratic) ) );
   m_continuumType->setCurrentIndex( 0 );
@@ -620,16 +619,16 @@ void DetectionLimitSimple::init()
   m_continuumTypeLabel->setHidden( true );
   m_continuumType->setHidden( true );
   
-  WContainerWidget *container = new WContainerWidget( generalInput );
+  WContainerWidget *container = generalInput->addNew<WContainerWidget>();
   container->addStyleClass( "MethodSelect GridFirstCol GridNinthRow GridSpanFiveCol" );
   
-  WLabel *methodLabel = new WLabel( WString::tr("dls-calc-method"), container);
+  WLabel *methodLabel = container->addNew<WLabel>( WString::tr("dls-calc-method") );
   
-  m_methodGroup = new WButtonGroup( container );
-  WRadioButton *currieBtn = new Wt::WRadioButton( WString::tr("dls-currie-tab-title"), container );
+  m_methodGroup = std::make_shared<WButtonGroup>();
+  WRadioButton *currieBtn = container->addNew<Wt::WRadioButton>( WString::tr("dls-currie-tab-title") );
   m_methodGroup->addButton(currieBtn, static_cast<int>(MethodIds::Currie) );
   
-  WRadioButton *deconvBtn = new Wt::WRadioButton( WString::tr("dls-decon-tab-title"), container);
+  WRadioButton *deconvBtn = container->addNew<Wt::WRadioButton>( WString::tr("dls-decon-tab-title") );
   m_methodGroup->addButton(deconvBtn, static_cast<int>(MethodIds::Deconvolution) );
   m_methodGroup->setCheckedButton( currieBtn );
 
@@ -637,28 +636,26 @@ void DetectionLimitSimple::init()
 
   // "Advanced" goes on the far right of this row.  An auto margin in the flex row does the pushing,
   //  so `justify-content: flex-start` can stay and the label + radios keep hugging the left edge.
-  m_advancedCb = new WCheckBox( WString::tr(isPhone ? "dl-advanced-cb-short" : "dl-advanced-cb"),
-                                container );
+  m_advancedCb = container->addNew<WCheckBox>( WString::tr(isPhone ? "dl-advanced-cb-short" : "dl-advanced-cb") );
   m_advancedCb->addStyleClass( "CbNoLineBreak AdvancedCb" );
   m_advancedCb->setWordWrap( false );
   m_advancedCb->checked().connect( this, &DetectionLimitSimple::handleAdvancedToggled );
   m_advancedCb->unChecked().connect( this, &DetectionLimitSimple::handleAdvancedToggled );
   HelpSystem::attachToolTipOn( m_advancedCb, WString::tr("dl-advanced-tt"), showToolTips );
 
-  m_methodDescription = new WText( WString::tr("dls-currie-desc"), generalInput );
+  m_methodDescription = generalInput->addNew<WText>( WString::tr("dls-currie-desc") );
   m_methodDescription->addStyleClass( "CalcMethodDesc GridSecondCol GridTenthRow GridSpanFourCol" );
 
   // The advanced statistical inputs; a sibling of `generalInput` rather than an eleventh grid row -
   //  see `m_advancedDiv`'s doc comment for why.
-  m_advancedDiv = new WContainerWidget( this );
+  m_advancedDiv = this->addNew<WContainerWidget>();
   m_advancedDiv->addStyleClass( "AdvancedInput" );
   m_advancedDiv->hide();  //Deliberately NOT setHiddenKeepsGeometry: this must take up no room.
 
   // Labels and fields are direct grid children, so the columns line up across both rows; wrapping
   //  them in per-pair divs would let each pair size independently and lose that alignment.
-  WLabel *alphaLabel = new WLabel( WString::tr(isPhone ? "dl-alpha-label-short" : "dl-alpha-label"),
-                                   m_advancedDiv );
-  m_alpha = new NativeFloatSpinBox( m_advancedDiv );
+  WLabel *alphaLabel = m_advancedDiv->addNew<WLabel>( WString::tr(isPhone ? "dl-alpha-label-short" : "dl-alpha-label") );
+  m_alpha = m_advancedDiv->addNew<NativeFloatSpinBox>();
   m_alpha->setSpinnerHidden();
   // A probability, not a percent.  The upper bound is 0.5 because at or above it the "threshold"
   //  would sit at or below the expected background, and the arithmetic stops meaning what it says.
@@ -671,9 +668,8 @@ void DetectionLimitSimple::init()
   m_alpha->valueChanged().connect( this, &DetectionLimitSimple::handleAlphaChanged );
   HelpSystem::attachToolTipOn( {alphaLabel, m_alpha}, WString::tr("dl-alpha-tt"), showToolTips );
 
-  WLabel *betaLabel = new WLabel( WString::tr(isPhone ? "dl-beta-label-short" : "dl-beta-label"),
-                                  m_advancedDiv );
-  m_beta = new NativeFloatSpinBox( m_advancedDiv );
+  WLabel *betaLabel = m_advancedDiv->addNew<WLabel>( WString::tr(isPhone ? "dl-beta-label-short" : "dl-beta-label") );
+  m_beta = m_advancedDiv->addNew<NativeFloatSpinBox>();
   m_beta->setSpinnerHidden();
   m_beta->setRange( 1.0E-7f, 0.4999f );  //Same reasoning as alpha, above.
   m_beta->setValue( static_cast<float>( 1.0 - currentConfidenceLevel() ) );
@@ -681,11 +677,9 @@ void DetectionLimitSimple::init()
   m_beta->valueChanged().connect( this, &DetectionLimitSimple::handleBetaChanged );
   HelpSystem::attachToolTipOn( {betaLabel, m_beta}, WString::tr("dl-beta-tt"), showToolTips );
 
-  WLabel *distUncertLabel = new WLabel(
-            WString::tr(isPhone ? "dl-dist-uncert-label-short" : "dl-dist-uncert-label"),
-            m_advancedDiv );
-  m_distanceUncert = new WLineEdit( m_advancedDiv );
-  m_distanceUncert->setEmptyText( WString::tr("dl-dist-uncert-empty-text") );
+  WLabel *distUncertLabel = m_advancedDiv->addNew<WLabel>( WString::tr(isPhone ? "dl-dist-uncert-label-short" : "dl-dist-uncert-label") );
+  m_distanceUncert = m_advancedDiv->addNew<WLineEdit>();
+  m_distanceUncert->setPlaceholderText( WString::tr("dl-dist-uncert-empty-text") );
   distUncertLabel->setBuddy( m_distanceUncert );
   m_distanceUncert->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
@@ -696,9 +690,8 @@ void DetectionLimitSimple::init()
     // Same grammar as the distance field above it.  Note `PhysicalUnits::stringToDistance` requires
     //  a unit *unless* the value is exactly "0" - which is what makes "0" the natural spelling of
     //  "none", and stops a bare "1" being silently read as some unit.
-    WRegExpValidator *distUncertVal
-                = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, this );
-    distUncertVal->setFlags( Wt::MatchCaseInsensitive );
+    auto distUncertVal = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
+    distUncertVal->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
     m_distanceUncert->setValidator( distUncertVal );
   }
   m_distanceUncert->changed().connect( this, &DetectionLimitSimple::handleSystematicUncertChanged );
@@ -706,17 +699,15 @@ void DetectionLimitSimple::init()
   HelpSystem::attachToolTipOn( {distUncertLabel, m_distanceUncert},
                               WString::tr("dl-dist-uncert-tt"), showToolTips );
 
-  WLabel *effUncertLabel = new WLabel(
-            WString::tr(isPhone ? "dl-eff-uncert-label-short" : "dl-eff-uncert-label"),
-            m_advancedDiv );
-  m_effUncert = new WLineEdit( m_advancedDiv );
-  m_effUncert->setEmptyText( WString::tr("dl-eff-uncert-empty-text") );
+  WLabel *effUncertLabel = m_advancedDiv->addNew<WLabel>( WString::tr(isPhone ? "dl-eff-uncert-label-short" : "dl-eff-uncert-label") );
+  m_effUncert = m_advancedDiv->addNew<WLineEdit>();
+  m_effUncert->setPlaceholderText( WString::tr("dl-eff-uncert-empty-text") );
   effUncertLabel->setBuddy( m_effUncert );
   {
     // Not mandatory, so an empty field validates - blank means "none".  The 99.9 cap is only a first
     //  pass; the *combined* systematic is what has to stay under 100%, and
     //  `currentSystematicUncertainty()` is where that is enforced.
-    WDoubleValidator *effUncertVal = new WDoubleValidator( 0.0, 99.9, this );
+    auto effUncertVal = std::make_shared<WDoubleValidator>( 0.0, 99.9 );
     m_effUncert->setValidator( effUncertVal );
   }
   m_effUncert->changed().connect( this, &DetectionLimitSimple::handleSystematicUncertChanged );
@@ -724,7 +715,7 @@ void DetectionLimitSimple::init()
   HelpSystem::attachToolTipOn( {effUncertLabel, m_effUncert},
                               WString::tr("dl-eff-uncert-tt"), showToolTips );
 
-  m_advancedNote = new WText( WString::tr("dls-advanced-decon-note"), m_advancedDiv );
+  m_advancedNote = m_advancedDiv->addNew<WText>( WString::tr("dls-advanced-decon-note") );
   m_advancedNote->addStyleClass( "AdvancedNote" );
   m_advancedNote->setInline( false );
   m_advancedNote->hide();  //Only shown under the Deconvolution method; \sa handleMethodChanged
@@ -1049,15 +1040,15 @@ void DetectionLimitSimple::handleMethodChanged()
                     : "dl-model-backref-cb" ) );
   if( m_isBackgroundHelpImg )
   {
-    // On mobile `attachToolTipOn` connects a NEW clicked() handler rather than replacing a qTip,
-    //  and nothing disconnects the old ones - so without this every method/background change would
-    //  add another stacked dialog, each showing the text captured when it was attached.
-    HelpSystem::removeToolTipOn( m_isBackgroundHelpImg );
+    // NOTE: upstream called HelpSystem::removeToolTipOn() here, because with qTip2 `attachToolTipOn`
+    //  connected a NEW clicked() handler on mobile rather than replacing the tooltip, so repeated
+    //  method/background changes stacked dialogs.  This branch uses Wt's native tooltips
+    //  (setToolTip(), which replaces) and returns early on mobile, so there is nothing to remove.
     HelpSystem::attachToolTipOn( m_isBackgroundHelpImg,
                                 WString::tr( currieMethod ? "dls-is-background-spectrum-tt"
                                                           : "dl-model-backref-tt" ),
                                 true,
-                                HelpSystem::ToolTipPrefOverride::InstantAlways );
+                                HelpSystem::ToolTipPrefOverride::AlwaysShow );
   }
 
   m_continuumPriorLabel->setHidden( currieMethod );
@@ -2318,11 +2309,11 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     label = WString("{1} &chi;<sup>2</sup>").arg(typestr);
     value = SpecUtils::printCompact(result.chi2, 4);
     cell = table->elementAt( table->rowCount(), 0 );
-    WText *stat_label = new WText( label, cell );
+    WText *stat_label = cell->addNew<WText>( label );
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    WText *stat_value = new WText( value, cell );
+    WText *stat_value = cell->addNew<WText>( value );
     HelpSystem::attachToolTipOn( {stat_label, stat_value}, stat_tt, true,
-                                HelpSystem::ToolTipPrefOverride::InstantAlways );
+                                HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
     if( !is_best )
       return;
@@ -2330,11 +2321,11 @@ SimpleDialog *DetectionLimitSimple::createDeconvolutionLimitMoreInfo()
     label = WString::tr("dls-DOF");
     value = std::to_string( result.num_degree_of_freedom );
     cell = table->elementAt( table->rowCount(), 0 );
-    WText *dof_label = new WText( label, cell );
+    WText *dof_label = cell->addNew<WText>( label );
     cell = table->elementAt( table->rowCount() - 1, 1 );
-    WText *dof_value = new WText( value, cell );
+    WText *dof_value = cell->addNew<WText>( value );
     HelpSystem::attachToolTipOn( {dof_label, dof_value}, stat_tt, true,
-                                HelpSystem::ToolTipPrefOverride::InstantAlways );
+                                HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
     if( result.fit_peaks.size() )
     {

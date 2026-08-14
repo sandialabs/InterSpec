@@ -356,7 +356,7 @@ nlohmann::json executePeakBasedRelativeEfficiency(
   }//if( nuclide_ages provided )
   
   // Get peaks from PeakModel
-  PeakModel *peakModel = interspec->peakModel();
+  const std::shared_ptr<PeakModel> peakModel = interspec->peakModel();
   if( !peakModel )
     throw runtime_error( "Peak model not available" );
   

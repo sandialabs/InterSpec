@@ -93,7 +93,7 @@ namespace
 
 
     EnergyCalTool *tool = viewer->energyCalTool();
-    PeakModel *peakModel = viewer->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = viewer->peakModel();
     assert( tool && peakModel );
     if( !tool || !peakModel )
     {

@@ -1263,8 +1263,7 @@ protected:
       "  var quality = (outMime === 'image/jpeg') ? 0.85 : undefined;"
       "  var dataUrl = canvas.toDataURL(outMime, quality);"
       "  var base64 = dataUrl.split(',')[1];"
-      "  " + m_resizedImageForLlmSignal.createCall( "base64", "outMime",
-                                                     "w", "h" ) + ";"
+      "  " + m_resizedImageForLlmSignal.createCall( {"base64", "outMime", "w", "h"} ) + ";"
       "})();";
 
     doJavaScript( js );
@@ -1459,12 +1458,12 @@ public:
       LlmToolGui *llmTool = m_viewer->currentLlmTool();
       if( llmTool && llmTool->canAcceptImages() )
       {
-        m_resizedImageForLlmSignal.connect(
-          boost::bind( &UploadedImgDisplay::handleResizedImageForLlm, this,
-                      boost::placeholders::_1, boost::placeholders::_2,
-                      boost::placeholders::_3, boost::placeholders::_4 ) );
+        m_resizedImageForLlmSignal.connect( this, [this]( std::string b64, std::string mime,
+                                                          int w, int h ){
+          handleResizedImageForLlm( std::move(b64), std::move(mime), w, h );
+        } );
 
-        WPushButton *sendToLlmBtn = new WPushButton( WString::tr("uid-send-to-llm-btn"), btn_div );
+        WPushButton *sendToLlmBtn = btn_div->addNew<WPushButton>( WString::tr("uid-send-to-llm-btn") );
         sendToLlmBtn->setStyleClass( "LinkBtn NonSpecSendToLlmBtn" );
         sendToLlmBtn->clicked().connect( this, &UploadedImgDisplay::sendToLlm );
       }
@@ -4791,7 +4790,7 @@ void SpecMeasManager::showBatchDialogForFile( std::shared_ptr<SpecMeas> meas )
 {
   if( !m_batchDialog )
   {
-    m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop, true );
+    m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop.get(), true );
     m_batchDialog->finished().connect( this, &SpecMeasManager::handleBatchDialogFinished );
 
     // The link that gets us here is only offered for files with several foreground records, which

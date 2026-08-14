@@ -184,7 +184,7 @@ struct LowerChanCalOriginal
 class EnergyCalTool : public Wt::WContainerWidget
 {
 public:
-  EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, Wt::WContainerWidget *parent = nullptr );
+  EnergyCalTool( InterSpec *viewer, std::shared_ptr<PeakModel> peakModel );
   virtual ~EnergyCalTool();
   
   void setWideLayout();
@@ -330,7 +330,7 @@ public:
   
   /** Returns the pointer to the CALp resource (derived from Wt::WResource) that can be used to export CALp files.
    */
-  EnergyCalImp::CALpDownloadResource *calpResources();
+  std::shared_ptr<EnergyCalImp::CALpDownloadResource> calpResources();
 
   /** Makes a dialog the user can then use to upload a CALp file */
   void handleRequestToUploadCALp();
@@ -426,9 +426,9 @@ protected:
   Wt::WFlags<EnergyCalToolRenderFlags> m_renderFlags;
   
   InterSpec *m_interspec;
-  PeakModel *m_peakModel;
+  std::shared_ptr<PeakModel> m_peakModel;
   
-  EnergyCalImp::CALpDownloadResource *m_calpResource;
+  std::shared_ptr<EnergyCalImp::CALpDownloadResource> m_calpResource;
   
   WContainerWidget *m_tallLayoutContent;
   
@@ -487,7 +487,7 @@ protected:
   time_t m_lastGraphicalRecal;  // \TODO: switch this to std::chrono::timepoint
   int m_lastGraphicalRecalType;
   float m_lastGraphicalRecalEnergy;
-  EnergyCalGraphicalConfirm *m_graphicalRecal;
+  Wt::Core::observing_ptr<EnergyCalGraphicalConfirm> m_graphicalRecal;
   
   std::shared_ptr<SpecMeas> m_currentSpecMeas[3];
   std::set<int> m_currentSampleNumbers[3];

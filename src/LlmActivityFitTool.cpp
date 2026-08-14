@@ -591,7 +591,7 @@ nlohmann::json executeCloseActivityShieldingDisplay(
   if( num_ms_delay > 0 )
   {
     const string sessionid = Wt::WApplication::instance()->sessionId();
-    Wt::WServer::instance()->schedule( 2000, sessionid, [](){
+    Wt::WServer::instance()->schedule( std::chrono::milliseconds(2000), sessionid, [](){
       Wt::WApplication *app = Wt::WApplication::instance();
       InterSpec *viewer = InterSpec::instance();
       assert( app && viewer );
@@ -634,26 +634,29 @@ nlohmann::json executeAskUserQuestion(
   json result;
 
   // Create a modal dialog
-  Wt::WDialog *dialog = new Wt::WDialog( "Question from Analysis Agent" );
+  // Wt4 has no owner-taking WDialog ctor; hold it locally so it is destroyed when this function
+  //  returns (exec() blocks until the user is done, so the scope outlives the dialog's use).
+  auto dialogOwned = std::make_unique<Wt::WDialog>( "Question from Analysis Agent" );
+  Wt::WDialog * const dialog = dialogOwned.get();
   dialog->setModal( true );
   dialog->rejectWhenEscapePressed( false );
 
   // Add question text
-  new Wt::WText( question, dialog->contents() );
-  dialog->contents()->addWidget( new Wt::WBreak() );
-  dialog->contents()->addWidget( new Wt::WBreak() );
+  dialog->contents()->addNew<Wt::WText>( question );
+  dialog->contents()->addNew<Wt::WBreak>();
+  dialog->contents()->addNew<Wt::WBreak>();
 
   // Add text area for response
-  Wt::WTextArea *response_area = new Wt::WTextArea( dialog->contents() );
+  Wt::WTextArea *response_area = dialog->contents()->addNew<Wt::WTextArea>();
   response_area->setColumns( 60 );
   response_area->setRows( 5 );
   if( !default_response.empty() )
     response_area->setText( default_response );
 
-  dialog->contents()->addWidget( new Wt::WBreak() );
+  dialog->contents()->addNew<Wt::WBreak>();
 
   // Add submit button
-  Wt::WPushButton *submit_btn = new Wt::WPushButton( "Submit", dialog->contents() );
+  Wt::WPushButton *submit_btn = dialog->contents()->addNew<Wt::WPushButton>( "Submit" );
   submit_btn->setDefault( true );
 
   // Result will be stored here
@@ -704,7 +707,7 @@ nlohmann::json executeMarkPeaksForActivityFit(
     spec_type = SpecUtils::SpectrumType::SecondForeground;
 
   // Get the PeakModel - this is the correct way to modify peaks
-  PeakModel *peakModel = interspec->peakModel();
+  const std::shared_ptr<PeakModel> peakModel = interspec->peakModel();
   if( !peakModel )
     throw runtime_error( "PeakModel not available" );
 
@@ -1061,7 +1064,7 @@ nlohmann::json executeGetShieldingSourceConfig(
   }
 
   // Get peaks from InterSpec for progeny counting
-  PeakModel *peakModel = interspec->peakModel();
+  const std::shared_ptr<PeakModel> peakModel = interspec->peakModel();
   const std::deque<std::shared_ptr<const PeakDef>> *peaks = nullptr;
   std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks_ptr;
   if( peakModel )
@@ -1114,7 +1117,7 @@ nlohmann::json executeGetShieldingSourceConfig(
       throw runtime_error( "Failed to parse configuration from XML" );
 
     // Get peaks from InterSpec for progeny counting
-    PeakModel *peakModel = interspec->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = interspec->peakModel();
     const std::deque<std::shared_ptr<const PeakDef>> *peaks = nullptr;
     std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks_ptr;
     if( peakModel )
@@ -1434,7 +1437,7 @@ nlohmann::json executeModifyShieldingSourceConfig(
     modified_config.sources.push_back( source );
 
     // Mark all peaks with this nuclide to be used for fitting
-    PeakModel *peakModel = interspec->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = interspec->peakModel();
     if( !peakModel )
       throw runtime_error( "No currently active peak model - this is really not expected" );
     
@@ -1495,7 +1498,7 @@ nlohmann::json executeModifyShieldingSourceConfig(
     modified_config.sources.erase( it );
 
     // Unmark all peaks with this nuclide from being used for fitting
-    PeakModel *peakModel = interspec->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = interspec->peakModel();
     if( peakModel )
     {
       std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> peaks = peakModel->peaks();
@@ -2030,7 +2033,7 @@ nlohmann::json executeModifyShieldingSourceConfig(
   state.config = std::make_shared<const GammaInteractionCalc::ShieldSourceConfig>( modified_config );
 
   // Deserialize the modified state back to the GUI
-  display->deSerialize( state, 0 );
+  display->deSerialize( state, Wt::WFlags<ShieldingSourceDisplay::DeserializeOptions>{} );
 
   // Save to SpecMeas
   interspec->saveShieldingSourceModelToForegroundSpecMeas();

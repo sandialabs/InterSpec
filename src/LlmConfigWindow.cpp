@@ -52,6 +52,8 @@
 
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/HelpSystem.h"
+#include "InterSpec/UserPreferences.h"
 #include "InterSpec/LlmConfig.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/LlmInterface.h"
@@ -317,15 +319,17 @@ void LlmConfigWindow::seedWorkingCopy()
 
 void LlmConfigWindow::buildUi()
 {
+  const bool showToolTips = m_interspec
+         ? UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec ) : true;
   WContainerWidget *body = contents();
   body->addStyleClass( "LlmConfigBody" );
-  body->setOverflow( WContainerWidget::OverflowAuto, Wt::Vertical );
+  body->setOverflow( Overflow::Auto, Wt::Orientation::Vertical );
 
   // --- Enable LLM row ---
-  WContainerWidget *enableRow = new WContainerWidget( body );
+  WContainerWidget *enableRow = body->addNew<WContainerWidget>();
   enableRow->addStyleClass( "LcwCard LcwEnableRow" );
 
-  m_enableLlm = new WCheckBox( WString(), enableRow );
+  m_enableLlm = enableRow->addNew<WCheckBox>( WString() );
   m_enableLlm->addStyleClass( "LcwCheck" );
   m_enableLlm->setChecked( m_working.llmApi.enabled );
   m_enableLlm->changed().connect( std::bind( [this](){
@@ -334,69 +338,69 @@ void LlmConfigWindow::buildUi()
     refreshPreview();
   } ) );
 
-  WContainerWidget *enableText = new WContainerWidget( enableRow );
+  WContainerWidget *enableText = enableRow->addNew<WContainerWidget>();
   enableText->addStyleClass( "LcwLabelStack" );
-  WText *enTitle = new WText( WString::tr("lcw-enable-llm"), enableText );
+  WText *enTitle = enableText->addNew<WText>( WString::tr("lcw-enable-llm") );
   enTitle->addStyleClass( "LcwTitle" );
-  WText *enSub = new WText( WString::tr("lcw-enable-llm-sub"), enableText );
+  WText *enSub = enableText->addNew<WText>( WString::tr("lcw-enable-llm-sub") );
   enSub->addStyleClass( "LcwSubtle" );
 
-  m_activeSummary = new WText( enableRow );
+  m_activeSummary = enableRow->addNew<WText>();
   m_activeSummary->addStyleClass( "LcwActiveSummary" );
 
   // --- Providers header ---
-  WContainerWidget *provHeader = new WContainerWidget( body );
+  WContainerWidget *provHeader = body->addNew<WContainerWidget>();
   provHeader->addStyleClass( "LcwSectionHeader" );
-  WText *provLbl = new WText( WString::tr("lcw-providers"), provHeader );
+  WText *provLbl = provHeader->addNew<WText>( WString::tr("lcw-providers") );
   provLbl->addStyleClass( "LcwSectionLabel" );
-  WPushButton *addProv = new WPushButton( WString::tr("lcw-add-provider"), provHeader );
+  WPushButton *addProv = provHeader->addNew<WPushButton>( WString::tr("lcw-add-provider") );
   addProv->addStyleClass( "LinkBtn" );  // app-standard link-style button (flat, no hover chrome)
   addProv->clicked().connect( this, &LlmConfigWindow::addProvider );
 
   // --- Providers list (recreated by rebuildProviders) ---
-  m_providersArea = new WContainerWidget( body );
+  m_providersArea = body->addNew<WContainerWidget>();
   m_providersArea->addStyleClass( "LcwProviders" );
 
   // --- MCP card ---
-  WContainerWidget *mcpCard = new WContainerWidget( body );
+  WContainerWidget *mcpCard = body->addNew<WContainerWidget>();
   mcpCard->addStyleClass( "LcwCard LcwMcpCard" );
 
-  WContainerWidget *mcpTop = new WContainerWidget( mcpCard );
+  WContainerWidget *mcpTop = mcpCard->addNew<WContainerWidget>();
   mcpTop->addStyleClass( "LcwEnableRow" );
-  m_mcpEnable = new WCheckBox( WString(), mcpTop );
+  m_mcpEnable = mcpTop->addNew<WCheckBox>( WString() );
   m_mcpEnable->addStyleClass( "LcwCheck" );
   m_mcpEnable->setChecked( m_working.mcpServer.enabled );
-  WContainerWidget *mcpText = new WContainerWidget( mcpTop );
+  WContainerWidget *mcpText = mcpTop->addNew<WContainerWidget>();
   mcpText->addStyleClass( "LcwLabelStack" );
-  WText *mcpTitle = new WText( WString::tr("lcw-mcp-server"), mcpText );
+  WText *mcpTitle = mcpText->addNew<WText>( WString::tr("lcw-mcp-server") );
   mcpTitle->addStyleClass( "LcwTitle" );
-  WText *mcpSub = new WText( WString::tr("lcw-mcp-sub"), mcpText );
+  WText *mcpSub = mcpText->addNew<WText>( WString::tr("lcw-mcp-sub") );
   mcpSub->addStyleClass( "LcwSubtle" );
 
-  m_mcpDetail = new WContainerWidget( mcpCard );
+  m_mcpDetail = mcpCard->addNew<WContainerWidget>();
   m_mcpDetail->addStyleClass( "LcwMcpDetail" );
 
 #if( MCP_ENABLE_AUTH )
-  WLabel *mcpTokLbl = new WLabel( WString::tr("lcw-mcp-token"), m_mcpDetail );
+  WLabel *mcpTokLbl = m_mcpDetail->addNew<WLabel>( WString::tr("lcw-mcp-token") );
   mcpTokLbl->addStyleClass( "LcwFieldLabel" );
-  WContainerWidget *mcpTokRow = new WContainerWidget( m_mcpDetail );
+  WContainerWidget *mcpTokRow = m_mcpDetail->addNew<WContainerWidget>();
   mcpTokRow->addStyleClass( "LcwTokenRow" );
-  m_mcpToken = new WLineEdit( mcpTokRow );
+  m_mcpToken = mcpTokRow->addNew<WLineEdit>();
   m_mcpToken->addStyleClass( "LcwInput LcwMono" );
-  m_mcpToken->setEchoMode( WLineEdit::Password );
+  m_mcpToken->setEchoMode( EchoMode::Password );
   m_mcpToken->setText( WString::fromUTF8( m_working.mcpServer.bearerToken ) );
   m_mcpToken->changed().connect( std::bind( [this](){
     m_working.mcpServer.bearerToken = m_mcpToken->text().toUTF8();
     updateValidation();
     refreshPreview();
   } ) );
-  m_mcpTokenShow = new WPushButton( WString::tr("lcw-show"), mcpTokRow );
+  m_mcpTokenShow = mcpTokRow->addNew<WPushButton>( WString::tr("lcw-show") );
   m_mcpTokenShow->clicked().connect( std::bind( [this](){
-    const bool reveal = (m_mcpToken->echoMode() == WLineEdit::Password);
-    m_mcpToken->setEchoMode( reveal ? WLineEdit::Normal : WLineEdit::Password );
+    const bool reveal = (m_mcpToken->echoMode() == EchoMode::Password);
+    m_mcpToken->setEchoMode( reveal ? EchoMode::Normal : EchoMode::Password );
     m_mcpTokenShow->setText( reveal ? WString::tr("lcw-hide") : WString::tr("lcw-show") );
   } ) );
-  m_mcpTokenWarn = new WText( WString::tr("lcw-mcp-token-invalid"), m_mcpDetail );
+  m_mcpTokenWarn = m_mcpDetail->addNew<WText>( WString::tr("lcw-mcp-token-invalid") );
   m_mcpTokenWarn->addStyleClass( "LcwError" );
 #endif
 
@@ -414,26 +418,26 @@ void LlmConfigWindow::buildUi()
   //  uses the system proxy and trust store, and we could not override those if we wanted to.
   //  Collapsed behind a checkbox because the overwhelming majority of users must never touch it -
   //  the defaults are "whatever this machine is configured to do", which is nearly always right.
-  WContainerWidget *netCard = new WContainerWidget( body );
+  WContainerWidget *netCard = body->addNew<WContainerWidget>();
   netCard->addStyleClass( "LcwCard LcwMcpCard" );
 
-  WContainerWidget *netTop = new WContainerWidget( netCard );
+  WContainerWidget *netTop = netCard->addNew<WContainerWidget>();
   netTop->addStyleClass( "LcwEnableRow" );
-  m_netOverride = new WCheckBox( WString(), netTop );
+  m_netOverride = netTop->addNew<WCheckBox>( WString() );
   m_netOverride->addStyleClass( "LcwCheck" );
-  WContainerWidget *netText = new WContainerWidget( netTop );
+  WContainerWidget *netText = netTop->addNew<WContainerWidget>();
   netText->addStyleClass( "LcwLabelStack" );
-  WText *netTitle = new WText( WString::tr("lcw-net-title"), netText );
+  WText *netTitle = netText->addNew<WText>( WString::tr("lcw-net-title") );
   netTitle->addStyleClass( "LcwTitle" );
-  WText *netSub = new WText( WString::tr("lcw-net-sub"), netText );
+  WText *netSub = netText->addNew<WText>( WString::tr("lcw-net-sub") );
   netSub->addStyleClass( "LcwSubtle" );
 
-  m_netDetail = new WContainerWidget( netCard );
+  m_netDetail = netCard->addNew<WContainerWidget>();
   m_netDetail->addStyleClass( "LcwMcpDetail" );
 
-  WLabel *proxyLbl = new WLabel( WString::tr("lcw-net-proxy"), m_netDetail );
+  WLabel *proxyLbl = m_netDetail->addNew<WLabel>( WString::tr("lcw-net-proxy") );
   proxyLbl->addStyleClass( "LcwFieldLabel" );
-  m_netProxy = new WLineEdit( m_netDetail );
+  m_netProxy = m_netDetail->addNew<WLineEdit>();
   m_netProxy->addStyleClass( "LcwInput LcwMono" );
   m_netProxy->setEmptyText( WString::tr("lcw-net-proxy-ph") );
   m_netProxy->setText( WString::fromUTF8( m_working.llmApi.httpProxyUrl ) );
@@ -444,13 +448,13 @@ void LlmConfigWindow::buildUi()
   //  keystroke, so disable it and say why.
   if( NativeHttp::supportsProxyOverride() )
   {
-    m_netProxy->setToolTip( WString::tr("lcw-net-proxy-tip"), Wt::XHTMLText );
+    HelpSystem::attachToolTipOn( m_netProxy, WString::tr("lcw-net-proxy-tip"), showToolTips );
   }else
   {
     m_netProxy->setEnabled( false );
     m_netProxy->setEmptyText( WString::tr("lcw-net-proxy-unsupported-ph") );
-    m_netProxy->setToolTip( WString::tr("lcw-net-proxy-unsupported")
-                              .arg( WString::fromUTF8(NativeHttp::backendName()) ), Wt::XHTMLText );
+    HelpSystem::attachToolTipOn( m_netProxy, WString::tr("lcw-net-proxy-unsupported")
+                              .arg( WString::fromUTF8(NativeHttp::backendName()) ), Wt::TextFormat::XHTML );
   }
 
   m_netProxy->changed().connect( std::bind( [this](){
@@ -459,24 +463,24 @@ void LlmConfigWindow::buildUi()
     refreshPreview();
   } ) );
 
-  WLabel *caLbl = new WLabel( WString::tr("lcw-net-ca"), m_netDetail );
+  WLabel *caLbl = m_netDetail->addNew<WLabel>( WString::tr("lcw-net-ca") );
   caLbl->addStyleClass( "LcwFieldLabel" );
-  m_netCaBundle = new WLineEdit( m_netDetail );
+  m_netCaBundle = m_netDetail->addNew<WLineEdit>();
   m_netCaBundle->addStyleClass( "LcwInput LcwMono" );
   m_netCaBundle->setEmptyText( WString::tr("lcw-net-ca-ph") );
   m_netCaBundle->setText( WString::fromUTF8( m_working.llmApi.httpCaBundlePath ) );
-  m_netCaBundle->setToolTip( WString::tr("lcw-net-ca-tip"), Wt::XHTMLText );
+  HelpSystem::attachToolTipOn( m_netCaBundle, WString::tr("lcw-net-ca-tip"), showToolTips );
   m_netCaBundle->changed().connect( std::bind( [this](){
     m_working.llmApi.httpCaBundlePath = m_netCaBundle->text().toUTF8();
     updateValidation();
     refreshPreview();
   } ) );
 
-  m_netNoVerify = new WCheckBox( WString::tr("lcw-net-noverify"), m_netDetail );
+  m_netNoVerify = m_netDetail->addNew<WCheckBox>( WString::tr("lcw-net-noverify") );
   m_netNoVerify->addStyleClass( "LcwCheck" );
   m_netNoVerify->setChecked( m_working.llmApi.httpDisableCertCheck );
-  m_netNoVerify->setToolTip( WString::tr("lcw-net-noverify-tip"), Wt::XHTMLText );
-  m_netNoVerifyWarn = new WText( WString::tr("lcw-net-noverify-warn"), m_netDetail );
+  HelpSystem::attachToolTipOn( m_netNoVerify, WString::tr("lcw-net-noverify-tip"), showToolTips );
+  m_netNoVerifyWarn = m_netDetail->addNew<WText>( WString::tr("lcw-net-noverify-warn") );
   m_netNoVerifyWarn->addStyleClass( "LcwError" );
   m_netNoVerifyWarn->setHidden( !m_working.llmApi.httpDisableCertCheck );
 
@@ -515,33 +519,36 @@ void LlmConfigWindow::buildUi()
 #endif //USE_NATIVE_HTTP_CLIENT
 
   // --- XML preview (hidden until toggled) ---
-  m_previewContainer = new WContainerWidget( body );
+  m_previewContainer = body->addNew<WContainerWidget>();
   m_previewContainer->addStyleClass( "LcwXmlPreview" );
-  m_previewPre = new WText( m_previewContainer );
-  m_previewPre->setTextFormat( Wt::PlainText );
+  m_previewPre = m_previewContainer->addNew<WText>();
+  m_previewPre->setTextFormat( Wt::TextFormat::Plain );
   m_previewPre->addStyleClass( "LcwXmlPre" );
   m_previewContainer->setHidden( true );
 
   // --- Footer ---
   WContainerWidget *foot = footer();
 
-  WContainerWidget *footLeft = new WContainerWidget( foot );
+  WContainerWidget *footLeft = foot->addNew<WContainerWidget>();
   footLeft->addStyleClass( "LcwFooterLeft" );
-  m_validationSummary = new WText( footLeft );
+  m_validationSummary = footLeft->addNew<WText>();
   m_validationSummary->addStyleClass( "LcwValidation" );
-  m_previewToggle = new WPushButton( WString::tr("lcw-preview-xml"), footLeft );
+  m_previewToggle = footLeft->addNew<WPushButton>( WString::tr("lcw-preview-xml") );
   m_previewToggle->addStyleClass( "LinkBtn" );
   m_previewToggle->clicked().connect( this, &LlmConfigWindow::togglePreviewXml );
 
-  m_acceptBtn = new WPushButton( WString::tr("lcw-accept"), foot );
+  m_acceptBtn = foot->addNew<WPushButton>( WString::tr("lcw-accept") );
   m_acceptBtn->clicked().connect( this, &LlmConfigWindow::handleAccept );
 
-  WPushButton *cancelBtn = new WPushButton( WString::tr("lcw-cancel"), foot );
+  WPushButton *cancelBtn = foot->addNew<WPushButton>( WString::tr("lcw-cancel") );
   cancelBtn->clicked().connect( this, &AuxWindow::hide );
 
   if( m_writableDir.empty() )
   {
     m_acceptBtn->disable();
+    // Deliberately NOT HelpSystem::attachToolTipOn: this is dynamic status ("why is Save
+    //  disabled"), re-set and cleared as validation changes, and must not be suppressible by the
+    //  user's ShowTooltips preference.
     m_acceptBtn->setToolTip( WString::tr("lcw-save-unavailable") );
   }
 }//buildUi()
@@ -565,18 +572,20 @@ void LlmConfigWindow::rebuildProviders()
 
 void LlmConfigWindow::buildProviderCard( const size_t pi )
 {
+  const bool showToolTips = m_interspec
+         ? UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec ) : true;
   const ApiProvider &prov = m_working.llmApi.providers[pi];
   ProviderUiState &ui = m_uiState[pi];
   const ApiFormat fmt = resolvedFormat( pi );
   const bool isActive = (pi == m_working.llmApi.activeProviderIndex);
 
-  WContainerWidget *card = new WContainerWidget( m_providersArea );
+  WContainerWidget *card = m_providersArea->addNew<WContainerWidget>();
   card->addStyleClass( "LcwProviderCard" );
   if( isActive )
     card->addStyleClass( "LcwActive" );
 
   // ---- Header (click to expand) ----
-  WContainerWidget *header = new WContainerWidget( card );
+  WContainerWidget *header = card->addNew<WContainerWidget>();
   header->addStyleClass( "LcwProviderHeader" );
   header->clicked().connect( std::bind( [this,pi](){
     if( pi < m_uiState.size() )
@@ -584,14 +593,14 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
     rebuildProviders();
   } ) );
 
-  WText *chev = new WText( ui.expanded ? "\xE2\x96\xBC" : "\xE2\x96\xB6", header ); // ▼ / ▶
+  WText *chev = header->addNew<WText>( ui.expanded ? "\xE2\x96\xBC" : "\xE2\x96\xB6" ); // ▼ / ▶
   chev->addStyleClass( "LcwChevron" );
 
-  WContainerWidget *titleStack = new WContainerWidget( header );
+  WContainerWidget *titleStack = header->addNew<WContainerWidget>();
   titleStack->addStyleClass( "LcwProviderTitleStack" );
   const string host = host_from_url( prov.apiEndpoint );
-  WText *hostLbl = new WText( host.empty() ? WString::tr("lcw-new-provider")
-                                           : WString::fromUTF8(host), titleStack );
+  WText *hostLbl = titleStack->addNew<WText>( host.empty() ? WString::tr("lcw-new-provider")
+                                           : WString::fromUTF8(host) );
   hostLbl->addStyleClass( "LcwProviderHost" );
 
   const string activeModelName = (prov.activeModelIndex < prov.models.size())
@@ -601,21 +610,21 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
                   .arg( static_cast<int>(prov.models.size()) )
                   .arg( activeModelName.empty() ? WString::tr("lcw-active-none")
                                                 : WString::fromUTF8(activeModelName) );
-  WText *subLbl = new WText( sub, titleStack );
+  WText *subLbl = titleStack->addNew<WText>( sub );
   subLbl->addStyleClass( "LcwProviderSub" );
 
   // Active checkbox (exclusive across providers).  Stop the header's expand-click from also firing.
-  WContainerWidget *activeWrap = new WContainerWidget( header );
+  WContainerWidget *activeWrap = header->addNew<WContainerWidget>();
   activeWrap->addStyleClass( "LcwHeaderActive" );
   activeWrap->clicked().preventPropagation();
-  WCheckBox *activeCb = new WCheckBox( WString::tr("lcw-active-label"), activeWrap );
+  WCheckBox *activeCb = activeWrap->addNew<WCheckBox>( WString::tr("lcw-active-label") );
   activeCb->setChecked( isActive );
   activeCb->changed().connect( std::bind( [this,pi](){ setActiveProvider(pi); } ) );
 
-  WPushButton *removeBtn = new WPushButton( header );
+  WPushButton *removeBtn = header->addNew<WPushButton>();
   removeBtn->setStyleClass( "LcwRemoveIcon Wt-icon" );
   removeBtn->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
-  removeBtn->setToolTip( WString::tr("lcw-remove-provider") );
+  HelpSystem::attachToolTipOn( removeBtn, WString::tr("lcw-remove-provider"), showToolTips );
   removeBtn->clicked().preventPropagation();
   removeBtn->clicked().connect( std::bind( [this,pi](){ removeProvider(pi); } ) );
 
@@ -623,13 +632,13 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
     return;
 
   // ---- Body ----
-  WContainerWidget *bodyc = new WContainerWidget( card );
+  WContainerWidget *bodyc = card->addNew<WContainerWidget>();
   bodyc->addStyleClass( "LcwProviderBody" );
 
   // Endpoint
-  WLabel *epLbl = new WLabel( WString::tr("lcw-api-endpoint"), bodyc );
+  WLabel *epLbl = bodyc->addNew<WLabel>( WString::tr("lcw-api-endpoint") );
   epLbl->addStyleClass( "LcwFieldLabel" );
-  WLineEdit *epEdit = new WLineEdit( bodyc );
+  WLineEdit *epEdit = bodyc->addNew<WLineEdit>();
   epEdit->addStyleClass( "LcwInput" );
   epEdit->setText( WString::fromUTF8(prov.apiEndpoint) );
   epEdit->setPlaceholderText( WString::tr("lcw-endpoint-ph") );
@@ -644,20 +653,20 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
   } ) );
 
   // Wire format row
-  WContainerWidget *fmtRow = new WContainerWidget( bodyc );
+  WContainerWidget *fmtRow = bodyc->addNew<WContainerWidget>();
   fmtRow->addStyleClass( "LcwFormatRow" );
-  WText *fmtLblTxt = new WText( WString::tr("lcw-wire-format"), fmtRow );
+  WText *fmtLblTxt = fmtRow->addNew<WText>( WString::tr("lcw-wire-format") );
   fmtLblTxt->addStyleClass( "LcwFieldLabelInline" );
-  WText *fmtBadge = new WText( format_label(fmt), fmtRow );
+  WText *fmtBadge = fmtRow->addNew<WText>( format_label(fmt) );
   fmtBadge->addStyleClass( "LcwBadge" );
-  WText *fmtSrc = new WText( prov.apiFormat.has_value() ? WString::tr("lcw-fmt-source-manual")
-                                                        : WString::tr("lcw-fmt-source-auto"), fmtRow );
+  WText *fmtSrc = fmtRow->addNew<WText>( prov.apiFormat.has_value() ? WString::tr("lcw-fmt-source-manual")
+                                                        : WString::tr("lcw-fmt-source-auto") );
   fmtSrc->addStyleClass( "LcwSubtle" );
 
-  WContainerWidget *ovrWrap = new WContainerWidget( fmtRow );
+  WContainerWidget *ovrWrap = fmtRow->addNew<WContainerWidget>();
   ovrWrap->addStyleClass( "LcwOverrideWrap" );
-  new WText( WString::tr("lcw-override"), ovrWrap );
-  WComboBox *ovr = new WComboBox( ovrWrap );
+  ovrWrap->addNew<WText>( WString::tr("lcw-override") );
+  WComboBox *ovr = ovrWrap->addNew<WComboBox>();
   ovr->addStyleClass( "LcwSelect" );
   ovr->addItem( WString::tr("lcw-fmt-auto") );             // 0 -> nullopt
   ovr->addItem( WString::tr("lcw-fmt-openai-chat") );      // 1 -> OpenAiChat
@@ -698,17 +707,17 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
   //  backend would actually be used, so the row stays quiet until someone needs it.
   const bool nativeUsable = NativeHttp::available();
 
-  WContainerWidget *corsRow = new WContainerWidget( bodyc );
+  WContainerWidget *corsRow = bodyc->addNew<WContainerWidget>();
   corsRow->addStyleClass( "LcwFormatRow" );
 
-  WCheckBox *corsCb = new WCheckBox( WString::tr("lcw-cors-fix"), corsRow );
+  WCheckBox *corsCb = corsRow->addNew<WCheckBox>( WString::tr("lcw-cors-fix") );
   corsCb->addStyleClass( "LcwCheck" );
   corsCb->setChecked( resolvedTransport(pi) == LlmConfig::LlmApi::HttpBackend::Native );
 
   if( nativeUsable )
   {
-    corsCb->setToolTip( WString::tr("lcw-cors-fix-tip")
-                          .arg( WString::fromUTF8(NativeHttp::backendName()) ), Wt::XHTMLText );
+    HelpSystem::attachToolTipOn( corsCb, WString::tr("lcw-cors-fix-tip")
+                          .arg( WString::fromUTF8(NativeHttp::backendName()) ), showToolTips );
   }else
   {
     // Compiled in, but not usable - a Wt built without SSL cannot do https at all.  Leave the
@@ -716,8 +725,8 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
     //  a config carrying httpBackend="native" must stay correctable from here.
     //  (When the option is compiled out entirely this whole row is absent, not disabled.)
     corsCb->setEnabled( corsCb->isChecked() );
-    corsCb->setToolTip( WString::tr("lcw-cors-fix-unavail")
-                          .arg( WString::fromUTF8(NativeHttp::backendName()) ), Wt::XHTMLText );
+    HelpSystem::attachToolTipOn( corsCb, WString::tr("lcw-cors-fix-unavail")
+                          .arg( WString::fromUTF8(NativeHttp::backendName()) ), showToolTips );
   }
 
   corsCb->changed().connect( std::bind( [this,pi,corsCb](){
@@ -745,13 +754,13 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
 #endif //USE_NATIVE_HTTP_CLIENT
 
   // Bearer token row
-  WLabel *tokLbl = new WLabel( WString::tr("lcw-bearer-token"), bodyc );
+  WLabel *tokLbl = bodyc->addNew<WLabel>( WString::tr("lcw-bearer-token") );
   tokLbl->addStyleClass( "LcwFieldLabel" );
-  WContainerWidget *tokRow = new WContainerWidget( bodyc );
+  WContainerWidget *tokRow = bodyc->addNew<WContainerWidget>();
   tokRow->addStyleClass( "LcwTokenRow" );
-  WLineEdit *tokEdit = new WLineEdit( tokRow );
+  WLineEdit *tokEdit = tokRow->addNew<WLineEdit>();
   tokEdit->addStyleClass( "LcwInput LcwMono" );
-  tokEdit->setEchoMode( ui.tokenRevealed ? WLineEdit::Normal : WLineEdit::Password );
+  tokEdit->setEchoMode( ui.tokenRevealed ? EchoMode::Normal : EchoMode::Password );
   tokEdit->setText( WString::fromUTF8(prov.bearerToken) );
   tokEdit->setPlaceholderText( WString::tr("lcw-token-ph") );
   tokEdit->changed().connect( std::bind( [this,pi,tokEdit](){
@@ -761,49 +770,49 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
     updateValidation();
     refreshPreview();
   } ) );
-  WPushButton *revealBtn = new WPushButton( ui.tokenRevealed ? WString::tr("lcw-hide")
-                                                             : WString::tr("lcw-show"), tokRow );
+  WPushButton *revealBtn = tokRow->addNew<WPushButton>( ui.tokenRevealed ? WString::tr("lcw-hide")
+                                                             : WString::tr("lcw-show") );
   revealBtn->clicked().connect( std::bind( [this,pi,tokEdit,revealBtn](){
     if( pi >= m_uiState.size() )
       return;
     m_uiState[pi].tokenRevealed = !m_uiState[pi].tokenRevealed;
-    tokEdit->setEchoMode( m_uiState[pi].tokenRevealed ? WLineEdit::Normal : WLineEdit::Password );
+    tokEdit->setEchoMode( m_uiState[pi].tokenRevealed ? EchoMode::Normal : EchoMode::Password );
     revealBtn->setText( m_uiState[pi].tokenRevealed ? WString::tr("lcw-hide") : WString::tr("lcw-show") );
   } ) );
-  WPushButton *fetchBtn = new WPushButton( ui.fetchInProgress ? WString::tr("lcw-fetching")
-                                                              : WString::tr("lcw-fetch-models"), tokRow );
+  WPushButton *fetchBtn = tokRow->addNew<WPushButton>( ui.fetchInProgress ? WString::tr("lcw-fetching")
+                                                              : WString::tr("lcw-fetch-models") );
   if( ui.fetchInProgress )
     fetchBtn->disable();
   fetchBtn->clicked().connect( std::bind( [this,pi](){ requestFetchModels(pi); } ) );
 
   if( isPlaceholderToken( prov.bearerToken ) )
   {
-    WText *tokWarn = new WText( WString::tr("lcw-token-warn"), bodyc );
+    WText *tokWarn = bodyc->addNew<WText>( WString::tr("lcw-token-warn") );
     tokWarn->addStyleClass( "LcwWarn" );
   }
   if( !ui.fetchStatusMsg.empty() )
   {
-    WText *fetchMsg = new WText( ui.fetchStatusMsg, bodyc );
+    WText *fetchMsg = bodyc->addNew<WText>( ui.fetchStatusMsg );
     fetchMsg->addStyleClass( ui.fetchOk ? "LcwFetchOk" : "LcwFetchErr" );
   }
 
   // Models subsection
-  WContainerWidget *modelsHeader = new WContainerWidget( bodyc );
+  WContainerWidget *modelsHeader = bodyc->addNew<WContainerWidget>();
   modelsHeader->addStyleClass( "LcwSectionHeader LcwModelsHeader" );
-  WText *modelsLbl = new WText( WString::tr("lcw-models")
-                                  .arg( static_cast<int>(prov.models.size()) ), modelsHeader );
+  WText *modelsLbl = modelsHeader->addNew<WText>( WString::tr("lcw-models")
+                                  .arg( static_cast<int>(prov.models.size()) ) );
   modelsLbl->addStyleClass( "LcwSectionLabel" );
-  WPushButton *addModelBtn = new WPushButton( WString::tr("lcw-add-model"), modelsHeader );
+  WPushButton *addModelBtn = modelsHeader->addNew<WPushButton>( WString::tr("lcw-add-model") );
   addModelBtn->addStyleClass( "LinkBtn" );
   addModelBtn->clicked().connect( std::bind( [this,pi](){ addModel(pi); } ) );
 
   if( prov.models.empty() )
   {
-    WText *noModels = new WText( WString::tr("lcw-no-models"), bodyc );
+    WText *noModels = bodyc->addNew<WText>( WString::tr("lcw-no-models") );
     noModels->addStyleClass( "LcwNoModels" );
   }else
   {
-    WContainerWidget *modelsList = new WContainerWidget( bodyc );
+    WContainerWidget *modelsList = bodyc->addNew<WContainerWidget>();
     modelsList->addStyleClass( "LcwModelsList" );
     for( size_t mi = 0; mi < prov.models.size(); ++mi )
       buildModelEditor( modelsList, pi, mi );
@@ -813,32 +822,34 @@ void LlmConfigWindow::buildProviderCard( const size_t pi )
 
 void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t pi, const size_t mi )
 {
+  const bool showToolTips = m_interspec
+         ? UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec ) : true;
   const ApiProvider &prov = m_working.llmApi.providers[pi];
   const ModelInfo &m = prov.models[mi];
   const ProviderUiState &ui = m_uiState[pi];
   const ApiFormat fmt = resolvedFormat( pi );
   const bool isActive = (mi == prov.activeModelIndex);
 
-  WContainerWidget *card = new WContainerWidget( parent );
+  WContainerWidget *card = parent->addNew<WContainerWidget>();
   card->addStyleClass( "LcwModelCard" );
   if( isActive )
     card->addStyleClass( "LcwActive" );
 
   // Row 1: active + name + remove
-  WContainerWidget *row1 = new WContainerWidget( card );
+  WContainerWidget *row1 = card->addNew<WContainerWidget>();
   row1->addStyleClass( "LcwModelRow1" );
 
-  WCheckBox *activeCb = new WCheckBox( WString::tr("lcw-active-label"), row1 );
+  WCheckBox *activeCb = row1->addNew<WCheckBox>( WString::tr("lcw-active-label") );
   activeCb->setChecked( isActive );
   activeCb->changed().connect( std::bind( [this,pi,mi](){ setActiveModel(pi,mi); } ) );
 
-  WContainerWidget *nameWrap = new WContainerWidget( row1 );
+  WContainerWidget *nameWrap = row1->addNew<WContainerWidget>();
   nameWrap->addStyleClass( "LcwModelNameWrap" );
 
   // Quick-pick of fetched model ids (optional convenience), then the free-text name field.
   if( !ui.discoveredModelIds.empty() )
   {
-    WComboBox *pick = new WComboBox( nameWrap );
+    WComboBox *pick = nameWrap->addNew<WComboBox>();
     pick->addStyleClass( "LcwSelect" );
     pick->addItem( WString::tr("lcw-select-model") );
     for( const string &id : ui.discoveredModelIds )
@@ -859,7 +870,7 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
     } ) );
   }
 
-  WLineEdit *nameEdit = new WLineEdit( nameWrap );
+  WLineEdit *nameEdit = nameWrap->addNew<WLineEdit>();
   nameEdit->addStyleClass( "LcwInput LcwMono" );
   nameEdit->setText( WString::fromUTF8(m.name) );
   nameEdit->setPlaceholderText( WString::tr("lcw-model-name-ph") );
@@ -873,23 +884,23 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
     refreshPreview();
   } ) );
 
-  WPushButton *removeBtn = new WPushButton( row1 );
+  WPushButton *removeBtn = row1->addNew<WPushButton>();
   removeBtn->setStyleClass( "LcwRemoveIcon Wt-icon" );
   removeBtn->setIcon( "InterSpec_resources/images/minus_min_black.svg" );
-  removeBtn->setToolTip( WString::tr("lcw-remove-model") );
+  HelpSystem::attachToolTipOn( removeBtn, WString::tr("lcw-remove-model"), showToolTips );
   removeBtn->clicked().connect( std::bind( [this,pi,mi](){ removeModel(pi,mi); } ) );
 
   // Row 2: max tokens / context limit / temperature
-  WContainerWidget *grid = new WContainerWidget( card );
+  WContainerWidget *grid = card->addNew<WContainerWidget>();
   grid->addStyleClass( "LcwNumGrid" );
 
   auto makeNumField = [this,grid]( const WString &label, const WString &ph, const string &val,
                                    std::function<void(WLineEdit *)> onChange ) -> WLineEdit *
   {
-    WContainerWidget *cell = new WContainerWidget( grid );
+    WContainerWidget *cell = grid->addNew<WContainerWidget>();
     cell->addStyleClass( "LcwNumCell" );
-    new WText( label, cell );
-    WLineEdit *edit = new WLineEdit( cell );
+    cell->addNew<WText>( label );
+    WLineEdit *edit = cell->addNew<WLineEdit>();
     edit->addStyleClass( "LcwNumInput" );
     edit->setPlaceholderText( ph );
     edit->setText( WString::fromUTF8(val) );
@@ -943,10 +954,10 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
     } );
 
   // Row 3: supports images / force tool / reasoning / verbosity
-  WContainerWidget *row3 = new WContainerWidget( card );
+  WContainerWidget *row3 = card->addNew<WContainerWidget>();
   row3->addStyleClass( "LcwModelRow3" );
 
-  WCheckBox *imgCb = new WCheckBox( WString::tr("lcw-supports-images"), row3 );
+  WCheckBox *imgCb = row3->addNew<WCheckBox>( WString::tr("lcw-supports-images") );
   imgCb->setChecked( m.supportsImages );
   imgCb->changed().connect( std::bind( [this,pi,mi,imgCb](){
     if( pi < m_working.llmApi.providers.size() && mi < m_working.llmApi.providers[pi].models.size() )
@@ -956,9 +967,9 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
     }
   } ) );
 
-  WCheckBox *toolCb = new WCheckBox( WString::tr("lcw-force-tool"), row3 );
+  WCheckBox *toolCb = row3->addNew<WCheckBox>( WString::tr("lcw-force-tool") );
   toolCb->setChecked( m.requireToolInStateMachine );
-  toolCb->setToolTip( WString::tr("lcw-force-tool-tip") );
+  HelpSystem::attachToolTipOn( toolCb, WString::tr("lcw-force-tool-tip"), showToolTips );
   toolCb->changed().connect( std::bind( [this,pi,mi,toolCb](){
     if( pi < m_working.llmApi.providers.size() && mi < m_working.llmApi.providers[pi].models.size() )
     {
@@ -967,10 +978,10 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
     }
   } ) );
 
-  WContainerWidget *reasonWrap = new WContainerWidget( row3 );
+  WContainerWidget *reasonWrap = row3->addNew<WContainerWidget>();
   reasonWrap->addStyleClass( "LcwReasonWrap" );
-  new WText( WString::tr("lcw-reasoning"), reasonWrap );
-  WComboBox *reason = new WComboBox( reasonWrap );
+  reasonWrap->addNew<WText>( WString::tr("lcw-reasoning") );
+  WComboBox *reason = reasonWrap->addNew<WComboBox>();
   reason->addStyleClass( "LcwSelect" );
   reason->addItem( WString::tr("lcw-reasoning-off") );
   reason->addItem( WString::tr("lcw-reasoning-on") );
@@ -986,16 +997,16 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
     }
   } ) );
 
-  WContainerWidget *verbWrap = new WContainerWidget( row3 );
+  WContainerWidget *verbWrap = row3->addNew<WContainerWidget>();
   verbWrap->addStyleClass( "LcwReasonWrap" );
-  new WText( WString::tr("lcw-verbosity"), verbWrap );
-  WComboBox *verbosity = new WComboBox( verbWrap );
+  verbWrap->addNew<WText>( WString::tr("lcw-verbosity") );
+  WComboBox *verbosity = verbWrap->addNew<WComboBox>();
   verbosity->addStyleClass( "LcwSelect" );
   verbosity->addItem( WString::tr("lcw-verbosity-terse") );
   verbosity->addItem( WString::tr("lcw-verbosity-normal") );
   verbosity->addItem( WString::tr("lcw-verbosity-verbose") );
   verbosity->setCurrentIndex( verbosity_to_index( m.instructionVerbosity ) );
-  verbosity->setToolTip( WString::tr("lcw-verbosity-tip") );
+  HelpSystem::attachToolTipOn( verbosity, WString::tr("lcw-verbosity-tip"), showToolTips );
   verbosity->activated().connect( std::bind( [this,pi,mi,verbosity](){
     if( pi < m_working.llmApi.providers.size() && mi < m_working.llmApi.providers[pi].models.size() )
     {
@@ -1007,7 +1018,7 @@ void LlmConfigWindow::buildModelEditor( WContainerWidget *parent, const size_t p
   // Anthropic requires MaxTokens
   if( (fmt == ApiFormat::Anthropic) && (m.maxTokens <= 0) )
   {
-    WText *needMax = new WText( WString::tr("lcw-anthropic-needs-max"), card );
+    WText *needMax = card->addNew<WText>( WString::tr("lcw-anthropic-needs-max") );
     needMax->addStyleClass( "LcwError LcwModelError" );
   }
 }//buildModelEditor()
@@ -1265,7 +1276,7 @@ void LlmConfigWindow::installFetchJs()
     return;
   m_fetchJsInstalled = true;
 
-  const string emit = m_fetchModelsResult->createCall( "payload" );
+  const string emit = m_fetchModelsResult->createCall( {"payload"} );
 
   // `deliver` is guarded so the timeout and the (aborted) fetch can't both report a result.
   const string js =
@@ -1478,9 +1489,9 @@ void LlmConfigWindow::handleAccept()
     const string existing = SpecUtils::append_path( m_writableDir, "llm_config.xml" );
     if( SpecUtils::is_file(existing) )
     {
-      SimpleDialog *dialog = new SimpleDialog( WString::tr("lcw-overwrite-title") );
-      WText *txt = new WText( WString::tr("lcw-overwrite-msg"), dialog->contents() );
-      txt->setTextFormat( Wt::XHTMLText );
+      SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("lcw-overwrite-title") );
+      WText *txt = dialog->contents()->addNew<WText>( WString::tr("lcw-overwrite-msg") );
+      txt->setTextFormat( Wt::TextFormat::XHTML );
 
       WPushButton *ok = dialog->addButton( WString::tr("lcw-overwrite-confirm") );
       dialog->addButton( WString::tr("lcw-cancel") );  // just dismisses; settings window stays open
@@ -1521,12 +1532,12 @@ void LlmConfigWindow::handleAccept()
   }
 
   // Warn the user, offering: apply now, save the file without touching the running session, or cancel.
-  SimpleDialog *dialog = new SimpleDialog( WString::tr("lcw-apply-title") );
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("lcw-apply-title") );
   const WString msg = (change == LlmInterface::ConfigChange::FormatChanged)
                         ? WString::tr("lcw-apply-reset-msg")
                         : WString::tr("lcw-apply-keep-msg");
-  WText *txt = new WText( msg, dialog->contents() );
-  txt->setTextFormat( Wt::XHTMLText );
+  WText *txt = dialog->contents()->addNew<WText>( msg );
+  txt->setTextFormat( Wt::TextFormat::XHTML );
 
   WPushButton *cont = dialog->addButton( WString::tr("lcw-apply-continue") );
   WPushButton *fileOnly = dialog->addButton( WString::tr("lcw-apply-file-only") );
@@ -1541,8 +1552,8 @@ void LlmConfigWindow::doAccept( const bool applyToSession )
 {
   if( !saveConfig() )
   {
-    SimpleDialog *dialog = new SimpleDialog( WString::tr("lcw-save-failed-title") );
-    new WText( WString::tr("lcw-save-failed"), dialog->contents() );
+    SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr("lcw-save-failed-title") );
+    dialog->contents()->addNew<WText>( WString::tr("lcw-save-failed") );
     dialog->addButton( WString::tr("lcw-ok") );
     return;  // keep the settings window open so the user can retry
   }

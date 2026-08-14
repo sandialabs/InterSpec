@@ -43,6 +43,9 @@
 #include <Wt/WLineEdit.h>
 #include <Wt/WTableCell.h>
 #include <Wt/WPushButton.h>
+#include <Wt/WServer.h>
+#include <boost/asio/post.hpp>
+#include <Wt/WIOService.h>
 #include <Wt/WApplication.h>
 #include <Wt/WRegExpValidator.h>
 #include <Wt/WSuggestionPopup.h>
@@ -721,7 +724,7 @@ public:
     label->setBuddy( m_continuum );
     
     
-    label = new WLabel( WString::tr("dl-cont-norm-label"), leftColumn );
+    label = leftColumn->addNew<WLabel>( WString::tr("dl-cont-norm-label") );
     label->addStyleClass( "GridFirstCol GridSixthRow" );
     m_decon_cont_norm_method = leftColumn->addNew<WComboBox>();
     m_decon_cont_norm_method->addStyleClass( "GridSecondCol GridSixthRow" );
@@ -1309,9 +1312,9 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   m_displayDistance->hide();
   
   
-  m_confidenceLevelLabel = new WLabel( WString::tr("dl-conf-level-one-sided"), inputTable );
+  m_confidenceLevelLabel = inputTable->addNew<WLabel>( WString::tr("dl-conf-level-one-sided") );
   m_confidenceLevelLabel->addStyleClass( "GridSixthCol GridSecondRow GridVertCenter" );
-  m_confidenceLevel = new WComboBox( inputTable );
+  m_confidenceLevel = inputTable->addNew<WComboBox>();
   m_confidenceLevel->addStyleClass( "GridSeventhCol GridSecondRow GridVertCenter" );
   HelpSystem::attachToolTipOn( {m_confidenceLevelLabel, m_confidenceLevel},
                               WString::tr("dl-conf-level-tt"), showToolTips );
@@ -1343,9 +1346,9 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   //  measurement time.  Measurement model and limit type are tool-level rather than per-ROI: they
   //  are statements about the whole calculation, and mixing two measurement models inside one
   //  likelihood is not meaningful.
-  m_measurementModelLabel = new WLabel( WString::tr("dl-model-label"), inputTable );
+  m_measurementModelLabel = inputTable->addNew<WLabel>( WString::tr("dl-model-label") );
   m_measurementModelLabel->addStyleClass( "GridFirstCol GridFourthRow GridVertCenter" );
-  m_measurementModel = new WComboBox( inputTable );
+  m_measurementModel = inputTable->addNew<WComboBox>();
   m_measurementModel->addStyleClass( "GridSecondCol GridFourthRow GridVertCenter" );
   m_measurementModel->addItem( WString::tr("dl-model-current") );
   m_measurementModel->addItem( WString::tr("dl-model-backref") );
@@ -1356,9 +1359,9 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   HelpSystem::attachToolTipOn( {m_measurementModelLabel, m_measurementModel},
                               WString::tr("dl-model-tt"), showToolTips );
 
-  m_limitTypeLabel = new WLabel( WString::tr("dl-limittype-label"), inputTable );
+  m_limitTypeLabel = inputTable->addNew<WLabel>( WString::tr("dl-limittype-label") );
   m_limitTypeLabel->addStyleClass( "GridFourthCol GridFourthRow GridVertCenter" );
-  m_limitType = new WComboBox( inputTable );
+  m_limitType = inputTable->addNew<WComboBox>();
   m_limitType->addStyleClass( "GridFifthCol GridFourthRow GridVertCenter" );
   m_limitType->addItem( WString::tr("dl-limittype-upper") );
   m_limitType->addItem( WString::tr("dl-limittype-central") );
@@ -1373,22 +1376,22 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   //  displays per-ROI Currie limits alongside the deconvolution scan, and projecting one but not
   //  the other would put two different dwells side by side on one screen.  Asserting the spectrum
   //  is a background reference is exactly what makes the question well posed for both.
-  m_planTimeCb = new WCheckBox( WString::tr("dl-plan-time-cb"), inputTable );
+  m_planTimeCb = inputTable->addNew<WCheckBox>( WString::tr("dl-plan-time-cb") );
   m_planTimeCb->setWordWrap( false );
   m_planTimeCb->addStyleClass( "CbNoLineBreak GridSixthCol GridFourthRow GridVertCenter" );
   m_planTimeCb->checked().connect( this, &DetectionLimitTool::handlePlanTimeChanged );
   m_planTimeCb->unChecked().connect( this, &DetectionLimitTool::handlePlanTimeChanged );
 
-  m_planTimeDiv = new WContainerWidget( inputTable );
+  m_planTimeDiv = inputTable->addNew<WContainerWidget>();
   m_planTimeDiv->addStyleClass( "ScaleEntryDiv GridSeventhCol GridFourthRow GridVertCenter" );
 
-  m_planTimeEdit = new WLineEdit( m_planTimeDiv );
-  m_planTimeEdit->setEmptyText( WString::tr("dl-plan-time-empty-text") );
+  m_planTimeEdit = m_planTimeDiv->addNew<WLineEdit>();
+  m_planTimeEdit->setPlaceholderText( WString::tr("dl-plan-time-empty-text") );
   m_planTimeEdit->setDisabled( true );
   {
-    WRegExpValidator *planTimeValidator
-              = new WRegExpValidator( PhysicalUnitsLocalized::timeDurationRegex(), m_planTimeEdit );
-    planTimeValidator->setFlags( Wt::MatchCaseInsensitive );
+    auto planTimeValidator
+              = std::make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationRegex() );
+    planTimeValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
     m_planTimeEdit->setValidator( planTimeValidator );
   }
   m_planTimeEdit->changed().connect( this, &DetectionLimitTool::handlePlanTimeChanged );
@@ -1396,12 +1399,12 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   m_planTimeEdit->enterPressed().connect( this, &DetectionLimitTool::handlePlanTimeChanged );
 
   {
-    WImage *img = new WImage( m_planTimeDiv );
+    WImage *img = m_planTimeDiv->addNew<WImage>();
     img->setImageLink( Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
     img->resize( 16, 16 );
-    img->decorationStyle().setCursor( Wt::Cursor::WhatsThisCursor );
+    img->decorationStyle().setCursor( Wt::Cursor::WhatsThis );
     HelpSystem::attachToolTipOn( img, WString::tr("dl-plan-time-tt"), true,
-                                HelpSystem::ToolTipPrefOverride::InstantAlways );
+                                HelpSystem::ToolTipPrefOverride::AlwaysShow );
   }
 
   m_planTimeCb->hide();
@@ -1429,22 +1432,22 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   m_upperLimit->setInline( false );
   m_upperLimit->addStyleClass( "MdaResultTxt" );
 
-  m_bandTxt = new WText( "&nbsp;", m_results );
+  m_bandTxt = m_results->addNew<WText>( "&nbsp;" );
   m_bandTxt->setInline( false );
   m_bandTxt->addStyleClass( "MdaResultTxt" );
   m_bandTxt->hide();
   
-  m_errorMsg = new WText("&nbsp;", this );
+  m_errorMsg = this->addNew<WText>( "&nbsp;" );
   m_errorMsg->addStyleClass( "MdaErrMsg" );
   m_errorMsg->hide();
 
   // A warning qualifies a limit that was produced; an error means there is no limit.  They must
   //  not look the same, and must not share a widget - see the note on `m_warningMsg`.
-  m_warningMsg = new WText("&nbsp;", this );
+  m_warningMsg = this->addNew<WText>( "&nbsp;" );
   m_warningMsg->addStyleClass( "MdaWarnMsg" );
   m_warningMsg->hide();
   
-  m_fitFwhmBtn = new WPushButton( WString::tr("dlt-fit-fwhm-btn"), this );
+  m_fitFwhmBtn = this->addNew<WPushButton>( WString::tr("dlt-fit-fwhm-btn") );
   m_fitFwhmBtn->addStyleClass( "MdaFitFwhm LightButton" );
   m_fitFwhmBtn->clicked().connect( this, &DetectionLimitTool::handleFitFwhmRequested );
   m_fitFwhmBtn->hide();
@@ -4267,13 +4270,13 @@ void DetectionLimitTool::startBandCalculation()
   m_bandTxt->setText( WString::tr("dlt-estimating-spread") );
   m_bandTxt->show();
 
-  // `wApp->bind` is what makes these safe to call from the posted event: it ties the callback to
-  //  this widget's lifetime, so a tool closed while the calculation ran does not get called back
-  //  into a destroyed object.
-  auto gui_update_callback = app->bind( boost::bind( &DetectionLimitTool::updateBandFromCalc, this,
-                                                    result, cancel_calc, calc_number ) );
-  auto error_callback = app->bind( boost::bind( &DetectionLimitTool::handleBandCalcError, this,
-                                               error_msg, cancel_calc ) );
+  // Wt4 removed WApplication::bind().  Its replacement, `bindSafe`, is a captured
+  //  Wt::Core::observing_ptr, and `worker` below is copied to - and destroyed on - an ioService
+  //  thread; copying/destroying an observing_ptr off the session thread mutates the target's
+  //  unsynchronized observer list (see CLAUDE.md).  So only an inert widget id crosses the thread
+  //  boundary, and it is resolved back to the widget inside the session-thread continuation,
+  //  which yields nullptr if the tool was closed while the calculation ran.
+  const string widget_id = id();
 
   auto worker = [=](){
     try
@@ -4297,8 +4300,13 @@ void DetectionLimitTool::startBandCalculation()
           return;
         }
 
+        DetectionLimitTool * const tool
+              = dynamic_cast<DetectionLimitTool *>( inner_app->domRoot()->findById( widget_id ) );
+        if( !tool )
+          return;  //tool was closed while the calculation ran
+
         *result = answer;
-        gui_update_callback();
+        tool->updateBandFromCalc( result, cancel_calc, calc_number );
         inner_app->triggerUpdate();
       } );
     }catch( std::exception &e )
@@ -4314,8 +4322,13 @@ void DetectionLimitTool::startBandCalculation()
           return;
         }
 
+        DetectionLimitTool * const tool
+              = dynamic_cast<DetectionLimitTool *>( inner_app->domRoot()->findById( widget_id ) );
+        if( !tool )
+          return;  //tool was closed while the calculation ran
+
         *error_msg = msg;
-        error_callback();
+        tool->handleBandCalcError( error_msg, cancel_calc );
         inner_app->triggerUpdate();
       } );
     }//try / catch

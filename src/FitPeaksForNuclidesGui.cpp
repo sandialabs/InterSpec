@@ -93,7 +93,7 @@ namespace
   // The fit runs asynchronously, so the user may have edited/deleted peaks between launching the
   // fit and accepting the result; PeakModel::removePeaks throws on the first missing peak, which
   // would both leave the removal half-done and propagate an uncaught exception through the UI.
-  void remove_peaks_tolerantly( PeakModel *peak_model,
+  void remove_peaks_tolerantly( const std::shared_ptr<PeakModel> &peak_model,
                                 const std::vector<std::shared_ptr<const PeakDef>> &peaks )
   {
     if( !peak_model )
@@ -1629,28 +1629,6 @@ void FitPeaksAdvancedWidget::buildOptionsFromConfig()
     // Hide "Use Background" checkbox when fitting only background - background is required
     if( fitting_only_background )
       m_opt_use_background->setHidden( true );
-  }
-
-  {
-    auto roi_chi2 = std::make_unique<NativeFloatSpinBox>();
-    m_opt_roi_min_chi2 = roi_chi2.get();
-    roi_chi2->setWidth( WLength( 4, WLength::Unit::FontEm ) );
-    roi_chi2->setSpinnerHidden( true );
-    roi_chi2->setValue( static_cast<float>( config.roi_significance_min_chi2_reduction ) );
-    roi_chi2->setRange( 0.1f, 1000.f );
-    roi_chi2->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-    add_form_row( trOpt("fpn-opt-roi-min-chi2-red","fpn-opt-roi-min-chi2-red-phone"), roi_chi2.release(), WString::tr("fpn-opt-tt-roi-min-chi2-red") );
-  }
-
-  {
-    auto roi_sig = std::make_unique<NativeFloatSpinBox>();
-    m_opt_roi_min_peak_sig = roi_sig.get();
-    roi_sig->setWidth( WLength( 4, WLength::Unit::FontEm ) );
-    roi_sig->setSpinnerHidden( true );
-    roi_sig->setValue( static_cast<float>( config.roi_significance_min_peak_sig ) );
-    roi_sig->setRange( 0.1f, 20.f );
-    roi_sig->valueChanged().connect( this, &FitPeaksAdvancedWidget::scheduleOptionsUpdate );
-    add_form_row( trOpt("fpn-opt-roi-min-peak-sig","fpn-opt-roi-min-peak-sig-phone"), roi_sig.release(), WString::tr("fpn-opt-tt-roi-min-peak-sig") );
   }
 
   {

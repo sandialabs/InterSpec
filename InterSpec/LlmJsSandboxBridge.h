@@ -58,7 +58,7 @@ public:
   using AsyncCallback
     = std::function<void( std::variant<nlohmann::json, std::string> )>;
 
-  LlmJsSandboxBridge( Wt::WContainerWidget *parent = nullptr );
+  LlmJsSandboxBridge();
   ~LlmJsSandboxBridge();
 
   /** Run a sandboxed JavaScript snippet.

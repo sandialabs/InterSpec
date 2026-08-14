@@ -1616,7 +1616,7 @@ void LlmBenchmarkRunner::showResultsDialog()
   const string jsonStr = resultsJson.dump( 2 );
 
   // Show a summary dialog
-  SimpleDialog *dialog = new SimpleDialog( "LLM Benchmark Results" );
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "LLM Benchmark Results" );
 
   string summaryHtml = "<div style='font-family: monospace; font-size: 12px; overflow-y: auto; max-height: 75vh'>";
   summaryHtml += "<b>" + m_results.benchmarkName + "</b><br/>";
@@ -1690,13 +1690,13 @@ void LlmBenchmarkRunner::showResultsDialog()
 
   summaryHtml += "</table></div>";
 
-  new Wt::WText( summaryHtml, Wt::XHTMLUnsafeText, dialog->contents() );
+  dialog->contents()->addNew<Wt::WText>( summaryHtml, Wt::TextFormat::UnsafeXHTML );
 
   // Add a hidden textarea with the JSON for copy/save
-  Wt::WContainerWidget *jsonContainer = new Wt::WContainerWidget( dialog->contents() );
-  jsonContainer->setMargin( 8, Wt::Top );
+  Wt::WContainerWidget *jsonContainer = dialog->contents()->addNew<Wt::WContainerWidget>();
+  jsonContainer->setMargin( 8, Wt::Side::Top );
 
-  Wt::WPushButton *copyBtn = new Wt::WPushButton( "Copy JSON", dialog->footer() );
+  Wt::WPushButton *copyBtn = dialog->footer()->addNew<Wt::WPushButton>( "Copy JSON" );
   copyBtn->setStyleClass( "simple-dialog-btn" );
 
   // Use JavaScript to copy

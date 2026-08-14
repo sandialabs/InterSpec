@@ -36,6 +36,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <functional>
 
 #include <Wt/WSignal.h>
+#include <Wt/Core/observable.hpp>
 
 #include "SpecUtils/SpecFile.h"
 
@@ -169,7 +170,10 @@ struct BenchmarkResults
  The runner is owned by LlmToolGui and uses an async state-machine pattern
  driven by Wt signals — no new threads are needed.
  */
-class LlmBenchmarkRunner
+// Derives from Wt::Core::observable so Wt4's tracked `connect(target, &Class::method)` form
+//  works, and so connections are auto-disconnected on destruction - the safety net Wt3 got
+//  from boost::signals2 tracking.  The explicit disconnects in ~LlmBenchmarkRunner remain.
+class LlmBenchmarkRunner : public Wt::Core::observable
 {
 public:
   /** Construct a benchmark runner.
@@ -252,11 +256,11 @@ private:
   std::shared_ptr<LlmInterface> m_judgeInterface;
 
   // Signal connections we manage
-  boost::signals2::connection m_conversationFinishedConn;
-  boost::signals2::connection m_responseErrorConn;
-  boost::signals2::connection m_spectrumChangedConn;  // For sequence step spectrum loads
-  boost::signals2::connection m_judgeConversationFinishedConn;
-  boost::signals2::connection m_judgeResponseErrorConn;
+  Wt::Signals::connection m_conversationFinishedConn;
+  Wt::Signals::connection m_responseErrorConn;
+  Wt::Signals::connection m_spectrumChangedConn;  // For sequence step spectrum loads
+  Wt::Signals::connection m_judgeConversationFinishedConn;
+  Wt::Signals::connection m_judgeResponseErrorConn;
 
   Wt::Signal<> m_benchmarkFinished;
 

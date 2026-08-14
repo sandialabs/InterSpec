@@ -3886,7 +3886,7 @@ nlohmann::json ToolRegistry::executeLoadSpectrumFile( const nlohmann::json &para
   if( !hasPath )
   {
     // Unload the specified spectrum
-    interspec->setSpectrum( nullptr, std::set<int>{}, specType, 0 );
+    interspec->setSpectrum( nullptr, std::set<int>{}, specType, Wt::WFlags<InterSpec::SetSpectrumOptions>{} );
 
     json result;
     result["success"] = true;
@@ -4370,7 +4370,7 @@ nlohmann::json ToolRegistry::executeSetDisplayedTimeRanges( const nlohmann::json
     if( bgRangeStr.empty() || (bgRangeStr == "clear") )
     {
       // Clear background
-      interspec->setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, 0 );
+      interspec->setSpectrum( nullptr, {}, SpecUtils::SpectrumType::Background, Wt::WFlags<InterSpec::SetSpectrumOptions>{} );
       result["background"] = "cleared";
     }
     else
@@ -4388,7 +4388,7 @@ nlohmann::json ToolRegistry::executeSetDisplayedTimeRanges( const nlohmann::json
         throw runtime_error( "No samples found in the specified background time range(s): " + bgRangeStr );
 
       // Set background from the same foreground file
-      interspec->setSpectrum( fgMeas, bgSamples, SpecUtils::SpectrumType::Background, 0 );
+      interspec->setSpectrum( fgMeas, bgSamples, SpecUtils::SpectrumType::Background, Wt::WFlags<InterSpec::SetSpectrumOptions>{} );
       result["background"] = samplesToTimeRanges( bgSamples, timeMap );
       result["backgroundNumSamples"] = static_cast<int>( bgSamples.size() );
     }
@@ -4403,7 +4403,7 @@ nlohmann::json ToolRegistry::executeSetDisplayedTimeRanges( const nlohmann::json
     if( secRangeStr.empty() || (secRangeStr == "clear") )
     {
       // Clear secondary
-      interspec->setSpectrum( nullptr, {}, SpecUtils::SpectrumType::SecondForeground, 0 );
+      interspec->setSpectrum( nullptr, {}, SpecUtils::SpectrumType::SecondForeground, Wt::WFlags<InterSpec::SetSpectrumOptions>{} );
       result["secondary"] = "cleared";
     }
     else
@@ -4421,7 +4421,7 @@ nlohmann::json ToolRegistry::executeSetDisplayedTimeRanges( const nlohmann::json
         throw runtime_error( "No samples found in the specified secondary time range(s): " + secRangeStr );
 
       // Set secondary from the same foreground file
-      interspec->setSpectrum( fgMeas, secSamples, SpecUtils::SpectrumType::SecondForeground, 0 );
+      interspec->setSpectrum( fgMeas, secSamples, SpecUtils::SpectrumType::SecondForeground, Wt::WFlags<InterSpec::SetSpectrumOptions>{} );
       result["secondary"] = samplesToTimeRanges( secSamples, timeMap );
       result["secondaryNumSamples"] = static_cast<int>( secSamples.size() );
     }
@@ -8048,8 +8048,8 @@ nlohmann::json ToolRegistry::executeSearchSourcesByEnergy(nlohmann::json params,
       : IsotopeSearchByEnergyModel::Column::Distance;
 
   const Wt::SortOrder sort_order = (sort_by == "ProfileScore")
-                                     ? Wt::DescendingOrder  // Larger ProfileScore is better
-                                     : Wt::AscendingOrder;  // Smaller distance is better
+                                     ? Wt::SortOrder::Descending  // Larger ProfileScore is better
+                                     : Wt::SortOrder::Ascending;  // Smaller distance is better
 
   IsotopeSearchByEnergyModel::sortData( workingspace->matches, energies, sort_column, sort_order );
 
@@ -8395,7 +8395,7 @@ nlohmann::json ToolRegistry::executeCreatePeakCheckpoint( const nlohmann::json &
   checkpoint.m_checkpoint_name = checkpoint_name;
   checkpoint.m_creation_time = chrono::system_clock::now();
 
-  PeakModel * const peak_model = interspec->peakModel();
+  const std::shared_ptr<PeakModel> peak_model = interspec->peakModel();
   assert( peak_model );
   if( !peak_model )
     throw runtime_error( "No PeakModel available." );
@@ -8760,7 +8760,7 @@ json ToolRegistry::executeRestoreEnergyCalCheckpoint( const json& params,
     SpecUtils::SpectrumType::SecondForeground
   };
 
-  PeakModel * const peak_model = interspec->peakModel();
+  const std::shared_ptr<PeakModel> peak_model = interspec->peakModel();
   vector<string> restored_types;
 
   for( const SpecUtils::SpectrumType type : spec_types )
@@ -8945,7 +8945,7 @@ json ToolRegistry::executeFitEnergyCalibration( const json& params, InterSpec* i
   }
 
   // Look up analysis peaks for the spectrum type
-  PeakModel * const peak_model = interspec->peakModel();
+  const std::shared_ptr<PeakModel> peak_model = interspec->peakModel();
   if( !peak_model )
     throw runtime_error( "No PeakModel available." );
 
@@ -9411,7 +9411,7 @@ json ToolRegistry::executeFitEnergyCalibration( const json& params, InterSpec* i
       }
 
       // Reload the displayed peaks from the (now-updated) SpecMeas and redraw.
-      PeakModel * const pm = interspec->peakModel();
+      const std::shared_ptr<PeakModel> pm = interspec->peakModel();
       const SpectrumType refresh_types[] = { SpectrumType::Foreground, SpectrumType::Background,
                                              SpectrumType::SecondForeground };
       for( const SpectrumType t : refresh_types )

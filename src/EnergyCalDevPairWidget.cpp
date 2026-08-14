@@ -58,34 +58,34 @@ template<class T> struct index_compare_assend
 namespace EnergyCalImp
 {
 
-DevPair::DevPair( const bool show_fit_offset, Wt::WContainerWidget *parent )
-  : WContainerWidget( parent ),
-    m_energy( new NativeFloatSpinBox() ),
-    m_offset( new NativeFloatSpinBox() ),
+DevPair::DevPair( const bool show_fit_offset )
+  : WContainerWidget(),
+    m_energy( nullptr ),
+    m_offset( nullptr ),
     m_fitOffset( nullptr ),
-    m_delete( new WContainerWidget() )
+    m_delete( nullptr )
 {
-  WGridLayout* layout = new WGridLayout();
+  WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
   layout->setContentsMargins(0, 0, 0, 0);
   layout->setVerticalSpacing( 0 );
 
-  setLayout(layout);
   setStyleClass( "DevPair" );
 
   int col = 0;
-  layout->addWidget( m_energy, 0, col ); layout->setColumnStretch( col, 1 ); ++col;
-  layout->addWidget( m_offset, 0, col ); layout->setColumnStretch( col, 1 ); ++col;
+  m_energy = layout->addWidget( std::make_unique<NativeFloatSpinBox>(), 0, col );
+  layout->setColumnStretch( col, 1 ); ++col;
+  m_offset = layout->addWidget( std::make_unique<NativeFloatSpinBox>(), 0, col );
+  layout->setColumnStretch( col, 1 ); ++col;
 
   if( show_fit_offset )
   {
-    m_fitOffset = new WCheckBox( "Fit offset" );
+    m_fitOffset = layout->addWidget( std::make_unique<WCheckBox>( "Fit offset" ), 0, col );
     m_fitOffset->addStyleClass( "DevFitOffset CbNoLineBreak" );
-    layout->addWidget( m_fitOffset, 0, col );
     layout->setColumnStretch( col, 0 );
     ++col;
   }//if( show_fit_offset )
 
-  layout->addWidget( m_delete, 0, col );
+  m_delete = layout->addWidget( std::make_unique<WContainerWidget>(), 0, col );
   layout->setColumnStretch( col, 0 );
 
   m_energy->setStyleClass( "DevEnergy" );
@@ -148,25 +148,25 @@ void DevPair::visuallyIndicateChanged()
 }//void visuallyIndicateChanged();
 
 
-DeviationPairDisplay::DeviationPairDisplay( const bool show_fit_offsets, Wt::WContainerWidget *parent )
-  : WContainerWidget( parent ),
+DeviationPairDisplay::DeviationPairDisplay( const bool show_fit_offsets )
+  : WContainerWidget(),
     m_pairs( NULL ),
     m_show_fit_offsets( show_fit_offsets )
 {
   addStyleClass( "DevPairDisplay" );
-  WLabel *title = new WLabel( WString::tr("ect-deviation-pairs"), this );
+  WLabel *title = this->addNew<WLabel>( WString::tr("ect-deviation-pairs") );
   title->setStyleClass( "Wt-itemview Wt-header Wt-label DevPairTitle" );
   title->setInline( false );
 
-  m_pairs = new WContainerWidget(this);
+  m_pairs = this->addNew<WContainerWidget>();
   m_pairs->setStyleClass( "DevPairsContainer" );
 
-  auto footer = new WContainerWidget(this);
+  auto footer = this->addNew<WContainerWidget>();
   footer->setStyleClass( "DevPairsFooter" );
 
-  auto addBtn = new WContainerWidget( footer );
+  auto addBtn = footer->addNew<WContainerWidget>();
   addBtn->addStyleClass( "Wt-icon AddDevPair" );
-  addBtn->clicked().connect( boost::bind(&DeviationPairDisplay::newDevPair, this, true) );
+  addBtn->clicked().connect( this, [this](){ newDevPair( true ); } );
   addBtn->setToolTip( "Add another deviation pair" );
 }//DeviationPairDisplay constructor
 
@@ -268,13 +268,16 @@ void DeviationPairDisplay::sortDisplayOrder( const bool indicateVisually )
   if( !order_changed )
     return;
 
+  // Wt4's removeWidget() hands back ownership, so hold the unique_ptrs across the reorder and
+  //  give them back in the new order.
+  std::map<DevPair *,std::unique_ptr<WWidget>> owned;
   for( size_t i = 0; i < displays.size(); ++i )
-    m_pairs->removeWidget( displays[i] );
+    owned[ displays[i] ] = m_pairs->removeWidget( displays[i] );
 
   for( size_t i = 0; i < displays.size(); ++i )
   {
     DevPair *p = displays[ sort_indices[i] ];
-    m_pairs->addWidget( p );
+    m_pairs->addWidget( std::move(owned[p]) );
     if( indicateVisually && (i != sort_indices[i]) )
       p->visuallyIndicateChanged();
   }
@@ -369,17 +372,17 @@ void DeviationPairDisplay::setValidValues()
 void DeviationPairDisplay::setPairsAreaMaxHeight( const int max_height_px )
 {
   m_pairs->setMaximumSize( WLength::Auto, WLength(max_height_px, WLength::Unit::Pixel) );
-  m_pairs->setOverflow( WContainerWidget::OverflowAuto, Wt::Vertical );
+  m_pairs->setOverflow( Overflow::Auto, Wt::Orientation::Vertical );
 }//setPairsAreaMaxHeight(...)
 
 
 DevPair *DeviationPairDisplay::newDevPair( const bool emitChangedNow )
 {
-  DevPair *dev = new DevPair( m_show_fit_offsets, m_pairs );
-  dev->m_delete->clicked().connect( boost::bind( &DeviationPairDisplay::removeDevPair, this, dev ) );
-  dev->m_energy->valueChanged().connect( boost::bind( &DeviationPairDisplay::emitChanged, this, UserFieldChanged::EnergyChanged ) );
-  dev->m_offset->valueChanged().connect( boost::bind( &DeviationPairDisplay::emitChanged, this, UserFieldChanged::OffsetChanged ) );
-  dev->m_energy->blurred().connect( boost::bind(&DeviationPairDisplay::sortDisplayOrder, this, true) );
+  DevPair *dev = m_pairs->addNew<DevPair>( m_show_fit_offsets );
+  dev->m_delete->clicked().connect( this, [this,dev](){ removeDevPair( dev ); } );
+  dev->m_energy->valueChanged().connect( this, [this](){ emitChanged( UserFieldChanged::EnergyChanged ); } );
+  dev->m_offset->valueChanged().connect( this, [this](){ emitChanged( UserFieldChanged::OffsetChanged ); } );
+  dev->m_energy->blurred().connect( this, [this](){ sortDisplayOrder( true ); } );
 
   if( emitChangedNow )
     emitChanged( UserFieldChanged::AddedDeviationPair );

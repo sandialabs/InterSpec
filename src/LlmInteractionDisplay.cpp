@@ -210,9 +210,8 @@ namespace
 // LlmInteractionTurnDisplay implementation
 //
 
-LlmInteractionTurnDisplay::LlmInteractionTurnDisplay( shared_ptr<LlmInteractionTurn> turn,
-                                                      WContainerWidget *parent )
-  : WPanel( parent ),
+LlmInteractionTurnDisplay::LlmInteractionTurnDisplay( shared_ptr<LlmInteractionTurn> turn )
+  : WPanel(),
     m_turn( turn ),
     m_menuIcon( nullptr ),
     m_menu( nullptr ),
@@ -222,8 +221,9 @@ LlmInteractionTurnDisplay::LlmInteractionTurnDisplay( shared_ptr<LlmInteractionT
   addStyleClass( "LlmInteractionTurnDisplay" );
 
   // Create empty body container - content will be created on construction for now
-  m_bodyContainer = new WContainerWidget();
-  setCentralWidget( m_bodyContainer );
+  auto bodyContainerOwned = std::make_unique<WContainerWidget>();
+  m_bodyContainer = bodyContainerOwned.get();
+  setCentralWidget( std::move(bodyContainerOwned) );
 
   // Note: Lazy loading will be added later
   // For now, we create content immediately in derived constructors
@@ -262,7 +262,7 @@ void LlmInteractionTurnDisplay::createMenuIcon()
   // Create menu button in title bar.  The menu itself is built lazily on first
   // click (showMenu), so turns whose menu is never opened cost nothing - which is
   // every turn during headless/benchmark runs.
-  m_menuIcon = new WPushButton( titleBarWidget() );
+  m_menuIcon = titleBarWidget()->addNew<WPushButton>();
   m_menuIcon->setStyleClass( "RoundMenuIcon InvertInDark dropdown-toggle Wt-btn" );
   m_menuIcon->clicked().preventPropagation();
   m_menuIcon->clicked().connect( this, &LlmInteractionTurnDisplay::showMenu );
@@ -273,7 +273,7 @@ void LlmInteractionTurnDisplay::showMenu()
 {
   if( !m_menu )
   {
-    m_menu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
+    m_menu = makePopupMenu( nullptr );
     addMenuItems( m_menu );
   }
   m_menu->popup( m_menuIcon );
@@ -335,12 +335,12 @@ void LlmInteractionTurnDisplay::showJsonDialog( const WString &title,
                                                 const string &jsonStr,
                                                 bool allowDownload )
 {
-  SimpleDialog *dialog = new SimpleDialog( title );
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( title );
 
   // Format and display JSON
   const string formattedJson = formatJsonString( jsonStr );
 
-  WTextArea *jsonArea = new WTextArea( dialog->contents() );
+  WTextArea *jsonArea = dialog->contents()->addNew<WTextArea>();
   jsonArea->setReadOnly( true );
   jsonArea->setText( formattedJson );
   jsonArea->setRows( 20 );
@@ -357,7 +357,7 @@ void LlmInteractionTurnDisplay::showJsonDialog( const WString &title,
   if( allowDownload )
   {
     // Create memory resource for download; parented to the dialog so it gets cleaned up with it.
-    WMemoryResource *resource = new WMemoryResource( "application/json", dialog );
+    auto resource = std::make_shared<WMemoryResource>( "application/json" );
     resource->setData( reinterpret_cast<const unsigned char*>(formattedJson.data()),
                       static_cast<int>(formattedJson.size()) );
 
@@ -368,22 +368,23 @@ void LlmInteractionTurnDisplay::showJsonDialog( const WString &title,
     strftime( timeBuffer, sizeof(timeBuffer), "%Y%m%d_%H%M%S", local_tm );
     const string filename = string("llm_interaction_") + timeBuffer + ".json";
     resource->suggestFileName( filename );
-    resource->setDispositionType( WResource::Attachment );
+    resource->setDispositionType( ContentDisposition::Attachment );
 
     // On macOS/iOS only clicks on real anchors trigger a download; the `window.open(...)` a
     //  WPushButton link emits is silently dropped by the WKWebView.
     // Note: we deliberately do not use `SimpleDialog::addButton(...)` here - it closes the dialog
     //  on click, which would destroy `resource` (its child) before the browser has fetched it.
 #if( BUILD_AS_OSX_APP || IOS )
-    WAnchor *downloadBtn = new WAnchor( WLink(resource), dialog->footer() );
-    downloadBtn->setTarget( AnchorTarget::TargetNewWindow );
+    WLink dlLink( resource );
+    dlLink.setTarget( Wt::LinkTarget::NewWindow );
+    WAnchor *downloadBtn = dialog->footer()->addNew<WAnchor>( dlLink );
+    downloadBtn->setTarget( LinkTarget::NewWindow );
     downloadBtn->setStyleClass( "simple-dialog-btn DownloadLink" );
     downloadBtn->setText( "Download" );
 #else
-    WPushButton *downloadBtn = new WPushButton( "Download", dialog->footer() );
+    WPushButton *downloadBtn = dialog->footer()->addNew<WPushButton>( "Download" );
     downloadBtn->setIcon( "InterSpec_resources/images/download_small.svg" );
-    downloadBtn->setLink( WLink(resource) );
-    downloadBtn->setLinkTarget( Wt::LinkTarget::NewWindow );
+    { WLink lnk( resource ); lnk.setTarget( Wt::LinkTarget::NewWindow ); downloadBtn->setLink( lnk ); }
 #endif
   }
 
@@ -410,9 +411,8 @@ void LlmInteractionTurnDisplay::showJsonDialog( const WString &title,
 //
 
 LlmInteractionFinalResponseDisplay::LlmInteractionFinalResponseDisplay(
-  shared_ptr<LlmInteractionFinalResponse> response,
-  WContainerWidget *parent )
-  : LlmInteractionTurnDisplay( response, parent ),
+  shared_ptr<LlmInteractionFinalResponse> response )
+  : LlmInteractionTurnDisplay( response ),
     m_response( response )
 {
   addStyleClass( "LlmFinalResponseDisplay" );
@@ -452,26 +452,26 @@ WString LlmInteractionFinalResponseDisplay::getTitleText() const
 
 void LlmInteractionFinalResponseDisplay::createBodyContent()
 {
-  // Display the full response content.  Pass PlainText in the constructor: the 3-arg WText ctor sets
+  // Display the full response content.  Pass TextFormat::Plain in the constructor: the 3-arg WText ctor sets
   // the format BEFORE the text, so the raw model content is never run through Wt's XHTML parser (which
   // would log "Error reading XHTML string" on a bare '&' or '<' before silently falling back).
-  WText *contentText = new WText( m_response->content(), PlainText, m_bodyContainer );
+  WText *contentText = m_bodyContainer->addNew<WText>( m_response->content(), TextFormat::Plain );
   contentText->addStyleClass( "LlmResponseContent" );
 
   // Add metadata section
-  WContainerWidget *metadataDiv = new WContainerWidget( m_bodyContainer );
+  WContainerWidget *metadataDiv = m_bodyContainer->addNew<WContainerWidget>();
   metadataDiv->addStyleClass( "LlmMetadata" );
 
   // Timestamp
   const string timeStr = formatTime( m_response->timestamp() );
-  WText *timeText = new WText( "Time: " + timeStr, metadataDiv );
+  WText *timeText = metadataDiv->addNew<WText>( "Time: " + timeStr );
   timeText->addStyleClass( "LlmTimestamp" );
 
   // Duration
   if( m_response->callDuration().has_value() )
   {
     const string durationStr = formatDuration( m_response->callDuration().value() );
-    WText *durationText = new WText( " | Duration: " + durationStr, metadataDiv );
+    WText *durationText = metadataDiv->addNew<WText>( " | Duration: " + durationStr );
     durationText->addStyleClass( "LlmDuration" );
   }
 
@@ -485,7 +485,7 @@ void LlmInteractionFinalResponseDisplay::createBodyContent()
                       + " out = " + to_string(convo->totalTokens.value_or(0));
       if( convo->cachedTokens.has_value() )
         tokenStr += " (" + to_string(convo->cachedTokens.value()) + " cached)";
-      WText *tokenText = new WText( tokenStr, metadataDiv );
+      WText *tokenText = metadataDiv->addNew<WText>( tokenStr );
       tokenText->addStyleClass( "LlmTokenUsage" );
     }
   }
@@ -493,14 +493,14 @@ void LlmInteractionFinalResponseDisplay::createBodyContent()
   // Thinking content (if available)
   if( !m_response->thinkingContent().empty() )
   {
-    WContainerWidget *thinkingDiv = new WContainerWidget( m_bodyContainer );
+    WContainerWidget *thinkingDiv = m_bodyContainer->addNew<WContainerWidget>();
     thinkingDiv->addStyleClass( "LlmThinkingContent" );
 
-    WText *thinkingLabel = new WText( "Thinking:", thinkingDiv );
+    WText *thinkingLabel = thinkingDiv->addNew<WText>( "Thinking:" );
     thinkingLabel->addStyleClass( "LlmThinkingLabel" );
 
-    // PlainText via the 3-arg ctor (format before text) so raw thinking content skips the XHTML parser.
-    WText *thinkingText = new WText( m_response->thinkingContent(), PlainText, thinkingDiv );
+    // TextFormat::Plain via the 3-arg ctor (format before text) so raw thinking content skips the XHTML parser.
+    WText *thinkingText = thinkingDiv->addNew<WText>( m_response->thinkingContent(), TextFormat::Plain );
   }
 }//createBodyContent()
 
@@ -509,9 +509,8 @@ void LlmInteractionFinalResponseDisplay::createBodyContent()
 // LlmToolRequestDisplay implementation
 //
 
-LlmToolRequestDisplay::LlmToolRequestDisplay( shared_ptr<LlmToolRequest> request,
-                                              WContainerWidget *parent )
-  : LlmInteractionTurnDisplay( request, parent ),
+LlmToolRequestDisplay::LlmToolRequestDisplay( shared_ptr<LlmToolRequest> request )
+  : LlmInteractionTurnDisplay( request ),
     m_request( request )
 {
   addStyleClass( "LlmToolRequestDisplay" );
@@ -566,7 +565,7 @@ void LlmToolRequestDisplay::createBodyContent()
 
   if( calls.empty() )
   {
-    WText *emptyText = new WText( "No tool calls", m_bodyContainer );
+    WText *emptyText = m_bodyContainer->addNew<WText>( "No tool calls" );
     emptyText->addStyleClass( "LlmEmptyMessage" );
     return;
   }
@@ -574,25 +573,25 @@ void LlmToolRequestDisplay::createBodyContent()
   // Display each tool call
   for( const LlmToolCall &call : calls )
   {
-    WContainerWidget *callDiv = new WContainerWidget( m_bodyContainer );
+    WContainerWidget *callDiv = m_bodyContainer->addNew<WContainerWidget>();
     callDiv->addStyleClass( "LlmToolCallItem" );
 
     // Tool name - escape the model-derived name but keep the intentional <b> markup.
-    WText *nameText = new WText( "<b>" + Wt::Utils::htmlEncode( call.toolName ) + "</b>", callDiv );
-    nameText->setTextFormat( TextFormat::XHTMLUnsafeText );
+    WText *nameText = callDiv->addNew<WText>( "<b>" + Wt::Utils::htmlEncode( call.toolName ) + "</b>" );
+    nameText->setTextFormat( TextFormat::UnsafeXHTML );
     nameText->addStyleClass( "LlmToolName" );
 
-    // Invocation ID - PlainText so a stray '&'/'<' in an id can't hit the XHTML parser.
-    WText *idText = new WText( " (ID: " + call.invocationId + ")", PlainText, callDiv );
+    // Invocation ID - TextFormat::Plain so a stray '&'/'<' in an id can't hit the XHTML parser.
+    WText *idText = callDiv->addNew<WText>( " (ID: " + call.invocationId + ")", TextFormat::Plain );
     idText->addStyleClass( "LlmInvocationId" );
 
     // Parameters
     if( !call.toolParameters.empty() )
     {
-      WText *paramsLabel = new WText( "Parameters:", callDiv );
+      WText *paramsLabel = callDiv->addNew<WText>( "Parameters:" );
       paramsLabel->addStyleClass( "LlmParamsLabel" );
 
-      WTextArea *paramsArea = new WTextArea( callDiv );
+      WTextArea *paramsArea = callDiv->addNew<WTextArea>();
       paramsArea->setReadOnly( true );
       paramsArea->setText( formatJson(call.toolParameters) );
       paramsArea->setRows( 5 );
@@ -608,9 +607,8 @@ void LlmToolRequestDisplay::createBodyContent()
 
 LlmToolResultsDisplay::LlmToolResultsDisplay( shared_ptr<LlmToolResults> results,
                                               std::weak_ptr<LlmInterface> llmInterface,
-                                              int nestingLevel,
-                                              WContainerWidget *parent )
-  : LlmInteractionTurnDisplay( results, parent ),
+                                              int nestingLevel )
+  : LlmInteractionTurnDisplay( results ),
     m_results( results ),
     m_llmInterface( llmInterface ),
     m_nestingLevel( nestingLevel )
@@ -702,19 +700,19 @@ void LlmToolResultsDisplay::renderToolCallResult( const LlmToolCall &call,
   else if( call.status == LlmToolCall::CallStatus::Pending && !call.sub_agent_conversation )
     nameHtml << " <span class='LlmToolStatusPending'>[PENDING]</span>";
 
-  WText *nameText = new WText( nameHtml.str(), resultDiv );
-  nameText->setTextFormat( TextFormat::XHTMLUnsafeText );
+  WText *nameText = resultDiv->addNew<WText>( nameHtml.str() );
+  nameText->setTextFormat( TextFormat::UnsafeXHTML );
   nameText->addStyleClass( "LlmToolName" );
 
-  // Invocation ID - PlainText so a stray '&'/'<' in an id can't hit the XHTML parser.
-  WText *idText = new WText( " (ID: " + call.invocationId + ")", PlainText, resultDiv );
+  // Invocation ID - TextFormat::Plain so a stray '&'/'<' in an id can't hit the XHTML parser.
+  WText *idText = resultDiv->addNew<WText>( " (ID: " + call.invocationId + ")", TextFormat::Plain );
   idText->addStyleClass( "LlmInvocationId" );
 
   // Execution duration
   if( call.executionDuration.has_value() )
   {
     const string durationStr = formatDuration( call.executionDuration.value() );
-    WText *durationText = new WText( " - took " + durationStr, resultDiv );
+    WText *durationText = resultDiv->addNew<WText>( " - took " + durationStr );
     durationText->addStyleClass( "LlmDuration" );
   }
 
@@ -723,10 +721,10 @@ void LlmToolResultsDisplay::renderToolCallResult( const LlmToolCall &call,
       && call.status != LlmToolCall::CallStatus::Pending
       && (!call.sub_agent_conversation || call.sub_agent_conversation->finishTime.has_value()) )
   {
-    WText *resultLabel = new WText( "Result:", resultDiv );
+    WText *resultLabel = resultDiv->addNew<WText>( "Result:" );
     resultLabel->addStyleClass( "LlmResultLabel" );
 
-    WTextArea *resultArea = new WTextArea( resultDiv );
+    WTextArea *resultArea = resultDiv->addNew<WTextArea>();
     resultArea->setReadOnly( true );
     resultArea->setText( call.content );
     resultArea->setRows( 5 );
@@ -739,10 +737,10 @@ void LlmToolResultsDisplay::renderToolCallResult( const LlmToolCall &call,
     const LlmToolCall::ImageContent &img = call.imageContent.value();
     const string decoded = Wt::Utils::base64Decode( img.base64Data );
     vector<unsigned char> bytes( decoded.begin(), decoded.end() );
-    WMemoryResource *imgResource = new WMemoryResource( img.mimeType, resultDiv );
+    auto imgResource = std::make_shared<WMemoryResource>( img.mimeType );
     imgResource->setData( bytes );
 
-    WImage *thumb = new WImage( WLink( imgResource ), resultDiv );
+    WImage *thumb = resultDiv->addNew<WImage>( WLink( imgResource ) );
     thumb->addStyleClass( "LlmToolResultImageThumb" );
   }
 
@@ -755,23 +753,23 @@ void LlmToolResultsDisplay::renderToolCallResult( const LlmToolCall &call,
 void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualContent &visual,
                                                    WContainerWidget *parentDiv )
 {
-  WContainerWidget *vizDiv = new WContainerWidget( parentDiv );
+  WContainerWidget *vizDiv = parentDiv->addNew<WContainerWidget>();
   vizDiv->addStyleClass( "LlmToolVisual" );
 
   if( !visual.title.empty() )
   {
-    // PlainText via the 3-arg ctor (format before text) keeps model-derived text out of the XHTML parser.
-    WText *titleText = new WText( WString::fromUTF8( visual.title ), Wt::PlainText, vizDiv );
+    // TextFormat::Plain via the 3-arg ctor (format before text) keeps model-derived text out of the XHTML parser.
+    WText *titleText = vizDiv->addNew<WText>( WString::fromUTF8( visual.title ), Wt::TextFormat::Plain );
     titleText->addStyleClass( "LlmToolVisualTitle" );
   }
 
   if( !visual.description.empty() )
   {
-    WText *descText = new WText( WString::fromUTF8( visual.description ), Wt::PlainText, vizDiv );
+    WText *descText = vizDiv->addNew<WText>( WString::fromUTF8( visual.description ), Wt::TextFormat::Plain );
     descText->addStyleClass( "LlmToolVisualDesc" );
   }
 
-  WContainerWidget *chartDiv = new WContainerWidget( vizDiv );
+  WContainerWidget *chartDiv = vizDiv->addNew<WContainerWidget>();
   chartDiv->addStyleClass( "LlmToolVisualChart" );
 
   const int defaultHeight = [&visual]() -> int {
@@ -833,7 +831,7 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
       const string buttonLabel = visual.title.empty()
         ? "View Spectrum" : ("View " + visual.title);
 
-      WPushButton *viewBtn = new WPushButton( WString::fromUTF8( buttonLabel ), vizDiv );
+      WPushButton *viewBtn = vizDiv->addNew<WPushButton>( WString::fromUTF8( buttonLabel ) );
       viewBtn->addStyleClass( "LlmToolVisualReportBtn" );
 
       // Capture by value - measurement shared_ptr is lightweight (shares channel data)
@@ -847,7 +845,7 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
         if( !specMeas )
           return;
 
-        AuxWindow *window = new AuxWindow( WString::fromUTF8( dlgTitle ),
+        AuxWindow *window = AuxWindow::make( WString::fromUTF8( dlgTitle ),
           AuxWindowProperties::EnableResize | AuxWindowProperties::DisableCollapse );
         window->rejectWhenEscapePressed();
         window->setClosable( true );
@@ -858,9 +856,9 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
         window->resize( WLength( dlgWidth ), WLength( dlgHeight ) );
 
         WContainerWidget *contents = window->contents();
-        contents->setOverflow( WContainerWidget::OverflowHidden );
+        contents->setOverflow( Overflow::Hidden );
 
-        D3SpectrumDisplayDiv *chart = new D3SpectrumDisplayDiv( contents );
+        D3SpectrumDisplayDiv *chart = contents->addNew<D3SpectrumDisplayDiv>();
         chart->setCompactAxis( true );
         chart->setWidth( WLength( 100, WLength::Unit::Percentage ) );
         chart->setHeight( WLength( 100, WLength::Unit::Percentage ) );
@@ -870,12 +868,12 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
           chart->setXAxisRange( xMin, xMax );
 
         WPushButton *closeBtn = window->addCloseButtonToFooter();
-        closeBtn->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+        closeBtn->clicked().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
         window->centerWindow();
         window->show();
 
-        window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+        window->finished().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
       } ) );
 
       break;
@@ -883,8 +881,8 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
 
     case LlmToolCall::VisualContent::VisualType::Svg:
     {
-      WText *svgWidget = new WText( WString::fromUTF8( visual.data ), chartDiv );
-      svgWidget->setTextFormat( TextFormat::XHTMLUnsafeText );
+      WText *svgWidget = chartDiv->addNew<WText>( WString::fromUTF8( visual.data ) );
+      svgWidget->setTextFormat( TextFormat::UnsafeXHTML );
       break;
     }
 
@@ -897,7 +895,7 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
       const string buttonLabel = visual.title.empty()
         ? "View Report" : ("View " + visual.title);
 
-      WPushButton *viewBtn = new WPushButton( WString::fromUTF8( buttonLabel ), vizDiv );
+      WPushButton *viewBtn = vizDiv->addNew<WPushButton>( WString::fromUTF8( buttonLabel ) );
       viewBtn->addStyleClass( "LlmToolVisualReportBtn" );
 
       // Capture the HTML data by value for the click handler
@@ -905,7 +903,7 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
       const string dlgTitle = visual.title.empty() ? "Report" : visual.title;
 
       viewBtn->clicked().connect( std::bind( [htmlData, dlgTitle](){
-        AuxWindow *window = new AuxWindow( WString::fromUTF8( dlgTitle ),
+        AuxWindow *window = AuxWindow::make( WString::fromUTF8( dlgTitle ),
           AuxWindowProperties::EnableResize | AuxWindowProperties::DisableCollapse );
         window->rejectWhenEscapePressed();
         window->setClosable( true );
@@ -917,10 +915,10 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
         window->resize( WLength( dlgWidth ), WLength( dlgHeight ) );
 
         WContainerWidget *contents = window->contents();
-        contents->setOverflow( WContainerWidget::OverflowHidden );
+        contents->setOverflow( Overflow::Hidden );
 
         // Create iframe via JS after the dialog is rendered
-        WContainerWidget *iframeDiv = new WContainerWidget( contents );
+        WContainerWidget *iframeDiv = contents->addNew<WContainerWidget>();
         iframeDiv->setWidth( WLength( 100, WLength::Unit::Percentage ) );
         iframeDiv->setHeight( WLength( 100, WLength::Unit::Percentage ) );
 
@@ -951,12 +949,12 @@ void LlmToolResultsDisplay::renderVisualContent( const LlmToolCall::VisualConten
 
         // Add close button to the footer
         WPushButton *closeBtn = window->addCloseButtonToFooter();
-        closeBtn->clicked().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+        closeBtn->clicked().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
 
         window->centerWindow();
         window->show();
 
-        window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+        window->finished().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
       } ) );
 
       break;
@@ -971,7 +969,7 @@ void LlmToolResultsDisplay::createBodyContent()
 
   if( calls.empty() )
   {
-    WText *emptyText = new WText( "No tool results", m_bodyContainer );
+    WText *emptyText = m_bodyContainer->addNew<WText>( "No tool results" );
     emptyText->addStyleClass( "LlmEmptyMessage" );
     return;
   }
@@ -979,7 +977,7 @@ void LlmToolResultsDisplay::createBodyContent()
   // Display each tool result
   for( const LlmToolCall &call : calls )
   {
-    WContainerWidget *resultDiv = new WContainerWidget( m_bodyContainer );
+    WContainerWidget *resultDiv = m_bodyContainer->addNew<WContainerWidget>();
     resultDiv->addStyleClass( "LlmToolResultItem" );
 
     // Render the common parts (name, status, duration, result content)
@@ -988,7 +986,7 @@ void LlmToolResultsDisplay::createBodyContent()
     // Sub-agent conversation (if present)
     if( call.sub_agent_conversation )
     {
-        WText *subAgentLabel = new WText( "Sub-agent conversation:", resultDiv );
+        WText *subAgentLabel = resultDiv->addNew<WText>( "Sub-agent conversation:" );
         subAgentLabel->addStyleClass( "LlmSubAgentLabel" );
 
       /*
@@ -1001,10 +999,10 @@ void LlmToolResultsDisplay::createBodyContent()
             const string context = call.toolParameters["context"].get<string>();
             if( !context.empty() )
             {
-              WText *contextLabel = new WText( "Context:", resultDiv );
+              WText *contextLabel = resultDiv->addNew<WText>( "Context:" );
               contextLabel->addStyleClass( "LlmParamsLabel" );
 
-              WTextArea *contextArea = new WTextArea( resultDiv );
+              WTextArea *contextArea = resultDiv->addNew<WTextArea>();
               contextArea->setReadOnly( true );
               contextArea->setText( context );
               contextArea->setRows( 3 );
@@ -1018,10 +1016,10 @@ void LlmToolResultsDisplay::createBodyContent()
             const string task = call.toolParameters["task"].get<string>();
             if( !task.empty() )
             {
-              WText *taskLabel = new WText( "Task:", resultDiv );
+              WText *taskLabel = resultDiv->addNew<WText>( "Task:" );
               taskLabel->addStyleClass( "LlmParamsLabel" );
 
-              WTextArea *taskArea = new WTextArea( resultDiv );
+              WTextArea *taskArea = resultDiv->addNew<WTextArea>();
               taskArea->setReadOnly( true );
               taskArea->setText( task );
               taskArea->setRows( 3 );
@@ -1032,8 +1030,8 @@ void LlmToolResultsDisplay::createBodyContent()
        */
 
         // Create nested LlmInteractionDisplay for sub-agent
-        LlmInteractionDisplay *subAgentDisplay =
-          new LlmInteractionDisplay( call.sub_agent_conversation, m_llmInterface, m_nestingLevel + 1, resultDiv );
+        LlmInteractionDisplay *subAgentDisplay = resultDiv->addNew<LlmInteractionDisplay>(
+                    call.sub_agent_conversation, m_llmInterface, m_nestingLevel + 1 );
         subAgentDisplay->addStyleClass( "LlmSubAgentNesting" );
 
         m_subAgentDisplays.push_back( subAgentDisplay );
@@ -1042,9 +1040,12 @@ void LlmToolResultsDisplay::createBodyContent()
         m_subAgentResultDivs[call.sub_agent_conversation] = resultDiv;
 
         // Connect to sub-agent finished signal to update results
-        call.sub_agent_conversation->conversationFinished.connect(
-          boost::bind( &LlmToolResultsDisplay::handleSubAgentFinished,
-                    this, m_turn, call.sub_agent_conversation ) );
+        {
+          const auto turn = m_turn;
+          const auto conv = call.sub_agent_conversation;
+          call.sub_agent_conversation->conversationFinished.connect(
+            this, [this,turn,conv](){ handleSubAgentFinished( turn, conv ); } );
+        }
 
       // Make sure we expand the parent widget so we can see the sub-agent conversation going on.
       if( isCollapsed() )
@@ -1061,8 +1062,9 @@ void LlmToolResultsDisplay::createBodyContent()
   // Connect to async tool completion signal if there are any pending async tools
   if( !m_asyncToolResultDivs.empty() )
   {
-    m_results->asyncToolCompleted().connect(
-      boost::bind( &LlmToolResultsDisplay::handleAsyncToolCompleted, this, _1 ) );
+    m_results->asyncToolCompleted().connect( this, [this]( const std::string &a1 ){
+      handleAsyncToolCompleted( a1 );
+    } );
   }
 }//createBodyContent()
 
@@ -1141,10 +1143,10 @@ void LlmToolResultsDisplay::handleSubAgentFinished( shared_ptr<LlmInteractionTur
       WContainerWidget *resultDiv = divIter->second;
 
       // Create the result label and text area
-      WText *resultLabel = new WText( "Result:", resultDiv );
+      WText *resultLabel = resultDiv->addNew<WText>( "Result:" );
       resultLabel->addStyleClass( "LlmResultLabel" );
 
-      WTextArea *resultArea = new WTextArea( resultDiv );
+      WTextArea *resultArea = resultDiv->addNew<WTextArea>();
       resultArea->setReadOnly( true );
       resultArea->setText( call.content );
       resultArea->setRows( 5 );
@@ -1190,9 +1192,8 @@ void LlmToolResultsDisplay::handleAsyncToolCompleted( const string &invocationId
 //
 
 LlmInteractionErrorDisplay::LlmInteractionErrorDisplay( shared_ptr<LlmInteractionError> error,
-                                                        std::weak_ptr<LlmInterface> llmInterface,
-                                                        WContainerWidget *parent )
-  : LlmInteractionTurnDisplay( error, parent ),
+                                                        std::weak_ptr<LlmInterface> llmInterface )
+  : LlmInteractionTurnDisplay( error ),
     m_error( error ),
     m_llmInterface( llmInterface ),
     m_retryBtn( nullptr ),
@@ -1257,32 +1258,29 @@ WString LlmInteractionErrorDisplay::getTitleText() const
 void LlmInteractionErrorDisplay::createBodyContent()
 {
   // Display error message
-  WText *errorText = new WText( m_error->errorMessage(), Wt::PlainText, m_bodyContainer );
+  WText *errorText = m_bodyContainer->addNew<WText>( m_error->errorMessage(), Wt::TextFormat::Plain );
   errorText->addStyleClass( "LlmErrorMessage" );
   cout << "=======Setting error body text to:\n" << m_error->errorMessage() << "=======" << endl;
 
   // Add retry status if automatic retry was attempted
   if( m_error->supportsAutomaticRetry() && m_error->retryAttempted() )
   {
-    WText *retryInfo = new WText( "Automatic retry was attempted", m_bodyContainer );
+    WText *retryInfo = m_bodyContainer->addNew<WText>( "Automatic retry was attempted" );
     retryInfo->addStyleClass( "LlmErrorRetryInfo" );
   }
 
   // Add retry button (always shown for all errors)
-  m_retryBtn = new WPushButton( "Retry", m_bodyContainer );
+  m_retryBtn = m_bodyContainer->addNew<WPushButton>( "Retry" );
   m_retryBtn->addStyleClass( "LlmRetryButton" );
   m_retryBtn->clicked().connect( this, &LlmInteractionErrorDisplay::handleRetry );
 
   // Add "Continue Anyway" button (always shown for all errors)
-  m_continueBtn = new WPushButton( "Continue Anyway", m_bodyContainer );
+  m_continueBtn = m_bodyContainer->addNew<WPushButton>( "Continue Anyway" );
   m_continueBtn->addStyleClass( "LlmContinueButton" );
   m_continueBtn->clicked().connect( this, &LlmInteractionErrorDisplay::handleContinueAnyway );
 
   // Add help text
-  m_helpText = new WText(
-    "Click Retry to attempt this request again, or Continue Anyway to start a new conversation.",
-    m_bodyContainer
-  );
+  m_helpText = m_bodyContainer->addNew<WText>( "Click Retry to attempt this request again, or Continue Anyway to start a new conversation." );
   m_helpText->addStyleClass( "LlmErrorHelpText" );
 }//createBodyContent()
 
@@ -1475,9 +1473,8 @@ int LlmInteractionDisplay::s_nextTimerId = 0;
 
 LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interaction,
                                               std::weak_ptr<LlmInterface> llmInterface,
-                                              int nestingLevel,
-                                              WContainerWidget *parent )
-  : WPanel( parent ),
+                                              int nestingLevel )
+  : WPanel(),
     m_interaction( interaction ),
     m_llmInterface( llmInterface ),
     m_turnContainer( nullptr ),
@@ -1500,12 +1497,12 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
   setCollapsed( false );
 
   // Set title with status - create status text widget
-  m_statusText = new WText( titleBarWidget() );
-  m_statusText->setTextFormat( PlainText );  // Plain text only
+  m_statusText = titleBarWidget()->addNew<WText>();
+  m_statusText->setTextFormat( TextFormat::Plain );  // Plain text only
   m_statusText->addStyleClass( "LlmStatusIndicator" );
 
   // Create separate timer widget with the timer ID
-  m_timerText = new WText( titleBarWidget() );
+  m_timerText = titleBarWidget()->addNew<WText>();
   m_timerText->setId( m_timerId );
   m_timerText->setInline( true );
   m_timerText->setText( "0s" );
@@ -1517,8 +1514,7 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
   createMenuIcon();
 
   // Create main body container
-  WContainerWidget *bodyContainer = new WContainerWidget();
-  setCentralWidget( bodyContainer );
+  WContainerWidget *bodyContainer = setCentralWidget( std::make_unique<WContainerWidget>() );
 
   // Display the user's question/content if non-empty
   // Get content from the InitialRequest turn if it exists
@@ -1537,43 +1533,43 @@ LlmInteractionDisplay::LlmInteractionDisplay( shared_ptr<LlmInteraction> interac
 
   if( !questionContent.empty() || (initialReq && !initialReq->imageContent().empty()) )
   {
-    WContainerWidget *questionDiv = new WContainerWidget( bodyContainer );
+    WContainerWidget *questionDiv = bodyContainer->addNew<WContainerWidget>();
     questionDiv->addStyleClass( "LlmUserQuestion" );
 
-    WText *questionLabel = new WText( "Question:", questionDiv );
+    WText *questionLabel = questionDiv->addNew<WText>( "Question:" );
     questionLabel->addStyleClass( "LlmQuestionLabel" );
 
     if( !questionContent.empty() )
     {
-      // PlainText via the 3-arg ctor (format before text) so raw user text skips the XHTML parser.
-      WText *questionText = new WText( questionContent, PlainText, questionDiv );
+      // TextFormat::Plain via the 3-arg ctor (format before text) so raw user text skips the XHTML parser.
+      WText *questionText = questionDiv->addNew<WText>( questionContent, TextFormat::Plain );
       questionText->addStyleClass( "LlmQuestionContent" );
     }
 
     // Show image thumbnails if the user attached images
     if( initialReq && !initialReq->imageContent().empty() )
     {
-      WContainerWidget *imageStrip = new WContainerWidget( questionDiv );
+      WContainerWidget *imageStrip = questionDiv->addNew<WContainerWidget>();
       imageStrip->addStyleClass( "LlmUserQuestionImages" );
 
       for( const LlmToolCall::ImageContent &img : initialReq->imageContent() )
       {
         const string decoded = Wt::Utils::base64Decode( img.base64Data );
         vector<unsigned char> bytes( decoded.begin(), decoded.end() );
-        WMemoryResource *imgResource = new WMemoryResource( img.mimeType, imageStrip );
+        auto imgResource = std::make_shared<WMemoryResource>( img.mimeType );
         imgResource->setData( bytes );
 
-        WImage *thumb = new WImage( WLink( imgResource ), imageStrip );
+        WImage *thumb = imageStrip->addNew<WImage>( WLink( imgResource ) );
         thumb->addStyleClass( "LlmUserQuestionImageThumb" );
       }
     }
   }
 
   // Create container for turns
-  m_turnContainer = new WContainerWidget( bodyContainer );
+  m_turnContainer = bodyContainer->addNew<WContainerWidget>();
 
   // Add summary section after the turns
-  m_summaryDiv = new WContainerWidget( bodyContainer );
+  m_summaryDiv = bodyContainer->addNew<WContainerWidget>();
   m_summaryDiv->addStyleClass( "LlmInteractionSummary" );
 
   // Add any existing responses
@@ -1659,7 +1655,7 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
     {
       shared_ptr<LlmInteractionFinalResponse> response =
         dynamic_pointer_cast<LlmInteractionFinalResponse>( turn );
-      turnDisplay = new LlmInteractionFinalResponseDisplay( response, m_turnContainer );
+      turnDisplay = m_turnContainer->addNew<LlmInteractionFinalResponseDisplay>( response );
 
       // Final response means conversation is finished
       if( !m_isFinished )
@@ -1675,7 +1671,7 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
     {
       shared_ptr<LlmToolRequest> request =
         dynamic_pointer_cast<LlmToolRequest>( turn );
-      turnDisplay = new LlmToolRequestDisplay( request, m_turnContainer );
+      turnDisplay = m_turnContainer->addNew<LlmToolRequestDisplay>( request );
       break;
     }
 
@@ -1683,7 +1679,7 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
     {
       shared_ptr<LlmToolResults> results =
         dynamic_pointer_cast<LlmToolResults>( turn );
-      turnDisplay = new LlmToolResultsDisplay( results, m_llmInterface, m_nestingLevel, m_turnContainer );
+      turnDisplay = m_turnContainer->addNew<LlmToolResultsDisplay>( results, m_llmInterface, m_nestingLevel );
       break;
     }
 
@@ -1692,7 +1688,7 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
       shared_ptr<LlmInteractionError> error =
         dynamic_pointer_cast<LlmInteractionError>( turn );
       LlmInteractionErrorDisplay *errorDisplay =
-        new LlmInteractionErrorDisplay( error, m_llmInterface, m_turnContainer );
+            m_turnContainer->addNew<LlmInteractionErrorDisplay>( error, m_llmInterface );
 
       turnDisplay = errorDisplay;
 
@@ -1720,7 +1716,7 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
       tempResponse->setThinkingContent( autoReply->thinkingContent() );
       tempResponse->setRawContent( autoReply->rawContent() );
 
-      turnDisplay = new LlmInteractionFinalResponseDisplay( tempResponse, m_turnContainer );
+      turnDisplay = m_turnContainer->addNew<LlmInteractionFinalResponseDisplay>( tempResponse );
 
       // AutoReply doesn't mean conversation is finished - we're waiting for LLM response
       break;
@@ -1730,8 +1726,8 @@ void LlmInteractionDisplay::handleResponseAdded( shared_ptr<LlmInteractionTurn> 
   {
     cerr << "LlmInteractionDisplay::handleResponseAdded: failed to render turn: " << e.what() << endl;
 
-    WText *fallback = new WText( m_turnContainer );
-    fallback->setTextFormat( Wt::PlainText );
+    WText *fallback = m_turnContainer->addNew<WText>();
+    fallback->setTextFormat( Wt::TextFormat::Plain );
     fallback->setText( string("[Turn could not be displayed: ") + e.what() + "]" );
 
     // A FinalLlmResponse or Error turn still terminates the conversation - keep that bookkeeping
@@ -1816,7 +1812,7 @@ void LlmInteractionDisplay::updateSummary()
 
   // Start time
   const string startTimeStr = formatTime( m_interaction->timestamp );
-  WText *startTime = new WText( "Start Time: " + startTimeStr, m_summaryDiv );
+  WText *startTime = m_summaryDiv->addNew<WText>( "Start Time: " + startTimeStr );
   startTime->addStyleClass( "LlmSummaryItem" );
 
   // Total duration (if conversation is finished)
@@ -1833,7 +1829,7 @@ void LlmInteractionDisplay::updateSummary()
     const auto duration = chrono::duration_cast<chrono::milliseconds>( endTime - m_interaction->timestamp );
     const string durationStr = formatDuration( duration );
 
-    WText *totalDuration = new WText( " | Total Duration: " + durationStr, m_summaryDiv );
+    WText *totalDuration = m_summaryDiv->addNew<WText>( " | Total Duration: " + durationStr );
     totalDuration->addStyleClass( "LlmSummaryItem" );
   }
 
@@ -1848,7 +1844,7 @@ void LlmInteractionDisplay::updateSummary()
     const string tokenStr = " | Tokens: " + to_string(promptTok) + " in + "
                          + to_string(completionTok) + " out = "
                          + to_string(m_interaction->totalTokens.value()) + " total";
-    WText *tokens = new WText( tokenStr, m_summaryDiv );
+    WText *tokens = m_summaryDiv->addNew<WText>( tokenStr );
     tokens->addStyleClass( "LlmSummaryItem" );
 
     // Cache usage: how much of the (cumulative) input was served from / written to cache.
@@ -1865,7 +1861,7 @@ void LlmInteractionDisplay::updateSummary()
       if( writtenTok > 0 )
         cacheStr += ", " + to_string(writtenTok) + " written";
 
-      WText *cache = new WText( cacheStr, m_summaryDiv );
+      WText *cache = m_summaryDiv->addNew<WText>( cacheStr );
       cache->addStyleClass( "LlmSummaryItem" );
     }
   }
@@ -2017,7 +2013,7 @@ void LlmInteractionDisplay::createMenuIcon()
 {
   // Create menu button in title bar; the menu is built lazily on first click
   // (showMenu) so interactions whose menu is never opened cost nothing.
-  m_menuIcon = new WPushButton( titleBarWidget() );
+  m_menuIcon = titleBarWidget()->addNew<WPushButton>();
   m_menuIcon->setStyleClass( "RoundMenuIcon InvertInDark dropdown-toggle Wt-btn" );
   m_menuIcon->clicked().preventPropagation();
   m_menuIcon->clicked().connect( this, &LlmInteractionDisplay::showMenu );
@@ -2032,7 +2028,7 @@ void LlmInteractionDisplay::showMenu()
     return;
   }
 
-  PopupDivMenu *menu = new PopupDivMenu( nullptr, PopupDivMenu::TransientMenu );
+  PopupDivMenu *menu = makePopupMenu( nullptr );
   m_menu = menu;
 
   // Add "Show Initial Request" option
@@ -2084,7 +2080,10 @@ void LlmInteractionDisplay::showMenu()
     // LlmSubAgentFollowup self-deletes when done
     try
     {
-      LlmSubAgentFollowup *followup = new LlmSubAgentFollowup( m_interaction );
+      // Owned by wApp (Wt4 has no parent-taking WObject ctor); it hands itself back via
+      //  removeChild() in startDeleteSelf() when the user closes its dialog.
+      LlmSubAgentFollowup *followup
+            = wApp->addChild( std::make_unique<LlmSubAgentFollowup>( m_interaction ) );
       followup->showDialog();
     }catch( const std::exception &e )
     {
@@ -2102,10 +2101,10 @@ void LlmInteractionDisplay::showJsonDialog( const WString &title,
                                             const string &jsonStr,
                                             bool allowDownload )
 {
-  SimpleDialog *dialog = new SimpleDialog( title );
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( title );
 
   // Create text area to display JSON
-  WTextArea *jsonArea = new WTextArea( dialog->contents() );
+  WTextArea *jsonArea = dialog->contents()->addNew<WTextArea>();
   jsonArea->setReadOnly( true );
   jsonArea->setText( jsonStr );  // jsonStr is already formatted
   jsonArea->setRows( 20 );
@@ -2115,7 +2114,7 @@ void LlmInteractionDisplay::showJsonDialog( const WString &title,
   if( allowDownload )
   {
     // Create a memory resource for the JSON; parented to the dialog so it is cleaned up with it.
-    WMemoryResource *resource = new WMemoryResource( "application/json", dialog );
+    auto resource = std::make_shared<WMemoryResource>( "application/json" );
     resource->setData( reinterpret_cast<const unsigned char*>(jsonStr.c_str()),
                       static_cast<int>(jsonStr.length()) );
 
@@ -2140,32 +2139,33 @@ void LlmInteractionDisplay::showJsonDialog( const WString &title,
     filename = filename + "_" + timeBuffer + ".json";
 
     resource->suggestFileName( filename );
-    resource->setDispositionType( WResource::Attachment );
+    resource->setDispositionType( ContentDisposition::Attachment );
 
     // On macOS/iOS only clicks on real anchors trigger a download; the `window.open(...)` a
     //  WPushButton link emits is silently dropped by the WKWebView.
 #if( BUILD_AS_OSX_APP || IOS )
-    WAnchor *downloadBtn = new WAnchor( WLink(resource), dialog->footer() );
-    downloadBtn->setTarget( AnchorTarget::TargetNewWindow );
+    WLink dlLink( resource );
+    dlLink.setTarget( Wt::LinkTarget::NewWindow );
+    WAnchor *downloadBtn = dialog->footer()->addNew<WAnchor>( dlLink );
+    downloadBtn->setTarget( LinkTarget::NewWindow );
     downloadBtn->setStyleClass( "simple-dialog-btn DownloadLink" );
     downloadBtn->setText( "Download" );
 #else
-    WPushButton *downloadBtn = new WPushButton( "Download", dialog->footer() );
+    WPushButton *downloadBtn = dialog->footer()->addNew<WPushButton>( "Download" );
     downloadBtn->setIcon( "InterSpec_resources/images/download_small.svg" );
-    downloadBtn->setLink( WLink(resource) );
-    downloadBtn->setLinkTarget( Wt::LinkTarget::NewWindow );
+    { WLink lnk( resource ); lnk.setTarget( Wt::LinkTarget::NewWindow ); downloadBtn->setLink( lnk ); }
 #endif
   }
 
   // Add copy button
   LOAD_JAVASCRIPT(wApp, "LlmInteractionDisplay.cpp", "LlmInteractionDisplay", wtjsLlmCopyTextToClipboard );
 
-  WPushButton *copyBtn = new WPushButton( "Copy", dialog->footer() );
+  WPushButton *copyBtn = dialog->footer()->addNew<WPushButton>( "Copy" );
   const string copyJs = "function(s,e){ Wt.WT.LlmCopyTextToClipboard(s,e,'" + jsonArea->id() + "'); }";
   copyBtn->clicked().connect( copyJs );
 
   // Add close button
-  WPushButton *closeBtn = new WPushButton( "Close", dialog->footer() );
+  WPushButton *closeBtn = dialog->footer()->addNew<WPushButton>( "Close" );
   closeBtn->clicked().connect( dialog, &WDialog::accept );
 
   dialog->show();

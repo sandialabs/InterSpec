@@ -16,7 +16,6 @@
 #include <Wt/WAnchor.h>
 #include <Wt/WResource.h>
 #include <Wt/WLineEdit.h>
-#include <Wt/WScrollArea.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WGridLayout.h>
 #include <Wt/WApplication.h>
@@ -48,8 +47,8 @@
 using namespace std;
 using namespace Wt;
 
-LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
-  : WContainerWidget(parent),
+LlmToolGui::LlmToolGui(InterSpec *viewer)
+  : WContainerWidget(),
     m_viewer(viewer),
     m_llmInterface(nullptr),
     m_root(nullptr),
@@ -74,13 +73,11 @@ LlmToolGui::LlmToolGui(InterSpec *viewer, WContainerWidget *parent)
 
   // A single-cell outer layout holds m_root, which we swap between the configured chat UI and
   // the "not configured" panel.
-  WGridLayout *outer = new WGridLayout();
+  WGridLayout *outer = setLayout( std::make_unique<WGridLayout>() );
   outer->setContentsMargins( 0, 0, 0, 0 );
   outer->setVerticalSpacing( 0 );
   outer->setHorizontalSpacing( 0 );
-  setLayout( outer );
-  m_root = new WContainerWidget();
-  outer->addWidget( m_root, 0, 0 );
+  m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
   outer->setRowStretch( 0, 1 );
   outer->setColumnStretch( 0, 1 );
 
@@ -130,8 +127,10 @@ LlmToolGui::~LlmToolGui()
   // this) can never fire against a destroyed widget.
   if( m_configWindow )
   {
-    delete m_configWindow;
-    m_configWindow = nullptr;
+    // AuxWindow::make() gave ownership to wApp, so hand it back rather than `delete`ing a
+    //  widget the app owns (that would double-free); the observing_ptr clears itself.
+    AuxWindow::deleteAuxWindow( m_configWindow.get() );
+    assert( !m_configWindow );
   }
 }
 
@@ -154,7 +153,7 @@ void LlmToolGui::buildConfiguredUi( const std::shared_ptr<const LlmConfig> &conf
   }catch( std::exception &e )
   {
     m_llmInterface.reset();
-    new WText( "Error initializing LLM assistant: " + string(e.what()), m_root );
+    m_root->addNew<WText>( "Error initializing LLM assistant: " + string(e.what()) );
   }
 }
 
@@ -163,13 +162,13 @@ void LlmToolGui::buildUnconfiguredUi()
 {
   m_root->addStyleClass( "LlmToolGui" );
 
-  WContainerWidget *panel = new WContainerWidget( m_root );
+  WContainerWidget *panel = m_root->addNew<WContainerWidget>();
   panel->addStyleClass( "LlmNotConfigured" );
 
-  WText *msg = new WText( WString::tr("lcw-not-configured"), panel );
+  WText *msg = panel->addNew<WText>( WString::tr("lcw-not-configured") );
   msg->addStyleClass( "LlmNotConfiguredMsg" );
 
-  WPushButton *btn = new WPushButton( WString::tr("lcw-configure-btn"), panel );
+  WPushButton *btn = panel->addNew<WPushButton>( WString::tr("lcw-configure-btn") );
   btn->clicked().connect( this, &LlmToolGui::openConfigWindow );
 }
 
@@ -179,21 +178,21 @@ void LlmToolGui::showWelcomeMessage()
   if( m_welcomeMessage || !m_conversationContainer )
     return;
 
-  m_welcomeMessage = new WContainerWidget( m_conversationContainer );
+  m_welcomeMessage = m_conversationContainer->addNew<WContainerWidget>();
   m_welcomeMessage->addStyleClass( "LlmWelcome" );
 
-  WText *title = new WText( WString::tr("lcw-welcome-title"), m_welcomeMessage );
+  WText *title = m_welcomeMessage->addNew<WText>( WString::tr("lcw-welcome-title") );
   title->addStyleClass( "LlmWelcomeTitle" );
 
-  WText *summary = new WText( WString::tr("lcw-welcome-summary"), m_welcomeMessage );
+  WText *summary = m_welcomeMessage->addNew<WText>( WString::tr("lcw-welcome-summary") );
   summary->addStyleClass( "LlmWelcomeSummary" );
 
   // Empty WLink => an <a> with no href, so the browser does nothing on click while the
   // server-side clicked() still fires and opens the help window.
-  WAnchor *learnMore = new WAnchor( WLink(), m_welcomeMessage );
+  WAnchor *learnMore = m_welcomeMessage->addNew<WAnchor>( WLink() );
   learnMore->setText( WString::tr("lcw-welcome-learn-more") );
   learnMore->addStyleClass( "LlmWelcomeLearnMore" );
-  learnMore->clicked().connect( boost::bind( &HelpSystem::createHelpWindow, string("llm-assistant") ) );
+  learnMore->clicked().connect( this, [](){ HelpSystem::createHelpWindow( "llm-assistant" ); } );
 }//showWelcomeMessage()
 
 
@@ -254,10 +253,9 @@ void LlmToolGui::resetRoot()
   m_imagePreviewContainer = nullptr;
   m_jsSandboxBridge = nullptr;
 
-  m_root = new WContainerWidget();
   if( outer )
   {
-    outer->addWidget( m_root, 0, 0 );
+    m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
     outer->setRowStretch( 0, 1 );
     outer->setColumnStretch( 0, 1 );
   }
@@ -269,10 +267,10 @@ void LlmToolGui::openConfigWindow()
   if( m_configWindow )
     return;  // already open
 
-  m_configWindow = new LlmConfigWindow( m_viewer,
+  m_configWindow = AuxWindow::make<LlmConfigWindow>( m_viewer,
                                         std::bind( &LlmToolGui::handleConfigSaved, this ),
                                         std::bind( &LlmToolGui::hasConversationHistory, this ) );
-  m_configWindow->finished().connect( std::bind( [this](){ m_configWindow = nullptr; } ) );
+  m_configWindow->finished().connect( this, [this](){ AuxWindow::deleteAuxWindow( m_configWindow.get() ); } );
 }
 
 
@@ -281,15 +279,15 @@ void LlmToolGui::openConfigWindowToImport( const std::string &configFilePath )
   // Replace any window that is already open so the imported config is what the user sees.
   if( m_configWindow )
   {
-    AuxWindow::deleteAuxWindow( m_configWindow );  // deletes the window; does not emit finished()
-    m_configWindow = nullptr;
+    AuxWindow::deleteAuxWindow( m_configWindow.get() );  // deletes the window; does not emit finished()
+    assert( !m_configWindow );   //observing_ptr auto-clears
   }
 
-  m_configWindow = new LlmConfigWindow( m_viewer,
+  m_configWindow = AuxWindow::make<LlmConfigWindow>( m_viewer,
                                         std::bind( &LlmToolGui::handleConfigSaved, this ),
                                         std::bind( &LlmToolGui::hasConversationHistory, this ),
                                         configFilePath );
-  m_configWindow->finished().connect( std::bind( [this](){ m_configWindow = nullptr; } ) );
+  m_configWindow->finished().connect( this, [this](){ AuxWindow::deleteAuxWindow( m_configWindow.get() ); } );
 }
 
 
@@ -312,8 +310,8 @@ void LlmToolGui::handleConfigSaved()
     config = LlmConfig::load();
   }catch( std::exception &e )
   {
-    SimpleDialog *errDialog = new SimpleDialog( "Error Loading LLM Config" );
-    new WText( e.what(), errDialog->contents() );
+    SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Loading LLM Config" );
+    errDialog->contents()->addNew<WText>( e.what() );
     errDialog->addButton( "Okay" );
     return;
   }
@@ -357,8 +355,8 @@ void LlmToolGui::handleConfigSaved()
         }
       }catch( std::exception &e )
       {
-        SimpleDialog *errDialog = new SimpleDialog( "Error Updating LLM" );
-        new WText( e.what(), errDialog->contents() );
+        SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Updating LLM" );
+        errDialog->contents()->addNew<WText>( e.what() );
         errDialog->addButton( "Okay" );
         return;
       }
@@ -404,14 +402,14 @@ void LlmToolGui::initializeUI()
   m_root->addStyleClass("LlmToolGui");
 
   // Create the main layout
-  m_layout = new WGridLayout();
-  m_root->setLayout(m_layout);
+  m_layout = m_root->setLayout( std::make_unique<WGridLayout>() );
   m_layout->setContentsMargins(5, 5, 5, 5);
   m_layout->setVerticalSpacing(5);
   m_layout->setHorizontalSpacing(5);
 
   // Create wrapper container for scroll area and menu icon
-  WContainerWidget *scrollWrapper = new WContainerWidget();
+  auto scrollWrapperOwned = std::make_unique<WContainerWidget>();
+  WContainerWidget *scrollWrapper = scrollWrapperOwned.get();
   scrollWrapper->setStyleClass( "LlmScrollWrapper" );
 
 
@@ -419,7 +417,7 @@ void LlmToolGui::initializeUI()
   // of this widget; its iframe is positioned off-screen by the JS helper.
   try
   {
-    m_jsSandboxBridge = new LlmJsSandboxBridge( scrollWrapper );
+    m_jsSandboxBridge = scrollWrapper->addNew<LlmJsSandboxBridge>();
   }catch( std::exception &e )
   {
     cerr << "Failed to construct LlmJsSandboxBridge: " << e.what() << endl;
@@ -427,12 +425,12 @@ void LlmToolGui::initializeUI()
   }
 
   // Create menu icon for conversation-level actions (positioned in upper-right via CSS)
-  m_menuIcon = new WPushButton( scrollWrapper );
+  m_menuIcon = scrollWrapper->addNew<WPushButton>();
   m_menuIcon->setStyleClass( "RoundMenuIcon InvertInDark dropdown-toggle Wt-btn LlmMenuIcon" );
   // Note: deliberately do NOT preventPropagation() here (doing this lets menu open, but not close when you click the button).
 
   // Create popup menu
-  PopupDivMenu *menu = new PopupDivMenu( m_menuIcon, PopupDivMenu::TransientMenu );
+  PopupDivMenu *menu = makePopupMenu( m_menuIcon );
 
   // Add "Export Conversation as JSON" option
   PopupDivMenuItem *exportJsonItem = menu->addMenuItem( "Export Conversation as JSON" );
@@ -456,7 +454,7 @@ void LlmToolGui::initializeUI()
 
   // Add "Help" option - opens the standard InterSpec help window on the AI Assistant topic
   PopupDivMenuItem *helpItem = menu->addMenuItem( WString::tr("lcw-help-menu") );
-  helpItem->triggered().connect( boost::bind( &HelpSystem::createHelpWindow, string("llm-assistant") ) );
+  helpItem->triggered().connect( this, [](){ HelpSystem::createHelpWindow( "llm-assistant" ); } );
 
   // Add benchmark submenu - scan for *_llm_benchmark.xml files in test_datasets/
   {
@@ -488,29 +486,31 @@ void LlmToolGui::initializeUI()
     }
   }
 
-  // Create scrollable container for conversation displays
-  WScrollArea *scrollArea = new WScrollArea( scrollWrapper );
+  // Create scrollable container for conversation displays.  Wt4 removed WScrollArea; the
+  //  replacement is a plain container with overflow:auto.
+  WContainerWidget *scrollArea = scrollWrapper->addNew<WContainerWidget>();
   scrollArea->addStyleClass("LlmConversationScrollArea");
+  scrollArea->setOverflow( Overflow::Auto );
 
-  m_conversationContainer = new WContainerWidget();
+  m_conversationContainer = scrollArea->addNew<WContainerWidget>();
   m_conversationContainer->addStyleClass("LlmConversationContainer");
-  scrollArea->setWidget(m_conversationContainer);
 
   // Add scroll wrapper to layout (row 0, spans 2 columns)
-  m_layout->addWidget(scrollWrapper, 0, 0, 1, 2);
+  m_layout->addWidget(std::move(scrollWrapperOwned), 0, 0, 1, 2);
   m_layout->setRowStretch(0, 1); // Make conversation display expand
 
   // Create a vertical container for the image preview strip + input edit
-  WContainerWidget *inputColumn = new WContainerWidget();
+  auto inputColumnOwned = std::make_unique<WContainerWidget>();
+  WContainerWidget *inputColumn = inputColumnOwned.get();
   inputColumn->addStyleClass( "LlmInputColumn" );
 
   // Image preview strip (hidden by default)
-  m_imagePreviewContainer = new WContainerWidget( inputColumn );
+  m_imagePreviewContainer = inputColumn->addNew<WContainerWidget>();
   m_imagePreviewContainer->addStyleClass( "LlmStagedImagePreview" );
   m_imagePreviewContainer->hide();
 
   // Create input line edit
-  m_inputEdit = new WLineEdit( inputColumn );
+  m_inputEdit = inputColumn->addNew<WLineEdit>();
   m_inputEdit->addStyleClass("llm-input-edit");
   m_inputEdit->setPlaceholderText( WString( "Type your question here..." ) );
   m_inputEdit->setAutoComplete(false);
@@ -521,15 +521,12 @@ void LlmToolGui::initializeUI()
 #endif
 
   // Add input column to layout (row 1, column 0)
-  m_layout->addWidget(inputColumn, 1, 0);
+  m_layout->addWidget(std::move(inputColumnOwned), 1, 0);
   m_layout->setColumnStretch(0, 1); // Make input expand horizontally
 
   // Create send button (bottom right)
-  m_sendButton = new WPushButton("Send");
+  m_sendButton = m_layout->addWidget( std::make_unique<WPushButton>("Send"), 1, 1 );
   m_sendButton->addStyleClass("llm-send-button");
-
-  // Add send button to layout (row 1, column 1)
-  m_layout->addWidget(m_sendButton, 1, 1);
 
   // Connect signals
   m_inputEdit->enterPressed().connect(this, &LlmToolGui::handleInputSubmit);
@@ -590,24 +587,24 @@ void LlmToolGui::stageImage( const string &base64Data, const string &mimeType,
   // Create a thumbnail entry for this image
   const size_t index = m_stagedImages.size() - 1;
 
-  WContainerWidget *entry = new WContainerWidget( m_imagePreviewContainer );
+  WContainerWidget *entry = m_imagePreviewContainer->addNew<WContainerWidget>();
   entry->addStyleClass( "LlmStagedImageEntry" );
 
   // Create thumbnail using WMemoryResource (same pattern as UploadedImgDisplay)
   const string decoded = Wt::Utils::base64Decode( base64Data );
   vector<unsigned char> bytes( decoded.begin(), decoded.end() );
-  WMemoryResource *thumbResource = new WMemoryResource( mimeType, entry );
+  auto thumbResource = std::make_shared<WMemoryResource>( mimeType );
   thumbResource->setData( bytes );
 
-  WImage *thumb = new WImage( WLink( thumbResource ), entry );
+  WImage *thumb = entry->addNew<WImage>( WLink( thumbResource ) );
   thumb->addStyleClass( "LlmStagedImageThumb" );
 
   // Filename label
-  WText *nameLabel = new WText( WString::fromUTF8( displayName ), entry );
+  WText *nameLabel = entry->addNew<WText>( WString::fromUTF8( displayName ) );
   nameLabel->addStyleClass( "LlmStagedImageName" );
 
   // Remove button
-  WPushButton *removeBtn = new WPushButton( entry );
+  WPushButton *removeBtn = entry->addNew<WPushButton>();
   removeBtn->setStyleClass( "LlmStagedImageRemove" );
   removeBtn->setText( WString::fromUTF8( "\xc3\x97" ) ); // multiplication sign as X
   removeBtn->clicked().connect( std::bind( [this]( size_t idx ){ removeStagedImage( idx ); }, index ) );
@@ -639,21 +636,21 @@ void LlmToolGui::removeStagedImage( const size_t index )
     {
       const StagedImage &img = m_stagedImages[i];
 
-      WContainerWidget *entry = new WContainerWidget( m_imagePreviewContainer );
+      WContainerWidget *entry = m_imagePreviewContainer->addNew<WContainerWidget>();
       entry->addStyleClass( "LlmStagedImageEntry" );
 
       const string decoded = Wt::Utils::base64Decode( img.base64Data );
       vector<unsigned char> bytes( decoded.begin(), decoded.end() );
-      WMemoryResource *thumbResource = new WMemoryResource( img.mimeType, entry );
+      auto thumbResource = std::make_shared<WMemoryResource>( img.mimeType );
       thumbResource->setData( bytes );
 
-      WImage *thumb = new WImage( WLink( thumbResource ), entry );
+      WImage *thumb = entry->addNew<WImage>( WLink( thumbResource ) );
       thumb->addStyleClass( "LlmStagedImageThumb" );
 
-      WText *nameLabel = new WText( WString::fromUTF8( img.displayName ), entry );
+      WText *nameLabel = entry->addNew<WText>( WString::fromUTF8( img.displayName ) );
       nameLabel->addStyleClass( "LlmStagedImageName" );
 
-      WPushButton *removeBtn = new WPushButton( entry );
+      WPushButton *removeBtn = entry->addNew<WPushButton>();
       removeBtn->setStyleClass( "LlmStagedImageRemove" );
       removeBtn->setText( WString::fromUTF8( "\xc3\x97" ) );
       removeBtn->clicked().connect( std::bind( [this]( size_t idx ){ removeStagedImage( idx ); }, i ) );
@@ -741,7 +738,7 @@ void LlmToolGui::sendMessage(const std::string& message)
     {
       // Create display widget for this interaction
       LlmInteractionDisplay *interactionDisplay =
-      new LlmInteractionDisplay( convo, m_llmInterface, 0, m_conversationContainer );
+        m_conversationContainer->addNew<LlmInteractionDisplay>( convo, m_llmInterface, 0 );
 
       // Remove the getting-started panel now that there is a real interaction
       updateWelcomeMessage();
@@ -778,8 +775,8 @@ void LlmToolGui::sendMessage(const std::string& message)
     m_isRequestPending = false;
 
     // Show error in a dialog
-    SimpleDialog *errorDialog = new SimpleDialog( "Error" );
-    WText *errorText = new WText( "Failed to send message: " + string(e.what()), errorDialog->contents() );
+    SimpleDialog *errorDialog = SimpleDialog::make<SimpleDialog>( "Error" );
+    WText *errorText = errorDialog->contents()->addNew<WText>( "Failed to send message: " + string(e.what()) );
     WPushButton *okBtn = errorDialog->addButton( "OK" );
     okBtn->clicked().connect( errorDialog, &SimpleDialog::accept );
   }
@@ -1007,8 +1004,8 @@ void LlmToolGui::exportConversationJson()
   shared_ptr<LlmConversationHistory> history = m_llmInterface->getHistory();
   if( !history || history->isEmpty() )
   {
-    SimpleDialog *dialog = new SimpleDialog( "No Conversation" );
-    WText *msg = new WText( "There is no conversation history to export.", dialog->contents() );
+    SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "No Conversation" );
+    WText *msg = dialog->contents()->addNew<WText>( "There is no conversation history to export." );
     WPushButton *okBtn = dialog->addButton( "OK" );
     okBtn->clicked().connect( dialog, &SimpleDialog::accept );
     return;
@@ -1033,8 +1030,8 @@ void LlmToolGui::exportConversationJson()
 
   if( !currentConvo )
   {
-    SimpleDialog *dialog = new SimpleDialog( "No Active Conversation" );
-    WText *msg = new WText( "There is no active conversation to export.", dialog->contents() );
+    SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "No Active Conversation" );
+    WText *msg = dialog->contents()->addNew<WText>( "There is no active conversation to export." );
     WPushButton *okBtn = dialog->addButton( "OK" );
     okBtn->clicked().connect( dialog, &SimpleDialog::accept );
     return;
@@ -1047,8 +1044,8 @@ void LlmToolGui::exportConversationJson()
   }
   catch( std::exception &e )
   {
-    SimpleDialog *dialog = new SimpleDialog( "Export Failed" );
-    WText *msg = new WText( string("Failed to build export JSON: ") + e.what(), dialog->contents() );
+    SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Export Failed" );
+    WText *msg = dialog->contents()->addNew<WText>( string("Failed to build export JSON: ") + e.what() );
     WPushButton *okBtn = dialog->addButton( "OK" );
     okBtn->clicked().connect( dialog, &SimpleDialog::accept );
     return;
@@ -1063,16 +1060,18 @@ void LlmToolGui::exportConversationJson()
 
   // Present the download as an anchor the user clicks, rather than redirecting the page to the
   //  resource - a redirect just navigates away from the app in the native (WKWebView) builds.
-  SimpleDialog *dialog = new SimpleDialog( "Export Conversation" );
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Export Conversation" );
 
-  // Resource is parented to the dialog, so it lives as long as the download link does.
-  WMemoryResource *resource = new WMemoryResource( "application/json", dialog );
+  // In Wt4 a WLink holds a shared_ptr to the resource, so the link itself keeps it alive for as
+  //  long as the download anchor exists.
+  auto resource = std::make_shared<WMemoryResource>( "application/json" );
   resource->setData( reinterpret_cast<const unsigned char*>(jsonStr.data()), jsonStr.size() );
   resource->suggestFileName( "llm_conversation.json" );
-  resource->setDispositionType( WResource::Attachment );
+  resource->setDispositionType( ContentDisposition::Attachment );
 
-  WAnchor *download = new WAnchor( WLink(resource), dialog->contents() );
-  download->setTarget( AnchorTarget::TargetNewWindow );
+  WLink dlLink( resource );
+  dlLink.setTarget( LinkTarget::NewWindow );
+  WAnchor *download = dialog->contents()->addNew<WAnchor>( dlLink );
   download->setStyleClass( "LinkBtn DownloadLink" );
   download->setText( "Download conversation JSON" );
 
@@ -1083,9 +1082,8 @@ void LlmToolGui::exportConversationJson()
 void LlmToolGui::handleClearConversation()
 {
   // Show confirmation dialog
-  SimpleDialog *dialog = new SimpleDialog( "Clear Conversation" );
-  WText *msg = new WText( "Are you sure you want to clear the entire conversation history? This cannot be undone.",
-                         dialog->contents() );
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Clear Conversation" );
+  WText *msg = dialog->contents()->addNew<WText>( "Are you sure you want to clear the entire conversation history? This cannot be undone." );
 
   WPushButton *yesBtn = dialog->addButton( "Yes, Clear" );
   WPushButton *noBtn = dialog->addButton( "Cancel" );
@@ -1102,9 +1100,8 @@ void LlmToolGui::handleClearConversation()
 void LlmToolGui::handleResetLlmConfig()
 {
   // Show confirmation dialog before resetting
-  SimpleDialog *dialog = new SimpleDialog( "Reset LLM Config" );
-  new WText( "This will re-read the LLM configuration files and clear the current conversation. Continue?",
-            dialog->contents() );
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Reset LLM Config" );
+  dialog->contents()->addNew<WText>( "This will re-read the LLM configuration files and clear the current conversation. Continue?" );
 
   WPushButton *yesBtn = dialog->addButton( "Yes, Reset" );
   WPushButton *noBtn = dialog->addButton( "Cancel" );
@@ -1120,16 +1117,16 @@ void LlmToolGui::handleResetLlmConfig()
       config = LlmConfig::load();
     }catch( std::exception &e )
     {
-      SimpleDialog *errDialog = new SimpleDialog( "Error Loading LLM Config" );
-      new WText( e.what(), errDialog->contents() );
+      SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Loading LLM Config" );
+      errDialog->contents()->addNew<WText>( e.what() );
       errDialog->addButton( "Okay" );
       return;
     }
 
     if( !config || !config->llmApi.enabled || config->llmApi.apiEndpoint().empty() )
     {
-      SimpleDialog *errDialog = new SimpleDialog( "Error Loading LLM Config" );
-      new WText( "LLM API is not enabled in the configuration.", errDialog->contents() );
+      SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Loading LLM Config" );
+      errDialog->contents()->addNew<WText>( "LLM API is not enabled in the configuration." );
       errDialog->addButton( "Okay" );
       return;
     }
@@ -1147,8 +1144,8 @@ void LlmToolGui::handleResetLlmConfig()
       m_llmInterface->resetWithConfig( config );
     }catch( std::exception &e )
     {
-      SimpleDialog *errDialog = new SimpleDialog( "Error Resetting LLM" );
-      new WText( e.what(), errDialog->contents() );
+      SimpleDialog *errDialog = SimpleDialog::make<SimpleDialog>( "Error Resetting LLM" );
+      errDialog->contents()->addNew<WText>( e.what() );
       errDialog->addButton( "Okay" );
       return;
     }
@@ -1167,8 +1164,8 @@ void LlmToolGui::handleCompactConversation()
 
   if( m_isRequestPending )
   {
-    SimpleDialog *dialog = new SimpleDialog( "Cannot Compact" );
-    new WText( "Please wait for the current request to finish before compacting.", dialog->contents() );
+    SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Cannot Compact" );
+    dialog->contents()->addNew<WText>( "Please wait for the current request to finish before compacting." );
     dialog->addButton( "OK" );
     return;
   }
@@ -1179,14 +1176,14 @@ void LlmToolGui::handleCompactConversation()
 
     if( !summarizationConvo )
     {
-      SimpleDialog *dialog = new SimpleDialog( "Cannot Compact" );
-      new WText( "Not enough conversation history to compact.", dialog->contents() );
+      SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Cannot Compact" );
+      dialog->contents()->addNew<WText>( "Not enough conversation history to compact." );
       dialog->addButton( "OK" );
       return;
     }
 
     // Create display widget for the summarization conversation
-    new LlmInteractionDisplay( summarizationConvo, m_llmInterface, 0, m_conversationContainer );
+    m_conversationContainer->addNew<LlmInteractionDisplay>( summarizationConvo, m_llmInterface, 0 );
 
     // Remove the getting-started panel now that there is a real interaction
     updateWelcomeMessage();
@@ -1205,8 +1202,8 @@ void LlmToolGui::handleCompactConversation()
   {
     cerr << "Error triggering conversation compaction: " << e.what() << endl;
 
-    SimpleDialog *dialog = new SimpleDialog( "Compaction Error" );
-    new WText( string("Failed to compact conversation: ") + e.what(), dialog->contents() );
+    SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Compaction Error" );
+    dialog->contents()->addNew<WText>( string("Failed to compact conversation: ") + e.what() );
     dialog->addButton( "OK" );
   }
 }
@@ -1332,7 +1329,7 @@ void LlmToolGui::setConversationHistory(const std::shared_ptr<std::vector<std::s
 
       // Create display widget for this interaction
       LlmInteractionDisplay *interactionDisplay =
-        new LlmInteractionDisplay( conv, m_llmInterface, 0, m_conversationContainer );
+        m_conversationContainer->addNew<LlmInteractionDisplay>( conv, m_llmInterface, 0 );
     }
   }else
   {
@@ -1533,7 +1530,7 @@ bool LlmToolGui::shouldPreserveConversation() const
   // During benchmark SpectrumSequence steps, the spectrum-changed handler is disconnected
   //  so that conversation history survives mid-sequence spectrum loads.
   //  When disconnected, the connection object is "empty" / not connected.
-  return isBenchmarkRunning() && !m_spectrumChangedConnection.connected();
+  return isBenchmarkRunning() && !m_spectrumChangedConnection.isConnected();
 }
 
 
@@ -1541,8 +1538,8 @@ void LlmToolGui::handleStartBenchmark( const string &xmlPath )
 {
   if( m_benchmarkRunner && m_benchmarkRunner->isRunning() )
   {
-    SimpleDialog *dialog = new SimpleDialog( "Benchmark Running" );
-    new WText( "A benchmark is already running. Please wait for it to finish.", dialog->contents() );
+    SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Benchmark Running" );
+    dialog->contents()->addNew<WText>( "A benchmark is already running. Please wait for it to finish." );
     dialog->addButton( "OK" );
     return;
   }

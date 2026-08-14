@@ -351,7 +351,7 @@ void EnergyCalGraphicalConfirm::apply()
       viewer->logMessage( WString::fromUTF8(e.what()), 2 );
     }//try / catch
 
-    finished().emit(WDialog::Accepted);
+    finished().emit(Wt::DialogCode::Accepted);
     return;
   }//if( lower channel energy calibration )
   

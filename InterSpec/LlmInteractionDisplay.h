@@ -60,8 +60,7 @@ class LlmInteractionFinalResponse;
 class LlmInteractionTurnDisplay : public Wt::WPanel
 {
 public:
-  LlmInteractionTurnDisplay( std::shared_ptr<LlmInteractionTurn> turn,
-                            Wt::WContainerWidget *parent = nullptr );
+  LlmInteractionTurnDisplay( std::shared_ptr<LlmInteractionTurn> turn );
 
   virtual ~LlmInteractionTurnDisplay();
 
@@ -111,8 +110,7 @@ protected:
 class LlmInteractionFinalResponseDisplay : public LlmInteractionTurnDisplay
 {
 public:
-  LlmInteractionFinalResponseDisplay( std::shared_ptr<LlmInteractionFinalResponse> response,
-                                      Wt::WContainerWidget *parent = nullptr );
+  LlmInteractionFinalResponseDisplay( std::shared_ptr<LlmInteractionFinalResponse> response );
 
   virtual ~LlmInteractionFinalResponseDisplay();
 
@@ -129,8 +127,7 @@ private:
 class LlmToolRequestDisplay : public LlmInteractionTurnDisplay
 {
 public:
-  LlmToolRequestDisplay( std::shared_ptr<LlmToolRequest> request,
-                        Wt::WContainerWidget *parent = nullptr );
+  LlmToolRequestDisplay( std::shared_ptr<LlmToolRequest> request );
 
   virtual ~LlmToolRequestDisplay();
 
@@ -149,8 +146,7 @@ class LlmToolResultsDisplay : public LlmInteractionTurnDisplay
 public:
   LlmToolResultsDisplay( std::shared_ptr<LlmToolResults> results,
                         std::weak_ptr<class LlmInterface> llmInterface,
-                        int nestingLevel = 0,
-                        Wt::WContainerWidget *parent = nullptr );
+                        int nestingLevel = 0 );
 
   virtual ~LlmToolResultsDisplay();
 
@@ -195,8 +191,7 @@ class LlmInteractionErrorDisplay : public LlmInteractionTurnDisplay
 {
 public:
   LlmInteractionErrorDisplay( std::shared_ptr<LlmInteractionError> error,
-                             std::weak_ptr<class LlmInterface> llmInterface,
-                             Wt::WContainerWidget *parent = nullptr );
+                             std::weak_ptr<class LlmInterface> llmInterface );
 
   virtual ~LlmInteractionErrorDisplay();
 
@@ -234,8 +229,7 @@ class LlmInteractionDisplay : public Wt::WPanel
 public:
   LlmInteractionDisplay( std::shared_ptr<LlmInteraction> interaction,
                         std::weak_ptr<class LlmInterface> llmInterface,
-                        int nestingLevel = 0,
-                        Wt::WContainerWidget *parent = nullptr );
+                        int nestingLevel = 0 );
 
   virtual ~LlmInteractionDisplay();
 

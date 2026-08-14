@@ -2671,7 +2671,7 @@ void D3SpectrumDisplayDiv::captureChartImage( const std::string &format, int max
 
     // Repeating (not single-shot) and checked against a deadline - see m_imageCaptureTimer.
     m_imageCaptureTimer.reset( new Wt::WTimer() );
-    m_imageCaptureTimer->setInterval( sm_image_capture_poll_ms );
+    m_imageCaptureTimer->setInterval( std::chrono::milliseconds(sm_image_capture_poll_ms) );
     m_imageCaptureTimer->timeout().connect( this, &D3SpectrumDisplayDiv::checkImageCaptureDeadline );
   }//if( !m_imageCapturedJS )
 
@@ -2679,7 +2679,7 @@ void D3SpectrumDisplayDiv::captureChartImage( const std::string &format, int max
 
   // The capture id is only known when the JS is actually issued (a queued capture gets its id then),
   //  so emit with a placeholder that issueNextQueuedCapture()/this function substitutes.
-  const std::string emitJs = m_imageCapturedJS->createCall( "b64", "mime", "w", "h", "%CAPTUREID%" );
+  const std::string emitJs = m_imageCapturedJS->createCall( {"b64", "mime", "w", "h", "%CAPTUREID%"} );
 
   // Build a single JS block that optionally zooms/changes y-scale/toggles background
   //  subtraction, captures via requestAnimationFrame, and restores

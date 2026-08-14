@@ -52,6 +52,7 @@
 #include <Wt/WContainerWidget.h>
 #include <Wt/cpp17/any.hpp>
 #include <Wt/WAbstractItemModel.h>
+#include <Wt/WItemDelegate.h>
 #include <Wt/WAbstractItemDelegate.h>
 
 #include "SandiaDecay/SandiaDecay.h"
@@ -456,7 +457,7 @@ namespace FluxToolImp
       //  Wt::cpp17::any for CheckStateRole (via the `default:` case, below).
       if( col == FluxToolWidget::sm_selectColumn )
       {
-        if( role != Wt::CheckStateRole )
+        if( role != Wt::ItemDataRole::Checked )
           return Wt::cpp17::any();
 
         assert( m_fluxtool->m_rowSelected.size() == data.size() );
@@ -466,23 +467,21 @@ namespace FluxToolImp
         return Wt::cpp17::any( static_cast<bool>(m_fluxtool->m_rowSelected[realind]) );
       }//if( col == FluxToolWidget::sm_selectColumn )
 
-      switch( role )
+      // Wt4's ItemDataRole is a class (not an integer enum), so this cannot be a switch.
+      if( role == Wt::ItemDataRole::Display )
       {
-        case Wt::DisplayRole:
-          if( col == FluxToolWidget::FluxColumns::FluxNuclideCol )
-            return nucs[realind].empty() ? Wt::cpp17::any() : Wt::cpp17::any( WString::fromUTF8(nucs[realind]) );
-          return Wt::cpp17::any( data[realind][col] );
+        if( col == FluxToolWidget::FluxColumns::FluxNuclideCol )
+          return nucs[realind].empty() ? Wt::cpp17::any() : Wt::cpp17::any( WString::fromUTF8(nucs[realind]) );
+        return Wt::cpp17::any( data[realind][col] );
+      }//if( role == Wt::ItemDataRole::Display )
 
-        //case Wt::StyleClassRole: break;
-        //case Wt::ToolTipRole: break;
-        case Wt::UserRole:
-          if( col == FluxToolWidget::FluxColumns::FluxNuclideCol )
-            return Wt::cpp17::any();
-          return uncerts[realind][col] > std::numeric_limits<double>::epsilon() ? Wt::cpp17::any(uncerts[realind][col]) : Wt::cpp17::any();
-
-        default:
+      if( role == Wt::ItemDataRole::User )
+      {
+        if( col == FluxToolWidget::FluxColumns::FluxNuclideCol )
           return Wt::cpp17::any();
-      }//switch( role )
+        return uncerts[realind][col] > std::numeric_limits<double>::epsilon()
+                 ? Wt::cpp17::any(uncerts[realind][col]) : Wt::cpp17::any();
+      }//if( role == Wt::ItemDataRole::User )
 
       return Wt::cpp17::any();
     }//data(...)
@@ -494,11 +493,11 @@ namespace FluxToolImp
      we dont set ItemIsTristate.
      */
     virtual bool setData( const Wt::WModelIndex &index, const Wt::cpp17::any &value,
-                          int role = Wt::EditRole )
+                          Wt::ItemDataRole role = Wt::ItemDataRole::Edit )
     {
       if( index.parent().isValid()
          || (index.column() != FluxToolWidget::sm_selectColumn)
-         || (role != Wt::CheckStateRole)
+         || (role != Wt::ItemDataRole::Checked)
          || (index.row() < 0)
          || (index.row() >= static_cast<int>(m_sort_indices.size()))
          || (value.type() != typeid(bool)) )
@@ -543,8 +542,8 @@ namespace FluxToolImp
                           Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const
     {
       if( section < 0 || section > FluxToolWidget::sm_selectColumn
-         || orientation != Wt::Horizontal
-         || role != Wt::DisplayRole )
+         || orientation != Wt::Orientation::Horizontal
+         || role != Wt::ItemDataRole::Display )
         return Wt::cpp17::any();
 
       if( section == FluxToolWidget::sm_selectColumn )
@@ -1169,7 +1168,7 @@ void FluxToolWidget::handleAppUrl( std::string query_str )
       selected.push_back( energy );
     }//for( string field : fields )
 
-    PeakModel *peakmodel = m_interspec->peakModel();
+    const std::shared_ptr<PeakModel> peakmodel = m_interspec->peakModel();
     const vector<PeakDef> peaks = peakmodel ? peakmodel->peakVec() : vector<PeakDef>{};
     const vector<bool> is_selected = FluxToolImp::peaks_matching_energies( peaks, selected );
 
@@ -1222,7 +1221,7 @@ std::string FluxToolWidget::encodeStateToUrl() const
   //  when the table is empty (no DRF chosen, invalid distance, ...).
   if( !m_deselectedEnergies.empty() )
   {
-    PeakModel *peakmodel = m_interspec ? m_interspec->peakModel() : nullptr;
+    const std::shared_ptr<PeakModel> peakmodel = m_interspec ? m_interspec->peakModel() : nullptr;
     const vector<PeakDef> peaks = peakmodel ? peakmodel->peakVec() : vector<PeakDef>{};
     const vector<bool> deselected = FluxToolImp::peaks_matching_energies( peaks, m_deselectedEnergies );
 
@@ -1325,11 +1324,9 @@ void FluxToolWidget::init()
   
   WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
   layout->setContentsMargins( 0, 0, 0, 0 );
-  setLayout( layout );
-  
-  WTable *distDetRow = new WTable();
+
+  WTable *distDetRow = layout->addWidget( std::make_unique<WTable>(), 0, 0, 1, 2 );
   distDetRow->addStyleClass( "FluxDistMsgDetTbl" );
-  layout->addWidget( distDetRow, 0, 0, 1, 2 );
 
   
   auto distCell = distDetRow->elementAt( m_narrowLayout ? 1 : 0, 0 );
@@ -1386,25 +1383,38 @@ void FluxToolWidget::init()
   
   m_selectColName = WString::tr("ftw-hdr-use");
 
-  m_fluxModel = new FluxToolImp::FluxModel( this );
-  m_table = new RowStretchTreeView();
-  m_table->setModel( m_fluxModel );
+  // Wt4 owns models and item delegates through shared_ptr; `m_fluxModel` is just an observer
+  //  (the table's setModel() keeps the model alive).
+  auto fluxModelOwned = std::make_shared<FluxToolImp::FluxModel>( this );
+  m_fluxModel = fluxModelOwned.get();
+
+  {
+    auto tbl = std::make_unique<RowStretchTreeView>();
+    m_table = tbl.get();
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+    layout->addWidget( std::move(tbl), 1, 0, 1, 2 );
+#else
+    layout->addWidget( std::move(tbl), 1, 0, 1, 1 );
+#endif
+  }
+
+  m_table->setModel( fluxModelOwned );
   m_table->setRootIsDecorated( false );
   m_table->addStyleClass( "FluxTable" );
   m_table->setAlternatingRowColors( true );
-  m_table->sortByColumn( FluxColumns::FluxEnergyCol, Wt::AscendingOrder );
+  m_table->sortByColumn( FluxColumns::FluxEnergyCol, Wt::SortOrder::Ascending );
 
   //Setting rows selectable doesnt seem to work... not that it would do us
   //  any good anyway since you probably want to copy the info to the clipboard.
   //m_table->setSelectable( true );
   //m_table->setSelectionMode( Wt::SelectionMode::SingleSelection );
 
-  FluxToolImp::FluxRenderDelegate *renderdel = new FluxToolImp::FluxRenderDelegate( this );
+  auto renderdel = std::make_shared<FluxToolImp::FluxRenderDelegate>( this );
   m_table->setItemDelegate( renderdel );
 
   // The stock delegate knows how to render a checkbox from CheckStateRole; using it just
   //  for the selection column saves teaching FluxRenderDelegate about checkboxes.
-  m_table->setItemDelegateForColumn( sm_selectColumn, new WItemDelegate(this) );
+  m_table->setItemDelegateForColumn( sm_selectColumn, std::make_shared<WItemDelegate>() );
 
   for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
     m_table->setSortingEnabled( col, (col!=FluxColumns::FluxGeometricEffCol) );
@@ -1413,17 +1423,22 @@ void FluxToolWidget::init()
   //  explicitly - the loop above only covers the data columns.  See FluxModel::sort().
   m_table->setSortingEnabled( sm_selectColumn, false );
 
-  layout->addWidget( m_table, 1, 0, 1, 2 );
   layout->setRowStretch( 1, 1 );
 
-  WContainerWidget *buttonBox = new WContainerWidget();
-  buttonBox->addStyleClass( "FluxInfoAmount" );
-  
-  WRadioButton *simpleInfo = new WRadioButton( WString::tr("ftw-simple"), buttonBox );
-  WRadioButton *standardInfo = new WRadioButton( WString::tr("ftw-standard"), buttonBox );
-  WRadioButton *moreInfo = new WRadioButton( WString::tr("ftw-more"), buttonBox );
-  
-  m_displayLevelButtons = new WButtonGroup( buttonBox );
+  WContainerWidget *buttonBox = nullptr;
+  {
+    auto buttonBoxOwned = std::make_unique<WContainerWidget>();
+    buttonBox = buttonBoxOwned.get();
+    buttonBox->addStyleClass( "FluxInfoAmount" );
+    layout->addWidget( std::move(buttonBoxOwned), 2, 1,
+                       AlignmentFlag::Right | AlignmentFlag::Middle );
+  }
+
+  WRadioButton *simpleInfo = buttonBox->addNew<WRadioButton>( WString::tr("ftw-simple") );
+  WRadioButton *standardInfo = buttonBox->addNew<WRadioButton>( WString::tr("ftw-standard") );
+  WRadioButton *moreInfo = buttonBox->addNew<WRadioButton>( WString::tr("ftw-more") );
+
+  m_displayLevelButtons = std::make_shared<WButtonGroup>();
   m_displayLevelButtons->addButton( simpleInfo, static_cast<int>(DisplayInfoLevel::Simple) );
   m_displayLevelButtons->addButton( standardInfo, static_cast<int>(DisplayInfoLevel::Normal) );
   m_displayLevelButtons->addButton( moreInfo, static_cast<int>(DisplayInfoLevel::Extended) );
@@ -1437,20 +1452,23 @@ void FluxToolWidget::init()
            || (level == DisplayInfoLevel::Extended) );
 
     setDisplayInfoLevel( level, false );
-  }) );
+  } );
   
   
-  layout->addWidget( buttonBox, 2, 1, AlignmentFlag::Right | AlignmentFlag::Middle );
-
-  WContainerWidget *outputOptsDiv = new WContainerWidget();
-  outputOptsDiv->addStyleClass( "FluxOutputOpts" );
-  layout->addWidget( outputOptsDiv, 2, 0, AlignmentFlag::Left | AlignmentFlag::Middle );
+  WContainerWidget *outputOptsDiv = nullptr;
+  {
+    auto outputOptsOwned = std::make_unique<WContainerWidget>();
+    outputOptsDiv = outputOptsOwned.get();
+    outputOptsDiv->addStyleClass( "FluxOutputOpts" );
+    layout->addWidget( std::move(outputOptsOwned), 2, 0,
+                       AlignmentFlag::Left | AlignmentFlag::Middle );
+  }
 
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
   LOAD_JAVASCRIPT(wApp, "FluxTool.cpp", "FluxTool", wtjsCopyFluxDataTextToClipboard );
 
-  m_copyBtn = new WPushButton( WString::tr( m_narrowLayout ? "ftw-copy-btn-narrow" : "ftw-copy-btn"),
-                               outputOptsDiv );
+  m_copyBtn = outputOptsDiv->addNew<WPushButton>(
+                     WString::tr( m_narrowLayout ? "ftw-copy-btn-narrow" : "ftw-copy-btn") );
 
   // TODO: "upgrade" to using the InterSpecApp 'miscSignal' directly in CopyFluxDataTextToClipboard, and get rid of m_infoCopied signal handler
   //"Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, 'showMsg-info-' );"
@@ -1460,17 +1478,17 @@ void FluxToolWidget::init()
     "Wt.emit( '" + id() + "', {name:'infocopied', eventObject:e}, success );"
   "}" );
 
-  m_infoCopied.connect( boost::bind( &FluxToolWidget::tableCopiedToCliboardCallback, this,
-                                    boost::placeholders::_1 ) );
+  m_infoCopied.connect( this, [this]( const bool success ){
+    tableCopiedToCliboardCallback( success );
+  } );
 #endif
 
-  m_selectRowsCb = new WCheckBox( WString::tr( m_narrowLayout ? "ftw-select-rows-narrow"
-                                                              : "ftw-select-rows"),
-                                  outputOptsDiv );
+  m_selectRowsCb = outputOptsDiv->addNew<WCheckBox>( WString::tr( m_narrowLayout ? "ftw-select-rows-narrow"
+                                                              : "ftw-select-rows") );
   m_selectRowsCb->addStyleClass( "FluxSelectRowsCb" );
   HelpSystem::attachToolTipOn( m_selectRowsCb, WString::tr("ftw-tt-select-rows"), showToolTips );
-  m_selectRowsCb->checked().connect( boost::bind( &FluxToolWidget::setSelectRows, this, true ) );
-  m_selectRowsCb->unChecked().connect( boost::bind( &FluxToolWidget::setSelectRows, this, false ) );
+  m_selectRowsCb->checked().connect( this, [this](){ setSelectRows( true ); } );
+  m_selectRowsCb->unChecked().connect( this, [this](){ setSelectRows( false ); } );
 
   setDisplayInfoLevel( m_narrowLayout ? DisplayInfoLevel::Simple : DisplayInfoLevel::Normal, true );
 }//void init()
@@ -1845,7 +1863,7 @@ void FluxToolWidget::setSelectRows( const bool selectRows )
 
 void FluxToolWidget::handleRowSelectionChanged( const size_t dataRow, const bool selected )
 {
-  PeakModel *peakmodel = m_interspec->peakModel();
+  const std::shared_ptr<PeakModel> peakmodel = m_interspec->peakModel();
   const vector<PeakDef> peaks = peakmodel ? peakmodel->peakVec() : vector<PeakDef>{};
 
   assert( dataRow < m_rowSelected.size() );
@@ -1920,7 +1938,7 @@ void FluxToolWidget::applySelectionState( const bool selectRows, vector<double> 
   //  A matching size means these are the same peaks m_data was built from: every peak
   //  change routes through setTableNeedsUpdating() (see init()), and Wt renders at the end
   //  of the event, so m_data can only be stale here if a refresh is already scheduled.
-  PeakModel *peakmodel = m_interspec->peakModel();
+  const std::shared_ptr<PeakModel> peakmodel = m_interspec->peakModel();
   const vector<PeakDef> peaks = peakmodel ? peakmodel->peakVec() : vector<PeakDef>{};
   if( peaks.size() == m_data.size() )
     syncRowSelectionFromEnergies( peaks );

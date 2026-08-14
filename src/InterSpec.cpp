@@ -4447,7 +4447,7 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
   #if( USE_LLM_INTERFACE )
           case UserState::kLlmAssistantTab:
             if( m_llmTool )
-              m_toolsTabs->setCurrentWidget( m_llmTool );
+              m_toolsTabs->setCurrentWidget( m_llmTool.get() );
             break;
   #endif
           case UserState::kNoTabs:  
@@ -13248,8 +13248,9 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
 
     Wt::WServer *server = Wt::WServer::instance();
     if( server )
-      server->post( sessionId, boost::bind( &InterSpec::setHintPeaks, this, weak_spectrum,
-                                            samples, origPeaks, found, updateDetTypeGuess ) );
+      server->post( sessionId, [this, weak_spectrum, samples, origPeaks, found, updateDetTypeGuess](){
+        setHintPeaks( weak_spectrum, samples, origPeaks, found, updateDetTypeGuess );
+      } );
   } ).detach();
 }//void searchForHintPeaks(...)
 
@@ -14124,7 +14125,8 @@ void InterSpec::createLlmTool()
     
   try
   {
-    m_llmTool = new LlmToolGui( this );
+    std::unique_ptr<LlmToolGui> llmTool = std::make_unique<LlmToolGui>( this );
+    m_llmTool = llmTool.get();
     m_llmTool->focusInput();
 
     // Load any existing LLM conversation history from the foreground SpecMeas
@@ -14144,31 +14146,35 @@ void InterSpec::createLlmTool()
 
     if( m_toolsTabs )
     {
-      WMenuItem *item = m_toolsTabs->addTab( m_llmTool, WString::fromUTF8("LLM Assistant") );
+      WMenuItem *item = m_toolsTabs->addTab( std::move(llmTool), WString::fromUTF8("LLM Assistant") );
       item->setCloseable( true );
-      m_toolsTabs->setCurrentWidget( m_llmTool );
+      m_toolsTabs->setCurrentWidget( m_llmTool.get() );
       const int index = m_toolsTabs->currentIndex();
       m_toolsTabs->setTabToolTip( index, WString::fromUTF8("Chat with the Large Language Model assistant for spectrum analysis help") );
 
       // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
       //  handleToolTabClosed(), which will delete m_llmTool when the user closes the tab.
+    }else
+    {
+      // No tool-tab strip to dock into; park ownership on this InterSpec (same slot
+      //  setToolTabsVisible() uses for the other Cat-C tools) so the widget stays alive.
+      addChild( std::move(llmTool) );
     }
 
     m_llmToolMenuItem->disable();
   }catch( const std::exception &e )
   {
     std::cout << "Error creating LLM tool: " << e.what() << std::endl;
-    if( m_llmTool )
-    {
-      delete m_llmTool;
-      m_llmTool = nullptr;
-    }//if( m_llmTool )
+    // `llmTool` still owns the widget unless it was handed to the tab strip / addChild above,
+    //  so it is freed when it goes out of scope; the observing_ptr auto-clears with it.
+    if( m_llmTool && m_llmTool->parent() )
+      safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
   }//try / catch
 }//void createLlmTool()
 
 LlmToolGui *InterSpec::currentLlmTool()
 {
-  return m_llmTool;
+  return m_llmTool.get();
 }//LlmToolGui *currentLlmTool();
 
 void InterSpec::openLlmConfigForImport( const std::string &configFilePath )
@@ -14182,7 +14188,7 @@ void InterSpec::openLlmConfigForImport( const std::string &configFilePath )
 
   // If the tool already existed, the user may be on a different tab - bring the assistant forward.
   if( m_toolsTabs )
-    m_toolsTabs->setCurrentWidget( m_llmTool );
+    m_toolsTabs->setCurrentWidget( m_llmTool.get() );
 
   m_llmTool->openConfigWindowToImport( configFilePath );
 }//void openLlmConfigForImport( const std::string &configFilePath )
@@ -14227,20 +14233,20 @@ void InterSpec::handleLlmToolClose()
 
   m_llmToolMenuItem->enable();
 
-  // Wt 3.7.1's WTabWidget::closeTab() only hides the tab and emits tabClosed_; it does NOT
-  //  remove the tab from its internal vectors.  We must explicitly removeTab() before
-  //  deleting, otherwise a stale (zombie) tab entry remains and becomes visible the next
-  //  time the tool is reopened (and closing it trips the assert in handleToolTabClosed).
-  //  Guarded by indexOf() so it stays idempotent with the docking path that already removes
+  // safeRemoveTab() destroys the widget (it drops the returned unique_ptr) and works around the
+  //  Wt4 WMenuItem::removeContents() bug that leaves eager tab content in the internal stack.
+  //  Guarded by indexOf() so it stays idempotent with the docking path, which already removed
   //  the tab before calling this.
-  if( m_toolsTabs && (m_toolsTabs->indexOf(m_llmTool) >= 0) )
-    m_toolsTabs->removeTab( m_llmTool );
-  delete m_llmTool;
-
-  m_llmTool = nullptr;
-  
-  if( m_toolsTabs )
+  if( m_toolsTabs && (m_toolsTabs->indexOf(m_llmTool.get()) >= 0) )
+  {
+    safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
     m_toolsTabs->setCurrentIndex( 2 );
+  }else if( m_llmTool )
+  {
+    removeChild( m_llmTool.get() );   // parked via addChild when there is no tab strip
+  }
+
+  assert( !m_llmTool );   // observing_ptr auto-clears when the widget is destroyed
 }
 #endif // USE_LLM_INTERFACE
 

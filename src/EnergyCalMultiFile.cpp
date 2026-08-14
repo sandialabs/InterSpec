@@ -190,74 +190,89 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
 {
   InterSpec *viewer = InterSpec::instance();
  
-  if( parent )
-    parent->stretcher()->addWidget( this, 0, 0  );
+  // Note: caller (EnergyCalAddActionsWindow) adds this widget to its stretcher via make_unique/addWidget
   
-  m_model = new EnergyCalMultiFileModel( cal, this );
+  m_model = std::make_shared<EnergyCalMultiFileModel>( cal );
 
-  RowStretchTreeView *tree = new RowStretchTreeView();
+  WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
+  layout->setContentsMargins( 0, 0, 0, 0 );
+
+  WContainerWidget *instructions = layout->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
+  WText *line = instructions->addNew<WText>( "Select peaks to use from each file then click &quot;Fit&quot;." );
+  line->setInline( false );
+  line = instructions->addNew<WText>( "If satisfied, click &quot;Use&quot; to set calibration for involved files." );
+  line->setInline( false );
+  line = instructions->addNew<WText>( "Calibration will be applied to all files with at least one selected peak." );
+  line->setInline( false );
+
+  RowStretchTreeView *tree = layout->addWidget( std::make_unique<RowStretchTreeView>(), 1, 0 );
   tree->setSortingEnabled(false);
   tree->setModel( m_model );
-  tree->setColumn1Fixed( false );
+  //tree->setColumn1Fixed( false ); // Not available in Wt4
   tree->setHeaderHeight( 20 );
   tree->setColumnWidth( 0, 200 );
   tree->setColumnWidth( 1, 150 );
   tree->setColumnWidth( 2, 150 );
   tree->expandToDepth( 2 );
-  
-  WGroupBox *fitFor = new WGroupBox( "Coefficients to fit for" );
-  WGridLayout *fitForLayout = new WGridLayout( fitFor );
-  
-  
+  layout->setRowStretch( 1, 1 );
+
+  auto fitForUptr = std::make_unique<WGroupBox>( "Coefficients to fit for" );
+  WGroupBox *fitFor = fitForUptr.get();
+  WGridLayout *fitForLayout = fitFor->setLayout( std::make_unique<WGridLayout>() );
+
   for( int i = 0; i < static_cast<int>(ns_min_num_coef); ++i )
   {
-    WLabel *label = 0;
+    std::string labelStr;
     switch( i )
     {
-      case 0: label = new WLabel( "Offset" ); break;
-      case 1: label = new WLabel( "Linear" ); break;
-      case 2: label = new WLabel( "Quadratic" ); break;
-      case 3: label = new WLabel( "Cubic" ); break;
-      default: label = new WLabel( std::to_string(i+1) + "th" ); break;
+      case 0: labelStr = "Offset";    break;
+      case 1: labelStr = "Linear";    break;
+      case 2: labelStr = "Quadratic"; break;
+      case 3: labelStr = "Cubic";     break;
+      default: labelStr = std::to_string(i+1) + "th"; break;
     }//switch( i )
-    
-    auto coefval = new WLineEdit();
-    
+
+    auto coefvalUptr = std::make_unique<WLineEdit>();
+    WLineEdit *coefval = coefvalUptr.get();
     coefval->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     coefval->setAttributeValue( "autocorrect", "off" );
     coefval->setAttributeValue( "spellcheck", "off" );
 #endif
-    auto fitcb = new WCheckBox( "Fit" );
-    
+
+    auto fitcbUptr = std::make_unique<WCheckBox>( "Fit" );
+    WCheckBox *fitcb = fitcbUptr.get();
+
     m_coefvals.push_back( coefval );
     m_fitFor.push_back( fitcb );
     coefval->disable();
-    fitcb->setChecked( (i < 2 ) );
-    
-    fitForLayout->addWidget( label,   i, 0 );
-    fitForLayout->addWidget( coefval, i, 1 );
-    fitForLayout->addWidget( fitcb,   i, 2 );
+    fitcb->setChecked( (i < 2) );
+
+    fitForLayout->addWidget( std::make_unique<WLabel>( labelStr ), i, 0 );
+    fitForLayout->addWidget( std::move(coefvalUptr), i, 1 );
+    fitForLayout->addWidget( std::move(fitcbUptr),   i, 2 );
   }//for( int i = 0; i < sm_numCoefs; ++i )
-  
-                  
+
   fitForLayout->setColumnStretch( 1, 1 );
+  layout->addWidget( std::move(fitForUptr), 2, 0 );
 
   // Deviation pairs: the same editable widget as the Energy Calibration tab (add / edit / delete
   //  rows), plus a per-row "Fit offset" checkbox.  Checked offsets get fit (this requires the
   //  non-linear fit); the resulting deviation pairs are applied to every detector of every file
   //  the calibration is applied to.  The list is seeded from the displayed foregrounds pairs.
-  m_devPairBox = new WGroupBox( "Deviation pairs" );
+  auto devPairBoxUptr = std::make_unique<WGroupBox>( "Deviation pairs" );
+  m_devPairBox = devPairBoxUptr.get();
   m_devPairBox->setToolTip( "Deviation pairs to apply (add, edit, or delete rows).  Check "
       "\"Fit offset\" on a pair to fit its offset (a non-linear fit); the pairs energies are never "
       "fit.  The resulting deviation pairs are applied to every detector of every file the "
       "calibration is applied to." );
-  WGridLayout *devPairBoxLayout = new WGridLayout( m_devPairBox );
+  // Wt4's WGroupBox renders only layout-managed children, so it must be given a layout.
+  WGridLayout *devPairBoxLayout = m_devPairBox->setLayout( std::make_unique<WGridLayout>() );
   devPairBoxLayout->setContentsMargins( 0, 0, 0, 0 );
 
-  m_devPairDisplay = new EnergyCalImp::DeviationPairDisplay( true );
+  m_devPairDisplay = devPairBoxLayout->addWidget(
+              std::make_unique<EnergyCalImp::DeviationPairDisplay>( true ), 0, 0 );
   m_devPairDisplay->setPairsAreaMaxHeight( 165 );  //keep the whole section roughly <= 185 px
-  devPairBoxLayout->addWidget( m_devPairDisplay, 0, 0 );
 
   {//begin codeblock to seed the deviation pairs from the displayed foreground
     shared_ptr<const SpecUtils::Measurement> disp_fore
@@ -268,28 +283,13 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
       m_devPairDisplay->setDeviationPairs( disp_cal->deviation_pairs() );
   }//end codeblock to seed the deviation pairs from the displayed foreground
 
-  m_fitSumary = new WTextArea();
+  layout->addWidget( std::move(devPairBoxUptr), 3, 0 );
+
+  auto fitSumaryUptr = std::make_unique<WTextArea>();
+  m_fitSumary = fitSumaryUptr.get();
   m_fitSumary->setHeight( 75 );
   m_fitSumary->setMaximumSize( WLength::Auto, 75 );
-  
-  WContainerWidget *instructions = new WContainerWidget();
-  WText *line = new WText( "Select peaks to use from each file then click &quot;Fit&quot;.", instructions );
-  line->setInline( false );
-  line = new WText( "If satisfied, click &quot;Use&quot; to set calibration for involved files.", instructions );
-  line->setInline( false );
-  line = new WText( "Calibration will be applied to all files with at least one selected peak.", instructions );
-  line->setInline( false );
-
-  
-  WGridLayout *layout = new WGridLayout( this );
-  layout->setContentsMargins( 0, 0, 0, 0 );
-  
-  layout->addWidget( instructions, 0, 0 );
-  layout->addWidget( tree, 1, 0 );
-  layout->setRowStretch( 1, 1 );
-  layout->addWidget( fitFor, 2, 0 );
-  layout->addWidget( m_devPairBox, 3, 0 );
-  layout->addWidget( m_fitSumary, 4, 0 );
+  layout->addWidget( std::move(fitSumaryUptr), 4, 0 );
 
   WContainerWidget *buttonDiv = nullptr;
 
@@ -298,19 +298,18 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
     buttonDiv = parent->footer();
   }else
   {
-    buttonDiv = new WContainerWidget();
-    layout->addWidget( buttonDiv, 5, 0 );
+    buttonDiv = layout->addWidget( std::make_unique<WContainerWidget>(), 5, 0 );
   }
-  
+
   AuxWindow::addHelpInFooter( buttonDiv, "multi-file-calibration-dialog" );
-  
-  m_cancel = new WPushButton( WString::tr("Cancel"), buttonDiv );
-  m_fit    = new WPushButton( WString::tr("Fit"), buttonDiv );
-  m_use    = new WPushButton( WString::tr("Use"), buttonDiv );
-  
+
+  m_cancel = buttonDiv->addNew<WPushButton>( WString::tr("Cancel") );
+  m_fit    = buttonDiv->addNew<WPushButton>( WString::tr("Fit") );
+  m_use    = buttonDiv->addNew<WPushButton>( WString::tr("Use") );
+
   m_use->disable();
-  m_cancel->clicked().connect( boost::bind( &EnergyCalMultiFile::handleFinish, this, WDialog::Rejected ) );
-  m_use->clicked().connect( boost::bind( &EnergyCalMultiFile::handleFinish, this, WDialog::Accepted ) );
+  m_cancel->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
+  m_use->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
   m_fit->clicked().connect( this, &EnergyCalMultiFile::doFit );
   
   m_fitSumary->disable();
@@ -960,14 +959,14 @@ void EnergyCalMultiFile::applyCurrentFit()
 }//void applyCurrentFit()
 
 
-void EnergyCalMultiFile::handleFinish( WDialog::DialogCode result )
+void EnergyCalMultiFile::handleFinish( DialogCode result )
 {
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
   
   switch( result )
   {
-    case WDialog::Rejected:
+    case Wt::DialogCode::Rejected:
     {
       UndoRedoManager *undoManager = viewer->undoRedoManager();
       if( m_parent && undoManager )
@@ -978,27 +977,27 @@ void EnergyCalMultiFile::handleFinish( WDialog::DialogCode result )
           if( tool )
             tool->moreActionBtnClicked( MoreActionsIndex::MultipleFilesCal );
         };
-        
+
         auto redo = [](){
           InterSpec *viewer = InterSpec::instance();
           EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
           if( tool )
             tool->cancelMoreActionWindow();
         };
-        
+
         undoManager->addUndoRedoStep( undo, redo, "Cancel multi-file energy cal" );
       }//if( m_parent && undoManager )
-      
+
       break;
-    }//case WDialog::Rejected:
-      
-    case WDialog::Accepted:
+    }//case Wt::DialogCode::Rejected:
+
+    case Wt::DialogCode::Accepted:
     {
       // applyCurrentFit() inserts an undo/redo step covering the files currently displayed as
       //  foreground/background/secondary; changes to any other files are not undoable.
       applyCurrentFit();
       break;
-    }//case WDialog::Accepted:
+    }//case Wt::DialogCode::Accepted:
   }//switch( result )
   
   if( m_parent )
@@ -1007,8 +1006,8 @@ void EnergyCalMultiFile::handleFinish( WDialog::DialogCode result )
 
 
 
-EnergyCalMultiFileModel::EnergyCalMultiFileModel( EnergyCalTool *calibrator, Wt::WObject *parent )
-: WAbstractItemModel( parent ),
+EnergyCalMultiFileModel::EnergyCalMultiFileModel( EnergyCalTool *calibrator )
+: WAbstractItemModel(),
   m_calibrator( calibrator ),
   m_fileModel( nullptr )
 {
@@ -1023,8 +1022,8 @@ EnergyCalMultiFileModel::EnergyCalMultiFileModel( EnergyCalTool *calibrator, Wt:
   
   refreshData();
   
-  m_fileModel->rowsInserted().connect( boost::bind(&EnergyCalMultiFileModel::refreshData, this) );
-  m_fileModel->rowsRemoved().connect( boost::bind(&EnergyCalMultiFileModel::refreshData, this) );
+  m_fileModel->rowsInserted().connect( this, [this]( const Wt::WModelIndex &, int, int ){ refreshData(); } );
+  m_fileModel->rowsRemoved().connect( this, [this]( const Wt::WModelIndex &, int, int ){ refreshData(); } );
 
   //Should add in a listener here to the PeakModel to see if peaks are
   //  added/removed; this might necessitate tracking
@@ -1198,9 +1197,9 @@ int EnergyCalMultiFileModel::columnCount( const WModelIndex &parent ) const
 }//columnCount(...)
 
   
-Wt::cpp17::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, int role ) const
+Wt::cpp17::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, Wt::ItemDataRole role ) const
 {
-  if( (role != Wt::DisplayRole) && (role != Wt::CheckStateRole) )
+  if( (role != Wt::ItemDataRole::Display) && (role != Wt::ItemDataRole::Checked) )
     return Wt::cpp17::any();
   
   if( !index.isValid() )
@@ -1228,7 +1227,7 @@ Wt::cpp17::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, int 
     case ModelLevel::File:
     {
       // Return filename here
-      if( (col != 0) || (role != Wt::DisplayRole) )
+      if( (col != 0) || (role != Wt::ItemDataRole::Display) )
         return Wt::cpp17::any();
         
       assert( filenum == row );
@@ -1252,7 +1251,7 @@ Wt::cpp17::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, int 
     {
       // Return sample numbers + title here
       assert( row == samplesnum );
-      if( (col != 0) || (role != Wt::DisplayRole) )
+      if( (col != 0) || (role != Wt::ItemDataRole::Display) )
         return Wt::cpp17::any();
       
       if( (samplesnum < 0) || (samplesnum >= static_cast<int>(fileinfos.size())) )
@@ -1314,7 +1313,7 @@ Wt::cpp17::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, int 
       const bool checked = get<0>(peakinfos[peaknum]);
       shared_ptr<const PeakDef> peak = get<1>(peakinfos[peaknum]);
       
-      if( role == Wt::CheckStateRole )
+      if( role == Wt::ItemDataRole::Checked )
       {
         if( col == 0 )
           return Wt::cpp17::any( checked );
@@ -1327,7 +1326,7 @@ Wt::cpp17::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, int 
       if( !peak->parentNuclide() && !peak->xrayElement() && !peak->reaction() )
         return Wt::cpp17::any();
       
-      if( role == Wt::CheckStateRole )
+      if( role == Wt::ItemDataRole::Checked )
       {
         if( index.column() == 0 )
           return Wt::cpp17::any( checked );
@@ -1379,9 +1378,9 @@ Wt::cpp17::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, int 
 }//data(...)
 
 
-bool EnergyCalMultiFileModel::setData( const WModelIndex &index, const Wt::cpp17::any &value, int role )
+bool EnergyCalMultiFileModel::setData( const WModelIndex &index, const Wt::cpp17::any &value, Wt::ItemDataRole role )
 {
-  if( (role != Wt::CheckStateRole) || (index.column() != 0) )
+  if( (role != Wt::ItemDataRole::Checked) || (index.column() != 0) )
     return false;
   
   ModelLevel level;
@@ -1425,7 +1424,7 @@ WFlags<ItemFlag> EnergyCalMultiFileModel::flags( const WModelIndex &index ) cons
   from_internal_id( index.internalId(), level, filenum, samplesnum, peaknum );
   
   if( (level == ModelLevel::Peak) && (index.column() == 0) )
-    return WFlags<ItemFlag>(ItemIsUserCheckable);
+    return WFlags<ItemFlag>(Wt::ItemFlag::UserCheckable);
   
   //return WFlags<ItemFlag>(ItemIsXHTMLText);
   return WFlags<ItemFlag>();
@@ -1433,7 +1432,7 @@ WFlags<ItemFlag> EnergyCalMultiFileModel::flags( const WModelIndex &index ) cons
 
 
 Wt::cpp17::any EnergyCalMultiFileModel::headerData( int section, Wt::Orientation orientation,
-                                                int role ) const
+                                                Wt::ItemDataRole role ) const
 {
 //  if( role == DisplayRole )
 //  {

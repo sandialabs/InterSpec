@@ -833,7 +833,6 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_clearLines( NULL ),
     //m_fitPeaks( NULL ),
     m_fitSourcesBtn( nullptr ),
-    m_fitSourcesMenu( nullptr ),
     m_fitSourcesAdvancedDialog( nullptr ),
     m_showGammas( NULL ),
     m_options_icon( NULL ),

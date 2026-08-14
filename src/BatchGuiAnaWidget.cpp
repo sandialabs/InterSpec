@@ -391,12 +391,12 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget() : BatchGuiAnaWidget()
   HelpSystem::attachToolTipOn(
     m_peak_hypothesis_threshold, WString::tr( "bgw-peak-hypothesis-threshold-tt" ), showToolTips );
 
-  m_multi_sample_container = new Wt::WContainerWidget( float_options );
+  m_multi_sample_container = float_options->addNew<Wt::WContainerWidget>();
   m_multi_sample_container->addStyleClass( "ThresholdOptionContainer" );
 
-  m_multi_sample_label = new Wt::WLabel( WString::tr( "bgw-multi-sample-label" ), m_multi_sample_container );
+  m_multi_sample_label = m_multi_sample_container->addNew<Wt::WLabel>( WString::tr( "bgw-multi-sample-label" ) );
   m_multi_sample_label->setWordWrap( false );
-  m_multi_sample_handling = new Wt::WComboBox( m_multi_sample_container );
+  m_multi_sample_handling = m_multi_sample_container->addNew<Wt::WComboBox>();
   m_multi_sample_label->setBuddy( m_multi_sample_handling );
   m_multi_sample_handling->addItem( WString::tr( "bgw-multi-sample-auto" ) );
   m_multi_sample_handling->addItem( WString::tr( "bgw-multi-sample-each" ) );
@@ -406,14 +406,14 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget() : BatchGuiAnaWidget()
   HelpSystem::attachToolTipOn( m_multi_sample_handling, WString::tr( "bgw-multi-sample-tt" ), showToolTips );
 
   // Detection limit ("MDA") options, for the exemplar peaks that couldnt be fit.
-  m_mda_options_container = new Wt::WContainerWidget( float_options );
+  m_mda_options_container = float_options->addNew<Wt::WContainerWidget>();
   m_mda_options_container->addStyleClass( "MdaOptionsContainer" );
 
-  m_mda_method_container = new Wt::WContainerWidget( m_mda_options_container );
+  m_mda_method_container = m_mda_options_container->addNew<Wt::WContainerWidget>();
   m_mda_method_container->addStyleClass( "ThresholdOptionContainer" );
-  m_mda_method_label = new Wt::WLabel( WString::tr( "bgw-mda-method-label" ), m_mda_method_container );
+  m_mda_method_label = m_mda_method_container->addNew<Wt::WLabel>( WString::tr( "bgw-mda-method-label" ) );
   m_mda_method_label->setWordWrap( false );
-  m_mda_method = new Wt::WComboBox( m_mda_method_container );
+  m_mda_method = m_mda_method_container->addNew<Wt::WComboBox>();
   m_mda_method_label->setBuddy( m_mda_method );
   m_mda_method->addItem( WString::tr( "bgw-mda-method-none" ) );
   m_mda_method->addItem( WString::tr( "bgw-mda-method-currie" ) );
@@ -422,12 +422,11 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget() : BatchGuiAnaWidget()
   m_mda_method->activated().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
   HelpSystem::attachToolTipOn( m_mda_method, WString::tr( "bgw-mda-method-tt" ), showToolTips );
 
-  m_mda_confidence_level_container = new Wt::WContainerWidget( m_mda_options_container );
+  m_mda_confidence_level_container = m_mda_options_container->addNew<Wt::WContainerWidget>();
   m_mda_confidence_level_container->addStyleClass( "ThresholdOptionContainer" );
-  m_mda_confidence_level_label = new Wt::WLabel( WString::tr( "bgw-mda-cl-label" ),
-                                                m_mda_confidence_level_container );
+  m_mda_confidence_level_label = m_mda_confidence_level_container->addNew<Wt::WLabel>( WString::tr( "bgw-mda-cl-label" ) );
   m_mda_confidence_level_label->setWordWrap( false );
-  m_mda_confidence_level = new Wt::WComboBox( m_mda_confidence_level_container );
+  m_mda_confidence_level = m_mda_confidence_level_container->addNew<Wt::WComboBox>();
   m_mda_confidence_level_label->setBuddy( m_mda_confidence_level );
   for( int i = 0; i < static_cast<int>(sm_mda_confidence_levels.size()); ++i )
     m_mda_confidence_level->addItem( WString::fromUTF8( sm_mda_confidence_levels[i].first ) );
@@ -435,12 +434,11 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget() : BatchGuiAnaWidget()
   m_mda_confidence_level->activated().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
   HelpSystem::attachToolTipOn( m_mda_confidence_level, WString::tr( "bgw-mda-cl-tt" ), showToolTips );
 
-  m_mda_side_channels_container = new Wt::WContainerWidget( m_mda_options_container );
+  m_mda_side_channels_container = m_mda_options_container->addNew<Wt::WContainerWidget>();
   m_mda_side_channels_container->addStyleClass( "ThresholdOptionContainer" );
-  m_mda_side_channels_label = new Wt::WLabel( WString::tr( "bgw-mda-side-channels-label" ),
-                                             m_mda_side_channels_container );
+  m_mda_side_channels_label = m_mda_side_channels_container->addNew<Wt::WLabel>( WString::tr( "bgw-mda-side-channels-label" ) );
   m_mda_side_channels_label->setWordWrap( false );
-  m_mda_side_channels = new Wt::WSpinBox( m_mda_side_channels_container );
+  m_mda_side_channels = m_mda_side_channels_container->addNew<Wt::WSpinBox>();
   m_mda_side_channels_label->setBuddy( m_mda_side_channels );
   m_mda_side_channels->setRange( 1, 64 );
   m_mda_side_channels->setValue( 4 );  // Default value from command line
@@ -449,12 +447,11 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget() : BatchGuiAnaWidget()
   HelpSystem::attachToolTipOn( m_mda_side_channels, WString::tr( "bgw-mda-side-channels-tt" ), showToolTips );
 
 #if( ALLOW_SPECIFY_MDA_ROI_WIDTH )
-  m_mda_roi_num_fwhm_container = new Wt::WContainerWidget( m_mda_options_container );
+  m_mda_roi_num_fwhm_container = m_mda_options_container->addNew<Wt::WContainerWidget>();
   m_mda_roi_num_fwhm_container->addStyleClass( "ThresholdOptionContainer" );
-  m_mda_roi_num_fwhm_label = new Wt::WLabel( WString::tr( "bgw-mda-roi-num-fwhm-label" ),
-                                            m_mda_roi_num_fwhm_container );
+  m_mda_roi_num_fwhm_label = m_mda_roi_num_fwhm_container->addNew<Wt::WLabel>( WString::tr( "bgw-mda-roi-num-fwhm-label" ) );
   m_mda_roi_num_fwhm_label->setWordWrap( false );
-  m_mda_roi_num_fwhm = new NativeFloatSpinBox( m_mda_roi_num_fwhm_container );
+  m_mda_roi_num_fwhm = m_mda_roi_num_fwhm_container->addNew<NativeFloatSpinBox>();
   m_mda_roi_num_fwhm_label->setBuddy( m_mda_roi_num_fwhm );
   m_mda_roi_num_fwhm->setValue( 2.5f );  // Default value from command line
   m_mda_roi_num_fwhm->setRange( 0.5f, 10.0f );
@@ -1801,10 +1798,11 @@ BatchGuiIsotopicsByNuclidesWidget::BatchGuiIsotopicsByNuclidesWidget()
 
   // Make clear these options are for the "Isotopics by nuclides" tool, and not "Isotopics by peaks".
   //  The base-class ctor has already added its widgets to `this`, so insert at the front.
-  WText *title = new WText( WString::tr( "bgw-iso-by-nucs-title" ) );
+  auto titleOwned = std::make_unique<WText>( WString::tr( "bgw-iso-by-nucs-title" ) );
+  WText *title = titleOwned.get();
   title->setInline( false );
   title->addStyleClass( "IsotopicsOptsTitle" );
-  insertWidget( 0, title );
+  insertWidget( 0, std::move(titleOwned) );
 
   // Hide peak-fit-only controls that don't apply to RelActCalcAuto.
   m_fit_all_peaks->setChecked( false );

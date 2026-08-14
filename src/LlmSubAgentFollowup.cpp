@@ -31,6 +31,7 @@
 #include <Wt/WText.h>
 #include <Wt/WTextArea.h>
 #include <Wt/WPushButton.h>
+#include <Wt/WServer.h>
 #include <Wt/WApplication.h>
 #include <Wt/WContainerWidget.h>
 
@@ -47,7 +48,7 @@ using namespace std;
 
 
 LlmSubAgentFollowup::LlmSubAgentFollowup( std::shared_ptr<LlmInteraction> interaction )
-  : WObject( WApplication::instance() ),
+  : WObject(),
     m_originalInteraction( interaction ),
     m_llmInterface( nullptr ),
     m_requestPending( false )
@@ -103,11 +104,33 @@ LlmSubAgentFollowup::~LlmSubAgentFollowup()
 }
 
 
+void LlmSubAgentFollowup::startDeleteSelf()
+{
+  // Deferred, because this is called from inside a button's clicked() emission: Wt4 frees the
+  //  object through its owner's unique_ptr, and tearing it down mid-emit would leave the emitting
+  //  signal walking freed connections.  `WServer::post` runs the removal on the session thread in
+  //  a later pass of the event loop.  See SimpleDialog::startDeleteSelf().
+  WApplication * const app = WApplication::instance();
+  if( !app )
+    return;
+
+  const std::string sessionId = app->sessionId();
+  WServer::instance()->post( sessionId, [this, sessionId](){
+    WApplication * const inner_app = WApplication::instance();
+    if( inner_app && (inner_app->sessionId() == sessionId) )
+    {
+      inner_app->removeChild( this );   //owner is wApp; see the creation site
+      inner_app->triggerUpdate();
+    }
+  } );
+}//startDeleteSelf()
+
+
 void LlmSubAgentFollowup::showDialog()
 {
-  SimpleDialog *dialog = new SimpleDialog( "Ask Followup Question" );
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Ask Followup Question" );
 
-  WTextArea *questionArea = new WTextArea( dialog->contents() );
+  WTextArea *questionArea = dialog->contents()->addNew<WTextArea>();
   questionArea->setRows( 4 );
   questionArea->setPlaceholderText( "Enter your question about this conversation..." );
   questionArea->addStyleClass( "LlmFollowupInput" );
@@ -119,7 +142,7 @@ void LlmSubAgentFollowup::showDialog()
   cancelBtn->clicked().connect( std::bind( [this, dialog]() {
     assert( !m_requestPending );
     if( !m_requestPending )
-      delete this;
+      startDeleteSelf();
   } ) );
 
   sendBtn->clicked().connect( std::bind( [this, dialog, questionArea]() {
@@ -174,19 +197,19 @@ void LlmSubAgentFollowup::handleConversationFinished()
 
 void LlmSubAgentFollowup::showResponseDialog( const std::string &responseText )
 {
-  SimpleDialog *dialog = new SimpleDialog( "Followup Response" );
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Followup Response" );
 
-  WTextArea *responseArea = new WTextArea( dialog->contents() );
+  WTextArea *responseArea = dialog->contents()->addNew<WTextArea>();
   responseArea->setReadOnly( true );
   responseArea->setText( responseText );
   responseArea->setRows( 15 );
   responseArea->addStyleClass( "LlmFollowupResponse" );
   responseArea->setWidth( WLength( 100, WLength::Unit::Percentage ) );
 
-  WText *label = new WText( "Ask another question:", dialog->contents() );
-  label->setPadding( WLength( 8 ), Wt::Top );
+  WText *label = dialog->contents()->addNew<WText>( "Ask another question:" );
+  label->setPadding( WLength( 8 ), Wt::Side::Top );
 
-  WTextArea *questionArea = new WTextArea( dialog->contents() );
+  WTextArea *questionArea = dialog->contents()->addNew<WTextArea>();
   questionArea->setRows( 3 );
   questionArea->setPlaceholderText( "Enter another question, or close..." );
   questionArea->addStyleClass( "LlmFollowupInput" );
@@ -198,7 +221,7 @@ void LlmSubAgentFollowup::showResponseDialog( const std::string &responseText )
   closeBtn->clicked().connect( std::bind( [this, dialog](){
     assert( !m_requestPending );
     if( !m_requestPending )
-      delete this;
+      startDeleteSelf();
   } ) );
 
   sendBtn->clicked().connect( std::bind( [this, dialog, questionArea](){

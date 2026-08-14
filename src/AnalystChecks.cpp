@@ -1115,7 +1115,7 @@ namespace AnalystChecks
           }//if( source assignment )
 
           // Update PeakModel
-          PeakModel *pmodel = viewer->peakModel();
+          const std::shared_ptr<PeakModel> pmodel = viewer->peakModel();
           assert( pmodel );
           if( !doNotAddToAnalysisPeaks && pmodel )
           {
@@ -1967,7 +1967,7 @@ namespace AnalystChecks
 
           if( !doNotAddPeaksToUserSession && !result.fitPeaks.empty() )
           {
-            PeakModel * const pmodel = viewer->peakModel();
+            const std::shared_ptr<PeakModel> pmodel = viewer->peakModel();
             if( pmodel )
             {
               shared_ptr<const deque<shared_ptr<const PeakDef>>> existing_peaks

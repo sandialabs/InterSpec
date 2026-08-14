@@ -51,6 +51,19 @@ public:
 
   virtual ~LlmSubAgentFollowup();
 
+protected:
+  /** Detaches this object from its owner (wApp) and destroys it, deferred to the next pass of the
+   event loop.
+
+   Wt4 owns WObjects through a unique_ptr in the parent's child list, so `delete this` from inside
+   a signal handler is both a double-free and a destroy-during-own-emit; the object must instead be
+   handed back by `removeChild()`, and only after the emitting signal has finished.  Mirrors
+   `SimpleDialog::startDeleteSelf()`.
+   */
+  void startDeleteSelf();
+
+public:
+
   /** Show the initial dialog prompting for a followup question. */
   void showDialog();
 

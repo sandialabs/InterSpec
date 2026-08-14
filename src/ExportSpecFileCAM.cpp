@@ -1390,8 +1390,8 @@ GenieEfficiencyResult convert_efficiency_to_genie( const DetectorPeakResponse &d
 }//convert_efficiency_to_genie(...)
 
 
-GenieLibraryModel::GenieLibraryModel( Wt::WObject *parent )
-  : Wt::WAbstractItemModel( parent )
+GenieLibraryModel::GenieLibraryModel()
+  : Wt::WAbstractItemModel()
 {
 }
 
@@ -1486,7 +1486,7 @@ int GenieLibraryModel::columnCount( const WModelIndex & ) const
 }//columnCount(...)
 
 
-Wt::cpp17::any GenieLibraryModel::data( const WModelIndex &index, int role ) const
+Wt::cpp17::any GenieLibraryModel::data( const WModelIndex &index, Wt::ItemDataRole role ) const
 {
   if( !index.isValid() )
     return Wt::cpp17::any();
@@ -1503,18 +1503,18 @@ Wt::cpp17::any GenieLibraryModel::data( const WModelIndex &index, int role ) con
     switch( Column(index.column()) )
     {
       case Column::Name:
-        if( role != Wt::DisplayRole )
+        if( role != Wt::ItemDataRole::Display )
           return Wt::cpp17::any();
         return Wt::cpp17::any( WString::fromUTF8(source.name) );
 
       case Column::Info:
         //  Just the time - the column header says what it is.
-        if( role != Wt::DisplayRole )
+        if( role != Wt::ItemDataRole::Display )
           return Wt::cpp17::any();
         return Wt::cpp17::any( WString::fromUTF8( PhysicalUnits::printToBestTimeUnits(source.half_life_seconds) ) );
 
       case Column::Age:
-        if( !source.is_ageable || ((role != Wt::DisplayRole) && (role != Wt::EditRole)) )
+        if( !source.is_ageable || ((role != Wt::ItemDataRole::Display) && (role != Wt::ItemDataRole::Edit)) )
           return Wt::cpp17::any();
         return Wt::cpp17::any( WString::fromUTF8( PhysicalUnits::printToBestTimeUnits(source.age_seconds) ) );
 
@@ -1522,7 +1522,7 @@ Wt::cpp17::any GenieLibraryModel::data( const WModelIndex &index, int role ) con
         return Wt::cpp17::any();
 
       case Column::Include:
-        if( role != Wt::CheckStateRole )
+        if( role != Wt::ItemDataRole::Checked )
           return Wt::cpp17::any();
         return Wt::cpp17::any( source.included );
 
@@ -1542,7 +1542,7 @@ Wt::cpp17::any GenieLibraryModel::data( const WModelIndex &index, int role ) con
   switch( Column(index.column()) )
   {
     case Column::Name:
-      if( role != Wt::DisplayRole )
+      if( role != Wt::ItemDataRole::Display )
         return Wt::cpp17::any();
       {
         //  Just the number - the column header carries the "keV".
@@ -1553,7 +1553,7 @@ Wt::cpp17::any GenieLibraryModel::data( const WModelIndex &index, int role ) con
 
     case Column::Info:
     {
-      if( role != Wt::DisplayRole )
+      if( role != Wt::ItemDataRole::Display )
         return Wt::cpp17::any();
       char buffer[32];
       snprintf( buffer, sizeof(buffer), "%.4g", 100.0*line.yield );
@@ -1571,12 +1571,12 @@ Wt::cpp17::any GenieLibraryModel::data( const WModelIndex &index, int role ) con
     case Column::Key:
       //  A line that isnt being written cannot be the key line, so it gets no checkbox at all
       //  rather than an unchecked one the user could click to no effect.
-      if( (role != Wt::CheckStateRole) || !line.included )
+      if( (role != Wt::ItemDataRole::Checked) || !line.included )
         return Wt::cpp17::any();
       return Wt::cpp17::any( line.is_key_line );
 
     case Column::Include:
-      if( role != Wt::CheckStateRole )
+      if( role != Wt::ItemDataRole::Checked )
         return Wt::cpp17::any();
       return Wt::cpp17::any( line.included );
 
@@ -1588,7 +1588,7 @@ Wt::cpp17::any GenieLibraryModel::data( const WModelIndex &index, int role ) con
 }//data(...)
 
 
-bool GenieLibraryModel::setData( const WModelIndex &index, const Wt::cpp17::any &value, int role )
+bool GenieLibraryModel::setData( const WModelIndex &index, const Wt::cpp17::any &value, Wt::ItemDataRole role )
 {
   if( !index.isValid() )
     return false;
@@ -1606,7 +1606,7 @@ bool GenieLibraryModel::setData( const WModelIndex &index, const Wt::cpp17::any 
     {
       case Column::Include:
       {
-        if( role != Wt::CheckStateRole )
+        if( role != Wt::ItemDataRole::Checked )
           return false;
 
         const bool checked = Wt::cpp17::any_cast<bool>( value );
@@ -1649,7 +1649,7 @@ bool GenieLibraryModel::setData( const WModelIndex &index, const Wt::cpp17::any 
 
       case Column::Age:
       {
-        if( !source.is_ageable || (role != Wt::EditRole) )
+        if( !source.is_ageable || (role != Wt::ItemDataRole::Edit) )
           return false;
         const string str_value = Wt::cpp17::any_cast<WString>(value).toUTF8();
         try
@@ -1677,7 +1677,7 @@ bool GenieLibraryModel::setData( const WModelIndex &index, const Wt::cpp17::any 
 
   const int num_lines = static_cast<int>( source.lines.size() );
 
-  if( (Column(index.column()) == Column::Include) && (role == Wt::CheckStateRole) )
+  if( (Column(index.column()) == Column::Include) && (role == Wt::ItemDataRole::Checked) )
   {
     source.lines[line_index].included = Wt::cpp17::any_cast<bool>( value );
 
@@ -1692,7 +1692,7 @@ bool GenieLibraryModel::setData( const WModelIndex &index, const Wt::cpp17::any 
     return true;
   }
 
-  if( (Column(index.column()) == Column::Key) && (role == Wt::CheckStateRole) )
+  if( (Column(index.column()) == Column::Key) && (role == Wt::ItemDataRole::Checked) )
   {
     GenieLibraryLine &line = source.lines[line_index];
     if( !line.included )
@@ -1788,7 +1788,7 @@ WFlags<ItemFlag> GenieLibraryModel::flags( const WModelIndex &index ) const
     if( (source_index >= 0) && (source_index < static_cast<int>(m_sources.size()))
        && m_sources[source_index].is_ageable )
     {
-      return WFlags<ItemFlag>( ItemFlag::ItemIsEditable );
+      return WFlags<ItemFlag>( ItemFlag::Editable );
     }
   }
 
@@ -1796,19 +1796,19 @@ WFlags<ItemFlag> GenieLibraryModel::flags( const WModelIndex &index ) const
 }//flags(...)
 
 
-Wt::cpp17::any GenieLibraryModel::headerData( int section, Orientation orientation, int role ) const
+Wt::cpp17::any GenieLibraryModel::headerData( int section, Orientation orientation, Wt::ItemDataRole role ) const
 {
-  if( orientation != Horizontal )
+  if( orientation != Wt::Orientation::Horizontal )
     return WAbstractItemModel::headerData( section, orientation, role );
 
-  if( role == Wt::ToolTipRole )
+  if( role == Wt::ItemDataRole::ToolTip )
   {
     if( Column(section) == Column::Key )
       return Wt::cpp17::any( WString::tr("esfcam-col-key-tt") );
     return Wt::cpp17::any();
   }
 
-  if( role != Wt::DisplayRole )
+  if( role != Wt::ItemDataRole::Display )
     return WAbstractItemModel::headerData( section, orientation, role );
 
   switch( Column(section) )
@@ -1831,8 +1831,8 @@ Wt::Signal<const SandiaDecay::Nuclide *, double> &GenieLibraryModel::ageEdited()
 }
 
 
-GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidget *parent )
-  : WContainerWidget( parent ),
+GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer )
+  : WContainerWidget(),
     m_interspec( viewer ),
     m_writeSpectrumCb( nullptr ),
     m_writePeaksCb( nullptr ),
@@ -1869,11 +1869,11 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
 
   addStyleClass( "GenieCnfOptions" );
 
-  WText *title = new WText( WString::tr("esfcam-title"), this );
+  WText *title = this->addNew<WText>( WString::tr("esfcam-title") );
   title->addStyleClass( "ExportColTitle" );
 
   // --- What to write ---
-  m_writeSpectrumCb = new WCheckBox( WString::tr("esfcam-write-spectrum"), this );
+  m_writeSpectrumCb = this->addNew<WCheckBox>( WString::tr("esfcam-write-spectrum") );
   m_writeSpectrumCb->addStyleClass( "CbNoLineBreak" );
   m_writeSpectrumCb->setChecked( true );
   HelpSystem::attachToolTipOn( m_writeSpectrumCb, WString::tr("esfcam-write-spectrum-tt"),
@@ -1882,7 +1882,7 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
   m_writeSpectrumCb->checked().connect( this, &GenieCnfOptionsWidget::handleWriteSpectrumChanged );
   m_writeSpectrumCb->unChecked().connect( this, &GenieCnfOptionsWidget::handleWriteSpectrumChanged );
 
-  m_writePeaksCb = new WCheckBox( WString::tr("esfcam-write-peaks"), this );
+  m_writePeaksCb = this->addNew<WCheckBox>( WString::tr("esfcam-write-peaks") );
   m_writePeaksCb->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( m_writePeaksCb, WString::tr("esfcam-write-peaks-tt"),
                                true,
@@ -1890,7 +1890,7 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
   m_writePeaksCb->changed().connect( this, &GenieCnfOptionsWidget::handleEfficiencyOrEnergyCalChanged );
 
   // --- Nuclide library ---
-  m_writeLibraryCb = new WCheckBox( WString::tr("esfcam-write-library"), this );
+  m_writeLibraryCb = this->addNew<WCheckBox>( WString::tr("esfcam-write-library") );
   HelpSystem::attachToolTipOn( m_writeLibraryCb, WString::tr("esfcam-write-library-tt"),
                                true,
                                HelpSystem::ToolTipPrefOverride::AlwaysShow );
@@ -1898,13 +1898,13 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
   m_writeLibraryCb->checked().connect( this, &GenieCnfOptionsWidget::handleLibraryOptionsChanged );
   m_writeLibraryCb->unChecked().connect( this, &GenieCnfOptionsWidget::handleLibraryOptionsChanged );
 
-  m_libraryModeCb = new WComboBox( this );
+  m_libraryModeCb = this->addNew<WComboBox>();
   m_libraryModeCb->addItem( WString::tr("esfcam-lines-from-peaks") );
   m_libraryModeCb->addItem( WString::tr("esfcam-lines-above-thresh") );
   m_libraryModeCb->setCurrentIndex( 0 );
   m_libraryModeCb->activated().connect( this, &GenieCnfOptionsWidget::handleLibraryOptionsChanged );
 
-  m_interferenceLinesCb = new WCheckBox( WString::tr("esfcam-interference-lines"), this );
+  m_interferenceLinesCb = this->addNew<WCheckBox>( WString::tr("esfcam-interference-lines") );
   m_interferenceLinesCb->addStyleClass( "CbNoLineBreak GenieCnfSubOption" );
   m_interferenceLinesCb->setChecked( true );
   HelpSystem::attachToolTipOn( m_interferenceLinesCb, WString::tr("esfcam-interference-lines-tt"),
@@ -1914,10 +1914,10 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
   m_interferenceLinesCb->unChecked().connect( this, &GenieCnfOptionsWidget::handleLibraryOptionsChanged );
 
   // Keep the label and its input on one line, so hiding them together leaves no stray gap.
-  WContainerWidget *thresholdRow = new WContainerWidget( this );
+  WContainerWidget *thresholdRow = this->addNew<WContainerWidget>();
   thresholdRow->addStyleClass( "GenieCnfRow" );
-  m_thresholdLabel = new WLabel( WString::tr("esfcam-threshold-label"), thresholdRow );
-  m_thresholdEdit = new NativeFloatSpinBox( thresholdRow );
+  m_thresholdLabel = thresholdRow->addNew<WLabel>( WString::tr("esfcam-threshold-label") );
+  m_thresholdEdit = thresholdRow->addNew<NativeFloatSpinBox>();
   m_thresholdEdit->setRange( 0.0f, 100.0f );
   m_thresholdEdit->setValue( 1.0f );
   m_thresholdLabel->setBuddy( m_thresholdEdit );
@@ -1927,7 +1927,7 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
                                HelpSystem::ToolTipPrefOverride::AlwaysShow );
   m_thresholdEdit->valueChanged().connect( this, &GenieCnfOptionsWidget::handleLibraryOptionsChanged );
 
-  m_combineLinesCb = new WCheckBox( WString::tr("esfcam-combine-lines"), this );
+  m_combineLinesCb = this->addNew<WCheckBox>( WString::tr("esfcam-combine-lines") );
   m_combineLinesCb->addStyleClass( "CbNoLineBreak GenieCnfSubOption" );
   m_combineLinesCb->setChecked( true );
   HelpSystem::attachToolTipOn( m_combineLinesCb, WString::tr("esfcam-combine-lines-tt"),
@@ -1936,16 +1936,18 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
   m_combineLinesCb->checked().connect( this, &GenieCnfOptionsWidget::handleLibraryOptionsChanged );
   m_combineLinesCb->unChecked().connect( this, &GenieCnfOptionsWidget::handleLibraryOptionsChanged );
 
-  m_libraryModel = new GenieLibraryModel( this );
+  // Wt4 owns models through shared_ptr (the view co-owns it via setModel).
+  auto libraryModelOwned = std::make_shared<GenieLibraryModel>();
+  m_libraryModel = libraryModelOwned.get();
   m_libraryModel->ageEdited().connect( this, &GenieCnfOptionsWidget::handleSourceAgeEdited );
 
-  m_libraryTable = new RowStretchTreeView( this );
+  m_libraryTable = this->addNew<RowStretchTreeView>();
   m_libraryTable->setRootIsDecorated( true );
   //  Sorting is not useful here (the rows are already energy ordered within each source), and the
   //  sort indicators eat header width we need for the column labels.
   m_libraryTable->setSortingEnabled( false );
   m_libraryTable->addStyleClass( "GenieLibraryTable" );
-  m_libraryTable->setModel( m_libraryModel );
+  m_libraryTable->setModel( libraryModelOwned );
   // These have to add up to less than the dialog column the panel lives in (widened to ~340px by
   //  the `ExportSpecFileToolCnf` style class), or the "Write" checkbox column - the whole point of
   //  the table - ends up off-screen behind a scrollbar the user is unlikely to find.
@@ -1959,31 +1961,31 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
 
   //  Directly under the table, so warnings and "why you cannot export" messages are next to what
   //  they are about, rather than at the bottom of a panel the user has to scroll to reach.
-  m_warningsTxt = new WText( this );
+  m_warningsTxt = this->addNew<WText>();
   m_warningsTxt->addStyleClass( "GenieCnfWarnings" );
-  m_warningsTxt->setTextAlignment( Wt::AlignmentFlag::AlignmentFlag::Left );
+  m_warningsTxt->setTextAlignment( Wt::AlignmentFlag::Left );
   m_warningsTxt->hide();
   // Note: dont call `setHeight(...)`/`resize(...)` on a RowStretchTreeView (see its header) - the
   //  table's height comes from the `.GenieLibraryTable` rule in ExportSpecFile.css.
 
   // --- FWHM ---
-  m_writeFwhmCb = new WCheckBox( WString::tr("esfcam-write-fwhm"), this );
+  m_writeFwhmCb = this->addNew<WCheckBox>( WString::tr("esfcam-write-fwhm") );
   m_writeFwhmCb->addStyleClass( "CbNoLineBreak" );
   m_writeFwhmCb->checked().connect( this, &GenieCnfOptionsWidget::handleFwhmSourceChanged );
   m_writeFwhmCb->unChecked().connect( this, &GenieCnfOptionsWidget::handleFwhmSourceChanged );
 
   //  Contents are filled in by `updateAvailableFwhmSources()`, so only sources that can actually
   //  produce a shape calibration for the current spectrum are ever offered.
-  m_fwhmSourceCb = new WComboBox( this );
+  m_fwhmSourceCb = this->addNew<WComboBox>();
   m_fwhmSourceCb->activated().connect( this, &GenieCnfOptionsWidget::handleFwhmSourceChanged );
 
   //  Above the button, so the equation that will actually be written is visible right where the
   //  user picks/fits it.
-  m_fwhmFitTxt = new WText( this );
+  m_fwhmFitTxt = this->addNew<WText>();
   m_fwhmFitTxt->addStyleClass( "GenieCnfFitResult" );
   m_fwhmFitTxt->hide();
 
-  m_fitFwhmFromPeaksBtn = new WPushButton( WString::tr("esfcam-fit-from-peaks-btn"), this );
+  m_fitFwhmFromPeaksBtn = this->addNew<WPushButton>( WString::tr("esfcam-fit-from-peaks-btn") );
   m_fitFwhmFromPeaksBtn->addStyleClass( "LightButton" );
   m_fitFwhmFromPeaksBtn->clicked().connect( this, &GenieCnfOptionsWidget::handleFitFwhmFromPeaksClicked );
   m_fitFwhmFromPeaksBtn->hide();
@@ -1993,7 +1995,7 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
   //  so following it does not round-trip pending form state to the server.  Every input in this
   //  widget must therefore have a change handler connected, otherwise the user's selection can
   //  still be un-sent when the file gets written.
-  m_writeEfficiencyCb = new WCheckBox( WString::tr("esfcam-write-eff"), this );
+  m_writeEfficiencyCb = this->addNew<WCheckBox>( WString::tr("esfcam-write-eff") );
   m_writeEfficiencyCb->addStyleClass( "CbNoLineBreak" );
   HelpSystem::attachToolTipOn( m_writeEfficiencyCb, WString::tr("esfcam-write-eff-tt"),
                                true,
@@ -2002,19 +2004,19 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
 
   // Genie efficiency curves are absolute, so a far-field DRF needs the source distance the
   //  exported curve is for; hidden for fixed-geometry DRFs, where there is no distance to give.
-  WContainerWidget *effDistRow = new WContainerWidget( this );
+  WContainerWidget *effDistRow = this->addNew<WContainerWidget>();
   effDistRow->addStyleClass( "GenieCnfRow" );
-  m_effDistanceLabel = new WLabel( WString::tr("esfcam-eff-distance-label"), effDistRow );
-  m_effDistanceEdit = new WLineEdit( "1 m", effDistRow );
+  m_effDistanceLabel = effDistRow->addNew<WLabel>( WString::tr("esfcam-eff-distance-label") );
+  m_effDistanceEdit = effDistRow->addNew<WLineEdit>( "1 m" );
   m_effDistanceEdit->addStyleClass( "GenieEffDistance" );
   m_effDistanceLabel->setBuddy( m_effDistanceEdit );
   HelpSystem::attachToolTipOn( m_effDistanceEdit, WString::tr("esfcam-eff-distance-tt"),
                                true,
                                HelpSystem::ToolTipPrefOverride::AlwaysShow );
 
-  WRegExpValidator *distValidator
-              = new WRegExpValidator( PhysicalUnits::sm_distanceUnitOptionalRegex, m_effDistanceEdit );
-  distValidator->setFlags( Wt::MatchCaseInsensitive );
+  auto distValidator
+        = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
+  distValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
   distValidator->setMandatory( true );
   m_effDistanceEdit->setValidator( distValidator );
 
@@ -2022,7 +2024,7 @@ GenieCnfOptionsWidget::GenieCnfOptionsWidget( InterSpec *viewer, WContainerWidge
   m_effDistanceEdit->enterPressed().connect( this, &GenieCnfOptionsWidget::handleEfficiencyOrEnergyCalChanged );
   m_effDistanceEdit->blurred().connect( this, &GenieCnfOptionsWidget::handleEfficiencyOrEnergyCalChanged );
 
-  m_writeEnergyCalCb = new WCheckBox( WString::tr("esfcam-write-energy-cal"), this );
+  m_writeEnergyCalCb = this->addNew<WCheckBox>( WString::tr("esfcam-write-energy-cal") );
   m_writeEnergyCalCb->addStyleClass( "CbNoLineBreak" );
   m_writeEnergyCalCb->setChecked( true );
   HelpSystem::attachToolTipOn( m_writeEnergyCalCb, WString::tr("esfcam-write-energy-cal-tt"),

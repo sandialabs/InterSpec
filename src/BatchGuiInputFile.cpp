@@ -198,9 +198,8 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
 BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_name,
                                                       const std::string path_to_file,
                                                       std::shared_ptr<SpecMeas> spec_meas,
-                                                      const BatchGuiInputSpectrumFile::ShowPreviewOption preview,
-                                                      Wt::WContainerWidget *parent )
-: Wt::WContainerWidget( parent ),
+                                                      const BatchGuiInputSpectrumFile::ShowPreviewOption preview )
+: Wt::WContainerWidget(),
   m_filename( path_to_file ),
   m_display_name( display_name ),
   m_should_cleanup( false ),  //we dont own the file on disk, if there even is one
@@ -210,8 +209,8 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
   m_preview_created( false ),
   m_spec_meas( nullptr ),
   m_is_peaks_csv( false ),
-  m_preview_created_signal( this ),
-  m_remove_self_request_signal( this )
+  m_preview_created_signal(),
+  m_remove_self_request_signal()
 {
   init_gui( display_name, path_to_file );
 
@@ -221,12 +220,24 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
   m_spec_meas = spec_meas;
 
   std::shared_ptr<int> status_ptr = make_shared<int>( spec_meas ? 1 : 3 );
-  boost::function<void( void )> updateGuiCallback =
-    wApp->bind( boost::bind( &BatchGuiInputSpectrumFile::set_spectrum, this, spec_meas, status_ptr ) );
+
+  // Wt4 removed WApplication::bind().  This fires ~1s later on the session thread, and this widget
+  //  lives in a SimpleDialog the user can dismiss before then, so re-resolve it by id rather than
+  //  capturing `this` (see the disk-loading constructor, and CLAUDE.md).
+  const std::string widget_id = id();
+  std::function<void(void)> updateGuiCallback = [widget_id, spec_meas, status_ptr](){
+    WApplication * const app = WApplication::instance();
+    if( !app )
+      return;
+    BatchGuiInputSpectrumFile * const self
+        = dynamic_cast<BatchGuiInputSpectrumFile *>( app->domRoot()->findById( widget_id ) );
+    if( self )
+      self->set_spectrum( spec_meas, status_ptr );
+  };
 
   // There is nothing to parse here, but we still cant create the preview chart synchronously -
   //  see the comment in the other constructor for why the delay is needed.
-  WServer::instance()->schedule( 1000, wApp->sessionId(), updateGuiCallback );
+  WServer::instance()->schedule( std::chrono::milliseconds(1000), wApp->sessionId(), updateGuiCallback );
 }// BatchGuiInputSpectrumFile in-memory constructor
 
 
@@ -239,19 +250,19 @@ void BatchGuiInputSpectrumFile::init_gui( const std::string &display_name, const
 
   wApp->useStyleSheet( "InterSpec_resources/BatchGuiInputFile.css" );
 
-  m_preview_container = new Wt::WContainerWidget( this );
+  m_preview_container = addNew<Wt::WContainerWidget>();
   m_preview_container->addStyleClass( "InputFilePreview" );
 
-  WText *filename_text = new WText( display_name, this );
+  WText *filename_text = addNew<WText>( display_name );
   filename_text->addStyleClass( "FilenameText" );
   if( path_to_file.empty() )
     filename_text->setToolTip( WString::fromUTF8(display_name) );
   else
     filename_text->setToolTip( "Full path of disk file: '" + path_to_file + "'" );
 
-  WContainerWidget *close_icon = new WContainerWidget( this );
+  WContainerWidget *close_icon = addNew<WContainerWidget>();
   close_icon->addStyleClass( "closeicon-wtdefault" );
-  close_icon->clicked().connect( boost::bind( &BatchGuiInputSpectrumFile::requestRemoveSelf, this ) );
+  close_icon->clicked().connect( this, [this](){ requestRemoveSelf(); } );
   close_icon->clicked().preventPropagation();
 }// void BatchGuiInputSpectrumFile::init_gui(...)
 

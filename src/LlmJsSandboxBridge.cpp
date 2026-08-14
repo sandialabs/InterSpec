@@ -40,8 +40,8 @@ using namespace Wt;
 using json = nlohmann::json;
 
 
-LlmJsSandboxBridge::LlmJsSandboxBridge( WContainerWidget *parent )
-  : WContainerWidget( parent ),
+LlmJsSandboxBridge::LlmJsSandboxBridge()
+  : WContainerWidget(),
     m_resultSignal( this, "jsSandboxResult", false ),
     m_pending(),
     m_nextRequestId( 1 )
@@ -51,7 +51,7 @@ LlmJsSandboxBridge::LlmJsSandboxBridge( WContainerWidget *parent )
   // display:none so timer throttling rules (which can apply to fully
   // hidden frames in some browsers) do not bite synchronous JS execution.
   setPositionScheme( PositionScheme::Absolute );
-  setOffsets( -9999, Wt::Left | Wt::Top );
+  setOffsets( -9999, Wt::Side::Left | Wt::Side::Top );
   setWidth( 1 );
   setHeight( 1 );
 

@@ -33,6 +33,7 @@
 #include <Wt/WDialog.h>
 #include <Wt/WContainerWidget.h>
 #include <Wt/WAbstractItemModel.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 // Forward Declarations
 class PeakDef;
@@ -75,8 +76,8 @@ public:
   void doFit();
 
   void applyCurrentFit();
-
-  void handleFinish( Wt::WDialog::DialogCode result );
+  
+  void handleFinish( Wt::DialogCode result );
 protected:
   void updateCoefDisplay();
 
@@ -85,8 +86,8 @@ protected:
   void updateDevPairDisplay();
 
   EnergyCalTool *m_calibrator;
-  AuxWindow *m_parent;
-  EnergyCalMultiFileModel *m_model;
+  Wt::Core::observing_ptr<AuxWindow> m_parent;
+  std::shared_ptr<EnergyCalMultiFileModel> m_model;
   std::vector<Wt::WCheckBox *> m_fitFor;
   std::vector<Wt::WLineEdit *> m_coefvals;
   Wt::WPushButton *m_use;
@@ -110,7 +111,7 @@ protected:
 class EnergyCalMultiFileModel : public  Wt::WAbstractItemModel
 {
 public:
-  EnergyCalMultiFileModel( EnergyCalTool *calibrator, Wt::WObject *parent = 0 );
+  EnergyCalMultiFileModel( EnergyCalTool *calibrator );
   virtual ~EnergyCalMultiFileModel();
   
   virtual Wt::WModelIndex index( int row, int column,
@@ -121,13 +122,13 @@ public:
   virtual int columnCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const;
   
   virtual Wt::cpp17::any data( const Wt::WModelIndex &index,
-                           int role = Wt::DisplayRole ) const;
+                           Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const;
   virtual bool setData( const Wt::WModelIndex &index,
-                        const Wt::cpp17::any &value, int role = Wt::EditRole );
+                        const Wt::cpp17::any &value, Wt::ItemDataRole role = Wt::ItemDataRole::Edit );
   virtual Wt::WFlags<Wt::ItemFlag> flags( const Wt::WModelIndex &index ) const;
   virtual Wt::cpp17::any headerData( int section,
-                                 Wt::Orientation orientation = Wt::Horizontal,
-                                 int role = Wt::DisplayRole) const;
+                                 Wt::Orientation orientation = Wt::Orientation::Horizontal,
+                                 Wt::ItemDataRole role = Wt::ItemDataRole::Display) const;
   void refreshData();
   
 protected:

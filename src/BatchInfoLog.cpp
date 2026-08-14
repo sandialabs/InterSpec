@@ -2084,10 +2084,10 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     
     using So = Wt::SortOrder;
     using Col = PeakModel::Columns;
-    json["PeakSortIndex_Energy_Ascend"] = sorted_indices( So::AscendingOrder, Col::kMean );
+    json["PeakSortIndex_Energy_Ascend"] = sorted_indices( So::Ascending, Col::kMean );
     json["PeakSortIndex_Energy_Descend"] = sorted_indices( Wt::SortOrder::Descending, PeakModel::Columns::kMean );
     
-    json["PeakSortIndex_Isotope_Ascend"] = sorted_indices( So::AscendingOrder, Col::kIsotope );
+    json["PeakSortIndex_Isotope_Ascend"] = sorted_indices( So::Ascending, Col::kIsotope );
     json["PeakSortIndex_Isotope_Descend"] = sorted_indices( Wt::SortOrder::Descending, PeakModel::Columns::kIsotope );
     
     json["PeakSortIndex_Mean_Ascend"] = sorted_indices( Wt::SortOrder::Ascending, PeakModel::Columns::kMean );

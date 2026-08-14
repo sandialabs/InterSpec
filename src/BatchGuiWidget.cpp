@@ -409,11 +409,11 @@ void BatchGuiWidget::addInMemoryFiles( const std::vector<std::tuple<std::string,
                     : BatchGuiInputSpectrumFile::ShowPreviewOption::DontShow;
 
     BatchGuiInputSpectrumFile *input_file =
-      new BatchGuiInputSpectrumFile( display_name, path_to_file, spec_meas, show_preview,
-                                     m_input_files_container );
+      m_input_files_container->addNew<BatchGuiInputSpectrumFile>( display_name, path_to_file,
+                                                                 spec_meas, show_preview );
     input_file->preview_created_signal().connect( this, &BatchGuiWidget::updateCanDoAnalysis );
     input_file->remove_self_request().connect(
-      boost::bind( &BatchGuiWidget::handle_remove_input_file, this, boost::placeholders::_1 ) );
+      this, [this]( BatchGuiInputSpectrumFile *a1 ){ handle_remove_input_file( a1 ); } );
 
     already_added.push_back( spec_meas );
     num_initial_files += 1;
@@ -502,7 +502,7 @@ void BatchGuiWidget::handleLoadOpenFileRequest()
 
   const vector<shared_ptr<const SpecMeas>> already_added = currentInputSpecMeas();
 
-  SimpleDialog *dialog = new SimpleDialog( WString::tr( "bgw-pick-open-file-title" ) );
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( WString::tr( "bgw-pick-open-file-title" ) );
   dialog->addStyleClass( "BatchOpenFilePickerDialog" );
 
   // The headers themselves, parallel to the entries of the selection box.  Holding these rather
@@ -510,9 +510,9 @@ void BatchGuiWidget::handleLoadOpenFileRequest()
   //  out from under us.
   auto headers = make_shared<vector<shared_ptr<SpectraFileHeader>>>();
 
-  WSelectionBox *selection = new WSelectionBox( dialog->contents() );
+  WSelectionBox *selection = dialog->contents()->addNew<WSelectionBox>();
   selection->addStyleClass( "BatchOpenFilePicker" );
-  selection->setSelectionMode( Wt::ExtendedSelection );
+  selection->setSelectionMode( Wt::SelectionMode::Extended );
   selection->setVerticalSize( 8 );
 
   for( int row = 0; row < model->rowCount(); ++row )
@@ -532,17 +532,18 @@ void BatchGuiWidget::handleLoadOpenFileRequest()
   if( headers->empty() )
   {
     delete selection;
-    new WText( WString::tr( "bgw-pick-open-file-none" ), dialog->contents() );
+    dialog->contents()->addNew<WText>( WString::tr( "bgw-pick-open-file-none" ) );
     dialog->addButton( WString::tr( "Okay" ) );
     return;
   }//if( headers->empty() )
 
-  new WText( WString::tr( "bgw-pick-open-file-msg" ), dialog->contents() );
+  dialog->contents()->addNew<WText>( WString::tr( "bgw-pick-open-file-msg" ) );
 
   dialog->addButton( WString::tr( "Cancel" ) );
   WPushButton *add_btn = dialog->addButton( WString::tr( "bgw-pick-open-file-add" ) );
-  add_btn->clicked().connect( boost::bind( &BatchGuiWidget::handleAddOpenFiles, this,
-                                           selection, headers ) );
+  add_btn->clicked().connect( this, [this,selection,headers](){
+    handleAddOpenFiles( selection, headers );
+  } );
 }// void BatchGuiWidget::handleLoadOpenFileRequest()
 
 

@@ -192,7 +192,7 @@ static void writeCacheDebugFiles( const std::string &currentRequest,
 #endif // PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER
 
 LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const LlmConfig> &config )
-  : Wt::Signals::trackable(),
+  : Wt::Core::observable(),
     m_interspec(interspec),
     m_block_tool_calls(false),
     m_config( config ),
@@ -260,15 +260,15 @@ LlmInterface::LlmInterface( InterSpec* interspec, const std::shared_ptr<const Ll
   // active WApplication session, which is present here.  Left stopped until work is outstanding.
   m_watchdogTimer.reset( new Wt::WTimer() );
   m_watchdogTimer->setSingleShot( true );
-  m_watchdogTimer->setInterval( sm_watchdog_timeout_ms );
-  // LlmInterface is a Wt::Signals::trackable (not a WObject), so connect a functor rather than the
+  m_watchdogTimer->setInterval( std::chrono::milliseconds(sm_watchdog_timeout_ms) );
+  // LlmInterface is a Wt::Core::observable (not a WObject), so connect a functor rather than the
   // (target,method) overload, which would pick the WObject fast-path and fail to compile.
   m_watchdogTimer->timeout().connect( std::bind( &LlmInterface::onWatchdogTimeout, this ) );
 
   // Repeating sweep that force-fails async tool calls past their deadline; only runs while a tool round
   // is outstanding (see updateDeferredSweepTimer()).
   m_deferredSweepTimer.reset( new Wt::WTimer() );
-  m_deferredSweepTimer->setInterval( sm_deferred_sweep_interval_ms );
+  m_deferredSweepTimer->setInterval( std::chrono::milliseconds(sm_deferred_sweep_interval_ms) );
   m_deferredSweepTimer->timeout().connect( std::bind( &LlmInterface::onDeferredSweep, this ) );
 }
 
@@ -4865,7 +4865,7 @@ void LlmInterface::setupJavaScriptBridge() {
   const string callbackJs =
     "if (!window.llmResponseCallbacks) { window.llmResponseCallbacks = {}; }\n"
     "window.llmResponseCallbacks['" + m_instanceId + "'] = function(response, requestId) { "
-    "" + m_responseSignal->createCall("response", "requestId") + ";"
+    "" + m_responseSignal->createCall({"response", "requestId"}) + ";"
     "};";
 
   app->doJavaScript( callbackJs );

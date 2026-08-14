@@ -51,7 +51,7 @@ class DeviationPairDisplay;
 class DevPair : public Wt::WContainerWidget
 {
 public:
-  DevPair( const bool show_fit_offset, Wt::WContainerWidget *parent = 0 );
+  DevPair( const bool show_fit_offset );
   void setDevPair( const std::pair<float,float> &d );
   std::pair<float,float> devPair() const;
   bool fitOffset() const;         //false if the "Fit offset" checkbox isnt shown
@@ -72,7 +72,7 @@ class DeviationPairDisplay : public Wt::WContainerWidget
 {
 public:
   /** @param show_fit_offsets if true, each row gets a "Fit offset" checkbox. */
-  DeviationPairDisplay( const bool show_fit_offsets = false, Wt::WContainerWidget *parent = 0 );
+  DeviationPairDisplay( const bool show_fit_offsets = false );
 
   void setDeviationPairs( std::vector< std::pair<float,float> > d );
   std::vector< std::pair<float,float> > deviationPairs() const;

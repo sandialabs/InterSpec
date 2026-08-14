@@ -2264,7 +2264,7 @@ void D3TimeChart::captureChartImage( const std::string &format, int maxLongestSi
     //  the comment on its m_imageCaptureTimer.  Do not copy this without checking that property holds.
     m_imageCaptureTimer.reset( new Wt::WTimer() );
     m_imageCaptureTimer->setSingleShot( true );
-    m_imageCaptureTimer->setInterval( sm_image_capture_timeout_ms );
+    m_imageCaptureTimer->setInterval( std::chrono::milliseconds(sm_image_capture_timeout_ms) );
     m_imageCaptureTimer->timeout().connect( this, &D3TimeChart::handleImageCaptureTimeout );
   }//if( !m_imageCapturedJS )
 
@@ -2281,8 +2281,8 @@ void D3TimeChart::captureChartImage( const std::string &format, int maxLongestSi
   m_pendingImageCallback = std::move( callback );
   m_activeCaptureId = m_nextCaptureId++;
 
-  const std::string emitJs = m_imageCapturedJS->createCall( "b64", "mime", "w", "h",
-                                                           std::to_string(m_activeCaptureId) );
+  const std::string emitJs = m_imageCapturedJS->createCall( {"b64", "mime", "w", "h",
+                                                             std::to_string(m_activeCaptureId)} );
 
   // The Wt.WT.ChartToImageData function is normally defined in D3SpectrumDisplayDiv.cpp,
   //  but may not be loaded yet. We define it inline if not already present.

@@ -3097,10 +3097,12 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 
   // Passive, always-current interpretation of the pull-trend chart (too much/little
   //  shielding, wrong effective atomic number).  Hidden when there is no conclusion.
-  m_trendTxt = new WText();
+  // Held here until it is handed to whichever layout the (phone / regular) branch below builds.
+  auto trendTxtOwned = std::make_unique<WText>();
+  m_trendTxt = trendTxtOwned.get();
   m_trendTxt->setInline( false );
   m_trendTxt->addStyleClass( "ShieldSourceTrendMsg" );
-  m_trendTxt->setTextFormat( XHTMLText );
+  m_trendTxt->setTextFormat( TextFormat::XHTML );
   m_trendTxt->hide();
       
   // Connect to display mode change signal to update m_showChiOnChart
@@ -3337,7 +3339,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
     chartLayout->addWidget( std::unique_ptr<WWidget>(addItemMenubutton),      0, 1, AlignmentFlag::Right);
     chartLayout->addWidget( std::unique_ptr<WWidget>(m_chi2Plot),             1, 0, 1, 2 );
     m_showChiOnChart->setWidth( 130 );
-    chartLayout->addWidget( std::unique_ptr<WWidget>(m_trendTxt),             2, 0, AlignmentFlag::Left | AlignmentFlag::Middle );
+    chartLayout->addWidget( std::move(trendTxtOwned),                        2, 0, AlignmentFlag::Left | AlignmentFlag::Middle );
     chartLayout->addWidget( std::unique_ptr<WWidget>(m_showChiOnChart),       2, 1, AlignmentFlag::Right );
     chartLayout->addWidget( std::unique_ptr<WWidget>(m_optionsDiv),           3, 0, 1, 2 );
     chartLayout->addWidget( std::unique_ptr<WWidget>(m_fitModelButton),       4, 0, 1, 2, AlignmentFlag::Center );
@@ -3401,7 +3403,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
     auto belowChartOwner = std::make_unique<WContainerWidget>();
     WContainerWidget *belowChart = belowChartOwner.get();
     belowChart->addStyleClass( "ShieldSourceTrendRow" );
-    belowChart->addWidget( std::unique_ptr<WWidget>(m_trendTxt) );
+    belowChart->addWidget( std::move(trendTxtOwned) );
     belowChart->addWidget( std::unique_ptr<WWidget>(m_showChiOnChart) );
     chartLayout->addWidget( std::move(belowChartOwner), 1, 0 );
     chartLayout->setRowStretch( 0, 1 );

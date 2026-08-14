@@ -429,7 +429,7 @@ namespace ExportSpecFileCAM
       NumColumns
     };//enum class Column
 
-    explicit GenieLibraryModel( Wt::WObject *parent = nullptr );
+    explicit GenieLibraryModel();
 
     /** Replaces the underlying data, e.g. after `build_genie_library(...)` is re-run because the
      user changed the line-selection mode, yield threshold, combine-lines option, or a source's
@@ -446,10 +446,10 @@ namespace ExportSpecFileCAM
     virtual Wt::WModelIndex parent( const Wt::WModelIndex &index ) const override;
     virtual int rowCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const override;
     virtual int columnCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const override;
-    virtual Wt::cpp17::any data( const Wt::WModelIndex &index, int role = Wt::DisplayRole ) const override;
-    virtual bool setData( const Wt::WModelIndex &index, const Wt::cpp17::any &value, int role = Wt::EditRole ) override;
+    virtual Wt::cpp17::any data( const Wt::WModelIndex &index, Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const override;
+    virtual bool setData( const Wt::WModelIndex &index, const Wt::cpp17::any &value, Wt::ItemDataRole role = Wt::ItemDataRole::Edit ) override;
     virtual Wt::WFlags<Wt::ItemFlag> flags( const Wt::WModelIndex &index ) const override;
-    virtual Wt::cpp17::any headerData( int section, Wt::Orientation orientation = Wt::Horizontal, int role = Wt::DisplayRole ) const override;
+    virtual Wt::cpp17::any headerData( int section, Wt::Orientation orientation = Wt::Orientation::Horizontal, Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const override;
 
     /** Emitted after a source's age is edited by the user (with the new age, in seconds); the
      owning widget should re-run `build_genie_library(...)` with an updated `nuclide_ages` map
@@ -493,7 +493,7 @@ namespace ExportSpecFileCAM
   class GenieCnfOptionsWidget : public Wt::WContainerWidget
   {
   public:
-    explicit GenieCnfOptionsWidget( InterSpec *viewer, Wt::WContainerWidget *parent = nullptr );
+    explicit GenieCnfOptionsWidget( InterSpec *viewer );
 
     /** Call whenever the selected file/samples change, so the library table (and FWHM/efficiency
      defaults) can be rebuilt/updated from the (possibly new) peaks and detector response.

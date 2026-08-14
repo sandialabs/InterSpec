@@ -749,7 +749,7 @@ void LlmMcpResource::handle_sse_continuation( const Wt::Http::Request &request,
   try
   {
     state = Wt::cpp17::any_cast<std::shared_ptr<AsyncSseState>>( continuation->data() );
-  }catch( const boost::bad_any_cast & )
+  }catch( const std::bad_any_cast & )
   {
     assert( 0 );
     return;
@@ -860,7 +860,7 @@ void LlmMcpResource::schedule_sse_keepalive( const int delay_ms )
 
   std::weak_ptr<std::atomic<bool>> weak_alive = m_alive;
 
-  server->ioService().schedule( std::max( delay_ms, sm_min_sse_wake_ms ), [this, weak_alive](){
+  server->ioService().schedule( std::chrono::milliseconds( std::max( delay_ms, sm_min_sse_wake_ms ) ), [this, weak_alive](){
     const std::shared_ptr<std::atomic<bool>> alive = weak_alive.lock();
     if( alive && alive->load() )
       this->haveMoreData();
