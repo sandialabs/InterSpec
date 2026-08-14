@@ -33,6 +33,7 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/RelActCalcAuto.h"
+#include "InterSpec/BatchSampleSelect.h"
 
 class SpecMeas;
 class DetectorPeakResponse;
@@ -67,6 +68,11 @@ namespace BatchRelActAuto
     std::vector<std::string> report_templates;
     std::vector<std::string> summary_report_templates;
     std::string template_include_dir;
+
+    /** How to treat an input file that holds more than one candidate foreground spectrum.
+     Defaults to the historical behaviour, so a caller that doesnt set it is unaffected. */
+    BatchSampleSelect::MultiSampleHandling multi_sample_handling
+                                    = BatchSampleSelect::MultiSampleHandling::Auto;
 
     // -- Background plumbing --
     /** If non-empty, this background spectrum file overrides whatever the
@@ -118,7 +124,16 @@ namespace BatchRelActAuto
     SolveFailedToSolve,
     SolveUserCanceled,
     SolveThrewException,
-    UnknownStatus
+    UnknownStatus,
+
+    /** The exemplar / state-override held a `<RelActCalcAuto>` state, but it doesnt define enough
+     of a problem to solve (no rel-eff curves, no nuclides, or no energy ranges) - e.g., the state
+     of an "Isotopics by nuclides" tool that was opened but never configured.
+
+     Note: new codes must be appended here, never inserted - the integer value is written into
+     reports as `ResultCodeInt`, which user templates may compare against.
+     */
+    RelActStateNotUsable
   };//enum class ResultCode
 
   InterSpec_API const char *to_str( const ResultCode code );
@@ -155,8 +170,9 @@ namespace BatchRelActAuto
     std::shared_ptr<const SpecMeas> exemplar;
     std::set<int> exemplar_sample_nums;
 
-    /** All four `file_*` vectors are kept the same length as the input file
-     list. */
+    /** All the `file_*` vectors are kept the same length as the number of analyses performed;
+     this equals the input file list length unless `Options::multi_sample_handling` split an
+     input file into per-sample analyses. */
     std::vector<Result> file_results;
     std::vector<std::string> file_json;
     std::vector<std::vector<std::string>> file_reports;
@@ -177,12 +193,18 @@ namespace BatchRelActAuto
 
   /** Run a single-file analysis.  Mirrors
    `BatchActivity::fit_activities_in_file`.  Never throws on per-file errors —
-   the failure is reported via `Result::m_result_code` / `m_error_msg`. */
+   the failure is reported via `Result::m_result_code` / `m_error_msg`.
+
+   @param requested_fore_samples The sample numbers to use as the foreground.  If empty, will try
+          to automatically determine, and fail with
+          `ResultCode::ForegroundSampleNumberUnderSpecified` if ambiguous.  More than one sample
+          number means the samples will be summed together. */
   InterSpec_API Result run_on_file( const std::string &exemplar_filename,
                        std::set<int> exemplar_sample_nums,
                        std::shared_ptr<const SpecMeas> cached_exemplar,
                        const std::string &filename,
                        std::shared_ptr<SpecMeas> cached_file,
+                       std::set<int> requested_fore_samples,
                        const Options &options );
 
 

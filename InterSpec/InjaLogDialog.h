@@ -44,6 +44,7 @@
 namespace Wt
 {
   class WText;
+  class WAnchor;
   class WComboBox;
   class WResource;
   class WPushButton;
@@ -125,7 +126,16 @@ private:
 
   Wt::WContainerWidget *m_toolbar;
   Wt::WComboBox *m_template_selector;
+
+  /** On macOS/iOS the WKWebView only intercepts downloads from real anchor clicks, so we must use
+   a WAnchor there, rather than a WPushButton (which emits a `window.open(...)` that goes nowhere).
+   */
+#if( BUILD_AS_OSX_APP || IOS )
+  Wt::WAnchor *m_download_button;
+#else
   Wt::WPushButton *m_download_button;
+#endif
+
   Wt::WText *m_iframe_holder;
   Wt::WResource *m_current_resource;
   std::string m_current_content;

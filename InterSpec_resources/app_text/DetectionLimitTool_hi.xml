@@ -9,25 +9,6 @@
   <message id="dlt-roi-lower-label">ROI निचला:</message>
   <message id="dlt-roi-upper-label">ROI ऊपरी:</message>
   <message id="dlt-continuum-label">कंटीन्यूअम</message>
-  <message id="dlt-cont-norm-label">कंट. नॉर्म</message>
-  <message id="dlt-cont-norm-floating">फ्लोटिंग</message>
-  <message id="dlt-cont-norm-fixed-edges">किनारों पर निश्चित</message>
-  <message id="dlt-cont-norm-fixed-full-roi">पूर्ण ROI निश्चित</message>
-  <message id="dlt-cont-norm-tt">
-    कंटीन्यूअम सामान्यीकरण कैसे निर्धारित किया जाना चाहिए:
-    <ul><li><b>फ्लोटिंग</b>: बहुपदीय कंटीन्यूअम प्रत्येक दी गई गतिविधि के लिए फिट किया जाता है -
-    गतिविधि कंटीन्यूअम को प्रभावित करती है।</li>
-    <li><b>किनारों पर निश्चित</b>: ROI के दोनों ओर के चैनलों का उपयोग एक
-    रैखिक कंटीन्यूअम निर्धारित करने के लिए किया जाता है जो निश्चित है, और न्यूक्लाइड की गतिविधि से प्रभावित नहीं होता है।</li>
-    <li><b>पूर्ण ROI निश्चित</b>: कंटीन्यूअम ROI की पूरी ऊर्जा सीमा का उपयोग करके फिट किया जाता है,
-    शून्य गाउसियन आयाम मानते हुए; बाद में, पीक का गाउसियन घटक
-    इस निश्चित कंटीन्यूअम के शीर्ष पर बैठेगा।<br/>
-    यह प्रभावी रूप से दावा कर रहा है कि आप जानते हैं कि डेटा में कोई सिग्नल पीक मौजूद नहीं है।
-    कंटीन्यूअम न्यूक्लाइड गतिविधि मान से प्रभावित नहीं होगा, और गाउसियन
-    पीक का घटक मूल्यांकन करते समय इस निश्चित कंटीन्यूअम के शीर्ष पर बैठेगा
-    &chi;<sup>2</sup>।</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">एकल पीक क्यूरी सीमा</message>
   <message id="dlt-num-side-channels-label">पार्श्व चैनल संख्या</message>
   <message id="dlt-further-details-link">अधिक विवरण...</message>
@@ -39,7 +20,10 @@
   <message id="dlt-range">सीमा:</message>
   <message id="dlt-detected-activity-tt">पता चली गतिविधि, केवल इस रुचि क्षेत्र का उपयोग करके,
     और देखे गए काउंट्स की अधिकता, साथ ही
-    सांख्यिकीय आत्मविश्वास अंतराल।</message>
+    सांख्यिकीय आत्मविश्वास अंतराल।
+    नाममात्र मान ISO 11929 के अनुसार सर्वोत्तम आकलन है: असंभव ऋणात्मक गतिविधियों पर स्थित भाग को
+    हटाने के बाद सिग्नल वितरण का माध्य।  यह हमेशा कच्ची काउंट्स अधिकता से कम नहीं होता, और जब
+    सिग्नल महत्वपूर्ण स्तर से काफी ऊपर हो तो दोनों समान हो जाते हैं।</message>
   <message id="dlt-limit-lt-zero"><![CDATA[सीमा: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(ROI में पूर्वानुमान से काफी कम काउंट्स)</message>
   <message id="dlt-fewer-counts-tt">रुचि क्षेत्र में काफी कम काउंट्स देखे गए,
@@ -66,22 +50,12 @@
   <message id="dlt-distance-limit">दूरी सीमा</message>
   <message id="dlt-peaks-disp-act-label">पीक प्रदर्शन गतिविधि:</message>
   <message id="dlt-peaks-disp-dist-label">पीक प्रदर्शन दूरी:</message>
-  <message id="dlt-conf-level-label">आत्मविश्वास स्तर:</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68.2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95.4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99.7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">उपयोग करने के लिए गामा लाइनें</message>
   <message id="dlt-min-rel-intensity-label">न्यूनतम सापेक्ष तीव्रता:</message>
   <message id="dlt-fit-fwhm-btn">FWHM फिट करें...</message>
   <message id="dlt-log">लॉग</message>
   <message id="dlt-lin">लिन</message>
   <message id="dlt-below-lc">(L<sub>c</sub> के नीचे)</message>
-  <message id="dlt-lt-zero-counts"><![CDATA[< 0 काउंट्स]]></message>
-  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">कोई डेटा लोड नहीं किया गया</message>
@@ -128,7 +102,10 @@
   
   <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
   <message id="dlt-tt-greater-than-lc">&quot;महत्वपूर्ण स्तर&quot;, L<sub>c</sub> से अधिक,
-    पीक क्षेत्र में काउंट्स देखे गए।</message>
+    पीक क्षेत्र में काउंट्स देखे गए।
+    दिखाया गया मान ISO 11929 के अनुसार सिग्नल का सर्वोत्तम आकलन है, जो इस बात को ध्यान में रखता है
+    कि गतिविधि ऋणात्मक नहीं हो सकती; सिग्नल उपस्थित होने का निर्णय कच्ची काउंट्स अधिकता पर लिया गया
+    था।  स्पष्ट सिग्नल के लिए दोनों समान होते हैं, और सीमांत सिग्नल के लिए सर्वोत्तम आकलन बड़ा होता है।</message>
   <message id="dlt-tt-activity-range">सिग्नल गतिविधि सीमा अनुमान, {1} आत्मविश्वास स्तर तक।</message>
   <message id="dlt-tt-counts-range">सिग्नल काउंट्स सीमा अनुमान, {1} आत्मविश्वास स्तर तक।</message>
   <message id="dlt-tt-fewer-than-predicted">पीक क्षेत्र में काफी कम काउंट्स देखे गए,
@@ -165,15 +142,19 @@
     स्रोत से किसी भी सुरक्षा से पहले, लेकिन न्यूक्लाइड आयु को ध्यान में रखते हुए,
     माता-पिता न्यूक्लाइड के प्रति क्षय।</message>
   <message id="dlt-tt-below-lc-counts">देखा गया सिग्नल काउंट्स &quot;महत्वपूर्ण स्तर&quot;, L<sub>c</sub> से कम है,
-    इसलिए पता लगाने की घोषणा नहीं की जा सकती, लेकिन यह अपेक्षित काउंट्स पर अधिक है।</message>
+    इसलिए पता लगाने की घोषणा नहीं की जा सकती, लेकिन यह ISO 11929 के अनुसार सिग्नल काउंट्स का
+    सर्वोत्तम आकलन है, यह देखते हुए कि सिग्नल ऋणात्मक नहीं हो सकता।  यह कभी शून्य से नीचे नहीं
+    जाता, भले ही पीक क्षेत्र में पड़ोसी क्षेत्रों के पूर्वानुमान से कम काउंट्स देखे गए हों।</message>
   <message id="dlt-tt-below-lc-activity">देखी गई सिग्नल गतिविधि &quot;महत्वपूर्ण स्तर&quot;, L<sub>c</sub> से कम है,
-    इसलिए पता लगाने की घोषणा नहीं की जा सकती, लेकिन यह अपेक्षित काउंट्स पर अधिक है।</message>
+    इसलिए पता लगाने की घोषणा नहीं की जा सकती, लेकिन यह ISO 11929 के अनुसार गतिविधि का सर्वोत्तम
+    आकलन है, यह देखते हुए कि गतिविधि ऋणात्मक नहीं हो सकती।  यह कभी शून्य से नीचे नहीं जाता, भले ही
+    पीक क्षेत्र में पड़ोसी क्षेत्रों के पूर्वानुमान से कम काउंट्स देखे गए हों।</message>
   
   <!-- Chart strings -->
   <message id="dlt-chart-x-axis-distance">दूरी ({1})</message>
   <message id="dlt-chart-x-axis-activity">गतिविधि ({1})</message>
   <message id="dlt-chart-title-estimated-activity">अनुमानित गतिविधि {1}।</message>
-  <message id="dlt-chart-title-excess-counts">अतिरिक्त काउंट्स {1}।</message>
+  <message id="dlt-chart-title-excess-counts">अनुमानित सिग्नल {1} काउंट्स।</message>
   <message id="dlt-chart-title-activity-lt-zero"><![CDATA[गतिविधि < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">डेटा + पीक {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">ऊपरी सीमा का पीक {1} @{2} CL</message>
@@ -188,4 +169,9 @@
   <message id="dlt-err-upper-limit-negative">काउंट्स की ऊपरी सीमा शून्य से कम है, लेकिन देखे गए काउंट्स L_d से अधिक हैं।</message>
   <message id="dlt-err-activity-zero-negative">गतिविधि शून्य या नकारात्मक नहीं हो सकती</message>
   <message id="dlt-err-distance-zero-negative">दूरी शून्य या नकारात्मक नहीं हो सकती</message>
+  <message id="dlt-qr-tool-state-title">पता लगाने का विश्वास उपकरण की स्थिति</message>
+  <message id="dlt-qr-tool-state-txt">पता लगाने का विश्वास उपकरण की वर्तमान स्थिति।</message>
+  <message id="dlt-estimating-spread">प्रसार की गणना…</message>
+  <message id="dlt-spread-band">(आमतौर पर इस मान का {1}&ndash;{2}&times;)</message>
+  <message id="dlt-spread-unavailable">प्रसार का अनुमान नहीं लगाया जा सका।</message>
 </messages>

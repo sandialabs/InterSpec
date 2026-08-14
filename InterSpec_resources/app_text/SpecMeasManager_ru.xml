@@ -49,15 +49,6 @@
   </message>
   <message id="smm-unsupported-document">Этот файл похож на документ и не поддерживается InterSpec.</message>
   <message id="smm-invalid-peak-csv">Загруженный файл выглядел как Peak CSV файл, но был недействительным.</message>
-  <message id="smm-file-is-drf">
-    <p style="white-space: nowrap;">
-      Этот файл похож на функцию отклика детектора.
-    </p>
-    <p style="text-align: left; white-space: nowrap;">
-      Имя: {1}
-    </p>
-   <p>Хотите использовать этот DRF?</p>
-  </message>
   <message id="smm-saved-drf-conf">
     Сохранён '{1}' для последующего использования и будет доступен в
     разделе "<em>Отн. эфф.</em>" инструмента "<em>Выбор функции отклика детектора</em>".
@@ -254,7 +245,6 @@
     Используйте <b>Файловый менеджер</b> для изменения этого.
   </message>
 
-
   <!-- The visual components of the Spectrum Measurement Manager GUI -->
   <message id="smm-selected-spec-label">Выбранный спектр: </message>
   <message id="smm-disp-as-btn">Отобразить как</message>
@@ -267,7 +257,6 @@
   <message id="smm-export-btn">Экспорт...</message>
   <message id="smm-unload-btn">Выгрузить</message>
   <message id="smm-unassign-label">Отменить назначение: </message>
-
 
   <message id="smm-prev-states-window-title">Ранее сохранённые состояния</message>
   <message id="smm-err-prev-state-unexpected">Неожиданная проблема отображения доступных сохранённых состояний: {1}</message>
@@ -327,9 +316,7 @@
   <message id="musd-err-decoding-url">Ошибка декодирования URL: {1}</message>
   <message id="musd-received-urls-list">Получены URL {1} из {2}.<p>Ожидание дополнительных URL/QR-кодов</p></message>
 
-
   <message id="uid-qr-code-pic">Изображение QR-кода</message>
-  <message id="uid-no-qr-found">QR-коды не найдены ⓘ</message>
   <message id="uid-no-qr-found-title">QR-код не найден</message>
   <message id="uid-no-qr-content">
     <p>

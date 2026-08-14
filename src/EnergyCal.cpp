@@ -32,11 +32,16 @@
 #include <cassert>
 #include <sstream>
 #include <iostream>
+#include <algorithm>
 #include <stdexcept>
 
 #include "Eigen/Dense"
 
+
+//Ceres includes; note: "ceres/ceres.h" must come before
+//  "InterSpec/RelActCalcAuto_EnergyCal_imp.hpp", so the real ceres::Jet is used
 #include "ceres/ceres.h"
+
 
 #include "InterSpec/PeakDef.h"
 #include "SpecUtils/SpecFile.h"
@@ -44,6 +49,7 @@
 #include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/EnergyCalibration.h"
+
 #include "InterSpec/RelActCalcAuto_EnergyCal_imp.hpp"
 
 using namespace std;
@@ -63,6 +69,66 @@ double frf_coef_fcn( size_t order, double channel, size_t nchannel )
     return 1.0 / (1.0 + 60.0*x);
   return pow( x, static_cast<double>(order) );
 }
+
+
+/** Solves the (already row-weighted) linear least squares problem `A*x = b` via SVD of the
+ column-equilibrated matrix, optionally also computing the coefficient variances.
+
+ Raw polynomial basis columns (e.g., channel^k, with channel up to ~64k) differ by many orders of
+ magnitude, which loses accuracy in the SVD - and did so catastrophically in the coefficient
+ uncertainties, which were previously computed as inverse(A^T*A) (squaring the condition number).
+ Scaling column j of A by s_j is equivalent to fitting x_j/s_j, so the solution is un-scaled
+ before returning; in exact arithmetic the answer is unchanged.  The covariance is computed from
+ the SVD factors as the pseudo-inverse V*diag(1/sigma_i^2)*V^T, with singular values below
+ max(sigma)*1e-10 contributing zero variance, rather than near-singular directions blowing the
+ variances up.
+ */
+Eigen::VectorXd solve_lls_equilibrated( Eigen::MatrixX<double> A,
+                                        const Eigen::VectorX<double> &b,
+                                        Eigen::VectorXd * const coef_variances )
+{
+  const Eigen::Index ncols = A.cols();
+
+  Eigen::VectorXd col_scale( ncols );
+  for( Eigen::Index col = 0; col < ncols; ++col )
+  {
+    const double mag = A.col(col).cwiseAbs().maxCoeff();
+    col_scale(col) = (mag > 0.0) ? (1.0 / mag) : 1.0;
+    A.col(col) *= col_scale(col);
+  }//for( loop over columns of A )
+
+#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
+  const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
+#else
+  const Eigen::BDCSVD<Eigen::MatrixX<double>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
+#endif
+
+  const Eigen::VectorXd scaled_answer = svd.solve(b);
+
+  if( coef_variances )
+  {
+    const Eigen::VectorXd &sigmas = svd.singularValues();
+    const double sigma_min_allowed = (sigmas.size() ? sigmas(0) : 0.0) * 1.0E-10;
+
+    Eigen::VectorXd inv_sigma2 = Eigen::VectorXd::Zero( sigmas.size() );
+    for( Eigen::Index i = 0; i < sigmas.size(); ++i )
+      inv_sigma2(i) = (sigmas(i) > sigma_min_allowed) ? 1.0/(sigmas(i)*sigmas(i)) : 0.0;
+
+    const Eigen::MatrixX<double> &V = svd.matrixV();
+
+    coef_variances->resize( ncols );
+    for( Eigen::Index j = 0; j < ncols; ++j )
+    {
+      double scaled_var = 0.0;
+      for( Eigen::Index i = 0; i < sigmas.size(); ++i )
+        scaled_var += V(j,i) * V(j,i) * inv_sigma2(i);
+
+      (*coef_variances)(j) = col_scale(j) * col_scale(j) * scaled_var;
+    }//for( loop over coefficients )
+  }//if( coef_variances )
+
+  return col_scale.cwiseProduct( scaled_answer );
+}//solve_lls_equilibrated(...)
 
 
 double fit_energy_cal_imp( const std::vector<EnergyCal::RecalPeakInfo> &peakinfos,
@@ -131,31 +197,19 @@ double fit_energy_cal_imp( const std::vector<EnergyCal::RecalPeakInfo> &peakinfo
     b(row) = data_y / data_y_uncert;
   }//for( int col = 0; col < order; ++col )
   
-#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
-  const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
-#else
-  const Eigen::BDCSVD<Eigen::MatrixX<double>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
-#endif
-  
-  const Eigen::VectorXd a = svd.solve(b);
-  
-  // Compute uncertainties using normal equations for compatibility
-  // Note: For maximum numerical stability, we could extract uncertainties from the SVD,
-  // but for consistency with existing code behavior, we use the normal equations approach
-  const Eigen::MatrixX<double> A_transpose = A.transpose();
-  const Eigen::MatrixX<double> alpha = A_transpose * A;
-  const Eigen::MatrixX<double> C = alpha.inverse();
-  
+  Eigen::VectorXd coef_variances;
+  const Eigen::VectorXd a = solve_lls_equilibrated( A, b, &coef_variances );
+
   coefs.resize( fitfor.size(), 0.0 );
   coefs_uncert.resize( fitfor.size(), 0.0 );
-  
+
   for( size_t col = 0, coef_index = 0; coef_index < fitfor.size(); ++coef_index )
   {
     if( fitfor[coef_index] )
     {
       assert( col < nparsfit );
       coefs[coef_index] = static_cast<float>( a(col) );
-      coefs_uncert[coef_index] = static_cast<float>( std::sqrt( C(col,col) ) );
+      coefs_uncert[coef_index] = static_cast<float>( std::sqrt( coef_variances(col) ) );
       ++col;
     }else
     {
@@ -214,15 +268,9 @@ double fit_from_channel_energies_imp( const size_t ncoeffs, const vector<float> 
       A(row,col) = coeffcn(col, row, nchannel) / uncert;
     b(row) = channel_energies[row] / uncert;
   }//for( int col = 0; col < order; ++col )
-  
-#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
-  const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
-#else
-  const Eigen::BDCSVD<Eigen::MatrixX<double>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
-#endif
-  
-  const Eigen::VectorXd a = svd.solve(b);
-  
+
+  const Eigen::VectorXd a = solve_lls_equilibrated( A, b, nullptr );
+
   coefs.resize( ncoeffs, 0.0 );
   for( size_t col = 0; col < ncoeffs; ++col )
     coefs[col] = static_cast<float>( a(col) );
@@ -241,135 +289,195 @@ double fit_from_channel_energies_imp( const size_t ncoeffs, const vector<float> 
 
 
 
-/** Stride for Ceres autodiff (max expected number of fit parameters).
- If exceeded, Ceres handles it by chunking - just slightly less efficient.
- Energy cal fits are small (poly/FRF order ≤ 5, LowerChannelEdge fits 2 params).
+/** Cost functor for #EnergyCal::fit_energy_cal_ceres.
+
+ One parameter block, laid out as [coefficients..., deviation-pair offsets...]; parameters not
+ being fit are held constant with a ceres::SubsetManifold.  Polynomial coefficients are scaled by
+ nchannel^order internally, so all parameters (and their gradients) are of roughly keV magnitude.
+
+ The residuals are one per peak, `(E_predicted(channel) - photopeakEnergy)/sigma` - the same
+ model and weighting as the linear fits - plus two soft hinge residuals that punish the
+ calibration becoming non-monotonic (replacing the hard chi2 cliff of the old Minuit based
+ implementation, which gave the minimizer no gradient to recover along).
  */
-constexpr int sm_energy_cal_ceres_stride = 8;
-
-
-/** Linear interpolation of the baseline lower-channel-edge vector at fractional channel `channel`,
- transformed by the relative affine model
-   new[i] = baseline[i] + offset + (gain - 1) * (baseline[i] - baseline[0])
-          = baseline[0] + offset + gain * (baseline[i] - baseline[0])
- where `offset` is the *delta* applied at channel 0 (so 0 means no shift) and `gain` is a
- multiplier on the energy span (so 1 means identity). This matches the values shown to the
- user in the EnergyCalTool UI.
-
- `baseline` has `nchannel + 1` entries (last entry is upper edge of last channel).
- Extrapolation outside `[0, nchannel]` uses the first/last channel width.
- Auto-diff gradient flows through `offset` and `gain`; the baseline values are constants.
- */
-template<typename T>
-T predicted_lce_energy( const T &offset,
-                        const T &gain,
-                        const double channel,
-                        const std::vector<float> &baseline )
+struct EnergyCalCeresCostFcn
 {
-  assert( baseline.size() >= 2 );
-  const size_t nchannel = baseline.size() - 1;
-  const double base0 = static_cast<double>( baseline[0] );
+  const EnergyCal::EnergyCalCeresFitSetup &m_setup;
 
-  double base_at_channel;
-  if( channel < 0.0 )
+  /** If no deviation pair offsets are being fit, the (fixed) deviation pairs are subtracted from
+   the target peak energies up-front - exactly like the linear fits do - instead of evaluating
+   the spline inside the fit. */
+  bool m_fit_any_dev_offsets;
+
+  /** Multiplicative scale from parameter-space to coefficient-space. */
+  std::vector<double> m_par_scales;
+
+  std::vector<double> m_channels, m_sigmas, m_targets;
+
+  /** Per-peak {original energy, fraction of original energy range}; only for LowerChannelEdge,
+   whose predicted energy is `orig_energy + offset + gain*frac` (see
+   #EnergyCal::adjust_lower_channel_energy_cal). */
+  /** For a LowerChannelEdge fit, each peaks ORIGINAL energy (E_orig); the model is
+   E_new = offset + gain*E_orig (offset keV, gain dimensionless, nominal 1.0). */
+  std::vector<double> m_lower_chan_orig;
+
+  /** The original energy range of a LowerChannelEdge calibration; its channel energies stay
+   monotonic exactly when `gain > -range`. */
+  double m_lower_chan_range;
+
+  /** How hard to punish each keV of non-monotonicity at the spectrum ends. */
+  static constexpr double sm_mono_hinge_weight = 100.0;
+
+  EnergyCalCeresCostFcn( const std::vector<EnergyCal::RecalPeakInfo> &peaks,
+                         const EnergyCal::EnergyCalCeresFitSetup &setup )
+  : m_setup( setup ),
+    m_fit_any_dev_offsets( false ),
+    m_lower_chan_range( 0.0 )
   {
-    const double e0 = static_cast<double>( baseline[0] );
-    const double width = static_cast<double>( baseline[1] ) - e0;
-    base_at_channel = e0 + width * channel;
-  }
-  else if( channel >= static_cast<double>(nchannel) )
-  {
-    const double e_last = static_cast<double>( baseline[nchannel] );
-    const double width  = e_last - static_cast<double>( baseline[nchannel - 1] );
-    base_at_channel = e_last + width * (channel - static_cast<double>(nchannel));
-  }
-  else
-  {
-    const size_t low = static_cast<size_t>( std::floor(channel) );
-    assert( (low + 1) < baseline.size() );
-    const double e_lo = static_cast<double>( baseline[low] );
-    const double e_hi = static_cast<double>( baseline[low + 1] );
-    const double frac = channel - static_cast<double>(low);
-    base_at_channel = e_lo + (e_hi - e_lo) * frac;
-  }
+    for( const bool fit : setup.fit_dev_pair_offsets )
+      m_fit_any_dev_offsets = (m_fit_any_dev_offsets || fit);
 
-  return T(base0) + offset + gain * T( base_at_channel - base0 );
-}//predicted_lce_energy(...)
+    const size_t ncoefs = setup.fitfor.size();
+    m_par_scales.resize( ncoefs + setup.dev_pairs.size(), 1.0 );
 
+    switch( setup.cal_type )
+    {
+      case SpecUtils::EnergyCalType::Polynomial:
+      case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+        for( size_t i = 0; i < ncoefs; ++i )
+          m_par_scales[i] = 1.0 / std::pow( static_cast<double>(setup.num_channels),
+                                            static_cast<double>(i) );
+        break;
 
-/** Ceres autodiff cost functor for fitting energy calibration coefficients.
+      case SpecUtils::EnergyCalType::FullRangeFraction:
+      case SpecUtils::EnergyCalType::LowerChannelEdge:
+        break;  //coefficients are already keV magnitude
 
- Handles Polynomial, FullRangeFraction (with deviation pairs via the templated cubic spline in
- RelActCalcAuto_EnergyCal_imp.hpp), and LowerChannelEdge (with offset/gain affine transform of a
- baseline lower-channel-edge vector — `params[0] = offset`, `params[1] = gain`).
+      case SpecUtils::EnergyCalType::InvalidEquationType:
+        assert( 0 );
+        break;
+    }//switch( setup.cal_type )
 
- Each residual i is `(predicted_energy_i - photopeak_energy_i) / uncert_i`, so Ceres' final cost
- `0.5 * sum(r_i^2)` equals half the Minuit-style chi-squared. The caller returns `2*final_cost`
- to preserve the chi2 return contract.
- */
-struct EnergyCalFitCost
-{
-  SpecUtils::EnergyCalType m_eqnType;
-  size_t m_nchannel;
-  size_t m_npars;
-  std::vector<EnergyCal::RecalPeakInfo> m_peakInfo;
-  std::vector<std::pair<float,float>> m_dev_pairs;
-  std::vector<float> m_baseline_lce_edges; // only populated when m_eqnType == LowerChannelEdge
+    if( setup.cal_type == SpecUtils::EnergyCalType::LowerChannelEdge )
+    {
+      assert( setup.lower_channel_energies.size() >= 2 );
+      m_lower_chan_range = setup.lower_channel_energies.back() - setup.lower_channel_energies.front();
+    }
+
+    const std::vector<RelActCalcAutoImp::CubicSplineNodeT<double>> no_spline;
+
+    for( const EnergyCal::RecalPeakInfo &peak : peaks )
+    {
+      m_channels.push_back( peak.peakMeanBinNumber );
+
+      const double sigma = peak.photopeakEnergy * peak.peakMeanUncert
+                           / (std::max)( peak.peakMean, 1.0 );
+      m_sigmas.push_back( (std::max)( fabs(sigma), 1.0e-6 ) );
+
+      double target = peak.photopeakEnergy;
+      if( !m_fit_any_dev_offsets && !setup.dev_pairs.empty() )
+        target -= SpecUtils::correction_due_to_dev_pairs( peak.photopeakEnergy, setup.dev_pairs );
+      m_targets.push_back( target );
+
+      if( setup.cal_type == SpecUtils::EnergyCalType::LowerChannelEdge )
+      {
+        // E_new = offset + gain*E_orig; store the peaks original energy
+        const double orig_energy = RelActCalcAutoImp::lowerchannel_energy(
+                              peak.peakMeanBinNumber, setup.lower_channel_energies, no_spline );
+        m_lower_chan_orig.push_back( orig_energy );
+      }
+    }//for( const EnergyCal::RecalPeakInfo &peak : peaks )
+  }//EnergyCalCeresCostFcn constructor
+
+  size_t num_coefs() const { return m_setup.fitfor.size(); }
+  size_t num_parameters() const { return m_setup.fitfor.size() + m_setup.dev_pairs.size(); }
+  size_t num_residuals() const { return m_channels.size() + 2; }
 
   template<typename T>
-  bool operator()( T const * const * parameters, T *residuals ) const
+  bool operator()( T const *const *parameters, T *residuals ) const
   {
-    const T * const pars = parameters[0];
-
-    if( m_eqnType == SpecUtils::EnergyCalType::LowerChannelEdge )
+    try
     {
-      for( size_t i = 0; i < m_peakInfo.size(); ++i )
+      const T * const pars = parameters[0];
+      const size_t ncoefs = num_coefs();
+      const size_t npeaks = m_channels.size();
+
+      std::vector<T> coefs( ncoefs );
+      for( size_t i = 0; i < ncoefs; ++i )
+        coefs[i] = pars[i] * m_par_scales[i];
+
+      // The deviation pair spline; only built (and only needed) when offsets are being fit
+      std::vector<RelActCalcAutoImp::CubicSplineNodeT<T>> spline;
+      if( m_fit_any_dev_offsets && (m_setup.dev_pairs.size() > 1) )
       {
-        const T predE = predicted_lce_energy<T>( pars[0], pars[1],
-                                                 m_peakInfo[i].peakMeanBinNumber,
-                                                 m_baseline_lce_edges );
-        const double w = (m_peakInfo[i].peakMeanUncert <= 0.0) ? 1.0 : m_peakInfo[i].peakMeanUncert;
-        residuals[i] = (predE - T(m_peakInfo[i].photopeakEnergy)) / T(w);
+        std::vector<std::pair<double,T>> pairs;
+        pairs.reserve( m_setup.dev_pairs.size() );
+        for( size_t i = 0; i < m_setup.dev_pairs.size(); ++i )
+          pairs.emplace_back( static_cast<double>(m_setup.dev_pairs[i].first), pars[ncoefs + i] );
+
+        spline = RelActCalcAutoImp::create_cubic_spline( pairs );
+      }//if( fitting deviation pair offsets )
+
+      // Predicted (observed) energy at a channel; for peaks the per-peak lower-channel values
+      //  are precomputed, but the monotonicity checks below need arbitrary channels, so
+      //  lower-channel is special-cased where this lambda is used.
+      const auto base_energy = [&]( const double channel ) -> T {
+        switch( m_setup.cal_type )
+        {
+          case SpecUtils::EnergyCalType::Polynomial:
+          case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+            return RelActCalcAutoImp::polynomial_energy( T(channel), coefs, spline );
+
+          case SpecUtils::EnergyCalType::FullRangeFraction:
+            return RelActCalcAutoImp::fullrangefraction_energy( T(channel), coefs,
+                                                            m_setup.num_channels, spline );
+
+          case SpecUtils::EnergyCalType::LowerChannelEdge:
+          case SpecUtils::EnergyCalType::InvalidEquationType:
+            assert( 0 );  //lower-channel handled separately; invalid never gets here
+            break;
+        }//switch( m_setup.cal_type )
+
+        return T(0.0);
+      };//base_energy lambda
+
+      const bool lower_channel = (m_setup.cal_type == SpecUtils::EnergyCalType::LowerChannelEdge);
+
+      for( size_t i = 0; i < npeaks; ++i )
+      {
+        T pred;
+        if( lower_channel )
+          pred = coefs[0] + coefs[1]*m_lower_chan_orig[i];  //offset + gain*E_orig
+        else
+          pred = base_energy( m_channels[i] );
+
+        residuals[i] = (pred - m_targets[i]) / m_sigmas[i];
+      }//for( loop over peaks )
+
+      // Soft punishments for the calibration becoming non-monotonic at the spectrum ends (for a
+      //  lower-channel calibration the monotonicity condition is uniform: gain > -range)
+      T lower_diff, upper_diff;
+      if( lower_channel )
+      {
+        //Monotonic iff the new energy range (gain*orig_range) is positive, i.e., gain > 0
+        lower_diff = upper_diff = coefs[1] * T(m_lower_chan_range);
+      }else
+      {
+        const double nchan = static_cast<double>( m_setup.num_channels );
+        lower_diff = base_energy(1.0) - base_energy(0.0);
+        upper_diff = base_energy(nchan) - base_energy(nchan - 1.0);
       }
-      return true;
-    }
 
-    // Build templated dev-pair spline. Anchors are constant doubles, so the offsets
-    // are wrapped as T(0)-derivative jets — gradient flows only through `pars`.
-    std::vector<std::pair<double,T>> dev_pairs_T;
-    dev_pairs_T.reserve( m_dev_pairs.size() );
-    for( const auto &dp : m_dev_pairs )
-      dev_pairs_T.emplace_back( static_cast<double>(dp.first), T(static_cast<double>(dp.second)) );
-    const std::vector<RelActCalcAutoImp::CubicSplineNodeT<T>> spline
-      = RelActCalcAutoImp::create_cubic_spline( dev_pairs_T );
-
-    std::vector<T> coefs( pars, pars + m_npars );
-
-    if( m_eqnType == SpecUtils::EnergyCalType::FullRangeFraction )
+      residuals[npeaks] = (lower_diff < T(0.0)) ? T(-sm_mono_hinge_weight)*lower_diff : T(0.0);
+      residuals[npeaks + 1] = (upper_diff < T(0.0)) ? T(-sm_mono_hinge_weight)*upper_diff : T(0.0);
+    }catch( std::exception & )
     {
-      for( size_t i = 0; i < m_peakInfo.size(); ++i )
-      {
-        const T predE = RelActCalcAutoImp::fullrangefraction_energy<T>(
-          T(m_peakInfo[i].peakMeanBinNumber), coefs, m_nchannel, spline );
-        const double w = (m_peakInfo[i].peakMeanUncert <= 0.0) ? 1.0 : m_peakInfo[i].peakMeanUncert;
-        residuals[i] = (predE - T(m_peakInfo[i].photopeakEnergy)) / T(w);
-      }
-    }
-    else
-    {
-      // Polynomial or UnspecifiedUsingDefaultPolynomial
-      for( size_t i = 0; i < m_peakInfo.size(); ++i )
-      {
-        const T predE = RelActCalcAutoImp::polynomial_energy<T>(
-          T(m_peakInfo[i].peakMeanBinNumber), coefs, spline );
-        const double w = (m_peakInfo[i].peakMeanUncert <= 0.0) ? 1.0 : m_peakInfo[i].peakMeanUncert;
-        residuals[i] = (predE - T(m_peakInfo[i].photopeakEnergy)) / T(w);
-      }
+      return false;  //Ceres treats this as an invalid step, and tries a different one
     }
 
     return true;
   }//operator()
-};//struct EnergyCalFitCost
+};//struct EnergyCalCeresCostFcn
 
 }//namespace
 
@@ -415,202 +523,495 @@ double EnergyCal::fit_full_range_fraction_from_channel_energies( const size_t nc
   if( ncoeffs >= 5 )
     throw runtime_error( "fit_full_range_fraction_from_channel_energies:"
                          " You must request less than 5 coefficients" );
-  
+
   return fit_from_channel_energies_imp( ncoeffs, channel_energies, &frf_coef_fcn, coefs );
 }//fit_full_range_fraction_from_channel_energies(...)
 
 
-double EnergyCal::fit_energy_cal_iterative( const std::vector<EnergyCal::RecalPeakInfo> &peakInfo,
-                                           const size_t nbin,
-                                           const SpecUtils::EnergyCalType eqnType,
-                                           const std::vector<bool> fitfor,
-                                           std::vector<float> &startingCoefs,
-                                           const std::vector<std::pair<float,float>> &devpair,
-                                           std::vector<float> &coefs,
-                                           std::vector<float> &coefs_uncert,
-                                           std::string &warning_msg,
-                                           const std::vector<float> &lower_channel_edges )
+std::shared_ptr<const SpecUtils::EnergyCalibration>
+EnergyCal::adjust_lower_channel_energy_cal( const std::shared_ptr<const SpecUtils::EnergyCalibration> &orig,
+                                            const double offset, const double gain )
 {
-  coefs.clear();
-  coefs_uncert.clear();
-  warning_msg.clear();
+  using SpecUtils::EnergyCalibration;
 
-  if( peakInfo.size() < 1 )
-    throw runtime_error( "fit_energy_cal_iterative: no peaks specified" );
+  if( !orig || !orig->valid() || (orig->type() != SpecUtils::EnergyCalType::LowerChannelEdge) )
+    throw runtime_error( "adjust_lower_channel_energy_cal: input must be a valid lower channel"
+                         " energy calibration" );
 
-  const size_t npars = startingCoefs.size();
+  //A non-positive gain would make the (increasing) original energies non-increasing
+  if( gain <= 0.0 )
+    throw runtime_error( "adjust_lower_channel_energy_cal: gain must be positive" );
 
-  if( npars < 2 )
-    throw runtime_error( "fit_energy_cal_iterative: must be at least two coefficients" );
+  const shared_ptr<const vector<float>> &orig_energies = orig->channel_energies();
+  assert( orig_energies && (orig_energies->size() > 1) );
+  if( !orig_energies || (orig_energies->size() < 2) )
+    throw runtime_error( "adjust_lower_channel_energy_cal: invalid input channel energies" );
 
-  if( fitfor.size() != npars )
-    throw runtime_error( "fit_energy_cal_iterative: fitfor.size() != startingCoefs.size()" );
+  const size_t nchannel = orig->num_channels();
 
-  switch( eqnType )
+  //  E_new[i] = offset + gain*E_orig[i]   (offset in keV, gain dimensionless, nominal 1.0)
+  vector<float> new_energies( *orig_energies );
+  for( size_t i = 0; i < new_energies.size(); ++i )
+    new_energies[i] = static_cast<float>( offset + gain*new_energies[i] );
+
+  auto answer = make_shared<EnergyCalibration>();
+  //set_lower_channel_energy(...) throws if the result isnt monotonically increasing
+  answer->set_lower_channel_energy( nchannel, std::move(new_energies) );
+
+  return answer;
+}//adjust_lower_channel_energy_cal(...)
+
+
+double EnergyCal::fit_energy_cal_lower_channel( const std::vector<EnergyCal::RecalPeakInfo> &peakinfos,
+                              const std::shared_ptr<const SpecUtils::EnergyCalibration> &orig_cal,
+                                                const std::vector<bool> &fitfor,
+                                                std::vector<float> &coefs,
+                                                std::vector<float> &coefs_uncert )
+{
+  if( !orig_cal || !orig_cal->valid()
+      || (orig_cal->type() != SpecUtils::EnergyCalType::LowerChannelEdge) )
+    throw runtime_error( "fit_energy_cal_lower_channel: input must be a valid lower channel"
+                         " energy calibration" );
+
+  if( fitfor.size() != 2 )
+    throw runtime_error( "fit_energy_cal_lower_channel: fitfor must have exactly two ({offset,"
+                         " gain}) entries" );
+
+  const shared_ptr<const vector<float>> &orig_energies = orig_cal->channel_energies();
+  assert( orig_energies && (orig_energies->size() > 1) );
+  if( !orig_energies || (orig_energies->size() < 2) )
+    throw runtime_error( "fit_energy_cal_lower_channel: invalid input channel energies" );
+
+  const size_t nchannels = orig_cal->num_channels();
+  const double range = orig_energies->back() - orig_energies->front();
+  if( range <= 0.0 )
+    throw runtime_error( "fit_energy_cal_lower_channel: invalid original energy range" );
+
+  // We model the true peak energies as:
+  //   E_true = offset + gain*E_orig(channel)   (offset keV, gain dimensionless, nominal 1.0)
+  //  which is a plain 2-parameter linear fit ({offset, gain}), so we reuse the linear-least-
+  //  squares fitter directly: coef 0 = offset (basis 1), coef 1 = gain (basis E_orig(channel)).
+  const auto basis = [orig_cal]( size_t order, double channel, size_t nchan ) -> double {
+    switch( order )
+    {
+      case 0: return 1.0;
+      case 1: return orig_cal->energy_for_channel( channel );
+    }
+    assert( 0 );
+    return 0.0;
+  };
+
+  const vector<pair<float,float>> dev_pairs;  //lower channel energy cals dont have deviation pairs
+  const double chi2 = fit_energy_cal_imp( peakinfos, fitfor, nchannels, dev_pairs,
+                                          coefs, coefs_uncert, basis );
+
+  assert( (coefs.size() == 2) && (coefs_uncert.size() == 2) );
+
+  return chi2;
+}//fit_energy_cal_lower_channel(...)
+
+
+EnergyCal::EnergyCalCeresFitResult EnergyCal::fit_energy_cal_ceres(
+                                          const std::vector<EnergyCal::RecalPeakInfo> &peakinfos,
+                                          const EnergyCal::EnergyCalCeresFitSetup &setup_in )
+{
+  using SpecUtils::EnergyCalType;
+
+  EnergyCalCeresFitSetup setup = setup_in;  //we may prepend an implicit {0,0} deviation pair
+
+  const size_t ncoefs = setup.fitfor.size();
+
+  if( peakinfos.empty() )
+    throw runtime_error( "fit_energy_cal_ceres: no peaks specified" );
+
+  if( setup.starting_coefs.size() != ncoefs )
+    throw runtime_error( "fit_energy_cal_ceres: fitfor and starting_coefs must be the same size" );
+
+  if( !setup.fit_dev_pair_offsets.empty()
+      && (setup.fit_dev_pair_offsets.size() != setup.dev_pairs.size()) )
+    throw runtime_error( "fit_energy_cal_ceres: fit_dev_pair_offsets must be empty, or the same"
+                         " size as dev_pairs" );
+
+  if( setup.num_channels < 2 )
+    throw runtime_error( "fit_energy_cal_ceres: must have at least two channels" );
+
+  switch( setup.cal_type )
   {
-    case SpecUtils::EnergyCalType::Polynomial:
-    case SpecUtils::EnergyCalType::FullRangeFraction:
-    case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-      if( !lower_channel_edges.empty() )
-        throw runtime_error( "fit_energy_cal_iterative: lower_channel_edges must be empty for"
-                             " Polynomial/FullRangeFraction calibrations" );
+    case EnergyCalType::Polynomial:
+    case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+      if( ncoefs < 2 )
+        throw runtime_error( "fit_energy_cal_ceres: must have at least two coefficients" );
       break;
 
-    case SpecUtils::EnergyCalType::LowerChannelEdge:
-      if( npars != 2 )
-        throw runtime_error( "fit_energy_cal_iterative: LowerChannelEdge requires exactly 2"
-                             " coefficients (offset, gain)" );
-      if( lower_channel_edges.size() != (nbin + 1) )
-        throw runtime_error( "fit_energy_cal_iterative: lower_channel_edges size must equal"
-                             " nchannels + 1 for LowerChannelEdge fits" );
+    case EnergyCalType::FullRangeFraction:
+      if( (ncoefs < 2) || (ncoefs > 5) )
+        throw runtime_error( "fit_energy_cal_ceres: full range fraction must have two to five"
+                             " coefficients" );
       break;
 
-    case SpecUtils::EnergyCalType::InvalidEquationType:
-      throw runtime_error( "fit_energy_cal_iterative: invalid calibration type" );
+    case EnergyCalType::LowerChannelEdge:
+      if( ncoefs != 2 )
+        throw runtime_error( "fit_energy_cal_ceres: lower channel energy must have exactly the"
+                             " two {offset, gain} coefficients" );
+      if( !setup.dev_pairs.empty() )
+        throw runtime_error( "fit_energy_cal_ceres: lower channel energy calibrations cant have"
+                             " deviation pairs" );
+      if( setup.lower_channel_energies.size() < (setup.num_channels + 1) )
+        throw runtime_error( "fit_energy_cal_ceres: not enough lower channel energies" );
       break;
-  }//switch( eqnType )
 
-  if( nbin < 7 )
-    throw runtime_error( "fit_energy_cal_iterative: you must have at least 7 channels" );
+    case EnergyCalType::InvalidEquationType:
+      throw runtime_error( "fit_energy_cal_ceres: invalid calibration type" );
+  }//switch( setup.cal_type )
 
-  const size_t nfit = std::accumulate( begin(fitfor), end(fitfor), size_t(0) );
+  bool fit_any_dev = false;
+  size_t num_fit_coefs = 0, num_fit_dev = 0;
+  for( const bool fit : setup.fitfor )
+    num_fit_coefs += fit;
+  for( const bool fit : setup.fit_dev_pair_offsets )
+  {
+    num_fit_dev += fit;
+    fit_any_dev = (fit_any_dev || fit);
+  }
 
-  if( nfit < 1 )
-    throw runtime_error( "fit_energy_cal_iterative: must fit for at least one coefficient" );
+  if( (num_fit_coefs + num_fit_dev) < 1 )
+    throw runtime_error( "fit_energy_cal_ceres: must fit at least one parameter" );
 
-  if( nfit > peakInfo.size() )
-    throw runtime_error( "fit_energy_cal_iterative: must have at least as many peaks as"
-                         " coefficients being fit for" );
+  if( (num_fit_coefs + num_fit_dev) > peakinfos.size() )
+    throw runtime_error( "fit_energy_cal_ceres: must have at least as many peaks as parameters"
+                         " being fit" );
 
-  EnergyCalFitCost *cost_functor = new EnergyCalFitCost();
-  cost_functor->m_eqnType = eqnType;
-  cost_functor->m_nchannel = nbin;
-  cost_functor->m_npars = npars;
-  cost_functor->m_peakInfo = peakInfo;
-  cost_functor->m_dev_pairs = devpair;
-  if( eqnType == SpecUtils::EnergyCalType::LowerChannelEdge )
-    cost_functor->m_baseline_lce_edges = lower_channel_edges;
+  // If fitting deviation pair offsets with only a single input pair, prepend the implicit
+  //  (fixed) {0,0} pair, matching the convention SpecUtils uses when applying deviation pairs
+  if( fit_any_dev && (setup.dev_pairs.size() == 1) && (setup.dev_pairs[0].first >= 0.1f) )
+  {
+    setup.dev_pairs.insert( begin(setup.dev_pairs), {0.0f, 0.0f} );
+    setup.fit_dev_pair_offsets.insert( begin(setup.fit_dev_pair_offsets), false );
+  }
 
-  ceres::DynamicAutoDiffCostFunction<EnergyCalFitCost,sm_energy_cal_ceres_stride> *cost_function
-    = new ceres::DynamicAutoDiffCostFunction<EnergyCalFitCost,sm_energy_cal_ceres_stride>(
-        cost_functor, ceres::TAKE_OWNERSHIP );
-  cost_function->AddParameterBlock( static_cast<int>(npars) );
-  cost_function->SetNumResiduals( static_cast<int>(peakInfo.size()) );
+  EnergyCalCeresFitResult result;
 
-  std::vector<double> parameters( npars, 0.0 );
-  for( size_t i = 0; i < npars; ++i )
-    parameters[i] = static_cast<double>( startingCoefs[i] );
+  const auto append_warning = [&result]( const std::string &msg ){
+    if( !result.warning_msg.empty() )
+      result.warning_msg += "\n";
+    result.warning_msg += msg;
+  };
+
+  // If, even after the implicit {0,0} handling, there arent enough pairs to form a spline (i.e.,
+  //  a lone pair below 0.1 keV, which SpecUtils treats as no deviation at all), a fit offset
+  //  would enter no residual - Ceres would silently leave it untouched, with a zero Jacobian
+  //  column poisoning the covariance - so dont pretend to fit it.
+  if( fit_any_dev && (setup.dev_pairs.size() < 2) )
+  {
+    append_warning( "The deviation pair offset was not fit: a lone pair below 0.1 keV has no"
+                    " effect on the energy calibration." );
+    std::fill( begin(setup.fit_dev_pair_offsets), end(setup.fit_dev_pair_offsets), false );
+    fit_any_dev = false;
+    num_fit_dev = 0;
+
+    if( num_fit_coefs < 1 )
+      throw runtime_error( "fit_energy_cal_ceres: must fit at least one parameter" );
+  }//if( fitting dev pair offsets, but they cant form a spline )
+
+  // Bound (per fitted deviation pair) applied below; 0 means unbounded/not-fit.
+  std::vector<double> dev_offset_limit( setup.dev_pairs.size(), 0.0 );
+
+  if( fit_any_dev )
+  {
+    // A deviation pair offset is only meaningfully constrained if a calibration peak falls in the
+    //  energy region where that pair is the closest deviation pair - otherwise fitting it lets
+    //  the optimizer overfit through spline interpolation, dragging the coefficients (the offset
+    //  especially) to non-physical values.  Hold such pairs fixed, and warn.  For the pairs we do
+    //  fit, bound the offset to a fraction of the spacing to the nearest neighbor (capped), so
+    //  even a weakly-conditioned pair cant produce a non-physical spike.
+    const size_t ndev = setup.dev_pairs.size();
+    const double inf = std::numeric_limits<double>::infinity();
+
+    bool warned_unconstrained = false;
+    for( size_t i = 0; i < ndev; ++i )
+    {
+      if( !setup.fit_dev_pair_offsets[i] )
+        continue;
+
+      // The energy region where deviation pair i is the closest pair (endpoints reach to infinity)
+      const double lo = (i == 0)      ? -inf : 0.5*(setup.dev_pairs[i-1].first + setup.dev_pairs[i].first);
+      const double hi = (i+1 == ndev) ?  inf : 0.5*(setup.dev_pairs[i].first + setup.dev_pairs[i+1].first);
+
+      bool has_peak = false;
+      for( const EnergyCal::RecalPeakInfo &peak : peakinfos )
+        has_peak = (has_peak || ((peak.photopeakEnergy >= lo) && (peak.photopeakEnergy <= hi)));
+
+      if( !has_peak )
+      {
+        setup.fit_dev_pair_offsets[i] = false;  //hold fixed - nothing constrains it
+        if( !warned_unconstrained )
+          append_warning( "A deviation pair offset was not fit: no calibration peak falls in the"
+                          " energy region it governs, so its value cant be determined." );
+        warned_unconstrained = true;
+        continue;
+      }//if( no peak governs this deviation pair )
+
+      double nearest_spacing = inf;
+      if( i > 0 )
+        nearest_spacing = std::min( nearest_spacing,
+                              static_cast<double>(setup.dev_pairs[i].first - setup.dev_pairs[i-1].first) );
+      if( (i+1) < ndev )
+        nearest_spacing = std::min( nearest_spacing,
+                              static_cast<double>(setup.dev_pairs[i+1].first - setup.dev_pairs[i].first) );
+
+      const double spacing_limit = std::isinf(nearest_spacing) ? 50.0 : (0.15 * nearest_spacing);
+      dev_offset_limit[i] = std::max( 0.5, std::min( spacing_limit, 50.0 ) );
+    }//for( loop over deviation pairs )
+
+    // Re-tally after possibly holding some fixed
+    num_fit_dev = 0;
+    fit_any_dev = false;
+    for( const bool fit : setup.fit_dev_pair_offsets )
+    {
+      num_fit_dev += fit;
+      fit_any_dev = (fit_any_dev || fit);
+    }
+
+    // Fitting the offset coefficient together with ALL the (remaining) deviation pair offsets
+    //  leaves a constant-energy-shift degeneracy; the SVD covariance absorbs it, but warn.
+    if( fit_any_dev && !setup.fitfor.empty() && setup.fitfor[0] )
+    {
+      bool all_dev_fit = true;
+      for( const bool fit : setup.fit_dev_pair_offsets )
+        all_dev_fit = (all_dev_fit && fit);
+
+      if( all_dev_fit )
+        append_warning( "Fitting the offset coefficient together with all deviation pair offsets"
+                        " is degenerate (a constant energy shift can go into either), so the"
+                        " result may be poorly determined." );
+    }
+  }//if( fit_any_dev )
+
+  // Seed the polynomial/FRF coefficients with a quick linear fit (deviation pairs held at their
+  //  current values), so Ceres starts near the solution.  The non-linear deviation-pair fit is
+  //  otherwise sensitive to a poor starting calibration and can diverge from it - the linear fit
+  //  cant fit the deviation-pair offsets, but it gets the offset/gain right, which is the hard
+  //  part for the non-linear solver to recover from a bad start.
+  std::vector<float> seed_coefs = setup.starting_coefs;
+  if( (num_fit_coefs > 0) && (setup.cal_type != EnergyCalType::LowerChannelEdge) )
+  {
+    try
+    {
+      std::vector<float> lls_coefs = setup.starting_coefs, lls_uncert;
+      if( setup.cal_type == EnergyCalType::FullRangeFraction )
+        fit_energy_cal_frf( peakinfos, setup.fitfor, setup.num_channels, setup.dev_pairs,
+                            lls_coefs, lls_uncert );
+      else
+        fit_energy_cal_poly( peakinfos, setup.fitfor, setup.num_channels, setup.dev_pairs,
+                             lls_coefs, lls_uncert );
+
+      bool valid = (lls_coefs.size() == seed_coefs.size());
+      for( const float c : lls_coefs )
+        valid = (valid && !std::isnan(c) && !std::isinf(c));
+      if( valid )
+        seed_coefs = lls_coefs;
+    }catch( std::exception & )
+    {
+      //keep setup.starting_coefs as the seed
+    }
+  }//if( can seed coefficients with a linear fit )
+
+  // Setup and solve the Ceres problem
+  EnergyCalCeresCostFcn cost_functor( peakinfos, setup );
+
+  const size_t num_pars = cost_functor.num_parameters();
+  assert( num_pars == (ncoefs + setup.dev_pairs.size()) );
+
+  vector<double> pars( num_pars, 0.0 );
+  for( size_t i = 0; i < ncoefs; ++i )
+    pars[i] = seed_coefs[i] / cost_functor.m_par_scales[i];
+  for( size_t i = 0; i < setup.dev_pairs.size(); ++i )
+    pars[ncoefs + i] = setup.dev_pairs[i].second;
+
+  vector<int> constant_pars;
+  for( size_t i = 0; i < ncoefs; ++i )
+  {
+    if( !setup.fitfor[i] )
+      constant_pars.push_back( static_cast<int>(i) );
+  }
+  for( size_t i = 0; i < setup.dev_pairs.size(); ++i )
+  {
+    if( setup.fit_dev_pair_offsets.empty() || !setup.fit_dev_pair_offsets[i] )
+      constant_pars.push_back( static_cast<int>(ncoefs + i) );
+  }
+
+  auto cost_function = new ceres::DynamicAutoDiffCostFunction<EnergyCalCeresCostFcn,4>(
+                              &cost_functor, ceres::Ownership::DO_NOT_TAKE_OWNERSHIP );
+  cost_function->AddParameterBlock( static_cast<int>(num_pars) );
+  cost_function->SetNumResiduals( static_cast<int>(cost_functor.num_residuals()) );
 
   ceres::Problem problem;
-  problem.AddResidualBlock( cost_function, nullptr, parameters.data() );
+  problem.AddResidualBlock( cost_function, nullptr, pars.data() );  //problem owns cost_function
 
-  // Hold fixed parameters constant via SubsetManifold.
-  std::vector<int> constant_indices;
-  for( size_t i = 0; i < npars; ++i )
+  if( !constant_pars.empty() )
   {
-    if( !fitfor[i] )
-      constant_indices.push_back( static_cast<int>(i) );
-  }
-  if( !constant_indices.empty() && (constant_indices.size() < npars) )
-  {
-    ceres::Manifold *subset = new ceres::SubsetManifold( static_cast<int>(npars), constant_indices );
-    problem.SetManifold( parameters.data(), subset );
+    ceres::SubsetManifold * const manifold
+                    = new ceres::SubsetManifold( static_cast<int>(num_pars), constant_pars );
+    problem.SetManifold( pars.data(), manifold );  //problem owns manifold
   }
 
-  // Bound the linear/gain term (index 1) to be strictly positive when it is being fit.
-  // For polynomial/FRF this preserves the Minuit2 lower-limit at 0.0; for LowerChannelEdge the
-  // 'gain' multiplier must also stay positive to avoid an inverted energy axis.
-  if( fitfor[1] )
-    problem.SetParameterLowerBound( parameters.data(), 1, 0.0 );
+  // Bound the fitted deviation-pair offsets, so even a weakly-conditioned pair cant produce a
+  //  non-physical spike (which the coefficients would then compensate for, wrecking the fit)
+  for( size_t i = 0; i < setup.dev_pairs.size(); ++i )
+  {
+    if( setup.fit_dev_pair_offsets.empty() || !setup.fit_dev_pair_offsets[i] )
+      continue;
+
+    assert( dev_offset_limit[i] > 0.0 );
+    const int par_index = static_cast<int>( ncoefs + i );
+    const double start = pars[par_index];
+    problem.SetParameterLowerBound( pars.data(), par_index, start - dev_offset_limit[i] );
+    problem.SetParameterUpperBound( pars.data(), par_index, start + dev_offset_limit[i] );
+  }//for( bound the fitted deviation pair offsets )
 
   ceres::Solver::Options options;
   options.linear_solver_type = ceres::DENSE_QR;
   options.minimizer_type = ceres::TRUST_REGION;
   options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
   options.use_nonmonotonic_steps = true;
-  options.max_num_iterations = 200;
-  options.function_tolerance = 1e-10;
-  options.parameter_tolerance = 1e-12;
+  options.max_num_iterations = 250;
+  options.function_tolerance = 1.0e-9;
+  options.parameter_tolerance = 1.0e-11;
+  options.num_threads = 1;
   options.logging_type = ceres::SILENT;
   options.minimizer_progress_to_stdout = false;
 
   ceres::Solver::Summary summary;
   ceres::Solve( options, &problem, &summary );
 
-  if( summary.termination_type == ceres::FAILURE
-      || summary.termination_type == ceres::USER_FAILURE )
+  switch( summary.termination_type )
   {
-    throw runtime_error( "Fit for calibration parameters failed: " + summary.message );
-  }
+    case ceres::CONVERGENCE:
+    case ceres::USER_SUCCESS:
+      break;
 
-  for( size_t i = 0; i < npars; ++i )
-  {
-    if( std::isinf(parameters[i]) || std::isnan(parameters[i]) )
-      throw runtime_error( "Invalid calibration parameter from fit :(" );
-  }
+    case ceres::NO_CONVERGENCE:
+      append_warning( "The fit did not fully converge, so the calibration may not be optimal;"
+                      " please check the result." );
+      break;
 
-  if( summary.termination_type == ceres::NO_CONVERGENCE )
-  {
-    warning_msg = "Warning: calibration coefficient fit did not fully converge; please check"
-                  " the result, and revert this calibration if necessary.";
-    bool fithigher = false;
-    for( size_t i = 2; i < npars; ++i )
-      fithigher |= fitfor[i];
-    if( fithigher )
-      warning_msg += " You might try not fitting for quadratic or higher terms.";
-  }
+    case ceres::FAILURE:
+    case ceres::USER_FAILURE:
+      throw runtime_error( "fit_energy_cal_ceres: minimization failed: " + summary.message );
+  }//switch( summary.termination_type )
 
-  // Extract parameter uncertainties from the covariance matrix.
-  std::vector<double> uncerts( npars, 0.0 );
-  if( nfit < npars || nfit > 0 )
+  // Extract the results
+  result.coefs.resize( ncoefs );
+  result.coef_uncerts.assign( ncoefs, 0.0f );
+  for( size_t i = 0; i < ncoefs; ++i )
+    result.coefs[i] = static_cast<float>( pars[i] * cost_functor.m_par_scales[i] );
+
+  result.dev_pairs = setup.dev_pairs;
+  result.dev_pair_offset_uncerts.assign( setup.dev_pairs.size(), 0.0f );
+  for( size_t i = 0; i < setup.dev_pairs.size(); ++i )
+    result.dev_pairs[i].second = static_cast<float>( pars[ncoefs + i] );
+
+  // Parameter uncertainties, from the SVD pseudo-inverse based covariance
   {
     ceres::Covariance::Options cov_options;
-    cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD;
-    cov_options.min_reciprocal_condition_number = 1e-14;
+    cov_options.algorithm_type = ceres::DENSE_SVD;
     cov_options.null_space_rank = -1;
+    cov_options.min_reciprocal_condition_number = 1.0e-14;
 
     ceres::Covariance covariance( cov_options );
-    std::vector<std::pair<const double*,const double*>> cov_blocks;
-    cov_blocks.emplace_back( parameters.data(), parameters.data() );
+    vector<pair<const double *, const double *>> cov_blocks;
+    cov_blocks.emplace_back( pars.data(), pars.data() );
 
-    if( covariance.Compute( cov_blocks, &problem ) )
+    vector<double> cov( num_pars * num_pars, 0.0 );
+    if( covariance.Compute( cov_blocks, &problem )
+        && covariance.GetCovarianceBlock( pars.data(), pars.data(), cov.data() ) )
     {
-      std::vector<double> row_major( npars * npars, 0.0 );
-      const std::vector<const double*> blocks( 1, parameters.data() );
-      if( covariance.GetCovarianceMatrix( blocks, row_major.data() ) )
+      for( size_t i = 0; i < ncoefs; ++i )
       {
-        for( size_t i = 0; i < npars; ++i )
-        {
-          const double v = row_major[i * npars + i];
-          uncerts[i] = (v > 0.0) ? std::sqrt(v) : 0.0;
-        }
+        const double var = cov[i*num_pars + i];
+        if( setup.fitfor[i] && (var > 0.0) )
+          result.coef_uncerts[i] = static_cast<float>( cost_functor.m_par_scales[i] * std::sqrt(var) );
       }
-    }
-    else
+
+      for( size_t i = 0; i < setup.dev_pairs.size(); ++i )
+      {
+        const size_t index = ncoefs + i;
+        const double var = cov[index*num_pars + index];
+        if( !setup.fit_dev_pair_offsets.empty() && setup.fit_dev_pair_offsets[i] && (var > 0.0) )
+          result.dev_pair_offset_uncerts[i] = static_cast<float>( std::sqrt(var) );
+      }
+    }else
     {
-      if( !warning_msg.empty() ) warning_msg += " ";
-      warning_msg += "Could not compute parameter uncertainties (covariance was rank-deficient).";
+      append_warning( "Parameter uncertainties could not be computed." );
     }
-  }
+  }//end code-block to compute uncertainties
 
-  // Zero uncertainties on fixed parameters (they were not fit).
-  for( size_t i = 0; i < npars; ++i )
+  // Compute chi2 using the SpecUtils forward functions, consistent with the linear fits
+  result.chi2 = 0.0;
+  for( size_t i = 0; i < peakinfos.size(); ++i )
   {
-    if( !fitfor[i] )
-      uncerts[i] = 0.0;
-  }
+    const EnergyCal::RecalPeakInfo &peak = peakinfos[i];
 
-  coefs.resize( npars, 0.0f );
-  coefs_uncert.resize( npars, 0.0f );
-  for( size_t i = 0; i < npars; ++i )
+    double pred = 0.0;
+    switch( setup.cal_type )
+    {
+      case EnergyCalType::Polynomial:
+      case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+        pred = SpecUtils::polynomial_energy( peak.peakMeanBinNumber, result.coefs, result.dev_pairs );
+        break;
+
+      case EnergyCalType::FullRangeFraction:
+        pred = SpecUtils::fullrangefraction_energy( peak.peakMeanBinNumber, result.coefs,
+                                                    setup.num_channels, result.dev_pairs );
+        break;
+
+      case EnergyCalType::LowerChannelEdge:
+        pred = result.coefs[0] + result.coefs[1]*cost_functor.m_lower_chan_orig[i];
+        break;
+
+      case EnergyCalType::InvalidEquationType:
+        assert( 0 );
+        break;
+    }//switch( setup.cal_type )
+
+    result.chi2 += std::pow( (pred - peak.photopeakEnergy) / cost_functor.m_sigmas[i], 2.0 );
+  }//for( loop over peaks )
+
+  // Hard validity check: make sure the result actually forms a valid calibration
+  try
   {
-    coefs[i] = static_cast<float>( parameters[i] );
-    coefs_uncert[i] = static_cast<float>( uncerts[i] );
-  }
+    auto check_cal = make_shared<SpecUtils::EnergyCalibration>();
+    switch( setup.cal_type )
+    {
+      case EnergyCalType::Polynomial:
+      case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+        check_cal->set_polynomial( setup.num_channels, result.coefs, result.dev_pairs );
+        break;
 
-  // Ceres minimizes 0.5 * sum(r_i^2); chi^2 = sum(r_i^2) = 2 * final_cost.
-  return 2.0 * summary.final_cost;
-}//fit_energy_cal_iterative(...)
+      case EnergyCalType::FullRangeFraction:
+        check_cal->set_full_range_fraction( setup.num_channels, result.coefs, result.dev_pairs );
+        break;
+
+      case EnergyCalType::LowerChannelEdge:
+      {
+        auto orig_cal = make_shared<SpecUtils::EnergyCalibration>();
+        orig_cal->set_lower_channel_energy( setup.num_channels, setup.lower_channel_energies );
+        adjust_lower_channel_energy_cal( orig_cal, result.coefs[0], result.coefs[1] );
+        break;
+      }
+
+      case EnergyCalType::InvalidEquationType:
+        assert( 0 );
+        break;
+    }//switch( setup.cal_type )
+  }catch( std::exception &e )
+  {
+    throw runtime_error( "fit_energy_cal_ceres: fit produced an invalid calibration: "
+                         + std::string(e.what()) );
+  }//try / catch
+
+  return result;
+}//fit_energy_cal_ceres(...)
 
 
 
@@ -879,73 +1280,22 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
   }//if( other_cal->type() == EnergyCalType::LowerChannelEdge )
 
   
-  // LowerChannelEdge foreground propagating to a poly / FRF measurement: the displayed LCE
-  // change is always a 2-parameter affine of the loaded edges (offset + gain — that's what the
-  // UI exposes), so we don't need the full channel-matching dance below. Just shift the other
-  // cal's offset by the same energy delta and multiply its linear term by the same gain ratio.
-  // Higher-order coefficients are left alone (they represent intrinsic non-linearity of the
-  // other detector that shouldn't change when the displayed detector's offset/gain is nudged).
-  if( orig_cal->type() == EnergyCalType::LowerChannelEdge )
-  {
-    const auto orig_edges = orig_cal->channel_energies();
-    const auto new_edges  = (new_cal->type() == EnergyCalType::LowerChannelEdge)
-                              ? new_cal->channel_energies()
-                              : shared_ptr<const vector<float>>{};
-    if( !orig_edges || orig_edges->size() < 2 || !new_edges || new_edges->size() < 2
-        || (orig_edges->size() != new_edges->size()) )
-      throw runtime_error( "EnergyCal::propogate_energy_cal_change: LowerChannelEdge edges missing or size mismatch" );
-
-    const double orig_span = static_cast<double>(orig_edges->back())
-                             - static_cast<double>(orig_edges->front());
-    const double new_span = static_cast<double>(new_edges->back())
-                            - static_cast<double>(new_edges->front());
-    const double offset_delta = static_cast<double>(new_edges->front())
-                                - static_cast<double>(orig_edges->front());
-    const double gain_factor = (std::fabs(orig_span) > 1e-6) ? (new_span / orig_span) : 1.0;
-
-    vector<float> new_other_coefs = other_cal->coefficients();
-    if( new_other_coefs.empty() )
-      new_other_coefs.push_back( 0.0f );
-    new_other_coefs[0] = static_cast<float>( static_cast<double>(new_other_coefs[0]) + offset_delta );
-    if( new_other_coefs.size() >= 2 )
-      new_other_coefs[1] = static_cast<float>( static_cast<double>(new_other_coefs[1]) * gain_factor );
-
-    const auto &dev_pairs = other_cal->deviation_pairs();
-    switch( other_cal->type() )
-    {
-      case EnergyCalType::Polynomial:
-      case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-        answer->set_polynomial( other_num_channel, new_other_coefs, dev_pairs );
-        break;
-
-      case EnergyCalType::FullRangeFraction:
-        answer->set_full_range_fraction( other_num_channel, new_other_coefs, dev_pairs );
-        break;
-
-      case EnergyCalType::LowerChannelEdge:
-      case EnergyCalType::InvalidEquationType:
-        assert( 0 );
-        break;
-    }//switch( other_cal->type() )
-
-    return answer;
-  }//if( orig_cal is LowerChannelEdge )
-
-  // At this point both `orig_cal` and `new_cal` are poly / FRF, and `other_cal` is poly / FRF
-  // too (LowerChannelEdge other_cal returned above).
-  assert( (orig_cal->type() == EnergyCalType::FullRangeFraction)
-          || (orig_cal->type() == EnergyCalType::Polynomial)
-          || (orig_cal->type() == EnergyCalType::UnspecifiedUsingDefaultPolynomial) );
-  assert( (new_cal->type() == EnergyCalType::FullRangeFraction)
-          || (new_cal->type() == EnergyCalType::Polynomial)
-          || (new_cal->type() == EnergyCalType::UnspecifiedUsingDefaultPolynomial) );
+  assert( (orig_cal->type() != EnergyCalType::InvalidEquationType) );
+  assert( (new_cal->type() != EnergyCalType::InvalidEquationType) );
   assert( (other_cal->type() == EnergyCalType::FullRangeFraction)
           || (other_cal->type() == EnergyCalType::Polynomial)
           || (other_cal->type() == EnergyCalType::UnspecifiedUsingDefaultPolynomial) );
 
   const double accuracy = 0.00001;
-  const size_t order = std::max( other_coeffs.size(),
-                                 std::max(prev_disp_coefs.size(), new_disp_coefs.size()) );
+
+  // For a lower-channel-energy calibration coefficients() returns all the channel energies, so
+  //  dont let it drive the number of sampled points (its offset/gain style adjustments are
+  //  linear, so two points would do; other_cal's order still gets honored).
+  const size_t prev_order = (orig_cal->type() == EnergyCalType::LowerChannelEdge)
+                            ? size_t(2) : prev_disp_coefs.size();
+  const size_t new_order = (new_cal->type() == EnergyCalType::LowerChannelEdge)
+                            ? size_t(2) : new_disp_coefs.size();
+  const size_t order = std::max( other_coeffs.size(), std::max(prev_order, new_order) );
   
   vector<pair<double,double>> channels_energies;  //this gives <channel number,energy it should be>
   for( size_t i = 0; i < order; ++i )
@@ -964,7 +1314,7 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
         new_disp_energy = fullrangefraction_energy( display_channel, new_disp_coefs, new_num_channel, new_disp_devs );
         break;
       }//case orig_cal was FRF
-
+        
       case EnergyCalType::Polynomial:
       case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
       {
@@ -974,9 +1324,15 @@ EnergyCal::propogate_energy_cal_change( const shared_ptr<const SpecUtils::Energy
       }//case: orig_cal was Poly
 
       case EnergyCalType::LowerChannelEdge:
+      {
+        // Lower channel energy calibrations dont have deviation pairs, so using the member
+        //  functions here is consistent with the dev-pair-ignoring convention above
+        old_disp_energy = orig_cal->energy_for_channel( static_cast<double>(display_channel) );
+        new_disp_energy = new_cal->energy_for_channel( static_cast<double>(display_channel) );
+        break;
+      }//case: orig_cal was LowerChannelEdge
+
       case EnergyCalType::InvalidEquationType:
-        // LowerChannelEdge handled by the early-return block above; InvalidEquationType
-        // rejected by the up-front validity check.
         assert( 0 );
         break;
     }//switch( orig_cal->type() )
@@ -1074,15 +1430,9 @@ std::vector<float> EnergyCal::fit_for_poly_coefs( const std::vector<std::pair<do
     for( int col = 0; col < poly_terms; ++col )
       A(row,col) = std::pow( channels_energies[row].first, double(col) );
   }//for( int col = 0; col < poly_terms; ++col )
-  
-#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
-  const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
-#else
-  const Eigen::BDCSVD<Eigen::MatrixX<double>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
-#endif
-  
-  const Eigen::VectorXd a = svd.solve(b);
-  
+
+  const Eigen::VectorXd a = solve_lls_equilibrated( A, b, nullptr );
+
   vector<float> poly_coeffs( poly_terms );
   for( int coef = 0; coef < poly_terms; ++coef )
     poly_coeffs[coef] = static_cast<float>( a(coef) );
@@ -1113,15 +1463,9 @@ std::vector<float> EnergyCal::fit_for_fullrangefraction_coefs( const std::vector
     if( polyterms > 4 )
       A(row,4) = 1.0 / (1.0 + 60.0*x);
   }//for( int col = 0; col < poly_terms; ++col )
-  
-#if( EIGEN_VERSION_AT_LEAST( 3, 4, 1 ) )
-  const Eigen::JacobiSVD<Eigen::MatrixX<double>,Eigen::ComputeThinU | Eigen::ComputeThinV> svd(A);
-#else
-  const Eigen::BDCSVD<Eigen::MatrixX<double>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
-#endif
-  
-  const Eigen::VectorXd a = svd.solve(b);
-  
+
+  const Eigen::VectorXd a = solve_lls_equilibrated( A, b, nullptr );
+
   vector<float> frf_coeffs( polyterms );
   for( int coef = 0; coef < polyterms; ++coef )
     frf_coeffs[coef] = static_cast<float>( a(coef) );

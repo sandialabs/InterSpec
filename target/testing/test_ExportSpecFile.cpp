@@ -1,0 +1,1185 @@
+/* InterSpec: an application to analyze spectral gamma radiation data.
+
+ Copyright 2018 National Technology & Engineering Solutions of Sandia, LLC
+ (NTESS). Under the terms of Contract DE-NA0003525 with NTESS, the U.S.
+ Government retains certain rights in this software.
+ For questions contact William Johnson via email at wcjohns@sandia.gov, or
+ alternative emails of interspec@sandia.gov.
+
+ This library is free software; you can redistribute it and/or
+ modify it under the terms of the GNU Lesser General Public
+ License as published by the Free Software Foundation; either
+ version 2.1 of the License, or (at your option) any later version.
+
+ This library is distributed in the hope that it will be useful,
+ but WITHOUT ANY WARRANTY; without even the implied warranty of
+ MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the GNU
+ Lesser General Public License for more details.
+
+ You should have received a copy of the GNU Lesser General Public
+ License along with this library; if not, write to the Free Software
+ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
+ */
+
+#include "InterSpec_config.h"
+
+#include <set>
+#include <deque>
+#include <cmath>
+#include <string>
+#include <memory>
+#include <vector>
+#include <fstream>
+#include <sstream>
+#include <iostream>
+
+#include <Wt/Utils>
+#include <Wt/WApplication>
+#include <Wt/Test/WTestEnvironment>
+
+#ifdef _WIN32
+#include "winsock2.h"
+#include "Windows.h"
+#endif
+
+#define BOOST_TEST_MODULE ExportSpecFile_suite
+#include <boost/test/included/unit_test.hpp>
+
+#include "SpecUtils/SpecFile.h"
+#include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/EnergyCalibration.h"
+
+#include "InterSpec/PeakDef.h"
+#include "InterSpec/SpecMeas.h"
+#include "InterSpec/InterSpec.h"
+#include "InterSpec/InterSpecApp.h"
+#include "InterSpec/ExportSpecFile.h"
+#include "InterSpec/DecayDataBaseServer.h"
+
+using namespace std;
+using namespace boost::unit_test;
+
+std::string g_test_file_dir;
+
+// Set the static data directory
+void set_data_dir()
+{
+  static bool s_have_set = false;
+  if( s_have_set )
+    return;
+
+  s_have_set = true;
+
+  int argc = boost::unit_test::framework::master_test_suite().argc;
+  char **argv = boost::unit_test::framework::master_test_suite().argv;
+
+  string datadir;
+
+  for( int i = 1; i < argc; ++i )
+  {
+    const string arg = argv[i];
+    if( SpecUtils::istarts_with( arg, "--datadir=" ) )
+      datadir = arg.substr( 10 );
+
+    if( SpecUtils::istarts_with( arg, "--testfiledir=" ) )
+      g_test_file_dir = arg.substr( 14 );
+  }
+
+  SpecUtils::ireplace_all( datadir, "%20", " " );
+  SpecUtils::ireplace_all( g_test_file_dir, "%20", " " );
+
+  // Search for the data directory if not specified
+  if( datadir.empty() )
+  {
+    for( const auto &d : { "data", "../data", "../../data", "../../../data" } )
+    {
+      if( SpecUtils::is_file( SpecUtils::append_path(d, "sandia.decay.xml") ) )
+      {
+        datadir = d;
+        break;
+      }
+    }
+  }//if( datadir.empty() )
+
+  // Search for test file directory if not specified
+  if( g_test_file_dir.empty() )
+  {
+    const vector<string> candidate_test_dirs{
+      "test_data",
+      "../test_data",
+      "target/testing/test_data",
+      "../target/testing/test_data",
+      "../../target/testing/test_data",
+      "../../../target/testing/test_data"
+    };
+
+    for( const auto &d : candidate_test_dirs )
+    {
+      if( SpecUtils::is_directory(d) )
+      {
+        g_test_file_dir = d;
+        break;
+      }
+    }
+  }//if( g_test_file_dir.empty() )
+
+  if( datadir.empty() )
+    throw runtime_error( "Could not find data directory" );
+
+  if( g_test_file_dir.empty() )
+    throw runtime_error( "Could not find test file directory" );
+
+  // Initialize the decay database
+  DecayDataBaseServer::setDecayXmlFile( SpecUtils::append_path(datadir, "sandia.decay.xml") );
+
+  // Set other data directories
+  InterSpec::setStaticDataDirectory( datadir );
+}//void set_data_dir()
+
+
+namespace
+{
+/** Returns a deque holding a single Gaussian peak at 661.7 keV. */
+deque<shared_ptr<const PeakDef>> make_test_peaks()
+{
+  auto cont = make_shared<PeakContinuum>();
+  cont->setType( PeakContinuum::OffsetType::Linear );
+  cont->setRange( 630.0, 690.0 );
+
+  auto peak = make_shared<PeakDef>( 661.7, 6.0, 1000.0 );
+  peak->setContinuum( cont );
+
+  return deque<shared_ptr<const PeakDef>>{ peak };
+}//make_test_peaks()
+
+
+/** One sample of a synthetic file: its sample number, the detectors present for it,
+ and its source type.
+ */
+struct SynthSample
+{
+  int sample_number;
+  vector<string> detector_names;
+  SpecUtils::SourceType source_type;
+};//struct SynthSample
+
+
+/** Creates a SpecMeas from the given sample descriptions: 1024 channels at 3 keV/channel,
+ flat continuum plus a Gaussian bump at 661.7 keV whose area scales with sample number and
+ detector index (so exported records can be told apart when manually checking in the GUI).
+ */
+shared_ptr<SpecMeas> create_synthetic_file( const vector<SynthSample> &samples )
+{
+  auto cal = make_shared<SpecUtils::EnergyCalibration>();
+  cal->set_polynomial( 1024, {0.0f, 3.0f}, {} );
+
+  auto meas = make_shared<SpecMeas>();
+  for( const SynthSample &sample : samples )
+  {
+    for( size_t det_index = 0; det_index < sample.detector_names.size(); ++det_index )
+    {
+      const double amp = 100.0 * sample.sample_number * (1.0 + det_index);
+      auto counts = make_shared<vector<float>>( 1024, 10.0f );
+      // Gaussian at 661.7 keV (channel ~220.57), sigma 2 channels
+      for( size_t ch = 200; ch < 240; ++ch )
+      {
+        const double x = (ch + 0.5) - 220.57;
+        (*counts)[ch] += static_cast<float>( amp * std::exp( -0.5*x*x/(2.0*2.0) )
+                                            / (2.0*std::sqrt(2.0*3.14159265358979)) );
+      }
+
+      auto m = make_shared<SpecUtils::Measurement>();
+      m->set_gamma_counts( counts, 300.0f, 315.0f );
+      m->set_energy_calibration( cal );
+      m->set_sample_number( sample.sample_number );
+      m->set_detector_name( sample.detector_names[det_index] );
+      m->set_title( "Sample " + std::to_string(sample.sample_number) );
+      m->set_source_type( sample.source_type );
+      meas->add_measurement( m, false );
+    }//for( loop over detectors of this sample )
+  }//for( const SynthSample &sample : samples )
+
+  meas->cleanup_after_load( SpecUtils::SpecFile::DontChangeOrReorderSamples );
+
+  return meas;
+}//create_synthetic_file(...)
+
+
+/** Makes sure the N42 test-file variants exist in `<testfiledir>/ExportSpecFile/`, creating
+ any that are missing.  Returns the directory path.
+
+ These files are checked into the repository (rather than being temp files) so they can be
+ manually loaded in the InterSpec GUI to reproduce/inspect export behavior - so we only write
+ the ones that arent already there.  Note `SpecFile::write_2012_N42(...)` stamps the current
+ time into the file, so re-writing an existing file would leave the working tree dirty after
+ every test run.
+
+ If you change how these files are made, delete them and re-run this test to re-create them.
+ */
+string ensure_synthetic_files()
+{
+  static string s_dir;
+  if( !s_dir.empty() )
+    return s_dir;
+
+  set_data_dir();
+
+  const string dir = SpecUtils::append_path( g_test_file_dir, "ExportSpecFile" );
+  if( !SpecUtils::is_directory(dir) )
+    BOOST_REQUIRE_EQUAL( SpecUtils::create_directory(dir), 1 );
+
+  const SpecUtils::SourceType fore_type = SpecUtils::SourceType::Foreground;
+  const SpecUtils::SourceType back_type = SpecUtils::SourceType::Background;
+
+  const auto write_file = [&dir]( const shared_ptr<SpecMeas> &meas, const string &name ){
+    const string path = SpecUtils::append_path( dir, name );
+    if( SpecUtils::is_file(path) )
+      return;
+
+    ofstream out( path.c_str(), ios::binary );
+    BOOST_REQUIRE( out.is_open() );
+    BOOST_REQUIRE( meas->write_2012_N42( out ) );
+  };
+
+  // The reported-bug scenario: 13 samples, one detector, user peaks on sample 8 only
+  {
+    vector<SynthSample> samples;
+    for( int i = 1; i <= 13; ++i )
+      samples.push_back( SynthSample{i, {"Aa1"}, fore_type} );
+    const shared_ptr<SpecMeas> meas = create_synthetic_file( samples );
+    meas->setPeaks( make_test_peaks(), {8} );
+    write_file( meas, "13samples_1det_peaks_on_8.n42" );
+  }
+
+  // Multiple detectors per sample: 5 samples, each with two detectors, peaks on sample 3
+  {
+    vector<SynthSample> samples;
+    for( int i = 1; i <= 5; ++i )
+      samples.push_back( SynthSample{i, {"Aa1", "Ba2"}, fore_type} );
+    const shared_ptr<SpecMeas> meas = create_synthetic_file( samples );
+    meas->setPeaks( make_test_peaks(), {3} );
+    write_file( meas, "5samples_2dets_peaks_on_3.n42" );
+  }
+
+  // Non-uniform detectors: "Aa1" on every sample, "Ba2" only on odd samples
+  {
+    vector<SynthSample> samples;
+    for( int i = 1; i <= 6; ++i )
+    {
+      const vector<string> dets = (i % 2) ? vector<string>{"Aa1", "Ba2"} : vector<string>{"Aa1"};
+      samples.push_back( SynthSample{i, dets, fore_type} );
+    }
+    const shared_ptr<SpecMeas> meas = create_synthetic_file( samples );
+    meas->setPeaks( make_test_peaks(), {3} );
+    write_file( meas, "6samples_nonuniform_dets_peaks_on_3.n42" );
+  }
+
+  // Non-monotonic / gapped sample numbers, peaks on sample 9
+  {
+    vector<SynthSample> samples;
+    for( const int i : {2, 3, 7, 9, 15} )
+      samples.push_back( SynthSample{i, {"Aa1"}, fore_type} );
+    const shared_ptr<SpecMeas> meas = create_synthetic_file( samples );
+    meas->setPeaks( make_test_peaks(), {9} );
+    write_file( meas, "gapped_samples_peaks_on_9.n42" );
+  }
+
+  // Foreground samples plus a background sample, peaks on the foreground samples
+  {
+    vector<SynthSample> samples;
+    samples.push_back( SynthSample{1, {"Aa1"}, fore_type} );
+    samples.push_back( SynthSample{2, {"Aa1"}, fore_type} );
+    samples.push_back( SynthSample{3, {"Aa1"}, back_type} );
+    const shared_ptr<SpecMeas> meas = create_synthetic_file( samples );
+    meas->setPeaks( make_test_peaks(), {1, 2} );
+    write_file( meas, "fore_plus_back_peaks_on_1_2.n42" );
+  }
+
+  s_dir = dir;
+  return s_dir;
+}//ensure_synthetic_files()
+}//namespace
+
+
+// Helper class to manage InterSpec instance for tests
+class InterSpecTestFixture
+{
+public:
+  std::unique_ptr<Wt::Test::WTestEnvironment> m_env;
+  InterSpecApp *m_app;
+  std::unique_ptr<Wt::WApplication::UpdateLock> m_update_lock;
+  InterSpec *m_interspec;
+
+  InterSpecTestFixture()
+  : m_env( nullptr ),
+    m_app( nullptr ),
+    m_interspec( nullptr )
+  {
+    set_data_dir();
+    ensure_synthetic_files();
+
+    string wt_app_root = SpecUtils::append_path( InterSpec::staticDataDirectory(), "..");
+    wt_app_root = SpecUtils::lexically_normalize_path(wt_app_root);
+
+    // Create a test environment
+    const std::string applicationPath = "";
+    const std::string configurationFile = "";
+    m_env.reset( new Wt::Test::WTestEnvironment( applicationPath, configurationFile, Wt::Application ) );
+    m_env->setAppRoot( wt_app_root );
+
+    // Create the app
+    m_app = new InterSpecApp( *m_env );
+
+    m_update_lock.reset( new Wt::WApplication::UpdateLock(m_app) );
+
+    // Get the InterSpec viewer instance
+    m_interspec = m_app->viewer();
+    BOOST_REQUIRE( m_interspec );
+  }
+
+  /** Loads one of the synthesized N42 variants as the foreground. */
+  shared_ptr<SpecMeas> loadForeground( const string &filename )
+  {
+    const string path = SpecUtils::append_path( ensure_synthetic_files(), filename );
+    BOOST_REQUIRE( SpecUtils::is_file(path) );
+
+    m_interspec->userOpenFileFromFilesystem( path, path );
+    Wt::WApplication::instance()->processEvents();
+
+    shared_ptr<SpecMeas> fore = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
+    BOOST_REQUIRE( fore );
+
+    return fore;
+  }//loadForeground(...)
+
+  /** Returns the (single) sample-number set the loaded file has peaks for.
+   Using the loaded key - rather than the key the file was written with - keeps the tests
+   robust to any sample-number normalization the N42 load path performs.
+   */
+  set<int> loadedPeakKey( const shared_ptr<SpecMeas> &meas )
+  {
+    const set<set<int>> keys = meas->sampleNumsWithPeaks();
+    BOOST_REQUIRE_EQUAL( static_cast<int>(keys.size()), 1 );
+    return *begin(keys);
+  }//loadedPeakKey(...)
+
+  ~InterSpecTestFixture()
+  {
+    m_update_lock.reset();
+    m_env.reset();
+    m_interspec = nullptr;
+  }
+};//class InterSpecTestFixture
+
+
+/** Availability of export options across file-shape and format combinations,
+ via the pure `applicable_export_options(...)` (no GUI needed).
+ */
+BOOST_AUTO_TEST_CASE( applicableOptionsMatrix )
+{
+  set_data_dir();
+
+  typedef ExportSpecFileTool::DisplayStateInfo DisplayStateInfo;
+  typedef ExportSpecFileTool::ExportOptions ExportOptions;
+  typedef ExportSpecFileTool::ExportOptionsAvailability Availability;
+
+  const SpecUtils::SaveSpectrumAsType n42 = SpecUtils::SaveSpectrumAsType::N42_2012;
+  const SpecUtils::SaveSpectrumAsType spe = SpecUtils::SaveSpectrumAsType::SpeIaea;
+
+  // 13 samples, one detector, displayed as foreground with sample 8 shown
+  {
+    vector<SynthSample> defs;
+    for( int i = 1; i <= 13; ++i )
+      defs.push_back( SynthSample{i, {"Aa1"}, SpecUtils::SourceType::Foreground} );
+    const shared_ptr<SpecMeas> spec = create_synthetic_file( defs );
+
+    DisplayStateInfo display;
+    display.spec_is_fore = true;
+    display.fore_samples = set<int>{8};
+    display.fore_dets = vector<string>{"Aa1"};
+
+    ExportOptions options;
+    options.all_samples = true;
+
+    const Availability n42_avail = ExportSpecFileTool::applicable_export_options( spec, n42, display, options );
+    BOOST_CHECK( n42_avail.disp_fore );
+    BOOST_CHECK( !n42_avail.disp_back );
+    BOOST_CHECK( !n42_avail.disp_seco );
+    BOOST_CHECK( n42_avail.all_samples );
+    BOOST_CHECK( n42_avail.custom_samples );
+    BOOST_CHECK( !n42_avail.filter_detectors );  // only one detector
+    BOOST_CHECK( n42_avail.sum_all );            // 13 records can be summed
+    BOOST_CHECK( !n42_avail.sum_fore );          // displayed foreground not selected
+    BOOST_CHECK( !n42_avail.back_sub );          // no background displayed
+    BOOST_CHECK( !n42_avail.sum_dets_per_sample );
+    BOOST_CHECK( n42_avail.sum_samples_per_det );
+    BOOST_CHECK( n42_avail.exclude_interspec );
+    BOOST_CHECK( !n42_avail.exclude_gps );       // no GPS in synthetic file
+
+    const Availability spe_avail = ExportSpecFileTool::applicable_export_options( spec, spe, display, options );
+    BOOST_CHECK( !spe_avail.sum_all );           // single-record format sums regardless
+    BOOST_CHECK( !spe_avail.sum_fore );
+    BOOST_CHECK( !spe_avail.sum_dets_per_sample );
+    BOOST_CHECK( !spe_avail.sum_samples_per_det );
+    BOOST_CHECK( !spe_avail.exclude_interspec ); // SPE cant carry the InterSpec info block
+
+    // Selecting displayed foreground with multiple displayed samples offers per-type sum for N42
+    ExportOptions disp_options;
+    disp_options.use_disp_fore = true;
+    display.fore_samples = set<int>{7, 8};
+    const Availability disp_avail = ExportSpecFileTool::applicable_export_options( spec, n42, display, disp_options );
+    BOOST_CHECK( disp_avail.sum_fore );
+
+    display.fore_samples = set<int>{8};
+    const Availability one_disp_avail = ExportSpecFileTool::applicable_export_options( spec, n42, display, disp_options );
+    BOOST_CHECK( !one_disp_avail.sum_fore );     // only a single displayed record
+  }
+
+  // 5 samples, two detectors each
+  {
+    vector<SynthSample> defs;
+    for( int i = 1; i <= 5; ++i )
+      defs.push_back( SynthSample{i, {"Aa1", "Ba2"}, SpecUtils::SourceType::Foreground} );
+    const shared_ptr<SpecMeas> spec = create_synthetic_file( defs );
+
+    DisplayStateInfo display;
+    display.spec_is_fore = true;
+    display.fore_samples = set<int>{3};
+    display.fore_dets = vector<string>{"Aa1", "Ba2"};
+
+    ExportOptions options;
+    options.all_samples = true;
+
+    const Availability n42_avail = ExportSpecFileTool::applicable_export_options( spec, n42, display, options );
+    BOOST_CHECK( n42_avail.filter_detectors );
+    BOOST_CHECK( n42_avail.sum_all );
+    BOOST_CHECK( n42_avail.sum_dets_per_sample );
+    BOOST_CHECK( n42_avail.sum_samples_per_det );
+
+    const Availability spe_avail = ExportSpecFileTool::applicable_export_options( spec, spe, display, options );
+    BOOST_CHECK( spe_avail.filter_detectors );   // filtering applies to any format
+    BOOST_CHECK( !spe_avail.sum_dets_per_sample );
+    BOOST_CHECK( !spe_avail.sum_samples_per_det );
+  }
+
+  // Single sample, two detectors: no sample selection; sum-all only where format allows
+  {
+    const vector<SynthSample> defs{ SynthSample{1, {"Aa1", "Ba2"}, SpecUtils::SourceType::Foreground} };
+    const shared_ptr<SpecMeas> spec = create_synthetic_file( defs );
+
+    DisplayStateInfo display;
+    display.spec_is_fore = true;
+    display.fore_samples = set<int>{1};
+    display.fore_dets = vector<string>{"Aa1", "Ba2"};
+
+    ExportOptions options;
+    options.all_samples = true;
+
+    const Availability n42_avail = ExportSpecFileTool::applicable_export_options( spec, n42, display, options );
+    BOOST_CHECK( !n42_avail.disp_fore );
+    BOOST_CHECK( !n42_avail.all_samples );
+    BOOST_CHECK( !n42_avail.custom_samples );
+    BOOST_CHECK( n42_avail.filter_detectors );
+    BOOST_CHECK( n42_avail.sum_all );            // two detector records can be summed
+    BOOST_CHECK( !n42_avail.sum_dets_per_sample );  // same thing as sum-all for one sample
+  }
+
+  // Background-subtract offered exactly when a background plus fore (or secondary) is used
+  {
+    vector<SynthSample> defs;
+    for( int i = 1; i <= 3; ++i )
+      defs.push_back( SynthSample{i, {"Aa1"}, SpecUtils::SourceType::Foreground} );
+    const shared_ptr<SpecMeas> spec = create_synthetic_file( defs );
+
+    DisplayStateInfo display;
+    display.spec_is_fore = true;
+    display.spec_is_back = true;
+    display.fore_samples = set<int>{1};
+    display.back_samples = set<int>{3};
+    display.fore_dets = display.back_dets = vector<string>{"Aa1"};
+
+    ExportOptions options;
+    options.use_disp_fore = true;
+    BOOST_CHECK( !ExportSpecFileTool::applicable_export_options( spec, n42, display, options ).back_sub );
+
+    options.use_disp_back = true;
+    BOOST_CHECK( ExportSpecFileTool::applicable_export_options( spec, n42, display, options ).back_sub );
+
+    options.use_disp_fore = false;
+    BOOST_CHECK( !ExportSpecFileTool::applicable_export_options( spec, n42, display, options ).back_sub );
+  }
+}//BOOST_AUTO_TEST_CASE( applicableOptionsMatrix )
+
+
+/** Results of option combinations, via the pure `generate_file_to_save(...)` (no GUI). */
+BOOST_AUTO_TEST_CASE( generateFileCombinations )
+{
+  set_data_dir();
+
+  typedef ExportSpecFileTool::DisplayStateInfo DisplayStateInfo;
+  typedef ExportSpecFileTool::ExportOptions ExportOptions;
+
+  const SpecUtils::SaveSpectrumAsType n42 = SpecUtils::SaveSpectrumAsType::N42_2012;
+  const SpecUtils::SaveSpectrumAsType spe = SpecUtils::SaveSpectrumAsType::SpeIaea;
+
+  vector<SynthSample> defs;
+  for( int i = 1; i <= 13; ++i )
+    defs.push_back( SynthSample{i, {"Aa1"}, SpecUtils::SourceType::Foreground} );
+  const shared_ptr<SpecMeas> thirteen = create_synthetic_file( defs );
+  thirteen->setPeaks( make_test_peaks(), {8} );
+
+  DisplayStateInfo display;
+  display.spec_is_fore = true;
+  display.fore_samples = set<int>{8};
+  display.fore_dets = vector<string>{"Aa1"};
+
+  // Displayed foreground to SPE: single faithful record, peaks re-keyed to {1}
+  {
+    ExportOptions options;
+    options.use_disp_fore = true;
+
+    const shared_ptr<const SpecMeas> result
+                 = ExportSpecFileTool::generate_file_to_save( thirteen, spe, display, options );
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+    BOOST_CHECK_EQUAL( result->measurements()[0]->sample_number(), 1 );
+    BOOST_CHECK_EQUAL( result->measurements()[0]->live_time(), 300.0f );
+
+    const SpecMeas &const_result = *result;
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = const_result.peaks( set<int>{1} );
+    BOOST_REQUIRE( peaks );
+    BOOST_CHECK_EQUAL( static_cast<int>(peaks->size()), 1 );
+  }
+
+  // All samples to N42: 13 records, sample numbers 1..N, peaks still keyed {8}
+  {
+    ExportOptions options;
+    options.all_samples = true;
+
+    const shared_ptr<const SpecMeas> result
+                 = ExportSpecFileTool::generate_file_to_save( thirteen, n42, display, options );
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 13 );
+
+    set<int> expected;
+    for( int i = 1; i <= 13; ++i )
+      expected.insert( i );
+    BOOST_CHECK( result->sample_numbers() == expected );
+
+    const SpecMeas &const_result = *result;
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = const_result.peaks( set<int>{8} );
+    BOOST_REQUIRE( peaks );
+    BOOST_CHECK_EQUAL( static_cast<int>(peaks->size()), 1 );
+  }
+
+  // Displayed foreground of multiple samples to SPE: records summed; peaks keyed on the
+  //  displayed set survive; peaks keyed on a different set do not (exact-match semantics)
+  {
+    display.fore_samples = set<int>{2, 5};
+
+    ExportOptions options;
+    options.use_disp_fore = true;
+
+    shared_ptr<const SpecMeas> result
+                 = ExportSpecFileTool::generate_file_to_save( thirteen, spe, display, options );
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+    BOOST_CHECK_CLOSE( result->measurements()[0]->live_time(), 600.0f, 1.0e-3 );
+
+    {
+      const SpecMeas &const_result = *result;
+      const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = const_result.peaks( set<int>{1} );
+      BOOST_CHECK( !peaks || peaks->empty() );  // peaks were keyed {8}, not {2,5}
+    }
+
+    thirteen->setPeaks( make_test_peaks(), {2, 5} );
+    result = ExportSpecFileTool::generate_file_to_save( thirteen, spe, display, options );
+    BOOST_REQUIRE( result );
+
+    {
+      const SpecMeas &const_result = *result;
+      const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks = const_result.peaks( set<int>{1} );
+      BOOST_REQUIRE( peaks );
+      BOOST_CHECK_EQUAL( static_cast<int>(peaks->size()), 1 );
+    }
+
+    thirteen->removePeaks( set<int>{2, 5} );
+    display.fore_samples = set<int>{8};
+  }
+
+  // Detector filtering: only the named detector's records survive
+  {
+    vector<SynthSample> two_det_defs;
+    for( int i = 1; i <= 5; ++i )
+      two_det_defs.push_back( SynthSample{i, {"Aa1", "Ba2"}, SpecUtils::SourceType::Foreground} );
+    const shared_ptr<SpecMeas> two_dets = create_synthetic_file( two_det_defs );
+
+    DisplayStateInfo two_det_display;
+    two_det_display.spec_is_fore = true;
+    two_det_display.fore_samples = set<int>{1};
+    two_det_display.fore_dets = vector<string>{"Aa1", "Ba2"};
+
+    ExportOptions options;
+    options.all_samples = true;
+    options.filter_detectors = true;
+    options.detectors = vector<string>{"Aa1"};
+
+    const shared_ptr<const SpecMeas> result
+                 = ExportSpecFileTool::generate_file_to_save( two_dets, n42, two_det_display, options );
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 5 );
+    for( const auto &m : result->measurements() )
+      BOOST_CHECK_EQUAL( m->detector_name(), "Aa1" );
+  }
+
+  // Background subtraction to N42: a single subtracted foreground record, peaks kept
+  {
+    vector<SynthSample> fb_defs;
+    fb_defs.push_back( SynthSample{1, {"Aa1"}, SpecUtils::SourceType::Foreground} );
+    fb_defs.push_back( SynthSample{2, {"Aa1"}, SpecUtils::SourceType::Foreground} );
+    fb_defs.push_back( SynthSample{3, {"Aa1"}, SpecUtils::SourceType::Background} );
+    const shared_ptr<SpecMeas> fore_back = create_synthetic_file( fb_defs );
+    fore_back->setPeaks( make_test_peaks(), {1, 2} );
+
+    DisplayStateInfo fb_display;
+    fb_display.spec_is_fore = true;
+    fb_display.spec_is_back = true;
+    fb_display.fore_samples = set<int>{1, 2};
+    fb_display.back_samples = set<int>{3};
+    fb_display.fore_dets = fb_display.back_dets = vector<string>{"Aa1"};
+
+    ExportOptions options;
+    options.use_disp_fore = true;
+    options.use_disp_back = true;
+    options.back_sub_fore = true;
+
+    vector<Wt::WString> warnings;
+    const shared_ptr<const SpecMeas> result
+       = ExportSpecFileTool::generate_file_to_save( fore_back, n42, fb_display, options, &warnings );
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+
+    const shared_ptr<const SpecUtils::Measurement> rec = result->measurements()[0];
+    BOOST_CHECK( rec->source_type() == SpecUtils::SourceType::Foreground );
+
+    // Counts should be (sample1 + sample2) - sample3, channel by channel
+    const shared_ptr<const SpecUtils::Measurement> s1 = fore_back->measurement( 1, "Aa1" );
+    const shared_ptr<const SpecUtils::Measurement> s2 = fore_back->measurement( 2, "Aa1" );
+    const shared_ptr<const SpecUtils::Measurement> s3 = fore_back->measurement( 3, "Aa1" );
+    BOOST_REQUIRE( s1 && s2 && s3 && rec->gamma_counts() );
+    const vector<float> &result_counts = *rec->gamma_counts();
+
+    // Check the peak region (the Gaussian is centered at channel ~220.6) as well as the
+    //  flat continuum - a check that only samples the continuum would pass even if the
+    //  wrong record had been subtracted.
+    set<size_t> channels_to_check{ 0, 100, 210, 218, 220, 221, 223, 230, 500, 1000 };
+    for( size_t ch = 0; ch < result_counts.size(); ch += 100 )
+      channels_to_check.insert( ch );
+
+    for( const size_t ch : channels_to_check )
+    {
+      BOOST_REQUIRE( ch < result_counts.size() );
+      const float expected = (*s1->gamma_counts())[ch] + (*s2->gamma_counts())[ch]
+                             - (*s3->gamma_counts())[ch];
+      BOOST_CHECK_CLOSE( result_counts[ch], expected, 1.0e-2 );
+    }
+
+    // Sanity: the peak channel must actually carry signal, else the above proves nothing
+    BOOST_CHECK_GT( (*s1->gamma_counts())[220], 1.5f*(*s1->gamma_counts())[0] );
+
+    const SpecMeas &const_result = *result;
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> peaks
+                                     = const_result.peaks( result->sample_numbers() );
+    BOOST_REQUIRE( peaks );
+    BOOST_CHECK_EQUAL( static_cast<int>(peaks->size()), 1 );
+  }
+}//BOOST_AUTO_TEST_CASE( generateFileCombinations )
+
+
+/** Generation fixes: background subtraction must not double-count on single-record
+ formats; 2-record formats must not over-produce; per-sample sums keep source types.
+ */
+BOOST_AUTO_TEST_CASE( generationRecordCountAndSourceTypes )
+{
+  set_data_dir();
+
+  typedef ExportSpecFileTool::DisplayStateInfo DisplayStateInfo;
+  typedef ExportSpecFileTool::ExportOptions ExportOptions;
+
+  const SpecUtils::SaveSpectrumAsType n42 = SpecUtils::SaveSpectrumAsType::N42_2012;
+  const SpecUtils::SaveSpectrumAsType spe = SpecUtils::SaveSpectrumAsType::SpeIaea;
+
+  // Background subtraction to a single-record format: exactly one record, equal to
+  //  foreground minus background (previously the fore and back also got summed back in,
+  //  roughly doubling the foreground).
+  {
+    vector<SynthSample> defs;
+    defs.push_back( SynthSample{1, {"Aa1"}, SpecUtils::SourceType::Foreground} );
+    defs.push_back( SynthSample{2, {"Aa1"}, SpecUtils::SourceType::Background} );
+    const shared_ptr<SpecMeas> spec = create_synthetic_file( defs );
+
+    DisplayStateInfo display;
+    display.spec_is_fore = display.spec_is_back = true;
+    display.fore_samples = set<int>{1};
+    display.back_samples = set<int>{2};
+    display.fore_dets = display.back_dets = vector<string>{"Aa1"};
+
+    ExportOptions options;
+    options.use_disp_fore = true;
+    options.use_disp_back = true;
+    options.back_sub_fore = true;
+
+    const shared_ptr<const SpecMeas> result
+                 = ExportSpecFileTool::generate_file_to_save( spec, spe, display, options );
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+
+    const shared_ptr<const SpecUtils::Measurement> rec = result->measurements()[0];
+    const shared_ptr<const SpecUtils::Measurement> s1 = spec->measurement( 1, "Aa1" );
+    const shared_ptr<const SpecUtils::Measurement> s2 = spec->measurement( 2, "Aa1" );
+    BOOST_REQUIRE( rec && rec->gamma_counts() && s1 && s2 );
+
+    // Include the peak region (Gaussian centered at channel ~220.6): sampling only the
+    //  flat continuum would pass even if the peak had been subtracted wrongly.  The two
+    //  samples have different peak areas (amplitude scales with sample number), so the
+    //  difference is non-zero there, and the old double-counting bug is caught.
+    set<size_t> channels_to_check{ 0, 100, 210, 218, 220, 221, 223, 230, 500, 1000 };
+    for( size_t ch = 0; ch < rec->gamma_counts()->size(); ch += 50 )
+      channels_to_check.insert( ch );
+
+    for( const size_t ch : channels_to_check )
+    {
+      BOOST_REQUIRE( ch < rec->gamma_counts()->size() );
+      const float expected = (*s1->gamma_counts())[ch] - (*s2->gamma_counts())[ch];
+      if( fabs(expected) < 1.0e-4 )
+        BOOST_CHECK_SMALL( (*rec->gamma_counts())[ch], 1.0e-3f );
+      else
+        BOOST_CHECK_CLOSE( (*rec->gamma_counts())[ch], expected, 1.0e-2 );
+    }
+
+    // Sanity: the peak channel must actually carry signal, else the above proves nothing
+    BOOST_CHECK_GT( (*s1->gamma_counts())[220], 1.5f*(*s1->gamma_counts())[0] );
+  }
+
+  // Summing detectors per sample keeps the (uniform) source type of the constituents
+  {
+    vector<SynthSample> defs;
+    for( int i = 1; i <= 3; ++i )
+      defs.push_back( SynthSample{i, {"Aa1", "Ba2"},
+        ((i == 3) ? SpecUtils::SourceType::Background : SpecUtils::SourceType::Foreground)} );
+    const shared_ptr<SpecMeas> spec = create_synthetic_file( defs );
+
+    DisplayStateInfo display;
+    display.spec_is_fore = true;
+    display.fore_samples = set<int>{1};
+    display.fore_dets = vector<string>{"Aa1", "Ba2"};
+
+    ExportOptions options;
+    options.all_samples = true;
+    options.sum_dets_per_sample = true;
+
+    const shared_ptr<const SpecMeas> result
+                 = ExportSpecFileTool::generate_file_to_save( spec, n42, display, options );
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 3 );
+
+    for( const auto &m : result->measurements() )
+    {
+      BOOST_CHECK_CLOSE( m->live_time(), 600.0f, 1.0e-3 );
+      const SpecUtils::SourceType expected = (m->sample_number() == 3)
+                          ? SpecUtils::SourceType::Background : SpecUtils::SourceType::Foreground;
+      BOOST_CHECK( m->source_type() == expected );
+    }
+  }
+
+#if( USE_QR_CODES )
+  // A 2-record format with three displayed spectrum types selected gets summed to a
+  //  single record (previously produced 3 records, which then failed QR generation)
+  {
+    vector<SynthSample> defs;
+    for( int i = 1; i <= 6; ++i )
+      defs.push_back( SynthSample{i, {"Aa1"}, SpecUtils::SourceType::Foreground} );
+    const shared_ptr<SpecMeas> spec = create_synthetic_file( defs );
+
+    DisplayStateInfo display;
+    display.spec_is_fore = display.spec_is_back = display.spec_is_seco = true;
+    display.fore_samples = set<int>{1};
+    display.back_samples = set<int>{2};
+    display.seco_samples = set<int>{3};
+    display.fore_dets = display.back_dets = display.seco_dets = vector<string>{"Aa1"};
+
+    ExportOptions options;
+    options.use_disp_fore = true;
+    options.use_disp_back = true;
+    options.use_disp_seco = true;
+
+    const SpecUtils::SaveSpectrumAsType qr = SpecUtils::SaveSpectrumAsType::Uri;
+    BOOST_REQUIRE_EQUAL( ExportSpecFileTool::maxRecordsInCurrentSaveType(qr, spec), 2 );
+
+    const shared_ptr<const SpecMeas> result
+                 = ExportSpecFileTool::generate_file_to_save( spec, qr, display, options );
+    BOOST_REQUIRE( result );
+    BOOST_CHECK_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+
+    // With only two types selected, the two records are kept separate
+    ExportOptions two_type_options;
+    two_type_options.use_disp_fore = true;
+    two_type_options.use_disp_back = true;
+
+    const shared_ptr<const SpecMeas> two_rec
+                 = ExportSpecFileTool::generate_file_to_save( spec, qr, display, two_type_options );
+    BOOST_REQUIRE( two_rec );
+    BOOST_CHECK_EQUAL( static_cast<int>(two_rec->num_measurements()), 2 );
+  }
+#endif //#if( USE_QR_CODES )
+}//BOOST_AUTO_TEST_CASE( generationRecordCountAndSourceTypes )
+
+
+/** SpecMeas-level guards for the peak-map access semantics the export code relies on. */
+BOOST_AUTO_TEST_CASE( specMeasPeakMapGuards )
+{
+  set_data_dir();
+
+  vector<SynthSample> sample_defs;
+  for( int i = 1; i <= 13; ++i )
+    sample_defs.push_back( SynthSample{i, {"Aa1"}, SpecUtils::SourceType::Foreground} );
+
+  shared_ptr<SpecMeas> meas = create_synthetic_file( sample_defs );
+  meas->setPeaks( make_test_peaks(), {8} );
+  const SpecMeas &const_meas = *meas;
+
+  // The const `peaks(...)` overload must not insert an entry on a lookup miss
+  BOOST_CHECK( !const_meas.peaks( set<int>{1,2,3} ) );
+  BOOST_CHECK( !const_meas.peaks( set<int>{1,2,3} ) );
+  BOOST_CHECK_EQUAL( static_cast<int>(meas->sampleNumsWithPeaks().size()), 1 );
+
+  // `removePeaks(...)` must not touch a previously obtained deque - only the map entry
+  const shared_ptr<deque<shared_ptr<const PeakDef>>> live_deque = meas->peaks( set<int>{8} );
+  BOOST_REQUIRE( live_deque );
+  BOOST_CHECK_EQUAL( static_cast<int>(live_deque->size()), 1 );
+  meas->removePeaks( set<int>{8} );
+  BOOST_CHECK_EQUAL( static_cast<int>(live_deque->size()), 1 );
+  BOOST_CHECK( !const_meas.peaks( set<int>{8} ) );
+
+  // `setPeaks(...)` over an existing entry clears/re-fills the stored deque IN-PLACE;
+  //  PeakModel relies on this aliasing, so pin the behavior (see notes in SpecMeas.h).
+  meas->setPeaks( *live_deque, {8} );
+  const shared_ptr<deque<shared_ptr<const PeakDef>>> alias = meas->peaks( set<int>{8} );
+  BOOST_REQUIRE( alias );
+  BOOST_CHECK_EQUAL( static_cast<int>(alias->size()), 1 );
+  meas->setPeaks( {}, {8} );
+  BOOST_CHECK( alias->empty() );
+
+  // `change_sample_numbers(...)` must remap the peak-map keys along with the measurements
+  meas->removePeaks( set<int>{8} );
+  meas->setPeaks( make_test_peaks(), {8} );
+  vector<pair<int,int>> renumber;
+  for( int sample = 1; sample <= 13; ++sample )
+    renumber.emplace_back( sample, sample + 100 );
+  meas->change_sample_numbers( renumber );
+  BOOST_CHECK( !const_meas.peaks( set<int>{8} ) );
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> remapped = const_meas.peaks( set<int>{108} );
+  BOOST_REQUIRE( remapped );
+  BOOST_CHECK_EQUAL( static_cast<int>(remapped->size()), 1 );
+
+  // `write_iaea_spe` includes the peak CSV section when (and only when) the sample
+  //  numbers passed exactly match the peak-map key
+  {
+    stringstream matching;
+    BOOST_REQUIRE( meas->write_iaea_spe( matching, set<int>{108}, set<int>{} ) );
+    BOOST_CHECK( matching.str().find( "$PEAK_INFO_CSV:" ) != string::npos );
+
+    stringstream non_matching;
+    BOOST_REQUIRE( meas->write_iaea_spe( non_matching, meas->sample_numbers(), set<int>{} ) );
+    BOOST_CHECK( non_matching.str().find( "$PEAK_INFO_CSV:" ) == string::npos );
+  }
+}//BOOST_AUTO_TEST_CASE( specMeasPeakMapGuards )
+
+
+/** The reported bug: 13-sample file, displayed foreground = sample 8 only, peaks fit on it,
+ exported to IAEA SPE.  The output must be a faithful copy of the sample-8 record (not a
+ sum artifact), renumbered to sample 1, with the peaks preserved and written to the SPE file.
+ */
+BOOST_FIXTURE_TEST_CASE( exportDisplayedForegroundToSpeKeepsPeaks, InterSpecTestFixture )
+{
+  const shared_ptr<SpecMeas> fore = loadForeground( "13samples_1det_peaks_on_8.n42" );
+  BOOST_REQUIRE_EQUAL( static_cast<int>(fore->sample_numbers().size()), 13 );
+
+  const set<int> peak_key = loadedPeakKey( fore );
+  BOOST_REQUIRE_EQUAL( static_cast<int>(peak_key.size()), 1 );
+
+  m_interspec->changeDisplayedSampleNums( peak_key, SpecUtils::SpectrumType::Foreground );
+  Wt::WApplication::instance()->processEvents();
+
+  // The tool must be attached to the widget tree - `generateFileToSave()` checks
+  //  `isVisible()` on the option checkboxes, and orphan widgets report not-visible.
+  ExportSpecFileTool *tool = new ExportSpecFileTool( m_interspec, m_app->root() );
+  tool->handleAppUrl( "V=1&FORE=1&FORMAT=IAEA-SPE&DISPFORE=1" );
+
+  const shared_ptr<const SpecMeas> result = tool->generateFileToSave();
+  BOOST_REQUIRE( result );
+  BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+
+  const string det_name = fore->detector_names().empty() ? string() : fore->detector_names()[0];
+  const shared_ptr<const SpecUtils::Measurement> orig = fore->measurement( *begin(peak_key), det_name );
+  const shared_ptr<const SpecUtils::Measurement> rec = result->measurements()[0];
+  BOOST_REQUIRE( orig );
+  BOOST_REQUIRE( rec );
+
+  // Output sample numbers should start at 1
+  BOOST_CHECK_EQUAL( rec->sample_number(), 1 );
+
+  // The record must be a faithful copy of the displayed sample - not a sum artifact
+  BOOST_CHECK_EQUAL( rec->title(), orig->title() );
+  BOOST_CHECK_EQUAL( rec->live_time(), orig->live_time() );
+  BOOST_CHECK_EQUAL( rec->real_time(), orig->real_time() );
+  BOOST_CHECK( rec->source_type() == SpecUtils::SourceType::Foreground );
+  BOOST_REQUIRE( rec->gamma_counts() );
+  BOOST_REQUIRE( orig->gamma_counts() );
+  BOOST_CHECK( (*rec->gamma_counts()) == (*orig->gamma_counts()) );
+
+  // The user peaks must have survived, re-keyed to sample 1
+  const SpecMeas &const_result = *result;
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> out_peaks = const_result.peaks( set<int>{1} );
+  BOOST_REQUIRE( out_peaks );
+  BOOST_CHECK_EQUAL( static_cast<int>(out_peaks->size()), 1 );
+
+  // And they must make it into the IAEA SPE output
+  stringstream spe;
+  BOOST_REQUIRE( result->write_iaea_spe( spe, result->sample_numbers(), set<int>{} ) );
+  BOOST_CHECK( spe.str().find( "$PEAK_INFO_CSV:" ) != string::npos );
+}//BOOST_FIXTURE_TEST_CASE( exportDisplayedForegroundToSpeKeepsPeaks, ... )
+
+
+/** A state URL that selects no sample numbers at all (which `encodeStateToUrl()` can emit,
+ e.g. if custom-sample text resolved to nothing) must restore to the default of all samples,
+ and must not leave the tool with nothing selected - `selected_samples(...)` asserts on that.
+ */
+BOOST_FIXTURE_TEST_CASE( restoreUrlWithNoSampleSelection, InterSpecTestFixture )
+{
+  const shared_ptr<SpecMeas> fore = loadForeground( "13samples_1det_peaks_on_8.n42" );
+  BOOST_REQUIRE_EQUAL( static_cast<int>(fore->sample_numbers().size()), 13 );
+
+  ExportSpecFileTool *tool = new ExportSpecFileTool( m_interspec, m_app->root() );
+
+  // No DISPFORE / ALLSAMPLES / SAMPLES key
+  tool->handleAppUrl( "V=1&FORE=1&FORMAT=N42-2012" );
+
+  // Should have fallen back to all samples, and be able to generate a file
+  BOOST_CHECK( tool->currentlySelectedSamples() == fore->sample_numbers() );
+
+  const shared_ptr<const SpecMeas> result = tool->generateFileToSave();
+  BOOST_REQUIRE( result );
+  BOOST_CHECK_EQUAL( static_cast<int>(result->num_measurements()), 13 );
+}//BOOST_FIXTURE_TEST_CASE( restoreUrlWithNoSampleSelection, ... )
+
+
+/** Summing all samples to a single record: peaks keyed on the full sample set must survive
+ (re-keyed to sample 1); peaks keyed on a subset (e.g. just sample 8) are - by design - not
+ carried over to the sum (exact-match peak-key semantics).
+ */
+BOOST_FIXTURE_TEST_CASE( exportAllSamplesSummedPeakSemantics, InterSpecTestFixture )
+{
+  const shared_ptr<SpecMeas> fore = loadForeground( "13samples_1det_peaks_on_8.n42" );
+  const int nsamples = static_cast<int>( fore->sample_numbers().size() );
+  BOOST_REQUIRE_EQUAL( nsamples, 13 );
+
+  ExportSpecFileTool *tool = new ExportSpecFileTool( m_interspec, m_app->root() );
+
+  // Case 1: peaks keyed on a single-sample subset, exporting all samples summed:
+  //  exact-match semantics mean the summed record carries no peaks.
+  tool->handleAppUrl( "V=1&FORE=1&FORMAT=IAEA-SPE&ALLSAMPLES=1" );
+  shared_ptr<const SpecMeas> result = tool->generateFileToSave();
+  BOOST_REQUIRE( result );
+  BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+  BOOST_CHECK_EQUAL( result->measurements()[0]->sample_number(), 1 );
+
+  {
+    const SpecMeas &const_result = *result;
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> out_peaks = const_result.peaks( set<int>{1} );
+    BOOST_CHECK( !out_peaks || out_peaks->empty() );
+
+    stringstream spe;
+    BOOST_REQUIRE( result->write_iaea_spe( spe, result->sample_numbers(), set<int>{} ) );
+    BOOST_CHECK( spe.str().find( "$PEAK_INFO_CSV:" ) == string::npos );
+  }
+
+  // Case 2: peaks keyed on the full sample set must survive the sum, re-keyed to sample 1.
+  fore->setPeaks( make_test_peaks(), fore->sample_numbers() );
+
+  tool->handleAppUrl( "V=1&FORE=1&FORMAT=IAEA-SPE&ALLSAMPLES=1" );
+  result = tool->generateFileToSave();
+  BOOST_REQUIRE( result );
+  BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+
+  {
+    const SpecMeas &const_result = *result;
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> out_peaks = const_result.peaks( set<int>{1} );
+    BOOST_REQUIRE( out_peaks );
+    BOOST_CHECK_EQUAL( static_cast<int>(out_peaks->size()), 1 );
+
+    // The summed record should cover all 13 samples worth of live time
+    const shared_ptr<const SpecUtils::Measurement> rec = result->measurements()[0];
+    BOOST_CHECK_CLOSE( rec->live_time(), nsamples*300.0f, 1.0e-3 );
+
+    stringstream spe;
+    BOOST_REQUIRE( result->write_iaea_spe( spe, result->sample_numbers(), set<int>{} ) );
+    BOOST_CHECK( spe.str().find( "$PEAK_INFO_CSV:" ) != string::npos );
+  }
+}//BOOST_FIXTURE_TEST_CASE( exportAllSamplesSummedPeakSemantics, ... )
+
+
+/** Multiple detectors per sample: exporting the displayed (single) sample to SPE sums the
+ two detectors into one record; the peaks for that sample must survive.
+ */
+BOOST_FIXTURE_TEST_CASE( exportMultiDetectorSampleToSpeKeepsPeaks, InterSpecTestFixture )
+{
+  const shared_ptr<SpecMeas> fore = loadForeground( "5samples_2dets_peaks_on_3.n42" );
+  BOOST_REQUIRE_EQUAL( static_cast<int>(fore->detector_names().size()), 2 );
+
+  const set<int> peak_key = loadedPeakKey( fore );
+  BOOST_REQUIRE_EQUAL( static_cast<int>(peak_key.size()), 1 );
+
+  m_interspec->changeDisplayedSampleNums( peak_key, SpecUtils::SpectrumType::Foreground );
+  Wt::WApplication::instance()->processEvents();
+
+  ExportSpecFileTool *tool = new ExportSpecFileTool( m_interspec, m_app->root() );
+  tool->handleAppUrl( "V=1&FORE=1&FORMAT=IAEA-SPE&DISPFORE=1" );
+
+  const shared_ptr<const SpecMeas> result = tool->generateFileToSave();
+  BOOST_REQUIRE( result );
+  BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+
+  const shared_ptr<const SpecUtils::Measurement> rec = result->measurements()[0];
+  BOOST_REQUIRE( rec );
+  BOOST_CHECK_EQUAL( rec->sample_number(), 1 );
+
+  // Both detectors were summed for the displayed sample
+  BOOST_CHECK_CLOSE( rec->live_time(), 2.0f*300.0f, 1.0e-3 );
+
+  const SpecMeas &const_result = *result;
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> out_peaks = const_result.peaks( set<int>{1} );
+  BOOST_REQUIRE( out_peaks );
+  BOOST_CHECK_EQUAL( static_cast<int>(out_peaks->size()), 1 );
+
+  stringstream spe;
+  BOOST_REQUIRE( result->write_iaea_spe( spe, result->sample_numbers(), set<int>{} ) );
+  BOOST_CHECK( spe.str().find( "$PEAK_INFO_CSV:" ) != string::npos );
+}//BOOST_FIXTURE_TEST_CASE( exportMultiDetectorSampleToSpeKeepsPeaks, ... )
+
+
+/** Non-uniform detectors per sample: peaks fit over displayed samples where one detector is
+ missing from some samples must still survive an SPE export of the displayed samples.
+ */
+BOOST_FIXTURE_TEST_CASE( exportNonUniformDetectorsToSpeKeepsPeaks, InterSpecTestFixture )
+{
+  const shared_ptr<SpecMeas> fore = loadForeground( "6samples_nonuniform_dets_peaks_on_3.n42" );
+  BOOST_REQUIRE_EQUAL( static_cast<int>(fore->detector_names().size()), 2 );
+
+  // Display samples 1 and 2: sample 1 has both detectors, sample 2 only "Aa1"
+  const set<int> disp_samples{1, 2};
+  m_interspec->changeDisplayedSampleNums( disp_samples, SpecUtils::SpectrumType::Foreground );
+  Wt::WApplication::instance()->processEvents();
+
+  fore->setPeaks( make_test_peaks(), disp_samples );
+
+  ExportSpecFileTool *tool = new ExportSpecFileTool( m_interspec, m_app->root() );
+  tool->handleAppUrl( "V=1&FORE=1&FORMAT=IAEA-SPE&DISPFORE=1" );
+
+  const shared_ptr<const SpecMeas> result = tool->generateFileToSave();
+  BOOST_REQUIRE( result );
+  BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+
+  const shared_ptr<const SpecUtils::Measurement> rec = result->measurements()[0];
+  BOOST_REQUIRE( rec );
+  BOOST_CHECK_EQUAL( rec->sample_number(), 1 );
+
+  // Three records summed: sample 1 (2 dets) + sample 2 (1 det)
+  BOOST_CHECK_CLOSE( rec->live_time(), 3.0f*300.0f, 1.0e-3 );
+
+  const SpecMeas &const_result = *result;
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> out_peaks = const_result.peaks( set<int>{1} );
+  BOOST_REQUIRE( out_peaks );
+  BOOST_CHECK_EQUAL( static_cast<int>(out_peaks->size()), 1 );
+
+  stringstream spe;
+  BOOST_REQUIRE( result->write_iaea_spe( spe, result->sample_numbers(), set<int>{} ) );
+  BOOST_CHECK( spe.str().find( "$PEAK_INFO_CSV:" ) != string::npos );
+}//BOOST_FIXTURE_TEST_CASE( exportNonUniformDetectorsToSpeKeepsPeaks, ... )
+
+
+/** Non-monotonic / gapped sample numbers (2, 3, 7, 9, 15): the SPE export of the displayed
+ sample must produce a faithful copy renumbered to sample 1; a whole-file N42 export must
+ renumber samples to 1..N with the peak-map key remapped to match.
+ */
+BOOST_FIXTURE_TEST_CASE( exportGappedSampleNumbers, InterSpecTestFixture )
+{
+  const shared_ptr<SpecMeas> fore = loadForeground( "gapped_samples_peaks_on_9.n42" );
+  BOOST_REQUIRE_EQUAL( static_cast<int>(fore->sample_numbers().size()), 5 );
+
+  // InterSpec-written N42 files must keep their (gapped) sample numbers on load, so the
+  //  peak-map key still refers to valid samples.  REQUIRE, not CHECK: the rest of this
+  //  test displays sample 9, which doesnt exist if this fails.
+  BOOST_REQUIRE( fore->sample_numbers().count(9) );
+
+  const set<int> peak_key = loadedPeakKey( fore );
+  BOOST_REQUIRE_EQUAL( static_cast<int>(peak_key.size()), 1 );
+  const int peak_sample = *begin(peak_key);
+
+  // Zero-based index of the peak sample within the file's ordered sample numbers
+  const set<int> &all_samples = fore->sample_numbers();
+  const int peak_sample_index = static_cast<int>( std::distance( begin(all_samples),
+                                                            all_samples.find(peak_sample) ) );
+
+  m_interspec->changeDisplayedSampleNums( peak_key, SpecUtils::SpectrumType::Foreground );
+  Wt::WApplication::instance()->processEvents();
+
+  ExportSpecFileTool *tool = new ExportSpecFileTool( m_interspec, m_app->root() );
+
+  // SPE of the displayed sample: faithful copy, renumbered to 1, peaks intact
+  {
+    tool->handleAppUrl( "V=1&FORE=1&FORMAT=IAEA-SPE&DISPFORE=1" );
+    const shared_ptr<const SpecMeas> result = tool->generateFileToSave();
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 1 );
+
+    const shared_ptr<const SpecUtils::Measurement> rec = result->measurements()[0];
+    BOOST_CHECK_EQUAL( rec->sample_number(), 1 );
+
+    const string det_name = fore->detector_names().empty() ? string() : fore->detector_names()[0];
+    const shared_ptr<const SpecUtils::Measurement> orig = fore->measurement( peak_sample, det_name );
+    BOOST_REQUIRE( orig );
+    BOOST_REQUIRE( rec->gamma_counts() && orig->gamma_counts() );
+    BOOST_CHECK( (*rec->gamma_counts()) == (*orig->gamma_counts()) );
+
+    const SpecMeas &const_result = *result;
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> out_peaks = const_result.peaks( set<int>{1} );
+    BOOST_REQUIRE( out_peaks );
+    BOOST_CHECK_EQUAL( static_cast<int>(out_peaks->size()), 1 );
+
+    stringstream spe;
+    BOOST_REQUIRE( result->write_iaea_spe( spe, result->sample_numbers(), set<int>{} ) );
+    BOOST_CHECK( spe.str().find( "$PEAK_INFO_CSV:" ) != string::npos );
+  }
+
+  // Whole file to N42: all samples renumbered 1..N, peak key remapped along with its sample
+  {
+    tool->handleAppUrl( "V=1&FORE=1&FORMAT=N42-2012&ALLSAMPLES=1" );
+    const shared_ptr<const SpecMeas> result = tool->generateFileToSave();
+    BOOST_REQUIRE( result );
+    BOOST_REQUIRE_EQUAL( static_cast<int>(result->num_measurements()), 5 );
+
+    set<int> expected_samples;
+    for( int i = 1; i <= 5; ++i )
+      expected_samples.insert( i );
+    BOOST_CHECK( result->sample_numbers() == expected_samples );
+
+    const SpecMeas &const_result = *result;
+    const int expected_peak_sample = peak_sample_index + 1;
+    const shared_ptr<const deque<shared_ptr<const PeakDef>>> out_peaks
+                                    = const_result.peaks( set<int>{expected_peak_sample} );
+    BOOST_REQUIRE( out_peaks );
+    BOOST_CHECK_EQUAL( static_cast<int>(out_peaks->size()), 1 );
+  }
+}//BOOST_FIXTURE_TEST_CASE( exportGappedSampleNumbers, ... )

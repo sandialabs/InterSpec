@@ -35,7 +35,6 @@
   <message id="bgw-concatenate-all-to-single">Concatenar todos os arquivos em um único arquivo</message>
   <message id="bgw-info-will-convert-file-type">Os arquivos serão convertidos para o tipo selecionado.</message>
 
-
   <!-- Reports group -->
   <message id="bgw-reports-grp-title">Relatórios a Escrever</message>
   <message id="bgw-reports-write-html">HTML</message>
@@ -43,7 +42,6 @@
   <message id="bgw-reports-write-csv">CSV Resumido</message>
   <message id="bgw-reports-write-csv-tooltip">Escrever um arquivo CSV resumido com resultados da análise de todos os arquivos de entrada.</message>
   <message id="bgw-reports-write-custom-per-file">Personalizado por Arquivo</message>
-  <message id="bgw-reports-write-custom-per-file-tooltip">Carregar um modelo de relatório personalizado para usar em cada arquivo.</message>
   <message id="bgw-reports-write-custom-summary">Resumo Personalizado</message>
   <message id="bgw-reports-write-custom-summary-tooltip">Um ou mais arquivos de modelo usados para fornecer um resumo de todos os arquivos de entrada.</message>
 
@@ -58,7 +56,6 @@
   <message id="bgw-no-ana-act-shield-invalid-background">Fundo inválido</message>
   <message id="bgw-no-ana-no-input-files">Nenhum arquivo de entrada.</message>
   <message id="bgw-no-ana-invalid-output-path">Por favor, selecione um diretório de saída válido.</message>
-
 
   <!-- Analysis progress and results -->
   <message id="bgw-performing-work-title">Executando Trabalho</message>
@@ -120,8 +117,6 @@ Um valor razoável para isso parece estar na faixa de 1 a 5.
 Um valor zero ou negativo significará nenhum requisito, e também nenhum requisito de 'peak-stat-threshold'.</message>
 
   <message id="bgw-reports-write-custom-per-file-tooltip">Um ou mais arquivos de modelo de relatório de espectro - para cada arquivo de entrada, um relatório será produzido com cada modelo especificado.</message>
-
-  <message id="bgw-reports-write-custom-summary-tooltip">Um ou mais arquivos de modelo usados para fornecer um resumo de todos os arquivos de entrada.</message>
 
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Usar unidades Bq</message>

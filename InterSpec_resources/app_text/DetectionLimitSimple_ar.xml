@@ -5,7 +5,6 @@
   <message id="dls-fit-fwhm-btn">ملائمة FWHM...</message>
   <message id="dls-select-drf-btn">اختيار الكاشف...</message>
   <message id="dls-further-details-link">تفاصيل إضافية...</message>
-  <message id="dls-conf-level-label">مستوى الثقة:</message>
   <message id="dls-roi-lower-label">الحد الأدنى لـ ROI:</message>
   <message id="dls-roi-upper-label">الحد الأعلى لـ ROI:</message>
   <message id="dls-num-side-channel-label">عدد القنوات الجانبية:</message>
@@ -20,9 +19,6 @@
       خيار اختيار القنوات الجانبية المجاورة لمنطقة القمة يصبح غير ذي صلة، لذا سيتم إخفاؤه.
     </p>
   </message>
-  <message id="dls-cont-norm-unknown">عائم</message>
-  <message id="dls-cont-norm-not-present">كلا إشارة</message>
-  <message id="dls-cont-norm-fixed-by-sides">من الجوانب</message>
   <message id="dls-roi-changed-no-gamma">تغيير ROI استبعد الجاما الأولي - لا يتم التغيير</message>
   <message id="dls-suggest-fwhm">FWHM الكاشف: {1} كيلوإلكترون فولت</message>
   <message id="dls-rough-est-fwhm">تقدير تقريبي لـ FWHM: {1} كيلوإلكترون فولت</message>
@@ -38,7 +34,7 @@
 
   <message id="dls-det-act-with-range">مكتشف: {1}، النطاق [{2}, {3}]، @{4} CL</message>
   <message id="dls-det-no-result">عذرًا، لا توجد نتيجة</message>
-  <message id="dls-det-counts-with-range">العدد الزائد: {1}، النطاق [{2}, {3}]، @{4} CL</message>
+  <message id="dls-det-counts-with-range">الإشارة المقدّرة: {1} عدة، النطاق [{2}, {3}]، @{4} CL</message>
   <message id="dls-det-act-less-zero">النشاط &lt; 0 {1} (لوحظ عدد أقل بكثير من المتوقع).</message>
   <message id="dls-det-counts-less-zero">العدد الزائد &lt; 0 {2} (لوحظ عدد أقل بكثير من المتوقع).</message>
   <message id="dls-det-upper-bound">أقل من {1} موجود @{2} CL.</message>
@@ -59,6 +55,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">القمة للحد الأعلى لـ {1} @{2} CL</message>
   <message id="dls-results-txt-upper-bound-act">أقل من {1} @{2} CL</message>
+  <message id="dls-results-txt-predicted-act">حساسية متوقَّعة: أقل من {1} عند ثقة {2} لقياس مدته {3}</message>
+  <message id="dls-results-txt-predicted-counts">حساسية متوقَّعة: أقل من {1} عدد إشارة عند ثقة {2} لقياس مدته {3}</message>
+  <message id="dls-chart-title-predicted-act">القمة للحساسية المتوقَّعة لـ {1} @{2} CL</message>
+  <message id="dls-chart-title-predicted-counts">القمة للحساسية المتوقَّعة لـ {1} عدد @{2} CL</message>
   <message id="dls-chart-title-upper-bound-counts">القمة للحد الأعلى لـ {1} عدد @{2} CL</message>
   <message id="dls-results-txt-upper-bound-counts">أقل من {1} عدد إشارة موجود @{2} CL</message>
   <message id="dls-err-no-meas">لا يوجد قياس متاح</message>
@@ -83,7 +83,16 @@
   <message id="dls-err-select-det">يرجى اختيار دالة كفاءة الكاشف.</message>
   <message id="dls-err-neg-distance">المسافة لا يمكن أن تكون سالبة.</message>
   <message id="dls-err-no-fwhm-info">دالة كفاءة الكاشف لا تحتوي على معلومات FWHM - يرجى ملائمة FWHM، أو تغيير الكاشف.</message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
+  <message id="dls-is-background-spectrum-cb-short">خلفية؟</message>
+  <message id="dls-num-side-channel-label-short">قنوات جانبية:</message>
+  <message id="dls-result-projected-band"> (عادةً {1}&ndash;{2}&times; من هذه القيمة)</message>
+  <message id="dls-roi-lower-label-short">الأدنى:</message>
+  <message id="dls-roi-upper-label-short">الأعلى:</message>
+  <message id="dls-scale-more-info-note">
+    مُسقَط على زمن حقيقي {1} (زمن حي {2}، بنسبة &times;{3} من الزمن الحقيقي للقياس {4}).
+  </message>
+
+  <!-- تُعرض أسفل المدخلات المتقدّمة عند اختيار طريقة إزالة التداخل، حيث تكون تلك المدخلات معطّلة.
+       فعنصر تحكم معطّل بلا تفسير يبدو وكأنه خلل. -->
+  <message id="dls-advanced-decon-note">تنطبق هذه على طريقة كوري؛ أما حد إزالة التداخل فلا يستخدمها بعد.</message>
 </messages>

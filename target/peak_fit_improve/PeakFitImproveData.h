@@ -55,6 +55,28 @@ std::vector<G2kPeak> g2k_peaks_from_file( std::istream &strm );
 
 ExpectedPhotopeakInfo create_expected_photopeak( const InjectSourceInfo &info, const std::vector<PeakTruthInfo> &lines );
 
+
+/** Filters expected photopeaks down to the set used for scoring, dropping peaks below a det-type
+ low-energy threshold (30 keV for HPGe, 50 keV otherwise) where peaks are unreliable (poor
+ resolution, fast-changing efficiency, x-ray overlap).  Exception: if the source's dominant
+ (largest-area) expected peak is itself below the threshold, all peaks are kept (so a low-energy-
+ dominant source is not discarded).  Mirrors the filter in FitPeaksForNuclideDev so the GA objective
+ and the dev eval path score against the same peaks. */
+std::vector<ExpectedPhotopeakInfo> filter_photopeaks_for_scoring(
+    const std::vector<ExpectedPhotopeakInfo> &expected,
+    PeakFitUtils::CoarseResolutionType det_type );
+
+
+/** Fraction (0..1) of "definitely wanted" expected peak-AREA that was not detected, used for the GA
+ miss-penalty term.  Denominator: summed area of def-wanted peaks (det-type gated:
+ nsigma>def_want_nsigma and area>min_def_wanted_counts) in `scoring_peaks`.  Numerator: summed area of
+ `missed_def_wanted` (i.e. CandidatePeakScore::def_expected_but_not_detected, after escape-peak
+ correction).  Returns 0 when there is no def-wanted area. */
+double missed_def_wanted_area_fraction(
+    const std::vector<ExpectedPhotopeakInfo> &scoring_peaks,
+    const std::vector<ExpectedPhotopeakInfo> &missed_def_wanted,
+    PeakFitUtils::CoarseResolutionType det_type );
+
 /**
 
  Expects:

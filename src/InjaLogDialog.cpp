@@ -31,6 +31,8 @@
 
 #include <Wt/WText.h>
 #include <Wt/Utils.h>
+#include <Wt/WImage.h>
+#include <Wt/WAnchor.h>
 #include <Wt/WComboBox.h>
 #include <Wt/WResource.h>
 #include <Wt/WPushButton.h>
@@ -96,6 +98,10 @@ public:
   m_app( Wt::WApplication::instance() )
   {
     assert( m_app );
+
+    // Keep the session lock held for the duration of `handleRequest`, since we read content
+    //  directly out of the (still live) dialog.
+    setTakesUpdateLock( true );
   }
   
   virtual ~InjaLogResource()
@@ -110,17 +116,9 @@ private:
   virtual void handleRequest( const Wt::Http::Request &request,
                               Wt::Http::Response &response )
   {
-    Wt::WApplication::UpdateLock lock( m_app );
-    
-    if( !lock )
-    {
-      Wt::log("error") << "Failed to WApplication::UpdateLock in InjaLogResource.";
-      response.out() << "Error grabbing application lock to form InjaLogResource resource; please report to InterSpec@sandia.gov.";
-      response.setStatus( 500 );
-      assert( 0 );
-      return;
-    }//if( !lock )
-    
+    // `setTakesUpdateLock(true)` (see constructor) means Wt holds the session lock for us here.
+    assert( m_app );
+
     if( !m_dialog )
     {
       response.out() << "Error: InjaLogDialog is null";
@@ -208,12 +206,22 @@ InjaLogDialog::InjaLogDialog( const Wt::WString &title,
   std::shared_ptr<InjaLogResource> download_resource = std::make_shared<InjaLogResource>( this );
   m_download_resource = download_resource.get();
 
-  // Add download button
-  m_download_button = m_toolbar->addNew<Wt::WPushButton>();
-  m_download_button->setIcon( "InterSpec_resources/images/download_small.svg" );
+  // Add download button.
+  // On macOS/iOS the WKWebView only intercepts downloads from clicks on real anchors; the
+  //  `window.open(...)` that a WPushButton link emits is routed to the (disabled) WKUIDelegate,
+  //  and silently does nothing.
   Wt::WLink dlLink( download_resource );
   dlLink.setTarget( Wt::LinkTarget::NewWindow );
+
+#if( BUILD_AS_OSX_APP || IOS )
+  m_download_button = m_toolbar->addNew<Wt::WAnchor>( dlLink );
+  m_download_button->setImage( std::make_unique<Wt::WImage>(
+                                 Wt::WLink("InterSpec_resources/images/download_small.svg") ) );
+#else
+  m_download_button = m_toolbar->addNew<Wt::WPushButton>();
+  m_download_button->setIcon( "InterSpec_resources/images/download_small.svg" );
   m_download_button->setLink( dlLink );
+#endif
   m_download_button->setStyleClass( "LinkBtn DownloadBtn InjaLogDownloadBtn" );
 
   // Set dialog size

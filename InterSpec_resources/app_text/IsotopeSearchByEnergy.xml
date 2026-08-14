@@ -69,8 +69,6 @@
   <message id="isbe-category-nuc-xray-rctn-desc">All nuclides, x-rays (decay and fluorescence), and reactions</message>
   <message id="isbe-category-xray">Fluorescence x-rays</message>
   <message id="isbe-category-xray-desc">Only fluorescence x-rays</message>
-  <message id="isbe-category-reactions">Reactions</message>
-  <message id="isbe-category-reactions-desc">Only Reactions</message>
   <message id="isbe-category-medical">Medical Nuclides</message>
   <message id="isbe-category-medical-desc">Common medical nuclides</message>
   <message id="isbe-category-industrial">Industrial Nuclides</message>

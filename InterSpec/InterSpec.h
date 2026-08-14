@@ -67,6 +67,10 @@ class DoseCalcWindow;
 class FluxToolWindow;
 class PeakEditWindow;
 class RefLineDynamic;
+
+#if( USE_LLM_INTERFACE )
+class LlmToolGui;
+#endif
 class WarningMessage;
 class DrfSelectWindow;
 class PeakInfoDisplay;
@@ -547,6 +551,7 @@ public:
   void captureSpectrumImage( const std::string &format, int maxLongestSide,
                              std::optional<std::pair<double,double>> energyRange,
                              std::optional<bool> yAxisLog,
+                             std::optional<bool> backgroundSubtract,
                              std::function<void(std::string, std::string, int, int)> callback );
 
   /** Capture the time history chart as a base64-encoded image via JavaScript round-trip.
@@ -901,6 +906,28 @@ public:
    */
   void deleteFwhmFromForegroundWindow();
 
+#if( USE_LLM_INTERFACE )
+  /** Create and show the LLM tool widget in the tools tab, if its not already created. */
+  void createLlmTool();
+  
+  /** Returns current LLM tool, or nullptr if one does not currently exist. */
+  LlmToolGui *currentLlmTool();
+
+  /** Open the LLM provider settings window seeded from an `llm_config.xml` the user opened or
+   dragged onto the app.  Ensures the LLM Assistant tool/tab exists (createLlmTool()) and then hands
+   off to LlmToolGui::openConfigWindowToImport().  On Accept the file is installed into the writable
+   data directory (with an overwrite warning if one already exists). */
+  void openLlmConfigForImport( const std::string &configFilePath );
+  
+  /** Handle cleanup when LLM tool is closed. */
+  void handleLlmToolClose();
+
+  /** Sync the current LLM conversation history into the foreground SpecMeas,
+   so it will be included when the file is next saved.
+   */
+  void syncLlmHistoryToSpecMeas();
+#endif
+  
   /** Will show the disclaimer, license, and statment window, setting
       m_licenseWindow pointer with its value.
    */
@@ -1220,23 +1247,30 @@ public:
    */
   bool colorPeaksBasedOnReferenceLines() const;
   
-  //searchForHintPeaks(): launches the job to search for peaks (single threaded)
-  //  which will call setHintPeaks(...) when done.
+  //searchForHintPeaks(): launches (or coalesces onto) the shared automated peak search via
+  //  PeakSearchGuiUtils::get_or_launch_automated_search_peaks(...) and calls setHintPeaks(...)
+  //  on this session's event loop when done.
   void searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                            const std::set<int> &samples,
                           const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
                           std::shared_ptr<const PeakFitDetPrefs> fitPrefs );
-  
-  //setHintPeaks(): sets the hint peaks (SpecMeas::m_autoSearchPeaks and
-  //  SpecMeas::m_autoSearchInitialPeaks) if spectrum.lock() yeilds a valid ptr.
-  //  If the user has changed peaks from existingPeaks, then results will be
-  //  merged.
+
+  //setHintPeaks(): sets the hint peaks (SpecMeas::m_autoSearchPeaks) if spectrum.lock() yeilds a
+  //  valid ptr.  If the user has changed peaks from existingPeaks, then results will be merged.
+  //  If `potentuallyUpdateDetTypeGuess` is true, and the foreground doesnt have a confident
+  //  detector-resolution type yet, the found peaks are used to refine that guess.
   //  This function should be called from the main event loop.
   void setHintPeaks( std::weak_ptr<SpecMeas> spectrum,
                      std::set<int> samplenums,
                      std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > existingPeaks,
-                     std::shared_ptr<std::vector<std::shared_ptr<const PeakDef> > > resultpeaks,
+                     std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef> > > resultpeaks,
                      const bool potentuallyUpdateDetTypeGuess );
+
+  //startBackgroundPeakRecoveryIfReady(): if both a foreground and background are loaded and both
+  //  have automated-search peaks available, launches (once per pairing, on a worker thread)
+  //  background-peak recovery so non-elevated NORM lines the background auto-search missed are not
+  //  mis-flagged as elevated.  Called after the hint-peak search completes.  No-op otherwise.
+  void startBackgroundPeakRecoveryIfReady();
   
   
   void excludePeaksFromRange( double x0, double x1 );
@@ -1521,6 +1555,7 @@ protected:
   PopupDivMenuItem *m_saveTimeChartPng;
   PopupDivMenuItem *m_saveTimeChartSvg;
 
+
   enum RightClickItems
   {
     kPeakEdit,
@@ -1723,6 +1758,14 @@ protected:
   //  would like to use a calibration from a previously used spectrum if the one
   //  they just uploaded is from the same detector as the previous one.
   Wt::Core::observing_ptr<EnergyCalPreserveWindow> m_preserveCalibWindow;
+
+#if( USE_LLM_INTERFACE )
+  /** Menu item for opening the LLM tool. */
+  PopupDivMenuItem *m_llmToolMenuItem;
+  /** LLM tool widget for user interaction; it lives in the tools tab strip (a Cat-C reparenting
+   tool), so whichever parent currently holds it owns it - hence the observing_ptr. */
+  Wt::Core::observing_ptr<LlmToolGui> m_llmTool;
+#endif
   
 #if( USE_SEARCH_MODE_3D_CHART )
   /** Pointer to window showing the Search Mode 3D data view. */
@@ -1799,8 +1842,6 @@ protected:
   
   Wt::Signal<std::shared_ptr<const ColorTheme>> m_colorThemeChanged;
   
-  bool m_findingHintPeaks;
-  std::deque<std::function<void()> > m_hintQueue;
   Wt::Signal<SpecUtils::SpectrumType> m_hintPeaksSet;
   
   Wt::Signal<std::shared_ptr<const ExternalRidResults>> m_externalRidResultsRecieved;

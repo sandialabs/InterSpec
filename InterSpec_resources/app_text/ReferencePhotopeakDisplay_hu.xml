@@ -83,13 +83,11 @@
   <message id="rpd-tbl-hdr-tt-trans">A ténylegesen bomló nuklid, amely ezt a részecskét keltette.</message>
   <message id="rpd-tbl-hdr-tt-trans-mode">A szülő nuklid bomlási módja, amely ezt a részecskét keltette.</message>
   <message id="rpd-tbl-hdr-tt-type">A keletkezett részecske típusa</message>
-  <message id="rpd-tbl-hdr-tt-"></message>
 
   <!-- Fit Sources (peak fitting from displayed reference lines) -->
   <message id="rpd-fit-source">Forrás illesztése</message>
   <message id="rpd-fit-sources">Források illesztése</message>
   <message id="rpd-fit-sources-menu-auto">Automatikus</message>
   <message id="rpd-fit-sources-menu-advanced">Haladó</message>
-
 
 </messages>

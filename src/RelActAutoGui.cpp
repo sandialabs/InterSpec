@@ -500,6 +500,9 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   m_lorentzian_xrays( nullptr ),
   m_use_fixed_skew_enabled( false ),
   m_use_fixed_skew( nullptr ),
+  m_auto_simplify( nullptr ),
+  m_auto_simplify_dchi2_div( nullptr ),
+  m_auto_simplify_max_dchi2( nullptr ),
   m_more_options_menu( nullptr ),
   m_apply_energy_cal_item( nullptr ),
   m_show_ref_lines_item( nullptr ),
@@ -603,6 +606,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
     m_spectrum->dragCreateRoiUpdate().connect( this, &RelActAutoGui::handleCreateRoiDrag );
     m_spectrum->rightClicked().connect( this, &RelActAutoGui::handleRightClick );
     m_spectrum->shiftKeyDragged().connect( this, &RelActAutoGui::handleShiftDrag );
+    m_spectrum->xRangeChanged().connect( this, &RelActAutoGui::handleChartXRangeChange );
     m_spectrum->doubleLeftClick().connect( this, [this]( double a1, double a2, std::string a3, Wt::WFlags<Wt::KeyboardModifier> a4 ){
       handleDoubleLeftClick( a1, a2, a3, a4 );
     } );
@@ -926,8 +930,33 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   }//for( loop over AddUncert )
      
   m_add_uncert->setCurrentIndex( static_cast<int>(RelActAutoGui::AddUncert::StatOnly) );
-    
-  
+
+  // Auto-simplify model: a checkbox that, when checked, reveals a chi2-increase tolerance input.  Drives
+  //  Options::auto_simplify_model / auto_simplify_max_dchi2 (greedy redundant-DOF removal).  The checkbox
+  //  and its tolerance input are grouped in a single container so they stay together on one row.
+  WContainerWidget *autoSimplifyDiv = generalOptionsDiv->addNew<WContainerWidget>();
+  autoSimplifyDiv->addStyleClass( "RelActAutoAutoSimplifyDiv" );
+
+  m_auto_simplify = autoSimplifyDiv->addNew<WCheckBox>( WString::tr("raag-auto-simplify") );
+  m_auto_simplify->addStyleClass( "AutoSimplifyCb CbNoLineBreak" );
+  m_auto_simplify->checked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
+  m_auto_simplify->unChecked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
+  HelpSystem::attachToolTipOn( m_auto_simplify, WString::tr("raag-tt-auto-simplify"), showToolTips );
+
+  m_auto_simplify_dchi2_div = autoSimplifyDiv->addNew<WContainerWidget>();
+  m_auto_simplify_dchi2_div->addStyleClass( "RelActAutoAutoSimplifyDchi2Div" );
+  WLabel *autoSimplifyLabel = m_auto_simplify_dchi2_div->addNew<WLabel>( WString::tr("raag-auto-simplify-dchi2") );
+  m_auto_simplify_max_dchi2 = m_auto_simplify_dchi2_div->addNew<NativeFloatSpinBox>();
+  m_auto_simplify_max_dchi2->addStyleClass( "RelActAutoAutoSimplifyDchi2Input" );
+  m_auto_simplify_max_dchi2->setValue( 1.0f );
+  m_auto_simplify_max_dchi2->setMinimum( 0.0f );
+  m_auto_simplify_max_dchi2->setSpinnerHidden( false );
+  autoSimplifyLabel->setBuddy( m_auto_simplify_max_dchi2 );
+  m_auto_simplify_max_dchi2->valueChanged().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
+  HelpSystem::attachToolTipOn( m_auto_simplify_dchi2_div, WString::tr("raag-tt-auto-simplify-dchi2"), showToolTips );
+  m_auto_simplify_dchi2_div->setHidden( true );  // revealed only when the checkbox is checked
+
+
   GroupBox *optionsDiv = addNew<GroupBox>( WString::tr("raag-rel-eff-curve-options") );
   optionsDiv->addStyleClass( "RelActAutoOptions" );
 
@@ -1201,68 +1230,198 @@ RelActAutoGui::~RelActAutoGui()
 }//~RelActAutoGui();
 
 
-void RelActAutoGui::addUndoRedoStep()
+RelActAutoGui::GuiUndoState RelActAutoGui::currentUndoState() const
+{
+  GuiUndoState answer;
+
+  shared_ptr<RelActCalcAuto::RelActAutoGuiState> state = make_shared<RelActCalcAuto::RelActAutoGuiState>();
+  serialize( *state );  //may throw
+  answer.state = state;
+
+  answer.preset_index = m_current_preset_index;
+  answer.preset_items.reserve( static_cast<size_t>(m_presets->count()) );
+  for( int i = 0; i < m_presets->count(); ++i )
+    answer.preset_items.push_back( m_presets->itemText(i) );
+
+  return answer;
+}//GuiUndoState RelActAutoGui::currentUndoState() const
+
+
+void RelActAutoGui::captureGuiStateForUndo()
+{
+  try
+  {
+    m_currentGuiState = currentUndoState();
+  }catch( std::exception &e )
+  {
+    // `getCalcOptions()` throws if a rel-eff curve is in a half-built state.  Leaving the previous
+    //  baseline in place is the best we can do; the next successful render will correct it.
+    cerr << "RelActAutoGui unexpectedly caught exception capturing undo/redo state: "
+         << e.what() << endl;
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( __func__, ("Failed to capture RelActAutoGui undo state: "
+                                    + string(e.what())).c_str() );
+#endif
+  }//try / catch
+}//void RelActAutoGui::captureGuiStateForUndo()
+
+
+void RelActAutoGui::setPresetSelection( const GuiUndoState &undo_state )
+{
+  if( (undo_state.preset_index < 0) || undo_state.preset_items.empty() )
+    return;
+
+  const int num_items = static_cast<int>( undo_state.preset_items.size() );
+
+  // Any trailing entries we drop take their saved configurations with them; otherwise a later
+  //  `checkIfInUserConfigOrCreateOne(...)` could re-use the index and pick up a stale config.
+  for( int i = num_items; i < m_presets->count(); ++i )
+    m_previous_presets.erase( i );
+
+  while( m_presets->count() > num_items )
+    m_presets->removeItem( m_presets->count() - 1 );
+
+  for( int i = 0; i < num_items; ++i )
+  {
+    if( i < m_presets->count() )
+      m_presets->setItemText( i, undo_state.preset_items[i] );
+    else
+      m_presets->addItem( undo_state.preset_items[i] );
+  }
+
+  // Set `m_current_preset_index` before the combo, so that even if `changed()` were to fire,
+  //  `handlePresetChange()` would see no change and return.
+  m_current_preset_index = (undo_state.preset_index < num_items) ? undo_state.preset_index : (num_items - 1);
+  m_presets->setCurrentIndex( m_current_preset_index );
+}//void RelActAutoGui::setPresetSelection( const GuiUndoState & )
+
+
+void RelActAutoGui::restoreUndoState( const GuiUndoState &undo_state )
+{
+  if( !undo_state.state )
+    return;
+
+  // Clear before deSerialize: restoring a state is not itself a user edit.  `deSerialize` also
+  //  clears the flag, so the render it schedules records no step, and re-baselines
+  //  `m_currentGuiState` from the settled GUI via `captureGuiStateForUndo()`.
+  m_render_flags.clear( RenderActions::AddUndoRedoStep );
+  deSerialize( *undo_state.state );
+  setPresetSelection( undo_state );
+}//void RelActAutoGui::restoreUndoState( const GuiUndoState & )
+
+
+void RelActAutoGui::addUndoRedoStep( const GuiUndoState &prev, const GuiUndoState &next,
+                                     const std::string &description )
+{
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( !undoRedo || !undoRedo->canAddUndoRedoNow() || !prev.state || !next.state )
+    return;
+
+  // Go through `InterSpec::relActAutoWindow(...)` rather than capturing `this`, so the step is
+  //  still valid if the user has closed the tool since.
+  auto apply = []( const GuiUndoState &state ){
+    InterSpec *viewer = InterSpec::instance();
+    RelActAutoGui *gui = viewer ? viewer->relActAutoWindow( true ) : nullptr;
+    if( gui )
+      gui->restoreUndoState( state );
+  };
+
+  undoRedo->addUndoRedoStep( [prev,apply](){ apply(prev); },
+                             [next,apply](){ apply(next); },
+                             description );
+}//void RelActAutoGui::addUndoRedoStep( const GuiUndoState &, const GuiUndoState &, const string & )
+
+
+void RelActAutoGui::addUndoRedoStep( const GuiUndoState &baseline )
 {
   UndoRedoManager *undoRedo = UndoRedoManager::instance();
   if( !undoRedo || !undoRedo->canAddUndoRedoNow() )
     return;
 
-  shared_ptr<RelActCalcAuto::RelActAutoGuiState> current_state = make_shared<RelActCalcAuto::RelActAutoGuiState>();
-  try
-  {
-    serialize( *current_state );
-  }catch( std::exception &e )
-  {
-    cerr << "RelActAutoGui unexpectedly caught exception rendering to undo/redo state: " << e.what() << endl;
-    return;
-  }
-  
-  if( !m_currentGuiState )
-  {
-    // This is the first render - dont add undo/redo
-    m_currentGuiState = current_state;
-    return;
-  }
-  
-  if( *current_state == *m_currentGuiState )
+  // `baseline.state` is null only on the very first render, or if a previous serialization failed.
+  //  `m_currentGuiState` has just been refreshed by `captureGuiStateForUndo()`; if that threw, it
+  //  still holds `baseline` and the comparison below correctly finds nothing to record.
+  if( !baseline.state || !m_currentGuiState.state )
     return;
 
-  const shared_ptr<const RelActCalcAuto::RelActAutoGuiState> prev_state = m_currentGuiState;
+  // Compare only the analysis configuration.  A preset-selector change with no accompanying state
+  //  change (selecting a different preset that happens to deserialize to an identical state) is
+  //  deliberately not recorded - there is nothing for the user to get back.
+  if( *m_currentGuiState.state == *baseline.state )
+    return;
 
-  auto undo = [prev_state](){
-    InterSpec *viewer = InterSpec::instance();
-    RelActAutoGui *gui = viewer ? viewer->relActAutoWindow( true ) : nullptr;
-    if( gui && prev_state )
-    {
-      // Clear before deSerialize: satisfies the deSerialize invariant. The end of deSerialize
-      //  also clears AddUndoRedoStep, so the post-undo render will not capture a new step.
-      gui->m_render_flags.clear( RenderActions::AddUndoRedoStep );
-      gui->deSerialize( *prev_state );
-      // Because the next render will NOT call addUndoRedoStep (the flag is clear), we update
-      //  m_currentGuiState here so subsequent edits compare against the correct baseline.
-      gui->m_currentGuiState = prev_state;
-    }
-  };
-
-  auto redo = [current_state](){
-    InterSpec *viewer = InterSpec::instance();
-    RelActAutoGui *gui = viewer ? viewer->relActAutoWindow( true ) : nullptr;
-    if( gui && current_state )
-    {
-      gui->m_render_flags.clear( RenderActions::AddUndoRedoStep );
-      gui->deSerialize( *current_state );
-      gui->m_currentGuiState = current_state;
-    }
-  };
-  
-  undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "RelActAutoGui gui change." );
-  
-  m_currentGuiState = current_state;
+  addUndoRedoStep( baseline, m_currentGuiState, "RelActAutoGui gui change." );
 }//void addUndoRedoStep(...)
+
+
+void RelActAutoGui::setChartEnergyRange( const double lower_energy, const double upper_energy )
+{
+  m_spectrum->setXAxisRange( lower_energy, upper_energy );
+
+  // `D3SpectrumDisplayDiv::setXAxisRange(...)` does not emit `xRangeChanged()`, so patch the two
+  //  display-energy fields of the baseline ourselves.  Without this the baseline would think the
+  //  chart is still showing the old range, and the range change would get folded into the undo
+  //  step of whatever the user edits next.
+  //
+  // Note: the values must be stored verbatim - `RelActAutoGuiState::operator==` compares the
+  //  display energies with exact `double` equality, and `serialize()` reads them straight back
+  //  out of the chart, so any rounding here would make every state compare unequal.
+  if( m_currentGuiState.state )
+  {
+    shared_ptr<RelActCalcAuto::RelActAutoGuiState> updated
+                = make_shared<RelActCalcAuto::RelActAutoGuiState>( *m_currentGuiState.state );
+    updated->lower_display_energy = lower_energy;
+    updated->upper_display_energy = upper_energy;
+    m_currentGuiState.state = updated;
+  }//if( m_currentGuiState.state )
+}//void RelActAutoGui::setChartEnergyRange( const double, const double )
+
+
+void RelActAutoGui::handleChartXRangeChange( const double xmin, const double xmax,
+                                             const double oldXmin, const double oldXmax,
+                                             const bool user_interaction )
+{
+  // Keep the undo baseline tracking the chart, whether or not we add a step - see the comment in
+  //  `setChartEnergyRange(...)`.
+  if( m_currentGuiState.state )
+  {
+    shared_ptr<RelActCalcAuto::RelActAutoGuiState> updated
+                = make_shared<RelActCalcAuto::RelActAutoGuiState>( *m_currentGuiState.state );
+    updated->lower_display_energy = xmin;
+    updated->upper_display_energy = xmax;
+    m_currentGuiState.state = updated;
+  }//if( m_currentGuiState.state )
+
+  // Mirrors `InterSpec::handleSpectrumChartXRangeChange(...)`: only user zoom/pan is undoable, and
+  //  only a step carrying the two ranges is needed - not a whole GUI state.
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( !undoRedo || !user_interaction
+     || ((fabs(xmin - oldXmin) < 0.5) && (fabs(xmax - oldXmax) < 0.5)) )
+    return;
+
+  // `relActAutoWindow(false)`: re-creating the tool just to change a chart range would be
+  //  surprising; if the tool is gone, the step is a no-op.
+  auto set_range = []( const double lower, const double upper ){
+    InterSpec *viewer = InterSpec::instance();
+    RelActAutoGui *gui = viewer ? viewer->relActAutoWindow( false ) : nullptr;
+    if( gui )
+      gui->setChartEnergyRange( lower, upper );
+  };
+
+  undoRedo->addUndoRedoStep( [oldXmin,oldXmax,set_range](){ set_range(oldXmin,oldXmax); },
+                             [xmin,xmax,set_range](){ set_range(xmin,xmax); },
+                             "Isotopics-by-nuclides energy range change." );
+}//void RelActAutoGui::handleChartXRangeChange(...)
 
 
 void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 {
+  // Snapshot the undo baseline BEFORE any of the update work below: some of it mutates
+  //  `m_currentGuiState` itself (ChartToDefaultRange -> `setChartEnergyRange`), and an undo step
+  //  must revert to what the user was looking at when they acted - not to a chart range this
+  //  render just changed.
+  const GuiUndoState baseline = m_currentGuiState;
+
   if( m_render_flags.test(RenderActions::UpdateSpectra) )
   {
     updateDuringRenderForSpectrumChange();
@@ -1315,9 +1474,15 @@ void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
     startUpdatingCalculation();
   }
 
-  // Capture current GUI state and add undo/redo step if flagged
-  if( m_render_flags.test( RenderActions::AddUndoRedoStep ) )
-    addUndoRedoStep();
+  // Re-baseline on EVERY render - not just flagged ones - so the paths that change serialized
+  //  state without recording a step (calc write-back, spectrum change, energy-cal apply,
+  //  deSerialize) do not leave a stale baseline for the next user edit to diff against.
+  const bool add_undo_step = m_render_flags.test( RenderActions::AddUndoRedoStep );
+
+  captureGuiStateForUndo();
+
+  if( add_undo_step )
+    addUndoRedoStep( baseline );
 
   m_render_flags = Wt::WFlags<RenderActions>();
   m_loading_preset = false;
@@ -1328,6 +1493,11 @@ void RelActAutoGui::render( Wt::WFlags<Wt::RenderFlag> flags )
 
 void RelActAutoGui::handleDisplayedSpectrumChange( SpecUtils::SpectrumType type )
 {
+  // Note: deliberately no `AddUndoRedoStep` - the user changed the displayed spectrum, not this
+  //  tools configuration, and that change carries its own undo step.  The `scheduleRender()`
+  //  calls below still re-baseline the undo state (see `captureGuiStateForUndo`), which matters
+  //  because the spectrum title / file names / sample numbers are part of the serialized state.
+
   switch( type )
   {
     case SpecUtils::SpectrumType::Foreground:
@@ -1362,16 +1532,19 @@ void RelActAutoGui::handleDisplayedSpectrumChange( SpecUtils::SpectrumType type 
 
 void RelActAutoGui::checkIfInUserConfigOrCreateOne( const bool force_create )
 {
-  if( m_loading_preset )
+  // `m_loading_preset` is set by `deSerialize(...)` and not cleared until the next render, so
+  //  handlers triggered while loading a state dont each mark it as user-modified.  A
+  //  `force_create` caller is however explicitly asking us to mark the just-loaded state as
+  //  custom, so it must not be suppressed.
+  if( m_loading_preset && !force_create )
     return;
-  
-  const int index = m_presets->currentIndex();
+
   if( !force_create && (m_current_preset_index >= static_cast<int>(m_preset_paths.size())) )
   {
     // We are in a user-modified state, go ahead and return
     return;
   }
-  
+
   string name;
   if( force_create )
     name = "Custom";
@@ -1379,9 +1552,14 @@ void RelActAutoGui::checkIfInUserConfigOrCreateOne( const bool force_create )
     name = "User Created";
   else
     name = "Modified " + m_presets->itemText(m_current_preset_index).toUTF8();
-  
+
+  // Note: entries with duplicate names are possible (modify preset B, go back to B, modify again),
+  //  and are deliberately left alone.  Collapsing same-named entries onto one index would make the
+  //  second modification silently overwrite the first ones saved config in `m_previous_presets`.
+  //  Undo/redo does not grow this list: `setPresetSelection()` restores the combo contents along
+  //  with the rest of the state.
   m_presets->addItem( WString::fromUTF8(name) );
-  
+
   m_current_preset_index = m_presets->count() - 1;
   m_presets->setCurrentIndex( m_current_preset_index );
 }//void checkIfInUserConfigOrCreateOne()
@@ -1466,7 +1644,7 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   options.rois = getRoiRanges();
   
   int num_phys_model_curves = 0;
-  bool any_using_hoerl = false, same_hoerl_all_curves = false, same_ext_shieldings = false;
+  bool any_using_corr_fcn = false, same_corr_fcn_all_curves = false, same_ext_shieldings = false;
   vector<shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_attens;
   
   const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
@@ -1487,17 +1665,17 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
     rel_eff_curve.rel_eff_eqn_order = opts->rel_eff_eqn_order();
     rel_eff_curve.phys_model_self_atten = opts->phys_model_self_atten();
     rel_eff_curve.phys_model_external_atten = opts->phys_model_external_atten();
-    rel_eff_curve.phys_model_use_hoerl = opts->phys_model_use_hoerl();
+    rel_eff_curve.phys_model_corr = opts->phys_model_corr();
     rel_eff_curve.pu242_correlation_method = opts->pu242_correlation_method();
 
     if( rel_eff_curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {
       num_phys_model_curves += 1;
-      any_using_hoerl = (any_using_hoerl || rel_eff_curve.phys_model_use_hoerl);
+      any_using_corr_fcn = (any_using_corr_fcn || rel_eff_curve.uses_phys_model_correction());
       if( phys_model_external_attens.empty() )
         phys_model_external_attens = rel_eff_curve.phys_model_external_atten;
       same_ext_shieldings = (same_ext_shieldings || opts->physModelSameExtShieldAllCurves());
-      same_hoerl_all_curves = (same_hoerl_all_curves || opts->physModelSameHoerlOnAllCurves());
+      same_corr_fcn_all_curves = (same_corr_fcn_all_curves || opts->physModelSameCorrFcnOnAllCurves());
 
       if( opts->physModelShieldedByOtherCurves() )
       {
@@ -1517,19 +1695,34 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
     options.rel_eff_curves.push_back( rel_eff_curve );
   }//for( int rel_eff_curve_index = 0; rel_eff_curve_index < num_rel_eff_curves; ++rel_eff_curve_index )
 
-  options.same_hoerl_for_all_rel_eff_curves = false;
+  options.same_corr_fcn_for_all_rel_eff_curves = false;
   options.same_external_shielding_for_all_rel_eff_curves = false;
-  if( (num_phys_model_curves > 1) && (same_ext_shieldings || same_hoerl_all_curves) )
+  if( (num_phys_model_curves > 1) && (same_ext_shieldings || same_corr_fcn_all_curves) )
   {
-    if( any_using_hoerl && same_hoerl_all_curves )
+    if( any_using_corr_fcn && same_corr_fcn_all_curves )
     {
-      options.same_hoerl_for_all_rel_eff_curves = true;
-      for( RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
+      options.same_corr_fcn_for_all_rel_eff_curves = true;
+
+      // Shared correction uses the FIRST physical-model curve's settings (matching the solver); copy that
+      //  curve's correction config onto all physical-model curves so they are identical.
+      const RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput *first_corr = nullptr;
+      for( const RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
       {
-        assert( curve.phys_model_use_hoerl );
-        curve.phys_model_use_hoerl = true;
+        if( curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+        {
+          first_corr = &curve.phys_model_corr;
+          break;
+        }
       }
-    }//if( any_using_hoerl and all should share a Hoerl)
+      if( first_corr )
+      {
+        for( RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
+        {
+          if( curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+            curve.phys_model_corr = *first_corr;
+        }
+      }//if( first_corr )
+    }//if( any_using_corr_fcn and all should share a Hoerl)
     
     if( same_ext_shieldings && !phys_model_external_attens.empty() )
     {
@@ -1542,7 +1735,12 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
       }
     }//if( all should share ext atten and there are some defined )
   }//if( num_phys_model_curves > 1 )
-  
+
+  // Auto-simplify (greedy redundant-DOF removal).
+  options.auto_simplify_model = (m_auto_simplify && m_auto_simplify->isChecked());
+  if( m_auto_simplify_max_dchi2 )
+    options.auto_simplify_max_dchi2 = std::max( 0.0, static_cast<double>(m_auto_simplify_max_dchi2->value()) );
+
   return options;
 }//RelActCalcAuto::Options getCalcOptions() const
 
@@ -2196,8 +2394,14 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   m_fwhm_eqn_form->setHidden( fixed_to_det_eff );
   if( m_fwhm_eqn_form->label() )
     m_fwhm_eqn_form->label()->setHidden( fixed_to_det_eff );
-  if( !fixed_to_det_eff && (options.fwhm_form != RelActCalcAuto::FwhmForm::NotApplicable) )
-    setFwhmFormFromCombo( options.fwhm_form );
+  if( !fixed_to_det_eff )
+  {
+    // Stale configs pairing NotApplicable with a non-Fixed estimation method get the same concrete
+    //  form BatchRelActAuto::load_state_from_xml_file coerces to, so GUI and headless runs of the
+    //  same config XML use the same FWHM model (previously the combo silently kept its prior value).
+    setFwhmFormFromCombo( (options.fwhm_form == RelActCalcAuto::FwhmForm::NotApplicable)
+                            ? RelActCalcAuto::FwhmForm::Polynomial_2 : options.fwhm_form );
+  }//if( !fixed_to_det_eff )
   
   // First update lorentzian checkbox (before populating skew combo)
   m_lorentzian_xrays->setChecked( options.lorentzian_xrays );
@@ -2241,6 +2445,14 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
   if( add_uncert == AddUncert::NumAddUncert )
     add_uncert = AddUncert::StatOnly;
   m_add_uncert->setCurrentIndex( static_cast<int>(add_uncert) );
+
+  // Auto-simplify (greedy redundant-DOF removal); the value input is only shown when enabled.
+  if( m_auto_simplify )
+    m_auto_simplify->setChecked( options.auto_simplify_model );
+  if( m_auto_simplify_max_dchi2 )
+    m_auto_simplify_max_dchi2->setValue( static_cast<float>(options.auto_simplify_max_dchi2) );
+  if( m_auto_simplify_dchi2_div )
+    m_auto_simplify_dchi2_div->setHidden( !options.auto_simplify_model );
 
   // First, remove any extra Rel Eff curve GUIs
   const size_t num_rel_eff_curves = options.rel_eff_curves.size();
@@ -2397,7 +2609,7 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     if( !rel_eff_opts || (rel_eff_opts->rel_eff_eqn_form() != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
       continue;
     
-    rel_eff_opts->setPhysModelSameHoerlOnAllCurves( options.same_hoerl_for_all_rel_eff_curves );
+    rel_eff_opts->setPhysModelSameCorrFcnOnAllCurves( options.same_corr_fcn_for_all_rel_eff_curves );
     rel_eff_opts->setPhysModelSameExtShieldAllCurves( options.same_external_shielding_for_all_rel_eff_curves );
     
     if( options.same_external_shielding_for_all_rel_eff_curves )
@@ -2512,12 +2724,16 @@ void RelActAutoGui::serialize( RelActCalcAuto::RelActAutoGuiState &state ) const
 
 void RelActAutoGui::deSerialize( const RelActCalcAuto::RelActAutoGuiState &state )
 {
-  // m_currentGuiState is only set after the first render(), so if it is set,
-  //  we are in active use - and AddUndoRedoStep should not be set when entering deSerialize.
-  //  Callers in active use must either clear the flag before calling (e.g. undo/redo lambdas)
-  //  or set it after deSerialize returns (e.g. handlePresetChange).
-  //  During initial load (e.g., loadStateFromDb), m_currentGuiState is null, and flags may be set.
-  assert( !m_currentGuiState || !m_render_flags.test( RenderActions::AddUndoRedoStep ) );
+  // Loading a state is not itself a user edit, so this function never records an undo step, and
+  //  clears the flag both on entry and on exit (`setCalcOptionsGui` below re-sets it).  Callers
+  //  that DO want a step either set AddUndoRedoStep after we return (e.g. handlePresetChange),
+  //  or use `deSerializeWithUndo`.
+#if( PERFORM_DEVELOPER_CHECKS )
+  if( m_currentGuiState.state && m_render_flags.test( RenderActions::AddUndoRedoStep ) )
+    log_developer_error( __func__, "AddUndoRedoStep was set entering deSerialize - the pending"
+                                   " user edit it represents will not be recorded." );
+#endif
+  m_render_flags.clear( RenderActions::AddUndoRedoStep );
 
   // Cancel any in-progress calculation so its results dont overwrite the state we are about to restore.
   if( m_cancel_calc )
@@ -2541,7 +2757,7 @@ void RelActAutoGui::deSerialize( const RelActCalcAuto::RelActAutoGuiState &state
     //       yet, and if not, and it looks like a custom range has been set, then it wont
     //       reset the range.
 
-    m_spectrum->setXAxisRange( state.lower_display_energy, state.upper_display_energy );
+    setChartEnergyRange( state.lower_display_energy, state.upper_display_energy );
   }
 
   m_loading_preset = true;
@@ -2571,6 +2787,34 @@ void RelActAutoGui::deSerialize( const RelActCalcAuto::RelActAutoGuiState &state
   //  AddUndoRedoStep again after deSerialize returns.
   m_render_flags.clear( RenderActions::AddUndoRedoStep );
 }//void deSerialize( const RelActCalcAuto::RelActAutoGuiState &state )
+
+
+void RelActAutoGui::deSerializeWithUndo( const RelActCalcAuto::RelActAutoGuiState &state,
+                                         const std::string &undo_description )
+{
+  GuiUndoState prev;
+  try
+  {
+    prev = currentUndoState();
+  }catch( std::exception &e )
+  {
+    // The load must still happen; the user just wont be able to undo past it.
+    cerr << "RelActAutoGui::deSerializeWithUndo: failed to capture previous state: "
+         << e.what() << endl;
+  }
+
+  deSerialize( state );
+
+  if( !prev.state )
+    return;
+
+  GuiUndoState next = prev;   //keeps the preset selection, which `deSerialize` does not change
+  next.state = make_shared<RelActCalcAuto::RelActAutoGuiState>( state );
+
+  addUndoRedoStep( prev, next, undo_description );
+
+  // `deSerialize` scheduled a render, which will re-baseline `m_currentGuiState`.
+}//void RelActAutoGui::deSerializeWithUndo( const RelActAutoGuiState &, const std::string & )
 
 
 rapidxml::xml_node<char> *RelActAutoGui::serialize( rapidxml::xml_node<char> *parent_node ) const
@@ -2603,7 +2847,8 @@ std::unique_ptr<rapidxml::xml_document<char>> RelActAutoGui::guiStateToXml() con
 }//std::unique_ptr<rapidxml::xml_document<char>> guiStateToXml() const
 
 
-void RelActAutoGui::setGuiStateFromXml( const rapidxml::xml_document<char> *doc )
+void RelActAutoGui::setGuiStateFromXml( const rapidxml::xml_document<char> *doc,
+                                        const std::string &undo_description )
 {
   if( !doc )
     throw runtime_error( "RelActAutoGui::setGuiStateFromXml: nullptr passed in." );
@@ -2615,7 +2860,10 @@ void RelActAutoGui::setGuiStateFromXml( const rapidxml::xml_document<char> *doc 
   RelActCalcAuto::RelActAutoGuiState state;
   state.deSerialize( base_node );
 
-  deSerialize( state );  // Use new struct-based method
+  if( undo_description.empty() )
+    deSerialize( state );
+  else
+    deSerializeWithUndo( state, undo_description );
 }//void setGuiStateFromXml( const rapidxml::xml_node<char> *node );
 
 
@@ -2625,12 +2873,10 @@ void RelActAutoGui::handlePresetChange()
   //  check if the user is in a modified parameter set, and if so save it to memory, so it can go
   //  back to it later
   //
-  // TODO: undo/redo currently reverts the analysis state (energy ranges, nuclides, options) but
-  //  does NOT revert the preset selector itself. `RelActAutoGuiState` (RelActCalcAuto.h) does not
-  //  carry `m_current_preset_index` or the dropdown selection, so after Ctrl-Z the dropdown still
-  //  displays the newly-chosen preset name even though the underlying state has been reverted.
-  //  Fix by either adding the preset index to `RelActAutoGuiState`, or wrapping preset changes in
-  //  a custom undo step that also restores the dropdown.
+  // Note: the preset selector is restored by undo/redo via `RelActAutoGui::GuiUndoState`, which
+  //  carries the combo contents and selected index alongside the analysis state.  It is kept out
+  //  of `RelActAutoGuiState` because that struct is persisted into the `SpecMeas` and read by
+  //  headless code, where a GUI widget index has no meaning.
 
   const int index = m_presets->currentIndex();
   if( index == m_current_preset_index )
@@ -2762,8 +3008,9 @@ void RelActAutoGui::handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_
   if( rel_eff_curve_gui->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
     vector<const RelEffShieldWidget *> ext_shields;
-    bool same_hoerl = false, same_ext_shield = false, use_hoerl = false;
-  
+    bool same_corr_fcn = false, same_ext_shield = false;
+    RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput shared_corr; // adopted from a sibling phys-model curve
+
     const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
     for( int i = 0; i < num_rel_eff_curves; ++i )
     {
@@ -2771,19 +3018,21 @@ void RelActAutoGui::handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_
       assert( options );
       if( options && (options != rel_eff_curve_gui) && (options->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
       {
-        same_hoerl = options->physModelSameHoerlOnAllCurves();
+        same_corr_fcn = options->physModelSameCorrFcnOnAllCurves();
         same_ext_shield = options->physModelSameExtShieldAllCurves();
+        if( same_corr_fcn )
+          shared_corr = options->phys_model_corr();
         if( same_ext_shield )
           ext_shields = options->externalAttenWidgets();
         break; //
       }
     }//for( int i = 0; i < num_rel_eff_curves; ++i )
-    
-    rel_eff_curve_gui->setPhysModelSameHoerlOnAllCurves( same_hoerl );
+
+    rel_eff_curve_gui->setPhysModelSameCorrFcnOnAllCurves( same_corr_fcn );
     rel_eff_curve_gui->setPhysModelSameExtShieldAllCurves( same_ext_shield );
-    
-    if( same_hoerl )
-      rel_eff_curve_gui->setPhysModelUseHoerl( use_hoerl );
+
+    if( same_corr_fcn )
+      rel_eff_curve_gui->setPhysModelCorr( shared_corr );
     if( same_ext_shield )
       rel_eff_curve_gui->update_external_atten_shield_widget( ext_shields );
   }//if( rel_eff_curve_gui->rel_eff_eqn_form() == RelActCalc::RelEffEqnForm::FramPhysicalModel )
@@ -2795,7 +3044,7 @@ void RelActAutoGui::handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_
 }//void handleRelEffEqnTypeChanged();
 
 
-void RelActAutoGui::handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+void RelActAutoGui::handleSameCorrFcnOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 {
   assert( rel_eff_curve_gui );
   if( !rel_eff_curve_gui )
@@ -2804,28 +3053,28 @@ void RelActAutoGui::handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOption
   // Show/hide physical model elements
   updateMultiPhysicalModelUI( rel_eff_curve_gui, nullptr );
   
-  const bool same_hoerl = rel_eff_curve_gui->physModelSameHoerlOnAllCurves();
-  const bool use_hoerl = rel_eff_curve_gui->phys_model_use_hoerl();
-  
+  const bool same_corr_fcn = rel_eff_curve_gui->physModelSameCorrFcnOnAllCurves();
+  const RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput shared_corr = rel_eff_curve_gui->phys_model_corr();
+
   const int num_rel_eff_curves = m_rel_eff_opts_menu->count();
-  
+
   for( int i = 0; i < num_rel_eff_curves; ++i )
   {
     RelActAutoGuiRelEffOptions *options = getRelEffCurveOptions(i);
     assert( options );
     if( !options )
       continue;
-    
-    options->setPhysModelSameHoerlOnAllCurves( same_hoerl );
-    if( same_hoerl )
-      options->setPhysModelUseHoerl( use_hoerl );
+
+    options->setPhysModelSameCorrFcnOnAllCurves( same_corr_fcn );
+    if( same_corr_fcn )
+      options->setPhysModelCorr( shared_corr );
   }//for( int i = 0; i < num_rel_eff_curves; ++i )
   
   checkIfInUserConfigOrCreateOne( false );
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
-}//void handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
+}//void handleSameCorrFcnOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
 
 
 void RelActAutoGui::handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui )
@@ -3227,12 +3476,18 @@ void RelActAutoGui::handleUseFixedSkewChanged()
   }
 
   m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
   scheduleRender();
 }//void RelActAutoGui::handleUseFixedSkewChanged()
 
 
 void RelActAutoGui::handlePeakFitDetPrefsChanged()
 {
+  // Note: deliberately no `AddUndoRedoStep` - the user changed the peak-fit preferences, not this
+  //  tools configuration, and that change carries its own undo step.  The `scheduleRender()` below
+  //  still re-baselines the undo state (see `captureGuiStateForUndo`), which matters because the
+  //  skew type we sync here is part of the serialized state.
+
   // Check if current prefs specify a non-NoSkew skew type
   shared_ptr<SpecMeas> meas = m_interspec
     ? m_interspec->measurment( SpecUtils::SpectrumType::Foreground ) : nullptr;
@@ -3266,14 +3521,31 @@ void RelActAutoGui::handlePeakFitDetPrefsChanged()
   if( has_fixed && m_use_fixed_skew->isChecked() )
   {
     m_skew_type->setDisabled( true );
-
     m_render_flags |= RenderActions::UpdateCalculations;
-    scheduleRender();
   }else
   {
     m_skew_type->setDisabled( false );
   }
+
+  // Render even when the calculation does not need redoing: we may have just changed the skew type,
+  //  which is serialized state, and the undo baseline has to be refreshed so the users next edit
+  //  does not fold this change into its undo step.
+  scheduleRender();
 }//void RelActAutoGui::handlePeakFitDetPrefsChanged()
+
+
+void RelActAutoGui::handleAutoSimplifyChanged()
+{
+  checkIfInUserConfigOrCreateOne( false );
+
+  // Reveal the chi2-tolerance input only when auto-simplify is enabled.
+  if( m_auto_simplify_dchi2_div && m_auto_simplify )
+    m_auto_simplify_dchi2_div->setHidden( !m_auto_simplify->isChecked() );
+
+  m_render_flags |= RenderActions::UpdateCalculations;
+  m_render_flags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
+}//void RelActAutoGui::handleAutoSimplifyChanged()
 
 
 PeakDef::SkewType RelActAutoGui::currentSkewType() const
@@ -3824,7 +4096,13 @@ void RelActAutoGui::handleSortEnergyRanges()
   for( auto &w : range_owners )
     m_energy_ranges->addWidget( std::move(w) );
 
-  // No need to update calculation... I think
+  // No need to update the calculation - the fit does not care about ROI order.  We do need the
+  //  undo step and the render though: `getRoiRanges()` walks the children in order, and
+  //  `Options::operator==` compares `rois` as an ordered vector, so sorting IS a state change;
+  //  without this the next user edit would record a step reaching back past the sort.
+  checkIfInUserConfigOrCreateOne( false );
+  m_render_flags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
 }//void handleSortEnergyRanges()
 
 
@@ -4335,6 +4613,12 @@ void RelActAutoGui::applyFitEnergyCalToSpecFile()
   // We will apply to currently displayed spectra; its too complicated to
   //  give the user all the options of what to apply it to, like the
   //  energy calibration tool
+  //
+  // Note: deliberately no `AddUndoRedoStep` - the energy calibration change is undone through the
+  //  energy calibration tool.  The `scheduleRender()` at the end still re-baselines the undo state
+  //  (see `captureGuiStateForUndo`), which matters because we also set `m_fit_energy_cal` to
+  //  "no fit" here, and that IS part of the serialized state.
+  //
   // If the shared energy-cal tool isn't currently open, make a temporary one (owned by `ownedTool`)
   //  just to apply the calibration; it is freed automatically when this function returns.
   std::unique_ptr<EnergyCalTool> ownedTool;
@@ -4524,9 +4808,14 @@ void RelActAutoGui::setPeaksToForeground()
     //  think we need to update them here
   }//if( fitting energy cal )
   
-  yes->clicked().connect( this, [solution_peaks, replace_or_add, refit_peaks, previous_peaks, ana_drf](){
+  yes->clicked().connect( this, [solution_peaks, replace_or_add, refit_peaks, ana_drf](){
+    // Must be the first thing we do: it snapshots the foreground peaks now, and records a single
+    //  undo step when it goes out of scope - without it, "Replace peaks" below would destroy the
+    //  users existing peaks irrecoverably.
+    UndoRedoManager::PeakModelChange peak_undo_creator;
+
     const bool replace_peaks = (!replace_or_add || replace_or_add->isChecked());
-    
+
     InterSpec *interpsec = InterSpec::instance();
     assert( interpsec );
     if( !interpsec )
@@ -4713,8 +5002,8 @@ void RelActAutoGui::handleRelEffModelOptionsChanged( RelActAutoGuiRelEffOptions 
       {
         if( curve->physModelSameExtShieldAllCurves() )
           options->update_external_atten_shield_widget( curve->externalAttenWidgets() );
-        if( curve->physModelSameHoerlOnAllCurves() )
-          options->setPhysModelUseHoerl( curve->phys_model_use_hoerl() );
+        if( curve->physModelSameCorrFcnOnAllCurves() )
+          options->setPhysModelCorr( curve->phys_model_corr() );
       }
     }//for( int i = 0; i < num_rel_eff_curves; ++i )
   }//if( we need to make sure to keep external shieldings in sync )
@@ -4732,6 +5021,9 @@ void RelActAutoGui::handleDetectorChange()
   // We could sometimes get away with not updating calculations if we arent using a physical model,
   //  but I think having the detectors FWHM may slightly impact the auto-search peaks (not 100% sure),
   //  so we'll just always refresh calculations on detector changes.
+  //
+  // Note: deliberately no `AddUndoRedoStep` - the DRF is not part of the serialized state, and
+  //  changing it is undone through the detector widget itself.
 
   m_cached_drf = nullptr;
   m_cached_all_peaks.clear();
@@ -4788,8 +5080,8 @@ void RelActAutoGui::handleAddRelEffCurve()
   rel_eff_curve->equationTypeChanged().connect( this, [this]( RelActAutoGuiRelEffOptions *a1 ){
     handleRelEffEqnTypeChanged( a1 );
   } );
-  rel_eff_curve->sameHoerlOnAllCurvesChanged().connect( this, [this]( RelActAutoGuiRelEffOptions *a1 ){
-    handleSameHoerlOnAllCurvesChanged( a1 );
+  rel_eff_curve->sameCorrFcnOnAllCurvesChanged().connect( this, [this]( RelActAutoGuiRelEffOptions *a1 ){
+    handleSameCorrFcnOnAllCurvesChanged( a1 );
   } );
   rel_eff_curve->sameExternalShieldingChanged().connect( this, [this]( RelActAutoGuiRelEffOptions *a1 ){
     handleSameExtShieldingOnAllCurvesChanged( a1 );
@@ -5392,7 +5684,7 @@ void RelActAutoGui::updateSpectrumToDefaultEnergyRange()
 {
   if( !m_foreground || (m_foreground->gamma_energy_max() < 1.0f) )
   {
-    m_spectrum->setXAxisRange( 0, 3000 );
+    setChartEnergyRange( 0, 3000 );
     return;
   }
   
@@ -5402,7 +5694,7 @@ void RelActAutoGui::updateSpectrumToDefaultEnergyRange()
   const vector<RelActCalcAuto::RoiRange> rois = getRoiRanges();
   if( rois.empty() )
   {
-    m_spectrum->setXAxisRange( spec_min, spec_max );
+    setChartEnergyRange( spec_min, spec_max );
     return;
   }
   
@@ -5424,10 +5716,10 @@ void RelActAutoGui::updateSpectrumToDefaultEnergyRange()
     min_energy = std::max( min_energy, spec_min );
     max_energy = std::min( max_energy, spec_max );
     
-    m_spectrum->setXAxisRange( min_energy, max_energy );
+    setChartEnergyRange( min_energy, max_energy );
   }else
   {
-    m_spectrum->setXAxisRange( spec_min, spec_max );
+    setChartEnergyRange( spec_min, spec_max );
   }
 }//void updateSpectrumToDefaultEnergyRange()
 
@@ -5684,17 +5976,9 @@ void RelActAutoGui::startUpdatingCalculation()
     }
     options = getCalcOptions();
     
-    if( options.rel_eff_curves.empty() )
-      throw runtime_error( "No relative efficiency curves defined." );
-
-    for( const auto &rel_eff_curve : options.rel_eff_curves )
-    {
-      if( rel_eff_curve.nuclides.empty() )
-        throw runtime_error( "No nuclides defined for relative efficiency curve." );
-    }
-
-    if( options.rois.empty() )
-      throw runtime_error( "No energy ranges defined." );
+    const string why_unusable = options.why_not_usable();
+    if( !why_unusable.empty() )
+      throw runtime_error( why_unusable );
   }catch( std::exception &e )
   {
     if( m_cancel_calc )
@@ -5852,7 +6136,19 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   //  but this is just a backup, that I dont think we need.
   if( calc_number != m_calc_number )
     return;
-  
+
+  // Everything past here mutates the GUI, and the failure branch of the status switch below
+  //  returns early, so run the wrap-up on every exit rather than only at the bottom.
+  //  We must render so the undo baseline picks up those mutations (see `captureGuiStateForUndo`)
+  //  - otherwise the next user edit records a step reaching back past them, and one Ctrl-Z
+  //  reverts more than the user did.  We must also clear AddUndoRedoStep, because the widget
+  //  mutations invoke handlers that set it, and a calculation finishing is not a user edit;
+  //  `BlockUndoRedoInserts` above only suppresses synchronous adds, not the deferred render.
+  DoWorkOnDestruct render_and_rebaseline( [this](){
+    m_render_flags.clear( RenderActions::AddUndoRedoStep );
+    scheduleRender();
+  } );
+
   m_is_calculating = false;
   m_status_indicator->hide();
 
@@ -5936,16 +6232,18 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   const double live_time = answer->m_foreground ? answer->m_foreground->live_time() : 1.0f;
 
 
-  const string chi2_str = SpecUtils::printCompact(answer->m_chi2, 3);
-  const int dof = static_cast<int>(answer->m_dof);
+  // Goodness-of-fit uses the data-only chi2/dof (channel rows only); the full chi2 the optimizer
+  //  minimized also includes anchor/prior/BR rows and is not a data goodness-of-fit.
+  const string chi2_str = SpecUtils::printCompact(answer->m_chi2_data, 3);
+  const int dof = static_cast<int>(answer->m_dof_data);
   WString chi2_title_tooltip;
   WString chi2_title = WString("χ²/dof = {1}/{2}{3}").arg( chi2_str ).arg( dof );
   try
   {
-    const double chi2_dof = answer->m_chi2 / answer->m_dof;
+    const double chi2_dof = (answer->m_dof_data > 0) ? (answer->m_chi2_data / answer->m_dof_data) : 0.0;
     const string chi2_dof_str = SpecUtils::printCompact(chi2_dof, 3);
     boost::math::chi_squared chi2_dist(dof);
-    const double prob = boost::math::cdf(chi2_dist,answer->m_chi2); //Probability we would have seen a chi2 this large.
+    const double prob = boost::math::cdf(chi2_dist,answer->m_chi2_data); //Probability we would have seen a chi2 this large.
     const double p_value = 1.0 - prob; //Probability we would have observed this good of a chi2, or better
     const string p_value_str = SpecUtils::printCompact(p_value, 3);
 
@@ -6092,25 +6390,24 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   {
     RelEffChart::ReCurveInfo info;
     info.live_time = live_time;
+    //Note: pass _all_ the points; `RelEffChart` uses `RelActAutoSolution::show_obs_eff_point(...)` to decide
+    //  which to plot, and lists the rest (with why they were left out) in its omitted-points panel.
     if( i < answer->m_obs_eff_for_each_curve.size() ) //`m_obs_eff_for_each_curve` may be empty if computation failed
-    {
-      // Filter to only include ObsEff entries with observed_efficiency > 0 and num_sigma_significance > 4, and peak
-      //  mean+-1sigma is fully within ROI
-      for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff : answer->m_obs_eff_for_each_curve[i] )
-      {
-        if( (obs_eff.observed_efficiency > 0.0)
-           && (obs_eff.num_sigma_significance > 2.5)
-           && (obs_eff.fraction_roi_counts > 0.05)
-           && obs_eff.within_roi )
-        {
-          info.obs_eff_data.push_back( obs_eff );
-        }
-      }
-    }
+      info.obs_eff_data = answer->m_obs_eff_for_each_curve[i];
     info.rel_acts = answer->m_rel_activities[i];
-    info.js_rel_eff_eqn = answer->rel_eff_eqn_js_function(i);
-    info.js_rel_eff_uncert_eqn = answer->rel_eff_eqn_js_uncert_fcn(i);
-    
+    try
+    {
+      // For a physical model these throw if an areal density evaluates < 0.  Leave the strings empty on
+      //  failure: RelEffChart serializes an empty equation as JS `null`, so the chart still shows the data
+      //  points (just without a fit line / uncertainty band) instead of letting the exception escape the
+      //  GUI update.
+      info.js_rel_eff_eqn = answer->rel_eff_eqn_js_function(i);
+      info.js_rel_eff_uncert_eqn = answer->rel_eff_eqn_js_uncert_fcn(i);
+    }catch( const std::exception &e )
+    {
+      cerr << "RelActAutoGui: failed to build rel-eff equation JS for curve " << i << ": " << e.what() << endl;
+    }
+
     info.re_curve_name = WString::fromUTF8( answer->m_options.rel_eff_curves[i].name );
 
     try
@@ -6125,6 +6422,51 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   }//for( size_t i = 0; i < answer->m_rel_activities.size(); ++i )
   
   m_rel_eff_chart->setData( info_sets );
+
+  // Multi-curve fits: append the curve-separation verdict to the status line, with the interpretation
+  //  (including the healthy ranges) in the tooltip; the full numeric details are in the Results tab's
+  //  "Rel. eff. curve separation" block.  Status decided in
+  //  RelActAutoSolution::compute_curve_separation_metrics().
+  if( answer->m_options.rel_eff_curves.size() > 1 )
+  {
+    WString sep_status, sep_tooltip;
+    switch( answer->m_curve_separation_status )
+    {
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::NotApplicable:
+        break;
+
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::WellSeparated:
+        sep_status = WString::tr( "raag-curve-sep-well" );
+        sep_tooltip = WString::tr( "raag-tt-curve-sep-well" );
+        break;
+
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::PoorlySeparated:
+        // Detection evidence takes priority in the label: a clearly-detected pair of distinct
+        //  curves must not read the same as "nothing separated".  Except on a failed fit (R^2
+        //  floor) - the detection evidence comes from that same meaningless fit.
+        if( answer->curves_detected_distinct() && !answer->poor_fit_quality() )
+        {
+          sep_status = WString::tr( "raag-curve-sep-distinct" );
+          sep_tooltip = WString::tr( "raag-tt-curve-sep-distinct" );
+        }else
+        {
+          sep_status = WString::tr( "raag-curve-sep-poor" );
+          sep_tooltip = WString::tr( "raag-tt-curve-sep-poor" );
+        }
+        break;
+
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::Degenerate:
+        sep_status = WString::tr( "raag-curve-sep-degen" );
+        sep_tooltip = WString::tr( "raag-tt-curve-sep-degen" );
+        break;
+    }//switch( answer->m_curve_separation_status )
+
+    if( !sep_status.empty() )
+    {
+      chi2_title = WString("{1}; {2}").arg( chi2_title ).arg( sep_status );
+      chi2_title_tooltip = WString("{1}\n{2}").arg( chi2_title_tooltip ).arg( sep_tooltip );
+    }
+  }//if( multi-curve )
 
   m_fit_chi2_msg->setText( chi2_title );
   m_fit_chi2_msg->setToolTip( chi2_title_tooltip );
@@ -6389,13 +6731,15 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
    
       //phys_info_ref.hoerl_b/hoerl_c will have (double) values iff the correction function was used
       assert( phys_info_ref.hoerl_b.has_value() == phys_info_ref.hoerl_c.has_value() );
-      //assert( phys_info_ref.hoerl_b.has_value() == opts->phys_model_use_hoerl() );
-      if( phys_info_ref.hoerl_b.has_value() != opts->phys_model_use_hoerl() )
+      const bool soln_uses_corr = phys_info_ref.hoerl_b.has_value();
+      if( soln_uses_corr != opts->phys_model_corr().uses_correction() )
       {
-        cerr << "Warning: mismatch between solution using Hoerl, and GUI saying thier using Hoerl"
-        << " {solution: " << phys_info_ref.hoerl_b.has_value() << ", GUI: " << opts->phys_model_use_hoerl() << "}";
+        cerr << "Warning: mismatch between solution using a correction function, and GUI saying it is"
+        << " {solution: " << soln_uses_corr << ", GUI: " << opts->phys_model_corr().uses_correction() << "}";
         cerr << endl;
-        opts->setPhysModelUseHoerl( phys_info_ref.hoerl_b.has_value() );
+        RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput corr = opts->phys_model_corr();
+        corr.corr_fcn = phys_info_ref.corr_fcn;
+        opts->setPhysModelCorr( corr );
       }
     }//if( Physical model fit info is available )
 
@@ -6419,10 +6763,10 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
     m_calc_failed.emit();
   
   if( any_nucs_updated )
-  {
     m_render_flags |= RenderActions::UpdateRefGammaLines;
-    scheduleRender();
-  }
+
+  // `render_and_rebaseline` (declared at the top of this function) does the scheduleRender() and
+  //  clears AddUndoRedoStep - here, and on the early return in the failure branch above.
 }//void updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSolution> answer )
 
 
@@ -6432,18 +6776,23 @@ void RelActAutoGui::handleCalcException( std::shared_ptr<std::string> message,
   assert( message );
   if( !message )
     return;
-  
+
+  // Mirrors updateFromCalc: a calculation result arriving (success or failure) is not a
+  //  user edit, so any synchronous addUndoRedoStep calls triggered by widget mutations
+  //  below should be suppressed.
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+
   // If we started a new calculation between when this one was started, and right now, dont
   //  do anything to the GUI state.
   if( cancel_flag != m_cancel_calc )
     return;
-  
+
   m_is_calculating = false;
   m_status_indicator->hide();
-  
+
   string msg = "Calculation error: ";
   msg += *message;
-  
+
   m_error_msg->setText( msg );
   m_error_msg->show();
 
@@ -6451,9 +6800,16 @@ void RelActAutoGui::handleCalcException( std::shared_ptr<std::string> message,
   m_fit_chi2_msg->hide();
 
   m_solution.reset();
-  
+
   setOptionsForNoSolution();
-  
+
   m_solution_updated.emit( m_solution );
   m_calc_failed.emit();
+
+  // See the matching comment in updateFromCalc: clear any AddUndoRedoStep flag set as a
+  //  side-effect of the widget mutations above so the deferred render does not record a
+  //  spurious undo step for a failure that the user did not initiate.  We do still want the
+  //  render, so the undo baseline picks up the widget changes `setOptionsForNoSolution()` made.
+  m_render_flags.clear( RenderActions::AddUndoRedoStep );
+  scheduleRender();
 }//void handleCalcException( std::shared_ptr<std::string> message )

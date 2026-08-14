@@ -98,6 +98,7 @@ endif()
 
 set( ELECTRON_SUPPORT_FILES
   app/main.js
+  app/sandbox_fallback.js
   app/loading.html
   README.md
   package.json
@@ -119,9 +120,12 @@ install( FILES ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/InterSpec_resources/d3.v
         ${CMAKE_CURRENT_BINARY_DIR}/LibInterSpec/InterSpec_resources/SpectrumChartD3.js
          DESTINATION ${PROJECT_BINARY_DIR}/app/InterSpec_resources/ )
 install( DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../../example_spectra DESTINATION ${PROJECT_BINARY_DIR}/app/ )
+# Every .js main.js require()s has to be installed here too, or the packaged app dies at startup
+#  with MODULE_NOT_FOUND.
 install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/app/loading.html
         ${CMAKE_CURRENT_SOURCE_DIR}/app/main.js
-        DESTINATION ${PROJECT_BINARY_DIR}/app/ 
+        ${CMAKE_CURRENT_SOURCE_DIR}/app/sandbox_fallback.js
+        DESTINATION ${PROJECT_BINARY_DIR}/app/
 )
 
 #Need to get {d3.v3.min.js, SpectrumChartD3.js, SpectrumChartD3.css} and related into InterSpec_resources as well.
@@ -131,7 +135,12 @@ install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/../../external_libs/SandiaDecay/sandi
         # PERMISSIONS OWNER_READ GROUP_READ WORLD_READ
         DESTINATION ${PROJECT_BINARY_DIR}/app/data/
         RENAME sandia.decay.xml )
-install( FILES ${CMAKE_CURRENT_SOURCE_DIR}/package_for_running.json
+# The shipped app/package.json.  Generated so its "version" - which becomes the .deb/.rpm and
+#  AppImage version - always tracks the project version rather than being edited by hand.
+configure_file( ${CMAKE_CURRENT_SOURCE_DIR}/package_for_running.json.in
+                ${CMAKE_CURRENT_BINARY_DIR}/package_for_running.json
+                @ONLY )
+install( FILES ${CMAKE_CURRENT_BINARY_DIR}/package_for_running.json
         DESTINATION ${PROJECT_BINARY_DIR}/app/
         RENAME package.json )
 install( TARGETS ${PROJECT_NAME} DESTINATION ${PROJECT_BINARY_DIR}/app/ )

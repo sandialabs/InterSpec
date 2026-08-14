@@ -9,6 +9,7 @@
   <message id="ftw-hdr-flux-on-det">ডিটেক্টরে ফ্লাক্স (ɣ/s)</message>
   <message id="ftw-hdr-flux-cm">ফ্লাক্স (ɣ/cm²/s)</message>
   <message id="ftw-hdr-flux-4pi">ɣ/4π/s</message>
+  <message id="ftw-hdr-use">ব্যবহার</message>
   <message id="ftw-tt-distance">
     উৎসের কেন্দ্র থেকে ডিটেক্টরের মুখ পর্যন্ত দূরত্ব। সংখ্যা অবশ্যই
     ইউনিট দ্বারা অনুসরণ করতে হবে; বৈধ ইউনিট হল: meters, m, cm, mm, km, feet,
@@ -21,6 +22,14 @@
   <message id="ftw-more">আরও</message>
   <message id="ftw-copy-btn">ক্লিপবোর্ডে কপি করুন</message>
   <message id="ftw-copy-btn-narrow">কপি</message>
+  <message id="ftw-select-rows">সারি নির্বাচন</message>
+  <message id="ftw-select-rows-narrow">নির্বাচন</message>
+  <message id="ftw-tt-select-rows">
+      টেবিলের প্রতিটি সারিতে একটি চেকবক্স যোগ করে, যাতে আপনি বেছে নিতে পারেন কোন সারিগুলি
+    ক্লিপবোর্ডে অনুলিপি করা হবে বা CSV-তে রপ্তানি করা হবে।  সারিগুলি প্রাথমিকভাবে চেক করা
+    থাকে; আউটপুটে যেগুলি চান না সেগুলি আনচেক করুন।  এটি আনচেক করা থাকলে, সমস্ত সারি
+    অনুলিপি/রপ্তানি করা হয়।
+  </message>
   <message id="ftw-invalid-dist">অবৈধ দূরত্ব</message>
   <message id="ftw-no-drf">কোনো ডিটেক্টর রেসপন্স ফাংশন নির্বাচিত নেই</message>
   <message id="ftw-no-foreground">কোনো ফোরগ্রাউন্ড স্পেকট্রাম লোড করা হয়নি</message>

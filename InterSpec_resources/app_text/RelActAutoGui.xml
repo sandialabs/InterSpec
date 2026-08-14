@@ -26,6 +26,8 @@
   <message id="raag-lorentzian-xrays">Lorentzian X-rays</message>
   <message id="raag-use-fixed-skew">Peak fit opt. skew</message>
   <message id="raag-add-uncert">Add. Uncert</message>
+  <message id="raag-auto-simplify">Auto-simplify model</message>
+  <message id="raag-auto-simplify-dchi2">Max &#967;&#178; increase</message>
   <message id="raag-yield-info">Yield Info</message>
   
   <!-- FWHM estimation methods -->
@@ -78,7 +80,23 @@
   <message id="raag-tt-skew-type">The type of skew to apply to the peaks; skew parameters will be fit.</message>
   <message id="raag-tt-lorentzian-xrays">When checked, x-ray peaks will use a Voigt profile with the Lorentzian width set to the natural x-ray linewidth. This accounts for the intrinsic Lorentzian shape of x-ray lines. Only compatible with NoSkew or GaussPlusBortel peak skew types.</message>
   <message id="raag-tt-use-fixed-skew">When checked, the peak skew type and any fixed skew parameter values from the Peak Fit Options will be used. The skew type selector will be disabled. When unchecked, you can manually select the skew type and all skew parameters will be fit.</message>
+  <message id="raag-tt-auto-simplify">When checked, after the initial fit the solver removes near-degenerate / redundant degrees of freedom — the empirical correction, then external attenuator(s), then a high-order polynomial term — keeping each removal only if it does not worsen the fit's &#967;&#178; by more than the value you set. This gives a more robust, more accurate result by dropping parameters the data cannot actually constrain. Self-attenuation and the sources are never removed.</message>
+  <message id="raag-tt-auto-simplify-dchi2">The most a single parameter removal may increase &#967;&#178; and still be accepted. A small value (~1) means "a unit or two of &#967;&#178; is not physically meaningful, prefer the simpler model"; larger values remove more aggressively.</message>
   <message id="raag-tt-u-pu-data-source">The nuclear data source for gamma branching ratios of uranium and plutonium.</message>
+
+  <!-- Multi-curve separation status (shown appended to the chi2/dof status line; the tooltip carries
+       the interpretation, matching RelActAutoSolution::finalize_curve_separation_status() /
+       curve_separation_verdict()).  Detection evidence (enrichment-difference z, single-vs-multi
+       curve delta-chi2) takes priority: a clearly-detected distinct pair never reads
+       "indistinguishable". -->
+  <message id="raag-curve-sep-well">curves separated</message>
+  <message id="raag-curve-sep-distinct">curves distinct; see notes</message>
+  <message id="raag-curve-sep-poor">curves poorly separated</message>
+  <message id="raag-curve-sep-degen">curves not distinguished</message>
+  <message id="raag-tt-curve-sep-well">The relative-efficiency curves are constrained relatively independently by the data; per-curve results can be used with their reported uncertainties.  Whether the curves genuinely differ is answered by the detection lines (enrichment-difference z, and the single-vs-multi-curve &#916;&#967;&#178;) in the Results tab's separation block.</message>
+  <message id="raag-tt-curve-sep-distinct">The data shows the relative-efficiency curves are genuinely different (an enrichment-difference z &#8805; 3, or a single merged curve fitting significantly worse), but some per-curve values are not determined from individually resolved peaks: in the energy regions those nuclides share, the fit divides the counts between the curves through the fitted attenuation physics / curve shapes (attributed share &lt; 0.3 means no individually resolved peaks; &gt; 0.8 means a nuclide has peaks of its own).  This division is a valid fit result, constrained by the whole spectrum, and the reported (already widened) uncertainties are the measure of it; no statistical prior is applied (unless a shield's opt-in 'Bias AD' option is checked).  See the Results tab for the full separation details, including how each nuclide's counts divide between the curves.</message>
+  <message id="raag-tt-curve-sep-poor">The relative-efficiency curves are NOT well separated by this data: some curve has no nuclide with individually resolved peaks (attributed share &lt; 0.3 for all of its nuclides; &gt; 0.8 would mean a nuclide has peaks of its own), and/or the curves' normalizations trade against each other on a rank-deficient fit.  The division of shared peaks between the curves is fitted through the attenuation physics / curve shapes rather than resolved peak-by-peak &#8212; no statistical prior is applied (unless a shield's opt-in 'Bias AD' option is checked).  Prefer joint/summed quantities; within-curve ratios such as enrichment may still be constrained, with the (already widened) uncertainties carrying the rest.  See the Results tab for the full separation details.</message>
+  <message id="raag-tt-curve-sep-degen">The data does not distinguish the relative-efficiency curves: a single merged curve fits essentially as well, and/or the division of activity between the curves is an unconstrained fit direction.  For stacked geometries this is exactly what a single material of one enrichment looks like (stacked layers of the same material are identical to one thicker layer), so it can simply be the correct answer rather than an error.  Quote combined quantities; the reported per-curve split follows from the fitted model with correspondingly large uncertainties, and no statistical prior is applied (unless a shield's opt-in 'Bias AD' option is checked).  See the Results tab for the full separation details.</message>
   <message id="raag-tt-add-source">Add a source.</message>
   <message id="raag-tt-add-energy-range">Add an energy range.</message>
 

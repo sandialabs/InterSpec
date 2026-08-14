@@ -46,7 +46,11 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/BatchInfoLog.h"
+#include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/BatchSampleSelect.h"
+#include "InterSpec/DetectionLimitCalc.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/DetectorPeakResponse.h"
 
 
 using namespace std;
@@ -70,10 +74,575 @@ namespace
       return template_path;
     return template_path.substr( 0, pos );
   }
+
+  /** Creates a fixed-geometry detector response with unity intrinsic efficiency, so that the
+   "activity" limited by `DetectionLimitCalc::get_activity_or_distance_limits` is simply the
+   number of peak counts.
+
+   The FWHM curve is taken from `base_drf` if it has one, otherwise it is fit from the exemplar
+   peaks, and failing that it is set to a constant.  In practice which curve is used doesnt matter,
+   since each peaks FWHM is passed into the calculation explicitly; the curve just has to exist for
+   the DRF to be accepted.
+
+   Returns nullptr if no usable peak width could be determined.
+   */
+  std::shared_ptr<const DetectorPeakResponse> make_unity_fixed_geom_drf(
+                        const std::vector<std::shared_ptr<const PeakDef>> &exemplar_peaks,
+                        const std::shared_ptr<const SpecUtils::Measurement> &spectrum,
+                        const std::shared_ptr<const DetectorPeakResponse> &base_drf )
+  {
+    auto drf = std::make_shared<DetectorPeakResponse>();
+
+    try
+    {
+      drf->setIntrinsicEfficiencyFormula( "1.0", 2.54f*PhysicalUnits::cm, PhysicalUnits::keV,
+                                     0.0f, 0.0f,
+                                     DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
+    }catch( std::exception & )
+    {
+      return nullptr;
+    }
+
+    if( base_drf && base_drf->hasResolutionInfo() )
+    {
+      try
+      {
+        drf->setFwhmCoefficients( base_drf->resolutionFcnCoefficients(), base_drf->resolutionFcnType() );
+      }catch( std::exception & )
+      {
+      }
+    }//if( base_drf && base_drf->hasResolutionInfo() )
+
+    if( !drf->hasResolutionInfo() )
+    {
+      try
+      {
+        auto peaks = std::make_shared<std::deque<std::shared_ptr<const PeakDef>>>(
+                                              begin(exemplar_peaks), end(exemplar_peaks) );
+        drf->fitResolution( peaks, spectrum, DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+      }catch( std::exception & )
+      {
+      }
+    }//if( !drf->hasResolutionInfo() )
+
+    if( !drf->hasResolutionInfo() )
+    {
+      // Fall back to a constant width, taken as the median of the exemplar peak widths.
+      std::vector<float> fwhms;
+      for( const std::shared_ptr<const PeakDef> &p : exemplar_peaks )
+      {
+        const double fwhm = p ? DetectionLimitCalc::peak_width_for_currie_check(*p) : 0.0;
+        if( fwhm > 0.0 )
+          fwhms.push_back( static_cast<float>(fwhm) );
+      }
+
+      if( fwhms.empty() )
+        return nullptr;
+
+      std::sort( begin(fwhms), end(fwhms) );
+      const float fwhm = fwhms[fwhms.size()/2];
+
+      try
+      {
+        // For `kSqrtPolynomial`, FWHM = sqrt(a0 + a1*E_MeV + ...), so this gives a constant width.
+        drf->setFwhmCoefficients( std::vector<float>{ fwhm*fwhm, 0.0f },
+                                  DetectorPeakResponse::ResolutionFnctForm::kSqrtPolynomial );
+      }catch( std::exception & )
+      {
+        return nullptr;
+      }
+    }//if( !drf->hasResolutionInfo() )
+
+    if( !drf->isValid() || !drf->hasResolutionInfo() )
+      return nullptr;
+
+    return drf;
+  }//make_unity_fixed_geom_drf(...)
 }//namespace
 
 namespace BatchPeak
 {
+
+const char *to_str( const NotFitPeakMdaMethod method )
+{
+  switch( method )
+  {
+    case NotFitPeakMdaMethod::None:           return "none";
+    case NotFitPeakMdaMethod::Currie:         return "currie";
+    case NotFitPeakMdaMethod::CurrieAndDecon: return "currie-and-decon";
+  }//switch( method )
+
+  assert( 0 );
+  throw runtime_error( "Invalid NotFitPeakMdaMethod value." );
+}//const char *to_str( const NotFitPeakMdaMethod )
+
+
+NotFitPeakMdaMethod not_fit_peak_mda_method_from_str( const string &str )
+{
+  string value = str;
+  SpecUtils::trim( value );
+  SpecUtils::to_lower_ascii( value );
+
+  if( value == "none" )
+    return NotFitPeakMdaMethod::None;
+
+  if( value == "currie" )
+    return NotFitPeakMdaMethod::Currie;
+
+  if( (value == "currie-and-decon") || (value == "currie-and-deconvolution") )
+    return NotFitPeakMdaMethod::CurrieAndDecon;
+
+  throw runtime_error( "Invalid not-fit peak MDA method '" + str + "'; must be one of 'none',"
+                       " 'currie', or 'currie-and-decon'." );
+}//NotFitPeakMdaMethod not_fit_peak_mda_method_from_str( const string & )
+
+
+void update_description( NotFitPeakMda &mda )
+{
+  mda.description = mda.currie.result_summary;
+
+  if( !mda.activity_summary.empty() )
+    mda.description += "  " + mda.activity_summary;
+
+  if( !mda.caveats.empty() )
+    mda.description += "  " + mda.caveats;
+}//void update_description( NotFitPeakMda & )
+
+
+void compute_decon_limit( NotFitPeakMda &mda,
+                          const DetectionLimitCalc::DeconComputeInput &input,
+                          const double gammas_per_bq,
+                          const bool quantity_is_counts,
+                          const double confidence_level,
+                          const bool use_curie )
+{
+  mda.decon_attempted = true;
+  mda.decon_quantity_is_counts = quantity_is_counts;
+  mda.decon_computed = false;
+  mda.decon_result = nullptr;
+
+  if( !mda.currie.computed )
+  {
+    mda.decon_error = "the Currie-style limit, used to seed the search range, was not computed";
+    return;
+  }
+
+  if( (gammas_per_bq <= 0.0) || IsNan(gammas_per_bq) || IsInf(gammas_per_bq) )
+  {
+    mda.decon_error = "invalid number of counts per unit activity";
+    return;
+  }
+
+  const DetectionLimitCalc::CurrieMdaResult &res = mda.currie.result;
+
+  // Exaggerate the range implied by the Currie-style limit, so we can be confident of bracketing
+  //  the answer; the multiple is arbitrary, and matches what the GUI "Simple MDA" tool uses.
+  const double diff_multiple = 50.0;
+  const double smallest_range = 1.0 / gammas_per_bq;
+  double min_quantity = 0.0, max_quantity = 0.0;
+
+  if( res.source_counts > res.decision_threshold )
+  {
+    const double nominal = res.source_counts / gammas_per_bq;
+    const double lower_diff = fabs( nominal - (res.lower_limit / gammas_per_bq) );
+    const double upper_diff = fabs( (res.upper_limit / gammas_per_bq) - nominal );
+
+    min_quantity = std::max( 0.0, nominal - diff_multiple*lower_diff );
+    max_quantity = std::max( smallest_range, nominal + diff_multiple*upper_diff );
+  }else if( res.upper_limit < 0.0f )
+  {
+    // Many fewer counts in the peak region than the sides predict; fall back to the Poisson
+    //  uncertainty of the peak region to set the scale.
+    const double poisson_uncert = sqrt( std::max( 0.0f, res.peak_region_counts_sum ) );
+    min_quantity = 0.0;
+    max_quantity = std::max( smallest_range, diff_multiple*poisson_uncert/gammas_per_bq );
+  }else
+  {
+    min_quantity = 0.0;
+    max_quantity = std::max( smallest_range, diff_multiple*res.upper_limit/gammas_per_bq );
+  }//if( detected ) / else if( deficit ) / else
+
+  if( (max_quantity <= min_quantity) || IsNan(max_quantity) || IsInf(max_quantity) )
+  {
+    mda.decon_error = "could not determine a valid range of values to search over";
+    return;
+  }
+
+  try
+  {
+    const auto base_input = make_shared<const DetectionLimitCalc::DeconComputeInput>( input );
+    const DetectionLimitCalc::DeconActivityOrDistanceLimitResult result
+        = DetectionLimitCalc::get_activity_or_distance_limits( static_cast<float>(confidence_level),
+                                                              base_input, false,
+                                                              min_quantity, max_quantity, use_curie );
+
+    mda.decon_result = make_shared<const DetectionLimitCalc::DeconActivityOrDistanceLimitResult>( result );
+    mda.decon_computed = true;
+
+    if( !result.foundUpperCl )
+      mda.decon_error = result.errorMessage.empty()
+                        ? "the profile scan did not bracket an upper confidence limit"
+                        : result.errorMessage;
+
+    // The two methods look at the same data, so a large disagreement says something about the
+    //  data, rather than about the methods - most often a curved continuum, or an interfering
+    //  peak in the region.  Worth telling the user, rather than quietly reporting two numbers.
+    const double currie_limit = res.upper_limit / gammas_per_bq;
+    if( result.foundUpperCl && (currie_limit > 0.0) && (result.upperLimit > 0.0) )
+    {
+      mda.decon_over_currie_ratio = result.upperLimit / currie_limit;
+      // Calibrated in log-ratio space on the clean synthetic counting-statistics grid and the
+      // isolated saved peaks of the bundled Ba-133 spectrum (16 observations in total), by taking
+      // the empirical range and expanding each endpoint outward by 10%.
+      //
+      // 2026-08: retightened from [0.60, 1.87] to [0.66, 1.23] when the deconvolution profile
+      // moved to a Poisson/Cash likelihood.  The old window had to be wide mainly because of one
+      // artifact: at 0.1 counts/channel the modified-Neyman variance floor pushed the ratio to
+      // 1.69.  With a Poisson statistic that cell sits at 1.05, and the whole empirical range
+      // narrows from [0.663, 1.694] to [0.731, 1.117], so the diagnostic can be more sensitive.
+      //
+      // This is an empirical warning band, not a statistical test; recalibrate it when an
+      // operational clean-spectrum corpus is available.
+      constexpr double minimum_agreement_ratio = 0.66;
+      constexpr double maximum_agreement_ratio = 1.23;
+      mda.methods_disagree = (mda.decon_over_currie_ratio > maximum_agreement_ratio)
+                             || (mda.decon_over_currie_ratio < minimum_agreement_ratio);
+
+      if( mda.methods_disagree )
+      {
+        const double factor = (mda.decon_over_currie_ratio > 1.0)
+                                ? mda.decon_over_currie_ratio : (1.0/mda.decon_over_currie_ratio);
+        char buffer[256] = { '\0' };
+        snprintf( buffer, sizeof(buffer),
+                 "Note: the gross-counts and deconvolution limits differ by a factor of %.1f,"
+                 " which usually means the continuum under the peak is not straight, or another"
+                 " peak falls within the region.", factor );
+
+        mda.caveats += string(mda.caveats.empty() ? "" : "  ") + buffer;
+        update_description( mda );
+      }//if( mda.methods_disagree )
+    }//if( both limits are usable )
+  }catch( std::exception &e )
+  {
+    mda.decon_error = e.what();
+  }//try / catch
+}//void compute_decon_limit(...)
+
+
+void add_counts_decon_limits( vector<NotFitPeakMda> &mdas,
+                              const shared_ptr<const SpecUtils::Measurement> &spectrum,
+                              const shared_ptr<const DetectorPeakResponse> &drf,
+                              const BatchPeakFitOptions &options )
+{
+  // Anything that already has a limit (e.g. the activity-space one an activity/shielding fit
+  //  computes) is left alone.
+  vector<shared_ptr<const PeakDef>> peaks;
+  for( const NotFitPeakMda &mda : mdas )
+  {
+    // A peak that was fit already has a measured area with an uncertainty; the deconvolution
+    //  scan answers the "what can be excluded" question, which is the not-detected question.  It
+    //  is also the expensive path, so it is never run for a peak that was fit.
+    if( !mda.decon_attempted && !mda.peak_was_fit && mda.exemplar_peak )
+      peaks.push_back( mda.exemplar_peak );
+  }
+
+  if( peaks.empty() || !spectrum )
+    return;
+
+  const size_t num_side_channels = std::max( size_t(1), options.mda_num_side_channels );
+
+  // The unity-efficiency detector response makes the "activity" the calculation limits be simply
+  //  the number of peak counts.
+  const shared_ptr<const DetectorPeakResponse> unity_drf
+                                     = make_unity_fixed_geom_drf( peaks, spectrum, drf );
+
+  for( NotFitPeakMda &mda : mdas )
+  {
+    if( mda.decon_attempted || mda.peak_was_fit || !mda.exemplar_peak )
+      continue;
+
+    mda.decon_attempted = true;
+    mda.decon_quantity_is_counts = true;
+
+    const double fwhm = DetectionLimitCalc::peak_width_for_currie_check( *mda.exemplar_peak );
+
+    if( !unity_drf )
+    {
+      mda.decon_error = "could not determine peak widths to use";
+      continue;
+    }
+
+    if( fwhm <= 0.0 )
+    {
+      mda.decon_error = "exemplar peak has no width";
+      continue;
+    }
+
+    if( !mda.currie.computed )
+    {
+      mda.decon_error = "the peak region could not be determined";
+      continue;
+    }
+
+    DetectionLimitCalc::DeconRoiInfo roi;
+    roi.roi_start = mda.currie.result.input.roi_lower_energy;
+    roi.roi_end = mda.currie.result.input.roi_upper_energy;
+    roi.continuum_type = PeakContinuum::OffsetType::Linear;
+    roi.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::Floating;
+    roi.num_lower_side_channels = num_side_channels;
+    roi.num_upper_side_channels = num_side_channels;
+
+    DetectionLimitCalc::DeconRoiInfo::PeakInfo peak_info;
+    peak_info.energy = mda.currie.result.input.gamma_energy;
+    peak_info.fwhm = static_cast<float>( fwhm );
+    // With a unity-efficiency fixed-geometry DRF, a "counts per bq" of one makes the quantity
+    //  being limited be the number of peak counts.
+    peak_info.counts_per_bq_into_4pi = 1.0;
+    roi.peak_infos.push_back( peak_info );
+
+    DetectionLimitCalc::DeconComputeInput decon_input;
+    decon_input.distance = 0.0;
+    decon_input.activity = 0.0;
+    decon_input.include_air_attenuation = false;
+    decon_input.shielding_thickness = 0.0;
+    decon_input.drf = unity_drf;
+    decon_input.measurement = spectrum;
+    decon_input.roi_info.push_back( roi );
+
+    compute_decon_limit( mda, decon_input, 1.0, true, options.mda_confidence_level, true );
+  }//for( NotFitPeakMda &mda : mdas )
+}//void add_counts_decon_limits(...)
+
+
+namespace
+{
+  /** Adds the caveats that apply to a limit, and rebuilds its description.
+
+   The caveats go at the end of the description, after any activity information the
+   activity/shielding fit may fill in later, so this is done as its own pass.
+   */
+  void add_limit_caveats( BatchPeak::NotFitPeakMda &mda )
+  {
+    if( mda.overlaps_fit_peak )
+      mda.caveats += string(mda.caveats.empty() ? "" : "  ")
+                     + "Note: a fit peak overlaps the region used to estimate the continuum, so"
+                       " this limit may be unreliable.";
+
+    if( mda.overlaps_other_unfit_peak )
+      mda.caveats += string(mda.caveats.empty() ? "" : "  ")
+                     + "Note: another exemplar peak that was not fit lies within the evaluated"
+                       " region.";
+
+    // The calculation assumes the whole peak is inside the peak region, so a narrow region gives
+    //  a limit on the counts within it, rather than on the peaks total area.  Negligible at the
+    //  default region width, but worth saying once it is not.
+    if( mda.currie.computed && (mda.currie.signal_fraction_in_roi < 0.99) )
+    {
+      char buffer[256] = { '\0' };
+      snprintf( buffer, sizeof(buffer),
+               "Note: the peak region holds only %.0f%% of the peak, and the limit is not"
+               " corrected for the signal outside it, so it is optimistic by about %.0f%%.",
+               100.0*mda.currie.signal_fraction_in_roi,
+               100.0*(1.0/mda.currie.signal_fraction_in_roi - 1.0) );
+      mda.caveats += string(mda.caveats.empty() ? "" : "  ") + buffer;
+    }//if( a meaningful part of the peak is outside the region )
+
+    BatchPeak::update_description( mda );
+  }//void add_limit_caveats( NotFitPeakMda & )
+
+
+  /** Fills out the Currie-style limit for a single peak, along with the flags for neighboring
+   peaks that may contaminate the continuum estimate.
+
+   @param exemplar_peak The exemplar peak the limit is for; recorded on the result.
+   @param eval_peak The peak whose mean and width define the region evaluated.  For a peak that was
+          fit this is the fit peak, since re-fitting the energy calibration can shift the mean.
+   @param fit_peak The fit peak matched to `exemplar_peak`, or nullptr if it was not fit.  Never
+          counts towards `overlaps_fit_peak` - a peak always overlaps itself.
+   */
+  BatchPeak::NotFitPeakMda currie_limit_for_peak(
+                        const shared_ptr<const PeakDef> &exemplar_peak,
+                        const PeakDef &eval_peak,
+                        const shared_ptr<const PeakDef> &fit_peak,
+                        const deque<shared_ptr<const PeakDef>> &fit_peaks,
+                        const vector<shared_ptr<const PeakDef>> &unfit_exemplar_peaks,
+                        const shared_ptr<const SpecUtils::Measurement> &spectrum,
+                        const BatchPeak::BatchPeakFitOptions &options )
+  {
+    BatchPeak::NotFitPeakMda mda;
+    mda.exemplar_peak = exemplar_peak;
+    mda.fit_peak = fit_peak;
+    mda.peak_was_fit = !!fit_peak;
+
+    DetectionLimitCalc::PeakCurrieCheckOptions check_opts;
+    check_opts.confidence_level = options.mda_confidence_level;
+    check_opts.num_side_channels = options.mda_num_side_channels;
+    check_opts.roi_num_fwhm = options.mda_roi_num_fwhm;
+
+    mda.currie = DetectionLimitCalc::currie_check_for_peak( eval_peak, spectrum, check_opts,
+                                                            mda.peak_was_fit );
+
+    if( !mda.currie.computed )
+      return mda;
+
+    // Flag limits whose continuum estimate may be contaminated by a neighboring peak.
+    const pair<double,double> energy_range
+                        = DetectionLimitCalc::currie_check_energy_range( mda.currie.result );
+
+    for( const shared_ptr<const PeakDef> &p : fit_peaks )
+    {
+      if( p && (p != fit_peak)
+         && (p->upperX() > energy_range.first) && (p->lowerX() < energy_range.second) )
+        mda.overlaps_fit_peak = true;
+    }
+
+    for( const shared_ptr<const PeakDef> &p : unfit_exemplar_peaks )
+    {
+      if( p && (p != exemplar_peak)
+         && (p->mean() > energy_range.first) && (p->mean() < energy_range.second) )
+        mda.overlaps_other_unfit_peak = true;
+    }
+
+    return mda;
+  }//NotFitPeakMda currie_limit_for_peak(...)
+}//namespace
+
+
+vector<NotFitPeakMda> compute_not_fit_peak_mdas(
+                          const vector<shared_ptr<const PeakDef>> &unfit_exemplar_peaks,
+                          const deque<shared_ptr<const PeakDef>> &fit_peaks,
+                          const shared_ptr<const SpecUtils::Measurement> &spectrum,
+                          const shared_ptr<const DetectorPeakResponse> &exemplar_drf,
+                          const BatchPeakFitOptions &options )
+{
+  vector<NotFitPeakMda> answer;
+
+  if( unfit_exemplar_peaks.empty()
+     || (options.not_fit_peak_mda == NotFitPeakMdaMethod::None)
+     || !spectrum
+     || (spectrum->num_gamma_channels() < 4) )
+  {
+    return answer;
+  }
+
+  const bool want_decon = (options.not_fit_peak_mda == NotFitPeakMdaMethod::CurrieAndDecon);
+
+  for( const shared_ptr<const PeakDef> &peak : unfit_exemplar_peaks )
+  {
+    if( !peak )
+    {
+      assert( 0 );
+
+      NotFitPeakMda mda;
+      mda.currie.error_message = "invalid peak";
+      mda.currie.short_description = "Not computed";
+      mda.currie.result_summary = "Detection limit could not be computed: invalid peak.";
+      update_description( mda );
+      answer.push_back( mda );
+      continue;
+    }//if( !peak )
+
+    answer.push_back( currie_limit_for_peak( peak, *peak, nullptr, fit_peaks, unfit_exemplar_peaks,
+                                             spectrum, options ) );
+  }//for( const shared_ptr<const PeakDef> &peak : unfit_exemplar_peaks )
+
+  for( NotFitPeakMda &mda : answer )
+    add_limit_caveats( mda );
+
+  // Done after the caveats above, so any note the comparison of the two methods adds goes last
+  if( want_decon )
+    add_counts_decon_limits( answer, spectrum, exemplar_drf, options );
+
+  return answer;
+}//compute_not_fit_peak_mdas(...)
+
+
+vector<NotFitPeakMda> compute_exemplar_peak_mdas(
+                    const deque<shared_ptr<const PeakDef>> &exemplar_peaks,
+                    const vector<NotFitPeakMda> &not_fit_peak_mdas,
+                    const vector<shared_ptr<const PeakDef>> &fit_peak_exemplar_parents,
+                    const deque<shared_ptr<const PeakDef>> &fit_peaks,
+                    const shared_ptr<const SpecUtils::Measurement> &spectrum,
+                    const BatchPeakFitOptions &options )
+{
+  vector<NotFitPeakMda> answer;
+
+  if( exemplar_peaks.empty()
+     || (options.not_fit_peak_mda == NotFitPeakMdaMethod::None)
+     || !spectrum
+     || (spectrum->num_gamma_channels() < 4) )
+  {
+    return answer;
+  }
+
+  assert( fit_peak_exemplar_parents.size() == fit_peaks.size() );
+
+  // The peaks that were not fit; needed to flag limits whose region holds another such peak.
+  vector<shared_ptr<const PeakDef>> unfit_exemplar_peaks;
+  for( const NotFitPeakMda &mda : not_fit_peak_mdas )
+  {
+    if( mda.exemplar_peak )
+      unfit_exemplar_peaks.push_back( mda.exemplar_peak );
+  }
+
+  for( const shared_ptr<const PeakDef> &exemplar : exemplar_peaks )
+  {
+    if( !exemplar )
+    {
+      assert( 0 );
+      continue;
+    }
+
+    // A peak that could not be fit already has its limit computed; reuse it so the two lists agree,
+    //  and so the (expensive) deconvolution limit is not computed twice.
+    bool was_not_fit = false;
+    for( const NotFitPeakMda &mda : not_fit_peak_mdas )
+    {
+      if( mda.exemplar_peak == exemplar )
+      {
+        answer.push_back( mda );
+        was_not_fit = true;
+        break;
+      }
+    }//for( const NotFitPeakMda &mda : not_fit_peak_mdas )
+
+    if( was_not_fit )
+      continue;
+
+    // Find the peak that was fit for this exemplar peak; the limit is evaluated there, since
+    //  re-fitting the energy calibration can shift the mean.
+    shared_ptr<const PeakDef> fit_peak;
+    for( size_t i = 0; !fit_peak && (i < fit_peak_exemplar_parents.size()); ++i )
+    {
+      if( fit_peak_exemplar_parents[i] == exemplar )
+        fit_peak = fit_peaks[i];
+    }
+
+    if( !fit_peak )
+    {
+      // Neither in the not-fit list, nor matched to a fit peak; shouldnt happen, but report the
+      //  peak rather than silently dropping it from the full-set list.
+      assert( 0 );
+
+      NotFitPeakMda mda;
+      mda.exemplar_peak = exemplar;
+      mda.currie.error_message = "the peak was neither fit nor reported as not fit";
+      mda.currie.short_description = "Not computed";
+      mda.currie.result_summary = "Detection limit could not be computed: "
+                                  + mda.currie.error_message + ".";
+      update_description( mda );
+      answer.push_back( mda );
+      continue;
+    }//if( !fit_peak )
+
+    answer.push_back( currie_limit_for_peak( exemplar, *fit_peak, fit_peak, fit_peaks,
+                                             unfit_exemplar_peaks, spectrum, options ) );
+    add_limit_caveats( answer.back() );
+  }//for( const shared_ptr<const PeakDef> &exemplar : exemplar_peaks )
+
+  return answer;
+}//compute_exemplar_peak_mdas(...)
+
 
 void propagate_energy_cal( const shared_ptr<const SpecUtils::EnergyCalibration> &energy_cal,
                            shared_ptr<SpecUtils::Measurement> &to_spectrum,
@@ -346,6 +915,100 @@ void fit_energy_cal_from_fit_peaks( shared_ptr<SpecUtils::Measurement> &raw, vec
 }//void fit_energy_cal_from_fit_peaks(...)
 
   
+std::shared_ptr<SpecMeas> write_concatenated_n42( const std::vector<ConcatRecord> &records,
+                                                  const BatchPeakFitOptions &options,
+                                                  std::vector<std::string> &warnings )
+{
+  if( records.empty() || options.output_dir.empty() )
+    return nullptr;
+
+  try
+  {
+    auto concatenated_spec = make_shared<SpecMeas>();
+    int current_sample = 0;
+
+    // Add remarks to indicate when this file was created
+    auto now = chrono::system_clock::now();
+    auto time_t = chrono::system_clock::to_time_t(now);
+    stringstream time_str;
+    time_str << put_time(localtime(&time_t), "%Y-%m-%d %H:%M:%S");
+    concatenated_spec->add_remark( "Concatenated N42 file created on " + time_str.str() );
+
+    // Only input files that produced more than one analysis need their sample numbers spelled out
+    //  in the record title; adding it unconditionally would change the output of runs that arent
+    //  using multi-sample handling at all.
+    map<string,size_t> analyses_per_input;
+    for( const ConcatRecord &record : records )
+      analyses_per_input[record.source_file_path] += 1;
+
+    for( const ConcatRecord &record : records )
+    {
+      if( !record.spectrum )
+        continue;
+
+      // Create a copy of the spectrum measurement
+      auto new_meas = make_shared<SpecUtils::Measurement>( *record.spectrum );
+      current_sample += 1;
+      new_meas->set_sample_number( current_sample );
+
+      // Add source file name to the measurement title.  When one input file was split into several
+      //  analyses, include the sample numbers so the records stay distinguishable.
+      string source_filename = SpecUtils::filename( record.source_file_path );
+      if( analyses_per_input[record.source_file_path] > 1 )
+      {
+        string samples;
+        for( const int sample : record.sample_numbers )
+          samples += (samples.empty() ? "" : ",") + std::to_string( sample );
+        if( !samples.empty() )
+          source_filename += " (sample" + string(record.sample_numbers.size() > 1 ? "s " : " ") + samples + ")";
+      }//if( this input file produced more than one analysis )
+
+      // Note the summed spectrum often already carries the source file name as its title (see
+      //  `SpecFile::sum_measurements`), so only append it when it actually adds something.
+      const string original_title = new_meas->title();
+      if( original_title.empty() || (original_title == SpecUtils::filename(record.source_file_path)) )
+        new_meas->set_title( source_filename );
+      else
+        new_meas->set_title( source_filename + " - " + original_title );
+
+      concatenated_spec->add_measurement( new_meas, false );
+
+      if( !record.peaks.empty() )
+      {
+        const set<int> sample_nums = { current_sample };
+        deque<shared_ptr<const PeakDef>> peaks_copy;
+        for( const shared_ptr<const PeakDef> &peak : record.peaks )
+          peaks_copy.push_back( peak );
+        concatenated_spec->setPeaks( peaks_copy, sample_nums );
+      }//if( !record.peaks.empty() )
+    }//for( const ConcatRecord &record : records )
+
+    concatenated_spec->cleanup_after_load( SpecUtils::SpecFile::ReorderSamplesByTime );
+
+    const string concatenated_file = SpecUtils::append_path( options.output_dir, "concatenated.n42" );
+
+    if( SpecUtils::is_file( concatenated_file ) && !options.overwrite_output_files )
+    {
+      warnings.push_back( "Not writing '" + concatenated_file + "', as it would overwrite a file."
+                         " See the '--overwrite-output-files' option to force writing." );
+    }else
+    {
+      if( !concatenated_spec->save2012N42File( concatenated_file ) )
+        warnings.push_back( "Failed to write concatenated N42 file '" + concatenated_file + "'." );
+      else
+        cout << "Have written concatenated N42 file '" << concatenated_file << "'" << endl;
+    }//if( would overwrite ) / else
+
+    return concatenated_spec;
+  }catch( const std::exception &e )
+  {
+    warnings.push_back( "Error creating concatenated N42 file: " + string(e.what()) );
+  }//try / catch
+
+  return nullptr;
+}//std::shared_ptr<SpecMeas> write_concatenated_n42(...)
+
+
 void fit_peaks_in_files( const std::string &exemplar_filename,
                         std::shared_ptr<const SpecMeas> cached_exemplar_n42,
                           const std::set<int> &exemplar_sample_nums,
@@ -398,31 +1061,65 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
   for( const pair<string,string> &key_val : spec_chart_js_and_css )
     summary_json[key_val.first] = key_val.second;
 
-  // Resize per-file results to match the input file size
-  if( results )
-  {
-    results->file_results.resize( files.size() );
-    results->file_json.resize( files.size() );
-    results->file_peak_csvs.resize( files.size() );
-    results->file_reports.resize( files.size() );
-  }//if( results )
+  // Records for the optional concatenated N42; accumulated as we go, rather than pulled out of
+  //  `results` afterwards, so `--concatenate-to-n42` works even when the caller doesnt ask for the
+  //  full per-file results to be retained (which the command line doesnt).
+  vector<ConcatRecord> concat_records;
 
-  for( size_t file_index = 0; file_index < files.size(); file_index += 1 )
-  {
-    const string filename = files[file_index];
+  // Each input file becomes one or more work items; more than one when the user has asked for a
+  //  file holding several foreground records to be analyzed record-by-record.  The expansion is
+  //  done a file at a time so that only one input file is held parsed in memory at once.
+  size_t file_index = 0;  //index of the analysis, which is not the input file index when splitting
 
-    std::shared_ptr<SpecMeas> cached_file;
-    if( file_index < cached_files.size() )
-      cached_file = cached_files[file_index];
+  for( size_t input_index = 0; input_index < files.size(); input_index += 1 )
+  {
+   const shared_ptr<SpecMeas> input_cached_file
+                      = (input_index < cached_files.size()) ? cached_files[input_index] : nullptr;
+   vector<BatchSampleSelect::InputWorkItem> work_items
+      = BatchSampleSelect::expand_input_file( files[input_index], input_index, input_cached_file,
+                                              options.multi_sample_handling );
+
+   for( size_t item_index = 0; item_index < work_items.size(); item_index += 1, file_index += 1 )
+   {
+    BatchSampleSelect::InputWorkItem &item = work_items[item_index];
+    const string &filename = item.filename;
+
+    if( results )
+    {
+      results->file_results.resize( file_index + 1 );
+      results->file_json.resize( file_index + 1 );
+      results->file_peak_csvs.resize( file_index + 1 );
+      results->file_reports.resize( file_index + 1 );
+    }//if( results )
+
+    // `fit_peaks_in_file` modifies the file handed to it, so work items that share a parsed file
+    //  each need their own copy.  Only one copy is alive at a time.
+    std::shared_ptr<SpecMeas> cached_file = item.source;
+    if( item.needs_private_copy && item.source )
+    {
+      cached_file = make_shared<SpecMeas>();
+      cached_file->uniqueCopyContents( *item.source );
+    }
 
     const BatchPeak::BatchPeakFitResult fit_results
                  = fit_peaks_in_file( exemplar_filename, exemplar_sample_nums,
-                                     cached_exemplar_n42, filename, cached_file, {}, options );
-    
+                                     cached_exemplar_n42, filename, cached_file,
+                                     item.foreground_sample_numbers, options );
+
+    // Release our reference to the parsed input file now that it has been analyzed, so that a run
+    //  over many files doesnt hold every one of them in memory at once.
+    item.source.reset();
+    cached_file.reset();
+
     if( !cached_exemplar_n42 )
       cached_exemplar_n42 = fit_results.exemplar;
-    warnings.insert(end(warnings), begin(fit_results.warnings), end(fit_results.warnings) );
-    
+
+    // Only label the warnings when the input file was split or summed, so that output for the
+    //  default handling stays exactly as it was.
+    const bool label_warnings = (item.output_base_name != SpecUtils::filename(filename));
+    for( const string &warn : fit_results.warnings )
+      warnings.push_back( label_warnings ? ("File '" + item.label + "': " + warn) : warn );
+
     nlohmann::json data;
     BatchInfoLog::add_exe_info_to_json( data );
     BatchInfoLog::add_peak_fit_options_to_json( data, options );
@@ -430,9 +1127,19 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     if( !exemplar_sample_nums.empty() )
       data["ExemplarSampleNumbers"] = vector<int>{begin(exemplar_sample_nums), end(exemplar_sample_nums)};
     data["Filepath"] = filename;
-    data["Filename"] = SpecUtils::filename( filename );
+    // `Filename` identifies this analysis, and matches the output files written for it; for a file
+    //  split into per-sample analyses it carries the same "_sampleN" infix the output files do.
+    //  `SourceFilename` is always the unmodified input file leaf name.
+    data["Filename"] = item.output_base_name;
+    data["SourceFilename"] = SpecUtils::filename( filename );
+    data["AnalysisLabel"] = item.label;
+    data["IsSplitFromMultiSampleFile"] = (work_items.size() > 1);
+    // Report the samples actually used, which are known even in `Auto` mode
+    if( !fit_results.sample_numbers.empty() )
+      data["ForegroundSampleNumbers"] = vector<int>{ begin(fit_results.sample_numbers),
+                                                     end(fit_results.sample_numbers) };
     data["ParentDir"] = SpecUtils::parent_path( filename );
-    
+
     BatchInfoLog::add_peak_fit_results_to_json( data, fit_results );
     
     summary_json["Files"].push_back( data );
@@ -466,7 +1173,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
         if( !options.output_dir.empty() )
         {
           const string out_file
-                    = BatchInfoLog::suggested_output_report_filename( filename, tmplt_name,
+                    = BatchInfoLog::suggested_output_report_filename( item.output_base_name, tmplt_name,
                                   BatchInfoLog::TemplateRenderType::PeakFitIndividual, options );
 
           if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
@@ -503,7 +1210,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     }//for( const string &tmplt : options.report_templates )
     
     if( !options.output_dir.empty() && options.create_json_output )
-      BatchInfoLog::write_json( options, warnings, filename, data );
+      BatchInfoLog::write_json( options, warnings, item.output_base_name, data );
     
     if( !fit_results.success )
       continue;
@@ -512,8 +1219,8 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     
     if( options.write_n42_with_results && fit_results.measurement )
     {
-      string outn42 = SpecUtils::append_path(options.output_dir, SpecUtils::filename(filename) );
-      if( !SpecUtils::iequals_ascii(SpecUtils::file_extension(filename), ".n42") )
+      string outn42 = SpecUtils::append_path(options.output_dir, item.output_base_name );
+      if( !SpecUtils::iequals_ascii(SpecUtils::file_extension(item.output_base_name), ".n42") )
         outn42 += ".n42";
       
       if( SpecUtils::is_file( outn42 ) && !options.overwrite_output_files )
@@ -555,7 +1262,7 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     
     if( !options.output_dir.empty() && options.create_csv_output )
     {
-      const string leaf_name = SpecUtils::filename(filename);
+      const string &leaf_name = item.output_base_name;
       string outcsv = SpecUtils::append_path(options.output_dir, leaf_name) + ".CSV";
       
       if( SpecUtils::is_file(outcsv) && !options.overwrite_output_files )
@@ -586,20 +1293,36 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     if( results )
     {
       stringstream out_csv;
-      PeakModel::write_peak_csv( out_csv, SpecUtils::filename(filename),
+      PeakModel::write_peak_csv( out_csv, item.output_base_name,
                                 PeakModel::PeakCsvType::Full, fit_peaks, fit_results.spectrum );
       results->file_peak_csvs[file_index] = out_csv.str();
     }
 
+    if( options.concatenate_to_n42 && !options.output_dir.empty() && fit_results.spectrum )
+    {
+      ConcatRecord record;
+      record.source_file_path = filename;
+      record.sample_numbers = fit_results.sample_numbers;
+      record.spectrum = fit_results.spectrum;
+      record.peaks = fit_peaks;
+      concat_records.push_back( record );
+    }//if( options.concatenate_to_n42 ... )
+
     if( options.to_stdout )
     {
-      const string leaf_name = SpecUtils::filename(filename);
-      cout << "peaks for '" << leaf_name << "':" << endl;
+      const string &leaf_name = item.output_base_name;
+      cout << "peaks for '" << item.label << "':" << endl;
       PeakModel::write_peak_csv( cout, leaf_name, PeakModel::PeakCsvType::Full,
                                 fit_peaks, fit_results.spectrum );
       cout << endl;
     }
-  }//for( size_t file_index = 0; file_index < files.size(); file_index += 1 )
+   }//for( loop over work items of this input file )
+  }//for( loop over input files )
+
+  // `Files` holds one entry per analysis performed; with multi-sample handling this may be more
+  //  entries than there were input files.
+  summary_json["NumInputFiles"] = static_cast<int>( files.size() );
+  summary_json["NumAnalyses"] = static_cast<int>( file_index );
 
   // Add any encountered errors to output summary JSON
   for( const string &warn : warnings )
@@ -665,83 +1388,12 @@ void fit_peaks_in_files( const std::string &exemplar_filename,
     BatchInfoLog::write_json( options, warnings, "", summary_json );
   
   // Create concatenated N42 file if requested
-  if( options.concatenate_to_n42 && !options.output_dir.empty() && results )
+  if( options.concatenate_to_n42 && !options.output_dir.empty() )
   {
-    try
-    {
-      auto concatenated_spec = make_shared<SpecMeas>();
-      int current_sample = 0;
-      
-      // Add remarks to indicate when this file was created
-      auto now = chrono::system_clock::now();
-      auto time_t = chrono::system_clock::to_time_t(now);
-      stringstream time_str;
-      time_str << put_time(localtime(&time_t), "%Y-%m-%d %H:%M:%S");
-      concatenated_spec->add_remark("Concatenated N42 file created on " + time_str.str());
-      
-      for( const auto &fit_result : results->file_results )
-      {
-        if( !fit_result.success || !fit_result.spectrum )
-          continue;
-          
-        // Create a copy of the spectrum measurement
-        auto new_meas = make_shared<SpecUtils::Measurement>( *fit_result.spectrum );
-        current_sample += 1;
-        new_meas->set_sample_number( current_sample );
-        
-        // Add source file name to the measurement title
-        string source_filename = SpecUtils::filename( fit_result.file_path );
-        string original_title = new_meas->title();
-        if( original_title.empty() )
-        {
-          new_meas->set_title( source_filename );
-        }
-        else
-        {
-          new_meas->set_title( source_filename + " - " + original_title );
-        }
-        
-        // Add the measurement to the concatenated SpecMeas
-        concatenated_spec->add_measurement( new_meas, false );
-        
-        // Add the peaks for this measurement
-        if( !fit_result.fit_peaks.empty() )
-        {
-          set<int> sample_nums = { current_sample };
-          deque<shared_ptr<const PeakDef>> peaks_copy;
-          for( const auto &peak : fit_result.fit_peaks )
-            peaks_copy.push_back( peak );
-          concatenated_spec->setPeaks( peaks_copy, sample_nums );
-        }
-      }
-
-      // Clean up the SpecMeas after adding all measurements
-      concatenated_spec->cleanup_after_load( SpecUtils::SpecFile::ReorderSamplesByTime ); 
-
-      // Save the concatenated file
-      const string concatenated_file = SpecUtils::append_path( options.output_dir, "concatenated.n42" );
-      
-      if( SpecUtils::is_file( concatenated_file ) && !options.overwrite_output_files )
-      {
-        warnings.push_back( "Not writing '" + concatenated_file + "', as it would overwrite a file."
-                           " See the '--overwrite-output-files' option to force writing." );
-      }
-      else
-      {
-        if( !concatenated_spec->save2012N42File( concatenated_file ) )
-          warnings.push_back( "Failed to write concatenated N42 file '" + concatenated_file + "'." );
-        else
-          cout << "Have written concatenated N42 file '" << concatenated_file << "'" << endl;
-      }
-      
-      // Store the concatenated results
-      results->concatenated_results = concatenated_spec;
-    }
-    catch( const std::exception &e )
-    {
-      warnings.push_back( "Error creating concatenated N42 file: " + string(e.what()) );
-    }
-  }
+    shared_ptr<SpecMeas> concatenated = write_concatenated_n42( concat_records, options, warnings );
+    if( results )
+      results->concatenated_results = concatenated;
+  }//if( options.concatenate_to_n42 && !options.output_dir.empty() )
   
   if( !warnings.empty() )
     cerr << endl << endl;
@@ -1002,33 +1654,17 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         spec = specfile->sum_measurements( used_sample_nums, det_names, nullptr );
       }else
       {
-        set<int> foregroundSamples, backgroundSamples, unknownSamples, otherSamples;
-        for( const int sample_num : specfile->sample_numbers() )
-        {
-          for( const string det_name : det_names )
-          {
-            auto m = specfile->measurement( sample_num, det_name );
-            if( !m )
-              continue;
-            switch( m->source_type() )
-            {
-              case SpecUtils::SourceType::IntrinsicActivity:
-              case SpecUtils::SourceType::Calibration:
-                otherSamples.insert( sample_num );
-                break;
-              case SpecUtils::SourceType::Background:
-                backgroundSamples.insert( sample_num );
-                break;
-              case SpecUtils::SourceType::Foreground:
-                foregroundSamples.insert( sample_num );
-                break;
-              case SpecUtils::SourceType::Unknown:
-                unknownSamples.insert( sample_num );
-                break;
-            }//switch( m->source_type() )
-          }//for( const string det_name : det_names )
-        }//for( const int sample_num : specfile.sample_numbers() )
-        
+        // Note: this ladder is deliberately more permissive than the one `BatchActivity` and
+        //  `BatchRelActAuto` use - Foreground and Unknown are kept separate, and a lone
+        //  calibration/intrinsic spectrum is accepted, since fitting peaks in one is a sensible
+        //  thing to do even though fitting an activity to one is not.
+        const BatchSampleSelect::SampleBuckets buckets
+                                                = BatchSampleSelect::classify_samples( *specfile );
+        const set<int> &foregroundSamples = buckets.foreground;
+        const set<int> &backgroundSamples = buckets.background;
+        const set<int> &unknownSamples = buckets.unknown;
+        const set<int> &otherSamples = buckets.other;
+
         if( foregroundSamples.size() == 1 )
         {
           used_sample_nums = foregroundSamples;
@@ -1238,6 +1874,12 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
     deque<shared_ptr<const PeakDef>> fit_peaks_ptrs;
     set<shared_ptr<const PeakDef>> unused_exemplar_peaks;
 
+    /** The exemplar peak each entry of `fit_peaks_ptrs` was matched to; parallel to it, and null
+     where no exemplar peak matched.  Used to evaluate each exemplar peaks detection limit at the
+     mean and width it was actually fit with.
+     */
+    vector<shared_ptr<const PeakDef>> fit_peak_exemplar_parents;
+
     if( options.fit_all_peaks )
     {
       std::shared_ptr<const DetectorPeakResponse> det;
@@ -1308,7 +1950,6 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
 
       results.exemplar_peaks.clear();
       vector<shared_ptr<const PeakDef>> exemplar_peaks;
-      set<shared_ptr<const PeakDef>> unused_exemplar_peaks;
       for( const auto &p : starting_peaks )
       {
         auto ep = make_shared<PeakDef>(p);
@@ -1434,7 +2075,14 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
         {
           try
           {
-            propagate_energy_cal( new_cal, spec, results.measurement, {} );
+            // Must pass the sample numbers being fit - `propagate_energy_cal` only updates the
+            //  measurements of the samples given to it, so an empty set updates nothing, and the
+            //  written out N42 would keep the original calibration, while the peaks in it were fit
+            //  at the new calibration.  Sample numbers chosen same as the `setPeaks(...)` below.
+            const set<int> cal_sample_nums = (options.background_subtract_file.empty()
+                                              && !options.cached_background_subtract_spec)
+                                             ? used_sample_nums : results.measurement->sample_numbers();
+            propagate_energy_cal( new_cal, spec, results.measurement, cal_sample_nums );
           }catch( std::exception &e )
           {
             results.warnings.push_back( "Failed to propagate fit energy calibration in '" + filename + "'." );
@@ -1524,6 +2172,10 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
                                      " corresponding to peak fit with mean=" + std::to_string( p.mean() ) + " keV." );
           //cout << "\tmean=" << p.mean() << ", FWHM=" << p.fwhm() << ", area=" << p.amplitude() << endl;
         }//if( exemplar_parent ) / else
+
+        // Kept parallel to `fit_peaks`, and hence to `fit_peaks_ptrs`, which is filled in below
+        //  from `fit_peaks` in this same order.
+        fit_peak_exemplar_parents.push_back( exemplar_parent );
       }//for( PeakDef &p: fit_peaks )
 
       //cout << endl << endl;
@@ -1559,10 +2211,28 @@ BatchPeak::BatchPeakFitResult fit_peaks_in_file( const std::string &exemplar_fil
                                         begin(unused_exemplar_peaks), end(unused_exemplar_peaks) );
     std::sort( begin(results.unfit_exemplar_peaks), end(results.unfit_exemplar_peaks),
               &PeakDef::lessThanByMeanShrdPtr );
+
+    if( !options.fit_all_peaks && (options.not_fit_peak_mda != NotFitPeakMdaMethod::None) )
+    {
+      const shared_ptr<const DetectorPeakResponse> exemplar_drf = exemplar_n42 ? exemplar_n42->detector()
+                                                                               : nullptr;
+
+      if( !results.unfit_exemplar_peaks.empty() )
+        results.not_fit_peak_mdas = compute_not_fit_peak_mdas( results.unfit_exemplar_peaks,
+                                                     results.fit_peaks, spec, exemplar_drf, options );
+
+      // Every exemplar peak also gets a limit, whether or not it was fit; for a peak that was fit
+      //  this is a quality check, since a peak can pass the significance tests and still sit below
+      //  the level at which a signal can be reliably claimed.
+      assert( fit_peak_exemplar_parents.size() == results.fit_peaks.size() );
+      if( fit_peak_exemplar_parents.size() == results.fit_peaks.size() )
+        results.exemplar_peak_mdas = compute_exemplar_peak_mdas( results.exemplar_peaks,
+                                              results.not_fit_peak_mdas, fit_peak_exemplar_parents,
+                                              results.fit_peaks, spec, options );
+    }//if( we should compute detection limits )
   }
   
   return results;
 }//fit_peaks_in_file(...)
   
 }//namespace BatchPeak
-

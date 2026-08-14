@@ -212,8 +212,13 @@ double exit_point_of_sphere_z( const double source_point[3],
                                bool postiveSolution = true );
 
 /** An enum to to tell #cylinder_line_intersection which exit point from sphere you want.
- 
+
  A better name would be CylinderIntersectionDirection, but thats too long.
+
+ Defined in terms of the ray parameter: writing the ray as P(t) = source + t*(detector - source), t
+ increases monotonically toward the detector, so #TowardDetector is the larger-t crossing and
+ #AwayFromDetector the smaller-t one.  For a source inside the volume this means #AwayFromDetector is
+ behind the source (t < 0); for a source outside it is the point the ray enters the volume.
  */
 enum class CylExitDir
 {
@@ -746,14 +751,41 @@ public:
 
 
   
+  /** Options controlling the supplemental per-peak information (Currie detection-limit checks,
+   and nominal implied activities for peaks not used in the fit) that
+   `ShieldingSourceFitCalc::fit_model(...)` computes after a successful fit.
+
+   These are runtime-only options - they are not serialized with the model.
+   */
+  struct SupplementalInfoOptions
+  {
+    /** Whether to compute the supplemental info at all. */
+    bool compute = true;
+
+    /** Confidence level for the Currie-style limits; e.g., 0.95 for 95%. */
+    double confidence_level = 0.95;
+
+    /** Number of channels on either side of the peak region used to estimate the continuum. */
+    size_t num_side_channels = 4;
+
+    /** Width of the peak region, in multiples of the peak FWHM.
+     The default of 2.5 (i.e., +-1.25 FWHM) is what ISO 11929:2010 recommends.
+     */
+    double roi_num_fwhm = 2.5;
+
+    /** Whether activities in the descriptions should be written in curie, rather than becquerel. */
+    bool use_curie = true;
+  };//struct SupplementalInfoOptions
+
+
   struct ShieldSourceInput
   {
     ShieldSourceConfig config;
-    
+
     std::shared_ptr<const DetectorPeakResponse> detector;
     std::deque<std::shared_ptr<const PeakDef>> foreground_peaks;
     std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> background_peaks;
-    
+
     std::shared_ptr<const SpecUtils::Measurement> foreground;
     std::shared_ptr<const SpecUtils::Measurement> background;
 
@@ -764,6 +796,17 @@ public:
      If zero, negative, inf, or NaN, will use live-time scaling.
      */
     double background_sf = -1.0;
+
+    /** Options for the supplemental per-peak info computed after the fit; see the struct. */
+    SupplementalInfoOptions supplemental_options;
+
+    /** Peaks in `foreground_peaks` that do not correspond to a peak actually observed/fit in the
+     spectrum (e.g., exemplar peaks a batch analysis could not fit).  Their fitted amplitude is
+     meaningless, but including them lets the supplemental info computation predict the counts the
+     fitted model implies for them (e.g., to convert a counts-based detection limit to activity).
+     They must never have `useForShieldingSourceFit()` set.
+     */
+    std::vector<std::shared_ptr<const PeakDef>> synthetic_peaks;
   };//struct ShieldSourceInput
 
   static std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> create(
@@ -1129,9 +1172,23 @@ public:
   double backgroundNormalizationFactor() const;
 
   double distance() const;
-  
+
+  double liveTime() const;
+  double realTime() const;
+
+  /** The input this object was created from, kept verbatim.
+
+   Notably `ShieldSourceInput::foreground_peaks` holds _all_ the peaks that were given, including
+   the ones not used in the fit; `peaks()`, in contrast, holds only the peaks the fit uses.
+
+   Copying this, changing which peaks are flagged `useForShieldingSourceFit()`, and calling
+   `create(...)` again gives a function object with an identical parameter layout, so a fitted
+   parameter vector can be applied to it directly.
+   */
+  const ShieldSourceInput &createInput() const;
+
   const std::shared_ptr<const DetectorPeakResponse> &detector() const;
-  
+
   const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options() const;
   
   const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &initialShieldings() const;
@@ -1223,7 +1280,17 @@ protected:
 
 
   std::shared_ptr<const DetectorPeakResponse> m_detector;
-  
+
+  /** The input `create(...)` was given, kept verbatim.
+
+   The chi2 evaluation itself does not use this - it is kept so that after the fit, the per-peak
+   supplemental information (detection-limit checks, and the activities implied by peaks not used in
+   the fit) can be computed by building a second function object over an augmented peak list.
+   Keeping the input exactly as it came in is what guarantees the second object lays its parameters
+   out identically, so the fitted parameter values can be applied to it directly.
+   */
+  ShieldSourceInput m_create_input;
+
   const std::vector<ShieldingSourceFitCalc::ShieldingInfo> m_initial_shieldings;
   
   std::vector<const SandiaDecay::Nuclide *> m_nuclides; //sorted alphabetically and unique

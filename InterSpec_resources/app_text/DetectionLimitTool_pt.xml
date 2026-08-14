@@ -9,25 +9,6 @@
   <message id="dlt-roi-lower-label">ROI Inferior:</message>
   <message id="dlt-roi-upper-label">ROI Superior:</message>
   <message id="dlt-continuum-label">Contínuo</message>
-  <message id="dlt-cont-norm-label">Norm. Cont.</message>
-  <message id="dlt-cont-norm-floating">Flutuante</message>
-  <message id="dlt-cont-norm-fixed-edges">Fixo nas bordas</message>
-  <message id="dlt-cont-norm-fixed-full-roi">Fixo ROI completo</message>
-  <message id="dlt-cont-norm-tt">
-    Como a normalização do contínuo deve ser determinada:
-    <ul><li><b>Flutuante</b>: O contínuo polinomial é ajustado, para cada atividade dada -
-    a atividade afeta o contínuo.</li>
-    <li><b>Fixo nas bordas</b>: Os canais em ambos os lados do ROI são usados para determinar um
-    contínuo linear que é fixo, e não é afetado pela atividade dos nuclídeos.</li>
-    <li><b>Fixo ROI completo</b>: O contínuo é ajustado usando toda a faixa de energia do ROI,
-    assumindo uma amplitude gaussiana de zero; mais tarde, o componente gaussiano do pico
-    ficará sobre este contínuo fixo.<br/>
-    Isso efetivamente afirma que você sabe que não há pico de sinal presente nos dados.
-    O contínuo não será afetado pelo valor de atividade do nuclídeo, e o componente
-    gaussiano do pico ficará sobre este contínuo fixo ao avaliar o
-    &chi;<sup>2</sup>.</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">Limite Currie Pico Único</message>
   <message id="dlt-num-side-channels-label">Núm. Canais Laterais</message>
   <message id="dlt-further-details-link">mais detalhes...</message>
@@ -39,7 +20,10 @@
   <message id="dlt-range">Faixa:</message>
   <message id="dlt-detected-activity-tt">Atividade detectada, usando apenas esta Região de Interesse,
     e o excesso observado de contagens, bem como o
-    intervalo de confiança estatístico.</message>
+    intervalo de confiança estatístico.
+    O valor nominal é a melhor estimativa segundo a ISO 11929: a média da distribuição do sinal após
+    remover a parte que corresponde a atividades negativas impossíveis.  É sempre pelo menos o
+    excesso bruto de contagens, e os dois coincidem quando o sinal está bem acima do nível crítico.</message>
   <message id="dlt-limit-lt-zero"><![CDATA[Limite: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(muito menos contagens no ROI do que previsto)</message>
   <message id="dlt-fewer-counts-tt">Muito menos contagens foram observadas na
@@ -66,22 +50,12 @@
   <message id="dlt-distance-limit">Limite de Distância</message>
   <message id="dlt-peaks-disp-act-label">Picos exib. ativ.:</message>
   <message id="dlt-peaks-disp-dist-label">Picos exib. dist.:</message>
-  <message id="dlt-conf-level-label">Nível de Confiança:</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68,2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95,4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99,7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">Linhas gama para usar</message>
   <message id="dlt-min-rel-intensity-label">Intensidade relativa mín.:</message>
   <message id="dlt-fit-fwhm-btn">Ajustar FWHM...</message>
   <message id="dlt-log">Log</message>
   <message id="dlt-lin">Lin</message>
   <message id="dlt-below-lc">(abaixo de L<sub>c</sub>)</message>
-  <message id="dlt-lt-zero-counts"><![CDATA[< 0 contagens]]></message>
-  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">Nenhum Dado Carregado</message>
@@ -128,7 +102,11 @@
   
   <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
   <message id="dlt-tt-greater-than-lc">Maior que o &quot;nível crítico&quot;, L<sub>c</sub>,
-    contagens foram observadas na região do pico.</message>
+    contagens foram observadas na região do pico.
+    O valor mostrado é a melhor estimativa do sinal segundo a ISO 11929, que leva em conta que a
+    atividade não pode ser negativa; a decisão de que há sinal presente foi tomada com o excesso
+    bruto de contagens.  Os dois coincidem para um sinal claro, e a melhor estimativa é o maior dos
+    dois para um sinal marginal.</message>
   <message id="dlt-tt-activity-range">A estimativa da faixa de atividade do sinal, até o nível de confiança {1}.</message>
   <message id="dlt-tt-counts-range">A estimativa da faixa de contagens do sinal, até o nível de confiança {1}.</message>
   <message id="dlt-tt-fewer-than-predicted">Muito menos contagens na região do pico foram observadas,
@@ -165,15 +143,19 @@
     radioativa antes de qualquer blindagem, mas contabilizando a idade do nuclídeo,
     por decaimento do nuclídeo pai.</message>
   <message id="dlt-tt-below-lc-counts">As contagens de sinal observadas são menores que o &quot;nível crítico&quot;, L<sub>c</sub>,
-    então uma detecção não pode ser declarada, mas este é o excesso sobre as contagens esperadas.</message>
+    então uma detecção não pode ser declarada, mas esta é a melhor estimativa segundo a ISO 11929 das
+    contagens do sinal, dado que um sinal não pode ser negativo.  Nunca é inferior a zero, mesmo
+    quando são observadas menos contagens na região do pico do que as regiões vizinhas preveem.</message>
   <message id="dlt-tt-below-lc-activity">A atividade de sinal observada é menor que o &quot;nível crítico&quot;, L<sub>c</sub>,
-    então uma detecção não pode ser declarada, mas este é o excesso sobre as contagens esperadas.</message>
+    então uma detecção não pode ser declarada, mas esta é a melhor estimativa segundo a ISO 11929 da
+    atividade, dado que uma atividade não pode ser negativa.  Nunca é inferior a zero, mesmo quando
+    são observadas menos contagens na região do pico do que as regiões vizinhas preveem.</message>
   
   <!-- Chart strings -->
   <message id="dlt-chart-x-axis-distance">Distância ({1})</message>
   <message id="dlt-chart-x-axis-activity">Atividade ({1})</message>
   <message id="dlt-chart-title-estimated-activity">Atividade estimada de {1}.</message>
-  <message id="dlt-chart-title-excess-counts">Contagens excessivas de {1}.</message>
+  <message id="dlt-chart-title-excess-counts">Sinal estimado de {1} contagens.</message>
   <message id="dlt-chart-title-activity-lt-zero"><![CDATA[Atividade < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">Dados + pico para {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">Pico para limite superior de {1} @{2} CL</message>
@@ -188,4 +170,9 @@
   <message id="dlt-err-upper-limit-negative">O limite superior de contagens é menor que zero, mas as contagens observadas são maiores que L_d.</message>
   <message id="dlt-err-activity-zero-negative">A atividade não pode ser zero ou negativa</message>
   <message id="dlt-err-distance-zero-negative">A distância não pode ser zero ou negativa</message>
+  <message id="dlt-qr-tool-state-title">Estado da Ferramenta de Confiança de Detecção</message>
+  <message id="dlt-qr-tool-state-txt">Estado atual da ferramenta de confiança de detecção.</message>
+  <message id="dlt-estimating-spread">Calculando dispersão…</message>
+  <message id="dlt-spread-band">(tipicamente {1}&ndash;{2}&times; este valor)</message>
+  <message id="dlt-spread-unavailable">Não foi possível estimar a dispersão.</message>
 </messages>

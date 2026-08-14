@@ -127,6 +127,48 @@ height in all browsers, so for the moment we'll just match
   }
 }
 
+/* Wraps the input-files box, so the "load open file..." link can be positioned against it.
+   The link is a sibling of the box, rather than a child, since the box is a click-to-upload
+   target, and it scrolls. */
+.BatchGuiWidget .InputFilesHolder
+{
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  flex-grow: 1;
+  flex-shrink: 1;
+  min-height: 0;
+}
+
+/* Note: dont set `min-height` here - a rule with this selector out-specifies the
+   `.BatchGuiWidget .InputFilesContainer` rule below, and would silently defeat its 100px floor.
+   The holder above is the flex item that needs `min-height:0` in order to scroll. */
+
+.BatchGuiWidget .LoadOpenFileBtn
+{
+  position: absolute;
+  right: 6px;
+  bottom: 2px;
+  z-index: 2;
+  float: none;  /* .LinkBtn sets float:right, which we dont want here */
+  margin: 0px;
+  padding: 0px;
+  font-size: 10px;
+  line-height: 12px;
+}
+
+/* Keep the file cards clear of the absolutely-positioned link in the bottom-right corner */
+.BatchGuiWidget .InputFilesHolder > .InputFilesContainer
+{
+  padding-bottom: 16px;
+}
+
+/* Dont let the link swallow a file drop aimed at the bottom-right of the input area */
+.BatchGuiWidget .InputFilesContainer.DomIsDrugOver ~ .LoadOpenFileBtn
+{
+  pointer-events: none;
+}
+
 .BatchGuiWidget .InputFilesContainer
 {
   flex-grow: 1;
@@ -208,4 +250,12 @@ height in all browsers, so for the moment we'll just match
 .BatchGuiWidget .ReasonCantAnalyzeMsg
 {
   color: orange;
+}
+
+
+.BatchOpenFilePickerDialog .BatchOpenFilePicker
+{
+  width: 100%;
+  margin-top: 5px;
+  margin-bottom: 5px;
 }

@@ -33,8 +33,6 @@
   <message id="fpn-opt-use-background">পটভূমি বিয়োগ সহ গণনা</message>
 
   <!-- PeakFitForNuclideConfig option labels -->
-  <message id="fpn-opt-roi-min-chi2-red">ROI chi2 হ্রাসের সীমা</message>
-  <message id="fpn-opt-roi-min-peak-sig">ROI তাৎপর্যের সীমা</message>
   <message id="fpn-opt-obs-initial-sig">পূর্বাভাসিত পিক তাৎপর্যের সীমা</message>
   <message id="fpn-opt-obs-final-sig">চূড়ান্ত পিক তাৎপর্যের সীমা</message>
   <message id="fpn-opt-skew-type">পিক স্কিউ</message>
@@ -49,8 +47,6 @@
   <message id="fpn-opt-tt-dont-refine-energy-cal">ফিটে শক্তি ক্যালিব্রেশন পরিবর্তিত হয়, কিন্তু ফিট ক্যালিব্রেশনের উপর ভিত্তি করে ROI পরিসর আপডেট হয় না।</message>
   <message id="fpn-opt-tt-fit-bkgnd-peaks">দ্বিতীয় আপেক্ষিক দক্ষতা বক্ররেখা ব্যবহার করে NORM পিক (U-238, Ra-226, U-235, Th-232, K-40) ফিট করুন।</message>
   <message id="fpn-opt-tt-use-background">সক্রিয় থাকলে, ব্যবহারযোগ্য ROI নির্ধারণ করতে পিক ফিটিংয়ের সময় পটভূমি বর্ণালী বিয়োগ করা হয়, তবে ফেরত দেওয়া পিকের চূড়ান্ত ফিটের জন্য পটভূমি বিয়োগ করা হয় না। পটভূমি বিয়োগ ছাড়া ফিট করতে আনচেক করুন।</message>
-  <message id="fpn-opt-tt-roi-min-chi2-red">ROI-তে পিকগুলিকে তাৎপর্যপূর্ণ বলে বিবেচনা করতে ন্যূনতম মোট chi2 হ্রাস প্রয়োজন। পিকসহ chi2 কন্টিনিউয়াম-শুধু chi2 থেকে কমপক্ষে এতটুকু কম হতে হবে।</message>
-  <message id="fpn-opt-tt-roi-min-peak-sig">পিক তাৎপর্যপূর্ণ বলে বিবেচিত হতে ন্যূনতম পিক তাৎপর্য (পিক_ক্ষেত্রফল / sqrt(কন্টিনিউয়াম))। ROI-এর কোনো পিকের তাৎপর্য এই সীমার উপরে থাকলে, ROI রাখা হয়।</message>
   <message id="fpn-opt-tt-obs-initial-sig">পুনরায় ফিট করার আগে প্রাথমিক পিক তাৎপর্য ফিল্টারের সীমা। তাৎপর্য = (পিক_প্রশস্ততা * 0.7607) / sqrt(pm_1_fwhm-এ_ডেটা_ক্ষেত্রফল)।</message>
   <message id="fpn-opt-tt-obs-final-sig">পুনরায় ফিট করার পর চূড়ান্ত পিক তাৎপর্যের সীমা। তাৎপর্য = পিক_ক্ষেত্রফল / পিক_ক্ষেত্রফল_অনিশ্চয়তা।</message>
   <message id="fpn-opt-tt-skew-type">ফিটে সমস্ত পিকে প্রয়োগ করা স্কিউ আকৃতি। &quot;None&quot; বিশুদ্ধ গাউসিয়ান ব্যবহার করে। অন্যান্য বিকল্প নিম্ন-শক্তি লেজ উপাদান যোগ করে (যেমন NaI/CsI ডিটেক্টরের জন্য Exp*Gauss, HPGe-তে চার্জ-সংগ্রহ লেজের জন্য Crystal Ball)।</message>

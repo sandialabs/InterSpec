@@ -66,7 +66,15 @@ public:
   
   void setToDrf();
   Wt::Signal<std::shared_ptr<DetectorPeakResponse>> &updatedDrf();
-  
+
+  /** Locks the equation-type selection to `DetectorPeakResponse::kConstantPlusSqrtEnergy`
+   (i.e., `FWHM = A0 + A1*sqrt(energy)`) and hides/disables the combo box that would otherwise
+   let the user pick a different form.  Intended for callers (e.g. the GENIE CNF export options,
+   which can only make use of this one FWHM form) that need this tool restricted to fitting only
+   this equation type.
+   */
+  void restrictToConstantPlusSqrtEnergy();
+
   
 public: //Some stuff for undo/redo support
   struct TableRow

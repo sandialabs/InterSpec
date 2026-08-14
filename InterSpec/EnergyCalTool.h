@@ -30,10 +30,8 @@
 #include <string>
 #include <vector>
 #include <memory>
-#include <utility>
 
 #include <Wt/WContainerWidget.h>
-#include <Wt/Core/observing_ptr.hpp>
 
 #include "InterSpec/AuxWindow.h"
 
@@ -49,6 +47,7 @@ namespace Wt
 {
   class WText;
   class WCheckBox;
+  class WMenuItem;
   class WGridLayout;
   class WPushButton;
   class WStackedWidget;
@@ -164,11 +163,28 @@ struct MeasToApplyCoefChangeTo
 };//struct MeasToApplyCoefChangeTo
 
 
+/** Tracks the ORIGINAL channel energies of a lower-channel-energy defined calibration, together
+ with the cumulative {offset, gain} adjustment that has been applied to it this session, so that
+ re-calibrating these calibrations is always done relative to the original channel energies (and
+ not just the current ones).  See #EnergyCal::adjust_lower_channel_energy_cal for the meaning of
+ offset and gain.
+
+ Once the file is unloaded/re-loaded (or exported), the adjusted calibration becomes the new
+ nominal calibration - which is fine.
+ */
+struct LowerChanCalOriginal
+{
+  std::shared_ptr<const SpecUtils::EnergyCalibration> original;
+  double offset = 0.0;  //keV; E_new = offset + gain*E_orig
+  double gain = 1.0;    //dimensionless, nominal 1.0 (identity)
+};//struct LowerChanCalOriginal
+
+
 
 class EnergyCalTool : public Wt::WContainerWidget
 {
 public:
-  EnergyCalTool( InterSpec *viewer, std::shared_ptr<PeakModel> peakModel );
+  EnergyCalTool( InterSpec *viewer, PeakModel *peakModel, Wt::WContainerWidget *parent = nullptr );
   virtual ~EnergyCalTool();
   
   void setWideLayout();
@@ -181,7 +197,16 @@ public:
   void deleteGraphicalRecalConfirmWindow();
   
   void updateFitButtonStatus();
-  
+
+  /** Called when the user toggles a per-coefficient "Fit" checkbox on `display`.
+
+   The selection of which coefficient orders to fit is a property of the fit itself - not of any
+   one detector - since the fit result gets propagated to all applicable detectors; so this
+   function keeps the "Fit" checkboxes in sync across all displays, then updates the fit button
+   status.
+   */
+  void fitCheckboxChanged( EnergyCalImp::CalDisplay *display );
+
 #if( !IMP_CALp_BTN_NEAR_COEFS )
   void updateCALpButtonsStatus();
 #endif
@@ -257,6 +282,22 @@ public:
    what options the user has chosen.
    */
   std::vector<MeasToApplyCoefChangeTo> measurementsToApplyCoeffChangeTo();
+
+  /** Returns the original channel energies, and cumulative {offset, gain} adjustment, of a
+   (possibly already adjusted) lower-channel-energy calibration; if `cal` hasnt been adjusted this
+   session, returns {cal, 0.0, 0.0} - i.e., the passed in calibration is the original.
+   */
+  LowerChanCalOriginal lowerChannelOriginal(
+                        const std::shared_ptr<const SpecUtils::EnergyCalibration> &cal ) const;
+
+  /** Registers `new_cal` as being `info.original`, adjusted by the cumulative {info.offset,
+   info.gain}, so future adjustments of `new_cal` stay relative to the true original channel
+   energies.  `info.original` should be the resolved original (i.e., from
+   #lowerChannelOriginal), not just the previous calibration.
+   */
+  void registerLowerChannelAdjustment(
+                        const std::shared_ptr<const SpecUtils::EnergyCalibration> &new_cal,
+                        const LowerChanCalOriginal &info );
   
   
   
@@ -289,7 +330,7 @@ public:
   
   /** Returns the pointer to the CALp resource (derived from Wt::WResource) that can be used to export CALp files.
    */
-  std::shared_ptr<EnergyCalImp::CALpDownloadResource> calpResources();
+  EnergyCalImp::CALpDownloadResource *calpResources();
 
   /** Makes a dialog the user can then use to upload a CALp file */
   void handleRequestToUploadCALp();
@@ -305,12 +346,40 @@ protected:
   
   
   void doRefreshFromFiles();
-  
+
+  /** Creates #m_specTypeMenu, #m_specTypeMenuStack, #m_calInfoDisplayStack, and all three
+   #m_detectorMenu entries.  Called once per layout (Wide/Tall) from #doRefreshFromFiles; after
+   that the menu contents are only diffed/updated in place.
+   */
+  void createCalDisplayWidgets();
+
   void specTypeToDisplayForChanged();
   
   void fitCoefficients();
-  bool canDoEnergyFit();
-  
+
+  /** Whether the "Fit Coeffs" button should be enabled, or the reason it shouldnt be. */
+  enum class CanFitCoefStatus : int
+  {
+    CanFit,
+    ForegroundNotApplied,  //"Foreground" unchecked in "Apply Changes To"
+    NoPeaksToUse,          //no peaks, or none marked to use for energy calibration
+    NotForegroundCal,      //shown display isnt showing the foregrounds displayed calibration
+    InvalidCalType,        //InvalidEquationType - no hint shown; the convert-to-poly msg covers it
+    NoCoefSelected,        //no "Fit" checkbox checked on the fit-source display
+    MorePeaksNeeded,       //more coefficients selected to fit than peaks marked to use
+    InternalError          //null stack/display/cal - no hint shown
+  };//enum class CanFitCoefStatus
+
+  CanFitCoefStatus canDoEnergyFit();
+
+  /** Returns the foreground CalDisplay of a displayed detector - the display whose "Fit"
+   checkboxes are consulted when fitting coefficients - or nullptr if there is none.
+   Optionally also gives the menu number and menu item, so the caller can select the display
+   in the GUI.
+   */
+  EnergyCalImp::CalDisplay *foregroundFitDisplay( int *menunum = nullptr,
+                                                  Wt::WMenuItem **item = nullptr );
+
   /** Have #refreshGuiFromFiles only ever get called from #render to avoid current situation
    of calling refreshGuiFromFiles multiple times for a single render (the looping over files can
    get expensive probably)
@@ -357,9 +426,9 @@ protected:
   Wt::WFlags<EnergyCalToolRenderFlags> m_renderFlags;
   
   InterSpec *m_interspec;
-  std::shared_ptr<PeakModel> m_peakModel;
+  PeakModel *m_peakModel;
   
-  std::shared_ptr<EnergyCalImp::CALpDownloadResource> m_calpResource;
+  EnergyCalImp::CALpDownloadResource *m_calpResource;
   
   WContainerWidget *m_tallLayoutContent;
   
@@ -373,8 +442,12 @@ protected:
   
   /** The menus that let you select which detector to show calibration info for.
    These menues are held in the #m_specTypeMenuStack stack.
-   
-   These entries will be nullptr if there is not a SpecFile for its respective {for, back, sec}
+
+   All three menus are created (in #createCalDisplayWidgets) even if there is not a SpecFile for
+   the respective {for, back, sec} - in that case the menu is just empty, and its item in
+   #m_specTypeMenu hidden.  When every displayed file has no more than one detector, all entries
+   go in the foreground menu (labeled "Foreground"/"Background"/"Secondary"), and the other two
+   menus are empty.
    */
   Wt::WMenu *m_detectorMenu[3];
   
@@ -414,51 +487,20 @@ protected:
   time_t m_lastGraphicalRecal;  // \TODO: switch this to std::chrono::timepoint
   int m_lastGraphicalRecalType;
   float m_lastGraphicalRecalEnergy;
-  Wt::Core::observing_ptr<EnergyCalGraphicalConfirm> m_graphicalRecal;
+  EnergyCalGraphicalConfirm *m_graphicalRecal;
   
   std::shared_ptr<SpecMeas> m_currentSpecMeas[3];
   std::set<int> m_currentSampleNumbers[3];
 
-  /** Per-(spectrum_type, detector_name) "original" energy calibration — the calibration the
-   measurement had at the moment the SpecMeas was first loaded as that spectrum type. Captured
-   in `displayedSpecChangedCallback` whenever a different SpecMeas appears for a given type;
-   left untouched on subsequent sample/detector display changes and on subsequent user
-   calibration edits. Persisted at the EnergyCalTool level so the entry survives CalDisplay
-   widget re-creation on every cal change.
-
-   Currently used by the LowerChannelEdge UI to compute the displayed offset/gain as a delta
-   from the original cal's channel edges. Storing the full EnergyCalibration (rather than just
-   the lower-channel-edges) generalizes naturally to a future "Reset to original calibration"
-   action and to delta-from-original display for Polynomial/FRF.
-
-   For each `SpectrumType`, `m_originalCalSpecMeas` records which SpecMeas the entries belong
-   to; when that pointer changes (new spectrum loaded), entries for that type are cleared and
-   re-captured.
+  /** Map from a session-adjusted lower-channel-energy calibration, to its original channel
+   energies and the cumulative adjustment applied; see #LowerChanCalOriginal.  Weak keys stay
+   resolvable while the measurements (or the undo/redo history) hold the calibrations; expired
+   entries are lazily pruned in #doRefreshFromFiles.
    */
-  std::map<std::pair<SpecUtils::SpectrumType, std::string>,
-           std::shared_ptr<const SpecUtils::EnergyCalibration>> m_originalCalibrations;
-  std::shared_ptr<SpecMeas> m_originalCalSpecMeas[3];
-
-public:
-  /** Look up the original calibration for the given (spectrum_type, detector_name). Returns
-   nullptr if no calibration has been registered for that pair (e.g., no file loaded for that
-   spectrum type, or the detector was not present at load time).
-   */
-  std::shared_ptr<const SpecUtils::EnergyCalibration>
-    originalCalibrationFor( const SpecUtils::SpectrumType type, const std::string &detname ) const;
-
-private:
-  /** If `meas` is a different SpecMeas than the one we last captured originals for under this
-   `type`, clear all entries for `type` and capture each detector's `energy_calibration()` as
-   the new "original". If `meas` matches the previously-captured one, only fill in entries for
-   detectors we hadn't yet seen.
-
-   Called from `displayedSpecChangedCallback`.
-   */
-  void captureOriginalCalibrationsIfNeeded( const SpecUtils::SpectrumType type,
-                                            const std::shared_ptr<SpecMeas> &meas );
+  std::map<std::weak_ptr<const SpecUtils::EnergyCalibration>, LowerChanCalOriginal,
+           std::owner_less<std::weak_ptr<const SpecUtils::EnergyCalibration>>> m_lowerChanOrigCals;
   
-  Wt::Core::observing_ptr<EnergyCalAddActionsWindow> m_addActionWindow;
+  EnergyCalAddActionsWindow *m_addActionWindow;
   
   /*
    We could hook up to SpecMeas::aboutToBeDeleted() to know whene file is about to go-away, but this

@@ -364,7 +364,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minBranchRatioDiv = searchOptions->addNew<WContainerWidget>();
   m_minBranchRatioDiv->setHiddenKeepsGeometry( true );
   WLabel *label = m_minBranchRatioDiv->addNew<WLabel>( WString::tr("isbe-min-br") );
-//  HelpSystem::attachToolTipOn( label,"Toggle or type minimum branching ratio.", showToolTips , HelpSystem::ToolTipPosition::Top);
+//  HelpSystem::attachToolTipOn( label,"Toggle or type minimum branching ratio.", showToolTips  );
 
   m_minBranchRatio = m_minBranchRatioDiv->addNew<NativeFloatSpinBox>();
   HelpSystem::attachToolTipOn( m_minBranchRatio, WString::tr("isbe-tt-min-br"),

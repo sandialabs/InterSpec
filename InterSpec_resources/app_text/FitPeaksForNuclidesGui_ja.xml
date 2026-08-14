@@ -33,8 +33,6 @@
   <message id="fpn-opt-use-background">バックグラウンド減算で計算</message>
 
   <!-- PeakFitForNuclideConfig option labels -->
-  <message id="fpn-opt-roi-min-chi2-red">ROI chi2削減閾値</message>
-  <message id="fpn-opt-roi-min-peak-sig">ROI有意性閾値</message>
   <message id="fpn-opt-obs-initial-sig">予測ピーク有意性閾値</message>
   <message id="fpn-opt-obs-final-sig">最終ピーク有意性閾値</message>
   <message id="fpn-opt-skew-type">ピーク歪度</message>
@@ -49,8 +47,6 @@
   <message id="fpn-opt-tt-dont-refine-energy-cal">フィットでエネルギー校正は変化しますが、フィット校正に基づくROI範囲の更新は行われません。</message>
   <message id="fpn-opt-tt-fit-bkgnd-peaks">第2の相対効率曲線を使用してNORMピーク（U-238、Ra-226、U-235、Th-232、K-40）をフィットします。</message>
   <message id="fpn-opt-tt-use-background">有効にすると、使用するROIを決定するためにピークフィッティング中にバックグラウンドスペクトルが減算されますが、返されるピークの最終フィットではバックグラウンドは減算されません。バックグラウンド減算なしでフィットするにはチェックを外してください。</message>
-  <message id="fpn-opt-tt-roi-min-chi2-red">ROI内のピークが有意と見なされるために必要な最小合計chi2削減量。ピークありのchi2がコンティニュアムのみのchi2より少なくともこの値だけ低い必要があります。</message>
-  <message id="fpn-opt-tt-roi-min-peak-sig">ピークが有意と見なされるための最小ピーク有意性（ピーク面積 / sqrt(コンティニュアム)）。ROI内のいずれかのピークの有意性がこの閾値を超える場合、ROIは保持されます。</message>
   <message id="fpn-opt-tt-obs-initial-sig">再フィット前の初期ピーク有意性フィルターの閾値。有意性 = (ピーク振幅 * 0.7607) / sqrt(pm_1_fwhm内のデータ面積)。</message>
   <message id="fpn-opt-tt-obs-final-sig">再フィット後の最終ピーク有意性の閾値。有意性 = ピーク面積 / ピーク面積不確かさ。</message>
   <message id="fpn-opt-tt-skew-type">フィット内の全ピークに適用される歪度形状。&quot;None&quot;は純粋なガウシアンを使用します。他のオプションは低エネルギーテール成分を追加します（例：NaI/CsI検出器用のExp*Gauss、HPGeの電荷収集テール用のCrystal Ball）。</message>

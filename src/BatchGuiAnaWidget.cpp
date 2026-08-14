@@ -42,6 +42,7 @@
 #include <Wt/WImage.h>
 #include <Wt/WLabel.h>
 #include <Wt/WServer.h>
+#include <Wt/WSpinBox.h>
 #include <Wt/WCheckBox.h>
 #include <Wt/WComboBox.h>
 #include <Wt/WLineEdit.h>
@@ -200,10 +201,48 @@ BatchGuiAnaWidget::BatchGuiAnaWidget()
   interspec->useMessageResourceBundle( "BatchGuiAnaWidget" );
 }
 
+void BatchGuiAnaWidget::setMultiSampleHandling( const BatchSampleSelect::MultiSampleHandling )
+{
+  // No-op; analysis types the option applies to override this.
+}
+
+
+void BatchGuiPeakFitWidget::setMultiSampleHandling( const BatchSampleSelect::MultiSampleHandling handling )
+{
+  if( !m_multi_sample_handling )
+    return;
+
+  int index = 0;
+  switch( handling )
+  {
+    case BatchSampleSelect::MultiSampleHandling::Auto:                 index = 0; break;
+    case BatchSampleSelect::MultiSampleHandling::EachSampleSeparately: index = 1; break;
+    case BatchSampleSelect::MultiSampleHandling::SumAllSamples:        index = 2; break;
+  }//switch( handling )
+
+  m_multi_sample_handling->setCurrentIndex( index );
+  optionsChanged();
+}//void BatchGuiPeakFitWidget::setMultiSampleHandling(...)
+
+
 Wt::Signal<bool,Wt::WString> &BatchGuiAnaWidget::canDoAnalysisSignal()
 {
   return m_canDoAnalysis;
 }
+
+const std::vector<std::pair<const char *,double>> BatchGuiPeakFitWidget::sm_mda_confidence_levels{
+  { "95%", 0.95 },
+  { "99%", 0.99 },
+  // Plain percentages rather than a sigma claim: these are the central-normal probabilities for
+  //  1-5 sigma, but they are applied as ONE-SIDED confidence levels, so a "1 sigma" label would
+  //  describe a bound this is not.  Values unchanged.
+  { "68.27%", 0.682689492137086 },
+  { "95.45%", 0.954499736103642 },
+  { "99.73%", 0.997300203936740 },
+  { "99.9937%", 0.999936657516334 },
+  { "99.999943%", 0.999999426696856 }
+};
+
 
 BatchGuiPeakFitWidget::BatchGuiPeakFitWidget() : BatchGuiAnaWidget()
 {
@@ -351,6 +390,79 @@ BatchGuiPeakFitWidget::BatchGuiPeakFitWidget() : BatchGuiAnaWidget()
   m_peak_hypothesis_threshold->setWidth( 40 );
   HelpSystem::attachToolTipOn(
     m_peak_hypothesis_threshold, WString::tr( "bgw-peak-hypothesis-threshold-tt" ), showToolTips );
+
+  m_multi_sample_container = new Wt::WContainerWidget( float_options );
+  m_multi_sample_container->addStyleClass( "ThresholdOptionContainer" );
+
+  m_multi_sample_label = new Wt::WLabel( WString::tr( "bgw-multi-sample-label" ), m_multi_sample_container );
+  m_multi_sample_label->setWordWrap( false );
+  m_multi_sample_handling = new Wt::WComboBox( m_multi_sample_container );
+  m_multi_sample_label->setBuddy( m_multi_sample_handling );
+  m_multi_sample_handling->addItem( WString::tr( "bgw-multi-sample-auto" ) );
+  m_multi_sample_handling->addItem( WString::tr( "bgw-multi-sample-each" ) );
+  m_multi_sample_handling->addItem( WString::tr( "bgw-multi-sample-sum" ) );
+  m_multi_sample_handling->setCurrentIndex( 0 );
+  m_multi_sample_handling->activated().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
+  HelpSystem::attachToolTipOn( m_multi_sample_handling, WString::tr( "bgw-multi-sample-tt" ), showToolTips );
+
+  // Detection limit ("MDA") options, for the exemplar peaks that couldnt be fit.
+  m_mda_options_container = new Wt::WContainerWidget( float_options );
+  m_mda_options_container->addStyleClass( "MdaOptionsContainer" );
+
+  m_mda_method_container = new Wt::WContainerWidget( m_mda_options_container );
+  m_mda_method_container->addStyleClass( "ThresholdOptionContainer" );
+  m_mda_method_label = new Wt::WLabel( WString::tr( "bgw-mda-method-label" ), m_mda_method_container );
+  m_mda_method_label->setWordWrap( false );
+  m_mda_method = new Wt::WComboBox( m_mda_method_container );
+  m_mda_method_label->setBuddy( m_mda_method );
+  m_mda_method->addItem( WString::tr( "bgw-mda-method-none" ) );
+  m_mda_method->addItem( WString::tr( "bgw-mda-method-currie" ) );
+  m_mda_method->addItem( WString::tr( "bgw-mda-method-currie-decon" ) );
+  m_mda_method->setCurrentIndex( 1 );  // Default to Currie, same as command line
+  m_mda_method->activated().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
+  HelpSystem::attachToolTipOn( m_mda_method, WString::tr( "bgw-mda-method-tt" ), showToolTips );
+
+  m_mda_confidence_level_container = new Wt::WContainerWidget( m_mda_options_container );
+  m_mda_confidence_level_container->addStyleClass( "ThresholdOptionContainer" );
+  m_mda_confidence_level_label = new Wt::WLabel( WString::tr( "bgw-mda-cl-label" ),
+                                                m_mda_confidence_level_container );
+  m_mda_confidence_level_label->setWordWrap( false );
+  m_mda_confidence_level = new Wt::WComboBox( m_mda_confidence_level_container );
+  m_mda_confidence_level_label->setBuddy( m_mda_confidence_level );
+  for( int i = 0; i < static_cast<int>(sm_mda_confidence_levels.size()); ++i )
+    m_mda_confidence_level->addItem( WString::fromUTF8( sm_mda_confidence_levels[i].first ) );
+  m_mda_confidence_level->setCurrentIndex( 0 );  // Default to 95%, same as command line
+  m_mda_confidence_level->activated().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
+  HelpSystem::attachToolTipOn( m_mda_confidence_level, WString::tr( "bgw-mda-cl-tt" ), showToolTips );
+
+  m_mda_side_channels_container = new Wt::WContainerWidget( m_mda_options_container );
+  m_mda_side_channels_container->addStyleClass( "ThresholdOptionContainer" );
+  m_mda_side_channels_label = new Wt::WLabel( WString::tr( "bgw-mda-side-channels-label" ),
+                                             m_mda_side_channels_container );
+  m_mda_side_channels_label->setWordWrap( false );
+  m_mda_side_channels = new Wt::WSpinBox( m_mda_side_channels_container );
+  m_mda_side_channels_label->setBuddy( m_mda_side_channels );
+  m_mda_side_channels->setRange( 1, 64 );
+  m_mda_side_channels->setValue( 4 );  // Default value from command line
+  m_mda_side_channels->setWidth( 45 );
+  m_mda_side_channels->changed().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
+  HelpSystem::attachToolTipOn( m_mda_side_channels, WString::tr( "bgw-mda-side-channels-tt" ), showToolTips );
+
+#if( ALLOW_SPECIFY_MDA_ROI_WIDTH )
+  m_mda_roi_num_fwhm_container = new Wt::WContainerWidget( m_mda_options_container );
+  m_mda_roi_num_fwhm_container->addStyleClass( "ThresholdOptionContainer" );
+  m_mda_roi_num_fwhm_label = new Wt::WLabel( WString::tr( "bgw-mda-roi-num-fwhm-label" ),
+                                            m_mda_roi_num_fwhm_container );
+  m_mda_roi_num_fwhm_label->setWordWrap( false );
+  m_mda_roi_num_fwhm = new NativeFloatSpinBox( m_mda_roi_num_fwhm_container );
+  m_mda_roi_num_fwhm_label->setBuddy( m_mda_roi_num_fwhm );
+  m_mda_roi_num_fwhm->setValue( 2.5f );  // Default value from command line
+  m_mda_roi_num_fwhm->setRange( 0.5f, 10.0f );
+  m_mda_roi_num_fwhm->setSpinnerHidden( true );
+  m_mda_roi_num_fwhm->setWidth( 40 );
+  m_mda_roi_num_fwhm->valueChanged().connect( this, &BatchGuiPeakFitWidget::optionsChanged );
+  HelpSystem::attachToolTipOn( m_mda_roi_num_fwhm, WString::tr( "bgw-mda-roi-num-fwhm-tt" ), showToolTips );
+#endif //ALLOW_SPECIFY_MDA_ROI_WIDTH
 
 
   m_reports_container = addNew<GroupBox>( WString::tr( "bgw-reports-grp-title" ) );
@@ -605,6 +717,15 @@ void BatchGuiPeakFitWidget::optionsChanged()
   m_peak_stat_threshold_container->setHidden( fit_all_peaks );// Fit thresholds not currently implemented when fitting all peaks
   m_peak_hypothesis_threshold_container->setHidden( fit_all_peaks );// Fit thresholds not currently implemented when fitting all peaks
 
+  // There are no exemplar peaks to miss when fitting for all peaks, so no limits to compute
+  m_mda_options_container->setHidden( fit_all_peaks );
+  const bool no_mda = (m_mda_method->currentIndex() == 0);
+  m_mda_confidence_level_container->setHidden( no_mda );
+  m_mda_side_channels_container->setHidden( no_mda );
+#if( ALLOW_SPECIFY_MDA_ROI_WIDTH )
+  m_mda_roi_num_fwhm_container->setHidden( no_mda );
+#endif
+
   const bool use_current_fore = m_use_current_foreground->isChecked();
   m_exemplar_file_drop->setHidden( use_current_fore );
   if( !use_current_fore )
@@ -845,12 +966,33 @@ BatchPeak::BatchPeakFitOptions BatchGuiPeakFitWidget::getPeakFitOptions() const
   {
     answer.refit_energy_cal = false;
     answer.show_nonfit_peaks = false;
+    // No exemplar peaks to miss, so there are no detection limits to compute
+    answer.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::None;
   } else
   {
     answer.refit_energy_cal = m_refit_energy_cal->isChecked();
     answer.show_nonfit_peaks = m_show_nonfit_peaks->isChecked();
     answer.peak_stat_threshold = m_peak_stat_threshold->value();
     answer.peak_hypothesis_threshold = m_peak_hypothesis_threshold->value();
+
+    switch( m_mda_method->currentIndex() )
+    {
+      case 0:  answer.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::None;           break;
+      case 2:  answer.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::CurrieAndDecon; break;
+      default: answer.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::Currie;         break;
+    }//switch( m_mda_method->currentIndex() )
+
+    const int cl_index = m_mda_confidence_level->currentIndex();
+    if( (cl_index >= 0) && (cl_index < static_cast<int>(sm_mda_confidence_levels.size())) )
+      answer.mda_confidence_level = sm_mda_confidence_levels[cl_index].second;
+
+    // Wt 3.7.1's WSpinBox does not clamp typed-in text to setRange(), and a negative value would
+    //  wrap around when cast to size_t, so clamp here.
+    const int side_channels = std::max( 1, std::min( 64, m_mda_side_channels->value() ) );
+    answer.mda_num_side_channels = static_cast<size_t>( side_channels );
+#if( ALLOW_SPECIFY_MDA_ROI_WIDTH )
+    answer.mda_roi_num_fwhm = m_mda_roi_num_fwhm->value();
+#endif
   }
 
   tuple<shared_ptr<const SpecMeas>, string, set<int>> exemplar_info = get_exemplar();
@@ -863,6 +1005,19 @@ BatchPeak::BatchPeakFitOptions BatchGuiPeakFitWidget::getPeakFitOptions() const
   answer.create_csv_output = m_create_csv_output->isChecked();
   answer.create_json_output = m_create_json_output->isChecked();
   answer.concatenate_to_n42 = m_concatenate_to_n42->isChecked();
+
+  switch( m_multi_sample_handling ? m_multi_sample_handling->currentIndex() : 0 )
+  {
+    case 1:
+      answer.multi_sample_handling = BatchSampleSelect::MultiSampleHandling::EachSampleSeparately;
+      break;
+    case 2:
+      answer.multi_sample_handling = BatchSampleSelect::MultiSampleHandling::SumAllSamples;
+      break;
+    default:
+      answer.multi_sample_handling = BatchSampleSelect::MultiSampleHandling::Auto;
+      break;
+  }//switch( m_multi_sample_handling->currentIndex() )
 
   if( m_no_background->isChecked() )
   {
@@ -986,6 +1141,9 @@ void BatchGuiPeakFitWidget::performAnalysis(
   }// for( size_t i = 0; i < input_files.size(); ++i )
 
   auto error_msg = make_shared<string>();
+  // Resolve now, on the session thread: the worker below runs without a `WApplication`, where
+  //  `WString::tr(...)` cannot resolve and would yield the literal "??key??".
+  const string unknown_error_msg = WString::tr( "bgw-unknown-analysis-error" ).toUTF8();
   auto results = make_shared<BatchPeak::BatchPeakFitSummary>();
 
   SimpleDialog *waiting_dialog =
@@ -1297,6 +1455,9 @@ void BatchGuiActShieldAnaWidget::performAnalysis(
     make_shared<BatchActivity::BatchActivityFitSummary>();
 
   auto error_msg = make_shared<string>();
+  // Resolve now, on the session thread: the worker below runs without a `WApplication`, where
+  //  `WString::tr(...)` cannot resolve and would yield the literal "??key??".
+  const string unknown_error_msg = WString::tr( "bgw-unknown-analysis-error" ).toUTF8();
 
   SimpleDialog *waiting_dialog =
     SimpleDialog::make( WString::tr( "bgw-performing-work-title" ), WString::tr( "bgw-performing-work-msg" ) );
@@ -1638,6 +1799,13 @@ BatchGuiIsotopicsByNuclidesWidget::BatchGuiIsotopicsByNuclidesWidget()
 {
   addStyleClass( "BatchGuiIsotopicsByNuclidesWidget" );
 
+  // Make clear these options are for the "Isotopics by nuclides" tool, and not "Isotopics by peaks".
+  //  The base-class ctor has already added its widgets to `this`, so insert at the front.
+  WText *title = new WText( WString::tr( "bgw-iso-by-nucs-title" ) );
+  title->setInline( false );
+  title->addStyleClass( "IsotopicsOptsTitle" );
+  insertWidget( 0, title );
+
   // Hide peak-fit-only controls that don't apply to RelActCalcAuto.
   m_fit_all_peaks->setChecked( false );
   m_fit_all_peaks->hide();
@@ -1649,6 +1817,8 @@ BatchGuiIsotopicsByNuclidesWidget::BatchGuiIsotopicsByNuclidesWidget()
   m_use_exemplar_energy_cal_for_background->hide();
   m_show_nonfit_peaks->setChecked( false );
   m_show_nonfit_peaks->hide();
+  m_mda_method->setCurrentIndex( 0 );
+  m_mda_options_container->hide();
   m_create_csv_output->setChecked( false );
   m_create_csv_output->hide();
   m_concatenate_to_n42->setChecked( false );
@@ -1961,6 +2131,10 @@ BatchRelActAuto::Options BatchGuiIsotopicsByNuclidesWidget::getIsotopicsOptions(
   options.write_n42_with_results = m_write_n42_with_results->isChecked();
   options.create_json_output = m_create_json_output->isChecked();
 
+  // The multi-record combo is inherited from BatchGuiPeakFitWidget, and is shown on this pane, so
+  //  it has to be carried over into our own options struct.
+  options.multi_sample_handling = getPeakFitOptions().multi_sample_handling;
+
   // Reports - default to "html" per-file + "html" summary; users with custom
   // template uploaders override by checking those checkboxes.
   if( m_html_report->isChecked() )
@@ -2031,18 +2205,35 @@ std::pair<bool,Wt::WString> BatchGuiIsotopicsByNuclidesWidget::canDoAnalysis() c
   // — they carry a stored `<RelActCalcAuto>` state instead.
 
   // Either an exemplar with a stored state OR an uploaded rel-eff config XML.
+  //  `get_exemplar()` deep-copies the foreground `SpecMeas` (and re-serializes the tool states into
+  //  it), and we are called on every `optionsChanged()`, so resolve the state exactly once.
   const bool have_state_override = (m_use_rel_eff_config_override->isChecked()
                                     && m_uploaded_rel_eff_config);
-  if( !have_state_override )
+  shared_ptr<RelActCalcAuto::RelActAutoGuiState> resolved_state;
+  if( have_state_override )
+  {
+    resolved_state = m_uploaded_rel_eff_config;
+  }else
   {
     const tuple<shared_ptr<SpecMeas>, string, set<int>> exemplar_info = get_exemplar();
     const shared_ptr<SpecMeas> &exemplar = std::get<0>( exemplar_info );
     if( !exemplar )
       return { false, WString::tr("bgw-no-ana-iso-no-state-or-exemplar") };
+
     unique_ptr<RelActCalcAuto::RelActAutoGuiState> state = exemplar->getRelActAutoGuiState();
     if( !state )
       return { false, WString::tr("bgw-no-ana-iso-no-state-in-exemplar") };
-  }
+
+    resolved_state.reset( state.release() );
+  }//if( have_state_override ) / else
+
+  // Having a state isnt enough - it must actually define a problem.  Just opening the "Isotopics
+  //  by nuclides" tool (without configuring it) stores a state with no nuclides and no energy
+  //  ranges, and that would otherwise sail through to a doomed batch analysis.
+  assert( resolved_state );
+  const string why_state_unusable = resolved_state->options.why_not_usable();
+  if( !why_state_unusable.empty() )
+    return { false, WString::tr("bgw-no-ana-iso-state-not-configured").arg( why_state_unusable ) };
 
   // Background: must have a usable choice (no-background, current background,
   // or an uploaded background file).  Mirrors the relevant slice of
@@ -2065,32 +2256,13 @@ std::pair<bool,Wt::WString> BatchGuiIsotopicsByNuclidesWidget::canDoAnalysis() c
   if( !back_okay )
     return { false, WString::tr("bgw-no-ana-peak-fit-bad-background") };
 
-  // Physical-model rel-eff curve requires a DRF.
-  shared_ptr<RelActCalcAuto::RelActAutoGuiState> resolved_state;
-  if( have_state_override )
-  {
-    resolved_state = m_uploaded_rel_eff_config;
-  }else
-  {
-    const tuple<shared_ptr<SpecMeas>, string, set<int>> exemplar_info = get_exemplar();
-    const shared_ptr<SpecMeas> &exemplar = std::get<0>( exemplar_info );
-    if( exemplar )
-    {
-      unique_ptr<RelActCalcAuto::RelActAutoGuiState> tmp = exemplar->getRelActAutoGuiState();
-      if( tmp )
-        resolved_state.reset( tmp.release() );
-    }
-  }
+  // A DRF-seeded FWHM method requires a DRF.
+  const RelActCalcAuto::FwhmEstimationMethod fwhm_m = resolved_state->options.fwhm_estimation_method;
+  const bool needs_drf = ( ( fwhm_m == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
+                           || ( fwhm_m == RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency ) );
 
-  if( resolved_state )
-  {
-    const RelActCalcAuto::FwhmEstimationMethod fwhm_m = resolved_state->options.fwhm_estimation_method;
-    const bool needs_drf = ( ( fwhm_m == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
-                             || ( fwhm_m == RelActCalcAuto::FwhmEstimationMethod::StartingFromDetectorEfficiency ) );
-
-    if( needs_drf && !detector() )
-      return { false, WString::tr("bgw-no-ana-iso-need-drf") };
-  }
+  if( needs_drf && !detector() )
+    return { false, WString::tr("bgw-no-ana-iso-need-drf") };
 
   return { true, WString() };
 }
@@ -2112,6 +2284,8 @@ void BatchGuiIsotopicsByNuclidesWidget::optionsChanged()
   m_create_csv_output->hide();
   m_concatenate_to_n42->hide();
   m_use_existing_background_peaks->hide();
+  if( m_mda_options_container )
+    m_mda_options_container->hide();
   if( m_peak_stat_threshold_container )
     m_peak_stat_threshold_container->hide();
   if( m_peak_hypothesis_threshold_container )
@@ -2166,6 +2340,9 @@ void BatchGuiIsotopicsByNuclidesWidget::performAnalysis(
   shared_ptr<BatchRelActAuto::Summary> summary_results = make_shared<BatchRelActAuto::Summary>();
 
   auto error_msg = make_shared<string>();
+  // Resolve now, on the session thread: the worker below runs without a `WApplication`, where
+  //  `WString::tr(...)` cannot resolve and would yield the literal "??key??".
+  const string unknown_error_msg = WString::tr( "bgw-unknown-analysis-error" ).toUTF8();
 
   SimpleDialog *waiting_dialog = SimpleDialog::make( WString::tr("bgw-performing-work-title"),
                                                       WString::tr("bgw-performing-work-msg") );

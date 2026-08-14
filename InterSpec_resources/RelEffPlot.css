@@ -25,6 +25,76 @@
 .RelEffPlot circle.noiso{ fill: black; }
 .RelEffPlot circle.multiiso{ fill: #ef5675; }
 
+/* Points whose counts are shared with another relative efficiency curve.  The split between curves is a
+   model assumption rather than a measurement, so these are drawn hollow to say they are not independent
+   evidence for this curve (their error bars are also widened to cover the unmeasured split). */
+.RelEffPlot circle.blended {
+    fill-opacity: 0.15;
+    stroke-width: 1.5;
+}
+
+/* The "some points were left off this chart" affordance.
+   Positioned against the chart's container div - `updateOmittedPointsInfo` gives that div
+   `position: relative` if it isn't already positioned, so these never escape to an outer dialog. */
+.RelEffPlotOmittedIcon {
+    position: absolute;
+    left: 2px;
+    top: 2px;
+    width: 15px;
+    height: 15px;
+    line-height: 15px;
+    text-align: center;
+    font: italic bold 11px serif;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+    background: var(--interspec-background-color, #ffffee);
+    color: var(--interspec-text-color, #333322);
+    opacity: 0.55;
+    cursor: pointer;
+    user-select: none;
+}
+
+.RelEffPlotOmittedIcon:hover { opacity: 1; }
+
+.RelEffPlotOmittedPanel {
+    position: absolute;
+    /* Adjoins the icon, so there is no gap for the pointer to fall through on its way over to the panel */
+    left: 17px;
+    top: 2px;
+    max-width: 95%;
+    max-height: 90%;
+    overflow: auto;
+    z-index: 10;
+    padding: 6px 8px;
+    font: 11px sans-serif;
+    border-radius: 6px;
+    /* Follows the app color theme (variables set on :root by InterSpec::applyColorTheme); the fallbacks
+       are for the self-contained HTML reports, which do not define them. */
+    background: var(--interspec-background-color, #ffffee);
+    color: var(--interspec-text-color, #333322);
+    border: 1px solid var(--interspec-border-color, #cccc99);
+    box-shadow: 0 1px 4px rgba(0,0,0,0.25);
+}
+
+.RelEffPlotOmittedPanel table { border-collapse: collapse; }
+.RelEffPlotOmittedPanel td { padding: 1px 6px 1px 0; vertical-align: top; }
+.RelEffPlotOmittedHeader td { font-weight: bold; border-bottom: 1px solid currentColor; }
+.RelEffPlotOmittedTitle { font-weight: bold; margin-bottom: 2px; }
+.RelEffPlotOmittedExplain { margin-bottom: 4px; opacity: 0.8; }
+.RelEffPlotOmittedCurve { font-weight: bold; padding-top: 4px; }
+.RelEffPlotBlendNote { margin-top: 3px; max-width: 260px; opacity: 0.85; }
+
+/* Note the var() is repeated here so that when the app _has_ set a theme, it still wins - this block would
+   otherwise override it, since it comes later at the same specificity. */
+@media (prefers-color-scheme: dark) {
+    .RelEffPlotOmittedIcon,
+    .RelEffPlotOmittedPanel {
+        background: var(--interspec-background-color, #2b2b2b);
+        color: var(--interspec-text-color, #dddddd);
+        border-color: var(--interspec-border-color, #555555);
+    }
+}
+
 .RelEffPlot .errorbar {
   fill: none;
   stroke: grey;

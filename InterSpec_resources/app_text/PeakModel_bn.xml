@@ -23,7 +23,6 @@
   <message id="pm-hdr-up-energy">উচ্চ শক্তি</message>
   <message id="pm-hdr-roi-counts">ROI কাউন্ট</message>
 
-
   <message id="pm-hdr-tt-mean">মিন এনার্জি</message>
   <message id="pm-hdr-tt-fwhm">অর্ধ সর্বোচ্চ এ সম্পূর্ণ প্রস্থ</message>
   <message id="pm-hdr-tt-amp">পিক এলাকা</message>
@@ -34,6 +33,5 @@
   <message id="pm-hdr-tt-color">পিক রং</message>
   <message id="pm-hdr-tt-label">ব্যবহারকারী নির্দিষ্ট লেবেল</message>
   <message id="pm-hdr-tt-roi-counts">আগ্রহের অঞ্চলে গামা কাউন্টের সমাকলন</message>
-  <message id="pm-hdr-tt-"></message>
 
 </messages>

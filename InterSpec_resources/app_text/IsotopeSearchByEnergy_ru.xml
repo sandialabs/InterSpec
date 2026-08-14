@@ -69,8 +69,6 @@
   <message id="isbe-category-nuc-xray-rctn-desc">Все нуклиды, рентгеновские лучи (распад и флуоресценция) и реакции</message>
   <message id="isbe-category-xray">Флуоресцентный рентген</message>
   <message id="isbe-category-xray-desc">Только флуоресцентный рентген</message>
-  <message id="isbe-category-reactions">Реакции</message>
-  <message id="isbe-category-reactions-desc">Только реакции</message>
   <message id="isbe-category-medical">Медицинские нуклиды</message>
   <message id="isbe-category-medical-desc">Обычные медицинские нуклиды</message>
   <message id="isbe-category-industrial">Промышленные нуклиды</message>

@@ -2278,6 +2278,23 @@ void ShieldingSelect::init()
   m_materialSuggest->forEdit( m_materialEdit,
                  PopupTrigger::Editing | PopupTrigger::DropDownIcon );
 
+  // `ShieldingSelect` is frequently hosted inside an AuxWindow that calls
+  //  `rejectWhenEscapePressed()`, which wires the global (domRoot) Escape handler to close the
+  //  window.  When the suggestion popup is open, Escape should only dismiss the popup - but the
+  //  keydown still bubbles up to the domRoot and closes the whole window.  Install a capture-phase
+  //  keydown listener on the material edit that stops Escape from propagating *only while the popup
+  //  is showing*, so the popup still hides (it does that on keyup) while the window stays open.
+  //  This must be a raw capture-phase listener: WSuggestionPopup replaces the edit's `onkeydown`
+  //  property while it is shown, which would suppress a Wt keyWentDown() handler.
+  const std::string escapeJs =
+    "var e=" + m_materialEdit->jsRef() + ";"
+    "if(e){e.addEventListener('keydown',function(ev){"
+      "if(ev.keyCode!==27)return;"
+      "var p=" + m_materialSuggest->jsRef() + ";"
+      "if(p && p.style.display!=='none')ev.stopPropagation();"
+    "},true);}";
+  m_materialEdit->doJavaScript( escapeJs );
+
   if( m_forFitting )
   {
     auto materialSummaryUniq = std::make_unique<WText>( "", TextFormat::XHTML );
@@ -3441,7 +3458,8 @@ std::shared_ptr<const Material> ShieldingSelect::material( const std::string &te
     //material wasnt in the database
   }
 
-  //See if 'text' is a chemical formula, if so add it to possible suggestions
+  //See if 'text' is a chemical formula, and if so add it to the suggestions so the user
+  //  doesn't have to retype it next time.
   try
   {
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();

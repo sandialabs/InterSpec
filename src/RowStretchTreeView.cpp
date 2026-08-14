@@ -188,9 +188,12 @@ void RowStretchTreeView::render(	Wt::WFlags<Wt::RenderFlag> flags )
     //  and only very superficially tested for Wt 3.7.1
     //  The WT_RESIZE_JS member seems to be called even if a CSS flex layout
     //  is controlling the size of the item.
+    //  Note: Wt can call this resize function before the WTreeView's client-side object exists
+    //  (e.g. if the widget is given an explicit size while its rendering is still pending), so
+    //  we must not assume it is there - otherwise the resulting JS exception kills the session.
     setJavaScriptMember(WT_RESIZE_JS,
                         "function(self,w,h) {"
-                        "self.wtObj.wtResize();"
+                        "if(self.wtObj) self.wtObj.wtResize();"
                         "Wt.WT.TreeViewCheckWidth(" + jsRef() + ");"
                         "}");
 

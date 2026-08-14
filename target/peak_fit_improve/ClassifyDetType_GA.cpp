@@ -70,55 +70,10 @@ namespace
 }//anonymous namespace
 
 
-// ============================================================================
-// HighResClassifySettings print/to_json
-// ============================================================================
-
-string HighResClassifySettings::print( const string &var_name ) const
-{
-  string result;
-  result += var_name + ".hpge_fwhm_bias_mult = " + to_string( hpge_fwhm_bias_mult ) + ";\n";
-  result += var_name + ".nai_fwhm_bias_mult = " + to_string( nai_fwhm_bias_mult ) + ";\n";
-  result += var_name + ".hpge_distance_weight = " + to_string( hpge_distance_weight ) + ";\n";
-  result += var_name + ".nai_distance_weight = " + to_string( nai_distance_weight ) + ";\n";
-  result += var_name + ".amp_clamp_denom = " + to_string( amp_clamp_denom ) + ";\n";
-  result += var_name + ".weight_clamp_max = " + to_string( weight_clamp_max ) + ";\n";
-  result += var_name + ".min_peak_energy = " + to_string( min_peak_energy ) + ";\n";
-  result += var_name + ".max_peak_energy = " + to_string( max_peak_energy ) + ";\n";
-  result += var_name + ".unknown_threshold = " + to_string( unknown_threshold ) + ";\n";
-  result += var_name + ".min_peaks_for_classify = " + to_string( min_peaks_for_classify ) + ";\n";
-  result += var_name + ".min_peak_significance = " + to_string( min_peak_significance ) + ";\n";
-  result += var_name + ".sig_fraction_of_max = " + to_string( sig_fraction_of_max ) + ";\n";
-  result += var_name + ".narrow_penalty_mult = " + to_string( narrow_penalty_mult ) + ";\n";
-  result += var_name + ".narrow_sig_threshold = " + to_string( narrow_sig_threshold ) + ";\n";
-  result += var_name + ".best_peak_czt_penalty = " + to_string( best_peak_czt_penalty ) + ";\n";
-  result += var_name + ".best_peak_conf_threshold = " + to_string( best_peak_conf_threshold ) + ";\n";
-  return result;
-}//HighResClassifySettings::print
-
-
-string HighResClassifySettings::to_json() const
-{
-  string result = "{\n";
-  result += "  \"hpge_fwhm_bias_mult\": " + to_string( hpge_fwhm_bias_mult ) + ",\n";
-  result += "  \"nai_fwhm_bias_mult\": " + to_string( nai_fwhm_bias_mult ) + ",\n";
-  result += "  \"hpge_distance_weight\": " + to_string( hpge_distance_weight ) + ",\n";
-  result += "  \"nai_distance_weight\": " + to_string( nai_distance_weight ) + ",\n";
-  result += "  \"amp_clamp_denom\": " + to_string( amp_clamp_denom ) + ",\n";
-  result += "  \"weight_clamp_max\": " + to_string( weight_clamp_max ) + ",\n";
-  result += "  \"min_peak_energy\": " + to_string( min_peak_energy ) + ",\n";
-  result += "  \"max_peak_energy\": " + to_string( max_peak_energy ) + ",\n";
-  result += "  \"unknown_threshold\": " + to_string( unknown_threshold ) + ",\n";
-  result += "  \"min_peaks_for_classify\": " + to_string( min_peaks_for_classify ) + ",\n";
-  result += "  \"min_peak_significance\": " + to_string( min_peak_significance ) + ",\n";
-  result += "  \"sig_fraction_of_max\": " + to_string( sig_fraction_of_max ) + ",\n";
-  result += "  \"narrow_penalty_mult\": " + to_string( narrow_penalty_mult ) + ",\n";
-  result += "  \"narrow_sig_threshold\": " + to_string( narrow_sig_threshold ) + ",\n";
-  result += "  \"best_peak_czt_penalty\": " + to_string( best_peak_czt_penalty ) + ",\n";
-  result += "  \"best_peak_conf_threshold\": " + to_string( best_peak_conf_threshold ) + "\n";
-  result += "}";
-  return result;
-}//HighResClassifySettings::to_json
+// HighResClassifySettings::print / ::to_json are DEFINED in the production translation unit
+// src/PeakFitSpecImp.cpp (as LowHighResClassifySettings, of which HighResClassifySettings is an alias
+// per ClassifyDetType_GA.h).  The duplicate copies that used to live here were an ODR violation that
+// only static linking (InterSpec.a) surfaces as a duplicate-symbol error; removed 2026-07-19.
 
 
 // ============================================================================

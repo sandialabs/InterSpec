@@ -5,7 +5,6 @@
   <message id="dls-fit-fwhm-btn">FWHMをフィット...</message>
   <message id="dls-select-drf-btn">検出器を選択...</message>
   <message id="dls-further-details-link">詳細...</message>
-  <message id="dls-conf-level-label">信頼水準:</message>
   <message id="dls-roi-lower-label">ROI下限:</message>
   <message id="dls-roi-upper-label">ROI上限:</message>
   <message id="dls-num-side-channel-label">サイドチャンネル数:</message>
@@ -20,9 +19,6 @@
       ピーク領域に隣接するサイドチャンネルを選択するオプションは関係なくなるため、非表示になります。
     </p>
   </message>
-  <message id="dls-cont-norm-unknown">フローティング</message>
-  <message id="dls-cont-norm-not-present">信号なしとして</message>
-  <message id="dls-cont-norm-fixed-by-sides">サイドから</message>
   <message id="dls-roi-changed-no-gamma">ROIの変更により主要ガンマが除外されました - 変更しません</message>
   <message id="dls-suggest-fwhm">検出器FWHM: {1} keV</message>
   <message id="dls-rough-est-fwhm">概算FWHM: {1} keV</message>
@@ -38,7 +34,7 @@
 
   <message id="dls-det-act-with-range">検出: {1}, 範囲 [{2}, {3}], @{4} CL</message>
   <message id="dls-det-no-result">すみません、結果がありません</message>
-  <message id="dls-det-counts-with-range">過剰カウント: {1}, 範囲 [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">信号推定: {1} カウント, 範囲 [{2}, {3}], @{4} CL</message>
   <message id="dls-det-act-less-zero">放射能 &lt; 0 {1} （期待値より有意に少ないカウントが観測されました）。</message>
   <message id="dls-det-counts-less-zero">過剰カウント &lt; 0 {2} （期待値より有意に少ないカウントが観測されました）。</message>
   <message id="dls-det-upper-bound">{1}未満が@{2} CLで存在。</message>
@@ -59,6 +55,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">{1} @{2} CLの上限ピーク</message>
   <message id="dls-results-txt-upper-bound-act">{1}未満 @{2} CL</message>
+  <message id="dls-results-txt-predicted-act">予測感度: {3} の測定に対し、信頼度 {2} で {1} 未満</message>
+  <message id="dls-results-txt-predicted-counts">予測感度: {3} の測定に対し、信頼度 {2} で {1} 信号カウント未満</message>
+  <message id="dls-chart-title-predicted-act">{1} @{2} CLの予測感度ピーク</message>
+  <message id="dls-chart-title-predicted-counts">{1}カウント @{2} CLの予測感度ピーク</message>
   <message id="dls-chart-title-upper-bound-counts">{1}カウント @{2} CLの上限ピーク</message>
   <message id="dls-results-txt-upper-bound-counts">{1}信号カウント未満が@{2} CLで存在</message>
   <message id="dls-err-no-meas">利用可能な測定がありません</message>
@@ -83,7 +83,16 @@
   <message id="dls-err-select-det">検出器効率関数を選択してください。</message>
   <message id="dls-err-neg-distance">距離は負にできません。</message>
   <message id="dls-err-no-fwhm-info">検出器効率関数にはFWHM情報がありません - FWHMをフィットするか、検出器を変更してください。</message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
+  <message id="dls-is-background-spectrum-cb-short">背景?</message>
+  <message id="dls-num-side-channel-label-short">側方ch数:</message>
+  <message id="dls-result-projected-band"> (通常この値の{1}&ndash;{2}&times;)</message>
+  <message id="dls-roi-lower-label-short">下限:</message>
+  <message id="dls-roi-upper-label-short">上限:</message>
+  <message id="dls-scale-more-info-note">
+    実時間 {1} に換算 (ライブタイム {2}、測定実時間 {4} の &times;{3} 倍)。
+  </message>
+
+  <!-- 逆畳み込み法が選択されていて、これらが無効化されているときに、詳細設定の下に表示される。
+       説明のない無効化された項目は不具合のように見えるため。 -->
+  <message id="dls-advanced-decon-note">これらは Currie 法に適用されます。逆畳み込みの限界ではまだ使用されません。</message>
 </messages>

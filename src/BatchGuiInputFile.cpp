@@ -136,24 +136,7 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
   m_preview_created_signal(),
   m_remove_self_request_signal()
 {
-  addStyleClass( "BatchGuiInputSpectrumFile" );
-
-  InterSpec * const interspec = InterSpec::instance();
-  interspec->useMessageResourceBundle( "BatchGuiInputFile" );
-  
-  wApp->useStyleSheet( "InterSpec_resources/BatchGuiInputFile.css" );
-  
-  m_preview_container = addNew<Wt::WContainerWidget>();
-  m_preview_container->addStyleClass( "InputFilePreview" );
-
-  WText *filename_text = addNew<WText>( display_name );
-  filename_text->addStyleClass( "FilenameText" );
-  filename_text->setToolTip( "Full path of disk file: '" + path_to_file + "'" );
-
-  WContainerWidget *close_icon = addNew<WContainerWidget>();
-  close_icon->addStyleClass( "closeicon-wtdefault" );
-  close_icon->clicked().connect( this, [this](){ requestRemoveSelf(); } );
-  close_icon->clicked().preventPropagation();
+  init_gui( display_name, path_to_file );
 
   const string sessionid = wApp->sessionId();
   std::shared_ptr<int> status_ptr = make_shared<int>( 0 );
@@ -210,6 +193,67 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
       WServer::instance()->schedule( std::chrono::milliseconds(1000), sessionid, updateGuiCallback );
     } );
 }// BatchGuiInputSpectrumFile constructor
+
+
+BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_name,
+                                                      const std::string path_to_file,
+                                                      std::shared_ptr<SpecMeas> spec_meas,
+                                                      const BatchGuiInputSpectrumFile::ShowPreviewOption preview,
+                                                      Wt::WContainerWidget *parent )
+: Wt::WContainerWidget( parent ),
+  m_filename( path_to_file ),
+  m_display_name( display_name ),
+  m_should_cleanup( false ),  //we dont own the file on disk, if there even is one
+  m_show_preview( preview ),
+  m_preview_container( nullptr ),
+  m_spectrum( nullptr ),
+  m_preview_created( false ),
+  m_spec_meas( nullptr ),
+  m_is_peaks_csv( false ),
+  m_preview_created_signal( this ),
+  m_remove_self_request_signal( this )
+{
+  init_gui( display_name, path_to_file );
+
+  // Unlike the disk-loading constructor, there is nothing to parse, so the measurement is
+  //  available right away - only creating the preview chart has to be deferred.  Setting it now
+  //  means callers dont have to wait a second before this file counts as an input.
+  m_spec_meas = spec_meas;
+
+  std::shared_ptr<int> status_ptr = make_shared<int>( spec_meas ? 1 : 3 );
+  boost::function<void( void )> updateGuiCallback =
+    wApp->bind( boost::bind( &BatchGuiInputSpectrumFile::set_spectrum, this, spec_meas, status_ptr ) );
+
+  // There is nothing to parse here, but we still cant create the preview chart synchronously -
+  //  see the comment in the other constructor for why the delay is needed.
+  WServer::instance()->schedule( 1000, wApp->sessionId(), updateGuiCallback );
+}// BatchGuiInputSpectrumFile in-memory constructor
+
+
+void BatchGuiInputSpectrumFile::init_gui( const std::string &display_name, const std::string &path_to_file )
+{
+  addStyleClass( "BatchGuiInputSpectrumFile" );
+
+  InterSpec * const interspec = InterSpec::instance();
+  interspec->useMessageResourceBundle( "BatchGuiInputFile" );
+
+  wApp->useStyleSheet( "InterSpec_resources/BatchGuiInputFile.css" );
+
+  m_preview_container = new Wt::WContainerWidget( this );
+  m_preview_container->addStyleClass( "InputFilePreview" );
+
+  WText *filename_text = new WText( display_name, this );
+  filename_text->addStyleClass( "FilenameText" );
+  if( path_to_file.empty() )
+    filename_text->setToolTip( WString::fromUTF8(display_name) );
+  else
+    filename_text->setToolTip( "Full path of disk file: '" + path_to_file + "'" );
+
+  WContainerWidget *close_icon = new WContainerWidget( this );
+  close_icon->addStyleClass( "closeicon-wtdefault" );
+  close_icon->clicked().connect( boost::bind( &BatchGuiInputSpectrumFile::requestRemoveSelf, this ) );
+  close_icon->clicked().preventPropagation();
+}// void BatchGuiInputSpectrumFile::init_gui(...)
 
 
 void BatchGuiInputSpectrumFile::set_spectrum( std::shared_ptr<SpecMeas> spec_meas, std::shared_ptr<int> status_ptr )

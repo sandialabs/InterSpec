@@ -48,6 +48,8 @@
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ReactionGamma.h"
 #include "InterSpec/EnergyCalTool.h"
+#include "InterSpec/EnergyCalUndoRedo.h"
+#include "InterSpec/EnergyCalDevPairWidget.h"
 #include "InterSpec/SpecMeasManager.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/SpectraFileModel.h"
@@ -181,82 +183,113 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
   m_cancel( nullptr ),
   m_fit( nullptr ),
   m_fitSumary( nullptr ),
+  m_devPairBox( nullptr ),
+  m_devPairDisplay( nullptr ),
   m_calVal(),
   m_calUncert()
 {
   InterSpec *viewer = InterSpec::instance();
  
-  // Note: caller (EnergyCalAddActionsWindow) adds this widget to its stretcher via make_unique/addWidget
+  if( parent )
+    parent->stretcher()->addWidget( this, 0, 0  );
   
-  m_model = std::make_shared<EnergyCalMultiFileModel>( cal );
+  m_model = new EnergyCalMultiFileModel( cal, this );
 
-  WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
-  layout->setContentsMargins( 0, 0, 0, 0 );
-
-  WContainerWidget *instructions = layout->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
-  WText *line = instructions->addNew<WText>( "Select peaks to use from each file then click &quot;Fit&quot;." );
-  line->setInline( false );
-  line = instructions->addNew<WText>( "If satisfied, click &quot;Use&quot; to set calibration for involved files." );
-  line->setInline( false );
-  line = instructions->addNew<WText>( "Calibration will be applied to all files with at least one selected peak." );
-  line->setInline( false );
-
-  RowStretchTreeView *tree = layout->addWidget( std::make_unique<RowStretchTreeView>(), 1, 0 );
+  RowStretchTreeView *tree = new RowStretchTreeView();
   tree->setSortingEnabled(false);
   tree->setModel( m_model );
-  //tree->setColumn1Fixed( false ); // Not available in Wt4
+  tree->setColumn1Fixed( false );
   tree->setHeaderHeight( 20 );
   tree->setColumnWidth( 0, 200 );
   tree->setColumnWidth( 1, 150 );
   tree->setColumnWidth( 2, 150 );
   tree->expandToDepth( 2 );
-  layout->setRowStretch( 1, 1 );
-
-  auto fitForUptr = std::make_unique<WGroupBox>( "Coefficients to fit for" );
-  WGroupBox *fitFor = fitForUptr.get();
-  WGridLayout *fitForLayout = fitFor->setLayout( std::make_unique<WGridLayout>() );
-
+  
+  WGroupBox *fitFor = new WGroupBox( "Coefficients to fit for" );
+  WGridLayout *fitForLayout = new WGridLayout( fitFor );
+  
+  
   for( int i = 0; i < static_cast<int>(ns_min_num_coef); ++i )
   {
-    std::string labelStr;
+    WLabel *label = 0;
     switch( i )
     {
-      case 0: labelStr = "Offset";    break;
-      case 1: labelStr = "Linear";    break;
-      case 2: labelStr = "Quadratic"; break;
-      case 3: labelStr = "Cubic";     break;
-      default: labelStr = std::to_string(i+1) + "th"; break;
+      case 0: label = new WLabel( "Offset" ); break;
+      case 1: label = new WLabel( "Linear" ); break;
+      case 2: label = new WLabel( "Quadratic" ); break;
+      case 3: label = new WLabel( "Cubic" ); break;
+      default: label = new WLabel( std::to_string(i+1) + "th" ); break;
     }//switch( i )
-
-    auto coefvalUptr = std::make_unique<WLineEdit>();
-    WLineEdit *coefval = coefvalUptr.get();
+    
+    auto coefval = new WLineEdit();
+    
     coefval->setAttributeValue( "ondragstart", "return false" );
 #if( BUILD_AS_OSX_APP || IOS )
     coefval->setAttributeValue( "autocorrect", "off" );
     coefval->setAttributeValue( "spellcheck", "off" );
 #endif
-
-    auto fitcbUptr = std::make_unique<WCheckBox>( "Fit" );
-    WCheckBox *fitcb = fitcbUptr.get();
-
+    auto fitcb = new WCheckBox( "Fit" );
+    
     m_coefvals.push_back( coefval );
     m_fitFor.push_back( fitcb );
     coefval->disable();
-    fitcb->setChecked( (i < 2) );
-
-    fitForLayout->addWidget( std::make_unique<WLabel>( labelStr ), i, 0 );
-    fitForLayout->addWidget( std::move(coefvalUptr), i, 1 );
-    fitForLayout->addWidget( std::move(fitcbUptr),   i, 2 );
+    fitcb->setChecked( (i < 2 ) );
+    
+    fitForLayout->addWidget( label,   i, 0 );
+    fitForLayout->addWidget( coefval, i, 1 );
+    fitForLayout->addWidget( fitcb,   i, 2 );
   }//for( int i = 0; i < sm_numCoefs; ++i )
-
+  
+                  
   fitForLayout->setColumnStretch( 1, 1 );
-  layout->addWidget( std::move(fitForUptr), 2, 0 );
 
-  auto fitSumaryUptr = std::make_unique<WTextArea>();
-  m_fitSumary = fitSumaryUptr.get();
+  // Deviation pairs: the same editable widget as the Energy Calibration tab (add / edit / delete
+  //  rows), plus a per-row "Fit offset" checkbox.  Checked offsets get fit (this requires the
+  //  non-linear fit); the resulting deviation pairs are applied to every detector of every file
+  //  the calibration is applied to.  The list is seeded from the displayed foregrounds pairs.
+  m_devPairBox = new WGroupBox( "Deviation pairs" );
+  m_devPairBox->setToolTip( "Deviation pairs to apply (add, edit, or delete rows).  Check "
+      "\"Fit offset\" on a pair to fit its offset (a non-linear fit); the pairs energies are never "
+      "fit.  The resulting deviation pairs are applied to every detector of every file the "
+      "calibration is applied to." );
+  WGridLayout *devPairBoxLayout = new WGridLayout( m_devPairBox );
+  devPairBoxLayout->setContentsMargins( 0, 0, 0, 0 );
+
+  m_devPairDisplay = new EnergyCalImp::DeviationPairDisplay( true );
+  m_devPairDisplay->setPairsAreaMaxHeight( 165 );  //keep the whole section roughly <= 185 px
+  devPairBoxLayout->addWidget( m_devPairDisplay, 0, 0 );
+
+  {//begin codeblock to seed the deviation pairs from the displayed foreground
+    shared_ptr<const SpecUtils::Measurement> disp_fore
+                        = viewer->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    shared_ptr<const SpecUtils::EnergyCalibration> disp_cal
+                        = disp_fore ? disp_fore->energy_calibration() : nullptr;
+    if( disp_cal && disp_cal->valid() )
+      m_devPairDisplay->setDeviationPairs( disp_cal->deviation_pairs() );
+  }//end codeblock to seed the deviation pairs from the displayed foreground
+
+  m_fitSumary = new WTextArea();
   m_fitSumary->setHeight( 75 );
   m_fitSumary->setMaximumSize( WLength::Auto, 75 );
-  layout->addWidget( std::move(fitSumaryUptr), 3, 0 );
+  
+  WContainerWidget *instructions = new WContainerWidget();
+  WText *line = new WText( "Select peaks to use from each file then click &quot;Fit&quot;.", instructions );
+  line->setInline( false );
+  line = new WText( "If satisfied, click &quot;Use&quot; to set calibration for involved files.", instructions );
+  line->setInline( false );
+  line = new WText( "Calibration will be applied to all files with at least one selected peak.", instructions );
+  line->setInline( false );
+
+  
+  WGridLayout *layout = new WGridLayout( this );
+  layout->setContentsMargins( 0, 0, 0, 0 );
+  
+  layout->addWidget( instructions, 0, 0 );
+  layout->addWidget( tree, 1, 0 );
+  layout->setRowStretch( 1, 1 );
+  layout->addWidget( fitFor, 2, 0 );
+  layout->addWidget( m_devPairBox, 3, 0 );
+  layout->addWidget( m_fitSumary, 4, 0 );
 
   WContainerWidget *buttonDiv = nullptr;
 
@@ -265,18 +298,19 @@ EnergyCalMultiFile::EnergyCalMultiFile( EnergyCalTool *cal, AuxWindow *parent )
     buttonDiv = parent->footer();
   }else
   {
-    buttonDiv = layout->addWidget( std::make_unique<WContainerWidget>(), 4, 0 );
+    buttonDiv = new WContainerWidget();
+    layout->addWidget( buttonDiv, 5, 0 );
   }
-
+  
   AuxWindow::addHelpInFooter( buttonDiv, "multi-file-calibration-dialog" );
-
-  m_cancel = buttonDiv->addNew<WPushButton>( WString::tr("Cancel") );
-  m_fit    = buttonDiv->addNew<WPushButton>( WString::tr("Fit") );
-  m_use    = buttonDiv->addNew<WPushButton>( WString::tr("Use") );
-
+  
+  m_cancel = new WPushButton( WString::tr("Cancel"), buttonDiv );
+  m_fit    = new WPushButton( WString::tr("Fit"), buttonDiv );
+  m_use    = new WPushButton( WString::tr("Use"), buttonDiv );
+  
   m_use->disable();
-  m_cancel->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Rejected ); } );
-  m_use->clicked().connect( this, [this](){ handleFinish( Wt::DialogCode::Accepted ); } );
+  m_cancel->clicked().connect( boost::bind( &EnergyCalMultiFile::handleFinish, this, WDialog::Rejected ) );
+  m_use->clicked().connect( boost::bind( &EnergyCalMultiFile::handleFinish, this, WDialog::Accepted ) );
   m_fit->clicked().connect( this, &EnergyCalMultiFile::doFit );
   
   m_fitSumary->disable();
@@ -376,84 +410,131 @@ void EnergyCalMultiFile::doFit()
       fitfor[i] = m_fitFor[i]->isChecked();
       num_coeff_fit += m_fitFor[i]->isChecked();
     }
-    
-    if( num_coeff_fit < 1 )
+
+    // Deviation pairs (and which offsets to fit) come from the editable deviation-pair widget
+    const vector<tuple<float,float,bool>> widget_devs = m_devPairDisplay->deviationPairsAndFit();
+    vector<pair<float,float>> cur_dev_pairs;
+    vector<bool> fit_dev_offsets;
+    int num_devpair_fit = 0;
+    for( const auto &d : widget_devs )
     {
-      const char *msg = "You must select at least one coefficient to fit for";
+      cur_dev_pairs.emplace_back( get<0>(d), get<1>(d) );
+      fit_dev_offsets.push_back( get<2>(d) );
+      num_devpair_fit += get<2>(d);
+    }
+
+    if( (num_coeff_fit + num_devpair_fit) < 1 )
+    {
+      const char *msg = "You must select at least one coefficient, or deviation pair offset,"
+                        " to fit for";
       interspec->logMessage( msg, 3 );
       return;
-    }//if( num_coeff_fit < 1 )
-    
-    if( num_coeff_fit > static_cast<int>(npeaks) )
+    }//if( nothing to fit )
+
+    if( (num_coeff_fit + num_devpair_fit) > static_cast<int>(npeaks) )
     {
-      const char *msg = "You must select at least as many peaks as coefficients to fit for";
+      const char *msg = "You must select at least as many peaks as parameters to fit for";
       interspec->logMessage( msg, 3 );
       return;
-    }//if( num_coeff_fit < 1 )
-    
-    
+    }//if( more parameters than peaks )
+
+
     bool fit_coefs = false;
-    try
+
+    if( num_devpair_fit > 0 )
     {
-      vector<float> lls_fit_coefs( ncoeffs, 0.0f ), lls_fit_coefs_uncert( ncoeffs, 0.0f );
-      
-      const double chi2 = EnergyCal::fit_energy_cal_poly( peakInfos, fitfor,
-                                               disp_cal->num_channels(),
-                                               disp_cal->deviation_pairs(),
-                                              lls_fit_coefs, lls_fit_coefs_uncert );
-      
-      stringstream msg;
-      msg << "\nfit_energy_cal_poly gave chi2=" << chi2 << " with coefs={";
-      for( size_t i = 0; i < lls_fit_coefs.size(); ++i )
-        msg << lls_fit_coefs[i] << "+-" << lls_fit_coefs_uncert[i] << ", ";
-      msg << "}\n";
-      cout << msg.str() << endl;
-      
+      // Deviation pair offsets can only be fit with the non-linear (Ceres) fit.
+      //  Note: coefficients not being fit are fixed at the displayed calibrations values when it
+      //  is polynomial, otherwise at zero (matching the linear-fit path below).
+      EnergyCal::EnergyCalCeresFitSetup ceres_setup;
+      ceres_setup.cal_type = SpecUtils::EnergyCalType::Polynomial;
+      ceres_setup.num_channels = nchannel;
+      ceres_setup.fitfor = fitfor;
+      ceres_setup.starting_coefs = vector<float>( ncoeffs, 0.0f );
+
+      const bool disp_is_poly
+              = ((disp_cal->type() == SpecUtils::EnergyCalType::Polynomial)
+                 || (disp_cal->type() == SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial));
+      if( disp_is_poly )
+      {
+        const vector<float> &disp_coefs = disp_cal->coefficients();
+        for( size_t i = 0; (i < disp_coefs.size()) && (i < ncoeffs); ++i )
+          ceres_setup.starting_coefs[i] = disp_coefs[i];
+      }else
+      {
+        ceres_setup.starting_coefs[1] = disp_cal->upper_energy() / disp_cal->num_channels();
+      }
+
+      ceres_setup.dev_pairs = cur_dev_pairs;
+      ceres_setup.fit_dev_pair_offsets = fit_dev_offsets;
+
+      const EnergyCal::EnergyCalCeresFitResult ceres_result
+                                    = EnergyCal::fit_energy_cal_ceres( peakInfos, ceres_setup );
+
+      if( !ceres_result.warning_msg.empty() )
+        interspec->logMessage( WString::fromUTF8(ceres_result.warning_msg), 3 );
+
       fit_coefs = true;
-      m_calVal = lls_fit_coefs;
-      m_calUncert = lls_fit_coefs_uncert;
-      m_devPairs = disp_cal->deviation_pairs();
-    }catch( std::exception &e )
+      m_calVal = ceres_result.coefs;
+      m_calUncert = ceres_result.coef_uncerts;
+      m_devPairs = ceres_result.dev_pairs;
+    }//if( num_devpair_fit > 0 )
+
+    if( !fit_coefs )
     {
-      cerr << "fit_energy_cal_poly threw: " << e.what() << endl;
+      try
+      {
+        vector<float> lls_fit_coefs( ncoeffs, 0.0f ), lls_fit_coefs_uncert( ncoeffs, 0.0f );
+
+        EnergyCal::fit_energy_cal_poly( peakInfos, fitfor,
+                                        disp_cal->num_channels(),
+                                        cur_dev_pairs,
+                                        lls_fit_coefs, lls_fit_coefs_uncert );
+
+        fit_coefs = true;
+        m_calVal = lls_fit_coefs;
+        m_calUncert = lls_fit_coefs_uncert;
+        m_devPairs = cur_dev_pairs;
+      }catch( std::exception &e )
+      {
 #if( PERFORM_DEVELOPER_CHECKS )
-      char buffer[512] = { '\0' };
-      snprintf( buffer, sizeof(buffer)-1, "fit_energy_cal_poly threw: %s", e.what() );
-      log_developer_error( __func__, buffer );
+        char buffer[512] = { '\0' };
+        snprintf( buffer, sizeof(buffer)-1, "fit_energy_cal_poly threw: %s", e.what() );
+        log_developer_error( __func__, buffer );
 #endif
-      fit_coefs = false;
-    }//try / catch fit for coefficents using least linear squares
+        fit_coefs = false;
+      }//try / catch fit for coefficents using least linear squares
+    }//if( !fit_coefs )
     
     
     if( !fit_coefs )
     {
-      //This Minuit based fitting methodolgy is depreciated I think; the LLS code
-      //  should work better, and seems to be releiabel, but leaving this code
-      //  in for a while as a backup
-      const auto &devpairs = disp_cal->deviation_pairs();
-      vector<float> starting_coefs( ncoeffs, 0.0 );
-      starting_coefs[1] = disp_cal->upper_energy() / disp_cal->num_channels();
-      
-      string warning_msg;
-      vector<float> coefs, coefs_uncert;
-      EnergyCal::fit_energy_cal_iterative( peakInfos, nchannel,
-                              SpecUtils::EnergyCalType::Polynomial, fitfor, starting_coefs,
-                              devpairs, coefs, coefs_uncert, warning_msg );
-      
-      if( warning_msg.size() )
-        interspec->logMessage( warning_msg, 3 );
-      
-      assert( coefs.size() == ncoeffs );
-      assert( coefs.size() == coefs_uncert.size() );
-      
-      for( size_t i = 0; i < coefs.size(); ++i )
-        if( IsInf(coefs[i]) || IsNan(coefs[i]) )
+      // The linear least squares fit failed; fall back to a Ceres based non-linear fit
+      EnergyCal::EnergyCalCeresFitSetup ceres_setup;
+      ceres_setup.cal_type = SpecUtils::EnergyCalType::Polynomial;
+      ceres_setup.num_channels = nchannel;
+      ceres_setup.fitfor = fitfor;
+      ceres_setup.starting_coefs = vector<float>( ncoeffs, 0.0f );
+      ceres_setup.starting_coefs[1] = disp_cal->upper_energy() / disp_cal->num_channels();
+      ceres_setup.dev_pairs = cur_dev_pairs;
+
+      const EnergyCal::EnergyCalCeresFitResult ceres_result
+                                    = EnergyCal::fit_energy_cal_ceres( peakInfos, ceres_setup );
+
+      if( !ceres_result.warning_msg.empty() )
+        interspec->logMessage( WString::fromUTF8(ceres_result.warning_msg), 3 );
+
+      assert( ceres_result.coefs.size() == ncoeffs );
+      assert( ceres_result.coefs.size() == ceres_result.coef_uncerts.size() );
+
+      for( size_t i = 0; i < ceres_result.coefs.size(); ++i )
+        if( IsInf(ceres_result.coefs[i]) || IsNan(ceres_result.coefs[i]) )
           throw runtime_error( "Invalid calibration parameter from fit :(" );
-      
+
       fit_coefs = true;
-      m_calVal = coefs;
-      m_calUncert = coefs_uncert;
-      m_devPairs = disp_cal->deviation_pairs();
+      m_calVal = ceres_result.coefs;
+      m_calUncert = ceres_result.coef_uncerts;
+      m_devPairs = ceres_result.dev_pairs;
     }//if( !fit_coefs )
     
     //Try to loop over peaks to give chi2 values and such
@@ -474,6 +555,7 @@ void EnergyCalMultiFile::doFit()
     m_fitSumary->setText( msg.str() );
     m_fitSumary->show();
     updateCoefDisplay();
+    updateDevPairDisplay();
     m_use->enable();
   }catch( std::exception &e )
   {
@@ -516,11 +598,22 @@ void EnergyCalMultiFile::updateCoefDisplay()
 }//void updateCoefDisplay()
 
 
+void EnergyCalMultiFile::updateDevPairDisplay()
+{
+  // Push the fitted deviation pairs back into the editable widget (updates the offset values
+  //  in-place, keeping each rows "Fit offset" checkbox state).  Note that the fit may have
+  //  prepended an implicit {0,0} pair (see EnergyCal::fit_energy_cal_ceres); setDeviationPairs
+  //  will just show it as another (editable) row.
+  if( m_devPairDisplay )
+    m_devPairDisplay->setDeviationPairs( m_devPairs );
+}//void updateDevPairDisplay()
+
+
 void EnergyCalMultiFile::applyCurrentFit()
 {
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
-  
+
   if( m_calVal.size() < 2 )
   {
     viewer->logMessage( "Currently fit calibration is invalid", 3 );
@@ -530,12 +623,17 @@ void EnergyCalMultiFile::applyCurrentFit()
   vector<pair<string,string>> error_msgs;
   const shared_ptr<SpecMeas> foreground = viewer->measurment(SpecUtils::SpectrumType::Foreground);
   const set<int> &foreSamples = viewer->displayedSamples(SpecUtils::SpectrumType::Foreground);
-  
+
   const shared_ptr<SpecMeas> background = viewer->measurment(SpecUtils::SpectrumType::Background);
   const set<int> &backSamples = viewer->displayedSamples(SpecUtils::SpectrumType::Background);
-  
+
   const shared_ptr<SpecMeas> secondary = viewer->measurment(SpecUtils::SpectrumType::SecondForeground);
   const set<int> &secoSamples = viewer->displayedSamples(SpecUtils::SpectrumType::SecondForeground);
+
+  // Changes to the files currently displayed as foreground/background/secondary get an undo/redo
+  //  step (associated with the foreground, as all InterSpec undo/redo is); changes to any other
+  //  files are not undoable.
+  EnergyCalImp::EnergyCalUndoRedoSentry undo_sentry;
   
   for( size_t filenum = 0; filenum < m_model->m_data.size(); ++filenum )
   {
@@ -594,6 +692,42 @@ void EnergyCalMultiFile::applyCurrentFit()
       map<shared_ptr<deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_peaks; //old peaks, to new peaks
       map<shared_ptr<const deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_auto_search_peaks;
 
+      // Apply the fitted deviation pairs to EVERY detector in the file: deviation pairs are
+      //  energy-keyed, so the same non-linearity correction applies to all detectors.  The
+      //  polynomial change still propagates per-detector (below, via propogate_energy_cal_change,
+      //  which keeps a targets OWN deviation pairs), so we rebuild each propagated calibration
+      //  with the fitted deviation pairs.
+      const auto with_fitted_dev_pairs = [this]( shared_ptr<const EnergyCalibration> cal )
+                                                -> shared_ptr<const EnergyCalibration> {
+        if( !cal || !cal->valid() || (cal->deviation_pairs() == m_devPairs) )
+          return cal;
+
+        try
+        {
+          auto rebuilt = make_shared<EnergyCalibration>();
+          switch( cal->type() )
+          {
+            case SpecUtils::EnergyCalType::Polynomial:
+            case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+              rebuilt->set_polynomial( cal->num_channels(), cal->coefficients(), m_devPairs );
+              return rebuilt;
+
+            case SpecUtils::EnergyCalType::FullRangeFraction:
+              rebuilt->set_full_range_fraction( cal->num_channels(), cal->coefficients(), m_devPairs );
+              return rebuilt;
+
+            case SpecUtils::EnergyCalType::LowerChannelEdge:
+            case SpecUtils::EnergyCalType::InvalidEquationType:
+              return cal;  //cant carry deviation pairs
+          }//switch( cal->type() )
+        }catch( std::exception & )
+        {
+          //keep the propagated calibration without the fitted deviation pairs
+        }
+
+        return cal;
+      };//with_fitted_dev_pairs
+
       // We will first update the energy calibration for Measurements associated with peaks, since
       //  this is kinda un-ambiguous for how to do it for multi-detector systems.
       const auto &detnames = spec->gamma_detector_names();
@@ -641,14 +775,15 @@ void EnergyCalMultiFile::applyCurrentFit()
               auto pos = updated_cals.find( dispcal );
               if( pos == end(updated_cals) )
               {
-                auto thisnewcal = EnergyCal::propogate_energy_cal_change( dispcal, newcal, cal );
+                auto thisnewcal = with_fitted_dev_pairs(
+                                    EnergyCal::propogate_energy_cal_change( dispcal, newcal, cal ) );
                 updated_cals[cal] = thisnewcal;
                 newcals.insert( thisnewcal );
               }
             }//
           }//for( const auto m : spec->sample_measurements(sample) )
         }//for( const int sample : samples )
-        
+
         updated_peaks[peaks] = EnergyCal::translatePeaksForCalibrationChange( *peaks, dispcal, newcal );
       }//for( const set<int> &samples : peaksets )
 
@@ -694,7 +829,8 @@ void EnergyCalMultiFile::applyCurrentFit()
               auto pos = updated_cals.find( dispcal );
               if( pos == end(updated_cals) )
               {
-                auto thisnewcal = EnergyCal::propogate_energy_cal_change( dispcal, newcal, cal );
+                auto thisnewcal = with_fitted_dev_pairs(
+                                    EnergyCal::propogate_energy_cal_change( dispcal, newcal, cal ) );
                 updated_cals[cal] = thisnewcal;
                 newcals.insert( thisnewcal );
               }
@@ -725,22 +861,32 @@ void EnergyCalMultiFile::applyCurrentFit()
         
         auto newdispcal = make_shared<EnergyCalibration>();
         newdispcal->set_polynomial( oldcal->num_channels(), m_calVal, m_devPairs);
-        
-        auto newcal = EnergyCal::propogate_energy_cal_change( dispcal, newdispcal, oldcal );
+
+        auto newcal = with_fitted_dev_pairs(
+                          EnergyCal::propogate_energy_cal_change( dispcal, newdispcal, oldcal ) );
         updated_cals[oldcal] = newcal;
         newcals.insert( newcal );
       }//for( auto m : spec->measurements() )
       
+      // Changes to files currently displayed as For./Back./Sec. get recorded for undo/redo
+      const bool is_displayed_file
+                     = ((spec == foreground) || (spec == background) || (spec == secondary));
+
       //We have made all the new energy calibrations, and translated all the peaks; lets set them
       for( shared_ptr<const SpecUtils::Measurement> m : spec->measurements() )
       {
         shared_ptr<const EnergyCalibration> oldcal = m ? m->energy_calibration() : nullptr;
         auto pos = updated_cals.find( oldcal );
         if( pos != end(updated_cals) )
+        {
+          if( is_displayed_file )
+            undo_sentry.cal_info( spec ).emplace_back( m, oldcal, pos->second );
+
           spec->set_energy_calibration( pos->second, m );
+        }
       }//for( auto m : spec->measurements() )
-      
-      
+
+
       for( const set<int> &samples : peaksets )
       {
         auto peaks = spec->peaks( samples );
@@ -748,7 +894,12 @@ void EnergyCalMultiFile::applyCurrentFit()
           continue;
         auto pos = updated_peaks.find( peaks );
         if( pos != end(updated_peaks) )
+        {
+          if( is_displayed_file )
+            undo_sentry.peak_info( spec ).emplace_back( samples, *peaks, pos->second );
+
           spec->setPeaks( pos->second, samples );
+        }
       }//for( const set<int> &samples : peaksets )
 
 
@@ -760,8 +911,11 @@ void EnergyCalMultiFile::applyCurrentFit()
         const auto pos = updated_auto_search_peaks.find( peaks );
         if( pos != end(updated_auto_search_peaks) )
         {
-          auto peaks = make_shared<std::deque<std::shared_ptr<const PeakDef>>>(pos->second);
-          spec->setAutomatedSearchPeaks( samples, peaks );
+          if( is_displayed_file )
+            undo_sentry.hint_peak_info( spec ).emplace_back( samples, *peaks, pos->second );
+
+          auto newpeaks = make_shared<std::deque<std::shared_ptr<const PeakDef>>>(pos->second);
+          spec->setAutomatedSearchPeaks( samples, newpeaks );
         }
       }//for( const set<int> &samples : peaksets )
 
@@ -806,17 +960,15 @@ void EnergyCalMultiFile::applyCurrentFit()
 }//void applyCurrentFit()
 
 
-void EnergyCalMultiFile::handleFinish( DialogCode result )
+void EnergyCalMultiFile::handleFinish( WDialog::DialogCode result )
 {
   InterSpec *viewer = InterSpec::instance();
   assert( viewer );
   
   switch( result )
   {
-    case Wt::DialogCode::Rejected:
+    case WDialog::Rejected:
     {
-      cerr << "\nRejected EnergyCalMultiFile" << endl;
-
       UndoRedoManager *undoManager = viewer->undoRedoManager();
       if( m_parent && undoManager )
       {
@@ -826,31 +978,27 @@ void EnergyCalMultiFile::handleFinish( DialogCode result )
           if( tool )
             tool->moreActionBtnClicked( MoreActionsIndex::MultipleFilesCal );
         };
-
+        
         auto redo = [](){
           InterSpec *viewer = InterSpec::instance();
           EnergyCalTool *tool = viewer ? viewer->energyCalTool() : nullptr;
           if( tool )
             tool->cancelMoreActionWindow();
         };
-
+        
         undoManager->addUndoRedoStep( undo, redo, "Cancel multi-file energy cal" );
       }//if( m_parent && undoManager )
-
+      
       break;
-    }//case Wt::DialogCode::Rejected:
-
-    case Wt::DialogCode::Accepted:
+    }//case WDialog::Rejected:
+      
+    case WDialog::Accepted:
     {
+      // applyCurrentFit() inserts an undo/redo step covering the files currently displayed as
+      //  foreground/background/secondary; changes to any other files are not undoable.
       applyCurrentFit();
-      cerr << "\nAccepted EnergyCalMultiFile" << endl;
-
-      UndoRedoManager *undoManager = viewer->undoRedoManager();
-      if( undoManager )
-        undoManager->clearUndoRedu();
-
       break;
-    }//case Wt::DialogCode::Accepted:
+    }//case WDialog::Accepted:
   }//switch( result )
   
   if( m_parent )
@@ -859,8 +1007,8 @@ void EnergyCalMultiFile::handleFinish( DialogCode result )
 
 
 
-EnergyCalMultiFileModel::EnergyCalMultiFileModel( EnergyCalTool *calibrator )
-: WAbstractItemModel(),
+EnergyCalMultiFileModel::EnergyCalMultiFileModel( EnergyCalTool *calibrator, Wt::WObject *parent )
+: WAbstractItemModel( parent ),
   m_calibrator( calibrator ),
   m_fileModel( nullptr )
 {
@@ -875,8 +1023,8 @@ EnergyCalMultiFileModel::EnergyCalMultiFileModel( EnergyCalTool *calibrator )
   
   refreshData();
   
-  m_fileModel->rowsInserted().connect( this, [this]( const Wt::WModelIndex &, int, int ){ refreshData(); } );
-  m_fileModel->rowsRemoved().connect( this, [this]( const Wt::WModelIndex &, int, int ){ refreshData(); } );
+  m_fileModel->rowsInserted().connect( boost::bind(&EnergyCalMultiFileModel::refreshData, this) );
+  m_fileModel->rowsRemoved().connect( boost::bind(&EnergyCalMultiFileModel::refreshData, this) );
 
   //Should add in a listener here to the PeakModel to see if peaks are
   //  added/removed; this might necessitate tracking
@@ -1050,9 +1198,9 @@ int EnergyCalMultiFileModel::columnCount( const WModelIndex &parent ) const
 }//columnCount(...)
 
   
-Wt::cpp17::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, Wt::ItemDataRole role ) const
+Wt::cpp17::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, int role ) const
 {
-  if( (role != Wt::ItemDataRole::Display) && (role != Wt::ItemDataRole::Checked) )
+  if( (role != Wt::DisplayRole) && (role != Wt::CheckStateRole) )
     return Wt::cpp17::any();
   
   if( !index.isValid() )
@@ -1080,7 +1228,7 @@ Wt::cpp17::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, Wt::
     case ModelLevel::File:
     {
       // Return filename here
-      if( (col != 0) || (role != Wt::ItemDataRole::Display) )
+      if( (col != 0) || (role != Wt::DisplayRole) )
         return Wt::cpp17::any();
         
       assert( filenum == row );
@@ -1104,7 +1252,7 @@ Wt::cpp17::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, Wt::
     {
       // Return sample numbers + title here
       assert( row == samplesnum );
-      if( (col != 0) || (role != Wt::ItemDataRole::Display) )
+      if( (col != 0) || (role != Wt::DisplayRole) )
         return Wt::cpp17::any();
       
       if( (samplesnum < 0) || (samplesnum >= static_cast<int>(fileinfos.size())) )
@@ -1166,7 +1314,7 @@ Wt::cpp17::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, Wt::
       const bool checked = get<0>(peakinfos[peaknum]);
       shared_ptr<const PeakDef> peak = get<1>(peakinfos[peaknum]);
       
-      if( role == Wt::ItemDataRole::Checked )
+      if( role == Wt::CheckStateRole )
       {
         if( col == 0 )
           return Wt::cpp17::any( checked );
@@ -1179,7 +1327,7 @@ Wt::cpp17::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, Wt::
       if( !peak->parentNuclide() && !peak->xrayElement() && !peak->reaction() )
         return Wt::cpp17::any();
       
-      if( role == Wt::ItemDataRole::Checked )
+      if( role == Wt::CheckStateRole )
       {
         if( index.column() == 0 )
           return Wt::cpp17::any( checked );
@@ -1231,9 +1379,9 @@ Wt::cpp17::any EnergyCalMultiFileModel::data( const Wt::WModelIndex &index, Wt::
 }//data(...)
 
 
-bool EnergyCalMultiFileModel::setData( const WModelIndex &index, const Wt::cpp17::any &value, Wt::ItemDataRole role )
+bool EnergyCalMultiFileModel::setData( const WModelIndex &index, const Wt::cpp17::any &value, int role )
 {
-  if( (role != Wt::ItemDataRole::Checked) || (index.column() != 0) )
+  if( (role != Wt::CheckStateRole) || (index.column() != 0) )
     return false;
   
   ModelLevel level;
@@ -1277,7 +1425,7 @@ WFlags<ItemFlag> EnergyCalMultiFileModel::flags( const WModelIndex &index ) cons
   from_internal_id( index.internalId(), level, filenum, samplesnum, peaknum );
   
   if( (level == ModelLevel::Peak) && (index.column() == 0) )
-    return WFlags<ItemFlag>(Wt::ItemFlag::UserCheckable);
+    return WFlags<ItemFlag>(ItemIsUserCheckable);
   
   //return WFlags<ItemFlag>(ItemIsXHTMLText);
   return WFlags<ItemFlag>();
@@ -1285,7 +1433,7 @@ WFlags<ItemFlag> EnergyCalMultiFileModel::flags( const WModelIndex &index ) cons
 
 
 Wt::cpp17::any EnergyCalMultiFileModel::headerData( int section, Wt::Orientation orientation,
-                                                Wt::ItemDataRole role ) const
+                                                int role ) const
 {
 //  if( role == DisplayRole )
 //  {

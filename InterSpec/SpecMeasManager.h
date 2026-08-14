@@ -141,9 +141,15 @@ public:
                     std::shared_ptr<SpecMeas> &meas_ptr );
   
   //loadFromFileSystem(...) loads a file from disk, as if it were uploaded.
-  //  Returns whether or not file was loaded
+  //  Returns whether or not file was loaded.
   bool loadFromFileSystem( const std::string &filename, SpecUtils::SpectrumType type,
                            SpecUtils::ParserType parseType = SpecUtils::ParserType::Auto );
+
+  /** Load a file from disk with control over the "Previously Stored States" dialog.
+   If checkIfPreviouslyOpened is false, the dialog will be suppressed (useful for benchmarks).
+   */
+  bool loadFromFileSystem( const std::string &filename, SpecUtils::SpectrumType type,
+                           SpecUtils::ParserType parseType, bool checkIfPreviouslyOpened );
   
   
   void selectionChanged();
@@ -460,7 +466,16 @@ public:
                        Wt::WApplication *app );
 
 #if( USE_BATCH_GUI_TOOLS )
+  /** Shows the batch analysis dialog; wired to the batch drag-n-drop resource. */
   void showBatchDialog();
+
+  /** Shows the batch analysis dialog with `meas` already in the "Input Files" area, and offering
+   the option of adding other files currently open in InterSpec.
+
+   If the dialog is already showing, `meas` is added to it (adding the same file twice is a no-op).
+   */
+  void showBatchDialogForFile( std::shared_ptr<SpecMeas> meas );
+
   void handleBatchDialogFinished();
 #endif
 
@@ -549,6 +564,9 @@ private:
     EfficiencyCsv,       ///< GADRAS Efficiency.csv / gamEff CSV / Run_effoutput
     ShieldingSourceXml,
     SourceLib
+#if( USE_LLM_INTERFACE )
+    , LlmConfigXml       ///< `llm_config.xml` provider/MCP config for the LLM assistant
+#endif
   };
 
   struct NonSpecFileClassification

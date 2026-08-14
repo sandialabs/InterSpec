@@ -43,7 +43,6 @@
   <message id="bgw-reports-write-csv">CSV résumé</message>
   <message id="bgw-reports-write-csv-tooltip">Écrire un fichier CSV résumé avec les résultats d'analyse de tous les fichiers d'entrée.</message>
   <message id="bgw-reports-write-custom-per-file">Personnalisé par fichier</message>
-  <message id="bgw-reports-write-custom-per-file-tooltip">Télécharger un modèle de rapport personnalisé à utiliser pour chaque fichier.</message>
   <message id="bgw-reports-write-custom-summary">Résumé personnalisé</message>
   <message id="bgw-reports-write-custom-summary-tooltip">Un ou plusieurs fichiers modèles utilisés pour fournir un résumé de tous les fichiers d'entrée.</message>
 
@@ -58,7 +57,6 @@
   <message id="bgw-no-ana-act-shield-invalid-background">Bruit de fond invalide</message>
   <message id="bgw-no-ana-no-input-files">Aucun fichier d'entrée.</message>
   <message id="bgw-no-ana-invalid-output-path">Veuillez sélectionner un répertoire de sortie valide.</message>
-
 
   <!-- Analysis progress and results -->
   <message id="bgw-performing-work-title">Exécution du travail</message>
@@ -120,8 +118,6 @@ Une valeur raisonnable pour ceci semble être dans la plage de 1 à 5.
 Une valeur zéro ou négative signifiera aucune exigence, et aussi aucune exigence de 'peak-stat-threshold'.</message>
   
   <message id="bgw-reports-write-custom-per-file-tooltip">Un ou plusieurs fichiers modèles de rapport de spectre - pour chaque fichier d'entrée, un rapport sera produit avec chaque modèle spécifié.</message>
-
-  <message id="bgw-reports-write-custom-summary-tooltip">Un ou plusieurs fichiers modèles utilisés pour fournir un résumé de tous les fichiers d'entrée.</message>
 
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Utiliser unités Bq</message>

@@ -119,7 +119,7 @@ namespace BatchActivity
     
     std::string m_filename;
     std::shared_ptr<const SpecMeas> m_foreground_file;
-    std::set<int> m_foreground_sample_numbers;  ///!< right now limited to single sample - may change in future
+    std::set<int> m_foreground_sample_numbers;  ///!< more than one sample number means they were summed together
     std::shared_ptr<const SpecUtils::Measurement> m_foreground;
     
     std::shared_ptr<const SpecMeas> m_exemplar_file;
@@ -178,6 +178,9 @@ namespace BatchActivity
           of the exemplar file over-and-over again.
    @param filename The filesystem path of the spectrum file to fit peaks to.
    @param cached_file If non-null, then this file will be used as the input file for analysis, and `filename` will only be used as the display name of the input file in the reports.
+   @param requested_fore_samples The sample numbers to use as the foreground.  If empty, will try to automatically determine, and
+          fail with `ResultCode::ForegroundSampleNumberUnderSpecified` if ambiguous.  More than one sample number means the
+          samples will be summed together.
    @param options The options to use for fitting peaks; note, not all options are used, as some of them are only applicable to
           #fit_peaks_in_files
    */
@@ -186,6 +189,7 @@ namespace BatchActivity
                           std::shared_ptr<const SpecMeas> cached_exemplar_n42,
                           const std::string &filename,
                           std::shared_ptr<SpecMeas> cached_file,
+                          std::set<int> requested_fore_samples,
                           const BatchActivityFitOptions &options );
   
 }//namespace BatchPeak

@@ -49,15 +49,6 @@
   </message>
   <message id="smm-unsupported-document">File ini sepertinya file dokumen, dan tidak didukung oleh InterSpec.</message>
   <message id="smm-invalid-peak-csv">File yang diunggah sepertinya file Peak CSV, tetapi tidak valid.</message>
-  <message id="smm-file-is-drf">
-    <p style="white-space: nowrap;">
-      File ini sepertinya Fungsi Respons Detektor.
-    </p>
-    <p style="text-align: left; white-space: nowrap;">
-      Nama: {1}
-    </p>
-   <p>Apakah Anda ingin menggunakan DRF ini?</p>
-  </message>
   <message id="smm-saved-drf-conf">
     Disimpan '{1}' untuk penggunaan nanti, dan akan tersedia di
     bagian "<em>Eff. Rel.</em>" dari alat "<em>Pemilih Fungsi Respons Detektor</em>".
@@ -254,7 +245,6 @@
     Gunakan <b>Manajer File</b> untuk mengubah ini.
   </message>
 
-
   <!-- The visual components of the Spectrum Measurement Manager GUI -->
   <message id="smm-selected-spec-label">Spektrum yang Dipilih: </message>
   <message id="smm-disp-as-btn">Tampilkan Sebagai</message>
@@ -267,7 +257,6 @@
   <message id="smm-export-btn">Ekspor...</message>
   <message id="smm-unload-btn">Bongkar</message>
   <message id="smm-unassign-label">Batalkan Penugasan: </message>
-
 
   <message id="smm-prev-states-window-title">Status yang Disimpan Sebelumnya</message>
   <message id="smm-err-prev-state-unexpected">Masalah tak terduga menampilkan status simpan yang tersedia: {1}</message>
@@ -327,9 +316,7 @@
   <message id="musd-err-decoding-url">Kesalahan mendekode URL: {1}</message>
   <message id="musd-received-urls-list">Telah menerima URL {1} dari {2}.<p>Menunggu URL/kode QR lebih lanjut</p></message>
 
-
   <message id="uid-qr-code-pic">Gambar Kode QR</message>
-  <message id="uid-no-qr-found">Tidak ada kode QR yang ditemukan ⓘ</message>
   <message id="uid-no-qr-found-title">Tidak ada kode QR yang ditemukan</message>
   <message id="uid-no-qr-content">
     <p>

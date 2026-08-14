@@ -72,6 +72,7 @@ namespace Wt
 
 
 class InterSpec;
+class PopupDivMenu;
 class SourceFitModel;
 class TraceSrcDisplay;
 class NativeFloatSpinBox;
@@ -693,6 +694,8 @@ protected:
   Wt::WText *m_materialSummary;
   Wt::WPushButton *m_closeIcon;
   Wt::WPushButton *m_addIcon;
+  /** The "add shield before/after" menu; owned by the session domRoot (not this widget),
+      so it must be manually deleted in the destructor / when removed. */
   Wt::WPushButton *m_addTraceSrcBtn;
   
   /** If true, then `m_addTraceSourceItem` should be hidden, spherical geometry, and there should be no trace sources,

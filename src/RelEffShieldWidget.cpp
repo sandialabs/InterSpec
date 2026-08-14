@@ -145,6 +145,16 @@ RelEffShieldWidget::RelEffShieldWidget( ShieldType type )
   m_fitArealDensity->checked().connect( this, &RelEffShieldWidget::userUpdated );
   m_fitArealDensity->setChecked( true );
 
+  // Optional "Bias AD" checkbox (RelActCalcAuto physical-model fits only; hidden by default).  Placed on the
+  //  group box itself (after the stacked widget) so it sits on its own row at the bottom, floated right
+  //  (see RelEffShieldWidget.css); enabled only while the areal density is being fit.
+  m_biasArealDensity = new Wt::WCheckBox( WString::tr("resw-bias-ad"), this );
+  m_biasArealDensity->addStyleClass( "RelEffShieldBiasAD" );
+  m_biasArealDensity->setToolTip( WString::tr("resw-bias-ad-tt") );
+  m_biasArealDensity->setHidden( true );
+  m_biasArealDensity->checked().connect( this, &RelEffShieldWidget::userUpdated );
+  m_biasArealDensity->unChecked().connect( this, &RelEffShieldWidget::userUpdated );
+
   m_stackedWidget->setCurrentIndex(0);
 
   userUpdated();
@@ -191,7 +201,8 @@ std::shared_ptr<const Material> RelEffShieldWidget::material( const std::string 
     //material wasnt in the database
   }
 
-  //See if 'text' is a chemical formula
+  //See if 'text' is a chemical formula, and if so add it to the suggestions so the user
+  //  doesn't have to retype it next time.
   try
   {
     const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
@@ -212,7 +223,14 @@ std::shared_ptr<const Material> RelEffShieldWidget::material() const
     return nullptr;
 
   const string text = m_materialEdit->text().toUTF8();
-  return material( text );
+  const std::shared_ptr<const Material> mat = material( text );
+
+  // If the user typed a chemical formula, add it to this widget's suggestions so they don't have
+  //  to retype it next time.  addFormulaMaterial() skips empties and de-duplicates.
+  if( mat && m_materialSuggest )
+    m_materialSuggest->addFormulaMaterial( mat->name );
+
+  return mat;
 }//shared_ptr<const Material> material() const
 
 
@@ -326,6 +344,24 @@ void RelEffShieldWidget::setFitArealDensity(bool fit)
 }
 
 
+void RelEffShieldWidget::setArealDensityBiasVisible( bool visible )
+{
+  m_biasArealDensity->setHidden( !visible );
+}
+
+
+bool RelEffShieldWidget::biasArealDensity() const
+{
+  return m_biasArealDensity->isChecked();
+}
+
+
+void RelEffShieldWidget::setBiasArealDensity( bool bias )
+{
+  m_biasArealDensity->setChecked( bias );
+}
+
+
 bool RelEffShieldWidget::nonEmpty() const
 {
   if( isMaterialSelected() )
@@ -375,7 +411,12 @@ void RelEffShieldWidget::userUpdated()
   m_arealDensity->setDisabled( m_fitArealDensity->isChecked() );
   m_atomicNumber->setDisabled( m_fitAtomicNumber->isChecked() );
   m_thicknessEdit->setDisabled( m_fitThickness->isChecked() );
- 
+
+  // Biasing the areal density only makes sense while it is being fit (material mode fits thickness, generic
+  //  mode fits AD); grey-out (but keep checked state) otherwise.
+  const bool fitting_ad = isMaterialSelected() ? m_fitThickness->isChecked() : m_fitArealDensity->isChecked();
+  m_biasArealDensity->setEnabled( fitting_ad );
+
   m_changed.emit();
 }
 
@@ -412,6 +453,7 @@ std::unique_ptr<RelEffShieldState> RelEffShieldWidget::state() const
   s->fitAtomicNumber = fitAtomicNumber();
   s->arealDensity = arealDensity();
   s->fitArealDensity = fitArealDensity();
+  s->biasArealDensity = biasArealDensity();
 
   return s;
 }
@@ -441,7 +483,9 @@ void RelEffShieldWidget::setState(const RelEffShieldState& s)
     setThickness(s.thickness);
     setFitThickness(s.fitThickness);
   }
-  
+
+  setBiasArealDensity( s.biasArealDensity );
+
   //materialTypeUpdated(); //Not calling, because we dont want to emit that user changed things
   m_stackedWidget->setCurrentIndex( m_frameSwitch->isChecked() ? 1 : 0 );
 }
@@ -475,6 +519,7 @@ void RelEffShieldState::toXml( rapidxml::xml_node<> *node ) const
   root->append_node(allocateNode("fitAtomicNumber", fitAtomicNumber ? "true" : "false"));
   root->append_node(allocateNode("arealDensity", std::to_string(arealDensity).c_str()));
   root->append_node(allocateNode("fitArealDensity", fitArealDensity ? "true" : "false"));
+  root->append_node(allocateNode("biasArealDensity", biasArealDensity ? "true" : "false"));
 
   node->append_node(root);
 }//void RelEffShieldState::toXml(rapidxml::xml_node<>* node)
@@ -511,6 +556,9 @@ void RelEffShieldState::fromXml(const rapidxml::xml_node<>* node)
   
   val = XML_FIRST_NODE(node, "fitArealDensity");
   fitArealDensity = val ? XML_VALUE_ICOMPARE(val, "true") : false;
+
+  val = XML_FIRST_NODE(node, "biasArealDensity");
+  biasArealDensity = val ? XML_VALUE_ICOMPARE(val, "true") : false;
 }//void RelEffShieldState::fromXml(const rapidxml::xml_node<>* node)
 
 
@@ -558,7 +606,9 @@ std::shared_ptr<RelActCalc::PhysicalModelShieldInput> RelEffShieldState::fitInpu
       self_atten->upper_fit_areal_density = 0.0;
     }
   }//if( materialSelected ) / else
-  
+
+  self_atten->ad_bias.use = biasArealDensity;
+
   return self_atten;
 }//fitInput()
 
@@ -584,6 +634,7 @@ void RelEffShieldState::setStateFromFitInput( const RelActCalc::PhysicalModelShi
   fitArealDensity = input.fit_areal_density;
   fitAtomicNumber = input.fit_atomic_number;
   fitThickness = input.fit_areal_density;
+  biasArealDensity = input.ad_bias.use;
 }//void setStateFromFitInput( const RelActCalc::PhysicalModelShieldInput &input )
 
 
@@ -633,6 +684,8 @@ std::shared_ptr<RelActCalc::PhysicalModelShieldInput> RelEffShieldWidget::fitInp
     else
       s->areal_density = arealDensity()*PhysicalUnits::g_per_cm2;
   }//if( isMaterialSelected() ) / else
+
+  s->ad_bias.use = biasArealDensity();
 
   return s;
 }//shared_ptr<RelActCalc::PhysicalModelShieldInput> fitInput() const

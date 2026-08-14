@@ -32,6 +32,8 @@
   <message id="smm-empty-file">File was probably an empty file - not a spectrum file.</message>
   <message id="smm-failed-reading-nonspec-file">Failed to read non-spectrum file.</message>
   <message id="smm-not-spec-file">Not a spectrum file</message>
+  <message id="smm-llm-config-invalid-title">Invalid LLM configuration file</message>
+  <message id="smm-llm-config-invalid-msg">This file looks like an LLM assistant configuration, but it could not be read. It may be malformed or from an incompatible version.</message>
   <message id="smm-image-file">Image File Selected</message>
   <message id="smm-icd2">This looks to be an N42 ICD2 file that contains analysis results
     rather than raw spectra.
@@ -51,15 +53,6 @@
   </message>
   <message id="smm-unsupported-document">This file looks to be a document file, and not supported by InterSpec.</message>
   <message id="smm-invalid-peak-csv">Uploaded file looked like a Peak CSV file, but was invalid.</message>
-  <message id="smm-file-is-drf">
-    <p style="white-space: nowrap;">
-      This file looks to be a Detector Response Function.
-    </p>
-    <p style="text-align: left; white-space: nowrap;">
-      Name: {1}
-    </p>
-   <p>Would you like to use this DRF?</p>
-  </message>
   <message id="smm-saved-drf-conf">
     Saved '{1}' for later use, and will be available in the
     "<em>Rel. Eff.</em>" portion of the "<em>Detector Response Function Select</em>" tool.
@@ -257,7 +250,6 @@
     Use the <b>File Manager</b> to change this.
   </message>
 
-
   <!-- The visual components of the Spectrum Measurement Manager GUI -->
   <message id="smm-selected-spec-label">Selected Spectrum: </message>
   <message id="smm-disp-as-btn">Display As</message>
@@ -270,7 +262,6 @@
   <message id="smm-export-btn">Export...</message>
   <message id="smm-unload-btn">Unload</message>
   <message id="smm-unassign-label">Unassign: </message>
-
 
   <message id="smm-prev-states-window-title">Previously Stored States</message>
   <message id="smm-err-prev-state-unexpected">Unexpected issue displaying available save-states: {1}</message>
@@ -330,9 +321,7 @@
   <message id="musd-err-decoding-url">Error decoding URL: {1}</message>
   <message id="musd-received-urls-list">Have received urls {1} of {2}.<p>Waiting on more URLS/QR-codes</p></message>
 
-
   <message id="uid-qr-code-pic">QR-code Picture</message>
-  <message id="uid-no-qr-found">No QR-codes found ⓘ</message>
   <message id="uid-no-qr-found-title">No QR-code found</message>
   <message id="uid-no-qr-content">
     <p>
@@ -367,6 +356,7 @@
   <message id="uid-err-to-large">Uploaded file was too large to try and display.</message>
   <message id="uid-err-reading-upload">Couldn't read uploaded file.</message>
   <message id="uid-embed-image-btn">Embed image in spectrum file</message>
+  <message id="uid-send-to-llm-btn">Send to AI assistant</message>
   <message id="uid-no-qr-found">QR-code not found ⓘ</message>
   <message id="uid-looking-for-qr">Looking for QR-codes.</message>
   <message id="uid-check-for-qr-btn">Check for Qr-code</message>
