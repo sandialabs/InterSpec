@@ -108,6 +108,11 @@
   /* height: 100%; */
 
   height: 200px;
+
+  /* NOTE: this overflow-y is NOT what makes the panel scroll - Wt4's WStackedWidget ctor sets an
+     inline `overflow:hidden`, which beats any stylesheet rule.  The scrolling is set from C++ with
+     setOverflow(Overflow::Auto, Orientation::Vertical) in BatchGuiWidget's constructor.  Kept here
+     only so the intent is obvious if the C++ call is ever removed. */
   overflow-y: auto;
 }
 

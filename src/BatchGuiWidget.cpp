@@ -192,6 +192,13 @@ BatchGuiWidget::BatchGuiWidget( FileDragUploadResource *uploadResource,
   {
     auto stack_owner = std::make_unique<Wt::WStackedWidget>();
     m_options_stack = stack_owner.get();
+
+    // Wt4's WStackedWidget ctor does `setOverflow(Overflow::Hidden)`, which is an *inline* style and
+    //  therefore beats the `overflow-y: auto` our stylesheet sets on `.Wt-stack` (Wt3's ctor only
+    //  added the style class, so the CSS worked there).  Without this, an options panel taller than
+    //  the fixed-height container is simply clipped, with no way to scroll to the rest of it.
+    //  Set it through the API so we win on specificity; leave overflow-x hidden as Wt left it.
+    m_options_stack->setOverflow( Wt::Overflow::Auto, Wt::Orientation::Vertical );
     m_batch_type_menu = options_container->addNew<Wt::WMenu>( m_options_stack );
     m_batch_type_menu->addStyleClass( "LightNavMenu VerticalNavMenu AnaTypeMenu" );
     options_container->addWidget( std::move(stack_owner) );
