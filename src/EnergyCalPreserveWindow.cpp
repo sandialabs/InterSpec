@@ -302,7 +302,12 @@ EnergyCalPreserveWindow::EnergyCalPreserveWindow(
   WContainerWidget *bottom = footer();
   //bottom->setStyleClass("modal-footer");
   WPushButton *cancel = bottom->addNew<WPushButton>( "No" );
-  cancel->clicked().connect( this, &EnergyCalPreserveWindow::emitReject );
+  // Must go through hide(), not emitReject() directly: emitReject() defers the finished() emit to
+  //  the next event loop and then suppresses it if the dialog is not hidden by then (that guard is
+  //  what stops a stale reject when a dialog is re-shown).  Called straight from a button click the
+  //  dialog is still visible, so the emit was always suppressed and "No" did nothing at all.
+  //  AuxWindow::setHidden(true) hides first and then calls emitReject(), which is the intended path.
+  cancel->clicked().connect( this, &AuxWindow::hide );
   cancel->setWidth( WLength(47.5,WLength::Unit::Percentage) );
   cancel->setFloatSide(Wt::Side::Left);
 

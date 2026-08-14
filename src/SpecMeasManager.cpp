@@ -444,7 +444,10 @@ namespace
       m_fileUpload->changed().connect( m_fileUpload, &Wt::WFileUpload::upload );
       m_fileUpload->uploaded().connect( this, &FileUploadDialog::finishUpload );
       m_fileUpload->fileTooLarge().connect( this, [this]( const ::int64_t size_tried ){ toLarge( size_tried ); } );
-      m_specChangedConection = viewer->displayedSpectrumChanged().connect( this, &AuxWindow::emitReject );
+      // hide(), not emitReject(): see the note in EnergyCalPreserveWindow - emitReject() suppresses
+      //  its deferred finished() emit unless the dialog is already hidden, so calling it from a
+      //  signal that does not hide the dialog silently does nothing.
+      m_specChangedConection = viewer->displayedSpectrumChanged().connect( this, &AuxWindow::hide );
       
       finished().connect( this, &FileUploadDialog::userCanceled );
       

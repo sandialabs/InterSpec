@@ -288,6 +288,15 @@ public:
   
   //Help button add to footer
   static void addHelpInFooter(Wt::WContainerWidget *footer, std::string page );
+  /** Queues the deferred `finished( DialogCode::Rejected )` emission.
+
+   ONLY call this from the hide path (`AuxWindow::setHidden(true)` does).  It defers the emit to the
+   next event loop iteration and then *suppresses* it unless the dialog is hidden by then - a guard
+   that stops a stale reject when a dialog is re-shown in between.  So wiring this straight to a
+   button or a signal that does not hide the dialog silently does nothing at all.
+
+   To dismiss a dialog from a button or a signal, connect to `AuxWindow::hide` instead.
+   */
   void emitReject();
   
   /** Returns if dialog is customized for phones. */
