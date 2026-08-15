@@ -1403,6 +1403,8 @@ InterSpec::~InterSpec() noexcept(true)
   AuxWindow::deleteAuxWindow( m_addFwhmTool.get() );
   AuxWindow::deleteAuxWindow( m_preserveCalibWindow.get() );
   AuxWindow::deleteAuxWindow( m_drfSelectWindow.get() );
+  AuxWindow::deleteAuxWindow( m_mcResponseTool.get() );
+  AuxWindow::deleteAuxWindow( m_drfModifyWindow.get() );
 
   SimpleDialog::deleteSimpleDialog( m_exportSpecFileWindow.get() );
   SimpleDialog::deleteSimpleDialog( m_multimedia.get() );

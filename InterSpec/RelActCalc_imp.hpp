@@ -460,7 +460,8 @@ T get_atten_coef_for_an( const T &an, const float energy )
 
   // Allow a small margin past [1,98]: callers no longer hard-clamp the (Jet) atomic number to the
   //  bound (that would zero its derivative), so the optimizer may evaluate a hair outside.  The
-  //  lookup stays valid regardless - `mass_atten_coef_frac_an` saturates to the table endpoints.
+  //  lookup stays valid regardless - `mass_atten_coef_frac_an` interpolates on the bounds
+  //  themselves (keeping the derivative live there) and clamps only strictly outside them.
   assert( (an_scalar >= 1.0 - 1.0e-3) && (an_scalar <= 98.0 + 1.0e-3) );
 #endif
 

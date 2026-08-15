@@ -905,6 +905,22 @@ public:
      They must never have `useForShieldingSourceFit()` set.
      */
     std::vector<std::shared_ptr<const PeakDef>> synthetic_peaks;
+
+    /** An already-built cascade calculator to take the (expensive) cascade enumeration and
+     shield-scatter table from, rather than rebuilding them.
+
+     Only the peak windows are rebuilt from this input's peaks, so it is safe to pass one built
+     for a different peak list - but everything else (source nuclides and their starting ages,
+     detector, shield stack) must match, since none of it is re-derived.  Used by
+     `ShieldingSourceFitCalc::compute_supplemental_peak_info(...)`, which re-creates the function
+     object with extra peaks right after a fit.  Ignored unless
+     `config.options.correct_for_cascade_summing` is set.
+
+     Note that when `supplemental_options.compute` is set, the cascade calculator is given a
+     window for every peak in `foreground_peaks` rather than only the fitted ones - so the peaks
+     the post-fit pass adds are already covered either way.
+     */
+    std::shared_ptr<const CascadeSummingCalc> reuse_cascade_calc;
   };//struct ShieldSourceInput
 
   static std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> create(
@@ -1430,6 +1446,11 @@ public:
    parameter vector can be applied to it directly.
    */
   const ShieldSourceInput &createInput() const;
+
+  /** The cascade-summing calculator built for this object, or null when the correction is off.
+   Hand this to `ShieldSourceInput::reuse_cascade_calc` when re-creating for the same scene.
+   */
+  const std::shared_ptr<const CascadeSummingCalc> &cascadeCalc() const;
 
   const std::shared_ptr<const DetectorPeakResponse> &detector() const;
 

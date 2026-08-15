@@ -1639,6 +1639,37 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
           " detector editor (Detector Response Select -> Modify), e.g. by"
           " attaching a Monte-Carlo characterization." );
 
+    // Which peaks get a cascade window.  `evaluate()` returns one result per *stored* window, so
+    //  a calculator that has no window for a peak silently applies no correction to it.  When the
+    //  post-fit supplemental pass is enabled (always, for the GUI) it evaluates this model against
+    //  the peaks the fit did *not* use as well - so give the calculator windows for every
+    //  foreground peak up front, not just the fitted ones.
+    //  Extra windows cannot perturb the fit: `applyCascadeToClusterMap` looks each result up by
+    //  energy in the fit's own cluster map and skips the ones that do not match.
+    vector<PeakDef> cascade_window_peaks;
+    if( input.supplemental_options.compute )
+    {
+      for( const shared_ptr<const PeakDef> &peak : foreground_peaks )
+      {
+        if( peak )
+          cascade_window_peaks.push_back( *peak );
+      }
+    }else
+    {
+      cascade_window_peaks = peaks;
+    }
+
+    // Re-window an existing calculator when the caller has one for the same scene: the cascade
+    //  enumeration and the shield-scatter table are the expensive part, and neither depends on
+    //  the peak list.  See `ShieldSourceInput::reuse_cascade_calc`.
+    if( input.reuse_cascade_calc )
+    {
+      answer->m_cascadeCalc = make_shared<const CascadeSummingCalc>( *input.reuse_cascade_calc,
+                                        observedPeakEnergyWidths( cascade_window_peaks ),
+                                        options.photopeak_cluster_sigma );
+    }else
+    {
+
     vector<pair<const SandiaDecay::Nuclide *,double>> nuc_ages;
     for( const ShieldingSourceFitCalc::SourceFitDef &src : src_definitions )
     {
@@ -1670,9 +1701,11 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
     const double shield_frac_h = (total_mass > 0.0) ? (h_mass / total_mass) : 0.0;
 
     answer->m_cascadeCalc = make_shared<const CascadeSummingCalc>( nuc_ages,
-                    observedPeakEnergyWidths( peaks ), options.photopeak_cluster_sigma,
+                    observedPeakEnergyWidths( cascade_window_peaks ),
+                    options.photopeak_cluster_sigma,
                     detector, shield_frac_h, shields_present,
                     InterSpec::staticDataDirectory() );
+    }//if( input.reuse_cascade_calc ) / else
   }//if( options.correct_for_cascade_summing )
 
   // Hold onto the input verbatim, so the per-peak supplemental information can be computed after
@@ -4203,6 +4236,12 @@ double ShieldingSourceChi2Fcn::realTime() const
 const ShieldingSourceChi2Fcn::ShieldSourceInput &ShieldingSourceChi2Fcn::createInput() const
 {
   return m_create_input;
+}
+
+
+const std::shared_ptr<const CascadeSummingCalc> &ShieldingSourceChi2Fcn::cascadeCalc() const
+{
+  return m_cascadeCalc;
 }
 
 

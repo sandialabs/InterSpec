@@ -279,6 +279,27 @@ CascadeSummingCalc::CascadeSummingCalc(
 }//CascadeSummingCalc constructor
 
 
+CascadeSummingCalc::CascadeSummingCalc( const CascadeSummingCalc &other,
+                    const std::vector<std::pair<double,double>> &peak_energy_widths,
+                    const double photopeak_cluster_sigma )
+  : m_partner_energies( other.m_partner_energies ),
+    m_scatter( other.m_scatter )
+{
+  // Windows are the only peak-dependent state; rebuild just those.
+  for( const pair<double,double> &ew : peak_energy_widths )
+  {
+    ceelo::PeakWindow win;
+    win.energy_keV = ew.first;
+    win.tolerance_keV = std::max( 0.25, photopeak_cluster_sigma * ew.second );
+    m_windows.push_back( win );
+  }
+
+  // Carry over the memoized cascades, so the (expensive) per-nuclide enumeration is not redone.
+  std::lock_guard<std::mutex> lock( other.m_cascade_mutex );
+  m_cascades = other.m_cascades;
+}//CascadeSummingCalc re-windowing constructor
+
+
 bool CascadeSummingCalc::drfHasNeededInfo( const std::shared_ptr<const DetectorPeakResponse> &drf )
 {
   return drf && drf->isValid() && drf->hasAnyTotalEfficiencyInfo();

@@ -2245,7 +2245,13 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
             bool have_remap = false;
             double remap_a = 1.0, remap_b = 0.0;
 
-            if( disp_prev_cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge )
+            // Both cals must be lower-channel-edge to trace back to a common original.  A change
+            //  that switches the calibration *type* (e.g. "Guess Gain", which always applies a
+            //  polynomial) has no shared original to remap through, and `lowerChannelOriginal()`
+            //  asserts on anything else - so fall through to the non-remap path.
+            if( (disp_prev_cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge)
+                && new_disp_cal
+                && (new_disp_cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge) )
             {
               const LowerChanCalOriginal previnfo = lowerChannelOriginal( disp_prev_cal );
               const LowerChanCalOriginal newinfo = lowerChannelOriginal( new_disp_cal );

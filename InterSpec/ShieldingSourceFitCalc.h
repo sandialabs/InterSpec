@@ -516,8 +516,9 @@ namespace ShieldingSourceFitCalc
     /** Non-fatal warnings about a completed fit, suitable for display to the user and inclusion in
      reports (e.g. a large average peak deviation, or x-ray peaks being used), plus any problems
      encountered computing `supplemental_peak_info`.  Populated for Final fits by
-     `fill_fit_results(...)`.  Distinct from `errormsgs`, which are lower-level fit problems.
-     Add new warning conditions in the warning-detection helper, not at call sites. */
+     `fill_fit_results(...)`, curated fit warnings first.  Distinct from `errormsgs`, which are
+     lower-level fit problems.  Add new warning conditions about the *fit* in the
+     warning-detection helper, not at call sites. */
     std::vector<std::string> warnings;
 
     double distance;

@@ -51,7 +51,11 @@ namespace MassAttenuation
  respect to atomic number is preserved); when using Jets, include ceres.h
  before this header.
 
- Outside [1,98] the value is clamped to the boundary element (derivative zero).
+ Strictly outside [1,98] the value is clamped to the boundary element, which zeroes the
+ derivative.  *On* either bound the interpolation below is still used, so the derivative stays
+ live: the AN fit parameter is Ceres-bounded to [1,98] and the optimizer routinely evaluates
+ exactly on a bound, where a zero gradient would trap it there (see the "Do NOT clamp `an`"
+ notes in RelActCalcManual.cpp).
 
  Returns mass attenuation coefficient in PhysicalUnits (divide by
  PhysicalUnits::cm2/PhysicalUnits::g for cm2/g); throws the same as
@@ -69,10 +73,14 @@ T mass_atten_coef_frac_an( const T &atomic_number, const float energy )
   else
     an_scalar = atomic_number.a;
 
-  if( an_scalar <= sm_min_xs_atomic_number )
+  // Strict comparisons: at an == 1 or an == 98 the interpolation below reproduces the element
+  //  value exactly (t == 0 or t == 1) while keeping a live Jet derivative.  Constructing the
+  //  result from a scalar, as these clamps do, zeroes every derivative lane - and the AN
+  //  parameter's Ceres bounds are exactly [1,98], so the optimizer sits on them.
+  if( an_scalar < sm_min_xs_atomic_number )
     return T( static_cast<double>( massAttenuationCoefficientElement( sm_min_xs_atomic_number, energy ) ) );
 
-  if( an_scalar >= sm_max_xs_atomic_number )
+  if( an_scalar > sm_max_xs_atomic_number )
     return T( static_cast<double>( massAttenuationCoefficientElement( sm_max_xs_atomic_number, energy ) ) );
 
   const int lower_an = std::clamp( static_cast<int>( std::floor(an_scalar) ),

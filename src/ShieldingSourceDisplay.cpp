@@ -5046,13 +5046,16 @@ tuple<bool,int,int,vector<string>> ShieldingSourceDisplay::testCurrentFitAgainst
             continue;
           }
           
-          const double fitAD = select->arealDensity();
+          // `arealDensity()` is in InterSpec internal units, while `truthAD` is the raw g/cm2
+          //  number the user typed in - so convert before comparing (cf. the same check in
+          //  test_ShieldingSourceFitCalc.cpp's FitAnalystShieldingSourcecases).
+          const double fitAD = select->arealDensity() / (PhysicalUnits::g/PhysicalUnits::cm2);
           const bool closeEnough = (fabs(*select->truthAD - fitAD) < *select->truthADTolerance);
-          
+
           numTested += 1;
           numCorrect += closeEnough;
-          
-          textInfoLines.push_back( "For Generic Shielding fit AN " + std::to_string(fitAD)
+
+          textInfoLines.push_back( "For Generic Shielding fit AD " + std::to_string(fitAD)
                                   + " with the truth value of " + std::to_string(*select->truthAD)
                                   + " and tolerance " + std::to_string(*select->truthADTolerance)
                                   + (closeEnough ? " - within tolerance." : " - out of tolerance." )

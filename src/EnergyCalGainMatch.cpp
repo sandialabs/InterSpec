@@ -1038,8 +1038,12 @@ namespace
                                           = viewer->displayedHistogram( change.type );
       if( disp_hist )
       {
-        specfile->setAutomatedSearchPeaks( disp_samples,
-                                     make_shared<deque<shared_ptr<const PeakDef>>>() );
+        // Drop the cached result to *null*, not to an empty deque: the search is now coordinated
+        //  through `SpecMeas::reserveAutomatedSearchPeaks(...)`, whose cache-hit test is a bare
+        //  pointer check - an empty-but-non-null deque counts as a hit, so the relaunch below
+        //  would return that empty result immediately, re-persist it, and leave the file with no
+        //  hint peaks at all.
+        specfile->setAutomatedSearchPeaks( disp_samples, nullptr );
         viewer->searchForHintPeaks( specfile, disp_samples, disp_hist,
                                     specfile->peakFitDetPrefs() );
       }

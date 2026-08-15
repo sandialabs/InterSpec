@@ -197,6 +197,21 @@ public:
                       const bool shields_present,
                       const std::string &data_directory );
 
+  /** Re-windowing copy: same physics as `other` (cascade enumeration, partner energies and the
+   shield-scatter table are all peak-independent), but for a different set of fit peaks.
+
+   Every expensive part of the primary constructor - `cascades(...)` per nuclide, the daughter
+   x-ray line enumeration, and `ShieldScatterAugment::build(...)` - is reused, including `other`s
+   memoized cascade cache.  Only the peak windows are rebuilt.
+
+   Use this rather than the shared_ptr when the peak list differs: #evaluate returns one result
+   per *stored* window, so a calculator built for a smaller peak set silently applies no
+   correction to the peaks it has no window for.
+   */
+  CascadeSummingCalc( const CascadeSummingCalc &other,
+                      const std::vector<std::pair<double,double>> &peak_energy_widths,
+                      const double photopeak_cluster_sigma );
+
   /** Whether the DRF carries the total-efficiency info corrections need. */
   static bool drfHasNeededInfo( const std::shared_ptr<const DetectorPeakResponse> &drf );
 

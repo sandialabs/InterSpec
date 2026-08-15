@@ -2155,6 +2155,10 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
                               const unsigned int ndof,
                               std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results )
 {
+  // Complaints from the supplemental-peak-info pass; merged into `results->warnings` at the end
+  //  of this function, after the curated fit warnings.  See the note at that call.
+  vector<string> supplemental_warnings;
+
   {// Begin set fit source info
     results->fit_src_info.clear();
       
@@ -2550,14 +2554,17 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
     // Per-peak detection limit checks, and the activities implied by peaks that were fit but not
     //  used in the model.  Both the GUI and batch analyses get this from here.  A failure must
     //  not lose the fit, so it is caught separately.
+    //  Its complaints are collected separately and appended *after* the curated fit warnings
+    //  below, so that "your fit may be unreliable" always leads the warning list the GUI pill,
+    //  the results sheet and the reports show - rather than a supplemental-info diagnostic.
     try
     {
       results->supplemental_peak_info = compute_supplemental_peak_info( *chi2Fcn, *results,
-                                                                       results->warnings );
+                                                                       supplemental_warnings );
     }catch( std::exception &e )
     {
-      results->warnings.push_back( "Failed to compute supplemental peak information: "
-                                   + string(e.what()) );
+      supplemental_warnings.push_back( "Failed to compute supplemental peak information: "
+                                       + string(e.what()) );
     }//try / catch
 
     // Check if background subtraction is enabled, but no peaks actually background subtracted
@@ -2576,6 +2583,11 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
   // Surface non-fatal warnings (poor average deviation, x-ray peaks, ...) on the results so the
   //  GUI, phone fit bar, and reports can all show them.  Only reached on the Final/success path.
   check_for_fit_warnings( *results, *chi2Fcn, params );
+
+  // ... then the supplemental-info diagnostics collected above, which are about a secondary
+  //  computation rather than about the trustworthiness of the fit itself.
+  results->warnings.insert( end(results->warnings),
+                            begin(supplemental_warnings), end(supplemental_warnings) );
 }//fill_fit_results(...)
 
 
@@ -2701,6 +2713,12 @@ vector<SupplementalPeakInfo> compute_supplemental_peak_info(
   //  `create(...)` keeps them.  Everything else is passed through untouched.
   GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput aug_input = input;
   aug_input.supplemental_options.compute = false;  //dont recurse
+
+  // Same scene, only more peaks - so re-window the fit's cascade calculator rather than paying to
+  //  re-enumerate every cascade and rebuild the shield-scatter table.  (Sharing the pointer would
+  //  be wrong: `evaluate()` returns one result per stored window, so the peaks we are adding here
+  //  would get no correction at all.)
+  aug_input.reuse_cascade_calc = chi2Fcn.cascadeCalc();
   aug_input.foreground_peaks.clear();
 
   set<shared_ptr<const PeakDef>> added_peaks;
