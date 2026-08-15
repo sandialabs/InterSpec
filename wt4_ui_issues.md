@@ -299,22 +299,159 @@ reads size limits from `from.style.*` (**inline only**) and then writes `height:
 `maxWidth:100%`, `maxHeight:100%` inline on the child — so a limit coming from a stylesheet is
 discarded rather than transferred.
 
-**Dead rules** (all target `WDialog::contents()` == `.body` == `.AuxWindow-content`):
-`ExportSpecFile.css:10`, `:34`, and knock-on `:39-45`; `SimpleDialog.css:62`, `:78`, `:87`;
-`DetectionLimitSimple.css:305-308`, `:313-315`; `BatchGuiWidget.css:4`; `InjaLogDialog.css:9`;
-`RefSpectraWidget.css:6`; `ShieldingSourceDisplay.css:8`; `FitPeaksForNuclidesGui.css:13`;
-`DrfSelect.css:221`.
+**Dead rules** — all `max-height` on `WDialog::contents()` (== `.body` == `.AuxWindow-content`).
+**All of these were removed on 2026-08-14** and replaced by the C++ backstop below:
+`ExportSpecFile.css`, `SimpleDialog.css:62`, `:78`, `:87`; `BatchGuiWidget.css:4`;
+`InjaLogDialog.css:9`; `RefSpectraWidget.css:6`; `ShieldingSourceDisplay.css:8`;
+`FitPeaksForNuclidesGui.css:13`.
 
-**Dead C++, not just CSS:** `SimpleDialog.cpp:236-245` builds a per-instance `#<id> .body`
-max-width/max-height rule; its comment claims it "wins without `!important`", which is true against
-other stylesheets but false against an inline style. So `SimpleDialog::setMaximumSize()` is a no-op
-on the scrollable body.
+Two corrections to that list, from the 2026-08-14 survey below: `DrfSelect.css:221` was listed in
+error — it is `max-width` on `.DrfFileSelectMainDesc`, an ordinary inner div that flex never touches,
+so it is live (the `.DrfFileSelectDialog .body` rule at `:212` sets padding only). And
+`DetectionLimitSimple.css:305`/`:313` are dead for a second, unrelated reason: `SimpleMdaBody`
+appears nowhere but in that stylesheet (`grep -rn SimpleMdaBody src/ InterSpec/`), so the selector
+matches no element. The class was never added on the C++ side when the rule landed in `ad13333d`.
+Those two are still there (an AuxWindow, which has its own backstop — see below).
 
-**Fix:** set these from C++ (`contents()->setHeight(...)` / `setMaximumSize(...)`), which
-`FlexLayoutImpl` transfers to the wrapper's flex-basis. A **global escape hatch** also exists:
-`WLayout::setDefaultImplementation( LayoutImplementation::JavaScript )` once at startup restores the
-Wt3 engine app-wide and retires this whole issue — at the cost of flex's auto-sizing. That is a
-judgement call, not an obvious win.
+**Dead C++, not just CSS:** `SimpleDialog::setMaximumSize()` used to build a per-instance
+`#<id> .body` max-width/max-height rule; its comment claimed it "wins without `!important`", which is
+true against other stylesheets but false against an inline style, so it was a no-op on the
+scrollable body. Removed 2026-08-14.
+
+**Fix, shipped 2026-08-14: `SimpleDialog::updateBodySizeForWindow()`.** Set the limit on the *widget*
+rather than in a stylesheet. `FlexLayoutImpl.js`'s `copySizeLimits()` reads the body's **inline**
+`max-height` and copies it onto the flex item that wraps the body, *then* rewrites the body's own to
+`100%` — which now resolves against that wrapper, so an inline value survives the round trip while a
+stylesheet one is discarded. Measured on a live dialog: setting `contents()->setMaximumSize()` to
+629 px puts `max-height: 629px` on the wrapper and gives the body a computed `100%` = 629.15 px.
+`FlexLayoutImpl.C` re-asserts the value through `layout.resizeItem(...)` whenever the C++ size
+changes, so later updates work too.
+
+Three consequences worth knowing:
+- The limit has to be *arithmetic* (`0.95*renderedHeight() - chrome`), because `WLength` cannot
+  express `calc(95vh - 90px)` — see the worked example below.
+- Because it is arithmetic rather than `95vh`, it goes stale when the browser window changes size,
+  so `InterSpec::layoutSizeChanged()` walks `m_trackedDialogs` and re-applies it. Verified live:
+  with the Export dialog open, shrinking the window from 837 px to 417 px took the body from 400 px
+  to 306 px (= `0.95*417 - 90`) immediately.
+- A dialog needing a different allowance says so with `setBodyChromeHeight()` (Export uses 20 px on
+  phone, where there is no title bar or footer), and one wanting a specific height rather than
+  sizing to content uses `setBodyPreferredHeight()` (Export asks for 400 px). Both are re-clamped on
+  resize.
+
+**AuxWindow needs no equivalent — it already had one.** `AuxWindowResizeToFitOnScreen` (at show) and
+`AuxWindowOnDomResize` (a `window` resize listener installed once, `AuxWindow.cpp:383-463`) shrink
+any AuxWindow bigger than the window via `dialog.wtObj.onresize(...)` and set `overflow-y: auto` on
+its body. Verified by injecting 60 lines into an open Gamma XS window in a 757 px viewport: the
+window stayed at 753 px, the body capped at 681 px and scrolled, footer at 754 px.
+
+**DECIDED 2026-08-14: do NOT use `WLayout::setDefaultImplementation(LayoutImplementation::JavaScript)`.**
+That one-liner would restore the Wt3 layout engine app-wide and retire this whole issue, but the
+project's direction is to migrate to flex layout where appropriate rather than pin the framework to
+its old engine. So each case here gets fixed on its merits: size from C++ (which flex honours), or
+restructure the CSS to be flex-native. Do not re-propose the global switch.
+
+#### Worked example, 2026-08-14: the Export Spectrum File dialog
+
+Symptom: the dialog grew to ~706 px (nearly the whole screen) and hung off the bottom, because the
+File Format list never produced a scrollbar. Confirmed the mechanism above end-to-end, and settled
+three open questions about the prescribed fixes. `!important` on the existing rules was tried first
+and did work (706 px → 428 px), but was taken back the same day in favour of doing the arithmetic in
+C++ (`setBodyChromeHeight()` / `setBodyPreferredHeight()` in `ExportSpecFileWindow`'s constructor),
+and those CSS rules were deleted. Same result — 428 px with a 400 px body, verified at 837 px, 757 px
+and 357 px viewports, the last of which correctly clamps the 400 px request down to 249 px.
+
+**The intended sizing was already written, in CSS, and had simply stopped applying.**
+`git blame` puts `height: min(calc(95vh - 90px), 400px)` at commit `72819438`, 2023-09-01. Nothing
+about this dialog's sizing has changed since: `ExportSpecFile.css` was last touched before the Wt4
+merge, and the migration commits changed 4 and 10 lines of `ExportSpecFile.cpp`, none of them
+sizing. The C++ sets width only (`setMaxWidth(95vw)`, `setMinimumSize(650px, Auto)`); height is
+`Auto` everywhere. So under Wt3 this dialog's height came from that one stylesheet rule, and under
+Wt4 it comes from its content.
+
+**Measured, not inferred.** On the live dialog `.body` carries
+`style="flex: 1 1 auto; height: auto; max-width: 100%; max-height: 100%;"`, and its *computed*
+`max-height` is `100%` — not the `calc(95vh - 90px)` the stylesheet asks for. A plain stylesheet
+`height` on `.body` had no effect at all; the same rule with `!important` took, and survived a
+forced reflow (FlexLayoutImpl rewrites its inline style, `!important` still wins).
+
+**Constraint on the "size from C++" fix: `WLength` cannot express `calc()`, `min()` or `clamp()`.**
+`WLength::parseCssString` (`WLength.C`) is `strtod` plus a unit suffix, so anything it cannot parse
+falls back to `auto`. C++ sizing can therefore only supply a single value+unit — fine for a plain
+`400px` or `85vh`, but it cannot reproduce a viewport expression with a fixed offset such as
+`calc(95vh - 90px)`, where the offset does not scale with the viewport. Where the intended size
+needs that arithmetic, `!important` on the stylesheet rule is the only faithful option.
+
+**The JavaScript engine is not an escape hatch for dialog bodies — tested, does not work.**
+This is the per-layout variant, not the global switch ruled out above, and it is *reachable*:
+`StdGridLayoutImpl2` still ships in 4.13.2, `WBoxLayout::setImplementation()` builds it whenever
+`preferredImplementation() != Flex` (`WBoxLayout::implementationIsFlexLayout()`), and the layout is
+one level up from `contents()` — the ancestry is `contents()` → `WContainerWidget 'dialog-layout'`
+(holds the `WVBoxLayout`) → `WTemplate` → the dialog — so
+`dynamic_cast<WContainerWidget *>( contents()->parent() )->layout()` gets it with no Wt patching.
+Both routes render wrong:
+- `setPreferredImplementation(JavaScript)` *after* construction: sizing becomes exactly right (the
+  inline flex styles vanish, the stylesheet 400 px applies, the list scrolls) but the engine leaves
+  `visibility: hidden` on `.body` and never clears it — blank dialog, persists through a forced
+  resize.
+- Layout built as JS *from the start* (flipping the default around the `SimpleDialog::make` call):
+  visible, but the engine writes `width: 15px` on `.body`; the title wraps down a sliver and the
+  content is unreachable.
+
+The second failure explains both: the JS engine measures against definite parent dimensions, and in
+Wt4 the dialog is a `WTemplate` sized by CSS (`max-width: 50vw`, the C++ `min-width`) rather than by
+the explicit pixel sizes Wt3 handed it. Restoring the engine would mean also restoring how the
+dialog gets sized — most of the migration, not a switch. Do not retry this per-dialog either.
+
+**Red herring worth not re-chasing:** the dialog also sat ~130 px too low and hung off the bottom.
+That was not a separate positioning bug — Wt centres a dialog when it is shown, using the height it
+has at that instant, and this one grew afterwards. Fixing the height fixed the position; a
+`centerDialog()` re-centre added for it was verified unnecessary and removed.
+
+#### Survey, 2026-08-14: what the other affected dialogs look like today
+
+Every dialog carrying one of the dead rules was opened in the running app and measured (viewport
+813 px high, so the intended cap computes to 682.35 px). **None of them is visibly broken today, and
+the reason is uniform: each one already computes the very same cap in C++.** `BatchGuiWidget.cpp:109-126`,
+`RefSpectraWidget.cpp:154-171` and `FitPeaksForNuclidesGui.cpp:750-766` all set
+`m_widget->setHeight( 0.95*renderedHeight() - 90 )` (capped at 650/500/750 px in the landscape
+branch); `InjaLogDialog.cpp:228` does `resize( 95%, 95% )`; `BackPeakPreviewDialog` sizes its chart
+to `min(0.45*renderedHeight(), 450)`. `0.95*h - 90` *is* `calc(95vh - 90px)`, so the stylesheet rule
+was always belt-and-braces — which is why its loss went unnoticed. Measured example: Reference
+Spectra's body carries `min-height: 410px; height: 431px` inline, exactly `min(500, 0.95*813) - 90`.
+Export Spectrum File was the one dialog that relied on the CSS alone, hence the only one that broke.
+
+**The real exposure is the generic rule, `SimpleDialog.css:62`.** That is the app-wide safety net for
+every auto-sized `SimpleDialog` — confirms, warnings, long error messages, `DrfFileSelectDialog`
+(`DrfSelect.cpp:3045`, which sets no height at all) — none of which size themselves from C++.
+Measured on a live dialog (File → Enter URL, content padded to ~1260 px):
+
+| | body `max-height` | body height | dialog height | result |
+|---|---|---|---|---|
+| today | `100%` (inline wins) | 1261 px | 772 px (pinned at `max-height:95vh`) | ~490 px of content **and the whole footer** clipped away by `.simple-dialog{overflow:hidden}`; **no scrollbar** |
+| rule revived with `!important` | 682.35 px | 682 px | 751 px | body scrolls internally, Cancel/Okay visible |
+
+So the failure mode here is worse than Export's: not merely a too-tall dialog but a modal whose
+buttons are unreachable — Escape is the only way out. Verified with the dialog re-centred, to rule
+out the stale-centring red herring below.
+
+`AuxWindow` bodies are laid out by the same flex impl (Gamma XS, Dose Calc, DRF Select and Nuclide
+Decay Info all read `max-height: 100%` inline), so any future `max-height` written for an
+`.AuxWindow-content` in a stylesheet will be discarded too.
+
+**Both follow-ups from this survey, resolved 2026-08-14.** The generic net became
+`SimpleDialog::updateBodySizeForWindow()` rather than `!important` (see the fix above); re-run of the
+same experiment afterwards, in a 357 px window with 1261 px of content: body capped at 249 px and
+scrolling, Cancel/Okay on screen. And the Simple MDA rule needs no `addStyleClass("SimpleMdaBody")`
+after all — `DetectionLimitSimpleWindow` is an `AuxWindow`, so it is already covered by the
+AuxWindow JS backstop; the two orphan CSS rules are just dead weight.
+
+**Still open, and pre-existing (not caused by any of this):** a `SimpleDialog` is positioned once,
+when shown, with an inline `top` in pixels. Shrink the browser window while one is open and it stays
+where it was — measured after 837 px → 417 px, a 334 px dialog sat at `top: 206px` and hung 123 px off
+the bottom, footer included. AuxWindows re-centre themselves for exactly this reason
+(`AuxWindowOnDomResize`); SimpleDialogs have no equivalent. Sizing is now right in that situation;
+position is not.
 
 ### Issue 30 — Three more tools with a layout-on-self hosted in a layout-less `contents()`
 
