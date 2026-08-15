@@ -1020,11 +1020,12 @@ BOOST_AUTO_TEST_CASE( FitGenericShieldingANBaseline )
   BOOST_REQUIRE_EQUAL( results->final_shieldings.size(), size_t(1) );
   BOOST_REQUIRE_EQUAL( results->fit_src_info.size(), size_t(1) );
 
-  // Note: for generic materials, FitShieldingInfo::m_dimensions[1] is in g/cm2
-  //  (unlike the PhysicalUnits-valued input ShieldingInfo) - see fit_model().
+  // Note: `FitShieldingInfo::m_dimensions[1]` holds the generic areal density in InterSpec
+  //  internal units, the same as the input `ShieldingInfo` - see fill_fit_results().
   const double true_ad_g_cm2 = true_ad / (PhysicalUnits::g/PhysicalUnits::cm2);
   const double fit_an = results->final_shieldings[0].m_dimensions[0];
-  const double fit_ad_g_cm2 = results->final_shieldings[0].m_dimensions[1];
+  const double fit_ad_g_cm2 = results->final_shieldings[0].m_dimensions[1]
+                              / (PhysicalUnits::g/PhysicalUnits::cm2);
   const double fit_activity = results->fit_src_info[0].activity;
 
   cout << "FitGenericShieldingANBaseline: AN=" << fit_an
@@ -1394,7 +1395,8 @@ BOOST_AUTO_TEST_CASE( FitOffAxisSourceBaseline )
   BOOST_REQUIRE_EQUAL( results->fit_src_info.size(), size_t(1) );
 
   const double true_ad_g_cm2 = true_ad / (PhysicalUnits::g/PhysicalUnits::cm2);
-  const double fit_ad_g_cm2 = results->final_shieldings[0].m_dimensions[1];
+  const double fit_ad_g_cm2 = results->final_shieldings[0].m_dimensions[1]
+                              / (PhysicalUnits::g/PhysicalUnits::cm2);
   const double fit_activity = results->fit_src_info[0].activity;
 
   cout << "FitOffAxisSourceBaseline: AD=" << fit_ad_g_cm2 << " g/cm2 (truth " << true_ad_g_cm2
@@ -1587,13 +1589,15 @@ std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingS
             continue;
           }
           
-          const double fitAD = shield.m_dimensions[1];
+          // The truth AD is typed into the GUI in g/cm2 and stored unconverted, while
+          //  `m_dimensions[1]` is in InterSpec internal units - so convert before comparing.
+          const double fitAD = shield.m_dimensions[1] / (PhysicalUnits::g/PhysicalUnits::cm2);
           const bool closeEnough = (fabs(*truth - fitAD) < *tolerance);
-          
+
           numTested += 1;
           numCorrect += closeEnough;
-          
-          textInfoLines.push_back( "For Generic Shielding fit AN " + std::to_string(fitAD)
+
+          textInfoLines.push_back( "For Generic Shielding fit AD " + std::to_string(fitAD)
                                   + " with the truth value of " + std::to_string(*truth)
                                   + " and tolerance " + std::to_string(*tolerance)
                                   + (closeEnough ? " - within tolerance." : " - out of tolerance." )

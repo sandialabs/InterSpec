@@ -399,10 +399,10 @@ Sources:
         <th>Det. Eff</th>
         <th>Pred.</th>
         <th>&sigma; off</th>
-{% if ActShieldFitSetup.FitOptions.AccountForDrfUncert %}
+{% if exists("ActShieldFitSetup") and ActShieldFitSetup.FitOptions.AccountForDrfUncert %}
         <th>DRF eff. uncert.</th>
 {% endif %}
-{% if ActShieldFitSetup.FitOptions.CorrectForCascadeSumming %}
+{% if exists("ActShieldFitSetup") and ActShieldFitSetup.FitOptions.CorrectForCascadeSumming %}
         <th title="True-coincidence (cascade) summing multiplier applied to the predicted counts (summing-out x1 + summing-in)">Cascade mult.</th>
 {% endif %}
       </tr>
@@ -427,10 +427,10 @@ Sources:
         <td>{{ printCompact(peak.DetectorEff,5) }}</td>
         <td>{{ printCompact(peak.PredictedCounts,5) }}</td>
         <td>{{ printFixed(peak.PredictedNumSigmaOff,3) }}</td>
-{% if ActShieldFitSetup.FitOptions.AccountForDrfUncert %}
+{% if exists("ActShieldFitSetup") and ActShieldFitSetup.FitOptions.AccountForDrfUncert %}
         <td>{% if existsIn(peak,"DrfEffFracUncert") %}{{ peak.DrfEffFracUncertPercentStr }}%{% endif %}</td>
 {% endif %}
-{% if ActShieldFitSetup.FitOptions.CorrectForCascadeSumming %}
+{% if exists("ActShieldFitSetup") and ActShieldFitSetup.FitOptions.CorrectForCascadeSumming %}
         <td>{% if existsIn(peak,"CascadeCorrection") %}{{ peak.CascadeCorrection.NetMultStr }} (out {{ peak.CascadeCorrection.SummingOutStr }}, in +{{ peak.CascadeCorrection.SummingInStr }}){% endif %}</td>
 {% endif %}
       </tr>
