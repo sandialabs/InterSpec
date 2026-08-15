@@ -85,13 +85,11 @@
   <message id="rpd-tbl-hdr-tt-trans">Фактический нуклид, который распался, давая эту частицу.</message>
   <message id="rpd-tbl-hdr-tt-trans-mode">Режим распада родительского нуклида, который произвёл эту частицу.</message>
   <message id="rpd-tbl-hdr-tt-type">Тип образующейся частицы</message>
-  <message id="rpd-tbl-hdr-tt-"></message>
 
   <!-- Fit Sources (peak fitting from displayed reference lines) -->
   <message id="rpd-fit-source">Подогнать источник</message>
   <message id="rpd-fit-sources">Подогнать источники</message>
   <message id="rpd-fit-sources-menu-auto">Автоматически</message>
   <message id="rpd-fit-sources-menu-advanced">Расширенные</message>
-
 
 </messages>

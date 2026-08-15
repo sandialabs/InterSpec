@@ -46,8 +46,9 @@ Requires HPGe data, with well-defined peak structure in the 610 to 775 keV energ
 				<Pu242CorrMethod>ByPu239Only</Pu242CorrMethod>
 			</RelEffCurveInput>
 		</RelEffCurveInputs>
-		<SameHoerlForAllRelEffCurves>false</SameHoerlForAllRelEffCurves>
+		<SameCorrFcnForAllRelEffCurves>false</SameCorrFcnForAllRelEffCurves>
 		<SameExternalShieldingForAllRelEffCurves>false</SameExternalShieldingForAllRelEffCurves>
+		<AutoRemoveDegeneraciesChi2Delta enabled="false" remark="Auto-simplify: greedily remove redundant degrees of freedom (the empirical correction, then external attenuator(s), then the highest polynomial term) when removing one increases chi2 by no more than this value. Optional 'enabled' attribute (true/false, default true) toggles it; an absent element means disabled.">1</AutoRemoveDegeneraciesChi2Delta>
 		<RoiRangeList>
 			<RoiRange version="0">
 				<LowerEnergy>6.14203003e+02</LowerEnergy>

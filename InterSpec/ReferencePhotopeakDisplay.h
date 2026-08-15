@@ -73,6 +73,7 @@ namespace Wt
   class WContainerWidget;
   class WTreeView;
   class WGridLayout;
+  class WPopupMenu;
   class WPushButton;
   class WDoubleSpinBox;
   class WSplitButton;
@@ -466,6 +467,11 @@ protected:
   //Wt::WPushButton *m_fitPeaks;
   
   Wt::WSplitButton *m_fitSourcesBtn;
+  /** NOTE: master carried an `m_fitSourcesMenu` member here purely so its destructor could
+   `delete` the fit-sources menu, which in Wt 3 was parented to the session domRoot rather than to
+   `m_fitSourcesBtn`.  On this branch the menu is handed to `WSplitButton::setMenu(unique_ptr)`,
+   which owns it, so the member (and the manual delete, which would double-free) are unnecessary.
+   */
   Wt::Core::observing_ptr<SimpleDialog> m_fitSourcesAdvancedDialog;
 
   Wt::WPushButton *m_options_icon;

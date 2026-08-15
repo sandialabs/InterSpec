@@ -49,15 +49,6 @@
   </message>
   <message id="smm-unsupported-document">Este arquivo parece ser um arquivo de documento, e não é suportado pelo InterSpec.</message>
   <message id="smm-invalid-peak-csv">Arquivo carregado parecia um arquivo CSV de Pico, mas era inválido.</message>
-  <message id="smm-file-is-drf">
-    <p style="white-space: nowrap;">
-      Este arquivo parece ser uma Função de Resposta do Detector.
-    </p>
-    <p style="text-align: left; white-space: nowrap;">
-      Nome: {1}
-    </p>
-   <p>Gostaria de usar esta DRF?</p>
-  </message>
   <message id="smm-saved-drf-conf">
     Salvo '{1}' para uso posterior, e estará disponível na
     porção "<em>Efic. Rel.</em>" da ferramenta "<em>Seleção de Função de Resposta do Detector</em>".
@@ -254,7 +245,6 @@
     Use o <b>Gerenciador de Arquivos</b> para mudar isso.
   </message>
 
-
   <!-- The visual components of the Spectrum Measurement Manager GUI -->
   <message id="smm-selected-spec-label">Espectro Selecionado: </message>
   <message id="smm-disp-as-btn">Exibir Como</message>
@@ -267,7 +257,6 @@
   <message id="smm-export-btn">Exportar...</message>
   <message id="smm-unload-btn">Descarregar</message>
   <message id="smm-unassign-label">Desatribuir: </message>
-
 
   <message id="smm-prev-states-window-title">Estados Armazenados Anteriormente</message>
   <message id="smm-err-prev-state-unexpected">Problema inesperado ao exibir estados salvos disponíveis: {1}</message>
@@ -294,7 +283,6 @@
   <message id="smm-qr-title">Arquivo de Espectro {1}</message>
   <message id="smm-qr-sequence-single">Código QR</message>
   <message id="smm-qr-sequence-multi">Código QR {1} de {2}</message>
-
 
   <message id="smm-changed-background">
     O espectro de fundo também foi atualizado para ser o incluído com o arquivo recém-carregado.
@@ -327,9 +315,7 @@
   <message id="musd-err-decoding-url">Erro ao decodificar URL: {1}</message>
   <message id="musd-received-urls-list">Recebeu urls {1} de {2}.<p>Aguardando mais URLs/códigos QR</p></message>
 
-
   <message id="uid-qr-code-pic">Foto de Código QR</message>
-  <message id="uid-no-qr-found">Nenhum código QR encontrado ⓘ</message>
   <message id="uid-no-qr-found-title">Nenhum código QR encontrado</message>
   <message id="uid-no-qr-content">
     <p>

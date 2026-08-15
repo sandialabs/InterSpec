@@ -1105,6 +1105,17 @@ void MakeFwhmForDrf::handleFwhmEqnTypeChange()
 }//void handleFwhmEqnTypeChange();
 
 
+void MakeFwhmForDrf::restrictToConstantPlusSqrtEnergy()
+{
+  m_fwhmEqnType->setCurrentIndex( DetectorPeakResponse::kConstantPlusSqrtEnergy );
+  m_fwhmEqnType->disable();
+  if( m_fwhmEqnType->parent() )
+    m_fwhmEqnType->parent()->hide();
+
+  handleFwhmEqnTypeChange();
+}//void restrictToConstantPlusSqrtEnergy()
+
+
 void MakeFwhmForDrf::handleSqrtEqnOrderChange()
 {
   handleFwhmEqnTypeChange();

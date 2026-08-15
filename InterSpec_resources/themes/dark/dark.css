@@ -172,3 +172,9 @@ ul.HeavyNavMenu > li.item:hover  {
   color: rgb(220, 220, 220);
   box-shadow: 1px 1px 3px 1px rgba(0, 0, 0, 0.4);
 }
+
+/* Soft warnings on the detection-limit tools; the light-theme colour is too dark to read here.
+   See `.MdaWarnMsg` in DetectionLimitTool.css and DetectionLimitSimple.css. */
+.MdaWarnMsg {
+  color: #e0a640;
+}

@@ -84,7 +84,6 @@
   <message id="rpd-tbl-hdr-tt-trans">衰变产生此粒子的实际核素。</message>
   <message id="rpd-tbl-hdr-tt-trans-mode">产生此粒子的母体核素的衰变模式。</message>
   <message id="rpd-tbl-hdr-tt-type">产生的粒子类型</message>
-  <message id="rpd-tbl-hdr-tt-"></message>
 
   <!-- Fit Sources (peak fitting from displayed reference lines) -->
   <message id="rpd-fit-source">拟合源</message>

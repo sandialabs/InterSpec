@@ -25,8 +25,10 @@
 
 #include <mutex>
 #include <atomic>
+#include <thread>
 #include <iostream>
 
+#include <boost/bind/bind.hpp>
 #include <boost/math/tools/roots.hpp>
 #include <boost/math/tools/minima.hpp>
 #include <boost/math/distributions/chi_squared.hpp>
@@ -41,6 +43,9 @@
 #include <Wt/WLineEdit.h>
 #include <Wt/WTableCell.h>
 #include <Wt/WPushButton.h>
+#include <Wt/WServer.h>
+#include <boost/asio/post.hpp>
+#include <Wt/WIOService.h>
 #include <Wt/WApplication.h>
 #include <Wt/WRegExpValidator.h>
 #include <Wt/WSuggestionPopup.h>
@@ -162,7 +167,9 @@ protected:
     const bool use = m_use_for_likelihood->isChecked();
     m_decon_cont_norm_method->setEnabled( use );
     
-    const bool fixed_at_edges = (m_decon_cont_norm_method->currentIndex() == static_cast<int>(DetectionLimitCalc::DeconContinuumNorm::FixedByEdges));
+    const bool fixed_at_edges
+      = (DetectionLimitCalc::continuum_norm_from_index( m_decon_cont_norm_method->currentIndex() )
+         == DetectionLimitCalc::DeconContinuumNorm::FixedByEdges);
     m_continuum->setEnabled( use && !fixed_at_edges );
     if( fixed_at_edges )
     {
@@ -191,8 +198,11 @@ protected:
       const double counts_4pi = ((m_input.do_air_attenuation && !fixed_geom)
                                  ? m_input.counts_per_bq_into_4pi_with_air
                                  : m_input.counts_per_bq_into_4pi__);
-      const double gammas_per_bq = counts_4pi * det_eff;
-      
+      // `counts_per_bq_into_4pi__` is at the REFERENCE exposure while the Currie result below is for
+      //  the projected measurement; without lining them up the activity would be wrong by the ratio.
+      //  Exactly 1 unless a background reference is being projected.  \sa MdaPeakRowInput::exposure_ratio
+      const double gammas_per_bq = counts_4pi * det_eff * m_input.exposure_ratio;
+
       const DetectionLimitCalc::CurrieMdaInput input = currieInput();
       
       const DetectionLimitCalc::CurrieMdaResult result = DetectionLimitCalc::currie_mda_calc( input );
@@ -210,10 +220,15 @@ protected:
           {
             // There is enough excess counts that we would reliably detect this activity, so we will
             //  give the activity range.
+            //
+            // The nominal value quoted is the ISO 11929-1:2019 best estimate, Formula (44), not the
+            //  primary result `source_counts` - see `CurrieMdaResult::best_estimate`.  The decision
+            //  just above is still made on the primary result, per clause 10.  The range is already
+            //  the truncated interval from the same distribution, so it does not change.
             const float lower_act = result.lower_limit / gammas_per_bq;
             const float upper_act = result.upper_limit / gammas_per_bq;
-            const float nominal_act = result.source_counts / gammas_per_bq;
-            
+            const float nominal_act = result.best_estimate / gammas_per_bq;
+
             const string lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
             + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
             const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
@@ -305,7 +320,12 @@ protected:
               air_eff = exp( -1.0 * coef );
             }
             
-            return activity * counts_4pi_no_air * geom_eff * intrinsic_eff * air_eff;
+            // `counts_per_bq_into_4pi__` is at the REFERENCE exposure, while every quantity this is
+            //  compared against (source_counts, lower/upper_limit) comes from the Currie result on
+            //  the PROJECTED spectrum.  Exactly 1 unless a background reference is being projected.
+            //  \sa MdaPeakRowInput::exposure_ratio
+            return activity * counts_4pi_no_air * geom_eff * intrinsic_eff * air_eff
+                   * m_input.exposure_ratio;
           };//counts_at_distance(...)
           
           if( result.source_counts > counts_at_distance(0.0) )
@@ -352,8 +372,12 @@ protected:
               return fabs( counts_at_distance(dist) - result.upper_limit );
             };
             
+            // The nominal distance is inverted from the reported signal, so it uses the best
+            //  estimate for the same reason the activity above does.  `brent_find_minima` just
+            //  returns the closest point in [0, max_distance], so the degenerate case of a best
+            //  estimate above the on-contact counts reports zero distance rather than failing.
             auto nominal_dist = [&]( double dist ) -> double {
-              return fabs( counts_at_distance(dist) - result.source_counts );
+              return fabs( counts_at_distance(dist) - result.best_estimate );
             };
             
             using boost::math::tools::brent_find_minima;
@@ -493,7 +517,8 @@ protected:
   
   void handleContinuumNormMethodChange()
   {
-    auto norm_type = static_cast<DetectionLimitCalc::DeconContinuumNorm>( m_decon_cont_norm_method->currentIndex() );
+    DetectionLimitCalc::DeconContinuumNorm norm_type
+      = DetectionLimitCalc::continuum_norm_from_index( m_decon_cont_norm_method->currentIndex() );
     switch( norm_type )
     {
       case DetectionLimitCalc::DeconContinuumNorm::Floating:
@@ -510,9 +535,10 @@ protected:
       default:
         assert(0);
         norm_type = DetectionLimitCalc::DeconContinuumNorm::Floating;
-        m_decon_cont_norm_method->setCurrentIndex( static_cast<int>(DetectionLimitCalc::DeconContinuumNorm::Floating ) );
+        m_decon_cont_norm_method->setCurrentIndex(
+              DetectionLimitCalc::index_from_continuum_norm( norm_type ) );
         break;
-    }//switch( m_decon_cont_norm_method->currentIndex() )
+    }//switch( norm_type )
     
     m_input.decon_cont_norm_method = norm_type;
     
@@ -555,7 +581,8 @@ protected:
         break;
     }//switch( m_continuum->currentIndex() )
     
-    auto norm_method = static_cast<DetectionLimitCalc::DeconContinuumNorm>( m_decon_cont_norm_method->currentIndex() );
+    const DetectionLimitCalc::DeconContinuumNorm norm_method
+      = DetectionLimitCalc::continuum_norm_from_index( m_decon_cont_norm_method->currentIndex() );
     switch( norm_method )
     {
       case DetectionLimitCalc::DeconContinuumNorm::Floating:
@@ -695,24 +722,26 @@ public:
     m_continuum->addItem( WString::tr( PeakContinuum::offset_type_label_tr(PeakContinuum::OffsetType::Quadratic) ) );
     m_continuum->setCurrentIndex( 0 );
     label->setBuddy( m_continuum );
-
-
-    label = leftColumn->addNew<WLabel>( WString::tr("dlt-cont-norm-label") );
+    
+    
+    label = leftColumn->addNew<WLabel>( WString::tr("dl-cont-norm-label") );
     label->addStyleClass( "GridFirstCol GridSixthRow" );
     m_decon_cont_norm_method = leftColumn->addNew<WComboBox>();
     m_decon_cont_norm_method->addStyleClass( "GridSecondCol GridSixthRow" );
-    
-    static_assert( static_cast<int>(DetectionLimitCalc::DeconContinuumNorm::Floating) == 0, "DeconContinuumNorm out of date" );
-    static_assert( static_cast<int>(DetectionLimitCalc::DeconContinuumNorm::FixedByEdges) == 1, "DeconContinuumNorm out of date" );
-    static_assert( static_cast<int>(DetectionLimitCalc::DeconContinuumNorm::FixedByFullRange) == 2, "DeconContinuumNorm out of date" );
-    m_decon_cont_norm_method->addItem( WString::tr("dlt-cont-norm-floating") );
-    m_decon_cont_norm_method->addItem( WString::tr("dlt-cont-norm-fixed-edges") );
-    m_decon_cont_norm_method->addItem( WString::tr("dlt-cont-norm-fixed-full-roi") );
-    m_decon_cont_norm_method->setCurrentIndex( static_cast<int>(m_input.decon_cont_norm_method) );
-    
+
+    // Only the two selectable treatments; `FixedByFullRange` is deprecated.  A stored state that
+    //  named it is migrated before any row is built, so it can never reach here - if it did,
+    //  `index_from_continuum_norm` throws rather than displaying it as some other treatment.
+    m_decon_cont_norm_method->addItem( WString::tr("dl-cont-norm-floating") );
+    m_decon_cont_norm_method->addItem( WString::tr("dl-cont-norm-edges") );
+    assert( m_decon_cont_norm_method->count()
+            == DetectionLimitCalc::num_selectable_continuum_norms() );
+    m_decon_cont_norm_method->setCurrentIndex(
+          DetectionLimitCalc::index_from_continuum_norm( m_input.decon_cont_norm_method ) );
+
     const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
-    const WString tooltip = WString::tr("dlt-cont-norm-tt");
-    
+    const WString tooltip = WString::tr("dl-cont-norm-tt");
+
     HelpSystem::attachToolTipOn( {label, m_decon_cont_norm_method},
                                 tooltip, showToolTips,
                                 HelpSystem::ToolTipPrefOverride::RespectPreference );
@@ -868,7 +897,8 @@ public:
     assert( fabs(m_input.roi_start - roundToNearestChannelEdge( m_roi_start->value() ) ) < 0.01 );
     assert( fabs(m_input.roi_end - roundToNearestChannelEdge( m_roi_end->value() ) ) < 0.01 );
     
-    assert( static_cast<int>(m_input.decon_cont_norm_method) == m_decon_cont_norm_method->currentIndex() );
+    assert( DetectionLimitCalc::index_from_continuum_norm( m_input.decon_cont_norm_method )
+            == m_decon_cont_norm_method->currentIndex() );
     assert( m_input.num_side_channels == m_num_side_channels->value() );
     assert( (m_continuum->currentIndex() == 0)
            || (m_continuum->currentIndex() == 1) );
@@ -1037,17 +1067,29 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
     m_chi2Chart( nullptr ),
     m_bestChi2Act( nullptr ),
     m_upperLimit( nullptr ),
+    m_bandTxt( nullptr ),
+    m_bandInput{},
+    m_bandCalcNumber( 0 ),
+    m_bandCancel( nullptr ),
     m_errorMsg( nullptr ),
+    m_warningMsg( nullptr ),
     m_fitFwhmBtn( nullptr ),
     m_origSpec( nullptr ),
-    m_scaleSpectrumCb( nullptr ),
-    m_scaleSpectrumTime( nullptr )
+    m_planTimeCb( nullptr ),
+    m_planTimeEdit( nullptr ),
+    m_planTimeDiv( nullptr ),
+    m_confidenceLevelLabel( nullptr ),
+    m_measurementModelLabel( nullptr ),
+    m_measurementModel( nullptr ),
+    m_limitTypeLabel( nullptr ),
+    m_limitType( nullptr )
 {
   WApplication * const app = wApp;
   assert( app );
   
   app->useStyleSheet( "InterSpec_resources/DetectionLimitTool.css" );
   viewer->useMessageResourceBundle( "DetectionLimitTool" );
+  viewer->useMessageResourceBundle( "DetectionLimit" );
   app->require( "InterSpec_resources/d3.v3.min.js", "d3.v3.js" );
   app->require( "InterSpec_resources/DetectionLimitTool.js" );
   
@@ -1270,23 +1312,25 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   m_displayDistance->hide();
   
   
-  label = inputTable->addNew<WLabel>( WString::tr("dlt-conf-level-label") );
-  label->addStyleClass( "GridSixthCol GridSecondRow GridVertCenter" );
+  m_confidenceLevelLabel = inputTable->addNew<WLabel>( WString::tr("dl-conf-level-one-sided") );
+  m_confidenceLevelLabel->addStyleClass( "GridSixthCol GridSecondRow GridVertCenter" );
   m_confidenceLevel = inputTable->addNew<WComboBox>();
   m_confidenceLevel->addStyleClass( "GridSeventhCol GridSecondRow GridVertCenter" );
-  
+  HelpSystem::attachToolTipOn( {m_confidenceLevelLabel, m_confidenceLevel},
+                              WString::tr("dl-conf-level-tt"), showToolTips );
+
   for( auto cl = ConfidenceLevel(0); cl < NumConfidenceLevel; cl = ConfidenceLevel(cl+1) )
   {
     WString txt;
     switch( cl )
     {
-      case ConfidenceLevel::NinetyFivePercent: txt = WString::tr("dlt-conf-95");        break;
-      case ConfidenceLevel::NinetyNinePercent: txt = WString::tr("dlt-conf-99");        break;
-      case ConfidenceLevel::OneSigma:          txt = WString::tr("dlt-conf-1sigma"); break;
-      case ConfidenceLevel::TwoSigma:          txt = WString::tr("dlt-conf-2sigma"); break;
-      case ConfidenceLevel::ThreeSigma:        txt = WString::tr("dlt-conf-3sigma"); break;
-      case ConfidenceLevel::FourSigma:         txt = WString::tr("dlt-conf-4sigma");         break;
-      case ConfidenceLevel::FiveSigma:         txt = WString::tr("dlt-conf-5sigma");         break;
+      case ConfidenceLevel::NinetyFivePercent: txt = WString::tr("dl-conf-95");        break;
+      case ConfidenceLevel::NinetyNinePercent: txt = WString::tr("dl-conf-99");        break;
+      case ConfidenceLevel::OneSigma:          txt = WString::tr("dl-conf-1sigma"); break;
+      case ConfidenceLevel::TwoSigma:          txt = WString::tr("dl-conf-2sigma"); break;
+      case ConfidenceLevel::ThreeSigma:        txt = WString::tr("dl-conf-3sigma"); break;
+      case ConfidenceLevel::FourSigma:         txt = WString::tr("dl-conf-4sigma");         break;
+      case ConfidenceLevel::FiveSigma:         txt = WString::tr("dl-conf-5sigma");         break;
       case ConfidenceLevel::NumConfidenceLevel: break;
     }//switch( cl )
     
@@ -1298,44 +1342,76 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   m_confidenceLevel->activated().connect(this, &DetectionLimitTool::handleUserChangedConfidenceLevel );
 
 
-  // "Scale" controls - lets the user query the limits at a different dwell time
-  //  than the loaded spectrum.  Cols 6-7 of row 3 are the only free cells in the
-  //  input grid: checkbox in col 6, and a flex div in col 7 sharing space between
-  //  the text input and the help icon (mirrors the Simple MDA layout).
-  m_scaleSpectrumCb = inputTable->addNew<WCheckBox>( WString::tr("dlt-scale-spectrum-cb") );
-  m_scaleSpectrumCb->setWordWrap( false );
-  m_scaleSpectrumCb->addStyleClass( "CbNoLineBreak GridSixthCol GridThirdRow GridVertCenter" );
-  m_scaleSpectrumCb->checked().connect( this, &DetectionLimitTool::handleScaleSpectrumChanged );
-  m_scaleSpectrumCb->unChecked().connect( this, &DetectionLimitTool::handleScaleSpectrumChanged );
+  // Row 4 - which measurement the limit describes, which quantity to report, and the planned
+  //  measurement time.  Measurement model and limit type are tool-level rather than per-ROI: they
+  //  are statements about the whole calculation, and mixing two measurement models inside one
+  //  likelihood is not meaningful.
+  m_measurementModelLabel = inputTable->addNew<WLabel>( WString::tr("dl-model-label") );
+  m_measurementModelLabel->addStyleClass( "GridFirstCol GridFourthRow GridVertCenter" );
+  m_measurementModel = inputTable->addNew<WComboBox>();
+  m_measurementModel->addStyleClass( "GridSecondCol GridFourthRow GridVertCenter" );
+  m_measurementModel->addItem( WString::tr("dl-model-current") );
+  m_measurementModel->addItem( WString::tr("dl-model-backref") );
+  m_measurementModel->setCurrentIndex(
+        DetectionLimitCalc::index_from_measurement_model(
+              DetectionLimitCalc::DeconMeasurementModel::CurrentSpectrum ) );
+  m_measurementModel->activated().connect( this, &DetectionLimitTool::handleMeasurementModelChanged );
+  HelpSystem::attachToolTipOn( {m_measurementModelLabel, m_measurementModel},
+                              WString::tr("dl-model-tt"), showToolTips );
 
-  WContainerWidget *scaleDiv = inputTable->addNew<WContainerWidget>();
-  scaleDiv->addStyleClass( "ScaleEntryDiv GridSeventhCol GridThirdRow GridVertCenter" );
+  m_limitTypeLabel = inputTable->addNew<WLabel>( WString::tr("dl-limittype-label") );
+  m_limitTypeLabel->addStyleClass( "GridFourthCol GridFourthRow GridVertCenter" );
+  m_limitType = inputTable->addNew<WComboBox>();
+  m_limitType->addStyleClass( "GridFifthCol GridFourthRow GridVertCenter" );
+  m_limitType->addItem( WString::tr("dl-limittype-upper") );
+  m_limitType->addItem( WString::tr("dl-limittype-central") );
+  m_limitType->setCurrentIndex(
+        DetectionLimitCalc::index_from_limit_type(
+              DetectionLimitCalc::DeconLimitType::OneSidedUpperLimit ) );
+  m_limitType->activated().connect( this, &DetectionLimitTool::handleLimitTypeChanged );
+  HelpSystem::attachToolTipOn( {m_limitTypeLabel, m_limitType},
+                              WString::tr("dl-limittype-tt"), showToolTips );
 
-  m_scaleSpectrumTime = scaleDiv->addNew<WLineEdit>();
-  m_scaleSpectrumTime->setPlaceholderText( WString::tr("dlt-scale-spectrum-empty-text") );
-  m_scaleSpectrumTime->setDisabled( true );
+  // The planned measurement time.  Shown only under a background-reference model: this tool always
+  //  displays per-ROI Currie limits alongside the deconvolution scan, and projecting one but not
+  //  the other would put two different dwells side by side on one screen.  Asserting the spectrum
+  //  is a background reference is exactly what makes the question well posed for both.
+  m_planTimeCb = inputTable->addNew<WCheckBox>( WString::tr("dl-plan-time-cb") );
+  m_planTimeCb->setWordWrap( false );
+  m_planTimeCb->addStyleClass( "CbNoLineBreak GridSixthCol GridFourthRow GridVertCenter" );
+  m_planTimeCb->checked().connect( this, &DetectionLimitTool::handlePlanTimeChanged );
+  m_planTimeCb->unChecked().connect( this, &DetectionLimitTool::handlePlanTimeChanged );
+
+  m_planTimeDiv = inputTable->addNew<WContainerWidget>();
+  m_planTimeDiv->addStyleClass( "ScaleEntryDiv GridSeventhCol GridFourthRow GridVertCenter" );
+
+  m_planTimeEdit = m_planTimeDiv->addNew<WLineEdit>();
+  m_planTimeEdit->setPlaceholderText( WString::tr("dl-plan-time-empty-text") );
+  m_planTimeEdit->setDisabled( true );
   {
-    auto scaleTimeValidator
+    auto planTimeValidator
               = std::make_shared<WRegExpValidator>( PhysicalUnitsLocalized::timeDurationRegex() );
-    scaleTimeValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
-    m_scaleSpectrumTime->setValidator( scaleTimeValidator );
+    planTimeValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+    m_planTimeEdit->setValidator( planTimeValidator );
   }
-  m_scaleSpectrumTime->changed().connect( this, &DetectionLimitTool::handleScaleSpectrumChanged );
-  m_scaleSpectrumTime->blurred().connect( this, &DetectionLimitTool::handleScaleSpectrumChanged );
-  m_scaleSpectrumTime->enterPressed().connect( this, &DetectionLimitTool::handleScaleSpectrumChanged );
+  m_planTimeEdit->changed().connect( this, &DetectionLimitTool::handlePlanTimeChanged );
+  m_planTimeEdit->blurred().connect( this, &DetectionLimitTool::handlePlanTimeChanged );
+  m_planTimeEdit->enterPressed().connect( this, &DetectionLimitTool::handlePlanTimeChanged );
 
   {
-    WImage *img = scaleDiv->addNew<WImage>();
+    WImage *img = m_planTimeDiv->addNew<WImage>();
     img->setImageLink( Wt::WLink("InterSpec_resources/images/help_minimal.svg") );
     img->resize( 16, 16 );
     img->decorationStyle().setCursor( Wt::Cursor::WhatsThis );
-    HelpSystem::attachToolTipOn( img, WString::tr("dlt-scale-spectrum-tt"), true,
+    HelpSystem::attachToolTipOn( img, WString::tr("dl-plan-time-tt"), true,
                                 HelpSystem::ToolTipPrefOverride::AlwaysShow );
   }
 
+  m_planTimeCb->hide();
+  m_planTimeDiv->hide();
 
   if( !loadCurrentForeground() )
-    m_scaleSpectrumCb->setDisabled( true );
+    m_planTimeCb->setDisabled( true );
 
   // Track the foreground so swaps in the main window propagate into this tool.
   m_interspec->displayedSpectrumChanged().connect( this, &DetectionLimitTool::handleForegroundChanged );
@@ -1356,11 +1432,22 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   m_upperLimit->setInline( false );
   m_upperLimit->addStyleClass( "MdaResultTxt" );
 
-  m_errorMsg = addNew<WText>( "&nbsp;" );
+  m_bandTxt = m_results->addNew<WText>( "&nbsp;" );
+  m_bandTxt->setInline( false );
+  m_bandTxt->addStyleClass( "MdaResultTxt" );
+  m_bandTxt->hide();
+  
+  m_errorMsg = this->addNew<WText>( "&nbsp;" );
   m_errorMsg->addStyleClass( "MdaErrMsg" );
   m_errorMsg->hide();
 
-  m_fitFwhmBtn = addNew<WPushButton>( WString::tr("dlt-fit-fwhm-btn") );
+  // A warning qualifies a limit that was produced; an error means there is no limit.  They must
+  //  not look the same, and must not share a widget - see the note on `m_warningMsg`.
+  m_warningMsg = this->addNew<WText>( "&nbsp;" );
+  m_warningMsg->addStyleClass( "MdaWarnMsg" );
+  m_warningMsg->hide();
+  
+  m_fitFwhmBtn = this->addNew<WPushButton>( WString::tr("dlt-fit-fwhm-btn") );
   m_fitFwhmBtn->addStyleClass( "MdaFitFwhm LightButton" );
   m_fitFwhmBtn->clicked().connect( this, &DetectionLimitTool::handleFitFwhmRequested );
   m_fitFwhmBtn->hide();
@@ -1428,8 +1515,8 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   handleUserNuclideChange();
   
   // Update the displayed activity units, when the user changes this preference.
-  viewer->preferences()->addCallbackWhenChanged( "DisplayBecquerel",
-                                        [this](){ handleInputChange(); } );
+  viewer->preferences()->addCallbackWhenChanged( "DisplayBecquerel", this,
+                                        &DetectionLimitTool::handleDisplayBecquerelChanged );
   
   
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -1473,6 +1560,11 @@ DetectionLimitTool::DetectionLimitTool( InterSpec *viewer )
   
 DetectionLimitTool::~DetectionLimitTool()
 {
+  // Tell any in-flight band calculation to stop.  `wApp->bind` already stops the callback firing
+  //  into a destroyed tool, but without this the work itself runs to completion.
+  if( m_bandCancel )
+    m_bandCancel->store( true );
+
 }
 
 
@@ -1489,7 +1581,10 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
   InterSpec * const viewer = InterSpec::instance();
   assert( viewer );
   if( viewer )
+  {
     viewer->useMessageResourceBundle( "DetectionLimitTool" );
+    viewer->useMessageResourceBundle( "DetectionLimit" );
+  }
   
   assert( chart );
   if( !chart )
@@ -1669,16 +1764,9 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
         specific_peaks[i].setContinuum( generic_peak.continuum() );
       }
       
-      char cl_str_buffer[64] = {'\0'};
-      
-      if( confidence_level < 0.999 )
-        snprintf( cl_str_buffer, sizeof(cl_str_buffer), "%.1f%%", 100.0*confidence_level );
-      else
-        snprintf( cl_str_buffer, sizeof(cl_str_buffer), "1-%.2G", (1.0-confidence_level) );
-     
       WString chart_title;
-      const string cl_str = cl_str_buffer;
-      
+      const string cl_str = DetectionLimitCalc::confidence_level_pct_str( confidence_level );
+
       switch( limitType )
       {
         case DetectionLimitTool::LimitType::Activity:
@@ -1691,31 +1779,33 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
             //  give the activity range.
             string lowerstr, upperstr, nomstr;
             
+            // The quoted title is the ISO best estimate, as elsewhere; the peak drawn below is not -
+            //  it overlays the data, so its area has to stay the excess actually observed.
             if( gammas_per_bq > 0.0 )
             {
               const float lower_act = result->lower_limit / gammas_per_bq;
               const float upper_act = result->upper_limit / gammas_per_bq;
-              const float nominal_act = result->source_counts / gammas_per_bq;
-              
+              const float nominal_act = result->best_estimate / gammas_per_bq;
+
               lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
               + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
               upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
               + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
               nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
               + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-              
+
               chart_title = WString::tr("dlt-chart-title-estimated-activity").arg(nomstr);
             }else
             {
               lowerstr = SpecUtils::printCompact(result->lower_limit, 4);
               upperstr = SpecUtils::printCompact(result->upper_limit, 4);
-              nomstr = SpecUtils::printCompact(result->source_counts, 4);
-              
+              nomstr = SpecUtils::printCompact(result->best_estimate, 4);
+
               chart_title = WString::tr("dlt-chart-title-excess-counts").arg(nomstr);
             }
-            
+
             //const string cl_str = SpecUtils::printCompact( 100.0*confidence_level, 3 );
-            
+
             generic_peak.setPeakArea( result->source_counts );
             
             for( size_t i = 0; i < peaks.size(); ++i )
@@ -1856,6 +1946,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     InterSpec * const viewer = InterSpec::instance();
     assert( viewer );
     viewer->useMessageResourceBundle( "DetectionLimitTool" );
+    viewer->useMessageResourceBundle( "DetectionLimit" );
     
     
     if( !input.spectrum )
@@ -1886,13 +1977,8 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
     const double gammas_per_bq = counts_4pi * det_eff;
     
     char buffer[256];
-    if( conf_level < 0.999 )
-      snprintf( buffer, sizeof(buffer), "%.1f%%", 100.0*conf_level );
-    else
-      snprintf( buffer, sizeof(buffer), "1-%.3g", (1.0-conf_level) );
-    
-    const string confidence_level = buffer;
-    
+    const string confidence_level = DetectionLimitCalc::confidence_level_pct_str( conf_level );
+
     const bool assertedNoSignal = (result.input.num_lower_side_channels == 0);
     
     const double lower_upper_energy = input.spectrum->gamma_channel_lower( result.first_peak_region_channel );
@@ -1958,7 +2044,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
           if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
           {
             WString obs_label = WString::tr("dlt-observed-activity");
-            const double nominal_act = result.source_counts / gammas_per_bq;
+            const double nominal_act = result.best_estimate / gammas_per_bq;
             const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
                                   + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
 
@@ -1971,7 +2057,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
 
           {
             WString obs_label = WString::tr("dlt-observed-counts");
-            const string nomstr = SpecUtils::printCompact(result.source_counts, 4);
+            const string nomstr = SpecUtils::printCompact(result.best_estimate, 4);
 
             cell = table->elementAt( table->rowCount(), 0 );
             cell->addNew<WText>( obs_label );
@@ -2201,10 +2287,15 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
           //  didnt give nominal activity above, so we'll do that here
           if( !assertedNoSignal )
           {
+            // ISO 11929-1:2019 clause 10 NOTE 2 - the best estimate may also be given when the
+            //  primary result is below the decision threshold, and ISO 11929-4:2020 clause 7 does
+            //  exactly that for its own not-detected example.  It is the bigger change here than in
+            //  the detected case (the two diverge most at low signal), and it is what removes the
+            //  "< 0 counts" reading: a truncated-at-zero estimate cannot be negative, so the
+            //  impossible value no longer has to be papered over.  The "(below Lc)" tag stays, so
+            //  the detection decision - still made on the primary result - is not misread.
             WString obs_counts_label = WString::tr("dlt-observed-counts");
-            string nom_counts_str = SpecUtils::printCompact(result.source_counts, 4);
-            if( result.source_counts < 0 )
-              nom_counts_str = WString::tr("dlt-lt-zero-counts").toUTF8();
+            string nom_counts_str = SpecUtils::printCompact(result.best_estimate, 4);
 
             nom_counts_str = Wt::Utils::htmlEncode( nom_counts_str, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
 
@@ -2218,13 +2309,10 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
             if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
             {
               WString obs_act_label = WString::tr("Activity");
-              const float nominal_act = result.source_counts / gammas_per_bq;
+              const float nominal_act = result.best_estimate / gammas_per_bq;
 
               string nom_act_str = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
                         + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-              if( nominal_act < 0 )
-                nom_act_str = WString::tr("dlt-lt-zero-activity").arg(PhysicalUnits::printToBestActivityUnits( 0.0, 2, useCuries )
-                          + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom )).toUTF8();
 
               nom_act_str = Wt::Utils::htmlEncode( nom_act_str, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
 
@@ -2310,12 +2398,126 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
 }//SimpleDialog *createCurrieRoiMoreInfoWindow()
 
 
+WString DetectionLimitTool::limitResultText(
+                    const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result,
+                    const std::function<WString(double)> &format_quantity )
+{
+  using DetectionLimitCalc::DeconLimitTextKind;
+
+  const string cl_str = DetectionLimitCalc::confidence_level_pct_str( result.confidenceLevel );
+
+  // The statistic at the reported limit; for a two-crossing result the two should agree, and the
+  //  English text prints both when they do not.  One number is enough here.
+  const auto stat_str = []( const double value ) -> WString {
+    char buffer[32] = { '\0' };
+    snprintf( buffer, sizeof(buffer), "%.1f", value );
+    return WString::fromUTF8( buffer );
+  };
+
+  switch( result.limitTextKind )
+  {
+    case DeconLimitTextKind::CentralIntervalUpperBound:
+      // Lower endpoint pinned at zero; must not be worded as a one-sided bound at this CL.
+      return WString::tr("dl-limit-central-upper")
+                .arg( format_quantity(result.upperLimit) )
+                .arg( cl_str )
+                .arg( stat_str(result.upperLimitChi2) );
+
+    case DeconLimitTextKind::OneSidedUpper:
+      return WString::tr("dl-limit-upper")
+                .arg( format_quantity(result.upperLimit) )
+                .arg( cl_str )
+                .arg( stat_str(result.upperLimitChi2) );
+
+    case DeconLimitTextKind::PredictedSensitivity:
+      return WString::tr("dl-limit-predicted")
+                .arg( format_quantity(result.upperLimit) )
+                .arg( cl_str )
+                .arg( WString::fromUTF8(
+                        PhysicalUnits::printToBestTimeUnits( result.sampleRealTime, 3 ) ) )
+                .arg( stat_str(result.upperLimitChi2) );
+
+    case DeconLimitTextKind::CentralInterval:
+      return WString::tr("dl-limit-central")
+                .arg( format_quantity(result.lowerLimit) )
+                .arg( format_quantity(result.upperLimit) )
+                .arg( cl_str )
+                .arg( stat_str(result.upperLimitChi2) );
+
+    case DeconLimitTextKind::TwoOneSidedBounds:
+      // Two roots of a one-sided threshold, which together cover only about 2*CL-1 centrally.
+      return WString::tr("dl-limit-two-one-sided")
+                .arg( cl_str )
+                .arg( format_quantity(result.lowerLimit) )
+                .arg( format_quantity(result.upperLimit) )
+                .arg( DetectionLimitCalc::confidence_level_pct_str( 2.0*result.confidenceLevel - 1.0 ) )
+                .arg( stat_str(result.upperLimitChi2) );
+
+    case DeconLimitTextKind::DistanceLowerBound:
+      return WString::tr("dl-limit-distance-lower")
+                .arg( format_quantity(result.lowerLimit) )
+                .arg( cl_str )
+                .arg( stat_str(result.lowerLimitChi2) );
+
+    case DeconLimitTextKind::None:
+      break;
+  }//switch( result.limitTextKind )
+
+  // No statement could be made.  `errorMessage` is not localized - it comes from the calculation
+  //  layer, which has no message bundles - but it is the only thing that says what went wrong.
+  const string why = result.errorMessage.empty() ? result.limitText : result.errorMessage;
+  return WString::tr("dl-limit-none").arg( WString::fromUTF8(why) );
+}//DetectionLimitTool::limitResultText(...)
+
+
+WString DetectionLimitTool::bestStatisticText(
+                    const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result,
+                    const std::function<WString(double)> &format_quantity )
+{
+  char stat_buffer[32] = { '\0' };
+  snprintf( stat_buffer, sizeof(stat_buffer), "%.1f", result.overallBestChi2 );
+
+  const int numDOF = result.overallBestResults ? result.overallBestResults->num_degree_of_freedom : 0;
+
+  if( result.isDistanceLimit && !result.foundUpperCl )
+    return WString::tr("dl-best-stat-flat")
+              .arg( WString::fromUTF8(stat_buffer) )
+              .arg( numDOF );
+
+  return WString::tr("dl-best-stat")
+            .arg( WString::fromUTF8(stat_buffer) )
+            .arg( format_quantity(result.overallBestQuantity) )
+            .arg( numDOF );
+}//DetectionLimitTool::bestStatisticText(...)
+
+
+WString DetectionLimitTool::statisticTooltip(
+                    const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result )
+{
+  // `statistic_name` lives on the per-point results, which a failed scan may not have.
+  const string name = (result.overallBestResults
+                       && !result.overallBestResults->statistic_name.empty())
+                        ? result.overallBestResults->statistic_name : string("Cash");
+
+  return WString::tr("dl-stat-is-cash-tt").arg( WString::fromUTF8(name) );
+}//DetectionLimitTool::statisticTooltip(...)
+
+
 Wt::Json::Object DetectionLimitTool::generateChartJson( const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result, const bool is_dist_limit )
 {
   
   const bool useCurie = use_curie_units();
   const vector<pair<double,double>> &chi2s = result.chi2s;
-  
+
+  // A scan that produced no points has nothing to chart, and `front()` on it is undefined.  Return
+  //  an empty series rather than nothing, so the chart JS still finds the field it requires.
+  if( chi2s.empty() )
+  {
+    Wt::Json::Object empty;
+    empty["data"] = Wt::Json::Array();
+    return empty;
+  }
+
   const double avrg_quantity = 0.5*(chi2s.front().first + chi2s.back().first);
   const pair<string,double> &units = is_dist_limit
   ? PhysicalUnits::bestLengthUnitHtml( avrg_quantity )
@@ -2327,10 +2529,14 @@ Wt::Json::Object DetectionLimitTool::generateChartJson( const DetectionLimitCalc
   
   double maxchi2 = -std::numeric_limits<double>::infinity();
   
-  // The first/last Chi2 may be a huge (like when distance approaches 0), so we'll protect
+  // The first/last statistic value may be huge (like when distance approaches 0), so we'll protect
   //  against this.
   // TODO: use `result.foundUpperCl` and `result.foundLowerCl` to see if we need this, and also, perhaps maybe we should be smarter in picking which points to compute the Chi2 for
-  const double maxYRange = 15; //arbitrary
+  //
+  // Must clear the threshold the limit was taken at, or the chart omits the very level being
+  //  reported.  The 4-sigma and 5-sigma choices use deltas of 16 and 25, well past the 15 this
+  //  used to be fixed at.  Matches the sampling range `get_activity_or_distance_limits(...)` uses.
+  const double maxYRange = (std::max)( 15.0, result.limitDelta + 5.0 );
   
   
   Wt::Json::Object json;
@@ -2370,16 +2576,45 @@ Wt::Json::Object DetectionLimitTool::generateChartJson( const DetectionLimitCalc
   SpecUtils::ireplace_all( unit_str, "&mu;", MU_CHARACTER );
   WString xaxis_prefix = is_dist_limit ? WString::tr("dlt-chart-x-axis-distance") : WString::tr("dlt-chart-x-axis-activity");
   json["xtitle"] = xaxis_prefix.arg(unit_str);
-  json["ytitle"] = WString::fromUTF8( "\xCF\x87\xC2\xB2" ); //chi^2
+  // Kept as "chi squared" for continuity with the reports and with what users already recognise,
+  //  even though the quantity is a Cash statistic; `statisticTooltip()` says so where it is shown.
+  json["ytitle"] = WString::tr("dl-chart-y-axis-chi2");
   
   double xstart = (chi2s.front().first/units.second);
-  double xend = (chi2s.front().first/units.second);
+  double xend = (chi2s.back().first/units.second);
   //Blah blah blah, coarse labels to be round numbers
   //const double initialrange = xend - xstart;
   
   //json["xrange"] = Wt::Json::Array{ Wt::Json::Array( Wt::Json::Value(xstart), Wt::Json::Value(xend) ) };
   //json["yrange"] = Wt::Json::Array{ Wt::Json::Array( Wt::Json::Value(minchi2 - 0.1*chi2range), Wt::Json::Value(maxchi2 + 0.1*chi2range) ) };
-  
+
+  // The level the limit is actually read off at.  Without it the curve shows the statistic rising
+  //  but gives no way to see where the reported number came from, or how sharply it is determined -
+  //  a nearly flat crossing and a steep one look identical.  `maxYRange` above is what keeps this
+  //  level inside the plotted band.
+  //
+  //  Only drawn when a crossing was found: on a scan that never crossed, a threshold line with no
+  //  intersection reads as "the limit is off the right edge" rather than "there is no limit".
+  if( result.foundUpperCl || result.foundLowerCl )
+  {
+    // Measured from `overallBestChi2`, not from the plotted grid's minimum.  The scan solves the
+    //  crossing against the Brent-refined minimum, whose abscissa is generally not one of the
+    //  points sampled for display, so `minchi2 >= overallBestChi2`.  Using the grid minimum drew
+    //  the line slightly high, and its intersection with the curve then sat at a larger quantity
+    //  than the number being reported - which is precisely the discrepancy this line exists to
+    //  make visible.
+    json["thresholdY"] = (result.overallBestChi2 + result.limitDelta);
+
+    char delta_buffer[32] = { '\0' };
+    snprintf( delta_buffer, sizeof(delta_buffer), "%.3f", result.limitDelta );
+
+    const string cl_str = DetectionLimitCalc::confidence_level_pct_str( result.confidenceLevel );
+
+    json["thresholdText"] = WString::tr("dl-chart-threshold-label")
+                              .arg( WString::fromUTF8(cl_str) )
+                              .arg( WString::fromUTF8(delta_buffer) );
+  }//if( a crossing was found )
+
   // TODO: draw line at upperLimit.
   InterSpec *interspec = InterSpec::instance();
   std::shared_ptr<const ColorTheme> theme = interspec ? interspec->getColorTheme() : nullptr;
@@ -2629,24 +2864,24 @@ bool DetectionLimitTool::loadCurrentForeground()
   // currently scaling, repopulate with the new real time; preserve a typed-in
   // target dwell when the user is actively scaling so they can compare across
   // spectra.
-  if( m_scaleSpectrumCb && m_scaleSpectrumTime )
+  if( m_planTimeCb && m_planTimeEdit )
   {
     if( ourspec->real_time() > 0.0f )
     {
-      m_scaleSpectrumCb->setDisabled( false );
+      m_planTimeCb->setDisabled( false );
       const bool field_empty
-                  = SpecUtils::trim_copy( m_scaleSpectrumTime->text().toUTF8() ).empty();
-      if( !m_scaleSpectrumCb->isChecked() || field_empty )
+                  = SpecUtils::trim_copy( m_planTimeEdit->text().toUTF8() ).empty();
+      if( !m_planTimeCb->isChecked() || field_empty )
       {
-        m_scaleSpectrumTime->setText( WString::fromUTF8(
+        m_planTimeEdit->setText( WString::fromUTF8(
             PhysicalUnits::printToBestTimeUnits( ourspec->real_time(), 3 ) ) );
       }
     }else
     {
-      m_scaleSpectrumCb->setChecked( false );
-      m_scaleSpectrumCb->setDisabled( true );
-      m_scaleSpectrumTime->setEnabled( false );
-      m_scaleSpectrumTime->setText( "" );
+      m_planTimeCb->setChecked( false );
+      m_planTimeCb->setDisabled( true );
+      m_planTimeEdit->setEnabled( false );
+      m_planTimeEdit->setText( "" );
     }
   }
 
@@ -2665,10 +2900,10 @@ void DetectionLimitTool::handleForegroundChanged( const SpecUtils::SpectrumType 
     return;
 
   // Rerun the chart's effective-spectrum logic and the calc against the new
-  // foreground.  If Scale is on but the time string no longer parses against
-  // the new spectrum, fall back to the unscaled foreground.
+  // foreground.  If a planned time is set but no longer parses against the new
+  // spectrum, fall back to the unprojected foreground.
   shared_ptr<const SpecUtils::Measurement> eff;
-  try { eff = effectiveSpectrum(); } catch( std::exception & ) {}
+  try { eff = effectiveSpectra().decon; } catch( std::exception & ) {}
   if( !eff )
     eff = m_origSpec;
   if( eff )
@@ -2678,66 +2913,137 @@ void DetectionLimitTool::handleForegroundChanged( const SpecUtils::SpectrumType 
 }//handleForegroundChanged()
 
 
-void DetectionLimitTool::handleScaleSpectrumChanged()
+void DetectionLimitTool::handlePlanTimeChanged()
 {
-  if( !m_scaleSpectrumCb )
+  if( !m_planTimeCb )
     return;
 
-  const bool checked = m_scaleSpectrumCb->isChecked();
-  m_scaleSpectrumTime->setEnabled( checked );
+  const bool checked = m_planTimeCb->isChecked();
+  m_planTimeEdit->setEnabled( checked );
 
   // Whenever the field is empty (whitespace-only counts), or the checkbox is off,
   // repopulate it with the current foreground's real time so the displayed value
   // is always meaningful and `effectiveSpectrum()` won't see an empty string.
   const bool field_empty
-              = SpecUtils::trim_copy( m_scaleSpectrumTime->text().toUTF8() ).empty();
+              = SpecUtils::trim_copy( m_planTimeEdit->text().toUTF8() ).empty();
   if( (!checked || field_empty) && m_origSpec && (m_origSpec->real_time() > 0.0f) )
   {
-    m_scaleSpectrumTime->setText( WString::fromUTF8(
+    m_planTimeEdit->setText( WString::fromUTF8(
         PhysicalUnits::printToBestTimeUnits( m_origSpec->real_time(), 3 ) ) );
   }
 
-  // Update the chart so the user sees the scaled spectrum, then recompute.
+  // Show the spectrum the likelihood will actually see, then recompute.  Under a background
+  //  reference that is the UNSCALED spectrum - the projection is carried as an exposure instead.
   shared_ptr<const SpecUtils::Measurement> eff;
-  try { eff = effectiveSpectrum(); } catch( std::exception & ) {}
+  try { eff = effectiveSpectra().decon; } catch( std::exception & ) {}
   if( !eff )
     eff = m_origSpec;
   if( eff )
     m_chart->setData( eff, false );
 
   handleInputChange();
-}//handleScaleSpectrumChanged()
+}//handlePlanTimeChanged()
 
 
-shared_ptr<const SpecUtils::Measurement> DetectionLimitTool::effectiveSpectrum() const
+DetectionLimitCalc::DeconMeasurementModel DetectionLimitTool::currentMeasurementModel() const
 {
-  if( !m_origSpec )
-    return nullptr;
+  if( !m_measurementModel )
+    return DetectionLimitCalc::DeconMeasurementModel::CurrentSpectrum;
+  return DetectionLimitCalc::measurement_model_from_index( m_measurementModel->currentIndex() );
+}
 
-  if( !m_scaleSpectrumCb || !m_scaleSpectrumCb->isChecked() )
-    return m_origSpec;
 
-  if( m_origSpec->real_time() <= 0.0f )
-    return m_origSpec;
+DetectionLimitCalc::DeconLimitType DetectionLimitTool::currentLimitType() const
+{
+  if( !m_limitType )
+    return DetectionLimitCalc::DeconLimitType::OneSidedUpperLimit;
+  return DetectionLimitCalc::limit_type_from_index( m_limitType->currentIndex() );
+}
 
-  // An empty / whitespace-only field means "no scaling requested" - return the raw
-  // foreground rather than letting stringToTimeDuration throw.  The handler
-  // repopulates the field on focus events so this is mostly a transient state.
-  const string txt = SpecUtils::trim_copy( m_scaleSpectrumTime->text().toUTF8() );
+
+double DetectionLimitTool::currentPlanTimeSeconds() const
+{
+  // Hidden, unchecked, or blank all mean "not asked for"; none of them is an error.
+  if( !m_planTimeCb || !m_planTimeEdit || m_planTimeCb->isHidden() || !m_planTimeCb->isChecked() )
+    return 0.0;
+
+  const string txt = SpecUtils::trim_copy( m_planTimeEdit->text().toUTF8() );
   if( txt.empty() )
-    return m_origSpec;
+    return 0.0;
 
-  const double t = PhysicalUnits::stringToTimeDuration( txt );
+  const double t = PhysicalUnits::stringToTimeDuration( txt );  //throws on parse error
   if( t <= 0.0 )
-    throw runtime_error( WString::tr("dlt-err-bad-scale-time").toUTF8() );
+    throw runtime_error( WString::tr("dl-err-bad-plan-time").toUTF8() );
 
-  return DetectionLimitCalc::scale_spectrum_for_dwell( m_origSpec, static_cast<float>(t) );
-}//effectiveSpectrum()
+  return t;
+}//currentPlanTimeSeconds()
+
+
+DetectionLimitCalc::PlannedMeasurement DetectionLimitTool::effectiveSpectra() const
+{
+  return DetectionLimitCalc::plan_measurement( m_origSpec, currentPlanTimeSeconds(),
+                                               currentMeasurementModel() );
+}//effectiveSpectra()
+
+
+void DetectionLimitTool::updateMeasurementModelAvailability()
+{
+  // A predicted sensitivity forces `foundLowerCl` false, and a DISTANCE scan reports from its lower
+  //  crossing - so distance + background reference is structurally incapable of producing an
+  //  answer.  Offering it would only yield a scan-failure message for a question that cannot be
+  //  asked.  \sa DetectionLimitCalc::decon_limit_text_kind
+  if( !m_measurementModel || !m_measurementModelLabel )
+    return;
+
+  const bool dist_limit = (m_distOrActivity && m_distOrActivity->isChecked());
+
+  if( dist_limit
+     && (currentMeasurementModel()
+         == DetectionLimitCalc::DeconMeasurementModel::BackgroundReference) )
+  {
+    m_measurementModel->setCurrentIndex(
+          DetectionLimitCalc::index_from_measurement_model(
+                DetectionLimitCalc::DeconMeasurementModel::CurrentSpectrum ) );
+    handleMeasurementModelChanged();
+  }
+
+  m_measurementModel->setDisabled( dist_limit );
+  m_measurementModelLabel->setDisabled( dist_limit );
+}//updateMeasurementModelAvailability()
+
+
+void DetectionLimitTool::handleMeasurementModelChanged()
+{
+  const bool backref = (currentMeasurementModel()
+                        == DetectionLimitCalc::DeconMeasurementModel::BackgroundReference);
+
+  // See the note on `m_planTimeCb`: this tool shows Currie limits beside the deconvolution scan, so
+  //  the planned time is only well posed once the spectrum has been asserted to be a background.
+  m_planTimeCb->setHidden( !backref );
+  m_planTimeDiv->setHidden( !backref );
+
+  // The rows have to be rebuilt - `counts_per_bq_into_4pi__` and the per-row Currie limits are
+  //  computed against whichever measurement is being described.
+  handleInputChange();
+}//handleMeasurementModelChanged()
+
+
+void DetectionLimitTool::handleLimitTypeChanged()
+{
+  const bool central = (currentLimitType() == DetectionLimitCalc::DeconLimitType::CentralInterval);
+  m_confidenceLevelLabel->setText( WString::tr( central ? "dl-conf-level-central"
+                                                        : "dl-conf-level-one-sided" ) );
+
+  // Only the threshold changes; the row inputs do not depend on the limit type.
+  scheduleCalcUpdate();
+}//handleLimitTypeChanged()
 
 
 void DetectionLimitTool::handleUserChangedToComputeActOrDist()
 {
   const bool distanceLimit = m_distOrActivity->isChecked();
+
+  updateMeasurementModelAvailability();
   
   m_activityLabel->setHidden( !distanceLimit );
   m_activityForDistanceLimit->setHidden( !distanceLimit );
@@ -2998,6 +3304,12 @@ vector<DetectionLimitTool::GammaLineInfo> DetectionLimitTool::gammaLines() const
 }//vector<GammaLineInfo> gammaLines() const
 
 
+void DetectionLimitTool::handleDisplayBecquerelChanged( const bool becquerel )
+{
+  handleInputChange();
+}//void DetectionLimitTool::handleDisplayBecquerelChanged( const bool )
+
+
 void DetectionLimitTool::handleInputChange()
 {
   // Grab currently displayed values incase its the same nuclide as before, and we are just updating
@@ -3014,11 +3326,15 @@ void DetectionLimitTool::handleInputChange()
   m_results->hide();
   m_errorMsg->setText( "&nbsp;" );
   m_errorMsg->hide();
+  m_warningMsg->setText( "&nbsp;" );
+  m_warningMsg->hide();
   
+  DetectionLimitCalc::PlannedMeasurement eff;
   shared_ptr<const SpecUtils::Measurement> spec;
   try
   {
-    spec = effectiveSpectrum();
+    eff = effectiveSpectra();
+    spec = eff.currie;
   }catch( std::exception &e )
   {
     m_errorMsg->setText( WString::fromUTF8(e.what()) );
@@ -3204,8 +3520,13 @@ void DetectionLimitTool::handleInputChange()
     input.energy = energy;
     input.branch_ratio = br;
     input.shield_transmission = line.shield_transmission;
-    input.counts_per_bq_into_4pi__ = line.gammas_into_4pi*spec->live_time();
-    input.counts_per_bq_into_4pi_with_air = line.gammas_4pi_after_air_attenuation*spec->live_time();
+    // From the DECON spectrum's live time, not the projected one.  `decon_compute_peaks` multiplies
+    //  the trial signal by `sample_exposure/live_time` itself, so a per-Bq yield built from an
+    //  already-projected live time would apply the projection twice - silently, and quadratically.
+    //  Display code that pairs this with a Currie number uses `exposure_ratio` to line them up.
+    input.counts_per_bq_into_4pi__ = line.gammas_into_4pi*eff.decon->live_time();
+    input.counts_per_bq_into_4pi_with_air = line.gammas_4pi_after_air_attenuation*eff.decon->live_time();
+    input.exposure_ratio = eff.exposure_ratio;
     input.distance = distance;
     input.activity = activity;
     input.roi_start = energy - 1.25*fwhm; // recommended by ISO 11929:2010, could instead use 1.19
@@ -3410,7 +3731,7 @@ std::string DetectionLimitTool::encodeStateToUrl() const
   //  `DoseCalcWidget` so the nested ShieldingSelect URL (which contains its own '&'/'='
   //  separators) round-trips intact.
 
-  string answer = "VER=1";
+  string answer = "VER=2";
 
   if( m_currentNuclide )
   {
@@ -3478,13 +3799,32 @@ std::string DetectionLimitTool::encodeStateToUrl() const
   if( m_attenuateForAir )
     answer += string("&AIRATTN=") + (m_attenuateForAir->isChecked() ? "1" : "0");
 
-  // Scale-to-dwell - encoded as the absolute target dwell in seconds, so reloading the
-  //  URL against a different foreground preserves "the dwell I asked about".
-  if( m_scaleSpectrumCb && m_scaleSpectrumCb->isChecked() && m_scaleSpectrumTime )
+  // Which measurement the limit describes, and which quantity it reports.  Both default on decode,
+  //  so a URI written by an older build still means what it did.
+  if( m_measurementModel )
+  {
+    answer += string("&MODEL=")
+              + ((currentMeasurementModel()
+                    == DetectionLimitCalc::DeconMeasurementModel::BackgroundReference)
+                   ? "BACKREF" : "CUR");
+  }
+
+  if( m_limitType )
+  {
+    answer += string("&LIMTYPE=")
+              + ((currentLimitType() == DetectionLimitCalc::DeconLimitType::CentralInterval)
+                   ? "CENTRAL" : "UPPER");
+  }
+
+  // The planned measurement time - encoded as the absolute target dwell in seconds, so reloading
+  //  the URL against a different foreground preserves "the dwell I asked about".  Under a migrated
+  //  legacy state this is the exposure of the predicted measurement rather than a rescaling.
+  // Hidden means the calculation ignores it, so it must not be persisted either.
+  if( m_planTimeCb && m_planTimeCb->isChecked() && !m_planTimeCb->isHidden() && m_planTimeEdit )
   {
     try
     {
-      const double t = PhysicalUnits::stringToTimeDuration( m_scaleSpectrumTime->text().toUTF8() );
+      const double t = PhysicalUnits::stringToTimeDuration( m_planTimeEdit->text().toUTF8() );
       if( t > 0.0 )
         answer += "&SCALE=" + SpecUtils::printCompact( t / PhysicalUnits::second, 6 ) + "s";
     }catch( std::exception & )
@@ -3535,13 +3875,8 @@ std::string DetectionLimitTool::encodeStateToUrl() const
     answer += ",H:" + SpecUtils::printCompact( in.roi_end, 6 );
     answer += ",N:" + std::to_string( in.num_side_channels );
 
-    answer += ",CN:";
-    switch( in.decon_cont_norm_method )
-    {
-      case DetectionLimitCalc::DeconContinuumNorm::Floating:           answer += "FLOAT"; break;
-      case DetectionLimitCalc::DeconContinuumNorm::FixedByEdges:       answer += "EDGES"; break;
-      case DetectionLimitCalc::DeconContinuumNorm::FixedByFullRange:   answer += "FULL";  break;
-    }//switch( in.decon_cont_norm_method )
+    // Decoding migrates the deprecated value before any row is built, so it can never reach here.
+    answer += ",CN:" + DetectionLimitCalc::continuum_norm_token( in.decon_cont_norm_method );
 
     answer += ",CT:";
     switch( in.decon_continuum_type )
@@ -3588,8 +3923,46 @@ void DetectionLimitTool::handleAppUrl( std::string query_str )
 
   auto qpos = values.find( "VER" );
   const string ver = ((qpos != end(values)) && !qpos->second.empty()) ? qpos->second : "1";
-  if( (ver != "1") && !SpecUtils::istarts_with(ver, "1.") )
+  // Accept the major version only, so a later "2.1" that adds an optional token is still readable
+  //  by this build.  An unknown major means tokens whose meaning cannot be guessed.
+  // Major version only, so a later "2.1" adding an optional token stays readable - but "10"/"27"
+  //  are different majors, not v1/v2, so match the separator too.
+  const bool known_ver = (ver == "1") || (ver == "2")
+                         || SpecUtils::istarts_with(ver, "1.")
+                         || SpecUtils::istarts_with(ver, "2.");
+  if( !known_ver )
     throw runtime_error( "DetectionLimitTool::handleAppUrl: invalid URI version '" + ver + "'" );
+
+  // Collected while decoding, shown once at the end - never applied silently.
+  bool migrated_deprecated_norm = false;
+
+  // Tool-level settings; a migrated row token can move the model, so it is decoded before the rows.
+  DetectionLimitCalc::DeconMeasurementModel decoded_model
+        = DetectionLimitCalc::DeconMeasurementModel::CurrentSpectrum;
+  DetectionLimitCalc::DeconLimitType decoded_limit_type
+        = DetectionLimitCalc::DeconLimitType::OneSidedUpperLimit;
+
+  qpos = values.find( "MODEL" );
+  if( qpos != end(values) )
+  {
+    if( SpecUtils::iequals_ascii(qpos->second, "CUR") )
+      decoded_model = DetectionLimitCalc::DeconMeasurementModel::CurrentSpectrum;
+    else if( SpecUtils::iequals_ascii(qpos->second, "BACKREF") )
+      decoded_model = DetectionLimitCalc::DeconMeasurementModel::BackgroundReference;
+    else
+      cerr << "DetectionLimitTool::handleAppUrl: unrecognized 'MODEL' value '" << qpos->second << "'" << endl;
+  }
+
+  qpos = values.find( "LIMTYPE" );
+  if( qpos != end(values) )
+  {
+    if( SpecUtils::iequals_ascii(qpos->second, "UPPER") )
+      decoded_limit_type = DetectionLimitCalc::DeconLimitType::OneSidedUpperLimit;
+    else if( SpecUtils::iequals_ascii(qpos->second, "CENTRAL") )
+      decoded_limit_type = DetectionLimitCalc::DeconLimitType::CentralInterval;
+    else
+      cerr << "DetectionLimitTool::handleAppUrl: unrecognized 'LIMTYPE' value '" << qpos->second << "'" << endl;
+  }
 
   // --- Apply scalar widget values (no signal handlers fire from programmatic setText/setChecked/etc).
   qpos = values.find( "LIM" );
@@ -3667,16 +4040,16 @@ void DetectionLimitTool::handleAppUrl( std::string query_str )
   // --- Scale-to-dwell.  Encoded as an absolute target dwell (e.g. "60s", "5 min").
   qpos = values.find( "SCALE" );
   bool scale_set_ok = false;
-  if( qpos != end(values) && m_scaleSpectrumCb && m_scaleSpectrumTime )
+  if( qpos != end(values) && m_planTimeCb && m_planTimeEdit )
   {
     try
     {
       const double t = PhysicalUnits::stringToTimeDuration( qpos->second );
       if( t > 0.0 )
       {
-        m_scaleSpectrumCb->setChecked( true );
-        m_scaleSpectrumTime->setEnabled( true );
-        m_scaleSpectrumTime->setText( WString::fromUTF8(
+        m_planTimeCb->setChecked( true );
+        m_planTimeEdit->setEnabled( true );
+        m_planTimeEdit->setText( WString::fromUTF8(
             PhysicalUnits::printToBestTimeUnits( t, 4 ) ) );
         scale_set_ok = true;
       }
@@ -3685,12 +4058,12 @@ void DetectionLimitTool::handleAppUrl( std::string query_str )
     if( !scale_set_ok )
       cerr << "DetectionLimitTool::handleAppUrl: invalid 'SCALE' value '" << qpos->second << "'" << endl;
   }
-  if( !scale_set_ok && m_scaleSpectrumCb && m_scaleSpectrumTime )
+  if( !scale_set_ok && m_planTimeCb && m_planTimeEdit )
   {
-    m_scaleSpectrumCb->setChecked( false );
-    m_scaleSpectrumTime->setEnabled( false );
+    m_planTimeCb->setChecked( false );
+    m_planTimeEdit->setEnabled( false );
     if( m_origSpec && (m_origSpec->real_time() > 0.0f) )
-      m_scaleSpectrumTime->setText( WString::fromUTF8(
+      m_planTimeEdit->setText( WString::fromUTF8(
           PhysicalUnits::printToBestTimeUnits( m_origSpec->real_time(), 3 ) ) );
   }
 
@@ -3738,12 +4111,26 @@ void DetectionLimitTool::handleAppUrl( std::string query_str )
           row_input.num_side_channels = static_cast<size_t>( std::max(0, std::stoi(sub_val)) );
         else if( sub_key == "CN" )
         {
-          if( SpecUtils::iequals_ascii(sub_val, "FLOAT") )
-            row_input.decon_cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::Floating;
-          else if( SpecUtils::iequals_ascii(sub_val, "EDGES") )
-            row_input.decon_cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::FixedByEdges;
-          else if( SpecUtils::iequals_ascii(sub_val, "FULL") )
-            row_input.decon_cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::FixedByFullRange;
+          // Migration happens HERE, before any MdaPeakRow is constructed: the row asserts its combo
+          //  index matches its stored treatment, and the deprecated value has no combo index.
+          DetectionLimitCalc::DeconContinuumNorm norm = row_input.decon_cont_norm_method;
+          DetectionLimitCalc::DeconMeasurementModel model = decoded_model;
+          bool migrated = false;
+          if( DetectionLimitCalc::decode_continuum_norm_token( sub_val, norm, model, migrated ) )
+          {
+            row_input.decon_cont_norm_method = norm;
+            if( migrated )
+            {
+              // A retired option was reinterpreted; the model is a tool-level setting, so the
+              //  migration has to move it too, and the user has to be told.
+              decoded_model = model;
+              migrated_deprecated_norm = true;
+            }
+          }else
+          {
+            cerr << "DetectionLimitTool::handleAppUrl: unrecognized 'CN' value '" << sub_val
+                 << "'; keeping " << static_cast<int>(row_input.decon_cont_norm_method) << endl;
+          }
         }else if( sub_key == "CT" )
         {
           if( SpecUtils::iequals_ascii(sub_val, "LIN") )
@@ -3801,14 +4188,232 @@ void DetectionLimitTool::handleAppUrl( std::string query_str )
     }
   }
 
+  // Tool-level statistical settings, applied after the rows so a migrated row token has already
+  //  had its say about the measurement model.
+  if( m_measurementModel )
+    m_measurementModel->setCurrentIndex( DetectionLimitCalc::index_from_measurement_model( decoded_model ) );
+  if( m_limitType )
+    m_limitType->setCurrentIndex( DetectionLimitCalc::index_from_limit_type( decoded_limit_type ) );
+
+  // These only set widget state, so drive the handlers to get the dependent visibility and labels.
+  handleMeasurementModelChanged();
+  handleLimitTypeChanged();
+
+  // A saved state can name a combination the UI will not let a user build - `LIM=DIST` with
+  //  `MODEL=BACKREF` - so the same guard the activity/distance toggle applies has to run here too.
+  //  Without it a restored state lands directly in the structurally-impossible case, and the
+  //  combo is left enabled so the user can walk back into it.
+  updateMeasurementModelAvailability();
+
   // Final rebuild: guarantees rows reflect URL state regardless of which path the
   //  upstream handlers took.
   handleInputChange();
+
+  // A retired option was reinterpreted.  Loading it as something else without saying so would
+  //  change what a saved number means without telling anyone, so this is never silent.
+  if( migrated_deprecated_norm )
+    passMessage( WString::tr("dl-migrate-nosig-notice"), WarningWidget::WarningMsgMedium );
 }//void DetectionLimitTool::handleAppUrl( std::string query_str )
+
+
+void DetectionLimitTool::cancelBandCalculation()
+{
+  // Bumping the number is what makes an in-flight result stale; the flag lets the worker give up
+  //  early rather than finish work nobody will look at.
+  m_bandCalcNumber += 1;
+
+  if( m_bandCancel )
+    m_bandCancel->store( true );
+  m_bandCancel = nullptr;
+
+  if( m_bandTxt )
+  {
+    m_bandTxt->setText( "&nbsp;" );
+    m_bandTxt->hide();
+  }
+
+}//void DetectionLimitTool::cancelBandCalculation()
+
+
+void DetectionLimitTool::startBandCalculation()
+{
+  if( !m_bandInput.valid || !m_bandInput.input )
+    return;
+
+  // Supersede anything already running, then take this run's identity.
+  cancelBandCalculation();
+
+  const size_t calc_number = m_bandCalcNumber;
+  auto cancel_calc = make_shared<std::atomic_bool>( false );
+  m_bandCancel = cancel_calc;
+
+  // Set after the last early return below, so a bail-out cannot strand the placeholder on screen.
+
+  // Everything the worker needs, by value: it runs off the GUI thread and must not read a widget
+  //  or a member, either of which the user could change while it works.
+  const BandCalcInput job = m_bandInput;
+
+  // Hundreds of profile scans, each of which is milliseconds; enough realisations that the
+  //  percentiles are stable, and the deterministic seed means the same inputs give the same band.
+  const size_t num_trials = 128;
+
+  // Sized over *realisations* - that is what `decon_projected_limit` parallelizes over; all regions
+  //  of interest are handled inside a single scan, so the region count is not the relevant bound.
+  //  The pool it creates is private, so these threads do not come out of the Wt io service.
+  const unsigned hardware_threads = std::thread::hardware_concurrency();
+  const size_t num_threads = (std::min)( num_trials,
+                                static_cast<size_t>( (std::max)( 4u, hardware_threads ) ) );
+
+  auto result = make_shared<DetectionLimitCalc::ProjectedLimit>();
+  auto error_msg = make_shared<string>();
+
+  WApplication * const app = WApplication::instance();
+  assert( app );
+  if( !app )
+    return;
+  const string sessionId = app->sessionId();
+
+  m_bandTxt->setText( WString::tr("dlt-estimating-spread") );
+  m_bandTxt->show();
+
+  // Wt4 removed WApplication::bind().  Its replacement, `bindSafe`, is a captured
+  //  Wt::Core::observing_ptr, and `worker` below is copied to - and destroyed on - an ioService
+  //  thread; copying/destroying an observing_ptr off the session thread mutates the target's
+  //  unsynchronized observer list.  So only an inert widget id crosses the thread
+  //  boundary, and it is resolved back to the widget inside the session-thread continuation,
+  //  which yields nullptr if the tool was closed while the calculation ran.
+  const string widget_id = id();
+
+  auto worker = [=](){
+    try
+    {
+      const DetectionLimitCalc::ProjectedLimit answer
+          = DetectionLimitCalc::decon_projected_limit( job.input, job.wantedCl,
+                                job.planned_real_time, job.max_search_quantity, job.useCurie,
+                                job.limit_type,
+                                DetectionLimitCalc::ProjectedLimitScoring::JointWithReference,
+                                num_trials, num_threads, cancel_calc );
+
+      if( cancel_calc->load() )
+        return;
+
+      WServer::instance()->post( sessionId, [=](){
+        WApplication * const inner_app = WApplication::instance();
+        if( !inner_app )
+        {
+          cerr << "Failed to get WApplication::instance() for DetectionLimitTool band worker" << endl;
+          assert( 0 );
+          return;
+        }
+
+        DetectionLimitTool * const tool
+              = dynamic_cast<DetectionLimitTool *>( inner_app->domRoot()->findById( widget_id ) );
+        if( !tool )
+          return;  //tool was closed while the calculation ran
+
+        *result = answer;
+        tool->updateBandFromCalc( result, cancel_calc, calc_number );
+        inner_app->triggerUpdate();
+      } );
+    }catch( std::exception &e )
+    {
+      const string msg = e.what();
+
+      WServer::instance()->post( sessionId, [=](){
+        WApplication * const inner_app = WApplication::instance();
+        if( !inner_app )
+        {
+          cerr << "Failed to get WApplication::instance() for DetectionLimitTool band worker" << endl;
+          assert( 0 );
+          return;
+        }
+
+        DetectionLimitTool * const tool
+              = dynamic_cast<DetectionLimitTool *>( inner_app->domRoot()->findById( widget_id ) );
+        if( !tool )
+          return;  //tool was closed while the calculation ran
+
+        *error_msg = msg;
+        tool->handleBandCalcError( error_msg, cancel_calc );
+        inner_app->triggerUpdate();
+      } );
+    }//try / catch
+  };//auto worker
+
+  WServer::instance()->ioService().boost::asio::io_service::post( worker );
+}//void DetectionLimitTool::startBandCalculation()
+
+
+void DetectionLimitTool::updateBandFromCalc( shared_ptr<DetectionLimitCalc::ProjectedLimit> result,
+                                             shared_ptr<std::atomic_bool> cancel_flag,
+                                             const size_t calc_number )
+{
+  // Writing widgets from a computation can trip signal handlers that would otherwise record undo
+  //  steps the user never took.
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+
+  // Three ways a result can be stale, and all three are cheap to check: a newer run replaced the
+  //  flag, this run was cancelled, or the number moved on.
+  if( !result || (cancel_flag != m_bandCancel) )
+    return;
+  if( cancel_flag && cancel_flag->load() )
+    return;
+  if( calc_number != m_bandCalcNumber )
+    return;
+
+  m_bandCancel = nullptr;
+
+  // As a multiple of the quoted limit: counts and activity differ by a constant factor, so the
+  //  fraction is the same number in either, and it anchors the band on the figure on screen.
+  string low_multiple, high_multiple;
+  if( !DetectionLimitCalc::projected_band_endpoints( *result, low_multiple, high_multiple ) )
+  {
+    if( result->valid && (result->median > 0.0) )
+    {
+      // A band too tight to print at two decimals.  A limit that firm needs no caveat, so the line
+      //  goes away entirely rather than sitting there empty.
+      m_bandTxt->setText( "&nbsp;" );
+      m_bandTxt->hide();
+    }else
+    {
+      m_bandTxt->setText( WString::tr("dlt-spread-unavailable") );
+      m_bandTxt->show();
+    }
+
+    return;
+  }
+
+  m_bandTxt->setText( WString::tr("dlt-spread-band")
+                        .arg( low_multiple )
+                        .arg( high_multiple ) );
+  m_bandTxt->show();
+}//void DetectionLimitTool::updateBandFromCalc(...)
+
+
+void DetectionLimitTool::handleBandCalcError( shared_ptr<string> message,
+                                              shared_ptr<std::atomic_bool> cancel_flag )
+{
+  UndoRedoManager::BlockUndoRedoInserts undo_blocker;
+
+  if( cancel_flag != m_bandCancel )
+    return;
+
+  m_bandCancel = nullptr;
+
+  cerr << "DetectionLimitTool band calculation failed: " << (message ? *message : string("?")) << endl;
+
+  m_bandTxt->setText( WString::tr("dlt-spread-unavailable") );
+  m_bandTxt->show();
+}//void DetectionLimitTool::handleBandCalcError(...)
 
 
 void DetectionLimitTool::doCalc()
 {
+  // Every exit from here must leave the band consistent with what is displayed - including the
+  //  early returns below, which used to skip this and leave a superseded run working.
+  cancelBandCalculation();
+  m_bandInput = BandCalcInput{};
+
   try
   {
     const bool useCurie = use_curie_units();
@@ -3859,7 +4464,9 @@ void DetectionLimitTool::doCalc()
             const double def_dist = 1.0*PhysicalUnits::meter;
             const double det_eff_1m = fixed_geom ? input.drf->intrinsicEfficiency(input.energy)
             : input.drf->efficiency(input.energy, def_dist);
-            const double counts_4pi = input.counts_per_bq_into_4pi__;
+            // Reference-exposure yield vs a projected Currie count; line them up.
+            //  \sa MdaPeakRowInput::exposure_ratio
+            const double counts_4pi = input.counts_per_bq_into_4pi__ * input.exposure_ratio;
             
             const double activity = other_quantity;
             
@@ -3873,7 +4480,9 @@ void DetectionLimitTool::doCalc()
             : input.drf->efficiency(input.energy, input.distance);
             const double counts_4pi = (air_atten ? input.counts_per_bq_into_4pi_with_air
                                        : input.counts_per_bq_into_4pi__);
-            const double gammas_per_bq = det_eff * counts_4pi;
+            // Reference-exposure yield vs a projected excess-counts number; line them up.
+            //  \sa MdaPeakRowInput::exposure_ratio
+            const double gammas_per_bq = det_eff * counts_4pi * input.exposure_ratio;
             
             const double nominalActivity = rw->simple_excess_counts() / gammas_per_bq;
             min_search_quantity = std::min( min_search_quantity, nominalActivity );
@@ -3928,7 +4537,8 @@ void DetectionLimitTool::doCalc()
     }
     
     m_errorMsg->hide();
-    
+    m_warningMsg->hide();
+
     const double mid_search_quantity = 0.5*(min_search_quantity + max_search_quantity);
     const double base_act = is_dist_limit ?  other_quantity : mid_search_quantity;
     const double base_dist = is_dist_limit ? mid_search_quantity : other_quantity;
@@ -3941,21 +4551,78 @@ void DetectionLimitTool::doCalc()
     DetectionLimitCalc::DeconActivityOrDistanceLimitResult result
                   = DetectionLimitCalc::get_activity_or_distance_limits( wantedCl, base_input,
                                                                   is_dist_limit, min_search_quantity,
-                                                                    max_search_quantity, useCurie );
+                                                                    max_search_quantity, useCurie,
+                                                                    currentLimitType() );
     
+    // Same statements as `result.limitText` / `result.bestCh2Text`, but localized; those stay
+    //  English because the calculation layer feeds batch reports, which have no message bundles.
+    const std::function<WString(double)> format_quantity
+              = [is_dist_limit,useCurie,det_geom]( const double quantity ) -> WString {
+      if( is_dist_limit )
+        return WString::fromUTF8( PhysicalUnits::printToBestLengthUnits(quantity,2) );
+      return WString::fromUTF8( PhysicalUnits::printToBestActivityUnits(quantity,2,useCurie)
+                                + DetectorPeakResponse::det_eff_geom_type_postfix(det_geom) );
+    };//format_quantity
+
     // TODO: This `m_upperLimit` text could be moved to where the warnings is, ot the title area where the "Gamma lines to use" is
     //       This would give us more room, and maybe be more obvious to the user
-    m_upperLimit->setText( WString::fromUTF8(result.limitText) );
-    
+    m_upperLimit->setText( limitResultText( result, format_quantity ) );
+
+    // Snapshot what a band calculation would need, while everything is in hand and on the GUI
+    //  thread.  Offered only for a background reference: that is the mode whose whole output is a
+    //  prediction about a measurement nobody has taken, so it is the one where a single number
+    //  says nothing about how far the answer could land from it.
+    // (already cancelled and cleared at the top of doCalc)
+    if( !is_dist_limit
+       && (base_input->measurement_model
+             == DetectionLimitCalc::DeconMeasurementModel::BackgroundReference)
+       && base_input->measurement
+       && (base_input->measurement->real_time() > 0.0f)
+       && result.foundUpperCl )
+    {
+      m_bandInput.input = base_input;
+      m_bandInput.wantedCl = wantedCl;
+      m_bandInput.planned_real_time = (result.sampleRealTime > 0.0)
+                        ? result.sampleRealTime
+                        : static_cast<double>( base_input->measurement->real_time() );
+      m_bandInput.max_search_quantity = max_search_quantity;
+      m_bandInput.useCurie = useCurie;
+      m_bandInput.limit_type = currentLimitType();
+      m_bandInput.valid = true;
+    }//if( a background-reference limit that a band would describe )
+
+    // Started automatically: the limit on its own says nothing about how far a real measurement of
+    //  that length could land from it, and the user should not have to ask.  Runs off the GUI
+    //  thread, and supersedes any calculation still running for an older set of inputs.
+    if( m_bandInput.valid )
+      startBandCalculation();
+
     if( is_dist_limit )
       m_displayDistance->setText( WString::fromUTF8(result.quantityLimitStr) );
     else
       m_displayActivity->setText( WString::fromUTF8(result.quantityLimitStr) );
-    
-    m_bestChi2Act->setText( WString::fromUTF8(result.bestCh2Text) );
-    
+
+    m_bestChi2Act->setText( bestStatisticText( result, format_quantity ) );
+
+    // The displayed value is a Cash statistic, not a chi-square; say so where it is shown.
+    HelpSystem::attachToolTipOn( m_bestChi2Act, statisticTooltip(result), true,
+                                HelpSystem::ToolTipPrefOverride::RespectPreference );
+
+    // Anything that qualifies the limit without preventing it - overlapping regions of interest
+    //  being combined, the search range having to be extended, or a profile that crosses the
+    //  threshold more than twice.  Each changes how the number should be read, so none of them
+    //  may be dropped just because the calculation succeeded.
+    if( !result.warnings.empty() )
+    {
+      string warning_text;
+      for( const string &warning : result.warnings )
+        warning_text += (warning_text.empty() ? "" : "<br />") + warning;
+      m_warningMsg->setText( WString::fromUTF8(warning_text) );
+      m_warningMsg->show();
+    }
+
     m_results->show();
-    
+
     const string jsgraph = m_chi2Chart->jsRef() + ".chart";
     const Wt::Json::Object chartJson = generateChartJson( result, is_dist_limit );
     const string datajson = Wt::Json::serialize(chartJson);
@@ -4044,26 +4711,30 @@ shared_ptr<DetectionLimitCalc::DeconComputeInput> DetectionLimitTool::getCompute
 {
   peaks.clear();
 
-  shared_ptr<const SpecUtils::Measurement> spec;
+  DetectionLimitCalc::PlannedMeasurement eff;
   try
   {
-    spec = effectiveSpectrum();
+    eff = effectiveSpectra();
   }catch( std::exception &e )
   {
-    cerr << "getComputeForActivityInput: bad scale - " << e.what() << endl;
+    cerr << "getComputeForActivityInput: bad planned measurement time - " << e.what() << endl;
     return nullptr;
   }
 
-  if( !spec )
+  if( !eff.decon )
   {
     cerr << "No displayed histogram!" << endl;
     return nullptr;
   }
 
   auto input = make_shared<DetectionLimitCalc::DeconComputeInput>();
-  input->measurement = spec;
+  // The deconvolution sees the unscaled reference under a background-reference model; the planned
+  //  dwell rides along as `sample_exposure`.  \sa DetectionLimitCalc::plan_measurement
+  input->measurement = eff.decon;
+  input->measurement_model = currentMeasurementModel();
+  input->sample_exposure = eff.sample_exposure;
   input->drf = detector();
-  
+
   input->include_air_attenuation = m_attenuateForAir->isChecked();
   input->distance = distance;
   input->activity = activity;

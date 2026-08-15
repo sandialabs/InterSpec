@@ -46,6 +46,7 @@ class RelActTxtResults;
 class RelEffShieldWidget;
 class DetectorPeakResponse;
 class D3SpectrumDisplayDiv;
+class NativeFloatSpinBox;
 class RelActAutoGuiNuclide;
 class RelActAutoGuiRelEffOptions;
 
@@ -118,7 +119,7 @@ public:
   void handleDisplayedSpectrumChange( SpecUtils::SpectrumType );
   void handlePresetChange();
   void handleRelEffEqnTypeChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
-  void handleSameHoerlOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
+  void handleSameCorrFcnOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleSameExtShieldingOnAllCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleShieldedByOtherCurvesChanged( RelActAutoGuiRelEffOptions *rel_eff_curve_gui );
   void handleRelEffEqnOrderChanged();
@@ -197,7 +198,8 @@ public:
   void handleFreePeakChange();
   
   void handleAdditionalUncertChanged();
-  
+  void handleAutoSimplifyChanged();
+
   void setOptionsForNoSolution();
   void setOptionsForValidSolution();
   void makeZeroAmplitudeRoisToChart();
@@ -217,13 +219,43 @@ public:
   void deSerialize( const rapidxml::xml_node<char> *base_node );
 
   std::unique_ptr<rapidxml::xml_document<char>> guiStateToXml() const;
-  void setGuiStateFromXml( const rapidxml::xml_document<char> *doc );
+
+  /** Sets the GUI state from XML.
+
+   @param doc The document to load; must contain a &lt;RelActCalcAuto&gt; node.
+   @param undo_description If non-empty, an undo/redo step with this description is added for the
+          change.  Pass a description for user-initiated programmatic loads (drag-n-drop of a
+          config file, LLM tool calls), so the user can get back to their previous configuration.
+   */
+  void setGuiStateFromXml( const rapidxml::xml_document<char> *doc,
+                           const std::string &undo_description = "" );
 
   /** Serializes the GUI state to a RelActAutoGuiState struct. */
   void serialize( RelActCalcAuto::RelActAutoGuiState &state ) const;
 
-  /** Deserializes a RelActAutoGuiState struct into the GUI. */
+  /** Deserializes a RelActAutoGuiState struct into the GUI.
+
+   Note: does not create an undo/redo step - see #deSerializeWithUndo.
+   */
   void deSerialize( const RelActCalcAuto::RelActAutoGuiState &state );
+
+  /** Same as #deSerialize, but also adds an undo/redo step for the change, so the user can get
+   back to the configuration that was displayed before the call.
+
+   Use this for programmatic loads the user initiated from outside this widget; #deSerialize is
+   for restoring state the user should not be able to "undo past" (initial window creation,
+   the undo/redo steps themselves).
+   */
+  void deSerializeWithUndo( const RelActCalcAuto::RelActAutoGuiState &state,
+                            const std::string &undo_description );
+
+  /** Sets the displayed energy range of this tools chart, keeping the undo/redo baseline in sync.
+
+   Always use this instead of calling `m_spectrum->setXAxisRange(...)` directly: the chart does not
+   emit `xRangeChanged()` for programmatic changes, so #handleChartXRangeChange would not run, and
+   the undo baseline would be left thinking the chart is still showing the old range.
+   */
+  void setChartEnergyRange( const double lower_energy, const double upper_energy );
 
   void setCalcOptionsGui( const RelActCalcAuto::Options &options );
   
@@ -256,6 +288,15 @@ protected:
                            const bool is_final_range );
   
   void handleShiftDrag( const double lower_energy, const double upper_energy );
+
+  /** Called when the user zooms/pans this tools chart; adds a lightweight undo/redo step that
+   carries just the old and new energy ranges (rather than a whole GUI state), and keeps
+   #m_currentGuiState in sync with the chart so the zoom does not also get folded into the undo
+   step of whatever the user edits next.
+   */
+  void handleChartXRangeChange( const double xmin, const double xmax,
+                                const double oldXmin, const double oldXmax,
+                                const bool user_interaction );
 
   /** Callback for when user double-clicks on the spectrum - currently only energy argument is used. */
   void handleDoubleLeftClick( const double energy, const double counts,
@@ -313,11 +354,66 @@ protected:
   void addDownloadAndUploadLinks( Wt::WContainerWidget *parent );
   void handleRequestToUploadXmlConfig();
 
-  /** Registers an undo/redo step if the current state differs from the previous state. */
-  void addUndoRedoStep();
+  /** Everything needed to put this tool back to a previous point, for undo/redo.
+
+   The preset-selector information is kept here, rather than in `RelActCalcAuto::RelActAutoGuiState`,
+   because that struct is persisted into the `SpecMeas` and consumed by headless code
+   (`BatchRelActAuto`, `LlmIsotopicsTool`), where a GUI widget index has no meaning.
+   */
+  struct GuiUndoState
+  {
+    /** The analysis configuration; null means "no state captured yet". */
+    std::shared_ptr<const RelActCalcAuto::RelActAutoGuiState> state;
+
+    /** Value of #m_current_preset_index; negative means "dont restore the preset selector". */
+    int preset_index = -1;
+
+    /** The full contents of #m_presets.  Only the trailing "Custom"/"User Created"/"Modified ..."
+     entries can vary, since the built-in presets are added once, at construction. */
+    std::vector<Wt::WString> preset_items;
+  };//struct GuiUndoState
+
+  /** Registers an undo/redo step if #m_currentGuiState differs from `baseline`.
+
+   `baseline` must be the value #m_currentGuiState had at the START of the render, before any
+   `updateDuringRender*` work - some of that work mutates #m_currentGuiState itself (see
+   #setChartEnergyRange), and the step has to revert to what the user was looking at when they
+   acted.  Call after #captureGuiStateForUndo, so #m_currentGuiState is the settled GUI.
+   */
+  void addUndoRedoStep( const GuiUndoState &baseline );
+
+  /** Adds an undo/redo step that moves this tool between the two given states.
+
+   Static, and goes through `InterSpec::relActAutoWindow(true)`, so the step remains valid after
+   this widget has been destroyed (e.g. the user closed the tool, then hit undo).
+   */
+  static void addUndoRedoStep( const GuiUndoState &prev, const GuiUndoState &next,
+                               const std::string &description );
+
+  /** Re-serializes the current GUI into #m_currentGuiState - the baseline #addUndoRedoStep diffs
+   against.
+
+   Called at the end of every render so that the paths which mutate serialized state without
+   emitting a step (fit results being written back into the GUI, foreground change, energy
+   calibration being applied, #deSerialize) do not leave a stale baseline behind for the *next*
+   user edit to diff against - if they did, a single undo would revert all of it at once.
+
+   Serialization failures are logged, and leave the previous baseline in place.
+   */
+  void captureGuiStateForUndo();
+
+  /** Captures the current GUI state and preset selection; throws if serialization fails. */
+  GuiUndoState currentUndoState() const;
+
+  /** Puts the GUI back to `undo_state`; the body of the undo/redo lambdas. */
+  void restoreUndoState( const GuiUndoState &undo_state );
+
+  /** Restores #m_presets and #m_current_preset_index from `undo_state`; no-op if
+   `undo_state.preset_index` is negative. */
+  void setPresetSelection( const GuiUndoState &undo_state );
 
 protected:
-  
+
   enum RenderActions
   {
     UpdateSpectra         = 0x0001,
@@ -335,8 +431,10 @@ protected:
 
   Wt::WFlags<RenderActions> m_render_flags;
 
-  /** The GUI state from the last render; used for undo/redo deduplication. */
-  std::shared_ptr<const RelActCalcAuto::RelActAutoGuiState> m_currentGuiState;
+  /** The GUI state as of the last render (see #captureGuiStateForUndo); the baseline that
+   #addUndoRedoStep diffs the current GUI against to decide if, and what, to record.
+   `m_currentGuiState.state` is null only before the first render. */
+  GuiUndoState m_currentGuiState;
   
   std::string m_default_par_sets_dir;
   std::string m_user_par_sets_dir;
@@ -430,6 +528,13 @@ protected:
   bool m_use_fixed_skew_enabled;
   Wt::WCheckBox *m_use_fixed_skew;
 
+  /** Auto-simplify model: when checked, the solver greedily removes redundant degrees of freedom (see
+   `RelActCalcAuto::Options::auto_simplify_model`).  Checking it reveals `m_auto_simplify_dchi2_div`, which
+   holds the chi2-increase tolerance (`auto_simplify_max_dchi2`, default 1). */
+  Wt::WCheckBox *m_auto_simplify;
+  Wt::WContainerWidget *m_auto_simplify_dchi2_div;
+  NativeFloatSpinBox *m_auto_simplify_max_dchi2;
+
   // Wt::WComboBox *m_u_pu_data_source;
   Wt::Core::observing_ptr<PopupDivMenu> m_more_options_menu;
   Wt::Core::observing_ptr<PopupDivMenuItem> m_apply_energy_cal_item;
@@ -439,6 +544,12 @@ protected:
   Wt::Core::observing_ptr<PopupDivMenuItem> m_show_background;
   Wt::Core::observing_ptr<PopupDivMenuItem> m_hide_background;
   bool m_showing_background;
+
+  /** The per-right-click ROI context menu created in `handleRoiRightClick()`, so the next
+   right-click can drop it.  Its normal teardown is its own `aboutToHide()`, but that signal does not
+   fire for every dismissal path (see the creation site), which would leak one menu per right-click.
+   */
+  Wt::Core::observing_ptr<PopupDivMenu> m_roiRightClickMenu;
 
   /** If the user wants to show reference gamma lines, we'll use a #ReferencePhotopeakDisplay
    widget to calculate them and load them to m_spectrum; this is primarily for code re-use

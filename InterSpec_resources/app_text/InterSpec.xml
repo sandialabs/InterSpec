@@ -176,6 +176,7 @@
   <message id="app-tab-spec-files">Spectrum Files</message>
   <message id="app-tab-terminal">Terminal</message>
   <message id="app-tab-isotopics">Isotopics</message>
+  <message id="app-tab-llm-assistant">LLM Assistant</message>
 
   <message id="app-tab-tt-ref-photopeak">Allows user to display reference photopeak lines from x-rays,
     gammas, or nuclear reactions.  
@@ -200,6 +201,7 @@
   <message id="app-tab-tt-auto-search">Auto Peak Search</message>
   <message id="app-tab-tt-terminal">Numeric, algebraic, and text-based spectrum interaction terminal.</message>
   <message id="app-tab-tt-rel-eff">Relative Efficiency analysis, from peaks you have fit.</message>
+  <message id="app-tab-tt-llm-assistant">Chat with the Large Language Model assistant for spectrum analysis help.</message>
 
 
   <!-- App-level menu names -->
@@ -348,6 +350,7 @@
   <message id="app-mi-tools-file-par">File Parameters</message>
   <message id="app-mi-tt-tools-file-par">Allows user to view/edit the file parameters. If ever the application is unable to render activity calculation, use this tool to provide parameters the original file did not provide; <code>InterSpec</code> needs all parameters for activity calculation.</message>
   <message id="app-mi-tools-en-sum">Energy Range Sum</message>
+  <message id="app-mi-tt-tools-llm">Open the Large Language Model assistant for spectrum analysis help.</message>
   <message id="app-mi-tt-tools-en-sum">Sums the number of gammas in region of interest (ROI). Can also be accessed by left-click dragging over the ROI while holding both the <kbd><b>ALT</b></kbd> and <kbd><b>SHIFT</b></kbd> keys.</message>
   <message id="app-mi-tools-query">File Query Tool</message>
   <message id="app-mi-tt-tools-query">Searches through a directory (recursively) for spectrum files that match specified conditions.</message>

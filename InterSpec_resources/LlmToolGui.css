@@ -1,0 +1,631 @@
+/* LlmToolGui Widget Styles */
+
+/* Main container for the LLM tool widget */
+.LlmToolGui {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  
+  user-select: text;
+  -webkit-user-select: text;
+}
+
+/* Wrapper for scroll area and menu icon */
+.LlmScrollWrapper {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+/* Menu icon positioned in upper-right corner.  Reserve room for Windows' native vertical
+   scrollbar, which occupies layout space and can otherwise cover the right edge of the button. */
+.LlmMenuIcon {
+  position: absolute;
+  top: 2px;
+  right: 20px;
+  z-index: 100;
+}
+
+/* Scroll area for conversations */
+.LlmConversationScrollArea {
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  background-color: var(--interspec-background-color, #ffffff);
+}
+
+/* Container holding all interaction displays */
+.LlmConversationContainer {
+  padding: 10px;
+}
+
+/* Input field styles */
+.llm-input-edit {
+  font-size: 14px;
+}
+
+.llm-input-edit.disabled {
+  opacity: 0.6;
+  background-color: var(--interspec-input-background, #f5f5f5);
+  cursor: not-allowed;
+}
+
+/* Send button styles */
+.llm-send-button {
+  min-width: 80px;
+}
+
+.llm-send-button.disabled {
+  opacity: 0.6;
+  background-color: var(--interspec-button-background, #f5f5f5);
+  cursor: not-allowed;
+}
+
+/* The dark theme has a global disabled-button rule; keep assistant controls tied to the active theme. */
+.LlmToolGui button[disabled] {
+  color: var(--interspec-button-text-color, white);
+  background-color: var(--interspec-button-background, #888888);
+  border-color: var(--interspec-button-border-color, #e1e1e1);
+}
+
+/* ============================================ */
+/* LlmInteractionDisplay - Main interaction panel */
+/* ============================================ */
+
+.LlmInteractionDisplay {
+  margin-bottom: 15px;
+  border: 1px solid var(--interspec-border-color, #d0d0d0);
+  border-radius: 6px;
+  background-color: var(--interspec-input-background, #fafafa);
+}
+
+.LlmInteractionDisplay.Wt-panel > .titlebar {
+  background-color: var(--interspec-input-background, #e8f4f8) !important;
+  border-bottom: 1px solid var(--interspec-border-color, #b8d4dc);
+  padding: 10px 12px;
+  font-weight: 600;
+  color: var(--interspec-text-color, #2c3e50);
+  display: flex;
+  /* justify-content: space-between; */
+  align-items: center;
+}
+
+.LlmInteractionDisplay.Wt-panel > .titlebar .LlmStatusIndicator {
+  flex-grow: 1;
+  flex-shrink: 1;
+}
+
+.LlmInteractionDisplay.Wt-panel > .titlebar .RoundMenuIcon {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.LlmInteractionDisplay.Wt-panel > .body {
+  padding: 12px;
+  background-color: var(--interspec-input-background, #ffffff);
+}
+
+/* Status indicator in title */
+.LlmStatusIndicator {
+  font-weight: normal;
+  font-size: 13px;
+  color: var(--interspec-label-color, #666);
+  margin-left: 8px;
+}
+
+/* Summary section at top of interaction */
+.LlmInteractionSummary {
+  padding: 8px 12px;
+  background-color: var(--interspec-background-color, #f8f9fa);
+  border-bottom: 1px solid var(--interspec-border-color, #dee2e6);
+  font-size: 12px;
+  color: var(--interspec-label-color, #6c757d);
+  margin-bottom: 10px;
+}
+
+.LlmSummaryItem {
+  display: inline;
+  margin-right: 10px;
+}
+
+/* Sub-agent nesting indentation */
+.LlmSubAgentNesting {
+  margin-left: 20px;
+  margin-top: 10px;
+  border-left: 3px solid var(--interspec-border-color, #6c757d);
+}
+
+.LlmUserQuestion {
+  
+}
+
+.LlmQuestionLabel {
+  display: block;
+}
+
+.LlmQuestionContent {
+  display: block;
+  margin-bottom: 8px;
+}
+
+.LlmNestLevel1 {
+  margin-left: 20px;
+}
+
+.LlmNestLevel2 {
+  margin-left: 40px;
+}
+
+.LlmNestLevel3 {
+  margin-left: 60px;
+}
+
+/* ============================================ */
+/* LlmInteractionTurnDisplay - Base turn panel */
+/* ============================================ */
+
+.LlmInteractionTurnDisplay {
+  margin-bottom: 10px;
+  border: 1px solid var(--interspec-border-color, #e0e0e0);
+  border-radius: 4px;
+  background-color: var(--interspec-input-background, #ffffff);
+}
+
+.LlmInteractionTurnDisplay.Wt-panel > .titlebar {
+  background-color: var(--interspec-background-color, #f5f5f5) !important;
+  padding: 8px 10px;
+  font-size: 14px;
+  color: var(--interspec-text-color, #495057);
+  display: flex;
+  /* justify-content: space-between; */
+  align-items: center;
+}
+
+/*
+.LlmInteractionTurnDisplay.Wt-panel > .titlebar .Wt-label {
+  flex-grow: 1;
+  flex-shrink: 1;
+}
+ */
+
+
+.Wt-panel.LlmInteractionTurnDisplay .titlebar .RoundMenuIcon {
+  margin-left: auto;
+  flex-shrink: 0;
+}
+
+.LlmInteractionTurnDisplay.Wt-panel > .body {
+  padding: 10px;
+}
+
+/* ============================================ */
+/* LlmFinalResponseDisplay */
+/* ============================================ */
+
+.LlmFinalResponseDisplay.Wt-panel > .titlebar {
+  background-color: var(--interspec-background-color, #e7f3e7) !important;
+  border-bottom: 1px solid var(--interspec-border-color, #c3e6cb);
+  color: var(--interspec-text-color, #212529);
+}
+
+.LlmResponseContent {
+  white-space: pre-wrap;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--interspec-text-color, #212529);
+  margin-bottom: 12px;
+}
+
+.LlmMetadata {
+  font-size: 12px;
+  color: var(--interspec-label-color, #6c757d);
+  padding-top: 8px;
+  border-top: 1px solid var(--interspec-border-color, #e9ecef);
+}
+
+.LlmTimestamp, .LlmDuration, .LlmTokenUsage {
+  display: inline;
+  margin-right: 10px;
+}
+
+.LlmThinkingContent {
+  margin-top: 12px;
+  padding: 10px;
+  background-color: var(--interspec-background-color, #fff3cd);
+  border-left: 3px solid #ffc107;
+  border-radius: 4px;
+}
+
+.LlmThinkingLabel {
+  font-weight: 600;
+  color: var(--interspec-text-color, #856404);
+  display: block;
+  margin-bottom: 6px;
+}
+
+.LlmThinkingContent > .Wt-text {
+  color: var(--interspec-text-color, #856404);
+  font-size: 13px;
+}
+
+/* ============================================ */
+/* LlmToolRequestDisplay */
+/* ============================================ */
+
+.LlmToolRequestDisplay.Wt-panel > .titlebar {
+  background-color: var(--interspec-background-color, #e8f0fe) !important;
+  border-bottom: 1px solid var(--interspec-border-color, #c5d9f1);
+  color: var(--interspec-text-color, #212529);
+}
+
+.LlmToolCallItem {
+  margin-bottom: 12px;
+  padding: 10px;
+  background-color: var(--interspec-background-color, #f8f9fa);
+  border-left: 3px solid var(--interspec-link-color, #007bff);
+  border-radius: 4px;
+}
+
+.LlmToolName {
+  font-size: 14px;
+  color: var(--interspec-link-color, #0056b3);
+  font-weight: 600;
+}
+
+.LlmInvocationId {
+  font-size: 12px;
+  color: var(--interspec-label-color, #6c757d);
+  font-family: "Courier New", monospace;
+}
+
+.LlmParamsLabel {
+  display: block;
+  margin-top: 8px;
+  margin-bottom: 4px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--interspec-text-color, #495057);
+}
+
+.LlmToolParams {
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  background-color: var(--interspec-input-background, #ffffff);
+  border: 1px solid var(--interspec-border-color, #ced4da);
+  color: var(--interspec-text-color, #212529);
+  padding: 8px;
+  border-radius: 3px;
+  width: 100%;
+}
+
+/* ============================================ */
+/* LlmToolResultsDisplay */
+/* ============================================ */
+
+.LlmToolResultsDisplay.Wt-panel > .titlebar {
+  background-color: var(--interspec-background-color, #f0e8ff) !important;
+  border-bottom: 1px solid var(--interspec-border-color, #d4c5f1);
+  color: var(--interspec-text-color, #212529);
+}
+
+.LlmToolResultItem {
+  margin-bottom: 12px;
+  padding: 10px;
+  background-color: var(--interspec-background-color, #f8f9fa);
+  border-left: 3px solid var(--interspec-link-color, #6f42c1);
+  border-radius: 4px;
+}
+
+/* Error state for tool results */
+.LlmToolResultItem.LlmToolResultError {
+  background-color: var(--interspec-background-color, #fff5f5);
+  border-left: 3px solid #dc3545;
+}
+
+/* Status indicators */
+.LlmToolStatusError {
+  color: #dc3545;
+  font-weight: bold;
+  font-size: 12px;
+}
+
+.LlmToolStatusPending {
+  color: #ffc107;
+  font-weight: bold;
+  font-size: 12px;
+}
+
+.LlmResultLabel {
+  display: block;
+  margin-top: 8px;
+  margin-bottom: 4px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--interspec-text-color, #495057);
+}
+
+.LlmToolResult {
+  font-family: "Courier New", monospace;
+  font-size: 12px;
+  background-color: var(--interspec-input-background, #ffffff);
+  border: 1px solid var(--interspec-border-color, #ced4da);
+  color: var(--interspec-text-color, #212529);
+  padding: 8px;
+  border-radius: 3px;
+  width: 100%;
+}
+
+/* ============================================ */
+/* Visual Content in Tool Results               */
+/* ============================================ */
+
+.LlmToolVisual {
+  margin-top: 8px;
+  border: 1px solid var(--interspec-border-color, #ddd);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.LlmToolVisualTitle {
+  display: block;
+  font-weight: bold;
+  font-size: 0.85em;
+  padding: 4px 8px;
+  background: var(--interspec-background-color, #f5f5f5);
+  border-bottom: 1px solid var(--interspec-border-color, #ddd);
+  color: var(--interspec-text-color, #495057);
+}
+
+.LlmToolVisualDesc {
+  display: block;
+  font-size: 0.8em;
+  padding: 2px 8px 4px 8px;
+  color: var(--interspec-label-color, #6c757d);
+  background: var(--interspec-background-color, #f5f5f5);
+  border-bottom: 1px solid var(--interspec-border-color, #ddd);
+}
+
+.LlmToolVisualChart {
+  width: 500px;
+  max-width: 75vw;
+  min-height: 150px;
+  position: relative;
+}
+
+.LlmToolVisualReportBtn {
+  margin: 6px 8px;
+}
+
+.LlmSubAgentLabel {
+  display: block;
+  margin-top: 12px;
+  margin-bottom: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--interspec-text-color, #495057);
+}
+
+/* ============================================ */
+/* LlmErrorDisplay */
+/* ============================================ */
+
+.LlmErrorDisplay.Wt-panel > .titlebar {
+  background-color: var(--interspec-background-color, #f8d7da) !important;
+  border-bottom: 1px solid var(--interspec-border-color, #f5c6cb);
+  color: var(--interspec-text-color, #721c24);
+}
+
+.LlmErrorMessage {
+  color: var(--interspec-text-color, #721c24);
+  background-color: var(--interspec-input-background, #fff5f5);
+  border-left: 4px solid #dc3545;
+  border-radius: 4px;
+  margin-bottom: 12px;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+  font-family: "Courier New", "Consolas", "Monaco", monospace;
+  font-size: 13px;
+  line-height: 1.5;
+  display: block;
+}
+
+.LlmRetryButton {
+  background-color: #dc3545;
+  color: var(--interspec-button-text-color, white);
+  cursor: pointer;
+  margin-right: 8px;
+}
+
+.LlmRetryButton:hover {
+  background-color: #c82333;
+}
+
+.LlmContinueButton {
+  background-color: var(--interspec-button-background, #6c757d);
+  border-color: var(--interspec-button-border-color, #6c757d);
+  color: var(--interspec-button-text-color, white);
+  cursor: pointer;
+}
+
+.LlmContinueButton:hover {
+  background-color: var(--interspec-button-background, #5a6268);
+}
+
+.LlmErrorRetryInfo {
+  color: var(--interspec-text-color, #856404);
+  background-color: var(--interspec-background-color, #fff3cd);
+  padding: 8px 10px;
+  border-left: 3px solid #ffc107;
+  border-radius: 4px;
+  margin-bottom: 10px;
+  font-size: 13px;
+}
+
+.LlmErrorHelpText {
+  color: var(--interspec-label-color, #6c757d);
+  font-size: 13px;
+  margin-top: 12px;
+  font-style: italic;
+}
+
+/* ============================================ */
+/* JSON Display Dialog */
+/* ============================================ */
+
+.LlmJsonDisplay {
+  font-family: "Courier New", "Consolas", monospace;
+  font-size: 12px;
+  line-height: 1.4;
+  background-color: var(--interspec-input-background, #f8f9fa);
+  border: 1px solid var(--interspec-border-color, #ced4da);
+  color: var(--interspec-text-color, #212529);
+  padding: 10px;
+  width: 100%;
+  max-width: 800px;
+}
+
+/* ============================================ */
+/* Utility classes */
+/* ============================================ */
+
+.LlmEmptyMessage {
+  color: var(--interspec-label-color, #6c757d);
+  font-style: italic;
+  font-size: 13px;
+}
+
+/* ============================================ */
+/* Welcome / getting-started panel               */
+/* ============================================ */
+
+/* Shown in the otherwise empty conversation area before the first message. */
+.LlmWelcome {
+  max-width: 640px;
+  margin: 24px auto;
+  padding: 4px 8px;
+  color: var(--interspec-text-color, #495057);
+}
+
+.LlmWelcomeTitle {
+  display: block;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--interspec-text-color, #2c3e50);
+  margin-bottom: 10px;
+}
+
+.LlmWelcomeSummary {
+  display: block;
+  font-size: 14px;
+  line-height: 1.6;
+  margin-bottom: 12px;
+}
+
+.LlmWelcomeLearnMore {
+  font-size: 14px;
+  cursor: pointer;
+  color: var(--interspec-link-color, #0d6efd);
+}
+
+/* ============================================ */
+/* Staged Image Preview Strip                    */
+/* ============================================ */
+
+/* Vertical container wrapping preview strip + input edit */
+.LlmInputColumn {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+}
+
+/* Horizontal strip showing staged image thumbnails */
+.LlmStagedImagePreview {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  padding: 3px 4px;
+  gap: 4px;
+  background-color: var(--interspec-background-color, #f0f4f8);
+  border: 1px solid var(--interspec-border-color, #d0d8e0);
+  border-radius: 4px;
+  margin-bottom: 4px;
+}
+
+/* Individual staged image entry (thumbnail + name + X) */
+.LlmStagedImageEntry {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background-color: var(--interspec-input-background, #e8ecf0);
+  border-radius: 3px;
+  padding: 2px 4px;
+}
+
+.LlmStagedImageThumb {
+  max-width: 40px;
+  max-height: 40px;
+  border-radius: 2px;
+  object-fit: cover;
+  border: 1px solid var(--interspec-border-color, #ccc);
+}
+
+.LlmStagedImageName {
+  font-size: 11px;
+  color: var(--interspec-text-color, #495057);
+  max-width: 80px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.LlmStagedImageRemove {
+  background: none;
+  border: none;
+  color: var(--interspec-label-color, #999);
+  font-size: 14px;
+  cursor: pointer;
+  padding: 0 3px;
+  line-height: 1;
+}
+
+.LlmStagedImageRemove:hover {
+  color: #dc3545;
+}
+
+/* ============================================ */
+/* User Question Image Thumbnails               */
+/* ============================================ */
+
+/* Strip of image thumbnails shown in the user question area */
+.LlmUserQuestionImages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.LlmUserQuestionImageThumb {
+  max-width: 120px;
+  max-height: 120px;
+  border-radius: 4px;
+  border: 1px solid var(--interspec-border-color, #ccc);
+  object-fit: contain;
+  cursor: pointer;
+}
+
+/* ============================================ */
+/* Tool Result Image Preview                     */
+/* ============================================ */
+
+.LlmToolResultImageThumb {
+  display: block;
+  max-width: 300px;
+  max-height: 200px;
+  border-radius: 4px;
+  border: 1px solid var(--interspec-border-color, #ccc);
+  object-fit: contain;
+  margin-top: 6px;
+  margin-bottom: 4px;
+}

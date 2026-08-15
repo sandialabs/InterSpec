@@ -85,7 +85,6 @@
   <message id="rpd-tbl-hdr-tt-trans">Nuklida aktual yang meluruh untuk menghasilkan partikel ini.</message>
   <message id="rpd-tbl-hdr-tt-trans-mode">Mode peluruhan nuklida induk, yang menghasilkan partikel ini.</message>
   <message id="rpd-tbl-hdr-tt-type">Jenis partikel yang dihasilkan</message>
-  <message id="rpd-tbl-hdr-tt-"></message>
 
   <!-- Fit Sources (peak fitting from displayed reference lines) -->
   <message id="rpd-fit-source">Sesuaikan Sumber</message>

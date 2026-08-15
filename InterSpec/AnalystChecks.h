@@ -31,6 +31,7 @@
 #include <memory>
 #include <variant>
 #include <optional>
+#include <functional>
 
 #include "SpecUtils/SpecFile.h"
 
@@ -93,7 +94,14 @@ namespace AnalystChecks
   };
   
   InterSpec_API FitPeakStatus fit_user_peak( const FitPeakOptions &options, InterSpec *interspec );
-  
+
+  /** Async version of fit_user_peak that runs the expensive peak search in a background thread.
+   The callback is called on the GUI thread with either a FitPeakStatus (success) or a string (error message).
+   */
+  using FitPeakCallback = std::function<void( std::variant<FitPeakStatus, std::string> )>;
+  InterSpec_API void fit_user_peak_async( const FitPeakOptions &options, InterSpec *interspec,
+                                          FitPeakCallback callback );
+
   struct GetUserPeakOptions {
     SpecUtils::SpectrumType specType;
     std::optional<double> lowerEnergy;
@@ -131,11 +139,19 @@ namespace AnalystChecks
     std::vector<std::shared_ptr<const PeakDef>> fitPeaks;
     std::vector<std::shared_ptr<const PeakDef>> peaksToRemove;
     bool peaksWereRemovedFromSession = false;
+    bool noObservablePeaksFit = false;
     std::vector<std::string> warnings;
   };
   
   InterSpec_API FitPeaksForNuclideStatus fit_peaks_for_nuclides( const FitPeaksForNuclideOptions &options, InterSpec *interspec );
-  
+
+  /** Async version of fit_peaks_for_nuclides that runs the expensive fitting in a background thread.
+   The callback is called on the GUI thread with either a FitPeaksForNuclideStatus (success) or a string (error message).
+   */
+  using FitPeaksCallback = std::function<void( std::variant<FitPeaksForNuclideStatus, std::string> )>;
+  InterSpec_API void fit_peaks_for_nuclides_async( const FitPeaksForNuclideOptions &options, InterSpec *interspec,
+                                                    FitPeaksCallback callback );
+
   /** Calculates an approximate importance that a peak in a spectrum will have for a given nuclide.
    * 
    * Importance is defined by `yield(i)*sqrt(energy(i))/sum(yield*sqrt(energy))`.
@@ -172,88 +188,157 @@ namespace AnalystChecks
    @throws std::runtime_error if no InterSpec session, no foreground loaded, or FWHM cannot be determined
    */
   float get_expected_fwhm( const double energy, InterSpec *interspec );
-  
+
+  /** Returns a callable giving the expected FWHM (keV) at an energy (keV).
+
+   The underlying resolution source is resolved once, up front - in order of preference: the
+   loaded DRF's resolution info, a one-time resolution fit to the detected peaks, the nearest
+   detected peak (within 20% of the requested energy), then a generic HPGe/low-res estimate -
+   so the returned function is cheap to evaluate repeatedly, and does not touch InterSpec
+   session state when called.
+
+   @param interspec Pointer to the InterSpec session
+   @return Function mapping energy (keV) to expected FWHM (keV)
+   @throws std::runtime_error if no InterSpec session or no foreground loaded
+   */
+  InterSpec_API std::function<float(double)> make_expected_fwhm_fcn( InterSpec *interspec );
+
   struct SpectrumCountsInEnergyRange
   {
-    double lower_energy;
-    double upper_energy;
+    double lower_energy;  // actual lower energy, snapped to channel boundary
+    double upper_energy;  // actual upper energy, snapped to channel boundary
 
-    double foreground_counts;
+    double foreground_counts;  // total counts in range
 
     /** Counts divided by live time.  If live time of spectrum is not valid, this will be set to NaN. */
     double foreground_cps;
 
-    struct CountsWithComparisonToForeground
+    // Per-channel data (empty when max_channels <= 1)
+    std::vector<float> channel_lower_energies;    // lower edge of each (possibly combined) bin
+    std::vector<float> foreground_channel_counts;  // counts in each bin
+    size_t channel_combine_factor = 1;             // the 2^N combining factor used
+
+    struct BackgroundSecondaryInfo
     {
       double counts;
 
       /** Counts divided by live time.  If live time of spectrum is not valid, this will be set to NaN. */
       double cps;
 
-      /** The number of statistical sigma the foreground is is elevated, 
-       * relative to this spectrum (the background or secondary), when live-time normalized. 
-       * Positive numbers indicate foreground is elevated, negative numbers indicate 
+      /** The number of statistical sigma the foreground is elevated,
+       * relative to this spectrum (the background or secondary), when live-time normalized.
+       * Positive numbers indicate foreground is elevated, negative numbers indicate
        * deficit in foreground.
-       * */
+       */
       double num_sigma_rel_foreground;
-    };//struct CountsWithComparisonToForeground
 
-    std::optional<CountsWithComparisonToForeground> background_info;
-    std::optional<CountsWithComparisonToForeground> secondary_info;
+      /** Scale factor: foreground_live_time / this_live_time.
+       * Set to 1.0 if either live time is zero or invalid.
+       */
+      double live_time_scale_factor;
+
+      /** Per-channel counts, rebinned to foreground energy calibration and scaled by live-time ratio.
+       * Empty when max_channels <= 1.
+       */
+      std::vector<float> channel_counts;
+    };//struct BackgroundSecondaryInfo
+
+    std::optional<BackgroundSecondaryInfo> background_info;
+    std::optional<BackgroundSecondaryInfo> secondary_info;
   };//struct SpectrumCountsInEnergyRange
 
-  SpectrumCountsInEnergyRange get_counts_in_energy_range( double lower_energy, double upper_energy, InterSpec *interspec );
+  SpectrumCountsInEnergyRange get_counts_in_energy_range( double lower_energy, double upper_energy,
+                                                          int max_channels, InterSpec *interspec );
 
-  /** Enum specifying the action to perform when editing a peak. */
-  enum class EditPeakAction
+  /** Structural actions for peak editing that are mutually exclusive with property changes. */
+  enum class EditPeakStructuralAction
   {
-    SetEnergy,
-    SetFwhm,
-    SetAmplitude,
-    SetEnergyUncertainty,
-    SetFwhmUncertainty,
-    SetAmplitudeUncertainty,
-    SetRoiLower,
-    SetRoiUpper,
-    SetSkewType,
-    SetContinuumType,
-    SetSource,
-    SetColor,
-    SetUserLabel,
-    SetUseForEnergyCalibration,
-    SetUseForShieldingSourceFit,
-    SetUseForManualRelEff,
     DeletePeak,
     SplitFromRoi,
     MergeWithLeft,
     MergeWithRight
-  };//enum class EditPeakAction
+  };//enum class EditPeakStructuralAction
 
-  /** Converts EditPeakAction enum to string representation.
+  const char *to_string( EditPeakStructuralAction action );
+  EditPeakStructuralAction structural_action_from_string( const std::string &str );
 
-   @param action The edit action to convert
-   @return String representation of the action
+
+  /** Options for editing a peak at a specified energy.
+
+   Supports setting multiple peak properties in a single call.  When a structural action is
+   specified (Delete, Split, Merge), all property fields are ignored.
+
+   Shape-affecting property changes (mean, fwhm, amplitude, skew type/params, continuum
+   type/coefficients, ROI bounds) trigger an automatic refit unless suppressed via #refit.
+   Fit-for flags and metadata changes do not trigger auto-refit.
+
+   Important: setting a parameter value (e.g., skewPar0) triggers a refit that may adjust
+   that value.  To lock a value, also set its corresponding fitFor flag to false.
    */
-  const char* to_string( EditPeakAction action );
-
-  /** Converts string to EditPeakAction enum.
-
-   @param str String representation of the action
-   @return The corresponding EditPeakAction enum value
-   @throws std::runtime_error if string does not match a valid action
-   */
-  EditPeakAction edit_peak_action_from_string( const std::string &str );
-
-  /** Options for editing a peak at a specified energy. */
   struct EditAnalysisPeakOptions
   {
+    /** Energy (keV) used to find the nearest analysis peak (must be within 1 FWHM). */
     double energy;
-    EditPeakAction editAction;
-    SpecUtils::SpectrumType specType;
-    std::optional<double> doubleValue;
-    std::optional<std::string> stringValue;
-    std::optional<bool> boolValue;
-    std::optional<double> uncertainty;
+    SpecUtils::SpectrumType specType = SpecUtils::SpectrumType::Foreground;
+
+    /** When set, performs a structural action and all property fields below are ignored. */
+    std::optional<EditPeakStructuralAction> structuralAction;
+
+    // --- Gaussian peak properties ---
+    std::optional<double> meanEnergy;
+    std::optional<double> fwhm;
+    std::optional<double> amplitude;
+
+    std::optional<double> meanUncertainty;
+    std::optional<double> fwhmUncertainty;
+    std::optional<double> amplitudeUncertainty;
+
+    std::optional<bool> fitForMean;
+    std::optional<bool> fitForFwhm;       // maps to PeakDef::CoefficientType::Sigma
+    std::optional<bool> fitForAmplitude;
+
+    // --- Skew ---
+    std::optional<std::string> skewType;
+    std::optional<double> skewPar0;
+    std::optional<double> skewPar1;
+    std::optional<double> skewPar2;
+    std::optional<double> skewPar3;
+    std::optional<bool> fitForSkewPar0;
+    std::optional<bool> fitForSkewPar1;
+    std::optional<bool> fitForSkewPar2;
+    std::optional<bool> fitForSkewPar3;
+
+    // --- Continuum ---
+    std::optional<std::string> continuumType;
+    std::optional<double> continuumCoef0;
+    std::optional<double> continuumCoef1;
+    std::optional<double> continuumCoef2;
+    std::optional<double> continuumCoef3;
+    std::optional<bool> fitForContinuumCoef0;
+    std::optional<bool> fitForContinuumCoef1;
+    std::optional<bool> fitForContinuumCoef2;
+    std::optional<bool> fitForContinuumCoef3;
+
+    // --- ROI bounds ---
+    std::optional<double> roiLowerEnergy;
+    std::optional<double> roiUpperEnergy;
+
+    // --- Source / metadata ---
+    std::optional<std::string> source;
+    std::optional<std::string> color;
+    std::optional<std::string> userLabel;
+
+    // --- Usage flags ---
+    std::optional<bool> useForEnergyCalibration;
+    std::optional<bool> useForShieldingSourceFit;
+    std::optional<bool> useForManualRelEff;
+
+    /** Refit control.
+     nullopt: auto (refit if shape-affecting values changed).
+     true: force refit even if only metadata changed.
+     false: suppress refit even if shape values changed.
+     */
+    std::optional<bool> refit;
   };//struct EditAnalysisPeakOptions
 
   /** Results of peak edit operation. */
@@ -261,20 +346,19 @@ namespace AnalystChecks
   {
     bool success;
     std::string message;
+    bool refitPerformed = false;
     std::optional<std::shared_ptr<const PeakDef>> modifiedPeak;
     std::vector<std::shared_ptr<const PeakDef>> peaksInRoi;
   };//struct EditAnalysisPeakStatus
 
   /** Edit or delete a peak at the specified energy.
 
-   This function allows modifying peak properties (energy, FWHM, amplitude),
-   ROI bounds, continuum/skew types, assigning sources, setting colors/labels,
-   deleting peaks, or splitting/merging ROIs.
+   Supports modifying multiple peak properties in a single call, with optional automatic
+   refitting when shape-affecting properties change.
 
-   @param options Specifies the energy, action, and values for the edit
+   @param options Specifies the energy and property changes (or structural action) to apply
    @param interspec Pointer to the InterSpec session containing the peak
-   @return EditAnalysisPeakStatus containing success/failure and modified peak info
-   @throws std::runtime_error if InterSpec is null or other errors occur
+   @return EditAnalysisPeakStatus containing success/failure, refit info, and modified peak
    */
   InterSpec_API EditAnalysisPeakStatus edit_analysis_peak( const EditAnalysisPeakOptions &options, InterSpec *interspec );
 
@@ -549,6 +633,136 @@ namespace AnalystChecks
    @throws std::runtime_error if InterSpec is null or no spectrum is loaded.
    */
   InterSpec_API ComptonPeakCheckStatus compton_peak_check( const ComptonPeakCheckOptions &options, InterSpec *interspec );
+
+
+  /** Graded verdict of the pure-beta-emitter (bremsstrahlung) continuum check.
+
+   The check background-subtracts the foreground and analyzes the net continuum shape;
+   a smooth quasi-exponential hump with no gamma-peak evidence and a gradual (non-cliff)
+   high-energy fade is characteristic of bremsstrahlung from a pure beta emitter
+   (e.g. P-32, Sr-90/Y-90, Tl-204).
+   */
+  enum class BetaContinuumVerdict
+  {
+    BackgroundNotLoaded,   // check requires a displayed Background spectrum to subtract
+    NoContinuumElevation,  // net continuum not significantly above background
+    BremLike,              // all gates passed: smooth brem-shaped continuum, no gamma peaks
+    Ambiguous,             // elevation present, but a soft gate failed (smoothness marginal,
+                           //  or too little tail to analyze)
+    NotBremLike,           // a hard gate failed (gamma peaks present, cliff-like termination,
+                           //  shape too hard/soft, or termination beyond plausible beta endpoint)
+    AnnihilationDominated  // strong 511 keV peak with continuum ending just above it -
+                           //  suggests a positron source (e.g. F-18), not a pure beta-minus emitter
+  };//enum class BetaContinuumVerdict
+
+  const char *to_string( BetaContinuumVerdict verdict );
+
+  /** A peak the beta-continuum check considered as gamma-source evidence (or an x-ray report). */
+  struct BetaContinuumPeakInfo
+  {
+    double energy = 0.0;             // keV
+    double amplitude = 0.0;          // peak area, counts
+    double numSigmaElevated = 0.0;   // significance of elevation over the (live-time scaled)
+                                     //  matching background peak; over zero if no match
+    bool isAnnihilation = false;     // within tolerance of 511 keV
+  };//struct BetaContinuumPeakInfo
+
+  /** A pure-beta nuclide whose (equilibrium-chain) endpoint is consistent with the observed
+   continuum termination energy.  A consistency candidate - NOT an identification.
+   */
+  struct BetaContinuumCandidateNuclide
+  {
+    std::string nuclide;             // e.g. "Sr90"
+    double betaEndpoint = 0.0;       // keV; max endpoint over the parent and any shorter-lived
+                                     //  (in-equilibrium) descendants
+    std::string note;                // e.g. "endpoint is from in-equilibrium daughter Y90"
+  };//struct BetaContinuumCandidateNuclide
+
+  /** Options for beta_continuum_check. */
+  struct BetaContinuumCheckOptions
+  {
+    /** Spectrum to test as the candidate beta/bremsstrahlung source; Foreground or
+     SecondForeground only (the displayed Background is always the subtraction baseline). */
+    SpecUtils::SpectrumType specType = SpecUtils::SpectrumType::Foreground;
+  };//struct BetaContinuumCheckOptions
+
+  /** Worker-thread-safe inputs for beta_continuum_check - no InterSpec session state. */
+  struct BetaContinuumCheckInput
+  {
+    std::shared_ptr<const SpecUtils::Measurement> foreground;    // required
+    std::shared_ptr<const SpecUtils::Measurement> background;    // null => BackgroundNotLoaded
+    std::vector<std::shared_ptr<const PeakDef>> foregroundPeaks; // user + auto-search peaks
+    std::vector<std::shared_ptr<const PeakDef>> backgroundPeaks; // user + auto-search peaks
+    std::function<float(double)> expectedFwhm;                   // FWHM(energy in keV) in keV; required
+  };//struct BetaContinuumCheckInput
+
+  /** Results of the beta/bremsstrahlung continuum analysis. */
+  struct BetaContinuumCheckStatus
+  {
+    BetaContinuumVerdict verdict = BetaContinuumVerdict::BackgroundNotLoaded;
+
+    /** Total net-continuum significance (sigma) over the analysis range, peak regions excluded. */
+    double continuumElevationSigma = 0.0;
+
+    // Shape metrics; populated only once continuum elevation was established:
+    std::optional<double> modeEnergy;           // keV; maximum of the smoothed net continuum (turn-on hump)
+    std::optional<double> terminationEnergy;    // keV; last coarse bin > 3 sigma.  A statistics-limited
+                                                //  LOWER BOUND on the beta endpoint energy.
+    std::optional<double> terminationRatio;     // smoothed net at termination / smoothed max; small
+                                                //  (<~0.05) for a gradual brem fade, large for a cliff
+    std::optional<double> characteristicEnergy; // keV; -1/(dln(net)/dE) at fit midrange (continuum softness)
+    std::optional<double> fitChi2Dof;           // robust log-fit chi2/dof (3% systematic floor included)
+    std::optional<double> fitOutlierFraction;   // fraction of fit bins rejected as outliers
+    std::optional<double> fitMaxSegmentResidual;// max |mean residual| over 5 fit segments, in sigma
+
+    /** Peaks >~120 keV (non-511) significantly elevated over background - gamma-source evidence
+     that vetoes a BremLike verdict. */
+    std::vector<BetaContinuumPeakInfo> elevatedGammaPeaks;
+
+    /** Peaks at <~120 keV - candidate fluorescence/decay x-rays (e.g. Hg K x-rays from Tl-204's
+     EC branch).  Reported for context; these do NOT veto a BremLike verdict. */
+    std::vector<BetaContinuumPeakInfo> xrayRegionPeaks;
+
+    /** True when a strong 511 keV peak dominates and the continuum terminates just above it. */
+    bool annihilationDominant = false;
+
+    // Set when a weak net tail (beyond the count-quantile used for shape fitting - i.e., holding
+    // <~1% of the net counts) extends past terminationEnergy.  Commonly random-summing (pile-up)
+    // at elevated count rates; not used for shape grading or the endpoint bound.
+    std::optional<double> highEnergyTailUpperEnergy;  // keV
+    std::optional<double> highEnergyTailSigma;        // significance of the tail region net counts
+
+    /** Pure-beta nuclides consistent with terminationEnergy; only filled for
+     BremLike/Ambiguous/AnnihilationDominated verdicts. */
+    std::vector<BetaContinuumCandidateNuclide> candidateNuclides;
+
+    std::vector<std::string> warnings;
+  };//struct BetaContinuumCheckStatus
+
+  /** Check whether the net (background-subtracted) continuum is consistent with bremsstrahlung
+   from a pure beta emitter.
+
+   Worker-thread-safe overload: pure function of the input struct; touches no InterSpec session
+   state.  See BetaContinuumVerdict and BetaContinuumCheckStatus for the semantics of the result.
+
+   @param input Spectra, peak lists, and FWHM function; see BetaContinuumCheckInput.
+   @return BetaContinuumCheckStatus with graded verdict and shape metrics.
+   @throws std::runtime_error if the foreground or FWHM function is missing/unusable.
+   */
+  InterSpec_API BetaContinuumCheckStatus beta_continuum_check( const BetaContinuumCheckInput &input );
+
+  /** Main-thread wrapper around the worker-safe overload above.
+
+   Gathers the displayed foreground (or second foreground) and background spectra, their
+   user + automated-search peaks (running background-peak recovery first), and the expected-FWHM
+   function from the session, then delegates.
+
+   @param options Which spectrum to test (Foreground or SecondForeground).
+   @param interspec Pointer to the InterSpec session.
+   @throws std::runtime_error if InterSpec is null or the candidate spectrum is not loaded.
+   */
+  InterSpec_API BetaContinuumCheckStatus beta_continuum_check( const BetaContinuumCheckOptions &options,
+                                                               InterSpec *interspec );
 
 } // namespace AnalystChecks
 

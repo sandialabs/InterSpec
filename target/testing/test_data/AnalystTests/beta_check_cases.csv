@@ -1,0 +1,39 @@
+# Data-driven cases for AnalystChecks::beta_continuum_check, run by the
+# `test_beta_continuum_case_manifest` case in target/testing/test_AnalystChecks.cpp.
+# Add a spectrum file (any format SpecUtils reads) and a row here to extend coverage -
+# e.g. known brem spectra, heavily-shielded gamma sources, or x-ray generator spectra.
+#
+# All spectra should live in this repository so CI can run every row; rows whose files are not
+# found are skipped (with a note in the test output) rather than failing the test.
+#
+# Columns (comma separated, '#' starts a comment line):
+#   fore_file        - spectrum file; absolute path, or relative to test_data/AnalystTests/
+#   fore_sample      - integer sample number, 'auto' (first record NOT titled "Background"),
+#                      or 'auto-bkg' (shortest-live-time "Background" record; for null tests)
+#   back_file        - file for the background spectrum (may be the same file)
+#   back_sample      - integer sample number, or 'auto-bkg' (longest-live-time "Background"
+#                      record, falling back to the longest-live-time record)
+#   allowed_verdicts - '|'-separated acceptable verdicts: BremLike, Ambiguous, NotBremLike,
+#                      NoContinuumElevation, AnnihilationDominated, BackgroundNotLoaded
+#   min_term_keV     - lower bound on TerminationEnergy, or '-' to skip
+#   max_term_keV     - upper bound on TerminationEnergy, or '-' to skip
+#   note             - free text shown in failure messages
+#   must_contain     - (optional 9th column) a nuclide symbol that must appear in ConsistentPureBetaNuclides ('-' or absent to skip)
+#
+# fore_file, fore_sample, back_file, back_sample, allowed_verdicts, min_term_keV, max_term_keV, note
+# 300s .pcf cases; each file holds its own "Background" record(s) alongside the source record.
+BetaCheck/detx_sr90_unshielded.pcf,   auto,     BetaCheck/detx_sr90_unshielded.pcf,   auto-bkg, BremLike,             500, 2450, Sr-90 unshielded on HPGe
+BetaCheck/nai3x3_sr90_unshielded.pcf, auto,     BetaCheck/nai3x3_sr90_unshielded.pcf, auto-bkg, BremLike,             500, 2450, Sr-90 unshielded on 3x3 NaI
+BetaCheck/nai3x3_tl204_unshielded.pcf,auto,     BetaCheck/nai3x3_tl204_unshielded.pcf,auto-bkg, BremLike|Ambiguous,   -,   950,  Tl-204 (Hg K x-rays must not veto; endpoint 763.7)
+BetaCheck/detx_cs137_shielded.pcf,    auto,     BetaCheck/detx_cs137_shielded.pcf,    auto-bkg, NotBremLike,          -,   -,    Shielded Cs-137: 661.7 peak + Compton structure
+BetaCheck/detx_cs137_shielded.pcf,    auto-bkg, BetaCheck/detx_cs137_shielded.pcf,    auto-bkg, NoContinuumElevation, -,   -,    Null: background record as foreground
+#
+# Detective-X 300s cases, from the nuclide-ID benchmark set (separate fg/bkg files; spectra copied
+# into BetaCheck/, originally question_{128,214,129,167,168}.n42 + background.n42).
+# The P-32 shielded and Y-90 cases were tool false-negatives before the count-quantile fit bound -
+# a trace pile-up tail beyond the beta endpoint was stretching the shape gates.
+BetaCheck/detx_p32_shielded.n42,   auto, BetaCheck/detx_background.n42, auto-bkg, BremLike,           -, 2450, P-32 shielded (pile-up tail must not veto), P32
+BetaCheck/detx_y90_phantom.n42,    auto, BetaCheck/detx_background.n42, auto-bkg, BremLike|Ambiguous, -, -,    Y-90 phantom (hard scattered continuum; ambiguous acceptable), Y90
+BetaCheck/detx_p32_unshielded.n42, auto, BetaCheck/detx_background.n42, auto-bkg, BremLike,           -, 2450, P-32 unshielded
+BetaCheck/detx_sr90_shielded.n42,  auto, BetaCheck/detx_background.n42, auto-bkg, BremLike,           -, 2450, Sr-90 shielded, Sr90
+BetaCheck/detx_sr90_unshielded.n42,auto, BetaCheck/detx_background.n42, auto-bkg, BremLike,           -, 2450, Sr-90 unshielded (benchmark set; independent of the .pcf case above)

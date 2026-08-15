@@ -5,7 +5,8 @@
 
 .simple-dialog.BackPeakPreviewDialog .body
 {
-  max-height: calc( 95vh - 90px );
+  /* The bodys max-height comes from SimpleDialog::updateBodySizeForWindow() - Wt 4 discards a
+     max-height set here.  The preview chart is also sized from the window, in C++. */
   overflow: hidden;
 }
 
@@ -275,7 +276,9 @@
 {
   display: flex;
   justify-content: flex-end;
-  padding: 2px 6px 0 0;
+  align-items: center;
+  column-gap: 8px;
+  padding: 2px 6px 0 8px;
 }
 
 /* Fit zone: inline message + action row (calc.log + Perform Model Fit) + progress/cancel */
@@ -1240,4 +1243,27 @@
   margin-left: 8px;
   font-weight: 500;
   white-space: nowrap;
+}
+
+/* Passive pull-trend interpretation text, sharing the under-chart `.ChartToolbar` strip with the
+   Mult./chi switch.  Ellipsized so it stays on one line and can never push the switch out of
+   view; hidden entirely when the fit has no conclusion to offer. */
+.ShieldingSourceDisplay .ChartToolbar .ShieldSourceTrendMsg
+{
+  flex: 1 1 auto;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-size: 12px;
+  font-style: italic;
+  color: var(--ssd-ink-3, var(--d3spec-text-color, #86868f));
+  opacity: 0.9;
+}
+
+/* Keep the switch pinned to the right whether or not a message is showing. */
+.ShieldingSourceDisplay .ChartToolbar .SwitchCheckbox
+{
+  margin-left: auto;
+  flex: 0 0 auto;
 }

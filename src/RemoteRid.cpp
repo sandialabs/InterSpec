@@ -63,6 +63,7 @@
 #include <Wt/WJavaScript.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
+#include <Wt/Http/Client.h>
 #include <Wt/Http/Request.h>
 #include <Wt/Http/Response.h>
 #include <Wt/WStackedWidget.h>
@@ -192,6 +193,29 @@ std::string run_external_command( const string &exe, const vector<string> &args 
 
 #endif //#if( !ANDROID && !IOS && !BUILD_FOR_WEB_DEPLOYMENT )
 }//namespace
+
+
+bool RemoteRid::isValidRestUrl( const std::string &url )
+{
+  if( url.empty() )
+    return false;
+
+  // Raw whitespace, controls, and JavaScript quoting characters do not belong
+  // in an HTTP URL. Their percent-encoded forms remain supported.
+  for( const unsigned char c : url )
+  {
+    if( (c <= 0x20) || (c == 0x7f) || (c == '\'') || (c == '"') || (c == '\\') )
+      return false;
+  }
+
+  Wt::Http::Client::URL parsed;
+  if( !Wt::Http::Client::parseUrl(url, parsed) )
+    return false;
+
+  return !parsed.host.empty()
+         && (SpecUtils::iequals_ascii(parsed.protocol, "http")
+             || SpecUtils::iequals_ascii(parsed.protocol, "https"));
+}//bool RemoteRid::isValidRestUrl(...)
 
 
 namespace RestRidImp
@@ -545,7 +569,7 @@ public:
     {
       case ServiceType::Rest:
       {
-        const char *url_regex = "^(http(s)?:\\/\\/)[\\w.-]+(?:\\.[\\w\\.-]+)*[\\w\\-\\._~:/?#[\\]@!\\$&'\\(\\)\\*\\+,;=.]+$";
+        const char *url_regex = "^(http(s)?:\\/\\/)[\\w.-]+(?:\\.[\\w\\.-]+)*[\\w\\-\\._~:/?#[\\]@!\\$&\\(\\)\\*\\+,;=%]+$";
         m_url->setValidator( std::make_shared<WRegExpValidator>( url_regex ) );
         m_url->setPlaceholderText( WString::tr("rr-url-empty-text") );
         break;
@@ -590,6 +614,13 @@ public:
 
     m_status_stack = layout->addWidget( std::make_unique<WStackedWidget>(), 2, 0, 1, 2 );
     m_status_stack->addStyleClass( "RestRidInfoStack" );
+
+    // Wt4's WStackedWidget ctor sets an inline `overflow:hidden`, which beats the `overflow-y`
+    //  our stylesheet sets on this stack (Wt3's ctor only added the style class, so the CSS
+    //  worked).  Set it through the API so we win on specificity, else content taller than the
+    //  container is clipped with no scrollbar.
+    m_status_stack->setOverflow( Wt::Overflow::Auto, Wt::Orientation::Vertical );
+    m_status_stack->setOverflow( Wt::Overflow::Hidden, Wt::Orientation::Horizontal );
 
     m_error = m_status_stack->addNew<WText>();
     m_error->addStyleClass( "RestRidError" );
@@ -1060,7 +1091,7 @@ public:
       }else
       {
         WStringStream js;
-        js << message.toUTF8();
+        js << Wt::Utils::htmlEncode( message, Wt::Utils::HtmlEncodingFlag::EncodeNewLines ).toUTF8();
         
         js << "<div class=\"RemoteRidToastButtons\">";
         if( !nuclides.empty() )
@@ -1099,7 +1130,7 @@ public:
       }
       
       WStringStream js;
-      js << msg
+      js << Wt::Utils::htmlEncode( msg, Wt::Utils::HtmlEncodingFlag::EncodeNewLines )
          <<
       "<div class=\"RemoteRidToastButtons\">"
       "<div onclick=\"Wt.emit( document.querySelector('.specviewer').id,{name:'miscSignal'}, 'openRemoteRidTool');"
@@ -1726,7 +1757,7 @@ public:
             return false;
 
           case Wt::ValidationState::Valid:
-            return true;
+            return RemoteRid::isValidRestUrl( m_url->text().toUTF8() );
         }//switch( m_url->validate() )
         
         break;
@@ -1779,7 +1810,7 @@ public:
         return false;
 
       case Wt::ValidationState::Valid:
-        return true;
+        return RemoteRid::isValidRestUrl( m_url->text().toUTF8() );
     }//switch( m_url->validate() )
 #endif
 
@@ -2005,6 +2036,8 @@ void RestRidInterface::setDrf( const string &drf )
 void RestRidInterface::startRestAnalysis( const string ana_service_url )
 {
   const string &resource_url = m_resource->url();
+  const string analysis_url = WString::fromUTF8( ana_service_url + "/analysis" ).jsStringLiteral('\'');
+  const string resource_url_literal = WString::fromUTF8( resource_url ).jsStringLiteral('\'');
   
   // Note: the JS is defined in the C++ to avoid having a separate JS file that will end up being
   // packaged in builds that wont use it (i.e., most InterSpec builds); I dont like having various
@@ -2013,7 +2046,7 @@ void RestRidInterface::startRestAnalysis( const string ana_service_url )
   js <<
   "\n(function(){"
   "let sendAnaRequest = function(formData){\n"
-  "  fetch('" << ana_service_url << "/analysis', {method: 'POST', body: formData})\n"
+  "  fetch(" << analysis_url << ", {method: 'POST', body: formData})\n"
   "    .then(response => {\n"
   "       if( !response.ok ) {\n"
   "         throw new Error('Server returned status ' + response.status);\n"
@@ -2039,7 +2072,7 @@ void RestRidInterface::startRestAnalysis( const string ana_service_url )
   
   js <<
   "\n"
-  "fetch('" << resource_url << "', {method: 'POST'})\n"
+  "fetch(" << resource_url_literal << ", {method: 'POST'})\n"
   "  .then( response => response.formData() )\n"
   "  .then( data => {\n"
   //"  console.log( 'Got FormData wt app!' );\n"
@@ -2057,9 +2090,10 @@ void RestRidInterface::startRestAnalysis( const string ana_service_url )
 void RestRidInterface::requestRestServiceInfo( const string url )
 {
   WStringStream js;
+  const string info_url = WString::fromUTF8( url + "/info" ).jsStringLiteral('\'');
   
   js <<
-  "fetch('" << url << "/info', {method: 'POST'})\n"
+  "fetch(" << info_url << ", {method: 'POST'})\n"
   "  .then( response => response.json() )\n"
   "  .then( data => {\n"
 //            << "console.log( 'Got service info data:', data );"
@@ -2800,6 +2834,9 @@ void RemoteRid::handleAppUrl( std::string query_str )
   
   string exe_path = parts.count("PATH") ? Wt::Utils::urlDecode(parts["PATH"]) : string();
   const string url_path = parts.count("URL") ? Wt::Utils::urlDecode(parts["URL"]) : string();
+
+  if( !url_path.empty() && !isValidRestUrl(url_path) )
+    throw runtime_error( "RemoteRid::handleAppUrl: invalid HTTP(S) service URL." );
   
   // No matter what value is given for "&none=...", or what other parameters are specified, we will try to reset things
   if( parts.count("NONE") || (url_path.empty() && exe_path.empty()) )
@@ -2845,8 +2882,9 @@ void RemoteRid::handleAppUrl( std::string query_str )
 #endif
   
   const string title = "Use External-RID Service?";
+  const string display_endpoint = Wt::Utils::htmlEncode( exe_path.empty() ? url_path : exe_path );
   const string desc = "Are you sure you would like to use the '"
-  + (exe_path.empty() ? url_path : exe_path) + "' service to call"
+  + display_endpoint + "' service to call"
   + (always_call ? " whenever spectrum files are loaded" : " when the External-RID tool is used")
   + "?<br />"
   + (show_dialog ? "A modal-dialog with results will be shown." : "")

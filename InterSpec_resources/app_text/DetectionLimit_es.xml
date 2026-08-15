@@ -1,0 +1,286 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Traducción de DetectionLimit.xml -->
+
+  <message id="dl-conf-95">95%</message>
+  <message id="dl-conf-99">99%</message>
+  <message id="dl-conf-1sigma">68,27%</message>
+  <message id="dl-conf-2sigma">95,45%</message>
+  <message id="dl-conf-3sigma">99,73%</message>
+  <message id="dl-conf-4sigma">99,9937%</message>
+  <message id="dl-conf-5sigma">99,999943%</message>
+  <message id="dl-conf-level-one-sided">N.C. unilateral:</message>
+  <message id="dl-conf-level-central">N.C. central:</message>
+  <message id="dl-conf-level-one-sided-short">N.C. unilat.:</message>
+  <message id="dl-conf-level-tt">
+    El nivel de confianza con el que se expresa el límite.
+    <p>
+      Los cinco valores no redondos son las probabilidades normales centrales de 1&sigma; a 5&sigma;
+      (68,27%, 95,45%, 99,73%, 99,9937%, 99,999943%), pero aquí se aplican como niveles de confianza
+      <b>unilaterales</b>.  Por tanto, una opción de &quot;1&sigma;&quot; no es una cota unilateral
+      de una sigma: se ofrecen porque son cifras familiares, no porque el límite sea un múltiplo de
+      ninguna sigma.
+    </p>
+  </message>
+
+  <!-- Tratamiento del continuo -->
+  <message id="dl-cont-norm-label">Norm. Cont.:</message>
+  <message id="dl-cont-norm-floating">Flotante</message>
+  <message id="dl-cont-norm-edges">Anclado por canales laterales</message>
+  <message id="dl-cont-norm-edges-short">De los lados</message>
+  <message id="dl-cont-norm-tt">
+    De dónde procede el conocimiento del fondo bajo el pico, y por tanto qué es lo que usted está
+    afirmando.  Esta es una cuestión distinta de <i>qué medición</i> describe el límite; vea la
+    opción de medición.
+    <ul>
+      <li><b>Flotante</b>: el continuo se infiere de los mismos canales que podrían contener la
+      señal, de modo que no se supone nada sobre el entorno.  Un exceso ancho o uniforme se absorbe
+      en el continuo, así que sólo cuenta como señal el exceso con forma de pico; esta es la prueba
+      más estricta de &quot;¿eso es realmente un pico?&quot;.  La opción por defecto y la mejor
+      validada.</li>
+      <li><b>Anclado por canales laterales</b>: el fondo se mide en los canales contiguos a la
+      región y se traslada a ella, lo que afirma que esos hombros no contienen señal y que el
+      continuo pasa recto por ellos.  Una región que simplemente esté más alta que sus hombros
+      cuenta ahora como señal, tenga o no forma de pico.  Requiere un continuo lineal: cuatro más
+      cuatro canales laterales apenas determinan una ordenada y una pendiente.</li>
+    </ul>
+    <p>
+      El anclaje añade información, por lo que suele dar un límite más estrecho, pero un número más
+      estrecho no es automáticamente mejor.  Flotante tiende a errar hacia límites <em>más
+      anchos</em>; el anclaje tiende a errar hacia límites <em>equivocados</em>, en cualquiera de
+      los dos sentidos, si una línea vecina, un escalón o una curvatura hacen que los hombros no
+      sean representativos.  Use Flotante por defecto, y los canales laterales cuando la región esté
+      limpia durante varias FWHM a ambos lados y la sensibilidad adicional compense la afirmación.
+    </p>
+    <p>
+      Tenga en cuenta que la incertidumbre de conteo de los propios hombros se propaga en la función
+      de verosimilitud, de modo que un anclaje débil ensancha honestamente el límite en lugar de
+      fingir que el continuo se conoce.
+    </p>
+  </message>
+
+  <!-- Modelo de medición -->
+  <message id="dl-model-label">Medición:</message>
+  <message id="dl-model-current">Espectro actual</message>
+  <message id="dl-model-backref">Referencia de fondo</message>
+  <message id="dl-model-backref-cb">Referencia de fondo</message>
+  <message id="dl-model-tt">
+    Sobre qué medición trata el límite.
+    <ul>
+      <li><b>Espectro actual</b>: cuánta señal podría estar oculta en el espectro que usted tiene.
+      El caso habitual.</li>
+      <li><b>Referencia de fondo</b>: se afirma que el espectro cargado no contiene señal, y se usa
+      para predecir qué podría detectar una medición <i>futura</i>.  Los conteos de la referencia y
+      la medición proyectada se evalúan juntos, compartiendo un mismo continuo, de modo que la
+      propia estadística de conteo de la referencia se propaga al resultado en lugar de ignorarse.</li>
+    </ul>
+    <p>
+      Un resultado de referencia de fondo es una <b>sensibilidad predicha</b>, no una cota sobre el
+      espectro en mano, y se comunica como tal.  Es una expectativa mediana: no hay una medición
+      futura que observar, así que la predicción se hace con los conteos esperados.  Eso vale mientras el tiempo introducido sea parecido al de este espectro o menor; al ir mucho más lejos el resultado se lee optimista, en torno a un tercio a 16 veces, porque cualquier desajuste entre el continuo verdadero de la región y la recta que se le ajusta crece con la exposición mientras que el ruido de conteo solo crece como su raíz cuadrada.
+    </p>
+  </message>
+  <message id="dl-model-backref-tt">
+    Afirma que este espectro no contiene señal, y lo usa para predecir qué podría detectar una
+    medición futura.
+    <p>
+      El resultado es una <b>sensibilidad predicha</b> para una medición del tiempo planificado, no
+      un límite superior sobre este espectro.  La propia estadística de conteo de la referencia se
+      propaga al resultado, así que un fondo corto da una predicción proporcionalmente más débil.
+    </p>
+  </message>
+
+  <!-- Tipo de límite -->
+  <message id="dl-limittype-label">Límite:</message>
+  <message id="dl-limittype-upper">Límite superior</message>
+  <message id="dl-limittype-central">Intervalo central</message>
+  <message id="dl-limittype-tt">
+    Qué magnitud informar.  Son productos distintos y usan umbrales distintos sobre el estadístico,
+    de modo que la elección es explícita y no supuesta.
+    <ul>
+      <li><b>Límite superior</b>: una cota unilateral, &quot;la actividad es menor que U con esta
+      confianza&quot;.  Lo que se desea casi siempre.</li>
+      <li><b>Intervalo central</b>: un intervalo bilateral, &quot;la actividad está entre L y U con
+      esta confianza&quot;.</li>
+    </ul>
+    <p>
+      Observe que las dos raíces halladas con un umbral unilateral <b>no</b> forman un intervalo
+      central: juntas cubren sólo alrededor de 2&times;N.C.&minus;1, así que dos cotas unilaterales
+      del 95% forman aproximadamente un intervalo central del 90%.  Cuando eso ocurre, el resultado
+      lo indica en lugar de llamarlo intervalo.
+    </p>
+    <p>
+      En un espectro sin señal, un intervalo central suele topar con la frontera física en cero, de
+      modo que sólo existe el extremo superior; entonces se informa como &quot;entre 0 y U&quot;.
+      Eso <b>no</b> es lo mismo que un límite superior unilateral con la misma confianza: el extremo
+      se sitúa en un umbral más alto, lo que lo convierte en una cota unilateral de (1+N.C.)/2.
+    </p>
+  </message>
+
+  <!-- Tiempo de medición planificado -->
+  <message id="dl-plan-time-cb">Tiempo med.:</message>
+  <message id="dl-plan-time-cb-short">Med. 🕐</message>
+  <message id="dl-plan-time-empty-text">p. ej. 5 min</message>
+  <message id="dl-plan-time-tt">
+    La duración sobre la que pregunta.  Un solo control, pero llega al cálculo por dos vías distintas:
+    <ul>
+      <li>Para el método Currie, y cuando el límite describe el espectro cargado, las cuentas por
+      canal del espectro se proyectan a este tiempo real (y el tiempo vivo en la misma razón, de modo
+      que se conserva la fracción de tiempo muerto).</li>
+      <li>Cuando el espectro es una <b>referencia de fondo</b>, las cuentas de la referencia se dejan
+      intactas y esto pasa a ser la exposición de la medición futura predicha - así la propia
+      estadística de conteo de la referencia se traslada a la respuesta en lugar de ignorarse.</li>
+    </ul>
+    <p>
+      Proyectar el espectro predice bien el límite <b>típico</b> de la nueva medición; lo que se
+      subestima es la <b>dispersión</b> a su alrededor.  Las cuentas escaladas se tratan como Poisson
+      con varianza igual a la cuenta escalada, lo que afirma que la tasa del espectro cargado se
+      conoce exactamente; en realidad la proyección hereda también el ruido de conteo de ese
+      espectro.  Medido frente a mediciones reales extraídas de un fondo de 11,5 horas, la mediana
+      del límite Currie proyectado quedó dentro del 4% de lo que entregó la medición a lo largo de un
+      rango de 64 veces, mientras que la dispersión real a su alrededor fue unas 1,6&#215; más ancha
+      que la implícita en k&#160;=&#160;1 y unas 4&#215; más ancha en k&#160;=&#160;16, donde k es el
+      tiempo introducido dividido por el del espectro cargado.  Así que k hasta aproximadamente 1 es
+      seguro; más allá, trate el número como una estimación de planificación, no como una cota.
+    </p>
+    <p>
+      La vía de referencia de fondo no escala cuentas y por eso no tiene ese problema - pero solo
+      cubre el límite por deconvolución.  Cualquier límite Currie mostrado a su lado sigue estando
+      proyectado, y la advertencia anterior le aplica.
+    </p>
+  </message>
+  <message id="dl-err-bad-plan-time">Tiempo de medición no válido - se esperaba algo como '5 min', '300 s' o '00:05:00'.</message>
+
+  <!-- Redacción del resultado -->
+  <message id="dl-limit-upper">Menos de {1} con N.C. {2} (límite superior unilateral), &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-predicted">Sensibilidad predicha: menos de {1} con N.C. {2} para una medición de {3}, &chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central">Entre {1} y {2} con N.C. central {3}, &chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central-upper">Entre 0 y {1} con N.C. central {2}, &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-two-one-sided">Dos cotas unilaterales del {1}: {2} a {3} (cobertura central ~{4}), &chi;<sup>2</sup>={5}</message>
+  <message id="dl-limit-distance-lower">Distancia &ge;{1} con N.C. {2} (límite inferior unilateral), &chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-none">Sin límite: {1}</message>
+  <message id="dl-best-stat">Mejor &chi;<sup>2</sup> de {1} en {2}, {3} GDL</message>
+  <message id="dl-best-stat-flat">&chi;<sup>2</sup> es {1} a gran distancia, {2} GDL</message>
+
+  <message id="dl-stat-is-cash-tt">
+    La magnitud aquí etiquetada como &chi;<sup>2</sup> es el <b>estadístico {1}</b>: una desviación
+    de Poisson, 2&middot;&sum;(E &minus; n + n&middot;ln(n/E)), sumada una vez por canal (Cash 1979).
+    Se usa en lugar de un &chi;<sup>2</sup> gaussiano porque no tiene el sesgo de varianza de Neyman
+    modificado y no necesita un suelo de varianza para los canales vacíos.
+    <p>
+      Sólo las <em>diferencias</em> entre actividades de prueba son significativas; una diferencia
+      sigue la misma ley asintótica &chi;<sup>2</sup> que seguiría una gaussiana, y eso es lo que
+      fija el umbral de confianza.  Su valor absoluto <b>no</b> comprueba la bondad del ajuste:
+      E[estadístico] no es (canales &minus; parámetros), de modo que un &chi;<sup>2</sup>/GDL
+      formado con los dos números mostrados uno junto al otro <b>no</b> es una medida de bondad de
+      ajuste y no debe leerse como tal.
+    </p>
+  </message>
+
+  <!-- Gráfico -->
+  <message id="dl-chart-y-axis-chi2">χ²</message>
+  <message id="dl-chart-threshold-label">Umbral de {1} (Δχ²={2})</message>
+  <message id="dl-migrate-nosig-notice">
+    El estado guardado usaba la opción de continuo retirada &quot;suponer que no hay señal
+    presente&quot;.  Esa opción afirmaba que el espectro no contiene señal y luego ignoraba la
+    incertidumbre de esa afirmación, lo que midió una cobertura de alrededor del 40% donde se
+    declaraba el 95%.  Se ha recargado como un continuo flotante sobre una medición de referencia de
+    fondo, que es lo que pretendía ser.  El tiempo de medición significa ahora la duración de la
+    medición futura que se predice, en vez de un reescalado de este espectro; compruébelo antes de
+    confiar en el número.
+  </message>
+
+  <!-- Entradas estadísticas avanzadas.  Tres probabilidades que responden a tres preguntas
+       distintas; las ayudas emergentes indican cuál es cuál. -->
+  <message id="dl-advanced-cb">Avanzado</message>
+  <message id="dl-advanced-cb-short">Av.</message>
+  <message id="dl-advanced-tt">
+    Muestra las tasas de error y la incertidumbre sistemática con las que se calcula el límite.
+    Mientras esta casilla esté sin marcar no se aplica ninguna de ellas, y el resultado es
+    exactamente el que se obtendría sin ellas.
+  </message>
+
+  <message id="dl-alpha-label">Falso positivo (&#945;):</message>
+  <message id="dl-alpha-label-short">Falso pos. &#945;:</message>
+  <message id="dl-alpha-tt">
+    Con qué frecuencia está dispuesto a declarar una señal presente cuando no la hay: la tasa de
+    falsos positivos.  Fija el <b>umbral de decisión</b> L<sub>c</sub>: el exceso sobre el continuo
+    estimado a partir del cual se declararía una detección.
+    <p>
+      Introduzca una <b>probabilidad, no un porcentaje</b>: 0,05 es la elección habitual.  Debe ser
+      mayor que 0 y menor que 0,5; por debajo de aproximadamente 1E-7 la aproximación normal en la
+      que se apoya este cálculo ya no vale gran cosa.  Un &#945; menor significa menos falsas
+      alarmas y un umbral más alto.
+    </p>
+    <p>
+      Mientras no lo edite, sigue al nivel de confianza de arriba como 1 &#8722; N.C.  Es una
+      cuestión distinta de ese nivel de confianza, que es la cobertura del intervalo
+      &quot;menor que X&quot; que se informa.
+    </p>
+  </message>
+
+  <message id="dl-beta-label">Falso negativo (&#946;):</message>
+  <message id="dl-beta-label-short">Falso neg. &#946;:</message>
+  <message id="dl-beta-tt">
+    Con qué frecuencia está dispuesto a pasar por alto una señal que realmente está en el límite de
+    detección: la tasa de falsos negativos.  Fija el <b>límite de detección</b> L<sub>d</sub>: la
+    magnitud verdadera de la señal que se detectaría de forma fiable.
+    <p>
+      Introduzca una <b>probabilidad, no un porcentaje</b>: 0,05 es la elección habitual.  Debe ser
+      mayor que 0 y menor que 0,5.  Un &#946; menor da un límite de detección mayor y más
+      conservador.
+    </p>
+    <p>
+      Mientras no lo edite, sigue al nivel de confianza de arriba como 1 &#8722; N.C.  Con
+      &#945;&#160;=&#160;&#946; el límite de detección adopta su forma cerrada familiar; con los dos
+      distintos se resuelve de forma exacta, no aproximada.
+    </p>
+  </message>
+
+  <message id="dl-dist-uncert-label">Incert. dist.:</message>
+  <message id="dl-dist-uncert-label-short">&#177;Dist:</message>
+  <message id="dl-dist-uncert-empty-text">p. ej. 1 cm</message>
+  <message id="dl-dist-uncert-tt">
+    La incertidumbre 1&#963; de la distancia fuente-detector, escrita igual que la propia distancia;
+    por ejemplo <b>1 cm</b>.  Déjelo en blanco, o introduzca 0, para ninguna.
+    <p>
+      La eficiencia de una fuente puntual va como 1/r&#178;, de modo que esto llega a las cuentas
+      esperadas con un factor de dos: un 5% de incertidumbre en la distancia es un 10% de
+      incertidumbre en las cuentas.  Se combina en cuadratura con la incertidumbre de eficiencia
+      contigua.  Bastante más allá de un 20% de la distancia, la propagación lineal que se usa aquí
+      pisa terreno frágil.
+    </p>
+    <p>
+      No se aplica a una respuesta de detector de geometría fija, cuya eficiencia no depende en
+      absoluto de la distancia; la herramienta lo indica cuando ocurre.
+    </p>
+  </message>
+
+  <message id="dl-eff-uncert-label">Incert. eficiencia (%):</message>
+  <message id="dl-eff-uncert-label-short">&#177;Efic. %:</message>
+  <message id="dl-eff-uncert-empty-text">p. ej. 5</message>
+  <message id="dl-eff-uncert-tt">
+    La incertidumbre <b>relativa</b> 1&#963; de las cuentas esperadas por unidad de actividad, como
+    <b>porcentaje</b>; por ejemplo <b>5</b> para un 5%.  Déjelo en blanco, o introduzca 0, para
+    ninguna.
+    <p>
+      Cubre todo lo que escala las cuentas esperadas y no es estadística de conteo: la curva de
+      eficiencia del detector y la relación de ramificación gamma, que entran de forma idéntica.
+      Introduzca ambas combinadas en cuadratura si las dos importan.  Las incertidumbres de
+      eficiencia del detector suelen ser del 3&#8211;10%.
+    </p>
+    <p>
+      Se combina en cuadratura con la incertidumbre de distancia, y el total debe mantenerse por
+      debajo del 100%.  Observe que el <i>límite de detección</i> se agota antes, en
+      1/k<sub>&#946;</sub>: alrededor del 61% con &#946;&#160;=&#160;0,05, porque más allá de ahí
+      ningún conteo separa la señal de la escala.  El límite superior sigue siendo válido.
+    </p>
+  </message>
+
+  <message id="dl-err-bad-dist-uncert">No se pudo leer la incertidumbre de distancia - se esperaba algo como '1 cm', o en blanco para ninguna.</message>
+  <message id="dl-err-bad-eff-uncert">No se pudo leer la incertidumbre de eficiencia - se esperaba un porcentaje, como '5', o en blanco para ninguna.</message>
+  <message id="dl-err-dist-uncert-no-distance">Se introdujo una incertidumbre de distancia, pero la distancia está en blanco o no es positiva - introduzca una distancia, o borre la incertidumbre.</message>
+  <message id="dl-err-systematic-too-large">La incertidumbre sistemática combinada es del {1}%, que la formulación de Currie no puede usar - debe ser menor del 100%.  Reduzca la incertidumbre de distancia o de eficiencia.</message>
+  <message id="dl-warn-dist-uncert-fixed-geom">No se aplicó la incertidumbre de distancia: esta respuesta de detector es para una geometría fija, por lo que su eficiencia no depende de la distancia.</message>
+  <message id="dl-warn-no-detection-limit">Con esta incertidumbre sistemática no existe un límite de detección finito - la señal verdadera no se puede separar de la incertidumbre de escala, por mucho que se cuente.  El límite superior de arriba no se ve afectado.</message>
+</messages>

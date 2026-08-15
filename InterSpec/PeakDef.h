@@ -741,7 +741,25 @@ public:
    This is currently experimental - I dont actually know!!!
    */
   static bool is_energy_dependent( const SkewType skew_type, const CoefficientType coefficient );
-  
+
+  /** Returns the value to fix a skew coefficient at in order to remove skew (i.e. make the peak a
+   pure Gaussian, or as close as the model allows).
+
+   The "no skew" limit is at a different end of the parameter range for different skew models: some
+   reach a pure Gaussian at an exact finite value (e.g. Bortel skew=0, GaussPlusBortel R=0), while
+   GaussExp/ExpGaussExp/CrystalBall approach a Gaussian only asymptotically, so their no-skew value
+   is taken as the (negligible-tail) upper bound from #skew_parameter_range.  Coefficients that no
+   longer affect the shape once skew is turned off (e.g. CrystalBall `n`, a Bortel decay constant
+   paired with a zeroed mixing fraction) are set to a neutral starting value.
+
+   Returns true and sets `no_skew_value` when `skew_type` has a reachable no-skew configuration and
+   `coefficient` applies to it; otherwise returns false (e.g. DoubleBortel, which has no pure-Gaussian
+   limit, or a coefficient not used by `skew_type`).  Used by RelActAuto auto-simplify to drop a skew
+   degree of freedom the data does not want (see #skew_parameter_range for the bounds rationale).
+   */
+  static bool skew_no_skew_value( const SkewType skew_type, const CoefficientType coefficient,
+                                  double &no_skew_value );
+
 public:
   PeakDef();
 

@@ -676,7 +676,14 @@ PopupDivMenu::PopupDivMenu( const PopupDivMenu::MenuType menutype )
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "ShowPhone", wtjsShowPhone);
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "SetupHideOverlay", wtjsSetupHideOverlay);
 
-    aboutToHide().connect( this, &PopupDivMenu::mobileDoHide );
+    // On phones sub-menus are shown *over* their parent (they are separate top-level menus - see
+    //  addPopupMenuItem), so selecting the item that opens one must not collapse the parent.  That
+    //  is exactly what `hideOnSelect` controls in `WPopupMenu::done()`.  Closing menus on activation
+    //  is done by us instead, through mobileHideMenuAndParents()/mobileDoHide().
+    //  (This replaces an `isHidden()` override that used to return true unconditionally on mobile;
+    //   that made `done()` take its early-out, which silently killed aboutToHide(), triggered(),
+    //   cancel(), and every `isHidden()` query on a phone menu.)
+    setHideOnSelect( false );
   }else
   {
     addStyleClass( "PopupDivMenu" );
@@ -783,6 +790,21 @@ PopupDivMenu *makePopupMenu( Wt::WPushButton *button )
 
   return button->addChild( std::move(menu) );
 }//PopupDivMenu *makePopupMenu(...)
+
+
+PopupDivMenu *makeButtonOwnedPopupMenu( Wt::WPushButton *button )
+{
+  assert( button );
+  if( !button )
+    return nullptr;
+
+  auto menu = std::make_unique<PopupDivMenu>();
+  menu->setAutoHide( true, 500 );
+
+  // Note: deliberately no `button->clicked()` connection here (see header) - the caller pops the
+  //  menu up from its own click handler.
+  return button->addChild( std::move(menu) );
+}//PopupDivMenu *makeButtonOwnedPopupMenu(...)
 
 
 
@@ -1248,13 +1270,6 @@ void PopupDivMenu::mobileHideMenuAndParents()
 }//void mobileHideMenuAndParents()
 
 
-bool PopupDivMenu::isHidden() const
-{
-  //See notes in header for how big of a hack this function is.
-  return m_mobile || WPopupMenu::isHidden();
-}
-
-
 PopupDivMenuItem *PopupDivMenu::addPhoneBackItem( PopupDivMenu *parent )
 {
   const char *txt = parent ? "Previous" : "Close";
@@ -1288,6 +1303,12 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
 
   if( m_mobile )
   {
+    // On phones the sub-menu is shown *over* its parent, so it is a separate top-level menu rather
+    //  than a Wt sub-menu (no addMenu(), hence nothing takes ownership of it below).  A WPopupMenu
+    //  parents itself to domRoot_ through addGlobalWidget() but that hands ownership straight back,
+    //  so without this addChild() the menu would never be freed.
+    addChild( std::unique_ptr<PopupDivMenu>(menu) );
+
     menu->m_menuParent = m_menuParent;
     menu->m_menuParentID = (m_menuParent ? m_menuParent->id() : string());
     menu->m_parentItem = addItem( text );

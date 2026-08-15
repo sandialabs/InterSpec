@@ -33,8 +33,6 @@
   <message id="fpn-opt-use-background">Hitung dengan pengurangan latar belakang</message>
 
   <!-- PeakFitForNuclideConfig option labels -->
-  <message id="fpn-opt-roi-min-chi2-red">Ambang reduksi chi2 ROI</message>
-  <message id="fpn-opt-roi-min-peak-sig">Ambang signifikansi ROI</message>
   <message id="fpn-opt-obs-initial-sig">Ambang signifikansi awal puncak</message>
   <message id="fpn-opt-obs-final-sig">Ambang signifikansi akhir puncak</message>
   <message id="fpn-opt-skew-type">Kemiringan puncak</message>
@@ -49,8 +47,6 @@
   <message id="fpn-opt-tt-dont-refine-energy-cal">Kalibrasi energi divariasikan dalam fit, tetapi cakupan ROI tidak diperbarui berdasarkan kalibrasi fit.</message>
   <message id="fpn-opt-tt-fit-bkgnd-peaks">Fit puncak NORM (U-238, Ra-226, U-235, Th-232, K-40) menggunakan kurva efisiensi relatif kedua.</message>
   <message id="fpn-opt-tt-use-background">Saat diaktifkan, spektrum latar belakang dikurangkan selama fitting puncak untuk menentukan ROI yang akan digunakan, tetapi latar belakang tidak dikurangkan untuk fit akhir puncak yang akan dikembalikan. Hapus centang untuk fit tanpa pengurangan latar belakang.</message>
-  <message id="fpn-opt-tt-roi-min-chi2-red">Reduksi chi2 total minimum yang diperlukan agar puncak dalam ROI dianggap signifikan. Chi2 dengan puncak harus setidaknya lebih rendah sebanyak ini dari chi2 dengan kontinum saja.</message>
-  <message id="fpn-opt-tt-roi-min-peak-sig">Signifikansi puncak minimum (area_puncak / sqrt(kontinum)) agar puncak dianggap signifikan. Jika ada puncak dalam ROI yang signifikansinya di atas ambang ini, ROI dipertahankan.</message>
   <message id="fpn-opt-tt-obs-initial-sig">Ambang untuk filter signifikansi puncak awal sebelum refit. Signifikansi = (amplitudo_puncak * 0.7607) / sqrt(area_data_dalam_pm_1_fwhm).</message>
   <message id="fpn-opt-tt-obs-final-sig">Ambang untuk signifikansi puncak akhir setelah refit. Signifikansi = area_puncak / ketidakpastian_area_puncak.</message>
   <message id="fpn-opt-tt-skew-type">Bentuk kemiringan yang diterapkan pada semua puncak dalam fit. &quot;None&quot; menggunakan Gaussian murni. Opsi lain menambahkan komponen ekor energi rendah (mis. Exp*Gauss untuk detektor NaI/CsI, Crystal Ball untuk ekor pengumpulan muatan di HPGe).</message>

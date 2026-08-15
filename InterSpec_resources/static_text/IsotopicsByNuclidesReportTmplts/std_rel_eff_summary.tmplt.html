@@ -146,8 +146,68 @@
     <div class="results">
 {% if status.success %}
 <div>&chi;<sup>2</sup>={{ chi2_str }} and there were {{ dof }} DOF (&chi;<sup>2</sup>/dof={{ chi2_per_dof_str }})</div>
+<div title="Weighted coefficient of determination (&gt;0.999 excellent, 0.99-0.999 good, &lt;0.99 the model is missing structure) and condition number of the fit Jacobian (&lt;~1e4 well-conditioned; &gt;~1e7 some parameter direction is nearly unconstrained).">
+R<sup>2</sup>={{ r2_str }}, &kappa;(J)={{ condition_number_str }}</div>
 {% else %}
 <div style="color: red; font-size: 150%;">Calculation failed, {{ status.fail_reason }}: {{ status.error_message }}</div>
+{% endif %}
+
+{# ---- Multi-curve separation diagnostics (absent for single-curve fits) ---- #}
+{% if curve_separation_status != "NotApplicable" %}
+<div class="curveSeparation">
+  <div><b>Rel. eff. curve separation: {{ curve_separation_display }}</b></div>
+  <div>{{ curve_separation_verdict_html }}</div>
+{% if enrichment_diff_z %}
+  <div title="z &ge; 3: the curves clearly have different compositions; 1.5-3 marginal; &lt;1.5 not distinguished.">Enrichment-difference detection:
+    <ul>
+{% for d in enrichment_diff_z %}
+      <li>{{ d.nuclide }}: curve {{ d.curve_a }} = {{ d.enrichment_a_str }}, curve {{ d.curve_b }} = {{ d.enrichment_b_str }} &rarr; z = {{ d.z_str }}{{ d.not_usable_note }}</li>
+{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+{% if merged_curve_comparison %}
+{% if merged_curve_comparison.valid %}
+  <div title="Likelihood-ratio-style check: how much worse a single merged curve fits the same data/ROIs.  &Delta;&chi;&sup2; much larger than the extra DOF means more than one curve is needed (it does not say the per-curve split is well determined).">
+{% if merged_curve_comparison.merged_fits_better %}
+  Single-curve comparison: merging all sources onto one curve <b>lowers</b> &chi;<sup>2</sup> by {{ merged_curve_comparison.delta_chi2_abs_str }} for {{ merged_curve_comparison.extra_dof_of_multi }} fewer effective parameters (merging only removes freedom, so the multi-curve fit is not at its own optimum).
+{% else %}
+  Single-curve comparison: merging all sources onto one curve raises &chi;<sup>2</sup> by {{ merged_curve_comparison.delta_chi2_str }} for {{ merged_curve_comparison.extra_dof_of_multi }} fewer effective parameters ({% if merged_curve_comparison.single_curve_adequate %}&Delta;&chi;&sup2; is comparable to &Delta;dof: a single curve describes this data about as well{% else %}&Delta;&chi;&sup2; &Gt; &Delta;dof: one merged curve cannot describe this data - this says more than one curve is needed, not that the per-curve split is well determined{% endif %}).
+{% endif %}
+{% if merged_curve_comparison.message %} Note: {{ merged_curve_comparison.message }}.{% endif %}
+  </div>
+{% else %}
+  <div>Single-curve comparison: not available ({{ merged_curve_comparison.message }}).</div>
+{% endif %}
+{% endif %}
+{% if cross_curve_correlations %}
+  <div title="|&rho;| &lt; 0.7 separated; 0.7-0.95 caution; &gt; 0.95 effectively one normalization degree of freedom (high &rho; alone is accounted for by the widened uncertainties).">Cross-curve correlations:
+    <ul>
+{% for c in cross_curve_correlations %}
+      <li>{{ c.param_a }} of curve {{ c.curve_a }} &times; {{ c.param_b }} of curve {{ c.curve_b }}: &rho; = {{ c.correlation_str }}</li>
+{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+{% if evidence_purity %}
+  <div title="For each energy region containing a nuclide's peaks, the fraction of that region's counts the fit assigns to this curve, averaged weighted by counts.  &gt;0.8 own resolved peaks; 0.3-0.8 peak regions shared with the other curve(s); &lt;0.3 no individually resolved peaks - the value follows from the fitted physics.">Attributed share per (curve, nuclide):
+    <ul>
+{% for curve_purity in evidence_purity %}
+      <li>{% if curve_purity %}{{ curve_purity.0.curve_label }}{% else %}curve {{ loop.index }}{% endif %}: {% for p in curve_purity %}{% if not loop.is_first %}, {% endif %}{{ p.source }} = {{ p.purity_str }}{% endfor %}</li>
+{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+{% if source_count_attribution %}
+  <div title="How the fit divides each nuclide's detected peak counts (counts in the measured spectrum - after attenuation and detector efficiency, not emitted source counts) between the curves.  The division is fitted through the attenuation physics / curve shapes, constrained by the whole spectrum.">Peak-count attribution per nuclide:
+    <ul>
+{% for a in source_count_attribution %}
+      <li>{{ a.source }}: {% for c in a.curves %}{% if not loop.is_first %}, {% endif %}{{ c.curve_label }} {{ c.percent_str }}{% endfor %}</li>
+{% endfor %}
+    </ul>
+  </div>
+{% endif %}
+</div>
 {% endif %}
 
 {% for curve in rel_eff_curves %}

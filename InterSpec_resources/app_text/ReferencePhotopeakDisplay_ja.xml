@@ -85,7 +85,6 @@
   <message id="rpd-tbl-hdr-tt-trans">この粒子を生じるために崩壊した実際の核種。</message>
   <message id="rpd-tbl-hdr-tt-trans-mode">この粒子を生成した親核種の崩壊モード。</message>
   <message id="rpd-tbl-hdr-tt-type">生成された粒子のタイプ</message>
-  <message id="rpd-tbl-hdr-tt-"></message>
 
   <!-- Fit Sources (peak fitting from displayed reference lines) -->
   <message id="rpd-fit-source">ソースをフィット</message>

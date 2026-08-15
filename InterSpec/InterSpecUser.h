@@ -704,6 +704,9 @@ struct UserState
 #if( USE_REL_ACT_TOOL )
     kRelActManualTab,
 #endif
+#if( USE_LLM_INTERFACE )
+    kLlmAssistantTab,
+#endif
     kNoTabs
   };//enum CurrentTab
 
@@ -758,6 +761,9 @@ struct UserState
   , kShowingDetectionSens   = 0x080000
   , kShowingSimpleMda       = 0x100000
 #endif //USE_DETECTION_LIMIT_TOOL
+#if( USE_LLM_INTERFACE )
+  , kShowingLlmAssistant    = 0x200000
+#endif //USE_LLM_INTERFACE
   };//enum ShownDisplayFeatures
   
   //UserState(): default constructor, initializes values to reasonable defaults

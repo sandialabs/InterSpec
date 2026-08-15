@@ -16,6 +16,7 @@ set(TRY_TO_STATIC_LINK ON CACHE INTERNAL "Try to statically link" )
 set(CMAKE_OSX_DEPLOYMENT_TARGET "13.3" CACHE INTERNAL "Set OSX deployment target to 13.3 (Ventura)" )
 set(USE_REL_ACT_TOOL ON CACHE INTERNAL "Enable Rel. Act. Tools" )
 set(USE_LEAFLET_MAP ON CACHE INTERNAL "Use leaflet map tool" )
+set(USE_LLM_INTERFACE ON CACHE INTERNAL "Enable the AI/LLM assistant and MCP server" )
 option( USE_BATCH_CLI_TOOLS "Enables command line batch processing." OFF )
 option( USE_BATCH_GUI_TOOLS "Enables GUI batch processing." ON )
 option( USE_MACOS_QUICK_LOOK "Build macOS Quick Look preview and thumbnail extensions." ON )
@@ -34,7 +35,7 @@ SET(MACOSX_BUNDLE_BUNDLE_VERSION "0" )
 SET(MACOSX_BUNDLE_COPYRIGHT "Sandia National Labs, Will Johnson" )
 SET(MACOSX_BUNDLE_GUI_IDENTIFIER "gov.sandia.macOS.InterSpec" )
 #set MACOS_BUNDLE_VERSION_NUMBER for Info.plist.template to populate corresponding value in Xcode
-set(MACOS_BUNDLE_VERSION_NUMBER 58)
+set(MACOS_BUNDLE_VERSION_NUMBER 59)
 
 
 SET( ${PRODUCT_NAME} "InterSpec" )

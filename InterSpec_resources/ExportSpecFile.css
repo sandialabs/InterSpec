@@ -7,10 +7,8 @@
 
 .simple-dialog.export-spec-file .body
 {
-  height: min(calc(95vh - 90px), 400px);
-
-  max-height: calc(95vh - 90px);
-
+  /* The height of this element is set from C++, in ExportSpecFileWindow's constructor - Wt 4 lays
+     the dialog out with a flex layout that overwrites any height set here.  */
   padding-bottom: 10px;
 }
 
@@ -26,12 +24,11 @@
 
 .simple-dialog.export-spec-file.export-spec-phone .body
 {
+  /* The 10px margins here are the 20px of "chrome" the C++ leaves room for. */
   margin-top: 10px;
   margin-left: 10px;
   margin-right: 10px;
   margin-bottom: 10px;
-  height: min(calc(95vh - 20px), 400px);
-  max-height: calc(95vh - 20px);
 }
 
 
@@ -298,4 +295,113 @@
   color: blue;
   float: none;
   border: 1px solid blue !important;
+}
+
+
+/* When the CNF format is selected the GENIE options share the "Samples to Include" column, and
+   need more room than the plain sample checkboxes do. */
+.ExportSpecFileTool.ExportSpecFileToolCnf .ExportSpecSamples
+{
+  min-width: 345px;
+}
+
+/* CNF-only GENIE options panel (see ExportSpecFileCAM.cpp).
+   The panel shares the dialog's third column with "Samples to Include"/"Options", so it is laid
+   out as a column that can scroll on its own - otherwise the library table pushes the FWHM and
+   efficiency controls out of the dialog entirely. */
+.ExportSpecFileTool .GenieCnfOptions
+{
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  min-height: 0;
+  flex: 1 1 auto;
+  overflow-y: auto;
+  margin-top: 8px;
+  padding-top: 6px;
+  border-top: 1px solid #e1e1e1;
+}
+
+.ExportSpecFileTool .GenieCnfOptions > *
+{
+  flex: 0 0 auto;
+  margin-bottom: 4px;
+}
+
+/* The panel stretches its children, which would leave a combo as wide as the whole column; these
+   should only be as wide as their longest entry. */
+.ExportSpecFileTool .GenieCnfOptions > select
+{
+  align-self: flex-start;
+  width: auto;
+  max-width: 100%;
+}
+
+/* A label and its input, kept on one line so hiding the pair leaves no stray gap. */
+.ExportSpecFileTool .GenieCnfRow
+{
+  display: flex;
+  flex-direction: row;
+  flex-wrap: nowrap;
+  align-items: center;
+  padding-left: 12px;
+}
+
+/* This panel lives inside the "Samples to include" column, whose `.ExportSpecSamples label` rule
+   makes every label a block-level flex container - which would put the input on its own line.
+   Note also that Safari 13 has no flexbox `column-gap`, so the pair is spaced with a margin. */
+.ExportSpecFileTool .GenieCnfRow > label
+{
+  display: inline-block;
+  flex: 0 0 auto;
+  width: auto;
+  white-space: nowrap;
+  margin: 0 5px 0 0;
+}
+
+.ExportSpecFileTool .GenieCnfRow > input
+{
+  flex: 0 1 auto;
+  min-width: 0;
+  width: 5em;
+}
+
+/* The library options that only qualify the checkbox above them, indented to show that. */
+.ExportSpecFileTool .GenieCnfSubOption
+{
+  margin-left: 5px;
+}
+
+.ExportSpecFileTool .GenieEffDistance
+{
+  width: 90px;
+  max-width: 90px;
+}
+
+/* Dont use setHeight()/resize() on a RowStretchTreeView (see its header) - size it with CSS. */
+.ExportSpecFileTool .GenieLibraryTable
+{
+  width: 100%;
+  height: 150px;
+  min-height: 150px;
+  flex: 0 0 auto;
+}
+
+.ExportSpecFileTool .GenieCnfWarnings
+{
+  font-size: x-small;
+  color: #b35c00;
+  white-space: normal;
+}
+
+.ExportSpecFileTool .GenieCnfFitResult
+{
+  font-size: x-small;
+  font-family: monospace;
+}
+
+.ExportSpecFileTool .GenieCnfOptions input.InvalidInput
+{
+  background: #ffe8e8;
+  border: 1px solid #d00;
 }

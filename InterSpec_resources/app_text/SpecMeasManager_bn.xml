@@ -44,15 +44,6 @@
   </message>
   <message id="smm-unsupported-document">This file looks to be a document file, and not supported by InterSpec.</message>
   <message id="smm-invalid-peak-csv">Uploaded file looked like a পিক CSV file, but was invalid.</message>
-  <message id="smm-file-is-drf">
-    <p style="white-space: nowrap;">
-      This file looks to be a Detector Response Function.
-    </p>
-    <p style="text-align: left; white-space: nowrap;">
-      Name: {1}
-    </p>
-   <p>Would you like to use this DRF?</p>
-  </message>
   <message id="smm-saved-drf-conf">
     সংরক্ষণd '{1}' for later use, and will be available in the
     "<em>Rel. Eff.</em>" portion of the "<em>Detector Response Function Select</em>" tool.
@@ -143,7 +134,6 @@
   <message id="smm-eff-csv-det-dat-label">Detector.dat (ঐচ্ছিক)</message>
   <message id="smm-eff-csv-intrinsic">অন্তর্নিহিত দক্ষতা</message>
   <message id="smm-eff-csv-abs-eff">পরম দক্ষতা</message>
-
 
   <message id="smm-act-shield-xml">কার্যকলাপ/শিল্ডিং XML</message>
   <message id="smm-act-shield-use">Use this কার্যকলাপ/শিল্ডিং fit setup?</message>
@@ -249,7 +239,6 @@
     Use the <b>File Manager</b> to change this.
   </message>
 
-
   
   <message id="smm-selected-spec-label">Selected স্পেকট্রাম: </message>
   <message id="smm-disp-as-btn">Display As</message>
@@ -262,7 +251,6 @@
   <message id="smm-export-btn">এক্সপোর্ট...</message>
   <message id="smm-unload-btn">Unload</message>
   <message id="smm-unassign-label">Unassign: </message>
-
 
   <message id="smm-prev-states-window-title">Previously Stored States</message>
   <message id="smm-err-prev-state-unexpected">Unexpected issue displaying available save-states: {1}</message>
@@ -322,9 +310,7 @@
   <message id="musd-err-decoding-url">ত্রুটি decoding URL: {1}</message>
   <message id="musd-received-urls-list">Have received urls {1} of {2}.<p>Waiting on more URLS/QR-codes</p></message>
 
-
   <message id="uid-qr-code-pic">QR-code Picture</message>
-  <message id="uid-no-qr-found">না QR-codes found ⓘ</message>
   <message id="uid-no-qr-found-title">না QR-code found</message>
   <message id="uid-no-qr-content">
     <p>

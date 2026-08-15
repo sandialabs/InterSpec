@@ -53,6 +53,9 @@ struct RelEffShieldState
    */
   double arealDensity;
   bool fitArealDensity;
+  /** Whether the optional weak prior pulling this shield's fit areal density toward 0 is enabled.
+   Only meaningful for RelActCalcAuto physical-model fits (ignored by the Manual tool). */
+  bool biasArealDensity = false;
 
   void toXml(rapidxml::xml_node<char>* node) const;
   void fromXml(const rapidxml::xml_node<char>* node);
@@ -100,6 +103,11 @@ public:
   bool fitArealDensity() const;
   void setFitArealDensity(bool fit);
 
+  /** Show/hide the optional "Bias AD" checkbox (hidden by default; the RelActCalcAuto GUI enables it). */
+  void setArealDensityBiasVisible( bool visible );
+  bool biasArealDensity() const;
+  void setBiasArealDensity( bool bias );
+
   bool nonEmpty() const;
   /// Resets material/AN/AD and "Fit" checkboxes
   void resetState();
@@ -134,6 +142,9 @@ private:
   Wt::WLabel *m_arealDensityLabel;
   NativeFloatSpinBox *m_arealDensity;
   Wt::WCheckBox *m_fitArealDensity;
+  /** Optional "Bias AD" checkbox (own row at the bottom, floated right); hidden unless
+   `setArealDensityBiasVisible(true)` is called (RelActCalcAuto only). */
+  Wt::WCheckBox *m_biasArealDensity;
 
   void userUpdated();
   void materialUpdated();

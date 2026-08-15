@@ -28,6 +28,8 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <atomic>
+#include <thread>
 #include <algorithm>
 #include <assert.h>
 #include <iostream> //for cout, only for debug
@@ -38,6 +40,8 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/SpecUtilsAsync.h"
 #include "SpecUtils/SpecFile.h"
+
+#include "SandiaDecay/SandiaDecay.h"
 
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/RelActCalc.h"
@@ -82,6 +86,24 @@ namespace
 
 namespace RelActCalc
 {
+namespace
+{
+  /** Backing store for set_max_solve_threads(); 0 == "auto" (hardware concurrency). */
+  std::atomic<unsigned> sm_max_solve_threads{ 0 };
+}//namespace
+
+void set_max_solve_threads( const unsigned num_threads )
+{
+  sm_max_solve_threads.store( num_threads );
+}
+
+unsigned max_solve_threads()
+{
+  const unsigned hw = std::max( 1u, std::thread::hardware_concurrency() );
+  const unsigned cap = sm_max_solve_threads.load();
+  return cap ? std::min( cap, hw ) : hw;
+}
+
 const double PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2 = 500.0;
 
 const char *to_str( const RelEffEqnForm form )
@@ -122,6 +144,37 @@ RelEffEqnForm rel_eff_eqn_form_from_str( const char *str )
   
   throw runtime_error( "String '" + std::string(str) + "' not a valid RelEffEqnForm" );
 }//rel_eff_eqn_rorm_from_str(...)
+
+
+const char *to_str( const PhysModelCorrFcn corr )
+{
+  switch( corr )
+  {
+    case PhysModelCorrFcn::None:      return "None";
+    case PhysModelCorrFcn::Hoerl:     return "Hoerl";
+    case PhysModelCorrFcn::Chebyshev: return "Chebyshev";
+  }
+
+  assert( 0 );
+  throw runtime_error( "to_str(PhysModelCorrFcn): invalid input" );
+  return "";
+}//to_str( PhysModelCorrFcn )
+
+
+PhysModelCorrFcn phys_model_corr_fcn_from_str( const char *str )
+{
+  const PhysModelCorrFcn corrs[] = {
+    PhysModelCorrFcn::None, PhysModelCorrFcn::Hoerl, PhysModelCorrFcn::Chebyshev
+  };
+
+  for( const PhysModelCorrFcn corr : corrs )
+  {
+    if( SpecUtils::iequals_ascii( to_str(corr), str ) )
+      return corr;
+  }
+
+  throw runtime_error( "String '" + std::string(str) + "' not a valid PhysModelCorrFcn" );
+}//phys_model_corr_fcn_from_str(...)
 
 
 string rel_eff_eqn_text( const RelEffEqnForm eqn_form, const std::vector<double> &coefs )
@@ -316,6 +369,11 @@ std::string rel_eff_eqn_js_function( const RelEffEqnForm eqn_form, const std::ve
 
 double eval_eqn( const double energy, const RelEffEqnForm eqn_form, const vector<double> &coeffs )
 {
+  // `&(coeffs[0])` would be UB on an empty vector, and an equation with no coefficients is
+  //  meaningless anyway.
+  if( coeffs.empty() )
+    throw runtime_error( "eval_eqn: no relative efficiency coefficients provided." );
+
   return eval_eqn( energy, eqn_form, &(coeffs[0]), coeffs.size() );
 }
 
@@ -614,7 +672,8 @@ bool PhysicalModelShieldInput::operator==( const PhysicalModelShieldInput &rhs )
     && (upper_fit_atomic_number == rhs.upper_fit_atomic_number)
     && (fit_areal_density == rhs.fit_areal_density)
     && (lower_fit_areal_density == rhs.lower_fit_areal_density)
-    && (upper_fit_areal_density == rhs.upper_fit_areal_density);
+    && (upper_fit_areal_density == rhs.upper_fit_areal_density)
+    && (ad_bias == rhs.ad_bias);
 }//bool PhysicalModelShieldInput::operator==( const PhysicalModelShieldInput &rhs ) const
 
 
@@ -656,6 +715,9 @@ void PhysicalModelShieldInput::equalEnough( const PhysicalModelShieldInput &lhs,
   
   if( fabs(lhs.upper_fit_areal_density - rhs.upper_fit_areal_density) > 1.0E-3 )
     throw runtime_error( "PhysicalModelShieldInput::equalEnough: upper fit areal density mismatch" );
+
+  if( lhs.ad_bias != rhs.ad_bias )
+    throw runtime_error( "PhysicalModelShieldInput::equalEnough: areal-density bias mismatch" );
 }//void PhysicalModelShieldInput::equalEnough(...)
 #endif
   
@@ -683,6 +745,23 @@ rapidxml::xml_node<char> *PhysicalModelShieldInput::toXml( ::rapidxml::xml_node<
   XmlUtils::append_bool_node( base_node, "FitArealDensity", fit_areal_density );
   XmlUtils::append_float_node( base_node, "LowerFitArealDensity", lower_fit_areal_density / PhysicalUnits::g_per_cm2 );
   XmlUtils::append_float_node( base_node, "UpperFitArealDensity", upper_fit_areal_density / PhysicalUnits::g_per_cm2 );
+
+  // Optional areal-density regularization prior (off by default).  Written only when enabled; the enclosing
+  //  RelEffCurveInput is then serialized at a newer version so older builds reject the whole curve (they
+  //  would otherwise silently drop the regularization).
+  if( ad_bias.use )
+  {
+    xml_node<char> *bias_node = XmlUtils::append_string_node( base_node, "ArealDensityBias", "true" );
+    if( ad_bias.value.has_value() )
+    {
+      char buffer[64];
+      snprintf( buffer, sizeof(buffer), "%1.8e", *ad_bias.value );
+      XmlUtils::append_attrib( bias_node, "value", buffer );
+    }
+    XmlUtils::append_attrib( bias_node, "remark", "Weak prior pulling this shield's fitted areal density"
+      " toward 0 g/cm^2. true/false enables; optional 'value' attribute sets the weight (default 0.05 for a"
+      " self-attenuating shield / 0.1 for an external shield; sigma ~ 1/weight in g/cm^2). Off by default." );
+  }//if( ad_bias.use )
 
   return base_node;
 }//rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const
@@ -829,6 +908,28 @@ void PhysicalModelShieldInput::fromXml( const ::rapidxml::xml_node<char> *parent
           atomic_number = 26.0;
       }//
     }// if( material_node ) / else
+
+    // Optional areal-density regularization prior (absent -> off).  Mirrors the RelActCalcAuto biasing
+    //  format: bool content + optional `value` weight attribute; a disabled prior may not carry a non-zero
+    //  weight.
+    ad_bias = RelActCalc::PriorWeightOption{};
+    const rapidxml::xml_node<char> *ad_bias_node = XML_FIRST_NODE( parent, "ArealDensityBias" );
+    if( ad_bias_node )
+    {
+      const string val = SpecUtils::xml_value_str( ad_bias_node );
+      ad_bias.use = (SpecUtils::iequals_ascii(val,"true") || SpecUtils::iequals_ascii(val,"1")
+                     || SpecUtils::iequals_ascii(val,"yes"));
+      const rapidxml::xml_attribute<char> *val_attr = ad_bias_node->first_attribute( "value" );
+      if( val_attr && val_attr->value_size() )
+      {
+        double v;
+        if( !SpecUtils::parse_double( val_attr->value(), val_attr->value_size(), v ) )
+          throw runtime_error( "Invalid 'value' attribute on 'ArealDensityBias'" );
+        ad_bias.value = v;
+      }
+      if( !ad_bias.use && ad_bias.value.has_value() && (*ad_bias.value != 0.0) )
+        throw runtime_error( "Invalid config: 'ArealDensityBias' specifies a non-zero value but is disabled" );
+    }//if( ad_bias_node )
   }catch( std::exception &e )
   {
     throw runtime_error( "PhysicalModelShieldInput::fromXml(): " + string(e.what()) );
@@ -841,9 +942,14 @@ double eval_physical_model_eqn( const double energy,
                                const std::vector<PhysModelShield<double>> &external_attens,
                                const DetectorPeakResponse * const drf,
                                std::optional<double> hoerl_b,
-                               std::optional<double> hoerl_c )
+                               std::optional<double> hoerl_c,
+                               const double corr_lower_energy,
+                               const double corr_upper_energy,
+                               const double corr_pivot_energy,
+                               const PhysModelCorrFcn corr_fcn )
 {
-  return eval_physical_model_eqn_imp<double>( energy, self_atten, external_attens, drf, hoerl_b, hoerl_c );
+  return eval_physical_model_eqn_imp<double>( energy, self_atten, external_attens, drf, hoerl_b, hoerl_c,
+                                             corr_lower_energy, corr_upper_energy, corr_pivot_energy, corr_fcn );
 }//eval_physical_model_eqn(...)
   
     
@@ -851,7 +957,11 @@ std::function<double(double)> physical_model_eff_function( const std::optional<P
                                                           const std::vector<PhysModelShield<double>> &external_attens,
                                                           const std::shared_ptr<const DetectorPeakResponse> &drf,
                                                           std::optional<double> hoerl_b,
-                                                          std::optional<double> hoerl_c )
+                                                          std::optional<double> hoerl_c,
+                                                          const double corr_lower_energy,
+                                                          const double corr_upper_energy,
+                                                          const double corr_pivot_energy,
+                                                          const PhysModelCorrFcn corr_fcn )
 {
   const auto sanity_check_shield = []( const PhysModelShield<double> &shield ){
     double atomic_number = shield.atomic_number;
@@ -895,8 +1005,10 @@ std::function<double(double)> physical_model_eff_function( const std::optional<P
   
   //const function<float(float)> drffcn = drf ? drf->intrinsicEfficiencyFcn() : []( float ){ return 1.0f; };
   
-  return [drf, self_atten, external_attens, hoerl_b, hoerl_c]( double energy ) -> double {
-    return eval_physical_model_eqn_imp<double>( energy, self_atten, external_attens, drf.get(), hoerl_b, hoerl_c );
+  return [drf, self_atten, external_attens, hoerl_b, hoerl_c,
+          corr_lower_energy, corr_upper_energy, corr_pivot_energy, corr_fcn]( double energy ) -> double {
+    return eval_physical_model_eqn_imp<double>( energy, self_atten, external_attens, drf.get(), hoerl_b, hoerl_c,
+                                               corr_lower_energy, corr_upper_energy, corr_pivot_energy, corr_fcn );
   };
 }//physical_model_eff_function(...)
   
@@ -907,7 +1019,11 @@ string physical_model_rel_eff_eqn_text( const std::optional<PhysModelShield<doub
                                        const std::shared_ptr<const DetectorPeakResponse> &drf,
                                        std::optional<double> hoerl_b,
                                        std::optional<double> hoerl_c,
-                                                const bool html_format )
+                                                const bool html_format,
+                                       const double corr_lower_energy,
+                                       const double corr_upper_energy,
+                                       const double corr_pivot_energy,
+                                       const PhysModelCorrFcn corr_fcn )
 {
   string eqn;
   
@@ -964,7 +1080,20 @@ string physical_model_rel_eff_eqn_text( const std::optional<PhysModelShield<doub
   eqn += "[Det. Eff.]";
 
   
-  if( hoerl_b.has_value() && hoerl_c.has_value() && ((hoerl_b.value() != 0.0) || (hoerl_c.value() != 1.0)) )
+  if( hoerl_b.has_value() && hoerl_c.has_value()
+     && (corr_fcn == PhysModelCorrFcn::Chebyshev)
+     && ((hoerl_b.value() != 0.0) || (hoerl_c.value() != 0.0)) )
+  {
+    // Basis-correction mode: hoerl_b/hoerl_c carry the Chebyshev coefficients a1,a2.
+    const string a1 = SpecUtils::printCompact( hoerl_b.value(), 3 );
+    const string a2 = SpecUtils::printCompact( hoerl_c.value(), 3 );
+    const string basis = "T";
+    if( html_format )
+      eqn += " * exp(" + a1 + "&middot;" + basis + "<sub>1</sub>(u) + " + a2 + "&middot;" + basis + "<sub>2</sub>(u))";
+    else
+      eqn += " * exp(" + a1 + "*" + basis + "1(u) + " + a2 + "*" + basis + "2(u)), u=log-energy in [-1,1]";
+  }else if( hoerl_b.has_value() && hoerl_c.has_value() && (corr_fcn == PhysModelCorrFcn::Hoerl)
+           && ((hoerl_b.value() != 0.0) || (hoerl_c.value() != 1.0)) )
   {
     if( html_format )
     {
@@ -975,8 +1104,8 @@ string physical_model_rel_eff_eqn_text( const std::optional<PhysModelShield<doub
       eqn += " * [E^" + SpecUtils::printCompact(hoerl_b.value(), 3) + " * "
          + SpecUtils::printCompact(hoerl_c.value(), 3) + "^(1/E)]";
     }//if( html_format ) / else
-  }//if( c_index < num_pars )
-   
+  }//if( basis correction ) / else if( Hoerl correction )
+
   return eqn;
 }//string physical_model_rel_eff_eqn_text(...)
 
@@ -985,14 +1114,19 @@ std::string physical_model_rel_eff_eqn_js_function( const std::optional<PhysMode
                                                    const std::vector<PhysModelShield<double>> &external_attens,
                                                    const DetectorPeakResponse * const drf,
                                                    std::optional<double> hoerl_b,
-                                                   std::optional<double> hoerl_c )
+                                                   std::optional<double> hoerl_c,
+                                                   const double corr_lower_energy,
+                                                   const double corr_upper_energy,
+                                                   const double corr_pivot_energy,
+                                                   const PhysModelCorrFcn corr_fcn )
 {
   cerr << "physical_model_rel_eff_eqn_js_function: TODO: implement better than just interpolating" << endl;
   string fcn = "function(x){\n"
   "  const points = [";
   for( int x = 20; x < 3000; )
   {
-    double y = eval_physical_model_eqn( x, self_atten, external_attens, drf, hoerl_b, hoerl_c );
+    double y = eval_physical_model_eqn( x, self_atten, external_attens, drf, hoerl_b, hoerl_c,
+                                       corr_lower_energy, corr_upper_energy, corr_pivot_energy, corr_fcn );
     if( (y < 0.0) || IsNan(y) || IsInf(y) )
       y = 0.0;
     
@@ -1130,24 +1264,6 @@ std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_
       auto new_continuum = make_shared<PeakContinuum>(*continuum);
       new_continuum->setParameters( lower_energy, continuum_coeffs, {} );
 
-#if( PERFORM_DEVELOPER_CHECKS )
-      {
-        const vector<double> old_coeffs = continuum->parameters();
-        // Use a single snprintf to avoid interleaving from threads
-        char buf[512];
-        int pos = snprintf( buf, sizeof(buf),
-          "refit_roi_continuums: ROI [%.1f, %.1f] nch=%zu np=%zu old_coeffs={",
-          lower_energy, upper_energy, roi_channels, roi_peaks.size() );
-        for( size_t ci = 0; ci < old_coeffs.size() && pos < 400; ++ci )
-          pos += snprintf( buf + pos, sizeof(buf) - pos, "%.2f%s", old_coeffs[ci], (ci + 1 < old_coeffs.size()) ? "," : "" );
-        pos += snprintf( buf + pos, sizeof(buf) - pos, "} new_coeffs={" );
-        for( size_t ci = 0; ci < continuum_coeffs.size() && pos < 480; ++ci )
-          pos += snprintf( buf + pos, sizeof(buf) - pos, "%.2f%s", continuum_coeffs[ci], (ci + 1 < continuum_coeffs.size()) ? "," : "" );
-        snprintf( buf + pos, sizeof(buf) - pos, "}\n" );
-        cerr << buf;
-      }
-#endif
-
       // Update all peaks with the new continuum coefficients
       for( size_t idx : peak_indices )
         result_peaks[idx].setContinuum(new_continuum);
@@ -1157,8 +1273,11 @@ std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_
     }
   };
   
-  // Decide whether to use threading
-  if( num_rois > 4 )
+  // Decide whether to use threading.  Only fan out when the per-solve thread
+  // budget allows >1 thread; when solves run concurrently (e.g. the peak-fit GA)
+  // max_solve_threads()==1, so this stays serial rather than stacking a pool on
+  // top of the outer parallelism and exhausting the OS thread limit.
+  if( (num_rois > 4) && (max_solve_threads() > 1) )
   {
     // Use ThreadPool for parallel processing
     SpecUtilsAsync::ThreadPool pool;
@@ -1184,9 +1303,9 @@ std::vector<PeakDef> refit_roi_continuums( const std::vector<PeakDef> &solution_
   
   // Sort peaks by energy before returning
   sort( begin(result_peaks), end(result_peaks), &PeakDef::lessThanByMean );
-  
+
   return result_peaks;
 }
 
-  
+
 }//namespace RelActCalc

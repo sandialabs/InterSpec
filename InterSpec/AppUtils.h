@@ -156,8 +156,16 @@ namespace AppUtils
 
    Intended use is to decouple long-running background work from the
    "please wait" `SimpleDialog` shown during it: the dialog is owned by the
-   call site, captured (via `Wt::Core::observing_ptr`) into only the completion
-   lambda, and the worker never references it.
+   call site, referenced from only the completion lambda, and the worker never
+   touches it.
+
+   IMPORTANT: neither `work` nor `on_session_complete` may capture a
+   `Wt::Core::observing_ptr` (or an `observable::bindSafe` functor).  `WServer::post()`
+   takes its task by const-ref and copy-constructs the `std::function` on the worker
+   thread, and every copy/destroy of an `observing_ptr` mutates
+   `Wt::Core::observable::observers_`, which has no mutex or atomic - so that copy races
+   the session thread's `~observable`.  Capture a `WidgetUtils::WidgetHandle` (an inert
+   id string) instead and `resolve()` it inside the completion.
    */
   InterSpec_API void run_on_ioservice( std::function<void()> work,
                                        std::function<void()> on_session_complete );

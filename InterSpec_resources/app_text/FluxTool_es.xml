@@ -9,6 +9,7 @@
   <message id="ftw-hdr-flux-on-det">Flujo en det. (ɣ/s)</message>
   <message id="ftw-hdr-flux-cm">Flujo (ɣ/cm²/s)</message>
   <message id="ftw-hdr-flux-4pi">ɣ/4π/s</message>
+  <message id="ftw-hdr-use">Usar</message>
   <message id="ftw-tt-distance">
     Distancia desde el centro de la fuente hasta la cara del detector. El número debe
     estar seguido de unidades; las unidades válidas son: metros, m, cm, mm, km, pies,
@@ -21,6 +22,14 @@
   <message id="ftw-more">Más</message>
   <message id="ftw-copy-btn">Copiar al portapapeles</message>
   <message id="ftw-copy-btn-narrow">Copiar</message>
+  <message id="ftw-select-rows">Seleccionar filas</message>
+  <message id="ftw-select-rows-narrow">Seleccionar</message>
+  <message id="ftw-tt-select-rows">
+      Añade una casilla de verificación a cada fila de la tabla, para que pueda elegir
+    qué filas se copian al portapapeles o se exportan a CSV.  Las filas empiezan
+    marcadas; desmarque las que no quiera en la salida.  Cuando esta casilla está
+    desmarcada, se copian/exportan todas las filas.
+  </message>
   <message id="ftw-invalid-dist">Distancia inválida</message>
   <message id="ftw-no-drf">No se eligió función de respuesta del detector</message>
   <message id="ftw-no-foreground">No se cargó espectro de primer plano</message>

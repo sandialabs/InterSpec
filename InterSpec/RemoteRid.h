@@ -121,6 +121,10 @@ public:
   static void handleOpeningRemoteRidTool( InterSpec *interspec );
   static void disableAutoRemoteRid( InterSpec *interspec );
   static void handleShowingRemoteRidRefLines( InterSpec *interspec, std::string signal);
+
+  /** Returns whether a Remote RID REST endpoint is a safe, supported HTTP(S)
+      URL. Shared by interactive and deep-link configuration paths. */
+  static bool isValidRestUrl( const std::string &url );
   
   /** Handles receiving a "deep-link" url starting with "interspec://remoterid?ver=1&url=...&always=1".
    

@@ -71,6 +71,16 @@ export MACOSX_DEPLOYMENT_TARGET=13.3 # macOS Ventura (2023); required for C++20 
 export MY_WT_PREFIX=$install_directory
 export CMAKE_POLICY_VERSION_MINIMUM=3.5
 
+# TODO(Wt4): upstream (feature/PeakFitImprove) grew a `BUILD_OPENSSL` block here that builds a static
+#  OpenSSL into the prefix and turns on Wt's ENABLE_SSL, so `Wt::Http::Client` can do https:// - which
+#  is what the USE_NATIVE_HTTP_CLIENT Wt backend needs on Linux.  That block was written against
+#  Wt 3.7.1: it patches `wt-3.7.1/...` and `cmake/WtFindSsl.txt`, neither of which exists here.
+#  It was therefore NOT carried across.  To restore https for the Wt HTTP backend on this branch,
+#  build OpenSSL into the prefix and flip `ENABLE_SSL` (currently forced OFF in
+#  cmake/FetchInterSpecDeps.cmake) - no source patching should be needed with Wt 4.
+#  Not currently blocking: USE_NATIVE_HTTP_CLIENT defaults OFF, and on macOS the native backend is
+#  NSURLSession, which needs none of this.
+
 # Optional: also build wxWidgets (off by default).  wxWidgets is only needed when
 # building the target/wxwidgets desktop-app form; the local web-server and Electron
 # targets do not require it.  Override by editing this line, or run with:

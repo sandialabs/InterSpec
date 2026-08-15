@@ -1,0 +1,70 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  AppStream metadata, installed to /usr/share/metainfo/ by the .deb and .rpm.  This is what
+  makes InterSpec show up properly in GNOME Software / KDE Discover, and is a prerequisite for
+  any future Flathub submission.
+
+  Validate changes with:  appstreamcli validate gov.sandia.InterSpec.metainfo.xml
+-->
+<component type="desktop-application">
+  <id>gov.sandia.InterSpec</id>
+  <launchable type="desktop-id">interspec.desktop</launchable>
+
+  <name>InterSpec</name>
+  <summary>Analyze spectral gamma radiation data</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>LGPL-2.1-only</project_license>
+  <developer id="gov.sandia">
+    <name>Sandia National Laboratories</name>
+  </developer>
+
+  <description>
+    <p>
+      InterSpec assists in analyzing spectral nuclear radiation data, using a peak-based
+      methodology. It runs offline and is intended for radiation spectroscopists, emergency
+      responders, safeguards inspectors, and students.
+    </p>
+    <p>Capabilities include:</p>
+    <ul>
+      <li>Interactive spectrum display, with peak fitting and region-of-interest editing</li>
+      <li>Nuclide, x-ray, and nuclear reaction identification from reference gamma lines</li>
+      <li>Activity and shielding fitting, including trace sources and source age</li>
+      <li>Uranium and plutonium isotopic (enrichment and burn-up) analysis</li>
+      <li>Detection-limit and minimum-detectable-activity calculations</li>
+      <li>Energy calibration, detector response function creation, and decay calculations</li>
+      <li>Reading and writing a wide range of spectrum file formats</li>
+    </ul>
+  </description>
+
+  <categories>
+    <category>Science</category>
+    <category>Physics</category>
+    <category>Education</category>
+  </categories>
+
+  <keywords>
+    <keyword>gamma</keyword>
+    <keyword>spectroscopy</keyword>
+    <keyword>radiation</keyword>
+    <keyword>nuclide</keyword>
+    <keyword>spectrum</keyword>
+    <keyword>isotope</keyword>
+  </keywords>
+
+  <url type="homepage">https://sandialabs.github.io/InterSpec/</url>
+  <url type="bugtracker">https://github.com/sandialabs/InterSpec/issues</url>
+  <url type="vcs-browser">https://github.com/sandialabs/InterSpec</url>
+
+  <provides>
+    <binary>interspec</binary>
+  </provides>
+
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>touch</control>
+  </supports>
+
+  <content_rating type="oars-1.1"/>
+</component>

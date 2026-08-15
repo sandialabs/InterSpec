@@ -66,6 +66,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/SpecMeasManager.h"
+#include "InterSpec/BatchSampleSelect.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/RefSpectraWidget.h"
 #include "InterSpec/SpectraFileModel.h"
@@ -77,6 +78,30 @@
 
 using namespace Wt;
 using namespace std;
+
+#if( USE_BATCH_GUI_TOOLS )
+namespace
+{
+  /** Whether the "batch tool" link should be offered for `meas`.
+
+   The link is for files that hold several separate foreground measurements - i.e., where the user
+   likely wants each measurement analyzed as if it were its own file.  Passthrough/search-mode
+   files are excluded; their records are time-slices of one measurement, not separate items.
+   */
+  bool should_show_batch_tool_link( const shared_ptr<const SpecMeas> &meas )
+  {
+    // Cheap rejections first; this runs on every sample-number change.
+    if( !meas || meas->passthrough() || (meas->sample_numbers().size() < 3) )
+      return false;
+
+    BatchSampleSelect::Options opts;
+    opts.allow_lone_background_fallback = false;
+    opts.mix_unknown_with_foreground = true;
+
+    return (BatchSampleSelect::candidate_foreground_samples( *meas, opts ).size() >= 3);
+  }//bool should_show_batch_tool_link( const shared_ptr<const SpecMeas> & )
+}//namespace
+#endif //USE_BATCH_GUI_TOOLS
 
 
 CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
@@ -344,6 +369,15 @@ CompactFileManager::CompactFileManager( SpecMeasManager *fileManager,
     //HelpSystem::attachToolTipOn( m_showImage[typeindex], WString::tr("app-mi-tt-view-img"), showToolTips );
     m_showImage[typeindex]->hide();
 
+#if( USE_BATCH_GUI_TOOLS )
+    m_batchToolBtn[typeindex] = btndiv->addNew<WPushButton>( WString::tr("cfm-batch-tool-btn") );
+    m_batchToolBtn[typeindex]->addStyleClass( "LinkBtn MoreInfoBtn" );
+    m_batchToolBtn[typeindex]->clicked().connect( this, [this,type](){ handleShowBatchTool( type ); } );
+    HelpSystem::attachToolTipOn( m_batchToolBtn[typeindex], WString::tr("cfm-tt-batch-tool-btn"), showToolTips );
+    m_batchToolBtn[typeindex]->hide();
+    m_batchToolBtnMemo[typeindex] = BatchToolBtnMemo{};
+#endif
+
     m_moreInfoBtn[typeindex] = btndiv->addNew<WPushButton>( WString::tr("cfm-more-info-btn") );
     m_moreInfoBtn[typeindex]->addStyleClass( "LinkBtn MoreInfoBtn" );
     m_moreInfoBtn[typeindex]->clicked().connect( this, [this, type](){ m_interspec->createFileParameterWindow( type ); } );
@@ -452,6 +486,10 @@ void CompactFileManager::handleFileChangeRequest( int row, SpecUtils::SpectrumTy
     m_spectrumLineLegend[typeindex]->hide();
     m_showRidIdResult[typeindex]->hide();
     m_showImage[typeindex]->hide();
+#if( USE_BATCH_GUI_TOOLS )
+    m_batchToolBtn[typeindex]->hide();
+    m_batchToolBtnMemo[typeindex] = BatchToolBtnMemo{};
+#endif
     m_moreInfoBtn[typeindex]->hide();
     m_clearFileSelection[typeindex]->hide();
 
@@ -825,6 +863,10 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
     m_spectrumLineLegend[typeindex]->hide();
     m_showRidIdResult[typeindex]->hide();
     m_showImage[typeindex]->hide();
+#if( USE_BATCH_GUI_TOOLS )
+    m_batchToolBtn[typeindex]->hide();
+    m_batchToolBtnMemo[typeindex] = BatchToolBtnMemo{};
+#endif
     m_moreInfoBtn[typeindex]->hide();
     m_clearFileSelection[typeindex]->hide();
     
@@ -844,6 +886,18 @@ void CompactFileManager::handleDisplayChange( SpecUtils::SpectrumType spectrum_t
   const bool showPics = (meas->multimedia_data().size() > 0);
   m_showImage[typeindex]->setHidden( !showPics );
   
+#if( USE_BATCH_GUI_TOOLS )
+  // Recompute only when the displayed file, or its number of records, has changed
+  BatchToolBtnMemo &memo = m_batchToolBtnMemo[typeindex];
+  if( (memo.meas.lock() != meas) || (memo.num_samples != meas->sample_numbers().size()) )
+  {
+    memo.meas = meas;
+    memo.num_samples = meas->sample_numbers().size();
+    memo.show = should_show_batch_tool_link( meas );
+  }
+  m_batchToolBtn[typeindex]->setHidden( !memo.show );
+#endif
+
   m_moreInfoBtn[typeindex]->show();
   
   if( m_scaleValueRow[typeindex] )
@@ -1209,7 +1263,7 @@ void CompactFileManager::updateSummaryTable( SpecUtils::SpectrumType type,
     val->setToolTip( WString::tr("cfm-tt-meas-type") );
     //const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", hostViewer );
     //HelpSystem::attachToolTipOn( {label, val}, WString::tr("cfm-tt-meas-type"),
-    //                            showToolTips, HelpSystem::ToolTipPosition::Right );
+    //                            showToolTips );
   }//if( a single sample, and spectrum type is marked )
   
 }//void updateSummaryTable(...)
@@ -1392,6 +1446,16 @@ void CompactFileManager::handleSwapWithForeground( const SpecUtils::SpectrumType
   //m_fullFileManager->displayFile( index.row(), meas, SpecUtils::SpectrumType::Foreground, false, false, SpecMeasManager::VariantChecksToDo::None );
   //m_fullFileManager->displayFile( foreground_index.row(), foreground_meas, type, false, false, SpecMeasManager::VariantChecksToDo::None );
 }//void handleSwapWithForeground( const SpecUtils::SpectrumType type )
+
+
+#if( USE_BATCH_GUI_TOOLS )
+void CompactFileManager::handleShowBatchTool( const SpecUtils::SpectrumType type )
+{
+  const shared_ptr<SpecMeas> meas = m_interspec->measurment( type );
+  if( meas && m_fullFileManager )
+    m_fullFileManager->showBatchDialogForFile( meas );
+}//void CompactFileManager::handleShowBatchTool( const SpecUtils::SpectrumType type )
+#endif //USE_BATCH_GUI_TOOLS
 
 
 void CompactFileManager::handleClearFileSelection( const SpecUtils::SpectrumType type )

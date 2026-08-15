@@ -17,6 +17,9 @@ Warnings:
   {{ warning }}
 ## endfor
 {% endif %}
+{% if exists("PullTrend") and PullTrend.HasConclusion %}
+Pull-trend interpretation: {{ PullTrend.Message }}
+{% endif %}
 {% if exists("Sources") %}
 Sources:
 ## for src in Sources
@@ -73,9 +76,11 @@ Chi2 Contributions Of Peaks:
 {% if HasFitResults %}
 There were {{ NumDof }} parameters fit for
 It took {{ NumberFcnCalls }} solution trials to reach chi2={{ FitChi2 }} with an estimated distance to minumum of {{ EstimatedDistanceToMinimum }}
+## if exists("Sources")
 ## for src in Sources
 {{ src.Nuclide }} fit activity {{ src.Activity }} {% if src.ActivityIsFit %}with uncertainty {{ src.ActivityUncert }} ({{ src.ActivityUncertPercent }}) {% endif %}at {% if src.AgeIsFit %}assumed {% else %}fit {% endif %}age {{ src.Age }}
 ## endfor
+## endif
 {% if HasFitResults %}
 Geometry: {% if FixedGeometryDetector %}Fixed geometry, {{ ActShieldFitSetup.FixedGeometryType }}.
 {% else %}{{ ActShieldFitSetup.Geometry }}
@@ -94,3 +99,26 @@ Shieldings:
 {% endif %}
 {% endif %}
 {% endif %}
+
+{% if exists("NotFitPeaks") %}
+Exemplar peaks that could not be fit{% if existsIn(NotFitPeaks,"HasMdas") and NotFitPeaks.HasMdas %}, and their detection limits{% endif %}:
+## for peak in NotFitPeaks.Peaks
+    {{ printFixed(peak.PeakMean,2) }} keV{% if peak.SourceName %} ({{ peak.SourceName }}){% endif %}{% if existsIn(peak,"Mda") %}: {{ peak.Mda.Description }}{% if peak.Mda.DeconAttempted %}{% if peak.Mda.DeconComputed %}{% if peak.Mda.DeconFoundUpperLimit %}  The deconvolution method {% if peak.Mda.DeconIsPredictedSensitivity and existsIn(peak.Mda,"DeconSampleExposure_s") %}predicts a sensitivity of less than {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %} at the {{ peak.Mda.ConfidenceLevelStr }} confidence level for a {{ printFixed(peak.Mda.DeconSampleExposure_s,1) }} second measurement.{% else if peak.Mda.DeconIsPredictedSensitivity %}predicts a sensitivity of less than {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %} at the {{ peak.Mda.ConfidenceLevelStr }} confidence level for the planned measurement{% else if peak.Mda.DeconLimitType == "CentralInterval" %}gives a {{ peak.Mda.ConfidenceLevelStr }} central-interval upper endpoint of {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %}.{% else %}gives a one-sided upper limit of {% if peak.Mda.DeconQuantityIsCounts %}{{ peak.Mda.DeconUpperLimitStr }} counts{% else %}{{ peak.Mda.DeconUpperLimit }}{% endif %} at the {{ peak.Mda.ConfidenceLevelStr }} confidence level.{% endif %}{% else %}  The deconvolution method did not give a limit: {{ peak.Mda.DeconError }}.{% endif %}{% else %}  The deconvolution method did not give a limit: {{ peak.Mda.DeconError }}.{% endif %}{% endif %}{% endif %}
+## endfor
+{% endif %}
+## if exists("SupplementalPeakInfo")
+## if SupplementalPeakInfo.AnyPeakNotUsedForFit
+
+Peaks that were fit, but not used for the activity fit; the activity each implies on its own:
+## for peak in SupplementalPeakInfo.PeaksNotUsedForFit.Peaks
+    {{ printFixed(peak.PeakMean,2) }} keV{% if peak.SourceName %} ({{ peak.SourceName }}){% endif %}: {% if peak.HasNominalActivity %}{{ peak.Description }}{% else %}No activity could be derived: {{ peak.NotEvaluatedReason }}.{% endif %}
+## endfor
+## endif
+## if SupplementalPeakInfo.HasCurrieChecks
+
+Detection-limit check of each peak:
+## for peak in SupplementalPeakInfo.AllPeaks.Peaks
+    {{ printFixed(peak.PeakMean,2) }} keV{% if peak.SourceName %} ({{ peak.SourceName }}){% endif %}: {{ peak.CurrieCheck.ShortDescription }}{% if peak.CurrieCheck.CurrieComputed %} (Lc={{ peak.CurrieCheck.DecisionThresholdStr }}, Ld={{ peak.CurrieCheck.DetectionLimitStr }}, net={{ peak.CurrieCheck.SourceCountsStr }} counts, best est.={{ peak.CurrieCheck.BestEstimateCountsStr }} +- {{ peak.CurrieCheck.BestEstimateCountsUncertStr }} counts){% endif %}
+## endfor
+## endif
+## endif

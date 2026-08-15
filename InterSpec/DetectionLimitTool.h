@@ -26,12 +26,18 @@
 #include "InterSpec_config.h"
 
 #include <tuple>
+#include <atomic>
+#include <memory>
 #include <vector>
+#include <functional>
 
 #include <Wt/Json/Object.h>
 #include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
+// Used in the interface below (DeconComputeInput, DeconLimitType, ProjectedLimit); this header used
+//  to rely on its includers pulling it in first, which broke whenever they were sorted differently.
+#include "InterSpec/DetectionLimitCalc.h"
 
 /** TODO:
  - [x] Every update seems to trigger a layout resize that causes the chart to grow.
@@ -234,6 +240,40 @@ public:
                                             double shield_transmission );
   
   static Wt::Json::Object generateChartJson( const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result, const bool is_dist_limit );
+
+  /** Builds the localized sentence describing a completed deconvolution scan.
+
+   `DeconActivityOrDistanceLimitResult::limitText` is hard-coded English, because the calculation
+   layer has no Wt dependency and batch mode never loads message bundles.  This is its GUI
+   counterpart; both are driven by the same `DetectionLimitCalc::DeconLimitTextKind`, so the two
+   cannot end up describing different things.
+
+   Static, and shared with `DetectionLimitSimple`, so the two tools word the same result the same
+   way.
+
+   @param result The completed scan.
+   @param format_quantity Formats a value of whatever is being limited - activity, counts, or
+          distance - including any units or geometry postfix.  Called at most twice.
+   */
+  static Wt::WString limitResultText(
+            const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result,
+            const std::function<Wt::WString(double)> &format_quantity );
+
+  /** Companion to #limitResultText for the "best fit" line; the localized equivalent of
+   `DeconActivityOrDistanceLimitResult::bestCh2Text`.
+   */
+  static Wt::WString bestStatisticText(
+            const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result,
+            const std::function<Wt::WString(double)> &format_quantity );
+
+  /** Tooltip naming the statistic behind the displayed "chi2", and saying that chi2/DOF is not a
+   goodness-of-fit measure.  Attach wherever a chi2 value or the chi2 axis is shown.
+
+   Reads `DeconComputeResults::statistic_name` when it is available, falling back to "Cash".
+   */
+  static Wt::WString statisticTooltip(
+            const DetectionLimitCalc::DeconActivityOrDistanceLimitResult &result );
+
 protected:
   virtual void render( Wt::WFlags<Wt::RenderFlag> flags );
   
@@ -293,6 +333,13 @@ protected:
   
   void handleInputChange();
 
+  /** Callback for the "DisplayBecquerel" preference changing, so the displayed activity units
+   update.  Exists (rather than a lambda) so it can go through the *tracked*
+   UserPreferences::addCallbackWhenChanged overload: the untracked one connects for the whole
+   session, and this tool lives in a DetectionLimitWindow the user can close.
+   */
+  void handleDisplayBecquerelChanged( const bool becquerel );
+
   /** If the user-visible state has changed since the last call, registers a single undo/redo step
    that restores the tool's state via #encodeStateToUrl / #handleAppUrl.  Called from
    #scheduleCalcUpdate (the funnel for all input-driven recomputes - both the per-ROI MdaPeakRow
@@ -317,18 +364,47 @@ protected:
    displayed foreground.  Returns true if a new foreground was loaded. */
   bool loadCurrentForeground();
 
-  /** Toggles enabled state of the scale time input, repopulates the field with
+  /** Toggles enabled state of the planned-measurement-time input, repopulates the field with
    `m_origSpec`'s real time when the checkbox is off OR the field is empty (so
    the displayed value is always meaningful), refreshes the chart to show the
    effective spectrum, and triggers a recompute. */
-  void handleScaleSpectrumChanged();
+  void handlePlanTimeChanged();
 
-  /** Returns the original foreground (`m_origSpec`), or the scaled version if the
-   Scale checkbox is on and the field contains a parseable positive time.  Returns
-   `m_origSpec` unchanged if the checkbox is off, the spectrum has no real time, or
-   the field is empty / whitespace-only.  Throws only if Scale is on and the field
-   contains a non-empty but unparseable / non-positive value. */
-  std::shared_ptr<const SpecUtils::Measurement> effectiveSpectrum() const;
+  /** Shows or hides the planned-measurement-time control per the selected model, and rebuilds the
+   rows - the per-Bq yields depend on which measurement is being described. */
+  void handleMeasurementModelChanged();
+
+  /** Disables the measurement-model selector for a distance limit, and forces it back to
+   `CurrentSpectrum` if it was on a background reference.
+
+   A predicted sensitivity forces `foundLowerCl` false while a distance scan reports from its lower
+   crossing, so the combination cannot produce an answer at all.
+   \sa DetectionLimitCalc::decon_limit_text_kind
+   */
+  void updateMeasurementModelAvailability();
+
+  /** Retitles the confidence-level label to say which product the confidence applies to, and
+   schedules a recompute.  The row inputs do not depend on the limit type. */
+  void handleLimitTypeChanged();
+
+  DetectionLimitCalc::DeconMeasurementModel currentMeasurementModel() const;
+  DetectionLimitCalc::DeconLimitType currentLimitType() const;
+
+  /** The planned measurement time, in seconds, or zero when none was requested.
+
+   Zero when the control is hidden or unchecked, or the field is empty - all of which mean "not
+   asked for".  Throws only when the control is active and the field holds a non-empty but
+   unparseable or non-positive value.
+   */
+  double currentPlanTimeSeconds() const;
+
+  /** The spectra and exposure bookkeeping the current measurement model needs.
+
+   Thin wrapper over `DetectionLimitCalc::plan_measurement`, which is where the real subtlety
+   lives: under a background-reference model the deconvolution must see the UNSCALED spectrum, with
+   the planned time carried as an exposure instead, or the projection gets applied twice.
+   */
+  DetectionLimitCalc::PlannedMeasurement effectiveSpectra() const;
 
   /** Gets DRF from GUI widget, and if that isnt valid, gets it from the spectrum. */
   std::shared_ptr<const DetectorPeakResponse> detector();
@@ -437,8 +513,26 @@ protected:
     FiveSigma,
     NumConfidenceLevel
   };
+  /** Retitled by #handleLimitTypeChanged to name which product the confidence applies to - a
+   one-sided bound and a central interval are different claims at the same number. */
+  Wt::WLabel *m_confidenceLevelLabel;
   Wt::WComboBox *m_confidenceLevel;
-  
+
+  /** Whether the limit describes the loaded spectrum or a future measurement predicted from it.
+
+   Tool-level rather than per-region: it is a statement about the whole calculation, and two
+   measurement models cannot meaningfully share one likelihood.
+   \sa DetectionLimitCalc::DeconMeasurementModel
+   */
+  Wt::WLabel *m_measurementModelLabel;
+  Wt::WComboBox *m_measurementModel;
+
+  /** Which quantity the profile scan reports; sets the threshold and how the result is worded.
+   \sa DetectionLimitCalc::DeconLimitType
+   */
+  Wt::WLabel *m_limitTypeLabel;
+  Wt::WComboBox *m_limitType;
+
   /** Holds m_chi2Chart, m_bestChi2Act, and m_upperLimit. */
   Wt::WContainerWidget *m_results;
   
@@ -446,22 +540,94 @@ protected:
   Wt::WContainerWidget *m_chi2Chart;
   Wt::WText *m_bestChi2Act;
   Wt::WText *m_upperLimit;
-  
+
+  /** Shows the predicted spread of a background-reference limit, beneath the limit itself.
+
+   Filled in by a background calculation started automatically once the limit is known - a few
+   hundred profile scans, which is far too slow to do on the GUI thread but fine off it.  Shows a
+   placeholder while that runs.  \sa startBandCalculation
+   */
+  Wt::WText *m_bandTxt;
+
+  /** Everything `DetectionLimitCalc::decon_projected_limit` needs, captured on the GUI thread the
+   moment the limit is computed.
+
+   The worker runs on a background thread and must not touch a widget, so it gets a snapshot rather
+   than a pointer back into the tool.
+   */
+  struct BandCalcInput
+  {
+    std::shared_ptr<const DetectionLimitCalc::DeconComputeInput> input;
+    double wantedCl = 0.95;
+    double planned_real_time = 0.0;
+    double max_search_quantity = 0.0;
+    bool useCurie = true;
+    DetectionLimitCalc::DeconLimitType limit_type
+                       = DetectionLimitCalc::DeconLimitType::OneSidedUpperLimit;
+    bool valid = false;
+  };//struct BandCalcInput
+
+  BandCalcInput m_bandInput;
+
+  /** Which band calculation the displayed result belongs to.
+
+   Incremented every time one is started.  A result arriving from a superseded run carries the old
+   number and is dropped, so a slow calculation cannot overwrite the answer to a newer question.
+   Same guard `RelActAutoGui` uses.
+   */
+  size_t m_bandCalcNumber;
+
+  /** Set true to tell an in-flight band calculation to stop; also identifies the run, since a
+   result whose flag is not the current one is stale by definition.
+   */
+  std::shared_ptr<std::atomic_bool> m_bandCancel;
+
+  /** Starts the band calculation on a background thread.  Returns immediately. */
+  void startBandCalculation();
+
+  /** Stops any in-flight band calculation and clears what is shown; called whenever the inputs
+   change, so a band never sits beside a limit it was not computed for.
+   */
+  void cancelBandCalculation();
+
+  /** Applies a finished band to the GUI.  Only ever called on the GUI thread, via `wApp->bind`. */
+  void updateBandFromCalc( std::shared_ptr<DetectionLimitCalc::ProjectedLimit> result,
+                           std::shared_ptr<std::atomic_bool> cancel_flag,
+                           const size_t calc_number );
+
+  /** Reports a band calculation that threw.  Same staleness guard as the success path. */
+  void handleBandCalcError( std::shared_ptr<std::string> message,
+                            std::shared_ptr<std::atomic_bool> cancel_flag );
+
   Wt::WText *m_errorMsg;
-  
+
+  /** Notes that qualify a limit that WAS produced - overlapping regions of interest combined, a
+   profile crossing the threshold more than twice, and so on.
+
+   Separate from #m_errorMsg, which means "there is no result".  Sharing one red widget made a
+   qualified answer look like a failure, and let a warning survive as the last thing written into
+   the slot the next hard error needed.
+   */
+  Wt::WText *m_warningMsg;
+
   Wt::WPushButton *m_fitFwhmBtn;
   
   std::shared_ptr<SpecMeas> m_our_meas;
 
   /** A copy of the foreground Measurement we were initialized with - kept around
-   so that the Scale feature can compute a fresh scaled copy from a stable source
-   regardless of what is currently displayed on the chart. */
+   so that the planned-measurement-time feature can compute a fresh scaled copy from a stable
+   source regardless of what is currently displayed on the chart. */
   std::shared_ptr<const SpecUtils::Measurement> m_origSpec;
 
-  /** "Scale to dwell" controls.  When checked, the chart and calculations use the
-   foreground scaled by `(m_scaleSpectrumTime real time) / m_origSpec->real_time()`. */
-  Wt::WCheckBox *m_scaleSpectrumCb;
-  Wt::WLineEdit *m_scaleSpectrumTime;
+  /** The planned measurement time (T_s) - the dwell being asked about.
+
+   Shown only under `DeconMeasurementModel::BackgroundReference`: this tool shows per-region Currie
+   limits next to the deconvolution scan, and projecting one but not the other would put two
+   different dwells on one screen.  \sa DetectionLimitCalc::plan_measurement
+   */
+  Wt::WCheckBox *m_planTimeCb;
+  Wt::WLineEdit *m_planTimeEdit;
+  Wt::WContainerWidget *m_planTimeDiv;
 
   Wt::WContainerWidget *m_peaks;
 
@@ -505,6 +671,20 @@ public:
      */
     PeakContinuum::OffsetType decon_continuum_type;
     
+    /** Multiplies #counts_per_bq_into_4pi__ to give the yield in the measurement being *reported
+     on*, as opposed to the one that was loaded.
+
+     Exactly 1 except under `DetectionLimitCalc::DeconMeasurementModel::BackgroundReference`, where
+     #counts_per_bq_into_4pi__ is deliberately kept at the reference exposure - the deconvolution
+     calculation applies the projection itself, and would double-count a pre-scaled value - while
+     #measurement is the projected spectrum the Currie limit is computed from.  Display code that
+     pairs a Currie number with a per-Bq yield has to bring the two onto the same footing.
+
+     Derived from the current control state, so it must not be restored from a cached row.
+     \sa DetectionLimitCalc::PlannedMeasurement
+     */
+    double exposure_ratio = 1.0;
+
     std::shared_ptr<const DetectorPeakResponse> drf;
     std::shared_ptr<const SpecUtils::Measurement> measurement;
   };//struct MdaPeakRowInput

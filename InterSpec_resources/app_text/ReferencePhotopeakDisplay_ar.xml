@@ -84,7 +84,6 @@
   <message id="rpd-tbl-hdr-tt-trans">النويدة الفعلية التي تحللت لتعطي هذا الجسيم.</message>
   <message id="rpd-tbl-hdr-tt-trans-mode">وضع تحلل النويدة الأم، الذي أنتج هذا الجسيم.</message>
   <message id="rpd-tbl-hdr-tt-type">نوع الجسيم الناتج</message>
-  <message id="rpd-tbl-hdr-tt-"></message>
 
   <!-- Fit Sources (peak fitting from displayed reference lines) -->
   <message id="rpd-fit-source">ملاءمة المصدر</message>
@@ -92,6 +91,5 @@
   <message id="rpd-fit-sources-menu-auto">تلقائي</message>
   <message id="rpd-fit-sources-menu-advanced">متقدم</message>
   
-
 
 </messages>

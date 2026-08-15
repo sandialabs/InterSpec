@@ -69,8 +69,6 @@
   <message id="isbe-category-nuc-xray-rctn-desc">সমস্ত নিউক্লাইড, এক্স-রে (ক্ষয় এবং ফ্লুরোসেন্স), এবং বিক্রিয়া</message>
   <message id="isbe-category-xray">ফ্লুরোসেন্স এক্স-রে</message>
   <message id="isbe-category-xray-desc">শুধুমাত্র ফ্লুরোসেন্স এক্স-রে</message>
-  <message id="isbe-category-reactions">বিক্রিয়া</message>
-  <message id="isbe-category-reactions-desc">শুধুমাত্র বিক্রিয়া</message>
   <message id="isbe-category-medical">চিকিৎসা নিউক্লাইড</message>
   <message id="isbe-category-medical-desc">সাধারণ চিকিৎসা নিউক্লাইড</message>
   <message id="isbe-category-industrial">শিল্প নিউক্লাইড</message>

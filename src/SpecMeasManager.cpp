@@ -30,6 +30,7 @@
 #include <sstream>
 #include <fstream>
 #include <numeric>
+#include <limits>
 #include <iostream>
 #include <stdio.h>
 #include <stdlib.h>
@@ -108,6 +109,7 @@
 #include "SpecUtils/UriSpectrum.h"
 
 
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/MakeDrf.h"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/DrfChart.h"
@@ -145,6 +147,11 @@
 
 #if( USE_REL_ACT_TOOL )
 #include "InterSpec/RelActAutoGui.h"
+#endif
+
+#if( USE_LLM_INTERFACE )
+#include "InterSpec/LlmConfig.h"
+#include "InterSpec/LlmToolGui.h"
 #endif
 
 #if( USE_QR_CODES )
@@ -190,6 +197,25 @@ SpectrumType typeFromInt( int id ){ return SpectrumType(id); }
 
 namespace
 {
+  struct ZipSecurityLimits
+  {
+    ZipArchive::ExtractionLimits member;
+    size_t aggregate;
+  };
+
+  ZipSecurityLimits zip_security_limits()
+  {
+#if( defined(MAX_SPECTRUM_MEMMORY_SIZE_MB) && (MAX_SPECTRUM_MEMMORY_SIZE_MB > 0) )
+    const size_t member_limit = size_t(MAX_SPECTRUM_MEMMORY_SIZE_MB) * 1024u * 1024u;
+#else
+    const size_t member_limit = 256u * 1024u * 1024u;
+#endif
+    const size_t aggregate_limit = (member_limit > (std::numeric_limits<size_t>::max() / 2u))
+                                   ? std::numeric_limits<size_t>::max()
+                                   : (2u * member_limit);
+    return { {member_limit, 100u}, aggregate_limit };
+  }
+
 #if( USE_DB_TO_STORE_SPECTRA )
   class PreviousDbEntry : public WContainerWidget
   {
@@ -419,10 +445,12 @@ namespace
       m_fileUpload->uploaded().connect( this, &FileUploadDialog::finishUpload );
       m_fileUpload->fileTooLarge().connect( this, [this]( const ::int64_t size_tried ){ toLarge( size_tried ); } );
       // Close this dialog if the displayed spectrum changes while it is open.  Route through
-      //  hide() (not emitReject() directly): emitReject() only emits finished() once the window
-      //  is hidden, and hide() also defers the finished()->userCanceled()->deleteAuxWindow()
-      //  teardown out of the displayedSpectrumChanged emission we are inside.
-      m_specChangedConection = viewer->displayedSpectrumChanged().connect( this, [this](){ hide(); } );
+      //  hide(), not emitReject(): see the note in EnergyCalPreserveWindow - emitReject() suppresses
+      //  its deferred finished() emit unless the dialog is already hidden, so calling it from a
+      //  signal that does not hide the dialog silently does nothing.  hide() also defers the
+      //  finished()->userCanceled()->deleteAuxWindow() teardown out of the
+      //  displayedSpectrumChanged emission we are inside.
+      m_specChangedConection = viewer->displayedSpectrumChanged().connect( this, &AuxWindow::hide );
       
       finished().connect( this, &FileUploadDialog::userCanceled );
       
@@ -935,6 +963,9 @@ protected:
   WText *m_qrCodeStatusTxt;
   
   JSignal<int,std::string> m_qrDecodeSignal;
+#if( USE_LLM_INTERFACE )
+  JSignal<std::string, std::string, int, int> m_resizedImageForLlmSignal;
+#endif
   std::function<void()> m_close_parent_dialog;
   
   /** Cleanup functions for sub-dialogs (e.g., QR-scan result dialogs) spawned by this
@@ -1206,9 +1237,57 @@ protected:
   {
     LOAD_JAVASCRIPT(wApp, "SpecMeasManager.cpp", "SpecMeasManager", wtjsSearchForQrUsingCanvas);
     wApp->require( "InterSpec_resources/assets/js/zxing-cpp-wasm/zxing_reader.js", "zxing_reader.js" );
-    
+
     this->doJavaScript( "Wt.WT.SearchForQrUsingCanvas('" + this->id() + "'," + m_image->jsRef() + ", 5);" );
   }//void check_for_qr_from_canvas()
+
+
+#if( USE_LLM_INTERFACE )
+  void sendToLlm()
+  {
+    if( !m_image || !m_resource )
+      return;
+
+    // JavaScript: draw image to canvas at reduced size (max 2048px), export as base64
+    const string js =
+      "(function(){"
+      "  var img = " + m_image->jsRef() + ";"
+      "  if(!img) return;"
+      "  var canvas = document.createElement('canvas');"
+      "  var maxSize = 2048;"
+      "  var w = img.naturalWidth, h = img.naturalHeight;"
+      "  if(w > maxSize || h > maxSize){"
+      "    var scale = maxSize / Math.max(w, h);"
+      "    w = Math.round(w * scale);"
+      "    h = Math.round(h * scale);"
+      "  }"
+      "  canvas.width = w;"
+      "  canvas.height = h;"
+      "  var ctx = canvas.getContext('2d');"
+      "  ctx.drawImage(img, 0, 0, w, h);"
+      "  var mime = '" + m_mimetype + "';"
+      "  var outMime = (mime === 'image/png') ? 'image/png' : 'image/jpeg';"
+      "  var quality = (outMime === 'image/jpeg') ? 0.85 : undefined;"
+      "  var dataUrl = canvas.toDataURL(outMime, quality);"
+      "  var base64 = dataUrl.split(',')[1];"
+      "  " + m_resizedImageForLlmSignal.createCall( {"base64", "outMime", "w", "h"} ) + ";"
+      "})();";
+
+    doJavaScript( js );
+  }//void sendToLlm()
+
+
+  void handleResizedImageForLlm( const string &base64, const string &mime,
+                                  int w, int h )
+  {
+    LlmToolGui *llmTool = m_viewer->currentLlmTool();
+    if( llmTool )
+    {
+      llmTool->stageImage( base64, mime, m_display_name, w, h );
+      m_close_parent_dialog();
+    }
+  }//void handleResizedImageForLlm(...)
+#endif
   
   
   void embed_in_n42()
@@ -1275,6 +1354,9 @@ public:
   m_checkForQrCodeBtn( nullptr ),
   m_qrCodeStatusTxt( nullptr ),
   m_qrDecodeSignal( this, "QrDecodedFromImg", false)
+#if( USE_LLM_INTERFACE )
+  , m_resizedImageForLlmSignal( this, "ResizedImageForLlm", false )
+#endif
   {
     // Capture the parent dialog by observing_ptr.  In normal operation the parent
     // outlives this child widget (children destruct first), but using observing_ptr
@@ -1377,6 +1459,23 @@ public:
       embedbtn->setStyleClass( "LinkBtn NonSpecEmbedBtn" );
       embedbtn->clicked().connect( this, &UploadedImgDisplay::embed_in_n42 );
     }//if( m_viewer->measurment( SpecUtils::SpectrumType::Foreground ) )
+
+#if( USE_LLM_INTERFACE )
+    {
+      LlmToolGui *llmTool = m_viewer->currentLlmTool();
+      if( llmTool && llmTool->canAcceptImages() )
+      {
+        m_resizedImageForLlmSignal.connect( this, [this]( std::string b64, std::string mime,
+                                                          int w, int h ){
+          handleResizedImageForLlm( std::move(b64), std::move(mime), w, h );
+        } );
+
+        WPushButton *sendToLlmBtn = btn_div->addNew<WPushButton>( WString::tr("uid-send-to-llm-btn") );
+        sendToLlmBtn->setStyleClass( "LinkBtn NonSpecSendToLlmBtn" );
+        sendToLlmBtn->clicked().connect( this, &UploadedImgDisplay::sendToLlm );
+      }
+    }
+#endif
   }//UploadedImgDisplay constructor
   
   
@@ -1738,6 +1837,11 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
     
     const string tmppath = SpecUtils::temp_dir();
     string tmpfile = SpecUtils::temp_file_name( "", tmppath );
+    BOOST_SCOPE_EXIT(&tmpfile)
+    {
+      if( !tmpfile.empty() )
+        SpecUtils::remove_file( tmpfile );
+    } BOOST_SCOPE_EXIT_END
     
     ifstream zipfilestrm( spoolName.c_str(), ios::in | ios::binary );
     
@@ -1747,8 +1851,6 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
     if( !headers.count(fileInZip) )
       throw runtime_error( "Couldnt find file in zip" );
 
-    size_t nbytewritten = 0;
-    
     {
 #ifdef _WIN32
       const std::wstring wtmpfile = SpecUtils::convert_from_utf8_to_utf16(tmpfile);
@@ -1756,12 +1858,12 @@ void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
 #else
       ofstream tmpfilestrm( tmpfile.c_str(), ios::out | ios::binary );
 #endif
-      nbytewritten = read_file_from_zip( zipfilestrm, headers[fileInZip], tmpfilestrm );
+      const ZipSecurityLimits limits = zip_security_limits();
+      ZipArchive::read_file_from_zip( zipfilestrm, headers[fileInZip], tmpfilestrm, limits.member );
     }
     
     handleFileDropWorker( fileInZip, tmpfile, type, wApp );
 
-    SpecUtils::remove_file( tmpfile );
   }catch( std::exception & )
   {
     passMessage( WString::tr("smm-err-zip"), 2 );
@@ -1799,6 +1901,8 @@ bool SpecMeasManager::handleZippedFile( const std::string &name,
     ifstream zipfilestrm( spoolName.c_str(), ios::in | ios::binary );
     
     ZipArchive::FilenameToZipHeaderMap headers = ZipArchive::open_zip_file( zipfilestrm );
+    const ZipSecurityLimits limits = zip_security_limits();
+    ZipArchive::validate_archive_for_extraction( headers, limits.member, limits.aggregate );
     
     
     vector<string> filenames;
@@ -2234,6 +2338,14 @@ SpecMeasManager::classifyNonSpecFileHeader( const uint8_t *header,
   if( header_contains( "CALp File" ) )
     result.candidates.push_back( NonSpecFileKind::CalpFile );
 
+#if( USE_LLM_INTERFACE )
+  // --- `llm_config.xml` for the LLM assistant ---
+  if( header_contains( "<LlmConfig" ) )
+    result.candidates.push_back( NonSpecFileKind::LlmConfigXml );
+#endif
+
+  
+
 #if( USE_REL_ACT_TOOL )
   // --- Isotopics-by-nuclide RelActCalcAuto XML.  State-gate (currdata) checked by caller. ---
   if( header_contains( "<RelActCalcAuto " ) )
@@ -2418,6 +2530,26 @@ bool SpecMeasManager::handleNonSpectrumFile( const std::string &displayName,
             [this, &infile]( SimpleDialog *d ){ return handleSourceLibFile( infile, d ); } );
         }
         break;
+
+#if( USE_LLM_INTERFACE )
+      case NonSpecFileKind::LlmConfigXml:
+        // Open the provider settings window pre-loaded with this config (the user installs it by
+        //  accepting), instead of the generic non-spectrum message dialog.  Validate it parses
+        //  first, so a malformed file gets a real error rather than an empty settings window.
+        try
+        {
+          LlmConfig::loadApiAndMcpConfigs( fileLocation );
+          m_viewer->openLlmConfigForImport( fileLocation );
+        }catch( std::exception & )
+        {
+          SimpleDialog *errdialog = SimpleDialog::make<SimpleDialog>(
+                                              WString::tr("smm-llm-config-invalid-title") );
+          errdialog->contents()->addNew<WText>( WString::tr("smm-llm-config-invalid-msg") );
+          errdialog->addButton( WString::tr("Close") );
+        }//try / catch
+        handled = true;
+        break;
+#endif //USE_LLM_INTERFACE
 
       case NonSpecFileKind::Empty:
       case NonSpecFileKind::ReadFailed:
@@ -3420,7 +3552,7 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
     if( !tool )
       throw runtime_error( "Could not create <em>Isotopics by nuclides</em> tool." );
     
-    tool->setGuiStateFromXml( &doc );
+    tool->setGuiStateFromXml( &doc, "Load 'Isotopics by nuclides' config file." );
     
     dialog->done( Wt::DialogCode::Accepted );
     return true;
@@ -4452,10 +4584,14 @@ void SpecMeasManager::handleDataRecievedStatus( uint64_t num_bytes_recieved, uin
     m_processingUploadTimer->expires_from_now( boost::posix_time::seconds(120) );
     // Capture an observing_ptr so the deferred timer callback safely no-ops if the
     //  dialog was destroyed before the timer fires.
-    Wt::Core::observing_ptr<SimpleDialog> dialog_obs( dialog );
+    // Only the widget id crosses the thread boundary: WServer::post() copy-constructs the
+    //  completion on the worker thread, and copying an observing_ptr there would race the session
+    //  thread on Wt::Core::observable's unsynchronized observer list.
+    const WidgetUtils::WidgetHandle dialog_obs( dialog );
     m_processingUploadTimer->async_wait( [this, dialog_obs, app, sessionId, server]( const boost::system::error_code &ec ){
       if( !ec )
-        server->post( sessionId, [this, dialog_obs, app](){ checkCloseUploadDialog( dialog_obs.get(), app ); } );
+        server->post( sessionId, [this, dialog_obs, app](){
+          checkCloseUploadDialog( dialog_obs.resolve_as<SimpleDialog>(), app ); } );
     } );
   };//make_timer lamda
   
@@ -4621,7 +4757,10 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
   // under the session-thread's UpdateLock.  While we hold UpdateLock the
   // destructor cannot proceed, so once the destructed-check passes, `this`
   // is safe for the rest of this call.
-  Wt::Core::observing_ptr<SimpleDialog> dialog_obs( dialog );
+  // Only the widget id crosses the thread boundary: WServer::post() copy-constructs the
+  //  completion on the worker thread, and copying an observing_ptr there would race the session
+  //  thread on Wt::Core::observable's unsynchronized observer list.
+  const WidgetUtils::WidgetHandle dialog_obs( dialog );
   Wt::WApplication * const app = wApp;
   std::shared_ptr<std::mutex> destruct_mutex = m_destructMutex;
   std::shared_ptr<bool> destructed = m_destructed;
@@ -4643,8 +4782,9 @@ void SpecMeasManager::handleFileDrop( const std::string &name,
     },
     [dialog_obs]()
     {
-      if( dialog_obs )
-        dialog_obs->accept();
+      SimpleDialog * const dlg = dialog_obs.resolve_as<SimpleDialog>();
+      if( dlg )
+        dlg->accept();
     } );
 }//handleFileDrop(...)
 
@@ -4655,10 +4795,46 @@ void SpecMeasManager::showBatchDialog()
   if( m_batchDialog )
     return;
 
-  m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop.get() );
+  m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop.get(), false );
   m_batchDialog->finished().connect( this, &SpecMeasManager::handleBatchDialogFinished );
   wApp->triggerUpdate();
 }//void showBatchDialog()
+
+
+void SpecMeasManager::showBatchDialogForFile( std::shared_ptr<SpecMeas> meas )
+{
+  if( !m_batchDialog )
+  {
+    m_batchDialog = BatchGuiDialog::createDialog( m_batchDragNDrop.get(), true );
+    m_batchDialog->finished().connect( this, &SpecMeasManager::handleBatchDialogFinished );
+
+    // The link that gets us here is only offered for files with several foreground records, which
+    //  is exactly the case the default handling refuses to analyze - so start out set to analyze
+    //  each record.
+    m_batchDialog->widget()->setMultiSampleHandling(
+                              BatchSampleSelect::MultiSampleHandling::EachSampleSeparately );
+  }else
+  {
+    m_batchDialog->show();
+  }
+
+  if( meas )
+  {
+    // Prefer the name shown everywhere else in the app for this file
+    std::string display_name = meas->filename();
+    const Wt::WModelIndex index = m_fileModel ? m_fileModel->index( meas ) : Wt::WModelIndex();
+    if( index.isValid() )
+    {
+      const std::shared_ptr<SpectraFileHeader> header = m_fileModel->fileHeader( index.row() );
+      if( header && !header->displayName().empty() )
+        display_name = header->displayName().toUTF8();
+    }//if( index.isValid() )
+
+    m_batchDialog->widget()->addInMemoryFiles( { std::make_tuple( display_name, std::string(), meas ) } );
+  }//if( meas )
+
+  wApp->triggerUpdate();
+}//void showBatchDialogForFile( std::shared_ptr<SpecMeas> meas )
 
 void SpecMeasManager::handleBatchDialogFinished()
 {
@@ -7252,6 +7428,14 @@ int SpecMeasManager::dataUploaded( Wt::WFileUpload *upload )
 bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::SpectrumType type,
                                          SpecUtils::ParserType parseType )
 {
+  return loadFromFileSystem( name, type, parseType, true );
+}
+
+
+bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::SpectrumType type,
+                                         SpecUtils::ParserType parseType,
+                                         bool checkIfPreviouslyOpened )
+{
   if( m_previousStatesDialog )
     handleCancelPreviousStatesDialog( m_previousStatesDialog.get() );
   
@@ -7268,8 +7452,7 @@ bool SpecMeasManager::loadFromFileSystem( const string &name, SpecUtils::Spectru
     WModelIndexSet selected;
     WModelIndex index = m_fileModel->index( row, 0 );
     selected.insert( index );
-    m_treeView->setSelectedIndexes( WModelIndexSet() );    
-//    passMessage( "Successfully uploaded file.", 0 );
+    m_treeView->setSelectedIndexes( WModelIndexSet() );
 
     displayFile( row, measurement, type, true, true, 
               SpecMeasManager::VariantChecksToDo::DerivedDataAndMultiEnergyAndMultipleVirtualDets );
@@ -7535,5 +7718,3 @@ void SpecMeasManager::browsePrevSpectraAndStatesDb()
 
 
 #endif //#if( USE_DB_TO_STORE_SPECTRA )
-
-

@@ -658,8 +658,22 @@ void run_on_ioservice( std::function<void()> work,
     Wt::WServer::instance()->post( sessionId,
       [done = std::move(done)]()
     {
-      if( done )
-        done();
+      // Guard the completion too, not just the worker.  Completions typically parse the work's
+      //  results and render a report template, either of which can throw; letting that escape into
+      //  Wt's event loop skips the triggerUpdate() below, so the client never learns the "please
+      //  wait" dialog was dismissed and the session appears hung.
+      try
+      {
+        if( done )
+          done();
+      }catch( std::exception &e )
+      {
+        std::cerr << "AppUtils::run_on_ioservice completion threw: " << e.what() << std::endl;
+      }catch( ... )
+      {
+        std::cerr << "AppUtils::run_on_ioservice completion threw unknown exception" << std::endl;
+      }
+
       Wt::WApplication *session_app = Wt::WApplication::instance();
       if( session_app )
         session_app->triggerUpdate();

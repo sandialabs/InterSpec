@@ -83,7 +83,6 @@
   <message id="rpd-tbl-hdr-tt-trans">वास्तविक न्यूक्लाइड जो इस कण को देने के लिए क्षय हुआ।</message>
   <message id="rpd-tbl-hdr-tt-trans-mode">जनक न्यूक्लाइड का क्षय मोड, जिसने यह कण उत्पादित किया।</message>
   <message id="rpd-tbl-hdr-tt-type">उत्पादित कण का प्रकार</message>
-  <message id="rpd-tbl-hdr-tt-"></message>
 
   <!-- Fit Sources (peak fitting from displayed reference lines) -->
   <message id="rpd-fit-source">स्रोत फिट करें</message>

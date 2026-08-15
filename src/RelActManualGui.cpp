@@ -737,7 +737,7 @@ void RelActManualGui::init()
   m_matchTolerance->setSpinnerHidden();
   m_matchTolerance->setWidth( 35 );
   m_matchTolerance->setRange( 0, 5 );
-  m_matchTolerance->setValue( 0.5 ); //Other places we use 1.25/2.355 = 0.530786
+  m_matchTolerance->setValue( 0.65 ); //Other places we use 1.25/2.355 = 0.530786
   label = optionsList->elementAt(row, 1)->addNew<WLabel>( WString("&nbsp;{1}").arg(WString::tr("FWHM")) );
   label->setBuddy( m_matchTolerance );
   m_matchTolerance->valueChanged().connect( this, &RelActManualGui::matchToleranceChanged );
@@ -1993,9 +1993,19 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   if( solution.m_status != RelActCalcManual::ManualSolutionStatus::Success )
     return;
   
-  // We'll first update the chart
-  string relEffEqn = solution.rel_eff_eqn_js_function();
-  string relEffEqnUncert = solution.rel_eff_eqn_js_uncert_fcn();
+  // We'll first update the chart.  For a physical model these throw if an areal density evaluates < 0;
+  //  on failure leave the strings empty - RelEffChart serializes an empty equation as JS `null`, so the
+  //  chart shows the data points without a fit line / uncertainty band rather than letting the exception
+  //  escape this GUI update.
+  string relEffEqn, relEffEqnUncert;
+  try
+  {
+    relEffEqn = solution.rel_eff_eqn_js_function();
+    relEffEqnUncert = solution.rel_eff_eqn_js_uncert_fcn();
+  }catch( const std::exception &e )
+  {
+    cerr << "RelActManualGui: failed to build rel-eff equation JS: " << e.what() << endl;
+  }
   if( solution.m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
     // Update shield widgets
@@ -2122,6 +2132,16 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
         ext_shields[i]->resetMaterialEntryState();
         continue;
       }
+
+      // solution and input external shields should be 1:1; guard the input access defensively so a
+      //  size mismatch can't read out of bounds.
+      assert( i < input.phys_model_external_attens.size() );
+      if( i >= input.phys_model_external_attens.size() )
+      {
+        ext_shields[i]->resetMaterialEntryState();
+        continue;
+      }
+
       const auto &fit_val = solution.m_phys_model_external_atten_shields[i];
       const shared_ptr<const RelActCalc::PhysicalModelShieldInput> in_shield = input.phys_model_external_attens[i];
 
@@ -2755,7 +2775,7 @@ size_t RelActManualGui::relEffEqnOrder() const
     return 0;
 
   const int orderIndex = m_relEffEqnOrder->currentIndex();
-  if( (orderIndex < 0) || (orderIndex > 7) )
+  if( (orderIndex < 0) || (orderIndex > 6) )
     throw runtime_error( "Invalid RelEffEqnOrder" );
   
   return static_cast<size_t>(orderIndex);

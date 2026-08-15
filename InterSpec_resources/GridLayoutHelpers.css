@@ -105,6 +105,11 @@
   grid-row-start: 9;
 }
 
+.GridTenthRow
+{
+  grid-row-start: 10;
+}
+
 .GridSpanTwoCol
 {
   grid-column-end: span 2;

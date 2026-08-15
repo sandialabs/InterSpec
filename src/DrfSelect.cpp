@@ -129,10 +129,13 @@ using SpecUtils::DetectorType;
 
 namespace
 {
+  /** Select `item` when the click landed on the item's `<li>` but outside its `<a>`.
+   `WMenu::select()` emits `triggered()`/`itemSelected()` itself when the index changes, and nothing
+   when it does not - so no explicit emit here (that would double-fire on an anchor click).
+   */
   void right_select_item( WMenu *menu, WMenuItem *item )
   {
     menu->select( item );
-    item->triggered().emit( item ); //
   }
   
   class UtcToLocalTimeDelegate : public Wt::WItemDelegate
@@ -581,6 +584,13 @@ public:
   {
     assert( m_app );
     assert( m_drfSelect );
+
+    // Have Wt hold the session lock across handleRequest instead of dropping it for us: by
+    //  default `WResource::handle` unlocks before invoking us, so the session thread can be
+    //  inside `~WResource`'s `beingDeleted()` - waiting on our use-count - while we block
+    //  acquiring the lock it holds.  That is a deadlock.  Free: the `WApplication::UpdateLock`
+    //  in handleRequest already spanned the whole body, so this only moves it earlier.
+    setTakesUpdateLock( true );
   }
   
   virtual ~DrfDownloadResource()
@@ -2290,6 +2300,12 @@ DrfSelect::DrfSelect( std::shared_ptr<DetectorPeakResponse> currentDet,
     auto stackOwned = std::make_unique<Wt::WStackedWidget>();
     m_drfTypeStack = stackOwned.get();
     m_drfTypeStack->addStyleClass( "UseInfoStack DetEditContent" );
+
+    // Wt4's WStackedWidget ctor sets an inline `overflow:hidden`, which beats the `overflow-y`
+    //  our stylesheet sets on this stack (Wt3's ctor only added the style class, so the CSS
+    //  worked).  Set it through the API so we win on specificity, else content taller than the
+    //  container is clipped with no scrollbar.
+    m_drfTypeStack->setOverflow( Overflow::Auto, Wt::Orientation::Vertical );
 
     auto menuOwned = std::make_unique<WMenu>( m_drfTypeStack );
     m_drfTypeMenu = menuOwned.get();

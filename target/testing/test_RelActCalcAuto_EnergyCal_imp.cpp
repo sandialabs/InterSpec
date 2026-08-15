@@ -1437,8 +1437,8 @@ BOOST_AUTO_TEST_CASE( PolynomialChannel_OutOfRange_BoundaryContinuity )
   const Jet1 ch_out = find_polynomial_channel( e_out, coeffs_jet, nchannel, no_dev_pairs_jet );
 
   // Derivatives should agree to first order in eps.
-  const double denom = std::max( std::fabs(ch_in.v[0]), std::fabs(ch_out.v[0]) );
-  BOOST_CHECK_LE( std::fabs(ch_in.v[0] - ch_out.v[0]) / std::max(denom, 1.0e-12), 1.0e-3 );
+  const double denom = (std::max)( std::fabs(ch_in.v[0]), std::fabs(ch_out.v[0]) );
+  BOOST_CHECK_LE( std::fabs(ch_in.v[0] - ch_out.v[0]) / (std::max)(denom, 1.0e-12), 1.0e-3 );
 }
 
 

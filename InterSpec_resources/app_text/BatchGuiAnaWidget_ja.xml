@@ -43,7 +43,6 @@
   <message id="bgw-reports-write-csv">サマリーCSV</message>
   <message id="bgw-reports-write-csv-tooltip">全入力ファイルの解析結果のサマリーCSVファイルを書き出します。</message>
   <message id="bgw-reports-write-custom-per-file">カスタム各ファイル用</message>
-  <message id="bgw-reports-write-custom-per-file-tooltip">各ファイルに使用するカスタムレポートテンプレートをアップロードします。</message>
   <message id="bgw-reports-write-custom-summary">カスタムサマリー</message>
   <message id="bgw-reports-write-custom-summary-tooltip">全入力ファイルのサマリーを提供する一つまたは複数のテンプレートファイル。</message>
 
@@ -58,7 +57,6 @@
   <message id="bgw-no-ana-act-shield-invalid-background">無効なバックグラウンド</message>
   <message id="bgw-no-ana-no-input-files">入力ファイルがありません。</message>
   <message id="bgw-no-ana-invalid-output-path">有効な出力ディレクトリを選択してください。</message>
-
 
   <!-- Analysis progress and results -->
   <message id="bgw-performing-work-title">作業実行中</message>
@@ -120,8 +118,6 @@ InterSpecからのピークがスペクトルファイルに存在する必要�
 ゼロまたは負の値は要求なしを意味し、また'peak-stat-threshold'要求もありません。</message>
   
   <message id="bgw-reports-write-custom-per-file-tooltip">一つまたは複数のスペクトルレポートテンプレートファイル - 各入力ファイルに対して、指定された各テンプレートでレポートが生成されます。</message>
-
-  <message id="bgw-reports-write-custom-summary-tooltip">全入力ファイルのサマリーを提供する一つまたは複数のテンプレートファイル。</message>
 
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Bq単位を使用</message>

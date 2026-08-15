@@ -27,13 +27,16 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <set>
 #include <deque>
 #include <mutex>
 #include <atomic>
 #include <chrono>
 #include <string>
 #include <fstream>
+#include <memory>
 #include <numeric>
+#include <cstdlib>
 #include <iostream>
 #include <thread>
 
@@ -43,11 +46,11 @@
 #include <boost/math/constants/constants.hpp>
 
 //#include "/external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
-#include <Wt/Json/Value>
-#include <Wt/Json/Array>
-#include <Wt/Json/Parser>
-#include <Wt/Json/Object>
-#include <Wt/Json/Serializer>
+#include <Wt/Json/Value.h>
+#include <Wt/Json/Array.h>
+#include <Wt/Json/Parser.h>
+#include <Wt/Json/Object.h>
+#include <Wt/Json/Serializer.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/DateTime.h"
@@ -70,6 +73,7 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/AnalystChecks.h"
 #include "InterSpec/PeakFitSpecImp.h"
+#include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/InterSpecServer.h"
 #include "InterSpec/ReferenceLineInfo.h"
 #include "InterSpec/FitPeaksForNuclides.h"
@@ -990,6 +994,386 @@ const char *det_type_filename_str( const PeakFitUtils::CoarseResolutionType type
 }//det_type_filename_str(...)
 
 
+/** Score a single config across all precomputed spectra.
+
+ This is the exact objective the NuclideConfigGA action minimizes; it is shared with the
+ NuclideConfigEval action so a saved gene-line can be re-scored on a different dataset
+ (holdout split, other live-times, other detector classes) with identical math.
+
+ Per-spectrum tasks write into pre-sized slots so summation order is independent of
+ completion order.  The two out-params receive the foreground-only and raw bg-penalty
+ totals so reporting can show the breakdown when --background-fit-trial is on.
+
+ Returns `total_fg + NuclideConfig_GA::sm_background_fit_penalty_weight * total_bg`.
+ */
+static double score_config_over_precomputed(
+    const std::vector<NuclideConfig_GA::PrecomputedNuclideData> &precomputed,
+    const FitPeaksForNuclides::PeakFitForNuclideConfig &config,
+    const size_t num_threads,
+    double *out_fg, double *out_bg,
+    NuclideConfig_GA::ConfigEvaluation *report_evaluation = nullptr )
+{
+  if( report_evaluation )
+  {
+    *report_evaluation = NuclideConfig_GA::ConfigEvaluation{};
+    report_evaluation->spectra.resize( precomputed.size() );
+  }
+
+  // Optional per-spectrum diagnostics (env PEAKFIT_PERSPEC_TSV) + scoring progress to stderr.  The
+  // NuclideConfigEval path otherwise has no visibility into the (multi-minute) scoring loop, and no
+  // way to see which low-resolution spectra fail / find nothing without rendering the full HTML
+  // gallery.  A total-miss fit scores ~0 cost yet miss_fraction=1 - the row the aggregate mean hides.
+  std::atomic<size_t> num_scored{ 0 };
+  const size_t total_spectra = precomputed.size();
+  std::mutex tsv_mutex;
+  std::shared_ptr<std::ofstream> tsv;
+  if( const char * const tsv_path = std::getenv( "PEAKFIT_PERSPEC_TSV" ) )
+  {
+    tsv = std::make_shared<std::ofstream>( tsv_path );
+    if( tsv->good() )
+      (*tsv) << "spectrum_id\tsource\tdetector\tlocation\tlive_time\tfg_cost\tstatus"
+                "\tmiss_fraction\tn_observable\tn_fit\terror\n";
+    else
+      tsv.reset();
+  }
+  std::shared_ptr<std::ofstream> shadow_tsv;
+  if( const char * const shadow_path = std::getenv( "PEAKFIT_ROI_SHADOW_TSV" ) )
+  {
+    shadow_tsv = std::make_shared<std::ofstream>( shadow_path );
+    if( shadow_tsv->good() )
+      (*shadow_tsv) << "spectrum_id\tfit_role\tstage\tpass\tvalid\tfallback\tinterval\tlegacy_lower"
+        "\tlegacy_upper\tproposed_lower\tproposed_upper\twidth_fwhm\tchannels"
+        "\tcontinuum\tnormalized_mismatch\tinterval_score\tlegacy_continuum"
+        "\tlegacy_normalized_mismatch\tlegacy_interval_score\tlegacy_total_score"
+        "\tproposed_total_score\ttotal_score_delta\tfirst_group\tlast_group"
+        "\tgroup_gamma_energies\treason\tunmodeled_conflicts"
+        "\tprofile_energies\tprofile_foreground\tprofile_snip\tprofile_continuum"
+        "\tunmodeled_peak_energies\n";
+    else
+      shadow_tsv.reset();
+  }
+
+  // Map the solution status enum to a name so failures self-classify in the TSV
+  // (FailedToSetupProblem vs FailToSolveProblem vs a Success that found 0 observable peaks) - the
+  // single most-requested diagnostic from the review panel.
+  const auto status_name = []( const RelActCalcAuto::RelActAutoSolution::Status s ) -> const char *
+  {
+    using S = RelActCalcAuto::RelActAutoSolution::Status;
+    switch( s )
+    {
+      case S::Success:              return "Success";
+      case S::NotInitiated:         return "NotInitiated";
+      case S::FailedToSetupProblem: return "FailedToSetupProblem";
+      case S::FailToSolveProblem:   return "FailToSolveProblem";
+      case S::UserCanceled:         return "UserCanceled";
+    }
+    return "Unknown";
+  };
+
+  const auto record_spectrum = [&]( const NuclideConfig_GA::PrecomputedNuclideData &pd,
+                                    const double fg, const char *status, const double miss_frac,
+                                    const size_t n_observable, const size_t n_fit,
+                                    const std::string &error )
+  {
+    const size_t done = num_scored.fetch_add( 1 ) + 1;
+    if( (done % 25) == 0 || done == total_spectra )
+      std::cerr << "  [score] " << done << " of " << total_spectra << " spectra" << std::endl;
+    if( tsv )
+    {
+      std::string err = error;                       // keep the TSV one-row-per-spectrum
+      for( char &c : err ) if( c=='\t' || c=='\n' || c=='\r' ) c = ' ';
+      if( err.size() > 80 ) err.resize( 80 );
+      std::lock_guard<std::mutex> lock( tsv_mutex );
+      const std::string spectrum_id = pd.src_info->src_info.file_base_path + "/"
+          + pd.src_info->detector_name + "/"
+          + pd.src_info->location_name + "/" + pd.src_info->live_time_name + "/"
+          + pd.src_info->src_info.src_name;
+      (*tsv) << spectrum_id << '\t' << pd.src_info->src_info.src_name << '\t'
+             << pd.src_info->detector_name << '\t' << pd.src_info->location_name << '\t'
+             << pd.src_info->live_time_name << '\t'
+             << fg << '\t' << status << '\t' << miss_frac << '\t'
+             << n_observable << '\t' << n_fit << '\t' << err << '\n';
+      tsv->flush();
+    }
+  };
+
+  const auto record_shadow = [&]( const NuclideConfig_GA::PrecomputedNuclideData &pd,
+      const std::vector<FitPeaksForNuclides::detail::RoiBoundaryShadowResult> &diagnostics,
+      const char * const fit_role )
+  {
+    if( !shadow_tsv )
+      return;
+    const std::string spectrum_id = pd.src_info->src_info.file_base_path + "/"
+        + pd.src_info->detector_name + "/"
+        + pd.src_info->location_name + "/" + pd.src_info->live_time_name + "/"
+        + pd.src_info->src_info.src_name;
+    std::lock_guard<std::mutex> lock( tsv_mutex );
+    for( size_t pass = 0; pass < diagnostics.size(); ++pass )
+    {
+      const FitPeaksForNuclides::detail::RoiBoundaryShadowResult &diagnostic
+        = diagnostics[pass];
+      if( !diagnostic.valid )
+      {
+        (*shadow_tsv) << spectrum_id << '\t' << fit_role << '\t' << diagnostic.stage
+          << '\t' << pass << "\t0\t" << diagnostic.fallback_reason
+          << "\t-1\t0\t0\t0\t0\t0\t0\tUnknown\t0\t0\tUnknown\t0\t0\t"
+          << diagnostic.legacy_total_score << '\t' << diagnostic.proposed_total_score
+          << "\t0\t0\t0\t\tlegacy fallback\t0\t\t\t\t\t\n";
+        continue;
+      }
+      for( size_t interval_index = 0;
+           interval_index < diagnostic.intervals.size(); ++interval_index )
+      {
+        const FitPeaksForNuclides::detail::RoiBoundaryShadowInterval &interval
+          = diagnostic.intervals[interval_index];
+        std::ostringstream gamma_energies;
+        for( size_t gamma_index = 0;
+             gamma_index < interval.group_gamma_energies.size(); ++gamma_index )
+        {
+          if( gamma_index )
+            gamma_energies << ',';
+          gamma_energies << interval.group_gamma_energies[gamma_index];
+        }
+        const auto serialize_values = []( const std::vector<double> &values ) {
+          std::ostringstream stream;
+          for( size_t index = 0; index < values.size(); ++index )
+          {
+            if( index )
+              stream << ',';
+            stream << values[index];
+          }
+          return stream.str();
+        };
+        (*shadow_tsv) << spectrum_id << '\t' << fit_role << '\t' << diagnostic.stage
+          << '\t' << pass << "\t1\t\t" << interval_index
+          << '\t' << interval.legacy_lower << '\t' << interval.legacy_upper
+          << '\t' << interval.lower << '\t' << interval.upper << '\t'
+          << interval.width_fwhm << '\t' << interval.num_channels << '\t'
+          << PeakContinuum::offset_type_str(interval.continuum_type) << '\t'
+          << interval.normalized_continuum_mismatch << '\t' << interval.interval_score << '\t'
+          << PeakContinuum::offset_type_str(interval.legacy_continuum_type) << '\t'
+          << interval.legacy_normalized_continuum_mismatch << '\t' << interval.legacy_score << '\t'
+          << diagnostic.legacy_total_score << '\t' << diagnostic.proposed_total_score << '\t'
+          << (diagnostic.proposed_total_score - diagnostic.legacy_total_score) << '\t'
+          << interval.first_group << '\t' << interval.last_group << '\t'
+          << gamma_energies.str() << '\t' << interval.reason << '\t'
+          << interval.unmodeled_peak_conflicts << '\t'
+          << serialize_values(interval.profile_energies) << '\t'
+          << serialize_values(interval.profile_foreground) << '\t'
+          << serialize_values(interval.profile_snip) << '\t'
+          << serialize_values(interval.profile_continuum) << '\t'
+          << serialize_values(interval.unmodeled_peak_energies) << '\n';
+      }
+    }
+    shadow_tsv->flush();
+  };
+
+  // Reliability is reported separately from fit-quality cost: any non-Success is a mechanical
+  // failure, while a legitimate empty is a successful fit with no observable or definitely-wanted
+  // missed peak.
+  std::atomic<size_t> num_mechanical_failures{ 0 };
+  std::atomic<size_t> num_legit_empty{ 0 };
+
+  NuclideConfig_GA::FitAccuracyBreakdown accuracy_totals;
+  std::vector<NuclideConfig_GA::FitAccuracyBreakdown> accuracy_partials(
+    precomputed.size() );
+
+  // Score one spectrum.  Returns (fg, raw_bg) - the raw bg is unweighted.
+  // Called from both the serial and parallel paths below; safe to invoke concurrently.
+  const auto score_one_spectrum = [&config, &record_spectrum, &record_shadow, &status_name,
+                                   &num_mechanical_failures, &num_legit_empty,
+                                   &accuracy_partials,
+                                   &precomputed, report_evaluation](
+      const NuclideConfig_GA::PrecomputedNuclideData &pd ) -> std::pair<double,double>
+  {
+    const size_t index = static_cast<size_t>( &pd - precomputed.data() );
+    NuclideConfig_GA::SpectrumEvaluation *report = nullptr;
+    if( report_evaluation )
+    {
+      report = &report_evaluation->spectra[index];
+      report->spectrum_id = NuclideConfig_GA::ReportDetail::canonical_spectrum_key( pd );
+      report->anchor_id = NuclideConfig_GA::ReportDetail::stable_spectrum_id( pd );
+    }
+
+    Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
+    if( NuclideConfig_GA::sm_background_mode == NuclideConfig_GA::BackgroundMode::NoBackgroundFitNorm )
+      options |= FitPeaksForNuclides::FitNormBkgrndPeaks;
+    if( NuclideConfig_GA::sm_disable_auto_interferer_fit )
+      options |= FitPeaksForNuclides::DisableAutoInterfererFit;
+
+    try
+    {
+      const std::vector<std::shared_ptr<const PeakDef>> user_peaks;
+
+      FitPeaksForNuclides::PeakFitResult result = FitPeaksForNuclides::fit_peaks_for_nuclides(
+        pd.auto_search_peaks, pd.foreground, pd.sources, user_peaks,
+        pd.background, pd.drf, options, config, pd.peak_fit_prefs );
+      record_shadow( pd, FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics(),
+                     "foreground" );
+
+      const bool ok = (result.status == RelActCalcAuto::RelActAutoSolution::Status::Success);
+
+      // A non-Success fit produced no usable peaks (observable_peaks is empty), so it is scored as
+      // the total-miss its empty result earns - identical to a Success that recovered nothing.  The
+      // mechanical status is recorded separately (the counters + the TSV), never added to the cost.
+      const NuclideConfig_GA::FitAccuracyBreakdown breakdown
+        = NuclideConfig_GA::ReportDetail::score_observable_peaks( pd, result.observable_peaks );
+      accuracy_partials[index] = breakdown;
+      const double fg_score = breakdown.cost;
+
+      // Status and fit quality are separate axes: any non-Success is mechanical even when its empty
+      // result happens to earn no miss penalty.  A legitimate empty must complete successfully.
+      const bool legitimate_empty = ok && result.observable_peaks.empty()
+          && (breakdown.missed_definitely_wanted == 0);
+      const bool mechanical_failure = !ok;
+      if( mechanical_failure )
+        num_mechanical_failures.fetch_add( 1, std::memory_order_relaxed );
+      else if( legitimate_empty )
+        num_legit_empty.fetch_add( 1, std::memory_order_relaxed );
+
+      // Background-false-positive penalty (no-op unless the bg-fit trial is enabled); only meaningful
+      // for a successful fit.
+      NuclideConfig_GA::BackgroundFitDetail bg_detail;
+      const double bg_raw = ok ? NuclideConfig_GA::compute_background_fit_penalty(
+          pd, config, NuclideConfig_GA::sm_background_mode,
+          report ? &bg_detail : nullptr ) : 0.0;
+      record_shadow( pd, FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics(),
+                     "background trial" );
+
+      record_spectrum( pd, fg_score, ok ? "Success" : status_name(result.status), breakdown.miss_fraction,
+                       result.observable_peaks.size(), result.fit_peaks.size(),
+                       ok ? std::string() : result.error_message );
+      if( report )
+      {
+        report->has_fit_result = true;
+        report->legitimate_empty = legitimate_empty;
+        report->mechanical_failure = mechanical_failure;
+        report->status = ok ? "Success" : status_name(result.status);
+        report->error_message = result.error_message;
+        report->accuracy = breakdown;
+        report->background_detail = std::move( bg_detail );
+        report->background_penalty = bg_raw;
+        report->fit_result = std::move( result );
+      }
+      return { fg_score, bg_raw };
+    }
+    catch( const std::exception &e )
+    {
+      FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics();
+      // An exception is a mechanical failure with no result at all; score the truth as a total-miss.
+      num_mechanical_failures.fetch_add( 1, std::memory_order_relaxed );
+      const std::vector<PeakDef> no_peaks;
+      const NuclideConfig_GA::FitAccuracyBreakdown breakdown
+        = NuclideConfig_GA::ReportDetail::score_observable_peaks( pd, no_peaks );
+      accuracy_partials[index] = breakdown;
+      const double fg_score = breakdown.cost;
+      record_spectrum( pd, fg_score, "EXCEPTION", breakdown.miss_fraction, 0, 0, e.what() );
+      if( report )
+      {
+        report->exception = true;
+        report->mechanical_failure = true;
+        report->status = "EXCEPTION";
+        report->error_message = e.what();
+        report->accuracy = breakdown;
+      }
+      return { fg_score, 0.0 };
+    }
+  };//score_one_spectrum lambda
+
+  const size_t inner_threads = std::max<size_t>( 1, num_threads );
+
+  double total_fg = 0.0, total_bg = 0.0;
+
+  if( inner_threads <= 1 )
+  {
+    for( const NuclideConfig_GA::PrecomputedNuclideData &pd : precomputed )
+    {
+      const auto [fg, bg] = score_one_spectrum( pd );
+      total_fg += fg;
+      total_bg += bg;
+    }
+  }
+  else
+  {
+    // Parallel path: each task writes into its own slot, then we sum in
+    // spectrum-index order so the result is independent of thread count.
+    std::vector<std::pair<double,double>> partials( precomputed.size(), {0.0, 0.0} );
+    {
+      boost::asio::thread_pool pool( inner_threads );
+      for( size_t i = 0; i < precomputed.size(); ++i )
+      {
+        boost::asio::post( pool, [i, &precomputed, &partials, &score_one_spectrum]()
+        {
+          partials[i] = score_one_spectrum( precomputed[i] );
+        } );
+      }
+      pool.join();
+    }
+    for( const auto &p : partials )
+    {
+      total_fg += p.first;
+      total_bg += p.second;
+    }
+  }
+
+  // Reduce all floating-point components in spectrum order, never worker-completion order.
+  for( const NuclideConfig_GA::FitAccuracyBreakdown &partial : accuracy_partials )
+  {
+    accuracy_totals.area_cost += partial.area_cost;
+    accuracy_totals.find_reward += partial.find_reward;
+    accuracy_totals.candidate_reward += partial.candidate_reward;
+    accuracy_totals.miss_fraction += partial.miss_fraction;
+    accuracy_totals.missed_definitely_wanted += partial.missed_definitely_wanted;
+    accuracy_totals.extra_peaks += partial.extra_peaks;
+  }
+
+  if( out_fg ) *out_fg = total_fg;
+  if( out_bg ) *out_bg = total_bg;
+
+  if( report_evaluation )
+  {
+    report_evaluation->total_fg = total_fg;
+    report_evaluation->total_bg_raw = total_bg;
+    report_evaluation->total_cost = total_fg
+        + NuclideConfig_GA::sm_background_fit_penalty_weight*total_bg;
+    report_evaluation->accuracy_totals = accuracy_totals;
+    for( const NuclideConfig_GA::SpectrumEvaluation &spectrum : report_evaluation->spectra )
+    {
+      if( spectrum.mechanical_failure )
+        report_evaluation->mechanical_failures += 1;
+      else if( spectrum.legitimate_empty )
+        report_evaluation->legitimate_empties += 1;
+      else
+        report_evaluation->successes += 1;
+    }
+  }
+
+  // Reliability axis, reported separately from the fit-quality cost above: how many spectra the
+  // fitter could not fit at all (scored as total-misses in the cost, but the goal is to drive this
+  // count to zero by fixing the fitter, not by pricing failures).
+  const size_t mech_fail = num_mechanical_failures.load();
+  const size_t legit_empty = num_legit_empty.load();
+  std::cout << "  Mechanical fit failures (any non-Success status; tracked independently of cost): "
+            << mech_fail << " of " << precomputed.size()
+            << " (" << (100.0 * mech_fail / std::max<size_t>(1, precomputed.size())) << "%)" << std::endl
+            << "  Legitimate empties (successful fit, no observable peak, and no definitely-wanted miss): "
+            << legit_empty << std::endl
+            << "  Accuracy components (per spectrum): area_cost="
+            << (accuracy_totals.area_cost / std::max<size_t>(1, precomputed.size()))
+            << ", find_reward="
+            << (accuracy_totals.find_reward / std::max<size_t>(1, precomputed.size()))
+            << ", candidate_reward="
+            << (accuracy_totals.candidate_reward / std::max<size_t>(1, precomputed.size()))
+            << ", miss_fraction="
+            << (accuracy_totals.miss_fraction / std::max<size_t>(1, precomputed.size()))
+            << std::endl
+            << "  Accuracy counts: missed_definitely_wanted="
+            << accuracy_totals.missed_definitely_wanted
+            << ", spurious_extra=" << accuracy_totals.extra_peaks << std::endl;
+
+  return total_fg + NuclideConfig_GA::sm_background_fit_penalty_weight * total_bg;
+}//score_config_over_precomputed(...)
+
 
 int main( int argc, char **argv )
 {
@@ -1018,6 +1402,14 @@ int main( int argc, char **argv )
   bool background_fit_trial_arg = false;
   string chi2_cap_mode_str = "fixed";
   double chi2_cap_fixed_value = 25.0;
+  double holdout_frac = 0.0;
+  string holdout_role_str = "all";
+  size_t holdout_seed = 20260703;
+  string config_genes_file;
+  string eval_html_file;
+  string spectrum_key_file;
+  string eval_results_tsv_file;
+  bool reporter_self_test_arg = false;
 
   po::options_description desc( "Allowed options" );
   desc.add_options()
@@ -1049,13 +1441,47 @@ int main( int argc, char **argv )
        "the long_background spectrum with the source(s) and penalize the "
        "score (weighted 0.25x) by source-attributed peaks that survive the "
        "511/<30 keV/NORM-overlap filters.  Default off.")
+    ("disable-auto-interferer-fit",
+       po::bool_switch( &NuclideConfig_GA::sm_disable_auto_interferer_fit ),
+       "Disable automatic strong-interferer discovery and nuisance co-fitting.  Use this for "
+       "source-only manual tuning; the default leaves production interferer handling enabled.")
     ("rel-eff-chi2-cap-mode", po::value<string>( &chi2_cap_mode_str )->default_value( chi2_cap_mode_str ),
        "How initial_manual_rel_eff_max_chi2_dof is treated: 'disabled' (cap "
        "never fires), 'fixed' (use --rel-eff-chi2-cap-value), 'ga-optimized' "
        "(GA picks the cap as a gene).  Default 'fixed'.")
     ("rel-eff-chi2-cap-value", po::value<double>( &chi2_cap_fixed_value )->default_value( chi2_cap_fixed_value ),
        "Fixed value for initial_manual_rel_eff_max_chi2_dof.  Used only when "
-       "--rel-eff-chi2-cap-mode=fixed.");
+       "--rel-eff-chi2-cap-mode=fixed.")
+    ("checkpoint", po::value<string>(),
+       "NuclideConfigGA: enable per-generation checkpointing of the GA population.  The value is a "
+       "run name embedded in the filename (<det-type>_<name>_nuclide_config_ga_checkpoint.tsv), so "
+       "concurrent runs don't overwrite each other's state.")
+    ("resume", po::value<string>(),
+       "NuclideConfigGA: resume by seeding the initial population from the given checkpoint file.  "
+       "Refuses to resume if the run options (det-type, dataset filters, chi2-cap, bg-trial) differ.")
+    ("holdout-frac", po::value<double>( &holdout_frac )->default_value( holdout_frac ),
+       "Fraction of source entries (by src_name hash) assigned to the held-out 'eval' split.  "
+       "0 disables the split.  The hash is of the source name only, so an entry's split assignment "
+       "is identical across detectors/cities/live-times (eval sources are unseen during tuning, "
+       "while every detector/city/live-time stratum stays represented in both splits).")
+    ("holdout-role", po::value<string>( &holdout_role_str )->default_value( holdout_role_str ),
+       "Which split this run uses when --holdout-frac > 0: 'train' (tuning), 'eval' (validation), "
+       "or 'all' (no filtering).")
+    ("holdout-seed", po::value<size_t>( &holdout_seed )->default_value( holdout_seed ),
+       "Seed mixed into the split hash; keep it identical between the tuning run and its evaluation.")
+    ("config-genes", po::value<string>( &config_genes_file ),
+       "NuclideConfigEval: file whose first non-comment line is a gene set, in either checkpoint-TSV "
+       "(tab-separated) or results-txt (comma-space) key=value format.")
+    ("eval-html", po::value<string>( &eval_html_file ),
+       "NuclideConfigEval: optional output HTML report filename for the evaluated config.")
+    ("spectrum-key-file", po::value<string>( &spectrum_key_file ),
+       "Exact canonical spectrum keys to evaluate, one per line. Blank lines and # comments are ignored; "
+       "duplicates, unknown keys, and an empty selection are errors.")
+    ("eval-results-tsv", po::value<string>( &eval_results_tsv_file ),
+       "NuclideConfigEval: write the exact cached evaluation and ROI diagnostics used by --eval-html. "
+       "Refuses to overwrite an existing file.")
+    ("reporter-self-test", po::bool_switch( &reporter_self_test_arg ),
+       "Run focused deterministic-ID, escaping, ROI-measurement, and objective-consistency tests, then exit.");
   
   po::variables_map vm;
   
@@ -1073,6 +1499,20 @@ int main( int argc, char **argv )
   {
     cout << desc << endl;
     return 0;
+  }
+
+  if( reporter_self_test_arg )
+  {
+    try
+    {
+      NuclideConfig_GA::ReportDetail::run_self_tests();
+      cout << "Reporter self-tests passed." << endl;
+      return 0;
+    }catch( const std::exception &e )
+    {
+      cerr << "Reporter self-test failed: " << e.what() << endl;
+      return -25;
+    }
   }
   
   // Validate and set up directories
@@ -1123,6 +1563,52 @@ int main( int argc, char **argv )
     return -6;
   }
   NuclideConfig_GA::sm_rel_eff_chi2_cap_fixed_value = chi2_cap_fixed_value;
+
+  // Checkpoint / resume (opt-in).  Build a one-line summary of the options that affect the objective
+  //  and gene meaning so a --resume can refuse an incompatible continuation; thread counts are
+  //  intentionally omitted as they don't affect results.
+  if( vm.count( "checkpoint" ) )
+    NuclideConfig_GA::sm_checkpoint_name = vm["checkpoint"].as<string>();
+  if( vm.count( "resume" ) )
+    NuclideConfig_GA::sm_resume_path = vm["resume"].as<string>();
+  {
+    const auto opt_or = [&vm]( const char *key, const char *dflt ) -> string {
+      return vm.count(key) ? vm[key].as<string>() : string(dflt);
+    };
+    ostringstream opts_summary;
+    // genome=v2: the statistically-reformulated gene set (dimensionless keep/merge/extent
+    // thresholds, AICc model selection).  Bump on any change to gene meaning so --resume
+    // refuses checkpoints from a different genome even if all gene names happen to parse.
+    opts_summary << "genome=v2"
+                 << "; det_type=" << det_type_str
+                 << "; detector=" << opt_or( "detector", "(default)" )
+                 << "; city=" << opt_or( "city", "(all)" )
+                 << "; live_time=" << opt_or( "live-time", "(all)" )
+                 << "; subsample=" << (vm.count("subsample") ? std::to_string(vm["subsample"].as<size_t>()) : string("1"))
+                 << "; source_nuclide=" << opt_or( "source-nuclide", "(all)" )
+                 << "; data_base_dir=" << data_base_dir
+                 << "; chi2_cap_mode=" << chi2_cap_mode_str
+                 << "; chi2_cap_value=" << chi2_cap_fixed_value
+                 << "; bg_trial=" << (background_fit_trial_arg ? 1 : 0)
+                 << "; auto_interferer_fit="
+                 << (NuclideConfig_GA::sm_disable_auto_interferer_fit ? 0 : 1)
+                 << "; holdout_frac=" << holdout_frac
+                 << "; holdout_role=" << holdout_role_str
+                 << "; holdout_seed=" << holdout_seed;
+    NuclideConfig_GA::sm_checkpoint_options_summary = opts_summary.str();
+  }
+
+  if( (holdout_role_str != "train") && (holdout_role_str != "eval") && (holdout_role_str != "all") )
+  {
+    cerr << "Error: --holdout-role must be 'train', 'eval', or 'all' (got '" << holdout_role_str << "')." << endl;
+    return -7;
+  }
+
+  if( (holdout_frac < 0.0) || (holdout_frac >= 1.0) )
+  {
+    cerr << "Error: --holdout-frac must be in [0, 1) (got " << holdout_frac << ")." << endl;
+    return -7;
+  }
   
   // Parse action enum
   enum class OptimizationAction : int
@@ -1136,6 +1622,7 @@ int main( int argc, char **argv )
     DetTypeClassify,
     ValidateDetType,
     NuclideConfigGA,
+    NuclideConfigEval,
     SpectroscopicExtent
   };//enum class OptimizationAction : int
   
@@ -1158,11 +1645,13 @@ int main( int argc, char **argv )
     action = OptimizationAction::ValidateDetType;
   else if( action_str == "NuclideConfigGA" )
     action = OptimizationAction::NuclideConfigGA;
+  else if( action_str == "NuclideConfigEval" )
+    action = OptimizationAction::NuclideConfigEval;
   else if( action_str == "SpectroscopicExtent" )
     action = OptimizationAction::SpectroscopicExtent;
   else
   {
-    cerr << "Error: invalid action '" << action_str << "'. Valid actions are: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy, PeaksForNuclide, DetTypeClassify, ValidateDetType, NuclideConfigGA, SpectroscopicExtent" << endl;
+    cerr << "Error: invalid action '" << action_str << "'. Valid actions are: Candidate, InitialFit, FinalFit, CodeDev, AccuracyFromCsvsStudy, PeaksForNuclide, DetTypeClassify, ValidateDetType, NuclideConfigGA, NuclideConfigEval, SpectroscopicExtent" << endl;
     return -4;
   }
 
@@ -1201,6 +1690,14 @@ int main( int argc, char **argv )
   << " threads for individual evaluation, with each individual using up to " << PeakFitImprove::sm_num_threads_per_individual
   << " threads for optimization."
   << endl;
+
+  // Cap the threads each relative-activity solve uses internally to the
+  // per-individual budget (default 1).  The GA already parallelizes across
+  // individuals at the outer level, so without this each solve would spin up a
+  // hardware_concurrency-sized ROI/Ceres thread-pool, and (outer x inner) would
+  // exhaust the OS thread limit on many-core machines (EAGAIN). See
+  // RelActCalc::set_max_solve_threads().
+  RelActCalc::set_max_solve_threads( static_cast<unsigned>( PeakFitImprove::sm_num_threads_per_individual ) );
   cout << "Data base directory: " << data_base_dir << endl;
   if( !static_data_dir.empty() )
     cout << "Static data directory: " << static_data_dir << endl;
@@ -1262,7 +1759,7 @@ int main( int argc, char **argv )
   vector<string> wanted_detectors = detectors_for_type( selected_det_type );
 
   if( vm.count( "detector" ) )
-    wanted_detectors = { vm["detector"].as<string>() };
+    SpecUtils::split( wanted_detectors, vm["detector"].as<string>(), "," );
   else if( debug_printout_arg )
     wanted_detectors = vector<string>{ "Detective-X" };
 
@@ -1301,6 +1798,16 @@ int main( int argc, char **argv )
 
   const vector<DetectorInjectSet> &inject_sets = std::get<0>( loaded_data );
   vector<DataSrcInfo> input_srcs = std::get<1>( loaded_data );
+
+  // Filesystem directory iteration order is unspecified.  Sort before subsampling so the selected
+  // corpus, stable IDs, CLI totals, and report ordering reproduce across runs and thread counts.
+  std::stable_sort( input_srcs.begin(), input_srcs.end(),
+    []( const DataSrcInfo &lhs, const DataSrcInfo &rhs ) -> bool {
+      return std::tie( lhs.detector_name, lhs.location_name, lhs.live_time_name,
+                       lhs.src_info.src_name, lhs.src_info.file_base_path )
+           < std::tie( rhs.detector_name, rhs.location_name, rhs.live_time_name,
+                       rhs.src_info.src_name, rhs.src_info.file_base_path );
+    } );
 
   // Apply subsampling if requested (before any action uses input_srcs)
   if( vm.count( "subsample" ) )
@@ -1342,6 +1849,108 @@ int main( int argc, char **argv )
          << before << " entries matching prefixes: " << nuclide_csv << endl;
     input_srcs = std::move( filtered );
   }//if( source-nuclide filter )
+
+  // Train/eval holdout split.  Assignment is a deterministic hash of the source name plus
+  // the seed, so the same source lands in the same split on every machine and for every
+  // detector/city/live-time stratum: eval sources are never seen during tuning, while every
+  // stratum stays represented in both splits.  FNV-1a is used (not std::hash) because
+  // std::hash is implementation-defined and the split must reproduce across platforms.
+  if( (holdout_frac > 0.0) && (holdout_role_str != "all") )
+  {
+    const auto fnv1a_hash = []( const string &key ) -> uint64_t {
+      uint64_t h = 14695981039346656037ULL;
+      for( const char c : key )
+      {
+        h ^= static_cast<uint64_t>( static_cast<unsigned char>(c) );
+        h *= 1099511628211ULL;
+      }
+      return h;
+    };
+
+    const bool want_eval = (holdout_role_str == "eval");
+    const size_t before = input_srcs.size();
+    vector<DataSrcInfo> split_srcs;
+    for( DataSrcInfo &info : input_srcs )
+    {
+      const uint64_t hash = fnv1a_hash( info.src_info.src_name + "|" + std::to_string(holdout_seed) );
+      // Top 53 bits -> uniform in [0,1); entries above (1 - holdout_frac) form the eval split.
+      const double u = static_cast<double>( hash >> 11 ) / 9007199254740992.0;
+      const bool is_eval = (u >= (1.0 - holdout_frac));
+      if( is_eval == want_eval )
+        split_srcs.push_back( std::move( info ) );
+    }
+
+    cout << "Holdout split: kept " << split_srcs.size() << " of " << before
+         << " entries (role=" << holdout_role_str << ", frac=" << holdout_frac
+         << ", seed=" << holdout_seed << ")." << endl;
+    input_srcs = std::move( split_srcs );
+  }//if( holdout split requested )
+
+  if( !spectrum_key_file.empty() )
+  {
+    ifstream keys_file( spectrum_key_file );
+    if( !keys_file.good() )
+    {
+      cerr << "Could not open --spectrum-key-file: " << spectrum_key_file << endl;
+      return -21;
+    }
+
+    set<string> wanted_keys;
+    string line;
+    size_t line_number = 0;
+    while( getline( keys_file, line ) )
+    {
+      ++line_number;
+      const size_t comment = line.find( '#' );
+      if( comment != string::npos )
+        line.erase( comment );
+      const size_t first = line.find_first_not_of( " \t\r\n" );
+      if( first == string::npos )
+        continue;
+      const size_t last = line.find_last_not_of( " \t\r\n" );
+      const string key = line.substr( first, last - first + 1 );
+      if( !wanted_keys.insert(key).second )
+      {
+        cerr << "Duplicate canonical spectrum key in " << spectrum_key_file
+             << " at line " << line_number << ": " << key << endl;
+        return -22;
+      }
+    }
+    if( wanted_keys.empty() )
+    {
+      cerr << "--spectrum-key-file selected no spectrum keys: " << spectrum_key_file << endl;
+      return -23;
+    }
+
+    set<string> matched_keys;
+    vector<DataSrcInfo> selected;
+    selected.reserve( input_srcs.size() );
+    for( DataSrcInfo &info : input_srcs )
+    {
+      const string key = NuclideConfig_GA::ReportDetail::canonical_spectrum_key( info );
+      if( wanted_keys.count(key) )
+      {
+        matched_keys.insert( key );
+        selected.push_back( std::move(info) );
+      }
+    }
+    if( matched_keys != wanted_keys )
+    {
+      cerr << "Unknown canonical spectrum key(s) in " << spectrum_key_file << ":" << endl;
+      for( const string &key : wanted_keys )
+        if( !matched_keys.count(key) )
+          cerr << "  " << key << endl;
+      return -24;
+    }
+    if( selected.empty() )
+    {
+      cerr << "--spectrum-key-file selected no usable spectra: " << spectrum_key_file << endl;
+      return -25;
+    }
+    cout << "Spectrum-key allowlist: kept " << selected.size() << " of "
+         << input_srcs.size() << " corpus entries from " << spectrum_key_file << endl;
+    input_srcs = std::move( selected );
+  }
 
   // Handle --create-compact-data: write compact format, then round-trip verify
   if( vm.count( "create-compact-data" ) )
@@ -1728,108 +2337,21 @@ int main( int argc, char **argv )
         break;
       }
 
-      const double num_sigma_contribution = 1.5;
-
       // The GA evaluation function: given a config, score it across all precomputed spectra.
-      // Per-individual parallelism is controlled by --num-threads-per-individual; the per-spectrum
-      // tasks write into pre-sized slots so summation order is independent of completion order.
-      // The two out-params receive the foreground-only and raw bg-penalty totals so reporting
-      // can show the breakdown when --background-fit-trial is on.
-      const auto ga_eval = [&precomputed, num_sigma_contribution](
+      // Per-individual parallelism is controlled by --num-threads-per-individual.  The scoring
+      // math lives in score_config_over_precomputed() so the NuclideConfigEval action can
+      // re-score saved genes with identical math.
+      const auto ga_eval = [&precomputed](
           const FitPeaksForNuclides::PeakFitForNuclideConfig &config,
           double *out_fg, double *out_bg ) -> double
       {
-        // Score one spectrum.  Returns (fg, raw_bg) - the raw bg is unweighted.
-        // Called from both the serial and parallel paths below; safe to invoke concurrently.
-        const auto score_one_spectrum = [&config, num_sigma_contribution](
-            const NuclideConfig_GA::PrecomputedNuclideData &pd ) -> std::pair<double,double>
-        {
-          Wt::WFlags<FitPeaksForNuclides::FitSrcPeaksOptions> options;
-          if( NuclideConfig_GA::sm_background_mode == NuclideConfig_GA::BackgroundMode::NoBackgroundFitNorm )
-            options |= FitPeaksForNuclides::FitNormBkgrndPeaks;
-
-          try
-          {
-            const std::vector<std::shared_ptr<const PeakDef>> user_peaks;
-
-            const FitPeaksForNuclides::PeakFitResult result = FitPeaksForNuclides::fit_peaks_for_nuclides(
-              pd.auto_search_peaks, pd.foreground, pd.sources, user_peaks,
-              pd.background, pd.drf, options, config, pd.peak_fit_prefs );
-
-            if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
-              return { 100.0, 0.0 };  // Penalty for failed foreground fits, no bg attempted
-
-            const std::vector<PeakDef> &fit_peaks = result.observable_peaks;
-
-            CombinedPeakFitScore combined_score;
-            combined_score.final_fit_score = FinalFit_GA::calculate_final_fit_score(
-              fit_peaks, pd.src_info->expected_signal_photopeaks, num_sigma_contribution );
-            combined_score.initial_fit_weights = InitialFit_GA::calculate_peak_find_weights(
-              fit_peaks, pd.src_info->expected_signal_photopeaks, num_sigma_contribution );
-            combined_score.candidate_peak_score = CandidatePeak_GA::calculate_candidate_peak_score_for_source(
-              fit_peaks, pd.src_info->expected_signal_photopeaks );
-            CandidatePeak_GA::correct_score_for_escape_peaks(
-              combined_score.candidate_peak_score, pd.src_info->expected_signal_photopeaks );
-
-            const double fg_score = combined_score.initial_fit_weights.find_weight
-                                  + combined_score.final_fit_score.total_weight
-                                  + combined_score.candidate_peak_score.score;
-
-            // Background-false-positive penalty.  No-op (returns 0) when
-            // sm_do_background_fit_trial is false or background_auto_search_peaks
-            // is empty for this entry.
-            const double bg_raw = NuclideConfig_GA::compute_background_fit_penalty(
-                pd, config, NuclideConfig_GA::sm_background_mode, /*detail_out=*/nullptr );
-
-            return { fg_score, bg_raw };
-          }
-          catch( const std::exception & )
-          {
-            return { 100.0, 0.0 };  // Penalty for exceptions
-          }
-        };//score_one_spectrum lambda
-
-        const size_t inner_threads = std::max<size_t>( 1, PeakFitImprove::sm_num_threads_per_individual );
-
-        double total_fg = 0.0, total_bg = 0.0;
-
-        if( inner_threads <= 1 )
-        {
-          for( const NuclideConfig_GA::PrecomputedNuclideData &pd : precomputed )
-          {
-            const auto [fg, bg] = score_one_spectrum( pd );
-            total_fg += fg;
-            total_bg += bg;
-          }
-        }
-        else
-        {
-          // Parallel path: each task writes into its own slot, then we sum in
-          // spectrum-index order so the result is independent of thread count.
-          std::vector<std::pair<double,double>> partials( precomputed.size(), {0.0, 0.0} );
-          {
-            boost::asio::thread_pool pool( inner_threads );
-            for( size_t i = 0; i < precomputed.size(); ++i )
-            {
-              boost::asio::post( pool, [i, &precomputed, &partials, &score_one_spectrum]()
-              {
-                partials[i] = score_one_spectrum( precomputed[i] );
-              } );
-            }
-            pool.join();
-          }
-          for( const auto &p : partials )
-          {
-            total_fg += p.first;
-            total_bg += p.second;
-          }
-        }
-
-        if( out_fg ) *out_fg = total_fg;
-        if( out_bg ) *out_bg = total_bg;
-
-        return total_fg + NuclideConfig_GA::sm_background_fit_penalty_weight * total_bg;
+        return score_config_over_precomputed( precomputed, config,
+            PeakFitImprove::sm_num_threads_per_individual, out_fg, out_bg );
       };//ga_eval lambda
+
+      // Make the GA's non-optimized config fields (skew_type, etc.) match this detector type's
+      // production defaults, rather than always starting from the non-HPGe (Low) baseline.
+      NuclideConfig_GA::sm_base_det_type = selected_det_type;
 
       // Run the GA
       const FitPeaksForNuclides::PeakFitForNuclideConfig best_config
@@ -1837,6 +2359,139 @@ int main( int argc, char **argv )
 
       break;
     }//case OptimizationAction::NuclideConfigGA
+
+    case OptimizationAction::NuclideConfigEval:
+    {
+      // Re-score a saved gene-line (e.g. the best individual from a NuclideConfigGA run) on the
+      // currently-loaded dataset, with the exact same objective math as the GA.  Used for holdout
+      // validation and cross-live-time transfer measurements.
+      if( config_genes_file.empty() )
+      {
+        cerr << "NuclideConfigEval requires --config-genes <file>." << endl;
+        return -8;
+      }
+
+      NuclideConfig_GA::NuclideConfigSolution genes;
+
+      if( SpecUtils::iequals_ascii( config_genes_file, "default" ) )
+      {
+        // Sentinel: score the production default_config for the selected det type, and dump it as
+        // a hand-editable genes TSV (the starting point for manual tuning iterations).  The
+        // chi2/dof-cap gene only round-trips under GAOptimized mode (genes_to_settings otherwise
+        // overrides it from the CLI cap flags), so force that mode here for an exact round-trip.
+        NuclideConfig_GA::sm_rel_eff_chi2_cap_mode = NuclideConfig_GA::RelEffChi2CapMode::GAOptimized;
+        genes = NuclideConfig_GA::settings_to_genes(
+            FitPeaksForNuclides::PeakFitForNuclideConfig::default_config( selected_det_type ) );
+
+        const string genes_filename = det_type_str + "_default_genes.tsv";
+        ofstream genes_out( genes_filename.c_str() );
+        genes_out << "# Production default_config(" << det_type_str << ") as genes;"
+                  << " hand-edit and pass back via --config-genes.\n"
+                  << genes.to_string( "\t" ) << "\n";
+        cout << "Wrote default-config genes to " << genes_filename << endl;
+      }else
+      {
+        ifstream genes_strm( config_genes_file.c_str(), (ios::binary | ios::in) );
+        if( !genes_strm.good() )
+        {
+          cerr << "Could not open --config-genes file '" << config_genes_file << "'." << endl;
+          return -8;
+        }
+
+        // First non-comment, non-empty line is the gene set.
+        string genes_line;
+        while( std::getline( genes_strm, genes_line ) )
+        {
+          SpecUtils::trim( genes_line );
+          if( !genes_line.empty() && (genes_line[0] != '#') )
+            break;
+          genes_line.clear();
+        }
+
+        if( genes_line.empty() )
+        {
+          cerr << "No gene line found in '" << config_genes_file << "'." << endl;
+          return -8;
+        }
+
+        // Accept either a bare gene line (checkpoint TSV rows) or a line containing a braced gene
+        // list (results-txt rows look like "step<TAB>cost_avg<TAB>cost_best<TAB>{key=value, ...}<TAB>status").
+        const size_t open_brace = genes_line.find( '{' );
+        if( open_brace != string::npos )
+        {
+          const size_t close_brace = genes_line.rfind( '}' );
+          const size_t span_end = (close_brace == string::npos) ? genes_line.size() : close_brace;
+          genes_line = genes_line.substr( open_brace + 1, span_end - open_brace - 1 );
+        }
+
+        bool parsed = NuclideConfig_GA::NuclideConfigSolution::from_string( genes_line, "\t", genes );
+        if( !parsed )
+          parsed = NuclideConfig_GA::NuclideConfigSolution::from_string( genes_line, ", ", genes );
+
+        if( !parsed )
+        {
+          cerr << "Could not parse gene line from '" << config_genes_file
+               << "' (tried tab and comma-space separators)." << endl;
+          return -8;
+        }
+      }//if( "default" sentinel ) / else
+
+      // genes_to_settings() starts from default_config(sm_base_det_type), so the non-GA fields
+      // (skew_type, etc.) must match the detector class the genes were tuned for.
+      NuclideConfig_GA::sm_base_det_type = selected_det_type;
+      const FitPeaksForNuclides::PeakFitForNuclideConfig config = NuclideConfig_GA::genes_to_settings( genes );
+
+      const std::vector<NuclideConfig_GA::PrecomputedNuclideData> precomputed
+        = NuclideConfig_GA::precompute_nuclide_data( input_srcs, NuclideConfig_GA::sm_background_mode );
+
+      if( precomputed.empty() )
+      {
+        cerr << "No valid spectra to evaluate - check your data and filters." << endl;
+        break;
+      }
+
+      // A single config evaluation has no outer GA parallelism, so give it the full thread budget.
+      const size_t eval_threads = std::max( PeakFitImprove::sm_num_threads_per_individual,
+                                            PeakFitImprove::sm_num_optimization_threads );
+
+      double total_fg = 0.0, total_bg = 0.0;
+      NuclideConfig_GA::ConfigEvaluation report_evaluation;
+      const double total = score_config_over_precomputed( precomputed, config, eval_threads,
+                                                          &total_fg, &total_bg,
+                                                          &report_evaluation );
+
+      cout << "NuclideConfigEval over " << precomputed.size() << " spectra:" << endl
+           << "  total_cost=" << total
+           << " (fg=" << total_fg << ", raw_bg=" << total_bg
+           << ", bg_weight=" << NuclideConfig_GA::sm_background_fit_penalty_weight << ")" << endl
+           << "  per-spectrum avg cost=" << (total / static_cast<double>(precomputed.size())) << endl;
+
+      if( !eval_results_tsv_file.empty() )
+      {
+        NuclideConfig_GA::write_config_evaluation_tsv(
+          precomputed, report_evaluation, eval_results_tsv_file );
+        cout << "Wrote cached evaluation TSV to " << eval_results_tsv_file << endl;
+      }
+
+      if( !eval_html_file.empty() )
+      {
+        ostringstream run_metadata;
+        run_metadata << NuclideConfig_GA::sm_checkpoint_options_summary
+                     << "; static_data_dir=" << datadir
+                     << "; config_genes=" << config_genes_file
+                     << "; eval_threads=" << eval_threads
+                     << "; build_stamp=" << __DATE__ << " " << __TIME__
+                     << "; invocation=";
+        for( int arg_index = 0; arg_index < argc; ++arg_index )
+          run_metadata << (arg_index ? " " : "") << argv[arg_index];
+        NuclideConfig_GA::write_results_html_and_n42( precomputed, config, genes,
+            NuclideConfig_GA::sm_background_mode, eval_html_file, /*n42_dir=*/"",
+            &report_evaluation, run_metadata.str() );
+        cout << "Wrote HTML report to " << eval_html_file << endl;
+      }
+
+      break;
+    }//case OptimizationAction::NuclideConfigEval
 
     case OptimizationAction::AccuracyFromCsvsStudy:
     {
@@ -2816,5 +3471,3 @@ int main( int argc, char **argv )
 
   return EXIT_SUCCESS;
 }//int main( int argc, const char * argv[] )
-
-

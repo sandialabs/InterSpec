@@ -110,6 +110,13 @@ namespace
     {
       assert( m_model );
       assert( m_app );
+
+      // Have Wt hold the session lock across handleRequest instead of dropping it for us: by
+      //  default `WResource::handle` unlocks before invoking us, so the session thread can be
+      //  inside `~WResource`'s `beingDeleted()` - waiting on our use-count - while we block
+      //  acquiring the lock it holds.  That is a deadlock.  Free: the `WApplication::UpdateLock`
+      //  in handleRequest already spanned the whole body, so this only moves it earlier.
+      setTakesUpdateLock( true );
     }
 
     virtual ~PeakCsvResource()
@@ -313,7 +320,7 @@ namespace
   protected:
     
  
-    Wt::cpp17::any editState( Wt::WWidget *editor ) const
+    Wt::cpp17::any editState( Wt::WWidget *editor, const Wt::WModelIndex &index ) const override
     {
       EditWidget *w = dynamic_cast<EditWidget *>(editor);
       if( !w )
@@ -330,7 +337,8 @@ namespace
     }//Wt::cpp17::any editState( WWidget *editor ) const
 
     
-    void setEditState( Wt::WWidget *editor, const Wt::cpp17::any &value ) const
+    void setEditState( Wt::WWidget *editor, const Wt::WModelIndex &index,
+                       const Wt::cpp17::any &value ) const override
     {
       EditWidget *w = dynamic_cast<EditWidget *>(editor);
       if( !w )
@@ -649,7 +657,7 @@ public:
   }//setModelData(...)
 
 
-  virtual Wt::cpp17::any editState( WWidget *editor ) const
+  virtual Wt::cpp17::any editState( WWidget *editor, const Wt::WModelIndex &index ) const override
   {
     WContainerWidget *container = dynamic_cast<WContainerWidget *>( editor );
     if( !container )
@@ -665,7 +673,8 @@ public:
   }//editState(...)
 
 
-  virtual void setEditState( WWidget *editor, const Wt::cpp17::any &value ) const
+  virtual void setEditState( WWidget *editor, const Wt::WModelIndex &index,
+                             const Wt::cpp17::any &value ) const override
   {
     WContainerWidget *container = dynamic_cast<WContainerWidget *>( editor );
     if( !container )

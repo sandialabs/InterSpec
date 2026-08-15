@@ -5,7 +5,6 @@
   <message id="dls-fit-fwhm-btn">FWHM illesztés...</message>
   <message id="dls-select-drf-btn">Detektor választás...</message>
   <message id="dls-further-details-link">további részletek...</message>
-  <message id="dls-conf-level-label">Megbízhatósági szint:</message>
   <message id="dls-roi-lower-label">ROI alsó:</message>
   <message id="dls-roi-upper-label">ROI felső:</message>
   <message id="dls-num-side-channel-label">Oldalsó csatornák:</message>
@@ -20,9 +19,6 @@
       A csúcsrégió melletti oldalsó csatornák választási lehetősége már nem releváns, így el lesz rejtve.
     </p>
   </message>
-  <message id="dls-cont-norm-unknown">Lebegő</message>
-  <message id="dls-cont-norm-not-present">Mint nincs jel</message>
-  <message id="dls-cont-norm-fixed-by-sides">Oldalakból</message>
   <message id="dls-roi-changed-no-gamma">Az ROI módosítása kizárta az elsődleges gammát - nem változtatunk</message>
   <message id="dls-suggest-fwhm">Detektor FWHM: {1} keV</message>
   <message id="dls-rough-est-fwhm">Durva becslés FWHM: {1} keV</message>
@@ -38,7 +34,7 @@
 
   <message id="dls-det-act-with-range">Detektált: {1}, tartomány [{2}, {3}], @{4} CL</message>
   <message id="dls-det-no-result">Sajnos nincs eredmény</message>
-  <message id="dls-det-counts-with-range">Többlet impulzusok: {1}, tartomány [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">Becsült jel: {1} impulzus, tartomány [{2}, {3}], @{4} CL</message>
   <message id="dls-det-act-less-zero">Aktivitás &lt; 0 {1} (jelentősen kevesebb impulzust figyeltek meg a vártnál).</message>
   <message id="dls-det-counts-less-zero">Többlet impulzusok &lt; 0 {2} (jelentősen kevesebb impulzust figyeltek meg a vártnál).</message>
   <message id="dls-det-upper-bound">Kevesebb mint {1} van jelen @{2} CL.</message>
@@ -59,6 +55,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">Csúcs a(z) {1} felső határához @{2} CL</message>
   <message id="dls-results-txt-upper-bound-act">Kevesebb mint {1} @{2} CL</message>
+  <message id="dls-results-txt-predicted-act">Előrejelzett érzékenység: kevesebb mint {1} {2} konfidencián egy {3} hosszú mérésre</message>
+  <message id="dls-results-txt-predicted-counts">Előrejelzett érzékenység: kevesebb mint {1} jelimpulzus {2} konfidencián egy {3} hosszú mérésre</message>
+  <message id="dls-chart-title-predicted-act">Csúcs a(z) {1} előrejelzett érzékenységéhez @{2} CL</message>
+  <message id="dls-chart-title-predicted-counts">Csúcs a(z) {1} impulzus előrejelzett érzékenységéhez @{2} CL</message>
   <message id="dls-chart-title-upper-bound-counts">Csúcs a(z) {1} impulzus felső határához @{2} CL</message>
   <message id="dls-results-txt-upper-bound-counts">Kevesebb mint {1} jelimpulzus van jelen @{2} CL</message>
   <message id="dls-err-no-meas">Nincs elérhető mérés</message>
@@ -83,7 +83,16 @@
   <message id="dls-err-select-det">Kérjük, válasszon detector hatásfok függvényt.</message>
   <message id="dls-err-neg-distance">A távolság nem lehet negatív.</message>
   <message id="dls-err-no-fwhm-info">A detector hatásfok függvény nem rendelkezik FWHM információval - kérjük, illessze az FWHM-et, vagy válasszon másik detektort.</message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
+  <message id="dls-is-background-spectrum-cb-short">Háttér?</message>
+  <message id="dls-num-side-channel-label-short">Oldalcsat.:</message>
+  <message id="dls-result-projected-band"> (jellemzően ennek {1}&ndash;{2}&times; szerese)</message>
+  <message id="dls-roi-lower-label-short">Alsó:</message>
+  <message id="dls-roi-upper-label-short">Felső:</message>
+  <message id="dls-scale-more-info-note">
+    {1} valós időre skálázva (élő idő {2}, a mérés {4} valós idejének &times;{3} szorosa).
+  </message>
+
+  <!-- A haladó bemenetek alatt jelenik meg, amikor a Dekonvolúció módszer van kiválasztva, ahol
+       azok le vannak tiltva.  A magyarázat nélkül letiltott vezérlő hibának tűnik. -->
+  <message id="dls-advanced-decon-note">Ezek a Currie-módszerre vonatkoznak; a dekonvolúciós határérték egyelőre nem használja őket.</message>
 </messages>

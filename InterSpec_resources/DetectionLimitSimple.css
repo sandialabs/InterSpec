@@ -31,7 +31,10 @@
   margin-left: 10px;
   margin-right: 10px;
   
-  height: 41px;
+  /* Two lines of 14px text at the usual width, but the projected-band suffix can push a long
+     result to three - so grow rather than clip what the user came here to read. */
+  height: auto;
+  min-height: 41px;
   
   font-size: 14px;
   font-weight: 500;
@@ -111,6 +114,48 @@
   font-size: xx-small;
 }
 
+/* "Advanced" sits at the far right of the Calc. Method row.  An auto margin absorbs the free space,
+   so `justify-content` can stay flex-start and the label and radios keep hugging the left. */
+.DetectionLimitSimple .MethodSelect .AdvancedCb {
+  margin-left: auto;
+}
+
+/* The advanced statistical inputs: a two-pair-per-row grid, so the labels and fields line up in
+   columns across both rows.  Unlike `.GeneralInput` this declares an explicit column template, which
+   is what lets the note below span the full width with `1 / -1` and removes any need for the
+   per-widget placement classes (and their phone renumbering table) the main grid needs.
+   `grid-gap` rather than the newer `gap`, and no flex `gap` anywhere - Safari 13 (macOS 10.15's
+   WKWebView) supports gaps on grid but not on flex. */
+.DetectionLimitSimple .AdvancedInput {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content minmax(0, 1fr);
+  grid-gap: 6px 8px;
+  align-items: center;
+  margin: 8px 20px 0 20px;
+  padding-top: 8px;
+  border-top: 1px solid #e1e1e1;
+}
+
+.DetectionLimitSimple .AdvancedInput > label {
+  white-space: nowrap;
+  justify-self: end;
+}
+
+.DetectionLimitSimple .AdvancedInput > input {
+  width: 100%;
+  min-width: 0;
+  box-sizing: border-box;
+}
+
+/* Its own full-width row under the fields. */
+.DetectionLimitSimple .AdvancedInput .AdvancedNote {
+  grid-column: 1 / -1;
+  display: block;
+  font-style: italic;
+  font-size: xx-small;
+  margin-top: 2px;
+}
+
 
 .DetectionLimitSimple .BackCbDiv {
   display: flex;
@@ -165,19 +210,14 @@
 }
 
 
-/* Phone-only: shrink inputs, let DetectorDisplay take its own row, allow the
-   result text to grow when it wraps instead of clipping at 41px. */
-.IsPhone .DetectionLimitSimple .ResultsTxtArea {
-  height: auto;
-  min-height: 41px;
-}
-
+/* Phone-only: shrink inputs, and let DetectorDisplay take its own row.  The result text growing
+   rather than clipping is no longer phone-specific - see `.ResultsTxtArea` above. */
 .IsPhone .DetectionLimitSimple .GeneralInput > input { width: 75px; }
 .IsPhone .DetectionLimitSimple .GeneralInput > select { width: 80px; }
 .IsPhone .DetectionLimitSimple .GeneralInput input.Wt-spinbox { width: 55px; }
 
 /* On phone we insert a dedicated row 3 for the DetectorDisplay, on the right side,
-   and shift everything else in rows 3-9 down by one row to make room. */
+   and shift everything else in rows 3-10 down by one row to make room. */
 .IsPhone .DetectionLimitSimple .GeneralInput .GridThirdRow { grid-row-start: 4; }
 .IsPhone .DetectionLimitSimple .GeneralInput .GridFourthRow { grid-row-start: 5; }
 .IsPhone .DetectionLimitSimple .GeneralInput .GridFifthRow { grid-row-start: 6; }
@@ -185,6 +225,7 @@
 .IsPhone .DetectionLimitSimple .GeneralInput .GridSeventhRow { grid-row-start: 8; }
 .IsPhone .DetectionLimitSimple .GeneralInput .GridEighthRow { grid-row-start: 9; }
 .IsPhone .DetectionLimitSimple .GeneralInput .GridNinthRow { grid-row-start: 10; }
+.IsPhone .DetectionLimitSimple .GeneralInput .GridTenthRow { grid-row-start: 11; }
 
 /* Pin the DetectorDisplay back to row 3 (overrides the GridThirdRow shift above).
    It spans every column to claim the whole row, but min-width:0 + overflow:hidden
@@ -230,4 +271,51 @@
   box-sizing: content-box;
   padding-top: 8px;
   margin-bottom: 15px;
+}
+
+/* Soft warnings qualify a limit that WAS produced; hard errors (.ErrMsg) mean there is no limit.
+   Duplicated from DetectionLimitTool.css because this widget loads only its own stylesheet.
+   The dark-theme colour lives in themes/dark/dark.css. */
+.DetectionLimitSimple .MdaWarnMsg {
+  display: block;
+  color: #9a6400;
+}
+
+/* Phone: shrink the advanced inputs to match the rest of the tool, and let the Calc. Method row wrap
+   - "Calc. Method:" + two radio labels + "Adv." do not fit across 320px, and once it wraps the auto
+   margin would strand the checkbox on the right of an otherwise empty line. */
+/* One label/field pair per row on phone; the note still spans, since `1 / -1` follows the template. */
+.IsPhone .DetectionLimitSimple .AdvancedInput {
+  grid-template-columns: max-content minmax(0, 1fr);
+  margin-left: 6px;
+  margin-right: 6px;
+}
+.IsPhone .DetectionLimitSimple .MethodSelect { flex-wrap: wrap; }
+.IsPhone .DetectionLimitSimple .MethodSelect .AdvancedCb { margin-left: 0; }
+
+
+/* The Simple MDA dialog body.  Same pattern as `.simple-dialog .body` in SimpleDialog.css.
+   Wt's dialog layout gives this a definite height whenever the dialog is capped, and `overflow-y`
+   turns the excess into a scrollbar rather than letting it spill over the footer.  The `max-height`
+   is the half that holds without any JavaScript - Wt re-measures the dialog only when asked, so a
+   section revealed after the window opened would otherwise push the footer off screen; the layout
+   also honours this cap when measuring the body's preferred size, so the dialog itself never asks to
+   be taller than the screen either.  90px is the 25px title bar, the 45px footer, and the 10px the
+   fit-to-screen JavaScript leaves as margin. */
+.AuxWindow-content.SimpleMdaBody {
+  max-height: calc( 100vh - 90px );
+  overflow-y: auto;
+}
+
+/* On phone the dialog is full screen and its buttons live in the title bar, so there is no footer
+   row to leave room for, and Wt gives the body its exact height; a cap here would just waste the
+   bottom of the screen. */
+.IsPhone .AuxWindow-content.SimpleMdaBody {
+  max-height: none;
+}
+
+/* Keep the panels at their content height rather than letting a squeezed column crush the 200px
+   chart - the body scrolling is what should absorb the overflow. */
+.DetectionLimitSimple > * {
+  flex-shrink: 0;
 }

@@ -52,12 +52,15 @@
 #include <Wt/WContainerWidget.h>
 #include <Wt/cpp17/any.hpp>
 #include <Wt/WAbstractItemModel.h>
+#include <Wt/WItemDelegate.h>
 #include <Wt/WAbstractItemDelegate.h>
 
 #include "SandiaDecay/SandiaDecay.h"
 
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/StringAlgo.h"
 
+#include "InterSpec/PeakDef.h"
 #include "InterSpec/AppUtils.h"
 #include "InterSpec/FluxTool.h"
 #include "InterSpec/DrfSelect.h"
@@ -307,9 +310,58 @@ namespace FluxToolImp
     {
       snprintf( buffer, sizeof(buffer), "%.*G", nsigfigs, uncert );
     }
-    
+
   return buffer;
 }//print_uncert(...)
+
+
+  /** Returns, for each entry of `peaks`, whether any of `energies` names that peak.
+
+   An energy names the peak whose mean is nearest to it, and then only if that mean is
+   within 0.5 FWHM.  The tolerance necessarily comes from the candidate peak, since only
+   the mean is remembered (both in the app-URL, and in FluxToolWidget::m_deselectedEnergies).
+
+   Marking is idempotent, so two energies landing on one peak, or an energy sitting between
+   the two halves of a doublet, give an answer that doesnt depend on iteration order, and
+   hence doesnt flap between table refreshes.
+
+   This is the only place peak/energy matching is done; #FluxToolWidget::refreshPeakTable,
+   #FluxToolWidget::handleAppUrl, and #FluxToolWidget::encodeStateToUrl all come through here.
+   */
+  vector<bool> peaks_matching_energies( const vector<PeakDef> &peaks,
+                                        const vector<double> &energies )
+  {
+    vector<bool> matched( peaks.size(), false );
+
+    for( const double energy : energies )
+    {
+      size_t nearest = peaks.size();
+      double nearest_dist = std::numeric_limits<double>::max();
+
+      for( size_t i = 0; i < peaks.size(); ++i )
+      {
+        const double dist = fabs( peaks[i].mean() - energy );
+        if( dist < nearest_dist )
+        {
+          nearest_dist = dist;
+          nearest = i;
+        }
+      }//for( loop over peaks, finding nearest )
+
+      if( nearest >= peaks.size() )
+        continue;
+
+      // PeakDef::fwhm() throws for data-defined peaks, so use the same fallback as the
+      //  rest of the code-base (e.g., InterSpec::searchForSinglePeak(...)).
+      const PeakDef &peak = peaks[nearest];
+      const double fwhm = peak.gausPeak() ? peak.fwhm() : 0.5*peak.roiWidth();
+
+      if( nearest_dist <= 0.5*fwhm )
+        matched[nearest] = true;
+    }//for( const double energy : energies )
+
+    return matched;
+  }//vector<bool> peaks_matching_energies(...)
 
 
   class FluxModel : public  Wt::WAbstractItemModel
@@ -341,6 +393,9 @@ namespace FluxToolImp
     
     virtual Wt::WFlags<Wt::ItemFlag> flags( const Wt::WModelIndex &index ) const
     {
+      if( index.column() == FluxToolWidget::sm_selectColumn )
+        return Wt::WFlags<Wt::ItemFlag>(Wt::ItemFlag::UserCheckable);
+
       return Wt::WFlags<Wt::ItemFlag>(Wt::ItemFlag::XHTMLText);
     }
     
@@ -367,7 +422,13 @@ namespace FluxToolImp
         endInsertRows();
       }//
       
-      reset(); //JIC, to make sure the GUI refreshes
+      // Deliberately NO reset() here.  The remove/insert-rows signals above already refresh the
+      //  view, and under Wt4 `WAbstractItemModel::reset()` -> `WAbstractItemView::modelReset()`
+      //  is literally `setModel(model_)`: it re-connects every model signal (and
+      //  RowStretchTreeView::setModel's rowsInserted/rowsRemoved callbacks) a second time, and the
+      //  header re-render it forces leaves the *previous* header DOM behind on the client - so the
+      //  table visibly grows a duplicate set of column headers and rows on the first info-level or
+      //  "select rows" change.  (Under Wt3 this was a harmless "just in case".)
     }//void handleFluxToolWidgetUpdated()
     
     
@@ -379,58 +440,137 @@ namespace FluxToolImp
       
       const int row = index.row();
       const int col = index.column();
-      
+
       if( row < 0 || col < 0
-         || col >= FluxToolWidget::FluxColumns::FluxNumColumns
+         || col > FluxToolWidget::sm_selectColumn
          || row >= static_cast<int>(m_sort_indices.size()) )
         return Wt::cpp17::any();
-      
+
       const size_t realind = m_sort_indices[row];
-      
+
       const auto &nucs = m_fluxtool->m_nucNames;
       const auto &data = m_fluxtool->m_data;
       const auto &uncerts = m_fluxtool->m_uncertainties;
-      
+
       assert( nucs.size() == data.size() );
       assert( uncerts.size() == data.size() );
       assert( realind < data.size() );
-      
+
+      // The selection column has no value/uncertainty in m_data; it is checkbox-only.
+      //  Note that Wt::WItemDelegate decides whether to render a checkbox at all based on
+      //  CheckStateRole being non-empty here - the ItemIsUserCheckable flag only controls
+      //  if that checkbox is enabled - so the other columns must keep returning an empty
+      //  Wt::cpp17::any for CheckStateRole (via the `default:` case, below).
+      if( col == FluxToolWidget::sm_selectColumn )
+      {
+        if( role != Wt::ItemDataRole::Checked )
+          return Wt::cpp17::any();
+
+        assert( m_fluxtool->m_rowSelected.size() == data.size() );
+        if( realind >= m_fluxtool->m_rowSelected.size() )
+          return Wt::cpp17::any();
+
+        return Wt::cpp17::any( static_cast<bool>(m_fluxtool->m_rowSelected[realind]) );
+      }//if( col == FluxToolWidget::sm_selectColumn )
+
+      // Wt4's ItemDataRole is a class (not an integer enum), so this cannot be a switch.
       if( role == Wt::ItemDataRole::Display )
       {
         if( col == FluxToolWidget::FluxColumns::FluxNuclideCol )
           return nucs[realind].empty() ? Wt::cpp17::any() : Wt::cpp17::any( WString::fromUTF8(nucs[realind]) );
         return Wt::cpp17::any( data[realind][col] );
-      }else if( role == Wt::ItemDataRole::User )
+      }//if( role == Wt::ItemDataRole::Display )
+
+      if( role == Wt::ItemDataRole::User )
       {
         if( col == FluxToolWidget::FluxColumns::FluxNuclideCol )
           return Wt::cpp17::any();
-        return uncerts[realind][col] > std::numeric_limits<double>::epsilon() ? Wt::cpp17::any(uncerts[realind][col]) : Wt::cpp17::any();
-      }else
-      {
-        return Wt::cpp17::any();
-      }//if/else on role
-      
+        return uncerts[realind][col] > std::numeric_limits<double>::epsilon()
+                 ? Wt::cpp17::any(uncerts[realind][col]) : Wt::cpp17::any();
+      }//if( role == Wt::ItemDataRole::User )
+
       return Wt::cpp17::any();
     }//data(...)
+
+
+    /** Handles the user clicking a rows checkbox.
+
+     Wt::WItemDelegate::onCheckedChange sends a bool (rather than a Wt::CheckState), since
+     we dont set ItemIsTristate.
+     */
+    virtual bool setData( const Wt::WModelIndex &index, const Wt::cpp17::any &value,
+                          Wt::ItemDataRole role = Wt::ItemDataRole::Edit )
+    {
+      if( index.parent().isValid()
+         || (index.column() != FluxToolWidget::sm_selectColumn)
+         || (role != Wt::ItemDataRole::Checked)
+         || (index.row() < 0)
+         || (index.row() >= static_cast<int>(m_sort_indices.size()))
+         || (value.type() != typeid(bool)) )
+      {
+        return false;
+      }
+
+      // Sorting means the displayed row is not the m_data row; m_rowSelected parallels
+      //  m_data, so map through m_sort_indices, just like data(...) does.
+      const size_t realind = m_sort_indices[index.row()];
+      assert( realind < m_fluxtool->m_rowSelected.size() );
+      if( realind >= m_fluxtool->m_rowSelected.size() )
+        return false;
+
+      m_fluxtool->handleRowSelectionChanged( realind, Wt::cpp17::any_cast<bool>(value) );
+
+      dataChanged().emit( index, index );
+
+      return true;
+    }//bool setData(...)
+
+
+    /** Tells the view every rows checkbox may have changed.
+
+     Used when selection changes from something other than a click on that checkbox (an
+     undo/redo, the "select rows" checkbox, or an app-URL), so the view redraws the checkboxes
+     without rebuilding every row the way #handleFluxToolWidgetUpdated does.
+     */
+    void notifySelectionChanged()
+    {
+      if( m_sort_indices.empty() )
+        return;
+
+      const int lastrow = static_cast<int>(m_sort_indices.size()) - 1;
+      dataChanged().emit( index(0, FluxToolWidget::sm_selectColumn),
+                          index(lastrow, FluxToolWidget::sm_selectColumn) );
+    }//void notifySelectionChanged()
     
     
     Wt::cpp17::any headerData( int section,
                           Wt::Orientation orientation = Wt::Orientation::Horizontal,
                           Wt::ItemDataRole role = Wt::ItemDataRole::Display ) const
     {
-      if( section < 0 || section >= FluxToolWidget::FluxColumns::FluxNumColumns
+      if( section < 0 || section > FluxToolWidget::sm_selectColumn
          || orientation != Wt::Orientation::Horizontal
          || role != Wt::ItemDataRole::Display )
         return Wt::cpp17::any();
+
+      if( section == FluxToolWidget::sm_selectColumn )
+        return Wt::cpp17::any( m_fluxtool->m_selectColName );
+
       return Wt::cpp17::any( m_fluxtool->m_colnames[section] );
     }
-    
+
     virtual int columnCount( const Wt::WModelIndex &parent
                             = Wt::WModelIndex() ) const
     {
       if( parent.isValid() )
         return 0;
-      return FluxToolWidget::FluxColumns::FluxNumColumns;
+
+      // Always report the selection column, even when rows arent being selected - the view
+      //  hides it instead (see FluxToolWidget::setDisplayInfoLevel).  Wt::WAbstractItemView
+      //  only truncates/appends its column list when the model column count changes, and never
+      //  re-initializes the entries that survive, so a varying column count would leave the
+      //  ColumnInfo silently recreated with a default width/sorting/delegate the next time rows
+      //  became selectable.
+      return FluxToolWidget::sm_selectColumn + 1;
     }
     
     virtual int rowCount( const Wt::WModelIndex &parent = Wt::WModelIndex() ) const
@@ -466,9 +606,17 @@ namespace FluxToolImp
     
     virtual void sort( int column, Wt::SortOrder order = Wt::SortOrder::Ascending )
     {
+      // index_compare_sort indexes m_data, which only has the FluxColumns; sorting on
+      //  anything else (i.e., the selection column) would read off the end of it.
+      //  RowStretchTreeView is told not to offer sorting on that column, but that is set
+      //  per-column and defaults to on, so dont rely on it alone.
+      assert( (column >= 0) && (column < FluxToolWidget::FluxColumns::FluxNumColumns) );
+      if( (column < 0) || (column >= FluxToolWidget::FluxColumns::FluxNumColumns) )
+        return;
+
       m_sortOrder = order;
       m_sortColumn = FluxToolWidget::FluxColumns( column );
-      
+
       layoutAboutToBeChanged().emit();
       doSortWork();
       layoutChanged().emit();
@@ -577,6 +725,13 @@ namespace FluxToolImp
       m_app( WApplication::instance() )
     {
       assert( m_app );
+
+      // Have Wt hold the session lock across handleRequest instead of dropping it for us: by
+      //  default `WResource::handle` unlocks before invoking us, so the session thread can be
+      //  inside `~WResource`'s `beingDeleted()` - waiting on our use-count - while we block
+      //  acquiring the lock it holds.  That is a deadlock.  Free: the `WApplication::UpdateLock`
+      //  in handleRequest already spanned the whole body, so this only moves it earlier.
+      setTakesUpdateLock( true );
     }
     
     virtual ~FluxCsvResource()
@@ -648,9 +803,21 @@ namespace FluxToolImp
       
       for( size_t row = 0; row < tool->m_data.size(); ++row )
       {
+        // When the user is picking rows, only the checked ones get output.  m_rowSelected
+        //  parallels m_data, both in un-sorted order, so it indexes straight off `row`.
+        //  The size check is just belt-and-braces (refreshPeakTable() keeps the two the
+        //  same size, including on its early-returns, where both end up empty).
+        assert( tool->m_rowSelected.size() == tool->m_data.size() );
+        if( tool->m_selectRows
+           && (row < tool->m_rowSelected.size())
+           && !tool->m_rowSelected[row] )
+        {
+          continue;
+        }
+
         if( html )
           strm << "\\t<tr>";
-        
+
         for( FluxToolWidget::FluxColumns col = FluxToolWidget::FluxColumns(0);
             col < FluxToolWidget::FluxColumns::FluxNumColumns; col = FluxToolWidget::FluxColumns(col+1) )
         {
@@ -902,6 +1069,9 @@ FluxToolWidget::FluxToolWidget( InterSpec *viewer )
     m_distance( nullptr ),
     m_prevDistance(),
     m_table( nullptr ),
+    m_fluxModel( nullptr ),
+    m_selectRowsCb( nullptr ),
+    m_selectRows( false ),
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
     m_copyBtn( nullptr ),
     m_infoCopied( this, "infocopied", true ),
@@ -973,7 +1143,57 @@ void FluxToolWidget::handleAppUrl( std::string query_str )
   else
     Wt::log("warn") << "FluxToolWidget URI had invalid display type: '" << disp_str << "'";
   
+  // "SELROWS" and "SEL" are both optional (added in URI version 1.1), so URIs saved by
+  //  previous versions - and QR codes already out in the wild - keep working.
+  bool selectRows = false;
+  const auto selrows_iter = parts.find( "SELROWS" );
+  if( selrows_iter != end(parts) )
+    selectRows = (selrows_iter->second == "1") || SpecUtils::iequals_ascii(selrows_iter->second, "true");
+
+  // The URI names the *selected* peaks, but we track the un-selected ones (so a peak fit
+  //  later defaults to being included), so invert against the peaks currently loaded.  An
+  //  absent "SEL" means every peak is selected.
+  vector<double> deselected;
+  const auto sel_iter = parts.find( "SEL" );
+  string sel_str = (sel_iter != end(parts)) ? sel_iter->second : string();
+  SpecUtils::trim( sel_str );
+
+  // Keyed off the field being *present*, not off it being non-empty: "SEL=" is how a URI
+  //  says no rows are selected (which is what encodeStateToUrl() writes when the user has
+  //  un-checked every row).  Treating an empty value as "all selected" would invert the
+  //  state on the way back in.
+  if( sel_iter != end(parts) )
+  {
+    // SpecUtils::split drops empty tokens, so "SEL=" gives no energies, hence no peaks
+    //  matched, hence every peak de-selected.
+    vector<string> fields;
+    SpecUtils::split( fields, sel_str, "," );
+
+    vector<double> selected;
+    for( string field : fields )
+    {
+      SpecUtils::trim( field );
+
+      double energy = 0.0;
+      if( !SpecUtils::parse_double( field.c_str(), field.size(), energy ) )
+        throw runtime_error( "Invalid Flux Tool selected-row energy in URI: '" + field + "'" );
+
+      selected.push_back( energy );
+    }//for( string field : fields )
+
+    const std::shared_ptr<PeakModel> peakmodel = m_interspec->peakModel();
+    const vector<PeakDef> peaks = peakmodel ? peakmodel->peakVec() : vector<PeakDef>{};
+    const vector<bool> is_selected = FluxToolImp::peaks_matching_energies( peaks, selected );
+
+    for( size_t i = 0; i < peaks.size(); ++i )
+    {
+      if( !is_selected[i] )
+        deselected.push_back( peaks[i].mean() );
+    }
+  }//if( sel_iter != end(parts) )
+
   setDisplayInfoLevel( level, true );
+  applySelectionState( selectRows, deselected );
   m_prevDistance = WString::fromUTF8(dist);
   m_distance->setText( m_prevDistance );
   setTableNeedsUpdating();
@@ -993,17 +1213,55 @@ std::string FluxToolWidget::encodeStateToUrl() const
     dist = "";
   }
   
-  string answer = "VER=1&DIST=" + dist + "&DISPLAY=";
-  
+  string answer = "VER=1.1&DIST=" + dist + "&DISPLAY=";
+
   switch( displayInfoLevel() )
   {
     case DisplayInfoLevel::Simple:   answer += "SIMPLE";   break;
     case DisplayInfoLevel::Normal:   answer += "NORMAL";   break;
     case DisplayInfoLevel::Extended: answer += "EXTENDED"; break;
   }//switch( displayInfoLevel() )
-  
+
+  if( m_selectRows )
+    answer += "&SELROWS=1";
+
+  // List the selected peaks, but only when that isnt all of them - it keeps the URI (and
+  //  so the QR code) short in the common case.  Note this is emitted even when
+  //  !m_selectRows, since the URI is the only thing that carries state across the window
+  //  being closed, and the user gets their rows back if they re-tick "select rows".
+  //
+  //  Deliberately worked out from the peaks, rather than from m_data, so this is right even
+  //  when the table is empty (no DRF chosen, invalid distance, ...).
+  if( !m_deselectedEnergies.empty() )
+  {
+    const std::shared_ptr<PeakModel> peakmodel = m_interspec ? m_interspec->peakModel() : nullptr;
+    const vector<PeakDef> peaks = peakmodel ? peakmodel->peakVec() : vector<PeakDef>{};
+    const vector<bool> deselected = FluxToolImp::peaks_matching_energies( peaks, m_deselectedEnergies );
+
+    const bool anyDeselected = std::any_of( begin(deselected), end(deselected),
+                                            []( const bool v ){ return v; } );
+    if( anyDeselected )
+    {
+      answer += "&SEL=";
+      char buffer[32] = { '\0' };
+      bool first = true;
+      for( size_t i = 0; i < peaks.size(); ++i )
+      {
+        if( deselected[i] )
+          continue;
+
+        // "%.2f" to match how the table prints energies; it also keeps the '+' that "%g"
+        //  would put in an exponent out of the URI (Wt::Utils::urlEncode escapes '+', as
+        //  it does the ',' separator).
+        snprintf( buffer, sizeof(buffer), "%.2f", peaks[i].mean() );
+        answer += (first ? "" : ",") + string(buffer);
+        first = false;
+      }//for( loop over peaks )
+    }//if( anyDeselected )
+  }//if( !m_deselectedEnergies.empty() )
+
   //SpecUtils::erase_any_character( answer, " \t\n\r" );
-  
+
   return answer;
 }//std::string encodeStateToUrl() const
 
@@ -1080,19 +1338,10 @@ void FluxToolWidget::init()
   WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
   layout->setContentsMargins( 0, 0, 0, 0 );
 
-  WTable *distDetRow = nullptr;
-  {
-    auto distDetRowOwned = std::make_unique<WTable>();
-    distDetRow = distDetRowOwned.get();
-    distDetRow->addStyleClass( "FluxDistMsgDetTbl" );
-#if( FLUX_USE_COPY_TO_CLIPBOARD )
-    layout->addWidget( std::move(distDetRowOwned), 0, 0, 1, 2 );
-#else
-    layout->addWidget( std::move(distDetRowOwned), 0, 0 );
-#endif
-  }
+  WTable *distDetRow = layout->addWidget( std::make_unique<WTable>(), 0, 0, 1, 2 );
+  distDetRow->addStyleClass( "FluxDistMsgDetTbl" );
 
-
+  
   auto distCell = distDetRow->elementAt( m_narrowLayout ? 1 : 0, 0 );
   distCell->addStyleClass( "FluxDistCell" );
   WLabel *label = distCell->addNew<WLabel>( WString::tr("distance-label") );
@@ -1143,9 +1392,14 @@ void FluxToolWidget::init()
   msgCell->addStyleClass( "FluxMsgCell" );
   m_msg = msgCell->addNew<WText>( WString::fromUTF8(""), Wt::TextFormat::XHTML );
   m_msg->addStyleClass( "FluxMsg" );
+  
+  
+  m_selectColName = WString::tr("ftw-hdr-use");
 
-
+  // Wt4 owns models and item delegates through shared_ptr; `m_fluxModel` is just an observer
+  //  (the table's setModel() keeps the model alive).
   auto fluxModelOwned = std::make_shared<FluxToolImp::FluxModel>( this );
+  m_fluxModel = fluxModelOwned.get();
 
   {
     auto tbl = std::make_unique<RowStretchTreeView>();
@@ -1156,6 +1410,7 @@ void FluxToolWidget::init()
     layout->addWidget( std::move(tbl), 1, 0, 1, 1 );
 #endif
   }
+
   m_table->setModel( fluxModelOwned );
   m_table->setRootIsDecorated( false );
   m_table->addStyleClass( "FluxTable" );
@@ -1170,21 +1425,26 @@ void FluxToolWidget::init()
   auto renderdel = std::make_shared<FluxToolImp::FluxRenderDelegate>( this );
   m_table->setItemDelegate( renderdel );
 
+  // The stock delegate knows how to render a checkbox from CheckStateRole; using it just
+  //  for the selection column saves teaching FluxRenderDelegate about checkboxes.
+  m_table->setItemDelegateForColumn( sm_selectColumn, std::make_shared<WItemDelegate>() );
+
   for( FluxColumns col = FluxColumns(0); col < FluxColumns::FluxNumColumns; col = FluxColumns(col + 1) )
     m_table->setSortingEnabled( col, (col!=FluxColumns::FluxGeometricEffCol) );
 
+  // Sorting is per-column, and defaults to enabled, so the selection column needs this
+  //  explicitly - the loop above only covers the data columns.  See FluxModel::sort().
+  m_table->setSortingEnabled( sm_selectColumn, false );
+
   layout->setRowStretch( 1, 1 );
-  
+
   WContainerWidget *buttonBox = nullptr;
   {
     auto buttonBoxOwned = std::make_unique<WContainerWidget>();
     buttonBox = buttonBoxOwned.get();
     buttonBox->addStyleClass( "FluxInfoAmount" );
-#if( FLUX_USE_COPY_TO_CLIPBOARD )
-    layout->addWidget( std::move(buttonBoxOwned), 2, 1, AlignmentFlag::Right | AlignmentFlag::Middle );
-#else
-    layout->addWidget( std::move(buttonBoxOwned), 2, 0, AlignmentFlag::Right );
-#endif
+    layout->addWidget( std::move(buttonBoxOwned), 2, 1,
+                       AlignmentFlag::Right | AlignmentFlag::Middle );
   }
 
   WRadioButton *simpleInfo = buttonBox->addNew<WRadioButton>( WString::tr("ftw-simple") );
@@ -1206,16 +1466,22 @@ void FluxToolWidget::init()
 
     setDisplayInfoLevel( level, false );
   } );
-
+  
+  
+  WContainerWidget *outputOptsDiv = nullptr;
+  {
+    auto outputOptsOwned = std::make_unique<WContainerWidget>();
+    outputOptsDiv = outputOptsOwned.get();
+    outputOptsDiv->addStyleClass( "FluxOutputOpts" );
+    layout->addWidget( std::move(outputOptsOwned), 2, 0,
+                       AlignmentFlag::Left | AlignmentFlag::Middle );
+  }
 
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
   LOAD_JAVASCRIPT(wApp, "FluxTool.cpp", "FluxTool", wtjsCopyFluxDataTextToClipboard );
 
-  {
-    auto copyBtnOwned = std::make_unique<WPushButton>( WString::tr( m_narrowLayout ? "ftw-copy-btn-narrow" : "ftw-copy-btn") );
-    m_copyBtn = copyBtnOwned.get();
-    layout->addWidget( std::move(copyBtnOwned), 2, 0, AlignmentFlag::Left | AlignmentFlag::Middle );
-  }
+  m_copyBtn = outputOptsDiv->addNew<WPushButton>(
+                     WString::tr( m_narrowLayout ? "ftw-copy-btn-narrow" : "ftw-copy-btn") );
 
   // TODO: "upgrade" to using the InterSpecApp 'miscSignal' directly in CopyFluxDataTextToClipboard, and get rid of m_infoCopied signal handler
   //"Wt.emit( $('.specviewer').attr('id'), {name:'miscSignal'}, 'showMsg-info-' );"
@@ -1225,9 +1491,18 @@ void FluxToolWidget::init()
     "Wt.emit( '" + id() + "', {name:'infocopied', eventObject:e}, success );"
   "}" );
 
-  m_infoCopied.connect( this, [this]( int a1 ){ tableCopiedToCliboardCallback( a1 ); } );
+  m_infoCopied.connect( this, [this]( const bool success ){
+    tableCopiedToCliboardCallback( success );
+  } );
 #endif
-  
+
+  m_selectRowsCb = outputOptsDiv->addNew<WCheckBox>( WString::tr( m_narrowLayout ? "ftw-select-rows-narrow"
+                                                              : "ftw-select-rows") );
+  m_selectRowsCb->addStyleClass( "FluxSelectRowsCb" );
+  HelpSystem::attachToolTipOn( m_selectRowsCb, WString::tr("ftw-tt-select-rows"), showToolTips );
+  m_selectRowsCb->checked().connect( this, [this](){ setSelectRows( true ); } );
+  m_selectRowsCb->unChecked().connect( this, [this](){ setSelectRows( false ); } );
+
   setDisplayInfoLevel( m_narrowLayout ? DisplayInfoLevel::Simple : DisplayInfoLevel::Normal, true );
 }//void init()
 
@@ -1291,44 +1566,57 @@ void FluxToolWidget::refreshPeakTable()
   m_nucNames.clear();
   m_data.clear();
   m_uncertainties.clear();
-  
+
+  // Note that m_deselectedEnergies is deliberately *not* touched here - it is keyed by
+  //  energy exactly so it can outlive the table.  Several of the early-returns below leave
+  //  m_data empty, and re-deriving the users selections from an empty table would throw
+  //  them away.
+  m_rowSelected.clear();
+
   m_msg->setText( "" );
-  
+
+  // Shared tail for the cases below where there is nothing to compute.  The table is left
+  //  empty, so the clipboard text is refreshed to match, rather than leaving the button
+  //  holding the last table that could be computed.
+  auto showMessageForEmptyTable = [this]( const char * const msg_key ){
+    m_msg->setText( WString::tr(msg_key) );
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+    updateCopyToClipboardText();
+#endif
+    m_tableUpdated.emit();
+  };
+
   double distance = 1.0*PhysicalUnits::meter;
   try
   {
     distance = PhysicalUnits::stringToDistance( m_distance->text().toUTF8() );
   }catch(...)
   {
-    m_msg->setText( WString::tr("ftw-invalid-dist") );
-    m_tableUpdated.emit();
+    showMessageForEmptyTable( "ftw-invalid-dist" );
     return;
   }
-  
+
   auto det = m_detector->detector();
   if( !det || !det->isValid() )
   {
-    m_msg->setText( WString::tr("ftw-no-drf") );
-    m_tableUpdated.emit();
+    showMessageForEmptyTable( "ftw-no-drf" );
     return;
   }
-  
+
   auto spec = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   if( !spec )
   {
-    m_msg->setText( WString::tr("ftw-no-foreground") );
-    m_tableUpdated.emit();
+    showMessageForEmptyTable( "ftw-no-foreground" );
     return;
   }
-  
+
   const float live_time = spec->gamma_live_time();
   if( live_time <= 0.0f )
   {
-    m_msg->setText( WString::tr("ftw-invalid-livetime") );
-    m_tableUpdated.emit();
+    showMessageForEmptyTable( "ftw-invalid-livetime" );
     return;
   }
-  
+
   const vector<PeakDef> peaks = peakmodel->peakVec();
   
   const size_t npeaks = peaks.size();
@@ -1402,15 +1690,58 @@ void FluxToolWidget::refreshPeakTable()
       m_uncertainties[i][FluxColumns::FluxGammasInto4PiCol] = gammaInto4piUncert;
     }//if( eff > 0 ) / else
   }//for( const PeakDef &peak : peaks )
-  
+
+  syncRowSelectionFromEnergies( peaks );
+
 #if( FLUX_USE_COPY_TO_CLIPBOARD )
-  stringstream pastebrdtxt;
-  FluxToolImp::FluxCsvResource::data_to_strm( this, pastebrdtxt, true, m_displayInfoLevel );
-  m_copyBtn->doJavaScript( "var el=document.getElementById('" + m_copyBtn->id() + "'); el._isData = el._isData || {}; el._isData.TableData = '" + pastebrdtxt.str() + "';" );
+  updateCopyToClipboardText();
 #endif
-  
+
   m_tableUpdated.emit();
 }//void refreshPeakTable()
+
+
+void FluxToolWidget::syncRowSelectionFromEnergies( const vector<PeakDef> &peaks )
+{
+  assert( peaks.size() == m_data.size() );
+
+  m_rowSelected.resize( m_data.size(), true );
+
+  if( m_deselectedEnergies.empty() )
+  {
+    // Nothing remembered, so every row is selected - which is also the state after the
+    //  resize() above, but be explicit since m_rowSelected may have been left over.
+    std::fill( begin(m_rowSelected), end(m_rowSelected), true );
+    return;
+  }
+
+  // deselected is sized to `peaks`, m_rowSelected to m_data; callers pass the peaks m_data
+  //  was built from, so they agree - but bound the loop by both, since reading past a
+  //  vector<bool> wouldnt crash, it would just silently give the wrong rows.
+  const vector<bool> deselected = FluxToolImp::peaks_matching_energies( peaks, m_deselectedEnergies );
+  assert( deselected.size() == m_rowSelected.size() );
+
+  const size_t nrows = std::min( deselected.size(), m_rowSelected.size() );
+  for( size_t i = 0; i < nrows; ++i )
+    m_rowSelected[i] = !deselected[i];
+}//void syncRowSelectionFromEnergies( const vector<PeakDef> &peaks )
+
+
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+void FluxToolWidget::updateCopyToClipboardText()
+{
+  stringstream pastebrdtxt;
+  FluxToolImp::FluxCsvResource::data_to_strm( this, pastebrdtxt, true, m_displayInfoLevel );
+  // Must stash the text on the elements own `_isData` expando: that is what
+  //  `CopyFluxDataTextToClipboard` (top of this file) reads.  jQuery's `.data()` writes into
+  //  jQuery's internal cache instead, which the reader never looks at.
+  //  jsStringLiteral escapes the quotes/newlines the CSV payload contains.
+  m_copyBtn->doJavaScript( "var el=document.getElementById('" + m_copyBtn->id() + "');"
+                           " el._isData = el._isData || {};"
+                           " el._isData.TableData = "
+                           + Wt::WWebWidget::jsStringLiteral( pastebrdtxt.str(), '\'' ) + ";" );
+}//void updateCopyToClipboardText()
+#endif
 
 
 void FluxToolWidget::handleDrfChange( std::shared_ptr<DetectorPeakResponse> drf )
@@ -1509,9 +1840,146 @@ void FluxToolWidget::setDisplayInfoLevel( const DisplayInfoLevel disptype, const
       
     m_table->setColumnWidth( col, length);
   }//for( loop over columns )
-  
+
+  m_table->setColumnHidden( sm_selectColumn, !m_selectRows );
+
+  // Must set the width explicitly: WTreeView::setColumnHidden() calls the (virtual)
+  //  setColumnWidth() with the columns current width, which for a column we have never
+  //  sized is Wt's 150px default - and RowStretchTreeView takes that as the columns share
+  //  of the tables width.  The loop above is what keeps the data columns from doing this.
+  m_table->setColumnWidth( sm_selectColumn, WLength(2.5, WLength::Unit::FontEm) );
+
   m_table->refreshColWidthLayout();
 }//void setDisplayInfoLevel( const bool minonly )
+
+
+void FluxToolWidget::setSelectRows( const bool selectRows )
+{
+  if( selectRows == m_selectRows )
+    return;
+
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    const bool prev = m_selectRows;
+    const vector<double> deselected = m_deselectedEnergies;
+    auto undo_redo = [prev, selectRows, deselected]( const bool is_undo ){
+      InterSpec *viewer = InterSpec::instance();
+      FluxToolWindow *fluxwin = viewer ? viewer->createFluxTool() : nullptr;
+      FluxToolWidget *tool = fluxwin ? fluxwin->m_fluxTool : nullptr;
+      if( tool )
+        tool->applySelectionState( is_undo ? prev : selectRows, deselected );
+    };
+    auto undo = [=](){ undo_redo(true); };
+    auto redo = [=](){ undo_redo(false); };
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Change flux tool row selection." );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+
+  // m_deselectedEnergies is intentionally left alone, so un-ticking and re-ticking gets the
+  //  user back the rows they had picked.
+  applySelectionState( selectRows, m_deselectedEnergies );
+}//void setSelectRows( const bool selectRows, const bool force )
+
+
+void FluxToolWidget::handleRowSelectionChanged( const size_t dataRow, const bool selected )
+{
+  const std::shared_ptr<PeakModel> peakmodel = m_interspec->peakModel();
+  const vector<PeakDef> peaks = peakmodel ? peakmodel->peakVec() : vector<PeakDef>{};
+
+  assert( dataRow < m_rowSelected.size() );
+  assert( m_rowSelected.size() == m_data.size() );
+  if( (dataRow >= m_rowSelected.size())
+     || (m_rowSelected.size() != m_data.size())
+     || (peaks.size() != m_data.size()) )
+  {
+    return;
+  }
+
+  if( m_rowSelected[dataRow] == selected )
+    return;
+
+  vector<double> deselected = m_deselectedEnergies;
+
+  if( selected )
+  {
+    // Drop the remembered energy that names this row.  It need not equal the peaks current
+    //  mean (the peak may have been re-fit since it was remembered), so match it the same
+    //  way refreshPeakTable() does.  Entries that name some other peak - or no peak at all
+    //  - are kept, so this set only ever changes through an explicit user action.
+    vector<double> keep;
+    for( const double energy : deselected )
+    {
+      const vector<bool> named = FluxToolImp::peaks_matching_energies( peaks, vector<double>{energy} );
+      if( !named[dataRow] )
+        keep.push_back( energy );
+    }
+    deselected.swap( keep );
+  }else
+  {
+    deselected.push_back( m_data[dataRow][FluxColumns::FluxEnergyCol] );
+  }
+
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    const bool selectRows = m_selectRows;
+    const vector<double> prev = m_deselectedEnergies;
+    const vector<double> current = deselected;
+    auto undo_redo = [selectRows, prev, current]( const bool is_undo ){
+      InterSpec *viewer = InterSpec::instance();
+      FluxToolWindow *fluxwin = viewer ? viewer->createFluxTool() : nullptr;
+      FluxToolWidget *tool = fluxwin ? fluxwin->m_fluxTool : nullptr;
+      if( tool )
+        tool->applySelectionState( selectRows, is_undo ? prev : current );
+    };
+    auto undo = [=](){ undo_redo(true); };
+    auto redo = [=](){ undo_redo(false); };
+    undoRedo->addUndoRedoStep( std::move(undo), std::move(redo), "Change flux tool selected row." );
+  }//if( undoRedo && undoRedo->canAddUndoRedoNow() )
+
+  applySelectionState( m_selectRows, deselected );
+}//void handleRowSelectionChanged( const size_t dataRow, const bool selected )
+
+
+void FluxToolWidget::applySelectionState( const bool selectRows, vector<double> deselected )
+{
+  // Taken by value: setSelectRows() passes m_deselectedEnergies itself, and we both assign
+  //  to and then read that member below.
+  const bool colVisibilityChanged = (selectRows != m_selectRows);
+
+  m_selectRows = selectRows;
+  m_deselectedEnergies = std::move( deselected );
+
+  if( m_selectRowsCb->isChecked() != selectRows )
+    m_selectRowsCb->setChecked( selectRows );
+
+  // Re-derive which rows are checked, without rebuilding the table - the peaks and their
+  //  flux values havent changed, only which of them the user wants in the output.
+  //  A matching size means these are the same peaks m_data was built from: every peak
+  //  change routes through setTableNeedsUpdating() (see init()), and Wt renders at the end
+  //  of the event, so m_data can only be stale here if a refresh is already scheduled.
+  const std::shared_ptr<PeakModel> peakmodel = m_interspec->peakModel();
+  const vector<PeakDef> peaks = peakmodel ? peakmodel->peakVec() : vector<PeakDef>{};
+  if( peaks.size() == m_data.size() )
+    syncRowSelectionFromEnergies( peaks );
+  else
+    setTableNeedsUpdating();  //Table is stale; it will pick the selections up when rebuilt.
+
+  if( colVisibilityChanged )
+  {
+    // Re-runs the column show/hide + width logic, which is where sm_selectColumn gets shown.
+    setDisplayInfoLevel( m_displayInfoLevel, true );
+  }
+
+  if( m_fluxModel )
+    m_fluxModel->notifySelectionChanged();
+
+#if( FLUX_USE_COPY_TO_CLIPBOARD )
+  // Deliberately not emitting m_tableUpdated - that resets the model, re-rendering (and
+  //  re-sorting) the whole table, which is far too heavy for a checkbox click.
+  updateCopyToClipboardText();
+#endif
+}//void applySelectionState( const bool selectRows, const vector<double> &deselected )
 
 
 #if( FLUX_USE_COPY_TO_CLIPBOARD )

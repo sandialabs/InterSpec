@@ -49,15 +49,6 @@
   </message>
   <message id="smm-unsupported-document">यह फ़ाइल एक दस्तावेज़ फ़ाइल प्रतीत होती है, और InterSpec द्वारा समर्थित नहीं है।</message>
   <message id="smm-invalid-peak-csv">अपलोड की गई फ़ाइल एक शिखर CSV फ़ाइल जैसी लगी, लेकिन अमान्य थी।</message>
-  <message id="smm-file-is-drf">
-    <p style="white-space: nowrap;">
-      यह फ़ाइल एक डिटेक्टर प्रतिक्रिया फ़ंक्शन प्रतीत होती है।
-    </p>
-    <p style="text-align: left; white-space: nowrap;">
-      नाम: {1}
-    </p>
-   <p>क्या आप इस DRF का उपयोग करना चाहेंगे?</p>
-  </message>
   <message id="smm-saved-drf-conf">
     '{1}' को बाद में उपयोग के लिए सहेजा गया, और "<em>डिटेक्टर प्रतिक्रिया फ़ंक्शन चयन</em>" उपकरण के
     "<em>सापेक्ष दक्षता</em>" भाग में उपलब्ध होगा।
@@ -254,7 +245,6 @@
     इसे बदलने के लिए <b>फ़ाइल प्रबंधक</b> का उपयोग करें।
   </message>
 
-
   <!-- The visual components of the Spectrum Measurement Manager GUI -->
   <message id="smm-selected-spec-label">चयनित स्पेक्ट्रम: </message>
   <message id="smm-disp-as-btn">इस रूप में प्रदर्शित करें</message>
@@ -267,7 +257,6 @@
   <message id="smm-export-btn">निर्यात...</message>
   <message id="smm-unload-btn">अनलोड करें</message>
   <message id="smm-unassign-label">असाइनमेंट हटाएं: </message>
-
 
   <message id="smm-prev-states-window-title">पहले संग्रहीत स्थितियां</message>
   <message id="smm-err-prev-state-unexpected">उपलब्ध सहेजी गई स्थितियां प्रदर्शित करने में अप्रत्याशित समस्या: {1}</message>
@@ -294,7 +283,6 @@
   <message id="smm-qr-title">स्पेक्ट्रम फ़ाइल {1}</message>
   <message id="smm-qr-sequence-single">QR कोड</message>
   <message id="smm-qr-sequence-multi">{2} का QR कोड {1}</message>
-
 
   <message id="smm-changed-background">
     नई लोड की गई फ़ाइल के साथ शामिल एक होने के लिए पृष्ठभूमि स्पेक्ट्रम को भी अपडेट किया गया था।
@@ -327,9 +315,7 @@
   <message id="musd-err-decoding-url">URL डिकोड करने में त्रुटि: {1}</message>
   <message id="musd-received-urls-list">{2} के {1} url प्राप्त किए हैं।<p>अधिक URLS/QR-code की प्रतीक्षा कर रहा है</p></message>
 
-
   <message id="uid-qr-code-pic">QR-code चित्र</message>
-  <message id="uid-no-qr-found">कोई QR-code नहीं मिला ⓘ</message>
   <message id="uid-no-qr-found-title">कोई QR-code नहीं मिला</message>
   <message id="uid-no-qr-content">
     <p>
