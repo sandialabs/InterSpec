@@ -111,6 +111,13 @@ public:
     assert( m_app );
     assert( m_tool );
     assert( m_interspec );
+
+    // Have Wt hold the session lock across handleRequest instead of dropping it for us: by
+    //  default `WResource::handle` unlocks before invoking us, so the session thread can be
+    //  inside `~WResource`'s `beingDeleted()` - waiting on our use-count - while we block
+    //  acquiring the lock it holds.  That is a deadlock.  Free: the `WApplication::UpdateLock`
+    //  in handleRequest already spanned the whole body, so this only moves it earlier.
+    setTakesUpdateLock( true );
   }
   
   virtual ~CALpDownloadResource()
@@ -122,9 +129,11 @@ public:
   {
     assert( m_app );
     assert( m_interspec );
-    
+
     try
     {
+      // setTakesUpdateLock(true) in the ctor means Wt already holds the session lock here, so this
+      //  is a same-thread no-op (WApplication::UpdateLock detects that and returns immediately).
       WApplication::UpdateLock lock( m_app );
       
       if( !lock )
@@ -1398,8 +1407,22 @@ void EnergyCalTool::setTallLayout()
 
 EnergyCalTool::~EnergyCalTool()
 {
-}
-  
+  // Both of these are AuxWindows created by `AuxWindow::make(...)`, so `wApp` owns them - they are
+  //  not our children and will not go away with us.  They hold a raw `EnergyCalTool*` back-pointer
+  //  they dereference from their Accept/Apply handlers (EnergyCalAddActions.cpp, EnergyCalGraphical.cpp),
+  //  so leaving them up after we die is a use-after-free waiting on a user click.
+  cancelMoreActionWindow();
+
+  //  Note: deliberately not `deleteGraphicalRecalConfirmWindow()` - that also reads a user preference
+  //  through, and logs a message to, `m_interspec`.  We run when InterSpec destroys its widget
+  //  children, i.e. *after* the `~InterSpec` body, so `m_interspec` is already dangling.
+  if( m_graphicalRecal )
+  {
+    AuxWindow::deleteAuxWindow( m_graphicalRecal.get() );
+    assert( !m_graphicalRecal );   //observing_ptr auto-clears
+  }
+}//EnergyCalTool destructor
+
 
 set<string> EnergyCalTool::gammaDetectorsForDisplayedSamples( const SpecUtils::SpectrumType type )
 {

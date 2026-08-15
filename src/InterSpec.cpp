@@ -1364,6 +1364,102 @@ InterSpec::~InterSpec() noexcept(true)
   closeAddPeakDialog();
   deleteGammaCountDialog();
 
+  // Every remaining tool window/dialog.  These are *not* our children: `AuxWindow::make<T>()` and
+  //  `SimpleDialog::make<T>()` hand ownership to `wApp` (see AuxWindow.h / SimpleDialog.h), and
+  //  `WPopupWidget` parents them under `domRoot_` - neither of which `InterSpecApp::setupWidgets()`
+  //  touches when it does `root()->clear()` for "Clear Session...".  So anything not torn down here
+  //  stays on screen and clickable while holding a dangling `InterSpec*` (or a dangling pointer to a
+  //  tool inside us).  If you add a new tool window member, add it here too.
+  //
+  //  Use the raw `deleteAuxWindow`/`deleteSimpleDialog` primitives rather than the tools' usual
+  //  `closeXxx()` handlers: at this point we only want the window gone, and the handlers' side
+  //  effects are hazards - several register undo/redo steps (`m_undo` is already destroyed above),
+  //  some re-encode state off a dying InterSpec, and the `programmatically*Close*()`/`accept()`
+  //  paths call `done()`, which synchronously re-enters `finished()` handlers bound to `this`.
+  //  (Wt cuts those tracked connections in `~observable`, i.e. *after* this body runs.)
+  //  The exceptions are the tools that persist user state on close - handled above (shielding/
+  //  rel-act) or just below (LLM history).
+#if( USE_LLM_INTERFACE )
+  if( m_llmToolWindow )
+    handleLlmToolClose();   //syncs conversation history into the SpecMeas before deleting
+#endif
+
+  AuxWindow::deleteAuxWindow( m_specFileQueryDialog.get() );
+  AuxWindow::deleteAuxWindow( m_featureMarkersWindow.get() );
+  AuxWindow::deleteAuxWindow( m_gammaXsToolWindow.get() );
+  AuxWindow::deleteAuxWindow( m_doseCalcWindow.get() );
+  AuxWindow::deleteAuxWindow( m_1overR2Calc.get() );
+  AuxWindow::deleteAuxWindow( m_unitsConverter.get() );
+  AuxWindow::deleteAuxWindow( m_fluxTool.get() );
+  AuxWindow::deleteAuxWindow( m_makeDrfTool.get() );
+  AuxWindow::deleteAuxWindow( m_simpleActivityCalcWindow.get() );
+  AuxWindow::deleteAuxWindow( m_helpWindow.get() );
+  AuxWindow::deleteAuxWindow( m_useInfoWindow.get() );
+  AuxWindow::deleteAuxWindow( m_decayInfoWindow.get() );
+  AuxWindow::deleteAuxWindow( m_addFwhmTool.get() );
+  AuxWindow::deleteAuxWindow( m_preserveCalibWindow.get() );
+  AuxWindow::deleteAuxWindow( m_drfSelectWindow.get() );
+
+  SimpleDialog::deleteSimpleDialog( m_exportSpecFileWindow.get() );
+  SimpleDialog::deleteSimpleDialog( m_multimedia.get() );
+  SimpleDialog::deleteSimpleDialog( m_enterUri.get() );
+  SimpleDialog::deleteSimpleDialog( m_riidDisplay.get() );
+
+#if( USE_LEAFLET_MAP )
+  SimpleDialog::deleteSimpleDialog( m_leafletWarning.get() );
+  AuxWindow::deleteAuxWindow( m_leafletWindow.get() );
+#endif
+
+#if( USE_TERMINAL_WIDGET )
+  AuxWindow::deleteAuxWindow( m_terminalWindow.get() );
+#endif
+
+#if( USE_REMOTE_RID )
+  SimpleDialog::deleteSimpleDialog( m_autoRemoteRidResultDialog.get() );
+  AuxWindow::deleteAuxWindow( m_remoteRidWindow.get() );
+#endif
+
+#if( USE_DETECTION_LIMIT_TOOL )
+  AuxWindow::deleteAuxWindow( m_simpleMdaWindow.get() );
+  AuxWindow::deleteAuxWindow( m_detectionLimitWindow.get() );
+#endif
+
+#if( USE_SEARCH_MODE_3D_CHART )
+  AuxWindow::deleteAuxWindow( m_3dViewWindow.get() );
+#endif
+
+  // Backstop for every dialog the named teardowns above do not cover.  Most tool dialogs are
+  //  created *locally* with no member holding them (`SpecFileSummary`, the External RID warning,
+  //  ...), yet their handlers capture an `InterSpec *` just the same - and since `AuxWindow::make`
+  //  gives ownership to `wApp`, nothing else would ever destroy them.  Both factories register here
+  //  via `WidgetUtils::trackSessionDialog`, so this catches those, and any window added in future.
+  //
+  //  Swap the list out first: tearing a dialog down can, in principle, register another one, and we
+  //  do not want to invalidate the iteration (anything registered from here on has no owner to
+  //  outlive anyway).  Entries for dialogs already destroyed are null and skipped.
+  std::vector<Wt::Core::observing_ptr<Wt::WDialog>> tracked;
+  tracked.swap( m_trackedDialogs );
+
+  for( const Wt::Core::observing_ptr<Wt::WDialog> &dialog : tracked )
+  {
+    if( !dialog )
+      continue;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    // Not an assert: the dialogs that reach here are a known, non-empty set until each is given a
+    //  proper owner.  A log line keeps new ones visible without aborting the app.
+    log("info") << "~InterSpec: backstop tearing down an untracked-by-member dialog of type '"
+                << typeid(*dialog.get()).name() << "' - consider giving it an explicit owner.";
+#endif
+
+    if( AuxWindow * const window = dynamic_cast<AuxWindow *>( dialog.get() ) )
+      AuxWindow::deleteAuxWindow( window );
+    else if( SimpleDialog * const simple = dynamic_cast<SimpleDialog *>( dialog.get() ) )
+      SimpleDialog::deleteSimpleDialog( simple );
+    else if( WApplication * const app = WApplication::instance() )
+      app->removeChild( dialog.get() );   //shouldnt happen - only those two factories register
+  }//for( loop over tracked dialogs )
+
   // The following are parented by app->domRoot()
   if( m_mobileMenuButton )
     m_mobileMenuButton->removeFromParent();
@@ -9232,10 +9328,9 @@ void InterSpec::startAddPeakFromRightClick()
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    // Look the dialog up at execution time via `closeAddPeakDialog` / `showAddPeakDialog`
-    // so undo/redo always addresses the *current* dialog (per CLAUDE.md "Undo/redo
-    // discipline").  Capturing the dialog pointer here would go stale across
-    // undo→redo→undo cycles, since `redo` creates a fresh instance.
+    // Look the dialog up at execution time via `closeAddPeakDialog` / `showAddPeakDialog` so
+    // undo/redo always addresses the *current* dialog.  Capturing the dialog pointer here would go
+    // stale across undo→redo→undo cycles, since `redo` creates a fresh instance.
     auto undo = [](){
       InterSpec *interspec = InterSpec::instance();
       if( interspec )
@@ -9253,12 +9348,14 @@ void InterSpec::startAddPeakFromRightClick()
 
 AddNewPeakDialog *InterSpec::showAddPeakDialog( const float energy, std::string ref_line_hint )
 {
-  // Per Cat-A pattern (CLAUDE.md): close any prior instance and create a fresh dialog
-  // seeded at the requested energy.  We always recreate rather than re-using the
-  // existing dialog so the seeded energy / reference-line hint take effect.
+  // One dialog per session: close any prior instance and create a fresh one seeded at the
+  // requested energy.  We always recreate rather than re-use the existing dialog, so the seeded
+  // energy / reference-line hint take effect.
   if( m_addPeakDialog )
     closeAddPeakDialog();
 
+  // If there is no usable foreground the dialog puts up a message explaining that, instead of the
+  //  peak-editing controls; either way it is a normal dialog that closes through finished().
   m_addPeakDialog = AuxWindow::make<AddNewPeakDialog>( energy, ref_line_hint );
   m_addPeakDialog->finished().connect( this, &InterSpec::closeAddPeakDialog );
   return m_addPeakDialog.get();
@@ -9272,6 +9369,28 @@ void InterSpec::closeAddPeakDialog()
   AuxWindow::deleteAuxWindow( m_addPeakDialog.get() );
   assert( !m_addPeakDialog );
 }//void closeAddPeakDialog()
+
+
+void InterSpec::trackToolDialog( Wt::WDialog *dialog )
+{
+  if( !dialog )
+    return;
+
+  // Drop entries whose dialogs have since been destroyed.  Sessions can stay open for weeks, so
+  //  without this the list would grow once per dialog ever opened; with it the size stays bounded by
+  //  ~64 plus however many dialogs are open at once (compacting leaves only the live ones, so the
+  //  next compaction is another ~64 registrations away).  Cheap either way: a dead entry is an
+  //  `observing_ptr` that nulled itself when its target was destroyed - it holds no back-reference
+  //  and costs nothing but its slot - so this is a plain scan, not a lifetime operation.
+  if( m_trackedDialogs.size() >= 64 )
+  {
+    const auto is_dead = []( const Wt::Core::observing_ptr<Wt::WDialog> &p ) -> bool { return !p; };
+    m_trackedDialogs.erase( std::remove_if( begin(m_trackedDialogs), end(m_trackedDialogs), is_dead ),
+                            end(m_trackedDialogs) );
+  }
+
+  m_trackedDialogs.emplace_back( dialog );
+}//void InterSpec::trackToolDialog( Wt::WDialog *dialog )
 
 
 void InterSpec::searchOnEnergyFromRightClick()

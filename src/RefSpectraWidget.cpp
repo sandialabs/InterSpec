@@ -50,6 +50,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/RefSpectraModel.h"
@@ -875,8 +876,39 @@ void RefSpectraWidget::handleSelectionChanged()
   {
     // We'll auto-expand directories when selected, but we'll do it after the current
     //  event loop iteration, incase the user is collapsing the node (in which case we dont want to expand it)
+    // Wt4: this widget lives in a transient RefSpectraDialog, and `WServer::post` only guarantees
+    //  the *session* is alive when the task runs - so `this` may not be captured directly (nor an
+    //  observing_ptr, which would race `observable::observers_` when the std::function is copied
+    //  across threads).  Re-resolve by DOM id.
+    //
+    //  The WModelIndex may not be carried across either: it holds the model pointer plus a raw
+    //  `RefSpectraModel::Node*`, and `RefSpectraModel::refresh()` destroys every Node and rebuilds.
+    //  `WModelIndex::isValid()` is only `model_ != nullptr`, so it happily reports true for an index
+    //  whose node has been freed - it cannot be used as a guard.  Carry the row path instead and
+    //  rebuild the index against whatever the model holds now.
+    std::vector<int> rowpath;
+    for( WModelIndex idx = index; idx.isValid(); idx = idx.parent() )
+      rowpath.push_back( idx.row() );
+    std::reverse( begin(rowpath), end(rowpath) );
+
     const std::string sessionId = wApp->sessionId();
-    WServer::instance()->post( sessionId, [this, index](){ tryExpandNode( index ); wApp->triggerUpdate(); } );
+    const WidgetUtils::WidgetHandle self( this );
+    WServer::instance()->post( sessionId, [self, rowpath](){
+      RefSpectraWidget * const w = self.resolve_as<RefSpectraWidget>();
+      if( !w || !w->m_treeModel || rowpath.empty() )
+        return;
+
+      WModelIndex idx;
+      for( const int row : rowpath )
+      {
+        idx = w->m_treeModel->index( row, 0, idx );
+        if( !idx.isValid() )
+          return;   //tree changed under us; nothing to expand
+      }
+
+      w->tryExpandNode( idx );
+      wApp->triggerUpdate();
+    } );
     
 #if( !IOS && !ANDROID && !BUILD_FOR_WEB_DEPLOYMENT )
     int parent_levels = 0;

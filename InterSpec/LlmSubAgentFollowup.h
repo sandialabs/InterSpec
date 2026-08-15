@@ -78,6 +78,11 @@ private:
   std::shared_ptr<LlmInterface> m_llmInterface;          // private interface; tool calls blocked
                                                          // (shared_ptr so LlmInterface::weak_from_this() is valid)
   bool m_requestPending;
+
+  /** Set by the first #startDeleteSelf call, so a second one (there is more than one caller) does
+   not post a second `removeChild` for an object that has already been handed back.
+   */
+  bool m_deleting;
 };//class LlmSubAgentFollowup
 
 

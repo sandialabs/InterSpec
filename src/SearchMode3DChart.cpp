@@ -50,6 +50,7 @@
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/InterSpecUser.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/SearchMode3DChart.h"
@@ -218,7 +219,16 @@ void SearchMode3DChart::load()
     m_loaded = true;
     assert( !m_model );
     assert( !m_chart );
-    WServer::instance()->post( wApp->sessionId(), [this](){ initChart(); } );
+
+    // Wt4: we live in a transient AuxWindow that can be closed (e.g. by the phone
+    //  orientation-change handler) before this lands, and `WServer::post` only guarantees the
+    //  *session* is alive - so re-resolve by DOM id instead of capturing a raw `this`.
+    const WidgetUtils::WidgetHandle self( this );
+    WServer::instance()->post( wApp->sessionId(), [self](){
+      SearchMode3DChart * const chart = self.resolve_as<SearchMode3DChart>();
+      if( chart )
+        chart->initChart();
+    } );
   }//if( !m_loaded )
 }//void load()
 

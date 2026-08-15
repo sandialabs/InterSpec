@@ -77,6 +77,7 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/MakeDrfChart.h"
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/PeakFitDetPrefsGui.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
@@ -208,6 +209,13 @@ namespace
        m_app( WApplication::instance() )
     {
       assert( m_app );
+
+      // Have Wt hold the session lock across handleRequest instead of dropping it for us: by
+      //  default `WResource::handle` unlocks before invoking us, so the session thread can be
+      //  inside `~WResource`'s `beingDeleted()` - waiting on our use-count - while we block
+      //  acquiring the lock it holds.  That is a deadlock.  Free: the `WApplication::UpdateLock`
+      //  in handleRequest already spanned the whole body, so this only moves it earlier.
+      setTakesUpdateLock( true );
     }
     
     virtual ~CalFileDownloadResource()
@@ -322,6 +330,13 @@ namespace
     : WResource(), m_filename(""), m_makedrf( parent ), m_app( WApplication::instance() )
     {
       assert( m_app );
+
+      // Have Wt hold the session lock across handleRequest instead of dropping it for us: by
+      //  default `WResource::handle` unlocks before invoking us, so the session thread can be
+      //  inside `~WResource`'s `beingDeleted()` - waiting on our use-count - while we block
+      //  acquiring the lock it holds.  That is a deadlock.  Free: the `WApplication::UpdateLock`
+      //  in handleRequest already spanned the whole body, so this only moves it earlier.
+      setTakesUpdateLock( true );
     }
     
     virtual ~DrfSummaryBase()
@@ -1784,7 +1799,14 @@ MakeDrf::MakeDrf( InterSpec *viewer )
   
   //If we directly call handleSourcesUpdates() now, getting the activity
   //  uncertainty will throw an exception because they wont validate.... whatever.
-  WServer::instance()->post( wApp->sessionId(), [this](){ handleSourcesUpdates(); } );
+  //  Re-resolve by DOM id rather than capturing `this`: we live in a transient MakeDrfWindow and
+  //  `WServer::post` only guarantees the session is alive (same pattern as fitFwhmEqn() below).
+  const WidgetUtils::WidgetHandle self( this );
+  WServer::instance()->post( wApp->sessionId(), [self](){
+    MakeDrf * const drf = self.resolve_as<MakeDrf>();
+    if( drf )
+      drf->handleSourcesUpdates();
+  } );
 }//MakeDrf( constructor )
 
 

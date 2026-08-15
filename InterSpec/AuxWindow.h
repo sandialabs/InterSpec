@@ -33,6 +33,8 @@
 #include <Wt/WApplication.h>
 #include <Wt/WJavaScript.h>
 
+#include "InterSpec/WidgetUtils.h"
+
 namespace Wt
 {
   class WText;
@@ -161,7 +163,13 @@ public:
     //  the factory, as a member of AuxWindow, has access to the protected
     //  constructor of T (as long as T derives from AuxWindow).
     std::unique_ptr<T> ptr( new T( std::forward<Args>(args)... ) );
-    return Wt::WApplication::instance()->addChild( std::move( ptr ) );
+    T * const window = Wt::WApplication::instance()->addChild( std::move( ptr ) );
+
+    // Ownership is wApp's, not the InterSpec instance's, so nothing would otherwise stop this
+    //  window outliving the viewer on "Clear Session..." - register it so ~InterSpec can sweep it.
+    WidgetUtils::trackSessionDialog( window );
+
+    return window;
   }
 
   virtual ~AuxWindow();

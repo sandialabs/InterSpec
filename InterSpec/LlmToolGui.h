@@ -200,8 +200,8 @@ private:
   Wt::WContainerWidget *m_root;
 
   /** The open provider-settings window (nullptr if none), so it can be cleaned up. */
-  /** Cat-A style singleton dialog: created with AuxWindow::make() (owned by wApp) and torn down
-   with AuxWindow::deleteAuxWindow(); the observing_ptr auto-clears when it goes. */
+  /** At most one of these exists at a time: created with AuxWindow::make() (owned by wApp) and
+   torn down with AuxWindow::deleteAuxWindow(); the observing_ptr auto-clears when it goes. */
   Wt::Core::observing_ptr<LlmConfigWindow> m_configWindow;
 
   Wt::WContainerWidget *m_conversationContainer;  ///< Container holding LlmInteractionDisplay widgets

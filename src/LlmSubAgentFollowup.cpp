@@ -51,7 +51,8 @@ LlmSubAgentFollowup::LlmSubAgentFollowup( std::shared_ptr<LlmInteraction> intera
   : WObject(),
     m_originalInteraction( interaction ),
     m_llmInterface( nullptr ),
-    m_requestPending( false )
+    m_requestPending( false ),
+    m_deleting( false )
 {
   assert( interaction );
   if( !interaction )
@@ -113,6 +114,17 @@ void LlmSubAgentFollowup::startDeleteSelf()
   WApplication * const app = WApplication::instance();
   if( !app )
     return;
+
+  //  Capturing a raw `this` is safe here only because our owner is `wApp` itself and this function
+  //  is the *only* thing that ever removes us: `WServer::post` will not dispatch to a dead session,
+  //  so if we run at all, wApp - and therefore we - are still alive.  (A `WidgetUtils::WidgetHandle`
+  //  cannot be used: we are a WObject, not a widget, so there is nothing to look up by DOM id.  An
+  //  observing_ptr must not be used either - `post` copy-constructs the std::function, and
+  //  `observable::observers_` has no mutex.)  The `m_deleting` latch above covers the one remaining
+  //  hazard: two different code paths call this, and a second removeChild() would be a double-free.
+  if( m_deleting )
+    return;
+  m_deleting = true;
 
   const std::string sessionId = app->sessionId();
   WServer::instance()->post( sessionId, [this, sessionId](){

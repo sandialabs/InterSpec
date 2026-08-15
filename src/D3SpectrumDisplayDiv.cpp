@@ -3548,13 +3548,27 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
           //  global widget, and remove it (deferred, routed through the owner) when it hides.  The
           //  old `new` + setHidden `delete this` both double-freed (wApp owns popups) and, per the
           //  observed leak, often never fired.
+          //
+          //  `aboutToHide()` alone is not enough to bound this.  `WPopupMenu::done()` starts with
+          //  `if( isHidden() ) return;`, so the signal is skipped whenever the menu is already
+          //  hidden by the time an item is selected - always on mobile (PopupDivMenu::isHidden()
+          //  used to force `true` there) and, for the tap-outside dismissal, there is no server-side
+          //  signal at all.  So also drop any menu still hanging around from the previous drag.
+          if( spectrum->m_roiPeakCountMenu )
+            spectrum->removeChild( spectrum->m_roiPeakCountMenu.get() );
+
           DeleteOnClosePopupMenu *menu = spectrum->addChild( std::make_unique<DeleteOnClosePopupMenu>() );
+          spectrum->m_roiPeakCountMenu = menu;
           const string menuownerid = spectrum->id();
           menu->aboutToHide().connect( menu, [menuownerid, menu](){
             WServer::instance()->post( wApp->sessionId(), [menuownerid, menu](){
               D3SpectrumDisplayDiv *owner = dynamic_cast<D3SpectrumDisplayDiv *>( wApp->domRoot() ? wApp->domRoot()->findById(menuownerid) : nullptr );
-              if( owner )
-                owner->removeChild( menu );  // owner alive => menu (its child) alive; frees it exactly once
+              // Identity-check before removing: the owner also drops the previous menu when it puts
+              //  up a new one, so by the time this deferred task runs `menu` may already be gone and
+              //  a *replacement* may sit at the same address.  Without this, a late continuation
+              //  could destroy the menu the user is currently looking at.
+              if( owner && (owner->m_roiPeakCountMenu.get() == menu) )
+                owner->removeChild( menu );  // still the live menu; frees it exactly once
             } );
           } );
 
@@ -3590,8 +3604,11 @@ void D3SpectrumDisplayDiv::performDragCreateRoiWork( double lower_energy, double
             
             
             item->triggered().connect( item, [=](){
-              menu->setHidden( true );
-
+              // Deliberately no `menu->setHidden(true)` here: `WMenu::select()` emits triggered()
+              //  *before* itemSelected() reaches `WPopupMenu::done()`, so hiding now would make
+              //  done() take its `if( isHidden() ) return;` early-out and skip aboutToHide() - which
+              //  is what tears this menu down.  done() hides it for us on desktop; on mobile
+              //  PopupDivMenu::insertMenuItem wires triggered() -> mobileHideMenuAndParents.
               if( i == npeakstry[best_choice] )
               {
                 //m_peakModel->addPeaks( shown_peaks );

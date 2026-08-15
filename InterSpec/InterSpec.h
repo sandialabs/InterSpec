@@ -1207,6 +1207,15 @@ protected:
 //  to be able to display/hide them on the chart
 public:
 
+  /** Note a dialog created by `AuxWindow::make()` / `SimpleDialog::make()`, so `~InterSpec` can
+   guarantee it does not outlive us.
+
+   Called for you by those factories (through `WidgetUtils::trackSessionDialog`) - do not call it
+   directly.  Tracking is non-owning: entries auto-null as dialogs are destroyed normally, and
+   `~InterSpec` only tears down whatever is still standing.  See #m_trackedDialogs.
+   */
+  void trackToolDialog( Wt::WDialog *dialog );
+
   std::shared_ptr<const PeakDef> nearestPeak( const double energy ) const;
 
   //Tracking of which feature markers are being shown on the c++ side of things
@@ -1467,7 +1476,7 @@ protected:
   //  time.  Will be null if no peak editor is open; valid if one is open.
   Wt::Core::observing_ptr<PeakEditWindow> m_peakEditWindow;
 
-  /** Tracks the currently-open "Add New Peak" dialog (Cat-A pattern; see CLAUDE.md).
+  /** Tracks the currently-open "Add New Peak" dialog; at most one exists per session.
    Null when no dialog is open.  Managed by `showAddPeakDialog` / `closeAddPeakDialog`
    so undo/redo can address the *current* dialog rather than the one that existed at
    undo-step registration time.
@@ -1762,8 +1771,9 @@ protected:
 #if( USE_LLM_INTERFACE )
   /** Menu item for opening the LLM tool. */
   PopupDivMenuItem *m_llmToolMenuItem;
-  /** LLM tool widget for user interaction; it lives in the tools tab strip (a Cat-C reparenting
-   tool), so whichever parent currently holds it owns it - hence the observing_ptr. */
+  /** LLM tool widget for user interaction.  It moves between the tools tab strip and an AuxWindow
+   depending on whether the tab strip is showing, so whichever parent currently holds it owns it -
+   hence the observing_ptr. */
   Wt::Core::observing_ptr<LlmToolGui> m_llmTool;
 
   /** Holds m_llmTool when there is no tool-tab strip to dock it into (same role
@@ -1781,9 +1791,22 @@ protected:
   Wt::Core::observing_ptr<SimpleDialog> m_riidDisplay;
   
   Wt::Core::observing_ptr<DrfSelectWindow> m_drfSelectWindow;
-  
+
+  /** Every dialog created through `AuxWindow::make()` / `SimpleDialog::make()` this session.
+
+   The backstop for `~InterSpec`: those factories give ownership to `wApp`, so a dialog nobody
+   explicitly tears down survives `root()->clear()` on "Clear Session..." and stays clickable with a
+   dangling `InterSpec *`.  The members above are torn down by name; this catches the many dialogs
+   created *locally* with no member holding them (`SpecFileSummary`, the External RID warning, ...).
+
+   Non-owning `observing_ptr`s, so entries auto-null as dialogs are destroyed the normal way; the
+   destructor only acts on survivors.  Compacted in #trackToolDialog so a long session does not
+   accumulate dead slots.
+   */
+  std::vector<Wt::Core::observing_ptr<Wt::WDialog>> m_trackedDialogs;
+
   Wt::Core::observing_ptr<UndoRedoManager> m_undo;
-  
+
   //Current width and height are set in layoutSizeChanged(...).
   int m_renderedWidth;
   int m_renderedHeight;

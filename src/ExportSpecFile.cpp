@@ -100,10 +100,13 @@ using namespace Wt;
 
 namespace
 {
+  /** Select `item` when the click landed on the item's `<li>` but outside its `<a>`.
+   `WMenu::select()` emits `triggered()`/`itemSelected()` itself when the index changes, and nothing
+   when it does not - so no explicit emit here (that would double-fire on an anchor click).
+   */
   void right_select_item( WMenu *menu, WMenuItem *item )
   {
     menu->select( item );
-    item->triggered().emit( item ); //
   }
 
 const std::vector<std::pair<SpecUtils::SaveSpectrumAsType,std::string>> sm_file_type_to_uri_name = {

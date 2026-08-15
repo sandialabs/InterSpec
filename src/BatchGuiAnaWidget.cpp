@@ -116,10 +116,13 @@ using namespace std;
 
 namespace
 {
+  /** Select `item` when the click landed on the item's `<li>` but outside its `<a>`.
+   `WMenu::select()` emits `triggered()`/`itemSelected()` itself when the index changes, and nothing
+   when it does not - so no explicit emit here (that would double-fire on an anchor click).
+   */
   void right_select_item( WMenu *menu, WMenuItem *item )
   {
     menu->select( item );
-    item->triggered().emit( item ); //
   }
   
   // This is a duplicate of `ExportSpecFileTool::maxRecordsInCurrentSaveType(...)`.

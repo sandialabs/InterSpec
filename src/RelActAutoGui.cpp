@@ -591,30 +591,21 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
 
     WMenuItem *item = m_upper_menu->addItem( WString::tr("raag-spec"), std::move(spectrum_owner) );
     // When outside the link area is clicked, the item doesnt get selected, so we'll work around this.
-    item->clicked().connect( this, [this,item](){
-      m_upper_menu->select( item );
-      item->triggered().emit( item );
-    } );
+    item->clicked().connect( this, [this,item](){ m_upper_menu->select( item ); } );
   }
 
   {
     auto rel_eff_owner = std::make_unique<RelEffChart>();
     m_rel_eff_chart = rel_eff_owner.get();
     WMenuItem *item = m_upper_menu->addItem( WString::tr("raag-rel-eff"), std::move(rel_eff_owner) );
-    item->clicked().connect( this, [this,item](){
-      m_upper_menu->select( item );
-      item->triggered().emit( item );
-    } );
+    item->clicked().connect( this, [this,item](){ m_upper_menu->select( item ); } );
   }
 
   {
     auto txt_results_owner = std::make_unique<RelActTxtResults>();
     m_txt_results = txt_results_owner.get();
     WMenuItem *item = m_upper_menu->addItem( WString::tr("raag-result"), std::move(txt_results_owner) );
-    item->clicked().connect( this, [this,item](){
-      m_upper_menu->select( item );
-      item->triggered().emit( item );
-    } );
+    item->clicked().connect( this, [this,item](){ m_upper_menu->select( item ); } );
   }
   
   m_upper_menu->select( static_cast<int>(0) );
@@ -1189,10 +1180,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
     // so we'll work around this for each sub-tab (same pattern as UpperMenu above).
     const auto addSubTab = [phoneSubMenu]( const Wt::WString &text, std::unique_ptr<Wt::WWidget> content ) -> WMenuItem* {
       WMenuItem * const it = phoneSubMenu->addItem( text, std::move(content) );
-      it->clicked().connect( std::bind([phoneSubMenu, it](){
-        phoneSubMenu->select( it );
-        it->triggered().emit( it );
-      }) );
+      it->clicked().connect( std::bind([phoneSubMenu, it](){ phoneSubMenu->select( it ); }) );
       return it;
     };
 
@@ -2300,13 +2288,23 @@ void RelActAutoGui::handleRightClick( const double energy, const double counts,
   //  to nobody, and WPopupMenu::done() hides *before* emitting aboutToHide(), so the flag is set
   //  after the only setHidden(true) and the delete never fires.  Same fix as in
   //  D3SpectrumDisplayDiv::  (see its right-click "Peaks To Keep In ROI" menu).
+  //  `aboutToHide()` alone does not bound this though: it is skipped whenever the menu is already
+  //  hidden when an item is selected, and the mobile tap-outside dismissal is pure client-side JS
+  //  with no server signal at all.  So also drop any menu left over from the previous right-click.
+  if( m_roiRightClickMenu )
+    removeChild( m_roiRightClickMenu.get() );
+
   DeleteOnClosePopupMenu *menu = addChild( std::make_unique<DeleteOnClosePopupMenu>() );
+  m_roiRightClickMenu = menu;
   const string menuownerid = id();
   menu->aboutToHide().connect( menu, [menuownerid, menu](){
     WServer::instance()->post( wApp->sessionId(), [menuownerid, menu](){
       RelActAutoGui *owner = dynamic_cast<RelActAutoGui *>( wApp->domRoot() ? wApp->domRoot()->findById(menuownerid) : nullptr );
-      if( owner )
-        owner->removeChild( menu );  // owner alive => menu (its child) alive; frees it exactly once
+      // Identity-check before removing: the owner also drops the previous menu when it puts up a new
+      //  one, so by the time this deferred task runs `menu` may already be gone and a *replacement*
+      //  may sit at the same address.
+      if( owner && (owner->m_roiRightClickMenu.get() == menu) )
+        owner->removeChild( menu );  // still the live menu; frees it exactly once
     } );
   } );
   menu->setPositionScheme( Wt::PositionScheme::Absolute );

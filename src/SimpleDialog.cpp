@@ -35,6 +35,7 @@
 #include <string>
 
 #include "InterSpec/InterSpec.h"  //for InterSpec::instance()
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/SimpleDialog.h"
 
 #if( BUILD_AS_WX_WIDGETS_APP || BUILD_AS_ELECTRON_APP )
@@ -300,15 +301,24 @@ void SimpleDialog::startDeleteSelf()
   
   // We'll actually delete the windows later on in the event loop incase the order of connections
   //  to its signals is out of intended order, but also we will protect against being deleted in the
-  //  current event loop as well
+  //  current event loop as well.
+  //  Only the dialog id crosses into the task: `post` copy-constructs the std::function and only
+  //  guarantees the *session* is still alive - another path (an owner's destructor,
+  //  deleteSimpleDialog) may have destroyed us in the meantime.  An observing_ptr must not be used
+  //  here; it would mutate `observable::observers_`, which has no mutex, from the io-service thread.
   const string sessionId = wApp->sessionId();
-  WServer::instance()->post( sessionId, [this, sessionId](){
+  const WidgetUtils::WidgetHandle self( this );
+  WServer::instance()->post( sessionId, [self, sessionId](){
     auto *app = WApplication::instance();
-    if( app && (app->sessionId() == sessionId) )
-    {
-      deleteSelf();
-      app->triggerUpdate();
-    }
+    if( !app || (app->sessionId() != sessionId) )
+      return;
+
+    SimpleDialog * const dialog = self.resolve_as<SimpleDialog>();
+    if( !dialog )
+      return;  //already destroyed
+
+    dialog->deleteSelf();
+    app->triggerUpdate();
   } );
 }//startDeleteSelf()
 
@@ -319,4 +329,21 @@ void SimpleDialog::deleteSelf()
   //  so we use removeChild() to properly release and destruct this dialog.
   Wt::WApplication::instance()->removeChild( this );
 }
+
+
+void SimpleDialog::deleteSimpleDialog( SimpleDialog *dialog )
+{
+  if( !dialog )
+    return;
+
+  // Clear modal first so the dialog cover is popped (same reason AuxWindow::deleteAuxWindow does),
+  //  then hand the widget back from wApp and destroy it.  Deliberately *not* done()/reject(): those
+  //  emit finished(), whose handlers usually call back into the owner that is tearing us down.
+  if( dialog->isModal() )
+    dialog->setModal( false );
+
+  WApplication * const app = WApplication::instance();
+  if( app )
+    app->removeChild( dialog );
+}//void deleteSimpleDialog( SimpleDialog *dialog )
 

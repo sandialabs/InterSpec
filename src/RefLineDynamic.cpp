@@ -622,18 +622,21 @@ void RefLineDynamic::finishUpdateLines( const std::shared_ptr<std::vector<std::p
                        const std::shared_ptr<std::string> &js_fwhm_fcn_ptr,
                                        const size_t calc_num )
 {
-  m_current_ref_lines = ref_lines_ptr;
-  
   assert( ref_lines_ptr && js_fwhm_fcn_ptr );
   if( !ref_lines_ptr || !js_fwhm_fcn_ptr )
     return;
-  
+
   if( calc_num != m_current_calc_num->load() )
   {
     cerr << "Got a stale RefLineUpdate - not setting." << endl;
     return;
   }
-  
+
+  // Only adopt the lines once we know they are current.  This used to be assigned before the check
+  //  above, which meant a superseded calculation still overwrote the lines that
+  //  `InterSpec::handleRightClick` uses to attribute a right-clicked peak to a nuclide.
+  m_current_ref_lines = ref_lines_ptr;
+
   vector<pair<double,ReferenceLineInfo>> ref_lines = *ref_lines_ptr;
   std::string &js_fwhm_fcn = *js_fwhm_fcn_ptr;
   
@@ -731,9 +734,24 @@ void RefLineDynamic::startUpdateLines()
   shared_ptr<vector<pair<double,ReferenceLineInfo>>> ref_lines_answer = make_shared<vector<pair<double,ReferenceLineInfo>>>();
   shared_ptr<string> js_fwhm_fcn = make_shared<string>();
   
+  //  `updaterfcn` is posted back from the worker thread, so it must not capture a raw `this` (nor an
+  //  observing_ptr - `WServer::post` copy-constructs the std::function on that thread, and
+  //  `observable::observers_` has no mutex).  We are a WObject rather than a widget, so a
+  //  `WidgetUtils::WidgetHandle` cannot address us; look ourselves back up through the InterSpec
+  //  instance instead (which is null if the session's viewer has been torn down).
+  //
+  //  Looking up by accessor is not enough on its own: "Clear Session..." destroys the InterSpec and
+  //  builds a new one *within the same Wt session*, so the accessor can hand back a *different*
+  //  RefLineDynamic whose m_current_calc_num has restarted from 0 - and `starting_calc_num` alone
+  //  would then match by coincidence, painting the previous session's reference lines onto the new
+  //  chart.  Capturing the counter's shared_ptr pins the identity: it is created once per instance.
   const string sessionId = wApp->sessionId();
-  std::function<void()> updaterfcn = [this, ref_lines_answer, js_fwhm_fcn, starting_calc_num](){
-    finishUpdateLines( ref_lines_answer, js_fwhm_fcn, starting_calc_num );
+  const shared_ptr<atomic<size_t>> calc_num_ptr = m_current_calc_num;
+  std::function<void()> updaterfcn = [ref_lines_answer, js_fwhm_fcn, starting_calc_num, calc_num_ptr](){
+    InterSpec * const viewer = InterSpec::instance();
+    RefLineDynamic * const me = viewer ? viewer->refLineDynamic() : nullptr;
+    if( me && (me->m_current_calc_num == calc_num_ptr) )
+      me->finishUpdateLines( ref_lines_answer, js_fwhm_fcn, starting_calc_num );
   };
   
   

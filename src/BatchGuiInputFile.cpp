@@ -223,7 +223,7 @@ BatchGuiInputSpectrumFile::BatchGuiInputSpectrumFile( const std::string display_
 
   // Wt4 removed WApplication::bind().  This fires ~1s later on the session thread, and this widget
   //  lives in a SimpleDialog the user can dismiss before then, so re-resolve it by id rather than
-  //  capturing `this` (see the disk-loading constructor, and CLAUDE.md).
+  //  capturing `this` (same pattern as the disk-loading constructor).
   const std::string widget_id = id();
   std::function<void(void)> updateGuiCallback = [widget_id, spec_meas, status_ptr](){
     WApplication * const app = WApplication::instance();

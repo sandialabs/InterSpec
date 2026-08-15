@@ -31,6 +31,7 @@
 #include <Wt/WApplication.h>
 #include <Wt/WContainerWidget.h>
 
+#include "InterSpec/InterSpec.h"
 #include "InterSpec/WidgetUtils.h"
 
 
@@ -150,5 +151,13 @@ Wt::WWidget *WidgetHandle::resolve() const
   //  walks children_ *and* layout_->iterateWidgets).
   return app->findById( m_id );
 }
+
+
+void trackSessionDialog( Wt::WDialog *dialog )
+{
+  InterSpec * const viewer = InterSpec::instance();
+  if( viewer && dialog )
+    viewer->trackToolDialog( dialog );
+}//void trackSessionDialog( Wt::WDialog *dialog )
 
 }//namespace WidgetUtils

@@ -31,6 +31,8 @@
 #include <Wt/WString.h>
 #include <Wt/WApplication.h>
 
+#include "InterSpec/WidgetUtils.h"
+
 namespace Wt
 {
   class WCssTextRule;
@@ -72,7 +74,13 @@ public:
   static T *make( Args&&... args )
   {
     std::unique_ptr<T> ptr( new T( std::forward<Args>(args)... ) );
-    return Wt::WApplication::instance()->addChild( std::move( ptr ) );
+    T * const dialog = Wt::WApplication::instance()->addChild( std::move( ptr ) );
+
+    // Ownership is wApp's, not the InterSpec instance's, so nothing would otherwise stop this
+    //  dialog outliving the viewer on "Clear Session..." - register it so ~InterSpec can sweep it.
+    WidgetUtils::trackSessionDialog( dialog );
+
+    return dialog;
   }
 
   ~SimpleDialog();
@@ -110,6 +118,18 @@ public:
    base call only reaches the outer dialog and its inner layout).  Accepts viewport units (vw/vh).
    */
   virtual void setMaximumSize( const Wt::WLength &width, const Wt::WLength &height ) override;
+
+  /** Force a dialog to be destroyed *now*, without emitting `finished()`.
+
+   The SimpleDialog counterpart of `AuxWindow::deleteAuxWindow()`, and the only correct way to tear a
+   dialog down from an owner's destructor: `done()`/`accept()`/`reject()` synchronously emit
+   `finished()`, and those handlers typically call back into the (half-destroyed) owner.  Safe to
+   call with a null `dialog`.
+
+   Normal, user-driven dismissal should keep going through the buttons/`done()`, which self-destruct
+   via `startDeleteSelf()`.
+   */
+  static void deleteSimpleDialog( SimpleDialog *dialog );
 
 protected:
   /** Constructors are protected to enforce use of the SimpleDialog::make() factory,

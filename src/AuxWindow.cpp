@@ -882,8 +882,7 @@ void AuxWindow::emitReject()
   //  dialog teardown deferred deletion. Wt4's `finished()` -> `deleteAuxWindow` ->
   //  `removeChild` chain destroys the AuxWindow synchronously, so emitting from
   //  inside our own setHidden() stack frame leaves the unwind running through a
-  //  destroyed AuxWindow (Issue 17 use-after-free family). Deferring lets the
-  //  setHidden() frame return before any handler runs.
+  //  destroyed AuxWindow. Deferring lets the setHidden() frame return before any handler runs.
   if( m_destructing || m_pendingReject )
     return;
   m_pendingReject = true;

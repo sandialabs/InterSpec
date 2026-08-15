@@ -545,6 +545,12 @@ protected:
   Wt::Core::observing_ptr<PopupDivMenuItem> m_hide_background;
   bool m_showing_background;
 
+  /** The per-right-click ROI context menu created in `handleRoiRightClick()`, so the next
+   right-click can drop it.  Its normal teardown is its own `aboutToHide()`, but that signal does not
+   fire for every dismissal path (see the creation site), which would leak one menu per right-click.
+   */
+  Wt::Core::observing_ptr<PopupDivMenu> m_roiRightClickMenu;
+
   /** If the user wants to show reference gamma lines, we'll use a #ReferencePhotopeakDisplay
    widget to calculate them and load them to m_spectrum; this is primarily for code re-use
    until I bother to refactor #ReferencePhotopeakDisplay to more easily generate reference

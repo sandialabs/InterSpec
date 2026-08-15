@@ -18,6 +18,7 @@
 #include <Wt/WEvent.h>
 #include <Wt/WSignal.h>
 #include <Wt/WContainerWidget.h>
+#include <Wt/Core/observing_ptr.hpp>
 
 #include "SpecUtils/SpecFile.h"
 #include "InterSpec/SpectrumChart.h"
@@ -30,6 +31,7 @@ class SpecMeas;
 class PeakModel;
 class InterSpec;
 struct ColorTheme;
+class PopupDivMenu;
 class RefLineDynamic;
 
 namespace Wt
@@ -837,7 +839,13 @@ protected:
    user hits escape to cancel the operation, no call will be made, so this variable wont be cleared.
    */
   std::vector<std::shared_ptr<const PeakDef>> m_last_being_added_peaks;
-  
+
+  /** The "Peaks To Keep In ROI:" menu put up by `dragCreateRoiCallback()`, so the next one can drop
+   it.  Its normal teardown is its own `aboutToHide()`, but that signal does not always fire (see the
+   creation site), which would otherwise leak one menu per drag-created ROI, forever.
+   */
+  Wt::Core::observing_ptr<PopupDivMenu> m_roiPeakCountMenu;
+
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
   friend class SpectrumViewerTester;
 #endif

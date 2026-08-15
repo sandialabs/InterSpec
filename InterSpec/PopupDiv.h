@@ -203,15 +203,16 @@ public:
   //  be closed, but parent menu wont be.
   PopupDivMenuItem *addPhoneBackItem( PopupDivMenu *parent );
   
-  //isHidden(): for m_mobile==true, this functions always returns true.  Else
-  //  it returns WPopupMenu::isHidden().
-  //  This is a hack to keep WPopupMenu from hiding this menu as soon as
-  //  a submenu is opened (we want the sub-menu to open over the current one).
-  //  This does create the issue where we have to manually close the menues
-  //  on item activation though.
-  virtual bool isHidden() const;
-  
-  
+  //Note: there used to be an `isHidden()` override here that returned true unconditionally when
+  //  m_mobile, to keep WPopupMenu from hiding this menu as soon as a submenu was opened (we want the
+  //  sub-menu to open over the current one).  `WPopupMenu::done()` starts with
+  //  `if( isHidden() ) return;`, so that hack also silently disabled aboutToHide(), the menu-level
+  //  triggered(), cancel(), and every isHidden() query on a phone menu - which leaked a popup menu
+  //  per right-click, among other things.  `setHideOnSelect(false)` in the constructor now provides
+  //  the sub-menu behaviour instead; we still close menus ourselves on item activation, via
+  //  mobileHideMenuAndParents().
+
+
   //parentItem(): if this PopupDivMenu is a sub menu of another PopupDivMenu,
   //  and was created by calling addPopupMenuItem(...) on the parent, then
   //  parentItem() will return its cooresponding WMenuItem in its parent,

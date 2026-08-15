@@ -4279,7 +4279,7 @@ void DetectionLimitTool::startBandCalculation()
   // Wt4 removed WApplication::bind().  Its replacement, `bindSafe`, is a captured
   //  Wt::Core::observing_ptr, and `worker` below is copied to - and destroyed on - an ioService
   //  thread; copying/destroying an observing_ptr off the session thread mutates the target's
-  //  unsynchronized observer list (see CLAUDE.md).  So only an inert widget id crosses the thread
+  //  unsynchronized observer list.  So only an inert widget id crosses the thread
   //  boundary, and it is resolved back to the widget inside the session-thread continuation,
   //  which yields nullptr if the tool was closed while the calculation ran.
   const string widget_id = id();

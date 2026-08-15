@@ -30,6 +30,7 @@
 
 namespace Wt
 {
+  class WDialog;
   class WWidget;
   class WContainerWidget;
 }//namespace Wt
@@ -53,8 +54,10 @@ namespace WidgetUtils
 
    IMPORTANT - these rely on `WWidget::removeFromParent()`, which returns null (i.e. destroys
    NOTHING, silently) for three parent shapes.  Asserts catch them in a developer build:
-     - the widget has no *widget* parent, e.g. it is owned only through `WObject::addChild`
-       (the "parked" Cat-C tool shape).  Use `owner->removeChild(w)` instead.
+     - the widget has no *widget* parent, e.g. it is owned only through `WObject::addChild`.  The
+       tool-tab widgets are in that state whenever the tab strip is hidden: they are detached from
+       the strip and parked on the `InterSpec` instance until something docks them again.  Use
+       `owner->removeChild(w)` instead.
      - the widget is a *global* widget - anything deriving from `WPopupWidget` (`WDialog`,
        `AuxWindow`, `SimpleDialog`, `WSuggestionPopup`) or a `WPopupMenu`.  `addGlobalWidget()`
        leaves it parented to `domRoot_` but hands ownership back, so this would unparent it
@@ -100,7 +103,19 @@ namespace WidgetUtils
    This handle instead stores only the widget's DOM id - an inert `std::string` - and looks the
    widget back up when it is used.
 
-   \sa CLAUDE.md, "Tool window lifecycle"
+   **Do not use this for a widget that can be detached from the widget tree**, i.e. one that ends up
+   owned only through `WObject::addChild` with no *widget* parent.  The tool-tab widgets
+   (`m_nuclideSearch`, `m_energyCalTool`, `m_referencePhotopeakLines`, ...) are in that state
+   whenever the tool tabs are hidden - they are parked on the `InterSpec` instance until re-docked.
+   #resolve is `WApplication::findById`, which only walks `domRoot_`/`domRoot2_`, so for a parked
+   widget it silently returns null and your callback quietly stops running.
+
+   For those, and for plain `WObject`s that are not widgets at all, reach the target through its
+   owner instead (e.g. `InterSpec::instance()->nuclideSearch()`) - and additionally pin the specific
+   *instance* with something unique to it, such as a member `shared_ptr`'s identity or a
+   `shared_ptr<atomic<bool>>` "deleted" flag (see `SpecFileQueryWidget`).  That second step matters
+   because "Clear Session..." destroys the `InterSpec` and builds a new one inside the *same* Wt
+   session, so a bare accessor lookup would hand you the replacement object rather than nothing.
    */
   class WidgetHandle
   {
@@ -122,6 +137,23 @@ namespace WidgetUtils
   private:
     std::string m_id;
   };//class WidgetHandle
+
+
+  /** Record `dialog` with the current `InterSpec` so it cannot outlive the session's viewer.
+
+   Called by `AuxWindow::make()` and `SimpleDialog::make()`; you should not need to call it yourself.
+
+   Both factories give ownership to `wApp`, and `WPopupWidget` parents the dialog under `domRoot_` -
+   neither of which `InterSpecApp::setupWidgets()` touches when it does `root()->clear()` for
+   "Clear Session...".  Windows held in an `InterSpec` member are torn down explicitly by
+   `~InterSpec`, but the many dialogs created *locally* (no member holds them) have no such owner,
+   and their button handlers routinely capture an `InterSpec *` - clicking one after Clear Session
+   is a use-after-free.  This registration lets `~InterSpec` sweep up whatever is left.
+
+   No-op when there is no current `InterSpec` (e.g. early startup, unit tests) or `dialog` is null.
+   Must be called on the session thread.
+   */
+  void trackSessionDialog( Wt::WDialog *dialog );
 }//namespace WidgetUtils
 
 #endif //WidgetUtils_h
