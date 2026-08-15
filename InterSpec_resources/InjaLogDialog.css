@@ -5,8 +5,8 @@
 
 .simple-dialog.InjaLogDialog .body
 {
-  /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
-  max-height: calc( 95vh - 90px );
+  /* The bodys max-height comes from SimpleDialog::updateBodySizeForWindow() - Wt 4 discards a
+     max-height set here. */
   overflow-y: hidden;
   overflow-x: hidden;
   padding-top: 16px;

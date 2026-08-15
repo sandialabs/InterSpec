@@ -7,17 +7,8 @@
 
 .simple-dialog.export-spec-file .body
 {
-  /* `!important` is required under Wt 4, not a specificity fudge.  WDialog lays title/body/footer
-     out with a WVBoxLayout, which Wt 4 backs with FlexLayoutImpl (Wt 3 used the JavaScript engine),
-     and FlexLayoutImpl.js writes `height: auto; max-width: 100%; max-height: 100%` *inline* on this
-     element on every reflow.  An inline declaration beats any stylesheet selector, so without
-     `!important` both rules below are silently discarded and the dialog grows to fit the format
-     list - roughly 700px instead of the 400px intended here.  Do not remove without checking the
-     dialog still sizes to its content; see also the same problem in SimpleDialog.css. */
-  height: min(calc(95vh - 90px), 400px) !important;
-
-  max-height: calc(95vh - 90px) !important;
-
+  /* The height of this element is set from C++, in ExportSpecFileWindow's constructor - Wt 4 lays
+     the dialog out with a flex layout that overwrites any height set here.  */
   padding-bottom: 10px;
 }
 
@@ -33,13 +24,11 @@
 
 .simple-dialog.export-spec-file.export-spec-phone .body
 {
+  /* The 10px margins here are the 20px of "chrome" the C++ leaves room for. */
   margin-top: 10px;
   margin-left: 10px;
   margin-right: 10px;
   margin-bottom: 10px;
-  /* `!important` for the same reason as the non-phone rule above. */
-  height: min(calc(95vh - 20px), 400px) !important;
-  max-height: calc(95vh - 20px) !important;
 }
 
 

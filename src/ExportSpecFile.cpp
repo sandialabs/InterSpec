@@ -4242,10 +4242,19 @@ ExportSpecFileWindow::ExportSpecFileWindow( InterSpec *viewer )
   const int w = viewer->renderedWidth();
   const bool isPhone = (w > 100) ? (w < ns_min_screen_width_for_wide_layout) : (viewer && viewer->isPhone());
 
+  // Height: as tall as the window allows, but no more than 400px - which is enough for the File
+  //  Format list, and lets that list scroll rather than the dialog growing to fit it.  On phone the
+  //  dialog has no title bar or footer of its own, just 10px margins top and bottom.  This is done
+  //  from C++ rather than in ExportSpecFile.css because Wt 4 lays the dialog out with a flex layout
+  //  that overwrites any height a stylesheet sets on the body - see
+  //  SimpleDialog::updateBodySizeForWindow(), which also redoes this when the window is resized.
+  setBodyChromeHeight( (viewer && viewer->isPhone()) ? 20 : 90 );
+  setBodyPreferredHeight( 400.0 );
+
   if( isPhone )
   {
     resize( 320, Wt::WLength::Auto ); //320 px is about the smallest width Android phone to expect
-  }else 
+  }else
   {
     //setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 800.0) : 800.0 ,WLength::Unit::Pixel), WLength::Auto );
     setMinimumSize( WLength(w > 100 ? std::min(0.95*w, 650.0) : 650.0, WLength::Unit::Pixel), WLength::Auto );

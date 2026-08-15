@@ -1698,6 +1698,17 @@ void InterSpec::layoutSizeChanged( int w, int h )
   }//if( isPhone() )
 #endif
   
+  // A SimpleDialog limits its scrollable body to the window height from C++ (the value cannot come
+  //  from a stylesheet - see SimpleDialog::updateBodySizeForWindow), so the arithmetic has to be
+  //  redone every time the window changes size.  AuxWindows look after themselves in JavaScript.
+  for( const Wt::Core::observing_ptr<Wt::WDialog> &dialog : m_trackedDialogs )
+  {
+    SimpleDialog * const simpleDialog = dialog ? dynamic_cast<SimpleDialog *>( dialog.get() ) : nullptr;
+    if( simpleDialog )
+      simpleDialog->updateBodySizeForWindow();
+  }//for( each dialog we are tracking )
+
+
   const bool comactX = (h <= 420); //Apple iPhone 6+, 6s+, 7+, 8+
   if( (h > 20) && (comactX != m_spectrum->isAxisCompacted()) )
   {

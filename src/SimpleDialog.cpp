@@ -29,10 +29,11 @@
 #include <Wt/WTemplate.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
-#include <Wt/WCssStyleSheet.h>
 #include <Wt/WContainerWidget.h>
 
 #include <string>
+#include <cassert>
+#include <algorithm>
 
 #include "InterSpec/InterSpec.h"  //for InterSpec::instance()
 #include "InterSpec/WidgetUtils.h"
@@ -71,11 +72,47 @@ WT_DECLARE_WT_MEMBER
 
 namespace
 {
-  // These mirror the space reserved in InterSpec_resources/SimpleDialog.css, and must stay in sync
-  //  with it: the `.body` element has 15px left+right padding (30px total), and the title bar plus
-  //  footer occupy roughly 90px of height.
-  const int sm_bodyHorizPaddingPx = 30;
-  const int sm_bodyHeaderFooterPx = 90;
+  /** Default height of everything in the dialog that is not the scrollable body - the title bar plus
+   the footer.  See SimpleDialog::setBodyChromeHeight().
+   */
+  const int sm_defaultBodyChromePx = 90;
+
+  /** The most of the browser window a dialog may take; mirrors the `max-height` on `.simple-dialog`
+   in InterSpec_resources/SimpleDialog.css, and must stay in sync with it.
+   */
+  const double sm_maxFractionOfWindow = 0.95;
+
+  /** Resolves a WLength to pixels for the current browser window size, or returns -1 if it cannot
+   be (an `auto` length, or a percentage of a parent we have no size for here).
+   */
+  double length_in_px( const Wt::WLength &length, const int windowWidth, const int windowHeight )
+  {
+    if( length.isAuto() )
+      return -1.0;
+
+    switch( length.unit() )
+    {
+      case WLength::Unit::ViewportWidth:
+        return (windowWidth > 100) ? (0.01 * length.value() * windowWidth) : -1.0;
+
+      case WLength::Unit::ViewportHeight:
+        return (windowHeight > 100) ? (0.01 * length.value() * windowHeight) : -1.0;
+
+      case WLength::Unit::ViewportMin:
+        return (windowWidth > 100 && windowHeight > 100)
+                 ? (0.01 * length.value() * std::min(windowWidth,windowHeight)) : -1.0;
+
+      case WLength::Unit::ViewportMax:
+        return (windowWidth > 100 && windowHeight > 100)
+                 ? (0.01 * length.value() * std::max(windowWidth,windowHeight)) : -1.0;
+
+      case WLength::Unit::Percentage:
+        return -1.0;
+
+      default:
+        return length.toPixels();  //px, in, cm, mm, pt, pc, em, ex
+    }//switch( length.unit() )
+  }//double length_in_px(...)
 }//namespace
 
 
@@ -83,7 +120,9 @@ SimpleDialog::SimpleDialog()
 : Wt::WDialog(),
   m_title( nullptr ),
   m_msgContents( nullptr ),
-  m_multipleBringToFront( true )
+  m_multipleBringToFront( true ),
+  m_bodyChromeHeight( sm_defaultBodyChromePx ),
+  m_bodyPreferredHeight( -1.0 )
 {
   init( "", "" );
 }
@@ -93,7 +132,9 @@ SimpleDialog::SimpleDialog( const Wt::WString &title )
  : Wt::WDialog(),
   m_title( nullptr ),
   m_msgContents( nullptr ),
-  m_multipleBringToFront( true )
+  m_multipleBringToFront( true ),
+  m_bodyChromeHeight( sm_defaultBodyChromePx ),
+  m_bodyPreferredHeight( -1.0 )
 {
   init( title, "" );
 }
@@ -103,7 +144,9 @@ SimpleDialog::SimpleDialog( const Wt::WString &title, const Wt::WString &content
  : Wt::WDialog(),
   m_title( nullptr ),
   m_msgContents( nullptr ),
-  m_multipleBringToFront( true )
+  m_multipleBringToFront( true ),
+  m_bodyChromeHeight( sm_defaultBodyChromePx ),
+  m_bodyPreferredHeight( -1.0 )
 {
   init( title, content );
 }
@@ -195,9 +238,11 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
     m_msgContents->setInline( false );
   }
   
-  // We need to set the minimum size in C++; the maximum size is set in CSS.
+  // We need to set the minimum size in C++; the dialogs maximum size is set in CSS, but the bodys
+  //  has to come from here - see updateBodySizeForWindow().
   setMinimumSize( WLength(260,WLength::Unit::Pixel), WLength::Auto );
-  
+  updateBodySizeForWindow();
+
   show();
   finished().connect( this, &SimpleDialog::startDeleteSelf );
   
@@ -211,10 +256,6 @@ void SimpleDialog::init( const Wt::WString &title, const Wt::WString &content )
 
 SimpleDialog::~SimpleDialog()
 {
-  // Remove the per-instance body sizing rule we may have added (see setMaximumSize).
-  WApplication * const app = WApplication::instance();
-  if( app && m_bodySizeRule )
-    app->styleSheet().removeRule( m_bodySizeRule );
 }
 
 
@@ -225,25 +266,10 @@ void SimpleDialog::setMaximumSize( const Wt::WLength &width, const Wt::WLength &
   //  (WDialog::setMaximumSize silently drops Percentage units for the inner layout, but not vw/vh.)
   WDialog::setMaximumSize( width, height );
 
-  // WDialog::setMaximumSize cannot reach the scrollable `.body` element, whose max-size must track
-  //  the dialog (minus its padding and header/footer).  Scope a rule to this dialog's id so the body
-  //  stays in sync; it is removed here on re-set and in the destructor.  `#id .body` has higher
-  //  specificity than every `.simple-dialog .body` rule, so it wins without `!important`.
-  WCssStyleSheet &style = wApp->styleSheet();
-  if( m_bodySizeRule )
-  {
-    style.removeRule( m_bodySizeRule );
-    m_bodySizeRule = nullptr;
-  }
-
-  string decl;
-  if( !width.isAuto() )
-    decl += "max-width: calc(" + width.cssText() + " - " + std::to_string(sm_bodyHorizPaddingPx) + "px);";
-  if( !height.isAuto() )
-    decl += "max-height: calc(" + height.cssText() + " - " + std::to_string(sm_bodyHeaderFooterPx) + "px);";
-
-  if( !decl.empty() )
-    m_bodySizeRule = style.addRule( "#" + id() + " .body", decl );
+  // The call above does not reach the scrollable `.body` element, whose height has to be limited
+  //  separately.  Its width needs no help: the dialog layout gives it `max-width: 100%`, so it
+  //  already follows whatever the dialog itself is limited to.
+  updateBodySizeForWindow();
 }//setMaximumSize(...)
 
 
@@ -252,6 +278,59 @@ void SimpleDialog::setMaxWidth( const Wt::WLength &width )
   // Width-only convenience; preserves any existing maximum height.
   setMaximumSize( width, maximumHeight() );
 }//setMaxWidth(...)
+
+
+void SimpleDialog::setBodyChromeHeight( const int pixels )
+{
+  m_bodyChromeHeight = std::max( 0, pixels );
+  updateBodySizeForWindow();
+}//setBodyChromeHeight(...)
+
+
+void SimpleDialog::setBodyPreferredHeight( const double pixels )
+{
+  m_bodyPreferredHeight = pixels;
+  updateBodySizeForWindow();
+}//setBodyPreferredHeight(...)
+
+
+void SimpleDialog::updateBodySizeForWindow()
+{
+  const InterSpec * const viewer = InterSpec::instance();
+  const int windowWidth = viewer ? viewer->renderedWidth() : 0;
+  const int windowHeight = viewer ? viewer->renderedHeight() : 0;
+
+  // How much of the window is left for the body, once the dialogs own 95vh cap and its title bar
+  //  and footer are taken off.  Negative means we dont know the window size yet (the very first
+  //  render), in which case we leave the body to size to its content.
+  double maxHeight = (windowHeight > 100)
+                       ? (sm_maxFractionOfWindow*windowHeight - m_bodyChromeHeight) : -1.0;
+
+  // A caller-supplied maximum for the whole dialog wins, if it is the more restrictive of the two.
+  const double dialogMaxHeight = length_in_px( maximumHeight(), windowWidth, windowHeight );
+  if( dialogMaxHeight > 0.0 )
+    maxHeight = (maxHeight > 0.0) ? std::min( maxHeight, dialogMaxHeight - m_bodyChromeHeight )
+                                  : (dialogMaxHeight - m_bodyChromeHeight);
+
+  // Dont let a tiny window (or a large chrome allowance) collapse the body to nothing.
+  if( maxHeight > 0.0 )
+    maxHeight = std::max( maxHeight, 100.0 );
+
+  WContainerWidget * const body = contents();
+  assert( body );
+  if( !body )
+    return;
+
+  body->setMaximumSize( body->maximumWidth(),
+                        (maxHeight > 0.0) ? WLength(maxHeight,WLength::Unit::Pixel) : WLength::Auto );
+
+  if( m_bodyPreferredHeight > 0.0 )
+  {
+    const double height = (maxHeight > 0.0) ? std::min( m_bodyPreferredHeight, maxHeight )
+                                            : m_bodyPreferredHeight;
+    body->setHeight( WLength(height,WLength::Unit::Pixel) );
+  }
+}//updateBodySizeForWindow()
 
 
 void SimpleDialog::doNotUseMultpleBringstoFront()

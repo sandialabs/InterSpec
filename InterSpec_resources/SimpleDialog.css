@@ -49,7 +49,19 @@ dialog
   max-width: 100%
 }
 
-/* Note: the dialog .body position and height is adjusted by Wt layout JS. */
+/* Note: the dialog .body position and size is adjusted by Wt layout JS.
+
+   Its `max-height` cannot be set here - Wt 4 lays the dialog out with a flex layout whose
+   JavaScript rewrites this element's `max-height` to `100%` on every reflow, discarding anything a
+   stylesheet asks for.  Without a limit the body grows until the dialog hits the 95vh cap above,
+   and everything past that - including the footer buttons - is clipped away by the `overflow:
+   hidden` there, with no scrollbar.  So the limit is arithmetic in
+   SimpleDialog::updateBodySizeForWindow() instead, which also redoes it when the window is resized.
+   The `overflow-y` below is what turns that limit into a scrollbar, and does still apply.
+
+   The width needs no such help: the flex layout gives this element `max-width: 100%`, so it already
+   follows whatever `.simple-dialog` is limited to.
+ */
 .simple-dialog .body
 {
   /* Use 15px padding on right and left, instead of margin, so this way scroll bar will be
@@ -57,9 +69,7 @@ dialog
    */
   padding: 0px 15px 0px 15px;
   margin: 0px 0px 0px 0px;
-  
-  /* The 95vh is from .simple-dialog, and the 90px is the header and footer height. */
-  max-height: calc( 95vh - 90px );
+
   overflow-y: auto;
 
   /* Scroll vertically only.  Setting just overflow-y:auto makes the browser promote overflow-x
@@ -73,18 +83,11 @@ dialog
   .simple-dialog {
     max-width: min( 500px, 99vw );
   }
-  
-  .simple-dialog .body {
-    max-width: min( 530px, calc(99vw - 30px) );
-  }
 }
 
 @media screen and (min-width: 1000px) {
   .simple-dialog {
     max-width: 50vw;
-  }
-  .simple-dialog .body {
-    max-width: calc( 50vw - 30px );
   }
 }
 

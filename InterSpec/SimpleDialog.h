@@ -35,7 +35,6 @@
 
 namespace Wt
 {
-  class WCssTextRule;
   class WPushButton;
   class WContainerWidget;
 }//namespace Wt
@@ -108,16 +107,47 @@ public:
 
   /** Sets the dialog's maximum width, overriding the default responsive ~50vw.
 
-   Wt4's WLength supports viewport units, e.g. `WLength(95, Wt::LengthUnit::ViewportWidth)`; the
-   scrollable body's max-width is kept in sync automatically.  Pass `WLength::Auto` to clear an
-   override.  This is a width-only convenience around setMaximumSize() that preserves any max height.
+   Wt4's WLength supports viewport units, e.g. `WLength(95, Wt::LengthUnit::ViewportWidth)`.  Pass
+   `WLength::Auto` to clear an override.  This is a width-only convenience around setMaximumSize()
+   that preserves any max height.  The scrollable body follows the dialog's width on its own (the
+   dialog layout gives it `max-width: 100%`), so only the height needs any help - see
+   #updateBodySizeForWindow.
    */
   void setMaxWidth( const Wt::WLength &width );
 
-  /** Like WDialog::setMaximumSize(), but also keeps the scrollable `.body` element in sync (the
-   base call only reaches the outer dialog and its inner layout).  Accepts viewport units (vw/vh).
+  /** Like WDialog::setMaximumSize(), but also keeps the scrollable `.body` element's height in sync
+   (the base call only reaches the outer dialog and its inner layout).  Accepts viewport units.
    */
   virtual void setMaximumSize( const Wt::WLength &width, const Wt::WLength &height ) override;
+
+  /** Sets how much of the dialog is *not* the scrollable body - the title bar, the footer, and any
+   margins - so #updateBodySizeForWindow knows how much of the window is left for the body.
+
+   Defaults to 90 px, which is what the stock title bar plus footer take.  A dialog that hides the
+   title bar or has no footer buttons (typically the phone layouts) should reduce it.
+   */
+  void setBodyChromeHeight( int pixels );
+
+  /** Asks for the scrollable body to be this tall, rather than sizing to its content.
+
+   The request is clamped to what the browser window allows, and re-clamped when the window is
+   resized.  Pass a value <= 0 (the default) to size to content.
+   */
+  void setBodyPreferredHeight( double pixels );
+
+  /** Sizes the scrollable `.body` so the dialog cannot outgrow the browser window.
+
+   This arithmetic lives in C++ rather than in `SimpleDialog.css` because Wt 4 lays a dialog's
+   title/body/footer out with a flex layout, whose JavaScript rewrites the body's `max-height` to
+   `100%` on every reflow after copying the *inline* value onto the flex item that wraps it.  A
+   limit coming from a stylesheet is therefore discarded, while one set on the widget is honoured.
+   Without it a dialog with tall content grows until it hits the 95vh cap on `.simple-dialog` and
+   then has its overflow - including the footer buttons - clipped, with no scrollbar.
+
+   Called on construction and from InterSpec whenever the browser window changes size.  AuxWindow
+   needs no equivalent; it re-fits itself in JavaScript (`AuxWindowOnDomResize` in AuxWindow.cpp).
+   */
+  void updateBodySizeForWindow();
 
   /** Force a dialog to be destroyed *now*, without emitting `finished()`.
 
@@ -180,11 +210,11 @@ protected:
   Wt::Signals::connection m_escapeConnection1;
 
 private:
-  /** Per-instance stylesheet rule (selector `#<id> .body`) that keeps the scrollable body element's
-   max-size in sync with setMaximumSize().  Null until setMaximumSize()/setMaxWidth() is first
-   called; removed in the destructor.
-   */
-  Wt::WCssTextRule *m_bodySizeRule = nullptr;
+  /** Height taken by the title bar, footer and margins; see #setBodyChromeHeight. */
+  int m_bodyChromeHeight;
+
+  /** Requested body height, or <= 0 to size to content; see #setBodyPreferredHeight. */
+  double m_bodyPreferredHeight;
 };//class SimpleDialog
 
 
