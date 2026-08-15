@@ -82,9 +82,6 @@ namespace
     return val ? t : f;
   };
   
-  //DeleteOnClosePopupMenu is a PopupDivMenu that deletes itself on close.
-  //  Necassary because (with Wt 3.3.4 at least) using the aboutToHide() signal
-  //  to delete the menu causes a crash.
   /** A right-click popup menu that is owned by the widget that pops it up.
 
    Note: this deliberately has no `delete this` on hide any more.  Under Wt3 the menu was an

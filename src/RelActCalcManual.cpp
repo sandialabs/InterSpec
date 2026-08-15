@@ -1731,8 +1731,9 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
           // Do NOT clamp `an` with fmin/fmax: that zeroes the ceres::Jet derivative at the [1,98]
           //  bound, re-creating the bound-trap the areal-density AD path deliberately avoids (see
           //  RelActCalc_imp.hpp).  The AN parameter is already Ceres-bounded (to [lower_an,upper_an]/
-          //  ns_an_ceres_mult), and get_atten_coef_for_an interpolates smoothly - keeping the gradient
-          //  non-zero - for the tiny margin the optimizer can reach past the bound.
+          //  ns_an_ceres_mult), and get_atten_coef_for_an interpolates *on* the bounds themselves -
+          //  where the optimizer sits when it pins AN - keeping the gradient non-zero there.  Only
+          //  strictly outside [1,98] does it clamp to the table endpoint.
           att.atomic_number = an;
           par_num += 1;
         }else
@@ -1777,8 +1778,9 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
           // Do NOT clamp `an` with fmin/fmax: that zeroes the ceres::Jet derivative at the [1,98]
           //  bound, re-creating the bound-trap the areal-density AD path deliberately avoids (see
           //  RelActCalc_imp.hpp).  The AN parameter is already Ceres-bounded (to [lower_an,upper_an]/
-          //  ns_an_ceres_mult), and get_atten_coef_for_an interpolates smoothly - keeping the gradient
-          //  non-zero - for the tiny margin the optimizer can reach past the bound.
+          //  ns_an_ceres_mult), and get_atten_coef_for_an interpolates *on* the bounds themselves -
+          //  where the optimizer sits when it pins AN - keeping the gradient non-zero there.  Only
+          //  strictly outside [1,98] does it clamp to the table endpoint.
           att.atomic_number = an;
           par_num += 1;
         }else

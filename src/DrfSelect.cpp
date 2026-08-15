@@ -3657,6 +3657,14 @@ void DrfSelect::detectorsWereInited()
 
 DrfSelect::~DrfSelect()
 {
+  // The "Modify Detector Response" window is ours (AuxWindow::make gives ownership to wApp, and we
+  //  only hold an observing_ptr), so it has to be taken down by name here - otherwise closing
+  //  Detector Select leaves an orphaned Modify window whose Accept silently does nothing.
+  //  deleteAuxWindow() defers the finished() re-emit, and that connection is tracked to `this`, so
+  //  it is dropped before the deferred emit could reach a destroyed DrfSelect.
+  if( m_modifyWindow )
+    AuxWindow::deleteAuxWindow( m_modifyWindow.get() );
+  assert( !m_modifyWindow );
 } //~DrfSelect()
 
 

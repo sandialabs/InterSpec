@@ -1646,17 +1646,47 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
     //  foreground peak up front, not just the fitted ones.
     //  Extra windows cannot perturb the fit: `applyCascadeToClusterMap` looks each result up by
     //  energy in the fit's own cluster map and skips the ones that do not match.
-    vector<PeakDef> cascade_window_peaks;
-    if( input.supplemental_options.compute )
+    vector<pair<double,double>> cascade_windows;
     {
-      for( const shared_ptr<const PeakDef> &peak : foreground_peaks )
+      vector<PeakDef> cascade_window_peaks;
+      if( input.supplemental_options.compute )
       {
-        if( peak )
+        for( const shared_ptr<const PeakDef> &peak : foreground_peaks )
+        {
+          // Only peaks with an assigned gamma can have a window; `observedPeakEnergyWidths`
+          //  throws (and logs) for the others, and the not-used peaks we are adding here are
+          //  exactly the ones likely to be unassigned.
+          if( !peak )
+            continue;
+          try
+          {
+            peak->gammaParticleEnergy();
+          }catch( std::exception & )
+          {
+            continue;
+          }
           cascade_window_peaks.push_back( *peak );
+        }
+      }else
+      {
+        cascade_window_peaks = peaks;
       }
-    }else
-    {
-      cascade_window_peaks = peaks;
+
+      cascade_windows = observedPeakEnergyWidths( cascade_window_peaks );
+
+      // Collapse windows that share a gamma energy.  `evaluate()` returns one result per stored
+      //  window and `applyCascadeToClusterMap` multiplies the matching cluster entry by each, so
+      //  two peaks assigned the same gamma would apply c_net twice.  Keep the widest tolerance.
+      //  (`observedPeakEnergyWidths` returns them sorted by energy.)
+      vector<pair<double,double>> deduped;
+      for( const pair<double,double> &ew : cascade_windows )
+      {
+        if( !deduped.empty() && (deduped.back().first == ew.first) )
+          deduped.back().second = std::max( deduped.back().second, ew.second );
+        else
+          deduped.push_back( ew );
+      }
+      cascade_windows.swap( deduped );
     }
 
     // Re-window an existing calculator when the caller has one for the same scene: the cascade
@@ -1665,8 +1695,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
     if( input.reuse_cascade_calc )
     {
       answer->m_cascadeCalc = make_shared<const CascadeSummingCalc>( *input.reuse_cascade_calc,
-                                        observedPeakEnergyWidths( cascade_window_peaks ),
-                                        options.photopeak_cluster_sigma );
+                                        cascade_windows, options.photopeak_cluster_sigma );
     }else
     {
 
@@ -1701,8 +1730,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
     const double shield_frac_h = (total_mass > 0.0) ? (h_mass / total_mass) : 0.0;
 
     answer->m_cascadeCalc = make_shared<const CascadeSummingCalc>( nuc_ages,
-                    observedPeakEnergyWidths( cascade_window_peaks ),
-                    options.photopeak_cluster_sigma,
+                    cascade_windows, options.photopeak_cluster_sigma,
                     detector, shield_frac_h, shields_present,
                     InterSpec::staticDataDirectory() );
     }//if( input.reuse_cascade_calc ) / else
