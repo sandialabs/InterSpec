@@ -38,8 +38,8 @@
 #define BOOST_TEST_MODULE TestDetectionLimitState
 #include <boost/test/included/unit_test.hpp>
 
-#include <Wt/WApplication>
-#include <Wt/Test/WTestEnvironment>
+#include <Wt/WApplication.h>
+#include <Wt/Test/WTestEnvironment.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
@@ -340,7 +340,7 @@ public:
     string app_root = SpecUtils::append_path( InterSpec::staticDataDirectory(), ".." );
     app_root = SpecUtils::lexically_normalize_path( app_root );
 
-    m_env.reset( new Wt::Test::WTestEnvironment( "", "", Wt::Application ) );
+    m_env.reset( new Wt::Test::WTestEnvironment( "", "", Wt::EntryPointType::Application ) );
     m_env->setAppRoot( app_root );
     m_app = new InterSpecApp( *m_env );
     m_lock.reset( new Wt::WApplication::UpdateLock(m_app) );
@@ -372,7 +372,7 @@ public:
     BOOST_REQUIRE( drf->isValid() && drf->hasResolutionInfo() );
     meas->setDetector( drf );
 
-    m_interspec->setSpectrum( meas, {m->sample_number()}, SpecUtils::SpectrumType::Foreground, 0 );
+    m_interspec->setSpectrum( meas, {m->sample_number()}, SpecUtils::SpectrumType::Foreground, {} );
   }
 
   ~ToolSessionFixture()

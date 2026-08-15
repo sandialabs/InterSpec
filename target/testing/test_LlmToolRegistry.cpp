@@ -26,9 +26,9 @@
 #include <string>
 #include <iostream>
 
-#include <Wt/Utils>
-#include <Wt/WApplication>
-#include <Wt/Test/WTestEnvironment>
+#include <Wt/Utils.h>
+#include <Wt/WApplication.h>
+#include <Wt/Test/WTestEnvironment.h>
 
 #ifdef _WIN32
 #include "winsock2.h"
@@ -151,7 +151,7 @@ public:
     // Create a test environment
     const std::string applicationPath = "";
     const std::string configurationFile = ""; //Add a XML config file that makes it so WLogger wont printout anything
-    m_env.reset( new Wt::Test::WTestEnvironment( applicationPath, configurationFile, Wt::Application ) );
+    m_env.reset( new Wt::Test::WTestEnvironment( applicationPath, configurationFile, Wt::EntryPointType::Application ) );
     m_env->setAppRoot( wt_app_root );
 
     // Create the app
@@ -191,7 +191,7 @@ public:
         {
           const shared_ptr<const SpecUtils::Measurement> m = meas->measurement_at_index(0);
           BOOST_REQUIRE( !!m );
-          m_interspec->setSpectrum( meas, {m->sample_number()}, SpecUtils::SpectrumType::Foreground, 0 );
+          m_interspec->setSpectrum( meas, {m->sample_number()}, SpecUtils::SpectrumType::Foreground, {} );
         }
         else
         {
@@ -211,7 +211,7 @@ public:
         {
           const shared_ptr<const SpecUtils::Measurement> m = meas->measurement_at_index(0);
           BOOST_REQUIRE( !!m );
-          m_interspec->setSpectrum( meas, {m->sample_number()}, SpecUtils::SpectrumType::Background, 0 );
+          m_interspec->setSpectrum( meas, {m->sample_number()}, SpecUtils::SpectrumType::Background, {} );
         }
         else
         {
@@ -3738,7 +3738,7 @@ static void load_spectrum_as_foreground( InterSpec *interspec, const std::string
 
   const std::shared_ptr<const SpecUtils::Measurement> m = meas->measurement_at_index( 0 );
   BOOST_REQUIRE( !!m );
-  interspec->setSpectrum( meas, {m->sample_number()}, SpecUtils::SpectrumType::Foreground, 0 );
+  interspec->setSpectrum( meas, {m->sample_number()}, SpecUtils::SpectrumType::Foreground, {} );
 }//load_spectrum_as_foreground(...)
 
 

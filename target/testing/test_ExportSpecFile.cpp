@@ -33,9 +33,9 @@
 #include <sstream>
 #include <iostream>
 
-#include <Wt/Utils>
-#include <Wt/WApplication>
-#include <Wt/Test/WTestEnvironment>
+#include <Wt/Utils.h>
+#include <Wt/WApplication.h>
+#include <Wt/Test/WTestEnvironment.h>
 
 #ifdef _WIN32
 #include "winsock2.h"
@@ -325,7 +325,7 @@ public:
     // Create a test environment
     const std::string applicationPath = "";
     const std::string configurationFile = "";
-    m_env.reset( new Wt::Test::WTestEnvironment( applicationPath, configurationFile, Wt::Application ) );
+    m_env.reset( new Wt::Test::WTestEnvironment( applicationPath, configurationFile, Wt::EntryPointType::Application ) );
     m_env->setAppRoot( wt_app_root );
 
     // Create the app
@@ -914,7 +914,7 @@ BOOST_FIXTURE_TEST_CASE( exportDisplayedForegroundToSpeKeepsPeaks, InterSpecTest
 
   // The tool must be attached to the widget tree - `generateFileToSave()` checks
   //  `isVisible()` on the option checkboxes, and orphan widgets report not-visible.
-  ExportSpecFileTool *tool = new ExportSpecFileTool( m_interspec, m_app->root() );
+  ExportSpecFileTool *tool = m_app->root()->addNew<ExportSpecFileTool>( m_interspec );
   tool->handleAppUrl( "V=1&FORE=1&FORMAT=IAEA-SPE&DISPFORE=1" );
 
   const shared_ptr<const SpecMeas> result = tool->generateFileToSave();
@@ -961,7 +961,7 @@ BOOST_FIXTURE_TEST_CASE( restoreUrlWithNoSampleSelection, InterSpecTestFixture )
   const shared_ptr<SpecMeas> fore = loadForeground( "13samples_1det_peaks_on_8.n42" );
   BOOST_REQUIRE_EQUAL( static_cast<int>(fore->sample_numbers().size()), 13 );
 
-  ExportSpecFileTool *tool = new ExportSpecFileTool( m_interspec, m_app->root() );
+  ExportSpecFileTool *tool = m_app->root()->addNew<ExportSpecFileTool>( m_interspec );
 
   // No DISPFORE / ALLSAMPLES / SAMPLES key
   tool->handleAppUrl( "V=1&FORE=1&FORMAT=N42-2012" );
@@ -985,7 +985,7 @@ BOOST_FIXTURE_TEST_CASE( exportAllSamplesSummedPeakSemantics, InterSpecTestFixtu
   const int nsamples = static_cast<int>( fore->sample_numbers().size() );
   BOOST_REQUIRE_EQUAL( nsamples, 13 );
 
-  ExportSpecFileTool *tool = new ExportSpecFileTool( m_interspec, m_app->root() );
+  ExportSpecFileTool *tool = m_app->root()->addNew<ExportSpecFileTool>( m_interspec );
 
   // Case 1: peaks keyed on a single-sample subset, exporting all samples summed:
   //  exact-match semantics mean the summed record carries no peaks.
@@ -1044,7 +1044,7 @@ BOOST_FIXTURE_TEST_CASE( exportMultiDetectorSampleToSpeKeepsPeaks, InterSpecTest
   m_interspec->changeDisplayedSampleNums( peak_key, SpecUtils::SpectrumType::Foreground );
   Wt::WApplication::instance()->processEvents();
 
-  ExportSpecFileTool *tool = new ExportSpecFileTool( m_interspec, m_app->root() );
+  ExportSpecFileTool *tool = m_app->root()->addNew<ExportSpecFileTool>( m_interspec );
   tool->handleAppUrl( "V=1&FORE=1&FORMAT=IAEA-SPE&DISPFORE=1" );
 
   const shared_ptr<const SpecMeas> result = tool->generateFileToSave();
@@ -1084,7 +1084,7 @@ BOOST_FIXTURE_TEST_CASE( exportNonUniformDetectorsToSpeKeepsPeaks, InterSpecTest
 
   fore->setPeaks( make_test_peaks(), disp_samples );
 
-  ExportSpecFileTool *tool = new ExportSpecFileTool( m_interspec, m_app->root() );
+  ExportSpecFileTool *tool = m_app->root()->addNew<ExportSpecFileTool>( m_interspec );
   tool->handleAppUrl( "V=1&FORE=1&FORMAT=IAEA-SPE&DISPFORE=1" );
 
   const shared_ptr<const SpecMeas> result = tool->generateFileToSave();
@@ -1135,7 +1135,7 @@ BOOST_FIXTURE_TEST_CASE( exportGappedSampleNumbers, InterSpecTestFixture )
   m_interspec->changeDisplayedSampleNums( peak_key, SpecUtils::SpectrumType::Foreground );
   Wt::WApplication::instance()->processEvents();
 
-  ExportSpecFileTool *tool = new ExportSpecFileTool( m_interspec, m_app->root() );
+  ExportSpecFileTool *tool = m_app->root()->addNew<ExportSpecFileTool>( m_interspec );
 
   // SPE of the displayed sample: faithful copy, renumbered to 1, peaks intact
   {

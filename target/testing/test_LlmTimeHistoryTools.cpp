@@ -28,9 +28,9 @@
 #include <vector>
 #include <iostream>
 
-#include <Wt/Utils>
-#include <Wt/WApplication>
-#include <Wt/Test/WTestEnvironment>
+#include <Wt/Utils.h>
+#include <Wt/WApplication.h>
+#include <Wt/Test/WTestEnvironment.h>
 
 #ifdef _WIN32
 #include "winsock2.h"
@@ -173,7 +173,7 @@ public:
 
     const std::string applicationPath = "";
     const std::string configurationFile = "";
-    m_env.reset( new Wt::Test::WTestEnvironment( applicationPath, configurationFile, Wt::Application ) );
+    m_env.reset( new Wt::Test::WTestEnvironment( applicationPath, configurationFile, Wt::EntryPointType::Application ) );
     m_env->setAppRoot( wt_app_root );
 
     m_app = new InterSpecApp( *m_env );
@@ -224,7 +224,7 @@ public:
     // Set all sample numbers as foreground
     const std::set<int> &allSamples = meas->sample_numbers();
     BOOST_REQUIRE( !allSamples.empty() );
-    m_interspec->setSpectrum( meas, allSamples, SpecUtils::SpectrumType::Foreground, 0 );
+    m_interspec->setSpectrum( meas, allSamples, SpecUtils::SpectrumType::Foreground, {} );
 
     // Verify it loaded correctly
     const std::shared_ptr<SpecMeas> loadedMeas = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
@@ -248,7 +248,7 @@ public:
 
     const std::shared_ptr<const SpecUtils::Measurement> m = meas->measurement_at_index( 0 );
     BOOST_REQUIRE( m );
-    m_interspec->setSpectrum( meas, {m->sample_number()}, SpecUtils::SpectrumType::Foreground, 0 );
+    m_interspec->setSpectrum( meas, {m->sample_number()}, SpecUtils::SpectrumType::Foreground, {} );
   }//loadNonPassthroughFile()
 };// class TimeHistoryTestFixture
 

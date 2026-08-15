@@ -25,8 +25,8 @@
 #include <string>
 #include <unistd.h>
 
-#include <Wt/WApplication>
-#include <Wt/Test/WTestEnvironment>
+#include <Wt/WApplication.h>
+#include <Wt/Test/WTestEnvironment.h>
 
 #include "SpecUtils/Filesystem.h"
 
