@@ -100,6 +100,7 @@
 #include "InterSpec/IsotopeId.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/ColorTheme.h"
+#include "InterSpec/EnergyCal.h"
 #include "InterSpec/GammaXsGui.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
@@ -13518,13 +13519,18 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
   //  .get() for the whole search would risk starving the pool under many concurrent searches), then
   //  deliver the result back to this session's event loop.  server->post is a no-op if the session
   //  has gone away, so setHintPeaks only runs while this InterSpec is alive.
-  std::thread( [this, fut, sessionId, weak_spectrum, samples, origPeaks, updateDetTypeGuess](){
+  // The calibration the search is about to run against; compared in setHintPeaks(...) so a
+  //  calibration change made while the search was in flight does not cache peaks at stale energies.
+  const std::shared_ptr<const SpecUtils::EnergyCalibration> search_cal
+                                                      = spectrum_meas->energy_calibration();
+
+  std::thread( [this, fut, sessionId, weak_spectrum, samples, origPeaks, updateDetTypeGuess, search_cal](){
     const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> found = fut.get();
 
     Wt::WServer *server = Wt::WServer::instance();
     if( server )
-      server->post( sessionId, [this, weak_spectrum, samples, origPeaks, found, updateDetTypeGuess](){
-        setHintPeaks( weak_spectrum, samples, origPeaks, found, updateDetTypeGuess );
+      server->post( sessionId, [this, weak_spectrum, samples, origPeaks, found, updateDetTypeGuess, search_cal](){
+        setHintPeaks( weak_spectrum, samples, origPeaks, found, updateDetTypeGuess, search_cal );
       } );
   } ).detach();
 }//void searchForHintPeaks(...)
@@ -13663,7 +13669,8 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
                   std::set<int> samplenums,
                   shared_ptr<const deque< std::shared_ptr<const PeakDef>>> existing,
                   shared_ptr<const deque<std::shared_ptr<const PeakDef>>> resultpeaks,
-                  const bool potentuallyUpdateDetTypeGuess )
+                  const bool potentuallyUpdateDetTypeGuess,
+                  shared_ptr<const SpecUtils::EnergyCalibration> searchCal )
 {
 #if( PERFORM_DEVELOPER_CHECKS )
   if( !wApp )
@@ -13683,6 +13690,46 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
 
   shared_ptr<deque<shared_ptr<const PeakDef>>> newpeaks
     = make_shared<deque<shared_ptr<const PeakDef>>>( resultpeaks->begin(), resultpeaks->end() );
+
+  // If the energy calibration changed while the search was running (e.g. the user applied a gain
+  //  match), the found peaks are at channel positions that no longer mean the same energies.
+  //  Translate them into the current calibration rather than caching them at stale energies.
+  //  Only done when these samples are actually being displayed, since that is the calibration the
+  //  peaks will be shown and re-fit against.
+  if( searchCal && searchCal->valid() && !newpeaks->empty() )
+  {
+    shared_ptr<const SpecUtils::Measurement> current_disp;
+    for( const SpecUtils::SpectrumType type : { SpecUtils::SpectrumType::Foreground,
+                                                SpecUtils::SpectrumType::Background,
+                                                SpecUtils::SpectrumType::SecondForeground } )
+    {
+      if( (measurment(type) == spectrum) && (displayedSamples(type) == samplenums) )
+      {
+        current_disp = displayedHistogram( type );
+        break;
+      }
+    }//for( loop over display slots )
+
+    const shared_ptr<const SpecUtils::EnergyCalibration> current_cal
+                            = current_disp ? current_disp->energy_calibration() : nullptr;
+
+    if( current_cal && current_cal->valid() && (current_cal != searchCal)
+        && ((*current_cal) != (*searchCal)) )
+    {
+      try
+      {
+        const deque<shared_ptr<const PeakDef>> shifted
+              = EnergyCal::translatePeaksForCalibrationChange( *newpeaks, searchCal, current_cal );
+        *newpeaks = shifted;
+      }catch( std::exception &e )
+      {
+        // Better to drop the stale peaks than to cache them at the wrong energies.
+        newpeaks->clear();
+        cerr << "setHintPeaks: could not translate search peaks to the current energy"
+                " calibration (" << e.what() << ") - discarding them." << endl;
+      }//try / catch
+    }//if( the calibration changed under us )
+  }//if( searchCal && !newpeaks->empty() )
 
   //See if the user has added any peaks since we did the automated search
   shared_ptr<deque<shared_ptr<const PeakDef>>> current_user_peaks;

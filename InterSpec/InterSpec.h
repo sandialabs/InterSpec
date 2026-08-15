@@ -126,6 +126,7 @@ class LeafletRadMapWindow;
 
 namespace SpecUtils{ class SpecFile; }
 namespace SpecUtils{ class Measurement; }
+namespace SpecUtils{ class EnergyCalibration; }
 namespace SpecUtils{ enum class SpectrumType : int; }
 namespace SpecUtils{ enum class DetectorType : int; }
 namespace SpecUtils{ enum class OccupancyStatus : int; }
@@ -1294,11 +1295,16 @@ public:
   //  If `potentuallyUpdateDetTypeGuess` is true, and the foreground doesnt have a confident
   //  detector-resolution type yet, the found peaks are used to refine that guess.
   //  This function should be called from the main event loop.
+  //  `searchCal` is the energy calibration of the histogram the search actually ran against.  If
+  //  the displayed calibration has changed since (e.g. the user applied a gain match while the
+  //  search was in flight), the found peaks are translated into the current calibration rather
+  //  than being cached at stale energies.  May be null, in which case no translation is done.
   void setHintPeaks( std::weak_ptr<SpecMeas> spectrum,
                      std::set<int> samplenums,
                      std::shared_ptr<const std::deque< std::shared_ptr<const PeakDef> > > existingPeaks,
                      std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef> > > resultpeaks,
-                     const bool potentuallyUpdateDetTypeGuess );
+                     const bool potentuallyUpdateDetTypeGuess,
+                     std::shared_ptr<const SpecUtils::EnergyCalibration> searchCal );
 
   //startBackgroundPeakRecoveryIfReady(): if both a foreground and background are loaded and both
   //  have automated-search peaks available, launches (once per pairing, on a worker thread)

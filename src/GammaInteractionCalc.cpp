@@ -1653,11 +1653,18 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
       {
         for( const shared_ptr<const PeakDef> &peak : foreground_peaks )
         {
-          // Only peaks with an assigned gamma can have a window; `observedPeakEnergyWidths`
-          //  throws (and logs) for the others, and the not-used peaks we are adding here are
-          //  exactly the ones likely to be unassigned.
           if( !peak )
             continue;
+
+          // Match `compute_supplemental_peak_info(...)`, which only evaluates a not-used peak when
+          //  its nuclide is already one of the fitted sources (a new nuclide would change the
+          //  parameter layout).  A peak with no source, or a source not being fit, will never be
+          //  asked about - so it needs no window.
+          const SandiaDecay::Nuclide * const nuc = peak->parentNuclide();
+          if( !nuc || !nuclides.count(nuc) )
+            continue;
+
+          // `observedPeakEnergyWidths` throws (and logs to cerr) for a peak with no assigned gamma.
           try
           {
             peak->gammaParticleEnergy();
@@ -1665,6 +1672,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
           {
             continue;
           }
+
           cascade_window_peaks.push_back( *peak );
         }
       }else

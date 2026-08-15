@@ -542,3 +542,66 @@ editor throwing `bad_any_cast`; the `delete`-on-parent-owned-widget family; `obs
 across thread boundaries; deferred widget destruction happening on an io-service thread; the
 "Keep Previous Calibration?" **No** button doing nothing (it was wired straight to
 `AuxWindow::emitReject`, which suppresses its deferred emit unless the dialog is already hidden).
+
+
+## Issues found 2026-08-15 while verifying the upgrade/Wt4 → upgrade/DetEff merge
+
+All of these are **pre-existing** — each was checked against the pre-merge tips and is not merge
+damage. None are fixed. Found by driving the merged app (desktop + phone) and by a DOM/layout audit
+(offscreen windows, non-scrolling overflow, children escaping clipping parents).
+
+### Phone mode tears down the session on load — `?isphone=1` is unusable
+
+Reproducible on every load (2/2 on the merged build; the same hang reproduces on a pre-merge binary,
+so this is not from the merge). Desktop is unaffected and keeps working after the phone session dies.
+
+Wt emits `Wt4_13_2.$('<id>').setAttribute('title','Update nuclide search.')` for a DOM node that does
+not exist, the JS throws `Cannot read properties of null (reading 'setAttribute')`, and the session is
+removed a millisecond later.
+
+The string is an undo/redo **step description** (`IsotopeSearchByEnergy.cpp:2346`), routed to an Edit
+menu item's tooltip by `UndoRedoManager::m_undoMenuToolTipUpdate` →
+`InterSpec.cpp:6844` (`undoMenu->setToolTip(...)`). So the `PopupDivMenuItem` C++ object outlives its
+DOM node in the phone menu build and a later `setToolTip()` addresses a stale id. Same family as the
+already-fixed `BringAboveDialogs` phone teardown (`PopupDiv.cpp:693-697`) and as item 3 in the
+"Non-UI items outstanding" list above: a widget that is alive in C++ but no longer rendered.
+
+### "Modify Detector Response" tabs render as a vertical stack on desktop
+
+`DrfModifyWidget.cpp:89` does `addStyleClass( "VerticalNavMenu HeavyNavMenu HorizontalMenu" )`, but
+`ul.HorizontalMenu` is only defined in `InterSpecMobileCommon.css`, which `InterSpecApp` loads only
+when `isMobile()`. On desktop nothing counteracts `VerticalNavMenu`, so the four tabs (Name &
+Description / Geometry & MC / FWHM / Uncertainty) render as full-width stacked grey bars, each 768 px
+wide, instead of a tab strip. It looks correct on a phone/tablet.
+
+`DrfSelect.cpp:2319` gets this right for the same menu style by adding a fourth class,
+`DetEditMenuHorizontal` — which is why the Detector Response Select strip one dialog up renders
+horizontally. `LicenseAndDisclaimersWindow.cpp:144` uses the same three-class combination and is
+worth checking for the same symptom.
+
+### MakeDrf "Peak Fit Prefs" overflows its bordered panel
+
+`.MakeDrfOptions { width: 150px; }` (`MakeDrf.css:6`) is a hard width, but the `PeakFitDetPrefsGui`
+block inside it needs ~196 px, so the Det. Type / FWHM Method / Skew Type combos stick ~48 px past the
+panel's right border and overlap the chart. Present on both pre-merge tips; `MakeDrf.css` was not
+touched by either branch.
+
+### "Create Detector Response Function" opens far taller than its content
+
+The dialog comes up ~810 px tall with ~290 px of content, leaving a large empty band above the footer.
+Same family as the dialog-sizing work recorded earlier in this file (Wt 4 sizing a dialog to something
+other than its content).
+
+### Non-UI: every stock GADRAS DRF now hashes differently than intended
+
+`DetectorPeakResponse::computeHash()` (`src/DetectorPeakResponse.cpp:722-723`) folds
+`m_totalEfficiency` in under a comment saying the optional fields are hashed "only ... when present, so
+legacy DRFs keep their existing hash values". Unlike its neighbours (`eff_uncert`, `m_measuredPoints`),
+the guard is a bare pointer check with no emptiness test — and `parseEfficiencyCsvFile` populates
+`m_totalEfficiency` from the GADRAS `PTOT` column, which every shipped detector has (62 non-zero rows
+in `data/GenericGadrasDetectors/HPGe 40%/Efficiency.csv` alone). So the stated intent does not hold for
+any stock DRF.
+
+Verified: the guard, the parser path, and the non-zero PTOT data. **Not** verified end-to-end: the
+downstream consequence (the hash is the DB key — `DrfSelect.cpp:5279-5283`, `:5447-5455` — so stock
+DRFs would re-insert as duplicates and a `UseDrfPref` lookup could throw).

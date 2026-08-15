@@ -1528,9 +1528,11 @@ void ShieldingSelect::setClosableAndAddable( bool closeable, WGridLayout *layout
     m_addIcon->setIcon("InterSpec_resources/images/plus_min_black.svg");
 
     // Use a plain WPopupMenu (NOT PopupDivMenu): a compact dropdown that pops up next to the
-    //  "+" on both desktop and phone, matching the fit split-button's menu.  PopupDivMenu renders
-    //  as a full-height slide-in on phones, and its show-JS calls Wt.WT.BringAboveDialogs(), which
-    //  isn't loaded in mobile mode -- the resulting JS error tore down the whole session.
+    //  "+" on both desktop and phone, matching the fit split-button's menu, where PopupDivMenu
+    //  renders as a full-height slide-in on phones.
+    //  (This also used to dodge a phone-only session teardown from PopupDivMenu's show-JS calling
+    //   an unloaded Wt.WT.BringAboveDialogs; that is fixed at the source now - PopupDiv.cpp loads
+    //   it in both modes - so the remaining reason is purely the compact appearance.)
     auto addMenuOwned = std::make_unique<WPopupMenu>();
     WPopupMenu *addMenu = addMenuOwned.get();
     WMenuItem *beforeItem = addMenu->addItem( WString::tr("ss-add-shield-before") );
