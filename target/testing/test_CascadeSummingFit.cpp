@@ -961,6 +961,12 @@ double fit_activity( const TruthScene &sc, const bool cascade_option )
   chi_input.foreground_peaks = peaks;
   chi_input.background_peaks = nullptr;
 
+  // This test only looks at the fitted activity, so skip the post-fit per-peak supplemental
+  //  info (Currie limits + implied activities).  It defaults on, and computing it for all ~60
+  //  fits here costs real time while nothing reads the result.  `TShieldingSourceFitCalc` and
+  //  `TBatchPeakMda` are what cover that pass.
+  chi_input.supplemental_options.compute = false;
+
   pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters>
         fcn_pars = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 
