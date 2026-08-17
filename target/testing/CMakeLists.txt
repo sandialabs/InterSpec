@@ -156,12 +156,59 @@ add_test( NAME TestRelEffAuto
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActAutoTruthManifest test_RelActAutoTruthManifest.cpp )
+target_link_libraries( test_RelActAutoTruthManifest PRIVATE InterSpecLib )
+add_test( NAME TRelActAutoTruthManifest
+  COMMAND $<TARGET_FILE:test_RelActAutoTruthManifest> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_RelActAutoReport test_RelActAutoReport.cpp )
 target_link_libraries( test_RelActAutoReport PRIVATE InterSpecLib )
 add_test( NAME TRelActAutoReport
   COMMAND $<TARGET_FILE:test_RelActAutoReport> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
+
+add_executable( test_RelActCalcAuto_ProfileApi test_RelActCalcAuto_ProfileApi.cpp )
+target_link_libraries( test_RelActCalcAuto_ProfileApi PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_ProfileApi
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_ProfileApi> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_ProfileScan test_RelActCalcAuto_ProfileScan.cpp )
+target_link_libraries( test_RelActCalcAuto_ProfileScan PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_ProfileScan
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_ProfileScan> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+# Developer tool, deliberately not a ctest: it sweeps the local IDB/JRC corpora (about 1 GB of
+# licensed scratch data that cannot live in the repository) for non-graceful RelActCalcAuto behavior
+# - NaN/Inf, out-of-range mass fractions, unusable statuses with no explanation, throws, hangs - and
+# dumps per-profile-sample delta-chi2 so scan convergence can be studied over a population.
+add_executable( rel_act_corpus_sweep rel_act_corpus_sweep.cpp )
+target_link_libraries( rel_act_corpus_sweep PRIVATE InterSpecLib )
+
+# The JRC known-truth plutonium grid always builds, so its sources are compile-checked with every
+# other test, but it is not registered as a ctest by default: each of the three cases runs a free-age
+# solve plus up to five bounded profile-likelihood scans of 32 conditional fits each, which makes the
+# whole target a multi-hour run.  Enable the option to register it, and run it with `-L long`.
+# Follows the INTERSPEC_ENABLE_DECON_COVERAGE_TEST precedent further down this file.
+add_executable( test_RelActCalcAuto_Pu610775 test_RelActCalcAuto_Pu610775.cpp )
+target_link_libraries( test_RelActCalcAuto_Pu610775 PRIVATE InterSpecLib )
+option( INTERSPEC_ENABLE_JRC_PU_GRID_TEST
+        "Register the licensed-fixture JRC plutonium profile grid as a ctest (runs for hours)" OFF )
+if( INTERSPEC_ENABLE_JRC_PU_GRID_TEST )
+  add_test( NAME TRelActCalcAuto_Pu610775
+    COMMAND $<TARGET_FILE:test_RelActCalcAuto_Pu610775> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+    WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+  )
+  set_tests_properties( TRelActCalcAuto_Pu610775 PROPERTIES
+    TIMEOUT 7200
+    LABELS "long" )
+endif()
 
 add_executable( test_BatchSampleSelect test_BatchSampleSelect.cpp )
 target_link_libraries( test_BatchSampleSelect PRIVATE InterSpecLib )
@@ -209,6 +256,41 @@ add_executable( test_RelActCalcAuto_EnergyCal_imp test_RelActCalcAuto_EnergyCal_
 target_link_libraries( test_RelActCalcAuto_EnergyCal_imp PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcAuto_EnergyCal_imp
   COMMAND $<TARGET_FILE:test_RelActCalcAuto_EnergyCal_imp> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_AgeDerivative test_RelActCalcAuto_AgeDerivative.cpp )
+target_link_libraries( test_RelActCalcAuto_AgeDerivative PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_AgeDerivative
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_AgeDerivative> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_ConvergenceAudit test_RelActCalcAuto_ConvergenceAudit.cpp )
+target_link_libraries( test_RelActCalcAuto_ConvergenceAudit PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_ConvergenceAudit
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_ConvergenceAudit> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_Search test_RelActCalcAuto_Search.cpp )
+target_link_libraries( test_RelActCalcAuto_Search PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_Search
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_Search> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_Conditioning test_RelActCalcAuto_Conditioning.cpp )
+target_link_libraries( test_RelActCalcAuto_Conditioning PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_Conditioning
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_Conditioning> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_RelActCalcAuto_CovarianceQuality test_RelActCalcAuto_CovarianceQuality.cpp )
+target_link_libraries( test_RelActCalcAuto_CovarianceQuality PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_CovarianceQuality
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_CovarianceQuality> ${BOOST_TEST_CL_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 

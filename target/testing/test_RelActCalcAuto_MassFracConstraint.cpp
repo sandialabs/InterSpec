@@ -442,6 +442,21 @@ BOOST_AUTO_TEST_CASE( auto_simplify_double_crystal_ball_no_duplicate_const )
   BOOST_CHECK_MESSAGE( removed_skew,
                        "Expected an auto-simplify 'peak skew' removal warning (the path that produced the"
                        " duplicate-constant crash); none found - the regression path may not be exercised." );
+
+  BOOST_REQUIRE_EQUAL( sol.m_parameter_fixed_by_model_selection.size(),
+                       sol.m_final_parameters.size() );
+  BOOST_REQUIRE_EQUAL( sol.m_parameter_were_fit.size(),sol.m_final_parameters.size() );
+  size_t num_model_fixed = 0;
+  for( size_t index = 0; index < sol.m_final_parameters.size(); ++index )
+  {
+    if( !sol.m_parameter_fixed_by_model_selection[index] )
+      continue;
+    ++num_model_fixed;
+    BOOST_CHECK( !sol.m_parameter_were_fit[index] );
+    BOOST_CHECK( std::isfinite(sol.m_final_parameters[index]) );
+  }
+  BOOST_CHECK_GT( num_model_fixed,0U );
+  BOOST_CHECK_NE( sol.m_frozen_model_policy_hash,UINT64_C(0) );
 }//BOOST_AUTO_TEST_CASE( auto_simplify_double_crystal_ball_no_duplicate_const )
 
 
@@ -835,7 +850,312 @@ namespace
     out.options = state->options;
     return true;
   }
+
+
+  /** A small live U problem used by deterministic repeat/permutation tests.  It retains the
+   physical-model response and a nonlinear U-235 mass-fraction coordinate, but fixes nuisance
+   families and keeps only the U-235/U-238 evidence windows so repeated solves remain inexpensive. */
+  RelActCalcAuto::Options small_canonical_u_options(
+                                      const RelActCalcAuto::Options &input,
+                                      const SandiaDecay::Nuclide * const u235,
+                                      const SandiaDecay::Nuclide * const u238 )
+  {
+    BOOST_REQUIRE( u235 && u238 );
+    RelActCalcAuto::Options options = input;
+    options.auto_profile_weak_mass_fractions = false;
+    options.auto_simplify_model = false;
+    options.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
+    options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_2;
+    options.fwhm_estimation_method
+        = RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum;
+    options.skew_type = PeakDef::SkewType::NoSkew;
+    options.additional_br_uncert = 0.0;
+
+    for( RelActCalcAuto::RoiRange &roi : options.rois )
+      roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+    options.rois.erase( std::remove_if(options.rois.begin(),options.rois.end(),
+        []( const RelActCalcAuto::RoiRange &roi ) {
+          const bool low_energy_u235 = (roi.lower_energy >= 140.0)
+                                         && (roi.upper_energy <= 210.0);
+          const bool high_energy_u238 = (roi.lower_energy >= 990.0)
+                                         && (roi.upper_energy <= 1010.0);
+          return !low_energy_u235 && !high_energy_u238;
+        }),options.rois.end() );
+    BOOST_REQUIRE_GE( options.rois.size(),3u );
+
+    BOOST_REQUIRE_EQUAL( options.rel_eff_curves.size(),1u );
+    RelActCalcAuto::RelEffCurveInput &curve = options.rel_eff_curves[0];
+    curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+    curve.rel_eff_eqn_order = 0;
+    curve.phys_model_corr.corr_fcn = RelActCalc::PhysModelCorrFcn::None;
+    curve.shielded_by_other_phys_model_curve_shieldings.clear();
+    curve.mass_fraction_constraints.clear();
+    curve.act_ratio_constraints.clear();
+
+    const auto freeze_shield = [](
+        const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &input_shield ) {
+      if( !input_shield )
+        return input_shield;
+      auto fixed = std::make_shared<RelActCalc::PhysicalModelShieldInput>(*input_shield);
+      fixed->fit_atomic_number = false;
+      fixed->fit_areal_density = false;
+      fixed->lower_fit_areal_density = fixed->areal_density;
+      fixed->upper_fit_areal_density = fixed->areal_density;
+      return std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>(fixed);
+    };
+    curve.phys_model_self_atten = freeze_shield(curve.phys_model_self_atten);
+    for( std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &shield
+           : curve.phys_model_external_atten )
+      shield = freeze_shield(shield);
+
+    curve.nuclides.erase( std::remove_if(curve.nuclides.begin(),curve.nuclides.end(),
+        [u235,u238]( const RelActCalcAuto::NucInputInfo &source ) {
+          const SandiaDecay::Nuclide * const nuclide
+                                            = RelActCalcAuto::nuclide(source.source);
+          return (nuclide != u235) && (nuclide != u238);
+        }),curve.nuclides.end() );
+    BOOST_REQUIRE_EQUAL( curve.nuclides.size(),2u );
+    for( RelActCalcAuto::NucInputInfo &source : curve.nuclides )
+    {
+      source.fit_age = false;
+      source.fit_age_min.reset();
+      source.fit_age_max.reset();
+      source.force_profile_mass_fraction = false;
+    }
+
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint u235_window;
+    u235_window.nuclide = u235;
+    u235_window.lower_mass_fraction = 0.10;
+    u235_window.upper_mass_fraction = 0.50;
+    curve.mass_fraction_constraints.push_back(u235_window);
+    return options;
+  }
+
+
+  /** Restore the process-wide solve-thread limit even when a BOOST_REQUIRE aborts a test case.
+   `max_solve_threads()` returns the resolved previous behavior; restoring that explicit value is
+   behaviorally equivalent for the lifetime of this test process. */
+  class SolveThreadLimitRestorer
+  {
+  public:
+    SolveThreadLimitRestorer()
+      : m_previous(RelActCalc::max_solve_threads())
+    {}
+
+    ~SolveThreadLimitRestorer()
+    {
+      RelActCalc::set_max_solve_threads(m_previous);
+    }
+
+    SolveThreadLimitRestorer( const SolveThreadLimitRestorer & ) = delete;
+    SolveThreadLimitRestorer &operator=( const SolveThreadLimitRestorer & ) = delete;
+
+  private:
+    const unsigned m_previous;
+  };
 }//namespace
+
+
+// MODEL-03: U-234 is tied to U-235 here so the selected quantity is an activity-ratio controller;
+// its forced profile equality must act on the reported mass fraction and vary the
+// controller/nuisances, rather than rejecting the request or trying to free the controlled
+// activity coordinate.
+BOOST_AUTO_TEST_CASE( forced_ratio_constrained_u235_profile )
+{
+  set_data_dir();
+  ULoadResult tc;
+  BOOST_REQUIRE_MESSAGE( load_u_test_case(tc),
+                         "Failed to load U235_Unshielded_6000.n42 test case." );
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide * const u234 = db->nuclide("U234");
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  BOOST_REQUIRE( u234 && u235 );
+
+  RelActCalcAuto::Options options = tc.options;
+  options.auto_profile_weak_mass_fractions = false;
+  options.auto_simplify_model = false;
+  options.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
+  options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_2;
+  options.fwhm_estimation_method
+      = RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum;
+  options.skew_type = PeakDef::SkewType::NoSkew;
+  for( RelActCalcAuto::RoiRange &roi : options.rois )
+    roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+  options.rois.erase( std::remove_if(options.rois.begin(),options.rois.end(),
+      []( const RelActCalcAuto::RoiRange &roi ){
+        const bool low_energy_u235 = (roi.lower_energy >= 140.0) && (roi.upper_energy <= 210.0);
+        const bool high_energy_u238 = (roi.lower_energy >= 990.0) && (roi.upper_energy <= 1010.0);
+        return !low_energy_u235 && !high_energy_u238;
+      }),options.rois.end() );
+  BOOST_REQUIRE_GE( options.rois.size(),3u );
+
+  RelActCalcAuto::RelEffCurveInput &curve = options.rel_eff_curves.at(0);
+  curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnY;
+  curve.rel_eff_eqn_order = 1;
+  curve.phys_model_self_atten.reset();
+  curve.phys_model_external_atten.clear();
+  curve.nuclides.erase( std::remove_if(curve.nuclides.begin(),curve.nuclides.end(),
+      []( const RelActCalcAuto::NucInputInfo &input ){
+        const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(input.source);
+        return !nuclide || (nuclide->massNumber == 232);
+      }),curve.nuclides.end() );
+  bool found_u235 = false;
+  for( RelActCalcAuto::NucInputInfo &input : curve.nuclides )
+  {
+    const bool is_u235 = RelActCalcAuto::nuclide(input.source) == u235;
+    input.force_profile_mass_fraction = is_u235;
+    found_u235 = found_u235 || is_u235;
+  }
+  BOOST_REQUIRE( found_u235 );
+
+  RelActCalcAuto::RelEffCurveInput::ActRatioConstraint ratio;
+  ratio.controlling_source = RelActCalcAuto::SrcVariant(u235);
+  ratio.constrained_source = RelActCalcAuto::SrcVariant(u234);
+  // Approximate the fixture's 1.5/25 wt% U-234/U-235 composition in activity coordinates.
+  ratio.constrained_to_controlled_activity_ratio
+      = (0.015*u234->activityPerGram()) / (0.25*u235->activityPerGram());
+  curve.act_ratio_constraints.push_back(ratio);
+
+  vector<shared_ptr<const PeakDef>> input_peaks;
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> stored_peaks
+      = static_cast<const SpecMeas &>(*tc.meas).peaks({tc.foreground->sample_number()});
+  if( stored_peaks )
+    input_peaks.assign(stored_peaks->begin(),stored_peaks->end());
+
+  RelActCalcAuto::RelActAutoSolution solution;
+  BOOST_REQUIRE_NO_THROW( solution = RelActCalcAuto::solve(
+      options,tc.foreground,tc.background,tc.det,input_peaks,
+      PeakFitUtils::coarse_det_type(tc.foreground,nullptr),nullptr) );
+  BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status),
+                         solution.m_error_message );
+
+  const auto result = solution.mass_enrichment_result(u235,0);
+  BOOST_REQUIRE_MESSAGE( result.profile.has_value(),
+                         "Explicit U-235 profile was not produced" );
+  BOOST_CHECK( result.profile->reason
+      == RelActCalcAuto::RelActAutoSolution::MassFractionProfileReason::Forced );
+  const auto profile_status = result.profile->status;
+  BOOST_REQUIRE_MESSAGE(
+      profile_status == RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::Complete
+      || profile_status == RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::BoundaryLimited
+      || profile_status == RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::NonIdentifiable,
+      result.profile->message );
+  BOOST_CHECK_GT( result.profile->num_fits, 0u );
+  BOOST_CHECK_LE( result.profile->num_fits, 32u );
+  BOOST_REQUIRE_EQUAL( result.profile->intervals.size(),2u );
+  for( const auto &interval : result.profile->intervals )
+  {
+    BOOST_CHECK_GE( interval.lower,0.0 );
+    BOOST_CHECK_LE( interval.upper,1.0 );
+    BOOST_CHECK_LE( interval.lower,result.fraction + 1.0e-8 );
+    BOOST_CHECK_GE( interval.upper,result.fraction - 1.0e-8 );
+  }
+}
+
+
+// MODEL-03: an explicit request profiles U-235 even when its quantity-specific local covariance is
+// already usable.  This is intentionally a small two-isotope empirical problem so the production
+// conditional solve (rather than fixture complexity) is what the regression measures.
+BOOST_AUTO_TEST_CASE( forced_healthy_u235_profile )
+{
+  set_data_dir();
+  ULoadResult tc;
+  BOOST_REQUIRE_MESSAGE( load_u_test_case(tc),
+                         "Failed to load U235_Unshielded_6000.n42 test case." );
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  BOOST_REQUIRE( u235 );
+
+  RelActCalcAuto::Options options = tc.options;
+  options.auto_profile_weak_mass_fractions = false;
+  options.auto_simplify_model = false;
+  options.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
+  options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_2;
+  options.fwhm_estimation_method
+      = RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum;
+  options.skew_type = PeakDef::SkewType::NoSkew;
+  for( RelActCalcAuto::RoiRange &roi : options.rois )
+    roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+  options.rois.erase( std::remove_if(options.rois.begin(),options.rois.end(),
+      []( const RelActCalcAuto::RoiRange &roi ){
+        const bool low_energy_u235 = (roi.lower_energy >= 140.0) && (roi.upper_energy <= 210.0);
+        const bool high_energy_u238 = (roi.lower_energy >= 990.0) && (roi.upper_energy <= 1010.0);
+        return !low_energy_u235 && !high_energy_u238;
+      }),options.rois.end() );
+  BOOST_REQUIRE_GE( options.rois.size(),3u );
+
+  RelActCalcAuto::RelEffCurveInput &curve = options.rel_eff_curves.at(0);
+  curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+  curve.rel_eff_eqn_order = 0;
+  const auto freeze_shield = []( const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &input ) {
+    if( !input )
+      return input;
+    auto fixed = std::make_shared<RelActCalc::PhysicalModelShieldInput>(*input);
+    fixed->fit_atomic_number = false;
+    fixed->fit_areal_density = false;
+    fixed->lower_fit_areal_density = fixed->areal_density;
+    fixed->upper_fit_areal_density = fixed->areal_density;
+    return std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>(fixed);
+  };
+  curve.phys_model_self_atten = freeze_shield(curve.phys_model_self_atten);
+  for( std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &shield
+       : curve.phys_model_external_atten )
+    shield = freeze_shield(shield);
+  curve.phys_model_corr.corr_fcn = RelActCalc::PhysModelCorrFcn::None;
+  curve.nuclides.erase( std::remove_if(curve.nuclides.begin(),curve.nuclides.end(),
+      []( const RelActCalcAuto::NucInputInfo &input ){
+        const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(input.source);
+        return !nuclide || ((nuclide->massNumber != 235) && (nuclide->massNumber != 238));
+      }),curve.nuclides.end() );
+  BOOST_REQUIRE_EQUAL( curve.nuclides.size(),2u );
+  bool found_u235 = false;
+  for( RelActCalcAuto::NucInputInfo &input : curve.nuclides )
+  {
+    const bool is_u235 = RelActCalcAuto::nuclide(input.source) == u235;
+    input.force_profile_mass_fraction = is_u235;
+    found_u235 = found_u235 || is_u235;
+  }
+  BOOST_REQUIRE( found_u235 );
+  RelActCalcAuto::RelEffCurveInput::MassFractionConstraint healthy_window;
+  healthy_window.nuclide = u235;
+  healthy_window.lower_mass_fraction = 0.10;
+  healthy_window.upper_mass_fraction = 0.50;
+  curve.mass_fraction_constraints.push_back(healthy_window);
+
+  vector<shared_ptr<const PeakDef>> input_peaks;
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> stored_peaks
+      = static_cast<const SpecMeas &>(*tc.meas).peaks({tc.foreground->sample_number()});
+  if( stored_peaks )
+    input_peaks.assign(stored_peaks->begin(),stored_peaks->end());
+
+  RelActCalcAuto::RelActAutoSolution solution;
+  BOOST_REQUIRE_NO_THROW( solution = RelActCalcAuto::solve(
+      options,tc.foreground,tc.background,tc.det,input_peaks,
+      PeakFitUtils::coarse_det_type(tc.foreground,nullptr),nullptr) );
+  BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status),
+                         solution.m_error_message );
+
+  const auto result = solution.mass_enrichment_result(u235,0);
+  BOOST_REQUIRE_MESSAGE(
+      result.covariance_quality
+        == RelActCalcAuto::RelActAutoSolution::MassFractionCovarianceQuality::Usable,
+      "Expected a healthy local U-235 covariance before honoring the explicit profile request: "
+        << result.diagnostic << " (fraction=" << result.fraction << ")" );
+  BOOST_REQUIRE( result.profile.has_value() );
+  BOOST_CHECK( result.profile->reason
+      == RelActCalcAuto::RelActAutoSolution::MassFractionProfileReason::Forced );
+  const auto profile_status = result.profile->status;
+  BOOST_REQUIRE_MESSAGE(
+      profile_status == RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::Complete
+      || profile_status == RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::BoundaryLimited
+      || profile_status == RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::NonIdentifiable,
+      result.profile->message );
+  BOOST_CHECK_GT( result.profile->num_fits,0u );
+  BOOST_CHECK_LE( result.profile->num_fits,32u );
+  BOOST_REQUIRE_EQUAL( result.profile->intervals.size(),2u );
+}
 
 
 // A.8 - Overlap regression: an element carrying TWO wide overlapping constraints (U234 [0,1] and
@@ -1085,4 +1405,269 @@ BOOST_AUTO_TEST_CASE( mass_fraction_constraint_all_fixed_element )
   // ... and the fitted element scale gives positive relative activities.
   BOOST_CHECK_MESSAGE( sol.m_dof > 0 && (sol.m_chi2 / sol.m_dof) < 100.0,
                        "chi2/dof = " << (sol.m_dof > 0 ? sol.m_chi2/sol.m_dof : -1.0) << " is unreasonable." );
+}
+
+
+// CONV-00/10: caller source order is presentation state, not optimization state.  Exercise both
+// permutations of this deliberately small two-source mass-fraction problem; the five-repeat
+// multi-curve permutation matrix lives in test_RelActCalcAuto_MultiCurve.cpp.
+BOOST_AUTO_TEST_CASE( source_order_is_semantically_canonical )
+{
+  set_data_dir();
+  ULoadResult tc;
+  BOOST_REQUIRE_MESSAGE( load_u_test_case(tc),
+                         "Failed to load U235_Unshielded_6000.n42 test case." );
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide * const u235 = db->nuclide( "U235" );
+  const SandiaDecay::Nuclide * const u238 = db->nuclide( "U238" );
+  BOOST_REQUIRE( u235 && u238 );
+  const RelActCalcAuto::Options canonical_options
+                           = small_canonical_u_options(tc.options,u235,u238);
+  BOOST_REQUIRE_EQUAL( canonical_options.rel_eff_curves[0].nuclides.size(),2u );
+
+  RelActCalcAuto::Options semantic_orders[2]{canonical_options,canonical_options};
+  std::reverse( semantic_orders[1].rel_eff_curves[0].nuclides.begin(),
+                semantic_orders[1].rel_eff_curves[0].nuclides.end() );
+
+  const PeakFitUtils::CoarseResolutionType det_type
+      = PeakFitUtils::coarse_det_type( tc.foreground, nullptr );
+  std::uint64_t reference_gamma_hash = 0, reference_layout_hash = 0;
+  double reference_objective = 0.0, reference_data_objective = 0.0;
+  double reference_u235 = 0.0, reference_u238 = 0.0;
+  bool exercised_orders[2]{false,false};
+
+  for( size_t repeat = 0; repeat < 2; ++repeat )
+  {
+    const size_t order = repeat % 2;
+    exercised_orders[order] = true;
+    RelActCalcAuto::RelActAutoSolution solution;
+    BOOST_REQUIRE_NO_THROW( solution = RelActCalcAuto::solve(
+        semantic_orders[order],tc.foreground,tc.background,tc.det,{},det_type,nullptr) );
+    BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status),
+                           "Repeat " << repeat << " (source order " << order
+                                     << ") failed: " << solution.m_error_message );
+    BOOST_REQUIRE_NE( solution.m_frozen_gamma_membership_hash,UINT64_C(0) );
+    BOOST_REQUIRE_NE( solution.m_frozen_layout_hash,UINT64_C(0) );
+    BOOST_REQUIRE_EQUAL( solution.m_options.rel_eff_curves[0].nuclides.size(),
+                         solution.m_rel_activities[0].size() );
+    for( size_t row = 0; row < solution.m_rel_activities[0].size(); ++row )
+      BOOST_CHECK( solution.m_rel_activities[0][row].source
+                   == semantic_orders[order].rel_eff_curves[0].nuclides[row].source );
+
+    const double fraction_u235 = solution.mass_enrichment_fraction(u235,0).first;
+    const double fraction_u238 = solution.mass_enrichment_fraction(u238,0).first;
+    BOOST_REQUIRE( std::isfinite(fraction_u235) && std::isfinite(fraction_u238) );
+    if( repeat == 0 )
+    {
+      reference_gamma_hash = solution.m_frozen_gamma_membership_hash;
+      reference_layout_hash = solution.m_frozen_layout_hash;
+      reference_objective = solution.m_chi2;
+      reference_data_objective = solution.m_chi2_data;
+      reference_u235 = fraction_u235;
+      reference_u238 = fraction_u238;
+      continue;
+    }
+
+    BOOST_CHECK_EQUAL( solution.m_frozen_gamma_membership_hash,reference_gamma_hash );
+    BOOST_CHECK_EQUAL( solution.m_frozen_layout_hash,reference_layout_hash );
+    const double full_scale = (std::max)(1.0,std::fabs(reference_objective));
+    const double data_scale = (std::max)(1.0,std::fabs(reference_data_objective));
+    BOOST_CHECK_SMALL( solution.m_chi2-reference_objective,1.0e-8*full_scale );
+    BOOST_CHECK_SMALL( solution.m_chi2_data-reference_data_objective,1.0e-8*data_scale );
+    BOOST_CHECK_SMALL( fraction_u235-reference_u235,1.0e-7 );
+    BOOST_CHECK_SMALL( fraction_u238-reference_u238,1.0e-7 );
+  }
+  BOOST_CHECK( exercised_orders[0] && exercised_orders[1] );
+}
+
+
+// AD-13/CONV-00: the production solver must freeze and select the same physical problem when its
+// Ceres/ROI work is forced serial or allowed to use multiple threads.  Keep the nuisance families
+// fixed so this specifically detects shared cache, summation-order, or semantic-layout drift.
+BOOST_AUTO_TEST_CASE( production_thread_count_is_semantically_invariant )
+{
+  set_data_dir();
+  ULoadResult tc;
+  BOOST_REQUIRE_MESSAGE( load_u_test_case(tc),
+                         "Failed to load U235_Unshielded_6000.n42 test case." );
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
+  BOOST_REQUIRE( u235 && u238 );
+
+  const RelActCalcAuto::Options options
+      = small_canonical_u_options(tc.options,u235,u238);
+  const PeakFitUtils::CoarseResolutionType det_type
+      = PeakFitUtils::coarse_det_type(tc.foreground,nullptr);
+
+  SolveThreadLimitRestorer restore_thread_limit;
+  RelActCalc::set_max_solve_threads(0);
+  const unsigned available_threads = RelActCalc::max_solve_threads();
+  if( available_threads < 2 )
+  {
+    BOOST_TEST_MESSAGE( "Thread-count invariance skipped: only one hardware thread is available." );
+    return;
+  }
+
+  RelActCalc::set_max_solve_threads(1);
+  BOOST_REQUIRE_EQUAL( RelActCalc::max_solve_threads(),1u );
+  RelActCalcAuto::RelActAutoSolution serial;
+  BOOST_REQUIRE_NO_THROW( serial = RelActCalcAuto::solve(
+      options,tc.foreground,tc.background,tc.det,{},det_type,nullptr) );
+  BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(serial.m_status),
+                         "Serial solve failed: " << serial.m_error_message );
+
+  const unsigned parallel_limit = (std::min)(4u,available_threads);
+  RelActCalc::set_max_solve_threads(parallel_limit);
+  BOOST_REQUIRE_GT( RelActCalc::max_solve_threads(),1u );
+  RelActCalcAuto::RelActAutoSolution parallel;
+  BOOST_REQUIRE_NO_THROW( parallel = RelActCalcAuto::solve(
+      options,tc.foreground,tc.background,tc.det,{},det_type,nullptr) );
+  BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(parallel.m_status),
+                         "Parallel solve failed: " << parallel.m_error_message );
+
+  BOOST_REQUIRE_NE( serial.m_frozen_gamma_membership_hash,UINT64_C(0) );
+  BOOST_REQUIRE_NE( serial.m_frozen_layout_hash,UINT64_C(0) );
+  BOOST_CHECK_EQUAL( serial.m_frozen_gamma_membership_hash,
+                     parallel.m_frozen_gamma_membership_hash );
+  BOOST_CHECK_EQUAL( serial.m_frozen_layout_hash,parallel.m_frozen_layout_hash );
+  BOOST_CHECK_EQUAL( serial.m_frozen_model_policy_hash,parallel.m_frozen_model_policy_hash );
+  BOOST_CHECK_SMALL( serial.m_chi2-parallel.m_chi2,
+                     1.0e-8*(std::max)(1.0,std::fabs(serial.m_chi2)) );
+  BOOST_CHECK_SMALL( serial.m_chi2_data-parallel.m_chi2_data,
+                     1.0e-8*(std::max)(1.0,std::fabs(serial.m_chi2_data)) );
+
+  for( const SandiaDecay::Nuclide * const nuclide : {u235,u238} )
+  {
+    const double serial_fraction = serial.mass_enrichment_fraction(nuclide,0).first;
+    const double parallel_fraction = parallel.mass_enrichment_fraction(nuclide,0).first;
+    BOOST_REQUIRE( std::isfinite(serial_fraction) && std::isfinite(parallel_fraction) );
+    BOOST_CHECK_SMALL( serial_fraction-parallel_fraction,1.0e-7 );
+  }
+  const double serial_u235 = serial.mass_enrichment_fraction(u235,0).first;
+  const double parallel_u235 = parallel.mass_enrichment_fraction(u235,0).first;
+  BOOST_CHECK( (serial_u235 >= 0.10) && (serial_u235 <= 0.50) );
+  BOOST_CHECK( (parallel_u235 >= 0.10) && (parallel_u235 <= 0.50) );
+}
+
+
+// CONV-01/03: two curves with disjoint source identities have no EM/shared-line rescue candidate.
+// They must nevertheless select a stable basin, report physical sole-isotope fractions, and avoid
+// inventing cross-curve source-attribution rows.
+BOOST_AUTO_TEST_CASE( no_shared_source_multicurve_is_deterministic )
+{
+  set_data_dir();
+  ULoadResult tc;
+  BOOST_REQUIRE_MESSAGE( load_u_test_case(tc),
+                         "Failed to load U235_Unshielded_6000.n42 test case." );
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
+  BOOST_REQUIRE( u235 && u238 );
+
+  RelActCalcAuto::Options options = small_canonical_u_options(tc.options,u235,u238);
+  BOOST_REQUIRE_EQUAL( options.rel_eff_curves.size(),1u );
+  RelActCalcAuto::RelEffCurveInput u235_curve = options.rel_eff_curves.front();
+  RelActCalcAuto::RelEffCurveInput u238_curve = options.rel_eff_curves.front();
+  u235_curve.name = "U-235 only";
+  u238_curve.name = "U-238 only";
+  u235_curve.mass_fraction_constraints.clear();
+  u238_curve.mass_fraction_constraints.clear();
+  u235_curve.nuclides.erase( std::remove_if(u235_curve.nuclides.begin(),u235_curve.nuclides.end(),
+      [u235]( const RelActCalcAuto::NucInputInfo &source ) {
+        return RelActCalcAuto::nuclide(source.source) != u235;
+      }),u235_curve.nuclides.end() );
+  u238_curve.nuclides.erase( std::remove_if(u238_curve.nuclides.begin(),u238_curve.nuclides.end(),
+      [u238]( const RelActCalcAuto::NucInputInfo &source ) {
+        return RelActCalcAuto::nuclide(source.source) != u238;
+      }),u238_curve.nuclides.end() );
+  BOOST_REQUIRE_EQUAL( u235_curve.nuclides.size(),1u );
+  BOOST_REQUIRE_EQUAL( u238_curve.nuclides.size(),1u );
+  options.rel_eff_curves = {u235_curve,u238_curve};
+  options.same_corr_fcn_for_all_rel_eff_curves = false;
+  options.same_external_shielding_for_all_rel_eff_curves = false;
+
+  const PeakFitUtils::CoarseResolutionType det_type
+      = PeakFitUtils::coarse_det_type(tc.foreground,nullptr);
+  RelActCalcAuto::RelActAutoSolution solutions[2];
+  for( size_t repeat = 0; repeat < 2; ++repeat )
+  {
+    BOOST_REQUIRE_NO_THROW( solutions[repeat] = RelActCalcAuto::solve(
+        options,tc.foreground,tc.background,tc.det,{},det_type,nullptr) );
+    BOOST_REQUIRE_MESSAGE(
+        RelActCalcAuto::RelActAutoSolution::is_usable_status(solutions[repeat].m_status),
+        "No-shared-source repeat " << repeat << " failed: "
+                                    << solutions[repeat].m_error_message );
+    BOOST_REQUIRE_EQUAL( solutions[repeat].m_rel_activities.size(),2u );
+    BOOST_REQUIRE_EQUAL( solutions[repeat].m_rel_activities[0].size(),1u );
+    BOOST_REQUIRE_EQUAL( solutions[repeat].m_rel_activities[1].size(),1u );
+    BOOST_CHECK_GT( solutions[repeat].m_rel_activities[0][0].rel_activity,0.0 );
+    BOOST_CHECK_GT( solutions[repeat].m_rel_activities[1][0].rel_activity,0.0 );
+    BOOST_CHECK_SMALL( solutions[repeat].mass_enrichment_fraction(u235,0).first-1.0,1.0e-12 );
+    BOOST_CHECK_SMALL( solutions[repeat].mass_enrichment_fraction(u238,1).first-1.0,1.0e-12 );
+    BOOST_CHECK( solutions[repeat].source_count_attributions().empty() );
+    BOOST_CHECK( solutions[repeat].m_enrichment_diff_z.empty() );
+  }
+
+  BOOST_REQUIRE_NE( solutions[0].m_frozen_gamma_membership_hash,UINT64_C(0) );
+  BOOST_REQUIRE_NE( solutions[0].m_frozen_layout_hash,UINT64_C(0) );
+  BOOST_CHECK_EQUAL( solutions[0].m_frozen_gamma_membership_hash,
+                     solutions[1].m_frozen_gamma_membership_hash );
+  BOOST_CHECK_EQUAL( solutions[0].m_frozen_layout_hash,solutions[1].m_frozen_layout_hash );
+  BOOST_CHECK_EQUAL( solutions[0].m_frozen_model_policy_hash,
+                     solutions[1].m_frozen_model_policy_hash );
+  BOOST_CHECK_SMALL( solutions[0].m_chi2-solutions[1].m_chi2,
+                     1.0e-8*(std::max)(1.0,std::fabs(solutions[0].m_chi2)) );
+  BOOST_CHECK_SMALL( solutions[0].m_chi2_data-solutions[1].m_chi2_data,
+                     1.0e-8*(std::max)(1.0,std::fabs(solutions[0].m_chi2_data)) );
+}
+
+
+// CONV-01/03: requesting automatic model selection is a production search trigger, but the search
+// itself belongs to the opt-in robust budget (it costs one full solve per applicable candidate), so
+// this case asks for a robust solve - it is exercising precisely that path.  In the small
+// fixed-nuisance problem above exactly four named seeds are applicable: default, the two semantic
+// activity splits, and the weakest-direction checkerboard.  The production diagnostic is
+// deliberately asserted here so a successful early candidate cannot silently truncate the matrix.
+BOOST_AUTO_TEST_CASE( forced_search_polishes_complete_applicable_candidate_matrix )
+{
+  set_data_dir();
+  ULoadResult tc;
+  BOOST_REQUIRE_MESSAGE( load_u_test_case(tc),
+                         "Failed to load U235_Unshielded_6000.n42 test case." );
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
+  BOOST_REQUIRE( u235 && u238 );
+
+  RelActCalcAuto::Options options = small_canonical_u_options(tc.options,u235,u238);
+  options.auto_simplify_model = true; //forces the unsimplified frozen-model basin matrix first
+  options.auto_simplify_max_dchi2 = 0.0;
+  options.robust_solve = true;        //the multi-start candidate search is opt-in
+
+  RelActCalcAuto::RelActAutoSolution solution;
+  BOOST_REQUIRE_NO_THROW( solution = RelActCalcAuto::solve(
+      options,tc.foreground,tc.background,tc.det,{},
+      PeakFitUtils::coarse_det_type(tc.foreground,nullptr),nullptr) );
+  BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status),
+                         solution.m_error_message );
+
+  bool saw_forced_complete_matrix = false;
+  bool saw_selected_basin_then_elimination = false;
+  for( const string &warning : solution.m_warnings )
+  {
+    if( SpecUtils::icontains(warning,"Deterministic candidate search was triggered")
+        && SpecUtils::icontains(warning,"ROI/model layout change") )
+    {
+      BOOST_CHECK_MESSAGE( SpecUtils::icontains(warning,"polished 4 named candidates"),warning );
+      saw_forced_complete_matrix = SpecUtils::icontains(warning,"polished 4 named candidates");
+    }
+    saw_selected_basin_then_elimination = saw_selected_basin_then_elimination
+      || SpecUtils::icontains(warning,
+          "same unsimplified frozen full model before applying backward elimination");
+  }
+  BOOST_CHECK_MESSAGE( saw_forced_complete_matrix,
+                       "No diagnostic confirmed all four applicable semantic candidates" );
+  BOOST_CHECK_MESSAGE( saw_selected_basin_then_elimination,
+                       "Model selection did not report search-before-elimination staging" );
 }

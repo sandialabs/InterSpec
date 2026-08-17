@@ -530,7 +530,7 @@ double predicted_source_anchor_counts(
   const RelActCalcManual::GenericPeakInfo &anchor,
   const double live_time )
 {
-  if( (solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
+  if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status)
       || (rel_eff_curve_index >= solution.m_rel_activities.size())
       || !(live_time > 0.0) )
     return 0.0;
@@ -6690,7 +6690,7 @@ double source_anchor_data_aicc(
   const double aicc_penalty )
 {
   const std::shared_ptr<const SpecUtils::Measurement> &data = solution.m_foreground;
-  if( (solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
+  if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status)
       || !data || anchors.empty() || !(aicc_penalty > 0.0) )
     return std::numeric_limits<double>::max();
 
@@ -13090,7 +13090,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         : std::vector<RelActCalcManual::GenericPeakInfo>();
     const size_t initial_source_anchors_preserved
       = (use_automatic_roi_policy && (sources_rel_eff_index >= 0)
-          && (solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success))
+          && RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status))
         ? preserved_source_anchor_count( solution,
             static_cast<size_t>(sources_rel_eff_index), significant_source_anchors,
             orig_foreground->live_time() )
@@ -13144,8 +13144,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             significant_source_anchors, orig_foreground->live_time() );
         const double incumbent_score = source_anchor_data_aicc(
             solution, significant_source_anchors, config.manual_releff_aicc_penalty );
-        const double clean_score = (clean_solution.m_status
-                == RelActCalcAuto::RelActAutoSolution::Status::Success)
+        const double clean_score = RelActCalcAuto::RelActAutoSolution::is_usable_status(clean_solution.m_status)
             ? source_anchor_data_aicc( clean_solution, significant_source_anchors,
                 config.manual_releff_aicc_penalty )
             : std::numeric_limits<double>::max();
@@ -13156,7 +13155,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           = significant_requested_source_anchor_count( clean_solution, sources,
               significant_source_anchors, config.roi_significance_z, global_fwhm_at );
         const bool accept = detail::should_accept_source_clean_challenger(
-            clean_solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success,
+            RelActCalcAuto::RelActAutoSolution::is_usable_status(clean_solution.m_status),
             initial_source_anchors_preserved, clean_preserved,
             incumbent_fit_anchors, clean_fit_anchors, incumbent_score, clean_score );
         if( should_debug_print() )
@@ -13192,7 +13191,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     // As of 20260103, energy calibration adjustments may cause failure to fit the correct solution sometimes,
     //  so if our current solution failed, or is really bad, we'll try without fitting energy cal
     if( ( options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit )
-      && ((solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
+      && ((!RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status))
         || (reduced_chi2(solution) > 10.0)) ) //10.0 arbitrary - and un-explored
     {
       RelActCalcAuto::Options no_ecal_opts = options;
@@ -13222,7 +13221,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       RelActCalcAuto::RelActAutoSolution desperation_solution;
       desperation_solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::NotInitiated;
 
-      if( ((no_ecal_solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
+      if( ((!RelActCalcAuto::RelActAutoSolution::is_usable_status(no_ecal_solution.m_status))
           || (reduced_chi2(no_ecal_solution) > 10.0))
          && (sources_rel_eff_index >= 0) )
       {
@@ -13291,7 +13290,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         = [&]( const RelActCalcAuto::RelActAutoSolution &candidate ) -> bool {
         if( recovered_source_anchors.empty() )
           return true;
-        if( (candidate.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
+        if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(candidate.m_status)
             || (sources_rel_eff_index < 0) )
           return false;
         const bool predicted_preserved = std::all_of(
@@ -13309,9 +13308,9 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       const auto is_better_than_solution
         = [&solution, &preserves_recovered_evidence](
             const RelActCalcAuto::RelActAutoSolution &cand ) -> bool {
-        return (cand.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success)
+        return RelActCalcAuto::RelActAutoSolution::is_usable_status(cand.m_status)
                && preserves_recovered_evidence( cand )
-               && ( (solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success)
+               && ( (!RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status))
                    || (reduced_chi2(solution) > reduced_chi2(cand)) );
       };
 
@@ -13331,7 +13330,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     }
 
     // Check if initial solve failed
-    if( solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+    if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status) )
     {
       result.status = solution.m_status;
       result.error_message = solution.m_error_message;
@@ -13867,10 +13866,10 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           double affected_deviance_source = 0.0;
           double affected_deviance_augmented = 0.0;
           std::set<const SandiaDecay::Nuclide *> contributing_interferers;
-          if( (common_domain_source_solution.m_status
-                == RelActCalcAuto::RelActAutoSolution::Status::Success)
-              && (augmented_solution.m_status
-                == RelActCalcAuto::RelActAutoSolution::Status::Success) )
+          if( RelActCalcAuto::RelActAutoSolution::is_usable_status(
+                common_domain_source_solution.m_status)
+              && RelActCalcAuto::RelActAutoSolution::is_usable_status(
+                augmented_solution.m_status) )
           {
             for( const RelActCalcAuto::RoiRange &roi : augmented_options.rois )
             {
@@ -13983,8 +13982,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
           const bool anchors_preserved = requested_anchors_preserved(
               solution, augmented_solution, selected_lines );
-          const bool accept = (augmented_solution.m_status
-                  == RelActCalcAuto::RelActAutoSolution::Status::Success)
+          const bool accept = RelActCalcAuto::RelActAutoSolution::is_usable_status(
+                augmented_solution.m_status)
               && (incumbent_requested_count > 0)
               && (augmented_requested_count > 0)
               && anchors_preserved
@@ -14011,8 +14010,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             warning << "Rejected the automatic interfering-line augmentation because it failed,"
               " removed a requested-source anchor, or lacked significant affected-ROI likelihood"
               " gain; retained the successful source-only fit";
-            warning << " (solve=" << (augmented_solution.m_status
-                == RelActCalcAuto::RelActAutoSolution::Status::Success)
+            warning << " (solve=" << RelActCalcAuto::RelActAutoSolution::is_usable_status(
+                                          augmented_solution.m_status)
                     << ", requested=" << incumbent_requested_count << "->"
                     << augmented_requested_count << ", anchors=" << anchors_preserved
                     << ", affected_roi=" << have_affected_roi
@@ -15242,7 +15241,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
               desperation_opts, foreground, background, drf, auto_search_peaks, det_type
             );
 
-            if( (desperation_solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success)
+            if( RelActCalcAuto::RelActAutoSolution::is_usable_status(desperation_solution.m_status)
                 && (reduced_chi2(desperation_solution) < reduced_chi2(solution)) )
             {
               if( should_debug_print() )
@@ -15396,7 +15395,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           break;
         }
 
-        if( refined_solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+        if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(refined_solution.m_status) )
         {
           if( rescue_solve_this_iteration )
           {
@@ -15645,8 +15644,8 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
               RelActCalcAuto::RelActAutoSolution local_solution = RelActCalcAuto::solve(
                   local_options, orig_foreground, orig_background,
                   drf, auto_search_peaks, det_type );
-              const bool solved = local_solution.m_status
-                  == RelActCalcAuto::RelActAutoSolution::Status::Success;
+              const bool solved = RelActCalcAuto::RelActAutoSolution::is_usable_status(
+                                    local_solution.m_status);
               const bool local_predicted = solved && (recovered_source_anchors.empty()
                   || ((sources_rel_eff_index >= 0)
                     && std::all_of( std::begin(recovered_source_anchors),
@@ -16336,7 +16335,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 
     if( existing_peaks_as_free
        && !existing_peaks_added_as_floating.empty()
-       && (result.status == RelActCalcAuto::RelActAutoSolution::Status::Success) )
+       && RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) )
     {
       for( const std::pair<std::shared_ptr<const PeakDef>, double> &orig_and_energy : existing_peaks_added_as_floating )
       {
@@ -16570,7 +16569,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
     // DoNotUseExistingRois is excluded: existing ROIs are intentionally left untouched.
     if( !do_not_use_existing_rois && !existing_peaks_as_free
        && !user_peaks.empty()
-       && (result.status == RelActCalcAuto::RelActAutoSolution::Status::Success) )
+       && RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) )
     {
       for( const std::shared_ptr<const PeakDef> &peak : user_peaks )
       {

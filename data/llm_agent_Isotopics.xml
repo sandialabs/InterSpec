@@ -73,7 +73,7 @@ The workflow is guided by a state machine with 7 states. Use `set_workflow_state
 **For Plutonium isotopics:**
   * **HPGe Pu (120-420 keV).xml** - Low-energy region, good when low-energy peaks are clean
   * **HPGe Pu (120-780 keV).xml** - Wide energy range, most comprehensive, RECOMMENDED DEFAULT
-  * **HPGe Pu (610-775 keV).xml** - High-energy only, use when Am-241 interference severe at 59.5 keV
+  * **HPGe Pu (610-775 keV).xml** - High-energy only; age-dependent fractions may be non-identifiable, so prefer a lower-energy preset when age is unknown
 
 **For Uranium isotopics:**
   * **HPGe U (120-1001 keV).xml** - RECOMMENDED for U-235/U-238 enrichment analysis
@@ -120,7 +120,7 @@ The workflow is guided by a state machine with 7 states. Use `set_workflow_state
 
 **Actions:**
 * Call `perform_isotopics_calculation` (no parameters needed - uses loaded configuration)
-* The tool will return mass fractions with uncertainties for each isotope
+* The tool returns structured covariance quality and bounded profile intervals when local Gaussian uncertainties are weak
 * Results include quality metrics (chi-squared per DOF)
 
 
@@ -140,6 +140,7 @@ The workflow is guided by a state machine with 7 states. Use `set_workflow_state
 * Check how well the relative efficiency solution matches peak areas to what would be freely-fit in the spectrum (see observed_efficiencies -> deviation_from_solution_sigma).
   * If the solution under-predicts the peak that would be freely fit - it could be a sign of a missing source, or too much shielding being applied
   * If the solution over-predicts, then perhaps shielding should be added (especially if low energy peaks are over-predicted and/or higher energy peaks under-predict)
+* If mass_fraction_profile_intervals are present, use the 68% profile as the primary uncertainty and the 95% interval for detail. If mass_fraction_status is non_identifiable, say that the data do not identify the fraction over its feasible range. Never turn mass_fraction_local_gaussian_one_sigma_diagnostic into a symmetric reported uncertainty when covariance quality is weak.
 * If solution χ²/DOF is not good, and all the ROIs have poor individual χ²/DOF, then:
   * Try a different peak skew model
 
@@ -282,7 +283,7 @@ Be precise and quantitative - isotopics is a high-stakes measurement.]]></System
         <SuggestedTools>
           <Tool>perform_isotopics_calculation</Tool>
         </SuggestedTools>
-        <PromptGuidance>Call perform_isotopics_calculation (no parameters - uses loaded configuration). The tool will return mass fractions, uncertainties, and quality metrics. For Pu may include Pu-242 corrections. For U will show U-235 enrichment. Transition to EVALUATE_RESULTS to assess quality.</PromptGuidance>
+        <PromptGuidance>Call perform_isotopics_calculation (no parameters - uses loaded configuration). The tool returns structured mass-fraction covariance quality and, when needed, bounded 68% and 95% profile intervals with endpoint classifications. Treat a non-identifiable profile as the scientific result; never restate the local Gaussian diagnostic as a usable symmetric uncertainty. For Pu it may include Pu-242-corrected and uncorrected fitted fractions plus an extrapolation warning. For U it reports U-235 enrichment. Transition to EVALUATE_RESULTS to assess quality.</PromptGuidance>
       </State>
 
       <State name="EVALUATE_RESULTS">

@@ -130,14 +130,14 @@ std::vector<CubicSplineNodeT<T>> create_cubic_spline_legacy( const std::vector<s
   {
     const double h = transformed_energies[i+1] - transformed_energies[i];
 
-    nodes[i].x = transformed_energies[i];
+    nodes[i].x = T( transformed_energies[i] );
     nodes[i].y = offsets[i];
     nodes[i].a = (b_vals[i+1] - b_vals[i]) / (3.0 * h);
     nodes[i].b = b_vals[i];
     nodes[i].c = (offsets[i+1] - offsets[i]) / h - (2.0 * b_vals[i] + b_vals[i+1]) * h / 3.0;
   }
 
-  nodes[n-1].x = transformed_energies[n-1];
+  nodes[n-1].x = T( transformed_energies[n-1] );
   nodes[n-1].y = offsets[n-1];
   nodes[n-1].a = T(0.0);
   nodes[n-1].b = T(0.0);
@@ -246,10 +246,11 @@ BOOST_AUTO_TEST_CASE( CubicSplineFullDeriv_CloseToLegacyJet )
     dev_pairs.emplace_back( anchor_energies[i], offset );
   }
 
-  const std::vector<CubicSplineNodeT<Jet3>> legacy_nodes = RelActCalcAutoImp::create_cubic_spline( dev_pairs );
+  const std::vector<CubicSplineNodeT<Jet3>> legacy_nodes = create_cubic_spline_legacy( dev_pairs );
   const std::vector<CubicSplineNodeT<Jet3>> full_nodes = RelActCalcAutoImp::create_cubic_spline( dev_pairs );
   BOOST_REQUIRE_EQUAL( legacy_nodes.size(), full_nodes.size() );
 
+  bool saw_knot_motion_derivative = false;
   for( size_t i = 0; i < legacy_nodes.size(); ++i )
   {
     BOOST_CHECK_SMALL( std::fabs( legacy_nodes[i].x.a - full_nodes[i].x.a ), 1.0e-10 );
@@ -257,6 +258,14 @@ BOOST_AUTO_TEST_CASE( CubicSplineFullDeriv_CloseToLegacyJet )
     BOOST_CHECK_SMALL( std::fabs( legacy_nodes[i].a.a - full_nodes[i].a.a ), 1.0e-8 );
     BOOST_CHECK_SMALL( std::fabs( legacy_nodes[i].b.a - full_nodes[i].b.a ), 1.0e-8 );
     BOOST_CHECK_SMALL( std::fabs( legacy_nodes[i].c.a - full_nodes[i].c.a ), 1.0e-8 );
+
+    for( size_t d = 0; d < 3; ++d )
+    {
+      saw_knot_motion_derivative = saw_knot_motion_derivative
+        || (std::fabs(legacy_nodes[i].a.v[d] - full_nodes[i].a.v[d]) > 1.0e-15)
+        || (std::fabs(legacy_nodes[i].b.v[d] - full_nodes[i].b.v[d]) > 1.0e-15)
+        || (std::fabs(legacy_nodes[i].c.v[d] - full_nodes[i].c.v[d]) > 1.0e-15);
+    }
   }
 
   for( double energy = 200.0; energy <= 1700.0; energy += 100.0 )
@@ -271,20 +280,13 @@ BOOST_AUTO_TEST_CASE( CubicSplineFullDeriv_CloseToLegacyJet )
     const Jet3 y_full = eval_cubic_spline( e, full_nodes );
 
     BOOST_CHECK_SMALL( std::fabs( y_legacy.a - y_full.a ), 5.0e-8 );
-
-    const double frac_thresh = 1.0e-4;  // 0.01%
-    const double deriv_floor = 1.0e-12;
-
-    const double rel_diff_v0 = std::fabs( y_legacy.v[0] - y_full.v[0] )
-                               / (std::max)( deriv_floor, std::fabs( y_legacy.v[0] ) );
-    const double rel_diff_v1 = std::fabs( y_legacy.v[1] - y_full.v[1] )
-                               / (std::max)( deriv_floor, std::fabs( y_legacy.v[1] ) );
-    const double rel_diff_v2 = std::fabs( y_legacy.v[2] - y_full.v[2] )
-                               / (std::max)( deriv_floor, std::fabs( y_legacy.v[2] ) );
-    BOOST_CHECK_SMALL( rel_diff_v0, frac_thresh );
-    BOOST_CHECK_SMALL( rel_diff_v1, frac_thresh );
-    BOOST_CHECK_SMALL( rel_diff_v2, frac_thresh );
   }
+
+  // The full implementation deliberately includes knot-motion derivatives;
+  // the legacy helper deliberately does not.  They must agree in scalar value,
+  // but a test claiming their Jet coefficients are equal would be testing away
+  // the behavior this implementation was introduced to provide.
+  BOOST_CHECK( saw_knot_motion_derivative );
 }
 
 
@@ -307,21 +309,17 @@ BOOST_AUTO_TEST_CASE( CubicSplineFullDeriv_AtKnotEnergies )
     dev_pairs.emplace_back( anchor_energies[i], offset );
   }
 
-  const std::vector<CubicSplineNodeT<Jet3>> legacy_nodes = RelActCalcAutoImp::create_cubic_spline( dev_pairs );
+  const std::vector<CubicSplineNodeT<Jet3>> legacy_nodes = create_cubic_spline_legacy( dev_pairs );
   const std::vector<CubicSplineNodeT<Jet3>> full_nodes = RelActCalcAutoImp::create_cubic_spline( dev_pairs );
   BOOST_REQUIRE_EQUAL( legacy_nodes.size(), full_nodes.size() );
 
   // Check exactly at transformed knot positions and immediately around them.
   // At exact knot locations, piecewise interval selection makes the legacy/full-deriv
   // implementations diverge slightly more than away from knots; keep a modest guardrail.
-  const double frac_thresh = 5.0e-4;  // 0.05%
-  const double deriv_floor = 1.0e-12;
   const double eps = 1.0e-6;
 
-  double max_rel_v0 = 0.0;
-  double max_rel_v1 = 0.0;
-  double max_rel_v2 = 0.0;
   double max_abs_val_diff = 0.0;
+  bool saw_derivative_difference = false;
 
   auto update_stats = [&]( const double energy_value ) {
     Jet3 e;
@@ -333,16 +331,9 @@ BOOST_AUTO_TEST_CASE( CubicSplineFullDeriv_AtKnotEnergies )
     const Jet3 y_legacy = eval_cubic_spline( e, legacy_nodes );
     const Jet3 y_full = eval_cubic_spline( e, full_nodes );
 
-    const double rel_v0 = std::fabs( y_legacy.v[0] - y_full.v[0] )
-                          / (std::max)( deriv_floor, std::fabs( y_legacy.v[0] ) );
-    const double rel_v1 = std::fabs( y_legacy.v[1] - y_full.v[1] )
-                          / (std::max)( deriv_floor, std::fabs( y_legacy.v[1] ) );
-    const double rel_v2 = std::fabs( y_legacy.v[2] - y_full.v[2] )
-                          / (std::max)( deriv_floor, std::fabs( y_legacy.v[2] ) );
-
-    max_rel_v0 = (std::max)( max_rel_v0, rel_v0 );
-    max_rel_v1 = (std::max)( max_rel_v1, rel_v1 );
-    max_rel_v2 = (std::max)( max_rel_v2, rel_v2 );
+    for( size_t d = 0; d < 3; ++d )
+      saw_derivative_difference = saw_derivative_difference
+        || (std::fabs(y_legacy.v[d] - y_full.v[d]) > 1.0e-15);
     max_abs_val_diff = (std::max)( max_abs_val_diff, std::fabs( y_legacy.a - y_full.a ) );
   };
 
@@ -355,13 +346,97 @@ BOOST_AUTO_TEST_CASE( CubicSplineFullDeriv_AtKnotEnergies )
   }
 
   BOOST_CHECK_SMALL( max_abs_val_diff, 1.0e-7 );
-  BOOST_CHECK_SMALL( max_rel_v0, frac_thresh );
-  BOOST_CHECK_SMALL( max_rel_v1, frac_thresh );
-  BOOST_CHECK_SMALL( max_rel_v2, frac_thresh );
+  BOOST_CHECK( saw_derivative_difference );
+}
 
-  BOOST_TEST_MESSAGE( "Knot-energy max relative diffs: v0="
-    << (100.0 * max_rel_v0) << "%, v1=" << (100.0 * max_rel_v1)
-    << "%, v2=" << (100.0 * max_rel_v2) << "%" );
+
+BOOST_AUTO_TEST_CASE( CubicSplineFullDeriv_MatchesOffsetFiniteDifferences )
+{
+  using Jet4 = ceres::Jet<double,4>;
+
+  const std::vector<double> anchors = { 150.0, 500.0, 900.0, 1300.0 };
+  const std::vector<double> offsets = { 0.6, 1.1, 0.9, 0.4 };
+  std::vector<std::pair<double,Jet4>> jet_pairs;
+  for( size_t i = 0; i < anchors.size(); ++i )
+  {
+    Jet4 offset( offsets[i] );
+    offset.v[i] = 1.0;
+    jet_pairs.emplace_back( anchors[i], offset );
+  }
+
+  const auto jet_nodes = RelActCalcAutoImp::create_cubic_spline( jet_pairs );
+  const Jet4 value = eval_cubic_spline( Jet4(775.0), jet_nodes );
+  constexpr double eps = 1.0e-5;
+
+  for( size_t varied = 0; varied < offsets.size(); ++varied )
+  {
+    std::vector<std::pair<double,double>> plus_pairs, minus_pairs;
+    for( size_t i = 0; i < anchors.size(); ++i )
+    {
+      plus_pairs.emplace_back( anchors[i], offsets[i] + ((i == varied) ? eps : 0.0) );
+      minus_pairs.emplace_back( anchors[i], offsets[i] - ((i == varied) ? eps : 0.0) );
+    }
+    const double plus = eval_cubic_spline( 775.0, RelActCalcAutoImp::create_cubic_spline(plus_pairs) );
+    const double minus = eval_cubic_spline( 775.0, RelActCalcAutoImp::create_cubic_spline(minus_pairs) );
+    const double finite_difference = (plus - minus) / (2.0 * eps);
+    const double tolerance = 2.0e-6 * (std::max)( 1.0, std::fabs(finite_difference) );
+    BOOST_CHECK_SMALL( std::fabs(value.v[varied] - finite_difference), tolerance );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( CubicSplineClamp_HasCoherentScalarAndJetState )
+{
+  using Jet3 = ceres::Jet<double,3>;
+
+  // The middle raw transformed knot is 99 keV, so both implementations must
+  // select x=100.1 and y=0.9 on the active clamp branch.
+  const std::vector<std::pair<double,double>> scalar_pairs = {
+    {100.0, 0.0}, {101.0, 2.0}, {200.0, 0.0}
+  };
+  std::vector<std::pair<double,Jet3>> jet_pairs;
+  for( size_t i = 0; i < scalar_pairs.size(); ++i )
+  {
+    Jet3 offset( scalar_pairs[i].second );
+    offset.v[i] = 1.0;
+    jet_pairs.emplace_back( scalar_pairs[i].first, offset );
+  }
+
+  const auto scalar_nodes = RelActCalcAutoImp::create_cubic_spline( scalar_pairs );
+  const auto jet_nodes = RelActCalcAutoImp::create_cubic_spline( jet_pairs );
+  BOOST_REQUIRE_EQUAL( scalar_nodes.size(), jet_nodes.size() );
+  BOOST_CHECK_SMALL( std::fabs(scalar_nodes[1].x - 100.1), 1.0e-12 );
+  BOOST_CHECK_SMALL( std::fabs(scalar_nodes[1].y - 0.9), 1.0e-12 );
+
+  for( size_t i = 0; i < scalar_nodes.size(); ++i )
+  {
+    BOOST_CHECK_SMALL( std::fabs(scalar_nodes[i].x - jet_nodes[i].x.a), 1.0e-12 );
+    BOOST_CHECK_SMALL( std::fabs(scalar_nodes[i].y - jet_nodes[i].y.a), 1.0e-12 );
+    BOOST_CHECK_SMALL( std::fabs(scalar_nodes[i].a - jet_nodes[i].a.a), 1.0e-10 );
+    BOOST_CHECK_SMALL( std::fabs(scalar_nodes[i].b - jet_nodes[i].b.a), 1.0e-10 );
+    BOOST_CHECK_SMALL( std::fabs(scalar_nodes[i].c - jet_nodes[i].c.a), 1.0e-10 );
+  }
+
+  constexpr double eval_energy = 150.0;
+  const double scalar_value = eval_cubic_spline( eval_energy, scalar_nodes );
+  const Jet3 jet_value = eval_cubic_spline( Jet3(eval_energy), jet_nodes );
+  BOOST_CHECK_SMALL( std::fabs(scalar_value - jet_value.a), 1.0e-10 );
+
+  constexpr double eps = 1.0e-6;
+  for( size_t varied = 0; varied < scalar_pairs.size(); ++varied )
+  {
+    auto plus_pairs = scalar_pairs;
+    auto minus_pairs = scalar_pairs;
+    plus_pairs[varied].second += eps;
+    minus_pairs[varied].second -= eps;
+    const double plus = eval_cubic_spline( eval_energy,
+                            RelActCalcAutoImp::create_cubic_spline(plus_pairs) );
+    const double minus = eval_cubic_spline( eval_energy,
+                            RelActCalcAutoImp::create_cubic_spline(minus_pairs) );
+    const double finite_difference = (plus - minus) / (2.0 * eps);
+    const double tolerance = 2.0e-5 * (std::max)( 1.0, std::fabs(finite_difference) );
+    BOOST_CHECK_SMALL( std::fabs(jet_value.v[varied] - finite_difference), tolerance );
+  }
 }
 
 
@@ -393,6 +468,60 @@ BOOST_AUTO_TEST_CASE( DeviationPairCorrection )
 
     // Should match within tolerance
     BOOST_CHECK_SMALL( std::fabs(our_correction - specutils_correction), 0.001 );  // 1 eV tolerance
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( DeviationPairCorrection_JetMatchesAllInputFiniteDifferences )
+{
+  using Jet5 = ceres::Jet<double,5>;
+
+  const std::vector<double> anchors = { 500.0, 1000.0, 1500.0, 2000.0 };
+  const std::vector<double> offsets = { 1.5, 2.0, 1.0, 0.5 };
+  std::vector<std::pair<double,Jet5>> jet_pairs;
+  for( size_t i = 0; i < anchors.size(); ++i )
+  {
+    Jet5 offset( offsets[i] );
+    offset.v[i + 1] = 1.0;
+    jet_pairs.emplace_back( anchors[i], offset );
+  }
+
+  Jet5 energy( 1200.0 );
+  energy.v[0] = 1.0;
+  const Jet5 answer = correction_due_to_deviation_pairs(
+                        energy, RelActCalcAutoImp::create_cubic_spline(jet_pairs) );
+
+  const auto scalar_answer = [&]( const double eval_energy,
+                                  const std::vector<double> &eval_offsets ) -> double {
+    std::vector<std::pair<double,double>> pairs;
+    for( size_t i = 0; i < anchors.size(); ++i )
+      pairs.emplace_back( anchors[i], eval_offsets[i] );
+    return correction_due_to_deviation_pairs(
+             eval_energy, RelActCalcAutoImp::create_cubic_spline(pairs) );
+  };
+
+  BOOST_CHECK_SMALL( std::fabs(answer.a - scalar_answer(1200.0, offsets)), 1.0e-9 );
+  constexpr double eps = 1.0e-4;
+  for( size_t lane = 0; lane < 5; ++lane )
+  {
+    double plus_energy = 1200.0, minus_energy = 1200.0;
+    auto plus_offsets = offsets;
+    auto minus_offsets = offsets;
+    if( lane == 0 )
+    {
+      plus_energy += eps;
+      minus_energy -= eps;
+    }
+    else
+    {
+      plus_offsets[lane - 1] += eps;
+      minus_offsets[lane - 1] -= eps;
+    }
+    const double finite_difference =
+      (scalar_answer(plus_energy, plus_offsets) - scalar_answer(minus_energy, minus_offsets))
+      / (2.0 * eps);
+    const double tolerance = 2.0e-5 * (std::max)( 1.0, std::fabs(finite_difference) );
+    BOOST_CHECK_SMALL( std::fabs(answer.v[lane] - finite_difference), tolerance );
   }
 }
 
@@ -437,9 +566,11 @@ BOOST_AUTO_TEST_CASE( PolynomialChannel_Quadratic )
 
 BOOST_AUTO_TEST_CASE( PolynomialChannel_Cubic )
 {
-  // Test cubic polynomial: E = 5 + 1.5*ch + 0.002*ch² - 0.000001*ch³
+  // Keep the calibration monotonic over the detector range so this test exercises
+  // the cubic inverse instead of silently executing zero loop iterations.
+  // E = 5 + 1.5*ch + 0.0002*ch² + 0.00000001*ch³
   const size_t nchannel = 4096;
-  std::vector<double> coeffs = { 5.0, 1.5, 0.002, -0.000001 };
+  std::vector<double> coeffs = { 5.0, 1.5, 0.0002, 0.00000001 };
   std::vector<pair<double,double>> dev_pairs;
 
   // Compute max energy for the calibration
@@ -562,6 +693,40 @@ BOOST_AUTO_TEST_CASE( PolynomialChannel_DeviationPairs_JetDerivative )
 
   BOOST_CHECK_SMALL( std::fabs( jet_channel.a - ch_val ), 1.0e-6 );
   BOOST_CHECK_SMALL( std::fabs( jet_channel.v[0] - fd_deriv ), 1.0e-3 );
+}
+
+
+BOOST_AUTO_TEST_CASE( PolynomialChannel_DeclaredZeroCoefficientsRemainActive )
+{
+  using Jet5 = ceres::Jet<double,5>;
+  const size_t nchannel = 1024;
+
+  Jet5 energy( 100.0 );
+  energy.v[0] = 1.0;
+  const std::vector<double> scalar_coeffs = { 0.0, 1.0, 0.0, 0.0 };
+  std::vector<Jet5> coeffs;
+  for( size_t i = 0; i < scalar_coeffs.size(); ++i )
+  {
+    Jet5 coefficient( scalar_coeffs[i] );
+    coefficient.v[i + 1] = 1.0;
+    coeffs.push_back( coefficient );
+  }
+
+  const std::vector<std::pair<double,Jet5>> no_deviation_pairs;
+  const Jet5 channel = find_polynomial_channel(
+                         energy, coeffs, nchannel, no_deviation_pairs );
+  BOOST_CHECK_SMALL( std::fabs(channel.a - 100.0), 2.0e-3 );
+
+  const double denergy_dchannel = 1.0;
+  BOOST_CHECK_SMALL( std::fabs(channel.v[0] - 1.0/denergy_dchannel), 1.0e-10 );
+  double channel_power = 1.0;
+  for( size_t coefficient = 0; coefficient < scalar_coeffs.size(); ++coefficient )
+  {
+    const double expected = -channel_power / denergy_dchannel;
+    const double tolerance = 1.0e-9 * (std::max)( 1.0, std::fabs(expected) );
+    BOOST_CHECK_SMALL( std::fabs(channel.v[coefficient + 1] - expected), tolerance );
+    channel_power *= channel.a;
+  }
 }
 
 
@@ -759,6 +924,41 @@ BOOST_AUTO_TEST_CASE( FullRangeFraction_DeviationPairs_JetDerivative )
 }
 
 
+BOOST_AUTO_TEST_CASE( FullRangeFraction_DeclaredZeroCoefficientsRemainActive )
+{
+  using Jet6 = ceres::Jet<double,6>;
+  const size_t nchannel = 1024;
+
+  Jet6 energy( 500.0 );
+  energy.v[0] = 1.0;
+  const std::vector<double> scalar_coeffs = { 0.0, 1000.0, 0.0, 0.0, 0.0 };
+  std::vector<Jet6> coeffs;
+  for( size_t i = 0; i < scalar_coeffs.size(); ++i )
+  {
+    Jet6 coefficient( scalar_coeffs[i] );
+    coefficient.v[i + 1] = 1.0;
+    coeffs.push_back( coefficient );
+  }
+
+  const std::vector<std::pair<double,Jet6>> no_deviation_pairs;
+  const Jet6 bin = find_fullrangefraction_channel(
+                     energy, coeffs, nchannel, no_deviation_pairs );
+  BOOST_CHECK_SMALL( std::fabs(bin.a - 512.0), 2.0e-3 );
+
+  const double x = bin.a / static_cast<double>(nchannel);
+  const double denergy_dbin = 1000.0 / static_cast<double>(nchannel);
+  BOOST_CHECK_SMALL( std::fabs(bin.v[0] - 1.0/denergy_dbin), 1.0e-10 );
+  const std::vector<double> basis = {
+    1.0, x, x*x, x*x*x, 1.0/(1.0 + 60.0*x)
+  };
+  for( size_t coefficient = 0; coefficient < basis.size(); ++coefficient )
+  {
+    const double expected = -basis[coefficient] / denergy_dbin;
+    BOOST_CHECK_SMALL( std::fabs(bin.v[coefficient + 1] - expected), 1.0e-8 );
+  }
+}
+
+
 BOOST_AUTO_TEST_CASE( FullRangeFraction_ManyDeviationPairs )
 {
   // Test FRF with many deviation pairs
@@ -856,6 +1056,106 @@ BOOST_AUTO_TEST_CASE( LowerChannelEdge_WithDeviationPairs )
     BOOST_CHECK( channel_with_devpairs >= 0.0 );
     BOOST_CHECK( channel_with_devpairs < static_cast<double>(nchannel) );
     BOOST_CHECK( std::isfinite(channel_with_devpairs) );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( LowerChannelEdge_DeviationPairs_AreExactInverse )
+{
+  const std::vector<float> channel_energies = {
+    0.0f, 100.0f, 200.0f, 300.0f
+  };
+  const std::vector<std::pair<double,double>> deviation_pairs = {
+    {0.0, 0.0}, {100.0, 15.0}, {200.0, -5.0}, {300.0, 0.0}
+  };
+  const auto spline = RelActCalcAutoImp::create_cubic_spline( deviation_pairs );
+
+  for( const double original_channel : { 0.2, 0.8, 1.3, 1.8, 2.4 } )
+  {
+    const double energy = RelActCalcAutoImp::lowerchannel_energy(
+                            original_channel, channel_energies, spline );
+    const double recovered_channel = find_lowerchannel_channel(
+                                       energy, channel_energies, deviation_pairs );
+    BOOST_CHECK_SMALL( std::fabs(recovered_channel - original_channel), 1.0e-8 );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( LowerChannelEdge_AllAdjustmentLanesMatchFiniteDifferences )
+{
+  using Jet7 = ceres::Jet<double,7>;
+  const std::vector<float> channel_energies = {
+    0.0f, 100.0f, 200.0f, 300.0f
+  };
+  const std::vector<double> anchors = { 0.0, 100.0, 200.0, 300.0 };
+  const std::vector<double> offsets = { 0.0, 15.0, -5.0, 0.0 };
+
+  std::vector<std::pair<double,Jet7>> jet_pairs;
+  for( size_t i = 0; i < anchors.size(); ++i )
+  {
+    Jet7 offset( offsets[i] );
+    offset.v[i + 1] = 1.0;
+    jet_pairs.emplace_back( anchors[i], offset );
+  }
+  Jet7 energy( 155.0 );
+  energy.v[0] = 1.0;
+  Jet7 offset_adjustment( 2.0 );
+  offset_adjustment.v[5] = 1.0;
+  Jet7 gain_adjustment( 5.0 );
+  gain_adjustment.v[6] = 1.0;
+
+  const Jet7 answer = find_lowerchannel_channel(
+                        energy, channel_energies, jet_pairs,
+                        offset_adjustment, gain_adjustment );
+
+  const auto scalar_answer = [&]( const double eval_energy,
+                                  const std::vector<double> &eval_offsets,
+                                  const double eval_offset_adjustment,
+                                  const double eval_gain_adjustment ) -> double {
+    std::vector<std::pair<double,double>> pairs;
+    for( size_t i = 0; i < anchors.size(); ++i )
+      pairs.emplace_back( anchors[i], eval_offsets[i] );
+    return find_lowerchannel_channel( eval_energy, channel_energies, pairs,
+                                      eval_offset_adjustment, eval_gain_adjustment );
+  };
+
+  BOOST_CHECK_SMALL( std::fabs(answer.a - scalar_answer(155.0, offsets, 2.0, 5.0)), 1.0e-9 );
+  constexpr double eps = 1.0e-5;
+  for( size_t lane = 0; lane < 7; ++lane )
+  {
+    double plus_energy = 155.0, minus_energy = 155.0;
+    auto plus_offsets = offsets;
+    auto minus_offsets = offsets;
+    double plus_offset_adjustment = 2.0, minus_offset_adjustment = 2.0;
+    double plus_gain_adjustment = 5.0, minus_gain_adjustment = 5.0;
+
+    if( lane == 0 )
+    {
+      plus_energy += eps;
+      minus_energy -= eps;
+    }
+    else if( lane <= offsets.size() )
+    {
+      plus_offsets[lane - 1] += eps;
+      minus_offsets[lane - 1] -= eps;
+    }
+    else if( lane == 5 )
+    {
+      plus_offset_adjustment += eps;
+      minus_offset_adjustment -= eps;
+    }
+    else
+    {
+      plus_gain_adjustment += eps;
+      minus_gain_adjustment -= eps;
+    }
+
+    const double finite_difference =
+      (scalar_answer(plus_energy, plus_offsets, plus_offset_adjustment, plus_gain_adjustment)
+       - scalar_answer(minus_energy, minus_offsets, minus_offset_adjustment, minus_gain_adjustment))
+      / (2.0 * eps);
+    const double tolerance = 5.0e-5 * (std::max)( 1.0, std::fabs(finite_difference) );
+    BOOST_CHECK_SMALL( std::fabs(answer.v[lane] - finite_difference), tolerance );
   }
 }
 
@@ -1311,8 +1611,7 @@ BOOST_AUTO_TEST_CASE( EdgeCases )
 
 BOOST_AUTO_TEST_CASE( PolynomialChannel_OutOfRange_BelowLowerBound )
 {
-  // Use 4 non-zero coefficients to force the binary-search path (the linear
-  // and quadratic analytical paths don't have the historical clamp bug).
+  // Use 4 non-zero coefficients to exercise the generic scalar-root/IFT path.
   // Effectively linear: E = 10 + 0.5*ch + 1e-8*ch^2 + 1e-11*ch^3
   const size_t nchannel = 1000;
   const std::vector<double> coeffs = { 10.0, 0.5, 1.0e-8, 1.0e-11 };
@@ -1356,6 +1655,65 @@ BOOST_AUTO_TEST_CASE( PolynomialChannel_OutOfRange_BelowLowerBound )
   // effectively linear out here; C2, C3 contributions are negligible).
   const double expected_dch_dE = 1.0 / coeffs[1];
   BOOST_CHECK_SMALL( std::fabs(channel_jet.v[0] - expected_dch_dE), 1.0e-6 );
+}
+
+
+BOOST_AUTO_TEST_CASE( QuadraticPolynomialChannel_OutOfRange_UsesExtendedInverse )
+{
+  // Regression for the distinct three-coefficient analytic branch: both quadratic roots are
+  // outside the native [0,nchannel) interval, but the positive root is the valid monotone
+  // extrapolated inverse and must not collapse to constant channel zero.
+  const size_t nchannel = 1000;
+  const std::vector<double> coeffs{ 10.0, 0.5, 1.0e-8 };
+  const std::vector<std::pair<double,double>> no_dev_pairs;
+  const double energy = 600.0;
+  constexpr double tight_accuracy = 1.0e-10;
+
+  const double channel = find_polynomial_channel(
+      energy,coeffs,nchannel,no_dev_pairs,tight_accuracy );
+  BOOST_CHECK_GT( channel,static_cast<double>(nchannel) );
+  BOOST_CHECK_CLOSE( channel,1179.972153314,0.001 );
+  BOOST_CHECK_SMALL( polynomial_energy(channel,coeffs,
+      std::vector<RelActCalcAutoImp::CubicSplineNodeT<double>>{}) - energy,1.0e-3 );
+
+  // Exercise independent energy, offset, gain, and active-quadratic Jet lanes.  Every lane must
+  // agree with a fresh scalar finite difference at the extrapolated root.
+  using Jet4 = ceres::Jet<double,4>;
+  Jet4 energy_jet(energy);
+  energy_jet.v[0] = 1.0;
+  std::vector<Jet4> coeffs_jet;
+  for( size_t i = 0; i < coeffs.size(); ++i )
+  {
+    Jet4 coefficient(coeffs[i]);
+    coefficient.v[i+1] = 1.0;
+    coeffs_jet.push_back(coefficient);
+  }
+  const Jet4 answer = find_polynomial_channel(
+      energy_jet,coeffs_jet,nchannel,std::vector<std::pair<double,Jet4>>{},tight_accuracy );
+  BOOST_CHECK_CLOSE( answer.a,channel,1.0e-8 );
+
+  constexpr double steps[4] = { 1.0e-2,1.0e-2,1.0e-4,1.0e-10 };
+  for( size_t lane = 0; lane < 4; ++lane )
+  {
+    double plus_energy = energy,minus_energy = energy;
+    std::vector<double> plus_coeffs = coeffs,minus_coeffs = coeffs;
+    if( lane == 0 )
+    {
+      plus_energy += steps[lane];
+      minus_energy -= steps[lane];
+    }else
+    {
+      plus_coeffs[lane-1] += steps[lane];
+      minus_coeffs[lane-1] -= steps[lane];
+    }
+    const double plus = find_polynomial_channel(
+        plus_energy,plus_coeffs,nchannel,no_dev_pairs,tight_accuracy );
+    const double minus = find_polynomial_channel(
+        minus_energy,minus_coeffs,nchannel,no_dev_pairs,tight_accuracy );
+    const double finite_difference = (plus-minus)/(2.0*steps[lane]);
+    BOOST_CHECK_SMALL( answer.v[lane]-finite_difference,
+                       4.0e-3*(1.0+std::fabs(finite_difference)) );
+  }
 }
 
 

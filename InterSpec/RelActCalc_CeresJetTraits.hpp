@@ -1,3 +1,20 @@
+#ifndef RelActCalc_CeresJetTraits_hpp
+#define RelActCalc_CeresJetTraits_hpp
+
+#include "InterSpec_config.h"
+
+#include <limits>
+
+#include <Eigen/Core>
+#include <ceres/jet.h>
+
+// Current Ceres provides this complete Eigen trait itself.  Retain the local
+// specialization only as a compatibility adapter for older dependencies that
+// lack infinity()/quiet_NaN(); otherwise a more-specialized duplicate can
+// silently drift from Ceres' generic Jet<T,N> implementation.
+#if !defined(INTERSPEC_CERES_JET_NUMTRAITS_HAS_NONFINITE) \
+    || !INTERSPEC_CERES_JET_NUMTRAITS_HAS_NONFINITE
+
 namespace Eigen {
   
   /** To use `Jets<>` in Eigen matrices, `ceres` defines
@@ -49,3 +66,7 @@ namespace Eigen {
     };
   };//struct NumTraits<ceres::Jet<double, N>>
 }//namespace Eigen
+
+#endif // old Ceres Eigen::NumTraits<Jet> compatibility
+
+#endif // RelActCalc_CeresJetTraits_hpp

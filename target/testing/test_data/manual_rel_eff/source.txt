@@ -1,1 +1,19 @@
-File 'spec184_235U_12.9543.n42' is from "An International Database of Reference Gamma Spectra", https://nds.iaea.org/idb/, retrieved on 20241004; file was renamed to reflect uranium enrichment.
+File: spec184_235U_12.9543.n42
+
+Source: International Database of Reference Gamma Spectra, IDB-v2024-01,
+record 184 (original file IDB_U/184_0129543U235.spe), retrieved 2024-10-04.
+The record identifies the United States Support Program as data provider.
+
+Dataset DOI: https://doi.org/10.61092/iaea.gaef-dhff
+Data descriptor: https://doi.org/10.1038/s41597-025-05455-1
+License: Creative Commons Attribution 4.0 International (CC BY 4.0),
+https://creativecommons.org/licenses/by/4.0/
+
+Changes made for this fixture: the original SPE was converted to N42-2012 and
+renamed to show the stated U-235 enrichment.  Its linear energy calibration
+(0, 0.075 keV/channel) was refined to (0.0692044422, 0.0749428347, 0), and
+InterSpec peak fits/nuclide assignments plus manual-relative-efficiency flags
+were saved in the N42 file.  These are test annotations, not original IDB data.
+
+SHA-256 of original SPE: f831779ff25eeae31af532613b4c1d76da5b55c6fcdfaa6e32f108297efe8c07
+SHA-256 of this N42:     014bc03cebd62c0583f76fa921695a146ca1fd7d666b9bf3720021d230edad8c

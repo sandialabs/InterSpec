@@ -676,6 +676,7 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui )
   m_age_container( nullptr ),
   m_age_edit( nullptr ),
   m_fit_age( nullptr ),
+  m_force_profile_mass_fraction( nullptr ),
   m_color_select( nullptr ),
   m_lower_container( nullptr ),
   m_add_constraint_btn( nullptr ),
@@ -772,6 +773,13 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui )
   m_fit_age->setWordWrap( false );
   m_fit_age->checked().connect( this, &RelActAutoGuiNuclide::handleFitAgeChange );
   m_fit_age->unChecked().connect( this, &RelActAutoGuiNuclide::handleFitAgeChange );
+
+  m_force_profile_mass_fraction = upper_container->addNew<WCheckBox>( WString::tr("raagn-force-profile") );
+  m_force_profile_mass_fraction->addStyleClass( "CbNoLineBreak" );
+  m_force_profile_mass_fraction->setWordWrap( false );
+  m_force_profile_mass_fraction->setToolTip( WString::tr("raagn-force-profile-tt") );
+  m_force_profile_mass_fraction->changed().connect( [this]{ m_updated.emit(); } );
+  m_force_profile_mass_fraction->hide();
   
   m_summary_text = upper_container->addNew<WText>();
   m_summary_text->setStyleClass( "RelActAutoGuiNuclideSummaryText" );
@@ -1016,6 +1024,8 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
     m_age_container->hide();
     m_age_range_container->hide();
     m_fit_age->setUnChecked();
+    m_force_profile_mass_fraction->setUnChecked();
+    m_force_profile_mass_fraction->hide();
     
     const string nucstr = m_nuclide_edit->text().toUTF8();
     if( !nucstr.empty() && std::holds_alternative<std::monostate>(nuc_input) )
@@ -1046,6 +1056,7 @@ void RelActAutoGuiNuclide::handleIsotopeChange()
 
   if( nuc )
   {
+    m_force_profile_mass_fraction->show();
     if( IsInf(nuc->halfLife) )
     {
       const string nucstr = m_nuclide_edit->text().toUTF8();
@@ -1474,6 +1485,7 @@ RelActCalcAuto::NucInputInfo RelActAutoGuiNuclide::toNucInputInfo() const
   {
     nuc_info.age = age(); // Must not be negative.
     nuc_info.fit_age = m_fit_age->isChecked();
+    nuc_info.force_profile_mass_fraction = m_force_profile_mass_fraction->isChecked();
 
     if( nuc_info.fit_age )
     {
@@ -1523,6 +1535,8 @@ void RelActAutoGuiNuclide::fromNucInputInfo( const RelActCalcAuto::NucInputInfo 
     m_age_container->hide();
     m_age_edit->setText( "0s" );
     m_fit_age->setUnChecked();
+    m_force_profile_mass_fraction->setUnChecked();
+    m_force_profile_mass_fraction->hide();
     m_age_range_container->hide();
 
     updateAllowedConstraints();
@@ -1553,6 +1567,8 @@ void RelActAutoGuiNuclide::fromNucInputInfo( const RelActCalcAuto::NucInputInfo 
   const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(info.source);
   if( nuc )
   {
+    m_force_profile_mass_fraction->show();
+    m_force_profile_mass_fraction->setChecked( info.force_profile_mass_fraction );
     const bool age_is_fittable = !PeakDef::ageFitNotAllowed(nuc);
     m_age_container->setHidden( !age_is_fittable );
     m_fit_age->setChecked( age_is_fittable && info.fit_age );
@@ -1581,6 +1597,8 @@ void RelActAutoGuiNuclide::fromNucInputInfo( const RelActCalcAuto::NucInputInfo 
     m_fit_age_max_edit->setText( max_str );
   }else
   {
+    m_force_profile_mass_fraction->setUnChecked();
+    m_force_profile_mass_fraction->hide();
     m_age_container->hide();
     m_fit_age->setUnChecked();
     m_age_range_container->hide();
@@ -1765,5 +1783,3 @@ void RelActAutoGuiNuclide::addMassFractionConstraint( const RelActCalcAuto::RelE
 
   m_constraint->setMassFraction( constraint.lower_mass_fraction, constraint.upper_mass_fraction );
 }//void addMassFractionConstraint( const MassFractionConstraint & )
-
-

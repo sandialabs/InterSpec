@@ -145,6 +145,9 @@
 
     <div class="results">
 {% if status.success %}
+{% if status.usable_with_warnings %}
+<div class="warnings"><strong>Solution is usable with warnings.</strong> Review the diagnostics below.</div>
+{% endif %}
 <div>&chi;<sup>2</sup>={{ chi2_str }} and there were {{ dof }} DOF (&chi;<sup>2</sup>/dof={{ chi2_per_dof_str }})</div>
 <div title="Weighted coefficient of determination (&gt;0.999 excellent, 0.99-0.999 good, &lt;0.99 the model is missing structure) and condition number of the fit Jacobian (&lt;~1e4 well-conditioned; &gt;~1e7 some parameter direction is nearly unconstrained).">
 R<sup>2</sup>={{ r2_str }}, &kappa;(J)={{ condition_number_str }}</div>
@@ -220,10 +223,10 @@ R<sup>2</sup>={{ r2_str }}, &kappa;(J)={{ condition_number_str }}</div>
 {% if curve_acts.pu.rows %}
 <table class="nuctable resulttable">
   <caption>Plutonium mass fractions{% if have_multiple_rel_eff %} Rel. Eff. {{ curve_acts.curve_index }}{% endif %}</caption>
-  <thead><tr> <th scope="col">Nuclide</th> <th scope="col">Uncor. % Pu Mass</th> <th scope="col">% Pu Mass</th> <th scope="col">1-&sigma; Uncert</th> </tr></thead>
+  <thead><tr> <th scope="col">Nuclide</th> <th scope="col">Uncor. % Pu Mass</th> <th scope="col">% Pu Mass</th> <th scope="col">68% uncertainty</th> <th scope="col">95% profile interval</th> </tr></thead>
   <tbody>
 {% for row in curve_acts.pu.rows %}
-  <tr><td>{{ row.nuclide }}{% if row.is_by_corr %} (by corr){% endif %}</td>{% if row.is_by_corr %}<td></td>{% else %}<td>{{ pct(row.uncorrected_mass_frac, 4) }}</td>{% endif %}<td>{{ pct(row.mass_frac, 4) }}</td>{% if row.mass_frac_uncert >= 0 %}<td>{{ pct(row.mass_frac_uncert, 4) }}</td>{% else %}<td></td>{% endif %}</tr>
+  <tr><td>{{ row.nuclide }}{% if row.is_by_corr %} (by corr){% endif %}{% if row.correlation_extrapolated %} &#9888; correlation extrapolated outside validated range{% endif %}</td>{% if row.is_by_corr %}<td></td>{% else %}<td>{{ pct(row.uncorrected_mass_frac, 4) }}</td>{% endif %}<td>{{ pct(row.mass_frac, 4) }}</td>{% if row.uncertainty_kind == "non_identifiable" %}<td>Non-identifiable</td>{% else if row.has_primary_interval %}<td>{{ pct(row.primary_lower, 4) }} &ndash; {{ pct(row.primary_upper, 4) }}</td>{% else if row.uncertainty_kind == "gaussian" and row.mass_frac_uncert >= 0 %}<td>&plusmn; {{ pct(row.mass_frac_uncert, 4) }}</td>{% else if row.uncertainty_kind == "locally_unreliable" %}<td>Unreliable locally</td>{% else %}<td></td>{% endif %}{% if existsIn(row, "profile_95_lower") %}<td>{{ pct(row.profile_95_lower, 4) }} &ndash; {{ pct(row.profile_95_upper, 4) }}</td>{% else %}<td>--</td>{% endif %}</tr>
 {% endfor %}
   </tbody>
 </table>
@@ -244,10 +247,10 @@ R<sup>2</sup>={{ r2_str }}, &kappa;(J)={{ condition_number_str }}</div>
 
 <table class="nuctable resulttable">
   <caption>Relative activities and mass fractions{% if have_multiple_rel_eff %} Rel. Eff. {{ curve_acts.curve_index }}{% endif %}</caption>
-  <thead><tr> <th scope="col">Nuclide</th> <th scope="col">Rel. Act.</th> <th scope="col">Total Mas Frac.</th> <th scope="col">Enrichment</th> <th scope="col">Enrich 2&sigma;</th> <th scope="col">Det. Counts</th> <th scope="col">Age</th> </tr></thead>
+  <thead><tr> <th scope="col">Nuclide</th> <th scope="col">Rel. Act.</th> <th scope="col">Total Mas Frac.</th> <th scope="col">Enrichment</th> <th scope="col">Enrich. 68% interval</th> <th scope="col">Enrich. 95% profile</th> <th scope="col">Det. Counts</th> <th scope="col">Age</th> </tr></thead>
   <tbody>
 {% for nuc in curve_acts.nuclides %}
-  <tr><td>{{ nuc.name }}{% if nuc.is_pu242_by_corr %} (by corr){% endif %}</td><td>{{ printCompact(nuc.rel_activity, 6) }} &plusmn; {{ printCompact(nuc.rel_activity_uncertainty, 6) }}</td>{% if existsIn(nuc, "total_mass_fraction") %}<td>{{ pct(nuc.total_mass_fraction, 4) }}%</td>{% if existsIn(nuc, "enrichment") %}<td>{{ pct(nuc.enrichment, 4) }}%</td>{% if nuc.has_enrichment_uncert %}<td>{{ pct(nuc.enrichment_minus_2sigma, 4) }}%, {{ pct(nuc.enrichment_plus_2sigma, 4) }}%</td>{% else %}<td>--</td>{% endif %}{% else %}<td>--</td><td>--</td>{% endif %}{% else %}<td></td><td></td><td></td>{% endif %}{% if existsIn(nuc, "detector_counts") %}<td>{{ printCompact(nuc.detector_counts, 6) }}</td>{% else %}<td></td>{% endif %}{% if existsIn(nuc, "age_str") %}<td>{{ nuc.age_str }}</td>{% else %}<td> -- </td>{% endif %}</tr>
+  <tr><td>{{ nuc.name }}{% if nuc.is_pu242_by_corr %} (by corr){% endif %}{% if nuc.pu242_correlation_extrapolated %} &#9888; extrapolated{% endif %}</td><td>{{ printCompact(nuc.rel_activity, 6) }} &plusmn; {{ printCompact(nuc.rel_activity_uncertainty, 6) }}</td>{% if existsIn(nuc, "total_mass_fraction") %}<td>{{ pct(nuc.total_mass_fraction, 4) }}%</td>{% if existsIn(nuc, "enrichment") %}<td>{{ pct(nuc.enrichment, 4) }}%</td>{% if nuc.enrichment_uncertainty_kind == "non_identifiable" %}<td>Non-identifiable</td>{% else if nuc.has_primary_enrichment_interval %}<td>{{ pct(nuc.enrichment_primary_lower, 4) }}% &ndash; {{ pct(nuc.enrichment_primary_upper, 4) }}%</td>{% else %}<td>--</td>{% endif %}{% if existsIn(nuc, "enrichment_95_lower") %}<td>{{ pct(nuc.enrichment_95_lower, 4) }}% &ndash; {{ pct(nuc.enrichment_95_upper, 4) }}%</td>{% else %}<td>--</td>{% endif %}{% else %}<td>--</td><td>--</td><td>--</td>{% endif %}{% else %}<td></td><td></td><td></td><td></td>{% endif %}{% if existsIn(nuc, "detector_counts") %}<td>{{ printCompact(nuc.detector_counts, 6) }}</td>{% else %}<td></td>{% endif %}{% if existsIn(nuc, "age_str") %}<td>{{ nuc.age_str }}</td>{% else %}<td> -- </td>{% endif %}</tr>
 {% endfor %}
   </tbody>
 </table>

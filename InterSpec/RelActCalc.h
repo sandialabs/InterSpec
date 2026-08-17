@@ -262,7 +262,8 @@ struct Pu242ByCorrelationInput
   T pu239_rel_mass = T(0.0);
   T pu240_rel_mass = T(0.0);
   T pu241_rel_mass = T(0.0);
-  /** A value to capture all other non-Pu242 plutonium isotopes (I dont expect to ever be used) */
+  /** Legacy aggregate for other non-Pu242 plutonium isotopes.  The current correction output has
+   no matching coordinate, so `correct_pu_mass_fractions_for_pu242` rejects a positive value. */
   T other_pu_mass  = T(0.0);
 
   /** The age of the Pu, so this way the mass fractions can be back-corrected to T=0, to ever so slightly increase the accuracy of the correction. */
@@ -355,10 +356,22 @@ const std::string &to_description( const PuCorrMethod method );
  isotopes, as well as Pu242, as determined from the specified correlation estimate
  method.
 
+ Correlation values through a predicted Pu-242 fraction of 0.9 are evaluated by the historical
+ formula exactly.  Above that point a C1 continuation approaches the physical limit of one; this
+ keeps finite positive out-of-domain compositions physical without changing the validated or
+ ordinary extrapolation domain.  `profile_safe_physical_continuation` is reserved for
+ optimizer-internal reported-coordinate constraints: it additionally gives otherwise-singular
+ zero-total/zero-Pu239 trial points a finite physical limiting value.  Nominal callers should leave
+ that argument false so an undefined zero-total composition throws rather than being silently
+ assigned a value.  Correlation-range provenance and its uncertainty bucket are classified at the
+ back-decayed correlation epoch; `pu_age` affects the returned acquisition-time fractions only.
+
  This function is implemented in RelActCalc_imp.hpp, so you will need to include that if you would like to use it.
  */
 template<typename T>
-Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelationInput<T> input, PuCorrMethod method );
+Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242(
+    Pu242ByCorrelationInput<T> input, PuCorrMethod method,
+    bool profile_safe_physical_continuation = false );
 
 
     

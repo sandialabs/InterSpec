@@ -40,7 +40,7 @@ Use `list_isotopics_presets` to see available presets, then `load_isotopics_pres
 |---|---|
 | HPGe Pu (120-780 keV).xml | **Default**. Wide energy range, most comprehensive. |
 | HPGe Pu (120-420 keV).xml | Low-energy region only. Use when low-energy peaks are clean. |
-| HPGe Pu (610-775 keV).xml | High-energy only. Use when Am-241 interference at 59.5 keV is severe. |
+| HPGe Pu (610-775 keV).xml | High-energy only. Age-dependent fractions may be non-identifiable; use when low-energy interference is severe and interpret bounded profiles, or provide a known age. |
 
 **For Uranium:**
 | Preset | When to use |
@@ -75,11 +75,11 @@ If significant interference is found, add the interfering nuclide to the configu
 Call `perform_isotopics_calculation` (no parameters needed - uses current configuration).
 
 Returns:
-- Mass fractions with uncertainties for each isotope
+- Mass fractions with covariance quality and, when needed, bounded 68%/95% profile intervals
 - Relative activities
 - Ages (if fitted)
 - Quality metrics (chi-squared per DOF)
-- Pu-242 corrected values (for Pu analysis, if available)
+- Pu-242 corrected and uncorrected fitted values, including an out-of-range correlation warning
 
 ### Step 6: Evaluate Results
 
@@ -95,6 +95,11 @@ Returns:
 - Check `roi_info -> chi2_per_dof` for individual ROIs to find problem regions
 - High chi2 in a single ROI may indicate missing source, wrong continuum type, or interference
 - For high-statistics ROIs, try changing continuum type (e.g., to stepped continuum)
+
+**Mass-fraction uncertainty:**
+- Use profile intervals as the primary uncertainty when present; inspect their physical/input-bound/likelihood-crossing endpoint kinds
+- Report `non_identifiable` as the result when the whole feasible range remains below threshold
+- A `mass_fraction_local_gaussian_one_sigma_diagnostic` with weak covariance is diagnostic only; do not present it as a symmetric `±`
 
 **Observed efficiencies:**
 - Check `observed_efficiencies -> deviation_from_solution_sigma`

@@ -24,11 +24,13 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <fstream>
 #include <iostream>
 #include <algorithm>
+#include <limits>
 
 // <boost/test/included/unit_test.hpp> includes <windows.h>; pulling winsock2.h in first keeps any
 //  header that later needs it consistent, and protects against a future include pulling
@@ -45,6 +47,7 @@
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
+#include "SpecUtils/EnergyCalibration.h"
 
 #include "SandiaDecay/SandiaDecay.h"
 
@@ -176,6 +179,158 @@ namespace
     options.skew_type = PeakDef::SkewType::NoSkew;  //the simulated spectra are pure Gaussian
     return options;
   }//load_u_inside_u_options()
+
+
+  /** Keep a representative low/high-energy subset of the live two-disk problem and freeze nuisance
+   families.  This remains a genuine shared-source, cross-shielded two-curve solve, while making
+   repeated source-order and one-channel-translation checks practical in the ordinary test suite. */
+  RelActCalcAuto::Options compact_two_disk_options()
+  {
+    RelActCalcAuto::Options options = load_u_inside_u_options();
+    options.auto_profile_weak_mass_fractions = false;
+    options.auto_simplify_model = false;
+    options.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
+    options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_2;
+    options.fwhm_estimation_method
+        = RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum;
+    options.skew_type = PeakDef::SkewType::NoSkew;
+    options.additional_br_uncert = 0.0;
+
+    const size_t roi_indices[] = {0,1,2,3,5,8,9,10,16};
+    vector<RelActCalcAuto::RoiRange> selected_rois;
+    for( const size_t index : roi_indices )
+    {
+      BOOST_REQUIRE_LT( index,options.rois.size() );
+      RelActCalcAuto::RoiRange roi = options.rois[index];
+      roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+      selected_rois.push_back(roi);
+    }
+    options.rois.swap(selected_rois);
+
+    const auto freeze_shield = [](
+        const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &input ) {
+      if( !input )
+        return input;
+      auto fixed = make_shared<RelActCalc::PhysicalModelShieldInput>(*input);
+      fixed->fit_atomic_number = false;
+      fixed->fit_areal_density = false;
+      fixed->lower_fit_areal_density = fixed->areal_density;
+      fixed->upper_fit_areal_density = fixed->areal_density;
+      return shared_ptr<const RelActCalc::PhysicalModelShieldInput>(fixed);
+    };
+
+    for( RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
+    {
+      curve.phys_model_corr.corr_fcn = RelActCalc::PhysModelCorrFcn::None;
+      curve.phys_model_self_atten = freeze_shield(curve.phys_model_self_atten);
+      for( shared_ptr<const RelActCalc::PhysicalModelShieldInput> &shield
+             : curve.phys_model_external_atten )
+        shield = freeze_shield(shield);
+      curve.mass_fraction_constraints.clear();
+      curve.act_ratio_constraints.clear();
+      curve.nuclides.erase( remove_if(curve.nuclides.begin(),curve.nuclides.end(),
+          []( const RelActCalcAuto::NucInputInfo &source ) {
+            const SandiaDecay::Nuclide * const nuclide
+                                             = RelActCalcAuto::nuclide(source.source);
+            return !nuclide || ((nuclide->massNumber != 235)
+                                && (nuclide->massNumber != 238));
+          }),curve.nuclides.end() );
+      BOOST_REQUIRE_EQUAL( curve.nuclides.size(),2u );
+      for( RelActCalcAuto::NucInputInfo &source : curve.nuclides )
+      {
+        source.fit_age = false;
+        source.fit_age_min.reset();
+        source.fit_age_max.reset();
+        source.force_profile_mass_fraction = false;
+      }
+    }
+    return options;
+  }//compact_two_disk_options()
+
+
+  RelActCalcAuto::Options translate_rois_one_measurement_channel(
+                    const RelActCalcAuto::Options &input,
+                    const shared_ptr<const SpecUtils::Measurement> &foreground )
+  {
+    BOOST_REQUIRE( foreground );
+    const shared_ptr<const SpecUtils::EnergyCalibration> calibration
+                                                 = foreground->energy_calibration();
+    BOOST_REQUIRE( calibration && calibration->valid() );
+    RelActCalcAuto::Options translated = input;
+    for( RelActCalcAuto::RoiRange &roi : translated.rois )
+    {
+      const double lower_channel = calibration->channel_for_energy(roi.lower_energy);
+      const double upper_channel = calibration->channel_for_energy(roi.upper_energy);
+      roi.lower_energy = calibration->energy_for_channel(lower_channel + 1.0);
+      roi.upper_energy = calibration->energy_for_channel(upper_channel + 1.0);
+      BOOST_REQUIRE( std::isfinite(roi.lower_energy) && std::isfinite(roi.upper_energy) );
+      BOOST_REQUIRE_LT( roi.lower_energy,roi.upper_energy );
+    }
+    return translated;
+  }//translate_rois_one_measurement_channel(...)
+
+
+  void check_fitted_areal_density_user_bounds(
+                     const RelActCalcAuto::Options &options,
+                     const RelActCalcAuto::RelActAutoSolution &solution )
+  {
+    BOOST_REQUIRE_EQUAL( solution.m_phys_model_results.size(),
+                         options.rel_eff_curves.size() );
+    const auto check_one = []( const RelActCalc::PhysicalModelShieldInput &configured,
+                               const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo::ShieldInfo &fitted,
+                               const string &label ) {
+      if( !configured.fit_areal_density )
+        return;
+      BOOST_CHECK_MESSAGE( fitted.areal_density_was_fit,
+                           label << " was configured to fit areal density" );
+      BOOST_REQUIRE_MESSAGE( std::isfinite(fitted.areal_density),
+                             label << " returned non-finite areal density" );
+      // These are the exact user bounds supplied to Ceres.  Permit only physical-unit conversion
+      // roundoff; a modeling-scale tolerance would hide a regression in bound construction.
+      const double lower_tolerance = 64.0*std::numeric_limits<double>::epsilon()
+                                  *(1.0 + std::fabs(configured.lower_fit_areal_density));
+      BOOST_CHECK_MESSAGE( fitted.areal_density
+                              >= configured.lower_fit_areal_density-lower_tolerance,
+                           label << " areal density " << fitted.areal_density
+                                 << " is below configured lower bound "
+                                 << configured.lower_fit_areal_density );
+      if( configured.upper_fit_areal_density > configured.lower_fit_areal_density )
+      {
+        const double upper_tolerance = 64.0*std::numeric_limits<double>::epsilon()
+                                    *(1.0 + std::fabs(configured.upper_fit_areal_density));
+        BOOST_CHECK_MESSAGE( fitted.areal_density
+                                <= configured.upper_fit_areal_density+upper_tolerance,
+                             label << " areal density " << fitted.areal_density
+                                   << " is above configured upper bound "
+                                   << configured.upper_fit_areal_density );
+      }
+    };
+
+    for( size_t curve = 0; curve < options.rel_eff_curves.size(); ++curve )
+    {
+      const RelActCalcAuto::RelEffCurveInput &configured = options.rel_eff_curves[curve];
+      BOOST_REQUIRE_MESSAGE( solution.m_phys_model_results[curve].has_value(),
+                             "No physical-model result for curve " << curve );
+      const RelActCalcAuto::RelActAutoSolution::PhysicalModelFitInfo &fitted
+                                            = *solution.m_phys_model_results[curve];
+      if( configured.phys_model_self_atten )
+      {
+        BOOST_REQUIRE_MESSAGE( fitted.self_atten.has_value(),
+                               "No fitted self attenuator for curve " << curve );
+        check_one(*configured.phys_model_self_atten,*fitted.self_atten,
+                  "curve " + to_string(curve) + " self attenuator");
+      }
+      BOOST_REQUIRE_EQUAL( fitted.ext_shields.size(),
+                           configured.phys_model_external_atten.size() );
+      for( size_t shield = 0; shield < fitted.ext_shields.size(); ++shield )
+      {
+        BOOST_REQUIRE( configured.phys_model_external_atten[shield] );
+        check_one(*configured.phys_model_external_atten[shield],fitted.ext_shields[shield],
+                  "curve " + to_string(curve) + " external attenuator "
+                    + to_string(shield));
+      }
+    }
+  }//check_fitted_areal_density_user_bounds(...)
 }//namespace
 
 
@@ -202,6 +357,11 @@ BOOST_AUTO_TEST_CASE( two_disk_default_seeding_reaches_truth )
 
   BOOST_REQUIRE_MESSAGE( sol.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success,
                          "Solve failed: " << sol.m_error_message );
+
+  check_fitted_areal_density_user_bounds(options,sol);
+
+
+
 
   const double chi2_dof = (sol.m_dof_data > 0) ? sol.m_chi2_data/static_cast<double>(sol.m_dof_data) : -1.0;
   BOOST_CHECK_MESSAGE( (chi2_dof > 0.0) && (chi2_dof < 2.0),
@@ -286,17 +446,157 @@ BOOST_AUTO_TEST_CASE( two_disk_default_seeding_reaches_truth )
 }//BOOST_AUTO_TEST_CASE( two_disk_default_seeding_reaches_truth )
 
 
+// CONV-00/05/10: a source-record permutation is the same frozen mathematical problem, while a
+// +1 measurement-channel translation of every ROI is intentionally a different frozen objective.
+// Use the compact live two-disk configuration so the ordinary five-solve sample plus the
+// translated-objective rebuild are CI practical.  Setting
+// INTERSPEC_REL_ACT_AUTO_EXHAUSTIVE_VALIDATION to a nonzero value runs the literal acceptance
+// matrix: five repeats of every 2x2 within-curve semantic permutation (20 equivalent solves).
+BOOST_AUTO_TEST_CASE( two_disk_source_order_and_one_channel_roi_semantics )
+{
+  set_data_dir();
+  const shared_ptr<const SpecUtils::Measurement> foreground
+                                             = load_meas("easy_two_disk_fore.n42");
+  const shared_ptr<const SpecUtils::Measurement> background
+                                             = load_meas("easy_background_long.n42");
+  const shared_ptr<DetectorPeakResponse> drf = load_detective_x();
+  const PeakFitUtils::CoarseResolutionType det_type
+                                  = PeakFitUtils::coarse_det_type(foreground,nullptr);
+
+  const RelActCalcAuto::Options baseline_options = compact_two_disk_options();
+  BOOST_REQUIRE_EQUAL( baseline_options.rel_eff_curves.size(),2u );
+  // Curve order and the index-valued shielding graph intentionally remain untouched.
+  vector<RelActCalcAuto::Options> permutations(4,baseline_options);
+  reverse(permutations[1].rel_eff_curves[0].nuclides.begin(),
+          permutations[1].rel_eff_curves[0].nuclides.end());
+  reverse(permutations[2].rel_eff_curves[1].nuclides.begin(),
+          permutations[2].rel_eff_curves[1].nuclides.end());
+  for( RelActCalcAuto::RelEffCurveInput &curve : permutations[3].rel_eff_curves )
+    reverse(curve.nuclides.begin(),curve.nuclides.end());
+
+  const char * const exhaustive_env
+      = std::getenv("INTERSPEC_REL_ACT_AUTO_EXHAUSTIVE_VALIDATION");
+  const bool exhaustive = exhaustive_env && exhaustive_env[0]
+                       && (string(exhaustive_env) != "0");
+  const size_t repeats_per_permutation = exhaustive ? size_t(5) : size_t(1);
+  vector<RelActCalcAuto::Options> semantic_options;
+  semantic_options.reserve(repeats_per_permutation*permutations.size() + (exhaustive ? 0u : 1u));
+  for( size_t repeat = 0; repeat < repeats_per_permutation; ++repeat )
+    semantic_options.insert(semantic_options.end(),permutations.begin(),permutations.end());
+  if( !exhaustive )
+    semantic_options.push_back(baseline_options); //ordinary CI: a fifth canonical repeat
+  BOOST_TEST_MESSAGE( "Running " << semantic_options.size()
+                      << " semantic-permutation solves (exhaustive=" << exhaustive << ")" );
+  const RelActCalcAuto::Options translated_options
+             = translate_rois_one_measurement_channel(baseline_options,foreground);
+
+  vector<RelActCalcAuto::RelActAutoSolution> semantic_solutions(semantic_options.size());
+  for( size_t run = 0; run < semantic_options.size(); ++run )
+  {
+    BOOST_REQUIRE_NO_THROW( semantic_solutions[run] = RelActCalcAuto::solve(
+        semantic_options[run],foreground,background,drf,{},det_type,nullptr) );
+    BOOST_REQUIRE_MESSAGE(
+        RelActCalcAuto::RelActAutoSolution::is_usable_status(semantic_solutions[run].m_status),
+        "Within-curve source permutation run " << run
+          << " failed: " << semantic_solutions[run].m_error_message );
+  }
+  const RelActCalcAuto::RelActAutoSolution &baseline = semantic_solutions.front();
+  RelActCalcAuto::RelActAutoSolution translated;
+  BOOST_REQUIRE_NO_THROW( translated = RelActCalcAuto::solve(
+      translated_options,foreground,background,drf,{},det_type,nullptr) );
+  BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(translated.m_status),
+                         "One-channel ROI solve failed: " << translated.m_error_message );
+
+  BOOST_REQUIRE_NE( baseline.m_frozen_gamma_membership_hash,UINT64_C(0) );
+  BOOST_REQUIRE_NE( baseline.m_frozen_layout_hash,UINT64_C(0) );
+  const double full_scale = (std::max)(1.0,std::fabs(baseline.m_chi2));
+  const double data_scale = (std::max)(1.0,std::fabs(baseline.m_chi2_data));
+  for( size_t run = 1; run < semantic_solutions.size(); ++run )
+  {
+    const RelActCalcAuto::RelActAutoSolution &permuted = semantic_solutions[run];
+    BOOST_CHECK_EQUAL( baseline.m_frozen_gamma_membership_hash,
+                       permuted.m_frozen_gamma_membership_hash );
+    BOOST_CHECK_EQUAL( baseline.m_frozen_layout_hash,permuted.m_frozen_layout_hash );
+    BOOST_CHECK_SMALL( baseline.m_chi2-permuted.m_chi2,1.0e-8*full_scale );
+    BOOST_CHECK_SMALL( baseline.m_chi2_data-permuted.m_chi2_data,1.0e-8*data_scale );
+  }
+
+  // Native channel windows are part of the gamma hash, and the residual/parameter layout hash
+  // additionally records those frozen ROI policies.  The translated case must therefore differ;
+  // its chi-square is finite but is not compared numerically with the baseline's changed objective.
+  BOOST_CHECK_NE( baseline.m_frozen_gamma_membership_hash,
+                  translated.m_frozen_gamma_membership_hash );
+  BOOST_CHECK_NE( baseline.m_frozen_layout_hash,translated.m_frozen_layout_hash );
+  BOOST_CHECK( std::isfinite(translated.m_chi2) && (translated.m_chi2 >= 0.0) );
+  BOOST_CHECK( std::isfinite(translated.m_chi2_data) && (translated.m_chi2_data >= 0.0) );
+  BOOST_CHECK_SMALL( translated.m_optimizer_chi2-translated.m_chi2,
+                     1.0e-10*(std::max)(1.0,std::fabs(translated.m_chi2)) );
+
+  const SandiaDecay::Nuclide * const u235
+                                  = DecayDataBaseServer::database()->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238
+                                  = DecayDataBaseServer::database()->nuclide("U238");
+  BOOST_REQUIRE( u235 && u238 );
+  for( size_t run = 0; run < semantic_solutions.size(); ++run )
+  {
+    const RelActCalcAuto::RelActAutoSolution &permuted = semantic_solutions[run];
+    for( size_t curve = 0; curve < baseline_options.rel_eff_curves.size(); ++curve )
+    {
+      BOOST_REQUIRE_EQUAL( permuted.m_rel_activities[curve].size(),
+                           semantic_options[run].rel_eff_curves[curve].nuclides.size() );
+      for( size_t row = 0; row < permuted.m_rel_activities[curve].size(); ++row )
+        BOOST_CHECK( permuted.m_rel_activities[curve][row].source
+                     == semantic_options[run].rel_eff_curves[curve].nuclides[row].source );
+
+      for( const SandiaDecay::Nuclide * const nuclide : {u235,u238} )
+      {
+        const double nominal = baseline.mass_enrichment_fraction(nuclide,curve).first;
+        const double fraction = permuted.mass_enrichment_fraction(nuclide,curve).first;
+        BOOST_CHECK_SMALL( nominal-fraction,1.0e-7 );
+      }
+    }
+  }
+
+  for( size_t curve = 0; curve < baseline_options.rel_eff_curves.size(); ++curve )
+  {
+    for( const SandiaDecay::Nuclide * const nuclide : {u235,u238} )
+    {
+      const double shifted = translated.mass_enrichment_fraction(nuclide,curve).first;
+      BOOST_CHECK( std::isfinite(shifted) && (shifted >= 0.0) && (shifted <= 1.0) );
+    }
+    const double shifted_sum = translated.mass_enrichment_fraction(u235,curve).first
+                             + translated.mass_enrichment_fraction(u238,curve).first;
+    BOOST_CHECK_SMALL( shifted_sum-1.0,1.0e-8 );
+  }
+
+  // The inner curve is the one shielded by the outer disk; the minor ROI edit must retain the
+  // physically separated high-enrichment-inner/low-enrichment-outer basin.
+  for( size_t curve = 0; curve < baseline_options.rel_eff_curves.size(); ++curve )
+  {
+    const bool inner = !baseline_options.rel_eff_curves[curve]
+                          .shielded_by_other_phys_model_curve_shieldings.empty();
+    const double shifted_u235 = translated.mass_enrichment_fraction(u235,curve).first;
+    if( inner )
+      BOOST_CHECK_MESSAGE( shifted_u235 > 0.75,
+                           "Translated inner U-235 fraction=" << shifted_u235 );
+    else
+      BOOST_CHECK_MESSAGE( shifted_u235 < 0.10,
+                           "Translated outer U-235 fraction=" << shifted_u235 );
+  }
+}
+
+
 // Mixed physical + non-physical multi-curve config with an areal-density prior enabled: developer
 //  builds used to spuriously abort on the eval residual-count assert, which omitted
-//  m_phys_model_param_priors (2026-07 review, M6/A29).  The point of this test is simply that a
-//  debug build gets through eval without asserting; the fit quality is irrelevant (ROIs are trimmed
-//  to keep it quick).
+//  m_phys_model_param_priors (2026-07 review, M6/A29).  In addition to reaching eval, require a
+//  usable independently scored result whose emitted curve forms/results match the mixed input.
 BOOST_AUTO_TEST_CASE( mixed_physical_and_empirical_curves_with_ad_prior )
 {
   set_data_dir();
 
   RelActCalcAuto::Options options = load_u_inside_u_options();
   BOOST_REQUIRE_EQUAL( options.rel_eff_curves.size(), size_t(2) );
+  options.auto_profile_weak_mass_fractions = false;
 
   // Keep only a few ROIs so the solve is quick - this test only needs eval to run.
   if( options.rois.size() > 4 )
@@ -345,10 +645,25 @@ BOOST_AUTO_TEST_CASE( mixed_physical_and_empirical_curves_with_ad_prior )
   BOOST_REQUIRE_NO_THROW( sol = RelActCalcAuto::solve( options, foreground, background, drf, {},
                                     PeakFitUtils::coarse_det_type( foreground, nullptr ), nullptr ) );
 
-  // Reaching here in a developer (assert-enabled) build IS the regression check; the solve status
-  //  just must not indicate the problem could not even be set up.
-  BOOST_CHECK( sol.m_status != RelActCalcAuto::RelActAutoSolution::Status::NotInitiated );
-  BOOST_CHECK( sol.m_status != RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem );
+  BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(sol.m_status),
+                         "Mixed physical/empirical solve failed: " << sol.m_error_message );
+  BOOST_REQUIRE_NE( sol.m_frozen_gamma_membership_hash,UINT64_C(0) );
+  BOOST_REQUIRE_NE( sol.m_frozen_layout_hash,UINT64_C(0) );
+  BOOST_CHECK( std::isfinite(sol.m_chi2) && (sol.m_chi2 >= 0.0) );
+  BOOST_CHECK( std::isfinite(sol.m_chi2_data) && (sol.m_chi2_data >= 0.0) );
+  BOOST_CHECK_SMALL( sol.m_optimizer_chi2-sol.m_chi2,
+                     1.0e-10*(std::max)(1.0,std::fabs(sol.m_chi2)) );
+
+  BOOST_REQUIRE_EQUAL( sol.m_rel_eff_forms.size(),2u );
+  BOOST_CHECK( sol.m_rel_eff_forms[0] == RelActCalc::RelEffEqnForm::FramPhysicalModel );
+  BOOST_CHECK( sol.m_rel_eff_forms[1] == RelActCalc::RelEffEqnForm::LnX );
+  BOOST_REQUIRE_EQUAL( sol.m_phys_model_results.size(),2u );
+  BOOST_CHECK( sol.m_phys_model_results[0].has_value() );
+  BOOST_CHECK( !sol.m_phys_model_results[1].has_value() );
+  BOOST_REQUIRE_EQUAL( sol.m_rel_eff_coefficients.size(),2u );
+  BOOST_REQUIRE( !sol.m_rel_eff_coefficients[1].empty() );
+  for( const double coefficient : sol.m_rel_eff_coefficients[1] )
+    BOOST_CHECK( std::isfinite(coefficient) );
 }//BOOST_AUTO_TEST_CASE( mixed_physical_and_empirical_curves_with_ad_prior )
 
 

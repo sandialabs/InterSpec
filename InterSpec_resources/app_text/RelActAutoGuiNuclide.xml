@@ -23,6 +23,7 @@
   
   <!-- Checkboxes -->
   <message id="raagn-fit-age">Fit Age</message>
+  <message id="raagn-force-profile">Always profile</message>
   
   <!-- Buttons -->
   <message id="raagn-add-constraint">Add Constraint</message>
@@ -31,6 +32,7 @@
   <message id="raagn-nuclide-tt">ex. <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (meta stable state), <b>Cs137</b>, Pb, Fe(n,n), etc.</message>
   <message id="raagn-remove-constraint-tt">Remove this constraint</message>
   <message id="raagn-add-constraint-tt">Add a constraint to this nuclide</message>
+  <message id="raagn-force-profile-tt">Always compute bounded profile-likelihood intervals for this nuclide's mass fraction, even when the local covariance appears reliable.</message>
   
   <!-- User messages -->
   <message id="raagn-invalid-nuclide">{1} is not a valid nuclide, x-ray, or reaction.</message>

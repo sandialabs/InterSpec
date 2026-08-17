@@ -631,7 +631,7 @@ double compute_background_fit_penalty(
     return sm_background_fit_penalty_per_spectrum_cap;
   }
 
-  if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+  if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) )
   {
     if( detail_out )
     {
@@ -2516,7 +2516,7 @@ ConfigEvaluation evaluate_for_report(
           pd.background, pd.drf, options, config, pd.peak_fit_prefs );
         FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics();
         const bool success
-          = (result.status == RelActCalcAuto::RelActAutoSolution::Status::Success);
+          = RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status);
         record.has_fit_result = true;
         record.accuracy = ReportDetail::score_observable_peaks(
           pd, result.observable_peaks );
@@ -2528,6 +2528,7 @@ ConfigEvaluation evaluate_for_report(
         switch( result.status )
         {
           case Status::Success: record.status = "Success"; break;
+          case Status::UsableWithWarnings: record.status = "UsableWithWarnings"; break;
           case Status::NotInitiated: record.status = "NotInitiated"; break;
           case Status::FailedToSetupProblem: record.status = "FailedToSetupProblem"; break;
           case Status::FailToSolveProblem: record.status = "FailToSolveProblem"; break;
@@ -2862,7 +2863,7 @@ void write_results_html_and_n42(
         pd.auto_search_peaks, pd.foreground, pd.sources, user_peaks,
         pd.background, pd.drf, options, config, pd.peak_fit_prefs );
 
-      if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+      if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) )
       {
         // A failed foreground fit is the GA's worst case (scored at sm_fit_failure_penalty); record
         //  it so it shows up in the worst-spectra table rather than silently vanishing.

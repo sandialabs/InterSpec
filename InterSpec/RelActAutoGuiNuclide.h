@@ -144,6 +144,7 @@ protected:
   Wt::WContainerWidget *m_age_container;
   Wt::WLineEdit *m_age_edit;  
   Wt::WCheckBox *m_fit_age;
+  Wt::WCheckBox *m_force_profile_mass_fraction;
   ColorSelect *m_color_select;
 
   Wt::WContainerWidget *m_lower_container;

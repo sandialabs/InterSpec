@@ -215,7 +215,7 @@ with the heaviest blobs elided for readability.
 
 | Key | Type | Notes |
 |---|---|---|
-| `status` | object | `success` (bool), `status_code` (int), `fail_reason` (string), `error_message` (string) |
+| `status` | object | `success` (bool), `usable_with_warnings` (bool), `status_code` (int), `fail_reason` (string), `error_message` (string), and `warnings` (array). `success` remains true for a usable independently audited point whose optimizer did not formally converge |
 | `spectrum_title` | string | The user-supplied analysis title |
 | `have_multiple_rel_eff` | bool | True if more than one rel-eff curve was fit |
 | `live_time_s` | number | Spectrum live time, seconds |
@@ -331,6 +331,17 @@ per-nuclide fit results for that curve, plus a nested `pu` block (Pu fits only) 
       "enrichment_uncert": 0.0,
       "enrichment_minus_2sigma": 1.0,
       "enrichment_plus_2sigma": 1.0,
+      "enrichment_covariance_quality": "usable",
+      "enrichment_status": "complete",
+      "enrichment_uncertainty_kind": "gaussian",
+      "has_primary_enrichment_interval": true,
+      "enrichment_primary_lower": 1.0,
+      "enrichment_primary_upper": 1.0,
+      "enrichment_profile_status": "not_requested",
+      "enrichment_profile_reason": null,
+      "enrichment_profile_intervals": [],
+      "pu242_correlation_extrapolated": false,
+      "uncorrected_enrichment": null,
       "detector_counts": 36847.4
     }
   ],
@@ -355,9 +366,17 @@ per-nuclide fit results for that curve, plus a nested `pu` block (Pu fits only) 
 | `rel_mass` | `rel_activity / activity_per_gram(nuclide)` — relative mass in arbitrary units |
 | `total_mass_fraction` | This nuclide's mass divided by the sum of all nuclide masses in the curve. 0..1; multiply by 100 for %. (Often less informative than `enrichment` for mixed-element fits.) |
 | `enrichment` | This nuclide's mass divided by the total mass of *its element* across the fit (this is the "enrichment" or per-element mass fraction). 0..1; multiply by 100 for %. For a single-isotope element this is trivially 1 |
-| `has_enrichment_uncert` | True when covariance was available and a 1σ enrichment uncertainty could be computed |
-| `enrichment_uncert` | 1σ enrichment uncertainty (0..1 scale) — only meaningful when `has_enrichment_uncert` |
-| `enrichment_minus_2sigma`, `enrichment_plus_2sigma` | 2σ enrichment band (0..1); only meaningful when `has_enrichment_uncert` |
+| `has_enrichment_uncert` | Legacy compatibility flag from `mass_enrichment_fraction()`; retained unchanged for custom templates |
+| `enrichment_uncert` | Legacy 1σ enrichment uncertainty (0..1 scale), including its historical reliability floor/Pu-correlation behavior |
+| `enrichment_minus_2sigma`, `enrichment_plus_2sigma` | Legacy clipped 2σ band (0..1); only meaningful when `has_enrichment_uncert` |
+| `enrichment_local_gaussian_one_sigma` | Raw local Gaussian 1σ from the structured API, or `null`; render it only when `enrichment_covariance_quality == "usable"` |
+| `enrichment_covariance_quality` | Local Gaussian classification: `"usable"`, `"unavailable"`, `"locally_unreliable"`, or `"spans_feasible_range"` |
+| `enrichment_status` | Overall structured uncertainty status: `"complete"`, `"boundary_limited"`, `"non_identifiable"`, or `"failed"` |
+| `enrichment_uncertainty_kind` | What first-party output should display: `"profile"`, `"gaussian"`, `"non_identifiable"`, `"locally_unreliable"`, or `"unavailable"` |
+| `has_primary_enrichment_interval`, `enrichment_primary_lower`, `enrichment_primary_upper` | Primary 68% interval. Profile-likelihood endpoints take precedence; otherwise a usable Gaussian 1σ band is clipped to [0,1] |
+| `enrichment_profile_status`, `enrichment_profile_reason`, `enrichment_profile_intervals` | Profile result and independently classified intervals. Each interval contains `confidence_level`, `delta_chi2`, `lower`, `upper`, and endpoint kinds (`likelihood_crossing`, `physical_limit`, or `input_constraint_limit`) |
+| `pu242_correlation_extrapolated` | True when the reported Pu fractions use a Pu-242 correlation outside its validated Pu-239 range |
+| `uncorrected_enrichment` | Fitted fraction before Pu-242 correlation and renormalization; `null` when no correction applies |
 | `detector_counts` | Total fitted detector counts attributed to this nuclide across all its peaks in this curve |
 
 `enrichment` is what U/Pu reports usually want to display ("99.3% U-238", "0.66% U-235"), and
@@ -580,7 +599,12 @@ synonymous with the canonical capitalised form for that continuum type.
   "curve_index": 0,
   "rows": [
     { "nuclide": "Pu239", "mass_number": 239, "is_by_corr": false,
-      "uncorrected_mass_frac": 0.93, "mass_frac": 0.92, "mass_frac_uncert": 0.001 },
+      "uncorrected_mass_frac": 0.93, "mass_frac": 0.92, "mass_frac_uncert": 0.001,
+      "local_gaussian_one_sigma": 0.001,
+      "uncertainty_kind": "profile", "has_primary_interval": true,
+      "primary_lower": 0.918, "primary_upper": 0.922,
+      "profile_95_lower": 0.916, "profile_95_upper": 0.924,
+      "correlation_extrapolated": false },
     { "nuclide": "Pu242", "mass_number": 242, "is_by_corr": true,
       "uncorrected_mass_frac": -1, "mass_frac": 0.012, "mass_frac_uncert": 0.0006 }
   ],
@@ -590,7 +614,11 @@ synonymous with the canonical capitalised form for that continuum type.
 }
 ```
 
-`uncorrected_mass_frac == -1` and `mass_frac_uncert < 0` are both blank-cell sentinels.
+`uncorrected_mass_frac == -1` and `mass_frac_uncert < 0` are both legacy blank-cell sentinels;
+`mass_frac_uncert` itself retains the legacy accessor semantics for custom-template compatibility.
+`local_gaussian_one_sigma` is the structured raw local covariance value (or `null`).
+First-party templates use `uncertainty_kind` plus the primary/profile endpoints, so an unreliable
+or non-identifiable local Gaussian is never rendered as a giant symmetric `±` value.
 
 ### 3.9 Full Mn56 example
 

@@ -49,6 +49,8 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/LlmInterface.h"
 #include "InterSpec/LlmToolRegistry.h"
+#include "InterSpec/RelActAutoGui.h"
+#include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -57,6 +59,18 @@
 using namespace std;
 using namespace boost::unit_test;
 using json = nlohmann::json;
+
+// Focused result-JSON helpers have external linkage so their production membership/dedup and
+// structured-field policy can be verified without running another expensive spectrum solve.
+namespace LlmTools { namespace IsotopicsTool { namespace ResultJsonDetail {
+std::vector<const SandiaDecay::Nuclide *> isotopicsResultNuclides(
+    const std::vector<RelActCalcAuto::NuclideRelAct> &rel_activities,
+    const SandiaDecay::Nuclide *correlation_generated_pu242 );
+nlohmann::json massFractionResultToJson(
+    const RelActCalcAuto::RelActAutoSolution::MassFractionResult &mass_frac,
+    const std::string &nuclide_symbol,
+    bool generated_by_correlation );
+}}}
 
 // TODO: as of 20251013, need to add tests for: `currie_mda_calc`, `add_analysis_peaks_for_source`, `get_automated_id_results`, and `sources_with_gammas_near_energy` 
 
@@ -278,6 +292,145 @@ BOOST_AUTO_TEST_CASE( test_executeListIsotopicsPresets )
   BOOST_CHECK_MESSAGE( found_pu_preset || found_u_preset, "Should have at least one Pu or U preset" );
 
   cout << "Found " << result["presets"].size() << " isotopics presets" << endl;
+}
+
+
+BOOST_AUTO_TEST_CASE( test_correlationGeneratedPu242UsesStructuredLlmRow )
+{
+  set_data_dir();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const pu239 = db->nuclide("Pu239");
+  const SandiaDecay::Nuclide * const pu240 = db->nuclide("Pu240");
+  const SandiaDecay::Nuclide * const pu242 = db->nuclide("Pu242");
+  BOOST_REQUIRE( pu239 && pu240 && pu242 );
+
+  std::vector<RelActCalcAuto::NuclideRelAct> fitted(2);
+  fitted[0].source = RelActCalcAuto::SrcVariant(pu239);
+  fitted[1].source = RelActCalcAuto::SrcVariant(pu240);
+  const auto with_generated
+      = LlmTools::IsotopicsTool::ResultJsonDetail::isotopicsResultNuclides(fitted,pu242);
+  BOOST_REQUIRE_EQUAL( with_generated.size(),3u );
+  BOOST_CHECK_EQUAL( with_generated.back(),pu242 );
+
+  // Defensive deduplication: even a future configuration that directly carries Pu-242 must not
+  // emit a second row when a correlation pointer is also supplied.
+  fitted.push_back(RelActCalcAuto::NuclideRelAct{});
+  fitted.back().source = RelActCalcAuto::SrcVariant(pu242);
+  const auto deduplicated
+      = LlmTools::IsotopicsTool::ResultJsonDetail::isotopicsResultNuclides(fitted,pu242);
+  BOOST_REQUIRE_EQUAL( deduplicated.size(),3u );
+  BOOST_CHECK_EQUAL( std::count(deduplicated.begin(),deduplicated.end(),pu242),1 );
+
+  using Solution = RelActCalcAuto::RelActAutoSolution;
+  Solution::MassFractionResult structured;
+  structured.fraction = 0.0123;
+  structured.status = Solution::MassFractionStatus::BoundaryLimited;
+  structured.covariance_one_sigma = 2.75;
+  structured.covariance_quality = Solution::MassFractionCovarianceQuality::LocallyUnreliable;
+  structured.pu242_correlation_extrapolated = true;
+  structured.uncorrected_fraction = 0.0;
+  structured.diagnostic = "correlation outside validated range; local covariance unreliable";
+
+  Solution::MassFractionProfileResult profile;
+  profile.status = Solution::MassFractionProfileStatus::BoundaryLimited;
+  profile.reason = Solution::MassFractionProfileReason::AutomaticWeak;
+  profile.num_fits = 9;
+  profile.message = "bounded profile";
+  Solution::MassFractionProfileInterval interval;
+  interval.confidence_level = 0.95;
+  interval.delta_chi2 = 3.841458820694124;
+  interval.lower = 0.001;
+  interval.upper = 0.025;
+  interval.lower_kind = Solution::MassFractionProfileEndpointKind::PhysicalLimit;
+  interval.upper_kind = Solution::MassFractionProfileEndpointKind::LikelihoodCrossing;
+  profile.intervals.push_back(interval);
+  structured.profile = profile;
+
+  const json row = LlmTools::IsotopicsTool::ResultJsonDetail::massFractionResultToJson(
+                                                            structured,"Pu242",true);
+  BOOST_CHECK_EQUAL( row.at("nuclide"),"Pu242" );
+  BOOST_CHECK( row.at("generated_by_correlation").get<bool>() );
+  BOOST_CHECK_CLOSE_FRACTION( row.at("mass_fraction").get<double>(),structured.fraction,1.0e-12 );
+  BOOST_CHECK_EQUAL( row.at("mass_fraction_status"),"boundary_limited" );
+  BOOST_CHECK_EQUAL( row.at("mass_fraction_covariance_quality"),"locally_unreliable" );
+  BOOST_CHECK( !row.contains("mass_fraction_uncert") );
+  BOOST_CHECK_CLOSE_FRACTION(
+      row.at("mass_fraction_local_gaussian_one_sigma_diagnostic").get<double>(),2.75,1.0e-12 );
+  BOOST_CHECK( row.at("pu242_correlation_extrapolated").get<bool>() );
+  BOOST_CHECK_EQUAL( row.at("uncorrected_mass_fraction").get<double>(),0.0 );
+  BOOST_CHECK_EQUAL( row.at("mass_fraction_profile_reason"),"automatic_weak" );
+  BOOST_CHECK_EQUAL( row.at("mass_fraction_profile_status"),"boundary_limited" );
+  BOOST_REQUIRE_EQUAL( row.at("mass_fraction_profile_intervals").size(),1u );
+  BOOST_CHECK_EQUAL( row.at("mass_fraction_profile_intervals")[0].at("lower_endpoint"),
+                     "physical_limit" );
+  BOOST_CHECK_EQUAL( row.at("mass_fraction_profile_intervals")[0].at("upper_endpoint"),
+                     "likelihood_crossing" );
+}
+
+
+BOOST_AUTO_TEST_CASE( test_massFractionProfileControls_GuiRoundTrip )
+{
+  InterSpecTestFixture fixture;
+  const LlmTools::ToolRegistry &registry = fixture.llmToolRegistry();
+
+  json listed;
+  BOOST_REQUIRE_NO_THROW(
+      listed = registry.executeTool("list_isotopics_presets", json::object(), fixture.m_interspec) );
+  BOOST_REQUIRE( listed.contains("presets") && listed["presets"].is_array() );
+  BOOST_REQUIRE( !listed["presets"].empty() );
+
+  string preset_name;
+  for( const json &preset : listed["presets"] )
+  {
+    const string candidate = preset.value("name", "");
+    if( SpecUtils::icontains(candidate, "610-775") )
+    {
+      preset_name = candidate;
+      break;
+    }
+    if( preset_name.empty() )
+      preset_name = candidate;
+  }
+  BOOST_REQUIRE( !preset_name.empty() );
+  BOOST_REQUIRE_NO_THROW( registry.executeTool(
+      "load_isotopics_preset", json{{"preset", preset_name}}, fixture.m_interspec) );
+
+  RelActAutoGui * const gui = fixture.m_interspec->relActAutoWindow( true );
+  BOOST_REQUIRE( gui );
+  RelActCalcAuto::Options options = gui->getCalcOptions();
+  options.auto_profile_weak_mass_fractions = false;
+
+  size_t forced_curve = options.rel_eff_curves.size();
+  size_t forced_source = 0;
+  for( size_t curve_index = 0; curve_index < options.rel_eff_curves.size(); ++curve_index )
+  {
+    for( size_t source_index = 0;
+         source_index < options.rel_eff_curves[curve_index].nuclides.size(); ++source_index )
+    {
+      RelActCalcAuto::NucInputInfo &source
+          = options.rel_eff_curves[curve_index].nuclides[source_index];
+      if( RelActCalcAuto::nuclide(source.source) )
+      {
+        source.force_profile_mass_fraction = true;
+        forced_curve = curve_index;
+        forced_source = source_index;
+        break;
+      }
+    }
+    if( forced_curve != options.rel_eff_curves.size() )
+      break;
+  }
+  BOOST_REQUIRE_MESSAGE( forced_curve != options.rel_eff_curves.size(),
+                         "Selected isotopics preset contained no nuclide input" );
+
+  BOOST_REQUIRE_NO_THROW( gui->setCalcOptionsGui(options) );
+  const RelActCalcAuto::Options restored = gui->getCalcOptions();
+  BOOST_CHECK( !restored.auto_profile_weak_mass_fractions );
+  BOOST_REQUIRE_GT( restored.rel_eff_curves.size(), forced_curve );
+  BOOST_REQUIRE_GT( restored.rel_eff_curves[forced_curve].nuclides.size(), forced_source );
+  BOOST_CHECK( restored.rel_eff_curves[forced_curve]
+                       .nuclides[forced_source].force_profile_mass_fraction );
 }
 
 
@@ -1473,6 +1626,12 @@ BOOST_AUTO_TEST_CASE( test_executeIsotopics_Br82_EndToEnd )
   // Check that calculation succeeded
   BOOST_REQUIRE( calc_result.contains("success") );
   BOOST_REQUIRE( calc_result["success"].get<bool>() );
+  BOOST_REQUIRE( calc_result.contains("status") );
+  BOOST_CHECK( (calc_result["status"] == "Success")
+               || (calc_result["status"] == "UsableWithWarnings") );
+  BOOST_REQUIRE( calc_result.contains("usable_with_warnings") );
+  BOOST_CHECK_EQUAL( calc_result["usable_with_warnings"].get<bool>(),
+                     calc_result["status"] == "UsableWithWarnings" );
 
   // Extract and verify the results
   cout << "\nIsotopics calculation complete!" << endl;
@@ -1522,10 +1681,27 @@ BOOST_AUTO_TEST_CASE( test_executeIsotopics_Br82_EndToEnd )
       cout << "Br82 relative activity = " << rel_act << " +- " << rel_act_uncert << endl;
 
       // Verify relative activity is in expected range.
-      // Updated alongside the chi2/dof values above (master RelActAuto improvements).
-      // Actual value from run: 25.46 +- 0.423
-      BOOST_CHECK_CLOSE( rel_act, 25.46, 5.0 );  // within 5%
-      BOOST_CHECK_CLOSE( rel_act_uncert, 0.423, 10.0 );  // within 10%
+      //
+      // Re-recorded for the fixed-gauge empirical curve (see EmpiricalBasisTransform in
+      // RelActCalcAuto_Conditioning.hpp).  That change pins the efficiency curve to f(E_pivot)=1 and
+      // carries the removed scale on the curve's activities, so a *relative* activity is reported in
+      // a different normalization than before: 25.46 -> 23.396, a factor of 1.088.  Nothing physical
+      // moved - predicted counts are unchanged, so chi2/dof above still matches its original
+      // baseline to four digits, and the gauge-invariant mass fraction below is still 1.0.
+      //
+      // The uncertainty shrinks (0.423 -> 0.136) for the same reason: slot zero is now a fixed
+      // parameter, so the activity no longer absorbs the overall curve-normalization direction.  That
+      // direction is unobservable for relative activities, so including it was over-reporting.
+      //
+      // Only ratios of relative activities are physically meaningful; for this single-nuclide fit the
+      // absolute value is pure convention.  Assert it loosely, and assert the invariant that actually
+      // matters (mass fraction) tightly below.
+      BOOST_CHECK_CLOSE( rel_act, 23.396, 5.0 );  // within 5%
+      BOOST_CHECK_CLOSE( rel_act_uncert, 0.1363, 10.0 );  // within 10%
+      // The relative uncertainty is the gauge-independent way to state the precision.
+      BOOST_CHECK_MESSAGE( (rel_act > 0.0) && ((rel_act_uncert/rel_act) < 0.02),
+                           "relative activity uncertainty " << (100.0*rel_act_uncert/rel_act)
+                           << "% is larger than this well-determined fit should give" );
 
       // Check that age was not fit (we didn't enable it)
       BOOST_REQUIRE( nuc.contains("age_was_fit") );
@@ -1534,6 +1710,29 @@ BOOST_AUTO_TEST_CASE( test_executeIsotopics_Br82_EndToEnd )
       // Check mass fraction is 1.0 (only nuclide)
       BOOST_REQUIRE( nuc.contains("mass_fraction") );
       BOOST_CHECK_CLOSE( nuc["mass_fraction"].get<double>(), 1.0, 0.1 );
+      BOOST_REQUIRE( nuc.contains("mass_fraction_covariance_quality") );
+      BOOST_REQUIRE( nuc.contains("mass_fraction_status") );
+      BOOST_REQUIRE( nuc.contains("mass_fraction_uncertainty_status") );
+      BOOST_REQUIRE( nuc.contains("pu242_correlation_extrapolated") );
+
+      // Profile fields are conditional, but when present the LLM surface must preserve the same
+      // independently classified interval information exposed by the public structured API.
+      if( nuc.contains("mass_fraction_profile_intervals") )
+      {
+        BOOST_REQUIRE( nuc.contains("mass_fraction_profile_status") );
+        BOOST_REQUIRE( nuc.contains("mass_fraction_profile_reason") );
+        BOOST_REQUIRE( nuc.contains("mass_fraction_profile_message") );
+        BOOST_REQUIRE( nuc.contains("mass_fraction_profile_num_fits") );
+        for( const json &interval : nuc["mass_fraction_profile_intervals"] )
+        {
+          BOOST_CHECK( interval.contains("confidence_level") );
+          BOOST_CHECK( interval.contains("delta_chi2") );
+          BOOST_CHECK( interval.contains("lower") );
+          BOOST_CHECK( interval.contains("upper") );
+          BOOST_CHECK( interval.contains("lower_endpoint") );
+          BOOST_CHECK( interval.contains("upper_endpoint") );
+        }
+      }
 
       break;
     }

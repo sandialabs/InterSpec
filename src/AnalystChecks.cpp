@@ -1619,6 +1619,7 @@ namespace AnalystChecks
       switch( fit_results.status )
       {
         case RelActCalcAuto::RelActAutoSolution::Status::Success:
+        case RelActCalcAuto::RelActAutoSolution::Status::UsableWithWarnings:
           break;
 
         case RelActCalcAuto::RelActAutoSolution::Status::NotInitiated:
@@ -1902,6 +1903,7 @@ namespace AnalystChecks
           switch( fit_result->status )
           {
             case RelActCalcAuto::RelActAutoSolution::Status::Success:
+            case RelActCalcAuto::RelActAutoSolution::Status::UsableWithWarnings:
               break;
             case RelActCalcAuto::RelActAutoSolution::Status::NotInitiated:
               callback( string("Failed to initialize peak fit")

@@ -99,6 +99,22 @@ namespace BatchRelActAuto
     std::optional<RelActCalcAuto::FwhmForm> fwhm_form;
     std::optional<PeakDef::SkewType> skew_type;
 
+    /** Overrides automatic profile-likelihood evaluation of weak mass fractions.
+
+     Only consulted when a robust solve is requested; see `robust_solve` below.  An explicit
+     `profile_mass_fractions` entry is honored either way. */
+    std::optional<bool> auto_profile_weak_mass_fractions;
+
+    /** Overrides `RelActCalcAuto::Options::robust_solve`.  Batch runs are unattended, so the
+     interactive time budget that makes this off by default does not apply the same way; set it
+     explicitly when a run should spend the extra computation. */
+    std::optional<bool> robust_solve;
+
+    /** Nuclides whose mass fractions must be profiled.  Each selector is either a nuclide
+     symbol (all matching curves) or `[curve:]Nuclide`, where curve is a one-based index or
+     the configured curve name. */
+    std::vector<std::string> profile_mass_fractions;
+
     /** When set, forces `RelActAutoGuiState::background_subtract` regardless of
      what the exemplar / state-override said.  `false` here means
      "no background subtract"; `true` requires a usable background to be

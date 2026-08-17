@@ -26,8 +26,10 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <map>
 #include <array>
 #include <atomic>
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <memory>
@@ -238,7 +240,7 @@ struct NucInputInfo
   
   /** If nuclide age should be fit.  Must be false for x-ray or reaction. */
   bool fit_age = false;
-  
+
   /** Minimum age to fit; if specified, must be zero or greater. 
    
    In units of PhysicalUnits (i.e., 1.0 == second).
@@ -291,12 +293,18 @@ struct NucInputInfo
    points are silently skipped.
    **/
   std::string peak_color_css;
+
+  /** Request a profile-likelihood interval for this nuclide's reported within-element mass
+   fraction, even when the local covariance appears well conditioned.  Kept at the tail of this
+   aggregate so legacy aggregate initializers preserve their field mapping. */
+  bool force_profile_mass_fraction = false;
   
   const std::string name() const;
 
   bool operator==( const NucInputInfo &rhs ) const;
 
-  static const int sm_xmlSerializationVersion = 0;
+  /** v1 adds the optional `<ForceMassFractionProfile>` post-fit inference request. */
+  static const int sm_xmlSerializationVersion = 1;
   void toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
 
@@ -859,7 +867,34 @@ struct Options
    * Its not perfect, but its something.
    */
   double additional_br_uncert;
-  
+
+  /** Automatically compute bounded profile-likelihood intervals for mass fractions whose local
+   Gaussian covariance is missing or demonstrably unreliable.  Explicit per-nuclide requests are
+   honored even when this global automatic mode is disabled.
+
+   Only consulted when `robust_solve` is set; see that field for why. */
+  bool auto_profile_weak_mass_fractions;
+
+  /** Spend substantially more computation to defend the result against a bad local minimum.
+
+   A default solve is meant to be interactive: it fits the configured problem once (with ROI
+   refinement and automatic model simplification) and reports it.  A robust solve additionally
+   runs the deterministic multi-start basin search, computes automatic bounded profile-likelihood
+   intervals for weak mass fractions, and permits the one profile-triggered baseline reselection.
+
+   Each of those multiplies the work by roughly the number of named candidates or conditional fits
+   involved, which routinely takes a solve from seconds to many minutes - far past what an
+   interactive user will wait for.  It is therefore opt-in rather than on by default.
+
+   Turning this off never makes a result *dishonest*, only less precise: covariance-quality
+   classification is cheap and always runs, so a mass fraction whose local Gaussian uncertainty is
+   unusable is still reported as unusable rather than as a meaningless symmetric interval.  What a
+   non-robust solve cannot supply is the bounded 68%/95% interval that replaces it.
+
+   Explicit per-nuclide profile requests (`NucInputInfo::force_profile_mass_fraction`) are honored
+   regardless: those are a deliberate user request for a specific expensive quantity. */
+  bool robust_solve;
+
 
   /** The relative efficiency curves to use.
    */
@@ -896,16 +931,13 @@ struct Options
 
   /** Auto-simplify the model.
 
-   When true, after the normal fit `solve()` peels off near-degenerate / redundant degrees of freedom,
-   keeping each removal only if it does not meaningfully worsen the data fit (the chi2 increase is
-   `<= auto_simplify_max_dchi2`).  Candidates are tried most-degenerate / least-physical first:
-     1. the empirical correction function (Hoerl / Chebyshev),
-     2. fitted external attenuator(s),
-     3. the highest-order term of a polynomial/empirical (non-physical) rel-eff curve.
-   Only the highest-priority remaining candidate is tried each round, and the process STOPS at the first
-   one the data won't give up (it does not skip to a lower-priority candidate).  Self-attenuation and the
-   sources themselves are never removed (a source that is degenerate with another should be surfaced as a
-   warning, not silently dropped).
+   When true, after the normal fit `solve()` performs deterministic backward elimination.  In each
+   round every eligible one-degree-of-freedom removal is warm-solved from the same parent point and
+   scored with the complete configured objective.  Removals within `auto_simplify_max_dchi2` are
+   eligible; the lowest objective wins, with a stable semantic tie-break, and the process repeats.
+   Candidates include physical-model correction coefficients, optional external-attenuator areal
+   densities, successively lower polynomial/empirical orders, and peak-skew nuisance coefficients.
+   Self-attenuation and sources are never removed (source degeneracy is surfaced as a warning).
 
    The intent: when the data can't distinguish the physical attenuation from an extra empirical knob, that
    knob is redundant and distorts the answer (and its uncertainty); dropping it gives a more robust, more
@@ -922,6 +954,22 @@ struct Options
    of chi2 is not physically meaningful"); exactly 0 makes near-equivalent choices a numerical coin-flip, so
    a small positive default is used. */
   double auto_simplify_max_dchi2;
+
+  /** Transient augmented-Lagrangian equality used only by post-fit mass-fraction profiling.
+
+   This is intentionally not serialized and is ignored by the public equality helpers.  Normal
+   callers leave it disengaged.  The profile engine uses it to constrain the fraction after every
+   reporting transformation (notably Pu-242 correlation and renormalization) while retaining the
+   ordinary physical objective as the quantity used for likelihood thresholds. */
+  struct ProfileOnlyMassFractionConstraint
+  {
+    size_t rel_eff_curve_index = 0;
+    const SandiaDecay::Nuclide *nuclide = nullptr;
+    double reported_fraction = 0.0;
+    double lagrange_multiplier = 0.0;
+    double penalty = 0.0;
+  };
+  std::optional<ProfileOnlyMassFractionConstraint> profile_only_mass_fraction_constraint;
 
   /** If using the same Hoerl function, or external shielding for all relative efficiency curves,
    * this will check that the specifications are consistent.
@@ -950,8 +998,13 @@ struct Options
    */
   /** XML serialization version. v3 (2026-04-27) added `foreground_filename`,
    `background_filename`, `foreground_sample_numbers`, and `background_sample_numbers`. v2
-   XML still parses (the new fields default to empty / no samples). */
-  static const int sm_xmlSerializationVersion = 3;
+   XML still parses (the new fields default to empty / no samples). v4 adds
+   `auto_profile_weak_mass_fractions` and permits v1 `NucInputInfo` children.  v5 adds
+   `robust_solve`.
+
+   Serialization writes the lowest version a reader actually needs, so a config that leaves the
+   newer options at their defaults stays byte-identical and keeps parsing in older builds. */
+  static const int sm_xmlSerializationVersion = 5;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
   
   /** Sets the member variables from an XML element created by `toXml(...)`.
@@ -1099,6 +1152,81 @@ struct RelActAutoSolution
   
   /** Prints the txt version of relative eff eqn. */
   std::string rel_eff_txt( const bool html_format, const size_t rel_eff_index ) const;
+
+  enum class MassFractionCovarianceQuality : int
+  {
+    Usable,
+    Unavailable,
+    LocallyUnreliable,
+    SpansFeasibleRange
+  };
+
+  enum class MassFractionProfileReason : int
+  {
+    AutomaticWeak,
+    Forced
+  };
+
+  enum class MassFractionProfileStatus : int
+  {
+    NotRequested,
+    Complete,
+    BoundaryLimited,
+    NonIdentifiable,
+    Failed
+  };
+
+  enum class MassFractionProfileEndpointKind : int
+  {
+    LikelihoodCrossing,
+    PhysicalLimit,
+    InputConstraintLimit
+  };
+
+  /** Overall usability of the reported mass-fraction uncertainty. */
+  enum class MassFractionStatus : int
+  {
+    Complete,
+    BoundaryLimited,
+    NonIdentifiable,
+    Failed
+  };
+
+  struct MassFractionProfileInterval
+  {
+    double confidence_level = 0.0;
+    double delta_chi2 = 0.0;
+    double lower = 0.0;
+    double upper = 1.0;
+    MassFractionProfileEndpointKind lower_kind = MassFractionProfileEndpointKind::PhysicalLimit;
+    MassFractionProfileEndpointKind upper_kind = MassFractionProfileEndpointKind::PhysicalLimit;
+  };
+
+  struct MassFractionProfileResult
+  {
+    MassFractionProfileStatus status = MassFractionProfileStatus::NotRequested;
+    MassFractionProfileReason reason = MassFractionProfileReason::AutomaticWeak;
+    std::vector<MassFractionProfileInterval> intervals;
+    size_t num_fits = 0;
+    std::string message;
+    /** Diagnostic `(fraction, delta-chi2)` samples.  Reports may omit this potentially verbose field. */
+    std::vector<std::pair<double,double>> sampled_delta_chi2;
+  };
+
+  struct MassFractionResult
+  {
+    double fraction = -1.0;
+    MassFractionStatus status = MassFractionStatus::Failed;
+    std::optional<double> covariance_one_sigma;
+    MassFractionCovarianceQuality covariance_quality = MassFractionCovarianceQuality::Unavailable;
+    std::optional<MassFractionProfileResult> profile;
+    bool pu242_correlation_extrapolated = false;
+    std::optional<double> uncorrected_fraction;
+    /** Human-readable detail explaining the covariance/profile classification. */
+    std::string diagnostic;
+    /** Compatibility alias retained for callers developed against the initial structured draft. */
+    std::string message;
+  };
   
   /** Returns the fractional amount of an element (by mass), the nuclide composes, as well as (hopefully) the uncertainty.
    
@@ -1117,6 +1245,12 @@ struct RelActAutoSolution
    */
   std::pair<double,std::optional<double>> mass_enrichment_fraction( const SandiaDecay::Nuclide *nuclide,
                                                                    const size_t rel_eff_index ) const;
+
+  /** Rich, bounded uncertainty result for a within-element mass fraction.  Unlike the legacy
+   `mass_enrichment_fraction`, this can distinguish a local Gaussian approximation from a
+   profile-likelihood interval and can explicitly report non-identifiability. */
+  MassFractionResult mass_enrichment_result( const SandiaDecay::Nuclide *nuclide,
+                                             const size_t rel_eff_index ) const;
 
   /** Returns the mass ratio of two nuclides.
    
@@ -1254,12 +1388,21 @@ struct RelActAutoSolution
   
   enum class Status : int
   {
-    Success,
-    NotInitiated,
-    FailedToSetupProblem,
-    FailToSolveProblem,
-    UserCanceled
+    Success = 0,
+    NotInitiated = 1,
+    FailedToSetupProblem = 2,
+    FailToSolveProblem = 3,
+    UserCanceled = 4,
+    /** A finite, feasible, independently stationary result for which the underlying solver did
+     not claim normal convergence.  Results are available, but every first-party surface must
+     display the accompanying warning. */
+    UsableWithWarnings = 5
   };//
+
+  static bool is_usable_status( const Status status )
+  {
+    return (status == Status::Success) || (status == Status::UsableWithWarnings);
+  }
   
   RelActAutoSolution::Status m_status;
   std::string m_error_message;
@@ -1278,7 +1421,8 @@ struct RelActAutoSolution
    */
   std::shared_ptr<const SpecUtils::Measurement> m_background;
   
-  /** The final fit parameters. */
+  /** The final optimizer parameters.  Empirical relative-efficiency blocks use an internal
+   fixed-gauge QR basis; use `m_rel_eff_coefficients` for legacy/display/XML coefficients. */
   std::vector<double> m_final_parameters;
   
   /** The uncertainties on the final fit parameters; the sqrt of covariance matrix diagonal.
@@ -1320,6 +1464,36 @@ struct RelActAutoSolution
    not inflated). */
   size_t m_num_rank_deficient_dirs = 0;
 
+  /** Scale-aware tangent-to-ambient map retained from the covariance SVD.
+
+   This is `B = PlusJacobian * D`, stored by ambient row, where `D` is the inverse
+   objective-Jacobian column norm.  A genuinely zero Jacobian column receives a
+   finite parameter-characteristic diagnostic scale (while still contributing
+   zero to the covariance).  A derived quantity with ambient gradient `g` therefore
+   has its unit-independent local sensitivity in `B^T g`.  Empty when the
+   scale-invariant covariance diagnostic could not be constructed. */
+  std::vector<std::vector<double>> m_covariance_equilibrated_tangent_basis;
+
+  /** Ambient forms `B*v` of every right-singular direction omitted by the
+   truncated covariance pseudo-inverse.  Projecting a quantity gradient onto
+   these vectors determines whether that quantity, rather than merely some
+   unrelated fit parameter, depends on the discarded null space. */
+  std::vector<std::vector<double>> m_covariance_dropped_directions;
+
+  /** Ambient `B*v` direction belonging to the weakest equilibrated Jacobian
+   singular value (or an exact null-space vector).  Its sign is canonicalized by
+   the largest ambient component, making it deterministic.  Production basin
+   search uses this direction for its weak-direction candidate. */
+  std::vector<double> m_weakest_jacobian_direction;
+
+  /** Singular-value ratio for `m_weakest_jacobian_direction`; zero for an exact
+   rectangular/null direction, NaN when the SVD diagnostic was unavailable. */
+  double m_weakest_jacobian_singular_value_ratio
+      = std::numeric_limits<double>::quiet_NaN();
+
+  /** Whether the weakest direction was below the covariance truncation floor. */
+  bool m_weakest_jacobian_direction_was_dropped = false;
+
   /** Per-parameter flag, non-zero if the fitted parameter sits within tolerance of a lower or
    upper bound.  Ceres' covariance ignores active bounds, so a pinned parameter's reported variance is
    meaningless (usually too small).  Size `m_final_parameters.size()`, or empty.  Same (ambient) index
@@ -1337,6 +1511,14 @@ struct RelActAutoSolution
   std::vector<std::string> m_parameter_names;
 
   std::vector<bool> m_parameter_were_fit;
+
+  /** Per-parameter flag for degrees of freedom removed by selected-basin backward elimination.
+
+   Unlike parameters fixed intrinsically by the input options, these constants are not encoded by
+   `m_options`.  Profile-likelihood conditional solves therefore snapshot their canonical names
+   and exact values and replay this selected-model policy.  Same ambient ordering as
+   `m_final_parameters`; empty until a solve reaches final bookkeeping. */
+  std::vector<char> m_parameter_fixed_by_model_selection;
   
   /** This is a spectrum that will be background subtracted and energy calibrated, if those options
    where wanted.
@@ -1353,7 +1535,11 @@ struct RelActAutoSolution
   
   std::vector<RelActCalc::RelEffEqnForm> m_rel_eff_forms;
   
-  /** The coefficients for the relative efficiency curve(s)
+  /** The coefficients for the relative efficiency curve(s).
+
+   Empirical curves are always exposed in the legacy equation basis, with their normalization fixed
+   to one at the solve's data-independent ROI pivot.  Their absorbed scale is carried analytically by
+   the corresponding relative activities; internal QR optimizer coordinates are never persisted.
    * 
    * If Hoerl or external shieldings were shared between Physical Model curves, then the
    * coefficents fit for these values will be copied from the first physical model curve
@@ -1361,7 +1547,8 @@ struct RelActAutoSolution
    */
   std::vector<std::vector<double>> m_rel_eff_coefficients;
 
-  /** The covariance matrix of the relative efficiency curve(s)
+  /** The covariance matrix of the relative efficiency curve(s), in the same coefficient basis as
+   `m_rel_eff_coefficients` (including the exact QR-to-legacy covariance map for empirical curves).
    * 
    * If Hoerl or external shieldings were shared between Physical Model curves, then the
    * covariance matrix entries these values will NOT have been copied from the first 
@@ -1573,6 +1760,24 @@ struct RelActAutoSolution
 
   /** These ROIs are in the energy of the spectrum. */
   std::vector<RoiRange> m_final_roi_ranges_in_spectrum_cal;
+
+  /** Deterministic fingerprints of the frozen optimization problem.
+
+   `m_frozen_gamma_membership_hash` covers the canonical curve/source identities, the
+   exact gamma-line membership admitted to every ROI, and the fixed native-calibration
+   channel windows.  `m_frozen_layout_hash` additionally covers the residual/parameter
+   layout, which parameters were held constant and their exact fixed values, every ROI's frozen continuum basis,
+   numerical rank and non-negative-channel active set, and the exact branching-ratio nuisance
+   range endpoints and semantic gamma membership.  `m_frozen_model_policy_hash` covers the exact
+   canonical name/value policy selected by backward elimination; it remains stable when a profile
+   adds its transient equality residual.  The gamma/layout hashes intentionally exclude fitted
+   values, pointer addresses, thread count, and caller source ordering.  Equal hashes let
+   tests and diagnostics establish that two derivative probes or semantic permutations
+   evaluated the same mathematical problem; zero means setup did not progress far enough
+   to freeze that part of the problem. */
+  std::uint64_t m_frozen_gamma_membership_hash = 0;
+  std::uint64_t m_frozen_layout_hash = 0;
+  std::uint64_t m_frozen_model_policy_hash = 0;
   
   
   /** This DRF will be the input DRF you passed in, if it was valid and had energy resolution info.
@@ -1604,6 +1809,10 @@ struct RelActAutoSolution
    access the uncorrected mass fractions (unless you manually compute from relative activities)
    */
   std::vector<std::shared_ptr<const RelActCalc::Pu242ByCorrelationInput<double>>> m_uncorrected_pu;
+
+  /** Profile-likelihood results keyed by curve index and nuclide symbol.  Filled only for
+   automatically weak or explicitly requested quantities, after the final ROI/model/basin solve. */
+  std::vector<std::map<std::string,MassFractionProfileResult>> m_mass_fraction_profiles;
   
   /** We will allow corrections to the first following number of energy calibration coefficients.
  
@@ -1687,14 +1896,28 @@ struct RelActAutoSolution
    */
   std::vector<std::pair<double,double>> m_peak_ranges_with_uncert;
   
-  /** The full chi-square: sum of squares of ALL residual rows (data channels plus the rel-eff anchor,
-   peak-range-uncertainty, and physical-model parameter-prior rows).  This is the value the optimizer
-   minimizes; the report/GUI display the data-only `m_chi2_data`/`m_dof_data` goodness-of-fit instead. */
+  /** The full *physical* chi-square: sum of squares of all configured data and prior residual rows.
+
+   A transient augmented-Lagrangian row used by profile-likelihood conditional solves is deliberately
+   excluded, so likelihood differences compare only the frozen physical objective.  For ordinary
+   solves there is no such row and this is also twice the objective minimized by Ceres.  The
+   report/GUI display the data-only `m_chi2_data`/`m_dof_data` goodness-of-fit instead. */
   double m_chi2;
+
+  /** Sum of squares of every optimizer residual row.  This differs from `m_chi2` only for an
+   internal profile conditional solve, where it also includes the augmented-Lagrangian row. */
+  double m_optimizer_chi2 = -1.0;
+
+  /** Squared augmented-Lagrangian residual in a profile conditional solve; zero otherwise. */
+  double m_profile_constraint_penalty_chi2 = 0.0;
+
+  /** Reported-coordinate equality violation (actual minus requested) in a profile conditional
+   solve.  NaN for an ordinary unconstrained solve. */
+  double m_profile_constraint_violation = std::numeric_limits<double>::quiet_NaN();
 
   /** The number of degrees of freedom in the fit for equation parameters.
 
-   Note: this is the number of residual rows (data channels plus the non-data prior/anchor rows that
+   Note: this is the number of physical residual rows (data channels plus the non-data prior rows that
    `m_chi2` sums), minus the number of (estimated effective) fit paramaters - i.e. the DOF matching
    `m_chi2`.  For the data-only goodness-of-fit use `m_dof_data`.
    */
@@ -1714,6 +1937,10 @@ struct RelActAutoSolution
    `max(1.0, m_chi2_data/m_dof_data)`.  A value of 1.0 means no inflation (a good or over-fit).
    Variances are multiplied by this; standard deviations by its square root. */
   double m_cov_scale = 1.0;
+
+  /** Number of objective evaluations that occupied the empirical-curve exponential continuation.
+   Zero means every evaluated exponent remained in the native exp region. */
+  size_t m_exp_continuation_evaluations = 0;
 
   /** Weighted coefficient of determination: R2 = 1 - m_chi2_data / SS_tot, where SS_tot is the
    inverse-variance-weighted total sum of squares of the data about its weighted mean, taken over the

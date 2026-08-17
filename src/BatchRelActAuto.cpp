@@ -339,8 +339,50 @@ Result run_on_file( const std::string &exemplar_filename,
     state->options.fwhm_form = *options.fwhm_form;
   if( options.skew_type )
     state->options.skew_type = *options.skew_type;
+  if( options.auto_profile_weak_mass_fractions )
+    state->options.auto_profile_weak_mass_fractions = *options.auto_profile_weak_mass_fractions;
+  if( options.robust_solve )
+    state->options.robust_solve = *options.robust_solve;
   if( options.background_subtract )
     state->background_subtract = *options.background_subtract;
+
+  for( const string &selector : options.profile_mass_fractions )
+  {
+    const size_t colon = selector.find(':');
+    const string curve_selector = (colon == string::npos) ? string() : selector.substr(0, colon);
+    const string nuc_selector = (colon == string::npos) ? selector : selector.substr(colon + 1);
+    if( nuc_selector.empty()
+        || ((colon != string::npos) && curve_selector.empty())
+        || ((colon != string::npos) && (selector.find(':', colon + 1) != string::npos)) )
+      throw runtime_error( "Invalid --profile-mass-fraction selector '" + selector + "'." );
+
+    bool matched = false;
+    for( size_t curve_index = 0; curve_index < state->options.rel_eff_curves.size(); ++curve_index )
+    {
+      RelActCalcAuto::RelEffCurveInput &curve = state->options.rel_eff_curves[curve_index];
+      bool curve_matches = curve_selector.empty()
+                           || SpecUtils::iequals_ascii(curve_selector, curve.name)
+                           || (curve_selector == std::to_string(curve_index + 1));
+      if( !curve_matches )
+        continue;
+
+      for( RelActCalcAuto::NucInputInfo &nuc : curve.nuclides )
+      {
+        // Elements and reaction sources can share the same input container, but a reported
+        // within-element mass fraction is defined only for an actual nuclide.
+        if( RelActCalcAuto::nuclide(nuc.source)
+            && SpecUtils::iequals_ascii(nuc.name(), nuc_selector) )
+        {
+          nuc.force_profile_mass_fraction = true;
+          matched = true;
+        }
+      }
+    }
+
+    if( !matched )
+      throw runtime_error( "--profile-mass-fraction selector '" + selector
+                           + "' did not match a configured nuclide." );
+  }
 
   // A state serialized from an "Isotopics by nuclides" tool that was opened but never configured
   //  is perfectly valid XML, yet defines no problem to solve; reject it here rather than letting
@@ -570,6 +612,7 @@ Result run_on_file( const std::string &exemplar_filename,
   switch( solution.m_status )
   {
     case RelActCalcAuto::RelActAutoSolution::Status::Success:
+    case RelActCalcAuto::RelActAutoSolution::Status::UsableWithWarnings:
       result.m_result_code = ResultCode::Success;
       break;
     case RelActCalcAuto::RelActAutoSolution::Status::NotInitiated:

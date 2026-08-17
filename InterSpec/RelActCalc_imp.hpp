@@ -24,12 +24,18 @@
  */
 
 #include <tuple>
+#include <atomic>
+#include <cmath>
+#include <limits>
+#include <type_traits>
 #include <vector>
 #include <cassert>
 #include <utility>
 #include <optional>
 #include <algorithm>
+#include <stdexcept>
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/MassAttenuationTool_imp.hpp"
@@ -53,7 +59,77 @@ namespace ceres
  */
 namespace RelActCalc
 {
-  
+
+template<typename T>
+double rel_eff_scalar_value( const T &value )
+{
+  if constexpr ( std::is_arithmetic_v<T> )
+    return static_cast<double>(value);
+  else
+    return static_cast<double>(value.a);
+}
+
+
+/** A C1, monotone continuation of exp(z) outside [-limit,limit].
+
+ Hard clipping creates a zero-Jacobian plateau, allowing invalid trials to look stationary.  The
+ upper tail initially follows exp(limit)'s tangent exactly, then (far beyond any useful trial)
+ switches C1-continuously to logarithmic growth before that tangent can overflow.  The lower tail
+ uses a reciprocal continuation with a positive normal asymptote.  Both tails match exp in value
+ and first derivative at their primary joins and return finite, positive values for every finite
+ double input. */
+template<typename T>
+T continued_exp( const T &z, const double limit,
+                 std::atomic<size_t> * const continuation_evaluations = nullptr )
+{
+  using namespace ceres;
+  using std::exp;
+  using std::log1p;
+
+  assert( std::isfinite(limit) && (limit > 0.0) );
+  const double scalar = rel_eff_scalar_value(z);
+  if( scalar > limit )
+  {
+    if( continuation_evaluations )
+      continuation_evaluations->fetch_add( 1, std::memory_order_relaxed );
+
+    const double join_value = std::exp(limit);
+    assert( std::isfinite(join_value) );
+
+    // Leave ample headroom for the logarithmic factor at DBL_MAX.  Up to this span the expression
+    // is exactly the historical tangent continuation; the second branch is algebraically C1 at
+    // `linear_span` and keeps both its value and Jet derivative finite at DBL_MAX.
+    constexpr double headroom = 4096.0;
+    const double linear_span = (std::numeric_limits<double>::max() / join_value) / headroom;
+    const T offset = z - T(limit);
+    if( scalar - limit <= linear_span )
+      return T(join_value) * (T(1.0) + offset);
+
+    const double log_scale = 1.0 + linear_span;
+    const double log_join_value = join_value * log_scale;
+    const T scaled_offset = (offset - T(linear_span)) / T(log_scale);
+    return T(log_join_value) * (T(1.0) + log1p(scaled_offset));
+  }
+  if( scalar < -limit )
+  {
+    if( continuation_evaluations )
+      continuation_evaluations->fetch_add( 1, std::memory_order_relaxed );
+
+    const double join_value = std::exp(-limit);
+    const double positive_floor = std::numeric_limits<double>::min();
+    assert( std::isfinite(join_value) && (join_value > positive_floor) );
+
+    // Written in this reciprocal form so `offset + inverse_scale` cannot overflow for finite z.
+    // The scale makes the derivative at offset zero exactly join_value despite the positive floor.
+    const double span = join_value - positive_floor;
+    const double inverse_scale = span / join_value;
+    const double numerator = span * inverse_scale;
+    const T offset = T(-limit) - z;
+    return T(positive_floor) + T(numerator) / (offset + T(inverse_scale));
+  }
+  return exp(z);
+}
+
 /** Fraction of an element's post-fixed-constraint budget (`1 - Σ fixed`) kept in reserve for the
  element's unconstrained nuclides: the range-constrained nuclides' total mass fraction is
  hard-bounded (a Ceres box constraint on the carrier parameter) at
@@ -331,7 +407,8 @@ inline void invert_mass_frac_block( const MassFracBlockSpec &spec, const double 
 
 template<typename T>
 T eval_eqn_imp( const double energy, const RelActCalc::RelEffEqnForm eqn_form,
-                  const T * const coeffs, const size_t num_coefs )
+                  const T * const coeffs, const size_t num_coefs,
+                  std::atomic<size_t> * const continuation_evaluations = nullptr )
 {
   using namespace std;
   using namespace ceres;
@@ -345,13 +422,8 @@ T eval_eqn_imp( const double energy, const RelActCalc::RelEffEqnForm eqn_form,
   
   T answer( 0.0 );
 
-  // Bound on the argument to `exp()` for the exponential equation forms below.
-  // A divergent fit step can push the coefficients to where `exp()` overflows to
-  // +inf, producing an inf/huge relative efficiency that poisons the Ceres
-  // residuals (the solver then rejects the residual block).  Clamping to +-50
-  // spans rel-eff ~5e21..2e-22 -- already far outside any physical value -- and
-  // keeps the (later squared) residuals finite.  In the normal range min/max are
-  // a no-op, passing the value (and its ceres::Jet derivatives) through exactly.
+  // Join point for the monotone overflow continuation below.  exp(+-50) already
+  // spans ~2e-22..5e21, far outside a physical relative-efficiency range.
   constexpr double max_exp_arg = 50.0;
 
   switch( eqn_form )
@@ -390,7 +462,7 @@ T eval_eqn_imp( const double energy, const RelActCalc::RelEffEqnForm eqn_form,
         }//switch( order )
       }//for( loop over coeffs )
       
-      answer = exp( max( T(-max_exp_arg), min( T(max_exp_arg), answer ) ) );
+      answer = continued_exp( answer, max_exp_arg, continuation_evaluations );
       
       break;
     }//case RelEffEqnForm::LnY:
@@ -410,7 +482,7 @@ T eval_eqn_imp( const double energy, const RelActCalc::RelEffEqnForm eqn_form,
         }//switch( order )
       }//for( loop over coeffs )
       
-      answer = exp( max( T(-max_exp_arg), min( T(max_exp_arg), answer ) ) );
+      answer = continued_exp( answer, max_exp_arg, continuation_evaluations );
       
       break;
     }//case RelEffEqnForm::LnXLnY:
@@ -430,7 +502,7 @@ T eval_eqn_imp( const double energy, const RelActCalc::RelEffEqnForm eqn_form,
         }//switch( order )
       }//for( loop over coeffs )
       
-      answer = exp( max( T(-max_exp_arg), min( T(max_exp_arg), answer ) ) );
+      answer = continued_exp( answer, max_exp_arg, continuation_evaluations );
       
       break;
     }//case RelEffEqnForm::FramEmpirical:
@@ -594,20 +666,15 @@ T eval_physical_model_eqn_imp( const double energy,
     
     T areal_density = self_atten->areal_density;
 
-    // `setup_physical_model_shield_par` loosens the Ceres-level lower bound on AD by 1e-5 g/cm^2
-    //  to escape an active-bound LM trap, so the optimizer may evaluate at AD a hair below zero.
-    //  We deliberately do NOT clamp `areal_density` to >= 0 here: the self-attenuation factor
-    //  (1 - e^{-x})/x is smooth and accurate for the tiny negative x reachable inside that margin,
-    //  so letting the true value/gradient flow keeps the AD Jacobian column non-zero (clamping a
-    //  `ceres::Jet` with `fmax(jet,0)` would zero its derivative and recreate the trap - see A2).
-    //  The converged AD is clamped to >= 0 where the solution is extracted (`get_shield_info` in
-    //  RelActCalcAuto.cpp), so the user never sees a negative AD; here we only guard grossly
-    //  negative values. `areal_density` is in PhysicalUnits, so the -1e-3 g/cm^2 throw threshold
-    //  (well below the -1e-5 loosening) compares in physical units.
+    // Do not clamp a Jet at AD=0 here: the self-attenuation factor (1-e^{-x})/x has a finite,
+    // non-zero inward derivative at the physical boundary, and a value clamp would erase that
+    // derivative.  Production Ceres bounds keep AD in the physical range; the small negative guard
+    // below is retained for standalone diagnostic callers and catches only grossly invalid input.
     assert( !isinf(areal_density) );
     if( (areal_density <= -1.0e-3 * PhysicalUnits::g_per_cm2)
         || isnan(areal_density) || isinf(areal_density) )
-      throw std::runtime_error( "eval_physical_model_eqn: areal density must be >= 0 - got value " );
+      throw std::runtime_error( "eval_physical_model_eqn: self-attenuation areal density must be"
+                                " >= 0." );
 
     assert( mu >= 0.0 );
     if( mu < 0.0 )
@@ -649,11 +716,9 @@ T eval_physical_model_eqn_imp( const double energy,
     
     T areal_density = ext_atten.areal_density;
 
-    // See note in self-atten branch above: we do NOT clamp `areal_density` to >= 0 (that would zero
-    //  the Jet gradient across the deliberately-loosened bound margin - A2); e^{-mu*AD} is smooth for
-    //  the tiny negative AD reachable inside the margin, and the converged value is clamped >= 0 at
-    //  extraction. The -1e-3 g/cm^2 throw (in PhysicalUnits, below the -1e-5 loosening) only catches
-    //  grossly negative values.
+    // See the self-attenuation note above: production bounds enforce AD>=0, while avoiding an
+    // evaluator-side Jet clamp preserves the correct inward derivative exactly at the boundary.
+    // The negative guard is only defensive for direct/diagnostic calls.
     assert( !isinf(areal_density) );
     if( (areal_density <= -1.0e-3 * PhysicalUnits::g_per_cm2)
         || isnan(areal_density) || isinf(areal_density) )
@@ -665,9 +730,7 @@ T eval_physical_model_eqn_imp( const double energy,
 
     assert( areal_density >= -1.0e-3 * PhysicalUnits::g_per_cm2 );
 
-    // Apply unconditionally: `mu >= 0` (clamped above) and `AD >= -1e-5` is a valid exponent.
-    //  Guarding on `areal_density >= 0` would skip the term for AD in the loosened margin and
-    //  re-zero the external-AD gradient there.
+    // Apply unconditionally so AD=0 retains its non-zero inward Jet derivative.
     answer *= exp( -mu * areal_density );
     
     assert( !isnan(answer) && !isinf(answer) );
@@ -679,8 +742,10 @@ T eval_physical_model_eqn_imp( const double energy,
 }//eval_physical_model_eqn_imp(...)
   
 
-  template<typename T>
-Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelationInput<T> input, PuCorrMethod method )
+template<typename T>
+Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242(
+    Pu242ByCorrelationInput<T> input, PuCorrMethod method,
+    const bool profile_safe_physical_continuation )
 {
   using namespace std;
   using namespace ceres;
@@ -707,7 +772,7 @@ Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelat
       input_nuclide_rel_acts.emplace_back( pu239, input.pu239_rel_mass * pu239->activityPerGram() );
     if( input.pu240_rel_mass > 0.0 )
       input_nuclide_rel_acts.emplace_back( pu240, input.pu240_rel_mass * pu240->activityPerGram() );
-    if( input.pu240_rel_mass > 0.0 )
+    if( input.pu241_rel_mass > 0.0 )
       input_nuclide_rel_acts.emplace_back( pu241, input.pu241_rel_mass * pu241->activityPerGram() );
 
     const vector<tuple<const SandiaDecay::Nuclide *,T,T>> time_zero_vals
@@ -737,11 +802,72 @@ Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelat
   sum_input_mass += input.pu241_rel_mass;
   sum_input_mass += input.other_pu_mass;
 
-  input.pu238_rel_mass /= sum_input_mass;
-  input.pu239_rel_mass /= sum_input_mass;
-  input.pu240_rel_mass /= sum_input_mass;
-  input.pu241_rel_mass /= sum_input_mass;
-  input.other_pu_mass  /= sum_input_mass;
+  // A reported-coordinate profile is allowed to probe the closed non-negative activity box.  Its
+  // all-zero corner has no normalized composition, so nominal/reporting callers retain an
+  // explicitly undefined singular result.  Give only the profile-safe path a deterministic
+  // physical limiting composition; the correlation continuation below maps it to pure Pu-242 and
+  // supplies a finite, zero-Jacobian rejected-trial boundary.
+  const double sum_input_mass_scalar = rel_eff_scalar_value(sum_input_mass);
+  const bool finite_nonnegative_inputs
+      = std::isfinite(rel_eff_scalar_value(input.pu238_rel_mass))
+        && std::isfinite(rel_eff_scalar_value(input.pu239_rel_mass))
+        && std::isfinite(rel_eff_scalar_value(input.pu240_rel_mass))
+        && std::isfinite(rel_eff_scalar_value(input.pu241_rel_mass))
+        && std::isfinite(rel_eff_scalar_value(input.other_pu_mass))
+        && (rel_eff_scalar_value(input.pu238_rel_mass) >= 0.0)
+        && (rel_eff_scalar_value(input.pu239_rel_mass) >= 0.0)
+        && (rel_eff_scalar_value(input.pu240_rel_mass) >= 0.0)
+        && (rel_eff_scalar_value(input.pu241_rel_mass) >= 0.0)
+        && (rel_eff_scalar_value(input.other_pu_mass) >= 0.0);
+  const bool invalid_total = !(sum_input_mass_scalar > 0.0)
+                             || !std::isfinite(sum_input_mass_scalar);
+  if( rel_eff_scalar_value(input.other_pu_mass) > 0.0 )
+  {
+    throw std::domain_error(
+        "Pu-242 correlation output cannot represent Pu isotopes other than Pu-238 through Pu-241." );
+  }
+  if( (invalid_total || !finite_nonnegative_inputs)
+      && !profile_safe_physical_continuation )
+  {
+    throw std::domain_error(
+        "Pu-242 correlation requires finite, non-negative input masses with a positive total." );
+  }
+  const bool profile_zero_total = profile_safe_physical_continuation
+                                  && (invalid_total || !finite_nonnegative_inputs);
+  if( profile_zero_total )
+  {
+    input.pu238_rel_mass = T(0.0);
+    input.pu239_rel_mass = T(0.0);
+    input.pu240_rel_mass = T(0.0);
+    input.pu241_rel_mass = T(0.0);
+    input.other_pu_mass  = T(0.0);
+  }else
+  {
+    // Keep normalization arithmetic exactly as it was.  The correlation formulas below remain
+    // bit-for-bit historical through q=0.9, then use their shared physical continuation.
+    input.pu238_rel_mass /= sum_input_mass;
+    input.pu239_rel_mass /= sum_input_mass;
+    input.pu240_rel_mass /= sum_input_mass;
+    input.pu241_rel_mass /= sum_input_mass;
+    input.other_pu_mass  /= sum_input_mass;
+  }
+
+  // Above q_join, smoothly continue a correlation-predicted Pu-242 fraction toward one.  Expressing
+  // the tail in log(q/q_join) avoids ever forming the divergent negative-power law.  At the join,
+  // value and d/dlog(q) are q_join on both sides, so the piecewise map is C1.  q_join=0.9 leaves the
+  // complete validated/ordinary correlation domain on the exact historical branch.  This bounded
+  // tail is part of nominal reporting too: an extrapolated mass fraction must remain physical.
+  // The opt-in profile flag below is needed only for singular zero-total/zero-denominator corners.
+  static constexpr double physical_q_join = 0.9;
+  static constexpr double physical_log_slope
+      = physical_q_join / (1.0-physical_q_join);
+  const auto continued_pu242_fraction = []( const T &log_q_over_join ) -> T {
+    const double scalar = rel_eff_scalar_value(log_q_over_join);
+    if( !std::isfinite(scalar) )
+      return T(1.0);
+    return T(1.0) - T(1.0-physical_q_join)
+         * exp( -T(physical_log_slope)*log_q_over_join );
+  };
 
   T pu242_mass_frac = T(0.0), fractional_uncert = T(0.0);
   switch( method )
@@ -754,12 +880,66 @@ Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelat
       //  realistically this is way to fine-meshed for the calculations we could hope to do
       //  in InterSpec
       
-      const T c_0 = ((method == PuCorrMethod::Bignan95_PWR) ? T(1.313) : T(1.117));
-      const T pu238_to_pu239 = input.pu238_rel_mass / input.pu239_rel_mass;
-      const T pu240_to_pu239 = input.pu240_rel_mass / input.pu239_rel_mass;
-      const T pu242_to_pu239 = c_0 * pow( pu238_to_pu239, T(0.33) ) * pow( pu240_to_pu239, T(1.7) );
-      
-      pu242_mass_frac = pu242_to_pu239 * input.pu239_rel_mass;
+      const double c_0_scalar = (method == PuCorrMethod::Bignan95_PWR) ? 1.313 : 1.117;
+      const T c_0 = T(c_0_scalar);
+      if( profile_zero_total )
+      {
+        pu242_mass_frac = T(1.0);
+      }else
+      {
+        const double pu238_scalar = rel_eff_scalar_value(input.pu238_rel_mass);
+        const double pu239_scalar = rel_eff_scalar_value(input.pu239_rel_mass);
+        const double pu240_scalar = rel_eff_scalar_value(input.pu240_rel_mass);
+        const bool finite_positive_inputs = std::isfinite(pu238_scalar)
+            && std::isfinite(pu239_scalar) && std::isfinite(pu240_scalar)
+            && (pu238_scalar > 0.0) && (pu239_scalar > 0.0) && (pu240_scalar > 0.0);
+        if( finite_positive_inputs )
+        {
+          const double log_q_scalar = std::log(c_0_scalar)
+              + 0.33*std::log(pu238_scalar) + 1.7*std::log(pu240_scalar)
+              - 1.03*std::log(pu239_scalar);
+          if( log_q_scalar <= std::log(physical_q_join) )
+          {
+            // Exact historical expression, including its Jet derivatives and operation ordering.
+            const T pu238_to_pu239 = input.pu238_rel_mass / input.pu239_rel_mass;
+            const T pu240_to_pu239 = input.pu240_rel_mass / input.pu239_rel_mass;
+            const T pu242_to_pu239 = c_0 * pow( pu238_to_pu239, T(0.33) )
+                                        * pow( pu240_to_pu239, T(1.7) );
+            pu242_mass_frac = pu242_to_pu239 * input.pu239_rel_mass;
+          }else
+          {
+            const T log_q_over_join = log(T(c_0_scalar/physical_q_join))
+                + T(0.33)*log(input.pu238_rel_mass)
+                + T(1.7)*log(input.pu240_rel_mass)
+                - T(1.03)*log(input.pu239_rel_mass);
+            pu242_mass_frac = continued_pu242_fraction(log_q_over_join);
+          }
+        }else if( profile_safe_physical_continuation
+                  && (!(pu238_scalar > 0.0) || !(pu240_scalar > 0.0)) )
+        {
+          // A zero numerator makes the Bignan product zero.  Handle it before the zero-denominator
+          // case so no 0/0 power is formed at a feasible activity boundary.
+          pu242_mass_frac = T(0.0);
+        }else if( profile_safe_physical_continuation && !(pu239_scalar > 0.0) )
+        {
+          pu242_mass_frac = T(1.0);
+        }else if( !profile_safe_physical_continuation
+                  && (!(pu239_scalar > 0.0) || !std::isfinite(pu239_scalar)) )
+        {
+          throw std::domain_error(
+              "Bignan Pu-242 correlation requires a finite, positive Pu-239 mass." );
+        }else
+        {
+          // Preserve the historical singular/invalid-input behavior for nominal callers.  The
+          // production solution-state audit rejects a non-physical result rather than assigning a
+          // composition to a zero or negative input mass.
+          const T pu238_to_pu239 = input.pu238_rel_mass / input.pu239_rel_mass;
+          const T pu240_to_pu239 = input.pu240_rel_mass / input.pu239_rel_mass;
+          const T pu242_to_pu239 = c_0 * pow( pu238_to_pu239, T(0.33) )
+                                      * pow( pu240_to_pu239, T(1.7) );
+          pu242_mass_frac = pu242_to_pu239 * input.pu239_rel_mass;
+        }
+      }
       break;
     }//case PuCorrMethod::Bignan95_BWR:
     
@@ -767,13 +947,36 @@ Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelat
     {
       const T A = T(9.66E-3);
       const T C = T(-3.83);
-      
-      pu242_mass_frac = A * pow( input.pu239_rel_mass, C );
+
+      const double pu239_scalar = rel_eff_scalar_value(input.pu239_rel_mass);
+      if( std::isfinite(pu239_scalar) && (pu239_scalar > 0.0) )
+      {
+        static constexpr double A_scalar = 9.66E-3;
+        static constexpr double C_scalar = -3.83;
+        const double pu239_join
+            = std::pow(physical_q_join/A_scalar,1.0/C_scalar);
+        if( pu239_scalar >= pu239_join )
+        {
+          // Exact historical expression, including its Jet derivatives and operation ordering.
+          pu242_mass_frac = A * pow( input.pu239_rel_mass, C );
+        }else
+        {
+          const T log_q_over_join = C * log(input.pu239_rel_mass/T(pu239_join));
+          pu242_mass_frac = continued_pu242_fraction(log_q_over_join);
+        }
+      }else if( profile_safe_physical_continuation )
+      {
+        pu242_mass_frac = T(1.0);
+      }else
+      {
+        throw std::domain_error(
+            "Pu-239-only Pu-242 correlation requires a finite, positive Pu-239 mass." );
+      }
       break;
     }//case PuCorrMethod::ByPu239Only:
       
     case PuCorrMethod::NotApplicable:
-      pu242_mass_frac = T(0.0);
+      pu242_mass_frac = profile_zero_total ? T(1.0) : T(0.0);
       break;
   }//switch( method )
   
@@ -791,6 +994,55 @@ Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelat
   answer.pu240_mass_frac = input.pu240_rel_mass * (T(1.0) - pu242_mass_frac);
   answer.pu241_mass_frac = input.pu241_rel_mass * (T(1.0) - pu242_mass_frac);
   answer.pu242_mass_frac = pu242_mass_frac;
+
+  // Correlation provenance belongs to the composition on which the correlation was actually
+  // evaluated: the back-decayed reference epoch above.  Forward-aging changes the reported
+  // acquisition-time fractions, but must not make an out-of-domain correlation look validated (or
+  // select a different literature uncertainty bucket).
+  switch( method )
+  {
+    case PuCorrMethod::Bignan95_PWR:
+    case PuCorrMethod::Bignan95_BWR:
+    {
+      const T pu238_pu239 = answer.pu238_mass_frac / answer.pu239_mass_frac;
+      const T pu240_pu239 = answer.pu240_mass_frac / answer.pu239_mass_frac;
+      const T pu242_pu239 = answer.pu242_mass_frac / answer.pu239_mass_frac;
+
+      answer.is_within_range = ((pu238_pu239 >= T(0.007851)) && (pu238_pu239 <= T(0.02952)))
+                                && ((pu240_pu239 >= T(0.2688)) && (pu240_pu239 <= T(0.4586)))
+                                && ((pu242_pu239 >= T(0.03323)) && (pu242_pu239 <= T(0.1152)));
+
+      if( method == PuCorrMethod::Bignan95_PWR )
+        answer.pu242_uncert = T(0.03);
+      else
+        answer.pu242_uncert = T(0.07);
+
+      break;
+    }//case PuCorrMethod::Bignan95_BWR:
+
+    case PuCorrMethod::ByPu239Only:
+    {
+      answer.is_within_range = (answer.pu239_mass_frac >= T(0.55)) && (answer.pu239_mass_frac <= T(0.80));
+
+      if( (answer.pu239_mass_frac >= T(0.55)) && (answer.pu239_mass_frac <= T(0.64)) )
+        answer.pu242_uncert = T(0.012);
+      else if( answer.pu239_mass_frac < T(0.55) )
+        answer.pu242_uncert = T(0.05); //totally made up
+      else if( answer.pu239_mass_frac < T(0.70) )
+        answer.pu242_uncert = T(0.01);
+      else if( answer.pu239_mass_frac < T(0.80) )
+        answer.pu242_uncert = T(0.04);
+      else
+        answer.pu242_uncert = T(0.05); //totally made up
+
+      break;
+    }//case PuCorrMethod::ByPu239Only
+
+    case PuCorrMethod::NotApplicable:
+      answer.is_within_range = true;
+      answer.pu242_uncert = T(0.0);
+    break;
+  }//switch( method )
 
   if( input.pu_age > 0.0 )
   {
@@ -813,51 +1065,6 @@ Pu242ByCorrelationOutput<T> correct_pu_mass_fractions_for_pu242( Pu242ByCorrelat
     answer.pu242_mass_frac /= norm_amount;
   }//if( input.pu_age > 0.0 )
 
-  
-  switch( method )
-  {
-    case PuCorrMethod::Bignan95_PWR:
-    case PuCorrMethod::Bignan95_BWR:
-    {
-      const T pu238_pu239 = answer.pu238_mass_frac / answer.pu239_mass_frac;
-      const T pu240_pu239 = answer.pu240_mass_frac / answer.pu239_mass_frac;
-      const T pu242_pu239 = answer.pu242_mass_frac / answer.pu239_mass_frac;
-      
-      answer.is_within_range = ((pu238_pu239 >= T(0.007851)) && (pu238_pu239 <= T(0.02952)))
-                                && ((pu240_pu239 >= T(0.2688)) && (pu240_pu239 <= T(0.4586)))
-                                && ((pu242_pu239 >= T(0.03323)) && (pu242_pu239 <= T(0.1152)));
-      
-      if( method == PuCorrMethod::Bignan95_PWR )
-        answer.pu242_uncert = T(0.03);
-      else
-        answer.pu242_uncert = T(0.07);
-      
-      break;
-    }//case PuCorrMethod::Bignan95_BWR:
-      
-    case PuCorrMethod::ByPu239Only:
-    {
-      answer.is_within_range = (answer.pu239_mass_frac >= T(0.55)) && (answer.pu239_mass_frac <= T(0.80));
-      
-      if( (answer.pu239_mass_frac >= T(0.55)) && (answer.pu239_mass_frac <= T(0.64)) )
-        answer.pu242_uncert = T(0.012);
-      else if( answer.pu239_mass_frac < T(0.55) )
-        answer.pu242_uncert = T(0.05); //totally made up
-      else if( answer.pu239_mass_frac < T(0.70) )
-        answer.pu242_uncert = T(0.01);
-      else if( answer.pu239_mass_frac < T(0.80) )
-        answer.pu242_uncert = T(0.04);
-      else
-        answer.pu242_uncert = T(0.05); //totally made up
-      
-      break;
-    }//case PuCorrMethod::ByPu239Only
-      
-    case PuCorrMethod::NotApplicable:
-      answer.is_within_range = true;
-      answer.pu242_uncert = T(0.0);
-    break;
-  }//switch( method )
 
   // Except for the totally made up uncertainties (which are out of validated ranges), the
   //  actual errors are likely much larger than reported in the paper, as their data probably

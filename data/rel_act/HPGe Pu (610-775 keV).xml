@@ -1,8 +1,9 @@
 <RelActCalcAuto version="0">
 	<Description>Performs plutonium isotopics over the higher energy range (610 to 775 keV). 
 This is a good option when you have a well-defined peak structure in this region, and the lower-energy regions may have interferences (e.g., non-plutonium isotopes), significant lower-energy continuum, significant shielding, or you do not know your detector efficiency.
-This configuration does not use detectors efficiency, or require any knowledge of shielding.
-Requires HPGe data, with well-defined peak structure in the 610 to 775 keV energy range.</Description>
+This configuration does not use detectors efficiency, or require any knowledge of shielding. Its LnY order-2 empirical efficiency is exp(a + b E + c/E); it is not a polynomial in ln(E).
+Requires HPGe data, with well-defined peak structure in the 610 to 775 keV energy range.
+This narrow high-energy window may not independently identify plutonium age and age-dependent isotopics. The fit keeps age free and automatically reports bounded profile-likelihood intervals when the local covariance is weak; a non-identifiable result is scientifically meaningful. If age is known, fix or constrain it for a conditional result. If age must be inferred, prefer the 120-420 keV or 120-780 keV preset, whose lower-energy Pu/Am lines provide substantially more age information.</Description>
 	<Options version="2">
     <FitEnergyCal remark="For backwards compat">true</FitEnergyCal>
     <EnergyCalFitType remark="Possible values: NoFit, LinearFit, NonLinearFit">NonLinearFit</EnergyCalFitType>
@@ -85,4 +86,3 @@ Requires HPGe data, with well-defined peak structure in the 610 to 775 keV energ
 		<UpperDisplayEnergy>809.691944</UpperDisplayEnergy>
 	</Options>
 </RelActCalcAuto>
-

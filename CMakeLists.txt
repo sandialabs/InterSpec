@@ -270,6 +270,29 @@ else( InterSpec_FETCH_DEPENDENCIES )
   set( Wt_INCLUDE_DIR "${_wt_inc}" CACHE PATH "Wt include directory" FORCE )
 endif( InterSpec_FETCH_DEPENDENCIES )
 
+# Ceres releases before their Eigen Jet traits supplied non-finite helpers need
+# a small compatibility specialization used by the relative-activity fit.
+# Probe the capability instead of keying this on a Ceres version: downstream
+# packages occasionally backport the trait independently.
+include(CheckCXXSourceCompiles)
+include(CMakePushCheckState)
+cmake_push_check_state(RESET)
+set(CMAKE_REQUIRED_LIBRARIES Ceres::ceres Eigen3::Eigen)
+check_cxx_source_compiles([[
+  #include <Eigen/Core>
+  #include <ceres/jet.h>
+  int main()
+  {
+    using Jet = ceres::Jet<double, 1>;
+    const Jet inf = Eigen::NumTraits<Jet>::infinity();
+    const Jet nan = Eigen::NumTraits<Jet>::quiet_NaN();
+    (void)inf;
+    (void)nan;
+    return 0;
+  }
+]] INTERSPEC_CERES_JET_NUMTRAITS_HAS_NONFINITE)
+cmake_pop_check_state()
+
 
 
 set(sources

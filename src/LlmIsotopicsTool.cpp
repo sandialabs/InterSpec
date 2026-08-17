@@ -1000,6 +1000,137 @@ nlohmann::json executeLoadIsotopicsPreset(
 }//executeLoadIsotopicsPreset()
 
 
+namespace ResultJsonDetail
+{
+/** Stable result-row membership for the first relative-efficiency curve.
+
+ Pu-242 produced by a correlation is not an optimizer input and therefore has no
+ `NuclideRelAct` row.  Append it exactly once so it receives the same structured
+ mass-fraction serialization as fitted isotopes. */
+std::vector<const SandiaDecay::Nuclide *> isotopicsResultNuclides(
+    const std::vector<RelActCalcAuto::NuclideRelAct> &rel_activities,
+    const SandiaDecay::Nuclide * const correlation_generated_pu242 )
+{
+  std::vector<const SandiaDecay::Nuclide *> result;
+  result.reserve( rel_activities.size() + (correlation_generated_pu242 ? 1u : 0u) );
+  for( const RelActCalcAuto::NuclideRelAct &activity : rel_activities )
+  {
+    const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(activity.source);
+    if( nuclide && (std::find(begin(result),end(result),nuclide) == end(result)) )
+      result.push_back(nuclide);
+  }
+  if( correlation_generated_pu242
+      && (std::find(begin(result),end(result),correlation_generated_pu242) == end(result)) )
+    result.push_back(correlation_generated_pu242);
+  return result;
+}
+
+
+/** Serialize the structured mass-fraction API identically for fitted and correlation-generated rows. */
+nlohmann::json massFractionResultToJson(
+    const RelActCalcAuto::RelActAutoSolution::MassFractionResult &mass_frac,
+    const std::string &nuclide_symbol,
+    const bool generated_by_correlation )
+{
+  using Solution = RelActCalcAuto::RelActAutoSolution;
+  json result;
+  result["nuclide"] = nuclide_symbol;
+  result["generated_by_correlation"] = generated_by_correlation;
+  result["mass_fraction"] = mass_frac.fraction;
+
+  const bool gaussian_usable = mass_frac.covariance_one_sigma
+    && (mass_frac.covariance_quality == Solution::MassFractionCovarianceQuality::Usable);
+  // Keep an unreliable local Gaussian only as an explicitly diagnostic value; it must never be
+  // presented to an LLM as the primary symmetric uncertainty.
+  if( gaussian_usable )
+    result["mass_fraction_uncert"] = *mass_frac.covariance_one_sigma;
+  if( mass_frac.covariance_one_sigma )
+    result["mass_fraction_local_gaussian_one_sigma_diagnostic"]
+        = *mass_frac.covariance_one_sigma;
+
+  const char *covariance_quality = "unavailable";
+  switch( mass_frac.covariance_quality )
+  {
+    case Solution::MassFractionCovarianceQuality::Usable:
+      covariance_quality = "usable"; break;
+    case Solution::MassFractionCovarianceQuality::Unavailable:
+      covariance_quality = "unavailable"; break;
+    case Solution::MassFractionCovarianceQuality::LocallyUnreliable:
+      covariance_quality = "locally_unreliable"; break;
+    case Solution::MassFractionCovarianceQuality::SpansFeasibleRange:
+      covariance_quality = "spans_feasible_range"; break;
+  }
+  result["mass_fraction_covariance_quality"] = covariance_quality;
+  result["mass_fraction_uncertainty_status"] = mass_frac.diagnostic;
+
+  switch( mass_frac.status )
+  {
+    case Solution::MassFractionStatus::Complete:
+      result["mass_fraction_status"] = "complete"; break;
+    case Solution::MassFractionStatus::BoundaryLimited:
+      result["mass_fraction_status"] = "boundary_limited"; break;
+    case Solution::MassFractionStatus::NonIdentifiable:
+      result["mass_fraction_status"] = "non_identifiable"; break;
+    case Solution::MassFractionStatus::Failed:
+      result["mass_fraction_status"] = "failed"; break;
+  }
+
+  result["pu242_correlation_extrapolated"] = mass_frac.pu242_correlation_extrapolated;
+  if( mass_frac.uncorrected_fraction )
+    result["uncorrected_mass_fraction"] = *mass_frac.uncorrected_fraction;
+
+  if( mass_frac.profile )
+  {
+    const Solution::MassFractionProfileResult &profile = *mass_frac.profile;
+    const char *profile_status = "failed";
+    switch( profile.status )
+    {
+      case Solution::MassFractionProfileStatus::NotRequested:
+        profile_status = "not_requested"; break;
+      case Solution::MassFractionProfileStatus::Complete:
+        profile_status = "complete"; break;
+      case Solution::MassFractionProfileStatus::BoundaryLimited:
+        profile_status = "boundary_limited"; break;
+      case Solution::MassFractionProfileStatus::NonIdentifiable:
+        profile_status = "non_identifiable"; break;
+      case Solution::MassFractionProfileStatus::Failed:
+        profile_status = "failed"; break;
+    }
+    result["mass_fraction_profile_status"] = profile_status;
+    result["mass_fraction_profile_reason"]
+        = (profile.reason == Solution::MassFractionProfileReason::Forced)
+          ? "forced" : "automatic_weak";
+    result["mass_fraction_profile_message"] = profile.message;
+    result["mass_fraction_profile_num_fits"] = profile.num_fits;
+    result["mass_fraction_profile_intervals"] = json::array();
+
+    const auto endpoint_name = []( const Solution::MassFractionProfileEndpointKind kind ) {
+      switch( kind )
+      {
+        case Solution::MassFractionProfileEndpointKind::LikelihoodCrossing:
+          return "likelihood_crossing";
+        case Solution::MassFractionProfileEndpointKind::PhysicalLimit:
+          return "physical_limit";
+        case Solution::MassFractionProfileEndpointKind::InputConstraintLimit:
+          return "input_constraint_limit";
+      }
+      return "physical_limit";
+    };
+    for( const Solution::MassFractionProfileInterval &interval : profile.intervals )
+      result["mass_fraction_profile_intervals"].push_back({
+        {"confidence_level", interval.confidence_level},
+        {"delta_chi2", interval.delta_chi2},
+        {"lower", interval.lower}, {"upper", interval.upper},
+        {"lower_endpoint", endpoint_name(interval.lower_kind)},
+        {"upper_endpoint", endpoint_name(interval.upper_kind)}
+      });
+  }
+
+  return result;
+}
+}//namespace ResultJsonDetail
+
+
 nlohmann::json executePerformIsotopics(
   const nlohmann::json& params,
   InterSpec* interspec
@@ -1081,7 +1212,7 @@ nlohmann::json executePerformIsotopics(
     );
 
     // Check if solve was successful
-    if( solution.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+    if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status) )
     {
       result["success"] = false;
       result["status"] = "Failed";
@@ -1095,7 +1226,10 @@ nlohmann::json executePerformIsotopics(
 
     // Build success result
     result["success"] = true;
-    result["status"] = "Success";
+    const bool usable_with_warnings
+        = (solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::UsableWithWarnings);
+    result["status"] = usable_with_warnings ? "UsableWithWarnings" : "Success";
+    result["usable_with_warnings"] = usable_with_warnings;
 
     // Quality metrics
     json quality;
@@ -1111,40 +1245,57 @@ nlohmann::json executePerformIsotopics(
 
     const vector<RelActCalcAuto::NuclideRelAct> &rel_acts = solution.m_rel_activities[0];
 
-    // Calculate mass fractions for all isotopes
+    // Calculate mass fractions for every fitted isotope and for correlation-generated Pu-242.
+    // The latter is not a NuclideRelAct because it was never an optimizer input, but it is a
+    // first-class reported quantity with the same structured profile/covariance contract.
     json isotopics = json::array();
+    const bool has_pu242_correlation
+        = !solution.m_corrected_pu.empty() && solution.m_corrected_pu[0];
+    const SandiaDecay::SandiaDecayDataBase * const decay_db
+        = has_pu242_correlation ? DecayDataBaseServer::database() : nullptr;
+    const SandiaDecay::Nuclide * const generated_pu242
+        = decay_db ? decay_db->nuclide("Pu242") : nullptr;
+    const vector<const SandiaDecay::Nuclide *> result_nuclides
+        = ResultJsonDetail::isotopicsResultNuclides(rel_acts,generated_pu242);
 
-    for( const RelActCalcAuto::NuclideRelAct &nuc_act : rel_acts )
+    for( const SandiaDecay::Nuclide * const nuc : result_nuclides )
     {
-      const SandiaDecay::Nuclide *nuc = RelActCalcAuto::nuclide( nuc_act.source );
       if( !nuc )
         continue;
 
-      json nuc_result;
-      nuc_result["nuclide"] = nuc->symbol;
+      const auto activity = std::find_if(begin(rel_acts),end(rel_acts),
+          [nuc]( const RelActCalcAuto::NuclideRelAct &candidate ) {
+            return RelActCalcAuto::nuclide(candidate.source) == nuc;
+          } );
+      const bool generated_by_correlation
+          = (nuc == generated_pu242) && (activity == end(rel_acts));
 
-      // Get mass fraction
+      json nuc_result;
       try
       {
-        const pair<double,optional<double>> mass_frac = solution.mass_enrichment_fraction( nuc, 0 );
-        nuc_result["mass_fraction"] = mass_frac.first;
-        if( mass_frac.second )
-          nuc_result["mass_fraction_uncert"] = *mass_frac.second;
+        const RelActCalcAuto::RelActAutoSolution::MassFractionResult mass_frac
+                                            = solution.mass_enrichment_result( nuc, 0 );
+        nuc_result = ResultJsonDetail::massFractionResultToJson(
+                                         mass_frac,nuc->symbol,generated_by_correlation);
       }catch( exception &e )
       {
+        nuc_result["nuclide"] = nuc->symbol;
+        nuc_result["generated_by_correlation"] = generated_by_correlation;
         nuc_result["mass_fraction_error"] = e.what();
       }
 
-      // Relative activity
-      nuc_result["rel_activity"] = nuc_act.rel_activity;
-      nuc_result["rel_activity_uncert"] = nuc_act.rel_activity_uncertainty;
-
-      // Age
-      if( nuc_act.age >= 0.0 )
+      // A generated Pu-242 row intentionally has no fitted activity or age.  Fitted rows retain
+      // those fields unchanged for schema compatibility.
+      if( activity != end(rel_acts) )
       {
-        nuc_result["age_days"] = nuc_act.age / PhysicalUnits::day;
-        nuc_result["age_uncert_days"] = nuc_act.age_uncertainty / PhysicalUnits::day;
-        nuc_result["age_was_fit"] = nuc_act.age_was_fit;
+        nuc_result["rel_activity"] = activity->rel_activity;
+        nuc_result["rel_activity_uncert"] = activity->rel_activity_uncertainty;
+        if( activity->age >= 0.0 )
+        {
+          nuc_result["age_days"] = activity->age / PhysicalUnits::day;
+          nuc_result["age_uncert_days"] = activity->age_uncertainty / PhysicalUnits::day;
+          nuc_result["age_was_fit"] = activity->age_was_fit;
+        }
       }
 
       isotopics.push_back( nuc_result );
@@ -1163,8 +1314,23 @@ nlohmann::json executePerformIsotopics(
       pu242_corr["pu240"] = corr_pu->pu240_mass_frac;
       pu242_corr["pu241"] = corr_pu->pu241_mass_frac;
       pu242_corr["pu242"] = corr_pu->pu242_mass_frac;
+      pu242_corr["is_within_validated_range"] = corr_pu->is_within_range;
+      pu242_corr["correlation_extrapolated"] = !corr_pu->is_within_range;
+      if( !corr_pu->is_within_range )
+        pu242_corr["warning"]
+            = "Pu-242 correlation extrapolated outside its validated Pu-239 range.";
 
       result["pu242_corrected"] = pu242_corr;
+
+      if( !solution.m_uncorrected_pu.empty() && solution.m_uncorrected_pu[0] )
+      {
+        const auto &raw = solution.m_uncorrected_pu[0];
+        result["pu242_uncorrected_fit"] = {
+          {"pu238", raw->pu238_rel_mass}, {"pu239", raw->pu239_rel_mass},
+          {"pu240", raw->pu240_rel_mass}, {"pu241", raw->pu241_rel_mass},
+          {"pu_other", raw->other_pu_mass}
+        };
+      }
     }
 
     // Warnings

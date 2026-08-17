@@ -2650,7 +2650,7 @@ void run_idb_comparison( const std::string &idb_dir,
       RelActCalcAuto::RelActAutoSolution sol = RelActCalcAuto::solve(
           options, foreground, nullptr, drf, {}, PeakFitUtils::CoarseResolutionType::High );
 
-      if( sol.m_status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+      if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(sol.m_status) )
         throw std::runtime_error( "Solve failed: " + sol.m_error_message );
 
       result.solution = std::make_shared<RelActCalcAuto::RelActAutoSolution>( std::move( sol ) );

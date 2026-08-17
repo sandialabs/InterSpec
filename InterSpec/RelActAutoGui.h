@@ -535,6 +535,10 @@ protected:
   Wt::WContainerWidget *m_auto_simplify_dchi2_div;
   NativeFloatSpinBox *m_auto_simplify_max_dchi2;
 
+  /** Automatically profile mass fractions whose local covariance is weak or unusable. */
+  Wt::WCheckBox *m_auto_profile_weak_mass_fractions;
+  Wt::WCheckBox *m_robust_solve;
+
   // Wt::WComboBox *m_u_pu_data_source;
   Wt::Core::observing_ptr<PopupDivMenu> m_more_options_menu;
   Wt::Core::observing_ptr<PopupDivMenuItem> m_apply_energy_cal_item;

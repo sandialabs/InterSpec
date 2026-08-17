@@ -93,6 +93,7 @@ namespace
       case RelActCalcAuto::RelActAutoSolution::Status::FailedToSetupProblem:  return "Failed to setup problem";
       case RelActCalcAuto::RelActAutoSolution::Status::FailToSolveProblem:    return "Failed to solve problem";
       case RelActCalcAuto::RelActAutoSolution::Status::UserCanceled:          return "User canceled";
+      case RelActCalcAuto::RelActAutoSolution::Status::UsableWithWarnings:    return "Usable with warnings";
     }
     return "Unknown";
   }
@@ -412,7 +413,7 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
   json data;
 
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-  const bool success = (sol.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success);
+  const bool success = RelActCalcAuto::RelActAutoSolution::is_usable_status( sol.m_status );
   const float live_time = sol.m_spectrum ? sol.m_spectrum->live_time() : 1.0f;
   const bool have_multiple_rel_eff = (sol.m_rel_eff_forms.size() > 1);
 
@@ -423,6 +424,9 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
     { "fail_reason",   status_fail_reason( sol.m_status ) },
     { "error_message", sol.m_error_message }
   };
+  data["status"]["usable_with_warnings"]
+      = (sol.m_status == RelActCalcAuto::RelActAutoSolution::Status::UsableWithWarnings);
+  data["status"]["warnings"] = sol.m_warnings;
 
   data["spectrum_title"]        = sol.m_options.spectrum_title;
   data["have_multiple_rel_eff"] = have_multiple_rel_eff;
@@ -469,6 +473,8 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
       data["condition_number_str"] = string("n/a");
     }
   }
+  data["exp_continuation_evaluations"]
+      = static_cast<uint64_t>(sol.m_exp_continuation_evaluations);
 
   // ---- Multi-curve separation diagnostics ----
   // Same quantities as the "Rel. eff. curve separation" block of print_summary(); see the doc
@@ -743,6 +749,12 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
       nuc_info["age"] = act.age;
       nuc_info["age_uncertainty"] = act.age_uncertainty;
       nuc_info["age_was_fit"] = act.age_was_fit;
+      // Keep the additive uncertainty schema safe even for element/reaction rows and for a
+      // nuclide whose mass-fraction accessor reports an error.  First-party templates may render
+      // heterogeneous source rows without probing a missing JSON member.
+      nuc_info["pu242_correlation_extrapolated"] = false;
+      nuc_info["enrichment_uncertainty_kind"] = "unavailable";
+      nuc_info["has_primary_enrichment_interval"] = false;
 
       // Pre-formatted "rel_activity ± uncertainty" matching the legacy raw stream output.
       {
@@ -769,23 +781,150 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
 
         try
         {
-          const pair<double,std::optional<double>> enr = sol.mass_enrichment_fraction(nuc, curve_idx);
-          nuc_info["enrichment"] = enr.first;
-          if( enr.second.has_value() )
+          // Keep all legacy keys byte-for-schema compatible for custom templates, and add the
+          // authoritative bounded/profile fields used by first-party output.
+          const pair<double,std::optional<double>> legacy_enr
+                                      = sol.mass_enrichment_fraction(nuc, curve_idx);
+          const RelActCalcAuto::RelActAutoSolution::MassFractionResult enr
+                                      = sol.mass_enrichment_result(nuc, curve_idx);
+          // These keys predate the structured API and are consumed by user-supplied templates.
+          // Preserve the legacy accessor's historical uncertainty-floor/Pu-correlation semantics
+          // exactly; all authoritative quality/profile information remains additive below.
+          nuc_info["enrichment"] = legacy_enr.first;
+          nuc_info["pu242_correlation_extrapolated"] = enr.pu242_correlation_extrapolated;
+          nuc_info["uncorrected_enrichment"] = enr.uncorrected_fraction
+                                                ? json(*enr.uncorrected_fraction) : json(nullptr);
+          nuc_info["enrichment_diagnostic"] = enr.diagnostic;
+          switch( enr.status )
+          {
+            case RelActCalcAuto::RelActAutoSolution::MassFractionStatus::Complete:
+              nuc_info["enrichment_status"] = "complete"; break;
+            case RelActCalcAuto::RelActAutoSolution::MassFractionStatus::BoundaryLimited:
+              nuc_info["enrichment_status"] = "boundary_limited"; break;
+            case RelActCalcAuto::RelActAutoSolution::MassFractionStatus::NonIdentifiable:
+              nuc_info["enrichment_status"] = "non_identifiable"; break;
+            case RelActCalcAuto::RelActAutoSolution::MassFractionStatus::Failed:
+              nuc_info["enrichment_status"] = "failed"; break;
+          }
+
+          const char *cov_quality = "unavailable";
+          switch( enr.covariance_quality )
+          {
+            case RelActCalcAuto::RelActAutoSolution::MassFractionCovarianceQuality::Usable:
+              cov_quality = "usable"; break;
+            case RelActCalcAuto::RelActAutoSolution::MassFractionCovarianceQuality::Unavailable:
+              cov_quality = "unavailable"; break;
+            case RelActCalcAuto::RelActAutoSolution::MassFractionCovarianceQuality::LocallyUnreliable:
+              cov_quality = "locally_unreliable"; break;
+            case RelActCalcAuto::RelActAutoSolution::MassFractionCovarianceQuality::SpansFeasibleRange:
+              cov_quality = "spans_feasible_range"; break;
+          }
+          nuc_info["enrichment_covariance_quality"] = cov_quality;
+
+          nuc_info["enrichment_local_gaussian_one_sigma"]
+              = enr.covariance_one_sigma ? json(*enr.covariance_one_sigma) : json(nullptr);
+
+          if( legacy_enr.second.has_value() )
           {
             nuc_info["has_enrichment_uncert"]   = true;
-            nuc_info["enrichment_uncert"]       = *enr.second;
+            nuc_info["enrichment_uncert"]       = *legacy_enr.second;
             // Clipped to the physical [0,1] mass-fraction range - an unclipped band prints as
             //  e.g. 101.7 % or a negative enrichment.  `enrichment_2sigma_clipped` says when the
             //  raw interval ran outside, so a template can flag it.
-            const double raw_minus = enr.first - 2.0 * (*enr.second);
-            const double raw_plus  = enr.first + 2.0 * (*enr.second);
+            const double raw_minus = legacy_enr.first - 2.0 * (*legacy_enr.second);
+            const double raw_plus  = legacy_enr.first + 2.0 * (*legacy_enr.second);
             nuc_info["enrichment_2sigma_clipped"] = ((raw_minus < 0.0) || (raw_plus > 1.0));
             nuc_info["enrichment_minus_2sigma"] = (std::max)( 0.0, raw_minus );
             nuc_info["enrichment_plus_2sigma"]  = (std::min)( 1.0, raw_plus );
           }else
           {
             nuc_info["has_enrichment_uncert"] = false;
+          }
+
+          nuc_info["enrichment_profile_status"] = "not_requested";
+          nuc_info["enrichment_profile_reason"] = nullptr;
+          nuc_info["enrichment_profile_intervals"] = json::array();
+          nuc_info["has_primary_enrichment_interval"] = false;
+          nuc_info["enrichment_uncertainty_kind"]
+              = !enr.covariance_one_sigma ? "unavailable"
+                : ((enr.covariance_quality
+                    == RelActCalcAuto::RelActAutoSolution::MassFractionCovarianceQuality::Usable)
+                   ? "gaussian" : "locally_unreliable");
+          if( enr.covariance_one_sigma
+              && (enr.covariance_quality
+                    == RelActCalcAuto::RelActAutoSolution::MassFractionCovarianceQuality::Usable) )
+          {
+            nuc_info["has_primary_enrichment_interval"] = true;
+            nuc_info["enrichment_primary_lower"]
+                = (std::max)(0.0, enr.fraction - *enr.covariance_one_sigma);
+            nuc_info["enrichment_primary_upper"]
+                = (std::min)(1.0, enr.fraction + *enr.covariance_one_sigma);
+          }
+          if( enr.profile )
+          {
+            const auto &profile = *enr.profile;
+            const char *profile_status = "failed";
+            switch( profile.status )
+            {
+              case RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::NotRequested:
+                profile_status = "not_requested"; break;
+              case RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::Complete:
+                profile_status = "complete"; break;
+              case RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::BoundaryLimited:
+                profile_status = "boundary_limited"; break;
+              case RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::NonIdentifiable:
+                profile_status = "non_identifiable"; break;
+              case RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::Failed:
+                profile_status = "failed"; break;
+            }
+            nuc_info["enrichment_profile_status"] = profile_status;
+            nuc_info["enrichment_profile_reason"]
+                = (profile.reason == RelActCalcAuto::RelActAutoSolution::MassFractionProfileReason::Forced)
+                  ? "forced" : "automatic_weak";
+            nuc_info["enrichment_profile_message"] = profile.message;
+            nuc_info["enrichment_profile_num_fits"] = profile.num_fits;
+
+            const auto endpoint_name = [](const RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind kind){
+              switch( kind )
+              {
+                case RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind::LikelihoodCrossing:
+                  return "likelihood_crossing";
+                case RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind::PhysicalLimit:
+                  return "physical_limit";
+                case RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind::InputConstraintLimit:
+                  return "input_constraint_limit";
+              }
+              return "physical_limit";
+            };
+
+            for( const auto &interval : profile.intervals )
+            {
+              json interval_json = {
+                {"confidence_level", interval.confidence_level},
+                {"delta_chi2", interval.delta_chi2},
+                {"lower", interval.lower}, {"upper", interval.upper},
+                {"lower_endpoint", endpoint_name(interval.lower_kind)},
+                {"upper_endpoint", endpoint_name(interval.upper_kind)}
+              };
+              nuc_info["enrichment_profile_intervals"].push_back( interval_json );
+              if( std::fabs(interval.confidence_level - 0.6827) < 0.01 )
+              {
+                nuc_info["has_primary_enrichment_interval"] = true;
+                nuc_info["enrichment_primary_lower"] = interval.lower;
+                nuc_info["enrichment_primary_upper"] = interval.upper;
+              }
+              if( std::fabs(interval.confidence_level - 0.95) < 0.01 )
+              {
+                nuc_info["enrichment_95_lower"] = interval.lower;
+                nuc_info["enrichment_95_upper"] = interval.upper;
+              }
+            }
+
+            if( profile.status == RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::NonIdentifiable )
+              nuc_info["enrichment_uncertainty_kind"] = "non_identifiable";
+            else if( profile.status != RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::Failed
+                     && !profile.intervals.empty() )
+              nuc_info["enrichment_uncertainty_kind"] = "profile";
           }
         }catch( const std::exception &e )
         {
@@ -865,16 +1004,21 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
           continue;
 
         double mass_frac = -1.0, mass_frac_uncert = -1.0;
+        std::optional<RelActCalcAuto::RelActAutoSolution::MassFractionResult> rich;
         try
         {
-          const pair<double,std::optional<double>> v = sol.mass_enrichment_fraction(nuc, curve_idx);
-          mass_frac = v.first;
-          if( v.second.has_value() )
-            mass_frac_uncert = *v.second;
+          const pair<double,std::optional<double>> legacy
+                                      = sol.mass_enrichment_fraction(nuc, curve_idx);
+          rich = sol.mass_enrichment_result(nuc, curve_idx);
+          // Preserve the legacy Pu-row fields for custom templates.  First-party templates gate
+          // them with the structured classification and prefer the bounded primary interval.
+          mass_frac = legacy.first;
+          if( legacy.second.has_value() )
+            mass_frac_uncert = *legacy.second;
         }catch( const std::exception & )
         {
           // Fallback to corrected struct if covariance failed (matches legacy fallback).
-          if( iso_table[k].A == 238 )      mass_frac = pu_corr.pu239_mass_frac;
+          if( iso_table[k].A == 238 )      mass_frac = pu_corr.pu238_mass_frac;
           else if( iso_table[k].A == 239 ) mass_frac = pu_corr.pu239_mass_frac;
           else if( iso_table[k].A == 240 ) mass_frac = pu_corr.pu240_mass_frac;
           else if( iso_table[k].A == 241 ) mass_frac = pu_corr.pu241_mass_frac;
@@ -892,6 +1036,44 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
         prow["uncorrected_mass_frac"] = (iso_table[k].A == 242) ? -1.0 : uncorr_for[k];
         prow["mass_frac"] = mass_frac;
         prow["mass_frac_uncert"] = mass_frac_uncert;
+        prow["local_gaussian_one_sigma"]
+            = (rich && rich->covariance_one_sigma)
+                ? json(*rich->covariance_one_sigma) : json(nullptr);
+        prow["uncertainty_kind"] = !rich || !rich->covariance_one_sigma
+                                     ? "unavailable"
+                                     : ((rich->covariance_quality
+                                         == RelActCalcAuto::RelActAutoSolution::MassFractionCovarianceQuality::Usable)
+                                        ? "gaussian" : "locally_unreliable");
+        prow["has_primary_interval"] = false;
+        prow["correlation_extrapolated"] = rich ? rich->pu242_correlation_extrapolated
+                                                 : !pu_corr.is_within_range;
+        if( rich && rich->profile )
+        {
+          const auto &profile = *rich->profile;
+          if( profile.status == RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::NonIdentifiable )
+            prow["uncertainty_kind"] = "non_identifiable";
+          for( const auto &interval : profile.intervals )
+          {
+            if( std::fabs(interval.confidence_level - 0.6827) < 0.01 )
+            {
+              prow["has_primary_interval"] = true;
+              prow["primary_lower"] = interval.lower;
+              prow["primary_upper"] = interval.upper;
+            }
+            if( std::fabs(interval.confidence_level - 0.95) < 0.01 )
+            {
+              prow["profile_95_lower"] = interval.lower;
+              prow["profile_95_upper"] = interval.upper;
+            }
+          }
+        }else if( rich && rich->covariance_one_sigma
+                  && (rich->covariance_quality
+                      == RelActCalcAuto::RelActAutoSolution::MassFractionCovarianceQuality::Usable) )
+        {
+          prow["has_primary_interval"] = true;
+          prow["primary_lower"] = (std::max)(0.0, rich->fraction - *rich->covariance_one_sigma);
+          prow["primary_upper"] = (std::min)(1.0, rich->fraction + *rich->covariance_one_sigma);
+        }
         pu_data["rows"].push_back( prow );
       }
 

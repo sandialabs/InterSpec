@@ -492,7 +492,14 @@ bool chi2_significance_test( const PeakDef &peak,
 
 namespace ExperimentalAutomatedPeakSearch
 {
-  /** Optional cancellation token.  When non-null and `*cancel_flag == true` the
+  /** Searches a spectrum for peaks.
+
+   `fitPrefs` may be null.  In that case a local default preference object is
+   created and its coarse detector type is inferred from `meas`; callers that
+   do not own application/DRF preferences therefore get the same documented
+   fallback in Debug and Release builds.
+
+   `cancel_flag` is optional.  When non-null and `*cancel_flag == true` the
    search aborts at its next cooperative check point and returns the peaks fit
    so far.  See `SpecMeas::peak_search_cancel_flag()`.
    */

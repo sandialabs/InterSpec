@@ -512,7 +512,7 @@ void startFitSources( const bool /*from_advanced_dialog*/ )
           return;
         }
 
-        if( result->status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+        if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(result->status) )
         {
           SimpleDialog *err = SimpleDialog::make( WString::tr("fpn-error-title"),
                                                 WString::tr("fpn-error-content").arg( result->error_message ) );
@@ -1146,7 +1146,7 @@ void FitPeaksAdvancedWidget::acceptResult()
 bool FitPeaksAdvancedWidget::canAccept() const
 {
   return !m_is_calculating && m_current_result
-         && m_current_result->status == RelActCalcAuto::RelActAutoSolution::Status::Success
+         && RelActCalcAuto::RelActAutoSolution::is_usable_status(m_current_result->status)
          && !m_current_result->observable_peaks.empty();
 }
 
@@ -1335,7 +1335,7 @@ void FitPeaksAdvancedWidget::updateFromResult( std::shared_ptr<FitPeaksForNuclid
   m_current_result = result;
   m_status->removeStyleClass( "calculating" );
 
-  if( result->status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+  if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(result->status) )
   {
     m_status->setText( WString::tr("fpn-error-content").arg( result->error_message ) );
     m_warnings_div->show();

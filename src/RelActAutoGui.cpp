@@ -481,6 +481,8 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   m_auto_simplify( nullptr ),
   m_auto_simplify_dchi2_div( nullptr ),
   m_auto_simplify_max_dchi2( nullptr ),
+  m_auto_profile_weak_mass_fractions( nullptr ),
+  m_robust_solve( nullptr ),
   m_more_options_menu( nullptr ),
   m_apply_energy_cal_item( nullptr ),
   m_show_ref_lines_item( nullptr ),
@@ -924,6 +926,23 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   m_auto_simplify_max_dchi2->valueChanged().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
   HelpSystem::attachToolTipOn( m_auto_simplify_dchi2_div, WString::tr("raag-tt-auto-simplify-dchi2"), showToolTips );
   m_auto_simplify_dchi2_div->setHidden( true );  // revealed only when the checkbox is checked
+
+  m_auto_profile_weak_mass_fractions = generalOptionsDiv->addNew<WCheckBox>(
+                                                    WString::tr("raag-auto-profile-mass-frac") );
+  m_auto_profile_weak_mass_fractions->addStyleClass( "AutoProfileMassFracCb CbNoLineBreak" );
+  m_auto_profile_weak_mass_fractions->setChecked( true );
+  m_auto_profile_weak_mass_fractions->checked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
+  m_auto_profile_weak_mass_fractions->unChecked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
+  HelpSystem::attachToolTipOn( m_auto_profile_weak_mass_fractions,
+                              WString::tr("raag-tt-auto-profile-mass-frac"), showToolTips );
+
+  m_robust_solve = generalOptionsDiv->addNew<WCheckBox>( WString::tr("raag-robust-solve") );
+  m_robust_solve->addStyleClass( "RobustSolveCb CbNoLineBreak" );
+  m_robust_solve->setChecked( false );
+  m_robust_solve->checked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
+  m_robust_solve->unChecked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
+  HelpSystem::attachToolTipOn( m_robust_solve,
+                              WString::tr("raag-tt-robust-solve"), showToolTips );
 
 
   GroupBox *optionsDiv = addNew<GroupBox>( WString::tr("raag-rel-eff-curve-options") );
@@ -1719,6 +1738,9 @@ RelActCalcAuto::Options RelActAutoGui::getCalcOptions() const
   options.auto_simplify_model = (m_auto_simplify && m_auto_simplify->isChecked());
   if( m_auto_simplify_max_dchi2 )
     options.auto_simplify_max_dchi2 = std::max( 0.0, static_cast<double>(m_auto_simplify_max_dchi2->value()) );
+  options.auto_profile_weak_mass_fractions = !m_auto_profile_weak_mass_fractions
+                                             || m_auto_profile_weak_mass_fractions->isChecked();
+  options.robust_solve = m_robust_solve && m_robust_solve->isChecked();
 
   return options;
 }//RelActCalcAuto::Options getCalcOptions() const
@@ -2455,6 +2477,10 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     m_auto_simplify_max_dchi2->setValue( static_cast<float>(options.auto_simplify_max_dchi2) );
   if( m_auto_simplify_dchi2_div )
     m_auto_simplify_dchi2_div->setHidden( !options.auto_simplify_model );
+  if( m_auto_profile_weak_mass_fractions )
+    m_auto_profile_weak_mass_fractions->setChecked( options.auto_profile_weak_mass_fractions );
+  if( m_robust_solve )
+    m_robust_solve->setChecked( options.robust_solve );
 
   // First, remove any extra Rel Eff curve GUIs
   const size_t num_rel_eff_curves = options.rel_eff_curves.size();
@@ -3907,8 +3933,8 @@ void RelActAutoGui::setOptionsForNoSolution()
 
 void RelActAutoGui::setOptionsForValidSolution()
 {
-  assert( m_solution && (m_solution->m_status == RelActCalcAuto::RelActAutoSolution::Status::Success) );
-  if( !m_solution || (m_solution->m_status != RelActCalcAuto::RelActAutoSolution::Status::Success) )
+  assert( m_solution && RelActCalcAuto::RelActAutoSolution::is_usable_status(m_solution->m_status) );
+  if( !m_solution || !RelActCalcAuto::RelActAutoSolution::is_usable_status(m_solution->m_status) )
     return;
     
   // Check if we should allow setting energy calibration from fit solution
@@ -4223,7 +4249,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
   assert( energy_range );
   
   const shared_ptr<const RelActCalcAuto::RelActAutoSolution> solution = m_solution;
-  if( !solution || (solution->m_status != RelActCalcAuto::RelActAutoSolution::Status::Success) )
+  if( !solution || !RelActCalcAuto::RelActAutoSolution::is_usable_status(solution->m_status) )
   {
     // TODO: just hide/disable the button untill we have a valid solution
     SimpleDialog *dialog = SimpleDialog::make( WString::tr("raag-cant-perform-action"),
@@ -6183,6 +6209,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
   switch( answer->m_status )
   {
     case RelActCalcAuto::RelActAutoSolution::Status::Success:
+    case RelActCalcAuto::RelActAutoSolution::Status::UsableWithWarnings:
       break;
       
     case RelActCalcAuto::RelActAutoSolution::Status::NotInitiated:
@@ -6352,24 +6379,61 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       try
       {
         const size_t precision = (num_curves_with_enrich > 1) ? 3 : 4;
-        pair<double,optional<double>> enrich_val = answer->mass_enrichment_fraction( iso, rel_eff_index );
+        const RelActCalcAuto::RelActAutoSolution::MassFractionResult enrich_val
+                                      = answer->mass_enrichment_result( iso, rel_eff_index );
 
-        const double nominal = enrich_val.first;
+        const double nominal = enrich_val.fraction;
         chi2_info_arg += ", " + SpecUtils::printCompact(100.0*nominal, precision) + "%";
 
-        if( enrich_val.second.has_value() )
+        bool showed_profile = false;
+        if( enrich_val.profile )
         {
-          if( num_curves_with_enrich == 1 )
+          if( enrich_val.profile->status
+              == RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::NonIdentifiable )
           {
-            const double neg_2sigma = nominal - 2.0*enrich_val.second.value();
-            const double pos_2sigma = nominal + 2.0*enrich_val.second.value();
-            chi2_info_arg += " (2σ: " + SpecUtils::printCompact(100.0*neg_2sigma, precision) + "%, "
-            + SpecUtils::printCompact(100.0*pos_2sigma, precision) + "%)";
-          }else
+            chi2_info_arg += " (non-identifiable)";
+            showed_profile = true;
+          }
+          if( !showed_profile )
           {
-            chi2_info_arg += " ± " + SpecUtils::printCompact(100.0*enrich_val.second.value(), precision) + "%";
+            for( const auto &interval : enrich_val.profile->intervals )
+            {
+              if( std::fabs(interval.confidence_level - 0.6827) < 0.01 )
+              {
+                chi2_info_arg += " (68%: " + SpecUtils::printCompact(100.0*interval.lower, precision)
+                                 + "%–" + SpecUtils::printCompact(100.0*interval.upper, precision) + "%)";
+                showed_profile = true;
+                break;
+              }
+            }
           }
         }
+        if( !showed_profile && enrich_val.covariance_one_sigma
+            && (enrich_val.covariance_quality
+                == RelActCalcAuto::RelActAutoSolution::MassFractionCovarianceQuality::Usable) )
+        {
+          const double lo = (std::max)(0.0, nominal - *enrich_val.covariance_one_sigma);
+          const double hi = (std::min)(1.0, nominal + *enrich_val.covariance_one_sigma);
+          chi2_info_arg += " (68%: " + SpecUtils::printCompact(100.0*lo, precision)
+                           + "%–" + SpecUtils::printCompact(100.0*hi, precision) + "%)";
+          showed_profile = true;
+        }
+        if( !showed_profile )
+        {
+          if( enrich_val.profile
+              && (enrich_val.profile->status
+                  == RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::Failed) )
+            chi2_info_arg += " (profile uncertainty failed)";
+          else if( (enrich_val.covariance_quality
+                    == RelActCalcAuto::RelActAutoSolution::MassFractionCovarianceQuality::LocallyUnreliable)
+                   || (enrich_val.covariance_quality
+                    == RelActCalcAuto::RelActAutoSolution::MassFractionCovarianceQuality::SpansFeasibleRange) )
+            chi2_info_arg += " (local uncertainty unreliable)";
+          else
+            chi2_info_arg += " (uncertainty unavailable)";
+        }
+        if( enrich_val.pu242_correlation_extrapolated )
+          chi2_info_arg += " [Pu-242 correlation extrapolated]";
       }catch( std::exception & )
       {
         // Shouldnt normally happen
@@ -6566,20 +6630,66 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
           //const double rel_mass_percent = 100.0 * this_rel_mass / total_rel_mass;
           try
           {
-            pair<double,optional<double>> enrich_val = m_solution->mass_enrichment_fraction( nuc_nuclide, rel_eff_index);
+            const RelActCalcAuto::RelActAutoSolution::MassFractionResult enrich_val
+                                  = m_solution->mass_enrichment_result( nuc_nuclide, rel_eff_index);
             
-            const double rel_mass_percent = 100.0 * enrich_val.first;
+            const double rel_mass_percent = 100.0 * enrich_val.fraction;
             const SandiaDecay::SandiaDecayDataBase *db = DecayDataBaseServer::database();
             const SandiaDecay::Element *el = db->element( nuc_nuclide->atomicNumber );
             const string el_symbol = el ? el->symbol : "?";
             const string mass_frac_str = ", MassFrac(" + el_symbol + ")=" + SpecUtils::printCompact(rel_mass_percent, 3) + "%";
             summary_text += mass_frac_str;
 
-            if( enrich_val.second.has_value() )
+            bool showed_profile = false;
+            if( enrich_val.profile )
             {
-              const double rel_mass_uncert_percent = 100.0 * enrich_val.second.value();
-              tooltip_text += (mass_frac_str + " ± " +  SpecUtils::printCompact(rel_mass_uncert_percent, 3));
+              if( enrich_val.profile->status
+                  == RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::NonIdentifiable )
+              {
+                tooltip_text += mass_frac_str + "; uncertainty non-identifiable";
+                showed_profile = true;
+              }
+              if( !showed_profile )
+              {
+                for( const auto &interval : enrich_val.profile->intervals )
+                {
+                  if( std::fabs(interval.confidence_level - 0.6827) < 0.01 )
+                  {
+                    tooltip_text += mass_frac_str + " (68%: "
+                                    + SpecUtils::printCompact(100.0*interval.lower, 3) + "%–"
+                                    + SpecUtils::printCompact(100.0*interval.upper, 3) + "%)";
+                    showed_profile = true;
+                    break;
+                  }
+                }
+              }
             }
+            if( !showed_profile && enrich_val.covariance_one_sigma
+                && (enrich_val.covariance_quality
+                    == RelActCalcAuto::RelActAutoSolution::MassFractionCovarianceQuality::Usable) )
+            {
+              const double lo = (std::max)(0.0, enrich_val.fraction - *enrich_val.covariance_one_sigma);
+              const double hi = (std::min)(1.0, enrich_val.fraction + *enrich_val.covariance_one_sigma);
+              tooltip_text += mass_frac_str + " (68%: " + SpecUtils::printCompact(100.0*lo, 3)
+                              + "%–" + SpecUtils::printCompact(100.0*hi, 3) + "%)";
+              showed_profile = true;
+            }
+            if( !showed_profile )
+            {
+              if( enrich_val.profile
+                  && (enrich_val.profile->status
+                      == RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::Failed) )
+                tooltip_text += mass_frac_str + "; profile uncertainty failed";
+              else if( (enrich_val.covariance_quality
+                        == RelActCalcAuto::RelActAutoSolution::MassFractionCovarianceQuality::LocallyUnreliable)
+                       || (enrich_val.covariance_quality
+                        == RelActCalcAuto::RelActAutoSolution::MassFractionCovarianceQuality::SpansFeasibleRange) )
+                tooltip_text += mass_frac_str + "; local Gaussian uncertainty unreliable";
+              else
+                tooltip_text += mass_frac_str + "; uncertainty unavailable";
+            }
+            if( enrich_val.pu242_correlation_extrapolated )
+              tooltip_text += "; Pu-242 correlation extrapolated outside its validated range";
           }catch( std::exception & )
           {
             // We shouldnt get here
@@ -6757,7 +6867,7 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
 
   
   m_solution_updated.emit( m_solution );
-  if( m_solution && (m_solution->m_status == RelActCalcAuto::RelActAutoSolution::Status::Success) )
+  if( m_solution && RelActCalcAuto::RelActAutoSolution::is_usable_status(m_solution->m_status) )
     m_calc_successful.emit();
   else
     m_calc_failed.emit();

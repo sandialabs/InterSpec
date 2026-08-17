@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <limits>
 #include <string>
 #include <memory>
 #include <iostream>
@@ -319,6 +320,91 @@ static void do_one_fit_and_check( const string &n42_basename,
   BOOST_CHECK( data.contains("r2_str") );
   BOOST_CHECK( data.contains("condition_number_str") );
 
+  // Structured mass-fraction uncertainty fields are additive: keep the legacy enrichment and
+  // Gaussian keys for custom templates while publishing the covariance/profile classification
+  // used by first-party reports.  A profile may or may not be requested for a particular fit, but
+  // the schema must be stable in either case.
+  BOOST_REQUIRE( data.contains("relative_activities") );
+  BOOST_REQUIRE( data["relative_activities"].is_array() );
+  bool saw_enrichment = false;
+  size_t json_curve_index = 0;
+  for( const nlohmann::json &curve_json : data["relative_activities"] )
+  {
+    BOOST_REQUIRE( curve_json.contains("nuclides") );
+    BOOST_REQUIRE( curve_json["nuclides"].is_array() );
+    for( const nlohmann::json &nuc_json : curve_json["nuclides"] )
+    {
+      if( !nuc_json.contains("enrichment") )
+        continue;
+      saw_enrichment = true;
+
+      // Backward-compatible fields.
+      BOOST_CHECK( nuc_json.contains("has_enrichment_uncert") );
+      BOOST_CHECK( nuc_json.contains("enrichment") );
+      const SandiaDecay::Nuclide * const json_nuc
+          = DecayDataBaseServer::database()->nuclide(nuc_json.value("name",string()));
+      if( json_nuc )
+      {
+        const pair<double,optional<double>> legacy
+            = sol.mass_enrichment_fraction(json_nuc,json_curve_index);
+        BOOST_CHECK_CLOSE_FRACTION( nuc_json["enrichment"].get<double>(), legacy.first, 1.0e-12 );
+        BOOST_CHECK_EQUAL( nuc_json["has_enrichment_uncert"].get<bool>(), legacy.second.has_value() );
+        if( legacy.second )
+        {
+          BOOST_REQUIRE( nuc_json.contains("enrichment_uncert") );
+          BOOST_CHECK_CLOSE_FRACTION( nuc_json["enrichment_uncert"].get<double>(),
+                                      *legacy.second, 1.0e-12 );
+        }
+      }
+
+      // New structured fields.
+      BOOST_CHECK( nuc_json.contains("enrichment_covariance_quality") );
+      BOOST_CHECK( nuc_json.contains("enrichment_profile_status") );
+      BOOST_CHECK( nuc_json.contains("enrichment_profile_reason") );
+      BOOST_CHECK( nuc_json.contains("enrichment_profile_intervals") );
+      BOOST_CHECK( nuc_json["enrichment_profile_intervals"].is_array() );
+      BOOST_CHECK( nuc_json.contains("enrichment_uncertainty_kind") );
+      BOOST_CHECK( nuc_json.contains("has_primary_enrichment_interval") );
+      BOOST_CHECK( nuc_json.contains("pu242_correlation_extrapolated") );
+      BOOST_CHECK( nuc_json.contains("uncorrected_enrichment") );
+      BOOST_CHECK( nuc_json.contains("enrichment_diagnostic") );
+      BOOST_CHECK( nuc_json.contains("enrichment_local_gaussian_one_sigma") );
+
+      const string profile_status = nuc_json.value("enrichment_profile_status", "");
+      BOOST_CHECK_MESSAGE(
+          (profile_status == "not_requested") || (profile_status == "complete")
+            || (profile_status == "boundary_limited")
+            || (profile_status == "non_identifiable") || (profile_status == "failed"),
+          "Unknown enrichment_profile_status '" << profile_status << "'" );
+
+      if( profile_status != "not_requested" )
+      {
+        BOOST_CHECK( nuc_json["enrichment_profile_reason"].is_string() );
+        const string reason = nuc_json["enrichment_profile_reason"].get<string>();
+        BOOST_CHECK( (reason == "forced") || (reason == "automatic_weak") );
+      }
+
+      for( const nlohmann::json &interval : nuc_json["enrichment_profile_intervals"] )
+      {
+        BOOST_CHECK( interval.contains("confidence_level") );
+        BOOST_CHECK( interval.contains("delta_chi2") );
+        BOOST_CHECK( interval.contains("lower") );
+        BOOST_CHECK( interval.contains("upper") );
+        BOOST_CHECK( interval.contains("lower_endpoint") );
+        BOOST_CHECK( interval.contains("upper_endpoint") );
+        if( interval.contains("lower") && interval.contains("upper") )
+        {
+          BOOST_CHECK_GE( interval["lower"].get<double>(), 0.0 );
+          BOOST_CHECK_LE( interval["upper"].get<double>(), 1.0 );
+          BOOST_CHECK_LE( interval["lower"].get<double>(), interval["upper"].get<double>() );
+        }
+      }
+    }
+    ++json_curve_index;
+  }
+  BOOST_CHECK_MESSAGE( saw_enrichment,
+                       "No structured enrichment record was produced for " << n42_basename );
+
   // 9. Inja env construction.  (`inja::Environment` is non-copyable, so direct-construct.)
   inja::Environment env = RelActAutoReport::get_default_inja_env( "" );
 
@@ -600,6 +686,36 @@ BOOST_AUTO_TEST_CASE( reporting_on_unusable_solve )
 }//BOOST_AUTO_TEST_CASE( reporting_on_unusable_solve )
 
 
+BOOST_AUTO_TEST_CASE( usable_with_warnings_is_successful_but_explicit_in_json )
+{
+  set_data_dir();
+
+  RelActCalcAuto::RelActAutoSolution sol;
+  sol.m_status = RelActCalcAuto::RelActAutoSolution::Status::UsableWithWarnings;
+  sol.m_warnings.push_back( "Formal convergence was not reached; the retained point passed independent checks." );
+
+  nlohmann::json data;
+  BOOST_REQUIRE_NO_THROW( data = RelActAutoReport::solution_to_json(sol) );
+  BOOST_REQUIRE( data.contains("status") );
+  BOOST_CHECK( data["status"].value("success", false) );
+  BOOST_CHECK( data["status"].value("usable_with_warnings", false) );
+  BOOST_CHECK_EQUAL( data["status"].value("status_code", -1), 5 );
+  BOOST_REQUIRE( data["status"].contains("warnings") );
+  BOOST_REQUIRE_EQUAL( data["status"]["warnings"].size(), 1u );
+  BOOST_CHECK_EQUAL( data["status"]["warnings"][0].get<string>(), sol.m_warnings[0] );
+
+  inja::Environment env = RelActAutoReport::get_default_inja_env( "" );
+  for( const string &tmplt : { string("html"), string("txt") } )
+  {
+    string rendered;
+    BOOST_REQUIRE_NO_THROW( rendered = RelActAutoReport::render_template(env, data, tmplt, "") );
+    BOOST_CHECK_MESSAGE(
+        SpecUtils::ifind_substr_ascii(rendered, "usable with warnings") != string::npos,
+        "The bundled " << tmplt << " report hid Status::UsableWithWarnings" );
+  }
+}
+
+
 /** `Options::why_not_usable()` is what keeps an unconfigured "Isotopics by nuclides" state from
  being handed to `solve(...)` (and to the batch tools).
  */
@@ -629,6 +745,28 @@ BOOST_AUTO_TEST_CASE( options_why_not_usable )
   roi.upper_energy = 220.0;
   options.rois.push_back( roi );
   BOOST_CHECK( options.why_not_usable().empty() );
+
+  // Fixed skew values are constant parameter lanes, so Ceres will never apply its ordinary bounds
+  // checks to them.  Setup validation must reject non-finite and out-of-domain active values while
+  // ignoring stale upper-array entries for coefficients that are not energy dependent.
+  options.skew_type = PeakDef::SkewType::CrystalBall;
+  options.fixed_lower_skew[0] = std::numeric_limits<double>::quiet_NaN();
+  BOOST_CHECK( SpecUtils::icontains(options.why_not_usable(),"finite") );
+  options.fixed_lower_skew[0] = 5.01;
+  BOOST_CHECK( SpecUtils::icontains(options.why_not_usable(),"allowed range") );
+  options.fixed_lower_skew[0].reset();
+
+  options.fixed_upper_skew[0] = 0.49;
+  BOOST_CHECK( SpecUtils::icontains(options.why_not_usable(),"allowed range") );
+  options.fixed_upper_skew[0] = 2.0;
+  BOOST_CHECK( options.why_not_usable().empty() );
+
+  // CrystalBall SkewPar1 is active but not energy dependent, so its upper slot is intentionally
+  // ignored for compatibility; its lower fixed value is still checked against the n > 1 pole.
+  options.fixed_upper_skew[1] = std::numeric_limits<double>::infinity();
+  BOOST_CHECK( options.why_not_usable().empty() );
+  options.fixed_lower_skew[1] = 1.0;
+  BOOST_CHECK( SpecUtils::icontains(options.why_not_usable(),"allowed range") );
 }//BOOST_AUTO_TEST_CASE( options_why_not_usable )
 
 

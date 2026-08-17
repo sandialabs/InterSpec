@@ -653,7 +653,9 @@ int run_batch_command( int argc, char **argv )
       string rel_eff_config_file, drf_file, drf_name;
       string energy_cal_type_str, fwhm_form_str, skew_type_str;
       string background_subtract_str;
-      vector<string> input_files, report_templates, summary_report_templates;
+      string auto_profile_weak_mass_fractions_str;
+      string robust_solve_str;
+      vector<string> input_files, report_templates, summary_report_templates, profile_mass_fractions;
       bool to_stdout, write_n42_with_results, overwrite_output_files, create_json_output;
       string iso_multi_sample_handling_str;
 
@@ -728,6 +730,18 @@ int run_batch_command( int argc, char **argv )
         " (e.g. \"Gadras\", \"Polynomial_2\", \"Berstein_4\").")
       ("skew-type", po::value<string>(&skew_type_str)->default_value(""),
         "Override the exemplar's peak skew type.  See PeakDef::SkewType for accepted values.")
+      ("auto-profile-weak-mass-fractions",
+       po::value<string>(&auto_profile_weak_mass_fractions_str)->implicit_value("true")->default_value(""),
+        "Enable or disable automatic bounded profile-likelihood intervals for weak mass fractions."
+        "  Only has effect together with --robust-solve; without it, automatic profiling is skipped"
+        "  (an explicit --profile-mass-fraction request is always honored).")
+      ("profile-mass-fraction", po::value<vector<string>>(&profile_mass_fractions)->composing(),
+        "Always profile a nuclide mass fraction. Repeat for multiple values; accepts Nuclide or [curve:]Nuclide, where curve is a one-based index or configured name.")
+      ("robust-solve", po::value<string>(&robust_solve_str)->implicit_value("true")->default_value(""),
+        "Spend substantially more computation defending against a bad local minimum: run the"
+        " deterministic multi-start basin search and compute automatic bounded profile-likelihood"
+        " intervals for weak mass fractions.  Off by default because it can take a solve from"
+        " seconds to many minutes.")
       ;
 
       try
@@ -845,6 +859,7 @@ int run_batch_command( int argc, char **argv )
       options.background_subtract_samples = background_sample_nums;
       options.multi_sample_handling
             = BatchSampleSelect::multi_sample_handling_from_str( iso_multi_sample_handling_str );
+      options.profile_mass_fractions = profile_mass_fractions;
 
       // DRF override (loaded via the same helper used by batch-act-fit)
       options.drf_override = BatchActivity::init_drf_from_name( drf_file, drf_name );
@@ -900,6 +915,30 @@ int run_batch_command( int argc, char **argv )
         else
           throw runtime_error( "Invalid --background-subtract '" + background_subtract_str
                                + "'.  Use 'true' or 'false'." );
+      }
+
+      if( !auto_profile_weak_mass_fractions_str.empty() )
+      {
+        const string lower = SpecUtils::to_lower_ascii_copy( auto_profile_weak_mass_fractions_str );
+        if( lower == "true" || lower == "1" || lower == "yes" || lower == "on" )
+          options.auto_profile_weak_mass_fractions = true;
+        else if( lower == "false" || lower == "0" || lower == "no" || lower == "off" )
+          options.auto_profile_weak_mass_fractions = false;
+        else
+          throw runtime_error( "Invalid --auto-profile-weak-mass-fractions '"
+                               + auto_profile_weak_mass_fractions_str + "'. Use 'true' or 'false'." );
+      }
+
+      if( !robust_solve_str.empty() )
+      {
+        const string lower = SpecUtils::to_lower_ascii_copy( robust_solve_str );
+        if( lower == "true" || lower == "1" || lower == "yes" || lower == "on" )
+          options.robust_solve = true;
+        else if( lower == "false" || lower == "0" || lower == "no" || lower == "off" )
+          options.robust_solve = false;
+        else
+          throw runtime_error( "Invalid --robust-solve '" + robust_solve_str
+                               + "'. Use 'true' or 'false'." );
       }
 
       BatchRelActAuto::run_in_files( exemplar_path, nullptr, exemplar_sample_nums,

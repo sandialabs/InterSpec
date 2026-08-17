@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <algorithm>
 #include <string>
 #include <memory>
 #include <vector>
@@ -180,6 +181,59 @@ BOOST_AUTO_TEST_CASE( floating_peak_fwhm_reported_in_kev )
   // Solve with one floating peak at `float_energy`, and return its FloatingPeakResult.
   const auto solve_with_float = [&]( const bool release ) -> RelActCalcAuto::FloatingPeakResult {
     RelActCalcAuto::Options opts = base_options;
+    // This regression exercises only the units of a released floating-peak width.  Do not append
+    // potentially dozens of mass-fraction conditional fits after each otherwise identical solve;
+    // profile orchestration has dedicated coverage in test_RelActCalcAuto_ProfileScan and
+    // test_RelActCalcAuto_MassFracConstraint.
+    opts.auto_profile_weak_mass_fractions = false;
+    // Backward elimination now deliberately runs the complete deterministic candidate matrix
+    // before simplifying a selected basin.  That production behavior is unrelated to this units
+    // regression and would turn each of its two otherwise small solves into a multi-minute search.
+    opts.auto_simplify_model = false;
+    opts.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
+    opts.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_2;
+    opts.fwhm_estimation_method
+        = RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum;
+    opts.skew_type = PeakDef::SkewType::NoSkew;
+    opts.additional_br_uncert = 0.0;
+
+    // Keep a compact, well-determined U-235/U-238 problem around the strong 185.7-keV line and
+    // independent high-energy U-238 evidence.  The original embedded state has many nuisance
+    // families whose basin search is valuable in production but immaterial to converting the
+    // released floating-width multiplier back to keV.
+    opts.rel_eff_curves.resize(1);
+    opts.same_corr_fcn_for_all_rel_eff_curves = false;
+    opts.same_external_shielding_for_all_rel_eff_curves = false;
+    RelActCalcAuto::RelEffCurveInput &curve = opts.rel_eff_curves.front();
+    curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::LnY;
+    curve.rel_eff_eqn_order = 1;
+    curve.phys_model_self_atten.reset();
+    curve.phys_model_external_atten.clear();
+    curve.mass_fraction_constraints.clear();
+    curve.act_ratio_constraints.clear();
+    curve.nuclides.erase( std::remove_if(curve.nuclides.begin(),curve.nuclides.end(),
+        []( const RelActCalcAuto::NucInputInfo &input ) {
+          const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(input.source);
+          return !nuclide || ((nuclide->massNumber != 235) && (nuclide->massNumber != 238));
+        }),curve.nuclides.end() );
+    BOOST_REQUIRE_EQUAL( curve.nuclides.size(),2U );
+    for( RelActCalcAuto::NucInputInfo &input : curve.nuclides )
+    {
+      input.fit_age = false;
+      input.fit_age_min.reset();
+      input.fit_age_max.reset();
+      input.force_profile_mass_fraction = false;
+    }
+
+    for( RelActCalcAuto::RoiRange &roi : opts.rois )
+      roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+    opts.rois.erase( std::remove_if(opts.rois.begin(),opts.rois.end(),
+        []( const RelActCalcAuto::RoiRange &roi ) {
+          const bool u235_region = (roi.lower_energy >= 140.0) && (roi.upper_energy <= 210.0);
+          const bool u238_region = (roi.lower_energy >= 990.0) && (roi.upper_energy <= 1010.0);
+          return !u235_region && !u238_region;
+        }),opts.rois.end() );
+    BOOST_REQUIRE_GE( opts.rois.size(),3U );
 
     RelActCalcAuto::FloatingPeak fp;
     fp.energy = float_energy;

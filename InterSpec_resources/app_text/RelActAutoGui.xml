@@ -28,6 +28,10 @@
   <message id="raag-add-uncert">Add. Uncert</message>
   <message id="raag-auto-simplify">Auto-simplify model</message>
   <message id="raag-auto-simplify-dchi2">Max &#967;&#178; increase</message>
+  <message id="raag-auto-profile-mass-frac">Profile weak mass fractions</message>
+  <message id="raag-tt-auto-profile-mass-frac">Use bounded profile likelihood when the local covariance cannot give a trustworthy mass-fraction uncertainty.  Only applies to a robust solve.</message>
+  <message id="raag-robust-solve">Robust solve (slow)</message>
+  <message id="raag-tt-robust-solve">Spend substantially more computation defending the result against a bad local minimum: try many deterministic starting points, and compute bounded profile-likelihood intervals for mass fractions whose ordinary uncertainty is untrustworthy.  This can take a fit from seconds to many minutes.  Leaving it off never makes a result misleading - an untrustworthy uncertainty is still reported as untrustworthy - it just cannot be replaced with a bounded interval.</message>
   <message id="raag-yield-info">Yield Info</message>
   
   <!-- FWHM estimation methods -->

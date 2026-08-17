@@ -1211,7 +1211,7 @@ static double score_config_over_precomputed(
       record_shadow( pd, FitPeaksForNuclides::detail::take_roi_boundary_shadow_diagnostics(),
                      "foreground" );
 
-      const bool ok = (result.status == RelActCalcAuto::RelActAutoSolution::Status::Success);
+      const bool ok = RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status);
 
       // A non-Success fit produced no usable peaks (observable_peaks is empty), so it is scored as
       // the total-miss its empty result earns - identical to a Success that recovered nothing.  The

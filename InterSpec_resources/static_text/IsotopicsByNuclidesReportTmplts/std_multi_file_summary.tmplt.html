@@ -81,6 +81,12 @@
       font-size: 110%;
       padding: 10px 0;
     }
+    .file-status-warning {
+      color: #7a5300;
+      background: #fff7cf;
+      padding: 6px 8px;
+      margin: 6px 0;
+    }
     .per-file-section .charts-row {
       display: flex;
       flex-direction: row;
@@ -139,30 +145,35 @@
       <th scope="col">Rel. Activity (&plusmn;1&sigma;)</th>
       <th scope="col">Total Mass Frac.</th>
       <th scope="col">Enrichment</th>
-      <th scope="col">Enrichment 2&sigma; band</th>
+      <th scope="col">Enrichment 68% interval</th>
+      <th scope="col">Enrichment 95% profile</th>
       <th scope="col">Det. Counts</th>
     </tr>
   </thead>
   <tbody>
 {% for file in Files %}
-    <tr class="file-row"><td colspan="7">{{ file.Filename }}</td></tr>
+    <tr class="file-row"><td colspan="8">{{ file.Filename }}</td></tr>
 {% if file.Success %}
+{% if file.status.usable_with_warnings %}
+    <tr><td class="file-status-warning" colspan="8"><strong>Usable with warnings.</strong>{% if file.HasWarnings %}<ul>{% for w in file.Warnings %}<li>{{ safe_html(w) }}</li>{% endfor %}</ul>{% endif %}</td></tr>
+{% endif %}
 {% for curve_acts in file.relative_activities %}
 {% for nuc in curve_acts.nuclides %}
     <tr>
-      <td>{{ nuc.name }}{% if nuc.is_pu242_by_corr %} (by corr){% endif %}</td>
+      <td>{{ nuc.name }}{% if nuc.is_pu242_by_corr %} (by corr){% endif %}{% if nuc.pu242_correlation_extrapolated %} &#9888; extrapolated{% endif %}</td>
       <td>{{ curve_acts.curve_index }}</td>
       <td>{{ printCompact(nuc.rel_activity, 6) }} &plusmn; {{ printCompact(nuc.rel_activity_uncertainty, 6) }}</td>
       <td>{% if existsIn(nuc, "total_mass_fraction") %}{{ pct(nuc.total_mass_fraction, 4) }}%{% else %}--{% endif %}</td>
       <td>{% if existsIn(nuc, "enrichment") %}{{ pct(nuc.enrichment, 4) }}%{% else %}--{% endif %}</td>
-      <td>{% if existsIn(nuc, "has_enrichment_uncert") %}{% if nuc.has_enrichment_uncert %}{{ pct(nuc.enrichment_minus_2sigma, 4) }}% &ndash; {{ pct(nuc.enrichment_plus_2sigma, 4) }}%{% else %}--{% endif %}{% else %}--{% endif %}</td>
+      <td>{% if existsIn(nuc, "enrichment_uncertainty_kind") and nuc.enrichment_uncertainty_kind == "non_identifiable" %}Non-identifiable{% else if existsIn(nuc, "has_primary_enrichment_interval") and nuc.has_primary_enrichment_interval %}{{ pct(nuc.enrichment_primary_lower, 4) }}% &ndash; {{ pct(nuc.enrichment_primary_upper, 4) }}%{% else %}--{% endif %}</td>
+      <td>{% if existsIn(nuc, "enrichment_95_lower") %}{{ pct(nuc.enrichment_95_lower, 4) }}% &ndash; {{ pct(nuc.enrichment_95_upper, 4) }}%{% else %}--{% endif %}</td>
       <td>{% if existsIn(nuc, "detector_counts") %}{{ printCompact(nuc.detector_counts, 6) }}{% else %}--{% endif %}</td>
     </tr>
 {% endfor %}
 {% endfor %}
 {% else %}
     <tr class="fail-row">
-      <td colspan="7">FAILED &mdash; {{ file.ResultCode }}{% if file.HasErrorMessage %}: {{ safe_html(file.ErrorMessage) }}{% endif %}</td>
+      <td colspan="8">FAILED &mdash; {{ file.ResultCode }}{% if file.HasErrorMessage %}: {{ safe_html(file.ErrorMessage) }}{% endif %}</td>
     </tr>
 {% endif %}
 {% endfor %}
@@ -183,6 +194,13 @@
     Fit failed &mdash; {{ file.ResultCode }}{% if file.HasErrorMessage %}: {{ safe_html(file.ErrorMessage) }}{% endif %}
   </div>
 {% else %}
+
+{% if file.status.usable_with_warnings %}
+  <div class="file-status-warning"><strong>Fit is usable with warnings.</strong></div>
+{% endif %}
+{% if file.HasWarnings %}
+  <div class="file-status-warning"><strong>Warnings:</strong><ul>{% for w in file.Warnings %}<li>{{ safe_html(w) }}</li>{% endfor %}</ul></div>
+{% endif %}
 
   <div>
     &chi;<sup>2</sup>={{ file.chi2_str }} and there were {{ file.dof }} DOF (&chi;<sup>2</sup>/dof={{ file.chi2_per_dof_str }})
@@ -218,10 +236,10 @@
 {% if curve_acts.pu.rows %}
   <table class="resulttable">
     <caption>Plutonium mass fractions{% if file.have_multiple_rel_eff %} Rel. Eff. {{ curve_acts.curve_index }}{% endif %}</caption>
-    <thead><tr><th scope="col">Nuclide</th><th scope="col">Uncor. % Pu Mass</th><th scope="col">% Pu Mass</th><th scope="col">1-&sigma; Uncert</th></tr></thead>
+    <thead><tr><th scope="col">Nuclide</th><th scope="col">Uncor. % Pu Mass</th><th scope="col">% Pu Mass</th><th scope="col">68% uncertainty</th><th scope="col">95% profile interval</th></tr></thead>
     <tbody>
 {% for row in curve_acts.pu.rows %}
-      <tr><td>{{ row.nuclide }}{% if row.is_by_corr %} (by corr){% endif %}</td>{% if row.is_by_corr %}<td></td>{% else %}<td>{{ pct(row.uncorrected_mass_frac, 4) }}</td>{% endif %}<td>{{ pct(row.mass_frac, 4) }}</td>{% if row.mass_frac_uncert >= 0 %}<td>{{ pct(row.mass_frac_uncert, 4) }}</td>{% else %}<td></td>{% endif %}</tr>
+      <tr><td>{{ row.nuclide }}{% if row.is_by_corr %} (by corr){% endif %}{% if row.correlation_extrapolated %} &#9888; correlation extrapolated outside validated range{% endif %}</td>{% if row.is_by_corr %}<td></td>{% else %}<td>{{ pct(row.uncorrected_mass_frac, 4) }}</td>{% endif %}<td>{{ pct(row.mass_frac, 4) }}</td>{% if row.uncertainty_kind == "non_identifiable" %}<td>Non-identifiable</td>{% else if row.has_primary_interval %}<td>{{ pct(row.primary_lower, 4) }} &ndash; {{ pct(row.primary_upper, 4) }}</td>{% else if row.uncertainty_kind == "gaussian" and row.mass_frac_uncert >= 0 %}<td>&plusmn; {{ pct(row.mass_frac_uncert, 4) }}</td>{% else if row.uncertainty_kind == "locally_unreliable" %}<td>Unreliable locally</td>{% else %}<td></td>{% endif %}{% if existsIn(row, "profile_95_lower") %}<td>{{ pct(row.profile_95_lower, 4) }} &ndash; {{ pct(row.profile_95_upper, 4) }}</td>{% else %}<td>--</td>{% endif %}</tr>
 {% endfor %}
     </tbody>
   </table>
@@ -230,10 +248,10 @@
 
   <table class="resulttable">
     <caption>Relative activities and mass fractions{% if file.have_multiple_rel_eff %} Rel. Eff. {{ curve_acts.curve_index }}{% endif %}</caption>
-    <thead><tr><th scope="col">Nuclide</th><th scope="col">Rel. Act.</th><th scope="col">Total Mass Frac.</th><th scope="col">Enrichment</th><th scope="col">Enrich 2&sigma;</th><th scope="col">Det. Counts</th><th scope="col">Age</th></tr></thead>
+    <thead><tr><th scope="col">Nuclide</th><th scope="col">Rel. Act.</th><th scope="col">Total Mass Frac.</th><th scope="col">Enrichment</th><th scope="col">Enrich. 68% interval</th><th scope="col">Enrich. 95% profile</th><th scope="col">Det. Counts</th><th scope="col">Age</th></tr></thead>
     <tbody>
 {% for nuc in curve_acts.nuclides %}
-      <tr><td>{{ nuc.name }}{% if nuc.is_pu242_by_corr %} (by corr){% endif %}</td><td>{{ printCompact(nuc.rel_activity, 6) }} &plusmn; {{ printCompact(nuc.rel_activity_uncertainty, 6) }}</td>{% if existsIn(nuc, "total_mass_fraction") %}<td>{{ pct(nuc.total_mass_fraction, 4) }}%</td>{% if existsIn(nuc, "enrichment") %}<td>{{ pct(nuc.enrichment, 4) }}%</td>{% if nuc.has_enrichment_uncert %}<td>{{ pct(nuc.enrichment_minus_2sigma, 4) }}%, {{ pct(nuc.enrichment_plus_2sigma, 4) }}%</td>{% else %}<td>--</td>{% endif %}{% else %}<td>--</td><td>--</td>{% endif %}{% else %}<td></td><td></td><td></td>{% endif %}{% if existsIn(nuc, "detector_counts") %}<td>{{ printCompact(nuc.detector_counts, 6) }}</td>{% else %}<td></td>{% endif %}{% if existsIn(nuc, "age_str") %}<td>{{ nuc.age_str }}</td>{% else %}<td>--</td>{% endif %}</tr>
+      <tr><td>{{ nuc.name }}{% if nuc.is_pu242_by_corr %} (by corr){% endif %}{% if nuc.pu242_correlation_extrapolated %} &#9888; extrapolated{% endif %}</td><td>{{ printCompact(nuc.rel_activity, 6) }} &plusmn; {{ printCompact(nuc.rel_activity_uncertainty, 6) }}</td>{% if existsIn(nuc, "total_mass_fraction") %}<td>{{ pct(nuc.total_mass_fraction, 4) }}%</td>{% if existsIn(nuc, "enrichment") %}<td>{{ pct(nuc.enrichment, 4) }}%</td>{% if nuc.enrichment_uncertainty_kind == "non_identifiable" %}<td>Non-identifiable</td>{% else if nuc.has_primary_enrichment_interval %}<td>{{ pct(nuc.enrichment_primary_lower, 4) }}% &ndash; {{ pct(nuc.enrichment_primary_upper, 4) }}%</td>{% else %}<td>--</td>{% endif %}{% if existsIn(nuc, "enrichment_95_lower") %}<td>{{ pct(nuc.enrichment_95_lower, 4) }}% &ndash; {{ pct(nuc.enrichment_95_upper, 4) }}%</td>{% else %}<td>--</td>{% endif %}{% else %}<td>--</td><td>--</td><td>--</td>{% endif %}{% else %}<td></td><td></td><td></td><td></td>{% endif %}{% if existsIn(nuc, "detector_counts") %}<td>{{ printCompact(nuc.detector_counts, 6) }}</td>{% else %}<td></td>{% endif %}{% if existsIn(nuc, "age_str") %}<td>{{ nuc.age_str }}</td>{% else %}<td>--</td>{% endif %}</tr>
 {% endfor %}
     </tbody>
   </table>

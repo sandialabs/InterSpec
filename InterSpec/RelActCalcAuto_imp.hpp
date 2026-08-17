@@ -1,6 +1,7 @@
 #ifndef RelActCalcAuto_imp_h
 #define RelActCalcAuto_imp_h
 
+#include <utility>
 #include <vector>
 
 #include <thread>
@@ -15,6 +16,97 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 
 #include "InterSpec/PeakDists_imp.hpp"  //for `check_jet_for_NaN(...)`
+
+
+namespace RelActCalcAutoImp
+{
+/** Conservative extra true-energy margin used when freezing gamma membership.
+
+ A fitted calibration changes the observed separation between a source line and a fixed native-
+ calibration ROI window.  Even when the legacy moving-window mode is selected, gain and spline
+ curvature can change that separation.  The linear coefficient limits are expressed as maximum
+ keV movement at the spectrum edge.  `summed_deviation_limits_keV` is the L1 budget of all fitted
+ deviation-pair offsets; using the sum remains conservative when the cubic-spline basis overshoots
+ its individual knot values.  Native-calibration channel windows are fixed in production, so only
+ the line moves.  The optional factor of two is retained for legacy builds where the ROI edge also
+ moves under the nonlinear coordinate map.
+
+ The actual Ceres bounds may be narrower (they are detector/FWHM dependent), but this helper uses
+ their hard caps so membership is fixed before any trial is evaluated.
+ */
+inline double frozen_gamma_calibration_motion_guard_keV(
+  const bool fit_linear_calibration,
+  const bool fit_nonlinear_deviations,
+  const bool roi_window_moves_with_calibration,
+  const double one_point_linear_motion_limit_keV,
+  const double summed_deviation_limits_keV )
+{
+  assert( std::isfinite(one_point_linear_motion_limit_keV)
+          && (one_point_linear_motion_limit_keV >= 0.0) );
+  assert( std::isfinite(summed_deviation_limits_keV) && (summed_deviation_limits_keV >= 0.0) );
+
+  if( !fit_linear_calibration )
+    return 0.0;
+
+  double one_point_motion = one_point_linear_motion_limit_keV;
+  if( fit_nonlinear_deviations )
+    one_point_motion += summed_deviation_limits_keV;
+
+  return (roi_window_moves_with_calibration ? 2.0 : 1.0) * one_point_motion;
+}
+
+
+/** Closed true-energy window used for one ROI's frozen gamma identity set. */
+inline std::pair<double,double> frozen_gamma_membership_energy_limits(
+  const double roi_lower_energy,
+  const double roi_upper_energy,
+  const double lower_peak_shape_margin_keV,
+  const double upper_peak_shape_margin_keV,
+  const double calibration_motion_guard_keV )
+{
+  assert( std::isfinite(roi_lower_energy) && std::isfinite(roi_upper_energy)
+          && (roi_lower_energy < roi_upper_energy) );
+  assert( std::isfinite(lower_peak_shape_margin_keV)
+          && (lower_peak_shape_margin_keV >= 0.0) );
+  assert( std::isfinite(upper_peak_shape_margin_keV)
+          && (upper_peak_shape_margin_keV >= 0.0) );
+  assert( std::isfinite(calibration_motion_guard_keV)
+          && (calibration_motion_guard_keV >= 0.0) );
+  constexpr double roundoff_guard_keV = 1.0e-6;
+  return { roi_lower_energy - lower_peak_shape_margin_keV
+                            - calibration_motion_guard_keV - roundoff_guard_keV,
+           roi_upper_energy + upper_peak_shape_margin_keV
+                            + calibration_motion_guard_keV + roundoff_guard_keV };
+}
+
+
+/** Maps an unconstrained trial FWHM to a strictly positive, resolvable width.
+
+ The mapping is exactly the identity above twice the minimum width.  Below that join it is a
+ monotone C1 exponential continuation with a positive asymptote, so invalid optimizer trials never
+ make the peak model throw and normal persisted FWHM semantics remain unchanged. */
+template<typename T>
+T resolvable_fwhm_continuation( const T &raw_fwhm, const double channel_width,
+                                const double minimum_channels = 1.25 )
+{
+  assert( std::isfinite(channel_width) && (channel_width > 0.0) );
+  assert( std::isfinite(minimum_channels) && (minimum_channels > 0.0) );
+
+  const double lower_asymptote = minimum_channels * channel_width;
+  const double join = 2.0 * lower_asymptote;
+  double scalar = 0.0;
+  if constexpr ( std::is_same_v<T,double> )
+    scalar = raw_fwhm;
+  else
+    scalar = raw_fwhm.a;
+
+  if( scalar >= join )
+    return raw_fwhm;
+
+  const double scale = join - lower_asymptote;
+  return T(lower_asymptote) + T(scale)*exp((raw_fwhm - T(join))/T(scale));
+}
+}//namespace RelActCalcAutoImp
 
 
 namespace RelActCalcAuto

@@ -413,7 +413,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       if( !fit_errors[fi_idx].empty() )
         throw std::runtime_error( fit_errors[fi_idx] );
 
-      if( curve_results.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+      if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(curve_results.status) )
         throw std::runtime_error( "fit_peaks_for_nuclides failed: " + curve_results.error_message );
 
       const RelActCalcAuto::RelActAutoSolution &solution = curve_results.solution;
@@ -561,7 +561,7 @@ void eval_peaks_for_nuclide( const std::vector<DataSrcInfo> &srcs_info )
       }
 
       // Write N42 file with foreground, background, and fit peaks (only if fit succeeded)
-      if( curve_results.status == RelActCalcAuto::RelActAutoSolution::Status::Success )
+      if( RelActCalcAuto::RelActAutoSolution::is_usable_status(curve_results.status) )
       {
         if( write_n42 )
         {

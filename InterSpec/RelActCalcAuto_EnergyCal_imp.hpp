@@ -31,6 +31,7 @@
 #include <utility>
 #include <cassert>
 #include <algorithm>
+#include <limits>
 #include <type_traits>
 
 #include <Eigen/Dense>
@@ -204,9 +205,16 @@ std::vector<CubicSplineNodeT<T>> create_cubic_spline(
       }
     }
 
-    // Ensure transformed x-values remain sorted (same fix as double branch).
-    // When clamping, zero out the derivatives since the clamped x position is
-    // no longer a smooth function of the parameters.
+    // Ensure transformed x-values remain sorted (same active-set rule as the
+    // double branch).  On the active side of the clamp
+    //
+    //   x[i] = x[i-1] + min_spacing
+    //   y[i] = anchor_energy[i] - x[i]
+    //
+    // so both values and derivatives must be inherited from x[i-1].  Keeping
+    // the original offset Jet here would make the Jet's scalar spline differ
+    // from the double spline, while zeroing the derivatives would make a chain
+    // of clamped knots internally inconsistent.
     for( size_t i = 1; i < n; ++i )
     {
       if( x_vals[i] <= x_vals[i-1] )
@@ -216,8 +224,8 @@ std::vector<CubicSplineNodeT<T>> create_cubic_spline(
         y_vals[i] = deviation_pairs[i].first - x_vals[i];
         for( size_t d = 0; d < nderiv; ++d )
         {
-          dx_vals[i][d] = 0.0;
-          dy_vals[i][d] = 0.0;
+          dx_vals[i][d] = dx_vals[i-1][d];
+          dy_vals[i][d] = -dx_vals[i][d];
         }
       }
     }
@@ -295,27 +303,38 @@ std::vector<CubicSplineNodeT<T>> create_cubic_spline(
         b_vals[i].v[d] = db_vals[d](i);
     }
 
+    // Materialize the coherent, possibly-clamped knot state once.  In
+    // particular, do not re-read deviation_pairs below: an active clamp has
+    // intentionally replaced both its scalar offset and its one-sided
+    // derivative.
+    std::vector<T> x_knots( n, T(0.0) );
+    std::vector<T> y_knots( n, T(0.0) );
+    for( size_t i = 0; i < n; ++i )
+    {
+      x_knots[i].a = x_vals[i];
+      y_knots[i].a = y_vals[i];
+      for( size_t d = 0; d < nderiv; ++d )
+      {
+        x_knots[i].v[d] = dx_vals[i][d];
+        y_knots[i].v[d] = dy_vals[i][d];
+      }
+    }
+
     std::vector<CubicSplineNodeT<T>> nodes( n );
     for( size_t i = 0; i < (n - 1); ++i )
     {
-      T h = T( x_vals[i+1] - x_vals[i] );
-      for( size_t d = 0; d < nderiv; ++d )
-        h.v[d] = dx_vals[i+1][d] - dx_vals[i][d];
+      const T h = x_knots[i+1] - x_knots[i];
 
-      nodes[i].x = T( x_vals[i] );
-      for( size_t d = 0; d < nderiv; ++d )
-        nodes[i].x.v[d] = dx_vals[i][d];
-      nodes[i].y = deviation_pairs[i].second;
+      nodes[i].x = x_knots[i];
+      nodes[i].y = y_knots[i];
       nodes[i].a = (b_vals[i+1] - b_vals[i]) / (T(3.0) * h);
       nodes[i].b = b_vals[i];
-      nodes[i].c = (deviation_pairs[i+1].second - deviation_pairs[i].second) / h
+      nodes[i].c = (y_knots[i+1] - y_knots[i]) / h
                  - (T(2.0) * b_vals[i] + b_vals[i+1]) * h / T(3.0);
     }
 
-    nodes[n-1].x = T( x_vals[n-1] );
-    for( size_t d = 0; d < nderiv; ++d )
-      nodes[n-1].x.v[d] = dx_vals[n-1][d];
-    nodes[n-1].y = deviation_pairs[n-1].second;
+    nodes[n-1].x = x_knots[n-1];
+    nodes[n-1].y = y_knots[n-1];
     nodes[n-1].a = T(0.0);
     nodes[n-1].b = T(0.0);
     nodes[n-1].c = T(0.0);
@@ -372,13 +391,73 @@ T eval_cubic_spline( const T energy, const std::vector<CubicSplineNodeT<T>> &nod
 }//eval_cubic_spline(...)
 
 
+/** Evaluate only the scalar part of a double/Jet spline without allocating a
+ scalar copy of all nodes.  Root searches use this function so their branch
+ decisions and stopping criteria never depend on active Jet lanes. */
+template<typename T>
+double eval_cubic_spline_scalar( const double energy,
+                                 const std::vector<CubicSplineNodeT<T>> &nodes )
+{
+  const auto scalar = []( const T &value ) -> double {
+    if constexpr ( std::is_same_v<T, double> )
+      return value;
+    else
+      return value.a;
+  };
+
+  if( nodes.empty() )
+    return 0.0;
+
+  const auto it = std::upper_bound( nodes.begin(), nodes.end(), energy,
+    [&]( const double e, const CubicSplineNodeT<T> &node ) {
+      return e < scalar(node.x);
+    } );
+  if( it == nodes.begin() )
+    return scalar( nodes.front().y );
+  if( it == nodes.end() )
+    return scalar( nodes.back().y );
+
+  const CubicSplineNodeT<T> &node = *(it - 1);
+  const double h = energy - scalar(node.x);
+  return ((scalar(node.a) * h + scalar(node.b)) * h + scalar(node.c)) * h
+         + scalar(node.y);
+}
+
+
+/** Scalar derivative dS/dE for the same piecewise branch selected by
+ eval_cubic_spline_scalar(). */
+template<typename T>
+double eval_cubic_spline_scalar_derivative(
+  const double energy, const std::vector<CubicSplineNodeT<T>> &nodes )
+{
+  const auto scalar = []( const T &value ) -> double {
+    if constexpr ( std::is_same_v<T, double> )
+      return value;
+    else
+      return value.a;
+  };
+
+  const auto it = std::upper_bound( nodes.begin(), nodes.end(), energy,
+    [&]( const double e, const CubicSplineNodeT<T> &node ) {
+      return e < scalar(node.x);
+    } );
+  if( it == nodes.begin() || it == nodes.end() )
+    return 0.0;
+
+  const CubicSplineNodeT<T> &node = *(it - 1);
+  const double h = energy - scalar(node.x);
+  return (3.0 * scalar(node.a) * h + 2.0 * scalar(node.b)) * h
+         + scalar(node.c);
+}
+
+
 /** Compute the inverse correction for deviation pairs (analogous to SpecUtils::correction_due_to_dev_pairs).
 
  Given a true_energy, this function solves for the offset that was applied:
    true_energy = observed_energy + deviation_correction(observed_energy)
    true_energy = (true_energy - answer) + deviation_correction(true_energy - answer)
 
- It uses an iterative Newton-Raphson style solver to find 'answer' such that:
+ It solves a scalar fixed-point/root problem for 'answer' such that:
    answer = deviation_correction(true_energy - answer)
 
  @param true_energy The true energy value
@@ -391,162 +470,121 @@ T correction_due_to_deviation_pairs( const T true_energy, const std::vector<Cubi
   if( nodes.empty() )
     return T(0.0);
 
-  auto get_scalar = []( const T &val ) -> double {
+  const auto get_scalar = []( const T &val ) -> double {
     if constexpr ( std::is_same_v<T, double> )
       return val;
     else
       return val.a;
   };
 
-  // We solve: answer = eval_cubic_spline(true_energy - answer, nodes)
-  // Equivalently: f(answer) = answer - eval_cubic_spline(true_energy - answer, nodes) = 0
-
-  T answer = eval_cubic_spline( true_energy, nodes );
-  T check = eval_cubic_spline( true_energy - answer, nodes );
-  T diff = answer - check;
-
-  const double tolerance = 0.0001;  // 0.1 eV tolerance, same as SpecUtils
-
-  if( std::fabs( get_scalar( diff ) ) < tolerance )
-    return answer;
-
-  // Use averaged fixed-point iteration: a_{n+1} = (a_n + S(E - a_n)) / 2
-  // This is much more robust than the direct iteration a_{n+1} = S(E - a_n),
-  //  which oscillates and diverges when |S'(E-a)| is close to or greater than 1.
-  // The averaged iteration has convergence rate 0.5*|1 - S'(E-a*)|, which is
-  //  typically much smaller (e.g., 0.07 vs 0.86 for a typical steep spline).
-  const int max_avg_iters = 25;
-  int niters = 0;
-
-  while( (std::fabs( get_scalar( diff ) ) > tolerance) && (niters < max_avg_iters) )
-  {
-    answer = (answer + check) * T( 0.5 );
-    check = eval_cubic_spline( true_energy - answer, nodes );
-    diff = answer - check;
-    ++niters;
-  }
-
-  if( std::fabs( get_scalar( diff ) ) <= tolerance )
-  {
-#if( PERFORM_DEVELOPER_CHECKS )
-    // Verify the converged answer satisfies the fixed-point equation
-    {
-      const T verify = eval_cubic_spline( true_energy - answer, nodes );
-      const double residual = std::fabs( get_scalar( answer ) - get_scalar( verify ) );
-      if( residual > tolerance )
-      {
-        char buffer[256];
-        snprintf( buffer, sizeof(buffer),
-          "correction_due_to_deviation_pairs: averaged iteration returned answer with"
-          " residual=%.6e for E=%.4f (expected < %.6e)",
-          residual, get_scalar(true_energy), tolerance );
-        log_developer_error( __func__, buffer );
-      }
-    }
-#endif
-    return answer;
-  }
-
-  // (Removed the per-energy "averaged iteration did not converge ... falling to bisection"
-  //  developer-error log: the bisection fallback below is a normal/expected path, and logging it on
-  //  every energy produced ~GB of developer_errors.log during bulk fitting (e.g. GA runs with
-  //  energy-cal fitting on).  Re-add behind a finer debug flag if this needs tracing.)
-
-  // Averaged iteration did not converge (can happen if S' < -1, giving a fold in the
-  //  energy mapping); fall back to bisection on scalar values.
+  // The scalar root and its derivatives are deliberately separated.  Let
+  //
+  //   f(a) = a - S(E-a) = 0.
+  //
+  // Iterating this equation with Jets makes the returned derivative depend on
+  // how many iterations happened to be needed.  Instead, solve f with doubles
+  // and attach the exact first derivative of that selected root with the
+  // implicit-function theorem below.  This also ensures every DynamicAutoDiff
+  // pass sees the same scalar answer.
   const double true_energy_scalar = get_scalar( true_energy );
 
-  // Extract scalar-only nodes for bisection
-  std::vector<CubicSplineNodeT<double>> scalar_nodes( nodes.size() );
-  for( size_t i = 0; i < nodes.size(); ++i )
-  {
-    scalar_nodes[i].x = get_scalar( nodes[i].x );
-    scalar_nodes[i].y = get_scalar( nodes[i].y );
-    scalar_nodes[i].a = get_scalar( nodes[i].a );
-    scalar_nodes[i].b = get_scalar( nodes[i].b );
-    scalar_nodes[i].c = get_scalar( nodes[i].c );
-  }
-
-  // Bracket the root using the range of spline y-values
-  double y_min = scalar_nodes[0].y, y_max = scalar_nodes[0].y;
-  for( size_t i = 1; i < scalar_nodes.size(); ++i )
-  {
-    y_min = std::min( y_min, scalar_nodes[i].y );
-    y_max = std::max( y_max, scalar_nodes[i].y );
-  }
-
-  const double margin = std::max( (y_max - y_min) * 0.5, 10.0 );
-  double a_lo = y_min - margin;
-  double a_hi = y_max + margin;
-
-  // f(a) = a - S(E - a); f is monotonically increasing for well-conditioned splines
-  auto f_scalar = [&]( double a ) -> double {
-    return a - eval_cubic_spline( true_energy_scalar - a, scalar_nodes );
+  const auto f_scalar = [&]( const double a ) -> double {
+    return a - eval_cubic_spline_scalar( true_energy_scalar - a, nodes );
   };
 
-  double f_lo = f_scalar( a_lo );
-  double f_hi = f_scalar( a_hi );
-
-  // Widen bracket if needed
-  for( int i = 0; i < 10 && f_lo * f_hi > 0.0; ++i )
+  // Preserve the legacy root-selection bias for ordinary, contractive
+  // splines, but converge the *scalar* fixed point much more tightly than the
+  // public 0.1-eV compatibility tolerance.
+  constexpr double root_residual_tol = 1.0e-10;
+  double a_scalar = eval_cubic_spline_scalar( true_energy_scalar, nodes );
+  bool converged = false;
+  for( int iter = 0; iter < 64; ++iter )
   {
-    const double width = a_hi - a_lo;
-    a_lo -= width;
-    a_hi += width;
-    f_lo = f_scalar( a_lo );
-    f_hi = f_scalar( a_hi );
-  }
-
-  if( f_lo * f_hi > 0.0 )
-  {
-    // Could not bracket the root; return best averaged-iteration result
-    assert( 0 );
-    return answer;
-  }
-
-  // Bisection: 60 iterations gives ~1e-18 relative precision
-  double a_scalar = 0.5 * (a_lo + a_hi);
-  for( int i = 0; i < 60; ++i )
-  {
-    a_scalar = 0.5 * (a_lo + a_hi);
-    const double f_mid = f_scalar( a_scalar );
-
-    if( std::fabs( f_mid ) < tolerance * 0.1 )
+    const double spline_value = eval_cubic_spline_scalar( true_energy_scalar - a_scalar, nodes );
+    const double residual = a_scalar - spline_value;
+    if( std::fabs(residual) <= root_residual_tol )
+    {
+      converged = true;
       break;
-
-    if( f_mid * f_lo < 0.0 )
-    {
-      a_hi = a_scalar;
-      f_hi = f_mid;
     }
-    else
-    {
-      a_lo = a_scalar;
-      f_lo = f_mid;
-    }
+    a_scalar = 0.5 * (a_scalar + spline_value);
   }
 
-  a_scalar = 0.5 * (a_lo + a_hi);
-
-#if( PERFORM_DEVELOPER_CHECKS )
-  // Verify bisection result satisfies the fixed-point equation
+  // Non-contractive splines still have at least one root because S clamps at
+  // both ends.  Bracket it in offset space and bisect.  Expanding around the
+  // fixed-point seed, instead of returning that unfinished iterate, makes the
+  // scalar result independent of iteration-count seams.
+  if( !converged )
   {
-    const double bisect_verify = eval_cubic_spline( true_energy_scalar - a_scalar, scalar_nodes );
-    const double bisect_residual = std::fabs( a_scalar - bisect_verify );
-    if( bisect_residual >= tolerance )
+    double y_min = get_scalar(nodes[0].y), y_max = get_scalar(nodes[0].y);
+    for( size_t i = 1; i < nodes.size(); ++i )
     {
-      char buffer[256];
-      snprintf( buffer, sizeof(buffer),
-        "correction_due_to_deviation_pairs: bisection result has residual=%.6e"
-        " for E=%.4f, a=%.6f (expected < %.6e)",
-        bisect_residual, true_energy_scalar, a_scalar, tolerance );
-      log_developer_error( __func__, buffer );
+      y_min = std::min( y_min, get_scalar(nodes[i].y) );
+      y_max = std::max( y_max, get_scalar(nodes[i].y) );
     }
-  }
-#endif
 
-  assert( std::fabs( a_scalar - eval_cubic_spline( true_energy_scalar - a_scalar, scalar_nodes ) )
-         < 10.0 * tolerance );
+    double half_width = std::max( y_max - y_min, 10.0 );
+    double a_lo = a_scalar - half_width;
+    double a_hi = a_scalar + half_width;
+
+    double f_lo = f_scalar( a_lo );
+    double f_hi = f_scalar( a_hi );
+
+    if( std::fabs(f_lo) <= root_residual_tol )
+    {
+      a_scalar = a_lo;
+      converged = true;
+    }
+    else if( std::fabs(f_hi) <= root_residual_tol )
+    {
+      a_scalar = a_hi;
+      converged = true;
+    }
+
+    for( int i = 0; !converged && i < 64
+                      && std::signbit(f_lo) == std::signbit(f_hi); ++i )
+    {
+      half_width *= 2.0;
+      a_lo = a_scalar - half_width;
+      a_hi = a_scalar + half_width;
+      f_lo = f_scalar( a_lo );
+      f_hi = f_scalar( a_hi );
+    }
+
+    // A finite, continuous clamped spline must bracket eventually.  Treat a
+    // non-finite spline as an invalid calibration rather than returning a Jet
+    // derivative of an unfinished iteration.
+    if( !converged
+        && (!std::isfinite(f_lo) || !std::isfinite(f_hi)
+            || (std::signbit(f_lo) == std::signbit(f_hi))) )
+      return T( std::numeric_limits<double>::quiet_NaN() );
+
+    for( int i = 0; !converged && i < 80; ++i )
+    {
+      a_scalar = 0.5 * (a_lo + a_hi);
+      const double f_mid = f_scalar( a_scalar );
+      if( std::fabs(f_mid) <= root_residual_tol )
+      {
+        converged = true;
+        break;
+      }
+
+      if( std::signbit(f_mid) != std::signbit(f_lo) )
+      {
+        a_hi = a_scalar;
+        f_hi = f_mid;
+      }
+      else
+      {
+        a_lo = a_scalar;
+        f_lo = f_mid;
+      }
+    }
+    if( !converged )
+      a_scalar = 0.5 * (a_lo + a_hi);
+  }
+
+  assert( std::fabs(f_scalar(a_scalar)) < 1.0e-7 );
 
   if constexpr ( std::is_same_v<T, double> )
   {
@@ -554,7 +592,7 @@ T correction_due_to_deviation_pairs( const T true_energy, const std::vector<Cubi
   }
   else
   {
-    // For Jet types, recover derivatives using the implicit function theorem.
+    // Recover Jet derivatives using the implicit function theorem.
     // From a = S(E - a), differentiating w.r.t. any parameter p:
     //   da/dp = S'(E-a) * (dE/dp - da/dp) + dS/dp_partial
     //   da/dp * (1 + S'(E-a)) = S'(E-a) * dE/dp + dS/dp_partial
@@ -563,100 +601,23 @@ T correction_due_to_deviation_pairs( const T true_energy, const std::vector<Cubi
     //   S'(E-a*) * dE/dp + dS/dp_partial  (since T(a_scalar) has zero derivatives).
     // So: da/dp = S_jet.v[d] / (1 + S'(E-a*))
 
-    // Compute S'(E-a*) from the cubic spline coefficients
+    // Compute S'(E-a*) from the selected scalar spline branch.
     const double eval_point = true_energy_scalar - a_scalar;
-    double sprime = 0.0;
-
-    const auto it = std::upper_bound( scalar_nodes.begin(), scalar_nodes.end(), eval_point,
-      []( double e, const CubicSplineNodeT<double> &node ) { return e < node.x; } );
-
-    if( it != scalar_nodes.begin() && it != scalar_nodes.end() )
-    {
-      const CubicSplineNodeT<double> &node = *(it - 1);
-      const double h = eval_point - node.x;
-      sprime = (3.0 * node.a * h + 2.0 * node.b) * h + node.c;
-    }
-    // At boundaries, spline clamps to constant y, so S' = 0 (default)
-
+    const double sprime = eval_cubic_spline_scalar_derivative( eval_point, nodes );
     const double denom = 1.0 + sprime;
 
-    // Evaluate spline at E_jet - T(a_scalar) to get the numerator derivatives
-    T a_scalar_jet;
-    a_scalar_jet.a = a_scalar;
-    for( size_t d = 0; d < static_cast<size_t>( T::DIMENSION ); ++d )
-      a_scalar_jet.v[d] = 0.0;
+    // Evaluate the spline at E_jet - a* to get the numerator derivatives.
+    const T a_scalar_jet( a_scalar );
 
     const T S_jet = eval_cubic_spline( true_energy - a_scalar_jet, nodes );
 
     // Verify that S(E - a*) ≈ a* (the fixed-point equation holds in the scalar part)
-    assert( std::fabs( S_jet.a - a_scalar ) < 10.0 * tolerance );
+    assert( std::fabs( S_jet.a - a_scalar ) < 1.0e-7 );
 
-    // Construct result with proper derivatives
-    T result;
+    T result( a_scalar );
     result.a = a_scalar;
-    if( std::fabs( denom ) > 1.0e-10 )
-    {
-      for( size_t d = 0; d < static_cast<size_t>( T::DIMENSION ); ++d )
-        result.v[d] = S_jet.v[d] / denom;
-    }
-    else
-    {
-      // Near a fold (S' ≈ -1), IFT breaks down; use the Jet derivatives as-is
-      for( size_t d = 0; d < static_cast<size_t>( T::DIMENSION ); ++d )
-        result.v[d] = S_jet.v[d];
-    }
-
-#if( PERFORM_DEVELOPER_CHECKS )
-    // Finite-difference check of IFT derivatives w.r.t. true_energy
-    {
-      const double fd_eps = 1.0e-5;
-      for( size_t d = 0; d < static_cast<size_t>( T::DIMENSION ); ++d )
-      {
-        // Only check directions where true_energy carries a derivative
-        if( std::fabs( true_energy.v[d] ) < 1.0e-15 )
-          continue;
-
-        // Solve scalar fixed-point at E +/- fd_eps
-        double a_plus = eval_cubic_spline( true_energy_scalar + fd_eps, scalar_nodes );
-        for( int iter = 0; iter < 50; ++iter )
-        {
-          const double c = eval_cubic_spline( true_energy_scalar + fd_eps - a_plus, scalar_nodes );
-          if( std::fabs( a_plus - c ) < tolerance * 0.01 )
-            break;
-          a_plus = 0.5 * (a_plus + c);
-        }
-
-        double a_minus = eval_cubic_spline( true_energy_scalar - fd_eps, scalar_nodes );
-        for( int iter = 0; iter < 50; ++iter )
-        {
-          const double c = eval_cubic_spline( true_energy_scalar - fd_eps - a_minus, scalar_nodes );
-          if( std::fabs( a_minus - c ) < tolerance * 0.01 )
-            break;
-          a_minus = 0.5 * (a_minus + c);
-        }
-
-        const double fd_da_dE = (a_plus - a_minus) / (2.0 * fd_eps);
-        const double ad_da_dE = result.v[d] / true_energy.v[d];
-        const double deriv_diff = std::fabs( fd_da_dE - ad_da_dE );
-        const double deriv_scale = std::max( std::fabs( fd_da_dE ), 1.0e-12 );
-
-        if( (deriv_diff > 1.0e-3) && (deriv_diff / deriv_scale > 0.05) )
-        {
-          static int s_logged_fd_mismatch = 0;
-          if( s_logged_fd_mismatch < 20 )
-          {
-            char buffer[320];
-            snprintf( buffer, sizeof(buffer),
-              "correction_due_to_deviation_pairs: IFT derivative mismatch"
-              " dim=%zu fd=%.6e ad=%.6e E=%.4f a=%.6f S'=%.6f denom=%.6f",
-              d, fd_da_dE, ad_da_dE, true_energy_scalar, a_scalar, sprime, denom );
-            log_developer_error( __func__, buffer );
-            s_logged_fd_mismatch += 1;
-          }
-        }
-      }
-    }
-#endif
+    for( size_t d = 0; d < static_cast<size_t>( T::DIMENSION ); ++d )
+      result.v[d] = S_jet.v[d] / denom;
 
     return result;
   }
@@ -849,19 +810,10 @@ T find_polynomial_channel( const T energy,
   if( coeffs.empty() || nchannel < 2 )
     return T(0.0);
 
-  // Count non-zero coefficients
-  size_t ncoefs = 0;
-  for( size_t i = 0; i < coeffs.size(); ++i )
-  {
-    double coef_val;
-    if constexpr ( std::is_same_v<T, double> )
-      coef_val = coeffs[i];
-    else
-      coef_val = coeffs[i].a;
-
-    if( coef_val != 0.0 )
-      ncoefs = i + 1;
-  }
+  // The vector length declares the calibration order.  A fitted coefficient
+  // can have scalar value zero while carrying a live Jet lane; trimming on the
+  // scalar value would silently delete that derivative.
+  const size_t ncoefs = coeffs.size();
 
   if( ncoefs < 2 )
     return T(0.0);
@@ -880,7 +832,20 @@ T find_polynomial_channel( const T energy,
     }
 
     // Quadratic case: solve C₀ + C₁*ch + C₂*ch² = energy
+    double quadratic_scalar = 0.0;
     if( ncoefs == 3 )
+    {
+      if constexpr ( std::is_same_v<T, double> )
+        quadratic_scalar = coeffs[2];
+      else
+        quadratic_scalar = coeffs[2].a;
+    }
+
+    // At a scalar-zero quadratic coefficient the equation is linear, but its
+    // derivative with respect to C2 is not zero.  Route that case through the
+    // scalar-root/IFT path below instead of dividing by a Jet whose scalar is
+    // zero.
+    if( (ncoefs == 3) && (quadratic_scalar != 0.0) )
     {
       const T a = coeffs[2];
       const T b = coeffs[1];
@@ -888,56 +853,59 @@ T find_polynomial_channel( const T energy,
 
       const T discriminant = b*b - T(4.0)*a*c;
 
-      if( discriminant < 0.0 )
-        return T(0.0);  // No real solution
-
-      const T sqrt_disc = sqrt(discriminant);
-      const T root1 = (-b + sqrt_disc) / (T(2.0) * a);
-      const T root2 = (-b - sqrt_disc) / (T(2.0) * a);
-
-      // Extract scalar values for comparison
-      double root1_val, root2_val;
-      if constexpr ( std::is_same_v<T, double> )
+      // Keep the inexpensive analytic result only when it identifies a root inside the
+      // measurement's native channel interval.  A real root outside that interval is still a
+      // valid inverse (gamma membership deliberately allows calibration extrapolation), and a
+      // negative discriminant needs the same documented turning-point behavior as higher-order
+      // calibrations.  Both cases therefore fall through to the scalar-root/IFT path below rather
+      // than returning a constant channel zero with no useful derivative.
+      if( !(discriminant < 0.0) )
       {
-        root1_val = root1;
-        root2_val = root2;
-      }
-      else
-      {
-        root1_val = root1.a;
-        root2_val = root2.a;
-      }
+        const T sqrt_disc = sqrt(discriminant);
+        const T root1 = (-b + sqrt_disc) / (T(2.0) * a);
+        const T root2 = (-b - sqrt_disc) / (T(2.0) * a);
 
-      // Choose the root that's in valid range
-      const bool root1_valid = (root1_val >= 0.0) && (root1_val < static_cast<double>(nchannel));
-      const bool root2_valid = (root2_val >= 0.0) && (root2_val < static_cast<double>(nchannel));
-
-      if( root1_valid && !root2_valid )
-        return root1;
-      if( root2_valid && !root1_valid )
-        return root2;
-
-      // Both valid - choose the one closer to linear solution.
-      // Note: for Jet types, if dist1 ≈ dist2, a small perturbation could flip the
-      // selected root, creating a derivative discontinuity.  In practice this is
-      // unlikely for well-conditioned polynomial calibrations, but could be an issue
-      // in the future if quadratic terms become large.
-      if( root1_valid && root2_valid )
-      {
-        const T linear_sol = (polyenergy - coeffs[0]) / coeffs[1];
-        double linear_val;
+        // Extract scalar values for comparison.
+        double root1_val, root2_val;
         if constexpr ( std::is_same_v<T, double> )
-          linear_val = linear_sol;
+        {
+          root1_val = root1;
+          root2_val = root2;
+        }
         else
-          linear_val = linear_sol.a;
+        {
+          root1_val = root1.a;
+          root2_val = root2.a;
+        }
 
-        const double dist1 = std::fabs( root1_val - linear_val );
-        const double dist2 = std::fabs( root2_val - linear_val );
+        const bool root1_valid = (root1_val >= 0.0)
+                              && (root1_val < static_cast<double>(nchannel));
+        const bool root2_valid = (root2_val >= 0.0)
+                              && (root2_val < static_cast<double>(nchannel));
 
-        return (dist1 < dist2) ? root1 : root2;
+        if( root1_valid && !root2_valid )
+          return root1;
+        if( root2_valid && !root1_valid )
+          return root2;
+
+        // Both valid - choose the one closer to the linearized solution.  This branch choice is a
+        // genuine multi-valued-inverse seam; all single-valued extrapolated cases use the common
+        // scalar-root/IFT implementation below.
+        if( root1_valid && root2_valid )
+        {
+          const T linear_sol = (polyenergy - coeffs[0]) / coeffs[1];
+          double linear_val;
+          if constexpr ( std::is_same_v<T, double> )
+            linear_val = linear_sol;
+          else
+            linear_val = linear_sol.a;
+
+          const double dist1 = std::fabs( root1_val - linear_val );
+          const double dist2 = std::fabs( root2_val - linear_val );
+
+          return (dist1 < dist2) ? root1 : root2;
+        }
       }
-
-      return T(0.0);  // Neither valid
     }
   }
 
@@ -1319,22 +1287,9 @@ T find_fullrangefraction_channel( const T energy,
   if( coeffs.empty() || nchannel < 2 )
     return T(0.0);
 
-  // Count non-zero coefficients
-  size_t ncoefs = 0;
-  for( size_t i = 0; i < (std::min)(coeffs.size(), size_t(4)); ++i )
-  {
-    double coef_val;
-    if constexpr ( std::is_same_v<T, double> )
-      coef_val = coeffs[i];
-    else
-      coef_val = coeffs[i].a;
-
-    if( coef_val != 0.0 )
-      ncoefs = i + 1;
-  }
-
-  if( coeffs.size() > 4 )
-    ncoefs = 5;  // Has the 1/(1+60x) term
+  // As for polynomial calibration, layout declares the order.  Do not discard
+  // a scalar-zero coefficient that carries an active derivative lane.
+  const size_t ncoefs = (std::min)( coeffs.size(), size_t(5) );
 
   if( ncoefs < 2 )
     return T(0.0);
@@ -1355,7 +1310,16 @@ T find_fullrangefraction_channel( const T energy,
 
     // Quadratic case: E = C₀ + x*C₁ + x²*C₂
     // Let y = bin/nchannel, solve: C₂*y² + C₁*y + (C₀ - E) = 0
+    double quadratic_scalar = 0.0;
     if( ncoefs == 3 )
+    {
+      if constexpr ( std::is_same_v<T, double> )
+        quadratic_scalar = coeffs[2];
+      else
+        quadratic_scalar = coeffs[2].a;
+    }
+
+    if( (ncoefs == 3) && (quadratic_scalar != 0.0) )
     {
       const T a = coeffs[2];
       const T b = coeffs[1];
@@ -1748,7 +1712,7 @@ T find_lowerchannel_channel( const T energy,
   // Apply deviation pair correction to the energy
   T corrected_energy = energy;
   if( !dev_pair_spline.empty() )
-    corrected_energy -= eval_cubic_spline( energy, dev_pair_spline );
+    corrected_energy -= correction_due_to_deviation_pairs( energy, dev_pair_spline );
 
   // Out-of-range handling: return the unclamped linear-extrapolation channel via
   // Jet arithmetic, using the first (resp. last) channel's width as the slope.
@@ -1871,7 +1835,7 @@ T find_lowerchannel_channel( const T energy,
   // Apply deviation pair correction to the energy first
   T corrected_energy = energy;
   if( !dev_pair_spline.empty() )
-    corrected_energy -= eval_cubic_spline( energy, dev_pair_spline );
+    corrected_energy -= correction_due_to_deviation_pairs( energy, dev_pair_spline );
 
   // The adjustment transforms channel energies as:
   //   E_adj[i] = E_orig[i] + offset_adj + ((E_orig[i] - lower_energy) / range) * gain_adj

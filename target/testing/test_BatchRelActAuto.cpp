@@ -408,3 +408,59 @@ BOOST_AUTO_TEST_CASE( unconfigured_state_rejected )
     BOOST_CHECK( !summary.summary_json.empty() );
   }
 }
+
+
+BOOST_AUTO_TEST_CASE( mass_fraction_profile_selectors_are_nuclide_only_and_repeatable )
+{
+  set_data_dir();
+
+  const string state_xml = SpecUtils::append_path(
+      g_eu152_dir, "isotopics_by_nuclides_Eu152_Unshielded_releff.xml" );
+  shared_ptr<RelActCalcAuto::RelActAutoGuiState> state;
+  BOOST_REQUIRE_NO_THROW( state = BatchRelActAuto::load_state_from_xml_file(state_xml) );
+  BOOST_REQUIRE( state );
+  BOOST_REQUIRE_EQUAL( state->options.rel_eff_curves.size(), 1u );
+  BOOST_REQUIRE( !state->options.rel_eff_curves[0].nuclides.empty() );
+
+  RelActCalcAuto::RelEffCurveInput &curve = state->options.rel_eff_curves[0];
+  curve.name = "primary";
+  const string nuclide_name = curve.nuclides[0].name();
+  BOOST_REQUIRE( RelActCalcAuto::nuclide(curve.nuclides[0].source) );
+
+  // Stop after selector application so this test checks the CLI override grammar without running
+  // an expensive fit.  A bare selector, one-based index, and configured name may be repeated.
+  state->options.rois.clear();
+  BatchRelActAuto::Options valid;
+  valid.state_override = state;
+  valid.profile_mass_fractions = {
+    nuclide_name, "1:" + nuclide_name, "primary:" + nuclide_name
+  };
+  BatchRelActAuto::Result valid_result;
+  BOOST_REQUIRE_NO_THROW(
+      valid_result = BatchRelActAuto::run_on_file("", {}, nullptr, "", nullptr, {}, valid) );
+  BOOST_CHECK( valid_result.m_result_code == BatchRelActAuto::ResultCode::RelActStateNotUsable );
+
+  const auto check_invalid = [&]( const string &selector ){
+    BatchRelActAuto::Options invalid;
+    invalid.state_override = state;
+    invalid.profile_mass_fractions = { selector };
+    BOOST_CHECK_THROW(
+        BatchRelActAuto::run_on_file("", {}, nullptr, "", nullptr, {}, invalid),
+        std::runtime_error );
+  };
+
+  check_invalid( ":" + nuclide_name );
+  check_invalid( "1:" );
+  check_invalid( "1:" + nuclide_name + ":extra" );
+  check_invalid( "2:" + nuclide_name );
+  check_invalid( "NoSuchNuclide" );
+
+  // NucInputInfo also stores element and reaction sources.  Even when such a source has the exact
+  // requested name, --profile-mass-fraction must not treat it as a nuclide.
+  const SandiaDecay::Element * const iron = DecayDataBaseServer::database()->element( "Fe" );
+  BOOST_REQUIRE( iron );
+  RelActCalcAuto::NucInputInfo element_input;
+  element_input.source = iron;
+  curve.nuclides.push_back( element_input );
+  check_invalid( element_input.name() );
+}

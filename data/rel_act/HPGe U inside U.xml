@@ -63,7 +63,7 @@
 					<MassFractionConstraint version="0">
 						<Nuclide>U234</Nuclide>
 						<LowerMassFraction>0.00000000e+00</LowerMassFraction>
-						<UpperMassFraction>9.99999978e-03</UpperMassFraction>
+						<UpperMassFraction>1.50000006e-02</UpperMassFraction>
 					</MassFractionConstraint>
 					<MassFractionConstraint version="0">
 						<Nuclide>U232</Nuclide>
@@ -129,7 +129,7 @@
 					<MassFractionConstraint version="0">
 						<Nuclide>U234</Nuclide>
 						<LowerMassFraction>0.00000000e+00</LowerMassFraction>
-						<UpperMassFraction>9.99999978e-03</UpperMassFraction>
+						<UpperMassFraction>1.50000006e-02</UpperMassFraction>
 					</MassFractionConstraint>
 				</MassFractionConstraints>
 			</RelEffCurveInput>

@@ -748,6 +748,19 @@ vector<std::shared_ptr<const PeakDef> > search_for_peaks(
 {
   vector<std::shared_ptr<const PeakDef> > answer;
 
+  // Library/test callers do not necessarily have application- or DRF-owned
+  // preferences.  The lower-level search routines require a non-null object,
+  // so establish the documented fallback once at this public entry point.
+  // Inferring the detector class here also makes the behavior independent of
+  // assertions: Debug and Release now take the same path.
+  if( !fitPrefs )
+  {
+    auto defaults = std::make_shared<PeakFitDetPrefs>();
+    defaults->m_det_type = PeakFitUtils::effective_det_type( nullptr, meas, nullptr );
+    defaults->m_source = PeakFitDetPrefs::LoadingSource::FromSpectralData;
+    fitPrefs = std::move(defaults);
+  }
+
   if( singleThreaded )
     answer = search_for_peaks_singlethread( meas, drf, origpeaks, fitPrefs, cancel_flag );
   else

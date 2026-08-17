@@ -1,5 +1,5 @@
 {% if status.success %}
-Solution was successfully found.
+{% if status.usable_with_warnings %}Solution is usable with warnings.{% else %}Solution was successfully found.{% endif %}
 {% else if status.status_code == 1 %}
 Problem was not initialized.
 {% else if status.status_code == 2 %}
@@ -92,7 +92,7 @@ Relative Activities{% if have_multiple_rel_eff %} {{ curve_acts.curve_index }}{%
 
 Plutonium Enrichment{% if have_multiple_rel_eff %} {{ curve_acts.curve_index }}{% endif %}:
 {% for row in curve_acts.pu.rows %}
-    {{ row.nuclide }}{% if row.is_by_corr %} (by corr): {% else %}: {% endif %}{{ pct(row.mass_frac, 4) }}%{% if row.mass_frac_uncert >= 0 %} ± {{ pct(row.mass_frac_uncert, 4) }}%{% endif %}
+    {{ row.nuclide }}{% if row.is_by_corr %} (by corr){% endif %}{% if row.correlation_extrapolated %} [correlation extrapolated]{% endif %}: {{ pct(row.mass_frac, 4) }}%{% if row.uncertainty_kind == "non_identifiable" %} (non-identifiable){% else if row.has_primary_interval %} (68%: {{ pct(row.primary_lower, 4) }}% to {{ pct(row.primary_upper, 4) }}%){% else if row.uncertainty_kind == "locally_unreliable" %} (local Gaussian uncertainty unreliable){% else if row.uncertainty_kind == "gaussian" and row.mass_frac_uncert >= 0 %} ± {{ pct(row.mass_frac_uncert, 4) }}%{% endif %}{% if existsIn(row, "profile_95_lower") %} (95%: {{ pct(row.profile_95_lower, 4) }}% to {{ pct(row.profile_95_upper, 4) }}%){% endif %}
 {% endfor %}
 {% endif %}
 {% endfor %}

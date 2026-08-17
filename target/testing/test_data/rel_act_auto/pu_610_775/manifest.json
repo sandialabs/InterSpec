@@ -1,0 +1,328 @@
+{
+  "schema_version": 1,
+  "fixture_set": "rel_act_auto_pu_610_775",
+  "prepared_utc_date": "2026-08-15",
+  "truth_convention": {
+    "certificate_mass_unit": "absolute_weight_percent",
+    "certificate_uncertainty_sigma": 2,
+    "pu_normalization": "The five Pu isotope masses are normalized to total remaining Pu and sum to one.",
+    "am241_quantity": "Am241 mass divided by total remaining Pu mass; it is not included in the Pu normalization.",
+    "acquisition_truth_derivation": "Apply exponential depletion to each certificate-date Pu isotope, apply the two-member Bateman equation to Am241 including Pu241 branching, then normalize the remaining Pu isotope masses.",
+    "nuclear_data_source": "data/sandia.decay.xml",
+    "half_life_seconds": {
+      "Pu238": 2767600000.0,
+      "Pu239": 760854000000.0,
+      "Pu240": 207049000000.0,
+      "Pu241": 450958000.0,
+      "Pu242": 11834100000000.0,
+      "Am241": 13651800000.0
+    },
+    "atomic_mass_u": {
+      "Pu238": 238.049559894,
+      "Pu239": 239.052163381,
+      "Pu240": 240.053813545,
+      "Pu241": 241.056851456,
+      "Pu242": 242.058742611,
+      "Am241": 241.056829144
+    },
+    "pu241_to_am241_branching_ratio": 0.99998,
+    "effective_age_diagnostic": {
+      "certified_separation_truth": false,
+      "meaning": "Conditional common Pu age used only by the known-age fit-accuracy diagnostic; it is not a certificate separation age.",
+      "initial_condition": "Idealized zero Am241 at a single prior chemical separation.",
+      "derivation": "Invert two-member Pu241-to-Am241 ingrowth at acquisition using acquisition_truth.am241_to_total_pu_mass_ratio divided by acquisition_truth.pu_mass_fractions.Pu241, the listed atomic masses and half-lives, and the listed branching ratio.",
+      "equation": "t = ln(1 + (m_Am241/m_Pu241)*(A_Pu241/A_Am241)*(lambda_Pu241-lambda_Am241)/(branch*lambda_Pu241))/(lambda_Pu241-lambda_Am241)",
+      "time_unit": "365.25-day years"
+    },
+    "parsed_spectrum_header_cross_check": "SPE timestamps have one-second resolution and no timezone designator. Compare a parser to each case's embedded_spe_header.start_time_no_zone, not to the independently published UTC acquisition truth. Time tolerances below are absolute and include source rounding.",
+    "jrc_generated_decay_corrected_field_is_truth": false
+  },
+  "sources": {
+    "jrc_upu_gamma": {
+      "title": "JRC-OpenData UPu-Gamma",
+      "publisher": "European Commission, Joint Research Centre",
+      "root_url": "https://jeodpp.jrc.ec.europa.eu/ftp/public/JRC-OpenData/UPu-Gamma/",
+      "reference_document": "Detective_Pu/ESARDA2019-Stresa-FRAM-Pu.pdf",
+      "license": "CC-BY-4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "copyright_notice_file": "COPYRIGHT-JRC.txt",
+      "copyright_notice_sha256": "f20723519a580fb35b3499870f0b1baea54f483195105416e547f0014f1610d2"
+    },
+    "idb_v2024_01": {
+      "title": "International Database of Reference Gamma Spectra",
+      "version": "IDB-v2024-01",
+      "publisher": "IAEA Nuclear Data Section",
+      "dataset_doi": "https://doi.org/10.61092/iaea.gaef-dhff",
+      "data_descriptor_doi": "https://doi.org/10.1038/s41597-025-05455-1",
+      "license": "CC-BY-4.0",
+      "license_url": "https://creativecommons.org/licenses/by/4.0/",
+      "archive_record_count": 1591
+    }
+  },
+  "artifacts": {
+    "48xmDT-CBNMPu93-10cm-Fe16-Cd00-0.spe": {
+      "role": "foreground",
+      "source": "jrc_upu_gamma",
+      "size_bytes": 42547,
+      "sha256": "cad575aef8debe301f1d862f6c98c14739ef2808b96dd8695efdc8150a6a8676",
+      "original_relative_path": "Detective_Pu/CBNM_Pu/4h/48xmDT-CBNMPu93-10cm-Fe16-Cd00/48xmDT-CBNMPu93-10cm-Fe16-Cd00-0.spe",
+      "changes": "None; byte-for-byte copy with original basename."
+    },
+    "48xmDT-CBNMPu70-10cm-Fe16-Cd00-0.spe": {
+      "role": "foreground",
+      "source": "jrc_upu_gamma",
+      "size_bytes": 46689,
+      "sha256": "fa2814c409cbd05cbabf2b659190b3d7764c609b57e018c11f9340380ee7b00b",
+      "original_relative_path": "Detective_Pu/CBNM_Pu/4h/48xmDT-CBNMPu70-10cm-Fe16-Cd00/48xmDT-CBNMPu70-10cm-Fe16-Cd00-0.spe",
+      "changes": "None; byte-for-byte copy with original basename."
+    },
+    "48xmDT-CBNMPu61-10cm-Fe16-Cd00-0.spe": {
+      "role": "foreground",
+      "source": "jrc_upu_gamma",
+      "size_bytes": 47678,
+      "sha256": "a015a2c8412f2951fe38b75c603d337b9fbdb081ffacce18963d715a970193ae",
+      "original_relative_path": "Detective_Pu/CBNM_Pu/4h/48xmDT-CBNMPu61-10cm-Fe16-Cd00/48xmDT-CBNMPu61-10cm-Fe16-Cd00-0.spe",
+      "changes": "None; byte-for-byte copy with original basename."
+    },
+    "mDT-BKG-2017-09-20_summed.n42": {
+      "role": "background",
+      "source": "jrc_upu_gamma",
+      "size_bytes": 29499,
+      "sha256": "50408c491cd87a38436ccbffd97727bd815f84cc7d4b78d0582ce967857f68ac",
+      "original_relative_path": "Detective_Pu/Background_microDetective/mDT-BKG-2017-09-20/*.Spc",
+      "changes": "The 192 five-minute SPC acquisitions were combined with SpecUtils cleanup/sumMeasurements and serialized as N42-2012; the N42 remark records the input count.",
+      "derived_real_time_seconds": 57600.0,
+      "derived_live_time_seconds": 54973.695312,
+      "derived_polynomial_calibration_coefficients_kev": [0.210819006, 0.124860696, 0.0]
+    },
+    "mDT-BKG-2017-10-11_summed.n42": {
+      "role": "background",
+      "source": "jrc_upu_gamma",
+      "size_bytes": 29437,
+      "sha256": "b95391f935e5e47576b94c4258a1a06a3d5436ad56ee78ecc8e3b44904fe4df3",
+      "original_relative_path": "Detective_Pu/Background_microDetective/mDT-BKG-2017-10-11/*.Spc",
+      "changes": "The 192 five-minute SPC acquisitions were combined with SpecUtils cleanup/sumMeasurements and serialized as N42-2012; the N42 remark records the input count.",
+      "derived_real_time_seconds": 57600.0,
+      "derived_live_time_seconds": 54963.460938,
+      "derived_polynomial_calibration_coefficients_kev": [0.205398694, 0.124852397, 0.0]
+    },
+    "1461_0190727Pu240.spe": {
+      "role": "foreground",
+      "source": "idb_v2024_01",
+      "size_bytes": 82730,
+      "sha256": "85cf0b2f963f34bfa7dd530febbb94e5dc2e204d56dbd46b59c425a00de40342",
+      "original_relative_path": "IDB_Pu/1461_0190727Pu240.spe",
+      "changes": "None; byte-for-byte copy with original basename."
+    }
+  },
+  "cases": [
+    {
+      "id": "jrc_cbnm_pu93_4h_fe16_cd00_rep0",
+      "source": "jrc_upu_gamma",
+      "source_record_id": "Pu93_10cm_Fe16-Cd00_0",
+      "spectrum_file": "48xmDT-CBNMPu93-10cm-Fe16-Cd00-0.spe",
+      "background_file": "mDT-BKG-2017-10-11_summed.n42",
+      "detector": {
+        "type": "HPGe",
+        "geometry": "coaxial",
+        "description": "ORTEC microDetective, 50 mm diameter x 30 mm",
+        "channels": 8192,
+        "source_distance_cm": 10.0
+      },
+      "attenuators_mm": { "Fe": 16.0, "Cd": 0.0 },
+      "acquisition_start_utc": "2017-10-09T11:23:12Z",
+      "embedded_spe_header": {
+        "start_time_no_zone": "2017-10-09T18:23:12",
+        "start_time_resolution_seconds": 1.0,
+        "live_time_absolute_tolerance_seconds": 0.051,
+        "real_time_absolute_tolerance_seconds": 0.001,
+        "note": "The timezone-free SPE timestamp is seven hours later than the JRC metadata's explicitly UTC value; the latter remains acquisition truth."
+      },
+      "real_time_seconds": 14400.0,
+      "live_time_seconds": 12545.7,
+      "total_gamma_counts": 32953225,
+      "certificate": {
+        "reference_date_utc": "1986-06-20T00:00:00Z",
+        "uncertainty_sigma": 2,
+        "pu_mass_fractions_wt_percent": { "Pu238": 0.0117, "Pu239": 93.4123, "Pu240": 6.3131, "Pu241": 0.2235, "Pu242": 0.0395 },
+        "pu_mass_fraction_uncertainty_wt_percent": { "Pu238": 0.00003, "Pu239": 0.004, "Pu240": 0.0039, "Pu241": 0.0004, "Pu242": 0.0003 },
+        "am241_to_total_pu_mass_wt_percent": 0.1047,
+        "am241_uncertainty_wt_percent": 0.0021
+      },
+      "acquisition_truth": {
+        "elapsed_years_365_25d": 31.3058848582,
+        "pu_mass_fractions": { "Pu238": 0.000091612433, "Pu239": 0.935920939673, "Pu240": 0.063100423177, "Pu241": 0.000490931012, "Pu242": 0.000396093704 },
+        "am241_to_total_pu_mass_ratio": 0.002695341100
+      },
+      "fit_acceptance": {
+        "free_age": "Require physical normalized fractions. Weak quantities require a bounded or non-identifiable profile; healthy local covariance uses a physically clipped Gaussian 95 percent interval. Because ByPu239Only is outside its validation range for Pu93 and renormalizes every corrected Pu component, corrected intervals are explicitly conditional on the extrapolated model and do not carry a calibrated truth-coverage gate. Direct pre-correlation composition is checked in the known-age diagnostic.",
+        "known_age_diagnostic": {
+          "effective_age_years_365_25d": 39.2716951300,
+          "total_variation_max": 0.05,
+          "absolute_fraction_error_max": { "Pu238": 0.005, "Pu239": 0.03, "Pu240": 0.03, "Pu241": 0.015 }
+        },
+        "one_sigma_fraction_max": { "Pu238": 0.01, "Pu239": 0.05, "Pu240": 0.05, "Pu241": 0.02, "Pu242": 0.03 },
+        "relative_one_sigma_max_for_truth_fraction_at_least_0_01": 1.0,
+        "pu242_correlation_expected_within_range": false,
+        "pu242": "Keep the numeric correlation result and renormalization, but require every corrected Pu row to state that its interval is conditional on the out-of-range extrapolation and excludes the unvalidated correlation-model systematic. Do not apply a calibrated coverage gate to any corrected Pu93 component."
+      }
+    },
+    {
+      "id": "jrc_cbnm_pu70_4h_fe16_cd00_rep0",
+      "source": "jrc_upu_gamma",
+      "source_record_id": "Pu70_10cm_Fe16-Cd00_0",
+      "spectrum_file": "48xmDT-CBNMPu70-10cm-Fe16-Cd00-0.spe",
+      "background_file": "mDT-BKG-2017-09-20_summed.n42",
+      "detector": {
+        "type": "HPGe",
+        "geometry": "coaxial",
+        "description": "ORTEC microDetective, 50 mm diameter x 30 mm",
+        "channels": 8192,
+        "source_distance_cm": 10.0
+      },
+      "attenuators_mm": { "Fe": 16.0, "Cd": 0.0 },
+      "acquisition_start_utc": "2017-09-15T09:30:05Z",
+      "embedded_spe_header": {
+        "start_time_no_zone": "2017-09-15T16:30:05",
+        "start_time_resolution_seconds": 1.0,
+        "live_time_absolute_tolerance_seconds": 0.051,
+        "real_time_absolute_tolerance_seconds": 0.001,
+        "note": "The timezone-free SPE timestamp is seven hours later than the JRC metadata's explicitly UTC value; the latter remains acquisition truth."
+      },
+      "real_time_seconds": 14400.0,
+      "live_time_seconds": 10651.3,
+      "total_gamma_counts": 78363842,
+      "certificate": {
+        "reference_date_utc": "1986-06-20T00:00:00Z",
+        "uncertainty_sigma": 2,
+        "pu_mass_fractions_wt_percent": { "Pu238": 0.8458, "Pu239": 73.3191, "Pu240": 18.2945, "Pu241": 5.4634, "Pu242": 2.0772 },
+        "pu_mass_fraction_uncertainty_wt_percent": { "Pu238": 0.0018, "Pu239": 0.0098, "Pu240": 0.0087, "Pu241": 0.0034, "Pu242": 0.0023 },
+        "am241_to_total_pu_mass_wt_percent": 1.1705,
+        "am241_uncertainty_wt_percent": 0.0117
+      },
+      "acquisition_truth": {
+        "elapsed_years_365_25d": 31.2399613722,
+        "pu_mass_fractions": { "Pu238": 0.006924214632, "Pu239": 0.767646102488, "Pu240": 0.191082614349, "Pu241": 0.012580638132, "Pu242": 0.021766430398 },
+        "am241_to_total_pu_mass_ratio": 0.054973830068
+      },
+      "fit_acceptance": {
+        "free_age": "Require physical normalized fractions. Weak quantities require a bounded or non-identifiable profile; healthy local covariance uses a physically clipped Gaussian 95 percent interval. The applicable 95 percent interval must contain truth for modeled isotopes.",
+        "known_age_diagnostic": {
+          "effective_age_years_365_25d": 35.2541533628,
+          "total_variation_max": 0.05,
+          "absolute_fraction_error_max": { "Pu238": 0.005, "Pu239": 0.03, "Pu240": 0.03, "Pu241": 0.015, "Pu242": 0.015 }
+        },
+        "one_sigma_fraction_max": { "Pu238": 0.01, "Pu239": 0.05, "Pu240": 0.05, "Pu241": 0.02, "Pu242": 0.03 },
+        "relative_one_sigma_max_for_truth_fraction_at_least_0_01": 1.0,
+        "pu242_correlation_expected_within_range": true,
+        "pu242": "The certificate composition is within the intended correlation-validation range."
+      }
+    },
+    {
+      "id": "jrc_cbnm_pu61_4h_fe16_cd00_rep0",
+      "source": "jrc_upu_gamma",
+      "source_record_id": "Pu61_10cm_Fe16-Cd00_0",
+      "spectrum_file": "48xmDT-CBNMPu61-10cm-Fe16-Cd00-0.spe",
+      "background_file": "mDT-BKG-2017-10-11_summed.n42",
+      "detector": {
+        "type": "HPGe",
+        "geometry": "coaxial",
+        "description": "ORTEC microDetective, 50 mm diameter x 30 mm",
+        "channels": 8192,
+        "source_distance_cm": 10.0
+      },
+      "attenuators_mm": { "Fe": 16.0, "Cd": 0.0 },
+      "acquisition_start_utc": "2018-06-14T04:16:07Z",
+      "embedded_spe_header": {
+        "start_time_no_zone": "2018-06-14T11:16:07",
+        "start_time_resolution_seconds": 1.0,
+        "live_time_absolute_tolerance_seconds": 0.051,
+        "real_time_absolute_tolerance_seconds": 0.001,
+        "note": "The timezone-free SPE timestamp is seven hours later than the JRC metadata's explicitly UTC value; the latter remains acquisition truth."
+      },
+      "real_time_seconds": 14400.0,
+      "live_time_seconds": 11395.8,
+      "total_gamma_counts": 61367463,
+      "certificate": {
+        "reference_date_utc": "1986-06-20T00:00:00Z",
+        "uncertainty_sigma": 2,
+        "pu_mass_fractions_wt_percent": { "Pu238": 1.1969, "Pu239": 62.5255, "Pu240": 25.4058, "Pu241": 6.6793, "Pu242": 4.1925 },
+        "pu_mass_fraction_uncertainty_wt_percent": { "Pu238": 0.0025, "Pu239": 0.0283, "Pu240": 0.0241, "Pu241": 0.0087, "Pu242": 0.0064 },
+        "am241_to_total_pu_mass_wt_percent": 1.4452,
+        "am241_uncertainty_wt_percent": 0.0144
+      },
+      "acquisition_truth": {
+        "elapsed_years_365_25d": 31.9840598461,
+        "pu_mass_fractions": { "Pu238": 0.009854691411, "Pu239": 0.662259574515, "Pu240": 0.268432937204, "Pu241": 0.015008318693, "Pu242": 0.044444478178 },
+        "am241_to_total_pu_mass_ratio": 0.068605665715
+      },
+      "fit_acceptance": {
+        "free_age": "Require physical normalized fractions. Weak quantities require a bounded or non-identifiable profile; healthy local covariance uses a physically clipped Gaussian 95 percent interval. The applicable 95 percent interval must contain truth for modeled isotopes.",
+        "known_age_diagnostic": {
+          "effective_age_years_365_25d": 36.0345313151,
+          "total_variation_max": 0.05,
+          "absolute_fraction_error_max": { "Pu238": 0.005, "Pu239": 0.03, "Pu240": 0.03, "Pu241": 0.015, "Pu242": 0.015 }
+        },
+        "one_sigma_fraction_max": { "Pu238": 0.01, "Pu239": 0.05, "Pu240": 0.05, "Pu241": 0.02, "Pu242": 0.03 },
+        "relative_one_sigma_max_for_truth_fraction_at_least_0_01": 1.0,
+        "pu242_correlation_expected_within_range": true,
+        "pu242": "The certificate composition is within the intended correlation-validation range."
+      }
+    },
+    {
+      "id": "idb_pu_record_1461",
+      "source": "idb_v2024_01",
+      "source_record_id": "1461",
+      "spectrum_file": "1461_0190727Pu240.spe",
+      "background_file": null,
+      "provider": "IAEA",
+      "laboratory": "EC-JRC-Karlsruhe",
+      "certificate_url": "https://nds.iaea.org/media-idb/certificates/Pu_CBNM271.pdf#page=3",
+      "detector": {
+        "type": "HPGe",
+        "geometry": "coaxial",
+        "description": "50 percent relative efficiency; Lynx (Canberra)",
+        "channels": 8192,
+        "source_distance_cm": 22.42
+      },
+      "attenuators_mm": { "Cd": 1.0, "Steel": 3.0, "PMMA": 6.4 },
+      "acquisition_start_utc": "2014-12-11T07:37:26Z",
+      "embedded_spe_header": {
+        "start_time_no_zone": "2014-12-11T07:37:26",
+        "start_time_resolution_seconds": 1.0,
+        "live_time_absolute_tolerance_seconds": 0.001,
+        "real_time_absolute_tolerance_seconds": 0.51,
+        "note": "The IDB SPE timestamp and metadata UTC wall-clock value agree; the SPE field itself has no timezone designator."
+      },
+      "real_time_seconds": 59360.6,
+      "live_time_seconds": 50000.0,
+      "total_gamma_counts": 639174745,
+      "certificate": {
+        "reference_date_utc": "1986-06-20T00:00:00Z",
+        "separation_date_utc": null,
+        "separation_date_note": "No distinct certified separation date is available; the certificate reference date must not be relabeled as one.",
+        "uncertainty_sigma": 2,
+        "pu_mass_fractions_wt_percent": { "Pu238": 0.8458, "Pu239": 73.3191, "Pu240": 18.2945, "Pu241": 5.4634, "Pu242": 2.0772 },
+        "pu_mass_fraction_uncertainty_wt_percent": { "Pu238": 0.0018, "Pu239": 0.0098, "Pu240": 0.0087, "Pu241": 0.0034, "Pu242": 0.0023 },
+        "am241_to_total_pu_mass_wt_percent": 1.1705,
+        "am241_uncertainty_wt_percent": 0.0117
+      },
+      "acquisition_truth": {
+        "elapsed_years_365_25d": 28.4772557482,
+        "pu_mass_fractions": { "Pu238": 0.007062424209, "Pu239": 0.766118303090, "Pu240": 0.190742832281, "Pu241": 0.014354944815, "Pu242": 0.021721495605 },
+        "am241_to_total_pu_mass_ratio": 0.053299237927
+      },
+      "source_metadata_acquisition_composition": {
+        "units": "fraction",
+        "pu_mass_fractions": { "Pu238": 0.007062, "Pu239": 0.766054, "Pu240": 0.190727, "Pu241": 0.014437, "Pu242": 0.021720 },
+        "am241_to_total_pu_mass_ratio": 0.053213,
+        "comparison_tolerance_absolute_wt_percent": 0.02,
+        "note": "Acquisition-date values transcribed from the IDB record metadata; retained as an independent cross-check, not as the decay-propagation algorithm."
+      },
+      "fit_acceptance": {
+        "mode": "provenance_parsing_and_robustness_only",
+        "reason": "The IDB record has no paired background; it is not an unconditional fit-accuracy gate."
+      }
+    }
+  ]
+}
