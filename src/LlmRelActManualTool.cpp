@@ -94,6 +94,10 @@ RelActManualGui::AddUncert parseAddUncert( const string &str )
     return RelActManualGui::AddUncert::Unweighted;
   if( str == "StatOnly" )
     return RelActManualGui::AddUncert::StatOnly;
+  if( SpecUtils::iequals_ascii(str, "AutoEstimate") || SpecUtils::iequals_ascii(str, "Auto") )
+    return RelActManualGui::AddUncert::AutoEstimate;
+  if( SpecUtils::iequals_ascii(str, "StatOnlyNoWidening") )
+    return RelActManualGui::AddUncert::StatOnlyNoWidening;
   if( str == "OnePercent" )
     return RelActManualGui::AddUncert::OnePercent;
   if( str == "FivePercent" )
@@ -121,6 +125,8 @@ string addUncertToString( const RelActManualGui::AddUncert val )
   {
     case RelActManualGui::AddUncert::Unweighted:         return "Unweighted";
     case RelActManualGui::AddUncert::StatOnly:           return "StatOnly";
+    case RelActManualGui::AddUncert::AutoEstimate:       return "AutoEstimate";
+    case RelActManualGui::AddUncert::StatOnlyNoWidening: return "StatOnlyNoWidening";
     case RelActManualGui::AddUncert::OnePercent:         return "OnePercent";
     case RelActManualGui::AddUncert::FivePercent:        return "FivePercent";
     case RelActManualGui::AddUncert::TenPercent:         return "TenPercent";
@@ -143,6 +149,8 @@ double addUncertToValue( const RelActManualGui::AddUncert val )
   {
     case RelActManualGui::AddUncert::Unweighted:         return -1.0;
     case RelActManualGui::AddUncert::StatOnly:           return 0.0;
+    case RelActManualGui::AddUncert::AutoEstimate:       return 0.0; //solver estimates it
+    case RelActManualGui::AddUncert::StatOnlyNoWidening: return 0.0;
     case RelActManualGui::AddUncert::OnePercent:         return 0.01;
     case RelActManualGui::AddUncert::FivePercent:        return 0.05;
     case RelActManualGui::AddUncert::TenPercent:         return 0.1;
@@ -683,7 +691,11 @@ nlohmann::json executePeakBasedRelativeEfficiency(
   input.peaks = peak_infos;
   input.eqn_form = eqn_form;
   input.eqn_order = eqn_order;
-  input.use_ceres_to_fit_eqn = (eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel);
+  // Keep in step with RelActManualGui::prepare_calc_input: Ceres for everything except LnX,
+  //  where the inner linear-least-squares fit is an exact variable projection.  (This tool builds
+  //  and saves a GuiState, so a different policy here would make the same saved configuration
+  //  give different answers in the GUI.)
+  input.use_ceres_to_fit_eqn = (eqn_form != RelActCalc::RelEffEqnForm::LnX);
   
   // Setup physical model if needed
   if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
@@ -806,6 +818,12 @@ nlohmann::json executePeakBasedRelativeEfficiency(
     }//if( external_shieldings )
   }//if( FramPhysicalModel )
   
+  // "Auto" means the solver estimates the additional per-peak fractional uncertainty from the
+  //  data (the peaks were given 0.0 above); without this the tool would silently do a stat-only
+  //  fit while reporting, and saving into the GUI state, that "Auto" was used.
+  input.auto_estimate_add_uncert = (add_uncert == RelActManualGui::AddUncert::AutoEstimate);
+  input.widen_uncerts_for_scatter = (add_uncert != RelActManualGui::AddUncert::StatOnlyNoWidening);
+
   // Solve
   RelEffSolution solution = solve_relative_efficiency( input );
   
@@ -820,7 +838,42 @@ nlohmann::json executePeakBasedRelativeEfficiency(
       result["warnings"] = solution.m_warnings;
     return result;
   }
-  
+
+  // Optional profile-likelihood mass-fraction intervals (asymmetric; see profile_mass_fraction):
+  //  run for every nuclide whose element has at least two isotopes in the solution.
+  if( params.contains("profile_uncertainty") && params["profile_uncertainty"].is_boolean()
+      && params["profile_uncertainty"].get<bool>() )
+  {
+    const SandiaDecay::SandiaDecayDataBase * const decay_db = DecayDataBaseServer::database();
+
+    map<int,int> num_isos_of_element;
+    for( const auto &rel_act : solution.m_rel_activities )
+    {
+      const SandiaDecay::Nuclide * const nuc = decay_db ? decay_db->nuclide(rel_act.m_isotope) : nullptr;
+      if( nuc )
+        num_isos_of_element[nuc->atomicNumber] += 1;
+    }
+
+    for( const auto &rel_act : solution.m_rel_activities )
+    {
+      const SandiaDecay::Nuclide * const nuc = decay_db ? decay_db->nuclide(rel_act.m_isotope) : nullptr;
+      if( !nuc || (num_isos_of_element[nuc->atomicNumber] < 2) )
+        continue;
+
+      try
+      {
+        ProfileMassFractionOptions profile_opts;
+        profile_opts.nuclide = rel_act.m_isotope;
+        solution.m_profile_mass_fractions.push_back(
+                              profile_mass_fraction( input, solution, profile_opts ) );
+      }catch( std::exception &e )
+      {
+        solution.m_warnings.push_back( "Profile-likelihood scan for " + rel_act.m_isotope
+                                       + " failed: " + string(e.what()) );
+      }
+    }//for( const auto &rel_act : solution.m_rel_activities )
+  }//if( profile_uncertainty requested )
+
   result["success"] = true;
 
   // If sources were specified, return the peak energies actually used
@@ -846,12 +899,26 @@ nlohmann::json executePeakBasedRelativeEfficiency(
     {
       const double mass_frac = solution.mass_fraction( rel_act.m_isotope );
       src["mass_fraction"] = mass_frac;
+
+      try
+      {
+        // Asymmetric 1-sigma interval, plus symmetric sigma = interval half-width (the same
+        //  convention the GUI displays); requires the covariance, so nested try.
+        const double plus = solution.mass_fraction( rel_act.m_isotope, 1.0 );
+        const double minus = solution.mass_fraction( rel_act.m_isotope, -1.0 );
+        src["mass_fraction_lower_1sigma"] = minus;
+        src["mass_fraction_upper_1sigma"] = plus;
+        src["mass_fraction_uncert"] = 0.5*( fabs(plus - mass_frac) + fabs(mass_frac - minus) );
+      }
+      catch( ... )
+      {
+      }
     }
     catch( ... )
     {
       // Mass fraction not available (e.g., for reactions)
     }
-    
+
     sources_arr.push_back( src );
   }
   result["sources"] = sources_arr;
@@ -870,7 +937,17 @@ nlohmann::json executePeakBasedRelativeEfficiency(
         ratio_obj["numerator"] = solution.m_rel_activities[i].m_isotope;
         ratio_obj["denominator"] = solution.m_rel_activities[j].m_isotope;
         ratio_obj["ratio"] = round_to_sig_figs( solution.activity_ratio( i, j ), 6 );
-        ratio_obj["ratio_uncert"] = round_to_sig_figs( solution.activity_ratio_uncert( i, j ), 6 );
+
+        try
+        {
+          // Throws when the covariance was not successfully computed; keep the ratio value
+          //  and just omit its uncertainty in that case.
+          ratio_obj["ratio_uncert"] = round_to_sig_figs( solution.activity_ratio_uncert( i, j ), 6 );
+        }
+        catch( ... )
+        {
+        }
+
         activity_ratios.push_back( ratio_obj );
       }
       catch( ... )
@@ -889,7 +966,21 @@ nlohmann::json executePeakBasedRelativeEfficiency(
           mass_ratio_obj["numerator"] = solution.m_rel_activities[i].m_isotope;
           mass_ratio_obj["denominator"] = solution.m_rel_activities[j].m_isotope;
           mass_ratio_obj["ratio"] = round_to_sig_figs( mass_frac_i / mass_frac_j, 6 );
-          // Note: mass ratio uncertainty would require propagation from activity uncertainties
+
+          try
+          {
+            // Mass ratio = activity ratio times the specific-activity ratio, so the relative
+            //  uncertainties are identical (the same computation get_mass_ratio_table() does).
+            const double act_ratio = solution.activity_ratio( i, j );
+            const double act_ratio_uncert = solution.activity_ratio_uncert( i, j );
+            if( act_ratio > 0.0 )
+              mass_ratio_obj["ratio_uncert"] = round_to_sig_figs(
+                          (mass_frac_i / mass_frac_j) * (act_ratio_uncert / act_ratio), 6 );
+          }
+          catch( ... )
+          {
+          }
+
           mass_ratios.push_back( mass_ratio_obj );
         }
       }
@@ -902,6 +993,37 @@ nlohmann::json executePeakBasedRelativeEfficiency(
   
   result["activity_ratios"] = activity_ratios;
   result["mass_ratios"] = mass_ratios;
+
+  if( !solution.m_profile_mass_fractions.empty() )
+  {
+    json profiles = json::array();
+    for( const ProfileMassFractionResult &profile : solution.m_profile_mass_fractions )
+    {
+      json profile_json;
+      profile_json["nuclide"] = profile.nuclide;
+      profile_json["nominal_element_mass_fraction"] = profile.nominal_mass_fraction;
+
+      json intervals = json::array();
+      for( const ProfileMassFractionInterval &interval : profile.intervals )
+      {
+        json interval_json;
+        interval_json["confidence_level"] = interval.confidence_level;
+        interval_json["lower_mass_fraction"] = interval.lower_frac;
+        interval_json["upper_mass_fraction"] = interval.upper_frac;
+        interval_json["lower_at_bound"] = interval.lower_at_bound;
+        interval_json["upper_at_bound"] = interval.upper_at_bound;
+        intervals.push_back( interval_json );
+      }
+      profile_json["intervals"] = intervals;
+
+      if( !profile.warnings.empty() )
+        profile_json["warnings"] = profile.warnings;
+
+      profiles.push_back( profile_json );
+    }//for( const ProfileMassFractionResult &profile : solution.m_profile_mass_fractions )
+
+    result["profile_mass_fractions"] = profiles;
+  }//if( !solution.m_profile_mass_fractions.empty() )
   
   // Peak information with observed vs fit efficiency
   json peaks_arr = json::array();
@@ -1046,7 +1168,15 @@ json guiStateToJson( const RelActManualGui::GuiState &gui_state )
     decay_correct[name] = correct;
   }
   state["nuclide_decay_correct"] = decay_correct;
-  
+
+  // Per-nuclide profile-likelihood uncertainty flags
+  json profile_uncert;
+  for( const auto &[name, profile] : gui_state.nucProfileUncert )
+  {
+    profile_uncert[name] = profile;
+  }
+  state["nuclide_profile_uncertainty"] = profile_uncert;
+
   return state;
 }//guiStateToJson
 

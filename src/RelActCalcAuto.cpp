@@ -14572,10 +14572,50 @@ void RelEffCurveInput::check_nuclide_constraints() const
         // but not of the same element.
         const SandiaDecay::Nuclide *constrained_nuclide = nuclide(nuc_constraint.constrained_source);
         if( constrained_nuclide && (mass_frac_nuc->atomicNumber == constrained_nuclide->atomicNumber) )
-          throw logic_error( "Constrained nuclide " + constrained_nuclide->symbol 
+          throw logic_error( "Constrained nuclide " + constrained_nuclide->symbol
                              + " is controlled by a mass fraction constrained nuclide of the same element (not currently supported)." );
       }//if( mass_fraction_constraint.nuclide == nuc_constraint.controlling_nuclide )
     }//for( const RelEffCurveInput::MassFractionConstraint &mass_fraction_constraint : mass_fraction_constraints )
+
+    // The test above only inspects the DIRECT controller; a chain through another element
+    //  (e.g., X(U) controlled by W(Pu), W(Pu) controlled by Z(U, mass-fraction constrained))
+    //  evades it, and evaluating such a chain in the (manual pre-fit) solver recurses without
+    //  bound.  Resolve the chain to its terminal controller and repeat the same-element test.
+    {
+      SrcVariant terminal = nuc_constraint.controlling_source;
+      size_t num_hops = 0;
+      bool moved = true;
+      while( moved )
+      {
+        moved = false;
+        for( const RelEffCurveInput::ActRatioConstraint &link : act_ratio_constraints )
+        {
+          if( link.constrained_source == terminal )
+          {
+            terminal = link.controlling_source;
+            moved = true;
+            num_hops += 1;
+            if( num_hops > act_ratio_constraints.size() ) //cycles get their own error below, but dont hang here
+              throw logic_error( "Cycle in nuclide constraints." );
+            break;
+          }
+        }//for( const RelEffCurveInput::ActRatioConstraint &link : act_ratio_constraints )
+      }//while( moved )
+
+      const SandiaDecay::Nuclide * const terminal_nuc = nuclide(terminal);
+      const SandiaDecay::Nuclide * const constrained_nuc = nuclide(nuc_constraint.constrained_source);
+      if( terminal_nuc && constrained_nuc && !(terminal == nuc_constraint.controlling_source) )
+      {
+        for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &mass_fraction_constraint : mass_fraction_constraints )
+        {
+          if( (mass_fraction_constraint.nuclide == terminal_nuc)
+              && (terminal_nuc->atomicNumber == constrained_nuc->atomicNumber) )
+            throw logic_error( "Constrained nuclide " + constrained_nuc->symbol
+                + " is (transitively) controlled by mass fraction constrained nuclide "
+                + terminal_nuc->symbol + " of the same element (not currently supported)." );
+        }
+      }//if( the chain went further than the direct controller )
+    }
   }//for( const RelEffCurveInput::ActRatioConstraint &nuc_constraint : act_ratio_constraints )
 
   // Check that the constrained nuclide is only controlled by one nuclide

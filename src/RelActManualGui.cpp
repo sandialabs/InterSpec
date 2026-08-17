@@ -279,7 +279,8 @@ public:
   Wt::WLineEdit *m_age_edit_tmp;
   Wt::WTableRow *m_age_row;
   Wt::WCheckBox *m_decay_during_meas;
-  
+  Wt::WCheckBox *m_profile_uncert;
+
   Wt::Signal<> m_updated;
   
   
@@ -297,6 +298,7 @@ public:
    m_age_edit_tmp( nullptr ),
    m_age_row( nullptr ),
    m_decay_during_meas( nullptr ),
+   m_profile_uncert( nullptr ),
    m_updated( this )
   {
     assert( m_nuc || m_reaction );
@@ -462,7 +464,74 @@ public:
   {
     return (m_nuc && m_decay_during_meas && m_decay_during_meas->isChecked());
   }
-  
+
+
+  void handleProfileUncertChanged()
+  {
+    m_updated.emit();
+  }
+
+
+  void showProfileUncertCb()
+  {
+    if( m_profile_uncert || !m_nuc || !m_nucContentTable )
+      return;
+
+    // Checkbox to compute this nuclides mass-fraction uncertainty with a profile-likelihood
+    //  scan (re-solving with the fraction fixed at trial values): gives an asymmetric interval
+    //  that stays valid near the physical bounds, at the cost of extra solve time.  This same
+    //  explanation lives in the "mrend-tt-profile-uncert" tooltip - keep the two in sync.
+    WTableCell *cell = m_nucContentTable->elementAt(4, 0);
+    cell->setColumnSpan( 2 );
+    m_profile_uncert = new WCheckBox( WString::tr("mrend-cb-profile-uncert"), cell );
+    m_profile_uncert->addStyleClass( "CbNoLineBreak" );
+    m_profile_uncert->checked().connect( this, &ManRelEffNucDisp::handleProfileUncertChanged );
+    m_profile_uncert->unChecked().connect( this, &ManRelEffNucDisp::handleProfileUncertChanged );
+
+    const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", InterSpec::instance() );
+
+    HelpSystem::attachToolTipOn( m_profile_uncert, WString::tr("mrend-tt-profile-uncert"),
+                                showToolTips );
+  }//void showProfileUncertCb()
+
+
+  /** Shows (creating, if needed) or hides the "Profile uncert." checkbox; the parent widget
+   shows it only for nuclides whose element has at least two isotopes in the problem (the
+   element-relative fraction of a lone isotope is 1.0 by definition).
+   */
+  void setProfileUncertVisible( const bool visible )
+  {
+    if( visible )
+      showProfileUncertCb();
+
+    if( m_profile_uncert )
+      m_profile_uncert->setHidden( !visible );
+  }//void setProfileUncertVisible( const bool visible )
+
+
+  /** Programmatic setter - does not emit m_updated (see the AddUndoRedoStep asserts in
+   RelActManualGui::setGuiState for why it must not).
+   */
+  void setProfileUncert( const bool profile )
+  {
+    if( !m_nuc || !m_nucContentTable )
+      return;
+
+    const bool prev = (m_profile_uncert && m_profile_uncert->isChecked());
+    if( prev == profile )
+      return;
+
+    showProfileUncertCb();
+    if( m_profile_uncert )
+      m_profile_uncert->setChecked( profile );
+  }//void setProfileUncert( const bool profile )
+
+
+  bool profileUncert() const
+  {
+    return (m_nuc && m_profile_uncert && !m_profile_uncert->isHidden() && m_profile_uncert->isChecked());
+  }
+
   void handleAgeChange()
   {
     assert( m_age_edit_tmp || m_reaction );
@@ -551,6 +620,7 @@ RelActManualGui::RelActManualGui( InterSpec *viewer, Wt::WContainerWidget *paren
   m_extAttenShields( nullptr ),
   m_nucAge{},
   m_nucDecayCorrect{},
+  m_nucProfileUncert{},
   m_resultMenu( nullptr ),
   m_chart( nullptr ),
   m_results( nullptr ),
@@ -768,6 +838,8 @@ void RelActManualGui::init()
     {
       case AddUncert::Unweighted:         uncert_txt = WString::tr("ramg-unweighted-label"); break;
       case AddUncert::StatOnly:           uncert_txt = WString::tr("ramg-stat-only-label");  break;
+      case AddUncert::AutoEstimate:       uncert_txt = WString::tr("ramg-auto-uncert-label");  break;
+      case AddUncert::StatOnlyNoWidening: uncert_txt = WString::tr("ramg-stat-only-nowiden-label"); break;
       case AddUncert::OnePercent:         uncert_txt = WString::fromUTF8("1%");              break;
       case AddUncert::FivePercent:        uncert_txt = WString::fromUTF8("5%");              break;
       case AddUncert::TenPercent:         uncert_txt = WString::fromUTF8("10%");             break;
@@ -781,8 +853,13 @@ void RelActManualGui::init()
     m_addUncertainty->addItem( uncert_txt );
   }//for( loop over AddUncert )
   
+  // Default stays "Stat. Only".  Validated 20260816 against the reference materials we have
+  //  (IAEA IDB spec184 at 12.9543 wt%, and CBNM295/CBNM446 at 2.9463/4.4649 wt%): adding a
+  //  fractional per-peak uncertainty - by hand OR auto-estimated - biases the enrichment LOW in
+  //  every case, while statistics-only weighting lands closest to truth and, with the robust
+  //  covariance inflation, still covers it.  See the AddUncert::AutoEstimate notes.
   m_addUncertainty->setCurrentIndex( static_cast<int>(AddUncert::StatOnly) );
-  
+
   row = optionsList->rowCount();
   m_backgroundSubtract = new WCheckBox( WString::tr("ramg-back-sub-cb"), optionsList->elementAt(row, 0) );
   m_backgroundSubtract->addStyleClass( "BackSub CbNoLineBreak" );
@@ -1003,7 +1080,8 @@ shared_ptr<const RelActManualGui::GuiState> RelActManualGui::getGuiState() const
                                    && m_backgroundSubtract->isChecked());
     state->nucAge = m_nucAge;
     state->nucDecayCorrect = m_nucDecayCorrect;
-    
+    state->nucProfileUncert = m_nucProfileUncert;
+
     for( auto w : m_nuclidesDisp->children() )
     {
       const ManRelEffNucDisp *rr = dynamic_cast<const ManRelEffNucDisp *>(w);
@@ -1011,13 +1089,18 @@ shared_ptr<const RelActManualGui::GuiState> RelActManualGui::getGuiState() const
       {
         //state->m_nucAgesAndDecayCorrect.emplace_back( rr->m_nuc->symbol, rr->m_current_age,
         //                                                rr->decayDuringMeasurement() );
-        
+
         state->nucAge[rr->m_nuc->symbol] = rr->m_current_age;
-        
+
         if( rr->m_decay_during_meas )
           state->nucDecayCorrect[rr->m_nuc->symbol] = rr->m_decay_during_meas->isChecked();
         else
           state->nucDecayCorrect.erase( rr->m_nuc->symbol );
+
+        if( rr->m_profile_uncert )
+          state->nucProfileUncert[rr->m_nuc->symbol] = rr->m_profile_uncert->isChecked();
+        else
+          state->nucProfileUncert.erase( rr->m_nuc->symbol );
       }
     }//for( auto w : m_nuclidesDisp->children() )
     
@@ -1119,13 +1202,14 @@ void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
   
   m_nucAge = state.nucAge;
   m_nucDecayCorrect = state.nucDecayCorrect;
-  
+  m_nucProfileUncert = state.nucProfileUncert;
+
   for( auto w : m_nuclidesDisp->children() )
   {
     ManRelEffNucDisp *rr = dynamic_cast<ManRelEffNucDisp *>(w);
     if( !rr || !rr->m_nuc )
       continue;
-    
+
     const auto age_pos = state.nucAge.find( rr->m_nuc->symbol );
     if( (age_pos != end(state.nucAge)) && (age_pos->second != rr->m_current_age) )
     {
@@ -1133,12 +1217,21 @@ void RelActManualGui::setGuiState( const RelActManualGui::GuiState &state )
       m_renderFlags |= RenderActions::UpdateNuclides;
       updateCalc = true;
     }//
-    
+
     const bool decayCorr = rr->decayDuringMeasurement();
     const auto correct_pos = state.nucDecayCorrect.find( rr->m_nuc->symbol );
     if( (correct_pos != end(state.nucDecayCorrect)) && (decayCorr != correct_pos->second) )
     {
       rr->setDecayDuringMeasurement( correct_pos->second );
+      m_renderFlags |= RenderActions::UpdateNuclides;
+      updateCalc = true;
+    }
+
+    const bool profileUncert = (rr->m_profile_uncert && rr->m_profile_uncert->isChecked());
+    const auto profile_pos = state.nucProfileUncert.find( rr->m_nuc->symbol );
+    if( (profile_pos != end(state.nucProfileUncert)) && (profileUncert != profile_pos->second) )
+    {
+      rr->setProfileUncert( profile_pos->second );
       m_renderFlags |= RenderActions::UpdateNuclides;
       updateCalc = true;
     }
@@ -1423,6 +1516,8 @@ void RelActManualGui::prepare_calc_input( const RelActCalcRawInput &setup_input,
   {
     case AddUncert::Unweighted:         addUncert = -1.0; break;
     case AddUncert::StatOnly:           addUncert = 0.0;  break;
+    case AddUncert::AutoEstimate:       addUncert = 0.0;  break; //solver estimates it; see below
+    case AddUncert::StatOnlyNoWidening: addUncert = 0.0;  break; //see widen_uncerts_for_scatter below
     case AddUncert::OnePercent:         addUncert = 0.01; break;
     case AddUncert::FivePercent:        addUncert = 0.05; break;
     case AddUncert::TenPercent:         addUncert = 0.1;  break;
@@ -1435,6 +1530,14 @@ void RelActManualGui::prepare_calc_input( const RelActCalcRawInput &setup_input,
   
   if( addUncert < -1.0 )
     throw runtime_error( "Invalid add. uncert. selected." );
+
+  // For "Auto" the solver estimates the additional per-peak fractional uncertainty from the
+  //  scatter of the peaks about the fitted model, and overwrites each peak's value with it.
+  setup_output.auto_estimate_add_uncert = (addUncertType == AddUncert::AutoEstimate);
+
+  // Only this one option asks for the raw statistical uncertainty; everything else lets the
+  //  reported uncertainties be widened when the peaks scatter beyond what they allow.
+  setup_output.widen_uncerts_for_scatter = (addUncertType != AddUncert::StatOnlyNoWidening);
     
   const double match_tol_sigma = 2.35482 * state->m_matchToleranceValue;
   
@@ -1765,9 +1868,23 @@ void RelActManualGui::prepare_calc_input( const RelActCalcRawInput &setup_input,
   setup_output.peaks = peak_infos;
   setup_output.eqn_form = eqn_form;
   setup_output.eqn_order = eqn_order;
-  // We will only use Ceres to fit equation parameters when we have to; using matrix math (i.e.
-  //  Eigen) looks to be at least about twice as fast.
-  setup_output.use_ceres_to_fit_eqn = (eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel);
+  // Which forms need Ceres to fit the equation coefficients (rather than the inner
+  //  linear-least-squares fit)?
+  //
+  //  LnX is fit un-transformed, and there the inner LLS is an EXACT variable projection: its
+  //  weighted residual (C/S - f)/(sigma/S) is algebraically the counts-space residual
+  //  (C - f*S)/sigma that the outer fit minimizes.  Both routes therefore reach the same
+  //  solution (measured on spec184 20260816: chi2 97.9018 vs 97.9019, U235 10.8459% vs
+  //  10.8464%), and LLS is a bit quicker, so LnX keeps using it.
+  //
+  //  The exponential forms are fit by the inner LLS in LOG space, which is a different (only
+  //  approximate) criterion - so Ceres, which minimizes the counts-space objective over the
+  //  coefficients directly, always does at least as well.  Measured on spec184: chi2
+  //  99.90->98.59 (LnY), 97.81->95.60 (LnXLnY), 99.75->98.10 (FRAM Empirical), moving U235 by
+  //  about +0.1 percentage points.  The cost is ~1-2.5 ms per solve in a release build, so the
+  //  accuracy is worth taking.  (Ceres is seeded from an LLS fit of the coefficients - see
+  //  `solve_relative_efficiency` - so this is "LLS for the starting values, Ceres to finish".)
+  setup_output.use_ceres_to_fit_eqn = (eqn_form != RelActCalc::RelEffEqnForm::LnX);
 
   if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
@@ -1874,11 +1991,40 @@ void RelActManualGui::calculateSolution()
     RelActCalcManual::RelEffInput setup_output;
     prepare_calc_input( raw_info, setup_output );
 
+    // Collect the nuclides whose "Profile uncert." checkbox is checked (GUI thread only).
+    vector<string> profile_nuclides;
+    for( auto w : m_nuclidesDisp->children() )
+    {
+      const ManRelEffNucDisp *rr = dynamic_cast<const ManRelEffNucDisp *>(w);
+      if( rr && rr->m_nuc && rr->profileUncert() )
+        profile_nuclides.push_back( rr->m_nuc->symbol );
+    }//for( auto w : m_nuclidesDisp->children() )
+
     WServer::instance()->ioService().boost::asio::io_service::post( std::bind(
-      [setup_output, sessionId, solution, updater, errmsg, err_updater](){
+      [setup_output, sessionId, solution, updater, errmsg, err_updater, profile_nuclides](){
         try
         {
           *solution = solve_relative_efficiency( setup_output );
+
+          // Optional profile-likelihood scans for the nuclides the user checked; a failure only
+          //  becomes a warning (the covariance-based uncertainty display is the fallback).
+          if( solution->m_status == RelActCalcManual::ManualSolutionStatus::Success )
+          {
+            for( const string &nuclide : profile_nuclides )
+            {
+              try
+              {
+                RelActCalcManual::ProfileMassFractionOptions profile_opts;
+                profile_opts.nuclide = nuclide;
+                solution->m_profile_mass_fractions.push_back(
+                    RelActCalcManual::profile_mass_fraction( setup_output, *solution, profile_opts ) );
+              }catch( std::exception &e )
+              {
+                solution->m_warnings.push_back( "Profile-likelihood scan for " + nuclide
+                                                + " failed: " + string(e.what()) );
+              }//try / catch
+            }//for( const string &nuclide : profile_nuclides )
+          }//if( the solve was successful )
 
           WServer::instance()->post( sessionId, updater );
         }catch( std::exception &e )
@@ -2210,15 +2356,38 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   {
     string enrich;
     const string iso = isotopes.count("U235") ? "U235" : "Pu239";
-    
+
+    // Prefer a profile-likelihood interval when the user requested one for this nuclide - it is
+    //  asymmetric and stays valid near the physical bounds; fall back to the (symmetrized)
+    //  covariance-based uncertainty otherwise.
+    const RelActCalcManual::ProfileMassFractionResult *profile = nullptr;
+    for( const RelActCalcManual::ProfileMassFractionResult &p : solution.m_profile_mass_fractions )
+    {
+      if( (p.nuclide == iso) && !p.intervals.empty() )
+        profile = &p;
+    }
+
     try
     {
-      const double nominal = solution.mass_fraction(iso);
-      const double plus = solution.mass_fraction( iso, 1.0 );
-      const double minus = solution.mass_fraction( iso, -1.0 );
-      const double error = 0.5*( fabs(plus - nominal) + fabs(nominal - minus) );
-      enrich = ", " + PhysicalUnits::printValueWithUncertainty(100.0*nominal, 100.0*error, 4)
-               + "% "+ iso;
+      if( profile )
+      {
+        const RelActCalcManual::ProfileMassFractionInterval &interval = profile->intervals.front();
+        const double plus = (std::max)( 0.0, interval.upper_frac - profile->nominal_mass_fraction );
+        const double minus = (std::max)( 0.0, profile->nominal_mass_fraction - interval.lower_frac );
+        enrich = ", " + SpecUtils::printCompact(100.0*profile->nominal_mass_fraction, 4)
+                 + " (+" + SpecUtils::printCompact(100.0*plus, 3)
+                 + "/-" + SpecUtils::printCompact(100.0*minus, 3) + ")% " + iso;
+        if( interval.lower_at_bound || interval.upper_at_bound )
+          enrich += " (limit)";
+      }else
+      {
+        const double nominal = solution.mass_fraction(iso);
+        const double plus = solution.mass_fraction( iso, 1.0 );
+        const double minus = solution.mass_fraction( iso, -1.0 );
+        const double error = 0.5*( fabs(plus - nominal) + fabs(nominal - minus) );
+        enrich = ", " + PhysicalUnits::printValueWithUncertainty(100.0*nominal, 100.0*error, 4)
+                 + "% "+ iso;
+      }
     }catch( std::exception & )
     {
       // We dont have the covariance matrix required to get mass fraction errors
@@ -2243,10 +2412,18 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     const string num_nuc = rel_acts[num_index].m_isotope;
     const string den_nuc = rel_acts[denom_index].m_isotope;
     const double ratio = solution.activity_ratio(num_nuc, den_nuc);
-    const double uncert = solution.activity_ratio_uncert(num_nuc, den_nuc);
-    
-    string ratio_txt = ", act(" + num_nuc + "/" + den_nuc + ")="
-                   + PhysicalUnits::printValueWithUncertainty(ratio, uncert, 4);
+
+    string ratio_txt;
+    try
+    {
+      // Will throw if the covariance was not successfully computed
+      const double uncert = solution.activity_ratio_uncert(num_nuc, den_nuc);
+      ratio_txt = ", act(" + num_nuc + "/" + den_nuc + ")="
+                     + PhysicalUnits::printValueWithUncertainty(ratio, uncert, 4);
+    }catch( std::exception & )
+    {
+      ratio_txt = ", act(" + num_nuc + "/" + den_nuc + ")=" + SpecUtils::printCompact(ratio, 4);
+    }
     chi2_title.arg( ratio_txt );
   }else
   {
@@ -2271,11 +2448,18 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
   results_html << solution.rel_eff_eqn_txt(true);
 
   results_html << "</div>\n";
-  
+
+  solution.get_phys_model_shield_text( results_html );
+
   results_html << "<br /> <div>&chi;<sup>2</sup>=" << SpecUtils::printCompact( solution.m_chi2, 4)
   << " " << WString::tr("ramg-and-there-were").toUTF8() << " " << solution.m_dof
-  << " DOF (&chi;<sup>2</sup>/<sub>" << WString::tr("ramg-dof").toUTF8() << "</sub>="
-  << SpecUtils::printCompact(solution.m_chi2/solution.m_dof, 4) << ")</div>\n";
+  << " DOF";
+  if( solution.m_dof > 0 ) //m_dof can legitimately be zero
+  {
+    results_html << " (&chi;<sup>2</sup>/<sub>" << WString::tr("ramg-dof").toUTF8() << "</sub>="
+                 << SpecUtils::printCompact(solution.m_chi2/solution.m_dof, 4) << ")";
+  }
+  results_html << "</div>\n";
   
   
   results_html << "<div class=\"ToolAlphaWarning\">";
@@ -2289,6 +2473,25 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     case AddUncert::StatOnly:
       results_html << WString::tr("ramg-fit-stat-only").toUTF8();
       break;
+
+    case AddUncert::StatOnlyNoWidening:
+      results_html << WString::tr("ramg-fit-stat-only-nowiden").toUTF8();
+      break;
+
+    case AddUncert::AutoEstimate:
+    {
+      if( solution.m_auto_stat_uncert_multiple >= 0.0 )
+      {
+        WString msg = WString::tr("ramg-fit-auto-stat-mult");
+        msg.arg( SpecUtils::printCompact(solution.m_auto_stat_uncert_multiple, 3) );
+        results_html << msg.toUTF8();
+      }else
+      {
+        results_html << WString::tr("ramg-fit-stat-only").toUTF8();
+      }
+      break;
+    }
+
       
     case AddUncert::OnePercent:
     case AddUncert::FivePercent:
@@ -2540,7 +2743,11 @@ void RelActManualGui::updateNuclides()
       if( rr->m_decay_during_meas )
         rr->setDecayDuringMeasurement( decay_corr_pos->second );
     }//if( we cached if we should decay correct this nuclide )
-    
+
+    const auto profile_pos = m_nucProfileUncert.find(nuc->symbol);
+    if( profile_pos != end(m_nucProfileUncert) )
+      rr->setProfileUncert( profile_pos->second ); //visibility is set at the end of this function
+
     m_nuclidesDisp->insertWidget( insert_index, rr );
   }//for( loop over to add displays for new nuclides )
   
@@ -2614,7 +2821,7 @@ void RelActManualGui::updateNuclides()
       continue;
     
     m_nucAge[nuc_widget.first->symbol] = nuc_widget.second->m_current_age;
-    
+
     if( nuc_widget.second->m_decay_during_meas )
     {
       m_nucDecayCorrect[nuc_widget.first->symbol] = nuc_widget.second->decayDuringMeasurement();
@@ -2624,7 +2831,12 @@ void RelActManualGui::updateNuclides()
       if( decay_corr_pos != end(m_nucDecayCorrect) )
         m_nucDecayCorrect.erase( decay_corr_pos );
     }
-    
+
+    if( nuc_widget.second->m_profile_uncert )
+      m_nucProfileUncert[nuc_widget.first->symbol] = nuc_widget.second->m_profile_uncert->isChecked();
+    else
+      m_nucProfileUncert.erase( nuc_widget.first->symbol );
+
     delete nuc_widget.second;
   }//for( loop over to remove any nuclides )
   
@@ -2640,6 +2852,14 @@ void RelActManualGui::updateNuclides()
   current_nucs.clear();
   current_rctns.clear();
   
+  std::map<int,int> num_isotopes_of_element;
+  for( auto w : m_nuclidesDisp->children() )
+  {
+    const ManRelEffNucDisp *rr = dynamic_cast<const ManRelEffNucDisp *>(w);
+    if( rr && rr->m_nuc )
+      num_isotopes_of_element[rr->m_nuc->atomicNumber] += 1;
+  }//for( auto w : m_nuclidesDisp->children() )
+
   bool has_uranium = false;
   for( auto w : m_nuclidesDisp->children() )
   {
@@ -2650,9 +2870,14 @@ void RelActManualGui::updateNuclides()
       const bool isU = (rr->m_nuc->atomicNumber == 92);
       has_uranium |= isU;
       rr->setAgeHidden( isU ? !showAge : false );
+
+      // A profile-likelihood mass-fraction uncertainty is only meaningful when the element has
+      //  at least two isotopes in the problem (a lone isotopes element-relative fraction is 1.0
+      //  by definition).
+      rr->setProfileUncertVisible( num_isotopes_of_element[rr->m_nuc->atomicNumber] > 1 );
     }
   }//for( auto w : m_nuclidesDisp->children() )
-  
+
   m_nucDataSrcHolder->setHidden( !has_uranium );
 }//void updateNuclides()
 
@@ -2851,6 +3076,8 @@ const char *RelActManualGui::to_str( const RelActManualGui::AddUncert val )
   {
     case AddUncert::Unweighted:         return "Unweighted";
     case AddUncert::StatOnly:           return "StatOnly";
+    case AddUncert::AutoEstimate:       return "AutoEstimate";
+    case AddUncert::StatOnlyNoWidening: return "StatOnlyNoWidening";
     case AddUncert::OnePercent:         return "OnePercent";
     case AddUncert::FivePercent:        return "FivePercent";
     case AddUncert::TenPercent:         return "TenPercent";
@@ -2938,6 +3165,15 @@ const char *RelActManualGui::to_str( const RelActManualGui::AddUncert val )
       value = decay_corr_pos->second ? "true" : "false";
       ::rapidxml::xml_node<char> *corr_node = doc->allocate_node( ::rapidxml::node_element, "DecayDuringMeasurement", value );
       nuc_node->append_node(corr_node);
+    }
+
+    // Optional node (like DecayDuringMeasurement) - older app versions just ignore it.
+    const auto profile_pos = state.nucProfileUncert.find(n.first);
+    if( profile_pos != end(state.nucProfileUncert) )
+    {
+      value = profile_pos->second ? "true" : "false";
+      ::rapidxml::xml_node<char> *profile_node = doc->allocate_node( ::rapidxml::node_element, "ProfileUncertainty", value );
+      nuc_node->append_node(profile_node);
     }
   }//for( const auto &n : nuc_age_cache )
   
@@ -3129,6 +3365,13 @@ void RelActManualGui::GuiState::deSerialize( const ::rapidxml::xml_node<char> *b
       const string decay_corr = SpecUtils::xml_value_str(decay_corr_node);
       state.nucDecayCorrect[nuc] = ((decay_corr == "true") || (decay_corr == "1"));
     }
+
+    ::rapidxml::xml_node<char> *profile_node = XML_FIRST_NODE(nuc_node, "ProfileUncertainty");
+    if( profile_node )
+    {
+      const string profile_str = SpecUtils::xml_value_str(profile_node);
+      state.nucProfileUncert[nuc] = ((profile_str == "true") || (profile_str == "1"));
+    }
   }//for( loop over <Nuclide> nodes )
     
   if( PhysicalModelShields_node )
@@ -3169,5 +3412,6 @@ bool RelActManualGui::GuiState::operator==( const RelActManualGui::GuiState &rhs
     //&& (m_nucAgesAndDecayCorrect == rhs.m_nucAgesAndDecayCorrect)
     && (nucAge == rhs.nucAge)
     && (nucDecayCorrect == rhs.nucDecayCorrect)
+    && (nucProfileUncert == rhs.nucProfileUncert)
   ;
 }//RelActManualGui::GuiState::GuiState::operator==

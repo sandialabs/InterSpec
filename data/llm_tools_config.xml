@@ -2541,6 +2541,10 @@ The save_to_state option allows persisting the configuration to the app state fo
             "type": "string"
           }
         },
+        "profile_uncertainty": {
+          "type": "boolean",
+          "description": "If true, also computes profile-likelihood (asymmetric) mass-fraction intervals for each nuclide whose element has at least two isotopes in the problem, by re-solving with the fraction fixed at trial values; results are returned in 'profile_mass_fractions' (element-relative fractions, 1-sigma and 2-sigma central intervals, at-bound flags). More reliable than the covariance-based uncertainties near physical bounds, at the cost of extra solve time. Default: false."
+        },
         "save_to_state": {
           "type": "boolean",
           "description": "If true, saves the configuration to app state for user to see, or for later retrieval. Default: false."

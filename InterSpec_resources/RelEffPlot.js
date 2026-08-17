@@ -1,3 +1,13 @@
+/* Relative-efficiency chart.
+
+ Shared by BOTH relative-activity tools - "Isotopics from peaks" (RelActManualGui) and
+ "Isotopics by nuclides" (RelActAutoGui) - via RelEffChart, and it is also inlined into the HTML
+ reports RelActAutoReport exports.  A change here therefore lands in all four places at once.
+
+ Uncertainty convention: the shaded band around a fitted curve and the data-point error bars are
+ both +-1 sigma (the band from the fitted curve's covariance, the bars statistical only).  Both
+ tools' help files state this; keep them in step if it ever changes.
+*/
 RelEffPlot = function (elem,options) {
   this.chart = typeof elem === "string" ? document.getElementById(elem) : elem;
 
@@ -354,8 +364,8 @@ RelEffPlot.prototype.updateYAxisRange = function() {
       if (visibleFitData.length > 0) {
         hasVisibleData = true;
         visibleFitData.forEach(function(d) {
-          min_y = Math.min(min_y, d.eff - (d.eff_uncert ? 2 * d.eff_uncert : 0));
-          max_y = Math.max(max_y, d.eff + (d.eff_uncert ? 2 * d.eff_uncert : 0));
+          min_y = Math.min(min_y, d.eff - (d.eff_uncert ? d.eff_uncert : 0));
+          max_y = Math.max(max_y, d.eff + (d.eff_uncert ? d.eff_uncert : 0));
         });
       }
     }
@@ -435,8 +445,8 @@ RelEffPlot.prototype.redrawData = function() {
       if (dataset.fit_uncert_fcn) {
         const area = d3.svg.area()
           .x(function(d) { return self.xScale(d.energy); })
-          .y0(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff - 2*d.eff_uncert) : null; })
-          .y1(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff + 2*d.eff_uncert) : null; });
+          .y0(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff - d.eff_uncert) : null; })  /* band is +-1 sigma, matching the data error bars */
+          .y1(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff + d.eff_uncert) : null; });
 
         const path_uncert = self.plotGroup.append("path")
           .attr("class", "RelEffPlotErrorBounds dataset-" + index)
@@ -745,8 +755,8 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
       });
       
       // Update min/max y based on fit equations
-      min_y = Math.min(min_y, eff - (eff_uncert ? 2 * eff_uncert : 0));
-      max_y = Math.max(max_y, eff + (eff_uncert ? 2 * eff_uncert : 0));
+      min_y = Math.min(min_y, eff - (eff_uncert ? eff_uncert : 0));
+      max_y = Math.max(max_y, eff + (eff_uncert ? eff_uncert : 0));
     }
   });
 
@@ -828,8 +838,8 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
     if (fit_data.fit_uncert_fcn) {
       const area = d3.svg.area()
         .x(function(d) { return self.xScale(d.energy); })
-        .y0(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff - 2*d.eff_uncert) : null; })
-        .y1(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff + 2*d.eff_uncert) : null; });
+        .y0(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff - d.eff_uncert) : null; })  /* band is +-1 sigma, matching the data error bars */
+        .y1(function(d) { return d.eff_uncert !== null ? self.yScale(d.eff + d.eff_uncert) : null; });
         
       const path_uncert = self.plotGroup.append("path")
         .attr("class", "RelEffPlotErrorBounds dataset-" + index)
@@ -1023,14 +1033,20 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
         // Add fit equation value if available for this dataset
         if (eqn_eff) {
           txt += "<div>RelEff Curve: " + eqn_eff.toPrecision(4);
-          if( dataset.fit_uncert_fcn )
-            txt += " &plusmn " + dataset.fit_uncert_fcn(d.energy);
+          if( dataset.fit_uncert_fcn ){
+            const crv_uncert = dataset.fit_uncert_fcn(d.energy);
+            if( (crv_uncert !== null) && (crv_uncert > 0) )
+              txt += " &plusmn; " + crv_uncert.toPrecision(4) + " (1&sigma;)";
+          }
           txt += "</div>";
         }
 
+        /* Data-point error bars/uncertainties are 1-sigma STATISTICAL only (counts_uncert/src_counts)
+           - deliberately excluding any user "Add. Uncert.", which is a model-error term the fitted
+           band accounts for, not a measurement error of the point. */
         txt += "<div>Measured RelEff: " + d.eff.toPrecision(4);
         if( d.eff_uncert && (d.eff_uncert > 0) ){
-          txt += " &plusmn " + d.eff_uncert.toPrecision(4);
+          txt += " &plusmn; " + d.eff_uncert.toPrecision(4) + " (1&sigma;)";
         }
         txt += "</div>";
 

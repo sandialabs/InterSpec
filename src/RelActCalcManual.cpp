@@ -24,12 +24,16 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <cstdlib>
+#include <cstring>
 #include <thread>
 #include <chrono>
 #include <vector>
 #include <memory>
 #include <optional>
 #include <iostream>
+
+#include <boost/math/distributions/chi_squared.hpp>
 
 #include <Wt/WApplication>
 
@@ -80,6 +84,56 @@ struct DoWorkOnDestruct
   DoWorkOnDestruct( std::function<void()> &&worker ) : m_worker( std::move(worker) ){}
   ~DoWorkOnDestruct(){ if(m_worker) m_worker(); }
 };//struct DoWorkOnDestruct
+
+
+/** Console-chatter gate for the solver: set the INTERSPEC_RELACT_DEBUG environment variable to a
+ non-"0" value to re-enable Ceres iteration progress and the solver diagnostic printouts.  An
+ env-var (rather than a compile flag) so it can be flipped on a production GUI server without a
+ rebuild - and so debug builds stay quiet for tests.
+ */
+bool debug_printout()
+{
+  static const bool s_debug = [](){
+    const char * const env_val = std::getenv( "INTERSPEC_RELACT_DEBUG" );
+    return env_val && env_val[0] && strcmp(env_val, "0");
+  }();
+
+  return s_debug;
+}//bool debug_printout()
+
+
+/** Whether this Physical Model shielding contributes any Ceres parameters: it has a material,
+ or its atomic number is being fit, or it has a valid fixed atomic number in [1,98].
+
+ These are the canonical thresholds - previously several call sites re-implemented this
+ predicate with slightly different cutoffs (0.99 / 0.999 / 1.0), which only agreed because
+ `PhysicalModelShieldInput::check_valid()` forbids AN in (0,1).  Any drift between call sites
+ is a parameter-index-shift bug, so use these helpers everywhere.
+ */
+bool shield_is_present( const RelActCalc::PhysicalModelShieldInput * const opt )
+{
+  if( !opt )
+    return false;
+
+  return opt->material || opt->fit_atomic_number
+         || ((opt->atomic_number >= 1.0) && (opt->atomic_number <= 98.0));
+}//bool shield_is_present(...)
+
+bool shield_is_present( const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &opt )
+{
+  return shield_is_present( opt.get() );
+}
+
+/** Whether the shields atomic number is a fitted Ceres parameter (no material, and AN fit). */
+bool shield_fits_an( const RelActCalc::PhysicalModelShieldInput * const opt )
+{
+  return opt && !opt->material && opt->fit_atomic_number;
+}
+
+bool shield_fits_an( const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &opt )
+{
+  return shield_fits_an( opt.get() );
+}
 
 /** We can either use a residual to force the normalization of the R.E. curve to 1.0 at the lowest
  * energy.  Or we can manually force the average measured relative efficiency to 1.0.
@@ -378,29 +432,35 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
     for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
     {
       const auto iso_pos = std::lower_bound( std::begin(isotopes), std::end(isotopes), line.m_isotope );
-      assert( iso_pos != std::end(isotopes) );
-      
-      if( iso_pos == std::end(isotopes) )
-        throw std::logic_error( "fit_rel_eff_eqn_lls: missing nuclide" );
-      
+
+      // `lower_bound` requires `isotopes` sorted (the public overload sorts caller input), and
+      //  without the equality check a missing isotope would silently take the next entry's
+      //  activity.  Reachable from the public API with bad input, so throw rather than assert.
+      if( (iso_pos == std::end(isotopes)) || ((*iso_pos) != line.m_isotope) )
+        throw std::logic_error( "fit_rel_eff_eqn_lls: peak source '" + line.m_isotope
+                                + "' is not in the isotope list" );
+
       const size_t iso_index = static_cast<size_t>( iso_pos - std::begin(isotopes) );
       const T rel_act_value = rel_acts[iso_index];
       
       raw_rel_counts += line.m_yield * rel_act_value;
     }//for( const GenericLineInfo &line : peak.m_source_gammas )
 
-    //assert( raw_rel_counts > 0.0 );
-    if( raw_rel_counts <= std::numeric_limits<double>::epsilon() )
-    {
-      string rel_cnts_str;
-      if constexpr ( !std::is_same_v<T, double> )
-        rel_cnts_str = to_string(raw_rel_counts.a);
-      else
-        rel_cnts_str = to_string(raw_rel_counts);
-      throw runtime_error( "fit_rel_eff_eqn_lls_imp: predicted counts for peak " + to_string(peak.m_energy)
-                          + " is " + rel_cnts_str + " vs actual " + to_string(peak.m_counts)
-                          + "; this will cause computation to fail." );
-    }
+    // The optimizer is free to probe zero relative activity (activities are bounded below by 0),
+    //  which drives `raw_rel_counts` to zero for any peak fed only by that source.  This used to
+    //  throw, which the Ceres functor turned into a failed evaluation and hence a trust-region
+    //  shrink - an expensive way to say "that point is bad", and it happens on ordinary LnX fits.
+    //  Instead floor it smoothly: the point stays evaluable with a finite, correctly-signed
+    //  gradient, so the optimizer walks away from it on its own.
+    //
+    //  The floor is scale-free (tied to the peak's own counts) and matches the clamp the Ceres
+    //  twin already uses in `eval_internal_nl_rel_eff`.  Note the weighted least-squares row is
+    //  well behaved in the limit: `measured_rel_eff` and `measured_rel_eff_uncert` both scale as
+    //  1/raw_rel_counts, so their ratio - the pull this peak exerts - stays at counts/counts_uncert
+    //  while the design-matrix row shrinks toward zero, i.e. the peak simply stops constraining
+    //  the curve rather than blowing up the normal equations.
+    const double raw_rel_counts_floor = 1.0E-6 * (std::max)( 1.0, counts );
+    raw_rel_counts = smooth_lower_bound( raw_rel_counts, raw_rel_counts_floor );
 
     T measured_rel_eff = counts / raw_rel_counts;
     T measured_rel_eff_uncert = counts_uncert / raw_rel_counts;
@@ -478,18 +538,18 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
   
   
 #if( !USE_RESIDUAL_TO_BREAK_DEGENERACY )
-#pragma message( "Double check how measured rel eff are being pinned to 1.0 - is there a better way?  Probably is!" )
-  
+  // Pin the measured rel-eff points to an average of 1.0; this is what breaks the overall
+  //  activities-vs-curve scale degeneracy in the LLS fit mode (the counts-space residuals then
+  //  penalize any deviation of the average from 1).  The uncertainties are divided by the same
+  //  factor so absolute (non-log) uncertainty use stays consistent with the normalized values.
+  //  See also ManualGenericRelActFunctor::average_measured_rel_eff(), which must compute the
+  //  identical normalization.
   const T sum_re = std::accumulate( begin(meas_rel_eff), end(meas_rel_eff), T(0.0) ); //Previous to 20250110, a value of 1,0 was used to initialize accumulate - not sure want that was, should probably check on this again
   const T average_re = sum_re / static_cast<double>( meas_rel_eff.size() );
-  //const double first_re = meas_rel_eff[0];
   for( T &re : meas_rel_eff )
-  {
     re /= average_re;
-    //re -= average_re;        // This could go negative
-    //re -= (first_re - 1.0);  // Seems to
-    //re -= (meas_rel_eff[meas_rel_eff.size()-1] - 1.0);
-  }
+  for( T &re_uncert : meas_rel_eff_uncert )
+    re_uncert /= average_re;
 #endif
   
   
@@ -654,9 +714,12 @@ void setup_physical_model_shield_par_manual( vector<int> &constant_parameters,
                                             size_t &index,
                                             const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &opt )
 {
+  // Note: deliberately narrower than `shield_is_present()` - an *invalid* fixed AN (e.g. 0.5)
+  //  falls through to check_valid() below for a clean error, instead of being silently skipped.
+  //  For inputs check_valid() accepts, this condition is exactly `!shield_is_present(opt)`.
   if( !opt || (!opt->material && (opt->atomic_number == 0.0) && !opt->fit_atomic_number) )
     return;
-  
+
   opt->check_valid();
   
   if( opt->material )
@@ -854,10 +917,13 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         {
           m_input.phys_model_self_atten->check_valid();
 
-          if( m_input.phys_model_self_atten->fit_areal_density )
-            num_rel_eff_pars_fit += 1;
-          if( !m_input.phys_model_self_atten->material && m_input.phys_model_self_atten->fit_atomic_number )
-            num_rel_eff_pars_fit += 1;
+          if( shield_is_present(m_input.phys_model_self_atten) )
+          {
+            if( m_input.phys_model_self_atten->fit_areal_density )
+              num_rel_eff_pars_fit += 1;
+            if( shield_fits_an(m_input.phys_model_self_atten) )
+              num_rel_eff_pars_fit += 1;
+          }
         }//if( m_input.phys_model_self_atten )
 
         for( const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &opt : m_input.phys_model_external_attens )
@@ -866,10 +932,13 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
             throw runtime_error( "ManualGenericRelActFunctor: external attenuation may not be nullptr for FramPhysicalModel." );
           opt->check_valid();
 
-          if( opt->fit_areal_density )
-            num_rel_eff_pars_fit += 1;
-          if( !opt->material && opt->fit_atomic_number )
-            num_rel_eff_pars_fit += 1;
+          if( shield_is_present(opt) )
+          {
+            if( opt->fit_areal_density )
+              num_rel_eff_pars_fit += 1;
+            if( shield_fits_an(opt) )
+              num_rel_eff_pars_fit += 1;
+          }
         }//for( loop over m_input.phys_model_external_attens )
       }catch( const std::exception &e )
       {
@@ -879,8 +948,8 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     {
       // Apply some sanity checks to the eqn_order.  Realistically eqn_order should probably be
       //  between 3 and 6, but we'll allow an arbitrary amount of slop here.
-      if( (m_input.eqn_order < 0) || (m_input.eqn_order >= 10) )
-        throw runtime_error( "ManualGenericRelActFunctor: equation order must be at least 1 and less than 10." );
+      if( m_input.eqn_order >= 10 )
+        throw runtime_error( "ManualGenericRelActFunctor: equation order must be 9 or less." );
 
 #if( USE_RESIDUAL_TO_BREAK_DEGENERACY )
       std::sort( begin(m_input.peaks), end(m_input.peaks),
@@ -900,7 +969,9 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     // We will check that we arent being passed in a ridiculous number of peak.
     const size_t max_allowed_peaks = 2000; // Arbitrarily chosen value
     if( num_peaks > max_allowed_peaks )
-      throw std::runtime_error( "ManualGenericRelActFunctor: equation order must be at least 1 and less than 10." );
+      throw std::runtime_error( "ManualGenericRelActFunctor: too many peaks ("
+                                + std::to_string(num_peaks) + ") for the manual rel. eff. solver (max "
+                                + std::to_string(max_allowed_peaks) + ")." );
     
     bool unweighted_fit = false;
     
@@ -1243,8 +1314,8 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
       if( is_controlled )
         m_rel_act_norms[i] = -1.0;// JIC
 
+      bool is_mass_constrained = false; //declared outside the #if guard - also used below it
 #if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
-      bool is_mass_constrained = false;
       for( size_t j = 0; !is_mass_constrained && (j < m_input.mass_fraction_constraints.size()); ++j )
         is_mass_constrained = (m_input.mass_fraction_constraints[j].m_nuclide == m_isotopes[i]);
       assert( !is_mass_constrained || (m_rel_act_norms[i] == 1.0) );
@@ -1252,13 +1323,16 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         m_rel_act_norms[i] = 1.0; // JIC
 #endif
 
-      if( !is_controlled && ((m_rel_act_norms[i] < 1.0) || IsInf(m_rel_act_norms[i]) || IsNan(m_rel_act_norms[i])) )
+      // Only replace unusable (non-positive / non-finite) initial estimates: a legitimately
+      //  small pre-fit activity (CPS-scaled data, trace isotopes) is a good starting scale, and
+      //  flooring it at 1.0 used to leave that nuclides Ceres parameter far from O(1).
+      if( !is_controlled && ((m_rel_act_norms[i] <= 0.0) || IsInf(m_rel_act_norms[i]) || IsNan(m_rel_act_norms[i])) )
       {
         m_setup_warnings.push_back( "The initial activity estimate for " + m_isotopes[i]
                                     + " was " + std::to_string(m_rel_act_norms[i])
                                     + ", so will use 1.0 instead.");
         m_rel_act_norms[i] = 1.0;
-      }//if( m_rel_act_norms[i] < 1.0 )
+      }//if( initial activity estimate is unusable )
 
       if( !is_mass_constrained && !is_controlled )
         num_fit_activities += 1;
@@ -1285,11 +1359,11 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
   size_t iso_index( const std::string &iso ) const
   {
     const auto iso_pos = std::lower_bound( std::begin(m_isotopes), std::end(m_isotopes), iso );
-    assert( iso_pos != std::end(m_isotopes) );
-    
-    if( iso_pos == std::end(m_isotopes) )
-      throw std::logic_error( "ManualGenericRelActFunctor: missing nuclide" );
-    
+    assert( (iso_pos != std::end(m_isotopes)) && ((*iso_pos) == iso) );
+
+    if( (iso_pos == std::end(m_isotopes)) || ((*iso_pos) != iso) )
+      throw std::logic_error( "ManualGenericRelActFunctor: missing nuclide '" + iso + "'" );
+
     return static_cast<size_t>( iso_pos - std::begin(m_isotopes) );
   }
   
@@ -1448,10 +1522,7 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     answer.det = input.phys_model_detector;
     
     size_t shield_index = 0;
-    if( input.phys_model_self_atten
-       && (input.phys_model_self_atten->material
-           || ((input.phys_model_self_atten->atomic_number >= 1.0) && (input.phys_model_self_atten->atomic_number <= 98.0))
-           || input.phys_model_self_atten->fit_atomic_number) )
+    if( shield_is_present( input.phys_model_self_atten ) )
     {
       RelActCalc::PhysModelShield<T> self_atten;
 
@@ -1489,9 +1560,9 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     for( size_t i = 0; i < input.phys_model_external_attens.size(); ++i )
     {
       const auto &a = input.phys_model_external_attens[i];
-      if( !a->material && ((a->atomic_number < 1.0) || (a->atomic_number > 98)))
+      if( !shield_is_present(a) )
         continue;
-      
+
       RelActCalc::PhysModelShield<T> atten;
       atten.material = a->material;
       if( !atten.material )
@@ -1564,8 +1635,40 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
                                             input.det.get(), input.hoerl_b, input.hoerl_c );
     };
   }//std::function<T(double)> rel_eff_fcn( const std::vector<T> &x ) const
-  
-  
+
+
+  /** The plain average, over all peaks, of the measured relative efficiency implied by the
+   activities `x`: (1/P) * sum_p( C_p / sum_i( A_i(x)*y_pi ) ).
+
+   This is the normalization `fit_rel_eff_eqn_lls_imp(...)` divides out of the measured rel-eff
+   points in the LLS fit mode; it is used to place Ceres-fit empirical-form solutions in that
+   same gauge (average measured rel. eff. == 1), so the two fit modes report directly comparable
+   activities.  Note m(x)*A_i(x) is exactly invariant under the scale orbit (activities times k,
+   curve divided by k).
+
+   (Not bit-identical to the LLS version: that one averages the measured rel-eff values AFTER
+   their smooth lower bound / clamp is applied, so if any peak is being floored the two differ
+   slightly - at a converged solution no peak should be.)
+   */
+  template<typename T>
+  T average_measured_rel_eff( const std::vector<T> &x ) const
+  {
+    assert( !m_input.peaks.empty() );
+
+    T sum( 0.0 );
+    for( const RelActCalcManual::GenericPeakInfo &peak : m_input.peaks )
+    {
+      T rel_src_counts( 0.0 );
+      for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
+        rel_src_counts += relative_activity( line.m_isotope, x ) * line.m_yield;
+
+      sum += peak.m_counts / rel_src_counts;
+    }//for( loop over peaks )
+
+    return sum / static_cast<double>( m_input.peaks.size() );
+  }//T average_measured_rel_eff( const std::vector<T> &x ) const
+
+
   template<typename T>
   void eval_internal_lls_rel_eff( const std::vector<T> &x, T *residuals ) const
   {
@@ -1653,7 +1756,7 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         // Avoid dividing by zero, so make sure rel_src_counts isnt really close to zero.
         // TODO: - need to evaluate using a different formulation where \c rel_src_counts being zero isnt a problem (I think its fine, but need to check before making the change - and make sure it wont effect how we use the covariances).
         if( ((rel_src_counts < 1.0E-8) && (rel_src_counts < (1.0E-6*peak.m_counts)))
-           || (rel_src_counts < static_cast<double>(std::numeric_limits<float>::epsilon())) )
+           || (rel_src_counts < numeric_limits<T>::epsilon()) ) //keep consistent with the eval_internal_nl_rel_eff twin
         {
           rel_src_counts = T(1.0E-6) * peak.m_counts;
         }
@@ -1707,16 +1810,10 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
       const DetectorPeakResponse * const det = m_input.phys_model_detector.get();
       
       std::optional<RelActCalc::PhysModelShield<T>> self_atten;
-      
-      assert( !m_input.phys_model_self_atten
-             || m_input.phys_model_self_atten->material
-              || m_input.phys_model_self_atten->fit_atomic_number
-              || ((m_input.phys_model_self_atten->atomic_number >= 1.0) && (m_input.phys_model_self_atten->atomic_number <= 98.0)) );
-      
-      if( m_input.phys_model_self_atten
-         && (m_input.phys_model_self_atten->material
-             || m_input.phys_model_self_atten->fit_atomic_number
-             || ((m_input.phys_model_self_atten->atomic_number > 0.99) && (m_input.phys_model_self_atten->atomic_number < 98.001))) )
+
+      assert( !m_input.phys_model_self_atten || shield_is_present(m_input.phys_model_self_atten) );
+
+      if( shield_is_present( m_input.phys_model_self_atten ) )
       {
         RelActCalc::PhysModelShield<T> att;
         att.material = m_input.phys_model_self_atten->material;
@@ -1752,21 +1849,17 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         if( !ext_atten )
           continue;
         
-        assert( ext_atten->material
-                || ext_atten->fit_atomic_number
-                || ((ext_atten->atomic_number >= 1.0) && (ext_atten->atomic_number <= 98.0)) );
-        
-        if( !ext_atten->material
-           && !ext_atten->fit_atomic_number
-           && ((ext_atten->atomic_number < 0.999) || (ext_atten->atomic_number > 98.001)) )
+        assert( shield_is_present(ext_atten) );
+
+        if( !shield_is_present(ext_atten) )
         {
           assert( 0 );
           continue;
         }
-        
+
         RelActCalc::PhysModelShield<T> att;
         att.material = ext_atten->material;
-        
+
         if( att.material )
         {
           att.atomic_number = T(0.0);
@@ -1877,7 +1970,7 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
         //       #fit_rel_eff_eqn_lls.
         const double add_uncert = peak.m_counts * peak.m_base_rel_eff_uncert;
         const double uncert = sqrt( pow(peak.m_counts_uncert,2.0) + pow(add_uncert,2.0) );
-        
+
         residuals[index] = (peak.m_counts - pred_counts) / uncert;
       }
     }//for( loop over energies to evaluate at )
@@ -1985,29 +2078,19 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
     
     if( m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
     {
-      const auto &self_atten = m_input.phys_model_self_atten;
-      if( self_atten
-         && (self_atten->material
-             || ((self_atten->atomic_number >= 0.999) && (self_atten->atomic_number <= 98.001))
-             || self_atten->fit_atomic_number) )
+      if( shield_is_present( m_input.phys_model_self_atten ) )
       {
-        if( self_atten->fit_atomic_number )
+        if( shield_fits_an( m_input.phys_model_self_atten ) )
           num_pars += 1; //AN is only a parameter if being fit
         num_pars += 1; //AD is always a paramater
       }
-      
+
       for( const auto &atten : m_input.phys_model_external_attens )
       {
         assert( atten );
-        if( !atten )
-          continue;
-        
-        assert( atten->material || ((atten->atomic_number >= 0.999) && (atten->atomic_number <= 98.001)) );
-        if( atten->material
-           || ((atten->atomic_number >= 0.999) && (atten->atomic_number <= 98.001))
-           || atten->fit_atomic_number )
+        if( shield_is_present( atten ) )
         {
-          if( atten->fit_atomic_number )
+          if( shield_fits_an( atten ) )
             num_pars += 1;
           num_pars += 1;
         }
@@ -2192,7 +2275,33 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
                            std::vector<double> &fit_pars,
                            std::vector<std::vector<double>> *covariance )
 {
-  fit_rel_eff_eqn_lls_imp( fcn_form, order, isotopes, rel_acts, peak_infos, fit_pars, covariance );
+  // The implementation looks isotopes up with std::lower_bound, so the (index-paired) isotope
+  //  and activity lists must be sorted together; dont rely on the caller for that.
+  assert( isotopes.size() == rel_acts.size() );
+  if( isotopes.size() != rel_acts.size() )
+    throw std::logic_error( "fit_rel_eff_eqn_lls: isotopes and rel_acts sizes dont match" );
+
+  if( std::is_sorted( std::begin(isotopes), std::end(isotopes) ) )
+  {
+    fit_rel_eff_eqn_lls_imp( fcn_form, order, isotopes, rel_acts, peak_infos, fit_pars, covariance );
+  }else
+  {
+    std::vector<size_t> order_index( isotopes.size() );
+    for( size_t i = 0; i < order_index.size(); ++i )
+      order_index[i] = i;
+    std::sort( std::begin(order_index), std::end(order_index),
+               [&isotopes]( const size_t lhs, const size_t rhs ){ return isotopes[lhs] < isotopes[rhs]; } );
+
+    std::vector<std::string> sorted_isotopes( isotopes.size() );
+    std::vector<double> sorted_rel_acts( rel_acts.size() );
+    for( size_t i = 0; i < order_index.size(); ++i )
+    {
+      sorted_isotopes[i] = isotopes[order_index[i]];
+      sorted_rel_acts[i] = rel_acts[order_index[i]];
+    }
+
+    fit_rel_eff_eqn_lls_imp( fcn_form, order, sorted_isotopes, sorted_rel_acts, peak_infos, fit_pars, covariance );
+  }//if( already sorted ) / else
 }
   
   
@@ -2216,7 +2325,16 @@ vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo
     
     energy_widths.push_back( {p.m_energy, p.m_fwhm / 2.35482} );
   }
-  
+
+  // `cluster_peak_activities(...)` looks peaks up with std::lower_bound, so the energy/width
+  //  list must be sorted by energy - the caller's peak ordering is not otherwise required to be.
+  //  (The per-peak yield write-back below is keyed by energy, so `answer` keeps caller order.)
+  std::sort( begin(energy_widths), end(energy_widths),
+             []( const pair<double,double> &lhs, const pair<double,double> &rhs ){
+               return lhs.first < rhs.first;
+             } );
+
+
   set<const void *> nuclides_seen;
   for( const auto &n : nuclides )
   {
@@ -2294,20 +2412,21 @@ vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo
       }//for( const auto &p : peaks )
     }
     
-    // Convert energy_gammas_map to a vector for convenience
-    vector<pair<double,double>> energy_gammas;
-    for( const auto &ec : energy_gammas_map )
-      energy_gammas.push_back( ec );
-    
-    assert( energy_gammas.size() == answer.size() );
-    
-    for( size_t peak_index = 0; peak_index < energy_gammas.size(); ++peak_index )
+    // Write the per-peak yields back keyed by ENERGY: `energy_gammas_map` iterates in ascending
+    //  energy order, while `answer` preserves the caller's peak ordering, so a positional zip
+    //  would silently mis-assign yields whenever the input peaks are not energy-sorted.
+    //  (Duplicate energies were rejected above, so the lookup is unambiguous; keys were inserted
+    //  as the exact same peak-energy doubles, so exact find() is safe.)
+    assert( energy_gammas_map.size() == answer.size() );
+
+    for( GenericPeakInfo &peak : answer )
     {
-      GenericPeakInfo &peak = answer[peak_index];
-      const double yield = energy_gammas[peak_index].second;
+      const map<double,double>::const_iterator pos = energy_gammas_map.find( peak.m_energy );
+      assert( pos != end(energy_gammas_map) );
+      const double yield = (pos == end(energy_gammas_map)) ? 0.0 : pos->second;
       if( yield > numeric_limits<float>::min() )
         peak.m_source_gammas.emplace_back( yield, name );
-    }//for( size_t row = 0; row < num_peaks; ++row )
+    }//for( GenericPeakInfo &peak : answer )
   }//for( const auto &n : nuclides )
   
   // an alternate way to do this, but they dont match exactly
@@ -2855,6 +2974,135 @@ void RelEffInput::check_nuclide_constraints() const
     }//while( found_constroller )
   }//for( size_t outer_index = 0; outer_index < act_ratio_constraints.size(); ++outer_index )
 
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+  // Guard against unbounded recursion between act-ratio chains and mass-fraction blocks:
+  //  relative_activity() of an act-ratio constrained nuclide recurses to its (terminal)
+  //  controller; if that controller is mass-fraction constrained, its sigma-block decode sums
+  //  the element's non-mass-fraction-constrained isotopes by calling relative_activity() on
+  //  each - and if such an isotope's own act-ratio chain terminates back on a nuclide of the
+  //  same (or a mutually-referencing) block, the evaluation never terminates (a stack-overflow
+  //  crash, not an exception).  Model each distinct element roster as a node, add an edge
+  //  A -> B when decoding block A requires a chain that terminates on a nuclide mass-fraction
+  //  constrained in block B, and reject any cycle.
+  if( !act_ratio_constraints.empty() && !mass_fraction_constraints.empty() )
+  {
+    // Distinct element rosters ("blocks"); constraints sharing a nuclide are validated (below)
+    //  to carry identical rosters, so keying on the sorted isotope set is well-defined.
+    vector<set<string>> rosters;
+    const auto roster_index_of_constraint = [&rosters]( const MassFractionConstraint &mfc ) -> size_t {
+      set<string> roster;
+      for( const auto &iso_act : mfc.m_specific_activities )
+        roster.insert( iso_act.first );
+      for( size_t i = 0; i < rosters.size(); ++i )
+        if( rosters[i] == roster )
+          return i;
+      rosters.push_back( roster );
+      return rosters.size() - 1;
+    };
+
+    const auto mass_frac_constraint_for = [this]( const string &iso ) -> const MassFractionConstraint * {
+      for( const MassFractionConstraint &mfc : mass_fraction_constraints )
+        if( mfc.m_nuclide == iso )
+          return &mfc;
+      return nullptr;
+    };
+
+    const auto terminal_of_chain = [this]( const string &iso ) -> const string * {
+      // Walk act-ratio links until the current nuclide is not itself constrained; cycles among
+      //  the act-ratio constraints were already rejected above, so this terminates.
+      const string *current = &iso;
+      bool moved = true;
+      while( moved )
+      {
+        moved = false;
+        for( const ManualActRatioConstraint &link : act_ratio_constraints )
+        {
+          if( link.m_constrained_nuclide == (*current) )
+          {
+            current = &(link.m_controlling_nuclide);
+            moved = true;
+            break;
+          }
+        }
+      }//while( moved )
+      return current;
+    };
+
+    vector<size_t> constraint_roster( mass_fraction_constraints.size() );
+    for( size_t i = 0; i < mass_fraction_constraints.size(); ++i )
+      constraint_roster[i] = roster_index_of_constraint( mass_fraction_constraints[i] );
+
+    // Edges between blocks, plus the member/terminal names that created them (for the message).
+    vector<set<size_t>> edges( rosters.size() );
+    vector<map<size_t,pair<string,string>>> edge_reason( rosters.size() );
+    for( size_t a = 0; a < rosters.size(); ++a )
+    {
+      for( const string &member : rosters[a] )
+      {
+        if( mass_frac_constraint_for(member) )
+          continue; //the block decode does not recurse into mass-fraction constrained members
+
+        const string * const terminal = terminal_of_chain( member );
+        if( (*terminal) == member )
+          continue; //not act-ratio constrained
+
+        const MassFractionConstraint * const term_mfc = mass_frac_constraint_for( *terminal );
+        if( !term_mfc )
+          continue; //chain ends on a plain nuclide - evaluation terminates
+
+        // Look the roster up WITHOUT inserting: growing `rosters` here would invalidate the
+        //  range-for above (and leave `edges`, sized from `rosters`, too short).  Every
+        //  constraint was already seeded into `rosters` by the loop above, so a miss is
+        //  impossible; skip defensively rather than risk it.
+        size_t b = rosters.size();
+        {
+          set<string> terminal_roster;
+          for( const auto &iso_specact : term_mfc->m_specific_activities )
+            terminal_roster.insert( iso_specact.first );
+          for( size_t r = 0; r < rosters.size(); ++r )
+            if( rosters[r] == terminal_roster )
+              b = r;
+        }
+        assert( b < rosters.size() );
+        if( b >= rosters.size() )
+          continue;
+        edges[a].insert( b );
+        edge_reason[a].emplace( b, make_pair(member, *terminal) );
+      }//for( const string &member : rosters[a] )
+    }//for( size_t a = 0; a < rosters.size(); ++a )
+
+    // Reject any cycle (including a self-loop) via a simple bounded walk from each node.
+    for( size_t start = 0; start < rosters.size(); ++start )
+    {
+      set<size_t> visited{ start };
+      vector<size_t> to_visit( begin(edges[start]), end(edges[start]) );
+      while( !to_visit.empty() )
+      {
+        const size_t node = to_visit.back();
+        to_visit.pop_back();
+        if( node == start )
+        {
+          // The cycle may close through an intermediate block, so report the edge that leaves
+          //  `start` (there is at least one, or we would not be walking).
+          assert( !edge_reason[start].empty() );
+          const pair<string,string> &reason = edge_reason[start].count(node)
+                                                ? edge_reason[start][node]
+                                                : begin(edge_reason[start])->second;
+          throw logic_error( "RelEffInput: evaluating mass-fraction constrained element containing '"
+              + reason.first + "' requires the activity of '" + reason.second
+              + "' (through an activity-ratio constraint chain), which is mass-fraction"
+              " constrained in a way that recurses back to the same element - this configuration"
+              " is not supported." );
+        }
+        if( visited.count(node) )
+          continue;
+        visited.insert( node );
+        to_visit.insert( end(to_visit), begin(edges[node]), end(edges[node]) );
+      }//while( !to_visit.empty() )
+    }//for( size_t start = 0; start < rosters.size(); ++start )
+  }//if( have both act-ratio and mass-fraction constraints )
+#endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
+
 
 #if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
   // Check that mass fraction constraints are valid
@@ -2909,8 +3157,10 @@ void RelEffInput::check_nuclide_constraints() const
     bool has_this_nuc = false;
     for( const auto &specific_activity : constraint.m_specific_activities )
     {
-      if( specific_activity.second <= 0.0 )
-        throw logic_error( "RelEffInput: Mass fraction constraint specific activity is less than or equal to 0." );
+      if( (specific_activity.second <= 0.0)
+          || isnan(specific_activity.second) || isinf(specific_activity.second) )
+        throw logic_error( "RelEffInput: Mass fraction constraint specific activity must be a"
+                           " positive, finite number." );
 
       if( !check_iso_in_curve( specific_activity.first ) )
         throw logic_error( "RelEffInput: Mass fraction constraint specific activity nuclide is not in any peak." );
@@ -3101,7 +3351,16 @@ bool RelEffSolution::walk_to_controlling_nuclide( size_t &iso_index, double &mul
 
   
 #ifndef NDEBUG
-  assert( fabs((multiple * m_rel_activities[iso_index].m_rel_activity_uncert) - m_rel_activities[original_iso_index].m_rel_activity_uncert) < 1e-6 );
+  // A controlled nuclide's uncertainty is its controller's, times the chain multiple.  This now
+  //  comes out of two separate J*C*J^T accumulations rather than being exact by construction, so
+  //  compare relatively; and it says nothing when no covariance was computed (both are -1).
+  if( (m_rel_activities[iso_index].m_rel_activity_uncert > 0.0)
+     && (m_rel_activities[original_iso_index].m_rel_activity_uncert > 0.0) )
+  {
+    const double expected = multiple * m_rel_activities[iso_index].m_rel_activity_uncert;
+    const double actual = m_rel_activities[original_iso_index].m_rel_activity_uncert;
+    assert( fabs(expected - actual) <= 1.0E-6*(std::max)(fabs(expected), fabs(actual)) );
+  }
 #endif
 
   return found_controller;
@@ -3110,127 +3369,54 @@ bool RelEffSolution::walk_to_controlling_nuclide( size_t &iso_index, double &mul
 
 double RelEffSolution::activity_ratio_uncert( const size_t iso1_index, const size_t iso2_index ) const
 {
-  assert( iso1_index != iso2_index );
-  assert( iso1_index < m_nonlin_covariance.size() );
-  assert( iso2_index < m_nonlin_covariance.size() );
-  assert( iso1_index < m_rel_activities.size() );
-  assert( iso2_index < m_rel_activities.size() );
-  assert( m_nonlin_covariance.size() >= m_rel_activities.size() );
-  assert( m_input.use_ceres_to_fit_eqn || (m_nonlin_covariance.size() == m_rel_activities.size()) );
-  
   if( (iso1_index == iso2_index)
      || (iso1_index >= m_rel_activities.size())
      || (iso2_index >= m_rel_activities.size()) )
-  {
-    //throw runtime_error( "RelEffSolution::activity_ratio_uncert: invalid iso number" );
-    return -1;
-  }
+    throw runtime_error( "RelEffSolution::activity_ratio_uncert: invalid isotope index" );
 
-  // If we have constrined either nuclide, then we need to find the ultimate controlling nuclides
-  // and use those indices, as well as keep track of the activity ratios we used to get to them.
-  double iso1_mult = 1.0, iso2_mult = 1.0;
-  size_t iso1 = iso1_index, iso2 = iso2_index;
+  if( m_rel_act_covariance.empty() )
+    throw runtime_error( "RelEffSolution::activity_ratio_uncert: covariance not available" );
 
-  if( m_input.act_ratio_constraints.size() > 0 )
+  assert( m_rel_act_covariance.size() == m_rel_activities.size() );
+
+  // Nuclides tied (possibly through a chain) to the same ultimate controller have an exactly
+  //  fixed ratio, with zero uncertainty.
+  if( !m_input.act_ratio_constraints.empty() )
   {
+    double iso1_mult = 1.0, iso2_mult = 1.0;
+    size_t iso1 = iso1_index, iso2 = iso2_index;
     walk_to_controlling_nuclide( iso1, iso1_mult );
     walk_to_controlling_nuclide( iso2, iso2_mult );
 
     if( iso1 == iso2 )
       return 0.0;
-  }//if( m_input.act_ratio_constraints.size() > 0 )
+  }//if( !m_input.act_ratio_constraints.empty() )
 
-#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
-  if( m_input.mass_fraction_constraints.size() > 0 )
-  {
-    // If this is iso1 or iso2, then 
-    const auto constraint_begin = begin(m_input.mass_fraction_constraints);
-    const auto constraint_end = end(m_input.mass_fraction_constraints);
-    const auto iso1_constraint_pos 
-      = std::find_if( constraint_begin, constraint_end, [&]( const RelActCalcManual::MassFractionConstraint &mfc ){
-        return mfc.m_nuclide == m_rel_activities[iso1].m_isotope;
-      } );
-    const auto iso2_constraint_pos = std::find_if( constraint_begin, constraint_end,
-        [&]( const RelActCalcManual::MassFractionConstraint &mfc ){
-        return mfc.m_nuclide == m_rel_activities[iso2].m_isotope;
-      } );
-      
-    if( (iso1_constraint_pos == constraint_end) && (iso2_constraint_pos == constraint_end) )
-    {
-      // Neither nuclide is mass fraction constrained - nothing to do here
-    }else if( (iso1_constraint_pos != constraint_end) && (iso2_constraint_pos != constraint_end) )
-    {
-      // Both nuclides are mass fraction constrained.
-#ifdef _MSC_VER
-#pragma message( "TODO: RelEffSolution::activity_ratio_uncert: calculating activity_ratio_uncert is not implemented when both nuclides are mass fraction constrained." )
-#else
-#warning "TODO: RelEffSolution::activity_ratio_uncert: calculating activity_ratio_uncert is not implemented when both nuclides are mass fraction constrained."
-#endif
-      cerr << "RelEffSolution::activity_ratio_uncert: both nuclides are mass fraction constrained - calculating activity_ratio_uncert is not implemented." << endl;
-      return -1.0;
-    }else if( (iso1_constraint_pos != constraint_end) && (iso2_constraint_pos == constraint_end) )
-    {
-      // Only one isotope is mass fraction constrained.
-#ifdef _MSC_VER
-#pragma message( "TODO: RelEffSolution::activity_ratio_uncert: calculating activity_ratio_uncert is not implemented when only one isotope is mass fraction constrained." )
-#else
-#warning "TODO: RelEffSolution::activity_ratio_uncert: calculating activity_ratio_uncert is not implemented when only one isotope is mass fraction constrained."
-#endif
-      cerr << "RelEffSolution::activity_ratio_uncert: only one isotope is mass fraction constrained - calculating activity_ratio_uncert is not implemented." << endl;
-      return -1.0;
-    }
-  }//if( m_input.mass_fraction_constraints.size() > 0 )
-#endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
+  // `m_rel_act_covariance` is the full-Jacobian covariance of the final relative activities, so
+  //  activity norms, act-ratio constraint chains, and mass-fraction constraints are all already
+  //  accounted for; first-order propagation of the ratio is all that is left.
+  const double act_1 = m_rel_activities[iso1_index].m_rel_activity;
+  const double act_2 = m_rel_activities[iso2_index].m_rel_activity;
 
-  const double norm_1 = m_activity_norms[iso1];
-  const double norm_2 = m_activity_norms[iso2];
-  
-  // Divide the relative activities by their norms, to go back to the actual values fit for.
-  const double fit_act_1 = m_rel_activities[iso1].m_rel_activity / norm_1;
-  const double fit_act_2 = m_rel_activities[iso2].m_rel_activity / norm_2;
-  
-  const double cov_1_1 = m_nonlin_covariance[iso1][iso1];
-  const double cov_1_2 = m_nonlin_covariance[iso1][iso2];
-  const double cov_2_2 = m_nonlin_covariance[iso2][iso2];
-  
-  // TODO: I think if we have constraints, all we need to do is multiply the ratio by the activity ratios
-  //       of the constraints.... but not checked as of 20250316.
+  // Relative activities are bounded below by zero, so a nuclide with no real signal can land
+  //  exactly at 0 - the relative-uncertainty form below would then produce inf/NaN rather than
+  //  failing, and NaN would flow all the way to the displayed "+-" (callers guard by catching).
+  if( (act_1 <= 0.0) || (act_2 <= 0.0) )
+    throw runtime_error( "RelEffSolution::activity_ratio_uncert: a relative activity is zero,"
+                         " so their ratio's uncertainty is not defined" );
 
-#ifdef _MSC_VER
-#pragma message( "TODO: Need to check if we are computing activity ratio uncertainties correctly when there are constraints (looks correct with a simple example)." )
-#else
-#warning "TODO: Need to check if we are computing activity ratio uncertainties correctly when there are constraints (looks correct with a simple example)."
-#endif
-  if( m_input.act_ratio_constraints.size() > 0 )
-    cerr << "Need to check if we are computing activity ratio uncertainties correctly when there are constraints." << endl;
-  
-  const double ratio = (iso1_mult * m_rel_activities[iso1].m_rel_activity)
-                          / (iso2_mult * m_rel_activities[iso2].m_rel_activity);
-  
-  // TODO: I think this is the right way to compute ratio, taking into account correlations, given
-  //       we actually fit for the values that multiplied m_activity_norms[],... need to double check
+  const double ratio = act_1 / act_2;
+
+  const double cov_1_1 = m_rel_act_covariance[iso1_index][iso1_index];
+  const double cov_1_2 = m_rel_act_covariance[iso1_index][iso2_index];
+  const double cov_2_2 = m_rel_act_covariance[iso2_index][iso2_index];
+
   // The correlation term can drive the radicand negative for strongly correlated isotopes;
   // clamp to zero rather than producing NaN.
-  const double uncert = fabs(ratio)
-  * sqrt( std::max( 0.0,
-                    (cov_1_1 / fit_act_1 / fit_act_1)
-                    + (cov_2_2 / fit_act_2 / fit_act_2)
-                    - (2.0 * cov_1_2 / fit_act_1 / fit_act_2) ) );
-  
-#ifndef NDEBUG
-  {// Begin print out comparison between this result, and if we hadnt taken into account correlation
-    const double iso1_uncert_frac = m_rel_activities[iso1].m_rel_activity_uncert / m_rel_activities[iso1].m_rel_activity;
-    const double iso2_uncert_frac = m_rel_activities[iso2].m_rel_activity_uncert / m_rel_activities[iso2].m_rel_activity;
-    const double niave_uncert = ratio * sqrt( iso1_uncert_frac*iso1_uncert_frac + iso2_uncert_frac*iso2_uncert_frac );
-    
-    cout
-    << "Ratio " << m_rel_activities[iso1].m_isotope << "/" << m_rel_activities[iso2].m_isotope
-    << " = " << ratio << " +- " << uncert << " (would be +- "
-    << niave_uncert << " w/ no correlation)" << endl;
-  }// End print out comparison between this result, and if we hadnt taken into account correlation
-#endif
-  
-  return uncert;
+  return fabs(ratio) * sqrt( std::max( 0.0,
+                    (cov_1_1 / (act_1 * act_1))
+                    + (cov_2_2 / (act_2 * act_2))
+                    - (2.0 * cov_1_2 / (act_1 * act_2)) ) );
 }
 
 
@@ -3260,7 +3446,7 @@ double RelEffSolution::mass_fraction( const std::string &nuclide ) const
     
     if( nuc == wanted_nuc )
     {
-      assert( nuc_rel_mas = -1.0 );
+      assert( nuc_rel_mas == -1.0 );
       nuc_rel_mas = rel_mass;
     }
   }//for( size_t index = 0; index < m_rel_activities.size(); ++index )
@@ -3283,117 +3469,64 @@ double RelEffSolution::mass_fraction( const std::string &nuclide, const double n
   if( !wanted_nuc ) //Will be nullptr for reactions and x-rays
     throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', num_sigma): invalid nuclide" );
   
-  //assert( !m_nonlin_covariance.empty() ); // Failing to compute the activity covarances can happen sometimes
-  if( m_nonlin_covariance.empty() )
+  //assert( !m_rel_act_covariance.empty() ); // Failing to compute the activity covarances can happen sometimes
+  if( m_rel_act_covariance.empty() )
     throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', num_sigma): no valid covariance." );
-  
-  assert( m_nonlin_covariance.size() >= m_activity_norms.size() );
-  assert( m_input.use_ceres_to_fit_eqn || (m_nonlin_covariance.size() == m_rel_activities.size()) );
-  
-  const size_t input_nuc_index = std::find_if( begin(m_rel_activities), end(m_rel_activities),
+
+  assert( m_rel_act_covariance.size() == m_rel_activities.size() );
+
+  const size_t nuc_index = std::find_if( begin(m_rel_activities), end(m_rel_activities),
                           [&nuclide]( const IsotopeRelativeActivity &val ) {
     return val.m_isotope == nuclide;
   }) - begin(m_rel_activities);
-  
-  assert( input_nuc_index < m_nonlin_covariance.size() );
-  assert( input_nuc_index < m_rel_activities.size() );
-  
-  if( input_nuc_index >= m_rel_activities.size() )
+
+  // Note: asking for a nuclide that isnt in the solution is a legitimate query (callers ask for
+  //  e.g. "U235" without knowing what was fit, inside a try/catch), so this must throw - dont
+  //  assert on it ahead of the check, which would abort debug builds.
+  if( nuc_index >= m_rel_activities.size() )
     throw runtime_error( "RelEffSolution::mass_fraction('" + nuclide + "', "
                         + std::to_string(num_sigma) + "): nuclide not in solution set" );
-  
 
-#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
-  // A FIXED (lower == upper) mass-fraction constraint pins this nuclides fraction by construction
-  //  (the elements scale cancels out of the fraction), so its mass fraction carries no +-num_sigma
-  //  variation - and its parameter slot may hold something else entirely (the element total, when
-  //  every isotope of the element is constrained), so the per-parameter variation scheme below
-  //  does not apply to it.
-  for( const MassFractionConstraint &mfc : m_input.mass_fraction_constraints )
-  {
-    if( (mfc.m_nuclide == nuclide) && (mfc.m_mass_fraction_lower == mfc.m_mass_fraction_upper) )
-      return mass_fraction( nuclide );
-  }
-#endif
+  assert( nuc_index < m_rel_act_covariance.size() );
 
-// If this nuclide was constrained, then we need to find the ultimate controlling nuclide.
-  double nuc_mult = 1.0;
-  size_t nuc_index = input_nuc_index;
-  const bool nuc_was_constrained = walk_to_controlling_nuclide( nuc_index, nuc_mult );
-#pragma message( "Need to check if we are computing mass_fraction with uncertainties correctly when there are constraints (looks correct with a simple example)." )
-  if( nuc_was_constrained )
-    cerr << "Need to check if we are computing mass_fraction with uncertainties correctly when there are constraints." << endl;
+  // Vary the target nuclides activity by num_sigma of its uncertainty, moving every other
+  //  activity along its regression slope cov_kn/var_n (the conditional mean of the joint
+  //  Gaussian) - a linearized profile.  `m_rel_act_covariance` is the full-Jacobian covariance
+  //  of the final relative activities, so all constraint co-movements (act-ratio chains,
+  //  mass-fraction block decodes) are already encoded in the slopes: e.g., a fixed
+  //  mass-fraction nuclide automatically stays at its pinned within-element fraction, since its
+  //  activity co-varies proportionally with the rest of its element.
+  const double var_n = m_rel_act_covariance[nuc_index][nuc_index];
+  if( var_n <= 0.0 ) // an exactly-pinned (or degenerate) activity: no variation to propagate
+    return mass_fraction( nuclide );
 
-  // The Covariance matrix is in terms of fit activities - however, we had divided out
-  //  a normalization to bring them all near-ish 1.0 (before actually fitting for things
-  //  though).
-  const double norm_for_nuc = m_activity_norms[nuc_index] / nuc_mult;
-  const double cov_nuc_nuc = nuc_mult*nuc_mult*m_nonlin_covariance[nuc_index][nuc_index];
-  const double sqrt_cov_nuc_nuc = sqrt( std::max(0.0, cov_nuc_nuc) );
-  //const double fit_act_for_nuc = m_rel_activities[nuc_index].m_rel_activity / norm_for_nuc;
-  
-  // Check that relative activity uncertainties have been computed compatible with what we are
-  //  assuming here (and no funny business has happened).
-  if( (norm_for_nuc * sqrt_cov_nuc_nuc) != m_rel_activities[nuc_index].m_rel_activity_uncert )
-  {
-    cout << "norm_for_nuc = " << norm_for_nuc << ", sqrt_cov_nuc_nuc = " << sqrt_cov_nuc_nuc << " (="<< norm_for_nuc*sqrt_cov_nuc_nuc << ")" << endl;
-    cout << "m_rel_activities[nuc_index].m_rel_activity_uncert = " << m_rel_activities[nuc_index].m_rel_activity_uncert << endl;
-    cout << "m_rel_activities[nuc_index].m_rel_activity = " << m_rel_activities[nuc_index].m_rel_activity << endl;
-  }
-  assert( (fabs((norm_for_nuc * sqrt_cov_nuc_nuc) - m_rel_activities[nuc_index].m_rel_activity_uncert)
-            < 1.0E-6*m_rel_activities[nuc_index].m_rel_activity_uncert)
-         || (fabs((norm_for_nuc * sqrt_cov_nuc_nuc) - m_rel_activities[nuc_index].m_rel_activity_uncert) < 1.0E-3) );
+  const double sqrt_var_n = sqrt( var_n );
 
   double sum_rel_mass = 0.0, nuc_rel_mas = -1.0;
-  for( size_t loop_index = 0; loop_index < m_rel_activities.size(); ++loop_index )
+  for( size_t index = 0; index < m_rel_activities.size(); ++index )
   {
-    size_t index = loop_index;
-    assert( m_nonlin_covariance[index].size() >= m_rel_activities.size() );
-    
     const IsotopeRelativeActivity &act = m_rel_activities[index];
     const SandiaDecay::Nuclide * const nuc = db->nuclide( act.m_isotope );
     if( !nuc ) //For example when an x-ray or reaction
       continue;
 
-    double loop_nuc_mult = 1.0;
-    const bool was_constrolled = walk_to_controlling_nuclide( index, loop_nuc_mult );
+    const double shifted_act = act.m_rel_activity
+                               + (num_sigma * m_rel_act_covariance[index][nuc_index] / sqrt_var_n);
+    const double rel_mass = shifted_act / nuc->activityPerGram();
 
-    const double norm_for_index = m_activity_norms[index];
-    if( !was_constrolled )
-    {
-#ifndef NDEBUG
-      // Every mass-fraction-constrained nuclide - fixed or range - carries a norm of 1.0 here; act-ratio
-      //  controlled nuclides are handled in the `was_constrolled` branch above, not this one.  (The norm
-      //  cancels for the central mass fraction below; it only scales the +-num_sigma perturbation.)
-      bool was_mass_frac_constrained = false;
-      for( size_t j = 0; !was_mass_frac_constrained && (j < m_input.mass_fraction_constraints.size()); ++j )
-        was_mass_frac_constrained = (m_input.mass_fraction_constraints[j].m_nuclide == act.m_isotope);
-      assert( !was_mass_frac_constrained || (norm_for_index == 1.0) );
-#endif
-    }//if( !was_constrolled )
-
-    const double fit_act_for_index = loop_nuc_mult * m_rel_activities[index].m_rel_activity / norm_for_index;
-    
-    const double cov_nuc_index = loop_nuc_mult*m_nonlin_covariance[nuc_index][index];
-    const double varied_fit_act_for_index = fit_act_for_index
-                                  + (cov_nuc_index / cov_nuc_nuc) * num_sigma * sqrt_cov_nuc_nuc;
-    
-    const double rel_act = varied_fit_act_for_index * norm_for_index;
-    const double rel_mass = rel_act / nuc->activityPerGram();
-    
     sum_rel_mass += (std::max)( rel_mass, 0.0 );
-    
-    if( loop_index == input_nuc_index )
+
+    if( index == nuc_index )
     {
       assert( nuc == wanted_nuc );
-      
+
       nuc_rel_mas = rel_mass;
-    }//if( loop_index == input_nuc_index )
+    }//if( index == nuc_index )
   }//for( size_t index = 0; index < m_rel_activities.size(); ++index )
-  
+
   if( nuc_rel_mas < 0.0 ) // This can happen when we go down a couple sigma
     return 0.0;
-    
+
   return nuc_rel_mas / sum_rel_mass;
 }//double mass_fraction( const std::string &iso, const double num_sigma ) const
     
@@ -3412,37 +3545,27 @@ std::string RelEffSolution::parameter_name( const size_t par_num ) const
     if( working_par_num )
       working_par_num -= 1;
     
-    if( m_input.phys_model_self_atten
-       && (m_input.phys_model_self_atten->material
-           || m_input.phys_model_self_atten->fit_atomic_number
-           || ((m_input.phys_model_self_atten->atomic_number > 0.99) && (m_input.phys_model_self_atten->atomic_number < 98.001))) )
+    if( shield_is_present( m_input.phys_model_self_atten ) )
     {
-      if( !m_input.phys_model_self_atten->material && m_input.phys_model_self_atten->fit_atomic_number )
+      if( shield_fits_an( m_input.phys_model_self_atten ) )
       {
         working_par_num += 1;
         if( working_par_num == par_num )
           return "SAtt(AN)";
       }
-      
+
       working_par_num += 1;
       if( working_par_num == par_num )
         return "SAtt(AD)";
     }//if( use internal attenuation shielding )
-    
+
     for( size_t i = 0; i < m_input.phys_model_external_attens.size(); ++i )
     {
       const auto &ext_atten = m_input.phys_model_external_attens[i];
-      if( !ext_atten )
+      if( !shield_is_present( ext_atten ) )
         continue;
-      
-      if( !ext_atten->material
-         && !ext_atten->fit_atomic_number
-         && ((ext_atten->atomic_number < 0.999) || (ext_atten->atomic_number > 98.001)) )
-      {
-        continue;
-      }
-      
-      if( !ext_atten->material && ext_atten->fit_atomic_number )
+
+      if( shield_fits_an( ext_atten ) )
       {
         working_par_num += 1;
         if( working_par_num == par_num )
@@ -3574,7 +3697,7 @@ std::ostream &RelEffSolution::print_summary( std::ostream &strm ) const
               = ManualGenericRelActFunctor::make_phys_eqn_input( m_input, m_rel_eff_eqn_coefficients );
         
         function_val = RelActCalc::eval_physical_model_eqn( peak.m_energy, input.self_atten,
-                            input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_b );
+                            input.external_attens, input.det.get(), input.hoerl_b, input.hoerl_c );
       }//if( m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel ) / else
     }//if( !m_rel_eff_eqn_coefficients.empty() )
 
@@ -3627,7 +3750,7 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
                  " <th scope=\"col\">Rel. Act.</th>"
                  " <th scope=\"col\">Mass Frac.</th>"
                  //" <th scope=\"col\" title=\"This is percentage uncertainty - i.e., the percent error on the reported percent.\">Uncert.</th>"
-                 " <th scope=\"col\" >2&sigma; range</th>"
+                 " <th scope=\"col\" >2&sigma; interval</th>"
                  " </tr></thead>\n";
   results_html << "  <tbody>\n";
   
@@ -3642,8 +3765,7 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
   for( size_t index = 0; index < m_rel_activities.size(); ++index )
   {
     const IsotopeRelativeActivity &act = m_rel_activities[index];
-    const double uncert_percent = 100.0 * act.m_rel_activity_uncert / act.m_rel_activity;  //"percentage uncertainty"
-    
+
     results_html << "  <tr><td>" << act.m_isotope << "</td>"
     << "<td title=\"The normalized relative activity (i.e., divided by largest rel. act.) is "
     << SpecUtils::printCompact( act.m_rel_activity / largest_rel_act, nsigfig + 1)
@@ -3658,28 +3780,29 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
       results_html << "<td>N.A.</td>";
     }
     
-    // We need to do a better job of calculating mass fraction uncertainties.
-    //  Maybe an okay way to go is increase activity by 1-sigma, then recalculate
-    //  mass fraction, then re-normalize by new total mass
-    
+    // Convention: report the asymmetric 1-sigma interval, with the symmetric sigma defined as
+    //  the interval half-width, 0.5*(|delta_plus| + |delta_minus|) - the same convention the
+    //  chart-title enrichment uses.  (Check the "Profile uncert." checkbox of a nuclide for a
+    //  profile-likelihood interval, which is also valid near the physical bounds.)
     string error_tt;
     try
     {
       const double frac_mass = mass_fraction(act.m_isotope);
-      
+
       const double frac_mass_plus1 = mass_fraction(act.m_isotope, 1.0);
       const double frac_mass_minus1 = mass_fraction(act.m_isotope, -1.0);
-       
+
       const double delta_plus1 = frac_mass_plus1 - frac_mass;
       const double delta_minus1 = frac_mass_minus1 - frac_mass;
-      const double max_delta = (std::max)( fabs(delta_plus1), fabs(delta_minus1) );
-      const double uncert_percent = 100.0 * max_delta / frac_mass;
-      
-      error_tt = "The 1-sigma mass fraction range is ["
+      const double half_width = 0.5*( fabs(delta_plus1) + fabs(delta_minus1) );
+      const double uncert_percent = 100.0 * half_width / frac_mass;
+
+      error_tt = "The 1-sigma mass fraction interval is ["
       + SpecUtils::printCompact(100.0*frac_mass_minus1, nsigfig+1)
       + "% to "
       + SpecUtils::printCompact(100.0*frac_mass_plus1, nsigfig+1)
-      + "%]. \nThe 1-sigma percentage uncertainty (i.e., the percent of the percent value) is "
+      + "%]. \nThe symmetric 1-sigma percentage uncertainty (interval half-width, as percent of"
+      " the reported percent) is "
       + SpecUtils::printCompact(uncert_percent, nsigfig+1)
       + "%";
     }catch( std::exception & )
@@ -3694,8 +3817,7 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
     {
       const double frac_mass_plus2 = mass_fraction(act.m_isotope, 2.0);
       const double frac_mass_minus2 = mass_fraction(act.m_isotope, -2.0);
-      
-      const double frac_mass = mass_fraction(act.m_isotope);
+
       results_html << SpecUtils::printCompact(100.0*frac_mass_minus2, nsigfig-1)
       << "%, "
       << SpecUtils::printCompact( 100.0*frac_mass_plus2, nsigfig-1)
@@ -3710,7 +3832,68 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
   }
   results_html << "  </tbody>\n"
   << "</table>\n\n";
+
+  // Profile-likelihood intervals, when the caller ran them (see #profile_mass_fraction); these
+  //  lines serve both the in-app results tab and the HTML report.
+  for( const ProfileMassFractionResult &profile : m_profile_mass_fractions )
+  {
+    if( profile.intervals.empty() )
+      continue;
+
+    results_html << "<div class=\"profileuncert\">Profile likelihood " << profile.nuclide
+                 << " mass fraction (of its element): "
+                 << SpecUtils::printCompact(100.0*profile.nominal_mass_fraction, 4) << "%";
+
+    for( const ProfileMassFractionInterval &interval : profile.intervals )
+    {
+      results_html << "; " << SpecUtils::printCompact(100.0*interval.confidence_level, 4)
+                   << "% CL in [" << SpecUtils::printCompact(100.0*interval.lower_frac, 4)
+                   << "%, " << SpecUtils::printCompact(100.0*interval.upper_frac, 4) << "%]";
+      if( interval.lower_at_bound || interval.upper_at_bound )
+        results_html << " (limit)";
+    }//for( const ProfileMassFractionInterval &interval : profile.intervals )
+
+    results_html << "</div>\n";
+
+    for( const std::string &warning : profile.warnings )
+      results_html << "<div class=\"profileuncert profileuncertwarn\">" << warning << "</div>\n";
+  }//for( const ProfileMassFractionResult &profile : m_profile_mass_fractions )
 }//void get_mass_fraction_table( std::ostream &strm ) const
+
+
+void RelEffSolution::get_phys_model_shield_text( std::ostream &strm ) const
+{
+  if( m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+    return;
+
+  // The shield AD/AN uncertainties (computed from the parameter covariance, including the
+  //  chi2/dof inflation) were previously computed but shown nowhere.
+  const auto print_shield = [&strm]( const PhysModelShieldFit &shield, const std::string &label ){
+    strm << "<div class=\"shieldfit\">" << label << ": ";
+    if( shield.m_material )
+      strm << shield.m_material->name;
+    else
+    {
+      strm << "AN=" << SpecUtils::printCompact( shield.m_atomic_number, 4 );
+      if( shield.m_atomic_number_uncert > 0.0 )
+        strm << " &plusmn; " << SpecUtils::printCompact( shield.m_atomic_number_uncert, 3 );
+    }
+
+    strm << ", AD=" << SpecUtils::printCompact( shield.m_areal_density/PhysicalUnits::g_per_cm2, 4 );
+    if( shield.m_areal_density_uncert > 0.0 )
+      strm << " &plusmn; " << SpecUtils::printCompact( shield.m_areal_density_uncert/PhysicalUnits::g_per_cm2, 3 );
+    strm << " g/cm<sup>2</sup></div>\n";
+  };//print_shield
+
+  if( m_phys_model_self_atten_shield )
+    print_shield( *m_phys_model_self_atten_shield, "Self-atten" );
+
+  for( size_t i = 0; i < m_phys_model_external_atten_shields.size(); ++i )
+  {
+    if( m_phys_model_external_atten_shields[i] )
+      print_shield( *m_phys_model_external_atten_shields[i], "Ext-atten " + std::to_string(i+1) );
+  }
+}//void get_phys_model_shield_text( std::ostream &strm ) const
 
 
 void RelEffSolution::get_mass_ratio_table( std::ostream &results_html ) const
@@ -3762,13 +3945,24 @@ void RelEffSolution::get_mass_ratio_table( std::ostream &results_html ) const
       const double i_to_j_mass_ratio = i_to_j_act_ratio * j_to_i_specific_act;
       const double j_to_i_mass_ratio = j_to_i_act_ratio * i_to_j_specific_act;
       
-      if( !m_nonlin_covariance.empty() )
+      // activity_ratio_uncert(...) throws when the covariance was not successfully computed
+      //  (or an index is invalid); fall back to the "n/a" cells in that case.
+      bool have_uncerts = false;
+      double i_to_j_act_ratio_uncert = -1.0, j_to_i_act_ratio_uncert = -1.0;
+      try
       {
-        const double i_to_j_act_ratio_uncert = activity_ratio_uncert( nuc_i_str, nuc_j_str );
-        const double j_to_i_act_ratio_uncert = activity_ratio_uncert( nuc_j_str, nuc_i_str );
+        i_to_j_act_ratio_uncert = activity_ratio_uncert( nuc_i_str, nuc_j_str );
+        j_to_i_act_ratio_uncert = activity_ratio_uncert( nuc_j_str, nuc_i_str );
+        have_uncerts = true;
+      }catch( std::exception & )
+      {
+      }
+
+      if( have_uncerts )
+      {
         const double i_to_j_mass_ratio_uncert = i_to_j_act_ratio_uncert * j_to_i_specific_act;
         const double j_to_i_mass_ratio_uncert = j_to_i_act_ratio_uncert * i_to_j_specific_act;
-        
+
         results_html << "<tr><td>" << nuc_i->symbol << "/" << nuc_j->symbol
         << "</td><td>" << PhysicalUnits::printValueWithUncertainty( i_to_j_mass_ratio, i_to_j_mass_ratio_uncert, nsigfig )
         << "</td><td>" << PhysicalUnits::printValueWithUncertainty( i_to_j_act_ratio, i_to_j_act_ratio_uncert, nsigfig )
@@ -3812,511 +4006,84 @@ double RelEffSolution::rel_eff_eqn_value( const double energy ) const
 
 double RelEffSolution::rel_eff_eqn_uncert( const double energy ) const
 {
-  // Check if we use least linear squares to fit the equation; if so, use the covariance matrix directly
-  if( !m_input.use_ceres_to_fit_eqn && (m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel) )
-  {
-    if( m_rel_eff_eqn_covariance.empty() )
-      throw std::runtime_error( "RelEffSolution::rel_eff_eqn_uncert: Rel. Eff. Eqn. covariances not available." );
+  if( m_rel_eff_eqn_covariance.empty() )
+    throw std::runtime_error( "RelEffSolution::rel_eff_eqn_uncert: Rel. Eff. Eqn. covariances not available." );
 
+  assert( m_rel_eff_eqn_covariance.size() == m_rel_eff_eqn_coefficients.size() );
+  if( m_rel_eff_eqn_covariance.size() != m_rel_eff_eqn_coefficients.size() )
+    throw std::logic_error( "RelEffSolution::rel_eff_eqn_uncert: covariance matrix does not match expected." );
+
+  // I think we would be safe skipping this following check, at least on non-debug builds, but whatever
+  for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
+  {
+    assert( m_rel_eff_eqn_covariance[i].size() == m_rel_eff_eqn_covariance.size() );
+    if( m_rel_eff_eqn_covariance[i].size() != m_rel_eff_eqn_covariance.size() )  //JIC for release builds
+      throw std::runtime_error( "RelEffSolution::rel_eff_eqn_uncert: covariance not a square matrix." );
+  }//for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
+
+  if( m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
+  {
+    // We can delegate to RelActCalc::eval_eqn_uncertainty() no matter whether the covariance
+    //  came from the log-space LLS fit (use_ceres_to_fit_eqn == false), or from Ceres fitting
+    //  the coefficients directly: LnX is linear in its coefficients, and for the exponential
+    //  forms (LnY, LnXLnY, FramEmpirical) ln(y) is linear in the *same* coefficients in both
+    //  parameterizations, so sigma_y = y*sqrt(t^T*C*t) is the identical quadratic form either
+    //  way (the non-log Jacobian factors, y*t_i, just pull y^2 outside the double sum).
     const double val = RelActCalc::eval_eqn_uncertainty( energy, m_input.eqn_form,
                                             m_rel_eff_eqn_coefficients, m_rel_eff_eqn_covariance );
     if( isnan(val) )
       throw std::runtime_error( "RelEffSolution::rel_eff_eqn_uncert: NaN value for uncertainty." );
 
     return val;
-  }//if( we can call eval_eqn_uncertainty )
-  
-  if( m_rel_eff_eqn_covariance.empty() )
-    throw std::runtime_error( "RelEffSolution::rel_eff_eqn_uncert: nonlinear covariances not available." );
+  }//if( an empirical eqn form )
 
+  // FramPhysicalModel: compute the gradient of the rel. eff. curve with respect to the
+  //  Ceres-space parameters (i.e., AN/ns_an_ceres_mult, AD as the g/cm2 number, and the
+  //  offset Hoerl b/c values), using automatic differentiation, then contract it with
+  //  `m_rel_eff_eqn_covariance` - which is the raw Ceres covariance sub-block in those same
+  //  units.  `make_phys_eqn_input` applies all unit transforms internally, exactly like the
+  //  cost functor does during the fit, so the chain rule to parameter space is automatic.
+  //  Parameters held constant during the fit have all-zero covariance rows/columns, so their
+  //  gradient components contribute nothing.
   assert( m_input.use_ceres_to_fit_eqn );
 
-  assert( m_nonlin_covariance.size() == m_fit_parameters.size() );
-  assert( m_rel_eff_eqn_covariance.size() == m_rel_eff_eqn_coefficients.size() );
-  if( m_rel_eff_eqn_covariance.size() != m_rel_eff_eqn_coefficients.size() )
-    throw std::logic_error( "RelEffSolution::rel_eff_eqn_uncert: covariance matrix does not match expected." );
-  
-  // I think we would be safe skipping this following check, at least on non-debug builds, but whatever
-  for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
+  const size_t num_pars = m_rel_eff_eqn_coefficients.size();
+  vector<double> gradient( num_pars, 0.0 );
+
+  for( size_t chunk_start = 0; chunk_start < num_pars; chunk_start += 8 )
   {
-    assert( m_rel_eff_eqn_covariance[i].size() == m_rel_eff_eqn_covariance.size() );
-    if( m_rel_eff_eqn_covariance[i].size() != m_rel_eff_eqn_covariance.size() )  //JIC for release builds
-      throw runtime_error( "eval_eqn_uncertainty: covariance not a square matrix." );
-  }//for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
+    typedef ceres::Jet<double,8> JetType;
+
+    vector<JetType> jet_coefs( num_pars );
+    for( size_t i = 0; i < num_pars; ++i )
+      jet_coefs[i] = JetType( m_rel_eff_eqn_coefficients[i] );
+
+    const size_t num_seed = std::min( num_pars - chunk_start, size_t(8) );
+    for( size_t k = 0; k < num_seed; ++k )
+      jet_coefs[chunk_start + k].v[k] = 1.0;
+
+    const ManualGenericRelActFunctor::PhysModelRelEqnDef<JetType> eqn_input
+                        = ManualGenericRelActFunctor::make_phys_eqn_input( m_input, jet_coefs );
+
+    const JetType eval_val = RelActCalc::eval_physical_model_eqn_imp<JetType>( energy,
+                        eqn_input.self_atten, eqn_input.external_attens, eqn_input.det.get(),
+                        eqn_input.hoerl_b, eqn_input.hoerl_c );
+
+    for( size_t k = 0; k < num_seed; ++k )
+      gradient[chunk_start + k] = eval_val.v[k];
+  }//for( loop over stride-8 chunks of parameters )
 
   double uncert_sq = 0.0;
-
-  switch( m_input.eqn_form )
+  for( size_t i = 0; i < num_pars; ++i )
   {
-    case RelActCalc::RelEffEqnForm::LnX:
-    {
-      // y = a + b*ln(x) + c*(ln(x))^2 + d*(ln(x))^3 + ...
-      // We use/fit the same form where we use least linear squares, or Ceres, so we could just
-      //  use the function we made for LLS fit
-      const double log_energy = std::log(energy);
-      for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
-      {
-        for( size_t j = 0; j < m_rel_eff_eqn_covariance.size(); ++j )
-          uncert_sq += std::pow(log_energy,1.0*i) * m_rel_eff_eqn_covariance[i][j] * std::pow(log_energy,1.0*j);
-      }//for( size_t i = 0; i < coefs.size(); ++i )
-      
-      assert( uncert_sq >= 0.0 );
+    for( size_t j = 0; j < num_pars; ++j )
+      uncert_sq += gradient[i] * m_rel_eff_eqn_covariance[i][j] * gradient[j];
+  }//for( size_t i = 0; i < num_pars; ++i )
 
-      // Mirror the throw pattern used at the FramPhysicalModel exit below: a negative
-      // squared uncertainty means the covariance matrix is non-positive-definite, which is
-      // a real failure, not numerical noise we should silently round to zero.
-      if( uncert_sq < 0.0 )
-        throw std::runtime_error( "RelEffSolution::rel_eff_eqn_uncert: negative squared uncertainty." );
-
-      return sqrt(uncert_sq);
-    }//case RelEffEqnForm::LnX:
-      
-      
-    case RelActCalc::RelEffEqnForm::LnY:
-    {
-      // y = exp( a + b*x + c/x + d/x^2 + e/x^3 + ... )
-      const double eval_val = eval_eqn( energy, m_input.eqn_form, m_rel_eff_eqn_coefficients );
-      
-      const auto eval_derivative = [energy, eval_val]( const size_t order ) -> double {
-        switch( order )
-        {
-          case 0:  return 1.0 * eval_val;
-          case 1:  return energy * eval_val;
-          default:
-            break;
-        }//switch( order )
-        
-        return eval_val * std::pow( energy, 1.0 - order );
-      };//eval_derivative
-      
-      for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
-      {
-        for( size_t j = 0; j < m_rel_eff_eqn_covariance.size(); ++j )
-          uncert_sq += eval_derivative(i) * m_rel_eff_eqn_covariance[i][j] * eval_derivative(j);
-      }//for( size_t i = 0; i < coefs.size(); ++i )
-    }//case RelEffEqnForm::LnY:
-      
-    case RelActCalc::RelEffEqnForm::LnXLnY:
-    {
-      // y = exp(a  + b*(lnx) + c*(lnx)^2 + d*(lnx)^3 + ... )
-      const double log_energy = std::log(energy);
-      const double eval_val = eval_eqn( energy, m_input.eqn_form, m_rel_eff_eqn_coefficients );
-      
-      for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
-      {
-        for( size_t j = 0; j < m_rel_eff_eqn_covariance.size(); ++j )
-          uncert_sq += (eval_val * std::pow(log_energy,1.0*i)) * m_rel_eff_eqn_covariance[i][j] * (eval_val * std::pow(log_energy,1.0*j));
-      }//for( size_t i = 0; i < coefs.size(); ++i )
-      
-    }//case RelEffEqnForm::LnXLnY:
-      
-    case RelActCalc::RelEffEqnForm::FramEmpirical:
-    {
-      // y = exp( a + b/x^2 + c*(lnx) + d*(lnx)^2 + e*(lnx)^3 )
-      const double log_energy = std::log(energy);
-      const double eval_val = eval_eqn( energy, m_input.eqn_form, m_rel_eff_eqn_coefficients );
-      
-      double uncert_sq = 0.0;
-      
-      for( size_t i = 0; i < m_rel_eff_eqn_covariance.size(); ++i )
-      {
-        double i_component = 0.0;
-        switch( i )
-        {
-          case 0:  i_component = eval_val;  break;
-          case 1:  i_component = eval_val / (energy*energy); break;
-          default: i_component = eval_val * std::pow(log_energy, i - 1.0); break;
-        }//switch( i )
-        
-        for( size_t j = 0; j < m_rel_eff_eqn_covariance.size(); ++j )
-        {
-          double j_component = 0.0;
-          switch( j )
-          {
-            case 0:  j_component = eval_val;  break;
-            case 1:  j_component = eval_val / (energy*energy); break;
-            default: j_component = eval_val * std::pow(log_energy, j - 1.0); break;
-          }//switch( i )
-          
-          uncert_sq += i_component * m_rel_eff_eqn_covariance[i][j] * j_component;
-        }
-      }//for( size_t i = 0; i < coefs.size(); ++i )
-    }//case RelEffEqnForm::FramEmpirical:
-      
-    case RelActCalc::RelEffEqnForm::FramPhysicalModel:
-    {
-      // y = [(1 - exp(-mu(AN_0,E)*x_j))/(mu(AN_0,E)*x_j)]
-      //     * [exp(-mu(AN_1,E)*x_1) * exp(-mu(AN_2,E)*x_2) * ...]
-      //     * [(E/1000)^b * c^(1000/E)]
-      //     * [Det Eff]
-      //
-      // https://www.derivative-calculator.net
-      // let f   = [(1 - exp(-function_m(x_0)*x_1))/(function_m(x_0)*x_1)]
-      //           * [exp(-function_m(x_2)*x_3)*exp(-function_m(x_4)*x_5)]
-      //           * ((E/1000)^(x_6)) * ((x_7)^(1000/E))
-      //----------------------------------------------------------------------
-      // df/dx_0 = ((E/1000)^x_6 * x_7^(1000 / E) * e^(-x_1 * function_m(x_0) - function_m(x_4) * x_5 - function_m(x_2) * x_3) * (x_1 * function_m(x_0) - e^(x_1 * function_m(x_0)) + 1) * function_m'(x_0))
-      //    / (x_1 * function_m(x_0)^2)
-      //
-      // df/dx_1 = -(E^x_6 * x_7^(1000 / E) * (e^(function_m(x_0) * x_1) - function_m(x_0) * x_1 - 1) * e^(-function_m(x_0) * x_1 - function_m(x_4) * x_5 - function_m(x_2) * x_3))
-      //    / (function_m(x_0) * 1000^x_6 * x_1^2)
-      //
-      // df/dx_2 = -(E^x_6 * (1 - e^(-function_m(x_0) * x_1)) * x_3 * x_7^(1000 / E) * e^(-x_3 * function_m(x_2) - function_m(x_4) * x_5) * function_m'(x_2))
-      //    / (function_m(x_0) * x_1 * 1000^x_6)
-      //
-      // df/dx_3 = -(E^x_6 * (1 - e^(-function_m(x_0) * x_1)) * function_m(x_2) * x_7^(1000 / E) * e^(-function_m(x_2) * x_3 - function_m(x_4) * x_5))
-      //    / (function_m(x_0) * x_1 * 1000^x_6)
-      //
-      // df/dx_4 = -(E^x_6 * (1 - e^(-function_m(x_0) * x_1)) * x_5 * x_7^(1000 / E) * e^(-x_5 * function_m(x_4) - function_m(x_2) * x_3) * function_m'(x_4))
-      //    / (function_m(x_0) * x_1 * 1000^x_6)
-      //
-      // df/dx_5 = -(E^x_6 * (1 - e^(-function_m(x_0) * x_1)) * function_m(x_4) * x_7^(1000 / E) * e^(-function_m(x_4) * x_5 - function_m(x_2) * x_3))
-      //    / (function_m(x_0) * x_1 * 1000^x_6)
-      //
-      // df/dx_6 = (E^x_6 * (ln(E) - ln(1000)) * (e^(function_m(x_0) * x_1) - 1) * e^(-function_m(x_4) * x_5 - function_m(x_2) * x_3 - function_m(x_0) * x_1) * x_7^(1000 / E))
-      //    / (function_m(x_0) * x_1 * 1000^x_6)
-      //
-      // df/dx_7 = (E^(x_6 - 1) * (1 - e^(-function_m(x_0) * x_1)) * e^(-function_m(x_4) * x_5 - function_m(x_2) * x_3) * 1000^(1 - x_6) * x_7^(1000 / E - 1))
-      //    / (function_m(x_0) * x_1)
-      
-      const auto is_valid_shield = []( const PhysModelShieldFit * const result,
-                              const RelActCalc::PhysicalModelShieldInput * const input ) -> bool {
-        if( !result || !input )
-          return false;
-        assert( (!result->m_material) == (!input->material) );
-        if( result->m_material )
-          return true;
-        return (input->fit_atomic_number || ((result->m_atomic_number >= 1.0) && (result->m_atomic_number <= 98.0)));
-      };//is_valid_shield(...)
-      
-      const auto an_was_fit = []( const RelActCalc::PhysicalModelShieldInput * const input ) -> bool {
-        return input && input->fit_atomic_number;
-      };
-      
-      const auto ad_was_fit = []( const RelActCalc::PhysicalModelShieldInput * const input ) -> bool {
-        return input && input->fit_areal_density;
-      };
-      
-      assert( (!m_phys_model_self_atten_shield) == (!m_input.phys_model_self_atten) );
-      if( (!m_phys_model_self_atten_shield) != (!m_input.phys_model_self_atten) )
-        throw runtime_error( "eval_eqn_uncertainty: result/input mismatch" );
-      
-      assert( m_phys_model_external_atten_shields.size() == m_input.phys_model_external_attens.size() );
-      if( m_phys_model_external_atten_shields.size() != m_input.phys_model_external_attens.size() )
-        throw runtime_error( "eval_eqn_uncertainty: result/input mismatch" );
-      
-      
-      
-      // Since the meaning of parameters doesnt map to their index, its a little awkward, we'll
-      //  expand things so we can do a fixed mapping, but also track which variables we should skip.
-      const size_t max_num_par = 2 + 2*m_phys_model_external_atten_shields.size() + 2;
-      const size_t num_actual_pars = m_rel_eff_eqn_coefficients.size();
-      vector<size_t> par_index( max_num_par, num_actual_pars ); //m
-      vector<double> expanded_pars( max_num_par, 0.0 );
-      vector<bool> is_used_parameter( max_num_par, false ), is_fit_parameter( max_num_par, false );
-      size_t working_actual_index = 0; //indexes into `m_rel_eff_eqn_coefficients` and/or `m_rel_eff_eqn_covariance`
-      
-      // Fill out info on self-atten shielding
-      if( is_valid_shield(m_phys_model_self_atten_shield.get(), m_input.phys_model_self_atten.get()) )
-      {
-        assert( !!m_input.phys_model_self_atten && !!m_phys_model_self_atten_shield );
-        if( m_input.phys_model_self_atten->fit_atomic_number )
-        {
-          par_index[0] = working_actual_index;
-          expanded_pars[0] = m_phys_model_self_atten_shield->m_atomic_number;
-          is_used_parameter[0] = true;
-          is_fit_parameter[0] = true;
-          working_actual_index += 1;
-        }
-        
-        is_used_parameter[1] = true;
-        is_fit_parameter[1] = m_input.phys_model_self_atten->fit_areal_density;
-        expanded_pars[1] = m_phys_model_self_atten_shield->m_areal_density;
-        working_actual_index += 1;
-      }//if( is_valid_shield(m_phys_model_self_atten_shield.get(), m_input.phys_model_self_atten.get()) )
-      
-      // Fill out info on external shieldings
-      assert( m_input.phys_model_external_attens.size() == m_phys_model_external_atten_shields.size() );
-      for( size_t i = 0; i < m_phys_model_external_atten_shields.size(); ++i )
-      {
-        const size_t expanded_an_index = 2 + 2*i;
-        const size_t expanded_ad_index = expanded_an_index + 1;
-        
-        const auto &input = m_input.phys_model_external_attens[i];
-        const auto &result = m_phys_model_external_atten_shields[i];
-        assert( is_valid_shield(result.get(), input.get()) );
-        if( !is_valid_shield(result.get(), input.get()) )
-          continue;
-        
-        if( input->fit_atomic_number )
-        {
-          par_index[expanded_an_index] = working_actual_index;
-          expanded_pars[expanded_an_index] = result->m_atomic_number;
-          is_used_parameter[expanded_an_index] = true;
-          is_fit_parameter[expanded_an_index] = true;
-          working_actual_index += 1;
-        }
-        
-        is_used_parameter[expanded_ad_index] = true;
-        is_fit_parameter[expanded_ad_index] = input->fit_areal_density;
-        expanded_pars[expanded_ad_index] = result->m_areal_density;
-        working_actual_index += 1;
-      }//for( size_t i = 0; i < m_phys_model_external_atten_shields.size(); ++i )
-      
-      // Fill out info on modified Hoerl function
-      if( m_input.phys_model_use_hoerl )
-      {
-        assert( (working_actual_index + 1) < m_rel_eff_eqn_coefficients.size() );
-        
-        const size_t expanded_b_index = 2 + 2*m_phys_model_external_atten_shields.size();
-        const size_t expanded_c_index = expanded_b_index + 1;
-        assert( (expanded_c_index+1) == max_num_par );
-        
-        is_used_parameter[expanded_b_index] = true;
-        is_fit_parameter[expanded_b_index] = true;
-        expanded_pars[expanded_b_index] = m_rel_eff_eqn_coefficients.at(working_actual_index);
-        par_index[expanded_b_index] = working_actual_index;
-        working_actual_index += 1;
-        
-        
-        is_used_parameter[expanded_c_index] = true;
-        is_fit_parameter[expanded_c_index] = true;
-        expanded_pars[expanded_c_index] = m_rel_eff_eqn_coefficients.at(working_actual_index);
-        par_index[expanded_c_index] = working_actual_index;
-        working_actual_index += 1;
-      }//if( m_input.phys_model_use_hoerl )
-      
-      assert( working_actual_index == num_actual_pars );
-      if( working_actual_index != num_actual_pars )
-        throw std::logic_error( "eval_eqn_uncertainty:  working_actual_index != num_actual_pars" );
-      
-      const float energyf = static_cast<float>(energy);
-      
-      // Returns attenuation coefficient, mu, for expanded parameter number passed in
-      //  lambda name corresponds to notation used to get the derivatives in the online derivative
-      //  tool.
-      const auto function_m = [&]( size_t expanded_index ) -> double {
-        assert( (expanded_index % 2) == 0 );
-        
-        assert( (expanded_index == 0)
-               || ((expanded_index - 2)/2) < m_phys_model_external_atten_shields.size() );
-        if( (expanded_index != 0)
-               && ((expanded_index - 2)/2) >= m_phys_model_external_atten_shields.size() )
-          throw std::logic_error( "(expanded_index - 2)/2) >= m_phys_model_external_atten_shields.size()" );
-          
-        
-        const auto &shield = (expanded_index == 0) ? m_phys_model_self_atten_shield
-                                                     : m_phys_model_external_atten_shields[(expanded_index - 2)/2];
-        assert( shield );
-        if( !shield )
-          throw std::logic_error( "logic error: !shield" );
-        
-        const auto &mat = shield->m_material;
-        if( mat )
-          return GammaInteractionCalc::transmition_length_coefficient( mat.get(), energyf ) / mat->density;
-        return RelActCalc::get_atten_coef_for_an<double>( shield->m_atomic_number , energyf );
-      };//const auto function_m
-      
-      const auto derivative_function_m = [&]( size_t expanded_index ) -> double {
-        assert( (expanded_index == 0)
-               || ((expanded_index - 2)/2) < m_phys_model_external_atten_shields.size() );
-        if( (expanded_index != 0)
-               && ((expanded_index - 2)/2) >= m_phys_model_external_atten_shields.size() )
-          throw std::logic_error( "(expanded_index - 2)/2) >= m_phys_model_external_atten_shields.size()" );
-        
-        const auto &shield = (expanded_index == 0) ? m_phys_model_self_atten_shield
-                                                     : m_phys_model_external_atten_shields[(expanded_index - 2)/2];
-        assert( shield && !shield->m_material );
-        
-        ceres::Jet<double, 1> x(shield->m_atomic_number, 0); // x = AN, derivative index = 0
-        ceres::Jet<double, 1> y = RelActCalc::get_atten_coef_for_an( x, energyf );
-        //double value = y.a; // The function value at AN
-        const double derivative = y.v[0]; // The derivative at AN
-        
-        //Printing things out, like below, confirms we are getting the correct derivative
-        //cout << "Derivative for energy=" << energy << ", AN=" << shield->m_atomic_number << ", mu=" << y.a << " is: " << derivative << endl;
-        //if( shield->m_atomic_number > 2 && shield->m_atomic_number < 96 )
-        //{
-        //  const int lower_an = std::max( 1, static_cast<int>( std::floor(shield->m_atomic_number) ) );
-        //  const int upper_an = lower_an + 1;
-        //  cout << "mu(" << lower_an << ")= " << MassAttenuation::massAttenuationCoeficient(lower_an, energy) 
-        //       << ", mu(" << upper_an << ")= " << MassAttenuation::massAttenuationCoeficient(upper_an, energy) 
-        //       << " (diff=" << (MassAttenuation::massAttenuationCoeficient(lower_an, energy) - MassAttenuation::massAttenuationCoeficient(upper_an, energy)) << ")" 
-        //       << endl;
-        //}
-        
-        return derivative;
-      };//derivative_function_m(...)
-      
-      
-      
-      // Get derivative of f, with respect to parameter `expanded_index`.
-      //  As of 20250114, totally untested
-      auto df_dp = [&]( const size_t expanded_index ) -> double {
-        assert( expanded_index < is_used_parameter.size() );
-        assert( is_used_parameter[expanded_index] && is_fit_parameter[expanded_index] );
-        
-        const double det_eff = (m_input.phys_model_detector && m_input.phys_model_detector->isValid())
-                                ? m_input.phys_model_detector->intrinsicEfficiency(energyf)
-                                : 1.0f;
-        
-        double self_atten_val = 1.0;
-        if( is_used_parameter[1] )
-        {
-          const double mu_0 = function_m(0);
-          const double x_1 = expanded_pars[1];
-          self_atten_val = ((1 - exp(-mu_0 * x_1)) / (mu_0 * x_1));
-        }
-        
-        double hoerl_val = 1.0;
-        if( m_input.phys_model_use_hoerl )
-        {
-          const size_t expanded_b_index = 2 + 2*m_phys_model_external_atten_shields.size();
-          const size_t expanded_c_index = expanded_b_index + 1;
-          const double b = (expanded_pars[expanded_b_index] - RelActCalc::ns_decay_hoerl_b_offset) * RelActCalc::ns_decay_hoerl_b_multiple;
-          const double c = (expanded_pars[expanded_c_index] - RelActCalc::ns_decay_hoerl_c_offset) * RelActCalc::ns_decay_hoerl_c_multiple;
-
-          hoerl_val = std::pow( (energy/1000.0), b) * std::pow( c, (1000.0 / energy) );
-        }
-        
-        double ext_atten_exp_arg = 0.0;
-        for( size_t ext_shield_ind = 0; ext_shield_ind < m_phys_model_external_atten_shields.size(); ++ext_shield_ind )
-        {
-          const size_t an_index = 2 + 2*ext_shield_ind;
-          const size_t ad_index = an_index + 1;
-          ext_atten_exp_arg -= function_m(an_index) * expanded_pars[ad_index];
-        }
-        const double ext_atten_val = exp( ext_atten_exp_arg );
-        
-        
-        if( expanded_index == 0 )
-        {
-          // We want the derivative with respect to self-attenuating AN
-          const double x_1 = expanded_pars[1]; //self-atten AD
-          const double mu_0 = function_m(0);
-          double exp_arg = -x_1 * mu_0;
-          for( size_t ext_ind = 0; ext_ind < m_phys_model_external_atten_shields.size(); ++ext_ind )
-          {
-            const size_t expanded_an_index = 2 + 2*ext_ind;
-            const size_t expanded_ad_index = expanded_an_index + 1;
-            exp_arg -= function_m(expanded_an_index) * expanded_pars[expanded_ad_index];
-          }
-          
-          double answer = det_eff * (exp(exp_arg) * (x_1 * mu_0 - exp(x_1 * mu_0) + 1) * derivative_function_m(0))*hoerl_val
-                          / (x_1 * mu_0 * mu_0);
-          
-          return answer;
-        }else if( expanded_index == 1 )
-        {
-          // We want the derivative with respect to self-attenuating AD
-          const double x_1 = expanded_pars[1]; //self-atten AD
-          const double mu_0 = function_m(0);
-          
-          double exp_arg = -mu_0 * x_1;
-          for( size_t ext_ind = 0; ext_ind < m_phys_model_external_atten_shields.size(); ++ext_ind )
-          {
-            const size_t expanded_an_index = 2 + 2*ext_ind;
-            const size_t expanded_ad_index = expanded_an_index + 1;
-            exp_arg -= function_m(expanded_an_index) * expanded_pars[expanded_ad_index];
-          }
-      
-          double answer = -det_eff * (exp(mu_0 * x_1) - mu_0 * x_1 - 1) * exp( exp_arg ) * hoerl_val
-                          / (mu_0 * x_1*x_1);
-          
-          return answer;
-        }else if( expanded_index < (2 + 2*m_phys_model_external_atten_shields.size()) )
-        {
-          const size_t ext_shield_num = (expanded_index - 2) / 2;
-          
-          double answer = -det_eff * hoerl_val * self_atten_val * ext_atten_val;
-          
-          if( ((expanded_index % 2) == 0) )
-          {
-            //External shield AN
-            const double x_ad = expanded_pars[expanded_index + 1];
-            answer *= x_ad * derivative_function_m(expanded_index);
-          }else
-          {
-            //External shield AD
-            answer *= function_m(expanded_index-1);
-          }
-          
-          return answer;
-        }
-        
-        //Modified Hoerl function
-        if( ((expanded_index % 2) == 0) )
-        {
-          //df/dx_6 = (E^x_6 * (ln(E) - ln(1000)) * (e^(function_m(x_0) * x_1) - 1) * e^(-function_m(x_4) * x_5 - function_m(x_2) * x_3 - function_m(x_0) * x_1) * x_7^(1000 / E))
-          //    / (function_m(x_0) * x_1 * 1000^x_6)
-          
-          double answer = det_eff * ext_atten_val * self_atten_val * hoerl_val * (log(energy) - log(1000));
-          return answer;
-        }
-        
-        const size_t expanded_b_index = 2 + 2*m_phys_model_external_atten_shields.size();
-        const size_t expanded_c_index = expanded_b_index + 1;
-        const double b = expanded_pars[expanded_b_index];
-        const double c = expanded_pars[expanded_c_index];
-          
-        double answer = det_eff * ext_atten_val * self_atten_val * std::pow( (energy/1000.0), b);
-        answer *= (1000.0/energy)*std::pow(c, (1000.0/energy) - 1.0 );
-          
-        return answer;
-      };//auto df_dp = ...
-      
-      
-      size_t i_working = 0;
-      for( size_t i_expanded = 0; i_expanded < max_num_par; ++i_expanded )
-      {
-        if( !is_used_parameter[i_expanded] )
-          continue;
-        
-        if( !is_fit_parameter[i_expanded] ) //We only include AN as a parameter when we fit it
-        {
-          assert( m_rel_eff_eqn_covariance[i_working][i_working] == 0.0 );
-          
-          i_working += 1;
-          continue;
-        }
-        
-        size_t j_working = 0;
-        for( size_t j_expanded  = 0; j_expanded < max_num_par; ++j_expanded )
-        {
-          if( !is_used_parameter[j_expanded] )
-            continue;
-          
-          if( !is_fit_parameter[j_expanded] ) //We only include AN as a parameter when we fit it
-          {
-            j_working += 1;
-            continue;
-          }
-          
-          const double i_component = df_dp( i_expanded );
-          const double j_component = df_dp( j_expanded );
-          
-          uncert_sq += i_component * m_rel_eff_eqn_covariance[i_working][j_working] * j_component;
-          
-          j_working += 1;
-        }//for( size_t j_expanded  = 0; j_expanded < max_num_par; ++j_expanded )
-        assert( j_working == num_actual_pars );
-        
-        i_working += 1;
-      }//for( size_t i_expanded  = 0; i_expanded < max_num_par; ++i_expanded )
-      assert( i_working == num_actual_pars );
-      
-      break;
-    }//case RelActCalc::RelEffEqnForm::FramPhysicalModel:
-  }//switch( eqn_form )
-
-  const double eval_val = rel_eff_eqn_value( energy );
-  //cout << "Phys Model Rel Eff: energy=" << energy << "keV, val=" << eval_val << " uncert_sq=" << uncert_sq << " --> uncert=" << sqrt(uncert_sq) << endl;
-
-  //assert( uncert_sq >= 0.0 );
   if( uncert_sq < 0.0 )
     throw std::runtime_error( "RelEffSolution::rel_eff_eqn_uncert: negative squared uncertainty." );
-  
-  return sqrt(uncert_sq);
+
+  return sqrt( uncert_sq );
 }//double rel_eff_eqn_uncert( const double energy ) const
 
 
@@ -4407,7 +4174,7 @@ string RelEffSolution::rel_eff_eqn_txt( const bool html_format ) const
     const ManualGenericRelActFunctor::PhysModelRelEqnDef input
           = ManualGenericRelActFunctor::make_phys_eqn_input( m_input, m_rel_eff_eqn_coefficients );
     return RelActCalc::physical_model_rel_eff_eqn_text( input.self_atten,
-                input.external_attens, input.det, input.hoerl_b, input.hoerl_b, html_format );
+                input.external_attens, input.det, input.hoerl_b, input.hoerl_c, html_format );
   }
   
   return RelActCalc::rel_eff_eqn_text( m_input.eqn_form, m_rel_eff_eqn_coefficients );
@@ -4446,15 +4213,18 @@ void RelEffSolution::print_html_report( ostream &output_html_file,
   
   stringstream results_html;
   results_html << "<div>&chi;<sup>2</sup>=" << SpecUtils::printCompact(m_chi2, nsigfig)
-  << " and there were " << m_dof << " DOF; &chi;<sup>2</sup>/dof="
-  << SpecUtils::printCompact(m_chi2/m_dof, nsigfig)
-  << " </div>\n";
+  << " and there were " << m_dof << " DOF";
+  if( m_dof > 0 ) //m_dof can legitimately be zero
+    results_html << "; &chi;<sup>2</sup>/dof=" << SpecUtils::printCompact(m_chi2/m_dof, nsigfig);
+  results_html << " </div>\n";
   
   results_html << "<div class=\"releffeqn\">Rel. Eff. Eqn: y = ";
   results_html << rel_eff_eqn_txt( true );
-  
+
   results_html << "</div>\n";
-  
+
+  get_phys_model_shield_text( results_html );
+
   get_mass_fraction_table( results_html );
   get_mass_ratio_table( results_html );
   
@@ -4865,6 +4635,32 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
 
   input.check_nuclide_constraints();
 
+  // Estimate the additional per-peak fractional uncertainty from the data, if asked to.  The
+  //  estimate needs a fitted model to measure deviations against, so: solve, estimate, apply,
+  //  and repeat (the weights change the fit a little, which changes the estimate a little).
+  //  Converges in a couple of rounds; sub-solves skip the covariance work.
+  // Widen the peak uncertainties by one common factor estimated from the data, if asked to.
+  //  The estimate needs a fitted model to measure deviations against, so solve once first.  A
+  //  single pass suffices: scaling every peak by the same factor cannot move the fit, so
+  //  re-estimating afterwards would only ever return 1.
+  double auto_stat_multiple = -1.0;
+  if( input.auto_estimate_add_uncert )
+  {
+    RelEffInput trial_input = input;
+    trial_input.auto_estimate_add_uncert = false;
+    trial_input.point_estimate_only = true;
+
+    const RelEffSolution trial_solution = solve_relative_efficiency( trial_input );
+    if( trial_solution.m_status == ManualSolutionStatus::Success )
+      auto_stat_multiple = estimate_stat_uncert_multiple( trial_solution );
+
+    if( auto_stat_multiple >= 1.0 )
+    {
+      for( GenericPeakInfo &peak : input.peaks )
+        peak.m_counts_uncert *= auto_stat_multiple;
+    }
+  }//if( input.auto_estimate_add_uncert )
+
   const std::vector<GenericPeakInfo> &peak_infos = input.peaks;
   const RelActCalc::RelEffEqnForm eqn_form = input.eqn_form;
   const size_t eqn_order = input.eqn_order;
@@ -4884,10 +4680,23 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   solution.m_warnings.insert( begin(solution.m_warnings),
                       begin(input.prep_warnings), end(input.prep_warnings) );
 
+  if( input.auto_estimate_add_uncert )
+  {
+    solution.m_auto_stat_uncert_multiple = auto_stat_multiple;
+    if( auto_stat_multiple < 0.0 )
+      solution.m_warnings.push_back( "Could not estimate how much to widen the peak uncertainties"
+                                     " from the data; using them as they are." );
+    else if( auto_stat_multiple >= 24.9 ) //i.e. it ran into estimate_stat_uncert_multiple's cap
+      solution.m_warnings.push_back( "The peaks disagree with any achievable relative efficiency"
+                " curve so badly that the estimated uncertainty widening hit its limit - treat this"
+                " fit, and its uncertainties, with suspicion." );
+  }//if( input.auto_estimate_add_uncert )
+
 #if( SCAN_AN_FOR_BEST_FIT )
-  const bool scan_an_for_best_fit = (eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel 
+  const bool scan_an_for_best_fit = (eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel
                                       && input.phys_model_self_atten
-                                      && input.phys_model_self_atten->fit_atomic_number );
+                                      && input.phys_model_self_atten->fit_atomic_number
+                                      && !input.skip_an_scan );
   if( scan_an_for_best_fit )
   {
     SpecUtilsAsync::ThreadPool threadpool;
@@ -4895,16 +4704,33 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     double best_chi2 = std::numeric_limits<double>::max();
     double best_an = 0.0, best_ad = 0.0;
     
-    const auto do_work = [&input, &best_chi2, &best_an, &best_ad, &best_chi2_mutex]( const double an ){
+    const auto do_work = [&input, &best_chi2, &best_an, &best_ad, &best_chi2_mutex](
+                                        const double an, const double start_ad_gcm2 ){
       RelEffInput new_input = input;
       auto new_self_atten = std::make_shared<RelActCalc::PhysicalModelShieldInput>(*input.phys_model_self_atten);
       new_self_atten->fit_atomic_number = false;
       new_self_atten->atomic_number = an;
+      if( (start_ad_gcm2 > 0.0) && new_self_atten->fit_areal_density )
+      {
+        // Only use the multi-start AD if it is inside the callers allowed fit range (Ceres
+        //  requires the initial value within bounds).
+        double lower_ad = new_self_atten->lower_fit_areal_density / PhysicalUnits::g_per_cm2;
+        double upper_ad = new_self_atten->upper_fit_areal_density / PhysicalUnits::g_per_cm2;
+        if( (lower_ad == 0.0) && (upper_ad == 0.0) )
+          upper_ad = RelActCalc::PhysicalModelShieldInput::sm_upper_allowed_areal_density_in_g_per_cm2;
+        if( (start_ad_gcm2 >= lower_ad) && (start_ad_gcm2 <= upper_ad) )
+          new_self_atten->areal_density = start_ad_gcm2 * PhysicalUnits::g_per_cm2;
+      }
       new_input.phys_model_self_atten = new_self_atten;
+      new_input.point_estimate_only = true; //scan only reads m_chi2 and the fitted AD - skip covariance work
+      // The peaks already carry any auto-estimated additional uncertainty (it is applied before
+      //  this scan runs); re-estimating it per scan point would both cost several solves each and
+      //  make the scan compare chi2 values computed with different weights.
+      new_input.auto_estimate_add_uncert = false;
       RelEffSolution solution = solve_relative_efficiency( new_input );
-      
+
       std::lock_guard<std::mutex> lock(best_chi2_mutex);
-      
+
       if( (solution.m_status==ManualSolutionStatus::Success) && (solution.m_chi2 < best_chi2) )
       {
         best_chi2 = solution.m_chi2;
@@ -4917,26 +4743,47 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     double an_step = 5.0;
     double min_an = input.phys_model_self_atten->lower_fit_atomic_number;
     double max_an = input.phys_model_self_atten->upper_fit_atomic_number;
-    
+
+    // A (0,0) fit range means "use the default range" - the same convention the bounds-setting
+    //  lambda applies; without this the scan would degenerate to the single point AN = 0.
+    if( (min_an == 0.0) && (max_an == 0.0) )
+    {
+      min_an = 1.0;
+      max_an = 98.0;
+    }
+
+    // AD is the other known local-minimum axis, so the coarse pass can additionally be
+    //  multi-started over areal-density decades (add e.g. 0.5, 5.0, 50.0 below).  Measured on
+    //  the spec184 problem with a fit-AN self attenuator (20260816): the decade multi-start
+    //  tripled the scan cost (3.7 -> 11.1 CPU-seconds) and reached the identical chi2 and
+    //  enrichment, so only the caller's own starting AD is used until a problem shows a benefit.
+    //  (A start of 0 keeps the caller's input AD.)
+    const double coarse_start_ads[] = { 0.0 }; //g/cm2
     for( double an = min_an; an <= max_an; an += an_step )
-      threadpool.post( [&do_work, an](){ do_work(an); } );
+    {
+      for( const double start_ad : coarse_start_ads )
+        threadpool.post( [&do_work, an, start_ad](){ do_work(an, start_ad); } );
+    }
     threadpool.join();
 
     if( best_chi2 != std::numeric_limits<double>::max() )
     {
-      cout << "Initial best AN = " << best_an << " AD = " << best_ad << endl;
+      if( debug_printout() )
+        cout << "Initial best AN = " << best_an << " AD = " << best_ad << endl;
+      const double refine_start_ad = best_ad;
       best_chi2 = std::numeric_limits<double>::max();
       min_an = std::max( min_an, best_an - an_step );
       max_an = std::min( max_an, best_an + an_step );
       an_step = 1.0;
       for( double an = min_an; an <= max_an; an += an_step )
-        threadpool.post( [&do_work, an](){ do_work(an); } );
+        threadpool.post( [&do_work, an, refine_start_ad](){ do_work(an, refine_start_ad); } );
       threadpool.join();
     }
     
     if( best_chi2 != std::numeric_limits<double>::max() )
     {
-      cout << "Final best AN = " << best_an << " AD = " << best_ad << endl;
+      if( debug_printout() )
+        cout << "Final best AN = " << best_an << " AD = " << best_ad << endl;
       auto new_self_atten = std::make_shared<RelActCalc::PhysicalModelShieldInput>(*input.phys_model_self_atten);
       //new_self_atten->fit_atomic_number = input.use_ceres_to_fit_eqn ? false : true;
       new_self_atten->atomic_number = best_an;
@@ -5104,10 +4951,30 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   
   ceres::Problem problem;
   
-  // TODO: investigate using a LossFunction - probably really need it
-  //       The Huber and Cauchy functions dont seem to help a  ton on a single problem; probably need to define our own, probably based on Huber
+  // Robust/outlier-tolerant fitting has been investigated repeatedly (most recently 20260816,
+  //  in the detail below) and is deliberately NOT adopted.  Earlier passes reached the same
+  //  conclusion from the other direction: the stock Huber and Cauchy losses change little on any
+  //  single problem, which the mechanism in (1) explains.  Do not re-open without new evidence.
+  //
+  //  1) A ceres::LossFunction cannot do it here.  Ceres applies the loss to the squared norm of a
+  //     whole RESIDUAL BLOCK, and this problem adds one block holding every peak, so rho() acts
+  //     on the total chi2 - a monotone transform of the cost, which leaves the minimum exactly
+  //     where it was.  Measured: HuberLoss(3.5) moved the enrichment by 1e-4 percentage points
+  //     (i.e., nothing), while perturbing the reported uncertainties.
+  //  2) Genuine per-peak robustification (Huber influence applied to each residual inside the
+  //     cost functor, so peaks past N sigma contribute linearly) was implemented and measured at
+  //     N = 4, 3, 2, and 1.5 sigma.  It moved the enrichment by at most 0.08 percentage points -
+  //     and slightly AWAY from the reference value - while shrinking the reported uncertainties,
+  //     which is the wrong direction: those outlying peaks reflect real peak-fit/model error that
+  //     belongs in the error budget.
+  //
+  //  Spectra used: `manual_rel_eff/spec184_235U_12.9543.n42` (IAEA IDB reference spectrum,
+  //  12.9543 wt% U235, HPGe, 13.2M counts / 693 s live time, 24 fit peaks spanning 72-1001 keV),
+  //  fit both with the Physical Model and with an empirical LnX order-4 curve.  In both cases the
+  //  chi2 excess comes from a handful of individually mis-fit peaks; that is handled where it
+  //  belongs - in the uncertainty scale (see the outlier-insensitive `m_cov_scale` below) and by
+  //  telling the user which peaks to re-fit - rather than by down-weighting data in the fit.
   ceres::LossFunction *lossfcn = nullptr;
-  //ceres::LossFunction *lossfcn = new ceres::HuberLoss(3.5);
   //ceres::LossFunction *lossfcn = new ceres::CauchyLoss(1.0);
 
   problem.AddResidualBlock( cost_function, lossfcn, pars );
@@ -5200,11 +5067,8 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   }//for( const ManualMassFractionConstraint &constraint : input.mass_fraction_constraints )
 #endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
   
-  if( !constant_parameters.empty() )
-  {
-    ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_parameters), constant_parameters );
-    problem.SetManifold( pars, subset_manifold ); //Looks like it takes ownership of subset_manifold
-  }
+  // Note: the SubsetManifold holding `constant_parameters` fixed is created below, after the
+  //  Ceres-fit empirical-form coefficient seeding, which adds a gauge-pinned coefficient.
 
   // Set a lower bound on relative activities to be 0, unless it is constrained
   for( size_t i = 0; i < num_nuclides; ++i )
@@ -5263,7 +5127,9 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
   {
     const auto set_bounds = [&problem, num_nuclides, pars]( const shared_ptr<const RelActCalc::PhysicalModelShieldInput> &opt, size_t &index ){
-      if( !opt || (!opt->material && ((opt->atomic_number < 0.999) || (opt->atomic_number > 98.001))) )
+      // Note: the previous inline predicate here skipped a fit-AN shield whose atomic_number
+      //  was 0 (valid per check_valid), mis-aligning every subsequent parameter bound.
+      if( !shield_is_present(opt) )
         return;
 
       if( opt->fit_atomic_number )
@@ -5335,6 +5201,25 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       assert( parameters.size() == (cost_functor->m_isotopes.size() + eqn_order + 1) );
       for( size_t i = 0; i < (eqn_order + 1); ++i )
         parameters[num_nuclides + i] = fit_pars[i];
+
+      // The counts-space residuals are exactly invariant under scaling all activities by k while
+      //  dividing the curve by k (LnX: all coefficients divided by k; exponential forms:
+      //  c0 -> c0 - ln(k)), leaving the Jacobian rank-deficient by one - and the unweighted
+      //  residual variant is actively driven toward k -> infinity.  Pin the gauge by holding one
+      //  coefficient at its LLS-seeded value; after the solve the reported activities and
+      //  coefficients are re-expressed in the LLS-mode convention (average measured rel. eff.
+      //  == 1; see `average_measured_rel_eff`), so both fit methods agree in values and
+      //  uncertainties.
+      size_t held_coef_index = 0; // exponential forms: only c0 is on the scale orbit
+      if( eqn_form == RelActCalc::RelEffEqnForm::LnX )
+      {
+        // For LnX the orbit scales ALL coefficients, so hold the largest-magnitude one.  (If
+        //  every seeded coefficient were zero the data are degenerate and the solve fails anyway.)
+        for( size_t i = 0; i < (eqn_order + 1); ++i )
+          if( fabs(parameters[num_nuclides + i]) > fabs(parameters[num_nuclides + held_coef_index]) )
+            held_coef_index = i;
+      }
+      constant_parameters.push_back( static_cast<int>(num_nuclides + held_coef_index) );
     }catch( std::exception &e )
     {
       solution.m_status = ManualSolutionStatus::ErrorInitializing;
@@ -5343,13 +5228,19 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     }
   }//if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel ) / else if( input.use_ceres_to_fit_eqn )
 
+  if( !constant_parameters.empty() )
+  {
+    ceres::Manifold *subset_manifold = new ceres::SubsetManifold( static_cast<int>(num_parameters), constant_parameters );
+    problem.SetManifold( pars, subset_manifold ); //Looks like it takes ownership of subset_manifold
+  }
+
   // Okay - we've set our problem up
   ceres::Solver::Options ceres_options;
   ceres_options.minimizer_type = ceres::TRUST_REGION; //ceres::LINE_SEARCH
   ceres_options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT; //ceres::DOGLEG
   ceres_options.linear_solver_type = ceres::DENSE_QR;
-  ceres_options.logging_type = ceres::PER_MINIMIZER_ITERATION; //ceres::SILENT;
-  ceres_options.minimizer_progress_to_stdout = true; //false; //true;
+  ceres_options.logging_type = debug_printout() ? ceres::PER_MINIMIZER_ITERATION : ceres::SILENT;
+  ceres_options.minimizer_progress_to_stdout = debug_printout();
   ceres_options.max_num_iterations = 1000;
   ceres_options.max_solver_time_in_seconds = 60.0;
   //ceres_options.min_trust_region_radius = 1e-10;
@@ -5407,18 +5298,59 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   }//try / catch to fit the solution
   
   
-  std::cout << summary.BriefReport() << "\n";
-  //std::cout << summary.FullReport() << "\n";
-  const auto nmicro = std::chrono::duration<double, std::micro>(std::chrono::high_resolution_clock::now() - start_time).count();
-  cout << "Took " << solution.m_num_function_eval_solution << " calls and " << setprecision(6) << nmicro << " us to solve." << endl;
-  cout << "Final parameter values: {";
-  for( size_t i = 0; i < num_parameters; ++i )
-    cout << (i ? ", " : "") << parameters[i];
-  cout << "}\n";
-  cout << "Chi2=" << summary.final_cost << " (from initial value " << summary.initial_cost << ")\n\n";
-  
+  if( debug_printout() )
+  {
+    std::cout << summary.BriefReport() << "\n";
+    //std::cout << summary.FullReport() << "\n";
+    const auto nmicro = std::chrono::duration<double, std::micro>(std::chrono::high_resolution_clock::now() - start_time).count();
+    cout << "Took " << solution.m_num_function_eval_solution << " calls and " << setprecision(6) << nmicro << " us to solve." << endl;
+    cout << "Final parameter values: {";
+    for( size_t i = 0; i < num_parameters; ++i )
+      cout << (i ? ", " : "") << parameters[i];
+    cout << "}\n";
+    cout << "Chi2=" << summary.final_cost << " (from initial value " << summary.initial_cost << ")\n\n";
+  }//if( debug_printout() )
+
 
   solution.m_fit_parameters = parameters;
+
+  // Chi2 under the weights actually minimized (i.e., including any
+  //  GenericPeakInfo::m_base_rel_eff_uncert); Ceres' cost is (1/2)*sum(residual^2).  Note the
+  //  gauge pin for Ceres-fit empirical forms is a constant parameter, not an extra residual,
+  //  so this remains the pure data cost.
+  solution.m_chi2_fit_weights = 2.0 * summary.final_cost;
+
+  // Count the effective number of fitted parameters once, from the same bookkeeping the solver
+  //  used: `constant_parameters` holds act-ratio controlled and fixed mass-fraction slots,
+  //  non-fit shield parameters, and (for Ceres-fit empirical forms) the gauge-pinned
+  //  coefficient.  In the LLS fit mode the (eqn_order + 1) curve coefficients are profiled by
+  //  the inner LLS fit, with one combination fixed by the average-measured-rel-eff
+  //  normalization convention, so they add a further (eqn_order + 1) - 1 effective parameters.
+  {
+    size_t num_effective_pars = num_parameters - constant_parameters.size();
+    if( (eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel) && !input.use_ceres_to_fit_eqn )
+      num_effective_pars += eqn_order;  // == (eqn_order + 1) - 1
+    solution.m_dof = static_cast<int>( cost_functor->m_input.peaks.size() )
+                     - static_cast<int>( num_effective_pars );
+  }
+
+  // For the Ceres-fit empirical forms, results are reported in the LLS-mode gauge (average
+  //  measured rel. eff. == 1): activities are multiplied by m(x), and the curve coefficients
+  //  compensated, below.  m(x)*A_i(x) is exactly invariant along the scale orbit, so the
+  //  derived rel-act covariance is well-defined and directly comparable between fit methods.
+  bool gauge_normalize = (eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel)
+                         && input.use_ceres_to_fit_eqn;
+  double gauge_mult = 1.0;
+  if( gauge_normalize )
+  {
+    gauge_mult = cost_functor->average_measured_rel_eff( parameters );
+    if( (gauge_mult <= 0.0) || isnan(gauge_mult) || isinf(gauge_mult) )
+    {
+      //shouldnt happen; leave results in the solver gauge if it somehow does
+      gauge_mult = 1.0;
+      gauge_normalize = false;
+    }
+  }
 
   try
   {
@@ -5426,6 +5358,14 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     //cov_options.algorithm_type = ceres::CovarianceAlgorithmType::SPARSE_QR; //faster, but not capable of computing the covariance if the Jacobian is rank deficient.
     cov_options.algorithm_type = ceres::CovarianceAlgorithmType::DENSE_SVD;
     cov_options.null_space_rank = -1;
+    // Drop near-null directions (sigma_i/sigma_max < 1e-6) from the covariance instead of
+    //  letting their ~1/sigma^2 variances blow up the reported uncertainties; these are the
+    //  structurally near-degenerate directions (e.g., self-AD vs ext-AD vs Hoerl tilt in the
+    //  physical model).  Same remedy as the RelActCalcAuto solver; the manual problem's
+    //  parameters are already near-unit-scaled (activity multiples, AN/50, AD in g/cm2,
+    //  offset Hoerl), so a raw-Jacobian cutoff is appropriate here without the column
+    //  equilibration the Auto solver needs.
+    cov_options.min_reciprocal_condition_number = 1.0E-12;
     cov_options.num_threads = ceres_options.num_threads;
     
     vector<double> uncertainties( num_nuclides, 0.0 ), uncerts_squared( num_nuclides, 0.0 );
@@ -5438,7 +5378,12 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     covariance_blocks.push_back( {pars, pars} );
     
     solution.m_nonlin_covariance.clear();
-    if( !covariance.Compute(covariance_blocks, &problem) )
+    if( input.point_estimate_only )
+    {
+      // Skip all covariance work: derived uncertainties carry their "not available" sentinels
+      //  (empty matrices, -1 uncertainties), but point estimates, chi2, DOF, and the shield fit
+      //  values below are still produced.  Used by the AN scan and profile-likelihood sub-solves.
+    }else if( !covariance.Compute(covariance_blocks, &problem) )
     {
       cerr << "Failed to compute final covariances!" << endl;
       solution.m_warnings.push_back( "Failed to compute final covariances." );
@@ -5460,38 +5405,157 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
           solution.m_nonlin_covariance[row][col] = row_major_covariance[row*num_parameters + col];
       }//for( size_t row = 0; row < num_nuclides; ++row )
 
-      // If we had any mass-constrained sources, that were not fixed values, we need to convert the
-      //  covariance matrix from the paramter that goes between 0.5 and 1.5, to relative activity,
-      //  since this is what we will expect from the covariance matrix
-      for( const MassFractionConstraint &mass_constraint : input.mass_fraction_constraints )
+      // Inflate the covariance when the data scatter about the model exceeds the assumed
+      //  uncertainties (the classic "variance of unit weight" / Birge rescale): the raw
+      //  covariance then systematically understates the parameter uncertainties.  Never shrink
+      //  (a scale below 1 is clamped away), and skip it entirely for unweighted fits.
+      //
+      //  We deliberately do NOT use the usual chi2/dof for the scale.  In this problem the
+      //  excess is usually NOT a uniform underestimate of the peak uncertainties - it is a
+      //  handful of individually mis-fit peaks (wrong continuum type, insufficient skew, an
+      //  unmodeled interference).  Those land many sigma off when the peak is high-statistics,
+      //  yet barely move the enrichment; using the mean of the squared pulls would let them
+      //  inflate EVERY reported uncertainty.  Measured on the spec184 problem 20260816: with a
+      //  LnX order-4 fit the median |pull| is 0.93 (i.e. the typical peak fits fine) while the
+      //  top 3 of 24 peaks carry 55% of the chi2 - chi2/dof = 6.1 would inflate sigmas by 2.5x,
+      //  where the robust estimator below gives 1.7x.  When the excess really is broad, the two
+      //  agree: the same spectrum's physical-model fit gives 2.12x (mean) vs 2.06x (robust).
+      //
+      //  The robust estimator is the median of the squared pulls, scaled by the median of a
+      //  chi2(1) variate (0.4549) so it equals 1 for well-behaved data, and by n/dof to undo
+      //  the variance the fit itself removes from the residuals (average leverage; makes the
+      //  estimator unbiased in the no-outlier Gaussian case).
+      //  \sa RelActCalcAuto::RelActAutoSolution::m_cov_scale, which uses the chi2/dof form.
       {
-        // Fixed - we dont need to worry about this
-        if( mass_constraint.m_mass_fraction_lower == mass_constraint.m_mass_fraction_upper )
-          continue;
+        bool any_unweighted = false;
+        for( const GenericPeakInfo &peak : cost_functor->m_input.peaks )
+          any_unweighted |= (peak.m_base_rel_eff_uncert < -1.0E-9);
 
-        const size_t par_index = cost_functor->iso_index( mass_constraint.m_nuclide );
+        solution.m_cov_scale = 1.0;
 
-        if constexpr ( use_auto_diff )
+        if( (solution.m_dof > 0) && !any_unweighted && input.widen_uncerts_for_scatter )
+        {
+          const size_t num_resids = cost_functor->number_residuals();
+          vector<double> residuals( num_resids, 0.0 );
+          cost_functor->eval( parameters, residuals.data() );
+
+          vector<double> sq_pulls( num_resids );
+          for( size_t i = 0; i < num_resids; ++i )
+            sq_pulls[i] = residuals[i]*residuals[i];
+
+          vector<double> sorted_sq = sq_pulls;
+          std::sort( begin(sorted_sq), end(sorted_sq) );
+          const double median_sq = (num_resids % 2)
+                  ? sorted_sq[num_resids/2]
+                  : 0.5*(sorted_sq[num_resids/2 - 1] + sorted_sq[num_resids/2]);
+
+          const double chi2_1_median = 0.4549364; //median of a chi-squared(1) distribution
+          const double leverage_corr = static_cast<double>(num_resids) / solution.m_dof;
+          solution.m_cov_scale = (std::max)( 1.0, median_sq * leverage_corr / chi2_1_median );
+
+          // Point at the peaks driving the misfit - the actionable cure is re-fitting those
+          //  peaks, not accepting a wider error bar.
+          vector<pair<double,double>> abs_pull_and_energy; //|pull|, energy
+          for( size_t i = 0; (i < num_resids) && (i < cost_functor->m_input.peaks.size()); ++i )
+            abs_pull_and_energy.emplace_back( fabs(residuals[i]),
+                                              cost_functor->m_input.peaks[i].m_energy );
+          std::sort( begin(abs_pull_and_energy), end(abs_pull_and_energy),
+                     []( const pair<double,double> &l, const pair<double,double> &r ){
+                       return l.first > r.first;
+                     } );
+
+          if( !abs_pull_and_energy.empty() && (abs_pull_and_energy[0].first > 3.0) )
+          {
+            string msg = "Some peaks are much further from the fit than their uncertainties allow:";
+            for( size_t i = 0; (i < 3) && (i < abs_pull_and_energy.size()); ++i )
+            {
+              if( abs_pull_and_energy[i].first <= 3.0 )
+                break;
+              msg += " " + SpecUtils::printCompact(abs_pull_and_energy[i].second, 5) + " keV ("
+                     + SpecUtils::printCompact(abs_pull_and_energy[i].first, 2) + "&sigma;)";
+            }
+            msg += ".  This usually indicates a peak-fit issue (continuum type, peak skew, or an"
+                   " unmodeled interference) rather than a source-composition effect - checking"
+                   " those peak fits is worthwhile.  Reported uncertainties use an"
+                   " outlier-insensitive estimate of the scatter, so a few such peaks do not"
+                   " inflate every uncertainty.";
+            solution.m_warnings.push_back( msg );
+          }//if( there are strongly deviating peaks )
+        }//if( we can estimate the scatter )
+
+        if( solution.m_cov_scale > 1.0 )
+        {
+          for( vector<double> &row : solution.m_nonlin_covariance )
+            for( double &val : row )
+              val *= solution.m_cov_scale;
+        }
+
+        if( solution.m_cov_scale > 2.25 ) // i.e., sigmas inflated by more than 1.5x
+          solution.m_warnings.push_back( "The scatter of the data about the fitted model exceeds"
+                " the statistical (plus any additional) uncertainties, in a way that is spread"
+                " across the peaks rather than confined to a few: reported uncertainties have"
+                " been inflated by " + SpecUtils::printCompact( std::sqrt(solution.m_cov_scale), 3 )
+                + "x (chi2/dof = "
+                + SpecUtils::printCompact( solution.m_chi2_fit_weights / solution.m_dof, 3 )
+                + " under the fit weights)." );
+      }
+
+      // Compute the full Jacobian of the reported relative activities with respect to the fit
+      //  parameters, d(RelAct_i)/d(par_j), by automatic differentiation, and from it the
+      //  relative-activity covariance C_relact = J * C * J^T.  Every derived uncertainty
+      //  (per-isotope sigmas, activity ratios, mass-fraction variations) is computed from this
+      //  one matrix, so activity norms, act-ratio constraint chains, and mass-fraction block
+      //  decodes (a constrained nuclides activity co-varying with the rest of its element) are
+      //  all consistently accounted for.  `m_nonlin_covariance` itself stays pristine in
+      //  parameter space.  Parameters held constant (SubsetManifold) have all-zero covariance
+      //  rows, so seeding them costs nothing.
+      if constexpr ( use_auto_diff )
+      {
+        solution.m_rel_act_jacobian.assign( num_nuclides, vector<double>(num_parameters, 0.0) );
+
+        for( size_t chunk_start = 0; chunk_start < num_parameters; chunk_start += auto_diff_stride )
         {
           vector<ceres::Jet<double,auto_diff_stride>> input_jets( begin(parameters), end(parameters) );
-          input_jets[par_index].v[0] = 1.0; //It doesnt matter which element of `v` we use to get the derivative, so we'll just use the first one.
-          ceres::Jet<double,auto_diff_stride> rel_act_jet = cost_functor->relative_activity(mass_constraint.m_nuclide, input_jets);
+          const size_t num_seed = std::min( num_parameters - chunk_start, static_cast<size_t>(auto_diff_stride) );
+          for( size_t k = 0; k < num_seed; ++k )
+            input_jets[chunk_start + k].v[k] = 1.0;
 
-          const double derivative = rel_act_jet.v[0];
-          for( size_t i = 0; i < solution.m_nonlin_covariance.size(); ++i )
+          // In the LLS-reporting gauge the reported activity is m(x)*A_i(x) (see
+          //  `gauge_normalize` above), so differentiate that product.
+          const ceres::Jet<double,auto_diff_stride> chunk_gauge = gauge_normalize
+                     ? cost_functor->average_measured_rel_eff( input_jets )
+                     : ceres::Jet<double,auto_diff_stride>( 1.0 );
+
+          for( size_t i = 0; i < num_nuclides; ++i )
           {
-            solution.m_nonlin_covariance[i][par_index] *= derivative;
-            solution.m_nonlin_covariance[par_index][i] *= derivative;
+            const ceres::Jet<double,auto_diff_stride> rel_act
+                     = chunk_gauge * cost_functor->relative_activity( cost_functor->m_isotopes[i], input_jets );
+            for( size_t k = 0; k < num_seed; ++k )
+              solution.m_rel_act_jacobian[i][chunk_start + k] = rel_act.v[k];
           }
-        }else
-        {
-          // dont expect to ever not use auto-diff, so wont worry about this case
-          static_assert( use_auto_diff, "Numeric diff not implemented for RelEffManual to convert covariance of mass-constrained nuclides" );
-        }
-      }//for( const MassFractionConstraint &mass_constraint : input.mass_fraction_constraints )
+        }//for( loop over stride-sized chunks of parameters )
+
+        // C_relact = J * C * J^T  (problem sizes are tiny, so plain loops are fine)
+        vector<vector<double>> jac_cov( num_nuclides, vector<double>(num_parameters, 0.0) );
+        for( size_t i = 0; i < num_nuclides; ++i )
+          for( size_t l = 0; l < num_parameters; ++l )
+            for( size_t k = 0; k < num_parameters; ++k )
+              jac_cov[i][k] += solution.m_rel_act_jacobian[i][l] * solution.m_nonlin_covariance[l][k];
+
+        solution.m_rel_act_covariance.assign( num_nuclides, vector<double>(num_nuclides, 0.0) );
+        for( size_t i = 0; i < num_nuclides; ++i )
+          for( size_t j = 0; j < num_nuclides; ++j )
+            for( size_t k = 0; k < num_parameters; ++k )
+              solution.m_rel_act_covariance[i][j] += jac_cov[i][k] * solution.m_rel_act_jacobian[j][k];
+      }else
+      {
+        // dont expect to ever not use auto-diff, so wont worry about this case
+        static_assert( use_auto_diff, "Numeric diff not implemented for computing the manual solver rel. act. covariance" );
+      }
     }//if( we failed to get covariance ) / else
     
-    // Compute the Jacobian
+    // Compute the Jacobian (the rank-deficiency check below auto-skips when this is skipped)
+    if( !input.point_estimate_only )
     try
     {
       const size_t num_residuals = cost_functor->number_residuals();
@@ -5518,6 +5582,45 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       solution.m_warnings.push_back( "Failed to compute Jacobian: " + string(e.what()) );
     }//try / catch to compute Jacobian
 
+    // Detect effectively-unconstrained (near-degenerate) parameter directions, and warn.  With
+    //  DENSE_SVD + null_space_rank = -1 + the min_reciprocal_condition_number above, such
+    //  directions are dropped from the covariance (truncated pseudo-inverse) rather than
+    //  blowing it up - but the per-parameter uncertainties then omit those directions.  The
+    //  parameters are near-unit-scaled, so a raw-Jacobian singular value cutoff is meaningful.
+    if( !solution.m_nonlin_jacobian.empty() && !solution.m_nonlin_covariance.empty() )
+    {
+      vector<size_t> free_pars;
+      for( size_t i = 0; i < num_parameters; ++i )
+      {
+        if( !std::count( begin(constant_parameters), end(constant_parameters), static_cast<int>(i) ) )
+          free_pars.push_back( i );
+      }
+
+      const size_t num_resids = solution.m_nonlin_jacobian.size();
+      if( !free_pars.empty() && (num_resids >= free_pars.size()) )
+      {
+        Eigen::MatrixXd jacobian_mat( num_resids, free_pars.size() );
+        for( size_t r = 0; r < num_resids; ++r )
+          for( size_t c = 0; c < free_pars.size(); ++c )
+            jacobian_mat(r,c) = solution.m_nonlin_jacobian[r][free_pars[c]];
+
+        const Eigen::JacobiSVD<Eigen::MatrixXd> svd( jacobian_mat );
+        const Eigen::VectorXd &sing_vals = svd.singularValues(); //sorted decreasing
+
+        size_t num_deficient = 0;
+        for( Eigen::Index i = 0; i < sing_vals.size(); ++i )
+          num_deficient += ((sing_vals.size() > 0) && (sing_vals(i) < 1.0E-6*sing_vals(0)));
+
+        if( num_deficient > 0 )
+          solution.m_warnings.push_back( "The fit is rank-deficient: "
+                + std::to_string(num_deficient) + " of " + std::to_string(free_pars.size())
+                + " fitted parameters are effectively unconstrained by the data"
+                " (near-degenerate directions).  Per-parameter uncertainties omit these"
+                " directions, so uncertainties of quantities that depend on them may be"
+                " understated." );
+      }//if( sensible matrix dimensions )
+    }//if( have jacobian and covariance )
+
 
     // Compute the relative activities
     vector<double> rel_activities( num_nuclides );
@@ -5529,26 +5632,82 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     {
       solution.m_rel_eff_eqn_coefficients = {pars + num_nuclides, pars + num_parameters };
 
-      if( !solution.m_nonlin_covariance.empty() )
+      if( gauge_normalize )
       {
-        // The covariance matrix for the relative efficiency equation is the lower-right
-        //  submatrix of the full covariance matrix.
-        const size_t num_rel_eff_params = num_parameters - num_nuclides;
-        assert( solution.m_nonlin_covariance.size() == num_parameters );
-
-        solution.m_rel_eff_eqn_covariance.resize( num_rel_eff_params, vector<double>(num_rel_eff_params, 0.0) );
-        for( size_t i = num_nuclides; i < num_parameters; ++i )
+        // Re-express the curve in the LLS-mode gauge: the reported activities are multiplied by
+        //  `gauge_mult` (below), so the curve is divided by it.
+        if( eqn_form == RelActCalc::RelEffEqnForm::LnX )
         {
-          assert( solution.m_nonlin_covariance[i].size() == num_parameters );
-          for( size_t j = num_nuclides; j < num_parameters; ++j )
-            solution.m_rel_eff_eqn_covariance[i-num_nuclides][j-num_nuclides] = solution.m_nonlin_covariance[i][j];
+          for( double &coef : solution.m_rel_eff_eqn_coefficients )
+            coef /= gauge_mult;
+        }else
+        {
+          solution.m_rel_eff_eqn_coefficients[0] -= std::log( gauge_mult );
         }
-      }//if( we have the covariance matrix )
+      }//if( gauge_normalize )
+
+      if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
+      {
+        if( !solution.m_nonlin_covariance.empty() )
+        {
+          // The covariance matrix for the relative efficiency equation is the lower-right
+          //  submatrix of the full covariance matrix.  For the Physical Model this marginal
+          //  covariance is the right thing: the DRF fixes the curve's absolute scale, so the
+          //  shield/Hoerl parameters are identifiable on their own.
+          const size_t num_rel_eff_params = num_parameters - num_nuclides;
+          assert( solution.m_nonlin_covariance.size() == num_parameters );
+
+          solution.m_rel_eff_eqn_covariance.resize( num_rel_eff_params, vector<double>(num_rel_eff_params, 0.0) );
+          for( size_t i = num_nuclides; i < num_parameters; ++i )
+          {
+            assert( solution.m_nonlin_covariance[i].size() == num_parameters );
+            for( size_t j = num_nuclides; j < num_parameters; ++j )
+              solution.m_rel_eff_eqn_covariance[i-num_nuclides][j-num_nuclides] = solution.m_nonlin_covariance[i][j];
+          }
+        }//if( we have the covariance matrix )
+      }else if( !input.point_estimate_only )
+      {
+        // Empirical forms: use the coefficient covariance CONDITIONAL on the fitted activities -
+        //  i.e., the same one the LLS fit mode produces - rather than the marginal sub-block of
+        //  the joint covariance.
+        //
+        //  For these forms only the PRODUCT (rel. eff. curve x activities) is determined by the
+        //  data; the split between them is a gauge choice (fixed here by normalizing the average
+        //  measured rel. eff. to 1).  The marginal coefficient covariance therefore contains the
+        //  curve<->activity trade, and using it for the plotted band gives absurd widths -
+        //  measured on spec184 20260816, at 186 keV the band went from 0.047 (conditional) to
+        //  4.5 (LnX), 25 (LnXLnY) and 1.8 (FRAM Empirical), on a curve whose value is ~1.1.
+        //  It would also double-count: the plotted data points are themselves computed with the
+        //  fitted activities, so they move WITH the curve under that trade.  The band the chart
+        //  wants is "how well does this curve describe these points", which is the conditional
+        //  one.  (A refinement would be to take the conditional covariance from the coefficient
+        //  block of the Ceres Jacobian instead of re-fitting; that is exact for the counts-space
+        //  objective, but changes band values, so it is left for a deliberate change.)
+        vector<double> band_coefficients;
+        fit_rel_eff_eqn_lls( eqn_form, eqn_order, cost_functor->m_isotopes, rel_activities, peak_infos,
+                            band_coefficients, &(solution.m_rel_eff_eqn_covariance) );
+
+        if( solution.m_cov_scale > 1.0 )
+        {
+          for( vector<double> &row : solution.m_rel_eff_eqn_covariance )
+            for( double &val : row )
+              val *= solution.m_cov_scale;
+        }
+      }//if( FramPhysicalModel ) / else
     }else
     {
       fit_rel_eff_eqn_lls( eqn_form, eqn_order, cost_functor->m_isotopes, rel_activities, peak_infos,
                           solution.m_rel_eff_eqn_coefficients, &(solution.m_rel_eff_eqn_covariance) );
       assert( solution.m_rel_eff_eqn_coefficients.size() == (eqn_order + 1) );
+
+      // Propagate the chi2/dof covariance inflation to the LLS-fit curve covariance too, so the
+      //  plotted uncertainty band is consistent with the (inflated) activity uncertainties.
+      if( solution.m_cov_scale > 1.0 )
+      {
+        for( vector<double> &row : solution.m_rel_eff_eqn_covariance )
+          for( double &val : row )
+            val *= solution.m_cov_scale;
+      }
     }
     
     for( size_t i = 0; i < cost_functor->m_isotopes.size(); ++i )
@@ -5557,89 +5716,25 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       
       IsotopeRelativeActivity rel_act;
       rel_act.m_isotope = iso;
+
+      // `gauge_mult` is 1.0 except for Ceres-fit empirical forms (LLS-gauge reporting)
+      rel_act.m_rel_activity = gauge_mult * cost_functor->relative_activity( iso, parameters );
       
-      rel_act.m_rel_activity = cost_functor->relative_activity( iso, parameters );
-      
-      if( solution.m_nonlin_covariance.empty() )
+      if( solution.m_rel_act_covariance.empty() )
       {
         rel_act.m_rel_activity_uncert = -1.0;
       }else
       {
-        assert( i < solution.m_nonlin_covariance.size() );
-        assert( i < solution.m_nonlin_covariance[i].size() );
+        assert( i < solution.m_rel_act_covariance.size() );
+        assert( i < solution.m_rel_act_covariance[i].size() );
 
-        bool is_constrolled = false;
-        for( size_t j = 0; !is_constrolled && (j < input.act_ratio_constraints.size()); ++j )
-          is_constrolled = (input.act_ratio_constraints[j].m_constrained_nuclide == iso);
-
-#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
-        const MassFractionConstraint *mass_frac_constraint = nullptr;
-        for( size_t j = 0; j < input.mass_fraction_constraints.size(); ++j )
-        {
-          if( input.mass_fraction_constraints[j].m_nuclide == iso )
-          {
-            mass_frac_constraint = &(input.mass_fraction_constraints[j]);
-            break;
-          }
-        }//for( size_t j = 0; j < input.mass_fraction_constraints.size(); ++j )
-#endif // USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
-        
-        if( !is_constrolled && !mass_frac_constraint )
-        {
-          const double rel_act_norm = cost_functor->m_rel_act_norms[i];
-          rel_act.m_rel_activity_uncert = rel_act_norm * std::sqrt( std::max(0.0, solution.m_nonlin_covariance[i][i]) );
-        }
-#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
-        else if( mass_frac_constraint )
-        {
-          if( mass_frac_constraint->m_mass_fraction_lower == mass_frac_constraint->m_mass_fraction_upper )
-          {
-            // The FRACTION is pinned, but the rel act still scales with the elements total: when
-            //  every isotope of the element is constrained, that total is the free carrier
-            //  parameter (rel act linear in it), so propagate its variance; otherwise the fixed
-            //  slot is constant and 0 is kept.
-            //  TODO: for a mixed element, the total also varies (through the unconstrained
-            //        isotopes and sigma) - propagating that needs the full-parameter Jacobian.
-            rel_act.m_rel_activity_uncert = 0.0;
-            for( const auto &block : cost_functor->m_mass_frac_blocks )
-            {
-              if( block.spec.all_constrained
-                  && std::count( begin(block.fixed_isos), end(block.fixed_isos), iso )
-                  && (parameters[block.carrier_index] > 0.0) )
-              {
-                const double carrier_uncert = std::sqrt( std::max( 0.0,
-                              solution.m_nonlin_covariance[block.carrier_index][block.carrier_index] ) );
-                rel_act.m_rel_activity_uncert = rel_act.m_rel_activity * carrier_uncert
-                                                / parameters[block.carrier_index];
-                break;
-              }
-            }//for( const auto &block : cost_functor->m_mass_frac_blocks )
-          }else
-          {
-            // `m_nonlin_covariance` elements have already been multiplied by the derivative RelAct wrt RelAct parameter
-            rel_act.m_rel_activity_uncert = std::sqrt( std::max(0.0, solution.m_nonlin_covariance[i][i]) );
-          }
-        }
-#endif
-        else
-        {
-          assert( is_constrolled );
-          assert( fabs(parameters[i] - -1.0) < 1.0E-6 );
-          assert( parameters.size() == solution.m_nonlin_covariance.size() );
-
-          // Use the cost_functor's walk_to_controlling_nuclide function to find the ultimate
-          // controlling nuclide and calculate the uncertainty
-          size_t ultimate_controller_index = i;
-          double multiple = 1.0;
-          const bool found_controller = cost_functor->walk_to_controlling_nuclide( ultimate_controller_index, multiple );
-          assert( found_controller );
-
-          const double par_uncert = std::sqrt( std::max(0.0, solution.m_nonlin_covariance[ultimate_controller_index][ultimate_controller_index]) );
-          rel_act.m_rel_activity_uncert = multiple * cost_functor->m_rel_act_norms[ultimate_controller_index] * par_uncert;
-          assert( (fabs(rel_act.m_rel_activity - multiple*cost_functor->relative_activity( cost_functor->m_isotopes[ultimate_controller_index], parameters )) < 1.0E-5*rel_act.m_rel_activity)
-                  || (fabs(rel_act.m_rel_activity - multiple*cost_functor->relative_activity( cost_functor->m_isotopes[ultimate_controller_index], parameters )) < 1.0E-3) );
-        }//if( input.act_ratio_constraints.empty() ) / else
-      }//if( input.act_ratio_constraints.empty() ) / else
+        // The full-Jacobian relative-activity covariance already accounts for activity norms,
+        //  act-ratio constraint chains, and mass-fraction block decodes (a constrained nuclide
+        //  co-varying with the rest of its element), so this one expression covers every
+        //  constraint case - including a fixed mass-fraction nuclide in a mixed element, whose
+        //  relative activity still varies with the element total.
+        rel_act.m_rel_activity_uncert = std::sqrt( std::max( 0.0, solution.m_rel_act_covariance[i][i] ) );
+      }//if( no covariance ) / else
       
       solution.m_rel_activities.push_back( std::move(rel_act) );
     }//for( loop over relative activities )
@@ -5648,12 +5743,8 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     {
       const auto get_res = [num_nuclides, &parameters, &solution]( const RelActCalc::PhysicalModelShieldInput &orig_opt, 
                                                               size_t &shield_index ) -> unique_ptr<RelEffSolution::PhysModelShieldFit> {
-        if( !orig_opt.material
-           && ((orig_opt.atomic_number < 1.0) || (orig_opt.atomic_number > 98.0))
-           && !orig_opt.fit_atomic_number )
-        {
+        if( !shield_is_present(&orig_opt) )
           return nullptr;
-        }
         
         assert( solution.m_nonlin_covariance.empty()
                 || (solution.m_nonlin_covariance.size() > shield_index) );
@@ -5718,42 +5809,15 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     //  (i.e., we ignore #GenericPeakInfo::m_base_rel_eff_uncert)
     solution.m_chi2 = 0.0;
     
-    // TODO: The DOF is probably off by one - need to think on this and come back to it
-    //assert( cost_functor->m_peak_infos.size() >= ((eqn_order+1) + (cost_functor->m_isotopes.size() - 1)) );
-    if( cost_functor->m_input.peaks.size() < ((eqn_order+1) + (cost_functor->m_isotopes.size() - 1)) )
+    // Note: `m_dof` was computed from the solver parameter bookkeeping right after the solve
+    //  (num peaks minus effective fitted parameters); it can legitimately be 0.
+    if( solution.m_dof < 0 )
       throw runtime_error( "There are only " + std::to_string(cost_functor->m_input.peaks.size())
-                          + " peaks, but you are asking to fit " + std::to_string(eqn_order+1)
-                          + " rel. eff. parameters, and "
-                          + std::to_string(cost_functor->m_isotopes.size())
-                          + " isotope rel. act."
-                          );
-    
-    const int num_peaks = static_cast<int>(cost_functor->m_input.peaks.size());
-    const int num_isotopes = static_cast<int>(cost_functor->m_isotopes.size());
-    if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-    {
-      solution.m_dof = num_peaks - (num_isotopes - 1);
-      if( input.phys_model_self_atten )
-      {
-        solution.m_dof -= static_cast<int>(input.phys_model_self_atten->fit_areal_density);
-        if( !input.phys_model_self_atten->material )
-          solution.m_dof -= static_cast<int>(input.phys_model_self_atten->fit_atomic_number);
-      }
+                          + " peaks, but the fit has "
+                          + std::to_string( static_cast<int>(cost_functor->m_input.peaks.size()) - solution.m_dof )
+                          + " effective parameters." );
 
-      for( const auto &opt : input.phys_model_external_attens )
-      {
-        solution.m_dof -= static_cast<int>(opt->fit_areal_density);
-        if( !opt->material )
-          solution.m_dof -= static_cast<int>(opt->fit_atomic_number);
-      }
 
-      solution.m_dof -= (input.phys_model_use_hoerl ? 2 : 1); // for b and c
-    }else
-    {
-      solution.m_dof = static_cast<int>( num_peaks - (eqn_order + 1) - (num_isotopes - 1) );
-    }
-
-    
     const vector<double> &rel_eff_coefs = solution.m_rel_eff_eqn_coefficients;
     ManualGenericRelActFunctor::PhysModelRelEqnDef<double> phys_mode_rel_eqn_input;
     if( eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
@@ -5782,14 +5846,25 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       double expected_src_counts = 0.0;
       for( const GenericLineInfo &line : peak.m_source_gammas )
       {
-        const double rel_activity = cost_functor->relative_activity( line.m_isotope, parameters );
+        // `gauge_mult` (1.0 except Ceres-fit empirical forms) keeps the activities consistent
+        //  with the gauge-rescaled curve coefficients; their product is gauge-invariant.
+        const double rel_activity = gauge_mult * cost_functor->relative_activity( line.m_isotope, parameters );
         expected_src_counts += rel_activity * line.m_yield;
       }//for( const RelActCalc::GammaLineInfo &line : peak.m_source_gammas )
       
       const double expected_counts = expected_src_counts * curve_val;
-      solution.m_chi2 += std::pow( (expected_counts - peak.m_counts) / peak.m_counts_uncert, 2.0 );
+      if( peak.m_counts_uncert > 0.0 ) //unweighted fits can carry zero statistical uncert
+        solution.m_chi2 += std::pow( (expected_counts - peak.m_counts) / peak.m_counts_uncert, 2.0 );
     }//for( loop over energies to evaluate at )
     
+    // `m_chi2` is documented as being in terms of the peaks' STATISTICAL uncertainties.  When the
+    //  automatic estimate widened those uncertainties by a common multiple, undo it here so the
+    //  displayed chi2/dof still reports how far the data sit from the model in counting-statistics
+    //  terms - that number is the diagnostic that the model does not describe the data, and
+    //  ballooning the uncertainties should not hide it.
+    if( auto_stat_multiple > 1.0 )
+      solution.m_chi2 *= (auto_stat_multiple * auto_stat_multiple);
+
     if( used_add_uncert )
       solution.m_warnings.push_back( "Additional uncertainties were applied to peaks"
                                      " - the result uncertainties include these, so may not be"
@@ -5834,6 +5909,405 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   
   return solution;
 }//solve_relative_efficiency(...)
+
+
+double estimate_stat_uncert_multiple( const RelEffSolution &solution, const double max_multiple )
+{
+  if( solution.m_status != ManualSolutionStatus::Success )
+    return -1.0;
+
+  const vector<GenericPeakInfo> &peaks = solution.m_input.peaks;
+  if( peaks.size() < 4 )  //a median over fewer than this is not meaningful
+    return -1.0;
+
+  vector<double> sq_pulls;
+  for( const GenericPeakInfo &peak : peaks )
+  {
+    if( peak.m_base_rel_eff_uncert < -1.0E-9 ) //unweighted fit - no statistical scale to work from
+      return -1.0;
+
+    if( (peak.m_counts <= 0.0) || (peak.m_counts_uncert <= 0.0) )
+      return -1.0;
+
+    double src_counts = 0.0;
+    for( const GenericLineInfo &line : peak.m_source_gammas )
+      src_counts += solution.relative_activity( line.m_isotope ) * line.m_yield;
+
+    const double predicted = src_counts * solution.rel_eff_eqn_value( peak.m_energy );
+
+    // Deliberately against the peak's STATISTICAL uncertainty: `k` is the multiple of that
+    //  quantity we are solving for, whatever else may have been folded into the fit weights.
+    const double pull = (predicted - peak.m_counts) / peak.m_counts_uncert;
+    sq_pulls.push_back( pull * pull );
+  }//for( const GenericPeakInfo &peak : peaks )
+
+  const size_t num_peaks = sq_pulls.size();
+  std::sort( begin(sq_pulls), end(sq_pulls) );
+  const double median_sq = (num_peaks % 2) ? sq_pulls[num_peaks/2]
+                                    : 0.5*(sq_pulls[num_peaks/2 - 1] + sq_pulls[num_peaks/2]);
+
+  const double chi2_1_median = 0.4549364; //median of a chi-squared(1) distribution
+  const double leverage_corr = static_cast<double>(num_peaks) / (std::max)( solution.m_dof, 1 );
+  const double variance_multiple = median_sq * leverage_corr / chi2_1_median;
+
+  return (std::min)( max_multiple, (std::max)( 1.0, std::sqrt(variance_multiple) ) );
+}//double estimate_stat_uncert_multiple( const RelEffSolution &solution, const double max_multiple )
+
+
+ProfileMassFractionResult profile_mass_fraction( const RelEffInput &input,
+                                                 const RelEffSolution &nominal_solution,
+                                                 const ProfileMassFractionOptions &options )
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  if( !db )
+    throw runtime_error( "profile_mass_fraction: could not initialize nuclide database" );
+
+  const SandiaDecay::Nuclide * const target_nuc = db->nuclide( options.nuclide );
+  if( !target_nuc )
+    throw runtime_error( "profile_mass_fraction: '" + options.nuclide + "' is not a valid nuclide" );
+
+  if( nominal_solution.m_status != ManualSolutionStatus::Success )
+    throw runtime_error( "profile_mass_fraction: nominal solution was not successful" );
+
+  if( nominal_solution.m_chi2_fit_weights < 0.0 )
+    throw runtime_error( "profile_mass_fraction: nominal solution has no fit-weight chi2" );
+
+  if( options.confidence_levels.empty() )
+    throw runtime_error( "profile_mass_fraction: no confidence levels requested" );
+
+  for( const double cl : options.confidence_levels )
+  {
+    if( (cl <= 0.0) || (cl >= 1.0) || isnan(cl) )
+      throw runtime_error( "profile_mass_fraction: confidence levels must be in (0,1)" );
+  }
+
+  // The element roster (isotope -> specific activity): reuse an existing constraint on the
+  //  target (whose window then restricts the scan domain), else build from the same-element
+  //  nuclides in the solution.
+  map<string,double> specific_activities;
+  double domain_lower = 1.0e-6, domain_upper = 1.0 - 1.0e-6;
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+  for( const MassFractionConstraint &mfc : input.mass_fraction_constraints )
+  {
+    if( mfc.m_nuclide != options.nuclide )
+      continue;
+
+    if( mfc.m_mass_fraction_lower == mfc.m_mass_fraction_upper )
+      throw runtime_error( "profile_mass_fraction: '" + options.nuclide
+                           + "' has a FIXED mass-fraction constraint - nothing to profile" );
+
+    specific_activities = mfc.m_specific_activities;
+    domain_lower = (std::max)( domain_lower, mfc.m_mass_fraction_lower );
+    domain_upper = (std::min)( domain_upper, mfc.m_mass_fraction_upper );
+  }//for( const MassFractionConstraint &mfc : input.mass_fraction_constraints )
+#endif
+
+  if( specific_activities.empty() )
+  {
+    for( const IsotopeRelativeActivity &rel_act : nominal_solution.m_rel_activities )
+    {
+      const SandiaDecay::Nuclide * const nuc = db->nuclide( rel_act.m_isotope );
+      if( nuc && (nuc->atomicNumber == target_nuc->atomicNumber) )
+        specific_activities[rel_act.m_isotope] = nuc->activityPerGram();
+    }
+  }//if( no pre-existing constraint on the target )
+
+  if( specific_activities.size() < 2 )
+    throw runtime_error( "profile_mass_fraction: the element of '" + options.nuclide
+                         + "' has fewer than two isotopes in the problem - the element-relative"
+                         " mass fraction is fixed by definition." );
+
+  if( !specific_activities.count(options.nuclide) )
+    throw runtime_error( "profile_mass_fraction: '" + options.nuclide + "' missing from element roster" );
+
+  ProfileMassFractionResult result;
+  result.nuclide = options.nuclide;
+  result.nominal_chi2 = nominal_solution.m_chi2_fit_weights;
+
+  // The nominal ELEMENT-relative mass fraction, from the nominal solution.
+  {
+    double total_mass = 0.0, target_mass = 0.0;
+    for( const IsotopeRelativeActivity &rel_act : nominal_solution.m_rel_activities )
+    {
+      const map<string,double>::const_iterator pos = specific_activities.find( rel_act.m_isotope );
+      if( pos == end(specific_activities) )
+        continue;
+
+      const double mass = rel_act.m_rel_activity / pos->second;
+      total_mass += mass;
+      if( rel_act.m_isotope == options.nuclide )
+        target_mass = mass;
+    }
+
+    if( (total_mass <= 0.0) || (target_mass <= 0.0) )
+      throw runtime_error( "profile_mass_fraction: nominal solution has non-positive masses" );
+
+    result.nominal_mass_fraction = target_mass / total_mass;
+  }
+
+  const double nominal_frac = (std::max)( domain_lower, (std::min)( domain_upper, result.nominal_mass_fraction ) );
+
+  // The chi2 at a trial fraction: re-solve with the target FIXED there (all other parameters
+  //  re-fit, which is what makes this a genuine profile), memoized so bisections for different
+  //  confidence levels reuse points.  Failed solves record +inf.
+  map<double,double> chi2_of_frac;
+  std::mutex chi2_mutex;
+
+  const auto trial_chi2_eval = [&input, &nominal_solution, &options, &specific_activities]( const double frac ) -> double
+  {
+    RelEffInput trial_input = input;
+    trial_input.point_estimate_only = true;
+    trial_input.skip_an_scan = true;
+
+    // Profile every trial with the SAME peak weights the nominal solution used, so the chi2
+    //  values are all on one likelihood.  This matters when the caller asked for an
+    //  automatically estimated additional uncertainty: re-estimating it per trial would
+    //  re-weight the peaks to make each trial's own scatter look normal, flattening the profile
+    //  (and every trial would re-run the estimate, several solves apiece).
+    trial_input.auto_estimate_add_uncert = false;
+    trial_input.peaks = nominal_solution.m_input.peaks;
+
+    // Warm-start a physical-model self attenuator from the nominal solution (AN stays a fitted
+    //  nuisance parameter when configured so - profiling conditional on it would understate the
+    //  interval - but starting at the nominal optimum keeps each local solve cheap).
+    if( (input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel)
+        && input.phys_model_self_atten && nominal_solution.m_phys_model_self_atten_shield )
+    {
+      auto self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( *input.phys_model_self_atten );
+      const RelEffSolution::PhysModelShieldFit &fit = *nominal_solution.m_phys_model_self_atten_shield;
+      if( !self_atten->material && self_atten->fit_atomic_number
+          && (fit.m_atomic_number >= 1.0) && (fit.m_atomic_number <= 98.0) )
+        self_atten->atomic_number = fit.m_atomic_number;
+      if( self_atten->fit_areal_density && (fit.m_areal_density > 0.0) )
+        self_atten->areal_density = fit.m_areal_density;
+      trial_input.phys_model_self_atten = self_atten;
+    }
+
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+    MassFractionConstraint trial_constraint;
+    trial_constraint.m_nuclide = options.nuclide;
+    trial_constraint.m_mass_fraction_lower = trial_constraint.m_mass_fraction_upper = frac;
+    trial_constraint.m_specific_activities = specific_activities;
+
+    trial_input.mass_fraction_constraints.erase(
+        std::remove_if( begin(trial_input.mass_fraction_constraints),
+                        end(trial_input.mass_fraction_constraints),
+                        [&options]( const MassFractionConstraint &mfc ){
+                          return mfc.m_nuclide == options.nuclide;
+                        } ),
+        end(trial_input.mass_fraction_constraints) );
+    trial_input.mass_fraction_constraints.push_back( trial_constraint );
+#endif
+
+    try
+    {
+      const RelEffSolution trial_solution = solve_relative_efficiency( trial_input );
+      if( (trial_solution.m_status != ManualSolutionStatus::Success)
+          || (trial_solution.m_chi2_fit_weights < 0.0)
+          || isnan(trial_solution.m_chi2_fit_weights) )
+        return std::numeric_limits<double>::infinity();
+
+      return trial_solution.m_chi2_fit_weights;
+    }catch( std::exception & )
+    {
+      return std::numeric_limits<double>::infinity();
+    }
+  };//trial_chi2_eval
+
+  const auto chi2_at = [&chi2_of_frac, &chi2_mutex, &trial_chi2_eval]( const double frac ) -> double
+  {
+    {
+      std::lock_guard<std::mutex> lock( chi2_mutex );
+      const map<double,double>::const_iterator pos = chi2_of_frac.find( frac );
+      if( pos != end(chi2_of_frac) )
+        return pos->second;
+    }
+
+    const double chi2 = trial_chi2_eval( frac );
+
+    std::lock_guard<std::mutex> lock( chi2_mutex );
+    chi2_of_frac[frac] = chi2;
+    return chi2;
+  };//chi2_at
+
+  // Step-size seed from the covariance-based half-width, when available.
+  double sigma_seed = (std::max)( 0.02, 0.25*nominal_frac );
+  try
+  {
+    // (all-nuclide-relative rather than element-relative, but plenty close for a step seed)
+    const double plus = nominal_solution.mass_fraction( options.nuclide, 1.0 );
+    const double minus = nominal_solution.mass_fraction( options.nuclide, -1.0 );
+    const double half_width = 0.5*fabs( plus - minus );
+    if( (half_width > 1.0e-6) && !isnan(half_width) && !isinf(half_width) )
+      sigma_seed = half_width;
+  }catch( std::exception & )
+  {
+  }
+
+  // Parallel pre-scan around the nominal - primes the memo-map for the bisections, and lets us
+  //  notice a better-than-nominal minimum.
+  {
+    vector<double> grid;
+    for( const double num_sigma : { -3.0, -2.0, -1.0, 1.0, 2.0, 3.0 } )
+    {
+      const double frac = (std::max)( domain_lower, (std::min)( domain_upper, nominal_frac + num_sigma*sigma_seed ) );
+      if( !std::count( begin(grid), end(grid), frac ) )
+        grid.push_back( frac );
+    }
+
+    SpecUtilsAsync::ThreadPool pool;
+    for( const double frac : grid )
+      pool.post( [&chi2_at, frac](){ chi2_at( frac ); } );
+    pool.join();
+  }
+
+  // If the scan found a decidedly better fit, the nominal solve was a local minimum; reference
+  //  the interval to the scan minimum (and tell the user).
+  double ref_chi2 = result.nominal_chi2;
+  {
+    std::lock_guard<std::mutex> lock( chi2_mutex );
+    for( const pair<const double,double> &frac_chi2 : chi2_of_frac )
+      ref_chi2 = (std::min)( ref_chi2, frac_chi2.second );
+  }
+  if( ref_chi2 < (result.nominal_chi2 - 0.5) )
+  {
+    result.warnings.push_back( "The profile scan found a better fit (chi2 "
+        + SpecUtils::printCompact(ref_chi2, 5) + " vs nominal "
+        + SpecUtils::printCompact(result.nominal_chi2, 5) + ") - the nominal solution may be a"
+        " local minimum; the profile interval is referenced to the scan minimum." );
+    result.nominal_chi2 = ref_chi2;
+  }
+
+  // The reported covariance-based uncertainties carry the max(1, chi2/dof) "variance of unit
+  //  weight" inflation (see RelEffSolution::m_cov_scale); scale the delta-chi2 threshold by the
+  //  same factor so the profile interval is consistent with them in the Gaussian limit - i.e.,
+  //  the profile treats the same over-scatter as evidence of under-stated per-peak errors,
+  //  rather than of a sharper likelihood.
+  const double chi2_scale = (std::max)( 1.0, nominal_solution.m_cov_scale );
+
+  for( const double cl : options.confidence_levels )
+  {
+    // Central two-sided interval: the chi2(1 dof) CDF at delta_chi2 already folds both Gaussian
+    //  tails, so quantile(chi_squared(1), CL) is the threshold (a one-sided limit would instead
+    //  use 2*CL - 1; see DetectionLimitCalc::decon_limit_delta for that convention).
+    const boost::math::chi_squared_distribution<double> chi2_dist( 1.0 );
+    const double delta_chi2 = chi2_scale * boost::math::quantile( chi2_dist, cl );
+    const double threshold = ref_chi2 + delta_chi2;
+
+    ProfileMassFractionInterval interval;
+    interval.confidence_level = cl;
+    interval.delta_chi2 = delta_chi2;
+
+    // The expansion below starts from `nominal_frac` and assumes it is inside the interval.  That
+    //  can be false if the scan re-anchored to a better minimum elsewhere (`ref_chi2` dropped),
+    //  in which case bisecting from it would place both end-points on the wrong side of the
+    //  crossing and return a confidently wrong interval.  Detect and flag instead.
+    if( chi2_at(nominal_frac) >= threshold )
+    {
+      interval.lower_frac = interval.upper_frac = nominal_frac;
+      interval.lower_at_bound = interval.upper_at_bound = true;
+      result.warnings.push_back( "The nominal mass fraction is itself excluded at the "
+              + SpecUtils::printCompact(100.0*cl, 4) + "% level by the profile scan (a better fit"
+              " was found elsewhere), so no interval could be formed around it." );
+      result.intervals.push_back( interval );
+      continue;
+    }
+
+    for( const int direction : { -1, 1 } )
+    {
+      const double edge = (direction < 0) ? domain_lower : domain_upper;
+
+      double inside = nominal_frac;  //largest (in `direction`) fraction with chi2 < threshold
+      double outside = edge;         //once bracketed: a fraction with chi2 >= threshold
+      bool bracketed = false, hit_edge = false;
+      double step = (std::max)( sigma_seed, 10.0*options.frac_tolerance );
+      size_t num_solves = 0;
+
+      while( !bracketed && !hit_edge && (num_solves < options.max_solves_per_side) )
+      {
+        double candidate = nominal_frac + direction*step;
+        if( ((direction < 0) && (candidate <= edge)) || ((direction > 0) && (candidate >= edge)) )
+          candidate = edge;
+
+        const double cand_chi2 = chi2_at( candidate );
+        num_solves += 1;
+
+        if( cand_chi2 >= threshold )
+        {
+          outside = candidate;
+          bracketed = true;
+        }else
+        {
+          inside = candidate;
+          hit_edge = (candidate == edge);
+          step *= 2.0;
+        }
+      }//while( expanding toward the edge )
+
+      bool at_bound = false;
+      double crossing = inside;
+
+      if( bracketed )
+      {
+        size_t num_bisects = 0;
+        while( (fabs(outside - inside) > options.frac_tolerance)
+               && (num_bisects < options.max_solves_per_side) )
+        {
+          const double mid = 0.5*(inside + outside);
+          const double mid_chi2 = chi2_at( mid );
+          num_bisects += 1;
+
+          if( mid_chi2 >= threshold )
+            outside = mid;
+          else
+            inside = mid;
+        }//while( bisecting )
+
+        crossing = 0.5*(inside + outside);
+      }else
+      {
+        at_bound = true;
+        crossing = inside; //the furthest still-inside point we reached
+        if( !hit_edge )
+          result.warnings.push_back( "The profile scan did not bracket the "
+              + string((direction < 0) ? "lower" : "upper") + " "
+              + SpecUtils::printCompact(100.0*cl, 4)
+              + "% crossing within the allowed number of solves." );
+      }//if( bracketed ) / else
+
+      if( direction < 0 )
+      {
+        interval.lower_frac = crossing;
+        interval.lower_at_bound = at_bound;
+      }else
+      {
+        interval.upper_frac = crossing;
+        interval.upper_at_bound = at_bound;
+      }
+    }//for( const int direction : { -1, 1 } )
+
+    result.intervals.push_back( interval );
+  }//for( const double cl : options.confidence_levels )
+
+  size_t num_failed_solves = 0;
+  {
+    std::lock_guard<std::mutex> lock( chi2_mutex );
+    for( const pair<const double,double> &frac_chi2 : chi2_of_frac )
+    {
+      if( isinf(frac_chi2.second) )
+        num_failed_solves += 1;
+      else
+        result.scan_points.push_back( frac_chi2 );
+    }
+  }
+
+  if( num_failed_solves )
+    result.warnings.push_back( std::to_string(num_failed_solves)
+        + " of the profile scan solves failed; the interval may be unreliable." );
+
+  return result;
+}//profile_mass_fraction(...)
 
 
 

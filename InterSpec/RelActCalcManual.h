@@ -28,6 +28,7 @@
 #include <map>
 #include <vector>
 #include <memory>
+#include <cstdint>
 #include <istream>
 #include "ReactionGamma.h"
 
@@ -156,7 +157,11 @@ struct GenericPeakInfo
    an unweighted fit will be performed (i.e., no stat uncert taken into account - all peaks
    contribute equally, despite their size).
    
-   TODO: Try replacing this value by using a ceres::LossFunction.
+   Note: replacing this with a `ceres::LossFunction` was tried and rejected - Ceres applies the
+   loss to a whole residual block (this problem uses one block for every peak), so it acts on the
+   total chi2 and cannot move the minimum.  Per-peak Huber influence was also implemented and
+   measured, and moved the answer the wrong way.  See the comment at the `lossfcn` declaration in
+   RelActCalcManual.cpp for the measurements and the spectra they were made on.
    */
   double m_base_rel_eff_uncert;
   
@@ -416,12 +421,58 @@ struct RelEffInput
 
   /** If true, use Ceres to fit the relative efficiency equation.
    * If false, use LLS to fit the relative efficiency equation.
-   * 
+   *
    * For `RelActCalc::RelEffEqnForm::FramPhysicalModel`, this must be true.
    */
   bool use_ceres_to_fit_eqn = false;
 
-  /** If true, fit the modified Hoerl equation form for the physical model. 
+  /** Skip the covariance / Jacobian / derived-uncertainty computations: \p m_nonlin_covariance,
+   \p m_rel_act_covariance / \p m_rel_act_jacobian and \p m_nonlin_jacobian come back empty, and
+   the relative-activity uncertainties are the -1 "not available" sentinel.
+   Point estimates, chi2, DOF, and shield fit values are still produced.
+   (In the LLS fit mode \p m_rel_eff_eqn_covariance is still filled - it falls out of the same
+   linear fit that produces the curve coefficients, so there is nothing to skip.)
+   Used by the atomic-number-scan multi-start and by profile-likelihood sub-solves, where only
+   the chi2 of the re-fit is needed.
+   */
+  bool point_estimate_only = false;
+
+  /** Skip the SCAN_AN_FOR_BEST_FIT multi-start over self-attenuator atomic number (AN is still
+   fit locally when `fit_atomic_number` is set).  Used by profile-likelihood sub-solves, which
+   warm-start near the nominal solution.
+   */
+  bool skip_an_scan = false;
+
+  /** If true, widen every peak's statistical uncertainty by a single common factor estimated
+   from how far the peaks actually sit from the fitted model - see #estimate_stat_uncert_multiple.
+
+   Because every peak is scaled by the SAME factor, the 1/k^2 factors straight out of the
+   weighted-least-squares objective: the fitted values cannot move, only the uncertainties widen.
+   That is the point of this form.  Widening peaks by differing amounts - which is what a
+   fractional-of-peak-area term such as #GenericPeakInfo::m_base_rel_eff_uncert does - re-weights
+   the peaks against each other and shifts the answer (see RelActManualGui::AddUncert for the
+   measured size of that shift).
+
+   The estimate is outlier-insensitive (median based), so a few badly mis-fit peaks do not drive
+   it.  The factor used is reported in RelEffSolution::m_auto_stat_uncert_multiple.
+   Ignored for unweighted fits.
+   */
+  bool auto_estimate_add_uncert = false;
+
+  /** If true (the default), the reported uncertainties are widened when the peaks scatter about
+   the fitted model by more than their uncertainties allow - see RelEffSolution::m_cov_scale.
+
+   Set false to get the purely statistical uncertainty, i.e. what the covariance says if the model
+   is taken to be exactly right.  That is the correct quantity to quote only when the fit really
+   does describe the data within its uncertainties; on real uranium spectra it is typically far
+   too small (measured on CBNM446: +-0.04 wt% reported while sitting 0.58 wt% from the certified
+   value), because the peaks disagree with any achievable relative-efficiency curve by much more
+   than counting statistics.
+   */
+  bool widen_uncerts_for_scatter = true;
+
+
+  /** If true, fit the modified Hoerl equation form for the physical model.
    * If false, do not fit the modified Hoerl equation form (its value will be constant value of 1.0).
    * 
    * Ignored if not using `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
@@ -478,6 +529,86 @@ enum class ManualSolutionStatus : int
   Success
 };//enum class ManSolutionStatus
 
+
+/** Options for a profile-likelihood scan of one nuclide's mass fraction - see
+ #profile_mass_fraction.
+ */
+struct ProfileMassFractionOptions
+{
+  /** The nuclide whose (element-relative) mass fraction to profile; must resolve to a
+   SandiaDecay nuclide present in the problem's peaks.
+   */
+  std::string nuclide;
+
+  /** The confidence levels to find interval end-points for, as CENTRAL two-sided intervals;
+   each maps to a delta-chi2 threshold of quantile(chi_squared(1), CL).
+   Defaults to 1-sigma and 2-sigma.
+   */
+  std::vector<double> confidence_levels{ 0.682689492, 0.954499736 };
+
+  /** Maximum bisection solves per interval side, per confidence level. */
+  size_t max_solves_per_side = 12;
+
+  /** Absolute tolerance on the mass fraction at each interval crossing. */
+  double frac_tolerance = 1.0e-4;
+};//struct ProfileMassFractionOptions
+
+
+/** One profile-likelihood interval, at a single confidence level. */
+struct ProfileMassFractionInterval
+{
+  double confidence_level = 0.0;
+
+  /** The chi2 rise defining the interval end-points: quantile(chi_squared(1), CL), times the
+   nominal solution's max(1, m_cov_scale) - so the profile carries the same chi2/dof error
+   inflation the covariance-based uncertainties do, and the two agree in the Gaussian limit.
+   */
+  double delta_chi2 = 0.0;
+
+  /** Interval end-points, as ELEMENT-relative mass fractions (the constraint-native quantity;
+   equals RelEffSolution::mass_fraction(nuclide) for single-element problems).
+   */
+  double lower_frac = 0.0;
+  double upper_frac = 0.0;
+
+  /** Set when the corresponding end-point ran into the physical [0,1] boundary (or a
+   pre-existing mass-fraction constraint window edge) before crossing the delta-chi2 threshold;
+   the end-point then holds the boundary value.
+   */
+  bool lower_at_bound = false;
+  bool upper_at_bound = false;
+};//struct ProfileMassFractionInterval
+
+
+/** Result of a profile-likelihood scan of one nuclide's mass fraction - see
+ #profile_mass_fraction.
+ */
+struct ProfileMassFractionResult
+{
+  std::string nuclide;
+
+  /** The nominal ELEMENT-relative mass fraction (fraction of the summed mass of the nuclides
+   in the constraint roster / element), from the nominal solution.
+   */
+  double nominal_mass_fraction = 0.0;
+
+  /** The fit-weight chi2 (see RelEffSolution::m_chi2_fit_weights) the delta-chi2 is referenced
+   to; normally the nominal solution's, but re-anchored to the scan minimum if the profile
+   found a better fit (a warning is added in that case).
+   */
+  double nominal_chi2 = 0.0;
+
+  /** One interval per requested confidence level, in the requested order. */
+  std::vector<ProfileMassFractionInterval> intervals;
+
+  /** The (element-relative fraction, fit-weight chi2) points evaluated during the scan, sorted
+   by fraction - useful for plotting or diagnosing the profile shape.
+   */
+  std::vector<std::pair<double,double>> scan_points;
+
+  std::vector<std::string> warnings;
+};//struct ProfileMassFractionResult
+
 /** A struct to hold the information about the solution to fitting the relative activities and
  efficiency curves.
  */
@@ -494,30 +625,47 @@ struct RelEffSolution
 
   std::vector<double> m_rel_eff_eqn_coefficients;
 
-  /** The covariance matrix of the relative efficiency equation coefficients. 
-   
-   Note that if `m_input.use_ceres_to_fit_eqn` is false, then this is the covariance matrix 
-   for the `log` efficiency function, and is computed using the matrices of least linear squares.
-   If `m_input.use_ceres_to_fit_eqn` is true, then this is relative efficiency portion
-   of the full covariance matrix fit by Ceres; and the rel. eff. equations are not ``log''
-   transformed.
+  /** The covariance matrix of the relative efficiency equation coefficients.
+
+   For the empirical equation forms this is always the covariance CONDITIONAL on the fitted
+   relative activities (from the linear-least-squares fit of the curve to the measured rel. eff.
+   points), no matter which method fit the coefficients.  This is deliberate: for these forms
+   only the product (curve x activities) is determined by the data, so the marginal coefficient
+   covariance is dominated by that unidentifiable trade - and the measured rel. eff. points the
+   band is drawn against are themselves computed with the fitted activities, so they move with
+   the curve under it.
+
+   For `RelActCalc::RelEffEqnForm::FramPhysicalModel` this is the rel-eff sub-block of the full
+   Ceres parameter covariance (marginal); there the DRF sets the absolute scale, so the shield
+   and Hoerl parameters are identifiable in their own right.
+
+   Includes the \p m_cov_scale inflation.
   */
   std::vector<std::vector<double>> m_rel_eff_eqn_covariance;
   
   /** The relative activities for each of the input nuclides. */
   std::vector<IsotopeRelativeActivity> m_rel_activities;
 
-  /** The parameters fit by Ceres. */
+  /** The parameters fit by Ceres.
+
+   Note: kept in the raw solver gauge - for Ceres-fit empirical forms the reported
+   \p m_rel_activities and \p m_rel_eff_eqn_coefficients have additionally been re-expressed in
+   the LLS-mode normalization convention (average measured rel. eff. == 1), so they will not
+   reproduce exactly from these raw parameters.
+   */
   std::vector<double> m_fit_parameters;
 
-  /** Covariance matrix of nonlinear parameters fit by Ceres.
-   
-   If not empty, the first `m_rel_activities.size()` indices are the
-   relative activities, in the same index ordering as \p m_rel_activities. 
+  /** Covariance matrix of nonlinear parameters fit by Ceres, in raw (Ceres) parameter space.
+
+   If not empty, the first `m_rel_activities.size()` indices are the activity multiple
+   parameters, in the same index ordering as \p m_rel_activities.
    But also see `m_activity_norms`, as you need to multiple the relative activities by these
-   scale factors before using with this covariance matrix.
-   If a activity was constrained to a non-zero mass-fraction range, then the row and column of that nuclides
-   activity will be d(RelAct)/d(par).
+   scale factors before using with this covariance matrix; for act-ratio controlled or
+   mass-fraction constrained nuclides the parameter slot is not a simple activity multiple at
+   all (constant sentinel, or a sigma-block carrier/distribution slot in [0.5,1.5]) - use
+   \p m_rel_act_covariance for anything expressed in relative activities.
+   (Prior to 20250816 the rows/columns of range-constrained mass-fraction nuclides were
+   pre-scaled by a diagonal d(RelAct)/d(par) derivative; they no longer are.)
 
    If the equation form is `RelActCalc::RelEffEqnForm::PhysicalModel`, then the following
    indeices are for the shielding parameters:
@@ -533,8 +681,24 @@ struct RelEffSolution
    */
   std::vector<std::vector<double>> m_nonlin_covariance;
 
-  // TODO: we should probably save the full covariance matrix
-  
+  /** Jacobian of the final reported relative activities with respect to the fit parameters,
+   `m_rel_act_jacobian[i][j] = d(RelAct_i)/d(par_j)`, computed by automatic differentiation
+   through the cost functor at the solution.  Rows index \p m_rel_activities; columns index
+   \p m_fit_parameters.  These are derivatives of the FINAL relative activities - activity
+   norms, act-ratio constraint chains, and mass-fraction block decoding are all included -
+   so no \p m_activity_norms scaling applies.  Empty if covariance computation failed.
+   */
+  std::vector<std::vector<double>> m_rel_act_jacobian;
+
+  /** Covariance of the final reported relative activities:
+   `m_rel_act_jacobian * m_nonlin_covariance * m_rel_act_jacobian^T`.
+   Same index ordering as \p m_rel_activities.  This is the matrix every derived uncertainty
+   (per-isotope activity sigmas, activity ratios, mass-fraction variations) is computed from.
+   Empty if covariance computation failed.
+   */
+  std::vector<std::vector<double>> m_rel_act_covariance;
+
+
   /** The Jacobian matrix of the nonlinear parameters fit by Ceres.
   
   i.e, `m_nonlin_jacobian[k][i] = d residual[k] / d parameters[i]`
@@ -553,19 +717,57 @@ struct RelEffSolution
   /** The Chi2 summed over all peaks between their actual and fit relative efficiencies.
    
    Note that this always uses the peaks statistical uncertainties, and does not include
-   #GenericPeakInfo::m_base_rel_eff_uncert
+   #GenericPeakInfo::m_base_rel_eff_uncert - see \p m_chi2_fit_weights for the chi2 under the
+   weights the fit actually minimized.
    */
   double m_chi2 = 0.0;
-  
-  /** The number of degrees of freedom in the fit.
-   
-   For empirical rel-eff equations: num_peaks - (eqn_order + 1) - (num_isotopes - 1).
-   The (num_isotopes - 1) reflects the normalization degeneracy between the overall activity
-   scale and the rel-eff curve normalization.
-   
-   For Physical Model: num_peaks - num_parameters, where num_parameters counts all free
-   parameters (isotope activities, shield areal densities, atomic numbers, Hoerl b/c).
-   The Physical Model has no normalization degeneracy since the DRF provides an absolute scale.
+
+  /** The chi2 under the weights the fit actually minimized - i.e., including any
+   #GenericPeakInfo::m_base_rel_eff_uncert - equal to 2x the final Ceres cost.
+   Compare \p m_chi2, which is statistical-only and intended for display.
+   This is the chi2 used for the \p m_cov_scale covariance inflation, and the one a
+   profile-likelihood scan should difference.
+   Will be -1.0 if the solve did not complete.
+   */
+  double m_chi2_fit_weights = -1.0;
+
+  /** Variance inflation applied (once) to the stored covariances - and hence to every derived
+   uncertainty - when the data scatter about the model exceeds the assumed uncertainties.
+   1.0 when m_dof <= 0, for unweighted fits, or on covariance failure; never less than 1.
+
+   This uses an OUTLIER-INSENSITIVE estimate of the scatter,
+   `median(pull^2) * (num_peaks/m_dof) / 0.4549`, rather than the usual chi2/dof: the excess in
+   these fits is typically a few individually mis-fit peaks (continuum/skew/interference) that
+   land many sigma out without much affecting the composition, and the mean of the squared
+   pulls would let them inflate every reported uncertainty.  For a broad excess the two agree.
+
+   Divide the covariances by this to recover the raw Ceres values.
+   \sa RelActCalcAuto::RelActAutoSolution::m_cov_scale, which uses the chi2/dof form.
+   */
+  double m_cov_scale = 1.0;
+
+  /** When RelEffInput::auto_estimate_add_uncert was used, the common multiple `k` that every
+   peak's statistical uncertainty was scaled by (>= 1).  -1.0 when it was not used.
+
+   Note this leaves the fitted values untouched - it only widens uncertainties - so the reported
+   chi2/dof lands near 1 by construction and \p m_cov_scale has nothing left to inflate.
+   */
+  double m_auto_stat_uncert_multiple = -1.0;
+
+  /** The number of degrees of freedom in the fit: the number of peaks minus the effective
+   number of fitted parameters.
+
+   The effective parameter count comes from the solver bookkeeping: all Ceres parameters, minus
+   parameters held constant (act-ratio controlled and fixed mass-fraction activity slots,
+   non-fit shield parameters, and - for Ceres-fit empirical forms - the gauge-pinned curve
+   coefficient), plus, for the LLS fit mode, the (eqn_order + 1) profiled curve coefficients
+   less the one combination fixed by the average-measured-rel-eff normalization convention.
+
+   So with no constraints this is num_peaks - num_isotopes - eqn_order for the empirical forms,
+   and num_peaks - num_isotopes - num_fit_shield_pars - (use_hoerl ? 2 : 0) for the Physical
+   Model (which has no normalization degeneracy, since the DRF provides an absolute scale).
+
+   Can legitimately be 0 - guard before dividing by this.
    */
   int m_dof = 0;
   
@@ -577,21 +779,29 @@ struct RelEffSolution
   /** The number of evaluation calls it took to reach a solution, and compute final covariance. */
   int m_num_function_eval_total = 0;
   
-  /** How long it took to compute the answer (only for curiosity) */
-  int m_num_microseconds_eval = 0;
+  /** How long it took to compute the answer (only for curiosity).
+   (64-bit, since an int of microseconds overflows past ~35 minutes)
+   */
+  std::int64_t m_num_microseconds_eval = 0;
   
   /** As an internal detail of fitting the relative efficiencies, we normalize the activities to a flat relative efficiency curve of 1.0, and then
    fit for the multiple of the normalization that yields the best solution.  This member variable keeps track of these normalizations; we
    are keeping them around to help in computing the correlation compensated ratios (although we could instead modify
-   m_rel_act_covariance - but we'll just keep an extra variable around to make things a little easier to debug).
-   
+   m_nonlin_covariance - but we'll just keep an extra variable around to make things a little easier to debug).
+
    The entries in this vector correspond to \p m_rel_activities on an index-by-index basis.
-   
+
    To state it another way, these are the relative activities if the relative efficiency curve is 1.0.
 
    If a nuclide is controlled by another nuclide, its value will be -1.
-   If the mass-fraction is fixed to a specific value, its value in this entry will be -1.0
-   If the mass-fraction is constrained to a non-zero range, its value in this entry will be 1.0
+   If a nuclide is mass-fraction constrained (either fixed to a specific value, or constrained to a
+   range), its value in this entry will be 1.0.
+
+   NOTE: for Ceres-fit empirical forms the reported \p m_rel_activities have additionally been
+   re-expressed in the LLS-mode gauge, so `m_rel_activities[i] / m_activity_norms[i]` does NOT
+   recover the fitted parameter there (it is off by that gauge multiple), and neither does
+   combining these norms with \p m_nonlin_covariance.  Use \p m_rel_act_covariance for anything
+   expressed in relative activities.
    */
   std::vector<double> m_activity_norms;
   
@@ -603,11 +813,20 @@ struct RelEffSolution
   
   /** Warnings about the setup or solution of the problem; by no means comprehensive of potential
    issues!
-   
+
    Note: contents of `RelEffInput::prep_warnings` are copied into this variable.
    */
   std::vector<std::string> m_warnings;
-  
+
+  /** Optional profile-likelihood mass-fraction results.
+
+   NOT filled by #solve_relative_efficiency - the caller (GUI background job, LLM tool, tests)
+   runs #profile_mass_fraction on demand and stores the results here so the reporting surfaces
+   (chart title, mass-fraction table, HTML report, JSON) can pick them up.
+   */
+  std::vector<ProfileMassFractionResult> m_profile_mass_fractions;
+
+
 
   /** A struct to hold the self attenuation shield fit results. 
    * This is fine for simple accesses, but not if you need to take into account the correlations, which 
@@ -749,6 +968,13 @@ struct RelEffSolution
    and "Activity Ratio".
    */
   void get_mass_ratio_table( std::ostream &strm ) const;
+
+  /** Writes a short HTML summary of the fitted Physical Model shieldings - the material or
+   atomic number, and the areal density, each with its 1-sigma uncertainty when available.
+   Writes nothing for non-physical-model solutions, or when no shieldings were used.
+   Used by both the GUI results tab and print_html_report().
+   */
+  void get_phys_model_shield_text( std::ostream &strm ) const;
   
   /** Returns the value of the relative efficiency equation at the specified energy.
    */
@@ -791,6 +1017,51 @@ struct RelEffSolution
           RelEffSolution::m_warnings, and RelEffSolution::m_error_message.
  */
 RelEffSolution solve_relative_efficiency( const RelEffInput &input );
+
+
+/** Estimates the common multiple `k` by which every peak's statistical uncertainty should be
+ scaled for the peaks' scatter about the fitted model to look statistically reasonable.
+
+ Uses an outlier-insensitive statistic (median of the squared pulls, matched to a chi-squared(1)
+ median and corrected by num_peaks/dof), so a few badly mis-fit peaks cannot inflate it: `k = sqrt(max(1, median(pull^2)*num_peaks/(dof*0.4549)))`.
+
+ Scaling every peak by one factor does not move the weighted-least-squares solution, so this
+ widens the uncertainties without disturbing the fit.
+
+ Returns 1.0 when the peaks are already consistent with their uncertainties, and -1.0 if no
+ estimate could be made (unweighted fit, too few peaks, or an unsuccessful solution).
+ */
+double estimate_stat_uncert_multiple( const RelEffSolution &solution, const double max_multiple = 25.0 );
+
+
+/** Profile-likelihood interval for one nuclide's mass fraction (of its element).
+
+ For a grid of trial fractions f around the nominal, the problem is re-solved with the target
+ nuclide's mass fraction FIXED at f (a lower == upper #MassFractionConstraint), and the
+ fit-weight chi2 (see RelEffSolution::m_chi2_fit_weights - the objective the solver actually
+ minimizes, so all nuisance parameters are re-fit at each trial value) is recorded; interval
+ end-points are the chi2(f) = chi2_min + delta_chi2 crossings, found by bisection.  Compared to
+ the covariance-based RelEffSolution::mass_fraction(nuclide, num_sigma), this gives honest
+ asymmetric intervals, stays valid near the physical [0,1] bounds and constraint-window edges,
+ and does not rely on inverting a possibly ill-conditioned covariance.
+
+ Sub-solves use RelEffInput::point_estimate_only and RelEffInput::skip_an_scan (a physical-model
+ self-atten AN is re-fit locally, seeded from the nominal solution), so the whole scan is
+ typically well under a second for empirical forms, and a few seconds for the physical model.
+
+ If the target nuclide already has a range mass-fraction constraint, the scan is restricted to
+ its window (end-points then flagged `*_at_bound` when clipped).
+
+ Throws std::exception on invalid input (unknown nuclide, element with only one isotope in the
+ problem, non-Success nominal solution).
+
+ @param input The same input the nominal solution was solved with.
+ @param nominal_solution The nominal solution (must be Success).
+ @param options The nuclide to profile, confidence levels, and scan controls.
+ */
+ProfileMassFractionResult profile_mass_fraction( const RelEffInput &input,
+                                                 const RelEffSolution &nominal_solution,
+                                                 const ProfileMassFractionOptions &options );
 
 
 /** Functions in this namespace are for importing peak data from CSV files, and then matching
