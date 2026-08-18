@@ -30,6 +30,7 @@
 
 #include "InterSpec_config.h"
 
+#include <cctype>
 #include <cmath>
 #include <chrono>
 #include <cstdlib>
@@ -37,6 +38,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <map>
 #include <memory>
 #include <set>
 #include <sstream>
@@ -171,8 +173,14 @@ void audit_solution( const Solution &solution, Anomalies &anomalies )
 }
 
 
-/** Read every mass fraction through the structured accessor and check the physical invariants a
-    renderer relies on.  Returns the per-curve sums so the caller can report normalization drift. */
+/** Read every mass fraction through the structured accessor and check the invariants a renderer
+    relies on.
+
+    Mass fractions are normalized PER ELEMENT, not per curve: a curve carrying both uranium and
+    plutonium has two independent sums of 1.  A single-isotope entry (a lone fission product such as
+    Cs-137) has no isotopic composition at all, and asking it for a mass fraction rightly throws - so
+    this only queries elements with two or more isotopes.  An earlier version of this tool got both
+    of those wrong and reported an apparent 89% failure rate on a preset that is in fact clean. */
 void audit_mass_fractions( const Solution &solution, Anomalies &anomalies,
                            ostream &sample_out, const string &case_key )
 {
@@ -183,10 +191,7 @@ void audit_mass_fractions( const Solution &solution, Anomalies &anomalies,
 
   for( size_t curve = 0; curve < solution.m_options.rel_eff_curves.size(); ++curve )
   {
-    // The reported set is not the input set: the Pu-242 correlation deliberately generates a
-    // reported isotope which is never a fitted NucInputInfo, and it participates in the
-    // renormalization.  Summing only the inputs would under-count by the Pu-242 fraction.
-    vector<const SandiaDecay::Nuclide *> reported;
+    map<short,vector<const SandiaDecay::Nuclide *>> by_element;
     bool any_plutonium = false, has_pu242 = false;
     for( const RelActCalcAuto::NucInputInfo &input : solution.m_options.rel_eff_curves[curve].nuclides )
     {
@@ -195,75 +200,145 @@ void audit_mass_fractions( const Solution &solution, Anomalies &anomalies,
         continue;
       any_plutonium = any_plutonium || (nuclide->atomicNumber == 94);
       has_pu242 = has_pu242 || (nuclide == pu242);
-      reported.push_back( nuclide );
+      by_element[nuclide->atomicNumber].push_back( nuclide );
     }
+    // The Pu-242 correlation generates a reported isotope that is never a fitted input, and it
+    // participates in the plutonium renormalization.
     if( any_plutonium && !has_pu242 && pu242 )
-      reported.push_back( pu242 );
+      by_element[94].push_back( pu242 );
 
-    double sum = 0.0;
-    size_t counted = 0;
-    for( const SandiaDecay::Nuclide * const nuclide : reported )
+    for( const auto &element : by_element )
     {
+      if( element.second.size() < 2 )
+        continue;   //no isotopics to report
 
-      Solution::MassFractionResult result;
-      try
+      double sum = 0.0;
+      size_t counted = 0;
+      for( const SandiaDecay::Nuclide * const nuclide : element.second )
       {
-        result = solution.mass_enrichment_result( nuclide, curve );
-      }catch( const std::exception &e )
-      {
-        anomalies.add( string("mass_enrichment_result threw for ") + nuclide->symbol
-                       + ": " + e.what() );
-        continue;
+        Solution::MassFractionResult result;
+        try
+        {
+          result = solution.mass_enrichment_result( nuclide, curve );
+        }catch( const std::exception &e )
+        {
+          anomalies.add( string("mass_enrichment_result threw for ") + nuclide->symbol
+                         + ": " + e.what() );
+          continue;
+        }
+
+        if( !std::isfinite(result.fraction) )
+        {
+          anomalies.add( "non-finite mass fraction for " + string(nuclide->symbol) );
+          continue;
+        }
+        if( (result.fraction < 0.0) || (result.fraction > 1.0) )
+          anomalies.add( "mass fraction outside [0,1] for " + string(nuclide->symbol) );
+        sum += result.fraction;
+        ++counted;
+
+        if( result.covariance_one_sigma
+            && (!std::isfinite(*result.covariance_one_sigma) || (*result.covariance_one_sigma < 0.0)) )
+          anomalies.add( "invalid local sigma for " + string(nuclide->symbol) );
+        if( result.uncorrected_fraction && !std::isfinite(*result.uncorrected_fraction) )
+          anomalies.add( "non-finite uncorrected fraction for " + string(nuclide->symbol) );
+
+        if( !result.profile )
+          continue;
+
+        for( const Solution::MassFractionProfileInterval &interval : result.profile->intervals )
+        {
+          if( !std::isfinite(interval.lower) || !std::isfinite(interval.upper) )
+            anomalies.add( "non-finite profile interval for " + string(nuclide->symbol) );
+          else if( interval.lower > interval.upper )
+            anomalies.add( "inverted profile interval for " + string(nuclide->symbol) );
+          else if( (interval.lower < 0.0) || (interval.upper > 1.0) )
+            anomalies.add( "profile interval outside [0,1] for " + string(nuclide->symbol) );
+        }
+
+        // A profile likelihood is a MINIMUM over nuisance parameters, so a sample whose delta-chi2
+        // exceeds one further from the baseline is a failed minimization, not a likelihood value.
+        for( const pair<double,double> &sample : result.profile->sampled_delta_chi2 )
+          sample_out << case_key << '\t' << nuclide->symbol << '\t'
+                     << static_cast<int>(result.profile->status) << '\t'
+                     << setprecision(17) << sample.first << '\t'
+                     << setprecision(17) << sample.second << '\n';
       }
 
-      if( !std::isfinite(result.fraction) )
+      if( (counted == element.second.size()) && (std::fabs(sum - 1.0) > 1.0e-6) )
       {
-        anomalies.add( "non-finite mass fraction for " + nuclide->symbol );
-        continue;
+        ostringstream msg;
+        msg << "element Z=" << element.first << " mass fractions sum to "
+            << setprecision(12) << sum << " on curve " << curve;
+        anomalies.add( msg.str() );
       }
-      if( (result.fraction < 0.0) || (result.fraction > 1.0) )
-        anomalies.add( "mass fraction outside [0,1] for " + nuclide->symbol );
-      sum += result.fraction;
-      ++counted;
-
-      if( result.covariance_one_sigma
-          && (!std::isfinite(*result.covariance_one_sigma) || (*result.covariance_one_sigma < 0.0)) )
-        anomalies.add( "invalid local sigma for " + nuclide->symbol );
-      if( result.uncorrected_fraction && !std::isfinite(*result.uncorrected_fraction) )
-        anomalies.add( "non-finite uncorrected fraction for " + nuclide->symbol );
-
-      if( !result.profile )
-        continue;
-
-      for( const Solution::MassFractionProfileInterval &interval : result.profile->intervals )
-      {
-        if( !std::isfinite(interval.lower) || !std::isfinite(interval.upper) )
-          anomalies.add( "non-finite profile interval for " + nuclide->symbol );
-        else if( interval.lower > interval.upper )
-          anomalies.add( "inverted profile interval for " + nuclide->symbol );
-        else if( (interval.lower < 0.0) || (interval.upper > 1.0) )
-          anomalies.add( "profile interval outside [0,1] for " + nuclide->symbol );
-      }
-
-      // Emit every profile sample.  A profile likelihood is a minimum over nuisance parameters, so a
-      // sample whose delta-chi2 exceeds one further from the baseline is a failed minimization, not a
-      // likelihood value.  Recording them lets that be measured over a population.
-      for( const pair<double,double> &sample : result.profile->sampled_delta_chi2 )
-        sample_out << case_key << '\t' << nuclide->symbol << '\t'
-                   << static_cast<int>(result.profile->status) << '\t'
-                   << setprecision(17) << sample.first << '\t'
-                   << setprecision(17) << sample.second << '\n';
-    }
-
-    if( counted && (std::fabs(sum - 1.0) > 1.0e-6) )
-    {
-      ostringstream msg;
-      msg << "mass fractions sum to " << setprecision(12) << sum << " on curve " << curve;
-      anomalies.add( msg.str() );
     }
   }
 }
 
+/** Truth composition encoded in an IDB filename.
+
+ IDB spectra are named `<record>_<7digits><Nuclide>[_<7digits><Nuclide>...].spe`, where the seven
+ digits are the certified weight percent scaled by 1e4 - e.g. `1412_0059874Pu240` is 5.9874 wt%
+ Pu-240 and `208_0660410U235` is 66.0410 wt% U-235.  MoX files carry several.  Trailing tags that
+ are not nuclides (e.g. `UPuRatio`) are returned too and simply never match a fitted source. */
+vector<pair<string,double>> truth_from_filename( const string &filename )
+{
+  vector<pair<string,double>> answer;
+  for( size_t i = 0; (i + 7) < filename.size(); ++i )
+  {
+    if( (i > 0) && (filename[i-1] != '_') )
+      continue;
+    bool seven_digits = true;
+    for( size_t d = 0; d < 7; ++d )
+      seven_digits = seven_digits && std::isdigit( static_cast<unsigned char>(filename[i+d]) );
+    if( !seven_digits )
+      continue;
+
+    size_t end = i + 7;
+    while( (end < filename.size()) && (filename[end] != '_') && (filename[end] != '.') )
+      ++end;
+    const string symbol = filename.substr( i + 7, end - (i + 7) );
+    if( symbol.empty() )
+      continue;
+    answer.emplace_back( symbol, std::stod(filename.substr(i,7)) / 1.0e4 );
+  }
+  return answer;
+}
+
+/** Detector name as stated in the file header, e.g. "HPGe", "CZT", "LaBr3", "CdTe", "NaI".
+
+ The IDB corpus is mixed-detector - roughly 255 HPGe, 110 CZT, 74 LaBr3, 18 CdTe, 2 NaI in the slice
+ swept here - and every shipped preset targets HPGe.  Scoring an HPGe preset against a CZT or LaBr3
+ spectrum measures detector mismatch, not software defects: those cases legitimately produce poor or
+ failed fits.  An earlier sweep did exactly that and reported "catastrophic" accuracy failures that
+ were, on inspection, all CZT/LaBr3 spectra.  Hence HPGe-only by default. */
+string detector_name_from_header( const string &path )
+{
+  try
+  {
+    ifstream input( path.c_str(), ios::binary );
+    if( !input )
+      return "unknown";
+    string head( 4096, '\0' );
+    input.read( &head[0], static_cast<std::streamsize>(head.size()) );
+    head.resize( static_cast<size_t>(input.gcount()) );
+    const size_t pos = head.find( "Detector:" );
+    if( pos == string::npos )
+      return "unknown";
+    size_t begin = pos + 9;
+    while( (begin < head.size()) && std::isspace(static_cast<unsigned char>(head[begin])) )
+      ++begin;
+    size_t end = begin;
+    while( (end < head.size())
+           && (std::isalnum(static_cast<unsigned char>(head[end])) || (head[end] == '-')) )
+      ++end;
+    return (end > begin) ? head.substr(begin, end - begin) : string("unknown");
+  }catch( const std::exception & )
+  {
+    return "unknown";
+  }
+}
 
 string status_name( const Solution::Status status )
 {
@@ -292,7 +367,7 @@ int main( int argc, char **argv )
 {
   string data_dir, out_path = "rel_act_sweep.tsv", sample_path, list_path, background_path;
   vector<string> preset_paths, spectrum_paths;
-  bool auto_profile = false, resume = false;
+  bool auto_profile = false, resume = false, all_detectors = false;
   size_t shard_index = 0, shard_count = 1;
 
   for( int i = 1; i < argc; ++i )
@@ -308,6 +383,7 @@ int main( int argc, char **argv )
     else if( !(value = argument_value(argument,"samples")).empty() )   sample_path = value;
     else if( argument == "--auto-profile" )                            auto_profile = true;
     else if( argument == "--resume" )                                  resume = true;
+    else if( argument == "--all-detectors" )                           all_detectors = true;
     else if( !(value = argument_value(argument,"shard")).empty() )
     {
       const size_t slash = value.find('/');
@@ -324,7 +400,10 @@ int main( int argc, char **argv )
       cerr << "Unknown argument: " << argument << "\n"
            << "Usage: rel_act_corpus_sweep --datadir=DIR --preset=XML [--preset=XML ...]\n"
            << "         (--spectrum=FILE ... | --list=FILE) [--background=FILE]\n"
-           << "         [--auto-profile] [--resume] [--out=TSV] [--samples=TSV] [--shard=i/n]" << endl;
+           << "         [--auto-profile] [--resume] [--all-detectors] [--out=TSV]\n"
+            "         [--samples=TSV] [--shard=i/n]\n"
+            "  Only HPGe spectra are swept unless --all-detectors is given; every shipped\n"
+            "  preset targets HPGe, so other detectors measure mismatch, not defects." << endl;
       return 1;
     }
   }
@@ -475,7 +554,18 @@ int main( int argc, char **argv )
   }
   sample_out << "case\tnuclide\tprofile_status\tfraction\tdelta_chi2\n";
 
+  const string truth_path = out_path + ".truth.tsv";
+  ofstream truth_out( truth_path.c_str(), resume ? ios::app : ios::trunc );
+  if( !truth_out )
+  {
+    cerr << "Could not open '" << truth_path << "'" << endl;
+    return 1;
+  }
+  if( completed_cases.empty() )
+    truth_out << "case\tnuclide\tcurve\ttruth_wt_pct\tfitted_wt_pct\terror_wt_pct\tnote\n";
+
   size_t case_index = 0, anomaly_cases = 0, unusable_cases = 0, thrown_cases = 0;
+  size_t skipped_detector = 0;
   for( size_t spectrum_index = 0; spectrum_index < spectrum_paths.size(); ++spectrum_index )
   {
     // Shard on the spectrum, not on the flat case index: with `case_index % shard_count` and a
@@ -486,6 +576,17 @@ int main( int argc, char **argv )
       continue;
 
     const string &spectrum_path = spectrum_paths[spectrum_index];
+
+    // Every shipped preset targets HPGe.  Running them against CZT/LaBr3/CdTe/NaI measures detector
+    // mismatch rather than software defects - those fits legitimately fail - so they are skipped
+    // unless explicitly requested.  Counted and reported, never silently dropped.
+    const string detector = detector_name_from_header( spectrum_path );
+    if( !all_detectors && !SpecUtils::iequals_ascii(detector,"HPGe") )
+    {
+      ++skipped_detector;
+      continue;
+    }
+
     string load_error;
     const shared_ptr<const SpecUtils::Measurement> foreground
         = load_foreground( spectrum_path, load_error );
@@ -501,7 +602,7 @@ int main( int argc, char **argv )
         continue;
       if( crashed_cases.count(resume_key) )
       {
-        out << resume_key << "\tCrashed\t\t\t\t\t\t0\t0\t0\t0\t"
+        out << resume_key << '\t' << detector << "\tCrashed\t\t\t\t\t\t0\t0\t0\t0\t"
             << "the solve crashed the process outright on a previous attempt\n" << std::flush;
         ++anomaly_cases;
         continue;
@@ -509,7 +610,7 @@ int main( int argc, char **argv )
       attempted_out << resume_key << '\n' << std::flush;
       if( !foreground )
       {
-        out << spectrum_name << '\t' << preset.first << "\tLoadFailed\t0\t\t\t\t\t0\t0\t0\t0\t"
+        out << spectrum_name << '\t' << detector << '\t' << preset.first << "\tLoadFailed\t0\t\t\t\t\t0\t0\t0\t0\t"
             << load_error << '\n' << std::flush;
         ++anomaly_cases;
         continue;
@@ -522,7 +623,8 @@ int main( int argc, char **argv )
       try
       {
         solution = RelActCalcAuto::solve( preset.second, foreground, background, nullptr, {},
-                                          PeakFitUtils::CoarseResolutionType::High, nullptr );
+                                          PeakFitUtils::coarse_det_type(foreground,nullptr),
+                                          nullptr );
       }catch( const std::exception &e )
       {
         // A thrown solve is never graceful: callers are documented to receive a status.
@@ -537,6 +639,37 @@ int main( int argc, char **argv )
       {
         audit_solution( solution, anomalies );
         audit_mass_fractions( solution, anomalies, sample_out, case_key );
+
+        // Accuracy against the certified composition in the filename.  Recorded rather than
+        // asserted: a preset that cannot analyze a spectrum is expected to be wrong, and the point
+        // of the sweep is to see the distribution, not to gate on it.
+        if( Solution::is_usable_status(solution.m_status) )
+        {
+          const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+          for( const pair<string,double> &truth : truth_from_filename(spectrum_name) )
+          {
+            const SandiaDecay::Nuclide * const nuclide = db ? db->nuclide(truth.first) : nullptr;
+            if( !nuclide )
+              continue;
+            for( size_t curve = 0; curve < solution.m_options.rel_eff_curves.size(); ++curve )
+            {
+              double fitted = std::numeric_limits<double>::quiet_NaN();
+              string note = "-";
+              try
+              {
+                fitted = 100.0*solution.mass_enrichment_result( nuclide, curve ).fraction;
+              }catch( const std::exception &e )
+              {
+                note = e.what();
+              }
+              truth_out << case_key << '\t' << nuclide->symbol << '\t' << curve << '\t'
+                        << setprecision(10) << truth.second << '\t' << fitted << '\t'
+                        << (std::isfinite(fitted) ? fitted - truth.second
+                                                  : std::numeric_limits<double>::quiet_NaN())
+                        << '\t' << note << '\n' << std::flush;
+            }
+          }
+        }
 
         for( const auto &curve_profiles : solution.m_mass_fraction_profiles )
         {
@@ -556,7 +689,7 @@ int main( int argc, char **argv )
       thrown_cases += threw;
       anomaly_cases += !anomalies.reasons.empty();
 
-      out << spectrum_name << '\t' << preset.first << '\t'
+      out << spectrum_name << '\t' << detector << '\t' << preset.first << '\t'
           << (threw ? string("Threw") : status_name(solution.m_status)) << '\t'
           << setprecision(4) << seconds << '\t'
           << setprecision(12) << solution.m_chi2 << '\t'
@@ -570,6 +703,7 @@ int main( int argc, char **argv )
   }
 
   cerr << "Sweep finished: " << case_index << " cases considered, "
+       << skipped_detector << " spectra skipped as non-HPGe, "
        << unusable_cases << " unusable, " << thrown_cases << " threw, "
        << anomaly_cases << " with anomalies." << endl;
   return anomaly_cases ? 2 : 0;

@@ -4257,7 +4257,7 @@ void RelActAutoGui::handleConvertEnergyRangeToIndividuals( Wt::WWidget *w )
     dialog->addButton( WString::tr("Continue") );
     
     return;
-  }//if( !solution || (solution->m_status != RelActCalcAuto::RelActAutoSolution::Status::Success) )
+  }//if( !solution || !is_usable_status(solution->m_status) )
   
   if( !energy_range || energy_range->isEmpty() )
   {

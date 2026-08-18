@@ -543,11 +543,11 @@ namespace
     if( expect_success )
     {
       BOOST_CHECK_MESSAGE(
-        result.status == RelActCalcAuto::RelActAutoSolution::Status::Success,
+        RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status),
         "Fit failed: " << result.error_message );
     }
 
-    if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+    if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) )
       return;
 
     const FitPeaksForNuclides::PeakFitForNuclideConfig &config
@@ -661,7 +661,7 @@ namespace
   void verify_removed_peaks_replaced(
     const FitPeaksForNuclides::PeakFitResult &result )
   {
-    if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+    if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) )
       return;
 
     // Count removed peaks by source name
@@ -707,7 +707,7 @@ namespace
     const vector<shared_ptr<const PeakDef>> &current_peaks,
     const FitPeaksForNuclides::PeakFitResult &result )
   {
-    if( result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+    if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) )
       return current_peaks;
     if( result.observable_peaks.empty() )
       return current_peaks;
@@ -837,7 +837,7 @@ BOOST_AUTO_TEST_CASE( test_rescue_recovers_marginal_line )
   FitPeaksForNuclides::PeakFitResult result = run_fit_with_config(
       spec.foreground, spec.background, auto_peaks, make_sources({"Eu152"}),
       no_user_peaks, spec.isHPGe, config, no_ecal_options );
-  BOOST_REQUIRE( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) );
   for( const string &warning : result.warnings )
     BOOST_TEST_MESSAGE( "R2 recovery: " << warning );
 
@@ -862,7 +862,7 @@ BOOST_AUTO_TEST_CASE( test_rescue_recovers_marginal_line )
   FitPeaksForNuclides::PeakFitResult control = run_fit_with_config(
       spec.foreground, spec.background, auto_peaks, make_sources({"Eu152"}),
       no_user_peaks, spec.isHPGe, config, no_ecal_options );
-  BOOST_REQUIRE( control.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(control.status) );
   vector<double> rescued_only_energies;
   const auto find_rescued_only = [&]() {
     rescued_only_energies.clear();
@@ -888,8 +888,8 @@ BOOST_AUTO_TEST_CASE( test_rescue_recovers_marginal_line )
     FitPeaksForNuclides::detail::set_bounded_rescue_enabled_for_test( false );
     control = run_fit_with_config( spec.foreground, spec.background, auto_peaks,
         make_sources({"Eu152"}), no_user_peaks, spec.isHPGe, config, no_ecal_options );
-    BOOST_REQUIRE( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
-    BOOST_REQUIRE( control.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+    BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) );
+    BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(control.status) );
     find_rescued_only();
   }
   for( const double energy : rescued_only_energies )
@@ -927,7 +927,7 @@ BOOST_AUTO_TEST_CASE( test_rescue_exception_retains_successful_incumbent )
   const FitPeaksForNuclides::PeakFitResult result = run_fit_with_config(
       spec.foreground, spec.background, auto_peaks, make_sources({"Eu152"}), {},
       spec.isHPGe, config, no_ecal_options );
-  BOOST_REQUIRE( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) );
   BOOST_CHECK( find_source_gamma(result.observable_peaks, "Eu152", 344.28, 0.5) );
   BOOST_CHECK( !result.observable_peaks.empty() );
   BOOST_CHECK( std::any_of(std::begin(result.warnings), std::end(result.warnings),
@@ -980,7 +980,7 @@ BOOST_AUTO_TEST_CASE( test_rescue_is_source_order_and_background_invariant )
     const FitPeaksForNuclides::PeakFitResult &result = results[result_index];
     BOOST_TEST_CONTEXT( labels[result_index] )
     {
-    BOOST_REQUIRE( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+    BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) );
     const PeakDef * const rescued
       = find_source_gamma( result.uncombined_fit_peaks, "Eu152", rescued_energy, 0.5 );
     observable_presence[result_index] = static_cast<bool>(
@@ -1038,7 +1038,7 @@ BOOST_AUTO_TEST_CASE( test_eu152_then_eu154 )
     = run_fit( spec.foreground, spec.background, auto_peaks, eu152_sources,
                empty_user_peaks, spec.isHPGe );
 
-  BOOST_REQUIRE( eu152_result.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(eu152_result.status) );
   const vector<shared_ptr<const PeakDef>> after_eu152 = apply_fit_result( empty_user_peaks, eu152_result );
 
   // Step 2: Fit Eu-154 with ExistingPeaksAsFreePeak (Eu-152 peaks exist)
@@ -1085,7 +1085,7 @@ BOOST_AUTO_TEST_CASE( test_refit_same_source )
   const FitPeaksForNuclides::PeakFitResult result1
     = run_fit( spec.foreground, spec.background, auto_peaks, sources, empty_user_peaks, spec.isHPGe );
 
-  BOOST_REQUIRE( result1.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result1.status) );
   BOOST_REQUIRE_GE( result1.observable_peaks.size(), 1u );
 
   const vector<shared_ptr<const PeakDef>> after_first = apply_fit_result( empty_user_peaks, result1 );
@@ -1094,7 +1094,7 @@ BOOST_AUTO_TEST_CASE( test_refit_same_source )
   const FitPeaksForNuclides::PeakFitResult result2
     = run_fit( spec.foreground, spec.background, auto_peaks, sources, after_first, spec.isHPGe );
 
-  BOOST_REQUIRE( result2.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result2.status) );
 
   verify_fit_result( result2, after_first, spec.foreground, {} );
   verify_removed_peaks_replaced( result2 );
@@ -1132,7 +1132,7 @@ BOOST_AUTO_TEST_CASE( test_refit_after_peak_delete )
   const FitPeaksForNuclides::PeakFitResult result1
     = run_fit( spec.foreground, spec.background, auto_peaks, sources, empty_user_peaks, spec.isHPGe );
 
-  BOOST_REQUIRE( result1.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result1.status) );
   BOOST_REQUIRE_GE( result1.observable_peaks.size(), 5u );
 
   vector<shared_ptr<const PeakDef>> after_first = apply_fit_result( empty_user_peaks, result1 );
@@ -1150,7 +1150,7 @@ BOOST_AUTO_TEST_CASE( test_refit_after_peak_delete )
     = run_fit( spec.foreground, spec.background, auto_peaks, sources,
                with_deletions, spec.isHPGe );
 
-  BOOST_REQUIRE( result2.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result2.status) );
   verify_fit_result( result2, with_deletions, spec.foreground, {} );
   verify_removed_peaks_replaced( result2 );
 
@@ -1173,7 +1173,7 @@ BOOST_AUTO_TEST_CASE( test_refit_do_not_use_existing )
   const FitPeaksForNuclides::PeakFitResult result1
     = run_fit( spec.foreground, spec.background, auto_peaks, sources, empty_user_peaks, spec.isHPGe );
 
-  BOOST_REQUIRE( result1.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result1.status) );
   const vector<shared_ptr<const PeakDef>> after_first = apply_fit_result( empty_user_peaks, result1 );
 
   // Second fit with DoNotUseExistingRois
@@ -1187,7 +1187,7 @@ BOOST_AUTO_TEST_CASE( test_refit_do_not_use_existing )
 
   // But should still find Cs137 peaks (in new ROIs that don't overlap existing)
   // Note: this may or may not succeed depending on whether non-overlapping ROIs can be found
-  if( result2.status == RelActCalcAuto::RelActAutoSolution::Status::Success
+  if( RelActCalcAuto::RelActAutoSolution::is_usable_status(result2.status)
      && !result2.observable_peaks.empty() )
   {
     verify_fit_result( result2, after_first, spec.foreground,
@@ -1233,7 +1233,7 @@ BOOST_AUTO_TEST_CASE( test_default_preserves_other_source )
     = run_fit( spec.foreground, spec.background, auto_peaks, ba133_sources,
                after_cs, spec.isHPGe );
 
-  if( ba_result.status != RelActCalcAuto::RelActAutoSolution::Status::Success )
+  if( !RelActCalcAuto::RelActAutoSolution::is_usable_status(ba_result.status) )
     return;
 
   verify_removed_peaks_replaced( ba_result );
@@ -1266,7 +1266,7 @@ BOOST_AUTO_TEST_CASE( test_do_not_use_existing_ignores_all )
   const FitPeaksForNuclides::PeakFitResult result1
     = run_fit( spec.foreground, spec.background, auto_peaks, sources, empty_user_peaks, spec.isHPGe );
 
-  BOOST_REQUIRE( result1.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result1.status) );
   const vector<shared_ptr<const PeakDef>> after_first = apply_fit_result( empty_user_peaks, result1 );
   BOOST_REQUIRE( !after_first.empty() );
 
@@ -1500,7 +1500,7 @@ BOOST_AUTO_TEST_CASE( test_trinitite_default_sequence )
       = run_fit( spec.foreground, spec.background, auto_peaks, sources, user_peaks, spec.isHPGe );
 
     // May or may not find peaks - but should not corrupt existing
-    if( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success )
+    if( RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) )
     {
       verify_fit_result( result, user_peaks, spec.foreground, {} );
     }
@@ -1522,7 +1522,7 @@ BOOST_AUTO_TEST_CASE( test_trinitite_default_sequence )
     const FitPeaksForNuclides::PeakFitResult result
       = run_fit( spec.foreground, spec.background, auto_peaks, sources, user_peaks, spec.isHPGe );
 
-    if( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success )
+    if( RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) )
     {
       verify_fit_result( result, user_peaks, spec.foreground, {} );
     }
@@ -1580,7 +1580,7 @@ BOOST_AUTO_TEST_CASE( test_trinitite_do_not_use_existing_sequence )
       = run_fit( spec.foreground, spec.background, auto_peaks, sources,
                  user_peaks, spec.isHPGe, opts );
 
-    if( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success )
+    if( RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) )
     {
       verify_fit_result( result, user_peaks, spec.foreground, opts );
 
@@ -1691,8 +1691,8 @@ BOOST_AUTO_TEST_CASE( test_eu152_interferer_matches_joint )
     = run_fit( spec.foreground, spec.background, auto_peaks,
                make_sources( {"K40", "Eu152"} ), no_user_peaks, spec.isHPGe );
 
-  BOOST_REQUIRE( r_auto.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
-  BOOST_REQUIRE( r_joint.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(r_auto.status) );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(r_joint.status) );
 
   auto count_src = []( const vector<PeakDef> &peaks, const char *sym ) -> size_t {
     size_t n = 0;
@@ -1756,7 +1756,7 @@ BOOST_AUTO_TEST_CASE( test_r6_raw_interferer_transaction )
   const FitPeaksForNuclides::PeakFitResult result = run_fit(
       spec.foreground, nullptr, auto_peaks, make_sources({"Eu152", "Cs137"}),
       no_user_peaks, spec.isHPGe );
-  BOOST_REQUIRE( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) );
   for( const string &warning : result.warnings )
     BOOST_TEST_MESSAGE( warning );
   BOOST_REQUIRE( find_source_gamma(
@@ -1782,7 +1782,7 @@ BOOST_AUTO_TEST_CASE( test_r6_raw_interferer_transaction )
   const FitPeaksForNuclides::PeakFitResult source_only = run_fit(
       spec.foreground, nullptr, auto_peaks, make_sources({"Eu152", "Cs137"}),
       no_user_peaks, spec.isHPGe, no_interferer_options );
-  BOOST_REQUIRE( source_only.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(source_only.status) );
   verify_fit_result( source_only, no_user_peaks, spec.foreground, no_interferer_options );
   BOOST_CHECK( !find_source_gamma(
       source_only.solution.m_peaks_without_back_sub, "K40", 1460.82, 0.5 ) );
@@ -1810,7 +1810,7 @@ BOOST_AUTO_TEST_CASE( test_r6_raw_interferer_transaction )
       spec.foreground, nullptr, auto_peaks, make_sources({"Eu152", "Cs137"}),
       { k40_bystander }, spec.isHPGe,
       FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak );
-  BOOST_REQUIRE( with_float.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(with_float.status) );
   BOOST_CHECK( !find_source_gamma(
       with_float.solution.m_peaks_without_back_sub, "K40", 1460.82, 0.5 ) );
   BOOST_CHECK( find_source_gamma(with_float.observable_peaks, "Eu152", 1408.01, 0.5) );
@@ -1856,7 +1856,7 @@ BOOST_AUTO_TEST_CASE( test_multisource_strong_norm_interferer_is_stable )
   };
   for( const FitPeaksForNuclides::PeakFitResult * const result : results )
   {
-    BOOST_REQUIRE( result->status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+    BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result->status) );
     BOOST_CHECK( !result->observable_peaks.empty() );
   }
 
@@ -1982,8 +1982,8 @@ BOOST_AUTO_TEST_CASE( test_rescue_does_not_overfit_on_interferer )
         return warning.find("bounded fit-then-prune rescue") != string::npos;
       });
   };
-  BOOST_REQUIRE( enabled.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
-  BOOST_REQUIRE( disabled.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(enabled.status) );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(disabled.status) );
   BOOST_CHECK_MESSAGE( !did_rescue(enabled),
                        "A guarded marginal beside K40 was unexpectedly admitted" );
   BOOST_CHECK( find_source_gamma(enabled.observable_peaks, "Eu152", 1408.01, 0.5) );
@@ -2070,7 +2070,7 @@ BOOST_AUTO_TEST_CASE( test_pu239_smoke )
     = run_fit( spec.foreground, spec.background, auto_peaks, sources, user_peaks, spec.isHPGe );
 
   // Pu-239 may or may not fit well depending on the spectrum
-  if( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success )
+  if( RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) )
   {
     verify_fit_result( result, user_peaks, spec.foreground, {} );
     BOOST_TEST_MESSAGE( "Pu239 smoke: " << result.observable_peaks.size() << " observable peaks" );
@@ -2093,7 +2093,7 @@ BOOST_AUTO_TEST_CASE( test_i125_smoke )
   const FitPeaksForNuclides::PeakFitResult result
     = run_fit( spec.foreground, spec.background, auto_peaks, sources, user_peaks, spec.isHPGe );
 
-  if( result.status == RelActCalcAuto::RelActAutoSolution::Status::Success )
+  if( RelActCalcAuto::RelActAutoSolution::is_usable_status(result.status) )
   {
     verify_fit_result( result, user_peaks, spec.foreground, {} );
     BOOST_TEST_MESSAGE( "I125 smoke: " << result.observable_peaks.size() << " observable peaks" );
@@ -2133,7 +2133,7 @@ BOOST_AUTO_TEST_CASE( test_eu154_does_not_remove_strong_eu152_peak )
     = run_fit( spec.foreground, spec.background, auto_peaks, sources_eu152,
                empty_user_peaks, spec.isHPGe );
 
-  BOOST_REQUIRE( result_eu152.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result_eu152.status) );
 
   // Verify Eu-152 has a strong peak near 244.7 keV
   const PeakDef *eu152_244 = find_peak_near( result_eu152.observable_peaks, 244.7, 3.0 );
@@ -2215,7 +2215,7 @@ BOOST_AUTO_TEST_CASE( test_eu154_does_not_destroy_am241_peak )
     = run_fit( spec.foreground, spec.background, auto_peaks, sources_am241,
                empty_user_peaks, spec.isHPGe );
 
-  BOOST_REQUIRE( result_am241.status == RelActCalcAuto::RelActAutoSolution::Status::Success );
+  BOOST_REQUIRE( RelActCalcAuto::RelActAutoSolution::is_usable_status(result_am241.status) );
 
   // Verify Am-241 has a strong peak near 59.5 keV
   const PeakDef *am241_59 = find_peak_near( result_am241.observable_peaks, 59.5, 3.0 );
@@ -2242,7 +2242,7 @@ BOOST_AUTO_TEST_CASE( test_eu154_does_not_destroy_am241_peak )
                am241_user_peaks, spec.isHPGe,
                FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak );
 
-  if( result_eu154.status == RelActCalcAuto::RelActAutoSolution::Status::Success )
+  if( RelActCalcAuto::RelActAutoSolution::is_usable_status(result_eu154.status) )
   {
     verify_fit_result( result_eu154, am241_user_peaks, spec.foreground,
       FitPeaksForNuclides::FitSrcPeaksOptions::ExistingPeaksAsFreePeak );

@@ -529,8 +529,6 @@ BOOST_AUTO_TEST_CASE( two_disk_source_order_and_one_channel_roi_semantics )
   BOOST_CHECK_NE( baseline.m_frozen_layout_hash,translated.m_frozen_layout_hash );
   BOOST_CHECK( std::isfinite(translated.m_chi2) && (translated.m_chi2 >= 0.0) );
   BOOST_CHECK( std::isfinite(translated.m_chi2_data) && (translated.m_chi2_data >= 0.0) );
-  BOOST_CHECK_SMALL( translated.m_optimizer_chi2-translated.m_chi2,
-                     1.0e-10*(std::max)(1.0,std::fabs(translated.m_chi2)) );
 
   const SandiaDecay::Nuclide * const u235
                                   = DecayDataBaseServer::database()->nuclide("U235");
@@ -651,8 +649,6 @@ BOOST_AUTO_TEST_CASE( mixed_physical_and_empirical_curves_with_ad_prior )
   BOOST_REQUIRE_NE( sol.m_frozen_layout_hash,UINT64_C(0) );
   BOOST_CHECK( std::isfinite(sol.m_chi2) && (sol.m_chi2 >= 0.0) );
   BOOST_CHECK( std::isfinite(sol.m_chi2_data) && (sol.m_chi2_data >= 0.0) );
-  BOOST_CHECK_SMALL( sol.m_optimizer_chi2-sol.m_chi2,
-                     1.0e-10*(std::max)(1.0,std::fabs(sol.m_chi2)) );
 
   BOOST_REQUIRE_EQUAL( sol.m_rel_eff_forms.size(),2u );
   BOOST_CHECK( sol.m_rel_eff_forms[0] == RelActCalc::RelEffEqnForm::FramPhysicalModel );

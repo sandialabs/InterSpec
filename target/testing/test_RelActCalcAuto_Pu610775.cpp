@@ -632,7 +632,7 @@ BOOST_AUTO_TEST_CASE( free_age_grid_reports_bounded_profile_uncertainty )
   const string case_filter = filter_value ? filter_value : "";
   const PuCase *filtered_case = nullptr;
   bool checked_report_contract = false;
-  bool checked_generated_pu242_profile = false;
+  bool checked_generated_pu242_unprofiled = false;
   size_t truth_coverage_checks = 0;
   size_t expected_truth_coverage_checks = 0;
   size_t cases_checked = 0;
@@ -722,6 +722,34 @@ BOOST_AUTO_TEST_CASE( free_age_grid_reports_bounded_profile_uncertainty )
         continue;
       }
 
+      if( i == 4 )
+      {
+        // Correlation-generated Pu-242 is derived from the other Pu isotopes rather than fitted, so
+        // it has no likelihood direction and is never a profile target.  Assert that explicitly
+        // rather than merely skipping it: this is what stops the old carve-out being reinstated by
+        // accident.  Everything else this case checks about Pu-242 - the finite reported fraction,
+        // the extrapolation flags, the uncorrected sum - is untouched, because those test the
+        // reporting transform, which stays.
+        BOOST_CHECK_MESSAGE( !result.profile.has_value(),
+                             test_case.id << " generated Pu-242 was profiled; it is derived from"
+                                             " the other Pu isotopes and has no likelihood"
+                                             " direction of its own" );
+        checked_generated_pu242_unprofiled = true;
+        // Pu-242 reaches neither coverage branch: its covariance is unusable (it is derived, not
+        // fitted) and it is no longer profiled.  Drop its expected check here rather than with a
+        // blanket "-1" up front, so that the accounting stays exact if its covariance ever does
+        // become Usable - in that case the Gaussian-band branch above has already counted it and
+        // this line is never reached.  No gate replaces it: what this case asserts about Pu-242 is
+        // its finite reported fraction and its extrapolation flags, i.e. the reporting transform,
+        // which is unchanged.
+        if( require_truth_coverage )
+        {
+          BOOST_REQUIRE( expected_truth_coverage_checks > 0 );
+          --expected_truth_coverage_checks;
+        }
+        continue;
+      }
+
       BOOST_REQUIRE_MESSAGE( result.profile.has_value(),
                              test_case.id << " " << nuclides[i]->symbol
                                           << " weak covariance was not profiled" );
@@ -771,12 +799,6 @@ BOOST_AUTO_TEST_CASE( free_age_grid_reports_bounded_profile_uncertainty )
         ++truth_coverage_checks;
       }
       BOOST_CHECK_LE( result.profile->num_fits, 32u );
-      if( i == 4 )
-      {
-        BOOST_CHECK( result.profile->reason
-            == RelActCalcAuto::RelActAutoSolution::MassFractionProfileReason::AutomaticWeak );
-        checked_generated_pu242_profile = true;
-      }
     }
     BOOST_CHECK_SMALL( uncorrected_sum-1.0,1.0e-10 );
     if( runtime_extrapolated )
@@ -808,8 +830,9 @@ BOOST_AUTO_TEST_CASE( free_age_grid_reports_bounded_profile_uncertainty )
                          << "' did not match Pu93, Pu70, or Pu61" );
   BOOST_CHECK( checked_report_contract );
   BOOST_CHECK_EQUAL( truth_coverage_checks,expected_truth_coverage_checks );
-  BOOST_CHECK_MESSAGE( checked_generated_pu242_profile,
-                       "No weak correlation-generated Pu-242 quantity was automatically profiled" );
+  BOOST_CHECK_MESSAGE( checked_generated_pu242_unprofiled,
+                       "The correlation-generated Pu-242 quantity never reached the check that it"
+                       " is not offered as a profile target" );
 
   // Repeat one representative free-age case without profile scans.  This keeps the determinism
   // oracle focused on the selected physical basin/frozen objective and avoids repeating any of the
@@ -838,13 +861,36 @@ BOOST_AUTO_TEST_CASE( free_age_grid_reports_bounded_profile_uncertainty )
 }
 
 
-BOOST_AUTO_TEST_CASE( pu242_augmented_lagrangian_targets_reported_fraction_only )
+/** The plutonium arm of the pinning-validation harness: a static refit at the claimed limit.
+
+ Pinning a fit parameter gives `min over {a == a0}`, an upper bound on the exact `min over {q == q0}`
+ - delta chi2 is overstated, the threshold is crossed too early, and the interval comes out somewhat
+ too NARROW.  Nothing inside the engine can see that, so it is measured from outside: refit with the
+ mass fraction held FIXED at the endpoint the profile claims, and check the objective lands on the
+ threshold.
+
+ The one subtlety, and it is the whole reason this case is separate from the uranium one:
+ `MassFractionConstraint` pins the fraction of the modeled ELEMENT mass - the uncorrected coordinate
+ - while `mass_enrichment_fraction()` tests the Pu-correlation branch first and returns the
+ post-correlation value.  The two differ by the renormalization `q = u*(1 - f242)`, about 3.8%
+ relative on Pu70.  For Pu-240 that is ~0.007 absolute, many times the width of the interval being
+ measured, so pinning at `q*` and comparing would be measuring the wrong coordinate entirely - and
+ the natural response, loosening the tolerance until it passes, would silently bless a broken
+ oracle.
+
+ So the pin is secanted onto the reported coordinate: constrain at `u`, read back the achieved `q`,
+ correct `u` by the ratio, and refit.  `f242` depends on Pu-239, which moves, so this is iterative
+ rather than a closed-form conversion - but it converges in one correction because the
+ renormalization is smooth and nearly constant over the interval's width.  Two or three cold solves
+ per endpoint, in a test that already runs for hours.
+ */
+BOOST_AUTO_TEST_CASE( pinned_pu_endpoints_reproduce_the_threshold_on_a_fixed_fraction_refit )
 {
   initialize_paths();
   const PuCase &test_case = sm_cases[1]; // Pu70: inside the Pu-242 correlation validation range.
   const auto nuclides = pu_nuclides();
-  const SandiaDecay::Nuclide * const pu242 = nuclides[4];
-  BOOST_REQUIRE( pu242 );
+  const SandiaDecay::Nuclide * const pu240 = nuclides[2];
+  BOOST_REQUIRE( pu240 );
 
   RelActCalcAuto::Options options = preset_options();
   options.auto_profile_weak_mass_fractions = false;
@@ -856,11 +902,12 @@ BOOST_AUTO_TEST_CASE( pu242_augmented_lagrangian_targets_reported_fraction_only 
     input.fit_age = false;
     input.fit_age_min.reset();
     input.fit_age_max.reset();
-    input.force_profile_mass_fraction = false;
+    input.force_profile_mass_fraction = (RelActCalcAuto::nuclide(input.source) == pu240);
   }
 
   const auto foreground = load_measurement(test_case.spectrum);
   const auto background = load_measurement(test_case.background);
+
   RelActCalcAuto::RelActAutoSolution baseline;
   BOOST_REQUIRE_NO_THROW( baseline = RelActCalcAuto::solve(
       options,foreground,background,nullptr,{},
@@ -868,52 +915,105 @@ BOOST_AUTO_TEST_CASE( pu242_augmented_lagrangian_targets_reported_fraction_only 
   BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(baseline.m_status),
                          baseline.m_error_message );
 
-  const auto nominal = baseline.mass_enrichment_result(pu242,0);
-  BOOST_REQUIRE( std::isfinite(nominal.fraction) );
-  BOOST_REQUIRE( nominal.uncorrected_fraction.has_value() );
-  BOOST_CHECK_SMALL( *nominal.uncorrected_fraction,1.0e-14 );
-  const double requested = (std::min)(0.95,nominal.fraction + 0.002);
-  BOOST_REQUIRE_GT( requested,nominal.fraction );
+  const auto nominal = baseline.mass_enrichment_result( pu240,0 );
+  BOOST_REQUIRE_MESSAGE( nominal.profile.has_value(), "Pu-240 was not profiled" );
 
+  // Freeze the objective: the SPECTRUM peaks, not the fitted ones.  Fitted peaks would change FWHM
+  // initialization and the nonlinear-calibration anchors, i.e. change the objective, i.e. corrupt
+  // the delta chi2 being measured.
   vector<shared_ptr<const PeakDef>> frozen_peaks;
   frozen_peaks.reserve( baseline.m_fit_peaks_in_spectrums_cal.size() );
   for( const PeakDef &peak : baseline.m_fit_peaks_in_spectrums_cal )
     frozen_peaks.push_back( make_shared<const PeakDef>(peak) );
 
-  // This is the production initial penalty, chosen to make most profile points one conditional fit.
-  constexpr double penalty = 1.0e12;
-  RelActCalcAuto::Options::ProfileOnlyMassFractionConstraint constraint;
-  constraint.rel_eff_curve_index = 0;
-  constraint.nuclide = pu242; // Correlation-generated: deliberately absent from fitted inputs.
-  constraint.reported_fraction = requested;
-  constraint.lagrange_multiplier = 0.0;
-  constraint.penalty = penalty;
-  options.profile_only_mass_fraction_constraint = constraint;
+  RelActCalcAuto::Options refit_options = options;
+  for( RelActCalcAuto::NucInputInfo &input : refit_options.rel_eff_curves.at(0).nuclides )
+    input.force_profile_mass_fraction = false;
 
-  RelActCalcAuto::RelActAutoSolution conditional;
-  BOOST_REQUIRE_NO_THROW( conditional = RelActCalcAuto::solve(
-      options,foreground,background,nullptr,frozen_peaks,
-      PeakFitUtils::CoarseResolutionType::High,nullptr) );
-  BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(conditional.m_status),
-                         conditional.m_error_message );
+  const auto ninety_five = std::find_if( nominal.profile->intervals.begin(),
+                                         nominal.profile->intervals.end(),
+      []( const auto &candidate ){ return std::fabs(candidate.confidence_level - 0.95) < 0.01; } );
+  BOOST_REQUIRE( ninety_five != nominal.profile->intervals.end() );
 
-  const auto fitted = conditional.mass_enrichment_result(pu242,0);
-  BOOST_REQUIRE( std::isfinite(fitted.fraction) );
-  BOOST_REQUIRE( std::isfinite(conditional.m_profile_constraint_violation) );
-  BOOST_CHECK_SMALL( fitted.fraction-requested,3.0e-6 );
-  BOOST_CHECK_SMALL( conditional.m_profile_constraint_violation
-                       - (fitted.fraction-requested),1.0e-10 );
+  const double cov_scale = (std::max)( 1.0,baseline.m_cov_scale );
+  const double threshold = ninety_five->delta_chi2;
+  size_t endpoints_checked = 0;
 
-  // Ceres minimizes 0.5*sum(r^2); the production AL row is therefore
-  // sqrt(mu)*(h+lambda/mu).  Its diagnostic contribution is excluded from physical m_chi2.
-  const double expected_penalty_chi2
-      = penalty*conditional.m_profile_constraint_violation
-                *conditional.m_profile_constraint_violation;
-  BOOST_CHECK_SMALL( conditional.m_profile_constraint_penalty_chi2
-                       - expected_penalty_chi2,
-                     1.0e-8*(1.0+expected_penalty_chi2) );
-  BOOST_CHECK_SMALL( conditional.m_optimizer_chi2
-                       - conditional.m_chi2
-                       - conditional.m_profile_constraint_penalty_chi2,
-                     1.0e-8*(1.0+conditional.m_optimizer_chi2) );
+  const std::pair<double,RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind>
+      endpoints[2] = { {ninety_five->lower,ninety_five->lower_kind},
+                       {ninety_five->upper,ninety_five->upper_kind} };
+
+  for( const auto &endpoint : endpoints )
+  {
+    if( endpoint.second
+        != RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind::LikelihoodCrossing )
+      continue;
+
+    const double requested = endpoint.first;
+    BOOST_REQUIRE( std::isfinite(requested) && (requested > 0.0) && (requested < 1.0) );
+
+    double pinned_uncorrected = requested;   //first guess: ignore the renormalization
+    double achieved = std::numeric_limits<double>::quiet_NaN();
+    double delta = std::numeric_limits<double>::quiet_NaN();
+
+    for( int attempt = 0; attempt < 3; ++attempt )
+    {
+      RelActCalcAuto::Options trial = refit_options;
+      RelActCalcAuto::RelEffCurveInput &curve = trial.rel_eff_curves.at(0);
+      curve.mass_fraction_constraints.erase(
+          std::remove_if( curve.mass_fraction_constraints.begin(),
+                          curve.mass_fraction_constraints.end(),
+              [pu240]( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &c ){
+                return c.nuclide == pu240;
+              } ), curve.mass_fraction_constraints.end() );
+
+      RelActCalcAuto::RelEffCurveInput::MassFractionConstraint pinned;
+      pinned.nuclide = pu240;
+      pinned.lower_mass_fraction = pinned_uncorrected;
+      pinned.upper_mass_fraction = pinned_uncorrected;
+      curve.mass_fraction_constraints.push_back( pinned );
+
+      RelActCalcAuto::RelActAutoSolution refit;
+      BOOST_REQUIRE_NO_THROW( refit = RelActCalcAuto::solve(
+          trial,foreground,background,nullptr,frozen_peaks,
+          PeakFitUtils::CoarseResolutionType::High,nullptr) );
+      BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(refit.m_status),
+                             refit.m_error_message );
+
+      achieved = refit.mass_enrichment_result( pu240,0 ).fraction;
+      delta = refit.m_chi2 - baseline.m_chi2;
+      BOOST_REQUIRE( std::isfinite(achieved) && (achieved > 0.0) );
+
+      if( std::fabs(achieved - requested) <= 1.0e-5 )
+        break;
+
+      // Secant onto the reported coordinate through the renormalization.
+      pinned_uncorrected *= (requested/achieved);
+    }
+
+    ++endpoints_checked;
+    BOOST_TEST_MESSAGE( "pu-pinning-shortfall Pu240 q=" << std::setprecision(17) << requested
+                        << " achieved=" << achieved << " threshold=" << threshold
+                        << " refit_delta=" << delta << " shortfall=" << (threshold - delta)
+                        << " cov_scale=" << baseline.m_cov_scale );
+
+    BOOST_CHECK_MESSAGE( std::fabs(achieved - requested) <= 1.0e-4,
+        "the fixed-fraction refit did not reach the reported coordinate: achieved=" << achieved
+        << " requested=" << requested );
+
+    const double loose = cov_scale*(std::max)( 0.25,0.15*threshold/cov_scale );
+    BOOST_CHECK_MESSAGE( std::fabs(delta - threshold) <= loose,
+        "the refit at the predicted endpoint missed the threshold: delta=" << delta
+        << " threshold=" << threshold << " tolerance=" << loose );
+
+    // One-sided and hard: pinning can only OVERSTATE delta chi2, so the exact refit must come back
+    // at or below the threshold.  Above it means the fitted model was too flat and the interval too
+    // WIDE - the direction an uncertainty tool may never fail in silently.
+    BOOST_CHECK_MESSAGE( delta <= (threshold + 0.25*cov_scale),
+        "the refit objective exceeded the threshold, so the profile model was too flat: delta="
+        << delta << " threshold=" << threshold );
+  }
+
+  BOOST_CHECK_MESSAGE( endpoints_checked > 0,
+                       "no 95% likelihood-crossing endpoint was available to validate" );
 }

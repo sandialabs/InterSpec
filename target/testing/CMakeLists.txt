@@ -177,6 +177,13 @@ add_test( NAME TRelActCalcAuto_ProfileApi
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_RelActCalcAuto_ProfileFit test_RelActCalcAuto_ProfileFit.cpp )
+target_link_libraries( test_RelActCalcAuto_ProfileFit PRIVATE InterSpecLib )
+add_test( NAME TRelActCalcAuto_ProfileFit
+  COMMAND $<TARGET_FILE:test_RelActCalcAuto_ProfileFit> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_RelActCalcAuto_ProfileScan test_RelActCalcAuto_ProfileScan.cpp )
 target_link_libraries( test_RelActCalcAuto_ProfileScan PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcAuto_ProfileScan
@@ -193,8 +200,8 @@ target_link_libraries( rel_act_corpus_sweep PRIVATE InterSpecLib )
 
 # The JRC known-truth plutonium grid always builds, so its sources are compile-checked with every
 # other test, but it is not registered as a ctest by default: each of the three cases runs a free-age
-# solve plus up to five bounded profile-likelihood scans of 32 conditional fits each, which makes the
-# whole target a multi-hour run.  Enable the option to register it, and run it with `-L long`.
+# solve plus bounded profile-likelihood scans over every Pu isotope, which makes the whole target a
+# multi-hour run.  Enable the option to register it, and run it with `-L long`.
 # Follows the INTERSPEC_ENABLE_DECON_COVERAGE_TEST precedent further down this file.
 add_executable( test_RelActCalcAuto_Pu610775 test_RelActCalcAuto_Pu610775.cpp )
 target_link_libraries( test_RelActCalcAuto_Pu610775 PRIVATE InterSpecLib )

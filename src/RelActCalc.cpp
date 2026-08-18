@@ -25,6 +25,7 @@
 
 #include <cmath>
 #include <map>
+#include <limits>
 #include <string>
 #include <vector>
 #include <memory>
@@ -385,6 +386,24 @@ double eval_eqn( const double energy, const RelEffEqnForm eqn_form,
 }//eval_eqn(...)
 
 
+#ifndef NDEBUG
+/** Rounding bound for a floating-point quadratic form sum_ij g_i C_ij g_j, given the
+ absolute-value form sum_ij |g_i C_ij g_j|.
+
+ Higham, "Accuracy and Stability of Numerical Algorithms", 2nd ed., sec. 3.5: the error scales with
+ the absolute-value form, not with the result.  These sums are taken in the legacy monomial basis,
+ which cancels heavily, so a sum whose true value is near zero can legitimately land slightly
+ negative - most sharply when the caller evaluates near a point the fit's gauge pinned exactly (see
+ RelActAutoSolution::relative_efficiency_with_uncert()).
+ */
+double quad_form_roundoff( const size_t num_coefficients, const double abs_form )
+{
+  const double n = static_cast<double>( num_coefficients );
+  return (n*n + n)*0.5*std::numeric_limits<double>::epsilon()*abs_form;
+}//quad_form_roundoff(...)
+#endif //NDEBUG
+
+
 double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
                             const std::vector<double> &coefs,
                             const std::vector<std::vector<double>> &covariance )
@@ -400,6 +419,9 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
       const double log_energy = std::log(energy);
       
       double uncert_sq = 0.0;
+#ifndef NDEBUG
+      double abs_form = 0.0;
+#endif
       
       for( size_t i = 0; i < covariance.size(); ++i )
       {
@@ -408,10 +430,16 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
           throw runtime_error( "eval_eqn_uncertainty: covariance not a square matrix." );
         
         for( size_t j = 0; j < covariance.size(); ++j )
-          uncert_sq += std::pow(log_energy,1.0*i) * covariance[i][j] * std::pow(log_energy,1.0*j);
+        {
+          const double term = std::pow(log_energy,1.0*i) * covariance[i][j] * std::pow(log_energy,1.0*j);
+          uncert_sq += term;
+#ifndef NDEBUG
+          abs_form += std::fabs(term);
+#endif
+        }
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
-      assert( uncert_sq >= 0.0 );
+      assert( uncert_sq >= -quad_form_roundoff(covariance.size(), abs_form) );
 
       // Clamp tiny negatives from numerical noise so we never return NaN in release builds.
       return std::sqrt( std::max(0.0, uncert_sq) );
@@ -436,6 +464,9 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
       };//eval_term_log
       
       double log_uncert_sq = 0.0;
+#ifndef NDEBUG
+      double abs_form = 0.0;
+#endif
       
       for( size_t i = 0; i < covariance.size(); ++i )
       {
@@ -444,10 +475,16 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
           throw runtime_error( "eval_eqn_uncertainty: covariance not a square matrix." );
         
         for( size_t j = 0; j < covariance.size(); ++j )
-          log_uncert_sq += eval_term_log(i) * covariance[i][j] * eval_term_log(j);
+        {
+          const double term = eval_term_log(i) * covariance[i][j] * eval_term_log(j);
+          log_uncert_sq += term;
+#ifndef NDEBUG
+          abs_form += std::fabs(term);
+#endif
+        }
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
-      assert( log_uncert_sq >= 0.0 );
+      assert( log_uncert_sq >= -quad_form_roundoff(covariance.size(), abs_form) );
 
       return eval_val * std::sqrt( std::max(0.0, log_uncert_sq) );
     }//case RelEffEqnForm::LnY:
@@ -459,6 +496,9 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
       const double eval_val = eval_eqn( energy, eqn_form, coefs );
       
       double log_uncert_sq = 0.0;
+#ifndef NDEBUG
+      double abs_form = 0.0;
+#endif
       
       for( size_t i = 0; i < covariance.size(); ++i )
       {
@@ -467,10 +507,16 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
           throw runtime_error( "eval_eqn_uncertainty: covariance not a square matrix." );
         
         for( size_t j = 0; j < covariance.size(); ++j )
-        log_uncert_sq += std::pow(log_energy,1.0*i) * covariance[i][j] * std::pow(log_energy,1.0*j);
+        {
+          const double term = std::pow(log_energy,1.0*i) * covariance[i][j] * std::pow(log_energy,1.0*j);
+          log_uncert_sq += term;
+#ifndef NDEBUG
+          abs_form += std::fabs(term);
+#endif
+        }
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
-      assert( log_uncert_sq >= 0.0 );
+      assert( log_uncert_sq >= -quad_form_roundoff(covariance.size(), abs_form) );
 
       return eval_val * std::sqrt( std::max(0.0, log_uncert_sq) );
     }//case RelEffEqnForm::LnXLnY:
@@ -482,6 +528,9 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
       const double eval_val = eval_eqn( energy, eqn_form, coefs );
       
       double log_uncert_sq = 0.0;
+#ifndef NDEBUG
+      double abs_form = 0.0;
+#endif
       
       for( size_t i = 0; i < covariance.size(); ++i )
       {
@@ -507,11 +556,15 @@ double eval_eqn_uncertainty( const double energy, const RelEffEqnForm eqn_form,
             default: j_component = std::pow(log_energy, j - 1.0); break;
           }//switch( i )
           
-          log_uncert_sq += i_component * covariance[i][j] * j_component;
+          const double term = i_component * covariance[i][j] * j_component;
+          log_uncert_sq += term;
+#ifndef NDEBUG
+          abs_form += std::fabs(term);
+#endif
         }
       }//for( size_t i = 0; i < coefs.size(); ++i )
       
-      assert( log_uncert_sq >= 0.0 );
+      assert( log_uncert_sq >= -quad_form_roundoff(covariance.size(), abs_form) );
 
       return eval_val * std::sqrt( std::max(0.0, log_uncert_sq) );
     }//case RelEffEqnForm::FramEmpirical:

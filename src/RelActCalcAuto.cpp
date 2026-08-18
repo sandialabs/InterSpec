@@ -106,6 +106,7 @@
 #include "InterSpec/RelActCalcAuto_CovarianceQuality.h"
 #include "InterSpec/RelActCalcAuto_ConvergenceAudit.h"
 #include "InterSpec/RelActCalcAuto_Search_imp.hpp"
+#include "InterSpec/RelActCalcAuto_ProfileFit.h"
 #include "InterSpec/RelActCalcAuto_ProfileScan.h"
 #include "InterSpec/RelActCalcAuto_AgeDerivative.h"
 #include "InterSpec/RelActCalc_CeresJetTraits.hpp"
@@ -527,6 +528,73 @@ const double ns_decay_act_mult = SandiaDecay::MBq;
 
 // Forward declaration
 struct RelActAutoCostFcn;
+
+/** Owns one converged frame's live `ceres::Problem` so a profile scan can run its conditional
+ optimizations IN PLACE - same cost functor, same problem, same parameter buffer, warm from the
+ already-found optimum - instead of rebuilding the whole problem per conditional point.
+
+ Defined below `RelActAutoCostFcn` (it needs the complete type); `solve_ceres` only ever names it
+ through the factory declared just below, so the incomplete type here is enough.
+ */
+struct ProfileConditionalHost;
+
+/** Moves a converged frame's `problem` and its registered parameter buffer into a heap holder that
+ outlives the frame, and hands it to the returned solution.
+
+ `parameters` is MOVED, not copied: Ceres registered `parameters.data()` as its one parameter block,
+ and only a move preserves that address.  The caller must not touch its `parameters` afterwards.
+
+ @param cost_functor  The functor `problem` evaluates; must be the one whose optimum `parameters`
+                      holds.
+ @returns Null if the inputs are inconsistent (never throws - profiling is optional work).
+ */
+std::shared_ptr<ProfileConditionalHost> make_profile_conditional_host(
+                        std::shared_ptr<RelActAutoCostFcn> cost_functor,
+                        ceres::Problem &&problem,
+                        std::vector<double> &&parameters,
+                        const ceres::Solver::Options &solver_options,
+                        std::shared_ptr<std::atomic_bool> cancel_calc,
+                        std::vector<int> constant_parameters );
+
+
+/** Set `INTERSPEC_REL_ACT_PROFILE_STATS=1` to print one line per profiled quantity: which path it
+ took, how many conditional points the scanner asked for, and how many `ceres::Solve` calls those
+ actually cost.  The point is to make a slow scan diagnosable as "more points" vs "more solves per
+ point" vs "slower solves", rather than a single wall-clock number. */
+bool profile_stats_enabled()
+{
+  static const bool enabled = []() -> bool {
+    const char * const value = std::getenv( "INTERSPEC_REL_ACT_PROFILE_STATS" );
+    return value && (std::string(value) == "1");
+  }();
+  return enabled;
+}//bool profile_stats_enabled()
+
+
+/** Whether a solve of `options` could end up running a profile scan, and therefore needs to hand
+ its converged `ceres::Problem` forward for conditional solves to pin within.
+
+ This is the SINGLE source of truth for that decision: `solve_ceres` uses it to decide whether to
+ build a host, and `add_mass_fraction_profiles` uses it to decide whether to run at all.  If the two ever
+ disagree the failure is silent in both directions - a profile with no retained problem to pin
+ within, or a needlessly retained problem after every ordinary solve.
+
+ Automatic profiling is the single most expensive thing a solve can do (up to
+ `ProfileLikelihood::sm_profile_max_points_per_quantity` conditional optimizations per weak
+ quantity), so it belongs to the opt-in robust budget.  An
+ explicit per-source request is a different thing: the user asked for that specific quantity, and it
+ is honored whatever the budget.
+ */
+bool solve_may_profile( const RelActCalcAuto::Options &options )
+{
+  if( options.robust_solve && options.auto_profile_weak_mass_fractions )
+    return true;
+  for( const RelActCalcAuto::RelEffCurveInput &curve : options.rel_eff_curves )
+    for( const RelActCalcAuto::NucInputInfo &nuc : curve.nuclides )
+      if( nuc.force_profile_mass_fraction )
+        return true;
+  return false;
+}//bool solve_may_profile( const RelActCalcAuto::Options & )
 
 
 /** Evaluates FWHM from Bernstein polynomial parameters, for double type only.
@@ -2378,6 +2446,29 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   
 
   RelActCalcAuto::Options m_options;
+
+  /** Whether a profile scan may run against this functor, i.e. whether the frame that built it
+   should hand its converged `ceres::Problem` forward for conditional solves to pin within.
+
+   Set from `solve_may_profile(options)` and propagated unchanged into every recursive
+   candidate/simplify/continuum frame, so every candidate in one deterministic search compares like
+   with like. */
+  const bool m_may_host_profile;
+
+  /** True while a conditional profile point is being solved and read back.
+
+   Two places need this: `mass_enrichment_fraction`'s entry gate, which otherwise refuses to run
+   before the solution is finished, and `profile_safe_correlation`, which returns the physical
+   continuation instead of throwing when a scan point drives the Pu total toward zero - exactly the
+   singular corners a scan is built to reach.
+
+   Do NOT be tempted to drop this now that generated Pu-242 is no longer a profile target:
+   Pu-238/239/240/241 scans still run the correlation on every read-back, so the protection is
+   still needed.
+
+   Set only between solves, never during one (invariant 8): Ceres reads the functor from every
+   evaluation thread. */
+  bool m_profile_reporting_mode = false;
   std::vector<std::vector<NucInputGamma>> m_nuclides; //has same number of entries as `m_options.rel_eff_curves`
   std::vector<RoiRangeChannels> m_energy_ranges;
 
@@ -2686,9 +2777,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                      std::shared_ptr<const DetectorPeakResponse> drf,
                      std::vector<std::shared_ptr<const PeakDef>> all_peaks,
                      const PeakFitUtils::CoarseResolutionType det_type,
-                     std::shared_ptr<std::atomic_bool> cancel_calc
+                     std::shared_ptr<std::atomic_bool> cancel_calc,
+                     const bool may_host_profile
                            )
   : m_options( options ),
+    m_may_host_profile( may_host_profile ),
   m_nuclides{},
   m_energy_ranges{},
   m_mass_frac_blocks{},
@@ -3710,8 +3803,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//number_parameters()
 
 
-  /** Residual rows belonging to the configured physical/data objective.  A transient profile-only
-   augmented-Lagrangian equality, when present, is deliberately excluded. */
+  /** Residual rows belonging to the configured physical/data objective. */
   size_t number_physical_residuals() const
   {
     // Number of gamma channels.  Empirical efficiency normalization is an exact fixed-pivot
@@ -3730,10 +3822,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//size_t number_physical_residuals() const
 
 
+  /** Total residual rows in the optimizer problem.
+
+   Identical to `number_physical_residuals()` by design: every residual row is physical (the data
+   channels plus the prior rows `m_chi2` sums), and profile conditionals restrict a parameter with a
+   manifold rather than adding any row.  If a non-physical row is ever added again, it must be
+   excluded from `m_chi2` - and hence from every delta-chi2 the profile machinery thresholds - by
+   re-splitting these two counts.
+   */
   size_t number_residuals() const
   {
-    return number_physical_residuals()
-           + (m_options.profile_only_mass_fraction_constraint ? size_t(1) : size_t(0));
+    return number_physical_residuals();
   }//size_t number_residuals() const
 
 
@@ -4149,7 +4248,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                                         const bool defer_continuum_outer_check = false,
                                                         const std::vector<std::pair<double,double>> *frozen_peak_ranges_with_uncert = nullptr,
                                                         const FrozenModelPolicy *frozen_model_policy = nullptr,
-                                                        const bool all_peaks_are_frozen = false
+                                                        const bool all_peaks_are_frozen = false,
+                                                        const bool may_host_profile = false
                                                         )
   {
     // Automatic simplification is deliberately a second, selected-basin phase.  Running backward
@@ -4177,7 +4277,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           unsimplified_options,foreground,background,input_drf,all_peaks,det_type,cancel_calc,
           search_seed_variant,true,semantic_warm_start,allow_candidate_search,
           frozen_continuum_policies,continuum_outer_pass,defer_continuum_outer_check,
-          frozen_peak_ranges_with_uncert,frozen_model_policy,all_peaks_are_frozen );
+          frozen_peak_ranges_with_uncert,frozen_model_policy,all_peaks_are_frozen,
+          may_host_profile );
 
       const bool selected_usable
           = RelActCalcAuto::RelActAutoSolution::is_usable_status(selected.m_status);
@@ -4216,7 +4317,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           det_type,cancel_calc,
           search_seed_variant,false,&selected,false,selected_policies,
           continuum_outer_pass,defer_continuum_outer_check,selected_frozen_peak_ranges,
-          frozen_model_policy,true );
+          frozen_model_policy,true,may_host_profile );
 
       const bool simplification_kept_inputs = simplified.m_cost_functor
           && simplified.m_cost_functor->exact_retained_inputs_match(
@@ -4311,37 +4412,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const string why_unusable = options.why_not_usable();
       if( !why_unusable.empty() )
         throw runtime_error( why_unusable );
-
-      if( options.profile_only_mass_fraction_constraint )
-      {
-        const RelActCalcAuto::Options::ProfileOnlyMassFractionConstraint &profile_constraint
-            = *options.profile_only_mass_fraction_constraint;
-        if( !profile_constraint.nuclide
-            || (profile_constraint.rel_eff_curve_index >= options.rel_eff_curves.size())
-            || !std::isfinite(profile_constraint.reported_fraction)
-            || (profile_constraint.reported_fraction < 0.0)
-            || (profile_constraint.reported_fraction > 1.0)
-            || !std::isfinite(profile_constraint.lagrange_multiplier)
-            || !std::isfinite(profile_constraint.penalty)
-            || !(profile_constraint.penalty > 0.0) )
-          throw runtime_error( "Invalid profile-only reported mass-fraction constraint." );
-
-        const RelActCalcAuto::RelEffCurveInput &profile_curve
-            = options.rel_eff_curves[profile_constraint.rel_eff_curve_index];
-        bool target_is_available = false;
-        for( const RelActCalcAuto::NucInputInfo &input : profile_curve.nuclides )
-          target_is_available = target_is_available
-                                || (RelActCalcAuto::nuclide(input.source)
-                                    == profile_constraint.nuclide);
-        // Pu-242 is generated by correlation and is therefore intentionally absent from inputs.
-        target_is_available = target_is_available
-            || ((profile_constraint.nuclide->atomicNumber == 94)
-                && (profile_constraint.nuclide->massNumber == 242)
-                && (profile_curve.pu242_correlation_method
-                    != RelActCalc::PuCorrMethod::NotApplicable));
-        if( !target_is_available )
-          throw runtime_error( "Profile-only mass-fraction target is not available on its curve." );
-      }
 
       solution.m_fwhm_form = options.fwhm_form;
       for( const auto &rel_eff_curve : options.rel_eff_curves )
@@ -4635,7 +4705,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         throw runtime_error( "User cancelled calculation." );
       
       auto functor = new RelActAutoCostFcn( options, spectrum, channel_count_uncerts,
-                                           solution.m_drf, all_peaks, det_type, cancel_calc );
+                                           solution.m_drf, all_peaks, det_type, cancel_calc,
+                                           may_host_profile );
       cost_functor.reset( functor );
     }catch( std::exception &e )
     {
@@ -7628,9 +7699,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       assert( n_par == x.size() );
 
       const auto make_fresh_functor = [fcn]() {
+        // The oracle compares residual vectors row for row, so the clone must have the same rows -
+        // including a present-but-dormant profile row.
         auto fresh = std::make_unique<RelActAutoCostFcn>(
             fcn->m_options, fcn->m_spectrum, fcn->m_channel_count_uncerts, fcn->m_drf,
-            fcn->m_all_peaks, fcn->m_det_type, fcn->m_cancel_calc );
+            fcn->m_all_peaks, fcn->m_det_type, fcn->m_cancel_calc, fcn->m_may_host_profile );
 
         // These fields are finalized by solve setup/seeding after construction and are all part of
         // the mathematical problem.  Copy values, but deliberately not the aged-gamma cache,
@@ -8883,7 +8956,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     // Fills the per-parameter uncertainties and the rel-eff / rel-act / FWHM covariance sub-blocks
     //  from solution.m_covariance (which must already be filled, num_pars x num_pars).
-    // TODO: check the covariance is actually defined right (like not swapping row/col, calling the right places, etc).
+    // The row/col question the TODO below used to raise is settled: this block used to write
+    //  cov[j-start][i-start], i.e. the transpose.  m_covariance is a congruence of a symmetric
+    //  matrix, and measured on the Lu177m_shielded fit max|C - C^T|/max|C| = 1.6e-18, so the
+    //  index order was a no-op; it is now written the way it reads.
+    // TODO: check the covariance is otherwise defined right (calling the right places, etc).
     const auto fill_covariance_consumers = [&]()
     {
       for( size_t i = 0; i < num_pars; ++i )
@@ -8903,7 +8980,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         for( size_t i = start; i < (start + num); ++i )
         {
           for( size_t j = start; j < (start + num); ++j )
-            cov[j-start][i-start] = solution.m_covariance[i][j];
+            cov[i-start][j-start] = solution.m_covariance[i][j];
         }
       };
 
@@ -9011,10 +9088,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // ---------------------------------------------------------------------------------------------
     size_t num_effective_paramaters = num_pars;
 
-    // Conditional profile solves need only the optimized physical objective and reported fraction;
-    // their augmented-Lagrangian Jacobian is not the covariance of the unconstrained fit.  Skipping
-    // this expensive matrix construction also keeps the profile's <=32 conditional solves practical.
-    if( success && !options.profile_only_mass_fraction_constraint )
+    if( success )
     {
       solution.m_covariance.clear();
       solution.m_phys_units_cov.clear();
@@ -9157,11 +9231,22 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         solution.m_num_rank_deficient_dirs = (npar_eff_equil < num_free_pars)
                                              ? (num_free_pars - npar_eff_equil) : size_t(0);
         if( npar_eff_equil < num_free_pars )
+        {
           solution.m_warnings.push_back( "The fit is rank-deficient: " + std::to_string(num_free_pars - npar_eff_equil)
                               + " of " + std::to_string(num_free_pars) + " fit parameters are effectively"
                               " unconstrained by the data (near-degenerate directions).  Per-parameter"
                               " uncertainties omit these directions; derived quantities (enrichment,"
                               " relative-efficiency band) that depend on them are flagged and widened instead." );
+
+          // A direction the data does not constrain is exactly what `UsableWithWarnings` is for:
+          // results are available and may be perfectly good, but no first-party surface should
+          // present them without the accompanying warning.  Reporting plain `Success` here has been
+          // actively misleading - a rank-deficient 610-775 keV fit returned `Success` while reporting
+          // 0.0000 wt% Pu-240 against a certified 5.99 wt%.  Only ever a downgrade: a solve that
+          // already failed, was cancelled, or was audited into UsableWithWarnings keeps its status.
+          if( solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success )
+            solution.m_status = RelActCalcAuto::RelActAutoSolution::Status::UsableWithWarnings;
+        }
 
         // Truncated pseudo-inverse in the equilibrated basis, mapped back:
         //  C_tan = D * V * S^-2 * V^T * D   (dropped directions contribute zero)
@@ -9377,7 +9462,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           fill_covariance_consumers();
         }//if( Ceres covariance also failed ) / else
       }//try / catch( scale-invariant covariance )
-    }//if( solution.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success )
+    }//if( is_usable_status(solution.m_status) )
 
 
     // -------------------------------------------------------------------------------------------
@@ -10388,30 +10473,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( size_t residual_index = 0; residual_index < num_physical_residuals; ++residual_index )
       solution.m_chi2 += residuals[residual_index]*residuals[residual_index];
 
-    solution.m_optimizer_chi2 = solution.m_chi2;
-    solution.m_profile_constraint_penalty_chi2 = 0.0;
-    solution.m_profile_constraint_violation = std::numeric_limits<double>::quiet_NaN();
-    if( options.profile_only_mass_fraction_constraint )
-    {
-      assert( num_residuals == (num_physical_residuals + 1) );
-      const double penalty_residual = residuals[num_physical_residuals];
-      solution.m_profile_constraint_penalty_chi2 = penalty_residual*penalty_residual;
-      solution.m_optimizer_chi2 += solution.m_profile_constraint_penalty_chi2;
-
-      const RelActCalcAuto::Options::ProfileOnlyMassFractionConstraint &constraint
-          = *options.profile_only_mass_fraction_constraint;
-      try
-      {
-        const double actual_fraction = cost_functor->mass_enrichment_fraction(
-            RelActCalcAuto::SrcVariant(constraint.nuclide),
-            constraint.rel_eff_curve_index,parameters );
-        solution.m_profile_constraint_violation = actual_fraction-constraint.reported_fraction;
-      }catch( const std::exception & )
-      {
-        // Keep the independently evaluated physical objective usable even if this diagnostic fails.
-      }
-    }
-
     solution.m_dof = ((num_physical_residuals >= num_effective_paramaters)
                       ? (num_physical_residuals - num_effective_paramaters) : size_t(0));
 
@@ -10650,7 +10711,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                   options,foreground,background,frozen_input_solution.m_drf,
                   frozen_input_solution.m_spectrum_peaks,det_type,cancel_calc,
                   variant,false,candidate_warm_start,false,&continuum_policies_for_pass,
-                  continuum_outer_pass,true,&peak_ranges_for_pass,frozen_model_policy,true );
+                  continuum_outer_pass,true,&peak_ranges_for_pass,frozen_model_policy,true,
+                  may_host_profile );
             if( !candidate.m_cost_functor
                 || !candidate.m_cost_functor->continuum_policies_match(
                                                       continuum_policies_for_pass) )
@@ -10750,7 +10812,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 det_type,cancel_calc,
                 search_seed_variant,force_candidate_search,&solution,allow_candidate_search,
                 &classified,continuum_outer_pass + 1,false,&peak_ranges_for_pass,
-                frozen_model_policy,true );
+                frozen_model_policy,true,may_host_profile );
             if( !refined.m_cost_functor
                 || !refined.m_cost_functor->exact_retained_inputs_match(
                                         solution.m_drf,solution.m_spectrum_peaks) )
@@ -10826,6 +10888,30 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     }
 
     restore_caller_source_order( solution, caller_options );
+
+    // Hand this frame's converged problem to the solution so a post-fit profile scan can run its
+    // conditional optimizations in place (see `ProfileConditionalHost`).  Every frame that builds a
+    // functor does this, not just the outermost one: the deterministic candidate search picks a
+    // winner among frames that have already returned, so the only way the winning solution reliably
+    // carries a live warm problem is for each solution to carry its own.  The losers' hosts die with
+    // the losers.
+    //
+    // MUST be last: `parameters` is MOVED (Ceres registered `parameters.data()` as its parameter
+    // block, and only a move preserves that address), so this frame may not touch `parameters`
+    // afterwards.
+    //
+    // Construction is UNCONDITIONAL given a usable frame that was told it may profile: the host
+    // is how a profile pins a parameter and re-solves in place, and it is the only conditional
+    // mechanism there is.
+    if( may_host_profile
+        && RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status)
+        && (solution.m_cost_functor.get() == cost_functor.get()) )
+    {
+      solution.m_profile_host = make_profile_conditional_host( cost_functor, std::move(problem),
+                                        std::move(parameters), ceres_options, cancel_calc,
+                                        constant_parameters );
+    }
+
     return solution;
   }//RelActCalcAuto::RelActAutoSolution solve_ceres( ceres::Problem &problem )
   
@@ -12276,8 +12362,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     if( rel_eff_index >= m_nuclides.size() )
       throw std::logic_error( "mass_enrichment_fraction: invalid relative efficiency curve index." );
     
-    assert( m_solution_finished || m_options.profile_only_mass_fraction_constraint );
-    if( !m_solution_finished && !m_options.profile_only_mass_fraction_constraint )
+    assert( m_solution_finished || m_profile_reporting_mode );
+    if( !m_solution_finished && !m_profile_reporting_mode )
       throw std::logic_error( "mass_enrichment_fraction: should only be called after minimiztion has been completed." );
     
     assert( !RelActCalcAuto::is_null(src) );
@@ -12344,8 +12430,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       }
       
       const RelActCalc::PuCorrMethod method = rel_eff_curve.pu242_correlation_method;
-      const bool profile_safe_correlation
-          = m_options.profile_only_mass_fraction_constraint.has_value();
+      // See `m_profile_reporting_mode`: a scan point can legitimately drive the Pu total toward
+      // zero, where the correlation is singular, and the safe path returns the physical
+      // continuation rather than throwing.
+      const bool profile_safe_correlation = m_profile_reporting_mode;
       const double pu_total_mass_scalar = RelActCalc::rel_eff_scalar_value(pu_total_mass);
       const double raw_component_scalars[] = {
         RelActCalc::rel_eff_scalar_value(raw_rel_masses.pu238_rel_mass),
@@ -12434,6 +12522,8 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     
     return nuc_rel_mass / sum_rel_mass;
   }//T mass_enrichment_fraction(...)
+
+
 
 
   /** If the passed in index is the RelativeActivity index of a mass-constrained nuclide, will return the
@@ -14801,29 +14891,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       ++residual_index;
     }//for( loop over Physical-Model parameter priors )
 
-    // Profile-only augmented-Lagrangian equality.  Written last so every preceding row remains
-    // exactly the frozen physical objective.  Ceres minimizes one half the residual sum of
-    // squares, so this row contributes
-    //   (mu/2) * (h + lambda/mu)^2
-    // which differs from lambda*h + (mu/2)*h^2 only by a parameter-independent constant.  The
-    // reported fraction function includes Pu-242 correlation, age correction, and renormalization.
-    if( m_options.profile_only_mass_fraction_constraint )
-    {
-      const RelActCalcAuto::Options::ProfileOnlyMassFractionConstraint &constraint
-          = *m_options.profile_only_mass_fraction_constraint;
-      assert( constraint.nuclide );
-      assert( constraint.rel_eff_curve_index < m_options.rel_eff_curves.size() );
-      assert( constraint.penalty > 0.0 );
-      const T reported = mass_enrichment_fraction(
-          RelActCalcAuto::SrcVariant(constraint.nuclide),constraint.rel_eff_curve_index,x );
-      const T h = reported - T(constraint.reported_fraction);
-      residuals[residual_index] = T(std::sqrt(constraint.penalty))
-                                * (h + T(constraint.lagrange_multiplier/constraint.penalty));
-      if( isnan(residuals[residual_index]) || isinf(residuals[residual_index]) )
-        throw std::runtime_error( "Profile-only reported-fraction residual is non-finite." );
-      ++residual_index;
-    }
-
     assert( residual_index == number_residuals() );
 #ifndef NDEBUG
     // Non-fatal, for the same reason as `check_jet_for_NaN` in PeakDists_imp.hpp: a Levenberg-
@@ -14904,6 +14971,862 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     return true;
   };//bool operator() - for Ceres
 };//struct RelActAutoCostFcn
+
+
+/** Owns one converged frame's live `ceres::Problem` so a profile scan can run its conditional
+ optimizations in place: same cost functor, same problem, same registered parameter buffer, warm
+ from the already-found optimum.
+
+ The old design rebuilt the cost functor and the entire `ceres::Problem` for every conditional point
+ of every scan, then made Ceres re-find the basin cold - while the unconstrained optimum, the exact
+ information needed to start warm, was sitting right there and being thrown away.  A robust Pu solve
+ spent about half an hour on that.
+
+ Not thread safe by design and not meant to be: a `ceres::Solve` evaluates residuals on several
+ threads and reads the armed constraint from every one of them, so the constraint may only be
+ mutated between solves.  `m_solve_in_flight` asserts exactly that (invariant 8).
+ */
+struct ProfileConditionalHost
+{
+  ProfileConditionalHost( std::shared_ptr<RelActAutoCostFcn> cost_functor,
+                          ceres::Problem &&problem,
+                          std::vector<double> &&parameters,
+                          const ceres::Solver::Options &solver_options,
+                          std::shared_ptr<std::atomic_bool> cancel_calc,
+                          std::vector<int> constant_parameters )
+  : m_cost_functor( std::move(cost_functor) ),
+    m_parameters( std::move(parameters) ),   //a MOVE: only it preserves the registered address
+    m_parameter_block( m_parameters.data() ),
+    m_solver_options( solver_options ),
+    m_cancel_calc( std::move(cancel_calc) ),
+    m_terminate_callback(),
+    m_constant_parameters( std::move(constant_parameters) ),
+    m_pinned_index(),
+    m_optimum( m_parameters ),
+    m_optimum_objective( std::numeric_limits<double>::quiet_NaN() ),
+    m_solve_in_flight( false ),
+    m_num_conditional_solves( 0 ),
+    m_problem( std::move(problem) )
+  {
+    std::sort( begin(m_constant_parameters), end(m_constant_parameters) );
+    assert( m_cost_functor );
+    assert( m_parameters.size() == m_cost_functor->number_parameters() );
+
+    // The frame we were built from registered a callback it owned on its own stack.  Copying its
+    // solver options copies that raw pointer, which is dangling the moment the frame returns - so
+    // drop every inherited callback and own a fresh one.
+    m_solver_options.callbacks.clear();
+    if( m_cancel_calc )
+    {
+      m_terminate_callback.reset(
+                new RelActAutoCostFcn::CheckCeresTerminateCallback(m_cancel_calc) );
+      m_solver_options.callbacks.push_back( m_terminate_callback.get() );
+    }
+
+    m_optimum_objective = physical_objective( m_optimum );
+  }//ProfileConditionalHost constructor
+
+  ProfileConditionalHost( const ProfileConditionalHost & ) = delete;
+  ProfileConditionalHost &operator=( const ProfileConditionalHost & ) = delete;
+
+  /** The unconstrained optimum this host was built at. */
+  const std::vector<double> &optimum() const { return m_optimum; }
+
+  /** The physical objective at `optimum()`; the delta-chi2 baseline for every conditional. */
+  double optimum_objective() const { return m_optimum_objective; }
+
+  size_t num_conditional_solves() const { return m_num_conditional_solves; }
+
+  const RelActAutoCostFcn *cost_functor() const { return m_cost_functor.get(); }
+
+  /** The objective at an arbitrary point. */
+  double physical_objective( const std::vector<double> &x ) const
+  {
+    const size_t num_residuals = m_cost_functor->number_residuals();
+    std::vector<double> residuals( num_residuals, 0.0 );
+    m_cost_functor->eval( x, residuals.data() );
+    double chi2 = 0.0;
+    for( size_t row = 0; row < num_residuals; ++row )
+      chi2 += residuals[row]*residuals[row];
+    return chi2;
+  }//double physical_objective( const std::vector<double> & ) const
+
+
+  /** Builds a solution that seeds a fresh cold `solve_ceres` at `parameters`.
+
+   A conditional point discovered in place is only a parameter vector, but the one thing that
+   consumes a better-baseline discovery - the single permitted baseline reselection - wants a
+   `RelActAutoSolution` to warm start from.  Fill exactly the fields that warm start reads:
+   the named parameter values, and the per-curve legacy relative-efficiency coefficients and
+   source activities/ages that let it re-express the point in a possibly different QR frame.
+
+   @param primary  The solution this host belongs to; supplies the layout, names, and every field
+                   the warm start does not re-derive.
+   */
+  RelActCalcAuto::RelActAutoSolution warm_start_solution(
+                    const RelActCalcAuto::RelActAutoSolution &primary,
+                    const std::vector<double> &parameters ) const
+  {
+    RelActCalcAuto::RelActAutoSolution seed = primary;
+    seed.m_profile_host.reset();   //a seed never owns an optimizer problem
+    if( parameters.size() != m_parameters.size() )
+      return seed;
+
+    seed.m_final_parameters = parameters;
+    seed.m_chi2 = physical_objective( parameters );
+
+    try
+    {
+      for( size_t curve = 0; curve < seed.m_rel_eff_coefficients.size(); ++curve )
+        seed.m_rel_eff_coefficients[curve]
+              = m_cost_functor->pars_for_rel_eff_curve( curve, parameters );
+
+      for( size_t curve = 0; curve < seed.m_rel_activities.size(); ++curve )
+      {
+        for( RelActCalcAuto::NuclideRelAct &entry : seed.m_rel_activities[curve] )
+        {
+          entry.rel_activity = m_cost_functor->relative_activity( entry.source, curve, parameters );
+          const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(entry.source);
+          if( nuc )
+            entry.age = m_cost_functor->age( m_cost_functor->input_src_info(entry.source,curve),
+                                             curve, parameters );
+        }
+      }
+    }catch( const std::exception & )
+    {
+      // The by-name parameter transfer alone still seeds the restart at this point; the per-curve
+      // re-expression is a refinement, not a requirement.
+    }
+
+    return seed;
+  }//RelActAutoSolution warm_start_solution(...)
+
+  /** Which parameter a profile of `source` on `curve` should pin, or why none can be.
+
+   Every profilable target has a coordinate of its own; the table below is section 3.1 of the plan.
+   The exactness of the pin varies (an activity pin moves the reported fraction only as the siblings
+   reoptimize), but the mechanism does not: pin one index, re-solve, read the achieved quantity back.
+   */
+  struct PinSelection
+  {
+    std::optional<size_t> index;
+    /** Empty exactly when `index` is set. */
+    std::string why_not;
+  };
+
+  PinSelection pin_index_for( const RelActCalcAuto::SrcVariant &source, const size_t curve ) const
+  {
+    PinSelection answer;
+    const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( source );
+    if( !nuc )
+    {
+      answer.why_not = "Only a nuclide has an isotopic coordinate to profile.";
+      return answer;
+    }
+
+    if( curve >= m_cost_functor->m_options.rel_eff_curves.size() )
+    {
+      answer.why_not = "The profile target names a relative efficiency curve that does not exist.";
+      return answer;
+    }
+
+    // An ActRatioConstraint-controlled source's own slot is inert (`activity_multiple == -1`), so
+    // pinning it would do nothing at all and every scan point would land on the same place.  Walk
+    // the chain to its ROOT and pin that instead: it scales the whole rigid group, which is the
+    // only handle the group has.
+    RelActCalcAuto::SrcVariant pin_source = source;
+    const RelActCalcAuto::RelEffCurveInput &curve_input
+        = m_cost_functor->m_options.rel_eff_curves[curve];
+    for( size_t hop = 0; hop <= curve_input.act_ratio_constraints.size(); ++hop )
+    {
+      const auto controlled = std::find_if( begin(curve_input.act_ratio_constraints),
+                                            end(curve_input.act_ratio_constraints),
+          [&pin_source]( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint ){
+            return constraint.constrained_source == pin_source;
+          } );
+      if( controlled == end(curve_input.act_ratio_constraints) )
+        break;
+      pin_source = controlled->controlling_source;
+    }
+
+    // A mass-fraction-constrained source is parameterized through the element's sigma block, not
+    // through an activity.  Which slot carries it depends on the block's shape.
+    for( const RelActAutoCostFcn::MassFracBlock &block : m_cost_functor->m_mass_frac_blocks[curve] )
+    {
+      if( block.atomic_number != nuc->atomicNumber )
+        continue;
+
+      const bool is_fixed = std::count( begin(block.fixed_nucs), end(block.fixed_nucs), nuc ) > 0;
+      if( is_fixed )
+      {
+        answer.why_not = std::string(nuc->symbol) + "'s mass fraction is fixed by input, so it has"
+                         " no free coordinate and no likelihood direction to profile.";
+        return answer;
+      }
+
+      const auto ranged = std::find( begin(block.range_nucs), end(block.range_nucs), nuc );
+      if( ranged == end(block.range_nucs) )
+        continue;   //unconstrained nuclide of a partly-constrained element: ordinary activity slot
+
+      // With exactly one range nuclide the carrier slot IS the reported fraction (`this_frac ==
+      // sigma`), so the pin is exact - but only where no Pu correlation is renormalizing the
+      // reported coordinate on top of it.  With two or more, the carrier pins the constrained TOTAL
+      // and a `dist_par` pins one stick-breaking coordinate; neither pins `q`, which simply moves.
+      const size_t position = static_cast<size_t>( std::distance(begin(block.range_nucs),ranged) );
+      const size_t slot = (position == 0) ? block.carrier_par : block.dist_pars[position-1];
+      if( slot >= m_parameters.size() )
+      {
+        answer.why_not = std::string(nuc->symbol) + "'s mass-fraction block has no usable slot.";
+        return answer;
+      }
+      if( std::binary_search(begin(m_constant_parameters),end(m_constant_parameters),
+                             static_cast<int>(slot)) )
+      {
+        answer.why_not = std::string(nuc->symbol) + "'s mass-fraction coordinate is held constant by"
+                         " the selected model, so every scan point would be the same point.";
+        return answer;
+      }
+      answer.index = slot;
+      return answer;
+    }//for( mass-fraction blocks of this curve )
+
+    size_t activity_index = 0;
+    try
+    {
+      activity_index = m_cost_functor->nuclide_parameter_index( pin_source, curve );
+    }catch( const std::exception &e )
+    {
+      answer.why_not = std::string("No activity parameter for the profile target: ") + e.what();
+      return answer;
+    }
+
+    if( activity_index >= m_parameters.size() )
+    {
+      answer.why_not = "The profile target's activity parameter is out of range.";
+      return answer;
+    }
+
+    // Refuse LOUDLY rather than scanning a constant: every point would be the same point, every
+    // delta-chi2 zero, the fitted curvature zero, and the interval would span the whole feasible
+    // range - a confident-looking `NonIdentifiable` that is simply wrong.
+    if( std::binary_search(begin(m_constant_parameters),end(m_constant_parameters),
+                           static_cast<int>(activity_index)) )
+    {
+      answer.why_not = std::string(nuc->symbol) + "'s activity is held constant (a fixed activity"
+                       " range, a ratio-constrained slot, or a degenerate mass-fraction carrier), so"
+                       " it has no direction to profile along.";
+      return answer;
+    }
+
+    answer.index = activity_index;
+    return answer;
+  }//PinSelection pin_index_for( const SrcVariant &, size_t ) const
+
+
+  /** The feasible box for a parameter, as Ceres holds it. */
+  std::pair<double,double> parameter_bounds( const size_t index ) const
+  {
+    return { m_problem.GetParameterLowerBound(m_parameter_block,static_cast<int>(index)),
+             m_problem.GetParameterUpperBound(m_parameter_block,static_cast<int>(index)) };
+  }
+
+  double optimum_parameter( const size_t index ) const
+  {
+    return (index < m_optimum.size()) ? m_optimum[index]
+                                      : std::numeric_limits<double>::quiet_NaN();
+  }
+
+  /** Install a manifold pinning `index`, for the whole of one target's scan.
+
+   ONE manifold per target, not per point: the manifold encodes only WHICH indices are constant,
+   while the pinned VALUE lives in the parameter buffer, so it is set once at target entry and
+   replaced once at exit.  That matters because Ceres takes ownership of a manifold passed to
+   `SetManifold` and drains `manifolds_to_delete_` only in `~ProblemImpl`, so every call accumulates
+   until the Problem dies - bounded and negligible at two per target, six times faster-growing per
+   point for no benefit.
+   */
+  bool set_pin( const size_t index )
+  {
+    assert( !m_solve_in_flight );
+    if( index >= m_parameters.size() )
+      return false;
+    if( std::binary_search(begin(m_constant_parameters),end(m_constant_parameters),
+                           static_cast<int>(index)) )
+      return false;
+
+    std::vector<int> constants = m_constant_parameters;
+    constants.push_back( static_cast<int>(index) );
+    std::sort( begin(constants), end(constants) );
+
+    const int num_pars = static_cast<int>( m_parameters.size() );
+    if( static_cast<size_t>(constants.size()) >= m_parameters.size() )
+      return false;   //a SubsetManifold may not fix every coordinate
+
+    m_problem.SetManifold( m_parameter_block, new ceres::SubsetManifold(num_pars,constants) );
+    m_pinned_index = index;
+    return true;
+  }//bool set_pin( size_t )
+
+  /** Put the production manifold back exactly as the solve left it. */
+  void clear_pin()
+  {
+    assert( !m_solve_in_flight );
+    if( !m_pinned_index )
+      return;
+    const int num_pars = static_cast<int>( m_parameters.size() );
+    if( m_constant_parameters.empty() )
+      m_problem.SetManifold( m_parameter_block, nullptr );
+    else
+      m_problem.SetManifold( m_parameter_block,
+                             new ceres::SubsetManifold(num_pars,m_constant_parameters) );
+    m_pinned_index.reset();
+  }//void clear_pin()
+
+  /** Gradient of the reported mass fraction with respect to every parameter, by autodiff.
+
+   Chunked over `sm_auto_diff_stride_size` exactly as `RelActAutoSolution::mass_enrichment_fraction`
+   does for its delta-method uncertainty; this is the same object, taken at an arbitrary point.
+   */
+  std::vector<double> reported_gradient( const RelActCalcAuto::SrcVariant &source, const size_t curve,
+                                         const std::vector<double> &x ) const
+  {
+    constexpr size_t stride = RelActAutoCostFcn::sm_auto_diff_stride_size;
+    typedef ceres::Jet<double,stride> Jet;
+
+    const size_t num_pars = m_cost_functor->number_parameters();
+    std::vector<double> gradient( num_pars, 0.0 );
+    const ReportingModeGuard reporting_guard( m_cost_functor.get() );
+
+    for( size_t i = 0; i < num_pars; i += stride )
+    {
+      std::vector<Jet> x_local( begin(x), end(x) );
+      for( size_t j = 0; (j < stride) && ((i+j) < num_pars); ++j )
+        x_local[i+j].v[j] = 1.0;
+      const Jet value = m_cost_functor->mass_enrichment_fraction( source, curve, x_local );
+      for( size_t j = 0; (j < stride) && ((i+j) < num_pars); ++j )
+        gradient[i+j] = value.v[j];
+    }
+
+    return gradient;
+  }//std::vector<double> reported_gradient(...)
+
+
+  /** Outcome of one level-set refinement. */
+  struct LevelSetStep
+  {
+    bool improved = false;
+    std::vector<double> parameters;
+    double physical_chi2 = std::numeric_limits<double>::quiet_NaN();
+  };
+
+
+  /** Reduce the objective while holding the REPORTED quantity fixed, from a pinned conditional point.
+
+   This corrects the one known bias of profiling by pinning a parameter.  Pinning `a == a0` picks
+   *some* feasible point of `{q == q(a0)}`, so the objective there is an UPPER bound on the exact
+   conditional minimum at that same `q`.  Delta chi2 is overstated, the threshold is crossed early,
+   and the reported interval comes out too narrow.  In the quadratic/linear regime the overstatement
+   is exactly `1/r^2`, where `r` is the correlation between the pinned parameter and the delta-method
+   linearization of `q` - a cosine in the covariance metric, so the interval is narrow by `|r|`.
+
+   The target point is the in-model constrained minimum at the ACHIEVED reported value:
+
+       x_target = x_optimum + (q_achieved - q_nominal) * Cov*u / (u . Cov*u),   u = grad q
+
+   and the search runs along the chord from the current point to that target.
+
+   TWO OF THE THREE INGREDIENTS ARE MEASURED, NOT MODELLED, AND THAT IS THE POINT.  Written out, the
+   step is "retreat from the conditional point back to the optimum, then advance along the profile
+   direction to the same `q`".  The retreat leg is `x_optimum - x`, which is known EXACTLY - no
+   model, no differencing, valid however curved the true conditional path is, and it absorbs
+   whatever the restart loop actually did.  An earlier version estimated that leg from the
+   covariance's pinned column scaled by a multiplier `lambda`, which threw away a known quantity in
+   favour of a modelled one and imported the frozen metric's error twice over.  The reported
+   displacement is likewise the achieved value, not a predicted one.
+
+   What remains modelled is only the DIRECTION of `Cov*u`, and that is irreducible without extra
+   evaluation: the pinned sweep only ever excites `H^-1 e_k`-related directions, so no amount of
+   sweep data can recover the component of `H^-1 u` transverse to the path.  Evaluations probe it;
+   nothing free does.
+
+   WHY THIS IS APPLIED BY EVALUATION AND NOT BY SUBTRACTING AN ANALYTIC ESTIMATE: for any feasible
+   `x`, `chi2(x) >= min{ chi2 : q == q(x) }`.  So the returned point is still a rigorous upper bound
+   on the exact profile AT ITS OWN ACHIEVED `q`, exactly as the pinned point was - merely a tighter
+   one.  A correction can therefore only move a sample toward the truth from the narrow side; it can
+   never push it below and widen the interval, which is the failure direction an uncertainty tool
+   must never have silently.  A step that is wrong for any reason - stale Hessian, an active bound,
+   third-order terms - simply fails the `chi2` comparison and is discarded.
+
+   @param covariance  Ambient parameter covariance at the unconstrained optimum (`Cov == 2 H^-1`).
+   */
+  LevelSetStep refine_on_level_set( const std::vector<double> &x,
+                                    const double x_chi2,
+                                    const double x_reported,
+                                    const double baseline_reported,
+                                    const std::vector<std::vector<double>> &covariance,
+                                    const RelActCalcAuto::SrcVariant &source,
+                                    const size_t curve )
+  {
+    LevelSetStep answer;
+
+    const size_t num_pars = m_parameters.size();
+    if( (x.size() != num_pars) || (covariance.size() != num_pars) || (m_optimum.size() != num_pars)
+        || !std::isfinite(x_chi2) || !std::isfinite(x_reported) || !std::isfinite(baseline_reported) )
+      return answer;
+
+    const double reported_displacement = x_reported - baseline_reported;
+    if( !(std::fabs(reported_displacement) > 0.0) )
+      return answer;   //at the vertex there is nothing to correct
+
+    std::vector<double> u;
+    try
+    {
+      u = reported_gradient( source, curve, x );
+    }catch( const std::exception & )
+    {
+      return answer;
+    }
+
+    std::vector<double> p( num_pars, 0.0 );
+    double u_dot_p = 0.0;
+    for( size_t row = 0; row < num_pars; ++row )
+    {
+      if( covariance[row].size() != num_pars )
+        return answer;
+      double accumulated = 0.0;
+      for( size_t col = 0; col < num_pars; ++col )
+        accumulated += covariance[row][col]*u[col];
+      p[row] = accumulated;
+      u_dot_p += u[row]*accumulated;
+    }
+
+    if( !std::isfinite(u_dot_p) || !(u_dot_p > 0.0) )
+      return answer;
+
+    // The chord from here to the in-model constrained minimum at the achieved reported value.
+    const double target_scale = reported_displacement/u_dot_p;
+    std::vector<double> direction( num_pars, 0.0 );
+    double direction_norm = 0.0;
+    for( size_t i = 0; i < num_pars; ++i )
+    {
+      direction[i] = (m_optimum[i] + target_scale*p[i]) - x[i];
+      if( !std::isfinite(direction[i]) )
+        return answer;
+      direction_norm += direction[i]*direction[i];
+    }
+    if( !(direction_norm > 0.0) )
+      return answer;   //already at the target: an exact pin has nothing to recover
+
+    const ReportingModeGuard reporting_guard( m_cost_functor.get() );
+
+    // Evaluate along the chord.  `t == 1` is the modelled target; the ladder brackets it because the
+    // covariance is the Hessian inverse at the OPTIMUM while this point is some distance away, so
+    // the target's scale is approximate even when its direction is good.  Each trial is one residual
+    // evaluation - no solve.
+    std::vector<std::pair<double,double>> trials;   //(t, chi2)
+    double best_t = 0.0, best_chi2 = x_chi2;
+
+    const auto try_step = [&]( const double t ) -> bool {
+      std::vector<double> trial = x;
+      for( size_t i = 0; i < num_pars; ++i )
+      {
+        const std::pair<double,double> bounds = parameter_bounds( i );
+        const double moved = x[i] + t*direction[i];
+        if( !std::isfinite(moved) )
+          return false;
+        trial[i] = (std::min)( (std::max)(moved,bounds.first), bounds.second );
+      }
+
+      try
+      {
+        const double trial_chi2 = physical_objective( trial );
+        if( !std::isfinite(trial_chi2) )
+          return false;
+        trials.emplace_back( t, trial_chi2 );
+        if( trial_chi2 < best_chi2 )
+        {
+          best_chi2 = trial_chi2;
+          best_t = t;
+          answer.parameters = trial;
+          answer.physical_chi2 = trial_chi2;
+          answer.improved = true;
+        }
+        return true;
+      }catch( const std::exception & )
+      {
+        return false;   //a step can land where the model cannot be evaluated; skip that trial
+      }
+    };
+
+    const std::array<double,7> ladder{{0.25, 0.5, 0.75, 1.0, 1.25, 1.5, 2.0}};
+    for( const double t : ladder )
+      try_step( t );
+
+    // If the best rung is the outermost one the bracket is one-sided, so extend while it keeps
+    // paying.  A step scale much beyond the modelled target means the frozen metric under-estimated
+    // how far the level set runs, which is exactly the regime the ladder cannot otherwise reach.
+    double rail = ladder.back();
+    for( size_t extension = 0; (extension < 2) && (best_t >= rail - 1.0e-12); ++extension )
+    {
+      rail *= 1.5;
+      if( !try_step(rail) )
+        break;
+    }
+
+    // One parabolic refinement through the three best trials, which removes the ladder's
+    // quantization for a single extra evaluation.
+    if( answer.improved && (trials.size() >= 3) )
+    {
+      std::sort( begin(trials), end(trials),
+                 []( const std::pair<double,double> &lhs, const std::pair<double,double> &rhs ){
+                   return lhs.second < rhs.second;
+                 } );
+      const double t0 = trials[0].first, t1 = trials[1].first, t2 = trials[2].first;
+      const double f0 = trials[0].second, f1 = trials[1].second, f2 = trials[2].second;
+      const double denominator = (t0-t1)*(t0-t2)*(t1-t2);
+      if( std::fabs(denominator) > 1.0e-12 )
+      {
+        const double a_coef = (t2*(f1-f0) + t1*(f0-f2) + t0*(f2-f1))/denominator;
+        const double b_coef = (t2*t2*(f0-f1) + t1*t1*(f2-f0) + t0*t0*(f1-f2))/denominator;
+        if( std::isfinite(a_coef) && (a_coef > 0.0) )
+        {
+          const double vertex = -0.5*b_coef/a_coef;
+          const double low = (std::min)({t0,t1,t2}), high = (std::max)({t0,t1,t2});
+          if( std::isfinite(vertex) && (vertex > low) && (vertex < high) )
+            try_step( vertex );
+        }
+      }
+    }
+
+    if( profile_stats_enabled() )
+      std::cerr << "profile-refine q=" << x_reported
+                << " chi2=" << x_chi2
+                << " -> " << (answer.improved ? answer.physical_chi2 : x_chi2)
+                << " recovered=" << (answer.improved ? (x_chi2 - answer.physical_chi2) : 0.0)
+                << " t=" << best_t << " evals=" << trials.size() << std::endl;
+
+    return answer;
+  }//LevelSetStep refine_on_level_set(...)
+
+
+  /** Sets `m_profile_reporting_mode` for a scope.  See that member: a conditional read-back needs
+   the singular-corner-safe correlation path, and under pinning there is no armed constraint to
+   infer that from. */
+  struct ReportingModeGuard
+  {
+    RelActAutoCostFcn * const functor;
+    const bool previous;
+    explicit ReportingModeGuard( RelActAutoCostFcn *f )
+      : functor( f ), previous( f && f->m_profile_reporting_mode )
+    { if( functor ) functor->m_profile_reporting_mode = true; }
+    ~ReportingModeGuard(){ if( functor ) functor->m_profile_reporting_mode = previous; }
+  };
+
+  /** Outcome of one pinned conditional point. */
+  struct PinnedResult
+  {
+    bool converged = false;
+    bool canceled = false;
+    std::string diagnostic;
+    /** The objective at the conditional point. */
+    double physical_chi2 = std::numeric_limits<double>::quiet_NaN();
+    /** The value the pinned parameter actually took, after the box clamp. */
+    double achieved_parameter = std::numeric_limits<double>::quiet_NaN();
+    /** Number of `ceres::Solve` calls this point cost, including restart confirmations. */
+    size_t restarts_used = 0;
+    std::vector<double> parameters;
+  };
+
+  /** Solve one conditional point with parameter `index` pinned at `value`, warm from `warm_start`.
+
+   `set_pin(index)` must already have been called for this target.  The value is clamped into the
+   parameter's box here rather than relying on Ceres: `Program::IsFeasible` enforces "start inside
+   the box" only for WHOLLY constant blocks, and ours is one block with a subset manifold, so an
+   out-of-box pin is not rejected at `Solve` entry - instead `ParameterBlock::Plus` silently projects
+   it back on the first accepted step.  Clamping here makes that visible, and the achieved value is
+   always authoritative over the requested one.
+   */
+  PinnedResult solve_pinned( const size_t index, const double value,
+                             const std::vector<double> &warm_start )
+  {
+    PinnedResult result;
+
+    if( m_cancel_calc && m_cancel_calc->load() )
+    {
+      result.canceled = true;
+      result.diagnostic = "Profiling was canceled.";
+      return result;
+    }
+
+    if( !m_pinned_index || (*m_pinned_index != index) )
+    {
+      result.diagnostic = "A pinned conditional was requested without its manifold installed.";
+      return result;
+    }
+
+    if( warm_start.size() != m_parameters.size() )
+    {
+      result.diagnostic = "A conditional warm start had the wrong parameter count.";
+      return result;
+    }
+
+    if( !std::isfinite(value) )
+    {
+      result.diagnostic = "A pinned conditional was requested at a non-finite coordinate.";
+      return result;
+    }
+
+    // In place, never by assignment: Ceres registered `m_parameters.data()` as its one parameter
+    // block, so a resize or move-assign here hands the optimizer a dangling pointer (invariant 6).
+    std::copy( begin(warm_start), end(warm_start), begin(m_parameters) );
+    const std::pair<double,double> bounds = parameter_bounds( index );
+    m_parameters[index] = (std::min)( (std::max)(value,bounds.first), bounds.second );
+    result.achieved_parameter = m_parameters[index];
+    assert( m_parameters.data() == m_parameter_block );
+
+    const ReportingModeGuard reporting_guard( m_cost_functor.get() );
+
+    ceres::Solver::Summary summary;
+    m_solve_in_flight = true;
+    ceres::Solve( m_solver_options, &m_problem, &summary );
+    m_solve_in_flight = false;
+    ++m_num_conditional_solves;
+
+    bool converged = ((summary.termination_type == ceres::CONVERGENCE)
+                      || (summary.termination_type == ceres::USER_SUCCESS));
+
+    // Ceres reports CONVERGENCE for two situations that look identical in the step count and are
+    // opposite in meaning.  Both accept no steps:
+    //
+    //   - The solve began AT the conditional optimum - a pin displaced by less than the solver's
+    //     resolution - so there was nothing to do.  Legitimate; the point is a conditional minimum.
+    //   - Every trust-region step was REJECTED, the objective rose, the radius collapsed, and Ceres
+    //     declared convergence because the radius got small.  The returned point is then the WARM
+    //     START, not a conditional minimum at all - and since a warm start is a worse point, its
+    //     delta chi2 is overstated, which crosses the threshold early and biases the interval
+    //     NARROW: the same direction as the pinning bias, compounding it.
+    //
+    // The step count cannot separate them.  The GRADIENT can: a point at its optimum has a
+    // near-zero gradient, while a point that never moved carries the same large gradient it started
+    // with.  Ceres reports it in the TANGENT space, which under the pin's `SubsetManifold` excludes
+    // the pinned coordinate - so the large and entirely expected gradient along the pin (that is the
+    // multiplier `lambda`) does not pollute the test.  The threshold is Ceres' own
+    // `gradient_tolerance`, which is by definition this solver's notion of "the gradient is zero",
+    // so a genuine seed-convergence passes by construction: it is the very test Ceres used to
+    // declare convergence in the first place.
+    //
+    // Observed on the JRC Pu70 fixed-age harness in a Debug build: |gradient| = 60.3, unchanged
+    // across every iteration, step norm identically zero, cost rising, radius collapsing four
+    // orders of magnitude.
+    if( converged && (summary.num_successful_steps <= 1) && !summary.iterations.empty() )
+    {
+      const double final_gradient = summary.iterations.back().gradient_max_norm;
+      if( std::isfinite(final_gradient)
+          && (final_gradient > m_solver_options.gradient_tolerance) )
+      {
+        converged = false;
+        result.diagnostic = "A conditional solve accepted no trust-region step and remains at a"
+                            " non-stationary point (tangent-space gradient "
+                            + SpecUtils::printCompact(final_gradient,6)
+                            + "), so it is the warm start rather than a conditional minimum;"
+                              " using it would overstate delta chi2 and bias the interval narrow.";
+      }
+    }
+
+    // The restart-until-no-improvement loop is the ONLY absolute convergence check in the pipeline:
+    // the outlier rejection downstream is purely relative and cannot see a bias that lifts every
+    // point on a side by a similar amount, which biases the interval narrow - the same direction as
+    // the pinning bias, so the two errors compound rather than cancel.  From a true minimum the
+    // confirming solve exits immediately, so this is cheap exactly when it is not needed.
+    if( converged )
+    {
+      constexpr int max_restarts = 5;
+      for( int restart = 0; restart < max_restarts; ++restart )
+      {
+        if( m_cancel_calc && m_cancel_calc->load() )
+          break;
+
+        const std::vector<double> pre_restart = m_parameters;
+        const double pre_restart_cost = (*m_cost_functor)(pre_restart);
+
+        ceres::Solver::Summary restart_summary;
+        m_solve_in_flight = true;
+        ceres::Solve( m_solver_options, &m_problem, &restart_summary );
+        m_solve_in_flight = false;
+        ++m_num_conditional_solves;
+        ++result.restarts_used;
+
+        const bool restart_converged
+            = ((restart_summary.termination_type == ceres::CONVERGENCE)
+               || (restart_summary.termination_type == ceres::USER_SUCCESS));
+        if( !restart_converged )
+        {
+          std::copy( begin(pre_restart), end(pre_restart), begin(m_parameters) );
+          break;
+        }
+
+        const double restart_cost = (*m_cost_functor)(m_parameters);
+        const double rel_improve = (pre_restart_cost > 0.0)
+                                 ? (pre_restart_cost - restart_cost)/pre_restart_cost : 0.0;
+        if( !std::isfinite(restart_cost) || (rel_improve < 0.0) )
+        {
+          // Non-monotonic steps are enabled, so a converged restart can end above where it started.
+          std::copy( begin(pre_restart), end(pre_restart), begin(m_parameters) );
+          break;
+        }
+
+        summary = restart_summary;
+        if( rel_improve <= m_solver_options.function_tolerance )
+          break;
+      }//for( warm restarts )
+    }//if( converged )
+
+    if( m_cancel_calc && m_cancel_calc->load() )
+    {
+      result.canceled = true;
+      result.diagnostic = "Profiling was canceled.";
+      return result;
+    }
+
+    // The pin is a manifold restriction, so the optimizer cannot have moved it; assert rather than
+    // re-read, because a moved pin would silently mean every sample sits at the wrong coordinate.
+    assert( m_parameters[index] == result.achieved_parameter );
+
+    // The read-back MUST be guarded.  A pin at an extreme coordinate - an activity at its zero
+    // lower bound, say - can leave the model at a point it cannot evaluate at all, and `eval()`
+    // reports that by THROWING, unlike `operator()` which catches internally.  Ceres itself is
+    // content to report "Initial residual and Jacobian evaluation failed" and return; without this
+    // guard the exception escapes the profile, the solve, and the caller, turning one unusable scan
+    // point into a failed analysis.  A point that cannot be read back is simply discarded.
+    try
+    {
+      result.physical_chi2 = physical_objective( m_parameters );
+    }catch( const std::exception &e )
+    {
+      result.converged = false;
+      result.diagnostic = std::string("A conditional solve could not be read back: ") + e.what();
+      return result;
+    }
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    if( converged && std::isfinite(result.physical_chi2) )
+    {
+      // The pinned coordinate must be BIT-identical, not merely close: `SubsetManifold` removes it
+      // from the tangent space entirely, so any drift at all would mean the manifold was not
+      // installed and the whole scan is measuring the wrong thing.
+      assert( m_parameters[index] == result.achieved_parameter );
+
+      // The rest of the model must have reoptimized around the pin whenever the solver actually
+      // accepted a step - an accepted step by definition changes at least one free coordinate.
+      // Demanding movement UNCONDITIONALLY is wrong: a pin displaced by less than the solver's
+      // resolution legitimately converges AT ITS SEED and moves nothing (first observed on the
+      // JRC Pu70 fixed-age harness, where the opening probe sits well inside one sigma of the
+      // optimum), and the dead-pinned-slot failure this would otherwise catch - a constant
+      // coordinate whose every scan point is the same point - is already refused up front by
+      // `pin_index_for`.  Note Ceres counts the INITIAL EVALUATION as a successful step
+      // (`TrustRegionMinimizer::IterationZero` sets `step_is_successful`, and
+      // `FinalizeIterationAndCheckIfMinimizerCanContinue` counts it), so seed-convergence reports
+      // `num_successful_steps == 1`, not 0.
+      bool something_moved = false;
+      for( size_t i = 0; !something_moved && (i < m_parameters.size()); ++i )
+        something_moved = (i != index) && (m_parameters[i] != warm_start[i]);
+      assert( something_moved || (m_parameters[index] == warm_start[index])
+              || (summary.num_successful_steps <= 1) );
+
+      // A conditional is a RESTRICTED minimization, so it can never beat the unconstrained optimum.
+      // One that does means the baseline was not the optimum - which the scanner routes to the
+      // deferred-rebaseline flow rather than quietly reporting a negative delta-chi2.
+      const double tolerance = 1.0e-6*(1.0 + std::fabs(m_optimum_objective));
+      assert( !std::isfinite(m_optimum_objective)
+              || (result.physical_chi2 >= (m_optimum_objective - tolerance)) );
+    }
+#endif
+
+    result.parameters = m_parameters;
+    result.converged = converged && std::isfinite(result.physical_chi2);
+    if( !result.converged && result.diagnostic.empty() )
+      result.diagnostic = "A conditional solve did not converge to a finite point ("
+                          + std::string(ceres::TerminationTypeToString(summary.termination_type))
+                          + "); a non-converged conditional is rejected rather than used, because a"
+                            " point above its true conditional minimum would bias the reported"
+                            " interval narrow.";
+    return result;
+  }//PinnedResult solve_pinned( size_t, double, const std::vector<double> & )
+
+
+  /** The reported mass fraction at an arbitrary point, under profile-safe correlation handling. */
+  double reported_mass_fraction( const RelActCalcAuto::SrcVariant &source, const size_t curve,
+                                 const std::vector<double> &x ) const
+  {
+    const ReportingModeGuard reporting_guard( m_cost_functor.get() );
+    return m_cost_functor->mass_enrichment_fraction( source, curve, x );
+  }
+
+
+  /** Puts the parameter buffer back at the unconstrained optimum, clears any pin, and restores
+   the production manifold (invariant 7). */
+  void restore_optimum()
+  {
+    clear_pin();
+    assert( m_parameters.size() == m_optimum.size() );
+    std::copy( begin(m_optimum), end(m_optimum), begin(m_parameters) );
+    assert( m_parameters.data() == m_parameter_block );
+  }
+
+
+private:
+
+  // DECLARATION ORDER IS LOAD-BEARING.  The problem's cost function was built with
+  // `DO_NOT_TAKE_OWNERSHIP` over a raw `RelActAutoCostFcn*`, and its parameter block is a raw
+  // `double*` into `m_parameters`.  Members are destroyed in reverse declaration order, so
+  // `m_problem` is declared LAST to guarantee it is torn down while both of the things it points at
+  // are still alive.
+  std::shared_ptr<RelActAutoCostFcn> m_cost_functor;
+  /** The buffer Ceres registered as its one parameter block.  Never resized, never reassigned. */
+  std::vector<double> m_parameters;
+  /** The address that registration captured, asserted after every in-place load (invariant 6). */
+  double * const m_parameter_block;
+  ceres::Solver::Options m_solver_options;
+  std::shared_ptr<std::atomic_bool> m_cancel_calc;
+  /** Owned by this host, because `m_solver_options` holds a raw pointer to it. */
+  std::unique_ptr<RelActAutoCostFcn::CheckCeresTerminateCallback> m_terminate_callback;
+  /** The production constant-parameter set, so the manifold can be put back exactly as it was. */
+  std::vector<int> m_constant_parameters;
+  /** Which parameter the current per-target manifold pins, if any. */
+  std::optional<size_t> m_pinned_index;
+  const std::vector<double> m_optimum;
+  double m_optimum_objective;
+  bool m_solve_in_flight;
+  size_t m_num_conditional_solves;
+  ceres::Problem m_problem;
+};//struct ProfileConditionalHost
+
+
+std::shared_ptr<ProfileConditionalHost> make_profile_conditional_host(
+                        std::shared_ptr<RelActAutoCostFcn> cost_functor,
+                        ceres::Problem &&problem,
+                        std::vector<double> &&parameters,
+                        const ceres::Solver::Options &solver_options,
+                        std::shared_ptr<std::atomic_bool> cancel_calc,
+                        std::vector<int> constant_parameters )
+{
+  // Profiling is optional work; a host that cannot be built correctly simply is not built, and
+  // each requested profile then reports a structured failure.
+  try
+  {
+    if( !cost_functor || !cost_functor->m_may_host_profile
+        || (parameters.size() != cost_functor->number_parameters()) )
+      return nullptr;
+
+    return std::make_shared<ProfileConditionalHost>( std::move(cost_functor), std::move(problem),
+                                std::move(parameters), solver_options, std::move(cancel_calc),
+                                std::move(constant_parameters) );
+  }catch( const std::exception &e )
+  {
+    cerr << "make_profile_conditional_host: " << e.what() << endl;
+    return nullptr;
+  }
+}//make_profile_conditional_host(...)
 
 
 NucInputGamma::NucInputGamma( const RelActCalcAuto::NucInputInfo &info, const RelActAutoCostFcn * const cost_fcn )
@@ -16581,6 +17504,180 @@ string Options::why_not_usable() const
 }//string Options::why_not_usable() const
 
 
+const char *Options::ProfileTarget::to_str( const Kind kind )
+{
+  switch( kind )
+  {
+    case Kind::MassFraction:     return "MassFraction";
+    case Kind::RelativeActivity: return "RelativeActivity";
+    case Kind::ActivityRatio:    return "ActivityRatio";
+    case Kind::Age:              return "Age";
+  }
+  assert( 0 );
+  return "InvalidProfileTargetKind";
+}//const char *Options::ProfileTarget::to_str( const Kind )
+
+
+string Options::ProfileTarget::why_not_usable( const Options &options ) const
+{
+  const string kind_name = to_str(kind);
+
+  if( rel_eff_curve_index >= options.rel_eff_curves.size() )
+    return kind_name + " profile target names relative efficiency curve "
+           + std::to_string(rel_eff_curve_index) + ", which does not exist.";
+  if( RelActCalcAuto::is_null(source) )
+    return kind_name + " profile target has no source.";
+
+  const RelEffCurveInput &curve = options.rel_eff_curves[rel_eff_curve_index];
+  const auto source_is_present = [&curve]( const SrcVariant &src ){
+    return std::any_of( begin(curve.nuclides), end(curve.nuclides),
+                        [&src]( const NucInputInfo &nuc ){ return nuc.source == src; } );
+  };
+
+  const SandiaDecay::Nuclide * const src_nuc = RelActCalcAuto::nuclide(source);
+
+  switch( kind )
+  {
+    case Kind::MassFraction:
+    {
+      if( !src_nuc )
+        return "A mass-fraction profile target must be a nuclide.";
+
+      // Pu-242 under an active correlation is *derived* from the other Pu isotopes rather than
+      // fitted: it has no free parameter, hence no likelihood direction of its own, so a profile
+      // likelihood interval over it would not describe anything this data constrains.  Note this
+      // removes it as a profile *target* only - the correlation still supplies its reported value
+      // and still renormalizes its siblings' fractions.  Rejecting it here with its own message,
+      // rather than letting the generic "not a source on this curve" rule below catch it, keeps
+      // this reading as a deliberate design decision instead of a configuration error.
+      if( (src_nuc->atomicNumber == 94) && (src_nuc->massNumber == 242)
+          && (curve.pu242_correlation_method != RelActCalc::PuCorrMethod::NotApplicable) )
+        return "Pu242 is generated by the Pu-242 correlation rather than fitted, so it has no"
+               " likelihood direction to profile; its uncertainty is the correlation's systematic,"
+               " not a property of this fit.";
+
+      if( !source_is_present(source) )
+        return src_nuc->symbol + " is not a source on relative efficiency curve "
+               + std::to_string(rel_eff_curve_index) + ".";
+
+      // Below two same-element isotopes the normalized fraction is identically one, so there is no
+      // conditional optimization to perform and any "interval" would be an artifact.
+      size_t same_element_count = 0;
+      for( const NucInputInfo &other : curve.nuclides )
+      {
+        const SandiaDecay::Nuclide * const other_nuc = RelActCalcAuto::nuclide(other.source);
+        same_element_count += (other_nuc && (other_nuc->atomicNumber == src_nuc->atomicNumber));
+      }
+      if( same_element_count < 2 )
+        return src_nuc->symbol + " is the only modeled isotope of its element, so its mass fraction"
+               " is identically one and cannot be profiled.";
+      break;
+    }//case Kind::MassFraction
+
+    case Kind::RelativeActivity:
+    {
+      if( !source_is_present(source) )
+        return "A relative-activity profile target must be a source on its curve.";
+      break;
+    }//case Kind::RelativeActivity
+
+    case Kind::ActivityRatio:
+    {
+      if( denominator_curve_index >= options.rel_eff_curves.size() )
+        return "An activity-ratio profile target names a denominator curve that does not exist.";
+      if( RelActCalcAuto::is_null(denominator) )
+        return "An activity-ratio profile target has no denominator source.";
+      if( (denominator == source) && (denominator_curve_index == rel_eff_curve_index) )
+        return "An activity-ratio profile target's numerator and denominator are the same source.";
+      if( !source_is_present(source) )
+        return "An activity-ratio numerator must be a source on its curve.";
+      const RelEffCurveInput &denom_curve = options.rel_eff_curves[denominator_curve_index];
+      const bool denom_present = std::any_of( begin(denom_curve.nuclides), end(denom_curve.nuclides),
+                    [this]( const NucInputInfo &nuc ){ return nuc.source == denominator; } );
+      if( !denom_present )
+        return "An activity-ratio denominator must be a source on its curve.";
+      break;
+    }//case Kind::ActivityRatio
+
+    case Kind::Age:
+    {
+      if( !src_nuc )
+        return "An age profile target must be a nuclide.";
+      if( !source_is_present(source) )
+        return src_nuc->symbol + " is not a source on relative efficiency curve "
+               + std::to_string(rel_eff_curve_index) + ".";
+
+      // Where nuclides share one age parameter the constraint has to name the parameter's owner;
+      // pinning a follower would silently constrain nothing.  `nucs_of_el_same_age` makes the
+      // lowest-mass-number isotope of the element the owner, matching `age_controlling_nuc`.
+      const auto target_input = std::find_if( begin(curve.nuclides), end(curve.nuclides),
+                    [this]( const NucInputInfo &nuc ){ return nuc.source == source; } );
+      assert( target_input != end(curve.nuclides) );
+      // Where an element shares one age parameter, constraining any of its isotopes constrains that
+      // one parameter - the functor's `age()` resolves through `age_controlling_nuc` - so the
+      // requirement is that SOME isotope of the element is fitting the shared age, not that this
+      // particular one carries the flag.  (`check_nuclide_constraints()` already requires the flag
+      // to agree across the element, so in a valid model this loop is belt-and-braces.)
+      bool age_is_fitted = target_input->fit_age;
+      if( curve.nucs_of_el_same_age )
+      {
+        for( const NucInputInfo &other : curve.nuclides )
+        {
+          const SandiaDecay::Nuclide * const other_nuc = RelActCalcAuto::nuclide(other.source);
+          age_is_fitted = age_is_fitted
+                          || (other_nuc && other.fit_age
+                              && (other_nuc->atomicNumber == src_nuc->atomicNumber));
+        }
+      }//if( curve.nucs_of_el_same_age )
+      if( !age_is_fitted )
+        return src_nuc->symbol + "'s age is not fitted, so it cannot be profiled.";
+      break;
+    }//case Kind::Age
+  }//switch( kind )
+
+  return string();
+}//string Options::ProfileTarget::why_not_usable( const Options & ) const
+
+
+vector<Options::ProfileTarget::Kind> profilable_quantity_kinds(
+                                                    const Options &options,
+                                                    const SrcVariant &source,
+                                                    const size_t rel_eff_curve_index )
+{
+  using Kind = Options::ProfileTarget::Kind;
+
+  // Ask the coherence rules rather than restating them, so the two can never drift apart: a kind is
+  // offered exactly when a target of that kind would be accepted.
+  const auto offers = [&]( const Kind kind ) -> bool {
+    Options::ProfileTarget trial;
+    trial.kind = kind;
+    trial.source = source;
+    trial.rel_eff_curve_index = rel_eff_curve_index;
+    return trial.why_not_usable(options).empty();
+  };
+
+  vector<Kind> kinds;
+
+  // Isotopics where there are isotopics; otherwise the activity, which is all that is left.  These
+  // two are mutually exclusive by construction: a mass fraction needs a second isotope of the
+  // element, and with one it is identically 1 and must never be offered.
+  if( offers(Kind::MassFraction) )
+    kinds.push_back( Kind::MassFraction );
+  else if( offers(Kind::RelativeActivity) )
+    kinds.push_back( Kind::RelativeActivity );
+
+  // Independent of the above: a source can carry both a meaningful isotopic fraction and a
+  // meaningful fitted age.
+  if( offers(Kind::Age) )
+    kinds.push_back( Kind::Age );
+
+  // `ActivityRatio` is deliberately never auto-offered: it needs a denominator that only the caller
+  // can choose, and unlike the others it is the gauge-invariant quantity precisely because it is a
+  // comparison rather than a property of one source.
+  return kinds;
+}//vector<...::Kind> profilable_quantity_kinds(...)
+
+
 rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) const
 {
   using namespace rapidxml;
@@ -16725,7 +17822,6 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
 {
   try
   {
-    profile_only_mass_fraction_constraint.reset(); //transient inference state is never persisted
     if( !parent )
       throw runtime_error( "invalid input" );
     
@@ -22831,7 +23927,11 @@ pair<double,double> RelActAutoSolution::relative_efficiency_with_uncert( const d
     rel_eff = rel_eff_jet.a;
   }
   
-  double uncertainty = 0.0;
+  double uncert_sq = 0.0;
+#ifndef NDEBUG
+  // Sum of |term|, for the rounding bound on the quadratic form used by the cross-check below.
+  double auto_abs_form = 0.0;
+#endif
   for( size_t i = 0; i < num_par; ++i )
   {
     assert( m_covariance[i].size() == num_par );
@@ -22840,12 +23940,18 @@ pair<double,double> RelActAutoSolution::relative_efficiency_with_uncert( const d
       throw logic_error( "relative_efficiency_with_uncert: invalid Rel. Eff. covariance matrix row." );
     
     for( size_t j = 0; j < num_par; ++j )
-      uncertainty += jacobian[i]*m_covariance[i][j]*jacobian[j];
+    {
+      const double term = jacobian[i]*m_covariance[i][j]*jacobian[j];
+      uncert_sq += term;
+#ifndef NDEBUG
+      auto_abs_form += fabs(term);
+#endif
+    }
   }
 
   // Guard against a round-off-negative quadratic form (otherwise the IsNan check below
   //  throws and aborts the whole report render).
-  uncertainty = std::sqrt( std::max(0.0, uncertainty) );
+  double uncertainty = std::sqrt( std::max(0.0, uncert_sq) );
   
 #ifndef NDEBUG
   // We can double-check this rel eff calc, but more importantly, for non-physical models, we
@@ -22869,18 +23975,79 @@ pair<double,double> RelActAutoSolution::relative_efficiency_with_uncert( const d
       throw logic_error( "relative_efficiency_with_uncert: invalid Rel. Eff. covariance matrix." );
     
     const double manual_uncert = RelActCalc::eval_eqn_uncertainty( energy, eqn_form, coeffs, cov );
-    const double diff = fabs(manual_uncert - uncertainty);
-    // Both routes evaluate the quadratic form sqrt(g^T C g), but by different paths (auto-diff
-    //  jacobian vs analytical), so they lose different amounts to cancellation - the 1e-6 relative
-    //  tolerance this used to use fired on legitimate fits (a Br-82 fit agreeing to 1.2 ppm).  A
-    //  real mismatch between the two routes is order-unity relative, so 1e-5 still catches it.
-    // TODO (2026-07 validation follow-up): badly conditioned fits may still need more than this -
-    //  the Eu152+Ra226 two-LnXLnY case runs kappa(J) ~ 1e12 with 2 rank-deficient directions.
-    //  Scaling the tolerance with the conditioning (or skipping the check when
-    //  m_num_rank_deficient_dirs > 0) would be better than a fixed number; repro:
+
+    // Rebuild the same sum eval_eqn_uncertainty() performs, so the tolerance can be a rounding
+    //  bound on that exact sum.  `empirical_legacy_basis_value` is the same per-form basis (it is
+    //  documented as mirroring RelActCalc::eval_eqn_imp()), so this is not a third copy.
+    const size_t num_coefs = coeffs.size();
+    double manual_sq_local = 0.0, manual_abs_form = 0.0;
+    for( size_t i = 0; i < num_coefs; ++i )
+    {
+      const double g_i = RelActCalcAutoImp::empirical_legacy_basis_value( eqn_form, i, energy );
+      for( size_t j = 0; j < num_coefs; ++j )
+      {
+        const double term = g_i * cov[i][j]
+                            * RelActCalcAutoImp::empirical_legacy_basis_value( eqn_form, j, energy );
+        manual_sq_local += term;
+        manual_abs_form += fabs(term);
+      }
+    }
+
+    // The exponential forms are y = exp(u), so sigma_y = y*sqrt(g^T C g); put the local sums in
+    //  the same units as the returned variance.  `manual_rel_eff` is bitwise the `eval_val`
+    //  eval_eqn_uncertainty() uses internally (both are RelActCalc::eval_eqn on `coeffs`).
+    const bool is_exp_form = RelActCalcAutoImp::empirical_form_is_exponential( eqn_form );
+    if( is_exp_form )
+    {
+      manual_sq_local *= manual_rel_eff*manual_rel_eff;
+      manual_abs_form *= manual_rel_eff*manual_rel_eff;
+    }
+
+    const double manual_sq = manual_uncert*manual_uncert;
+
+    // Both routes evaluate the same quadratic form g^T C g, just in different bases, so compare the
+    //  variances - sqrt() has an infinite derivative at zero, which is exactly where this
+    //  comparison lives.  The fit's gauge pins f(E_pivot)=1 at E_pivot=sqrt(E_lo*E_hi), so the
+    //  rel-eff uncertainty has a STRUCTURAL zero there and grows only linearly in
+    //  |ln E - ln E_pivot|.  The auto-diff route works in the pivot-centered QR basis and resolves
+    //  that accurately; eval_eqn_uncertainty() works in the un-centered legacy monomial basis,
+    //  where the same near-zero answer is a small difference of far larger terms.  A fixed relative
+    //  tolerance therefore cannot work: measured on the Lu177m_shielded fit - kappa(J)=105, so not
+    //  a conditioning problem - sum|g_i C_ij g_j| / |sum g_i C_ij g_j| runs 4e5 at the ends of the
+    //  fitted range and 2.1e13 at the 218.10 keV peak that sits 0.12 keV from the pivot, and the
+    //  observed disagreement tracks that ratio times the unit roundoff across all eight decades.
+    //
+    // So bound the rounding instead (Higham, "Accuracy and Stability of Numerical Algorithms",
+    //  2nd ed., sec. 3.5): for s = sum_ij g_i C_ij g_j evaluated in floating point,
+    //  |fl(s) - s| <= gamma_k * sum_ij |g_i C_ij g_j|, with gamma_k = k*u/(1 - k*u).  The outer form
+    //  sums n^2 products (k = n^2+n), and every C entry is itself an n^2-product sum built by
+    //  EmpiricalBasisTransform::legacy_covariance() (k = n^2+2), so k_total = 2n^2+n+2.  The
+    //  measured worst case is 0.27*u*sum|.|, i.e. 140x inside this bound - the constant is derived,
+    //  not tuned to the case that prompted it.
+    constexpr double unit_roundoff = 0.5*std::numeric_limits<double>::epsilon();
+    double allowed_sq = (2*num_coefs*num_coefs + num_coefs + 2)*unit_roundoff
+                          *(std::max)( manual_abs_form, auto_abs_form );
+
+    // The exponential forms carry an exp() prefactor, whose own relative error - measured just
+    //  above as releff_diff, not assumed - enters the variance twice.
+    if( is_exp_form && (rel_eff > 0.0) )
+      allowed_sq += 2.0*(releff_diff/rel_eff)*(std::max)( fabs(manual_sq), fabs(uncert_sq) );
+
+    // Floor, so a mis-estimated constant can never spuriously abort a debug build.  At 1e-10 on the
+    //  variance this is still ~5e-11 relative on sigma, and a genuine mismatch between the two
+    //  routes (wrong basis, wrong index, an unscaled or non-symmetric covariance) is order-unity.
+    allowed_sq = (std::max)( allowed_sq, 1.0E-10*(std::max)(fabs(manual_sq), fabs(uncert_sq)) );
+
+    assert( fabs(manual_sq - uncert_sq) <= allowed_sq );
+    // ...and that the basis copy the bound is built from still matches what eval_eqn_uncertainty()
+    //  actually sums over, so neither can drift from the other unnoticed.
+    assert( fabs(manual_sq_local - manual_sq) <= allowed_sq );
+
+    // TODO (2026-07 validation follow-up): re-check the Eu152+Ra226 two-LnXLnY case under this
+    //  bound - it runs kappa(J) ~ 1e12 with 2 rank-deficient directions.  If it still fires, that
+    //  is a real mismatch rather than a tolerance problem.  Repro:
     //    scratch/multicurve_2026-07: ./MulticurveStudy fit --config eu152_ra226_two_curve.xml \
     //        --fore runs/sum_eu_ra/summed_fore.n42 --back runs/sum_eu_ra/summed_back.n42
-    assert( (diff < 1.0E-8) || (diff < 1.0E-5*(std::max)(manual_uncert, uncertainty)) );
   }//if( eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel )
 #endif //NDEBUG
 
@@ -24045,6 +25212,9 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
     merged.same_corr_fcn_for_all_rel_eff_curves = false;       //requires >= 2 physical curves
     merged.same_external_shielding_for_all_rel_eff_curves = false;
     merged.auto_simplify_model = false;  //determinism + speed; would perturb the effective-DOF count
+    // This null comparison is a different model on different curves; a profile equality carried over
+    // from the caller would name sources this problem no longer has, and its row is not built here
+    // anyway (`may_host_profile` is false below).
 
     // Single-curve options => the normal single-curve solver time cap applies automatically.  The
     // null comparison must reuse the exact peak-search result and derived DRF from the main solve;
@@ -24056,7 +25226,8 @@ static void add_merged_single_curve_comparison( RelActAutoSolution &sol,
     const RelActAutoSolution merged_sol = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
                         merged, foreground, background, retained_drf, retained_peaks,
                         det_type, cancel_calc, RelActCalcAutoImp::SearchSeedVariant::Default,
-                        false,nullptr,true,nullptr,0,false,nullptr,nullptr,true );
+                        false,nullptr,true,nullptr,0,false,nullptr,nullptr,true,
+                        /*may_host_profile=*/false );
 
     if( merged_sol.m_cost_functor
         && !merged_sol.m_cost_functor->exact_retained_inputs_match(
@@ -24117,6 +25288,10 @@ RelActAutoSolution solve( const Options options,
   const std::vector<FloatingPeak> &extra_peaks = options.floating_peaks;
 
 
+  // Build the profile row up front when this solve could possibly profile, so the winning frame can
+  // host its conditional optimizations in place; see `solve_may_profile`.
+  const bool may_host_profile = RelActCalcAutoImp::solve_may_profile( options );
+
   const RelActAutoSolution orig_sol = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
                      options,
                      foreground,
@@ -24124,7 +25299,10 @@ RelActAutoSolution solve( const Options options,
                      input_drf,
                      all_peaks,
                      det_type,
-                     cancel_calc );
+                     cancel_calc,
+                     RelActCalcAutoImp::SearchSeedVariant::Default,
+                     false,nullptr,true,nullptr,0,false,nullptr,nullptr,false,
+                     may_host_profile );
   
   bool all_roi_full_range = true;
   for( const auto &roi : energy_ranges )
@@ -24497,7 +25675,7 @@ RelActAutoSolution solve( const Options options,
           updated_options, foreground, background, current_sol.m_drf,
           current_sol.m_spectrum_peaks, det_type, cancel_calc,
           RelActCalcAutoImp::SearchSeedVariant::Default, true, &current_sol,
-          true,nullptr,0,false,nullptr,nullptr,true );
+          true,nullptr,0,false,nullptr,nullptr,true,may_host_profile );
 
       if( updated_sol.m_cost_functor
           && !updated_sol.m_cost_functor->exact_retained_inputs_match(

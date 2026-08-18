@@ -12,7 +12,10 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
 #include <string>
+#include <vector>
+#include <algorithm>
 #include <type_traits>
 
 #define BOOST_TEST_MODULE RelActCalcAuto_ProfileApi_suite
@@ -422,4 +425,205 @@ BOOST_AUTO_TEST_CASE( forced_single_isotope_profile_contract_is_zero_fit_physica
     BOOST_CHECK( interval.upper_kind
                  == Solution::MassFractionProfileEndpointKind::PhysicalLimit );
   }
+}
+
+
+/** The §3.2 rule: "profile the mass fraction" is only meaningful where there ARE isotopics.
+
+ A fit of Cs-137 plus I-131 has none - each element's normalized fraction is identically one - so a
+ mass-fraction interval there would be an artifact of the reporting code rather than a statement
+ about the data, and the quantity carrying the information is the activity.
+ */
+BOOST_AUTO_TEST_CASE( profilable_kind_selection_follows_what_carries_information )
+{
+  using Kind = RelActCalcAuto::Options::ProfileTarget::Kind;
+
+  initialize_decay_database();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const cs137 = db->nuclide("Cs137");
+  const SandiaDecay::Nuclide * const i131  = db->nuclide("I131");
+  const SandiaDecay::Nuclide * const u235  = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238  = db->nuclide("U238");
+  const SandiaDecay::Nuclide * const pu239 = db->nuclide("Pu239");
+  const SandiaDecay::Nuclide * const pu240 = db->nuclide("Pu240");
+  const SandiaDecay::Nuclide * const pu242 = db->nuclide("Pu242");
+  const SandiaDecay::Nuclide * const co60  = db->nuclide("Co60");
+  BOOST_REQUIRE( cs137 && i131 && u235 && u238 && pu239 && pu240 && pu242 && co60 );
+
+  const auto input_for = []( const SandiaDecay::Nuclide * const nuc, const bool fit_age ) {
+    RelActCalcAuto::NucInputInfo input;
+    input.source = nuc;
+    input.age = 0.0;
+    input.fit_age = fit_age;
+    return input;
+  };
+  const auto options_with = []( const RelActCalcAuto::RelEffCurveInput &curve ) {
+    RelActCalcAuto::Options options;
+    options.rel_eff_curves = { curve };
+    return options;
+  };
+  const auto kinds_for = []( const RelActCalcAuto::Options &options,
+                             const SandiaDecay::Nuclide * const nuc ) {
+    return RelActCalcAuto::profilable_quantity_kinds( options,
+                                                      RelActCalcAuto::SrcVariant(nuc),0 );
+  };
+
+  // Single-isotope elements: the activity is the only thing that can be profiled, and a mass
+  // fraction must NEVER be offered.
+  RelActCalcAuto::RelEffCurveInput singles;
+  singles.nuclides = { input_for(cs137,false),input_for(i131,false) };
+  const RelActCalcAuto::Options single_isotope_options = options_with( singles );
+  const vector<Kind> cs137_kinds = kinds_for( single_isotope_options,cs137 );
+  const vector<Kind> i131_kinds  = kinds_for( single_isotope_options,i131 );
+  BOOST_REQUIRE_EQUAL( cs137_kinds.size(),1U );
+  BOOST_CHECK( cs137_kinds[0] == Kind::RelativeActivity );
+  BOOST_REQUIRE_EQUAL( i131_kinds.size(),1U );
+  BOOST_CHECK( i131_kinds[0] == Kind::RelativeActivity );
+  BOOST_CHECK( std::find(begin(cs137_kinds),end(cs137_kinds),Kind::MassFraction)
+               == end(cs137_kinds) );
+
+  // Two isotopes of one element: the isotopic fraction is the informative quantity.
+  RelActCalcAuto::RelEffCurveInput uranium;
+  uranium.nuclides = { input_for(u235,false),input_for(u238,false) };
+  const RelActCalcAuto::Options uranium_options = options_with( uranium );
+  const vector<Kind> u235_kinds = kinds_for( uranium_options,u235 );
+  BOOST_REQUIRE_EQUAL( u235_kinds.size(),1U );
+  BOOST_CHECK( u235_kinds[0] == Kind::MassFraction );
+
+  // Pu-242 by correlation is a reported quantity that is deliberately NOT a fitted input, so it is
+  // never offered as a profile target: it has no free parameter and hence no likelihood direction
+  // of its own, and an interval over it would describe the correlation's systematic rather than
+  // anything this data constrains.  Its *reporting* is untouched - the correlation still supplies
+  // its value and still renormalizes its siblings' fractions - which is why the sibling Pu-239
+  // below is still profilable.
+  RelActCalcAuto::RelEffCurveInput plutonium;
+  plutonium.pu242_correlation_method = RelActCalc::PuCorrMethod::ByPu239Only;
+  plutonium.nuclides = { input_for(pu239,false),input_for(pu240,false) };
+  const RelActCalcAuto::Options plutonium_options = options_with( plutonium );
+  const vector<Kind> pu242_kinds = kinds_for( plutonium_options,pu242 );
+  BOOST_CHECK( pu242_kinds.empty() );
+  BOOST_CHECK( kinds_for(plutonium_options,pu239).size() == 1U );
+
+  // Without the correlation the same Pu-242 is not part of the model at all - which is now simply
+  // the general rule for a source that is not a fitted input, rather than a special case.
+  RelActCalcAuto::RelEffCurveInput uncorrelated = plutonium;
+  uncorrelated.pu242_correlation_method = RelActCalc::PuCorrMethod::NotApplicable;
+  BOOST_CHECK( kinds_for(options_with(uncorrelated),pu242).empty() );
+
+  // A fitted age is an independent second quantity, not an alternative to the first.
+  RelActCalcAuto::RelEffCurveInput aged_uranium;
+  aged_uranium.nuclides = { input_for(u235,true),input_for(u238,false) };
+  const vector<Kind> aged_kinds = kinds_for( options_with(aged_uranium),u235 );
+  BOOST_REQUIRE_EQUAL( aged_kinds.size(),2U );
+  BOOST_CHECK( aged_kinds[0] == Kind::MassFraction );
+  BOOST_CHECK( aged_kinds[1] == Kind::Age );
+
+  // A lone isotope with a fitted age offers both of the quantities that mean something.
+  RelActCalcAuto::RelEffCurveInput aged_single;
+  aged_single.nuclides = { input_for(cs137,true),input_for(i131,false) };
+  const vector<Kind> aged_single_kinds = kinds_for( options_with(aged_single),cs137 );
+  BOOST_REQUIRE_EQUAL( aged_single_kinds.size(),2U );
+  BOOST_CHECK( aged_single_kinds[0] == Kind::RelativeActivity );
+  BOOST_CHECK( aged_single_kinds[1] == Kind::Age );
+
+  // A source that is not on the curve has nothing to profile.
+  BOOST_CHECK( kinds_for(uranium_options,co60).empty() );
+
+  // A ratio needs a denominator only the caller can pick, so it is never auto-offered even though
+  // it is the one gauge-invariant kind.
+  for( const vector<Kind> &kinds : { cs137_kinds,u235_kinds,aged_kinds } )
+    BOOST_CHECK( std::find(begin(kinds),end(kinds),Kind::ActivityRatio) == end(kinds) );
+}
+
+
+/** Invariant 9 of the profile design: a profile target's kind and source must be coherent,
+ checked before any solve rather than producing a silently meaningless interval. */
+BOOST_AUTO_TEST_CASE( profile_target_coherence_is_checked_up_front )
+{
+  using Target = RelActCalcAuto::Options::ProfileTarget;
+  using Kind = Target::Kind;
+
+  initialize_decay_database();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
+  const SandiaDecay::Nuclide * const co60 = db->nuclide("Co60");
+  BOOST_REQUIRE( u235 && u238 && co60 );
+
+  // Every kind is nameable, and the names are distinct - reports and diagnostics quote them.
+  const Kind all_kinds[] = { Kind::MassFraction,Kind::RelativeActivity,
+                             Kind::ActivityRatio,Kind::Age };
+  set<string> names;
+  for( const Kind kind : all_kinds )
+  {
+    const string name = Target::to_str(kind);
+    BOOST_CHECK( !name.empty() );
+    names.insert( name );
+  }
+  BOOST_CHECK_EQUAL( names.size(),4U );
+
+  RelActCalcAuto::NucInputInfo u235_input;
+  u235_input.source = u235;
+  u235_input.age = 0.0;
+  u235_input.fit_age = false;
+  RelActCalcAuto::NucInputInfo u238_input = u235_input;
+  u238_input.source = u238;
+
+  RelActCalcAuto::RelEffCurveInput curve;
+  curve.nuclides = { u235_input,u238_input };
+  RelActCalcAuto::Options options;
+  options.rel_eff_curves = { curve };
+
+  Target good;
+  good.kind = Kind::MassFraction;
+  good.source = u235;
+  good.rel_eff_curve_index = 0;
+  BOOST_CHECK_EQUAL( good.why_not_usable(options),string() );
+
+  const auto rejects = [&options]( const Target &target,const char * const because ) {
+    const string why = target.why_not_usable( options );
+    BOOST_CHECK_MESSAGE( !why.empty(),
+        string("expected rejection because ") + because + ", but the target was accepted" );
+  };
+
+  Target absent = good;       absent.source = co60;
+  rejects( absent,"Co60 is not a source on the curve" );
+
+  Target bad_curve = good;    bad_curve.rel_eff_curve_index = 7;
+  rejects( bad_curve,"curve 7 does not exist" );
+
+  Target fixed_age = good;    fixed_age.kind = Kind::Age;
+  rejects( fixed_age,"U235's age is not being fitted" );
+
+  Target ratio = good;
+  ratio.kind = Kind::ActivityRatio;
+  ratio.denominator = u235;      //same as the numerator
+  rejects( ratio,"a source divided by itself carries no information" );
+
+  ratio.denominator = co60;
+  rejects( ratio,"the denominator is not a source on its curve" );
+
+  ratio.denominator = u238;
+  BOOST_CHECK_EQUAL( ratio.why_not_usable(options),string() );
+
+  // An age target becomes usable exactly when the age becomes a fitted parameter.  `RelEffCurveInput`
+  // shares one age per element by default, so ask for independent ages to isolate the per-source flag.
+  RelActCalcAuto::Options fitted_age_options = options;
+  fitted_age_options.rel_eff_curves[0].nucs_of_el_same_age = false;
+  fitted_age_options.rel_eff_curves[0].nuclides[0].fit_age = true;
+  Target age = good;
+  age.kind = Kind::Age;
+  BOOST_CHECK_EQUAL( age.why_not_usable(fitted_age_options),string() );
+
+  // A single fitted age shared across the element may be named through any of its isotopes: the
+  // functor resolves to the one parameter, so constraining U238's age constrains U235's too.
+  RelActCalcAuto::Options shared_age_options = fitted_age_options;
+  shared_age_options.rel_eff_curves[0].nucs_of_el_same_age = true;
+  Target follower_age = age;
+  follower_age.source = u238;                   //fit_age false on this input
+  BOOST_CHECK_EQUAL( follower_age.why_not_usable(shared_age_options),string() );
+  // ...but with independent ages, U238's own flag is what decides.
+  BOOST_CHECK( !follower_age.why_not_usable(fitted_age_options).empty() );
 }

@@ -99,6 +99,7 @@ namespace RelActCalc
 namespace RelActCalcAutoImp
 {
   struct RelActAutoCostFcn;
+  struct ProfileConditionalHost;
 }
 
 /*
@@ -879,8 +880,16 @@ struct Options
 
    A default solve is meant to be interactive: it fits the configured problem once (with ROI
    refinement and automatic model simplification) and reports it.  A robust solve additionally
-   runs the deterministic multi-start basin search, computes automatic bounded profile-likelihood
-   intervals for weak mass fractions, and permits the one profile-triggered baseline reselection.
+   runs the deterministic multi-start basin search and computes automatic bounded
+   profile-likelihood intervals for weak mass fractions.
+
+   Note the one profile-triggered baseline reselection is NOT gated on this flag: it is gated on a
+   profile having run at all.  An explicitly forced per-nuclide profile therefore can still trigger
+   it in a non-robust solve, which is deliberate - having discovered that the retained baseline is
+   not optimal, silently keeping it would be worse than spending the one permitted restart.
+
+   A default solve still runs the narrow EM-attribution rescue pair: that is the known remedy for a
+   degeneracy in all-physical multi-curve fits sharing sources, not exploratory breadth.
 
    Each of those multiplies the work by roughly the number of named candidates or conditional fits
    involved, which routinely takes a solve from seconds to many minutes - far past what an
@@ -955,21 +964,101 @@ struct Options
    a small positive default is used. */
   double auto_simplify_max_dchi2;
 
-  /** Transient augmented-Lagrangian equality used only by post-fit mass-fraction profiling.
+  /** Names one quantity a post-fit profile-likelihood scan can be run over.
 
-   This is intentionally not serialized and is ignored by the public equality helpers.  Normal
-   callers leave it disengaged.  The profile engine uses it to constrain the fraction after every
-   reporting transformation (notably Pu-242 correlation and renormalization) while retaining the
-   ordinary physical objective as the quantity used for likelihood thresholds. */
-  struct ProfileOnlyMassFractionConstraint
+   A pure descriptor: which source, which curve, which kind of quantity.  It carries no numeric
+   target, because the engine does not impose an equality on the reported quantity at all - it
+   restricts the target's own fit PARAMETER with a `ceres::SubsetManifold` and reads back whatever
+   reported value that produces.
+
+   The statistic that results, and its known bias: let `q(x)` be the reported quantity and `a` the
+   target's activity parameter.  A point minimizing subject to `a == a0` is merely *some* feasible
+   point of `{q == q(a0)}`, so `min over {q == q0} <= min over {a == a0}`.  Pinning therefore
+   upper-bounds the true profile of `q`: delta chi2 is overstated at a given `q`, the threshold is
+   crossed too early, and reported intervals come out somewhat too NARROW.  The two coincide when
+   `q` is effectively a function of `a` alone, which is the ordinary case for a fitted isotope
+   against its siblings.  It was least true for correlation-generated Pu-242, where `q` depends on
+   Pu-239 as well - and that quantity is no longer offered as a profile target, because it has no
+   free parameter and hence no likelihood direction of its own.
+
+   The size of the remaining bias is measured rather than assumed, by unit tests that refit with the
+   mass fraction held fixed at each claimed endpoint and check the objective lands on the threshold.
+   */
+  struct ProfileTarget
   {
+    /** Which reported quantity is profiled.
+
+     `MassFraction` is the historical behaviour, and the only kind that means anything for an
+     element carrying two or more fitted isotopes.  The others exist because a fit whose elements
+     each have a single isotope (Cs-137 plus I-131, say) has no isotopics at all - every mass
+     fraction is identically one - so the only quantities carrying information are activities,
+     their ratios, and fitted ages.
+     */
+    enum class Kind : int
+    {
+      /** Mass fraction of `source` within its own element, in the reported coordinate: after
+       Pu-242-by-correlation, age correction, and renormalization. */
+      MassFraction = 0,
+
+      /** The fitted relative activity of `source` on curve `rel_eff_curve_index`.
+
+       GAUGE CAVEAT: a relative activity is defined only against the relative-efficiency curve's
+       normalization.  `EmpiricalBasisTransform` pins the curve at `f(E_pivot) == 1` and carries the
+       removed scale on the activities, so an individual relative activity is well defined *given
+       that gauge* but its numeric value is a convention - which is exactly why a gauge change moved
+       one regression baseline's `rel_activity` from 25.46 to 23.396 with no physical change.  The
+       gauge is fixed for the life of a cost functor (the pivot derives only from frozen ROI bounds,
+       and the leading coefficient is a constant parameter), so *differences* and *relative*
+       uncertainties across one scan are meaningful even though the absolute value is not.  Reports
+       must not present a profiled single activity as if it were gauge-free. */
+      RelativeActivity = 1,
+
+      /** `source`'s relative activity divided by `denominator`'s.
+
+       Gauge invariant when both sources sit on the same curve (the shared normalization cancels),
+       and therefore the physically meaningful choice whenever the question is "how do these two
+       compare".  A cross-curve ratio is NOT gauge invariant - each curve carries its own
+       normalization - and is offered only because a caller may deliberately want it. */
+      ActivityRatio = 2,
+
+      /** The fitted age of `source`, in PhysicalUnits (1.0 == second).
+
+       Only meaningful when the age is actually a free parameter of the fit.  Where an element's
+       nuclides share one age (`RelEffCurveInput::nucs_of_el_same_age`), naming ANY of them is
+       equivalent - the fit has a single age parameter and `age()` resolves every isotope of the
+       element to it - so there is no age-controlling nuclide the caller has to identify.
+
+       The scan coordinate is linear in age, so `value_scale` matters more here than for any other
+       kind: ages are commonly O(1e9) seconds while a mass fraction is O(1). */
+      Age = 3
+    };//enum class Kind
+
+    /** String form of `Kind`; returns a static string, so do not delete it. */
+    static const char *to_str( const Kind kind );
+
+    Kind kind = Kind::MassFraction;
+
+    /** The source whose quantity is constrained; the numerator for `ActivityRatio`. */
+    SrcVariant source;
+
+    /** `ActivityRatio` only: the denominator source.  Left null for every other kind. */
+    SrcVariant denominator;
+
+    /** Curve `source` lives on. */
     size_t rel_eff_curve_index = 0;
-    const SandiaDecay::Nuclide *nuclide = nullptr;
-    double reported_fraction = 0.0;
-    double lagrange_multiplier = 0.0;
-    double penalty = 0.0;
-  };
-  std::optional<ProfileOnlyMassFractionConstraint> profile_only_mass_fraction_constraint;
+
+    /** `ActivityRatio` only: curve `denominator` lives on; a ratio may deliberately span curves. */
+    size_t denominator_curve_index = 0;
+
+    /** Checks the descriptor is self-consistent and coherent with `options`.
+
+     Covers invariant 9 of the profile design: `MassFraction` needs an element with at least two
+     fitted isotopes, `ActivityRatio` needs a distinct denominator that is actually present, and
+     `Age` needs a source whose age is fitted and which is its own age-controlling nuclide.
+
+     @returns An empty string when usable, otherwise a short untranslated reason why not. */
+    std::string why_not_usable( const Options &options ) const;
+  };//struct ProfileTarget
 
   /** If using the same Hoerl function, or external shielding for all relative efficiency curves,
    * this will check that the specifications are consistent.
@@ -1023,6 +1112,28 @@ struct Options
   static void equalEnough( const Options &lhs, const Options &rhs );
 #endif
 };//struct Options
+
+
+/** The profile-likelihood quantities that actually carry information for `source` on curve
+ `rel_eff_curve_index`, most informative first.
+
+ The point of this rule is that "profile the mass fraction" is only meaningful where there ARE
+ isotopics.  A fit of Cs-137 plus I-131 has none - each element's normalized fraction is identically
+ one - so offering a mass-fraction interval there would be an artifact, and the quantity that
+ carries the information is the activity.  A source may legitimately offer two kinds (an isotopic
+ fraction and a fitted age); both are returned.
+
+ `ActivityRatio` is never returned: it needs a denominator only the caller can choose.  It is also
+ the one gauge-invariant kind, so a caller comparing two sources should prefer it over two separate
+ `RelativeActivity` profiles - see `Options::ProfileTarget::Kind`.
+
+ @returns An empty vector when nothing about `source` can be profiled on that curve (it is not a
+          source there, its age is fixed, and its element has no second isotope).
+ */
+std::vector<Options::ProfileTarget::Kind> profilable_quantity_kinds(
+                                                  const Options &options,
+                                                  const SrcVariant &source,
+                                                  const size_t rel_eff_curve_index );
 
 
 /** Populates `opts.foreground_filename / foreground_sample_numbers` (and the background equivalents)
@@ -1411,7 +1522,19 @@ struct RelActAutoSolution
   Options m_options;
   
   std::shared_ptr<const RelActCalcAutoImp::RelActAutoCostFcn> m_cost_functor;
-  
+
+  /** The converged `ceres::Problem` this solution came out of, kept alive so a post-fit profile scan
+   can run its conditional optimizations in place rather than rebuilding the whole problem for every
+   point of every scan.
+
+   Only populated when the solve was told it might profile (see `solve_may_profile`), and cleared
+   again before the solution is handed back to a public caller - a returned solution never carries a
+   live optimizer problem.  Null at every other time.  Pinning within this problem is the only
+   conditional mechanism, so a profile requested with no host reports a structured failed profile
+   rather than running some slower engine.
+   */
+  std::shared_ptr<RelActCalcAutoImp::ProfileConditionalHost> m_profile_host;
+
   /** The original foreground passed into `solve_ceres(...)`. */
   std::shared_ptr<const SpecUtils::Measurement> m_foreground;
   
@@ -1898,22 +2021,9 @@ struct RelActAutoSolution
   
   /** The full *physical* chi-square: sum of squares of all configured data and prior residual rows.
 
-   A transient augmented-Lagrangian row used by profile-likelihood conditional solves is deliberately
-   excluded, so likelihood differences compare only the frozen physical objective.  For ordinary
-   solves there is no such row and this is also twice the objective minimized by Ceres.  The
-   report/GUI display the data-only `m_chi2_data`/`m_dof_data` goodness-of-fit instead. */
+   Twice the objective minimized by Ceres.  The report/GUI display the data-only
+   `m_chi2_data`/`m_dof_data` goodness-of-fit instead. */
   double m_chi2;
-
-  /** Sum of squares of every optimizer residual row.  This differs from `m_chi2` only for an
-   internal profile conditional solve, where it also includes the augmented-Lagrangian row. */
-  double m_optimizer_chi2 = -1.0;
-
-  /** Squared augmented-Lagrangian residual in a profile conditional solve; zero otherwise. */
-  double m_profile_constraint_penalty_chi2 = 0.0;
-
-  /** Reported-coordinate equality violation (actual minus requested) in a profile conditional
-   solve.  NaN for an ordinary unconstrained solve. */
-  double m_profile_constraint_violation = std::numeric_limits<double>::quiet_NaN();
 
   /** The number of degrees of freedom in the fit for equation parameters.
 

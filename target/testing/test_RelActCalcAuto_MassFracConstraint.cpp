@@ -1057,6 +1057,156 @@ BOOST_AUTO_TEST_CASE( forced_ratio_constrained_u235_profile )
 // MODEL-03: an explicit request profiles U-235 even when its quantity-specific local covariance is
 // already usable.  This is intentionally a small two-isotope empirical problem so the production
 // conditional solve (rather than fixture complexity) is what the regression measures.
+/** The frozen, cheap U-235/U-238 physical-model configuration the forced-profile cases share.
+
+ Everything that could move between two solves of the "same" problem is pinned (fixed ROIs, no
+ energy-cal fit, fixed FWHM, no skew, frozen shields, no Hoerl correction, no auto-simplify), so a
+ difference between two solves is attributable to the one thing under test.
+ */
+RelActCalcAuto::Options u235_forced_profile_options( const ULoadResult &tc,
+                                                     const SandiaDecay::Nuclide * const u235,
+                                                     const bool force_profile )
+{
+  RelActCalcAuto::Options options = tc.options;
+  options.auto_profile_weak_mass_fractions = false;
+  options.auto_simplify_model = false;
+  options.energy_cal_type = RelActCalcAuto::EnergyCalFitType::NoFit;
+  options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_2;
+  options.fwhm_estimation_method
+      = RelActCalcAuto::FwhmEstimationMethod::FixedToAllPeaksInSpectrum;
+  options.skew_type = PeakDef::SkewType::NoSkew;
+  for( RelActCalcAuto::RoiRange &roi : options.rois )
+    roi.range_limits_type = RelActCalcAuto::RoiRange::RangeLimitsType::Fixed;
+  options.rois.erase( std::remove_if(options.rois.begin(),options.rois.end(),
+      []( const RelActCalcAuto::RoiRange &roi ){
+        const bool low_energy_u235 = (roi.lower_energy >= 140.0) && (roi.upper_energy <= 210.0);
+        const bool high_energy_u238 = (roi.lower_energy >= 990.0) && (roi.upper_energy <= 1010.0);
+        return !low_energy_u235 && !high_energy_u238;
+      }),options.rois.end() );
+
+  RelActCalcAuto::RelEffCurveInput &curve = options.rel_eff_curves.at(0);
+  curve.rel_eff_eqn_type = RelActCalc::RelEffEqnForm::FramPhysicalModel;
+  curve.rel_eff_eqn_order = 0;
+  const auto freeze_shield = []( const std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &input ) {
+    if( !input )
+      return input;
+    auto fixed = std::make_shared<RelActCalc::PhysicalModelShieldInput>(*input);
+    fixed->fit_atomic_number = false;
+    fixed->fit_areal_density = false;
+    fixed->lower_fit_areal_density = fixed->areal_density;
+    fixed->upper_fit_areal_density = fixed->areal_density;
+    return std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>(fixed);
+  };
+  curve.phys_model_self_atten = freeze_shield(curve.phys_model_self_atten);
+  for( std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> &shield
+       : curve.phys_model_external_atten )
+    shield = freeze_shield(shield);
+  curve.phys_model_corr.corr_fcn = RelActCalc::PhysModelCorrFcn::None;
+  curve.nuclides.erase( std::remove_if(curve.nuclides.begin(),curve.nuclides.end(),
+      []( const RelActCalcAuto::NucInputInfo &input ){
+        const SandiaDecay::Nuclide * const nuclide = RelActCalcAuto::nuclide(input.source);
+        return !nuclide || ((nuclide->massNumber != 235) && (nuclide->massNumber != 238));
+      }),curve.nuclides.end() );
+  for( RelActCalcAuto::NucInputInfo &input : curve.nuclides )
+    input.force_profile_mass_fraction
+        = force_profile && (RelActCalcAuto::nuclide(input.source) == u235);
+
+  RelActCalcAuto::RelEffCurveInput::MassFractionConstraint healthy_window;
+  healthy_window.nuclide = u235;
+  healthy_window.lower_mass_fraction = 0.10;
+  healthy_window.upper_mass_fraction = 0.50;
+  curve.mass_fraction_constraints.push_back(healthy_window);
+
+  return options;
+}//u235_forced_profile_options(...)
+
+
+/** Invariants 4 and 7 of the profile design, checked through the public API.
+
+ A profile pins a parameter with a `ceres::SubsetManifold` on the retained converged
+ `ceres::Problem`; nothing is added to the objective.  Two obligations fail silently if broken:
+
+  4. Requesting a profile must not move the fit itself: the solve is identical whether or not the
+     converged problem is retained for profiling afterwards.
+  7. After profiling, the shared parameter buffer is back at the unconstrained optimum and the
+     production manifold is restored, so anything that reads the retained cost functor afterwards
+     (uncertainties, reports, the rel-eff chart) describes exactly the point the solution claims.
+ */
+BOOST_AUTO_TEST_CASE( profile_request_is_inert_and_restores_the_optimum )
+{
+  set_data_dir();
+  ULoadResult tc;
+  BOOST_REQUIRE_MESSAGE( load_u_test_case(tc),
+                         "Failed to load U235_Unshielded_6000.n42 test case." );
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  BOOST_REQUIRE( u235 );
+
+  vector<shared_ptr<const PeakDef>> input_peaks;
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> stored_peaks
+      = static_cast<const SpecMeas &>(*tc.meas).peaks({tc.foreground->sample_number()});
+  if( stored_peaks )
+    input_peaks.assign(stored_peaks->begin(),stored_peaks->end());
+
+  const auto run = [&]( const bool force_profile ){
+    RelActCalcAuto::RelActAutoSolution solution;
+    BOOST_REQUIRE_NO_THROW( solution = RelActCalcAuto::solve(
+        u235_forced_profile_options(tc,u235,force_profile),
+        tc.foreground,tc.background,tc.det,input_peaks,
+        PeakFitUtils::coarse_det_type(tc.foreground,nullptr),nullptr) );
+    BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status),
+                           solution.m_error_message );
+    return solution;
+  };
+
+  const RelActCalcAuto::RelActAutoSolution without_profile = run( false );
+  const RelActCalcAuto::RelActAutoSolution with_profile = run( true );
+
+  // The profile really ran only in the second solve.
+  BOOST_REQUIRE( !without_profile.mass_enrichment_result(u235,0).profile.has_value() );
+  BOOST_REQUIRE( with_profile.mass_enrichment_result(u235,0).profile.has_value() );
+
+  // Invariant 4.  Nothing about the profile request participates in the minimization, so it must
+  // not change the ANSWER.
+  BOOST_REQUIRE( std::isfinite(without_profile.m_chi2) && std::isfinite(with_profile.m_chi2) );
+  const double chi2_scale = std::max(1.0,std::fabs(without_profile.m_chi2));
+  BOOST_CHECK_MESSAGE( std::fabs(with_profile.m_chi2 - without_profile.m_chi2) <= 1.0e-6*chi2_scale,
+      "A profile request moved the objective: " << without_profile.m_chi2
+        << " -> " << with_profile.m_chi2 );
+
+  const double fraction_without = without_profile.mass_enrichment_result(u235,0).fraction;
+  const double fraction_with = with_profile.mass_enrichment_result(u235,0).fraction;
+  BOOST_REQUIRE( std::isfinite(fraction_without) && std::isfinite(fraction_with) );
+
+  // Invariant 7.  `mass_enrichment_result` reads the retained cost functor, so a scan that left
+  // the shared parameter buffer at its last conditional point would show up right here as a
+  // nominal that no longer matches the unprofiled solve.
+  BOOST_CHECK_MESSAGE( std::fabs(fraction_with - fraction_without) <= 1.0e-6,
+      "Profiling did not restore the reported nominal: " << fraction_without
+        << " -> " << fraction_with );
+
+  // A returned solution never carries a live optimizer problem.
+  for( const RelActCalcAuto::RelActAutoSolution *solution : { &without_profile,&with_profile } )
+    BOOST_CHECK( !solution->m_profile_host );
+
+  // Every sampled point of the scan is a conditional minimum of the SAME physical objective, so
+  // none may sit below the unconstrained optimum: a delta-chi2 that came out negative would mean
+  // the reported baseline was not the optimum, which the engine must route to the
+  // deferred-rebaseline flow instead of reporting.
+  const auto profile = *with_profile.mass_enrichment_result(u235,0).profile;
+  BOOST_CHECK_GT( profile.sampled_delta_chi2.size(),0u );
+  for( const std::pair<double,double> &sample : profile.sampled_delta_chi2 )
+  {
+    BOOST_CHECK_MESSAGE( std::isfinite(sample.first) && std::isfinite(sample.second),
+        "Non-finite profile sample (" << sample.first << "," << sample.second << ")" );
+    BOOST_CHECK_MESSAGE( sample.second >= -1.0e-6,
+        "Profile sample at fraction " << sample.first << " reported delta-chi2 "
+          << sample.second << ", below the unconstrained optimum" );
+  }
+}
+
+
 BOOST_AUTO_TEST_CASE( forced_healthy_u235_profile )
 {
   set_data_dir();
@@ -1670,4 +1820,167 @@ BOOST_AUTO_TEST_CASE( forced_search_polishes_complete_applicable_candidate_matri
                        "No diagnostic confirmed all four applicable semantic candidates" );
   BOOST_CHECK_MESSAGE( saw_selected_basin_then_elimination,
                        "Model selection did not report search-before-elimination staging" );
+}
+
+
+/** The gate on the whole parameter-pinning design: refit at each predicted endpoint and check that
+ the objective actually lands on the threshold.
+
+ Pinning a fit parameter gives `min over {a == a0}`, which is a FEASIBLE POINT of the
+ reported-coordinate constraint set and therefore an upper bound on the exact `min over {q == q0}`.
+ Delta chi2 is overstated at a given q, the threshold is crossed too early, and the reported interval
+ is somewhat too NARROW.  Nothing inside the engine can detect that - every point converges, the
+ model fits cleanly, the interval is simply too small - so the bias has to be measured from outside,
+ and this is the measurement.
+
+ The oracle is an exact refit with `MassFractionConstraint(lower == upper)` at the predicted
+ endpoint.  On uranium that is exact: with no Pu-242 correlation active the reported and uncorrected
+ coordinates coincide, so constraining the mass fraction constrains precisely the coordinate the
+ interval is quoted in.  (On plutonium it would NOT be - the correlation renormalizes the reported
+ fraction away from anything a parameter constraint can reach - which is why the Pu arm of the
+ harness secants the pin onto the reported coordinate instead; see
+ `Pu610775::pinned_pu_endpoints_reproduce_the_threshold_on_a_fixed_fraction_refit`.)
+
+ `forced_healthy_u235_profile`'s window makes U-235 the sole range-constrained nuclide of its
+ element, so the pinned coordinate IS the reported fraction and the pin is EXACT.  The shortfall must
+ therefore come out at essentially zero - which makes this case the harness's own self-test: if it
+ does not, the harness is wrong and no measurement downstream can be trusted.
+
+ Deviation from the plan, recorded deliberately: this lives beside the fixtures rather than in a
+ separate `test_RelActCalcAuto_ProfilePinning.cpp`, because the three uranium fixtures the harness
+ needs - plain, range-constrained, and ratio-constrained - and their ~200 lines of frozen setup
+ already live here, and duplicating them would create two things that must be kept identical.
+ */
+BOOST_AUTO_TEST_CASE( pinned_profile_endpoints_reproduce_the_threshold_on_refit )
+{
+  set_data_dir();
+  ULoadResult tc;
+  BOOST_REQUIRE_MESSAGE( load_u_test_case(tc),
+                         "Failed to load U235_Unshielded_6000.n42 test case." );
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  BOOST_REQUIRE( u235 );
+
+  vector<shared_ptr<const PeakDef>> input_peaks;
+  const shared_ptr<const deque<shared_ptr<const PeakDef>>> stored_peaks
+      = static_cast<const SpecMeas &>(*tc.meas).peaks({tc.foreground->sample_number()});
+  if( stored_peaks )
+    input_peaks.assign(stored_peaks->begin(),stored_peaks->end());
+
+  const RelActCalcAuto::Options options = u235_forced_profile_options( tc,u235,true );
+
+  RelActCalcAuto::RelActAutoSolution baseline;
+  BOOST_REQUIRE_NO_THROW( baseline = RelActCalcAuto::solve(
+      options,tc.foreground,tc.background,tc.det,input_peaks,
+      PeakFitUtils::coarse_det_type(tc.foreground,nullptr),nullptr) );
+  BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(baseline.m_status),
+                         baseline.m_error_message );
+
+  const auto nominal = baseline.mass_enrichment_result( u235,0 );
+  BOOST_REQUIRE_MESSAGE( nominal.profile.has_value(), "U-235 was not profiled" );
+  BOOST_REQUIRE_EQUAL( nominal.profile->intervals.size(),2u );
+  BOOST_REQUIRE( std::isfinite(baseline.m_chi2) );
+  BOOST_REQUIRE_GE( baseline.m_cov_scale,0.0 );
+
+  // The refit must see exactly the objective the baseline minimized: the SPECTRUM peaks, not the
+  // fitted ones.  Substituting the fitted peaks would change FWHM initialization and the nonlinear
+  // calibration anchors, i.e. it would change the objective, i.e. it would corrupt the very
+  // delta-chi2 being measured.
+  RelActCalcAuto::Options refit_options = options;
+  refit_options.auto_profile_weak_mass_fractions = false;
+  refit_options.auto_simplify_model = false;
+  for( RelActCalcAuto::NucInputInfo &input : refit_options.rel_eff_curves.at(0).nuclides )
+    input.force_profile_mass_fraction = false;
+
+  const double cov_scale = (std::max)( 1.0,baseline.m_cov_scale );
+  size_t endpoints_checked = 0;
+  double worst_shortfall = -std::numeric_limits<double>::infinity();
+
+  for( const auto &interval : nominal.profile->intervals )
+  {
+    const double threshold = interval.delta_chi2;
+    BOOST_REQUIRE( std::isfinite(threshold) && (threshold > 0.0) );
+
+    const std::pair<double,RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind>
+        endpoints[2] = { {interval.lower,interval.lower_kind},
+                         {interval.upper,interval.upper_kind} };
+
+    for( const auto &endpoint : endpoints )
+    {
+      // Only a likelihood crossing makes a claim about the objective.  A physical or input bound
+      // says the scan ran out of feasible room, which is a different statement entirely.
+      if( endpoint.second
+          != RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind::LikelihoodCrossing )
+        continue;
+
+      const double requested = endpoint.first;
+      BOOST_REQUIRE( std::isfinite(requested) && (requested > 0.0) && (requested < 1.0) );
+
+      // REPLACE, never append: `check_nuclide_constraints()` throws on two constraints for one
+      // nuclide, and this fixture already carries U-235's [0.10,0.50] window.
+      RelActCalcAuto::Options trial = refit_options;
+      RelActCalcAuto::RelEffCurveInput &curve = trial.rel_eff_curves.at(0);
+      curve.mass_fraction_constraints.erase(
+          std::remove_if( curve.mass_fraction_constraints.begin(),
+                          curve.mass_fraction_constraints.end(),
+              [u235]( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint ){
+                return constraint.nuclide == u235;
+              } ), curve.mass_fraction_constraints.end() );
+
+      RelActCalcAuto::RelEffCurveInput::MassFractionConstraint pinned;
+      pinned.nuclide = u235;
+      pinned.lower_mass_fraction = requested;
+      pinned.upper_mass_fraction = requested;
+      curve.mass_fraction_constraints.push_back( pinned );
+
+      RelActCalcAuto::RelActAutoSolution refit;
+      BOOST_REQUIRE_NO_THROW( refit = RelActCalcAuto::solve(
+          trial,tc.foreground,tc.background,baseline.m_drf,baseline.m_spectrum_peaks,
+          PeakFitUtils::coarse_det_type(tc.foreground,nullptr),nullptr) );
+      BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(refit.m_status),
+                             refit.m_error_message );
+
+      // The oracle must actually have reached the coordinate it was asked for, or it is measuring
+      // something else entirely.
+      const auto achieved = refit.mass_enrichment_result( u235,0 );
+      BOOST_CHECK_MESSAGE( std::fabs(achieved.fraction - requested) <= 1.0e-5,
+                           "oracle refit landed at " << achieved.fraction << " rather than "
+                                                     << requested );
+
+      const double delta = refit.m_chi2 - baseline.m_chi2;
+      const double shortfall = threshold - delta;
+      worst_shortfall = (std::max)( worst_shortfall,shortfall );
+      ++endpoints_checked;
+
+      BOOST_TEST_MESSAGE( "pinning-shortfall q=" << requested << " threshold=" << threshold
+                          << " refit_delta=" << delta << " shortfall=" << shortfall
+                          << " cov_scale=" << baseline.m_cov_scale );
+
+      // Both gates carry the same cov_scale factor, because the thresholds themselves are
+      // cov_scale*{1,3.841} - an earlier draft paired a relative loose gate with an absolute hard
+      // one, which differed by 17x on a real Pu fixture.
+      const double loose = cov_scale*(std::max)( 0.25,0.15*threshold/cov_scale );
+      BOOST_CHECK_MESSAGE( std::fabs(delta - threshold) <= loose,
+          "refit at the predicted endpoint missed the threshold: delta=" << delta
+          << " threshold=" << threshold << " tolerance=" << loose );
+
+      // ONE-SIDED and hard.  Pinning can only OVERSTATE delta-chi2, so the exact refit must come
+      // back at or BELOW the threshold; a refit above it means the fitted model was too flat and
+      // the interval is too WIDE - the direction no uncertainty tool may fail in silently.
+      BOOST_CHECK_MESSAGE( delta <= (threshold + 0.25*cov_scale),
+          "the refit objective exceeded the threshold, so the profile model was too flat: delta="
+          << delta << " threshold=" << threshold );
+    }
+  }
+
+  BOOST_CHECK_MESSAGE( endpoints_checked > 0,
+                       "no likelihood-crossing endpoint was available to validate" );
+
+  // U-235 is the sole range-constrained nuclide of its element here, so the pinned coordinate IS
+  // the reported fraction and the pin is exact.  A materially positive shortfall on THIS fixture
+  // means the harness itself is wrong, not that the statistic is biased.
+  BOOST_CHECK_MESSAGE( worst_shortfall <= 0.25*cov_scale,
+      "the exactly-pinned fixture shows a shortfall of " << worst_shortfall
+      << "; on an exact pin it must be ~0, so the harness is measuring the wrong thing" );
 }
