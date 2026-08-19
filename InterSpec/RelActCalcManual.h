@@ -225,6 +225,76 @@ struct MassFractionConstraint
 };//struct MassFractionConstraint
 #endif //USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
 
+
+/** A quantity to compute a profile-likelihood (asymmetric) interval for.
+
+ Add these to RelEffInput::profile_targets and #solve_relative_efficiency will, after the nominal
+ solve, walk each quantity away from its fitted value and record how the fit-weight chi2 rises;
+ results land in RelEffSolution::m_profile_results.
+
+ The walk is driven by an extra residual `w*(g(x) - target)` inside the SAME cost function (see
+ RelEffSolution::m_profile_results for why the reported interval is exact even though the achieved
+ `g` never lands exactly on `target`), so the scan reuses the nominal solve's basin, parameter
+ values and - for the physical model - its atomic-number scan.
+
+ Only gauge-INVARIANT quantities may be profiled - see the note on \p Type::RelativeActivity for
+ what that means for individual activities.
+ */
+struct ProfileTarget
+{
+  enum class Type : int
+  {
+    /** \p m_nuclide 's mass fraction of its element (i.e., of \p m_specific_activities roster). */
+    MassFraction,
+
+    /** The activity ratio \p m_nuclide / \p m_denom_nuclide. */
+    ActivityRatio,
+
+    /** \p m_nuclide 's REPORTED relative activity, i.e. the same quantity that appears in
+     RelEffSolution::m_rel_activities.
+
+     For the Physical Model the detector response sets the curve's absolute scale, so this is a
+     relative activity in the ordinary sense.  For the empirical equation forms only the PRODUCT
+     (curve x activities) is determined by the data, and the split between them is fixed by the
+     convention that the average measured relative efficiency is 1; the reported activity is
+     `m(x) * A_i(x)` with that average `m(x)` folded in, which IS invariant along the
+     curve<->activity scale orbit, and is therefore what gets profiled.  Profiling the raw solver
+     parameter instead would give an interval conditional on wherever the gauge happened to be
+     pinned, which is arbitrary.  For an empirical form, prefer \p Type::ActivityRatio when what
+     you want is convention-free.
+
+     Be aware of a structural floor for the empirical forms.  Any peak `p` fed only by `t`
+     contributes `C_p/(A_t*y_p)` to the average `m(x)`, so the `A_t` cancels and
+
+         m(x)*A_t  >=  (1/P) * sum over peaks owned by t of ( C_p / y_p )
+
+     independent of `A_t` and of every other activity.  A nuclide owning most of the peaks
+     therefore has very little room to move DOWN - measured on a Br82/K42/Na24 spectrum the floor
+     sat only 10% below the fitted value - and what limits it is how far the other nuclides can
+     shift the normalization, not its own peaks.  Both ends of such an interval are
+     convention-mediated; a ratio is the honest quantity there.
+     */
+    RelativeActivity
+  };//enum class Type
+
+  Type m_type = Type::MassFraction;
+
+  /** MassFraction: the isotope whose element-relative mass fraction to profile.
+   ActivityRatio: the numerator nuclide.
+   Must be a nuclide present in the problem's peaks.
+   */
+  std::string m_nuclide;
+
+  /** ActivityRatio only: the denominator nuclide. */
+  std::string m_denom_nuclide;
+
+  /** MassFraction only: the element roster the fraction is relative to (isotope -> specific
+   activity), including \p m_nuclide itself.  If left empty, it is built from the same-element
+   nuclides present in the problem, using SandiaDecay specific activities.
+   */
+  std::map<std::string,double> m_specific_activities;
+};//struct ProfileTarget
+
 /** Adds the `GenericLineInfo` info (e.g. nuclides and their BR) to input `peaks` by clustering gamma lines of
  provided nuclides.
  
@@ -510,6 +580,25 @@ struct RelEffInput
   */
   std::vector<MassFractionConstraint> mass_fraction_constraints;
 #endif //USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
+
+  /** Quantities to compute profile-likelihood (asymmetric) intervals for, after the nominal
+   solve; results land in RelEffSolution::m_profile_results.  Empty (the default) costs nothing:
+   the cost function does not even allocate the extra residual channel.
+   \sa ProfileTarget
+   */
+  std::vector<ProfileTarget> profile_targets;
+
+  /** The confidence levels to report profile intervals at, as CENTRAL two-sided intervals; each
+   maps to a chi2 rise of quantile(chi_squared(1), CL).  Defaults to 1-sigma and 2-sigma.
+   Ignored when \p profile_targets is empty.
+   */
+  std::vector<double> profile_confidence_levels{ 0.682689492, 0.954499736 };
+
+  /** Maximum penalized re-solves per side, per profile target.  Each solve warm-starts from the
+   previous one, so ~4 per side is typically enough to bracket the 2-sigma crossing.
+   */
+  size_t profile_max_solves_per_side = 8;
+
   /** Checks that the nuclide constraints are valid.
 
    Checks for cyclical constraints, and that all constrained nuclides are found in #nuclides.
@@ -530,67 +619,56 @@ enum class ManualSolutionStatus : int
 };//enum class ManSolutionStatus
 
 
-/** Options for a profile-likelihood scan of one nuclide's mass fraction - see
- #profile_mass_fraction.
- */
-struct ProfileMassFractionOptions
-{
-  /** The nuclide whose (element-relative) mass fraction to profile; must resolve to a
-   SandiaDecay nuclide present in the problem's peaks.
-   */
-  std::string nuclide;
-
-  /** The confidence levels to find interval end-points for, as CENTRAL two-sided intervals;
-   each maps to a delta-chi2 threshold of quantile(chi_squared(1), CL).
-   Defaults to 1-sigma and 2-sigma.
-   */
-  std::vector<double> confidence_levels{ 0.682689492, 0.954499736 };
-
-  /** Maximum bisection solves per interval side, per confidence level. */
-  size_t max_solves_per_side = 12;
-
-  /** Absolute tolerance on the mass fraction at each interval crossing. */
-  double frac_tolerance = 1.0e-4;
-};//struct ProfileMassFractionOptions
-
-
 /** One profile-likelihood interval, at a single confidence level. */
-struct ProfileMassFractionInterval
+struct ProfileInterval
 {
   double confidence_level = 0.0;
 
   /** The chi2 rise defining the interval end-points: quantile(chi_squared(1), CL), times the
-   nominal solution's max(1, m_cov_scale) - so the profile carries the same chi2/dof error
+   solution's max(1, m_cov_scale) - so the profile carries the same chi2/dof error
    inflation the covariance-based uncertainties do, and the two agree in the Gaussian limit.
    */
   double delta_chi2 = 0.0;
 
-  /** Interval end-points, as ELEMENT-relative mass fractions (the constraint-native quantity;
-   equals RelEffSolution::mass_fraction(nuclide) for single-element problems).
+  /** Interval end-points, in the units of the profiled quantity (an ELEMENT-relative mass
+   fraction, or an activity ratio - see ProfileTarget::Type).
    */
-  double lower_frac = 0.0;
-  double upper_frac = 0.0;
+  double lower_value = 0.0;
+  double upper_value = 0.0;
 
-  /** Set when the corresponding end-point ran into the physical [0,1] boundary (or a
-   pre-existing mass-fraction constraint window edge) before crossing the delta-chi2 threshold;
-   the end-point then holds the boundary value.
+  /** Set when the end-point is NOT a chi2 crossing.  Either the quantity stopped responding
+   before the chi2 rose to \p delta_chi2 - it ran into a physical boundary (activity bounded at 0,
+   mass fraction at 0 or 1, a mass-fraction constraint window edge), a solve did not converge, or
+   the allowed number of solves ran out - in which case the end-point holds the furthest value
+   actually reached; or the scan found a better fit elsewhere and the fitted value is itself
+   outside the interval, in which case both end-points hold the fitted value and a warning says so.
+   Either way the end-point is a limit, and the interval must not be read as a +-.
    */
   bool lower_at_bound = false;
   bool upper_at_bound = false;
-};//struct ProfileMassFractionInterval
+};//struct ProfileInterval
 
 
-/** Result of a profile-likelihood scan of one nuclide's mass fraction - see
- #profile_mass_fraction.
+/** Result of a profile-likelihood scan of one quantity - see ProfileTarget and
+ RelEffInput::profile_targets.
+
+ Mechanism: each scan point re-solves the SAME problem with one extra residual,
+ `w*(g(x) - target)`, added to the cost.  At the optimum of `C(x) + w^2*(g(x) - target)^2` we
+ have `grad C = -lambda * grad g`, which is exactly the stationarity condition of
+ "minimise C subject to g(x) == g(x*)".  So every scan point is an EXACT point of the profile
+ curve at the ACHIEVED `g`, whatever `w` was - which is why the achieved value is recorded and
+ the requested one is thrown away, and why `w` need not be large (no penalty-method
+ ill-conditioning, and no inner iteration to hit exact targets).
  */
-struct ProfileMassFractionResult
+struct ProfileResult
 {
-  std::string nuclide;
-
-  /** The nominal ELEMENT-relative mass fraction (fraction of the summed mass of the nuclides
-   in the constraint roster / element), from the nominal solution.
+  /** The target this result is for (as resolved - for a MassFraction target the element roster
+   is filled in even when the caller left it empty).
    */
-  double nominal_mass_fraction = 0.0;
+  ProfileTarget target;
+
+  /** The profiled quantity's value at the nominal solution. */
+  double nominal_value = 0.0;
 
   /** The fit-weight chi2 (see RelEffSolution::m_chi2_fit_weights) the delta-chi2 is referenced
    to; normally the nominal solution's, but re-anchored to the scan minimum if the profile
@@ -599,15 +677,15 @@ struct ProfileMassFractionResult
   double nominal_chi2 = 0.0;
 
   /** One interval per requested confidence level, in the requested order. */
-  std::vector<ProfileMassFractionInterval> intervals;
+  std::vector<ProfileInterval> intervals;
 
-  /** The (element-relative fraction, fit-weight chi2) points evaluated during the scan, sorted
-   by fraction - useful for plotting or diagnosing the profile shape.
+  /** The (achieved quantity value, peaks-only fit-weight chi2) points from the scan, sorted by
+   value, and including the nominal point - useful for plotting or diagnosing the profile shape.
    */
   std::vector<std::pair<double,double>> scan_points;
 
   std::vector<std::string> warnings;
-};//struct ProfileMassFractionResult
+};//struct ProfileResult
 
 /** A struct to hold the information about the solution to fitting the relative activities and
  efficiency curves.
@@ -704,13 +782,14 @@ struct RelEffSolution
   i.e, `m_nonlin_jacobian[k][i] = d residual[k] / d parameters[i]`
   
   To access the Jacobian for the k'th residual and i'th parameter, 
-  use `m_nonlin_jacobian[k][i]`.  The k-index cooresponds to the index 
-  of the peak in `m_input.peaks`.  The i-index cooresponds to the index 
+  use `m_nonlin_jacobian[k][i]`.  The k-index cooresponds to the index
+  of the peak in `m_input.peaks`.  The i-index cooresponds to the index
   of the parameter in `m_fit_parameters`.  You might want to think of it as
   `m_nonlin_jacobian[peak][parameter]`.
 
-  Note: if the compile time option `USE_RESIDUAL_TO_BREAK_DEGENERACY` is true, 
-  then there will be one more residual than the number of peaks.
+  Note: the cost function may carry residual channels that are not peaks (the
+  profile-likelihood penalty channel, or the `USE_RESIDUAL_TO_BREAK_DEGENERACY` normalization
+  channel); those rows are not included here.
   */
   std::vector<std::vector<double>> m_nonlin_jacobian;
 
@@ -818,13 +897,12 @@ struct RelEffSolution
    */
   std::vector<std::string> m_warnings;
 
-  /** Optional profile-likelihood mass-fraction results.
-
-   NOT filled by #solve_relative_efficiency - the caller (GUI background job, LLM tool, tests)
-   runs #profile_mass_fraction on demand and stores the results here so the reporting surfaces
-   (chart title, mass-fraction table, HTML report, JSON) can pick them up.
+  /** Profile-likelihood (asymmetric) intervals, one per RelEffInput::profile_targets entry that
+   could be scanned; empty when none were requested.  Filled by #solve_relative_efficiency after
+   the nominal solve, and picked up by the reporting surfaces (chart title, mass-fraction table,
+   HTML report, JSON).
    */
-  std::vector<ProfileMassFractionResult> m_profile_mass_fractions;
+  std::vector<ProfileResult> m_profile_results;
 
 
 
@@ -1032,36 +1110,6 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input );
  estimate could be made (unweighted fit, too few peaks, or an unsuccessful solution).
  */
 double estimate_stat_uncert_multiple( const RelEffSolution &solution, const double max_multiple = 25.0 );
-
-
-/** Profile-likelihood interval for one nuclide's mass fraction (of its element).
-
- For a grid of trial fractions f around the nominal, the problem is re-solved with the target
- nuclide's mass fraction FIXED at f (a lower == upper #MassFractionConstraint), and the
- fit-weight chi2 (see RelEffSolution::m_chi2_fit_weights - the objective the solver actually
- minimizes, so all nuisance parameters are re-fit at each trial value) is recorded; interval
- end-points are the chi2(f) = chi2_min + delta_chi2 crossings, found by bisection.  Compared to
- the covariance-based RelEffSolution::mass_fraction(nuclide, num_sigma), this gives honest
- asymmetric intervals, stays valid near the physical [0,1] bounds and constraint-window edges,
- and does not rely on inverting a possibly ill-conditioned covariance.
-
- Sub-solves use RelEffInput::point_estimate_only and RelEffInput::skip_an_scan (a physical-model
- self-atten AN is re-fit locally, seeded from the nominal solution), so the whole scan is
- typically well under a second for empirical forms, and a few seconds for the physical model.
-
- If the target nuclide already has a range mass-fraction constraint, the scan is restricted to
- its window (end-points then flagged `*_at_bound` when clipped).
-
- Throws std::exception on invalid input (unknown nuclide, element with only one isotope in the
- problem, non-Success nominal solution).
-
- @param input The same input the nominal solution was solved with.
- @param nominal_solution The nominal solution (must be Success).
- @param options The nuclide to profile, confidence levels, and scan controls.
- */
-ProfileMassFractionResult profile_mass_fraction( const RelEffInput &input,
-                                                 const RelEffSolution &nominal_solution,
-                                                 const ProfileMassFractionOptions &options );
 
 
 /** Functions in this namespace are for importing peak data from CSV files, and then matching

@@ -824,6 +824,50 @@ nlohmann::json executePeakBasedRelativeEfficiency(
   input.auto_estimate_add_uncert = (add_uncert == RelActManualGui::AddUncert::AutoEstimate);
   input.widen_uncerts_for_scatter = (add_uncert != RelActManualGui::AddUncert::StatOnlyNoWidening);
 
+  // Optional profile-likelihood mass-fraction intervals (asymmetric; see
+  //  RelEffInput::profile_targets), for each nuclide whose element has at least two isotopes in
+  //  the problem.  The solver would drop the others anyway, but with a warning apiece - and a
+  //  request the caller could not have known was invalid is not worth telling them about.
+  if( params.contains("profile_uncertainty") && params["profile_uncertainty"].is_boolean()
+      && params["profile_uncertainty"].get<bool>() )
+  {
+    // `database()` throws rather than returning null; catch it here so a missing decay database
+    //  degrades to "no profiles requested" instead of failing the whole tool call.
+    const SandiaDecay::SandiaDecayDataBase *decay_db = nullptr;
+    try
+    {
+      decay_db = DecayDataBaseServer::database();
+    }catch( std::exception & )
+    {
+      decay_db = nullptr;
+    }
+
+    set<string> problem_nuclides;
+    for( const GenericPeakInfo &peak : input.peaks )
+      for( const GenericLineInfo &line : peak.m_source_gammas )
+        problem_nuclides.insert( line.m_isotope );
+
+    map<int,int> num_isos_of_element;
+    for( const string &nuclide : problem_nuclides )
+    {
+      const SandiaDecay::Nuclide * const nuc = decay_db ? decay_db->nuclide(nuclide) : nullptr;
+      if( nuc )
+        num_isos_of_element[nuc->atomicNumber] += 1;
+    }
+
+    for( const string &nuclide : problem_nuclides )
+    {
+      const SandiaDecay::Nuclide * const nuc = decay_db ? decay_db->nuclide(nuclide) : nullptr;
+      if( !nuc || (num_isos_of_element[nuc->atomicNumber] < 2) )
+        continue;
+
+      ProfileTarget target;
+      target.m_type = ProfileTarget::Type::MassFraction;
+      target.m_nuclide = nuclide;
+      input.profile_targets.push_back( target );
+    }
+  }//if( profile_uncertainty requested )
+
   // Solve
   RelEffSolution solution = solve_relative_efficiency( input );
   
@@ -838,41 +882,6 @@ nlohmann::json executePeakBasedRelativeEfficiency(
       result["warnings"] = solution.m_warnings;
     return result;
   }
-
-  // Optional profile-likelihood mass-fraction intervals (asymmetric; see profile_mass_fraction):
-  //  run for every nuclide whose element has at least two isotopes in the solution.
-  if( params.contains("profile_uncertainty") && params["profile_uncertainty"].is_boolean()
-      && params["profile_uncertainty"].get<bool>() )
-  {
-    const SandiaDecay::SandiaDecayDataBase * const decay_db = DecayDataBaseServer::database();
-
-    map<int,int> num_isos_of_element;
-    for( const auto &rel_act : solution.m_rel_activities )
-    {
-      const SandiaDecay::Nuclide * const nuc = decay_db ? decay_db->nuclide(rel_act.m_isotope) : nullptr;
-      if( nuc )
-        num_isos_of_element[nuc->atomicNumber] += 1;
-    }
-
-    for( const auto &rel_act : solution.m_rel_activities )
-    {
-      const SandiaDecay::Nuclide * const nuc = decay_db ? decay_db->nuclide(rel_act.m_isotope) : nullptr;
-      if( !nuc || (num_isos_of_element[nuc->atomicNumber] < 2) )
-        continue;
-
-      try
-      {
-        ProfileMassFractionOptions profile_opts;
-        profile_opts.nuclide = rel_act.m_isotope;
-        solution.m_profile_mass_fractions.push_back(
-                              profile_mass_fraction( input, solution, profile_opts ) );
-      }catch( std::exception &e )
-      {
-        solution.m_warnings.push_back( "Profile-likelihood scan for " + rel_act.m_isotope
-                                       + " failed: " + string(e.what()) );
-      }
-    }//for( const auto &rel_act : solution.m_rel_activities )
-  }//if( profile_uncertainty requested )
 
   result["success"] = true;
 
@@ -994,22 +1003,25 @@ nlohmann::json executePeakBasedRelativeEfficiency(
   result["activity_ratios"] = activity_ratios;
   result["mass_ratios"] = mass_ratios;
 
-  if( !solution.m_profile_mass_fractions.empty() )
+  if( !solution.m_profile_results.empty() )
   {
     json profiles = json::array();
-    for( const ProfileMassFractionResult &profile : solution.m_profile_mass_fractions )
+    for( const ProfileResult &profile : solution.m_profile_results )
     {
+      if( profile.target.m_type != ProfileTarget::Type::MassFraction )
+        continue; //nothing requests activity-ratio profiles through this tool (yet)
+
       json profile_json;
-      profile_json["nuclide"] = profile.nuclide;
-      profile_json["nominal_element_mass_fraction"] = profile.nominal_mass_fraction;
+      profile_json["nuclide"] = profile.target.m_nuclide;
+      profile_json["nominal_element_mass_fraction"] = profile.nominal_value;
 
       json intervals = json::array();
-      for( const ProfileMassFractionInterval &interval : profile.intervals )
+      for( const ProfileInterval &interval : profile.intervals )
       {
         json interval_json;
         interval_json["confidence_level"] = interval.confidence_level;
-        interval_json["lower_mass_fraction"] = interval.lower_frac;
-        interval_json["upper_mass_fraction"] = interval.upper_frac;
+        interval_json["lower_mass_fraction"] = interval.lower_value;
+        interval_json["upper_mass_fraction"] = interval.upper_value;
         interval_json["lower_at_bound"] = interval.lower_at_bound;
         interval_json["upper_at_bound"] = interval.upper_at_bound;
         intervals.push_back( interval_json );
@@ -1020,10 +1032,11 @@ nlohmann::json executePeakBasedRelativeEfficiency(
         profile_json["warnings"] = profile.warnings;
 
       profiles.push_back( profile_json );
-    }//for( const ProfileMassFractionResult &profile : solution.m_profile_mass_fractions )
+    }//for( const ProfileResult &profile : solution.m_profile_results )
 
-    result["profile_mass_fractions"] = profiles;
-  }//if( !solution.m_profile_mass_fractions.empty() )
+    if( !profiles.empty() )
+      result["profile_mass_fractions"] = profiles;
+  }//if( !solution.m_profile_results.empty() )
   
   // Peak information with observed vs fit efficiency
   json peaks_arr = json::array();

@@ -881,7 +881,96 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
 
   /** just for debug purposes, we'll keep track of how many times the eval function gets called. */
   mutable std::atomic<size_t> m_ncalls;
-  
+
+  /** Profile-likelihood penalty channel state; see `number_residuals()` and #arm_profile.
+   Index into `m_input.profile_targets` of the quantity currently being driven, or -1 for
+   "disarmed" (the extra residual is then identically zero, so the nominal fit is untouched).
+
+   These are mutable so they can be changed on the const functor Ceres holds - but they are
+   written ONLY between `ceres::Solve` calls, never during one: Ceres may evaluate the functor
+   from several threads within a single solve.
+   */
+  mutable int m_profile_active = -1;
+  mutable double m_profile_target = 0.0;
+  mutable double m_profile_weight = 0.0;
+  mutable double m_profile_denom_floor = 0.0;
+
+  /** Point the penalty channel at `target_index`'s quantity, pulling it toward `target_value`
+   with weight `weight` (residual `weight*(g(x) - target_value)`).  `denom_floor` smoothly floors
+   the quantity's denominator so a vanishing element/denominator activity cannot make it NaN.
+   Call with a negative index to disarm.  Not thread safe - see the note above.
+   */
+  void arm_profile( const int target_index, const double target_value,
+                    const double weight, const double denom_floor ) const
+  {
+    assert( target_index < static_cast<int>(m_input.profile_targets.size()) );
+    m_profile_active = target_index;
+    m_profile_target = target_value;
+    m_profile_weight = weight;
+    m_profile_denom_floor = denom_floor;
+  }//void arm_profile(...)
+
+  /** Whether reported relative activities carry the LLS-gauge multiple `average_measured_rel_eff`
+   - i.e. the Ceres-fit empirical forms, where only the product (curve x activities) is determined
+   by the data.
+
+   Seeded from the equation form in the constructor, but `solve_relative_efficiency` OVERWRITES it
+   with the decision it actually used: that decision has a fallback (a non-finite average, or a
+   peak left with no fitted source activity) which the form alone cannot predict.  Re-deriving it
+   here instead would let the profiled quantity apply a gauge multiple the reported activities do
+   not, so the two would silently disagree.
+   */
+  mutable bool m_gauge_normalizes_activities = false;
+
+  bool gauge_normalizes_activities() const
+  {
+    return m_gauge_normalizes_activities;
+  }//bool gauge_normalizes_activities() const
+
+  void set_gauge_normalizes_activities( const bool normalizes ) const
+  {
+    m_gauge_normalizes_activities = normalizes;
+  }
+
+
+  /** The value of a profile target's quantity at parameters `x`.
+
+   Every form is invariant under the overall activity<->curve scale gauge: the ratio forms because
+   the scale cancels, and `RelativeActivity` because it carries the same `average_measured_rel_eff`
+   multiple the reported activities do.  All of them go through `relative_activity()`, so
+   act-ratio chains and mass-fraction block decodes are automatically respected.
+   */
+  template<typename T>
+  T profile_quantity( const RelActCalcManual::ProfileTarget &target, const std::vector<T> &x,
+                      const double denom_floor ) const
+  {
+    if( target.m_type == RelActCalcManual::ProfileTarget::Type::RelativeActivity )
+    {
+      const T act = relative_activity( target.m_nuclide, x );
+      return gauge_normalizes_activities() ? (average_measured_rel_eff( x ) * act) : act;
+    }//if( RelativeActivity )
+
+    if( target.m_type == RelActCalcManual::ProfileTarget::Type::ActivityRatio )
+    {
+      const T numer = relative_activity( target.m_nuclide, x );
+      const T denom = relative_activity( target.m_denom_nuclide, x );
+      return numer / smooth_lower_bound( denom, denom_floor );
+    }//if( ActivityRatio )
+
+    // Mass fraction of the element roster: (A_t/s_t) / sum_roster(A_i/s_i)
+    T total_mass( 0.0 ), target_mass( 0.0 );
+    for( const std::map<std::string,double>::value_type &iso_sa : target.m_specific_activities )
+    {
+      const T mass = relative_activity( iso_sa.first, x ) / iso_sa.second;
+      total_mass += mass;
+      if( iso_sa.first == target.m_nuclide )
+        target_mass = mass;
+    }
+
+    return target_mass / smooth_lower_bound( total_mass, denom_floor );
+  }//T profile_quantity(...)
+
+
   /** Constructor for this functior.
    
    Will throw exception on error.
@@ -899,6 +988,9 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
   {
     if( m_input.peaks.size() < 1 )
       throw runtime_error( "You must use at least one peak." );
+
+    m_gauge_normalizes_activities = (m_input.eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel)
+                                     && m_input.use_ceres_to_fit_eqn;
 
     size_t num_rel_eff_pars_fit = 0;
     if( m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
@@ -1347,12 +1439,17 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
   
   size_t number_residuals() const
   {
+    // One extra channel, present for the life of the functor, when profile-likelihood intervals
+    //  were asked for; it is inert (identically zero) until armed between solves.  Ceres needs a
+    //  constant residual count, hence "allocate up front, arm later".
+    const size_t num_profile = m_input.profile_targets.empty() ? 0 : 1;
+
 #if( USE_RESIDUAL_TO_BREAK_DEGENERACY )
     if( m_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel )
-      return m_input.peaks.size();
-    return m_input.peaks.size() + 1;
+      return m_input.peaks.size() + num_profile;
+    return m_input.peaks.size() + 1 + num_profile;
 #else
-    return m_input.peaks.size();
+    return m_input.peaks.size() + num_profile;
 #endif
   }//size_t number_residuals() const
   
@@ -1646,14 +1743,19 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
    activities.  Note m(x)*A_i(x) is exactly invariant under the scale orbit (activities times k,
    curve divided by k).
 
-   (Not bit-identical to the LLS version: that one averages the measured rel-eff values AFTER
-   their smooth lower bound / clamp is applied, so if any peak is being floored the two differ
-   slightly - at a converged solution no peak should be.)
+   The denominator carries the same smooth floor `fit_rel_eff_eqn_lls_imp` applies: this is not
+   only evaluated once at a converged solution - the profile-likelihood penalty channel calls it
+   for `Type::RelativeActivity` targets, so it sees whatever trial point the optimizer probes,
+   including ones where a source's activity has been driven to its lower bound of zero.  Without
+   the floor that is a division by zero, i.e. a non-finite residual.
    */
   template<typename T>
-  T average_measured_rel_eff( const std::vector<T> &x ) const
+  T average_measured_rel_eff( const std::vector<T> &x, bool *any_peak_floored = nullptr ) const
   {
     assert( !m_input.peaks.empty() );
+
+    if( any_peak_floored )
+      *any_peak_floored = false;
 
     T sum( 0.0 );
     for( const RelActCalcManual::GenericPeakInfo &peak : m_input.peaks )
@@ -1662,11 +1764,20 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
       for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
         rel_src_counts += relative_activity( line.m_isotope, x ) * line.m_yield;
 
-      sum += peak.m_counts / rel_src_counts;
+      const double floor_val = 1.0E-6 * (std::max)( 1.0, peak.m_counts );
+
+      // Report, but do not hide, a floored peak.  The floor keeps this evaluable, but a peak whose
+      //  only source has been driven to zero contributes ~1e6 rather than the infinity it used to,
+      //  which is finite enough to sail through a caller's isinf() check while being just as
+      //  meaningless - see where the reporting gauge is computed.
+      if( any_peak_floored && (rel_src_counts < 10.0*floor_val) )
+        *any_peak_floored = true;
+
+      sum += peak.m_counts / smooth_lower_bound( rel_src_counts, floor_val );
     }//for( loop over peaks )
 
     return sum / static_cast<double>( m_input.peaks.size() );
-  }//T average_measured_rel_eff( const std::vector<T> &x ) const
+  }//T average_measured_rel_eff( const std::vector<T> &x, bool *any_peak_floored ) const
 
 
   template<typename T>
@@ -2010,6 +2121,24 @@ struct ManualGenericRelActFunctor  /* : ROOT::Minuit2::FCNBase() */
       eval_internal_nl_rel_eff<T>( x, residuals );
     else
       eval_internal_lls_rel_eff<T>( x, residuals );
+
+    // The profile-likelihood penalty channel (last residual); zero unless armed, so the nominal
+    //  fit is bit-for-bit what it would be without profiling.
+    if( !m_input.profile_targets.empty() )
+    {
+      const size_t profile_index = number_residuals() - 1;
+
+      if( m_profile_active < 0 )
+      {
+        residuals[profile_index] = T(0.0);
+      }else
+      {
+        assert( static_cast<size_t>(m_profile_active) < m_input.profile_targets.size() );
+        const RelActCalcManual::ProfileTarget &target = m_input.profile_targets[m_profile_active];
+        residuals[profile_index] = m_profile_weight
+                    * (profile_quantity( target, x, m_profile_denom_floor ) - m_profile_target);
+      }
+    }//if( the penalty channel exists )
 
 
 #ifndef NDEBUG
@@ -3833,31 +3962,54 @@ void RelEffSolution::get_mass_fraction_table( std::ostream &results_html ) const
   results_html << "  </tbody>\n"
   << "</table>\n\n";
 
-  // Profile-likelihood intervals, when the caller ran them (see #profile_mass_fraction); these
-  //  lines serve both the in-app results tab and the HTML report.
-  for( const ProfileMassFractionResult &profile : m_profile_mass_fractions )
+  // Profile-likelihood intervals, when they were asked for (see RelEffInput::profile_targets);
+  //  these lines serve both the in-app results tab and the HTML report.
+  for( const ProfileResult &profile : m_profile_results )
   {
     if( profile.intervals.empty() )
       continue;
 
-    results_html << "<div class=\"profileuncert\">Profile likelihood " << profile.nuclide
-                 << " mass fraction (of its element): "
-                 << SpecUtils::printCompact(100.0*profile.nominal_mass_fraction, 4) << "%";
+    const bool is_mass_frac = (profile.target.m_type == ProfileTarget::Type::MassFraction);
+    const double disp_mult = is_mass_frac ? 100.0 : 1.0;
+    const char * const units = is_mass_frac ? "%" : "";
 
-    for( const ProfileMassFractionInterval &interval : profile.intervals )
+    results_html << "<div class=\"profileuncert\">Profile likelihood " << profile.target.m_nuclide;
+    switch( profile.target.m_type )
     {
+      case ProfileTarget::Type::MassFraction:
+        results_html << " mass fraction (of its element): ";
+        break;
+      case ProfileTarget::Type::ActivityRatio:
+        results_html << "/" << profile.target.m_denom_nuclide << " activity ratio: ";
+        break;
+      case ProfileTarget::Type::RelativeActivity:
+        results_html << " relative activity: ";
+        break;
+    }//switch( profile.target.m_type )
+    results_html << SpecUtils::printCompact(disp_mult*profile.nominal_value, 4) << units;
+
+    for( const ProfileInterval &interval : profile.intervals )
+    {
+      // Mark the individual end that is not a chi2 crossing, rather than tagging the whole
+      //  interval: that end is only as far as the scan got, so the true end-point lies beyond it -
+      //  hence the inequality - and which of the two it is changes how the number should be read.
       results_html << "; " << SpecUtils::printCompact(100.0*interval.confidence_level, 4)
-                   << "% CL in [" << SpecUtils::printCompact(100.0*interval.lower_frac, 4)
-                   << "%, " << SpecUtils::printCompact(100.0*interval.upper_frac, 4) << "%]";
-      if( interval.lower_at_bound || interval.upper_at_bound )
-        results_html << " (limit)";
-    }//for( const ProfileMassFractionInterval &interval : profile.intervals )
+                   << "% CL in ["
+                   << (interval.lower_at_bound ? "&lt;" : "")
+                   << SpecUtils::printCompact(disp_mult*interval.lower_value, 4) << units
+                   << (interval.lower_at_bound ? " (limit)" : "")
+                   << ", "
+                   << (interval.upper_at_bound ? "&gt;" : "")
+                   << SpecUtils::printCompact(disp_mult*interval.upper_value, 4) << units
+                   << (interval.upper_at_bound ? " (limit)" : "")
+                   << "]";
+    }//for( const ProfileInterval &interval : profile.intervals )
 
     results_html << "</div>\n";
 
     for( const std::string &warning : profile.warnings )
       results_html << "<div class=\"profileuncert profileuncertwarn\">" << warning << "</div>\n";
-  }//for( const ProfileMassFractionResult &profile : m_profile_mass_fractions )
+  }//for( const ProfileResult &profile : m_profile_results )
 }//void get_mass_fraction_table( std::ostream &strm ) const
 
 
@@ -4626,14 +4778,136 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   // I assume that we could avoid this with a proper implementation of DynamicCostFunction.
 #define SCAN_AN_FOR_BEST_FIT 1
 
-
-#if( SCAN_AN_FOR_BEST_FIT )
-  RelEffInput input = input_orig; //tmp copy for trying hack
-#else
-  const RelEffInput &input = input_orig;
-#endif
+  // A mutable copy: the AN scan replaces the self-attenuator with its best-fit one, and the
+  //  profile-target resolution below fills in element rosters.
+  RelEffInput input = input_orig;
 
   input.check_nuclide_constraints();
+
+  // Resolve the profile targets (see RelEffInput::profile_targets) against the nuclides actually
+  //  in the problem, before the cost functor - which allocates the penalty residual channel for
+  //  them - is built.  A target we cannot make sense of is dropped with a warning rather than
+  //  failing the whole fit; the covariance-based uncertainties remain as the fallback.
+  vector<string> profile_setup_warnings;
+  if( !input.profile_targets.empty() )
+  {
+    set<string> problem_isotopes;
+    for( const GenericPeakInfo &peak : input.peaks )
+      for( const GenericLineInfo &line : peak.m_source_gammas )
+        problem_isotopes.insert( line.m_isotope );
+
+    // `database()` THROWS on failure rather than returning null, and this runs outside the
+    //  try/catch that turns problems into a solution status - so catch it here and let the
+    //  per-target `db` guards below drop what they cannot resolve.
+    const SandiaDecay::SandiaDecayDataBase *db = nullptr;
+    try
+    {
+      db = DecayDataBaseServer::database();
+    }catch( std::exception & )
+    {
+      db = nullptr;
+    }
+
+    vector<ProfileTarget> resolved;
+    for( ProfileTarget target : input.profile_targets )
+    {
+      const string what = "profile of " + target.m_nuclide;
+
+      if( !problem_isotopes.count(target.m_nuclide) )
+      {
+        profile_setup_warnings.push_back( "Skipped the " + what + ": it is not in the fit." );
+        continue;
+      }
+
+      if( target.m_type == ProfileTarget::Type::RelativeActivity )
+      {
+        resolved.push_back( std::move(target) );
+        continue;
+      }//if( RelativeActivity )
+
+      if( target.m_type == ProfileTarget::Type::ActivityRatio )
+      {
+        if( !problem_isotopes.count(target.m_denom_nuclide) )
+        {
+          profile_setup_warnings.push_back( "Skipped the " + what + "/" + target.m_denom_nuclide
+                                            + " activity ratio: the denominator is not in the fit." );
+          continue;
+        }
+
+        if( target.m_denom_nuclide == target.m_nuclide )
+        {
+          profile_setup_warnings.push_back( "Skipped the " + what + " activity ratio: the"
+                                            " numerator and denominator are the same nuclide." );
+          continue;
+        }
+
+        resolved.push_back( std::move(target) );
+        continue;
+      }//if( ActivityRatio )
+
+      // A mass fraction pinned by a fixed constraint cannot move, so there is nothing to profile.
+#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
+      bool is_pinned = false;
+      for( const MassFractionConstraint &mfc : input.mass_fraction_constraints )
+        is_pinned |= ((mfc.m_nuclide == target.m_nuclide)
+                      && (mfc.m_mass_fraction_lower == mfc.m_mass_fraction_upper));
+      if( is_pinned )
+      {
+        profile_setup_warnings.push_back( "Skipped the " + what + " mass fraction: it is fixed by"
+                                          " a mass-fraction constraint." );
+        continue;
+      }
+
+      // A constraint on the target already names the element roster the fraction is relative to.
+      if( target.m_specific_activities.empty() )
+      {
+        for( const MassFractionConstraint &mfc : input.mass_fraction_constraints )
+          if( mfc.m_nuclide == target.m_nuclide )
+            target.m_specific_activities = mfc.m_specific_activities;
+      }
+#endif //USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT
+
+      const SandiaDecay::Nuclide * const target_nuc = db ? db->nuclide( target.m_nuclide ) : nullptr;
+      if( target.m_specific_activities.empty() && target_nuc )
+      {
+        for( const string &iso : problem_isotopes )
+        {
+          const SandiaDecay::Nuclide * const nuc = db->nuclide( iso );
+          if( nuc && (nuc->atomicNumber == target_nuc->atomicNumber) )
+            target.m_specific_activities[iso] = nuc->activityPerGram();
+        }
+      }//if( no roster from the caller or a constraint )
+
+      // The roster must be a subset of the fitted nuclides: an isotope that is not fit has no
+      //  activity to contribute, and asking the functor for one would throw.
+      for( map<string,double>::iterator iter = begin(target.m_specific_activities);
+           iter != end(target.m_specific_activities); /**/ )
+      {
+        if( problem_isotopes.count(iter->first) && (iter->second > 0.0) )
+          ++iter;
+        else
+          iter = target.m_specific_activities.erase( iter );
+      }
+
+      if( target.m_specific_activities.size() < 2 )
+      {
+        profile_setup_warnings.push_back( "Skipped the " + what + " mass fraction: fewer than two"
+                    " isotopes of its element are in the fit, so the fraction is 1 by definition." );
+        continue;
+      }
+
+      if( !target.m_specific_activities.count(target.m_nuclide) )
+      {
+        profile_setup_warnings.push_back( "Skipped the " + what + " mass fraction: it is not in"
+                                          " the roster the fraction would be relative to." );
+        continue;
+      }
+
+      resolved.push_back( std::move(target) );
+    }//for( ProfileTarget target : input.profile_targets )
+
+    input.profile_targets.swap( resolved );
+  }//if( !input.profile_targets.empty() )
 
   // Estimate the additional per-peak fractional uncertainty from the data, if asked to.  The
   //  estimate needs a fitted model to measure deviations against, so: solve, estimate, apply,
@@ -4649,6 +4923,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     RelEffInput trial_input = input;
     trial_input.auto_estimate_add_uncert = false;
     trial_input.point_estimate_only = true;
+    trial_input.profile_targets.clear(); //only the final solve profiles
 
     const RelEffSolution trial_solution = solve_relative_efficiency( trial_input );
     if( trial_solution.m_status == ManualSolutionStatus::Success )
@@ -4679,6 +4954,9 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
 
   solution.m_warnings.insert( begin(solution.m_warnings),
                       begin(input.prep_warnings), end(input.prep_warnings) );
+
+  solution.m_warnings.insert( end(solution.m_warnings),
+                      begin(profile_setup_warnings), end(profile_setup_warnings) );
 
   if( input.auto_estimate_add_uncert )
   {
@@ -4723,6 +5001,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       }
       new_input.phys_model_self_atten = new_self_atten;
       new_input.point_estimate_only = true; //scan only reads m_chi2 and the fitted AD - skip covariance work
+      new_input.profile_targets.clear(); //only the final solve profiles
       // The peaks already carry any auto-estimated additional uncertainty (it is applied before
       //  this scan runs); re-estimating it per scan point would both cost several solves each and
       //  make the scan compare chi2 values computed with different weights.
@@ -4897,6 +5176,20 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   const size_t num_peaks = cost_functor->m_input.peaks.size();
   const size_t num_nuclides = cost_functor->m_isotopes.size();
   const size_t num_parameters = cost_functor->num_parameters();
+
+  // The chi2 of the DATA channels alone, at the given parameters.  Everything that reports or
+  //  differences a chi2 goes through here, so an armed profile-likelihood penalty channel (see
+  //  RelEffInput::profile_targets) can never leak into a reported number: 2*Ceres' final cost
+  //  would include it.  With the channel disarmed this is exactly 2*final_cost.
+  const auto peaks_only_chi2 = [cost_functor, num_peaks]( const vector<double> &pars ) -> double {
+    vector<double> residuals( cost_functor->number_residuals(), 0.0 );
+    cost_functor->eval( pars, residuals.data() );
+
+    double chi2 = 0.0;
+    for( size_t i = 0; i < num_peaks; ++i )
+      chi2 += residuals[i]*residuals[i];
+    return chi2;
+  };//peaks_only_chi2 lambda
 
   solution.m_activity_norms = cost_functor->m_rel_act_norms;
 
@@ -5315,10 +5608,17 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   solution.m_fit_parameters = parameters;
 
   // Chi2 under the weights actually minimized (i.e., including any
-  //  GenericPeakInfo::m_base_rel_eff_uncert); Ceres' cost is (1/2)*sum(residual^2).  Note the
-  //  gauge pin for Ceres-fit empirical forms is a constant parameter, not an extra residual,
-  //  so this remains the pure data cost.
-  solution.m_chi2_fit_weights = 2.0 * summary.final_cost;
+  //  GenericPeakInfo::m_base_rel_eff_uncert).  Note the gauge pin for Ceres-fit empirical forms
+  //  is a constant parameter, not an extra residual, so the data channels are the whole cost
+  //  here; `peaks_only_chi2` (== 2*summary.final_cost on this path) is used so this and the
+  //  profile scan's chi2 values are produced by the identical expression.
+  solution.m_chi2_fit_weights = peaks_only_chi2( parameters );
+#if( !USE_RESIDUAL_TO_BREAK_DEGENERACY )
+  //  Only equal to Ceres' cost when every residual is a peak; the degeneracy-breaking channel
+  //  would be part of `final_cost` but not of `peaks_only_chi2`.
+  assert( fabs(solution.m_chi2_fit_weights - 2.0*summary.final_cost)
+          <= 1.0E-6*(std::max)(1.0, fabs(solution.m_chi2_fit_weights)) );
+#endif
 
   // Count the effective number of fitted parameters once, from the same bookkeeping the solver
   //  used: `constant_parameters` holds act-ratio controlled and fixed mass-fraction slots,
@@ -5326,12 +5626,15 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   //  coefficient.  In the LLS fit mode the (eqn_order + 1) curve coefficients are profiled by
   //  the inner LLS fit, with one combination fixed by the average-measured-rel-eff
   //  normalization convention, so they add a further (eqn_order + 1) - 1 effective parameters.
+  //  The residual count deliberately does NOT enter here: `number_residuals()` may include
+  //  channels that are not data (the profile-likelihood penalty channel), and the DOF of the fit
+  //  is set by the peaks.
   {
     size_t num_effective_pars = num_parameters - constant_parameters.size();
     if( (eqn_form != RelActCalc::RelEffEqnForm::FramPhysicalModel) && !input.use_ceres_to_fit_eqn )
       num_effective_pars += eqn_order;  // == (eqn_order + 1) - 1
-    solution.m_dof = static_cast<int>( cost_functor->m_input.peaks.size() )
-                     - static_cast<int>( num_effective_pars );
+    assert( cost_functor->m_input.peaks.size() == num_peaks );
+    solution.m_dof = static_cast<int>( num_peaks ) - static_cast<int>( num_effective_pars );
   }
 
   // For the Ceres-fit empirical forms, results are reported in the LLS-mode gauge (average
@@ -5343,14 +5646,27 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
   double gauge_mult = 1.0;
   if( gauge_normalize )
   {
-    gauge_mult = cost_functor->average_measured_rel_eff( parameters );
-    if( (gauge_mult <= 0.0) || isnan(gauge_mult) || isinf(gauge_mult) )
+    bool any_peak_floored = false;
+    gauge_mult = cost_functor->average_measured_rel_eff( parameters, &any_peak_floored );
+
+    // `any_peak_floored` matters as much as the finiteness test: a nuclide fitted to zero activity
+    //  that owns a peak makes that peak's term ~1e6 instead of infinite, so the average comes back
+    //  finite and would silently scale every reported activity by ~1e5.
+    if( any_peak_floored || (gauge_mult <= 0.0) || isnan(gauge_mult) || isinf(gauge_mult) )
     {
       //shouldnt happen; leave results in the solver gauge if it somehow does
       gauge_mult = 1.0;
       gauge_normalize = false;
+      if( any_peak_floored )
+        solution.m_warnings.push_back( "At least one peak has no fitted source activity left to"
+              " explain it, so the relative activities are reported in the solver's own"
+              " normalization rather than the usual one; compare ratios, not absolute values." );
     }
   }
+
+  // Whatever was decided above is what "reported activity" means from here on - including for a
+  //  ProfileTarget::Type::RelativeActivity scan.
+  cost_functor->set_gauge_normalizes_activities( gauge_normalize );
 
   try
   {
@@ -5435,8 +5751,11 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
 
         if( (solution.m_dof > 0) && !any_unweighted && input.widen_uncerts_for_scatter )
         {
-          const size_t num_resids = cost_functor->number_residuals();
-          vector<double> residuals( num_resids, 0.0 );
+          // Peak channels only - a profile-likelihood penalty channel, or the
+          //  USE_RESIDUAL_TO_BREAK_DEGENERACY normalization channel, is not data and would drag
+          //  the median of the squared pulls.
+          const size_t num_resids = num_peaks;
+          vector<double> residuals( cost_functor->number_residuals(), 0.0 );
           cost_functor->eval( parameters, residuals.data() );
 
           vector<double> sq_pulls( num_resids );
@@ -5560,7 +5879,7 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     {
       const size_t num_residuals = cost_functor->number_residuals();
       vector<double> residuals( num_residuals );
-      vector<double> jacobian( num_parameters * num_residuals ); 
+      vector<double> jacobian( num_parameters * num_residuals );
 
       const double * const parameters_ptr = parameters.data();
       double * const residuals_ptr = &(residuals[0]);
@@ -5570,8 +5889,10 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
       if( !success )
         throw std::runtime_error( "Failed to evaluate the cost function." );
 
-      solution.m_nonlin_jacobian.resize( num_residuals, vector<double>(num_parameters, 0.0) );
-      for( size_t k = 0; k < num_residuals; ++k )
+      // Keep only the peak rows, so the k-index stays the peak index no matter which extra
+      //  channels the functor carries (profile-likelihood penalty, degeneracy pin).
+      solution.m_nonlin_jacobian.resize( num_peaks, vector<double>(num_parameters, 0.0) );
+      for( size_t k = 0; k < num_peaks; ++k )
       {
         for( size_t i = 0; i < num_parameters; ++i )
           solution.m_nonlin_jacobian[k][i] = jacobian[k*num_parameters + i];
@@ -5883,10 +6204,615 @@ RelEffSolution solve_relative_efficiency( const RelEffInput &input_orig )
     solution.m_error_message = e.what();
     cerr << "RelActCalcManual::solve_relative_efficiency: Failed to get solution after solving: "
          << e.what() << endl;
-    
+
     return solution;
   }//try / catch to get the solution
-  
+
+
+  // Profile-likelihood (asymmetric) intervals - see RelEffInput::profile_targets.
+  //
+  //  Each scan point re-solves this same `problem`, from the parameters the nominal solve landed
+  //  on, with one extra residual `w*(g(x) - target)` armed in the cost functor.  At the optimum
+  //  of `C(x) + w^2*(g(x) - target)^2` we have `grad C = -lambda*grad g`, which is exactly the
+  //  stationarity condition of "minimise C subject to g == g(x*)" - so the point is an EXACT
+  //  point of the profile curve at the ACHIEVED g, whatever `w` was.  We therefore record the
+  //  achieved value and discard the requested one, which is what lets `w` stay small (no
+  //  penalty-method ill-conditioning) and removes any need to iterate onto exact targets.
+  //
+  //  Fixing the parameter instead would NOT work: that gives `grad C` parallel to a coordinate
+  //  axis, which is stationary for the wrong constraint, and yields intervals that are too narrow.
+  if( (solution.m_status == ManualSolutionStatus::Success) && !input.profile_targets.empty() )
+  {
+    const vector<double> nominal_parameters = parameters;
+
+    // Restoring `parameters` is load-bearing: `pars` points into it, so without this everything
+    //  downstream would see the last trial point rather than the solution.
+    DoWorkOnDestruct restore_nominal( [&parameters, &nominal_parameters, cost_functor](){
+      std::copy( begin(nominal_parameters), end(nominal_parameters), begin(parameters) );
+      cost_functor->arm_profile( -1, 0.0, 0.0, 0.0 );
+    } );
+
+    // Same iteration budget as the nominal solve: a scan point is only usable if it CONVERGED (a
+    //  point that ran out of iterations is not stationary, so it sits above the profile curve),
+    //  and the Ceres-fit empirical forms genuinely need a few hundred iterations on some steps -
+    //  cutting the budget just turns those steps into "at bound".  Warm starts mean the usual
+    //  step takes a handful.
+    ceres::Solver::Options profile_options = ceres_options;
+
+    // The covariance-based uncertainties carry the max(1, scatter) inflation (see m_cov_scale);
+    //  scale the chi2 thresholds by the same factor so the two agree in the Gaussian limit -
+    //  i.e. the profile also reads over-scatter as under-stated per-peak errors, rather than as
+    //  a sharper likelihood.
+    const double chi2_scale = (std::max)( 1.0, solution.m_cov_scale );
+
+    double max_quantile = 0.0;
+    vector<double> quantiles;
+    for( const double cl : input.profile_confidence_levels )
+    {
+      // Central two-sided interval: the chi2(1 dof) CDF at delta_chi2 already folds both Gaussian
+      //  tails, so quantile(chi_squared(1), CL) is the threshold (a one-sided limit would instead
+      //  use 2*CL - 1; see DetectionLimitCalc::decon_limit_delta for that convention).
+      const double q = ((cl > 0.0) && (cl < 1.0))
+              ? boost::math::quantile( boost::math::chi_squared_distribution<double>(1.0), cl )
+              : -1.0;
+      quantiles.push_back( q );
+      max_quantile = (std::max)( max_quantile, q );
+    }
+
+    if( max_quantile <= 0.0 )
+    {
+      solution.m_warnings.push_back( "No valid confidence level was given for the"
+                                     " profile-likelihood scan." );
+    }else
+    {
+      for( size_t target_index = 0; target_index < input.profile_targets.size(); ++target_index )
+      {
+        const ProfileTarget &target = input.profile_targets[target_index];
+        const bool is_mass_frac = (target.m_type == ProfileTarget::Type::MassFraction);
+        const bool is_rel_act = (target.m_type == ProfileTarget::Type::RelativeActivity);
+
+        ProfileResult result;
+        result.target = target;
+        result.nominal_chi2 = solution.m_chi2_fit_weights;
+
+        try
+        {
+          std::copy( begin(nominal_parameters), end(nominal_parameters), begin(parameters) );
+
+          // The floor keeps a vanishing denominator (whole element, or the ratio denominator,
+          //  going to zero) from making the quantity - and its gradient - non-finite.  A plain
+          //  relative activity has no denominator; its "denom" below is just the scale the
+          //  first-order sigma is expressed against, i.e. the activity itself.
+          double denom_nominal = 0.0;
+          if( is_mass_frac )
+          {
+            for( const map<string,double>::value_type &iso_sa : target.m_specific_activities )
+              denom_nominal += cost_functor->relative_activity( iso_sa.first, parameters ) / iso_sa.second;
+          }else
+          {
+            denom_nominal = cost_functor->relative_activity(
+                          is_rel_act ? target.m_nuclide : target.m_denom_nuclide, parameters );
+          }
+
+          if( !(denom_nominal > 0.0) )
+            throw runtime_error( "the quantity is zero at the solution, so it cannot be profiled"
+                                 " (the scan is multiplicative about the fitted value)" );
+
+          const double denom_floor = 1.0E-8 * denom_nominal;
+          result.nominal_value = cost_functor->profile_quantity( target, parameters, denom_floor );
+
+          if( !(result.nominal_value > 0.0) || isinf(result.nominal_value) )
+            throw runtime_error( "the quantity is not positive at the solution" );
+
+          // With a reporting gauge multiple and only ONE nuclide in the fit, the reported activity
+          //  is `(1/P)*sum_p C_p/y_p` exactly - every `A_t` cancels out of `m(x)*A_t` - so it is a
+          //  constant of the data with no dependence on the fit at all.  (Its covariance-based
+          //  sigma is ~0 for the same reason: the derivative row is identically zero.)  There is
+          //  nothing to profile, and saying so beats reporting a zero-width interval.
+          if( is_rel_act && cost_functor->gauge_normalizes_activities()
+              && (cost_functor->m_isotopes.size() == 1) )
+            throw runtime_error( "with an empirical equation fit by Ceres, the reported activity of"
+                    " the only nuclide in the problem is fixed by the reporting normalization and"
+                    " carries no information from the fit; use the LnX form or the physical model"
+                    " for an absolute activity uncertainty" );
+
+          // A RelativeActivity scan must walk exactly the number the solution reports - if the
+          //  functor's gauge decision ever drifted from the reporting one, this is where it shows.
+          assert( !is_rel_act
+                  || (fabs(result.nominal_value - gauge_mult*cost_functor->relative_activity(target.m_nuclide, parameters))
+                      <= 1.0E-9*result.nominal_value) );
+
+          // First-order (covariance) sigma of the quantity, used only to size the first step - the
+          //  scan re-estimates it from the first solved point, so a crude value is fine.  Note this
+          //  carries the m_cov_scale inflation, which is divided back out to get the RAW-chi2 sigma
+          //  the thresholds are expressed in.
+          double sigma_raw = 0.0;
+          if( !solution.m_rel_act_covariance.empty() )
+          {
+            // `m_rel_act_covariance` is the covariance of the REPORTED activities, which for
+            //  Ceres-fit empirical forms are `gauge_mult` times the functor's raw ones.  The two
+            //  ratio forms are unaffected by that factor, so only the denominator their
+            //  derivatives divide by needs it; the RelativeActivity form does not use this at all
+            //  (its derivative is just 1).
+            const double denom_reported = gauge_mult * denom_nominal;
+
+            // d(g)/d(A_i): mass fraction g = m_t/M with m_i = A_i/s_i gives (delta_it - g)/(s_i*M);
+            //  activity ratio g = A_n/A_d gives 1/A_d for the numerator and -g/A_d for the
+            //  denominator; a plain relative activity is just the identity.
+            vector<double> dg( num_nuclides, 0.0 );
+            for( size_t i = 0; i < num_nuclides; ++i )
+            {
+              const string &iso = cost_functor->m_isotopes[i];
+              if( is_mass_frac )
+              {
+                const map<string,double>::const_iterator pos = target.m_specific_activities.find( iso );
+                if( pos != end(target.m_specific_activities) )
+                  dg[i] = ((iso == target.m_nuclide) ? (1.0 - result.nominal_value) : -result.nominal_value)
+                          / (pos->second * denom_reported);
+              }else if( iso == target.m_nuclide )
+              {
+                dg[i] = is_rel_act ? 1.0 : (1.0 / denom_reported);
+              }else if( !is_rel_act && (iso == target.m_denom_nuclide) )
+              {
+                dg[i] = -result.nominal_value / denom_reported;
+              }
+            }//for( size_t i = 0; i < num_nuclides; ++i )
+
+            double var = 0.0;
+            for( size_t i = 0; i < num_nuclides; ++i )
+              for( size_t j = 0; j < num_nuclides; ++j )
+                var += dg[i] * dg[j] * solution.m_rel_act_covariance[i][j];
+
+            if( (var > 0.0) && !isinf(var) )
+              sigma_raw = std::sqrt( var / chi2_scale );
+          }//if( we have the relative-activity covariance )
+
+          if( !(sigma_raw > 0.0) || isinf(sigma_raw) )
+            sigma_raw = is_mass_frac ? (std::max)( 0.02, 0.25*result.nominal_value )
+                                     : 0.25*result.nominal_value;
+
+          const double max_delta_chi2 = chi2_scale * max_quantile;
+          const double s_max = std::sqrt( max_delta_chi2 ); //target displacement, in sigma_raw units
+
+          // Weight: with `w = K/sigma`, a request `t` away from nominal lands at `K^2/(1+K^2)` of
+          //  the way there (from `grad C = -grad penalty` with a locally quadratic C), so K = 4
+          //  tracks requests to ~94% while adding only ~K^2 to the curvature in that one direction.
+          const double weight_k = 4.0;
+
+          vector<pair<double,double>> scan; //(achieved value, peaks-only chi2)
+          scan.emplace_back( result.nominal_value, result.nominal_chi2 );
+
+          // Why each side stopped short of the widest threshold, if it did; used to explain the
+          //  `*_at_bound` ends below.  Indexed [0] = lower, [1] = upper.
+          string stop_reasons[2];
+
+          for( const int direction : { -1, 1 } )
+          {
+            //each side starts from the nominal basin
+            std::copy( begin(nominal_parameters), end(nominal_parameters), begin(parameters) );
+            double sigma_est = sigma_raw, prev_value = result.nominal_value, prev_s = 0.0;
+            string &stop_reason = stop_reasons[(direction < 0) ? 0 : 1];
+            stop_reason = "the allowed number of re-fits ran out";
+
+            // A step the solver cannot use - it did not converge or went non-finite - is RETRIED
+            //  by bisecting toward the last accepted request rather than ending the side.
+            //  Abandoning instead throws away the whole remaining range: measured on a
+            //  Br82/K42/Na24 spectrum, one 0.85-sigma overshoot ended a walk at 2.64 when the
+            //  data constrain the quantity near 0.5.
+            // Requests are anchored on the previous REQUEST, not on the previous achieved value,
+            //  and a rejected request is retried by bisecting toward the last accepted one.  The
+            //  achieved value lags its request by an amount comparable to the whole remaining
+            //  range near a domain edge, so a ladder anchored on it can step BACKWARDS after a
+            //  retry - which then reads as the profile going flat when nothing of the sort
+            //  happened.  Bisection is monotone by construction.
+            double good_request = result.nominal_value;
+            double bad_request = 0.0;
+            bool have_bad = false;
+
+            // Retries are counted separately from productive steps: a retry buys no ground, so
+            //  charging it to the step budget would let a couple of overshoots end the walk short
+            //  of the range the data actually constrain.  The second counter is only a
+            //  runaway-loop backstop.
+            size_t retries = 0;
+            const size_t max_retries = 2*input.profile_max_solves_per_side;
+
+            for( size_t step = 0; (step < input.profile_max_solves_per_side) && (retries <= max_retries); )
+            {
+              // Step outward from where the LAST solve landed, not from the nominal.  `sigma_est`
+              //  is revised as the walk proceeds, and a ladder built on the nominal plus a
+              //  multiple of the revised sigma can ask for a point INSIDE the previous one (any
+              //  shrink of more than 2x does it) - which then looks exactly like the profile
+              //  going flat, when all that moved was the ladder.
+              //
+              //  Deliberately NOT clamped to the quantity's physical range: the target is only a
+              //  knob - the achieved value is what gets recorded - and clamping caps how hard the
+              //  penalty can pull, so the walk stalls short of the real crossing and misreports it
+              //  as a bound.  The bound is enforced where it belongs, by the parameter bounds.
+              const double requested = have_bad
+                          ? 0.5*(good_request + bad_request)
+                          : (good_request + direction * 0.4 * s_max * sigma_est);
+
+              // The bracket has closed without finding a usable point.
+              if( have_bad && (fabs(bad_request - good_request) < 1.0E-3*fabs(sigma_est)) )
+                break;
+
+              cost_functor->arm_profile( static_cast<int>(target_index), requested,
+                                         weight_k / sigma_est, denom_floor );
+
+              ceres::Solver::Summary profile_summary;
+              ceres::Solve( profile_options, &problem, &profile_summary );
+
+              // Only a CONVERGED penalized solve is a point of the profile curve: the whole
+              //  argument above is a statement about optima, and a solve that merely ran out of
+              //  iterations or time sits ABOVE the curve at its achieved g - which would pull the
+              //  interpolated crossing inward and report a too-narrow interval as if it were a real
+              //  one.  (The nominal solve treats NO_CONVERGENCE as an error for the same reason.)
+              if( (profile_summary.termination_type != ceres::CONVERGENCE)
+                  && (profile_summary.termination_type != ceres::USER_SUCCESS) )
+              {
+                if( debug_printout() )
+                  cout << "Profile " << target.m_nuclide << " step " << step << " dir " << direction
+                       << ": " << profile_summary.BriefReport() << endl;
+
+                bad_request = requested;
+                have_bad = true;
+                retries += 1;
+                stop_reason = "a re-fit did not converge";
+                continue;
+                break;
+              }
+
+              const double achieved = cost_functor->profile_quantity( target, parameters, denom_floor );
+              const double chi2 = peaks_only_chi2( parameters );
+
+              if( isnan(achieved) || isinf(achieved) || isnan(chi2) || isinf(chi2) )
+              {
+                if( debug_printout() )
+                  cout << "Profile " << target.m_nuclide << " step " << step << " dir " << direction
+                       << ": non-finite at requested " << requested << endl;
+
+                bad_request = requested;
+                have_bad = true;
+                retries += 1;
+                stop_reason = "a re-fit gave a non-finite result";
+                continue;
+              }
+
+              // For the Ceres-fit empirical forms the reported activity carries the
+              //  average-measured-rel-eff multiple, and that average divides by each peak's source
+              //  counts.  Exactly, this makes a reported activity unable to fall below
+              //  `(1/P)*sum over peaks owned by t of (C_p/y_p)` - the `A_t` cancels.  Only the
+              //  smooth floor inside `average_measured_rel_eff` lets it through that wall, and
+              //  then the end-point is decided by the floor constant rather than by the data.
+              //  Stop instead: the floor exists to keep the fit evaluable, not to produce answers.
+              if( is_rel_act && cost_functor->gauge_normalizes_activities() )
+              {
+                bool any_peak_floored = false;
+                cost_functor->average_measured_rel_eff( parameters, &any_peak_floored );
+                if( any_peak_floored )
+                {
+                  if( debug_printout() )
+                    cout << "Profile " << target.m_nuclide << " step " << step << " dir " << direction
+                         << ": at the structural floor, requested " << requested << endl;
+
+                  // A request below the structural floor has no minimum to find: the optimizer
+                  //  just drives the activity to zero, where the smooth floor - not the data -
+                  //  decides the answer.  Stop; the zero-activity anchor solve below is the
+                  //  correct end-point for this side, and it is exact.
+                  stop_reason = "the reported activity reached its structural floor, where this"
+                                " nuclide's peaks are entirely unexplained";
+                  break;
+                }
+              }//if( the reported activity carries the gauge multiple )
+
+              scan.emplace_back( achieved, chi2 );
+
+              if( debug_printout() )
+                cout << "Profile " << target.m_nuclide << " step " << step << " dir " << direction
+                     << ": requested " << requested << ", achieved " << achieved
+                     << ", chi2 " << chi2 << " (nominal " << result.nominal_chi2 << ")" << endl;
+
+              const double delta_chi2 = chi2 - result.nominal_chi2;
+
+              // Calibrate the step scale from THIS step before diagnosing anything with it.  For a
+              //  locally quadratic C the penalized optimum lands at `K^2/(K^2 + r^2)` of the way to
+              //  the request, with `r = sigma_est/sigma_true` - so the achieved fraction measures
+              //  `r` directly, and one badly seeded step can be corrected instead of being read as
+              //  a verdict.  Without this, both diagnoses below fire on step 0 for a seed off by
+              //  more than ~100x (which the covariance-free fallback seed can be) and report a
+              //  confident "unbounded" or "at a bound" that is purely an artifact of the seed.
+              //  Measured against a real step: predicted 16/17 = 0.9412, achieved 0.9409.
+              const double asked = requested - prev_value;
+              if( fabs(asked) > 0.0 )
+              {
+                const double frac = (achieved - prev_value) / asked;
+                if( (frac > 1.0E-6) && (frac < 1.0) )
+                {
+                  const double r = weight_k * std::sqrt( 1.0/frac - 1.0 );
+                  if( (r > 0.0) && !isinf(r) )
+                    sigma_est = (std::max)( 0.02*sigma_est, (std::min)( 50.0*sigma_est, sigma_est/r ) );
+                }
+              }
+
+              // The quantity stopped responding: it is against a bound (activity at zero, a mass
+              //  fraction at 0/1, a constraint-window edge), so no stronger pull will move it.
+              //  This is NOT the flat case below - the fit is still resisting, something else is
+              //  simply holding the quantity - so it is diagnosed separately and first.
+              if( fabs(achieved - prev_value) < 1.0E-3*sigma_est )
+              {
+                stop_reason = "it ran into a bound before the chi2 rose that far";
+                break;
+              }
+
+              // Has the profile gone flat?  Each step aims to buy a fixed amount of sqrt(chi2)
+              //  - `0.4*s_max` - so a step that buys almost none of it means the likelihood has
+              //  stopped resisting and the quantity is simply running away.  A "crossing"
+              //  interpolated from points out there is decided by numerical noise rather than by
+              //  the data: measured on a Br82/K42/Na24 spectrum the last two points differed by
+              //  0.05 in chi2 across a 2.8x change in activity, so an asymptote at 4.02 reported
+              //  a finite 2-sigma bound where one at 3.99 would have reported none.  (Healthy
+              //  profiles are nowhere near this: on that same spectrum the K42 and Na24 walks
+              //  bought 57-94% of the intended amount every step, against 4% for flat Br82.)
+              //  Skipped when the fit got BETTER than nominal - `s` is pinned at 0 there, which
+              //  would read as flat while what actually happened is the re-anchoring case below.
+              const double s_now = std::sqrt( (std::max)( 0.0, delta_chi2 ) );
+              const bool went_flat = (delta_chi2 > 0.0)
+                                     && ((s_now - prev_s) < 0.10*0.4*s_max);
+              prev_s = s_now;
+
+              // The flat verdict is taken BEFORE "we reached the threshold", not after.  The whole
+              //  point is the knife-edge: an asymptote settling at 4.02 would otherwise be reported
+              //  as a finite bound while one settling at 3.99 is reported as unbounded, which is a
+              //  1% difference in the data deciding the entire character of the answer.  A step
+              //  that crosses the threshold while buying almost none of the sqrt(chi2) it aimed for
+              //  has crossed on noise, so it is a limit either way.  A healthy crossing is nowhere
+              //  near this: measured, the well-behaved walks bought 38-94% of the aim on the step
+              //  that crossed, against 4% for a genuinely flat direction.
+              if( went_flat )
+              {
+                stop_reason = "the fit stopped resisting further change, so it is unbounded on"
+                              " this side";
+                break;
+              }
+
+              if( delta_chi2 >= max_delta_chi2 )
+              {
+                stop_reason.clear();  //this side is properly bracketed
+                break;
+              }
+
+              // Also fold in the chi2 actually bought, which measures the sigma of the profile
+              //  itself rather than the local response to the penalty; the two agree for a
+              //  quadratic profile and this one keeps the walk moving on a flattening one.
+              if( delta_chi2 > 0.05 )
+              {
+                const double measured = fabs(achieved - result.nominal_value) / std::sqrt(delta_chi2);
+                if( (measured > 0.0) && !isinf(measured) )
+                  sigma_est = (std::max)( 0.2*sigma_est, (std::min)( 5.0*sigma_est, measured ) );
+              }
+
+              prev_value = achieved;
+              good_request = requested;
+              have_bad = false;
+              step += 1;
+            }//for( loop over steps out from the nominal )
+          }//for( const int direction : { -1, 1 } )
+
+          cost_functor->arm_profile( -1, 0.0, 0.0, 0.0 );
+          std::copy( begin(nominal_parameters), end(nominal_parameters), begin(parameters) );
+
+          // The lower end of a relative-activity profile IS the zero-activity hypothesis - "none of
+          //  this nuclide" - and the walk cannot reach it.  With the reporting gauge the quantity
+          //  has a hard floor there (`m(x)*A_t` tends to `(1/P)*sum over peaks owned by t of
+          //  C_p/y_p` as `A_t` goes to zero), which the penalty can only approach; past it the
+          //  smooth floor inside `average_measured_rel_eff` decides the answer instead of the data.
+          //  So solve it directly: cap the activity just above zero and re-fit everything else.
+          //  What comes back is an ordinary point of the profile curve, so the crossing logic
+          //  needs no special case - and it is the point that decides whether "absent" is inside
+          //  the interval, i.e. whether the nuclide is detected at that confidence level.
+          //  (chi2 at the floor is essentially the nuclide's detection significance squared, so
+          //  for a well-detected nuclide the anchor sits far outside every threshold and changes
+          //  nothing.)
+          //  Only where the reporting gauge applies.  Without it the profiled quantity is the raw
+          //  activity, which has no hard floor - the walk reaches the soft one the LLS
+          //  normalization imposes on its own, and forcing the activity to zero instead sails past
+          //  it into the region where that normalization blows the chi2 up (measured: 47401
+          //  against the 4.04 this nuclide's significance predicts).
+          if( is_rel_act && cost_functor->gauge_normalizes_activities() )
+          {
+            const size_t act_index = cost_functor->iso_index( target.m_nuclide );
+            const bool is_free_activity =
+                  (act_index < cost_functor->m_rel_act_norms.size())
+                  && (cost_functor->m_rel_act_norms[act_index] > 0.0)
+                  && !std::count( begin(constant_parameters), end(constant_parameters),
+                                  static_cast<int>(act_index) )
+                  && (nominal_parameters[act_index] > 0.0);
+
+            if( is_free_activity )
+            {
+              const double saved_upper = problem.GetParameterUpperBound( pars, static_cast<int>(act_index) );
+              const double cap = 1.0E-4 * nominal_parameters[act_index];
+
+              parameters[act_index] = cap;  //Ceres requires a feasible starting point
+              problem.SetParameterUpperBound( pars, static_cast<int>(act_index), cap );
+
+              ceres::Solver::Summary anchor_summary;
+              ceres::Solve( profile_options, &problem, &anchor_summary );
+
+              problem.SetParameterUpperBound( pars, static_cast<int>(act_index), saved_upper );
+
+              const bool anchor_ok = (anchor_summary.termination_type == ceres::CONVERGENCE)
+                                     || (anchor_summary.termination_type == ceres::USER_SUCCESS);
+              const double anchor_value = anchor_ok
+                        ? cost_functor->profile_quantity( target, parameters, denom_floor ) : 0.0;
+              const double anchor_chi2 = anchor_ok ? peaks_only_chi2( parameters ) : 0.0;
+
+              if( anchor_ok && !isnan(anchor_value) && !isinf(anchor_value)
+                  && !isnan(anchor_chi2) && !isinf(anchor_chi2)
+                  && (anchor_value < result.nominal_value) )
+              {
+                scan.emplace_back( anchor_value, anchor_chi2 );
+                stop_reasons[0] = "the lower end is the zero-activity hypothesis: the data do not"
+                        " exclude this nuclide being absent at this level (with an empirical"
+                        " equation the reporting normalization expresses 'absent' as that value,"
+                        " not as 0)";
+
+                if( debug_printout() )
+                  cout << "Profile " << target.m_nuclide << " zero-activity anchor: value "
+                       << anchor_value << ", chi2 " << anchor_chi2
+                       << " (nominal " << result.nominal_chi2 << ")" << endl;
+              }
+
+              std::copy( begin(nominal_parameters), end(nominal_parameters), begin(parameters) );
+            }//if( is_free_activity )
+          }//if( is_rel_act )
+
+          // Nothing moved the quantity at all, on either side: it is not a free function of the
+          //  fitted parameters (an act-ratio chain that ties the whole roster together, an element
+          //  whose other isotopes are all pinned, a zero-width constraint window, ...).  Reporting a
+          //  zero-width "(limit)" interval at the nominal would read as a confident answer, so say
+          //  what happened instead and leave the covariance-based uncertainty as the answer.
+          //  Note the stalled point IS recorded before the walk gives up, so this cannot be a test
+          //  on how many points there are - it has to be on how far any of them got.
+          double largest_move = 0.0;
+          for( const pair<double,double> &pt : scan )
+            largest_move = (std::max)( largest_move, fabs(pt.first - result.nominal_value) );
+
+          if( largest_move <= 1.0E-6*result.nominal_value )
+            throw runtime_error( "the quantity is fixed by the problem's constraints, so there is"
+                                 " nothing to profile" );
+
+          const pair<double,double> nominal_point( result.nominal_value, result.nominal_chi2 );
+
+          std::sort( begin(scan), end(scan),
+                     []( const pair<double,double> &l, const pair<double,double> &r ){
+                       return l.first < r.first;
+                     } );
+          result.scan_points = scan;
+
+          // If a scan point fit the data better than the nominal solve did, the nominal was a local
+          //  minimum; reference the interval to the better point.  The reference is always the scan
+          //  minimum (so `nominal_chi2` really is what the delta-chi2 is measured from, as its
+          //  documentation says); only the warning is gated on the improvement being meaningful.
+          double ref_chi2 = result.nominal_chi2;
+          for( const pair<double,double> &pt : scan )
+            ref_chi2 = (std::min)( ref_chi2, pt.second );
+
+          if( ref_chi2 < (result.nominal_chi2 - 0.5) )
+            result.warnings.push_back( "The profile scan found a better fit (chi2 "
+                + SpecUtils::printCompact(ref_chi2, 5) + " vs nominal "
+                + SpecUtils::printCompact(result.nominal_chi2, 5) + ") - the nominal solution may be"
+                " a local minimum; the profile interval is referenced to the scan minimum." );
+          result.nominal_chi2 = ref_chi2;
+
+          // Interval end-points: the crossings of sqrt(chi2 - ref_chi2) = sqrt(delta_chi2), found by
+          //  linear interpolation in (value, sqrt(delta chi2)) - which is exact for a quadratic
+          //  likelihood, so a handful of points suffices.
+          for( size_t cl_index = 0; cl_index < input.profile_confidence_levels.size(); ++cl_index )
+          {
+            if( quantiles[cl_index] <= 0.0 )
+              continue;
+
+            ProfileInterval interval;
+            interval.confidence_level = input.profile_confidence_levels[cl_index];
+            interval.delta_chi2 = chi2_scale * quantiles[cl_index];
+
+            const double s_target = std::sqrt( interval.delta_chi2 );
+
+            bool degenerate = false;
+
+            for( const int direction : { -1, 1 } )
+            {
+              // The scan points on this side, ordered from the nominal outward.  The nominal is
+              //  prepended rather than selected by value, so a stalled step that landed exactly on
+              //  it cannot end up ahead of it (`scan` is sorted on the value alone).
+              vector<pair<double,double>> side{ nominal_point };
+              for( const pair<double,double> &pt : scan )
+              {
+                if( (direction < 0) ? (pt.first < result.nominal_value)
+                                    : (pt.first > result.nominal_value) )
+                  side.push_back( pt );
+              }
+              if( direction < 0 )
+                std::reverse( begin(side) + 1, end(side) ); //keep the nominal first
+
+              double crossing = result.nominal_value;
+              bool crossed = false;
+
+              // The nominal point already past the threshold means the scan re-anchored to a better
+              //  minimum elsewhere, and there is no interval around the nominal to report.
+              if( std::sqrt( (std::max)( 0.0, side[0].second - ref_chi2 ) ) >= s_target )
+              {
+                degenerate = true;
+              }else for( size_t k = 0; !crossed && ((k + 1) < side.size()); ++k )
+              {
+                const double s_i = std::sqrt( (std::max)( 0.0, side[k].second - ref_chi2 ) );
+                const double s_j = std::sqrt( (std::max)( 0.0, side[k+1].second - ref_chi2 ) );
+
+                if( (s_i <= s_target) && (s_j >= s_target) )
+                {
+                  crossing = (s_j > s_i)
+                       ? (side[k].first + (side[k+1].first - side[k].first)*(s_target - s_i)/(s_j - s_i))
+                       : side[k+1].first;
+                  crossed = true;
+                }
+              }//for( walk outward looking for a bracketing pair )
+
+              if( !crossed && !degenerate )
+                crossing = side.back().first; //furthest the quantity actually got
+
+              if( direction < 0 )
+              {
+                interval.lower_value = crossing;
+                interval.lower_at_bound = !crossed;
+              }else
+              {
+                interval.upper_value = crossing;
+                interval.upper_at_bound = !crossed;
+              }
+            }//for( const int direction : { -1, 1 } )
+
+            if( degenerate )
+              result.warnings.push_back( "The value the fit landed on is itself excluded at the "
+                      + SpecUtils::printCompact(100.0*interval.confidence_level, 4) + "% level by the"
+                      " profile scan (a better fit was found elsewhere), so no interval could be"
+                      " formed around it." );
+
+            // Explain each end that came back a limit, at the confidence level it actually applies
+            //  to.  Emitting this from the walk instead would over-claim: a side can stop short of
+            //  the 2-sigma threshold having crossed the 1-sigma one perfectly well, and a blanket
+            //  "this side is unbounded" would then contradict the 1-sigma interval beside it.
+            if( !degenerate )
+            {
+              const bool ends_at_bound[2] = { interval.lower_at_bound, interval.upper_at_bound };
+              for( size_t side = 0; side < 2; ++side )
+              {
+                if( ends_at_bound[side] && !stop_reasons[side].empty() )
+                  result.warnings.push_back( string("The ") + (side ? "upper" : "lower") + " "
+                          + SpecUtils::printCompact(100.0*interval.confidence_level, 4)
+                          + "% end for " + target.m_nuclide + " is a limit, not a measured bound: "
+                          + stop_reasons[side] + "." );
+              }
+            }//if( !degenerate )
+
+            result.intervals.push_back( interval );
+          }//for( loop over confidence levels )
+        }catch( std::exception &e )
+        {
+          cost_functor->arm_profile( -1, 0.0, 0.0, 0.0 );
+          std::copy( begin(nominal_parameters), end(nominal_parameters), begin(parameters) );
+          result.intervals.clear();
+          solution.m_warnings.push_back( "Profile-likelihood scan for " + target.m_nuclide
+                                         + " failed: " + string(e.what()) );
+          continue;
+        }//try / catch around one profile target
+
+        solution.m_profile_results.push_back( std::move(result) );
+      }//for( loop over profile targets )
+    }//else (we have at least one valid confidence level)
+  }//if( profile-likelihood intervals were asked for )
+
+
   /*
   if( (solution.m_status == ManualSolutionStatus::Success)
      && !solution.m_nonlin_covariance.empty() && !solution.m_fit_parameters.empty() )
@@ -5954,360 +6880,6 @@ double estimate_stat_uncert_multiple( const RelEffSolution &solution, const doub
 }//double estimate_stat_uncert_multiple( const RelEffSolution &solution, const double max_multiple )
 
 
-ProfileMassFractionResult profile_mass_fraction( const RelEffInput &input,
-                                                 const RelEffSolution &nominal_solution,
-                                                 const ProfileMassFractionOptions &options )
-{
-  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-  if( !db )
-    throw runtime_error( "profile_mass_fraction: could not initialize nuclide database" );
-
-  const SandiaDecay::Nuclide * const target_nuc = db->nuclide( options.nuclide );
-  if( !target_nuc )
-    throw runtime_error( "profile_mass_fraction: '" + options.nuclide + "' is not a valid nuclide" );
-
-  if( nominal_solution.m_status != ManualSolutionStatus::Success )
-    throw runtime_error( "profile_mass_fraction: nominal solution was not successful" );
-
-  if( nominal_solution.m_chi2_fit_weights < 0.0 )
-    throw runtime_error( "profile_mass_fraction: nominal solution has no fit-weight chi2" );
-
-  if( options.confidence_levels.empty() )
-    throw runtime_error( "profile_mass_fraction: no confidence levels requested" );
-
-  for( const double cl : options.confidence_levels )
-  {
-    if( (cl <= 0.0) || (cl >= 1.0) || isnan(cl) )
-      throw runtime_error( "profile_mass_fraction: confidence levels must be in (0,1)" );
-  }
-
-  // The element roster (isotope -> specific activity): reuse an existing constraint on the
-  //  target (whose window then restricts the scan domain), else build from the same-element
-  //  nuclides in the solution.
-  map<string,double> specific_activities;
-  double domain_lower = 1.0e-6, domain_upper = 1.0 - 1.0e-6;
-
-#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
-  for( const MassFractionConstraint &mfc : input.mass_fraction_constraints )
-  {
-    if( mfc.m_nuclide != options.nuclide )
-      continue;
-
-    if( mfc.m_mass_fraction_lower == mfc.m_mass_fraction_upper )
-      throw runtime_error( "profile_mass_fraction: '" + options.nuclide
-                           + "' has a FIXED mass-fraction constraint - nothing to profile" );
-
-    specific_activities = mfc.m_specific_activities;
-    domain_lower = (std::max)( domain_lower, mfc.m_mass_fraction_lower );
-    domain_upper = (std::min)( domain_upper, mfc.m_mass_fraction_upper );
-  }//for( const MassFractionConstraint &mfc : input.mass_fraction_constraints )
-#endif
-
-  if( specific_activities.empty() )
-  {
-    for( const IsotopeRelativeActivity &rel_act : nominal_solution.m_rel_activities )
-    {
-      const SandiaDecay::Nuclide * const nuc = db->nuclide( rel_act.m_isotope );
-      if( nuc && (nuc->atomicNumber == target_nuc->atomicNumber) )
-        specific_activities[rel_act.m_isotope] = nuc->activityPerGram();
-    }
-  }//if( no pre-existing constraint on the target )
-
-  if( specific_activities.size() < 2 )
-    throw runtime_error( "profile_mass_fraction: the element of '" + options.nuclide
-                         + "' has fewer than two isotopes in the problem - the element-relative"
-                         " mass fraction is fixed by definition." );
-
-  if( !specific_activities.count(options.nuclide) )
-    throw runtime_error( "profile_mass_fraction: '" + options.nuclide + "' missing from element roster" );
-
-  ProfileMassFractionResult result;
-  result.nuclide = options.nuclide;
-  result.nominal_chi2 = nominal_solution.m_chi2_fit_weights;
-
-  // The nominal ELEMENT-relative mass fraction, from the nominal solution.
-  {
-    double total_mass = 0.0, target_mass = 0.0;
-    for( const IsotopeRelativeActivity &rel_act : nominal_solution.m_rel_activities )
-    {
-      const map<string,double>::const_iterator pos = specific_activities.find( rel_act.m_isotope );
-      if( pos == end(specific_activities) )
-        continue;
-
-      const double mass = rel_act.m_rel_activity / pos->second;
-      total_mass += mass;
-      if( rel_act.m_isotope == options.nuclide )
-        target_mass = mass;
-    }
-
-    if( (total_mass <= 0.0) || (target_mass <= 0.0) )
-      throw runtime_error( "profile_mass_fraction: nominal solution has non-positive masses" );
-
-    result.nominal_mass_fraction = target_mass / total_mass;
-  }
-
-  const double nominal_frac = (std::max)( domain_lower, (std::min)( domain_upper, result.nominal_mass_fraction ) );
-
-  // The chi2 at a trial fraction: re-solve with the target FIXED there (all other parameters
-  //  re-fit, which is what makes this a genuine profile), memoized so bisections for different
-  //  confidence levels reuse points.  Failed solves record +inf.
-  map<double,double> chi2_of_frac;
-  std::mutex chi2_mutex;
-
-  const auto trial_chi2_eval = [&input, &nominal_solution, &options, &specific_activities]( const double frac ) -> double
-  {
-    RelEffInput trial_input = input;
-    trial_input.point_estimate_only = true;
-    trial_input.skip_an_scan = true;
-
-    // Profile every trial with the SAME peak weights the nominal solution used, so the chi2
-    //  values are all on one likelihood.  This matters when the caller asked for an
-    //  automatically estimated additional uncertainty: re-estimating it per trial would
-    //  re-weight the peaks to make each trial's own scatter look normal, flattening the profile
-    //  (and every trial would re-run the estimate, several solves apiece).
-    trial_input.auto_estimate_add_uncert = false;
-    trial_input.peaks = nominal_solution.m_input.peaks;
-
-    // Warm-start a physical-model self attenuator from the nominal solution (AN stays a fitted
-    //  nuisance parameter when configured so - profiling conditional on it would understate the
-    //  interval - but starting at the nominal optimum keeps each local solve cheap).
-    if( (input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel)
-        && input.phys_model_self_atten && nominal_solution.m_phys_model_self_atten_shield )
-    {
-      auto self_atten = make_shared<RelActCalc::PhysicalModelShieldInput>( *input.phys_model_self_atten );
-      const RelEffSolution::PhysModelShieldFit &fit = *nominal_solution.m_phys_model_self_atten_shield;
-      if( !self_atten->material && self_atten->fit_atomic_number
-          && (fit.m_atomic_number >= 1.0) && (fit.m_atomic_number <= 98.0) )
-        self_atten->atomic_number = fit.m_atomic_number;
-      if( self_atten->fit_areal_density && (fit.m_areal_density > 0.0) )
-        self_atten->areal_density = fit.m_areal_density;
-      trial_input.phys_model_self_atten = self_atten;
-    }
-
-#if( USE_REL_ACT_MANUAL_MASS_FRACTION_CONSTRAINT )
-    MassFractionConstraint trial_constraint;
-    trial_constraint.m_nuclide = options.nuclide;
-    trial_constraint.m_mass_fraction_lower = trial_constraint.m_mass_fraction_upper = frac;
-    trial_constraint.m_specific_activities = specific_activities;
-
-    trial_input.mass_fraction_constraints.erase(
-        std::remove_if( begin(trial_input.mass_fraction_constraints),
-                        end(trial_input.mass_fraction_constraints),
-                        [&options]( const MassFractionConstraint &mfc ){
-                          return mfc.m_nuclide == options.nuclide;
-                        } ),
-        end(trial_input.mass_fraction_constraints) );
-    trial_input.mass_fraction_constraints.push_back( trial_constraint );
-#endif
-
-    try
-    {
-      const RelEffSolution trial_solution = solve_relative_efficiency( trial_input );
-      if( (trial_solution.m_status != ManualSolutionStatus::Success)
-          || (trial_solution.m_chi2_fit_weights < 0.0)
-          || isnan(trial_solution.m_chi2_fit_weights) )
-        return std::numeric_limits<double>::infinity();
-
-      return trial_solution.m_chi2_fit_weights;
-    }catch( std::exception & )
-    {
-      return std::numeric_limits<double>::infinity();
-    }
-  };//trial_chi2_eval
-
-  const auto chi2_at = [&chi2_of_frac, &chi2_mutex, &trial_chi2_eval]( const double frac ) -> double
-  {
-    {
-      std::lock_guard<std::mutex> lock( chi2_mutex );
-      const map<double,double>::const_iterator pos = chi2_of_frac.find( frac );
-      if( pos != end(chi2_of_frac) )
-        return pos->second;
-    }
-
-    const double chi2 = trial_chi2_eval( frac );
-
-    std::lock_guard<std::mutex> lock( chi2_mutex );
-    chi2_of_frac[frac] = chi2;
-    return chi2;
-  };//chi2_at
-
-  // Step-size seed from the covariance-based half-width, when available.
-  double sigma_seed = (std::max)( 0.02, 0.25*nominal_frac );
-  try
-  {
-    // (all-nuclide-relative rather than element-relative, but plenty close for a step seed)
-    const double plus = nominal_solution.mass_fraction( options.nuclide, 1.0 );
-    const double minus = nominal_solution.mass_fraction( options.nuclide, -1.0 );
-    const double half_width = 0.5*fabs( plus - minus );
-    if( (half_width > 1.0e-6) && !isnan(half_width) && !isinf(half_width) )
-      sigma_seed = half_width;
-  }catch( std::exception & )
-  {
-  }
-
-  // Parallel pre-scan around the nominal - primes the memo-map for the bisections, and lets us
-  //  notice a better-than-nominal minimum.
-  {
-    vector<double> grid;
-    for( const double num_sigma : { -3.0, -2.0, -1.0, 1.0, 2.0, 3.0 } )
-    {
-      const double frac = (std::max)( domain_lower, (std::min)( domain_upper, nominal_frac + num_sigma*sigma_seed ) );
-      if( !std::count( begin(grid), end(grid), frac ) )
-        grid.push_back( frac );
-    }
-
-    SpecUtilsAsync::ThreadPool pool;
-    for( const double frac : grid )
-      pool.post( [&chi2_at, frac](){ chi2_at( frac ); } );
-    pool.join();
-  }
-
-  // If the scan found a decidedly better fit, the nominal solve was a local minimum; reference
-  //  the interval to the scan minimum (and tell the user).
-  double ref_chi2 = result.nominal_chi2;
-  {
-    std::lock_guard<std::mutex> lock( chi2_mutex );
-    for( const pair<const double,double> &frac_chi2 : chi2_of_frac )
-      ref_chi2 = (std::min)( ref_chi2, frac_chi2.second );
-  }
-  if( ref_chi2 < (result.nominal_chi2 - 0.5) )
-  {
-    result.warnings.push_back( "The profile scan found a better fit (chi2 "
-        + SpecUtils::printCompact(ref_chi2, 5) + " vs nominal "
-        + SpecUtils::printCompact(result.nominal_chi2, 5) + ") - the nominal solution may be a"
-        " local minimum; the profile interval is referenced to the scan minimum." );
-    result.nominal_chi2 = ref_chi2;
-  }
-
-  // The reported covariance-based uncertainties carry the max(1, chi2/dof) "variance of unit
-  //  weight" inflation (see RelEffSolution::m_cov_scale); scale the delta-chi2 threshold by the
-  //  same factor so the profile interval is consistent with them in the Gaussian limit - i.e.,
-  //  the profile treats the same over-scatter as evidence of under-stated per-peak errors,
-  //  rather than of a sharper likelihood.
-  const double chi2_scale = (std::max)( 1.0, nominal_solution.m_cov_scale );
-
-  for( const double cl : options.confidence_levels )
-  {
-    // Central two-sided interval: the chi2(1 dof) CDF at delta_chi2 already folds both Gaussian
-    //  tails, so quantile(chi_squared(1), CL) is the threshold (a one-sided limit would instead
-    //  use 2*CL - 1; see DetectionLimitCalc::decon_limit_delta for that convention).
-    const boost::math::chi_squared_distribution<double> chi2_dist( 1.0 );
-    const double delta_chi2 = chi2_scale * boost::math::quantile( chi2_dist, cl );
-    const double threshold = ref_chi2 + delta_chi2;
-
-    ProfileMassFractionInterval interval;
-    interval.confidence_level = cl;
-    interval.delta_chi2 = delta_chi2;
-
-    // The expansion below starts from `nominal_frac` and assumes it is inside the interval.  That
-    //  can be false if the scan re-anchored to a better minimum elsewhere (`ref_chi2` dropped),
-    //  in which case bisecting from it would place both end-points on the wrong side of the
-    //  crossing and return a confidently wrong interval.  Detect and flag instead.
-    if( chi2_at(nominal_frac) >= threshold )
-    {
-      interval.lower_frac = interval.upper_frac = nominal_frac;
-      interval.lower_at_bound = interval.upper_at_bound = true;
-      result.warnings.push_back( "The nominal mass fraction is itself excluded at the "
-              + SpecUtils::printCompact(100.0*cl, 4) + "% level by the profile scan (a better fit"
-              " was found elsewhere), so no interval could be formed around it." );
-      result.intervals.push_back( interval );
-      continue;
-    }
-
-    for( const int direction : { -1, 1 } )
-    {
-      const double edge = (direction < 0) ? domain_lower : domain_upper;
-
-      double inside = nominal_frac;  //largest (in `direction`) fraction with chi2 < threshold
-      double outside = edge;         //once bracketed: a fraction with chi2 >= threshold
-      bool bracketed = false, hit_edge = false;
-      double step = (std::max)( sigma_seed, 10.0*options.frac_tolerance );
-      size_t num_solves = 0;
-
-      while( !bracketed && !hit_edge && (num_solves < options.max_solves_per_side) )
-      {
-        double candidate = nominal_frac + direction*step;
-        if( ((direction < 0) && (candidate <= edge)) || ((direction > 0) && (candidate >= edge)) )
-          candidate = edge;
-
-        const double cand_chi2 = chi2_at( candidate );
-        num_solves += 1;
-
-        if( cand_chi2 >= threshold )
-        {
-          outside = candidate;
-          bracketed = true;
-        }else
-        {
-          inside = candidate;
-          hit_edge = (candidate == edge);
-          step *= 2.0;
-        }
-      }//while( expanding toward the edge )
-
-      bool at_bound = false;
-      double crossing = inside;
-
-      if( bracketed )
-      {
-        size_t num_bisects = 0;
-        while( (fabs(outside - inside) > options.frac_tolerance)
-               && (num_bisects < options.max_solves_per_side) )
-        {
-          const double mid = 0.5*(inside + outside);
-          const double mid_chi2 = chi2_at( mid );
-          num_bisects += 1;
-
-          if( mid_chi2 >= threshold )
-            outside = mid;
-          else
-            inside = mid;
-        }//while( bisecting )
-
-        crossing = 0.5*(inside + outside);
-      }else
-      {
-        at_bound = true;
-        crossing = inside; //the furthest still-inside point we reached
-        if( !hit_edge )
-          result.warnings.push_back( "The profile scan did not bracket the "
-              + string((direction < 0) ? "lower" : "upper") + " "
-              + SpecUtils::printCompact(100.0*cl, 4)
-              + "% crossing within the allowed number of solves." );
-      }//if( bracketed ) / else
-
-      if( direction < 0 )
-      {
-        interval.lower_frac = crossing;
-        interval.lower_at_bound = at_bound;
-      }else
-      {
-        interval.upper_frac = crossing;
-        interval.upper_at_bound = at_bound;
-      }
-    }//for( const int direction : { -1, 1 } )
-
-    result.intervals.push_back( interval );
-  }//for( const double cl : options.confidence_levels )
-
-  size_t num_failed_solves = 0;
-  {
-    std::lock_guard<std::mutex> lock( chi2_mutex );
-    for( const pair<const double,double> &frac_chi2 : chi2_of_frac )
-    {
-      if( isinf(frac_chi2.second) )
-        num_failed_solves += 1;
-      else
-        result.scan_points.push_back( frac_chi2 );
-    }
-  }
-
-  if( num_failed_solves )
-    result.warnings.push_back( std::to_string(num_failed_solves)
-        + " of the profile scan solves failed; the interval may be unreliable." );
-
-  return result;
-}//profile_mass_fraction(...)
 
 
 

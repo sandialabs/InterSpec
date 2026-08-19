@@ -22,9 +22,12 @@
  */
 #include "InterSpec_config.h"
 
+#include <map>
 #include <set>
 #include <cmath>
+#include <ctime>
 #include <string>
+#include <utility>
 #include <iostream>
 #include <functional>
 
@@ -410,6 +413,127 @@ namespace
       state.m_addUncertIndex = add_uncert;
     };
   }//empirical_state_mod(...)
+
+
+  /** Process CPU time, in milliseconds, summed over all threads.
+
+   Solve cost is reported against this rather than wall time: wall time on a developer machine
+   measures whatever else is running, and the solver hands Ceres `hardware_concurrency()` threads,
+   so wall time also hides how much work was actually done.
+   (RelEffSolution::m_num_microseconds_eval is the wall-time figure.)
+
+   Note this is CPU time on POSIX only - MSVC's `std::clock()` returns wall time since process
+   start - so the numbers are only comparable within a platform.  Nothing asserts on them.
+   */
+  double process_cpu_ms()
+  {
+    return 1000.0 * static_cast<double>( std::clock() ) / CLOCKS_PER_SEC;
+  }//double process_cpu_ms()
+
+
+  /** Mean CPU milliseconds of one `solve_relative_efficiency(input)` call.
+
+   Repeats until enough CPU time has accumulated to be well above the ~1 ms `std::clock()`
+   granularity - a Release-build solve of these problems is itself only ~1 ms, so a single timed
+   call is entirely noise (it can even come out negative against a slower configuration).  The
+   repeat count self-tunes, so the same code gives a usable number in the ~100x slower Debug build.
+   */
+  double mean_solve_cpu_ms( const RelActCalcManual::RelEffInput &input )
+  {
+    const double min_accumulated_ms = 200.0;
+    const size_t max_reps = 500;
+
+    const double start_ms = process_cpu_ms();
+    size_t reps = 0;
+    double elapsed_ms = 0.0;
+
+    do
+    {
+      const RelActCalcManual::RelEffSolution sol = RelActCalcManual::solve_relative_efficiency( input );
+      BOOST_REQUIRE( sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
+      reps += 1;
+      elapsed_ms = process_cpu_ms() - start_ms;
+    }while( (elapsed_ms < min_accumulated_ms) && (reps < max_reps) );
+
+    return elapsed_ms / reps;
+  }//double mean_solve_cpu_ms( const RelActCalcManual::RelEffInput &input )
+
+
+  /** A `ProfileTarget` for `nuc`'s mass fraction of its element (roster resolved by the solver). */
+  RelActCalcManual::ProfileTarget mass_frac_profile_target( const std::string &nuc )
+  {
+    RelActCalcManual::ProfileTarget target;
+    target.m_type = RelActCalcManual::ProfileTarget::Type::MassFraction;
+    target.m_nuclide = nuc;
+    return target;
+  }//mass_frac_profile_target(...)
+
+
+  /** The 13 peaks of a real Br82 + K42 + Na24 HPGe measurement, exactly as the solver saw them
+   (LnX order 3, LLS mode), from a user report.  Embedded rather than kept as a data file because
+   the numbers - one nuclide owning 11 of the 13 peaks - are the whole point of the tests below.
+   */
+  struct Location2PeakSpec
+  {
+    double energy, counts, counts_uncert;
+    std::vector<RelActCalcManual::GenericLineInfo> lines;
+  };//struct Location2PeakSpec
+
+  const std::vector<Location2PeakSpec> &location2_peak_specs()
+  {
+    static const std::vector<Location2PeakSpec> s_specs = {
+    { 221.19, 594.7719, 57.05969, { { 0.0227, "Br82" } } },
+    { 273.46, 118.705, 36.1979, { { 0.0084, "Br82" } } },
+    { 554.98, 13089.28, 121.6942, { { 0.709, "Br82" } } },
+    { 619.57, 7777.57, 94.43, { { 0.431, "Br82" } } },
+    { 698.57, 4846.969, 74.60403, { { 0.282, "Br82" } } },
+    { 776.49, 13516.31, 119.4972, { { 0.836, "Br82" } } },
+    { 827.68, 3756.39, 65.26733, { { 0.240192, "Br82" } } },
+    { 1043.64, 3934.943, 66.86653, { { 0.274, "Br82" } } },
+    { 1317.36, 3428.325, 59.39558, { { 0.269, "Br82" } } },
+    { 1475.08, 1967.813, 44.65039, { { 0.1663, "Br82" } } },
+    { 1524.76, 20.62545, 5.207118, { { 0.18756, "K42" } } },
+    { 1650.5, 92.27771, 10.02691, { { 0.0079, "Br82" } } },
+    { 2753.92, 6.482638, 3.224987, { { 0.997512, "Na24" } } },
+    };
+    return s_specs;
+  }//location2_peak_specs()
+
+  RelActCalcManual::RelEffInput location2_calc_input()
+  {
+    RelActCalcManual::RelEffInput calc_input;
+    calc_input.eqn_form = RelActCalc::RelEffEqnForm::LnX;
+    calc_input.eqn_order = 3;
+    calc_input.use_ceres_to_fit_eqn = false;  //what RelActManualGui uses for LnX
+
+    for( const Location2PeakSpec &spec : location2_peak_specs() )
+    {
+      RelActCalcManual::GenericPeakInfo peak;
+      peak.m_energy = spec.energy;
+      peak.m_mean = spec.energy;
+      peak.m_counts = spec.counts;
+      peak.m_counts_uncert = spec.counts_uncert;
+      peak.m_base_rel_eff_uncert = 0.0;
+      peak.m_source_gammas = spec.lines;
+      calc_input.peaks.push_back( peak );
+    }
+
+    return calc_input;
+  }//location2_calc_input()
+
+
+  /** The one profile result for `nuc`; requires exactly one to be present. */
+  const RelActCalcManual::ProfileResult &profile_for( const RelActCalcManual::RelEffSolution &sol,
+                                                      const std::string &nuc )
+  {
+    const RelActCalcManual::ProfileResult *found = nullptr;
+    for( const RelActCalcManual::ProfileResult &p : sol.m_profile_results )
+      if( p.target.m_nuclide == nuc )
+        found = &p;
+
+    BOOST_REQUIRE_MESSAGE( found, "No profile result for " << nuc );
+    return *found;
+  }//profile_for(...)
 }//namespace
 
 
@@ -1213,39 +1337,36 @@ BOOST_AUTO_TEST_CASE( ProfileMatchesCovarianceEasyCase )
 {
   RelActCalcManual::RelEffInput calc_input = spec184_calc_input(
                               empirical_state_mod(RelActCalc::RelEffEqnForm::LnX, 4) );
+  calc_input.profile_targets.push_back( mass_frac_profile_target("U235") );
 
   RelActCalcManual::RelEffSolution sol;
   BOOST_REQUIRE_NO_THROW( sol = RelActCalcManual::solve_relative_efficiency( calc_input ) );
   BOOST_REQUIRE( sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
 
-  RelActCalcManual::ProfileMassFractionOptions options;
-  options.nuclide = "U235";
-
-  RelActCalcManual::ProfileMassFractionResult profile;
-  BOOST_REQUIRE_NO_THROW( profile = RelActCalcManual::profile_mass_fraction( calc_input, sol, options ) );
+  const RelActCalcManual::ProfileResult &profile = profile_for( sol, "U235" );
 
   BOOST_REQUIRE_EQUAL( profile.intervals.size(), size_t(2) );
-  const RelActCalcManual::ProfileMassFractionInterval &one_sigma = profile.intervals[0];
-  const RelActCalcManual::ProfileMassFractionInterval &two_sigma = profile.intervals[1];
+  const RelActCalcManual::ProfileInterval &one_sigma = profile.intervals[0];
+  const RelActCalcManual::ProfileInterval &two_sigma = profile.intervals[1];
 
-  const double nominal = profile.nominal_mass_fraction;
+  const double nominal = profile.nominal_value;
   BOOST_CHECK_CLOSE_FRACTION( nominal, sol.mass_fraction("U235"), 1.0e-6 );
 
   BOOST_CHECK( !one_sigma.lower_at_bound && !one_sigma.upper_at_bound );
-  BOOST_CHECK( one_sigma.lower_frac < nominal );
-  BOOST_CHECK( one_sigma.upper_frac > nominal );
+  BOOST_CHECK( one_sigma.lower_value < nominal );
+  BOOST_CHECK( one_sigma.upper_value > nominal );
 
   // 2-sigma interval strictly contains the 1-sigma one.
-  BOOST_CHECK( two_sigma.lower_frac < one_sigma.lower_frac );
-  BOOST_CHECK( two_sigma.upper_frac > one_sigma.upper_frac );
+  BOOST_CHECK( two_sigma.lower_value < one_sigma.lower_value );
+  BOOST_CHECK( two_sigma.upper_value > one_sigma.upper_value );
 
   // Rough agreement with the covariance-based half-widths (both carry the same chi2/dof
   //  inflation): per side within a factor of two - the profile is genuinely asymmetric, which
   //  the covariance cannot express - and the total interval width within 40%.
   const double cov_plus = sol.mass_fraction( "U235", 1.0 ) - sol.mass_fraction( "U235" );
   const double cov_minus = sol.mass_fraction( "U235" ) - sol.mass_fraction( "U235", -1.0 );
-  const double profile_plus = one_sigma.upper_frac - nominal;
-  const double profile_minus = nominal - one_sigma.lower_frac;
+  const double profile_plus = one_sigma.upper_value - nominal;
+  const double profile_minus = nominal - one_sigma.lower_value;
 
   BOOST_CHECK_MESSAGE( (profile_plus > 0.5*cov_plus) && (profile_plus < 2.0*cov_plus),
                        "1-sigma upper half-width: profile " << profile_plus
@@ -1266,37 +1387,45 @@ BOOST_AUTO_TEST_CASE( ProfileMatchesCovarianceEasyCase )
 // finite, bracketing, not at-bound intervals for U235 on the spec184 problem.
 BOOST_AUTO_TEST_CASE( ProfilePhysicalModelTruth )
 {
-  RelActCalcManual::RelEffInput calc_input = spec184_calc_input( []( RelActManualGui::GuiState & ){} );
-  BOOST_REQUIRE( calc_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel );
+  RelActCalcManual::RelEffInput plain_input = spec184_calc_input( []( RelActManualGui::GuiState & ){} );
+  BOOST_REQUIRE( plain_input.eqn_form == RelActCalc::RelEffEqnForm::FramPhysicalModel );
+
+  RelActCalcManual::RelEffInput calc_input = plain_input;
+  calc_input.profile_targets.push_back( mass_frac_profile_target("U235") );
 
   RelActCalcManual::RelEffSolution sol;
   BOOST_REQUIRE_NO_THROW( sol = RelActCalcManual::solve_relative_efficiency( calc_input ) );
   BOOST_REQUIRE( sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
 
-  RelActCalcManual::ProfileMassFractionOptions options;
-  options.nuclide = "U235";
+  // What the profile costs on the case that motivated warm-starting it inside the solve; the
+  //  scan re-solves from the nominal parameters and never re-runs the atomic-number scan.
+  //  (Timed outside the BOOST_TEST_MESSAGE: the helper makes its own Boost assertions, and those
+  //  nest inside the half-built log entry and swallow the message.)
+  const double plain_cpu_ms = mean_solve_cpu_ms( plain_input );
+  const double profiled_cpu_ms = mean_solve_cpu_ms( calc_input );
+  BOOST_TEST_MESSAGE( "Physical-model solve: " << plain_cpu_ms << " ms CPU without the profile, "
+                      << profiled_cpu_ms << " ms CPU with it." );
 
-  RelActCalcManual::ProfileMassFractionResult profile;
-  BOOST_REQUIRE_NO_THROW( profile = RelActCalcManual::profile_mass_fraction( calc_input, sol, options ) );
+  const RelActCalcManual::ProfileResult &profile = profile_for( sol, "U235" );
 
   BOOST_REQUIRE_EQUAL( profile.intervals.size(), size_t(2) );
 
-  for( const RelActCalcManual::ProfileMassFractionInterval &interval : profile.intervals )
+  for( const RelActCalcManual::ProfileInterval &interval : profile.intervals )
   {
-    BOOST_CHECK( !std::isnan(interval.lower_frac) && !std::isnan(interval.upper_frac) );
-    BOOST_CHECK_MESSAGE( interval.lower_frac < profile.nominal_mass_fraction,
-                         "Lower " << interval.lower_frac << " not below nominal "
-                         << profile.nominal_mass_fraction );
-    BOOST_CHECK_MESSAGE( interval.upper_frac > profile.nominal_mass_fraction,
-                         "Upper " << interval.upper_frac << " not above nominal "
-                         << profile.nominal_mass_fraction );
+    BOOST_CHECK( !std::isnan(interval.lower_value) && !std::isnan(interval.upper_value) );
+    BOOST_CHECK_MESSAGE( interval.lower_value < profile.nominal_value,
+                         "Lower " << interval.lower_value << " not below nominal "
+                         << profile.nominal_value );
+    BOOST_CHECK_MESSAGE( interval.upper_value > profile.nominal_value,
+                         "Upper " << interval.upper_value << " not above nominal "
+                         << profile.nominal_value );
     BOOST_CHECK( !interval.lower_at_bound && !interval.upper_at_bound );
   }//for( const auto &interval : profile.intervals )
 
   // Truth is 12.9543 wt% U235; the 2-sigma profile interval should be in the right neighborhood
   //  (this is a real spectrum with model error, so keep the check loose).
-  BOOST_CHECK( profile.intervals[1].lower_frac < 0.15 );
-  BOOST_CHECK( profile.intervals[1].upper_frac > 0.09 );
+  BOOST_CHECK( profile.intervals[1].lower_value < 0.15 );
+  BOOST_CHECK( profile.intervals[1].upper_value > 0.09 );
 }//BOOST_AUTO_TEST_CASE( ProfilePhysicalModelTruth )
 
 
@@ -1333,27 +1462,501 @@ BOOST_AUTO_TEST_CASE( ProfileRespectsConstraintWindow )
   for( const std::string &iso : u_isotopes )
     constraint.m_specific_activities[iso] = db->nuclide(iso)->activityPerGram();
   con_input.mass_fraction_constraints.push_back( constraint );
+  con_input.profile_targets.push_back( mass_frac_profile_target("U235") );
 
   RelActCalcManual::RelEffSolution con_sol;
   BOOST_REQUIRE_NO_THROW( con_sol = RelActCalcManual::solve_relative_efficiency( con_input ) );
   BOOST_REQUIRE( con_sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
 
-  RelActCalcManual::ProfileMassFractionOptions options;
-  options.nuclide = "U235";
-
-  RelActCalcManual::ProfileMassFractionResult profile;
-  BOOST_REQUIRE_NO_THROW( profile = RelActCalcManual::profile_mass_fraction( con_input, con_sol, options ) );
+  const RelActCalcManual::ProfileResult &profile = profile_for( con_sol, "U235" );
   BOOST_REQUIRE( !profile.intervals.empty() );
 
-  for( const RelActCalcManual::ProfileMassFractionInterval &interval : profile.intervals )
+  for( const RelActCalcManual::ProfileInterval &interval : profile.intervals )
   {
-    BOOST_CHECK( interval.lower_frac >= (constraint.m_mass_fraction_lower - 1.0e-9) );
-    BOOST_CHECK( interval.upper_frac <= (constraint.m_mass_fraction_upper + 1.0e-9) );
+    BOOST_CHECK( interval.lower_value >= (constraint.m_mass_fraction_lower - 1.0e-6) );
+    BOOST_CHECK( interval.upper_value <= (constraint.m_mass_fraction_upper + 1.0e-6) );
     BOOST_CHECK_MESSAGE( interval.lower_at_bound && interval.upper_at_bound,
                          "Expected both interval ends clipped to the constraint window (CL "
                          << interval.confidence_level << ")" );
   }//for( const auto &interval : profile.intervals )
+
+  // A user-imposed window is a BOUND, not a flat likelihood; saying "unbounded" here would be the
+  //  opposite of what happened.
+  for( const std::string &warning : profile.warnings )
+    BOOST_CHECK_MESSAGE( warning.find("unbounded") == std::string::npos,
+                         "A constraint-window limit was described as unbounded: " << warning );
 }//BOOST_AUTO_TEST_CASE( ProfileRespectsConstraintWindow )
+
+
+// The claim the penalty channel rests on, in code: minimizing `C(x) + w^2*(g(x) - t)^2` gives
+// `grad C = -lambda*grad g`, which is the stationarity condition of "minimise C subject to
+// g == g(x*)".  So each scan point must reproduce the chi2 of a HARD-constrained re-solve at the
+// same ACHIEVED mass fraction.  (Fixing a parameter instead would give `grad C` along a coordinate
+// axis - stationary for the wrong constraint - and a chi2 that is too high here, i.e. an interval
+// that is too narrow.)
+BOOST_AUTO_TEST_CASE( ProfilePenaltyMatchesHardConstraint )
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+
+  // Both fit paths: the empirical one (curve profiled out by an inner LLS each evaluation) and
+  //  the physical model (shield/Hoerl parameters carried by Ceres alongside the activities).
+  for( int case_index = 0; case_index < 2; ++case_index )
+  {
+    const bool phys_model = (case_index == 1);
+    const char * const case_name = phys_model ? "physical model" : "LnX order-4";
+
+    RelActCalcManual::RelEffInput calc_input = phys_model
+              ? spec184_calc_input( []( RelActManualGui::GuiState & ){} )
+              : spec184_calc_input( empirical_state_mod(RelActCalc::RelEffEqnForm::LnX, 4) );
+    calc_input.profile_targets.push_back( mass_frac_profile_target("U235") );
+
+    RelActCalcManual::RelEffSolution sol;
+    BOOST_REQUIRE_NO_THROW( sol = RelActCalcManual::solve_relative_efficiency( calc_input ) );
+    BOOST_REQUIRE( sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
+
+    const RelActCalcManual::ProfileResult &profile = profile_for( sol, "U235" );
+    BOOST_REQUIRE( profile.scan_points.size() >= 3 );
+
+    // Both extremes must genuinely straddle the nominal, or the loop below would compare the
+    //  nominal against itself on one side and check nothing.
+    BOOST_REQUIRE( profile.scan_points.front().first < profile.nominal_value );
+    BOOST_REQUIRE( profile.scan_points.back().first > profile.nominal_value );
+
+    std::map<std::string,double> roster;
+    for( const RelActCalcManual::GenericPeakInfo &peak : calc_input.peaks )
+      for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
+        if( db->nuclide(line.m_isotope) && (db->nuclide(line.m_isotope)->atomicNumber == 92) )
+          roster[line.m_isotope] = db->nuclide(line.m_isotope)->activityPerGram();
+    BOOST_REQUIRE( roster.size() >= 2 );
+
+    // The two points furthest from the nominal - where any KKT error would show up most.
+    for( const std::pair<double,double> &point : { profile.scan_points.front(),
+                                                   profile.scan_points.back() } )
+    {
+      RelActCalcManual::RelEffInput hard_input = calc_input;
+      hard_input.profile_targets.clear();
+
+      RelActCalcManual::MassFractionConstraint constraint;
+      constraint.m_nuclide = "U235";
+      constraint.m_mass_fraction_lower = constraint.m_mass_fraction_upper = point.first;
+      constraint.m_specific_activities = roster;
+      hard_input.mass_fraction_constraints.push_back( constraint );
+
+      RelActCalcManual::RelEffSolution hard_sol;
+      BOOST_REQUIRE_NO_THROW( hard_sol = RelActCalcManual::solve_relative_efficiency( hard_input ) );
+      BOOST_REQUIRE( hard_sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
+
+      // Both solves land on the same constrained optimum, so the same data chi2; the tolerance is
+      //  just solver convergence, kept well inside the delta-chi2 = 1 the interval is defined by.
+      const double tolerance = (std::max)( 0.02, 1.0e-4*fabs(point.second) );
+      BOOST_CHECK_MESSAGE( fabs(hard_sol.m_chi2_fit_weights - point.second) < tolerance,
+                           case_name << ": at U235 mass fraction " << point.first
+                           << " the penalized scan gives chi2 " << point.second
+                           << " but a hard-constrained re-solve gives " << hard_sol.m_chi2_fit_weights );
+
+      // ... and the constrained fit really is at the fraction the scan reported it reached.
+      BOOST_CHECK_CLOSE_FRACTION( hard_sol.mass_fraction("U235"), point.first, 1.0e-4 );
+    }//for( the two most extreme scan points )
+  }//for( empirical and physical-model cases )
+}//BOOST_AUTO_TEST_CASE( ProfilePenaltyMatchesHardConstraint )
+
+
+// A quantity the problem's constraints hold fixed has no profile: reporting a zero-width
+// "(limit)" interval at the fitted value would read as a confident answer.  Here U235 is tied to
+// U238 by an activity-ratio constraint and the roster is exactly those two, so the U235 fraction
+// of the roster is a constant of the problem no matter what the data say.
+BOOST_AUTO_TEST_CASE( ProfileFrozenQuantityIsRefused )
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+
+  RelActCalcManual::RelEffInput calc_input = spec184_calc_input(
+                              empirical_state_mod(RelActCalc::RelEffEqnForm::LnX, 4) );
+
+  RelActCalcManual::ManualActRatioConstraint constraint;
+  constraint.m_constrained_nuclide = "U235";
+  constraint.m_controlling_nuclide = "U238";
+  constraint.m_constrained_to_controlled_activity_ratio = 5.0;
+  calc_input.act_ratio_constraints.push_back( constraint );
+
+  RelActCalcManual::ProfileTarget target = mass_frac_profile_target("U235");
+  for( const std::string &iso : { "U235", "U238" } )
+    target.m_specific_activities[iso] = db->nuclide(iso)->activityPerGram();
+  calc_input.profile_targets.push_back( target );
+
+  RelActCalcManual::RelEffSolution sol;
+  BOOST_REQUIRE_NO_THROW( sol = RelActCalcManual::solve_relative_efficiency( calc_input ) );
+  BOOST_REQUIRE( sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
+
+  BOOST_CHECK_MESSAGE( sol.m_profile_results.empty(),
+                       "A mass fraction fixed by an activity-ratio constraint was reported as a"
+                       " profile interval rather than refused" );
+
+  bool explained = false;
+  for( const std::string &warning : sol.m_warnings )
+    explained |= (warning.find("nothing to profile") != std::string::npos);
+  BOOST_CHECK_MESSAGE( explained, "No warning explained why the profile was not produced" );
+}//BOOST_AUTO_TEST_CASE( ProfileFrozenQuantityIsRefused )
+
+
+// Profiling an activity RATIO (the other target type - the natural one for e.g. an I131/Cs137
+// problem, where there is no element mass fraction to speak of).  The ratio is gauge invariant, so
+// the interval must not depend on which fit mode set the activity<->curve normalization: the LLS
+// and Ceres empirical paths use different conventions internally and must still agree.
+BOOST_AUTO_TEST_CASE( ProfileActivityRatioInterval )
+{
+  RelActCalcManual::ProfileTarget target;
+  target.m_type = RelActCalcManual::ProfileTarget::Type::ActivityRatio;
+  target.m_nuclide = "U235";
+  target.m_denom_nuclide = "U238";
+
+  double lls_lower = 0.0, lls_upper = 0.0;
+
+  for( const bool use_ceres : { false, true } )
+  {
+    RelActCalcManual::RelEffInput calc_input = spec184_calc_input(
+                                empirical_state_mod(RelActCalc::RelEffEqnForm::LnX, 4) );
+    calc_input.use_ceres_to_fit_eqn = use_ceres;
+    calc_input.profile_targets.push_back( target );
+
+    RelActCalcManual::RelEffSolution sol;
+    BOOST_REQUIRE_NO_THROW( sol = RelActCalcManual::solve_relative_efficiency( calc_input ) );
+    BOOST_REQUIRE( sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
+
+    const RelActCalcManual::ProfileResult &profile = profile_for( sol, "U235" );
+    BOOST_REQUIRE( !profile.intervals.empty() );
+
+    const double nominal_ratio = sol.activity_ratio( "U235", "U238" );
+    BOOST_CHECK_CLOSE_FRACTION( profile.nominal_value, nominal_ratio, 1.0e-6 );
+
+    const RelActCalcManual::ProfileInterval &one_sigma = profile.intervals.front();
+    BOOST_CHECK( !one_sigma.lower_at_bound && !one_sigma.upper_at_bound );
+    BOOST_CHECK( one_sigma.lower_value < nominal_ratio );
+    BOOST_CHECK( one_sigma.upper_value > nominal_ratio );
+
+    // Same order as the covariance-based ratio uncertainty (both carry the m_cov_scale inflation).
+    const double cov_sigma = sol.activity_ratio_uncert( "U235", "U238" );
+    const double profile_sigma = 0.5*(one_sigma.upper_value - one_sigma.lower_value);
+    BOOST_CHECK_MESSAGE( (profile_sigma > 0.5*cov_sigma) && (profile_sigma < 2.0*cov_sigma),
+                         "1-sigma ratio half-width: profile " << profile_sigma
+                         << " vs covariance " << cov_sigma
+                         << (use_ceres ? " (Ceres mode)" : " (LLS mode)") );
+
+    if( !use_ceres )
+    {
+      lls_lower = one_sigma.lower_value;
+      lls_upper = one_sigma.upper_value;
+    }else
+    {
+      BOOST_CHECK_MESSAGE( fabs(one_sigma.lower_value - lls_lower) < 0.05*fabs(lls_lower),
+                           "Ratio interval lower end differs between fit modes: LLS " << lls_lower
+                           << " vs Ceres " << one_sigma.lower_value );
+      BOOST_CHECK_MESSAGE( fabs(one_sigma.upper_value - lls_upper) < 0.05*fabs(lls_upper),
+                           "Ratio interval upper end differs between fit modes: LLS " << lls_upper
+                           << " vs Ceres " << one_sigma.upper_value );
+    }
+  }//for( const bool use_ceres : { false, true } )
+}//BOOST_AUTO_TEST_CASE( ProfileActivityRatioInterval )
+
+
+// Profiling a single nuclide's relative activity - the target type for problems with no element
+// mass fraction to speak of (a mixed-nuclide spectrum).  The quantity is the REPORTED activity,
+// which carries the average-measured-rel-eff gauge multiple for Ceres-fit empirical forms, so it is
+// invariant along the curve<->activity scale orbit; the check is that the two fit modes, whose
+// internal normalizations differ, give the same interval.
+BOOST_AUTO_TEST_CASE( ProfileRelativeActivityInterval )
+{
+  RelActCalcManual::ProfileTarget target;
+  target.m_type = RelActCalcManual::ProfileTarget::Type::RelativeActivity;
+  target.m_nuclide = "U235";
+
+  double lls_lower = 0.0, lls_upper = 0.0;
+
+  for( const bool use_ceres : { false, true } )
+  {
+    RelActCalcManual::RelEffInput calc_input = spec184_calc_input(
+                                empirical_state_mod(RelActCalc::RelEffEqnForm::LnX, 4) );
+    calc_input.use_ceres_to_fit_eqn = use_ceres;
+    calc_input.profile_targets.push_back( target );
+
+    RelActCalcManual::RelEffSolution sol;
+    BOOST_REQUIRE_NO_THROW( sol = RelActCalcManual::solve_relative_efficiency( calc_input ) );
+    BOOST_REQUIRE( sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
+
+    const RelActCalcManual::ProfileResult &profile = profile_for( sol, "U235" );
+    BOOST_REQUIRE( !profile.intervals.empty() );
+
+    // The profiled quantity must be the activity the solution reports, gauge multiple included.
+    const double nominal_act = sol.relative_activity( "U235" );
+    BOOST_CHECK_CLOSE_FRACTION( profile.nominal_value, nominal_act, 1.0e-6 );
+
+    // How much work the gauge multiple is actually doing here.  If it were 1, the cross-mode
+    //  comparison below would still be a real check of the two fit paths, but it would not be
+    //  exercising `average_measured_rel_eff` at all - so report it rather than assume.
+    const size_t iso_index = sol.nuclide_index( "U235" );
+    const double raw_act = sol.m_activity_norms[iso_index] * sol.m_fit_parameters[iso_index];
+    if( use_ceres )
+    {
+      BOOST_REQUIRE( raw_act > 0.0 );
+      const double gauge_mult = nominal_act / raw_act;
+      BOOST_TEST_MESSAGE( "Ceres-mode reporting gauge multiple: " << gauge_mult );
+
+      // Measured at ~4.97 on this problem.  Asserted so the cross-mode agreement below is known to
+      //  be exercising `average_measured_rel_eff`: were the multiple ~1, the two modes could agree
+      //  while the gauge machinery went untested.
+      BOOST_CHECK_MESSAGE( fabs(gauge_mult - 1.0) > 0.5,
+                           "The reporting gauge multiple is " << gauge_mult << ", too close to 1"
+                           " for the cross-mode comparison to test the gauge at all" );
+    }//if( use_ceres )
+
+    const RelActCalcManual::ProfileInterval &one_sigma = profile.intervals.front();
+    BOOST_CHECK_MESSAGE( !one_sigma.lower_at_bound && !one_sigma.upper_at_bound,
+                         (use_ceres ? "Ceres mode" : "LLS mode")
+                         << ": activity profile ran to a bound instead of crossing" );
+    BOOST_CHECK( one_sigma.lower_value < nominal_act );
+    BOOST_CHECK( one_sigma.upper_value > nominal_act );
+
+    // Same order as the covariance-based activity uncertainty (both carry m_cov_scale).
+    const double cov_sigma = sol.relative_activity_uncertainty( "U235" );
+    const double profile_sigma = 0.5*(one_sigma.upper_value - one_sigma.lower_value);
+    BOOST_CHECK_MESSAGE( (profile_sigma > 0.5*cov_sigma) && (profile_sigma < 2.0*cov_sigma),
+                         "1-sigma activity half-width: profile " << profile_sigma
+                         << " vs covariance " << cov_sigma
+                         << (use_ceres ? " (Ceres mode)" : " (LLS mode)") );
+
+    if( !use_ceres )
+    {
+      lls_lower = one_sigma.lower_value;
+      lls_upper = one_sigma.upper_value;
+    }else
+    {
+      // The gauge check: the two fit modes fix the curve<->activity split differently, and the
+      //  reported (gauge-invariant) activity interval must not notice.
+      BOOST_CHECK_MESSAGE( fabs(one_sigma.lower_value - lls_lower) < 0.05*fabs(lls_lower),
+                           "Activity interval lower end differs between fit modes: LLS "
+                           << lls_lower << " vs Ceres " << one_sigma.lower_value );
+      BOOST_CHECK_MESSAGE( fabs(one_sigma.upper_value - lls_upper) < 0.05*fabs(lls_upper),
+                           "Activity interval upper end differs between fit modes: LLS "
+                           << lls_upper << " vs Ceres " << one_sigma.upper_value );
+    }
+  }//for( const bool use_ceres : { false, true } )
+}//BOOST_AUTO_TEST_CASE( ProfileRelativeActivityInterval )
+
+
+// The lower end of a relative-activity profile is the zero-activity hypothesis - "none of this
+// nuclide" - and the walk cannot get there: with an empirical equation fit by Ceres the reporting
+// gauge gives the quantity a hard floor at `(1/P)*sum over peaks owned by t of (C_p/y_p)`, which the
+// penalty can only approach.  A dedicated zero-activity solve supplies that end-point, and chi2
+// there is the nuclide's detection significance squared - which is what decides whether "absent" is
+// inside the interval.  Na24 owns one 6.48 +- 3.22 count peak, so its floor sits at 0.49991 with a
+// delta-chi2 of 4.04: right on the 2-sigma threshold, which is the whole point of the case.
+//
+// The two fit modes must agree.  They fix the curve/activity split differently, and before the
+// anchor existed they reported 1.218 (Ceres) against 0.557 (LLS) for this same number - so this is
+// the test that would have caught it.
+BOOST_AUTO_TEST_CASE( ProfileRelativeActivityZeroAnchor )
+{
+  set_data_dir();
+
+  // The analytic floor and the chi2 there, from the peaks Na24 owns outright.
+  double floor_value = 0.0, wall_delta_chi2 = 0.0;
+  for( const Location2PeakSpec &spec : location2_peak_specs() )
+  {
+    if( (spec.lines.size() == 1) && (spec.lines[0].m_isotope == "Na24") )
+    {
+      floor_value += spec.counts / spec.lines[0].m_yield;
+      wall_delta_chi2 += std::pow( spec.counts / spec.counts_uncert, 2.0 );
+    }
+  }
+  floor_value /= static_cast<double>( location2_peak_specs().size() );
+  BOOST_REQUIRE( floor_value > 0.0 );
+
+  double mode_lower[2] = { 0.0, 0.0 };
+
+  for( int mode = 0; mode < 2; ++mode )
+  {
+    const bool use_ceres = (mode == 1);
+
+    RelActCalcManual::RelEffInput calc_input = location2_calc_input();
+    calc_input.use_ceres_to_fit_eqn = use_ceres;
+
+    RelActCalcManual::ProfileTarget target;
+    target.m_type = RelActCalcManual::ProfileTarget::Type::RelativeActivity;
+    target.m_nuclide = "Na24";
+    calc_input.profile_targets.push_back( target );
+
+    RelActCalcManual::RelEffSolution sol;
+    BOOST_REQUIRE_NO_THROW( sol = RelActCalcManual::solve_relative_efficiency( calc_input ) );
+    BOOST_REQUIRE( sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
+
+    const RelActCalcManual::ProfileResult &profile = profile_for( sol, "Na24" );
+    BOOST_REQUIRE_EQUAL( profile.intervals.size(), size_t(2) );
+
+    // The scan must contain the zero-activity point, at the analytic floor and with the chi2 the
+    //  nuclide's own significance predicts.
+    double lowest = profile.nominal_value;
+    for( const std::pair<double,double> &pt : profile.scan_points )
+      lowest = (std::min)( lowest, pt.first );
+
+    BOOST_CHECK_MESSAGE( fabs(lowest - floor_value) < 0.02*floor_value,
+                         (use_ceres ? "Ceres" : "LLS") << " mode: lowest scan point " << lowest
+                         << " is not the analytic zero-activity floor " << floor_value );
+
+    double lowest_chi2 = profile.nominal_chi2;
+    for( const std::pair<double,double> &pt : profile.scan_points )
+      if( fabs(pt.first - lowest) < 1.0e-9 )
+        lowest_chi2 = pt.second;
+    BOOST_CHECK_MESSAGE( fabs((lowest_chi2 - profile.nominal_chi2) - wall_delta_chi2) < 0.1*wall_delta_chi2,
+                         (use_ceres ? "Ceres" : "LLS") << " mode: chi2 at zero activity rose "
+                         << (lowest_chi2 - profile.nominal_chi2) << ", but this nuclide's detection"
+                         " significance predicts " << wall_delta_chi2 );
+
+    // Na24 sits right on the 2-sigma threshold, so the reported end must land just above the floor.
+    const RelActCalcManual::ProfileInterval &two_sigma = profile.intervals[1];
+    BOOST_CHECK_MESSAGE( (two_sigma.lower_value > floor_value) && (two_sigma.lower_value < 1.0),
+                         (use_ceres ? "Ceres" : "LLS") << " mode: 2-sigma lower end "
+                         << two_sigma.lower_value << " is not between the floor " << floor_value
+                         << " and 1.0" );
+
+    // It is a bound/limit story, never "the fit stopped resisting" - that would be the opposite of
+    //  what happens at a hard floor.
+    for( const std::string &warning : profile.warnings )
+      BOOST_CHECK_MESSAGE( warning.find("stopped resisting") == std::string::npos,
+                           (use_ceres ? "Ceres" : "LLS")
+                           << " mode: a structural floor was described as unbounded: " << warning );
+
+    mode_lower[mode] = two_sigma.lower_value;
+  }//for( int mode = 0; mode < 2; ++mode )
+
+  // The two fit modes must agree on a quantity the data determine.
+  BOOST_CHECK_MESSAGE( fabs(mode_lower[0] - mode_lower[1]) < 0.15*mode_lower[0],
+                       "2-sigma lower end differs between fit modes: LLS " << mode_lower[0]
+                       << " vs Ceres " << mode_lower[1] );
+}//BOOST_AUTO_TEST_CASE( ProfileRelativeActivityZeroAnchor )
+
+
+// A single nuclide owning every peak makes the reported activity `(1/P)*sum_p C_p/y_p` exactly -
+// the activity cancels out of `m(x)*A_t` - so with an empirical equation fit by Ceres it is a
+// constant of the data, with a zero-derivative covariance row to match.  Refuse it rather than
+// report a zero-width interval.
+BOOST_AUTO_TEST_CASE( ProfileRelativeActivitySingleNuclideRefused )
+{
+  set_data_dir();
+
+  RelActCalcManual::RelEffInput calc_input = location2_calc_input();
+  calc_input.use_ceres_to_fit_eqn = true;
+
+  // Keep only the peaks Br82 owns outright, so Br82 is the only nuclide in the fit.
+  calc_input.peaks.clear();
+  for( const Location2PeakSpec &spec : location2_peak_specs() )
+  {
+    if( (spec.lines.size() != 1) || (spec.lines[0].m_isotope != "Br82") )
+      continue;
+    RelActCalcManual::GenericPeakInfo peak;
+    peak.m_energy = spec.energy;
+    peak.m_mean = spec.energy;
+    peak.m_counts = spec.counts;
+    peak.m_counts_uncert = spec.counts_uncert;
+    peak.m_base_rel_eff_uncert = 0.0;
+    peak.m_source_gammas = spec.lines;
+    calc_input.peaks.push_back( peak );
+  }
+  BOOST_REQUIRE( calc_input.peaks.size() > 4 );
+
+  RelActCalcManual::ProfileTarget target;
+  target.m_type = RelActCalcManual::ProfileTarget::Type::RelativeActivity;
+  target.m_nuclide = "Br82";
+  calc_input.profile_targets.push_back( target );
+
+  RelActCalcManual::RelEffSolution sol;
+  BOOST_REQUIRE_NO_THROW( sol = RelActCalcManual::solve_relative_efficiency( calc_input ) );
+  BOOST_REQUIRE( sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
+
+  BOOST_CHECK_MESSAGE( sol.m_profile_results.empty(),
+                       "A relative activity that is fixed by the reporting normalization was"
+                       " reported as a profile interval rather than refused" );
+
+  bool explained = false;
+  for( const std::string &warning : sol.m_warnings )
+    explained |= (warning.find("carries no information from the fit") != std::string::npos);
+  BOOST_CHECK_MESSAGE( explained, "No warning explained why the profile was refused" );
+
+  // ... and the covariance says the same thing, which is why refusing is right rather than a
+  //  workaround: the derivative of the reported activity wrt every parameter is identically zero.
+  if( !sol.m_rel_act_covariance.empty() )
+    BOOST_CHECK_MESSAGE( sol.m_rel_act_covariance[0][0] < 1.0e-6*std::pow(sol.m_rel_activities[0].m_rel_activity, 2.0),
+                         "Expected a ~zero covariance for a structurally fixed reported activity,"
+                         " got " << sol.m_rel_act_covariance[0][0] );
+}//BOOST_AUTO_TEST_CASE( ProfileRelativeActivitySingleNuclideRefused )
+
+
+// The penalty channel exists for the whole life of the cost function, so it must be provably inert
+// when disarmed: asking for a profile may not move the nominal answer by so much as a digit.  This
+// also covers the parameter snapshot/restore around the scan loop - a scan point left in `pars`
+// would show up in everything derived from it.
+BOOST_AUTO_TEST_CASE( ProfileChannelInertWhenDisarmed )
+{
+  RelActCalcManual::RelEffInput plain_input = spec184_calc_input(
+                              empirical_state_mod(RelActCalc::RelEffEqnForm::LnX, 4) );
+
+  RelActCalcManual::RelEffInput profiled_input = plain_input;
+  profiled_input.profile_targets.push_back( mass_frac_profile_target("U235") );
+
+  RelActCalcManual::RelEffSolution plain_sol, profiled_sol;
+  BOOST_REQUIRE_NO_THROW( plain_sol = RelActCalcManual::solve_relative_efficiency( plain_input ) );
+  BOOST_REQUIRE_NO_THROW( profiled_sol = RelActCalcManual::solve_relative_efficiency( profiled_input ) );
+  BOOST_REQUIRE( plain_sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
+  BOOST_REQUIRE( profiled_sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
+  BOOST_REQUIRE( !profiled_sol.m_profile_results.empty() );
+
+  const double plain_cpu_ms = mean_solve_cpu_ms( plain_input );
+  const double profiled_cpu_ms = mean_solve_cpu_ms( profiled_input );
+  BOOST_TEST_MESSAGE( "LnX order-4 solve: " << plain_cpu_ms << " ms CPU without the profile, "
+                      << profiled_cpu_ms << " ms CPU with it." );
+
+  BOOST_REQUIRE_EQUAL( profiled_sol.m_fit_parameters.size(), plain_sol.m_fit_parameters.size() );
+  for( size_t i = 0; i < plain_sol.m_fit_parameters.size(); ++i )
+    BOOST_CHECK_MESSAGE( plain_sol.m_fit_parameters[i] == profiled_sol.m_fit_parameters[i],
+                         "Fit parameter " << i << " moved: " << plain_sol.m_fit_parameters[i]
+                         << " -> " << profiled_sol.m_fit_parameters[i] );
+
+  BOOST_CHECK_EQUAL( plain_sol.m_dof, profiled_sol.m_dof );
+  BOOST_CHECK_EQUAL( plain_sol.m_chi2, profiled_sol.m_chi2 );
+  BOOST_CHECK_EQUAL( plain_sol.m_chi2_fit_weights, profiled_sol.m_chi2_fit_weights );
+  BOOST_CHECK_EQUAL( plain_sol.m_cov_scale, profiled_sol.m_cov_scale );
+
+  BOOST_REQUIRE_EQUAL( plain_sol.m_rel_activities.size(), profiled_sol.m_rel_activities.size() );
+  for( size_t i = 0; i < plain_sol.m_rel_activities.size(); ++i )
+  {
+    BOOST_CHECK_EQUAL( plain_sol.m_rel_activities[i].m_isotope,
+                       profiled_sol.m_rel_activities[i].m_isotope );
+    BOOST_CHECK_EQUAL( plain_sol.m_rel_activities[i].m_rel_activity,
+                       profiled_sol.m_rel_activities[i].m_rel_activity );
+    BOOST_CHECK_EQUAL( plain_sol.m_rel_activities[i].m_rel_activity_uncert,
+                       profiled_sol.m_rel_activities[i].m_rel_activity_uncert );
+  }
+
+  BOOST_REQUIRE_EQUAL( plain_sol.m_rel_eff_eqn_coefficients.size(),
+                       profiled_sol.m_rel_eff_eqn_coefficients.size() );
+  for( size_t i = 0; i < plain_sol.m_rel_eff_eqn_coefficients.size(); ++i )
+    BOOST_CHECK_EQUAL( plain_sol.m_rel_eff_eqn_coefficients[i],
+                       profiled_sol.m_rel_eff_eqn_coefficients[i] );
+
+  // The Jacobian's documented "k-index == peak index" must survive the extra residual channel.
+  BOOST_CHECK_EQUAL( profiled_sol.m_nonlin_jacobian.size(), profiled_sol.m_input.peaks.size() );
+  BOOST_CHECK_EQUAL( plain_sol.m_nonlin_jacobian.size(), profiled_sol.m_nonlin_jacobian.size() );
+
+  // A target that cannot be profiled is dropped with a warning, not by failing the fit.
+  RelActCalcManual::RelEffInput bogus_input = plain_input;
+  bogus_input.profile_targets.push_back( mass_frac_profile_target("Cs137") );
+
+  RelActCalcManual::RelEffSolution bogus_sol;
+  BOOST_REQUIRE_NO_THROW( bogus_sol = RelActCalcManual::solve_relative_efficiency( bogus_input ) );
+  BOOST_CHECK( bogus_sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
+  BOOST_CHECK( bogus_sol.m_profile_results.empty() );
+  BOOST_CHECK( bogus_sol.m_warnings.size() > plain_sol.m_warnings.size() );
+}//BOOST_AUTO_TEST_CASE( ProfileChannelInertWhenDisarmed )
 
 
 // The functor used to replace any initial activity estimate below 1.0 with 1.0, destroying the
@@ -1487,6 +2090,7 @@ BOOST_AUTO_TEST_CASE( ProfileWithAutoAddUncert )
     input.auto_estimate_add_uncert = true;
     for( RelActCalcManual::GenericPeakInfo &peak : input.peaks )
       peak.m_base_rel_eff_uncert = 0.0;
+    input.profile_targets.push_back( mass_frac_profile_target("U235") );
 
     const char * const form_name = "stat-multiple";
 
@@ -1496,24 +2100,20 @@ BOOST_AUTO_TEST_CASE( ProfileWithAutoAddUncert )
     BOOST_REQUIRE_MESSAGE( sol.m_auto_stat_uncert_multiple > 1.0,
                            "No automatic uncertainty estimate was made (" << form_name << ")" );
 
-    RelActCalcManual::ProfileMassFractionOptions options;
-    options.nuclide = "U235";
-
-    RelActCalcManual::ProfileMassFractionResult profile;
-    BOOST_REQUIRE_NO_THROW( profile = RelActCalcManual::profile_mass_fraction( input, sol, options ) );
+    const RelActCalcManual::ProfileResult &profile = profile_for( sol, "U235" );
     BOOST_REQUIRE( !profile.intervals.empty() );
 
-    const RelActCalcManual::ProfileMassFractionInterval &one_sigma = profile.intervals.front();
+    const RelActCalcManual::ProfileInterval &one_sigma = profile.intervals.front();
     BOOST_CHECK_MESSAGE( !one_sigma.lower_at_bound && !one_sigma.upper_at_bound,
                          "Profile ran to the domain bounds (" << form_name << ") - the trial solves"
                          " are probably not on the same likelihood as the nominal one" );
-    BOOST_CHECK( one_sigma.lower_frac < profile.nominal_mass_fraction );
-    BOOST_CHECK( one_sigma.upper_frac > profile.nominal_mass_fraction );
+    BOOST_CHECK( one_sigma.lower_value < profile.nominal_value );
+    BOOST_CHECK( one_sigma.upper_value > profile.nominal_value );
 
     // A sane interval, not one spanning the whole physical range.
-    BOOST_CHECK_MESSAGE( (one_sigma.upper_frac - one_sigma.lower_frac) < 0.5,
+    BOOST_CHECK_MESSAGE( (one_sigma.upper_value - one_sigma.lower_value) < 0.5,
                          "Profile interval (" << form_name << ") spans "
-                         << (one_sigma.upper_frac - one_sigma.lower_frac)
+                         << (one_sigma.upper_value - one_sigma.lower_value)
                          << " of the [0,1] mass-fraction range" );
   }
 }//BOOST_AUTO_TEST_CASE( ProfileWithAutoAddUncert )
@@ -1675,3 +2275,183 @@ BOOST_AUTO_TEST_CASE( MassFractionUnknownNuclideThrows )
 
 
 
+
+
+// A real mixed-nuclide problem (Br82 + K42 + Na24, HPGe, LnX order 3), taken from a user report.
+// Br82 owns 11 of the 13 peaks, so pushing ITS activity up is almost entirely absorbed by
+// renormalizing the efficiency curve - only the two weak minor-nuclide peaks resist - and the
+// profile chi2 asymptotes just above the 2-sigma threshold instead of crossing it.  Interpolating
+// a "crossing" out there is decided by numerical noise (the measured points differed by 0.05 in
+// chi2 across a 2.8x change in activity), so that side must be reported as a limit.  The two minor
+// nuclides, whose activities the data really do pin down, must still give genuine crossings.
+BOOST_AUTO_TEST_CASE( ProfileFlatDirectionReportedAsLimit )
+{
+  set_data_dir();
+
+  RelActCalcManual::RelEffInput calc_input = location2_calc_input();
+
+  for( const std::string &nuc : { "Na24", "K42", "Br82" } )
+  {
+    RelActCalcManual::ProfileTarget target;
+    target.m_type = RelActCalcManual::ProfileTarget::Type::RelativeActivity;
+    target.m_nuclide = nuc;
+    calc_input.profile_targets.push_back( target );
+  }
+
+  RelActCalcManual::RelEffSolution sol;
+  BOOST_REQUIRE_NO_THROW( sol = RelActCalcManual::solve_relative_efficiency( calc_input ) );
+  BOOST_REQUIRE( sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
+  BOOST_REQUIRE_EQUAL( sol.m_profile_results.size(), size_t(3) );
+
+  // The dominant nuclide: unbounded above at 2 sigma, and said to be so.
+  {
+    const RelActCalcManual::ProfileResult &br82 = profile_for( sol, "Br82" );
+    BOOST_REQUIRE_EQUAL( br82.intervals.size(), size_t(2) );
+    const RelActCalcManual::ProfileInterval &two_sigma = br82.intervals[1];
+
+    BOOST_CHECK_MESSAGE( two_sigma.upper_at_bound,
+                         "Br82's 2-sigma upper end came back as a crossing at "
+                         << two_sigma.upper_value << "; the profile is asymptotic there, so it"
+                         " must be reported as a limit" );
+
+    // ... and for the RIGHT reason.  Simply running out of re-fits also sets `upper_at_bound`, so
+    //  the flag alone cannot tell "the fit stopped resisting" from "the walk gave up", and a
+    //  regression in the flat detector would hide behind the solve budget.
+    bool said_unbounded = false;
+    for( const std::string &warning : br82.warnings )
+      said_unbounded |= (warning.find("stopped resisting") != std::string::npos);
+    BOOST_CHECK_MESSAGE( said_unbounded,
+                         "Br82's upper end was called a limit, but not because the profile went"
+                         " flat - the flat-direction detector did not fire" );
+
+    // ... and not at some absurd multiple of the fitted value, which is what interpolating along
+    //  the asymptote produced (a fitted 15096 gave an "upper bound" of 178788).
+    BOOST_CHECK_MESSAGE( two_sigma.upper_value < 10.0*br82.nominal_value,
+                         "Br82's 2-sigma upper end ran to " << two_sigma.upper_value
+                         << " against a fitted " << br82.nominal_value );
+
+    // The lower side is genuinely constrained - the minor nuclides' peaks pin it.
+    BOOST_CHECK( !two_sigma.lower_at_bound );
+    BOOST_CHECK( two_sigma.lower_value < br82.nominal_value );
+  }
+
+  // Br82's reported activity cannot fall below the structural floor `(1/P)*sum(C_p/y_p)` over the
+  //  peaks it owns (see ProfileTarget::Type::RelativeActivity) - so confirm the lower "crossing"
+  //  is a real one above that wall, not the wall itself.
+  {
+    const RelActCalcManual::ProfileResult &br82 = profile_for( sol, "Br82" );
+    double structural_floor = 0.0;
+    for( const Location2PeakSpec &spec : location2_peak_specs() )
+    {
+      if( (spec.lines.size() == 1) && (spec.lines[0].m_isotope == "Br82") )
+        structural_floor += spec.counts / spec.lines[0].m_yield;
+    }
+    structural_floor /= static_cast<double>( location2_peak_specs().size() );
+
+    BOOST_CHECK_MESSAGE( br82.intervals[1].lower_value > structural_floor,
+                         "Br82's 2-sigma lower end " << br82.intervals[1].lower_value
+                         << " is at or below the structural floor " << structural_floor
+                         << ", so it is not a measured bound" );
+  }
+
+  // The minor nuclides: the data really do bound these, so both ends must be real crossings.
+  for( const std::string &nuc : { "K42", "Na24" } )
+  {
+    const RelActCalcManual::ProfileResult &profile = profile_for( sol, nuc );
+    BOOST_REQUIRE_EQUAL( profile.intervals.size(), size_t(2) );
+
+    for( const RelActCalcManual::ProfileInterval &interval : profile.intervals )
+    {
+      BOOST_CHECK_MESSAGE( !interval.lower_at_bound && !interval.upper_at_bound,
+                           nuc << " CL=" << interval.confidence_level
+                           << " came back as a limit rather than a crossing" );
+      BOOST_CHECK( interval.lower_value < profile.nominal_value );
+      BOOST_CHECK( interval.upper_value > profile.nominal_value );
+    }
+
+    // 2-sigma strictly contains 1-sigma.
+    BOOST_CHECK( profile.intervals[1].lower_value < profile.intervals[0].lower_value );
+    BOOST_CHECK( profile.intervals[1].upper_value > profile.intervals[0].upper_value );
+  }//for( const std::string &nuc : { "K42", "Na24" } )
+
+  for( const RelActCalcManual::ProfileResult &profile : sol.m_profile_results )
+    for( const std::pair<double,double> &pt : profile.scan_points )
+      BOOST_CHECK_MESSAGE( std::isfinite(pt.first) && std::isfinite(pt.second),
+                           "Non-finite scan point for " << profile.target.m_nuclide );
+}//BOOST_AUTO_TEST_CASE( ProfileFlatDirectionReportedAsLimit )
+
+
+// The structural floor on a REPORTED relative activity for the empirical forms.  Because a peak fed
+// only by `t` contributes `C_p/(A_t*y_p)` to the average that sets the reporting gauge, the `A_t`
+// cancels and `m(x)*A_t >= (1/P)*sum over peaks owned by t of (C_p/y_p)` - independent of every
+// activity in the problem.  So a nuclide's reported activity CANNOT be walked to zero, and the
+// profile's lower end is a wall, not a measurement.  Na24 here owns one 6.48-count peak at yield
+// 0.9975 out of 13 peaks, giving a floor of 0.49991; the walk must stall there, stay finite, and
+// report that end as a bound.  (This is also why removing the smooth floor inside
+// `average_measured_rel_eff` does NOT blow up here - the product stays finite as the activity
+// falls - so this test does not stand in for that; only the Debug assert covers it.)
+BOOST_AUTO_TEST_CASE( ProfileRelativeActivityStructuralFloor )
+{
+  set_data_dir();
+
+  RelActCalcManual::RelEffInput calc_input = location2_calc_input();
+  calc_input.use_ceres_to_fit_eqn = true;   //the path that applies the gauge multiple
+
+  RelActCalcManual::ProfileTarget target;
+  target.m_type = RelActCalcManual::ProfileTarget::Type::RelativeActivity;
+  target.m_nuclide = "Na24";
+  calc_input.profile_targets.push_back( target );
+
+  RelActCalcManual::RelEffSolution sol;
+  BOOST_REQUIRE_NO_THROW( sol = RelActCalcManual::solve_relative_efficiency( calc_input ) );
+  BOOST_REQUIRE( sol.m_status == RelActCalcManual::ManualSolutionStatus::Success );
+
+  const RelActCalcManual::ProfileResult &profile = profile_for( sol, "Na24" );
+  BOOST_REQUIRE( !profile.scan_points.empty() );
+
+  for( const std::pair<double,double> &pt : profile.scan_points )
+    BOOST_CHECK_MESSAGE( std::isfinite(pt.first) && std::isfinite(pt.second),
+                         "Non-finite scan point (" << pt.first << ", " << pt.second << ")" );
+
+  for( const std::string &warning : profile.warnings )
+  {
+    BOOST_CHECK_MESSAGE( warning.find("non-finite") == std::string::npos,
+                         "Scan hit a non-finite value: " << warning );
+    BOOST_CHECK_MESSAGE( warning.find("did not converge") == std::string::npos,
+                         "Scan failed to converge: " << warning );
+  }
+
+  // The walk stalls exactly on the structural floor, not at zero.
+  double structural_floor = 0.0;
+  for( const Location2PeakSpec &spec : location2_peak_specs() )
+  {
+    if( (spec.lines.size() == 1) && (spec.lines[0].m_isotope == "Na24") )
+      structural_floor += spec.counts / spec.lines[0].m_yield;
+  }
+  structural_floor /= static_cast<double>( location2_peak_specs().size() );
+  BOOST_REQUIRE( structural_floor > 0.0 );
+
+  double lowest = profile.nominal_value;
+  for( const std::pair<double,double> &pt : profile.scan_points )
+    lowest = (std::min)( lowest, pt.first );
+
+  // No recorded point may sit below the wall: below it, the value is decided by the smooth floor
+  //  inside `average_measured_rel_eff` rather than by the data, so the walk must stop first.
+  BOOST_CHECK_MESSAGE( lowest >= structural_floor*(1.0 - 1.0e-6),
+                       "Scan recorded " << lowest << ", below the structural floor "
+                       << structural_floor << " that the reporting gauge makes impossible - the"
+                       " end-point is being set by the numerical floor" );
+
+  // That end must therefore be reported as a limit, and be explained.
+  BOOST_REQUIRE( !profile.intervals.empty() );
+  BOOST_CHECK( profile.intervals.back().lower_at_bound );
+  // Whatever stopped it, the end must say it is a limit and say why.  Which reason applies is not
+  //  pinned here: approaching the wall makes the reported activity ill-conditioned in the
+  //  parameters, so the walk can legitimately end on the floored-normalization guard, on a bound,
+  //  or on its solve budget.  What must never happen is an unexplained limit.
+  bool explained = false;
+  for( const std::string &warning : profile.warnings )
+    explained |= (warning.find("is a limit, not a measured bound") != std::string::npos);
+  BOOST_CHECK_MESSAGE( explained,
+                       "Na24's lower end came back a limit with no warning saying why" );
+}//BOOST_AUTO_TEST_CASE( ProfileRelativeActivityStructuralFloor )

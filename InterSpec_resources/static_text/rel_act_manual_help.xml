@@ -33,7 +33,7 @@ the uncertainties you are shown are arrived at:
       peak&#39;s uncertainty before fitting rather than to the final answer, so it is visible in the
       chart&#39;s error bars and is stated with the results.  Every peak is scaled by the same factor,
       which is why the fit itself does not move.</li>
-  <li><b>Stat. Only (no widening)</b>: the purely statistical uncertainty, as if the efficiency
+  <li><b>Strict Stat.</b>: the purely statistical uncertainty, as if the efficiency
       model were exactly correct.  On real spectra this is usually much too small - use it only
       when a statistics-only figure is specifically what you want.</li>
   <li><b>1% - 100%</b>: adds a fixed uncertainty proportional to each peak&#39;s area.  This changes
@@ -51,16 +51,26 @@ On the chart, the data-point error bars and the shaded band around the fitted cu
 
 <h2>Profile likelihood uncertainties</h2>
 <p>
-Each nuclide panel has a <b>Profile uncert.</b> check-box (shown when the nuclide&#39;s element has
-more than one isotope in the problem).  When checked, that nuclide&#39;s mass-fraction uncertainty is
-found by re-solving the problem with its mass fraction fixed at a range of trial values, and
-reading off where the &chi;<sup>2</sup> rises by the amount corresponding to 68.3% and 95.4%
-confidence.
+Each nuclide panel has a <b>Profile uncert.</b> check-box.  When checked, that nuclide&#39;s
+uncertainty is found by pushing the quantity away from its fitted value while every other quantity
+is re-fit around it, and reading off where the &chi;<sup>2</sup> has risen by the amount
+corresponding to 68.3% and 95.4% confidence.  The quantity scanned is the nuclide&#39;s mass fraction
+of its element when the element has more than one isotope in the problem, and otherwise its
+relative activity.
 </p>
 <p>
 This gives an asymmetric interval, and unlike the usual uncertainty it stays meaningful when the
-answer is near 0% or 100%, or when the problem is poorly constrained - situations where a
-symmetric &plusmn; is misleading.  It costs roughly 35 to 45 extra fits, which is well under a
-second for the empirical equation forms.  Results appear in the chart title and beneath the
-mass-fraction table.
+answer is near a physical bound (0% or 100% for a fraction, zero for an activity), or when the
+problem is poorly constrained - situations where a symmetric &plusmn; is misleading.  Each step
+starts from the solution the fit already found, so it typically costs 6 to 8 extra fits - well
+under a second.  Results appear in the chart title and beneath the mass-fraction table.
+</p>
+<p>
+A note on relative activities with the empirical equation forms (everything except <em>FRAM
+Physical</em>): there, only the <em>product</em> of the efficiency curve and the activities is
+determined by the data, and the split between them is set by the convention that the average
+measured relative efficiency is 1.  The profile respects that convention, so the interval is a
+valid uncertainty on the reported activity - but if what you want is a quantity free of any
+convention, use a ratio of two activities.  With <em>FRAM Physical</em> the detector response sets
+the absolute scale, so this caveat does not apply.
 </p>

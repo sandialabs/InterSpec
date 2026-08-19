@@ -1991,40 +1991,52 @@ void RelActManualGui::calculateSolution()
     RelActCalcManual::RelEffInput setup_output;
     prepare_calc_input( raw_info, setup_output );
 
-    // Collect the nuclides whose "Profile uncert." checkbox is checked (GUI thread only).
-    vector<string> profile_nuclides;
+    // The nuclides whose "Profile uncert." checkbox is checked (GUI thread only); the solver runs
+    //  the scans itself, after the nominal solve, reusing that solve's basin.
+    //
+    //  Profile the element-relative mass fraction when the element has more than one isotope in
+    //  the problem - that is the number the user is after - and the relative activity otherwise
+    //  (see ProfileTarget::Type::RelativeActivity for what that means for the empirical forms).
+    //  Count isotopes from the PEAKS the solver will actually see, not from the displayed nuclide
+    //  widgets: `prepare_calc_input` can drop a peak (background subtraction zeroing its counts),
+    //  and then the widget count says "two isotopes, profile the mass fraction" while the solver's
+    //  roster has one and refuses the target outright - where a relative-activity profile would
+    //  have worked.
+    const SandiaDecay::SandiaDecayDataBase * const decay_db = DecayDataBaseServer::database();
+    std::map<int,int> num_isotopes_of_element;
+    {
+      std::set<std::string> fit_isotopes;
+      for( const RelActCalcManual::GenericPeakInfo &peak : setup_output.peaks )
+        for( const RelActCalcManual::GenericLineInfo &line : peak.m_source_gammas )
+          fit_isotopes.insert( line.m_isotope );
+
+      for( const std::string &iso : fit_isotopes )
+      {
+        const SandiaDecay::Nuclide * const nuc = decay_db ? decay_db->nuclide(iso) : nullptr;
+        if( nuc )
+          num_isotopes_of_element[nuc->atomicNumber] += 1;
+      }
+    }
+
     for( auto w : m_nuclidesDisp->children() )
     {
       const ManRelEffNucDisp *rr = dynamic_cast<const ManRelEffNucDisp *>(w);
       if( rr && rr->m_nuc && rr->profileUncert() )
-        profile_nuclides.push_back( rr->m_nuc->symbol );
+      {
+        RelActCalcManual::ProfileTarget target;
+        target.m_type = (num_isotopes_of_element[rr->m_nuc->atomicNumber] > 1)
+                        ? RelActCalcManual::ProfileTarget::Type::MassFraction
+                        : RelActCalcManual::ProfileTarget::Type::RelativeActivity;
+        target.m_nuclide = rr->m_nuc->symbol;
+        setup_output.profile_targets.push_back( target );
+      }
     }//for( auto w : m_nuclidesDisp->children() )
 
     WServer::instance()->ioService().boost::asio::io_service::post( std::bind(
-      [setup_output, sessionId, solution, updater, errmsg, err_updater, profile_nuclides](){
+      [setup_output, sessionId, solution, updater, errmsg, err_updater](){
         try
         {
           *solution = solve_relative_efficiency( setup_output );
-
-          // Optional profile-likelihood scans for the nuclides the user checked; a failure only
-          //  becomes a warning (the covariance-based uncertainty display is the fallback).
-          if( solution->m_status == RelActCalcManual::ManualSolutionStatus::Success )
-          {
-            for( const string &nuclide : profile_nuclides )
-            {
-              try
-              {
-                RelActCalcManual::ProfileMassFractionOptions profile_opts;
-                profile_opts.nuclide = nuclide;
-                solution->m_profile_mass_fractions.push_back(
-                    RelActCalcManual::profile_mass_fraction( setup_output, *solution, profile_opts ) );
-              }catch( std::exception &e )
-              {
-                solution->m_warnings.push_back( "Profile-likelihood scan for " + nuclide
-                                                + " failed: " + string(e.what()) );
-              }//try / catch
-            }//for( const string &nuclide : profile_nuclides )
-          }//if( the solve was successful )
 
           WServer::instance()->post( sessionId, updater );
         }catch( std::exception &e )
@@ -2360,10 +2372,11 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     // Prefer a profile-likelihood interval when the user requested one for this nuclide - it is
     //  asymmetric and stays valid near the physical bounds; fall back to the (symmetrized)
     //  covariance-based uncertainty otherwise.
-    const RelActCalcManual::ProfileMassFractionResult *profile = nullptr;
-    for( const RelActCalcManual::ProfileMassFractionResult &p : solution.m_profile_mass_fractions )
+    const RelActCalcManual::ProfileResult *profile = nullptr;
+    for( const RelActCalcManual::ProfileResult &p : solution.m_profile_results )
     {
-      if( (p.nuclide == iso) && !p.intervals.empty() )
+      if( (p.target.m_type == RelActCalcManual::ProfileTarget::Type::MassFraction)
+          && (p.target.m_nuclide == iso) && !p.intervals.empty() )
         profile = &p;
     }
 
@@ -2371,10 +2384,10 @@ void RelActManualGui::updateGuiWithResults( shared_ptr<RelActCalcManual::RelEffS
     {
       if( profile )
       {
-        const RelActCalcManual::ProfileMassFractionInterval &interval = profile->intervals.front();
-        const double plus = (std::max)( 0.0, interval.upper_frac - profile->nominal_mass_fraction );
-        const double minus = (std::max)( 0.0, profile->nominal_mass_fraction - interval.lower_frac );
-        enrich = ", " + SpecUtils::printCompact(100.0*profile->nominal_mass_fraction, 4)
+        const RelActCalcManual::ProfileInterval &interval = profile->intervals.front();
+        const double plus = (std::max)( 0.0, interval.upper_value - profile->nominal_value );
+        const double minus = (std::max)( 0.0, profile->nominal_value - interval.lower_value );
+        enrich = ", " + SpecUtils::printCompact(100.0*profile->nominal_value, 4)
                  + " (+" + SpecUtils::printCompact(100.0*plus, 3)
                  + "/-" + SpecUtils::printCompact(100.0*minus, 3) + ")% " + iso;
         if( interval.lower_at_bound || interval.upper_at_bound )
@@ -2852,14 +2865,6 @@ void RelActManualGui::updateNuclides()
   current_nucs.clear();
   current_rctns.clear();
   
-  std::map<int,int> num_isotopes_of_element;
-  for( auto w : m_nuclidesDisp->children() )
-  {
-    const ManRelEffNucDisp *rr = dynamic_cast<const ManRelEffNucDisp *>(w);
-    if( rr && rr->m_nuc )
-      num_isotopes_of_element[rr->m_nuc->atomicNumber] += 1;
-  }//for( auto w : m_nuclidesDisp->children() )
-
   bool has_uranium = false;
   for( auto w : m_nuclidesDisp->children() )
   {
@@ -2871,10 +2876,11 @@ void RelActManualGui::updateNuclides()
       has_uranium |= isU;
       rr->setAgeHidden( isU ? !showAge : false );
 
-      // A profile-likelihood mass-fraction uncertainty is only meaningful when the element has
-      //  at least two isotopes in the problem (a lone isotopes element-relative fraction is 1.0
-      //  by definition).
-      rr->setProfileUncertVisible( num_isotopes_of_element[rr->m_nuc->atomicNumber] > 1 );
+      // Always offered: what gets profiled is the element-relative mass fraction when the element
+      //  has at least two isotopes in the problem, and the nuclides relative activity otherwise
+      //  (a lone isotopes element-relative fraction is 1.0 by definition, so there is nothing to
+      //  profile there).  See `calculateSolution`, which picks between them the same way.
+      rr->setProfileUncertVisible( true );
     }
   }//for( auto w : m_nuclidesDisp->children() )
 

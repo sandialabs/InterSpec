@@ -24,7 +24,7 @@
   <message id="mrend-cb-decay-during-meas">Decay during meas.</message>
   <message id="mrend-tt-decay-during-meas">When checked, the nuclides decay during the measurement will be accounted for, with the quoted relative activity being the activity at the start of measurement.</message>
   <message id="mrend-cb-profile-uncert">Profile uncert.</message>
-  <message id="mrend-tt-profile-uncert">When checked, this nuclides mass-fraction uncertainty is computed with a profile-likelihood scan - the problem is re-solved with the fraction fixed at trial values, and the 68.3% and 95.4% confidence intervals read from where the chi-squared rises by the corresponding amount.  This gives an asymmetric interval that stays valid near the physical 0% and 100% bounds (where the standard covariance-based uncertainty is unreliable), at the cost of some extra computation time.  Results appear in the chart title and below the mass-fraction table.</message>
+  <message id="mrend-tt-profile-uncert">When checked, this nuclides uncertainty is computed with a profile-likelihood scan - after the fit, the quantity is pushed away from its fitted value while everything else is re-fit around it, and the 68.3% and 95.4% confidence intervals are read from where the chi-squared has risen by the corresponding amount.  The quantity scanned is this nuclides mass fraction of its element when the element has more than one isotope in the problem, and otherwise its relative activity.  This gives an asymmetric interval that stays valid near the physical bounds (0% and 100% for a fraction, zero for an activity), where the standard covariance-based uncertainty is unreliable.  It typically takes 6 to 8 extra fits, each starting from the fitted solution, so it usually adds well under a second.  Results appear in the chart title and below the mass-fraction table.</message>
 
   <!-- Message on the general GUI interface -->
   <message id="ramg-eqn-form-label">Eqn Form</message>
@@ -86,7 +86,7 @@
     peak is scaled by the same factor, the fitted values are identical to Stat. Only - only the
     uncertainties differ in how they are presented.
     <br />
-    <b>Stat. Only (no widening)</b> reports the purely statistical uncertainty, as if the
+    <b>Strict Stat.</b> reports the purely statistical uncertainty, as if the
     efficiency model were exactly right.  On real spectra this is usually much too small; use it
     only when you specifically want the statistical figure.
     <br />
@@ -102,7 +102,7 @@
   <message id="ramg-unweighted-label">Unweighted</message>
   <message id="ramg-stat-only-label">Stat. Only</message>
   <message id="ramg-auto-uncert-label">Auto</message>
-  <message id="ramg-stat-only-nowiden-label">Stat. Only (no widening)</message>
+  <message id="ramg-stat-only-nowiden-label">Strict Stat.</message>
   <message id="ramg-back-sub-cb">Background Subtract</message>
   <message id="ramg-html-export-label">HTML Report</message>
   <message id="ramg-nucs-label">Nuclides</message>
