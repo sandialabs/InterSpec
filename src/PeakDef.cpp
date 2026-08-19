@@ -3506,14 +3506,15 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
               const double left_n = p.coefficient(CoefficientType::SkewPar1);
               const double right_skew = p.coefficient(CoefficientType::SkewPar2);
               const double right_n = p.coefficient(CoefficientType::SkewPar3);
-              const double p = hidden_frac;
               
               vis_limits = PeakDists::double_sided_crystal_ball_coverage_limits( mean, sigma,
                                               left_skew, left_n, right_skew, right_n, hidden_frac );
             }catch( std::exception & )
             {
               // DSCB dist can have really long tail, causing the coverage limits to fail, because
-              //  of unreasonable values - in this case we'll use the entire ROI.
+              //  of unreasonable values - in this case we'll use the entire ROI.  This throw is the
+              //  expected, cheap signal for a heavy tail (a power-law `n` near its 1.05 bound), not
+              //  a numerical accident - see `PeakDists::sk_max_coverage_limit_nsigma`.
               vis_limits.first = p.lowerX();
               vis_limits.second = p.upperX();
             }//try / catch

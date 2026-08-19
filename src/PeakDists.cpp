@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <atomic>
 #include <limits>
 #include <memory>
 #include <iostream>
@@ -538,6 +539,182 @@ template void photopeak_function_integral<double>( const double, const double,co
   
   
   
+  double crystal_ball_tail_frac_beyond( const double alpha, const double n, const double nsigma )
+  {
+    if( (alpha <= 0.0) || (n <= 1.0) || (nsigma < 0.0) )
+      throw runtime_error( "crystal_ball_tail_frac_beyond: invalid alpha/n/nsigma" );
+    
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>();
+    const double root_half_pi = boost::math::constants::root_half_pi<double>();
+    
+    // Same C/D decomposition as `crystal_ball_norm(...)`: C is the (non-normalized) power-law tail
+    //  area, D the rest, so the tail holds C/(C+D) of the distribution.
+    const double C = (n / alpha) * (1.0/(n - 1.0)) * std::exp( -0.5*alpha*alpha );
+    const double D = root_half_pi * (1.0 + boost_erf_imp( one_div_root_two * alpha ));
+    
+    if( nsigma >= alpha )
+    {
+      // Normalized tail indefinite integral is (C/(C+D))*t_1^(1-n); t_1 == 1 at t == -alpha.
+      const double t_1 = 1.0 + alpha*(nsigma - alpha)/n;
+      return (C / (C + D)) * std::pow( t_1, 1.0 - n );
+    }
+    
+    // `nsigma` is inside the Gaussian core, so add the core area between -alpha and -nsigma.
+    const double core = root_half_pi * ( boost_erf_imp( one_div_root_two * alpha )
+                                        - boost_erf_imp( one_div_root_two * nsigma ) );
+    return (C + core) / (C + D);
+  }//crystal_ball_tail_frac_beyond(...)
+  
+  
+  double dscb_tail_frac_beyond( const double alpha, const double n,
+                                const double other_alpha, const double other_n,
+                                const double nsigma )
+  {
+    if( (alpha <= 0.0) || (n <= 1.0) || (other_alpha <= 0.0) || (other_n <= 1.0) || (nsigma < 0.0) )
+      throw runtime_error( "dscb_tail_frac_beyond: invalid alpha/n/nsigma" );
+    
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>();
+    const double root_half_pi = boost::math::constants::root_half_pi<double>();
+    
+    // Non-normalized areas; their sum is 1/DSCB_norm(...) - see `double_sided_crystal_ball_coverage_limits`.
+    const double this_tail = n*std::exp(-0.5*alpha*alpha) / ((n - 1.0)*alpha);
+    const double other_tail = other_n*std::exp(-0.5*other_alpha*other_alpha) / ((other_n - 1.0)*other_alpha);
+    const double gaus = root_half_pi*( boost_erf_imp( one_div_root_two*alpha )
+                                      + boost_erf_imp( one_div_root_two*other_alpha ) );
+    const double total = this_tail + other_tail + gaus;
+    
+    if( nsigma >= alpha )
+    {
+      const double t_1 = 1.0 + alpha*(nsigma - alpha)/n;
+      return (this_tail/total) * std::pow( t_1, 1.0 - n );
+    }
+    
+    const double core = root_half_pi*( boost_erf_imp( one_div_root_two*alpha )
+                                      - boost_erf_imp( one_div_root_two*nsigma ) );
+    return (this_tail + core)/total;
+  }//dscb_tail_frac_beyond(...)
+  
+  
+  namespace
+  {
+    /** Shared bisection for the two `*_n_from_tail_frac(...)` inverses.
+     
+     `frac_for_n` is monotonically decreasing in `n`, so a plain bisection on log(n-1) is both
+     unconditionally safe and well-conditioned right down to the n->1 pole.
+     */
+    template<class Fcn>
+    double n_from_tail_frac_impl( const Fcn &frac_for_n, const double frac )
+    {
+      const double n_lo = 1.0 + 1.0E-9, n_hi = 1.0E4;
+      
+      if( (frac < 0.0) || (frac > 1.0) )
+        throw runtime_error( "n_from_tail_frac: fraction must be in [0,1]" );
+      
+      if( frac >= frac_for_n(n_lo) )
+        return n_lo;
+      if( frac <= frac_for_n(n_hi) )
+        return n_hi;
+      
+      double u_lo = std::log(n_lo - 1.0), u_hi = std::log(n_hi - 1.0);
+      for( size_t i = 0; i < 100; ++i )
+      {
+        const double u_mid = 0.5*(u_lo + u_hi);
+        if( frac_for_n( 1.0 + std::exp(u_mid) ) > frac )
+          u_lo = u_mid;   //too much area out in the tail - need a larger n
+        else
+          u_hi = u_mid;
+      }
+      
+      return 1.0 + std::exp( 0.5*(u_lo + u_hi) );
+    }//n_from_tail_frac_impl(...)
+  }//namespace
+  
+  
+  double crystal_ball_n_from_tail_frac( const double alpha, const double frac, const double nsigma )
+  {
+    return n_from_tail_frac_impl( [alpha,nsigma]( const double n ){
+      return crystal_ball_tail_frac_beyond( alpha, n, nsigma );
+    }, frac );
+  }//crystal_ball_n_from_tail_frac(...)
+  
+  
+  double dscb_n_from_tail_frac( const double alpha, const double frac,
+                                const double other_alpha, const double other_n,
+                                const double nsigma )
+  {
+    return n_from_tail_frac_impl( [alpha,other_alpha,other_n,nsigma]( const double n ){
+      return dscb_tail_frac_beyond( alpha, n, other_alpha, other_n, nsigma );
+    }, frac );
+  }//dscb_n_from_tail_frac(...)
+  
+  
+  namespace
+  {
+    /** Thrown when a coverage limit exists mathematically but is too far from the mean to be usable.
+     
+     Derives from `std::runtime_error` so callers catching `std::exception` are unaffected, but is a
+     distinct type so the wrapping catch blocks in this file can rethrow it untouched - rewrapping
+     costs a second throw (~2.5 us of the ~11 us per call) and yields a doubled-up message.
+     */
+    struct UnreachableCoverageLimit : public std::runtime_error
+    {
+      explicit UnreachableCoverageLimit( const std::string &what ) : std::runtime_error( what ){}
+    };//struct UnreachableCoverageLimit
+    
+    
+    /** Reports a coverage limit that exists mathematically but is too far from the mean to be usable
+     (see `sk_max_coverage_limit_nsigma`), and throws.
+     
+     The diagnostic is rate-limited.  Before this path was bounded, a single Ceres fit that pinned a
+     power-law at its 1.05 bound wrote ~370k copies of the failure through `log_developer_error`,
+     which serialises every fit thread on a global mutex and flushes to disk inside it.
+     
+     @param tail_frac Fraction of the peak area beyond `sk_tail_frac_nsigma`; this, rather than the
+            failed search, is what actually tells you what went wrong.
+     @param limit_x The unusable limit, or NaN if even that could not be evaluated.
+     */
+    [[noreturn]] void throw_unreachable_coverage_limit( const char * const fcn,
+                                                        const char * const side,
+                                                        const double mean, const double sigma,
+                                                        const double alpha, const double n,
+                                                        const double tail_frac,
+                                                        const double p, const double limit_x )
+    {
+#if( PERFORM_DEVELOPER_CHECKS )
+      static std::atomic<size_t> ntimeshere{0};
+      const size_t nthis = ++ntimeshere;
+      if( (nthis < 25) || ((nthis % 1000) == 0) )
+      {
+        // Formatted only when we are actually going to log it - a single fit reaches here hundreds
+        //  of thousands of times, and `std::to_string` of a 1E47-magnitude double writes 48 digits.
+        string msg = string(fcn) + ": the " + side + " coverage limit for p=" + std::to_string(p)
+        + " is unreachable.  The power-law tail (alpha=" + std::to_string(alpha)
+        + ", n=" + std::to_string(n) + ") leaves " + std::to_string(100.0*tail_frac)
+        + "% of the peak area beyond " + std::to_string(sk_tail_frac_nsigma) + " sigma";
+        
+        if( !IsNan(limit_x) )
+          msg += ", putting the limit at x=" + std::to_string(limit_x);
+        
+        msg += " (mean=" + std::to_string(mean) + ", sigma=" + std::to_string(sigma) + ")."
+        "  An `n` this near 1 is not a physical detector tail - the distribution has no finite mean"
+        " below n=2 - so the fit is likely absorbing continuum into the skew."
+        "  (occurrence " + std::to_string(nthis) + ")";
+        
+        log_developer_error( __func__, msg.c_str() );
+      }//if( should log this occurrence )
+#else
+      (void)mean; (void)sigma; (void)alpha; (void)n; (void)tail_frac; (void)p; (void)limit_x;
+#endif
+      
+      // Deliberately does not format the parameters into the message: every caller catches this and
+      //  substitutes a window of its own, so nobody reads the text, while building it cost ~10 us
+      //  per call on the path that motivated this function.  The numbers are in the developer log.
+      throw UnreachableCoverageLimit( string(fcn) + ": " + side + " coverage limit is unreachable"
+                                     " (power-law tail exponent too near 1)" );
+    }//throw_unreachable_coverage_limit(...)
+  }//namespace
+  
+  
   std::pair<double,double> crystal_ball_coverage_limits( const double mean, const double sigma,
                                                         const double alpha,
                                                         const double n,
@@ -583,9 +760,25 @@ template void photopeak_function_integral<double>( const double, const double,co
       if( IsNan(lower_x) || IsInf(lower_x) || IsNan(upper_x) || IsInf(upper_x) )
         throw runtime_error( "got invalid answer" );
       
+      // The symbolic inverse never fails here, but for `n` near 1 the answer it gives is finite and
+      //  physically meaningless (it can be ~1E47 sigma out) - report that rather than handing the
+      //  caller a limit it cannot use.  In practice only the lower side can trip this (the upper
+      //  side is normally the Gaussian quantile), but both are checked so the guard does not depend
+      //  on which branch of `x_from_eqn` a given (alpha, n, p) happens to land in.
+      const double max_dx = sk_max_coverage_limit_nsigma * std::max( sigma, 0.1 );
+      if( ((mean - lower_x) > max_dx) || ((upper_x - mean) > max_dx) )
+        throw_unreachable_coverage_limit( "crystal_ball_coverage_limits",
+                                         (((mean - lower_x) > max_dx) ? "lower" : "upper"),
+                                         mean, sigma, alpha, n,
+                                         crystal_ball_tail_frac_beyond( alpha, n, sk_tail_frac_nsigma ),
+                                         p, (((mean - lower_x) > max_dx) ? lower_x : upper_x) );
+      
       assert( (1.0 - crystal_ball_integral(mean, sigma, alpha, n, lower_x, upper_x)) <= (p + 1.0E-6) );
       
       return pair<double,double>( lower_x, upper_x );
+    }catch( const UnreachableCoverageLimit & )
+    {
+      throw;   //already says exactly what went wrong; do not pay for a second throw
     }catch( std::exception &e )
     {
       throw runtime_error( "crystal_ball_coverage_limits: failed to find limit: " + string(e.what()) );
@@ -740,118 +933,115 @@ template void photopeak_function_integral<double>( const double, const double,co
         return fabs(left - right) < 0.01*p;
       };
 
-      // TODO: if value is in right tail, we will fail, in which case we will resort to an iterative solution
-      double lower_x = -999, upper_x = -999;
+      // Anything further than this from the mean is not a limit anyone can use; see
+      //  `sk_max_coverage_limit_nsigma`.  The `max(sigma,0.1)` floor matches the one the bracket
+      //  search below starts from, so the cap is always a whole number of doublings away from it.
+      const double max_dx = sk_max_coverage_limit_nsigma * std::max( sigma, 0.1 );
+      
+      // Note: `have_lower`/`have_upper` rather than a sentinel value - the symbolic inverse can
+      //  legitimately return a large negative x, and a `lower_x < -998` test used to mistake that
+      //  for "not computed" and fall into the bracket search below for no reason.
+      double lower_x = 0.0, upper_x = 0.0;
+      bool have_lower = false, have_upper = false;
+      
       try
       {
         lower_x = x_from_eqn( 0.5*p );
+        have_lower = (!IsNan(lower_x) && !IsInf(lower_x));
       }catch( std::exception & )
       {
-        cout << "Failed to find lower answer by eqn from p=" << p << endl;
+        // Add a reminder here so we eventually fix not being able to get p-value from lower tail
+        static std::atomic<size_t> ntimeshere{0};
+        if( (++ntimeshere < 25) || ((ntimeshere%100) == 0) )
+          cerr << "Failed to find lower answer by eqn from p=" << p << endl;
       }
       
       try
       {
         upper_x = x_from_eqn( 1.0 - 0.5*p );
+        have_upper = (!IsNan(upper_x) && !IsInf(upper_x));
       }catch( std::exception & )
       {
         // Add a reminder here so we eventually fix not being able to get p-value from upper tail
-        static std::atomic<size_t> ntimeshere = 0;
+        static std::atomic<size_t> ntimeshere{0};
         if( (++ntimeshere < 25) || ((ntimeshere%100) == 0) )
           cerr << "Failed to find upper answer by eqn from p=" << p << endl;
       }
       
+      // Solving successfully is not enough: a power-law `n` near 1 gives an answer that is finite
+      //  but absurd, and no amount of searching improves it.
+      if( have_lower && ((mean - lower_x) > max_dx) )
+        throw_unreachable_coverage_limit( "double_sided_crystal_ball_coverage_limits", "lower",
+                                         mean, sigma, left_skew, left_n,
+                                         dscb_tail_frac_beyond( left_skew, left_n, right_skew,
+                                                               right_n, sk_tail_frac_nsigma ),
+                                         p, lower_x );
+      
+      if( have_upper && ((upper_x - mean) > max_dx) )
+        throw_unreachable_coverage_limit( "double_sided_crystal_ball_coverage_limits", "upper",
+                                         mean, sigma, right_skew, right_n,
+                                         dscb_tail_frac_beyond( right_skew, right_n, left_skew,
+                                                               left_n, sk_tail_frac_nsigma ),
+                                         p, upper_x );
+      
 
-      if( (lower_x < -998) || IsNan(lower_x) || IsInf(lower_x) )
+      if( !have_lower )
       {
         // With huge skew and/or small probabilities, the energy-value we are looking for can be
-        //  really far away from mean, so we will search by doubling the search range.
-        double low_low_limit;
+        //  really far away from mean, so we will search by doubling the search range - but only out
+        //  to `max_dx`; past there the answer is not usable, so searching for it just burns CDF
+        //  evaluations before an inevitable failure (this loop used to blindly double 40 times).
+        double low_low_limit = mean - 20.0*std::max(sigma, 0.1);
         bool found_lower = false;
-        const size_t max_range_doublings = 40;
-        double current_dx = 20.0 * std::max(sigma, 0.1); //20 sigma starting is arbitrary
-        for( size_t i = 0; !found_lower && (i < max_range_doublings); ++i, current_dx *= 2 )
+        for( double current_dx = 20.0*std::max(sigma, 0.1);  //20 sigma starting is arbitrary
+            !found_lower && (current_dx <= max_dx);
+            current_dx *= 2 )
         {
           low_low_limit = mean - current_dx;
-          const double y = lower_fcn( low_low_limit );
-          found_lower = (y < 0.0);
-          //if( (low_low_limit < 0.0) && (low_low_limit < (mean - 1000.0*sigma)) )
-          //  break;
+          found_lower = (lower_fcn( low_low_limit ) < 0.0);
         }//for( look for x where pdf has gone below limit )
         
-        // If we didnt find the lower limit, `boost::math::tools::bisect(...)` will throw exception
-        //assert( found_lower );
-        
-#if( PERFORM_DEVELOPER_CHECKS )
+        // Never hand `boost::math::tools::bisect(...)` a bracket we know has no sign change - it
+        //  would just throw after `max_iter` evaluations.
         if( !found_lower )
-        {
-          const string msg = "Failed to find lower limit by " + std::to_string(mean - current_dx)
-          + " for double_sided_crystal_ball_coverage_limits( "
-          + std::to_string(mean) + ", " + std::to_string(sigma) + ", " + std::to_string(left_skew)
-          + ", " + std::to_string(left_n) + ", " + std::to_string(right_skew) + ", "
-          + std::to_string(right_n) + ", " + std::to_string(p) + " )."
-          "  lower_fcn(" + std::to_string(low_low_limit) + ")=" + std::to_string( lower_fcn(low_low_limit) ) + ")";
-
-          log_developer_error( __func__, msg.c_str() );
-        }//if( !found_upper )
-#endif
+          throw_unreachable_coverage_limit( "double_sided_crystal_ball_coverage_limits", "lower",
+                                           mean, sigma, left_skew, left_n,
+                                           dscb_tail_frac_beyond( left_skew, left_n, right_skew,
+                                                                 right_n, sk_tail_frac_nsigma ),
+                                           p, std::numeric_limits<double>::quiet_NaN() );
         
         boost::uintmax_t max_iter = 1000;
         const pair<double,double> lower_val = boost::math::tools::bisect( lower_fcn, low_low_limit,
                                                                          mean, term_condition, max_iter );
         lower_x = 0.5*(lower_val.first + lower_val.second);
-      }//if( lower_x < 989 || IsNan(lower_x) || IsInf(lower_x) )
+      }//if( !have_lower )
       
        
-      if( (upper_x < -998) || IsNan(upper_x) || IsInf(upper_x) )
+      if( !have_upper )
       {
-        // With huge skew and/or small probabilities, the energy-value we are looking for can be
-        //  really huge, so we will search by doubling the search range.
-        double up_up_limit;
+        // See the note on the lower-side search above.
+        double up_up_limit = mean + 20.0*std::max(sigma, 0.1);
         bool found_upper = false;
-        const size_t max_range_doublings = 40;
-        double current_dx = 20.0 * std::max(sigma, 0.1);
-        for( size_t i = 0; !found_upper && (i < max_range_doublings); ++i, current_dx *= 2 )
+        for( double current_dx = 20.0*std::max(sigma, 0.1);
+            !found_upper && (current_dx <= max_dx);
+            current_dx *= 2 )
         {
           up_up_limit = mean + current_dx;
-          const double y = upper_fcn( up_up_limit );
-          found_upper = (y < 0.0);
+          found_upper = (upper_fcn( up_up_limit ) < 0.0);
         }//for( look for x where pdf has gone below limit )
         
-        // If we didnt find the upper limit, `boost::math::tools::bisect(...)` will throw exception
-        //assert( found_upper );
-        
-#if( PERFORM_DEVELOPER_CHECKS )
         if( !found_upper )
-        {
-          const double y_mean_2sigma = upper_fcn( mean + 2*sigma );
-          const double y_mean_5sigma = upper_fcn( mean + 5*sigma );
-          const double y_mean_10sigma = upper_fcn( mean + 10*sigma );
-          const double y_mean_20sigma = upper_fcn( mean + 20*sigma );
-          const double y_mean_40sigma = upper_fcn( mean + 40*sigma );
-          
-          const string msg = "Failed to find upper limit by " + std::to_string(mean + current_dx)
-          + " for\n"
-          "\tdouble_sided_crystal_ball_coverage_limits( mean="
-          + std::to_string(mean) + ", sigma=" + std::to_string(sigma) + ", lskew=" + std::to_string(left_skew)
-          + ", lpow=" + std::to_string(left_n) + ", rskew=" + std::to_string(right_skew) + ", rpow="
-          + std::to_string(right_n) + ", " + std::to_string(p) + " )"
-          + string("\n\ty(mean+2sigma) = ") + std::to_string(y_mean_2sigma)
-          + string("\n\ty(mean+5sigma) = ") + std::to_string(y_mean_5sigma)
-          + string("\n\ty(mean+10sigma) = ") + std::to_string(y_mean_10sigma)
-          + string("\n\ty(mean+20sigma) = ") + std::to_string(y_mean_20sigma)
-          + string("\n\ty(mean+40sigma) = ") + std::to_string(y_mean_40sigma)
-          ;
-          
-          log_developer_error( __func__, msg.c_str() );
-        }//if( !found_upper )
-#endif
+          throw_unreachable_coverage_limit( "double_sided_crystal_ball_coverage_limits", "upper",
+                                           mean, sigma, right_skew, right_n,
+                                           dscb_tail_frac_beyond( right_skew, right_n, left_skew,
+                                                                 left_n, sk_tail_frac_nsigma ),
+                                           p, std::numeric_limits<double>::quiet_NaN() );
 
         boost::uintmax_t max_iter = 1000;
         const pair<double,double> upper_val = boost::math::tools::bisect( upper_fcn, mean,
                                                                          up_up_limit, term_condition, max_iter );
         upper_x = 0.5*(upper_val.first + upper_val.second);
-      }//if( upper_x < 989 || IsNan(upper_x) || IsInf(upper_x) )
+      }//if( !have_upper )
         
       
       if( IsNan(lower_x) || IsInf(lower_x) || IsNan(upper_x) || IsInf(upper_x) )
@@ -859,6 +1049,9 @@ template void photopeak_function_integral<double>( const double, const double,co
       
       
       return pair<double,double>( lower_x, upper_x );
+    }catch( const UnreachableCoverageLimit & )
+    {
+      throw;   //already says exactly what went wrong; do not pay for a second throw
     }catch( std::exception &e )
     {
       const string excmsg = e.what();

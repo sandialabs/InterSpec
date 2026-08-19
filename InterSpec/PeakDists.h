@@ -417,6 +417,74 @@ double peak_cdf( const double x, const double mean, const double sigma,
   double crystal_ball_tail_indefinite_t( const double sigma, const double alpha,
                                         const double n, const double t );
   
+  /** Reference distance from the peak mean, in units of `sigma`, at which a power-law tail's
+   remaining area is quoted (see `crystal_ball_tail_frac_beyond` / `dscb_tail_frac_beyond`).
+   
+   20 sigma matches the `max_nsigma` clamp `RelActCalcAuto` already applies to peak coverage limits
+   (`PeakDefImp::peak_coverage_limits`), so "area beyond this" is literally "area the fit cannot
+   see".
+   */
+  const double sk_tail_frac_nsigma = 20.0;
+  
+  /** The furthest from the peak mean, in units of `max(sigma,0.1)`, that a coverage limit may be
+   before it is reported as unreachable.
+   
+   A CrystalBall power-law tail with exponent `n` falls off as |t|^(1-n), so as `n` approaches its
+   1.05 fit bound (`PeakDef::skew_parameter_range`) the x-value holding a given tail probability runs
+   away extremely fast: the p=0.001 limit of a DSCB with alpha=2.5, n=1.05 sits 4E47 sigma below the
+   mean.  Such an answer is finite and arithmetically correct, but meaningless for a spectrum and
+   useless to every caller (they all substitute a 15-20 sigma window, or the ROI).  1000 sigma is
+   ~50x the widest window any caller actually uses, so anything past it is "no usable limit".
+   */
+  const double sk_max_coverage_limit_nsigma = 1000.0;
+  
+  
+  /** Fraction of a Crystal Ball distribution's total area lying further than `nsigma` below the
+   mean (i.e. out along the power-law tail).
+   
+   Strictly monotonically decreasing in `n`, for every `alpha`, which is what makes
+   `crystal_ball_n_from_tail_frac(...)` well-defined.
+   
+   @param alpha The Crystal Ball skew (must be > 0)
+   @param n The Crystal Ball power-law (must be > 1; the tail area diverges at n <= 1)
+   @param nsigma How many sigma below the mean to measure from (must be >= 0)
+   
+   Throws error on invalid input.
+   */
+  double crystal_ball_tail_frac_beyond( const double alpha, const double n, const double nsigma );
+  
+  /** Inverse of `crystal_ball_tail_frac_beyond(...)` in `n`: the unique power-law giving `frac`.
+   
+   Solved by bisection on the (monotonic) forward function; the answer is clamped into
+   `n` in [1+1E-9, 1E4] when `frac` is outside the range attainable for this `alpha`.
+   */
+  double crystal_ball_n_from_tail_frac( const double alpha, const double frac, const double nsigma );
+  
+  /** Fraction of a double-sided Crystal Ball's total area lying further than `nsigma` from the mean,
+   out along the `(alpha, n)` tail.
+   
+   The opposite side's parameters are needed only because they contribute to the normalization; pass
+   the two sides swapped to measure the other tail (the DSCB normalization is symmetric under that
+   swap).
+   
+   @param alpha The skew of the tail being measured (must be > 0)
+   @param n The power-law of the tail being measured (must be > 1)
+   @param other_alpha The skew of the opposite side (must be > 0)
+   @param other_n The power-law of the opposite side (must be > 1)
+   @param nsigma How many sigma from the mean to measure from (must be >= 0)
+   
+   Throws error on invalid input.
+   */
+  double dscb_tail_frac_beyond( const double alpha, const double n,
+                                const double other_alpha, const double other_n,
+                                const double nsigma );
+  
+  /** Inverse of `dscb_tail_frac_beyond(...)` in `n`; see `crystal_ball_n_from_tail_frac(...)`. */
+  double dscb_n_from_tail_frac( const double alpha, const double frac,
+                                const double other_alpha, const double other_n,
+                                const double nsigma );
+  
+  
   /** Return the limits so that `1-p` of the Crustal Ball distribution is covered.
    
    @param mean The peak mean
@@ -433,7 +501,10 @@ double peak_cdf( const double x, const double mean, const double sigma,
    The area above and below the retuned limits is computed by inverting the indefinite integral, so should be
    decently accurate up to numeric precision (which hasn't been checked/optimized).
    
-   Throws error on invalid input.
+   Throws error on invalid input, or if the limit is unreachable.  "Unreachable" means the inverse
+   succeeded but landed further than `sk_max_coverage_limit_nsigma` from the mean, which is what
+   happens once `n` gets near 1 - see that constant.  Callers are expected to catch and substitute a
+   window of their own; every caller in the tree already does.
    */
   std::pair<double,double> crystal_ball_coverage_limits( const double mean, const double sigma,
                                                         const double alpha,
@@ -470,7 +541,7 @@ double peak_cdf( const double x, const double mean, const double sigma,
                                                  const double, const double, const float * const,
                                                  double *, const size_t );
     
-  /** Return the limits so that `1-p` of the ExpGaussExp distribution is covered.
+  /** Return the limits so that `1-p` of the double-sided Crystal Ball distribution is covered.
    
    @param mean The peak mean
    @param sigma The peak width
@@ -487,7 +558,11 @@ double peak_cdf( const double x, const double mean, const double sigma,
    
    The area below the retuned limit should be quite accurate, while above may only be good to within 0.02 of requested area (i.e. `0.02*p`).
    
-   Throws error on invalid input - or if limit cant be found (which can happen for really larger skews).
+   Throws error on invalid input, or if the limit is unreachable - which is common for really large
+   skews, and in particular whenever a power-law `n` sits near its 1.05 fit bound.  "Unreachable"
+   means the answer is further than `sk_max_coverage_limit_nsigma` from the mean; see that constant
+   for why such an answer is rejected rather than searched harder for.  Callers are expected to catch
+   and substitute a window of their own; every caller in the tree already does.
    */
   std::pair<double,double> double_sided_crystal_ball_coverage_limits( const double mean, const double sigma,
                                                                      const double left_skew,

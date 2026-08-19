@@ -343,7 +343,10 @@ struct PeakDefImp
         }catch( std::exception & )
         {
           // CB dist can have really long tail, causing the coverage limits to fail, because
-          //  of unreasonable values - in this case we'll just go way out
+          //  of unreasonable values - in this case we'll just go way out.  This throw is the
+          //  expected, cheap signal for a heavy tail (a power-law `n` near its 1.05 bound), not a
+          //  numerical accident - see `PeakDists::sk_max_coverage_limit_nsigma`.  Note the
+          //  `max_nsigma` clamp below caps us at 20 sigma either way.
           vis_limits.first  = mean - 20.0*sigma;
           vis_limits.second = mean + 20.0*sigma;
         }//try / catch

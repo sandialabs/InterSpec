@@ -23,6 +23,7 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <chrono>
 #include <string>
 #include <iostream>
 
@@ -710,7 +711,15 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
   {
     double mean=0, sigma=3.106207, alpha_low=0.500000, n_low=2.163142, alpha_high=0.500000, n_high=2.163142;
 
-    pair<double,double> limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low, n_low, alpha_high, n_high, 0.000001 );
+    // alpha=0.5 is the lower bound of the fitted skew range, and at n=2.163 that leaves 87% of the
+    //  area in the two tails, so the p=1E-6 limits sit 5.5E5 sigma (1.7 MeV!) out.  That is past
+    //  `sk_max_coverage_limit_nsigma`, so it is now reported as unreachable rather than returned;
+    //  the symmetry this block is really checking is done at a `p` whose limits are usable.
+    BOOST_CHECK_THROW( double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low, n_low,
+                                                                alpha_high, n_high, 0.000001 ),
+                      std::runtime_error );
+
+    pair<double,double> limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low, n_low, alpha_high, n_high, 0.01 );
 
     BOOST_CHECK_CLOSE( limits.first, -limits.second, 5.0E-4 );
 
@@ -1073,13 +1082,15 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
     n_high = 1.5;
     prob = 1.0E-3;
     
-    limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low,
-                                                       n_low, alpha_high, n_high, prob );
-    //cout << "Limits are {" << limits.first << ", " << limits.second << "}" << endl; //{-215.032, 14154.5}
+    // This used to return {-215.032, 14154.5} - an upper limit 1.1E4 sigma above a peak at 200 keV,
+    //  which no caller can use.  It is now reported as unreachable; see
+    //  `PeakDists::sk_max_coverage_limit_nsigma`.
+    BOOST_CHECK_THROW( double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low,
+                                                                 n_low, alpha_high, n_high, prob ),
+                      std::runtime_error );
     
-    
-    /*
-     //This next case will fail.
+    // This case used to hang up the fallback bracket search (n_high pinned at its 1.05 bound puts
+    //  the p=1E-6 upper limit 3E116 sigma out); it now fails immediately and explicitly.
     mean = 5577.6396484375;
     sigma = 1.2235283851623535;
     alpha_low = 0.79716122150421142;
@@ -1087,9 +1098,9 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
     alpha_high = 1.9554067850112915;
     n_high = 1.0500000715255737;
     prob = 1.0E-6;
-    limits = double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low,
-                                                       n_low, alpha_high, n_high, prob );
-     */
+    BOOST_CHECK_THROW( double_sided_crystal_ball_coverage_limits( mean, sigma, alpha_low,
+                                                                 n_low, alpha_high, n_high, prob ),
+                      std::runtime_error );
   }
   
   
@@ -1111,6 +1122,127 @@ BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
     double DSCB_gauss_indefinite_non_norm_t( const double t);
    */
 }//BOOST_AUTO_TEST_CASE( DoubleSidedCrystalBall )
+
+
+/** Pins the behaviour of CrystalBall / DSCB coverage limits when the power-law exponent sits near
+ its 1.05 fit bound (`PeakDef::skew_parameter_range`).
+ 
+ A tail with exponent `n` falls off as |t|^(1-n), so as n -> 1 the x-value holding a given tail
+ probability runs away without bound - the motivating case below has its p=0.001 limit 4E47 sigma
+ below the mean.  Such an answer is finite and arithmetically correct, but it is not a detector
+ response and no caller can use it, so it is reported as unreachable.
+ */
+BOOST_AUTO_TEST_CASE( CrystalBallTailReachability )
+{
+  // The case that motivated this test: a RelActAuto fit pinned `left_n` at 1.05 and then asked for
+  //  a 99.9% coverage window, ~370k times in one run.
+  const double mean = 260.5, sigma = 0.705058;
+  const double left_skew = 2.511494, left_n = 1.05;
+  const double right_skew = 5.0, right_n = 2.0;
+  const double prob = 0.001;
+  
+  // Note the symbolic inverse *succeeds* here, returning x = -2.8E47 keV.  The point is that such an
+  //  answer must be rejected - not returned, and not "searched harder" for.
+  BOOST_CHECK_THROW( double_sided_crystal_ball_coverage_limits( mean, sigma, left_skew, left_n,
+                                                               right_skew, right_n, prob ),
+                    std::runtime_error );
+  
+  // ...and this is why: over 10% of the peak area sits beyond 20 sigma.
+  const double frac_beyond = dscb_tail_frac_beyond( left_skew, left_n, right_skew, right_n,
+                                                   sk_tail_frac_nsigma );
+  BOOST_CHECK_CLOSE( frac_beyond, 0.10384912, 1.0E-3 );
+  
+  // The single-sided CrystalBall must agree - it used to silently hand back the ~1E47 value.
+  BOOST_CHECK_THROW( crystal_ball_coverage_limits( mean, sigma, left_skew, left_n, prob ),
+                    std::runtime_error );
+  BOOST_CHECK_CLOSE( crystal_ball_tail_frac_beyond( left_skew, left_n, sk_tail_frac_nsigma ),
+                    0.10384915, 1.0E-3 );
+  
+  // Failing has to be CHEAP.  The old code burned 40 CDF evaluations plus a bisection that could
+  //  not converge - and, in developer-check builds, a globally-locked log write - on every call.
+  //  The ceiling is deliberately loose: this guards against re-entering that path, it is not a
+  //  benchmark.
+  {
+    const size_t ntries = 20000;
+    size_t nthrown = 0;
+    const std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
+    for( size_t i = 0; i < ntries; ++i )
+    {
+      try
+      {
+        double_sided_crystal_ball_coverage_limits( mean, sigma, left_skew, left_n,
+                                                  right_skew, right_n, prob );
+      }catch( std::exception & )
+      {
+        ++nthrown;
+      }
+    }
+    const double elapsed = std::chrono::duration<double>( std::chrono::steady_clock::now() - start ).count();
+    
+    BOOST_CHECK_EQUAL( nthrown, ntries );
+    BOOST_CHECK_MESSAGE( elapsed < 10.0, "Unreachable DSCB coverage limits took " << elapsed
+                        << " s for " << ntries << " calls (" << (1.0E6*elapsed/ntries)
+                        << " us each) - the bounded-search path has likely regressed." );
+    cout << "CrystalBallTailReachability: " << (1.0E6*elapsed/ntries)
+         << " us per unreachable coverage-limit call." << endl;
+  }
+  
+  // Regression guard for the sentinel bug this replaced: `lower_x` used to be initialised to -999
+  //  as a "not computed" marker, so a legitimate limit below -998 keV was mistaken for a failure and
+  //  sent into the bracket search.  Here the true limit is -2202 keV, which is 801 sigma out - well
+  //  below -998, but comfortably inside `sk_max_coverage_limit_nsigma` - so it must be RETURNED.
+  {
+    const double s_mean = 200.0, s_sigma = 3.0;
+    const double s_alpha = 0.5, s_n = 2.163142;
+    const double s_prob = 0.002;
+    
+    const pair<double,double> limits = double_sided_crystal_ball_coverage_limits( s_mean, s_sigma,
+                                                      s_alpha, s_n, s_alpha, s_n, s_prob );
+    
+    BOOST_CHECK_CLOSE( limits.first, -2202.300215, 1.0E-4 );
+    BOOST_CHECK_LT( limits.first, -998.0 );
+    BOOST_CHECK_CLOSE( limits.first - s_mean, -(limits.second - s_mean), 5.0E-4 );
+    
+    const double fraction = 1.0 - double_sided_crystal_ball_integral( s_mean, s_sigma, s_alpha, s_n,
+                                                    s_alpha, s_n, limits.first, limits.second );
+    BOOST_CHECK_CLOSE( fraction, s_prob, 0.01 );
+  }
+  
+  // The tail-fraction helpers: strictly monotone in `n` (which is what makes the inverse
+  //  well-defined), and round-tripping to numerical precision.
+  {
+    const double alphas[] = { 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0 };
+    const double ns[] = { 1.05, 1.1, 1.5, 2.0, 3.0, 5.0, 10.0, 50.0, 100.0 };
+    
+    for( const double alpha : alphas )
+    {
+      double prev_dscb = 2.0, prev_cb = 2.0;
+      for( const double n : ns )
+      {
+        const double f_dscb = dscb_tail_frac_beyond( alpha, n, 2.0, 2.0, sk_tail_frac_nsigma );
+        const double f_cb = crystal_ball_tail_frac_beyond( alpha, n, sk_tail_frac_nsigma );
+        
+        BOOST_CHECK_LT( f_dscb, prev_dscb );
+        BOOST_CHECK_LT( f_cb, prev_cb );
+        prev_dscb = f_dscb;
+        prev_cb = f_cb;
+        
+        BOOST_CHECK_CLOSE( dscb_n_from_tail_frac( alpha, f_dscb, 2.0, 2.0, sk_tail_frac_nsigma ),
+                          n, 1.0E-6 );
+        BOOST_CHECK_CLOSE( crystal_ball_n_from_tail_frac( alpha, f_cb, sk_tail_frac_nsigma ), n,
+                          1.0E-6 );
+      }//for( const double n : ns )
+    }//for( const double alpha : alphas )
+    
+    // At `nsigma == alpha` the "beyond" fraction is the whole tail mass.
+    BOOST_CHECK_CLOSE( dscb_tail_frac_beyond( left_skew, left_n, right_skew, right_n, left_skew ),
+                      0.1253114051, 1.0E-3 );
+    
+    // Invalid input is rejected rather than returning nonsense.
+    BOOST_CHECK_THROW( dscb_tail_frac_beyond( 2.0, 1.0, 2.0, 2.0, 20.0 ), std::runtime_error );
+    BOOST_CHECK_THROW( crystal_ball_tail_frac_beyond( 0.0, 2.0, 20.0 ), std::runtime_error );
+  }
+}//BOOST_AUTO_TEST_CASE( CrystalBallTailReachability )
 
 
 BOOST_AUTO_TEST_CASE( VoigtPlusBortel )
