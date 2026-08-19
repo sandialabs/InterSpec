@@ -38,6 +38,7 @@
 #include <string>
 #include <vector>
 #include <limits>
+#include <utility>
 #include <optional>
 #include <algorithm>
 #include <functional>
@@ -1314,6 +1315,258 @@ inline ScanResult fit_profile( const double baseline_control,
         " discarded as unconverged and excluded from the fit.";
   return answer;
 }
+
+
+
+// -------------------------------------------------------------------------------------------------
+//  Conditional-solve convergence: telling "stuck" apart from "at a constrained optimum".
+//
+//  These live here rather than beside the solver so they can be unit tested; like the rest of this
+//  header they take plain numbers, not Ceres types.
+// -------------------------------------------------------------------------------------------------
+
+/** How a conditional solve's Ceres termination should be read, BEFORE any function evaluation.
+
+ Ceres reports `CONVERGENCE` for three situations a step count alone cannot separate, and the reason
+ is one asymmetry in `TrustRegionMinimizer::Minimize`: `ParameterToleranceReached()` is gated on
+ `atleast_one_successful_step` and `GradientToleranceReached()` on `step_is_successful`, but
+ `FunctionToleranceReached()` is gated on NOTHING - and it measures `x_cost - candidate_cost` using
+ the REJECTED trial point.  Once the trust region has collapsed the trial approaches `x`, the ratio
+ falls under `function_tolerance`, and Ceres returns `CONVERGENCE` having accepted nothing at all.
+ It is the only convergence test that can fire with zero accepted steps.
+
+ The REJECTED-step count separates the benign case for free:
+
+  - A pin displaced by less than the solver's resolution starts AT its conditional optimum.  The
+    first trial step is essentially zero, the cost does not change, and the function-tolerance test
+    fires immediately - so nothing is ever rejected.
+  - A solve that cannot move produces trial points that are genuinely WORSE (measured at 62-65 chi2
+    worse on the JRC Pu70 fixed-age harness), rejected one after another while the radius collapses,
+    and only then does the trial get small enough for the same test to fire.
+
+ What the count CANNOT separate is a solve that is truly stuck from one sitting at a legitimate
+ constrained optimum, because both reject steps for the same mechanical reason: `ParameterBlock::Plus`
+ clamps to the box AFTER applying the manifold, so a step pointing outward at an active bound is
+ truncated and need not reduce the cost.  Under KKT the raw gradient at a constrained optimum is
+ nonzero and balanced by the bound multipliers, so that case is not an error.  Only an evaluation
+ tells the two apart - see `projected_descent_point`.
+
+ DELIBERATELY NOT USED HERE: `ceres::Solver::Summary::iterations.back().gradient_max_norm`.  It is a
+ perfectly good quantity - Ceres computes `|Plus(x,-gradient) - x|`, so it is ALREADY in the tangent
+ space (the pin and the constant parameters are removed by the `SubsetManifold`) and ALREADY
+ projected on the box (a coordinate at a bound with an outward gradient contributes exactly zero).
+ What it lacks is a threshold.  It carries units, this problem's parameters span many orders of
+ magnitude - which is why Ceres jacobi-scales its Jacobian - and the only threshold to hand,
+ `Solver::Options::gradient_tolerance`, is set to 1e-13 here, which nothing real passes.  Comparing
+ against it vetoes every solve, benign ones included.  It is reported as a diagnostic and gates
+ nothing.
+ */
+enum class ConditionalConvergence
+{
+  /** Ceres did not report success.  Discard the point, exactly as before. */
+  Rejected,
+  /** Converged with nothing to do - no step was ever rejected.  Accept, no further work. */
+  SeedConverged,
+  /** Converged having accepted nothing WHILE rejecting steps.  Ambiguous; must be probed. */
+  NeedsProbe,
+  /** Converged after accepting real steps.  Accept. */
+  Converged
+};//enum class ConditionalConvergence
+
+
+/** Classify a conditional solve from what Ceres reports about it.
+
+ @param ceres_reported_success  `termination_type` was `CONVERGENCE` or `USER_SUCCESS`.
+ */
+inline ConditionalConvergence conditional_convergence_verdict( const bool ceres_reported_success,
+                                                               const int num_successful_steps,
+                                                               const int num_unsuccessful_steps )
+{
+  if( !ceres_reported_success )
+    return ConditionalConvergence::Rejected;
+
+  // Ceres counts the INITIAL EVALUATION as a successful step (`TrustRegionMinimizer::IterationZero`
+  // sets `step_is_successful`, and `FinalizeIterationAndCheckIfMinimizerCanContinue` counts it), so
+  // a solve that accepted no real step reports 1, not 0.
+  if( num_successful_steps > 1 )
+    return ConditionalConvergence::Converged;
+
+  return (num_unsuccessful_steps > 0) ? ConditionalConvergence::NeedsProbe
+                                      : ConditionalConvergence::SeedConverged;
+}//conditional_convergence_verdict(...)
+
+
+/** Whether a Ceres box edge is a real constraint.
+
+ Ceres represents "no bound" with `numeric_limits<double>::max()` / `lowest()`, NOT with an infinity,
+ so `std::isfinite` happily accepts the sentinel as a genuine bound.  Mistaking the sentinel for a
+ bound once cost an entire profile side, which marched its pin out toward 1e308 and found every
+ sample unevaluable.
+ */
+inline bool has_real_bound( const double edge )
+{
+  return std::isfinite(edge) && (std::fabs(edge) < 0.5*std::numeric_limits<double>::max());
+}
+
+
+/** The tangent-space to ambient index map a `ceres::SubsetManifold` implies.
+
+ `SubsetManifold::Plus` walks the ambient indices in increasing order and consumes one `delta` entry
+ for each NON-constant coordinate, so tangent index `j` is the `j`-th retained ambient index in
+ increasing order.  `ceres::Problem::Evaluate` hands back a tangent-sized gradient, and this is what
+ maps it onto parameters.
+
+ @param constant_indices  Must be sorted ascending, as `ceres::SubsetManifold` requires.
+ */
+inline std::vector<std::size_t> tangent_to_ambient_indices( const std::size_t ambient_size,
+                                                            const std::vector<int> &constant_indices )
+{
+  std::vector<std::size_t> answer;
+  answer.reserve( ambient_size );
+  for( std::size_t i = 0; i < ambient_size; ++i )
+  {
+    if( !std::binary_search( constant_indices.begin(), constant_indices.end(), static_cast<int>(i) ) )
+      answer.push_back( i );
+  }
+  return answer;
+}
+
+
+/** The per-coordinate scale that makes a descent step dimensionless.
+
+ The parameters here are activities, energy-calibration terms, FWHM coefficients and rel-eff
+ coefficients - quantities whose natural sizes differ by many orders of magnitude, which is exactly
+ why Ceres jacobi-scales.  A step measured in raw gradient units is meaningless across them; a step
+ measured as a fraction of what each coordinate is ALLOWED to do is not.
+ */
+inline double coordinate_scale( const double value, const double lower, const double upper )
+{
+  if( has_real_bound(lower) && has_real_bound(upper) && (upper > lower) )
+    return upper - lower;
+  return (std::max)( 1.0, std::fabs(value) );
+}
+
+
+/** Whether descent along `-gradient` is blocked for this coordinate by an active bound.
+
+ This is the same coordinate `ceres::TrustRegionMinimizer` drops when it forms its projected gradient
+ `|Plus(x,-gradient) - x|`: sitting ON a bound with the gradient pushing further outside, it cannot
+ move at all.  Excluding such a coordinate matters because it would otherwise be allowed to SET the
+ step scale while contributing no motion, silently shrinking every step that can actually be taken -
+ and an under-sized probe step under-detects descent, which is the direction that wrongly calls a
+ stuck solve a constrained optimum.
+
+ `x` is feasible here (Ceres clamps onto the bound exactly), so the comparisons need no tolerance.
+ */
+inline bool descent_blocked_by_bound( const double value, const double gradient,
+                                      const double lower, const double upper )
+{
+  if( (gradient > 0.0) && has_real_bound(lower) && (value <= lower) )
+    return true;   //wants to decrease, already on the lower bound
+  if( (gradient < 0.0) && has_real_bound(upper) && (value >= upper) )
+    return true;   //wants to increase, already on the upper bound
+  return false;
+}
+
+
+/** The multiplier for which the largest RELATIVE coordinate move of `x - alpha*gradient` equals
+ `relative_move`.  Returns 0 when the gradient carries no usable direction.
+
+ @param free_indices  Ambient index of each tangent-space entry, from `tangent_to_ambient_indices`.
+ @param box           Ambient-length feasible box, as Ceres holds it (sentinels allowed).
+ */
+inline double projected_step_scale( const std::vector<double> &x,
+                                    const std::vector<double> &gradient,
+                                    const std::vector<std::size_t> &free_indices,
+                                    const std::vector<std::pair<double,double>> &box,
+                                    const double relative_move )
+{
+  double largest = 0.0;
+  for( std::size_t j = 0; j < free_indices.size(); ++j )
+  {
+    const std::size_t i = free_indices[j];
+    if( (i >= x.size()) || (i >= box.size()) || (j >= gradient.size()) )
+      return 0.0;
+    if( !std::isfinite(gradient[j]) )
+      continue;
+    if( descent_blocked_by_bound( x[i], gradient[j], box[i].first, box[i].second ) )
+      continue;   //cannot move, so it must not set the scale for the coordinates that can
+
+    const double scale = coordinate_scale( x[i], box[i].first, box[i].second );
+    if( !(scale > 0.0) || !std::isfinite(scale) )
+      continue;
+
+    largest = (std::max)( largest, std::fabs(gradient[j])/scale );
+  }
+
+  if( !(largest > 0.0) || !std::isfinite(largest) || !(relative_move > 0.0) )
+    return 0.0;
+  return relative_move/largest;
+}//projected_step_scale(...)
+
+
+/** `trial = clamp( x - alpha*gradient, box )` over the free coordinates; `trial == x` elsewhere.
+
+ This is exactly what `ceres::ParameterBlock::Plus` computes - subset manifold, then bound
+ projection - and that is the point.  A coordinate sitting on a bound whose gradient pushes it
+ further outside does not move, so the trial is always feasible; the pinned and constant coordinates
+ are bit-identical to their input values because nothing ever writes them.
+
+ @returns whether any coordinate actually moved.  False means the whole step was clamped away, which
+          is the signature of a point whose descent direction points entirely out of the box.
+ */
+inline bool projected_descent_point( const std::vector<double> &x,
+                                     const std::vector<double> &gradient,
+                                     const std::vector<std::size_t> &free_indices,
+                                     const std::vector<std::pair<double,double>> &box,
+                                     const double alpha,
+                                     std::vector<double> &trial )
+{
+  trial = x;
+  if( !std::isfinite(alpha) || !(alpha > 0.0) )
+    return false;
+
+  bool moved = false;
+  for( std::size_t j = 0; j < free_indices.size(); ++j )
+  {
+    const std::size_t i = free_indices[j];
+    if( (i >= x.size()) || (i >= box.size()) || (j >= gradient.size()) )
+      return false;
+    if( !std::isfinite(gradient[j]) )
+      continue;
+
+    double moved_value = x[i] - alpha*gradient[j];
+    if( !std::isfinite(moved_value) )
+      return false;
+
+    if( has_real_bound(box[i].first) )
+      moved_value = (std::max)( moved_value, box[i].first );
+    if( has_real_bound(box[i].second) )
+      moved_value = (std::min)( moved_value, box[i].second );
+
+    trial[i] = moved_value;
+    moved = moved || (moved_value != x[i]);
+  }
+
+  return moved;
+}//projected_descent_point(...)
+
+
+/** Largest relative coordinate move the descent probe's opening rung takes. */
+constexpr double sm_descent_probe_relative_move = 1.0e-2;
+
+/** The descent probe's step ladder, as multiples of the opening scale.
+
+ The probe only has to DECIDE whether descent exists; when it does, an ordinary `ceres::Solve` from
+ the escape point produces the sample.  So the ladder is deliberately short, and runs DOWNWARD over
+ several decades, because the interesting failure is a step that is too large - once the box clamps
+ part of it away the retained direction stops being a descent direction well before it stops
+ existing.  For a smooth objective a nonzero projected gradient guarantees SOME small enough step
+ descends, so a ladder that reaches far enough down is a complete test up to the objective's own
+ reproducibility floor.
+ */
+constexpr std::array<double,6> sm_descent_probe_ladder{{ 1.0, 0.25, 0.0625,
+                                                         1.0/64.0, 1.0/256.0, 1.0/1024.0 }};
 
 
 }//namespace ProfileLikelihood

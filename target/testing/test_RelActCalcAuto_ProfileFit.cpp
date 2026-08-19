@@ -711,3 +711,211 @@ BOOST_AUTO_TEST_CASE( extensions_stop_once_a_measurement_brackets_the_threshold 
   BOOST_CHECK_LE( evaluations,
                   2*(PL::sm_profile_points_per_side + PL::sm_profile_reprobe_per_side) );
 }
+
+
+// -------------------------------------------------------------------------------------------------
+//  Conditional-solve convergence: "stuck" vs "at a constrained optimum"
+// -------------------------------------------------------------------------------------------------
+
+BOOST_AUTO_TEST_CASE( a_seed_convergence_is_accepted_without_probing )
+{
+  // Ceres counts the initial evaluation as a successful step, so a solve that started AT its
+  // conditional optimum reports one success and - the load-bearing part - zero rejections.
+  BOOST_CHECK( PL::conditional_convergence_verdict(true,1,0)
+               == PL::ConditionalConvergence::SeedConverged );
+  BOOST_CHECK( PL::conditional_convergence_verdict(true,0,0)
+               == PL::ConditionalConvergence::SeedConverged );
+}
+
+
+BOOST_AUTO_TEST_CASE( accepting_nothing_while_rejecting_steps_is_ambiguous_not_a_failure )
+{
+  // The observed JRC Pu70 signature.  It must be neither accepted outright nor discarded outright:
+  // a stuck solve and a genuine constrained optimum both look exactly like this.
+  BOOST_CHECK( PL::conditional_convergence_verdict(true,1,4)
+               == PL::ConditionalConvergence::NeedsProbe );
+  BOOST_CHECK( PL::conditional_convergence_verdict(true,1,1)
+               == PL::ConditionalConvergence::NeedsProbe );
+}
+
+
+BOOST_AUTO_TEST_CASE( a_solve_that_accepted_real_steps_is_converged )
+{
+  BOOST_CHECK( PL::conditional_convergence_verdict(true,2,0)
+               == PL::ConditionalConvergence::Converged );
+  BOOST_CHECK( PL::conditional_convergence_verdict(true,17,9)
+               == PL::ConditionalConvergence::Converged );
+}
+
+
+BOOST_AUTO_TEST_CASE( a_solve_ceres_did_not_call_successful_is_rejected_whatever_its_step_counts )
+{
+  BOOST_CHECK( PL::conditional_convergence_verdict(false,17,0)
+               == PL::ConditionalConvergence::Rejected );
+  BOOST_CHECK( PL::conditional_convergence_verdict(false,1,4)
+               == PL::ConditionalConvergence::Rejected );
+  BOOST_CHECK( PL::conditional_convergence_verdict(false,1,0)
+               == PL::ConditionalConvergence::Rejected );
+}
+
+
+BOOST_AUTO_TEST_CASE( ceres_no_bound_sentinels_are_not_mistaken_for_constraints )
+{
+  BOOST_CHECK( !PL::has_real_bound( std::numeric_limits<double>::max() ) );
+  BOOST_CHECK( !PL::has_real_bound( std::numeric_limits<double>::lowest() ) );
+  BOOST_CHECK( !PL::has_real_bound( std::numeric_limits<double>::infinity() ) );
+  BOOST_CHECK( !PL::has_real_bound( std::numeric_limits<double>::quiet_NaN() ) );
+  BOOST_CHECK( PL::has_real_bound( 0.0 ) );
+  BOOST_CHECK( PL::has_real_bound( -1.0e12 ) );
+}
+
+
+BOOST_AUTO_TEST_CASE( the_tangent_index_map_is_the_increasing_order_complement )
+{
+  // `ceres::SubsetManifold::Plus` walks the ambient indices in increasing order and consumes one
+  // delta entry per non-constant coordinate, so this is the ordering `Problem::Evaluate`'s gradient
+  // arrives in.  Getting it wrong would step the wrong parameters - possibly the pin.
+  const std::vector<int> constants{{1,3,4}};
+  const std::vector<std::size_t> free_indices = PL::tangent_to_ambient_indices( 6, constants );
+  const std::vector<std::size_t> expected{{0,2,5}};
+  BOOST_CHECK( free_indices == expected );
+
+  BOOST_CHECK( PL::tangent_to_ambient_indices(3,std::vector<int>{}).size() == 3u );
+  BOOST_CHECK( PL::tangent_to_ambient_indices(3,std::vector<int>{{0,1,2}}).empty() );
+}
+
+
+BOOST_AUTO_TEST_CASE( a_step_out_of_the_box_at_an_active_bound_is_clamped_away )
+{
+  // Index 0 sits ON its lower bound with a gradient pushing it further down: it must not move, which
+  // is precisely why such a coordinate contributes nothing to a projected-gradient test and why a
+  // point like this can be a legitimate constrained optimum rather than a stuck solve.
+  // Index 1 is interior and must move.  Index 2 is pinned/constant and must be bit-identical.
+  const std::vector<double> x{{0.0, 5.0, 42.0}};
+  const std::vector<std::pair<double,double>> box{{ {0.0,10.0}, {0.0,10.0}, {0.0,100.0} }};
+  const std::vector<std::size_t> free_indices{{0,1}};
+  const std::vector<double> gradient{{ 3.0, 2.0 }};   //descent is -gradient, so index 0 wants to go negative
+
+  std::vector<double> trial;
+  const bool moved = PL::projected_descent_point( x,gradient,free_indices,box,1.0,trial );
+
+  BOOST_CHECK( moved );
+  BOOST_CHECK_EQUAL( trial[0], 0.0 );    //clamped exactly back onto the bound
+  BOOST_CHECK_CLOSE( trial[1], 3.0, 1.0e-9 );
+  BOOST_CHECK_EQUAL( trial[2], 42.0 );   //never written
+}
+
+
+BOOST_AUTO_TEST_CASE( a_step_entirely_out_of_the_box_reports_that_nothing_moved )
+{
+  const std::vector<double> x{{0.0, 10.0}};
+  const std::vector<std::pair<double,double>> box{{ {0.0,10.0}, {0.0,10.0} }};
+  const std::vector<std::size_t> free_indices{{0,1}};
+  const std::vector<double> gradient{{ 1.0, -1.0 }};   //both push outward, off opposite bounds
+
+  std::vector<double> trial;
+  BOOST_CHECK( !PL::projected_descent_point(x,gradient,free_indices,box,1.0,trial) );
+  BOOST_CHECK( trial == x );
+}
+
+
+BOOST_AUTO_TEST_CASE( the_probe_step_is_scale_free )
+{
+  // The property the old magnitude test lacked.  The parameters of this problem are activities,
+  // energy-calibration terms, FWHM and rel-eff coefficients - sizes differing by many orders of
+  // magnitude - so a step measured in raw gradient units is meaningless across them.  Scaling one
+  // coordinate's box AND its gradient by the same factor is a pure change of units and must leave
+  // the resulting relative displacement identical.
+  const std::vector<std::size_t> free_indices{{0,1}};
+  const double relative_move = 1.0e-2;
+
+  const std::vector<double> x_a{{5.0, 0.5}};
+  const std::vector<std::pair<double,double>> box_a{{ {0.0,10.0}, {0.0,1.0} }};
+  const std::vector<double> gradient_a{{ 4.0, 0.25 }};
+
+  const double factor = 1000.0;
+  const std::vector<double> x_b{{5.0*factor, 0.5}};
+  const std::vector<std::pair<double,double>> box_b{{ {0.0,10.0*factor}, {0.0,1.0} }};
+  const std::vector<double> gradient_b{{ 4.0*factor, 0.25 }};
+
+  const double alpha_a = PL::projected_step_scale( x_a,gradient_a,free_indices,box_a,relative_move );
+  const double alpha_b = PL::projected_step_scale( x_b,gradient_b,free_indices,box_b,relative_move );
+  BOOST_REQUIRE( alpha_a > 0.0 );
+  BOOST_REQUIRE( alpha_b > 0.0 );
+
+  std::vector<double> trial_a, trial_b;
+  PL::projected_descent_point( x_a,gradient_a,free_indices,box_a,alpha_a,trial_a );
+  PL::projected_descent_point( x_b,gradient_b,free_indices,box_b,alpha_b,trial_b );
+
+  // Same fractional move of the rescaled coordinate, and the untouched coordinate is unaffected.
+  BOOST_CHECK_CLOSE( (x_a[0]-trial_a[0])/(box_a[0].second-box_a[0].first),
+                     (x_b[0]-trial_b[0])/(box_b[0].second-box_b[0].first), 1.0e-9 );
+  BOOST_CHECK_CLOSE( trial_a[1], trial_b[1], 1.0e-9 );
+
+  // And the opening rung really does move the leading coordinate by `relative_move` of its span.
+  BOOST_CHECK_CLOSE( (x_a[0]-trial_a[0])/(box_a[0].second-box_a[0].first), relative_move, 1.0e-9 );
+}
+
+
+BOOST_AUTO_TEST_CASE( an_unbounded_coordinate_is_scaled_by_its_own_magnitude )
+{
+  // Ceres' "no bound" sentinel must not be used as a span; a coordinate with no real box is scaled
+  // by its own size instead, floored at 1 so a coordinate sitting at zero still has a scale.
+  BOOST_CHECK_CLOSE( PL::coordinate_scale(7.0, 0.0, 10.0), 10.0, 1.0e-9 );
+  BOOST_CHECK_CLOSE( PL::coordinate_scale(7.0, 1.0, std::numeric_limits<double>::max()), 7.0, 1.0e-9 );
+  BOOST_CHECK_CLOSE( PL::coordinate_scale(0.0, std::numeric_limits<double>::lowest(),
+                                          std::numeric_limits<double>::max()), 1.0, 1.0e-9 );
+}
+
+
+BOOST_AUTO_TEST_CASE( the_descent_ladder_reaches_far_enough_down_to_be_a_complete_test )
+{
+  // For a smooth objective a nonzero projected gradient guarantees SOME small enough step descends,
+  // so the probe is only a complete test if the ladder spans several decades below its opening rung.
+  BOOST_REQUIRE( !PL::sm_descent_probe_ladder.empty() );
+  BOOST_CHECK_CLOSE( PL::sm_descent_probe_ladder.front(), 1.0, 1.0e-9 );
+  BOOST_CHECK_LE( PL::sm_descent_probe_ladder.back(), 1.0e-3 );
+  for( std::size_t i = 1; i < PL::sm_descent_probe_ladder.size(); ++i )
+    BOOST_CHECK_LT( PL::sm_descent_probe_ladder[i], PL::sm_descent_probe_ladder[i-1] );
+  BOOST_CHECK_GT( PL::sm_descent_probe_relative_move, 0.0 );
+  BOOST_CHECK_LT( PL::sm_descent_probe_relative_move, 1.0 );
+}
+
+
+BOOST_AUTO_TEST_CASE( a_coordinate_blocked_at_a_bound_does_not_set_the_step_scale )
+{
+  // Index 0 has by far the largest gradient but sits ON its lower bound with the gradient pushing
+  // further down, so it cannot move.  Letting it set the scale would shrink the step for index 1 by
+  // a factor of 100 - and an under-sized probe step under-detects descent, which is the direction
+  // that wrongly calls a stuck solve a constrained optimum.
+  const std::vector<double> x{{0.0, 5.0}};
+  const std::vector<std::pair<double,double>> box{{ {0.0,1.0}, {0.0,10.0} }};
+  const std::vector<std::size_t> free_indices{{0,1}};
+  const std::vector<double> blocked{{ 100.0, 1.0 }};   //index 0 wants to go below its lower bound
+  const std::vector<double> free_grad{{ -100.0, 1.0 }};//same magnitude, but pointing INTO the box
+
+  const double alpha_blocked = PL::projected_step_scale( x,blocked,free_indices,box,1.0e-2 );
+  const double alpha_free = PL::projected_step_scale( x,free_grad,free_indices,box,1.0e-2 );
+
+  BOOST_REQUIRE( alpha_blocked > 0.0 );
+  BOOST_REQUIRE( alpha_free > 0.0 );
+  BOOST_CHECK_GT( alpha_blocked, alpha_free );   //ignoring the blocked coordinate gives a larger step
+
+  std::vector<double> trial;
+  PL::projected_descent_point( x,blocked,free_indices,box,alpha_blocked,trial );
+  BOOST_CHECK_EQUAL( trial[0], 0.0 );   //still pinned to its bound
+  BOOST_CHECK_CLOSE( (x[1]-trial[1])/(box[1].second-box[1].first), 1.0e-2, 1.0e-9 );
+}
+
+
+BOOST_AUTO_TEST_CASE( only_an_outward_gradient_at_a_bound_counts_as_blocked )
+{
+  BOOST_CHECK( PL::descent_blocked_by_bound(0.0, 1.0, 0.0, 10.0) );    //on lower, wants lower
+  BOOST_CHECK( !PL::descent_blocked_by_bound(0.0, -1.0, 0.0, 10.0) );  //on lower, wants higher
+  BOOST_CHECK( PL::descent_blocked_by_bound(10.0, -1.0, 0.0, 10.0) );  //on upper, wants higher
+  BOOST_CHECK( !PL::descent_blocked_by_bound(10.0, 1.0, 0.0, 10.0) );  //on upper, wants lower
+  BOOST_CHECK( !PL::descent_blocked_by_bound(5.0, 1.0, 0.0, 10.0) );   //interior
+  // The Ceres "no bound" sentinel must never make a coordinate look blocked.
+  BOOST_CHECK( !PL::descent_blocked_by_bound(1.0, 1.0, std::numeric_limits<double>::lowest(),
+                                             std::numeric_limits<double>::max()) );
+}

@@ -8386,6 +8386,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     ceres::Solver::Summary summary;
 
+    // Kept so the check after the restart loop can ask the only unambiguous question about a solve
+    // that reported convergence without accepting anything: did the answer actually move?
+    const vector<double> pre_solve_parameters = parameters;
+
     ceres::Solve(ceres_options, &problem, &summary);
     //std::cout << summary.BriefReport() << "\n";
 
@@ -8485,6 +8489,59 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           break;
       }//for( int restart = 0; restart < max_restarts; ++restart )
     }//if( main solve converged )
+
+    // Ceres' `FunctionToleranceReached()` is the one convergence test it does NOT gate on an
+    // accepted step (`ParameterToleranceReached()` is gated on `atleast_one_successful_step`,
+    // `GradientToleranceReached()` on `step_is_successful`), and it measures the cost change against
+    // the REJECTED trial point.  So a solve whose every step is refused can collapse its trust
+    // region and then be reported as CONVERGENCE having moved nothing, returning its seed.  The
+    // profile's conditional solves have to tell that apart from a legitimate constrained optimum
+    // (see `ProfileConditionalHost::probe_projected_descent`); here it only needs to be made
+    // visible, because a whole analysis silently returning its starting point would be a far larger
+    // problem than a single lost scan sample.
+    //
+    // The step counts alone are NOT the test to use here, and measuring them was actively
+    // misleading: the restart loop above ends with a CONFIRMING solve from an already-converged
+    // point, which by design accepts nothing and rejects several trial steps - so every healthy fit
+    // shows the "accepted nothing" signature on its final summary.  The unambiguous question is
+    // whether the answer moved at all, so that is what is asked.
+    {
+      bool parameters_moved = (parameters.size() != pre_solve_parameters.size());
+      for( size_t i = 0; !parameters_moved && (i < parameters.size()); ++i )
+        parameters_moved = (parameters[i] != pre_solve_parameters[i]);
+
+      const bool main_ceres_success = ((summary.termination_type == ceres::CONVERGENCE)
+                                       || (summary.termination_type == ceres::USER_SUCCESS));
+
+      // Not moving is only a defect if the optimizer TRIED and failed.  A solve re-entered on an
+      // already-converged model legitimately has nothing to do and rejects nothing - measured at 5
+      // of 19 fits across the MassFracConstraint suite, every one of them with zero rejected steps.
+      // Requiring a rejected step is what separates "nothing to do" from "could not do anything".
+      if( main_ceres_success && !parameters_moved && (summary.num_unsuccessful_steps > 0) )
+      {
+        const string msg = "The fit was reported as converged, but the optimizer rejected every"
+              " step and never moved a single parameter, so the result is the starting point rather"
+              " than a minimum (" + summary.message + ").";
+        solution.m_warnings.push_back( msg );
+        cerr << "RelActCalcAuto: " << msg << endl;
+#if( PERFORM_DEVELOPER_CHECKS )
+        assert( 0 );
+#endif
+      }
+
+      if( RelActCalcAutoImp::profile_stats_enabled() )
+        cerr << "mainfit-convergence term=" << ceres::TerminationTypeToString(summary.termination_type)
+             << " msg=\"" << summary.message << "\""
+             << " final_successful=" << summary.num_successful_steps
+             << " final_unsuccessful=" << summary.num_unsuccessful_steps
+             << " parameters_moved=" << (parameters_moved ? 1 : 0)
+             << " returned_its_seed=" << ((main_ceres_success && !parameters_moved
+                                          && (summary.num_unsuccessful_steps > 0)) ? 1 : 0)
+             << " nothing_to_do=" << ((main_ceres_success && !parameters_moved
+                                       && (summary.num_unsuccessful_steps == 0)) ? 1 : 0)
+             << endl;
+    }
+
 
 
     switch( summary.termination_type )
@@ -15509,6 +15566,147 @@ struct ProfileConditionalHost
   }//LevelSetStep refine_on_level_set(...)
 
 
+  /** Outcome of the projected-descent probe at a returned conditional point. */
+  struct DescentProbe
+  {
+    /** Whether the gradient could be formed at all; false means the probe reached no verdict. */
+    bool gradient_available = false;
+    /** A feasible step that strictly lowered the objective was found - the solve WAS stuck. */
+    bool descent_found = false;
+    std::vector<double> parameters;
+    double physical_chi2 = std::numeric_limits<double>::quiet_NaN();
+    /** Trial evaluations the ladder spent, for the diagnostic. */
+    size_t evaluations = 0;
+    /** Step multiplier that produced the best trial. */
+    double alpha = 0.0;
+  };
+
+
+  /** Is there feasible descent left at the current point, or is it a constrained optimum?
+
+   A conditional solve that accepted nothing while REJECTING steps is ambiguous: it may be stuck
+   against the box (its returned point is then the warm start, whose overstated chi2 crosses the
+   threshold early and biases the interval narrow), or it may be sitting at a perfectly legitimate
+   constrained optimum, where under KKT the raw gradient is nonzero and balanced by the bound
+   multipliers while no FEASIBLE direction descends.  Ceres cannot distinguish them and neither can
+   any step count; see `ProfileLikelihood::conditional_convergence_verdict`.
+
+   This decides by EVALUATION rather than by comparing a gradient against a threshold, for the same
+   reason `refine_on_level_set` does: the answer then arrives in the units the profile actually
+   consumes - chi2 - and needs no scale-free constant invented for a problem whose parameters span
+   many orders of magnitude.  It is also a COMPLETE test up to the objective's own reproducibility:
+   for a smooth objective a nonzero projected gradient guarantees that some sufficiently small
+   projected step descends, so "no rung improved" means whatever is left is below the noise floor,
+   which is the operational meaning of "this point is as converged as this problem gets".
+
+   Operates on `m_parameters`, deliberately: `ceres::Problem::Evaluate` reads the registered
+   parameter block, so taking the base point from anywhere else would risk differentiating at one
+   point and stepping from another.
+
+   Costs one Jacobian evaluation - `ceil(number_parameters()/sm_auto_diff_stride_size)` forward Jet
+   passes, the same count the chunked-Jet helpers here pay - plus one residual evaluation per rung.
+   No solve.
+
+   @param x_chi2      The objective at the current point.
+   @param noise_floor A trial must beat `x_chi2` by more than this to count as descent.
+   */
+  DescentProbe probe_projected_descent( const double x_chi2, const double noise_floor )
+  {
+    DescentProbe answer;
+    assert( !m_solve_in_flight );
+
+    const size_t num_pars = m_parameters.size();
+    if( !std::isfinite(x_chi2) || !m_pinned_index )
+      return answer;
+
+    // The gradient of EXACTLY the function Ceres minimized, in EXACTLY the tangent space it used:
+    // the `SubsetManifold` installed by `set_pin` already removes both `m_constant_parameters` and
+    // the pinned index, so no index mask has to be maintained here and none can drift out of sync.
+    // Legal at this point because the solve has returned - `Problem::Evaluate` may not be called
+    // while one is in flight - and the problem carries no `EvaluationCallback`.
+    ceres::Problem::EvaluateOptions evaluate_options;
+    evaluate_options.num_threads = (std::max)( 1, m_solver_options.num_threads );
+    // `apply_loss_function` deliberately left at its default, so the probe follows whatever the
+    // solver minimized should a loss function ever be enabled (`lossfcn` is null today).
+
+    std::vector<double> gradient;
+    double ceres_cost = 0.0;
+    if( !m_problem.Evaluate( evaluate_options, &ceres_cost, nullptr, &gradient, nullptr ) )
+      return answer;
+
+    std::vector<int> constants = m_constant_parameters;
+    constants.push_back( static_cast<int>(*m_pinned_index) );
+    std::sort( begin(constants), end(constants) );
+
+    const std::vector<size_t> free_indices
+        = ProfileLikelihood::tangent_to_ambient_indices( num_pars, constants );
+
+    // If these disagree the manifold is not what we think it is, and guessing at the mapping would
+    // silently step the wrong coordinates - including, possibly, the pin.
+    assert( gradient.size() == free_indices.size() );
+    if( gradient.size() != free_indices.size() )
+      return answer;
+
+    answer.gradient_available = true;
+
+    std::vector<std::pair<double,double>> box( num_pars );
+    for( size_t i = 0; i < num_pars; ++i )
+      box[i] = parameter_bounds( i );
+
+    const std::vector<double> base = m_parameters;
+    const double alpha_scale = ProfileLikelihood::projected_step_scale( base, gradient, free_indices,
+                                     box, ProfileLikelihood::sm_descent_probe_relative_move );
+    if( !(alpha_scale > 0.0) )
+      return answer;
+
+    double best_chi2 = x_chi2;
+    std::vector<double> trial;
+
+    const auto try_alpha = [&]( const double alpha ) -> void {
+      if( !ProfileLikelihood::projected_descent_point( base, gradient, free_indices, box, alpha, trial ) )
+        return;   //the entire step clamped away; there is nothing to evaluate
+
+      ++answer.evaluations;
+      try
+      {
+        const double trial_chi2 = physical_objective( trial );
+        if( !std::isfinite(trial_chi2) || !(trial_chi2 < (best_chi2 - noise_floor)) )
+          return;
+
+        best_chi2 = trial_chi2;
+        answer.parameters = trial;
+        answer.physical_chi2 = trial_chi2;
+        answer.alpha = alpha;
+        answer.descent_found = true;
+      }catch( const std::exception & )
+      {
+        //a step can land where the model cannot be evaluated at all; that rung simply does not count
+      }
+    };//try_alpha lambda
+
+    for( const double rung : ProfileLikelihood::sm_descent_probe_ladder )
+      try_alpha( rung*alpha_scale );
+
+    // The ladder runs DOWNWARD, so its outermost rung is the first one.  If that is what won, the
+    // step was never limited by the clamping and a longer one may pay more; extend while it does.
+    const double opening = ProfileLikelihood::sm_descent_probe_ladder.front()*alpha_scale;
+    if( answer.descent_found && (answer.alpha >= opening) )
+    {
+      double rail = opening;
+      for( size_t extension = 0; extension < 2; ++extension )
+      {
+        const double before = best_chi2;
+        rail *= 4.0;
+        try_alpha( rail );
+        if( !(best_chi2 < before) )
+          break;
+      }
+    }
+
+    return answer;
+  }//DescentProbe probe_projected_descent( double, double )
+
+
   /** Sets `m_profile_reporting_mode` for a scope.  See that member: a conditional read-back needs
    the singular-corner-safe correlation path, and under pinning there is no armed constraint to
    infer that from. */
@@ -15592,46 +15790,184 @@ struct ProfileConditionalHost
     m_solve_in_flight = false;
     ++m_num_conditional_solves;
 
-    bool converged = ((summary.termination_type == ceres::CONVERGENCE)
-                      || (summary.termination_type == ceres::USER_SUCCESS));
+    // Ceres reports CONVERGENCE for three situations that a step count alone cannot separate.  The
+    // classification is in `ProfileLikelihood::conditional_convergence_verdict`, which also records
+    // why the REJECTED-step count is a free discriminator for the benign case, and why Ceres' own
+    // `gradient_max_norm` - already tangent-space and already box-projected - is reported here but
+    // deliberately gates nothing.
+    const bool ceres_success = ((summary.termination_type == ceres::CONVERGENCE)
+                                || (summary.termination_type == ceres::USER_SUCCESS));
+    const ProfileLikelihood::ConditionalConvergence verdict
+        = ProfileLikelihood::conditional_convergence_verdict( ceres_success,
+                                                              summary.num_successful_steps,
+                                                              summary.num_unsuccessful_steps );
+    bool converged = (verdict != ProfileLikelihood::ConditionalConvergence::Rejected);
 
-    // Ceres reports CONVERGENCE for two situations that look identical in the step count and are
-    // opposite in meaning.  Both accept no steps:
-    //
-    //   - The solve began AT the conditional optimum - a pin displaced by less than the solver's
-    //     resolution - so there was nothing to do.  Legitimate; the point is a conditional minimum.
-    //   - Every trust-region step was REJECTED, the objective rose, the radius collapsed, and Ceres
-    //     declared convergence because the radius got small.  The returned point is then the WARM
-    //     START, not a conditional minimum at all - and since a warm start is a worse point, its
-    //     delta chi2 is overstated, which crosses the threshold early and biases the interval
-    //     NARROW: the same direction as the pinning bias, compounding it.
-    //
-    // The step count cannot separate them.  The GRADIENT can: a point at its optimum has a
-    // near-zero gradient, while a point that never moved carries the same large gradient it started
-    // with.  Ceres reports it in the TANGENT space, which under the pin's `SubsetManifold` excludes
-    // the pinned coordinate - so the large and entirely expected gradient along the pin (that is the
-    // multiplier `lambda`) does not pollute the test.  The threshold is Ceres' own
-    // `gradient_tolerance`, which is by definition this solver's notion of "the gradient is zero",
-    // so a genuine seed-convergence passes by construction: it is the very test Ceres used to
-    // declare convergence in the first place.
-    //
-    // Observed on the JRC Pu70 fixed-age harness in a Debug build: |gradient| = 60.3, unchanged
-    // across every iteration, step norm identically zero, cost rising, radius collapsing four
-    // orders of magnitude.
-    if( converged && (summary.num_successful_steps <= 1) && !summary.iterations.empty() )
+    if( verdict == ProfileLikelihood::ConditionalConvergence::NeedsProbe )
     {
-      const double final_gradient = summary.iterations.back().gradient_max_norm;
-      if( std::isfinite(final_gradient)
-          && (final_gradient > m_solver_options.gradient_tolerance) )
+      // Converged having accepted nothing WHILE rejecting steps, which is ambiguous.  Either the box
+      // truncated every step and the returned point is the WARM START - whose overstated delta chi2
+      // crosses the threshold early and biases the interval narrow, the same direction as the
+      // pinning bias, so the two compound - or this is a genuine constrained optimum, where the raw
+      // gradient is nonzero but balanced by the bound multipliers and no FEASIBLE direction
+      // descends, in which case the point is a perfectly good conditional minimum.  Only an
+      // evaluation separates them, and that is what the probe does.
+      //
+      // What was here before compared Ceres' gradient against `Solver::Options::gradient_tolerance`,
+      // which this code sets to `1e-4*function_tolerance == 1e-13`.  Nothing real passes 1e-13, so
+      // the test rejected EVERY zero-step solve - a genuine seed-convergence and a constrained
+      // optimum along with the stuck ones.  The old comment's claim that a seed-convergence "passes
+      // by construction: it is the very test Ceres used to declare convergence" was not true: with
+      // that tolerance `GradientToleranceReached()` never fires, so Ceres converged on the FUNCTION
+      // tolerance, which is the one convergence test it does not gate on an accepted step.
+      const double noise_floor
+          = ProfileLikelihood::baseline_improvement_tolerance( m_optimum_objective, 1.0 );
+
+      // Captured before any repair, because a successful repair replaces `summary`.
+      const std::string first_term = ceres::TerminationTypeToString( summary.termination_type );
+      const std::string first_message = summary.message;
+      const size_t first_iterations = summary.iterations.size();
+      const int first_successful = summary.num_successful_steps;
+      const int first_unsuccessful = summary.num_unsuccessful_steps;
+      const double first_gradient = summary.iterations.empty()
+                                  ? std::numeric_limits<double>::quiet_NaN()
+                                  : summary.iterations.back().gradient_max_norm;
+
+      double current_chi2 = std::numeric_limits<double>::quiet_NaN();
+      try
       {
-        converged = false;
-        result.diagnostic = "A conditional solve accepted no trust-region step and remains at a"
-                            " non-stationary point (tangent-space gradient "
-                            + SpecUtils::printCompact(final_gradient,6)
-                            + "), so it is the warm start rather than a conditional minimum;"
-                              " using it would overstate delta chi2 and bias the interval narrow.";
+        current_chi2 = physical_objective( m_parameters );
+      }catch( const std::exception & )
+      {
+        //an unevaluable point is caught by the guarded read-back further down
       }
-    }
+
+      DescentProbe probe;
+      if( std::isfinite(current_chi2) )
+        probe = probe_projected_descent( current_chi2, noise_floor );
+
+      const char *stuck_verdict = "optimum";
+      double repaired_chi2 = std::numeric_limits<double>::quiet_NaN();
+
+      if( !std::isfinite(current_chi2) || !probe.gradient_available )
+      {
+        // No verdict could be reached, so give the conservative answer this code has always given:
+        // an unverifiable zero-step solve is discarded rather than used.
+        stuck_verdict = "unverified";
+        converged = false;
+      }else if( probe.descent_found )
+      {
+        // Genuinely stuck.  Step off the bound face, then let CERES produce the point, so the sample
+        // remains an ordinary conditional solve rather than an ad-hoc ladder point - which is also
+        // why it needs no reported-value drift guard of its own.
+        stuck_verdict = "stuck";
+
+        const std::vector<double> pre_repair = m_parameters;
+        std::copy( begin(probe.parameters), end(probe.parameters), begin(m_parameters) );
+        // The probe never writes a constant or pinned coordinate, so this cannot have moved the pin.
+        assert( m_parameters[index] == result.achieved_parameter );
+
+        ceres::Solver::Summary repair_summary;
+        m_solve_in_flight = true;
+        ceres::Solve( m_solver_options, &m_problem, &repair_summary );
+        m_solve_in_flight = false;
+        ++m_num_conditional_solves;
+        ++result.restarts_used;
+
+        const bool repair_success = ((repair_summary.termination_type == ceres::CONVERGENCE)
+                                     || (repair_summary.termination_type == ceres::USER_SUCCESS));
+        try
+        {
+          repaired_chi2 = physical_objective( m_parameters );
+        }catch( const std::exception & )
+        {
+        }
+
+        if( repair_success && std::isfinite(repaired_chi2)
+            && (repaired_chi2 < (current_chi2 - noise_floor)) )
+        {
+          // Safe in the only direction that matters: `chi2(x) >= min{ chi2 : q == q(x) }` for any
+          // feasible `x`, so this is still a rigorous upper bound on the exact profile at its own
+          // achieved `q` - merely a tighter one.  A repair can only move a sample toward the truth
+          // FROM THE NARROW SIDE; it can never push it below and widen the interval, which is the
+          // failure an uncertainty tool must never have silently.
+          summary = repair_summary;
+          stuck_verdict = "repaired";
+        }else
+        {
+          repaired_chi2 = std::numeric_limits<double>::quiet_NaN();
+          std::copy( begin(pre_repair), end(pre_repair), begin(m_parameters) );
+          converged = false;
+        }
+      }//if( unverifiable ) / else if( descent found )
+
+      if( profile_stats_enabled() )
+      {
+        // Why did Ceres stop, and is the step truncated by the box rather than by the trust region?
+        // `grad` is Ceres' `|Plus(x,-gradient) - x|`, so it is already tangent-space (the pin and the
+        // constant parameters are removed by the `SubsetManifold`) and already box-projected (a
+        // coordinate at a bound with an outward gradient contributes exactly zero).  It is printed
+        // because it is free and informative; it decides nothing.
+        std::cerr << "profile-stuck verdict=" << stuck_verdict
+                  << " term=" << first_term
+                  << " msg=\"" << first_message << "\""
+                  << " iters=" << first_iterations
+                  << " successful=" << first_successful
+                  << " unsuccessful=" << first_unsuccessful
+                  << " grad=" << first_gradient
+                  << " grad_tol=" << m_solver_options.gradient_tolerance << std::endl;
+
+        size_t at_bound = 0, free_pars = 0;
+        std::string bound_list;
+        for( size_t i = 0; i < m_parameters.size(); ++i )
+        {
+          if( std::binary_search(begin(m_constant_parameters),end(m_constant_parameters),
+                                 static_cast<int>(i)) || (m_pinned_index && (i == *m_pinned_index)) )
+            continue;
+          ++free_pars;
+
+          const std::pair<double,double> box = parameter_bounds( i );
+          const bool real_lower = ProfileLikelihood::has_real_bound( box.first );
+          const bool real_upper = ProfileLikelihood::has_real_bound( box.second );
+          // The span is only meaningful when both edges are real; Ceres' "no bound" sentinel is
+          // ~1.8e308, and a tolerance scaled off that would call every parameter bound-active.
+          const double span = (real_lower && real_upper) ? (box.second - box.first)
+                                                         : m_parameters[i];
+          const double tol = (std::max)( 1.0e-12, 1.0e-9*std::fabs(span) );
+
+          if( (real_lower && (std::fabs(m_parameters[i]-box.first) <= tol))
+              || (real_upper && (std::fabs(m_parameters[i]-box.second) <= tol)) )
+          {
+            ++at_bound;
+            if( bound_list.size() < 200 )
+              bound_list += (bound_list.empty() ? "" : ",") + std::to_string(i);
+          }
+        }
+
+        std::cerr << "profile-stuck free_pars=" << free_pars << " at_bound=" << at_bound
+                  << " [" << bound_list << "]"
+                  << " chi2=" << current_chi2
+                  << " probe_evals=" << probe.evaluations
+                  << " probe_chi2=" << probe.physical_chi2
+                  << " probe_alpha=" << probe.alpha
+                  << " repaired_chi2=" << repaired_chi2 << std::endl;
+      }//if( profile_stats_enabled() )
+
+      if( !converged )
+      {
+        result.diagnostic = probe.descent_found
+          ? ("A conditional solve accepted no trust-region step, and a projected-descent probe found"
+             " a feasible step that lowers the objective (chi2 "
+             + SpecUtils::printCompact(current_chi2,6) + " -> "
+             + SpecUtils::printCompact(probe.physical_chi2,6) + "), so it is the warm start rather"
+             " than a conditional minimum; a re-solve from that step did not confirm an improvement,"
+             " so the point is discarded rather than used, because a point above its true conditional"
+             " minimum would overstate delta chi2 and bias the interval narrow.")
+          : std::string("A conditional solve accepted no trust-region step and could not be checked"
+             " for remaining feasible descent, so it is discarded rather than used, because a point"
+             " above its true conditional minimum would bias the interval narrow.");
+      }
+    }//if( verdict == NeedsProbe )
 
     // The restart-until-no-improvement loop is the ONLY absolute convergence check in the pipeline:
     // the outlier rejection downstream is purely relative and cannot see a bias that lifts every
@@ -16703,23 +17039,43 @@ T eval_fwhm( const T energy, const FwhmForm form, const T * const pars, const si
   
 #ifndef NDEBUG
   float energy_kev;
+  double energy_scalar, answer_scalar;
   vector<float> drf_pars;
 
   if constexpr ( !std::is_same_v<T, double> )
   {
+    energy_scalar = energy.a;
+    answer_scalar = answer.a;
     energy_kev = static_cast<float>( energy.a );
     for( size_t i = 0; i < num_pars; ++i )
       drf_pars.push_back( static_cast<float>(pars[i].a) );
   }else
   {
+    energy_scalar = energy;
+    answer_scalar = answer;
     energy_kev = static_cast<float>( energy );
     for( size_t i = 0; i < num_pars; ++i )
       drf_pars.push_back( static_cast<float>(pars[i]) );
   }
 
-  const double drf_answer = DetectorPeakResponse::peakResolutionFWHM( energy_kev, fctntype, drf_pars );
+  // `answer` has been through the two C1 continuations that keep an optimizer trial inside
+  //  (0, energy), while the DRF reference is the raw form.  Put the reference through the same two
+  //  maps before comparing: otherwise any trial that legitimately triggers a continuation - routine
+  //  early in a fit, where the raw form goes negative or exceeds the gamma energy - reads as an
+  //  order-unity disagreement and aborts a debug build.  Both maps are contractions outside their
+  //  join (|f(a)-f(b)| <= |a-b|), so applying them can only tighten this check, never mask a real
+  //  mismatch.
+  double drf_answer = DetectorPeakResponse::peakResolutionFWHM( energy_kev, fctntype, drf_pars );
+  drf_answer = positive_c1_continuation( drf_answer, 1.0e-6 );
+  drf_answer = upper_c1_continuation( drf_answer, energy_scalar );
 
-  assert( (abs(answer - drf_answer) < 0.01) || (abs(answer - drf_answer) < 0.01*max(abs(answer),abs(T(drf_answer)))) );
+  // The reference is evaluated from float-cast energy and parameters (~6e-8 relative each), and the
+  //  sqrt-of-a-sum FWHM forms amplify that wherever their terms cancel, so the tolerance has to be
+  //  relative rather than the absolute 0.01 keV it used to lead with.  1e-4 matches the sibling
+  //  float-vs-double check in the NotApplicable branch above.
+  const double fwhm_diff = fabs( answer_scalar - drf_answer );
+  assert( (fwhm_diff < 1.0E-4*(std::max)(fabs(answer_scalar), fabs(drf_answer)))
+          || (fwhm_diff < 1.0E-8) );
 #endif
 
   return answer;
