@@ -34,7 +34,7 @@
 
   <message id="dls-det-act-with-range">पता लगाया गया: {1}, सीमा [{2}, {3}], @{4} CL</message>
   <message id="dls-det-no-result">क्षमा करें, कोई परिणाम नहीं</message>
-  <message id="dls-det-counts-with-range">अतिरिक्त गणनाएं: {1}, सीमा [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">सिग्नल अनुमान: {1} काउंट्स, सीमा [{2}, {3}], @{4} CL</message>
   <message id="dls-det-act-less-zero">गतिविधि &lt; 0 {1} (अपेक्षित से काफी कम गणनाएं देखी गईं)।</message>
   <message id="dls-det-counts-less-zero">अतिरिक्त गणनाएं &lt; 0 {2} (अपेक्षित से काफी कम गणनाएं देखी गईं)।</message>
   <message id="dls-det-upper-bound">{1} से कम उपस्थित @{2} CL।</message>
@@ -91,4 +91,8 @@
   <message id="dls-scale-more-info-note">
     {1} वास्तविक समय पर मापित (जीवंत समय {2}, मापन के वास्तविक समय {4} का &times;{3} अनुपात)।
   </message>
+
+  <!-- Deconvolution विधि चुनी होने पर उन्नत इनपुट के नीचे दिखाया जाता है, जहाँ वे निष्क्रिय रहते
+       हैं।  बिना स्पष्टीकरण के निष्क्रिय नियंत्रण बग जैसा लगता है। -->
+  <message id="dls-advanced-decon-note">ये Currie विधि पर लागू होते हैं; Deconvolution सीमा अभी इनका उपयोग नहीं करती।</message>
 </messages>

@@ -398,8 +398,9 @@ BOOST_AUTO_TEST_CASE( SimpleMdaStateRoundTrips )
 
   // A state exercising every control the tool serializes, including the ones this increment
   //  touched: the measurement model, the continuum type, and the planned measurement time.
-  const string uri = "DECON?VER=2&NUC=Cs137&ENERGY=661.657&DIST=100 cm&LROI=640&UROI=680"
-                     "&CL=95&NSIDE=4&MODEL=BACKREF&CONTNORM=FLOAT&CONTTYPE=QUAD&SCALE=1800s";
+  const string uri = "DECON?VER=2.1&NUC=Cs137&ENERGY=661.657&DIST=100 cm&LROI=640&UROI=680"
+                     "&CL=95&NSIDE=4&MODEL=BACKREF&CONTNORM=FLOAT&CONTTYPE=QUAD&SCALE=1800s"
+                     "&ADV=1&ALPHA=0.02&BETA=0.1&DISTUNCERT=2 cm&EFFUNCERT=5";
 
   BOOST_REQUIRE_NO_THROW( tool->handleAppUrl( uri ) );
 
@@ -440,6 +441,75 @@ BOOST_AUTO_TEST_CASE( SimpleMdaStateRoundTrips )
                       " change cannot be undone" );
   BOOST_CHECK_MESSAGE( after_current.find("MODEL=CUR") != string::npos,
                       "measurement model did not switch: " << after_current );
+
+  // ---- the "Advanced" section ------------------------------------------------------------------
+  BOOST_CHECK_MESSAGE( once.find("ADV=1") != string::npos,
+                      "advanced checkbox missing from encoded state: " << once );
+  BOOST_CHECK_MESSAGE( once.find("ALPHA=") != string::npos,
+                      "alpha missing from encoded state: " << once );
+  BOOST_CHECK_MESSAGE( once.find("BETA=") != string::npos,
+                      "beta missing from encoded state: " << once );
+  BOOST_CHECK_MESSAGE( once.find("DISTUNCERT=") != string::npos,
+                      "distance uncertainty missing from encoded state: " << once );
+  BOOST_CHECK_MESSAGE( once.find("EFFUNCERT=") != string::npos,
+                      "efficiency uncertainty missing from encoded state: " << once );
+
+  // Turning "Advanced" off has to change the URI, or the change cannot be undone.
+  {
+    string adv_off = once;
+    SpecUtils::ireplace_all( adv_off, "&ADV=1", "" );
+    BOOST_REQUIRE( adv_off != once );
+
+    BOOST_REQUIRE_NO_THROW( tool->handleAppUrl( adv_off ) );
+    const string after_adv_off = tool->encodeStateToUrl();
+    BOOST_CHECK_MESSAGE( after_adv_off.find("ADV=1") == string::npos,
+                        "advanced checkbox stayed on after being removed from the URI: "
+                        << after_adv_off );
+    BOOST_CHECK_MESSAGE( after_adv_off != once,
+                        "turning the advanced section off left the encoded state unchanged, so the"
+                        " change cannot be undone" );
+  }
+
+  // Alpha and beta track the confidence level until edited, and the ALPHA/BETA tokens are how that
+  //  latch is encoded.  A state without ALPHA must come back still tracking - otherwise loading a
+  //  state, then changing the confidence level, silently stops moving the error rates.  A plain
+  //  round trip cannot see this: both halves agree on a value either way.
+  {
+    const string tracking = "CURRIE?VER=2.1&NUC=Cs137&ENERGY=661.657&DIST=100 cm&LROI=640&UROI=680"
+                            "&CL=95&NSIDE=4&MODEL=CUR&ADV=1";
+    BOOST_REQUIRE_NO_THROW( tool->handleAppUrl( tracking ) );
+
+    const string no_alpha = tool->encodeStateToUrl();
+    BOOST_CHECK_MESSAGE( no_alpha.find("ADV=1") != string::npos, no_alpha );
+    BOOST_CHECK_MESSAGE( no_alpha.find("ALPHA=") == string::npos,
+                        "alpha latched by a state that never set it, so it has stopped following"
+                        " the confidence level: " << no_alpha );
+    BOOST_CHECK_MESSAGE( no_alpha.find("BETA=") == string::npos,
+                        "beta latched by a state that never set it: " << no_alpha );
+    BOOST_CHECK_MESSAGE( no_alpha.find("DISTUNCERT=") == string::npos,
+                        "distance uncertainty survived a state that did not carry it: " << no_alpha );
+    BOOST_CHECK_MESSAGE( no_alpha.find("EFFUNCERT=") == string::npos,
+                        "efficiency uncertainty survived a state that did not carry it: " << no_alpha );
+
+    // ...and it must still round trip in that un-latched condition.
+    BOOST_REQUIRE_NO_THROW( tool->handleAppUrl( no_alpha ) );
+    BOOST_CHECK_MESSAGE( tool->encodeStateToUrl() == no_alpha,
+                        "un-latched advanced state did not survive a round trip" );
+  }
+
+  // A VER=2 URI predates the advanced section entirely, and must decode to Advanced-off rather than
+  //  inheriting whatever the tool happened to be showing.
+  {
+    const string legacy = "CURRIE?VER=2&NUC=Cs137&ENERGY=661.657&DIST=100 cm&LROI=640&UROI=680"
+                          "&CL=95&NSIDE=4&MODEL=CUR";
+    BOOST_REQUIRE_NO_THROW( tool->handleAppUrl( legacy ) );
+
+    const string from_legacy = tool->encodeStateToUrl();
+    BOOST_CHECK_MESSAGE( from_legacy.find("ADV=") == string::npos,
+                        "a pre-advanced URI left the advanced section on: " << from_legacy );
+    BOOST_CHECK_MESSAGE( from_legacy.find("DISTUNCERT=") == string::npos,
+                        "a pre-advanced URI left a stale distance uncertainty: " << from_legacy );
+  }
 }// BOOST_AUTO_TEST_CASE( SimpleMdaStateRoundTrips )
 
 

@@ -450,7 +450,8 @@ Exemplar peaks that could not be fit{% if existsIn(file.NotFitPeaks,"HasMdas") a
         <th>Result</th>
         <th title="Currie&apos;s critical level; the net counts above which a signal may be reliably recognized as detected.">L<sub>c</sub> (counts)</th>
         <th title="Currie&apos;s detection limit; the true net signal level that may be expected to lead to detection.">L<sub>d</sub> (counts)</th>
-        <th>Net counts</th>
+        <th title="The raw net counts above the estimated continuum; this is what the detection decision is made on, and it may be negative.">Net counts</th>
+        <th title="The ISO 11929 best estimate and its standard uncertainty: the mean of the signal distribution after the part of it sitting on impossible negative activities has been removed.  This, not the net counts, is what ISO says to quote as the measured value; the two agree once the signal is well above L_c.">Best estimate (counts)</th>
       </tr>
     </thead>
     <tbody>
@@ -463,6 +464,7 @@ Exemplar peaks that could not be fit{% if existsIn(file.NotFitPeaks,"HasMdas") a
         <td>{% if peak.CurrieCheck.CurrieComputed %}{{ peak.CurrieCheck.DecisionThresholdStr }}{% endif %}</td>
         <td>{% if peak.CurrieCheck.CurrieComputed %}{{ peak.CurrieCheck.DetectionLimitStr }}{% endif %}</td>
         <td>{% if peak.CurrieCheck.CurrieComputed %}{{ peak.CurrieCheck.SourceCountsStr }}{% endif %}</td>
+        <td>{% if peak.CurrieCheck.CurrieComputed %}{{ peak.CurrieCheck.BestEstimateCountsStr }} &plusmn; {{ peak.CurrieCheck.BestEstimateCountsUncertStr }}{% endif %}</td>
       </tr>
 ## endfor
     </tbody>

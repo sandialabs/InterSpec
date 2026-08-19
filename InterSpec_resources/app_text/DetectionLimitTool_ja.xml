@@ -20,7 +20,10 @@
   <message id="dlt-range">範囲:</message>
   <message id="dlt-detected-activity-tt">検出された活動、この関心領域のみを使用し、
     観測された過剰カウント、および
-    統計的信頼区間。</message>
+    統計的信頼区間。
+    公称値は ISO 11929 の最良推定値です。すなわち、あり得ない負の放射能に対応する部分を
+    取り除いた後の信号分布の平均です。常に生の過剰カウント以上であり、信号が臨界レベルを
+    十分に上回ると両者は一致します。</message>
   <message id="dlt-limit-lt-zero"><![CDATA[限界: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(ROIのカウントが予測より大幅に少ない)</message>
   <message id="dlt-fewer-counts-tt">関心領域で観測されたカウントが
@@ -53,8 +56,6 @@
   <message id="dlt-log">対数</message>
   <message id="dlt-lin">線形</message>
   <message id="dlt-below-lc">(L<sub>c</sub>以下)</message>
-  <message id="dlt-lt-zero-counts"><![CDATA[< 0 カウント]]></message>
-  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">データが読み込まれていません</message>
@@ -101,7 +102,10 @@
   
   <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
   <message id="dlt-tt-greater-than-lc">&quot;臨界レベル&quot;、L<sub>c</sub>より大きい
-    カウントがピーク領域で観測されました。</message>
+    カウントがピーク領域で観測されました。
+    表示される値は ISO 11929 による信号の最良推定値で、放射能が負になり得ないことを
+    考慮しています。信号が存在するという判定は生の過剰カウントに基づいて行われました。
+    明瞭な信号では両者は一致し、境界的な信号では最良推定値の方が大きくなります。</message>
   <message id="dlt-tt-activity-range">信号活動範囲の推定、信頼水準{1}まで。</message>
   <message id="dlt-tt-counts-range">信号カウント範囲の推定、信頼水準{1}まで。</message>
   <message id="dlt-tt-fewer-than-predicted">ピーク領域で観測されたカウントが
@@ -138,15 +142,19 @@
     源から、任意の遮蔽の前、ただし核種の年齢を考慮して、
     親核種の崩壊あたり。</message>
   <message id="dlt-tt-below-lc-counts">観測された信号カウントは&quot;臨界レベル&quot;、L<sub>c</sub>より少なく、
-    したがって検出を宣言できませんが、これは予想カウントを超える過剰です。</message>
+    したがって検出を宣言できませんが、これは信号が負になり得ないことを考慮した
+    ISO 11929 による信号カウントの最良推定値です。ピーク領域で観測されたカウントが
+    隣接領域からの予測より少ない場合でも、ゼロを下回ることはありません。</message>
   <message id="dlt-tt-below-lc-activity">観測された信号活動は&quot;臨界レベル&quot;、L<sub>c</sub>より少なく、
-    したがって検出を宣言できませんが、これは予想カウントを超える過剰です。</message>
+    したがって検出を宣言できませんが、これは放射能が負になり得ないことを考慮した
+    ISO 11929 による放射能の最良推定値です。ピーク領域で観測されたカウントが
+    隣接領域からの予測より少ない場合でも、ゼロを下回ることはありません。</message>
   
   <!-- Chart strings -->
   <message id="dlt-chart-x-axis-distance">距離 ({1})</message>
   <message id="dlt-chart-x-axis-activity">活動 ({1})</message>
   <message id="dlt-chart-title-estimated-activity">推定活動 {1}。</message>
-  <message id="dlt-chart-title-excess-counts">過剰カウント {1}。</message>
+  <message id="dlt-chart-title-excess-counts">推定信号 {1} カウント。</message>
   <message id="dlt-chart-title-activity-lt-zero"><![CDATA[活動 < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">データ + ピーク {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">上限のピーク {1} @{2} CL</message>

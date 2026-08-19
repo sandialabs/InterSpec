@@ -204,4 +204,96 @@
     The measurement time now means the dwell of the future measurement being predicted, rather than
     a rescaling of this spectrum - check it before relying on the number.
   </message>
+
+  <!-- Advanced statistical inputs.  Three probabilities answering three different questions; the
+       tools used one number for all three, so the tooltips say which is which. -->
+  <message id="dl-advanced-cb">Advanced</message>
+  <message id="dl-advanced-cb-short">Adv.</message>
+  <message id="dl-advanced-tt">
+    Reveals the error rates and the systematic uncertainty the limit is computed with.  While this is
+    unchecked none of them are applied, and the result is exactly what it would be without them.
+  </message>
+
+  <!-- Named by what the rate *is*, not by its symbol: this tool is not used daily, and a reader who
+       has to recall which of alpha and beta is which cannot pick a value.  The symbol is kept so the
+       label still maps onto the literature, and the tooltip carries L_c / L_d. -->
+  <message id="dl-alpha-label">False positive (&#945;):</message>
+  <message id="dl-alpha-label-short">False pos. &#945;:</message>
+  <message id="dl-alpha-tt">
+    How often you are willing to call a signal present when there is none - the false-positive rate.
+    It sets the <b>decision threshold</b> L<sub>c</sub>: the excess above the estimated
+    continuum at which a detection would be declared.
+    <p>
+      Enter a <b>probability, not a percent</b>: 0.05 is the usual choice.  Must be above 0 and below
+      0.5; below about 1E-7 the normal approximation this calculation rests on is no longer worth
+      much.  A smaller &#945; means fewer false alarms and a higher threshold.
+    </p>
+    <p>
+      Until you edit it, this follows the confidence level above as 1 &#8722; C.L.  It is a different
+      question from that confidence level, which is the coverage of the reported
+      &quot;less than X&quot; interval.
+    </p>
+  </message>
+
+  <message id="dl-beta-label">False negative (&#946;):</message>
+  <message id="dl-beta-label-short">False neg. &#946;:</message>
+  <message id="dl-beta-tt">
+    How often you are willing to miss a signal that really is at the detection limit - the
+    false-negative rate.  It sets the <b>detection limit</b> L<sub>d</sub>: the true
+    signal size that would be reliably detected.
+    <p>
+      Enter a <b>probability, not a percent</b>: 0.05 is the usual choice.  Must be above 0 and below
+      0.5.  A smaller &#946; means a larger, more conservative detection limit.
+    </p>
+    <p>
+      Until you edit it, this follows the confidence level above as 1 &#8722; C.L.  With
+      &#945;&#160;=&#160;&#946; the detection limit takes its familiar closed form; with the two
+      different it is solved for exactly, not approximated.
+    </p>
+  </message>
+
+  <message id="dl-dist-uncert-label">Dist. uncert.:</message>
+  <message id="dl-dist-uncert-label-short">&#177;Dist:</message>
+  <message id="dl-dist-uncert-empty-text">e.g. 1 cm</message>
+  <message id="dl-dist-uncert-tt">
+    The 1&#963; uncertainty of the source-to-detector distance, written the same way as the distance
+    itself - for example <b>1 cm</b>.  Leave blank, or enter 0, for none.
+    <p>
+      A point source's efficiency goes as 1/r&#178;, so this reaches the expected counts with a
+      factor of two: a 5% distance uncertainty is a 10% counts uncertainty.  It is combined in
+      quadrature with the efficiency uncertainty beside it.  Much beyond about 20% of the distance,
+      the linear propagation used here is on thin ice.
+    </p>
+    <p>
+      It is not applied for a fixed-geometry detector response, whose efficiency does not depend on
+      distance at all; the tool says so when that happens.
+    </p>
+  </message>
+
+  <message id="dl-eff-uncert-label">Eff. uncert. (%):</message>
+  <message id="dl-eff-uncert-label-short">&#177;Eff %:</message>
+  <message id="dl-eff-uncert-empty-text">e.g. 5</message>
+  <message id="dl-eff-uncert-tt">
+    The 1&#963; <b>relative</b> uncertainty of the counts expected per unit activity, as a
+    <b>percent</b> - for example <b>5</b> for 5%.  Leave blank, or enter 0, for none.
+    <p>
+      This covers everything that scales the expected counts and is not counting statistics: the
+      detector efficiency curve and the gamma branching ratio, which enter identically.  Enter the
+      two combined in quadrature if both matter.  Detector efficiency uncertainties typically run
+      3&#8211;10%.
+    </p>
+    <p>
+      It is combined in quadrature with the distance uncertainty, and the total must stay under 100%.
+      Note the <i>detection limit</i> gives out earlier, at 1/k<sub>&#946;</sub> - about
+      61% at &#946;&#160;=&#160;0.05 - because past that no amount of counting separates signal from
+      scale.  The upper limit remains valid.
+    </p>
+  </message>
+
+  <message id="dl-err-bad-dist-uncert">Could not read the distance uncertainty - expected something like '1 cm', or blank for none.</message>
+  <message id="dl-err-bad-eff-uncert">Could not read the efficiency uncertainty - expected a percent, like '5', or blank for none.</message>
+  <message id="dl-err-dist-uncert-no-distance">A distance uncertainty was entered, but the distance is blank or not positive - enter a distance, or clear the uncertainty.</message>
+  <message id="dl-err-systematic-too-large">The combined systematic uncertainty is {1}%, which the Currie formulation cannot use - it must be under 100%.  Reduce the distance or efficiency uncertainty.</message>
+  <message id="dl-warn-dist-uncert-fixed-geom">The distance uncertainty was not applied: this detector response is for a fixed geometry, so its efficiency does not depend on distance.</message>
+  <message id="dl-warn-no-detection-limit">With this systematic uncertainty there is no finite detection limit - the true signal cannot be separated from the scale uncertainty, however long you count.  The upper limit above is unaffected.</message>
 </messages>

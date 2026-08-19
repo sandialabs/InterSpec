@@ -34,7 +34,7 @@
 
   <message id="dls-det-act-with-range">Terdeteksi: {1}, rentang [{2}, {3}], @{4} CL</message>
   <message id="dls-det-no-result">Maaf, tidak ada hasil</message>
-  <message id="dls-det-counts-with-range">Cacahan berlebih: {1}, rentang [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">Perkiraan sinyal: {1} cacahan, rentang [{2}, {3}], @{4} CL</message>
   <message id="dls-det-act-less-zero">Aktivitas &lt; 0 {1} (diamati cacahan signifikan lebih sedikit dari yang diharapkan).</message>
   <message id="dls-det-counts-less-zero">Cacahan berlebih &lt; 0 {2} (diamati cacahan signifikan lebih sedikit dari yang diharapkan).</message>
   <message id="dls-det-upper-bound">Kurang dari {1} ada @{2} CL.</message>
@@ -91,5 +91,9 @@
   <message id="dls-scale-more-info-note">
     Diskalakan ke waktu nyata {1} (waktu hidup {2}, rasio &times;{3} dari waktu nyata pengukuran {4}).
   </message>
+
+  <!-- Ditampilkan di bawah masukan lanjutan ketika metode Dekonvolusi dipilih, di mana masukan itu
+       dinonaktifkan.  Kendali yang dinonaktifkan tanpa penjelasan terbaca seperti bug. -->
+  <message id="dls-advanced-decon-note">Ini berlaku untuk metode Currie; batas dekonvolusi belum memakainya.</message>
 </messages>
 

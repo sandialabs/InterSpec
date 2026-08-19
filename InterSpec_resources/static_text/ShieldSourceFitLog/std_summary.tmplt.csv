@@ -56,11 +56,11 @@ Filename, Energy (keV), Nuclide, Observed counts, Model counts, Implied activity
 
 
 Detection-limit check of each peak
-Filename, Energy (keV), Nuclide, Used in fit, Result, Lc (counts), Ld (counts), Net counts, Description
+Filename, Energy (keV), Nuclide, Used in fit, Result, Lc (counts), Ld (counts), Net counts, Best estimate (counts), Best estimate uncert (counts), Description
 ## for file in Files
 ## if existsIn(file,"SupplementalPeakInfo")
 ## for peak in file.SupplementalPeakInfo.AllPeaks.Peaks
-{{ file.Filename }}, {{ printFixed(peak.PeakMean,2) }}, {{ peak.SourceName }}, {% if peak.UsedForFit %}yes{% else %}no{% endif %},"{{ peak.CurrieCheck.ShortDescription }}", {% if peak.CurrieCheck.CurrieComputed %}{{ peak.CurrieCheck.DecisionThresholdStr }}, {{ peak.CurrieCheck.DetectionLimitStr }}, {{ peak.CurrieCheck.SourceCountsStr }}{% else %}, , {% endif %},"{{ peak.CurrieCheck.ResultSummary }}"
+{{ file.Filename }}, {{ printFixed(peak.PeakMean,2) }}, {{ peak.SourceName }}, {% if peak.UsedForFit %}yes{% else %}no{% endif %},"{{ peak.CurrieCheck.ShortDescription }}", {% if peak.CurrieCheck.CurrieComputed %}{{ peak.CurrieCheck.DecisionThresholdStr }}, {{ peak.CurrieCheck.DetectionLimitStr }}, {{ peak.CurrieCheck.SourceCountsStr }}, {{ peak.CurrieCheck.BestEstimateCountsStr }}, {{ peak.CurrieCheck.BestEstimateCountsUncertStr }}{% else %}, , , , {% endif %},"{{ peak.CurrieCheck.ResultSummary }}"
 ## endfor
 ## endif
 ## endfor

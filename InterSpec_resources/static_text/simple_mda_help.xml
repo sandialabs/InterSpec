@@ -182,6 +182,28 @@ You enter a real time and every reported time is a real time; the likelihood wor
 live time.  A detector that reports only one of the two times is taken to have zero dead time.
 </p>
 
+<h3>The value reported when something is detected</h3>
+<p>
+When the Currie method declares a detection, the value quoted is the ISO
+11929-1:2019 <b>best estimate</b> (its Formula 44), not the raw excess of counts
+over the estimated continuum.  The raw excess is what the detection decision is
+made on &mdash; it is compared against the decision threshold L<sub>c</sub>
+&mdash; but it is not what the standard says to report, because it takes no
+account of the fact that an activity cannot be negative.  The best estimate is
+the mean of the same distribution after the impossible negative part has been
+removed and the rest renormalized; it is the same distribution the reported
+interval already comes from, so the quoted value always lies inside that
+interval.
+</p>
+<p>
+The two agree once a signal is clear, and separate as it weakens: the difference
+is negligible above four times the uncertainty, is a few percent near the
+decision threshold for a well-populated continuum, and grows to tens of percent
+at very low counts.  Because the best estimate cannot be negative, a large
+deficit of counts is now reported as a small positive value rather than as
+&quot;less than zero&quot;, which was never a possible activity.
+</p>
+
 <h3>Confidence levels</h3>
 <p>
 The confidence levels offered include the central-normal probabilities for
@@ -189,6 +211,52 @@ The confidence levels offered include the central-normal probabilities for
 &mdash; but they are applied here as <b>one-sided</b> confidence levels.  They
 are offered because they are familiar numbers, not because the limit is a
 multiple of any sigma.
+</p>
+
+<h3>Advanced: error rates and systematic uncertainty</h3>
+<p>
+The <b>Advanced</b> checkbox on the &quot;Calc. Method&quot; line reveals four
+inputs that are otherwise left at their defaults.  They apply to the
+<b>Currie method</b>; the deconvolution limit does not consume them yet.
+</p>
+<p>
+A detection limit answers three different questions, and the tool used a single
+number for all three until now:
+</p>
+<ul>
+  <li>The <b>confidence level</b> above is the coverage of the reported interval
+  &mdash; the &quot;less than X&quot; the result line quotes.</li>
+  <li><b>&alpha;</b> is how often you are willing to call a signal present when
+  there is none.  It sets the decision threshold L<sub>c</sub>.</li>
+  <li><b>&beta;</b> is how often you are willing to miss a signal that really is
+  at the detection limit.  It sets L<sub>d</sub>.</li>
+</ul>
+<p>
+&alpha; and &beta; are entered as probabilities rather than percentages &mdash;
+0.05, not 5 &mdash; and must be above 0 and below 0.5.  Until you edit them they
+follow the confidence level as 1&nbsp;&minus;&nbsp;C.L., so leaving them alone
+reproduces the familiar behaviour exactly.  With &alpha;&nbsp;=&nbsp;&beta; the
+detection limit takes its usual closed form; with the two different it is solved
+for exactly rather than approximated.
+</p>
+<p>
+The two uncertainty fields cover everything that scales the expected counts and
+is not counting statistics.  <b>Dist. uncert.</b> is the 1&sigma; uncertainty of
+the source-to-detector distance, written like the distance itself
+(&quot;1 cm&quot;); because a point source's efficiency goes as 1/r&sup2; it
+reaches the counts with a factor of two, so a 5% distance uncertainty is a 10%
+counts uncertainty.  It is not applied for a fixed-geometry detector response,
+whose efficiency does not depend on distance; the tool says so when that happens.
+<b>Eff. uncert.</b> is a percentage covering the detector efficiency curve and
+the gamma branching ratio, which enter identically.  The two are combined in
+quadrature, and the total must stay below 100%.
+</p>
+<p>
+Note the detection limit gives out before the upper limit does: once the
+systematic uncertainty reaches 1/k<sub>&beta;</sub> &mdash; about 61% at
+&beta;&nbsp;=&nbsp;0.05 &mdash; no amount of counting separates the signal from
+the scale uncertainty, and no finite L<sub>d</sub> exists.  The upper limit
+remains valid there, and the tool warns rather than hiding the result.
 </p>
 
 <h3>The quantity labelled &chi;<sup>2</sup></h3>
@@ -223,7 +291,11 @@ Carlo at low counts rather than assumed, and is not yet implemented.
 </p>
 <p>
 Uncertainties here come from counting statistics and, where applicable, the
-finite statistics of a background reference.  Detector-response uncertainty is
-not propagated.
+finite statistics of a background reference.  Detector-response and distance
+uncertainty are propagated only if you enter them under <b>Advanced</b>, and only
+for the Currie method &mdash; nothing is derived from the detector response
+itself, because a <code>DetectorPeakResponse</code> does not yet carry an
+uncertainty on its efficiency.  Peak positions, widths, and gamma yields are held
+fixed by both methods.
 </p>
 </div>

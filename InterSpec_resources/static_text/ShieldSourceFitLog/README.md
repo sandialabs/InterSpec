@@ -1440,13 +1440,15 @@ The remaining counts fields are present only when `CurrieComputed` is true:
 |---|---|---|
 | `DecisionThreshold_counts` | number  | Currie's critical level L<sub>c</sub>: net counts above which a signal may be reliably called detected. |
 | `DetectionLimit_counts`    | number  | Currie's detection limit L<sub>d</sub>: the true net signal that may be expected to lead to detection. This is the "MDA" in counts. |
-| `SourceCounts`             | number  | Nominal net counts observed above the continuum; may be negative. |
+| `SourceCounts`             | number  | ISO 11929's *primary result*: nominal net counts observed above the continuum. May be negative, and is what `ResultType` is decided from. It is **not** the value to quote as the measured signal — see `BestEstimateCounts`. |
+| `BestEstimateCounts`       | number  | ISO 11929-1:2019's *best estimate* (its Formula 44): the mean of the signal distribution after the impossible negative part has been truncated away and the rest renormalized. This is what the standard says to quote, and what the GUI shows. Never negative. The built-in templates put it in a "Best estimate (counts)" column beside the existing "Net counts" (which stays, and is the primary result) — as `value ± uncert` in one cell for HTML, and as two separate columns for CSV. It equals `SourceCounts` once the signal exceeds about four times its uncertainty, and exceeds it as the signal weakens — by a few percent near the decision threshold, and by tens of percent at very low counts. Given whether or not a detection was declared, per clause 10 NOTE 2. |
+| `BestEstimateCountsUncert` | number  | Standard uncertainty of `BestEstimateCounts` (Formula 45). Always the smaller of it and the primary result's own uncertainty, because truncation removes part of the distribution — so do not pair one of these with the other's uncertainty. |
 | `UpperLimit_counts`        | number  | Upper bound on the true signal counts, at the confidence level. |
-| `LowerLimit_counts`        | number  | Lower bound; may be negative. |
+| `LowerLimit_counts`        | number  | Lower bound. Non-negative: the coverage interval applies the same truncation at zero. |
 | `PeakRegionCounts`         | number  | Gross counts in the peak region. |
 | `ContinuumCounts`          | number  | Continuum counts estimated to be under the peak region. |
 | `ContinuumCountsUncert`    | number  | Uncertainty on that estimate. |
-| `DecisionThresholdStr`, `DetectionLimitStr`, `UpperLimitStr`, `SourceCountsStr` | string | The above, pre-formatted to 4 significant figures. |
+| `DecisionThresholdStr`, `DetectionLimitStr`, `UpperLimitStr`, `SourceCountsStr`, `BestEstimateCountsStr`, `BestEstimateCountsUncertStr` | string | The above, pre-formatted to 4 significant figures. |
 | `RoiLowerEnergy`, `RoiUpperEnergy` | number | Peak region bounds, in keV. |
 | `RoiWidth_keV`             | number  | Width of the peak region, in keV (Inja cannot subtract, so this is pre-computed). |
 | `RoiLowerChannel`, `RoiUpperChannel` | int  | The same, as channel numbers. |
@@ -1470,7 +1472,8 @@ activity ("MDA") is `DetectionLimitActivity`.
 | `DetectionLimitActivity`   | string  | Formatted L<sub>d</sub> activity — the minimum detectable activity (MDA) — including any fixed-geometry postfix. |
 | `DecisionThresholdActivity`| string  | Formatted L<sub>c</sub> activity. |
 | `UpperLimitActivity`       | string  | Upper bound on the activity actually present, at the confidence level. **Absent whenever it would not be positive** — a `Deficit` result, or an empty region. |
-| `ObservedActivity`, `ObservedActivityLower`, `ObservedActivityUpper` | string | Only when `ResultType` is `Detected`. `ObservedActivityLower` is additionally absent when the lower limit falls below zero, which a `Detected` result does not preclude. |
+| `ObservedActivity`, `ObservedActivityLower`, `ObservedActivityUpper` | string | Only when `ResultType` is `Detected`. `ObservedActivityLower` is additionally absent when the lower limit is not positive — which, since the coverage interval is truncated at zero, now means exactly zero rather than negative. `ObservedActivity` is the activity form of the primary result; `BestEstimateActivity` is what `ActivitySummary` quotes. |
+| `BestEstimateActivity`, `BestEstimateActivityUncert` | string | The activity form of `BestEstimateCounts` / `BestEstimateCountsUncert` — the ISO 11929 best estimate and its standard uncertainty. Unlike `ObservedActivity` these are given whether or not a detection was declared. `ActivitySummary` quotes the value; the uncertainty appears only in these fields, so a template wanting the ISO pair has to emit both. Both are subject to the non-positive rule below, so an empty region drops them. |
 | `<any of the above>_bq`, `_kBq`, `_MBq`, `_ci`, `_mCi`, `_uCi` | number | Numeric forms of each activity above; e.g. `DetectionLimitActivity_bq`. |
 | `ActivityPostFix`          | string  | Postfix for fixed-geometry detector responses; e.g. `"/cm2"`. Usually empty. |
 | `GammasPerBq`              | number  | Counts expected per becquerel: `activity = counts / GammasPerBq`. |

@@ -34,7 +34,7 @@
 
   <message id="dls-det-act-with-range">مكتشف: {1}، النطاق [{2}, {3}]، @{4} CL</message>
   <message id="dls-det-no-result">عذرًا، لا توجد نتيجة</message>
-  <message id="dls-det-counts-with-range">العدد الزائد: {1}، النطاق [{2}, {3}]، @{4} CL</message>
+  <message id="dls-det-counts-with-range">الإشارة المقدّرة: {1} عدة، النطاق [{2}, {3}]، @{4} CL</message>
   <message id="dls-det-act-less-zero">النشاط &lt; 0 {1} (لوحظ عدد أقل بكثير من المتوقع).</message>
   <message id="dls-det-counts-less-zero">العدد الزائد &lt; 0 {2} (لوحظ عدد أقل بكثير من المتوقع).</message>
   <message id="dls-det-upper-bound">أقل من {1} موجود @{2} CL.</message>
@@ -91,4 +91,8 @@
   <message id="dls-scale-more-info-note">
     مُسقَط على زمن حقيقي {1} (زمن حي {2}، بنسبة &times;{3} من الزمن الحقيقي للقياس {4}).
   </message>
+
+  <!-- تُعرض أسفل المدخلات المتقدّمة عند اختيار طريقة إزالة التداخل، حيث تكون تلك المدخلات معطّلة.
+       فعنصر تحكم معطّل بلا تفسير يبدو وكأنه خلل. -->
+  <message id="dls-advanced-decon-note">تنطبق هذه على طريقة كوري؛ أما حد إزالة التداخل فلا يستخدمها بعد.</message>
 </messages>

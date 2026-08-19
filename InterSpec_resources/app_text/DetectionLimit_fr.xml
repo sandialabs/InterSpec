@@ -193,4 +193,97 @@
     fond, ce qu'elle cherchait à faire.  La durée de mesure désigne désormais celle de la mesure
     future prédite, et non un rééchelonnage de ce spectre - vérifiez-la avant de vous fier au nombre.
   </message>
+
+  <!-- Entrées statistiques avancées.  Trois probabilités qui répondent à trois questions
+       différentes ; les infobulles précisent laquelle est laquelle. -->
+  <message id="dl-advanced-cb">Avancé</message>
+  <message id="dl-advanced-cb-short">Av.</message>
+  <message id="dl-advanced-tt">
+    Affiche les taux d'erreur et l'incertitude systématique avec lesquels la limite est calculée.
+    Tant que cette case n'est pas cochée, aucun d'eux n'est appliqué, et le résultat est exactement
+    celui que l'on obtiendrait sans eux.
+  </message>
+
+  <message id="dl-alpha-label">Faux positif (&#945;) :</message>
+  <message id="dl-alpha-label-short">Faux pos. &#945; :</message>
+  <message id="dl-alpha-tt">
+    À quelle fréquence vous acceptez de déclarer un signal présent alors qu'il n'y en a aucun - le
+    taux de faux positifs.  Il fixe le <b>seuil de décision</b> L<sub>c</sub> : l'excès au-dessus
+    du continuum estimé à partir duquel une détection serait déclarée.
+    <p>
+      Saisissez une <b>probabilité, et non un pourcentage</b> : 0,05 est le choix habituel.  Doit
+      être supérieur à 0 et inférieur à 0,5 ; en dessous d'environ 1E-7, l'approximation normale sur
+      laquelle repose ce calcul ne vaut plus grand-chose.  Un &#945; plus petit signifie moins de
+      fausses alarmes et un seuil plus élevé.
+    </p>
+    <p>
+      Tant que vous ne le modifiez pas, il suit le niveau de confiance ci-dessus, à 1 &#8722; N.C.
+      C'est une question différente de ce niveau de confiance, qui est la couverture de l'intervalle
+      &quot;inférieur à X&quot; rapporté.
+    </p>
+  </message>
+
+  <message id="dl-beta-label">Faux négatif (&#946;) :</message>
+  <message id="dl-beta-label-short">Faux nég. &#946; :</message>
+  <message id="dl-beta-tt">
+    À quelle fréquence vous acceptez de manquer un signal réellement présent à la limite de
+    détection - le taux de faux négatifs.  Il fixe la <b>limite de détection</b> L<sub>d</sub> :
+    l'intensité vraie du signal qui serait détectée de façon fiable.
+    <p>
+      Saisissez une <b>probabilité, et non un pourcentage</b> : 0,05 est le choix habituel.  Doit
+      être supérieur à 0 et inférieur à 0,5.  Un &#946; plus petit donne une limite de détection
+      plus grande et plus prudente.
+    </p>
+    <p>
+      Tant que vous ne le modifiez pas, il suit le niveau de confiance ci-dessus, à 1 &#8722; N.C.
+      Avec &#945;&#160;=&#160;&#946;, la limite de détection prend sa forme close familière ;
+      lorsque les deux diffèrent, elle est résolue exactement, et non approchée.
+    </p>
+  </message>
+
+  <message id="dl-dist-uncert-label">Incert. dist. :</message>
+  <message id="dl-dist-uncert-label-short">&#177;Dist :</message>
+  <message id="dl-dist-uncert-empty-text">p. ex. 1 cm</message>
+  <message id="dl-dist-uncert-tt">
+    L'incertitude à 1&#963; de la distance source-détecteur, écrite de la même façon que la distance
+    elle-même - par exemple <b>1 cm</b>.  Laissez vide, ou saisissez 0, pour aucune.
+    <p>
+      L'efficacité d'une source ponctuelle varie en 1/r&#178;, si bien que cette incertitude atteint
+      les comptages attendus avec un facteur deux : 5% d'incertitude sur la distance font 10%
+      d'incertitude sur les comptages.  Elle est combinée en quadrature avec l'incertitude
+      d'efficacité voisine.  Bien au-delà d'environ 20% de la distance, la propagation linéaire
+      utilisée ici devient hasardeuse.
+    </p>
+    <p>
+      Elle n'est pas appliquée pour une réponse de détecteur à géométrie fixe, dont l'efficacité ne
+      dépend pas du tout de la distance ; l'outil le signale lorsque c'est le cas.
+    </p>
+  </message>
+
+  <message id="dl-eff-uncert-label">Incert. efficacité (%) :</message>
+  <message id="dl-eff-uncert-label-short">&#177;Eff. % :</message>
+  <message id="dl-eff-uncert-empty-text">p. ex. 5</message>
+  <message id="dl-eff-uncert-tt">
+    L'incertitude <b>relative</b> à 1&#963; des comptages attendus par unité d'activité, en
+    <b>pourcentage</b> - par exemple <b>5</b> pour 5%.  Laissez vide, ou saisissez 0, pour aucune.
+    <p>
+      Elle couvre tout ce qui met à l'échelle les comptages attendus sans être de la statistique de
+      comptage : la courbe d'efficacité du détecteur et le rapport d'embranchement gamma, qui
+      interviennent de façon identique.  Saisissez les deux combinés en quadrature si les deux
+      comptent.  Les incertitudes d'efficacité des détecteurs sont typiquement de 3&#8211;10%.
+    </p>
+    <p>
+      Elle est combinée en quadrature avec l'incertitude de distance, et le total doit rester
+      inférieur à 100%.  Notez que la <i>limite de détection</i> lâche plus tôt, à
+      1/k<sub>&#946;</sub> - environ 61% à &#946;&#160;=&#160;0,05 - car au-delà aucun comptage ne
+      sépare le signal de l'échelle.  La limite supérieure reste valable.
+    </p>
+  </message>
+
+  <message id="dl-err-bad-dist-uncert">Impossible de lire l'incertitude de distance - attendu quelque chose comme '1 cm', ou vide pour aucune.</message>
+  <message id="dl-err-bad-eff-uncert">Impossible de lire l'incertitude d'efficacité - attendu un pourcentage, comme '5', ou vide pour aucune.</message>
+  <message id="dl-err-dist-uncert-no-distance">Une incertitude de distance a été saisie, mais la distance est vide ou n'est pas positive - saisissez une distance, ou effacez l'incertitude.</message>
+  <message id="dl-err-systematic-too-large">L'incertitude systématique combinée est de {1}%, ce que la formulation de Currie ne peut pas utiliser - elle doit être inférieure à 100%.  Réduisez l'incertitude de distance ou d'efficacité.</message>
+  <message id="dl-warn-dist-uncert-fixed-geom">L'incertitude de distance n'a pas été appliquée : cette réponse de détecteur est pour une géométrie fixe, son efficacité ne dépend donc pas de la distance.</message>
+  <message id="dl-warn-no-detection-limit">Avec cette incertitude systématique, il n'existe pas de limite de détection finie - le signal vrai ne peut pas être séparé de l'incertitude d'échelle, quelle que soit la durée de comptage.  La limite supérieure ci-dessus n'est pas affectée.</message>
 </messages>

@@ -20,7 +20,11 @@
   <message id="dlt-range">Rango:</message>
   <message id="dlt-detected-activity-tt">Actividad detectada, usando solo esta Región de Interés,
     y el exceso observado de conteos, así como el
-    intervalo de confianza estadístico.</message>
+    intervalo de confianza estadístico.
+    El valor nominal es la mejor estimación según ISO 11929: la media de la distribución de la señal
+    tras eliminar la parte que corresponde a actividades negativas imposibles.  Siempre es al menos
+    el exceso bruto de conteos, y ambos coinciden cuando la señal está muy por encima del nivel
+    crítico.</message>
   <message id="dlt-limit-lt-zero"><![CDATA[Límite: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(muchos menos conteos en ROI que predicho)</message>
   <message id="dlt-fewer-counts-tt">Se observaron significativamente menos conteos en la
@@ -53,8 +57,6 @@
   <message id="dlt-log">Log</message>
   <message id="dlt-lin">Lin</message>
   <message id="dlt-below-lc">(debajo de L<sub>c</sub>)</message>
-  <message id="dlt-lt-zero-counts"><![CDATA[< 0 conteos]]></message>
-  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">No hay datos cargados</message>
@@ -101,7 +103,11 @@
   
   <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
   <message id="dlt-tt-greater-than-lc">Mayor que el &quot;nivel crítico&quot;, L<sub>c</sub>,
-    se observaron conteos en la región del pico.</message>
+    se observaron conteos en la región del pico.
+    El valor mostrado es la mejor estimación de la señal según ISO 11929, que tiene en cuenta que la
+    actividad no puede ser negativa; la decisión de que hay señal presente se tomó con el exceso
+    bruto de conteos.  Ambos coinciden para una señal clara, y la mejor estimación es el mayor de los
+    dos para una señal marginal.</message>
   <message id="dlt-tt-activity-range">La estimación del rango de actividad de la señal, al nivel de confianza {1}.</message>
   <message id="dlt-tt-counts-range">La estimación del rango de conteos de la señal, al nivel de confianza {1}.</message>
   <message id="dlt-tt-fewer-than-predicted">Se observaron significativamente menos conteos en la región del pico,
@@ -138,15 +144,21 @@
     radiactiva antes de cualquier blindaje, pero teniendo en cuenta la edad del nucleido,
     por desintegración del nucleido padre.</message>
   <message id="dlt-tt-below-lc-counts">Los conteos de señal observados son menores que el &quot;nivel crítico&quot;, L<sub>c</sub>,
-    por lo que no se puede declarar una detección, pero este es el exceso sobre los conteos esperados.</message>
+    por lo que no se puede declarar una detección, pero esta es la mejor estimación según ISO 11929
+    de los conteos de señal, dado que una señal no puede ser negativa.  Nunca es inferior a cero,
+    incluso cuando se observan menos conteos en la región del pico que los previstos por las regiones
+    vecinas.</message>
   <message id="dlt-tt-below-lc-activity">La actividad de señal observada es menor que el &quot;nivel crítico&quot;, L<sub>c</sub>,
-    por lo que no se puede declarar una detección, pero este es el exceso sobre los conteos esperados.</message>
+    por lo que no se puede declarar una detección, pero esta es la mejor estimación según ISO 11929
+    de la actividad, dado que una actividad no puede ser negativa.  Nunca es inferior a cero, incluso
+    cuando se observan menos conteos en la región del pico que los previstos por las regiones
+    vecinas.</message>
   
   <!-- Chart strings -->
   <message id="dlt-chart-x-axis-distance">Distancia ({1})</message>
   <message id="dlt-chart-x-axis-activity">Actividad ({1})</message>
   <message id="dlt-chart-title-estimated-activity">Actividad estimada de {1}.</message>
-  <message id="dlt-chart-title-excess-counts">Conteos excesivos de {1}.</message>
+  <message id="dlt-chart-title-excess-counts">Señal estimada de {1} conteos.</message>
   <message id="dlt-chart-title-activity-lt-zero"><![CDATA[Actividad < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">Datos + pico para {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">Pico para límite superior de {1} @{2} CL</message>

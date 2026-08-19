@@ -3215,7 +3215,7 @@ bool SpecMeasManager::handleRelActAutoXmlFile( std::istream &input, SimpleDialog
     if( !tool )
       throw runtime_error( "Could not create <em>Isotopics by nuclide</em> tool." );
     
-    tool->setGuiStateFromXml( &doc );
+    tool->setGuiStateFromXml( &doc, "Load 'Isotopics by nuclides' config file." );
     
     dialog->done( Wt::WDialog::DialogCode::Accepted );
     return true;

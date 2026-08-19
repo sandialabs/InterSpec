@@ -189,4 +189,97 @@
     O tempo de medição significa agora a duração da medição futura que está a ser prevista, em vez de
     um reescalonamento deste espetro - verifique-o antes de confiar no número.
   </message>
+
+  <!-- Entradas estatísticas avançadas.  Três probabilidades que respondem a três perguntas
+       diferentes; as dicas indicam qual é qual. -->
+  <message id="dl-advanced-cb">Avançado</message>
+  <message id="dl-advanced-cb-short">Av.</message>
+  <message id="dl-advanced-tt">
+    Mostra as taxas de erro e a incerteza sistemática com que o limite é calculado.  Enquanto esta
+    caixa não estiver assinalada, nenhuma delas é aplicada, e o resultado é exatamente o que seria
+    sem elas.
+  </message>
+
+  <message id="dl-alpha-label">Falso positivo (&#945;):</message>
+  <message id="dl-alpha-label-short">Falso pos. &#945;:</message>
+  <message id="dl-alpha-tt">
+    Com que frequência está disposto a declarar um sinal presente quando não existe nenhum - a taxa
+    de falsos positivos.  Fixa o <b>limiar de decisão</b> L<sub>c</sub>: o excesso acima do contínuo
+    estimado a partir do qual uma detecção seria declarada.
+    <p>
+      Introduza uma <b>probabilidade, não uma percentagem</b>: 0,05 é a escolha habitual.  Tem de
+      ser maior que 0 e menor que 0,5; abaixo de cerca de 1E-7 a aproximação normal em que este
+      cálculo assenta deixa de valer grande coisa.  Um &#945; menor significa menos falsos alarmes e
+      um limiar mais alto.
+    </p>
+    <p>
+      Enquanto não o editar, segue o nível de confiança acima como 1 &#8722; N.C.  É uma questão
+      distinta desse nível de confiança, que é a cobertura do intervalo &quot;menor do que X&quot;
+      reportado.
+    </p>
+  </message>
+
+  <message id="dl-beta-label">Falso negativo (&#946;):</message>
+  <message id="dl-beta-label-short">Falso neg. &#946;:</message>
+  <message id="dl-beta-tt">
+    Com que frequência está disposto a falhar um sinal que está realmente no limite de detecção - a
+    taxa de falsos negativos.  Fixa o <b>limite de detecção</b> L<sub>d</sub>: a grandeza verdadeira
+    do sinal que seria detectada de forma fiável.
+    <p>
+      Introduza uma <b>probabilidade, não uma percentagem</b>: 0,05 é a escolha habitual.  Tem de
+      ser maior que 0 e menor que 0,5.  Um &#946; menor dá um limite de detecção maior e mais
+      conservador.
+    </p>
+    <p>
+      Enquanto não o editar, segue o nível de confiança acima como 1 &#8722; N.C.  Com
+      &#945;&#160;=&#160;&#946; o limite de detecção assume a sua forma fechada familiar; com os
+      dois diferentes é resolvido de forma exata, e não aproximada.
+    </p>
+  </message>
+
+  <message id="dl-dist-uncert-label">Incert. dist.:</message>
+  <message id="dl-dist-uncert-label-short">&#177;Dist:</message>
+  <message id="dl-dist-uncert-empty-text">p. ex. 1 cm</message>
+  <message id="dl-dist-uncert-tt">
+    A incerteza 1&#963; da distância fonte-detector, escrita da mesma forma que a própria distância -
+    por exemplo <b>1 cm</b>.  Deixe em branco, ou introduza 0, para nenhuma.
+    <p>
+      A eficiência de uma fonte pontual varia com 1/r&#178;, pelo que isto chega às contagens
+      esperadas com um fator de dois: 5% de incerteza na distância são 10% de incerteza nas
+      contagens.  É combinada em quadratura com a incerteza de eficiência ao lado.  Muito além de
+      cerca de 20% da distância, a propagação linear aqui usada fica em terreno frágil.
+    </p>
+    <p>
+      Não é aplicada a uma resposta de detector de geometria fixa, cuja eficiência não depende de
+      todo da distância; a ferramenta di-lo quando isso acontece.
+    </p>
+  </message>
+
+  <message id="dl-eff-uncert-label">Incert. eficiência (%):</message>
+  <message id="dl-eff-uncert-label-short">&#177;Efic. %:</message>
+  <message id="dl-eff-uncert-empty-text">p. ex. 5</message>
+  <message id="dl-eff-uncert-tt">
+    A incerteza <b>relativa</b> 1&#963; das contagens esperadas por unidade de atividade, em
+    <b>percentagem</b> - por exemplo <b>5</b> para 5%.  Deixe em branco, ou introduza 0, para
+    nenhuma.
+    <p>
+      Cobre tudo o que escala as contagens esperadas e não é estatística de contagem: a curva de
+      eficiência do detector e a razão de ramificação gama, que entram de forma idêntica.  Introduza
+      as duas combinadas em quadratura se ambas importarem.  As incertezas de eficiência de detector
+      são tipicamente de 3&#8211;10%.
+    </p>
+    <p>
+      É combinada em quadratura com a incerteza de distância, e o total tem de se manter abaixo de
+      100%.  Note que o <i>limite de detecção</i> cede mais cedo, em 1/k<sub>&#946;</sub> - cerca de
+      61% com &#946;&#160;=&#160;0,05 - porque a partir daí nenhuma contagem separa o sinal da
+      escala.  O limite superior mantém-se válido.
+    </p>
+  </message>
+
+  <message id="dl-err-bad-dist-uncert">Não foi possível ler a incerteza de distância - esperava-se algo como '1 cm', ou em branco para nenhuma.</message>
+  <message id="dl-err-bad-eff-uncert">Não foi possível ler a incerteza de eficiência - esperava-se uma percentagem, como '5', ou em branco para nenhuma.</message>
+  <message id="dl-err-dist-uncert-no-distance">Foi introduzida uma incerteza de distância, mas a distância está em branco ou não é positiva - introduza uma distância, ou limpe a incerteza.</message>
+  <message id="dl-err-systematic-too-large">A incerteza sistemática combinada é de {1}%, que a formulação de Currie não consegue usar - tem de ser inferior a 100%.  Reduza a incerteza de distância ou de eficiência.</message>
+  <message id="dl-warn-dist-uncert-fixed-geom">A incerteza de distância não foi aplicada: esta resposta de detector é para uma geometria fixa, pelo que a sua eficiência não depende da distância.</message>
+  <message id="dl-warn-no-detection-limit">Com esta incerteza sistemática não existe um limite de detecção finito - o sinal verdadeiro não pode ser separado da incerteza de escala, por mais tempo que se conte.  O limite superior acima não é afetado.</message>
 </messages>

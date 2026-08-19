@@ -20,7 +20,10 @@
   <message id="dlt-range">পরিসর:</message>
   <message id="dlt-detected-activity-tt">সনাক্তকৃত কার্যকলাপ, শুধুমাত্র এই আগ্রহের অঞ্চল ব্যবহার করে,
     এবং পর্যবেক্ষিত গণনার অতিরিক্ত, সেইসাথে
-    পরিসংখ্যানগত আস্থা ব্যবধান।</message>
+    পরিসংখ্যানগত আস্থা ব্যবধান।
+    নামমাত্র মানটি ISO 11929 অনুযায়ী সর্বোত্তম অনুমান: অসম্ভব ঋণাত্মক কার্যকলাপে থাকা অংশ
+    বাদ দেওয়ার পর সংকেত বণ্টনের গড়।  এটি সর্বদা কাঁচা গণনার অতিরিক্তের চেয়ে কম নয়, এবং
+    সংকেত সমালোচনামূলক স্তরের অনেক উপরে হলে দুটি মিলে যায়।</message>
   <message id="dlt-limit-lt-zero"><![CDATA[সীমা: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(ROI-এ পূর্বাভাসের চেয়ে উল্লেখযোগ্যভাবে কম গণনা)</message>
   <message id="dlt-fewer-counts-tt">আগ্রহের অঞ্চলে উল্লেখযোগ্যভাবে কম গণনা পর্যবেক্ষণ করা হয়েছিল,
@@ -53,8 +56,6 @@
   <message id="dlt-log">লগ</message>
   <message id="dlt-lin">লিন</message>
   <message id="dlt-below-lc">(L<sub>c</sub>-এর নিচে)</message>
-  <message id="dlt-lt-zero-counts"><![CDATA[< 0 গণনা]]></message>
-  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">কোনও ডেটা লোড করা হয়নি</message>
@@ -101,7 +102,11 @@
   
   <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
   <message id="dlt-tt-greater-than-lc">&quot;সমালোচনামূলক স্তর&quot;, L<sub>c</sub>-এর চেয়ে বেশি,
-    পিক অঞ্চলে গণনা পর্যবেক্ষণ করা হয়েছিল।</message>
+    পিক অঞ্চলে গণনা পর্যবেক্ষণ করা হয়েছিল।
+    প্রদর্শিত মানটি ISO 11929 অনুযায়ী সংকেতের সর্বোত্তম অনুমান, যা কার্যকলাপ ঋণাত্মক হতে
+    না পারার বিষয়টি বিবেচনা করে; সংকেত উপস্থিত থাকার সিদ্ধান্তটি কাঁচা গণনার অতিরিক্তের
+    ভিত্তিতে নেওয়া হয়েছিল।  স্পষ্ট সংকেতের ক্ষেত্রে দুটি মিলে যায়, এবং প্রান্তিক ক্ষেত্রে
+    সর্বোত্তম অনুমানটি বড়।</message>
   <message id="dlt-tt-activity-range">সংকেত কার্যকলাপ পরিসর অনুমান, {1} আস্থা স্তরে।</message>
   <message id="dlt-tt-counts-range">সংকেত গণনা পরিসর অনুমান, {1} আস্থা স্তরে।</message>
   <message id="dlt-tt-fewer-than-predicted">পিক অঞ্চলে উল্লেখযোগ্যভাবে কম গণনা পর্যবেক্ষণ করা হয়েছিল,
@@ -138,15 +143,19 @@
     উৎস থেকে যেকোনো রক্ষণাবেক্ষণের আগে, কিন্তু নিউক্লাইড বয়স বিবেচনা করে,
     পিতামাতা নিউক্লাইডের প্রতি ক্ষয়।</message>
   <message id="dlt-tt-below-lc-counts">পর্যবেক্ষিত সংকেত গণনা &quot;সমালোচনামূলক স্তর&quot;, L<sub>c</sub>-এর চেয়ে কম,
-    তাই সনাক্তকরণ ঘোষণা করা যায় না, কিন্তু এটি প্রত্যাশিত গণনার উপর অতিরিক্ত।</message>
+    তাই সনাক্তকরণ ঘোষণা করা যায় না, কিন্তু সংকেত ঋণাত্মক হতে পারে না বিবেচনা করে এটি
+    ISO 11929 অনুযায়ী সংকেত গণনার সর্বোত্তম অনুমান।  এটি কখনও শূন্যের নিচে নামে না, এমনকি
+    পিক অঞ্চলে প্রতিবেশী অঞ্চলগুলির পূর্বাভাসের চেয়ে কম গণনা দেখা গেলেও।</message>
   <message id="dlt-tt-below-lc-activity">পর্যবেক্ষিত সংকেত কার্যকলাপ &quot;সমালোচনামূলক স্তর&quot;, L<sub>c</sub>-এর চেয়ে কম,
-    তাই সনাক্তকরণ ঘোষণা করা যায় না, কিন্তু এটি প্রত্যাশিত গণনার উপর অতিরিক্ত।</message>
+    তাই সনাক্তকরণ ঘোষণা করা যায় না, কিন্তু কার্যকলাপ ঋণাত্মক হতে পারে না বিবেচনা করে এটি
+    ISO 11929 অনুযায়ী কার্যকলাপের সর্বোত্তম অনুমান।  এটি কখনও শূন্যের নিচে নামে না, এমনকি
+    পিক অঞ্চলে প্রতিবেশী অঞ্চলগুলির পূর্বাভাসের চেয়ে কম গণনা দেখা গেলেও।</message>
   
   <!-- Chart strings -->
   <message id="dlt-chart-x-axis-distance">দূরত্ব ({1})</message>
   <message id="dlt-chart-x-axis-activity">কার্যকলাপ ({1})</message>
   <message id="dlt-chart-title-estimated-activity">অনুমানিত কার্যকলাপ {1}।</message>
-  <message id="dlt-chart-title-excess-counts">অতিরিক্ত গণনা {1}।</message>
+  <message id="dlt-chart-title-excess-counts">আনুমানিক সংকেত {1} গণনা।</message>
   <message id="dlt-chart-title-activity-lt-zero"><![CDATA[কার্যকলাপ < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">ডেটা + পিক {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">উচ্চ সীমার পিক {1} @{2} CL</message>

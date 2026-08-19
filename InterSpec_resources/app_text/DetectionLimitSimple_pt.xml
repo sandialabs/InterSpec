@@ -34,7 +34,7 @@
 
   <message id="dls-det-act-with-range">Detectado: {1}, faixa [{2}, {3}], @{4} NC</message>
   <message id="dls-det-no-result">Desculpe, sem resultado</message>
-  <message id="dls-det-counts-with-range">Contagens em excesso: {1}, faixa [{2}, {3}], @{4} NC</message>
+  <message id="dls-det-counts-with-range">Sinal estimado: {1} contagens, faixa [{2}, {3}], @{4} NC</message>
   <message id="dls-det-act-less-zero">Atividade &lt; 0 {1} (observado significativamente menos contagens do que esperado).</message>
   <message id="dls-det-counts-less-zero">Contagens em excesso &lt; 0 {2} (observado significativamente menos contagens do que esperado).</message>
   <message id="dls-det-upper-bound">Menos de {1} presente @{2} NC.</message>
@@ -91,4 +91,8 @@
   <message id="dls-scale-more-info-note">
     Escalado para um tempo real de {1} (tempo vivo {2}, proporção &times;{3} do tempo real da medição {4}).
   </message>
+
+  <!-- Mostrado por baixo das entradas avançadas quando o método Deconvolução está selecionado, onde
+       ficam desativadas.  Um controlo desativado sem explicação parece um erro. -->
+  <message id="dls-advanced-decon-note">Aplicam-se ao método Currie; o limite por deconvolução ainda não os utiliza.</message>
 </messages>

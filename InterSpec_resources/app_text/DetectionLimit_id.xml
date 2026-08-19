@@ -192,4 +192,97 @@
     tujuannya.  Waktu pengukuran kini berarti lama pengukuran mendatang yang diprediksi, bukan
     penskalaan ulang spektrum ini - periksa dulu sebelum mengandalkan angkanya.
   </message>
+
+  <!-- Masukan statistik lanjutan.  Tiga probabilitas yang menjawab tiga pertanyaan berbeda; dulu
+       satu angka dipakai untuk ketiganya, jadi tooltipnya menyebutkan mana yang mana. -->
+  <message id="dl-advanced-cb">Lanjutan</message>
+  <message id="dl-advanced-cb-short">Lanj.</message>
+  <message id="dl-advanced-tt">
+    Menampilkan laju kesalahan dan ketidakpastian sistematik yang dipakai untuk menghitung batas.
+    Selama ini tidak dicentang, tidak satu pun diterapkan, dan hasilnya persis seperti tanpa
+    keduanya.
+  </message>
+
+  <message id="dl-alpha-label">Positif palsu (&#945;):</message>
+  <message id="dl-alpha-label-short">Pos. palsu &#945;:</message>
+  <message id="dl-alpha-tt">
+    Seberapa sering Anda bersedia menyatakan ada sinyal padahal tidak ada - laju positif palsu.  Ini
+    menetapkan <b>ambang keputusan</b> L<sub>c</sub>: kelebihan di atas kontinum yang ditaksir, yang
+    di atasnya sebuah deteksi dinyatakan.
+    <p>
+      Masukkan <b>probabilitas, bukan persen</b>: 0,05 adalah pilihan yang lazim.  Harus lebih besar
+      dari 0 dan lebih kecil dari 0,5; di bawah sekitar 1E-7, hampiran normal yang menjadi dasar
+      perhitungan ini tidak lagi banyak berarti.  &#945; yang lebih kecil berarti lebih sedikit
+      alarm palsu dan ambang yang lebih tinggi.
+    </p>
+    <p>
+      Sampai Anda mengubahnya, nilai ini mengikuti tingkat kepercayaan di atas sebagai
+      1 &#8722; T.K.  Ini pertanyaan yang berbeda dari tingkat kepercayaan tersebut, yang merupakan
+      cakupan selang &quot;kurang dari X&quot; yang dilaporkan.
+    </p>
+  </message>
+
+  <message id="dl-beta-label">Negatif palsu (&#946;):</message>
+  <message id="dl-beta-label-short">Neg. palsu &#946;:</message>
+  <message id="dl-beta-tt">
+    Seberapa sering Anda bersedia melewatkan sinyal yang benar-benar berada pada batas deteksi -
+    laju negatif palsu.  Ini menetapkan <b>batas deteksi</b> L<sub>d</sub>: besar sinyal sejati yang
+    akan terdeteksi secara andal.
+    <p>
+      Masukkan <b>probabilitas, bukan persen</b>: 0,05 adalah pilihan yang lazim.  Harus lebih besar
+      dari 0 dan lebih kecil dari 0,5.  &#946; yang lebih kecil berarti batas deteksi yang lebih
+      besar dan lebih konservatif.
+    </p>
+    <p>
+      Sampai Anda mengubahnya, nilai ini mengikuti tingkat kepercayaan di atas sebagai
+      1 &#8722; T.K.  Dengan &#945;&#160;=&#160;&#946; batas deteksi mengambil bentuk tertutupnya
+      yang sudah dikenal; bila keduanya berbeda, ia diselesaikan secara eksak, bukan dihampiri.
+    </p>
+  </message>
+
+  <message id="dl-dist-uncert-label">Ketidakpastian jarak:</message>
+  <message id="dl-dist-uncert-label-short">&#177;Jarak:</message>
+  <message id="dl-dist-uncert-empty-text">mis. 1 cm</message>
+  <message id="dl-dist-uncert-tt">
+    Ketidakpastian 1&#963; jarak sumber ke detektor, dituliskan dengan cara yang sama seperti
+    jaraknya sendiri - misalnya <b>1 cm</b>.  Kosongkan, atau isi 0, bila tidak ada.
+    <p>
+      Efisiensi sumber titik berbanding 1/r&#178;, sehingga ketidakpastian ini sampai ke cacahan
+      yang diharapkan dengan faktor dua: ketidakpastian jarak 5% menjadi ketidakpastian cacahan 10%.
+      Ia digabungkan secara kuadratur dengan ketidakpastian efisiensi di sebelahnya.  Jauh melampaui
+      sekitar 20% dari jaraknya, perambatan linear yang dipakai di sini menjadi tidak dapat
+      diandalkan.
+    </p>
+    <p>
+      Ia tidak diterapkan untuk respons detektor bergeometri tetap, yang efisiensinya sama sekali
+      tidak bergantung pada jarak; alat ini akan memberi tahu bila hal itu terjadi.
+    </p>
+  </message>
+
+  <message id="dl-eff-uncert-label">Ketidakpastian efisiensi (%):</message>
+  <message id="dl-eff-uncert-label-short">&#177;Efis %:</message>
+  <message id="dl-eff-uncert-empty-text">mis. 5</message>
+  <message id="dl-eff-uncert-tt">
+    Ketidakpastian 1&#963; <b>relatif</b> dari cacahan yang diharapkan per satuan aktivitas, dalam
+    <b>persen</b> - misalnya <b>5</b> untuk 5%.  Kosongkan, atau isi 0, bila tidak ada.
+    <p>
+      Ini mencakup segala sesuatu yang menskalakan cacahan yang diharapkan dan yang bukan statistik
+      pencacahan: kurva efisiensi detektor dan rasio percabangan gamma, yang masuk secara identik.
+      Masukkan keduanya digabung secara kuadratur bila keduanya penting.  Ketidakpastian efisiensi
+      detektor biasanya berkisar 3&#8211;10%.
+    </p>
+    <p>
+      Ia digabungkan secara kuadratur dengan ketidakpastian jarak, dan totalnya harus tetap di bawah
+      100%.  Perhatikan bahwa <i>batas deteksi</i> menyerah lebih dulu, pada 1/k<sub>&#946;</sub> -
+      sekitar 61% pada &#946;&#160;=&#160;0,05 - karena melewati titik itu tidak ada pencacahan
+      sebanyak apa pun yang dapat memisahkan sinyal dari skalanya.  Batas atasnya tetap sahih.
+    </p>
+  </message>
+
+  <message id="dl-err-bad-dist-uncert">Tidak dapat membaca ketidakpastian jarak - diharapkan sesuatu seperti '1 cm', atau kosong bila tidak ada.</message>
+  <message id="dl-err-bad-eff-uncert">Tidak dapat membaca ketidakpastian efisiensi - diharapkan sebuah persen, seperti '5', atau kosong bila tidak ada.</message>
+  <message id="dl-err-dist-uncert-no-distance">Ketidakpastian jarak telah dimasukkan, tetapi jaraknya kosong atau tidak positif - masukkan sebuah jarak, atau kosongkan ketidakpastiannya.</message>
+  <message id="dl-err-systematic-too-large">Ketidakpastian sistematik gabungan adalah {1}%, yang tidak dapat dipakai oleh formulasi Currie - nilainya harus di bawah 100%.  Kurangi ketidakpastian jarak atau efisiensi.</message>
+  <message id="dl-warn-dist-uncert-fixed-geom">Ketidakpastian jarak tidak diterapkan: respons detektor ini untuk geometri tetap, sehingga efisiensinya tidak bergantung pada jarak.</message>
+  <message id="dl-warn-no-detection-limit">Dengan ketidakpastian sistematik ini tidak ada batas deteksi yang berhingga - sinyal sejati tidak dapat dipisahkan dari ketidakpastian skalanya, seberapa lama pun Anda mencacah.  Batas atas di atas tidak terpengaruh.</message>
 </messages>

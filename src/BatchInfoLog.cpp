@@ -1703,10 +1703,19 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     json["ContinuumCounts"] = res.estimated_peak_continuum_counts;
     json["ContinuumCountsUncert"] = res.estimated_peak_continuum_uncert;
 
+    // ISO 11929-1:2019 clause 10.  `SourceCounts` is the primary result and is kept - it is what the
+    //  detection decision is made on - while these are what ISO says to quote as the measured value.
+    //  They are reported as a pair: the best estimate's own uncertainty is always the smaller of the
+    //  two, so quoting it beside the primary result's would overstate the spread.
+    json["BestEstimateCounts"] = res.best_estimate;
+    json["BestEstimateCountsUncert"] = res.best_estimate_uncert;
+
     json["DecisionThresholdStr"] = SpecUtils::printCompact( res.decision_threshold, 4 );
     json["DetectionLimitStr"] = SpecUtils::printCompact( res.detection_limit, 4 );
     json["UpperLimitStr"] = SpecUtils::printCompact( res.upper_limit, 4 );
     json["SourceCountsStr"] = SpecUtils::printCompact( res.source_counts, 4 );
+    json["BestEstimateCountsStr"] = SpecUtils::printCompact( res.best_estimate, 4 );
+    json["BestEstimateCountsUncertStr"] = SpecUtils::printCompact( res.best_estimate_uncert, 4 );
 
     json["RoiLowerEnergy"] = res.input.roi_lower_energy;
     json["RoiUpperEnergy"] = res.input.roi_upper_energy;
@@ -1944,6 +1953,13 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
         add_activity( "ObservedActivityLower", res.lower_limit / mda.gammas_per_bq );
         add_activity( "ObservedActivityUpper", res.upper_limit / mda.gammas_per_bq );
       }//if( detected )
+
+      // The activity form of the ISO best estimate and its uncertainty; see the counts fields above.
+      //  Unlike `ObservedActivity` these are given whether or not a detection was declared, per ISO
+      //  11929-1:2019 clause 10 NOTE 2 - subject, like every activity here, to `add_activity`
+      //  dropping a value that is not positive, which for these means an empty region.
+      add_activity( "BestEstimateActivity", res.best_estimate / mda.gammas_per_bq );
+      add_activity( "BestEstimateActivityUncert", res.best_estimate_uncert / mda.gammas_per_bq );
     }//if( !mda.has_activity ) / else
 
     mda_json["DeconAttempted"] = mda.decon_attempted;

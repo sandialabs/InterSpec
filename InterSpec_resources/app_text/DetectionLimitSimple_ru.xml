@@ -34,7 +34,7 @@
 
   <message id="dls-det-act-with-range">Обнаружено: {1}, диапазон [{2}, {3}], @{4} CL</message>
   <message id="dls-det-no-result">Извините, нет результата</message>
-  <message id="dls-det-counts-with-range">Избыточные отсчеты: {1}, диапазон [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">Оценка сигнала: {1} отсчётов, диапазон [{2}, {3}], @{4} CL</message>
   <message id="dls-det-act-less-zero">Активность &lt; 0 {1} (наблюдается значительно меньше отсчетов чем ожидалось).</message>
   <message id="dls-det-counts-less-zero">Избыточные отсчеты &lt; 0 {2} (наблюдается значительно меньше отсчетов чем ожидалось).</message>
   <message id="dls-det-upper-bound">Менее чем {1} присутствует @{2} CL.</message>
@@ -91,4 +91,8 @@
   <message id="dls-scale-more-info-note">
     Пересчитано на реальное время {1} (живое время {2}, отношение &times;{3} к реальному времени измерения {4}).
   </message>
+
+  <!-- Показывается под расширенными параметрами, когда выбран метод деконволюции и они отключены.
+       Отключённый элемент без пояснения выглядит как ошибка. -->
+  <message id="dls-advanced-decon-note">Это относится к методу Карри; предел по деконволюции их пока не использует.</message>
 </messages>

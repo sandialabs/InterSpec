@@ -34,7 +34,7 @@
 
   <message id="dls-det-act-with-range">Detektált: {1}, tartomány [{2}, {3}], @{4} CL</message>
   <message id="dls-det-no-result">Sajnos nincs eredmény</message>
-  <message id="dls-det-counts-with-range">Többlet impulzusok: {1}, tartomány [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">Becsült jel: {1} impulzus, tartomány [{2}, {3}], @{4} CL</message>
   <message id="dls-det-act-less-zero">Aktivitás &lt; 0 {1} (jelentősen kevesebb impulzust figyeltek meg a vártnál).</message>
   <message id="dls-det-counts-less-zero">Többlet impulzusok &lt; 0 {2} (jelentősen kevesebb impulzust figyeltek meg a vártnál).</message>
   <message id="dls-det-upper-bound">Kevesebb mint {1} van jelen @{2} CL.</message>
@@ -91,4 +91,8 @@
   <message id="dls-scale-more-info-note">
     {1} valós időre skálázva (élő idő {2}, a mérés {4} valós idejének &times;{3} szorosa).
   </message>
+
+  <!-- A haladó bemenetek alatt jelenik meg, amikor a Dekonvolúció módszer van kiválasztva, ahol
+       azok le vannak tiltva.  A magyarázat nélkül letiltott vezérlő hibának tűnik. -->
+  <message id="dls-advanced-decon-note">Ezek a Currie-módszerre vonatkoznak; a dekonvolúciós határérték egyelőre nem használja őket.</message>
 </messages>

@@ -20,7 +20,10 @@
   <message id="dlt-range">النطاق:</message>
   <message id="dlt-detected-activity-tt">النشاط المكتشف، باستخدام منطقة الاهتمام هذه فقط،
     والزيادة المرصودة في العد، بالإضافة إلى
-    فترة الثقة الإحصائية.</message>
+    فترة الثقة الإحصائية.
+    القيمة الاسمية هي أفضل تقدير وفق ISO 11929: متوسط توزيع الإشارة بعد إزالة الجزء الواقع عند
+    أنشطة سالبة مستحيلة. وهي دائماً لا تقل عن الفائض الخام في العد، ويتطابق الاثنان عندما تكون
+    الإشارة أعلى بكثير من المستوى الحرج.</message>
   <message id="dlt-limit-lt-zero"><![CDATA[الحد: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(عدد العد في ROI أقل بكثير من المتوقع)</message>
   <message id="dlt-fewer-counts-tt">لوحظ عدد عد أقل بكثير في
@@ -53,8 +56,6 @@
   <message id="dlt-log">لوغاريتم</message>
   <message id="dlt-lin">خطي</message>
   <message id="dlt-below-lc">(أقل من L<sub>c</sub>)</message>
-  <message id="dlt-lt-zero-counts"><![CDATA[< 0 عد]]></message>
-  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">لا توجد بيانات محملة</message>
@@ -101,7 +102,10 @@
   
   <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
   <message id="dlt-tt-greater-than-lc">أكبر من &quot;المستوى الحرج&quot;، L<sub>c</sub>،
-    تم رصد العد في منطقة الذروة.</message>
+    تم رصد العد في منطقة الذروة.
+    القيمة المعروضة هي أفضل تقدير للإشارة وفق ISO 11929، وهو يأخذ في الاعتبار أن النشاط لا يمكن أن
+    يكون سالباً؛ أما قرار وجود إشارة فقد اتُّخذ بناءً على الفائض الخام في العد. يتطابق الاثنان في
+    حالة الإشارة الواضحة، ويكون أفضل تقدير هو الأكبر في الحالة الحدية.</message>
   <message id="dlt-tt-activity-range">تقدير نطاق نشاط الإشارة، إلى مستوى الثقة {1}.</message>
   <message id="dlt-tt-counts-range">تقدير نطاق عد الإشارة، إلى مستوى الثقة {1}.</message>
   <message id="dlt-tt-fewer-than-predicted">لوحظ عدد عد أقل بكثير في منطقة الذروة،
@@ -138,15 +142,19 @@
     المشع قبل أي تدريع، ولكن مع الأخذ في الاعتبار عمر النويدة،
     لكل اضمحلال للنويدة الأب.</message>
   <message id="dlt-tt-below-lc-counts">عد الإشارة المرصود أقل من &quot;المستوى الحرج&quot;، L<sub>c</sub>،
-    لذلك لا يمكن الإعلان عن كشف، ولكن هذا هو الفائض على العد المتوقع.</message>
+    لذلك لا يمكن الإعلان عن كشف، ولكن هذا هو أفضل تقدير وفق ISO 11929 لعد الإشارة، مع مراعاة أن
+    الإشارة لا يمكن أن تكون سالبة. وهو لا يقل أبداً عن الصفر، حتى عندما يُرصد في منطقة الذروة عدد
+    أقل مما تتوقعه المناطق المجاورة.</message>
   <message id="dlt-tt-below-lc-activity">نشاط الإشارة المرصود أقل من &quot;المستوى الحرج&quot;، L<sub>c</sub>،
-    لذلك لا يمكن الإعلان عن كشف، ولكن هذا هو الفائض على العد المتوقع.</message>
+    لذلك لا يمكن الإعلان عن كشف، ولكن هذا هو أفضل تقدير وفق ISO 11929 للنشاط، مع مراعاة أن النشاط
+    لا يمكن أن يكون سالباً. وهو لا يقل أبداً عن الصفر، حتى عندما يُرصد في منطقة الذروة عدد أقل مما
+    تتوقعه المناطق المجاورة.</message>
   
   <!-- Chart strings -->
   <message id="dlt-chart-x-axis-distance">المسافة ({1})</message>
   <message id="dlt-chart-x-axis-activity">النشاط ({1})</message>
   <message id="dlt-chart-title-estimated-activity">النشاط المقدر {1}.</message>
-  <message id="dlt-chart-title-excess-counts">العد الزائد {1}.</message>
+  <message id="dlt-chart-title-excess-counts">الإشارة المقدّرة {1} عدة.</message>
   <message id="dlt-chart-title-activity-lt-zero"><![CDATA[النشاط < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">البيانات + الذروة {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">الذروة للحد الأعلى {1} @{2} CL</message>

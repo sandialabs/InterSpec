@@ -48,7 +48,7 @@
 
   <message id="dls-det-act-with-range">Detected: {1}, range [{2}, {3}], @{4} CL</message>
   <message id="dls-det-no-result">Sorry, no result</message>
-  <message id="dls-det-counts-with-range">Excess counts: {1}, range [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">Signal estimate: {1} counts, range [{2}, {3}], @{4} CL</message>
   <message id="dls-det-act-less-zero">Activity &lt; 0 {1} (observed significantly fewer counts than expected).</message>
   <message id="dls-det-counts-less-zero">Excess counts &lt; 0 {2} (observed significantly fewer counts than expected).</message>
   <message id="dls-det-upper-bound">Less than {1} present @{2} CL.</message>
@@ -100,4 +100,8 @@
   <message id="dls-err-select-det">Please select a detector efficiency function.</message>
   <message id="dls-err-neg-distance">Distance can't be negative.</message>
   <message id="dls-err-no-fwhm-info">Detector efficiency function does not have FWHM info - please fit for FWHM, or change detector.</message>
+
+  <!-- Shown under the advanced inputs while the Deconvolution method is selected, where they are
+       disabled.  A disabled control with no explanation reads as a bug. -->
+  <message id="dls-advanced-decon-note">These apply to the Currie method; the deconvolution limit does not use them yet.</message>
 </messages>

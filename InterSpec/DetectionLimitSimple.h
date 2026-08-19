@@ -156,7 +156,30 @@ protected:
   void handleDistanceChanged();
   
   void handleConfidenceLevelChanged();
-  
+
+  void handleAdvancedToggled();
+  void handleAlphaChanged();
+  void handleBetaChanged();
+  void handleSystematicUncertChanged();
+
+  /** The combined relative systematic uncertainty to hand to
+   `DetectionLimitCalc::CurrieMdaInput::additional_uncertainty`.
+
+   Zero when "Advanced" is unchecked or both fields are empty, so that with the section off the tool
+   computes exactly what it computed before the section existed.
+
+   @param [out] note Set to a user-facing note when the combination had to be qualified - a distance
+          uncertainty dropped because the detector response is fixed-geometry.  Left untouched
+          otherwise.  Cannot be `m_warningTxt` directly: this runs from `updateResult()`, and
+          `updateSpectrumDecorationsAndResultText()` clears that text afterwards.
+   @returns The relative (not percent) 1-sigma systematic uncertainty, in [0,1).
+
+   Throws `std::runtime_error` carrying a localized message when the entered strings cannot be used -
+   an unparseable field, a distance uncertainty with no distance to divide by, or a combination at or
+   above 100% (which `currie_mda_calc` rejects).
+   */
+  float currentSystematicUncertainty( Wt::WString &note ) const;
+
   void handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> new_drf );
   
   void handleFitFwhmRequested();
@@ -283,8 +306,67 @@ protected:
   
   Wt::WButtonGroup *m_methodGroup;
   Wt::WText *m_methodDescription;
-  
-  
+
+  /** Reveals the advanced statistical inputs below the rest of the tool.  Unchecked by default;
+   while unchecked none of those values reach the calculation, so the answers are exactly what they
+   were before this section existed. */
+  Wt::WCheckBox *m_advancedCb;
+
+  /** Container for the advanced inputs.  A sibling of the main "GeneralInput" grid rather than an
+   eleventh row of it: `GridLayoutHelpers.css` stops at `GridTenthRow`, the phone-only row-shift table
+   in `DetectionLimitSimple.css` renumbers `GridThirdRow`..`GridTenthRow` inside `.GeneralInput`, and
+   the phone input-width rules are `.GeneralInput`-scoped as well - so an eleventh row would mean
+   growing all three.  A sibling also gets its own, saner phone layout. */
+  Wt::WContainerWidget *m_advancedDiv;
+
+  /** Probability of deciding a signal is present when there is none.  Sets k_alpha, and so the
+   decision threshold L_c.  A probability, not a percent, in (0, 0.5); 0.05 is usual.
+   \sa DetectionLimitCalc::CurrieMdaInput::alpha */
+  NativeFloatSpinBox *m_alpha;
+
+  /** Probability of failing to detect a signal whose true size is the detection limit.  Sets k_beta,
+   and so L_d.  A probability in (0, 0.5); 0.05 is usual.
+   \sa DetectionLimitCalc::CurrieMdaInput::beta */
+  NativeFloatSpinBox *m_beta;
+
+  /** False until the user edits the corresponding field.  While false the field tracks the
+   confidence-level combo as 1 - CL, and - importantly - the *sentinel* rather than the field's
+   contents is handed to the calculation, so the answers stay bit-for-bit what they were before
+   alpha/beta were separable.  (The field shows a rounding of 1 - CL; feeding that back would move
+   the last digits for the sigma-style confidence levels.)  The flags are encoded in the state URI by
+   the presence or absence of the ALPHA / BETA tokens. */
+  bool m_alphaUserSet;
+  bool m_betaUserSet;
+
+  /** 1-sigma uncertainty of the source-to-detector distance, as a length string in the same grammar
+   as the distance field above it ("1 cm").  Empty, or a zero length, means none. */
+  Wt::WLineEdit *m_distanceUncert;
+
+  /** Most recent valid distance-uncertainty text, so an invalid entry can be reverted - same pattern,
+   and same reason, as `m_prevDistance`. */
+  Wt::WString m_prevDistanceUncert;
+
+  /** 1-sigma *relative* uncertainty of the counts expected per unit activity, as a PERCENT ("5").
+   Empty or zero means none.
+
+   Covers everything that scales the expected counts and is not counting statistics: the detector
+   efficiency curve and the gamma branching ratio, which enter identically and so cannot be usefully
+   separated here.
+
+   TODO: `DetectorPeakResponse` carries no uncertainty on its efficiency today.  When it does,
+         pre-fill this field from the DRF (combined in quadrature with the branching ratio's own
+         uncertainty, if `SandiaDecay` ever carries one), leaving the user able to override. */
+  Wt::WLineEdit *m_effUncert;
+
+  /** Note under the advanced inputs saying they apply to the Currie method; shown only while the
+   Deconvolution method is selected. */
+  Wt::WText *m_advancedNote;
+
+  /** A note about the systematic-uncertainty combination that has to survive from `updateResult()`
+   to `updateSpectrumDecorationsAndResultText()`, which runs afterwards and clears `m_warningTxt`. */
+  Wt::WString m_systematicNote;
+
+
   float m_numFwhmWide;
   NativeFloatSpinBox *m_lowerRoi;
   NativeFloatSpinBox *m_upperRoi;

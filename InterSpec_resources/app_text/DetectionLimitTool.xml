@@ -24,7 +24,10 @@
   <message id="dlt-range">Range:</message>
   <message id="dlt-detected-activity-tt">Detected activity, using just this Region Of Interests,
     and the observed excess of counts, as well as the
-    statistical confidence interval.</message>
+    statistical confidence interval.
+    The nominal value is the ISO 11929 best estimate: the mean of the signal distribution after
+    removing the part of it that sits on impossible negative activities.  It is always at least the
+    raw excess of counts, and the two agree once the signal is well above the critical level.</message>
   <message id="dlt-limit-lt-zero">Limit: &lt; 0{1}</message>
   <message id="dlt-sig-fewer-counts">(sig. fewer counts in ROI than predicted)</message>
   <message id="dlt-fewer-counts-tt">Significantly fewer counts were observed in the
@@ -57,8 +60,6 @@
   <message id="dlt-log">Log</message>
   <message id="dlt-lin">Lin</message>
   <message id="dlt-below-lc">(below L<sub>c</sub>)</message>
-  <message id="dlt-lt-zero-counts"><![CDATA[< 0 counts]]></message>
-  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">No Data Loaded</message>
@@ -105,7 +106,11 @@
   
   <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
   <message id="dlt-tt-greater-than-lc">Greater than the "critical level", L<sub>c</sub>,
-    counts were observed in the peak region.</message>
+    counts were observed in the peak region.
+    The value shown is the ISO 11929 best estimate of the signal, which accounts for activity not
+    being able to be negative; the decision that a signal is present was made on the raw excess of
+    counts.  The two agree for a clear signal, and the best estimate is the larger of the two for a
+    marginal one.</message>
   <message id="dlt-tt-activity-range">The signal activity range estimate, to the {1} confidence level.</message>
   <message id="dlt-tt-counts-range">The signal counts range estimate, to the {1} confidence level.</message>
   <message id="dlt-tt-fewer-than-predicted">Significantly fewer counts in peak region were observed,
@@ -142,15 +147,19 @@
     source before any shielding, but accounting for nuclide age,
     per decay of the parent nuclide.</message>
   <message id="dlt-tt-below-lc-counts">The observed signal counts is less than the &quot;critical level&quot;, L<sub>c</sub>,
-    so a detection can not be declared, but this is the excess over expected counts.</message>
+    so a detection can not be declared, but this is the ISO 11929 best estimate of the signal counts,
+    given that a signal can not be negative.  It is never below zero, even when fewer counts were
+    seen in the peak region than the neighboring regions predict.</message>
   <message id="dlt-tt-below-lc-activity">The observed signal activity is less than the &quot;critical level&quot;, L<sub>c</sub>,
-    so a detection can not be declared, but this is the excess over expected counts.</message>
+    so a detection can not be declared, but this is the ISO 11929 best estimate of the activity,
+    given that an activity can not be negative.  It is never below zero, even when fewer counts were
+    seen in the peak region than the neighboring regions predict.</message>
   
   <!-- Chart strings -->
   <message id="dlt-chart-x-axis-distance">Distance ({1})</message>
   <message id="dlt-chart-x-axis-activity">Activity ({1})</message>
   <message id="dlt-chart-title-estimated-activity">Estimated activity of {1}.</message>
-  <message id="dlt-chart-title-excess-counts">Excess counts of {1}.</message>
+  <message id="dlt-chart-title-excess-counts">Estimated signal of {1} counts.</message>
   <message id="dlt-chart-title-activity-lt-zero"><![CDATA[Activity < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">Data + peak for {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">Peak for upper bound of {1} @{2} CL</message>

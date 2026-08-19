@@ -219,10 +219,15 @@ protected:
           {
             // There is enough excess counts that we would reliably detect this activity, so we will
             //  give the activity range.
+            //
+            // The nominal value quoted is the ISO 11929-1:2019 best estimate, Formula (44), not the
+            //  primary result `source_counts` - see `CurrieMdaResult::best_estimate`.  The decision
+            //  just above is still made on the primary result, per clause 10.  The range is already
+            //  the truncated interval from the same distribution, so it does not change.
             const float lower_act = result.lower_limit / gammas_per_bq;
             const float upper_act = result.upper_limit / gammas_per_bq;
-            const float nominal_act = result.source_counts / gammas_per_bq;
-            
+            const float nominal_act = result.best_estimate / gammas_per_bq;
+
             const string lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
             + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
             const string upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
@@ -366,8 +371,12 @@ protected:
               return fabs( counts_at_distance(dist) - result.upper_limit );
             };
             
+            // The nominal distance is inverted from the reported signal, so it uses the best
+            //  estimate for the same reason the activity above does.  `brent_find_minima` just
+            //  returns the closest point in [0, max_distance], so the degenerate case of a best
+            //  estimate above the on-contact counts reports zero distance rather than failing.
             auto nominal_dist = [&]( double dist ) -> double {
-              return fabs( counts_at_distance(dist) - result.source_counts );
+              return fabs( counts_at_distance(dist) - result.best_estimate );
             };
             
             using boost::math::tools::brent_find_minima;
@@ -1776,31 +1785,33 @@ void DetectionLimitTool::update_spectrum_for_currie_result( D3SpectrumDisplayDiv
             //  give the activity range.
             string lowerstr, upperstr, nomstr;
             
+            // The quoted title is the ISO best estimate, as elsewhere; the peak drawn below is not -
+            //  it overlays the data, so its area has to stay the excess actually observed.
             if( gammas_per_bq > 0.0 )
             {
               const float lower_act = result->lower_limit / gammas_per_bq;
               const float upper_act = result->upper_limit / gammas_per_bq;
-              const float nominal_act = result->source_counts / gammas_per_bq;
-              
+              const float nominal_act = result->best_estimate / gammas_per_bq;
+
               lowerstr = PhysicalUnits::printToBestActivityUnits( lower_act, 2, useCuries )
               + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
               upperstr = PhysicalUnits::printToBestActivityUnits( upper_act, 2, useCuries )
               + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
               nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
               + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-              
+
               chart_title = WString::tr("dlt-chart-title-estimated-activity").arg(nomstr);
             }else
             {
               lowerstr = SpecUtils::printCompact(result->lower_limit, 4);
               upperstr = SpecUtils::printCompact(result->upper_limit, 4);
-              nomstr = SpecUtils::printCompact(result->source_counts, 4);
-              
+              nomstr = SpecUtils::printCompact(result->best_estimate, 4);
+
               chart_title = WString::tr("dlt-chart-title-excess-counts").arg(nomstr);
             }
-            
+
             //const string cl_str = SpecUtils::printCompact( 100.0*confidence_level, 3 );
-            
+
             generic_peak.setPeakArea( result->source_counts );
             
             for( size_t i = 0; i < peaks.size(); ++i )
@@ -2039,7 +2050,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
           if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
           {
             WString obs_label = WString::tr("dlt-observed-activity");
-            const double nominal_act = result.source_counts / gammas_per_bq;
+            const double nominal_act = result.best_estimate / gammas_per_bq;
             const string nomstr = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
                                   + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
 
@@ -2052,7 +2063,7 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
 
           {
             WString obs_label = WString::tr("dlt-observed-counts");
-            const string nomstr = SpecUtils::printCompact(result.source_counts, 4);
+            const string nomstr = SpecUtils::printCompact(result.best_estimate, 4);
 
             cell = table->elementAt( table->rowCount(), 0 );
             new WText( obs_label, cell );
@@ -2282,10 +2293,15 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
           //  didnt give nominal activity above, so we'll do that here
           if( !assertedNoSignal )
           {
+            // ISO 11929-1:2019 clause 10 NOTE 2 - the best estimate may also be given when the
+            //  primary result is below the decision threshold, and ISO 11929-4:2020 clause 7 does
+            //  exactly that for its own not-detected example.  It is the bigger change here than in
+            //  the detected case (the two diverge most at low signal), and it is what removes the
+            //  "< 0 counts" reading: a truncated-at-zero estimate cannot be negative, so the
+            //  impossible value no longer has to be papered over.  The "(below Lc)" tag stays, so
+            //  the detection decision - still made on the primary result - is not misread.
             WString obs_counts_label = WString::tr("dlt-observed-counts");
-            string nom_counts_str = SpecUtils::printCompact(result.source_counts, 4);
-            if( result.source_counts < 0 )
-              nom_counts_str = WString::tr("dlt-lt-zero-counts").toUTF8();
+            string nom_counts_str = SpecUtils::printCompact(result.best_estimate, 4);
 
             nom_counts_str = Wt::Utils::htmlEncode( nom_counts_str, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
 
@@ -2299,13 +2315,10 @@ SimpleDialog *DetectionLimitTool::createCurrieRoiMoreInfoWindow( const SandiaDec
             if( drf && (distance >= 0.0) && (gammas_per_bq > 0.0) )
             {
               WString obs_act_label = WString::tr("Activity");
-              const float nominal_act = result.source_counts / gammas_per_bq;
+              const float nominal_act = result.best_estimate / gammas_per_bq;
 
               string nom_act_str = PhysicalUnits::printToBestActivityUnits( nominal_act, 2, useCuries )
                         + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom );
-              if( nominal_act < 0 )
-                nom_act_str = WString::tr("dlt-lt-zero-activity").arg(PhysicalUnits::printToBestActivityUnits( 0.0, 2, useCuries )
-                          + DetectorPeakResponse::det_eff_geom_type_postfix( det_geom )).toUTF8();
 
               nom_act_str = Wt::Utils::htmlEncode( nom_act_str, Wt::Utils::HtmlEncodingFlag::EncodeNewLines );
 

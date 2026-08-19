@@ -189,4 +189,98 @@
     medición futura que se predice, en vez de un reescalado de este espectro; compruébelo antes de
     confiar en el número.
   </message>
+
+  <!-- Entradas estadísticas avanzadas.  Tres probabilidades que responden a tres preguntas
+       distintas; las ayudas emergentes indican cuál es cuál. -->
+  <message id="dl-advanced-cb">Avanzado</message>
+  <message id="dl-advanced-cb-short">Av.</message>
+  <message id="dl-advanced-tt">
+    Muestra las tasas de error y la incertidumbre sistemática con las que se calcula el límite.
+    Mientras esta casilla esté sin marcar no se aplica ninguna de ellas, y el resultado es
+    exactamente el que se obtendría sin ellas.
+  </message>
+
+  <message id="dl-alpha-label">Falso positivo (&#945;):</message>
+  <message id="dl-alpha-label-short">Falso pos. &#945;:</message>
+  <message id="dl-alpha-tt">
+    Con qué frecuencia está dispuesto a declarar una señal presente cuando no la hay: la tasa de
+    falsos positivos.  Fija el <b>umbral de decisión</b> L<sub>c</sub>: el exceso sobre el continuo
+    estimado a partir del cual se declararía una detección.
+    <p>
+      Introduzca una <b>probabilidad, no un porcentaje</b>: 0,05 es la elección habitual.  Debe ser
+      mayor que 0 y menor que 0,5; por debajo de aproximadamente 1E-7 la aproximación normal en la
+      que se apoya este cálculo ya no vale gran cosa.  Un &#945; menor significa menos falsas
+      alarmas y un umbral más alto.
+    </p>
+    <p>
+      Mientras no lo edite, sigue al nivel de confianza de arriba como 1 &#8722; N.C.  Es una
+      cuestión distinta de ese nivel de confianza, que es la cobertura del intervalo
+      &quot;menor que X&quot; que se informa.
+    </p>
+  </message>
+
+  <message id="dl-beta-label">Falso negativo (&#946;):</message>
+  <message id="dl-beta-label-short">Falso neg. &#946;:</message>
+  <message id="dl-beta-tt">
+    Con qué frecuencia está dispuesto a pasar por alto una señal que realmente está en el límite de
+    detección: la tasa de falsos negativos.  Fija el <b>límite de detección</b> L<sub>d</sub>: la
+    magnitud verdadera de la señal que se detectaría de forma fiable.
+    <p>
+      Introduzca una <b>probabilidad, no un porcentaje</b>: 0,05 es la elección habitual.  Debe ser
+      mayor que 0 y menor que 0,5.  Un &#946; menor da un límite de detección mayor y más
+      conservador.
+    </p>
+    <p>
+      Mientras no lo edite, sigue al nivel de confianza de arriba como 1 &#8722; N.C.  Con
+      &#945;&#160;=&#160;&#946; el límite de detección adopta su forma cerrada familiar; con los dos
+      distintos se resuelve de forma exacta, no aproximada.
+    </p>
+  </message>
+
+  <message id="dl-dist-uncert-label">Incert. dist.:</message>
+  <message id="dl-dist-uncert-label-short">&#177;Dist:</message>
+  <message id="dl-dist-uncert-empty-text">p. ej. 1 cm</message>
+  <message id="dl-dist-uncert-tt">
+    La incertidumbre 1&#963; de la distancia fuente-detector, escrita igual que la propia distancia;
+    por ejemplo <b>1 cm</b>.  Déjelo en blanco, o introduzca 0, para ninguna.
+    <p>
+      La eficiencia de una fuente puntual va como 1/r&#178;, de modo que esto llega a las cuentas
+      esperadas con un factor de dos: un 5% de incertidumbre en la distancia es un 10% de
+      incertidumbre en las cuentas.  Se combina en cuadratura con la incertidumbre de eficiencia
+      contigua.  Bastante más allá de un 20% de la distancia, la propagación lineal que se usa aquí
+      pisa terreno frágil.
+    </p>
+    <p>
+      No se aplica a una respuesta de detector de geometría fija, cuya eficiencia no depende en
+      absoluto de la distancia; la herramienta lo indica cuando ocurre.
+    </p>
+  </message>
+
+  <message id="dl-eff-uncert-label">Incert. eficiencia (%):</message>
+  <message id="dl-eff-uncert-label-short">&#177;Efic. %:</message>
+  <message id="dl-eff-uncert-empty-text">p. ej. 5</message>
+  <message id="dl-eff-uncert-tt">
+    La incertidumbre <b>relativa</b> 1&#963; de las cuentas esperadas por unidad de actividad, como
+    <b>porcentaje</b>; por ejemplo <b>5</b> para un 5%.  Déjelo en blanco, o introduzca 0, para
+    ninguna.
+    <p>
+      Cubre todo lo que escala las cuentas esperadas y no es estadística de conteo: la curva de
+      eficiencia del detector y la relación de ramificación gamma, que entran de forma idéntica.
+      Introduzca ambas combinadas en cuadratura si las dos importan.  Las incertidumbres de
+      eficiencia del detector suelen ser del 3&#8211;10%.
+    </p>
+    <p>
+      Se combina en cuadratura con la incertidumbre de distancia, y el total debe mantenerse por
+      debajo del 100%.  Observe que el <i>límite de detección</i> se agota antes, en
+      1/k<sub>&#946;</sub>: alrededor del 61% con &#946;&#160;=&#160;0,05, porque más allá de ahí
+      ningún conteo separa la señal de la escala.  El límite superior sigue siendo válido.
+    </p>
+  </message>
+
+  <message id="dl-err-bad-dist-uncert">No se pudo leer la incertidumbre de distancia - se esperaba algo como '1 cm', o en blanco para ninguna.</message>
+  <message id="dl-err-bad-eff-uncert">No se pudo leer la incertidumbre de eficiencia - se esperaba un porcentaje, como '5', o en blanco para ninguna.</message>
+  <message id="dl-err-dist-uncert-no-distance">Se introdujo una incertidumbre de distancia, pero la distancia está en blanco o no es positiva - introduzca una distancia, o borre la incertidumbre.</message>
+  <message id="dl-err-systematic-too-large">La incertidumbre sistemática combinada es del {1}%, que la formulación de Currie no puede usar - debe ser menor del 100%.  Reduzca la incertidumbre de distancia o de eficiencia.</message>
+  <message id="dl-warn-dist-uncert-fixed-geom">No se aplicó la incertidumbre de distancia: esta respuesta de detector es para una geometría fija, por lo que su eficiencia no depende de la distancia.</message>
+  <message id="dl-warn-no-detection-limit">Con esta incertidumbre sistemática no existe un límite de detección finito - la señal verdadera no se puede separar de la incertidumbre de escala, por mucho que se cuente.  El límite superior de arriba no se ve afectado.</message>
 </messages>
