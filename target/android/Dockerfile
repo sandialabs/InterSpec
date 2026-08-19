@@ -30,7 +30,9 @@ RUN mkdir -p "${ANDROID_HOME}/cmdline-tools" && \
     sdkmanager \
         "platform-tools" \
         "platforms;android-35" \
+        "platforms;android-36" \
         "build-tools;35.0.0" \
+        "build-tools;36.0.0" \
         "ndk;28.0.13004108"
 
 ENV JAVA_HOME=/usr/lib/jvm/java-17-openjdk-amd64
