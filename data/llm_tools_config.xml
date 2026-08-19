@@ -2531,8 +2531,8 @@ The save_to_state option allows persisting the configuration to the app state fo
         },
         "additional_uncertainty": {
           "type": "string",
-          "description": "Additional systematic uncertainty on the expected branching ratio of photopeaks. Default: 'StatOnly' (i.e., no additional uncertainty).",
-          "enum": ["Unweighted", "StatOnly", "OnePercent", "FivePercent", "TenPercent", "TwentyFivePercent", "FiftyPercent", "SeventyFivePercent", "OneHundredPercent"]
+          "description": "How peaks are weighted in the relative-efficiency fit, and how the resulting uncertainties are reported. 'StatOnly' (the default) weights each peak by its counting statistics and widens the reported uncertainties if the peaks scatter about the curve by more than those allow. 'AutoEstimate' does the same but applies the widening to each peak up front, so the fitted values match StatOnly and only the presentation differs. 'StatOnlyNoWidening' (shown in the app as 'Strict Stat.') reports the purely statistical uncertainty, which on real spectra is usually far too small. The percentage options add a fixed uncertainty proportional to peak area, which re-weights peaks against each other and was measured to bias uranium enrichment low.",
+          "enum": ["Unweighted", "StatOnly", "AutoEstimate", "StatOnlyNoWidening", "OnePercent", "FivePercent", "TenPercent", "TwentyFivePercent", "FiftyPercent", "SeventyFivePercent", "OneHundredPercent"]
         },
         "nuclide_ages": {
           "type": "object",
@@ -2540,6 +2540,10 @@ The save_to_state option allows persisting the configuration to the app state fo
           "additionalProperties": {
             "type": "string"
           }
+        },
+        "profile_uncertainty": {
+          "type": "boolean",
+          "description": "If true, also computes profile-likelihood (asymmetric) mass-fraction intervals for each nuclide whose element has at least two isotopes in the problem, by walking the fraction away from its fitted value and re-minimizing everything else. Results are returned in 'profile_mass_fractions', as fractions of the nuclide's ELEMENT (not of all fitted mass, which is what the 'mass_fraction' field elsewhere in this result reports - the two differ when more than one element is present), with 1-sigma and 2-sigma central intervals. IMPORTANT: when 'lower_at_bound' or 'upper_at_bound' is set, that end is NOT a measured bound - it is a limit, and the accompanying 'warnings' entries say which of several reasons applies (the quantity ran into a physical or user-imposed bound, the fit stopped constraining it, a re-fit did not converge, or the solve budget ran out). Do not quote a flagged end as a measurement; read 'warnings' before reporting any of these intervals. More reliable than the covariance-based uncertainties near physical bounds, at the cost of a handful of extra (warm-started) solves. Default: false."
         },
         "save_to_state": {
           "type": "boolean",

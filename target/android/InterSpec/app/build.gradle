@@ -67,6 +67,15 @@ android {
                 arguments "-DUSE_LEAFLET_MAP=ON",
                           "-DLEAFLET_MAPS_KEY=${leafletKey}",
                           "-DANDROID_ARM_NEON=TRUE"
+
+                // Optionally cap native-build parallelism so a build doesn't saturate every core.
+                // Ninja otherwise defaults to (cores + 2).  Set e.g. NATIVE_BUILD_JOBS=4.
+                def nativeJobs = signing_prop("NATIVE_BUILD_JOBS", "native.build.jobs")
+                if( nativeJobs != null && !nativeJobs.isEmpty() ) {
+                    arguments "-DCMAKE_JOB_POOLS=compile=${nativeJobs};link=2",
+                              "-DCMAKE_JOB_POOL_COMPILE=compile",
+                              "-DCMAKE_JOB_POOL_LINK=link"
+                }
             }
         }
     }

@@ -36,7 +36,7 @@
 #include "InterSpec/PeakDef.h"
 
 // Forward declarations
-struct DetectorPeakResponse;
+class DetectorPeakResponse;
 
 namespace SpecUtils
 {
