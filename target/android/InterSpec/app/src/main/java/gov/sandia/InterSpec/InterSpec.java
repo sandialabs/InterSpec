@@ -27,9 +27,16 @@ import android.app.Activity;
 import android.content.res.AssetFileDescriptor;
 import android.content.res.AssetManager;
 import android.content.res.Configuration;
+import android.os.Build;
 import android.os.Bundle;
 
+import androidx.core.graphics.Insets;
+import androidx.core.view.ViewCompat;
+import androidx.core.view.WindowCompat;
+import androidx.core.view.WindowInsetsCompat;
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.core.view.OnApplyWindowInsetsListener;
+import androidx.core.view.WindowInsetsControllerCompat;
 
 import android.webkit.*;
 import android.net.*;
@@ -574,29 +581,43 @@ public class InterSpec extends AppCompatActivity
       }
     });
 
-    // Start the Wt server exactly once per process.  sHttpPort survives Activity recreation
-    // (config change, theme switch, etc.) so we don't try to bind a new port -- which would
-    // fail if the previous instance's port is still held, or worse, succeed and leak it.
-    synchronized( sServerLock )
-    {
-      if( sHttpPort == 0 )
-      {
-        Log.i("onCreate", "First-time server start");
-        initNative();
-        setTempDir( getCacheDir().getPath() );
-        sHttpPort = startWt(this);
-      }
-      else
-      {
-        Log.i("onCreate", "Server already running on port " + sHttpPort);
-      }
-    }
 
     // No-title / no-action-bar is set declaratively via Theme.AppCompat.DayNight.NoActionBar
     // in res/values/styles.xml (AppTheme), so no programmatic requestWindowFeature is needed.
 
     {
       setContentView(R.layout.main);
+
+      // Android 15 (API 35) lays apps targeting SDK 35 out edge-to-edge, so our window spans the
+      // status bar and the gesture/navigation bar.  Nothing in the web UI accounts for those, so
+      // pad the content view by the system-bar and display-cutout insets to keep the WebView in
+      // the safe area.  We deliberately do not consume the insets - the soft-keyboard tracking in
+      // onGlobalLayout() still needs to see them.
+      ViewCompat.setOnApplyWindowInsetsListener( findViewById( android.R.id.content ),
+        new OnApplyWindowInsetsListener()
+        {
+          @Override
+          public WindowInsetsCompat onApplyWindowInsets( View v, WindowInsetsCompat windowInsets )
+          {
+            final Insets bars = windowInsets.getInsets( WindowInsetsCompat.Type.systemBars()
+                                                        | WindowInsetsCompat.Type.displayCutout() );
+            v.setPadding( bars.left, bars.top, bars.right, bars.bottom );
+            return windowInsets;
+          }//onApplyWindowInsets(...)
+        } );
+
+      // Now that the content is inset, the window background shows behind the system bars, so the
+      // bar icons need to contrast against it rather than against page content.  uiMode is not
+      // listed in configChanges=, so a day/night switch recreates the Activity and re-runs this.
+      final WindowInsetsControllerCompat barAppearance
+                 = WindowCompat.getInsetsController( getWindow(), getWindow().getDecorView() );
+      if( barAppearance != null )
+      {
+        final int uiMode = (getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK);
+        final boolean nightMode = (uiMode == Configuration.UI_MODE_NIGHT_YES);
+        barAppearance.setAppearanceLightStatusBars( !nightMode );
+        barAppearance.setAppearanceLightNavigationBars( !nightMode );
+      }
 
       webview = (WebView)findViewById(R.id.webview);
       WebSettings settings = webview.getSettings();
@@ -667,6 +688,35 @@ public class InterSpec extends AppCompatActivity
 
 
 
+      // Starting the Wt server unpacks interspec-assets.zip (~6 s on a first run, or after an
+      // update) and binds the HTTP port.  Doing that on the main thread produced an "Input
+      // dispatching timed out" ANR on first launch, so it runs on mIoExecutor.  Everything below
+      // depends on the port -- the intent handling calls into native code, and the WebView needs
+      // the URL -- so it all lives in this task; only loadUrl() is posted back to the UI thread.
+      // Query this on the UI thread, before we hand off to the executor.
+      final int webViewVersion = webViewChromeVersion( this );
+      Log.i("onCreate", "System WebView reports Chrome version " + webViewVersion);
+
+      mIoExecutor.execute( new Runnable(){ public void run(){
+
+      // Start the Wt server exactly once per process.  sHttpPort survives Activity recreation
+      // (config change, theme switch, etc.) so we don't try to bind a new port -- which would
+      // fail if the previous instance's port is still held, or worse, succeed and leak it.
+      synchronized( sServerLock )
+      {
+        if( sHttpPort == 0 )
+        {
+          Log.i("onCreate", "First-time server start");
+          initNative();
+          setTempDir( getCacheDir().getPath() );
+          sHttpPort = startWt( InterSpec.this );
+        }
+        else
+        {
+          Log.i("onCreate", "Server already running on port " + sHttpPort);
+        }
+      }
+
       if( Intent.ACTION_VIEW.equals(action)
               || Intent.ACTION_EDIT.equals(action)
               || Intent.ACTION_PICK.equals(action)
@@ -729,7 +779,23 @@ public class InterSpec extends AppCompatActivity
       }
 
       Log.d("onCreate", "Will load 'http://127.0.0.1:" + sHttpPort + "/?apptoken=" + interspecID + "'");
-      webview.loadUrl("http://127.0.0.1:" + sHttpPort + "/?apptoken=" + interspecID );
+      runOnUiThread( new Runnable(){ public void run(){
+        if( isFinishing() || isDestroyed() )
+          return;
+
+        if( (webViewVersion > 0) && (webViewVersion < MIN_WEBVIEW_CHROME_VERSION) )
+        {
+          Log.w("onCreate", "System WebView is Chrome " + webViewVersion + ", need at least "
+                            + MIN_WEBVIEW_CHROME_VERSION + " - showing upgrade notice instead.");
+          webview.loadDataWithBaseURL( null, unsupportedWebViewHtml(webViewVersion),
+                                       "text/html", "utf-8", null );
+          return;
+        }
+
+        webview.loadUrl("http://127.0.0.1:" + sHttpPort + "/?apptoken=" + interspecID );
+      }} );
+
+      }} );  // mIoExecutor.execute( ... ) -- deferred server start
 
       // WebView.setWebContentsDebuggingEnabled(true);
     }
@@ -742,109 +808,201 @@ public class InterSpec extends AppCompatActivity
 
     mLayoutListener = new ViewTreeObserver.OnGlobalLayoutListener() {
 
-      /// When the soft-keyboard shows, we'll query the position of the input element
-      /// asynchronously using JavaScript, so when we get a result, we will store it
-      /// in this next variable, then request a layout, and then move things when
-      /// that translate the WebView when that happens (it looks like we can only translate
-      /// the WebView after a layout cycle completes).
-      private double mInputYFromJS = 0.0;
+      /// Position of the focused <input>, in device pixels relative to the top of the WebView,
+      /// fetched asynchronously via JavaScript.  We need a layout pass between getting these and
+      /// applying the translation, so they are stashed here and used on the next onGlobalLayout().
+      /// Negative means "not yet known" / "no input focused".
+      private double mInputTopFromJS = -1.0;
+      private double mInputBottomFromJS = -1.0;
 
-      // We'll track the keyboard showing, but we dont actually use this right now
       private boolean mShowingKeyboard = false;
-      /// I cant get Android to move the WebView so that the input is visible, and we dont want to
-      /// resize the WebView when the soft keyboard shows, so we will watch for layout changes, and
-      /// detect the keyboard there.
-      /// For Android 11 (API level 30), and newer, there is a WindowInsets API that would be better
-      /// to use, but this would leave out too many users right now.
+
+      /// The soft keyboard covers the bottom of the WebView, and we do not want to resize the
+      /// WebView (that would re-layout the whole Wt app), so instead we slide the WebView up just
+      /// far enough to keep the focused input visible.
       @Override
       public void onGlobalLayout() {
-        Rect r = new Rect();
+        final Rect r = new Rect();
         mActivityRootView.getWindowVisibleDisplayFrame(r);
 
-        int activityH = mActivityRootView.getHeight(); // This is app area, minus top and bottom OS bars.  Not affected if keyboard is shown.
-        int visibleH = (r.bottom - r.top); // This is app area, accounting for keyboard being shown (so height doesnt include keyboard height, just the visible part of the app)
-        int heightDiff = activityH - visibleH;
-
-        int screenHeight = mActivityRootView.getRootView().getHeight(); // Includes the OS top and bottom bars
-        Context context = getApplicationContext();
-        //Toast.makeText(context, String.format("screenHeight: %d, activityHeight: %d, visibleHeight: %d, heightDiff: %d", screenHeight, activityH, visibleH, heightDiff), Toast.LENGTH_SHORT ).show();
-
-        // heightDiff is zero, if the keyboard is not showing, but at least a few hundred px if it is showing
-        if (heightDiff > 100) {
-          mShowingKeyboard = true;
-
-          // We may be here either when the keyboard is first showing, OR as a result of us
-          // requesting a layout below when we get the input element position from the WebView via JS
-          if( mInputYFromJS > 0.0 ) {
-            // If mInputYFromJS is greater than zero, then we are here as a result of getting the
-            // element position from the JS, and we can now slide the WebView up the right amount
-
-            // We'll assume element is 20px high, and add another 20px padding
-            double posToMakeVisibleDbl = r.top + mInputYFromJS + 20.0 + 20.0;
-            int posToMakeVisible = (int) Math.round(posToMakeVisibleDbl);
-
-            //On phone when keyboard shows: screenHeight: 1280, activityH: 1136, visibleH: 634, posToMakeVisible: 743
-            //Toast.makeText(context, String.format("screenHeight: %d, activityH: %d, visibleH: %d, posToMakeVisible: %d", screenHeight, activityH, visibleH, posToMakeVisible), Toast.LENGTH_SHORT ).show();
-
-            if( posToMakeVisible > visibleH )
-            {
-              int delta = visibleH - posToMakeVisible;
-              webview.setTranslationY( delta );
-            }else
-            {
-              //Toast.makeText(context, String.format("Setting translation to zero, posToMakeVisible=%d, visibleH=%d", posToMakeVisible, visibleH), Toast.LENGTH_SHORT).show();
-              webview.setTranslationY( 0 );
-            }
-          } else {
-            // If mInputYFromJS is zero, then the keyboard just appeared, and we dont have the input
-            // element position, and we need to get it.
-
-            // Ask JS for the active input's screen-pixel Y by multiplying its CSS-pixel
-            // bounding-rect.top by window.devicePixelRatio in the WebView itself, so we don't
-            // have to guess whether to apply the system DisplayMetrics density on the Java
-            // side.  The old code used TypedValue.applyDimension(COMPLEX_UNIT_DIP, ...), which
-            // only matches when the WebView's devicePixelRatio equals the system density --
-            // not true on tablets that set their own viewport meta or initial scale.
-            webview.evaluateJavascript(
-                    "(function() { " +
-                            "  const el = document.activeElement; " +
-                            "  if( !el || (el.tagName != 'INPUT') ) return '-1';" +
-                            "  const rect = el.getBoundingClientRect(); " +
-                            "  return '' + (rect.top * (window.devicePixelRatio || 1));" +
-                            "})()",
-                    value -> {
-                      try {
-                        double topPx = Double.parseDouble(value.replaceAll("[\"']", "")); //value is something like "\"519.667\"", so we need to get rid of leading/trailing quote
-
-                        if( topPx < 0.0 ) {
-                          mInputYFromJS = topPx; // There was an error.
-                        }else{
-                          mInputYFromJS = topPx; // Already in device pixels (CSS px * dpr).
-                        }
-
-                        // We cant access the WebView from here, and even if we evaluate on the GUI
-                        //  thread, thats not good enough to alter the layout, instead we have to
-                        //  request the layout to be computed, which will call the onGlobalLayout()
-                        //  where we can then set the Y translation
-                        webview.requestLayout();
-                      } catch (NumberFormatException e) {
-                        Log.e("WebView", "Error parsing position", e);
-                        Toast.makeText(context, "Error parsing result from webview, returned: '" + value + "', errmsg=" + e.toString(), Toast.LENGTH_SHORT).show();
-                      }
-                    }); //webview.evaluateJavascript(...)
-            webview.setTranslationY( 0 ); // JIC
-            mInputYFromJS = 0.0; //JIC
-          }//if( mInputYFromJS > 0.0 ) / else
-        } else {
-          // Reset translation back to zero when keyboard is hidden
+        if( !isSoftKeyboardShowing(mActivityRootView, r) )
+        {
+          // Keyboard is hidden: undo any slide, and forget the input position so that the next
+          // time the keyboard appears we re-query it rather than reusing a stale value.
           webview.setTranslationY( 0 );
-          mInputYFromJS = 0.0;
+          mInputTopFromJS = mInputBottomFromJS = -1.0;
           mShowingKeyboard = false;
+          return;
         }
+
+        mShowingKeyboard = true;
+
+        if( mInputBottomFromJS >= 0.0 )
+        {
+          // We are here because the JS callback below stashed a position and asked for a layout.
+
+          // Where the WebView *would* sit with no translation applied.
+          final int[] loc = new int[2];
+          webview.getLocationOnScreen( loc );
+          final int webviewTop = loc[1] - (int)Math.round( webview.getTranslationY() );
+
+          final float density = mActivityRootView.getResources().getDisplayMetrics().density;
+          final int margin = (int)Math.round( 8 * density );
+
+          // Screen coordinates of the input.  Note r.bottom is a screen coordinate too -- the
+          // previous code compared against (r.bottom - r.top), a *height*, and so scrolled an
+          // extra r.top pixels.
+          final int inputTop = (int)Math.round( webviewTop + mInputTopFromJS );
+          final int inputBottom = (int)Math.round( webviewTop + mInputBottomFromJS ) + margin;
+
+          int delta = 0;
+          if( inputBottom > r.bottom )
+            delta = r.bottom - inputBottom;   // negative -> slide up
+
+          // Never slide so far that the input goes off the top; better to leave it partly
+          // covered than to push it out of the window entirely.
+          if( (inputTop + delta) < r.top )
+            delta = r.top - inputTop;
+
+          webview.setTranslationY( Math.min( delta, 0 ) );
+        }else
+        {
+          // Keyboard just appeared and we do not know where the input is; ask the page.
+
+          // Ask JS for the active input's screen-pixel top and bottom by multiplying its CSS-pixel
+          // bounding-rect by window.devicePixelRatio in the WebView itself, so we don't have to
+          // guess whether to apply the system DisplayMetrics density on the Java side.  The old
+          // code used TypedValue.applyDimension(COMPLEX_UNIT_DIP, ...), which only matches when
+          // the WebView's devicePixelRatio equals the system density -- not true on tablets that
+          // set their own viewport meta or initial scale.
+          webview.evaluateJavascript(
+                  "(function() { " +
+                          "  const el = document.activeElement; " +
+                          "  if( !el || (el.tagName != 'INPUT') ) return '-1,-1';" +
+                          "  const rect = el.getBoundingClientRect(); " +
+                          "  const dpr = (window.devicePixelRatio || 1); " +
+                          "  return '' + (rect.top * dpr) + ',' + (rect.bottom * dpr);" +
+                          "})()",
+                  value -> {
+                    try {
+                      final String[] fields = value.replaceAll("[\"']", "").split(",");
+                      final double topPx = Double.parseDouble( fields[0] );
+                      final double bottomPx = Double.parseDouble( fields[1] );
+
+                      if( (topPx < 0.0) || (bottomPx <= topPx) )
+                        return;  // no input focused - leave things alone
+
+                      mInputTopFromJS = topPx;
+                      mInputBottomFromJS = bottomPx;
+
+                      // We cant alter the layout from here, so request a layout pass, which will
+                      // call onGlobalLayout() again, where we apply the translation.
+                      webview.requestLayout();
+                    } catch( NumberFormatException e ) {
+                      Log.e("WebView", "Error parsing input position from '" + value + "'", e);
+                    } catch( ArrayIndexOutOfBoundsException e ) {
+                      Log.e("WebView", "Unexpected input-position result '" + value + "'", e);
+                    }
+                  }); //webview.evaluateJavascript(...)
+        }//if( we know where the input is ) / else
       }
     };
 
   }//public void onCreate(Bundle savedInstanceState)
+
+
+  /** Minimum Chromium major version the web UI needs.
+   *
+   * Set by what stops the app *starting*: SpectrumChartD3.js uses optional chaining, a parse error
+   * below Chrome 80, so the script never runs and the user just sees a white page.
+   *
+   * Two later features are deliberately not enforced here, as they degrade rather than block:
+   * flexbox `gap` (Chrome 84, ~27 of our CSS files) collapses spacing, and logical assignment
+   * (??=, &&=) in the lazy-loaded zxing_reader.js (Chrome 85) breaks only QR-from-image decoding.
+   *
+   * WebView has been updatable through Play since Android 5.0, so in practice this only bites
+   * devices without Play services, or with WebView updates disabled.
+   */
+  private static final int MIN_WEBVIEW_CHROME_VERSION = 80;
+
+  /** Chromium major version of the system WebView, or -1 if it could not be determined.
+   *
+   * Returning -1 (rather than 0) matters: we only block on a version we positively know is too
+   * old, so an unparsable user-agent lets the app start normally.
+   */
+  private static int webViewChromeVersion( Context context )
+  {
+    try
+    {
+      final String ua = WebSettings.getDefaultUserAgent( context );
+      final int idx = (ua != null) ? ua.indexOf("Chrome/") : -1;
+      if( idx < 0 )
+        return -1;
+
+      int end = idx + 7;
+      while( (end < ua.length()) && Character.isDigit(ua.charAt(end)) )
+        end += 1;
+
+      if( end == (idx + 7) )
+        return -1;
+
+      return Integer.parseInt( ua.substring(idx + 7, end) );
+    }catch( Exception e )
+    {
+      Log.w("webViewChromeVersion", "Could not determine system WebView version", e);
+    }
+
+    return -1;
+  }//webViewChromeVersion(...)
+
+
+  /** Stand-in page shown when the system WebView is too old to parse our JavaScript.
+   *
+   * Deliberately plain HTML/ASCII: the apps normal localization lives in the web UI, which is
+   * exactly what cannot load here.
+   */
+  private static String unsupportedWebViewHtml( int version )
+  {
+    return "<html><head><meta name='viewport' content='width=device-width, initial-scale=1'></head>"
+         + "<body style='font-family:sans-serif;margin:2em;line-height:1.5;color:#222'>"
+         + "<h2>InterSpec cannot start</h2>"
+         + "<p>This device&#39;s <b>Android System WebView</b> is version " + version
+         + ", but InterSpec needs version " + MIN_WEBVIEW_CHROME_VERSION + " or newer.</p>"
+         + "<p>Please update <b>Android System WebView</b> from the Google Play Store, then "
+         + "restart InterSpec.</p>"
+         + "</body></html>";
+  }//unsupportedWebViewHtml(...)
+
+
+  /** Whether the soft keyboard is currently covering part of the window.
+   *
+   * On API 30+ the IME is a first-class WindowInset, so we just ask.  Below that we fall back to
+   * comparing the visible frame against the window, but we have to discount the system bars: when
+   * the app is laid out edge-to-edge (which Android 15 forces on apps targeting SDK 35), the
+   * window spans the status and navigation bars while the visible frame does not, so the two
+   * differ by ~200px with no keyboard at all.  The old `heightDiff > 100` test read that as a
+   * permanently-showing keyboard, which meant the "keyboard hidden" reset never ran and a stale
+   * input position was reused for whatever field was focused next.
+   */
+  private boolean isSoftKeyboardShowing( View rootView, Rect visibleFrame )
+  {
+    final WindowInsetsCompat insets = ViewCompat.getRootWindowInsets( rootView );
+
+    if( (insets != null) && (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) )
+      return insets.isVisible( WindowInsetsCompat.Type.ime() );
+
+    int obscured = rootView.getHeight() - (visibleFrame.bottom - visibleFrame.top);
+    if( insets != null )
+    {
+      final Insets bars = insets.getInsets( WindowInsetsCompat.Type.systemBars() );
+      obscured -= (bars.top + bars.bottom);
+    }
+
+    // Use dp, not raw pixels: 100px is ~38dp here, but ~100dp on an mdpi device.  No real IME is
+    // under ~120dp tall.
+    final float density = rootView.getResources().getDisplayMetrics().density;
+    return (obscured > (int)Math.round( 120 * density ));
+  }//isSoftKeyboardShowing(...)
 
   @Override
   protected void onStart() {
@@ -1027,8 +1185,11 @@ public class InterSpec extends AppCompatActivity
       e.printStackTrace();
     }
 
-    //Note: as of 20190311, the getExternalFilesDir() or getFilesDir() calls have not been tested.
-    String userDataDir = activity.getExternalFilesDir(null).getAbsolutePath();
+    // getExternalFilesDir(null) returns null when external storage is not mounted (no SD card,
+    // emulated storage unavailable, or media ejected) -- the fall back to getFilesDir() below was
+    // always intended, but only tested for an empty string, so we NPE'd before reaching it.
+    final File externalFilesDir = activity.getExternalFilesDir(null);
+    String userDataDir = (externalFilesDir != null) ? externalFilesDir.getAbsolutePath() : "";
     if( userDataDir.isEmpty() )
       userDataDir = activity.getFilesDir().getAbsolutePath();
 

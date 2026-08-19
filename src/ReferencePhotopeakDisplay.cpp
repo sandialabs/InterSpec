@@ -1248,6 +1248,13 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
 
   m_otherNucsColumn->addStyleClass("OtherNucs ToolTabSection ToolTabTitledColumn");
 
+  // The column lives in a WGridLayout cell, which Wt renders as a table that sizes to content --
+  // so the `width` in ReferencePhotopeakDisplay.css is compressed away and, on a phone, the
+  // column ends up ~60px: "Assoc. Nucs" wraps to two lines and nuclide names ellipsize after a
+  // few characters.  A minimum size becomes an inline style the table does honor.
+  if( m_spectrumViewer && m_spectrumViewer->isPhone() )
+    m_otherNucsColumn->setMinimumSize( WLength(125,WLength::Pixel), WLength::Auto );
+
   WText *otherNucTitle = new WText( WString::tr("rpd-suggestions"), m_otherNucsColumn);
   otherNucTitle->addStyleClass("ToolTabColumnTitle");
 
