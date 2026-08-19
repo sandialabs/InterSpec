@@ -60,7 +60,7 @@ namespace rapidxml{ template<class Ch> class xml_node; }
 
 namespace SandiaDecay
 {
-  class Nuclide;
+  struct Nuclide;
   struct Transition;
 }
 

@@ -37,7 +37,7 @@
 // Forward declarations
 class PeakDef;
 class SpecMeas;
-struct DetectorPeakResponse;
+class DetectorPeakResponse;
 
 namespace SpecUtils
 {
