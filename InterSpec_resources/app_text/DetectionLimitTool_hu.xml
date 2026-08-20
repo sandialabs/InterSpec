@@ -9,25 +9,6 @@
   <message id="dlt-roi-lower-label">ROI alsó:</message>
   <message id="dlt-roi-upper-label">ROI felső:</message>
   <message id="dlt-continuum-label">Kontinuum</message>
-  <message id="dlt-cont-norm-label">Kont. norm.</message>
-  <message id="dlt-cont-norm-floating">Lebegő</message>
-  <message id="dlt-cont-norm-fixed-edges">Széleken rögzített</message>
-  <message id="dlt-cont-norm-fixed-full-roi">Teljes ROI rögzített</message>
-  <message id="dlt-cont-norm-tt">
-    A kontinuum normalizálás meghatározásának módja:
-    <ul><li><b>Lebegő</b>: A polinomiális kontinuumot minden adott aktivitásnál illesztjük -
-    az aktivitás befolyásolja a kontinuumot.</li>
-    <li><b>Széleken rögzített</b>: A ROI mindkét oldalán lévő csatornákat használjuk egy
-    lineáris kontinuum meghatározásához, amely rögzített, és nem függ a nuklid aktivitásától.</li>
-    <li><b>Teljes ROI rögzített</b>: A kontinuumot a ROI teljes energiatartományára illesztjük,
-    nulla Gauss-amplitúdót feltételezve; ezután a csúcs Gauss-komponense
-    erre a rögzített kontinuumra kerül.<br/>
-    Ez gyakorlatilag azt jelenti, hogy nincs jelcsúcs jelen az adatokban.
-    A kontinuumot nem befolyásolja a nuklid aktivitás értéke, és a csúcs Gauss-komponense
-    erre a rögzített kontinuumra kerül a
-    &chi;<sup>2</sup> kiértékelésekor.</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">Egycsúcsos Currie-határ</message>
   <message id="dlt-num-side-channels-label">Oldalsó csatornák száma</message>
   <message id="dlt-further-details-link">további részletek...</message>
@@ -39,7 +20,11 @@
   <message id="dlt-range">Tartomány:</message>
   <message id="dlt-detected-activity-tt">Észlelt aktivitás, kizárólag ezt az érdeklődési régiót (ROI) használva,
     a megfigyelt impulzustöbblet és a
-    statisztikai megbízhatósági intervallum alapján.</message>
+    statisztikai megbízhatósági intervallum alapján.
+    A névleges érték az ISO 11929 szerinti legjobb becslés: a jel eloszlásának várható értéke,
+    miután eltávolítottuk belőle a lehetetlen negatív aktivitásokra eső részt.  Mindig legalább
+    akkora, mint a nyers impulzustöbblet, és a kettő megegyezik, ha a jel jóval a kritikus szint
+    felett van.</message>
   <message id="dlt-limit-lt-zero"><![CDATA[Határ: < 0{1}]]></message>
   <message id="dlt-sig-fewer-counts">(jelentősen kevesebb impulzus a ROI-ban, mint az előrejelzett)</message>
   <message id="dlt-fewer-counts-tt">Jelentősen kevesebb impulzust figyeltek meg az
@@ -66,22 +51,12 @@
   <message id="dlt-distance-limit">Távolság határ</message>
   <message id="dlt-peaks-disp-act-label">Csúcsok megj. akt.:</message>
   <message id="dlt-peaks-disp-dist-label">Csúcsok megj. táv.:</message>
-  <message id="dlt-conf-level-label">Megbízhatósági szint:</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68,2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95,4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99,7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">Használandó gamma-vonalak</message>
   <message id="dlt-min-rel-intensity-label">Min. relatív intenzitás:</message>
   <message id="dlt-fit-fwhm-btn">FWHM illesztés...</message>
   <message id="dlt-log">Log</message>
   <message id="dlt-lin">Lin</message>
   <message id="dlt-below-lc">(L<sub>c</sub> alatt)</message>
-  <message id="dlt-lt-zero-counts"><![CDATA[< 0 impulzus]]></message>
-  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
 
   <!-- Error messages -->
   <message id="dlt-err-no-data">Nincs betöltött adat</message>
@@ -128,7 +103,10 @@
 
   <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
   <message id="dlt-tt-greater-than-lc">A csúcsrégióban a megfigyelt impulzusszám meghaladta
-    a &quot;kritikus szintet&quot;, L<sub>c</sub>.</message>
+    a &quot;kritikus szintet&quot;, L<sub>c</sub>.
+    A megjelenített érték a jel ISO 11929 szerinti legjobb becslése, amely figyelembe veszi, hogy az
+    aktivitás nem lehet negatív; a jel jelenlétéről szóló döntés a nyers impulzustöbblet alapján
+    született.  Egyértelmű jel esetén a kettő megegyezik, határesetben a legjobb becslés a nagyobb.</message>
   <message id="dlt-tt-activity-range">A jel aktivitástartomány-becslése, {1} megbízhatósági szinten.</message>
   <message id="dlt-tt-counts-range">A jel impulzusszám-tartomány becslése, {1} megbízhatósági szinten.</message>
   <message id="dlt-tt-fewer-than-predicted">A csúcsrégióban jelentősen kevesebb impulzust figyeltek meg,
@@ -165,15 +143,21 @@
     forrásból, bármilyen árnyékolás előtt, de a nuklid korát figyelembe véve,
     a szülő nuklid bomlásánként.</message>
   <message id="dlt-tt-below-lc-counts">A megfigyelt jel impulzusszáma kisebb, mint a &quot;kritikus szint&quot;, L<sub>c</sub>,
-    így detektálás nem jelenthető ki, de ez a várható impulzusok feletti többlet.</message>
+    így detektálás nem jelenthető ki, de ez a jel impulzusszámának ISO 11929 szerinti legjobb
+    becslése, figyelembe véve, hogy a jel nem lehet negatív.  Soha nem kisebb nullánál, még akkor
+    sem, ha a csúcsrégióban kevesebb impulzust észleltünk, mint amennyit a szomszédos régiók
+    előrejeleznek.</message>
   <message id="dlt-tt-below-lc-activity">A megfigyelt jel aktivitása kisebb, mint a &quot;kritikus szint&quot;, L<sub>c</sub>,
-    így detektálás nem jelenthető ki, de ez a várható impulzusok feletti többlet.</message>
+    így detektálás nem jelenthető ki, de ez a jel aktivitásának ISO 11929 szerinti legjobb becslése,
+    figyelembe véve, hogy az aktivitás nem lehet negatív.  Soha nem kisebb nullánál, még akkor sem,
+    ha a csúcsrégióban kevesebb impulzust észleltünk, mint amennyit a szomszédos régiók
+    előrejeleznek.</message>
 
   <!-- Chart strings -->
   <message id="dlt-chart-x-axis-distance">Távolság ({1})</message>
   <message id="dlt-chart-x-axis-activity">Aktivitás ({1})</message>
   <message id="dlt-chart-title-estimated-activity">Becsült aktivitás: {1}.</message>
-  <message id="dlt-chart-title-excess-counts">Többlet impulzusok: {1}.</message>
+  <message id="dlt-chart-title-excess-counts">Becsült jel: {1} impulzus.</message>
   <message id="dlt-chart-title-activity-lt-zero"><![CDATA[Aktivitás < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">Adat + csúcs, {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">Csúcs a(z) {1} felső határához @{2} CL</message>
@@ -188,4 +172,9 @@
   <message id="dlt-err-upper-limit-negative">Az impulzusszám felső határa kisebb, mint nulla, de a megfigyelt impulzusszám nagyobb, mint L_d.</message>
   <message id="dlt-err-activity-zero-negative">Az aktivitás nem lehet nulla vagy negatív</message>
   <message id="dlt-err-distance-zero-negative">A távolság nem lehet nulla vagy negatív</message>
+  <message id="dlt-qr-tool-state-title">A Detektálási megbízhatósági eszköz állapota</message>
+  <message id="dlt-qr-tool-state-txt">A detektálási megbízhatósági eszköz jelenlegi állapota.</message>
+  <message id="dlt-estimating-spread">Szórás számítása…</message>
+  <message id="dlt-spread-band">(jellemzően ennek {1}&ndash;{2}&times; szerese)</message>
+  <message id="dlt-spread-unavailable">A szórást nem sikerült megbecsülni.</message>
 </messages>

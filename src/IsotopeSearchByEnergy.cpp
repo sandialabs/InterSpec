@@ -52,6 +52,7 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/SpecMeas.h"
 #include "InterSpec/PeakModel.h"
@@ -364,7 +365,7 @@ IsotopeSearchByEnergy::IsotopeSearchByEnergy( InterSpec *viewer,
   m_minBranchRatioDiv = searchOptions->addNew<WContainerWidget>();
   m_minBranchRatioDiv->setHiddenKeepsGeometry( true );
   WLabel *label = m_minBranchRatioDiv->addNew<WLabel>( WString::tr("isbe-min-br") );
-//  HelpSystem::attachToolTipOn( label,"Toggle or type minimum branching ratio.", showToolTips , HelpSystem::ToolTipPosition::Top);
+//  HelpSystem::attachToolTipOn( label,"Toggle or type minimum branching ratio.", showToolTips  );
 
   m_minBranchRatio = m_minBranchRatioDiv->addNew<NativeFloatSpinBox>();
   HelpSystem::attachToolTipOn( m_minBranchRatio, WString::tr("isbe-tt-min-br"),
@@ -1070,8 +1071,7 @@ void IsotopeSearchByEnergy::removeSearchEnergy( IsotopeSearchByEnergy::SearchEne
   //  and we are inside `energy`'s own remove() signal emission - detach it now (so startSearch sees
   //  the updated set) but defer destruction until the emit unwinds, else we free the emitting signal
   //  (use-after-free).
-  std::shared_ptr<Wt::WWidget> doomed( m_searchEnergies->removeWidget( energy ).release() );
-  Wt::WServer::instance()->post( wApp->sessionId(), [doomed](){} );
+  WidgetUtils::removeWidgetLater( m_searchEnergies, energy );
   startSearch( false );
 }//void removeSearchEnergy( SearchEnergy *energy )
 
@@ -2432,8 +2432,25 @@ void IsotopeSearchByEnergy::startSearch( const bool refreshBr )
   
   ++m_currentSearch;
   const int currentSearch = m_currentSearch;
-  workingspace->searchdoneCallback = [this, currentSearch](){
-    hideSearchingTxt( currentSearch );
+  //  This is invoked from `updatefcnt` below, i.e. on the session thread but from a task the worker
+  //  posted, so it must not capture a raw `this` (nor an observing_ptr - the std::function is copied
+  //  on the worker thread, and `observable::observers_` has no mutex).
+  //
+  //  Note we must NOT use `WidgetUtils::WidgetHandle` here: this widget moves between the tool tab
+  //  strip and its own window, and while the tool tabs are hidden it is detached from the widget
+  //  tree entirely - parked on InterSpec through `WObject::addChild` with no *widget* parent (see
+  //  `addChild( ...->removeWidget(m_nuclideSearch.get()) )` in InterSpec.cpp).
+  //  `WApplication::findById` only walks domRoot_/domRoot2_, so it would silently fail to resolve
+  //  and the "Searching..." text would stay up for the rest of the session.  Go through InterSpec
+  //  instead, pinning the *instance* by the model's shared_ptr identity - after "Clear Session..."
+  //  the accessor hands back a different tool whose m_currentSearch counter has restarted, which
+  //  could otherwise spuriously match.
+  const shared_ptr<IsotopeSearchByEnergyModel> searchmodel = m_model;
+  workingspace->searchdoneCallback = [currentSearch, searchmodel](){
+    InterSpec * const viewer = InterSpec::instance();
+    IsotopeSearchByEnergy * const search = viewer ? viewer->nuclideSearch() : nullptr;
+    if( search && (search->m_model == searchmodel) )
+      search->hideSearchingTxt( currentSearch );
   };
 
   //Verified below is safe if the WApplication instance is terminated before

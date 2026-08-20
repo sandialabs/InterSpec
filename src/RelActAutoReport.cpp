@@ -138,20 +138,10 @@ namespace
       RelEffChart::ReCurveInfo info;
       info.live_time = sol.m_spectrum ? sol.m_spectrum->live_time() : 1.0;
 
+      //Note: pass _all_ the points; `RelEffChart` uses `RelActAutoSolution::show_obs_eff_point(...)` to decide
+      //  which to plot, and lists the rest (with why they were left out) in its omitted-points panel.
       if( rel_eff_index < sol.m_obs_eff_for_each_curve.size() )
-      {
-        for( const RelActCalcAuto::RelActAutoSolution::ObsEff &obs_eff
-             : sol.m_obs_eff_for_each_curve[rel_eff_index] )
-        {
-          if( obs_eff.observed_efficiency > 0.0
-              && obs_eff.num_sigma_significance > 2.5
-              && obs_eff.fraction_roi_counts > 0.05
-              && obs_eff.within_roi )
-          {
-            info.obs_eff_data.push_back( obs_eff );
-          }
-        }
-      }
+        info.obs_eff_data = sol.m_obs_eff_for_each_curve[rel_eff_index];
 
       info.rel_acts = sol.m_rel_activities[rel_eff_index];
       info.re_curve_name = Wt::WString::fromUTF8( rel_eff.name );
@@ -438,16 +428,214 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
   data["have_multiple_rel_eff"] = have_multiple_rel_eff;
   data["live_time_s"]           = live_time;
 
-  // ---- Goodness-of-fit ----
-  data["chi2"]            = sol.m_chi2;
-  data["dof"]             = static_cast<int64_t>(sol.m_dof);
-  data["chi2_per_dof"]    = sol.m_dof > 0 ? sol.m_chi2 / static_cast<double>(sol.m_dof) : 0.0;
+  // ---- Goodness-of-fit (data channel rows only; excludes the anchor/prior/BR residual rows) ----
+  data["chi2"]            = sol.m_chi2_data;
+  data["dof"]             = static_cast<int64_t>(sol.m_dof_data);
+  data["chi2_per_dof"]    = sol.m_dof_data > 0 ? sol.m_chi2_data / static_cast<double>(sol.m_dof_data) : 0.0;
   {
     char buf[64] = { '\0' };
-    snprintf( buf, sizeof(buf), "%.6G", sol.m_chi2 );
+    snprintf( buf, sizeof(buf), "%.6G", sol.m_chi2_data );
     data["chi2_str"] = string(buf);
     snprintf( buf, sizeof(buf), "%.6G", data["chi2_per_dof"].get<double>() );
     data["chi2_per_dof_str"] = string(buf);
+  }
+
+  // Weighted R² (coefficient of determination) and the Jacobian condition number κ(J).  See the doc
+  //  comments on RelActAutoSolution::m_r2 / m_jacobian_condition_number for meaning and typical ranges.
+  //  Store null (and an "n/a" string) when a value was not computed, so the JSON stays valid.
+  data["r2"] = nullptr;
+  if( sol.m_r2 == sol.m_r2 )  // i.e. not NaN
+    data["r2"] = sol.m_r2;
+  data["condition_number"] = nullptr;
+  if( sol.m_jacobian_condition_number >= 0.0 )
+    data["condition_number"] = sol.m_jacobian_condition_number;
+  {
+    char buf[64] = { '\0' };
+    if( sol.m_r2 == sol.m_r2 )
+    {
+      snprintf( buf, sizeof(buf), "%.5G", sol.m_r2 );
+      data["r2_str"] = string(buf);
+    }else
+    {
+      data["r2_str"] = string("n/a");
+    }
+
+    if( sol.m_jacobian_condition_number >= 0.0 )
+    {
+      snprintf( buf, sizeof(buf), "%.3G", sol.m_jacobian_condition_number );
+      data["condition_number_str"] = string(buf);
+    }else
+    {
+      data["condition_number_str"] = string("n/a");
+    }
+  }
+
+  // ---- Multi-curve separation diagnostics ----
+  // Same quantities as the "Rel. eff. curve separation" block of print_summary(); see the doc
+  //  comments on RelActAutoSolution::CurveSeparationStatus / m_cross_curve_correlations /
+  //  m_evidence_purity / m_enrichment_diff_z / MergedCurveComparison for meanings + healthy ranges.
+  //  All empty/"NotApplicable"/null for single-curve fits.
+  {
+    const char *status_str = "NotApplicable";
+    switch( sol.m_curve_separation_status )
+    {
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::NotApplicable:                                  break;
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::WellSeparated:   status_str = "WellSeparated";   break;
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::PoorlySeparated: status_str = "PoorlySeparated"; break;
+      case RelActCalcAuto::RelActAutoSolution::CurveSeparationStatus::Degenerate:      status_str = "Degenerate";      break;
+    }
+    data["curve_separation_status"] = string(status_str);
+    // Display label + composed tier-1 verdict, single-sourced on the solution so every surface
+    //  (results tab, in-code HTML report, these templates) words the verdict identically.
+    data["curve_separation_display"] = string( sol.curve_separation_display() );
+    data["curve_separation_verdict"] = sol.curve_separation_verdict( false );
+    data["curve_separation_verdict_html"] = sol.curve_separation_verdict( true );
+
+    // Which evidence tier established the curves as distinct (see
+    //  RelActAutoSolution::curves_distinct_basis()): "none", "z", "z_plus_merged", or "merged_only".
+    const char *basis_str = "none";
+    switch( sol.curves_distinct_basis() )
+    {
+      case RelActCalcAuto::RelActAutoSolution::CurveDistinctBasis::None:                                              break;
+      case RelActCalcAuto::RelActAutoSolution::CurveDistinctBasis::ZScore:                basis_str = "z";            break;
+      case RelActCalcAuto::RelActAutoSolution::CurveDistinctBasis::ZCorroboratedByMerged: basis_str = "z_plus_merged"; break;
+      case RelActCalcAuto::RelActAutoSolution::CurveDistinctBasis::MergedOnly:            basis_str = "merged_only";  break;
+    }
+    data["curves_distinct_basis"] = string(basis_str);
+
+    const auto corr_to_json = []( const RelActCalcAuto::RelActAutoSolution::CrossCurveCorrelation &corr ) -> json {
+      json entry;
+      entry["curve_a"] = static_cast<int64_t>(corr.curve_a);
+      entry["curve_b"] = static_cast<int64_t>(corr.curve_b);
+      entry["param_a"] = corr.param_a;
+      entry["param_b"] = corr.param_b;
+      entry["correlation"] = corr.correlation;
+      char buf[64] = { '\0' };
+      snprintf( buf, sizeof(buf), "%.3G", corr.correlation );
+      entry["correlation_str"] = string(buf);
+      return entry;
+    };
+
+    data["cross_curve_max_corr"] = nullptr;
+    if( sol.m_cross_curve_max_corr.has_value() )
+      data["cross_curve_max_corr"] = corr_to_json( *sol.m_cross_curve_max_corr );
+
+    data["cross_curve_correlations"] = json::array();
+    for( const RelActCalcAuto::RelActAutoSolution::CrossCurveCorrelation &corr : sol.m_cross_curve_correlations )
+      data["cross_curve_correlations"].push_back( corr_to_json(corr) );
+
+    data["evidence_purity"] = json::array();
+    for( size_t re = 0; re < sol.m_evidence_purity.size(); ++re )
+    {
+      json curve_purity = json::array();
+      for( const auto &src_purity : sol.m_evidence_purity[re] )
+      {
+        json entry;
+        entry["source"] = RelActCalcAuto::to_name( src_purity.first );
+        entry["curve_label"] = sol.curve_label( re );  //same value for every entry of this row
+        // "purity" is the historical key name; rendered text calls this the "attributed share" -
+        //  the counts-weighted fraction of the source's peak regions the fit assigns to this curve.
+        entry["purity"] = src_purity.second;
+        char buf[64] = { '\0' };
+        snprintf( buf, sizeof(buf), "%.2G", src_purity.second );
+        entry["purity_str"] = string(buf);
+        // The source's total modeled peak counts on this curve (the share's weight denominator).
+        if( (re < sol.m_source_model_counts.size())
+            && sol.m_source_model_counts[re].count(src_purity.first) )
+          entry["model_counts"] = sol.m_source_model_counts[re].find(src_purity.first)->second;
+        curve_purity.push_back( entry );
+      }
+      data["evidence_purity"].push_back( curve_purity );
+    }
+
+    // The fit's division of each shared source's modeled peak counts between the curves (sources
+    //  on >= 2 curves only; fractions sum to 1).  No uncertainty is quoted on the fractions - see
+    //  RelActAutoSolution::SourceCountAttribution.
+    data["source_count_attribution"] = json::array();
+    for( const RelActCalcAuto::RelActAutoSolution::SourceCountAttribution &attrib
+                                                              : sol.source_count_attributions() )
+    {
+      json entry;
+      entry["source"] = RelActCalcAuto::to_name( attrib.source );
+      entry["total_counts"] = attrib.total_counts;
+      entry["curves"] = json::array();
+      for( const pair<size_t,double> &curve_frac : attrib.curve_fractions )
+      {
+        json curve_entry;
+        curve_entry["curve"] = static_cast<int64_t>(curve_frac.first);
+        curve_entry["curve_label"] = sol.curve_label( curve_frac.first );
+        curve_entry["fraction"] = curve_frac.second;
+        char buf[64] = { '\0' };
+        snprintf( buf, sizeof(buf), "%.3G", curve_frac.second );
+        curve_entry["fraction_str"] = string(buf);
+        snprintf( buf, sizeof(buf), "%.3G%%", 100.0*curve_frac.second );
+        curve_entry["percent_str"] = string(buf);
+        entry["curves"].push_back( curve_entry );
+      }
+      data["source_count_attribution"].push_back( entry );
+    }
+
+    data["enrichment_diff_z"] = json::array();
+    for( const RelActCalcAuto::RelActAutoSolution::EnrichmentDiffZ &diff : sol.m_enrichment_diff_z )
+    {
+      json entry;
+      entry["nuclide"] = RelActCalcAuto::to_name( diff.nuclide );
+      entry["curve_a"] = static_cast<int64_t>(diff.curve_a);
+      entry["curve_b"] = static_cast<int64_t>(diff.curve_b);
+      entry["enrichment_a"] = diff.enrichment_a;  //mass fraction, [0,1]
+      entry["enrichment_b"] = diff.enrichment_b;
+      entry["sigma_a"] = diff.sigma_a;
+      entry["sigma_b"] = diff.sigma_b;
+      entry["z"] = diff.z;
+      entry["reliable"] = diff.reliable;  //false: this z is not usable - see not_usable_note
+      // The reason differs (pinned at a limit -> inflated z; unconstrained composition ->
+      //  deflated z; overruled by the merged-curve comparison), so ship the composed note
+      //  rather than leaving each template to invent one.  Empty when the z is used as-is.
+      entry["not_usable_note"] = sol.z_row_annotation( diff );
+      char buf[128] = { '\0' };
+      snprintf( buf, sizeof(buf), "%.3G", diff.z );
+      entry["z_str"] = string(buf);
+      // Same rule as print_summary/print_html_report: an enrichment is a mass fraction in [0,1], so
+      //  a sigma spanning that whole range carries no information - printing "± 1219 wt%" reads as
+      //  a bug.  (`!(sigma < 1.0)` so NaN takes the unconstrained branch too.)
+      const auto enrich_str = []( const double enrich, const double sigma ) -> string {
+        char b[128] = { '\0' };
+        if( !(sigma < 1.0) )
+          snprintf( b, sizeof(b), "%.3G wt%% (uncertainty unconstrained)", 100.0*enrich );
+        else
+          snprintf( b, sizeof(b), "%.3G ± %.2G wt%%", 100.0*enrich, 100.0*sigma );
+        return string(b);
+      };
+      entry["enrichment_a_str"] = enrich_str( diff.enrichment_a, diff.sigma_a );
+      entry["enrichment_b_str"] = enrich_str( diff.enrichment_b, diff.sigma_b );
+      data["enrichment_diff_z"].push_back( entry );
+    }
+
+    data["merged_curve_comparison"] = nullptr;
+    if( sol.m_merged_single_curve_comparison.has_value() )
+    {
+      const RelActCalcAuto::RelActAutoSolution::MergedCurveComparison &merged = *sol.m_merged_single_curve_comparison;
+      json entry;
+      entry["valid"] = merged.valid;
+      entry["message"] = merged.message;
+      entry["multi_chi2"] = merged.multi_chi2_data;
+      entry["multi_dof"] = static_cast<int64_t>(merged.multi_dof_data);
+      entry["merged_chi2"] = merged.merged_chi2_data;
+      entry["merged_dof"] = static_cast<int64_t>(merged.merged_dof_data);
+      entry["delta_chi2"] = merged.delta_chi2;
+      entry["extra_dof_of_multi"] = static_cast<int64_t>(merged.extra_dof_of_multi);
+      entry["single_curve_adequate"] = merged.single_curve_adequate;
+      // A negative delta-chi2 means the merged (more constrained) model fit better, which cannot
+      //  happen at a proper solution - the multi-curve fit is not at its own optimum.  Templates
+      //  need the flag plus an unsigned magnitude so they can word "raises"/"lowers" correctly.
+      entry["merged_fits_better"] = (merged.delta_chi2 < 0.0);
+      char buf[64] = { '\0' };
+      snprintf( buf, sizeof(buf), "%.4G", merged.delta_chi2 );
+      entry["delta_chi2_str"] = string(buf);
+      snprintf( buf, sizeof(buf), "%.4G", std::fabs(merged.delta_chi2) );
+      entry["delta_chi2_abs_str"] = string(buf);
+      data["merged_curve_comparison"] = entry;
+    }
   }
 
   // ---- Warnings ----
@@ -480,6 +668,14 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
 
     if( i < sol.m_rel_eff_coefficients.size() )
       curve["coefficients"] = sol.m_rel_eff_coefficients[i];
+
+    // The equation keys are always present (empty when unavailable) so templates can reference
+    //  them unconditionally.  A solve that failed during setup fills in `m_rel_eff_forms` but never
+    //  the coefficients, in which case these throw (they used to read out of bounds instead - see
+    //  `RelActAutoSolution::rel_eff_txt`).
+    curve["equation_text"] = string();
+    curve["equation_html"] = string();
+    curve["js_rel_eff_eqn"] = string();
 
     try
     {
@@ -579,8 +775,14 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
           {
             nuc_info["has_enrichment_uncert"]   = true;
             nuc_info["enrichment_uncert"]       = *enr.second;
-            nuc_info["enrichment_minus_2sigma"] = enr.first - 2.0 * (*enr.second);
-            nuc_info["enrichment_plus_2sigma"]  = enr.first + 2.0 * (*enr.second);
+            // Clipped to the physical [0,1] mass-fraction range - an unclipped band prints as
+            //  e.g. 101.7 % or a negative enrichment.  `enrichment_2sigma_clipped` says when the
+            //  raw interval ran outside, so a template can flag it.
+            const double raw_minus = enr.first - 2.0 * (*enr.second);
+            const double raw_plus  = enr.first + 2.0 * (*enr.second);
+            nuc_info["enrichment_2sigma_clipped"] = ((raw_minus < 0.0) || (raw_plus > 1.0));
+            nuc_info["enrichment_minus_2sigma"] = (std::max)( 0.0, raw_minus );
+            nuc_info["enrichment_plus_2sigma"]  = (std::min)( 1.0, raw_plus );
           }else
           {
             nuc_info["has_enrichment_uncert"] = false;

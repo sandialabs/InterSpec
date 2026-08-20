@@ -37,6 +37,8 @@
 #include <boost/optional.hpp>
 #endif
 
+#include "InterSpec/DetectionLimitCalc.h"
+
 
 //Forward declarations
 struct Material;
@@ -79,6 +81,11 @@ namespace GammaInteractionCalc
   struct PeakResultPlotInfo;
   class ShieldingSourceChi2Fcn;
 }//namespace GammaInteractionCalc
+
+namespace ShieldSourcePullTrend
+{
+  struct TrendResult;
+}//namespace ShieldSourcePullTrend
 
 
 /** This namespace is structs that represent the data users input in the `ShieldingSelect` class, and the inputs of
@@ -345,8 +352,117 @@ namespace ShieldingSourceFitCalc
   };//struct ModelFitProgress
   
   
+  /** Per-peak information that supplements the fit itself, computed after a successful fit by
+   evaluating the fitted model - held at its nominal answer - against every peak that was given to
+   `GammaInteractionCalc::ShieldingSourceChi2Fcn::create(...)`, not just the peaks the fit used.
+
+   Two questions are answered:
+   - "Is there a detectable signal in this peaks region?" - a Currie-style detection limit check,
+     made for every peak.  For a peak that was fit this is a quality check: a peak can pass the
+     peak-fit significance tests and still sit below the level at which a signal can be reliably
+     claimed.
+   - "What activity would this peak imply on its own?" - for peaks that were fit but were _not_
+     used in the activity/shielding fit.  The useful reading is whether the unused peaks agree with
+     the answer the used peaks gave; a systematic offset across all of them means something
+     different (efficiency, shielding, branching ratio) than scatter does.
+
+   The model quantities come from the same forward model that produced the fit, so interference
+   between sources, self-attenuating and trace source geometry, and decay during the measurement are
+   all accounted for.
+   */
+  struct SupplementalPeakInfo
+  {
+    /** The peak this entry is for; an entry of
+     `GammaInteractionCalc::ShieldingSourceChi2Fcn::allForegroundPeaks()`.
+     */
+    std::shared_ptr<const PeakDef> peak;
+
+    /** Whether this peak was used in the activity/shielding fit (i.e., had
+     `PeakDef::useForShieldingSourceFit()` set).
+     */
+    bool used_for_fit = false;
+
+    /** Whether this peak stands in for a peak that was not actually observed; see
+     `GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput::synthetic_peaks`.
+
+     Its observed area is meaningless, so no implied activity is derived for it - but
+     `counts_per_bq` is, which is what turns a counts-based detection limit into an activity.
+     */
+    bool synthetic = false;
+
+    /** The Currie-style detection limit check for this peaks region. */
+    DetectionLimitCalc::PeakCurrieCheck currie;
+
+    /** Whether the fitted model was evaluated for this peak.  False when the peaks nuclide was not
+     one of the fitted sources, or it has no source gamma assigned; see `not_evaluated_reason`.
+     */
+    bool model_evaluated = false;
+    std::string not_evaluated_reason;
+
+    /** The counts the model predicts for this peak, from all fitted sources together. */
+    double expected_counts = 0.0;
+
+    /** The part of `expected_counts` this peaks own nuclide contributes, and the part all other
+     fitted sources contribute.  Splitting them out is the interference correction.
+     */
+    double nuclide_expected_counts = 0.0;
+    double other_srcs_expected_counts = 0.0;
+
+    /** Whether a fitted source other than this peaks nuclide contributes to this peak. */
+    bool shared_with_other_sources = false;
+
+    /** Counts this peak receives per becquerel of its nuclides activity; i.e.
+     `nuclide_expected_counts` divided by the fitted activity.
+
+     This is the counts-to-activity conversion, and it accounts for the branching ratio at the
+     fitted age, live time, shielding and air attenuation, detector efficiency, source geometry, and
+     decay during the measurement.
+     */
+    double counts_per_bq = 0.0;
+
+    /** Pieces of the conversion above, for reporting; the detector efficiency at this energy, and
+     the shielding and air transmission fractions.  For volumetric sources these are effective
+     values averaged over the source, rather than a single line-of-sight.
+     */
+    double det_efficiency = 0.0;
+    double shield_transmission = 1.0;
+    double air_transmission = 1.0;
+
+    /** Whether this peaks nuclide is a self-attenuating or trace (i.e. volumetric) source. */
+    bool is_volumetric_source = false;
+
+    /** The activity this peak alone implies, holding everything else at the nominal fitted answer.
+
+     Only derived for peaks that were fit, were not used in the fit, and whose nuclide was fitted;
+     see `has_implied_activity`.  Any contribution other fitted sources make to the peak is removed
+     before scaling, so this is the activity of `peak->parentNuclide()`.
+     */
+    bool has_implied_activity = false;
+    double fit_activity = 0.0;
+    double fit_activity_uncert = 0.0;
+    double implied_activity = 0.0;
+    double implied_activity_uncert = 0.0;
+
+    /** Observed counts divided by model-expected counts, and how many sigma the peak sits from the
+     model.  These are the same quantities the chi2 chart shows for the used peaks.
+     */
+    double ratio_to_fit = 0.0;
+    double ratio_to_fit_uncert = 0.0;
+    double num_sigma_off = 0.0;
+
+    /** A table-cell sized summary, a sentence or two with the numbers in it, notes about anything
+     that makes the comparison less reliable, and the three assembled into one paragraph (with the
+     caveats last).
+     */
+    std::string short_description;
+    std::string result_summary;
+    std::string caveats;
+    std::string description;
+  };//struct SupplementalPeakInfo
+
+
   /** A struct to store the results of the model fit.
-   
+
    */
   struct ModelFitResults
   {
@@ -386,7 +502,13 @@ namespace ShieldingSourceFitCalc
     std::vector<ShieldingSourceFitCalc::SourceFitDef> fit_src_info;
     
     std::unique_ptr<const std::vector<GammaInteractionCalc::PeakResultPlotInfo>> peak_comparisons;
-    
+
+    /** Diagnosis of the per-peak pull ("chi") trend vs energy - fitted trend curve(s) and an
+     interpretation (too much/little shielding, wrong effective atomic number).  May be null if
+     the analysis could not be run.  See ShieldSourcePullTrend.h.
+     */
+    std::shared_ptr<const ShieldSourcePullTrend::TrendResult> pull_trend;
+
     std::vector<std::string> peak_calc_log;
     std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> peak_calc_details;
     std::unique_ptr<const std::vector<GammaInteractionCalc::ShieldingDetails>> shield_calc_details;
@@ -396,6 +518,19 @@ namespace ShieldingSourceFitCalc
     std::unique_ptr<const std::vector<GammaInteractionCalc::EffectiveShieldingInfo>> effective_shielding;
     
     
+    /** Per-peak detection limit checks, and the activities that peaks not used in the fit imply;
+     one entry per peak given to `ShieldingSourceChi2Fcn::create(...)`, in that order.
+
+     Empty when the fit did not reach `FitStatus::Final`, when
+     `ShieldingSourceChi2Fcn::SupplementalInfoOptions::compute` is false, or if the computation
+     failed (in which case a message is added to `warnings`).
+     \sa SupplementalPeakInfo
+     */
+    std::vector<SupplementalPeakInfo> supplemental_peak_info;
+
+    /** Non-fatal problems encountered while computing `supplemental_peak_info`. */
+    std::vector<std::string> warnings;
+
     ShieldingSourceFitOptions options;
   };//struct ModelFitResults
     
@@ -460,6 +595,31 @@ namespace ShieldingSourceFitCalc
                   std::shared_ptr<ModelFitResults> results,
                   std::function<void()> finished_fcn );
 
+
+  /** Computes the per-peak supplemental information; see `SupplementalPeakInfo`.
+
+   `fit_model(...)` calls this itself, so both the GUI and batch analyses pick it up; it is exposed
+   for testing, and for callers that want to evaluate a model they did not fit.
+
+   The fitted model is evaluated - held at `results.paramValues` - against a peak list that also
+   includes the peaks the fit did not use, by building a second function object from
+   `chi2Fcn.createInput()` with those peaks flagged.  Only peaks whose nuclide is already one of the
+   fitted sources may be added: the parameter layout is derived from the nuclide set, so a peak with
+   a new nuclide would silently shift every parameter.  That the layout is unchanged is asserted
+   before anything is evaluated.
+
+   Never throws; problems are appended to `warnings`, and the affected entries carry a reason.
+
+   @param chi2Fcn The function object the fit was performed with.
+   @param results The fit results; `paramValues`, `fit_src_info`, `peak_calc_details` and
+          `source_calc_details` are used.  Nothing is computed unless the fit reached
+          `FitStatus::Final`.
+   @param warnings Non-fatal problems are appended here.
+   */
+  std::vector<SupplementalPeakInfo> compute_supplemental_peak_info(
+                  const GammaInteractionCalc::ShieldingSourceChi2Fcn &chi2Fcn,
+                  const ModelFitResults &results,
+                  std::vector<std::string> &warnings );
 
   /** The maximum time (in milliseconds) a model fit can take before the fit is
       aborted.  This generally will only ever be applicable to fits with

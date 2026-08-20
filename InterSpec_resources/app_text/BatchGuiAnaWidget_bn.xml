@@ -35,7 +35,6 @@
   <message id="bgw-concatenate-all-to-single">সমস্ত ফাইল একক ফাইলে সংযুক্ত করুন</message>
   <message id="bgw-info-will-convert-file-type">ফাইলগুলি নির্বাচিত টাইপে রূপান্তরিত হবে।</message>
 
-
   <!-- Reports group -->
   <message id="bgw-reports-grp-title">লিখতে হবে রিপোর্ট</message>
   <message id="bgw-reports-write-html">HTML</message>
@@ -43,7 +42,6 @@
   <message id="bgw-reports-write-csv">সারাংশ CSV</message>
   <message id="bgw-reports-write-csv-tooltip">সমস্ত ইনপুট ফাইল থেকে বিশ্লেষণ ফলাফল সহ একটি সারাংশ CSV ফাইল লিখুন।</message>
   <message id="bgw-reports-write-custom-per-file">কাস্টম প্রতি-ফাইল</message>
-  <message id="bgw-reports-write-custom-per-file-tooltip">প্রতিটি ফাইলের জন্য ব্যবহার করতে একটি কাস্টম রিপোর্ট টেমপ্লেট আপলোড করুন।</message>
   <message id="bgw-reports-write-custom-summary">কাস্টম সারাংশ</message>
   <message id="bgw-reports-write-custom-summary-tooltip">সমস্ত ইনপুট ফাইলের সারাংশ প্রদান করতে ব্যবহৃত এক বা একাধিক টেমপ্লেট ফাইল।</message>
 
@@ -58,7 +56,6 @@
   <message id="bgw-no-ana-act-shield-invalid-background">অবৈধ ব্যাকগ্রাউন্ড</message>
   <message id="bgw-no-ana-no-input-files">কোনো ইনপুট ফাইল নেই।</message>
   <message id="bgw-no-ana-invalid-output-path">একটি বৈধ আউটপুট ডিরেক্টরি নির্বাচন করুন।</message>
-
 
   <!-- Analysis progress and results -->
   <message id="bgw-performing-work-title">কাজ সম্পাদন করা হচ্ছে</message>
@@ -120,8 +117,6 @@ InterSpec থেকে পিকগুলি স্পেকট্রাম ফ�
 একটি শূন্য বা নেতিবাচক মান মানে কোনো প্রয়োজনীয়তা নেই, এবং কোনো 'peak-stat-threshold' প্রয়োজনীয়তাও নেই।</message>
 
   <message id="bgw-reports-write-custom-per-file-tooltip">এক বা একাধিক স্পেকট্রাম রিপোর্ট টেমপ্লেট ফাইল - প্রতিটি ইনপুট ফাইলের জন্য, নির্দিষ্ট প্রতিটি টেমপ্লেট দিয়ে একটি রিপোর্ট তৈরি করা হবে।</message>
-
-  <message id="bgw-reports-write-custom-summary-tooltip">সমস্ত ইনপুট ফাইলের সারাংশ প্রদান করতে ব্যবহৃত এক বা একাধিক টেমপ্লেট ফাইল।</message>
 
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Bq ইউনিট ব্যবহার করুন</message>

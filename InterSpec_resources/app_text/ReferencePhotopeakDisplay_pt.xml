@@ -83,13 +83,11 @@
   <message id="rpd-tbl-hdr-tt-trans">Nuclídeo real que decaiu para dar esta partícula.</message>
   <message id="rpd-tbl-hdr-tt-trans-mode">Modo de decaimento do nuclídeo pai, que produziu esta partícula.</message>
   <message id="rpd-tbl-hdr-tt-type">O tipo de partícula produzida</message>
-  <message id="rpd-tbl-hdr-tt-"></message>
 
   <!-- Fit Sources (peak fitting from displayed reference lines) -->
   <message id="rpd-fit-source">Ajustar Fonte</message>
   <message id="rpd-fit-sources">Ajustar Fontes</message>
   <message id="rpd-fit-sources-menu-auto">Automático</message>
   <message id="rpd-fit-sources-menu-advanced">Avançado</message>
-
 
 </messages>

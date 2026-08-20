@@ -43,6 +43,7 @@
 #endif 
 
 #include <Wt/WText.h>
+#include <Wt/Utils.h>
 #include <Wt/WTimer.h>
 #include <Wt/WServer.h>
 #include <Wt/WGridLayout.h>
@@ -191,8 +192,6 @@ bool InterSpecApp::checkExternalTokenFromUrl()
        && !p.second.empty() )
     {
       m_externalToken = p.second.front();
-      
-      InterSpecServer::add_allowed_session_token( m_externalToken.c_str(), InterSpecServer::SessionType::PrimaryAppInstance );
       
       const int status = InterSpecServer::set_session_loaded( m_externalToken.c_str() );
       
@@ -844,7 +843,8 @@ void InterSpecApp::setupWidgets( const bool attemptStateLoad  )
         m_viewer->loadStateFromDb( state );
           
         WStringStream js;
-        js << "Resuming where you left off on " << state->name.toUTF8()
+        js << "Resuming where you left off on "
+           << Wt::Utils::htmlEncode( state->name ).toUTF8()
            << "<div onclick="
         "\"Wt.emit( document.querySelector('.specviewer').id, {name:'miscSignal'}, 'clearSession');"
         "try{this.parentElement.parentElement.remove();}catch(e){}"

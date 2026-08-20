@@ -26,6 +26,8 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <memory>
+#include <utility>
 
 #include <Wt/WContainerWidget.h>
 
@@ -110,6 +112,11 @@ protected:
   
   void handleSwapWithForeground( const SpecUtils::SpectrumType type );
 
+#if( USE_BATCH_GUI_TOOLS )
+  /** Opens the Batch Analysis tool, with the file currently shown for `type` loaded into it. */
+  void handleShowBatchTool( const SpecUtils::SpectrumType type );
+#endif
+
   void handleClearFileSelection( const SpecUtils::SpectrumType type );
   
   void handleCreateReferenceSpectrumDialog();
@@ -160,6 +167,28 @@ private:
    "File Parameters" dialog for this file
    */
   Wt::WPushButton *m_moreInfoBtn[3];
+
+#if( USE_BATCH_GUI_TOOLS )
+  /** Buttons, that look like links in lower right-hand corner, that open the Batch Analysis tool
+   with this file loaded.  Only shown for files that hold several foreground records, which is the
+   case a user is most likely to want to analyze record-by-record.
+   */
+  Wt::WPushButton *m_batchToolBtn[3];
+
+  /** Memo of the last answer, per display type, so that `handleDisplayChange()` - which runs on
+   every sample-number change - doesnt have to re-walk every sample of a large file.
+
+   Keyed on a weak_ptr rather than a raw pointer so a recycled allocation cant be mistaken for the
+   same file, and on the sample count as well so that editing the file in place invalidates it.
+   */
+  struct BatchToolBtnMemo
+  {
+    std::weak_ptr<const SpecMeas> meas;
+    size_t num_samples = 0;
+    bool show = false;
+  };
+  BatchToolBtnMemo m_batchToolBtnMemo[3];
+#endif
 
   Wt::WPushButton *m_swapBackgroundWithForegroundBtn;
   Wt::WPushButton *m_swapSecondaryWithForegroundBtn;

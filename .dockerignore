@@ -1,0 +1,18 @@
+# Keep the Docker build context to the source tree.  Without this the local build directories
+# alone are ~20 GB, which has to be transferred to the daemon on every build.
+#
+# NOTE: debian_web_container.containerfile defaults hostdepdir/hostbuilddir to true and bind-mounts
+# the build context to reuse ./build and ./build/_deps.  Excluding build/ outright would silently
+# break that, so only the local build directories are excluded here, not the one it looks for.
+build_vscode/
+build_xcode/
+build_wtssl/
+build_d4check/
+scratch/
+test_results/
+.git/
+*.dylib
+*.o
+*.a
+InterSpecUserData.db
+developer_errors.log

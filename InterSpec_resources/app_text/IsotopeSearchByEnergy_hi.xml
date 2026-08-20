@@ -69,8 +69,6 @@
   <message id="isbe-category-nuc-xray-rctn-desc">सभी न्यूक्लाइड, x-rays (क्षय और प्रतिदीप्ति), और प्रतिक्रियाएं</message>
   <message id="isbe-category-xray">प्रतिदीप्ति x-rays</message>
   <message id="isbe-category-xray-desc">केवल प्रतिदीप्ति x-rays</message>
-  <message id="isbe-category-reactions">प्रतिक्रियाएं</message>
-  <message id="isbe-category-reactions-desc">केवल प्रतिक्रियाएं</message>
   <message id="isbe-category-medical">चिकित्सा न्यूक्लाइड</message>
   <message id="isbe-category-medical-desc">सामान्य चिकित्सा न्यूक्लाइड</message>
   <message id="isbe-category-industrial">औद्योगिक न्यूक्लाइड</message>

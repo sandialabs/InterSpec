@@ -55,6 +55,7 @@
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorSelect.h"
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/UserPreferences.h"
@@ -398,10 +399,18 @@ void PeakEdit::init()
   
   // When the detector changed/modified signal is emitted, the DRF for the foreground
   //  may not be updated yet, so we will delay until after current event loop
+  //  Wt4: we live in a transient PeakEditWindow, which the user can close inside those 100 ms.
+  //  `WServer::schedule` only guarantees the *session* is still around, so re-resolve this widget by
+  //  DOM id rather than capturing a raw `this` (an observing_ptr would race
+  //  `observable::observers_` when the std::function is copied to the io-service thread).
   const std::string sessionId = wApp->sessionId();
-  auto drfUpdater = [sessionId, this](){
-    WServer::instance()->schedule( std::chrono::milliseconds(100), sessionId, [this](){
-      updateDrfFwhmTxt();
+  const WidgetUtils::WidgetHandle self( this );
+  auto drfUpdater = [sessionId, self](){
+    WServer::instance()->schedule( std::chrono::milliseconds(100), sessionId, [self](){
+      PeakEdit * const editor = self.resolve_as<PeakEdit>();
+      if( !editor )
+        return;
+      editor->updateDrfFwhmTxt();
       wApp->triggerUpdate();
     });
   };

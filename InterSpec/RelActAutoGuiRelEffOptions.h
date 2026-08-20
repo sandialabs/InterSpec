@@ -41,6 +41,7 @@ namespace Wt
 {
   class WMenu;
   class WText;
+  class WLabel;
   class WCheckBox;
   class WComboBox;
   class WInPlaceEdit;
@@ -57,6 +58,8 @@ public:
 
   void showAndHideOptionsForEqnType();
   void initPhysModelShields();
+  /** Emits the options-changed signal.  Connected to the correction-function combo. */
+  void handlePhysModelCorrFcnChanged();
   void setIsOnlyOneRelEffCurve(const bool is_only_rel_eff_curve);
   void setHasMultiplePhysicalModels(const bool has_multiple_phys_models);
   Wt::WString name() const;
@@ -69,7 +72,7 @@ public:
   Wt::Signal<RelActAutoGuiRelEffOptions *> &delRelEffCurve();
   Wt::Signal<RelActAutoGuiRelEffOptions *, Wt::WString> &nameChanged();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &equationTypeChanged();
-  Wt::Signal<RelActAutoGuiRelEffOptions *> &sameHoerlOnAllCurvesChanged();
+  Wt::Signal<RelActAutoGuiRelEffOptions *> &sameCorrFcnOnAllCurvesChanged();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &sameExternalShieldingChanged();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &shieldedByOtherCurvesChanged();
   Wt::Signal<RelActAutoGuiRelEffOptions *> &optionsChanged();
@@ -78,10 +81,11 @@ public:
   size_t rel_eff_eqn_order() const;
   std::shared_ptr<const RelActCalc::PhysicalModelShieldInput> phys_model_self_atten() const;
   std::vector<std::shared_ptr<const RelActCalc::PhysicalModelShieldInput>> phys_model_external_atten() const;
-  bool phys_model_use_hoerl() const;
-  void setPhysModelUseHoerl(const bool use_hoerl);
-  bool physModelSameHoerlOnAllCurves() const;
-  void setPhysModelSameHoerlOnAllCurves(const bool same_hoerl_all_curves);
+  /** The physical-model correction form + biasing options selected in the GUI. */
+  RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput phys_model_corr() const;
+  void setPhysModelCorr( const RelActCalcAuto::RelEffCurveInput::PhysModelCorrInput &corr );
+  bool physModelSameCorrFcnOnAllCurves() const;
+  void setPhysModelSameCorrFcnOnAllCurves(const bool same_corr_fcn_all_curves);
   bool physModelSameExtShieldAllCurves() const;
   void setPhysModelSameExtShieldAllCurves(const bool same_ext_shield_all_curves);
   bool physModelShieldedByOtherCurves() const;
@@ -102,9 +106,13 @@ protected:
                               RelEffShieldWidget *w);
   
   void handleRelEffEqnTypeChanged();
-  void handleSameHoerlOnAllCurvesChanged();
+  void handleSameCorrFcnOnAllCurvesChanged();
   void handleSameExternalShieldingChanged();
   void handleShieldedByOtherCurvesChanged();
+  /** Handler for the "Hoerl Corr." checkbox: drives the source-of-truth combo (checked => Hoerl, unchecked => None). */
+  void handleUseHoerlCheckboxChanged();
+  /** Shows the "Hoerl Corr." checkbox, or the full None/Hoerl/Chebyshev drop-down when Chebyshev is selected. */
+  void updateCorrFcnWidgetVisibility();
 
 protected:
   RelActAutoGui *const m_gui;
@@ -125,8 +133,15 @@ protected:
   Wt::WContainerWidget *m_phys_model_shields;
   RelEffShieldWidget *m_phys_model_self_atten;
   Wt::WContainerWidget *m_phys_ext_attens;
+  Wt::WComboBox *m_phys_model_corr_fcn;
+  /** Label for the correction-function drop-down; hidden while the default "Hoerl Corr." checkbox is shown. */
+  Wt::WLabel *m_phys_model_corr_fcn_label;
+  /** Default-shown "Hoerl Corr." checkbox: a None/Hoerl skin over `m_phys_model_corr_fcn` (which stays the
+   source of truth).  The full None/Hoerl/Chebyshev drop-down is only revealed when a Chebyshev correction
+   is currently selected (e.g. loaded from an XML config). */
   Wt::WCheckBox *m_phys_model_use_hoerl;
-  Wt::WCheckBox *m_phys_model_same_hoerl_on_all_curves;
+  // (self-/external-attenuation AD biasing lives on each RelEffShieldWidget's own "Bias AD" checkbox)
+  Wt::WCheckBox *m_phys_model_same_corr_fcn_on_all_curves;
   Wt::WCheckBox *m_phys_model_same_ext_shield_all_curves;
   Wt::WCheckBox *m_phys_model_shielded_by_other_curves;
   Wt::WText *m_eqn_txt;
@@ -137,7 +152,7 @@ protected:
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_del_rel_eff_curve_signal;
   Wt::Signal<RelActAutoGuiRelEffOptions *, Wt::WString> m_name_changed_signal;
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_eqn_form_changed;
-  Wt::Signal<RelActAutoGuiRelEffOptions *> m_same_hoerl_on_all_curves;
+  Wt::Signal<RelActAutoGuiRelEffOptions *> m_same_corr_fcn_on_all_curves;
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_same_ext_shield_on_all_curves;
   Wt::Signal<RelActAutoGuiRelEffOptions *> m_shielded_by_other_curves;
 

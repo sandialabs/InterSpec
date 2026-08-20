@@ -10,7 +10,7 @@
 		<SkewType>GaussExp</SkewType>
 		<AddUncert>0.00000000e+00</AddUncert>
 		<RelEffCurveInputs>
-			<RelEffCurveInput version="0">
+			<RelEffCurveInput version="1">
 				<Name>Obj 1</Name>
 				<NucInputInfoList>
 					<NucInputInfo version="0">
@@ -67,7 +67,7 @@
 							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
 						</PhysicalModelShield>
 					</ExtAtten>
-					<PhysModelUseHoerl>false</PhysModelUseHoerl>
+					<CorrectionFcnType remark="The empirical correction form. Possible values: None, Hoerl, Chebyshev (default Hoerl if absent).">None</CorrectionFcnType>
 				</PhysicalModelOptions>
 				<MassFractionConstraints>
 					<MassFractionConstraint version="0">
@@ -82,7 +82,7 @@
 					</MassFractionConstraint>
 				</MassFractionConstraints>
 			</RelEffCurveInput>
-			<RelEffCurveInput version="0">
+			<RelEffCurveInput version="1">
 				<Name>Obj 2</Name>
 				<NucInputInfoList>
 					<NucInputInfo version="0">
@@ -133,7 +133,7 @@
 							<UpperFitArealDensity>0.00000000e+00</UpperFitArealDensity>
 						</PhysicalModelShield>
 					</ExtAtten>
-					<PhysModelUseHoerl>false</PhysModelUseHoerl>
+					<CorrectionFcnType remark="The empirical correction form. Possible values: None, Hoerl, Chebyshev (default Hoerl if absent).">None</CorrectionFcnType>
 				</PhysicalModelOptions>
 				<MassFractionConstraints>
 					<MassFractionConstraint version="0">
@@ -144,8 +144,9 @@
 				</MassFractionConstraints>
 			</RelEffCurveInput>
 		</RelEffCurveInputs>
-		<SameHoerlForAllRelEffCurves>false</SameHoerlForAllRelEffCurves>
+		<SameCorrFcnForAllRelEffCurves>false</SameCorrFcnForAllRelEffCurves>
 		<SameExternalShieldingForAllRelEffCurves>false</SameExternalShieldingForAllRelEffCurves>
+		<AutoRemoveDegeneraciesChi2Delta enabled="false" remark="Auto-simplify: greedily remove redundant degrees of freedom (the empirical correction, then external attenuator(s), then the highest polynomial term) when removing one increases chi2 by no more than this value. Optional 'enabled' attribute (true/false, default true) toggles it; an absent element means disabled.">1</AutoRemoveDegeneraciesChi2Delta>
 		<RoiRangeList>
 			<RoiRange version="0">
 				<LowerEnergy>1.18759003e+02</LowerEnergy>

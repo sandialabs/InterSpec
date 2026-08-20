@@ -33,8 +33,6 @@
   <message id="fpn-opt-use-background">Háttérkivonással számol</message>
 
   <!-- PeakFitForNuclideConfig option labels -->
-  <message id="fpn-opt-roi-min-chi2-red">ROI chi2 csökkenés küszöbe</message>
-  <message id="fpn-opt-roi-min-peak-sig">ROI szignifikancia küszöbe</message>
   <message id="fpn-opt-obs-initial-sig">Becsült csúcsszignifikancia küszöb</message>
   <message id="fpn-opt-obs-final-sig">Végső csúcsszignifikancia küszöb</message>
   <message id="fpn-opt-skew-type">Csúcs ferdeség</message>
@@ -49,8 +47,6 @@
   <message id="fpn-opt-tt-dont-refine-energy-cal">Az energiakalibráció változik az illesztés során, de a ROI kiterjedése nem frissül az illesztett kalibráció alapján.</message>
   <message id="fpn-opt-tt-fit-bkgnd-peaks">NORM csúcsok (U-238, Ra-226, U-235, Th-232, K-40) illesztése második relatív hatásfok görbével.</message>
   <message id="fpn-opt-tt-use-background">Ha be van kapcsolva, a háttérspektrum kivonásra kerül a csúcsillesztés során a felhasználandó ROI-k meghatározásához, de a háttér nem kerül kivonásra a visszaadott csúcsok végső illesztéséhez. Kikapcsolva a háttérkivonás nélkül illeszti a csúcsokat.</message>
-  <message id="fpn-opt-tt-roi-min-chi2-red">A csúcsoknak egy ROI-ban elért minimális teljes chi2 csökkenés ahhoz, hogy szignifikánsnak minősüljenek. A csúcsokkal kapott chi2-nek legalább ennyivel kell kisebbnek lennie, mint a csak-kontinuum chi2.</message>
-  <message id="fpn-opt-tt-roi-min-peak-sig">A csúcs minimális szignifikanciája (csúcs_terület / sqrt(kontinuum)) ahhoz, hogy szignifikánsnak minősüljön. Ha a ROI bármely csúcsának szignifikanciája meghaladja ezt a küszöböt, a ROI megmarad.</message>
   <message id="fpn-opt-tt-obs-initial-sig">Küszöbérték a kezdeti csúcsszignifikancia-szűrőhöz az újraillesztés előtt. Szignifikancia = (csúcs_amplitúdó * 0.7607) / sqrt(adat_terület_a_pm_1_fwhm-ben).</message>
   <message id="fpn-opt-tt-obs-final-sig">Küszöbérték a végső csúcsszignifikanciához az újraillesztés után. Szignifikancia = csúcs_terület / csúcs_terület_bizonytalanság.</message>
   <message id="fpn-opt-tt-skew-type">Az összes csúcsra alkalmazott ferdeségi alak az illesztésben. A &quot;None&quot; tiszta Gauss-t használ. Egyéb lehetőségek alacsony energiás farokkomponenseket adnak hozzá (pl. Exp*Gauss NaI/CsI detektorokhoz, Crystal Ball töltésgyűjtési farokhoz HPGe-ben).</message>

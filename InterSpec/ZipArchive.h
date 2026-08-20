@@ -41,6 +41,12 @@
 
 namespace ZipArchive
 {
+  struct ExtractionLimits
+  {
+    size_t max_uncompressed_bytes;
+    size_t max_compression_ratio;
+  };
+
   struct ZipFileHeader
   {
     uint16_t version;
@@ -66,12 +72,21 @@ namespace ZipArchive
   //  Output is garunteed to have at least one entry.
   FilenameToZipHeaderMap open_zip_file( std::istream &instrm );
 
+  // Throws if any member exceeds the per-file limits, if declared aggregate
+  // output exceeds max_aggregate_uncompressed_bytes, or if summing sizes would
+  // overflow.
+  void validate_archive_for_extraction(
+                         const FilenameToZipHeaderMap &headers,
+                         const ExtractionLimits &limits,
+                         size_t max_aggregate_uncompressed_bytes );
+
   //read_file_from_zip():  throws std::exception upon error; in which case it
   //  is indeterminant if any data has been written to the output stream.
   //  Returns number of bytes written to output, which is garunteed to be
   //  greater than zero.
   size_t read_file_from_zip( std::istream &instrm,
                              std::shared_ptr<const ZipFileHeader> header,
-                             std::ostream &output );
+                             std::ostream &output,
+                             const ExtractionLimits &limits );
 }//namespace ZipArchive
 #endif

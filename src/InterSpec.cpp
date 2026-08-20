@@ -30,6 +30,7 @@
 #include <ctime>
 #include <tuple>
 #include <mutex>
+#include <thread>
 #include <locale>
 #include <vector>
 #include <string>
@@ -211,6 +212,10 @@
 #include "InterSpec/RelActManualGui.h"
 #endif
 
+#if( USE_LLM_INTERFACE )
+#include "InterSpec/LlmToolGui.h"
+#include "InterSpec/LlmConversationHistory.h"
+#endif
 
 #include "src/js_inline/InterSpec.js"
 
@@ -264,6 +269,9 @@ namespace
 #endif
 #if( USE_REL_ACT_TOOL )
   static const string RelActManualTitleKey(      "app-tab-isotopics" );
+#endif
+#if( USE_LLM_INTERFACE )
+static const string LlmAssistantTabTitleKey(   "app-tab-llm-assistant" );
 #endif
 
   // The Reference Photopeak and/or the Search tab need thier widgets loaded,
@@ -502,6 +510,11 @@ InterSpec::InterSpec()
   m_decayInfoWindow( nullptr ),
   m_addFwhmTool( nullptr ),
   m_preserveCalibWindow( 0 ),
+#if( USE_LLM_INTERFACE )
+  m_llmToolMenuItem( nullptr ),
+  m_llmTool( nullptr ),
+  m_llmToolWindow( nullptr ),
+#endif
 #if( USE_SEARCH_MODE_3D_CHART )
   m_3dViewWindow( nullptr ),
 #endif
@@ -514,8 +527,6 @@ InterSpec::InterSpec()
   m_currentColorThemeCssFile(),
   m_colorTheme( nullptr ),
   m_colorThemeChanged(),
-  m_findingHintPeaks( false ),
-  m_hintQueue{},
   m_hintPeaksSet(),
   m_externalRidResultsRecieved(),
   m_infoNotificationsMade{}
@@ -1353,6 +1364,102 @@ InterSpec::~InterSpec() noexcept(true)
   closeAddPeakDialog();
   deleteGammaCountDialog();
 
+  // Every remaining tool window/dialog.  These are *not* our children: `AuxWindow::make<T>()` and
+  //  `SimpleDialog::make<T>()` hand ownership to `wApp` (see AuxWindow.h / SimpleDialog.h), and
+  //  `WPopupWidget` parents them under `domRoot_` - neither of which `InterSpecApp::setupWidgets()`
+  //  touches when it does `root()->clear()` for "Clear Session...".  So anything not torn down here
+  //  stays on screen and clickable while holding a dangling `InterSpec*` (or a dangling pointer to a
+  //  tool inside us).  If you add a new tool window member, add it here too.
+  //
+  //  Use the raw `deleteAuxWindow`/`deleteSimpleDialog` primitives rather than the tools' usual
+  //  `closeXxx()` handlers: at this point we only want the window gone, and the handlers' side
+  //  effects are hazards - several register undo/redo steps (`m_undo` is already destroyed above),
+  //  some re-encode state off a dying InterSpec, and the `programmatically*Close*()`/`accept()`
+  //  paths call `done()`, which synchronously re-enters `finished()` handlers bound to `this`.
+  //  (Wt cuts those tracked connections in `~observable`, i.e. *after* this body runs.)
+  //  The exceptions are the tools that persist user state on close - handled above (shielding/
+  //  rel-act) or just below (LLM history).
+#if( USE_LLM_INTERFACE )
+  if( m_llmToolWindow )
+    handleLlmToolClose();   //syncs conversation history into the SpecMeas before deleting
+#endif
+
+  AuxWindow::deleteAuxWindow( m_specFileQueryDialog.get() );
+  AuxWindow::deleteAuxWindow( m_featureMarkersWindow.get() );
+  AuxWindow::deleteAuxWindow( m_gammaXsToolWindow.get() );
+  AuxWindow::deleteAuxWindow( m_doseCalcWindow.get() );
+  AuxWindow::deleteAuxWindow( m_1overR2Calc.get() );
+  AuxWindow::deleteAuxWindow( m_unitsConverter.get() );
+  AuxWindow::deleteAuxWindow( m_fluxTool.get() );
+  AuxWindow::deleteAuxWindow( m_makeDrfTool.get() );
+  AuxWindow::deleteAuxWindow( m_simpleActivityCalcWindow.get() );
+  AuxWindow::deleteAuxWindow( m_helpWindow.get() );
+  AuxWindow::deleteAuxWindow( m_useInfoWindow.get() );
+  AuxWindow::deleteAuxWindow( m_decayInfoWindow.get() );
+  AuxWindow::deleteAuxWindow( m_addFwhmTool.get() );
+  AuxWindow::deleteAuxWindow( m_preserveCalibWindow.get() );
+  AuxWindow::deleteAuxWindow( m_drfSelectWindow.get() );
+
+  SimpleDialog::deleteSimpleDialog( m_exportSpecFileWindow.get() );
+  SimpleDialog::deleteSimpleDialog( m_multimedia.get() );
+  SimpleDialog::deleteSimpleDialog( m_enterUri.get() );
+  SimpleDialog::deleteSimpleDialog( m_riidDisplay.get() );
+
+#if( USE_LEAFLET_MAP )
+  SimpleDialog::deleteSimpleDialog( m_leafletWarning.get() );
+  AuxWindow::deleteAuxWindow( m_leafletWindow.get() );
+#endif
+
+#if( USE_TERMINAL_WIDGET )
+  AuxWindow::deleteAuxWindow( m_terminalWindow.get() );
+#endif
+
+#if( USE_REMOTE_RID )
+  SimpleDialog::deleteSimpleDialog( m_autoRemoteRidResultDialog.get() );
+  AuxWindow::deleteAuxWindow( m_remoteRidWindow.get() );
+#endif
+
+#if( USE_DETECTION_LIMIT_TOOL )
+  AuxWindow::deleteAuxWindow( m_simpleMdaWindow.get() );
+  AuxWindow::deleteAuxWindow( m_detectionLimitWindow.get() );
+#endif
+
+#if( USE_SEARCH_MODE_3D_CHART )
+  AuxWindow::deleteAuxWindow( m_3dViewWindow.get() );
+#endif
+
+  // Backstop for every dialog the named teardowns above do not cover.  Most tool dialogs are
+  //  created *locally* with no member holding them (`SpecFileSummary`, the External RID warning,
+  //  ...), yet their handlers capture an `InterSpec *` just the same - and since `AuxWindow::make`
+  //  gives ownership to `wApp`, nothing else would ever destroy them.  Both factories register here
+  //  via `WidgetUtils::trackSessionDialog`, so this catches those, and any window added in future.
+  //
+  //  Swap the list out first: tearing a dialog down can, in principle, register another one, and we
+  //  do not want to invalidate the iteration (anything registered from here on has no owner to
+  //  outlive anyway).  Entries for dialogs already destroyed are null and skipped.
+  std::vector<Wt::Core::observing_ptr<Wt::WDialog>> tracked;
+  tracked.swap( m_trackedDialogs );
+
+  for( const Wt::Core::observing_ptr<Wt::WDialog> &dialog : tracked )
+  {
+    if( !dialog )
+      continue;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    // Not an assert: the dialogs that reach here are a known, non-empty set until each is given a
+    //  proper owner.  A log line keeps new ones visible without aborting the app.
+    log("info") << "~InterSpec: backstop tearing down an untracked-by-member dialog of type '"
+                << typeid(*dialog.get()).name() << "' - consider giving it an explicit owner.";
+#endif
+
+    if( AuxWindow * const window = dynamic_cast<AuxWindow *>( dialog.get() ) )
+      AuxWindow::deleteAuxWindow( window );
+    else if( SimpleDialog * const simple = dynamic_cast<SimpleDialog *>( dialog.get() ) )
+      SimpleDialog::deleteSimpleDialog( simple );
+    else if( WApplication * const app = WApplication::instance() )
+      app->removeChild( dialog.get() );   //shouldnt happen - only those two factories register
+  }//for( loop over tracked dialogs )
+
   // The following are parented by app->domRoot()
   if( m_mobileMenuButton )
     m_mobileMenuButton->removeFromParent();
@@ -1591,6 +1698,17 @@ void InterSpec::layoutSizeChanged( int w, int h )
   }//if( isPhone() )
 #endif
   
+  // A SimpleDialog limits its scrollable body to the window height from C++ (the value cannot come
+  //  from a stylesheet - see SimpleDialog::updateBodySizeForWindow), so the arithmetic has to be
+  //  redone every time the window changes size.  AuxWindows look after themselves in JavaScript.
+  for( const Wt::Core::observing_ptr<Wt::WDialog> &dialog : m_trackedDialogs )
+  {
+    SimpleDialog * const simpleDialog = dialog ? dynamic_cast<SimpleDialog *>( dialog.get() ) : nullptr;
+    if( simpleDialog )
+      simpleDialog->updateBodySizeForWindow();
+  }//for( each dialog we are tracking )
+
+
   const bool comactX = (h <= 420); //Apple iPhone 6+, 6s+, 7+, 8+
   if( (h > 20) && (comactX != m_spectrum->isAxisCompacted()) )
   {
@@ -3387,7 +3505,10 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
     saveRelActManualStateToForegroundSpecMeas();
     saveRelActAutoStateToForegroundSpecMeas();
 #endif
-    
+#if( USE_LLM_INTERFACE )
+    syncLlmHistoryToSpecMeas();
+#endif
+
     DataBaseUtils::DbTransaction transaction( *m_sql );
     entry.modify()->serializeTime = WDateTime::currentDateTime();
     
@@ -3682,7 +3803,12 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       entry.modify()->simpleMdaUri = m_simpleMdaWindow->tool()->encodeStateToUrl();
     }//if( m_simpleMdaWindow )
 #endif
-        
+    
+#if( USE_LLM_INTERFACE )
+    if( m_llmTool )
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingLlmAssistant;
+#endif
+    
     entry.modify()->backgroundSubMode = UserState::kNoSpectrumSubtract;
     if( m_spectrum->backgroundSubtract() )
       entry.modify()->backgroundSubMode = UserState::kBackgorundSubtract;
@@ -3708,6 +3834,10 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
       else if( txtKey == RelActManualTitleKey )
         entry.modify()->currentTab = UserState::kRelActManualTab;
+#endif
+#if( USE_LLM_INTERFACE )
+      else if( txtKey == LlmAssistantTabTitleKey )
+        entry.modify()->currentTab = UserState::kLlmAssistantTab;
 #endif
     }//if( m_toolsTabs )
     
@@ -4216,7 +4346,15 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
     if( (entry->shownDisplayFeatures & UserState::kShowingRelActAuto) )
       relActAutoWindow(true);
 #endif
-        
+    
+#if( USE_LLM_INTERFACE )
+    if( (entry->shownDisplayFeatures & UserState::kShowingLlmAssistant)
+       && LlmToolGui::llmToolIsConfigured() )
+    {
+      createLlmTool();
+    }
+#endif
+    
     if( (entry->shownDisplayFeatures & UserState::kShowingMultimedia) )
       showMultimedia( SpecUtils::SpectrumType::Foreground );
     
@@ -4376,6 +4514,9 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
 #if( USE_REL_ACT_TOOL )
         case UserState::kRelActManualTab: titleKey = RelActManualTitleKey;     break;
 #endif
+#if( USE_LLM_INTERFACE )
+        case UserState::kLlmAssistantTab: titleKey = LlmAssistantTabTitleKey;  break;
+#endif
         case UserState::kNoTabs:                                               break;
       };//switch( entry->currentTab )
       
@@ -4409,6 +4550,12 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
           case UserState::kRelActManualTab: 
             if( m_relActManualGui )
               m_toolsTabs->setCurrentWidget( m_relActManualGui.get() );
+            break;
+  #endif
+  #if( USE_LLM_INTERFACE )
+          case UserState::kLlmAssistantTab:
+            if( m_llmTool )
+              m_toolsTabs->setCurrentWidget( m_llmTool.get() );
             break;
   #endif
           case UserState::kNoTabs:  
@@ -5554,7 +5701,10 @@ void InterSpec::storeTestStateToN42( const Wt::WString name, const Wt::WString d
     saveRelActManualStateToForegroundSpecMeas();
     saveRelActAutoStateToForegroundSpecMeas();
   #endif
-    
+  #if( USE_LLM_INTERFACE )
+    syncLlmHistoryToSpecMeas();
+  #endif
+
     SpecMeas meas;
     meas.uniqueCopyContents( *m_dataMeasurement );
     
@@ -6196,7 +6346,10 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
     saveRelActManualStateToForegroundSpecMeas();
     saveRelActAutoStateToForegroundSpecMeas();
   #endif
-    
+  #if( USE_LLM_INTERFACE )
+    syncLlmHistoryToSpecMeas();
+  #endif
+
     return;
   }//if( !saveState || !m_dataMeasurement )
   
@@ -6264,6 +6417,9 @@ void InterSpec::saveStateAtForegroundChange( const bool doAsync )
 #if( USE_REL_ACT_TOOL )
       saveRelActManualStateToForegroundSpecMeas();
       saveRelActAutoStateToForegroundSpecMeas();
+#endif
+#if( USE_LLM_INTERFACE )
+      syncLlmHistoryToSpecMeas();
 #endif
       
       // Get foreground/background/secondary files, and update them to the database..
@@ -7089,9 +7245,9 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
 //  WString tooltip = WString::tr("app-tab-tt-nuc-search");
 //  HelpSystem::attachToolTipOn( nuclideTab, tooltip, showToolTips );
     
-#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
-    // Handle when the user closes the tab for the Math/Command terminal and the Manual Relative
-    //  Activity tool
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL || USE_LLM_INTERFACE )
+    // Handle when the user closes the tab for the Math/Command terminal, the Manual Relative
+    //  Activity tool, or the LLM Assistant
     m_toolsTabs->tabClosed().connect( this, [this]( const int a1 ){ handleToolTabClosed( a1 ); } );
 #endif
 
@@ -7116,6 +7272,29 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
     }
 #endif
     
+#if( USE_LLM_INTERFACE )
+    // If the assistant was showing in its own window (no tab strip), dock it back into the strip.
+    if( m_llmTool )
+    {
+      std::unique_ptr<WWidget> llm_widget;
+      if( m_llmToolWindow )
+      {
+        llm_widget = m_llmToolWindow->stretcher()->removeWidget( m_llmTool.get() );
+        AuxWindow::deleteAuxWindow( m_llmToolWindow.get() );
+      }else
+      {
+        llm_widget = removeChild( m_llmTool.get() );
+      }
+      assert( llm_widget );
+      if( llm_widget )
+      {
+        WMenuItem *llmTab = m_toolsTabs->addTab( std::move(llm_widget),
+                                                 WString::tr(LlmAssistantTabTitleKey), TabLoadPolicy );
+        llmTab->setCloseable( true );
+      }
+    }//if( m_llmTool )
+#endif
+
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
     // If `m_currentToolsTab` is for `m_peakInfoDisplay`, and the floating peak info display
     //  window was showing when the user toggled to show tool tabs, then we get an exception:
@@ -7178,6 +7357,20 @@ void InterSpec::setToolTabsVisible( bool showToolTabs )
       if( m_terminalMenuItem )
         m_terminalMenuItem->enable();
     }
+#endif
+
+#if( USE_LLM_INTERFACE )
+    if( m_llmTool )
+    {
+      // Must persist the conversation *before* the widget goes away.  Otherwise m_toolsTabs (and
+      //  with it m_llmTool) is destroyed by the setLayout() below - Wt4's setLogicalLayout() calls
+      //  clear() first - handleLlmToolClose() never runs, and the whole in-tool conversation is
+      //  silently discarded instead of being written back to the SpecMeas.
+      syncLlmHistoryToSpecMeas();
+      safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
+      if( m_llmToolMenuItem )
+        m_llmToolMenuItem->enable();
+    }//if( m_llmTool )
 #endif
 
     m_nuclideSearch->clearSearchEnergiesOnClient();
@@ -8618,6 +8811,7 @@ void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
     timestr = timestr.substr(0,ppos);
   filename += "_" + timestr + (asPng ? ".png" : ".svg");
 
+
   string illegal_chars = "\\/:?\"<>|";
   SpecUtils::erase_any_character( filename, illegal_chars.c_str() );
 
@@ -8634,11 +8828,13 @@ void InterSpec::saveChartToImg( const bool spectrum, const bool asPng )
 void InterSpec::captureSpectrumImage( const std::string &format, int maxLongestSide,
                                        std::optional<std::pair<double,double>> energyRange,
                                        std::optional<bool> yAxisLog,
+                                       std::optional<bool> backgroundSubtract,
                                        std::function<void(std::string, std::string, int, int)> callback )
 {
   if( !m_spectrum )
     throw std::runtime_error( "captureSpectrumImage: no spectrum display available" );
-  m_spectrum->captureChartImage( format, maxLongestSide, energyRange, yAxisLog, std::move( callback ) );
+  m_spectrum->captureChartImage( format, maxLongestSide, energyRange, yAxisLog,
+                                 backgroundSubtract, std::move( callback ) );
 }//captureSpectrumImage(...)
 
 
@@ -9143,10 +9339,9 @@ void InterSpec::startAddPeakFromRightClick()
 
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
-    // Look the dialog up at execution time via `closeAddPeakDialog` / `showAddPeakDialog`
-    // so undo/redo always addresses the *current* dialog (per CLAUDE.md "Undo/redo
-    // discipline").  Capturing the dialog pointer here would go stale across
-    // undo→redo→undo cycles, since `redo` creates a fresh instance.
+    // Look the dialog up at execution time via `closeAddPeakDialog` / `showAddPeakDialog` so
+    // undo/redo always addresses the *current* dialog.  Capturing the dialog pointer here would go
+    // stale across undo→redo→undo cycles, since `redo` creates a fresh instance.
     auto undo = [](){
       InterSpec *interspec = InterSpec::instance();
       if( interspec )
@@ -9164,12 +9359,14 @@ void InterSpec::startAddPeakFromRightClick()
 
 AddNewPeakDialog *InterSpec::showAddPeakDialog( const float energy, std::string ref_line_hint )
 {
-  // Per Cat-A pattern (CLAUDE.md): close any prior instance and create a fresh dialog
-  // seeded at the requested energy.  We always recreate rather than re-using the
-  // existing dialog so the seeded energy / reference-line hint take effect.
+  // One dialog per session: close any prior instance and create a fresh one seeded at the
+  // requested energy.  We always recreate rather than re-use the existing dialog, so the seeded
+  // energy / reference-line hint take effect.
   if( m_addPeakDialog )
     closeAddPeakDialog();
 
+  // If there is no usable foreground the dialog puts up a message explaining that, instead of the
+  //  peak-editing controls; either way it is a normal dialog that closes through finished().
   m_addPeakDialog = AuxWindow::make<AddNewPeakDialog>( energy, ref_line_hint );
   m_addPeakDialog->finished().connect( this, &InterSpec::closeAddPeakDialog );
   return m_addPeakDialog.get();
@@ -9183,6 +9380,28 @@ void InterSpec::closeAddPeakDialog()
   AuxWindow::deleteAuxWindow( m_addPeakDialog.get() );
   assert( !m_addPeakDialog );
 }//void closeAddPeakDialog()
+
+
+void InterSpec::trackToolDialog( Wt::WDialog *dialog )
+{
+  if( !dialog )
+    return;
+
+  // Drop entries whose dialogs have since been destroyed.  Sessions can stay open for weeks, so
+  //  without this the list would grow once per dialog ever opened; with it the size stays bounded by
+  //  ~64 plus however many dialogs are open at once (compacting leaves only the live ones, so the
+  //  next compaction is another ~64 registrations away).  Cheap either way: a dead entry is an
+  //  `observing_ptr` that nulled itself when its target was destroyed - it holds no back-reference
+  //  and costs nothing but its slot - so this is a plain scan, not a lifetime operation.
+  if( m_trackedDialogs.size() >= 64 )
+  {
+    const auto is_dead = []( const Wt::Core::observing_ptr<Wt::WDialog> &p ) -> bool { return !p; };
+    m_trackedDialogs.erase( std::remove_if( begin(m_trackedDialogs), end(m_trackedDialogs), is_dead ),
+                            end(m_trackedDialogs) );
+  }
+
+  m_trackedDialogs.emplace_back( dialog );
+}//void InterSpec::trackToolDialog( Wt::WDialog *dialog )
 
 
 void InterSpec::searchOnEnergyFromRightClick()
@@ -9516,6 +9735,9 @@ void InterSpec::createMapWindow( SpecUtils::SpectrumType spectrum_type )
   {
     WPushButton *button = new WPushButton( "Load Visible Points...", window->footer() );
     WPopupMenu *menu = new WPopupMenu();
+    // A WPopupMenu is owned by the session domRoot, not `button`, so hand its lifetime to the
+    //  (transient) window via addChild() - otherwise it leaks each time the map window is opened.
+    window->addChild( menu );
     menu->setAutoHide( true );
     button->setMenu( menu );
     WMenuItem *item = menu->addItem( "As Foreground" );
@@ -10281,43 +10503,41 @@ void InterSpec::saveRelActAutoStateToForegroundSpecMeas()
 #endif //#if( USE_REL_ACT_TOOL )
 
 
-#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL )
+#if( USE_TERMINAL_WIDGET || USE_REL_ACT_TOOL || USE_LLM_INTERFACE )
 void InterSpec::handleToolTabClosed( const int tabnum )
 {
+  // The tabClosed() signal is emitted while the widget is still docked, so widget(tabnum) still
+  //  returns the widget being closed.  Wt 3.7.1's closeTab() does NOT itself remove or delete the
+  //  widget; each per-tool close handler below is responsible for the removeTab()+delete.
+
   assert( m_toolsTabs );
   if( !m_toolsTabs )
     return;
   
   WWidget *w = m_toolsTabs->widget( tabnum );
   
-#if( USE_TERMINAL_WIDGET && USE_REL_ACT_TOOL )
-  if( w == m_relActManualGui.get() )
+#if( USE_LLM_INTERFACE )
+  if( w == m_llmTool.get() )
   {
-    handleRelActManualClose();
-  }else if( w == m_terminal.get() )
-  {
-    handleTerminalWindowClose();
-  }else
-  {
-    assert( 0 );
+    handleLlmToolClose();
+    return;
   }
-#elif( USE_TERMINAL_WIDGET )
+#endif
+
+#if( USE_TERMINAL_WIDGET )
   if( w == m_terminal.get() )
   {
     handleTerminalWindowClose();
-  }else
-  {
-    assert( 0 );
+    return;
   }
-#elif( USE_REL_ACT_TOOL )
+#endif
+
+#if( USE_REL_ACT_TOOL )
   if( w == m_relActManualGui.get() )
   {
     handleRelActManualClose();
-  }else
-  {
-    assert( 0 );
+    return;
   }
-  //static_assert( 0, "Need to update handleToolTabClosed logic" );  //20230913 - no updates look to be needed
 #endif
   
 #if( InterSpec_PHONE_ROTATE_FOR_TABS )
@@ -10434,6 +10654,14 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item = popup->addMenuItem( WString::tr("app-mi-tools-en-sum") );
   HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-tools-en-sum"), showToolTips );
   item->triggered().connect( this, [this](){ showGammaCountDialog(); } );
+
+#if( USE_LLM_INTERFACE )
+  // Always offer the LLM Assistant; if it is not yet configured, opening it shows a panel with a
+  // button to configure the provider/model (see LlmToolGui).
+  m_llmToolMenuItem = popup->addMenuItem( WString::tr(LlmAssistantTabTitleKey) );
+  HelpSystem::attachToolTipOn( m_llmToolMenuItem, WString::tr("app-mi-tt-tools-llm"), showToolTips );
+  m_llmToolMenuItem->triggered().connect( this, &InterSpec::createLlmTool );
+#endif
   
 #if( USE_SPECRUM_FILE_QUERY_WIDGET )
   
@@ -11730,9 +11958,12 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
 
   if( (spec_type == SpecUtils::SpectrumType::Foreground) && previous && (previous != meas) )
   {
-#if( USE_DB_TO_STORE_SPECTRA )
+#if( USE_DB_TO_STORE_SPECTRA && !BUILD_AS_UNIT_TEST_SUITE )
+    // Not done for the unit-test suite: this posts the DB save to the session on a 25 ms timer, but
+    //  test fixtures destroy the session as soon as the test body returns, so the timer instead
+    //  hits the "session dead" fallback (which asserts).
     saveStateAtForegroundChange( true ); //This function will check "AutoSaveSpectraToDb" pref
-#endif //#if( USE_DB_TO_STORE_SPECTRA )
+#endif //#if( USE_DB_TO_STORE_SPECTRA && !BUILD_AS_UNIT_TEST_SUITE )
     
     // Close Shielding/Source fit Window
     if( m_shieldingSourceFitWindow )
@@ -11750,6 +11981,10 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     if( m_riidDisplay )
       programmaticallyCloseRiidResults();
     
+#if( USE_LLM_INTERFACE )
+    // Save LLM conversation history to previous SpecMeas before switching foreground
+    syncLlmHistoryToSpecMeas();
+#endif
   }//if( (spec_type == SpecUtils::SpectrumType::Foreground) && !!previous && (previous != meas) )
   
   if( !!meas && isMobile() && !toolTabsVisible()
@@ -12419,6 +12654,35 @@ void InterSpec::setSpectrum( std::shared_ptr<SpecMeas> meas,
     }//if( showToolTips )
   }//if( passthrough foreground )
    */
+   
+#if( USE_LLM_INTERFACE )
+  // Load LLM conversation history from the new foreground SpecMeas.
+  //  During benchmark SpectrumSequence steps, the conversation must be preserved across
+  //  mid-sequence spectrum loads, so we skip the swap.
+  if( (spec_type == SpecUtils::SpectrumType::Foreground)
+     && meas && m_llmTool && !m_llmTool->shouldPreserveConversation() )
+  {
+    try
+    {
+      // For passthrough/search-mode data, use an empty sample set as the history key
+      //  so that conversation history persists across time range changes.
+      static const std::set<int> s_empty_sample_set;
+      const std::set<int> &currentSamples = meas->passthrough()
+        ? s_empty_sample_set
+        : (sample_numbers.empty() ? displayedSamples( spec_type ) : sample_numbers);
+
+      // Get the LLM history for these sample numbers
+      auto nativeHistoryPtr = meas->llmConversationHistory( currentSamples );
+
+      // Set the conversation history in the LLM tool
+      m_llmTool->setConversationHistory( nativeHistoryPtr );
+    }
+    catch( const std::exception& e )
+    {
+      std::cerr << "Failed to load LLM conversation history from SpecMeas: " << e.what() << std::endl;
+    }
+  }
+#endif
 }//void setSpectrum(...)
 
 
@@ -12565,10 +12829,22 @@ bool InterSpec::userOpenFileFromFilesystem( const std::string path, std::string 
   {
     cerr << "Caught exception '" << e.what() << "' when trying to load '"
          << path << "'" << endl;
+
+    // Not a spectrum - give the non-spectrum dispatcher a chance to claim it (DRF, CALp, LLM config,
+    //  etc.), the same way in-app drag-drop does.  Only show the invalid-file message if nothing does.
+    try
+    {
+      if( m_fileManager
+         && m_fileManager->handleNonSpectrumFile( displayFileName, path, SpecUtils::SpectrumType::Foreground ) )
+        return false;
+    }catch( std::exception & )
+    {
+    }
+
     SpecMeasManager::displayInvalidFileMsg( displayFileName, e.what() );
     return false;
   }//try / catch
-  
+
   return true;
 }//bool userOpenFileFromFilesystem( const std::string filepath )
 
@@ -13093,69 +13369,64 @@ void InterSpec::searchForHintPeaks( const std::shared_ptr<SpecMeas> &data,
                                    std::shared_ptr<const PeakFitDetPrefs> fitPrefs )
 {
   assert( data );
-  if( !data )
+  if( !data || !spectrum_meas )
     return;
 
+  // Snapshot the existing peaks (on this GUI thread) - used both to seed the search and, in
+  //  setHintPeaks(...), to detect peaks the user added while the search was running.
   shared_ptr<const deque<shared_ptr<const PeakDef>>> origPeaks;
   if( data->sampleNumsWithAutomatedSearchPeaks().count(samples) )
     origPeaks = data->peaks(samples);
   if( origPeaks )
-    origPeaks = make_shared<deque<shared_ptr<const PeakDef>>>( *origPeaks );
+    origPeaks = make_shared<const deque<shared_ptr<const PeakDef>>>( *origPeaks );
 
-  shared_ptr<vector<shared_ptr<const PeakDef>>> searchresults = make_shared<vector<shared_ptr<const PeakDef>>>();
-
-  const string sessionId = wApp->sessionId();
-  weak_ptr<const SpecUtils::Measurement> weakdata = spectrum_meas;
-
-  // Grab the detector
+  // Grab the detector.  If this is the background measurement and it doesnt have a detector, try to
+  //  grab it from the foreground.
   shared_ptr<DetectorPeakResponse> drf = data->detector();
-  // If this is the background measurement, and it doesnt have a detector, try to grab it from the foreground
   if( !drf && (data != m_dataMeasurement) && (data == m_backgroundMeasurement) && m_dataMeasurement )
     drf = m_dataMeasurement->detector();
 
-  weak_ptr<SpecMeas> spectrum = data;
+  // If we dont yet have a confident detector-resolution type, let the peaks the search finds refine
+  //  the guess (done in setHintPeaks(...), on the GUI thread).
   const bool updateDetTypeGuess = ((data == m_dataMeasurement)
                                     && (samples == m_displayedSamples)
                                     && (!fitPrefs
                                     || (fitPrefs->m_det_type == PeakFitUtils::CoarseResolutionType::Unknown)));
 
-  // In Wt4, WApplication::bind() was removed; lambda passed directly (WServer::post handles session context)
-  std::function<void(void)> callback = [this, spectrum, samples, origPeaks,
-                                        searchresults, updateDetTypeGuess](){
-    setHintPeaks( spectrum, samples, origPeaks, searchresults, updateDetTypeGuess );
-  };
+  // Launch (or coalesce onto) the single shared automated search for these sample numbers.  The
+  //  search runs on its own dedicated thread, caches the result, and is honored by the SpecMeas
+  //  cancel token, so we never launch a duplicate here.
+  const std::shared_future<std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>>> fut
+    = PeakSearchGuiUtils::get_or_launch_automated_search_peaks( data, samples, spectrum_meas, drf,
+                                                               fitPrefs, origPeaks );
 
-  // Grab the SpecMeas's persistent cancel token; the worker will check it at
-  //  each cooperative point and inside the Ceres `IterationCallback`.  When
-  //  this `InterSpec` is destroyed (or the SpecMeas itself is destroyed) the
-  //  token is flipped to `true` and the worker bails within ~1 LM iteration.
-  std::shared_ptr<const std::atomic<bool>> cancel_flag = data->peak_search_cancel_flag();
+  Wt::WServer *server = Wt::WServer::instance();
+  if( !server )  //this should always be true
+    return;
 
-  std::function<void(void)> worker = [=](){
-    PeakSearchGuiUtils::search_for_peaks_worker( weakdata, drf, origPeaks, {}, false, searchresults,
-                                                callback, sessionId, false, fitPrefs, cancel_flag );
-  };
+  const string sessionId = wApp->sessionId();
+  const weak_ptr<SpecMeas> weak_spectrum = data;
 
+  // Wait for the search on a DEDICATED thread (not the Wt ioService pool - blocking a pool thread on
+  //  .get() for the whole search would risk starving the pool under many concurrent searches), then
+  //  deliver the result back to this session's event loop.  server->post is a no-op if the session
+  //  has gone away, so setHintPeaks only runs while this InterSpec is alive.
+  std::thread( [this, fut, sessionId, weak_spectrum, samples, origPeaks, updateDetTypeGuess](){
+    const std::shared_ptr<const std::deque<std::shared_ptr<const PeakDef>>> found = fut.get();
 
-  if( m_findingHintPeaks )
-  {
-    m_hintQueue.push_back( worker );
-  }else
-  {
     Wt::WServer *server = Wt::WServer::instance();
-    if( server )  //this should always be true
-    {
-      m_findingHintPeaks = true;
-      server->ioService().boost::asio::io_service::post( worker );
-    }//if( server )
-  }
+    if( server )
+      server->post( sessionId, [this, weak_spectrum, samples, origPeaks, found, updateDetTypeGuess](){
+        setHintPeaks( weak_spectrum, samples, origPeaks, found, updateDetTypeGuess );
+      } );
+  } ).detach();
 }//void searchForHintPeaks(...)
 
 
 void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
                   std::set<int> samplenums,
                   shared_ptr<const deque< std::shared_ptr<const PeakDef>>> existing,
-                  shared_ptr<vector<std::shared_ptr<const PeakDef>>> resultpeaks,
+                  shared_ptr<const deque<std::shared_ptr<const PeakDef>>> resultpeaks,
                   const bool potentuallyUpdateDetTypeGuess )
 {
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -13163,38 +13434,25 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
     log_developer_error( __func__, "setHintPeaks() being called from not within the event loop!" );
 #endif
 
-  m_findingHintPeaks = false;
-  
-  if( m_hintQueue.size() )
-  {
-    Wt::WServer *server = Wt::WServer::instance();
-    if( server )  //this should always be true
-    {
-      m_findingHintPeaks = true;
-      std::function<void()> worker = m_hintQueue.back();
-      m_hintQueue.pop_back();
-      server->ioService().boost::asio::io_service::post( worker );
-    }//if( server )
-  }//if( m_hintQueue.size() )
-  
-
   std::shared_ptr<SpecMeas> spectrum = weak_spectrum.lock();
-  
+
   if( !spectrum || !resultpeaks )
   {
-    cerr << "InterSpec::setHintPeaks(): invalid SpecMeas" << endl;
+    // Null result => the search was canceled or failed; nothing to cache.  Still see if recovery can
+    //  run (both spectra may already have peaks from other paths).
+    startBackgroundPeakRecoveryIfReady();
     return;
-  }//if( !spectrum )
-  
-  
+  }//if( !spectrum || !resultpeaks )
+
+
   shared_ptr<deque<shared_ptr<const PeakDef>>> newpeaks
     = make_shared<deque<shared_ptr<const PeakDef>>>( resultpeaks->begin(), resultpeaks->end() );
-  
+
   //See if the user has added any peaks since we did the automated search
   shared_ptr<deque<shared_ptr<const PeakDef>>> current_user_peaks;
   if( spectrum->sampleNumsWithPeaks().count(samplenums) )
     current_user_peaks = spectrum->peaks(samplenums);
-  
+
   vector<shared_ptr<const PeakDef>> addedpeaks;
   if( current_user_peaks && !existing )
   {
@@ -13205,7 +13463,7 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
       if( std::find(existing->begin(),existing->end(),p) != existing->end() )
         addedpeaks.push_back( p );
   }
-  
+
   if( addedpeaks.size() )
   {
     for( shared_ptr<const PeakDef> p : addedpeaks )
@@ -13215,10 +13473,9 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
         newpeaks->insert( newpeaks->begin() + pos, p );
     }
   }//if( addedpeaks.size() )
-  
+
   spectrum->setAutomatedSearchPeaks( samplenums, newpeaks );
-  
-  
+
   if( potentuallyUpdateDetTypeGuess
      && spectrum
      && resultpeaks
@@ -13246,14 +13503,74 @@ void InterSpec::setHintPeaks( std::weak_ptr<SpecMeas> weak_spectrum,
       }
     }//
   }//if( potentuallyUpdateDetTypeGuess )
-  
+
   if( (spectrum == m_dataMeasurement) && (m_displayedSamples == samplenums) )
     m_hintPeaksSet.emit(SpecUtils::SpectrumType::Foreground);
   else if( (spectrum == m_backgroundMeasurement) && (m_backgroundSampleNumbers == samplenums) )
     m_hintPeaksSet.emit(SpecUtils::SpectrumType::Background);
   else if( (spectrum == m_secondDataMeasurement) && (m_sectondForgroundSampleNumbers == samplenums) )
     m_hintPeaksSet.emit(SpecUtils::SpectrumType::SecondForeground);
+
+  // Now that this spectrum has automated-search peaks, run background-peak recovery if both a
+  //  foreground and background are loaded (guarded to run once per pairing).
+  startBackgroundPeakRecoveryIfReady();
 }//void setHintPeaks(...)
+
+
+void InterSpec::startBackgroundPeakRecoveryIfReady()
+{
+  const std::shared_ptr<SpecMeas> fg_meas = m_dataMeasurement;
+  const std::shared_ptr<SpecMeas> bg_meas = m_backgroundMeasurement;
+  if( !fg_meas || !bg_meas || (fg_meas == bg_meas) )
+    return;
+
+  const std::shared_ptr<const SpecUtils::Measurement> fg_spectrum
+      = displayedHistogram( SpecUtils::SpectrumType::Foreground );
+  const std::shared_ptr<const SpecUtils::Measurement> bg_spectrum
+      = displayedHistogram( SpecUtils::SpectrumType::Background );
+  if( !fg_spectrum || !bg_spectrum )
+    return;
+
+  const std::set<int> fg_samples = m_displayedSamples;
+  const std::set<int> bg_samples = m_backgroundSampleNumbers;
+  if( fg_samples.empty() || bg_samples.empty() )
+    return;
+
+  // Only proceed once both foreground and background automated-search peaks are actually cached, so
+  //  the worker below only hits the cache for them (no off-GUI-thread SpecMeas::peaks() snapshot -
+  //  the captured shared_ptrs keep those caches alive) and we dont kick off extra searches here.
+  if( !fg_meas->automatedSearchPeaks(fg_samples) || !bg_meas->automatedSearchPeaks(bg_samples) )
+    return;
+
+  // Guard: run recovery at most once per foreground/background pairing.
+  if( bg_meas->hasRecoveredBackgroundForForeground(fg_samples, bg_samples) )
+    return;
+
+  if( !Wt::WServer::instance() )
+    return;
+
+  // The foreground prefs are the ones the user configures, and the background is from the same
+  //  detector, so they apply to both spectra.
+  const std::shared_ptr<const PeakFitDetPrefs> fitPrefs = fg_meas->peakFitDetPrefs();
+  const std::string sessionId = wApp->sessionId();
+
+  // Recovery blocks (it fits peaks), so run it on a DEDICATED thread (not the ioService pool); then
+  //  refresh consumers of the background peaks (dynamic reference lines, shielding-source fit) on the
+  //  session event loop.
+  std::thread(
+    [this, fg_meas, fg_samples, fg_spectrum, bg_meas, bg_samples, bg_spectrum, fitPrefs, sessionId]()
+  {
+    const bool changed = PeakSearchGuiUtils::ensure_background_peaks_recovered(
+        fg_meas, fg_samples, fg_spectrum, bg_meas, bg_samples, bg_spectrum, fitPrefs );
+
+    if( !changed )
+      return;
+
+    Wt::WServer *server = Wt::WServer::instance();
+    if( server )
+      server->post( sessionId, [this](){ m_hintPeaksSet.emit(SpecUtils::SpectrumType::Background); } );
+  } ).detach();
+}//void startBackgroundPeakRecoveryIfReady()
 
 
 void InterSpec::excludePeaksFromRange( double x0, double x1 )
@@ -13961,3 +14278,167 @@ void InterSpec::displayBackgroundData()
   if( m_hardBackgroundSub->isEnabled() != canSub )
     m_hardBackgroundSub->setDisabled( !canSub );
 }//void displayBackgroundData()
+
+
+
+
+#if( USE_LLM_INTERFACE )
+void InterSpec::createLlmTool()
+{
+  // Note: the tool may be opened even when not configured - LlmToolGui then shows a "not configured"
+  // panel with a button to open the provider settings window.
+
+  if( m_llmTool )
+    return;
+    
+  try
+  {
+    std::unique_ptr<LlmToolGui> llmTool = std::make_unique<LlmToolGui>( this );
+    m_llmTool = llmTool.get();
+    m_llmTool->focusInput();
+
+    // Load any existing LLM conversation history from the foreground SpecMeas
+    std::shared_ptr<SpecMeas> meas = measurment( SpecUtils::SpectrumType::Foreground );
+    if( meas )
+    {
+      // For passthrough/search-mode data, use an empty sample set as the history key
+      static const std::set<int> s_empty_sample_set;
+      const std::set<int> &samples = meas->passthrough()
+        ? s_empty_sample_set
+        : displayedSamples( SpecUtils::SpectrumType::Foreground );
+      std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> history
+        = meas->llmConversationHistory( samples );
+      if( history && !history->empty() )
+        m_llmTool->setConversationHistory( history );
+    }
+
+    if( m_toolsTabs )
+    {
+      WMenuItem *item = m_toolsTabs->addTab( std::move(llmTool), WString::tr(LlmAssistantTabTitleKey) );
+      item->setCloseable( true );
+      m_toolsTabs->setCurrentWidget( m_llmTool.get() );
+      const int index = m_toolsTabs->currentIndex();
+      m_toolsTabs->setTabToolTip( index, WString::tr("app-tab-tt-llm-assistant") );
+
+      // Note that the m_toolsTabs->tabClosed() signal has already been hooked up to call
+      //  handleToolTabClosed(), which will delete m_llmTool when the user closes the tab.
+    }else
+    {
+      // No tool-tab strip to dock into, so show the tool in its own window - otherwise the widget
+      //  would be parked with addChild(), which gives it no widget parent and hence no DOM element,
+      //  leaving the tool invisible *and* (since we disable the menu item below) unreachable.
+      m_llmToolWindow = AuxWindow::make( WString::tr(LlmAssistantTabTitleKey),
+                                        (AuxWindowProperties::SetCloseable
+                                         | AuxWindowProperties::EnableResize
+                                         | AuxWindowProperties::TabletNotFullScreen) );
+
+      WPushButton *closeButton = m_llmToolWindow->addCloseButtonToFooter();
+      closeButton->clicked().connect( m_llmToolWindow.get(), &AuxWindow::hide );
+
+      m_llmToolWindow->rejectWhenEscapePressed();
+      m_llmToolWindow->finished().connect( this, &InterSpec::handleLlmToolClose );
+
+      m_llmToolWindow->show();
+      if( (m_renderedWidth > 100) && (m_renderedHeight > 100) && !isPhone() )
+      {
+        m_llmToolWindow->resizeWindow( 0.6*m_renderedWidth, 0.8*m_renderedHeight );
+        m_llmToolWindow->centerWindow();
+      }
+
+      m_llmToolWindow->stretcher()->addWidget( std::move(llmTool), 0, 0 );
+    }//if( m_toolsTabs ) / else
+
+    m_llmToolMenuItem->disable();
+  }catch( const std::exception &e )
+  {
+    std::cout << "Error creating LLM tool: " << e.what() << std::endl;
+    // `llmTool` still owns the widget unless it was handed to the tab strip / addChild above,
+    //  so it is freed when it goes out of scope; the observing_ptr auto-clears with it.
+    if( m_llmTool && m_llmTool->parent() )
+      safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
+  }//try / catch
+}//void createLlmTool()
+
+LlmToolGui *InterSpec::currentLlmTool()
+{
+  return m_llmTool.get();
+}//LlmToolGui *currentLlmTool();
+
+void InterSpec::openLlmConfigForImport( const std::string &configFilePath )
+{
+  // Make sure the LLM Assistant tool/tab exists so the user lands in the assistant, and so we have
+  //  the save/apply wiring; then open the settings window pre-loaded with the dropped config.
+  createLlmTool();  // creates + switches to the tab on first use; a no-op if already created
+
+  if( !m_llmTool )
+    return;
+
+  // If the tool already existed, the user may be on a different tab - bring the assistant forward.
+  if( m_toolsTabs )
+    m_toolsTabs->setCurrentWidget( m_llmTool.get() );
+
+  m_llmTool->openConfigWindowToImport( configFilePath );
+}//void openLlmConfigForImport( const std::string &configFilePath )
+
+void InterSpec::syncLlmHistoryToSpecMeas()
+{
+  if( !m_llmTool )
+    return;
+
+  std::shared_ptr<SpecMeas> meas = measurment( SpecUtils::SpectrumType::Foreground );
+  if( !meas )
+    return;
+
+  try
+  {
+    std::shared_ptr<std::vector<std::shared_ptr<LlmInteraction>>> history
+      = m_llmTool->getConversationHistory();
+
+    // For passthrough/search-mode data, use an empty sample set as the history key
+    static const std::set<int> s_empty_sample_set;
+    const std::set<int> &samples = meas->passthrough()
+      ? s_empty_sample_set
+      : displayedSamples( SpecUtils::SpectrumType::Foreground );
+
+    if( history && !history->empty() )
+      meas->setLlmConversationHistory( samples, history );
+    else
+      meas->removeLlmConversationHistory( samples );
+  }catch( const std::exception &e )
+  {
+    std::cerr << "Failed to sync LLM history to SpecMeas: " << e.what() << std::endl;
+  }
+}//void syncLlmHistoryToSpecMeas()
+
+
+void InterSpec::handleLlmToolClose()
+{
+  if( !m_llmTool )
+    return;
+
+  syncLlmHistoryToSpecMeas();
+
+  m_llmToolMenuItem->enable();
+
+  // safeRemoveTab() destroys the widget (it drops the returned unique_ptr) and works around the
+  //  Wt4 WMenuItem::removeContents() bug that leaves eager tab content in the internal stack.
+  //  Guarded by indexOf() so it stays idempotent with the docking path, which already removed
+  //  the tab before calling this.
+  if( m_llmToolWindow )
+  {
+    // The tool lives in the window's stretcher, so tearing the window down destroys it too.
+    AuxWindow::deleteAuxWindow( m_llmToolWindow.get() );
+  }else if( m_toolsTabs && (m_toolsTabs->indexOf(m_llmTool.get()) >= 0) )
+  {
+    safeRemoveTab( m_toolsTabs, m_llmTool.get(), false );
+    m_toolsTabs->setCurrentIndex( 2 );
+  }else if( m_llmTool )
+  {
+    removeChild( m_llmTool.get() );   // parked via addChild (legacy path)
+  }
+
+  assert( !m_llmTool );         // observing_ptr auto-clears when the widget is destroyed
+  assert( !m_llmToolWindow );
+}
+#endif // USE_LLM_INTERFACE
+

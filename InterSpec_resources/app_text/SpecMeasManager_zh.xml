@@ -49,15 +49,6 @@
   </message>
   <message id="smm-unsupported-document">此文件看起来是文档文件，InterSpec不支持。</message>
   <message id="smm-invalid-peak-csv">上传的文件看起来像峰CSV文件，但无效。</message>
-  <message id="smm-file-is-drf">
-    <p style="white-space: nowrap;">
-      此文件看起来是探测器响应函数。
-    </p>
-    <p style="text-align: left; white-space: nowrap;">
-      名称：{1}
-    </p>
-   <p>您想使用此DRF吗？</p>
-  </message>
   <message id="smm-saved-drf-conf">
     已保存'{1}'供以后使用，将在
     "<em>探测器响应函数选择</em>"工具的"<em>相对效率</em>"部分中可用。
@@ -254,7 +245,6 @@
     使用<b>文件管理器</b>更改此设置。
   </message>
 
-
   <!-- The visual components of the Spectrum Measurement Manager GUI -->
   <message id="smm-selected-spec-label">已选择的谱：</message>
   <message id="smm-disp-as-btn">显示为</message>
@@ -267,7 +257,6 @@
   <message id="smm-export-btn">导出...</message>
   <message id="smm-unload-btn">卸载</message>
   <message id="smm-unassign-label">取消分配：</message>
-
 
   <message id="smm-prev-states-window-title">先前存储的状态</message>
   <message id="smm-err-prev-state-unexpected">显示可用保存状态时出现意外问题：{1}</message>
@@ -327,9 +316,7 @@
   <message id="musd-err-decoding-url">解码URL时出错：{1}</message>
   <message id="musd-received-urls-list">已收到{2}个url中的{1}个。<p>等待更多URL/QR码</p></message>
 
-
   <message id="uid-qr-code-pic">QR码图片</message>
-  <message id="uid-no-qr-found">未找到QR码 ⓘ</message>
   <message id="uid-no-qr-found-title">未找到QR码</message>
   <message id="uid-no-qr-content">
     <p>

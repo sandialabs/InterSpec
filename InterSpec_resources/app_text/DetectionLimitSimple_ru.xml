@@ -5,7 +5,6 @@
   <message id="dls-fit-fwhm-btn">Фитировать FWHM...</message>
   <message id="dls-select-drf-btn">Выбрать детектор...</message>
   <message id="dls-further-details-link">подробности...</message>
-  <message id="dls-conf-level-label">Уровень доверия:</message>
   <message id="dls-roi-lower-label">ROI нижний:</message>
   <message id="dls-roi-upper-label">ROI верхний:</message>
   <message id="dls-num-side-channel-label">Кол-во боковых кан.:</message>
@@ -20,9 +19,6 @@
       Опция выбора боковых каналов рядом с областью пика становится неактуальной, поэтому будет скрыта.
     </p>
   </message>
-  <message id="dls-cont-norm-unknown">Плавающий</message>
-  <message id="dls-cont-norm-not-present">Как отсутствие сигнала</message>
-  <message id="dls-cont-norm-fixed-by-sides">От краев</message>
   <message id="dls-roi-changed-no-gamma">Изменение ROI исключило первичную гамму - не изменяю</message>
   <message id="dls-suggest-fwhm">FWHM детектора: {1} кэВ</message>
   <message id="dls-rough-est-fwhm">Грубая оценка FWHM: {1} кэВ</message>
@@ -38,7 +34,7 @@
 
   <message id="dls-det-act-with-range">Обнаружено: {1}, диапазон [{2}, {3}], @{4} CL</message>
   <message id="dls-det-no-result">Извините, нет результата</message>
-  <message id="dls-det-counts-with-range">Избыточные отсчеты: {1}, диапазон [{2}, {3}], @{4} CL</message>
+  <message id="dls-det-counts-with-range">Оценка сигнала: {1} отсчётов, диапазон [{2}, {3}], @{4} CL</message>
   <message id="dls-det-act-less-zero">Активность &lt; 0 {1} (наблюдается значительно меньше отсчетов чем ожидалось).</message>
   <message id="dls-det-counts-less-zero">Избыточные отсчеты &lt; 0 {2} (наблюдается значительно меньше отсчетов чем ожидалось).</message>
   <message id="dls-det-upper-bound">Менее чем {1} присутствует @{2} CL.</message>
@@ -59,6 +55,10 @@
   </message>
   <message id="dls-chart-title-upper-bound-act">Пик для верхней границы {1} @{2} CL</message>
   <message id="dls-results-txt-upper-bound-act">Менее чем {1} @{2} CL</message>
+  <message id="dls-results-txt-predicted-act">Предсказанная чувствительность: менее {1} при Д.У. {2} для измерения длительностью {3}</message>
+  <message id="dls-results-txt-predicted-counts">Предсказанная чувствительность: менее {1} сигнальных отсчетов при Д.У. {2} для измерения длительностью {3}</message>
+  <message id="dls-chart-title-predicted-act">Пик для предсказанной чувствительности {1} @{2} CL</message>
+  <message id="dls-chart-title-predicted-counts">Пик для предсказанной чувствительности {1} отсчетов @{2} CL</message>
   <message id="dls-chart-title-upper-bound-counts">Пик для верхней границы {1} отсчетов @{2} CL</message>
   <message id="dls-results-txt-upper-bound-counts">Менее чем {1} сигнальных отсчетов присутствует @{2} CL</message>
   <message id="dls-err-no-meas">Измерение недоступно</message>
@@ -83,7 +83,16 @@
   <message id="dls-err-select-det">Выберите функцию эффективности детектора.</message>
   <message id="dls-err-neg-distance">Расстояние не может быть отрицательным.</message>
   <message id="dls-err-no-fwhm-info">Функция эффективности детектора не содержит информации FWHM - пожалуйста, фитируйте FWHM или измените детектор.</message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
-  <message id="dls-"></message>
+  <message id="dls-is-background-spectrum-cb-short">Фон?</message>
+  <message id="dls-num-side-channel-label-short">Бок. каналы:</message>
+  <message id="dls-result-projected-band"> (обычно {1}&ndash;{2}&times; этого значения)</message>
+  <message id="dls-roi-lower-label-short">Нижняя:</message>
+  <message id="dls-roi-upper-label-short">Верхняя:</message>
+  <message id="dls-scale-more-info-note">
+    Пересчитано на реальное время {1} (живое время {2}, отношение &times;{3} к реальному времени измерения {4}).
+  </message>
+
+  <!-- Показывается под расширенными параметрами, когда выбран метод деконволюции и они отключены.
+       Отключённый элемент без пояснения выглядит как ошибка. -->
+  <message id="dls-advanced-decon-note">Это относится к методу Карри; предел по деконволюции их пока не использует.</message>
 </messages>

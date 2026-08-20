@@ -292,29 +292,38 @@ size_t findROILimitHighRes( const PeakDef &peak, const std::shared_ptr<const Mea
   {
     if( (channel <= nprev_avrg) || ((channel + nprev_avrg + 1) >= nchannel) )
       continue;
-    
+
     const size_t prev_sum_start = channel - direction*nprev_avrg;
     const size_t prev_sum_end = channel - direction;
-    
+
     const float prev_sum = dataH->gamma_channels_sum( prev_sum_start, prev_sum_end );
     const float val = dataH->gamma_channel_content( channel );
     const float val_next = dataH->gamma_channel_content( channel + direction );
 
     const float prev_avrg = prev_sum / nprev_avrg;
     const float prev_avrg_uncert = std::max( 1.0f*nprev_avrg, std::sqrt(prev_sum) ) / nprev_avrg;
-    
+
     const float max_allowable = std::ceil(prev_avrg + feature_nsigma_limit*prev_avrg_uncert) +  0.001f;
-    
+
     //cout << "mean=" << mean << ", channel=" << channel << ", prev_avrg(" << prev_sum_start
     //     <<  "," << prev_sum_end<< ")=" << prev_avrg
     //     << ", val=" << val << ", nextval=" << val_next << ", max_allowable=" << max_allowable << ""
     //     << endl;
-    
+
     // We'll require two bins to be outside of tolerance
     if( (val > max_allowable && val_next > max_allowable) )
-      return channel - direction;
+    {
+      // When the peaks FWHM is smaller than the channel width (e.g., a synthetic delta-like
+      //  peak), `feature_detect_start` can be the peaks own channel, in which case backing off
+      //  by one channel here would put the ROI limit on the wrong side of the peaks mean -
+      //  giving an inverted (lower above upper) ROI once both sides do this - so clamp the limit
+      //  to the peaks mean channel.
+      const size_t limit = channel - direction;
+      const size_t mean_channel = dataH->find_gamma_channel( mean );
+      return high ? std::max(limit, mean_channel) : std::min(limit, mean_channel);
+    }
   }//for( int bin = minBin; bin > lastbin; --bin )
-  
+
 
   return high ? nominal_up_channel : nominal_low_channel;
 }//findROILimitHighRes(...)
@@ -370,7 +379,7 @@ size_t findROILimit( const PeakDef &peak,
   
   const double mean = peak.mean();
   const double sigma = peak.sigma();
-  
+
   const int direction = high ? 1 : -1;
   lowxrange = mean + direction * 7.5*sigma;  //2.3 FWHM
   
@@ -411,7 +420,7 @@ size_t findROILimit( const PeakDef &peak,
   
   //Lets find the bin with the smallest contents, and
   for( indexing_t channel = startchannel + direction*nSideChannel;
-       channel != lastchannel && channel>nSideChannel; channel += direction )
+       channel != lastchannel && channel>nSideChannel && channel < nchannel; channel += direction )
   {
     assert( channel < (dataH->num_gamma_channels() + 100) );
     const float val = contents[channel];
@@ -556,8 +565,14 @@ size_t findROILimit( const PeakDef &peak,
   }//if( direction < 0 && dataH->GetBinCenter(lastbin) < 100.0 )
   
   
+  // Bound `channel` to the valid channel range.  The termination test only checks for reaching
+  // lastchannel/meanchannel, so on a degenerate low-resolution spectrum where the scan direction
+  // points away from both, `channel` would run to INT_MAX and `contents[channel]` below would read
+  // far out of bounds (heap OOB -> SIGBUS).  For valid inputs the loop stops at lastchannel/
+  // meanchannel first, so this bound only affects the runaway case.
   for( indexing_t channel = minChannel + direction*nSideChannel;
-      channel != lastchannel && channel != meanchannel; channel += direction )
+      channel != lastchannel && channel != meanchannel
+        && channel >= 0 && channel < nchannel; channel += direction )
   {
     const float val = contents[channel];
     const float nextval = (channel>1 && (nchannel-channel)>0)  //probably is fine, but we'll check JIC
@@ -1498,7 +1513,12 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
           starting_value = 2; // Saying skew becomes significant after 2 sigma, is maybe reasonable
           step_size = 0.5;
           lower_value = 0.5;  // You should at least be gaussian for half a sigma
-          upper_value = 4.0;  // If you are gaussian all the way out to 4 sigma, you dont need skew
+          // Pure Gaussian only as alpha->inf; the power-law tail is <1e-5 of the area by ~5 sigma,
+          //  so 5.0 is the practical "no skew" ceiling (a larger alpha also shrinks the (n/alpha)^n
+          //  term, so widening this does NOT worsen the CrystalBall overflow corner, which is at
+          //  small alpha).  The auto-simplify de-pin fixes alpha here to drop the skew DOF when the
+          //  data prefers no tail.
+          upper_value = 5.0;
           break;
         
           
@@ -1507,11 +1527,21 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
             return false;
           // fall-though intentional
         case CoefficientType::SkewPar1: //n (left)
-          // The valid values of `n` is probably a bit more complicated than just the range
+          // `n` is the power-law tail exponent.  These bounds are the single source of truth shared
+          //  by every peak-fit path and by RelActCalcAuto (both read this function), so the
+          //  CrystalBall range is unified across them.
+          //   - lower 1.05 keeps the 1/(n-1) tail-normalization pole bounded (|1/(n-1)| <= 20);
+          //     1.0 is a hard divide-by-zero.
+          //   - upper 100 is a deliberately generous ceiling.  It used to also cap the (n/alpha)^n
+          //     constant that overflowed for large n / small alpha, but the CrystalBall tail is now
+          //     evaluated in a cancellation-free form (PeakDists::crystal_ball_tail_indefinite_t)
+          //     that never forms that constant, so 100 is numerically safe.  (The likelihood in `n`
+          //     flattens for large n - the tail approaches a fixed exponential - so a tail-heavy peak
+          //     may pin here; that is handled by the bound-aware uncertainty path, not this bound.)
           starting_value = 2;
           step_size = 0.75;
-          lower_value = 1.05; //1.0 would be divide by zero
-          upper_value = 100;  //much higher than this and we run into numerical issues
+          lower_value = 1.05;
+          upper_value = 100;
           break;
           
         default:
@@ -1533,8 +1563,14 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
         case CoefficientType::SkewPar0:
           starting_value = 1;  //A pretty good amount of skew
           step_size = 0.2;
-          lower_value = 0.15;  //this is a huge amount of skew
-          upper_value = 3.25;  //you really cant see any skew above ~2.75
+          lower_value = 0.15;  //this is a huge amount of skew (~82% of the area is in the tail)
+          // GaussExp/ExpGaussExp reach a pure Gaussian only as skew->inf, so this upper bound is a
+          //  finite proxy for "no skew".  The exponential tail is ~0.06% of the peak area at 3.25,
+          //  but ~0.003% at 4.0 (tail = (sigma/s)*exp(-s^2/2) over the total `gauss_exp_norm`), so
+          //  4.0 is the practical "no skew" ceiling.  When the data wants even less tail, the
+          //  RelActAuto auto-simplify de-pin fixes skew here and drops the DOF (see
+          //  PeakDef::skew_no_skew_value) rather than the fit slamming into - and pinning at - the bound.
+          upper_value = 4.0;
           break;
           
         default:
@@ -1636,6 +1672,65 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
 
   return true;
 }//void skew_parameter_range(...)
+
+
+bool PeakDef::skew_no_skew_value( const SkewType skew_type, const CoefficientType coef,
+                                  double &no_skew_value )
+{
+  no_skew_value = 0.0;
+
+  // Only meaningful for coefficients this skew type actually uses; piggy-back on the bounds
+  //  function both to reject inapplicable coefficients and to read the (possibly widened) bounds
+  //  so the asymptotic "no skew" value tracks `skew_parameter_range` automatically.
+  double lower = 0.0, upper = 0.0, starting = 0.0, step = 0.0;
+  if( !skew_parameter_range( skew_type, coef, lower, upper, starting, step ) )
+    return false;
+
+  switch( skew_type )
+  {
+    case NumSkewType:
+    case NoSkew:
+      return false;
+
+    case SkewType::Bortel:
+      // tau -> 0 is exactly a pure Gaussian (bortel_indefinite_integral returns pure erf for skew<=0).
+      no_skew_value = lower;  // 0.0
+      return true;
+
+    case SkewType::GaussExp:
+    case SkewType::ExpGaussExp:
+      // skew -> inf approaches a pure Gaussian; the (negligible-tail) upper bound is the proxy.
+      no_skew_value = upper;
+      return true;
+
+    case SkewType::CrystalBall:
+    case SkewType::DoubleSidedCrystalBall:
+      // alpha -> inf approaches a pure Gaussian; the power `n` is then irrelevant, so leave it neutral.
+      if( (coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar2) )
+        no_skew_value = upper;     // alpha (left / right)
+      else
+        no_skew_value = starting;  // n (does not matter once alpha is at "no skew")
+      return true;
+
+    case SkewType::GaussPlusBortel:
+      // R == 0 is a pure Gaussian; tau is then irrelevant.
+      no_skew_value = (coef == CoefficientType::SkewPar0) ? lower : starting;
+      return true;
+
+    case SkewType::VoigtPlusBortel:
+      // gamma_lor == 0 and R == 0 give a pure Gaussian; tau is then irrelevant.
+      no_skew_value = ((coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1))
+                        ? lower : starting;
+      return true;
+
+    case SkewType::DoubleBortel:
+      // Always a sum of two exponential-Gaussian tails - there is no pure-Gaussian limit, so do not
+      //  offer a skew removal for it.
+      return false;
+  }//switch( skew_type )
+
+  return false;
+}//bool skew_no_skew_value(...)
 
 
 size_t PeakDef::num_skew_parameters( const SkewType skew_type )

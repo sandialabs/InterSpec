@@ -28,7 +28,6 @@
   <message id="dcw-generic-shield-invalid">ডোজ গণনা করতে ত্রুটি, অবৈধ শিল্ডিং, দুঃখিত :{</message>
   <message id="dcw-dist-invalid">দূরত্ব অবৈধ।</message>
   <message id="dcw-err-other">উৎস থেকে ডোজ গণনা করতে ত্রুটি, দুঃখিত :{</message>
-  <message id="dcw-invalid-src-dose">অবৈধ উৎস ডোজ।</message>
   <message id="dcw-invalid-src-act">অবৈধ উৎস কার্যকলাপ।</message>
   <message id="dcw-invalid-src-dose">অবৈধ উৎস ডোজ।</message>
   <message id="dcw-failed-find-lower-dist">নিম্ন সীমানা দূরত্ব খুঁজে পেতে ব্যর্থ, {1} cm এ।</message>

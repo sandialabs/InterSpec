@@ -43,7 +43,6 @@
   <message id="bgw-reports-write-csv">Сводный CSV</message>
   <message id="bgw-reports-write-csv-tooltip">Записать сводный CSV файл с результатами анализа всех входных файлов.</message>
   <message id="bgw-reports-write-custom-per-file">Пользовательский для каждого файла</message>
-  <message id="bgw-reports-write-custom-per-file-tooltip">Загрузить пользовательский шаблон отчета для каждого файла.</message>
   <message id="bgw-reports-write-custom-summary">Пользовательская сводка</message>
   <message id="bgw-reports-write-custom-summary-tooltip">Один или несколько файлов шаблонов для создания сводки всех входных файлов.</message>
 
@@ -58,7 +57,6 @@
   <message id="bgw-no-ana-act-shield-invalid-background">Недействительный фон</message>
   <message id="bgw-no-ana-no-input-files">Нет входных файлов.</message>
   <message id="bgw-no-ana-invalid-output-path">Выберите действительную выходную директорию.</message>
-
 
   <!-- Analysis progress and results -->
   <message id="bgw-performing-work-title">Выполнение работы</message>
@@ -120,8 +118,6 @@
 Нулевое или отрицательное значение означает отсутствие требования, а также отсутствие требования 'peak-stat-threshold'.</message>
   
   <message id="bgw-reports-write-custom-per-file-tooltip">Один или несколько файлов шаблонов отчетов спектра - для каждого входного файла будет создан отчет с каждым указанным шаблоном.</message>
-
-  <message id="bgw-reports-write-custom-summary-tooltip">Один или несколько файлов шаблонов, используемых для создания сводки всех входных файлов.</message>
 
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">Использовать единицы Бк</message>

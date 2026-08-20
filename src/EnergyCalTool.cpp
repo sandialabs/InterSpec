@@ -58,6 +58,7 @@
 #include "InterSpec/EnergyCal.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
@@ -69,6 +70,8 @@
 #include "InterSpec/SpectraFileModel.h"
 #include "InterSpec/NativeFloatSpinBox.h"
 #include "InterSpec/EnergyCalGraphical.h"
+#include "InterSpec/EnergyCalUndoRedo.h"
+#include "InterSpec/EnergyCalDevPairWidget.h"
 #include "InterSpec/RowStretchTreeView.h"
 #include "InterSpec/EnergyCalAddActions.h"
 #include "InterSpec/IsotopeSelectionAids.h"
@@ -77,377 +80,23 @@
 using namespace std;
 using namespace Wt;
 
-namespace
-{
-template<class T> struct index_compare_assend
-{
-  index_compare_assend(const T arr) : arr(arr) {} //pass the actual values you want sorted into here
-  bool operator()(const size_t a, const size_t b) const
-  {
-    return arr[a] < arr[b];
-  }
-  const T arr;
-};//struct index_compare
-  
-}// namepsace
-
+using EnergyCalImp::meas_old_new_cal_t;
+using EnergyCalImp::meas_old_new_peaks_t;
+using EnergyCalImp::EnergyCalUndoRedoSentry;
 
 namespace
 {
-  // For undo/redo, we will use a `EnergyCalUndoRedoSentry` struct to combine mutliple operations
-  //  (like multiple calls to #EnergyCalTool::setEnergyCal or #EnergyCalTool::addDeviationPair)
-  //  as part of a single user operation.  #EnergyCalUndoRedoSentry is a thread local object that
-  //  allows you to construct as many of them as you would like, and any changes from any of them,
-  //  will be combined together, and when the last #EnergyCalUndoRedoSentry destructs, an undo/redo
-  //  step will be inserted into the history.
-  //
-  
-  // For undo/redo, we will need to store the mappings, for each measurement, from old to new
-  //  energy calibration.  Using weak ptrs for Measurement, although I dont think it is strickly
-  //  necassary.
-  //  TODO: store energy calibration a little more compactly; could store just the coefficients, and not the channel lower-energies
-  typedef vector< tuple<weak_ptr<const SpecUtils::Measurement>, \
-            shared_ptr<const SpecUtils::EnergyCalibration>, \
-            shared_ptr<const SpecUtils::EnergyCalibration>> > \
-          meas_old_new_cal_t;
-  
-  // For undo/redo, keep track of new and old peaks
-  //  TODO: translate peaks on-the-fly, to reduce memory use, but will need to track pre-post energy cal to enable this
-  typedef vector< tuple< set<int>, \
-          deque< std::shared_ptr<const PeakDef> >, \
-          deque< std::shared_ptr<const PeakDef> > > >
-        meas_old_new_peaks_t;
-  
-  /** Function that actually does the work of undo/redo. */
-  void do_undo_or_redo( const bool is_undo,
-                        const SpecUtils::SpectrumType type,
-                        const meas_old_new_peaks_t &meas_old_new_peaks,
-                        const meas_old_new_peaks_t &meas_old_new_hint_peaks,
-                        const meas_old_new_cal_t &meas_old_new_cal,
-                        const std::weak_ptr<SpecMeas> &specfile_weak )
-  {
-    using namespace SpecUtils;
-    
-    const shared_ptr<SpecMeas> specfile = specfile_weak.lock();
-    assert( specfile );
-    InterSpec * const viewer = InterSpec::instance();
-    assert( viewer );
-    if( !viewer )
-      return;
-
-    const shared_ptr<SpecMeas> specfile_now = viewer ? viewer->measurment( type ) : nullptr;
-    assert( specfile == specfile_now );
-    if( !specfile || (specfile != specfile_now) )
-    {
-      Wt::log("error") << "SpecFile not same, as was expected during undo/redo.";
-      return;
-    }
-    
-    const shared_ptr<SpecMeas> foreground = viewer->measurment( SpecUtils::SpectrumType::Foreground );
-    const set<int> &foreSamples = viewer->displayedSamples( SpecUtils::SpectrumType::Foreground );
-    
-    const shared_ptr<SpecMeas> background = viewer->measurment( SpecUtils::SpectrumType::Background );
-    const set<int> &backSamples = viewer->displayedSamples( SpecUtils::SpectrumType::Background );
-    
-    const shared_ptr<SpecMeas> secondary = viewer->measurment( SpecUtils::SpectrumType::SecondForeground );
-    const set<int> &secoSamples = viewer->displayedSamples( SpecUtils::SpectrumType::SecondForeground );
-    
-  
-    EnergyCalTool *tool = viewer->energyCalTool();
-    const std::shared_ptr<PeakModel> peakModel = viewer->peakModel();
-    assert( tool && peakModel );
-    if( !tool || !peakModel )
-    {
-      Wt::log("error") << "Failed to get EnergyCalTool or PeakModel during undo/redo of dev. pairs.";
-      return;
-    }
-    
-    for( const auto &m_o_n : meas_old_new_cal )
-    {
-      const shared_ptr<const Measurement> lm = get<0>(m_o_n).lock();
-      assert( lm );
-      if( !lm )
-      {
-        Wt::log("error") << "Failed to get Measurement during undo/redo of dev. pairs.";
-        continue;
-      }
-      
-      const auto &from_cal = is_undo ? get<2>(m_o_n) : get<1>(m_o_n);
-      const auto &to_cal = is_undo ? get<1>(m_o_n) : get<2>(m_o_n);
-      assert( to_cal );
-      
-      shared_ptr<const Measurement> m = specfile->measurement( lm->sample_number(), lm->detector_name() );
-      assert( m && (lm == m) );
-      
-      if( lm != m )
-      {
-        Wt::log("error") << "Failed to update a Measurement during undo/redo of dev. pairs.";
-        continue;
-      }
-      
-      assert( lm && (lm->energy_calibration() == from_cal) );
-      specfile->set_energy_calibration( to_cal, m );
-    }//for( const auto &m_o_n : meas_old_new_cal )
-      
-    
-    for( const auto &m_o_n : meas_old_new_peaks )
-    {
-      const set<int> &samples = get<0>(m_o_n);
-      //const deque<shared_ptr<const PeakDef>> &from_peaks = is_undo ? get<2>(m_o_n) : get<1>(m_o_n);
-      const deque<shared_ptr<const PeakDef>> &to_peaks = is_undo ? get<1>(m_o_n) : get<2>(m_o_n);
-      
-      specfile->setPeaks( to_peaks, samples );
-      if( peakModel && (specfile == foreground) && (samples == foreSamples) )
-        peakModel->setPeakFromSpecMeas( foreground, foreSamples, SpecUtils::SpectrumType::Foreground );
-      else if( peakModel && (specfile == background) && (samples == backSamples) )
-        peakModel->setPeakFromSpecMeas( background, backSamples, SpecUtils::SpectrumType::Background );
-      else if( peakModel && (specfile == secondary) && (samples == secoSamples) )
-        peakModel->setPeakFromSpecMeas( secondary, secoSamples, SpecUtils::SpectrumType::SecondForeground );
-    }//for( loop over changed peaks )
-    
-    for( const auto &m_o_n : meas_old_new_hint_peaks )
-    {
-      const set<int> &samples = get<0>(m_o_n);
-      const deque<shared_ptr<const PeakDef>> &to_peaks = is_undo ? get<1>(m_o_n) : get<2>(m_o_n);
-      
-      auto peaks = make_shared<deque<shared_ptr<const PeakDef>>>( to_peaks );
-      specfile->setAutomatedSearchPeaks( samples, peaks );
-    }//for( loop over changed peaks )
-    
-    viewer->refreshDisplayedCharts();
-    tool->refreshGuiFromFiles();
-  }//void do_undo_or_redo(...)
-  
-  
-  /** We may make multiple calls to #EnergyCalTool::setEnergyCal and or #EnergyCalTool::addDeviationPair, or other function, for
-   a single user-instigated change.  We want to combine multiple of these calls, so its a single user undo/redo operation, so we'll use
-   thread-local storage, and this `EnergyCalUndoRedoSentry` object to aggregate all the changes, for a single user operation,
-   and have the destructor of #EnergyCalUndoRedoSentry actually insert the undo/redo step.
-  */
-  
-  typedef map<weak_ptr<SpecMeas>,meas_old_new_cal_t,owner_less<weak_ptr<SpecMeas>>> SpecMeasToCalHistoryMap;
-  typedef map<weak_ptr<SpecMeas>,meas_old_new_peaks_t,owner_less<weak_ptr<SpecMeas>>> SpecMeasToPeakHistoryMap;
-  
-  // If we were using c++17, we could declare the following as `inline` variables of
-  //  EnergyCalUndoRedoSentry, but for the moment we will just declare outside the class.
-  //  (or instead we could make `cal_info` and `peak_info` static functions, but this defaeats
-  //   thier purpose a bit)
-  thread_local static int sm_undo_redo_level;
-  thread_local static unique_ptr<SpecMeasToCalHistoryMap> sm_meas_old_new_cal_map;
-  thread_local static unique_ptr<SpecMeasToPeakHistoryMap> sm_meas_old_new_peaks_map;
-  thread_local static unique_ptr<SpecMeasToPeakHistoryMap> sm_meas_old_new_hint_peaks_map;
-  
-  struct EnergyCalUndoRedoSentry
-  {
-    EnergyCalUndoRedoSentry()
-    {
-      if( !sm_meas_old_new_cal_map )
-      {
-        sm_undo_redo_level = 1;
-        sm_meas_old_new_cal_map = make_unique<SpecMeasToCalHistoryMap>();
-        sm_meas_old_new_peaks_map = make_unique<SpecMeasToPeakHistoryMap>();
-        sm_meas_old_new_hint_peaks_map = make_unique<SpecMeasToPeakHistoryMap>();
-      }else
-      {
-        sm_undo_redo_level += 1;
-        assert( sm_meas_old_new_peaks_map && sm_meas_old_new_hint_peaks_map );
-      }
-    }//EnergyCalUndoRedoSentry()
-      
-    meas_old_new_cal_t &cal_info( const shared_ptr<SpecMeas> &meas )
-    {
-      assert( sm_meas_old_new_cal_map );
-      if( !sm_meas_old_new_cal_map )
-        throw logic_error( "EnergyCalUndoRedoSentry: cal info not initied?" );
-      
-      SpecMeasToCalHistoryMap &m = *sm_meas_old_new_cal_map;
-      return m[meas];
-    }
-    
-    meas_old_new_peaks_t &peak_info( const shared_ptr<SpecMeas> &meas )
-    {
-      assert( sm_meas_old_new_peaks_map );
-      if( !sm_meas_old_new_peaks_map )
-        throw logic_error( "EnergyCalUndoRedoSentry: peak info not inited?" );
-      
-      SpecMeasToPeakHistoryMap &m = *sm_meas_old_new_peaks_map;
-      return m[meas];
-    }
-    
-    meas_old_new_peaks_t &hint_peak_info( const shared_ptr<SpecMeas> &meas )
-    {
-      assert( sm_meas_old_new_hint_peaks_map );
-      if( !sm_meas_old_new_hint_peaks_map )
-        throw logic_error( "EnergyCalUndoRedoSentry: hint peak info not inited?" );
-      
-      SpecMeasToPeakHistoryMap &m = *sm_meas_old_new_hint_peaks_map;
-      return m[meas];
-    }
-    
-    
-    ~EnergyCalUndoRedoSentry()
-    {
-      using namespace SpecUtils;
-      
-      sm_undo_redo_level -= 1;
-      assert( sm_meas_old_new_cal_map && sm_meas_old_new_peaks_map && sm_meas_old_new_hint_peaks_map );
-      if( !sm_meas_old_new_cal_map || !sm_meas_old_new_peaks_map || !sm_meas_old_new_hint_peaks_map )
-        return;
-      
-      if( sm_undo_redo_level > 0 )
-        return;
-      
-      assert( sm_undo_redo_level == 0 );
-      
-      // Note, with C++14, we could capture unique_ptr into the lambdas, but we'll worry about that later
-      const SpecMeasToCalHistoryMap meas_old_new_cal_map( std::move(*sm_meas_old_new_cal_map) );
-      const SpecMeasToPeakHistoryMap meas_old_new_peaks_map( std::move(*sm_meas_old_new_peaks_map) );
-      const SpecMeasToPeakHistoryMap meas_old_new_hint_peaks_map( std::move(*sm_meas_old_new_hint_peaks_map) );
-      
-      sm_meas_old_new_cal_map.reset();
-      sm_meas_old_new_peaks_map.reset();
-      sm_meas_old_new_hint_peaks_map.reset();
-      
-      // No changes registered.
-      if( meas_old_new_cal_map.empty() 
-         && meas_old_new_peaks_map.empty()
-         && meas_old_new_hint_peaks_map.empty() )
-      {
-        return;
-      }
-      
-      InterSpec *viewer = InterSpec::instance();
-      assert( viewer );
-      UndoRedoManager *undoManager = viewer ? viewer->undoRedoManager() : nullptr;
-      if( !undoManager )
-        return;
-      
-      
-      // Create a map from SpecMeas to SpectrumType; although this is only used as a check
-      //  in do_undo_or_redo.
-      map<weak_ptr<SpecMeas>,SpecUtils::SpectrumType,std::owner_less<std::weak_ptr<SpecMeas>>> meas_to_type;
-      const SpectrumType types[] = {
-        SpectrumType::SecondForeground,
-        SpectrumType::Background,
-        SpectrumType::Foreground
-      };
-      for( const SpectrumType type : types )
-      {
-        const shared_ptr<SpecMeas> m = viewer->measurment(type);
-        if( m && (meas_old_new_cal_map.count(m) 
-                  || meas_old_new_peaks_map.count(m)
-                  || meas_old_new_hint_peaks_map.count(m)) )
-        {
-          meas_to_type[m] = type;
-        }
-      }
-      
-      if( meas_to_type.empty() )
-        return;
-      
-      // Lets avoid creating two copies of everything, and create a ptr to the undo/redo fcn
-      auto doUndoOrRedo = make_shared<function<void(bool)>>(
-        [meas_to_type, meas_old_new_peaks_map, 
-         meas_old_new_hint_peaks_map, meas_old_new_cal_map]( const bool is_undo ){
-          
-          size_t num_peak_sets_used = 0;
-          for( const auto &key : meas_old_new_cal_map )
-          {
-            const weak_ptr<SpecMeas> &specfile_weak = key.first;
-            const meas_old_new_cal_t &meas_old_new_cal = key.second;
-            
-            meas_old_new_peaks_t meas_old_new_peaks;
-            const auto peak_iter = meas_old_new_peaks_map.find(specfile_weak);
-            if( peak_iter != end(meas_old_new_peaks_map) )
-            {
-              num_peak_sets_used += 1;
-              meas_old_new_peaks = peak_iter->second;
-            }
-            
-            meas_old_new_peaks_t meas_old_new_hint_peaks;
-            const auto hint_peak_iter = meas_old_new_hint_peaks_map.find(specfile_weak);
-            if( hint_peak_iter != end(meas_old_new_hint_peaks_map) )
-            {
-              //num_peak_sets_used += 1;
-              meas_old_new_hint_peaks = hint_peak_iter->second;
-            }
-            
-            SpecUtils::SpectrumType type = SpecUtils::SpectrumType::Foreground;
-            const auto type_iter = meas_to_type.find(specfile_weak);
-            assert( type_iter != end(meas_to_type) );
-            if( type_iter != end(meas_to_type) )
-              type = type_iter->second;
-            
-            do_undo_or_redo( is_undo, type, meas_old_new_peaks, 
-                            meas_old_new_hint_peaks, meas_old_new_cal, specfile_weak );
-          }//for( const meas_old_new_cal_t &meas_old_new_cal : meas_old_new_cal_map )
-          
-          assert( num_peak_sets_used == meas_old_new_peaks_map.size() );
-      } );//create doUndoOrRedo function
-      
-      auto undo = [doUndoOrRedo](){ doUndoOrRedo->operator()( true ); };
-      auto redo = [doUndoOrRedo](){ doUndoOrRedo->operator()( false ); };
-      
-      undoManager->addUndoRedoStep( undo, redo, "Edit energy cal" );
-    }//~EnergyCalUndoRedoSentry()
-  };//struct EnergyCalUndoRedoSentry
-  
+  // The EnergyCalUndoRedoSentry (and its do_undo_or_redo machinery) used to live here; it
+  //  is now shared with EnergyCalMultiFile, in EnergyCalUndoRedo.{h,cpp}
+  // The DevPair / DeviationPairDisplay widgets (and the index_compare_assend sort helper) used
+  //  to live here too; they are now shared with EnergyCalMultiFile, in EnergyCalDevPairWidget.{h,cpp}
 }//namespace
 
 
 namespace EnergyCalImp
 {
 
-  class DeviationPairDisplay;
-  class DevPair : public Wt::WContainerWidget
-  {
-  protected:
-    DevPair();
-    void setDevPair( const std::pair<float,float> &d );
-    std::pair<float,float> devPair() const;
-    void visuallyIndicateChanged();
-    //Wt::WDoubleSpinBox *m_energy, *m_offset;
-    NativeFloatSpinBox *m_energy, *m_offset;
-    Wt::WContainerWidget *m_delete;
-    friend class DeviationPairDisplay;
-  };//class DevPair
-    
-  class DeviationPairDisplay : public Wt::WContainerWidget
-  {
-  public:
-    DeviationPairDisplay();
-    void setDeviationPairs( std::vector< std::pair<float,float> > d );
-    std::vector< std::pair<float,float> > deviationPairs() const;
-    void removeDevPair( DevPair *devpair );
-    DevPair *newDevPair( const bool emitChangedNow );
-    void setInvalidValues();
-    void setValidValues();
-    
-    //void setMsg( const string &msg );
-    
-    enum class UserFieldChanged : int
-    {
-      AddedDeviationPair,
-      RemovedDeviationPair,
-      EnergyChanged,
-      OffsetChanged
-    };//enum UserFieldChanged
-    
-    /** Signal that gets emited when dev pair is added, deleted, or changed.
-     Int argument is of type UserFieldChanged endum
-     */
-    Wt::Signal<int> &changed();
-    
-  protected:
-    void sortDisplayOrder( const bool indicateVisually );
-    
-    void emitChanged( const UserFieldChanged whatChanged );
-      
-    Wt::Signal<int> m_changed;
-    Wt::WContainerWidget *m_pairs;
-    //Wt::WText *m_msg;
-  };//class DeviationPairDisplay
-
+// DevPair and DeviationPairDisplay are defined in EnergyCalDevPairWidget.{h,cpp}
 
 class CALpDownloadResource : public Wt::WResource
 {
@@ -456,12 +105,19 @@ class CALpDownloadResource : public Wt::WResource
   EnergyCalTool *m_tool;
   
 public:
-  CALpDownloadResource( EnergyCalTool *tool, InterSpec *viewer, WObject* parent = nullptr )
+  CALpDownloadResource( EnergyCalTool *tool, InterSpec *viewer )
   : WResource(), m_app( WApplication::instance() ), m_interspec( viewer ), m_tool( tool )
   {
     assert( m_app );
     assert( m_tool );
     assert( m_interspec );
+
+    // Have Wt hold the session lock across handleRequest instead of dropping it for us: by
+    //  default `WResource::handle` unlocks before invoking us, so the session thread can be
+    //  inside `~WResource`'s `beingDeleted()` - waiting on our use-count - while we block
+    //  acquiring the lock it holds.  That is a deadlock.  Free: the `WApplication::UpdateLock`
+    //  in handleRequest already spanned the whole body, so this only moves it earlier.
+    setTakesUpdateLock( true );
   }
   
   virtual ~CALpDownloadResource()
@@ -473,9 +129,11 @@ public:
   {
     assert( m_app );
     assert( m_interspec );
-    
+
     try
     {
+      // setTakesUpdateLock(true) in the ctor means Wt already holds the session lock here, so this
+      //  is a same-thread no-op (WApplication::UpdateLock detects that and returns immediately).
       WApplication::UpdateLock lock( m_app );
       
       if( !lock )
@@ -599,281 +257,36 @@ public:
 };//class CalFileDownloadResource
 
 
-DevPair::DevPair()
-  : WContainerWidget()
-{
-  WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
-  layout->setContentsMargins(0, 0, 0, 0);
-  layout->setVerticalSpacing( 0 );
-
-  setStyleClass( "DevPair" );
-
-  m_energy = layout->addWidget( std::make_unique<NativeFloatSpinBox>(), 0, 0 );
-  m_offset = layout->addWidget( std::make_unique<NativeFloatSpinBox>(), 0, 1 );
-  m_delete = layout->addWidget( std::make_unique<WContainerWidget>(), 0, 2 );
-  layout->setColumnStretch(0, 1);
-  layout->setColumnStretch(1, 1);
-  layout->setColumnStretch(2, 0);
-          
-  m_energy->setStyleClass( "DevEnergy" );
-  m_offset->setStyleClass( "DevOffset" );
-  m_energy->setPlaceholderText( "Energy" );
-  m_offset->setPlaceholderText( "Offset" );
-  m_energy->setValueText( "" );
-  m_offset->setValueText( "" );
-          
-  m_delete->addStyleClass( "Wt-icon DeleteDevPair" );
-}//DevPair constructor
+// DevPair and DeviationPairDisplay implementations moved to EnergyCalDevPairWidget.cpp
 
 
-void DevPair::setDevPair( const std::pair<float,float> &d )
-{
-  m_energy->setValue( d.first );
-  m_offset->setValue( d.second );
-  
-  auto printval = []( float val ) -> std::string {
-    char buffer[64];
-    const float fraction = val - std::floor(val);
-    if( fraction == 0.0 )
-      snprintf( buffer, sizeof(buffer), "%.0f", val );
-    else if( fabs(fraction - 0.1f) < 1.0E-4f )
-      snprintf( buffer, sizeof(buffer), "%.1f", val );
-    else
-      snprintf( buffer, sizeof(buffer), "%.2f", val );
-    return buffer;
-  };
- 
-  m_energy->setText( printval(d.first) );
-  m_offset->setText( printval(d.second) );
-}
-
-
-std::pair<float,float> DevPair::devPair() const
-{
-  const float energy = m_energy->value();
-  const float offset = m_offset->value();
-  return std::make_pair( energy, offset );
-}
-
-
-void DevPair::visuallyIndicateChanged()
-{
-  doJavaScript( "var el=document.getElementById('" + id() + "'); el.classList.remove('interspec-flash'); void el.offsetWidth; el.classList.add('interspec-flash');" );
-}//void visuallyIndicateChanged();
-
-
-DeviationPairDisplay::DeviationPairDisplay()
-  : WContainerWidget()
-    //, m_msg( nullptr )
-{
-  addStyleClass( "DevPairDisplay" );
-  WLabel *title = addNew<WLabel>( WString::tr("ect-deviation-pairs") );
-  title->setStyleClass( "Wt-itemview Wt-header Wt-label DevPairTitle" );
-  title->setInline( false );
-
-  m_pairs = addNew<WContainerWidget>();
-  m_pairs->setStyleClass( "DevPairsContainer" );
-
-  //m_msg = addNew<WText>( "&nbsp;" );
-  //m_msg->addStyleClass( "DevPairMsg" );
-  //m_msg->setHidden( true );
-
-  WContainerWidget *footer = addNew<WContainerWidget>();
-  footer->setStyleClass( "DevPairsFooter" );
-
-  WContainerWidget *addBtn = footer->addNew<WContainerWidget>();
-  addBtn->addStyleClass( "Wt-icon AddDevPair" );
-  addBtn->clicked().connect( this, [this](){ newDevPair( true ); } );
-  addBtn->setToolTip( "Add another deviation pair" );
-}//DeviationPairDisplay constructor
-
-/*
-void DeviationPairDisplay::setMsg( const string &msg )
-{
-  if( msg == m_msg->text().toUTF8() )
-    return;
-  
-  const bool wasHidden = m_msg->isHidden();
-  const bool shouldBeHidden = msg.empty();
-  if( wasHidden != shouldBeHidden )
-  {
-    //WAnimation anim (WAnimation::AnimationEffect::Fade | WAnimation::AnimationEffect::SlideInFromBottom, WAnimation::Linear, 200);
-    m_msg->setHidden( shouldBeHidden, anim );
-  }
-  m_msg->setText( WString::fromUTF8(msg) );
-}
+/** The label (and tooltip) for a coefficient row; for lower-channel-energy calibrations the two
+ rows are the {offset, gain} adjustments relative to the sessions original channel energies (see
+ #EnergyCal::adjust_lower_channel_energy_cal), so get their own labels/explanations.
  */
-
-void DeviationPairDisplay::setDeviationPairs( vector< pair<float,float> > d )
+WString coef_disp_label_txt( const size_t order, const bool lower_channel )
 {
-  m_pairs->clear();
-  std::sort( d.begin(), d.end() );
-  
-  for( size_t i = 0; i < d.size(); ++i )
+  if( lower_channel )
+    return (order == 0) ? WString::tr("ect-offset-label") : WString::tr("ect-lce-gain-label");
+
+  switch( order )
   {
-    DevPair *dev = newDevPair( false );
-    dev->setDevPair( d[i] );
-  }//for( size_t i = 0; i < d.size(); ++i )
-  
-  sortDisplayOrder(false);
-}//setDeviationPairs(...)
+    case 0:  return WString::tr("ect-offset-label");
+    case 1:  return WString::tr("ect-linear-label");
+    case 2:  return WString::tr("ect-quad-label");
+    case 3:  return WString::tr("ect-cubic-label");
+  }//switch( order )
+
+  return WString::tr("ect-nth-label").arg( static_cast<int>(order) );
+}//coef_disp_label_txt(...)
 
 
-void DeviationPairDisplay::sortDisplayOrder( const bool indicateVisually )
+WString coef_disp_tooltip_txt( const size_t order, const bool lower_channel )
 {
-  vector<size_t> sort_indices;
-  vector<DevPair *> displays;
-  
-  vector<float> offsets;
-  const vector<WWidget *> childs = m_pairs->children();
-  for( WWidget *t : childs )
-  {
-    DevPair *p = dynamic_cast<DevPair *>( t );
-    if( p )
-    {
-      const size_t index = sort_indices.size();
-      offsets.push_back( p->devPair().first );
-      displays.push_back( p );
-      sort_indices.push_back( index );
-    }
-  }//for( WWidget *t : childs )
-  
-  std::stable_sort( sort_indices.begin(), sort_indices.end(),
-                    index_compare_assend<vector<float>&>(offsets) );
-
-  bool order_changed = false;
-  for( size_t i = 0; i < sort_indices.size(); ++i )
-    order_changed |= (sort_indices[i] != i );
-  
-  if( !order_changed )
-    return;
-          
-  vector<std::unique_ptr<WWidget>> removed;
-  for( size_t i = 0; i < displays.size(); ++i )
-    removed.push_back( m_pairs->removeWidget( displays[i] ) );
-
-  for( size_t i = 0; i < displays.size(); ++i )
-  {
-    DevPair *p = displays[ sort_indices[i] ];
-    // find which removed entry corresponds to p
-    std::unique_ptr<WWidget> widget;
-    for( auto &r : removed )
-    {
-      if( r.get() == p )
-      {
-        widget = std::move(r);
-        break;
-      }
-    }
-    assert( widget );
-    m_pairs->addWidget( std::move(widget) );
-    if( indicateVisually && (i != sort_indices[i]) )
-      p->visuallyIndicateChanged();
-  }
-}//void sortDisplayOrder()
-
-
-void DeviationPairDisplay::emitChanged( const UserFieldChanged whatChanged )
-{
-  m_changed.emit( static_cast<int>(whatChanged) );
-}
-
-
-vector< pair<float,float> > DeviationPairDisplay::deviationPairs() const
-{
-  vector< pair<float,float> > answer;
-  const vector<WWidget *> childs = m_pairs->children();
-  for( const WWidget *t : childs )
-  {
-    const DevPair *p = dynamic_cast<const DevPair *>( t );
-    
-    if( !p )
-      continue;
-    
-    // We will only insert a deviation pair if both fields have text entered.
-    if( p->m_energy->text().empty() || p->m_offset->text().empty() )
-      continue;
-    
-    answer.push_back( p->devPair() );
-  }//for( WWidget *t : childs )
-  
-  std::sort( answer.begin(), answer.end() );
-  
-  // The EnergyCalibration code implicitly will add in a {0,0} deviation pair if its needed, so
-  //  might as well just add it in now so it isnt implict to the user
-  //if( (answer.size() == 1) && (answer[0].first > 0.01f) )
-  //  answer.insert( begin(answer), {0.0f,0.0f} );
-  
-  // Remove duplicates, usually {0,0}
-  //const double epsilon = 1.0;
-  //for( size_t i = 1; i < answer.size(); ++i )
-  //{
-  //  const auto &prev = answer[i-1];
-  //  if( (fabs(answer[i].first - prev.first) < epsilon)
-  //      && (fabs(answer[i].second - prev.second) < epsilon) )
-  //    answer.erase( begin(answer) + i );
-  //}
-  
-  return answer;
-}//deviationPairs()
-
-
-void DeviationPairDisplay::removeDevPair( DevPair *devpair )
-{
-  if( !devpair )
-    return;
-  
-  const vector<WWidget *> childs = m_pairs->children();
-  for( WWidget *t : childs )
-  {
-    auto tt = dynamic_cast<DevPair *>( t ); //dynamic_cast prob not necessary
-    if( devpair == tt )
-    {
-      m_pairs->removeWidget( devpair );
-      sortDisplayOrder(false);
-      emitChanged( UserFieldChanged::RemovedDeviationPair );
-      return;
-    }
-  }//for( WWidget *t : childs )
-}//removeDevPair(...)
-
-
-void DeviationPairDisplay::setInvalidValues()
-{
-  addStyleClass( "InvalidDevPairs" );
-}
-
-
-void DeviationPairDisplay::setValidValues()
-{
-  removeStyleClass( "InvalidDevPairs" );
-}
-
-
-
-DevPair *DeviationPairDisplay::newDevPair( const bool emitChangedNow )
-{
-  // Wt 4 no longer auto-parents WContainerWidget via a ctor argument; the friend
-  //  relationship lets us call DevPair's protected ctor directly here.
-  std::unique_ptr<DevPair> devOwned( new DevPair() );
-  DevPair *dev = m_pairs->addWidget( std::move(devOwned) );
-  dev->m_delete->clicked().connect( this, [this, dev](){ removeDevPair( dev ); } );
-  //dev->m_energy->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
-  //dev->m_offset->valueChanged().connect( this, &DeviationPairDisplay::emitChanged );
-  dev->m_energy->valueChanged().connect( this, [this]( double ){ emitChanged( UserFieldChanged::EnergyChanged ); } );
-  dev->m_offset->valueChanged().connect( this, [this]( double ){ emitChanged( UserFieldChanged::OffsetChanged ); } );
-  dev->m_energy->blurred().connect( this, [this](){ sortDisplayOrder( true ); } );
-  
-  if( emitChangedNow )
-    emitChanged( UserFieldChanged::AddedDeviationPair );
-  
-  return dev;
-}//newDevPair()
-
-Wt::Signal<int> &DeviationPairDisplay::changed()
-{
-  return m_changed;
-}
+  if( lower_channel )
+    return (order == 0) ? WString::tr("ect-tt-lce-offset") : WString::tr("ect-tt-lce-gain");
+  return WString();
+}//coef_disp_tooltip_txt(...)
 
 
 class CoefDisplay : public WContainerWidget
@@ -883,7 +296,7 @@ public:
   WLabel *m_label;
   WCheckBox *m_fit;
   NativeFloatSpinBox *m_value;
-  
+
   CoefDisplay( const size_t order )
   : WContainerWidget(),
     m_order( order ),
@@ -893,23 +306,29 @@ public:
   {
     addStyleClass( "CoefDisplay" );
 
-    switch( order )
-    {
-      case 0:  m_label = addNew<WLabel>( WString::tr("ect-offset-label") );         break;
-      case 1:  m_label = addNew<WLabel>( WString::tr("ect-linear-label") );         break;
-      case 2:  m_label = addNew<WLabel>( WString::tr("ect-quad-label") );           break;
-      case 3:  m_label = addNew<WLabel>( WString::tr("ect-cubic-label") );          break;
-      default: m_label = addNew<WLabel>( WString::tr("ect-nth-label").arg(static_cast<int>(order)) ); break;
-    }//switch( order )
-
+    m_label = this->addNew<WLabel>( coef_disp_label_txt(order, false) );
     m_label->addStyleClass( "CoefLabel" );
 
-    m_value = addNew<NativeFloatSpinBox>();
+    m_value = this->addNew<NativeFloatSpinBox>();
     m_value->setSpinnerHidden( true );
 
-    m_fit = addNew<WCheckBox>( "Fit" );
+    m_fit = this->addNew<WCheckBox>( "Fit" );
     m_fit->addStyleClass( "CoefFit CbNoLineBreak" );
   }//CoefDisplay
+
+  /** Sets the rows label and tooltip, only updating the DOM if they actually changed (a display
+   can flip between polynomial/FRF and lower-channel-energy labeling when the file changes).
+   */
+  void setLabeling( const bool lower_channel )
+  {
+    const WString txt = coef_disp_label_txt( m_order, lower_channel );
+    if( m_label->text() != txt )
+      m_label->setText( txt );
+
+    const WString tooltip = coef_disp_tooltip_txt( m_order, lower_channel );
+    if( m_label->toolTip() != tooltip )
+      m_label->setToolTip( tooltip );
+  }//setLabeling(...)
 };//class CoefDisplay
 
 class CalDisplay : public WContainerWidget
@@ -933,7 +352,14 @@ class CalDisplay : public WContainerWidget
   
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
   WPushButton *m_fitCoeffs;
+  WText *m_fitHint;
 #endif
+
+  /** Whether the per-coefficient "Fit" checkboxes are disabled; they are disabled on displays
+   whose checkboxes are never consulted (fitting always uses the foreground displays selections;
+   the checkbox states are kept in sync across all displays).
+   */
+  bool m_fitCbsDisabled;
   
 #if( IMP_CALp_BTN_NEAR_COEFS )
   WPushButton *m_downloadCALp;
@@ -941,36 +367,12 @@ class CalDisplay : public WContainerWidget
 #endif
   
   shared_ptr<const SpecUtils::EnergyCalibration> m_cal;
-
+  
 public:
-  /** Convenience accessor: returns the "original" calibration for this CalDisplay's
-   (spectrum_type, detector_name) — i.e. the calibration the measurement had at the moment its
-   SpecMeas was first loaded as that spectrum type. Lives on EnergyCalTool and is populated by
-   `captureOriginalCalibrationsIfNeeded` from the displayedSpectrumChanged signal.
-   */
-  shared_ptr<const SpecUtils::EnergyCalibration> originalCalibration() const
-  {
-    return m_tool ? m_tool->originalCalibrationFor( m_cal_type, m_det_name )
-                  : shared_ptr<const SpecUtils::EnergyCalibration>{};
-  }
-
-  /** Convenience: lower-channel-edges of the original calibration, used by the LowerChannelEdge
-   UI to compute displayed offset/gain deltas. Returns nullptr if there is no original cal or
-   if it has no channel_energies vector.
-   */
-  shared_ptr<const vector<float>> lceBaselineEdges() const
-  {
-    const auto cal = originalCalibration();
-    return cal ? cal->channel_energies()
-               : shared_ptr<const vector<float>>{};
-  }
-
-
   CalDisplay( EnergyCalTool *tool,
              const SpecUtils::SpectrumType type,
              const std::string &detname,
-             const bool isWideLayout,
-             WContainerWidget *parent = nullptr )
+             const bool isWideLayout )
   : WContainerWidget(),
    m_tool( tool ),
    m_cal_type( type ),
@@ -983,38 +385,38 @@ public:
    , m_addPairs( nullptr )
 #endif
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
-  , m_fitCoeffs( nullptr )
+  , m_fitCoeffs( nullptr ),
+   m_fitHint( nullptr )
 #endif
+  , m_fitCbsDisabled( false )
 #if( IMP_CALp_BTN_NEAR_COEFS )
   , m_downloadCALp( nullptr )
   , m_uploadCALp( nullptr )
 #endif
   {
     addStyleClass( "CalDisplay" );
-
+    
     WGridLayout *layout = setLayout( std::make_unique<WGridLayout>() );
     layout->setContentsMargins( 0, 0, 0, 0 );
     layout->setVerticalSpacing( 0 );
     layout->setHorizontalSpacing( 0 );
-
-    auto coefDivOwner = std::make_unique<WContainerWidget>();
-    WContainerWidget *coefDiv = coefDivOwner.get();
+    
+    WContainerWidget *coefDiv = layout->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
     coefDiv->addStyleClass( "CoefCol" );
-    layout->addWidget( std::move(coefDivOwner), 0, 0 );
-
+    
     m_type = coefDiv->addNew<WText>( "&nbsp;" );
     m_type->setInline( false );
     m_type->addStyleClass( "Wt-itemview Wt-header Wt-label CalType" );
-
+    
     m_coefficients = coefDiv->addNew<WContainerWidget>();
     m_coefficients->addStyleClass( "CoefContent" );
     
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS || IMP_CALp_BTN_NEAR_COEFS )
-    auto btndivOwner = std::make_unique<WContainerWidget>();
-    WContainerWidget *btndiv = btndivOwner.get();
+    WContainerWidget *btndiv = layout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
     btndiv->addStyleClass( "CalCoefsBtnDiv" );
-
+  
 #if( IMP_CALp_BTN_NEAR_COEFS )
+
 #if( BUILD_AS_OSX_APP || IOS )
     {
       WLink calpLink( m_tool->calpResources() );
@@ -1026,68 +428,83 @@ public:
     m_downloadCALp = btndiv->addNew<WPushButton>();
     m_downloadCALp->setIcon( "InterSpec_resources/images/download_small.svg" );
     {
-      WLink calLink( m_tool->calpResources() );
-      calLink.setTarget( Wt::LinkTarget::NewWindow );
-      m_downloadCALp->setLink( calLink );
+      WLink calpLink( m_tool->calpResources() );
+      calpLink.setTarget( Wt::LinkTarget::NewWindow );
+      m_downloadCALp->setLink( calpLink );
     }
     m_downloadCALp->setStyleClass( "LinkBtn DownloadBtn CALp" );
+    
 #endif //#if( BUILD_AS_OSX_APP || IOS ) / #else
 
     m_downloadCALp->setText( "CALp" );
-
+    
     m_uploadCALp = btndiv->addNew<WPushButton>();
     m_uploadCALp->setIcon( "InterSpec_resources/images/upload_small.svg" );
     m_uploadCALp->setStyleClass( "LinkBtn UploadBtn CALp" );
     m_uploadCALp->clicked().connect( m_tool, &EnergyCalTool::handleRequestToUploadCALp );
 #endif //#if( IMP_CALp_BTN_NEAR_COEFS )
-
+    
     WContainerWidget *spacer = btndiv->addNew<WContainerWidget>();
     spacer->addStyleClass( "Spacer" );
 
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+    // The hint lives inside the flex spacer, absolutely positioned to fill it, so its text wraps
+    //  within the leftover space and can never change the column width or move the button.
+    m_fitHint = spacer->addNew<WText>();
+    m_fitHint->addStyleClass( "FitCoefHint" );
+    m_fitHint->hide();
+
     m_fitCoeffs = btndiv->addNew<WPushButton>( WString::tr("ect-fit-coeff-btn") );
     m_fitCoeffs->addStyleClass( "CalCoefFitBtn" );
-#endif
 
-    layout->addWidget( std::move(btndivOwner), 1, 0 );
+    const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips",
+                                                                      InterSpec::instance() );
+    HelpSystem::attachToolTipOn( m_fitCoeffs, WString::tr("ect-tt-fit-coeff-btn"), showToolTips );
+#endif
+    
     layout->setRowStretch( 0, 1 );
 #endif //#if( IMP_COEF_FIT_BTN_NEAR_COEFS || IMP_CALp_BTN_NEAR_COEFS )
+    
+    auto devPairsOwned = std::make_unique<DeviationPairDisplay>();
+    m_devPairs = devPairsOwned.get();
+    
+#if( HIDE_EMPTY_DEV_PAIRS )
+    //For files with multiple detectors, the "Add dev. pairs" buttons doesnt show up right
+    // for the detectors not currently showing - I guess should toggle dev pairs for all detectors.
+    m_devPairs->setHidden( true );
+    auto addPairsOwned = std::make_unique<WPushButton>("Add dev. pairs");
+    m_addPairs = addPairsOwned.get();
+    m_addPairs->addStyleClass( "LinkBtn" );
+    //m_addPairs->setIcon( "InterSpec_resources/images/plus_min_white.svg" );
+    m_addPairs->setHidden( true );
+    m_addPairs->clicked().connect( this, &CalDisplay::showDevPairs );
+#endif
     
     if( isWideLayout )
     {
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS || IMP_CALp_BTN_NEAR_COEFS )
-      m_devPairs = layout->addWidget( std::make_unique<DeviationPairDisplay>(), 0, 1, 2, 1 );
+      layout->addWidget( std::move(devPairsOwned), 0, 1, 2, 1 );
 #else
-      m_devPairs = layout->addWidget( std::make_unique<DeviationPairDisplay>(), 0, 1 );
+      layout->addWidget( std::move(devPairsOwned), 0, 1 );
 #endif
-
+      
 #if( HIDE_EMPTY_DEV_PAIRS )
-      m_devPairs->setHidden( true );
-      m_addPairs = layout->addWidget( std::make_unique<WPushButton>( "Add dev. pairs" ), 1, 0,
-                                      AlignmentFlag::Right );
-      m_addPairs->addStyleClass( "LinkBtn" );
-      m_addPairs->setHidden( true );
-      m_addPairs->clicked().connect( this, &CalDisplay::showDevPairs );
+      layout->addWidget( std::move(addPairsOwned), 1, 0, AlignmentFlag::Right );
       layout->setRowStretch( 0, 1 );
 #endif
     }else
     {
 #if( HIDE_EMPTY_DEV_PAIRS )
-      m_addPairs = layout->addWidget( std::make_unique<WPushButton>( "Add dev. pairs" ),
-                                      layout->rowCount(), 0, AlignmentFlag::Center );
-      m_addPairs->addStyleClass( "LinkBtn" );
-      m_addPairs->setHidden( true );
-      m_addPairs->clicked().connect( this, &CalDisplay::showDevPairs );
-      m_devPairs = layout->addWidget( std::make_unique<DeviationPairDisplay>(), layout->rowCount(), 0 );
-      m_devPairs->setHidden( true );
+      layout->addWidget( std::move(addPairsOwned), layout->rowCount(), 0, AlignmentFlag::Center );
+      layout->addWidget( std::move(devPairsOwned), layout->rowCount(), 0 );
 #else
-      m_devPairs = layout->addWidget( std::make_unique<DeviationPairDisplay>(), layout->rowCount(), 0 );
+      layout->addWidget( std::move(devPairsOwned), layout->rowCount(), 0 );
 #endif
       m_devPairs->setHeight( 100 );
     }
     
-    m_devPairs->changed().connect( this, [tool = m_tool, calDisp = this]( int a1 ){
-      tool->userChangedDeviationPair( calDisp, a1 );
+    m_devPairs->changed().connect( this, [this]( const int a1 ){
+      m_tool->userChangedDeviationPair( this, a1 );
     } );
   }//CalDisplay( constructor )
   
@@ -1117,12 +534,35 @@ public:
         ww->m_fit->setChecked( fitfor.count(ww->m_order) );
     }//for( auto w : m_coefficients->children() )
   }//void setFitFor( const set<size_t> &fitfor )
-  
+
+
+  /** Enable/disable the per-coefficient "Fit" checkboxes.  They are disabled on displays whose
+   checkboxes are never consulted (fitting always uses the foreground displays selections; the
+   checkbox states are kept in sync across all displays).
+   */
+  void setFitCheckboxesDisabled( const bool disabled )
+  {
+    m_fitCbsDisabled = disabled;
+
+    const WString tip = disabled ? WString::tr("ect-tt-fit-cb-disabled") : WString();
+    for( auto w : m_coefficients->children() )
+    {
+      auto ww = dynamic_cast<CoefDisplay *>( w );
+      assert( ww );
+      if( ww && (ww->m_fit->isDisabled() != disabled) )
+      {
+        ww->m_fit->setDisabled( disabled );
+        ww->m_fit->setToolTip( tip );
+      }
+    }//for( auto w : m_coefficients->children() )
+  }//void setFitCheckboxesDisabled( const bool disabled )
+
+
 #if( HIDE_EMPTY_DEV_PAIRS )
   void showDevPairs()
   {
     m_addPairs->setHidden( true );
-    m_devPairs->setHidden( false, WAnimation(Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200) );
+    m_devPairs->setHidden( false, WAnimation(AnimationEffect::Fade, TimingFunction::Linear, 200) );
   }
 #endif
   
@@ -1192,7 +632,6 @@ public:
   
   void updateToGui( const shared_ptr<const SpecUtils::EnergyCalibration> &cal )
   {
-
 #if( HIDE_EMPTY_DEV_PAIRS )
     const bool hadCal = !!m_cal;
 #endif
@@ -1220,6 +659,8 @@ public:
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
     if( m_fitCoeffs )
       m_fitCoeffs->setHidden( !fitCoeffsVisible );
+    if( m_fitHint && !fitCoeffsVisible && !m_fitHint->isHidden() )
+      m_fitHint->hide();
 #endif
     
 #if( IMP_CALp_BTN_NEAR_COEFS )
@@ -1254,8 +695,6 @@ public:
     
     m_type->setText( typetxt );
     
-    const bool isLowerChannelEdge = (m_cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge);
-
     switch( m_cal->type() )
     {
       case SpecUtils::EnergyCalType::InvalidEquationType:
@@ -1281,19 +720,16 @@ public:
         return;
 
       case SpecUtils::EnergyCalType::LowerChannelEdge:
-        // LowerChannelEdge has no deviation pairs in InterSpec; keep the pair editor hidden but
-        // still render editable offset/gain coefficient rows (handled below).
-        m_devPairs->setDeviationPairs( {} );
+        // Lower channel energy calibrations dont have deviation pairs, but their {offset, gain}
+        //  adjustments (relative to the sessions original channel energies) are editable
         if( !m_devPairs->isHidden() )
           m_devPairs->hide();
 #if( HIDE_EMPTY_DEV_PAIRS )
         m_addPairs->setHidden( true );
-        m_devPairs->setHidden( true );
 #endif
         if( m_convertMsg )
         {
-          if( auto pp = dynamic_cast<WContainerWidget *>( m_convertMsg->parent() ) )
-            pp->removeWidget( m_convertMsg );
+          WidgetUtils::removeWidgetNow( m_convertMsg );
           m_convertMsg = nullptr;
         }
         break;
@@ -1307,119 +743,92 @@ public:
 #endif
         if( m_convertMsg )
         {
-          if( auto pp = dynamic_cast<WContainerWidget *>( m_convertMsg->parent() ) )
-            pp->removeWidget( m_convertMsg );
+          WidgetUtils::removeWidgetNow( m_convertMsg );
           m_convertMsg = nullptr;
         }
         break;
     }//switch( m_cal->type() )
 
-    const auto &devpairs = m_cal->deviation_pairs();
+    const bool lower_channel = (m_cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge);
 
-    // For LowerChannelEdge, the calibration stores per-channel energies (not coefficients).
-    // We synthesize a two-coefficient [offset, gain] view such that
-    //   current_edge[i] = baseline[0] + offset + gain * (baseline[i] - baseline[0])
-    // where `baseline` is the calibration the spectrum had at first load (captured in
-    // `EnergyCalTool::captureOriginalCalibrationsIfNeeded`, lives on m_tool keyed by
-    // (spectrum_type, detector_name)). Displayed values: offset = 0 means "no shift",
-    // gain = 1 means "identity span". Both persist across user edits since the baseline is
-    // never overwritten by the edit/fit cycle.
-    vector<float> lce_coeffs;
-    if( isLowerChannelEdge )
+    vector<pair<float,float>> devpairs;
+    vector<float> coeffs;
+
+    if( lower_channel )
     {
-      const auto current_edges_ptr = m_cal->channel_energies();
-      const bool have_current = current_edges_ptr && (current_edges_ptr->size() >= 2);
-
-      const auto baseline_cal = originalCalibration();
-      const auto baseline_ptr = baseline_cal ? baseline_cal->channel_energies()
-                                             : shared_ptr<const vector<float>>{};
-
-      if( baseline_ptr && baseline_ptr->size() >= 2 && have_current
-          && (baseline_ptr->size() == current_edges_ptr->size()) )
-      {
-        const vector<float> &base = *baseline_ptr;
-        const double base_span = static_cast<double>(base.back())
-                                 - static_cast<double>(base.front());
-        const float offset_delta = static_cast<float>(
-            static_cast<double>(current_edges_ptr->front())
-            - static_cast<double>(base.front()) );
-        const float gain = (std::fabs(base_span) > 1e-6)
-            ? static_cast<float>(
-                (static_cast<double>(current_edges_ptr->back())
-                 - static_cast<double>(current_edges_ptr->front()))
-                / base_span )
-            : 1.0f;
-        lce_coeffs = { offset_delta, gain };
-      }
-      else
-      {
-        // No usable baseline (shouldn't normally happen since captureOriginalCalibrations runs
-        // on the displayedSpectrumChanged signal before this CalDisplay is rendered). Display
-        // identity so the user at least sees something sensible.
-        lce_coeffs = { 0.0f, 1.0f };
-      }
+      // The two displayed "coefficients" are the cumulative {offset, gain} adjustments applied
+      //  this session, relative to the original channel energies
+      const LowerChanCalOriginal info = m_tool->lowerChannelOriginal( m_cal );
+      coeffs = { static_cast<float>(info.offset), static_cast<float>(info.gain) };
+    }else
+    {
+      devpairs = m_cal->deviation_pairs();
+      coeffs = m_cal->coefficients();
     }
-
-    const vector<float> &coeffs = isLowerChannelEdge ? lce_coeffs : m_cal->coefficients();
-
+    
 #if( HIDE_EMPTY_DEV_PAIRS )
     // Once deviation pairs are showing, we will leave them showing, even if there are no deviation
     //  pairs; this is because if you click to add deviation pairs, dont add any, then adjust the
     //  the gain, the deviation pair display getting hidden, causing a layout update, is really
-    //  jarring. Skip this for LowerChannelEdge (dev pairs are not editable for that type).
-    if( !isLowerChannelEdge )
-    {
-      const auto anim = hadCal ? WAnimation(Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200) : WAnimation{};
-      if( m_devPairs->isHidden() && !devpairs.empty() )
-        m_devPairs->setHidden( false, anim );
-      m_addPairs->setHidden( !m_devPairs->isHidden(), anim );
-    }
+    //  jarring.
+    const auto anim = hadCal ? WAnimation(AnimationEffect::Fade, TimingFunction::Linear, 200) : WAnimation{};
+    if( m_devPairs->isHidden() && !devpairs.empty() )
+      m_devPairs->setHidden( false, anim );
+    m_addPairs->setHidden( !m_devPairs->isHidden(), anim );
 #endif
-
-    if( !isLowerChannelEdge )
-      m_devPairs->setDeviationPairs( devpairs );
-    //m_devPairs->changed().connect( std::bind( &EnergyCalTool::userChangedDeviationPair, m_tool, this) );
-
-    // For LowerChannelEdge show exactly 2 rows (offset, gain); polynomial/FRF use the
-    // standard minimum so higher-order rows remain available for fitting.
-    const size_t num_coef_disp = isLowerChannelEdge
-        ? size_t(2)
-        : std::max( coeffs.size(), sm_min_coef_display );
-    vector<CoefDisplay *> coef_disps( num_coef_disp, nullptr );
     
+    m_devPairs->setDeviationPairs( devpairs );
+    //m_devPairs->changed().connect( std::bind( &EnergyCalTool::userChangedDeviationPair, m_tool, this) );
+    
+    const size_t num_coef_disp = lower_channel ? coeffs.size()
+                                               : std::max( coeffs.size(), sm_min_coef_display );
+    vector<CoefDisplay *> coef_disps( num_coef_disp, nullptr );
+
     size_t coefnum = 0;
     const auto existing = m_coefficients->children();
     for( size_t i = 0; i < existing.size(); ++i )
     {
       auto ww = dynamic_cast<CoefDisplay *>( existing[i] );
       assert( ww || !existing[i] );
-      
+
       if( ww )
       {
         if( coefnum >= num_coef_disp )
         {
-          m_coefficients->removeWidget( existing[i] );
+          // Wt4: removeWidget() hands back ownership; the unique_ptr destroys it here.
+          const std::unique_ptr<WWidget> doomed = m_coefficients->removeWidget( existing[i] );
         }else
         {
           assert( coefnum < coef_disps.size() );
           coef_disps[coefnum] = ww;
+          ww->setLabeling( lower_channel );
           const float value = (coefnum < coeffs.size()) ? coeffs[coefnum] : 0.0f;
-          ww->m_value->setValue( value );
+          // Only write the value if it actually changed: NativeFloatSpinBox::setValue always
+          //  re-formats and re-sets the DOM text, which would lose the cursor position, and
+          //  clobber the formatting, of the value the user just typed in.
+          if( ww->m_value->value() != value )
+            ww->m_value->setValue( value );
         }
-        
+
         ++coefnum;
       }//if( ww )
     }//for( size_t i = 0; i < existing.size(); ++i )
-    
+
     for( ; coefnum < num_coef_disp; ++coefnum )
     {
       CoefDisplay *disp = m_coefficients->addNew<CoefDisplay>( coefnum );
       coef_disps[coefnum] = disp;
+      disp->setLabeling( lower_channel );
       const float value = (coefnum < coeffs.size()) ? coeffs[coefnum] : 0.0f;
       disp->m_value->setValue( value );
       disp->m_fit->setChecked( (coefnum < 2) );
-      
-      disp->m_fit->changed().connect( m_tool, &EnergyCalTool::updateFitButtonStatus );
+      if( m_fitCbsDisabled )
+      {
+        disp->m_fit->disable();
+        disp->m_fit->setToolTip( WString::tr("ect-tt-fit-cb-disabled") );
+      }
+
+      disp->m_fit->changed().connect( this, [this](){ m_tool->fitCheckboxChanged( this ); } );
       
       /* Note: if the user uses the up.down arrows in a NativeFloatSpinBox to change values, things
                get all messed up (new values get set via c++ messing  up current values, or the
@@ -1427,8 +836,8 @@ public:
                than everything can keep up, and just generally poor working), so for now I have
                disabled these spinners via #NativeFloatSpinBox::setSpinnerHidden()
        */
-      disp->m_value->valueChanged().connect( this, [tool = m_tool, coefnum, calDisp = this]( double ){
-        tool->userChangedCoefficient( coefnum, calDisp );
+      disp->m_value->valueChanged().connect( this, [this,coefnum](){
+        m_tool->userChangedCoefficient( coefnum, this );
       } );
     }
     
@@ -1473,14 +882,23 @@ public:
   }//updateToGui(...)
 
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
-  void setFitButtonEnabled( const bool canFitCeofs )
+  /** Sets the "Fit Coeffs" button enabled state, and when disabled, shows a short hint of why
+   fitting isnt possible (pass an empty hint to show nothing).
+   */
+  void setFitStatus( const bool canFitCoefs, const Wt::WString &hint )
   {
     if( !m_cal )
       return;
-      
-    if( m_fitCoeffs->isEnabled() != canFitCeofs )
-      m_fitCoeffs->setEnabled( canFitCeofs );
-  }
+
+    if( m_fitCoeffs->isEnabled() != canFitCoefs )
+      m_fitCoeffs->setEnabled( canFitCoefs );
+
+    const bool showHint = (!canFitCoefs && !hint.empty() && !m_fitCoeffs->isHidden());
+    if( showHint && (m_fitHint->text() != hint) )
+      m_fitHint->setText( hint );
+    if( m_fitHint->isHidden() == showHint )
+      m_fitHint->setHidden( !showHint );
+  }//void setFitStatus( const bool canFitCoefs, const Wt::WString &hint )
   
   Wt::EventSignal<Wt::WMouseEvent> &doFitCoeffs()
   {
@@ -1499,7 +917,7 @@ const size_t CalDisplay::sm_min_coef_display = 4;
 EnergyCalTool::EnergyCalTool( InterSpec *viewer, std::shared_ptr<PeakModel> peakModel )
 : WContainerWidget(),
   m_interspec( viewer ),
-  m_peakModel( peakModel ),
+  m_peakModel( std::move(peakModel) ),
   m_calpResource(),
   m_tallLayoutContent( nullptr ),
   m_peakTable( nullptr ),
@@ -1531,14 +949,14 @@ EnergyCalTool::EnergyCalTool( InterSpec *viewer, std::shared_ptr<PeakModel> peak
   m_addActionWindow( nullptr )
 {
   wApp->useStyleSheet( "InterSpec_resources/EnergyCalTool.css" );
-
+  
   assert( viewer );
   viewer->useMessageResourceBundle( "EnergyCalTool" );
-
-  m_calpResource = std::make_shared<EnergyCalImp::CALpDownloadResource>( this, viewer );
-
+    
   addStyleClass( "EnergyCalTool" );
 
+  m_calpResource = std::make_shared<EnergyCalImp::CALpDownloadResource>( this, m_interspec );
+  
   initWidgets( EnergyCalTool::LayoutType::Wide );
 }
 
@@ -1553,7 +971,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   if( m_graphicalRecal )
   {
     AuxWindow::deleteAuxWindow( m_graphicalRecal.get() );
-    m_graphicalRecal = nullptr;
+    assert( !m_graphicalRecal );   //observing_ptr auto-clears
   }//if( m_graphicalRecal )
   
   
@@ -1563,6 +981,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
     removeStyleClass( "TallEnergyCal" );
     if( m_tallLayoutContent )
     {
+      // Wt4: removeWidget() hands back ownership; the unique_ptr destroys it here.
       auto p = removeWidget( m_tallLayoutContent );
       m_tallLayoutContent = nullptr;
     }
@@ -1571,7 +990,16 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   }else
   {
     addStyleClass( "TallEnergyCal" );
-    // setLayout below will replace/delete existing layout
+
+    // We must drop any layout we already have on `this` BEFORE adding m_tallLayoutContent:
+    //  WContainerWidget renders only its layout's widgets when a layout is set, so a plain child
+    //  added while the wide layout is still installed would never get a DOM element (and the stale
+    //  wide widgets would keep rendering, wired to the same handlers).
+    //  setLayout(nullptr) -> setLogicalLayout() -> clear(), which destroys the old layout and all
+    //  the widgets it managed exactly once.
+    setLayout( std::unique_ptr<WLayout>() );
+    m_layout = nullptr;
+
     m_tallLayoutContent = addNew<WContainerWidget>();
     m_layout = m_tallLayoutContent->setLayout( std::make_unique<WGridLayout>() );
   }//if( wide ) / else
@@ -1609,44 +1037,38 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_layout->setVerticalSpacing( 0 );
   m_layout->setHorizontalSpacing( 0 );
   
-  {
-    auto noCalOwner = std::make_unique<WText>( WString::tr("ect-no-spec") );
-    m_noCalTxt = noCalOwner.get();
-    m_noCalTxt->addStyleClass( "NoCalContentTxt" );
-    if( wide )
-      m_layout->addWidget( std::move(noCalOwner), 0, 0, AlignmentFlag::Center | AlignmentFlag::Middle );
-    else
-      m_layout->addWidget( std::move(noCalOwner), 0, 0, 1, 2, AlignmentFlag::Center | AlignmentFlag::Middle );
-  }
-
+  auto noCalTxtOwned = std::make_unique<WText>(WString::tr("ect-no-spec"));
+  m_noCalTxt = noCalTxtOwned.get();
+  m_noCalTxt->addStyleClass( "NoCalContentTxt" );
+  if( wide )
+    m_layout->addWidget( std::move(noCalTxtOwned), 0, 0, AlignmentFlag::Center | AlignmentFlag::Middle );
+  else
+    m_layout->addWidget( std::move(noCalTxtOwned), 0, 0, 1, 2, AlignmentFlag::Center | AlignmentFlag::Middle );
+  
   //Create the more actions column...
-  {
-    auto col = std::make_unique<WContainerWidget>();
-    m_moreActionsColumn = col.get();
-    m_moreActionsColumn->addStyleClass( "ToolTabTitledColumn MoreActionCol" );
-    if( wide )
-      m_layout->addWidget( std::move(col), 0, 1 );
-    else
-      m_layout->addWidget( std::move(col), 3, 0 );
-  }
-
+  auto oreActionsColumnOwned = std::make_unique<WContainerWidget>();
+  m_moreActionsColumn = oreActionsColumnOwned.get();
+  m_moreActionsColumn->addStyleClass( "ToolTabTitledColumn MoreActionCol" );
+  if( wide )
+    m_layout->addWidget( std::move(oreActionsColumnOwned), 0, 1 );
+  else
+    m_layout->addWidget( std::move(oreActionsColumnOwned), 3, 0 );
+  
   WGridLayout *collayout = m_moreActionsColumn->setLayout( std::make_unique<WGridLayout>() );
   collayout->setContentsMargins( 0, 0, 0, 0 );
   collayout->setVerticalSpacing( 0 );
   collayout->setHorizontalSpacing( 0 );
   collayout->setRowStretch( 1, 1 );
-
-  {
-    WText *header = collayout->addWidget( std::make_unique<WText>( WString::tr("ect-more-act") ), 0, 0 );
-    header->addStyleClass( "ToolTabColumnTitle" );
-  }
-
+  
+  WText *header = collayout->addWidget( std::make_unique<WText>(WString::tr("ect-more-act")), 0, 0 );
+  header->addStyleClass( "ToolTabColumnTitle" );
+  
   //We will put the apply-to list inside a div so we can style consistently with other rows
   // (a <ul> element doesnt accept same css as <div>, apparently).
   WContainerWidget *moreActionsDiv = collayout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
   moreActionsDiv->addStyleClass( "ToolTabTitledColumnContent MoreActionsMenuContent" );
   collayout->setRowStretch( 1, 1 );
-
+  
   WContainerWidget *moreActionsList = moreActionsDiv->addNew<WContainerWidget>();
   moreActionsList->addStyleClass( "MoreActionsMenuList" );
   moreActionsList->setList( true );
@@ -1696,7 +1118,9 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
     
     WContainerWidget *holder = moreActionsList->addNew<WContainerWidget>();
     m_moreActions[static_cast<int>(index)] = holder->addNew<WAnchor>( WLink(), WString::tr(label) );
-    m_moreActions[static_cast<int>(index)]->clicked().connect( this, [this, index](){ moreActionBtnClicked( index ); } );
+    m_moreActions[static_cast<int>(index)]->clicked().connect( this, [this,index](){
+      moreActionBtnClicked( index );
+    } );
     
     assert( tooltip );
     if( tooltip )
@@ -1705,18 +1129,18 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   
   WContainerWidget *btndiv = collayout->addWidget( std::make_unique<WContainerWidget>(), 2, 0 );
   btndiv->addStyleClass( "BtmBtnDiv" );
-
-  WContainerWidget *helpBtn = btndiv->addNew<WContainerWidget>();
+  
+  auto helpBtn = btndiv->addNew<WContainerWidget>();
   helpBtn->addStyleClass( "Wt-icon ContentHelpBtn" );
   helpBtn->clicked().connect( this, [](){ HelpSystem::createHelpWindow( "energy-calibration" ); } );
 
-
+  
 #if( !IMP_CALp_BTN_NEAR_COEFS )
   m_uploadCALp = btndiv->addNew<WPushButton>();
   m_uploadCALp->setIcon( "InterSpec_resources/images/upload_small.svg" );
   m_uploadCALp->setStyleClass( "LinkBtn UploadBtn CALp" );
   m_uploadCALp->clicked().connect( this, &EnergyCalTool::handleRequestToUploadCALp );
-
+  
 #if( BUILD_AS_OSX_APP || IOS )
   {
     WLink calpLink( m_calpResource );
@@ -1756,32 +1180,30 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
 #endif // !IMP_COEF_FIT_BTN_NEAR_COEFS
   
   // Create the "Apply To" column that determines what to apply changes to
-  {
-    auto col = std::make_unique<WContainerWidget>();
-    m_applyToColumn = col.get();
-    m_applyToColumn->addStyleClass( "ToolTabTitledColumn ApplyToCol" );
-    if( wide )
-      m_layout->addWidget( std::move(col), 0, 2 );
-    else
-      m_layout->addWidget( std::move(col), 3, 1 );
-  }
-
+  auto applyToColumnOwned = std::make_unique<WContainerWidget>();
+  m_applyToColumn = applyToColumnOwned.get();
+  m_applyToColumn->addStyleClass( "ToolTabTitledColumn ApplyToCol" );
+  if( wide )
+    m_layout->addWidget( std::move(applyToColumnOwned), 0, 2 );
+  else
+    m_layout->addWidget( std::move(applyToColumnOwned), 3, 1 );
+  
   collayout = m_applyToColumn->setLayout( std::make_unique<WGridLayout>() );
   collayout->setContentsMargins( 0, 0, 0, 0 );
   collayout->setVerticalSpacing( 0 );
   collayout->setHorizontalSpacing( 0 );
   collayout->setRowStretch( 1, 1 );
-
-  {
-    WText *header = collayout->addWidget( std::make_unique<WText>( WString::tr("ect-apply-changes-to") ), 0, 0 );
-    header->addStyleClass( "ToolTabColumnTitle" );
-  }
-
+  
+  auto headerOwned = std::make_unique<WText>(WString::tr("ect-apply-changes-to"));
+  header = headerOwned.get();
+  header->addStyleClass( "ToolTabColumnTitle" );
+  collayout->addWidget( std::move(headerOwned), 0, 0 );
+  
   //We will put the apply-to list inside a div so we can style consistently with other rows
   // (a <ul> element doesnt accept same css as <div>, apparently).
   WContainerWidget *applyToDiv = collayout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
   applyToDiv->addStyleClass( "ToolTabTitledColumnContent ApplyToMenuContent" );
-
+  
   WContainerWidget *applyToList = applyToDiv->addNew<WContainerWidget>();
   applyToList->addStyleClass( "ApplyToMenuList" );
   applyToList->setList( true );
@@ -1808,7 +1230,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
     
     WContainerWidget *item = applyToList->addNew<WContainerWidget>();
     item->addStyleClass( "ApplyToItem" );
-    WCheckBox *cb = item->addNew<WCheckBox>( WString::tr(label) );
+    auto cb = item->addNew<WCheckBox>( WString::tr(label) );
     cb->setWordWrap( false );
     cb->addStyleClass( "ApplyToItem CbNoLineBreak" );
     
@@ -1830,8 +1252,8 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
         break;
     }//switch( index )
     
-    cb->checked().connect( this, [this, index](){ applyToCbChanged( index ); } );
-    cb->unChecked().connect( this, [this, index](){ applyToCbChanged( index ); } );
+    cb->checked().connect( this, [this,index](){ applyToCbChanged( index ); } );
+    cb->unChecked().connect( this, [this,index](){ applyToCbChanged( index ); } );
     
     m_applyToCbs[index] = cb;
   }//for( loop over ApplyToCbIndex )
@@ -1840,61 +1262,63 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
 
   
   // Create the "Coefficients" column that show the polynomial/FRF coefficents.
-  {
-    auto col = std::make_unique<WContainerWidget>();
-    m_calColumn = col.get();
-    m_calColumn->addStyleClass( "ToolTabTitledColumn CoefColumn" );
-    if( wide )
-      m_layout->addWidget( std::move(col), 0, 3 );
-    else
-      m_layout->addWidget( std::move(col), 1, 0, 1, 2 );
-  }
-
+  auto calColumnOwned = std::make_unique<WContainerWidget>();
+  m_calColumn = calColumnOwned.get();
+  m_calColumn->addStyleClass( "ToolTabTitledColumn CoefColumn" );
+  if( wide )
+    m_layout->addWidget( std::move(calColumnOwned), 0, 3 );
+  else
+    m_layout->addWidget( std::move(calColumnOwned), 1, 0, 1, 2 );
+  
+  
   collayout = m_calColumn->setLayout( std::make_unique<WGridLayout>() );
   collayout->setContentsMargins( 0, 0, 0, 0 );
   collayout->setVerticalSpacing( 0 );
   collayout->setHorizontalSpacing( 0 );
   collayout->setRowStretch( 1, 1 );
-
+  
   if( wide )
     collayout->setColumnStretch( 1, 1 );
+  
+  auto coefHeaderOwned = std::make_unique<WText>( WString::tr("ect-calib-coeffs") );
+  header = coefHeaderOwned.get();
+  header->addStyleClass( "ToolTabColumnTitle" );
 
-  {
-    WText *header = collayout->addWidget( std::make_unique<WText>( WString::tr("ect-calib-coeffs") ), 0, 0, 1, 2 );
-    header->addStyleClass( "ToolTabColumnTitle" );
-  }
+  collayout->addWidget( std::move(coefHeaderOwned), 0, 0, 1, 2 );
   //collayout->addWidget( m_calInfoDisplayStack, 1, 0 );
   
   
   // Create the "Detector" column that determines which coefficients to show
-  m_detColumn = collayout->addWidget( std::make_unique<WContainerWidget>(), 1, 0 );
+  auto detColumnOwned = std::make_unique<WContainerWidget>();
+  m_detColumn = detColumnOwned.get();
   m_detColumn->addStyleClass( "DetCol" );
-
+  collayout->addWidget( std::move(detColumnOwned), 1, 0 );
+  
   m_detColLayout = m_detColumn->setLayout( std::make_unique<WGridLayout>() );
   m_detColLayout->setContentsMargins( 0, 0, 0, 0 );
   m_detColLayout->setVerticalSpacing( 0 );
   m_detColLayout->setHorizontalSpacing( 0 );
-
-  {
-    WText *detheader = m_detColLayout->addWidget( std::make_unique<WText>( WString::tr("Detector") ), 0, 0 );
-    detheader->setInline( false );
-    detheader->addStyleClass( "DetHdr Wt-itemview Wt-header Wt-label" );
-  }
+  
+  auto detheaderOwned = std::make_unique<WText>( WString::tr("Detector") );
+  WText *detheader = detheaderOwned.get();
+  detheader->setInline( false );
+  detheader->addStyleClass( "DetHdr Wt-itemview Wt-header Wt-label" );
+  //detheader->resize( WLength::Auto, WLength(20,WLength::Unit::Pixel) );
+  //collayout->addWidget( std::move(detheaderOwned), 0, 0 );
+  m_detColLayout->addWidget( std::move(detheaderOwned), 0, 0  );
   m_detColLayout->setRowStretch( 2, 1 );
   
   // Create the "Cal Peaks" table
+  auto peakTableColumnOwned = std::make_unique<WContainerWidget>();
+  m_peakTableColumn = peakTableColumnOwned.get();
+  m_peakTableColumn->addStyleClass( "ToolTabTitledColumn PeakTableCol" );
+  if( wide )
   {
-    auto col = std::make_unique<WContainerWidget>();
-    m_peakTableColumn = col.get();
-    m_peakTableColumn->addStyleClass( "ToolTabTitledColumn PeakTableCol" );
-    if( wide )
-    {
-      m_layout->addWidget( std::move(col), 0, 4 );
-      m_layout->setColumnStretch( 4, 1 );
-    }else
-    {
-      m_layout->addWidget( std::move(col), 2, 0, 1, 2 );
-    }
+    m_layout->addWidget( std::move(peakTableColumnOwned), 0, 4 );
+    m_layout->setColumnStretch( 4, 1 );
+  }else
+  {
+    m_layout->addWidget( std::move(peakTableColumnOwned), 2, 0, 1, 2 );
   }
 
   collayout = m_peakTableColumn->setLayout( std::make_unique<WGridLayout>() );
@@ -1903,14 +1327,16 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   collayout->setHorizontalSpacing( 0 );
   if( wide )
     collayout->setRowStretch( 1, 1 );
-
-  {
-    WText *header = collayout->addWidget( std::make_unique<WText>( WString::tr("ect-cal-peaks") ), 0, 0 );
-    header->addStyleClass( "ToolTabColumnTitle" );
-  }
-
-  m_peakTable = collayout->addWidget( std::make_unique<RowStretchTreeView>(), 1, 0 );
+  
+  auto peakHeaderOwned = std::make_unique<WText>( WString::tr("ect-cal-peaks") );
+  header = peakHeaderOwned.get();
+  header->addStyleClass( "ToolTabColumnTitle" );
+  collayout->addWidget( std::move(peakHeaderOwned), 0, 0 );
+  
+  auto peakTableOwned = std::make_unique<RowStretchTreeView>();
+  m_peakTable = peakTableOwned.get();
   m_peakTable->addStyleClass( "ToolTabTitledColumnContent PeakTable" );
+  collayout->addWidget( std::move(peakTableOwned), 1, 0 );
   collayout->setRowStretch( 1, 1 );
   
   m_peakTable->setRootIsDecorated( false ); //makes the tree look like a table! :)
@@ -1922,7 +1348,7 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   m_peakTable->setSortingEnabled( true );
   m_peakTable->setAlternatingRowColors( true );
   m_peakTable->setSelectable( true );
-  m_peakTable->setSelectionMode( Wt::SelectionMode::Single );
+  m_peakTable->setSelectionMode( SelectionMode::Single );
   m_peakTable->setEditTriggers( Wt::EditTrigger::SingleClicked
                                | Wt::EditTrigger::DoubleClicked );
   
@@ -1941,31 +1367,26 @@ void EnergyCalTool::initWidgets( EnergyCalTool::LayoutType layoutType )
   
   
   
-  {
-    auto dblDelagate = std::make_shared<WItemDelegate>();
-    dblDelagate->setTextFormat( "%.2f" );
-    m_peakTable->setItemDelegateForColumn( PeakModel::kMean, dblDelagate );
-  }
+  auto dblDelagate = std::make_shared<WItemDelegate>();
+  dblDelagate->setTextFormat( "%.2f" );
+  m_peakTable->setItemDelegateForColumn( PeakModel::kMean, dblDelagate );
   
-  {
-    auto nuclideDelegate = std::make_shared<PhotopeakDelegate>( PhotopeakDelegate::NuclideDelegate, true );
-    m_peakTable->setItemDelegateForColumn( PeakModel::kIsotope, nuclideDelegate );
-  }
-
-  {
-    auto photopeakDelegate = std::make_shared<PhotopeakDelegate>( PhotopeakDelegate::GammaEnergyDelegate, true );
-    m_peakTable->setItemDelegateForColumn( PeakModel::kPhotoPeakEnergy, photopeakDelegate );
-  }
+  auto nuclideDelegate = std::make_shared<PhotopeakDelegate>( PhotopeakDelegate::NuclideDelegate, true );
+  m_peakTable->setItemDelegateForColumn( PeakModel::kIsotope, nuclideDelegate );
+  
+  auto photopeakDelegate = std::make_shared<PhotopeakDelegate>( PhotopeakDelegate::GammaEnergyDelegate, true );
+  m_peakTable->setItemDelegateForColumn( PeakModel::kPhotoPeakEnergy, photopeakDelegate );
   
   m_peakModel->dataChanged().connect( this, &EnergyCalTool::updateFitButtonStatus );
   m_peakModel->rowsRemoved().connect( this, &EnergyCalTool::updateFitButtonStatus );
   m_peakModel->rowsInserted().connect( this, &EnergyCalTool::updateFitButtonStatus );
   m_peakModel->layoutChanged().connect( this, &EnergyCalTool::updateFitButtonStatus );
   
-  m_interspec->displayedSpectrumChanged().connect( this, [this]( SpecUtils::SpectrumType a1,
-      std::shared_ptr<SpecMeas> a2, std::set<int> a3, std::vector<std::string> a4 ){
-    displayedSpectrumChanged( a1, a2, a3, a4 );
-  } );
+  m_interspec->displayedSpectrumChanged().connect( this,
+    [this]( const SpecUtils::SpectrumType a1, const std::shared_ptr<SpecMeas> a2,
+            const std::set<int> &a3, const std::vector<std::string> &a4 ){
+      displayedSpectrumChanged( a1, a2, a3, a4 );
+    } );
   
   m_renderFlags |= EnergyCalToolRenderFlags::FullGuiUpdate;
   scheduleRender();
@@ -1986,70 +1407,21 @@ void EnergyCalTool::setTallLayout()
 
 EnergyCalTool::~EnergyCalTool()
 {
-}
+  // Both of these are AuxWindows created by `AuxWindow::make(...)`, so `wApp` owns them - they are
+  //  not our children and will not go away with us.  They hold a raw `EnergyCalTool*` back-pointer
+  //  they dereference from their Accept/Apply handlers (EnergyCalAddActions.cpp, EnergyCalGraphical.cpp),
+  //  so leaving them up after we die is a use-after-free waiting on a user click.
+  cancelMoreActionWindow();
 
-
-std::shared_ptr<const SpecUtils::EnergyCalibration>
-EnergyCalTool::originalCalibrationFor( const SpecUtils::SpectrumType type,
-                                       const std::string &detname ) const
-{
-  const auto it = m_originalCalibrations.find( std::make_pair(type, detname) );
-  return (it == m_originalCalibrations.end())
-           ? std::shared_ptr<const SpecUtils::EnergyCalibration>{}
-           : it->second;
-}
-
-
-void EnergyCalTool::captureOriginalCalibrationsIfNeeded( const SpecUtils::SpectrumType type,
-                                                        const std::shared_ptr<SpecMeas> &meas )
-{
-  const size_t idx = static_cast<size_t>( type );
-  if( idx >= 3 )
-    return;
-
-  // If a different SpecMeas is now under this spectrum type, clear all entries for this type
-  // and re-capture. If the same SpecMeas is back (e.g., sample/detector display change), keep
-  // the existing entries — they represent the calibration at first-load time, which is the
-  // anchor we want to preserve across user edits.
-  if( m_originalCalSpecMeas[idx].get() != meas.get() )
+  //  Note: deliberately not `deleteGraphicalRecalConfirmWindow()` - that also reads a user preference
+  //  through, and logs a message to, `m_interspec`.  We run when InterSpec destroys its widget
+  //  children, i.e. *after* the `~InterSpec` body, so `m_interspec` is already dangling.
+  if( m_graphicalRecal )
   {
-    for( auto it = m_originalCalibrations.begin(); it != m_originalCalibrations.end(); )
-    {
-      if( it->first.first == type )
-        it = m_originalCalibrations.erase( it );
-      else
-        ++it;
-    }
-    m_originalCalSpecMeas[idx] = meas;
+    AuxWindow::deleteAuxWindow( m_graphicalRecal.get() );
+    assert( !m_graphicalRecal );   //observing_ptr auto-clears
   }
-
-  if( !meas )
-    return;
-
-  // Fill in entries for every detector we see in this SpecMeas, but never replace an existing
-  // entry (so the "original" stays the first cal we ever saw for that detector).
-  // NOTE: Many file formats don't explicitly name their detector — CSV/TXT, single-detector
-  // N42 stubs, etc. In those cases `detector_name()` is the empty string, which is a perfectly
-  // valid map key (it matches what `CalDisplay::m_det_name` ends up holding, via the file's
-  // `gamma_detector_names()` returning {""}). Do *not* skip empty detector names here.
-  for( const auto &m : meas->measurements() )
-  {
-    if( !m )
-      continue;
-
-    const std::string &detname = m->detector_name();
-
-    const auto key = std::make_pair( type, detname );
-    if( m_originalCalibrations.count( key ) )
-      continue;
-
-    const auto &cal = m->energy_calibration();
-    if( !cal || !cal->valid() )
-      continue;
-
-    m_originalCalibrations[key] = cal;
-  }
-}
+}//EnergyCalTool destructor
 
 
 set<string> EnergyCalTool::gammaDetectorsForDisplayedSamples( const SpecUtils::SpectrumType type )
@@ -2123,6 +1495,41 @@ vector<EnergyCalImp::CalDisplay *> EnergyCalTool::calDisplays()
 #endif
 
 
+EnergyCalImp::CalDisplay *EnergyCalTool::foregroundFitDisplay( int *menunum, Wt::WMenuItem **item )
+{
+  if( menunum )
+    *menunum = -1;
+  if( item )
+    *item = nullptr;
+
+  const vector<string> displayed
+                       = m_interspec->detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
+
+  for( int menuIndex = 0; menuIndex < 3; ++menuIndex )
+  {
+    WMenu * const detMenu = m_detectorMenu[menuIndex];
+    for( int i = 0; detMenu && (i < detMenu->count()); ++i )
+    {
+      WMenuItem * const thisitem = detMenu->itemAt(i);
+      auto display = thisitem ? dynamic_cast<EnergyCalImp::CalDisplay *>( thisitem->contents() )
+                              : nullptr;
+      if( display
+          && (display->spectrumType() == SpecUtils::SpectrumType::Foreground)
+          && (std::find(begin(displayed), end(displayed), display->detectorName()) != end(displayed)) )
+      {
+        if( menunum )
+          *menunum = menuIndex;
+        if( item )
+          *item = thisitem;
+        return display;
+      }//if( we found a displayed foreground detector )
+    }//for( loop over the menus items )
+  }//for( loop over the detector menus )
+
+  return nullptr;
+}//EnergyCalImp::CalDisplay *foregroundFitDisplay( int *menunum, Wt::WMenuItem **item )
+
+
 
 
 
@@ -2166,11 +1573,13 @@ vector<MeasToApplyCoefChangeTo> EnergyCalTool::measurementsToApplyCoeffChangeTo(
     
     //It could be that the background SpecFile is the same as the foreground, so check if we
     //  already have an entry for this file in answer, and if so, use it.  We dont want duplicate
-    //  entries for SpecFiles since this could cause us to maybe move peaks multiple times or
-    //  something
-    //  \TODO: if the background and foreground use different detectors (no overlap) or different
-    //         sample numbers (no overlap) should return multiple entries for the SpecFile to handle
-    //         the edge-case correctly
+    //  entries for a SpecFile, since consumers assume each measurement is visited only once (they
+    //  would otherwise move peaks multiple times, or fail to look up already-updated calibrations).
+    //  Note: samples displayed by a spectrum type that is NOT selected get subtracted back out
+    //  below, after this loop; the remaining compromise is that *detector* scopes of multiple
+    //  selected types showing the same file get unioned (handling that exactly would need
+    //  per-(samples,detectors) entries, and consumers hardened against visiting a measurement
+    //  twice, which isnt worth the complexity for how rare the situation is).
     MeasToApplyCoefChangeTo *changes = nullptr;
     for( size_t i = 0; !changes && i < answer.size(); ++i )
       changes = (answer[i].meas == meas) ? &(answer[i]) : changes;
@@ -2215,12 +1624,13 @@ vector<MeasToApplyCoefChangeTo> EnergyCalTool::measurementsToApplyCoeffChangeTo(
       const bool toDisplayed = (applyToDisplayedCb->parent()
                                 && !applyToDisplayedCb->parent()->isHidden()
                                 && applyToDisplayedCb->isChecked());
-      if( toAll == toDisplayed )
-      {
-        cerr << "EnergyCalTool::measurementsToApplyCoeffChangeTo:"
-                " got (toAll == toDisplayed) which shouldnt have happended" << endl;
-      }
-        
+
+      // The two checkboxes are kept mutually exclusive by #applyToCbChanged, but both can read
+      //  un-checked while their row is hidden - in that case (or any inconsistency) we fall back
+      //  to applying to all detectors.
+      assert( (toAll != toDisplayed)
+              || applyToAllCb->parent()->isHidden() || applyToDisplayedCb->parent()->isHidden() );
+
       if( toAll || (toAll == toDisplayed) )
       {
         for( const auto &det : detectors )
@@ -2251,10 +1661,88 @@ vector<MeasToApplyCoefChangeTo> EnergyCalTool::measurementsToApplyCoeffChangeTo(
       changes->sample_numbers = meas->sample_numbers();
     }
   }//for( const auto spectype : spectypes )
-  
-  
+
+
+  // Dont let a change bleed into the display of an un-selected spectrum type, when the same file
+  //  is displayed as multiple types.  E.g., with the foreground and background being different
+  //  sample numbers of the same file, and only "Background" selected, the samples the foreground
+  //  is displaying should be left alone (even when the sample scope is "all samples").
+  //  Samples displayed by both a selected and an un-selected type are kept - the change is to the
+  //  underlying measurements, so the un-selected display cant help but follow.
+  const auto type_is_checked = [this]( const SpecUtils::SpectrumType spectype ) -> bool {
+    switch( spectype )
+    {
+      case SpecUtils::SpectrumType::Foreground:
+        return m_applyToCbs[ApplyToCbIndex::ApplyToForeground]->isChecked();
+      case SpecUtils::SpectrumType::SecondForeground:
+        return m_applyToCbs[ApplyToCbIndex::ApplyToSecondary]->isChecked();
+      case SpecUtils::SpectrumType::Background:
+        return m_applyToCbs[ApplyToCbIndex::ApplyToBackground]->isChecked();
+    }//switch( spectype )
+
+    assert( 0 );
+    return false;
+  };
+
+  for( MeasToApplyCoefChangeTo &change : answer )
+  {
+    set<int> checked_disp, unchecked_disp;
+    for( const auto spectype : spectypes )
+    {
+      if( m_interspec->measurment(spectype) != change.meas )
+        continue;
+
+      const set<int> &disp = m_interspec->displayedSamples(spectype);
+      if( type_is_checked(spectype) )
+        checked_disp.insert( begin(disp), end(disp) );
+      else
+        unchecked_disp.insert( begin(disp), end(disp) );
+    }//for( const auto spectype : spectypes )
+
+    for( const int sample : unchecked_disp )
+    {
+      if( !checked_disp.count(sample) )
+        change.sample_numbers.erase( sample );
+    }
+  }//for( MeasToApplyCoefChangeTo &change : answer )
+
+
   return answer;
 }//std::vector<MeasToApplyCoefChangeTo> measurementsToApplyCoeffChangeTo()
+
+
+LowerChanCalOriginal EnergyCalTool::lowerChannelOriginal(
+                        const std::shared_ptr<const SpecUtils::EnergyCalibration> &cal ) const
+{
+  assert( cal && cal->valid() && (cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge) );
+
+  const auto pos = m_lowerChanOrigCals.find( cal );
+  if( pos != end(m_lowerChanOrigCals) )
+  {
+    assert( pos->second.original );
+    return pos->second;
+  }
+
+  //This calibration hasnt been adjusted this session - it IS the original
+  LowerChanCalOriginal answer;
+  answer.original = cal;
+  return answer;
+}//lowerChannelOriginal(...)
+
+
+void EnergyCalTool::registerLowerChannelAdjustment(
+                        const std::shared_ptr<const SpecUtils::EnergyCalibration> &new_cal,
+                        const LowerChanCalOriginal &info )
+{
+  assert( new_cal && info.original );
+  assert( new_cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge );
+  assert( info.original->type() == SpecUtils::EnergyCalType::LowerChannelEdge );
+
+  if( !new_cal || !info.original || (new_cal == info.original) )
+    return;
+
+  m_lowerChanOrigCals[new_cal] = info;
+}//registerLowerChannelAdjustment(...)
 
 
 void EnergyCalTool::applyCALpEnergyCal( std::map<std::string,std::shared_ptr<const SpecUtils::EnergyCalibration>> det_to_cal,
@@ -2344,14 +1832,16 @@ void EnergyCalTool::applyCALpEnergyCal( std::map<std::string,std::shared_ptr<con
       
       if( old_energy_cals.size() > 1 )
       {
-        // Note: we ARE NOT updating the deviation pairs here... I'm not totally sure how to
-        //       make everything consistent from the users perspective... perhaps just ignoring
-        //       this corner case of using a CALp file with a single calibration, with data that
-        //       currently uses multiple calibrations is fine - after all all that is lost is the
-        //       deviation pairs, which its not clear that you do actually want the deviation pairs.
-        //       The work around from the user perspective would be to display a single detector at
-        //       a time, and then apply the CALp file.  I doubt anyone will ever actually hit this
-        //       corner case, and even if they did, the behaviour is probably what they want anyway.
+        // A single-calibration CALp is being applied to data whose detectors currently use
+        //  multiple calibrations: we propagate the *coefficient* change to each detector
+        //  (relative to the displayed calibration), and deliberately DO NOT apply the CALp
+        //  deviation pairs (there is no consistent way to combine them with each detectors own
+        //  pairs).  The workaround, if the deviation pairs are wanted, is to display a single
+        //  detector at a time and apply the CALp to each.  We let the user know the deviation
+        //  pairs got dropped, so the data loss isnt silent.
+        if( !new_cal->deviation_pairs().empty() )
+          m_interspec->logMessage( WString::tr("ect-calp-dev-pairs-dropped"), 2 );
+
         applyCalChange( old_disp_cal, new_cal, { tochange }, false );
       }else
       {
@@ -2462,27 +1952,38 @@ void EnergyCalTool::applyCALpEnergyCal( std::map<std::string,std::shared_ptr<con
   
   
   m_interspec->refreshDisplayedCharts();
-  doRefreshFromFiles();
+  refreshGuiFromFiles();
 }//void applyCALpEnergyCal(...)
 
 
 SpecUtils::SpectrumType EnergyCalTool::typeOfCurrentlyShowingCoefficients() const
 {
+  // Prefer the currently showing CalDisplay, which knows its own spectrum type; this matters
+  //  when every file has a single detector, and all the displays live in the foreground menu
+  //  labeled "Foreground"/"Background"/"Secondary" (so the spectrum-type menu index alone would
+  //  always say foreground).
+  if( m_calInfoDisplayStack )
+  {
+    auto display = dynamic_cast<const EnergyCalImp::CalDisplay *>( m_calInfoDisplayStack->currentWidget() );
+    if( display )
+      return display->spectrumType();
+  }//if( m_calInfoDisplayStack )
+
   assert( m_specTypeMenu );
-  
+
   const SpecUtils::SpectrumType spectypes[3] = {
     SpecUtils::SpectrumType::Foreground,
     SpecUtils::SpectrumType::Background,
     SpecUtils::SpectrumType::SecondForeground
   };
-  
+
   const int selectedType = m_specTypeMenu->currentIndex();
   if( selectedType < 0 || selectedType > 2 )
   {
     assert( 0 );  //shouldnt ever happen, right?
     throw runtime_error( "EnergyCalTool::typeOfCurrentlyShowingCoefficients(): invalid spec type" );
   }
-  
+
   return spectypes[selectedType];
 }//SpecUtils::SpectrumType typeOfCurrentlyShowingCoefficients() const
 
@@ -2529,35 +2030,30 @@ std::shared_ptr<EnergyCalImp::CALpDownloadResource> EnergyCalTool::calpResources
 
 void EnergyCalTool::handleRequestToUploadCALp()
 {
-  SimpleDialog *dialog = SimpleDialog::make();
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>();
   WPushButton *closeButton = dialog->addButton( "Cancel" );
-  WGridLayout *stretcher = static_cast<WGridLayout *>( dialog->contents()->setLayout( std::make_unique<WGridLayout>() ) );
+  WGridLayout *stretcher = dialog->contents()->setLayout( std::make_unique<WGridLayout>() );
   stretcher->setContentsMargins( 0, 0, 0, 0 );
-  dialog->contents()->setOverflow( Overflow::Visible,
-                                  Wt::Orientation::Horizontal | Wt::Orientation::Vertical );
-  {
-    WText *title = stretcher->addWidget( std::make_unique<WText>( WString::tr("ect-import-CALp") ), 0, 0 );
-    title->addStyleClass( "title" );
-  }
-
-  WText *t = stretcher->addWidget( std::make_unique<WText>( WString::tr("ect-select-CALp") ), stretcher->rowCount(), 0, AlignmentFlag::Center | AlignmentFlag::Middle );
+  dialog->contents()->setOverflow( Overflow::Visible );
+  WText *title = stretcher->addWidget( std::make_unique<WText>(WString::tr("ect-import-CALp")), 0, 0 );
+  title->addStyleClass( "title" );
+  
+  WText *t = stretcher->addWidget( std::make_unique<WText>(WString::tr("ect-select-CALp")), stretcher->rowCount(), 0, AlignmentFlag::Center | AlignmentFlag::Middle );
   t->setTextAlignment( Wt::AlignmentFlag::Center );
-
-
+  
+  
   WFileUpload *upload = stretcher->addWidget( std::make_unique<WFileUpload>(), stretcher->rowCount(), 0, AlignmentFlag::Center | AlignmentFlag::Middle );
   upload->fileTooLarge().connect( upload, [=](){
     dialog->contents()->clear();
     dialog->footer()->clear();
     
     WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
-    WGridLayout *stretcher = static_cast<WGridLayout *>( dialog->contents()->setLayout( std::make_unique<WGridLayout>() ) );
+    WGridLayout *stretcher = dialog->contents()->setLayout( std::make_unique<WGridLayout>() );
     stretcher->setContentsMargins( 0, 0, 0, 0 );
-    {
-      WText *title = stretcher->addWidget( std::make_unique<WText>( WString::tr("ect-upload-CALp-to-large") ), 0, 0 );
-      title->addStyleClass( "title" );
-    }
+    WText *title = stretcher->addWidget( std::make_unique<WText>(WString::tr("ect-upload-CALp-to-large")), 0, 0 );
+    title->addStyleClass( "title" );
   } );
-
+  
   upload->changed().connect( upload, &WFileUpload::upload );
   upload->uploaded().connect( upload, [dialog,upload](){
     InterSpec *interspec = InterSpec::instance();
@@ -2577,7 +2073,7 @@ void EnergyCalTool::handleRequestToUploadCALp()
       WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
       WGridLayout *stretcher = dialog->contents()->setLayout( std::make_unique<WGridLayout>() );
       stretcher->setContentsMargins( 0, 0, 0, 0 );
-      WText *title = stretcher->addWidget( std::make_unique<WText>( WString::tr("ect-upload-CALp-to-large") ), 0, 0 );
+      WText *title = stretcher->addWidget( std::make_unique<WText>(WString::tr("ect-upload-CALp-to-large")), 0, 0 );
       title->addStyleClass( "title" );
 
       return;
@@ -2596,30 +2092,30 @@ void EnergyCalTool::handleRequestToUploadCALp()
       dialog->footer()->clear();
       
       WPushButton *closeButton = dialog->addButton( WString::tr("Close") );
-      WGridLayout *stretcher = static_cast<WGridLayout *>( dialog->contents()->setLayout( std::make_unique<WGridLayout>() ) );
+      WGridLayout *stretcher = dialog->contents()->setLayout( std::make_unique<WGridLayout>() );
       stretcher->setContentsMargins( 0, 0, 0, 0 );
-      {
-        WText *title = stretcher->addWidget( std::make_unique<WText>( WString::tr("ect-invalid-CALp") ), 0, 0 );
-        title->addStyleClass( "title" );
-      }
+      WText *title = stretcher->addWidget( std::make_unique<WText>(WString::tr("ect-invalid-CALp")), 0, 0 );
+      title->addStyleClass( "title" );
       
       return;
     }//if( was not a valid CALp file )
-
-    //wApp->doJavaScript( "$('.Wt-dialogcover').hide();" ); // JIC
-    //dialog->done( Wt::DialogCode::Accepted );
+    
+    //dialog->done( Wt::WDialog::DialogCode::Accepted );
   } );
+  
   
   InterSpec *interspec = InterSpec::instance();
   if( interspec && !interspec->isPhone() )
   {
-    t = stretcher->addWidget( std::make_unique<WText>( WString::tr("ect-CALp-drag-n-drop-note") ), stretcher->rowCount(), 0, AlignmentFlag::Center | AlignmentFlag::Middle );
+    auto tOwned = std::make_unique<WText>(WString::tr("ect-CALp-drag-n-drop-note"));
+    t = tOwned.get();
+    stretcher->addWidget( std::move(tOwned), stretcher->rowCount(), 0, AlignmentFlag::Center | AlignmentFlag::Middle );
     t->setTextAlignment( Wt::AlignmentFlag::Center );
   }
   
   /*
    //In case we want to use AuxWindow instead of SimpleDialog
-   AuxWindow *window = AuxWindow::make( "Import CALp file",
+   AuxWindow *window = new AuxWindow( "Import CALp file",
    (Wt::WFlags<AuxWindowProperties>(AuxWindowProperties::IsModal)
    | AuxWindowProperties::PhoneNotFullScreen
    | AuxWindowProperties::DisableCollapse
@@ -2633,10 +2129,10 @@ void EnergyCalTool::handleRequestToUploadCALp()
    window->centerWindow();
    
    WPushButton *close = window->addCloseButtonToFooter( "Cancel" );
-   close->clicked().connect( window, [window](){ window->hide(); } );
-
-   window->finished().connect( window, [window](){ AuxWindow::deleteAuxWindow( window ); } );
-
+   close->clicked().connect( boost::bind( &AuxWindow::hide, window ) );
+   
+   window->finished().connect( boost::bind( &AuxWindow::deleteAuxWindow, window ) );
+   
    // TODO: add link to relevant section of documentation
    //AuxWindow::addHelpInFooter( window->footer(), "energy-cal-CALp" );
    */
@@ -2728,59 +2224,90 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
           if( meas_old_cal == disp_prev_cal )
           {
             new_meas_cal = new_disp_cal;
-          }else if( isOffsetOnly )
+          }else if( meas_old_cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge )
           {
-            // Offset-only changes propagate as a scalar shift of the energy axis. Compute the
-            // shift from the displayed calibration in a way that works for any cal type
-            // (LowerChannelEdge has an empty coefficients() vector, so we use lower_energy()).
-            const float new_lower = new_disp_cal->lower_energy();
-            const float prev_lower = disp_prev_cal->lower_energy();
-            const float offset_delta = new_lower - prev_lower;
+            // Apply the SAME linear energy remap the user made to the displayed calibration, to
+            //  this lower-channel target - expressed relative to the targets own (session-tracked)
+            //  original channel energies, so its adjustment stays relative to its original.
+            //  The displayed change maps energies as E_new = A*E_prev + B; composing with the
+            //  targets current cumulative (off_t, gain_t) [E = off_t + gain_t*E_orig] gives
+            //    off_t_new = A*off_t + B,   gain_t_new = A*gain_t.
+            bool have_remap = false;
+            double remap_a = 1.0, remap_b = 0.0;
 
+            if( disp_prev_cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge )
+            {
+              const LowerChanCalOriginal previnfo = lowerChannelOriginal( disp_prev_cal );
+              const LowerChanCalOriginal newinfo = lowerChannelOriginal( new_disp_cal );
+
+              // Only an offset/gain style change if both displayed cals trace to the same original
+              //  (e.g., not a CALp file with un-related exact channel energies)
+              if( (newinfo.original == previnfo.original) && (previnfo.gain != 0.0) )
+              {
+                have_remap = true;
+                remap_a = newinfo.gain / previnfo.gain;
+                remap_b = newinfo.offset - previnfo.offset*remap_a;
+              }
+            }else if( isOffsetOnly )
+            {
+              // Displayed cal is polynomial/FRF; for both, coefficient 0 is the keV offset (a
+              //  pure energy shift, so A = 1)
+              have_remap = true;
+              remap_a = 1.0;
+              remap_b = new_disp_cal->coefficients()[0] - disp_prev_cal->coefficients()[0];
+            }
+
+            if( have_remap )
+            {
+              LowerChanCalOriginal info = lowerChannelOriginal( meas_old_cal );
+              info.offset = remap_a*info.offset + remap_b;
+              info.gain = remap_a*info.gain;
+
+              const auto adjusted = EnergyCal::adjust_lower_channel_energy_cal( info.original,
+                                                                        info.offset, info.gain );
+              registerLowerChannelAdjustment( adjusted, info );
+              new_meas_cal = adjusted;
+            }else
+            {
+              // A general calibration change: the target gets re-derived by channel mapping, and
+              //  becomes the new nominal (it is deliberately NOT registered as an offset/gain
+              //  adjustment of its original)
+              new_meas_cal = EnergyCal::propogate_energy_cal_change( disp_prev_cal, new_disp_cal,
+                                                                     meas_old_cal );
+            }
+          }else if( isOffsetOnly && (disp_prev_cal->type() != SpecUtils::EnergyCalType::LowerChannelEdge) )
+          {
+            const vector<float> &new_disp_coefs = new_disp_cal->coefficients();
+            const vector<float> &prev_disp_coefs = disp_prev_cal->coefficients();
             const vector<pair<float,float>> &dev_pairs = meas_old_cal->deviation_pairs();
+
+            vector<float> new_coefs = meas_old_cal->coefficients();
+            new_coefs[0] += (new_disp_coefs[0] - prev_disp_coefs[0]);
 
             auto cal = make_shared<EnergyCalibration>();
             switch( meas_old_cal->type() )
             {
               case SpecUtils::EnergyCalType::Polynomial:
               case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-              {
-                vector<float> new_coefs = meas_old_cal->coefficients();
-                if( new_coefs.empty() ) new_coefs.push_back( 0.0f );
-                new_coefs[0] += offset_delta;
                 cal->set_polynomial( meas_old_cal->num_channels(), new_coefs, dev_pairs );
                 break;
-              }
 
               case SpecUtils::EnergyCalType::FullRangeFraction:
-              {
-                vector<float> new_coefs = meas_old_cal->coefficients();
-                if( new_coefs.empty() ) new_coefs.push_back( 0.0f );
-                new_coefs[0] += offset_delta;
                 cal->set_full_range_fraction( meas_old_cal->num_channels(), new_coefs, dev_pairs );
                 break;
-              }
 
               case SpecUtils::EnergyCalType::LowerChannelEdge:
-              {
-                const auto edges_ptr = meas_old_cal->channel_energies();
-                if( !edges_ptr || edges_ptr->empty() )
-                  throw runtime_error( "LowerChannelEdge calibration missing channel energies." );
-                vector<float> new_edges = *edges_ptr;
-                for( float &e : new_edges )
-                  e += offset_delta;
-                cal->set_lower_channel_energy( meas_old_cal->num_channels(), std::move(new_edges) );
-                break;
-              }
-
               case SpecUtils::EnergyCalType::InvalidEquationType:
-                assert( 0 );
+                assert( 0 );  //lower channel energy handled in its own branch above
                 break;
             }//switch( meas_old_cal->type() )
 
             new_meas_cal = cal;
           }else
           {
+            // Note: an offset-only change of a displayed lower-channel-energy calibration, onto a
+            //  polynomial/FRF target, also takes this path (the generalized
+            //  propogate_energy_cal_change handles lower-channel displayed calibrations)
             new_meas_cal = EnergyCal::propogate_energy_cal_change( disp_prev_cal, new_disp_cal, meas_old_cal );
           }
           assert( new_meas_cal && new_meas_cal->valid() );
@@ -2883,8 +2410,10 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
     
     for( const set<int> &samples : peaksamples )
     {
-      //If there is any overlap between 'samples' and 'change.sample_numbers', then apply the change
-      //  Note: this isnt correct, but I cant think of a better solution at the moment.
+      // Peak sets are stored per sample-number set, which may only partially overlap the samples
+      //  being changed; we shift a peak set exactly when its display calibration is one of the
+      //  calibrations being changed.  This is a deliberate compromise - a partially-overlapping
+      //  peak set doesnt belong to any single calibration, so there is no exact answer.
       auto oldpeaks = change.meas->peaks(samples);
       auto oldcal = change.meas->suggested_sum_energy_calibration( samples, display_detectors );
       
@@ -3094,7 +2623,7 @@ void EnergyCalTool::applyCalChange( std::shared_ptr<const SpecUtils::EnergyCalib
   }//for( loop over SpecFiles for change )
   
   m_interspec->refreshDisplayedCharts();
-  doRefreshFromFiles();
+  refreshGuiFromFiles();
 }//applyCalChange(...)
 
 
@@ -3198,8 +2727,10 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
   //  dont want to move the peaks.
   for( const set<int> &samples : peaksamples )
   {
-    //If there is any overlap between 'samples' and 'change.sample_numbers', then apply the change
-    //  Note: this isnt correct, but I cant think of a better solution at the moment.
+    // Peak sets are stored per sample-number set, which may only partially overlap the samples
+    //  being changed; we shift a peak set exactly when its display calibration is one of the
+    //  calibrations being changed.  This is a deliberate compromise - a partially-overlapping
+    //  peak set doesnt belong to any single calibration, so there is no exact answer.
     auto oldpeaks = changemeas.meas->peaks(samples);
     auto oldcal = changemeas.meas->suggested_sum_energy_calibration( samples, dispdets );
       
@@ -3216,7 +2747,7 @@ void EnergyCalTool::setEnergyCal( shared_ptr<const SpecUtils::EnergyCalibration>
     const auto newcal_pos = old_to_new_cals.find(oldcal);
     if( (newcal_pos == end(old_to_new_cals)) || !newcal_pos->second || !newcal_pos->second->valid() )
     {
-      cout << __func__ << ": not applying energy cal change to peaks." << endl;
+      // This peak-sets display calibration isnt one of the calibrations being changed
       continue;
     }
       
@@ -3407,16 +2938,15 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
   const vector<MeasToApplyCoefChangeTo> changemeas = measurementsToApplyCoeffChangeTo();
   
   // For undo/redo, store changes to energy cal, and peaks.
+  //  Note: we only record into the sentry in the second (commit) loop, so a throw from this first
+  //  loop doesnt insert an undo/redo step for changes that were never applied.
   EnergyCalUndoRedoSentry undo_sentry;
-  
+
   // Do first loop to calculate new calibrations
   for( const MeasToApplyCoefChangeTo &change : changemeas )
   {
     assert( change.meas );
-    
-    meas_old_new_peaks_t &meas_old_new_peaks = undo_sentry.peak_info(change.meas);
-    meas_old_new_peaks_t &meas_old_new_hint_peaks = undo_sentry.hint_peak_info(change.meas);
-    
+
     try
     {
       for( const int sample : change.sample_numbers )
@@ -3500,8 +3030,10 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
     
     for( const set<int> &samples : peaksamples )
     {
-      //If there is any overlap between 'samples' and 'change.sample_numbers', then apply the change
-      //  Note: this isnt correct, but I cant think of a better solution at the moment.
+      // Peak sets are stored per sample-number set, which may only partially overlap the samples
+      //  being changed; we shift a peak set exactly when its display calibration is one of the
+      //  calibrations being changed.  This is a deliberate compromise - a partially-overlapping
+      //  peak set doesnt belong to any single calibration, so there is no exact answer.
       auto oldpeaks = change.meas->peaks(samples);
       auto oldcal = change.meas->suggested_sum_energy_calibration( samples, detnamesv );
       
@@ -3533,8 +3065,6 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
       {
         auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldpeaks, oldcal, newcal );
         updated_peaks[oldpeaks] = newpeaks;
-        
-        meas_old_new_peaks.push_back( {samples, *oldpeaks, newpeaks} );
       }catch( std::exception &e )
       {
         string msg = "There was an issue translating peaks for this energy change;"
@@ -3580,8 +3110,6 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
       {
         auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldHintPeaks, oldcal, newcal );
         updated_hint_peaks[oldHintPeaks] = newpeaks;
-        
-        meas_old_new_hint_peaks.push_back( {samples, *oldHintPeaks, newpeaks} );
       }catch( std::exception &e )
       {
         string msg = "There was an issue translating hint peaks for this energy change/"
@@ -3600,7 +3128,9 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
   {
     assert( change.meas );
     meas_old_new_cal_t &meas_old_new_cal = undo_sentry.cal_info( change.meas );
-    
+    meas_old_new_peaks_t &meas_old_new_peaks = undo_sentry.peak_info( change.meas );
+    meas_old_new_peaks_t &meas_old_new_hint_peaks = undo_sentry.hint_peak_info( change.meas );
+
     for( const int sample : change.sample_numbers )
     {
       for( const string &detname : change.detectors )
@@ -3653,7 +3183,9 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
           cerr << "Couldnt find an expected entry in updated_peaks" << endl;
         continue;
       }
-      
+
+      meas_old_new_peaks.emplace_back( samples, *oldpeaks, pos->second );
+
       change.meas->setPeaks( pos->second, samples );
       if( m_peakModel && (change.meas == forgrnd) && (samples == foreSamples) )
         m_peakModel->setPeakFromSpecMeas( forgrnd, foreSamples, SpectrumType::Foreground );
@@ -3678,6 +3210,8 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
           cerr << "Couldnt find an expected entry in updated_hint_peaks" << endl;
       }else
       {
+        meas_old_new_hint_peaks.emplace_back( samples, *oldHintPeaks, pos->second );
+
         auto peaks = make_shared<deque<shared_ptr<const PeakDef>>>( pos->second );
         change.meas->setAutomatedSearchPeaks( samples, peaks );
       }
@@ -3693,12 +3227,9 @@ void EnergyCalTool::addDeviationPair( const std::pair<float,float> &new_pair )
 
 void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::CalDisplay *display )
 {
-  //cout << "EnergyCalTool::userChangedCoefficient" << endl;
   using namespace SpecUtils;
-  // LowerChannelEdge exposes exactly two coefficients (offset, gain); Polynomial/FRF cap out far
-  // below 10 in practice.
-  assert( coefnum < 10 );
-
+  assert( coefnum < 10 );  //for lower channel energy cals, coefnum is 0 (offset) or 1 (gain)
+  
   shared_ptr<const EnergyCalibration> disp_prev_cal = display->lastSetCalibration();
   if( !disp_prev_cal )
   {
@@ -3760,72 +3291,59 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
   if( dispcoefs.size() <= coefnum )
     dispcoefs.resize( coefnum+1, 0.0f );
 
-  const size_t dispnchannel = disp_prev_cal->num_channels();
-  const auto &disp_dev_pairs = disp_prev_cal->deviation_pairs();
-  const bool isLowerChannelEdge
-      = (disp_prev_cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge);
-
-  // For Polynomial/FRF we patch only the changed coefficient onto the previous coefficients;
-  // for LowerChannelEdge the displayed [offset, gain] *replace* the identity transform, so we
-  // use them in full.
-  vector<float> new_disp_coefs;
-  if( isLowerChannelEdge )
-  {
-    if( dispcoefs.size() < 2 ) dispcoefs.resize( 2, 0.0f );
-    if( dispcoefs[1] == 0.0f ) dispcoefs[1] = 1.0f; // gain == 0 would invert/zero the axis
-    new_disp_coefs = { dispcoefs[0], dispcoefs[1] };
-  }
-  else
-  {
-    vector<float> prev_disp_coefs = disp_prev_cal->coefficients();
-    if( prev_disp_coefs.size() <= coefnum )
-      prev_disp_coefs.resize( coefnum+1, 0.0f );
-
-    new_disp_coefs = prev_disp_coefs;
-    new_disp_coefs[coefnum] = dispcoefs[coefnum];
-  }
-
   shared_ptr<const EnergyCalibration> new_disp_cal;
   try
   {
-    auto cal = make_shared<EnergyCalibration>();
     switch( disp_prev_cal->type() )
     {
       case SpecUtils::EnergyCalType::Polynomial:
       case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-        cal->set_polynomial( dispnchannel, new_disp_coefs, disp_dev_pairs );
-        break;
-
       case SpecUtils::EnergyCalType::FullRangeFraction:
-        cal->set_full_range_fraction( dispnchannel, new_disp_coefs, disp_dev_pairs );
+      {
+        vector<float> prev_disp_coefs = disp_prev_cal->coefficients();
+        if( prev_disp_coefs.size() <= coefnum )
+          prev_disp_coefs.resize( coefnum+1, 0.0f );
+
+        vector<float> new_disp_coefs = prev_disp_coefs;
+        new_disp_coefs[coefnum] = dispcoefs[coefnum];
+
+        const size_t dispnchannel = disp_prev_cal->num_channels();
+        const auto &disp_dev_pairs = disp_prev_cal->deviation_pairs();
+
+        auto cal = make_shared<EnergyCalibration>();
+        if( disp_prev_cal->type() == SpecUtils::EnergyCalType::FullRangeFraction )
+          cal->set_full_range_fraction( dispnchannel, new_disp_coefs, disp_dev_pairs );
+        else
+          cal->set_polynomial( dispnchannel, new_disp_coefs, disp_dev_pairs );
+
+        new_disp_cal = cal;
         break;
+      }//case polynomial or full range fraction
 
       case SpecUtils::EnergyCalType::LowerChannelEdge:
       {
-        // The displayed offset is a *delta* (0 = no shift from baseline) and the displayed gain
-        // is a *ratio* (1 = identity). Build the new lower-channel-edge vector accordingly:
-        //   new_edge[i] = baseline[0] + offset_delta + gain * (baseline[i] - baseline[0])
-        // The baseline lives on EnergyCalTool, so it survives this CalDisplay being recreated.
-        const auto baseline_ptr = display->lceBaselineEdges();
-        if( !baseline_ptr || baseline_ptr->size() != (dispnchannel + 1) )
-          throw runtime_error( "LowerChannelEdge baseline not available." );
-        const std::vector<float> &baseline = *baseline_ptr;
-        const float offset_delta = new_disp_coefs[0];
-        const float gain = new_disp_coefs[1];
-        const float base0 = baseline.front();
-        std::vector<float> new_edges( baseline.size(), 0.0f );
-        for( size_t i = 0; i < new_edges.size(); ++i )
-          new_edges[i] = base0 + offset_delta + gain * (baseline[i] - base0);
-        cal->set_lower_channel_energy( dispnchannel, std::move(new_edges) );
+        // The displayed {offset, gain} are the cumulative adjustments, relative to the sessions
+        //  ORIGINAL channel energies - so we always re-adjust from the original.
+        if( coefnum >= 2 )
+          throw runtime_error( "Unexpected lower channel energy coefficient number" );
+
+        dispcoefs.resize( 2, 0.0f );
+
+        LowerChanCalOriginal info = lowerChannelOriginal( disp_prev_cal );
+        info.offset = dispcoefs[0];
+        info.gain = dispcoefs[1];
+
+        const auto adjusted = EnergyCal::adjust_lower_channel_energy_cal( info.original,
+                                                                      info.offset, info.gain );
+        registerLowerChannelAdjustment( adjusted, info );
+        new_disp_cal = adjusted;
         break;
-      }
+      }//case lower channel energy
 
       case SpecUtils::EnergyCalType::InvalidEquationType:
         throw runtime_error( "Invalid calibration type changed?  Something is way wack." );
         break;
     }//switch( disp_prev_cal->type() )
-
-    new_disp_cal = cal;
   }catch( std::exception &e )
   {
     display->updateToGui( disp_prev_cal );
@@ -3851,42 +3369,42 @@ void EnergyCalTool::userChangedCoefficient( const size_t coefnum, EnergyCalImp::
 void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display, const int fieldTypeChanged )
 {
   using namespace SpecUtils;
-  
+
   const auto field = EnergyCalImp::DeviationPairDisplay::UserFieldChanged( fieldTypeChanged );
-  
+
   switch( field )
   {
     case EnergyCalImp::DeviationPairDisplay::UserFieldChanged::AddedDeviationPair:
       return;  //hasnt been filled out yet; no need to do anything
-      
+
     case EnergyCalImp::DeviationPairDisplay::UserFieldChanged::RemovedDeviationPair:
     case EnergyCalImp::DeviationPairDisplay::UserFieldChanged::EnergyChanged:
     case EnergyCalImp::DeviationPairDisplay::UserFieldChanged::OffsetChanged:
       break;
   };//enum UserFieldChanged
 
-  
+
   m_lastGraphicalRecal = 0;
   m_lastGraphicalRecalType = EnergyCalGraphicalConfirm::NumRecalTypes;
   m_lastGraphicalRecalEnergy = -999.0f;
-  
+
   const shared_ptr<SpecMeas> foregrnd = m_interspec->measurment(SpecUtils::SpectrumType::Foreground);
   const shared_ptr<SpecMeas> backgrnd = m_interspec->measurment(SpecUtils::SpectrumType::Background);
   const shared_ptr<SpecMeas> secogrnd = m_interspec->measurment(SpecUtils::SpectrumType::SecondForeground);
-  
+
   const set<int> &foreSamples = m_interspec->displayedSamples( SpectrumType::Foreground );
   const set<int> &backSamples = m_interspec->displayedSamples( SpectrumType::Background );
   const set<int> &secoSamples = m_interspec->displayedSamples( SpectrumType::SecondForeground );
-  
+
   assert( foregrnd );
   if( !foregrnd )
     return;
-  
+
   const shared_ptr<const EnergyCalibration> old_cal = display->lastSetCalibration();
   const vector<pair<float,float>> old_dev_pairs = old_cal
                                         ? old_cal->deviation_pairs() : vector<pair<float,float>>{};
   const vector<pair<float,float>> new_dev_pairs = display->displayedDeviationPairs();
-  
+
   // After the user clicks to add a new deviation pair, and then fills in one of the fields, if the
   //  other field is not yet filled in, then the GUI wont insert that deviation pair; so for this
   //  case where the deviation pairs havent yet changed, lets skip doing anything yet
@@ -3899,300 +3417,272 @@ void EnergyCalTool::userChangedDeviationPair( EnergyCalImp::CalDisplay *display,
     if( equal )
       return;
   }//if( new_dev_pairs.size() == old_dev_pairs.size() )
-  
-  
+
+
   const SpectrumType type = display->spectrumType();
   const std::string &detname = display->detectorName();
-  
-  auto specfile = m_interspec->measurment( type );
-  if( !specfile )  //Shouldnt ever happen
+
+  const shared_ptr<SpecMeas> dispmeas = m_interspec->measurment( type );
+  if( !dispmeas )  //Shouldnt ever happen
   {
     display->updateToGui( old_cal );
     m_interspec->logMessage( "Internal error retrieving correct measurement", 2 );
     return;
   }
 
-  // We will store updated calibrations and not set any of them until we know they can all be
-  //  successfully altered
-  map<shared_ptr<const EnergyCalibration>,shared_ptr<const EnergyCalibration>> old_to_new_cal;
-  
-  try
-  {
-    for( auto &m : specfile->measurements() )
+  // The change is applied according to the "Apply Changes To" selections, the same as coefficient
+  //  edits are.  Each selected measurements deviation pairs are REPLACED with the displayed list,
+  //  keeping that measurements own coefficients - a full-list edit has no well-defined
+  //  per-measurement delta, so wholesale replacement is the only consistent semantic.
+  const vector<MeasToApplyCoefChangeTo> changemeas = measurementsToApplyCoeffChangeTo();
+
+  {// Begin check the display that was edited is actually selected to have changes applied to it
+    bool willBeApplied = false;
+    for( size_t i = 0; !willBeApplied && (i < changemeas.size()); ++i )
+      willBeApplied = ( (changemeas[i].meas == dispmeas) && changemeas[i].detectors.count(detname) );
+
+    if( !willBeApplied )
     {
-      if( (m->detector_name() != detname) || (m->num_gamma_channels() < 5) )
-        continue;
-      
-      const auto cal = m->energy_calibration();
-      if( !cal || !cal->valid() || (cal->type() == EnergyCalType::LowerChannelEdge) )
-        continue;
-      
-      if( old_to_new_cal.find(cal) != end(old_to_new_cal) )
-        continue;
-      
-      const size_t nchannel = cal->num_channels();
-      const vector<float> &coefficients = cal->coefficients();
-      
-      auto new_cal = make_shared<EnergyCalibration>();
-      switch( cal->type() )
-      {
-        case EnergyCalType::Polynomial:
-        case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-          new_cal->set_polynomial( nchannel, coefficients, new_dev_pairs );
-          break;
-          
-        case EnergyCalType::FullRangeFraction:
-          new_cal->set_full_range_fraction( nchannel, coefficients, new_dev_pairs );
-          break;
-          
-        case EnergyCalType::LowerChannelEdge:
-        case EnergyCalType::InvalidEquationType:
-          assert( 0 );
-          break;
-      }//switch( old_cal->type() )
-      
-      assert( new_cal->valid() );
-      old_to_new_cal[cal] = new_cal;
-    }//for( auto &m : specfile->measurements() )
-  }catch( std::exception &e )
-  {
-    display->updateToGui( old_cal );
-    //display->setDeviationPairsInvalid();
-    
-    m_interspec->logMessage( WString::tr("ect-dev-pair-change-invalid").arg(e.what()), 2 );
-    
-    return;
-  }//try / catch
-  
-  // We will store updated peaks and not set any of them until we know all the energy calibrations
-  //  and peak shifts were sucessfully done.
+      display->updateToGui( old_cal );
+      m_interspec->logMessage( WString::tr("ect-changed-cal-not-selected"), 2 );
+      return;
+    }
+  }// End check the display that was edited is actually selected to have changes applied to it
+
+  // We will compute all the updated calibrations, and translated peaks, and not set any of them
+  //  until we know they can all be successfully computed.
+  map<shared_ptr<const EnergyCalibration>,shared_ptr<const EnergyCalibration>> old_to_new_cal;
   map<shared_ptr<deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_peaks;
   map<shared_ptr<const deque<shared_ptr<const PeakDef>>>,deque<shared_ptr<const PeakDef>>> updated_hint_peaks;
-  
-  //const vector<string> &detnames = specfile->gamma_detector_names();
-  const vector<string> &detnames = m_interspec->detectorsToDisplay( type );
-  const set<set<int>> samplesWithPeaks = specfile->sampleNumsWithPeaks();
-  for( const set<int> &samples : samplesWithPeaks )
+
+  for( const MeasToApplyCoefChangeTo &change : changemeas )
   {
+    assert( change.meas );
+
     try
     {
-      auto dispcal = specfile->suggested_sum_energy_calibration( samples, detnames );
-      
-      const auto dispcaliter = old_to_new_cal.find(dispcal);
-      if( dispcaliter == end(old_to_new_cal) )
-        continue;
-      
-      bool detInSample = false;
-      for( auto iter = begin(samples); !detInSample && (iter != end(samples)); ++iter )
+      for( const int sample : change.sample_numbers )
       {
-        auto m = specfile->measurement( *iter, detname );
-        detInSample = !!m;
-      }
-      
-      if( !detInSample )
-        continue;
-      
-      // I *think* that applying the update to deviation pairs shouldnt compound when you then apply
-      //  them to another detector since the dispaly energy cal should update, but could there be
-      //  any edge-cases?
-      auto oldpeaks = specfile->peaks(samples);
-      if( !oldpeaks || oldpeaks->empty() )
-        continue;
-      
-    
-      auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldpeaks, dispcaliter->first,
-                                                                     dispcaliter->second );
-      updated_peaks[oldpeaks] = newpeaks;
+        for( const string &name : change.detectors )
+        {
+          const shared_ptr<const Measurement> m = change.meas->measurement( sample, name );
+          if( !m || (m->num_gamma_channels() <= 4) )
+            continue;
+
+          const shared_ptr<const EnergyCalibration> cal = m->energy_calibration();
+          if( !cal || !cal->valid() || (cal->type() == EnergyCalType::LowerChannelEdge) )
+            continue;
+
+          //If we have already computed the new calibration for a EnergyCalibration object, lets
+          //  not re-due it.
+          if( old_to_new_cal.count(cal) )
+            continue;
+
+          const size_t nchannel = cal->num_channels();
+          const vector<float> &coefficients = cal->coefficients();
+
+          auto new_cal = make_shared<EnergyCalibration>();
+          switch( cal->type() )
+          {
+            case EnergyCalType::Polynomial:
+            case EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+              new_cal->set_polynomial( nchannel, coefficients, new_dev_pairs );
+              break;
+
+            case EnergyCalType::FullRangeFraction:
+              new_cal->set_full_range_fraction( nchannel, coefficients, new_dev_pairs );
+              break;
+
+            case EnergyCalType::LowerChannelEdge:
+            case EnergyCalType::InvalidEquationType:
+              assert( 0 );
+              break;
+          }//switch( cal->type() )
+
+          assert( new_cal->valid() );
+          old_to_new_cal[cal] = new_cal;
+        }//for( const string &name : change.detectors )
+      }//for( const int sample : change.sample_numbers )
     }catch( std::exception &e )
     {
-      //display->updateToGui( old_cal );
-      display->setDeviationPairsInvalid();
-      
-      string msg = "There was an issue translating peaks for this deviation pair change;"
-                   " not applying change.  Error: " + string(e.what());
-#if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( __func__, msg.c_str() );
-#endif
-      m_interspec->logMessage( msg, 2 );
-      
+      display->updateToGui( old_cal );
+      m_interspec->logMessage( WString::tr("ect-dev-pair-change-invalid").arg(e.what()), 2 );
       return;
     }//try / catch
-  }//for( const set<int> &samples : samplesWithPeaks )
-  
-  
-  const set<set<int>> samplesWithHintPeaks = specfile->sampleNumsWithAutomatedSearchPeaks();
-  for( const set<int> &samples : samplesWithHintPeaks )
-  {
-    try
+
+    // Now go through and translate the peaks, but we wont actually update them to the SpecMeas
+    //  until we know we can update all the peaks
+    const vector<string> detnamesv( begin(change.detectors), end(change.detectors) );
+    const set<set<int>> samplesWithPeaks = change.meas->sampleNumsWithPeaks();
+
+    for( const set<int> &samples : samplesWithPeaks )
     {
-      auto dispcal = specfile->suggested_sum_energy_calibration( samples, detnames );
-      
-      const auto dispcaliter = old_to_new_cal.find(dispcal);
-      if( dispcaliter == end(old_to_new_cal) )
-        continue;
-      
-      bool detInSample = false;
-      for( auto iter = begin(samples); !detInSample && (iter != end(samples)); ++iter )
+      try
       {
-        auto m = specfile->measurement( *iter, detname );
-        detInSample = !!m;
-      }
-      
-      if( !detInSample )
-        continue;
-      
-      auto oldHintPeaks = specfile->automatedSearchPeaks(samples);
-      if( !oldHintPeaks || oldHintPeaks->empty() )
-        continue;
-      
-      auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldHintPeaks, dispcaliter->first,
-                                                                    dispcaliter->second );
-      updated_hint_peaks[oldHintPeaks] = newpeaks;
-    }catch( std::exception &e )
-    {
+        auto dispcal = change.meas->suggested_sum_energy_calibration( samples, detnamesv );
+
+        const auto dispcaliter = old_to_new_cal.find(dispcal);
+        if( dispcaliter == end(old_to_new_cal) )
+          continue;
+
+        auto oldpeaks = change.meas->peaks(samples);
+        if( !oldpeaks || oldpeaks->empty() || updated_peaks.count(oldpeaks) )
+          continue;
+
+        auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldpeaks, dispcaliter->first,
+                                                                       dispcaliter->second );
+        updated_peaks[oldpeaks] = newpeaks;
+      }catch( std::exception &e )
+      {
+        display->setDeviationPairsInvalid();
+
+        string msg = "There was an issue translating peaks for this deviation pair change;"
+                     " not applying change.  Error: " + string(e.what());
 #if( PERFORM_DEVELOPER_CHECKS )
-      string msg = "There was an issue translating hint peaks for this deviation pair change."
-      " Error: " + string(e.what());
-      log_developer_error( __func__, msg.c_str() );
+        log_developer_error( __func__, msg.c_str() );
 #endif
-    }//try / catch
-  }//for( const set<int> &samples : samplesWithHintPeaks )
-  
+        m_interspec->logMessage( msg, 2 );
+
+        return;
+      }//try / catch
+    }//for( const set<int> &samples : samplesWithPeaks )
+
+
+    const set<set<int>> samplesWithHintPeaks = change.meas->sampleNumsWithAutomatedSearchPeaks();
+    for( const set<int> &samples : samplesWithHintPeaks )
+    {
+      try
+      {
+        auto dispcal = change.meas->suggested_sum_energy_calibration( samples, detnamesv );
+
+        const auto dispcaliter = old_to_new_cal.find(dispcal);
+        if( dispcaliter == end(old_to_new_cal) )
+          continue;
+
+        auto oldHintPeaks = change.meas->automatedSearchPeaks(samples);
+        if( !oldHintPeaks || oldHintPeaks->empty() || updated_hint_peaks.count(oldHintPeaks) )
+          continue;
+
+        auto newpeaks = EnergyCal::translatePeaksForCalibrationChange( *oldHintPeaks,
+                                                                dispcaliter->first, dispcaliter->second );
+        updated_hint_peaks[oldHintPeaks] = newpeaks;
+      }catch( std::exception &e )
+      {
+#if( PERFORM_DEVELOPER_CHECKS )
+        string msg = "There was an issue translating hint peaks for this deviation pair change."
+        " Error: " + string(e.what());
+        log_developer_error( __func__, msg.c_str() );
+#endif
+      }//try / catch
+    }//for( const set<int> &samples : samplesWithHintPeaks )
+  }//for( const MeasToApplyCoefChangeTo &change : changemeas )
+
   display->setDeviationPairsValid();
-  
-  
+
+
   size_t num_updated = 0;
-  
-  // Track some info for Undo/Redo
+
+  // Track info for undo/redo; changes are recorded per affected SpecMeas (the undo/redo step
+  //  itself is associated with the foreground, as all InterSpec undo/redo is).
+  //  Note we only record into the sentry in this commit stage, so an early return above doesnt
+  //  insert an undo/redo step for changes that were never applied.
   EnergyCalUndoRedoSentry undo_sentry;
-  meas_old_new_cal_t &meas_old_new_cal = undo_sentry.cal_info(foregrnd);
-  meas_old_new_peaks_t &meas_old_new_peaks = undo_sentry.peak_info(foregrnd);
-  meas_old_new_peaks_t &meas_old_new_hint_peaks = undo_sentry.hint_peak_info(foregrnd);
-  
-  for( auto &m : specfile->measurements() )
+
+  for( const MeasToApplyCoefChangeTo &change : changemeas )
   {
-    // I'm a little torn if we should update just the one energy calibration, or all occurances of
-    //  the detectors energy calibration.
-    //  Maybe we should update according to the checked GUI, but also restrict on name as well?
-    //auto cal = m->energy_calibration();
-    //if( cal == old_cal )
-    if( (m->detector_name() != detname) || (m->num_gamma_channels() < 5) )
-      continue;
-    
-    const auto cal = m->energy_calibration();
-    if( !cal || !cal->valid() || (cal->type() == EnergyCalType::LowerChannelEdge) )
-      continue;
-    
-    auto calpos = old_to_new_cal.find(cal);
-    if( (calpos == end(old_to_new_cal)) || !calpos->second || !calpos->second->valid() )
+    assert( change.meas );
+    meas_old_new_cal_t &meas_old_new_cal = undo_sentry.cal_info( change.meas );
+
+    for( const int sample : change.sample_numbers )
     {
+      for( const string &name : change.detectors )
+      {
+        const shared_ptr<const Measurement> m = change.meas->measurement( sample, name );
+        if( !m || (m->num_gamma_channels() <= 4) )
+          continue;
+
+        const shared_ptr<const EnergyCalibration> cal = m->energy_calibration();
+        if( !cal || !cal->valid() || (cal->type() == EnergyCalType::LowerChannelEdge) )
+          continue;
+
+        const auto calpos = old_to_new_cal.find(cal);
+        if( (calpos == end(old_to_new_cal)) || !calpos->second || !calpos->second->valid() )
+        {
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( __func__, "Unexpectedly found invalid calibration in old_to_new_cal" );
+          log_developer_error( __func__, "Unexpectedly found invalid calibration in old_to_new_cal" );
 #endif
-      continue;
-    }//if( sanity check that new calibration is valid - should always be )
-    
-    meas_old_new_cal.emplace_back( m, cal, calpos->second );
-    
-    specfile->set_energy_calibration( calpos->second, m );
-    ++num_updated;
-  }//for( loop over measurements )
-  
+          continue;
+        }//if( sanity check that new calibration is valid - should always be )
+
+        meas_old_new_cal.emplace_back( m, cal, calpos->second );
+
+        change.meas->set_energy_calibration( calpos->second, m );
+        ++num_updated;
+      }//for( const string &name : change.detectors )
+    }//for( const int sample : change.sample_numbers )
+  }//for( const MeasToApplyCoefChangeTo &change : changemeas )
+
   if( num_updated == 0 )
   {
     display->updateToGui( old_cal );
     m_interspec->logMessage( WString::tr("ect-set-dev-pair-err"), 2 );
     return;
   }
-  
-  // Now actually set the new peaks
-  for( const set<int> &samples : samplesWithPeaks )
+
+  // Now actually set the new peaks, and hint peaks
+  for( const MeasToApplyCoefChangeTo &change : changemeas )
   {
-    auto oldpeaks = specfile->peaks(samples);
-    if( !oldpeaks || oldpeaks->empty() )
-      continue;
-    
-    const auto peakpos = updated_peaks.find(oldpeaks);
-    if( peakpos == end(updated_peaks) )
+    meas_old_new_peaks_t &meas_old_new_peaks = undo_sentry.peak_info( change.meas );
+    meas_old_new_peaks_t &meas_old_new_hint_peaks = undo_sentry.hint_peak_info( change.meas );
+
+    const set<set<int>> samplesWithPeaks = change.meas->sampleNumsWithPeaks();
+    for( const set<int> &samples : samplesWithPeaks )
     {
-#if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( __func__, "Unexpectedly couldn't find peaks in updated_peaks" );
-#endif
-      continue;
-    }//if( sanity check that shouldnt ever happen )
-      
-    meas_old_new_peaks.emplace_back( samples, *oldpeaks, peakpos->second );
-    
-    specfile->setPeaks( peakpos->second, samples );
-    if( m_peakModel && (specfile == foregrnd) && (samples == foreSamples) )
-      m_peakModel->setPeakFromSpecMeas( foregrnd, foreSamples, SpecUtils::SpectrumType::Foreground );
-    else if( m_peakModel && (specfile == backgrnd) && (samples == backSamples) )
-      m_peakModel->setPeakFromSpecMeas( backgrnd, backSamples, SpecUtils::SpectrumType::Background );
-    else if( m_peakModel && (specfile == secogrnd) && (samples == secoSamples) )
-      m_peakModel->setPeakFromSpecMeas( secogrnd, secoSamples, SpecUtils::SpectrumType::SecondForeground );
-  }//for( const set<int> &samples : samplesWithPeaks )
-  
-  // And set the automated hint peaks
-  for( const set<int> &samples : samplesWithHintPeaks )
-  {
-    auto oldHintPeaks = specfile->automatedSearchPeaks(samples);
-    if( !oldHintPeaks || oldHintPeaks->empty() )
-      continue;
-    
-    const auto peakpos = updated_hint_peaks.find(oldHintPeaks);
-    if( peakpos == end(updated_hint_peaks) )
+      auto oldpeaks = change.meas->peaks(samples);
+      if( !oldpeaks || oldpeaks->empty() )
+        continue;
+
+      const auto peakpos = updated_peaks.find(oldpeaks);
+      if( peakpos == end(updated_peaks) )
+        continue;
+
+      meas_old_new_peaks.emplace_back( samples, *oldpeaks, peakpos->second );
+
+      change.meas->setPeaks( peakpos->second, samples );
+      if( m_peakModel && (change.meas == foregrnd) && (samples == foreSamples) )
+        m_peakModel->setPeakFromSpecMeas( foregrnd, foreSamples, SpecUtils::SpectrumType::Foreground );
+      else if( m_peakModel && (change.meas == backgrnd) && (samples == backSamples) )
+        m_peakModel->setPeakFromSpecMeas( backgrnd, backSamples, SpecUtils::SpectrumType::Background );
+      else if( m_peakModel && (change.meas == secogrnd) && (samples == secoSamples) )
+        m_peakModel->setPeakFromSpecMeas( secogrnd, secoSamples, SpecUtils::SpectrumType::SecondForeground );
+    }//for( const set<int> &samples : samplesWithPeaks )
+
+    const set<set<int>> samplesWithHintPeaks = change.meas->sampleNumsWithAutomatedSearchPeaks();
+    for( const set<int> &samples : samplesWithHintPeaks )
     {
-#if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( __func__, "Unexpectedly coudlnt find peaks in updated_peaks" );
-#endif
-      continue;
-    }//if( sanity check that shouldnt ever happen )
-    
-    meas_old_new_hint_peaks.emplace_back( samples, *oldHintPeaks, peakpos->second );
-    
-    auto peaks = make_shared<deque<shared_ptr<const PeakDef>>>( peakpos->second );
-    specfile->setAutomatedSearchPeaks( samples, peaks );
-  }//for( const set<int> &samples : samplesWithPeaks )
-  
-  const size_t ndets = specfile->gamma_detector_names().size();
-  const size_t nsamples = specfile->sample_numbers().size();
-  
-  if( (ndets > 1) || (nsamples > 1) )
-  {
-    WString msg;
-    if( (ndets > 1) && (nsamples > 1) )
-      msg = WString::tr("ect-dev-applied-dets-samples").arg(detname);
-    else if( nsamples > 1 )
-      msg = WString::tr("ect-dev-applied-to-samples");
-    
-    int nfiles = 0;
-    for( auto t : {0,1,2} )
-      nfiles += (m_interspec->measurment(static_cast<SpectrumType>(t)) != specfile);
-    
-    if( nfiles && !msg.empty() )
-    {
-      switch( type )
-      {
-        case SpectrumType::Foreground:       msg.arg( WString::tr("ect-of-the-fore") ); break;
-        case SpectrumType::SecondForeground: msg.arg( WString::tr("ect-of-the-sec") ); break;
-        case SpectrumType::Background:       msg.arg( WString::tr("ect-of-the-back") ); break;
-      }//switch( type )
-    }else if( !msg.empty() )
-    {
-      msg.arg( "" );
-    }//if( nfiles )
-  
-    /// \TODO: keep from issuing this message for ever single change!
-    if( !msg.empty() )
-      m_interspec->logMessage( msg, 1 );
-    
-    //Calling setDeviationPairMsg(...) is useless because we currently completely replace 
-    //display->setDeviationPairMsg( msg );
-  }else
-  {
-    //display->setDeviationPairMsg( "" );
-  }//if( more than one gamma detector and more than one sample number ) / else
-  
+      auto oldHintPeaks = change.meas->automatedSearchPeaks(samples);
+      if( !oldHintPeaks || oldHintPeaks->empty() )
+        continue;
+
+      const auto peakpos = updated_hint_peaks.find(oldHintPeaks);
+      if( peakpos == end(updated_hint_peaks) )
+        continue;
+
+      meas_old_new_hint_peaks.emplace_back( samples, *oldHintPeaks, peakpos->second );
+
+      auto peaks = make_shared<deque<shared_ptr<const PeakDef>>>( peakpos->second );
+      change.meas->setAutomatedSearchPeaks( samples, peaks );
+    }//for( const set<int> &samples : samplesWithHintPeaks )
+  }//for( const MeasToApplyCoefChangeTo &change : changemeas )
+
+  // Let the user know if the change may have applied beyond just the displayed spectrum
+  const size_t ndets = dispmeas->gamma_detector_names().size();
+  const size_t nsamples = dispmeas->sample_numbers().size();
+
+  /// \TODO: keep from issuing this message for ever single change!
+  if( (ndets > 1) || (nsamples > 1) || (changemeas.size() > 1) )
+    m_interspec->logMessage( WString::tr("ect-dev-pairs-applied-scope"), 1 );
+
   m_interspec->refreshDisplayedCharts();
   refreshGuiFromFiles();
 }//void userChangedDeviationPair( CalDisplay *display )
@@ -4276,59 +3766,87 @@ void EnergyCalTool::specTypeToDisplayForChanged()
 }//void specTypeToDisplayForChanged();
 
 
-bool EnergyCalTool::canDoEnergyFit()
+EnergyCalTool::CanFitCoefStatus EnergyCalTool::canDoEnergyFit()
 {
   // Check that "Apply Changes To" for the "Foreground" is checked, otherwise fitting makes no sense
   if( !m_applyToCbs[ApplyToCbIndex::ApplyToForeground]->isChecked() )
-    return false;
-  
+    return CanFitCoefStatus::ForegroundNotApplied;
+
   // Check if there are any peaks currently showing.
   shared_ptr<const deque<PeakModel::PeakShrdPtr>> peaks = m_peakModel->peaks();
   if( !peaks )
-    return false;
-  
+    return CanFitCoefStatus::NoPeaksToUse;
+
   size_t nPeaksToUse = 0;
   for( const PeakModel::PeakShrdPtr &p : *peaks )
     nPeaksToUse += (p && p->useForEnergyCalibration());
-  
+
   if( nPeaksToUse < 1 )
-    return false;
-  
+    return CanFitCoefStatus::NoPeaksToUse;
+
   if( !m_calInfoDisplayStack )
-    return false;
-  
-  // We are actually going to fit the coefficients for the currently showing CalDisplay, so only
-  //  consult the checkboxes on that one display.
+    return CanFitCoefStatus::InternalError;
+
   auto caldisp = dynamic_cast<EnergyCalImp::CalDisplay *>( m_calInfoDisplayStack->currentWidget() );
   if( !caldisp )
-    return false;
-  
+    return CanFitCoefStatus::InternalError;
+
   auto cal = caldisp->lastSetCalibration();
+  if( !cal || !cal->valid() )
+    return CanFitCoefStatus::InternalError;
+
+  // The peaks used for the fit are the foregrounds peaks, so the calibration being shown must
+  //  belong to the foreground - or at least be the foregrounds displayed calibration (e.g., when
+  //  the same file is loaded as multiple spectrum types).
+  if( caldisp->spectrumType() != SpecUtils::SpectrumType::Foreground )
+  {
+    const shared_ptr<const SpecUtils::Measurement> forehist
+                           = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+    if( !forehist || (forehist->energy_calibration() != cal) )
+      return CanFitCoefStatus::NotForegroundCal;
+  }//if( the display being shown isnt for the foreground )
+
   switch( cal->type() )
   {
     case SpecUtils::EnergyCalType::InvalidEquationType:
-      return false;
+      return CanFitCoefStatus::InvalidCalType;
 
     case SpecUtils::EnergyCalType::Polynomial:
     case SpecUtils::EnergyCalType::FullRangeFraction:
     case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-    case SpecUtils::EnergyCalType::LowerChannelEdge:
+    case SpecUtils::EnergyCalType::LowerChannelEdge:  //fits {offset, gain} relative to original
       break;
   }//switch( cal->type() )
-  
+
+  // The "Fit" checkboxes actually used for the fit are the foreground fit-source displays (see
+  //  #fitCoefficients), which is `caldisp` itself, unless we are showing a non-foreground display
+  //  that shares the foregrounds calibration.
+  const vector<string> foredets
+                       = m_interspec->detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
+  if( (caldisp->spectrumType() != SpecUtils::SpectrumType::Foreground)
+      || (std::find(begin(foredets), end(foredets), caldisp->detectorName()) == end(foredets)) )
+  {
+    caldisp = foregroundFitDisplay();
+    if( !caldisp )
+      return CanFitCoefStatus::InternalError;
+  }//if( the shown display isnt a displayed foreground detector )
+
   const set<size_t> ordersToFit = caldisp->fitForCoefficents();
-  if( ordersToFit.empty() || ordersToFit.size() > nPeaksToUse )
-    return false;
-  
-  return true;
-}//bool canDoEnergyFit()
+  if( ordersToFit.empty() )
+    return CanFitCoefStatus::NoCoefSelected;
+
+  if( ordersToFit.size() > nPeaksToUse )
+    return CanFitCoefStatus::MorePeaksNeeded;
+
+  return CanFitCoefStatus::CanFit;
+}//CanFitCoefStatus canDoEnergyFit()
 
 
 void EnergyCalTool::fitCoefficients()
 {
   try
   {
-    if( !canDoEnergyFit() )
+    if( canDoEnergyFit() != CanFitCoefStatus::CanFit )
     {
       m_interspec->logMessage( WString::tr("ect-err-not-enough-peaks"), 2 );
       return;
@@ -4346,49 +3864,34 @@ void EnergyCalTool::fitCoefficients()
     if( !caldisp )  //shouldnt ever happen, but JIC
       throw runtime_error( "Unexpected error determining current calibration" );
     
-    // The spectrum may not be displaying the detector we are currently seeing the calibration for
-    //  lets make sure of this, and if so, switch to one we are displaying
+    // The peaks we fit to are always the foregrounds peaks, so make sure the display we take the
+    //  calibration from (and that gets updated first) is a foreground display of a displayed
+    //  detector; #canDoEnergyFit has already checked the currently showing display is consistent
+    //  with the foregrounds calibration.
     string detname = caldisp->detectorName();
-    int previousSpecTypeInd = m_specTypeMenu ? m_specTypeMenu->currentIndex() : 0;
-    const auto type = (previousSpecTypeInd == 1)
-                          ? SpecUtils::SpectrumType::Background
-                          : (previousSpecTypeInd==2
-                            ? SpecUtils::SpectrumType::SecondForeground
-                            : SpecUtils::SpectrumType::Foreground);
-    const vector<string> displayed = m_interspec->detectorsToDisplay( type );
-    
-    if( std::find(begin(displayed), end(displayed), detname) == end(displayed) )
+    const vector<string> displayed = m_interspec->detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
+
+    if( (caldisp->spectrumType() != SpecUtils::SpectrumType::Foreground)
+        || (std::find(begin(displayed), end(displayed), detname) == end(displayed)) )
     {
-      if( previousSpecTypeInd >= 0
-         && previousSpecTypeInd < 3
-         && m_detectorMenu[previousSpecTypeInd] )
-      {
-        for( WMenuItem *item : m_detectorMenu[previousSpecTypeInd]->items() )
-        {
-          const string thisdetname = item->text().toUTF8();
-          if( std::find(begin(displayed), end(displayed), thisdetname) != end(displayed) )
-          {
-            item->select();
-            cout << "Starting from " << caldisp << endl;
-            caldisp = dynamic_cast<EnergyCalImp::CalDisplay *>( m_calInfoDisplayStack->currentWidget() );
-            cout << "  we moved to " << caldisp << endl;
-            if( !caldisp )  //shouldnt ever happen, but JIC
-              throw runtime_error( "Unexpected error determining current calibration" );
-            
-            detname = caldisp->detectorName();
-          }//if( we found a displayed detector )
-        }//for( loop over menu items to find a displayed detector )
-      }else
-      {
+      int menunum = -1;
+      WMenuItem *item = nullptr;
+      EnergyCalImp::CalDisplay * const foredisp = foregroundFitDisplay( &menunum, &item );
+
+      if( !foredisp )
         throw runtime_error( WString::tr("ect-select-cal-of-disp-det").toUTF8() );
-      }
-    }//if( std::find(begin(displayed), end(displayed), detname) == end(displayed) )
-    
-        
+
+      // Select the found display, so the user sees the calibration that got fit
+      m_specTypeMenu->select( menunum );
+      item->select();
+
+      caldisp = foredisp;
+      detname = caldisp->detectorName();
+    }//if( the currently showing display isnt a displayed foreground detector )
+
+
     auto original_cal = caldisp->lastSetCalibration();
-    
-    
-    
+
     switch( original_cal->type() )
     {
       case SpecUtils::EnergyCalType::InvalidEquationType:
@@ -4443,25 +3946,45 @@ void EnergyCalTool::fitCoefficients()
     if( orders_to_fit.size() > peakInfos.size() )
       throw runtime_error( WString::tr("ect-err-not-enough-peaks").toUTF8() );
     
-    auto answer = make_shared<SpecUtils::EnergyCalibration>();
-
-    const bool isLowerChannelEdge
-        = (original_cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge);
-
-    // LowerChannelEdge has exactly two fittable parameters (offset, gain); everything else uses
-    // the coefficient order implied by the current cal and the highest checked fit-coefficient.
-    const size_t eqn_order = isLowerChannelEdge
-        ? size_t(2)
-        : std::max( original_cal->coefficients().size(), (*orders_to_fit.rbegin()) + 1 );
-    const size_t nchannel = original_cal->num_channels();
-    const auto &devpairs = original_cal->deviation_pairs();
-
+    shared_ptr<const SpecUtils::EnergyCalibration> answer;
     double chi2 = -999;
 
-    // Phase 1: try the fast LLS path for Polynomial/FRF. LowerChannelEdge has no LLS analogue,
-    // so we skip this phase and let it fall through to the Ceres fallback below.
-    if( !isLowerChannelEdge )
+    if( original_cal->type() == SpecUtils::EnergyCalType::LowerChannelEdge )
     {
+      // Fit the {offset, gain} adjustment relative to the sessions original channel energies;
+      //  this problem is exactly linear in the fit parameters, so no iterative fallback needed.
+      const LowerChanCalOriginal previnfo = lowerChannelOriginal( original_cal );
+
+      vector<bool> fitfor( 2, false );
+      for( const size_t order : orders_to_fit )
+      {
+        if( order > 1 )
+          throw runtime_error( "Unexpected coefficient order for lower channel energy cal" );
+        fitfor[order] = true;
+      }
+
+      vector<float> coefs = { static_cast<float>(previnfo.offset),
+                              static_cast<float>(previnfo.gain) };
+      vector<float> coef_uncerts;
+      chi2 = EnergyCal::fit_energy_cal_lower_channel( peakInfos, previnfo.original, fitfor,
+                                                      coefs, coef_uncerts );
+
+      LowerChanCalOriginal info = previnfo;
+      info.offset = coefs[0];
+      info.gain = coefs[1];
+
+      const auto adjusted = EnergyCal::adjust_lower_channel_energy_cal( info.original,
+                                                                        info.offset, info.gain );
+      registerLowerChannelAdjustment( adjusted, info );
+      answer = adjusted;
+    }else
+    {
+      auto fit_cal = make_shared<SpecUtils::EnergyCalibration>();
+
+      const size_t eqn_order = std::max( original_cal->coefficients().size(), (*orders_to_fit.rbegin()) + 1 );
+      const size_t nchannel = original_cal->num_channels();
+      const auto &devpairs = original_cal->deviation_pairs();
+
       try
       {
         vector<bool> fitfor( eqn_order, false );
@@ -4483,136 +4006,76 @@ void EnergyCalTool::fitCoefficients()
           case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
             chi2 = EnergyCal::fit_energy_cal_poly( peakInfos, fitfor, nchannel, devpairs,
                                                   coefficents, coefficent_uncerts );
-            answer->set_polynomial( nchannel, coefficents, devpairs );
+            fit_cal->set_polynomial( nchannel, coefficents, devpairs );
             break;
 
           case SpecUtils::EnergyCalType::FullRangeFraction:
             chi2 = EnergyCal::fit_energy_cal_frf( peakInfos, fitfor, nchannel, devpairs,
                                                  coefficents, coefficent_uncerts );
-            answer->set_full_range_fraction( nchannel, coefficents, devpairs );
+            fit_cal->set_full_range_fraction( nchannel, coefficents, devpairs );
             break;
 
           case SpecUtils::EnergyCalType::LowerChannelEdge:
           case SpecUtils::EnergyCalType::InvalidEquationType:
-            throw runtime_error( "Didnt expect lower channel or invalid eqn type." );
+            assert( 0 );  //lower channel energy handled in its own branch above
             break;
         }//switch ( original_cal->type() )
 
-        //Print some developer info to terminal
-        stringstream msg;
-        msg << "\nfit_energy_cal_poly gave chi2=" << chi2 << " with coefs={";
-        for( size_t i = 0; i < coefficents.size(); ++i )
-          msg << coefficents[i] << "+-" << coefficent_uncerts[i] << ", ";
-        msg << "}\n";
-        cout << msg.str() << endl;
-
       }catch( std::exception &e )
       {
-        cerr << "fit_energy_cal_poly threw: " << e.what() << endl;
 #if( PERFORM_DEVELOPER_CHECKS )
         char buffer[512] = { '\0' };
         snprintf( buffer, sizeof(buffer)-1, "fit_energy_cal_poly threw: %s", e.what() );
         log_developer_error( __func__, buffer );
 #endif
       }//try / catch fit for coefficents using least linear squares
-    }//if( !isLowerChannelEdge )
 
 
-    if( !answer->valid() )
-    {
-      vector<bool> fitfor( eqn_order, false );
-
-      for( auto order : orders_to_fit )
+      if( !fit_cal->valid() )
       {
-        assert( order < fitfor.size() );
-        fitfor[order] = true;
-      }
+        // The linear least squares fit failed; fall back to a Ceres based non-linear fit
+        EnergyCal::EnergyCalCeresFitSetup ceres_setup;
+        ceres_setup.cal_type = original_cal->type();
+        ceres_setup.num_channels = nchannel;
+        ceres_setup.fitfor = vector<bool>( eqn_order, false );
+        for( auto order : orders_to_fit )
+          ceres_setup.fitfor[order] = true;
+        ceres_setup.starting_coefs = original_cal->coefficients();
+        if( ceres_setup.starting_coefs.size() < eqn_order )
+          ceres_setup.starting_coefs.resize( eqn_order, 0.0f );
+        ceres_setup.dev_pairs = devpairs;
 
-      // Starting coefficients: for LowerChannelEdge the fit returns *relative* offset/gain
-      // (offset = delta from baseline[0], gain = span multiplier; identity = (0, 1)). We seed
-      // the fit with whatever the user currently has in the UI, computed by inverting the
-      // affine transform between baseline and current edges.
-      // Polynomial/FRF start from whatever the current calibration already has (zero-padded
-      // if needed).
-      vector<float> calib_coefs;
-      std::vector<float> baseline_edges;
-      if( isLowerChannelEdge )
-      {
-        const auto baseline_ptr = caldisp->lceBaselineEdges();
-        if( !baseline_ptr || baseline_ptr->size() != (nchannel + 1) )
-          throw runtime_error( "LowerChannelEdge baseline not available." );
-        baseline_edges = *baseline_ptr;
+        const EnergyCal::EnergyCalCeresFitResult ceres_result
+                                      = EnergyCal::fit_energy_cal_ceres( peakInfos, ceres_setup );
+        chi2 = ceres_result.chi2;
 
-        const auto current_edges_ptr = original_cal->channel_energies();
-        if( !current_edges_ptr || current_edges_ptr->size() != (nchannel + 1) )
-          throw runtime_error( "LowerChannelEdge calibration missing channel energies." );
-        const double base_span = static_cast<double>(baseline_edges.back()) - static_cast<double>(baseline_edges.front());
-        const float start_offset = static_cast<float>(
-            static_cast<double>(current_edges_ptr->front())
-            - static_cast<double>(baseline_edges.front()) );
-        const float start_gain = (std::fabs(base_span) > 1e-6)
-            ? static_cast<float>(
-                (static_cast<double>(current_edges_ptr->back()) - static_cast<double>(current_edges_ptr->front()))
-                / base_span )
-            : 1.0f;
-        calib_coefs = { start_offset, start_gain };
-      }
-      else
-      {
-        calib_coefs = original_cal->coefficients();
-        if( calib_coefs.size() < eqn_order )
-          calib_coefs.resize( eqn_order, 0.0f );
-      }
+        if( !ceres_result.warning_msg.empty() )
+          m_interspec->logMessage( WString::fromUTF8(ceres_result.warning_msg), 3 );
 
-      std::string warning_msg;
-      std::vector<float> coefs, coefs_uncert;
-      chi2 = EnergyCal::fit_energy_cal_iterative( peakInfos, nchannel, original_cal->type(), fitfor,
-                                          calib_coefs, devpairs, coefs, coefs_uncert, warning_msg,
-                                          baseline_edges );
-
-      if( warning_msg.size() )
-        m_interspec->logMessage( warning_msg, 3 );
-
-      switch ( original_cal->type() )
-      {
-        case SpecUtils::EnergyCalType::Polynomial:
-        case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
-          answer->set_polynomial( nchannel, coefs, devpairs );
-          break;
-
-        case SpecUtils::EnergyCalType::FullRangeFraction:
-          answer->set_full_range_fraction( nchannel, coefs, devpairs );
-          break;
-
-        case SpecUtils::EnergyCalType::LowerChannelEdge:
+        switch ( original_cal->type() )
         {
-          // The fit returns relative offset/gain (offset = delta from baseline[0], gain = span
-          // multiplier). Materialize the new lower-channel-edges via
-          //   new[i] = baseline[0] + offset_delta + gain * (baseline[i] - baseline[0]).
-          assert( coefs.size() == 2 );
-          const float offset_delta = coefs[0];
-          const float gain = coefs[1];
-          const float base0 = baseline_edges.front();
-          std::vector<float> new_edges( baseline_edges.size(), 0.0f );
-          for( size_t i = 0; i < new_edges.size(); ++i )
-            new_edges[i] = base0 + offset_delta + gain * (baseline_edges[i] - base0);
-          answer->set_lower_channel_energy( nchannel, std::move(new_edges) );
-          break;
-        }
+          case SpecUtils::EnergyCalType::Polynomial:
+          case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
+            fit_cal->set_polynomial( nchannel, ceres_result.coefs, devpairs );
+            break;
 
-        case SpecUtils::EnergyCalType::InvalidEquationType:
-          assert( 0 );
-          break;
-      }//switch ( original_cal->type() )
-    }//if( !fit_coefs )
-    
-    if( !answer->valid() )
-      throw runtime_error( WString::tr("ect-fail-min").toUTF8() );
-    
-  
+          case SpecUtils::EnergyCalType::FullRangeFraction:
+            fit_cal->set_full_range_fraction( nchannel, ceres_result.coefs, devpairs );
+            break;
+
+          case SpecUtils::EnergyCalType::LowerChannelEdge:
+          case SpecUtils::EnergyCalType::InvalidEquationType:
+            assert( 0 );
+            break;
+        }//switch ( original_cal->type() )
+      }//if( !fit_coefs )
+
+      answer = fit_cal;
+    }//if( lower channel energy cal ) / else
+
     if( !answer || !answer->valid() )
-      return;
-    
+      throw runtime_error( WString::tr("ect-fail-min").toUTF8() );
+
     const vector<MeasToApplyCoefChangeTo> changemeas = measurementsToApplyCoeffChangeTo();
     applyCalChange( original_cal, answer, changemeas, false );
     
@@ -4624,14 +4087,41 @@ void EnergyCalTool::fitCoefficients()
       double dof = peakInfos.size() - 1;
       dof -= orders_to_fit.size();
       dof = (dof < 1) ? 1.0 : dof;
-      
+
       char buffer[64];
       snprintf( buffer, sizeof(buffer), " &chi;&sup2;/dof=%.2g", (chi2/dof) );
       msg += buffer;
     }
     */
-    
-    m_interspec->logMessage( WString::tr("ect-fit-successful"), 1 );
+
+    WString msg = WString::tr("ect-fit-successful");
+    try
+    {
+      // Summarize how much the fit improved things: the mean absolute offset of the used peaks
+      //  from their true energies, before and after the fit.
+      double pre_dev = 0.0, post_dev = 0.0;
+      for( const EnergyCal::RecalPeakInfo &info : peakInfos )
+      {
+        pre_dev += fabs( info.peakMean - info.photopeakEnergy );
+        post_dev += fabs( answer->energy_for_channel(info.peakMeanBinNumber) - info.photopeakEnergy );
+      }
+      pre_dev /= peakInfos.size();
+      post_dev /= peakInfos.size();
+
+      char prebuf[32], postbuf[32];
+      snprintf( prebuf, sizeof(prebuf), "%.3g", pre_dev );
+      snprintf( postbuf, sizeof(postbuf), "%.3g", post_dev );
+
+      msg = WString::tr("ect-fit-successful-detail")
+              .arg( static_cast<int>(peakInfos.size()) )
+              .arg( prebuf )
+              .arg( postbuf );
+    }catch( std::exception & )
+    {
+      //energy_for_channel can throw for out-of-range channels - just show the plain message
+    }
+
+    m_interspec->logMessage( msg, 1 );
   }catch( std::exception &e )
   {
     WString msg = WString::tr("ect-fail-fit").arg( e.what() );
@@ -4643,16 +4133,80 @@ void EnergyCalTool::fitCoefficients()
 
 void EnergyCalTool::updateFitButtonStatus()
 {
-  const bool canFit = canDoEnergyFit();
-  
+  const CanFitCoefStatus status = canDoEnergyFit();
+  const bool canFit = (status == CanFitCoefStatus::CanFit);
+
 #if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+  WString hint;
+  switch( status )
+  {
+    case CanFitCoefStatus::CanFit:
+      break;
+
+    case CanFitCoefStatus::ForegroundNotApplied:
+      hint = WString::tr("ect-fit-hint-fore-deselected");
+      break;
+
+    case CanFitCoefStatus::NoPeaksToUse:
+      hint = WString::tr("ect-fit-hint-no-peaks");
+      break;
+
+    case CanFitCoefStatus::NotForegroundCal:
+      hint = WString::tr("ect-fit-hint-not-fore-cal");
+      break;
+
+    case CanFitCoefStatus::NoCoefSelected:
+      hint = WString::tr("ect-fit-hint-no-coefs");
+      break;
+
+    case CanFitCoefStatus::MorePeaksNeeded:
+      hint = WString::tr("ect-fit-hint-few-peaks");
+      break;
+
+    case CanFitCoefStatus::InvalidCalType:  //the convert-to-polynomial message covers this
+    case CanFitCoefStatus::InternalError:   //not user-actionable
+      break;
+  }//switch( status )
+
+  // The "Fit" checkboxes are only consulted on the foreground displayed-detector display (the
+  //  "fit source" - see #fitCoefficients), so disable them everywhere else to avoid implying they
+  //  have an independent effect (their states are kept in sync across displays).
+  const vector<string> foredets
+                       = m_interspec->detectorsToDisplay( SpecUtils::SpectrumType::Foreground );
+
   for( EnergyCalImp::CalDisplay *disp : calDisplays() )
-    disp->setFitButtonEnabled( canFit );
+  {
+    const bool fitSource = (disp->spectrumType() == SpecUtils::SpectrumType::Foreground)
+        && (std::find(begin(foredets), end(foredets), disp->detectorName()) != end(foredets));
+    disp->setFitCheckboxesDisabled( !fitSource );
+    disp->setFitStatus( canFit, hint );
+  }
 #else
   if( canFit != m_fitCalBtn->isEnabled() )
     m_fitCalBtn->setDisabled( !canFit );
 #endif
 }//void updateFitButtonStatus()
+
+
+void EnergyCalTool::fitCheckboxChanged( EnergyCalImp::CalDisplay *display )
+{
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+  // The selection of which coefficient orders to fit is a property of the fit itself - not of any
+  //  one detector - since the fit result gets propagated to all applicable detectors; so keep the
+  //  "Fit" checkboxes in sync (by coefficient order) across all displays.
+  if( display )
+  {
+    const set<size_t> fitfor = display->fitForCoefficents();
+    for( EnergyCalImp::CalDisplay *disp : calDisplays() )
+    {
+      if( disp != display )
+        disp->setFitFor( fitfor );
+    }
+  }//if( display )
+#endif
+
+  updateFitButtonStatus();
+}//void fitCheckboxChanged( EnergyCalImp::CalDisplay *display )
 
 
 #if( !IMP_CALp_BTN_NEAR_COEFS )
@@ -4671,18 +4225,15 @@ void EnergyCalTool::updateCALpButtonsStatus()
 #endif
 
 
-void EnergyCalTool::displayedSpecChangedCallback( const SpecUtils::SpectrumType type,
-                                                  const std::shared_ptr<SpecMeas> meas,
+void EnergyCalTool::displayedSpecChangedCallback( const SpecUtils::SpectrumType,
+                                                  const std::shared_ptr<SpecMeas>,
                                                   const std::set<int>,
                                                   const std::vector<std::string> )
 {
   /// \TODO: set the various m_applyToCbs if it is a new spectrum being shown.
-
-  // Capture the calibration each detector had at first sight as the spectrum's "original".
-  // This is what the LowerChannelEdge UI uses to compute the displayed offset/gain deltas,
-  // and is the natural anchor for a future "Reset to original calibration" action.
-  captureOriginalCalibrationsIfNeeded( type, meas );
-
+  /// \TODO: if this is the first time seeing a SpecMeas, cache all of its energy calibration
+  ///        information
+  
   // \TODO: we could maybe save a little time by inspecting what was changed, but the added
   //        complexity probably isnt worth it, so we'll skip this.
   refreshGuiFromFiles();
@@ -4705,7 +4256,7 @@ void EnergyCalTool::handleGraphicalRecalRequest( double xstart, double xfinish )
                                                                ? foreground->energy_calibration()
                                                                : nullptr;
     if( !energycal || !energycal->valid()
-        || (energycal->type() == SpecUtils::EnergyCalType::LowerChannelEdge) )
+        || (energycal->type() == SpecUtils::EnergyCalType::InvalidEquationType) )
       return;
   
     if( m_graphicalRecal )
@@ -4732,7 +4283,7 @@ void EnergyCalTool::deleteGraphicalRecalConfirmWindow()
   if( m_graphicalRecal )
   {
     AuxWindow::deleteAuxWindow( m_graphicalRecal.get() );
-    m_graphicalRecal = nullptr;
+    assert( !m_graphicalRecal );   //observing_ptr auto-clears
   }//if( m_graphicalRecal )
   
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_interspec );
@@ -4783,420 +4334,178 @@ string EnergyCalTool::applyToSummaryTxt() const
 }//string applyToSummaryTxt() const
 
 
+namespace
+{
+  /** The info needed to create, or update, one CalDisplay entry in the detector menus; see
+   #EnergyCalTool::doRefreshFromFiles.
+   */
+  struct CalDisplayEntryInfo
+  {
+    SpecUtils::SpectrumType type;
+    std::string detname;
+    Wt::WString label;
+    std::shared_ptr<const SpecUtils::EnergyCalibration> cal;
+  };//struct CalDisplayEntryInfo
+}//namespace
+
+
+void EnergyCalTool::createCalDisplayWidgets()
+{
+  assert( !m_specTypeMenu && !m_specTypeMenuStack && !m_calInfoDisplayStack );
+  for( int i = 0; i < 3; ++i )
+  {
+    assert( !m_detectorMenu[i] );
+  }
+
+  //Labels for the vertical menu when you have multiple spectra shown, and at least one of them
+  //  has more than one detector.
+  const char * const spec_type_labels[3] = {"ect-short-fore","ect-short-back","ect-short-secondary"};
+
+  // Note: we deliberately dont set a transition animation on either of the stacks: in Wt 3.7.1 an
+  //  animated WStackedWidget::setCurrentIndex() only animates the previous/next widgets, and does
+  //  not reconcile the hidden state of its other children, so adding/removing children while
+  //  re-using the stack could leave the newly current widget invisible (this was the cause of the
+  //  "calibration coefficients wont show up" issue that previously forced re-creating all of
+  //  these widgets on nearly every update).
+  auto specTypeMenuStackOwned = std::make_unique<WStackedWidget>();
+  m_specTypeMenuStack = specTypeMenuStackOwned.get();
+  m_specTypeMenuStack->addStyleClass( "CalSpecStack" );
+
+  auto specTypeMenuOwned = std::make_unique<WMenu>(m_specTypeMenuStack);
+  m_specTypeMenu = specTypeMenuOwned.get();
+  m_specTypeMenu->addStyleClass( "CalSpecMenu" );
+  m_specTypeMenu->itemSelected().connect( this, &EnergyCalTool::specTypeToDisplayForChanged );
+  m_detColLayout->addWidget( std::move(specTypeMenuOwned), 1, 0 );
+  m_detColLayout->addWidget( std::move(specTypeMenuStackOwned), 2, 0 );
+
+  WGridLayout * const callayout = dynamic_cast<WGridLayout *>( m_calColumn->layout() );
+  assert( callayout );
+
+  auto calInfoDisplayStackOwned = std::make_unique<WStackedWidget>();
+  m_calInfoDisplayStack = calInfoDisplayStackOwned.get();
+  m_calInfoDisplayStack->addStyleClass( "ToolTabTitledColumnContent CalStack" );
+  callayout->addWidget( std::move(calInfoDisplayStackOwned), 1, 1 );
+
+  for( int i = 0; i < 3; ++i )
+  {
+    auto detMenuDivOwned = std::make_unique<WContainerWidget>();  //this holds the WMenu for this SpecFile
+    WContainerWidget *detMenuDiv = detMenuDivOwned.get();
+    detMenuDiv->addStyleClass( "DetMenuDiv" );
+
+    WMenuItem *item = m_specTypeMenu->addItem( WString::tr(spec_type_labels[i]),
+                                               std::move(detMenuDivOwned), ContentLoading::Eager );
+    //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
+    item->clicked().connect( item, [item](){ item->select(); } );
+    item->setHidden( true );  //#doRefreshFromFiles will un-hide, as needed
+
+    m_detectorMenu[i] = detMenuDiv->addNew<WMenu>( m_calInfoDisplayStack );
+    m_detectorMenu[i]->addStyleClass( "VerticalNavMenu HeavyNavMenu DetCalMenu" );
+    m_detectorMenu[i]->itemSelected().connect( this, &EnergyCalTool::updateFitButtonStatus );
+  }//for( int i = 0; i < 3; ++i )
+}//void createCalDisplayWidgets()
+
+
 void EnergyCalTool::doRefreshFromFiles()
 {
-  //Labels for horizontal labels when you have multiple spectra shown, and at least one of them has
-  //  more than one detectors
-  const char * const spec_type_labels[3] = {"ect-short-fore","ect-short-back","ect-short-secondary"};
+  //Menu entry labels used when each displayed file has no more than a single detector
   const char * const spec_type_labels_vert[3] = {"Foreground", "Background", "Secondary"};
-  
-  string prevdet[3];
-  int previousSpecInd = m_specTypeMenu ? m_specTypeMenu->currentIndex() : 0;
-  
+
   const SpecUtils::SpectrumType spectypes[3] = {
     SpecUtils::SpectrumType::Foreground,
     SpecUtils::SpectrumType::Background,
     SpecUtils::SpectrumType::SecondForeground
   };
-  
+
   shared_ptr<const SpecMeas> specfiles[3];
   for( int i = 0; i < 3; ++i )
     specfiles[i] = m_interspec->measurment( spectypes[i] );
-  
-  set<string> specdetnames[3]; //Just the names of gamma detectors with at least 4 channels
-  
-/*
-  //Delete calibration contents and menu items - we will add in all the current ones below.
-  //  - this appears to not work well - the stacks need replacing...
-  for( int i = 0; i < 3; ++i)
+
+  // Prune expired entries from the lower-channel-energy original-calibration tracking (the
+  //  calibrations die when their file is unloaded and the undo/redo history lets go of them;
+  //  the adjusted calibration then just becomes the new nominal on any future load, which is
+  //  fine)
+  for( auto iter = begin(m_lowerChanOrigCals); iter != end(m_lowerChanOrigCals); )
   {
-    Wt::WMenu *menu = m_detectorMenu[i];
-    
-    if( menu->currentItem() )
-      prevdet[i] = menu->currentItem()->text().toUTF8();
-    
-    for( WMenuItem *item : menu->items() )
-    {
-      WWidget *content = item->contents();
-      assert( content );
-      menu->removeItem( item );
-      
-      delete item;
-      delete content;
-    }//
-  }//for( Wt::WMenu *menu : m_detectorMenu )
-*/
-  
+    if( iter->first.expired() )
+      iter = m_lowerChanOrigCals.erase( iter );
+    else
+      ++iter;
+  }
+
   const bool isWide = (m_tallLayoutContent ? false : true);
-  
-  //If each spectrum file has only a single detector, then instead of having vertical menu display
-  //  detector name, we will have "For.", "Back", "Sec."
-  bool specTypeInForgrndMenu = true;
-  
-  //If we try to re-use the menu and stacks, for some reason the calibration coefficents wont show
-  //  up if we alter which background/secondary spectra are showing... not sure why, but for the
-  //  moment we'll just re-create the menus and stacks... not great, but works, for the moment.
-  bool needStackRefresh = false;
-  
-  // Get the detector names, for the displayed sample numbers, for each spectrum type
+
+  // Get the gamma detector names, for the displayed sample numbers, of each spectrum type
   set<string> disp_det_names[3];
-  
+
+  //If each spectrum file has no more than a single displayed detector, then instead of having the
+  //  vertical menu display detector names, we will have "Foreground", "Background", "Secondary"
+  //  entries, all in the foreground detector menu.
+  bool specTypeInForgrndMenu = true;
+
   int nFilesWithCalInfo = 0;
-  
-  // We want to preserve wich "Fit" check boxes are set.
-  map< pair<SpecUtils::SpectrumType,string>, set<size_t> > set_fit_for_cbs;
-  
-  
-  {//begin code-block to see if we need to refresh stack
-    
-    //TODO: need to check that isWide hasnt changed, and if it has set needStackRefresh=true
-    
-    //Check if we can put "For.", "Back", "Sec." on the vertical menu instead of detector names
-    for( int i = 0; i < 3; ++i )
-    {
-      disp_det_names[i] = gammaDetectorsForDisplayedSamples( spectypes[i] );
-      specTypeInForgrndMenu = (specTypeInForgrndMenu && (disp_det_names[i].size() <= 1));
-      
-      if( !disp_det_names[i].empty() )
-        nFilesWithCalInfo += 1;
-    }//for( int i = 0; i < 3; ++i )
-    
-    if( !m_specTypeMenu )
-    {
-      //cout << "needStackRefresh: m_specTypeMenu == nullptr" << endl;
-      needStackRefresh = true;
-    }
-    
-    for( int i = 0; !needStackRefresh && (i < 3); ++i )
-    {
-      WMenuItem *typeItem = m_specTypeMenu->itemAt(i);
-      if( !typeItem )
-      {
-        //cout << "needStackRefresh: !typeItem" << endl;
-        needStackRefresh = true;
-        continue;
-      }
-      
-      WMenu *detMenu = m_detectorMenu[(specTypeInForgrndMenu ? 0 : i)];
-      
-      if( !detMenu )
-      {
-        //cout << "needStackRefresh: !detMenu" << endl;
-        needStackRefresh = true;
-        continue;
-      }
-      
-      if( !specTypeInForgrndMenu && ((!detMenu) != (!specfiles[i])) )
-      {
-        //cout << "needStackRefresh: (!detMenu != !specfiles[i])" << endl;
-        needStackRefresh = true;
-        continue;
-      }
-      
-      if( specTypeInForgrndMenu )
-      {
-        if( specfiles[i] )
-        {
-          //Make sure one of the widgets have spec_type_labels_vert[i] in it
-          needStackRefresh = true;
-          for( int w = 0; needStackRefresh && (w < detMenu->count()); ++w )
-          {
-            auto item = detMenu->itemAt(w);
-            needStackRefresh = !(item && (item->text() == WString::tr(spec_type_labels_vert[i])));
-          }
-          
-          //if( needStackRefresh )
-          //  cout << "needStackRefresh: Did not have a menu entry for specfile[" << i << "]" << endl;
-        }else
-        {
-          //Make sure none of the widgets have spec_type_labels_vert[i] in them
-          for( int w = 0; !needStackRefresh && (w < detMenu->count()); ++w )
-          {
-            auto item = detMenu->itemAt(w);
-            needStackRefresh = (!item || (item->text() == WString::tr(spec_type_labels_vert[i])));
-          }
-          
-          //if( needStackRefresh )
-          //  cout << "needStackRefresh: For empty place " << i << " had a menu entry, but no spectrum file" << endl;
-        }//if( specfiles[i] ) / else
-      }else
-      {
-        assert( m_specTypeMenu );
-        WMenuItem *item = m_specTypeMenu->itemAt(i);
-        assert( item );
-     
-        if( !item )
-        {
-          //Shouldnt ever get here I think
-          needStackRefresh = true;
-          continue;
-        }//if( !item )
-        
-        if( !specfiles[i] )
-        {
-          //If there is no spectrum file for index i, item should be hidden, and if not need a refresh
-          needStackRefresh = !item->isHidden();
-          //if( needStackRefresh )
-          //  cout << "needStackRefresh: item is not hidden for missing spectrum " << i << endl;
-          continue;
-        }//if( !specfiles[i] )
-        
-        if( item->isHidden() )
-        {
-          //If item is hidden, but here we do have a spectrum file, we need a refresh
-          //cout << "needStackRefresh: item is hidden for " << i << endl;
-          needStackRefresh = true;
-          continue;
-        }//if( item->isHidden() )
-        
-        //if( needStackRefresh )
-        //  cout << "needStackRefresh: New det names dont equal old for type=" << i << endl;
-      }//if( specTypeInForgrndMenu ) / else
-      
-      
-      //Need to check all the detectors are the same names
-      set<string> detsInMenu;
-      for( int j = 0; j < detMenu->count(); ++j )
-      {
-        auto detitem = detMenu->itemAt(j);
-        if( detitem )
-          detsInMenu.insert( detitem->text().toUTF8() );
-      }//for( int j = 0; j < detMenu->count(); ++j )
-      
-      needStackRefresh = (detsInMenu != disp_det_names[i]);
-    }//for( int i = 0; i < 3; ++i )
-  }//end code-block to see if we need to refresh stack
-  
+
+  for( int i = 0; i < 3; ++i )
+  {
+    disp_det_names[i] = gammaDetectorsForDisplayedSamples( spectypes[i] );
+    specTypeInForgrndMenu = (specTypeInForgrndMenu && (disp_det_names[i].size() <= 1));
+
+    if( !disp_det_names[i].empty() )
+      nFilesWithCalInfo += 1;
+  }//for( int i = 0; i < 3; ++i )
+
+  // The menus and stacks are created just once for each wide/tall layout (#initWidgets nulls the
+  //  pointers on a layout change); after that we only diff their contents against the currently
+  //  displayed spectra, updating the CalDisplay widgets in-place, and creating/deleting only the
+  //  widgets we need to.  This avoids the jitter, and losing the users cursor/focus, that
+  //  re-creating everything on each calibration edit used to cause.
+  if( !m_specTypeMenu )
+    createCalDisplayWidgets();
+
+  assert( m_specTypeMenu && m_specTypeMenuStack && m_calInfoDisplayStack );
+
   //Dont show spectype menu (the vertical "For.", "Back", "Sec." menu), if we dont need to
   const bool hideSpecType = ( specTypeInForgrndMenu
                              || (nFilesWithCalInfo < 2)
                              || ( (!specfiles[1] || (specfiles[0]==specfiles[1]))
                                  && (!specfiles[2] || (specfiles[0]==specfiles[2]))) );
-  
-  if( !m_specTypeMenu || (m_specTypeMenu->isHidden() != hideSpecType) )
-  {
-    //cout << "needStackRefresh: m_specTypeMenu->isHidden() != hideSpecType" << endl;
-    needStackRefresh = true;
-  }
-  
-  //cout << "needStackRefresh=" << needStackRefresh << endl;
-  
-  // TODO: instead of the above logic to catch when we need to refresh (\e.g., create all new)
-  //       widgets, should combine it with the logic to create new widgets, but only delte or create
-  
-  if( needStackRefresh )
-  {
-    for( int i = 0; i < 3; ++i )
-    {
-      if( m_detectorMenu[i] )
-      {
-        for( WMenuItem *item : m_detectorMenu[i]->items() )
-        {
-          /// \TODO: the item text isnt necassarily the detector name - when specTypeInForgrndMenu
-          ///        is true, this breaks down - need to fix this
-          const string detname = item->text().toUTF8();
-          auto display = dynamic_cast<EnergyCalImp::CalDisplay *>( item->contents() );
-          if( display )
-            set_fit_for_cbs[{spectypes[i],detname}] = display->fitForCoefficents();
-          else
-            cerr << "Unexpected widget type as a sub-menu!" << endl;
-        }//for( loop over menu types )
-        
-        if( m_detectorMenu[i]->currentItem() )
-          prevdet[i] = m_detectorMenu[i]->currentItem()->text().toUTF8();
-        if( auto detMenuDivp = dynamic_cast<WContainerWidget *>( m_detectorMenu[i]->parent() ) )
-          detMenuDivp->removeWidget( m_detectorMenu[i] );
-      }
-      m_detectorMenu[i] = nullptr;
-    }//for( int i = 0; i < 3; ++i )
-    
-    if( m_specTypeMenuStack )
-      m_detColumn->removeWidget( m_specTypeMenuStack );
-    if( m_specTypeMenu )
-      m_detColumn->removeWidget( m_specTypeMenu );
-    m_specTypeMenuStack = nullptr;
-    m_specTypeMenu = nullptr;
 
-    WAnimation animation(Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200);
-
-    auto callayout = dynamic_cast<WGridLayout *>( m_calColumn->layout() );
-    assert( callayout );
-
-    m_specTypeMenuStack = m_detColLayout->addWidget( std::make_unique<WStackedWidget>(), 2, 0 );
-    m_specTypeMenuStack->addStyleClass( "CalSpecStack" );
-    m_specTypeMenuStack->setTransitionAnimation( animation );
-
-    m_specTypeMenu = m_detColLayout->addWidget( std::make_unique<WMenu>( m_specTypeMenuStack ), 1, 0 );
-    m_specTypeMenu->addStyleClass( "CalSpecMenu" );
-    m_specTypeMenu->itemSelected().connect( this, &EnergyCalTool::specTypeToDisplayForChanged );
-
-    if( m_calInfoDisplayStack )
-      m_calColumn->removeWidget( m_calInfoDisplayStack );
-    m_calInfoDisplayStack = callayout->addWidget( std::make_unique<WStackedWidget>(), 1, 1 );
-    m_calInfoDisplayStack->addStyleClass( "ToolTabTitledColumnContent CalStack" );
-    m_calInfoDisplayStack->setTransitionAnimation( animation );
-    
-    /// \TODO: only create these menus when actually needed, so we wont need to
-    for( int i = 0; i < 3; ++i )
-    {
-      if( !specfiles[i] )
-      {
-        //Add a dummy entry into the menu or else the 'm_specTypeMenu->itemAt(i)' call below will
-        //  segfault or not necassarily give the wanted answer.
-        WMenuItem *item = m_specTypeMenu->addItem( "", std::make_unique<WContainerWidget>() );
-        item->setHidden( true );
-        continue;
-      }
-      
-      auto detMenuDivOwner = std::make_unique<WContainerWidget>();  //this holds the WMenu for this SpecFile
-      WContainerWidget *detMenuDiv = detMenuDivOwner.get();
-      detMenuDiv->addStyleClass( "DetMenuDiv" );
-
-      m_detectorMenu[i] = detMenuDiv->addNew<WMenu>( m_calInfoDisplayStack );
-      m_detectorMenu[i]->addStyleClass( "VerticalNavMenu HeavyNavMenu DetCalMenu" );
-
-      WMenuItem *item = m_specTypeMenu->addItem( WString::tr(spec_type_labels[i]), std::move(detMenuDivOwner), ContentLoading::Eager );
-      //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
-      item->clicked().connect( item, [item](){ item->select(); } );
-      
-      m_detectorMenu[i]->itemSelected().connect( this, &EnergyCalTool::updateFitButtonStatus );
-    }//for( int i = 0; i < 3; ++i )
-  }//if( needStackRefresh )
-
-#if( !IMP_CALp_BTN_NEAR_COEFS )
-  updateCALpButtonsStatus();
-#endif
-  
-#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
-  const bool canFitCeofs = canDoEnergyFit();
-#endif
-  
-  if( !specfiles[0] )
-  {
-    setShowNoCalInfo( true );
-#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
-    for( EnergyCalImp::CalDisplay *disp : calDisplays() )
-      disp->setFitButtonEnabled( false );
-#else
-    m_fitCalBtn->disable();
-#endif
-    return;
-  }
-  
-  if( previousSpecInd < 0 ||  previousSpecInd > 2
-     || (previousSpecInd == 1 && !specfiles[1])
-     || (previousSpecInd == 2 && !specfiles[2])  )
-  {
-    previousSpecInd = 0;
-  }
-  
-  
-  bool selectedDetToShowCalFor = false;
+  // Figure out the CalDisplay entries each detector menu should end up with.  For each detector
+  //  we use the energy calibration of the first displayed sample that has gamma data.  If there
+  //  is no foreground, all the menus should become empty.
   bool hasFRFCal = false, hasPolyCal = false, hasLowerChanCal = false;
-  
-  
-  for( int i = 0; i < 3; ++i )
-  {
-    if( !specfiles[i] )
-      continue;
-    
-    Wt::WMenu *detMenu = m_detectorMenu[(specTypeInForgrndMenu ? 0 : i)];
-    if( !detMenu )
-      continue;
-    
-    WMenuItem *specItem = m_specTypeMenu->itemAt(i);
-    assert( specItem );
-    
-    const SpecUtils::SpectrumType type = spectypes[i];
-    shared_ptr<const SpecMeas> meas = specfiles[i];
-    assert( meas );
-    
-    const set<int> &samples = m_interspec->displayedSamples(type);
-    const set<string> &detectors = disp_det_names[i];
-    
-    specdetnames[i] = detectors;
-    
-    if( detectors.empty() )
-    {
-      if( m_specTypeMenu->currentIndex() == i )
-        m_specTypeMenu->select(0);
-      specItem->setHidden( true );
-      continue;
-    }
-    
 
-    assert( specItem );
-    specItem->setHidden( false );
-    
-    for( const string &detname : detectors )
+  vector<CalDisplayEntryInfo> wanted_entries[3];  //indexed by detector menu number
+  set<string> specdetnames[3]; //Just the names of gamma detectors with at least 5 channels
+
+  for( int i = 0; specfiles[0] && (i < 3); ++i )
+  {
+    if( !specfiles[i] || disp_det_names[i].empty() )
+      continue;
+
+    specdetnames[i] = disp_det_names[i];
+
+    const SpecUtils::SpectrumType type = spectypes[i];
+    const set<int> &samples = m_interspec->displayedSamples(type);
+    const int menu_index = (specTypeInForgrndMenu ? 0 : i);
+
+    for( const string &detname : disp_det_names[i] )
     {
       for( const int sample : samples )
       {
-        auto m = meas->measurement( sample, detname );
+        const shared_ptr<const SpecUtils::Measurement> m = specfiles[i]->measurement( sample, detname );
         if( !m || (m->num_gamma_channels() <= 4) )
           continue;
-        
-        shared_ptr<const SpecUtils::EnergyCalibration> energycal = m->energy_calibration();
-        
-        WString displayname = WString::fromUTF8( detname );
-        
-        if( specTypeInForgrndMenu )
-        {
-          /// \TODO: when specTypeInForgrndMenu is true, we may not match detector name because
-          ///        we are getting the menu item text above and assuming the detector name.
-          ///        should fix this.
-          displayname = WString::tr(spec_type_labels_vert[i]);
-        }//if( specTypeInForgrndMenu )
-        
-        WMenuItem *item = nullptr;
-        if( !needStackRefresh )
-        {
-          for( int j = 0; !item && (j < detMenu->count()); ++j )
-          {
-            auto jitem = detMenu->itemAt(j);
-            if( jitem && (jitem->text() == WString(displayname)) )
-              item = jitem;
-          }
-        }//if( !needStackRefresh )
-        
-        if( item )
-        {
-          WWidget *ww = item->contents();
-          EnergyCalImp::CalDisplay *calcontent = dynamic_cast<EnergyCalImp::CalDisplay *>(ww);
-          assert( calcontent );
-          if( calcontent )
-            calcontent->updateToGui( energycal );
-          else
-            item = nullptr;
-        }//if( item )
-        
-        if( !item )
-        {
-          auto calcontentOwner = std::make_unique<EnergyCalImp::CalDisplay>( this, type, detname, isWide );
-          EnergyCalImp::CalDisplay *calcontent = calcontentOwner.get();
-          item = detMenu->addItem( displayname, std::move(calcontentOwner), ContentLoading::Eager );
-          //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
-          item->clicked().connect( item, [item](){ item->select(); } );
 
-#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
-          calcontent->setFitButtonEnabled( canFitCeofs );
-          calcontent->doFitCoeffs().connect( this, &EnergyCalTool::fitCoefficients );
-#endif
-          
-          calcontent->updateToGui( energycal );
-          
-          const auto fitfor_iter = set_fit_for_cbs.find( {type,displayname.toUTF8()} );
-          if( fitfor_iter != end(set_fit_for_cbs) )
-            calcontent->setFitFor( fitfor_iter->second );
-          
-          if( (displayname == prevdet[i]) && (i == previousSpecInd) )
-          {
-            m_specTypeMenu->select( previousSpecInd );
-            detMenu->select( item );
-            selectedDetToShowCalFor = true;
-          }
-        }//if( !item )
-        
+        const shared_ptr<const SpecUtils::EnergyCalibration> energycal = m->energy_calibration();
+
+        CalDisplayEntryInfo info;
+        info.type = type;
+        info.detname = detname;
+        info.label = specTypeInForgrndMenu ? WString::tr(spec_type_labels_vert[i])
+                                           : WString::fromUTF8(detname);
+        info.cal = energycal;
+        wanted_entries[menu_index].push_back( std::move(info) );
+
         if( energycal )
         {
           switch( energycal->type() )
@@ -5205,31 +4514,228 @@ void EnergyCalTool::doRefreshFromFiles()
             case SpecUtils::EnergyCalType::UnspecifiedUsingDefaultPolynomial:
               hasPolyCal = true;
               break;
-              
+
             case SpecUtils::EnergyCalType::FullRangeFraction:
               hasFRFCal = true;
               break;
-              
+
             case SpecUtils::EnergyCalType::LowerChannelEdge:
               hasLowerChanCal = true;
               break;
-            
+
             case SpecUtils::EnergyCalType::InvalidEquationType:
               break;
           }//switch( energycal->type() )
         }//if( energycal )
-      
+
         break;
-      }
-    }//for( const string &detname : detectors )
+      }//for( const int sample : samples )
+    }//for( const string &detname : disp_det_names[i] )
   }//for( int i = 0; i < 3; ++i )
-  
-  if( needStackRefresh && !selectedDetToShowCalFor && m_detectorMenu[0] && m_detectorMenu[0]->count() )
+
+  // Remember which CalDisplay is currently showing, so we can re-show it (or its re-created
+  //  equivalent) after the update.
+  bool haveCurrent = false;
+  SpecUtils::SpectrumType current_type = SpecUtils::SpectrumType::Foreground;
+  string current_det;
+
+  {//begin code-block to get the currently showing CalDisplay
+    auto current = dynamic_cast<EnergyCalImp::CalDisplay *>( m_calInfoDisplayStack->currentWidget() );
+    if( current )
+    {
+      haveCurrent = true;
+      current_type = current->spectrumType();
+      current_det = current->detectorName();
+    }
+  }//end code-block to get the currently showing CalDisplay
+
+  // We want to preserve which "Fit" check boxes are set for any CalDisplay we delete, but will
+  //  then re-create in another menu (i.e., when `specTypeInForgrndMenu` flipped because the
+  //  displayed files/detectors changed).
+  map< pair<SpecUtils::SpectrumType,string>, set<size_t> > set_fit_for_cbs;
+
+  // First pass: remove the CalDisplays that are no longer wanted in their menu.
+  //  Note: Wt4's WMenu::removeItem() pulls the (Eager) contents back out of the shared contents
+  //  stack and into the item, then hands us the owning unique_ptr for the item - so dropping that
+  //  unique_ptr destroys both the WMenuItem and its CalDisplay.  Deleting either explicitly is a
+  //  double-free.
+  for( int menu_index = 0; menu_index < 3; ++menu_index )
   {
-    m_specTypeMenu->select( 0 );
-    m_detectorMenu[0]->select( 0 );
-  }
-  
+    WMenu * const detMenu = m_detectorMenu[menu_index];
+    assert( detMenu );
+    if( !detMenu )
+      continue;
+
+    for( int j = detMenu->count() - 1; j >= 0; --j )
+    {
+      WMenuItem * const item = detMenu->itemAt(j);
+      auto display = item ? dynamic_cast<EnergyCalImp::CalDisplay *>( item->contents() ) : nullptr;
+      assert( display );
+      if( !display )
+        continue;
+
+      const pair<SpecUtils::SpectrumType,string> key{ display->spectrumType(), display->detectorName() };
+
+      bool iswanted = false;
+      for( size_t k = 0; !iswanted && (k < wanted_entries[menu_index].size()); ++k )
+      {
+        const CalDisplayEntryInfo &info = wanted_entries[menu_index][k];
+        iswanted = ((info.type == key.first) && (info.detname == key.second));
+      }
+
+      if( iswanted )
+        continue;
+
+      for( int other = 0; other < 3; ++other )
+      {
+        for( const CalDisplayEntryInfo &info : wanted_entries[other] )
+        {
+          if( (other != menu_index) && (info.type == key.first) && (info.detname == key.second) )
+            set_fit_for_cbs[key] = display->fitForCoefficents();
+        }
+      }//for( loop over the other menus )
+
+      const std::unique_ptr<WMenuItem> doomed = detMenu->removeItem( item );
+    }//for( loop backwards over the menus items )
+  }//for( int menu_index = 0; menu_index < 3; ++menu_index )
+
+  // Second pass: update the surviving CalDisplays in-place, and create the missing ones.
+  for( int menu_index = 0; menu_index < 3; ++menu_index )
+  {
+    WMenu * const detMenu = m_detectorMenu[menu_index];
+    if( !detMenu )
+      continue;
+
+    const vector<CalDisplayEntryInfo> &wanted = wanted_entries[menu_index];
+
+    for( size_t j = 0; j < wanted.size(); ++j )
+    {
+      const CalDisplayEntryInfo &info = wanted[j];
+
+      WMenuItem *item = nullptr;
+      for( int k = 0; !item && (k < detMenu->count()); ++k )
+      {
+        WMenuItem * const kitem = detMenu->itemAt(k);
+        auto display = kitem ? dynamic_cast<EnergyCalImp::CalDisplay *>( kitem->contents() ) : nullptr;
+        if( display && (display->spectrumType() == info.type)
+            && (display->detectorName() == info.detname) )
+          item = kitem;
+      }//for( look for an existing menu item for this entry )
+
+      if( item )
+      {
+        auto display = dynamic_cast<EnergyCalImp::CalDisplay *>( item->contents() );
+        assert( display );
+
+        if( item->text() != info.label )
+          item->setText( info.label );
+
+        if( display )
+          display->updateToGui( info.cal );
+      }else
+      {
+        auto displayOwned = std::make_unique<EnergyCalImp::CalDisplay>( this, info.type, info.detname, isWide );
+        auto display = displayOwned.get();
+        item = detMenu->insertItem( static_cast<int>(j), info.label, std::move(displayOwned),
+                                    ContentLoading::Eager );
+        //Fix issue, for Wt 3.3.4 at least, if user doesnt click exactly on the <a> element
+        item->clicked().connect( item, [item](){ item->select(); } );
+
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+        display->doFitCoeffs().connect( this, &EnergyCalTool::fitCoefficients );
+#endif
+
+        display->updateToGui( info.cal );
+
+        const auto fitfor_iter = set_fit_for_cbs.find( {info.type, info.detname} );
+        if( fitfor_iter != end(set_fit_for_cbs) )
+          display->setFitFor( fitfor_iter->second );
+      }//if( item ) / else
+    }//for( size_t j = 0; j < wanted.size(); ++j )
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    // Check the menu ended up with exactly the wanted entries, in the wanted order (the relative
+    //  order of surviving entries always matches, since both old and new orderings derive from
+    //  the same sorted detector name sets).
+    assert( detMenu->count() == static_cast<int>(wanted.size()) );
+    for( int j = 0; j < detMenu->count(); ++j )
+    {
+      auto display = dynamic_cast<EnergyCalImp::CalDisplay *>( detMenu->itemAt(j)->contents() );
+      assert( display );
+      assert( !display || (display->spectrumType() == wanted[j].type) );
+      assert( !display || (display->detectorName() == wanted[j].detname) );
+    }
+#endif
+  }//for( int menu_index = 0; menu_index < 3; ++menu_index )
+
+#if( !IMP_CALp_BTN_NEAR_COEFS )
+  updateCALpButtonsStatus();
+#endif
+
+  if( !specfiles[0] )
+  {
+    setShowNoCalInfo( true );
+#if( IMP_COEF_FIT_BTN_NEAR_COEFS )
+    for( EnergyCalImp::CalDisplay *disp : calDisplays() )
+      disp->setFitStatus( false, WString() );  //silent - the whole cal column is hidden anyway
+#else
+    m_fitCalBtn->disable();
+#endif
+    return;
+  }//if( !specfiles[0] )
+
+  // Update which spectrum type ("For.", "Back", "Sec.") menu items are showing
+  for( int i = 0; i < 3; ++i )
+  {
+    WMenuItem * const specItem = m_specTypeMenu->itemAt(i);
+    assert( specItem );
+    if( specItem )
+      specItem->setHidden( disp_det_names[i].empty() );
+  }//for( int i = 0; i < 3; ++i )
+
+  // Re-select the previously showing CalDisplay (or its re-created equivalent), or else fallback
+  //  to the first available display.  We re-select even if the same item still looks current,
+  //  since this also re-syncs the (shared) contents stack (e.g., adding the first item to a menu
+  //  switches the stack to that widget).
+  int select_menu_index = -1;
+  WMenuItem *select_item = nullptr;
+
+  for( int i = 0; haveCurrent && !select_item && (i < 3); ++i )
+  {
+    WMenu * const detMenu = m_detectorMenu[i];
+    for( int j = 0; detMenu && !select_item && (j < detMenu->count()); ++j )
+    {
+      WMenuItem * const item = detMenu->itemAt(j);
+      auto display = item ? dynamic_cast<EnergyCalImp::CalDisplay *>( item->contents() ) : nullptr;
+      if( display && (display->spectrumType() == current_type)
+          && (display->detectorName() == current_det) )
+      {
+        select_menu_index = i;
+        select_item = item;
+      }
+    }//for( loop over the menus items )
+  }//for( loop over detector menus, looking for the previously showing display )
+
+  for( int i = 0; !select_item && (i < 3); ++i )
+  {
+    if( m_detectorMenu[i] && m_detectorMenu[i]->count() )
+    {
+      select_menu_index = i;
+      select_item = m_detectorMenu[i]->itemAt(0);
+    }
+  }//for( fallback to the first available display )
+
+  if( select_item )
+  {
+    assert( (select_menu_index >= 0) && (select_menu_index < 3) );
+    m_specTypeMenu->select( select_menu_index );
+    m_detectorMenu[select_menu_index]->select( m_detectorMenu[select_menu_index]->indexOf(select_item) );
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    assert( m_calInfoDisplayStack->currentWidget() == select_item->contents() );
+#endif
+  }//if( select_item )
+
   setShowNoCalInfo( !nFilesWithCalInfo );
   m_specTypeMenu->setHidden( hideSpecType );
   
@@ -5371,14 +4877,13 @@ void EnergyCalTool::doRefreshFromFiles()
   
   m_applyToColumn->setHidden( !anyApplyToCbShown );
   
-  bool hideDetCol = true;
-  if( specfiles[0] && specdetnames[0].size() > 1 )
-    hideDetCol = false;
-  if( specfiles[1] && (specfiles[0] != specfiles[1]) )
-    hideDetCol = false;
-  if( specfiles[2] && (specfiles[0] != specfiles[2]) )
-    hideDetCol = false;
-  
+  // Show the detector/spectrum-type selector whenever there is more than one CalDisplay to pick
+  //  from - multiple detectors, multiple files, or the same file displayed as multiple spectrum
+  //  types (whose displayed samples, and hence calibrations, can differ)
+  const size_t total_cal_displays = wanted_entries[0].size() + wanted_entries[1].size()
+                                    + wanted_entries[2].size();
+  const bool hideDetCol = (total_cal_displays < 2);
+
   m_detColumn->setHidden( hideDetCol );
   
   for( MoreActionsIndex index = MoreActionsIndex(0);
@@ -5438,8 +4943,6 @@ void EnergyCalTool::doRefreshFromFiles()
   // Update the "Fit Coeffs" button to be enabled/disabled
   updateFitButtonStatus();
   
-  //const int currentwidget = m_detectorMenu[0]->contentsStack()->currentIndex();
-  //cout << "currentwidget=" << currentwidget << endl;
 }//void doRefreshFromFiles()
 
 
@@ -5451,7 +4954,7 @@ void EnergyCalTool::moreActionBtnClicked( const MoreActionsIndex index )
   if( m_addActionWindow )
   {
     AuxWindow::deleteAuxWindow( m_addActionWindow.get() );
-    m_addActionWindow = nullptr;
+    assert( !m_addActionWindow );   //observing_ptr auto-clears
   }
   
   m_addActionWindow = AuxWindow::make<EnergyCalAddActionsWindow>( index, measToChange, this );
@@ -5484,14 +4987,14 @@ void EnergyCalTool::cancelMoreActionWindow()
   if( m_addActionWindow )
   {
     AuxWindow::deleteAuxWindow( m_addActionWindow.get() );
-    m_addActionWindow = nullptr;
+    assert( !m_addActionWindow );   //observing_ptr auto-clears
   }
 }//void cancelMoreActionWindow()
 
 
 void EnergyCalTool::render( Wt::WFlags<Wt::RenderFlag> flags)
 {
-  //flags.testFlag(RenderFlag::RenderFull) will only be true on initial rending of widget, and
+  //flags.test(RenderFlag::RenderFull) will only be true on initial rending of widget, and
   //  after that only the RenderFlag::RenderUpdate flag will be set
   
   if( flags.test(Wt::RenderFlag::Full)

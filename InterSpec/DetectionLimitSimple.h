@@ -157,7 +157,30 @@ protected:
   void handleDistanceChanged();
   
   void handleConfidenceLevelChanged();
-  
+
+  void handleAdvancedToggled();
+  void handleAlphaChanged();
+  void handleBetaChanged();
+  void handleSystematicUncertChanged();
+
+  /** The combined relative systematic uncertainty to hand to
+   `DetectionLimitCalc::CurrieMdaInput::additional_uncertainty`.
+
+   Zero when "Advanced" is unchecked or both fields are empty, so that with the section off the tool
+   computes exactly what it computed before the section existed.
+
+   @param [out] note Set to a user-facing note when the combination had to be qualified - a distance
+          uncertainty dropped because the detector response is fixed-geometry.  Left untouched
+          otherwise.  Cannot be `m_warningTxt` directly: this runs from `updateResult()`, and
+          `updateSpectrumDecorationsAndResultText()` clears that text afterwards.
+   @returns The relative (not percent) 1-sigma systematic uncertainty, in [0,1).
+
+   Throws `std::runtime_error` carrying a localized message when the entered strings cannot be used -
+   an unparseable field, a distance uncertainty with no distance to divide by, or a combination at or
+   above 100% (which `currie_mda_calc` rejects).
+   */
+  float currentSystematicUncertainty( Wt::WString &note ) const;
+
   void handleDetectorChanged( std::shared_ptr<DetectorPeakResponse> new_drf );
   
   void handleFitFwhmRequested();
@@ -177,17 +200,31 @@ protected:
   void handleNoSignalPresentChanged();
   void handleDeconContinuumTypeChange();
 
-  /** Toggles enabled state of the scale time input, repopulates the field with
+  /** Toggles enabled state of the planned-measurement-time input, repopulates the field with
    the current foreground real time when the checkbox is off OR when the field is
    empty (so the displayed value is always meaningful), and schedules a recompute. */
-  void handleScaleSpectrumChanged();
+  void handlePlanTimeChanged();
 
-  /** Returns the foreground (or scaled foreground if Scale is active and the
-   time string parses to a positive value).  Returns the raw foreground if
-   `m_scaleSpectrumCb` is null/unchecked, the spectrum has no real time, or the
-   field is empty / whitespace-only.  Throws only if Scale is enabled and the
-   field contains a non-empty but unparseable / non-positive value. */
-  std::shared_ptr<const SpecUtils::Measurement> currentEffectiveForeground() const;
+  /** The planned measurement time, in seconds, or zero when none was requested.
+
+   Zero when the control is hidden or unchecked, or the field is blank - all of which mean "not
+   asked for".  Throws only when the control is active and the field holds a non-empty but
+   unparseable or non-positive value. */
+  double currentPlanTimeSeconds() const;
+
+  /** Which measurement the deconvolution limit describes.
+
+   The "background spectrum" checkbox means the same assertion for both methods, but drives
+   different machinery: zero Currie side channels, or this measurement model.  Always
+   `CurrentSpectrum` under the Currie method, which has no notion of a future measurement. */
+  DetectionLimitCalc::DeconMeasurementModel currentMeasurementModel() const;
+
+  /** The spectra and exposure bookkeeping the current method / model combination needs.
+
+   Thin wrapper over `DetectionLimitCalc::plan_measurement`, which is where the subtlety lives:
+   under a background reference the deconvolution must see the UNSCALED spectrum with the planned
+   time carried as an exposure, or the projection is applied twice. */
+  DetectionLimitCalc::PlannedMeasurement currentEffectiveForeground() const;
   
   void updateSpectrumDecorationsAndResultText();
   
@@ -269,8 +306,67 @@ protected:
   
   std::shared_ptr<Wt::WButtonGroup> m_methodGroup;
   Wt::WText *m_methodDescription;
-  
-  
+
+  /** Reveals the advanced statistical inputs below the rest of the tool.  Unchecked by default;
+   while unchecked none of those values reach the calculation, so the answers are exactly what they
+   were before this section existed. */
+  Wt::WCheckBox *m_advancedCb;
+
+  /** Container for the advanced inputs.  A sibling of the main "GeneralInput" grid rather than an
+   eleventh row of it: `GridLayoutHelpers.css` stops at `GridTenthRow`, the phone-only row-shift table
+   in `DetectionLimitSimple.css` renumbers `GridThirdRow`..`GridTenthRow` inside `.GeneralInput`, and
+   the phone input-width rules are `.GeneralInput`-scoped as well - so an eleventh row would mean
+   growing all three.  A sibling also gets its own, saner phone layout. */
+  Wt::WContainerWidget *m_advancedDiv;
+
+  /** Probability of deciding a signal is present when there is none.  Sets k_alpha, and so the
+   decision threshold L_c.  A probability, not a percent, in (0, 0.5); 0.05 is usual.
+   \sa DetectionLimitCalc::CurrieMdaInput::alpha */
+  NativeFloatSpinBox *m_alpha;
+
+  /** Probability of failing to detect a signal whose true size is the detection limit.  Sets k_beta,
+   and so L_d.  A probability in (0, 0.5); 0.05 is usual.
+   \sa DetectionLimitCalc::CurrieMdaInput::beta */
+  NativeFloatSpinBox *m_beta;
+
+  /** False until the user edits the corresponding field.  While false the field tracks the
+   confidence-level combo as 1 - CL, and - importantly - the *sentinel* rather than the field's
+   contents is handed to the calculation, so the answers stay bit-for-bit what they were before
+   alpha/beta were separable.  (The field shows a rounding of 1 - CL; feeding that back would move
+   the last digits for the sigma-style confidence levels.)  The flags are encoded in the state URI by
+   the presence or absence of the ALPHA / BETA tokens. */
+  bool m_alphaUserSet;
+  bool m_betaUserSet;
+
+  /** 1-sigma uncertainty of the source-to-detector distance, as a length string in the same grammar
+   as the distance field above it ("1 cm").  Empty, or a zero length, means none. */
+  Wt::WLineEdit *m_distanceUncert;
+
+  /** Most recent valid distance-uncertainty text, so an invalid entry can be reverted - same pattern,
+   and same reason, as `m_prevDistance`. */
+  Wt::WString m_prevDistanceUncert;
+
+  /** 1-sigma *relative* uncertainty of the counts expected per unit activity, as a PERCENT ("5").
+   Empty or zero means none.
+
+   Covers everything that scales the expected counts and is not counting statistics: the detector
+   efficiency curve and the gamma branching ratio, which enter identically and so cannot be usefully
+   separated here.
+
+   TODO: `DetectorPeakResponse` carries no uncertainty on its efficiency today.  When it does,
+         pre-fill this field from the DRF (combined in quadrature with the branching ratio's own
+         uncertainty, if `SandiaDecay` ever carries one), leaving the user able to override. */
+  Wt::WLineEdit *m_effUncert;
+
+  /** Note under the advanced inputs saying they apply to the Currie method; shown only while the
+   Deconvolution method is selected. */
+  Wt::WText *m_advancedNote;
+
+  /** A note about the systematic-uncertainty combination that has to survive from `updateResult()`
+   to `updateSpectrumDecorationsAndResultText()`, which runs afterwards and clears `m_warningTxt`. */
+  Wt::WString m_systematicNote;
+
+
   float m_numFwhmWide;
   NativeFloatSpinBox *m_lowerRoi;
   NativeFloatSpinBox *m_upperRoi;
@@ -289,13 +385,26 @@ protected:
   Wt::WLabel *m_continuumTypeLabel;
   Wt::WComboBox *m_continuumType;
 
-  /** "Scale to dwell" controls.  When checked, calculations and chart use the
-   foreground spectrum scaled to `m_scaleSpectrumTime`'s value (parsed as a
-   real-time duration via `PhysicalUnits::stringToTimeDuration`).  When
-   unchecked, `m_scaleSpectrumTime` shows the current foreground's real time
-   for reference and is disabled. */
-  Wt::WCheckBox        *m_scaleSpectrumCb;
-  Wt::WLineEdit        *m_scaleSpectrumTime;
+  /** The planned measurement time (T_s) - the dwell being asked about.
+
+   Under the Currie method, and under the deconvolution method describing the current spectrum, the
+   spectrum's counts are projected to this real time.  Under a background reference the spectrum is
+   left alone and this becomes the exposure of the predicted future measurement.  Hidden for
+   deconvolution + current spectrum, where projecting the spectrum in hand and then bounding signal
+   in it is circular.  When unchecked, `m_planTimeEdit` shows the current foreground's real time for
+   reference and is disabled.  \sa DetectionLimitCalc::plan_measurement */
+  Wt::WCheckBox        *m_planTimeCb;
+  Wt::WLineEdit        *m_planTimeEdit;
+  Wt::WContainerWidget *m_planTimeDiv;
+
+  /** The help icon beside the background checkbox; its tooltip is swapped by method, because the
+   checkbox means the same assertion but drives different machinery for each. */
+  Wt::WImage           *m_isBackgroundHelpImg;
+
+  /** Notes that qualify a limit that WAS produced.  A sibling of `m_resultTxt` rather than a third
+   page of `m_chartErrMsgStack`, which is either-or: an error page OR the chart, with nowhere to
+   put a warning beside a successful result.  These were dropped entirely before Increment C. */
+  Wt::WText            *m_warningTxt;
   
   Wt::Core::observing_ptr<SimpleDialog> m_moreInfoWindow;
   
@@ -326,6 +435,16 @@ protected:
   
   std::shared_ptr<const DetectionLimitCalc::DeconComputeInput> m_currentDeconInput;
   std::shared_ptr<const DetectionLimitCalc::DeconActivityOrDistanceLimitResult> m_currentDeconResults;
+
+  /** The predicted spread of the limit, when a measurement time other than the spectrum's is being
+   asked about; invalid otherwise.
+
+   In counts, matching the limit the active method reports.  A projection is a prediction about a
+   measurement nobody has taken, and quoting only its middle hides how far the answer can move - by
+   about `sqrt(1+k)` more than a plain scaling implies, `k` being the projection factor.
+   \sa DetectionLimitCalc::currie_projected_limit, DetectionLimitCalc::decon_projected_limit
+   */
+  DetectionLimitCalc::ProjectedLimit m_currentProjectedLimit;
 };//class DoseCalcWidget
 
 #endif //DetectionLimitSimple_h

@@ -28,6 +28,7 @@
 #include <set>
 #include <array>
 #include <atomic>
+#include <limits>
 #include <string>
 #include <memory>
 #include <vector>
@@ -122,7 +123,7 @@ namespace RelActCalcAuto
 
 int run_test();
 
-/** A typdef for passing either Nuclide, Element, or Reaction to functions. 
+/** A typdef for passing either Nuclide, Element, or Reaction to functions.
  
  Note that it also includes using a monostate, because we would like to semi-enforse that if a pointer is
  used, then it is valid; if we didnt include the monostate, then default construction of the variant would
@@ -588,12 +589,30 @@ struct RelEffCurveInput
    */
   std::set<size_t> shielded_by_other_phys_model_curve_shieldings;
 
-  /** If true, fit the modified Hoerl equation form for the physical model.
-   * If false, do not fit the modified Hoerl equation form (its value will be constant value of 1.0).
-   *
-   * Ignored if not using `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
-  */
-  bool phys_model_use_hoerl = true;
+  /** Physical-Model empirical-correction options (currently just the correction form).  Ignored unless
+   `RelActCalc::RelEffEqnForm::FramPhysicalModel`.
+
+   When multiple physical-model curves share the correction (`Options::same_corr_fcn_for_all_rel_eff_curves`),
+   the FIRST physical-model curve's `phys_model_corr` is used for all of them. */
+  struct PhysModelCorrInput
+  {
+    /** The empirical correction form.  None disables the correction (its value is a constant 1.0).
+     Default Hoerl (matches the legacy `phys_model_use_hoerl == true`). */
+    RelActCalc::PhysModelCorrFcn corr_fcn = RelActCalc::PhysModelCorrFcn::Hoerl;
+
+    // Note: the per-shield areal-density biasing priors live on each shield
+    //  (`RelActCalc::PhysicalModelShieldInput::ad_bias`), not here.
+
+    bool uses_correction() const { return corr_fcn != RelActCalc::PhysModelCorrFcn::None; }
+
+    bool operator==( const PhysModelCorrInput &rhs ) const;
+    bool operator!=( const PhysModelCorrInput &rhs ) const { return !(*this == rhs); }
+  };//struct PhysModelCorrInput
+
+  PhysModelCorrInput phys_model_corr;
+
+  /** Convenience: whether any empirical correction is applied (replaces the legacy `phys_model_use_hoerl`). */
+  bool uses_phys_model_correction() const { return phys_model_corr.uses_correction(); }
 
   /** The method to use for Pu-242 mass-enrichment estimation (all methods use correlation to other
    Pu isotopics).
@@ -656,13 +675,21 @@ struct RelEffCurveInput
   std::vector<ActRatioConstraint> act_ratio_constraints;
 
 
-  /** A constraint on the mass fraction of an nuclide within an element. 
-   
+  /** A constraint on the mass fraction of an nuclide within an element.
+
+   Fixed (lower == upper) constraints pin the fraction exactly; range constraints fit it within
+   [lower, upper] through an exact per-element "sigma-block" reparameterization (see
+   RelActCalc::MassFracBlockSpec in RelActCalc_imp.hpp): the elements total constrained fraction
+   is one hard-bounded parameter, so the constrained sum can never exceed 1, with every in-window
+   position exactly reachable.
+
+   Note: for Plutonium with a Pu242-by-correlation method active, the windows bind the
+   PRE-correction fractions (the correlation correction is applied downstream when reporting).
 
    TODO: currently this constraint only applies to a single Rel. Eff. curve; if you have multiple
           curves with same constraint/nuclide, then each constraint will be applied seperately.
           We should add in a `set<size_t>` that specifies the indexes of all the Rel. Eff. curves
-          that this constraint applies to (if only single curve, then allow it to be empty), and 
+          that this constraint applies to (if only single curve, then allow it to be empty), and
           then move the constraint up a level to the `Options` struct.
   */
   struct MassFractionConstraint
@@ -694,10 +721,14 @@ struct RelEffCurveInput
     must be of a different element.
     (this could be changed in the future, but for the initial implementation, we'll enforce this)
 
-    The lower mass fractions, for a particular element, must sum to less than 1.0.
+    For an element that still has at least one unconstrained nuclide, the constrained lower mass
+    fractions must sum to less than 1.0 (the unconstrained nuclides need a positive mass remainder).
 
-    There must be at least one nuclide for the element that does not have a mass fraction constraint.
-    (this _could_ be relaxed in the future, but for the initial implementation, this is required)
+    ALL of an elements nuclides may be constrained: then the windows must be able to sum to
+    exactly 1 (sum of lowers <= 1 <= sum of uppers), and the elements total relative mass is fit
+    (the first range-constrained nuclides parameter slot carries it - see the sigma-block note on
+    #MassFractionConstraint); if every constraint is fixed, the fractions must sum to 1 and only
+    the element total is fit.
   */
   std::vector<MassFractionConstraint> mass_fraction_constraints;
 
@@ -708,10 +739,17 @@ struct RelEffCurveInput
    
    Throws an exception if they are not valid.
    */
-  void check_nuclide_constraints() const; 
+  void check_nuclide_constraints() const;
 
-  
-  static const int sm_xmlSerializationVersion = 0;
+
+  /** Version 1 (from 0): the physical-model empirical correction gained a `<CorrectionFcnType>` element
+   (content None/Hoerl/Chebyshev), and each shield gained an optional areal-density `<ArealDensityBias>`
+   regularization prior.  To stay readable by v0 builds, a curve is written as v0 -- carrying the legacy
+   boolean `<PhysModelUseHoerl>` *and* the new elements -- whenever its correction is v0-representable (None
+   or Hoerl) and no areal-density biasing is enabled; Chebyshev or any enabled AD biasing forces v1 (new
+   elements only).  Reading prefers `<CorrectionFcnType>` and falls back to the legacy `<PhysModelUseHoerl>`
+   (a plain bool: true => Hoerl, false/absent => None). */
+  static const int sm_xmlSerializationVersion = 1;
 
   /** Puts this object to XML
    * 
@@ -807,7 +845,7 @@ struct Options
    *
    * Only compatible with skew_type == NoSkew or skew_type == GaussPlusBortel.
    * If set to true with an incompatible skew_type, then the problem will fail to setup (an exception
-   * in `check_same_hoerl_and_external_shielding_specifications()` will be thrown)
+   * in `check_same_corr_fcn_and_external_shielding_specifications()` will be thrown)
    */
   bool lorentzian_xrays;
 
@@ -834,14 +872,15 @@ struct Options
   std::vector<RelActCalcAuto::FloatingPeak> floating_peaks;
 
 
-  /** If true, use the same Hoerl equation form for all relative efficiency curves.
+  /** If true, use the same empirical-correction function (form + coefficients) for all relative
+   * efficiency curves.
    *
-   * If false, each relative efficiency curve will have its own Hoerl equation fit (if applicable).
-   * 
-   * if true, and you do not have multiple physical models with `RelEffCurveInput::phys_model_use_hoerl`
-   * set to true, then an exception will be thrown.
+   * If false, each relative efficiency curve fits its own correction (if applicable).
+   *
+   * If true, and you do not have at least two physical-model curves that use a correction
+   * (`RelEffCurveInput::uses_phys_model_correction()`), then an exception will be thrown.
    */
-  bool same_hoerl_for_all_rel_eff_curves;
+  bool same_corr_fcn_for_all_rel_eff_curves;
 
   /** If true, use the same external shielding for all relative efficiency curves.
    *
@@ -855,12 +894,55 @@ struct Options
    */
   bool same_external_shielding_for_all_rel_eff_curves;
 
+  /** Auto-simplify the model.
+
+   When true, after the normal fit `solve()` peels off near-degenerate / redundant degrees of freedom,
+   keeping each removal only if it does not meaningfully worsen the data fit (the chi2 increase is
+   `<= auto_simplify_max_dchi2`).  Candidates are tried most-degenerate / least-physical first:
+     1. the empirical correction function (Hoerl / Chebyshev),
+     2. fitted external attenuator(s),
+     3. the highest-order term of a polynomial/empirical (non-physical) rel-eff curve.
+   Only the highest-priority remaining candidate is tried each round, and the process STOPS at the first
+   one the data won't give up (it does not skip to a lower-priority candidate).  Self-attenuation and the
+   sources themselves are never removed (a source that is degenerate with another should be surfaced as a
+   warning, not silently dropped).
+
+   The intent: when the data can't distinguish the physical attenuation from an extra empirical knob, that
+   knob is redundant and distorts the answer (and its uncertainty); dropping it gives a more robust, more
+   accurate result.  Each removal appends a plain-language `m_warnings` entry naming what was dropped.  Off
+   by default.
+
+   Serialized as the optional `<AutoRemoveDegeneraciesChi2Delta>` element (content = the chi2 tolerance,
+   optional `enabled` attribute, default true; absent element => disabled). */
+  bool auto_simplify_model;
+
+  /** The chi2 increase a single DOF removal may cost and still be accepted by `auto_simplify_model`.
+
+   A small positive value (~1) treats DOFs that change chi2 by less than this as redundant ("a unit or two
+   of chi2 is not physically meaningful"); exactly 0 makes near-equivalent choices a numerical coin-flip, so
+   a small positive default is used. */
+  double auto_simplify_max_dchi2;
+
   /** If using the same Hoerl function, or external shielding for all relative efficiency curves,
    * this will check that the specifications are consistent.
    *
    * Throws an exception if they are not consistent.
    */
-  void check_same_hoerl_and_external_shielding_specifications() const;
+  void check_same_corr_fcn_and_external_shielding_specifications() const;
+
+  /** Checks the options define enough of a problem to actually be solved.
+
+   That is, at least one relative efficiency curve, at least one nuclide on each of those curves,
+   and at least one energy range.  A `RelActAutoGuiState` serialized from a freshly opened (but
+   never configured) GUI satisfies none of these, yet is a perfectly valid state to store - so
+   callers that hand options off to `solve(...)` need a cheap way to reject it up front.
+
+   @returns An empty string if the options are complete enough to run; otherwise a short
+            reason why not.  The text is untranslated English, intended for logs, reports, and
+            exception messages - GUI callers that show it to the user are interpolating it into a
+            localized wrapper, so keep it short and factual.
+   */
+  std::string why_not_usable() const;
 
   /** Version history:
    - 20250117: incremented to 1 to handle FramPhysicalModel; if not this model, will still write version 0.
@@ -876,7 +958,7 @@ struct Options
    @param parent An XML element with name "Options".
    Uses `MaterialDB::instance()` to retrieve materials for #PhysicalModelShieldInput;
    for other equation types, or for AN/AD defined shields, the material DB isnt used/required.
-   `same_hoerl_for_all_rel_eff_curves` and `same_external_shielding_for_all_rel_eff_curves`
+   `same_corr_fcn_for_all_rel_eff_curves` and `same_external_shielding_for_all_rel_eff_curves`
    were also added, and are optional.
    */
   void fromXml( const ::rapidxml::xml_node<char> *parent );
@@ -958,7 +1040,15 @@ struct FloatingPeakResult
 
   double amplitude;
   double amplitude_uncert;
+
+  /** The fit peak FWHM, in keV.
+
+   Note: even when #FloatingPeak::release_fwhm is true (where the fit parameter is a
+   dimensionless multiplier on the functional FWHM), this value is the resulting FWHM in keV.
+   */
   double fwhm;
+
+  /** The uncertainty of #fwhm, in keV; a value of -1 indicates it was not evaluated. */
   double fwhm_uncert;
 };//struct FloatingPeakResult
 
@@ -1100,7 +1190,36 @@ struct RelActAutoSolution
    Throws exception if covariance matrix is invalid.
    */
   std::pair<double,double> relative_efficiency_with_uncert( const double energy, const size_t rel_eff_index ) const;
-  
+
+
+  /** Floors a derived-quantity uncertainty when the linearized covariance is known to under-state it.
+
+   The Ceres covariance is over-confident in two situations this catches: the fit is rank-deficient
+   and the quantity depends on a dropped near-degenerate direction, so its variance was zeroed (giving an
+   absurdly tiny uncertainty / huge pull); and a significant fraction of the quantity's sensitivity
+   rides on a parameter pinned at a fit bound, whose variance Ceres reports as ~0 (bounds are ignored by
+   the covariance).  In either case the returned uncertainty is floored to a wide fraction of `value`,
+   and `m_enrichment_uncert_unreliable` is set.  Otherwise `uncert` is returned unchanged.
+
+   @param value     The nominal derived quantity (e.g. enrichment fraction, rel-eff value).
+   @param uncert    Its linearized 1-sigma from `J^T Cov J` (already non-negative).
+   @param jacobian  d(value)/d(parameter) in the full/ambient parameter space (same index space as
+                    `m_final_parameters` and `m_param_at_bound`).
+   @param plausibility_scale  The magnitude an "implausibly small" uncertainty is judged against;
+                    <= 0 means use `fabs(value)`.  Needed for quantities whose information content is
+                    not proportional to their own value: an enrichment is a mass fraction, so for a
+                    nearly-pure component (value ~ 1) the informative scale is the distance to the
+                    bound, `1 - value`.  Judging it against `value` instead makes the SAME absolute
+                    uncertainty "implausible" for the major isotope while being accepted for the
+                    minor one, even though the two are complementary - which produced a fit reporting
+                    U238 = 99.3 +- 99 wt% beside U235 = 0.69 +- 0.0089 wt%.
+   */
+  double reliability_floored_uncert( const double value, const double uncert,
+                                     const std::vector<double> &jacobian,
+                                     const double plausibility_scale = -1.0 ) const;
+
+
+
 
   /** Get the index of specified nuclide within #m_rel_activities and #m_nonlin_covariance. */
   size_t nuclide_index( const SrcVariant &src, const size_t rel_eff_index ) const;
@@ -1193,6 +1312,27 @@ struct RelActAutoSolution
    */
   std::vector<std::vector<double>> m_phys_units_cov;
 
+  /** Number of near-degenerate Jacobian directions DROPPED from the
+   reported covariance (singular-value ratio below the 1e-7 conditioning floor) - i.e.
+   `num_free_parameters - effective_parameters` from the post-fit SVD.  Zero for a full-rank fit.  When
+   non-zero, a derived quantity (enrichment, rel-eff band) whose variance came out implausibly small is
+   depending on a dropped direction and its linearized uncertainty is not trustworthy (it was zeroed,
+   not inflated). */
+  size_t m_num_rank_deficient_dirs = 0;
+
+  /** Per-parameter flag, non-zero if the fitted parameter sits within tolerance of a lower or
+   upper bound.  Ceres' covariance ignores active bounds, so a pinned parameter's reported variance is
+   meaningless (usually too small).  Size `m_final_parameters.size()`, or empty.  Same (ambient) index
+   space as `m_final_parameters`, so a derived quantity's parameter-space Jacobian can be projected onto
+   it directly. */
+  std::vector<char> m_param_at_bound;
+
+  /** Set true when any reported enrichment / derived uncertainty was floored because the quantity
+   depends substantially on a dropped rank-deficient direction or a bound-pinned parameter,
+   so its linearized uncertainty was under-stated.  Consumers should treat such uncertainties as a wide
+   lower bound ("unreliable").  Mutable: set lazily by the const derived-uncertainty accessors. */
+  mutable bool m_enrichment_uncert_unreliable = false;
+
   /** The short names of the parameters. */
   std::vector<std::string> m_parameter_names;
 
@@ -1238,8 +1378,10 @@ struct RelActAutoSolution
    uncertainty correction applied (if they were fit for).
    */
   std::vector<std::vector<NuclideRelAct>> m_rel_activities;
-  
-  std::vector<std::vector<double>> m_rel_act_covariance;
+
+  /** Per-curve covariance of the relative-activity parameters (outer index = rel-eff curve index),
+   mirroring `m_rel_eff_covariance`.  In raw fit-parameter space (scale factor not applied). */
+  std::vector<std::vector<std::vector<double>>> m_rel_act_covariance;
   
   FwhmForm m_fwhm_form;
   std::vector<double> m_fwhm_coefficients;
@@ -1289,32 +1431,95 @@ struct RelActAutoSolution
    */
   struct ObsEff
   {
+    /** Why a point is not trustworthy enough to plot; set by `show_obs_eff_point(...)`.
+
+     The user-facing wording of each reason lives in "InterSpec_resources/app_text/RelEffChart.xml",
+     under the ids "obs-eff-excl-...", and is shown in the chart's "omitted points" panel:
+      - NoCountsForCurve: this rel. eff. curve has no gammas in this cluster.
+      - NonPositiveEff:   the free amplitude fit went negative, so there is no efficiency to plot.
+      - Insignificant:    this curve's share of the fit area is not significant compared to its uncertainty.
+      - TailLeakage:      most of the counts under this point come from neighboring peaks' tails and the
+                          continuum, so a small peak-shape (skew) mismatch would dominate the value.
+      - OutsideRoi:       the peak is not fully contained within the ROI, so its area is not fully measured.
+     */
+    enum class ExclusionReason : int
+    {
+      NotExcluded,
+      NoCountsForCurve,
+      NonPositiveEff,
+      Insignificant,
+      TailLeakage,
+      OutsideRoi
+    };//enum class ExclusionReason
+
     /** The effective mean of all the peaks clutered. */
-    double energy;
+    double energy = 0.0;
     /** The relative efficiency, as determined by the full solution to the problem. */
-    double orig_solution_eff;
+    double orig_solution_eff = 0.0;
     /** The relative efficiency from the amplitude-unconstrained fit. */
-    double observed_efficiency;
-    double observed_efficiency_uncert;
+    double observed_efficiency = 0.0;
+    /** Uncertainty on #observed_efficiency; includes both the free-fit area uncertainty, and (when more than one
+     rel. eff. curve contributes to this cluster) the uncertainty from the unmeasurable split between curves -
+     see #curve_model_fraction.
+     */
+    double observed_efficiency_uncert = 0.0;
     /** The scale factor to multiply the peak amplitude fit in the solution, to get what was freely fit for. */
-    double observed_scale_factor;
-    /** The unconstrained fit peak area, over its uncertainty.  Should be about 4, before we bother showing on chart */
-    double num_sigma_significance;
-    double cluster_lower_energy, cluster_upper_energy;
-    double roi_lower_energy, roi_upper_energy;
+    double observed_scale_factor = 0.0;
+    /** The unconstrained fit peak area, over its uncertainty.  This is a cluster-wide (all rel. eff. curves)
+     quantity; use #curve_num_sigma_significance to decide if _this_ curve's point should be shown.
+     */
+    double num_sigma_significance = 0.0;
+    double cluster_lower_energy = 0.0, cluster_upper_energy = 0.0;
+    double roi_lower_energy = 0.0, roi_upper_energy = 0.0;
     /** The unconstrained fit peak amplitude.  This amplitude includes contributions from all peaks, and all relative efficiency curves. */
-    double fit_clustered_peak_amplitude;
-    double fit_clustered_peak_amplitude_uncert;
+    double fit_clustered_peak_amplitude = 0.0;
+    double fit_clustered_peak_amplitude_uncert = 0.0;
     /** The starting amplitude */
-    double initial_clustered_peak_amplitude;
-    /** The effective sigma, after clustering all the input peaks together that are within 1.5 sigma of each other. */
-    double effective_sigma;
-    double fraction_roi_counts;
+    double initial_clustered_peak_amplitude = 0.0;
+    /** The effective sigma, after clustering all the input peaks together that are within 1.5 sigma of each other.
+     This is a second moment (it includes the spread of the clustered peak means), so it is the width used to fit a
+     single Gaussian to the blend - it is _not_ the detector resolution; see #resolution_sigma for that.
+     */
+    double effective_sigma = 0.0;
+    /** The amplitude-weighted mean of the clustered peaks' sigmas - i.e., the detector resolution at this energy,
+     without the spread of the clustered means folded in.  Used to decide if the peak is contained in the ROI.
+     */
+    double resolution_sigma = 0.0;
+    /** This clusters fraction of all the fit peak counts in the ROI; informational only (see #neighbor_leak_fraction
+     for the criteria actually used to reject tail-riding peaks).  A cluster-wide (all curves) quantity.
+     */
+    double fraction_roi_counts = 0.0;
+    /** This rel. eff. curves model share of the cluster: (this curves model counts)/(all curves model counts).
+
+     Will be 1.0 when this curve owns the cluster outright, and smaller when another curve also has gammas here.
+     The per-point split between curves is _not_ measurable (co-located lines are perfectly degenerate in the fit),
+     so this fraction comes from the model, and is what the blend term of #observed_efficiency_uncert is based on.
+     */
+    double curve_model_fraction = 1.0;
+    /** This curve's share of the freely-fit cluster area: `curve_model_fraction*fit_clustered_peak_amplitude`. */
+    double curve_fit_amplitude = 0.0;
+    /** #curve_fit_amplitude over its uncertainty (including the blend term).  Should be at least a few, before
+     we bother showing this curves point on the chart.
+     */
+    double curve_num_sigma_significance = 0.0;
+    /** Fraction of the _peak_ counts over this clusters mean +- 1.5*#resolution_sigma that come from neighboring
+     fit peaks (their tails), rather than from this cluster; i.e. leak/(own + leak).
+
+     Near 1.0 means the "peak" is mostly somebody else's tail, so a tiny peak-shape (skew) mismatch would swamp
+     its area - these are the points we do not want to plot.
+
+     Note the continuum is deliberately _not_ counted as leakage: a well measured peak sitting on a large Compton
+     continuum is still a good measurement, and the continuums uncertainty is already carried by
+     #fit_clustered_peak_amplitude_uncert, and so by #curve_num_sigma_significance.
+     */
+    double neighbor_leak_fraction = 0.0;
     /* The mean +- 1-sigma is fully within the ROI */
-    bool within_roi;
+    bool within_roi = false;
+    /** Why this point is not shown; set by `RelActAutoSolution::show_obs_eff_point(...)`. */
+    ExclusionReason exclusion_reason = ExclusionReason::NotExcluded;
 
     /** The peaks, who have had their amplitudes scaled to the unconstrined fit value, who where clustered together.
-     Ordered by largest peak first.
+     Ordered by largest peak first.  Only the peaks belonging to this rel. eff. curve.
      */
     std::vector<PeakDef> fit_peaks;
   };//struct ObsEff
@@ -1332,6 +1537,27 @@ struct RelActAutoSolution
    These peaks are seperated by rel eff curve, do not include free-floating peaks, an are in "true" energy calibration of the spectrum.
    */
   std::vector<std::vector<ObsEff>> m_obs_eff_for_each_curve;
+
+  /** Whether an `ObsEff` point is trustworthy enough to plot on the rel. eff. chart, or include in a report.
+
+   Sets `obs_eff.exclusion_reason` to say why, when returning false.
+
+   The intent is to leave out points whose value would be dominated by something other than the peak itself -
+   most notably minor gammas riding the tail of a much larger neighboring peak, where a tiny peak-shape (skew)
+   mismatch produces a wildly wrong efficiency, ruining the scale of the chart and misleading the user.
+
+   Note: this is applied per-relative-efficiency-curve, using this curve's share of each cluster; a cluster that is
+   only a small part of its ROI, but which is well measured and not sitting on a neighbor's tail, _is_ shown.
+   */
+  static bool show_obs_eff_point( ObsEff &obs_eff );
+
+  /** The minimum `ObsEff::curve_num_sigma_significance` for a point to be plotted. */
+  static const double sm_min_obs_eff_significance;
+
+  /** The maximum `ObsEff::neighbor_leak_fraction` for a point to be plotted; above this, most of the counts under
+   the point come from neighboring peaks' tails and the continuum, rather than from the peak itself.
+   */
+  static const double sm_max_obs_eff_leak_fraction;
 
 
   /** When a ROI is #RoiRange::force_full_range is false, independent energy ranges will
@@ -1390,10 +1616,19 @@ struct RelActAutoSolution
    */
   constexpr static double sm_energy_par_offset = 1.0;
   
-  /** We will allow the energy offset to vary by the minimum of +-15 keV or `sm_energy_offset_range_fwhm` times lower energy FWHM . This is arbitrarily chosen. */
-  constexpr static double sm_energy_offset_range_keV = 15.0;  // Allow +-15 keV offset adjust
-  /** If we are off by more than 1 FWHM on the offset, we are likely to be falling into some false minima - this has not been investigated. */
-  constexpr static double sm_energy_offset_range_fwhm = 1.0;
+  /** We will allow the energy offset to vary by the minimum of +-10 keV, or the maximum of
+   `sm_energy_offset_range_floor_keV` and `sm_energy_offset_range_fwhm` times the lower-energy FWHM.
+   The +-10 keV cap balances two concerns: a much larger offset lets the fit shift the energy calibration
+   far enough to line peaks up with a nuclide that isn't actually in the spectrum (biasing toward fitting
+   the wrong nuclide), but too tight a cap won't cover real low-resolution-detector calibration drift.
+   (For HPGe this cap is well above the FWHM-based limit, so it only constrains low-res detectors.) */
+  constexpr static double sm_energy_offset_range_keV = 10.0;  // Allow +-10 keV offset adjust
+  /** If we are off by more than a couple FWHM on the offset, we are likely to be falling into some
+   false minima - this has not been investigated. */
+  constexpr static double sm_energy_offset_range_fwhm = 2.0;
+  /** A floor on the offset allowance: for high-resolution detectors 2 FWHM can be sub-keV, which is
+   less than routine field calibration drift, so never allow less than this many keV of offset. */
+  constexpr static double sm_energy_offset_range_floor_keV = 2.0;
   
   /** We will allow the energy gain to vary by +-20 keV, or 4 FWHM - whichever is less, at the right side of the spectrum.
    This is arbitrarily chosen.
@@ -1452,15 +1687,374 @@ struct RelActAutoSolution
    */
   std::vector<std::pair<double,double>> m_peak_ranges_with_uncert;
   
-  /** */
+  /** The full chi-square: sum of squares of ALL residual rows (data channels plus the rel-eff anchor,
+   peak-range-uncertainty, and physical-model parameter-prior rows).  This is the value the optimizer
+   minimizes; the report/GUI display the data-only `m_chi2_data`/`m_dof_data` goodness-of-fit instead. */
   double m_chi2;
-  
+
   /** The number of degrees of freedom in the fit for equation parameters.
-   
-   Note: this is the number data channels used, minus the number of (estimated effective) fit paramaters.
+
+   Note: this is the number of residual rows (data channels plus the non-data prior/anchor rows that
+   `m_chi2` sums), minus the number of (estimated effective) fit paramaters - i.e. the DOF matching
+   `m_chi2`.  For the data-only goodness-of-fit use `m_dof_data`.
    */
   size_t m_dof;
-  
+
+  /** The data-only chi-square: sum of squares of just the spectrum-channel residual rows (excludes the
+   rel-eff anchor, peak-range-uncertainty, and physical-model parameter-prior rows that `m_chi2` includes).
+   This is the chi2/dof shown in the report and GUI, and the statistic used to rescale the reported
+   covariance/uncertainties by `m_cov_scale`. */
+  double m_chi2_data = 0.0;
+
+  /** Degrees of freedom for `m_chi2_data`: number of data channels used, minus the (estimated effective)
+   number of fit parameters. */
+  size_t m_dof_data = 0;
+
+  /** The covariance inflation factor applied to every reported covariance/uncertainty:
+   `max(1.0, m_chi2_data/m_dof_data)`.  A value of 1.0 means no inflation (a good or over-fit).
+   Variances are multiplied by this; standard deviations by its square root. */
+  double m_cov_scale = 1.0;
+
+  /** Weighted coefficient of determination: R2 = 1 - m_chi2_data / SS_tot, where SS_tot is the
+   inverse-variance-weighted total sum of squares of the data about its weighted mean, taken over the
+   same spectrum channels that contribute to `m_chi2_data` (so SS_res and SS_tot are consistent).
+
+   Interpretation - fraction of the (inverse-variance-weighted) variation in the channel counts that
+   the fitted model explains, relative to a flat (weighted-mean) baseline.  Range <= 1.0:
+     - 1.0  = the model passes through every channel (perfect).
+     - For gamma spectra it is normally very close to 1 (the peaks dominate the weighted variance),
+       so judge it on the trailing digits: >0.999 excellent, 0.99-0.999 good, <0.99 the model is
+       missing real structure.
+     - < 0  = the fit is worse than a constant (a failed fit).
+   It complements - does not replace - chi2/dof and the p-value (it is less discriminating than they
+   are for this kind of data).  NaN if it could not be computed. */
+  double m_r2 = std::numeric_limits<double>::quiet_NaN();
+
+  /** 2-norm condition number of the COLUMN-EQUILIBRATED fit Jacobian,
+   kappa(J~) = sigma_max / sigma_min with J~ = J * diag(1/||col||) (van der Sluis scaling), from the
+   post-fit singular-value decomposition - the same SVD used for the reported covariance
+   (equilibrated truncated pseudo-inverse), the rank-deficiency count, and the effective-DOF
+   estimate, so all four tell one consistent story.
+
+   Equilibration removes the many decades of spread the raw Jacobian gets from unit choices alone
+   (a unit step in an activity parameter moves thousands of Poisson-weighted counts; a nuisance
+   parameter moves O(1)), so this kappa measures GENUINE collinearity/degeneracy, independent of
+   parameter scaling.
+
+   Interpretation - how well-determined the fit parameters are / how near the inverted normal matrix
+   (J~^T J~) is to singular.  Range >= 1.0 (1 = perfectly conditioned); roughly log10(kappa) decimal
+   digits of precision are lost in the solution:
+     - <~1e4      : well-conditioned.
+     - ~1e5-1e6   : some parameters weakly constrained or strongly correlated.
+     - >~1e7      : near-degenerate - at least one parameter direction is essentially unconstrained by
+                    the data; its uncertainty (and any derived enrichment / rel-eff band that depends
+                    on it) is unreliable, and the "rank-deficient" warning fires (cf.
+                    `m_num_rank_deficient_dirs`).
+     - -> infinity: singular (infinitely many solutions along that direction, or a parameter with no
+                    gradient at all - a zero-norm Jacobian column).
+   -1.0 if it could not be computed (the SVD failed). */
+  double m_jacobian_condition_number = -1.0;
+
+  //-------------------------------------------------------------------------------------------
+  // BEGIN: members and functions for MULTIPLE relative-efficiency curves only
+  //
+  // Everything between here and the "END multi-curve-only" marker below exists solely to describe
+  // how well a fit with MORE THAN ONE rel-eff curve separates those curves from each other (the
+  // object-inside-an-object case).  For the usual single-curve fit none of it applies:
+  // `m_curve_separation_status` stays `NotApplicable`, the vectors stay empty,
+  // `m_merged_single_curve_comparison` stays unset, and no separation text is produced on any
+  // surface.  If you only care about single-curve relative efficiency, skip to "END
+  // multi-curve-only" below.
+  //-------------------------------------------------------------------------------------------
+
+  /** How well the data separates the multiple relative-efficiency curves from each other - i.e.
+   whether per-curve quantities (activities, enrichments) are individually meaningful, or only their
+   combination is.  Decided from the combination of `m_num_rank_deficient_dirs`,
+   `m_jacobian_condition_number`, `m_cross_curve_max_corr`, the per-curve aggregation of
+   `m_evidence_purity` (a curve is "unanchored" when NO source on it has attributed share >= 0.3 -
+   a single blocked source on an otherwise-anchored curve is expected physics and only earns a
+   per-source note), and the `m_merged_single_curve_comparison` likelihood-ratio result (a merged
+   single curve fitting the data about as well is the most direct "the data does not demand multiple
+   curves" signal) - see `finalize_curve_separation_status()` for the exact rule.
+
+   IMPORTANT (2026-07 review grid lesson): high cross-curve correlation ALONE must not be read as
+   non-separation - stacked same-nuclide problems show max|corr| >= 0.94 even when the within-curve
+   ratios (enrichments) are well determined; the correlation measures the normalization trade, which
+   the (already-widened) uncertainties account for. */
+  enum class CurveSeparationStatus : int
+  {
+    /** Single-curve fit, or the metrics could not be computed. */
+    NotApplicable,
+
+    /** The curves are constrained relatively independently; per-curve quantities are usable with
+     their reported uncertainties.  Includes the "detected distinct" cases (any tier of
+     `curves_distinct_basis()`: a clear z >= 3, a marginal z corroborated by the merged single-curve
+     fit being rejected, or a decisively large merged-curve delta-chi2 alone) and the benign "a
+     single curve would also describe the data, but per-curve values are individually anchored"
+     case (see `curve_separation_verdict()`, which words each). */
+    WellSeparated,
+
+    /** Some per-curve values are model-mediated: an unanchored curve (no source on it with
+     attributed share >= 0.3), and/or a normalization trade on a rank-deficient fit.  NOTE: strong
+     detection evidence routes here, never to Degenerate - the verdict must not contradict the
+     detection tier.  The apportionment of shared peaks follows from the fitted attenuation
+     physics / curve shapes; no statistical prior is involved (the only priors, the opt-in
+     "Bias AD" pulls, are off by default). */
+    PoorlySeparated,
+
+    /** The data does not distinguish the curves: the merged single curve fits about as well AND the
+     split between curves is unmeasured (rank-deficiency, blended evidence, or |corr| > 0.95); or,
+     when the merged comparison is unavailable, rank-deficiency together with blended evidence.
+     For stacked geometries this is the expected signature of a single material of one enrichment
+     (homogeneous slab self-attenuation composes exactly, so stacked same-material layers are
+     identical to one thicker layer) - reported as "consistent with a single curve", not as an
+     error.  Unreachable when detection evidence is strong. */
+    Degenerate,
+  };//enum class CurveSeparationStatus
+
+  CurveSeparationStatus m_curve_separation_status = CurveSeparationStatus::NotApplicable;
+
+  /** One cross-curve parameter correlation: between the activities of a source present on two curves,
+   or between two curves' shielding areal-density parameters, computed from the off-diagonal blocks of
+   `m_covariance` (which nothing previously read).
+
+   Interpretation of |correlation| (also in `compute_curve_separation_metrics()`):
+     - < 0.7      : well-separated.
+     - 0.7 - 0.95 : caution - quote joint quantities, not per-curve ones.
+     - > 0.95     : effectively one normalization degree of freedom between the curves; per-curve
+                    activities are not independently meaningful (within-curve *ratios* may still be
+                    constrained - see the class doc of `CurveSeparationStatus`). */
+  struct CrossCurveCorrelation
+  {
+    size_t curve_a = 0, curve_b = 0;
+    std::string param_a, param_b;  ///< e.g. "Act(U238)", "SelfAttenAD", "ExtAttenAD[0]"
+    double correlation = 0.0;      ///< Pearson rho, in [-1,+1]
+  };//struct CrossCurveCorrelation
+
+  /** All computed cross-curve correlation pairs (empty for single-curve fits, or if covariance
+   was not available). */
+  std::vector<CrossCurveCorrelation> m_cross_curve_correlations;
+
+  /** The entry of `m_cross_curve_correlations` with the largest |correlation| (unset when none). */
+  std::optional<CrossCurveCorrelation> m_cross_curve_max_corr;
+
+  /** The "attributed share" per (curve, source): the model-counts-weighted mean of the
+   energy-cluster ownership fraction (`ObsEff::curve_model_fraction`) over ALL clusters the source
+   contributes model counts to - including clusters excluded from the rel-eff chart (an excluded
+   shared cluster is exactly the "no independent evidence" situation this must reflect).
+
+   User-facing wording (keep tooltips/legends verbatim with this): for each energy region containing
+   the source's peaks, the fraction of that region's counts the fit assigns to this curve, averaged
+   weighted by counts.
+     - > 0.8     : this source has peaks that are effectively its own on this curve.
+     - 0.3 - 0.8 : its peak regions are shared with the other curve(s).
+     - < 0.3     : the other curve(s) dominate the regions where this source's peaks fall
+                   (counts-weighted), so its amount is determined by the fitted attenuation
+                   physics / curve shapes rather than by individually resolved peaks.
+   (Same ranges in `compute_curve_separation_metrics()`.  The member keeps its historical name -
+   "evidence purity" - for source/JSON compatibility; user-facing text says "attributed share".)
+   Empty for single-curve fits or when `m_obs_eff_for_each_curve` was not filled. */
+  std::vector<std::map<SrcVariant,double>> m_evidence_purity;
+
+  /** Total modeled peak counts per (curve, source): the sum, over ALL of this curve's obs-eff
+   energy clusters, of the source's fit-scaled model peak amplitudes (the weight denominator of
+   `m_evidence_purity`).  These are DETECTED counts - peak areas in the measured spectrum, i.e.
+   after attenuation and detector efficiency - NOT emitted source counts: two objects emitting
+   U238 equally, one shielded by the other, do NOT attribute 50/50; the shielded one gets the
+   smaller share, reflecting its actual contribution to the spectrum (source-side quantities are
+   the relative activities, reported elsewhere).  For a source present on multiple curves,
+   `counts[re] / sum_over_curves(counts)` is the fit's apportionment of that source's detected
+   peak counts between the curves - see `source_count_attributions()`.  Same fill conditions as
+   `m_evidence_purity`. */
+  std::vector<std::map<SrcVariant,double>> m_source_model_counts;
+
+  /** The fit's apportionment of one source's modeled peak counts between the curves it appears on.
+
+   TODO: no uncertainty is quoted on the fractions yet.  A first-order estimate is derivable from
+   the cross-curve activity covariance (delta method on f = c_a/(c_a+c_b)), but the counts also
+   depend on the shielding/curve-shape parameters, so an honest number needs the full Jacobian
+   rows - deferred. */
+  struct SourceCountAttribution
+  {
+    SrcVariant source;
+    double total_counts = 0.0;  ///< summed modeled peak counts of the source over all curves
+    /** {rel-eff curve index, fraction of `total_counts` on that curve}; fractions sum to 1. */
+    std::vector<std::pair<size_t,double>> curve_fractions;
+  };//struct SourceCountAttribution
+
+  /** The per-source count apportionment table, from `m_source_model_counts` - only sources present
+   on two or more curves (empty otherwise).  Ordered by source name for stable output. */
+  std::vector<SourceCountAttribution> source_count_attributions() const;
+
+  /** Detection statistic: for each nuclide present on two curves, the significance of the difference
+   of its mass-enrichment fraction between the curves, z = |e_a - e_b| / sqrt(sigma_a^2 + sigma_b^2)
+   (sigmas are the D2/D3-widened ones, which the 2026-07 review grid showed are honest).
+   z >= ~3 : the data clearly supports the curves having different isotopic compositions;
+   1.5 - 3 : marginal;  < 1.5 : not distinguished (which is also the honest answer when a curve's
+   enrichment is simply unconstrained - the huge sigma drives z to ~0). */
+  struct EnrichmentDiffZ
+  {
+    size_t curve_a = 0, curve_b = 0;
+    SrcVariant nuclide;
+    double enrichment_a = 0.0, enrichment_b = 0.0;  ///< mass fractions, in [0,1]
+    double sigma_a = 0.0, sigma_b = 0.0;            ///< 1-sigma uncertainties of the above
+    double z = 0.0;
+
+    /** False when either fitted enrichment is pinned essentially at the 0 or 1 limit: a bound-pinned
+     value carries an understated sigma (Ceres' covariance ignores active bounds), so its z can be
+     wildly inflated - e.g. a trace isotope fit to ~1e-10 +- 3e-10 against a well-measured 0.2 %
+     produced z = 93 on data where the true compositions were identical.  Unreliable entries are
+     shown in the z table (annotated) but never drive `curves_detected_distinct()` or the verdict. */
+    bool reliable = true;
+  };//struct EnrichmentDiffZ
+
+  std::vector<EnrichmentDiffZ> m_enrichment_diff_z;
+
+  /** Result of automatically re-fitting the same data/ROIs with all sources merged onto a single
+   rel-eff curve, as a likelihood-ratio-style check of whether the data actually demands multiple
+   curves: `delta_chi2 = merged_chi2_data - multi_chi2_data` gained by the multi-curve model's
+   `extra_dof_of_multi` additional effective parameters.  Rough reading: delta_chi2 >> extra_dof
+   (e.g. by several times sqrt(2*extra_dof)) - the data clearly supports multiple curves;
+   delta_chi2 ~ extra_dof or less - a single curve describes the data as well.
+   Both chi2 are the data-only chi2 over identical fixed ROIs, so they are directly comparable. */
+  struct MergedCurveComparison
+  {
+    bool valid = false;      ///< merged model built, solved to Success, and chi2/DOF comparable
+    std::string message;     ///< why not valid, and/or notes (e.g. constraints dropped in the merge)
+    double multi_chi2_data = 0.0, merged_chi2_data = 0.0;
+    size_t multi_dof_data = 0, merged_dof_data = 0;
+    double delta_chi2 = 0.0;
+    int extra_dof_of_multi = 0;
+
+    /** True when `delta_chi2` is within statistical expectation of the multi-curve model's extra
+     effective parameters, i.e. a single merged curve describes the data about as well.  The
+     comparison threshold is scaled by max(1, multi chi2/dof) - the same model-error inflation the
+     covariance rescale applies - so a fit sitting on an irreducible model-error floor is not
+     misread as demanding multiple curves.  Set by `finalize_curve_separation_status()`; only
+     meaningful when `valid`.  (Note: for stacked same-material objects a single summed-areal-density
+     slab is EXACTLY equivalent - homogeneous slab attenuation composes - so this being true there
+     means "consistent with a single homogeneous object/enrichment".) */
+    bool single_curve_adequate = false;
+  };//struct MergedCurveComparison
+
+  /** Only attempted for multi-curve fits that reach Status::Success; unset otherwise. */
+  std::optional<MergedCurveComparison> m_merged_single_curve_comparison;
+
+  /** Computes `m_cross_curve_correlations`/`m_cross_curve_max_corr`, `m_evidence_purity`, and
+   `m_enrichment_diff_z` from the already-filled `m_covariance`, `m_obs_eff_for_each_curve`, and
+   layout accessors; called at the end of `solve_ceres` for multi-curve fits (a no-op for
+   single-curve).  The combined status is decided later, by `finalize_curve_separation_status()`. */
+  void compute_curve_separation_metrics();
+
+  /** Decides `m_curve_separation_status` from the metrics above plus (when available)
+   `m_merged_single_curve_comparison`, and appends the user-facing warning to `m_warnings` when the
+   status is PoorlySeparated or Degenerate.  Idempotent (removes its own previous warning first);
+   `solve(...)` invokes it on every return path, after the merged single-curve comparison was
+   attempted. */
+  void finalize_curve_separation_status();
+
+  /** Which evidence tier established that the curves are genuinely distinct (None when not
+   established).  See `curves_distinct_basis()` for the three-tier rule. */
+  enum class CurveDistinctBasis : int
+  {
+    None,                   ///< distinctness not established by the data
+    ZScore,                 ///< a reliable enrichment-difference z >= 3 (not overruled by the merged fit)
+    ZCorroboratedByMerged,  ///< marginal z (>= 1.5) + single-curve fit rejected at the 3-sigma-scaled bar
+    MergedOnly,             ///< single-curve fit decisively worse (5-sigma-scaled bar); z table silent or absent
+  };//enum class CurveDistinctBasis
+
+  /** The detection tier showing the curves differ; drives `curves_detected_distinct()` and the
+   verdict wording (single source, so headline and details cannot disagree):
+     - `ZScore`: max reliable `m_enrichment_diff_z` >= 3, unless `merged_overrules_z_detection()`.
+     - `ZCorroboratedByMerged`: the merged single-curve fit is rejected (delta-chi2 above the same
+       3-sigma-scaled bar `single_curve_adequate` uses) AND a reliable z >= 1.5 points the same way.
+       The merged fit forces one curve and one composition, so its delta-chi2 is the proper
+       likelihood-ratio combination of all the evidence; the marginal z confirms the direction.
+       (Multiple marginal z's are deliberately NOT combined: enrichment z's of the same curve pair
+       are strongly anti-correlated - one signal, not several.)
+     - `MergedOnly`: delta-chi2 above ~5 sigma of the extra-DOF expectation (scaled by
+       max(1, chi2/dof)) with no corroborating z - e.g. configurations with no shared nuclide.
+   This evidence takes priority in the separation verdict: it can never be contradicted by an
+   "indistinguishable" headline. */
+  CurveDistinctBasis curves_distinct_basis() const;
+
+  /** Convenience: `curves_distinct_basis() != CurveDistinctBasis::None`. */
+  bool curves_detected_distinct() const;
+
+  /** Short display label for `m_curve_separation_status`, chosen so the equal-enrichment /
+   single-material outcome does not read as an error: "Separated", "Distinct curves - see
+   per-nuclide notes", "Poorly separated", "Not distinguished (consistent with a single curve)", or
+   "NotApplicable". */
+  const char *curve_separation_display() const;
+
+  /** Display name for a rel-eff curve: the user-assigned quoted name (e.g. "'Inner'") when one is
+   set, else "curve N".  Single source for every surface, so warnings/summaries/verdicts all name
+   curves the same way. */
+  std::string curve_label( const size_t rel_eff_index ) const;
+
+  /** The per-source caveat for sources whose attributed share is < 0.3 while their curve is still
+   anchored by another source's resolved evidence - the expected-physics case (e.g. an inner
+   object's low-energy U235 lines absorbed by the outer object).  Names each such source, its
+   attributed share, and the fit's count apportionment; empty when no such source exists (or when a
+   whole curve is unanchored - then `curve_separation_trigger_text()` carries the message instead).
+   Appended by `curve_separation_verdict()`; shared so surfaces cannot drift. */
+  std::string blended_source_caveat_text( const bool html ) const;
+
+  /** The tier-1 plain-language separation verdict - the SINGLE source of the verdict wording for
+   `print_summary`, the in-code HTML report, and the report templates (exported by
+   RelActAutoReport as `curve_separation_verdict`/`_html`).  Data-driven: names the triggering
+   source/number, distinguishes stacked ("consistent with a single material of one enrichment -
+   stacked layers of the same material are identical to one thicker layer") from side-by-side
+   geometry, and always disambiguates "the model" (the fitted attenuation physics / curve shapes -
+   never a statistical prior; none is applied unless a shield's opt-in "Bias AD" is checked). */
+  std::string curve_separation_verdict( const bool html ) const;
+
+  /** The shared "what the per-curve split actually rests on" clause, used by both the warning text
+   and `curve_separation_verdict()`.  One function so the two cannot drift: they were separate copies
+   once, and only one of them got the stacked-vs-co-located distinction.
+
+   @param sentence_start capitalizes the leading word; callers supply surrounding punctuation.
+   */
+  std::string curve_split_basis_text( const bool sentence_start ) const;
+
+  /** Names why the curves are not cleanly separated (blended evidence / trading normalizations /
+   rank deficiency / a fit that does not describe the data).  Shared by the warning text and
+   `curve_separation_verdict()` for the same anti-drift reason as `curve_split_basis_text()`.
+   */
+  std::string curve_separation_trigger_text() const;
+
+  /** True when the model is not reproducing the data's structure (weighted R^2 below a floor), so no
+   confident statement about the curves is supportable.  Uses R^2 rather than chi2/dof because
+   chi2/dof grows with counts - a hotter measurement of the same source is not a worse fit.
+   */
+  bool poor_fit_quality() const;
+
+  /** True when a usable z >= 3 exists but the single-vs-merged comparison says one curve describes
+   the data about as well, so `curves_detected_distinct()` does not claim a detection.
+
+   Surfaces MUST annotate the affected rows: the z table's own legend says "z >= 3 clearly
+   different", so leaving a large z unmarked under a "not distinguished" headline reproduces exactly
+   the headline-versus-evidence contradiction this reporting exists to prevent.
+   */
+  bool z_detection_vetoed_by_merged() const;
+
+  /** True when the single-vs-merged comparison is good enough to overrule a z >= 3 composition
+   detection.  Deliberately stricter than `MergedCurveComparison::single_curve_adequate` (which is a
+   wording flag) - see the implementation comment.
+   */
+  bool merged_overrules_z_detection() const;
+
+  /** The bracketed note to print after a z value, or empty when the z is used as-is.  Explains the
+   ACTUAL reason (pinned at a limit -> understated sigma and inflated z; unconstrained composition ->
+   deflated z; overruled by the merged-curve comparison), since one generic sentence for all three
+   states a false reason for two of them.
+   */
+  std::string z_row_annotation( const EnrichmentDiffZ &diff ) const;
+
+  //-------------------------------------------------------------------------------------------
+  // END: multi-curve-only members and functions
+  //-------------------------------------------------------------------------------------------
+
   /** A struct to hold information about the Physical Model result of the fit. */
   struct PhysicalModelFitInfo
   {
@@ -1485,10 +2079,25 @@ struct RelActAutoSolution
      */
     std::vector<ShieldInfo> shields_from_other_curves;
 
-    // Modified Hoerl corrections only present if fitting the Hoerl function was selected
-    //  Uncertainties are just sqrt of covariance diagnal
+    /** The empirical-correction form that was fit (None/Hoerl/Chebyshev).  Determines how to interpret
+     `hoerl_b`/`hoerl_c` and whether the `corr_*_energy` frame applies.  Must be passed to the
+     `RelActCalc::eval_physical_model_eqn`/`..._text`/`..._js_function` calls so the reported/plotted
+     correction matches the form that was fit. */
+    RelActCalc::PhysModelCorrFcn corr_fcn = RelActCalc::PhysModelCorrFcn::Hoerl;
+
+    // Empirical correction coefficients; only present if a correction (Hoerl or Chebyshev) was fit.
+    //  Uncertainties are just sqrt of covariance diagonal.  For `corr_fcn == Chebyshev`, `hoerl_b`/`hoerl_c`
+    //  instead carry the two pivot-anchored basis coefficients a1,a2 (and `corr_*_energy` below give the
+    //  basis energy reference frame).
     std::optional<double> hoerl_b, hoerl_b_uncert;
     std::optional<double> hoerl_c, hoerl_c_uncert;
+
+    /** Energy reference frame for the basis empirical-correction term (only meaningful when
+     `corr_fcn == Chebyshev`): the fit range [lower, upper] and the pivot (log-midpoint) where
+     `correction(pivot) == 1`.  Needed to evaluate/plot the correction the same way it was fit. */
+    double corr_lower_energy = 0.0;
+    double corr_upper_energy = 0.0;
+    double corr_pivot_energy = 0.0;
   };//struct PhysicalModelFitInfo
   
   /** The curve information for Physical Model curves.
@@ -1509,7 +2118,7 @@ struct RelActAutoSolution
   
   /** This is the total time spent in the `eval(...)` function. */
   int m_num_microseconds_in_eval;
-};//struct RelEffSolution
+};//struct RelActAutoSolution
 
 
 /**

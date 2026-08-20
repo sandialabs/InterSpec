@@ -727,6 +727,103 @@ BOOST_AUTO_TEST_CASE( FitGenericShieldingANBaseline )
   deque<shared_ptr<const PeakDef>> truth_peaks;
   for( const double energy : { 80.9979, 276.3989, 302.8508, 356.0129, 383.8485 } )
     truth_peaks.push_back( make_test_peak( ba133, energy, 1.0, placeholder_area ) );
+/** Checks `ShieldingSourceDisplayState::fromFitResults(...)` - i.e., that the results of a fit can
+ be turned into the `<ShieldingSourceFit>` XML, stored into a `SpecMeas`, written to a N42, and
+ then read back to give the fit model.  This is what batch activity/shielding fits do to write
+ their results N42 file.
+ */
+BOOST_AUTO_TEST_CASE( FitResultsToXmlRoundTrip )
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+
+  const double distance = 100*PhysicalUnits::cm;
+  const float live_time = 100*PhysicalUnits::second;
+  const float peak_area = PhysicalUnits::microCi;
+
+  const GammaInteractionCalc::GeometryType geometry = GammaInteractionCalc::GeometryType::Spherical;
+
+  // A generic (AN/AD) shielding, held fixed, so we have a shielding to round-trip without making
+  //  the single-peak fit degenerate.
+  vector<ShieldingSourceFitCalc::ShieldingInfo> shieldings;
+  {
+    ShieldingSourceFitCalc::ShieldingInfo shield;
+    shield.m_geometry = geometry;
+    shield.m_isGenericMaterial = true;
+    shield.m_forFitting = true;
+    shield.m_dimensions[0] = 26.0;                                      //atomic number
+    shield.m_dimensions[1] = 5.0*PhysicalUnits::g/PhysicalUnits::cm2;   //areal density
+    shield.m_fitDimensions[0] = shield.m_fitDimensions[1] = false;
+
+    shieldings.push_back( shield );
+  }
+
+  vector<ShieldingSourceFitCalc::SourceFitDef> src_definitions;
+  {
+    ShieldingSourceFitCalc::SourceFitDef cs137_src;
+    cs137_src.nuclide = db->nuclide( "Cs137" );
+    cs137_src.activity = 2.0*peak_area;
+    cs137_src.fitActivity = true;
+    cs137_src.age = 180*PhysicalUnits::day;
+    cs137_src.fitAge = false;
+    cs137_src.ageDefiningNuc = nullptr;
+    cs137_src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+    src_definitions.push_back( cs137_src );
+  }
+
+  // Create a 100% efficient detector at our test distance.
+  auto detector = make_shared<DetectorPeakResponse>();
+  detector->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, distance,
+                                    5*PhysicalUnits::cm, PhysicalUnits::keV,
+                                    0, 3000*PhysicalUnits::keV,
+                                    DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+
+  auto foreground = make_shared<SpecUtils::Measurement>();
+  auto spec = make_shared<vector<float>>( 1024, 1.0f );
+  foreground->set_gamma_counts( spec, live_time, live_time );
+
+  auto ene_cal = make_shared<SpecUtils::EnergyCalibration>();
+  ene_cal->set_polynomial( spec->size(), {0.0f, 1.0f}, {} );
+  foreground->set_energy_calibration( ene_cal );
+
+  std::deque<std::shared_ptr<const PeakDef>> foreground_peaks;
+
+  {// Begin create peak for 661 keV in Cs137
+    auto peak = make_shared<PeakDef>();
+    peak->setMean( 661 );
+    peak->setSigma( 10.0 );
+    peak->setPeakArea( peak_area );
+    peak->setPeakAreaUncert( sqrt(peak_area) );
+
+    const SandiaDecay::Nuclide * const cs137 = db->nuclide( "Cs137" );
+    const SandiaDecay::Nuclide * const ba137m = db->nuclide( "Ba137m" ); //661 keV comes from Ba137m
+    BOOST_REQUIRE( cs137 && ba137m );
+
+    int radParticle = -1;
+    const SandiaDecay::Transition *transition = nullptr;
+    for( size_t i = 0; !transition && (i < ba137m->decaysToChildren.size()); ++i )
+    {
+      const SandiaDecay::Transition *trans = ba137m->decaysToChildren[i];
+      for( size_t j = 0; !transition && (j < trans->products.size()); ++j )
+      {
+        if( (trans->products[j].type == SandiaDecay::GammaParticle)
+           && (fabs(trans->products[j].energy - 661.657) < 1.0) )
+        {
+          transition = trans;
+          radParticle = static_cast<int>(j);
+        }
+      }
+    }//for( find the 661 keV gamma )
+
+    BOOST_REQUIRE( transition && (radParticle >= 0) );
+
+    peak->setNuclearTransition( cs137, transition, radParticle, PeakDef::SourceGammaType::NormalGamma );
+    peak->useForShieldingSourceFit( true );
+
+    foreground_peaks.push_back( peak );
+  }// End create peak for 661 keV in Cs137
+
 
   ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
   options.attenuate_for_air = false;
@@ -757,6 +854,11 @@ BOOST_AUTO_TEST_CASE( FitGenericShieldingANBaseline )
   chi_input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
   chi_input.config.shieldings = { generic_shield };
   chi_input.config.sources = { ba133_src };
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+  chi_input.config.distance = distance;
+  chi_input.config.geometry = geometry;
+  chi_input.config.shieldings = shieldings;
+  chi_input.config.sources = src_definitions;
   chi_input.config.options = options;
   chi_input.detector = detector;
   chi_input.foreground = foreground;
@@ -781,6 +883,11 @@ BOOST_AUTO_TEST_CASE( FitGenericShieldingANBaseline )
 
   pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
                             = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+  chi_input.foreground_peaks = foreground_peaks;
+  chi_input.background_peaks = nullptr;
+
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
+                GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 
   auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
   *inputPrams = fcn_pars.second;
@@ -1241,6 +1348,104 @@ BOOST_AUTO_TEST_CASE( SourceOffsetsSerialization )
 }//BOOST_AUTO_TEST_CASE( SourceOffsetsSerialization )
 
 
+  auto progress_fcn = [progress](){ };
+  auto finished_fcn = [results](){ };
+
+  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, progress_fcn,
+                                    results, finished_fcn );
+
+  BOOST_REQUIRE( results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final );
+  BOOST_REQUIRE( results->fit_src_info.size() == 1 );
+  BOOST_REQUIRE( results->final_shieldings.size() == 1 );
+
+
+  // Turn the fit results into the state, and check the state itself first
+  ShieldingSourceDisplay::ShieldingSourceDisplayState state;
+  BOOST_REQUIRE_NO_THROW( state = ShieldingSourceDisplay::ShieldingSourceDisplayState::fromFitResults( *results ) );
+  BOOST_REQUIRE( state.config );
+  BOOST_CHECK( state.peaks.size() == 1 );
+  if( state.peaks.size() == 1 )
+  {
+    BOOST_CHECK( state.peaks[0].use );
+    BOOST_CHECK( state.peaks[0].nuclideSymbol == "Cs137" );
+    BOOST_CHECK( fabs(state.peaks[0].energy - 661.657) < 1.0 );
+  }
+
+  // Serialize into a SpecMeas, write the N42 to a stream, and read that back in
+  SpecMeas specmeas;
+  {
+    auto meas = make_shared<SpecUtils::Measurement>( *foreground );
+    meas->set_sample_number( 1 );
+    specmeas.add_measurement( meas, true );
+
+    unique_ptr<rapidxml::xml_document<char>> model_xml( new rapidxml::xml_document<char>() );
+    BOOST_REQUIRE_NO_THROW( state.serialize( model_xml.get() ) );
+    specmeas.setShieldingSourceModel( std::move(model_xml) );
+  }
+
+  std::stringstream n42_strm;
+  BOOST_REQUIRE( specmeas.write_2012_N42( n42_strm ) );
+
+  SpecMeas reloaded;
+  BOOST_REQUIRE_MESSAGE( reloaded.load_from_N42( n42_strm ), "Failed to read back written N42" );
+
+  const rapidxml::xml_document<char> * const model_xml = reloaded.shieldingSourceModel();
+  BOOST_REQUIRE_MESSAGE( model_xml && model_xml->first_node(),
+                        "N42 written from fit results has no ShieldingSourceFit model in it" );
+
+  GammaInteractionCalc::ShieldSourceConfig read_config;
+  BOOST_REQUIRE_NO_THROW( read_config.deSerialize( model_xml->first_node() ) );
+
+
+  // Finally, compare what we read back against the fit results
+  const GammaInteractionCalc::ShieldSourceConfig &fit_config = *state.config;
+
+  BOOST_CHECK( read_config.geometry == fit_config.geometry );
+  BOOST_CHECK_MESSAGE( fabs(read_config.distance - fit_config.distance) < 1.0E-5*fit_config.distance,
+                      "Distance mismatch: wrote " << fit_config.distance
+                      << ", read back " << read_config.distance );
+
+  BOOST_REQUIRE( read_config.shieldings.size() == fit_config.shieldings.size() );
+  for( size_t i = 0; i < fit_config.shieldings.size(); ++i )
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingInfo::equalEnough( fit_config.shieldings[i],
+                                                                             read_config.shieldings[i] ) );
+
+  BOOST_REQUIRE( read_config.sources.size() == fit_config.sources.size() );
+  for( size_t i = 0; i < fit_config.sources.size(); ++i )
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::SourceFitDef::equalEnough( fit_config.sources[i],
+                                                                            read_config.sources[i] ) );
+
+  BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingSourceFitOptions::equalEnough( fit_config.options,
+                                                                                        read_config.options ) );
+
+  // And the fitted activity should have survived the round trip, as the models starting value
+  BOOST_REQUIRE( read_config.sources.size() == 1 );
+  const double fit_activity = results->fit_src_info[0].activity;
+  BOOST_CHECK_MESSAGE( fabs(read_config.sources[0].activity - fit_activity) < 1.0E-4*fit_activity,
+                      "Activity read back (" << read_config.sources[0].activity
+                      << ") didnt match the fit activity (" << fit_activity << ")" );
+
+  // Check the generic shieldings AN/AD against the values we put in (they were not fit for), in
+  //  absolute terms - i.e., that the areal density is in InterSpec internal units all the way
+  //  through, rather than just consistently wrong.
+  BOOST_REQUIRE( read_config.shieldings.size() == 1 );
+  BOOST_REQUIRE( read_config.shieldings[0].m_isGenericMaterial );
+  const double expected_an = shieldings[0].m_dimensions[0];
+  const double expected_ad = shieldings[0].m_dimensions[1];
+  const double read_an = read_config.shieldings[0].m_dimensions[0];
+  const double read_ad = read_config.shieldings[0].m_dimensions[1];
+
+  BOOST_CHECK_MESSAGE( fabs(read_an - expected_an) < 1.0E-5*expected_an,
+                      "Atomic number read back (" << read_an << ") didnt match input (" << expected_an << ")" );
+  BOOST_CHECK_MESSAGE( fabs(read_ad - expected_ad) < 1.0E-5*expected_ad,
+                      "Areal density read back (" << read_ad << " => "
+                      << (read_ad*PhysicalUnits::cm2/PhysicalUnits::g) << " g/cm2) didnt match input ("
+                      << expected_ad << " => " << (expected_ad*PhysicalUnits::cm2/PhysicalUnits::g)
+                      << " g/cm2)" );
+}//BOOST_AUTO_TEST_CASE( FitResultsToXmlRoundTrip )
+
+
+
 std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingSourceFitCalc::ModelFitResults &results,
                                                                const string &filename )
 {
@@ -1365,13 +1570,16 @@ std::tuple<bool,int,int,vector<string>> test_fit_against_truth( const ShieldingS
             continue;
           }
           
-          const double fitAD = shield.m_dimensions[1];
+          // `m_dimensions[1]` is areal density in InterSpec internal units, but the truth values
+          //  are in g/cm2 (they come straight from the users g/cm2 entry - see
+          //  `ShieldingSourceDisplay.cpp` where `select->truthAD` is set), so convert to compare.
+          const double fitAD = shield.m_dimensions[1] * PhysicalUnits::cm2 / PhysicalUnits::gram;
           const bool closeEnough = (fabs(*truth - fitAD) < *tolerance);
-          
+
           numTested += 1;
           numCorrect += closeEnough;
-          
-          textInfoLines.push_back( "For Generic Shielding fit AN " + std::to_string(fitAD)
+
+          textInfoLines.push_back( "For Generic Shielding fit AD " + std::to_string(fitAD)
                                   + " with the truth value of " + std::to_string(*truth)
                                   + " and tolerance " + std::to_string(*tolerance)
                                   + (closeEnough ? " - within tolerance." : " - out of tolerance." )

@@ -69,8 +69,6 @@
   <message id="isbe-category-nuc-xray-rctn-desc">所有核素、X射线（衰变和荧光）和反应</message>
   <message id="isbe-category-xray">荧光X射线</message>
   <message id="isbe-category-xray-desc">仅荧光X射线</message>
-  <message id="isbe-category-reactions">反应</message>
-  <message id="isbe-category-reactions-desc">仅反应</message>
   <message id="isbe-category-medical">医用核素</message>
   <message id="isbe-category-medical-desc">常见医用核素</message>
   <message id="isbe-category-industrial">工业核素</message>

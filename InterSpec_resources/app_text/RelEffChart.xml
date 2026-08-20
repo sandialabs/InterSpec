@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- Reasons a relative efficiency data point is not shown on the chart; these are listed in the charts
+       "omitted points" panel.  Kept in sync with RelActCalcAuto::RelActAutoSolution::ObsEff::ExclusionReason. -->
+  <message id="rec-excl-no-counts">This relative efficiency curve has no gammas here.</message>
+  <message id="rec-excl-non-pos-eff">The freely-fit peak area came out negative, so there is no efficiency to show.</message>
+  <message id="rec-excl-insignificant">Not statistically significant compared to its uncertainty.</message>
+  <message id="rec-excl-tail-leakage">Most of the counts here come from neighboring peaks' tails, so a small peak-shape mismatch would dominate the value.</message>
+  <message id="rec-excl-outside-roi">The peak is not fully contained within its ROI, so its area is not fully measured.</message>
+
+  <!-- The "omitted points" affordance on the chart -->
+  <message id="rec-omitted-title">Points not shown</message>
+  <message id="rec-omitted-explain">These peaks were left off the chart because their measured efficiency would not be meaningful:</message>
+
+  <!-- Tooltip line for a point whose counts are shared with another relative efficiency curve -->
+  <message id="rec-blended-tooltip">Shared region: the fit attributes {1}% of the counts here to this curve. The division between curves is fitted through the attenuation physics / curve shapes, constrained by the rest of the spectrum - not resolved by this peak alone.</message>
+</messages>

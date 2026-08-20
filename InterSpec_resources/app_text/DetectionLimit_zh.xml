@@ -1,0 +1,236 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- DetectionLimit.xml 的翻译 -->
+
+  <message id="dl-conf-95">95%</message>
+  <message id="dl-conf-99">99%</message>
+  <message id="dl-conf-1sigma">68.27%</message>
+  <message id="dl-conf-2sigma">95.45%</message>
+  <message id="dl-conf-3sigma">99.73%</message>
+  <message id="dl-conf-4sigma">99.9937%</message>
+  <message id="dl-conf-5sigma">99.999943%</message>
+  <message id="dl-conf-level-one-sided">单侧置信水平:</message>
+  <message id="dl-conf-level-central">中心置信水平:</message>
+  <message id="dl-conf-level-one-sided-short">单侧C.L.:</message>
+  <message id="dl-conf-level-tt">
+    给出该限值所用的置信水平。
+    <p>
+      五个非整数值是 1&sigma; 至 5&sigma; 对应的正态中心概率
+      (68.27%、95.45%、99.73%、99.9937%、99.999943%)，但在这里它们是作为<b>单侧</b>置信水平使用的。
+      因此选择 &quot;1&sigma;&quot; 并不意味着得到一个一倍标准差的单侧界限——提供这些数值只是因为
+      它们是常见的数字，而不是因为限值是任何标准差的倍数。
+    </p>
+  </message>
+
+  <!-- 连续谱的处理方式 -->
+  <message id="dl-cont-norm-label">连续谱归一化:</message>
+  <message id="dl-cont-norm-floating">浮动</message>
+  <message id="dl-cont-norm-edges">由旁侧道锚定</message>
+  <message id="dl-cont-norm-edges-short">取自两侧</message>
+  <message id="dl-cont-norm-tt">
+    峰下本底的信息来自何处——也就是您在断言什么。这与限值描述的是<i>哪一次测量</i>是两个不同的问题；
+    请参见测量选项。
+    <ul>
+      <li><b>浮动</b>：连续谱由可能含有信号的那些道自身推断得出，因此对邻近区域不作任何假设。宽的或
+      均匀的超出量会被连续谱吸收，所以只有真正呈峰形的超出量才算作信号——这是对 &quot;那真的是一个峰
+      吗?&quot; 更严格的检验。默认选项，也是验证得最充分的选项。</li>
+      <li><b>由旁侧道锚定</b>：在感兴趣区两侧的道中测量本底并引入区内，这等于断言那些肩部不含信号，
+      且连续谱笔直地穿过它们。此时仅仅高于其肩部的区域也会被算作信号，无论它是否呈峰形。要求连续谱
+      为线性：左右各四个旁侧道仅够勉强确定一个截距和一个斜率。</li>
+    </ul>
+    <p>
+      锚定增加了信息量，因此通常给出更窄的限值——但更窄的数字并不自动就是更好的数字。浮动倾向于给出
+      <em>偏宽</em>的限值；而当邻近的谱线、台阶或曲率使肩部不具代表性时，锚定则会朝任一方向偏向
+      <em>错误</em>的限值。默认使用浮动；当感兴趣区两侧数个 FWHM 范围内都很干净，且额外的灵敏度值得
+      作出该断言时，再使用旁侧道。
+    </p>
+    <p>
+      请注意，肩部自身的计数不确定度也在似然函数中传播，因此较弱的锚定会诚实地展宽限值，而不是假装
+      连续谱是已知的。
+    </p>
+  </message>
+
+  <!-- 测量模型 -->
+  <message id="dl-model-label">测量:</message>
+  <message id="dl-model-current">当前谱</message>
+  <message id="dl-model-backref">本底参考</message>
+  <message id="dl-model-backref-cb">本底参考</message>
+  <message id="dl-model-tt">
+    该限值是关于哪一次测量的陈述。
+    <ul>
+      <li><b>当前谱</b>：您手中的这张谱里可能隐藏着多少信号。这是通常的情形。</li>
+      <li><b>本底参考</b>：断言载入的谱不含信号，并用它来预测<i>未来的</i>测量能够探测到什么。参考谱
+      的计数与所预测的测量被放在一起评估，共用同一个连续谱，因此参考谱自身的计数统计会传播到结果中，
+      而不是被忽略。</li>
+    </ul>
+    <p>
+      本底参考的结果是<b>预测灵敏度</b>，而不是对手中这张谱的界限，并会照此报告。它是中位数意义上的
+      期望：并不存在可供观测的未来测量，因此预测是在期望计数处作出的。  当输入时间与本谱相当或更短时这是成立的；远超之后结果会偏乐观，在 16 倍时约差三分之一，因为该区域真实连续本底与拟合直线之间的任何偏差会随曝光时间线性增长，而计数噪声只按其平方根增长。
+    </p>
+  </message>
+  <message id="dl-model-backref-tt">
+    断言这张谱不含信号，并用它来预测未来的测量能够探测到什么。
+    <p>
+      结果是针对所计划测量时间的<b>预测灵敏度</b>，而不是这张谱的上限值。参考谱自身的计数统计会传播
+      到结果中，因此较短的本底会相应地给出较弱的预测。
+    </p>
+  </message>
+
+  <!-- 限值类型 -->
+  <message id="dl-limittype-label">限值:</message>
+  <message id="dl-limittype-upper">上限值</message>
+  <message id="dl-limittype-central">中心区间</message>
+  <message id="dl-limittype-tt">
+    报告哪一个量。它们是不同的结果，并且对统计量使用不同的阈值，因此这一选择是显式指定的，而不是猜测
+    出来的。
+    <ul>
+      <li><b>上限值</b>：单侧界限——&quot;在该置信度下活度小于 U&quot;。这几乎总是所需要的。</li>
+      <li><b>中心区间</b>：双侧区间——&quot;在该置信度下活度介于 L 与 U 之间&quot;。</li>
+    </ul>
+    <p>
+      请注意，在<i>单侧</i>阈值上找到的两个根<b>并不</b>构成中心区间：两者合起来的覆盖率仅约为
+      2&times;C.L.&minus;1，因此两个 95% 的单侧界限大致只构成一个 90% 的中心区间。出现这种情况时，
+      结果会明确说明，而不会称之为区间。
+    </p>
+    <p>
+      对于不含信号的谱，中心区间通常会触及零处的物理边界，因此只存在上端点；此时报告为
+      &quot;介于 0 与 U 之间&quot;。这与相同置信度的单侧上限值<b>并不相同</b>——该端点位于更高的阈值
+      上，使其成为 (1+C.L.)/2 的单侧界限。
+    </p>
+  </message>
+
+  <!-- 计划测量时间 -->
+  <message id="dl-plan-time-cb">测量时间:</message>
+  <message id="dl-plan-time-cb-short">测量 🕐</message>
+  <message id="dl-plan-time-empty-text">例如 5 分钟</message>
+  <message id="dl-plan-time-tt">
+    您所询问的测量时长。  只有一个控件，但它通过两条不同的途径进入计算:
+    <ul>
+      <li>对于 Currie 方法，以及当限值描述已载入谱时，谱的各道计数会投影到该实时时间（活时间按同一比例，从而保持死时间比例不变）。</li>
+      <li>当谱为<b>本底参考</b>时，参考谱的计数保持不变，而此值成为所预测的未来测量的曝光时间 - 于是参考谱自身的计数统计被带入结果，而不是被忽略。</li>
+    </ul>
+    <p>
+      投影谱能很好地预测新测量的<b>典型</b>限值；被低估的是其周围的<b>离散度</b>。  缩放后的计数被当作方差等于该计数的泊松量处理，这等于断言已载入谱的计数率是精确已知的；实际上投影还继承了该谱自身的计数噪声。
+      以取自真实 11.5 小时本底的测量作对照，在 64 倍的跨度上，投影 Currie 限值的中位数与实测结果相差在 4% 以内，而实际离散度在 k&#160;=&#160;1 时约比隐含值宽 1.6&#215;，在 k&#160;=&#160;16 时约宽 4&#215;，其中 k 为所输入的时间除以已载入谱的时间。
+      因此 k 大致不超过 1 是安全的；超出后请将该数值视为规划估计，而非上界。
+    </p>
+    <p>
+      本底参考途径不缩放计数，因而没有这个问题 - 但它只覆盖反卷积限值。  旁边显示的任何 Currie 限值仍是投影得到的，上述提醒对其依然适用。
+    </p>
+  </message>
+  <message id="dl-err-bad-plan-time">测量时间无效 - 应为类似 '5 分钟'、'300 s' 或 '00:05:00' 的形式。</message>
+
+  <!-- 结果措辞 -->
+  <message id="dl-limit-upper">在 {2} 置信度下小于 {1} (单侧上限值)，&chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-predicted">预测灵敏度：对于 {3} 的测量，在 {2} 置信度下小于 {1}，&chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central">在 {3} 中心置信度下介于 {1} 与 {2} 之间，&chi;<sup>2</sup>={4}</message>
+  <message id="dl-limit-central-upper">在 {2} 中心置信度下介于 0 与 {1} 之间，&chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-two-one-sided">两个 {1} 单侧界限：{2} 至 {3} (中心覆盖率约 {4})，&chi;<sup>2</sup>={5}</message>
+  <message id="dl-limit-distance-lower">在 {2} 置信度下距离 &ge;{1} (单侧下限值)，&chi;<sup>2</sup>={3}</message>
+  <message id="dl-limit-none">无限值：{1}</message>
+  <message id="dl-best-stat">最佳 &chi;<sup>2</sup> 为 {1}，位于 {2}，自由度 {3}</message>
+  <message id="dl-best-stat-flat">远距离处 &chi;<sup>2</sup> 为 {1}，自由度 {2}</message>
+
+  <message id="dl-stat-is-cash-tt">
+    此处标注为 &chi;<sup>2</sup> 的量其实是 <b>{1} 统计量</b>——即泊松偏差
+    2&middot;&sum;(E &minus; n + n&middot;ln(n/E))，每道求和一次 (Cash 1979)。之所以用它而不用高斯型
+    &chi;<sup>2</sup>，是因为它没有修正 Neyman 方法的方差偏倚，也不需要为空道设置方差下限。
+    <p>
+      只有不同试验活度之间的<em>差值</em>才有意义；差值服从与高斯情形相同的渐近 &chi;<sup>2</sup>
+      分布，这正是置信阈值的依据。它的绝对值<b>不能</b>检验拟合优度：E[统计量] 并不等于
+      (道数 &minus; 参数数)，因此由并排显示的这两个数字构成的 &chi;<sup>2</sup>/自由度
+      <b>不是</b>拟合优度的度量，也不应这样解读。
+    </p>
+  </message>
+
+  <!-- 图表 -->
+  <message id="dl-chart-y-axis-chi2">χ²</message>
+  <message id="dl-chart-threshold-label">{1} 阈值 (Δχ²={2})</message>
+  <message id="dl-migrate-nosig-notice">
+    所保存的状态使用了已废止的 &quot;假定不存在信号&quot; 连续谱选项。该选项先断言谱中不含信号，
+    随后又忽略了这一断言本身的不确定度，结果在声称 95% 的情况下实测覆盖率仅约 40%。现已按其原本
+    想要表达的方式重新载入：本底参考测量下的浮动连续谱。测量时间现在指的是所预测的未来测量的时长，
+    而不是对这张谱的重新标度——在依据该数值之前请先核对。
+  </message>
+
+  <!-- 高级统计输入项。三个概率回答三个不同的问题；此前工具对这三者使用同一个数值，
+       因此提示中说明各自的含义。 -->
+  <message id="dl-advanced-cb">高级</message>
+  <message id="dl-advanced-cb-short">高级</message>
+  <message id="dl-advanced-tt">
+    显示计算该限值时所用的错误率与系统不确定度。未勾选时，它们都不会被应用，结果与没有它们时
+    完全相同。
+  </message>
+
+  <message id="dl-alpha-label">假阳性 (&#945;):</message>
+  <message id="dl-alpha-label-short">假阳性 &#945;:</message>
+  <message id="dl-alpha-tt">
+    您愿意在实际并无信号时把信号判为存在的频率——即假阳性率。它设定<b>判定阈值</b>
+    L<sub>c</sub>：超出所估计的连续谱多少才宣告为探测到。
+    <p>
+      请输入<b>概率而非百分数</b>：通常取 0.05。必须大于 0 且小于 0.5；低于约 1E-7 后，本计算所
+      依据的正态近似就没有多少意义了。&#945; 越小，误报越少，阈值也越高。
+    </p>
+    <p>
+      在您修改它之前，它按 1 &#8722; C.L. 跟随上面的置信水平。它与该置信水平所回答的问题不同：
+      置信水平指的是所报告的 &quot;小于 X&quot; 区间的覆盖率。
+    </p>
+  </message>
+
+  <message id="dl-beta-label">假阴性 (&#946;):</message>
+  <message id="dl-beta-label-short">假阴性 &#946;:</message>
+  <message id="dl-beta-tt">
+    您愿意漏掉一个确实处于检测限值上的信号的频率——即假阴性率。它设定<b>检测限值</b>
+    L<sub>d</sub>：能够被可靠探测到的真实信号大小。
+    <p>
+      请输入<b>概率而非百分数</b>：通常取 0.05。必须大于 0 且小于 0.5。&#946; 越小，检测限值越大、
+      越保守。
+    </p>
+    <p>
+      在您修改它之前，它按 1 &#8722; C.L. 跟随上面的置信水平。当 &#945;&#160;=&#160;&#946; 时，
+      检测限值具有人们熟悉的解析形式；两者不同时则是精确求解，而非近似。
+    </p>
+  </message>
+
+  <message id="dl-dist-uncert-label">距离不确定度:</message>
+  <message id="dl-dist-uncert-label-short">&#177;距离:</message>
+  <message id="dl-dist-uncert-empty-text">例如 1 cm</message>
+  <message id="dl-dist-uncert-tt">
+    源到探测器距离的 1&#963; 不确定度，写法与距离本身相同——例如 <b>1 cm</b>。若没有，请留空或
+    填 0。
+    <p>
+      点源的效率按 1/r&#178; 变化，因此它会以两倍的系数传到期望计数上：5% 的距离不确定度对应
+      10% 的计数不确定度。它与旁边的效率不确定度按平方和合成。一旦明显超过距离的约 20%，
+      这里所用的线性传播就不再可靠。
+    </p>
+    <p>
+      对于固定几何的探测器响应，其效率完全不依赖于距离，因此不会应用该项；出现这种情况时工具会
+      予以说明。
+    </p>
+  </message>
+
+  <message id="dl-eff-uncert-label">效率不确定度 (%):</message>
+  <message id="dl-eff-uncert-label-short">&#177;效率%:</message>
+  <message id="dl-eff-uncert-empty-text">例如 5</message>
+  <message id="dl-eff-uncert-tt">
+    单位活度所期望计数的 1&#963; <b>相对</b>不确定度，以<b>百分数</b>给出——例如 <b>5</b> 表示
+    5%。若没有，请留空或填 0。
+    <p>
+      它涵盖所有会按比例改变期望计数、而又不属于计数统计的因素：探测器效率曲线与伽马分支比，
+      二者的作用方式完全相同。若两者都重要，请输入二者按平方和合成后的值。探测器效率的不确定度
+      通常为 3&#8211;10%。
+    </p>
+    <p>
+      它与距离不确定度按平方和合成，总量必须保持在 100% 以下。请注意<i>检测限值</i>更早失效，
+      在 1/k<sub>&#946;</sub> 处——&#946;&#160;=&#160;0.05 时约为 61%——因为超过该值后，无论计数
+      多久都无法把信号与标度分离开。上限值仍然有效。
+    </p>
+  </message>
+
+  <message id="dl-err-bad-dist-uncert">无法读取距离不确定度——应为类似 '1 cm' 的值，若没有则留空。</message>
+  <message id="dl-err-bad-eff-uncert">无法读取效率不确定度——应为百分数，如 '5'，若没有则留空。</message>
+  <message id="dl-err-dist-uncert-no-distance">已输入距离不确定度，但距离为空或不是正值——请输入距离，或清除该不确定度。</message>
+  <message id="dl-err-systematic-too-large">合成后的系统不确定度为 {1}%，Currie 方法无法使用——它必须小于 100%。请减小距离或效率的不确定度。</message>
+  <message id="dl-warn-dist-uncert-fixed-geom">未应用距离不确定度：该探测器响应针对固定几何，其效率不依赖于距离。</message>
+  <message id="dl-warn-no-detection-limit">在该系统不确定度下不存在有限的检测限值——无论计数多久，真实信号都无法与标度不确定度分离开。上面的上限值不受影响。</message>
+</messages>

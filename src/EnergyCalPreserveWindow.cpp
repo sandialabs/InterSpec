@@ -256,6 +256,12 @@ EnergyCalPreserveWindow::EnergyCalPreserveWindow(
 
     auto contentstack = layout->addWidget( std::make_unique<WStackedWidget>(), 0, 1 );
     contentstack->addStyleClass( "EnergyCalPreserveStack" );
+
+    // Wt4's WStackedWidget ctor sets an inline `overflow:hidden`, which beats the `overflow-y`
+    //  our stylesheet sets on this stack (Wt3's ctor only added the style class, so the CSS
+    //  worked).  Set it through the API so we win on specificity, else content taller than the
+    //  container is clipped with no scrollbar.
+    contentstack->setOverflow( Wt::Overflow::Auto, Wt::Orientation::Vertical );
     WAnimation animation(Wt::AnimationEffect::Fade, Wt::TimingFunction::Linear, 200);
     contentstack->setTransitionAnimation( animation );
 
@@ -296,7 +302,12 @@ EnergyCalPreserveWindow::EnergyCalPreserveWindow(
   WContainerWidget *bottom = footer();
   //bottom->setStyleClass("modal-footer");
   WPushButton *cancel = bottom->addNew<WPushButton>( "No" );
-  cancel->clicked().connect( this, &EnergyCalPreserveWindow::emitReject );
+  // Must go through hide(), not emitReject() directly: emitReject() defers the finished() emit to
+  //  the next event loop and then suppresses it if the dialog is not hidden by then (that guard is
+  //  what stops a stale reject when a dialog is re-shown).  Called straight from a button click the
+  //  dialog is still visible, so the emit was always suppressed and "No" did nothing at all.
+  //  AuxWindow::setHidden(true) hides first and then calls emitReject(), which is the intended path.
+  cancel->clicked().connect( this, &AuxWindow::hide );
   cancel->setWidth( WLength(47.5,WLength::Unit::Percentage) );
   cancel->setFloatSide(Wt::Side::Left);
 

@@ -676,7 +676,14 @@ PopupDivMenu::PopupDivMenu( const PopupDivMenu::MenuType menutype )
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "ShowPhone", wtjsShowPhone);
     LOAD_JAVASCRIPT(wApp, "PopupDiv.cpp", "SetupHideOverlay", wtjsSetupHideOverlay);
 
-    aboutToHide().connect( this, &PopupDivMenu::mobileDoHide );
+    // On phones sub-menus are shown *over* their parent (they are separate top-level menus - see
+    //  addPopupMenuItem), so selecting the item that opens one must not collapse the parent.  That
+    //  is exactly what `hideOnSelect` controls in `WPopupMenu::done()`.  Closing menus on activation
+    //  is done by us instead, through mobileHideMenuAndParents()/mobileDoHide().
+    //  (This replaces an `isHidden()` override that used to return true unconditionally on mobile;
+    //   that made `done()` take its early-out, which silently killed aboutToHide(), triggered(),
+    //   cancel(), and every `isHidden()` query on a phone menu.)
+    setHideOnSelect( false );
   }else
   {
     addStyleClass( "PopupDivMenu" );
@@ -785,6 +792,21 @@ PopupDivMenu *makePopupMenu( Wt::WPushButton *button )
 }//PopupDivMenu *makePopupMenu(...)
 
 
+PopupDivMenu *makeButtonOwnedPopupMenu( Wt::WPushButton *button )
+{
+  assert( button );
+  if( !button )
+    return nullptr;
+
+  auto menu = std::make_unique<PopupDivMenu>();
+  menu->setAutoHide( true, 500 );
+
+  // Note: deliberately no `button->clicked()` connection here (see header) - the caller pops the
+  //  menu up from its own click handler.
+  return button->addChild( std::move(menu) );
+}//PopupDivMenu *makeButtonOwnedPopupMenu(...)
+
+
 
 PopupDivMenu::~PopupDivMenu()
 {
@@ -853,11 +875,18 @@ bool PopupDivMenu::removeSeperator( Wt::WMenuItem *sepertor )
     cerr << "PopupDivMenu::removeSeperator: !Couldnt find sepertor" << endl;
     return false;
   }
+
+#if( USE_OSX_NATIVE_MENU )
+  // removeItem() destroys the returned unique_ptr when it is discarded, so preserve the opaque
+  // native pointer before removing the Wt item.
+  void *nativeSepertor = sepertor->data();
+#endif
+
   removeItem( sepertor );
   
 #if( USE_OSX_NATIVE_MENU )
   if( m_nsmenu )
-    removeOsxSeparator( m_nsmenu, sepertor->data() );
+    removeOsxSeparator( m_nsmenu, nativeSepertor );
 #endif
 
   return true;
@@ -1128,8 +1157,18 @@ PopupDivMenuItem *PopupDivMenu::addWidget( Wt::WWidget *widget,
     WCheckBox *cb = static_cast<WCheckBox *>( widget );
     if( cb )
     {
+      // The ordinary native item is removed asynchronously. Invalidate and release its Target
+      //  bridge before losing our pointer so neither an AppKit action nor a queued Wt callback can
+      //  act on this item while it is being converted to a checkable native item.
+      if( item->m_nsmenuitemtarget )
+      {
+        invalidateOsxMenuItemTarget( item->m_nsmenuitemtarget );
+        item->m_nsmenuitemtarget = nullptr;
+      }
       removeOsxMenuItem( item->m_nsmenuitem, m_nsmenu );
-      item->m_nsmenuitem = addOsxCheckableMenuItem( m_nsmenu, cb, item );
+      item->m_nsmenuitem = nullptr;
+      item->m_nsmenuitem = addOsxCheckableMenuItem( m_nsmenu, cb, item,
+                                                    &item->m_nsmenuitemtarget );
     }else
     {
       cerr << "PopupDivMenu::addWidget: Unsuppored Widget type on OS X" << endl;
@@ -1190,7 +1229,8 @@ PopupDivMenuItem *PopupDivMenu::insertMenuItem( const int index,
 #if(USE_OSX_NATIVE_MENU)
   if( m_nsmenu )
   {
-    item->m_nsmenuitem = insertOsxMenuItem( m_nsmenu, item, index );
+    item->m_nsmenuitem = insertOsxMenuItem( m_nsmenu, item, index,
+                                           &item->m_nsmenuitemtarget );
     item->m_nsmenu = m_nsmenu;
     item->setData( item->m_nsmenuitem );
   }
@@ -1230,13 +1270,6 @@ void PopupDivMenu::mobileHideMenuAndParents()
 }//void mobileHideMenuAndParents()
 
 
-bool PopupDivMenu::isHidden() const
-{
-  //See notes in header for how big of a hack this function is.
-  return m_mobile || WPopupMenu::isHidden();
-}
-
-
 PopupDivMenuItem *PopupDivMenu::addPhoneBackItem( PopupDivMenu *parent )
 {
   const char *txt = parent ? "Previous" : "Close";
@@ -1270,6 +1303,12 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
 
   if( m_mobile )
   {
+    // On phones the sub-menu is shown *over* its parent, so it is a separate top-level menu rather
+    //  than a Wt sub-menu (no addMenu(), hence nothing takes ownership of it below).  A WPopupMenu
+    //  parents itself to domRoot_ through addGlobalWidget() but that hands ownership straight back,
+    //  so without this addChild() the menu would never be freed.
+    addChild( std::unique_ptr<PopupDivMenu>(menu) );
+
     menu->m_menuParent = m_menuParent;
     menu->m_menuParentID = (m_menuParent ? m_menuParent->id() : string());
     menu->m_parentItem = addItem( text );
@@ -1323,6 +1362,7 @@ PopupDivMenuItem::PopupDivMenuItem( const Wt::WString &text,
 #if( USE_OSX_NATIVE_MENU )
    , m_nsmenu( 0 )
    , m_nsmenuitem( 0 )
+   , m_nsmenuitemtarget( 0 )
 #endif
 {
   // In Wt 3, preventPropagation() on the anchor was needed to prevent double-firing.
@@ -1341,11 +1381,14 @@ PopupDivMenuItem::PopupDivMenuItem( const Wt::WString &text,
 PopupDivMenuItem::~PopupDivMenuItem()
 {
 #if( USE_OSX_NATIVE_MENU )
-  // Invalidate the NSMenuItem's Target (clears its raw pointers to this widget / our WCheckBox)
-  //  synchronously, BEFORE this widget's memory is freed, so the AppKit main thread can no longer
-  //  dereference us in validateMenuItem/clicked/toggleChecked after we're gone.
-  if( m_nsmenuitem )
-    invalidateOsxMenuItemTarget( m_nsmenuitem );
+  // Invalidate and release the native Target's Wt-bound callbacks synchronously, before the Wt
+  //  observable base classes begin destruction. The NSMenuItem association retains Target until
+  //  asynchronous AppKit removal finishes.
+  if( m_nsmenuitemtarget )
+  {
+    invalidateOsxMenuItemTarget( m_nsmenuitemtarget );
+    m_nsmenuitemtarget = nullptr;
+  }
   if( m_nsmenu && m_nsmenuitem )
     removeOsxMenuItem( m_nsmenuitem, m_nsmenu );
 #endif
@@ -1378,8 +1421,15 @@ void PopupDivMenuItem::setDisabled( bool disabled )
   WMenuItem::setDisabled( disabled );
   // Push the new enabled state to the native menu item's Target so validateMenuItem (AppKit thread)
   //  reflects it without having to dereference this widget.
-  if( m_nsmenuitem )
-    setOsxMenuItemTargetEnabled( m_nsmenuitem, !disabled );
+  if( m_nsmenuitemtarget )
+    setOsxMenuItemTargetEnabled( m_nsmenuitemtarget, isEnabled() );
+}
+
+void PopupDivMenuItem::propagateSetEnabled( bool enabled )
+{
+  WMenuItem::propagateSetEnabled( enabled );
+  if( m_nsmenuitemtarget )
+    setOsxMenuItemTargetEnabled( m_nsmenuitemtarget, isEnabled() );
 }
 #endif //USE_OSX_NATIVE_MENU
 
@@ -1449,6 +1499,4 @@ Wt::WAnchor *PopupDivMenuItem::anchor()
 
   return 0;
 }//Wt::WAnchor *PopupDivMenuItem::anchor()
-
-
 

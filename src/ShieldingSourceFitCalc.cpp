@@ -69,6 +69,7 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/ShieldSourcePullTrend.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 #include "InterSpec/GammaInteractionCalc_imp.hpp"
 
@@ -2448,6 +2449,415 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
 
 
 void fit_model_minuit2( const std::string wtsession,
+namespace
+{
+  /** Rebuilds a `SupplementalPeakInfo::description` from its parts, keeping the caveats last. */
+  void update_supplemental_description( ShieldingSourceFitCalc::SupplementalPeakInfo &info )
+  {
+    info.description = info.result_summary;
+
+    if( !info.caveats.empty() )
+      info.description += string(info.description.empty() ? "" : "  ") + info.caveats;
+  }//void update_supplemental_description( SupplementalPeakInfo & )
+
+
+  /** Appends a caveat, with the usual two-space separation. */
+  void add_supplemental_caveat( ShieldingSourceFitCalc::SupplementalPeakInfo &info,
+                                const string &caveat )
+  {
+    info.caveats += string(info.caveats.empty() ? "" : "  ") + caveat;
+  }//void add_supplemental_caveat( SupplementalPeakInfo &, const string & )
+}//namespace
+
+
+vector<SupplementalPeakInfo> compute_supplemental_peak_info(
+                            const GammaInteractionCalc::ShieldingSourceChi2Fcn &chi2Fcn,
+                            const ModelFitResults &results,
+                            vector<string> &warnings )
+{
+  vector<SupplementalPeakInfo> answer;
+
+  const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput &input
+                                                                = chi2Fcn.createInput();
+  const GammaInteractionCalc::ShieldingSourceChi2Fcn::SupplementalInfoOptions &supp_options
+                                                                = input.supplemental_options;
+
+  if( !supp_options.compute
+     || (results.successful != ModelFitResults::FitStatus::Final)
+     || input.foreground_peaks.empty() )
+  {
+    return answer;
+  }
+
+  const vector<double> &params = results.paramValues;
+
+  // The nuclides the fit actually has parameters for; a peak whose nuclide is not one of these
+  //  cannot be added to the evaluation without shifting the whole parameter layout.
+  set<const SandiaDecay::Nuclide *> fit_nuclides;
+  for( size_t i = 0; i < chi2Fcn.numNuclides(); ++i )
+  {
+    const SandiaDecay::Nuclide * const nuc = chi2Fcn.nuclide( i );
+    if( nuc )
+      fit_nuclides.insert( nuc );
+  }
+
+  const set<shared_ptr<const PeakDef>> synthetic_peaks( begin(input.synthetic_peaks),
+                                                        end(input.synthetic_peaks) );
+
+  // The nuclides that are volumetric (self-attenuating or trace) sources; their attenuation and
+  //  efficiency are averaged over the source, so scaling a single peak is only approximate.
+  set<const SandiaDecay::Nuclide *> volumetric_nuclides;
+  if( results.source_calc_details )
+  {
+    for( const GammaInteractionCalc::SourceDetails &src : *results.source_calc_details )
+    {
+      if( src.nuclide && (src.isSelfAttenSource || src.isTraceSource) )
+        volumetric_nuclides.insert( src.nuclide );
+    }
+  }//if( results.source_calc_details )
+
+  DetectionLimitCalc::PeakCurrieCheckOptions check_opts;
+  check_opts.confidence_level = supp_options.confidence_level;
+  check_opts.num_side_channels = supp_options.num_side_channels;
+  check_opts.roi_num_fwhm = supp_options.roi_num_fwhm;
+
+  // One entry per peak given to `create(...)`, in that order.  The peaks that will be added to the
+  //  evaluation are collected as we go.
+  vector<size_t> to_evaluate;  //indexes into `answer`
+
+  for( const shared_ptr<const PeakDef> &peak : input.foreground_peaks )
+  {
+    SupplementalPeakInfo info;
+    info.peak = peak;
+
+    if( !peak )
+    {
+      assert( 0 );
+      info.not_evaluated_reason = "invalid peak";
+      answer.push_back( info );
+      continue;
+    }
+
+    info.used_for_fit = peak->useForShieldingSourceFit();
+    info.synthetic = (synthetic_peaks.count(peak) > 0);
+
+    // The detection-limit check is meaningful for every peak: for a peak that was fit it says
+    //  whether the signal is actually above the level at which it can be claimed.
+    info.currie = DetectionLimitCalc::currie_check_for_peak( *peak, input.foreground, check_opts,
+                                                            !info.synthetic );
+
+    const SandiaDecay::Nuclide * const nuc = peak->parentNuclide();
+    if( !nuc )
+      info.not_evaluated_reason = "the peak has no nuclide assigned";
+    else if( !fit_nuclides.count(nuc) )
+      info.not_evaluated_reason = nuc->symbol + " was not one of the fitted sources";
+    else if( !peak->hasSourceGammaAssigned() )
+      info.not_evaluated_reason = "the peak has no specific gamma assigned";
+    else
+      to_evaluate.push_back( answer.size() );
+
+    info.nuclide_expected_counts = 0.0;
+    answer.push_back( info );
+  }//for( const shared_ptr<const PeakDef> &peak : input.foreground_peaks )
+
+  if( to_evaluate.empty() )
+  {
+    for( SupplementalPeakInfo &info : answer )
+      update_supplemental_description( info );
+    return answer;
+  }
+
+  // Build the augmented peak list: same order, with the eligible not-used peaks flagged so that
+  //  `create(...)` keeps them.  Everything else is passed through untouched.
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput aug_input = input;
+  aug_input.supplemental_options.compute = false;  //dont recurse
+  aug_input.foreground_peaks.clear();
+
+  set<shared_ptr<const PeakDef>> added_peaks;
+  for( const size_t index : to_evaluate )
+  {
+    if( !answer[index].used_for_fit )
+      added_peaks.insert( answer[index].peak );
+  }
+
+  for( const shared_ptr<const PeakDef> &peak : input.foreground_peaks )
+  {
+    if( added_peaks.count(peak) )
+    {
+      auto flagged = make_shared<PeakDef>( *peak );
+      flagged->useForShieldingSourceFit( true );
+      aug_input.foreground_peaks.push_back( flagged );
+    }else
+    {
+      aug_input.foreground_peaks.push_back( peak );
+    }
+  }//for( const shared_ptr<const PeakDef> &peak : input.foreground_peaks )
+
+  vector<GammaInteractionCalc::PeakDetail> details;
+  shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> aug_fcn;
+
+  try
+  {
+    const pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>,
+               ROOT::Minuit2::MnUserParameters> fcn_pars
+            = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( aug_input );
+
+    aug_fcn = fcn_pars.first;
+
+    // Adding peaks whose nuclides are already fitted leaves the nuclide set - and therefore the
+    //  parameter layout - unchanged.  If that ever stopped being true, every parameter would
+    //  silently shift, and the numbers below would be garbage; so check before evaluating.
+    const size_t num_aug_pars = fcn_pars.second.Parameters().size();
+    const bool layout_matches = (aug_fcn->numNuclides() == chi2Fcn.numNuclides())
+                                && (num_aug_pars == params.size());
+    assert( layout_matches );
+
+    if( !layout_matches )
+    {
+      warnings.push_back( "The peaks not used in the fit could not be evaluated: adding them"
+                          " changed the fit parameter layout." );
+      for( SupplementalPeakInfo &info : answer )
+      {
+        if( info.not_evaluated_reason.empty() )
+          info.not_evaluated_reason = "the fit parameter layout could not be reproduced";
+        update_supplemental_description( info );
+      }
+      return answer;
+    }//if( !layout_matches )
+
+    // `energy_chi_contributions` requires the uncertainties to be the same length as the values,
+    //  but a fit that didnt converge clears them.
+    vector<double> errors = results.paramErrors;
+    if( errors.size() != params.size() )
+      errors.resize( params.size(), 0.0 );
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
+    aug_fcn->energy_chi_contributions( params, errors, mixcache, nullptr, &details );
+  }catch( std::exception &e )
+  {
+    warnings.push_back( "Failed to evaluate the fitted model for the peaks not used in the fit: "
+                        + string(e.what()) );
+    for( SupplementalPeakInfo &info : answer )
+    {
+      if( info.not_evaluated_reason.empty() )
+        info.not_evaluated_reason = "the model evaluation failed";
+      update_supplemental_description( info );
+    }
+    return answer;
+  }//try / catch
+
+  // `details` is in the order of the peaks `create(...)` kept, which is the order they appear in
+  //  `aug_input.foreground_peaks`, filtered on the fit flag.
+  vector<shared_ptr<const PeakDef>> evaluated_peaks;
+  for( size_t i = 0; i < aug_input.foreground_peaks.size(); ++i )
+  {
+    const shared_ptr<const PeakDef> &p = aug_input.foreground_peaks[i];
+    if( p && p->useForShieldingSourceFit() )
+      evaluated_peaks.push_back( input.foreground_peaks[i] );  //the original, un-flagged peak
+  }
+
+  assert( evaluated_peaks.size() == details.size() );
+  if( evaluated_peaks.size() != details.size() )
+  {
+    warnings.push_back( "The peaks not used in the fit could not be evaluated: the model returned"
+                        " an unexpected number of results." );
+    for( SupplementalPeakInfo &info : answer )
+    {
+      if( info.not_evaluated_reason.empty() )
+        info.not_evaluated_reason = "the model returned an unexpected number of results";
+      update_supplemental_description( info );
+    }
+    return answer;
+  }//if( evaluated_peaks.size() != details.size() )
+
+  // Adding peaks changes which peaks the models gamma lines get clustered to, and a line can in
+  //  principle be pulled away from a peak the fit used.  If that happened the numbers below are not
+  //  the nominal answer any more, so check the used peaks still get what the fit gave them.
+  double worst_used_peak_diff = 0.0;
+  if( results.peak_calc_details )
+  {
+    size_t fit_index = 0;
+    for( size_t i = 0; i < evaluated_peaks.size(); ++i )
+    {
+      const shared_ptr<const PeakDef> &p = evaluated_peaks[i];
+      if( !p || !p->useForShieldingSourceFit() )
+        continue;
+
+      if( fit_index >= results.peak_calc_details->size() )
+        break;
+
+      const double fit_expected = (*results.peak_calc_details)[fit_index].expectedCounts;
+      const double aug_expected = details[i].expectedCounts;
+      fit_index += 1;
+
+      if( fit_expected > 0.0 )
+        worst_used_peak_diff = std::max( worst_used_peak_diff,
+                                         fabs(aug_expected - fit_expected) / fit_expected );
+    }//for( size_t i = 0; i < evaluated_peaks.size(); ++i )
+  }//if( results.peak_calc_details )
+
+  // A tenth of a percent is far above the numerical noise of re-running the same calculation, and
+  //  far below any real re-clustering, which moves a whole gamma line.
+  const bool clustering_changed = (worst_used_peak_diff > 1.0E-3);
+  assert( !clustering_changed );
+  if( clustering_changed )
+  {
+    char buffer[256] = { '\0' };
+    snprintf( buffer, sizeof(buffer),
+             "Including the peaks not used in the fit changed the model prediction for the peaks"
+             " that were used, by up to %.2g%%; the implied activities below are approximate.",
+             100.0*worst_used_peak_diff );
+    warnings.push_back( buffer );
+  }//if( clustering_changed )
+
+  const bool use_curie = supp_options.use_curie;
+
+  for( size_t i = 0; i < evaluated_peaks.size(); ++i )
+  {
+    const shared_ptr<const PeakDef> &peak = evaluated_peaks[i];
+    const GammaInteractionCalc::PeakDetail &detail = details[i];
+
+    // Find this peaks entry
+    SupplementalPeakInfo *info = nullptr;
+    for( SupplementalPeakInfo &candidate : answer )
+    {
+      if( candidate.peak == peak )
+      {
+        info = &candidate;
+        break;
+      }
+    }
+
+    assert( info );
+    if( !info )
+      continue;
+
+    const SandiaDecay::Nuclide * const nuc = peak->parentNuclide();
+    assert( nuc );
+
+    // Split the model prediction between this peaks nuclide and any other fitted source that also
+    //  contributes to it; this is the interference correction.
+    double nuclide_counts = 0.0;
+    for( const GammaInteractionCalc::PeakDetailSrc &src : detail.m_sources )
+    {
+      if( src.nuclide == nuc )
+        nuclide_counts += src.modelContribToPeak;
+    }
+
+    info->model_evaluated = true;
+    info->expected_counts = detail.expectedCounts;
+    info->nuclide_expected_counts = nuclide_counts;
+    info->other_srcs_expected_counts = detail.expectedCounts - nuclide_counts;
+    info->shared_with_other_sources = (info->other_srcs_expected_counts > 1.0E-6*detail.expectedCounts);
+    info->det_efficiency = detail.detEff;
+    info->shield_transmission = detail.m_totalShieldAttenFactor;
+    info->air_transmission = detail.m_airAttenFactor;
+    info->ratio_to_fit = detail.observedOverExpected;
+    info->ratio_to_fit_uncert = detail.observedOverExpectedUncert;
+    info->num_sigma_off = detail.numSigmaOff;
+    info->is_volumetric_source = (volumetric_nuclides.count(nuc) > 0);
+
+    // The fitted activity of this peaks nuclide.
+    for( const SourceFitDef &src : results.fit_src_info )
+    {
+      if( src.nuclide == nuc )
+      {
+        info->fit_activity = src.activity;
+        info->fit_activity_uncert = src.activityUncertainty ? *src.activityUncertainty : 0.0;
+        break;
+      }
+    }
+
+    if( nuclide_counts <= 0.0 )
+    {
+      info->not_evaluated_reason = "the model attributes no " + nuc->symbol + " counts to this peak";
+      info->model_evaluated = false;
+      update_supplemental_description( *info );
+      continue;
+    }
+
+    if( info->fit_activity > 0.0 )
+      info->counts_per_bq = nuclide_counts / info->fit_activity;
+
+    if( info->is_volumetric_source )
+      add_supplemental_caveat( *info, "Note: " + nuc->symbol + " is a volumetric (self-attenuating"
+                              " or trace) source, so the attenuation and efficiency are averaged"
+                              " over the source rather than a single line of sight." );
+
+    if( clustering_changed )
+      add_supplemental_caveat( *info, "Note: including this peak changed the model prediction for"
+                              " the peaks that were used in the fit, so this comparison is"
+                              " approximate." );
+
+    // Only a peak that was actually observed, and that the fit did not use, has an activity to
+    //  imply.  A synthetic peak has no real area, and a used peak already contributed its answer.
+    if( info->used_for_fit || info->synthetic )
+    {
+      update_supplemental_description( *info );
+      continue;
+    }
+
+    if( peak->sourceGammaType() != PeakDef::SourceGammaType::NormalGamma )
+      add_supplemental_caveat( *info, "Note: this peak is assigned to a single- or double-escape"
+                              " peak, x-ray, or annihilation gamma; the comparison is less"
+                              " reliable for these." );
+
+    if( info->shared_with_other_sources )
+    {
+      char buffer[256] = { '\0' };
+      snprintf( buffer, sizeof(buffer),
+               "Note: other fitted sources contribute %.0f%% of the counts expected in this peak;"
+               " their contribution has been removed before scaling.",
+               100.0*info->other_srcs_expected_counts/detail.expectedCounts );
+      add_supplemental_caveat( *info, buffer );
+    }//if( info->shared_with_other_sources )
+
+    // Everything else is held at the nominal fitted answer, so the activity this peak implies is
+    //  just the activity that would make the models prediction match what was observed.
+    const double nuclide_observed = detail.observedCounts - info->other_srcs_expected_counts;
+
+    info->implied_activity = info->fit_activity * nuclide_observed / nuclide_counts;
+    info->implied_activity_uncert = info->fit_activity * detail.observedUncert / nuclide_counts;
+    info->has_implied_activity = (info->fit_activity > 0.0);
+
+    if( !info->has_implied_activity )
+    {
+      info->not_evaluated_reason = "the fitted activity of " + nuc->symbol + " is zero";
+      update_supplemental_description( *info );
+      continue;
+    }
+
+    const string act_str = PhysicalUnits::printToBestActivityUnits( info->implied_activity, 3,
+                                                                    use_curie );
+    const string uncert_str = PhysicalUnits::printToBestActivityUnits( info->implied_activity_uncert,
+                                                                       2, use_curie );
+
+    char short_buffer[64] = { '\0' };
+    snprintf( short_buffer, sizeof(short_buffer), "%.2fx fitted", info->ratio_to_fit );
+    info->short_description = short_buffer;
+
+    char summary_buffer[512] = { '\0' };
+    snprintf( summary_buffer, sizeof(summary_buffer),
+             "This peak alone implies a %s activity of %s +- %s, which is %.2f times the fitted"
+             " activity (%.1f sigma).",
+             nuc->symbol.c_str(), act_str.c_str(), uncert_str.c_str(),
+             info->ratio_to_fit, info->num_sigma_off );
+    info->result_summary = summary_buffer;
+
+    update_supplemental_description( *info );
+  }//for( size_t i = 0; i < evaluated_peaks.size(); ++i )
+
+  for( SupplementalPeakInfo &info : answer )
+  {
+    if( info.description.empty() )
+      update_supplemental_description( info );
+  }
+
+  return answer;
+}//vector<SupplementalPeakInfo> compute_supplemental_peak_info(...)
+
+
+void fit_model( const std::string wtsession,
                          std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
                          std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
                          std::shared_ptr<ShieldingSourceFitCalc::ModelFitProgress> progress,
@@ -2805,6 +3215,410 @@ void fit_model_minuit2( const std::string wtsession,
     
     
     fill_fit_results( chi2Fcn, params, errors, ndof, results );
+    {// Begin set fit source info
+      results->fit_src_info.clear();
+      
+      const vector<ShieldingSourceFitCalc::SourceFitDef> &initialSources = chi2Fcn->initialSourceDefinitions();
+      
+      // Finally we'll set activities and ages
+      const size_t nnucs = chi2Fcn->numNuclides();
+      results->fit_src_info.resize( nnucs );
+      
+      assert( initialSources.size() == nnucs );
+      if( initialSources.size() != nnucs )
+        throw runtime_error( "Somehow different number of initial source and nuclides." );
+      
+      
+      //Go through and set the ages and activities fit for
+      for( size_t nucn = 0; nucn < nnucs; ++nucn )
+      {
+        const SandiaDecay::Nuclide *nuc = chi2Fcn->nuclide( nucn );
+        
+        size_t initial_row = nnucs;
+        for( size_t row = 0; (initial_row == nnucs) && (row < nnucs); ++row )
+        {
+          if( initialSources[row].nuclide == nuc )
+            initial_row = row;
+        }//for( size_t row = 0; row < nnucs; ++row )
+        
+        assert( initial_row != nnucs );
+        if( initial_row == nnucs )
+          throw runtime_error( "Unable to finish initial source for nuclide "
+                              + (nuc ? nuc->symbol : string("null")) );
+        
+        const ShieldingSourceFitCalc::SourceFitDef &initialdef = initialSources[initial_row];
+        ShieldingSourceFitCalc::SourceFitDef &row = results->fit_src_info[initial_row];
+        
+        
+        const double age = chi2Fcn->age( nuc, params );
+        const double total_activity = chi2Fcn->totalActivity( nuc, params );
+        
+        row.nuclide = nuc;
+        row.fitAge = initialdef.fitAge;
+        row.fitActivity = initialdef.fitActivity;
+        
+        row.age = age;
+        row.activity = total_activity;
+        row.ageDefiningNuc = initialdef.ageDefiningNuc;
+        row.sourceType = initialdef.sourceType;
+        
+#if( INCLUDE_ANALYSIS_TEST_SUITE )
+        row.truthActivity = initialdef.truthActivity;
+        row.truthActivityTolerance = initialdef.truthActivityTolerance;
+        row.truthAge = initialdef.truthAge;
+        row.truthAgeTolerance = initialdef.truthAgeTolerance;
+#endif
+        
+        row.activityUncertainty.reset();
+        if( row.fitActivity || chi2Fcn->isTraceSource(nuc) || chi2Fcn->isSelfAttenSource(nuc) )
+        {
+          try
+          {
+            const double activityUncert = chi2Fcn->totalActivityUncertainty( nuc, params, errors );
+            if( activityUncert > FLT_EPSILON )
+            {
+              assert( activityUncert > 0.0 );
+              row.activityUncertainty = activityUncert;
+            }
+          }catch( std::exception & )
+          {
+            //We dont seem to get here - but JUC
+            assert( 0 );
+          }
+        }
+        
+        row.ageUncertainty.reset();
+        if( row.fitAge )
+        {
+          const double ageUncert = chi2Fcn->age( nuc, errors );
+          if( ageUncert > FLT_EPSILON )
+          {
+            assert( ageUncert > 0.0 );
+            row.ageUncertainty = ageUncert;
+          }
+        }else
+        {
+          assert( (max(row.age, initialdef.age) < 1.0E-6)
+                 || (fabs(row.age - initialdef.age) < 1.0E-5*max(row.age,initialdef.age)) );
+        }
+        
+      }//for( int ison = 0; ison < niso; ++ison )
+    }// End set fit source info
+    
+    
+    
+    results->final_shieldings.clear();
+    assert( results->initial_shieldings.size() == chi2Fcn->numMaterials() );
+    if( results->initial_shieldings.size() != chi2Fcn->numMaterials() )
+      throw std::logic_error( "Pre/Post fit number of shieldings not equal" );
+    
+    for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
+    {
+      const ShieldingSourceFitCalc::ShieldingInfo &initial_shield = results->initial_shieldings[shielding_index];
+      
+      ShieldingSourceFitCalc::FitShieldingInfo shield;
+      shield.m_forFitting = true;
+      shield.m_geometry = chi2Fcn->geometry();
+      shield.m_isGenericMaterial = chi2Fcn->isGenericMaterial(shielding_index);
+      assert( shield.m_isGenericMaterial == initial_shield.m_isGenericMaterial );
+      shield.m_material = initial_shield.m_material;
+      assert( shield.m_material == chi2Fcn->material(shielding_index) );
+      
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+      shield.m_truthFitMassFractions = initial_shield.m_truthFitMassFractions;
+      
+      for( size_t i = 0; i < 3; ++i )
+      {
+        shield.m_truthDimensions[i] = initial_shield.m_truthDimensions[i];
+        shield.m_truthDimensionsTolerances[i] = initial_shield.m_truthDimensionsTolerances[i];
+      }
+#endif
+      
+      for( size_t i = 0; i < 3; ++i )
+      {
+        shield.m_dimensions[i] = 0.0;
+        shield.m_fitDimensions[i] = false;
+      }
+      
+      const int shield_start_par = static_cast<int>(2*chi2Fcn->numNuclides() + 3*shielding_index);
+      
+      
+      if( shield.m_isGenericMaterial )
+      {
+        // Note: `ShieldingInfo::m_dimensions[1]` holds the areal density in InterSpec internal
+        //  units - this is the convention used by `ShieldingSelect::toShieldingInfo()`,
+        //  `ShieldingInfo::serialize()`/`deSerialize()`, `ShieldingInfo::encodeStateToUrl()`, and
+        //  `ShieldingSourceChi2Fcn::create()` (which seeds the fit parameter from it).  So do not
+        //  convert to g/cm2 here, or consumers of `final_shieldings` are off by ~62415x.
+        const double an = chi2Fcn->atomicNumber( shielding_index, params );
+        const double ad = chi2Fcn->arealDensity( shielding_index, params );
+
+        shield.m_dimensions[0] = an;
+        shield.m_fitDimensions[0] = initial_shield.m_fitDimensions[0];
+        if( shield.m_fitDimensions[0] )
+          shield.m_dimensionUncerts[0] = chi2Fcn->atomicNumber( shielding_index, errors );
+
+        shield.m_dimensions[1] = ad;
+        shield.m_fitDimensions[1] = initial_shield.m_fitDimensions[1];
+        if( shield.m_fitDimensions[1] )
+          shield.m_dimensionUncerts[1] = chi2Fcn->arealDensity( shielding_index, errors );
+        
+        // There looks to be a bug in Minuit that IsFixed() doesnt work
+        //assert( shield.m_fitDimensions[0] != fitParams.Parameter(shield_start_par).IsFixed() );
+        //assert( shield.m_fitDimensions[1] != fitParams.Parameter(shield_start_par + 1).IsFixed() );
+      }else
+      {
+        const map<const SandiaDecay::Element *,vector<tuple<const SandiaDecay::Nuclide *,double,double,bool>>>
+        selfAttenSrcInfo = chi2Fcn->selfAttenSrcInfo( shielding_index, params, errors );
+        
+        const vector<const SandiaDecay::Nuclide *> trace_nucs = chi2Fcn->traceNuclidesForMaterial( shielding_index );
+      
+      
+        for( const auto &el_nucs : selfAttenSrcInfo )
+        {
+          const SandiaDecay::Element * const el = el_nucs.first;
+          assert( el );
+          
+          double post_fit_frac = 0.0;
+          for( const tuple<const SandiaDecay::Nuclide *,double,double,bool> &nuc_info : el_nucs.second )
+          {
+            const SandiaDecay::Nuclide * const nuc = get<0>(nuc_info);
+            const double &mass_frac = get<1>(nuc_info);
+            const double &mass_frac_uncert = get<2>(nuc_info);
+            const bool fit_frac = get<3>(nuc_info);
+            
+            assert( fit_frac || (mass_frac_uncert <= 0.0) );
+            
+            shield.m_nuclideFractions_[el].emplace_back( nuc, mass_frac, fit_frac );
+            
+            if( fit_frac && (mass_frac_uncert > 0.0) )
+              shield.m_nuclideFractionUncerts[el][nuc] = mass_frac_uncert;
+            
+            if( fit_frac )
+              post_fit_frac += mass_frac;
+          }//for( loop over nuclides )
+          
+          double pre_fit_frac = 0.0;
+          assert( initial_shield.m_nuclideFractions_.count(el) );
+          
+          for( const auto &el_infos : initial_shield.m_nuclideFractions_ )
+          {
+            if( el_infos.first != el )
+              continue;
+            
+            for( const tuple<const SandiaDecay::Nuclide *,double,bool> &nuc_info : el_infos.second )
+            {
+              if( get<2>(nuc_info) )
+                pre_fit_frac += get<1>(nuc_info);
+            }
+          }//for( loop over initial shielding self-atten elements )
+          
+          const double frac_diff = fabs(pre_fit_frac - post_fit_frac);
+          assert( (frac_diff < 1.0E-12) || (frac_diff < 1.0E-5*std::max(pre_fit_frac,post_fit_frac)) );
+          
+          if( (frac_diff > 1.0E-12) && ((frac_diff/std::max(pre_fit_frac,post_fit_frac)) > 1.0E-5) ) //limits chosen arbitrarily
+            throw logic_error( "Mass fraction for self-atten src element " + el->symbol
+                              + " should be " + to_string(pre_fit_frac) + " but calculation yielded "
+                              + to_string(post_fit_frac) );
+        }//for( const auto &el_nucs : selfAttenSrcInfo )
+        
+        for( const SandiaDecay::Nuclide * const nuc : trace_nucs )
+        {
+          ShieldingSourceFitCalc::TraceSourceInfo trace;
+          trace.m_nuclide = nuc;
+          trace.m_type = chi2Fcn->traceSourceActivityType( nuc );
+          const int ind = static_cast<int>( chi2Fcn->nuclideIndex( nuc ) );
+          
+          // There looks to be a bug in Minuit that IsFixed() doesnt work
+          //trace.m_fitActivity = !fitParams.Parameter(2*ind).IsFixed();
+          bool foundTrace = false;
+          for( size_t i = 0; !foundTrace && (i < initial_shield.m_traceSources.size()); ++i )
+          {
+            foundTrace = (initial_shield.m_traceSources[i].m_nuclide == nuc);
+            if( foundTrace )
+              trace.m_fitActivity = initial_shield.m_traceSources[i].m_fitActivity;
+          }//
+          
+          trace.m_activity = chi2Fcn->activity( nuc, params );
+          
+          if( trace.m_type == GammaInteractionCalc::TraceActivityType::ExponentialDistribution )
+            trace.m_relaxationDistance = chi2Fcn->relaxationLength( nuc );
+          
+          shield.m_traceSources.push_back( trace );
+          
+          if( trace.m_fitActivity )
+            shield.m_traceSourceActivityUncerts[nuc] = chi2Fcn->activityUncertainty( nuc, params, errors );
+        }//for( const SandiaDecay::Nuclide * const nuc : trace_nucs )
+        
+        switch( shield.m_geometry )
+        {
+          case GammaInteractionCalc::GeometryType::Spherical:
+            shield.m_dimensions[0] = chi2Fcn->sphericalThickness( shielding_index, params );
+            // There looks to be a bug in Minuit that IsFixed() doesnt work
+            //shield.m_fitDimensions[0] = !fitParams.Parameter(shield_start_par).IsFixed();
+            //assert( shield.m_fitDimensions[0] == initial_shield.m_fitDimensions[0] );
+            shield.m_fitDimensions[0] = initial_shield.m_fitDimensions[0];
+            
+            if( shield.m_fitDimensions[0] )
+              shield.m_dimensionUncerts[0] = chi2Fcn->sphericalThickness( shielding_index, errors );
+            break;
+            
+          case GammaInteractionCalc::GeometryType::CylinderEndOn:
+          case GammaInteractionCalc::GeometryType::CylinderSideOn:
+            shield.m_dimensions[0] = chi2Fcn->cylindricalRadiusThickness( shielding_index, params );
+            shield.m_dimensions[1] = chi2Fcn->cylindricalLengthThickness( shielding_index, params );
+            // There looks to be a bug in Minuit that IsFixed() doesnt work
+            //shield.m_fitDimensions[0] = !fitParams.Parameter(shield_start_par).IsFixed();
+            //shield.m_fitDimensions[1] = !fitParams.Parameter(shield_start_par + 1 ).IsFixed();
+            //assert( shield.m_fitDimensions[0] == initial_shield.m_fitDimensions[0] );
+            //assert( shield.m_fitDimensions[1] == initial_shield.m_fitDimensions[1] );
+            shield.m_fitDimensions[0] = initial_shield.m_fitDimensions[0];
+            shield.m_fitDimensions[1] = initial_shield.m_fitDimensions[1];
+            
+            if( shield.m_fitDimensions[0] )
+              shield.m_dimensionUncerts[0] = chi2Fcn->cylindricalRadiusThickness( shielding_index, errors );
+            if( shield.m_fitDimensions[1] )
+              shield.m_dimensionUncerts[1] = chi2Fcn->cylindricalLengthThickness( shielding_index, errors );
+            break;
+            
+          case GammaInteractionCalc::GeometryType::Rectangular:
+            shield.m_dimensions[0] = chi2Fcn->rectangularWidthThickness( shielding_index, params );
+            shield.m_dimensions[1] = chi2Fcn->rectangularHeightThickness( shielding_index, params );
+            shield.m_dimensions[2] = chi2Fcn->rectangularDepthThickness( shielding_index, params );
+            // There looks to be a bug in Minuit that IsFixed() doesnt work
+            //shield.m_fitDimensions[0] = !fitParams.Parameter(shield_start_par ).IsFixed();
+            //shield.m_fitDimensions[1] = !fitParams.Parameter(shield_start_par + 1 ).IsFixed();
+            //shield.m_fitDimensions[2] = !fitParams.Parameter(shield_start_par + 2 ).IsFixed();
+            //assert( shield.m_fitDimensions[0] == initial_shield.m_fitDimensions[0] );
+            //assert( shield.m_fitDimensions[1] == initial_shield.m_fitDimensions[1] );
+            //assert( shield.m_fitDimensions[2] == initial_shield.m_fitDimensions[2] );
+            shield.m_fitDimensions[0] = initial_shield.m_fitDimensions[0];
+            shield.m_fitDimensions[1] = initial_shield.m_fitDimensions[1];
+            shield.m_fitDimensions[2] = initial_shield.m_fitDimensions[2];
+            
+            if( shield.m_fitDimensions[0] )
+              shield.m_dimensionUncerts[0] = chi2Fcn->rectangularWidthThickness( shielding_index, errors );
+            if( shield.m_fitDimensions[1] )
+              shield.m_dimensionUncerts[1] = chi2Fcn->rectangularHeightThickness( shielding_index, errors );
+            if( shield.m_fitDimensions[2] )
+              shield.m_dimensionUncerts[2] = chi2Fcn->rectangularDepthThickness( shielding_index, errors );
+            break;
+            
+          case GammaInteractionCalc::GeometryType::NumGeometryType:
+            assert( 0 );
+            break;
+        }//switch( shield.m_geometry )
+      }//if( shield.m_isGenericMaterial ) / else
+      
+      results->final_shieldings.push_back( shield );
+    }//for( int i = 0; i < nshieldings; ++i )
+    
+    
+    
+    {// Begin logging detailed info, we'll later use to template reports
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
+      auto peak_calc_details = make_unique<vector<GammaInteractionCalc::PeakDetail>>();
+      const auto peak_comparisons = chi2Fcn->energy_chi_contributions( params, errors, mixcache,
+                                                                      &(results->peak_calc_log),
+                                                                      peak_calc_details.get() );
+      
+      results->peak_calc_details = std::move(peak_calc_details);
+      results->peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>(peak_comparisons) );
+
+      // Diagnose the per-peak pull trend vs energy (never let a diagnostic fail the fit).
+      try
+      {
+        const vector<ShieldingSourceFitCalc::ShieldingInfo> shield_bases(
+                        results->final_shieldings.begin(), results->final_shieldings.end() );
+        const ShieldSourcePullTrend::FitConfigSummary trend_config =
+          ShieldSourcePullTrend::summarize_fit_config( shield_bases, results->fit_src_info );
+        results->pull_trend = make_shared<const ShieldSourcePullTrend::TrendResult>(
+          ShieldSourcePullTrend::fit_pull_trend( *results->peak_comparisons,
+                                                 *results->peak_calc_details,
+                                                 shield_bases, trend_config ) );
+      }catch( std::exception & )
+      {
+        results->pull_trend = nullptr;
+      }
+
+
+      if( !results->peak_calc_log.empty() )
+      {
+        char buffer[64];
+        snprintf( buffer, sizeof(buffer), "There %s %i parameter%s fit for",
+                 (ndof>1 ? "were" : "was"), int(ndof), (ndof>1 ? "s" : "") );
+        results->peak_calc_log.push_back( "&nbsp;" );
+        results->peak_calc_log.push_back( buffer );
+      }//if( !m_calcLog.empty() )
+      
+      try
+      {
+        auto shielding_details = make_unique<vector<GammaInteractionCalc::ShieldingDetails>>();
+        chi2Fcn->log_shield_info( params, errors, results->fit_src_info, *shielding_details );
+        
+        // Now fill in a little info we need the results for
+        assert( results->initial_shieldings.size() == shielding_details->size() );
+        for( size_t i = 0; i < results->initial_shieldings.size(); ++i )
+        {
+          const ShieldingSourceFitCalc::ShieldingInfo &initial_shield = results->initial_shieldings[i];
+          if( i >= shielding_details->size() )
+            continue; //wont happen, but jic
+          if( i >= results->final_shieldings.size() )
+            continue; //wont happen, but jic
+          
+          const ShieldingSourceFitCalc::FitShieldingInfo &final_shield = results->final_shieldings[i];
+          
+          GammaInteractionCalc::ShieldingDetails &calc_detail = shielding_details->at( i );
+          for( size_t j = 0; j < 3; ++j )
+          {
+            calc_detail.m_fit_dimension[j] = initial_shield.m_fitDimensions[j];
+            if( calc_detail.m_fit_dimension[j] )
+              calc_detail.m_dimension_uncert[j] = final_shield.m_dimensionUncerts[j];
+          }//
+        }//for( size_t i = 0; i < results->initial_shieldings.size(); ++i )
+        
+        
+        results->shield_calc_details = std::move(shielding_details);
+      }catch( std::exception &e )
+      {
+        results->errormsgs.push_back( e.what() );
+      }
+      
+      try
+      {
+        auto shielding_details = make_unique<vector<GammaInteractionCalc::SourceDetails>>();
+        chi2Fcn->log_source_info( params, errors, results->fit_src_info, *shielding_details );
+        results->source_calc_details = std::move(shielding_details);
+      }catch( std::exception &e )
+      {
+        results->errormsgs.push_back( e.what() );
+      }
+      
+      // Per-peak detection limit checks, and the activities implied by peaks that were fit but not
+      //  used in the model.  Both the GUI and batch analyses get this from here.  A failure must
+      //  not lose the fit, so it is caught separately.
+      try
+      {
+        results->supplemental_peak_info = compute_supplemental_peak_info( *chi2Fcn, *results,
+                                                                         results->warnings );
+      }catch( std::exception &e )
+      {
+        results->warnings.push_back( "Failed to compute supplemental peak information: "
+                                     + string(e.what()) );
+      }//try / catch
+
+      // Check if background subtraction is enabled, but no peaks actually background subtracted
+      assert( results->peak_calc_details );
+      if( results->peak_calc_details && chi2Fcn->options().background_peak_subtract )
+      {
+        size_t num_back_sub_peaks = 0;
+        for( const GammaInteractionCalc::PeakDetail &p : *results->peak_calc_details )
+          num_back_sub_peaks += (p.backgroundCounts > 0.0f);
+        if( num_back_sub_peaks == 0 )
+          results->errormsgs.push_back( "Background peak subtraction requested, but no background"
+                                       " peak overlapped a foreground peak.");
+      }//if( background peak subtraction selected )
+    }// end logging detailed info, we'll later use to template reports
   }catch( GammaInteractionCalc::ShieldingSourceChi2Fcn::CancelException &e )
   {
     const size_t nFunctionCallsSoFar = gui_progress_info->numFunctionCallsSoFar();

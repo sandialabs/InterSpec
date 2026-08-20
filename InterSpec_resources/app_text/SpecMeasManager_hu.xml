@@ -49,15 +49,6 @@
   </message>
   <message id="smm-unsupported-document">Ez a fájl dokumentumfájlnak tűnik, amelyet az InterSpec nem támogat.</message>
   <message id="smm-invalid-peak-csv">A feltöltött fájl Peak CSV fájlnak tűnt, de érvénytelen volt.</message>
-  <message id="smm-file-is-drf">
-    <p style="white-space: nowrap;">
-      Ez a fájl detector hatásfok függvénynek tűnik.
-    </p>
-    <p style="text-align: left; white-space: nowrap;">
-      Név: {1}
-    </p>
-   <p>Szeretné használni ezt a DRF-et?</p>
-  </message>
   <message id="smm-saved-drf-conf">
     A(z) '{1}' elmentve későbbi használatra, és elérhető lesz a
     „<em>Rel. Hat.</em>" részben a „<em>Detector hatásfok függvény kiválasztó</em>" eszközben.
@@ -254,7 +245,6 @@
     Használja a <b>Fájlkezelőt</b> ennek módosításához.
   </message>
 
-
   <!-- The visual components of the Spectrum Measurement Manager GUI -->
   <message id="smm-selected-spec-label">Kiválasztott spektrum: </message>
   <message id="smm-disp-as-btn">Megjelenítés mint</message>
@@ -267,7 +257,6 @@
   <message id="smm-export-btn">Exportálás...</message>
   <message id="smm-unload-btn">Eltávolítás</message>
   <message id="smm-unassign-label">Hozzárendelés megszüntetése: </message>
-
 
   <message id="smm-prev-states-window-title">Korábban mentett állapotok</message>
   <message id="smm-err-prev-state-unexpected">Váratlan hiba a mentett állapotok megjelenítésekor: {1}</message>
@@ -294,7 +283,6 @@
   <message id="smm-qr-title">Spektrumfájl {1}</message>
   <message id="smm-qr-sequence-single">QR kód</message>
   <message id="smm-qr-sequence-multi">QR kód {1}/{2}</message>
-
 
   <message id="smm-changed-background">
     A háttérspektrum is frissítve lett az újonnan betöltött fájlban szereplőre.
@@ -327,9 +315,7 @@
   <message id="musd-err-decoding-url">Hiba az URL dekódolásakor: {1}</message>
   <message id="musd-received-urls-list">Beérkezett URL-ek: {1}/{2}.<p>Várakozás további URL-ekre/QR-kódokra</p></message>
 
-
   <message id="uid-qr-code-pic">QR-kód kép</message>
-  <message id="uid-no-qr-found">QR-kód nem található ⓘ</message>
   <message id="uid-no-qr-found-title">QR-kód nem található</message>
   <message id="uid-no-qr-content">
     <p>

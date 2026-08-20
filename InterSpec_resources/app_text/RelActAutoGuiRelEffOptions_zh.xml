@@ -8,7 +8,6 @@
   <message id="raageo-pu242-corr">Pu242校正</message>
   
   <!-- Checkboxes -->
-  <message id="raageo-use-corr-fcn">使用校正函数</message>
   <message id="raageo-share-corr-fcn">共享校正函数</message>
   <message id="raageo-share-ext-atten">共享外部衰减</message>
   <message id="raageo-shielded-by-other-curves">被其他曲线屏蔽</message>

@@ -73,6 +73,7 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/ColorTheme.h"
+#include "InterSpec/WidgetUtils.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
@@ -1237,6 +1238,7 @@ namespace
     DecayCsvResource( DecayActivityDiv *display )
       : WResource(),
         m_display( display ),
+        m_displayHandle( display ),
         m_numRows( 400 ),
         m_timeSpan( 0 ),
         m_activity( true ),
@@ -1247,15 +1249,35 @@ namespace
         m_sessionId( wApp->sessionId() ),
         m_app( wApp )
     {
+      // Have Wt hold the session lock across handleRequest instead of dropping it for us.
+      //  By default (`takesUpdateLock() == false`) `WResource::handle` calls `handler->unlock()`
+      //  before invoking us, so the session thread can be tearing this resource down - inside
+      //  `~WResource`'s `beingDeleted()`, which waits for our use-count to drop - while we are
+      //  blocked acquiring the very lock it holds.  That is a deadlock, and it is why the
+      //  `WApplication::UpdateLock` below had to exist at all.  Costs nothing: that lock already
+      //  spanned the whole of handleRequest, so this only moves the acquisition earlier.
+      setTakesUpdateLock( true );
+
       if( m_display )
         m_timeSpan = m_display->timeToDisplayTill();
       
-      //When a download is complete, we will delete the dialog, but jic something
-      //  wacky (and unexpected) is going on, we'll wrap it so that it wont
-      //  get called if the DecayActivityDiv has been deleted
-      //  (I'm a little adverse to relying on a 'modal' user effect to enforce
-      //   object lifetimes)
-      m_cleanup = [this](){ m_display->deleteCsvDownloadGuiTriggerUpdate(); };
+      //When a download is complete, we will delete the dialog, but jic something wacky (and
+      //  unexpected) is going on, we'll wrap it so that it wont get called if the DecayActivityDiv
+      //  has been deleted.
+      //  (I'm a little adverse to relying on a 'modal' user effect to enforce object lifetimes)
+      //
+      //  This used to be `wApp->bind(...)`, which Wt 4 removed.  It cannot capture `this` or
+      //  `m_display`: the task is posted from `handleRequest` (which runs on a request/IO thread)
+      //  and `WServer::post` only guarantees the *session* is still alive when it runs - by then
+      //  both the resource (a child of the transient CSV dialog) and the DecayActivityDiv (inside a
+      //  transient DecayWindow) may be gone.  A `WidgetHandle` is just an inert DOM-id string, so it
+      //  is safe to copy across the thread boundary, unlike an observing_ptr.
+      const WidgetUtils::WidgetHandle handle = m_displayHandle;
+      m_cleanup = [handle](){
+        DecayActivityDiv * const div = handle.resolve_as<DecayActivityDiv>();
+        if( div )
+          div->deleteCsvDownloadGuiTriggerUpdate();
+      };
     }
     
     virtual ~DecayCsvResource()
@@ -1279,8 +1301,11 @@ namespace
     virtual void handleRequest( const Wt::Http::Request &request,
                                 Wt::Http::Response &response )
     {
+      // With setTakesUpdateLock(true) (see ctor) Wt already holds the session lock for us here, so
+      //  this is a same-thread no-op (WApplication::UpdateLock detects that case and returns
+      //  immediately).  Kept so the null-session path below still has something to test.
       WApplication::UpdateLock lock( m_app );
-      
+
       if( !lock )
       {
         log("error") << "Failed to WApplication::UpdateLock in DecayCsvResource.";
@@ -1297,10 +1322,17 @@ namespace
       
       try
       {
-        SandiaDecay::NuclideMixture *mixture = m_display->m_currentMixture.get();
-        if( !mixture || !m_display )
+        // Re-resolve rather than trusting `m_display`: this runs on a request thread, and while the
+        //  UpdateLock we hold keeps the session thread out for the duration, the widget could
+        //  already have been destroyed before we got here.  `findById` is legal under the lock.
+        DecayActivityDiv * const display = m_displayHandle.resolve_as<DecayActivityDiv>();
+        if( !display )
           throw runtime_error( "No data avalaiable" );
-    
+
+        SandiaDecay::NuclideMixture *mixture = display->m_currentMixture.get();
+        if( !mixture )
+          throw runtime_error( "No data avalaiable" );
+
         const int nparents = mixture->numInitialNuclides();
         const int nchildnucs = mixture->numSolutionNuclides();
         if( nparents < 1 || nchildnucs < 1 )
@@ -1324,7 +1356,7 @@ namespace
       
         string name;
         bool use_curies = false;
-        for( const DecayActivityDiv::Nuclide &n : m_display->m_nuclides )
+        for( const DecayActivityDiv::Nuclide &n : display->m_nuclides )
         {
           const SandiaDecay::Nuclide *nuc = db->nuclide( n.z, n.a, n.iso );
           if( nuc && !IsInf(nuc->halfLife) )  //dont print out activity for stable nuclides.
@@ -1447,7 +1479,11 @@ namespace
       WServer::instance()->post( m_sessionId, m_cleanup );
     }//handleRequest(...)
     
+    /** Only valid during construction (which happens on the session thread) - use #m_displayHandle
+     from `handleRequest` and from anything posted back to the session. */
     DecayActivityDiv *m_display;
+    /** Id-based handle to #m_display, for re-resolving it off the session thread; see #m_cleanup. */
+    const WidgetUtils::WidgetHandle m_displayHandle;
     size_t m_numRows;
     double m_timeSpan;
     bool m_activity;
@@ -3625,4 +3661,8 @@ DecayActivityDiv::~DecayActivityDiv()
   
   if( m_csvDownloadDialog )
     deleteCsvDownloadGui();
+
+  // Owned by wApp (AuxWindow::make), so it does not go away with us; its Close button is a tracked
+  //  connection to this widget, so once we are gone the window is up and un-closeable.
+  deleteMoreInfoDialog();
 }//DecayActivityDiv destructor

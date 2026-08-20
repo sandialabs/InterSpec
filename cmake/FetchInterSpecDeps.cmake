@@ -186,7 +186,17 @@ set( ENABLE_QT6 OFF CACHE INTERNAL "" )
 set( ENABLE_LIBWTTEST OFF CACHE INTERNAL "" )
 set( ENABLE_SAML OFF CACHE INTERNAL "" )
 set( ENABLE_UNWIND OFF CACHE INTERNAL "" )
-set( HTTP_WITH_ZLIB OFF CACHE INTERNAL "" )
+# Keep Wt from enabling gzip responses.  Other than it probably not being needed here,
+#  we havnent build our zlib yet, so Wt will try to link against system zlib, causing
+#  hassles trying to package things on Linux.
+#  Web deployment is the exception: those builds serve real network clients, where HTTP
+#  compression (and WebSocket permessage-deflate, which the same define guards) is worth having,
+#  and they are not packaged as a relocatable app so a shared libz dependency is fine.
+if( BUILD_FOR_WEB_DEPLOYMENT )
+  message( STATUS "InterSpec: leaving Wt httpd zlib compression enabled for web deployment" )
+else()
+  set( HTTP_WITH_ZLIB OFF CACHE INTERNAL "" )
+endif()
 
 # Apple's libc++ on iOS (and older macOS) does not ship `std::chrono::time_zone`,
 # so force Wt to use the bundled Howard Hinnant `date` library instead of the

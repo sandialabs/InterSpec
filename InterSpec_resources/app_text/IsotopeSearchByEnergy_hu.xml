@@ -69,8 +69,6 @@
   <message id="isbe-category-nuc-xray-rctn-desc">Összes nuklid, röntgensugárzás (bomlási és fluoreszcens) és reakció</message>
   <message id="isbe-category-xray">Fluoreszcens röntgenek</message>
   <message id="isbe-category-xray-desc">Csak fluoreszcens röntgenek</message>
-  <message id="isbe-category-reactions">Reakciók</message>
-  <message id="isbe-category-reactions-desc">Csak reakciók</message>
   <message id="isbe-category-medical">Orvosi nuklidok</message>
   <message id="isbe-category-medical-desc">Gyakori orvosi nuklidok</message>
   <message id="isbe-category-industrial">Ipari nuklidok</message>

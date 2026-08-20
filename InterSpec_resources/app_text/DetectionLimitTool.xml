@@ -13,25 +13,6 @@
   <message id="dlt-roi-lower-label">ROI Lower:</message>
   <message id="dlt-roi-upper-label">ROI Upper:</message>
   <message id="dlt-continuum-label">Continuum</message>
-  <message id="dlt-cont-norm-label">Cont. Norm</message>
-  <message id="dlt-cont-norm-floating">Floating</message>
-  <message id="dlt-cont-norm-fixed-edges">Fixed at edges</message>
-  <message id="dlt-cont-norm-fixed-full-roi">Fixed full ROI</message>
-  <message id="dlt-cont-norm-tt">
-    How the continuum normalization should be determined:
-    <ul><li><b>Floating</b>: The polynomial continuum is fit for, at each given activity -
-    the activity affects the continuum.</li>
-    <li><b>Fixed at edges</b>: The channels on either side of the ROI are used to determine a
-    linear continuum that is fixed, and not affected by the nuclides activity.</li>
-    <li><b>Fixed full ROI</b>: The continuum is fit using the entire energy range of the ROI,
-    assuming a Gaussian amplitude of zero; later, the Gaussian component of the peak will
-    sit on top of this fixed continuum.<br/>
-    This is effectively asserting that you know there is no signal peak present in the data.
-    The continuum will not be affected by the nuclide activity value, and the Gaussian
-    component of the peak will sit on top of this fixed continuum when evaluating the
-    &chi;<sup>2</sup>.</li>
-    </ul>
-  </message>
   <message id="dlt-single-peak-currie-limit">Single peak Currie Limit</message>
   <message id="dlt-num-side-channels-label">Num Side Channels</message>
   <message id="dlt-further-details-link">further details...</message>
@@ -43,7 +24,10 @@
   <message id="dlt-range">Range:</message>
   <message id="dlt-detected-activity-tt">Detected activity, using just this Region Of Interests,
     and the observed excess of counts, as well as the
-    statistical confidence interval.</message>
+    statistical confidence interval.
+    The nominal value is the ISO 11929 best estimate: the mean of the signal distribution after
+    removing the part of it that sits on impossible negative activities.  It is always at least the
+    raw excess of counts, and the two agree once the signal is well above the critical level.</message>
   <message id="dlt-limit-lt-zero">Limit: &lt; 0{1}</message>
   <message id="dlt-sig-fewer-counts">(sig. fewer counts in ROI than predicted)</message>
   <message id="dlt-fewer-counts-tt">Significantly fewer counts were observed in the
@@ -65,42 +49,17 @@
     </div>
   </message>
   <message id="dlt-attenuate-for-air">Attenuate for air</message>
-  <message id="dlt-scale-spectrum-cb">Scale Time:</message>
-  <message id="dlt-scale-spectrum-empty-text">e.g. 5 min</message>
-  <message id="dlt-scale-spectrum-tt">
-    Compute the limit you would expect from a measurement of the entered real time, treating the
-    current spectrum as a per-second rate estimate.  Channel counts are scaled by
-    (entered real time) / (current spectrum real time), and the live time is scaled by the same
-    ratio so the dead-time fraction is preserved.
-    <p>
-      Most accurate when scaling to a shorter or comparable dwell time; for much longer dwells
-      the result is optimistic, since the rate-estimate uncertainty exceeds the projected
-      Poisson noise.
-    </p>
-  </message>
-  <message id="dlt-err-bad-scale-time">Invalid scale time - expected something like '5 min', '300 s', or '00:05:00'.</message>
-  <message id="dlt-err-zero-realtime">Cannot scale: foreground spectrum has zero real time.</message>
   <message id="dlt-shield-empty-text">shielding material</message>
   <message id="dlt-activity-limit">Activity Limit</message>
   <message id="dlt-distance-limit">Distance Limit</message>
   <message id="dlt-peaks-disp-act-label">Peaks disp. act.:</message>
   <message id="dlt-peaks-disp-dist-label">Peaks disp. dist.:</message>
-  <message id="dlt-conf-level-label">Confidence Level:</message>
-  <message id="dlt-conf-95">95%</message>
-  <message id="dlt-conf-99">99%</message>
-  <message id="dlt-conf-1sigma">1σ (68.2%)</message>
-  <message id="dlt-conf-2sigma">2σ (95.4%)</message>
-  <message id="dlt-conf-3sigma">3σ (99.7%)</message>
-  <message id="dlt-conf-4sigma">4σ</message>
-  <message id="dlt-conf-5sigma">5σ</message>
   <message id="dlt-gamma-lines-to-use">Gamma lines to use</message>
   <message id="dlt-min-rel-intensity-label">Min relative intensity:</message>
   <message id="dlt-fit-fwhm-btn">Fit FWHM...</message>
   <message id="dlt-log">Log</message>
   <message id="dlt-lin">Lin</message>
   <message id="dlt-below-lc">(below L<sub>c</sub>)</message>
-  <message id="dlt-lt-zero-counts"><![CDATA[< 0 counts]]></message>
-  <message id="dlt-lt-zero-activity"><![CDATA[< {1}]]></message>
   
   <!-- Error messages -->
   <message id="dlt-err-no-data">No Data Loaded</message>
@@ -147,7 +106,11 @@
   
   <!-- Tooltip strings for createCurrieRoiMoreInfoWindow -->
   <message id="dlt-tt-greater-than-lc">Greater than the "critical level", L<sub>c</sub>,
-    counts were observed in the peak region.</message>
+    counts were observed in the peak region.
+    The value shown is the ISO 11929 best estimate of the signal, which accounts for activity not
+    being able to be negative; the decision that a signal is present was made on the raw excess of
+    counts.  The two agree for a clear signal, and the best estimate is the larger of the two for a
+    marginal one.</message>
   <message id="dlt-tt-activity-range">The signal activity range estimate, to the {1} confidence level.</message>
   <message id="dlt-tt-counts-range">The signal counts range estimate, to the {1} confidence level.</message>
   <message id="dlt-tt-fewer-than-predicted">Significantly fewer counts in peak region were observed,
@@ -184,15 +147,19 @@
     source before any shielding, but accounting for nuclide age,
     per decay of the parent nuclide.</message>
   <message id="dlt-tt-below-lc-counts">The observed signal counts is less than the &quot;critical level&quot;, L<sub>c</sub>,
-    so a detection can not be declared, but this is the excess over expected counts.</message>
+    so a detection can not be declared, but this is the ISO 11929 best estimate of the signal counts,
+    given that a signal can not be negative.  It is never below zero, even when fewer counts were
+    seen in the peak region than the neighboring regions predict.</message>
   <message id="dlt-tt-below-lc-activity">The observed signal activity is less than the &quot;critical level&quot;, L<sub>c</sub>,
-    so a detection can not be declared, but this is the excess over expected counts.</message>
+    so a detection can not be declared, but this is the ISO 11929 best estimate of the activity,
+    given that an activity can not be negative.  It is never below zero, even when fewer counts were
+    seen in the peak region than the neighboring regions predict.</message>
   
   <!-- Chart strings -->
   <message id="dlt-chart-x-axis-distance">Distance ({1})</message>
   <message id="dlt-chart-x-axis-activity">Activity ({1})</message>
   <message id="dlt-chart-title-estimated-activity">Estimated activity of {1}.</message>
-  <message id="dlt-chart-title-excess-counts">Excess counts of {1}.</message>
+  <message id="dlt-chart-title-excess-counts">Estimated signal of {1} counts.</message>
   <message id="dlt-chart-title-activity-lt-zero"><![CDATA[Activity < 0 {1}]]></message>
   <message id="dlt-chart-title-data-peak">Data + peak for {1}</message>
   <message id="dlt-chart-title-peak-upper-bound">Peak for upper bound of {1} @{2} CL</message>
@@ -207,4 +174,10 @@
   <message id="dlt-err-upper-limit-negative">Upper limit of counts is less than zero, but counts observed is greater than L_d.</message>
   <message id="dlt-err-activity-zero-negative">Activity cant be zero or negative</message>
   <message id="dlt-err-distance-zero-negative">Distance cant be zero or negative</message>
+  <!-- Predicted spread of a background-reference limit, computed on demand: it is a few
+       hundred profile scans per gamma line, so it is not run on every input change.
+       Same sentence the Simple MDA tool uses, so the two tools do not word it differently. -->
+  <message id="dlt-estimating-spread">Calculating spread…</message>
+  <message id="dlt-spread-band">(typically {1}&ndash;{2}&times; this)</message>
+  <message id="dlt-spread-unavailable">Spread could not be estimated.</message>
 </messages>

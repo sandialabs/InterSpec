@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  shared-mime-info definition for gamma spectrum files, installed to
+  /usr/share/mime/packages/ by the .deb and .rpm (see the `fpm` operands in
+  ../electron-builder.js).
+
+  DO NOT DELETE THIS AS A DUPLICATE.  electron-builder also generates an `interspec.xml` in the
+  same directory from the `fileAssociations` config, but its glob is malformed - it joins the
+  whole extension array into a single pattern:
+
+      <glob pattern="*.n42,pcf,cnf,spe,spc,mca,mps,lis,chn"/>
+
+  which matches nothing.  This file is what actually makes the associations resolve.  The two
+  definitions are for the same MIME type, and update-mime-database merges them, so the broken
+  glob is harmless.
+
+  The type name and extension list intentionally match the macOS declaration in
+  target/electron/macOS/Info.plist, so one identifier covers both platforms.  The `dat`, `txt`,
+  `xml`, `csv` and `zip` extensions Info.plist lists as "Alternate" handlers are deliberately NOT
+  claimed here - on Linux those globs would hijack unrelated files.  InterSpec can still open
+  such files when the user asks it to.
+
+  Validate changes with:
+    cp gov.sandia.InterSpec.xml /tmp/mime/packages/ && update-mime-database /tmp/mime
+-->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/gamma-spectrum">
+    <comment>Gamma energy spectrum file</comment>
+    <acronym>N42</acronym>
+    <expanded-acronym>ANSI/IEEE N42.42 and related gamma spectrum formats</expanded-acronym>
+    <icon name="interspec"/>
+
+    <!--
+      weight="60" (default is 50) so we win the ties against types already in
+      shared-mime-info's freedesktop.org.xml.  Two of our extensions collide:
+        *.pcf - application/x-font-pcf          (X11 bitmap font)
+        *.spc - application/x-pkcs7-certificates
+      On a machine where someone has deliberately installed InterSpec, a .pcf or .spc is far
+      more likely to be a spectrum than a bitmap font or a certificate bundle, and neither of
+      those two types is something users double-click.  The weight is set uniformly rather than
+      only on the colliding globs, so the behaviour does not depend on which extension it is.
+    -->
+    <glob pattern="*.n42" weight="60"/>
+    <glob pattern="*.pcf" weight="60"/>
+    <glob pattern="*.cnf" weight="60"/>
+    <glob pattern="*.spe" weight="60"/>
+    <glob pattern="*.spc" weight="60"/>
+    <glob pattern="*.mca" weight="60"/>
+    <glob pattern="*.mps" weight="60"/>
+    <glob pattern="*.lis" weight="60"/>
+    <glob pattern="*.chn" weight="60"/>
+  </mime-type>
+</mime-info>

@@ -970,8 +970,11 @@ void ColorThemeWidget::setTheme(const ColorTheme *theme, const bool modifieable)
       m_specificRefLineColor[position]->show();
       m_specificRefLineColor[position]->setColor( c.second );
       ++position;
-    }else
+    }else if( position < sm_numRefLineColors )
     {
+      // Guarded: without the bounds check, a theme with more specificSources than we have colour
+      //  widgets (ColorTheme::fromJson does not cap them) indexes one past m_specificRefLineColor,
+      //  which is immediately followed by the m_edited signal member.
       m_specificRefLineColor[position]->hide();
     }
   }

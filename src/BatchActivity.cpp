@@ -23,6 +23,7 @@
 #include "InterSpec_config.h"
 
 #include <set>
+#include <memory>
 #include <string>
 #include <vector>
 #include <fstream>
@@ -51,17 +52,293 @@
 #include "InterSpec/BatchInfoLog.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/BatchActivity.h"
+#include "InterSpec/BatchSampleSelect.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/ShieldingSourceDisplay.h"
 
 
 using namespace std;
 
+namespace
+{
+/** Returns the thickness of a shielding along the line from the source to the detector.
+
+ This is the usual 1-D through-the-center approximation the detection-limit tools use; for
+ volumetric (self-attenuating or trace) sources it is only approximate.
+
+ Returns zero for generic (atomic-number/areal-density) shieldings, which are handled separately.
+ */
+double shield_thickness_towards_detector( const ShieldingSourceFitCalc::ShieldingInfo &shield,
+                                          const GammaInteractionCalc::GeometryType geometry )
+{
+  if( shield.m_isGenericMaterial )
+    return 0.0;
+
+  switch( geometry )
+  {
+    case GammaInteractionCalc::GeometryType::Spherical:
+      return shield.m_dimensions[0];  // Thickness
+
+    case GammaInteractionCalc::GeometryType::CylinderEndOn:
+      return shield.m_dimensions[1];  // Length
+
+    case GammaInteractionCalc::GeometryType::CylinderSideOn:
+      return shield.m_dimensions[0];  // Radius
+
+    case GammaInteractionCalc::GeometryType::Rectangular:
+      return shield.m_dimensions[2];  // Depth
+
+    case GammaInteractionCalc::GeometryType::NumGeometryType:
+      break;
+  }//switch( geometry )
+
+  return 0.0;
+}//double shield_thickness_towards_detector(...)
+
+
+/** Returns the total thickness of the shieldings along the line from the source to the detector.
+
+ Only needed to tell the deconvolution-style limit how much of the source-to-detector distance is
+ shielding rather than air; the attenuation itself comes from the fitted model.
+ */
+double total_shield_thickness( const ShieldingSourceFitCalc::ModelFitResults &fit_results )
+{
+  double total_thickness = 0.0;
+
+  for( const ShieldingSourceFitCalc::ShieldingInfo &shield : fit_results.final_shieldings )
+  {
+    if( !shield.m_isGenericMaterial && shield.m_material )
+      total_thickness += shield_thickness_towards_detector( shield, fit_results.geometry );
+  }
+
+  return total_thickness;
+}//double total_shield_thickness(...)
+}//namespace
+
+
 namespace BatchActivity
 {
+
+/** Converts the counts-based detection limits of exemplar peaks that could not be fit, into
+ activities.
+
+ The counts-to-activity conversion comes from evaluating the fitted shielding/source model at each
+ peaks energy - the same forward model that produced the fit - so interference between sources,
+ volumetric source geometry, and decay during the measurement are all accounted for.
+ \sa ShieldingSourceFitCalc::compute_supplemental_peak_info
+
+ Peaks whose nuclide was not one of the fitted sources keep their counts-based limit, and get a
+ `NotFitPeakMda::no_activity_reason` explaining why no activity limit is given.
+
+ @param mdas The limits to fill out.
+ @param synthetic_peak_for_mda The peak that was put into the fit to stand in for each entry of
+        `mdas`; parallel to `mdas`, and null where none was.
+ */
+void add_activity_info_to_not_fit_mdas( vector<BatchPeak::NotFitPeakMda> &mdas,
+                          const vector<shared_ptr<const PeakDef>> &synthetic_peak_for_mda,
+                          const ShieldingSourceFitCalc::ModelFitResults &fit_results,
+                          const shared_ptr<const DetectorPeakResponse> &drf,
+                          const shared_ptr<const SpecUtils::Measurement> &foreground,
+                          const BatchActivityFitOptions &options,
+                          vector<string> &warnings )
+{
+  if( mdas.empty() || !drf || !drf->isValid() || !foreground )
+    return;
+
+  assert( synthetic_peak_for_mda.size() == mdas.size() );
+  if( synthetic_peak_for_mda.size() != mdas.size() )
+    return;
+
+  const bool fixed_geom = drf->isFixedGeometry();
+  const double live_time = foreground->live_time();
+  const double distance = fixed_geom ? 0.0 : fit_results.distance;
+  const string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix( drf->geometryType() );
+  const bool want_decon = (options.not_fit_peak_mda == BatchPeak::NotFitPeakMdaMethod::CurrieAndDecon);
+  const double shield_thickness = total_shield_thickness( fit_results );
+
+  for( size_t mda_index = 0; mda_index < mdas.size(); ++mda_index )
+  {
+    BatchPeak::NotFitPeakMda &mda = mdas[mda_index];
+
+    mda.use_bq = options.use_bq;
+    mda.activity_postfix = act_postfix;
+    mda.live_time = live_time;
+
+    if( !mda.currie.computed || !mda.exemplar_peak )
+    {
+      mda.no_activity_reason = "the counts-based detection limit could not be computed";
+      continue;
+    }
+
+    const PeakDef &peak = *mda.exemplar_peak;
+    const SandiaDecay::Nuclide * const nuclide = peak.parentNuclide();
+
+    const auto no_activity = [&mda]( const string &reason ){
+      mda.no_activity_reason = reason;
+      mda.activity_summary = "No activity limit computed: " + reason + ".";
+      BatchPeak::update_description( mda );
+    };//no_activity lambda
+
+    if( !nuclide )
+    {
+      no_activity( "peak has no source nuclide assigned" );
+      continue;
+    }
+
+    // The model evaluation for the peak that stood in for this one in the fit.
+    const shared_ptr<const PeakDef> &synthetic_peak = synthetic_peak_for_mda[mda_index];
+    const ShieldingSourceFitCalc::SupplementalPeakInfo *supp = nullptr;
+    for( const ShieldingSourceFitCalc::SupplementalPeakInfo &info : fit_results.supplemental_peak_info )
+    {
+      if( synthetic_peak && (info.peak == synthetic_peak) )
+      {
+        supp = &info;
+        break;
+      }
+    }//for( loop over supplemental peak info )
+
+    if( !supp )
+    {
+      no_activity( "the fitted model was not evaluated for this peak" );
+      continue;
+    }
+
+    if( !supp->model_evaluated )
+    {
+      no_activity( supp->not_evaluated_reason.empty()
+                  ? string("the fitted model could not be evaluated for this peak")
+                  : supp->not_evaluated_reason );
+      continue;
+    }
+
+    mda.nuclide = nuclide;
+    mda.shield_transmission = supp->shield_transmission;
+    mda.air_transmission = supp->air_transmission;
+    mda.det_efficiency = supp->det_efficiency;
+    mda.gammas_per_bq = supp->counts_per_bq;
+
+    if( (mda.gammas_per_bq <= 0.0) || IsNan(mda.gammas_per_bq) || IsInf(mda.gammas_per_bq) )
+    {
+      no_activity( "the number of counts expected per unit activity worked out to be zero or"
+                   " invalid" );
+      continue;
+    }
+
+    mda.has_activity = true;
+
+    const DetectionLimitCalc::CurrieMdaResult &res = mda.currie.result;
+    const bool use_curie = !options.use_bq;
+    const auto act_str = [use_curie,&act_postfix]( const double counts, const double per_bq ) -> string {
+      return PhysicalUnits::printToBestActivityUnits( counts/per_bq, 4, use_curie ) + act_postfix;
+    };
+
+    switch( mda.currie.result_type )
+    {
+      case DetectionLimitCalc::PeakCurrieCheck::ResultType::NotDetected:
+        // With an empty region the upper limit is zero and means nothing; quote only the MDA
+        if( mda.currie.region_is_empty )
+          mda.activity_summary = "The minimum detectable activity (MDA) is "
+                             + act_str(res.detection_limit, mda.gammas_per_bq) + ".";
+        else
+          mda.activity_summary = "This corresponds to an activity less than "
+                             + act_str(res.upper_limit, mda.gammas_per_bq)
+                             + ", with a minimum detectable activity (MDA) of "
+                             + act_str(res.detection_limit, mda.gammas_per_bq) + ".";
+        break;
+
+      case DetectionLimitCalc::PeakCurrieCheck::ResultType::Detected:
+        // Being above the decision threshold does not stop the lower limit falling below zero.
+        //
+        // The activity quoted is the ISO 11929-1:2019 best estimate (Formula 44), not the primary
+        //  result the detection decision was made on; see `CurrieMdaResult::best_estimate`.  It is
+        //  named as such rather than said to "correspond to" the counts, because the sentence is
+        //  rendered right after `PeakCurrieCheck::result_summary`, which quotes the primary result -
+        //  the two are different quantities and a reader given both unlabelled cannot reconcile
+        //  them (they differ by ~7% at the decision threshold, and more at low counts).
+        mda.activity_summary = "The ISO 11929 best estimate of the activity is "
+                           + act_str(res.best_estimate, mda.gammas_per_bq)
+                           + ((res.lower_limit > 0.0f)
+                                ? (" (between " + act_str(res.lower_limit, mda.gammas_per_bq)
+                                    + " and " + act_str(res.upper_limit, mda.gammas_per_bq) + ")")
+                                : (" (less than " + act_str(res.upper_limit, mda.gammas_per_bq) + ")"))
+                           + ".";
+        break;
+
+      case DetectionLimitCalc::PeakCurrieCheck::ResultType::Deficit:
+        mda.activity_summary = "The minimum detectable activity (MDA) is "
+                           + act_str(res.detection_limit, mda.gammas_per_bq) + ".";
+        break;
+
+      case DetectionLimitCalc::PeakCurrieCheck::ResultType::Error:
+        break;
+    }//switch( mda.currie.result_type )
+
+    if( supp->is_volumetric_source )
+      mda.caveats += string(mda.caveats.empty() ? "" : "  ")
+                     + "Note: " + nuclide->symbol + " is a volumetric source, so the attenuation and"
+                       " efficiency used for this limit are averaged over the source, rather than a"
+                       " single line of sight.";
+
+    BatchPeak::update_description( mda );
+
+    if( !want_decon )
+      continue;
+
+    // The deconvolution-style limit; for activity/shielding fits we limit the activity directly,
+    //  rather than the peak counts, so that the shielding and detector response are folded in.
+    // Leave `decon_attempted` false so `add_counts_decon_limits(...)` still gives this peak the
+    //  counts-based limit - that path builds its own peak widths from the exemplar peaks, so it
+    //  does not need the detector response to have resolution information.
+    if( !drf->hasResolutionInfo() )
+      continue;
+
+    const double energy = peak.hasSourceGammaAssigned() ? peak.gammaParticleEnergy() : peak.mean();
+    const double fwhm = DetectionLimitCalc::peak_width_for_currie_check( peak );
+    const bool attenuate_air = (fit_results.options.attenuate_for_air && !fixed_geom
+                                && (distance > shield_thickness));
+
+    DetectionLimitCalc::DeconRoiInfo roi;
+    roi.roi_start = res.input.roi_lower_energy;
+    roi.roi_end = res.input.roi_upper_energy;
+    roi.continuum_type = PeakContinuum::OffsetType::Linear;
+    roi.cont_norm_method = DetectionLimitCalc::DeconContinuumNorm::Floating;
+    const size_t num_side_channels = std::max( size_t(1), options.mda_num_side_channels );
+    roi.num_lower_side_channels = num_side_channels;
+    roi.num_upper_side_channels = num_side_channels;
+
+    DetectionLimitCalc::DeconRoiInfo::PeakInfo peak_info;
+    peak_info.energy = static_cast<float>( energy );
+    peak_info.fwhm = static_cast<float>( fwhm );
+    // Per `DeconRoiInfo::PeakInfo`, air attenuation and detector efficiency are applied by the
+    //  calculation itself, so they must be divided back out of the model conversion here.
+    const double air_and_eff = supp->air_transmission * supp->det_efficiency;
+    if( air_and_eff <= 0.0 )
+      continue;
+    peak_info.counts_per_bq_into_4pi = mda.gammas_per_bq / air_and_eff;
+    roi.peak_infos.push_back( peak_info );
+
+    DetectionLimitCalc::DeconComputeInput decon_input;
+    decon_input.distance = distance;
+    decon_input.activity = 0.0;
+    decon_input.include_air_attenuation = attenuate_air;
+    decon_input.shielding_thickness = attenuate_air ? shield_thickness : 0.0;
+    decon_input.drf = drf;
+    decon_input.measurement = foreground;
+    decon_input.roi_info.push_back( roi );
+
+    BatchPeak::compute_decon_limit( mda, decon_input, mda.gammas_per_bq, false,
+                                    options.mda_confidence_level, !options.use_bq );
+
+    if( !mda.decon_computed && !mda.decon_error.empty() )
+      warnings.push_back( "Deconvolution-style detection limit failed for the "
+                          + SpecUtils::printCompact(peak.mean(),5) + " keV peak: " + mda.decon_error );
+  }//for( size_t mda_index = 0; mda_index < mdas.size(); ++mda_index )
+}//void add_activity_info_to_not_fit_mdas(...)
+
 
 const char *BatchActivityFitResult::to_str( const BatchActivityFitResult::ResultCode code )
 {
@@ -346,7 +623,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   if( !exemplar_sample_nums.empty() )
     summary_json["ExemplarSampleNumbers"] = vector<int>{begin(exemplar_sample_nums), end(exemplar_sample_nums)};
   summary_json["InputFiles"] = files;
-  
+
   if( summary_results )
   {
     summary_results->options = options;
@@ -356,16 +633,48 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   }//if( summary_results )
 
 
-  for( size_t file_index = 0; file_index < files.size(); ++file_index )
+  // Records for the optional concatenated N42; accumulated as we go, so the option works whether
+  //  or not the caller asked for the full per-file results to be retained.
+  vector<BatchPeak::ConcatRecord> concat_records;
+
+  // Each input file becomes one or more work items; more than one when the user has asked for a
+  //  file holding several foreground records to be analyzed record-by-record.  The expansion is
+  //  done a file at a time so that only one input file is held parsed in memory at once.
+  size_t num_analyses = 0;
+
+  for( size_t input_index = 0; input_index < files.size(); ++input_index )
   {
-    const string filename = files[file_index];
-    string leaf_name = SpecUtils::filename(filename);
-    const shared_ptr<SpecMeas> cached_file = optional_cached_files.empty() ? nullptr : optional_cached_files[file_index];
+   const shared_ptr<SpecMeas> input_cached_file
+             = optional_cached_files.empty() ? nullptr : optional_cached_files[input_index];
+   vector<BatchSampleSelect::InputWorkItem> work_items
+      = BatchSampleSelect::expand_input_file( files[input_index], input_index, input_cached_file,
+                                              options.multi_sample_handling );
+
+   for( size_t item_index = 0; item_index < work_items.size(); ++item_index )
+   {
+    num_analyses += 1;
+    BatchSampleSelect::InputWorkItem &item = work_items[item_index];
+    const string &filename = item.filename;
+
+    // `fit_activities_in_file` modifies the file handed to it, so work items that share a parsed
+    //  file each need their own copy.  Only one copy is alive at a time.
+    shared_ptr<SpecMeas> cached_file = item.source;
+    if( item.needs_private_copy && item.source )
+    {
+      cached_file = make_shared<SpecMeas>();
+      cached_file->uniqueCopyContents( *item.source );
+    }
 
     const BatchActivityFitResult fit_results
                  = fit_activities_in_file( exemplar_filename, exemplar_sample_nums,
-                                     cached_exemplar_n42, filename, cached_file, options );
-    
+                                     cached_exemplar_n42, filename, cached_file,
+                                     item.foreground_sample_numbers, options );
+
+    // Release our reference to the parsed input file now that it has been analyzed, so that a run
+    //  over many files doesnt hold every one of them in memory at once.
+    item.source.reset();
+    cached_file.reset();
+
     if( (fit_results.m_result_code == BatchActivityFitResult::ResultCode::CouldntOpenExemplar)
        || (fit_results.m_result_code == BatchActivityFitResult::ResultCode::CouldntOpenBackgroundFile) )
       throw runtime_error( fit_results.m_error_msg );
@@ -374,8 +683,8 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       cached_exemplar_n42 = fit_results.m_exemplar_file;
     
     for( const string &warn : fit_results.m_warnings )
-      warnings.push_back( "File '" + leaf_name + "': " + warn );
-    
+      warnings.push_back( "File '" + item.label + "': " + warn );
+
     if( !set_setup_info_to_summary_json && fit_results.m_fit_results )
     {
       std::shared_ptr<const DetectorPeakResponse> drf = options.drf_override;
@@ -398,7 +707,17 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     if( !exemplar_sample_nums.empty() )
       data["ExemplarSampleNumbers"] = vector<int>{begin(exemplar_sample_nums), end(exemplar_sample_nums)};
     data["Filepath"] = filename;
-    data["Filename"] = SpecUtils::filename( filename );
+    // `Filename` identifies this analysis, and matches the output files written for it; for a file
+    //  split into per-sample analyses it carries the same "_sampleN" infix the output files do.
+    //  `SourceFilename` is always the unmodified input file leaf name.
+    data["Filename"] = item.output_base_name;
+    data["SourceFilename"] = SpecUtils::filename( filename );
+    data["AnalysisLabel"] = item.label;
+    data["IsSplitFromMultiSampleFile"] = (work_items.size() > 1);
+    // Report the samples actually used, which are known even in `Auto` mode
+    if( !fit_results.m_foreground_sample_numbers.empty() )
+      data["ForegroundSampleNumbers"] = vector<int>{ begin(fit_results.m_foreground_sample_numbers),
+                                                     end(fit_results.m_foreground_sample_numbers) };
     data["ParentDir"] = SpecUtils::parent_path( filename );
     data["HasWarnings"] = !fit_results.m_warnings.empty();
     data["Warnings"] = fit_results.m_warnings;
@@ -453,13 +772,13 @@ void fit_activities_in_files( const std::string &exemplar_filename,
                           && fit_results.m_fit_results);
     if( success )
     {
-      cout << "Success analyzing '" << filename << "'!" << endl;
+      cout << "Success analyzing '" << item.label << "'!" << endl;
       assert( fit_results.m_fit_results );
       assert( fit_results.m_peak_fit_results && fit_results.m_peak_fit_results->measurement );
     }else
     {
-      cout << "Failure analyzing '" << filename << "': " << fit_results.m_error_msg << endl;
-      warnings.push_back( "Failed in analyzing '" + filename + "': " + fit_results.m_error_msg );
+      cout << "Failure analyzing '" << item.label << "': " << fit_results.m_error_msg << endl;
+      warnings.push_back( "Failed in analyzing '" + item.label + "': " + fit_results.m_error_msg );
     }
     
     data["Success"] = success;
@@ -482,7 +801,13 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     data["HasFitResults"] = !!fit_results.m_fit_results;
     if( fit_results.m_fit_results )
       BatchInfoLog::shield_src_fit_results_to_json( *fit_results.m_fit_results, drf, use_bq, data );
-      
+
+    // Detection limits for the exemplar peaks that couldnt be fit; the peak fit results arent
+    //  otherwise included in activity/shielding reports.
+    if( fit_results.m_peak_fit_results )
+      BatchInfoLog::add_not_fit_peaks_to_act_shield_json( data, *fit_results.m_peak_fit_results );
+
+
     if( summary_results )
     {
       summary_results->file_results.push_back( fit_results );
@@ -509,7 +834,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
         if( !options.output_dir.empty() )
         {
           const string out_file
-                    = BatchInfoLog::suggested_output_report_filename( filename, tmplt, 
+                    = BatchInfoLog::suggested_output_report_filename( item.output_base_name, tmplt,
                                   BatchInfoLog::TemplateRenderType::ActShieldIndividual, options );
           
           if( SpecUtils::is_file(out_file) && !options.overwrite_output_files )
@@ -549,20 +874,18 @@ void fit_activities_in_files( const std::string &exemplar_filename,
     if( options.write_n42_with_results && fit_results.m_peak_fit_results
        && fit_results.m_peak_fit_results->measurement )
     {
-      // TODO: need to have `fit_activities_in_file` add peaks and shielding model to a file,
-      //       perhaps in `fit_results.m_peak_fit_results->measurement`, or maybe better yet,
-      //       create whole new std::shared_ptr<SpecMeas> in BatchActivityFitResult
-      const string message = "Written N42 file does not currently have Act/Shielding model"
-      " written to it, only fit peaks, sorry - will.";
-      cerr << message << endl;
-      if( std::find(begin(warnings), end(warnings), message) == end(warnings) )
-        warnings.push_back( message );
-      
+      // `fit_activities_in_file` has already set the fit peaks, the fit Act/Shielding model, and
+      //  the DRF used, into `m_peak_fit_results->measurement` - but the model and DRF are only set
+      //  if the minimizer reached `FitStatus::Final`.  Note the input file may itself have had a
+      //  Act/Shielding model in it, which we leave alone if we didnt fit one.
+      const bool wrote_fit_model = (fit_results.m_fit_results
+              && (fit_results.m_fit_results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final));
+
       const BatchPeak::BatchPeakFitResult &peak_fit_results = *fit_results.m_peak_fit_results;
       assert( peak_fit_results.measurement );
       
-      string outn42 = SpecUtils::append_path(options.output_dir, SpecUtils::filename(filename) );
-      if( !SpecUtils::iequals_ascii(SpecUtils::file_extension(filename), ".n42") )
+      string outn42 = SpecUtils::append_path(options.output_dir, item.output_base_name );
+      if( !SpecUtils::iequals_ascii(SpecUtils::file_extension(item.output_base_name), ".n42") )
         outn42 += ".n42";
       
       if( SpecUtils::is_file(outn42) && !options.overwrite_output_files )
@@ -574,12 +897,13 @@ void fit_activities_in_files( const std::string &exemplar_filename,
         if( !peak_fit_results.measurement->save2012N42File( outn42 ) )
           warnings.push_back( "Failed to write '" + outn42 + "'.");
         else
-          cout << "Have written '" << outn42 << "' with peaks" << endl;
+          cout << "Have written '" << outn42 << "' with peaks"
+               << (wrote_fit_model ? ", Act/Shielding model, and DRF" : "") << endl;
       }
     }//if( options.write_n42_with_results )
     
     if( !options.output_dir.empty() && options.create_json_output )
-      BatchInfoLog::write_json( options, warnings, filename, data );
+      BatchInfoLog::write_json( options, warnings, item.output_base_name, data );
 
     if( fit_results.m_peak_fit_results )
     {
@@ -609,12 +933,13 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       
       if( !options.output_dir.empty() && options.create_csv_output )
       {
-        const string file_ext = SpecUtils::file_extension(leaf_name);
+        string csv_base_name = item.output_base_name;
+        const string file_ext = SpecUtils::file_extension(csv_base_name);
         if( !file_ext.empty() )
-          leaf_name = leaf_name.substr(0, leaf_name.size() - file_ext.size());
-        
-        string outcsv = SpecUtils::append_path(options.output_dir, leaf_name) + "_peaks.CSV";
-        
+          csv_base_name = csv_base_name.substr(0, csv_base_name.size() - file_ext.size());
+
+        string outcsv = SpecUtils::append_path(options.output_dir, csv_base_name) + "_peaks.CSV";
+
         if( SpecUtils::is_file(outcsv) && !options.overwrite_output_files )
         {
           warnings.push_back( "Not writing '" + outcsv + "', as it would overwrite a file."
@@ -633,7 +958,7 @@ void fit_activities_in_files( const std::string &exemplar_filename,
             warnings.push_back( "Failed to open '" + outcsv + "', for writing.");
           }else
           {
-            PeakModel::write_peak_csv( output_csv, leaf_name, PeakModel::PeakCsvType::Full,
+            PeakModel::write_peak_csv( output_csv, csv_base_name, PeakModel::PeakCsvType::Full,
                                       fit_peaks, peak_fit_res.spectrum );
             cout << "Have written '" << outcsv << "'" << endl;
           }
@@ -642,29 +967,43 @@ void fit_activities_in_files( const std::string &exemplar_filename,
       
       if( options.to_stdout )
       {
-        const string leaf_name = SpecUtils::filename(filename);
-        cout << "peaks for '" << leaf_name << "':" << endl;
-        PeakModel::write_peak_csv( cout, leaf_name, PeakModel::PeakCsvType::Full,
+        cout << "peaks for '" << item.label << "':" << endl;
+        PeakModel::write_peak_csv( cout, item.output_base_name, PeakModel::PeakCsvType::Full,
                                   fit_peaks, peak_fit_res.spectrum );
         cout << endl;
       }
 
       if( summary_results )
       {
-        const string leaf_name = SpecUtils::filename(filename);
         stringstream ss;
-        PeakModel::write_peak_csv( ss, leaf_name, PeakModel::PeakCsvType::Full,
+        PeakModel::write_peak_csv( ss, item.output_base_name, PeakModel::PeakCsvType::Full,
                                       fit_peaks, peak_fit_res.spectrum );
         summary_results->file_peak_csvs.back() = ss.str();
       }
+
+      if( options.concatenate_to_n42 && !options.output_dir.empty() && peak_fit_res.spectrum )
+      {
+        BatchPeak::ConcatRecord record;
+        record.source_file_path = filename;
+        record.sample_numbers = fit_results.m_foreground_sample_numbers;
+        record.spectrum = peak_fit_res.spectrum;
+        record.peaks = fit_peaks;
+        concat_records.push_back( record );
+      }//if( options.concatenate_to_n42 ... )
     }//if( fit_results.m_peak_fit_results )
     
     for( const pair<string,string> &key_val : spec_chart_js_and_css )
       data.erase(key_val.first);
     
     summary_json["Files"].push_back( data );
-  }//for( const string filename : files )
-  
+   }//for( loop over work items of this input file )
+  }//for( loop over input files )
+
+  // `Files` holds one entry per analysis performed; with multi-sample handling this may be more
+  //  entries than there were input files.
+  summary_json["NumInputFiles"] = static_cast<int>( files.size() );
+  summary_json["NumAnalyses"] = static_cast<int>( num_analyses );
+
   // Add any encountered errors to output summary JSON
   for( const string &warn : warnings )
     summary_json["Warnings"].push_back( warn );
@@ -724,6 +1063,10 @@ void fit_activities_in_files( const std::string &exemplar_filename,
   
   if( !options.output_dir.empty() && options.create_json_output )
     BatchInfoLog::write_json( options, warnings, "", summary_json );
+
+  // Create concatenated N42 file if requested
+  if( options.concatenate_to_n42 && !options.output_dir.empty() )
+    BatchPeak::write_concatenated_n42( concat_records, options, warnings );
   
   if( !warnings.empty() )
     cerr << endl << endl;
@@ -743,6 +1086,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
                           std::shared_ptr<const SpecMeas> cached_exemplar_n42,
                           const std::string &filename,
                           std::shared_ptr<SpecMeas> specfile,
+                          std::set<int> requested_fore_samples,
                           const BatchActivityFitOptions &options )
 {
   //  TODO: allow specifying, not just in the exemplar N42.  Also note InterSpec defines a URL encoding for model as well
@@ -844,90 +1188,49 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   }//if( !options.background_subtract_file.empty() )
   
   
-  // Find the sample number to use for either the foreground, or background measurement
+  // Find the sample number to use for either the foreground, or background measurement.
+  //  The actual classification lives in `BatchSampleSelect`, shared with `BatchPeak` and
+  //  `BatchRelActAuto`; this just keeps the previous behaviour of throwing on a null file.
   auto find_sample = []( shared_ptr<const SpecMeas> meas, const SpecUtils::SourceType wanted ) -> int {
-    // This logic is probably repeated in a number of places throughout InterSpec now...
     assert( (wanted == SpecUtils::SourceType::Foreground)
            || (wanted == SpecUtils::SourceType::Background) );
-    
+
     if( (wanted != SpecUtils::SourceType::Foreground)
            && (wanted != SpecUtils::SourceType::Background) )
     {
       throw std::logic_error( "Invalid src type" );
     }
-    
+
     if( !meas )
       throw runtime_error( "No SpecMeas passed in." );
-    
-    const vector<string> &detectors = meas->detector_names();
-    const set<int> &sample_nums = meas->sample_numbers();
-    
-    set<int> foreground_samples, background_samples;
-    
-    for( const int sample : sample_nums )
-    {
-      bool classified_sample_num = false;
-      for( const string &det : detectors )
-      {
-        auto m = meas->measurement( sample, det );
-        if( !m )
-          continue;
-        
-        switch( m->source_type() )
-        {
-          case SpecUtils::SourceType::IntrinsicActivity:
-          case SpecUtils::SourceType::Calibration:
-            break;
-            
-          case SpecUtils::SourceType::Background:
-            classified_sample_num = true;
-            background_samples.insert(sample);
-            break;
-            
-          case SpecUtils::SourceType::Foreground:
-          case SpecUtils::SourceType::Unknown:
-            classified_sample_num = true;
-            foreground_samples.insert(sample);
-            break;
-        }//switch( m->source_type() )
-        
-        if( classified_sample_num )
-          break;
-      }//for( const string &det : detectors )
-    }//for( const int sample : sample_nums )
-    
-    const set<int> &samples = (wanted == SpecUtils::SourceType::Foreground) ? foreground_samples 
-                                                                            : background_samples;
-    
-    // If a file only has a single sample in it, and its marked background, but we are requesting
-    //  foreground, use the single sample.  This happens, for example, when fitting peaks in a
-    //  background file, where the sole spectrum has been marked as background.
-    if( samples.empty()
-       && (wanted == SpecUtils::SourceType::Foreground)
-       && (background_samples.size() == 1) )
-    {
-      return *begin(background_samples);
-    }
-    
-    if( samples.size() != 1 )
-      throw runtime_error( "Sample number to use could not be uniquely identified." );
-    
-    return *begin(samples);
+
+    return (wanted == SpecUtils::SourceType::Foreground)
+              ? BatchSampleSelect::single_foreground_sample( *meas )
+              : BatchSampleSelect::single_background_sample( *meas );
   };//int find_sample(...)
-  
-  
+
+
   shared_ptr<const SpecUtils::Measurement> foreground;
   try
   {
-    const int sample_num = find_sample( specfile, SpecUtils::SourceType::Foreground );
-    
+    set<int> fore_samples = requested_fore_samples;
+    if( fore_samples.empty() )
+      fore_samples.insert( find_sample( specfile, SpecUtils::SourceType::Foreground ) );
+
     try
     {
-      vector<shared_ptr<const SpecUtils::Measurement>> meass = specfile->sample_measurements(sample_num);
-      if( meass.size() == 1 )
-        foreground = meass[0];
-      else
-        foreground = specfile->sum_measurements( {sample_num}, specfile->detector_names(), nullptr );
+      if( fore_samples.size() == 1 )
+      {
+        vector<shared_ptr<const SpecUtils::Measurement>> meass = specfile->sample_measurements( *begin(fore_samples) );
+        if( meass.size() == 1 )
+          foreground = meass[0];
+        else
+          foreground = specfile->sum_measurements( fore_samples, specfile->detector_names(), nullptr );
+      }else
+      {
+        foreground = specfile->sum_measurements( fore_samples, specfile->detector_names(), nullptr );
+      }
+
       if( !foreground )
         throw runtime_error( "Missing measurement." );
     }catch( std::exception &e )
@@ -936,9 +1239,9 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
       result.m_result_code = BatchActivityFitResult::ResultCode::ForegroundSampleNumberUnderSpecified;
       return result;
     }//Try / catch get
-    
+
     result.m_foreground = foreground;
-    result.m_foreground_sample_numbers = set<int>{ sample_num };
+    result.m_foreground_sample_numbers = fore_samples;
     assert( result.m_foreground_file );
   }catch( std::exception &e )
   {
@@ -946,6 +1249,10 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     result.m_result_code = BatchActivityFitResult::ResultCode::ForegroundSampleNumberUnderSpecified;
     return result;
   }// try / catch (find foreground)
+
+  // Make sure the peak fit below uses the samples we just resolved, rather than redundantly
+  //  auto-detecting (with a slightly different ladder) on its own.
+  foreground_sample_numbers = result.m_foreground_sample_numbers;
 
   
   set<int> background_sample_nums;
@@ -1219,12 +1526,19 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
   peak_fit_options.use_exemplar_energy_cal = false;  //We've already applied this.
   peak_fit_options.use_exemplar_energy_cal_for_background = false;
 
+  // The deconvolution-style detection limit is computed once, in activity space, after the
+  //  shielding/source fit - so dont have the peak fit compute a counts-based one as well.
+  if( peak_fit_options.not_fit_peak_mda == BatchPeak::NotFitPeakMdaMethod::CurrieAndDecon )
+    peak_fit_options.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::Currie;
+
   const BatchPeak::BatchPeakFitResult foreground_peak_fit_result
               = BatchPeak::fit_peaks_in_file( exemplar_filename, exemplar_sample_nums,
                                             cached_exemplar_n42, filename, specfile,
                                              foreground_sample_numbers, peak_fit_options );
-  
-  result.m_peak_fit_results = make_shared<BatchPeak::BatchPeakFitResult>( foreground_peak_fit_result );
+
+  const shared_ptr<BatchPeak::BatchPeakFitResult> peak_fit_results
+                      = make_shared<BatchPeak::BatchPeakFitResult>( foreground_peak_fit_result );
+  result.m_peak_fit_results = peak_fit_results;
 
   // Energy cal may have been modified - pick up these changes
   result.m_foreground = foreground_peak_fit_result.spectrum;
@@ -1293,6 +1607,10 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
       result.m_background_peak_fit_results = background_peaks;
     }else
     {
+      // Detection limits are only ever reported for the foreground, so dont spend time on them here
+      BatchPeak::BatchPeakFitOptions back_peak_fit_options = peak_fit_options;
+      back_peak_fit_options.not_fit_peak_mda = BatchPeak::NotFitPeakMdaMethod::None;
+
       const BatchPeak::BatchPeakFitResult background_peaks
       = BatchPeak::fit_peaks_in_file( exemplar_filename,
                                      exemplar_sample_nums,
@@ -1300,7 +1618,7 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
                                      options.background_subtract_file,
                                      backfile,
                                      result.m_background_sample_numbers,
-                                     peak_fit_options );
+                                     back_peak_fit_options );
       
       result.m_background_peak_fit_results = make_shared<BatchPeak::BatchPeakFitResult>( background_peaks );
       
@@ -1489,6 +1807,38 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
     chi_input.foreground_peaks = foreground_peaks;
     chi_input.background_peaks = background_peaks;
     chi_input.background_sf = -1.0; // default to use live-time scaling.
+
+    chi_input.supplemental_options.compute = (options.not_fit_peak_mda
+                                              != BatchPeak::NotFitPeakMdaMethod::None);
+    chi_input.supplemental_options.confidence_level = options.mda_confidence_level;
+    chi_input.supplemental_options.num_side_channels = options.mda_num_side_channels;
+    chi_input.supplemental_options.roi_num_fwhm = options.mda_roi_num_fwhm;
+    chi_input.supplemental_options.use_curie = !options.use_bq;
+
+    // Exemplar peaks that couldnt be fit are handed to the model as synthetic peaks, so it will
+    //  predict the counts each would receive; that is what turns their counts-based detection
+    //  limits into activities.  They must not be fit to, so the flag is cleared on the copies.
+    //  `synthetic_peak_for_mda` keeps them lined up with the limits they belong to.
+    vector<shared_ptr<const PeakDef>> synthetic_peak_for_mda;
+    if( peak_fit_results && chi_input.supplemental_options.compute )
+    {
+      for( const BatchPeak::NotFitPeakMda &mda : peak_fit_results->not_fit_peak_mdas )
+      {
+        shared_ptr<const PeakDef> synthetic;
+        if( mda.exemplar_peak && mda.exemplar_peak->parentNuclide() )
+        {
+          auto copy = make_shared<PeakDef>( *mda.exemplar_peak );
+          copy->useForShieldingSourceFit( false );
+          synthetic = copy;
+
+          chi_input.foreground_peaks.push_back( synthetic );
+          chi_input.synthetic_peaks.push_back( synthetic );
+        }//if( the peak has a nuclide the model might know about )
+
+        synthetic_peak_for_mda.push_back( synthetic );
+      }//for( const BatchPeak::NotFitPeakMda &mda : peak_fit_results->not_fit_peak_mdas )
+    }//if( there are limits to convert to activities )
+
     pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
     GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
     
@@ -1540,8 +1890,77 @@ BatchActivityFitResult fit_activities_in_file( const std::string &exemplar_filen
         result.m_result_code = BatchActivityFitResult::ResultCode::DidNotFitAllSources;
       }//if( !found_in_output )
     }//for( const ShieldingSourceFitCalc::SourceFitDef insrc : src_definitions )
-    
-    // TODO: create an output file that has peaks, drf, and the fit model.  This will mean creating the XML that represents the fit model then turning it into a string
+
+    // Now that we know the shielding, distance, and source ages, we can turn the counts-based
+    //  detection limits of the exemplar peaks that couldnt be fit, into activities.
+    //  A failure here must not lose the fit results, so it is caught separately.
+    if( peak_fit_results && !peak_fit_results->not_fit_peak_mdas.empty() )
+    {
+      try
+      {
+        add_activity_info_to_not_fit_mdas( peak_fit_results->not_fit_peak_mdas,
+                                        synthetic_peak_for_mda, *fit_results,
+                                        detector, result.m_foreground, options, result.m_warnings );
+
+        // Peaks we couldnt turn into an activity still get the counts-based deconvolution limit,
+        //  rather than no limit at all.
+        if( options.not_fit_peak_mda == BatchPeak::NotFitPeakMdaMethod::CurrieAndDecon )
+          BatchPeak::add_counts_decon_limits( peak_fit_results->not_fit_peak_mdas,
+                                             result.m_foreground, detector, options );
+
+        // The full-set list holds copies of these entries, so bring the activity information (and
+        //  any limit the deconvolution added) across to keep the two consistent.
+        for( BatchPeak::NotFitPeakMda &exemplar_mda : peak_fit_results->exemplar_peak_mdas )
+        {
+          for( const BatchPeak::NotFitPeakMda &mda : peak_fit_results->not_fit_peak_mdas )
+          {
+            if( mda.exemplar_peak && (mda.exemplar_peak == exemplar_mda.exemplar_peak) )
+            {
+              exemplar_mda = mda;
+              break;
+            }
+          }
+        }//for( BatchPeak::NotFitPeakMda &exemplar_mda : peak_fit_results->exemplar_peak_mdas )
+      }catch( std::exception &e )
+      {
+        result.m_warnings.push_back( "Failed to compute detection limits for the peaks that could"
+                                     " not be fit: " + string(e.what()) );
+      }//try / catch
+    }//if( there are detection limits to fill out )
+
+    // Pass along anything the supplemental per-peak computation had to say.
+    for( const string &warning : fit_results->warnings )
+      result.m_warnings.push_back( warning );
+
+
+    // Save the fit model, and the DRF it was fit with, into the file we may write out as a N42, so
+    //  the results can be re-opened in InterSpec, or used as the exemplar of a later batch fit.
+    //  Note the peaks have already been set into this file by `BatchPeak::fit_peaks_in_file(...)`.
+    //  We only get here if the minimizer reached `FitStatus::Final`, but the result code may still
+    //  be `DidNotFitAllSources` - the model is still worth saving in that case.
+    const shared_ptr<SpecMeas> &out_meas = foreground_peak_fit_result.measurement;
+    assert( out_meas );
+    assert( detector );  //we returned above if we didnt have a DRF to fit with
+    if( out_meas )
+    {
+      try
+      {
+        const ShieldingSourceDisplay::ShieldingSourceDisplayState state
+             = ShieldingSourceDisplay::ShieldingSourceDisplayState::fromFitResults( *fit_results );
+
+        unique_ptr<rapidxml::xml_document<char>> model_xml( new rapidxml::xml_document<char>() );
+        state.serialize( model_xml.get() );
+        out_meas->setShieldingSourceModel( std::move(model_xml) );
+
+        // Without the DRF used for the fit, the model in the file isnt re-fittable.
+        if( out_meas->detector() != detector )
+          out_meas->setDetector( make_shared<DetectorPeakResponse>( *detector ) );
+      }catch( std::exception &e )
+      {
+        result.m_warnings.push_back( "Failed to save the Act/Shielding model into the output"
+                                     " file: " + string(e.what()) );
+      }//try / catch
+    }//if( out_meas )
   }catch( std::exception &e )
   {
     result.m_error_msg = e.what();

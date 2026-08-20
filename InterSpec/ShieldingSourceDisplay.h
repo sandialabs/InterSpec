@@ -119,6 +119,11 @@ namespace GammaInteractionCalc
   struct ShieldSourceConfig;
 }//namespace GammaInteractionCalc
 
+namespace ShieldSourcePullTrend
+{
+  struct TrendResult;
+}//namespace ShieldSourcePullTrend
+
 class InterSpec;
 class SourceFitModel;
 class ShieldingSelect;
@@ -630,6 +635,17 @@ public:
     ::rapidxml::xml_node<char> *serialize( ::rapidxml::xml_node<char> *parent_node ) const;
     void deSerialize( const ::rapidxml::xml_node<char> *base_node );
 
+    /** Creates the state representing the results of a model fit, so it can be serialized to XML,
+     and for example stored into a `SpecMeas` using `SpecMeas::setShieldingSourceModel(...)`, all
+     without needing a GUI (e.g., from batch analysis).
+
+     The fitted values (activities, ages, shielding dimensions, mass fractions) become the models
+     current values - i.e., equivalent to what the GUI holds after `updateGuiWithModelFitResults(...)`,
+     and then serializes.  Note that shielding dimension uncertainties are not represented in the
+     XML, although activity and age uncertainties are - see `SourceFitDef::serialize(...)`.
+     */
+    static ShieldingSourceDisplayState fromFitResults( const ShieldingSourceFitCalc::ModelFitResults &results );
+
     bool operator==( const ShieldingSourceDisplayState &rhs ) const;
   };
   
@@ -812,6 +828,14 @@ protected:
    take a lock on it before calling this function
    */
   void updateChi2ChartActual( std::shared_ptr<const ShieldingSourceFitCalc::ModelFitResults> results );
+
+  /** Updates the passive `m_trendTxt` from a pull-trend result; hides it when there is no
+   conclusion (or when `from_completed_fit` is false, i.e. the model is stale / mid-edit and the
+   interpretation would be misleading), and mirrors the conclusion into `m_calcLog`.
+   */
+  void updateTrendMessage( const std::shared_ptr<const ShieldSourcePullTrend::TrendResult> &trend,
+                           const bool from_completed_fit );
+
   virtual void layoutSizeChanged( int width, int height ) override;
   
 protected:
@@ -895,7 +919,12 @@ protected:
   
   Wt::WText *m_showChi2Text;
   ShieldingSourceFitPlot *m_chi2Plot;
-  
+
+  /** Passive text under the chart giving the pull-trend interpretation (too much/little
+   shielding, wrong effective atomic number).  Hidden when there is no conclusion.
+   */
+  Wt::WText *m_trendTxt;
+
 
   Wt::WCheckBox  *m_multiIsoPerPeak;
   NativeFloatSpinBox *m_clusterWidth;

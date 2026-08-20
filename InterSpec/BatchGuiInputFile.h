@@ -76,13 +76,31 @@ protected:
   
   Wt::Signal<bool> m_preview_created_signal;
   Wt::Signal<BatchGuiInputSpectrumFile *> m_remove_self_request_signal;
-  
+
+  /** Creates the widgets common to both constructors. */
+  void init_gui( const std::string &display_name, const std::string &path_to_file );
+
 public:
   BatchGuiInputSpectrumFile( const std::string display_name,
                   const std::string path_to_file,
                   const bool should_cleanup,
                   const ShowPreviewOption preview );
-  
+
+  /** Constructor for a spectrum file that is already parsed and resident in memory - e.g., a file
+   the user has open in InterSpec.
+
+   `path_to_file` is the on-disk path, if one is known; it is used only for the tool-tip and
+   `path_to_file()`, and may be empty.  The file is never deleted by this class.
+
+   Note that, like the disk-loading constructor, the preview is not created synchronously - it is
+   created from a delayed callback, since creating the `D3SpectrumDisplayDiv` in the same event
+   loop that creates this widget gives JS errors inside a `SimpleDialog` on the macOS app.
+   */
+  BatchGuiInputSpectrumFile( const std::string display_name,
+                  const std::string path_to_file,
+                  std::shared_ptr<SpecMeas> spec_meas,
+                  const ShowPreviewOption preview );
+
   void set_spectrum( std::shared_ptr<SpecMeas> spec_meas, std::shared_ptr<int> status_ptr );
   
   Wt::Signal<bool> &preview_created_signal();

@@ -240,10 +240,11 @@ void LicenseAndDisclaimersWindow::right_select_item( WMenuItem *item )
   if( !item )
     return;
   
+  //Needed because clicking the body of a SideMenuItem, outside of its anchor, does not reach Wt's
+  //  own anchor-click -> WMenuItem::select wiring.  No explicit `triggered().emit()`:
+  //  `WMenu::select()` emits it when the index actually changes and nothing when it does not
+  //  (WMenu.C:348), so emitting here just double-fired on every anchor click.
   m_menu->select( item );
-  item->triggered().emit( item ); //doenst look like this is emmitted either
-                                  //when body of SideMenuItem is clicked
-                                  //stop all players
 }//void LicenseAndDisclaimersWindow::select_item(  SideMenuItem *item )
 
 

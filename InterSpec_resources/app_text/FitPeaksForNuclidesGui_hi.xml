@@ -33,8 +33,6 @@
   <message id="fpn-opt-use-background">पृष्ठभूमि घटाव के साथ गणना</message>
 
   <!-- PeakFitForNuclideConfig option labels -->
-  <message id="fpn-opt-roi-min-chi2-red">ROI chi2 कमी सीमा</message>
-  <message id="fpn-opt-roi-min-peak-sig">ROI महत्व सीमा</message>
   <message id="fpn-opt-obs-initial-sig">अनुमानित पीक महत्व सीमा</message>
   <message id="fpn-opt-obs-final-sig">अंतिम पीक महत्व सीमा</message>
   <message id="fpn-opt-skew-type">पीक विषमता</message>
@@ -49,8 +47,6 @@
   <message id="fpn-opt-tt-dont-refine-energy-cal">फ़िट में ऊर्जा अंशांकन बदला जाता है, लेकिन फ़िट अंशांकन के आधार पर ROI सीमा अपडेट नहीं की जाती।</message>
   <message id="fpn-opt-tt-fit-bkgnd-peaks">दूसरे सापेक्ष दक्षता वक्र का उपयोग करके NORM पीक (U-238, Ra-226, U-235, Th-232, K-40) फ़िट करें।</message>
   <message id="fpn-opt-tt-use-background">सक्षम होने पर, उपयोग किए जाने वाले ROI निर्धारित करने के लिए पीक फ़िटिंग के दौरान पृष्ठभूमि स्पेक्ट्रम घटाया जाता है, लेकिन लौटाए जाने वाले पीक के अंतिम फ़िट के लिए पृष्ठभूमि नहीं घटाई जाती। पृष्ठभूमि घटाव के बिना फ़िट करने के लिए अनचेक करें।</message>
-  <message id="fpn-opt-tt-roi-min-chi2-red">ROI में पीक को महत्वपूर्ण माने जाने के लिए आवश्यक न्यूनतम कुल chi2 कमी। पीक वाला chi2 केवल-कॉन्टिनुअम chi2 से कम से कम इतना कम होना चाहिए।</message>
-  <message id="fpn-opt-tt-roi-min-peak-sig">पीक को महत्वपूर्ण माने जाने के लिए न्यूनतम पीक महत्व (पीक_क्षेत्रफल / sqrt(कॉन्टिनुअम))। यदि ROI में किसी पीक का महत्व इस सीमा से ऊपर है, तो ROI रखा जाता है।</message>
   <message id="fpn-opt-tt-obs-initial-sig">पुनः फ़िट करने से पहले प्रारंभिक पीक महत्व फ़िल्टर की सीमा। महत्व = (पीक_आयाम * 0.7607) / sqrt(pm_1_fwhm_में_डेटा_क्षेत्रफल)।</message>
   <message id="fpn-opt-tt-obs-final-sig">पुनः फ़िट करने के बाद अंतिम पीक महत्व की सीमा। महत्व = पीक_क्षेत्रफल / पीक_क्षेत्रफल_अनिश्चितता।</message>
   <message id="fpn-opt-tt-skew-type">फ़िट में सभी पीक पर लागू विषमता आकृति। &quot;None&quot; शुद्ध गॉसियन उपयोग करता है। अन्य विकल्प निम्न-ऊर्जा पूंछ घटक जोड़ते हैं (जैसे NaI/CsI संसूचकों के लिए Exp*Gauss, HPGe में आवेश-संग्रह पूंछ के लिए Crystal Ball)।</message>

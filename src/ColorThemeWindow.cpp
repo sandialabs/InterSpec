@@ -97,6 +97,13 @@ namespace
     : WResource(), m_display( parent ), m_app( WApplication::instance() )
     {
       assert( m_app );
+
+      // Have Wt hold the session lock across handleRequest instead of dropping it for us: by
+      //  default `WResource::handle` unlocks before invoking us, so the session thread can be
+      //  inside `~WResource`'s `beingDeleted()` - waiting on our use-count - while we block
+      //  acquiring the lock it holds.  That is a deadlock.  Free: the `WApplication::UpdateLock`
+      //  in handleRequest already spanned the whole body, so this only moves it earlier.
+      setTakesUpdateLock( true );
     }
     
     virtual ~JsonDownloadResource()

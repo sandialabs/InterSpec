@@ -147,6 +147,13 @@ public:
   {
     assert( m_app );
     assert( m_chart );
+
+    // Have Wt hold the session lock across handleRequest instead of dropping it for us: by
+    //  default `WResource::handle` unlocks before invoking us, so the session thread can be
+    //  inside `~WResource`'s `beingDeleted()` - waiting on our use-count - while we block
+    //  acquiring the lock it holds.  That is a deadlock.  Free: the `WApplication::UpdateLock`
+    //  in handleRequest already spanned the whole body, so this only moves it earlier.
+    setTakesUpdateLock( true );
   }
   
   virtual ~DecayChainHtmlResource()
@@ -303,6 +310,12 @@ DecayChainChart::DecayChainChart()
   csvButton->hide();
 #endif
 }//DecayChainChart constructor
+
+
+DecayChainChart::~DecayChainChart()
+{
+  deleteMoreInfoDialog();
+}//DecayChainChart destructor
 
 
 pair<Wt::Core::observing_ptr<AuxWindow>, DecayChainChart *>

@@ -41,11 +41,11 @@
 #include <boost/math/constants/constants.hpp>
 
 //#include "/external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
-#include <Wt/Json/Value>
-#include <Wt/Json/Array>
-#include <Wt/Json/Parser>
-#include <Wt/Json/Object>
-#include <Wt/Json/Serializer>
+#include <Wt/Json/Value.h>
+#include <Wt/Json/Array.h>
+#include <Wt/Json/Parser.h>
+#include <Wt/Json/Object.h>
+#include <Wt/Json/Serializer.h>
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/DateTime.h"
@@ -266,6 +266,67 @@ ExpectedPhotopeakInfo create_expected_photopeak( const InjectSourceInfo &info, c
 
   return peak;
 }//ExpectedPhotopeakInfo create_expected_photopeak(...)
+
+
+std::vector<ExpectedPhotopeakInfo> filter_photopeaks_for_scoring(
+    const std::vector<ExpectedPhotopeakInfo> &expected,
+    PeakFitUtils::CoarseResolutionType det_type )
+{
+  // Below ~50 keV (NaI/low-med) / 30 keV (HPGe), peaks are unreliable (poor resolution, rapidly
+  //  changing efficiency, x-ray overlap), so they are excluded from scoring - unless the source's
+  //  primary (largest-area) peak is itself below the threshold, in which case keep all peaks so a
+  //  low-energy-dominant source is not discarded.
+  const double min_scoring_energy
+    = (det_type == PeakFitUtils::CoarseResolutionType::High) ? 30.0 : 50.0;
+
+  double primary_energy = 0.0, primary_area = 0.0;
+  for( const ExpectedPhotopeakInfo &ep : expected )
+  {
+    if( ep.peak_area > primary_area )
+    {
+      primary_area = ep.peak_area;
+      primary_energy = ep.effective_energy;
+    }
+  }//for( const ExpectedPhotopeakInfo &ep : expected )
+
+  if( primary_energy < min_scoring_energy )
+    return expected;  // low-energy-dominant source: keep everything
+
+  std::vector<ExpectedPhotopeakInfo> filtered;
+  filtered.reserve( expected.size() );
+  for( const ExpectedPhotopeakInfo &ep : expected )
+  {
+    if( ep.effective_energy >= min_scoring_energy )
+      filtered.push_back( ep );
+  }
+
+  return filtered;
+}//filter_photopeaks_for_scoring(...)
+
+
+double missed_def_wanted_area_fraction(
+    const std::vector<ExpectedPhotopeakInfo> &scoring_peaks,
+    const std::vector<ExpectedPhotopeakInfo> &missed_def_wanted,
+    PeakFitUtils::CoarseResolutionType det_type )
+{
+  const JudgmentThresholds &th = JudgmentThresholds::for_det_type( det_type );
+
+  double total_def_area = 0.0;
+  for( const ExpectedPhotopeakInfo &ep : scoring_peaks )
+  {
+    if( (ep.nsigma_over_background > th.def_want_nsigma) && (ep.peak_area > th.min_def_wanted_counts) )
+      total_def_area += ep.peak_area;
+  }
+
+  if( total_def_area <= 0.0 )
+    return 0.0;
+
+  double missed_area = 0.0;
+  for( const ExpectedPhotopeakInfo &ep : missed_def_wanted )
+    missed_area += ep.peak_area;
+
+  return std::min( 1.0, missed_area / total_def_area );
+}//missed_def_wanted_area_fraction(...)
 
 
 InjectSourceInfo parse_inject_source_files( const string &base_name, const std::vector<std::pair<float,float>> &deviation_pairs )
@@ -738,6 +799,15 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
 
 
 
+          // Largest single-line area among all clusters - used to decide whether the 511 keV
+          //  annihilation line is the *dominant* line for this source (see exclusion below).
+          double max_cluster_area = 0.0;
+          for( const vector<PeakTruthInfo> &cluster : clustered_lines )
+          {
+            if( !cluster.empty() )
+              max_cluster_area = std::max( max_cluster_area, static_cast<double>(cluster.front().area) );
+          }
+
           vector<ExpectedPhotopeakInfo> detectable_clusters;
           for( const vector<PeakTruthInfo> &cluster : clustered_lines )
           {
@@ -747,9 +817,25 @@ std::tuple<std::vector<DetectorInjectSet>,std::vector<DataSrcInfo>> load_inject_
               continue;
 
             const PeakTruthInfo &main_line = cluster.front();
+
+            // The 511 keV annihilation line is normally excluded from the truth set: it is contaminated
+            //  by ambient/cosmic annihilation and pair-production from high-energy gammas, and its truth
+            //  area is unreliable.  BUT for positron emitters whose dominant signature IS 511 (e.g. Ge68,
+            //  Cu64, F18, Na22), excluding it leaves a degenerate truth set and the source looks like a
+            //  total fit-failure.  So keep 511 only when it is the dominant (largest-area) line for the
+            //  source; otherwise exclude it as before.
+            // NOTE: this runs only when (re)generating data (original -> compact); load_compact_data()
+            //  reads the already-clustered expected photopeaks straight from the truth CSV, so existing
+            //  compact datasets must be regenerated (--create-compact-data) for this to take effect.
+            //  (HPGe caveat: the truth width here is detector-resolution only and omits the ~2-3 keV
+            //  annihilation Doppler broadening of 511, so on HPGe the 511 truth ROI is a bit narrow;
+            //  harmless for the area-based scoring, but see notes if width scoring is added later.)
+            const bool is_511 = (fabs(main_line.energy - 511.0) < 1.0);
+            const bool is_dominant_line = (main_line.area >= max_cluster_area);
+
             if( (main_line.area < 4.0)  // Let be realistic, and require something
                || (fabs(main_line.energy - 478.0) < 1.2)  // Avoid Alpha-Li reaction
-               || (fabs(main_line.energy - 511.0) < 1.0 ) // Avoid D.B. 511
+               || (is_511 && !is_dominant_line) // 511: keep only if it's this source's dominant line - please note there is dobler broadenging to the 511 keV peak, which we are not properly accounting for
                // Shouldn't there be some other broadened reaction lines here???
                || ((main_line.energy + 0.5*main_line.full_width) > info.src_no_poisson->gamma_energy_max()) // Make sure not off upper-end
                || ((main_line.energy - 0.5*main_line.full_width) < info.src_no_poisson->gamma_energy_min()) // Make sure not below lower-end

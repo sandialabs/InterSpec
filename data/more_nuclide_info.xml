@@ -1081,7 +1081,7 @@ U-232 (68.9 y)/Th-228 (1.91 y)
 
 Th-232 and U-232/Th-228 decay chain gamma spectra are similar.  
 
-Th-232 versus U-232/Th-228: Th-232 decay chain spectra generally contain readily detectable Ac-228 emissions (338.3, 911.2, and 969.0 keV).
+Th-232 versus U-232/Th-228: both chains share the strong Pb-212 (238.6 keV) and Tl-208 (583.2, 2614.5 keV) lines, so those alone do NOT distinguish them. The distinguishing feature is the Ac-228 emissions, which come from Th-232 but NOT from Th-228. Use the strongest, cleanest Ac-228 lines - 911.2 and 969.0 keV - as the discriminator (these are the best discriminant when the detector has adequate sensitivity at those energies). CRITICAL - how to judge "elevated": determine whether the 911.2/969.0 keV lines are elevated by their FIT PEAK AREA (continuum-subtracted) - e.g. whether a fit peak at 911.2/969.0 keV appears in the elevated-above-background / unidentified peak list, or its elevatedOverBackgroundPeakNumSigma is significant. Do NOT judge elevation from gross region counts (get_counts_in_energy_range): the source's Compton continuum raises gross counts across the whole spectrum, so a region can show elevated gross counts with NO actual elevated peak (e.g. the 338.3 keV region often shows elevated gross counts purely from continuum, even in a Th-228 source with no Ac-228 peak there). If the 911.2 and 969.0 keV Ac-228 fit peaks are NOT elevated over background while the Pb-212 (238.6) and Tl-208 (583.2, 2614.5) peaks ARE, the source is Th-228 (U-232 chain), NOT Th-232. Only conclude Th-232 if the 911.2/969.0 keV Ac-228 peaks themselves are elevated over background.
 
 Pb-212, a medical isotope, can also have many of the same peaks.
       </Notes>
@@ -1094,7 +1094,7 @@ U-232 (68.9 y)/Th-228 (1.91 y)
 
 Th-232 and U-232/Th-228 decay chain gamma spectra are similar.  
 
-Th-232 versus U-232/Th-228: Th-232 decay chain spectra generally contain readily detectable Ac-228 emissions (338.3, 911.2, and 969.0 keV).
+Th-232 versus U-232/Th-228: both chains share the strong Pb-212 (238.6 keV) and Tl-208 (583.2, 2614.5 keV) lines, so those alone do NOT distinguish them. The distinguishing feature is the Ac-228 emissions, which come from Th-232 but NOT from Th-228. Use the strongest, cleanest Ac-228 lines - 911.2 and 969.0 keV - as the discriminator (these are the best discriminant when the detector has adequate sensitivity at those energies). CRITICAL - how to judge "elevated": determine whether the 911.2/969.0 keV lines are elevated by their FIT PEAK AREA (continuum-subtracted) - e.g. whether a fit peak at 911.2/969.0 keV appears in the elevated-above-background / unidentified peak list, or its elevatedOverBackgroundPeakNumSigma is significant. Do NOT judge elevation from gross region counts (get_counts_in_energy_range): the source's Compton continuum raises gross counts across the whole spectrum, so a region can show elevated gross counts with NO actual elevated peak (e.g. the 338.3 keV region often shows elevated gross counts purely from continuum, even in a Th-228 source with no Ac-228 peak there). If the 911.2 and 969.0 keV Ac-228 fit peaks are NOT elevated over background while the Pb-212 (238.6) and Tl-208 (583.2, 2614.5) peaks ARE, the source is Th-228 (U-232 chain), NOT Th-232. Only conclude Th-232 if the 911.2/969.0 keV Ac-228 peaks themselves are elevated over background.
 
 Pb-212, a medical isotope, can also have many of the same peaks.
       </Notes>
@@ -1118,7 +1118,7 @@ Used in electric arc welding rods in construction, aircraft, petrochemical and f
 
 Th-232 and U-232/Th-228 decay chain gamma spectra are similar.  
 
-Th-232 versus U-232/Th-228: Th-232 decay chain spectra generally contain readily detectable Ac-228 emissions (338.3, 911.2, and 969.0 keV).
+Th-232 versus U-232/Th-228: both chains share the strong Pb-212 (238.6 keV) and Tl-208 (583.2, 2614.5 keV) lines, so those alone do NOT distinguish them. The distinguishing feature is the Ac-228 emissions, which come from Th-232 but NOT from Th-228. Use the strongest, cleanest Ac-228 lines - 911.2 and 969.0 keV - as the discriminator (these are the best discriminant when the detector has adequate sensitivity at those energies). CRITICAL - how to judge "elevated": determine whether the 911.2/969.0 keV lines are elevated by their FIT PEAK AREA (continuum-subtracted) - e.g. whether a fit peak at 911.2/969.0 keV appears in the elevated-above-background / unidentified peak list, or its elevatedOverBackgroundPeakNumSigma is significant. Do NOT judge elevation from gross region counts (get_counts_in_energy_range): the source's Compton continuum raises gross counts across the whole spectrum, so a region can show elevated gross counts with NO actual elevated peak (e.g. the 338.3 keV region often shows elevated gross counts purely from continuum, even in a Th-228 source with no Ac-228 peak there). If the 911.2 and 969.0 keV Ac-228 fit peaks are NOT elevated over background while the Pb-212 (238.6) and Tl-208 (583.2, 2614.5) peaks ARE, the source is Th-228 (U-232 chain), NOT Th-232. Only conclude Th-232 if the 911.2/969.0 keV Ac-228 peaks themselves are elevated over background.
 
 If significant quantities of aged, chemically processed natural thorium are present, Ra-226 decay products from Th-230 decay may be detectable.
       </Notes>

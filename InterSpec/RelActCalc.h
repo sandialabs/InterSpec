@@ -37,6 +37,11 @@ class MaterialDB;
 class DetectorPeakResponse;
 class PeakDef;
 
+namespace SandiaDecay
+{
+  struct Nuclide;
+}
+
 namespace SpecUtils
 {
   class Measurement;
@@ -52,6 +57,98 @@ namespace rapidxml
  */
 namespace RelActCalc
 {
+
+/** Caps the number of threads an individual relative-activity/efficiency solve uses
+ internally — both the ROI/atomic-number thread-pools and Ceres' own thread count,
+ which are otherwise sized to the hardware concurrency.
+
+ When many solves run concurrently — e.g. the peak-fit optimization GA on a many-core
+ machine — that `(outer parallelism) x (hardware_concurrency)` thread count can exhaust
+ the OS thread/process limit (`pthread_create` failing with EAGAIN, i.e. "Resource
+ temporarily unavailable").
+
+ Pass 0 (the default) for "auto" (use the hardware concurrency); pass a small value
+ (e.g. 1) when you provide your own outer parallelism.  Process-wide and thread-safe.
+ */
+void set_max_solve_threads( const unsigned num_threads );
+
+/** The resolved per-solve thread count: the value given to #set_max_solve_threads
+ clamped to [1, hardware_concurrency], or the hardware concurrency when set to 0.
+ Always >= 1.
+ */
+unsigned max_solve_threads();
+
+/** Number of empirical-correction basis coefficients (replaces the Hoerl b,c) - kept at 2 so the
+ physical-model parameter-block layout is identical for every correction type. */
+constexpr int ns_num_basis_correction_terms = 2;
+static_assert( ns_num_basis_correction_terms == 2,
+              "The correction always uses exactly 2 parameter slots ('Hoerl b,c'); changing this breaks the"
+              " invariant parameter-block layout shared by all correction types." );
+
+/** The single "max window-swing" knob R for the empirical-correction bounds: the largest factor any one
+ correction basis term may reshape the relative-efficiency curve across the fit energy window.  Every
+ correction form derives symmetric, window-aware bounds about its identity from R, so the start (identity)
+ is always interior - never pinned on a bound:
+   - Hoerl b   (E_MeV^b):     |b|     <= ln(R)/ln(Ehi/Elo)
+   - Hoerl c   (gamma=ln c):  |ln c|  <= ln(R)/(1/Elo_MeV - 1/Ehi_MeV)
+   - Chebyshev a1,a2:         |a|     <= ln(R)/2          (basis already normalized to u in [-1,1])
+ (with narrow-window clamps b<=2, c in [1/3,3]).  R=10 is a generous guard rail (~7x above the corrections
+ actually seen in fits); a 10..30 sweep showed larger R does not improve accuracy and only inflates the
+ rel-eff uncertainty band.  This bound is the SOLE guard on the correction now that the coefficient prior
+ has been removed. */
+constexpr double ns_corr_max_window_swing = 10.0;
+
+/** The empirical correction term applied on top of (DRF x attenuation) in the Physical Model rel-eff.
+
+  - None: no correction.
+  - Hoerl: the modified Hoerl function `E_MeV^b * c^(1/E_MeV)` (2 params b,c).
+  - Chebyshev: a pivot-anchored exponential of a low-order Chebyshev polynomial in log-energy,
+    `correction(E) = exp( sum_{k=1,2} a_k * (T_k(u(E)) - T_k(u(E0))) )`; `u` maps the fit range to [-1,1] and
+    the pivot anchoring forces `correction(E0)=1` (adds SHAPE, not scale).  Far better conditioned than the
+    Hoerl (whose b,c basis functions are ~96% collinear over a typical range).
+ All non-None forms use exactly 2 parameters, so the parameter-block layout is identical. */
+enum class PhysModelCorrFcn : int
+{
+  None,
+  Hoerl,
+  Chebyshev
+};//enum class PhysModelCorrFcn
+
+/** Returns "None"/"Hoerl"/"Chebyshev". */
+const char *to_str( const PhysModelCorrFcn corr );
+/** Inverse of `to_str`; throws std::runtime_error on an unrecognized string. */
+PhysModelCorrFcn phys_model_corr_fcn_from_str( const char *str );
+
+/** A weak Gaussian prior ("biasing"/regularization) applied to a Physical-Model parameter to stabilize the
+ near-degenerate shielding/correction covariance.
+
+  - use == false: prior is OFF (no residual added).
+  - use == true, value == nullopt: prior ON using the call-site default weight.
+  - use == true, value set: prior ON using the specified weight.
+ It is an invalid configuration to specify a non-zero `value` while `use` is false (callers throw). */
+struct PriorWeightOption
+{
+  bool use = false;
+  std::optional<double> value;
+
+  /** The effective weight: 0.0 if off, else `value` or `default_weight`. */
+  double effective_weight( const double default_weight ) const
+  {
+    return use ? value.value_or(default_weight) : 0.0;
+  }
+
+  bool operator==( const PriorWeightOption &rhs ) const
+  {
+    return (use == rhs.use) && (value == rhs.value);
+  }
+  bool operator!=( const PriorWeightOption &rhs ) const { return !(*this == rhs); }
+};//struct PriorWeightOption
+
+/** Default weights for the Physical-Model areal-density regularization priors (used when a shield's
+ `ad_bias` is enabled without an explicit value).  Acts like a Gaussian with sigma = 1/weight in g/cm^2,
+ pulling each fit areal density toward 0. */
+constexpr double ns_default_ext_atten_ad_prior_weight  = 0.1;   // sigma ~ 10 g/cm^2
+constexpr double ns_default_self_atten_ad_prior_weight = 0.05;  // sigma ~ 20 g/cm^2 (self-atten is physical)
 
 /** The available forms of relative efficiency equations.
   
@@ -328,10 +425,15 @@ struct PhysicalModelShieldInput
    In units of `PhysicalUnits` - i.e., you need to divide by `PhysicalUnits::g_per_cm2` to printout to g/cm2 human values.
    */
   double upper_fit_areal_density = 0.0;
-    
+
+  /** Optional weak regularization prior pulling this shield's FIT areal density toward 0 g/cm^2 (off by
+   default).  Only has an effect when `fit_areal_density` is true.  Used to break the
+   correction-vs-attenuation degeneracy when the data does not strongly constrain the shielding. */
+  RelActCalc::PriorWeightOption ad_bias;
+
   /** Checks specified constraints are obeyed - throwing an exception if not. */
   void check_valid() const;
-  
+
   static const int sm_xmlSerializationVersion = 0;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
   void fromXml( const ::rapidxml::xml_node<char> *parent );
@@ -396,41 +498,62 @@ struct PhysModelShield
 };//struct PhysModelShield
   
   
+/** Evaluates the Physical-Model relative efficiency at `energy`.
+
+ `hoerl_b`/`hoerl_c` carry the 2 correction parameters (Hoerl b,c, or the basis coefficients a1,a2).
+ `corr_fcn` selects the correction form.  `corr_lower_energy`/`corr_upper_energy`/`corr_pivot_energy` define
+ the energy reference frame for a basis (Chebyshev) correction; they are ignored for None/Hoerl. */
 double eval_physical_model_eqn( const double energy,
                                const std::optional<PhysModelShield<double>> &self_atten,
                                const std::vector<PhysModelShield<double>> &external_attens,
                                const DetectorPeakResponse * const drf,
                                std::optional<double> hoerl_b,
-                               std::optional<double> hoerl_c );
-  
+                               std::optional<double> hoerl_c,
+                               const double corr_lower_energy = 0.0,
+                               const double corr_upper_energy = 0.0,
+                               const double corr_pivot_energy = 0.0,
+                               const PhysModelCorrFcn corr_fcn = PhysModelCorrFcn::Hoerl );
+
 /** Please note, that the
  */
 std::function<double(double)> physical_model_eff_function( const std::optional<PhysModelShield<double>> &self_atten,
                                                           const std::vector<PhysModelShield<double>> &external_attens,
                                                           const std::shared_ptr<const DetectorPeakResponse> &drf,
                                                           std::optional<double> hoerl_b,
-                                                          std::optional<double> hoerl_c );
-  
-  
+                                                          std::optional<double> hoerl_c,
+                                                          const double corr_lower_energy = 0.0,
+                                                          const double corr_upper_energy = 0.0,
+                                                          const double corr_pivot_energy = 0.0,
+                                                          const PhysModelCorrFcn corr_fcn = PhysModelCorrFcn::Hoerl );
+
+
 std::string physical_model_rel_eff_eqn_text( const std::optional<PhysModelShield<double>> &self_atten,
                                             const std::vector<PhysModelShield<double>> &external_attens,
                                             const std::shared_ptr<const DetectorPeakResponse> &drf,
                                             std::optional<double> hoerl_b,
                                             std::optional<double> hoerl_c,
-                                            const bool html_format );
+                                            const bool html_format,
+                                            const double corr_lower_energy = 0.0,
+                                            const double corr_upper_energy = 0.0,
+                                            const double corr_pivot_energy = 0.0,
+                                            const PhysModelCorrFcn corr_fcn = PhysModelCorrFcn::Hoerl );
 
 std::string physical_model_rel_eff_eqn_js_function( const std::optional<PhysModelShield<double>> &self_atten,
                                                    const std::vector<PhysModelShield<double>> &external_attens,
                                                    const DetectorPeakResponse * const drf,
                                                    std::optional<double> hoerl_b,
-                                                   std::optional<double> hoerl_c );
+                                                   std::optional<double> hoerl_c,
+                                                   const double corr_lower_energy = 0.0,
+                                                   const double corr_upper_energy = 0.0,
+                                                   const double corr_pivot_energy = 0.0,
+                                                   const PhysModelCorrFcn corr_fcn = PhysModelCorrFcn::Hoerl );
 
 /** Refit the continuums for ROIs (peaks grouped by shared continuum) in polynomial-based continuums.
- 
+
  @param solution_peaks The fit peaks from solution.m_fit_peaks_in_spectrums_cal
  @param foreground The foreground spectrum measurement
  @returns A vector of all peaks (both modified and unmodified) sorted by energy
- 
+
  For polynomial-based continuums (excluding NoOffset and External), this function groups peaks
  by their shared continuum and refits the continuum coefficients. If there are more than 4 ROIs,
  the refitting is done using ThreadPool for parallel processing.

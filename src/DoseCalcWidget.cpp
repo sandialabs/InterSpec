@@ -88,10 +88,16 @@ using namespace std;
 
 namespace
 {
+  /** Select `item` when the click landed on the item's `<li>` but outside its `<a>` (the anchor does
+   not fill the item, so Wt's own anchor-click -> WMenuItem::select wiring misses that region).
+
+   No explicit `triggered().emit()`: `WMenu::select()` emits it itself when the index actually
+   changes, and does nothing when it does not (WMenu.C:348).  Emitting unconditionally here ran the
+   handler a second time for every anchor click, since the anchor's own path had already selected.
+   */
   void right_select_item( WMenu *menu, WMenuItem *item )
   {
     menu->select( item );
-    item->triggered().emit( item ); //
   }
   
 }//namespace
@@ -786,9 +792,13 @@ void DoseCalcWidget::handleAppUrl( std::string path, std::string query_str )
   if( dose_iter != end(parts) && !dose_iter->second.empty() && (dose_in_unit_index < 0) )
     throw runtime_error( "Dose Calc tool URI does not contain dose unit info." );
   
-  m_menu->select( static_cast<int>(calcQuantity) );
-  handleQuantityClick( calcQuantity );
-  
+  // `WMenu::select()` emits triggered() -> handleQuantityClick() itself, but only when the index
+  //  actually changes - so only call the handler directly when it does not.
+  if( m_menu->currentIndex() == static_cast<int>(calcQuantity) )
+    handleQuantityClick( calcQuantity );
+  else
+    m_menu->select( static_cast<int>(calcQuantity) );
+
   if( act_in_unit_index >= 0 )
     m_activityEnterUnits->setCurrentIndex( act_in_unit_index );
   if( act_out_unit_index >= 0 )
@@ -1067,8 +1077,15 @@ void DoseCalcWidget::handleQuantityClick( const DoseCalcWidget::Quantity q )
   //}//if( isDeselect )
   
   m_currentCalcQuantity = q;
-  
+
   m_stack->setCurrentIndex( (q == NumQuantity) ? 0 : 1 );
+
+  // Going back to the intro page must also clear the menu selection.  Otherwise the menu keeps
+  //  highlighting the quantity we just left, and because `WMenu::select()` only emits when the index
+  //  *changes*, clicking that still-highlighted item would then do nothing at all - leaving the tool
+  //  stuck on the intro page.  Reachable from undo, and from `interspec://dose/intro`.
+  if( q == NumQuantity )
+    m_menu->select( -1 );
   
   for( Quantity i = Quantity(0); i < NumQuantity; i = Quantity(i+1) )
   {

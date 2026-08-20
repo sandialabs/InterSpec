@@ -44,6 +44,7 @@
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/BatchRelActAuto.h"
+#include "InterSpec/BatchSampleSelect.h"
 #include "InterSpec/RelActCalcAuto.h"
 #include "InterSpec/RelActAutoReport.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -62,6 +63,7 @@ const char *to_str( const ResultCode code )
     case ResultCode::NoExemplar:                           return "NoExemplar";
     case ResultCode::CouldntOpenExemplar:                  return "CouldntOpenExemplar";
     case ResultCode::ExemplarMissingRelActState:           return "ExemplarMissingRelActState";
+    case ResultCode::RelActStateNotUsable:                 return "RelActStateNotUsable";
     case ResultCode::CouldntOpenStateOverride:             return "CouldntOpenStateOverride";
     case ResultCode::CouldntOpenInputFile:                 return "CouldntOpenInputFile";
     case ResultCode::CouldntOpenBackgroundFile:            return "CouldntOpenBackgroundFile";
@@ -129,67 +131,37 @@ shared_ptr<RelActCalcAuto::RelActAutoGuiState>
                         + "': " + e.what() );
   }
 
+  // Normalize the FwhmForm/FwhmEstimationMethod pairing the same way the GUI does on load:
+  //  `solve()` requires FwhmForm::NotApplicable if-and-only-if FixedToDetectorEfficiency, but some
+  //  older config files (e.g. past versions of the "HPGe U inside U" preset) pair NotApplicable with
+  //  another estimation method, which the GUI silently coerces but headless use would reject.
+  //  Polynomial_2 (sqrt(A0 + A1*E)) is the concrete form all the 2026-07 multi-curve review
+  //  validation ran those presets with, so stale configs keep producing the recorded results.
+  RelActCalcAuto::Options &options = state->options;
+  if( options.fwhm_estimation_method == RelActCalcAuto::FwhmEstimationMethod::FixedToDetectorEfficiency )
+  {
+    options.fwhm_form = RelActCalcAuto::FwhmForm::NotApplicable;
+  }else if( options.fwhm_form == RelActCalcAuto::FwhmForm::NotApplicable )
+  {
+    options.fwhm_form = RelActCalcAuto::FwhmForm::Polynomial_2;
+  }
+
   return state;
 }//load_state_from_xml_file(...)
 
 
-// Pick the single foreground or background sample number from a SpecMeas, the same
-// way `BatchActivity::fit_activities_in_file` does it.  Throws if the choice is
-// ambiguous.
+// Pick the single foreground or background sample number from a SpecMeas.  The classification
+// lives in `BatchSampleSelect`, shared with `BatchActivity` and `BatchPeak`; this just keeps the
+// previous behaviour of throwing on a null file.  Throws if the choice is ambiguous.
 static int find_single_sample( const shared_ptr<const SpecMeas> &meas,
                                const SpecUtils::SourceType wanted )
 {
   if( !meas )
     throw runtime_error( "find_single_sample: null SpecMeas" );
 
-  const vector<string> &detectors = meas->detector_names();
-  const set<int> &sample_nums = meas->sample_numbers();
-
-  set<int> foreground_samples, background_samples;
-  for( const int sample : sample_nums )
-  {
-    bool classified = false;
-    for( const string &det : detectors )
-    {
-      const shared_ptr<const SpecUtils::Measurement> m = meas->measurement( sample, det );
-      if( !m )
-        continue;
-
-      switch( m->source_type() )
-      {
-        case SpecUtils::SourceType::IntrinsicActivity:
-        case SpecUtils::SourceType::Calibration:
-          break;
-        case SpecUtils::SourceType::Background:
-          classified = true;
-          background_samples.insert( sample );
-          break;
-        case SpecUtils::SourceType::Foreground:
-        case SpecUtils::SourceType::Unknown:
-          classified = true;
-          foreground_samples.insert( sample );
-          break;
-      }//switch
-
-      if( classified )
-        break;
-    }//for( det )
-  }//for( sample )
-
-  const set<int> &samples = (wanted == SpecUtils::SourceType::Foreground) ? foreground_samples
-                                                                          : background_samples;
-
-  // If a file has only a single sample marked as background but we want foreground,
-  // use it (mirrors BatchActivity behaviour).
-  if( samples.empty()
-      && (wanted == SpecUtils::SourceType::Foreground)
-      && (background_samples.size() == 1) )
-    return *begin(background_samples);
-
-  if( samples.size() != 1 )
-    throw runtime_error( "Sample number to use could not be uniquely identified" );
-
-  return *begin(samples);
+  return (wanted == SpecUtils::SourceType::Foreground)
+            ? BatchSampleSelect::single_foreground_sample( *meas )
+            : BatchSampleSelect::single_background_sample( *meas );
 }//find_single_sample(...)
 
 
@@ -298,6 +270,7 @@ Result run_on_file( const std::string &exemplar_filename,
                     std::shared_ptr<const SpecMeas> cached_exemplar,
                     const std::string &filename,
                     std::shared_ptr<SpecMeas> cached_file,
+                    std::set<int> requested_fore_samples,
                     const Options &options )
 {
   Result result;
@@ -369,6 +342,17 @@ Result run_on_file( const std::string &exemplar_filename,
   if( options.background_subtract )
     state->background_subtract = *options.background_subtract;
 
+  // A state serialized from an "Isotopics by nuclides" tool that was opened but never configured
+  //  is perfectly valid XML, yet defines no problem to solve; reject it here rather than letting
+  //  `solve` fail deep inside setup.
+  const string why_state_unusable = state->options.why_not_usable();
+  if( !why_state_unusable.empty() )
+  {
+    result.m_error_msg = "The RelActCalcAuto state is not usable: " + why_state_unusable;
+    result.m_result_code = ResultCode::RelActStateNotUsable;
+    return result;
+  }
+
   // ---- 4. Load foreground spectrum ------------------------------------------
   shared_ptr<SpecMeas> specfile = cached_file;
   if( !specfile )
@@ -387,8 +371,11 @@ Result run_on_file( const std::string &exemplar_filename,
   set<int> foreground_sample_numbers;
   try
   {
-    const int sample_num = find_single_sample( specfile, SpecUtils::SourceType::Foreground );
-    foreground_sample_numbers.insert( sample_num );
+    if( requested_fore_samples.empty() )
+      foreground_sample_numbers.insert( find_single_sample( specfile, SpecUtils::SourceType::Foreground ) );
+    else
+      foreground_sample_numbers = requested_fore_samples;
+
     foreground = extract_measurement( specfile, foreground_sample_numbers );
     if( !foreground )
       throw runtime_error( "Missing foreground measurement." );
@@ -654,13 +641,39 @@ void run_in_files( const std::string &exemplar_filename,
     summary->exemplar_sample_nums = exemplar_sample_nums;
   }
 
-  for( size_t i = 0; i < files.size(); ++i )
+  // Each input file becomes one or more work items; more than one when the user has asked for a
+  //  file holding several foreground records to be analyzed record-by-record.  The expansion is
+  //  done a file at a time so that only one input file is held parsed in memory at once.
+  for( size_t input_index = 0; input_index < files.size(); ++input_index )
   {
-    const string &fname = files[i];
-    const shared_ptr<SpecMeas> cached = cached_files.empty() ? nullptr : cached_files[i];
+   const shared_ptr<SpecMeas> input_cached_file
+                        = cached_files.empty() ? nullptr : cached_files[input_index];
+   vector<BatchSampleSelect::InputWorkItem> work_items
+      = BatchSampleSelect::expand_input_file( files[input_index], input_index, input_cached_file,
+                                              options.multi_sample_handling );
+
+   for( size_t i = 0; i < work_items.size(); ++i )
+   {
+    BatchSampleSelect::InputWorkItem &item = work_items[i];
+    const string &fname = item.filename;
+
+    // `run_on_file` modifies the file handed to it, so work items that share a parsed file each
+    //  need their own copy.  Only one copy is alive at a time.
+    shared_ptr<SpecMeas> cached = item.source;
+    if( item.needs_private_copy && item.source )
+    {
+      cached = make_shared<SpecMeas>();
+      cached->uniqueCopyContents( *item.source );
+    }
 
     Result file_result = run_on_file( exemplar_filename, exemplar_sample_nums,
-                                      cached_exemplar, fname, cached, options );
+                                      cached_exemplar, fname, cached,
+                                      item.foreground_sample_numbers, options );
+
+    // Release our reference to the parsed input file now that it has been analyzed, so that a run
+    //  over many files doesnt hold every one of them in memory at once.
+    item.source.reset();
+    cached.reset();
 
     // Hard-stop errors that aren't per-file: bad exemplar / bad background.
     if( (file_result.m_result_code == ResultCode::CouldntOpenExemplar)
@@ -671,12 +684,39 @@ void run_in_files( const std::string &exemplar_filename,
       cached_exemplar = file_result.m_exemplar_file;
 
     for( const string &w : file_result.m_warnings )
-      warnings.push_back( "File '" + SpecUtils::filename(fname) + "': " + w );
+      warnings.push_back( "File '" + item.label + "': " + w );
 
-    // Build per-file JSON via RelActAutoReport, then add bookkeeping for templates.
-    nlohmann::json file_json = RelActAutoReport::solution_to_json( file_result.m_solution );
+    // Build per-file JSON via RelActAutoReport, then add bookkeeping for templates.  A failure to
+    //  serialize one file must not take the whole batch down, so fall back to a minimal object and
+    //  let the bookkeeping below record the error.
+    nlohmann::json file_json;
+    try
+    {
+      file_json = RelActAutoReport::solution_to_json( file_result.m_solution );
+    }catch( std::exception &e )
+    {
+      file_json = nlohmann::json::object();
+      const string msg = "Failed to create JSON of results: " + string(e.what());
+      warnings.push_back( "File '" + item.label + "': " + msg );
+      file_result.m_warnings.push_back( msg );
+      if( file_result.m_error_msg.empty() )
+        file_result.m_error_msg = msg;
+      if( file_result.m_result_code == ResultCode::Success )
+        file_result.m_result_code = ResultCode::UnknownStatus;
+    }//try / catch
+
     file_json["Filepath"] = fname;
-    file_json["Filename"] = SpecUtils::filename(fname);
+    // `Filename` identifies this analysis, and matches the output files written for it; for a file
+    //  split into per-sample analyses it carries the same "_sampleN" infix the output files do.
+    //  `SourceFilename` is always the unmodified input file leaf name.
+    file_json["Filename"] = item.output_base_name;
+    file_json["SourceFilename"] = SpecUtils::filename(fname);
+    file_json["AnalysisLabel"] = item.label;
+    file_json["IsSplitFromMultiSampleFile"] = (work_items.size() > 1);
+    // Report the samples actually used, which are known even in `Auto` mode
+    if( !file_result.m_foreground_sample_numbers.empty() )
+      file_json["ForegroundSampleNumbers"] = vector<int>{ begin(file_result.m_foreground_sample_numbers),
+                                                          end(file_result.m_foreground_sample_numbers) };
     file_json["ParentDir"] = SpecUtils::parent_path(fname);
     file_json["ResultCode"] = to_str( file_result.m_result_code );
     file_json["ResultCodeInt"] = static_cast<int>( file_result.m_result_code );
@@ -690,9 +730,9 @@ void run_in_files( const std::string &exemplar_filename,
 
     const bool success = (file_result.m_result_code == ResultCode::Success);
     if( success )
-      cout << "Success analyzing '" << fname << "'!" << endl;
+      cout << "Success analyzing '" << item.label << "'!" << endl;
     else
-      cout << "Failure analyzing '" << fname << "': " << file_result.m_error_msg << endl;
+      cout << "Failure analyzing '" << item.label << "': " << file_result.m_error_msg << endl;
 
     // Per-file reports - rendered with assets present in `file_json`.  We
     // strip them after rendering and lift `assets` to `summary_json["assets"]`
@@ -719,7 +759,7 @@ void run_in_files( const std::string &exemplar_filename,
 
         if( !options.output_dir.empty() )
         {
-          const string out_file = isotopics_output_filename( fname, tmplt,
+          const string out_file = isotopics_output_filename( item.output_base_name, tmplt,
                                                              /*is_summary=*/false,
                                                              options.output_dir );
 
@@ -768,7 +808,8 @@ void run_in_files( const std::string &exemplar_filename,
     file_json.erase( "assets" );
 
     summary_json["Files"].push_back( file_json );
-  }//for each input file
+   }//for( loop over work items of this input file )
+  }//for( loop over input files )
 
   // Summary-level counts and metadata used by the bundled multi-file summary
   // template.
@@ -780,7 +821,11 @@ void run_in_files( const std::string &exemplar_filename,
     else
       ++num_failed;
   }
+  // `Files`/`NumFiles` count analyses performed; with multi-sample handling this may be more than
+  //  the number of input files.
+  summary_json["NumInputFiles"] = static_cast<int>( files.size() );
   summary_json["NumFiles"] = summary_json["Files"].size();
+  summary_json["NumAnalyses"] = summary_json["Files"].size();
   summary_json["NumSucceeded"] = num_succeeded;
   summary_json["NumFailed"] = num_failed;
 

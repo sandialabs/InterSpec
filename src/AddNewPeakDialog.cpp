@@ -96,7 +96,27 @@ m_chart( nullptr )
   
   if( !m_peakModel || !m_meas || m_meas->num_gamma_channels() < 7 )
   {
-    passMessage( WString::tr("anpd-err-no-foreground"), WarningWidget::WarningMsgHigh );
+    // Not an expected path, but a reachable one (the spectrum right-click menu does not pre-check).
+    //  We must not simply return: the AuxWindow base ctor has already show()n us, and our property
+    //  set has no SetCloseable, so there is no title-bar X - and returning would skip the close
+    //  button and `rejectWhenEscapePressed()` at the end of this function, leaving a modal cover the
+    //  user cannot dismiss.  So show a plain, dismissable "cant do this" dialog and return.
+    //  Everything below is left null, which is safe: the close button is the only thing wired up,
+    //  and render() does no work unless UpdatePreview has been requested.
+    setWindowTitle( WString::tr("anpd-err-no-foreground-1") );
+
+    WText *msg = contents()->addNew<WText>( WString::tr("anpd-err-no-foreground") );
+    msg->setInline( false );
+
+    WPushButton *closeButton = addCloseButtonToFooter( WString::tr("Close") );
+    closeButton->clicked().connect( this, &AuxWindow::hide );
+
+    rejectWhenEscapePressed();
+
+    show();
+    resizeToFitOnScreen();
+    centerWindowHeavyHanded();
+
     return;
   }//if( we dont have a valid foreground )
   

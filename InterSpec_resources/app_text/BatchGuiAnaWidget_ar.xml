@@ -43,7 +43,6 @@
   <message id="bgw-reports-write-csv">ملخص CSV</message>
   <message id="bgw-reports-write-csv-tooltip">كتابة ملف CSV ملخص مع نتائج التحليل من جميع ملفات الإدخال.</message>
   <message id="bgw-reports-write-custom-per-file">مخصص لكل ملف</message>
-  <message id="bgw-reports-write-custom-per-file-tooltip">رفع قالب تقرير مخصص لاستخدامه لكل ملف.</message>
   <message id="bgw-reports-write-custom-summary">ملخص مخصص</message>
   <message id="bgw-reports-write-custom-summary-tooltip">ملف أو أكثر من ملفات القوالب المستخدمة لتوفير ملخص لجميع ملفات الإدخال.</message>
 
@@ -58,7 +57,6 @@
   <message id="bgw-no-ana-act-shield-invalid-background">خلفية غير صالحة</message>
   <message id="bgw-no-ana-no-input-files">لا توجد ملفات إدخال.</message>
   <message id="bgw-no-ana-invalid-output-path">يرجى اختيار دليل إخراج صالح.</message>
-
 
   <!-- Analysis progress and results -->
   <message id="bgw-performing-work-title">تنفيذ العمل</message>
@@ -120,8 +118,6 @@
 قيمة صفر أو سالبة ستعني عدم وجود متطلب، وأيضًا لا متطلب 'peak-stat-threshold'.</message>
   
   <message id="bgw-reports-write-custom-per-file-tooltip">ملف أو أكثر من ملفات قالب تقرير الطيف - لكل ملف إدخال، سيتم إنتاج تقرير مع كل قالب محدد.</message>
-
-  <message id="bgw-reports-write-custom-summary-tooltip">ملف أو أكثر من ملفات القوالب المستخدمة لتوفير ملخص لجميع ملفات الإدخال.</message>
 
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">استخدام وحدات Bq</message>

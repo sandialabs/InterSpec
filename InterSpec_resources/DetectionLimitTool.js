@@ -67,6 +67,23 @@ MdaChi2Chart = function(elem, options) {
     .style( "stroke", this.data.lineColor )
     .style("stroke-width", 2);
   
+  // The statistic level the reported limit is read off at.  Drawn before the axes so the axis
+  //  ticks stay on top of it, and non-interactive so it never eats a pointer event.
+  this.thresholdLine = this.svg.append("line")
+    .attr("class", "mdaThresholdLine")
+    .style("stroke-dasharray", "4,3")
+    .style("stroke-width", 1)
+    .style("pointer-events", "none")
+    .style("display", "none");
+
+  this.thresholdLabel = this.svg.append("text")
+    .attr("class", "mdaThresholdLabel")
+    .style("text-anchor", "end")
+    .style("pointer-events", "none")
+    .style("font-size", "0.8em")
+    .style("display", "none")
+    .text(" ");   // d3 `.text()` sets textContent, so entities would render literally
+
   this.xaxisg = this.svg.append("g")         // Add the X Axis
     .attr("class", "xaxis")
     .call(this.xaxis)
@@ -82,7 +99,7 @@ MdaChi2Chart = function(elem, options) {
     .attr("class", "xaxistitle")
     .style("text-anchor", "middle")
     .attr("dy", "-0.5em")
-    .text("&nbsp;");
+    .text(" ");   // d3 `.text()` sets textContent, so "&nbsp;" would render literally
   
   // Add the text label for the Y axis
   this.ytitle = this.svg.append("text")
@@ -92,7 +109,7 @@ MdaChi2Chart = function(elem, options) {
     .attr("x",0)
     .attr("dy", "1em")
     .style("text-anchor", "middle")
-    .text("&nbsp;");
+    .text(" ");   // see note on the x-axis title above
   
   this.redraw();
 }
@@ -100,8 +117,10 @@ MdaChi2Chart = function(elem, options) {
 MdaChi2Chart.prototype.setEmptyData = function() {
   this.data = {
     data: [{x:0, y:0}, {x:1, y:1}],
-    xtitle: "Activity (&mu;Ci)",
-    ytitle: "Chi2",
+    // Literal characters, not HTML entities: `.text()` does not decode them, so the placeholder
+    //  axes used to read "Activity (&mu;Ci)" and disagree with the C++ side's "\u03c7\u00b2".
+    xtitle: "Activity (\u00b5Ci)",
+    ytitle: "\u03c7\u00b2",
     lineColor: "black",
     //axisColor: "black",
     chartBackgroundColor: "rgba(0,0,0,0)",
@@ -129,10 +148,21 @@ MdaChi2Chart.prototype.redraw = function() {
   
   // Give a little marging above and below the plot line
   const yextent = d3.extent(this.data.data, function(d) {return d.y;});
-  const yspan = yextent[1] - yextent[0];
-  
+  let ylow = yextent[0], yhigh = yextent[1];
+
+  // The threshold is the level being reported, so it has to be on the chart even when the scan
+  //  stopped short of it; otherwise the line silently clamps to the top edge and reads as a
+  //  crossing that is not there.
+  const haveThreshold = (typeof this.data.thresholdY === "number") && isFinite(this.data.thresholdY);
+  if( haveThreshold ){
+    ylow = Math.min(ylow, this.data.thresholdY);
+    yhigh = Math.max(yhigh, this.data.thresholdY);
+  }
+
+  const yspan = yhigh - ylow;
+
   this.yscale
-    .domain([yextent[0]-0.1*yspan, yextent[1]+0.1*yspan])
+    .domain([ylow-0.1*yspan, yhigh+0.1*yspan])
     .range([chartAreaHeight + this.margins.top, this.margins.top]);
   
   
@@ -199,6 +229,32 @@ MdaChi2Chart.prototype.redraw = function() {
   this.path
     .attr("d", valueline(this.data.data))
     .style( "stroke", this.data.lineColor );
+
+  if( haveThreshold ){
+    const ty = this.yscale(this.data.thresholdY);
+
+    this.thresholdLine
+      .attr("x1", leftMargin)
+      .attr("x2", leftMargin + chartAreaWidth)
+      .attr("y1", ty)
+      .attr("y2", ty)
+      .style("stroke", this.data.lineColor)
+      .style("display", null);
+
+    // Below the line when it sits near the top of the chart, above it otherwise, so the label
+    //  never runs off the plot area.
+    const nearTop = (ty - this.margins.top) < 14;
+
+    this.thresholdLabel
+      .attr("x", leftMargin + chartAreaWidth - 4)
+      .attr("y", nearTop ? (ty + 12) : (ty - 4))
+      .style("fill", this.data.lineColor)
+      .style("display", null)
+      .text(this.data.thresholdText ? this.data.thresholdText : "");
+  } else {
+    this.thresholdLine.style("display", "none");
+    this.thresholdLabel.style("display", "none");
+  }
 }
 
 

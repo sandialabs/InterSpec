@@ -43,7 +43,6 @@
   <message id="bgw-reports-write-csv">汇总CSV</message>
   <message id="bgw-reports-write-csv-tooltip">写入包含所有输入文件分析结果的汇总CSV文件。</message>
   <message id="bgw-reports-write-custom-per-file">自定义单文件</message>
-  <message id="bgw-reports-write-custom-per-file-tooltip">上传自定义报告模板用于每个文件。</message>
   <message id="bgw-reports-write-custom-summary">自定义汇总</message>
   <message id="bgw-reports-write-custom-summary-tooltip">一个或多个模板文件用于提供所有输入文件的汇总。</message>
 
@@ -58,7 +57,6 @@
   <message id="bgw-no-ana-act-shield-invalid-background">本底无效</message>
   <message id="bgw-no-ana-no-input-files">无输入文件。</message>
   <message id="bgw-no-ana-invalid-output-path">请选择有效的输出目录。</message>
-
 
   <!-- Analysis progress and results -->
   <message id="bgw-performing-work-title">正在执行工作</message>
@@ -120,8 +118,6 @@
 零值或负值将意味着无要求，也无'peak-stat-threshold'要求。</message>
   
   <message id="bgw-reports-write-custom-per-file-tooltip">一个或多个谱报告模板文件 - 对于每个输入文件，将使用指定的每个模板生成报告。</message>
-
-  <message id="bgw-reports-write-custom-summary-tooltip">一个或多个模板文件用于提供所有输入文件的汇总。</message>
 
   <!-- Activity/Shielding Analysis specific strings -->
   <message id="bgw-use-bq">使用Bq单位</message>

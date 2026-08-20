@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <algorithm>
 #include <set>
 #include <tuple>
 #include <memory>
@@ -177,6 +178,18 @@ public:
 
 
 
+namespace
+{
+  /** The multi-file dialog wants to be tall (peak tree + coefficients + deviation pairs + summary),
+   but never taller than the window can show.  ~700px fits all sections without scrolling.
+   */
+  int available_height( const int rendered_height )
+  {
+    return std::max( 420, std::min( 700, rendered_height - 40 ) );
+  }
+}//namespace
+
+
 EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex actionType,
                              const std::vector<MeasToApplyCoefChangeTo> &measToChange,
                              EnergyCalTool *calibrator )
@@ -224,9 +237,30 @@ EnergyCalAddActionsWindow::EnergyCalAddActionsWindow( const MoreActionsIndex act
       break;
 
     case MoreActionsIndex::MultipleFilesCal:
+    {
       AuxWindow::setWindowTitle( WString::tr("ecaa-multi-file-title") );
-      contents()->addNew<EnergyCalMultiFile>( m_calibrator, this );
+
+      // Unlike the other tools in this switch, EnergyCalMultiFile is not simple block-flow content:
+      //  it puts its own WGridLayout on itself, with a stretch row for the peak tree.  A Wt4 layout
+      //  needs a *definite* height from its parent to distribute, and contents() has neither a
+      //  layout nor a fixed height - so the JS layout implementation resolved the height over
+      //  several passes (the content visibly jittered/grew on open) and settled taller than the
+      //  dialog, clipping the bottom rows (the deviation-pairs box) with no way to scroll to them.
+      //  Give this one a definite, resizable window and host it in the stretcher, so the layout
+      //  chain is continuous from the dialog down and the tree row absorbs the slack.
+      setResizable( true );
+      stretcher()->addWidget( std::make_unique<EnergyCalMultiFile>( m_calibrator, this ), 0, 0 );
+      stretcher()->setContentsMargins( 9, 2, 9, 2 );
+
+      InterSpec * const viewer = InterSpec::instance();
+      const int ww = viewer ? viewer->renderedWidth() : 0;
+      const int wh = viewer ? viewer->renderedHeight() : 0;
+      if( (ww > 100) && (wh > 100) )
+        resizeWindow( std::min(825, (95*ww)/100), std::min(available_height(wh), (92*wh)/100) );
+      else
+        resizeWindow( 800, 640 );
       break;
+    }//case MoreActionsIndex::MultipleFilesCal:
 
     case MoreActionsIndex::NumMoreActionsIndex:
       break;

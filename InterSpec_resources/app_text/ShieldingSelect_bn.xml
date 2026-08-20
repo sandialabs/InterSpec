@@ -53,7 +53,6 @@
   <message id="ss-add-trace-src">Add Trace Source</message>
   <message id="ss-non-src-frac-el">other {1}:</message>
   <message id="ss-tt-with-uncert">{1}</message>
-  <message id="ss-tt-without" />
   <message id="ss-warning-only-one-src-frac">To fit mass fractions, please select at least two components of {1} to fit.</message>
   
   

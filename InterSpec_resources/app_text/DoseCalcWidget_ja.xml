@@ -35,7 +35,6 @@
   <message id="dcw-generic-shield-invalid">線量計算エラー、無効な遮蔽、申し訳ありません :{</message>
   <message id="dcw-dist-invalid">距離が無効です。</message>
   <message id="dcw-err-other">線源からの線量計算エラー、申し訳ありません :{</message>
-  <message id="dcw-invalid-src-dose">無効な線源線量。</message>
   <message id="dcw-invalid-src-act">無効な線源放射能。</message>
   <message id="dcw-invalid-src-dose">無効な線源線量。</message>
   <message id="dcw-failed-find-lower-dist">{1} cmで下限距離の発見に失敗しました。</message>

@@ -33,8 +33,6 @@
   <message id="fpn-opt-use-background">使用本底扣除计算</message>
 
   <!-- PeakFitForNuclideConfig option labels -->
-  <message id="fpn-opt-roi-min-chi2-red">ROI chi2降低阈值</message>
-  <message id="fpn-opt-roi-min-peak-sig">ROI显著性阈值</message>
   <message id="fpn-opt-obs-initial-sig">预测峰显著性阈值</message>
   <message id="fpn-opt-obs-final-sig">最终峰显著性阈值</message>
   <message id="fpn-opt-skew-type">峰偏斜</message>
@@ -49,8 +47,6 @@
   <message id="fpn-opt-tt-dont-refine-energy-cal">拟合中能量校准会变化，但ROI范围不会根据拟合校准进行更新。</message>
   <message id="fpn-opt-tt-fit-bkgnd-peaks">使用第二条相对效率曲线拟合NORM峰（U-238、Ra-226、U-235、Th-232、K-40）。</message>
   <message id="fpn-opt-tt-use-background">启用后，在峰拟合过程中扣除本底谱以确定要使用的ROI，但对返回峰的最终拟合不扣除本底。取消勾选则不进行本底扣除拟合。</message>
-  <message id="fpn-opt-tt-roi-min-chi2-red">ROI中峰被视为显著所需的最小总chi2降低量。含峰的chi2必须至少比仅连续谱的chi2低这么多。</message>
-  <message id="fpn-opt-tt-roi-min-peak-sig">峰被视为显著的最小峰显著性（峰面积 / sqrt(连续谱)）。如果ROI中任何峰的显著性超过此阈值，则保留该ROI。</message>
   <message id="fpn-opt-tt-obs-initial-sig">重新拟合前初始峰显著性过滤器的阈值。显著性 =（峰幅度 * 0.7607）/ sqrt(pm_1_fwhm内的数据面积)。</message>
   <message id="fpn-opt-tt-obs-final-sig">重新拟合后最终峰显著性的阈值。显著性 = 峰面积 / 峰面积不确定度。</message>
   <message id="fpn-opt-tt-skew-type">应用于拟合中所有峰的偏斜形状。&quot;None&quot;使用纯高斯。其他选项添加低能尾部分量（如NaI/CsI探测器用Exp*Gauss，HPGe中电荷收集尾部用Crystal Ball）。</message>

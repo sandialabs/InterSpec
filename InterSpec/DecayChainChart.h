@@ -73,7 +73,15 @@ public:
   };//enum class DecayChainType
   
   DecayChainChart();
-  
+
+  /** Tears down #m_moreInfoDialog.
+
+   That dialog is created with `AuxWindow::make(...)`, so `wApp` owns it, not us - without this it
+   would stay on screen (with a now-inert Close button, since its handlers are tracked connections
+   to this widget) for the rest of the session, one per open/close cycle.
+   */
+  virtual ~DecayChainChart();
+
   /** Show the decay chain, or decay-through chart for a specified
   nuclide, as a AuxWindow.
 

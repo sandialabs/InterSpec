@@ -33,8 +33,6 @@
   <message id="fpn-opt-use-background">Calculer avec soustraction du bruit de fond</message>
 
   <!-- PeakFitForNuclideConfig option labels -->
-  <message id="fpn-opt-roi-min-chi2-red">Seuil de réduction chi2 du ROI</message>
-  <message id="fpn-opt-roi-min-peak-sig">Seuil de significativité du ROI</message>
   <message id="fpn-opt-obs-initial-sig">Seuil de significativité initiale du pic</message>
   <message id="fpn-opt-obs-final-sig">Seuil de significativité finale du pic</message>
   <message id="fpn-opt-skew-type">Asymétrie du pic</message>
@@ -49,8 +47,6 @@
   <message id="fpn-opt-tt-dont-refine-energy-cal">La calibration en énergie est variée dans l'ajustement, mais l'étendue du ROI n'est pas mise à jour en fonction de la calibration ajustée.</message>
   <message id="fpn-opt-tt-fit-bkgnd-peaks">Ajuster les pics NORM (U-238, Ra-226, U-235, Th-232, K-40) en utilisant une seconde courbe d'efficacité relative.</message>
   <message id="fpn-opt-tt-use-background">Lorsqu'activé, le spectre de bruit de fond est soustrait lors de l'ajustement des pics pour déterminer les ROI à utiliser, mais le bruit de fond n'est pas soustrait pour l'ajustement final des pics retournés. Décochez pour ajuster sans soustraction du bruit de fond.</message>
-  <message id="fpn-opt-tt-roi-min-chi2-red">Réduction minimale totale de chi2 requise pour que les pics d'un ROI soient considérés comme significatifs. Le chi2 avec pics doit être au moins inférieur de cette valeur au chi2 avec continuum seul.</message>
-  <message id="fpn-opt-tt-roi-min-peak-sig">Significativité minimale du pic (aire_du_pic / sqrt(continuum)) pour qu'un pic soit considéré comme significatif. Si un pic du ROI a une significativité supérieure à ce seuil, le ROI est conservé.</message>
   <message id="fpn-opt-tt-obs-initial-sig">Seuil du filtre de significativité initiale du pic avant le réajustement. Significativité = (amplitude_du_pic * 0.7607) / sqrt(aire_des_données_dans_pm_1_fwhm).</message>
   <message id="fpn-opt-tt-obs-final-sig">Seuil de significativité finale du pic après le réajustement. Significativité = aire_du_pic / incertitude_de_l_aire_du_pic.</message>
   <message id="fpn-opt-tt-skew-type">Forme d'asymétrie appliquée à tous les pics de l'ajustement. &quot;None&quot; utilise une gaussienne pure. Les autres options ajoutent des composantes de queue basse énergie (ex. Exp*Gauss pour les détecteurs NaI/CsI, Crystal Ball pour la queue de collection de charge dans les HPGe).</message>
