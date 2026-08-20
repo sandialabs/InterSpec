@@ -23,6 +23,7 @@
 #include "InterSpec_config.h"
 
 #include <string>
+#include <cassert>
 #include <iostream>
 #include <iterator>
 
@@ -46,6 +47,24 @@
 
 namespace DataBaseVersionUpgrade
 {
+  /** Returns whether `table` currently has a column named `column`.
+
+   Asks the database catalog (`pragma_table_info` for SQLite3, `information_schema.columns`
+   for MySQL).  Returns false if `table` itself doesnt exist, and logs-and-returns false if
+   the query fails - so callers must tolerate the subsequent `ALTER TABLE` failing, making a
+   false negative a logged no-op rather than an aborted start-up.
+   */
+  bool tableHasColumn( const std::string &table, const std::string &column,
+                       std::shared_ptr<Wt::Dbo::Session> sqlSession );
+
+  /** Adds the `DetectorPeakResponse.m_drfExtra` column, if it is not already present.
+
+   Used by both the version 13 and version 14 upgrade steps, so that neither aborts start-up
+   on a database that already has the column.
+   */
+  void addDrfExtraColumn( std::shared_ptr<Wt::Dbo::Session> sqlSession );
+
+
   void checkAndUpgradeVersion()
   {
     //Synchronize database here
@@ -92,7 +111,18 @@ namespace DataBaseVersionUpgrade
     } //get version
     
     std::cerr << "INTERSPEC DB VERSION: " << version << std::endl;
-    
+
+    if( version > DB_SCHEMA_VERSION )
+    {
+      // All the upgrade steps below are guarded on `version < N`, so a database written by a newer
+      //  build silently falls through them all, and then Dbo throws on the first query against a
+      //  table whose columns dont match.  We cant downgrade, so just make the reason obvious.
+      std::cerr << "Database is version " << version << ", but this build of InterSpec expects "
+                << DB_SCHEMA_VERSION << " - it was written by a newer version of InterSpec, and"
+                   " can not be downgraded.  Expect database errors." << std::endl;
+      return;
+    }//if( version > DB_SCHEMA_VERSION )
+
     if( version == DB_SCHEMA_VERSION )
     {
       std::cerr<<"No need to update database, everything in sync"<<std::endl;
@@ -310,15 +340,29 @@ namespace DataBaseVersionUpgrade
       // Holds a `<DrfExtra>` XML fragment with optional DRF extensions
       //  (efficiency uncertainty, total efficiency, and future additions).
       //  The following has only been checked for SQLite3.
-      const char *sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_drfExtra text default \"\" not null;";
-      executeSQL( sql_statement, sqlSession );
+      addDrfExtraColumn( sqlSession );
 
       version = 13;
       setDBVersion( version, sqlSession );
     }//if( version<13 && version<DB_SCHEMA_VERSION )
 
+    if( version<14 && version<DB_SCHEMA_VERSION )
+    {
+      // Version 13 added `m_drfExtra`, but some databases ended up stamped as version 13 without
+      //  ever receiving the column - the registry is written in a few places based only on whether
+      //  `Session::createTables()` threw, so a database can be marked current without its schema
+      //  actually matching.  Re-check, and add the column if it is missing.  A database that
+      //  upgraded normally through the version 13 block above already has it, so this is a no-op.
+      std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
+
+      addDrfExtraColumn( sqlSession );
+
+      version = 14;
+      setDBVersion( version, sqlSession );
+    }//if( version<14 && version<DB_SCHEMA_VERSION )
+
     /// ******************************************************************
-    /// DB_SCHEMA_VERSION is at 13.  Add Version 14 here.  Update InterSpecUser.h!
+    /// DB_SCHEMA_VERSION is at 14.  Add Version 15 here.  Update InterSpecUser.h!
     /// ******************************************************************
   }//void checkAndUpgradeVersion()
   
@@ -345,7 +389,67 @@ namespace DataBaseVersionUpgrade
     sqlSession->execute(sql);
     transaction.commit();
   } //executeSQL(std::string sql, std::shared_ptr<Wt::Dbo::Session> m_sqlSession)
-  
+
+
+  bool tableHasColumn( const std::string &table, const std::string &column,
+                       std::shared_ptr<Wt::Dbo::Session> sqlSession )
+  {
+    // Note: dont be tempted to probe this with something like
+    //   `select count("column") from "table"`
+    //  - SQLite treats a double-quoted identifier that doesnt resolve as a string literal, so
+    //  that query happily succeeds for a column that isnt there.  Ask the catalog instead.
+#if( USE_MYSQL_DB && !USE_SQLITE3_DB )
+    const std::string sql = "select count(*) from information_schema.columns"
+                            " where table_schema=database() and table_name='" + table + "'"
+                            " and column_name='" + column + "'";
+#elif( USE_SQLITE3_DB )
+    const std::string sql = "select count(*) from pragma_table_info('" + table + "')"
+                            " where name='" + column + "'";
+#else
+#error "Either a SQLITE3 or MySQL database must be selected"
+#endif
+
+    try
+    {
+      Wt::Dbo::Transaction transaction( *sqlSession );
+      const int num_matching = sqlSession->query<int>( sql );
+      transaction.commit();
+
+      return (num_matching > 0);
+    }catch( std::exception &e )
+    {
+      std::cerr << "Failed to check if '" << table << "' has column '" << column << "': "
+                << e.what() << std::endl;
+      return false;
+    }
+  }//bool tableHasColumn( const string &table, const string &column, shared_ptr<Session> )
+
+
+  void addDrfExtraColumn( std::shared_ptr<Wt::Dbo::Session> sqlSession )
+  {
+    if( tableHasColumn( "DetectorPeakResponse", "m_drfExtra", sqlSession ) )
+      return;
+
+    try
+    {
+      // Note the '' (a real SQL string literal) rather than "" - SQLite only accepts the latter
+      //  as an empty string by way of its double-quoted-identifier fallback, which a build with
+      //  SQLITE_DQS=0 turns off.
+      const char *sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_drfExtra text default '' not null;";
+      executeSQL( sql_statement, sqlSession );
+    }catch( std::exception &e )
+    {
+      // Dont let this abort start-up; without the column, saving DRFs to the database will fail,
+      //  but the rest of the application is still usable.
+      std::cerr << "Failed to add 'm_drfExtra' column to DetectorPeakResponse: " << e.what() << std::endl;
+
+      // Only a developer-side concern if the table is actually present - a database that doesnt
+      //  have the table at all will get it, with the column, from `Session::createTables()`.
+      assert( !tableHasColumn( "DetectorPeakResponse", "m_name", sqlSession ) );
+    }
+  }//void addDrfExtraColumn( std::shared_ptr<Wt::Dbo::Session> sqlSession )
+
+
   //Sets the DB registry with the schema version
   void setDBVersion(int version, std::shared_ptr<Wt::Dbo::Session> sqlSession)
   {
