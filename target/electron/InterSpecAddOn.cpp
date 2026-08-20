@@ -208,14 +208,16 @@ namespace InterSpecAddOn
       std::string errmsg;
       switch( serverPort )
       {
-        case -1: errmsg = "Failed to create user data directory '" + userdatadir + "'"; break;
-        case -2: errmsg = "InterSpecUserData.db: error in DataBaseUtils::setPreferenceDatabaseFile() or DbToFilesystemLink::setFileNumToFilePathDBNameBasePath()"; break;
-        case -3: errmsg = "Error in set_detector_model_input_csv(), unexpected"; break;
-        case -4: errmsg = "Error in InterSpec::setWritableDataDirectory('" + userdatadir + "')"; break;
-        case -5: errmsg = "Error in DataBaseVersionUpgrade::checkAndUpgradeVersion()"; break;
-        case -6: errmsg = "Error in ResourceUpdate::setupGlobalPrefsFromDb()"; break;
-        case -7: errmsg = "Error in InterSpec::setStaticDataDirectory('" + basedir + "/data')"; break;
-        case -8: errmsg = "Caught exception trying to start InterSpec server."; break;
+        case -1: errmsg = "Error resolving the directories to serve"; break;
+        case -2: errmsg = "Failed to create user data directory '" + userdatadir + "'"; break;
+        case -3: errmsg = "Error in DataBaseUtils::setPreferenceDatabaseFile() for 'InterSpecUserData.db'"; break;
+        case -4: errmsg = "Error in SerialToDetectorModel::set_detector_model_input_csv(), unexpected"; break;
+        case -5: errmsg = "Error in InterSpec::setWritableDataDirectory('" + userdatadir + "')"; break;
+        case -6: errmsg = "Error in DataBaseVersionUpgrade::checkAndUpgradeVersion()"; break;
+        case -8: errmsg = "Error in InterSpec::setStaticDataDirectory('" + basedir + "/data')"; break;
+        case -9: errmsg = "Error setting the user 'sandia.decay.xml'"; break;
+        case -10: errmsg = "Error setting the user 'sandia.reactiongamma.xml'"; break;
+        case -11: errmsg = "Caught exception trying to start InterSpec server."; break;
         default: errmsg = "Unrecognized error code."; break;
       }
       
