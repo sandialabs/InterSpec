@@ -49,25 +49,31 @@ class ShieldingDiagramDialog : public SimpleDialog
 {
   friend class SimpleDialog;
 public:
-  // Static factory method to create a dialog with 2D/3D view switcher
+  // Static factory method to create a dialog with 2D/3D view switcher.
+  // sourceOffset0/sourceOffset1 are the user-set off-axis offsets
+  // (GammaInteractionCalc::ShieldSourceConfig::source_offsets[0] and [1]).
   static ShieldingDiagramDialog *createShieldingDiagram(
                                      const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                                      const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                                      GammaInteractionCalc::GeometryType geometry,
                                      double detectorDistance,
-                                     double detectorDiameter
+                                     double detectorDiameter,
+                                     double sourceOffset0 = 0.0,
+                                     double sourceOffset1 = 0.0
                                      );
-  
+
   // Switch between 2D and 3D views
   void switchView( bool show3D );
-  
+
   // Update the data for both views
   void updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                    const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                    GammaInteractionCalc::GeometryType geometry,
                    double detectorDistance,
-                   double detectorDiameter );
-  
+                   double detectorDiameter,
+                   double sourceOffset0 = 0.0,
+                   double sourceOffset1 = 0.0 );
+
 protected:
   // Constructor is protected; use SimpleDialog::make<ShieldingDiagramDialog>() to create.
   ShieldingDiagramDialog(
@@ -75,22 +81,25 @@ protected:
                          const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                          GammaInteractionCalc::GeometryType geometry,
                          double detectorDistance,
-                         double detectorDiameter
+                         double detectorDiameter,
+                         double sourceOffset0,
+                         double sourceOffset1
                          );
 
 private:
   void handleViewTypeToggle();
-  
+
   Shielding2DView *m_2DView;
   Shielding3DView *m_3DView;
   Wt::WComboBox *m_select;
   Wt::WGridLayout *m_layout;
-  
+
   std::vector<ShieldingSourceFitCalc::ShieldingInfo> m_shieldings;
   std::vector<ShieldingSourceFitCalc::SourceFitDef> m_sources;
   GammaInteractionCalc::GeometryType m_geometry;
   double m_detectorDistance;
   double m_detectorDiameter;
+  double m_sourceOffsets[2];
 };
 
 // Create JSON representation of shielding data
@@ -99,7 +108,9 @@ std::string createShieldingDiagramJson(
                                        const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                                        GammaInteractionCalc::GeometryType geometry,
                                        double detectorDistance,
-                                       double detectorDiameter
+                                       double detectorDiameter,
+                                       double sourceOffset0 = 0.0,
+                                       double sourceOffset1 = 0.0
                                        );
 
 class Shielding2DView : public Wt::WContainerWidget
@@ -109,15 +120,19 @@ public:
                    const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                    GammaInteractionCalc::GeometryType geometry,
                    double detectorDistance,
-                   double detectorDiameter );
-  
+                   double detectorDiameter,
+                   double sourceOffset0 = 0.0,
+                   double sourceOffset1 = 0.0 );
+
   // Update the data and refresh the display
   void updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                    const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                    GammaInteractionCalc::GeometryType geometry,
                    double detectorDistance,
-                   double detectorDiameter );
-  
+                   double detectorDiameter,
+                   double sourceOffset0 = 0.0,
+                   double sourceOffset1 = 0.0 );
+
 private:
   void defineJavaScript();
   std::string createJsonData() const;
@@ -127,6 +142,7 @@ private:
   GammaInteractionCalc::GeometryType m_geometry;
   double m_detectorDistance;
   double m_detectorDiameter;
+  double m_sourceOffsets[2];
 };
 
 // Shielding3DView class (merged from Shielding3DView.h)
@@ -137,15 +153,19 @@ public:
                    const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                    GammaInteractionCalc::GeometryType geometry,
                    double detectorDistance,
-                   double detectorDiameter );
-  
+                   double detectorDiameter,
+                   double sourceOffset0 = 0.0,
+                   double sourceOffset1 = 0.0 );
+
   // Update the data and refresh the display
   void updateData( const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
                    const std::vector<ShieldingSourceFitCalc::SourceFitDef> &sources,
                    GammaInteractionCalc::GeometryType geometry,
                    double detectorDistance,
-                   double detectorDiameter );
-  
+                   double detectorDiameter,
+                   double sourceOffset0 = 0.0,
+                   double sourceOffset1 = 0.0 );
+
 private:
   void defineJavaScript();
   std::string createJsonData() const;
@@ -155,6 +175,7 @@ private:
   GammaInteractionCalc::GeometryType m_geometry;
   double m_detectorDistance;
   double m_detectorDiameter;
+  double m_sourceOffsets[2];
 };
 
 #endif // Shielding2DView_h

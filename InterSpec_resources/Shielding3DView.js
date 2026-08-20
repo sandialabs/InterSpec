@@ -420,6 +420,8 @@ Shielding3DView = function(id, data) {
   this.hoverTarget = null;
   this.keyPoints = null;
   this.currentViewProj = null;
+  this.fitRadius = 100;       // bounding radius of the model about camTarget (set in setData)
+  this.lastFitAspect = 0;     // canvas aspect the camera was last framed for (see frameToFit)
 
   // --- 2D Overlay Canvas for distance annotations ---
   this.overlayCanvas = document.createElement('canvas');
@@ -550,11 +552,25 @@ Shielding3DView = function(id, data) {
 
   // --- Render Loop ---
   function render() {
-    // Resize
+    // Keep the drawing buffer matched to the canvas's live CSS box (the canvas is
+    //  width/height:100% of the container, so clientWidth/Height track the dialog as it
+    //  resizes).  Use CSS pixels for the buffer so the canvas's intrinsic size stays tied
+    //  to its laid-out size and can't feed back into an auto-height ancestor.
     if (canvas.width !== canvas.clientWidth || canvas.height !== canvas.clientHeight) {
         canvas.width = canvas.clientWidth;
         canvas.height = canvas.clientHeight;
-        gl.viewport(0, 0, canvas.width, canvas.height);
+    }
+    // Always (re)set the viewport to the current buffer; relying only on the resize branch
+    //  could leave it at the context-init size if the first layout already matched.
+    gl.viewport(0, 0, canvas.width, canvas.height);
+
+    // Re-frame the camera when the canvas aspect changes (first layout, or the dialog was
+    //  resized between portrait/landscape) so the whole model stays visible.  Done only on
+    //  a real aspect change so it doesn't fight the user's wheel-zoom every frame.
+    var curAspect = (canvas.height > 0) ? (canvas.width / canvas.height) : 1;
+    if (isFinite(curAspect) && curAspect > 0 &&
+        Math.abs(curAspect - self.lastFitAspect) > 0.01 * (self.lastFitAspect || 1)) {
+      self.frameToFit(curAspect);
     }
 
     gl.clearColor(0.9, 0.9, 0.9, 1.0);
@@ -573,7 +589,11 @@ Shielding3DView = function(id, data) {
     var eyeZ = self.camTarget[2] + horizRad * Math.cos(self.camPhi);
 
     var view = self.Mat4.lookAt(self.Mat4.create(), [eyeX, eyeY, eyeZ], self.camTarget, [0, 1, 0]);
-    var projection = self.Mat4.perspective(self.Mat4.create(), Math.PI / 4, canvas.width / canvas.height, 1.0, 10000.0);
+    // Far plane scales with the camera distance (which grows to fit the model on narrow
+    //  canvases and for large source-to-detector distances) so nothing is clipped; keep a
+    //  small near plane for close-up zooming.
+    var farPlane = (self.camRadius + self.fitRadius) * 2.0 + 100.0;
+    var projection = self.Mat4.perspective(self.Mat4.create(), Math.PI / 4, curAspect, 1.0, farPlane);
     var viewProj = self.Mat4.multiply(self.Mat4.create(), projection, view);
     self.currentViewProj = viewProj;
 
@@ -919,13 +939,20 @@ Shielding3DView.prototype.setData = function(data) {
   
   // Position: Face at Z = detDistance. Cylinder center at Z = detDistance + detLen/2.
   var detZ = detDistance + detLen/2;
-  
+
+  // User-set off-axis offsets displace the whole detector assembly in the X-Y plane
+  //  (line of sight is +Z).  source_offsets[0] -> X, source_offsets[1] -> Y.  For
+  //  CylinderSideOn the shape is rotated so its axis is along Y, which matches the
+  //  axial offset (source_offsets[1]).
+  var offX = (data.sourceOffset0 !== undefined) ? (data.sourceOffset0 * MM) : 0;
+  var offY = (data.sourceOffset1 !== undefined) ? (data.sourceOffset1 * MM) : 0;
+
   // Add Cylinder mesh (Unit cylinder scaled)
   // We use generated buffers for specific sizes to avoid complex scaling normals issues if non-uniform
   meshes.push({
     buffer: createBufferInfo(gl, createCylinder(detRad, detLen, 32)),
     color: [0.7, 0.7, 0.7, 1.0], // Grey
-    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [0, 0, detZ]),
+    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [offX, offY, detZ]),
     transparent: false
   });
 
@@ -939,7 +966,7 @@ Shielding3DView.prototype.setData = function(data) {
   meshes.push({
     buffer: createBufferInfo(gl, createBox(boxDim, boxDim, boxDim)),
     color: [0.2, 0.2, 0.8, 1.0], // Blueish
-    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [0, 0, boxZ]),
+    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [offX, offY, boxZ]),
     transparent: false
   });
 
@@ -951,7 +978,7 @@ Shielding3DView.prototype.setData = function(data) {
   meshes.push({
     buffer: createBufferInfo(gl, createBox(handW, handH, handD)),
     color: [0.1, 0.1, 0.1, 1.0], // Dark
-    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [0, handY, handZ]),
+    matrix: this.Mat4.translate(this.Mat4.create(), this.Mat4.create(), [offX, handY + offY, handZ]),
     transparent: false
   });
 
@@ -1031,11 +1058,11 @@ Shielding3DView.prototype.setData = function(data) {
 
   this.keyPoints = {
     sourceCenter: [0, 0, 0],
-    detFaceCenter: [0, 0, detDistance],
+    detFaceCenter: [offX, offY, detDistance],
     outerShellPoint: [0, 0, outerShellZ],
     outerShellZ: outerShellZ,
     detDistance: detDistance,
-    detCenter: [0, 0, detZ],
+    detCenter: [offX, offY, detZ],
     detBoundRadius: Math.max(detRad, detLen / 2) * 1.2,
     geometry: data.geometry
   };
@@ -1088,9 +1115,49 @@ Shielding3DView.prototype.setData = function(data) {
       container.appendChild(overlay);
   }
   
-  // Update camera target based on new data
-  var detDistance = data.distance * MM;
-  this.camTarget = [0, 0, detDistance/2];
-  this.camRadius = detDistance * 1.5 + 10 * INCH;
-  if (this.camRadius < 100) this.camRadius = 100;
+  // Aim the camera at the center of the whole model's bounding box so it is framed
+  //  symmetrically.  The model is a long thin run of objects along Z: the source/shield
+  //  at the origin (front face at z=-outerShellZ) through the detector cylinder + body
+  //  box + handle out past the detector face (far face at z=farZ).  Targeting the Z
+  //  midpoint (rather than the source<->detector-face midpoint) keeps the bulky detector
+  //  assembly from sitting off in a corner.  lookAt projects this target to screen center,
+  //  so the scene always stays horizontally and vertically centered.
+  var offMag = Math.sqrt(offX*offX + offY*offY);
+  var farZ   = detDistance + detLen + boxDim;        // far face of the detector body box
+  var nearZ  = -outerShellZ;                          // front of the (origin-centered) shield
+  var centerZ = (farZ + nearZ) / 2;
+  this.camTarget = [offX/2, offY/2, centerZ];
+
+  // Bounding radius of the model about camTarget.  Half the Z span usually dominates;
+  //  include the transverse (box/handle/offset) extent so a corner is never clipped.
+  //  frameToFit() turns this radius into a camera distance that fits the model in *both*
+  //  screen dimensions -- essential on a narrow/portrait phone canvas, where the horizontal
+  //  field of view is much smaller than the vertical one and the old fixed 1.5x-distance
+  //  heuristic clipped the model sideways.
+  var halfZ = (farZ - nearZ) / 2;
+  var transverse = offMag/2 + Math.max(boxDim/2, handY + handH/2, detRad);
+  this.fitRadius = Math.sqrt(halfZ*halfZ + transverse*transverse);
+  if (this.fitRadius < 10*MM) this.fitRadius = 10*MM;
+
+  // Frame using the current canvas aspect (the dialog is laid out by now); the render loop
+  //  re-frames if the aspect later changes, so the model stays fully visible at any width.
+  var aspect = (this.canvas && this.canvas.height > 0) ? (this.canvas.width / this.canvas.height) : 1;
+  this.frameToFit(aspect);
+};
+
+// Set camRadius so a sphere of this.fitRadius (centered on camTarget) fits within the
+//  vertical AND horizontal field of view for the given aspect ratio.  The vertical fovy is
+//  fixed at PI/4 (see the perspective() call in render); the horizontal half-angle is
+//  atan(aspect*tan(fovy/2)), so for a portrait canvas (aspect<1) it is the limiting
+//  dimension and forces the camera farther back.
+Shielding3DView.prototype.frameToFit = function(aspect) {
+  if (!isFinite(aspect) || aspect <= 0) aspect = 1;
+  var vHalf = (Math.PI / 4) / 2;                       // half of the vertical fovy
+  var hHalf = Math.atan(aspect * Math.tan(vHalf));     // half of the horizontal fov
+  var minHalf = Math.min(vHalf, hHalf);
+  // distance so the bounding sphere subtends the (smaller) half-angle, plus a 15% margin.
+  var dist = (this.fitRadius / Math.sin(minHalf)) * 1.15;
+  if (dist < 100) dist = 100;
+  this.camRadius = dist;
+  this.lastFitAspect = aspect;
 };

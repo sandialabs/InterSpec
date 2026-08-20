@@ -29,6 +29,7 @@
 #include <atomic>
 #include <memory>
 #include <utility>
+#include <optional>
 #include <functional>
 
 #include <Wt/WFlags.h>

@@ -8,6 +8,49 @@
   background: var(--d3spec-background-color, none);
 }
 
+/* On narrow (phone) viewports the 600px floor would force the diagram dialog wider than the
+   screen; drop it so the SVG (width:100%) scales down to fit.  We also stack the controls
+   above the drawing (instead of the top-right overlay) so the SVG gets the full width, and
+   make the container a flex column so the SVG fills the height left after the controls row.
+   The JS measures the SVG element (not this container), so scale/centering stay correct. */
+@media (max-width: 640px) {
+  .Shielding2DView {
+    min-width: 0;
+    min-height: 260px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  .Shielding2DView .shielding-controls {
+    position: static;
+    flex: 0 0 auto;
+    display: flex;
+    flex-flow: row wrap;
+    column-gap: 16px;
+    align-items: center;
+    top: auto;
+    right: auto;
+    background: rgba(245,245,245,0.85);
+  }
+
+  /* The <br/> separator between the two checkboxes is irrelevant in the flex row. */
+  .Shielding2DView .shielding-controls br {
+    display: none;
+  }
+
+  .Shielding2DView .shielding-controls label {
+    display: inline-flex;
+    align-items: center;
+    margin: 2px 0;
+  }
+
+  .Shielding2DView svg {
+    flex: 1 1 auto;
+    height: auto;
+    min-height: 0;
+  }
+}
+
 .Shielding2DView svg {
   width: 100%;
   height: 100%;

@@ -35,6 +35,8 @@
 
 #cmakedefine01 USE_REL_ACT_TOOL
 
+#cmakedefine01 USE_CERES_FOR_ACTIVITY_FIT
+
 
 #cmakedefine01 BUILD_AS_UNIT_TEST_SUITE
 #cmakedefine01 INCLUDE_ANALYSIS_TEST_SUITE

@@ -7,7 +7,7 @@ You can build and test this QuickLook utility on its own. e.g.,
 cd InterSpec/target/macos/quicklook/SpecFilePreview/SpecFilePreview/
 mkdir build
 cd build
-cmake -DCMAKE_PREFIX_PATH=/Users/wcjohns/install/macOS_wt3.7.1_prefix ..
+cmake -DCMAKE_PREFIX_PATH=/Users/wcjohns/install/wt-4.13.2_prefix ..
 make
 
 rm -rf ./SpecFilePreview.qlgenerator

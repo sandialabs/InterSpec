@@ -14,6 +14,17 @@ at <a href="https://sandialabs.github.io/InterSpec/tutorials/#enrichment-and-iso
 
 
 <div style="display:table-row">
+<h4>The relative efficiency chart</h4>
+<p>
+On the relative efficiency chart, the shaded band around the fitted curve and the error bars on the
+data points are both <b>1-sigma</b>.  The point error bars are statistical only, while the band is
+the uncertainty of the fitted curve itself.  The same convention is used by the
+&quot;<em>Isotopics from peaks</em>&quot; tool, and in the HTML reports this tool exports.
+</p>
+</div>
+
+
+<div style="display:table-row">
 <h4>Custom report templates</h4>
 <p>
 The HTML, plain-text, CSV, etc. reports this tool produces &mdash; both in the GUI's

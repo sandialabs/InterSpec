@@ -98,7 +98,6 @@
   <message id="ssd-back-peaks-manual-hint">(háttércsúcsokat manuálisan is illeszthet az Alt billentyű (mac: Option billentyű) plusz dupla<br />
   kattintással a spektrumon, vagy a háttér előtérként való betöltésével)</message>
   <message id="ssd-err-adding-back-peaks">Hiba csúcsok háttérhez adásakor: {1}</message>
-  <message id="ssd-update-dim-to-be-min">Árnyékolási dimenzió frissítve minimális vastagságra.</message>
   <message id="ssd-scaled-shield-to-be-less-dist">Az árnyékolási vastagságok skálázva lettek, hogy kisebbek legyenek a detektortávolságnál.</message>
   <message id="ssd-err-fit-only-one-an">Egyszerre csak egy általános árnyékolás rendszámára lehet illeszteni.</message>
   <message id="ssd-warn-invalid-chi2-for-energy">Érvénytelen chi2 lett kiszámítva {1} keV-re, egyéb eredmények is érvénytelenek lehetnek</message>

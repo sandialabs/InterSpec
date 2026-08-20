@@ -651,7 +651,7 @@ void PhysicalModelShieldInput::check_valid() const
       
       if( (input.upper_fit_atomic_number <= input.lower_fit_atomic_number)
          && (input.upper_fit_atomic_number != 0.0) )
-        throw runtime_error( "PhysicalModelShieldInput: upper atomic number must be less than lower." );
+        throw runtime_error( "PhysicalModelShieldInput: upper atomic number must be greater than lower." );
     }else
     {
       if( (input.atomic_number < 1.0) || (input.atomic_number > 98) )

@@ -32,11 +32,10 @@ cd target/fuzzing/build
 cmake -DCMAKE_C_COMPILER=$(brew --prefix llvm)/bin/clang \
       -DCMAKE_CXX_COMPILER=$(brew --prefix llvm)/bin/clang++ \
       -DCMAKE_BUILD_TYPE=Debug \
-      -DCMAKE_PREFIX_PATH=/Users/wcjohns/install/wt-3.7.1_cxx20_prefix \
-      -DWt_INCLUDE_DIR=/Users/wcjohns/install/wt-3.7.1_cxx20_prefix/include \
-      -DBoost_DIR=/Users/wcjohns/install/wt-3.7.1_cxx20_prefix/lib/cmake/Boost-1.84.0 \
-      -DEigen3_DIR=/Users/wcjohns/install/wt-3.7.1_cxx20_prefix/share/eigen3/cmake \
-      -DCeres_DIR=/Users/wcjohns/install/wt-3.7.1_cxx20_prefix/lib/cmake/Ceres \
+      -DCMAKE_PREFIX_PATH=/Users/wcjohns/install/wt-4.13.2_prefix \
+      -DBoost_DIR=/Users/wcjohns/install/wt-4.13.2_prefix/lib/cmake/Boost-1.84.0 \
+      -DEigen3_DIR=/Users/wcjohns/install/wt-4.13.2_prefix/share/eigen3/cmake \
+      -DCeres_DIR=/Users/wcjohns/install/wt-4.13.2_prefix/lib/cmake/Ceres \
       -G Ninja \
       ..
 

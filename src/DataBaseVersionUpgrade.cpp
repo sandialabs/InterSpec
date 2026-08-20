@@ -302,9 +302,23 @@ namespace DataBaseVersionUpgrade
       version = 12;
       setDBVersion( version, sqlSession );
     }//if( version<11 && version<DB_SCHEMA_VERSION )
-    
+
+    if( version<13 && version<DB_SCHEMA_VERSION )
+    {
+      std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
+
+      // Holds a `<DrfExtra>` XML fragment with optional DRF extensions
+      //  (efficiency uncertainty, total efficiency, and future additions).
+      //  The following has only been checked for SQLite3.
+      const char *sql_statement = "ALTER TABLE DetectorPeakResponse ADD COLUMN m_drfExtra text default \"\" not null;";
+      executeSQL( sql_statement, sqlSession );
+
+      version = 13;
+      setDBVersion( version, sqlSession );
+    }//if( version<13 && version<DB_SCHEMA_VERSION )
+
     /// ******************************************************************
-    /// DB_SCHEMA_VERSION is at 11.  Add Version 12 here.  Update InterSpecUser.h!
+    /// DB_SCHEMA_VERSION is at 13.  Add Version 14 here.  Update InterSpecUser.h!
     /// ******************************************************************
   }//void checkAndUpgradeVersion()
   

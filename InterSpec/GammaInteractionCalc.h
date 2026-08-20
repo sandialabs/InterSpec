@@ -30,6 +30,7 @@
 #include <array>
 #include <deque>
 #include <tuple>
+#include <memory>
 #include <atomic>
 #include <vector>
 #include <utility>
@@ -319,6 +320,11 @@ double len_in_sphere_x( double r, double theta,
                         double phi, double sphere_rad, double observation_dist );
 */
 
+/** Templated (double or ceres::Jet<>) version of #DistributedSrcCalc - defined in
+ GammaInteractionCalc_imp.hpp. */
+template<typename T>
+struct DistributedSrcCalcT;
+
 struct DistributedSrcCalc
 {
   //Right now this struct assumes sources are solid, in terms of the attenuation
@@ -350,6 +356,14 @@ struct DistributedSrcCalc
   double m_detectorRadius;
   double m_detectorSetback;
   double m_observationDist;
+  
+  /** Lateral offsets of the source assembly from the detector axis (user-set; see
+   #ShieldSourceConfig::source_offsets); the detector center is at
+   {-m_srcOffsetX, -m_srcOffsetY, m_observationDist} in assembly coordinates
+   (CylinderSideOn: {m_observationDist, -m_srcOffsetX, -m_srcOffsetY}).
+   */
+  double m_srcOffsetX;
+  double m_srcOffsetY;
   
   /** Whether to account for attenuation in air.  If you want this, you must also set m_airTransLenCoef to the appropriate value. */
   bool m_attenuateForAir;
@@ -390,9 +404,20 @@ struct DistributedSrcCalc
 
   /** The photons (i.e., sum of activities times br) per volume of the shielding.
    Is not used during integration; used to multiple integral by to get number of expected peak counts.
+
+   Variant 2 (VOL_CALC_VARIANT, see GammaInteractionCalc_imp.hpp): when #m_normalizeByVolume is
+   set this instead carries the un-divided numerator (total activity, or activity per m^2 for an
+   in-situ exponential), and eval_* folds 1/vol (or 1/norm) into the integrand.
    */
   double m_srcVolumetricActivity;
-  
+
+  /** Variant 2: when true, eval_* returns trans*(dV/vol) for TotalActivity (or trans*(dV/norm)
+   for an in-situ exponential) instead of trans*dV, folding the source-shell normalization into
+   the integrand with the vanishing source dimension cancelled symbolically.  Mirrors
+   DistributedSrcCalcT<T>::m_normalizeByVolume.  Left false in variants 0/1.
+   */
+  bool m_normalizeByVolume = false;
+
   /** The energy of gamma being integrated over.
    
    Doesnt look to be used in the integration, but used for debug writing out.
@@ -684,6 +709,40 @@ struct SourceDetails
 };//struct SourceDetails
   
   
+/** The effective shielding seen by the gammas of one source at one energy that reach
+ the detector - the inputs `GadrasShieldScatter::getContinuum` needs to estimate the
+ scattered continuum (for future cascade-summing corrections).
+
+ The averages are attenuation-weighted: each ray from the source volume is weighted by
+ its `exp(-sum(mu*x))*solid_angle` contribution, so they reflect the shielding seen by
+ the photons that actually reach the detector.
+ */
+struct EffectiveShieldingInfo
+{
+  const SandiaDecay::Nuclide *nuclide = nullptr;
+  double energy = 0.0;
+
+  /** Gammas of this energy emitted into 4pi over the measurement live time;
+   -1 if not computed (in-situ exponentially-distributed trace sources).
+   */
+  double gammas_into_4pi = -1.0;
+
+  /** Attenuation-weighted traversed areal density, in PhysicalUnits. */
+  double effective_ad = 0.0;
+
+  /** Effective atomic number, weighted by traversed mass (sum AN_l*AD_l / sum AD_l). */
+  double effective_an_mass = 0.0;
+
+  /** Effective atomic number, weighted by each materials share of the attenuation. */
+  double effective_an_xs = 0.0;
+
+  /** Hydrogen mass fraction of the traversed areal density. */
+  double hydrogen_frac_of_ad = 0.0;
+
+  bool is_point_source = false;
+};//struct EffectiveShieldingInfo
+
+
 /** This is the setup of the problem - distances, shielding, how to calculate. */
 struct ShieldSourceConfig
 {
@@ -692,6 +751,20 @@ struct ShieldSourceConfig
    Note: If detector is fixed geometry, this value will not be used.
    */
   double distance;
+
+  /** Lateral offsets of the source/shielding assembly from the detector axis -
+   user-set, never fit.
+
+   source_offsets[0] is the horizontal offset perpendicular to the detector axis,
+   source_offsets[1] the vertical one; for Spherical geometry only the magnitude
+   matters (the second component is ignored by the UI).  In assembly-centered
+   coordinates the detector sits at {-dx, -dy, distance} (CylinderSideOn:
+   {distance, -dx, -dy}) - see #detector_geom_from_config.
+
+   Not used for fixed-geometry detectors.  Serialized as an optional
+   <SourceOffsets dx=".." dy=".."> node (absent means zero).
+   */
+  double source_offsets[2] = { 0.0, 0.0 };
   
   GammaInteractionCalc::GeometryType geometry;
   std::vector<ShieldingSourceFitCalc::ShieldingInfo> shieldings;
@@ -1011,10 +1084,21 @@ public:
   };//class CancelException
   
   /** Performs evaluation of Chi2, for parameters x.
-   
+
    May through CancelException (if user or time limit cancelled computation), or other std::exception (on other error type).
    */
   virtual double DoEval( const std::vector<double> &x ) const;
+
+  /** The current cancel/timeout status - lets external optimizer drivers (e.g., the
+   Ceres cost function) poll for cancellation, instead of relying on #DoEval throwing.
+   */
+  CalcStatus currentCancelStatus() const;
+
+  /** Reports a completed chi2 evaluation to the GUI progress updater (if a fit is in
+   progress and an updater was set) - the same reporting #DoEval does internally, for
+   use by optimizer drivers that dont evaluate through #DoEval.
+   */
+  void reportCompletedEval( const double chi2, const std::vector<double> &params ) const;
 
   
   /** For interface compatibility; calls directly to #DoEval */
@@ -1036,6 +1120,107 @@ public:
                                   NucMixtureCache &mixturecache,
                                   std::vector<std::string> *info = nullptr,
                                   std::vector<PeakDetail> *log_info = nullptr ) const;
+
+  /** Templated (double or ceres::Jet<>) core of the expected-counts computation,
+   used by the auto-differentiated (Ceres) fit; definitions are in
+   GammaInteractionCalc_imp.hpp, which callers must include (after ceres
+   headers, when using Jets).
+
+   Computes the model-expected counts for each peak that
+   #expected_observed_chis would include (i.e., peaks with a decay particle or
+   annihilation gamma), in that same order, with derivative information
+   propagated through shielding transmission, volumetric-source integration
+   (via #DistributedSrcCalcT and #self_shielding_integration_imp - NOT Cuhre),
+   and - by numeric differencing re-seeded into the Jet - nuclide age.
+
+   No logging; unlike #DoEval, exceptions (including CancelException) propagate.
+   */
+  template<typename T>
+  std::vector<T> expected_peak_counts_imp( const std::vector<T> &params,
+                                           NucMixtureCache &mixturecache ) const;
+
+  /** Builds the volumetric-source (self-attenuating and trace) calculators for the
+   given parameters - one per (source nuclide, clustered gamma energy) - with their
+   `m_srcVolumetricActivity` set, ready to integrate.  The per-shell composition
+   metadata (density, effective AN, hydrogen fraction) is also filled in.
+
+   Used by #expected_peak_counts_imp, and by #computeEffectiveShielding; defined in
+   GammaInteractionCalc_imp.hpp.
+   */
+  template<typename T>
+  std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> build_volumetric_calculators(
+                          const std::vector<T> &params,
+                          NucMixtureCache &mixturecache,
+                          const std::vector<std::pair<double,double>> &energie_widths ) const;
+
+  /** The user-set lateral offsets of the source assembly from the detector axis -
+   see #ShieldSourceConfig::source_offsets.
+   */
+  double sourceOffsetX() const;
+  double sourceOffsetY() const;
+
+  /** The true line-of-sight distance from the assembly center to the detector,
+   sqrt( distance^2 + offsetX^2 + offsetY^2 ).
+   */
+  double trueSourceToDetectorDistance() const;
+
+  /** Computes the effective (attenuation-weighted) shielding each sources gammas
+   traverse, per gamma energy of the fit peaks - the inputs needed for GADRAS
+   shield-scatter based cascade-summing corrections.
+
+   A post-fit diagnostic; call with the final fit parameters.  Defined in
+   GammaInteractionCalc_imp.hpp.
+   */
+  std::vector<EffectiveShieldingInfo> computeEffectiveShielding( const std::vector<double> &params,
+                                                                 NucMixtureCache &mixturecache ) const;
+
+  /** Templated equivalents of the same-named double-valued accessors below;
+   defined in GammaInteractionCalc_imp.hpp.
+   */
+  template<typename T>
+  T activity_imp( const SandiaDecay::Nuclide *nuclide, const std::vector<T> &params ) const;
+  template<typename T>
+  T age_imp( const SandiaDecay::Nuclide *nuclide, const std::vector<T> &params ) const;
+  template<typename T>
+  T activityOfSelfAttenSource_imp( const SandiaDecay::Nuclide *nuclide, const std::vector<T> &params ) const;
+  template<typename T>
+  T massFractionOfElement_imp( const size_t material_index, const SandiaDecay::Nuclide *nuc,
+                               const std::vector<T> &params ) const;
+  template<typename T>
+  T volumeOfMaterial_imp( const size_t matn, const std::vector<T> &params ) const;
+  template<typename T>
+  T sphericalThickness_imp( const size_t materialNum, const std::vector<T> &params ) const;
+  template<typename T>
+  T cylindricalRadiusThickness_imp( const size_t materialNum, const std::vector<T> &params ) const;
+  template<typename T>
+  T cylindricalLengthThickness_imp( const size_t materialNum, const std::vector<T> &params ) const;
+  template<typename T>
+  T rectangularWidthThickness_imp( const size_t materialNum, const std::vector<T> &params ) const;
+  template<typename T>
+  T rectangularHeightThickness_imp( const size_t materialNum, const std::vector<T> &params ) const;
+  template<typename T>
+  T rectangularDepthThickness_imp( const size_t materialNum, const std::vector<T> &params ) const;
+  template<typename T>
+  T arealDensity_imp( const size_t materialNum, const std::vector<T> &params ) const;
+  template<typename T>
+  T atomicNumber_imp( const size_t materialNum, const std::vector<T> &params ) const;
+
+  /** Templated equivalent of #cluster_peak_activities (no logging).
+
+   When T is a ceres::Jet and `age` carries derivative information, the
+   derivative of each gammas yield with respect to age is computed by numeric
+   differencing (the decay calculations are not templatable), and chained into
+   the result - same approach as RelActCalcAuto.
+   */
+  template<typename T>
+  static void cluster_peak_activities_imp( std::map<double,T> &energy_count_map,
+                  const std::vector<std::pair<double,double>> &energie_widths,
+                  SandiaDecay::NuclideMixture &mixture,
+                  const T &act, const T &age,
+                  const double photopeakClusterSigma,
+                  const double energyToCluster,
+                  const bool accountForDecayDuringMeas,
+                  const double measDuration );
 
   void log_shield_info( const std::vector<double> &params,
                         const std::vector<double> &error_params,
@@ -1266,6 +1451,11 @@ protected:
   std::shared_ptr<boost::asio::deadline_timer> m_zombieCheckTimer;
   
   double m_distance;
+
+  /** Lateral offsets of the source assembly from the detector axis - see
+   #ShieldSourceConfig::source_offsets.  Set by #create; never fit.
+   */
+  double m_sourceOffsets[2] = { 0.0, 0.0 };
   double m_liveTime;
 
   std::vector<PeakDef> m_peaks;

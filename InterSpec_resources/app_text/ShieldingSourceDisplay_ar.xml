@@ -101,7 +101,6 @@
   <message id="ssd-back-peaks-manual-hint">(يمكنك أيضاً ملاءمة ذرى الخلفية يدوياً بالضغط على مفتاح Alt (mac: مفتاح Option) مع النقر<br />
   المزدوج على الطيف، أو بتحميل الخلفية كمقدمة)</message>
   <message id="ssd-err-adding-back-peaks">خطأ في إضافة ذرى إلى الخلفية: {1}</message>
-  <message id="ssd-update-dim-to-be-min">تم تحديث بُعد التدريع ليكون سماكة دنيا.</message>
   <message id="ssd-scaled-shield-to-be-less-dist">تم تقييس سماكات التدريع لتكون أقل من مسافة الكاشف.</message>
   <message id="ssd-err-fit-only-one-an">يمكنك فقط ملاءمة العدد الذري لتدريع عام واحد في المرة.</message>
   <message id="ssd-warn-invalid-chi2-for-energy">تم حساب chi2 غير صالح لـ {1} keV، النتائج الأخرى قد تكون غير صالحة</message>

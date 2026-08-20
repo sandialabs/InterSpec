@@ -24,7 +24,7 @@
 
 .ShieldingSelect
 {
-  border: 1px solid #e1e1e1;
+  border: 1px solid var(--interspec-border-color, #e1e1e1);
   box-sizing: border-box;
   display: flex;
   flex-direction: column;
@@ -32,9 +32,94 @@
   column-gap: 5px;
 }
 
+/* Segmented material/generic type toggle (shield = material, atom = generic) */
+.ShieldingSelect .ShieldTypeToggle
+{
+  display: inline-flex;
+  flex: 0 0 auto;
+  background: var(--interspec-background-color, #ececef);
+  border: 1px solid var(--interspec-border-color, #d2d2d8);
+  border-radius: 7px;
+  padding: 2px;
+  gap: 2px;
+}
+
+.ShieldingSelect .ShieldTypeToggle .TypeBtn,
+.ShieldingSelect .ShieldTypeToggle .TypeBtn:hover,
+.ShieldingSelect .ShieldTypeToggle .TypeBtn:active
+{
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  cursor: pointer;
+  padding: 2px 8px;
+  margin: 0;
+  min-width: 0;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  opacity: 0.5;
+}
+
+.ShieldingSelect .ShieldTypeToggle .TypeBtn.on
+{
+  background: var(--interspec-input-background, #ffffff);
+  opacity: 1.0;
+  box-shadow: 0 1px 2px rgba(20,20,30,.14);
+}
+
+.ShieldingSelect .ShieldTypeToggle .TypeBtn:hover
+{
+  opacity: 0.85;
+}
+
+.ShieldingSelect .ShieldTypeToggle .TypeBtn img
+{
+  width: 15px;
+  height: 15px;
+  vertical-align: middle;
+  margin: 0;
+}
+
 .ShieldingSelect .DimDiv
 {
   padding: 3px;
+}
+
+/* Generic shielding: AN + AD (+ both Fit checkboxes) laid out compactly on a SINGLE line */
+.ShieldingSelect .GenericMatRow
+{
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  flex-wrap: nowrap;   /* never wrap - keep both Fit checkboxes on the input line */
+  gap: 4px 6px;
+  padding: 4px 3px;
+}
+/* Number inputs (AN / AD) only - NOT the Fit checkboxes, whose <input type=checkbox> would
+   otherwise be forced to 34px wide and read as large padding around each checkbox. */
+.ShieldingSelect .GenericMatRow input:not([type="checkbox"])
+{
+  flex: 0 1 auto;      /* compact; may shrink slightly if the column gets narrow */
+  min-width: 34px;
+}
+/* AN/AD "Fit" checkboxes: keep the box its natural size and tight to its label so the whole
+   AN/AD row fits the available width. */
+.ShieldingSelect .GenericMatRow .CbNoLineBreak input[type="checkbox"]
+{
+  min-width: 0;
+  flex: 0 0 auto;
+  margin: 0 2px 0 0;
+}
+.ShieldingSelect .GenericMatRow label
+{
+  white-space: nowrap;
+  flex: 0 0 auto;
+}
+/* Extra space before the AD group so the AN / AD groupings read as distinct */
+.ShieldingSelect .GenericMatRow .AdGroupStart
+{
+  margin-left: 12px;
 }
 
 .ShieldingSelect .DimEditRow
@@ -97,9 +182,9 @@
 .ShieldingAsSourceCBDiv
 {
 /*background: #888888; color: #FFFFFF;*/
-  border-color: #E1E1E1;
+  border-color: var(--interspec-border-color, #E1E1E1);
   border-style: solid;
-  border:2px solid #e1e1e1;
+  border:2px solid var(--interspec-border-color, #e1e1e1);
 }
 
 .ShieldingSelect .LinkBtn.AddTrcSrcBtn

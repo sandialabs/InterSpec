@@ -58,7 +58,7 @@ namespace Wt
 
 namespace SandiaDecay
 {
-  class Nuclide;
+  struct Nuclide;
   struct Transition;
 }
 

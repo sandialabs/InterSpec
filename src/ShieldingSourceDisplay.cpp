@@ -42,10 +42,10 @@
 
 
 #include <Wt/WText.h>
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
 #include <Wt/WTable.h>
-#endif
+#include <Wt/WTimer.h>
 #include <Wt/WLabel.h>
+#include <Wt/WTableCell.h>
 #include <Wt/WServer.h>
 #include <Wt/WPainter.h>
 #include <Wt/WTextArea.h>
@@ -55,10 +55,14 @@
 #include <Wt/WGridLayout.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WJavaScript.h>
+#include <Wt/WAny.h>
+#include <Wt/Utils.h>
 #include <Wt/WFileUpload.h>
 #include <Wt/Http/Response.h>
+#include <Wt/WSplitButton.h>
 #include <Wt/WSelectionBox.h>
 #include <Wt/WItemDelegate.h>
+#include <Wt/WAbstractItemDelegate.h>
 #include <Wt/Dbo/QueryModel.h>
 #include <Wt/WSuggestionPopup.h>
 #include <Wt/WRegExpValidator.h>
@@ -115,6 +119,7 @@
 #include "InterSpec/ShieldingSourceDiagram.h"
 #include "InterSpec/GroupBox.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
+#include "InterSpec/SourceFitNuclideDisplay.h"
 
 using namespace Wt;
 using namespace std;
@@ -571,7 +576,7 @@ using GammaInteractionCalc::TraceActivityType;
 namespace
 {
   const std::string ns_no_uncert_info_txt = "Perform model fit to update and get uncertainties.";
-  
+
   /** If a distance WLineEdit has a number, but no distance units, will add a " cm" to the text value. */
   void make_sure_distance_units_present( Wt::WLineEdit *edit )
   {
@@ -655,8 +660,69 @@ namespace
       rapidxml::print( response.out(), doc, 0 );
     }
   };//class StringDownloadResource
-  
-  
+
+
+  /** Display delegate for the Activity/Shielding peaks table's "Nuclide" column: renders a small
+   colored swatch (the peak's line color, from PeakModel::kPeakLineColor) followed by the nuclide
+   text.  Display-only - nuclide assignment is edited in the main Peak Manager, and the design
+   shows the peaks here as read-only selection rows.
+   */
+  class PeakNuclideSwatchDelegate : public Wt::WAbstractItemDelegate
+  {
+    std::shared_ptr<PeakModel> m_peakModel;
+  public:
+    PeakNuclideSwatchDelegate( std::shared_ptr<PeakModel> peakModel )
+      : Wt::WAbstractItemDelegate(), m_peakModel( peakModel ){}
+
+    virtual std::unique_ptr<Wt::WWidget> update( Wt::WWidget *widget,
+                                                 const Wt::WModelIndex &index,
+                                                 Wt::WFlags<Wt::ViewItemRenderFlag> flags ) override
+    {
+      Wt::WText *text = dynamic_cast<Wt::WText *>( widget );
+      std::unique_ptr<Wt::WWidget> created;
+      if( !text )
+      {
+        auto t = std::make_unique<Wt::WText>();
+        t->setTextFormat( Wt::TextFormat::XHTML );
+        text = t.get();
+        created = std::move( t );
+      }//if( !text )
+
+      if( !index.isValid() )
+      {
+        text->setText( "" );
+        return created;
+      }
+
+      const std::string nuc = Wt::asString( index.data() ).toUTF8();
+
+      std::string colorCss;
+      if( m_peakModel )
+      {
+        const Wt::WModelIndex colIdx = m_peakModel->index( index.row(), PeakModel::kPeakLineColor );
+        const Wt::cpp17::any colAny = colIdx.isValid() ? m_peakModel->data( colIdx ) : Wt::cpp17::any();
+        if( colAny.has_value() )
+          colorCss = Wt::asString( colAny ).toUTF8();
+      }//if( m_peakModel )
+
+      std::string html;
+      if( !colorCss.empty() )
+        html += "<span class=\"PeakSwatch\" style=\"background:" + Wt::Utils::htmlEncode(colorCss) + "\"></span>";
+      html += Wt::Utils::htmlEncode( nuc );
+      text->setText( Wt::WString::fromUTF8(html) );
+
+      text->setToolTip( Wt::asString( index.data( Wt::ItemDataRole::ToolTip ) ) );
+
+      std::string sc = "PeakNucCell";
+      if( flags.test( Wt::ViewItemRenderFlag::Selected ) )
+        sc += " Wt-selected";
+      text->setStyleClass( Wt::WString::fromUTF8(sc) );
+
+      return created;
+    }//update(...)
+  };//class PeakNuclideSwatchDelegate
+
+
   /** Struct that saves the ShieldingSourceDisplay state to XML, when this struct is first constructed, and then again
    when the struct destructs; it then uses these two XML states to create a undo/redo point.
    If blocks all other undo/redo step insertions until this object is destructed.
@@ -2695,7 +2761,52 @@ pair<ShieldingSourceDisplay *,AuxWindow *> ShieldingSourceDisplay::createWindow(
     closeButton->clicked().connect(window, &AuxWindow::hide);
       
     AuxWindow::addHelpInFooter( window->footer(), "activity-shielding-dialog" );
-    
+
+    // Footer model controls (replace the old upper-right "..." menu): export (download),
+    //  import (upload), and a single database icon whose menu does open/save/clone.
+    //  createWindow() is a static member of ShieldingSourceDisplay, so it may set disp's
+    //  private members directly.
+    {
+      const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", viewer );
+      WContainerWidget *footer = window->footer();
+
+      // Desktop: float the model icons (export/import/database) to the left, just after the help
+      //  icon, so the Close button stays the rightmost footer control (see .SsdModelFooterDesktop
+      //  CSS).  Not on phone, where these same buttons live in the top app bar.
+      if( !viewer->isPhone() )
+        footer->addStyleClass( "SsdModelFooterDesktop" );
+
+      disp->m_exportModelBtn = footer->addNew<WPushButton>();
+      disp->m_exportModelBtn->setStyleClass( "SsdFooterIcon" );
+      disp->m_exportModelBtn->setIcon( WLink("InterSpec_resources/images/download_small.svg") );
+      WLink exportLink( disp->m_xmlDownloadResource->url() );
+      exportLink.setTarget( Wt::LinkTarget::NewWindow );
+      disp->m_exportModelBtn->setLink( exportLink );
+      HelpSystem::attachToolTipOn( disp->m_exportModelBtn, WString::tr("ssd-tt-export-model"), showToolTips );
+
+      disp->m_importModelBtn = footer->addNew<WPushButton>();
+      disp->m_importModelBtn->setStyleClass( "SsdFooterIcon" );
+      disp->m_importModelBtn->setIcon( WLink("InterSpec_resources/images/upload_small.svg") );
+      disp->m_importModelBtn->clicked().connect( disp, &ShieldingSourceDisplay::startModelUpload );
+      HelpSystem::attachToolTipOn( disp->m_importModelBtn, WString::tr("ssd-tt-import-model"), showToolTips );
+
+#if( USE_DB_TO_STORE_SPECTRA )
+      disp->m_dbButton = footer->addNew<WPushButton>();
+      disp->m_dbButton->setStyleClass( "SsdFooterIcon" );
+      disp->m_dbButton->setIcon( WLink("InterSpec_resources/images/db_small.png") );
+      HelpSystem::attachToolTipOn( disp->m_dbButton, WString::tr("ssd-tt-database"), showToolTips );
+
+      disp->m_dbMenu = makePopupMenu( disp->m_dbButton );
+      PopupDivMenuItem *dbItem = disp->m_dbMenu->addMenuItem( WString::tr("ssd-mi-from-db") );
+      dbItem->triggered().connect( disp, &ShieldingSourceDisplay::startBrowseDatabaseModels );
+      dbItem = disp->m_dbMenu->addMenuItem( WString::tr("ssd-mi-save-to-db") );
+      dbItem->triggered().connect( disp, [disp](){ disp->startSaveModelToDatabase( false ); } );
+      disp->m_saveAsNewModelInDb = disp->m_dbMenu->addMenuItem( WString::tr("ssd-mi-clone-db-entry") );
+      disp->m_saveAsNewModelInDb->triggered().connect( disp, &ShieldingSourceDisplay::saveCloneModelToDatabase );
+      disp->m_saveAsNewModelInDb->disable();
+#endif //#if( USE_DB_TO_STORE_SPECTRA )
+    }
+
     window->rejectWhenEscapePressed();
       
     //Should take lock on m_dataMeasurement->mutex_
@@ -2817,16 +2928,27 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
     m_specViewer( specViewer ),
     m_sourceModel( nullptr ),
     m_peakView( nullptr ),
-    m_sourceView( nullptr ),
+    m_nuclideDisplay( nullptr ),
     m_detectorDisplay( nullptr ),
     m_distanceLabel( nullptr ),
     m_prevDistStr(),
     m_distanceEdit( nullptr ),
-    m_addMaterialShielding( nullptr ),
-    m_addGenericShielding( nullptr ),
+    m_useOffsetCheck( nullptr ),
+    m_offsetLabel1( nullptr ),
+    m_offsetLabel2( nullptr ),
+    m_prevOffset1Str( "0 cm" ),
+    m_prevOffset2Str( "0 cm" ),
+    m_offsetEdit1( nullptr ),
+    m_offsetEdit2( nullptr ),
+    m_addShieldingBtn( nullptr ),
+    m_showDiagramBtn( nullptr ),
     m_layout( nullptr ),
-    m_addItemMenu( nullptr ),
+    m_importModelBtn( nullptr ),
+    m_exportModelBtn( nullptr ),
+    m_xmlDownloadResource( nullptr ),
 #if( USE_DB_TO_STORE_SPECTRA )
+    m_dbButton( nullptr ),
+    m_dbMenu( nullptr ),
     m_saveAsNewModelInDb( nullptr ),
 #endif
     m_shieldingSelects( nullptr ),
@@ -2858,9 +2980,26 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
     m_modelDbBrowseWindow( nullptr ),
     m_modelDbSaveWindow( nullptr ),
 #endif
+    m_fitMessage( nullptr ),
+    m_fitSplitButton( nullptr ),
     m_fitModelButton( nullptr ),
+    m_autoFitItem( nullptr ),
+    m_manualFitItem( nullptr ),
     m_fitProgressTxt( nullptr ),
-    m_cancelfitModelButton( nullptr )
+    m_cancelfitModelButton( nullptr ),
+    m_phoneFitBar( nullptr ),
+    m_phoneDistChip( nullptr ),
+    m_phoneActStrip( nullptr ),
+    m_phoneWarnPill( nullptr ),
+    m_phoneTabs( nullptr ),
+    m_phonePhysicalTabIndex( -1 ),
+    m_autoFitTimer( nullptr ),
+    m_autoFitEpoch( 0 ),
+    m_fitInProgress( false ),
+    m_modelNeedsFit( false ),
+    m_applyingFitResults( false ),
+    m_autoFitArmed( false ),
+    m_lastFitWasAuto( false )
 {
   wApp->useStyleSheet( "InterSpec_resources/ShieldingSourceDisplay.css" );
   
@@ -2910,76 +3049,22 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_peakView->setColumnWidth( PeakModel::kUseForShieldingSourceFit, WLength(7,WLength::Unit::FontEx) );
 
 
-  auto nuclideDelegate = std::make_shared<PhotopeakDelegate>( PhotopeakDelegate::NuclideDelegate, true );
+  // The Nuclide column shows a peak-color swatch + the nuclide name (display only; nuclide
+  //  assignment is edited in the main Peak Manager).
+  auto nuclideDelegate = std::make_shared<PeakNuclideSwatchDelegate>( m_peakModel );
   m_peakView->setItemDelegateForColumn( PeakModel::kIsotope, nuclideDelegate );
 
 
-  m_sourceView = new RowStretchTreeView();
-  m_sourceView->setRootIsDecorated	(	false); //makes the tree look like a table! :)
-  
+  // The Nuclides column is a custom per-nuclide "card" display (replacing the old MVC table
+  //  view); SourceFitModel remains the single source of truth behind it.
+  //  On phone, the cards become accordions that nest each nuclide's peak rows (the user toggles a
+  //  peak's use-in-fit right inside the card), so the separate peak table is omitted there.
+  m_nuclideDisplay = new SourceFitNuclideDisplay( m_sourceModel, m_peakModel, m_specViewer,
+                                                  m_specViewer->isPhone() );
 
-  m_sourceView->setModel( std::shared_ptr<WAbstractItemModel>( m_sourceModel, []( WAbstractItemModel * ){} ) );
-  m_sourceView->setSortingEnabled( true );
-  m_sourceView->setAlternatingRowColors( true );
-  m_sourceView->addStyleClass( "SourceView" );
-
-  for( SourceFitModel::Columns col = SourceFitModel::Columns(0);
-       col < SourceFitModel::kNumColumns;
-       col = SourceFitModel::Columns(col+1) )
-  {
-    switch( col )
-    {
-      case SourceFitModel::kActivity:
-        //need make custom delegate
-      break;
-      case SourceFitModel::kAge:
-        //need to make custom delegate
-      break;
-
-      case SourceFitModel::kActivityUncertainty:
-      case SourceFitModel::kAgeUncertainty:
-        m_sourceView->setColumnHidden( static_cast<int>( col ), true );
-        break;
-        
-      case SourceFitModel::kFitActivity:
-      case SourceFitModel::kFitAge:
-      case SourceFitModel::kIsotope:
-      case SourceFitModel::kIsotopeMass:
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
-      case SourceFitModel::kTruthActivity: case SourceFitModel::kTruthActivityTolerance:
-      case SourceFitModel::kTruthAge: case SourceFitModel::kTruthAgeTolerance:
-#endif
-      case SourceFitModel::kNumColumns:
-      break;
-    }//case( col )
-  }//for( loop over SourceFitModel columns )
-
-
-  m_sourceView->setColumnWidth( SourceFitModel::kActivity, WLength(150,WLength::Unit::Pixel) );
-  m_sourceView->setColumnWidth( SourceFitModel::kAge, WLength(9,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kFitAge, WLength(10,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kFitActivity, WLength(10,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kIsotope, WLength(9,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kIsotopeMass, WLength(9,WLength::Unit::FontEx) );
-
-  m_sourceView->setColumnWidth( SourceFitModel::kActivityUncertainty, WLength(10,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kAgeUncertainty, WLength(10,WLength::Unit::FontEx) );
-
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
-  m_sourceView->setColumnWidth( SourceFitModel::kTruthActivity, WLength(13,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kTruthActivityTolerance, WLength(14,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kTruthAge, WLength(13,WLength::Unit::FontEx) );
-  m_sourceView->setColumnWidth( SourceFitModel::kTruthAgeTolerance, WLength(14,WLength::Unit::FontEx) );
-#endif
-  
   
   m_detectorDisplay = new DetectorDisplay( m_specViewer, m_specViewer->fileManager()->model() );
   m_detectorDisplay->setInline( true );
-
-  Wt::WPushButton *addItemMenubutton = new WPushButton();
-  addItemMenubutton->setStyleClass( "RoundMenuIcon InvertInDark" );
-  addItemMenubutton->clicked().preventPropagation();
-  m_addItemMenu = makePopupMenu( addItemMenubutton );
 
   //this validates floating point numbers followed by a distance unit
   auto distValidator = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceUnitOptionalRegex );
@@ -2998,6 +3083,44 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_distanceLabel->setBuddy( m_distanceEdit );
   m_distanceEdit->setValidator( distValidator );
   HelpSystem::attachToolTipOn( m_distanceEdit, WString::tr("ssd-tt-distance"), showToolTips );
+
+  // Off-axis source offsets; like distances, but may be negative
+  //  (the validators decimal part already allows a sign; parsing handles it).
+  //  The whole row is gated behind the "Offset" checkbox, and the number of
+  //  edits and their labels depend on geometry - see updateOffsetVisibility().
+  m_useOffsetCheck = new WCheckBox( WString::tr("ssd-offset-check") );
+  m_useOffsetCheck->setChecked( false );
+  // Vertically center the label with the checkbox, like the other checkboxes (.CbNoLineBreak).  This
+  //  one sits in a WGridLayout cell added with an alignment flag, so Wt positions it absolutely with
+  //  an inline display:block that beats the stylesheet; .SsdOffAxisCb re-asserts the flex (see CSS).
+  m_useOffsetCheck->addStyleClass( "CbNoLineBreak" );
+  m_useOffsetCheck->addStyleClass( "SsdOffAxisCb" );
+  HelpSystem::attachToolTipOn( m_useOffsetCheck, WString::tr("ssd-tt-offset-check"), showToolTips );
+
+  m_offsetLabel1 = new WLabel( WString::tr("ssd-offset-spherical") );
+  m_offsetLabel2 = new WLabel( WString::tr("ssd-offset-axial") );
+  m_offsetEdit1 = new WLineEdit( "0 cm" );
+  m_offsetEdit2 = new WLineEdit( "0 cm" );
+
+  for( WLineEdit *edit : { m_offsetEdit1, m_offsetEdit2 } )
+  {
+    edit->setAttributeValue( "ondragstart", "return false" );
+#if( BUILD_AS_OSX_APP || IOS )
+    edit->setAttributeValue( "autocorrect", "off" );
+    edit->setAttributeValue( "spellcheck", "off" );
+#endif
+    edit->setTextSize( 5 );
+    edit->setValidator( distValidator );
+  }//for( both offset edits )
+
+  m_offsetLabel1->setBuddy( m_offsetEdit1 );
+  m_offsetLabel2->setBuddy( m_offsetEdit2 );
+  // Per-geometry labels/tool-tips and visibility are applied by updateOffsetVisibility();
+  //  start hidden (offsets off, geometry Spherical).
+  m_offsetLabel1->hide();
+  m_offsetLabel2->hide();
+  m_offsetEdit1->hide();
+  m_offsetEdit2->hide();
 
   m_geometryLabel = new WLabel( WString::tr("ssd-geometry-label") );
   m_geometrySelect = new WComboBox();
@@ -3033,68 +3156,98 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 
   HelpSystem::attachToolTipOn( m_shieldingSelects, WString::tr("ssd-tt-shieldings"), showToolTips );
 
-  WLabel *addShieldingLabel = new WLabel( WString::tr("ssd-add-shield-label") );
-  m_addMaterialShielding = new WPushButton( WString::tr("Material") );
-  HelpSystem::attachToolTipOn( m_addMaterialShielding, WString::tr("ssd-tt-add-shield"),
-                              showToolTips );
-  m_addMaterialShielding->setIcon( "InterSpec_resources/images/shield_white.png" );
-  m_addMaterialShielding->clicked().connect( this,
-                                      &ShieldingSourceDisplay::doAddShielding );
-  
-  m_addGenericShielding = new WPushButton( WString::tr("ssd-generic-btn") );
-  HelpSystem::attachToolTipOn( m_addGenericShielding, WString::tr("ssd-tt-generic"),
-                              showToolTips );
-  m_addGenericShielding->setIcon( "InterSpec_resources/images/atom_white.png" );
-  m_addGenericShielding->clicked().connect( this,
-                                     &ShieldingSourceDisplay::addGenericShielding );
-  
-  
-  m_fitModelButton = new WPushButton( WString::tr("ssd-perform-fit-btn") );
-  m_fitModelButton->clicked().connect( this, [this](){ doModelFit( true, true ); } );
+  // "Add shielding" footer control.  The "+" always adds a material shielding (the user can
+  //  toggle it to generic); it uses the same icon/style as the "Isotopics by nuclides" tool's
+  //  add button.  The "Show Diagram" link sits beside it (placed in the layout below).
+  m_addShieldingBtn = new WPushButton();
+  m_addShieldingBtn->setStyleClass( "AddShieldingBtn Wt-icon" );
+  m_addShieldingBtn->setIcon( "InterSpec_resources/images/plus_min_black.svg" );
+  HelpSystem::attachToolTipOn( m_addShieldingBtn, WString::tr("ssd-tt-add-shield"), showToolTips );
+  m_addShieldingBtn->clicked().connect( this, &ShieldingSourceDisplay::doAddShielding );
+
+  m_showDiagramBtn = new WPushButton( WString::tr("ssd-show-diagram") );
+  m_showDiagramBtn->addStyleClass( "SsdLink ShowDiagramLink" );
+  m_showDiagramBtn->clicked().connect( this, &ShieldingSourceDisplay::showShieldSourceDiagram );
+  m_showDiagramBtn->hide();  // shown by handleShieldingChange() once there is >=1 shielding
+
+
+  // The fit control is a split button: the action half performs/shows the fit, and the
+  //  dropdown half lets the user choose "Live" (auto-update) vs "Manual" fitting.  We keep
+  //  m_fitModelButton pointing at the action half so existing show/hide/clicked() call-sites
+  //  keep working.  The Live/Manual choice is the app-level "AutoActShieldFit" preference.
+  m_fitSplitButton = new WSplitButton( WString::tr("ssd-perform-fit-btn") );
+  m_fitModelButton = m_fitSplitButton->actionButton();
+  // Tag the split button (desktop + phone) so the state classes set in updateFitButtonState() can
+  //  style it as one cohesive pill.  On phone .SsdPhone CSS applies; on desktop .FitActions CSS does.
+  m_fitSplitButton->addStyleClass( "SsdFitSplit" );
+  m_fitModelButton->clicked().connect( this, [this](){
+    // In manual mode this performs the fit; in live mode it forces a fresh recompute.
+    if( autoFitEnabled() )
+      startAutoFit();
+    else
+      doModelFit( true, true );
+  } );
+
+  {
+    // Use a plain WPopupMenu (NOT PopupDivMenu): a compact dropdown that pops up next to the
+    //  button on both desktop and phone.  PopupDivMenu renders as a full-height slide-in mobile
+    //  menu on phones, which is out of place for this little 2-item Live/Manual chooser.
+    auto fitMenuOwner = std::make_unique<WPopupMenu>();
+    WPopupMenu *fitMenu = fitMenuOwner.get();
+    m_autoFitItem = fitMenu->addItem( WString::tr("ssd-fit-mode-auto") );
+    m_autoFitItem->setCheckable( true );
+    m_manualFitItem = fitMenu->addItem( WString::tr("ssd-fit-mode-manual") );
+    m_manualFitItem->setCheckable( true );
+
+    // Set the preference; handleAutoFitPrefChanged() reacts to an actual change.  We also call
+    //  updateFitButtonState() directly so re-selecting the current mode still corrects the menu's
+    //  own click-toggle (the pref-changed callback doesn't fire when the value is unchanged).
+    m_autoFitItem->triggered().connect( this, [this](){
+      UserPreferences::setPreferenceValue<bool>( "AutoActShieldFit", true, m_specViewer );
+      updateFitButtonState();
+    } );
+    m_manualFitItem->triggered().connect( this, [this](){
+      UserPreferences::setPreferenceValue<bool>( "AutoActShieldFit", false, m_specViewer );
+      updateFitButtonState();
+    } );
+
+    // WSplitButton::setMenu takes unique_ptr<WPopupMenu> - the button owns the menu.
+    m_fitSplitButton->setMenu( std::unique_ptr<WPopupMenu>( std::move(fitMenuOwner) ) );
+    if( m_fitSplitButton->dropDownButton() )
+      HelpSystem::attachToolTipOn( m_fitSplitButton->dropDownButton(), WString::tr("ssd-tt-fit-mode"), showToolTips );
+  }
+
+  // Debounce timer for live/auto fitting: each model change restarts it, so a flurry of edits
+  //  collapses into a single (re)launch ~400 ms after the last change.
+  m_autoFitTimer = addChild( std::make_unique<WTimer>() );
+  m_autoFitTimer->setSingleShot( true );
+  m_autoFitTimer->setInterval( std::chrono::milliseconds(400) );
+  m_autoFitTimer->timeout().connect( this, &ShieldingSourceDisplay::startAutoFit );
 
   m_fitProgressTxt = new WText();
   m_fitProgressTxt->hide();
-  
+
   m_cancelfitModelButton = new WPushButton( WString::tr("ssd-cancel-fit") );
   m_cancelfitModelButton->clicked().connect( this, [this](){ cancelModelFit(); } );
   m_cancelfitModelButton->hide();
-  
-  m_showLog = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-calc-log") );
-  m_showLog->triggered().connect( this, &ShieldingSourceDisplay::showCalcLog );
-  m_showLog->disable();
 
-  PopupDivMenuItem *item = NULL;
-  item = m_addItemMenu->addMenuItem( WString::tr("ssd-show-model-diagram") );
-  item->triggered().connect( this, &ShieldingSourceDisplay::showShieldSourceDiagram );
+  // "calc. log" link, shown to the left of "Perform Model Fit"; only visible once a
+  //  fit has produced results (toggled in updateChi2Chart()).
+  m_showLog = new WPushButton( WString::tr("ssd-calc-log") );
+  m_showLog->addStyleClass( "SsdLink CalcLogLink" );
+  m_showLog->clicked().connect( this, &ShieldingSourceDisplay::showCalcLog );
+  m_showLog->hide();
 
-//  PopupDivMenuItem *item = m_addItemMenu->addMenuItem( "Test Serialization" );
-//  item->triggered().connect( this, &ShieldingSourceDisplay::testSerialization );
+  // Dedicated inline message area above "Perform Model Fit" (replaces toast for this tool).
+  m_fitMessage = new WText();
+  m_fitMessage->setInline( false );
+  m_fitMessage->addStyleClass( "FitMessage" );
+  m_fitMessage->hide();
 
-  item = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-import-model") );
-  item->triggered().connect( this, &ShieldingSourceDisplay::startModelUpload );
-  
-  StringDownloadResource *xmlResource = addChild( std::make_unique<StringDownloadResource>( this ) );
-  item = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-export-model") );
-  {
-    WLink exportLink( xmlResource->url() );
-    exportLink.setTarget( Wt::LinkTarget::NewWindow );
-    item->setLink( exportLink );
-  }
-  
-#if( USE_DB_TO_STORE_SPECTRA )
-  item = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-from-db") );
-  item->triggered().connect( this,
-                          &ShieldingSourceDisplay::startBrowseDatabaseModels );
-  
-  item = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-save-to-db") );
-  item->triggered().connect( this, [this](){ startSaveModelToDatabase( false ); } );
-  
-  m_saveAsNewModelInDb = m_addItemMenu->addMenuItem( WString::tr("ssd-mi-clone-db-entry") );
-  m_saveAsNewModelInDb->triggered().connect( this,
-                            &ShieldingSourceDisplay::saveCloneModelToDatabase );
-  m_saveAsNewModelInDb->disable();
-#endif //#if( USE_DB_TO_STORE_SPECTRA )
-  
+  // The XML export resource the footer "Export Model" link points to (footer built in
+  //  createWindow()).  Import/Export/Database controls now live in the window footer.
+  m_xmlDownloadResource = addChild( std::make_unique<StringDownloadResource>( this ) );
+
   m_showChi2Text = new WText( WString::tr("ssd-to-small-for-chart"), TextFormat::XHTML );
   m_showChi2Text->setInline( false );
   m_showChi2Text->hide();
@@ -3140,7 +3293,12 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   
   m_distanceEdit->changed().connect( this, &ShieldingSourceDisplay::handleUserDistanceChange );
   m_distanceEdit->enterPressed().connect( this, &ShieldingSourceDisplay::handleUserDistanceChange );
-  
+  m_offsetEdit1->changed().connect( this, &ShieldingSourceDisplay::handleUserOffsetChange );
+  m_offsetEdit1->enterPressed().connect( this, &ShieldingSourceDisplay::handleUserOffsetChange );
+  m_offsetEdit2->changed().connect( this, &ShieldingSourceDisplay::handleUserOffsetChange );
+  m_offsetEdit2->enterPressed().connect( this, &ShieldingSourceDisplay::handleUserOffsetChange );
+  m_useOffsetCheck->changed().connect( this, &ShieldingSourceDisplay::handleOffsetCheckChange );
+
   m_specViewer->detectorChanged().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
   m_specViewer->detectorModified().connect( this, [this]( std::shared_ptr<DetectorPeakResponse> det ){ handleDetectorChanged( det ); } );
   
@@ -3164,34 +3322,39 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_optionsDiv = new GroupBox( WString::tr("ssd-options-title") );
   m_optionsDiv->addStyleClass( "FitOptions" );
       
-  //The ToolTip of WCheckBoxes is a bit finicky, and only works over the
-  //  checkbox itself, so lets make it work over the label to, via lineDiv
-  WContainerWidget *lineDiv = m_optionsDiv->addNew<WContainerWidget>();
-  lineDiv->addStyleClass( "FitOptionsRow" );
-  m_multiIsoPerPeak = lineDiv->addNew<WCheckBox>( WString::tr("ssd-multi-iso-per-peak") );
+  // "Interference correct" and its "grouping width" entry are logically connected, so they share
+  //  one row (InterfRow): the checkbox, then "grouping width [N] σ".  (On phone this keeps them on
+  //  a single line.)  ToolTips attach to the widgets directly since they only fire over the box.
+  WContainerWidget *interfRow = m_optionsDiv->addNew<WContainerWidget>();
+  interfRow->addStyleClass( "FitOptionsRow InterfRow" );
+
+  m_multiIsoPerPeak = interfRow->addNew<WCheckBox>( WString::tr("ssd-multi-iso-per-peak") );
   m_multiIsoPerPeak->addStyleClass( "CbNoLineBreak" );
-  HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-multi-iso-per-peak"),
-                                      showToolTips );
+  HelpSystem::attachToolTipOn( m_multiIsoPerPeak, WString::tr("ssd-tt-multi-iso-per-peak"), showToolTips );
   m_multiIsoPerPeak->setChecked();
   m_multiIsoPerPeak->checked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
   m_multiIsoPerPeak->unChecked().connect( this, &ShieldingSourceDisplay::multiNucsPerPeakChanged );
-  
-  lineDiv = m_optionsDiv->addNew<WContainerWidget>();
-  lineDiv->addStyleClass( "NumInputOptLine FitOptionsRow" );
-  WLabel *clusterWidthLabel = lineDiv->addNew<WLabel>( WString::tr("ssd-cluster-width-label") );
-  m_clusterWidth = lineDiv->addNew<NativeFloatSpinBox>();
-  m_clusterWidth->addStyleClass( "CbNoLineBreak" );
+
+  // The grouping-width entry the checkbox controls: short "grouping width" label, then the value,
+  //  then a "σ" suffix (units).
+  WContainerWidget *gwDiv = interfRow->addNew<WContainerWidget>();
+  gwDiv->addStyleClass( "NumInputOptLine GroupingWidth" );
+  WLabel *clusterWidthLabel = gwDiv->addNew<WLabel>( WString::tr("ssd-grouping-width-label") );
+  m_clusterWidth = gwDiv->addNew<NativeFloatSpinBox>();
   m_clusterWidth->setRange( 0.0f, 10.0f );
-  m_clusterWidth->setWidth( 50 );
+  m_clusterWidth->setWidth( 36 );
   m_clusterWidth->setSpinnerHidden();
   clusterWidthLabel->setBuddy( m_clusterWidth );
-  HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-cluster-width"),
-                                showToolTips );
+  WText *sigmaLbl = gwDiv->addNew<WText>( WString::fromUTF8("\xcf\x83") );  //"σ", placed after the entry
+  sigmaLbl->addStyleClass( "GwSigma" );
+  HelpSystem::attachToolTipOn( gwDiv, WString::tr("ssd-tt-cluster-width"), showToolTips );
   m_clusterWidth->setValue( m_photopeak_cluster_sigma );
   m_clusterWidth->valueChanged().connect( this, &ShieldingSourceDisplay::clusterWidthChanged );
   m_clusterWidth->setDisabled( !m_multiIsoPerPeak->isChecked() );
   if( m_clusterWidth->label() )
     m_clusterWidth->label()->setDisabled( !m_multiIsoPerPeak->isChecked() );
+
+  WContainerWidget *lineDiv = nullptr;
 
   lineDiv = m_optionsDiv->addNew<WContainerWidget>();
   lineDiv->addStyleClass( "FitOptionsRow" );
@@ -3266,13 +3429,15 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   WGridLayout *smallLayout = smallerContainer->setLayout( std::make_unique<WGridLayout>() );
 
   smallLayout->addWidget( std::unique_ptr<WWidget>(m_distanceLabel),        0, 0, AlignmentFlag::Right | AlignmentFlag::Middle );
-  smallLayout->addWidget( std::unique_ptr<WWidget>(m_distanceEdit),         0, 1, 1, 2);
-  smallLayout->addWidget( std::unique_ptr<WWidget>(m_geometryLabel),        1, 0, AlignmentFlag::Right | AlignmentFlag::Middle );
-  smallLayout->addWidget( std::unique_ptr<WWidget>(m_geometrySelect),       1, 1, 1, 2);
-  smallLayout->addWidget( std::unique_ptr<WWidget>(m_fixedGeometryTxt),     2, 0, 1, 3, AlignmentFlag::Center );
-  smallLayout->addWidget( std::unique_ptr<WWidget>(addShieldingLabel),      3, 0, AlignmentFlag::Right | AlignmentFlag::Middle );
-  smallLayout->addWidget( std::unique_ptr<WWidget>(m_addMaterialShielding), 3, 1);
-  smallLayout->addWidget( std::unique_ptr<WWidget>(m_addGenericShielding),  3, 2);
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_distanceEdit),         0, 1);
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_useOffsetCheck),       0, 2, AlignmentFlag::Left | AlignmentFlag::Middle );
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_offsetLabel1),         1, 0, AlignmentFlag::Right | AlignmentFlag::Middle );
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_offsetEdit1),          1, 1);
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_offsetLabel2),         2, 0, AlignmentFlag::Right | AlignmentFlag::Middle );
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_offsetEdit2),          2, 1);
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_geometryLabel),        3, 0, AlignmentFlag::Right | AlignmentFlag::Middle );
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_geometrySelect),       3, 1, 1, 2);
+  smallLayout->addWidget( std::unique_ptr<WWidget>(m_fixedGeometryTxt),     4, 0, 1, 3, AlignmentFlag::Center );
   smallLayout->setContentsMargins( 0, 5, 0, 5 );
   smallerContainer->setPadding(0);
 
@@ -3287,10 +3452,14 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   peakGrid->setContentsMargins( 0, 0, 0, 0 );
   peakGrid->setVerticalSpacing( 0 );
   peakGrid->setHorizontalSpacing( 0 );
-  peakGrid->setRowStretch( 0, 1 );
+  WText *peakCap = new WText( WString::tr("ssd-cap-peaks") );
+  peakCap->addStyleClass( "SsdCap" );
+  peakCap->setInline( false );
+  peakGrid->addWidget( std::unique_ptr<WWidget>(peakCap),    0, 0 );
+  peakGrid->addWidget( std::unique_ptr<WWidget>(m_peakView), 1, 0 );
+  peakGrid->addWidget( std::unique_ptr<WWidget>(allPeaksDiv), 2, 0 );
+  peakGrid->setRowStretch( 1, 1 );
   peakGrid->setColumnStretch( 0, 1 );
-  peakGrid->addWidget( std::unique_ptr<WWidget>(m_peakView), 0, 0 );
-  peakGrid->addWidget( std::unique_ptr<WWidget>(allPeaksDiv), 1, 0 );
 
 
   m_layout = setLayout( std::make_unique<WGridLayout>() );
@@ -3306,76 +3475,166 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
 
   WContainerWidget *sourceDiv = new WContainerWidget();
   WGridLayout *sourceGrid = sourceDiv->setLayout( std::make_unique<WGridLayout>() );
-  sourceGrid->setRowStretch(0, 1);
+  // On phone the "Nuclides" caption is redundant with the tab label, so it is omitted there
+  //  (leaving grid row 0 empty, which collapses to zero height).
+  if( !m_specViewer->isPhone() )
+  {
+    WText *srcCap = new WText( WString::tr("ssd-cap-nuclides") );
+    srcCap->addStyleClass( "SsdCap" );
+    srcCap->setInline( false );
+    sourceGrid->addWidget( std::unique_ptr<WWidget>(srcCap),       0, 0 );
+  }
+  sourceGrid->addWidget( std::unique_ptr<WWidget>(m_nuclideDisplay), 1, 0 );
+  sourceGrid->setRowStretch(1, 1);
   sourceGrid->setColumnStretch(0, 1);
-  sourceGrid->addWidget( std::unique_ptr<WWidget>(m_sourceView), 0, 0 );
   sourceGrid->setContentsMargins( 0, 0, 0, 0 );
   sourceGrid->setVerticalSpacing( 0 );
   sourceGrid->setHorizontalSpacing( 0 );
-      
-  
+
+
+  // Shielding section: borderless caption + bordered scrolling box of ShieldingSelects +
+  //  an add-footer ("+ Add Shielding" menu and a "Show Diagram" link).  Used by both the
+  //  desktop and phone layouts.
+  WContainerWidget *shieldSection = new WContainerWidget();
+  shieldSection->addStyleClass( "ShieldSection" );
+  WGridLayout *shieldSectionLayout = shieldSection->setLayout( std::make_unique<WGridLayout>() );
+  shieldSectionLayout->setContentsMargins( 0, 0, 0, 0 );
+  shieldSectionLayout->setVerticalSpacing( 3 );
+  shieldSectionLayout->setHorizontalSpacing( 0 );
+
+  WText *shieldCap = new WText( WString::tr("ssd-cap-shielding") );
+  shieldCap->addStyleClass( "SsdCap" );
+  shieldCap->setInline( false );
+
+  // Bordered box holding the scrollable shielding cards plus a bottom footer bar with a
+  //  round "+" add-button (left) and the "Show Diagram" link (right) - styled after the
+  //  "Isotopics by nuclides" tool's nuclide box.
+  WContainerWidget *shieldBox = new WContainerWidget();
+  shieldBox->addStyleClass( "ShieldBox" );
+  WGridLayout *shieldBoxLayout = shieldBox->setLayout( std::make_unique<WGridLayout>() );
+  shieldBoxLayout->setContentsMargins( 0, 0, 0, 0 );
+  shieldBoxLayout->setVerticalSpacing( 0 );
+  shieldBoxLayout->setHorizontalSpacing( 0 );
+
+  WContainerWidget *shieldFoot = new WContainerWidget();
+  shieldFoot->addStyleClass( "ShieldFoot" );
+  shieldFoot->addWidget( std::unique_ptr<WWidget>(m_addShieldingBtn) );
+  shieldFoot->addWidget( std::unique_ptr<WWidget>(m_showDiagramBtn) );
+
+  shieldBoxLayout->addWidget( std::unique_ptr<WWidget>(m_shieldingSelects), 0, 0 );
+  shieldBoxLayout->addWidget( std::unique_ptr<WWidget>(shieldFoot),         1, 0 );
+  shieldBoxLayout->setRowStretch( 0, 1 );
+  shieldBoxLayout->setColumnStretch( 0, 1 );
+
+  shieldSectionLayout->addWidget( std::unique_ptr<WWidget>(shieldCap),  0, 0 );
+  shieldSectionLayout->addWidget( std::unique_ptr<WWidget>(shieldBox),  1, 0 );
+  shieldSectionLayout->setRowStretch( 1, 1 );
+  shieldSectionLayout->setColumnStretch( 0, 1 );
+
+  // Fit zone: inline message area, an action row (calc.log link + Perform Model Fit),
+  //  then the progress text and cancel button.  Used by both layouts.
+  WContainerWidget *fitZone = new WContainerWidget();
+  fitZone->addStyleClass( "FitZone" );
+  fitZone->addWidget( std::unique_ptr<WWidget>(m_fitMessage) );
+  WContainerWidget *fitActions = fitZone->addNew<WContainerWidget>();
+  fitActions->addStyleClass( "FitActions" );
+  fitActions->addWidget( std::unique_ptr<WWidget>(m_showLog) );
+  // On phone the fit split-button is the primary control and lives in the sticky bottom bar
+  //  (added there in createPhoneFitBar); on desktop it sits here next to the calc-log link.
+  if( !m_specViewer->isPhone() )
+    fitActions->addWidget( std::unique_ptr<WWidget>(m_fitSplitButton) );
+  fitZone->addWidget( std::unique_ptr<WWidget>(m_fitProgressTxt) );
+  fitZone->addWidget( std::unique_ptr<WWidget>(m_cancelfitModelButton) );
+
+
   if( m_specViewer->isPhone() )
   {
-    //phone layout
-    detectorLayout->addWidget( std::unique_ptr<WWidget>(smallerContainer),  0, 0);
-    detectorLayout->addWidget( std::unique_ptr<WWidget>(m_shieldingSelects), 1, 0);
+    // Phone layout (redesign): a pinned chart at top, then 3 tabs (Nuclides / Physical / Options),
+    //  then a sticky bottom status/fit bar.  peaksDiv (the separate peak table) is not used here -
+    //  peaks are nested inside each nuclide card (m_nuclideDisplay was built in nest-peaks mode).
+    addStyleClass( "SsdPhone" );
 
-    detectorLayout->setRowStretch( 1, 1 );
+    // The separate peak table (peaksDiv -> ... -> m_peakView) is not displayed on phone, but
+    //  m_peakView must stay alive (the fit start/done handlers disable/enable it).  Park peaksDiv
+    //  on the tool via addChild so it is owned (no leak) and hidden, without being in the layout.
+    peaksDiv->hide();
+    addChild( std::unique_ptr<WWidget>(peaksDiv) );
+
+    // Physical tab: detector pill, then distance/offset/geometry, then the shielding box.
+    detectorLayout->addWidget( std::unique_ptr<WWidget>(m_detectorDisplay), 0, 0, AlignmentFlag::Left );
+    detectorLayout->addWidget( std::unique_ptr<WWidget>(smallerContainer),  1, 0 );
+    detectorLayout->addWidget( std::unique_ptr<WWidget>(shieldSection),     2, 0 );
+    detectorLayout->setRowStretch( 2, 1 );
     detectorLayout->setColumnStretch( 0, 1 );
     detectorLayout->setHorizontalSpacing( 0 );
-    detectorLayout->setVerticalSpacing( 0 );
-    detectorLayout->setContentsMargins( 1, 1, 1, 1 );
+    detectorLayout->setVerticalSpacing( 5 );
+    detectorLayout->setContentsMargins( 4, 6, 4, 4 );
 
-    WTabWidget *tab = new WTabWidget();
-    tab->setMargin( 0 );
-    m_layout->addWidget( std::unique_ptr<WWidget>(tab), 0, 0 );
+    // The Options tab also carries the inline fit-message area, the calc-log link, and the
+    //  (now-secondary) fit split-button, so all existing fit controls remain reachable.  The
+    //  primary fit affordance on phone is the sticky bottom bar below.
+    WContainerWidget *optionsTab = new WContainerWidget();
+    optionsTab->addStyleClass( "SsdPhoneOptionsTab" );
+    WGridLayout *optionsTabLayout = optionsTab->setLayout( std::make_unique<WGridLayout>() );
+    optionsTabLayout->setContentsMargins( 4, 6, 4, 4 );
+    optionsTabLayout->setVerticalSpacing( 6 );
+    optionsTabLayout->addWidget( std::unique_ptr<WWidget>(m_optionsDiv), 0, 0 );
+    optionsTabLayout->addWidget( std::unique_ptr<WWidget>(fitZone),      1, 0 );
+    optionsTabLayout->setRowStretch( 0, 1 );
+    optionsTabLayout->setColumnStretch( 0, 1 );
+
+    // Pinned chart at the top (deviation drawn on the chart itself; Mult/χ toggle under it).
+    WContainerWidget *chartZone = new WContainerWidget();
+    chartZone->addStyleClass( "SsdPhoneChartZone" );
+    WGridLayout *chartLayout = chartZone->setLayout( std::make_unique<WGridLayout>() );
+    chartLayout->setContentsMargins( 4, 2, 4, 2 );
+    chartLayout->setVerticalSpacing( 0 );
+    chartLayout->addWidget( std::unique_ptr<WWidget>(m_chi2Plot),       0, 0 );
+    auto belowChartPhoneOwner = std::make_unique<WContainerWidget>();
+    WContainerWidget *belowChartPhone = belowChartPhoneOwner.get();
+    belowChartPhone->addStyleClass( "ShieldSourceTrendRow" );
+    belowChartPhone->addWidget( std::move(trendTxtOwned) );
+    belowChartPhone->addWidget( std::unique_ptr<WWidget>(m_showChiOnChart) );
+    chartLayout->addWidget( std::move(belowChartPhoneOwner), 1, 0 );
+    chartLayout->setRowStretch( 0, 1 );
+
+    // The 3 tabs.
+    m_phoneTabs = new WTabWidget();
+    m_phoneTabs->setMargin( 0 );
+    m_phoneTabs->addStyleClass( "SsdPhoneTabs" );
+    m_phoneTabs->addTab( std::unique_ptr<WWidget>(sourceDiv),   WString::tr("ssd-phone-tab-nuclides"), ContentLoading::Eager );
+    m_phoneTabs->addTab( std::unique_ptr<WWidget>(detectorDiv), WString::tr("ssd-phone-tab-physical"), ContentLoading::Eager );
+    m_phoneTabs->addTab( std::unique_ptr<WWidget>(optionsTab),  WString::tr("ssd-phone-tab-options"),  ContentLoading::Eager );
+    m_phonePhysicalTabIndex = 1;
+
+    // Sticky bottom status/fit bar.
+    m_phoneFitBar = createPhoneFitBar();
+
+    m_layout->addWidget( std::unique_ptr<WWidget>(chartZone),    0, 0 );
+    m_layout->addWidget( std::unique_ptr<WWidget>(m_phoneTabs),  1, 0 );
+    m_layout->addWidget( std::unique_ptr<WWidget>(m_phoneFitBar), 2, 0 );
     m_layout->setColumnStretch( 0, 1 );
+    m_layout->setRowStretch( 1, 1 );
+    m_layout->setRowResizable( 0, true, WLength(33.0,WLength::Unit::Percentage) );
+    m_layout->setVerticalSpacing( 0 );
+    m_layout->setHorizontalSpacing( 0 );
     m_layout->setRowStretch( 0, 1 );
-
-    tab->addTab( std::unique_ptr<WWidget>(peaksDiv), WString::tr("ssd-phone-tab-source-peaks"), ContentLoading::Eager);
-    tab->addTab( std::unique_ptr<WWidget>(sourceDiv), WString::tr("ssd-phone-tab-source-isotopes"), ContentLoading::Eager);
-    tab->addTab( std::unique_ptr<WWidget>(detectorDiv), WString::tr("ssd-phone-tab-shielding"), ContentLoading::Eager);
-
-    WContainerWidget *chartDiv = new WContainerWidget();
-    chartDiv->setOffsets(0);
-    chartDiv->setMargin(0);
-    chartDiv->setPadding(5);
-    WGridLayout *chartLayout = chartDiv->setLayout( std::make_unique<WGridLayout>() );
-    chartLayout->setContentsMargins(0, 0, 0, 0);
-
-    chartLayout->addWidget( std::unique_ptr<WWidget>(m_detectorDisplay),      0, 0, AlignmentFlag::Left );
-    chartLayout->addWidget( std::unique_ptr<WWidget>(addItemMenubutton),      0, 1, AlignmentFlag::Right);
-    chartLayout->addWidget( std::unique_ptr<WWidget>(m_chi2Plot),             1, 0, 1, 2 );
-    m_showChiOnChart->setWidth( 130 );
-    chartLayout->addWidget( std::move(trendTxtOwned),                        2, 0, AlignmentFlag::Left | AlignmentFlag::Middle );
-    chartLayout->addWidget( std::unique_ptr<WWidget>(m_showChiOnChart),       2, 1, AlignmentFlag::Right );
-    chartLayout->addWidget( std::unique_ptr<WWidget>(m_optionsDiv),           3, 0, 1, 2 );
-    chartLayout->addWidget( std::unique_ptr<WWidget>(m_fitModelButton),       4, 0, 1, 2, AlignmentFlag::Center );
-    chartLayout->addWidget( std::unique_ptr<WWidget>(m_fitProgressTxt),       5, 0, 1, 2, AlignmentFlag::Center );
-    chartLayout->addWidget( std::unique_ptr<WWidget>(m_cancelfitModelButton), 6, 0, 1, 2, AlignmentFlag::Center );
-
-
-    chartLayout->setRowStretch(1, 1);
-    tab->addTab( std::unique_ptr<WWidget>(chartDiv), "Fit", ContentLoading::Eager);
   }else
   {
     //regular layout
 
-    // We'll put the detector and menu icon in a flexbox layout, which is less hassle than
-    //  the Wt layout
+    // The detector display sits at the top of the right column (the old upper-right
+    //  "..." menu has moved to the window footer).
     WContainerWidget *toprow = new WContainerWidget();
     toprow->addStyleClass( "DetAndMenu" );
     toprow->addWidget( std::unique_ptr<WWidget>(m_detectorDisplay) );
-    toprow->addWidget( std::unique_ptr<WWidget>(addItemMenubutton) );
 
 
-    detectorLayout->addWidget( std::unique_ptr<WWidget>(toprow),             0, 0 );
-    detectorLayout->addWidget( std::unique_ptr<WWidget>(smallerContainer),   1, 0 );
-    detectorLayout->addWidget( std::unique_ptr<WWidget>(m_shieldingSelects), 2, 0 );
-    detectorLayout->addWidget( std::unique_ptr<WWidget>(m_fitModelButton),   3, 0, AlignmentFlag::Center );
-    detectorLayout->addWidget( std::unique_ptr<WWidget>(m_fitProgressTxt),   4, 0 );
-    detectorLayout->addWidget( std::unique_ptr<WWidget>(m_cancelfitModelButton), 5, 0, AlignmentFlag::Center );
-    detectorLayout->addWidget( std::unique_ptr<WWidget>(m_showChi2Text),     6, 0 );
+    detectorLayout->addWidget( std::unique_ptr<WWidget>(toprow),           0, 0 );
+    detectorLayout->addWidget( std::unique_ptr<WWidget>(smallerContainer), 1, 0 );
+    detectorLayout->addWidget( std::unique_ptr<WWidget>(shieldSection),    2, 0 );
+    detectorLayout->addWidget( std::unique_ptr<WWidget>(fitZone),          3, 0 );
+    detectorLayout->addWidget( std::unique_ptr<WWidget>(m_showChi2Text),   4, 0 );
 
     detectorLayout->setRowStretch( 2, 1 );
     detectorLayout->setHorizontalSpacing( 0 );
@@ -3393,11 +3652,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
     tablesLayoutPtr->setContentsMargins( 0, 0, 0, 0 );
 
 
-    // We will put the chart in a div that will also hold the Rel/Chi switch; its a bit of a hack
-    //  to get the chart type switch near the chart; it would probably be best to have the switch be
-    //  at the top of the chart, but that doesnt work so well because the chart <img> will be over
-    //  the switch if we want the switch to be over the image...  probably something better to do
-    //  here
+    // Chart, with the Mult./Chi segmented switch in a toolbar *under* the chart (the
+    //  <dev>=… value is drawn on the chart itself by ShieldingSourceFitPlot).
     WContainerWidget *chartHolder = new WContainerWidget();
     WGridLayout *chartLayout = chartHolder->setLayout( std::make_unique<WGridLayout>() );
     chartLayout->setVerticalSpacing( 0 );
@@ -3443,6 +3699,14 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   } //regular layout
   
   handleDetectorChanged( m_detectorDisplay->detector() ); // Will also call updateChi2Chart()
+
+  // Live/manual fit: react to the app-level preference changing (menu selection, state load, etc.)
+  m_specViewer->preferences()->addCallbackWhenChanged( "AutoActShieldFit",
+                                      this, &ShieldingSourceDisplay::handleAutoFitPrefChanged );
+  updateFitButtonState();  // set the split-button's initial text/check-state for the current mode
+
+  // Everything is built; from here on, user-driven changes may (re)launch the auto-fit.
+  m_autoFitArmed = true;
 }//ShieldingSourceDisplay constructor
 
 
@@ -3588,11 +3852,8 @@ ShieldingSourceDisplay::~ShieldingSourceDisplay() noexcept(true)
   }
 
 
-  if( m_addItemMenu )
-  {
-    if( m_addItemMenu ) m_addItemMenu->removeFromParent();
-    m_addItemMenu = NULL;
-  }//if( m_addItemMenu )
+  // m_dbMenu is owned (via WObject::addChild) by m_dbButton in the window footer, so it is
+  //  torn down with that button - no explicit menu cleanup is needed here.
   
   // Wt4: m_diagramDialog is a SimpleDialog owned by wApp via addChild(); removeFromParent() is a
   //  no-op for a global widget and would leak it (and can leave a modal cover stuck).  removeChild()
@@ -3757,6 +4018,7 @@ pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::Mn
   
   GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
   chi_input.config.distance = distance;
+  sourceOffsets( chi_input.config.source_offsets[0], chi_input.config.source_offsets[1] );
   chi_input.config.geometry = geom;
   chi_input.config.shieldings = initial_shieldings;
   chi_input.config.sources = src_definitions;
@@ -5597,7 +5859,10 @@ void ShieldingSourceDisplay::showGraphicTypeChanged()
   
   const bool chi = m_showChiOnChart->isChecked();
   m_chi2Plot->setShowChi( chi );
-  updateChi2Chart();
+  // Pure display change (Mult. vs χ): redraw the chart, but do NOT mark the model as needing a
+  //  re-fit (so it never triggers a live/auto-fit or the manual "needs update" hint).
+  m_chi2ChartNeedsUpdating = true;
+  scheduleRender();
 }
 
 void ShieldingSourceDisplay::handleUserDistanceChange()
@@ -5646,6 +5911,205 @@ void ShieldingSourceDisplay::handleUserDistanceChange()
 }//void ShieldingSourceDisplay::handleUserDistanceChange()
 
 
+namespace
+{
+  /** Parses an off-axis offset distance which, unlike normal distances, may be
+   negative; throws on invalid input.
+   */
+  double offset_text_to_distance( std::string txt )
+  {
+    SpecUtils::trim( txt );
+    if( txt.empty() )
+      return 0.0;
+
+    bool negative = false;
+    if( (txt[0] == '-') || (txt[0] == '+') )
+    {
+      negative = (txt[0] == '-');
+      txt = txt.substr( 1 );
+      SpecUtils::trim( txt );
+    }
+
+    if( txt.empty() )
+      return 0.0;
+
+    const double value = PhysicalUnits::stringToDistance( txt );
+    return negative ? -value : value;
+  }//offset_text_to_distance(...)
+}//namespace
+
+
+void ShieldingSourceDisplay::handleUserOffsetChange()
+{
+  auto normalize = []( WLineEdit *edit, string &prevStr ){
+    string txt = edit->text().toUTF8();
+    SpecUtils::trim( txt );
+
+    if( txt.empty() )
+      txt = "0 cm";
+
+    //Default to cm if no unit is given
+    if( txt.find_first_not_of( " \t0123456789.eE+-\n" ) == string::npos )
+      txt += " cm";
+
+    try
+    {
+      offset_text_to_distance( txt );  //throws if invalid
+      edit->setText( WString::fromUTF8(txt) );
+      prevStr = txt;
+    }catch( std::exception & )
+    {
+      edit->setText( WString::fromUTF8(prevStr) );
+    }
+  };//normalize lambda
+
+  const string prev1 = m_prevOffset1Str, prev2 = m_prevOffset2Str;
+  normalize( m_offsetEdit1, m_prevOffset1Str );
+  normalize( m_offsetEdit2, m_prevOffset2Str );
+
+  if( (prev1 != m_prevOffset1Str) || (prev2 != m_prevOffset2Str) )
+  {
+    UndoRedoManager *undoRedo = UndoRedoManager::instance();
+    if( undoRedo && !undoRedo->isInUndoOrRedo() )
+    {
+      const string cur1 = m_prevOffset1Str, cur2 = m_prevOffset2Str;
+      auto undo_redo = [prev1, prev2, cur1, cur2](){
+        UndoRedoManager *undoRedo = UndoRedoManager::instance();
+        ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+        if( display && undoRedo )
+        {
+          const bool isUndo = undoRedo->isInUndo();
+          display->m_offsetEdit1->setText( WString::fromUTF8(isUndo ? prev1 : cur1) );
+          display->m_offsetEdit2->setText( WString::fromUTF8(isUndo ? prev2 : cur2) );
+          display->handleUserOffsetChange();
+        }
+      };//undo_redo lambda
+
+      undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Change source off-axis offset." );
+    }//if( undoRedo )
+  }//if( either offset changed )
+
+  updateChi2Chart();
+}//void ShieldingSourceDisplay::handleUserOffsetChange()
+
+
+std::vector<ShieldingSourceDisplay::OffsetFieldSpec>
+ShieldingSourceDisplay::offsetFieldsForGeometry( GeometryType geom ) const
+{
+  switch( geom )
+  {
+    case GeometryType::Spherical:
+      return { { WString::tr("ssd-offset-spherical"), "ssd-tt-offset-spherical" } };
+
+    case GeometryType::CylinderEndOn:
+      // Detector is on the cylinder axis, so only the (magnitude of the) radial
+      //  offset perpendicular to the axis matters - a single field.
+      return { { WString::tr("ssd-offset-radial"), "ssd-tt-offset-radial" } };
+
+    case GeometryType::CylinderSideOn:
+      // source_offsets[0] is the radial (perpendicular) offset, [1] is along the axis.
+      return { { WString::tr("ssd-offset-radial"), "ssd-tt-offset-radial" },
+               { WString::tr("ssd-offset-axial"),  "ssd-tt-offset-axial"  } };
+
+    case GeometryType::Rectangular:
+      // source_offsets[0] is the width (horizontal) offset, [1] is the height (vertical).
+      return { { WString::tr("ssd-offset-width"),  "ssd-tt-offset-width"  },
+               { WString::tr("ssd-offset-height"), "ssd-tt-offset-height" } };
+
+    case GeometryType::NumGeometryType:
+      break;
+  }//switch( geom )
+
+  assert( 0 );
+  return { { WString::tr("ssd-offset-spherical"), "ssd-tt-offset-spherical" } };
+}//offsetFieldsForGeometry(...)
+
+
+void ShieldingSourceDisplay::updateOffsetVisibility()
+{
+  // Fixed-geometry DRFs hide the distance row entirely; offsets are meaningless then.
+  const bool fixed_geom = m_distanceEdit->isHidden();
+  m_useOffsetCheck->setHidden( fixed_geom );
+
+  const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_specViewer );
+  const std::vector<OffsetFieldSpec> fields = offsetFieldsForGeometry( geometry() );
+  const bool show = !fixed_geom && m_useOffsetCheck->isChecked();
+
+  // Field 1 (always used by every geometry when offsets are shown).
+  m_offsetLabel1->setText( fields[0].label );
+  HelpSystem::attachToolTipOn( m_offsetEdit1, WString::tr(fields[0].toolTip), showToolTips );
+  m_offsetLabel1->setHidden( !show );
+  m_offsetEdit1->setHidden( !show );
+
+  // Field 2 (only geometries that use two offsets: side-on cylinder, rectangular).
+  const bool has_two = (fields.size() > 1);
+  if( has_two )
+  {
+    m_offsetLabel2->setText( fields[1].label );
+    HelpSystem::attachToolTipOn( m_offsetEdit2, WString::tr(fields[1].toolTip), showToolTips );
+  }
+  m_offsetLabel2->setHidden( !show || !has_two );
+  m_offsetEdit2->setHidden( !show || !has_two );
+}//void updateOffsetVisibility()
+
+
+void ShieldingSourceDisplay::handleOffsetCheckChange()
+{
+  updateOffsetVisibility();
+
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() )
+  {
+    const bool checked = m_useOffsetCheck->isChecked();
+    auto undo_redo = [checked](){
+      UndoRedoManager *undoRedo = UndoRedoManager::instance();
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display && undoRedo )
+      {
+        const bool isUndo = undoRedo->isInUndo();
+        display->m_useOffsetCheck->setChecked( isUndo ? !checked : checked );
+        display->updateOffsetVisibility();
+        display->updateChi2Chart();
+      }
+    };//undo_redo lambda
+
+    undoRedo->addUndoRedoStep( undo_redo, undo_redo, "Toggle source off-axis offset." );
+  }//if( undoRedo )
+
+  updateChi2Chart();
+}//void handleOffsetCheckChange()
+
+
+void ShieldingSourceDisplay::sourceOffsets( double &dx, double &dy ) const
+{
+  dx = dy = 0.0;
+
+  // Offsets only apply when enabled, and only for non-fixed geometries.
+  if( !m_useOffsetCheck->isChecked() || m_distanceEdit->isHidden() )
+    return;
+
+  // edit1 -> source_offsets[0], edit2 -> source_offsets[1]; the number of fields
+  //  the current geometry uses tells us whether the second slot is meaningful.
+  const std::vector<OffsetFieldSpec> fields = offsetFieldsForGeometry( geometry() );
+
+  try
+  {
+    if( fields.size() >= 1 )
+      dx = offset_text_to_distance( m_offsetEdit1->text().toUTF8() );
+  }catch( std::exception & )
+  {
+  }
+
+  try
+  {
+    if( fields.size() >= 2 )
+      dy = offset_text_to_distance( m_offsetEdit2->text().toUTF8() );
+  }catch( std::exception & )
+  {
+  }
+}//void sourceOffsets( double &dx, double &dy ) const
+
+
 GeometryType ShieldingSourceDisplay::geometry() const
 {
   int currentIndex = m_geometrySelect->currentIndex();
@@ -5679,6 +6143,9 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
   
   m_prevGeometry = type;
   
+  // Update the offset row labels/visibility for the new geometry (field count + labels).
+  updateOffsetVisibility();
+
   for( WWidget *widget : m_shieldingSelects->children() )
   {
     ShieldingSelect *select = dynamic_cast<ShieldingSelect *>(widget);
@@ -5693,9 +6160,11 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
     try
     {
       checkDistanceAndThicknessConsistent();
+      if( !m_dimConsistencyMsg.empty() )
+        setFitMessage( WString::fromUTF8(m_dimConsistencyMsg), FitMsgType::Warning );
     }catch( std::exception &e )
     {
-      passMessage( e.what(), WarningWidget::WarningMsgMedium );
+      setFitMessage( WString::fromUTF8(e.what()), FitMsgType::Error );
     }//try / catch
   }//if( !is_same_geometry )
   
@@ -5707,10 +6176,14 @@ void ShieldingSourceDisplay::handleGeometryTypeChange()
 
 void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
 {
-  const char * const contained_err_msg_key = "ssd-update-dim-to-be-min";
   const char * const scaled_err_msg_key = "ssd-scaled-shield-to-be-less-dist";
- 
-  
+
+  // Informational notice (currently only "shielding scaled to fit inside the detector distance")
+  //  that callers surface in the inline fit-message area / end-of-fit warnings, rather than as a
+  //  toast.  Cleared on every call; genuine input errors are still thrown.
+  m_dimConsistencyMsg.clear();
+
+
   // TODO: We should probably check that we arent trying to fit multiple AN of generic shieldings,
   //       or the AD of two generic shieldings that have similar AN, or many other potentially
   //       degenerate cases.
@@ -5778,126 +6251,21 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
   
   
   // Now check shielding doesnt go past detector, and if it does, shrink things down.
+  //  Zero-thickness shieldings are allowed: a plain attenuator with zero thickness contributes no
+  //  attenuation, and a source-bearing shell with zero volume simply contributes no activity (and
+  //  earns a fit warning).  The volumetric calc guards the resulting zero-volume divisions (see
+  //  GammaInteractionCalc), so we no longer clamp dimensions up to a minimum thickness here.
   double shieldrad = 0.0, distance = 0.0;
-  
-  const double tolerance = PhysicalUnits::um;
-  
-  int shield_num = 0;
-  bool updated_a_dim = false;
+
   for( ShieldingSelect *select : shieldings )
   {
     assert( type == select->geometry() );
     if( type != select->geometry() )
       throw runtime_error( "A shieldings geometry didnt match expected." );
-    
+
     for( WLineEdit *edit : select->distanceEdits() )
       make_sure_distance_units_present( edit );
-    
-    // Check to make sure this shielding is larger than all shielding it contains
-    switch( type )
-    {
-      case GeometryType::Spherical:
-      {
-        double thick = select->thickness();
-        if( thick < tolerance )
-        {
-          updated_a_dim = true;
-          thick = tolerance;
-          select->setSphericalThickness( thick );
-        }
-        
-        break;
-      }//case GeometryType::Spherical:
-      
-      case GeometryType::CylinderEndOn:
-      case GeometryType::CylinderSideOn:
-      {
-        const double min_delta = (shield_num ? 0.0 : tolerance);
-        
-        double rad = select->cylindricalRadiusThickness();
-        double len = select->cylindricalLengthThickness();
-        
-        // If this is the first shielding, make sure it is at least 1 um rad/width.
-        //  After that, it makes sense to maybe have one of the dimensions be the same length
-        //  (e.x., in a hollow pipe, the inner void will be same length as metal tube).
-        if( rad < min_delta )
-        {
-          rad = min_delta;
-          updated_a_dim = true;
-          select->setCylindricalRadiusThickness( min_delta );
-        }
-        
-        if( len < min_delta )
-        {
-          len = min_delta;
-          updated_a_dim = true;
-          select->setCylindricalLengthThickness( min_delta );
-        }
-        
-        // Dont let the dimensions both be zero, even after first shielding... I think the code
-        //  would be fine if they are both zero, but this just doesnt quite seem right...
-        //  TODO: need to think about implications of (not) letting, both dimensions be zero
-        if( (rad == 0.0) && (len == 0.0) )
-        {
-          // I think we could leave
-          len = rad = tolerance;
-          updated_a_dim = true;
-          select->setCylindricalLengthThickness( tolerance );
-          select->setCylindricalLengthThickness( tolerance );
-        }
-        
-        break;
-      }//case GeometryType::CylinderSideOn:
-        
-      case GeometryType::Rectangular:
-      {
-        const double min_delta = (shield_num ? 0.0 : tolerance);
-        
-        double width = select->rectangularWidthThickness();
-        double height = select->rectangularHeightThickness();
-        double depth = select->rectangularDepthThickness();
-        
-        if( width < min_delta )
-        {
-          width = min_delta;
-          updated_a_dim = true;
-          select->setRectangularWidthThickness( min_delta );
-        }
-        
-        if( height < min_delta )
-        {
-          height = min_delta;
-          updated_a_dim = true;
-          select->setRectangularHeightThickness( min_delta );
-        }
-        
-        if( depth < min_delta )
-        {
-          depth = min_delta;
-          updated_a_dim = true;
-          select->setRectangularDepthThickness( min_delta );
-        }
-        
-        // Dont let the dimensions both be zero, even after first shielding.
-        //  See notes for cylindrical case.
-        if( (width == 0.0) && (height == 0.0) && (depth == 0.0) )
-        {
-          width = height = depth = tolerance;
-          updated_a_dim = true;
-          select->setRectangularWidthThickness( tolerance );
-          select->setRectangularHeightThickness( tolerance );
-          select->setRectangularDepthThickness( tolerance );
-        }
-        
-        break;
-      }//case GeometryType::CylinderSideOn:
-        
-      case GeometryType::NumGeometryType:
-        assert( 0 );
-        break;
-    }//switch( type )
-    
-    
+
     // Get the extent of the shielding, in the direction of the detector
     switch( type )
     {
@@ -5921,24 +6289,14 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
         assert( 0 );
         break;
     }//switch( type )
-    
-    shield_num += 1;
   }//for( WWidget *widget : m_shieldingSelects->children() )
-  
+
   const string distanceStr = m_distanceEdit->text().toUTF8();
   distance = PhysicalUnits::stringToDistance( distanceStr );
   if( distance <= 0.0 )
     throw runtime_error( "Distance must be greater than zero" );
-  
-  if( shieldrad <= distance )
-  {
-    if( updated_a_dim )
-    {
-      handleShieldingChange();
-      
-      throw runtime_error( WString::tr(contained_err_msg_key).toUTF8() );
-    }
-  }else
+
+  if( shieldrad > distance )
   {
     const double scale = 0.95*distance/shieldrad;
     for( ShieldingSelect *select : shieldings )
@@ -5966,22 +6324,13 @@ void ShieldingSourceDisplay::checkDistanceAndThicknessConsistent()
           break;
       }//switch( type )
     }//for( WWidget *widget : m_shieldingSelects->children() )
-    
-    WString msg;
-    if( updated_a_dim )
-    {
-      msg = WString("{1}<br />{2}")
-        .arg(WString::tr(contained_err_msg_key))
-        .arg( WString::tr(scaled_err_msg_key) );
-    }else
-    {
-      msg = WString::tr(scaled_err_msg_key);
-    }
-    
+
     handleShieldingChange();
-    
-    throw runtime_error( msg.toUTF8() );
-  }//if( shieldrad < distance )
+
+    // Not an error: record the (informational) notice for callers to surface alongside the other
+    //  fit warnings, instead of throwing/toasting it.
+    m_dimConsistencyMsg = WString::tr(scaled_err_msg_key).toUTF8();
+  }//if( shieldrad > distance )
 }//void checkDistanceAndThicknessConsistent()
 
 
@@ -6040,7 +6389,11 @@ void ShieldingSourceDisplay::handleShieldingChange()
     for( const SandiaDecay::Nuclide *nuc : self_atten_srcs )
       updateActivityOfShieldingIsotope( select, nuc );
   }//for( WWidget *widget : m_shieldingSelects->children() )
-  
+
+  // "Show Diagram" is only meaningful with at least one shielding layer.
+  if( m_showDiagramBtn )
+    m_showDiagramBtn->setHidden( numberShieldings() == 0 );
+
   updateChi2Chart();
 }//void handleShieldingChange()
 
@@ -6084,8 +6437,10 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
     m_geometryLabel->hide();
     m_geometrySelect->hide();
     m_fixedGeometryTxt->show();
-    
+
     m_geometrySelect->setCurrentIndex( static_cast<int>(GeometryType::Spherical) );
+    // The offset checkbox + row(s) are hidden by updateOffsetVisibility() (invoked from
+    //  handleGeometryTypeChange() below), since the now-hidden distance edit marks fixed geometry.
     handleGeometryTypeChange();
     
     for( WWidget *widget : m_shieldingSelects->children() )
@@ -6167,6 +6522,9 @@ void ShieldingSourceDisplay::handleDetectorChanged( std::shared_ptr<DetectorPeak
     m_geometryLabel->show();
     m_geometrySelect->show();
     m_fixedGeometryTxt->hide();
+    // Distance is now shown again, so the offset checkbox + row(s) can be (re)shown
+    //  per the checkbox state and current geometry.
+    updateOffsetVisibility();
     
     for( WWidget *widget : m_shieldingSelects->children() )
     {
@@ -6183,6 +6541,11 @@ void ShieldingSourceDisplay::updateChi2Chart()
 {
   m_chi2ChartNeedsUpdating = true;
   scheduleRender(); //trigger re-render
+
+  // Single chokepoint for "the user changed a fit input": drives live/auto-fit (re)launch, or
+  //  the manual-mode "needs update" button hint.  No-op during construction and while applying
+  //  fit results (guarded inside markModelChanged()).
+  markModelChanged();
 }//void updateChi2Chart()
 
 
@@ -6251,9 +6614,16 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
   try
   {
     checkDistanceAndThicknessConsistent();
+    // Interactive refreshes (results==null) surface the informational notice (e.g. shielding
+    //  scaled to fit inside the detector distance) in the inline message area here.  When applying
+    //  fit results, updateGuiWithModelFitResults() folds m_dimConsistencyMsg into the combined
+    //  fit-warning list instead, so don't touch the message area in that case.
+    if( !results && !m_dimConsistencyMsg.empty() )
+      setFitMessage( WString::fromUTF8(m_dimConsistencyMsg), FitMsgType::Warning );
   }catch( exception &e )
   {
-    passMessage( e.what(), WarningWidget::WarningMsgHigh );
+    if( !results )
+      setFitMessage( WString::fromUTF8(e.what()), FitMsgType::Error );
   }//try / catch
 
   try
@@ -6321,7 +6691,7 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
       m_peakCalcLogInfo.reset( new vector<GammaInteractionCalc::PeakDetail>( *results->peak_calc_details ) );
     }
 
-    m_showLog->setDisabled( !m_lastFitResults );
+    m_showLog->setHidden( !m_lastFitResults );
 
     // Add info about number of parameters to calc log
     if( !m_calcLog.empty() )
@@ -6387,8 +6757,8 @@ void ShieldingSourceDisplay::showCalcLog()
     data["ParentDir"] = SpecUtils::parent_path( filename );
     data["Success"] = (m_lastFitResults->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final);
     data["HasFitResults"] = true;
-    data["HasWarnings"] = false;
-    data["Warnings"] = nlohmann::json::array();
+    // "HasWarnings"/"Warnings" are populated from m_lastFitResults->warnings by
+    //  BatchInfoLog::shield_src_fit_results_to_json() below (shared with the batch report path).
     data["HasErrorMessage"] = !m_lastFitResults->errormsgs.empty();
     if( !m_lastFitResults->errormsgs.empty() )
     {
@@ -7499,11 +7869,11 @@ bool ShieldingSourceDisplay::finishSaveModelToDatabase( const Wt::WString &name,
       model->filesUsedWith.insert( dbmeas );
     
     transaction.commit();
-    m_saveAsNewModelInDb->enable();
+    if( m_saveAsNewModelInDb ) m_saveAsNewModelInDb->enable();
   }catch( std::exception & )
   {
     m_modelInDb.reset();
-    m_saveAsNewModelInDb->disable();
+    if( m_saveAsNewModelInDb ) m_saveAsNewModelInDb->disable();
     transaction.rollback();
     return false;
   }//try / catch
@@ -7550,7 +7920,7 @@ void ShieldingSourceDisplay::saveCloneModelToDatabase()
   }catch( std::exception &e )
   {
     m_modelInDb.reset();
-    m_saveAsNewModelInDb->disable();
+    if( m_saveAsNewModelInDb ) m_saveAsNewModelInDb->disable();
     cerr << "\n\nException caught in ShieldingSourceDisplay::saveCloneModelToDatabase(): "
          << e.what() << endl;
     transaction.rollback();
@@ -7714,6 +8084,11 @@ void ShieldingSourceDisplay::reset( const bool set_use_peaks_false )
   m_modifiedThisForeground = false;
   m_prevDistStr = "100 cm";
   m_distanceEdit->setValueText( m_prevDistStr );
+  m_prevOffset1Str = m_prevOffset2Str = "0 cm";
+  m_useOffsetCheck->setChecked( false );
+  m_offsetEdit1->setValueText( WString::fromUTF8(m_prevOffset1Str) );
+  m_offsetEdit2->setValueText( WString::fromUTF8(m_prevOffset2Str) );
+  // Offset row visibility is refreshed by the handleDetectorChanged() call at the end of reset().
   const vector<WWidget *> shieldings = m_shieldingSelects->children();
   for( WWidget *child : shieldings )
   {
@@ -7810,10 +8185,26 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_decayCorrect->setChecked( options.account_for_decay_during_meas );
   m_showChiOnChart->setChecked( state.showChiOnChart );
   m_chi2Plot->setShowChi( state.showChiOnChart );
-  string dist_str = PhysicalUnits::printToBestLengthUnits( state.config->distance, 6 );
+  string dist_str = PhysicalUnits::printToBestLengthUnitsCompact( state.config->distance );  //e.g. "1 m", not "1.000000 m"
   m_distanceEdit->setValueText( WString::fromUTF8(dist_str) );
   m_prevDistStr = dist_str;
   
+  auto offset_to_text = []( const double value ) -> string {
+    if( value == 0.0 )
+      return "0 cm";
+    const string txt = PhysicalUnits::printToBestLengthUnits( fabs(value), 3 );
+    return (value < 0.0) ? ("-" + txt) : txt;
+  };
+  m_prevOffset1Str = offset_to_text( state.config->source_offsets[0] );
+  m_prevOffset2Str = offset_to_text( state.config->source_offsets[1] );
+  m_offsetEdit1->setValueText( WString::fromUTF8(m_prevOffset1Str) );
+  m_offsetEdit2->setValueText( WString::fromUTF8(m_prevOffset2Str) );
+  // The checkbox state isn't serialized separately: a stored non-zero offset means
+  //  offsets were enabled.  Offset labels/visibility are applied by the
+  //  handleDetectorChanged() call below (which runs updateOffsetVisibility()).
+  m_useOffsetCheck->setChecked( (state.config->source_offsets[0] != 0.0)
+                                || (state.config->source_offsets[1] != 0.0) );
+
   if( update_use_peaks && !state.peaks.empty() )
     deSerializePeaksToUse( state.peaks );
   m_sourceModel->repopulateIsotopes();
@@ -7856,6 +8247,8 @@ ShieldingSourceDisplay::ShieldingSourceDisplayState ShieldingSourceDisplay::seri
   {
     config->distance = 0.0;
   }
+
+  sourceOffsets( config->source_offsets[0], config->source_offsets[1] );
 
   const vector<WWidget *> shielding_widgets = m_shieldingSelects->children();
   config->shieldings.reserve( shielding_widgets.size() );
@@ -8110,6 +8503,11 @@ ShieldingSelect *ShieldingSourceDisplay::addShielding( ShieldingSelect *before,
                               shared_ptr<const string> prev,
                               shared_ptr<const string> curr ){
     handleShieldingUndoRedoPoint( sel, prev, curr );
+    // Any user change to a shielding (including toggling a "Fit" checkbox for thickness / AN / AD,
+    //  which doesn't fire materialModified()) should refresh the chart and, in live mode, kick off
+    //  a re-fit.  updateChi2Chart() -> markModelChanged() does both; it's debounced so the extra
+    //  call when a change also fired materialModified() is harmless.
+    updateChi2Chart();
   } );
   
   
@@ -8610,46 +9008,438 @@ void ShieldingSourceDisplay::removeShielding( ShieldingSelect *select )
 
 
 
-void ShieldingSourceDisplay::setWidgetStateForFitStarting()
+void ShieldingSourceDisplay::setFitMessage( const WString &msg, const FitMsgType type )
 {
-  m_fitModelButton->hide();
+  if( !m_fitMessage )
+    return;
+
+  if( (type == FitMsgType::None) || msg.empty() )
+  {
+    clearFitMessage();
+    return;
+  }
+
+  m_fitMessage->removeStyleClass( "FitMsgInfo" );
+  m_fitMessage->removeStyleClass( "FitMsgWarn" );
+  m_fitMessage->removeStyleClass( "FitMsgError" );
+
+  const char *cls = "FitMsgInfo";
+  switch( type )
+  {
+    case FitMsgType::None:    case FitMsgType::Info: cls = "FitMsgInfo";  break;
+    case FitMsgType::Warning:                        cls = "FitMsgWarn";  break;
+    case FitMsgType::Error:                          cls = "FitMsgError"; break;
+  }//switch( type )
+
+  m_fitMessage->addStyleClass( cls );
+  m_fitMessage->setText( msg );
+  m_fitMessage->show();
+}//void setFitMessage( const WString &msg, const FitMsgType type )
+
+
+void ShieldingSourceDisplay::clearFitMessage()
+{
+  if( !m_fitMessage )
+    return;
+  m_fitMessage->setText( "" );
+  m_fitMessage->hide();
+}//void clearFitMessage()
+
+
+bool ShieldingSourceDisplay::autoFitEnabled() const
+{
+  return UserPreferences::preferenceValue<bool>( "AutoActShieldFit", m_specViewer );
+}//bool autoFitEnabled() const
+
+
+void ShieldingSourceDisplay::markModelChanged()
+{
+  // Ignore changes during construction/deserialization (m_autoFitArmed) and changes we cause
+  //  ourselves while writing fit results back into the model (m_applyingFitResults).
+  if( !m_autoFitArmed || m_applyingFitResults )
+    return;
+
+  if( autoFitEnabled() )
+  {
+    // Live mode: (re)start the debounce timer so rapid edits collapse into a single (re)launch.
+    if( m_autoFitTimer )
+    {
+      m_autoFitTimer->stop();
+      m_autoFitTimer->start();
+    }
+  }else
+  {
+    // Manual mode: flag the button so the user knows the showing results are now stale.
+    m_modelNeedsFit = true;
+    updateFitButtonState();
+  }
+}//void markModelChanged()
+
+
+void ShieldingSourceDisplay::startAutoFit()
+{
+  if( !autoFitEnabled() )
+    return;
+
+  // doModelFit() cancels/supersedes any in-flight fit itself (see its top), so we just launch.
+  //  The superseded fit's eventual result is dropped by the epoch guard in its gui_updater.
+  const std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> res
+        = doModelFit( true /*fitInBackground*/, false /*checkForMissingBackPeaks*/, true /*autoTriggered*/ );
+
+  // If the relaunch couldn't start (e.g., the edit left the model invalid) while a prior fit's
+  //  "Updating…" pill was showing, restore the idle button so it isn't stuck on "Updating…".
+  if( !res && m_fitInProgress )
+    setWidgetStateForFitBeingDone();
+}//void startAutoFit()
+
+
+void ShieldingSourceDisplay::updateFitButtonState()
+{
+  if( !m_fitModelButton || !m_fitSplitButton )
+    return;
+
+  const bool autoMode = autoFitEnabled();
+  const bool phone = (m_specViewer && m_specViewer->isPhone());
+
+  // Keep the dropdown menu's check marks in sync with the current mode (the preference is the
+  //  authoritative source - this corrects the WMenuItem's own click-toggle behavior too).
+  if( m_autoFitItem )
+    m_autoFitItem->setChecked( autoMode );
+  if( m_manualFitItem )
+    m_manualFitItem->setChecked( !autoMode );
+
+  // Reset the state classes we manage, then apply the one for the current mode/state.  On phone
+  //  the same classes drive a *compact* footer pill (icon-only) via the .SsdFitBar CSS, so the
+  //  text is left empty for the icon states and short ("Fit") for manual idle.
+  m_fitModelButton->removeStyleClass( "FitLive" );
+  m_fitModelButton->removeStyleClass( "FitUpToDate" );
+  m_fitModelButton->removeStyleClass( "FitUpdating" );
+  m_fitModelButton->removeStyleClass( "FitNeeded" );
+
+  if( m_fitInProgress )
+  {
+    // Working: a pulsing "Updating…" pill (desktop/auto) or just a spinner glyph (phone).
+    m_fitModelButton->addStyleClass( "FitLive" );
+    m_fitModelButton->addStyleClass( "FitUpdating" );
+    m_fitModelButton->setText( phone ? WString() : WString::tr("ssd-fit-updating") );
+  }else if( autoMode )
+  {
+    // Live + idle: green "Up to date" pill (desktop) or just the green status dot (phone).
+    m_fitModelButton->addStyleClass( "FitLive" );
+    m_fitModelButton->addStyleClass( "FitUpToDate" );
+    m_fitModelButton->setText( phone ? WString() : WString::tr("ssd-fit-up-to-date") );
+  }else
+  {
+    // Manual idle: the action button performs the fit; flag it when the showing results are stale.
+    m_fitModelButton->setText( phone ? WString::tr("ssd-phone-fit-btn")
+                                     : WString::tr("ssd-perform-fit-btn") );
+    if( m_modelNeedsFit )
+      m_fitModelButton->addStyleClass( "FitNeeded" );
+  }
+
+  // Set a state class on the WSplitButton container so both halves (action + dropdown caret) read as
+  //  one cohesive pill (see .SsdFitSplit CSS - phone: .SsdPhone scope; desktop: .FitActions scope):
+  //  working while fitting, green+● when live & up-to-date, default when manual.  Set on both phone
+  //  and desktop (desktop previously had a disjoint grey caret in the live states).
+  if( m_fitSplitButton )
+  {
+    m_fitSplitButton->toggleStyleClass( "SsdFitWorking", m_fitInProgress );
+    m_fitSplitButton->toggleStyleClass( "SsdFitLiveOk", !m_fitInProgress && autoMode );
+    m_fitSplitButton->toggleStyleClass( "SsdFitManual", !m_fitInProgress && !autoMode );
+    // Manual + stale: accent the WHOLE split button (action half + dropdown caret) via one ring on
+    //  the container, instead of just the action half (which read as discontinuous from the caret).
+    m_fitSplitButton->toggleStyleClass( "SsdFitNeeded", m_modelNeedsFit && !m_fitInProgress && !autoMode );
+  }
+
+  // Keep the phone bottom bar (distance chip / activity strip / warning pill) in sync.
+  updatePhoneFitBar();
+}//void updateFitButtonState()
+
+
+void ShieldingSourceDisplay::handleAutoFitPrefChanged( bool enabled )
+{
+  if( enabled )
+  {
+    // Entering live mode: if there were pending manual-mode edits, fit now.
+    const bool wasStale = m_modelNeedsFit;
+    m_modelNeedsFit = false;
+    updateFitButtonState();
+    if( wasStale )
+      markModelChanged();  // schedules the debounced auto-fit
+  }else
+  {
+    // Entering manual mode: cancel any pending debounce (an in-flight fit is left to finish).
+    if( m_autoFitTimer )
+      m_autoFitTimer->stop();
+    updateFitButtonState();
+  }
+}//void handleAutoFitPrefChanged( bool enabled )
+
+
+Wt::WContainerWidget *ShieldingSourceDisplay::createPhoneFitBar()
+{
+  WContainerWidget *bar = new WContainerWidget();
+  bar->addStyleClass( "SsdFitBar" );
+
+  // Left: pinned, accent-tinted distance chip - tap to jump to the Physical tab + focus distance.
+  m_phoneDistChip = bar->addNew<WPushButton>();
+  m_phoneDistChip->addStyleClass( "SsdDistChip" );
+  m_phoneDistChip->setTextFormat( TextFormat::XHTML );
+  HelpSystem::attachToolTipOn( m_phoneDistChip, WString::tr("ssd-phone-dist-tt"), true );
+  m_phoneDistChip->clicked().connect( this, &ShieldingSourceDisplay::showPhoneDistanceInput );
+
+  // Middle: a horizontally-scrollable strip of fitted-activity chips (stays visible during a fit,
+  //  showing the latest values; the right-edge fade cues that more may be off-screen).  Tapping it
+  //  opens the full results sheet.
+  m_phoneActStrip = bar->addNew<WContainerWidget>();
+  m_phoneActStrip->addStyleClass( "SsdActStrip" );
+  m_phoneActStrip->clicked().connect( this, &ShieldingSourceDisplay::showPhoneFitResults );
+
+  // Amber warning pill (shown when the last fit had warnings or a large deviation).
+  m_phoneWarnPill = bar->addNew<WPushButton>();
+  m_phoneWarnPill->addStyleClass( "SsdWarnPill" );
+  m_phoneWarnPill->setTextFormat( TextFormat::XHTML );
+  m_phoneWarnPill->clicked().connect( this, &ShieldingSourceDisplay::showPhoneFitResults );
+  m_phoneWarnPill->hide();
+
+  // Right: the (shared) fit split-button - on phone it is the primary fit control and lives here in
+  //  the footer (not in the Options tab).  Its compact appearance is driven by updateFitButtonState()
+  //  + the .SsdFitBar CSS: a "Fit" button (manual), a spinner (while fitting), or a green dot +
+  //  Live/Manual dropdown (auto).  m_fitModelButton == m_fitSplitButton->actionButton().
+  //  (The "SsdFitSplit" class is added once at construction.)
+  bar->addWidget( std::unique_ptr<WWidget>(m_fitSplitButton) );
+
+  // Whenever the source model changes (incl. a finished fit writing results back), refresh the
+  //  activity strip; this keeps the chips current independent of the fit-button state path.
+  m_sourceModel->dataChanged().connect( this, &ShieldingSourceDisplay::updatePhoneFitBar );
+  m_sourceModel->rowsInserted().connect( this, &ShieldingSourceDisplay::updatePhoneFitBar );
+  m_sourceModel->rowsRemoved().connect( this, &ShieldingSourceDisplay::updatePhoneFitBar );
+  m_sourceModel->modelReset().connect( this, &ShieldingSourceDisplay::updatePhoneFitBar );
+
+  return bar;
+}//Wt::WContainerWidget *createPhoneFitBar()
+
+
+void ShieldingSourceDisplay::updatePhoneFitBar()
+{
+  if( !m_phoneFitBar )
+    return;  // desktop, or not yet built
+
+  // Distance chip (m_distanceEdit stays the single source of truth).
+  if( m_phoneDistChip )
+  {
+    const string dist = Wt::Utils::htmlEncode( m_distanceEdit->text().toUTF8() );
+    m_phoneDistChip->setText( WString::fromUTF8(
+        "<span class=\"SsdDistIcon\"></span><span class=\"SsdDistVal\">" + dist + "</span>" ) );
+  }//if( m_phoneDistChip )
+
+  // Fitted-activity chips (the strip stays visible during a fit; the split button shows the
+  //  "working" state).
+  if( m_phoneActStrip )
+  {
+    m_phoneActStrip->clear();
+
+    const vector<SourceFitNuclideDisplay::NucActivitySummary> sums
+                  = m_nuclideDisplay ? m_nuclideDisplay->activitySummaries()
+                                     : vector<SourceFitNuclideDisplay::NucActivitySummary>{};
+    for( const SourceFitNuclideDisplay::NucActivitySummary &s : sums )
+    {
+      WContainerWidget *chip = m_phoneActStrip->addNew<WContainerWidget>();
+      chip->addStyleClass( "SsdActChip" );
+
+      WContainerWidget *cdot = chip->addNew<WContainerWidget>();
+      cdot->addStyleClass( "SsdActDot" );
+      cdot->setAttributeValue( "style", "background:" + (s.colorCss.empty() ? string("#888") : s.colorCss) + ";" );
+
+      WText *nuc = chip->addNew<WText>( WString::fromUTF8(s.symbol) );
+      nuc->addStyleClass( "SsdActNuc" );
+      WText *val = chip->addNew<WText>( WString::fromUTF8(s.activity) );
+      val->addStyleClass( "SsdActVal" );
+    }//for( const NucActivitySummary &s : sums )
+  }//if( m_phoneActStrip )
+
+  // Warning pill: shows the number of non-fatal "issues" from the last fit (poor average deviation,
+  //  x-ray peaks, ...), read straight from m_lastFitResults->warnings.  This read is intentionally
+  //  lock-free: the fit worker fills `warnings` before m_lastFitResults is published on the session
+  //  thread, and this method can be re-entered (via updateFitButtonState()) while the results mutex
+  //  is held during fit-result application, so it must never take that mutex.
+  if( m_phoneWarnPill )
+  {
+    const size_t nwarn = m_lastFitResults ? m_lastFitResults->warnings.size() : static_cast<size_t>(0);
+    if( nwarn > 0 )
+    {
+      m_phoneWarnPill->setText( WString::tr("ssd-phone-warn-pill").arg( static_cast<int>(nwarn) ) );
+      m_phoneWarnPill->setHidden( m_fitInProgress );
+    }else
+    {
+      m_phoneWarnPill->hide();
+    }
+  }//if( m_phoneWarnPill )
+
+  // The fit control itself (the split button in the footer) is styled by updateFitButtonState();
+  //  nothing else to do here for it.
+}//void updatePhoneFitBar()
+
+
+void ShieldingSourceDisplay::showPhoneDistanceInput()
+{
+  if( m_phoneTabs && (m_phonePhysicalTabIndex >= 0) )
+    m_phoneTabs->setCurrentIndex( m_phonePhysicalTabIndex );
+  if( m_distanceEdit )
+    m_distanceEdit->setFocus();
+}//void showPhoneDistanceInput()
+
+
+void ShieldingSourceDisplay::showPhoneFitResults()
+{
+  // A bottom-sheet-style dialog with a results table (nuclide / activity ± uncert / age), plus any
+  //  fit warnings and a "View calculation log" link when a log is available.
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("ssd-phone-results-title") );
+  dialog->addStyleClass( "SsdResultsSheet" );
+  WContainerWidget *contents = dialog->contents();
+
+  const vector<SourceFitNuclideDisplay::NucActivitySummary> sums
+                = m_nuclideDisplay ? m_nuclideDisplay->activitySummaries()
+                                   : vector<SourceFitNuclideDisplay::NucActivitySummary>{};
+
+  if( sums.empty() )
+  {
+    contents->addNew<WText>( WString::tr("ssd-phone-results-none") );
+  }else
+  {
+    WTable *table = contents->addNew<WTable>();
+    table->addStyleClass( "SsdResultsTable" );
+    table->setHeaderCount( 1 );
+    table->elementAt(0,0)->addNew<WText>( WString::tr("ssd-phone-col-nuclide") );
+    table->elementAt(0,1)->addNew<WText>( WString::tr("ssd-phone-col-activity") );
+    table->elementAt(0,2)->addNew<WText>( WString::tr("ssd-phone-col-age") );
+
+    int r = 1;
+    for( const SourceFitNuclideDisplay::NucActivitySummary &s : sums )
+    {
+      // Nuclide cell: color swatch + symbol.
+      WText *nuc = table->elementAt(r,0)->addNew<WText>();
+      nuc->setTextFormat( TextFormat::XHTML );
+      const string col = s.colorCss.empty() ? string("#888") : s.colorCss;
+      nuc->setText( WString::fromUTF8( "<span class=\"PeakSwatch\" style=\"background:"
+                       + Wt::Utils::htmlEncode(col) + "\"></span>" + Wt::Utils::htmlEncode(s.symbol) ) );
+
+      string actStr = s.activity;
+      if( !s.activityUncert.empty() )
+        actStr += " \xC2\xB1 " + s.activityUncert;  //UTF-8 plus-minus
+      WText *act = table->elementAt(r,1)->addNew<WText>( WString::fromUTF8(actStr) );
+      act->addStyleClass( "SsdResultMono" );
+
+      WText *age = table->elementAt(r,2)->addNew<WText>( WString::fromUTF8( s.age.empty() ? string("—") : s.age ) );
+      age->addStyleClass( "SsdResultMono" );
+      ++r;
+    }//for( const NucActivitySummary &s : sums )
+  }//if( sums.empty() ) / else
+
+  // Fit warnings (if any), then a calc-log link if a log exists.
+  if( m_lastFitResults )
+  {
+    vector<string> msgs;
+    {
+      std::lock_guard<std::mutex> lock( m_lastFitResults->m_mutex );
+      msgs = m_lastFitResults->warnings;  // the "issues" the pill counts...
+      msgs.insert( msgs.end(), m_lastFitResults->errormsgs.begin(),
+                   m_lastFitResults->errormsgs.end() );  // ...plus any lower-level fit messages
+    }
+    if( !msgs.empty() )
+    {
+      WContainerWidget *box = contents->addNew<WContainerWidget>();
+      box->addStyleClass( "SsdResultsWarn" );
+      string warn;
+      for( const string &m : msgs )
+        warn += (warn.empty() ? string() : string("<br />")) + Wt::Utils::htmlEncode(m);
+      WText *t = box->addNew<WText>( WString::fromUTF8(warn) );
+      t->setTextFormat( TextFormat::XHTML );
+    }//if( !msgs.empty() )
+  }//if( m_lastFitResults )
+
+  if( !m_calcLog.empty() )
+  {
+    WPushButton *logBtn = contents->addNew<WPushButton>( WString::tr("ssd-phone-view-log") );
+    logBtn->addStyleClass( "LinkBtn SsdViewLog" );
+    logBtn->clicked().connect( this, &ShieldingSourceDisplay::showCalcLog );
+  }//if( !m_calcLog.empty() )
+
+  dialog->addButton( WString::tr("ssd-phone-done") );
+}//void showPhoneFitResults()
+
+
+void ShieldingSourceDisplay::setWidgetStateForFitStarting( const bool autoTriggered )
+{
+  m_fitInProgress = true;
   m_fitProgressTxt->show();
   m_fitProgressTxt->setText("");
+
+  // Reflect the "fitting" state on the split button (auto: pill -> "Updating…").
+  updateFitButtonState();
+
+  // Keep the UI interactive (no widget-disable, no hiding the split button) for live/auto fits
+  //  AND on phone - on phone the split button lives in the always-visible bottom bar and shows the
+  //  working state there, so locking the UI / hiding it would be wrong.
+  if( autoTriggered || (m_specViewer && m_specViewer->isPhone()) )
+  {
+    m_cancelfitModelButton->hide();
+    return;
+  }//if( keep interactive )
+
+  // Manual fit: hide the split button, show a cancel button, and lock the rest of the UI down
+  //  while the (blocking-feeling) fit runs.
+  m_fitSplitButton->hide();
   m_cancelfitModelButton->show();
-  
+
   m_peakView->disable();
-  m_sourceView->disable();
+  m_nuclideDisplay->disable();
   m_optionsDiv->disable();
-  m_addItemMenu->disable();
   m_distanceEdit->disable();
+  m_useOffsetCheck->disable();
+  m_offsetEdit1->disable();
+  m_offsetEdit2->disable();
   m_detectorDisplay->disable();
   m_shieldingSelects->disable();
-  m_addGenericShielding->disable();
-  m_addMaterialShielding->disable();
+  m_addShieldingBtn->disable();
+  // Footer controls (created in createWindow()); may be null on code paths without a window.
+  if( m_importModelBtn ) m_importModelBtn->disable();
+  if( m_exportModelBtn ) m_exportModelBtn->disable();
 #if( USE_DB_TO_STORE_SPECTRA )
-  m_saveAsNewModelInDb->disable();
+  if( m_dbButton ) m_dbButton->disable();
+  if( m_saveAsNewModelInDb ) m_saveAsNewModelInDb->disable();
 #endif
 }//void setWidgetStateForFitStarting()
 
 
 void ShieldingSourceDisplay::setWidgetStateForFitBeingDone()
 {
-  m_fitModelButton->show();
+  m_fitInProgress = false;
+  m_fitSplitButton->show();
   m_fitProgressTxt->setText("");
   m_fitProgressTxt->hide();
   m_cancelfitModelButton->hide();
-  
+
+  // Reflect the idle state on the split button (auto: pill -> "Up to date"; manual: "Perform
+  //  Model Fit", possibly with the needs-update hint).  The enable() calls below are no-ops for
+  //  auto fits (which never disabled anything).
+  updateFitButtonState();
+
   m_peakView->enable();
-  m_sourceView->enable();
+  m_nuclideDisplay->enable();
   m_optionsDiv->enable();
-  m_addItemMenu->enable();
   m_distanceEdit->enable();
+  m_useOffsetCheck->enable();
+  m_offsetEdit1->enable();
+  m_offsetEdit2->enable();
   m_detectorDisplay->enable();
   m_shieldingSelects->enable();
-  m_addGenericShielding->enable();
-  m_addMaterialShielding->enable();
+  m_addShieldingBtn->enable();
+  if( m_importModelBtn ) m_importModelBtn->enable();
+  if( m_exportModelBtn ) m_exportModelBtn->enable();
 #if( USE_DB_TO_STORE_SPECTRA )
-  m_saveAsNewModelInDb->enable();
+  if( m_dbButton ) m_dbButton->enable();
+  if( m_saveAsNewModelInDb ) m_saveAsNewModelInDb->enable();
 #endif
 }//void setWidgetStateForFitBeingDone();
 
@@ -8670,7 +9460,11 @@ void ShieldingSourceDisplay::cancelModelFitWithNoUpdate()
   {
     m_currentFitFcn->cancelFit();
     m_currentFitFcn = nullptr;
-    
+
+    // Bump the epoch so the cancelled fit's queued gui_updater is dropped silently by its guard,
+    //  rather than reaching updateGuiWithModelFitResults() (which would warn about a null fcn).
+    ++m_autoFitEpoch;
+
     setWidgetStateForFitBeingDone();
   }//if( m_currentFitFcn )
 }//void cancelModelFitWithNoUpdate()
@@ -8721,13 +9515,38 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
       app->triggerUpdate();
   } BOOST_SCOPE_EXIT_END
 
+  // Writing the fit results back into the model below fires dataChanged -> updateChi2Chart ->
+  //  markModelChanged; this guard makes markModelChanged() a no-op so applying results can't
+  //  re-trigger an auto-fit.  Cleared on every exit path (including early returns).
+  bool * const applyingFlag = &m_applyingFitResults;
+  *applyingFlag = true;
+  BOOST_SCOPE_EXIT(applyingFlag){
+    *applyingFlag = false;
+  } BOOST_SCOPE_EXIT_END
+
+  // For live/auto fits, suppress the per-fit undo step: a debounced live fit fires repeatedly and
+  //  would otherwise flood the undo stack.  Blocking inserts *before* constructing
+  //  state_undo_creator makes its ctor see canAddUndoRedoNow()==false, so it captures no
+  //  pre-state and its dtor adds no step.  (Declared first so it outlives state_undo_creator.)
+  std::unique_ptr<UndoRedoManager::BlockUndoRedoInserts> block_auto_undo;
+  if( m_lastFitWasAuto )
+  {
+    UndoRedoManager * const undoRedo = UndoRedoManager::instance();
+    if( undoRedo )
+      block_auto_undo = std::make_unique<UndoRedoManager::BlockUndoRedoInserts>();
+  }
+
   ShieldSourceChange state_undo_creator( this, "Fit activity/shielding" );
 
   assert( results );
 
   // Cache the fit results for HTML log display
   m_lastFitResults = results;
-  
+
+  // Reset the dimension-consistency notice; the post-fit consistency check (updateChi2ChartActual)
+  //  re-sets it if needed, and it is folded into the fit warnings near the end of this function.
+  m_dimConsistencyMsg.clear();
+
   setWidgetStateForFitBeingDone();
   
   std::lock( results->m_mutex, m_currentFitFcnMutex );
@@ -8787,11 +9606,15 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
       ShieldingSourceFitCalc::ShieldingInfo::equalEnough( now_info, orig_info );
     }catch( std::exception &e )
     {
+      // This is a developer diagnostic (e.g., can trip for a shielding left with no material
+      //  selected); log it, but do NOT assert(0)/abort - crashing the whole app on a user's
+      //  "Perform Model Fit" is far worse than applying results, and release builds (where this
+      //  whole block is compiled out) proceed anyway.
       cerr << "shieldings changed: " << e.what() << endl;
 #if( PERFORM_DEVELOPER_CHECKS )
-      log_developer_error( __func__, "Programming Logic Error - shieldings changed - fit results when model was no longer valid." );
+      log_developer_error( __func__, ("shieldings changed during fit (continuing anyway): "
+                                      + string(e.what())).c_str() );
 #endif
-      assert( 0 );
     }//try / catch
   }//for( size_t i = 0; i < initial_shieldings.size(); ++i )
 #endif
@@ -8809,9 +9632,9 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
       string msg = "<b>" + WString::tr("ssd-fit-failed").toUTF8() + "</b>.";
       for( auto &s : errormsgs )
         msg += "<div>&nbsp;&nbsp;" + s + "</div>";
-      
-      passMessage( msg, WarningWidget::WarningMsgHigh );
-      
+
+      setFitMessage( WString::fromUTF8(msg), FitMsgType::Error );
+
       m_currentFitFcn.reset();
       return;
     }//
@@ -8827,9 +9650,16 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
   }//switch( status )
   
   
-  for( auto &s : errormsgs )
-    passMessage( s + "<br />" + WString::tr("ssd-using-fit-anyway").toUTF8(), WarningWidget::WarningMsgHigh );
-  
+  // Collect non-fatal fit warnings + lower-level fit messages now, but defer showing them until
+  //  after the post-fit consistency check has run (in updateChi2ChartActual, below) so its
+  //  informational notice - e.g. shielding scaled to fit inside the detector distance - is folded
+  //  in and they all appear together in the dedicated inline area at once (replaces the old toast).
+  //  results->warnings holds the curated warnings (poor average deviation, x-ray peaks, ...) from
+  //  fill_fit_results; errormsgs holds lower-level fit messages.  The phone fit bar's warning pill
+  //  reads results->warnings directly, so the dimension notice is appended to it too, below.
+  vector<string> shown_msgs = results->warnings;
+  shown_msgs.insert( shown_msgs.end(), errormsgs.begin(), errormsgs.end() );
+
   try
   {
     const size_t nshieldings = gui_shieldings.size();
@@ -8850,8 +9680,7 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
         continue;
       
       shared_ptr<const Material> usrmaterial = select->material();
-      assert( usrmaterial );
-      if( !usrmaterial )
+      if( !usrmaterial )  //e.g., a material shielding with no material selected - just skip it
         continue;
       
       const bool calcFitMassFrac = std::count(begin(massfracFitMaterials), end(massfracFitMaterials), usrmaterial);
@@ -9324,6 +10153,32 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
 #endif
   }//try / catch
 
+  // Fold the post-fit dimension-consistency notice (set by updateChi2ChartActual, above) into the
+  //  fit-warning list - in results->warnings so the phone fit-bar pill and reports pick it up, and
+  //  in the inline message we compose now - then show everything together, or clear if nothing.
+  if( !m_dimConsistencyMsg.empty() )
+  {
+    results->warnings.push_back( m_dimConsistencyMsg );
+    shown_msgs.push_back( m_dimConsistencyMsg );
+  }
+
+  if( !shown_msgs.empty() )
+  {
+    string warn;
+    for( const string &s : shown_msgs )
+      warn += (warn.empty() ? string() : string("<br />")) + s;
+    warn += "<br />" + WString::tr("ssd-using-fit-anyway").toUTF8();
+    setFitMessage( WString::fromUTF8(warn), FitMsgType::Warning );
+  }else
+  {
+    clearFitMessage();
+  }
+
+  // A successful fit means the showing results now match the model: clear the manual-mode
+  //  "needs update" hint and refresh the button/pill to its idle state.
+  m_modelNeedsFit = false;
+  updateFitButtonState();
+
   wApp->triggerUpdate();
   
   m_currentFitFcn.reset();
@@ -9331,34 +10186,69 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
 
 
 std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay::doModelFit( const bool fitInBackground,
-                                                                                           const bool checkForMissingBackPeaks )
+                                                                                           const bool checkForMissingBackPeaks,
+                                                                                           const bool autoTriggered )
 {
+  // Clear any prior message; fit warnings/errors are shown in the dedicated inline area.
+  clearFitMessage();
+
+  // Supersede any in-flight fit up front (before any early-return validation), so a fit we are
+  //  replacing is always invalidated: bump the epoch (its result is dropped by the gui_updater
+  //  guard) and signal it to stop wasting CPU.  In manual mode the UI is locked while a fit runs,
+  //  so there is never an in-flight fit here; this matters for live-mode cancel-and-relaunch.
+  {
+    std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
+    if( m_currentFitFcn )
+      m_currentFitFcn->cancelFit();
+  }
+  const std::size_t launch_epoch = ++m_autoFitEpoch;
+
+  // Remember whether this launch was auto-triggered so updateGuiWithModelFitResults() can suppress
+  //  the per-fit undo step (live fits debounce many times and would otherwise flood the stack).
+  m_lastFitWasAuto = autoTriggered;
+
+  // A material shielding with no material selected can't be fit (and trips internal
+  //  consistency checks); flag it and don't start the fit.
+  for( WWidget *w : m_shieldingSelects->children() )
+  {
+    ShieldingSelect * const select = dynamic_cast<ShieldingSelect *>( w );
+    if( select && !select->isGenericMaterial() && !select->material() )
+    {
+      setFitMessage( WString::tr("ssd-err-empty-material"), FitMsgType::Error );
+      return nullptr;
+    }
+  }//for( WWidget *w : m_shieldingSelects->children() )
+
   try
   {
     checkAndWarnZeroMassFraction();
   }catch( std::exception &e )
   {
-    passMessage( WString::tr("ssd-err-fit-not-performed").arg(e.what()), WarningWidget::WarningMsgHigh );
+    setFitMessage( WString::tr("ssd-err-fit-not-performed").arg(e.what()), FitMsgType::Error );
     return nullptr;
   }
-    
+
   try
   {
     checkForMultipleGenericMaterials();
   }catch( exception &e )
   {
-    passMessage( WString::tr("ssd-err-fit-not-performed").arg(e.what()), WarningWidget::WarningMsgHigh );
+    setFitMessage( WString::tr("ssd-err-fit-not-performed").arg(e.what()), FitMsgType::Error );
     return nullptr;
   }//try / catch
-  
+
   m_modifiedThisForeground = true;
-  
+
   try
   {
     checkDistanceAndThicknessConsistent();
+    // Give immediate feedback if the pre-fit consistency check adjusted dimensions (e.g. scaled the
+    //  shielding to fit inside the detector distance); the post-fit results display re-surfaces it.
+    if( !m_dimConsistencyMsg.empty() )
+      setFitMessage( WString::tr("ssd-err-before-fit").arg(WString::fromUTF8(m_dimConsistencyMsg)), FitMsgType::Warning );
   }catch( exception &e )
   {
-    passMessage( WString::tr("ssd-err-before-fit").arg(e.what()), WarningWidget::WarningMsgHigh );
+    setFitMessage( WString::tr("ssd-err-before-fit").arg(e.what()), FitMsgType::Warning );
   }//try / catch
 
   if( checkForMissingBackPeaks && m_backgroundPeakSub->isChecked() )
@@ -9392,23 +10282,22 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
   }catch( std::exception &e )
   {
     
-    passMessage( WString::tr("ssd-err-couldnt-make-chi2-fcn").arg(e.what()),
-                WarningWidget::WarningMsgHigh );
+    setFitMessage( WString::tr("ssd-err-couldnt-make-chi2-fcn").arg(e.what()), FitMsgType::Error );
     return nullptr;
   }//try / catch
-  
-  setWidgetStateForFitStarting();
+
+  setWidgetStateForFitStarting( autoTriggered );
 
   //Need to disable "All Peaks", Detector, Distance, and "Material", and "Generic"
-  
+
   {
     std::lock_guard<std::mutex> lock( m_currentFitFcnMutex );
     m_currentFitFcn = chi2Fcn;
   }
-  
+
   auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
   results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::InvalidOther;
-  
+
   auto progress = std::make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
 
   // Wt4: these updaters are dispatched to the session thread via WServer::post() from fit_model(),
@@ -9422,10 +10311,16 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
       self->updateGuiWithModelFitProgress( progress );
   };
 
-  std::function<void()> gui_updater = [thisid, results](){
+  std::function<void()> gui_updater = [thisid, results, launch_epoch](){
     ShieldingSourceDisplay *self = dynamic_cast<ShieldingSourceDisplay *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
-    if( self )
-      self->updateGuiWithModelFitResults( results );
+    if( !self )
+      return;
+    // Discard a stale/superseded fit's result: a newer fit was launched after this one (live-mode
+    //  cancel-and-relaunch), so applying this would clobber the newer state.  Epoch is only
+    //  touched on the session thread, so this read needs no lock.
+    if( self->m_autoFitEpoch != launch_epoch )
+      return;
+    self->updateGuiWithModelFitResults( results );
   };
   
   const string sessionid = wApp->sessionId();
@@ -9520,8 +10415,10 @@ void ShieldingSourceDisplay::updateCalcLogWithFitResults(
   {//begin add chi2 line
     stringstream msg;
     msg << "It took " << results->num_fcn_calls
-        << " solution trials to reach chi2=" << results->chi2
-        << " with an estimated distance to minumum of " << results->edm;
+        << " solution trials to reach chi2=" << results->chi2;
+    // The Ceres driver doesn't produce a Minuit-style EDM; it leaves edm < 0 as a sentinel.
+    if( results->edm >= 0.0 )
+      msg << " with an estimated distance to minimum of " << results->edm;
     calcLog.push_back( msg.str() );
   }//end add chi2 line
     
@@ -9756,16 +10653,20 @@ void ShieldingSourceDisplay::showShieldSourceDiagram()
 
   std::vector<ShieldingSourceFitCalc::SourceFitDef> sources = m_sourceModel->underlyingData();
   const GeometryType geom_type = geometry();
-  
+
+  // User-set off-axis offsets (zero when the offset checkbox is unchecked).
+  double offset0 = 0.0, offset1 = 0.0;
+  sourceOffsets( offset0, offset1 );
+
   if( m_diagramDialog )
   {
     // Dialog already exists, update its data and show it
-    m_diagramDialog->updateData( shieldings, sources, geom_type, distance, detDiameter );
+    m_diagramDialog->updateData( shieldings, sources, geom_type, distance, detDiameter, offset0, offset1 );
     m_diagramDialog->show();
     return;
   }
-  
-  m_diagramDialog = ShieldingDiagramDialog::createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter );
+
+  m_diagramDialog = ShieldingDiagramDialog::createShieldingDiagram( shieldings, sources, geom_type, distance, detDiameter, offset0, offset1 );
   
   //m_diagramDialog->destroyed().connect( std::bind([dialog_ptr]( Wt::WObject * ){
   //  InterSpec *viewer = InterSpec::instance();

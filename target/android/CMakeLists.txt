@@ -24,6 +24,9 @@ set( USE_DB_TO_STORE_SPECTRA ON CACHE INTERNAL "" )
 set( USE_SPECRUM_FILE_QUERY_WIDGET OFF CACHE INTERNAL "" )
 set( USE_REL_ACT_TOOL ON CACHE INTERNAL "" )
 set( USE_LEAFLET_MAP ON CACHE INTERNAL "" )
+# The LLM/MCP interface is desktop-only; the top-level CMakeLists defaults it ON and then
+# hard-errors for mobile builds, so turn it off here (as target/ios/InterSpec does).
+set( USE_LLM_INTERFACE OFF CACHE INTERNAL "" )
 
 
 message( "ANDROID_NDK_SYSROOT=${ANDROID_NDK_SYSROOT}")

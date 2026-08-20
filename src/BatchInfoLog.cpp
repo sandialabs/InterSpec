@@ -871,6 +871,11 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
     if( !results.errormsgs.empty() )
       data["ErrorMessages"] = results.errormsgs;
 
+    // Non-fatal fit warnings (poor average deviation, x-ray peaks, ...).  Templates render these
+    //  under {% if HasWarnings %} / {{ Warnings }}; the GUI and batch both reach this function, so
+    //  populating them here covers every report.
+    data["HasWarnings"] = !results.warnings.empty();
+    data["Warnings"] = results.warnings;
     // The automatic pull-trend interpretation (too much/little shielding, wrong effective atomic
     //  number, ...) as a dedicated field, so a template can place it under the chi chart (like the
     //  GUI) and/or in the warnings area.  The report always reflects a completed fit, so it's valid.
