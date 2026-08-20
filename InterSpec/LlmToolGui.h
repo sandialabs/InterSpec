@@ -45,10 +45,11 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
+#include "InterSpec/LlmConfig.h"
+
 //Forward declarations
 class SpecMeas;
 class InterSpec;
-class LlmConfig;
 class LlmInterface;
 class LlmConfigWindow;
 class LlmBenchmarkRunner;
@@ -125,14 +126,28 @@ public:
    error string. */
   using McpPromptCallback = std::function<void( std::variant<nlohmann::json, std::string> )>;
 
+  /** Progress callback for streaming intermediate results to the MCP client.
+   Called 0 or more times before the completion callback fires. */
+  using McpProgressCallback = std::function<void( const nlohmann::json& )>;
+
   /** Queue a prompt to be submitted into the conversation as if the user typed it, then invoke
    `callback` once the resulting turn (including all tool calls / sub-agents) finishes.
    Prompts are drained FIFO; only one runs at a time and never while a turn is already in progress.
    Resolves `callback` immediately with an error while a benchmark is running or the assistant is
    not configured.  Safe to call from the session event loop (e.g. an MCP async tool's Stage A,
    under the session UpdateLock).
+   If `progressCallback` is provided, it will be called with intermediate results as the assistant
+   works (tool calls, tool results, sub-agent responses).
    */
-  void queuePromptForMcp( const std::string &prompt, McpPromptCallback callback );
+  void queuePromptForMcp( const std::string &prompt, McpPromptCallback callback,
+                          McpProgressCallback progressCallback = {} );
+
+  /** Directly invoke a specialized agent (e.g. NuclideId, ActivityFit) with a prompt, streaming
+   intermediate results via `progressCallback` and resolving `callback` when the agent finishes.
+   Shows the assistant widget if it is not already visible.
+   */
+  void invokeAgentForMcp( AgentType agentType, const std::string &prompt,
+                          McpPromptCallback callback, McpProgressCallback progressCallback );
 
   /** Disconnect the spectrum-changed handler (used by LlmBenchmarkRunner during SpectrumSequence). */
   void disconnectSpectrumChangedForBenchmark();
@@ -309,11 +324,12 @@ private:
   /** Start running a benchmark from the given XML file path. */
   void handleStartBenchmark( const std::string &xmlPath );
 
-  /** A prompt queued by the MCP `assistant_submit_prompt` tool, with its completion callback. */
+  /** A prompt queued by the MCP tools, with its completion callback. */
   struct PendingMcpPrompt
   {
     std::string prompt;
     McpPromptCallback callback;
+    McpProgressCallback progressCallback;
   };//struct PendingMcpPrompt
 
   /** FIFO of MCP-submitted prompts awaiting their turn (front = next to run). */
@@ -323,7 +339,13 @@ private:
    active turn was not MCP-initiated, or when idle. */
   McpPromptCallback m_activeMcpCallback;
 
-  /** If idle and no MCP prompt is in flight, submit the next queued prompt. */
+  /** Progress callback for the in-flight MCP prompt (streams intermediate results). */
+  McpProgressCallback m_activeProgressCallback;
+
+  /** Connection to the current conversation's `responseAdded` signal for streaming MCP progress. */
+  Wt::Signals::connection m_mcpResponseAddedConn;
+
+  /** If idle and no MCP request is in flight, submit the next queued prompt. */
   void drainMcpPromptQueue();
 
   /** Resolve the in-flight MCP prompt's callback (success → result JSON; else error string), then
@@ -332,6 +354,18 @@ private:
 
   /** Build the JSON result (final assistant text + compact tool-call trace) for an MCP prompt. */
   nlohmann::json buildMcpPromptResult() const;
+
+  /** Build a JSON result from a specific agent conversation (for invoke_agent MCP tool). */
+  nlohmann::json buildMcpAgentResult( const std::shared_ptr<LlmInteraction> &convo ) const;
+
+  /** Build a JSON progress event from a single conversation turn (for streaming to MCP clients). */
+  nlohmann::json buildProgressFromTurn( const std::shared_ptr<LlmInteractionTurn> &turn ) const;
+
+  /** Connect to a conversation's responseAdded signal for MCP progress streaming. */
+  void connectMcpProgressToConversation( const std::shared_ptr<LlmInteraction> &convo );
+
+  /** Disconnect the MCP progress signal and clear the active progress callback. */
+  void disconnectMcpProgress();
 };
 
 #endif // USE_LLM_INTERFACE

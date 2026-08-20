@@ -95,6 +95,8 @@
   <message id="lcw-mcp-sub">Expose InterSpec as an MCP server for other apps.</message>
   <message id="lcw-mcp-token">MCP bearer token</message>
   <message id="lcw-mcp-token-invalid">Change this from the default value before enabling.</message>
+  <message id="lcw-mcp-allow-prompt">Allow MCP clients to submit prompts to the assistant</message>
+  <message id="lcw-mcp-allow-agent">Allow MCP clients to invoke specialized agents</message>
 
   <!-- Footer / validation -->
   <message id="lcw-config-valid">&#10003; Configuration valid</message>

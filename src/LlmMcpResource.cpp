@@ -395,14 +395,14 @@ void LlmMcpResource::handle_jsonrpc( const Wt::Http::Request &request, Wt::Http:
 
         if( user_session_id.empty() )
         {
-          std::chrono::steady_clock::time_point earliest_start{};
+          std::chrono::steady_clock::time_point latest_start{};
           for( InterSpecApp *app : instances )
           {
             Wt::WApplication::UpdateLock lock( app );
-            if( lock && (!targetApp || (earliest_start > app->startTime())) )
+            if( lock && (!targetApp || (app->startTime() > latest_start)) )
             {
               targetApp = app;
-              earliest_start = app->startTime();
+              latest_start = app->startTime();
             }
           }
         }else
@@ -456,20 +456,35 @@ void LlmMcpResource::handle_jsonrpc( const Wt::Http::Request &request, Wt::Http:
           // Start async operation. The callback captures the shared state and
           // wakes the SSE continuation when the tool finishes.
           std::weak_ptr<std::atomic<bool>> weak_alive = m_alive;
-          tool->asyncExecutor( arguments, viewer, nullptr, nullptr,
-            [state, this, weak_alive]( std::variant<json, std::string> result )
-            {
-              state->prom->set_value( std::move( result ) );
-              state->tool_complete.store( true );
 
-              // Wake any waiting SSE continuations so they can send the result.  The callback runs on
-              // the GUI thread via WServer::post(); guard against the resource having been destroyed
-              // (shutdown/static-destruction race) using the same alive-token the keepalive path uses.
+          auto completionCb = [state, this, weak_alive]( std::variant<json, std::string> result )
+          {
+            state->prom->set_value( std::move( result ) );
+            state->tool_complete.store( true );
+
+            const std::shared_ptr<std::atomic<bool>> alive = weak_alive.lock();
+            if( alive && alive->load() )
+              this->haveMoreData();
+          };
+
+          if( tool->isStreaming() )
+          {
+            // Streaming executor: also receives a progress callback that pushes intermediate
+            // results to the SSE state and wakes the continuation to send them.
+            auto progressFn = [state, this, weak_alive]( const json &item )
+            {
+              state->pushProgress( item );
               const std::shared_ptr<std::atomic<bool>> alive = weak_alive.lock();
               if( alive && alive->load() )
                 this->haveMoreData();
-            }
-          );
+            };
+
+            tool->asyncStreamingExecutor( arguments, viewer, nullptr, nullptr,
+              std::move( completionCb ), std::move( progressFn ) );
+          }else
+          {
+            tool->asyncExecutor( arguments, viewer, nullptr, nullptr, std::move( completionCb ) );
+          }
 
           // Flush queued JS (e.g., from doJavaScript) to the browser so the
           // async operation can actually begin on the client side.
@@ -622,14 +637,14 @@ json LlmMcpResource::executeWithSession( const std::string &userSessionId,
   if( userSessionId.empty() )
   {
     // No session specified — find the most recently started instance
-    std::chrono::steady_clock::time_point earliest_start{};
+    std::chrono::steady_clock::time_point latest_start{};
     for( InterSpecApp *app : instances )
     {
       Wt::WApplication::UpdateLock lock( app );
-      if( lock && (!targetApp || (earliest_start > app->startTime())) )
+      if( lock && (!targetApp || (app->startTime() > latest_start)) )
       {
         targetApp = app;
-        earliest_start = app->startTime();
+        latest_start = app->startTime();
       }
     }
   }else
@@ -758,6 +773,23 @@ void LlmMcpResource::handle_sse_continuation( const Wt::Http::Request &request,
   assert( state );
   if( !state )
     return;
+
+  // Drain any queued progress events (from streaming executors) regardless of completion state.
+  {
+    const std::vector<json> progressItems = state->drainProgress();
+    for( const json &item : progressItems )
+    {
+      const json progressEvent = json{
+        {"jsonrpc", "2.0"},
+        {"method", "notifications/progress"},
+        {"params", {
+          {"requestId", state->request_id},
+          {"data", item}
+        }}
+      };
+      response.out() << "event: progress\ndata: " << progressEvent.dump() << "\n\n";
+    }
+  }
 
   if( !state->tool_complete.load() )
   {

@@ -161,6 +161,8 @@ private:
   Wt::WPushButton *m_mcpTokenShow;
   Wt::WText *m_mcpTokenWarn;
 #endif
+  Wt::WCheckBox *m_mcpAllowPrompt;
+  Wt::WCheckBox *m_mcpAllowAgent;
 
 #if( USE_NATIVE_HTTP_CLIENT )
   // Network card - escape hatches for the native ("CORS fix") transport only.  Hidden behind a

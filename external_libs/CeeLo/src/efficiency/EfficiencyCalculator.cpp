@@ -47,6 +47,7 @@
 #include <mutex>
 #include <thread>
 #include <future>
+#include <array>
 #include <random>
 
 #if defined(_WIN32)
@@ -1196,7 +1197,14 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
         tally.pulse_height_counts_sq.resize(energy_bin_edges.size() - 1, 0.0);
     }
 
-    std::seed_seq seq{seed, seed >> 32, seed * 2654435761ULL};
+    const uint64_t seed_mixed = seed * 2654435761ULL;
+    const std::array<uint_least32_t, 6> seed_data{{
+      static_cast<uint_least32_t>(seed), static_cast<uint_least32_t>(seed >> 32),
+      static_cast<uint_least32_t>(seed_mixed), static_cast<uint_least32_t>(seed_mixed >> 32),
+      static_cast<uint_least32_t>(seed ^ (seed >> 16)),
+      static_cast<uint_least32_t>((seed >> 48) | (seed << 16))
+    }};
+    std::seed_seq seq( seed_data.begin(), seed_data.end() );
     std::mt19937_64 rng(seq);
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
@@ -3278,7 +3286,14 @@ EfficiencyCalculator::CascadePeakTally EfficiencyCalculator::cascade_peak_thread
     constexpr uint64_t kCheckMask = 0xFF;
     constexpr double kFlushSec = 0.25;
     auto last_flush = std::chrono::steady_clock::now();
-    std::seed_seq seq{seed, seed >> 32, seed * 2654435761ULL};
+    const uint64_t seed_mixed = seed * 2654435761ULL;
+    const std::array<uint_least32_t, 6> seed_data{{
+      static_cast<uint_least32_t>(seed), static_cast<uint_least32_t>(seed >> 32),
+      static_cast<uint_least32_t>(seed_mixed), static_cast<uint_least32_t>(seed_mixed >> 32),
+      static_cast<uint_least32_t>(seed ^ (seed >> 16)),
+      static_cast<uint_least32_t>((seed >> 48) | (seed << 16))
+    }};
+    std::seed_seq seq( seed_data.begin(), seed_data.end() );
     std::mt19937_64 rng(seq);
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
@@ -3747,7 +3762,14 @@ EfficiencyCalculator::CascadeFullTally EfficiencyCalculator::cascade_full_thread
     constexpr double kFlushSec = 0.25;
     auto last_flush = std::chrono::steady_clock::now();
 
-    std::seed_seq seq{seed, seed >> 32, seed * 2654435761ULL};
+    const uint64_t seed_mixed = seed * 2654435761ULL;
+    const std::array<uint_least32_t, 6> seed_data{{
+      static_cast<uint_least32_t>(seed), static_cast<uint_least32_t>(seed >> 32),
+      static_cast<uint_least32_t>(seed_mixed), static_cast<uint_least32_t>(seed_mixed >> 32),
+      static_cast<uint_least32_t>(seed ^ (seed >> 16)),
+      static_cast<uint_least32_t>((seed >> 48) | (seed << 16))
+    }};
+    std::seed_seq seq( seed_data.begin(), seed_data.end() );
     std::mt19937_64 rng(seq);
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
     // Per-branch coherent fallback forest (constant; branches are few).
@@ -4977,7 +4999,14 @@ EfficiencyResult EfficiencyCalculator::compute(const SimulationConfig& config)
 
     // Thread function: run batches until stop
     auto thread_fn = [&](uint64_t initial_seed) {
-        std::seed_seq seq{initial_seed, initial_seed >> 32, initial_seed * 2654435761ULL};
+        const uint64_t is_mixed = initial_seed * 2654435761ULL;
+        const std::array<uint_least32_t, 6> is_data{{
+          static_cast<uint_least32_t>(initial_seed), static_cast<uint_least32_t>(initial_seed >> 32),
+          static_cast<uint_least32_t>(is_mixed), static_cast<uint_least32_t>(is_mixed >> 32),
+          static_cast<uint_least32_t>(initial_seed ^ (initial_seed >> 16)),
+          static_cast<uint_least32_t>((initial_seed >> 48) | (initial_seed << 16))
+        }};
+        std::seed_seq seq( is_data.begin(), is_data.end() );
         std::mt19937_64 rng(seq);
 
         double cpu_last = thread_cpu_seconds();

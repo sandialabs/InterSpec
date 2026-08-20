@@ -177,6 +177,8 @@ LlmConfigWindow::LlmConfigWindow( InterSpec *viewer,
     m_mcpTokenShow( nullptr ),
     m_mcpTokenWarn( nullptr ),
 #endif
+    m_mcpAllowPrompt( nullptr ),
+    m_mcpAllowAgent( nullptr ),
 #if( USE_NATIVE_HTTP_CLIENT )
     m_netOverride( nullptr ),
     m_netDetail( nullptr ),
@@ -406,6 +408,24 @@ void LlmConfigWindow::buildUi()
   m_mcpTokenWarn->addStyleClass( "LcwError" );
 #endif
 
+  m_mcpAllowPrompt = m_mcpDetail->addNew<WCheckBox>( WString::tr("lcw-mcp-allow-prompt") );
+  m_mcpAllowPrompt->addStyleClass( "LcwCheck LcwMcpOption" );
+  m_mcpAllowPrompt->setChecked( m_working.mcpServer.allowAssistantPrompt );
+  m_mcpAllowPrompt->changed().connect( std::bind( [this](){
+    m_working.mcpServer.allowAssistantPrompt = m_mcpAllowPrompt->isChecked();
+    updateValidation();
+    refreshPreview();
+  } ) );
+
+  m_mcpAllowAgent = m_mcpDetail->addNew<WCheckBox>( WString::tr("lcw-mcp-allow-agent") );
+  m_mcpAllowAgent->addStyleClass( "LcwCheck LcwMcpOption" );
+  m_mcpAllowAgent->setChecked( m_working.mcpServer.allowAgentInvocation );
+  m_mcpAllowAgent->changed().connect( std::bind( [this](){
+    m_working.mcpServer.allowAgentInvocation = m_mcpAllowAgent->isChecked();
+    updateValidation();
+    refreshPreview();
+  } ) );
+
   m_mcpEnable->changed().connect( std::bind( [this](){
     m_working.mcpServer.enabled = m_mcpEnable->isChecked();
     m_mcpDetail->setHidden( !m_working.mcpServer.enabled );
@@ -441,7 +461,7 @@ void LlmConfigWindow::buildUi()
   proxyLbl->addStyleClass( "LcwFieldLabel" );
   m_netProxy = m_netDetail->addNew<WLineEdit>();
   m_netProxy->addStyleClass( "LcwInput LcwMono" );
-  m_netProxy->setEmptyText( WString::tr("lcw-net-proxy-ph") );
+  m_netProxy->setPlaceholderText( WString::tr("lcw-net-proxy-ph") );
   m_netProxy->setText( WString::fromUTF8( m_working.llmApi.httpProxyUrl ) );
 
   // Not every backend can honour an explicit proxy - Wt::Http::Client has no proxy support at
@@ -454,9 +474,9 @@ void LlmConfigWindow::buildUi()
   }else
   {
     m_netProxy->setEnabled( false );
-    m_netProxy->setEmptyText( WString::tr("lcw-net-proxy-unsupported-ph") );
+    m_netProxy->setPlaceholderText( WString::tr("lcw-net-proxy-unsupported-ph") );
     HelpSystem::attachToolTipOn( m_netProxy, WString::tr("lcw-net-proxy-unsupported")
-                              .arg( WString::fromUTF8(NativeHttp::backendName()) ), Wt::TextFormat::XHTML );
+                              .arg( WString::fromUTF8(NativeHttp::backendName()) ), showToolTips );
   }
 
   m_netProxy->changed().connect( std::bind( [this](){
@@ -469,7 +489,7 @@ void LlmConfigWindow::buildUi()
   caLbl->addStyleClass( "LcwFieldLabel" );
   m_netCaBundle = m_netDetail->addNew<WLineEdit>();
   m_netCaBundle->addStyleClass( "LcwInput LcwMono" );
-  m_netCaBundle->setEmptyText( WString::tr("lcw-net-ca-ph") );
+  m_netCaBundle->setPlaceholderText( WString::tr("lcw-net-ca-ph") );
   m_netCaBundle->setText( WString::fromUTF8( m_working.llmApi.httpCaBundlePath ) );
   HelpSystem::attachToolTipOn( m_netCaBundle, WString::tr("lcw-net-ca-tip"), showToolTips );
   m_netCaBundle->changed().connect( std::bind( [this](){

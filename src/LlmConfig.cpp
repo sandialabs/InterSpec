@@ -631,7 +631,7 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
       if( !mcpServerNode )
         throw runtime_error( "Missing 'McpServer' node." );
 
-      static_assert( McpServer::sm_xmlSerializationVersion == 0,
+      static_assert( McpServer::sm_xmlSerializationVersion == 1,
                     "needs to be updated for new serialization version." );
       XmlUtils::check_xml_version( mcpServerNode, McpServer::sm_xmlSerializationVersion );
 
@@ -639,6 +639,15 @@ std::pair<LlmConfig::LlmApi, LlmConfig::McpServer> LlmConfig::loadApiAndMcpConfi
 #if( MCP_ENABLE_AUTH )
       mcpServer.bearerToken = XmlUtils::get_string_node_value( mcpServerNode, "BearerToken" );
 #endif
+
+      // Version 1 fields - gracefully default to false if missing (backwards compat with version 0)
+      const rapidxml::xml_node<char> *allowPromptNode = XML_FIRST_NODE( mcpServerNode, "AllowAssistantPrompt" );
+      if( allowPromptNode )
+        mcpServer.allowAssistantPrompt = XmlUtils::get_bool_node_value( mcpServerNode, "AllowAssistantPrompt" );
+
+      const rapidxml::xml_node<char> *allowAgentNode = XML_FIRST_NODE( mcpServerNode, "AllowAgentInvocation" );
+      if( allowAgentNode )
+        mcpServer.allowAgentInvocation = XmlUtils::get_bool_node_value( mcpServerNode, "AllowAgentInvocation" );
     }// End load MCP server settings
 
     return std::make_pair( llmApi, mcpServer );
@@ -855,6 +864,8 @@ std::string LlmConfig::toXmlString( const LlmConfig &config )
 #if( MCP_ENABLE_AUTH )
   XmlUtils::append_string_node( mcpServer, "BearerToken", config.mcpServer.bearerToken );
 #endif
+  XmlUtils::append_bool_node( mcpServer, "AllowAssistantPrompt", config.mcpServer.allowAssistantPrompt );
+  XmlUtils::append_bool_node( mcpServer, "AllowAgentInvocation", config.mcpServer.allowAgentInvocation );
 
   std::string out;
   rapidxml::print( std::back_inserter(out), doc, 0 );

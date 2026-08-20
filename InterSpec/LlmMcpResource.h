@@ -26,11 +26,14 @@
 #include "InterSpec_config.h"
 
 #include <map>
+#include <deque>
+#include <mutex>
 #include <atomic>
 #include <chrono>
 #include <future>
 #include <memory>
 #include <string>
+#include <vector>
 #include <variant>
 
 #include <Wt/WResource.h>
@@ -138,6 +141,30 @@ private:
     std::string tool_name;
     int timeout_ms = 0;
     std::chrono::steady_clock::time_point deadline;
+
+    /** Thread-safe queue of streaming progress events for tools with asyncStreamingExecutor. */
+    mutable std::mutex progressMutex;
+    std::deque<nlohmann::json> progressQueue;
+
+    void pushProgress( const nlohmann::json &item )
+    {
+      std::lock_guard<std::mutex> lock( progressMutex );
+      progressQueue.push_back( item );
+    }
+
+    bool hasProgress() const
+    {
+      std::lock_guard<std::mutex> lock( progressMutex );
+      return !progressQueue.empty();
+    }
+
+    std::vector<nlohmann::json> drainProgress()
+    {
+      std::lock_guard<std::mutex> lock( progressMutex );
+      std::vector<nlohmann::json> items( progressQueue.begin(), progressQueue.end() );
+      progressQueue.clear();
+      return items;
+    }
   };
 
   /** Handles continuation re-entries for SSE streaming of async tool results.

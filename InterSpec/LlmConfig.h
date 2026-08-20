@@ -441,7 +441,7 @@ public:
   /** MCP server settings */
   struct McpServer
   {
-    static const int sm_xmlSerializationVersion = 0;
+    static const int sm_xmlSerializationVersion = 1;
     static const std::string sm_invalid_bearer_token;
 
     bool enabled = false;
@@ -454,6 +454,17 @@ public:
      */
     std::string bearerToken = McpServer::sm_invalid_bearer_token;
 #endif
+
+    /** When true (and an LLM provider is configured), expose the `assistant_submit_prompt` MCP tool
+     that lets an MCP client submit text into the assistant GUI as if the user typed it.
+     Intermediate results (tool calls, sub-agent responses) are streamed as SSE progress events.
+     */
+    bool allowAssistantPrompt = false;
+
+    /** When true (and an LLM provider is configured), expose the `invoke_agent` MCP tool that lets
+     an MCP client directly invoke a specialized agent (NuclideId, ActivityFit, etc.) with a prompt.
+     */
+    bool allowAgentInvocation = false;
   };//struct McpServer
   
 public:

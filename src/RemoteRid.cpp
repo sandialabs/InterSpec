@@ -1480,7 +1480,8 @@ public:
         }
         
         const Json::Value &name = option.get("name");
-        if( name != "drf" )
+        const std::string &namestr = name;
+        if( namestr != "drf" )
           continue;
         
         const Json::Array &possibleValues = option.get("possibleValues");

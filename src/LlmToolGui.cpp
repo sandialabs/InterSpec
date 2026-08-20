@@ -1282,6 +1282,10 @@ void LlmToolGui::cancelCurrentRequest()
   // Re-enable the input
   setInputEnabled(true);
 
+  // If an MCP prompt was in flight, resolve it as failed so the SSE stream ends
+  // and the queue can drain to the next entry.
+  resolveActiveMcpPrompt( false );
+
   // Note: We can't actually cancel the HTTP request from C++, but the response will be ignored
   // when it comes back since we've cleared the pending request state
 }
@@ -1376,7 +1380,8 @@ void LlmToolGui::submitMessageAsUser( const string &message )
 }
 
 
-void LlmToolGui::queuePromptForMcp( const string &prompt, McpPromptCallback callback )
+void LlmToolGui::queuePromptForMcp( const string &prompt, McpPromptCallback callback,
+                                    McpProgressCallback progressCallback )
 {
   if( !callback )
     return;
@@ -1399,15 +1404,14 @@ void LlmToolGui::queuePromptForMcp( const string &prompt, McpPromptCallback call
     return;
   }
 
-  m_mcpPromptQueue.push_back( PendingMcpPrompt{ prompt, std::move( callback ) } );
+  m_mcpPromptQueue.push_back( PendingMcpPrompt{ prompt, std::move( callback ), std::move( progressCallback ) } );
   drainMcpPromptQueue();
 }
 
 
 void LlmToolGui::drainMcpPromptQueue()
 {
-  // Only submit when the conversation is fully idle and no MCP prompt is already in flight;
-  //  submitting mid-turn would be interpreted as a "Stop" (see handleSendButton).
+  // Only dispatch when no MCP request is already in flight and the conversation is idle.
   if( m_activeMcpCallback || m_isRequestPending || m_mcpPromptQueue.empty() )
     return;
 
@@ -1427,18 +1431,33 @@ void LlmToolGui::drainMcpPromptQueue()
   PendingMcpPrompt next = std::move( m_mcpPromptQueue.front() );
   m_mcpPromptQueue.pop_front();
   m_activeMcpCallback = std::move( next.callback );
+  m_activeProgressCallback = std::move( next.progressCallback );
 
   submitMessageAsUser( next.prompt );
 
   // If the turn did not actually start (e.g. input unavailable / validation refused it),
   //  fail fast so the waiting MCP call doesn't hang, and move on to the next queued prompt.
   if( !m_isRequestPending )
+  {
     resolveActiveMcpPrompt( false );
+  }else if( m_activeProgressCallback && m_llmInterface )
+  {
+    // Connect to the conversation's responseAdded signal for streaming progress
+    const std::shared_ptr<LlmConversationHistory> history = m_llmInterface->getHistory();
+    if( history )
+    {
+      const std::vector<std::shared_ptr<LlmInteraction>> &conversations = history->getConversations();
+      if( !conversations.empty() )
+        connectMcpProgressToConversation( conversations.back() );
+    }
+  }
 }
 
 
 void LlmToolGui::resolveActiveMcpPrompt( bool success )
 {
+  disconnectMcpProgress();
+
   if( m_activeMcpCallback )
   {
     McpPromptCallback cb = std::move( m_activeMcpCallback );
@@ -1506,6 +1525,202 @@ nlohmann::json LlmToolGui::buildMcpPromptResult() const
   }
 
   return result;
+}
+
+
+nlohmann::json LlmToolGui::buildMcpAgentResult( const shared_ptr<LlmInteraction> &convo ) const
+{
+  nlohmann::json result;
+  result["response"] = "";
+  result["tool_calls"] = nlohmann::json::array();
+
+  if( !convo )
+    return result;
+
+  for( int i = static_cast<int>( convo->responses.size() ) - 1; i >= 0; --i )
+  {
+    const shared_ptr<LlmInteractionTurn> &turn = convo->responses[i];
+    if( turn && (turn->type() == LlmInteractionTurn::Type::FinalLlmResponse) )
+    {
+      const LlmInteractionFinalResponse *finalResp
+                       = dynamic_cast<const LlmInteractionFinalResponse *>( turn.get() );
+      if( finalResp )
+      {
+        result["response"] = finalResp->content();
+        break;
+      }
+    }
+  }
+
+  for( const shared_ptr<LlmInteractionTurn> &turn : convo->responses )
+  {
+    if( !turn || (turn->type() != LlmInteractionTurn::Type::ToolCall) )
+      continue;
+
+    const LlmToolRequest *req = dynamic_cast<const LlmToolRequest *>( turn.get() );
+    if( !req )
+      continue;
+
+    for( const LlmToolCall &call : req->toolCalls() )
+      result["tool_calls"].push_back( call.toolName );
+  }
+
+  return result;
+}
+
+
+nlohmann::json LlmToolGui::buildProgressFromTurn( const shared_ptr<LlmInteractionTurn> &turn ) const
+{
+  nlohmann::json progress;
+  if( !turn )
+    return progress;
+
+  switch( turn->type() )
+  {
+    case LlmInteractionTurn::Type::FinalLlmResponse:
+    {
+      progress["type"] = "assistant_response";
+      const LlmInteractionFinalResponse *resp
+        = dynamic_cast<const LlmInteractionFinalResponse *>( turn.get() );
+      if( resp )
+        progress["content"] = resp->content();
+      break;
+    }
+
+    case LlmInteractionTurn::Type::ToolCall:
+    {
+      progress["type"] = "tool_call";
+      const LlmToolRequest *req = dynamic_cast<const LlmToolRequest *>( turn.get() );
+      if( req )
+      {
+        nlohmann::json tools = nlohmann::json::array();
+        for( const LlmToolCall &call : req->toolCalls() )
+          tools.push_back( call.toolName );
+        progress["tools"] = std::move( tools );
+      }
+      break;
+    }
+
+    case LlmInteractionTurn::Type::ToolResult:
+    {
+      progress["type"] = "tool_result";
+      const LlmToolResults *results = dynamic_cast<const LlmToolResults *>( turn.get() );
+      if( results )
+      {
+        nlohmann::json tools = nlohmann::json::array();
+        for( const LlmToolCall &call : results->toolCalls() )
+        {
+          nlohmann::json entry;
+          entry["name"] = call.toolName;
+          if( call.status == LlmToolCall::CallStatus::Success )
+          {
+            // Include a truncated version of the result for progress reporting
+            const string &content = call.content;
+            if( content.size() > 500 )
+              entry["content"] = content.substr( 0, 500 ) + "...";
+            else
+              entry["content"] = content;
+          }else if( call.status == LlmToolCall::CallStatus::Error )
+          {
+            entry["error"] = call.content;
+          }
+
+          if( call.imageContent.has_value() )
+          {
+            entry["image"] = nlohmann::json{
+              {"mimeType", call.imageContent->mimeType},
+              {"data", call.imageContent->base64Data}
+            };
+          }
+
+          tools.push_back( std::move( entry ) );
+        }
+        progress["results"] = std::move( tools );
+      }
+      break;
+    }
+
+    case LlmInteractionTurn::Type::Error:
+    {
+      progress["type"] = "error";
+      const LlmInteractionError *err = dynamic_cast<const LlmInteractionError *>( turn.get() );
+      if( err )
+        progress["content"] = err->errorMessage();
+      break;
+    }
+
+    default:
+      progress["type"] = "other";
+      break;
+  }//switch( turn->type() )
+
+  return progress;
+}
+
+
+void LlmToolGui::connectMcpProgressToConversation( const shared_ptr<LlmInteraction> &convo )
+{
+  if( !convo || !m_activeProgressCallback )
+    return;
+
+  m_mcpResponseAddedConn = convo->responseAdded.connect(
+    [this]( shared_ptr<LlmInteractionTurn> turn )
+    {
+      if( !m_activeProgressCallback )
+        return;
+
+      nlohmann::json progress = buildProgressFromTurn( turn );
+      if( !progress.empty() )
+        m_activeProgressCallback( progress );
+    }
+  );
+}
+
+
+void LlmToolGui::disconnectMcpProgress()
+{
+  m_mcpResponseAddedConn.disconnect();
+  m_activeProgressCallback = McpProgressCallback();
+}
+
+
+void LlmToolGui::invokeAgentForMcp( AgentType agentType, const string &prompt,
+                                    McpPromptCallback callback, McpProgressCallback progressCallback )
+{
+  if( !callback )
+    return;
+
+  if( prompt.empty() )
+  {
+    callback( string( "Empty prompt: nothing to submit." ) );
+    return;
+  }
+
+  if( !m_llmInterface )
+  {
+    callback( string( "The LLM assistant is not configured for this session." ) );
+    return;
+  }
+
+  if( agentType == AgentType::MainAgent || agentType == AgentType::McpServer )
+  {
+    callback( string( "Cannot directly invoke MainAgent or McpServer agent types." ) );
+    return;
+  }
+
+  if( isBenchmarkRunning() )
+  {
+    callback( string( "A benchmark is currently running; cannot invoke agent right now." ) );
+    return;
+  }
+
+  // Build a prompt that instructs the assistant to invoke the specific agent tool.
+  // This goes through the normal UI conversation flow, so the user sees the agent in the chat.
+  const string agentName = agentTypeToString( agentType );
+  const string wrappedPrompt = "Please use the invoke_" + agentName
+    + " tool to handle the following request:\n\n" + prompt;
+
+  queuePromptForMcp( wrappedPrompt, std::move( callback ), std::move( progressCallback ) );
 }
 
 

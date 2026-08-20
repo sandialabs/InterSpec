@@ -198,12 +198,20 @@
   served on - see `HttpPortToServeOn` in InterSpec_app_settings.json - by default it is a random high-numbered
   port.
    -->
-  <McpServer version="0">
+  <McpServer version="1">
     <Enabled>false</Enabled>
 
     <!-- The bearer token required to access the MCP instance. If empty, no authorization will be required.
     But you must change this from "INVALID-BEARER-TOKEN" if you enable this capability.
      -->
     <BearerToken>INVALID-BEARER-TOKEN</BearerToken>
+
+    <!-- Allow MCP clients to submit prompts to the LLM assistant (requires a configured LLM provider).
+    Intermediate results (tool calls, sub-agent responses) are streamed as SSE progress events. -->
+    <AllowAssistantPrompt>false</AllowAssistantPrompt>
+
+    <!-- Allow MCP clients to directly invoke specialized agents like NuclideId, ActivityFit, etc.
+    (requires a configured LLM provider). -->
+    <AllowAgentInvocation>false</AllowAgentInvocation>
   </McpServer>
 </LlmConfig>

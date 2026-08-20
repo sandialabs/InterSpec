@@ -2669,19 +2669,19 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
     }
   }//for( loop over tool configs )
 
-#if( PERFORM_DEVELOPER_CHECKS )
-  // Developer/automation-only MCP tool: submit a prompt into the assistant conversation as if the
-  // user typed it, and (async) block until the whole turn finishes, returning the final response.
-  // Registered programmatically (not from llm_tools_config.xml) so the shipping tool surface is
-  // untouched, and marked MCP-only via AgentType::McpServer so no in-app agent can call it.
+  // MCP tool: submit a prompt into the assistant conversation as if the user typed it, with
+  // streaming intermediate results.  Gated by config.mcpServer.allowAssistantPrompt and a valid
+  // LLM provider; marked MCP-only via AgentType::McpServer so no in-app agent can call it.
+  if( config.mcpServer.allowAssistantPrompt && config.llmApi.enabled )
   {
     SharedTool submitTool;
     submitTool.name = "assistant_submit_prompt";
     submitTool.description =
-      "[Automation] Submit a prompt into the active InterSpec assistant conversation as if the user"
-      " typed it, then wait until the assistant's turn (including all tool calls and sub-agents)"
-      " finishes.  Returns the assistant's final response text plus a compact list of the tools it"
-      " called.  Prompts submitted while a turn is already in progress are queued and run in order."
+      "Submit a prompt into the InterSpec assistant conversation as if the user typed it, then wait"
+      " until the assistant's turn (including all tool calls and sub-agents) finishes.  Returns the"
+      " assistant's final response text plus a compact list of the tools it called.  Intermediate"
+      " results (tool calls, results, sub-agent responses) are streamed as progress events."
+      "  Prompts submitted while a turn is already in progress are queued and run in order."
       " Refused while a benchmark is running.";
     submitTool.mcpDescription = submitTool.description;
     submitTool.parameters_schema = json::parse(R"({
@@ -2695,18 +2695,28 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
         "required": ["prompt"]
       })");
     submitTool.availableForAgents = { AgentType::McpServer };
-
-    // A turn is legitimately open-ended, so this needs a far larger deadline than a normal tool -
-    // see sm_assistant_prompt_tool_timeout_ms for why it cannot be derived from the watchdog.
     submitTool.asyncTimeoutMs = sm_assistant_prompt_tool_timeout_ms;
 
-    submitTool.asyncExecutor = [](const json& params, InterSpec* interspec,
+    submitTool.asyncStreamingExecutor = []( const json &params, InterSpec *interspec,
         shared_ptr<LlmInteraction>, LlmConversationHistory*,
-        SharedTool::AsyncCallback callback) {
-      LlmToolGui *gui = interspec ? interspec->currentLlmTool() : nullptr;
+        SharedTool::AsyncCallback callback, SharedTool::AsyncProgressFn progressFn )
+    {
+      if( !interspec )
+      {
+        callback( std::string( "No InterSpec session available." ) );
+        return;
+      }
+
+      LlmToolGui *gui = interspec->currentLlmTool();
       if( !gui )
       {
-        callback( std::string("No active LLM GUI session - cannot submit a prompt.") );
+        interspec->createLlmTool();
+        gui = interspec->currentLlmTool();
+      }
+
+      if( !gui )
+      {
+        callback( std::string( "Failed to create LLM assistant session." ) );
         return;
       }
 
@@ -2714,12 +2724,100 @@ void ToolRegistry::registerDefaultTools( const LlmConfig &config )
       if( params.contains("prompt") && params["prompt"].is_string() )
         prompt = params["prompt"].get<std::string>();
 
-      gui->queuePromptForMcp( prompt, std::move(callback) );
+      gui->queuePromptForMcp( prompt, std::move( callback ), std::move( progressFn ) );
     };
 
     registerTool( submitTool );
-  }
-#endif // PERFORM_DEVELOPER_CHECKS
+  }//if( config.mcpServer.allowAssistantPrompt && config.llmApi.enabled )
+
+  // MCP tool: directly invoke a specialized agent (NuclideId, ActivityFit, etc.) with a prompt.
+  // Gated by config.mcpServer.allowAgentInvocation and a valid LLM provider.
+  if( config.mcpServer.allowAgentInvocation && config.llmApi.enabled )
+  {
+    // Build the enum list of available agent types for the schema
+    json agentEnum = json::array();
+    for( const LlmConfig::AgentConfig &ac : config.agents )
+    {
+      if( ac.type != AgentType::MainAgent && ac.type != AgentType::McpServer )
+        agentEnum.push_back( ac.name );
+    }
+
+    SharedTool agentTool;
+    agentTool.name = "invoke_agent";
+    agentTool.description =
+      "Directly invoke a specialized InterSpec agent with a prompt.  The agent runs with its own"
+      " system prompt and tool set, and intermediate results are streamed as progress events."
+      "  Returns the agent's final response text and a list of tools it called.";
+    agentTool.mcpDescription = agentTool.description;
+
+    json schema = json::parse(R"({
+        "type": "object",
+        "properties": {
+          "agent_type": {
+            "type": "string",
+            "description": "The type of agent to invoke."
+          },
+          "prompt": {
+            "type": "string",
+            "description": "The task or question to give the agent."
+          }
+        },
+        "required": ["agent_type", "prompt"]
+      })");
+
+    if( !agentEnum.empty() )
+      schema["properties"]["agent_type"]["enum"] = agentEnum;
+
+    agentTool.parameters_schema = std::move( schema );
+    agentTool.availableForAgents = { AgentType::McpServer };
+    agentTool.asyncTimeoutMs = sm_assistant_prompt_tool_timeout_ms;
+
+    agentTool.asyncStreamingExecutor = []( const json &params, InterSpec *interspec,
+        shared_ptr<LlmInteraction>, LlmConversationHistory*,
+        SharedTool::AsyncCallback callback, SharedTool::AsyncProgressFn progressFn )
+    {
+      if( !interspec )
+      {
+        callback( std::string( "No InterSpec session available." ) );
+        return;
+      }
+
+      LlmToolGui *gui = interspec->currentLlmTool();
+      if( !gui )
+      {
+        interspec->createLlmTool();
+        gui = interspec->currentLlmTool();
+      }
+
+      if( !gui )
+      {
+        callback( std::string( "Failed to create LLM assistant session." ) );
+        return;
+      }
+
+      std::string agentName;
+      if( params.contains("agent_type") && params["agent_type"].is_string() )
+        agentName = params["agent_type"].get<std::string>();
+
+      std::string prompt;
+      if( params.contains("prompt") && params["prompt"].is_string() )
+        prompt = params["prompt"].get<std::string>();
+
+      AgentType agentType;
+      try
+      {
+        agentType = stringToAgentType( agentName );
+      }catch( const std::exception & )
+      {
+        callback( std::string( "Unknown agent type: " + agentName ) );
+        return;
+      }
+
+      gui->invokeAgentForMcp( agentType, prompt, std::move( callback ), std::move( progressFn ) );
+    };
+
+    registerTool( agentTool );
+  }//if( config.mcpServer.allowAgentInvocation && config.llmApi.enabled )
 
   bool loaded_deep_research_skills = false;
   LlmDeepResearch::registerDeepResearchTools( config.llmApi.deep_research_url,
@@ -2978,8 +3076,8 @@ std::map<std::string, const SharedTool*> ToolRegistry::getToolsForMcp() const
 
   for( const auto &[toolName, tool] : m_tools )
   {
-    // Skip agent invocation tools
-    if( toolName.find( "invoke_" ) == 0 )
+    // Skip per-agent invocation tools (invoke_NuclideId, etc.), but keep invoke_agent
+    if( toolName.find( "invoke_" ) == 0 && toolName != "invoke_agent" )
       continue;
 
     // Skip deep research tools

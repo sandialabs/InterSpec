@@ -60,6 +60,9 @@ struct SharedTool {
     // Callback for async tool results: JSON for success, string for error message.
     using AsyncCallback = std::function<void( std::variant<nlohmann::json, std::string> )>;
 
+    // Callback for streaming progress updates (called 0+ times before the completion callback).
+    using AsyncProgressFn = std::function<void( const nlohmann::json& )>;
+
     // Optional async executor for tools that are too slow for the GUI thread.
     // When set, the tool runs its expensive work in a background thread and calls
     // the AsyncCallback exactly once on the GUI thread with either a result JSON or error string.
@@ -68,6 +71,13 @@ struct SharedTool {
         std::shared_ptr<LlmInteraction>, LlmConversationHistory*,
         AsyncCallback)> asyncExecutor;
 
+    // Optional streaming async executor: like asyncExecutor but also receives a progress callback
+    // that can be called multiple times with intermediate results before the final completion.
+    // When set, preferred over asyncExecutor for SSE-capable clients.
+    std::function<void(const nlohmann::json&, InterSpec*,
+        std::shared_ptr<LlmInteraction>, LlmConversationHistory*,
+        AsyncCallback, AsyncProgressFn)> asyncStreamingExecutor;
+
     /** How long the consumer should wait for asyncExecutor's callback before giving up and reporting a
      tool error, in milliseconds; 0 means use `sm_default_async_timeout_ms`.  Set a short value for
      tools whose work is a browser round-trip rather than computation, so a lost round-trip is
@@ -75,7 +85,8 @@ struct SharedTool {
      */
     int asyncTimeoutMs = 0;
 
-    bool isAsync() const { return static_cast<bool>( asyncExecutor ); }
+    bool isAsync() const { return static_cast<bool>( asyncExecutor ) || static_cast<bool>( asyncStreamingExecutor ); }
+    bool isStreaming() const { return static_cast<bool>( asyncStreamingExecutor ); }
 
     // Agent-specific configurations
     std::vector<AgentType> availableForAgents;  // List of agent types that can use this tool (empty = all agents)
