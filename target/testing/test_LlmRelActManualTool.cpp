@@ -26,9 +26,9 @@
 #include <string>
 #include <iostream>
 
-#include <Wt/Utils>
-#include <Wt/WApplication>
-#include <Wt/Test/WTestEnvironment>
+#include <Wt/Utils.h>
+#include <Wt/WApplication.h>
+#include <Wt/Test/WTestEnvironment.h>
 
 #ifdef _WIN32
 #include "winsock2.h"
@@ -148,7 +148,7 @@ public:
     // Create a test environment
     const std::string applicationPath = "";
     const std::string configurationFile = "";
-    m_env.reset( new Wt::Test::WTestEnvironment( applicationPath, configurationFile, Wt::Application ) );
+    m_env.reset( new Wt::Test::WTestEnvironment( applicationPath, configurationFile, Wt::EntryPointType::Application ) );
     m_env->setAppRoot( wt_app_root );
 
     // Create the app
@@ -221,7 +221,7 @@ public:
       {
         const shared_ptr<const SpecUtils::Measurement> m = meas->measurement_at_index(0);
         BOOST_REQUIRE( !!m );
-        m_interspec->setSpectrum( meas, {m->sample_number()}, SpecUtils::SpectrumType::Foreground, 0 );
+        m_interspec->setSpectrum( meas, {m->sample_number()}, SpecUtils::SpectrumType::Foreground );
         BOOST_TEST_MESSAGE( "Loaded test spectrum: " << spectrum_file );
       }
       else
@@ -240,7 +240,7 @@ public:
     // Create synthetic peaks with U235 and U238 source assignments for testing
     // This simulates having already fit peaks in the spectrum
     
-    PeakModel *peakModel = m_interspec->peakModel();
+    const std::shared_ptr<PeakModel> peakModel = m_interspec->peakModel();
     if( !peakModel )
     {
       BOOST_TEST_MESSAGE( "No peak model available" );

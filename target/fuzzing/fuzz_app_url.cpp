@@ -25,8 +25,8 @@
 #include <string>
 #include <unistd.h>
 
-#include <Wt/WApplication>
-#include <Wt/Test/WTestEnvironment>
+#include <Wt/WApplication.h>
+#include <Wt/Test/WTestEnvironment.h>
 
 #include "SpecUtils/Filesystem.h"
 
@@ -106,7 +106,7 @@ extern "C" int LLVMFuzzerInitialize( int * /*argc*/, char *** /*argv*/ )
                               SpecUtils::append_path( datadir, "..") );
 
   g_holder = std::make_unique<FuzzAppHolder>();
-  g_holder->env.reset( new Wt::Test::WTestEnvironment( "", "", Wt::Application ) );
+  g_holder->env.reset( new Wt::Test::WTestEnvironment( "", "", Wt::EntryPointType::Application ) );
   g_holder->env->setAppRoot( wt_app_root );
 
   g_holder->app = new InterSpecApp( *g_holder->env );

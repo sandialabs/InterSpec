@@ -27,9 +27,9 @@
 #include <fstream>
 #include <iostream>
 
-#include <Wt/Utils>
-#include <Wt/WApplication>
-#include <Wt/Test/WTestEnvironment>
+#include <Wt/Utils.h>
+#include <Wt/WApplication.h>
+#include <Wt/Test/WTestEnvironment.h>
 
 #ifdef _WIN32
 #include "winsock2.h"
@@ -159,7 +159,7 @@ public:
     // Create a test environment
     const std::string applicationPath = "";
     const std::string configurationFile = "";
-    m_env.reset( new Wt::Test::WTestEnvironment( applicationPath, configurationFile, Wt::Application ) );
+    m_env.reset( new Wt::Test::WTestEnvironment( applicationPath, configurationFile, Wt::EntryPointType::Application ) );
     m_env->setAppRoot( wt_app_root );
 
     // Create the app
@@ -629,9 +629,9 @@ namespace
     const int use_fore_sample = background_as_foreground ? short_bkg_sample : fore_sample;
     BOOST_REQUIRE( use_fore_sample != -999 );
 
-    interspec->setSpectrum( fore_meas, {use_fore_sample}, SpecUtils::SpectrumType::Foreground, 0 );
+    interspec->setSpectrum( fore_meas, {use_fore_sample}, SpecUtils::SpectrumType::Foreground );
     Wt::WApplication::instance()->processEvents();
-    interspec->setSpectrum( back_meas, {long_bkg_sample}, SpecUtils::SpectrumType::Background, 0 );
+    interspec->setSpectrum( back_meas, {long_bkg_sample}, SpecUtils::SpectrumType::Background );
     Wt::WApplication::instance()->processEvents();
   }//load_pcf_fore_and_back(...)
 }//namespace
@@ -923,9 +923,9 @@ BOOST_FIXTURE_TEST_CASE( test_beta_continuum_case_manifest, InterSpecTestFixture
     const int fore_sample = resolve_manifest_sample( fore_meas, fore_sel, false );
     const int back_sample = resolve_manifest_sample( back_meas, back_sel, true );
 
-    m_interspec->setSpectrum( fore_meas, {fore_sample}, SpecUtils::SpectrumType::Foreground, 0 );
+    m_interspec->setSpectrum( fore_meas, {fore_sample}, SpecUtils::SpectrumType::Foreground );
     Wt::WApplication::instance()->processEvents();
-    m_interspec->setSpectrum( back_meas, {back_sample}, SpecUtils::SpectrumType::Background, 0 );
+    m_interspec->setSpectrum( back_meas, {back_sample}, SpecUtils::SpectrumType::Background );
     Wt::WApplication::instance()->processEvents();
 
     const AnalystChecks::BetaContinuumCheckOptions options;
