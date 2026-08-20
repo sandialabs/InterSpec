@@ -3590,10 +3590,12 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
     chartLayout->setContentsMargins( 4, 2, 4, 2 );
     chartLayout->setVerticalSpacing( 0 );
     chartLayout->addWidget( std::unique_ptr<WWidget>(m_chi2Plot),       0, 0 );
-    WContainerWidget *chartToolbar = new WContainerWidget();
-    chartToolbar->addStyleClass( "ChartToolbar" );
-    chartToolbar->addWidget( std::unique_ptr<WWidget>(m_showChiOnChart) );
-    chartLayout->addWidget( std::unique_ptr<WWidget>(chartToolbar), 1, 0, AlignmentFlag::Right );
+    auto belowChartPhoneOwner = std::make_unique<WContainerWidget>();
+    WContainerWidget *belowChartPhone = belowChartPhoneOwner.get();
+    belowChartPhone->addStyleClass( "ShieldSourceTrendRow" );
+    belowChartPhone->addWidget( std::move(trendTxtOwned) );
+    belowChartPhone->addWidget( std::unique_ptr<WWidget>(m_showChiOnChart) );
+    chartLayout->addWidget( std::move(belowChartPhoneOwner), 1, 0 );
     chartLayout->setRowStretch( 0, 1 );
 
     // The 3 tabs.
@@ -3617,32 +3619,6 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
     m_layout->setVerticalSpacing( 0 );
     m_layout->setHorizontalSpacing( 0 );
     m_layout->setRowStretch( 0, 1 );
-
-    tab->addTab( std::unique_ptr<WWidget>(peaksDiv), WString::tr("ssd-phone-tab-source-peaks"), ContentLoading::Eager);
-    tab->addTab( std::unique_ptr<WWidget>(sourceDiv), WString::tr("ssd-phone-tab-source-isotopes"), ContentLoading::Eager);
-    tab->addTab( std::unique_ptr<WWidget>(detectorDiv), WString::tr("ssd-phone-tab-shielding"), ContentLoading::Eager);
-
-    WContainerWidget *chartDiv = new WContainerWidget();
-    chartDiv->setOffsets(0);
-    chartDiv->setMargin(0);
-    chartDiv->setPadding(5);
-    WGridLayout *chartLayout = chartDiv->setLayout( std::make_unique<WGridLayout>() );
-    chartLayout->setContentsMargins(0, 0, 0, 0);
-
-    chartLayout->addWidget( std::unique_ptr<WWidget>(m_detectorDisplay),      0, 0, AlignmentFlag::Left );
-    chartLayout->addWidget( std::unique_ptr<WWidget>(addItemMenubutton),      0, 1, AlignmentFlag::Right);
-    chartLayout->addWidget( std::unique_ptr<WWidget>(m_chi2Plot),             1, 0, 1, 2 );
-    m_showChiOnChart->setWidth( 130 );
-    chartLayout->addWidget( std::move(trendTxtOwned),                        2, 0, AlignmentFlag::Left | AlignmentFlag::Middle );
-    chartLayout->addWidget( std::unique_ptr<WWidget>(m_showChiOnChart),       2, 1, AlignmentFlag::Right );
-    chartLayout->addWidget( std::unique_ptr<WWidget>(m_optionsDiv),           3, 0, 1, 2 );
-    chartLayout->addWidget( std::unique_ptr<WWidget>(m_fitModelButton),       4, 0, 1, 2, AlignmentFlag::Center );
-    chartLayout->addWidget( std::unique_ptr<WWidget>(m_fitProgressTxt),       5, 0, 1, 2, AlignmentFlag::Center );
-    chartLayout->addWidget( std::unique_ptr<WWidget>(m_cancelfitModelButton), 6, 0, 1, 2, AlignmentFlag::Center );
-
-
-    chartLayout->setRowStretch(1, 1);
-    tab->addTab( std::unique_ptr<WWidget>(chartDiv), "Fit", ContentLoading::Eager);
   }else
   {
     //regular layout
@@ -3685,10 +3661,6 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
     chartLayout->setContentsMargins( 0, 0, 0, 0 );
     chartLayout->addWidget( std::unique_ptr<WWidget>(m_chi2Plot), 0, 0 );
 
-    WContainerWidget *switchHolder = new WContainerWidget();
-    switchHolder->addStyleClass( "ChartToolbar" );
-    switchHolder->addWidget( std::unique_ptr<WWidget>(m_showChiOnChart) );
-    chartLayout->addWidget( std::unique_ptr<WWidget>(switchHolder), 1, 0, AlignmentFlag::Right );
     // A compact strip just below the chart holding the pull-trend message (left, ellipsized) and
     //  the Chi/Mult switch (right), inline.  It sits above the resize handle and just below the
     //  x-axis title (rather than overlaying the chart), so the message can't cover the title.

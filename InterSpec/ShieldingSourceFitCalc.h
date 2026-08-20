@@ -528,9 +528,6 @@ namespace ShieldingSourceFitCalc
      */
     std::vector<SupplementalPeakInfo> supplemental_peak_info;
 
-    /** Non-fatal problems encountered while computing `supplemental_peak_info`. */
-    std::vector<std::string> warnings;
-
     ShieldingSourceFitOptions options;
   };//struct ModelFitResults
     

@@ -462,6 +462,7 @@ T get_atten_coef_for_an( const T &an, const float energy )
   //  bound (that would zero its derivative), so the optimizer may evaluate a hair outside while the
   //  table lookup below stays valid via std::clamp.
   assert( (an_scalar >= 1.0 - 1.0e-3) && (an_scalar <= 98.0 + 1.0e-3) );
+#endif //NDEBUG
 
   return MassAttenuation::mass_atten_coef_frac_an( an, energy );
 }//T get_atten_coef_for_an( const T &an )

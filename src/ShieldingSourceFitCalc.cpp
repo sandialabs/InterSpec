@@ -2448,7 +2448,6 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
 }//fill_fit_results(...)
 
 
-void fit_model_minuit2( const std::string wtsession,
 namespace
 {
   /** Rebuilds a `SupplementalPeakInfo::description` from its parts, keeping the caveats last. */
@@ -2857,7 +2856,7 @@ vector<SupplementalPeakInfo> compute_supplemental_peak_info(
 }//vector<SupplementalPeakInfo> compute_supplemental_peak_info(...)
 
 
-void fit_model( const std::string wtsession,
+void fit_model_minuit2( const std::string wtsession,
                          std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
                          std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
                          std::shared_ptr<ShieldingSourceFitCalc::ModelFitProgress> progress,
@@ -4806,6 +4805,21 @@ void fit_model_ceres( const std::string wtsession,
     results->numDOF = ndof;
 
     fill_fit_results( chi2Fcn, fit_full, errors, ndof, results );
+
+    // Diagnose the per-peak pull trend vs energy (never let a diagnostic fail the fit).
+    try
+    {
+      const ShieldSourcePullTrend::FitConfigSummary trend_config =
+        ShieldSourcePullTrend::summarize_fit_config( chi2Fcn->initialShieldings(),
+                                                     chi2Fcn->initialSourceDefinitions() );
+      results->pull_trend = make_shared<const ShieldSourcePullTrend::TrendResult>(
+        ShieldSourcePullTrend::fit_pull_trend( *results->peak_comparisons,
+                                               *results->peak_calc_details,
+                                               chi2Fcn->initialShieldings(), trend_config ) );
+    }catch( std::exception & )
+    {
+      results->pull_trend = nullptr;
+    }
   }catch( GammaInteractionCalc::ShieldingSourceChi2Fcn::CancelException &e )
   {
     std::lock_guard<std::mutex> lock( results->m_mutex );
