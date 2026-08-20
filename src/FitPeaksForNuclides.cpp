@@ -7390,6 +7390,36 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
             continue;
           }
 
+          // The solver can also come back with an amplitude it could not actually determine: the new
+          //  source's gammas sitting on top of the bystander leave the pair degenerate, and the fit
+          //  reports an uncertainty as large as, or larger than, the amplitude itself.  That is not a
+          //  re-measurement of the user's peak, it is the fit saying it cannot tell, and swapping it
+          //  in trades a measured peak for a meaningless one.  A missing or non-finite uncertainty is
+          //  the same situation with even less to go on - and worse, the update below would then pair
+          //  the fit's new amplitude with the ORIGINAL peak's (small) uncertainty, reporting a
+          //  confident peak that nothing ever measured.  Both retain the original, for the same
+          //  reason as the non-positive-amplitude case above.
+          //
+          //  The test is deliberately scale-free rather than a significance threshold: this
+          //  uncertainty carries the solve's sqrt(chi2/dof) covariance inflation (RelActCalcAuto's
+          //  `m_cov_scale`), while the thresholds used to filter observable peaks are calibrated on
+          //  un-inflated ROI refits.  Comparing across those two scales would reject sound updates on
+          //  any fit with a large chi2/dof; "the uncertainty exceeds the amplitude" needs no
+          //  calibration to mean what it says.
+          if( !(fpr->amplitude_uncert > 0.0)   //`!(x > 0)` so a NaN uncertainty lands here too
+             || (fpr->amplitude_uncert >= fpr->amplitude) )
+          {
+#if( PERFORM_DEVELOPER_CHECKS )
+            if( should_debug_print() )
+            {
+              std::cerr << "ExistingPeaksAsFreePeak: bystander at " << orig_energy
+                   << " keV was not determined by the fit (amplitude " << fpr->amplitude
+                   << " +- " << fpr->amplitude_uncert << ") - retaining original." << std::endl;
+            }
+#endif
+            continue;
+          }//if( the fit did not determine this bystander's amplitude )
+
           // Create updated bystander: copy original to preserve source info, color, labels, etc.
           PeakDef updated_bystander( *orig_peak );
 
@@ -7437,8 +7467,20 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         std::vector<double> bystander_fp_energies;
         for( const auto &orig_and_energy : existing_peaks_added_as_floating )
         {
-          if( !peak_source_is_in_fit( orig_and_energy.first ) )
-            bystander_fp_energies.push_back( orig_and_energy.second );
+          if( peak_source_is_in_fit( orig_and_energy.first ) )
+            continue;
+
+          bystander_fp_energies.push_back( orig_and_energy.second );
+
+          // The observable being matched here is where the SOLVER put this floating peak, which the
+          //  energy-cal fit can move well away from where it went in - so also match on the fitted
+          //  energy.  Matching only the pre-fit energy leaves the tolerance below load-bearing for
+          //  how far the calibration moved: a bystander retained above stays in the peak list, so a
+          //  missed match here shows the same line twice, once from each.
+          const RelActCalcAuto::FloatingPeakResult *fpr
+                                     = find_floating_peak_result( orig_and_energy.second );
+          if( fpr )
+            bystander_fp_energies.push_back( fpr->original_spectrum_cal_energy );
         }
 
         if( !bystander_fp_energies.empty() )
