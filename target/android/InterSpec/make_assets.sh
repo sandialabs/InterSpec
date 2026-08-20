@@ -32,6 +32,35 @@ fi
 
 echo "Using Wt resources from: ${WT_RES}"
 
+# Stage the files that a desktop CMake build would generate into the source tree.
+#
+# For non-Android builds, CMake symlinks ${PROJECT_BINARY_DIR}/{data,InterSpec_resources} to the
+# source dirs, so its configure_file()/deploy_js_resource() rules land in the source tree.  Android
+# sets no such symlinks (SUPPORT_DIRECTORIES is empty when ANDROID), and this script runs before
+# CMake anyway -- so without staging them here the assets zip silently ships without the nuclide
+# database and the D3 spectrum chart, and the app is broken at runtime.
+stage_generated() {
+  local src="$1" dst="$2"
+  if [ ! -f "${src}" ]; then
+    echo "ERROR: expected generated-asset source is missing: ${src}" >&2
+    echo "  (are the git submodules checked out?)" >&2
+    exit 1
+  fi
+  if [ ! -f "${dst}" ] || [ "${src}" -nt "${dst}" ]; then
+    echo "Staging ${dst#${REPO_ROOT}/}"
+    mkdir -p "$(dirname "${dst}")"
+    cp "${src}" "${dst}"
+  fi
+}
+
+stage_generated "${REPO_ROOT}/external_libs/SandiaDecay/sandia.decay.min.xml" \
+                "${REPO_ROOT}/data/sandia.decay.xml"
+for _d3 in SpectrumChartD3.js SpectrumChartD3.css d3.v3.min.js; do
+  stage_generated "${REPO_ROOT}/external_libs/SpecUtils/d3_resources/${_d3}" \
+                  "${REPO_ROOT}/InterSpec_resources/${_d3}"
+done
+
+mkdir -p "$(dirname "${ASSETS_ZIP}")"
 rm -f "${ASSETS_ZIP}"
 
 # Zip InterSpec data from repo root

@@ -2470,6 +2470,9 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
     results->peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>(peak_comparisons) );
 
     // Diagnose the per-peak pull trend vs energy (never let a diagnostic fail the fit).
+    //  Uses the *fitted* shieldings and sources - the conclusions ("too much/little shielding",
+    //  "wrong effective atomic number") are about the model that was arrived at, not the guess it
+    //  started from.
     try
     {
       const vector<ShieldingSourceFitCalc::ShieldingInfo> shield_bases(

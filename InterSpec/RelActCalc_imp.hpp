@@ -535,7 +535,7 @@ T get_atten_coef_for_an( const T &an, const float energy )
   //  lookup stays valid regardless - `mass_atten_coef_frac_an` interpolates on the bounds
   //  themselves (keeping the derivative live there) and clamps only strictly outside them.
   assert( (an_scalar >= 1.0 - 1.0e-3) && (an_scalar <= 98.0 + 1.0e-3) );
-#endif
+#endif //NDEBUG
 
   return MassAttenuation::mass_atten_coef_frac_an( an, energy );
 }//T get_atten_coef_for_an( const T &an )

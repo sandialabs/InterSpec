@@ -11640,7 +11640,7 @@ std::vector<RelActCalcAuto::RoiRange> estimate_initial_rois_using_relactmanual(
     {
       std::cout << "Successfully fitted initial RelActCalcManual::RelEffSolution: chi2/dof="
       << manual_solution.m_chi2 << "/" << manual_solution.m_dof << "="
-      << manual_solution.m_chi2 / manual_solution.m_dof
+      << (manual_solution.m_chi2 / (std::max)(manual_solution.m_dof, 1))
       << " using " << peaks_matched.size() << " peaks"
       << std::endl;
       std::cout << std::endl;

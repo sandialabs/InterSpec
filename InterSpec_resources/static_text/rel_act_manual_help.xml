@@ -8,3 +8,69 @@ Please see tutorial at
 <a target="_blank" href="https://sandialabs.github.io/InterSpec/tutorials/rel_eff_peaks/20220922_InterSpec_RelEff_Peaks_SAND2022_15323TR.pdf">https://sandialabs.github.io/InterSpec/tutorials/rel_eff_peaks/20220922_InterSpec_RelEff_Peaks_SAND2022_15323TR.pdf</a>
 for use instructions.
 </p>
+
+<h2>Uncertainties, and the &quot;Add. Uncert&quot; option</h2>
+<p>
+The peaks you fit are usually far more precise than the relative efficiency model that is fit
+through them.  A high-statistics peak may be measured to a few tenths of a percent, while the
+efficiency curve typically only describes the data to a few percent, so that peak can sit many
+statistical sigma from the fitted curve without anything being wrong with the peak.  This is why
+the &chi;<sup>2</sup>/DOF shown with the results is often large - it is comparing the model against
+counting statistics alone.
+</p>
+<p>
+The &quot;Add. Uncert&quot; option controls how the peaks are weighted against each other, and how
+the uncertainties you are shown are arrived at:
+</p>
+<ul>
+  <li><b>Stat. Only</b> (default): each peak is weighted by its own counting statistics.  If the
+      peaks scatter about the fitted curve by more than their uncertainties allow, the reported
+      uncertainties are widened to reflect the scatter actually observed.  The widening is based on
+      the typical (median) peak, so one or two badly mis-fit peaks do not inflate everything - if
+      any peak is more than three sigma from the curve it is instead named in a warning, since
+      re-fitting that peak is usually the real fix.</li>
+  <li><b>Auto</b>: identical fitted values to Stat. Only, but the widening is applied to each
+      peak&#39;s uncertainty before fitting rather than to the final answer, so it is visible in the
+      chart&#39;s error bars and is stated with the results.  Every peak is scaled by the same factor,
+      which is why the fit itself does not move.</li>
+  <li><b>Strict Stat.</b>: the purely statistical uncertainty, as if the efficiency
+      model were exactly correct.  On real spectra this is usually much too small - use it only
+      when a statistics-only figure is specifically what you want.</li>
+  <li><b>1% - 100%</b>: adds a fixed uncertainty proportional to each peak&#39;s area.  This changes
+      how peaks are weighted <em>relative to each other</em>, taking influence away from the
+      high-statistics peaks.  Tested against certified uranium reference materials, this shifts the
+      fitted enrichment downward - by roughly 0.2 to 2 percentage points, growing with the
+      percentage and levelling off around 25%.  Keep this in mind if you use these settings.</li>
+  <li><b>Unweighted</b>: every peak contributes equally, regardless of its statistical
+      uncertainty.</li>
+</ul>
+<p>
+On the chart, the data-point error bars and the shaded band around the fitted curve are both
+1-sigma.  The point error bars are statistical only.
+</p>
+
+<h2>Profile likelihood uncertainties</h2>
+<p>
+Each nuclide panel has a <b>Profile uncert.</b> check-box.  When checked, that nuclide&#39;s
+uncertainty is found by pushing the quantity away from its fitted value while every other quantity
+is re-fit around it, and reading off where the &chi;<sup>2</sup> has risen by the amount
+corresponding to 68.3% and 95.4% confidence.  The quantity scanned is the nuclide&#39;s mass fraction
+of its element when the element has more than one isotope in the problem, and otherwise its
+relative activity.
+</p>
+<p>
+This gives an asymmetric interval, and unlike the usual uncertainty it stays meaningful when the
+answer is near a physical bound (0% or 100% for a fraction, zero for an activity), or when the
+problem is poorly constrained - situations where a symmetric &plusmn; is misleading.  Each step
+starts from the solution the fit already found, so it typically costs 6 to 8 extra fits - well
+under a second.  Results appear in the chart title and beneath the mass-fraction table.
+</p>
+<p>
+A note on relative activities with the empirical equation forms (everything except <em>FRAM
+Physical</em>): there, only the <em>product</em> of the efficiency curve and the activities is
+determined by the data, and the split between them is set by the convention that the average
+measured relative efficiency is 1.  The profile respects that convention, so the interval is a
+valid uncertainty on the reported activity - but if what you want is a quantity free of any
+convention, use a ratio of two activities.  With <em>FRAM Physical</em> the detector response sets
+the absolute scale, so this caveat does not apply.
+</p>

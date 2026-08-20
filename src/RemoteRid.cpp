@@ -1483,7 +1483,9 @@ public:
         const std::string &namestr = name;
         if( namestr != "drf" )
           continue;
-        
+
+        //const std::string &
+
         const Json::Array &possibleValues = option.get("possibleValues");
         for( size_t i = 0; i < possibleValues.size(); ++i )
         {

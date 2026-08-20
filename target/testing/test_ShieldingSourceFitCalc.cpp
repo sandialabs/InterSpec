@@ -1020,8 +1020,9 @@ BOOST_AUTO_TEST_CASE( FitGenericShieldingANBaseline )
   BOOST_REQUIRE_EQUAL( results->final_shieldings.size(), size_t(1) );
   BOOST_REQUIRE_EQUAL( results->fit_src_info.size(), size_t(1) );
 
-  // Note: `FitShieldingInfo::m_dimensions[1]` holds the generic areal density in InterSpec
-  //  internal units, the same as the input `ShieldingInfo` - see fill_fit_results().
+  // Note: for generic materials, `FitShieldingInfo::m_dimensions[1]` is the areal density in
+  //  InterSpec internal units - the same convention as the input `ShieldingInfo` - so convert to
+  //  g/cm2 to compare against the truth value.
   const double true_ad_g_cm2 = true_ad / (PhysicalUnits::g/PhysicalUnits::cm2);
   const double fit_an = results->final_shieldings[0].m_dimensions[0];
   const double fit_ad_g_cm2 = results->final_shieldings[0].m_dimensions[1]

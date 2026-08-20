@@ -23,7 +23,9 @@
   <message id="mrend-X(,)"></message>
   <message id="mrend-cb-decay-during-meas">Decay during meas.</message>
   <message id="mrend-tt-decay-during-meas">When checked, the nuclides decay during the measurement will be accounted for, with the quoted relative activity being the activity at the start of measurement.</message>
-  
+  <message id="mrend-cb-profile-uncert">Profile uncert.</message>
+  <message id="mrend-tt-profile-uncert">When checked, this nuclides uncertainty is computed with a profile-likelihood scan - after the fit, the quantity is pushed away from its fitted value while everything else is re-fit around it, and the 68.3% and 95.4% confidence intervals are read from where the chi-squared has risen by the corresponding amount.  The quantity scanned is this nuclides mass fraction of its element when the element has more than one isotope in the problem, and otherwise its relative activity.  This gives an asymmetric interval that stays valid near the physical bounds (0% and 100% for a fraction, zero for an activity), where the standard covariance-based uncertainty is unreliable.  It typically takes 6 to 8 extra fits, each starting from the fitted solution, so it usually adds well under a second.  Results appear in the chart title and below the mass-fraction table.</message>
+
   <!-- Message on the general GUI interface -->
   <message id="ramg-eqn-form-label">Eqn Form</message>
   <message id="ramg-options-label">Options</message>
@@ -70,19 +72,37 @@
   </message>
   <message id="ramg-add-uncert-label">Add. Uncert</message>
   <message id="ramg-tt-add-uncert">
-    An additional uncertainty to add to the relative efficiency line, for each fit photopeak.
+    How each peak is weighted in the relative efficiency fit, and how the resulting uncertainties
+    are reported.
     <br />
-    Small deviations in efficiency of detection for one or a few high statistics peaks can cause the
-    efficiency curve to notably deviate from the other points if only statical uncertainties are
-    used; when an additional uncertainty is added the relative efficiency will then do a better job
-    of visibly going through all the data points, and from limited testing produce more accurate
-    results.  You can think of this as adding a systematic uncertainty to each detected photopeak,
-    that is uncorrelated between peaks.  From limited testing the value used is not hugely
-    important, just as long as there is something.  You can also choose to use an unweighted fit,
-    where each peak will contribute to the fit equally, no matter its statistical uncertainty.
+    <b>Stat. Only</b> (default) weights each peak by its own counting statistics.  If the peaks
+    then scatter about the fitted curve by more than those uncertainties allow - which is usual,
+    since the efficiency model is never perfect - the reported uncertainties are widened to match
+    the scatter actually seen.  The widening ignores a few badly mis-fit peaks, so one bad peak
+    does not inflate everything.
+    <br />
+    <b>Auto</b> does the same thing, but applies the widening to each peak's uncertainty up front
+    rather than to the final answer, so you can see it in the chart's error bars.  Since every
+    peak is scaled by the same factor, the fitted values are identical to Stat. Only - only the
+    uncertainties differ in how they are presented.
+    <br />
+    <b>Strict Stat.</b> reports the purely statistical uncertainty, as if the
+    efficiency model were exactly right.  On real spectra this is usually much too small; use it
+    only when you specifically want the statistical figure.
+    <br />
+    <b>1% through 100%</b> add a fixed uncertainty in proportion to each peak's area.  Be aware
+    this changes how the peaks are weighted relative to each other - it takes influence away from
+    the high-statistics peaks - and against certified uranium reference materials it was found to
+    shift the fitted enrichment downward (by around 0.2 to 2 percentage points, growing with the
+    percentage and levelling off around 25%).  They are kept for compatibility and for cases where
+    you want to force the curve to pass more evenly through all the points.
+    <br />
+    <b>Unweighted</b> lets every peak contribute equally, no matter its statistical uncertainty.
   </message>
   <message id="ramg-unweighted-label">Unweighted</message>
   <message id="ramg-stat-only-label">Stat. Only</message>
+  <message id="ramg-auto-uncert-label">Auto</message>
+  <message id="ramg-stat-only-nowiden-label">Strict Stat.</message>
   <message id="ramg-back-sub-cb">Background Subtract</message>
   <message id="ramg-html-export-label">HTML Report</message>
   <message id="ramg-nucs-label">Nuclides</message>
@@ -106,8 +126,10 @@
   <message id="ramg-and-there-were">and there were</message>
   <message id="ramg-dof">DOF</message> <!-- Degrees of freedom -->
   <message id="ramg-fit-unweighted-txt">Fit was unweighted; uncertainties may not make sense.</message>
+  <message id="ramg-fit-stat-only-nowiden">Uncertainties are purely statistical - they have NOT been widened for how far the peaks sit from the fitted curve, so if the &chi;<sup>2</sup>/DOF above is large they are likely much too small.</message>
   <message id="ramg-fit-stat-only">Uncertainties are statistical only.</message>
   <message id="ramg-fit-uncert-increased">Uncertainties artificially increased by "Add. Uncert".</message>
+  <message id="ramg-fit-auto-stat-mult">Peak uncertainties were scaled by {1}x, estimated from the scatter of the peaks about the fit.  This widens the uncertainties without changing the fitted values; the &chi;<sup>2</sup>/DOF shown is still in terms of the peaks' statistical uncertainties.</message>
   <message id="ramg-consider-add-uncert-u">You may want to consider adding "Add. Uncert" for Uranium problems.</message>
   <message id="ramg-you-using-add-uncert-u">You are adding "Add. Uncert" - interpret computed uncertainties with care.</message>
   <message id="ramg-you-using-add-uncert-non-u">You are currently adding "Add. Uncert", which will cause computed uncertainties to not be correct.</message>

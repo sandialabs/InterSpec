@@ -43,7 +43,7 @@ namespace Wt
   class WPushButton;
 }
 class PopupDivMenu;
-class LlmInteraction;
+struct LlmInteraction;
 class LlmInteractionTurn;
 class LlmToolRequest;
 class LlmToolResults;

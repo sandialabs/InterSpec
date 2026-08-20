@@ -57,7 +57,7 @@ class GroupBox;
 class InjaLogDialog;
 class ShieldingDiagramDialog;
 class MaterialDB;
-class ColorTheme;
+struct ColorTheme;
 class PopupDivMenu;
 class SwitchCheckbox;
 class DetectorDisplay;
