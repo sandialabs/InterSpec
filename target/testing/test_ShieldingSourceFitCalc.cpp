@@ -687,46 +687,6 @@ deque<shared_ptr<const PeakDef>> peaks_with_model_expected_areas(
 }//namespace
 
 
-/** Minuit2 baseline: fit generic-shielding atomic number + areal density + source
- activity on synthetic peak areas generated from the forward model, so the true
- minimum is at known parameter values.
-
- This is the regression fixture the (future) Ceres-based driver gets compared
- against; the same fixture exercises the coarse atomic-number scan in fit_model.
- */
-BOOST_AUTO_TEST_CASE( FitGenericShieldingANBaseline )
-{
-  set_data_dir();
-
-  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
-  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
-
-  const SandiaDecay::Nuclide * const ba133 = db->nuclide( "Ba133" );
-  BOOST_REQUIRE( ba133 );
-
-  const double distance = 100*PhysicalUnits::cm;
-  const float live_time = 600*PhysicalUnits::second;
-  const double true_an = 26.0;
-  const double true_ad = 10.0*PhysicalUnits::g/PhysicalUnits::cm2;
-  const double true_activity = 10.0*PhysicalUnits::microCi;
-  const double age = 5.0*PhysicalUnits::year;
-
-  auto detector = make_shared<DetectorPeakResponse>();
-  detector->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, distance,
-                                    5*PhysicalUnits::cm, PhysicalUnits::keV,
-                                    0, 3000*PhysicalUnits::keV,
-                                    DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
-
-  auto foreground = make_shared<SpecUtils::Measurement>();
-  auto spec = make_shared<vector<float>>( 16, 1.0f );
-  foreground->set_gamma_counts( spec, live_time, live_time );
-
-  // Ba133s main lines; spanning 81 to 384 keV gives leverage on atomic number
-  //  (photoelectric component at low energy).
-  const double placeholder_area = 1.0E4;
-  deque<shared_ptr<const PeakDef>> truth_peaks;
-  for( const double energy : { 80.9979, 276.3989, 302.8508, 356.0129, 383.8485 } )
-    truth_peaks.push_back( make_test_peak( ba133, energy, 1.0, placeholder_area ) );
 /** Checks `ShieldingSourceDisplayState::fromFitResults(...)` - i.e., that the results of a fit can
  be turned into the `<ShieldingSourceFit>` XML, stored into a `SpecMeas`, written to a N42, and
  then read back to give the fit model.  This is what batch activity/shielding fits do to write
@@ -828,6 +788,168 @@ BOOST_AUTO_TEST_CASE( FitResultsToXmlRoundTrip )
   ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
   options.attenuate_for_air = false;
 
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+  chi_input.config.distance = distance;
+  chi_input.config.geometry = geometry;
+  chi_input.config.shieldings = shieldings;
+  chi_input.config.sources = src_definitions;
+  chi_input.config.options = options;
+  chi_input.detector = detector;
+  chi_input.foreground = foreground;
+  chi_input.background = nullptr;
+  chi_input.foreground_peaks = foreground_peaks;
+  chi_input.background_peaks = nullptr;
+
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
+                GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+
+  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+  *inputPrams = fcn_pars.second;
+
+  auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+  auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+
+  auto progress_fcn = [progress](){ };
+  auto finished_fcn = [results](){ };
+
+  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, progress_fcn,
+                                    results, finished_fcn );
+
+  BOOST_REQUIRE( results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final );
+  BOOST_REQUIRE( results->fit_src_info.size() == 1 );
+  BOOST_REQUIRE( results->final_shieldings.size() == 1 );
+
+
+  // Turn the fit results into the state, and check the state itself first
+  ShieldingSourceDisplay::ShieldingSourceDisplayState state;
+  BOOST_REQUIRE_NO_THROW( state = ShieldingSourceDisplay::ShieldingSourceDisplayState::fromFitResults( *results ) );
+  BOOST_REQUIRE( state.config );
+  BOOST_CHECK( state.peaks.size() == 1 );
+  if( state.peaks.size() == 1 )
+  {
+    BOOST_CHECK( state.peaks[0].use );
+    BOOST_CHECK( state.peaks[0].nuclideSymbol == "Cs137" );
+    BOOST_CHECK( fabs(state.peaks[0].energy - 661.657) < 1.0 );
+  }
+
+  // Serialize into a SpecMeas, write the N42 to a stream, and read that back in
+  SpecMeas specmeas;
+  {
+    auto meas = make_shared<SpecUtils::Measurement>( *foreground );
+    meas->set_sample_number( 1 );
+    specmeas.add_measurement( meas, true );
+
+    unique_ptr<rapidxml::xml_document<char>> model_xml( new rapidxml::xml_document<char>() );
+    BOOST_REQUIRE_NO_THROW( state.serialize( model_xml.get() ) );
+    specmeas.setShieldingSourceModel( std::move(model_xml) );
+  }
+
+  std::stringstream n42_strm;
+  BOOST_REQUIRE( specmeas.write_2012_N42( n42_strm ) );
+
+  SpecMeas reloaded;
+  BOOST_REQUIRE_MESSAGE( reloaded.load_from_N42( n42_strm ), "Failed to read back written N42" );
+
+  const rapidxml::xml_document<char> * const model_xml = reloaded.shieldingSourceModel();
+  BOOST_REQUIRE_MESSAGE( model_xml && model_xml->first_node(),
+                        "N42 written from fit results has no ShieldingSourceFit model in it" );
+
+  GammaInteractionCalc::ShieldSourceConfig read_config;
+  BOOST_REQUIRE_NO_THROW( read_config.deSerialize( model_xml->first_node() ) );
+
+
+  // Finally, compare what we read back against the fit results
+  const GammaInteractionCalc::ShieldSourceConfig &fit_config = *state.config;
+
+  BOOST_CHECK( read_config.geometry == fit_config.geometry );
+  BOOST_CHECK_MESSAGE( fabs(read_config.distance - fit_config.distance) < 1.0E-5*fit_config.distance,
+                      "Distance mismatch: wrote " << fit_config.distance
+                      << ", read back " << read_config.distance );
+
+  BOOST_REQUIRE( read_config.shieldings.size() == fit_config.shieldings.size() );
+  for( size_t i = 0; i < fit_config.shieldings.size(); ++i )
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingInfo::equalEnough( fit_config.shieldings[i],
+                                                                             read_config.shieldings[i] ) );
+
+  BOOST_REQUIRE( read_config.sources.size() == fit_config.sources.size() );
+  for( size_t i = 0; i < fit_config.sources.size(); ++i )
+    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::SourceFitDef::equalEnough( fit_config.sources[i],
+                                                                            read_config.sources[i] ) );
+
+  BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingSourceFitOptions::equalEnough( fit_config.options,
+                                                                                        read_config.options ) );
+
+  // And the fitted activity should have survived the round trip, as the models starting value
+  BOOST_REQUIRE( read_config.sources.size() == 1 );
+  const double fit_activity = results->fit_src_info[0].activity;
+  BOOST_CHECK_MESSAGE( fabs(read_config.sources[0].activity - fit_activity) < 1.0E-4*fit_activity,
+                      "Activity read back (" << read_config.sources[0].activity
+                      << ") didnt match the fit activity (" << fit_activity << ")" );
+
+  // Check the generic shieldings AN/AD against the values we put in (they were not fit for), in
+  //  absolute terms - i.e., that the areal density is in InterSpec internal units all the way
+  //  through, rather than just consistently wrong.
+  BOOST_REQUIRE( read_config.shieldings.size() == 1 );
+  BOOST_REQUIRE( read_config.shieldings[0].m_isGenericMaterial );
+  const double expected_an = shieldings[0].m_dimensions[0];
+  const double expected_ad = shieldings[0].m_dimensions[1];
+  const double read_an = read_config.shieldings[0].m_dimensions[0];
+  const double read_ad = read_config.shieldings[0].m_dimensions[1];
+
+  BOOST_CHECK_MESSAGE( fabs(read_an - expected_an) < 1.0E-5*expected_an,
+                      "Atomic number read back (" << read_an << ") didnt match input (" << expected_an << ")" );
+  BOOST_CHECK_MESSAGE( fabs(read_ad - expected_ad) < 1.0E-5*expected_ad,
+                      "Areal density read back (" << read_ad << " => "
+                      << (read_ad*PhysicalUnits::cm2/PhysicalUnits::g) << " g/cm2) didnt match input ("
+                      << expected_ad << " => " << (expected_ad*PhysicalUnits::cm2/PhysicalUnits::g)
+                      << " g/cm2)" );
+}//BOOST_AUTO_TEST_CASE( FitResultsToXmlRoundTrip )
+
+
+/** Minuit2 baseline: fit generic-shielding atomic number + areal density + source
+ activity on synthetic peak areas generated from the forward model, so the true
+ minimum is at known parameter values.
+
+ This is the regression fixture the (future) Ceres-based driver gets compared
+ against; the same fixture exercises the coarse atomic-number scan in fit_model.
+ */
+BOOST_AUTO_TEST_CASE( FitGenericShieldingANBaseline )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+
+  const SandiaDecay::Nuclide * const ba133 = db->nuclide( "Ba133" );
+  BOOST_REQUIRE( ba133 );
+
+  const double distance = 100*PhysicalUnits::cm;
+  const float live_time = 600*PhysicalUnits::second;
+  const double true_an = 26.0;
+  const double true_ad = 10.0*PhysicalUnits::g/PhysicalUnits::cm2;
+  const double true_activity = 10.0*PhysicalUnits::microCi;
+  const double age = 5.0*PhysicalUnits::year;
+
+  auto detector = make_shared<DetectorPeakResponse>();
+  detector->fromExpOfLogPowerSeries( {0.0f, 0.0f}, {}, distance,
+                                    5*PhysicalUnits::cm, PhysicalUnits::keV,
+                                    0, 3000*PhysicalUnits::keV,
+                                    DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+
+  auto foreground = make_shared<SpecUtils::Measurement>();
+  auto spec = make_shared<vector<float>>( 16, 1.0f );
+  foreground->set_gamma_counts( spec, live_time, live_time );
+
+  // Ba133s main lines; spanning 81 to 384 keV gives leverage on atomic number
+  //  (photoelectric component at low energy).
+  const double placeholder_area = 1.0E4;
+  deque<shared_ptr<const PeakDef>> truth_peaks;
+  for( const double energy : { 80.9979, 276.3989, 302.8508, 356.0129, 383.8485 } )
+    truth_peaks.push_back( make_test_peak( ba133, energy, 1.0, placeholder_area ) );
+
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+  options.attenuate_for_air = false;
+
   ShieldingSourceFitCalc::ShieldingInfo generic_shield;
   generic_shield.m_geometry = GammaInteractionCalc::GeometryType::NumGeometryType;
   generic_shield.m_isGenericMaterial = true;
@@ -854,11 +976,6 @@ BOOST_AUTO_TEST_CASE( FitResultsToXmlRoundTrip )
   chi_input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
   chi_input.config.shieldings = { generic_shield };
   chi_input.config.sources = { ba133_src };
-  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
-  chi_input.config.distance = distance;
-  chi_input.config.geometry = geometry;
-  chi_input.config.shieldings = shieldings;
-  chi_input.config.sources = src_definitions;
   chi_input.config.options = options;
   chi_input.detector = detector;
   chi_input.foreground = foreground;
@@ -883,11 +1000,6 @@ BOOST_AUTO_TEST_CASE( FitResultsToXmlRoundTrip )
 
   pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
                             = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
-  chi_input.foreground_peaks = foreground_peaks;
-  chi_input.background_peaks = nullptr;
-
-  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars =
-                GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
 
   auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
   *inputPrams = fcn_pars.second;
@@ -905,11 +1017,13 @@ BOOST_AUTO_TEST_CASE( FitResultsToXmlRoundTrip )
   BOOST_REQUIRE_EQUAL( results->final_shieldings.size(), size_t(1) );
   BOOST_REQUIRE_EQUAL( results->fit_src_info.size(), size_t(1) );
 
-  // Note: for generic materials, FitShieldingInfo::m_dimensions[1] is in g/cm2
-  //  (unlike the PhysicalUnits-valued input ShieldingInfo) - see fit_model().
+  // Note: for generic materials, `FitShieldingInfo::m_dimensions[1]` is the areal density in
+  //  InterSpec internal units - the same convention as the input `ShieldingInfo` - so convert to
+  //  g/cm2 to compare against the truth value.
   const double true_ad_g_cm2 = true_ad / (PhysicalUnits::g/PhysicalUnits::cm2);
   const double fit_an = results->final_shieldings[0].m_dimensions[0];
-  const double fit_ad_g_cm2 = results->final_shieldings[0].m_dimensions[1];
+  const double fit_ad_g_cm2 = results->final_shieldings[0].m_dimensions[1]
+                              / (PhysicalUnits::g/PhysicalUnits::cm2);
   const double fit_activity = results->fit_src_info[0].activity;
 
   cout << "FitGenericShieldingANBaseline: AN=" << fit_an
@@ -1279,7 +1393,8 @@ BOOST_AUTO_TEST_CASE( FitOffAxisSourceBaseline )
   BOOST_REQUIRE_EQUAL( results->fit_src_info.size(), size_t(1) );
 
   const double true_ad_g_cm2 = true_ad / (PhysicalUnits::g/PhysicalUnits::cm2);
-  const double fit_ad_g_cm2 = results->final_shieldings[0].m_dimensions[1];
+  const double fit_ad_g_cm2 = results->final_shieldings[0].m_dimensions[1]
+                              / (PhysicalUnits::g/PhysicalUnits::cm2);
   const double fit_activity = results->fit_src_info[0].activity;
 
   cout << "FitOffAxisSourceBaseline: AD=" << fit_ad_g_cm2 << " g/cm2 (truth " << true_ad_g_cm2
@@ -1346,103 +1461,6 @@ BOOST_AUTO_TEST_CASE( SourceOffsetsSerialization )
   BOOST_CHECK_EQUAL( zero_reparsed.source_offsets[0], 0.0 );
   BOOST_CHECK_EQUAL( zero_reparsed.source_offsets[1], 0.0 );
 }//BOOST_AUTO_TEST_CASE( SourceOffsetsSerialization )
-
-
-  auto progress_fcn = [progress](){ };
-  auto finished_fcn = [results](){ };
-
-  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, progress_fcn,
-                                    results, finished_fcn );
-
-  BOOST_REQUIRE( results->successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final );
-  BOOST_REQUIRE( results->fit_src_info.size() == 1 );
-  BOOST_REQUIRE( results->final_shieldings.size() == 1 );
-
-
-  // Turn the fit results into the state, and check the state itself first
-  ShieldingSourceDisplay::ShieldingSourceDisplayState state;
-  BOOST_REQUIRE_NO_THROW( state = ShieldingSourceDisplay::ShieldingSourceDisplayState::fromFitResults( *results ) );
-  BOOST_REQUIRE( state.config );
-  BOOST_CHECK( state.peaks.size() == 1 );
-  if( state.peaks.size() == 1 )
-  {
-    BOOST_CHECK( state.peaks[0].use );
-    BOOST_CHECK( state.peaks[0].nuclideSymbol == "Cs137" );
-    BOOST_CHECK( fabs(state.peaks[0].energy - 661.657) < 1.0 );
-  }
-
-  // Serialize into a SpecMeas, write the N42 to a stream, and read that back in
-  SpecMeas specmeas;
-  {
-    auto meas = make_shared<SpecUtils::Measurement>( *foreground );
-    meas->set_sample_number( 1 );
-    specmeas.add_measurement( meas, true );
-
-    unique_ptr<rapidxml::xml_document<char>> model_xml( new rapidxml::xml_document<char>() );
-    BOOST_REQUIRE_NO_THROW( state.serialize( model_xml.get() ) );
-    specmeas.setShieldingSourceModel( std::move(model_xml) );
-  }
-
-  std::stringstream n42_strm;
-  BOOST_REQUIRE( specmeas.write_2012_N42( n42_strm ) );
-
-  SpecMeas reloaded;
-  BOOST_REQUIRE_MESSAGE( reloaded.load_from_N42( n42_strm ), "Failed to read back written N42" );
-
-  const rapidxml::xml_document<char> * const model_xml = reloaded.shieldingSourceModel();
-  BOOST_REQUIRE_MESSAGE( model_xml && model_xml->first_node(),
-                        "N42 written from fit results has no ShieldingSourceFit model in it" );
-
-  GammaInteractionCalc::ShieldSourceConfig read_config;
-  BOOST_REQUIRE_NO_THROW( read_config.deSerialize( model_xml->first_node() ) );
-
-
-  // Finally, compare what we read back against the fit results
-  const GammaInteractionCalc::ShieldSourceConfig &fit_config = *state.config;
-
-  BOOST_CHECK( read_config.geometry == fit_config.geometry );
-  BOOST_CHECK_MESSAGE( fabs(read_config.distance - fit_config.distance) < 1.0E-5*fit_config.distance,
-                      "Distance mismatch: wrote " << fit_config.distance
-                      << ", read back " << read_config.distance );
-
-  BOOST_REQUIRE( read_config.shieldings.size() == fit_config.shieldings.size() );
-  for( size_t i = 0; i < fit_config.shieldings.size(); ++i )
-    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingInfo::equalEnough( fit_config.shieldings[i],
-                                                                             read_config.shieldings[i] ) );
-
-  BOOST_REQUIRE( read_config.sources.size() == fit_config.sources.size() );
-  for( size_t i = 0; i < fit_config.sources.size(); ++i )
-    BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::SourceFitDef::equalEnough( fit_config.sources[i],
-                                                                            read_config.sources[i] ) );
-
-  BOOST_CHECK_NO_THROW( ShieldingSourceFitCalc::ShieldingSourceFitOptions::equalEnough( fit_config.options,
-                                                                                        read_config.options ) );
-
-  // And the fitted activity should have survived the round trip, as the models starting value
-  BOOST_REQUIRE( read_config.sources.size() == 1 );
-  const double fit_activity = results->fit_src_info[0].activity;
-  BOOST_CHECK_MESSAGE( fabs(read_config.sources[0].activity - fit_activity) < 1.0E-4*fit_activity,
-                      "Activity read back (" << read_config.sources[0].activity
-                      << ") didnt match the fit activity (" << fit_activity << ")" );
-
-  // Check the generic shieldings AN/AD against the values we put in (they were not fit for), in
-  //  absolute terms - i.e., that the areal density is in InterSpec internal units all the way
-  //  through, rather than just consistently wrong.
-  BOOST_REQUIRE( read_config.shieldings.size() == 1 );
-  BOOST_REQUIRE( read_config.shieldings[0].m_isGenericMaterial );
-  const double expected_an = shieldings[0].m_dimensions[0];
-  const double expected_ad = shieldings[0].m_dimensions[1];
-  const double read_an = read_config.shieldings[0].m_dimensions[0];
-  const double read_ad = read_config.shieldings[0].m_dimensions[1];
-
-  BOOST_CHECK_MESSAGE( fabs(read_an - expected_an) < 1.0E-5*expected_an,
-                      "Atomic number read back (" << read_an << ") didnt match input (" << expected_an << ")" );
-  BOOST_CHECK_MESSAGE( fabs(read_ad - expected_ad) < 1.0E-5*expected_ad,
-                      "Areal density read back (" << read_ad << " => "
-                      << (read_ad*PhysicalUnits::cm2/PhysicalUnits::g) << " g/cm2) didnt match input ("
-                      << expected_ad << " => " << (expected_ad*PhysicalUnits::cm2/PhysicalUnits::g)
-                      << " g/cm2)" );
-}//BOOST_AUTO_TEST_CASE( FitResultsToXmlRoundTrip )
 
 
 

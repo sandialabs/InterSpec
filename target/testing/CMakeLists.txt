@@ -497,6 +497,9 @@ add_executable( test_DetectorEfficiency test_DetectorEfficiency.cpp )
 target_link_libraries( test_DetectorEfficiency PRIVATE InterSpecLib )
 add_test( NAME TDetectorEfficiency
   COMMAND $<TARGET_FILE:test_DetectorEfficiency> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_ZipArchive test_ZipArchive.cpp )
 target_link_libraries( test_ZipArchive PRIVATE InterSpecLib )
 add_test( NAME TZipArchive

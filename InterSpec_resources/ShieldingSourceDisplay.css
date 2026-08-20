@@ -271,14 +271,6 @@
   text-decoration: underline;
 }
 
-/* Mult./Chi switch toolbar, placed under the chart */
-.ShieldingSourceDisplay .ChartToolbar
-{
-  display: flex;
-  justify-content: flex-end;
-  padding: 2px 6px 0 0;
-}
-
 /* Fit zone: inline message + action row (calc.log + Perform Model Fit) + progress/cancel */
 .ShieldingSourceDisplay .FitZone
 {
