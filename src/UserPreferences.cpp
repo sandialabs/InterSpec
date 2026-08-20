@@ -481,8 +481,8 @@ bool UserPreferences::setPreferenceValueWorker( const std::string &name,
       transaction.commit();
     }catch( std::exception &e )
     {
-      assert( 0 );
       std::cerr << "Caught exception setting preference value to database" << std::endl;
+      assert( 0 );
     }
     
     return true;

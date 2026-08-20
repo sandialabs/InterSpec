@@ -91,13 +91,19 @@ namespace rapidxml
 namespace Wt
 {
   class WText;
+  class WTimer;
   class WLabel;
+  class WMenuItem;
+  class WAnchor;
+  class WResource;
   class WCheckBox;
   class WLineEdit;
   class WTreeView;
   class WComboBox;
   class WGridLayout;
   class WFileUpload;
+  class WPushButton;
+  class WSplitButton;
   class WSelectionBox;
   class WSuggestionPopup;
 }//namespace Wt
@@ -123,6 +129,7 @@ class SourceFitModel;
 class ShieldingSelect;
 class NativeFloatSpinBox;
 class ShieldingSourceDisplay;
+class SourceFitNuclideDisplay;
 
 
 /*
@@ -302,7 +309,11 @@ public:
                        Columns sortColumn, Wt::SortOrder order );
 
   void displayUnitsChanged( bool displayBq );
-  
+
+  /** Whether activities are currently displayed in curies (true) or becquerel (false).
+   Used by the custom nuclide-card display to format derived quantities consistently. */
+  bool displayCuries() const{ return m_displayCuries; }
+
   const std::vector<ShieldingSourceFitCalc::SourceFitDef> &underlyingData() const;
   
   void setUnderlyingData( const std::vector<ShieldingSourceFitCalc::SourceFitDef> &data );
@@ -423,8 +434,27 @@ public:
             fitting is being performed (use m_mutex to ensure safe access).
    */
   std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> doModelFit( const bool fitInBackground,
-                                                                      const bool checkForMissingBackPeaks );
-  
+                                                                      const bool checkForMissingBackPeaks,
+                                                                      const bool autoTriggered = false );
+
+  /** Returns whether "live"/auto-fit mode is enabled (the app-level AutoActShieldFit preference). */
+  bool autoFitEnabled() const;
+
+  /** Single entry point called whenever the user changes something that affects the fit result.
+   In auto mode it (re)starts the debounced auto-fit; in manual mode it flags the fit button as
+   needing an update. */
+  void markModelChanged();
+
+  /** Debounce-timer slot: cancels any in-flight fit and launches a fresh auto-triggered fit. */
+  void startAutoFit();
+
+  /** Updates the fit split-button's text/style for the current mode + fit state (manual
+   "Perform Model Fit"/needs-update, or auto "Up to date"/"Updating…"). */
+  void updateFitButtonState();
+
+  /** Reacts to the AutoActShieldFit preference changing (menu selection or elsewhere). */
+  void handleAutoFitPrefChanged( bool enabled );
+
   /** Cancels the current model fit happening */
   void cancelModelFit();
   
@@ -461,7 +491,46 @@ public:
   void initialSizeHint( int width, int height );
   
   void handleUserDistanceChange();
-  
+
+  /** Handles the user changing one of the source off-axis offset fields; validates
+   (offsets may be negative), adds an undo/redo step, and updates the chi2 chart.
+   */
+  void handleUserOffsetChange();
+
+  /** Handles the user toggling the "Offset" checkbox: shows/hides the offset
+   input row(s), adds an undo/redo step, and updates the chi2 chart.
+   */
+  void handleOffsetCheckChange();
+
+  /** Description of one offset input field for a given geometry: the label and
+   tool-tip to show.  Returned in display order; entry 0 corresponds to
+   #m_offsetEdit1 (source_offsets[0]) and entry 1 to #m_offsetEdit2 (source_offsets[1]).
+   */
+  struct OffsetFieldSpec
+  {
+    Wt::WString label;     //!< label text (already localized)
+    const char *toolTip;   //!< i18n key for the tool-tip
+  };
+
+  /** Returns the 1 or 2 offset fields used for `geom`, in display (and slot) order:
+   Spherical -> {Offset}; CylinderEndOn -> {Radial}; CylinderSideOn -> {Radial, Axial};
+   Rectangular -> {Width, Height}.  A 1-element result means source_offsets[1] is unused.
+   */
+  std::vector<OffsetFieldSpec> offsetFieldsForGeometry( GammaInteractionCalc::GeometryType geom ) const;
+
+  /** Sets the per-geometry labels/tool-tips on the offset edits and shows/hides
+   the offset checkbox and row(s) according to fixed-geometry, the checkbox state,
+   and the current geometry's field count.  The single place offset visibility is set.
+   */
+  void updateOffsetVisibility();
+
+  /** The current source off-axis offsets, parsed from the GUI, in the
+   source_offsets[2] convention (dx==source_offsets[0], dy==source_offsets[1]).
+   Returns {0,0} when the offset checkbox is unchecked or geometry is fixed.
+   For 1-field geometries the unused slot is zero.
+   */
+  void sourceOffsets( double &dx, double &dy ) const;
+
   GammaInteractionCalc::GeometryType geometry() const;
   void handleGeometryTypeChange();
   
@@ -497,6 +566,17 @@ public:
   /** Callback for when the user toggles between Chi and Mult display modes in the chart */
   void handleChi2ChartDisplayModeChanged( bool showChi );
   
+  /** Kind of message shown in the dedicated inline message area (#m_fitMessage). */
+  enum class FitMsgType{ None, Info, Warning, Error };
+
+  /** Shows a message in the dedicated inline area above "Perform Model Fit"
+   (replaces toast-style notifications for this tool).  Passing FitMsgType::None
+   or an empty message hides the area. */
+  void setFitMessage( const Wt::WString &msg, const FitMsgType type );
+
+  /** Convenience: hides the inline message area. */
+  void clearFitMessage();
+
   void showCalcLog();
   void closeCalcLogWindow();
 
@@ -732,8 +812,11 @@ public:
   
   ShieldingSourceFitCalc::ShieldingSourceFitOptions fitOptions() const;
 protected:
-  /** Disables fit button and other elements, and hides some stuff, etc. */
-  void setWidgetStateForFitStarting();
+  /** Sets the widget state for a fit that is starting (shows progress/cancel, sets the fit
+   button to its "Updating…" state).  When `autoTriggered` is false (manual fit) the rest of
+   the UI is disabled; when true (auto/live fit) the UI stays interactive so the user can keep
+   editing (which will cancel-and-relaunch the fit). */
+  void setWidgetStateForFitStarting( const bool autoTriggered );
   
   /** Undoes the changes from #setWidgetStateForFitStarting */
   void setWidgetStateForFitBeingDone();
@@ -773,7 +856,8 @@ protected:
   SourceFitModel *m_sourceModel;
 
   Wt::WTreeView *m_peakView;
-  Wt::WTreeView *m_sourceView;
+  /** Custom per-nuclide card display (replaces the old MVC tree-view of m_sourceModel). */
+  SourceFitNuclideDisplay *m_nuclideDisplay;
 
   DetectorDisplay *m_detectorDisplay;
   
@@ -784,16 +868,44 @@ protected:
   std::string m_prevDistStr;
   Wt::WLineEdit *m_distanceEdit;
 
-  Wt::WPushButton *m_addMaterialShielding;
-  Wt::WPushButton *m_addGenericShielding;
-  
+  /** Off-axis source offsets - see #GammaInteractionCalc::ShieldSourceConfig::source_offsets.
+   The whole offset row(s) are gated behind #m_useOffsetCheck; the number of edits
+   shown and their labels depend on geometry (see #offsetFieldsForGeometry):
+   Spherical/CylEndOn use only #m_offsetEdit1; CylSideOn/Rectangular use both.
+   #m_offsetEdit1 and #m_offsetEdit2 always map to source_offsets[0] and [1]
+   respectively, except the display order/labels are set per geometry.
+   */
+  Wt::WCheckBox *m_useOffsetCheck;
+  Wt::WLabel *m_offsetLabel1;
+  Wt::WLabel *m_offsetLabel2;
+  std::string m_prevOffset1Str;
+  std::string m_prevOffset2Str;
+  Wt::WLineEdit *m_offsetEdit1;
+  Wt::WLineEdit *m_offsetEdit2;
+
+  /** "+" add-shielding button (always adds material; the user can toggle to generic).
+   Replaces the old separate Material/Generic push-buttons. */
+  Wt::WPushButton *m_addShieldingBtn;
+  /** "Show Diagram" link in the shielding add-footer; only shown when there is >=1 shielding. */
+  Wt::WPushButton *m_showDiagramBtn;
+
   Wt::WGridLayout *m_layout;
-  PopupDivMenu *m_addItemMenu;
-  
+
+  /** Footer model import/export controls + the download resource they link to
+   (replaces the old upper-right "..." menu's Import/Export items). */
+  Wt::WPushButton *m_importModelBtn;
+  Wt::WPushButton *m_exportModelBtn;
+  /** The XML model download resource (the concrete type is file-local in the .cpp, so it
+   is held here as its Wt::WResource base; the footer "Export Model" link uses its url()). */
+  Wt::WResource *m_xmlDownloadResource;
+
 #if( USE_DB_TO_STORE_SPECTRA )
+  /** Footer database button + menu (Open / Save / Clone), replacing the old menu items. */
+  Wt::WPushButton *m_dbButton;
+  PopupDivMenu *m_dbMenu;
   PopupDivMenuItem *m_saveAsNewModelInDb;
 #endif
-  
+
   Wt::Dbo::ptr<ShieldingSourceModel> m_modelInDb;
 
   //m_shieldingSelects: contains objects of class ShieldingSelect
@@ -832,7 +944,9 @@ protected:
    */
   bool m_skipBackgroundPeakCheck;
 
-  PopupDivMenuItem *m_showLog;
+  /** "calc. log" link shown to the left of the Perform Model Fit button; only
+   visible once a fit has produced results.  (Was a menu item.) */
+  Wt::WPushButton *m_showLog;
 
   InjaLogDialog *m_logDiv;
   ShieldingDiagramDialog *m_diagramDialog;
@@ -848,10 +962,71 @@ protected:
   
 
 
+  /** Dedicated inline message area shown above "Perform Model Fit"; replaces the
+   transient toast for this tool's own fit warnings/errors.  Hidden when empty. */
+  Wt::WText *m_fitMessage;
+
+  /** Informational notice produced by checkDistanceAndThicknessConsistent() (currently only that
+   shielding was scaled to fit inside the detector distance).  Set on each call to that function
+   (cleared if nothing to report) and surfaced by callers in #m_fitMessage / the end-of-fit
+   warnings, rather than as a toast.  UTF-8 (joins the English worker warnings list). */
+  std::string m_dimConsistencyMsg;
+
+  /** The fit control is a split button: the action half performs/shows the fit; the dropdown
+   half opens a menu to choose Live (auto) vs Manual fitting.  m_fitModelButton is kept pointing
+   at the action half so existing call-sites (clicked(), show/hide) still work. */
+  Wt::WSplitButton *m_fitSplitButton;
   Wt::WPushButton *m_fitModelButton;
+  /** Checkable "Live (auto-update)" / "Manual update" items in the split-button's WPopupMenu. */
+  Wt::WMenuItem *m_autoFitItem;
+  Wt::WMenuItem *m_manualFitItem;
   Wt::WText *m_fitProgressTxt;
   Wt::WPushButton *m_cancelfitModelButton;
-  
+
+  // ---- Phone-only bottom status/fit bar (built in the isPhone() layout branch) ----
+  /** The sticky bottom bar; null on desktop. */
+  Wt::WContainerWidget *m_phoneFitBar;
+  /** Tappable distance chip (left); jumps to the Physical tab + focuses #m_distanceEdit. */
+  Wt::WPushButton *m_phoneDistChip;
+  /** Horizontally-scrollable strip of fitted-activity chips (tap -> results sheet); stays visible
+   during a fit (the footer split-button shows the "working" state). */
+  Wt::WContainerWidget *m_phoneActStrip;
+  /** Amber "N ⚠" warning pill, shown when the last fit had warnings or a large deviation. */
+  Wt::WPushButton *m_phoneWarnPill;
+  /** The phone tab strip, so the distance chip can switch to the Physical tab. */
+  Wt::WTabWidget *m_phoneTabs;
+  /** Index of the Physical tab within #m_phoneTabs (the distance chip targets it). */
+  int m_phonePhysicalTabIndex;
+
+  /** Builds the sticky bottom status/fit bar used in the phone layout and returns it (the caller
+   adds it to the layout).  Wires the distance chip, activity strip, warning pill, and Live/Fit
+   control to their handlers. */
+  Wt::WContainerWidget *createPhoneFitBar();
+
+  /** Refreshes the phone bottom bar (distance chip, activity strip, spinner, warning pill,
+   Live/Fit control) from current state.  No-op on desktop. */
+  void updatePhoneFitBar();
+  /** Shows the phone fit-results sheet (a table of nuclide / activity±uncert / age + warnings). */
+  void showPhoneFitResults();
+  /** Switches to the Physical tab and focuses the distance input (phone distance-chip tap). */
+  void showPhoneDistanceInput();
+
+  /** Debounce timer for live/auto fitting (single-shot; restarted on each change). */
+  Wt::WTimer *m_autoFitTimer;
+  /** Bumped on every fit launch; a background fit's result is discarded if the epoch has moved
+   on (i.e., a newer fit superseded it) - prevents stale results clobbering newer user edits. */
+  std::size_t m_autoFitEpoch;
+  /** True while a fit is running (drives the split-button "Updating…" state). */
+  bool m_fitInProgress;
+  /** (Manual mode) true when the model changed since the last fit, so the button hints a re-fit. */
+  bool m_modelNeedsFit;
+  /** Guard: true while applying fit results (so the resulting setData()'s don't re-trigger auto-fit). */
+  bool m_applyingFitResults;
+  /** False during construction/deserialization so programmatic changes don't trigger auto-fit. */
+  bool m_autoFitArmed;
+  /** Whether the in-flight fit was auto-triggered (used to suppress its undo/redo step). */
+  bool m_lastFitWasAuto;
+
   std::mutex m_currentFitFcnMutex;  //protects the shared_ptr only, not the object it points to
   std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> m_currentFitFcn;
 

@@ -163,6 +163,14 @@ namespace PhysicalUnits
   std::wstring printToBestLengthUnits( double length, double uncert,
                                       int maxNpostDecimal = 2,
                                       const double cm_definition = cm );
+
+  /** Like #printToBestLengthUnits, but formats the numeric part with #SpecUtils::printCompact
+   (a given number of significant figures, trailing zeros trimmed) instead of a fixed number of
+   decimals - so 100 cm prints as "1 m" rather than "1.000000 m", and floating-point noise such
+   as 1.0000000001 m prints as "1 m".  Same magnitude-based unit selection (nm/um/mm/cm/m/km). */
+  std::string printToBestLengthUnitsCompact( double length,
+                                             size_t sig_figs = 6,
+                                             double cm_definition = cm );
   std::string printToBestActivityUnits( double activity,
                                         int maxNpostDecimal = 2,
                                         bool useCuries = true, //or else use becquerel

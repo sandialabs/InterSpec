@@ -98,7 +98,6 @@
   <message id="ssd-back-peaks-manual-hint">(आप Alt कुंजी (mac: Option कुंजी) प्लस डबल<br />
   क्लिक करके स्पेक्ट्रम पर मैन्युअल रूप से पृष्ठभूमि शिखर भी फिट कर सकते हैं, या पृष्ठभूमि को अग्रभूमि के रूप में लोड करके)</message>
   <message id="ssd-err-adding-back-peaks">पृष्ठभूमि में शिखर जोड़ने में त्रुटि: {1}</message>
-  <message id="ssd-update-dim-to-be-min">परिरक्षण आयाम को न्यूनतम मोटाई होने के लिए अपडेट किया गया।</message>
   <message id="ssd-scaled-shield-to-be-less-dist">परिरक्षण मोटाई को डिटेक्टर दूरी से कम होने के लिए स्केल किया गया है।</message>
   <message id="ssd-err-fit-only-one-an">आप एक समय में केवल एक सामान्य परिरक्षण की परमाणु संख्या के लिए फिट कर सकते हैं।</message>
   <message id="ssd-warn-invalid-chi2-for-energy">{1} keV के लिए एक अमान्य chi2 की गणना की गई थी, अन्य परिणाम अमान्य हो सकते हैं</message>

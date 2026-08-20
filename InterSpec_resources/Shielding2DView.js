@@ -296,11 +296,14 @@ Shielding2DView.prototype.processData = function() {
     maxY: bounds.maxY
   };
   
-  // Store detector info for bounds calculation
+  // Store detector info for bounds calculation.  sourceOffset0 is the in-plane
+  //  off-axis offset (source_offsets[0]); the second offset is out of this 2D
+  //  cross-section plane for every geometry, so it isn't drawn here (see the 3D view).
   this.detectorInfo = {
     distance: data.distance,
     diameter: (data.detectorDiameter !== undefined) ? data.detectorDiameter : (3.0 * 25.4),
-    geometry: data.geometry
+    geometry: data.geometry,
+    sourceOffset0: (data.sourceOffset0 !== undefined) ? data.sourceOffset0 : 0
   };
   
   // Calculate bounds with detector (will be recalculated in render() based on showDetector)
@@ -320,18 +323,19 @@ Shielding2DView.prototype.calculateBounds = function(shieldingBounds, detectorIn
     var detDist = detectorInfo.distance;
     var detDiam = detectorInfo.diameter;
     var detRad = detDiam / 2.0;
-    var detLen = detDiam; 
-    
+    var detLen = detDiam;
+    var off = detectorInfo.sourceOffset0 || 0;  // in-plane off-axis offset
+
     if (detectorInfo.geometry === "Spherical") {
-        // Top (-Y)
+        // Detector is above the source (line of sight = -Y); offset shifts it in X.
         bounds.minY = Math.min(bounds.minY, -detDist - detLen);
-        bounds.maxX = Math.max(bounds.maxX, detRad);
-        bounds.minX = Math.min(bounds.minX, -detRad);
+        bounds.maxX = Math.max(bounds.maxX, off + detRad);
+        bounds.minX = Math.min(bounds.minX, off - detRad);
     } else {
-        // Right (+X)
+        // Detector is to the right (line of sight = +X); offset shifts it in -Y.
         bounds.maxX = Math.max(bounds.maxX, detDist + detLen);
-        bounds.maxY = Math.max(bounds.maxY, detRad);
-        bounds.minY = Math.min(bounds.minY, -detRad);
+        bounds.maxY = Math.max(bounds.maxY, -off + detRad);
+        bounds.minY = Math.min(bounds.minY, -off - detRad);
     }
   }
   
@@ -354,11 +358,16 @@ Shielding2DView.prototype.render = function() {
   // Clear previous render
   this.g.selectAll("*").remove();
   
-  // Get container dimensions
+  // Drawing dimensions come from the SVG element itself, not the outer .Shielding2DView
+  //  container.  These differ on narrow screens where the controls stack above the SVG
+  //  (the SVG then gets the remaining flex height); measuring the SVG keeps scale/centering
+  //  correct in both the overlay (wide) and stacked (narrow) layouts.  `container` is still
+  //  used below for tooltip page-coordinate math.
   var container = this.svg.node().parentElement;
-  var width = container.clientWidth;
-  var height = container.clientHeight;
-  
+  var svgNode = this.svg.node();
+  var width = svgNode.clientWidth || container.clientWidth;
+  var height = svgNode.clientHeight || container.clientHeight;
+
   // Helper function to position tooltip within viewport
   function positionTooltip(tooltip, eventX, eventY, width, height) {
       var tooltipWidth = 200; // Approximate tooltip width
@@ -401,26 +410,32 @@ Shielding2DView.prototype.render = function() {
   function formatLength(length_mm, maxDecimals) {
       if (maxDecimals === undefined) maxDecimals = 2;
       if (length_mm === 0) return "0.00 mm";
-      
+
+      // Work in magnitude so negative values (e.g. off-axis offsets) pick the right
+      //  unit; re-apply the sign to the formatted number.
+      var sign = (length_mm < 0) ? "-" : "";
+      var mag = Math.abs(length_mm);
+      var fmt = function(v){ return sign + d3.format("." + maxDecimals + "f")(v); };
+
       // Convert mm to base units for comparison
-      var length_nm = length_mm * 1e6;
-      var length_um = length_mm * 1e3;
-      var length_cm = length_mm / 10;
-      var length_m = length_mm / 1000;
-      var length_km = length_mm / 1e6;
-      
+      var length_nm = mag * 1e6;
+      var length_um = mag * 1e3;
+      var length_cm = mag / 10;
+      var length_m = mag / 1000;
+      var length_km = mag / 1e6;
+
       if (length_nm < 1000) {
-          return d3.format("." + maxDecimals + "f")(length_nm) + " nm";
+          return fmt(length_nm) + " nm";
       } else if (length_um < 1000) {
-          return d3.format("." + maxDecimals + "f")(length_um) + " um";
-      } else if (length_mm < 10) {
-          return d3.format("." + maxDecimals + "f")(length_mm) + " mm";
+          return fmt(length_um) + " um";
+      } else if (mag < 10) {
+          return fmt(mag) + " mm";
       } else if (length_cm < 100) {
-          return d3.format("." + maxDecimals + "f")(length_cm) + " cm";
+          return fmt(length_cm) + " cm";
       } else if (length_m < 1000) {
-          return d3.format("." + maxDecimals + "f")(length_m) + " m";
+          return fmt(length_m) + " m";
       } else {
-          return d3.format("." + maxDecimals + "f")(length_km) + " km";
+          return fmt(length_km) + " km";
       }
   }
   
@@ -454,28 +469,43 @@ Shielding2DView.prototype.render = function() {
   var padRight = self.options.padding.right;
   var padBottom = self.options.padding.bottom;
   var padLeft = self.options.padding.left;
-  
-  var availableW = width - padLeft - padRight;
+
+  // Labels are drawn to the right of the geometry (at scaleX(shieldingMaxX)+20, then text),
+  //  and the detector/offset text can stick out past the geometry too.  None of that is in
+  //  `bounds`, so reserve a right-side band for it; otherwise the scale-to-fit centers only
+  //  the geometry and the labels/right text overflow the (narrow) container.
+  var labelReserve = self.estimateLabelBandWidth();   // px (0 when labels hidden)
+
+  // On a narrow container don't let the label band swallow the drawing: cap the reserve so
+  //  at least ~45% of the usable width is left for the geometry; labels then shrink-to-fit
+  //  against the right edge.
+  var usableW = width - padLeft - padRight;
+  if (usableW < 1) usableW = 1;
+  if (labelReserve > usableW * 0.55) labelReserve = usableW * 0.55;
+
+  var availableW = usableW - labelReserve;
   var availableH = height - padTop - padBottom;
-  
+  if (availableW < 1) availableW = 1;
+
   var contentW = bounds.maxX - bounds.minX;
   var contentH = bounds.maxY - bounds.minY;
-  
+
   if (contentW <= 0) contentW = 1;
   if (contentH <= 0) contentH = 1;
-  
+
   var scaleX = availableW / contentW;
   var scaleY = availableH / contentH;
   var scale = Math.min(scaleX, scaleY);
-  
+
   if (scale <= 0) scale = 1;
-  
+
   var cx = (bounds.minX + bounds.maxX) / 2;
   var cy = (bounds.minY + bounds.maxY) / 2;
-  
-  // Store scale for manual coordinate scaling
+
+  // Store scale for manual coordinate scaling.  Center the geometry within the left region
+  //  [padLeft, padLeft+availableW]; the reserved band on the right holds the labels.
   this.currentScale = scale;
-  this.currentTx = (width / 2) - cx * scale;
+  this.currentTx = padLeft + (availableW / 2) - cx * scale;
   this.currentTy = (height / 2) - cy * scale;
   
   // Helper functions to scale coordinates
@@ -1038,23 +1068,27 @@ Shielding2DView.prototype.render = function() {
       var detDist = data.distance;
       var detDiam = (data.detectorDiameter !== undefined) ? data.detectorDiameter : (3.0 * 25.4);
       var detRad = detDiam / 2.0;
-      var detLen = detDiam; 
+      var detLen = detDiam;
       var detGroup = this.g.append("g").attr("class", "detector-group");
 
+      // In-plane off-axis offset (source_offsets[0]).  The second offset is out of
+      //  this cross-section plane for every geometry, so it isn't shown in 2D.
+      var off0 = (data.sourceOffset0 !== undefined) ? data.sourceOffset0 : 0;
+
       if (data.geometry === "Spherical") {
-          // Top (-Y) - scale coordinates
+          // Detector above the source (line of sight = -Y); offset shifts it in +X.
           detGroup.append("rect")
               .attr("class", "detector-shape detector-rect")
-              .attr("x", scaleX(-detRad))
+              .attr("x", scaleX(off0 - detRad))
               .attr("y", scaleY(-detDist - detLen))
               .attr("width", scaleX(detDiam))
               .attr("height", scaleY(detLen))
               .attr("fill", "#ccc")
               .attr("stroke", "var(--d3spec-axis-color, black)")
               .style("stroke-width", "1px"); // Fixed pixel width
-              
+
           detGroup.append("text")
-              .attr("x", scaleX(0))
+              .attr("x", scaleX(off0))
               .attr("y", scaleY(-detDist - detLen/2))
               .attr("text-anchor", "middle")
               .attr("dy", "0.3em")
@@ -1062,12 +1096,25 @@ Shielding2DView.prototype.render = function() {
               .style("font-size", Math.min(scaleX(detDiam/4), scaleY(detLen/4), 12) + "px") // Scale with box size, but ensure it fits
               .attr("fill", "black")
               .style("pointer-events", "none");
+
+          // Dashed indicator from the on-axis point to the offset detector center.
+          if (Math.abs(off0) > 1e-6) {
+              detGroup.append("line").attr("class", "offset-indicator")
+                  .attr("x1", scaleX(0)).attr("y1", scaleY(-detDist))
+                  .attr("x2", scaleX(off0)).attr("y2", scaleY(-detDist))
+                  .attr("stroke", "orange").style("stroke-width", "1.5px").style("stroke-dasharray", "4,3");
+              detGroup.append("text").attr("class", "offset-label")
+                  .attr("x", scaleX(off0/2)).attr("y", scaleY(-detDist)).attr("dy", "-0.4em")
+                  .attr("text-anchor", "middle")
+                  .text("Offset: " + formatLength(off0, 1))
+                  .style("font-size", "11px").attr("fill", "orange").style("pointer-events", "none");
+          }
       } else {
-          // Right (+X) - scale coordinates
+          // Detector to the right (line of sight = +X); offset shifts it in -Y.
           detGroup.append("rect")
               .attr("class", "detector-shape detector-rect")
               .attr("x", scaleX(detDist))
-              .attr("y", scaleY(-detRad))
+              .attr("y", scaleY(-off0 - detRad))
               .attr("width", scaleX(detLen))
               .attr("height", scaleY(detDiam))
               .attr("fill", "#ccc")
@@ -1076,15 +1123,28 @@ Shielding2DView.prototype.render = function() {
 
           detGroup.append("text")
               .attr("x", scaleX(detDist + detLen/2))
-              .attr("y", scaleY(0))
+              .attr("y", scaleY(-off0))
               .attr("text-anchor", "middle")
               .attr("dy", "0.3em")
               .text("Detector")
               .style("font-size", Math.min(scaleX(detLen/4), scaleY(detDiam/4), 12) + "px") // Scale with box size, but ensure it fits
               .attr("fill", "black")
               .style("pointer-events", "none");
+
+          // Dashed indicator from the on-axis point to the offset detector center.
+          if (Math.abs(off0) > 1e-6) {
+              detGroup.append("line").attr("class", "offset-indicator")
+                  .attr("x1", scaleX(detDist)).attr("y1", scaleY(0))
+                  .attr("x2", scaleX(detDist)).attr("y2", scaleY(-off0))
+                  .attr("stroke", "orange").style("stroke-width", "1.5px").style("stroke-dasharray", "4,3");
+              detGroup.append("text").attr("class", "offset-label")
+                  .attr("x", scaleX(detDist)).attr("y", scaleY(-off0/2)).attr("dx", "0.4em")
+                  .attr("text-anchor", "start")
+                  .text("Offset: " + formatLength(off0, 1))
+                  .style("font-size", "11px").attr("fill", "orange").style("pointer-events", "none");
+          }
       }
-      
+
       // Interaction
       detGroup.selectAll(".detector-shape")
           .on("mouseover", function() {
@@ -1284,6 +1344,42 @@ Shielding2DView.prototype.render = function() {
               .text("Height");
       }
   }
+};
+
+// Estimate the pixel width of the right-side label band (longest material/density/OD line
+//  across all layers).  Used by render() to reserve room so labels aren't clipped and the
+//  geometry is centered in the remaining space.  Returns 0 when labels are hidden.
+//  This is an estimate (no DOM measurement) sized for the fixed 12px label font; render()
+//  caps it so it can never swallow the whole drawing on a narrow screen.
+Shielding2DView.prototype.estimateLabelBandWidth = function() {
+  if (!this.showLabels || !this.processedLayers || this.processedLayers.length === 0)
+    return 0;
+
+  var geo = this.data ? this.data.geometry : "";
+
+  // Rough mm->display string length without unit juggling: longest labels come from large
+  //  outer dimensions, so use a generous fixed estimate per number ("1234.5 cm" ~ 8 chars).
+  var numChars = 9;
+
+  var maxChars = 0;
+  for (var i = 0; i < this.processedLayers.length; i++) {
+    var layer = this.processedLayers[i];
+    var name = (layer.data && layer.data.material) ? layer.data.material : "";
+
+    // Density / AN-AD line, e.g. "AN=26.0, AD=12.3 g/cm2" or "ρ=7.87 g/cm3".
+    var line2 = layer.isGeneric ? (8 + numChars + 6) : (3 + numChars + 6);
+
+    // OD line: one number for spherical, two for cylinders, three for rectangular, plus a
+    //  prefix like "OD(WxHxD)=" and " x " separators.
+    var nNums = (geo === "Spherical") ? 1 : (geo === "Rectangular") ? 3 : 2;
+    var line3 = 10 + nNums * numChars + (nNums - 1) * 3;
+
+    maxChars = Math.max(maxChars, name.length, line2, line3);
+  }
+
+  // ~6.6 px per char at the 12px sans-serif label font, plus the 20px connector offset and
+  //  a small right gutter so text doesn't touch the edge.
+  return 20 + Math.ceil(maxChars * 6.6) + 6;
 };
 
 // Handle resize

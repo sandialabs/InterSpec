@@ -100,7 +100,6 @@
   <message id="ssd-back-peaks-manual-hint">(вы также можете подогнать фоновые пики вручную, нажав Alt (mac: Option) и дважды<br />
   кликнув по спектру, или загрузив фон как передний план)</message>
   <message id="ssd-err-adding-back-peaks">Ошибка добавления пиков в фон: {1}</message>
-  <message id="ssd-update-dim-to-be-min">Размер экранирования обновлён до минимальной толщины.</message>
   <message id="ssd-scaled-shield-to-be-less-dist">Толщины экранирования масштабированы так, чтобы быть меньше расстояния до детектора.</message>
   <message id="ssd-err-fit-only-one-an">Вы можете подгонять атомный номер только одного общего экранирования за раз.</message>
   <message id="ssd-warn-invalid-chi2-for-energy">Недопустимое значение chi2 было вычислено для {1} кэВ, другие результаты могут быть недопустимыми</message>

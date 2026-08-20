@@ -144,6 +144,7 @@ set(LEAFLET_MAPS_KEY "n/a" CACHE STRING "Leaflet maps api key.")
 
 option(USE_REMOTE_RID "Enables using remote RID tool" ON)
 option(USE_REL_ACT_TOOL "Enables Relative Activity tool" ON)
+option(USE_CERES_FOR_ACTIVITY_FIT "Use Ceres (auto-differentiated) instead of Minuit2 for the Activity/Shielding fit" ON)
 option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
 
 # LLM API calls are normally made by the browser via fetch(), which gets us the system trust
@@ -281,10 +282,12 @@ set(sources
     src/PhysicalUnits.cpp
     src/PhysicalUnitsLocalized.cpp
     src/MassAttenuationTool.cpp
+    src/DetectorEfficiency.cpp
     src/DetectorPeakResponse.cpp
     src/GammaInteractionCalc.cpp
     src/GroupBox.cpp
     src/ShieldingSourceDisplay.cpp
+    src/SourceFitNuclideDisplay.cpp
     src/ShieldingSourceDiagram.cpp
     src/ShieldingSourceFitCalc.cpp
     src/ShieldSourcePullTrend.cpp
@@ -415,9 +418,11 @@ set(headers
     InterSpec/PhysicalUnits.h
     InterSpec/PhysicalUnitsLocalized.h
     InterSpec/MassAttenuationTool.h
+    InterSpec/DetectorEfficiency.h
     InterSpec/DetectorPeakResponse.h
     InterSpec/GammaInteractionCalc.h
     InterSpec/ShieldingSourceDisplay.h
+    InterSpec/SourceFitNuclideDisplay.h
     InterSpec/ShieldingSourceDiagram.h
     InterSpec/ShieldingSourceFitCalc.h
     InterSpec/ShieldSourcePullTrend.h

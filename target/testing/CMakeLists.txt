@@ -1,6 +1,8 @@
 cmake_minimum_required(VERSION 3.20 FATAL_ERROR)
 
-cmake_policy(SET CMP0167 NEW)
+if(POLICY CMP0167)
+  cmake_policy(SET CMP0167 NEW)
+endif()
 
 project( InterSpecTests )
 
@@ -254,6 +256,31 @@ add_test( NAME TShieldingSourceFitCalc
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_VolumetricIntegration test_VolumetricIntegration.cpp VolumetricIntegrationFixtures.h )
+target_link_libraries( test_VolumetricIntegration PRIVATE InterSpecLib )
+add_test( NAME TVolumetricIntegration
+  COMMAND $<TARGET_FILE:test_VolumetricIntegration> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_ShieldingDimLimit test_ShieldingDimLimit.cpp VolumetricIntegrationFixtures.h )
+target_link_libraries( test_ShieldingDimLimit PRIVATE InterSpecLib )
+add_test( NAME TShieldingDimLimit
+  COMMAND $<TARGET_FILE:test_ShieldingDimLimit> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+option( RECORD_GEOM_GOLDENS "Print (instead of check) geometry golden values" OFF )
+add_executable( test_ShieldingGeomGolden test_ShieldingGeomGolden.cpp VolumetricIntegrationFixtures.h )
+target_link_libraries( test_ShieldingGeomGolden PRIVATE InterSpecLib )
+if( RECORD_GEOM_GOLDENS )
+  target_compile_definitions( test_ShieldingGeomGolden PRIVATE RECORD_GEOM_GOLDENS=1 )
+endif()
+add_test( NAME TShieldingGeomGolden
+  COMMAND $<TARGET_FILE:test_ShieldingGeomGolden> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_DetectionLimit test_DetectionLimit.cpp )
 target_link_libraries( test_DetectionLimit PRIVATE InterSpecLib )
 add_test( NAME test_DetectionLimit
@@ -466,6 +493,10 @@ add_test( NAME TDetectorPeakResponse
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_DetectorEfficiency test_DetectorEfficiency.cpp )
+target_link_libraries( test_DetectorEfficiency PRIVATE InterSpecLib )
+add_test( NAME TDetectorEfficiency
+  COMMAND $<TARGET_FILE:test_DetectorEfficiency> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
 add_executable( test_ZipArchive test_ZipArchive.cpp )
 target_link_libraries( test_ZipArchive PRIVATE InterSpecLib )
 add_test( NAME TZipArchive

@@ -101,7 +101,6 @@
   <message id="ssd-back-peaks-manual-hint">(Anda juga dapat menyesuaikan puncak latar belakang secara manual dengan tombol Alt (mac: tombol Option) plus klik<br />
   ganda pada spektrum, atau dengan memuat latar belakang sebagai latar depan)</message>
   <message id="ssd-err-adding-back-peaks">Kesalahan menambahkan puncak ke latar belakang: {1}</message>
-  <message id="ssd-update-dim-to-be-min">Memperbarui dimensi perisai menjadi ketebalan minimum.</message>
   <message id="ssd-scaled-shield-to-be-less-dist">Ketebalan perisai telah diskalakan agar kurang dari jarak detektor.</message>
   <message id="ssd-err-fit-only-one-an">Anda hanya dapat menyesuaikan nomor atom dari satu perisai umum pada satu waktu.</message>
   <message id="ssd-warn-invalid-chi2-for-energy">Chi2 yang tidak valid dihitung untuk {1} keV, hasil lain mungkin tidak valid</message>

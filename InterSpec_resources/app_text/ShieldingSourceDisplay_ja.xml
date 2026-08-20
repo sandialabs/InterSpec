@@ -98,7 +98,6 @@
   <message id="ssd-back-peaks-manual-hint">(Altキー（mac: Optionキー）を押しながらスペクトル上でダブル<br />
   クリックすることで、手動でバックグラウンドピークをフィットすることもできます。また、バックグラウンドをフォアグラウンドとして読み込む方法もあります)</message>
   <message id="ssd-err-adding-back-peaks">バックグラウンドへのピーク追加エラー: {1}</message>
-  <message id="ssd-update-dim-to-be-min">遮蔽寸法を最小厚さに更新しました。</message>
   <message id="ssd-scaled-shield-to-be-less-dist">遮蔽厚さが検出器距離未満になるようスケーリングされました。</message>
   <message id="ssd-err-fit-only-one-an">一度にフィットできる汎用遮蔽の原子番号は1つだけです。</message>
   <message id="ssd-warn-invalid-chi2-for-energy">{1} keVに対して無効なchi2が計算されました。他の結果も無効である可能性があります</message>

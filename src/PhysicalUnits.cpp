@@ -280,6 +280,27 @@ std::string printToBestLengthUnits( double length, int maxNpostDecimal,
   return buffer;
 }//std::string printToBestLengthUnits( ... )
 
+std::string printToBestLengthUnitsCompact( double length, size_t sig_figs,
+                                           const double cm_definition )
+{
+  using namespace std;
+  length *= cm / cm_definition;
+
+  // Same magnitude-based unit selection as printToBestLengthUnits, but the number is formatted
+  //  with SpecUtils::printCompact (significant figures, trailing zeros trimmed) instead of a
+  //  fixed number of decimals.
+  double value;
+  const char *unit;
+  if( length < (1000.0 * nm) )      { value = length / nm;            unit = "nm"; }
+  else if( length < (1000.0 * um) ) { value = length / um;            unit = "um"; }
+  else if( length < (10.0 * mm) )   { value = length / mm;            unit = "mm"; }
+  else if( length < (100.0 * cm) )  { value = length / cm;            unit = "cm"; }
+  else if( length < (1000.0 * m) )  { value = length / m;             unit = "m";  }
+  else                              { value = length / (1000.0 * m);  unit = "km"; }
+
+  return SpecUtils::printCompact( value, sig_figs ) + " " + unit;
+}//std::string printToBestLengthUnitsCompact( ... )
+
 std::wstring printToBestLengthUnits( double length, double uncert,
                                      int maxNpostDecimal,
                                      const double cm_definition )

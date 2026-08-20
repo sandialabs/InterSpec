@@ -10,6 +10,36 @@
   max-height: 95vh;
 }
 
+/* Vertically center SimpleDialogs with a transform instead of Wt's JS-computed `top`, which Wt
+   derives from the dialog height at layout time - so a dialog whose content settles taller afterwards
+   ends up below center.  A transform is relative to the dialog's own box, so it stays centered
+   regardless of final height/timing.  Safe on all screens (no width interaction).  SimpleDialogs are
+   non-movable, so overriding position is safe - movable AuxWindows are not .simple-dialog. */
+.Wt-dialog.simple-dialog
+{
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+}
+
+/* On phones, also fix horizontal centering.  Wt derives `left` from the dialog width at layout time,
+   so when the content settles wider (e.g. a table whose columns grow, or wrapping text) the dialog
+   spills to the right and looks off-center.  left:0/right:0 give the full viewport as the containing
+   block, width:fit-content keeps it content-sized (up to the 99vw max-width), and auto side-margins
+   center it - independent of the final width.  Scoped to phones on purpose: on desktop, fit-content
+   would let a text-heavy dialog's one-line content balloon it toward full width, while Wt's
+   content-sized placement there is fine and wasn't the problem.
+   Excludes .InjaLogDialog, which sets its own explicit width (95vw) and holds an iframe - fit-content
+   would collapse it around the iframe instead of honoring that width. */
+.IsPhone .Wt-dialog.simple-dialog:not(.InjaLogDialog)
+{
+  left: 0 !important;
+  right: 0 !important;
+  margin-left: auto !important;
+  margin-right: auto !important;
+  width: -webkit-fit-content !important;
+  width: fit-content !important;
+}
+
 .simple-dialog .title
 {
   /* line-height: 20px; */

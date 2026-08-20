@@ -147,7 +147,7 @@ namespace
       throw runtime_error( "Empty condition or logic array" );
     
     const std::string &condstr = cond;
-    if( cond != "AND" && cond != "OR" )
+    if( condstr != "AND" && condstr != "OR" )
       throw runtime_error( "Found condition that is not 'AND' or 'OR;" );
     
     const LogicType logic = ((condstr=="AND") ? LogicType::LogicalAnd : LogicType::LogicalOr);

@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <memory>
+#include <random>
 #include <optional>
 
 #include "rapidxml/rapidxml.hpp"
@@ -46,6 +47,7 @@
 //#include "Minuit2/Minuit2Minimizer.h"
 #include "Minuit2/MnUserParameterState.h"
 
+#include "ceres/ceres.h"
 
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
@@ -69,6 +71,7 @@
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/ShieldSourcePullTrend.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
+#include "InterSpec/GammaInteractionCalc_imp.hpp"
 
 
 using namespace std;
@@ -745,7 +748,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
         node->append_attribute( attr );
       }//if( m_fitAtomicNumberCB )
       
-  #if( INCLUDE_ANALYSIS_TEST_SUITE )
+  #if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
       auto addTruth = [doc,generic_node]( const char *truthName, const boost::optional<double> &value ){
         if( value )
         {
@@ -1057,7 +1060,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
           m_fitDimensions[1] = fit;
       }//if( m_fitArealDensityCB )
       
-  #if( INCLUDE_ANALYSIS_TEST_SUITE )
+  #if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
       auto getTruth = [generic_node]( const char *truthName, boost::optional<double> &value ){
         value.reset();
         auto node = generic_node->first_node( truthName );
@@ -1210,8 +1213,8 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
             throw runtime_error( "Material node expected thickness Fit attribute" );
         }
       }//for( int i = 0; i < required_dim; ++i )
-      
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
+
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
       auto getTruth = [material_node]( const char *truthName, boost::optional<double> &value ){
         value.reset();
         auto node = material_node->first_node( truthName );
@@ -1269,7 +1272,7 @@ void TraceSourceInfo::equalEnough( const TraceSourceInfo &lhs, const TraceSource
         
         m_truthFitMassFractions[el][nuc] = make_pair( value, tolerance );
       }//XML_FOREACH_CHILD( src_node, mass_frac_node, "SelfAttenSrc" )
-#endif //INCLUDE_ANALYSIS_TEST_SUITE
+#endif //#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
       
       bool vestigual_FitMassFraction = false;
       if( m_forFitting )
@@ -1864,6 +1867,11 @@ void ShieldingSourceFitOptions::serialize( rapidxml::xml_node<char> *parent_node
   node = doc->allocate_node( rapidxml::node_element, name, value );
   parent_node->append_node( node );
   
+  name = "ComputeEffectiveShielding";
+  value = compute_effective_shielding ? "1" : "0";
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  parent_node->append_node( node );
+  
   name = "PhotopeakClusterSigma";
   char buffer[64] = { '\0' };
   snprintf( buffer, sizeof(buffer), "%.9g", photopeak_cluster_sigma );
@@ -1914,6 +1922,10 @@ void ShieldingSourceFitOptions::deSerialize( const rapidxml::xml_node<char> *par
   if( node )
     same_age_isotopes = boolval( node );
   
+  node = XML_FIRST_NODE( parent_node, "ComputeEffectiveShielding" );
+  if( node )
+    compute_effective_shielding = boolval( node );
+  
   node = XML_FIRST_NODE( parent_node, "PhotopeakClusterSigma" );
   if( node )
   {
@@ -1948,6 +1960,9 @@ void ShieldingSourceFitOptions::equalEnough( const ShieldingSourceFitOptions &lh
   
   if( lhs.same_age_isotopes != rhs.same_age_isotopes )
     throw runtime_error( "ShieldingSourceFitOptions LHS same_age_isotopes != RHS same_age_isotopes" );
+  
+  if( lhs.compute_effective_shielding != rhs.compute_effective_shielding )
+    throw runtime_error( "ShieldingSourceFitOptions LHS compute_effective_shielding != RHS compute_effective_shielding" );
 }//void equalEnough( const ShieldingSourceFitOptions &lhs, const ShieldingSourceFitOptions &rhs )
 #endif
   
@@ -1962,6 +1977,477 @@ ModelFitProgress::ModelFitProgress()
 }
 
   
+/** Detects non-fatal warning conditions for a completed (Final) fit and appends human-readable
+ messages to `results->warnings`.  Centralizing this means every consumer - the desktop fit-message
+ area, the phone fit bar's "issue" pill, and the text/HTML/CSV reports - picks up each warning
+ automatically; add future warning conditions here rather than at call sites.
+
+ English strings (no WString::tr), matching the `errormsgs` convention: this runs on the fit worker
+ thread / in batch, where the Wt message bundles aren't necessarily available.  Avoid '<'/'>'/'&' in
+ the text so it renders correctly in the HTML report and the XHTML message area without escaping.
+ */
+static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &results,
+                                    const GammaInteractionCalc::ShieldingSourceChi2Fcn &chi2Fcn,
+                                    const std::vector<double> &params )
+{
+  // Zero-volume source: a trace or self-attenuating source needs a non-zero shielding volume to
+  //  carry activity.  Now that zero-thickness shieldings are allowed, flag a source-bearing shell
+  //  that ended the fit with zero volume - it contributes nothing and its fitted activity / mass
+  //  fraction is meaningless.  Skip generic shieldings: they can't carry sources, and
+  //  traceNuclidesForMaterial()/selfAttenuatingNuclides()/volumeOfMaterial() all throw on them.
+  const size_t nmaterials = chi2Fcn.numMaterials();
+  for( size_t i = 0; i < nmaterials; ++i )
+  {
+    if( chi2Fcn.isGenericMaterial(i) )
+      continue;
+
+    const bool is_source = !chi2Fcn.traceNuclidesForMaterial(i).empty()
+                           || !chi2Fcn.selfAttenuatingNuclides(i).empty();
+    if( is_source && (chi2Fcn.volumeOfMaterial(i,params) <= 0.0) )
+    {
+      results.warnings.push_back( "A shielding that carries a source has zero volume (zero"
+        " thickness), so it contributes no activity and its fitted activity is meaningless." );
+      break;
+    }
+  }//for( size_t i = 0; i < nmaterials; ++i )
+
+  // x-ray peaks: the activity/shielding model doesn't account for x-ray production, so a fit that
+  //  relies on x-ray peaks may be unreliable.  (Previously a transient toast at peak-select time.)
+  for( const PeakDef &peak : results.foreground_peaks )
+  {
+    const SandiaDecay::RadParticle * const radpart = peak.decayParticle();
+    if( radpart && (radpart->type == SandiaDecay::XrayParticle) )
+    {
+      results.warnings.push_back( "One or more peaks used in the fit are x-rays. X-ray production is"
+        " not modeled by the activity/shielding fit, so results that rely on these peaks may be"
+        " unreliable." );
+      break;
+    }
+  }//for( const PeakDef &peak : results.foreground_peaks )
+
+  // Questionable fit: the average per-peak deviation shown on the fit chart is
+  //  dev = sqrt(chi2 / num_peaks) - it divides by the NUMBER OF PEAKS, not the degrees of freedom
+  //  (see `dev` in ShieldingSourceFitPlot.js).  A good fit is around 1 sigma, so flag dev above 3.
+  //  Compute and format it the same way so the warning's number matches the chart's "<dev>".
+  const size_t num_peaks = results.foreground_peaks.size();
+  if( (num_peaks > 0) && (results.chi2 > 0.0) )
+  {
+    const double dev = std::sqrt( results.chi2 / static_cast<double>(num_peaks) );
+    if( dev > 3.0 )
+    {
+      char devbuf[32] = { '\0' };
+      snprintf( devbuf, sizeof(devbuf), "%.2f", dev );  // match the chart's dev.toFixed(2)
+      results.warnings.push_back( "The fit is questionable: the average peak deviation (dev) is "
+        + string(devbuf) + " sigma, well above the roughly 1 sigma expected for a good fit - the"
+        " model may not describe the data well." );
+    }
+  }//if( num_peaks > 0 && chi2 > 0 )
+}//void check_for_fit_warnings( ModelFitResults & )
+
+
+/** Fills the source/shielding interpretation of the fit results (fit_src_info,
+ final_shieldings, and the calculation-detail logs) from the final parameter
+ values and their uncertainties.
+
+ Shared by the Minuit2 and Ceres fit drivers; the caller must hold results->m_mutex.
+ */
+static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
+                              const std::vector<double> &params,
+                              const std::vector<double> &errors,
+                              const unsigned int ndof,
+                              std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results )
+{
+  {// Begin set fit source info
+    results->fit_src_info.clear();
+      
+    const vector<ShieldingSourceFitCalc::SourceFitDef> &initialSources = chi2Fcn->initialSourceDefinitions();
+      
+    // Finally we'll set activities and ages
+    const size_t nnucs = chi2Fcn->numNuclides();
+    results->fit_src_info.resize( nnucs );
+      
+    assert( initialSources.size() == nnucs );
+    if( initialSources.size() != nnucs )
+      throw runtime_error( "Somehow different number of initial source and nuclides." );
+      
+      
+    //Go through and set the ages and activities fit for
+    for( size_t nucn = 0; nucn < nnucs; ++nucn )
+    {
+      const SandiaDecay::Nuclide *nuc = chi2Fcn->nuclide( nucn );
+        
+      size_t initial_row = nnucs;
+      for( size_t row = 0; (initial_row == nnucs) && (row < nnucs); ++row )
+      {
+        if( initialSources[row].nuclide == nuc )
+          initial_row = row;
+      }//for( size_t row = 0; row < nnucs; ++row )
+        
+      assert( initial_row != nnucs );
+      if( initial_row == nnucs )
+        throw runtime_error( "Unable to finish initial source for nuclide "
+                            + (nuc ? nuc->symbol : string("null")) );
+        
+      const ShieldingSourceFitCalc::SourceFitDef &initialdef = initialSources[initial_row];
+      ShieldingSourceFitCalc::SourceFitDef &row = results->fit_src_info[initial_row];
+        
+        
+      const double age = chi2Fcn->age( nuc, params );
+      const double total_activity = chi2Fcn->totalActivity( nuc, params );
+        
+      row.nuclide = nuc;
+      row.fitAge = initialdef.fitAge;
+      row.fitActivity = initialdef.fitActivity;
+        
+      row.age = age;
+      row.activity = total_activity;
+      row.ageDefiningNuc = initialdef.ageDefiningNuc;
+      row.sourceType = initialdef.sourceType;
+        
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+      row.truthActivity = initialdef.truthActivity;
+      row.truthActivityTolerance = initialdef.truthActivityTolerance;
+      row.truthAge = initialdef.truthAge;
+      row.truthAgeTolerance = initialdef.truthAgeTolerance;
+#endif
+        
+      row.activityUncertainty.reset();
+      if( row.fitActivity || chi2Fcn->isTraceSource(nuc) || chi2Fcn->isSelfAttenSource(nuc) )
+      {
+        try
+        {
+          const double activityUncert = chi2Fcn->totalActivityUncertainty( nuc, params, errors );
+          if( activityUncert > FLT_EPSILON )
+          {
+            assert( activityUncert > 0.0 );
+            row.activityUncertainty = activityUncert;
+          }
+        }catch( std::exception & )
+        {
+          //We dont seem to get here - but JUC
+          assert( 0 );
+        }
+      }
+        
+      row.ageUncertainty.reset();
+      if( row.fitAge )
+      {
+        const double ageUncert = chi2Fcn->age( nuc, errors );
+        if( ageUncert > FLT_EPSILON )
+        {
+          assert( ageUncert > 0.0 );
+          row.ageUncertainty = ageUncert;
+        }
+      }else
+      {
+        assert( (max(row.age, initialdef.age) < 1.0E-6)
+               || (fabs(row.age - initialdef.age) < 1.0E-5*max(row.age,initialdef.age)) );
+      }
+        
+    }//for( int ison = 0; ison < niso; ++ison )
+  }// End set fit source info
+    
+    
+    
+  results->final_shieldings.clear();
+  assert( results->initial_shieldings.size() == chi2Fcn->numMaterials() );
+  if( results->initial_shieldings.size() != chi2Fcn->numMaterials() )
+    throw std::logic_error( "Pre/Post fit number of shieldings not equal" );
+    
+  for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
+  {
+    const ShieldingSourceFitCalc::ShieldingInfo &initial_shield = results->initial_shieldings[shielding_index];
+      
+    ShieldingSourceFitCalc::FitShieldingInfo shield;
+    shield.m_forFitting = true;
+    shield.m_geometry = chi2Fcn->geometry();
+    shield.m_isGenericMaterial = chi2Fcn->isGenericMaterial(shielding_index);
+    assert( shield.m_isGenericMaterial == initial_shield.m_isGenericMaterial );
+    shield.m_material = initial_shield.m_material;
+    assert( shield.m_material == chi2Fcn->material(shielding_index) );
+      
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
+    shield.m_truthFitMassFractions = initial_shield.m_truthFitMassFractions;
+      
+    for( size_t i = 0; i < 3; ++i )
+    {
+      shield.m_truthDimensions[i] = initial_shield.m_truthDimensions[i];
+      shield.m_truthDimensionsTolerances[i] = initial_shield.m_truthDimensionsTolerances[i];
+    }
+#endif
+      
+    for( size_t i = 0; i < 3; ++i )
+    {
+      shield.m_dimensions[i] = 0.0;
+      shield.m_fitDimensions[i] = false;
+    }
+      
+    const int shield_start_par = static_cast<int>(2*chi2Fcn->numNuclides() + 3*shielding_index);
+      
+      
+    if( shield.m_isGenericMaterial )
+    {
+      const double adUnits = PhysicalUnits::gram / PhysicalUnits::cm2;
+      const double an = chi2Fcn->atomicNumber( shielding_index, params );
+      const double ad = chi2Fcn->arealDensity( shielding_index, params ) / adUnits;
+        
+      shield.m_dimensions[0] = an;
+      shield.m_fitDimensions[0] = initial_shield.m_fitDimensions[0];
+      if( shield.m_fitDimensions[0] )
+        shield.m_dimensionUncerts[0] = chi2Fcn->atomicNumber( shielding_index, errors );
+        
+      shield.m_dimensions[1] = ad;
+      shield.m_fitDimensions[1] = initial_shield.m_fitDimensions[1];
+      if( shield.m_fitDimensions[1] )
+        shield.m_dimensionUncerts[1] = chi2Fcn->arealDensity( shielding_index, errors ) / adUnits;
+        
+      // There looks to be a bug in Minuit that IsFixed() doesnt work
+      //assert( shield.m_fitDimensions[0] != fitParams.Parameter(shield_start_par).IsFixed() );
+      //assert( shield.m_fitDimensions[1] != fitParams.Parameter(shield_start_par + 1).IsFixed() );
+    }else
+    {
+      const map<const SandiaDecay::Element *,vector<tuple<const SandiaDecay::Nuclide *,double,double,bool>>>
+      selfAttenSrcInfo = chi2Fcn->selfAttenSrcInfo( shielding_index, params, errors );
+        
+      const vector<const SandiaDecay::Nuclide *> trace_nucs = chi2Fcn->traceNuclidesForMaterial( shielding_index );
+      
+      
+      for( const auto &el_nucs : selfAttenSrcInfo )
+      {
+        const SandiaDecay::Element * const el = el_nucs.first;
+        assert( el );
+          
+        double post_fit_frac = 0.0;
+        for( const tuple<const SandiaDecay::Nuclide *,double,double,bool> &nuc_info : el_nucs.second )
+        {
+          const SandiaDecay::Nuclide * const nuc = get<0>(nuc_info);
+          const double &mass_frac = get<1>(nuc_info);
+          const double &mass_frac_uncert = get<2>(nuc_info);
+          const bool fit_frac = get<3>(nuc_info);
+            
+          assert( fit_frac || (mass_frac_uncert <= 0.0) );
+            
+          shield.m_nuclideFractions_[el].emplace_back( nuc, mass_frac, fit_frac );
+            
+          if( fit_frac && (mass_frac_uncert > 0.0) )
+            shield.m_nuclideFractionUncerts[el][nuc] = mass_frac_uncert;
+            
+          if( fit_frac )
+            post_fit_frac += mass_frac;
+        }//for( loop over nuclides )
+          
+        double pre_fit_frac = 0.0;
+        assert( initial_shield.m_nuclideFractions_.count(el) );
+          
+        for( const auto &el_infos : initial_shield.m_nuclideFractions_ )
+        {
+          if( el_infos.first != el )
+            continue;
+            
+          for( const tuple<const SandiaDecay::Nuclide *,double,bool> &nuc_info : el_infos.second )
+          {
+            if( get<2>(nuc_info) )
+              pre_fit_frac += get<1>(nuc_info);
+          }
+        }//for( loop over initial shielding self-atten elements )
+          
+        const double frac_diff = fabs(pre_fit_frac - post_fit_frac);
+        assert( (frac_diff < 1.0E-12) || (frac_diff < 1.0E-5*std::max(pre_fit_frac,post_fit_frac)) );
+          
+        if( (frac_diff > 1.0E-12) && ((frac_diff/std::max(pre_fit_frac,post_fit_frac)) > 1.0E-5) ) //limits chosen arbitrarily
+          throw logic_error( "Mass fraction for self-atten src element " + el->symbol
+                            + " should be " + to_string(pre_fit_frac) + " but calculation yielded "
+                            + to_string(post_fit_frac) );
+      }//for( const auto &el_nucs : selfAttenSrcInfo )
+        
+      for( const SandiaDecay::Nuclide * const nuc : trace_nucs )
+      {
+        ShieldingSourceFitCalc::TraceSourceInfo trace;
+        trace.m_nuclide = nuc;
+        trace.m_type = chi2Fcn->traceSourceActivityType( nuc );
+        const int ind = static_cast<int>( chi2Fcn->nuclideIndex( nuc ) );
+          
+        // There looks to be a bug in Minuit that IsFixed() doesnt work
+        //trace.m_fitActivity = !fitParams.Parameter(2*ind).IsFixed();
+        bool foundTrace = false;
+        for( size_t i = 0; !foundTrace && (i < initial_shield.m_traceSources.size()); ++i )
+        {
+          foundTrace = (initial_shield.m_traceSources[i].m_nuclide == nuc);
+          if( foundTrace )
+            trace.m_fitActivity = initial_shield.m_traceSources[i].m_fitActivity;
+        }//
+          
+        trace.m_activity = chi2Fcn->activity( nuc, params );
+          
+        if( trace.m_type == GammaInteractionCalc::TraceActivityType::ExponentialDistribution )
+          trace.m_relaxationDistance = chi2Fcn->relaxationLength( nuc );
+          
+        shield.m_traceSources.push_back( trace );
+          
+        if( trace.m_fitActivity )
+          shield.m_traceSourceActivityUncerts[nuc] = chi2Fcn->activityUncertainty( nuc, params, errors );
+      }//for( const SandiaDecay::Nuclide * const nuc : trace_nucs )
+        
+      switch( shield.m_geometry )
+      {
+        case GammaInteractionCalc::GeometryType::Spherical:
+          shield.m_dimensions[0] = chi2Fcn->sphericalThickness( shielding_index, params );
+          // There looks to be a bug in Minuit that IsFixed() doesnt work
+          //shield.m_fitDimensions[0] = !fitParams.Parameter(shield_start_par).IsFixed();
+          //assert( shield.m_fitDimensions[0] == initial_shield.m_fitDimensions[0] );
+          shield.m_fitDimensions[0] = initial_shield.m_fitDimensions[0];
+            
+          if( shield.m_fitDimensions[0] )
+            shield.m_dimensionUncerts[0] = chi2Fcn->sphericalThickness( shielding_index, errors );
+          break;
+            
+        case GammaInteractionCalc::GeometryType::CylinderEndOn:
+        case GammaInteractionCalc::GeometryType::CylinderSideOn:
+          shield.m_dimensions[0] = chi2Fcn->cylindricalRadiusThickness( shielding_index, params );
+          shield.m_dimensions[1] = chi2Fcn->cylindricalLengthThickness( shielding_index, params );
+          // There looks to be a bug in Minuit that IsFixed() doesnt work
+          //shield.m_fitDimensions[0] = !fitParams.Parameter(shield_start_par).IsFixed();
+          //shield.m_fitDimensions[1] = !fitParams.Parameter(shield_start_par + 1 ).IsFixed();
+          //assert( shield.m_fitDimensions[0] == initial_shield.m_fitDimensions[0] );
+          //assert( shield.m_fitDimensions[1] == initial_shield.m_fitDimensions[1] );
+          shield.m_fitDimensions[0] = initial_shield.m_fitDimensions[0];
+          shield.m_fitDimensions[1] = initial_shield.m_fitDimensions[1];
+            
+          if( shield.m_fitDimensions[0] )
+            shield.m_dimensionUncerts[0] = chi2Fcn->cylindricalRadiusThickness( shielding_index, errors );
+          if( shield.m_fitDimensions[1] )
+            shield.m_dimensionUncerts[1] = chi2Fcn->cylindricalLengthThickness( shielding_index, errors );
+          break;
+            
+        case GammaInteractionCalc::GeometryType::Rectangular:
+          shield.m_dimensions[0] = chi2Fcn->rectangularWidthThickness( shielding_index, params );
+          shield.m_dimensions[1] = chi2Fcn->rectangularHeightThickness( shielding_index, params );
+          shield.m_dimensions[2] = chi2Fcn->rectangularDepthThickness( shielding_index, params );
+          // There looks to be a bug in Minuit that IsFixed() doesnt work
+          //shield.m_fitDimensions[0] = !fitParams.Parameter(shield_start_par ).IsFixed();
+          //shield.m_fitDimensions[1] = !fitParams.Parameter(shield_start_par + 1 ).IsFixed();
+          //shield.m_fitDimensions[2] = !fitParams.Parameter(shield_start_par + 2 ).IsFixed();
+          //assert( shield.m_fitDimensions[0] == initial_shield.m_fitDimensions[0] );
+          //assert( shield.m_fitDimensions[1] == initial_shield.m_fitDimensions[1] );
+          //assert( shield.m_fitDimensions[2] == initial_shield.m_fitDimensions[2] );
+          shield.m_fitDimensions[0] = initial_shield.m_fitDimensions[0];
+          shield.m_fitDimensions[1] = initial_shield.m_fitDimensions[1];
+          shield.m_fitDimensions[2] = initial_shield.m_fitDimensions[2];
+            
+          if( shield.m_fitDimensions[0] )
+            shield.m_dimensionUncerts[0] = chi2Fcn->rectangularWidthThickness( shielding_index, errors );
+          if( shield.m_fitDimensions[1] )
+            shield.m_dimensionUncerts[1] = chi2Fcn->rectangularHeightThickness( shielding_index, errors );
+          if( shield.m_fitDimensions[2] )
+            shield.m_dimensionUncerts[2] = chi2Fcn->rectangularDepthThickness( shielding_index, errors );
+          break;
+            
+        case GammaInteractionCalc::GeometryType::NumGeometryType:
+          assert( 0 );
+          break;
+      }//switch( shield.m_geometry )
+    }//if( shield.m_isGenericMaterial ) / else
+      
+    results->final_shieldings.push_back( shield );
+  }//for( int i = 0; i < nshieldings; ++i )
+    
+    
+    
+  {// Begin logging detailed info, we'll later use to template reports
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
+    auto peak_calc_details = make_unique<vector<GammaInteractionCalc::PeakDetail>>();
+    const auto peak_comparisons = chi2Fcn->energy_chi_contributions( params, errors, mixcache,
+                                                                    &(results->peak_calc_log),
+                                                                    peak_calc_details.get() );
+      
+    results->peak_calc_details = std::move(peak_calc_details);
+    results->peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>(peak_comparisons) );
+      
+      
+    if( !results->peak_calc_log.empty() )
+    {
+      char buffer[64];
+      snprintf( buffer, sizeof(buffer), "There %s %i parameter%s fit for",
+               (ndof>1 ? "were" : "was"), int(ndof), (ndof>1 ? "s" : "") );
+      results->peak_calc_log.push_back( "&nbsp;" );
+      results->peak_calc_log.push_back( buffer );
+    }//if( !m_calcLog.empty() )
+      
+    try
+    {
+      auto shielding_details = make_unique<vector<GammaInteractionCalc::ShieldingDetails>>();
+      chi2Fcn->log_shield_info( params, errors, results->fit_src_info, *shielding_details );
+        
+      // Now fill in a little info we need the results for
+      assert( results->initial_shieldings.size() == shielding_details->size() );
+      for( size_t i = 0; i < results->initial_shieldings.size(); ++i )
+      {
+        const ShieldingSourceFitCalc::ShieldingInfo &initial_shield = results->initial_shieldings[i];
+        if( i >= shielding_details->size() )
+          continue; //wont happen, but jic
+        if( i >= results->final_shieldings.size() )
+          continue; //wont happen, but jic
+          
+        const ShieldingSourceFitCalc::FitShieldingInfo &final_shield = results->final_shieldings[i];
+          
+        GammaInteractionCalc::ShieldingDetails &calc_detail = shielding_details->at( i );
+        for( size_t j = 0; j < 3; ++j )
+        {
+          calc_detail.m_fit_dimension[j] = initial_shield.m_fitDimensions[j];
+          if( calc_detail.m_fit_dimension[j] )
+            calc_detail.m_dimension_uncert[j] = final_shield.m_dimensionUncerts[j];
+        }//
+      }//for( size_t i = 0; i < results->initial_shieldings.size(); ++i )
+        
+        
+      results->shield_calc_details = std::move(shielding_details);
+    }catch( std::exception &e )
+    {
+      results->errormsgs.push_back( e.what() );
+    }
+      
+    try
+    {
+      auto shielding_details = make_unique<vector<GammaInteractionCalc::SourceDetails>>();
+      chi2Fcn->log_source_info( params, errors, results->fit_src_info, *shielding_details );
+      results->source_calc_details = std::move(shielding_details);
+    }catch( std::exception &e )
+    {
+      results->errormsgs.push_back( e.what() );
+    }
+      
+    if( chi2Fcn->options().compute_effective_shielding )
+    {
+      try
+      {
+        GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache eff_mixcache;
+        results->effective_shielding = make_unique<vector<GammaInteractionCalc::EffectiveShieldingInfo>>(
+                                chi2Fcn->computeEffectiveShielding( params, eff_mixcache ) );
+      }catch( std::exception &e )
+      {
+        results->errormsgs.push_back( "Failed to compute effective shielding: " + string(e.what()) );
+      }
+    }//if( options().compute_effective_shielding )
+    
+    // Check if background subtraction is enabled, but no peaks actually background subtracted
+    assert( results->peak_calc_details );
+    if( results->peak_calc_details && chi2Fcn->options().background_peak_subtract )
+    {
+      size_t num_back_sub_peaks = 0;
+      for( const GammaInteractionCalc::PeakDetail &p : *results->peak_calc_details )
+        num_back_sub_peaks += (p.backgroundCounts > 0.0f);
+      if( num_back_sub_peaks == 0 )
+        results->errormsgs.push_back( "Background peak subtraction requested, but no background"
+                                     " peak overlapped a foreground peak.");
+    }//if( background peak subtraction selected )
+  }// end logging detailed info, we'll later use to template reports
+
+  // Surface non-fatal warnings (poor average deviation, x-ray peaks, ...) on the results so the
+  //  GUI, phone fit bar, and reports can all show them.  Only reached on the Final/success path.
+  check_for_fit_warnings( *results, *chi2Fcn, params );
+}//fill_fit_results(...)
+
+
 namespace
 {
   /** Rebuilds a `SupplementalPeakInfo::description` from its parts, keeping the caveats last. */
@@ -2370,7 +2856,7 @@ vector<SupplementalPeakInfo> compute_supplemental_peak_info(
 }//vector<SupplementalPeakInfo> compute_supplemental_peak_info(...)
 
 
-void fit_model( const std::string wtsession,
+void fit_model_minuit2( const std::string wtsession,
                          std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
                          std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
                          std::shared_ptr<ShieldingSourceFitCalc::ModelFitProgress> progress,
@@ -2727,6 +3213,7 @@ void fit_model( const std::string wtsession,
     results->chi2 = minimum.Fval();  //chi2Fcn->DoEval( results->paramValues );
     
     
+    fill_fit_results( chi2Fcn, params, errors, ndof, results );
     {// Begin set fit source info
       results->fit_src_info.clear();
       
@@ -3187,6 +3674,1219 @@ void fit_model( const std::string wtsession,
     else
       Wt::WServer::instance()->post( wtsession, finished_fcn );
   }//if( finished_fcn )
-}//void fit_model( std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams )
-  
+}//void fit_model_minuit2( std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams )
+
+
+namespace
+{
+  /** True if a fit-parameter name is a physical shielding dimension
+   (thickness/radius/half-length/width/height/depth), i.e. ends in
+   `_thickness`/`_dr`/`_dz`/`_dx`/`_dy`.  These are the parameters whose far/degenerate
+   starts trap the optimizer, and the ones the recovery multi-start perturbs.
+   */
+  bool is_dimension_param_name( const std::string &name )
+  {
+    const auto ends_with = []( const std::string &s, const std::string &suf ){
+      return (s.size() >= suf.size()) && (s.compare( s.size()-suf.size(), suf.size(), suf ) == 0);
+    };
+    return ends_with(name,"_thickness") || ends_with(name,"_dr")
+             || ends_with(name,"_dz") || ends_with(name,"_dx") || ends_with(name,"_dy");
+  }//is_dimension_param_name(...)
+
+
+  /** A Minuit2-independent description of one fit parameter.
+
+   The fit interface hands the Ceres driver a ROOT::Minuit2::MnUserParameters (it is the
+   projects current lingua franca for the activity/shielding fit setup), but everything
+   inside the driver works off these instead, so that Minuit2 can eventually be removed
+   from the project without touching the Ceres machinery -
+   #to_fit_parameter_defs is the single conversion point.
+   */
+  struct FitParameterDef
+  {
+    std::string name;
+    double value = 0.0;
+
+    /** Initial step size (what Minuit calls the parameter "error"); zero if not set. */
+    double step = 0.0;
+
+    /** True for constant/fixed parameters (including the "_FIXED"-named ones). */
+    bool is_const = true;
+
+    bool has_lower = false, has_upper = false;
+    double lower = 0.0, upper = 0.0;
+  };//struct FitParameterDef
+
+
+  /** The single place the Minuit2 parameter description is converted for the Ceres driver. */
+  std::vector<FitParameterDef> to_fit_parameter_defs( const ROOT::Minuit2::MnUserParameters &input )
+  {
+    std::vector<FitParameterDef> defs;
+
+    for( const ROOT::Minuit2::MinuitParameter &p : input.Parameters() )
+    {
+      FitParameterDef def;
+      def.name = p.GetName();
+      def.value = p.Value();
+      def.step = p.Error();
+      def.is_const = p.IsConst() || p.IsFixed() || (def.name.find("_FIXED") != std::string::npos);
+      def.has_lower = p.HasLowerLimit();
+      def.has_upper = p.HasUpperLimit();
+      def.lower = def.has_lower ? p.LowerLimit() : 0.0;
+      def.upper = def.has_upper ? p.UpperLimit() : 0.0;
+      defs.push_back( def );
+    }//for( loop over Minuit parameters )
+
+    return defs;
+  }//to_fit_parameter_defs(...)
+
+
+  /** The Minuit2-style transform between the bounded "external" parameters the physics
+   uses, and the unbounded "internal" parameters the optimizer sees.
+
+   Ceres' projected trust region has a known failure mode for this problem: a parameter
+   that rides into its bound far from the optimum gets pinned there (the projected steps
+   go to ~zero norm, and parameter-tolerance "convergence" is declared at a terrible
+   chi2).  Minuit2 does not suffer this because it optimizes unbounded internal
+   parameters, with x = c + s*sin(u) for two-sided limits - so we do the same; the
+   transform is smooth, so automatic differentiation just chains through it.
+
+   Note: the alternative used by RelActCalcAuto - keeping plain Ceres bounds but
+   loosening them slightly (1e-5 of the range) past the physical limits - was evaluated
+   here too (20260612).  With exact bounds, the u_np_1kg analyst case reliably pins its
+   mass-fraction parameters at a bound far from the optimum (chi2 ~1e12 vs the true
+   ~159); the loosening does rescue it (the slightly-unphysical region past the bound
+   restores a usable gradient), but took 55 residual evaluations vs 24 for this
+   transform on that problem, and can return slightly-unphysical values (e.g., mass
+   fraction 1+1e-5) that would need clamping on readout.  So the transform is used.
+   TODO.md has a note to evaluate this transform approach for RelActCalcAuto.
+   */
+  struct BoundTransform
+  {
+    // NOTE: from_par() currently only produces Unbounded (plain Ceres bounds) or TwoSided
+    //  (sin-transform) - every fit parameter is added with both limits or neither.  The
+    //  LowerOnly/UpperOnly arms are retained for a future one-sided-limit parameter.
+    enum class Type : int { Unbounded, TwoSided, LowerOnly, UpperOnly };
+
+    Type type = Type::Unbounded;
+    double lo = 0.0, up = 0.0;
+
+    /** When type==Unbounded but the parameter has limits, the limits are
+     enforced directly by Ceres bound constraints instead of a transform.
+     */
+    bool use_plain_bounds = false;
+
+    static BoundTransform from_par( const FitParameterDef &p )
+    {
+      BoundTransform tf;
+
+      if( !p.has_lower && !p.has_upper )
+        return tf;
+
+      tf.lo = p.lower;
+      tf.up = p.upper;
+
+      // Only "compact" parameters - whose full range is within a couple orders of
+      //  magnitude of their step size (mass fractions in [0,1], atomic number in
+      //  [1,98], areal density in [0,400 g/cm2]) - get the sin() transform; those are
+      //  the ones the projected trust region pins at a bound far from the optimum.
+      //  Parameters with sanity-check limits spanning many orders of magnitude
+      //  (thicknesses up to 1 km, ages up to centuries) sit so close to their lower
+      //  limit, relative to the range, that the transform is horribly conditioned
+      //  there - they keep direct coordinates with plain Ceres bounds.
+      const double range = (p.has_lower && p.has_upper) ? (tf.up - tf.lo) : -1.0;
+      const bool compact = (range > 0.0) && (p.step > 0.0) && (range <= 100.0*p.step);
+
+      // Physical dimension parameters (thickness/radius/half-length/width/height/depth) can legitimately
+      //  start at their lower limit (e.g. a 0-thickness shell) and span a wide range; the sin-transform's
+      //  zero derivative at the limits would trap them there.  Keep them on plain Ceres bounds even when a
+      //  tight (e.g. distance-capped) upper bound makes their range look "compact" - only the truly
+      //  compact non-dimension parameters (mass fraction, atomic number, areal density) get the transform.
+      const bool is_dimension = is_dimension_param_name( p.name );
+
+      if( compact && !is_dimension )
+        tf.type = Type::TwoSided;
+      else
+        tf.use_plain_bounds = true;
+
+      return tf;
+    }//from_par(...)
+
+    /** External (physical, bounded) value from internal (unbounded) value. */
+    template<typename T>
+    T to_external( const T &u ) const
+    {
+      using namespace std;
+      using namespace ceres;
+
+      switch( type )
+      {
+        case Type::Unbounded: return u;
+        case Type::TwoSided:  return 0.5*(lo + up) + 0.5*(up - lo)*sin(u);
+        case Type::LowerOnly: return lo - 1.0 + sqrt(u*u + 1.0);
+        case Type::UpperOnly: return up + 1.0 - sqrt(u*u + 1.0);
+      }
+      assert( 0 );
+      return u;
+    }//to_external(...)
+
+    /** Internal value whose to_external() is (approximately) x; for two-sided limits,
+     a starting value exactly at a limit is pulled slightly inside, since the
+     transform has zero derivative exactly at the limits.
+     */
+    double to_internal( const double x ) const
+    {
+      switch( type )
+      {
+        case Type::Unbounded:
+          return x;
+
+        case Type::TwoSided:
+        {
+          // Pull a value exactly at (or beyond) a limit just inside it, since the
+          //  transform derivative is zero exactly at the limits.
+          const double ratio = (2.0*x - lo - up) / (up - lo);
+          const double max_ratio = 1.0 - 1.0E-10;
+          return std::asin( std::max( -max_ratio, std::min( max_ratio, ratio ) ) );
+        }
+
+        case Type::LowerOnly:
+        {
+          const double shifted = std::max( x - lo + 1.0, 1.0 + 1.0E-7 );
+          return std::sqrt( shifted*shifted - 1.0 );
+        }
+
+        case Type::UpperOnly:
+        {
+          const double shifted = std::max( up - x + 1.0, 1.0 + 1.0E-7 );
+          return std::sqrt( shifted*shifted - 1.0 );
+        }
+      }
+      assert( 0 );
+      return x;
+    }//to_internal(...)
+
+    /** dx/du - for propagating internal-parameter uncertainties to external ones. */
+    double derivative( const double u ) const
+    {
+      switch( type )
+      {
+        case Type::Unbounded: return 1.0;
+        case Type::TwoSided:  return 0.5*(up - lo)*std::cos(u);
+        case Type::LowerOnly: return u / std::sqrt(u*u + 1.0);
+        case Type::UpperOnly: return -u / std::sqrt(u*u + 1.0);
+      }
+      assert( 0 );
+      return 1.0;
+    }//derivative(...)
+  };//struct BoundTransform
+
+
+  /** The Ceres cost functor for the activity/shielding fit: residual_i =
+   (observed_i - expected_i)/uncert_i for each peak included in the fit, with the
+   expected counts computed by the templated
+   #GammaInteractionCalc::ShieldingSourceChi2Fcn::expected_peak_counts_imp - so with
+   T = ceres::Jet<>, the Jacobian is computed by automatic differentiation (including
+   through the volumetric-source integration).
+
+   Only the *varying* parameters are exposed to Ceres (constant/fixed ones are baked
+   in from their initial values), so no autodiff lanes are wasted on constants.
+   */
+  struct ShieldSrcCeresCostFcn
+  {
+    /** How many parameters get their derivatives computed in a single pass; typical
+     fits vary ~3-20 parameters, so one or two passes covers everything.
+     */
+    static const int sm_auto_diff_stride = 16;
+
+    std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> m_fcn;
+
+    /** Full Minuit-layout parameter vector, supplying the constant parameters. */
+    std::vector<double> m_initial_params;
+
+    /** Index into the full parameter vector, for each parameter Ceres is varying. */
+    std::vector<size_t> m_variable_indices;
+
+    /** The internal<->external transform for each varied parameter. */
+    std::vector<BoundTransform> m_transforms;
+
+    /** Background-subtracted observed counts (and uncert) for each peak included in
+     the fit - same peak set and ordering as expected_peak_counts_imp returns.
+     */
+    std::vector<double> m_observed;
+    std::vector<double> m_observed_uncert;
+
+    /** Cache of decay mixtures; Ceres evaluates a single residual block serially, so
+     no synchronization is needed (each AN-scan solve has its own functor).
+     */
+    mutable GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache m_mix_cache;
+
+    template<typename T>
+    bool operator()( T const *const *parameters, T *residuals ) const
+    {
+      using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+
+      if( m_fcn->currentCancelStatus() != ShieldingSourceChi2Fcn::CalcStatus::NotCanceled )
+        return false;
+
+      try
+      {
+        std::vector<T> full( m_initial_params.size() );
+        for( size_t i = 0; i < m_initial_params.size(); ++i )
+          full[i] = T( m_initial_params[i] );
+        for( size_t i = 0; i < m_variable_indices.size(); ++i )
+          full[m_variable_indices[i]] = m_transforms[i].to_external( parameters[0][i] );
+
+        const std::vector<T> expected = m_fcn->expected_peak_counts_imp( full, m_mix_cache );
+
+        assert( expected.size() == m_observed.size() );
+        if( expected.size() != m_observed.size() )
+          return false;
+
+        for( size_t i = 0; i < expected.size(); ++i )
+          residuals[i] = (m_observed[i] - expected[i]) / m_observed_uncert[i];
+
+        // Report progress (and track best-so-far parameters) on the value-only passes
+        if constexpr ( std::is_same_v<T,double> )
+        {
+          double chi2 = 0.0;
+          for( size_t i = 0; i < expected.size(); ++i )
+            chi2 += residuals[i]*residuals[i];
+
+          m_fcn->reportCompletedEval( chi2, full );
+        }
+
+        return true;
+      }catch( std::exception &e )
+      {
+        if( getenv("INTERSPEC_DEBUG_CERES_FIT") )
+          std::cerr << "ShieldSrcCeresCostFcn eval failed: " << e.what() << std::endl;
+        return false;
+      }
+    }//operator()(...)
+  };//struct ShieldSrcCeresCostFcn
+
+
+  /** Aborts the Ceres minimization between iterations if the fit was cancelled or
+   timed out (the cost function also polls, for faster response).
+   */
+  class CheckCancelCallback : public ceres::IterationCallback
+  {
+  public:
+    const GammaInteractionCalc::ShieldingSourceChi2Fcn * const m_fcn;
+
+    explicit CheckCancelCallback( const GammaInteractionCalc::ShieldingSourceChi2Fcn *fcn )
+      : m_fcn( fcn )
+    {
+    }
+
+    virtual ceres::CallbackReturnType operator()( const ceres::IterationSummary & ) override
+    {
+      typedef GammaInteractionCalc::ShieldingSourceChi2Fcn::CalcStatus CalcStatus;
+      return (m_fcn->currentCancelStatus() == CalcStatus::NotCanceled)
+              ? ceres::SOLVER_CONTINUE : ceres::SOLVER_ABORT;
+    }
+  };//class CheckCancelCallback
+
+
+  /** Performs a single Ceres solve of the activity/shielding problem.
+
+   @param chi2Fcn The chi2 function (only expected_peak_counts_imp and cancel status used).
+   @param par_defs Source of the parameter bounds and step sizes.
+   @param start_full Full Minuit-layout starting parameter values.
+   @param var_indices Which entries of start_full to vary.
+   @param observed,observed_uncert Per-included-peak observed counts.
+   @param[out] final_full start_full with the varied entries updated to the solution.
+   @param[out] var_errors If non-null: 1-sigma uncertainties for the varied parameters,
+               from the Ceres covariance (zeros if covariance fails).
+   @param[out] cov_errmsg If non-null and the covariance fails, a user-displayable note.
+   @param[in,out] num_evals If non-null, incremented by the number of residual evaluations.
+   @returns the chi2 (=2*final_cost) at the solution.
+   */
+  double run_ceres_solve( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
+                          const std::vector<FitParameterDef> &par_defs,
+                          const std::vector<double> &start_full,
+                          const std::vector<size_t> &var_indices,
+                          const std::vector<double> &observed,
+                          const std::vector<double> &observed_uncert,
+                          std::vector<double> &final_full,
+                          std::vector<double> *var_errors,
+                          std::string *cov_errmsg,
+                          size_t *num_evals,
+                          std::string *convergence_msg = nullptr )
+  {
+    const size_t num_vars = var_indices.size();
+    assert( num_vars > 0 );
+
+    auto functor = std::make_unique<ShieldSrcCeresCostFcn>();
+    functor->m_fcn = chi2Fcn;
+    functor->m_initial_params = start_full;
+    functor->m_variable_indices = var_indices;
+    functor->m_observed = observed;
+    functor->m_observed_uncert = observed_uncert;
+
+    // The optimizer works on unbounded internal parameters (Minuit2-style transforms);
+    //  the functor maps them to the bounded physical values - see #BoundTransform.
+    std::vector<BoundTransform> transforms( num_vars );
+    for( size_t i = 0; i < num_vars; ++i )
+      transforms[i] = BoundTransform::from_par( par_defs[var_indices[i]] );
+
+    functor->m_transforms = transforms;
+
+    auto cost_function = std::make_unique<ceres::DynamicAutoDiffCostFunction<ShieldSrcCeresCostFcn,
+                            ShieldSrcCeresCostFcn::sm_auto_diff_stride>>( functor.release() );
+    cost_function->AddParameterBlock( static_cast<int>(num_vars) );
+    cost_function->SetNumResiduals( static_cast<int>(observed.size()) );
+
+    std::vector<double> u( num_vars );
+    for( size_t i = 0; i < num_vars; ++i )
+      u[i] = transforms[i].to_internal( start_full[var_indices[i]] );
+
+    ceres::Problem problem;
+    problem.AddResidualBlock( cost_function.release(), nullptr, u.data() );  //Problem takes ownership
+
+    // Parameters that didnt get a transform keep their limits as direct bound constraints
+    for( size_t i = 0; i < num_vars; ++i )
+    {
+      if( !transforms[i].use_plain_bounds )
+        continue;
+
+      const FitParameterDef &p = par_defs[var_indices[i]];
+      if( p.has_lower )
+        problem.SetParameterLowerBound( u.data(), static_cast<int>(i), p.lower );
+      if( p.has_upper )
+        problem.SetParameterUpperBound( u.data(), static_cast<int>(i), p.upper );
+    }//for( loop over varied parameters )
+
+    CheckCancelCallback cancel_callback( chi2Fcn.get() );
+
+    ceres::Solver::Options options;
+    options.minimizer_type = ceres::TRUST_REGION;
+    options.trust_region_strategy_type = ceres::LEVENBERG_MARQUARDT;
+    options.linear_solver_type = ceres::DENSE_QR;
+    options.use_nonmonotonic_steps = true;
+    options.max_num_iterations = 1000;
+
+    // Match the convergence tolerances to the forward model.  With volumetric (self-attenuating or
+    //  trace) sources, the chi2 and its auto-diff gradient carry parameter-dependent noise at roughly
+    //  the self-shielding integration accuracy (#self_shielding_integration_imp runs at epsrel=1e-4),
+    //  so tolerances tighter than ~1e-6 just polish against that noise (extra iterations, no real
+    //  improvement) - and those volumetric evaluations are the expensive ones.  Without volumetric
+    //  sources the model is smooth (to ~machine precision) and cheap, so keep the original tight
+    //  tolerances: they cost only a few extra quick iterations and guard an ill-conditioned smooth fit
+    //  (e.g. an activity/shielding-thickness degeneracy) from stopping a hair short of the true minimum
+    //  on a small step.  (For reference, the Ceres defaults are 1e-6 / 1e-8.)
+    bool has_volumetric_source = false;
+    for( size_t i = 0; (i < chi2Fcn->numNuclides()) && !has_volumetric_source; ++i )
+    {
+      const SandiaDecay::Nuclide * const nuc = chi2Fcn->nuclide( i );
+      has_volumetric_source = nuc && (chi2Fcn->isSelfAttenSource(nuc) || chi2Fcn->isTraceSource(nuc));
+    }
+    options.function_tolerance  = has_volumetric_source ? 1.0E-6 : 1.0E-9;
+    options.parameter_tolerance = has_volumetric_source ? 1.0E-6 : 1.0E-8;
+    options.logging_type = ceres::SILENT;
+    options.minimizer_progress_to_stdout = false;
+    options.callbacks.push_back( &cancel_callback );
+
+    // Even on the transformed (unbounded) parameters, a solution can stall in the
+    //  asymptotically-flat region near a limit (where the transform derivative goes to
+    //  zero), so if any parameter ends up essentially at a limit, nudge it inside and
+    //  re-solve, keeping the best result.
+    ceres::Solver::Summary summary;
+    double best_chi2 = std::numeric_limits<double>::max();
+    std::vector<double> best_u = u;
+    ceres::TerminationType best_termination = ceres::FAILURE;
+
+    const int max_attempts = 4;
+    for( int attempt = 0; attempt < max_attempts; ++attempt )
+    {
+      ceres::Solve( options, &problem, &summary );
+
+      if( num_evals )
+        *num_evals += static_cast<size_t>( summary.num_residual_evaluations );
+
+      // For development debugging of fit issues: set INTERSPEC_DEBUG_CERES_FIT=1
+      if( getenv("INTERSPEC_DEBUG_CERES_FIT") )
+      {
+        std::cout << summary.FullReport() << std::endl;
+        std::cout << "Attempt " << attempt << " solution x={";
+        for( size_t i = 0; i < num_vars; ++i )
+          std::cout << transforms[i].to_external( u[i] ) << ", ";
+        std::cout << "}" << std::endl;
+      }//if( INTERSPEC_DEBUG_CERES_FIT )
+
+      const double this_chi2 = 2.0*summary.final_cost;
+      const bool improved = (this_chi2 < best_chi2);
+      if( improved )
+      {
+        best_chi2 = this_chi2;
+        best_u = u;
+        best_termination = summary.termination_type;
+      }
+
+      if( chi2Fcn->currentCancelStatus() != GammaInteractionCalc::ShieldingSourceChi2Fcn::CalcStatus::NotCanceled )
+        break;
+
+      // A re-solve that didnt improve on the previous attempt wont get better by nudging again
+      if( (attempt > 0) && !improved )
+        break;
+
+      bool nudged = false;
+      for( size_t i = 0; i < num_vars; ++i )
+      {
+        const BoundTransform &tf = transforms[i];
+        const FitParameterDef &p = par_defs[var_indices[i]];
+
+        // "Pinned at a limit" is judged in external (physical) units, on the scale of
+        //  the parameters Minuit step size - a thickness of 22 mm with limits
+        //  [0, 1 km] is fine, but a mass fraction of 0.9999999 with limits [0,1] and
+        //  a step size of ~0.1 is pinned.
+        const double step_scale = (p.step > 0.0) ? p.step
+                  : ((tf.type == BoundTransform::Type::TwoSided) ? 0.01*(tf.up - tf.lo) : 0.0);
+        if( step_scale <= 0.0 )
+          continue;
+
+        const double x_ext = tf.to_external( u[i] );
+
+        if( p.has_lower && ((x_ext - tf.lo) < 1.0E-3*step_scale) )
+        {
+          double x_new = tf.lo + step_scale;
+          if( tf.type == BoundTransform::Type::TwoSided )
+            x_new = std::min( x_new, 0.5*(tf.lo + tf.up) );
+          u[i] = tf.to_internal( x_new );
+          nudged = true;
+        }else if( p.has_upper && ((tf.up - x_ext) < 1.0E-3*step_scale) )
+        {
+          double x_new = tf.up - step_scale;
+          if( tf.type == BoundTransform::Type::TwoSided )
+            x_new = std::max( x_new, 0.5*(tf.lo + tf.up) );
+          u[i] = tf.to_internal( x_new );
+          nudged = true;
+        }
+      }//for( loop over varied parameters )
+
+      if( !nudged )
+        break;
+    }//for( int attempt = 0; attempt < max_attempts; ++attempt )
+
+    // If no solve attempt got a valid cost, the problem is unevaluatable at/near the
+    //  starting parameters - report it rather than returning garbage.
+    if( best_chi2 == std::numeric_limits<double>::max() )
+      throw std::runtime_error( "The optimizer could not evaluate the model"
+                                " (check starting values and limits)." );
+
+    // Surface non-convergence (e.g. hit the iteration cap, or a numeric failure) so the
+    //  user gets the same "fit may not be reliable" signal the Minuit path provides.  A
+    //  user-canceled solve (USER_FAILURE / USER_SUCCESS) is handled separately and not warned.
+    if( convergence_msg
+        && (best_termination != ceres::CONVERGENCE)
+        && (best_termination != ceres::USER_SUCCESS)
+        && (best_termination != ceres::USER_FAILURE) )
+    {
+      *convergence_msg = "The fit did not fully converge (solver: "
+            + std::string( ceres::TerminationTypeToString(best_termination) )
+            + ") - results may be unreliable or sit at a parameter limit.";
+    }
+
+    u = best_u;
+
+    final_full = start_full;
+    for( size_t i = 0; i < num_vars; ++i )
+      final_full[var_indices[i]] = transforms[i].to_external( u[i] );
+
+    if( var_errors )
+    {
+      var_errors->assign( num_vars, 0.0 );
+
+      try
+      {
+        ceres::Covariance::Options cov_opts;
+        cov_opts.algorithm_type = ceres::DENSE_SVD;
+        cov_opts.null_space_rank = -1;
+
+        ceres::Covariance covariance( cov_opts );
+        std::vector<std::pair<const double *, const double *>> cov_blocks;
+        cov_blocks.emplace_back( u.data(), u.data() );
+
+        // ceres::Covariance (DENSE_SVD) evaluates the Jacobian at `u` and runs Eigen's SVD, which
+        //  null-derefs - a segfault, NOT catchable by the try below - on a non-finite Jacobian.  That
+        //  happens when the fit failed its initial residual/Jacobian evaluation: `u` is then left at a
+        //  point where the forward model is NaN/Inf (a far or degenerate starting point can cause it).
+        //  So only attempt covariance for a usable solution whose residuals are finite; otherwise leave
+        //  the uncertainties at the zero already assigned, exactly as on any other covariance failure.
+        double cov_eval_cost = 0.0;
+        std::vector<double> cov_eval_resids;
+        bool solution_usable = (best_termination != ceres::FAILURE)
+              && problem.Evaluate( ceres::Problem::EvaluateOptions(), &cov_eval_cost,
+                                   &cov_eval_resids, nullptr, nullptr )
+              && std::isfinite( cov_eval_cost );
+        for( size_t i = 0; solution_usable && (i < cov_eval_resids.size()); ++i )
+          solution_usable = std::isfinite( cov_eval_resids[i] );
+
+        if( solution_usable && covariance.Compute(cov_blocks, &problem) )
+        {
+          std::vector<double> cov_mat( num_vars*num_vars, 0.0 );
+          covariance.GetCovarianceBlock( u.data(), u.data(), cov_mat.data() );
+
+          // Propagate the internal-parameter uncertainties to the external (physical)
+          //  parameters: sigma_x = |dx/du| * sigma_u  (same as Minuit2 does).
+          for( size_t i = 0; i < num_vars; ++i )
+          {
+            const double sigma_u = std::sqrt( std::max( 0.0, cov_mat[i*num_vars + i] ) );
+            (*var_errors)[i] = std::fabs( transforms[i].derivative( u[i] ) ) * sigma_u;
+          }
+        }else if( cov_errmsg )
+        {
+          *cov_errmsg = "Failed to compute parameter uncertainties (a parameter may be"
+                        " at a limit, or the problem nearly degenerate).";
+        }
+      }catch( std::exception &e )
+      {
+        if( cov_errmsg )
+          *cov_errmsg = "Failed to compute parameter uncertainties: " + std::string(e.what());
+      }
+    }//if( var_errors )
+
+    return best_chi2;
+  }//run_ceres_solve(...)
+
+
+  /** Wraps #run_ceres_solve with a bounded multi-start "recovery" for stuck fits.
+
+   A far or degenerate start - most often a large shielding thickness deep in the flat
+   self-attenuation region, where the model is nearly insensitive to the dimension - can make
+   the optimizer "converge" to a local minimum with a disastrous chi2 rather than fail
+   outright.  The trap is often coupled across parameters (e.g. a far source radius together
+   with a far-low shield thickness), so nudging one parameter at a time does not escape it.
+
+   So: run the normal solve; if the average per-peak deviation dev=sqrt(chi2/npeaks) is far
+   above what even a poor-but-real fit gives (statistical-only uncertainties leave good fits
+   around 1-4), and shielding dimensions are being fit, re-solve from a small deterministic
+   set of restart points that move the fitted dimensions across their ranges - each
+   dimension's low/high end (from the primary fit), plus a few coupled log-uniform points
+   (all fitted dimensions moved jointly) - keeping the best result.  Good fits short-circuit
+   immediately with no extra work.  Same parameters and return value as #run_ceres_solve.
+   */
+  double run_ceres_solve_with_recovery( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
+                          const std::vector<FitParameterDef> &par_defs,
+                          const std::vector<double> &start_full,
+                          const std::vector<size_t> &var_indices,
+                          const std::vector<double> &observed,
+                          const std::vector<double> &observed_uncert,
+                          std::vector<double> &final_full,
+                          std::vector<double> *var_errors,
+                          std::string *cov_errmsg,
+                          size_t *num_evals,
+                          std::string *convergence_msg = nullptr )
+  {
+    typedef GammaInteractionCalc::ShieldingSourceChi2Fcn::CalcStatus CalcStatus;
+
+    const double primary_chi2 = run_ceres_solve( chi2Fcn, par_defs, start_full, var_indices,
+                                                 observed, observed_uncert, final_full, var_errors,
+                                                 cov_errmsg, num_evals, convergence_msg );
+
+    const size_t npeaks = observed.size();
+    if( npeaks == 0 )
+      return primary_chi2;
+
+    // Only rescue disasters.  The fit uncertainties are statistical-only (no detector-efficiency
+    //  or peak-fit systematics), so even good fits routinely sit at dev~2-4; trigger well above
+    //  that.  A stuck self-atten fit gives a far larger dev.  (The dev>3 "questionable" warning in
+    //  check_for_fit_warnings() is a separate, softer flag.)
+    const double sm_recovery_dev = 8.0;
+    const double primary_dev = std::sqrt( primary_chi2 / static_cast<double>(npeaks) );
+    if( !(primary_dev > sm_recovery_dev) )
+      return primary_chi2;
+
+    // The varied parameters that are shielding dimensions with a finite range - the ones to perturb.
+    std::vector<size_t> dim_indices;
+    for( const size_t idx : var_indices )
+    {
+      const FitParameterDef &p = par_defs[idx];
+      if( is_dimension_param_name( p.name ) && p.has_lower && p.has_upper && (p.upper > p.lower) )
+        dim_indices.push_back( idx );
+    }
+
+    if( dim_indices.empty() )
+      return primary_chi2;
+
+    // Per-dimension perturbation range, kept off the exact bounds: Ceres' projected trust region
+    //  pins a parameter at a limit (its transform derivative goes to zero there), so starting a
+    //  restart exactly at a bound would just re-stall.  Offset inward by min( ~0.5 g/cm2 of the
+    //  shell material, 0.5% of the range ); 0.5 g/cm2 is sub-mm for dense shields, and the 0.5%
+    //  cap handles a near-void shell (tiny density) whose 0.5 g/cm2 thickness would be enormous.
+    const double distance = chi2Fcn->distance();
+    const size_t nnuc = chi2Fcn->numNuclides();
+    const double half_gcm2 = 0.5 * PhysicalUnits::g_per_cm2;
+
+    struct DimRange{ size_t index; double lo; double hi; };
+    std::vector<DimRange> ranges;
+    for( const size_t idx : dim_indices )
+    {
+      const FitParameterDef &p = par_defs[idx];
+
+      // Clamp the range to a sane physical scale (some non-fit dims carry a 1000 m sanity bound).
+      double hi_raw = (distance > 0.0) ? std::min( p.upper, distance ) : p.upper;
+      double lo_raw = std::max( p.lower, 1.0E-3*((distance > 0.0) ? distance : hi_raw) );
+      if( !(hi_raw > lo_raw) ){ lo_raw = p.lower; hi_raw = p.upper; }
+
+      const double valid_range = hi_raw - lo_raw;
+
+      double offset = 0.005*valid_range;
+      if( idx >= 2*nnuc )   // full-vector layout: 2 params per nuclide, then 3 per shielding
+      {
+        const size_t shield_index = (idx - 2*nnuc)/3;
+        if( (shield_index < chi2Fcn->numMaterials()) && !chi2Fcn->isGenericMaterial(shield_index) )
+        {
+          const std::shared_ptr<const Material> mat = chi2Fcn->material( shield_index );
+          if( mat && (mat->density > 0.0f) )
+            offset = std::min( offset, half_gcm2 / static_cast<double>(mat->density) );
+        }
+      }//if( a real (non-generic) shielding material )
+      offset = std::max( 0.0, std::min( offset, 0.49*valid_range ) );
+
+      DimRange r;
+      r.index = idx;
+      r.lo = lo_raw + offset;
+      r.hi = hi_raw - offset;
+      if( !(r.hi > r.lo) ){ r.lo = lo_raw; r.hi = hi_raw; }
+      ranges.push_back( r );
+    }//for( const size_t idx : dim_indices )
+
+    // Assemble restart start-vectors.  Endpoints move one dimension at a time from the primary
+    //  fit (single-parameter escape); coupled samples move all fitted dimensions jointly from the
+    //  original start (the coupled trap).
+    const size_t sm_max_restarts = 12;
+    const size_t sm_num_coupled = 6;
+    std::vector<std::vector<double>> restarts;
+
+    for( const DimRange &r : ranges )
+    {
+      for( const double v : { r.lo, r.hi } )
+      {
+        std::vector<double> s = final_full;
+        s[r.index] = v;
+        restarts.push_back( std::move(s) );
+      }
+    }//for( const DimRange &r : ranges )
+
+    // Deterministic, portable coupled samples (fixed seed, like the tests own perturbation).
+    std::mt19937 rng( 0xC0FFEEu );
+    for( size_t k = 0; (k < sm_num_coupled) && (restarts.size() < sm_max_restarts); ++k )
+    {
+      std::vector<double> s = start_full;
+      for( const DimRange &r : ranges )
+      {
+        std::uniform_real_distribution<double> lu( std::log(r.lo), std::log(r.hi) );
+        s[r.index] = std::exp( lu(rng) );
+      }
+      restarts.push_back( std::move(s) );
+    }//for( coupled multistart samples )
+
+    if( restarts.size() > sm_max_restarts )
+      restarts.resize( sm_max_restarts );
+
+    // Cheap restart solves (no covariance); keep the best-improving start.  A far restart may put
+    //  the model where it cant evaluate (run_ceres_solve throws) - skip it and keep going.
+    double best_chi2 = primary_chi2;
+    std::vector<double> best_start;  //empty => the primary fit stays best
+    const double good_enough_chi2 = sm_recovery_dev*sm_recovery_dev*static_cast<double>(npeaks);
+
+    for( const std::vector<double> &s : restarts )
+    {
+      if( chi2Fcn->currentCancelStatus() != CalcStatus::NotCanceled )
+        break;
+
+      try
+      {
+        std::vector<double> trial_full;
+        const double c = run_ceres_solve( chi2Fcn, par_defs, s, var_indices, observed,
+                                          observed_uncert, trial_full, nullptr, nullptr,
+                                          num_evals, nullptr );
+        if( c < best_chi2 )
+        {
+          best_chi2 = c;
+          best_start = s;
+        }
+      }catch( std::exception & )
+      {
+        //model not evaluatable at this restart - ignore it
+      }
+
+      if( best_chi2 <= good_enough_chi2 )
+        break;  //recovered - self-atten solves are expensive, so stop probing
+    }//for( const std::vector<double> &s : restarts )
+
+    if( best_start.empty() )
+      return primary_chi2;  //nothing beat the primary; its outputs are already in place
+
+    // Final covariance-bearing solve from the best restart, so the returned
+    //  final_full/var_errors/messages correspond to the accepted solution.
+    if( cov_errmsg )
+      cov_errmsg->clear();
+    if( convergence_msg )
+      convergence_msg->clear();
+
+    return run_ceres_solve( chi2Fcn, par_defs, best_start, var_indices, observed, observed_uncert,
+                            final_full, var_errors, cov_errmsg, num_evals, convergence_msg );
+  }//run_ceres_solve_with_recovery(...)
+}//namespace
+
+
+void fit_model_ceres( const std::string wtsession,
+                      std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
+                      std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
+                      std::shared_ptr<ShieldingSourceFitCalc::ModelFitProgress> progress,
+                      std::function<void()> progress_fcn,
+                      std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results,
+                      std::function<void()> finished_fcn )
+{
+  using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+  typedef ShieldingSourceChi2Fcn::CalcStatus CalcStatus;
+
+  assert( results );
+
+  results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::InvalidOther;
+  results->distance = chi2Fcn->distance();
+  results->geometry = chi2Fcn->geometry();
+  results->foreground_peaks = chi2Fcn->peaks();
+  results->background_peaks = chi2Fcn->backgroundPeaks();
+  results->background_normalization_factor = chi2Fcn->backgroundNormalizationFactor();
+
+  results->options = chi2Fcn->options();
+  results->initial_shieldings = chi2Fcn->initialShieldings();
+
+  shared_ptr<ShieldingSourceChi2Fcn::GuiProgressUpdateInfo> gui_progress_info;
+
+  if( progress_fcn ) //if we are wanted to post updates to the GUI periodically.
+  {
+    auto updatefcn = [progress_fcn,wtsession,progress]( size_t ncalls, double elapsed_time,
+                                                       double chi2, std::vector<double> pars){
+      if( progress )
+      {
+        std::lock_guard<std::mutex> scoped_lock( progress->m_mutex );
+        progress->chi2 = chi2;
+        progress->elapsedTime = elapsed_time;
+        progress->parameters = pars;
+        progress->numFcnCalls = ncalls;
+      }
+
+      Wt::WApplication *app = Wt::WApplication::instance();
+      if( wtsession.empty() || (app && (app->sessionId() == wtsession)) )
+        progress_fcn();
+      else
+        Wt::WServer::instance()->post( wtsession, progress_fcn );
+    };//updatefcn
+
+    gui_progress_info = std::make_shared<ShieldingSourceChi2Fcn::GuiProgressUpdateInfo>(
+                                                    sm_model_update_frequency_ms, updatefcn );
+    chi2Fcn->setGuiProgressUpdater( gui_progress_info );
+  }//if( progress_fcn )
+
+  // We will update the GUI with results, unless the status code is CanceledNoUpdate
+  bool update_gui = true;
+
+  try
+  {
+    if( !chi2Fcn )
+      throw runtime_error( "Programming logic error - Chi2Function pointer is null." );
+
+    // Convert to the Minuit2-independent parameter description the driver works off of,
+    //  and decompose into constant values and varied indices.  All further logic uses these,
+    //  so to_fit_parameter_defs() is the only Minuit2 dependency in this driver.
+    const vector<FitParameterDef> par_defs = to_fit_parameter_defs( *inputPrams );
+
+    vector<double> initial_full( par_defs.size(), 0.0 );
+    vector<size_t> variable_indices;
+    for( size_t i = 0; i < par_defs.size(); ++i )
+    {
+      initial_full[i] = par_defs[i].value;
+      if( !par_defs[i].is_const )
+        variable_indices.push_back( i );
+    }//for( loop over parameters )
+
+    const size_t num_var_params = variable_indices.size();
+    if( num_var_params > chi2Fcn->peaks().size() )
+    {
+      const string msg = "You are asking to fit "
+                         + std::to_string( num_var_params )
+                         + " parameters, however there are only "
+                         + std::to_string( chi2Fcn->peaks().size() )
+                         + " peaks, which leads to this being an under-constrained problem";
+      throw runtime_error( msg );
+    }//if( num_fit_params > peaks.size() )
+
+    if( num_var_params < 1 )
+      throw runtime_error( "No parameters are selected for fitting." );
+
+    chi2Fcn->fittingIsStarting( sm_max_model_fit_time_ms );
+
+    // The background-subtracted observed counts for each peak in the fit - same peak
+    //  inclusion and background-subtraction as #ShieldingSourceChi2Fcn::expected_observed_chis
+    vector<double> observed, observed_uncert;
+    bool warned_zero_uncert = false;
+    const vector<PeakDef> &fit_peaks = chi2Fcn->peaks();
+    const vector<PeakDef> &back_peaks = chi2Fcn->backgroundPeaks();
+    for( const PeakDef &peak : fit_peaks )
+    {
+      if( !peak.decayParticle() && (peak.sourceGammaType() != PeakDef::AnnihilationGamma) )
+        continue;
+
+      double observed_counts = peak.peakArea();
+      double observed_uncertainty = peak.peakAreaUncert();
+      double backCounts = 0.0, backUncert2 = 0.0;
+      const double nsigmaNear = 1.0;
+
+      for( const PeakDef &backPeak : back_peaks )
+      {
+        const double sigma = peak.gausPeak() ? peak.sigma() : 0.25*peak.roiWidth();
+        if( fabs(backPeak.mean() - peak.mean()) < (nsigmaNear*sigma) )
+        {
+          backCounts += backPeak.peakArea();
+          backUncert2 += backPeak.peakAreaUncert()*backPeak.peakAreaUncert();
+        }
+      }//for( const PeakDef &backPeak : back_peaks )
+
+      if( backCounts > 0.0 )
+      {
+        observed_counts -= backCounts;
+        observed_uncertainty = sqrt( observed_uncertainty*observed_uncertainty + backUncert2 );
+      }
+
+      // A non-positive area uncertainty would make the residual (obs-exp)/uncert blow up to
+      //  inf/NaN and the solver would fail opaquely.  Real fit peaks always have a positive
+      //  Poisson area uncertainty; clamp to a Poisson floor so the fit can proceed, and note it.
+      if( !(observed_uncertainty > 0.0) )
+      {
+        observed_uncertainty = std::sqrt( std::max( std::fabs(observed_counts), 1.0 ) );
+        if( results && !warned_zero_uncert )
+        {
+          warned_zero_uncert = true;
+          results->errormsgs.push_back( "A peak had a non-positive area uncertainty; using a"
+                                        " Poisson estimate so the fit could proceed." );
+        }
+      }//if( non-positive area uncertainty )
+
+      observed.push_back( observed_counts );
+      observed_uncert.push_back( observed_uncertainty );
+    }//for( const PeakDef &peak : fit_peaks )
+
+    if( observed.empty() )
+      throw runtime_error( "No peaks suitable for fitting." );
+
+    // Figure out the generic-material atomic numbers being fit - if there are any (and
+    //  no volumetric sources), the chi2 is multi-modal in AN, so they get a scan.
+    vector<size_t> fit_generic_an_indices;
+    for( size_t i = 0; i < par_defs.size(); ++i )
+    {
+      const FitParameterDef &p = par_defs[i];
+      if( !p.is_const
+          && (p.name.find("Generic_") != string::npos)
+          && (p.name.find("_AN") != string::npos) )
+      {
+        fit_generic_an_indices.push_back( i );
+      }
+    }//for( loop over parameters )
+
+    // With a self-attenuating or trace source, computation time becomes pretty large,
+    //  so skip the detailed AN scan in that case (same policy as the Minuit2 driver).
+    if( !fit_generic_an_indices.empty() )
+    {
+      for( size_t i = 0; i < chi2Fcn->numNuclides(); ++i )
+      {
+        if( chi2Fcn->isVolumetricSource( chi2Fcn->nuclide(static_cast<int>(i)) ) )
+          fit_generic_an_indices.clear();
+      }
+    }//if( check if we also have a volumetric source )
+
+    size_t num_evals = 0;
+    string cov_errmsg, conv_msg;
+    vector<double> fit_full, var_errors;
+
+    // Per-parameter error overrides from the AN scans (full-vector index -> error)
+    std::map<size_t,double> an_scan_errors;
+
+    // The varied set used for the final (covariance-bearing) solve; scanned ANs are
+    //  excluded since their value comes from the scan and their error from the
+    //  chi2-vs-AN profile.
+    vector<size_t> final_var_indices = variable_indices;
+
+    if( fit_generic_an_indices.empty() )
+    {
+      const double chi2 = run_ceres_solve_with_recovery( chi2Fcn, par_defs, initial_full,
+                                           variable_indices, observed, observed_uncert, fit_full,
+                                           &var_errors, &cov_errmsg, &num_evals, &conv_msg );
+      results->chi2 = chi2;
+    }else
+    {
+      // First a fit with everything (including AN) free, as the starting reference
+      vector<double> free_fit_full;
+      double best_chi2 = run_ceres_solve( chi2Fcn, par_defs, initial_full, variable_indices,
+                                          observed, observed_uncert, free_fit_full, nullptr,
+                                          nullptr, &num_evals );
+      vector<double> best_full = free_fit_full;
+
+      for( const size_t an_index : fit_generic_an_indices )
+      {
+        std::mutex best_an_mutex;
+        vector<double> an_chi2s( MassAttenuation::sm_max_xs_atomic_number + 1,
+                                 std::numeric_limits<double>::max() );
+
+        // The varied parameters for the scan solves: everything except this AN
+        vector<size_t> scan_var_indices;
+        for( const size_t index : variable_indices )
+        {
+          if( index != an_index )
+            scan_var_indices.push_back( index );
+        }
+
+        if( scan_var_indices.empty() )
+          continue;  //fitting only the AN - the scan itself is the fit, but this shouldnt really happen
+
+        std::atomic<size_t> scan_num_evals( 0 );
+
+        auto calc_for_an = [&]( const int an ){
+          try
+          {
+            vector<double> start_full = initial_full;
+            start_full[an_index] = static_cast<double>( an );
+
+            vector<double> an_fit_full;
+            size_t this_num_evals = 0;
+            const double chi2 = run_ceres_solve( chi2Fcn, par_defs, start_full,
+                                                 scan_var_indices, observed, observed_uncert,
+                                                 an_fit_full, nullptr, nullptr, &this_num_evals );
+            scan_num_evals += this_num_evals;
+
+            std::lock_guard<std::mutex> lock( best_an_mutex );
+            an_chi2s[an] = chi2;
+            if( chi2 < best_chi2 )
+            {
+              best_chi2 = chi2;
+              best_full = an_fit_full;
+            }
+          }catch( std::exception & )
+          {
+            cerr << "Unexpected exception scanning in AN for shielding/src fit!" << endl;
+          }
+        };//calc_for_an lambda
+
+        const bool origMultithread = chi2Fcn->options().multithread_self_atten;
+        chi2Fcn->setSelfAttMultiThread( false ); //shouldnt affect anything, but JIC
+
+        SpecUtilsAsync::ThreadPool pool;
+
+        const int initial_an_skip = 5;
+        for( int an = MassAttenuation::sm_min_xs_atomic_number;
+             an < MassAttenuation::sm_max_xs_atomic_number;
+             an += initial_an_skip )
+        {
+          pool.post( [&calc_for_an,an](){ calc_for_an(an); } );
+        }
+        pool.join();
+
+        int detail_scan_start, detail_scan_end, best_coarse_an;
+        {// begin lock on best_an_mutex
+          std::lock_guard<std::mutex> lock( best_an_mutex );
+
+          const auto min_coarse_chi2_iter = std::min_element( begin(an_chi2s), end(an_chi2s) );
+          best_coarse_an = static_cast<int>( min_coarse_chi2_iter - begin(an_chi2s) );
+
+          detail_scan_start = best_coarse_an - (initial_an_skip - 1);
+          detail_scan_end = best_coarse_an + initial_an_skip;
+          detail_scan_start = std::max( detail_scan_start, MassAttenuation::sm_min_xs_atomic_number );
+          detail_scan_end = std::min( detail_scan_end, MassAttenuation::sm_max_xs_atomic_number );
+        }// end lock on best_an_mutex
+
+        for( int an = detail_scan_start; an <= detail_scan_end; an += 1 )
+        {
+          if( an != best_coarse_an )
+            pool.post( [&calc_for_an,an](){ calc_for_an(an); } );
+        }
+        pool.join();
+
+        chi2Fcn->setSelfAttMultiThread( origMultithread );
+
+        num_evals += scan_num_evals.load();
+
+        {// begin lock on best_an_mutex
+          std::lock_guard<std::mutex> lock( best_an_mutex );
+
+          // Estimate the AN uncertainty by walking the chi2-vs-AN profile out by Up()=1
+          //  (extraordinarily rough - same approach as the Minuit2 driver)
+          const double up = chi2Fcn->Up();
+          const int best_an = static_cast<int>( std::round( best_full[an_index] ) );
+
+          int lower_an = best_an, upper_an = best_an;
+          for( ; lower_an > MassAttenuation::sm_min_xs_atomic_number; --lower_an )
+          {
+            if( (an_chi2s[lower_an] != std::numeric_limits<double>::max())
+                && ((an_chi2s[lower_an] - best_chi2) >= up) )
+              break;
+          }
+
+          for( ; upper_an < MassAttenuation::sm_max_xs_atomic_number; ++upper_an )
+          {
+            if( (an_chi2s[upper_an] != std::numeric_limits<double>::max())
+                && ((an_chi2s[upper_an] - best_chi2) >= up) )
+              break;
+          }
+
+          double error = 0.5*(upper_an - lower_an);
+
+          if( ((best_an + error) >= MassAttenuation::sm_max_xs_atomic_number)
+              || ((best_an - error) <= MassAttenuation::sm_min_xs_atomic_number) )
+          {
+            error = std::max( error, static_cast<double>(upper_an - best_an) );
+            error = std::max( error, static_cast<double>(best_an - lower_an) );
+          }
+
+          an_scan_errors[an_index] = std::max( 1.0, error );
+        }// end lock on best_an_mutex
+
+        // The scanned AN keeps its scan value; drop it from the final varied set
+        final_var_indices.erase( std::remove( begin(final_var_indices), end(final_var_indices), an_index ),
+                                 end(final_var_indices) );
+      }//for( const size_t an_index : fit_generic_an_indices )
+
+      // Final solve from the best point found (cheap - already at/near the minimum),
+      //  to get the covariance for the non-scanned parameters
+      if( final_var_indices.empty() )
+      {
+        fit_full = best_full;
+        var_errors.clear();
+        results->chi2 = best_chi2;
+      }else
+      {
+        const double chi2 = run_ceres_solve( chi2Fcn, par_defs, best_full, final_var_indices,
+                                             observed, observed_uncert, fit_full, &var_errors,
+                                             &cov_errmsg, &num_evals, &conv_msg );
+        // Report the cost of the parameters we are actually returning (fit_full); the final
+        //  solve restarts from best_full so this is normally == best_chi2, but using it keeps
+        //  results->chi2 consistent with the reported parameters and per-peak residuals.
+        results->chi2 = chi2;
+      }
+    }//if( fit_generic_an_indices.empty() ) / else
+
+    // If the fit was cancelled or timed out, the solves returned early - reuse the
+    //  CancelException handling for reporting.
+    const CalcStatus cancel_status = chi2Fcn->currentCancelStatus();
+    if( cancel_status != CalcStatus::NotCanceled )
+      throw ShieldingSourceChi2Fcn::CancelException( cancel_status );
+
+    // Assemble the full-layout error vector: covariance errors for the varied
+    //  parameters, scan-profile errors for scanned ANs, zero for constants.
+    vector<double> errors( initial_full.size(), 0.0 );
+    if( var_errors.size() == final_var_indices.size() )
+    {
+      for( size_t i = 0; i < final_var_indices.size(); ++i )
+        errors[final_var_indices[i]] = var_errors[i];
+    }
+    for( const auto &index_error : an_scan_errors )
+      errors[index_error.first] = index_error.second;
+
+    std::lock_guard<std::mutex> lock( results->m_mutex );
+
+    if( !cov_errmsg.empty() )
+      results->errormsgs.push_back( cov_errmsg );
+    if( !conv_msg.empty() )
+      results->errormsgs.push_back( conv_msg );
+
+    const unsigned int num_fit_pars = static_cast<unsigned int>( num_var_params );
+    const unsigned int ndof = (num_fit_pars > chi2Fcn->peaks().size())
+                  ? static_cast<unsigned int>(0)
+                  : static_cast<unsigned int>(chi2Fcn->peaks().size() - num_fit_pars);
+
+    results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final;
+    results->paramValues = fit_full;
+    results->paramErrors = errors;
+    results->edm = -1.0;  //no Minuit-style estimated-distance-to-minimum from Ceres
+    results->num_fcn_calls = static_cast<int>( num_evals );
+    results->numDOF = ndof;
+
+    fill_fit_results( chi2Fcn, fit_full, errors, ndof, results );
+
+    // Diagnose the per-peak pull trend vs energy (never let a diagnostic fail the fit).
+    try
+    {
+      const ShieldSourcePullTrend::FitConfigSummary trend_config =
+        ShieldSourcePullTrend::summarize_fit_config( chi2Fcn->initialShieldings(),
+                                                     chi2Fcn->initialSourceDefinitions() );
+      results->pull_trend = make_shared<const ShieldSourcePullTrend::TrendResult>(
+        ShieldSourcePullTrend::fit_pull_trend( *results->peak_comparisons,
+                                               *results->peak_calc_details,
+                                               chi2Fcn->initialShieldings(), trend_config ) );
+    }catch( std::exception & )
+    {
+      results->pull_trend = nullptr;
+    }
+  }catch( GammaInteractionCalc::ShieldingSourceChi2Fcn::CancelException &e )
+  {
+    std::lock_guard<std::mutex> lock( results->m_mutex );
+
+    switch( e.m_code )
+    {
+      case CalcStatus::UserCanceled:
+        results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::UserCancelled;
+        results->errormsgs.push_back( "User canceled fit." );
+        break;
+
+      case CalcStatus::Timeout:
+        results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::TimedOut;
+        results->errormsgs.push_back( "Fit took to long." );
+
+        if( gui_progress_info )
+        {
+          results->edm = -1.0;
+          results->num_fcn_calls = static_cast<int>( gui_progress_info->numFunctionCallsSoFar() );
+          results->chi2 = gui_progress_info->bestChi2SoFar();
+          results->paramValues = gui_progress_info->bestParametersSoFar();
+          results->paramErrors.clear();
+        }//if( gui_progress_info )
+        break;
+
+      case CalcStatus::CanceledNoUpdate:
+        update_gui = false;
+        break;
+
+      default:
+        results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::InvalidOther;
+        results->errormsgs.push_back( "Fit not performed: " + string(e.what()) );
+        break;
+    }//switch( e.m_code )
+  }catch( exception &e )
+  {
+    std::lock_guard<std::mutex> lock( results->m_mutex );
+    results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::InvalidOther;
+    results->errormsgs.push_back( "Fit not performed: " + string(e.what()) );
+  }// try / catch
+
+  chi2Fcn->fittingIsFinished();
+
+  if( finished_fcn && update_gui )
+  {
+    Wt::WApplication *app = Wt::WApplication::instance();
+    if( wtsession.empty() || (app && (app->sessionId() == wtsession)) )
+      finished_fcn();
+    else
+      Wt::WServer::instance()->post( wtsession, finished_fcn );
+  }//if( finished_fcn )
+}//void fit_model_ceres(...)
+
+
+void fit_model( const std::string wtsession,
+                std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
+                std::shared_ptr<ROOT::Minuit2::MnUserParameters> inputPrams,
+                std::shared_ptr<ShieldingSourceFitCalc::ModelFitProgress> progress,
+                std::function<void()> progress_fcn,
+                std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results,
+                std::function<void()> finished_fcn )
+{
+#if( USE_CERES_FOR_ACTIVITY_FIT )
+  fit_model_ceres( wtsession, chi2Fcn, inputPrams, progress, progress_fcn, results, finished_fcn );
+#else
+  fit_model_minuit2( wtsession, chi2Fcn, inputPrams, progress, progress_fcn, results, finished_fcn );
+#endif
+}//void fit_model(...)
+
 }//namespace ShieldingSourceFitCalc

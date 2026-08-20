@@ -3156,11 +3156,10 @@ bool PeakModel::setData( const WModelIndex &index,
           
           if( new_peak.useForShieldingSourceFit() == use )
             return false;
-          
-          const SandiaDecay::RadParticle *radpart = new_peak.decayParticle();
-          if( use && radpart && (radpart->type == SandiaDecay::XrayParticle) )
-            passMessage( WString::tr("pm-warn-use-xray-fit"), WarningWidget::WarningMsgLow );
-          
+
+          // Note: using x-ray peaks in the activity/shielding fit is now reported as a warning on
+          //  the fit results (ShieldingSourceFitCalc::check_for_fit_warnings) rather than a toast
+          //  here, so it shows up consistently in the GUI, the phone fit bar, and the reports.
           new_peak.useForShieldingSourceFit( use );
         }catch(...)
         {

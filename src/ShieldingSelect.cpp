@@ -37,6 +37,8 @@
 #include <Wt/WComboBox.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WCheckBox.h>
+#include <Wt/WMenuItem.h>
+#include <Wt/WPopupMenu.h>
 #include <Wt/WGridLayout.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
@@ -55,7 +57,6 @@
 #include "SpecUtils/RapidXmlUtils.hpp"
 
 #include "InterSpec/AppUtils.h"
-#include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/MaterialDB.h"
@@ -1421,7 +1422,9 @@ void SourceCheckbox::handleFitMassFractionChanged()
 
 ShieldingSelect::ShieldingSelect()
 : WContainerWidget(),
-  m_toggleImage( nullptr ),
+  m_typeToggle( nullptr ),
+  m_materialTypeBtn( nullptr ),
+  m_genericTypeBtn( nullptr ),
   m_shieldSrcDisp( nullptr ),
   m_forFitting( false ),
   m_sourceModel( nullptr ),
@@ -1465,7 +1468,9 @@ ShieldingSelect::ShieldingSelect()
 ShieldingSelect::ShieldingSelect( SourceFitModel *sourceModel,
                                   const ShieldingSourceDisplay *shieldSource )
   : WContainerWidget(),
-    m_toggleImage( nullptr ),
+    m_typeToggle( nullptr ),
+    m_materialTypeBtn( nullptr ),
+    m_genericTypeBtn( nullptr ),
     m_shieldSrcDisp( shieldSource ),
     m_forFitting( (shieldSource != nullptr) ),
     m_sourceModel( sourceModel ),
@@ -1522,14 +1527,23 @@ void ShieldingSelect::setClosableAndAddable( bool closeable, WGridLayout *layout
     m_addIcon->setStyleClass( "ShieldingAdd Wt-icon" );
     m_addIcon->setIcon("InterSpec_resources/images/plus_min_black.svg");
 
-    PopupDivMenu *popup = makePopupMenu( m_addIcon );
-    PopupDivMenuItem *item = popup->addMenuItem( WString::tr("ss-add-shield-before") );
-    item->triggered().connect( this, &ShieldingSelect::emitAddBeforeSignal );
-    item = popup->addMenuItem( WString::tr("ss-add-shield-after") );
-    item->triggered().connect( this, &ShieldingSelect::emitAddAfterSignal );
+    // Use a plain WPopupMenu (NOT PopupDivMenu): a compact dropdown that pops up next to the
+    //  "+" on both desktop and phone, matching the fit split-button's menu.  PopupDivMenu renders
+    //  as a full-height slide-in on phones, and its show-JS calls Wt.WT.BringAboveDialogs(), which
+    //  isn't loaded in mobile mode -- the resulting JS error tore down the whole session.
+    auto addMenuOwned = std::make_unique<WPopupMenu>();
+    WPopupMenu *addMenu = addMenuOwned.get();
+    WMenuItem *beforeItem = addMenu->addItem( WString::tr("ss-add-shield-before") );
+    beforeItem->triggered().connect( this, &ShieldingSelect::emitAddBeforeSignal );
+    WMenuItem *afterItem = addMenu->addItem( WString::tr("ss-add-shield-after") );
+    afterItem->triggered().connect( this, &ShieldingSelect::emitAddAfterSignal );
+    addChild( std::move(addMenuOwned) );  // ShieldingSelect owns the menu
+    m_addIcon->clicked().connect( this, [this, addMenu](){ addMenu->popup( m_addIcon ); } );
 
-    layout->addWidget( std::move(closeIconUniq), 0, 2, AlignmentFlag::Middle | AlignmentFlag::Right );
-    layout->addWidget( std::move(addIconUniq), 1, 2, AlignmentFlag::Top | AlignmentFlag::Right );
+    // Keep the add/remove icons side-by-side in the top row so they don't each consume a
+    //  full grid row (which wasted vertical space, especially for generic shielding).
+    layout->addWidget( std::move(addIconUniq),   0, 2, AlignmentFlag::Middle | AlignmentFlag::Right );
+    layout->addWidget( std::move(closeIconUniq), 0, 3, AlignmentFlag::Middle | AlignmentFlag::Right );
 
     m_closeIcon->clicked().connect( this, &ShieldingSelect::emitRemoveSignal );
   }else
@@ -2229,15 +2243,28 @@ void ShieldingSelect::init()
 
 
   {
-    auto toggleImgUniq = std::make_unique<Wt::WImage>( Wt::WLink("InterSpec_resources/images/shield.png") );
-    m_toggleImage = toggleImgUniq.get();
-    m_toggleImage->clicked().connect( this, &ShieldingSelect::handleToggleGeneric );
-    m_toggleImage->decorationStyle().setCursor( Cursor::PointingHand );
-    m_toggleImage->addStyleClass( "Wt-icon" );
-    m_toggleImage->clicked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
-    HelpSystem::attachToolTipOn( m_toggleImage, WString::tr("ss-tt-shield-type-toggle"),
+    // A small segmented control to make the material/generic choice obvious (replaces the
+    //  old single click-to-toggle shield image, which users found non-discoverable).
+    auto toggleUniq = std::make_unique<WContainerWidget>();
+    m_typeToggle = toggleUniq.get();
+    m_typeToggle->addStyleClass( "ShieldTypeToggle" );
+
+    m_materialTypeBtn = m_typeToggle->addNew<WPushButton>();
+    m_materialTypeBtn->setIcon( Wt::WLink("InterSpec_resources/images/shield.png") );
+    m_materialTypeBtn->addStyleClass( "TypeBtn" );
+    m_materialTypeBtn->clicked().connect( this, [this](){ handleMaterialTypeToggle( false ); } );
+    HelpSystem::attachToolTipOn( m_materialTypeBtn, WString::tr("ss-tt-shield-type-material"),
                                 showToolTips );
-    materialDivLayout->addWidget( std::move(toggleImgUniq), 0, 0, AlignmentFlag::Left );
+
+    m_genericTypeBtn = m_typeToggle->addNew<WPushButton>();
+    m_genericTypeBtn->setIcon( Wt::WLink("InterSpec_resources/images/atom_black.png") );
+    m_genericTypeBtn->addStyleClass( "TypeBtn" );
+    m_genericTypeBtn->clicked().connect( this, [this](){ handleMaterialTypeToggle( true ); } );
+    HelpSystem::attachToolTipOn( m_genericTypeBtn, WString::tr("ss-tt-shield-type-generic"),
+                                showToolTips );
+
+    materialDivLayout->addWidget( std::move(toggleUniq), 0, 0, AlignmentFlag::Left );
+    updateMaterialTypeToggle();
   }
 
   {
@@ -2313,51 +2340,15 @@ void ShieldingSelect::init()
 
   m_dimensionsStack = addNew<WStackedWidget>();
 
-  // Begin setting up generic material widgets
+  // Begin setting up generic material widgets.  Use CSS flex rows (the .DimDiv/.DimEditRow
+  //  pattern shared with the geometry dimension inputs) rather than a WGridLayout: a
+  //  WGridLayout-managed container collapses to zero height inside the WStackedWidget under
+  //  Wt 4 and its contents get clipped - this is exactly why the geometry rows below use flex.
   m_genericDiv = m_dimensionsStack->addNew<WContainerWidget>();
-  WGridLayout *genericMatLayout = m_genericDiv->setLayout( std::make_unique<WGridLayout>() );
-  genericMatLayout->setContentsMargins(3,3,3,3);
+  m_genericDiv->addStyleClass( "DimDiv GenericMatRow" );
 
   {
-    auto adLabelUniq = std::make_unique<WLabel>( "AD" );
-    WLabel * const adLabel = adLabelUniq.get();
-    adLabel->setAttributeValue( "style", "padding-left: 1em;" );
-
-    auto arealDensityEditUniq = std::make_unique<NativeFloatSpinBox>();
-    m_arealDensityEdit = arealDensityEditUniq.get();
-    m_arealDensityEdit->setSpinnerHidden( true );
-    m_arealDensityEdit->setFormatString( "%.4g" );
-    m_arealDensityEdit->setTextSize( 5 );
-    m_arealDensityEdit->setRange( 0.0f,
-                              static_cast<float>(GammaInteractionCalc::sm_max_areal_density_g_cm2) );
-    adLabel->setBuddy( m_arealDensityEdit );
-    if( m_forFitting )
-      m_arealDensityEdit->setValue( 15.0f );
-    else
-      m_arealDensityEdit->setPlaceholderText( WString::tr("ss-areal-density-empty-txt") );
-    HelpSystem::attachToolTipOn( {adLabel, m_arealDensityEdit}, WString::tr("ss-tt-areal-density"),
-                                showToolTips );
-    genericMatLayout->addWidget( std::move(adLabelUniq), 0, 2+m_forFitting, AlignmentFlag::Middle );
-    genericMatLayout->addWidget( std::move(arealDensityEditUniq), 0, 3+m_forFitting, AlignmentFlag::Middle );
-    genericMatLayout->setColumnStretch( 3+m_forFitting, 1 );
-  }
-
-  {
-    auto gcm2LabelUniq = std::make_unique<WLabel>( "g/cm<sup>2</sup>" );
-    gcm2LabelUniq->setAttributeValue( "style", "font-size: 75%;" );
-    genericMatLayout->addWidget( std::move(gcm2LabelUniq), 0, 4+m_forFitting, AlignmentFlag::Middle );
-  }
-
-  if( m_forFitting )
-  {
-    auto fitArealDensityCBUniq = std::make_unique<WCheckBox>( WString::tr("Fit") );
-    m_fitArealDensityCB = fitArealDensityCBUniq.get();
-    m_fitArealDensityCB->setChecked( true );
-    m_fitArealDensityCB->addStyleClass( "CbNoLineBreak" );
-    genericMatLayout->addWidget( std::move(fitArealDensityCBUniq), 0, 6, AlignmentFlag::Middle );
-  }
-
-  {
+    // Atomic number: label + compact input + Fit checkbox, all inline.
     auto anLabelUniq = std::make_unique<WLabel>( "AN" );
     WLabel * const anLabel = anLabelUniq.get();
 
@@ -2365,7 +2356,7 @@ void ShieldingSelect::init()
     m_atomicNumberEdit = atomicNumberEditUniq.get();
     m_atomicNumberEdit->setSpinnerHidden( true );
     m_atomicNumberEdit->setFormatString( "%.3g" );
-    m_atomicNumberEdit->setTextSize( 5 );
+    m_atomicNumberEdit->setWidth( 46 );
     m_atomicNumberEdit->setRange( MassAttenuation::sm_min_xs_atomic_number,
                                    MassAttenuation::sm_max_xs_atomic_number );
     anLabel->setBuddy( m_atomicNumberEdit );
@@ -2375,18 +2366,70 @@ void ShieldingSelect::init()
       m_atomicNumberEdit->setPlaceholderText( WString::tr("ss-atomic-number-empty-txt") );
     HelpSystem::attachToolTipOn( {anLabel, m_atomicNumberEdit}, WString::tr("ss-tt-atomic-number"),
                                 showToolTips );
-    genericMatLayout->addWidget( std::move(anLabelUniq), 0, 0, AlignmentFlag::Middle );
-    genericMatLayout->addWidget( std::move(atomicNumberEditUniq), 0, 1, AlignmentFlag::Middle );
-    genericMatLayout->setColumnStretch( 1, 1 );
+    m_genericDiv->addWidget( std::move(anLabelUniq) );
+    m_genericDiv->addWidget( std::move(atomicNumberEditUniq) );
+
+    if( m_forFitting )
+    {
+      auto fitAtomicNumberCBUniq = std::make_unique<WCheckBox>( WString::tr("Fit") );
+      m_fitAtomicNumberCB = fitAtomicNumberCBUniq.get();
+      m_fitAtomicNumberCB->setChecked( false );
+      m_fitAtomicNumberCB->addStyleClass( "CbNoLineBreak" );
+      m_genericDiv->addWidget( std::move(fitAtomicNumberCBUniq) );
+      // These "Fit" checkboxes previously had no signal connections, so toggling them neither
+      //  added an undo step nor (in live mode) triggered a re-fit.  Wire them like the other fit
+      //  checkboxes: record undo state + emit materialModified() so the chart/live-fit updates.
+      m_fitAtomicNumberCB->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+      m_fitAtomicNumberCB->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+      m_fitAtomicNumberCB->checked().connect( this, [this](){ m_materialModifiedSignal.emit( this ); } );
+      m_fitAtomicNumberCB->unChecked().connect( this, [this](){ m_materialModifiedSignal.emit( this ); } );
+    }//if( m_forFitting )
+  }
+
+  {
+    // Areal density: label + compact input + units + Fit checkbox, all inline (same row as AN).
+    //  The AD label gets extra left margin to visually separate the AN and AD groupings.
+    auto adLabelUniq = std::make_unique<WLabel>( "AD" );
+    WLabel * const adLabel = adLabelUniq.get();
+    adLabel->addStyleClass( "AdGroupStart" );
+
+    auto arealDensityEditUniq = std::make_unique<NativeFloatSpinBox>();
+    m_arealDensityEdit = arealDensityEditUniq.get();
+    m_arealDensityEdit->setSpinnerHidden( true );
+    m_arealDensityEdit->setFormatString( "%.4g" );
+    m_arealDensityEdit->setWidth( 54 );
+    m_arealDensityEdit->setRange( 0.0f,
+                              static_cast<float>(GammaInteractionCalc::sm_max_areal_density_g_cm2) );
+    adLabel->setBuddy( m_arealDensityEdit );
+    if( m_forFitting )
+      m_arealDensityEdit->setValue( 15.0f );
+    else
+      m_arealDensityEdit->setPlaceholderText( WString::tr("ss-areal-density-empty-txt") );
+    HelpSystem::attachToolTipOn( {adLabel, m_arealDensityEdit}, WString::tr("ss-tt-areal-density"),
+                                showToolTips );
+    m_genericDiv->addWidget( std::move(adLabelUniq) );
+    m_genericDiv->addWidget( std::move(arealDensityEditUniq) );
+
+    auto gcm2LabelUniq = std::make_unique<WLabel>( "g/cm<sup>2</sup>" );
+    gcm2LabelUniq->setAttributeValue( "style", "font-size: 75%;" );
+    m_genericDiv->addWidget( std::move(gcm2LabelUniq) );
+
+    if( m_forFitting )
+    {
+      auto fitArealDensityCBUniq = std::make_unique<WCheckBox>( WString::tr("Fit") );
+      m_fitArealDensityCB = fitArealDensityCBUniq.get();
+      m_fitArealDensityCB->setChecked( true );
+      m_fitArealDensityCB->addStyleClass( "CbNoLineBreak" );
+      m_genericDiv->addWidget( std::move(fitArealDensityCBUniq) );
+      m_fitArealDensityCB->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+      m_fitArealDensityCB->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+      m_fitArealDensityCB->checked().connect( this, [this](){ m_materialModifiedSignal.emit( this ); } );
+      m_fitArealDensityCB->unChecked().connect( this, [this](){ m_materialModifiedSignal.emit( this ); } );
+    }//if( m_forFitting )
   }
 
   if( m_forFitting )
   {
-    auto fitAtomicNumberCBUniq = std::make_unique<WCheckBox>( WString::tr("Fit") );
-    m_fitAtomicNumberCB = fitAtomicNumberCBUniq.get();
-    m_fitAtomicNumberCB->setChecked( false );
-    m_fitAtomicNumberCB->addStyleClass( "CbNoLineBreak" );
-    genericMatLayout->addWidget( std::move(fitAtomicNumberCBUniq), 0, 2, AlignmentFlag::Middle );
 
     m_asSourceCBs = addNew<WContainerWidget>();
     m_asSourceCBs->addStyleClass( "ShieldingAsSourceCBDiv" );
@@ -2450,6 +2493,13 @@ void ShieldingSelect::init()
 
       fitCb->checked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
       fitCb->unChecked().connect( this, &ShieldingSelect::handleUserChangeForUndoRedo );
+
+      // Toggling whether to fit this dimension changes the model, so emit materialModified()
+      //  directly (immediately, on both check and uncheck) to drive the chart update / live
+      //  re-fit.  The deferred, state-diff-gated userChangedStateSignal alone proved unreliable
+      //  for triggering a re-fit when the box is *checked*.
+      fitCb->checked().connect( this, [this](){ m_materialModifiedSignal.emit( this ); } );
+      fitCb->unChecked().connect( this, [this](){ m_materialModifiedSignal.emit( this ); } );
     }//if( m_forFitting )
   };//setupDimEdit(...)
 
@@ -2826,7 +2876,7 @@ double ShieldingSelect::shieldingVolume() const
       
       const double innerVolume = (4.0/3.0) * pi * inner_rad * inner_rad * inner_rad;
       const double outerVolume = (4.0/3.0) * pi * outer_rad * outer_rad * outer_rad;
-      assert( outerVolume > innerVolume );
+      assert( outerVolume >= innerVolume );  // equal when this shell has zero thickness
       
       volume = outerVolume - innerVolume;
       
@@ -4438,7 +4488,7 @@ void ShieldingSelect::handleToggleGeneric()
     m_materialSummary->setText( "" );
     m_materialEdit->setText( WString::tr("ss-generic") );
     m_materialEdit->disable();
-    m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/atom_black.png") );
+    updateMaterialTypeToggle();
     
     std::shared_ptr<const Material> mat;
     try
@@ -4498,7 +4548,7 @@ void ShieldingSelect::handleToggleGeneric()
     }//if( m_forFitting )
   }else
   {
-    m_toggleImage->setImageLink(Wt::WLink("InterSpec_resources/images/shield.png"));
+    updateMaterialTypeToggle();
     m_materialEdit->enable();
     displayInputsForCurrentGeometry();
     
@@ -4578,6 +4628,26 @@ void ShieldingSelect::handleToggleGeneric()
   
   handleMaterialChange();
 }//void ShieldingSelect::handleToggleGeneric()
+
+
+void ShieldingSelect::handleMaterialTypeToggle( const bool wantGeneric )
+{
+  if( wantGeneric == m_isGenericMaterial )
+    return;  // Already showing the requested type - nothing to do.
+
+  handleToggleGeneric();          // Does the actual switch, conversions, and updateMaterialTypeToggle().
+  handleUserChangeForUndoRedo();  // Mirror the old click-to-toggle undo/redo behavior.
+}//void ShieldingSelect::handleMaterialTypeToggle( const bool wantGeneric )
+
+
+void ShieldingSelect::updateMaterialTypeToggle()
+{
+  if( !m_materialTypeBtn || !m_genericTypeBtn )
+    return;
+
+  m_materialTypeBtn->toggleStyleClass( "on", !m_isGenericMaterial );
+  m_genericTypeBtn->toggleStyleClass( "on", m_isGenericMaterial );
+}//void ShieldingSelect::updateMaterialTypeToggle()
 
 
 void ShieldingSelect::displayInputsForCurrentGeometry()
@@ -4664,7 +4734,7 @@ void ShieldingSelect::handleMaterialChange()
     m_materialSummary->setText( "" );
     m_materialEdit->setText( WString::tr("ss-generic") );
     m_materialEdit->disable();
-    m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/atom_black.png") );
+    updateMaterialTypeToggle();
     
     if( m_traceSources )
     {
@@ -4680,7 +4750,7 @@ void ShieldingSelect::handleMaterialChange()
     }//if( m_traceSources )
   }else
   {
-    m_toggleImage->setImageLink( Wt::WLink("InterSpec_resources/images/shield.png") );
+    updateMaterialTypeToggle();
     m_materialEdit->enable();
     
     string tooltip = "nothing";
@@ -5009,7 +5079,7 @@ ShieldingSourceFitCalc::ShieldingInfo ShieldingSelect::toShieldingInfo() const
       answer.m_fitDimensions[1] = fitArealDensity();
     }
     
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
     answer.m_truthDimensions[0] = truthAN;
     answer.m_truthDimensionsTolerances[0] = truthANTolerance;
     answer.m_truthDimensions[1] = truthAD;
@@ -5059,7 +5129,7 @@ ShieldingSourceFitCalc::ShieldingInfo ShieldingSelect::toShieldingInfo() const
         break;
     }//switch( m_geometry )
 
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
     answer.m_truthDimensions[0] = truthThickness;
     answer.m_truthDimensionsTolerances[0] = truthThicknessTolerance;
     answer.m_truthDimensions[1] = truthThicknessD2;
@@ -5115,7 +5185,7 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
       m_fitArealDensityCB->setChecked( info.m_fitDimensions[1] );
     }//if( m_fitArealDensityCB )
     
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
     truthAN  = info.m_truthDimensions[0];
     truthANTolerance = info.m_truthDimensionsTolerances[0];
     truthAD  = info.m_truthDimensions[1];
@@ -5293,7 +5363,7 @@ void ShieldingSelect::fromShieldingInfo( const ShieldingSourceFitCalc::Shielding
       m_fitMassFrac->setChecked( info.m_fitMassFrac );
     */
     
-#if( INCLUDE_ANALYSIS_TEST_SUITE )
+#if( INCLUDE_ANALYSIS_TEST_SUITE || PERFORM_DEVELOPER_CHECKS || BUILD_AS_UNIT_TEST_SUITE )
     truthThickness = info.m_truthDimensions[0];
     truthThicknessTolerance = info.m_truthDimensionsTolerances[0];
     truthThicknessD2 = info.m_truthDimensions[1];

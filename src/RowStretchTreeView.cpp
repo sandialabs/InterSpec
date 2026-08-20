@@ -23,6 +23,8 @@
 
 #include "InterSpec_config.h"
 
+#include <cmath>
+
 #include <Wt/WTreeView.h>
 #include <Wt/WApplication.h>
 #include <Wt/WAbstractItemModel.h>
