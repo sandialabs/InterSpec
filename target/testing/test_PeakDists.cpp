@@ -1245,6 +1245,59 @@ BOOST_AUTO_TEST_CASE( CrystalBallTailReachability )
 }//BOOST_AUTO_TEST_CASE( CrystalBallTailReachability )
 
 
+/** The Crystal Ball tail-fraction helpers.
+ 
+ These are diagnostics, not constraints - nothing in the fitters reads them.  They exist because the
+ tail fraction beyond a reference distance is the quantity that actually correlates with peak-area
+ accuracy (see `PeakDists::sk_tail_frac_max` for the truth-area measurement and for what was tried
+ and reverted), so any future attempt to constrain the Crystal Ball tail needs them and needs them
+ verified.
+ */
+BOOST_AUTO_TEST_CASE( CrystalBallTailFractionHelpers )
+{
+  const double K = sk_tail_frac_nsigma;
+  const double alphas[] = { 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0 };
+  const double ns[] = { 1.05, 1.1, 1.3, 2.0, 3.0, 5.0, 10.0, 50.0, 100.0 };
+
+  // The analytic derivative, against central differences.  It is what makes the inverse solvable by
+  //  Newton, and it must be negative everywhere or the inverse is not single-valued.
+  for( const double alpha : alphas )
+  {
+    for( const double n : ns )
+    {
+      const double h = 1.0E-6*n;
+      const double numeric = (crystal_ball_tail_frac_beyond( alpha, n + h, K )
+                              - crystal_ball_tail_frac_beyond( alpha, n - h, K )) / (2.0*h);
+      const double analytic = crystal_ball_tail_frac_beyond_dn( alpha, n, K );
+
+      BOOST_CHECK_MESSAGE( analytic < 0.0, "dB/dn must be negative (alpha=" << alpha
+                          << ", n=" << n << ") - the inverse relies on strict monotonicity" );
+      BOOST_CHECK_CLOSE( analytic, numeric, 1.0E-3 );
+    }
+  }
+
+  // Round-trip through the inverse.
+  for( const double alpha : alphas )
+  {
+    for( const double n : ns )
+    {
+      const double frac = crystal_ball_tail_frac_beyond( alpha, n, K );
+      if( (frac <= 1.0E-30) || (frac >= 1.0) )
+        continue;
+      BOOST_CHECK_CLOSE( crystal_ball_n_from_tail_frac( alpha, frac, K ), n, 1.0E-6 );
+    }
+  }
+
+  BOOST_CHECK_THROW( crystal_ball_tail_frac_beyond_dn( 2.0, 1.0, K ), std::runtime_error );
+  BOOST_CHECK_THROW( crystal_ball_tail_frac_beyond_dn( 2.0, 2.0, 1.0 ), std::runtime_error );
+
+  // The two anchors quoted in `sk_tail_frac_max`'s documentation: a real measured CZT peak sits an
+  //  order of magnitude inside the knee, the pathological fit sits above it.
+  BOOST_CHECK_LT( crystal_ball_tail_frac_beyond( 1.79967, 2.03026, K ), sk_tail_frac_max );
+  BOOST_CHECK_GT( crystal_ball_tail_frac_beyond( 2.511494, 1.05, K ), sk_tail_frac_max );
+}//BOOST_AUTO_TEST_CASE( CrystalBallTailFractionHelpers )
+
+
 BOOST_AUTO_TEST_CASE( VoigtPlusBortel )
 {
   // Check VoigtPlusBortel has unit area

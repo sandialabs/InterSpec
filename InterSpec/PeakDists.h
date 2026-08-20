@@ -439,6 +439,87 @@ double peak_cdf( const double x, const double mean, const double sigma,
   const double sk_max_coverage_limit_nsigma = 1000.0;
   
   
+  /** MEASURED FINDING, not an enforced limit - nothing currently reads this.
+   
+   Over 1003 CZT photopeaks with KNOWN TRUTH AREAS (Kromek GR1 corpus, chi2/dof < 2, physical sigma),
+   the fitted peak area tracks the truth area to within ~5% while the tail fraction beyond
+   `sk_tail_frac_nsigma` stays under 0.05, then degrades monotonically: 1.13x at m = 0.05-0.08,
+   1.20x at 0.08-0.2, 1.51x at 0.2-0.35 and 4.6x above 0.5.  Whatever cut is applied in [0.01, 0.2],
+   the fits it excludes have a median fitted/truth area of 2.2-2.9 - beyond this knee the Crystal
+   Ball tail is absorbing the continuum rather than describing the detector.  Critically those fits
+   have unremarkable chi2/dof, so chi2 CANNOT separate them; only a truth comparison can.
+   
+   For scale, a measured H3D M400 CZT Cs137 661.7 keV peak (target/testing/test_CrystalBall_CZT_fit.cpp)
+   sits at m = 4.3E-3, an order of magnitude inside this.
+   
+   ---------------------------------------------------------------------------------------------
+   WHAT WAS TRIED, AND WHY IT IS NOT WIRED UP (2026-08, see the notes below before retrying)
+   
+   Constraining this quantity during the fit DOES work on the corpus it was calibrated on: median
+   CZT peak-area bias fell from 15.8% to ~5% with no loss of fit quality (median chi2/dof 0.992 ->
+   0.989), which says the tail/continuum degeneracy is real and worth breaking.  Two implementations
+   were trialled and both were reverted:
+   
+     1. Fitting `log10(m)` directly, so the limit would be an axis of the parameter box.  The
+        feasible region of `n` is CURVED and alpha-dependent in that coordinate, so a fixed
+        rectangle over it left 32% of fits clamped with identically-zero derivatives and 21% at `n`
+        below the 1.05 pole guard that `PeakDef::skew_parameter_range` documents.
+     2. Fitting `w = log(n-1)` (an honest rectangle, exactly the documented `n` range) with this
+        limit as a one-sided penalty residual.  That fixed the geometry completely - 0% out of range
+        - and matched the accuracy of (1).
+   
+   (2) was reverted only because its calibration is not yet trustworthy off the Kromek corpus:
+     - `sk_tail_frac_nsigma` measures the tail in units of SIGMA, but a CZT charge-collection tail
+       has a fixed extent in keV.  At 662 keV that same 20 sigma is a 134 keV window on a Kromek GR1
+       but only 44 keV on an H3D M400, so a limit tuned on one CZT cuts real tail off a
+       better-resolution one.  On the M400 corpus the fitted area came out ~0.5 of truth for EVERY
+       skew model including NoSkew, and only ~40% of that gap is explained by the clipped tail; the
+       remainder is still unexplained.
+     - The penalty hinge behaved as a soft wall at the same value for HPGe and NaI, whose physical
+       tail masses are 1E-11..1E-7 - five to nine decades below it - so a single global constant
+       cannot serve detectors that differ that much.
+   
+   TO REVISIT: make the reference distance physical (keV, or a fraction of peak energy) rather than
+   a multiple of sigma; re-derive the knee per detector class against truth areas; and resolve the
+   M400 factor-of-two first, since it is not a peak-shape effect (it is identical across all seven
+   skew models and survives a correct sigma and chi2/dof ~ 1).
+   */
+  const double sk_tail_frac_max = 0.05;
+  
+
+  
+  /** The smallest tail fraction represented in the fit coordinate; below this a Crystal Ball is a
+   pure Gaussian for any practical purpose (the cleanest real HPGe in the survey sits at 2E-11).
+   */
+  const double sk_tail_frac_min = 1.0E-12;
+  
+  /** Bracket the `*_n_from_tail_frac(...)` inverses solve within.  Exposed so the Jet path can tell
+   a genuine interior root from a clamp at either end (a clamped root has no local sensitivity, so
+   the Newton step that carries the derivatives must be skipped there).
+   */
+  const double sk_cb_n_solve_min = 1.0 + 1.0E-9;
+  const double sk_cb_n_solve_max = 1.0E4;
+  
+  
+  /** Derivative of `crystal_ball_tail_frac_beyond(...)` with respect to `n`.
+   
+   Always negative (the tail fraction is strictly decreasing in `n`), which is what makes
+   `crystal_ball_n_from_tail_frac(...)` single-valued.  Written out analytically rather than
+   auto-differentiated so the Jet path can use it as a scalar Newton denominator:
+     dB/dn = B * [ -D/(n(n-1)(C+D)) - ln(t_1) + (n-1)*alpha*(K-alpha)/(n^2 * t_1) ]
+   with C, D as in `crystal_ball_norm(...)` and t_1 = 1 + alpha*(K-alpha)/n.  Verified against
+   central differences to ~1E-10 over alpha in [0.5,5], n in [1.05,100].
+   
+   Requires `nsigma >= alpha`; throws otherwise.
+   */
+  double crystal_ball_tail_frac_beyond_dn( const double alpha, const double n, const double nsigma );
+  
+  
+
+  
+
+  
+  
   /** Fraction of a Crystal Ball distribution's total area lying further than `nsigma` below the
    mean (i.e. out along the power-law tail).
    

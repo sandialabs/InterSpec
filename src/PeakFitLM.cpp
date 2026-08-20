@@ -1523,12 +1523,22 @@ struct PeakFitDiffCostFunction
       {
         if( restrict_skew_range )
         {
-          // Floor the window at a quarter of the parameters full range, so a zero starting value
-          //  doesnt collapse it to a point - see `LinearProblemSubSolveChi2Fcn::addSkewParameters`.
+          // A window centred on the starting value, floored at a quarter of the parameter's full
+          //  range so a zero starting value doesnt collapse it to a point - see
+          //  `LinearProblemSubSolveChi2Fcn::addSkewParameters`.
+          //
+          // Expressed as an OFFSET from the starting value rather than a multiple of it: scaling by
+          //  the value silently inverts for a negative parameter (lower bound above upper bound,
+          //  i.e. an infeasible starting point handed to Ceres).  No skew parameter is negative
+          //  today, so this is latent - but it bit immediately when a log-scaled skew coordinate
+          //  was trialled, and cost an afternoon to find.
           const double par_range = upper_values[skew_index] - lower_values[skew_index];
-          lower_bounds[skew_index] = std::max( lower_values[skew_index], 0.5*starting_value[skew_index] );
-          upper_bounds[skew_index] = std::min( upper_values[skew_index],
-                                std::max( 1.5*fabs(starting_value[skew_index]), 0.25*par_range ) );
+          const double half_window = (std::max)( 0.125*par_range,
+                                                0.5*fabs(starting_value[skew_index]) );
+          lower_bounds[skew_index] = (std::max)( lower_values[skew_index],
+                                                starting_value[skew_index] - half_window );
+          upper_bounds[skew_index] = (std::min)( upper_values[skew_index],
+                                                starting_value[skew_index] + half_window );
         }else
         {
           lower_bounds[skew_index] = lower_values[skew_index];

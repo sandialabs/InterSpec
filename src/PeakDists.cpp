@@ -566,6 +566,30 @@ template void photopeak_function_integral<double>( const double, const double,co
   }//crystal_ball_tail_frac_beyond(...)
   
   
+  double crystal_ball_tail_frac_beyond_dn( const double alpha, const double n, const double nsigma )
+  {
+    if( (alpha <= 0.0) || (n <= 1.0) || (nsigma < alpha) )
+      throw runtime_error( "crystal_ball_tail_frac_beyond_dn: invalid alpha/n/nsigma" );
+    
+    const double one_div_root_two = boost::math::constants::one_div_root_two<double>();
+    const double root_half_pi = boost::math::constants::root_half_pi<double>();
+    
+    const double C = (n / alpha) * (1.0/(n - 1.0)) * std::exp( -0.5*alpha*alpha );
+    const double D = root_half_pi * (1.0 + boost_erf_imp( one_div_root_two * alpha ));
+    const double t_1 = 1.0 + alpha*(nsigma - alpha)/n;
+    const double B = (C / (C + D)) * std::pow( t_1, 1.0 - n );
+    
+    // d(ln B)/dn has three pieces: the tail's share of the normalization shrinking with n, the
+    //  explicit (1-n) exponent, and t_1 itself depending on n.  See the header for the derivation.
+    return B * ( -D/(n*(n - 1.0)*(C + D))
+                - std::log(t_1)
+                + (n - 1.0)*alpha*(nsigma - alpha)/(n*n*t_1) );
+  }//crystal_ball_tail_frac_beyond_dn(...)
+  
+  
+
+  
+  
   double dscb_tail_frac_beyond( const double alpha, const double n,
                                 const double other_alpha, const double other_n,
                                 const double nsigma )
@@ -605,7 +629,7 @@ template void photopeak_function_integral<double>( const double, const double,co
     template<class Fcn>
     double n_from_tail_frac_impl( const Fcn &frac_for_n, const double frac )
     {
-      const double n_lo = 1.0 + 1.0E-9, n_hi = 1.0E4;
+      const double n_lo = sk_cb_n_solve_min, n_hi = sk_cb_n_solve_max;
       
       if( (frac < 0.0) || (frac > 1.0) )
         throw runtime_error( "n_from_tail_frac: fraction must be in [0,1]" );
@@ -632,9 +656,63 @@ template void photopeak_function_integral<double>( const double, const double,co
   
   double crystal_ball_n_from_tail_frac( const double alpha, const double frac, const double nsigma )
   {
-    return n_from_tail_frac_impl( [alpha,nsigma]( const double n ){
-      return crystal_ball_tail_frac_beyond( alpha, n, nsigma );
-    }, frac );
+    // This one is on the fit's hot path (every peak, every Ceres evaluation), so it uses a
+    //  safeguarded Newton on w = ln(n-1) rather than the generic bisection: with the analytic
+    //  `crystal_ball_tail_frac_beyond_dn` it converges in a handful of steps instead of ~100.
+    //  Solving in log-fraction / log-(n-1) space keeps it well conditioned across the nine decades
+    //  of tail fraction the coordinate spans, and the bracket is retained so a bad Newton step can
+    //  never leave the interval.
+    const double n_lo = sk_cb_n_solve_min, n_hi = sk_cb_n_solve_max;
+    
+    if( (frac < 0.0) || (frac > 1.0) )
+      throw runtime_error( "crystal_ball_n_from_tail_frac: fraction must be in [0,1]" );
+    
+    const double f_lo = crystal_ball_tail_frac_beyond( alpha, n_lo, nsigma );
+    const double f_hi = crystal_ball_tail_frac_beyond( alpha, n_hi, nsigma );
+    if( !(frac < f_lo) )
+      return n_lo;
+    if( !(frac > f_hi) )
+      return n_hi;
+    
+    const double ln_ten = boost::math::constants::ln_ten<double>();
+    const double target = std::log10( frac );
+    
+    double w_lo = std::log(n_lo - 1.0), w_hi = std::log(n_hi - 1.0);
+    double w = 0.5*(w_lo + w_hi);
+    
+    for( size_t iter = 0; iter < 60; ++iter )
+    {
+      const double n = 1.0 + std::exp(w);
+      const double f = crystal_ball_tail_frac_beyond( alpha, n, nsigma );
+      if( !(f > 0.0) )      //underflowed: we are far past the target, tighten from above
+      {
+        w_hi = w;
+        w = 0.5*(w_lo + w_hi);
+        continue;
+      }
+      
+      const double g = std::log10(f) - target;   //strictly decreasing in w
+      if( g > 0.0 ) w_lo = w; else w_hi = w;
+      if( std::fabs(g) < 1.0E-12 )
+        break;
+      
+      // dg/dw = (dB/dn)*(n-1)/(B*ln10)
+      const double dgdw = crystal_ball_tail_frac_beyond_dn( alpha, n, nsigma )
+                          * (n - 1.0) / (f * ln_ten);
+      
+      double w_next = ((dgdw < 0.0) ? (w - g/dgdw) : 0.5*(w_lo + w_hi));
+      if( !(w_next > w_lo) || !(w_next < w_hi) )   //also catches NaN
+        w_next = 0.5*(w_lo + w_hi);
+      
+      if( std::fabs(w_next - w) < 1.0E-13*(1.0 + std::fabs(w)) )
+      {
+        w = w_next;
+        break;
+      }
+      w = w_next;
+    }//for( safeguarded Newton )
+    
+    return 1.0 + std::exp(w);
   }//crystal_ball_n_from_tail_frac(...)
   
   
