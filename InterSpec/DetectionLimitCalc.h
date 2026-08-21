@@ -689,7 +689,12 @@ struct PoissonChannel
   /** Observed counts in this channel; must be non-negative. */
   double observed = 0.0;
 
-  /** Counts contributed by the fixed trial signal; must be non-negative. */
+  /** Counts contributed by the fixed trial signal.
+
+   May be signed when fitting the unconstrained primary activity estimate.  The continuum fit
+   constrains the *total* expected counts, `continuum + fixed_signal`, to remain strictly positive;
+   it does not constrain this component separately.
+   */
   double fixed_signal = 0.0;
 
   /** Multiplies the polynomial's contribution to this channel's expected counts, so that
@@ -725,7 +730,8 @@ struct PoissonChannel
  @param observed The observed counts of each channel; must have at least \p nbin entries, all
         non-negative.
  @param fixed_signal Counts in each channel from the fixed trial signal; may be nullptr, which is
-        equivalent to all zeros.  Must be non-negative.
+        equivalent to all zeros.  May be signed; total expected channel counts remain constrained
+        to be strictly positive.
  @param nbin The number of channels.
  @param num_coefficients The number of polynomial terms; 1 is constant, 2 linear, 3 quadratic.
  @param reference_energy The energy the polynomial is defined relative to.
@@ -1086,7 +1092,20 @@ struct DeconRoiInfo
 struct DeconComputeInput
 {
   double distance;
+
+  /** Trial activity.  Must normally be non-negative.
+
+   #allow_negative_activity exists only for algorithms, such as
+   #decon_characteristic_limits, that explicitly require an unconstrained signed primary
+   estimator.  Ordinary callers should leave it false.
+   */
   double activity;
+
+  /** Permit a signed #activity while still constraining every total expected channel count to be
+   strictly positive.  Defaults to false to preserve the physical contract of
+   #decon_compute_peaks for ordinary callers.
+   */
+  bool allow_negative_activity = false;
   
   /** Wether or not to include attenuation in air of #distance - #shielding_thickness */
   bool include_air_attenuation;
@@ -1202,10 +1221,148 @@ struct DeconComputeResults
 };//struct DeconComputeResults
 
 /** Computes the most consistent peaks, and their chi2, for a given input activity and distance.
- 
- Throws exception if input is invalid, or error during calculation.
+
+ Throws exception if input is invalid, or error during calculation.  That includes a gamma line
+ whose detector efficiency, attenuation, or derived width does not give a finite amplitude and a
+ strictly positive sigma - previously such a line produced a degenerate `PeakDef` whose integral
+ was zero or NaN, and the caller found out further downstream, if at all.
  */
 DeconComputeResults decon_compute_peaks( const DeconComputeInput &input );
+
+
+/** Typed outcome of the ISO-style characteristic-limit calculation for the deconvolution method.
+
+ This status belongs only to #decon_characteristic_limits.  In particular, it does not describe
+ the separate profile-likelihood upper-bound calculation.
+ */
+enum class DeconCharacteristicLimitStatus : int
+{
+  Success = 0,
+  InvalidInput,
+  UnsupportedModel,
+  FitFailed,
+  ApproximationInvalid,
+  SingularInformation,
+  NoFiniteDetectionLimit
+};//enum class DeconCharacteristicLimitStatus
+
+
+/** Inputs for ISO-style decision and detection limits of the deconvolution activity estimator.
+
+ Only `CurrentSpectrum` with a Floating or FixedByEdges Linear/Quadratic continuum is initially
+ supported.  The activity in #decon_input is ignored: the function obtains a global, signed
+ primary activity estimate from the spectrum.
+ */
+struct DeconCharacteristicLimitInput
+{
+  DeconComputeInput decon_input;
+
+  /** Probability of a false-positive detection under zero activity; must be in (0, 0.5). */
+  double alpha = 0.05;
+
+  /** Probability of failing to detect an activity equal to Ld; must be in (0, 0.5). */
+  double beta = 0.05;
+};//struct DeconCharacteristicLimitInput
+
+
+/** Result of #decon_characteristic_limits, with every activity-valued field in the units used by
+ `DeconComputeInput::activity`.
+
+ On failure #status identifies the failure class and #error_message gives details.  Numeric fields
+ that could not be obtained are NaN; fields completed before a later failure remain valid.
+ #decision_threshold is the ISO activity-domain \f$L_c\f$; it must not be confused with the
+ dimensionless profile-likelihood statistic threshold used by `get_activity_or_distance_limits`.
+ */
+struct DeconCharacteristicLimitResult
+{
+  DeconCharacteristicLimitInput input;
+  DeconCharacteristicLimitStatus status = DeconCharacteristicLimitStatus::InvalidInput;
+  std::string error_message;
+  std::vector<std::string> warnings;
+
+  /** Unconstrained global activity coefficient fitted jointly with all ROI continua. */
+  double primary_activity;
+
+  /** Complete standard uncertainty of #primary_activity, including continuum correlations. */
+  double primary_standard_uncertainty;
+
+  /** \f$\widetilde u(0)\f$, obtained from the artificial expected spectrum at zero activity.
+
+   Realization-dependent: the artificial spectrum is built on the continuum fitted to *this*
+   spectrum at #primary_activity, so this fluctuates with the data.  \sa #decision_threshold
+   */
+  double uncertainty_at_zero;
+
+  /** \f$L_c = k_{1-\alpha}\widetilde u(0)\f$.
+
+   \warning Do **not** write `primary_activity > decision_threshold`.  Both sides are computed
+   from the same fluctuating spectrum, and an upward fluctuation under the peak raises
+   #primary_activity while pulling the fitted continuum - and so this threshold - down.  Measured
+   that way the false-positive probability reaches 0.15 for a nominal \f$\alpha\f$ of 0.05.  A
+   decision needs a threshold fixed independently of the realization being judged; see the
+   discussion on #decon_characteristic_limits.
+   */
+  double decision_threshold;
+
+  /** Solution of \f$L_d=L_c+k_{1-\beta}\widetilde u(L_d)\f$.
+
+   Found by bisection on the first sign change out from #decision_threshold.  Uniqueness of that
+   root is not established: \f$A-L_c-k_{1-\beta}\widetilde u(A)\f$ need not be monotone once the
+   expected counts under the peak get small, so in that regime this may not be the smallest
+   solution ISO asks for.  The same sparse conditions raise a #warnings entry.
+   */
+  double detection_limit;
+
+  /** \f$\widetilde u(L_d)\f$ at the solved detection limit. */
+  double uncertainty_at_detection_limit;
+
+  /** Number of full profiled-likelihood evaluations used for the signed primary fit, including
+   the final evaluation retained for the result.
+   */
+  size_t num_profile_evaluations = 0;
+
+  DeconCharacteristicLimitResult();
+};//struct DeconCharacteristicLimitResult
+
+
+/** Calculates deconvolution activity decision and detection limits using the ISO uncertainty
+ function construction.
+
+ The primary result is the signed maximum-likelihood activity from a joint Poisson model with one
+ global activity coefficient and an independent polynomial continuum per merged ROI.  Continua are
+ profiled at each activity, which is mathematically the joint fit.  For each assumed activity A,
+ an artificial spectrum is formed from the primary fitted nuisance values plus A times the fixed
+ signal template.  For this fixed-template linear continuum model, refitting that spectrum is
+ mathematically a no-op; its complete expected-information covariance is used as
+ \f$\widetilde u(A)\f$.
+
+ This initially propagates only counting and fitted-continuum uncertainty.  Peak positions,
+ widths, yields, efficiency, attenuation, and other systematic quantities are held fixed, so this
+ API does not make an ISO-conformance claim.  Models whose fitted artificial expectation reaches
+ the positivity boundary cannot support the local-normal expected-information construction at all,
+ and return `DeconCharacteristicLimitStatus::ApproximationInvalid`.
+
+ Sparse data can be *outside the checked range* without reaching that boundary, which is a weaker
+ condition and is reported through #DeconCharacteristicLimitResult::warnings rather than through
+ #status.  The Monte Carlo in `test_DetectionLimit.cpp` checks a Floating continuum from 0.1
+ expected counts per channel upward, and a `FixedByEdges` continuum from 1 expected count per
+ control channel upward; `FixedByEdges` at 0.1 measured a false-positive probability of 0.083
+ against a nominal 0.05 and is deliberately excluded.  Across the checked range the realized
+ false-positive probability runs slightly high - 0.0539 pooled over 14000 trials against a nominal
+ 0.05, about +2 standard deviations - so \f$\alpha\f$ should be read as approximate rather than
+ exact.
+
+ This function deliberately does not return a detection boolean.  A repeated-measurement decision
+ must compare #DeconCharacteristicLimitResult::primary_activity with a procedure-level decision
+ threshold fixed independently of that realization.  Recomputing both from the same fluctuating
+ spectrum was found to inflate the false-positive probability and is not represented as a valid
+ decision here.
+
+ Failures are returned through `DeconCharacteristicLimitResult::status`, not converted to a
+ fabricated limit.
+ */
+DeconCharacteristicLimitResult
+decon_characteristic_limits( const DeconCharacteristicLimitInput &input );
 
 
 /** Which sentence describes a completed profile scan.
