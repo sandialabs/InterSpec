@@ -24,11 +24,13 @@
 #ifndef FitPeaksForNuclides_h
 #define FitPeaksForNuclides_h
 
+#include <set>
 #include <string>
 #include <vector>
 #include <memory>
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <functional>
 
 #include "InterSpec/PeakDef.h"
@@ -743,6 +745,50 @@ namespace detail
     std::vector<std::string> *warnings = nullptr,
     const GlobalContinuumEstimate *global_continuum = nullptr,
     std::vector<double> *guard_energies = nullptr );
+
+
+  /** Finds the `RelActCalcAuto::FloatingPeakResult` belonging to a bystander user-peak that was
+   enrolled into the fit as a `FloatingPeak` at `enrolled_energy`, and marks it consumed.
+
+   `RelActCalcAuto::FloatingPeakResult::energy` is a copy of the input `FloatingPeak::energy`, and
+   bystanders are enrolled at exactly their peak mean, so this requires energy identity (to within
+   `sm_enrolled_float_match_tol`) rather than a nearest-match over some window.  That matters
+   because `m_floating_peaks` also holds floats this code injects for its own reasons - the 511 keV
+   annihilation peak, escape peaks, and auto-detected interferers.  A nearest-match can bind an
+   unmatched bystander to one of those (e.g. a source-less user peak at ~510.7 keV to the 511 keV
+   float), after which the de-duplication pass erases the real 511 keV peak from the results.
+
+   Each result is returned at most once - `consumed_results` is both read and updated - so two
+   bystanders enrolled at the same energy bind to different results.
+
+   Returns nullptr when the bystander's own float did not survive to the solve (e.g. it was dropped
+   by `remove_floating_peaks_without_roi`); callers then retain the user's original peak. */
+  const RelActCalcAuto::FloatingPeakResult *find_enrolled_float_result(
+    const std::vector<RelActCalcAuto::FloatingPeakResult> &floating_results,
+    std::set<const RelActCalcAuto::FloatingPeakResult *> &consumed_results,
+    const double enrolled_energy );
+
+
+  /** Builds the updated bystander peak from the fit's `FloatingPeakResult`, or indicates that the
+   user's original peak should be retained instead.
+
+   Shared by the `ExistingPeaksAsFreePeak` and default-mode reconciliation blocks of
+   `fit_peaks_for_nuclide_relactauto` so their acceptance rules cannot drift apart.
+
+   Returns `std::nullopt` when the solver did not actually determine this peak - a non-positive
+   amplitude, or an amplitude whose uncertainty is missing, non-finite, or as large as the
+   amplitude itself.  Retaining the original is the conservative choice there: swapping in an
+   undetermined amplitude trades the user's measured peak for a meaningless one, and pairing the
+   fit's new amplitude with the original's (small) uncertainty would report a confident peak that
+   nothing ever measured.
+
+   `mode_label` prefixes the `PERFORM_DEVELOPER_CHECKS` diagnostics, to identify the calling block. */
+  std::optional<PeakDef> update_bystander_from_float_result(
+    const PeakDef &orig_peak,
+    const double orig_energy,
+    const RelActCalcAuto::FloatingPeakResult &fpr,
+    const std::shared_ptr<PeakContinuum> &roi_continuum,
+    const char * const mode_label );
 }//namespace detail
 
 

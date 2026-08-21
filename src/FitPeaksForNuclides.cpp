@@ -42,6 +42,7 @@
 #include <limits>
 #include <map>
 #include <numeric>
+#include <optional>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -5059,6 +5060,117 @@ std::vector<InterfererCandidate> find_strong_unmodeled_interferers(
 
   return candidates;
 }//find_strong_unmodeled_interferers(...)
+
+
+/** Match tolerance for #find_enrolled_float_result: an identity comparison with enough headroom
+ for the value having been copied through the solver, but far tighter than the spacing between any
+ two distinguishable peaks. */
+static constexpr double sm_enrolled_float_match_tol = 0.01;  // keV
+
+const RelActCalcAuto::FloatingPeakResult *find_enrolled_float_result(
+  const std::vector<RelActCalcAuto::FloatingPeakResult> &floating_results,
+  std::set<const RelActCalcAuto::FloatingPeakResult *> &consumed_results,
+  const double enrolled_energy )
+{
+  for( const RelActCalcAuto::FloatingPeakResult &fpr : floating_results )
+  {
+    if( consumed_results.count( &fpr ) )
+      continue;
+
+    // Identity, not proximity - see the header comment for why a nearest-match over a window is
+    //  unsafe here (the 511 keV, escape, and interferer floats share this pool).
+    if( std::fabs( fpr.energy - enrolled_energy ) >= sm_enrolled_float_match_tol )
+      continue;
+
+    consumed_results.insert( &fpr );
+    return &fpr;
+  }//for( floating_results )
+
+  return nullptr;
+}//find_enrolled_float_result(...)
+
+
+std::optional<PeakDef> update_bystander_from_float_result(
+  const PeakDef &orig_peak,
+  const double orig_energy,
+  const RelActCalcAuto::FloatingPeakResult &fpr,
+  const std::shared_ptr<PeakContinuum> &roi_continuum,
+  const char * const mode_label )
+{
+  if( fpr.amplitude <= 0.0 )
+  {
+    // The solver gave the floating peak zero or negative amplitude.  We can't build a
+    //  zero/negative-amplitude replacement, and silently dropping the user's existing peak
+    //  would degrade their data when fitting a new source.  So retain the original bystander
+    //  untouched (it keeps its own ROI) - the same conservative choice the callers make when the
+    //  fit produced no source peaks in the bystander's ROI.
+#if( PERFORM_DEVELOPER_CHECKS )
+    std::cerr << mode_label << ": bystander at " << orig_energy
+         << " keV has non-positive amplitude (" << fpr.amplitude
+         << ") — retaining original." << std::endl;
+#endif
+    return std::nullopt;
+  }//if( fpr.amplitude <= 0.0 )
+
+  // The solver can also come back with an amplitude it could not actually determine: the new
+  //  source's gammas sitting on top of the bystander leave the pair degenerate, and the fit
+  //  reports an uncertainty as large as, or larger than, the amplitude itself.  That is not a
+  //  re-measurement of the user's peak, it is the fit saying it cannot tell, and swapping it
+  //  in trades a measured peak for a meaningless one.  A missing or non-finite uncertainty is
+  //  the same situation with even less to go on - and worse, the update below would then pair
+  //  the fit's new amplitude with the ORIGINAL peak's (small) uncertainty, reporting a
+  //  confident peak that nothing ever measured.  Both retain the original, for the same
+  //  reason as the non-positive-amplitude case above.
+  //
+  //  The test is deliberately scale-free rather than a significance threshold: this
+  //  uncertainty carries the solve's sqrt(chi2/dof) covariance inflation (RelActCalcAuto's
+  //  `m_cov_scale`), while the thresholds used to filter observable peaks are calibrated on
+  //  un-inflated ROI refits.  Comparing across those two scales would reject sound updates on
+  //  any fit with a large chi2/dof; "the uncertainty exceeds the amplitude" needs no
+  //  calibration to mean what it says.
+  if( !(fpr.amplitude_uncert > 0.0)   //`!(x > 0)` so a NaN uncertainty lands here too
+     || (fpr.amplitude_uncert >= fpr.amplitude) )
+  {
+#if( PERFORM_DEVELOPER_CHECKS )
+    if( should_debug_print() )
+    {
+      std::cerr << mode_label << ": bystander at " << orig_energy
+           << " keV was not determined by the fit (amplitude " << fpr.amplitude
+           << " +- " << fpr.amplitude_uncert << ") - retaining original." << std::endl;
+    }
+#endif
+    return std::nullopt;
+  }//if( the fit did not determine this bystander's amplitude )
+
+  // Create updated bystander: copy original to preserve source info, color, labels, etc.
+  PeakDef updated_bystander( orig_peak );
+
+  // Update Gaussian parameters from the fit result.
+  // FloatingPeakResult::original_spectrum_cal_energy is in the original spectrum
+  // calibration, same as the observable_peaks after translate_peaks_to_orig_cal.
+  const double fwhm_to_sigma = 1.0 / (2.0 * std::sqrt( 2.0 * std::log( 2.0 ) ));
+  updated_bystander.setMean( fpr.original_spectrum_cal_energy );
+  updated_bystander.setSigma( fwhm_to_sigma * fpr.fwhm );
+  updated_bystander.setAmplitude( fpr.amplitude );
+  updated_bystander.setAmplitudeUncert( fpr.amplitude_uncert );  // > 0, per the guard above
+  if( fpr.fwhm_uncert > 0.0 )
+    updated_bystander.setSigmaUncert( fwhm_to_sigma * fpr.fwhm_uncert );
+
+  // Share the continuum with the observable peaks in the same ROI so the
+  // bystander is part of the same ROI as the source peaks.
+  updated_bystander.setContinuum( roi_continuum );
+
+  if( should_debug_print() )
+  {
+    std::cout << mode_label << ": updating bystander at " << orig_energy
+         << " keV -> " << fpr.original_spectrum_cal_energy << " keV"
+         << " (amp: " << orig_peak.amplitude() << " -> " << fpr.amplitude
+         << ", fwhm: " << orig_peak.fwhm() << " -> " << fpr.fwhm << ")"
+         << ", source: " << orig_peak.sourceName() << std::endl;
+  }
+
+  return updated_bystander;
+}//update_bystander_from_float_result(...)
 
 }//namespace detail
 
@@ -16297,40 +16409,18 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       return false;
     };//fit_has_source_peak_in_range
 
-    // Helper: finds the FloatingPeakResult in result.solution.m_floating_peaks whose energy
-    // matches the given bystander energy (in original calibration).  For ObservedInSpectrum
-    // floating peaks, FloatingPeakResult::energy equals the input energy.
-    // Each result is consumed at most once so two bystanders closer together than the match
-    // tolerance cannot both bind to the same (nearest) result - each input floating peak
-    // corresponds to exactly one bystander.
+    // Helper: finds the FloatingPeakResult that this bystander was enrolled into the fit as.  The
+    //  match is on energy identity with the enrolled energy (the bystander's own peak mean), not
+    //  proximity - `m_floating_peaks` also holds the 511 keV, escape-peak, and interferer floats
+    //  this code injects, and a nearest-match can bind a bystander to one of those.  Each result is
+    //  consumed at most once, so two bystanders enrolled at the same energy get different results.
+    //  See `detail::find_enrolled_float_result`.
     std::set<const RelActCalcAuto::FloatingPeakResult *> consumed_floating_results;
     const auto find_floating_peak_result = [&]( const double bystander_energy )
       -> const RelActCalcAuto::FloatingPeakResult *
     {
-      const RelActCalcAuto::FloatingPeakResult *best = nullptr;
-      double best_diff = std::numeric_limits<double>::max();
-
-      for( const RelActCalcAuto::FloatingPeakResult &fpr : result.solution.m_floating_peaks )
-      {
-        if( consumed_floating_results.count( &fpr ) )
-          continue;
-
-        const double diff = std::fabs( fpr.energy - bystander_energy );
-        if( diff < best_diff )
-        {
-          best_diff = diff;
-          best = &fpr;
-        }
-      }//for( result.solution.m_floating_peaks )
-
-      // Use a tight tolerance since these should match very closely
-      const double match_tol = 0.5; // keV
-      if( best && (best_diff < match_tol) )
-      {
-        consumed_floating_results.insert( best );
-        return best;
-      }
-      return nullptr;
+      return detail::find_enrolled_float_result( result.solution.m_floating_peaks,
+                                                 consumed_floating_results, bystander_energy );
     };//find_floating_peak_result
 
     if( existing_peaks_as_free
@@ -16431,83 +16521,17 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           //  updated one does - more so, since that is the case that would otherwise show twice.
           bystander_fit_energies[orig_peak.get()] = fpr->original_spectrum_cal_energy;
 
-          if( fpr->amplitude <= 0.0 )
-          {
-            // The solver gave the floating peak zero or negative amplitude.  We can't build a
-            //  zero/negative-amplitude replacement, and silently dropping the user's existing peak
-            //  would degrade their data when fitting a new source.  So retain the original bystander
-            //  untouched (it keeps its own ROI) - the same conservative choice we make above when the
-            //  fit produced no source peaks in the bystander's ROI.
-#if( PERFORM_DEVELOPER_CHECKS )
-            std::cerr << "ExistingPeaksAsFreePeak: bystander at " << orig_energy
-                 << " keV has non-positive amplitude (" << fpr->amplitude
-                 << ") — retaining original." << std::endl;
-#endif
+          // Shared with the default-mode block below so the two cannot drift apart; returns
+          //  nothing when the fit did not actually determine this peak, in which case we retain
+          //  the user's original untouched (it keeps its own ROI) - the same conservative choice
+          //  we make above when the fit produced no source peaks in the bystander's ROI.
+          const std::optional<PeakDef> updated_bystander
+              = detail::update_bystander_from_float_result( *orig_peak, orig_energy, *fpr,
+                                                    roi_continuum, "ExistingPeaksAsFreePeak" );
+          if( !updated_bystander )
             continue;
-          }
 
-          // The solver can also come back with an amplitude it could not actually determine: the new
-          //  source's gammas sitting on top of the bystander leave the pair degenerate, and the fit
-          //  reports an uncertainty as large as, or larger than, the amplitude itself.  That is not a
-          //  re-measurement of the user's peak, it is the fit saying it cannot tell, and swapping it
-          //  in trades a measured peak for a meaningless one.  A missing or non-finite uncertainty is
-          //  the same situation with even less to go on - and worse, the update below would then pair
-          //  the fit's new amplitude with the ORIGINAL peak's (small) uncertainty, reporting a
-          //  confident peak that nothing ever measured.  Both retain the original, for the same
-          //  reason as the non-positive-amplitude case above.
-          //
-          //  The test is deliberately scale-free rather than a significance threshold: this
-          //  uncertainty carries the solve's sqrt(chi2/dof) covariance inflation (RelActCalcAuto's
-          //  `m_cov_scale`), while the thresholds used to filter observable peaks are calibrated on
-          //  un-inflated ROI refits.  Comparing across those two scales would reject sound updates on
-          //  any fit with a large chi2/dof; "the uncertainty exceeds the amplitude" needs no
-          //  calibration to mean what it says.
-          if( !(fpr->amplitude_uncert > 0.0)   //`!(x > 0)` so a NaN uncertainty lands here too
-             || (fpr->amplitude_uncert >= fpr->amplitude) )
-          {
-#if( PERFORM_DEVELOPER_CHECKS )
-            if( should_debug_print() )
-            {
-              std::cerr << "ExistingPeaksAsFreePeak: bystander at " << orig_energy
-                   << " keV was not determined by the fit (amplitude " << fpr->amplitude
-                   << " +- " << fpr->amplitude_uncert << ") - retaining original." << std::endl;
-            }
-#endif
-            continue;
-          }//if( the fit did not determine this bystander's amplitude )
-
-          // Create updated bystander: copy original to preserve source info, color, labels, etc.
-          PeakDef updated_bystander( *orig_peak );
-
-          // Update Gaussian parameters from the fit result.
-          // FloatingPeakResult::original_spectrum_cal_energy is in the original spectrum
-          // calibration, same as the observable_peaks after translate_peaks_to_orig_cal.
-          updated_bystander.setMean( fpr->original_spectrum_cal_energy );
-          const double sigma = fpr->fwhm / (2.0 * std::sqrt( 2.0 * std::log( 2.0 ) ));
-          updated_bystander.setSigma( sigma );
-          updated_bystander.setAmplitude( fpr->amplitude );
-          if( fpr->amplitude_uncert > 0.0 )
-            updated_bystander.setAmplitudeUncert( fpr->amplitude_uncert );
-          if( fpr->fwhm_uncert > 0.0 )
-          {
-            const double sigma_uncert = fpr->fwhm_uncert / (2.0 * std::sqrt( 2.0 * std::log( 2.0 ) ));
-            updated_bystander.setSigmaUncert( sigma_uncert );
-          }
-
-          // Share the continuum with the observable peaks in the same ROI so the
-          // bystander is part of the same ROI as the source peaks.
-          updated_bystander.setContinuum( roi_continuum );
-
-          if( should_debug_print() )
-          {
-            std::cout << "ExistingPeaksAsFreePeak: updating bystander at " << orig_energy
-                 << " keV -> " << fpr->original_spectrum_cal_energy << " keV"
-                 << " (amp: " << orig_peak->amplitude() << " -> " << fpr->amplitude
-                 << ", fwhm: " << orig_peak->fwhm() << " -> " << fpr->fwhm << ")"
-                 << ", source: " << orig_peak->sourceName() << std::endl;
-          }
-
-          result.observable_peaks.push_back( updated_bystander );
+          result.observable_peaks.push_back( *updated_bystander );
           result.original_peaks_to_remove.push_back( orig_peak );
         }
       }// for( existing_peaks_added_as_floating )
@@ -16706,49 +16730,25 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
         // Reconstruct updated bystander from FloatingPeakResult, preserving source info and color.
         const RelActCalcAuto::FloatingPeakResult *fpr = find_floating_peak_result( orig_energy );
 
-        if( !fpr || (fpr->amplitude <= 0.0) )
+        if( !fpr )
         {
 #if( PERFORM_DEVELOPER_CHECKS )
-          if( !fpr )
-          {
-            std::cerr << "WARNING: Default mode bystander at " << orig_energy
-                 << " keV has no matching FloatingPeakResult — keeping original." << std::endl;
-          }else
-          {
-            std::cerr << "WARNING: Default mode bystander at " << orig_energy
-                 << " keV has non-positive amplitude (" << fpr->amplitude
-                 << ") in FloatingPeakResult — keeping original." << std::endl;
-          }
+          std::cerr << "WARNING: Default mode bystander at " << orig_energy
+               << " keV has no matching FloatingPeakResult — keeping original." << std::endl;
 #endif
           continue;
         }
 
-        PeakDef updated_bystander( *orig_peak );
+        // Shared with the ExistingPeaksAsFreePeak block above so the two cannot drift apart;
+        //  returns nothing when the fit did not actually determine this peak, in which case we
+        //  keep the user's original untouched.
+        const std::optional<PeakDef> updated_bystander
+            = detail::update_bystander_from_float_result( *orig_peak, orig_energy, *fpr,
+                                                          roi_continuum, "Default mode" );
+        if( !updated_bystander )
+          continue;
 
-        updated_bystander.setMean( fpr->original_spectrum_cal_energy );
-        const double sigma = fpr->fwhm / (2.0 * std::sqrt( 2.0 * std::log( 2.0 ) ));
-        updated_bystander.setSigma( sigma );
-        updated_bystander.setAmplitude( fpr->amplitude );
-        if( fpr->amplitude_uncert > 0.0 )
-          updated_bystander.setAmplitudeUncert( fpr->amplitude_uncert );
-        if( fpr->fwhm_uncert > 0.0 )
-        {
-          const double sigma_uncert = fpr->fwhm_uncert / (2.0 * std::sqrt( 2.0 * std::log( 2.0 ) ));
-          updated_bystander.setSigmaUncert( sigma_uncert );
-        }
-
-        updated_bystander.setContinuum( roi_continuum );
-
-        if( should_debug_print() )
-        {
-          std::cout << "Default mode: updating bystander at " << orig_energy
-               << " keV -> " << fpr->original_spectrum_cal_energy << " keV"
-               << " (amp: " << orig_peak->amplitude() << " -> " << fpr->amplitude
-               << ", fwhm: " << orig_peak->fwhm() << " -> " << fpr->fwhm << ")"
-               << ", source: " << orig_peak->sourceName() << std::endl;
-        }
-
-        result.observable_peaks.push_back( updated_bystander );
+        result.observable_peaks.push_back( *updated_bystander );
         result.original_peaks_to_remove.push_back( orig_peak );
       }//for( default_mode_bystander_peaks )
 

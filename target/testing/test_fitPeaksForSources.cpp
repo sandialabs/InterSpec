@@ -30,9 +30,11 @@
 #include <vector>
 #include <memory>
 #include <random>
+#include <limits>
 #include <numeric>
 #include <cstdint>
 #include <iostream>
+#include <optional>
 #include <algorithm>
 #include <functional>
 
@@ -3849,5 +3851,145 @@ BOOST_AUTO_TEST_CASE( test_marginal_keep_classification_preserves_normal_accept_
     BOOST_CHECK( !(normally_accepted && is_marginal_keep_reject(100.0, z, keep_z)) );
   }
 }
+
+
+namespace
+{
+  RelActCalcAuto::FloatingPeakResult make_float_result( const double energy,
+                                                       const double fit_energy,
+                                                       const double amplitude,
+                                                       const double amplitude_uncert )
+  {
+    RelActCalcAuto::FloatingPeakResult fpr;
+    fpr.energy = energy;
+    fpr.original_spectrum_cal_energy = fit_energy;
+    fpr.amplitude = amplitude;
+    fpr.amplitude_uncert = amplitude_uncert;
+    fpr.fwhm = 3.6;
+    fpr.fwhm_uncert = 0.12;
+    return fpr;
+  }//make_float_result(...)
+}//namespace
+
+
+/** A bystander must never be updated to the fit's amplitude while keeping the uncertainty of the
+ peak it replaced - that reports a confidently-measured peak the fit could not determine.  The
+ default-mode reconciliation block used to do exactly that whenever the solver returned a
+ non-positive or non-finite amplitude uncertainty; both blocks now share this helper.
+ */
+BOOST_AUTO_TEST_CASE( test_bystander_update_requires_determined_amplitude )
+{
+  using FitPeaksForNuclides::detail::update_bystander_from_float_result;
+
+  // The user's existing peak: a well-measured 1000 +- 20 counts.
+  const double orig_energy = 661.657;
+  PeakDef orig_peak( orig_energy, 1.5, 1000.0 );
+  orig_peak.setAmplitudeUncert( 20.0 );
+
+  const std::shared_ptr<PeakContinuum> roi_continuum = std::make_shared<PeakContinuum>();
+  roi_continuum->setRange( 640.0, 680.0 );
+
+  // A determined result is taken, uncertainty and all.
+  {
+    const RelActCalcAuto::FloatingPeakResult fpr
+        = make_float_result( orig_energy, 661.9, 1500.0, 60.0 );
+    const std::optional<PeakDef> updated = update_bystander_from_float_result(
+        orig_peak, orig_energy, fpr, roi_continuum, "unit test" );
+
+    BOOST_REQUIRE( updated.has_value() );
+    BOOST_CHECK_CLOSE( updated->mean(), 661.9, 1.0e-6 );
+    BOOST_CHECK_CLOSE( updated->amplitude(), 1500.0, 1.0e-6 );
+    BOOST_CHECK_CLOSE( updated->sigma(), 3.6 / (2.0*std::sqrt(2.0*std::log(2.0))), 1.0e-6 );
+    BOOST_CHECK_EQUAL( updated->continuum(), roi_continuum );
+
+    // The regression: the fit's amplitude must arrive with the FIT's uncertainty, never with the
+    //  original peak's.
+    BOOST_CHECK_CLOSE( updated->amplitudeUncert(), 60.0, 1.0e-6 );
+  }
+
+  // Every flavour of "the fit could not determine this peak" retains the user's original.
+  const double nan_uncert = std::numeric_limits<double>::quiet_NaN();
+  const std::vector<std::pair<std::string,RelActCalcAuto::FloatingPeakResult>> undetermined = {
+    { "zero uncertainty",      make_float_result( orig_energy, 661.9, 1500.0, 0.0 ) },
+    { "negative uncertainty",  make_float_result( orig_energy, 661.9, 1500.0, -1.0 ) },
+    { "NaN uncertainty",       make_float_result( orig_energy, 661.9, 1500.0, nan_uncert ) },
+    { "uncertainty == amplitude", make_float_result( orig_energy, 661.9, 1500.0, 1500.0 ) },
+    { "uncertainty > amplitude",  make_float_result( orig_energy, 661.9, 1500.0, 2400.0 ) },
+    { "zero amplitude",        make_float_result( orig_energy, 661.9, 0.0, 5.0 ) },
+    { "negative amplitude",    make_float_result( orig_energy, 661.9, -10.0, 5.0 ) },
+  };
+
+  for( const std::pair<std::string,RelActCalcAuto::FloatingPeakResult> &entry : undetermined )
+  {
+    const std::optional<PeakDef> updated = update_bystander_from_float_result(
+        orig_peak, orig_energy, entry.second, roi_continuum, "unit test" );
+    BOOST_CHECK_MESSAGE( !updated.has_value(),
+      "Bystander with " << entry.first << " should have been retained, not updated" );
+  }
+}//test_bystander_update_requires_determined_amplitude
+
+
+/** The floating-peak result pool also holds the 511 keV annihilation, escape, and interferer peaks
+ this code injects itself.  Matching a bystander to the *nearest* result within a window let an
+ unmatched user peak a few tenths of a keV from 511 bind to the annihilation peak's result, whose
+ energy then erased the real 511 keV peak from the results.  Matching is on identity instead.
+ */
+BOOST_AUTO_TEST_CASE( test_find_enrolled_float_result )
+{
+  using FitPeaksForNuclides::detail::find_enrolled_float_result;
+
+  const double annihilation_energy = 510.9989;
+
+  // The pool as the solver returns it: the injected 511 keV float, plus a bystander enrolled at
+  //  its own peak mean.
+  const std::vector<RelActCalcAuto::FloatingPeakResult> results = {
+    make_float_result( annihilation_energy, 511.2, 8000.0, 200.0 ),
+    make_float_result( 661.657, 661.9, 1500.0, 60.0 ),
+  };
+
+  {
+    // The regression: a source-less user peak at ~510.7 keV never enrolled this result, so it must
+    //  not bind to it - doing so deletes the real 511 keV peak downstream.
+    std::set<const RelActCalcAuto::FloatingPeakResult *> consumed;
+    BOOST_CHECK( !find_enrolled_float_result( results, consumed, 510.7 ) );
+    BOOST_CHECK( consumed.empty() );
+
+    // Nor may it reach a result further away than the old 0.5 keV window.
+    BOOST_CHECK( !find_enrolled_float_result( results, consumed, 661.3 ) );
+  }
+
+  {
+    // A bystander enrolled at exactly its own energy finds its result, and consumes it.
+    std::set<const RelActCalcAuto::FloatingPeakResult *> consumed;
+    const RelActCalcAuto::FloatingPeakResult * const found
+        = find_enrolled_float_result( results, consumed, 661.657 );
+    BOOST_REQUIRE( found );
+    BOOST_CHECK_CLOSE( found->energy, 661.657, 1.0e-9 );
+    BOOST_CHECK_EQUAL( consumed.size(), 1 );
+
+    // Consumed at most once: a repeat lookup finds nothing rather than re-using the result.
+    BOOST_CHECK( !find_enrolled_float_result( results, consumed, 661.657 ) );
+
+    // The 511 float is still available to whatever enrolled it.
+    BOOST_CHECK( find_enrolled_float_result( results, consumed, annihilation_energy ) );
+  }
+
+  {
+    // Two bystanders enrolled at the same energy must bind to different results.
+    const std::vector<RelActCalcAuto::FloatingPeakResult> duplicates = {
+      make_float_result( 1460.82, 1460.9, 500.0, 30.0 ),
+      make_float_result( 1460.82, 1461.1, 400.0, 25.0 ),
+    };
+
+    std::set<const RelActCalcAuto::FloatingPeakResult *> consumed;
+    const RelActCalcAuto::FloatingPeakResult * const first
+        = find_enrolled_float_result( duplicates, consumed, 1460.82 );
+    const RelActCalcAuto::FloatingPeakResult * const second
+        = find_enrolled_float_result( duplicates, consumed, 1460.82 );
+    BOOST_REQUIRE( first && second );
+    BOOST_CHECK( first != second );
+    BOOST_CHECK( !find_enrolled_float_result( duplicates, consumed, 1460.82 ) );
+  }
+}//test_find_enrolled_float_result
 
 BOOST_AUTO_TEST_SUITE_END() // StatisticalDetailHelpers
