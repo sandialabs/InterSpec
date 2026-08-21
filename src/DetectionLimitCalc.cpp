@@ -3025,8 +3025,15 @@ DeconComputeResults decon_compute_peaks( const DeconComputeInput &input )
           case PeakContinuum::FlatStepCDF:
           case PeakContinuum::LinearStepCDF:
           case PeakContinuum::BiLinearStepCDF:
+            // Only the polynomial continua are implemented here - the step forms need a peak
+            //  amplitude to define the step, which is the quantity being solved for.  `assert(0)`
+            //  on its own is a no-op under NDEBUG, and would leave the continuum unconfigured
+            //  while the caller was told the computation succeeded.  Note this switch runs for
+            //  every `cont_norm_method`, so these types were reachable through Floating and
+            //  FixedByFullRange even while FixedByEdges was forced to Linear.
             assert( 0 );
-            break;
+            throw runtime_error( "decon_compute_peaks: unsupported continuum type for the"
+                                 " deconvolution method" );
 
           case PeakContinuum::External:
             if( !computed_global_cont )
@@ -3410,6 +3417,10 @@ bool make_decon_characteristic_regions( const DeconComputeInput &input,
 
     for( const DeconRoiInfo::PeakInfo &peak_info : roi.peak_infos )
     {
+      // The 1.0 exposure ratios here are valid only while the caller is restricted to
+      //  CurrentSpectrum (enforced by `decon_characteristic_limits`); under any other model the
+      //  signal template would be wrong by the live-time ratio T_s/T_b, silently.
+      assert( input.measurement_model == DeconMeasurementModel::CurrentSpectrum );
       PeakDef unit_peak = decon_trial_peak( input, peak_info, 1.0, 1.0 );
       std::vector<double> line_counts( num_roi_channels, 0.0 );
       unit_peak.gauss_integral( &(channel_energies->at(roi.first_channel)),

@@ -4697,7 +4697,20 @@ void DetectionLimitTool::updateShownPeaks()
   int numDOF;
   double chi2;
   std::vector<PeakDef> peaks;
-  computeForActivity( activity, distance, peaks, chi2, numDOF );
+
+  try
+  {
+    computeForActivity( activity, distance, peaks, chi2, numDOF );
+  }catch( std::exception &e )
+  {
+    // A DRF extrapolated outside its calibration range can give a non-finite or zero FWHM, which
+    //  the decon peak model rejects; without this the exception unwinds into Wt's event loop.
+    //  Peaks were already cleared above, so returning leaves a consistent (empty) display.
+    passMessage( "Could not compute peaks for this activity: " + string(e.what()),
+                 WarningWidget::WarningMsgHigh );
+    return;
+  }//try / catch
+
   m_peakModel->setPeaks( peaks );
     
   cout << "Done in updateShownPeaks()" << endl;
