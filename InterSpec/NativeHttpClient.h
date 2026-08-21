@@ -292,6 +292,16 @@ namespace NativeHttp
   }//namespace Detail
 
 
+  class Call;
+
+  /** Declared here, ahead of `Call`, so the `friend` declaration inside `Call` refers to this
+   function rather than introducing a new one - which on MSVC would then disagree with the
+   `InterSpec_API` (dllexport) linkage of the declaration below (C2375).  See `start()` below
+   for what it does. */
+  InterSpec_API std::unique_ptr<Call> start( const Request &req, StreamHandler handler,
+                                             const std::string &sessionId );
+
+
   class InterSpec_API Call
   {
   public:
@@ -311,7 +321,7 @@ namespace NativeHttp
     /** Shared with the backend so in-flight callbacks stay safe after this `Call` is gone. */
     std::shared_ptr<Detail::RequestState> m_state;
 
-    friend std::unique_ptr<Call> start( const Request &, StreamHandler, const std::string & );
+    friend InterSpec_API std::unique_ptr<Call> start( const Request &, StreamHandler, const std::string & );
   };//class Call
 
 
