@@ -1894,6 +1894,12 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
     const SandiaDecay::Nuclide *const nuc = db->nuclide( nucstr );
     const SandiaDecay::Element *el = nuc ? nullptr : db->element( nucstr );
 
+    // An element with no fluorescence x-rays (its K series is below the 10 keV cut in the data -
+    //  Sc, Ti, Cr, Mn, Fe, Co, Ni, Cu, Zn) is not a source `generateRefLineInfo()` will accept, so
+    //  do not offer it as a clickable suggestion here either.
+    if( el && el->xrays.empty() )
+      el = nullptr;
+
     std::vector<ReactionGamma::ReactionPhotopeak> reactions;
     if( !nuc && !el )
     {
@@ -1918,6 +1924,8 @@ void ReferencePhotopeakDisplay::updateAssociatedNuclides()
         elstr = elstr.substr(0,pos);
       SpecUtils::ireplace_all( elstr, "-_\t ,", "" );
       el = db->element( elstr );
+      if( el && el->xrays.empty() )
+        el = nullptr;
     }//if( it might be an x-ray )
 
     if( nuc || el || !reactions.empty() )

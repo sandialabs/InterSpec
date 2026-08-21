@@ -494,6 +494,46 @@ BOOST_AUTO_TEST_CASE( testXRay )
     BOOST_CHECK_GE( line.m_normalized_intensity, 0.0 );
     BOOST_CHECK_LE( line.m_normalized_intensity, 1.00001 );
   }
+
+  // The data carries no fluorescence x-rays below 10 keV, so the elements whose whole K series is
+  //  under that cut have no x-ray lines at all.  Those must be rejected outright rather than
+  //  accepted into an empty reference-line set, which would just look like a broken display.
+  const SandiaDecay::SandiaDecayDataBase * const decay_db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( decay_db, "Error initing SandiaDecayDataBase" );
+
+  for( const char * const sym : { "Sc", "Ti", "Cr", "Mn", "Fe", "Co", "Ni", "Cu", "Zn" } )
+  {
+    const SandiaDecay::Element * const el = decay_db->element( sym );
+    BOOST_REQUIRE_MESSAGE( el, "No element '" << sym << "' in the database" );
+    BOOST_CHECK_MESSAGE( el->xrays.empty(),
+                         sym << " unexpectedly has fluorescence x-rays; if the sub-10 keV cut in"
+                         " the decay data changed, this test and the rejection in"
+                         " ReferenceLineInfo.cpp need revisiting" );
+
+    RefLineInput el_input;
+    el_input.m_input_txt = sym;
+    el_input.m_showXrays = true;
+
+    std::shared_ptr<ReferenceLineInfo> el_lines;
+    BOOST_REQUIRE_NO_THROW( el_lines = ReferenceLineInfo::generateRefLineInfo( el_input ) );
+    BOOST_REQUIRE( el_lines );
+    BOOST_CHECK_MESSAGE( el_lines->m_validity == ReferenceLineInfo::InputValidity::InvalidSource,
+                         sym << " has no x-rays, so it should not be accepted as a source" );
+    BOOST_CHECK_MESSAGE( !el_lines->m_input_warnings.empty(),
+                         sym << " was rejected without saying why" );
+  }//for( elements whose x-rays are all below the 10 keV cut )
+
+  // ...while an isotope of one of those elements is still a perfectly good nuclide source.
+  {
+    RefLineInput fe59;
+    fe59.m_input_txt = "Fe59";
+    fe59.m_showGammas = true;
+    std::shared_ptr<ReferenceLineInfo> fe59_lines;
+    BOOST_REQUIRE_NO_THROW( fe59_lines = ReferenceLineInfo::generateRefLineInfo( fe59 ) );
+    BOOST_REQUIRE( fe59_lines );
+    BOOST_CHECK( fe59_lines->m_validity == ReferenceLineInfo::InputValidity::Valid );
+    BOOST_CHECK( fe59_lines->m_nuclide && (fe59_lines->m_nuclide->symbol == "Fe59") );
+  }
 }//BOOST_AUTO_TEST_CASE( testXRay )
 
 

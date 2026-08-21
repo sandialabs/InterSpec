@@ -1290,7 +1290,7 @@ BOOST_AUTO_TEST_CASE( test_executeGetCharacteristicLines )
   };
 
   BOOST_CHECK_MESSAGE( has_prominent("U235", 185.7, 0.5), "U235 should have 185.7 keV as a prominent line" );
-  BOOST_CHECK_MESSAGE( has_prominent("Fe", 6.4, 1.6), "Fe should have K-alpha x-ray around 6.4 keV as a prominent line" );
+  BOOST_CHECK_MESSAGE( has_prominent("Pb", 75.0, 1.0), "Pb should have K-alpha x-ray around 75 keV as a prominent line" );
   BOOST_CHECK_MESSAGE( has_prominent("H(n,g)", 2223.0, 5.0), "H(n,g) should have 2223 keV capture gamma as a prominent line" );
 
   // The consolidated catalog lookup: sources near 661.7 keV should include Cs137, with its

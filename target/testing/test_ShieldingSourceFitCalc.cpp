@@ -2498,6 +2498,7 @@ BOOST_AUTO_TEST_CASE( CeresVsMinuitDrivers )
 
   vector<double> chi2s;
   vector<vector<double>> param_sets;
+  ROOT::Minuit2::MnUserParameters initial_pars;
 
   for( const bool use_ceres : { false, true } )
   {
@@ -2506,6 +2507,11 @@ BOOST_AUTO_TEST_CASE( CeresVsMinuitDrivers )
 
     auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
     *inputPrams = fcn_pars.second;
+
+    // Both drivers are handed the same parameter definitions; keep a copy so the comparison
+    //  below can name each parameter and know the scale `create()` chose for it.
+    if( !use_ceres )
+      initial_pars = fcn_pars.second;
 
     auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
     auto fit_results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
@@ -2541,15 +2547,30 @@ BOOST_AUTO_TEST_CASE( CeresVsMinuitDrivers )
   BOOST_CHECK_MESSAGE( fabs(chi2s[0] - chi2s[1]) <= 0.01*std::max(chi2s[0], chi2s[1]),
                        "Driver chi2s differ: Minuit=" << chi2s[0] << " vs Ceres=" << chi2s[1] );
 
+  BOOST_REQUIRE_EQUAL( initial_pars.Parameters().size(), param_sets[0].size() );
+
   for( size_t i = 0; i < param_sets[0].size(); ++i )
   {
+    const unsigned int par_num = static_cast<unsigned int>( i );
     const double minuit_val = param_sets[0][i];
     const double ceres_val = param_sets[1][i];
-    const double scale = std::max( {fabs(minuit_val), fabs(ceres_val), 1.0E-9} );
+
+    // Compare each parameter on its own scale.  A purely *relative* tolerance is meaningless for a
+    //  parameter both drivers drove to (numerically) zero: a mass fraction that comes out 7.6E-8
+    //  from one and 8.4E-8 from the other is the same answer - "this nuclide is not present" - yet
+    //  differs by 10% relative.  So floor the scale with the initial step `create()` chose for that
+    //  parameter, which is the size of a change that matters for the quantity (0.05 for a mass
+    //  fraction, 10mm for a thickness, 2.5 for an atomic number, 10% of an activity).  One part in
+    //  a thousand of that step is negligible for every parameter type here, and constant parameters
+    //  carry a zero step, so they stay on the exact-equality path they were already on.
+    const double par_step = fabs( initial_pars.Error( par_num ) );
+    const double scale = std::max( {fabs(minuit_val), fabs(ceres_val), 1.0E-3*par_step, 1.0E-9} );
 
     BOOST_CHECK_MESSAGE( fabs(minuit_val - ceres_val) <= 0.01*scale,
-                         "Parameter " << i << " differs: Minuit=" << minuit_val
-                         << " vs Ceres=" << ceres_val );
+                         "Parameter " << i << " (" << initial_pars.Name(par_num) << ") differs:"
+                         << " Minuit=" << minuit_val << " vs Ceres=" << ceres_val
+                         << " (differ by " << fabs(minuit_val - ceres_val)
+                         << ", allowed " << 0.01*scale << ")" );
   }//for( loop over parameters )
 }//BOOST_AUTO_TEST_CASE( CeresVsMinuitDrivers )
 

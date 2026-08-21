@@ -2966,6 +2966,18 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     el = db->element( elstr );
   }//
   
+  if( el && el->xrays.empty() )
+  {
+    // The decay data deliberately carries no fluorescence x-rays below 10 keV - so many elements dont have any lines
+    answer.m_validity = ReferenceLineInfo::InputValidity::InvalidSource;
+    answer.m_input_warnings.push_back( el->symbol + " has no fluorescence x-rays in the data; only"
+                                       " x-rays at or above 10 keV are included, and " + el->symbol
+                                       + "'s are all below that." );
+    answer_ptr->m_input = input;
+
+    return answer_ptr;
+  }//if( el && el->xrays.empty() )
+
   if( el )
   {
     input.m_input_txt = el->symbol;
