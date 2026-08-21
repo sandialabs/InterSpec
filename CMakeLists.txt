@@ -153,7 +153,17 @@ option(USE_LLM_INTERFACE "Enables the AI/LLM interface and MCP server code" ON)
 #  request from C++.  This enables a small transport backed by the platform's own HTTP stack
 #  (WinHTTP / NSURLSession / Wt::Http::Client) - see InterSpec/NativeHttpClient.h.
 #  Which backend is used is decided by platform, not by the user.
-option(USE_NATIVE_HTTP_CLIENT "Enables a native per-platform HTTPS client for LLM API calls" OFF)
+#  Defaulted ON where we ship a platform-native backend (Apple and Windows), but only for builds
+#  that actually have the LLM interface to use it - see the consistency check further down.  The
+#  NSURLSession backend is iOS-clean, so iOS is included here; it resolves to OFF today only
+#  because the iOS project builds with USE_LLM_INTERFACE off.
+if( USE_LLM_INTERFACE AND (NOT BUILD_FOR_WEB_DEPLOYMENT) AND (APPLE OR WIN32) )
+  set( DEFAULT_USE_NATIVE_HTTP_CLIENT ON )
+else()
+  set( DEFAULT_USE_NATIVE_HTTP_CLIENT OFF )
+endif()
+
+option(USE_NATIVE_HTTP_CLIENT "Enables a native per-platform HTTPS client for LLM API calls" ${DEFAULT_USE_NATIVE_HTTP_CLIENT})
 
 
 if(BUILD_FOR_WEB_DEPLOYMENT)

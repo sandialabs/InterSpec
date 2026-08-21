@@ -70,21 +70,18 @@ std::optional<size_t> get_usage_count( const json &usage, const char *key )
 }//get_usage_count(...)
 
 
-/** Attach an Anthropic 5-minute ephemeral cache breakpoint to the last block of the last *user*
- message, so the growing conversation prefix is cached incrementally across tool-call rounds and
- follow-up turns.  Restricting to user turns keeps the breakpoint off thinking blocks (which the API
- disallows cache_control on) and matches where a request normally ends before an assistant reply.
+/** Attach a 5-minute ephemeral cache breakpoint to the last content block of `msg`, promoting
+ string content to a single text block first so it can carry the marker.  Only user turns are
+ marked: that keeps the breakpoint off thinking blocks (which the API disallows cache_control on)
+ and matches where a request normally ends before an assistant reply.
+ Returns whether a breakpoint was set.
  */
-void add_anthropic_cache_breakpoint_to_last_message( json &messages )
+bool set_anthropic_cache_breakpoint( json &msg )
 {
-  if( !messages.is_array() || messages.empty() )
-    return;
+  if( !msg.is_object() || (msg.value("role","") != "user") || !msg.contains("content") )
+    return false;
 
-  json &lastMsg = messages.back();
-  if( (lastMsg.value("role","") != "user") || !lastMsg.contains("content") )
-    return;
-
-  json &content = lastMsg["content"];
+  json &content = msg["content"];
   if( content.is_string() )
   {
     // Promote string content to a single text block so it can carry the cache breakpoint.
@@ -93,11 +90,71 @@ void add_anthropic_cache_breakpoint_to_last_message( json &messages )
     textBlock["text"] = content.get<string>();
     textBlock["cache_control"]["type"] = "ephemeral";
     content = json::array({ textBlock });
-  }else if( content.is_array() && !content.empty() )
+    return true;
+  }
+
+  if( content.is_array() && !content.empty() && content.back().is_object() )
   {
     content.back()["cache_control"]["type"] = "ephemeral";
+    return true;
   }
-}//add_anthropic_cache_breakpoint_to_last_message(...)
+
+  return false;
+}//set_anthropic_cache_breakpoint(...)
+
+
+/** Place the rolling conversation cache breakpoints, so the growing prefix is cached incrementally
+ across tool-call rounds and follow-up turns.  Two markers are placed:
+
+   - the "head", on the end of the newest user turn.  This writes the entry that the *next* request
+     reads back.
+   - the "anchor", on the end of the previous user turn.  This is exactly where the previous
+     request's head marker wrote its entry, so reading it is an exact-position hit.  The anchor
+     matters because a breakpoint only searches back a bounded number of content blocks for a
+     usable entry, and a single round of parallel tool calls can add enough blocks to overshoot.
+
+ IMPORTANT: call this *before* appending any text that is not persisted into history (i.e. the
+ state-machine reminder from appendEphemeralUserNote()).  A breakpoint written onto a block the
+ next request will not contain can never be read back - it only ever pays the cache-write premium.
+ */
+void add_anthropic_cache_breakpoints( json &messages )
+{
+  if( !messages.is_array() )
+    return;
+
+  vector<size_t> userMsgIdx;
+  for( size_t i = 0; i < messages.size(); ++i )
+  {
+    if( !messages[i].is_object() || (messages[i].value("role","") != "user")
+        || !messages[i].contains("content") )
+      continue;  // note: contains() guard matters - operator[] below would insert a null "content"
+
+    // Normalize *every* user turn's string content to a one-block array, not just the two we are
+    // about to mark.  Marking is what promotes string content to a block array, so marking only
+    // some turns would make a given message's wire shape oscillate between rounds (block array
+    // while it is the head/anchor, bare string once it is neither).  Whether the provider treats
+    // the two shapes as the same cached content is an assumption we do not need to make, and if it
+    // did not the conversation would silently lose its cache with no error - only cost.
+    json &content = messages[i]["content"];
+    if( content.is_string() )
+    {
+      json textBlock;
+      textBlock["type"] = "text";
+      textBlock["text"] = content.get<string>();
+      content = json::array({ textBlock });
+    }
+
+    userMsgIdx.push_back( i );
+  }//for( i : messages )
+
+  if( userMsgIdx.empty() )
+    return;
+
+  set_anthropic_cache_breakpoint( messages[userMsgIdx.back()] );  // head
+
+  if( userMsgIdx.size() >= 2 )
+    set_anthropic_cache_breakpoint( messages[userMsgIdx[userMsgIdx.size() - 2]] );  // anchor
+}//add_anthropic_cache_breakpoints(...)
 
 
 /** Normalize string `content` into an array of text blocks (block `type` given by `textType`), so two
@@ -207,6 +264,14 @@ public:
       messages.push_back( msg );
     }
   }//appendEphemeralUserNote(...)
+
+
+  /** No-op: the OpenAI Chat Completions API caches automatically by longest-common-prefix, with no
+   client-side markers, so a trailing ephemeral note simply falls outside the matched prefix.
+   */
+  void placeConversationCacheBreakpoints( nlohmann::json &/*messages*/ ) const override
+  {
+  }
 
 
   nlohmann::json buildRequestBody( const LlmConfig::LlmApi &api,
@@ -657,6 +722,11 @@ public:
 
   void appendEphemeralUserNote( nlohmann::json &messages, const std::string &note ) const override
   {
+    // NOTE: placeConversationCacheBreakpoints() must already have run (LlmInterface calls it right
+    // after serializeConversations()).  This note is deliberately not persisted into history, so it
+    // must land *after* the last breakpoint: a cached prefix ending in text the next request cannot
+    // reproduce can never be read back, and only ever pays the cache-write premium.
+
     // Anthropic has no role:"tool"; tool results, auto-replies, and user queries are all user
     // messages.  Merge the note into a trailing user turn (rather than pushing a second user
     // message) so the note stays attached to that turn and we never emit consecutive user messages.
@@ -692,6 +762,12 @@ public:
   }//appendEphemeralUserNote(...)
 
 
+  void placeConversationCacheBreakpoints( nlohmann::json &messages ) const override
+  {
+    add_anthropic_cache_breakpoints( messages );
+  }
+
+
   nlohmann::json buildRequestBody( const LlmConfig::LlmApi &api,
                                    const std::string &systemPrompt,
                                    const nlohmann::json &messages,
@@ -716,9 +792,10 @@ public:
       request["system"] = json::array({ sysBlock });
     }
 
+    // Conversation breakpoints are NOT placed here: only the caller knows whether this request is
+    // part of a continuing conversation, and where the not-persisted ephemeral note ends.  See
+    // placeConversationCacheBreakpoints().
     request["messages"] = messages;
-    // Incrementally cache the growing conversation prefix as well.
-    add_anthropic_cache_breakpoint_to_last_message( request["messages"] );
 
     // Map any configured reasoning to Claude extended thinking.  Newer models (Opus/Sonnet) take the
     // "adaptive" type (the model sizes its own thinking); others (e.g. Haiku 4.5) reject "adaptive"
@@ -1049,6 +1126,12 @@ public:
     item["role"] = "user";
     item["content"] = note;
     input.push_back( item );
+  }
+
+
+  /** No-op: the OpenAI Responses API caches automatically by longest-common-prefix. */
+  void placeConversationCacheBreakpoints( nlohmann::json &/*input*/ ) const override
+  {
   }
 
 

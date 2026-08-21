@@ -2924,7 +2924,9 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
             // Aggregate sub-agent token usage to parent conversation
             if( sub_agent_convo->promptTokens.has_value() ||
                 sub_agent_convo->completionTokens.has_value() ||
-                sub_agent_convo->totalTokens.has_value() )
+                sub_agent_convo->totalTokens.has_value() ||
+                sub_agent_convo->cachedTokens.has_value() ||
+                sub_agent_convo->cacheCreationTokens.has_value() )
             {
               if( interface->m_debug_stream )
               {
@@ -2959,12 +2961,26 @@ LlmInterface::executeToolCallsAndSendResults( const nlohmann::json &toolCalls,
                   parent_conv->totalTokens = sub_agent_convo->totalTokens.value();
               }
 
+              // The cache counters must ride along with promptTokens: the displayed cache rate is
+              // cachedTokens/promptTokens, so folding in a sub-agent's input without its cache reads
+              // would inflate the denominator only, and understate the true rate for every
+              // conversation that invoked a sub-agent.
+              if( sub_agent_convo->cachedTokens.has_value() )
+                parent_conv->cachedTokens = parent_conv->cachedTokens.value_or(0)
+                                            + sub_agent_convo->cachedTokens.value();
+
+              if( sub_agent_convo->cacheCreationTokens.has_value() )
+                parent_conv->cacheCreationTokens = parent_conv->cacheCreationTokens.value_or(0)
+                                            + sub_agent_convo->cacheCreationTokens.value();
+
               if( interface->m_debug_stream )
               {
                 (*interface->m_debug_stream) << "Parent conversation now has:" << endl;
                 (*interface->m_debug_stream) << "  Prompt tokens: " << (parent_conv->promptTokens.has_value() ? std::to_string(parent_conv->promptTokens.value()) : "N/A") << endl;
                 (*interface->m_debug_stream) << "  Completion tokens: " << (parent_conv->completionTokens.has_value() ? std::to_string(parent_conv->completionTokens.value()) : "N/A") << endl;
                 (*interface->m_debug_stream) << "  Total tokens: " << (parent_conv->totalTokens.has_value() ? std::to_string(parent_conv->totalTokens.value()) : "N/A") << endl;
+                (*interface->m_debug_stream) << "  Cache read tokens: " << (parent_conv->cachedTokens.has_value() ? std::to_string(parent_conv->cachedTokens.value()) : "N/A") << endl;
+                (*interface->m_debug_stream) << "  Cache write tokens: " << (parent_conv->cacheCreationTokens.has_value() ? std::to_string(parent_conv->cacheCreationTokens.value()) : "N/A") << endl;
                 (*interface->m_debug_stream) << "===================================================" << endl;
               }
             }
@@ -4335,6 +4351,13 @@ nlohmann::json LlmInterface::buildMessagesArray( const std::shared_ptr<LlmIntera
   }
 
   json messages = m_protocol->serializeConversations( convos );
+
+  // Place the provider's conversation prompt-cache breakpoints now, while `messages` still holds
+  // only content that is persisted in history - i.e. content the *next* request will reproduce
+  // byte-for-byte.  This must happen before the ephemeral reminder is appended below: Anthropic's
+  // cache is an exact prefix match, so a breakpoint on the not-persisted reminder would cache a
+  // prefix the next request cannot match, paying the cache-write premium and never reading back.
+  m_protocol->placeConversationCacheBreakpoints( messages );
 
   // Add ephemeral state machine reminder as the last message (not persisted in history).
   // Only inject after the first call (when there are already responses), to avoid consecutive

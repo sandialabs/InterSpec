@@ -122,6 +122,23 @@ public:
    */
   virtual void appendEphemeralUserNote( nlohmann::json &messages, const std::string &note ) const = 0;
 
+  /** Place any provider prompt-cache breakpoints that belong on the *conversation* (the system
+   prompt's own breakpoint, if the format has one, is placed by buildRequestBody()).
+
+   No-op for the OpenAI formats, which cache automatically by longest-common-prefix.  Anthropic
+   caches only up to an explicitly marked content block, so a marker must be placed here.
+
+   ORDER MATTERS: call this immediately after serializeConversations(), and *before*
+   appendEphemeralUserNote().  Anthropic's cache is an exact prefix match, so a breakpoint placed on
+   a block the next request will not reproduce - such as the not-persisted-in-history state-machine
+   reminder - can never be read back; it only ever pays the cache-write premium.
+
+   Only call it for a conversation that will be continued.  A one-shot request (e.g. the compaction
+   summary, whose prompt differs every time) has no following request to read the entry back, so
+   marking it is a pure write surcharge.
+   */
+  virtual void placeConversationCacheBreakpoints( nlohmann::json &messages ) const = 0;
+
   /** Assemble the full request body: model + token caps + reasoning + system placement + the
    already-serialized messages + tools + tool_choice.
    */
