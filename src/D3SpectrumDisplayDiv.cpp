@@ -1087,8 +1087,8 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   if( m_renderFlags.test(UpdateMultiSpectra) )
     renderMultiSpectraToClient();
 
-  // After the per-type spectrum renders: this one re-pushes them through setData(), so it must
-  //  not be undone by a setSpectrumData() that runs later in the same pass.
+  // After the per-type spectrum renders, whose data it re-serializes; see the note in
+  //  renderTemplatesToClient() for why it has to run after them rather than before.
   if( m_renderFlags.test(UpdateTemplates) )
     renderTemplatesToClient();
 
@@ -1649,6 +1649,7 @@ void D3SpectrumDisplayDiv::setData( std::shared_ptr<const Measurement> data_hist
   // Counterpart to #setMultipleSpectra nulling these members: leaving the preview vector populated
   //  would let it shadow this spectrum on the next template push.
   m_multiSpectra.clear();
+  m_renderFlags &= ~WFlags<D3RenderActions>(UpdateMultiSpectra);
 
   m_foreground = data_hist;
   if( m_peakModel )
@@ -1785,6 +1786,7 @@ void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<const Measurement> bac
     return;
 
   m_multiSpectra.clear();  //see the note in #setData
+  m_renderFlags &= ~WFlags<D3RenderActions>(UpdateMultiSpectra);
   m_background = background;
   doBackgroundLiveTimeNormalization();
 
@@ -1799,6 +1801,7 @@ void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<const Measurement> bac
 void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> hist )
 {
   m_multiSpectra.clear();  //see the note in #setData
+  m_renderFlags &= ~WFlags<D3RenderActions>(UpdateMultiSpectra);
   m_secondary = hist;
   doSecondaryLiveTimeNormalization();
   scheduleUpdateSecondData();
@@ -2295,10 +2298,11 @@ void D3SpectrumDisplayDiv::renderTemplatesToClient()
   std::vector< std::pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
   std::vector< std::pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions> > templates;
 
-  // Position of the background/secondary within `measurements`; the writer uses that index as each
-  //  spectrum's `id`, which we need below to re-link the secondary to the background.
-  size_t background_pos = 0, secondary_pos = 0;
-  bool have_background = false, have_secondary = false;
+  // Position of each spectrum within `measurements`; the writer uses that index as the emitted
+  //  `id`, and we rewrite those ids below to the fixed per-type slots the rest of the chart code
+  //  assumes.
+  size_t foreground_pos = 0, background_pos = 0, secondary_pos = 0;
+  bool have_foreground = false, have_background = false, have_secondary = false;
 
   // In the #setMultipleSpectra preview mode the three per-type members are not what is on the
   //  chart, so re-pushing them would blank the preview.  Carry whatever that mode set instead.
@@ -2324,6 +2328,8 @@ void D3SpectrumDisplayDiv::renderTemplatesToClient()
       opts.peak_color = peak_color.cssText();
       opts.spectrum_type = SpecUtils::SpectrumType::Foreground;
       opts.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::Foreground );
+      foreground_pos = measurements.size();
+      have_foreground = true;
       measurements.push_back( make_pair( m_foreground.get(), opts ) );
     }//if( m_foreground )
 
@@ -2383,17 +2389,32 @@ void D3SpectrumDisplayDiv::renderTemplatesToClient()
       {
         data = data.substr( 0, index );
 
-        // The writer assigns each non-background spectrum the background that follows it in the
-        //  vector, so a secondary written after the background is left with backgroundID -1 and
-        //  loses background subtraction.  The per-type renders hard-code the link instead
-        //  (`setSpectrumData(..., 'SECONDARY', 2, 1)`); re-assert it here.  The writer uses the
-        //  vector index as the emitted `id`, and we push no null measurements, so the array
-        //  position and the id agree.
-        if( have_background && have_secondary )
+        // Rewrite the emitted ids to the fixed per-type slots the per-type renders hard-code
+        //  (`setSpectrumData(..., 'FOREGROUND', 0, 1)`, `('BACKGROUND', 1, -1)`,
+        //  `('SECONDARY', 2, 1)`).  The writer instead numbers spectra by vector position and
+        //  assigns each non-background the background that *follows* it, which only coincides with
+        //  those slots when all three are loaded.  For any partial set the ids would collide with
+        //  what a later per-type render assigns - two spectra sharing an id makes
+        //  `getSpectrumByID` return the wrong one, and background subtraction then subtracts the
+        //  wrong spectrum.  We push no null measurements, so vector position == array position.
+        const string data_var = "data_" + id();
+        if( have_foreground )
         {
-          data += "data_" + id() + ".spectra[" + std::to_string(secondary_pos) + "].backgroundID = "
-                  + std::to_string(background_pos) + ";\n";
-        }//if( have_background && have_secondary )
+          data += data_var + ".spectra[" + std::to_string(foreground_pos) + "].id = 0;\n";
+          data += data_var + ".spectra[" + std::to_string(foreground_pos) + "].backgroundID = 1;\n";
+        }
+
+        if( have_background )
+        {
+          data += data_var + ".spectra[" + std::to_string(background_pos) + "].id = 1;\n";
+          data += data_var + ".spectra[" + std::to_string(background_pos) + "].backgroundID = -1;\n";
+        }
+
+        if( have_secondary )
+        {
+          data += data_var + ".spectra[" + std::to_string(secondary_pos) + "].id = 2;\n";
+          data += data_var + ".spectra[" + std::to_string(secondary_pos) + "].backgroundID = 1;\n";
+        }
 
         js = data + m_jsgraph + ".setData(data_" + id() + ", " + resetDomain + ");";
       }

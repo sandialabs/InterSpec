@@ -16343,6 +16343,14 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
       //  here found rather than ask for it a second time.
       std::map<const PeakDef *, double> bystander_fit_energies;
 
+      // Everything the solver produced sits in [0, num_solver_observables); the loop below appends
+      //  our own updated bystanders after it.  The de-duplication pass needs that split: it removes
+      //  solver stand-ins by matching energy among *unattributed* peaks, and an updated bystander
+      //  built from a user peak with no source assigned is unattributed and sits at exactly the
+      //  stand-in's energy - so attribution cannot tell them apart, and matching by energy alone
+      //  would delete the replacement we just made.
+      const size_t num_solver_observables = result.observable_peaks.size();
+
       for( const std::pair<std::shared_ptr<const PeakDef>, double> &orig_and_energy : existing_peaks_added_as_floating )
       {
         const shared_ptr<const PeakDef> &orig_peak = orig_and_energy.first;
@@ -16552,12 +16560,19 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           // translate_peaks_to_orig_cal), so the difference should be small.
           const double match_tol = 1.0; // keV
 
+          assert( num_solver_observables <= result.observable_peaks.size() );
+          const std::vector<PeakDef>::iterator solver_end
+                         = result.observable_peaks.begin() + static_cast<long>(num_solver_observables);
+
+          // Only the solver's own peaks are candidates - see `num_solver_observables` above.  The
+          //  updated bystanders appended after `solver_end` are what we are de-duplicating *for*,
+          //  and are left alone by construction rather than by inspecting their source.
           const auto new_end = std::remove_if( result.observable_peaks.begin(),
-            result.observable_peaks.end(),
+            solver_end,
             [&bystander_fp_energies, match_tol]( const PeakDef &peak ) -> bool
             {
-              // Only remove unattributed peaks; source-attributed peaks (including
-              // updated bystanders just added above) must be preserved.
+              // Only remove unattributed peaks; a stand-in the solver made for a floating peak
+              //  carries no source, while a real fit result does.
               if( peak.parentNuclide() || peak.xrayElement() || peak.reaction() )
                 return false;
 
@@ -16573,7 +16588,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
 #if( PERFORM_DEVELOPER_CHECKS )
           if( should_debug_print() )
           {
-            const size_t num_removed = std::distance( new_end, result.observable_peaks.end() );
+            const size_t num_removed = std::distance( new_end, solver_end );
             if( num_removed > 0 )
             {
               std::cout << "ExistingPeaksAsFreePeak: removed " << num_removed
@@ -16584,7 +16599,7 @@ PeakFitResult fit_peaks_for_nuclide_relactauto(
           }
 #endif
 
-          result.observable_peaks.erase( new_end, result.observable_peaks.end() );
+          result.observable_peaks.erase( new_end, solver_end );
         }//if( !bystander_fp_energies.empty() )
       }
 
