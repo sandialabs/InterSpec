@@ -781,9 +781,6 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui )
   m_force_profile_mass_fraction->changed().connect( [this]{ m_updated.emit(); } );
   m_force_profile_mass_fraction->hide();
   
-  m_summary_text = upper_container->addNew<WText>();
-  m_summary_text->setStyleClass( "RelActAutoGuiNuclideSummaryText" );
-
   //WContainerWidget *spacer = new WContainerWidget( upper_container );
   //spacer->addStyleClass( "RelActAutoSpacer" );
   
@@ -846,6 +843,13 @@ RelActAutoGuiNuclide::RelActAutoGuiNuclide( RelActAutoGui *gui )
 
   WContainerWidget *spacer = m_lower_container->addNew<WContainerWidget>();
   spacer->addStyleClass( "RelActAutoSpacer" );
+
+
+  // Result summary lives on its own dedicated line at the bottom of the widget.  It always
+  //  shows either a result or italic placeholder text, so the widget height stays stable.
+  m_summary_text = addNew<WText>();
+  m_summary_text->setStyleClass( "RelActAutoGuiNuclideSummaryText" );
+  setSummaryText( WString(), WString() );
 
 
   // On phone, group min/max age edits inside the age container so age + Fit Age
@@ -1722,8 +1726,18 @@ void RelActAutoGuiNuclide::updateAllowedConstraints()
 
 void RelActAutoGuiNuclide::setSummaryText( const Wt::WString &text, const Wt::WString &tooltip )
 {
-  m_summary_text->setText( text );
-  m_summary_text->setToolTip( tooltip );
+  if( text.empty() )
+  {
+    // Show italic placeholder so the line never looks like empty space before a result.
+    m_summary_text->setText( WString::tr("raagn-result-pending") );
+    m_summary_text->addStyleClass( "PendingResult" );
+    m_summary_text->setToolTip( WString() );
+  }else
+  {
+    m_summary_text->setText( text );
+    m_summary_text->removeStyleClass( "PendingResult" );
+    m_summary_text->setToolTip( tooltip );
+  }
 }
 
 

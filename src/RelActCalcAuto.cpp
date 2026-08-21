@@ -8819,15 +8819,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       for( size_t i = 0; i < curves.size(); ++i )
       {
         const string key = "curve:" + semantic_curve_key(cost_functor->m_options,i);
+        // `key` embeds a full XML curve identity meant only for dedup/sort/tie-breaking; use a
+        // human-readable label (never the raw key) for the user-facing candidate descriptions.
+        const string curve_label = !curves[i].name.empty()
+            ? ("curve \"" + curves[i].name + "\"")
+            : (curves.size() > 1 ? ("curve " + std::to_string(i + 1))
+                                 : string("rel. eff. curve"));
         const size_t start = cost_functor->rel_eff_eqn_start_parameter(i);
         if( curves[i].rel_eff_eqn_type == RelEffEqnForm::FramPhysicalModel )
         {
           if( curves[i].uses_phys_model_correction() )
           {
             const size_t corr = start + 2 + 2*curves[i].phys_model_external_atten.size();
-            candidates.push_back( { key + ":correction:0", "correction coefficient 0 of " + key,
+            candidates.push_back( { key + ":correction:0", "correction coefficient 0 of " + curve_label,
                                     corr, b_identity, {} } );
-            candidates.push_back( { key + ":correction:1", "correction coefficient 1 of " + key,
+            candidates.push_back( { key + ":correction:1", "correction coefficient 1 of " + curve_label,
                                     corr+1, c_identity, {} } );
           }
           for( size_t e = 0; e < curves[i].phys_model_external_atten.size(); ++e )
@@ -8836,7 +8842,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                                 = curves[i].phys_model_external_atten[e];
             if( shield && shield->fit_areal_density && (shield->lower_fit_areal_density <= 0.0) )
               candidates.push_back( { key + ":external-ad:" + std::to_string(e),
-                                      "external attenuator " + std::to_string(e) + " of " + key,
+                                      "external attenuator " + std::to_string(e) + " of " + curve_label,
                                       start + 2 + 2*e + 1, ad_identity, {} } );
           }
         }else
@@ -8849,7 +8855,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             for( size_t h = term + 1; h <= curves[i].rel_eff_eqn_order; ++h )
               higher.push_back(start+h);
             candidates.push_back( { key + ":rel-eff-term:" + std::to_string(term),
-                                    "relative-efficiency term " + std::to_string(term) + " of " + key,
+                                    "relative-efficiency term " + std::to_string(term) + " of " + curve_label,
                                     start+term, 0.0, std::move(higher) } );
           }
         }
