@@ -84,8 +84,6 @@ void call_msg_send_in_node(Napi::Env env, Napi::Function callback, Napi::Referen
   
   std::unique_ptr<std::array<std::string,3>> data_holder( data );
   
-  std::cout << "call_msg_send_in_node" << std::endl;
-  
   // Check if TSFN has been aborted
   if( env == nullptr )
   {
@@ -116,12 +114,22 @@ void call_dir_browse_in_node(Napi::Env env, Napi::Function callback, Napi::Refer
     return;
   }
   
-  std::cout << "call_dir_browse_in_node" << std::endl;
+  //browse_for_directory(...) is blocked on data->cv until we set a status other than NotStarted,
+  //  so every path out of here from now on has to set one and notify.
+  const auto signal_failure = [data]( const char *why ){
+    std::cerr << "call_dir_browse_in_node: " << why << std::endl;
+    std::unique_lock<std::mutex> lk( data->m );
+    data->status = BrowseForDirStatus::Failed;
+    //Notify with the lock still held: `data` is browse_for_directory(...)'s stack object, and once
+    //  the waiter sees the status change it returns and destroys this condition_variable.  Doing
+    //  the notify after unlocking races with that destruction.
+    data->cv.notify_all();
+  };
   
   // Check if TSFN has been aborted
   if( env == nullptr )
   {
-    std::cerr << "call_dir_browse_in_node: function has been aborted." << std::endl;
+    signal_failure( "function has been aborted." );
     return;
   }
   
@@ -129,13 +137,11 @@ void call_dir_browse_in_node(Napi::Env env, Napi::Function callback, Napi::Refer
   
   if( callback == nullptr )
   {
-    std::cerr << "call_dir_browse_in_node: callback is null - unexpected." << std::endl;
+    signal_failure( "callback is null - unexpected." );
     return;
   }
   
   std::unique_lock<std::mutex> lk( data->m );
-  
-  data->status = BrowseForDirStatus::NotStarted;
   
   const std::string &token = data->token;
   const std::string &title = data->window_title;
@@ -164,11 +170,11 @@ void call_dir_browse_in_node(Napi::Env env, Napi::Function callback, Napi::Refer
     const std::u16string val_as_utf16 = rval.As<Napi::String>().Utf16Value();
     std::wstring_convert<std::codecvt_utf8_utf16<char16_t>,char16_t> convert;
     result = convert.to_bytes(val_as_utf16);
-    std::cout << "The call returned " << result.size() << " characters with value '" << result << "'" << std::endl;
   }
   
-  lk.unlock();
+  //Notified with the lock held, for the same reason as in signal_failure above.
   data->cv.notify_all();
+  lk.unlock();
 }//call_dir_browse_in_node
 
 }//namespace
@@ -183,7 +189,7 @@ namespace InterSpecAddOn
     if( info.Length() < 5 || !info[0].IsString() || !info[1].IsString() 
         || !info[2].IsString() || !info[3].IsString() || !info[4].IsNumber() ) 
     {
-      Napi::TypeError::New(env, "startServingInterSpec: Expected 4 strings and one short in port numbers").ThrowAsJavaScriptException();
+      Napi::TypeError::New(env, "startServingInterSpec: Expected 4 strings and a port number").ThrowAsJavaScriptException();
       return Napi::Number();
     } 
 
@@ -262,7 +268,7 @@ namespace InterSpecAddOn
 
     if (info.Length() < 1 || !info[0].IsString() )
     {
-      Napi::TypeError::New(env, "setBaseDir: Expected one strings").ThrowAsJavaScriptException();
+      Napi::TypeError::New(env, "setTempDir: Expected one string").ThrowAsJavaScriptException();
       return Napi::Boolean();
     } 
 
@@ -416,8 +422,6 @@ namespace InterSpecAddOn
 
   bool send_nodejs_message( const std::string &session_token, const std::string &msg_name, const std::string &msg_data )
   {
-    std::cout << "In InterSpecAddOn::send_nodejs_message, for msg_name=" << msg_name << std::endl;
-    
     if( !ns_message_to_node_js_callback.has_value() )
     {
       std::cerr << "InterSpecAddOn::send_nodejs_message: callback to JS not initialized" << std::endl;
@@ -425,7 +429,11 @@ namespace InterSpecAddOn
       return false;
     }
     
-    ns_message_to_node_js_callback->Acquire();
+    if( ns_message_to_node_js_callback->Acquire() != napi_ok )
+    {
+      std::cerr << "InterSpecAddOn::send_nodejs_message: could not acquire callback to JS" << std::endl;
+      return false;
+    }
 
     //BlockingCall only blocks while putting into work queue - it does not block until the work
     //  is done, so we need to make sure the data will stick around long enough; the worker
@@ -440,7 +448,6 @@ namespace InterSpecAddOn
     if( status == napi_ok )
     {
       value.release(); // ownership transferred to call_msg_send_in_node
-      std::cout << "InterSpecAddOn::send_nodejs_message: successfully called JS for msg_name=" << msg_name << std::endl;
       return true;
     }
 
@@ -473,10 +480,13 @@ namespace InterSpecAddOn
       delete ctx;
     };//finalizer
     
+    //main.js registers this exactly once, but overwriting the optional without aborting the
+    //  previous function would strand it (and its context) for the life of the process.
+    if( ns_message_to_node_js_callback.has_value() )
+      ns_message_to_node_js_callback->Abort();
+
     ns_message_to_node_js_callback = SendMsg_TSFN::New( env, info[0].As<Napi::Function>(),
                                                   "MessageToNodeJs",  0, 1, context, finalizer );
-
-    std::cout << "setMessageToNodeJsCallback: Have set callback to JS" << std::endl;
   }//setMessageToNodeJsCallback
 
 
@@ -495,10 +505,12 @@ namespace InterSpecAddOn
       delete ctx;
     };//finalizer
   
+    //See the note in setMessageToNodeJsCallback about re-registration.
+    if( ns_browse_for_directory_callback.has_value() )
+      ns_browse_for_directory_callback->Abort();
+
     ns_browse_for_directory_callback = BrowseDir_TSFN::New( env, info[0].As<Napi::Function>(),
                                              "BrowseForDirectory",  0, 1, context, finalizer );
-  
-    std::cout << "setBrowseForDirectoryCallback: Have set callback to JS" << std::endl;
   }//setBrowseForDirectoryCallback
 
 
@@ -633,7 +645,12 @@ bool browse_for_directory( const std::string &session_token,
       return false;
     }
     
-    ns_browse_for_directory_callback->Acquire();
+    if( ns_browse_for_directory_callback->Acquire() != napi_ok )
+    {
+      std::cerr << "InterSpecAddOn::browse_for_directory: could not acquire callback to JS"
+                << std::endl;
+      return false;
+    }
     
     BrowseForDirData data;
     data.token = session_token;
@@ -645,36 +662,40 @@ bool browse_for_directory( const std::string &session_token,
     
     //BlockingCall only blocks while putting into work queue - it does not block until the work
     //  is done
-    napi_status status = ns_browse_for_directory_callback->BlockingCall( &data );
+    const napi_status status = ns_browse_for_directory_callback->BlockingCall( &data );
     
-    //std::cout << "About to start waiting on lock" << std::endl;
+    //The status must be checked before waiting: if the call could not be enqueued (e.g. the
+    //  thread-safe function is closing during shutdown), call_dir_browse_in_node will never run,
+    //  `data.status` will stay NotStarted, and the wait below would never return - wedging this
+    //  (Wt io_service) thread forever.
+    if( status != napi_ok )
+    {
+      ns_browse_for_directory_callback->Release();
+      std::cerr << "InterSpecAddOn::browse_for_directory: failed call to JS (napi status="
+                << status << ")" << std::endl;
+      return false;
+    }
     
     data.cv.wait( lk, [&data]{ return data.status != BrowseForDirStatus::NotStarted; } );
     
-    //std::cout << "Done waiting on lock" << std::endl;
-    
     ns_browse_for_directory_callback->Release();
     
-    if( status == napi_ok )
+    switch( data.status )
     {
-      switch( data.status )
-      {
-        case BrowseForDirStatus::NotStarted:
-          std::cerr << "InterSpecAddOn::browse_for_directory: call never started?  Not calling callback." << std::endl;
-          return false;
-          
-        case BrowseForDirStatus::Failed:
-          std::cerr << "InterSpecAddOn::browse_for_directory: call failed.  Not calling callback." << std::endl;
-          return false;
-          
-        case BrowseForDirStatus::Successful:
-          //std::cout << "InterSpecAddOn::browse_for_directory: successfully called=" << data.result << std::endl;
-          callback( data.result );
-          return true;
-      }//switch( data.result )
-    }
+      case BrowseForDirStatus::NotStarted:
+        std::cerr << "InterSpecAddOn::browse_for_directory: call never started?  Not calling callback." << std::endl;
+        return false;
+
+      case BrowseForDirStatus::Failed:
+        std::cerr << "InterSpecAddOn::browse_for_directory: call failed.  Not calling callback." << std::endl;
+        return false;
+
+      case BrowseForDirStatus::Successful:
+        callback( data.result );
+        return true;
+    }//switch( data.status )
     
-    std::cerr << "InterSpecAddOn::send_nodejs_message: failed call to JS (napi status=" << status << ")" << std::endl;
+    assert( 0 );
     return false;
   }
 }//namespace InterSpecAddOn

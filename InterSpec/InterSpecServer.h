@@ -160,7 +160,10 @@ namespace InterSpecServer
    */
   InterSpec_API int add_allowed_session_token( const char *session_id, const SessionType type );
 
-  /** Returns -1 if invalid token.  Returns +1 if valid token that had never been loaded.  Returns zero if was loaded.  */
+  /** Deauthorizes a session token, returning the state it was in before this call:
+   -1 unknown token, -2 invalid session, 0 if it had been loaded (or was dead), +1 if authorized
+   but never loaded, +2 if it had already been deauthorized.
+   */
   InterSpec_API int remove_allowed_session_token( const char *session_token );
 
   /** Returns if we should allow sessions without, or without valid, tokens.

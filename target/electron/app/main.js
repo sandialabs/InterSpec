@@ -36,14 +36,12 @@ const electron = require('electron')
 const interspec = require('./InterSpecAddOn.node');
 
 const {dialog} = electron;
-const {Menu, MenuItem} = electron;
+const {Menu} = electron;
 //const {systemPreferences} = electron;
 
-const http = require('http');
 const child_process = require('child_process');
 const path = require('path')
 var fs = require("fs")
-const url = require('url')
 
 // Module to control application life.
 const app = electron.app
@@ -413,7 +411,7 @@ function get_interspec_options(){
     }catch( error ){
       console.error( 'Error:', error );
 
-      dialog.showErrorBox( "Error", "Error in " + path.basename(filepath) + ":", error.message );
+      dialog.showErrorBox( "Error", "Error in " + path.basename(filepath) + ":\n" + error.message );
     }
   };//const getOptionsFromFile
 
@@ -586,8 +584,8 @@ function createWindow() {
   if( !windowPrefs.minHeight )  
     windowPrefs.minHeight = 200;
 
-  //To get nodeIntegration to work, there is som JS hacks in
-  //  InterSpecApp::setupDomEnvironment()
+  //On macOS we get the native frame; elsewhere the window is frameless and InterSpec draws its
+  //  own titlebar and menubar in HTML (see InterSpec's `isAppTitlebar` branch).
   windowPrefs.frame = (process.platform == 'darwin');
   windowPrefs.webPreferences = { nodeIntegration: false, contextIsolation: true, spellcheck: false };
 
@@ -723,10 +721,10 @@ function createWindow() {
 
   // A nice way to have the renderes console.log show up on the command line
   //  when running for development.
-  //newWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-  //  //https://www.electronjs.org/docs/api/web-contents#event-console-message  
-  //  //console.log( sourceId+ " ("+line+"): " + message );
-  //  console.log( "From renderer: " + message );
+  //newWindow.webContents.on('console-message', (details) => {
+  //  //https://www.electronjs.org/docs/api/web-contents#event-console-message
+  //  //console.log( details.sourceId + " (" + details.lineNumber + "): " + details.message );
+  //  console.log( "From renderer: " + details.message );
   //});
 
   // Emitted when the window is closed.
@@ -746,41 +744,49 @@ function createWindow() {
   });
 
   
+  //These window events can fire before setInitialUrl() has minted the session token (and after a
+  //  reload has invalidated it), and the token is the only thing the C++ side can route on - so
+  //  skip the message rather than send one addressed to nobody.
+  const sendToRenderer = function( msg_name ){
+    if( newWindow.appSessionToken )
+      interspec.sendMessageToRenderer( newWindow.appSessionToken, msg_name );
+  };
+
   newWindow.on( 'blur', function(){ 
     //Emitted when the window loses focus.
     //Could save the work here.
-    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnBlur"); 
+    sendToRenderer( "OnBlur" );
   } );
 
   newWindow.on( 'focus', function(){ 
     //Emitted when the window gains focus.
     setAsMostRecentWindow(newWindow);
-    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnFocus"); 
+    sendToRenderer( "OnFocus" );
   } );
 
   newWindow.on( 'unmaximize', function(){ 
     //Emitted when the window exits from a maximized state.
     setAsMostRecentWindow(newWindow);
-    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnUnMaximize"); 
+    sendToRenderer( "OnUnMaximize" );
   } );
   
   newWindow.on( 'maximize', function(){ 
     //Emitted when window is maximized.
     setAsMostRecentWindow(newWindow);
-    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnMaximize"); 
+    sendToRenderer( "OnMaximize" );
   } );
   
   newWindow.on( 'leave-full-screen', function(){ 
     setAsMostRecentWindow(newWindow);
-    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnLeaveFullScreen"); 
+    sendToRenderer( "OnLeaveFullScreen" );
   } );
   
   newWindow.on( 'enter-full-screen', function(){ 
     setAsMostRecentWindow(newWindow);
-    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnEnterFullScreen"); 
+    sendToRenderer( "OnEnterFullScreen" );
   } );
 
-  newWindow.webContents.on('will-navigate', function(event, url){
+  newWindow.webContents.on('will-navigate', function(details){
     //Emitted when a user or the page wants to start navigation. It can happen
     //  when the window.location object is changed or a user clicks a link in
     //  the page.
@@ -788,11 +794,14 @@ function createWindow() {
     //  with APIs like webContents.loadURL and webContents.back.
     //It is also not emitted for in-page navigations, such as clicking anchor
     //  links or updating the window.location.hash.
+    //Note: this listener used to take (event, url); those positional arguments are
+    //  deprecated in favour of the single `details` object.
     
+    const url = details.url;
     console.log('webContents: will-navigate');
-    if( !url.startsWith(interspec_url) ) {
+    if( !interspec_url || !url.startsWith(interspec_url) ) {
       console.log( "Will prevent Opening URL=" + url + ", newWindow.webContents.getURL()=" + newWindow.webContents.getURL() );
-      event.preventDefault();
+      details.preventDefault();
       electron.shell.openExternal(url)
     } else {
       //We seem to only get here if the JS application dies and the message saying
@@ -813,7 +822,7 @@ function createWindow() {
     //console.log( 'frameName=' + frameName );
     //console.log( 'additionalFeatures=' + additionalFeatures );
 
-    if( url.startsWith(interspec_url) ) {
+    if( interspec_url && url.startsWith(interspec_url) ) {
       //Lets prevent a weird popup window that the user has to close...
       //  I think this is because InterSpec targets a new window for downloads.
       newWindow.webContents.downloadURL(url);
@@ -1110,7 +1119,26 @@ function messageToNodeJs( token, msg_name, msg_data ){
       interspec.sendMessageToRenderer( token, "OnMaximize");
     }
   }else if( msg_name == 'ToggleDevTools' ){
-    window.toggleDevTools();
+    window.webContents.toggleDevTools();
+  }else if( (msg_name == 'ResetPageZoom') || (msg_name == 'IncreasePageZoom')
+            || (msg_name == 'DecreasePageZoom') ){
+    //Real page zoom can only be set from the main process: `webFrame` is not reachable from the
+    //  renderer under contextIsolation.  Zoom level is logarithmic - each step is a factor of 1.2
+    //  - and Chromium applies its own limits on top (measured: it stops at a 5.0x factor), with
+    //  getZoomLevel() reporting the clamped value, so repeated steps cannot drift.  The explicit
+    //  bounds below are belt-and-braces.
+    //Note: Chromium's zoom is per-origin, and every InterSpec window is served from the same
+    //  127.0.0.1:<port>, so this necessarily applies to all open windows, and new ones inherit it.
+    const ZOOM_MIN = -8, ZOOM_MAX = 9;
+    const raw = (msg_name == 'ResetPageZoom')
+                    ? 0
+                    : window.webContents.getZoomLevel() + ((msg_name == 'IncreasePageZoom') ? 1 : -1);
+    const level = Math.max( ZOOM_MIN, Math.min( ZOOM_MAX, raw ) );
+    window.webContents.setZoomLevel( level );
+    //InterSpec sizes a lot of its layout from JS, so nudge it to re-measure.
+    window.webContents.executeJavaScript(
+      "setTimeout(function(){window.dispatchEvent(new Event('resize'));},100);" )
+      .catch( function(e){ console.error( "Failed to dispatch resize after zoom:", e ); } );
   }else{
     console.log( "messageToNodeJs: unrecognized msg_name:", msg_name, ", token:", token, ", msg_data:", msg_data );
   }

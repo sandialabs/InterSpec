@@ -7832,17 +7832,39 @@ void InterSpec::addViewMenu( WWidget *parent )
   LOAD_JAVASCRIPT(wApp, "src/js_inline/AppHtmlMenu.js", "AppHtmlMenu", wtjsIncreasePageZoom);
   LOAD_JAVASCRIPT(wApp, "src/js_inline/AppHtmlMenu.js", "AppHtmlMenu", wtjsDecreasePageZoom);
   
-  resetZoomItem->triggered().connect( this, []{
-    wApp->doJavaScript( "Wt.WT.ResetPageZoom();" );
-  } );
+#if( BUILD_AS_ELECTRON_APP )
+  // For the primary Electron window, real page zoom has to be done by the main process:
+  //  webFrame is not reachable from the renderer under contextIsolation, so we make the same
+  //  JS -> C++ -> JS round-trip the Full Screen item above does.  External-browser sessions of
+  //  the Electron build fall through to the CSS-zoom path.
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
+    resetZoomItem->triggered().connect( this, []{
+      ElectronUtils::send_nodejs_message( "ResetPageZoom", "" );
+    } );
 
-  zoomInItem->triggered().connect( this, []{
-    wApp->doJavaScript( "Wt.WT.IncreasePageZoom();" );
-  } );
+    zoomInItem->triggered().connect( this, []{
+      ElectronUtils::send_nodejs_message( "IncreasePageZoom", "" );
+    } );
 
-  zoomOutItem->triggered().connect( this, []{
-    wApp->doJavaScript( "Wt.WT.DecreasePageZoom();" );
-  } );
+    zoomOutItem->triggered().connect( this, []{
+      ElectronUtils::send_nodejs_message( "DecreasePageZoom", "" );
+    } );
+  }else
+#endif //BUILD_AS_ELECTRON_APP
+  {
+    resetZoomItem->triggered().connect( this, []{
+      wApp->doJavaScript( "Wt.WT.ResetPageZoom();" );
+    } );
+
+    zoomInItem->triggered().connect( this, []{
+      wApp->doJavaScript( "Wt.WT.IncreasePageZoom();" );
+    } );
+
+    zoomOutItem->triggered().connect( this, []{
+      wApp->doJavaScript( "Wt.WT.DecreasePageZoom();" );
+    } );
+  }
 
 #if( BUILD_AS_ELECTRON_APP )
 #if( PERFORM_DEVELOPER_CHECKS )
