@@ -6684,10 +6684,11 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
             {
               const double lo = (std::max)(0.0, enrich_val.fraction - *enrich_val.covariance_one_sigma);
               const double hi = (std::min)(1.0, enrich_val.fraction + *enrich_val.covariance_one_sigma);
-              const string interval_str = " (68%: " + SpecUtils::printCompact(100.0*lo, 3)
+              // Not profiled: show a symmetric ± uncertainty in the visible text (the bounded
+              //  68% interval is reserved for profiled quantities), but keep it in the tooltip.
+              summary_text += " ± " + SpecUtils::printCompact(100.0 * (*enrich_val.covariance_one_sigma), 3) + "%";
+              tooltip_text += mass_frac_str + " (68%: " + SpecUtils::printCompact(100.0*lo, 3)
                               + "%–" + SpecUtils::printCompact(100.0*hi, 3) + "%)";
-              summary_text += interval_str;
-              tooltip_text += mass_frac_str + interval_str;
               showed_profile = true;
             }
             if( !showed_profile )

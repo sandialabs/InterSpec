@@ -3,6 +3,11 @@
   display: flex;
   flex-direction: column;
   flex-wrap: nowrap;
+
+  /* Establish a positioning context so the absolutely-positioned .MoreMenuIcon
+     anchors to the tool content area (below the window title bar), rather than
+     to the AuxWindow's outer div where it would overlap the close "x". */
+  position: relative;
 }
 
 
@@ -739,6 +744,13 @@ padding-bottom: 1px;
 .RelActAutoGui .RelActAutoGuiNuclide .RelActAutGuiNuclideColorSelect
 {
   width: 35px;
+}
+
+/* Push the color picker (and the delete icon that follows it) to the right edge of the
+   upper row, since the summary text no longer fills that gap. */
+.RelActAutoGui .RelActAutoGuiNuclide .UpperRow > .RelActAutGuiNuclideColorSelect
+{
+  margin-left: auto;
 }
 
 .RelActAutoGui .RelActAutoGuiNuclide .UpperRow,

@@ -164,34 +164,33 @@ BOOST_AUTO_TEST_CASE( showObsEffPointRejectsNaNs )
 }
 
 
-BOOST_AUTO_TEST_CASE( blendedPointIsHeavilyDiscounted )
+BOOST_AUTO_TEST_CASE( sharedPointSignificanceIsStatisticalTimesShare )
 {
-  // A cluster split 50/50 between two rel. eff. curves carries a ~50% uncertainty, because how the counts
-  //  divide between curves is a model assumption rather than a measurement (co-located gammas are perfectly
-  //  degenerate in the fit).  This mirrors the arithmetic in `fit_free_peak_amplitudes()`.
-  const double area_rel_uncert = 0.02; //a 2% peak - by itself, 50 sigma
-  const double curve_model_fraction = 0.5;
-  const double blend_rel_uncert = 1.0 - curve_model_fraction;
-  const double total_rel_uncert = sqrt( area_rel_uncert*area_rel_uncert + blend_rel_uncert*blend_rel_uncert );
+  // For a cluster shared between rel. eff. curves, a point's significance is the statistically-measured signal
+  //  _attributed_ to this curve: `curve_num_sigma_significance = curve_model_fraction * (area/area_uncert)`
+  //  (see `fit_free_peak_amplitudes()`).  The unmeasurable split between curves is a model assumption, so it is
+  //  deliberately _not_ folded into the significance - the chart conveys it by fading the point's opacity instead.
+  //  Hence a modest share of a strong peak is still shown, while any share of a weak peak is dropped.
+  const double strong_cluster_sigma = 50.0; //a 2% peak - by itself, 50 sigma
+  const double weak_cluster_sigma   = 4.0;
 
-  BOOST_CHECK_CLOSE( total_rel_uncert, 0.5004, 0.1 );
+  // Half of a strong peak is still 25 sigma, so it is shown (the pre-blend-decoupling code dropped this).
+  ObsEff strong_half = good_point();
+  strong_half.curve_model_fraction = 0.5;
+  strong_half.curve_num_sigma_significance = 0.5 * strong_cluster_sigma;
+  BOOST_CHECK( RelActCalcAuto::RelActAutoSolution::show_obs_eff_point( strong_half ) );
 
-  // The point is now ~2 sigma, so it does not pass the significance gate, while the same peak on a curve
-  //  that owns it outright would be 50 sigma and pass.
-  ObsEff blended = good_point();
-  blended.curve_model_fraction = curve_model_fraction;
-  blended.curve_num_sigma_significance = 1.0/total_rel_uncert;
-  BOOST_CHECK( !RelActCalcAuto::RelActAutoSolution::show_obs_eff_point( blended ) );
-  BOOST_CHECK( blended.exclusion_reason == ExclusionReason::Insignificant );
+  // Half of a weak peak is only 2 sigma, so it does not pass the significance gate.
+  ObsEff weak_half = good_point();
+  weak_half.curve_model_fraction = 0.5;
+  weak_half.curve_num_sigma_significance = 0.5 * weak_cluster_sigma;
+  BOOST_CHECK( !RelActCalcAuto::RelActAutoSolution::show_obs_eff_point( weak_half ) );
+  BOOST_CHECK( weak_half.exclusion_reason == ExclusionReason::Insignificant );
 
-  ObsEff unblended = good_point();
-  unblended.curve_num_sigma_significance = 1.0/area_rel_uncert;
-  BOOST_CHECK( RelActCalcAuto::RelActAutoSolution::show_obs_eff_point( unblended ) );
-
-  // A lightly blended point (this curve owns 95%) is still shown.
-  ObsEff light = good_point();
-  light.curve_model_fraction = 0.95;
-  const double light_uncert = sqrt( area_rel_uncert*area_rel_uncert + 0.05*0.05 );
-  light.curve_num_sigma_significance = 1.0/light_uncert;
-  BOOST_CHECK( RelActCalcAuto::RelActAutoSolution::show_obs_eff_point( light ) );
+  // A tiny share (4%) of even a strong peak eventually falls below the gate (here 2 sigma).
+  ObsEff sliver = good_point();
+  sliver.curve_model_fraction = 0.04;
+  sliver.curve_num_sigma_significance = 0.04 * strong_cluster_sigma;
+  BOOST_CHECK( !RelActCalcAuto::RelActAutoSolution::show_obs_eff_point( sliver ) );
+  BOOST_CHECK( sliver.exclusion_reason == ExclusionReason::Insignificant );
 }

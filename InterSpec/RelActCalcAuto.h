@@ -1768,9 +1768,10 @@ struct RelActAutoSolution
     double orig_solution_eff = 0.0;
     /** The relative efficiency from the amplitude-unconstrained fit. */
     double observed_efficiency = 0.0;
-    /** Uncertainty on #observed_efficiency; includes both the free-fit area uncertainty, and (when more than one
-     rel. eff. curve contributes to this cluster) the uncertainty from the unmeasurable split between curves -
-     see #curve_model_fraction.
+    /** Uncertainty on #observed_efficiency: the free-fit area (statistical) uncertainty only.  The unmeasurable
+     split between rel. eff. curves (see #curve_model_fraction) is deliberately _not_ folded in here - the chart
+     conveys that split via point opacity instead, so both curves' points at a shared cluster carry the same
+     (statistical) error bar.
      */
     double observed_efficiency_uncert = 0.0;
     /** The scale factor to multiply the peak amplitude fit in the solution, to get what was freely fit for. */
@@ -1803,13 +1804,16 @@ struct RelActAutoSolution
 
      Will be 1.0 when this curve owns the cluster outright, and smaller when another curve also has gammas here.
      The per-point split between curves is _not_ measurable (co-located lines are perfectly degenerate in the fit),
-     so this fraction comes from the model, and is what the blend term of #observed_efficiency_uncert is based on.
+     so this fraction comes from the model.  The chart uses it to fade a shared point's opacity, roughly showing
+     how much each curve contributes at this energy.
      */
     double curve_model_fraction = 1.0;
     /** This curve's share of the freely-fit cluster area: `curve_model_fraction*fit_clustered_peak_amplitude`. */
     double curve_fit_amplitude = 0.0;
-    /** #curve_fit_amplitude over its uncertainty (including the blend term).  Should be at least a few, before
-     we bother showing this curves point on the chart.
+    /** Statistical significance of the signal attributed to this curve: #curve_fit_amplitude over the (statistical)
+     area uncertainty, i.e. #curve_model_fraction * #num_sigma_significance.  Should be at least a few before we
+     bother showing this curve's point on the chart - so a small share of a strong peak is still shown, but a small
+     share of a weak peak is dropped.
      */
     double curve_num_sigma_significance = 0.0;
     /** Fraction of the _peak_ counts over this clusters mean +- 1.5*#resolution_sigma that come from neighboring

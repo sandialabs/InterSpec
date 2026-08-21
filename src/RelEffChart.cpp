@@ -608,13 +608,9 @@ void RelEffChart::setCssRules()
                                          " pointer-events: none;"
                                          " color: #444422;" );
   
-  // Points whose counts are shared with another rel. eff. curve are drawn hollow - the split between curves
-  //  is fitted through the attenuation physics / curve shapes rather than resolved by the peak itself, so
-  //  such a point is not independent evidence for this curve.  See `ObsEff::curve_model_fraction`.
-  rulename = ".RelEffPlot circle.blended";
-  if( !m_cssRules.count(rulename) )
-    m_cssRules[rulename] = style.addRule( "#" + id() + " .RelEffPlot circle.blended",
-                                         "fill-opacity: 0.15; stroke-width: 1.5;" );
+  // Points whose counts are shared with another rel. eff. curve are faded in proportion to this curve's
+  //  contribution at that energy (opacity is set per-point in RelEffPlot.js, see `pointOpacity`), so the
+  //  opacity roughly shows how much each curve contributes.  See `ObsEff::curve_model_fraction`.
 
   // The "some points were left off this chart" affordance; see `RelEffPlot.prototype.updateOmittedPointsInfo`.
   //  Note the icon/panel are positioned against this widgets div (which has class "RelEffChart"); the
