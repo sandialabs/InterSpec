@@ -3192,30 +3192,54 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork( double new_lower_ener
         }
       }//if( we should start from the peaks we last fit while dragging )
       
-      // Apply fit preferences (FWHM method and skew) from PeakFitDetPrefs
+      // Apply the FWHM-method fit preference from PeakFitDetPrefs.
+      //  Note that we deliberately do *not* apply `PeakFitDetPrefs::m_peak_skew_type` here:
+      //  that preference is the skew to give *new* peaks, while these peaks already exist and
+      //  may carry a skew the user explicitly chose (right-click "Skew Type", Peak Editor, ...).
+      //  Dragging a ROI edge is a refit, not a shape change - so skew type/coefficients ride in
+      //  on the peaks, which is also the only way skew reaches the fitter (neither
+      //  `refitPeaksThatShareROI` nor `fit_peaks_in_roi_LM` takes a skew argument; they use
+      //  `skew_type_from_prev_peaks(...)` on the input peaks).  This matches every other
+      //  refit-existing-peaks path (right-click Refit ROI, PeakEdit, PeakModel ROI-range edits).
       Wt::WFlags<PeakFitLM::PeakFitLMOptions> refit_options( PeakFitLM::PeakFitLMOptions::MediumAmplitudeRefinementOnly );
       PeakFitUtils::CoarseResolutionType dragDetType = PeakFitUtils::CoarseResolutionType::Unknown;
 
       {
         InterSpec *viewer = InterSpec::instance();
-        const shared_ptr<const SpecMeas> meas = viewer
+
+        // Prefer the foreground's DRF/prefs - they are what the user has characterized - but if
+        //  the foreground doesnt provide them, and we are dragging a ROI on the background or
+        //  secondary spectrum, fall back to that spectrums own DRF/prefs.
+        const shared_ptr<const SpecMeas> fore_meas = viewer
           ? viewer->measurment( SpecUtils::SpectrumType::Foreground )
           : nullptr;
-        shared_ptr<const PeakFitDetPrefs> prefs = meas ? meas->peakFitDetPrefs() : nullptr;
+        const shared_ptr<const SpecMeas> drag_meas
+          = (viewer && (spec_type != SpecUtils::SpectrumType::Foreground))
+            ? viewer->measurment( spec_type )
+            : nullptr;
+
+        detector = fore_meas ? fore_meas->detector() : nullptr;
+        if( !detector && drag_meas )
+          detector = drag_meas->detector();
+
+        shared_ptr<const PeakFitDetPrefs> prefs = fore_meas ? fore_meas->peakFitDetPrefs() : nullptr;
+        if( !prefs && drag_meas )
+          prefs = drag_meas->peakFitDetPrefs();
         if( !prefs && detector )
           prefs = detector->peakFitDetPrefs();
         assert( prefs );
 
-        dragDetType = prefs ? prefs->m_det_type
-                            : PeakFitUtils::coarse_det_type( spectrum, meas );
+        // Guessing the resolution type from the data must use the spectrum actually being
+        //  dragged, so pair `spectrum` with the SpecMeas it came from.
+        const shared_ptr<const SpecMeas> &meas = drag_meas ? drag_meas : fore_meas;
+        dragDetType = PeakFitUtils::effective_det_type( prefs, spectrum, meas );
 
         if( prefs )
         {
-          shared_ptr<const DetectorPeakResponse> drf = meas ? meas->detector() : nullptr;
           vector<shared_ptr<PeakDef>> mutable_peaks;
           for( const auto &p : new_roi_initial_peaks )
             mutable_peaks.push_back( make_shared<PeakDef>( *p ) );
-          apply_fit_prefs_to_peaks( mutable_peaks, spectrum, drf, *prefs, refit_options );
+          apply_fwhm_method_to_peaks( mutable_peaks, detector, *prefs, refit_options );
           new_roi_initial_peaks.clear();
           for( const auto &p : mutable_peaks )
             new_roi_initial_peaks.push_back( p );
@@ -3227,7 +3251,37 @@ void D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork( double new_lower_ener
 
       vector<shared_ptr<const PeakDef>> refitpeaks
                   = refitPeaksThatShareROI( spectrum, detector, new_roi_initial_peaks, dragDetType, refit_options );
-      
+
+#if( PERFORM_DEVELOPER_CHECKS )
+      // Dragging a ROI edge must never *lose* the ROI's skew - see comment above.
+      //  A ROI has a single skew type, taken as the largest enum value over its peaks, so
+      //  compare that quantity between the peaks going in and the peaks coming out.  We only
+      //  flag a decrease: the chi2-fallback inside `refitPeaksThatShareROI_LM` may co-fit
+      //  neighboring peaks, which can legitimately promote the ROI to a higher skew type.
+      if( !refitpeaks.empty() )
+      {
+        auto roi_skew = []( const vector<shared_ptr<const PeakDef>> &peaks ) -> PeakDef::SkewType {
+          PeakDef::SkewType t = PeakDef::SkewType::NoSkew;
+          for( const shared_ptr<const PeakDef> &p : peaks )
+            t = std::max( t, p->skewType() );
+          return t;
+        };
+
+        const PeakDef::SkewType in_skew = roi_skew( new_roi_initial_peaks );
+        const PeakDef::SkewType out_skew = roi_skew( refitpeaks );
+        if( out_skew < in_skew )
+        {
+          log_developer_error( __func__, ("D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork:"
+                                          " drag lost the skew of ROI ["
+                                          + std::to_string(new_lower_energy) + ", "
+                                          + std::to_string(new_upper_energy) + "] keV - was '"
+                                          + PeakDef::to_string(in_skew) + "', became '"
+                                          + PeakDef::to_string(out_skew) + "'").c_str() );
+          assert( 0 );
+        }//if( out_skew < in_skew )
+      }//if( !refitpeaks.empty() )
+#endif //PERFORM_DEVELOPER_CHECKS
+
       m_continuum_being_drug = continuum;
       m_last_being_drug_peaks = refitpeaks;
       m_last_drag_time = chrono::steady_clock::now();

@@ -335,3 +335,80 @@ BOOST_AUTO_TEST_CASE( test_guess_from_spectral_data_stub )
   auto prefs = PeakFitDetPrefs::guessFromSpectralData( nullptr );
   BOOST_CHECK( !prefs );
 }//test_guess_from_spectral_data_stub
+
+
+/** Pins the contract that the ROI-edge-drag refit relies on.
+
+ `PeakFitDetPrefs::m_peak_skew_type` is the skew to give *new* peaks.  When refitting peaks
+ that already exist - e.g. `D3SpectrumDisplayDiv::performExistingRoiEdgeDragWork()` - only the
+ FWHM method may be applied, otherwise a skew the user explicitly chose gets silently reverted
+ (skew reaches the fitter only via the input peaks; `refitPeaksThatShareROI` takes no skew
+ argument).  So `apply_fwhm_method_to_peaks` must leave skew alone, while
+ `apply_fit_prefs_to_peaks` must keep overriding it for its new-peak callers.
+ */
+BOOST_AUTO_TEST_CASE( test_apply_prefs_skew_handling )
+{
+  const shared_ptr<const SpecUtils::Measurement> null_data;
+  const shared_ptr<const DetectorPeakResponse> null_drf;
+
+  PeakFitDetPrefs prefs;
+  prefs.m_det_type = PeakFitUtils::CoarseResolutionType::High;
+  prefs.m_peak_skew_type = PeakDef::NoSkew;
+  prefs.m_fwhm_method = PeakFitDetPrefs::FwhmMethod::Normal;
+
+  // A peak the user gave an explicit skew to, with a distinctive skew parameter value.
+  const double orig_skew_par = 1.25;
+  auto make_skewed_peak = [orig_skew_par]() -> shared_ptr<PeakDef> {
+    auto peak = make_shared<PeakDef>( 661.7, 3.0, 1000.0 );
+    peak->setSkewType( PeakDef::Bortel );
+    peak->set_coefficient( orig_skew_par, PeakDef::CoefficientType::SkewPar0 );
+    peak->setFitFor( PeakDef::CoefficientType::SkewPar0, true );
+    return peak;
+  };
+
+  // apply_fwhm_method_to_peaks(): skew must survive untouched (the refit path).
+  {
+    vector<shared_ptr<PeakDef>> peaks{ make_skewed_peak() };
+    Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+    apply_fwhm_method_to_peaks( peaks, null_drf, prefs, fit_options );
+
+    BOOST_CHECK( peaks[0]->skewType() == PeakDef::Bortel );
+    BOOST_CHECK_CLOSE( peaks[0]->coefficient(PeakDef::CoefficientType::SkewPar0),
+                       orig_skew_par, 1.0e-6 );
+    BOOST_CHECK( peaks[0]->fitFor(PeakDef::CoefficientType::SkewPar0) );
+  }
+
+  // apply_fit_prefs_to_peaks(): still overrides skew with the prefs value (the new-peak path).
+  {
+    vector<shared_ptr<PeakDef>> peaks{ make_skewed_peak() };
+    Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+    apply_fit_prefs_to_peaks( peaks, null_data, null_drf, prefs, fit_options );
+
+    BOOST_CHECK( peaks[0]->skewType() == PeakDef::NoSkew );
+  }
+
+  // And when prefs pin a skew parameter, apply_fit_prefs_to_peaks fixes it, while
+  //  apply_fwhm_method_to_peaks leaves the peak's own value alone.
+  prefs.m_peak_skew_type = PeakDef::Bortel;
+  prefs.m_lower_energy_skew[0] = 7.5;
+
+  {
+    vector<shared_ptr<PeakDef>> peaks{ make_skewed_peak() };
+    Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+    apply_fwhm_method_to_peaks( peaks, null_drf, prefs, fit_options );
+
+    BOOST_CHECK_CLOSE( peaks[0]->coefficient(PeakDef::CoefficientType::SkewPar0),
+                       orig_skew_par, 1.0e-6 );
+    BOOST_CHECK( peaks[0]->fitFor(PeakDef::CoefficientType::SkewPar0) );
+  }
+
+  {
+    vector<shared_ptr<PeakDef>> peaks{ make_skewed_peak() };
+    Wt::WFlags<PeakFitLM::PeakFitLMOptions> fit_options;
+    apply_fit_prefs_to_peaks( peaks, null_data, null_drf, prefs, fit_options );
+
+    BOOST_CHECK( peaks[0]->skewType() == PeakDef::Bortel );
+    BOOST_CHECK_CLOSE( peaks[0]->coefficient(PeakDef::CoefficientType::SkewPar0), 7.5, 1.0e-6 );
+    BOOST_CHECK( !peaks[0]->fitFor(PeakDef::CoefficientType::SkewPar0) );
+  }
+}//test_apply_prefs_skew_handling
