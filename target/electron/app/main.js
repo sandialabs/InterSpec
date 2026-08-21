@@ -40,6 +40,7 @@ const {Menu, MenuItem} = electron;
 //const {systemPreferences} = electron;
 
 const http = require('http');
+const child_process = require('child_process');
 const path = require('path')
 var fs = require("fs")
 const url = require('url')
@@ -110,6 +111,7 @@ if( !gotTheLock )
       }else
       {
         // I dont think we will get here; so lets show an error, for development purposes, incase it happens, so I'll see it.
+        const argvstr = commandLine.join(', ');
         dialog.showErrorBox('second instance with no previous window', `infiles.length: ${infiles.length}, workingDirectory: ${workingDirectory}, commandLine: ${argvstr}`)
         initial_file_to_open = infiles;
       }//if( window ) / else
@@ -286,6 +288,12 @@ function load_file(window, filename){
  * silently-retried one.
  */
 const is_test_load = process.argv.some( arg => (arg === '--test-load') );
+
+/** Set once we have decided to go down, so late-arriving work knows not to start anything that
+ * needs a window - or, worse, a modal dialog - on the way out.  `app.exit()` does not emit
+ * 'before-quit' or 'will-quit', so this cannot be inferred from those.
+ */
+let app_is_quitting = false;
 
 /** True when `--no-sandbox` is already on the real command line.
  *
@@ -1007,7 +1015,16 @@ function messageToNodeJs( token, msg_name, msg_data ){
 
   if( !window ){
     console.error( 'messageToNodeJs token: ' + token + "' did not coorespond to any open windows.");
-    dialog.showErrorBox('Error', 'Recieved message from a window that couldnt be found - app state is suspect.\nThere are currently ' + openWindows.length + ' open windows.');
+    
+    /* Messages are posted from the C++ side through the Wt io_service, so one queued just before
+       shutdown is delivered *during* it, after the window has been dropped from `openWindows` -
+       a benign race, not a corrupt state.  Never raise a modal here while quitting:
+       `dialog.showErrorBox` blocks the main thread until dismissed, and with the window gone (or
+       no display at all, as under Xvfb in CI) nobody ever dismisses it.  That wedges the process
+       inside `app.exit()`, where even the `--test-load` hard-exit timer cannot run.
+     */
+    if( !app_is_quitting )
+      dialog.showErrorBox('Error', 'Recieved message from a window that couldnt be found - app state is suspect.\nThere are currently ' + openWindows.length + ' open windows.');
     
     return;
   }
@@ -1138,6 +1155,7 @@ function finishTestLoad( code ){
   if( test_load_finished )
     return;
   test_load_finished = true;
+  app_is_quitting = true;
 
   if( test_load_timer ){
     clearTimeout( test_load_timer );
@@ -1163,15 +1181,37 @@ function finishTestLoad( code ){
     console.error( "--test-load: could not write result file: " + e );
   }
 
-  // Arm the hard-exit backstop *first*.  Both killServer() and app.exit() can block - killServer
+  // Arm the hard-exit backstops *first*.  Both killServer() and app.exit() can block - killServer
   //  waits on the Wt session, and app.exit() has been seen not to terminate when a child process
   //  is wedged (a zombie renderer, hit once while testing under CPU emulation; the process then
-  //  sat idle indefinitely).  Registering this after those calls would mean it never gets armed
-  //  in exactly the cases it exists for.  A test run that hangs is worse than one that fails.
+  //  sat idle indefinitely).  Registering these after those calls would mean they never get armed
+  //  in exactly the cases they exist for.  A test run that hangs is worse than one that fails.
   setTimeout( function(){
     console.error( "--test-load: did not terminate cleanly; forcing exit" );
     process.exit( code );
   }, 10000 ).unref();
+
+  /* The timer above only fires if the main thread comes back to the event loop, and the ways
+     app.exit() gets stuck are exactly the ways it does not (blocked in native teardown, or in a
+     modal nobody can dismiss).  So back it with a watchdog in a separate process, which the
+     state of this one cannot affect.  Only ever armed under `--test-load`, i.e. in CI; it exits
+     on its own if we terminate normally first, and `kill -0` keeps it from signalling a pid that
+     has already gone away.
+   */
+  if( process.platform !== 'win32' ){
+    try{
+      const watchdog = child_process.spawn( '/bin/sh',
+        ['-c', 'sleep 30; kill -0 ' + process.pid + ' 2>/dev/null && kill -9 ' + process.pid],
+        { detached: true, stdio: 'ignore' } );
+      // Without a handler an 'error' event (no /bin/sh, fork refused) is thrown, not reported.
+      watchdog.on( 'error', function(e){
+        console.error( "--test-load: could not start exit watchdog: " + e );
+      } );
+      watchdog.unref();
+    }catch(e){
+      console.error( "--test-load: could not start exit watchdog: " + e );
+    }
+  }
 
   // Deferred, because we are usually called from inside `messageToNodeJs`, which the C++ addon
   //  invokes - exiting there would tear the process down with native frames still on the stack.
@@ -1293,6 +1333,7 @@ app.on('window-all-closed', function () {
     //app.quit()
   //}
   openWindows = [];
+  app_is_quitting = true;
   
   interspec.killServer();
 
@@ -1301,6 +1342,7 @@ app.on('window-all-closed', function () {
 
 app.on('before-quit', function() {
   //Emitted before the application starts closing its windows.
+  app_is_quitting = true;
   console.log( "Sending Wt code command to exit" );
   interspec.killServer();
 });
