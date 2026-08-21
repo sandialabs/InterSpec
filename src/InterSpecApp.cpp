@@ -1912,8 +1912,10 @@ void InterSpecApp::loadSuccesfullCallback()
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
 #if( BUILD_AS_ELECTRON_APP )
+    // Sends "SessionFinishedLoading" to main.js; note this must only be sent once - a duplicate
+    //  gets delivered while node is already tearing the session down, and main.js then has no
+    //  window to match it to.
     ElectronUtils::notifyNodeJsOfNewSessionLoad();
-    ElectronUtils::send_nodejs_message( "SessionFinishedLoading", "" );
 #elif( BUILD_AS_OSX_APP )
     macOsUtils::sessionSuccessfullyLoaded();
 #elif( ANDROID )
