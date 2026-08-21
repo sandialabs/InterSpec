@@ -48,5 +48,6 @@
   <message id="d3sdd-yaxis-below-min-non-zero">Rentang atas kurang dari minimum yang ditampilkan, nilai bukan nol.</message>
   <message id="d3sdd-candidates">Kandidat:</message>
   <message id="d3sdd-use-arrows-to-select">(gunakan ↑ dan ↓ untuk memilih)</message>
+  <message id="d3sdd-templateDefaultTitle">Templat</message>
 </messages>
 

@@ -48,4 +48,5 @@
   <message id="d3sdd-yaxis-below-min-non-zero">Faixa superior menor que o valor mínimo exibido, não-zero.</message>
   <message id="d3sdd-candidates">Candidatos:</message>
   <message id="d3sdd-use-arrows-to-select">(use ↑ e ↓ para selecionar)</message>
+  <message id="d3sdd-templateDefaultTitle">Modelo</message>
 </messages>

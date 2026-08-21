@@ -48,5 +48,6 @@
   <message id="d3sdd-yaxis-below-min-non-zero">上限范围小于显示的最小非零值。</message>
   <message id="d3sdd-candidates">候选：</message>
   <message id="d3sdd-use-arrows-to-select">（使用↑和↓选择）</message>
+  <message id="d3sdd-templateDefaultTitle">模板</message>
 </messages>
 

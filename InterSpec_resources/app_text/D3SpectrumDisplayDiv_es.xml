@@ -48,6 +48,7 @@
   <message id="d3sdd-yaxis-below-min-non-zero">Rango superior menor que valor mínimo mostrado, no cero.</message>
   <message id="d3sdd-candidates">Candidatos:</message>
   <message id="d3sdd-use-arrows-to-select">(usar ↑ y ↓ para seleccionar)</message>
+  <message id="d3sdd-templateDefaultTitle">Plantilla</message>
 </messages>
 
 

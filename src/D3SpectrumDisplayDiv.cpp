@@ -23,6 +23,7 @@
 
 #include "InterSpec_config.h"
 
+#include <cmath>
 #include <memory>
 #include <vector>
 #include <utility>
@@ -1086,6 +1087,11 @@ void D3SpectrumDisplayDiv::render( Wt::WFlags<Wt::RenderFlag> flags )
   if( m_renderFlags.test(UpdateMultiSpectra) )
     renderMultiSpectraToClient();
 
+  // After the per-type spectrum renders: this one re-pushes them through setData(), so it must
+  //  not be undone by a setSpectrumData() that runs later in the same pass.
+  if( m_renderFlags.test(UpdateTemplates) )
+    renderTemplatesToClient();
+
   if( m_renderFlags.test(UpdateForegroundPeaks) )
     setPeaksToClient( SpecUtils::SpectrumType::Foreground );
   
@@ -1166,6 +1172,7 @@ std::string D3SpectrumDisplayDiv::localizedStringsJson() const
   "comptonPeakAngle: " + WString::tr("d3sdd-comptonPeakAngle").jsStringLiteral() + ",\n\t"        // "{1}° Compton Peak"
   "candidates: " + WString::tr("d3sdd-candidates").jsStringLiteral() + ",\n\t"                    // "Candidates:"
   "useArrowsToSelect: " + WString::tr("d3sdd-use-arrows-to-select").jsStringLiteral() + ",\n\t"   // "(use ↑ and ↓ to select)"
+  "templateDefaultTitle: " + WString::tr("d3sdd-templateDefaultTitle").jsStringLiteral() + ",\n\t" // "Template"
   "}";
   
   // In JS, probably need to call: `self.handleResize( false );`
@@ -1639,6 +1646,10 @@ void D3SpectrumDisplayDiv::setData( std::shared_ptr<const Measurement> data_hist
   const float oldBackSF = m_backgroundScale;
   const float oldSecondSF = m_secondaryScale;
   
+  // Counterpart to #setMultipleSpectra nulling these members: leaving the preview vector populated
+  //  would let it shadow this spectrum on the next template push.
+  m_multiSpectra.clear();
+
   m_foreground = data_hist;
   if( m_peakModel )
     m_peakModel->setForeground( data_hist );
@@ -1773,6 +1784,7 @@ void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<const Measurement> bac
   if( !m_background && !background )
     return;
 
+  m_multiSpectra.clear();  //see the note in #setData
   m_background = background;
   doBackgroundLiveTimeNormalization();
 
@@ -1786,11 +1798,32 @@ void D3SpectrumDisplayDiv::setBackground( std::shared_ptr<const Measurement> bac
 
 void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> hist )
 {
+  m_multiSpectra.clear();  //see the note in #setData
   m_secondary = hist;
   doSecondaryLiveTimeNormalization();
   scheduleUpdateSecondData();
   schedulePeakRedraw( SpecUtils::SpectrumType::SecondForeground );
 }//void D3SpectrumDisplayDiv::setSecondData( std::shared_ptr<const Measurement> background );
+
+
+void D3SpectrumDisplayDiv::setTemplates( std::vector<TemplateSpec> templates )
+{
+  // If we have no templates and aren't setting any, skip pushing anything to the client.
+  if( m_templates.empty() && templates.empty() )
+    return;
+
+  m_templates = std::move(templates);
+  scheduleUpdateTemplates();
+}//void D3SpectrumDisplayDiv::setTemplates(...)
+
+
+void D3SpectrumDisplayDiv::clearTemplates()
+{
+  if( m_templates.empty() )
+    return;
+  m_templates.clear();
+  scheduleUpdateTemplates();
+}//void D3SpectrumDisplayDiv::clearTemplates()
 
 
 void D3SpectrumDisplayDiv::visibleRange( double &xmin, double &xmax,
@@ -2022,6 +2055,13 @@ void D3SpectrumDisplayDiv::scheduleUpdateSecondData()
 }
 
 
+void D3SpectrumDisplayDiv::scheduleUpdateTemplates()
+{
+  m_renderFlags |= UpdateTemplates;
+  scheduleRender();
+}
+
+
 void D3SpectrumDisplayDiv::renderForegroundToClient()
 {
   const std::shared_ptr<const Measurement> &data_hist = m_foreground;
@@ -2097,6 +2137,12 @@ void D3SpectrumDisplayDiv::setMultipleSpectra(
     m_renderFlags |= ResetXDomain;
 
   m_renderFlags |= UpdateMultiSpectra;
+
+  // That render builds a fresh data object with no `templates` key, which drops any templates the
+  //  chart is showing.  Re-assert them afterwards so C++ and client state cannot disagree.
+  if( !m_templates.empty() )
+    m_renderFlags |= UpdateTemplates;
+
   scheduleRender();
 }//void setMultipleSpectra(...)
 
@@ -2226,6 +2272,156 @@ void D3SpectrumDisplayDiv::renderSecondDataToClient()
   else
     m_pendingJs.push_back( js );
 }//void D3SpectrumDisplayDiv::updateSecondData()
+
+
+void D3SpectrumDisplayDiv::renderTemplatesToClient()
+{
+  // Templates can only reach the chart through `setData(...)`: SpectrumChartD3 creates the
+  //  `templatepath<N>` elements while consuming that call, deliberately before the spectrum lines
+  //  so SVG paint order puts the filled areas underneath.  There is no entry point that adds
+  //  templates to an already-drawn chart, and `setData` replaces `rawData` wholesale - so pushing
+  //  templates with an empty spectra array would blank whatever spectra are displayed.  Everything
+  //  currently on the chart therefore has to go out with them, in this one call.
+  //
+  //  This runs after the per-type spectrum renders because those build their data from the same
+  //  members we do; running last simply means we do not serialize a spectrum they are about to
+  //  replace.  (`setSpectrumData` itself is template-safe - it hands `rawData` back to `setData` -
+  //  but `renderForegroundToClient`s null branch and `renderMultiSpectraToClient` both build fresh
+  //  objects that carry no templates, so template state has to be re-asserted after them.)
+  string js;
+
+  const string resetDomain = m_renderFlags.test(ResetXDomain) ? "true" : "false";
+
+  std::vector< std::pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions> > measurements;
+  std::vector< std::pair<const Measurement *,D3SpectrumExport::D3SpectrumOptions> > templates;
+
+  // Position of the background/secondary within `measurements`; the writer uses that index as each
+  //  spectrum's `id`, which we need below to re-link the secondary to the background.
+  size_t background_pos = 0, secondary_pos = 0;
+  bool have_background = false, have_secondary = false;
+
+  // In the #setMultipleSpectra preview mode the three per-type members are not what is on the
+  //  chart, so re-pushing them would blank the preview.  Carry whatever that mode set instead.
+  const bool multi_mode = !m_multiSpectra.empty();
+
+  if( multi_mode )
+  {
+    for( const std::pair<std::shared_ptr<const SpecUtils::Measurement>,
+                         D3SpectrumExport::D3SpectrumOptions> &spec : m_multiSpectra )
+    {
+      if( spec.first )
+        measurements.emplace_back( spec.first.get(), spec.second );
+    }
+  }else
+  {
+    // The spectra, with the same options the per-type renders give them, so a template update does
+    //  not quietly change how they are drawn.  Peaks are not set here; they are re-sent below
+    //  through the same `setRoiData` path the per-type renders use.
+    if( m_foreground )
+    {
+      D3SpectrumExport::D3SpectrumOptions opts;
+      const WColor peak_color = m_defaultPeakColor.isDefault() ? WColor(0, 51, 255) : m_defaultPeakColor;
+      opts.peak_color = peak_color.cssText();
+      opts.spectrum_type = SpecUtils::SpectrumType::Foreground;
+      opts.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::Foreground );
+      measurements.push_back( make_pair( m_foreground.get(), opts ) );
+    }//if( m_foreground )
+
+    if( m_background )
+    {
+      D3SpectrumExport::D3SpectrumOptions opts;
+      opts.spectrum_type = SpecUtils::SpectrumType::Background;
+      opts.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::Background );
+      background_pos = measurements.size();
+      have_background = true;
+      measurements.push_back( make_pair( m_background.get(), opts ) );
+    }//if( m_background )
+
+    if( m_secondary )
+    {
+      D3SpectrumExport::D3SpectrumOptions opts;
+      opts.spectrum_type = SpecUtils::SpectrumType::SecondForeground;
+      opts.display_scale_factor = displayScaleFactor( SpecUtils::SpectrumType::SecondForeground );
+      secondary_pos = measurements.size();
+      have_secondary = true;
+      measurements.push_back( make_pair( m_secondary.get(), opts ) );
+    }//if( m_secondary )
+  }//if( multi_mode ) / else
+
+  templates.reserve( m_templates.size() );
+  for( const TemplateSpec &t : m_templates )
+  {
+    if( !t.meas )
+      continue;
+
+    D3SpectrumExport::D3SpectrumOptions opts;
+    opts.title = t.title;
+    if( !t.color.isDefault() )
+      opts.line_color = t.color.cssText();
+    opts.display_scale_factor = ((t.scaleFactor > 0.0) && std::isfinite(t.scaleFactor)) ? t.scaleFactor : 1.0;
+    // spectrum_type isn't used in the template writer, but set to Foreground as a harmless default.
+    opts.spectrum_type = SpecUtils::SpectrumType::Foreground;
+    templates.push_back( make_pair( t.meas.get(), opts ) );
+  }//for( const TemplateSpec &t : m_templates )
+
+  if( measurements.empty() && templates.empty() )
+  {
+    // Nothing left to draw at all; the null form is what the other renders use to blank the chart.
+    js = m_jsgraph + ".setData(null,true);";
+  }else
+  {
+    std::ostringstream ostr;
+    if( D3SpectrumExport::write_and_set_data_for_chart( ostr, id(), measurements, templates ) )
+    {
+      // The writer emits `var data_<id> = {...}` followed by its own `spec_chart_<id>.setData(...)`
+      //  call.  We want the declaration but have to issue the call against `m_jsgraph`, so strip
+      //  from the marker on.  Without the marker there is no declaration to hand over, so emit
+      //  nothing rather than a call naming a variable that was never written.
+      string data = ostr.str();
+      const size_t index = data.find( "spec_chart_" );
+      if( index != string::npos )
+      {
+        data = data.substr( 0, index );
+
+        // The writer assigns each non-background spectrum the background that follows it in the
+        //  vector, so a secondary written after the background is left with backgroundID -1 and
+        //  loses background subtraction.  The per-type renders hard-code the link instead
+        //  (`setSpectrumData(..., 'SECONDARY', 2, 1)`); re-assert it here.  The writer uses the
+        //  vector index as the emitted `id`, and we push no null measurements, so the array
+        //  position and the id agree.
+        if( have_background && have_secondary )
+        {
+          data += "data_" + id() + ".spectra[" + std::to_string(secondary_pos) + "].backgroundID = "
+                  + std::to_string(background_pos) + ";\n";
+        }//if( have_background && have_secondary )
+
+        js = data + m_jsgraph + ".setData(data_" + id() + ", " + resetDomain + ");";
+      }
+    }//if( write_and_set_data_for_chart(...) )
+  }//if( nothing to draw ) / else
+
+  if( js.empty() )
+    return;
+
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+
+  // `setData` replaced `rawData`, so every spectrum's peaks went with it - including the background
+  //  and secondary ones, which are not carried in the JSON we just wrote.  Re-send all three
+  //  through the normal path (it picks the right alpha per type).  Not done in the preview mode,
+  //  which does not draw peaks.
+  if( !multi_mode )
+  {
+    if( m_foreground )
+      setPeaksToClient( SpecUtils::SpectrumType::Foreground );
+    if( m_secondary )
+      setPeaksToClient( SpecUtils::SpectrumType::SecondForeground );
+    if( m_background )
+      setPeaksToClient( SpecUtils::SpectrumType::Background );
+  }//if( !multi_mode )
+}//void D3SpectrumDisplayDiv::renderTemplatesToClient()
 
 
 void D3SpectrumDisplayDiv::applyColorTheme( std::shared_ptr<const ColorTheme> theme )

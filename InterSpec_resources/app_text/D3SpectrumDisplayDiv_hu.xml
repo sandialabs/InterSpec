@@ -48,4 +48,5 @@
   <message id="d3sdd-yaxis-below-min-non-zero">A felső tartomány kisebb, mint a minimális megjelenített, nem nulla érték.</message>
   <message id="d3sdd-candidates">Jelöltek:</message>
   <message id="d3sdd-use-arrows-to-select">(használja a ↑ és ↓ billentyűket a kiválasztáshoz)</message>
+  <message id="d3sdd-templateDefaultTitle">Sablon</message>
 </messages>

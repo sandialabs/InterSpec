@@ -48,4 +48,5 @@
   <message id="d3sdd-yaxis-below-min-non-zero">Верхний предел меньше минимального отображ. ненулевого значения.</message>
   <message id="d3sdd-candidates">Кандидаты:</message>
   <message id="d3sdd-use-arrows-to-select">(используйте ↑ и ↓ для выбора)</message>
+  <message id="d3sdd-templateDefaultTitle">Шаблон</message>
 </messages>

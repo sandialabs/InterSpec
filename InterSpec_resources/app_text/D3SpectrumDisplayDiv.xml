@@ -48,4 +48,5 @@
   <message id="d3sdd-yaxis-below-min-non-zero">Upper range less than minimum displayed, non-zero value.</message>
   <message id="d3sdd-candidates">Candidates:</message>
   <message id="d3sdd-use-arrows-to-select">(use ↑ and ↓ to select)</message>
+  <message id="d3sdd-templateDefaultTitle">Template</message>
 </messages>

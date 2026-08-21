@@ -48,4 +48,5 @@
   <message id="d3sdd-yaxis-below-min-non-zero">Plage sup. sous min. affiché, non nul.</message>
   <message id="d3sdd-candidates">Candidats :</message>
   <message id="d3sdd-use-arrows-to-select">(utiliser ↑ et ↓ pour sélectionner)</message>
+  <message id="d3sdd-templateDefaultTitle">Modèle</message>
 </messages>

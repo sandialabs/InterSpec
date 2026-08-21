@@ -48,4 +48,5 @@
   <message id="d3sdd-yaxis-below-min-non-zero">উচ্চ রেঞ্জ সর্বনিম্ন প্রদর্শিত মানের চেয়ে কম, অ-শূন্য মান।</message>
   <message id="d3sdd-candidates">প্রার্থী:</message>
   <message id="d3sdd-use-arrows-to-select">(নির্বাচন করতে ↑ এবং ↓ ব্যবহার করুন)</message>
+  <message id="d3sdd-templateDefaultTitle">টেমপ্লেট</message>
 </messages>

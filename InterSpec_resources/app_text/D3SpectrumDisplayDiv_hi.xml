@@ -48,4 +48,5 @@
   <message id="d3sdd-yaxis-below-min-non-zero">ऊपरी सीमा न्यूनतम प्रदर्शित, गैर-शून्य मान से कम।</message>
   <message id="d3sdd-candidates">उम्मीदवार:</message>
   <message id="d3sdd-use-arrows-to-select">(चयन के लिए ↑ और ↓ उपयोग करें)</message>
+  <message id="d3sdd-templateDefaultTitle">टेम्पलेट</message>
 </messages>

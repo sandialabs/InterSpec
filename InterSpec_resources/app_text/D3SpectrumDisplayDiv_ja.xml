@@ -48,4 +48,5 @@
   <message id="d3sdd-yaxis-below-min-non-zero">上限範囲が表示される最小の非ゼロ値より小さいです。</message>
   <message id="d3sdd-candidates">候補:</message>
   <message id="d3sdd-use-arrows-to-select">(↑と↓を使用して選択)</message>
+  <message id="d3sdd-templateDefaultTitle">テンプレート</message>
 </messages>

@@ -191,6 +191,29 @@ public:
   void scheduleUpdateForeground();
   void scheduleUpdateBackground();
   void scheduleUpdateSecondData();
+
+
+  /** A single stacked-template histogram, drawn as a filled area beneath the spectrum lines.
+      Templates are typically expected/simulated components (e.g., background + Ba-133 sim + Co-60 sim);
+      they stack bottom-to-top in array order so users can visually compare expected composition to measured data.
+   */
+  struct TemplateSpec
+  {
+    std::shared_ptr<const SpecUtils::Measurement> meas;
+    std::string title;            //empty => use meas->title()
+    Wt::WColor   color;           //fills with this color; defaults to a neutral grey if default()
+    double       scaleFactor = 1.0;
+  };
+
+  /** Replaces the current set of stacked-template histograms shown beneath the spectrum lines.
+      Pass an empty vector to remove all templates.
+      Schedules an UpdateTemplates render.  The chart takes templates only through its
+      setData(...), so the next render re-pushes the current foreground/background/secondary
+      alongside them, and re-sends all three spectra's peaks afterwards (setData replaces them).
+   */
+  void setTemplates( std::vector<TemplateSpec> templates );
+  void clearTemplates();
+  void scheduleUpdateTemplates();
   
   
   /** Schedules the peaks to be re-loaded to the client, for the specified spectrum, during the
@@ -528,6 +551,7 @@ protected:
   void renderMultiSpectraToClient();
   void renderBackgroundToClient();
   void renderSecondDataToClient();
+  void renderTemplatesToClient();
   
   
   void defineJavaScript();
@@ -578,6 +602,12 @@ protected:
     UpdateSecondaryPeaks  = 0x0200,
 
     UpdateMultiSpectra = 0x0400,
+
+    /** Push the current m_templates vector to the JS chart.  Templates can only be delivered
+     through the chart's setData(...), so this re-pushes the spectra alongside them - see
+     `renderTemplatesToClient()`.
+     */
+    UpdateTemplates = 0x0800,
     //ToDo: maybe add a few other things to this mechanism.
   };//enum D3RenderActions
   
@@ -596,6 +626,9 @@ protected:
   /** Spectra set via #setMultipleSpectra; empty unless that (preview-chart) mode is used. */
   std::vector<std::pair<std::shared_ptr<const SpecUtils::Measurement>,
                         D3SpectrumExport::D3SpectrumOptions>> m_multiSpectra;
+
+  /** Stacked-template histograms drawn as filled areas under the spectrum lines.  Empty when none set. */
+  std::vector<TemplateSpec> m_templates;
   
   /** Compact axis applies only when the xAxis slider chart is not showing. */
   bool m_compactAxis;
