@@ -8819,15 +8819,21 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       for( size_t i = 0; i < curves.size(); ++i )
       {
         const string key = "curve:" + semantic_curve_key(cost_functor->m_options,i);
+        // `key` embeds a full XML curve identity meant only for dedup/sort/tie-breaking; use a
+        // human-readable label (never the raw key) for the user-facing candidate descriptions.
+        const string curve_label = !curves[i].name.empty()
+            ? ("curve \"" + curves[i].name + "\"")
+            : (curves.size() > 1 ? ("curve " + std::to_string(i + 1))
+                                 : string("rel. eff. curve"));
         const size_t start = cost_functor->rel_eff_eqn_start_parameter(i);
         if( curves[i].rel_eff_eqn_type == RelEffEqnForm::FramPhysicalModel )
         {
           if( curves[i].uses_phys_model_correction() )
           {
             const size_t corr = start + 2 + 2*curves[i].phys_model_external_atten.size();
-            candidates.push_back( { key + ":correction:0", "correction coefficient 0 of " + key,
+            candidates.push_back( { key + ":correction:0", "correction coefficient 0 of " + curve_label,
                                     corr, b_identity, {} } );
-            candidates.push_back( { key + ":correction:1", "correction coefficient 1 of " + key,
+            candidates.push_back( { key + ":correction:1", "correction coefficient 1 of " + curve_label,
                                     corr+1, c_identity, {} } );
           }
           for( size_t e = 0; e < curves[i].phys_model_external_atten.size(); ++e )
@@ -8836,7 +8842,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                                                 = curves[i].phys_model_external_atten[e];
             if( shield && shield->fit_areal_density && (shield->lower_fit_areal_density <= 0.0) )
               candidates.push_back( { key + ":external-ad:" + std::to_string(e),
-                                      "external attenuator " + std::to_string(e) + " of " + key,
+                                      "external attenuator " + std::to_string(e) + " of " + curve_label,
                                       start + 2 + 2*e + 1, ad_identity, {} } );
           }
         }else
@@ -8849,7 +8855,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             for( size_t h = term + 1; h <= curves[i].rel_eff_eqn_order; ++h )
               higher.push_back(start+h);
             candidates.push_back( { key + ":rel-eff-term:" + std::to_string(term),
-                                    "relative-efficiency term " + std::to_string(term) + " of " + key,
+                                    "relative-efficiency term " + std::to_string(term) + " of " + curve_label,
                                     start+term, 0.0, std::move(higher) } );
           }
         }
@@ -25290,19 +25296,23 @@ std::vector<std::vector<RelActCalcAuto::RelActAutoSolution::ObsEff>>
 
         // Only the _total_ area of the cluster is measured; how that total divides between rel. eff. curves is
         //  degenerate (co-located gammas are indistinguishable in the fit), so the split has to come from the
-        //  model.  Fold that assumption into the uncertainty: a cluster this curve owns outright gets no extra
-        //  term, while a 50/50 blend gets ~50% - i.e., on its own that point says almost nothing about this curve.
+        //  model.  `curve_model_fraction` is this curve's model share of the cluster; the chart uses it to fade
+        //  a shared point's opacity (roughly showing each curve's contribution), so it is deliberately _not_
+        //  folded into the error bar or significance here - those stay purely statistical.
         eff.curve_model_fraction = (effective_amps[i] > 0.0) ? (curve_model_amp / effective_amps[i]) : 1.0;
         eff.curve_fit_amplitude = eff.curve_model_fraction * fit_amps[i];
 
         const double area_rel_uncert = std::isfinite(rel_uncert) ? rel_uncert : 0.0;
-        const double blend_rel_uncert = 1.0 - eff.curve_model_fraction;
-        const double total_rel_uncert = sqrt( area_rel_uncert*area_rel_uncert
-                                              + blend_rel_uncert*blend_rel_uncert );
 
-        eff.observed_efficiency_uncert = eff.observed_efficiency * total_rel_uncert;
-        eff.curve_num_sigma_significance = (total_rel_uncert > 0.0)
-                                             ? (eff.curve_fit_amplitude / (fabs(eff.curve_fit_amplitude)*total_rel_uncert))
+        // Statistical (measured-area) uncertainty only - the same for both curves' points at a shared cluster,
+        //  since they share the one fitted area.  The model-derived blend between curves is shown via opacity.
+        eff.observed_efficiency_uncert = eff.observed_efficiency * area_rel_uncert;
+
+        // Significance of the statistically-measured signal _attributed_ to this curve:
+        //  curve_fit_amplitude/sigma_area = curve_model_fraction * (fit_amps/sigma_area).  So a small share of a
+        //  strong peak is still significant (shown, faded), while a small share of a weak peak is not (dropped).
+        eff.curve_num_sigma_significance = (fit_amp_uncert[i] > 0.0)
+                                             ? (eff.curve_fit_amplitude / fit_amp_uncert[i])
                                              : nan_val;
 
         //TODO: store peak indices better than `range_peak_indices` (its an artifact of prev code)

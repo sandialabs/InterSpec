@@ -907,10 +907,40 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
   // A point is in a "shared region" when another relative efficiency curve also has gammas at this energy.
   //  How the counts divide between the curves is not resolved by this peak itself (co-located gammas are
   //  degenerate locally); the division is fitted through the attenuation physics / curve shapes, constrained
-  //  by the rest of the spectrum - such a point is not independent evidence for this curve, and is drawn hollow.
+  //  by the rest of the spectrum.  Such a point is faded (see `pointOpacity`) in proportion to this curve's
+  //  share, so its opacity roughly shows how much this curve contributes at that energy.
   const blendedThreshold = 0.9;
   function isBlendedPoint(d) {
     return ((typeof d.blend_frac === 'number') && (d.blend_frac < blendedThreshold));
+  }
+
+  // For each energy shared by more than one rel. eff. curve, find the largest curve share there.  The curve
+  //  contributing most is drawn fully opaque; the others are faded in proportion to their share of that maximum,
+  //  so the point opacities roughly convey how much each curve contributes at that energy.  A shared cluster has
+  //  the same `energy` on every curve's point (see ObsEff::energy), so rounding to the emitted precision keys them
+  //  together.
+  const maxBlendByEnergy = {};
+  datasets.forEach(function(dataset) {
+    const dv = dataset.data_vals;
+    if( !dv )
+      return;
+    for( const d of dv ){
+      const key = d.energy.toFixed(2);
+      const frac = (typeof d.blend_frac === 'number') ? d.blend_frac : 1;
+      if( !(key in maxBlendByEnergy) || (frac > maxBlendByEnergy[key]) )
+        maxBlendByEnergy[key] = frac;
+    }
+  });
+
+  // Opacity a point is drawn at: 1 for a sole-owner point, and for a shared point its share relative to the
+  //  largest-contributing curve at that energy (floored so a surviving minor point stays visible/clickable).
+  const opacityFloor = 0.25;
+  function pointOpacity(d) {
+    if( !isBlendedPoint(d) )
+      return 1;
+    const maxf = maxBlendByEnergy[d.energy.toFixed(2)] || 1;
+    const rel = (maxf > 0) ? (d.blend_frac / maxf) : 1;
+    return Math.max( opacityFloor, Math.min( 1, rel ) );
   }
 
   // Plot all data points across all datasets
@@ -941,7 +971,8 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
       .style("stroke", function(d) {
         // Fall back to dataset color if no valid color from nuc_info
         return pointNucColor(d) || self.getDatasetColor(datasetIndex);
-      });
+      })
+      .style("opacity", pointOpacity);
 
     // Add the data points
     self.plotGroup
@@ -1010,18 +1041,20 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
         // Fall back to dataset color if no nuc_info at all
         return self.getDatasetColor(datasetIndex);
       })
-      .style("stroke", function(d) {
-        // Blended points are drawn as an outline (see `isBlendedPoint`), so they need a stroke of their own
-        return isBlendedPoint(d) ? (pointNucColor(d) || self.getDatasetColor(datasetIndex)) : null;
-      })
+      .style("stroke", null)
+      // Shared points are faded in proportion to this curve's contribution (see `pointOpacity`), rather than
+      //  drawn hollow, so the opacity roughly conveys how much this curve contributes at that energy.
+      .style("opacity", pointOpacity)
       .on("mouseover", function (d, i) {
         self.tooltip.transition()
           .duration(200)
           .style("opacity", .9);
 
+        // Bring a faded (shared) point up on hover so it can be inspected; use style opacity to match how the
+        //  point is drawn (a `style` opacity would otherwise override an `attr` one).
         d3.select(this).transition()
           .duration('50')
-          .attr('opacity', '.85')
+          .style('opacity', Math.max( 0.85, pointOpacity(d) ))
           .attr("r", 6);
 
         const eqn_eff = dataset.fit_eqn ? dataset.fit_eqn(d.energy) : null;
@@ -1062,12 +1095,12 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
           txt += "</div>";
         }
 
-        if( isBlendedPoint(d) ){
+        // When the problem has more than one rel. eff. curve, always show what fraction of this energy's summed
+        //  counts the fit attributes to this curve - even when that is ~100% - so the split is never ambiguous.
+        if( (datasets.length > 1) && (typeof d.blend_frac === 'number') ){
           txt += "<div class=\"RelEffPlotBlendNote\">Shared region: the fit attributes "
                + (100*d.blend_frac).toFixed(0)
-               + "% of the counts here to this curve. The division between curves is fitted"
-               + " through the attenuation physics / curve shapes, constrained by the rest of"
-               + " the spectrum - not resolved by this peak alone.</div>";
+               + "% of the summed counts at this energy to this curve.</div>";
         }
 
         self.tooltip.html(txt);
@@ -1094,7 +1127,7 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
       .on('mouseout', function (d, i) {
         d3.select(this).transition()
           .duration('50')
-          .attr('opacity', '1')
+          .style('opacity', pointOpacity(d))
           .attr("r", calculateRadius(d.counts));
         self.tooltip.transition()
           .duration(500)

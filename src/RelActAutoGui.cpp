@@ -927,6 +927,16 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   HelpSystem::attachToolTipOn( m_auto_simplify_dchi2_div, WString::tr("raag-tt-auto-simplify-dchi2"), showToolTips );
   m_auto_simplify_dchi2_div->setHidden( true );  // revealed only when the checkbox is checked
 
+  m_robust_solve = generalOptionsDiv->addNew<WCheckBox>( WString::tr("raag-robust-solve") );
+  m_robust_solve->addStyleClass( "RobustSolveCb CbNoLineBreak" );
+  m_robust_solve->setChecked( false );
+  m_robust_solve->checked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
+  m_robust_solve->unChecked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
+  HelpSystem::attachToolTipOn( m_robust_solve,
+                              WString::tr("raag-tt-robust-solve"), showToolTips );
+
+  // The profile-weak option only has effect during a robust solve, so it is created after
+  //  m_robust_solve and only shown when robust solve is enabled.
   m_auto_profile_weak_mass_fractions = generalOptionsDiv->addNew<WCheckBox>(
                                                     WString::tr("raag-auto-profile-mass-frac") );
   m_auto_profile_weak_mass_fractions->addStyleClass( "AutoProfileMassFracCb CbNoLineBreak" );
@@ -935,14 +945,7 @@ RelActAutoGui::RelActAutoGui( InterSpec *viewer )
   m_auto_profile_weak_mass_fractions->unChecked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
   HelpSystem::attachToolTipOn( m_auto_profile_weak_mass_fractions,
                               WString::tr("raag-tt-auto-profile-mass-frac"), showToolTips );
-
-  m_robust_solve = generalOptionsDiv->addNew<WCheckBox>( WString::tr("raag-robust-solve") );
-  m_robust_solve->addStyleClass( "RobustSolveCb CbNoLineBreak" );
-  m_robust_solve->setChecked( false );
-  m_robust_solve->checked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
-  m_robust_solve->unChecked().connect( this, &RelActAutoGui::handleAutoSimplifyChanged );
-  HelpSystem::attachToolTipOn( m_robust_solve,
-                              WString::tr("raag-tt-robust-solve"), showToolTips );
+  m_auto_profile_weak_mass_fractions->setHidden( !m_robust_solve->isChecked() );
 
 
   GroupBox *optionsDiv = addNew<GroupBox>( WString::tr("raag-rel-eff-curve-options") );
@@ -2481,6 +2484,9 @@ void RelActAutoGui::setCalcOptionsGui( const RelActCalcAuto::Options &options )
     m_auto_profile_weak_mass_fractions->setChecked( options.auto_profile_weak_mass_fractions );
   if( m_robust_solve )
     m_robust_solve->setChecked( options.robust_solve );
+  // The profile-weak option only has effect during a robust solve, so only show it then.
+  if( m_auto_profile_weak_mass_fractions && m_robust_solve )
+    m_auto_profile_weak_mass_fractions->setHidden( !options.robust_solve );
 
   // First, remove any extra Rel Eff curve GUIs
   const size_t num_rel_eff_curves = options.rel_eff_curves.size();
@@ -3569,6 +3575,10 @@ void RelActAutoGui::handleAutoSimplifyChanged()
   // Reveal the chi2-tolerance input only when auto-simplify is enabled.
   if( m_auto_simplify_dchi2_div && m_auto_simplify )
     m_auto_simplify_dchi2_div->setHidden( !m_auto_simplify->isChecked() );
+
+  // The profile-weak option only has effect during a robust solve, so only show it then.
+  if( m_auto_profile_weak_mass_fractions && m_robust_solve )
+    m_auto_profile_weak_mass_fractions->setHidden( !m_robust_solve->isChecked() );
 
   m_render_flags |= RenderActions::UpdateCalculations;
   m_render_flags |= RenderActions::AddUndoRedoStep;
@@ -6596,7 +6606,9 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
         const pair<double,double> act_uncert = this->m_solution->rel_activity_with_uncert(src, rel_eff_index);
         assert( fabs(act_uncert.first - rel_act) < 1.0E-3*std::max(fabs(act_uncert.first), fabs(rel_act))
                || (fabs(act_uncert.first - rel_act) < 1.0E-6) );
-        tooltip_text += " ± " + SpecUtils::printCompact(act_uncert.second, 4);
+        const string uncert_str = " ± " + SpecUtils::printCompact(act_uncert.second, 4);
+        summary_text += uncert_str;
+        tooltip_text += uncert_str;
       }catch( std::exception &e )
       {
       }
@@ -6655,9 +6667,11 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
                 {
                   if( std::fabs(interval.confidence_level - 0.6827) < 0.01 )
                   {
-                    tooltip_text += mass_frac_str + " (68%: "
+                    const string interval_str = " (68%: "
                                     + SpecUtils::printCompact(100.0*interval.lower, 3) + "%–"
                                     + SpecUtils::printCompact(100.0*interval.upper, 3) + "%)";
+                    summary_text += interval_str;
+                    tooltip_text += mass_frac_str + interval_str;
                     showed_profile = true;
                     break;
                   }
@@ -6670,6 +6684,9 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
             {
               const double lo = (std::max)(0.0, enrich_val.fraction - *enrich_val.covariance_one_sigma);
               const double hi = (std::min)(1.0, enrich_val.fraction + *enrich_val.covariance_one_sigma);
+              // Not profiled: show a symmetric ± uncertainty in the visible text (the bounded
+              //  68% interval is reserved for profiled quantities), but keep it in the tooltip.
+              summary_text += " ± " + SpecUtils::printCompact(100.0 * (*enrich_val.covariance_one_sigma), 3) + "%";
               tooltip_text += mass_frac_str + " (68%: " + SpecUtils::printCompact(100.0*lo, 3)
                               + "%–" + SpecUtils::printCompact(100.0*hi, 3) + "%)";
               showed_profile = true;

@@ -3,6 +3,11 @@
   display: flex;
   flex-direction: column;
   flex-wrap: nowrap;
+
+  /* Establish a positioning context so the absolutely-positioned .MoreMenuIcon
+     anchors to the tool content area (below the window title bar), rather than
+     to the AuxWindow's outer div where it would overlap the close "x". */
+  position: relative;
 }
 
 
@@ -710,12 +715,18 @@ padding-bottom: 1px;
   gap: 5px;
 }
 
+/* Result summary is its own dedicated line at the bottom of the nuclide card.  It reserves
+   a single line's height (so the card doesn't jump when a result appears) and keeps the
+   content on one line, truncating with an ellipsis for the rare long result. */
 .RelActAutoGui .RelActAutoGuiNuclide .RelActAutoGuiNuclideSummaryText
 {
-  font-size: 10px;
-  overflow: hidden;
+  display: block;
+  font-size: 11px;
   margin-left: 5px;
-  flex: 1 1 auto;
+  min-height: 1.2em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 
   /* Let this text be selectable so user can copy/paste. */
   user-select: auto;
@@ -723,9 +734,23 @@ padding-bottom: 1px;
   -webkit-user-select: auto;
 }
 
+/* Italic, muted placeholder shown before a result is computed. */
+.RelActAutoGui .RelActAutoGuiNuclide .RelActAutoGuiNuclideSummaryText.PendingResult
+{
+  font-style: italic;
+  color: #888;
+}
+
 .RelActAutoGui .RelActAutoGuiNuclide .RelActAutGuiNuclideColorSelect
 {
   width: 35px;
+}
+
+/* Push the color picker (and the delete icon that follows it) to the right edge of the
+   upper row, since the summary text no longer fills that gap. */
+.RelActAutoGui .RelActAutoGuiNuclide .UpperRow > .RelActAutGuiNuclideColorSelect
+{
+  margin-left: auto;
 }
 
 .RelActAutoGui .RelActAutoGuiNuclide .UpperRow,
@@ -1159,20 +1184,13 @@ a.DownloadLink.RelActDownload > span
   gap: 4px 6px;
 }
 
+/* On phone the summary is already the last (bottom) child of the card; just align it
+   and let it wrap since horizontal room is tight. */
 .RelActAutoGui.Phone .RelActAutoGuiNuclide .RelActAutoGuiNuclideSummaryText
 {
-  order: 4;
-  flex: 1 0 100%;
   margin-left: 0;
-  min-height: 1.2em;
   text-align: right;
   white-space: normal;
-  display: block;
-}
-
-.RelActAutoGui.Phone .RelActAutoGuiNuclide .RelActAutoGuiNuclideSummaryText:empty::before
-{
-  content: "\00a0";
 }
 
 /* Physical-model Rel.Eff. options: stack DetectorDisplay, options column,

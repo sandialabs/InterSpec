@@ -25,13 +25,9 @@
 .RelEffPlot circle.noiso{ fill: black; }
 .RelEffPlot circle.multiiso{ fill: #ef5675; }
 
-/* Points whose counts are shared with another relative efficiency curve.  The split between curves is a
-   model assumption rather than a measurement, so these are drawn hollow to say they are not independent
-   evidence for this curve (their error bars are also widened to cover the unmeasured split). */
-.RelEffPlot circle.blended {
-    fill-opacity: 0.15;
-    stroke-width: 1.5;
-}
+/* Points whose counts are shared with another relative efficiency curve are faded in proportion to this
+   curve's contribution at that energy - the opacity is set per-point in RelEffPlot.js (see `pointOpacity`),
+   so the point's opacity roughly conveys how much each curve contributes. */
 
 /* The "some points were left off this chart" affordance.
    Positioned against the chart's container div - `updateOmittedPointsInfo` gives that div
