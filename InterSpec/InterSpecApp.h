@@ -274,6 +274,20 @@ public:
    */
   bool removeGlobalCssRule( const std::string &rulename );
 
+#if( USING_ELECTRON_NATIVE_MENU )
+  /** Registry of menu items that have a counterpart in Electron's native menu, keyed by Wt id.
+   
+   This is the (much simpler) analogue of the `Target` bridge target/macos/NativeMenu.mm attaches to
+   each NSMenuItem: a click arrives from the Electron main process carrying only an id, and this is
+   how it gets turned back into the item to emit `triggered()` on.  Entries are added by
+   insertElectronMenuItem() and removed by removeElectronMenuItem(), which ~PopupDivMenuItem() calls,
+   so a registered pointer is always live.
+   */
+  void registerElectronMenuItem( const std::string &id, PopupDivMenuItem *item );
+  void unregisterElectronMenuItem( const std::string &id );
+  PopupDivMenuItem *electronMenuItem( const std::string &id ) const;
+#endif //USING_ELECTRON_NATIVE_MENU
+
 protected:
 
   //notify(): over-riding WApplication::notify in order to catch any exceptions
@@ -416,6 +430,11 @@ protected:
       Used to manage global theme colors that apply to all D3SpectrumDisplayDiv instances.
    */
   std::map<std::string, Wt::WCssTextRule*> m_globalD3SpectrumCssRules;
+
+#if( USING_ELECTRON_NATIVE_MENU )
+  /** \sa registerElectronMenuItem */
+  std::map<std::string, PopupDivMenuItem *> m_electronMenuItems;
+#endif
 
   friend class InterSpec;
 #if( INCLUDE_ANALYSIS_TEST_SUITE )

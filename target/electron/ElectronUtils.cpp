@@ -48,6 +48,7 @@
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
+#include "target/electron/NativeMenu.h"
 #include "target/electron/ElectronUtils.h"
 #include "target/electron/InterSpecAddOn.h"
 
@@ -150,18 +151,25 @@ bool handle_message_from_nodejs( const std::string &session_token,
   
 // TODO: maybe we should make a own function for each of the cases below; maybe make things both
 //       clearer here, as well as in main.js
+  // The window-state messages only drive the HTML titlebar, which does not exist when the window
+  //  has a native frame (macOS, or any build using the native menus), so the JS may not be loaded.
   if( msg_name == "OnMaximize" )
   {
-    app->doJavaScript( "Wt.WT.TitleBarChangeMaximized(true);" );
+    app->doJavaScript( "if(Wt.WT.TitleBarChangeMaximized)Wt.WT.TitleBarChangeMaximized(true);" );
   }else if( msg_name == "OnUnMaximize" )
   {
-    app->doJavaScript( "Wt.WT.TitleBarChangeMaximized(false);" );
+    app->doJavaScript( "if(Wt.WT.TitleBarChangeMaximized)Wt.WT.TitleBarChangeMaximized(false);" );
   }else if( msg_name == "OnBlur" )
   {
     app->doJavaScript( "var _tb=document.querySelector('.app-titlebar');if(_tb)_tb.classList.add('inactive');" );
   }else if( msg_name == "OnFocus" )
   {
     app->doJavaScript( "var _tb=document.querySelector('.app-titlebar');if(_tb)_tb.classList.remove('inactive');" );
+#if( USING_ELECTRON_NATIVE_MENU )
+  }else if( msg_name == "MenuItemClicked" )
+  {
+    handleElectronMenuActivation( app, msg_data );
+#endif
   }else if( (msg_name == "OnEnterFullScreen") || (msg_name == "OnLeaveFullScreen") )
   {
     // main.js sends these, but the HTML titlebar does not currently do anything differently in
@@ -307,6 +315,16 @@ bool interspec_set_initial_file_to_open( const char *session_token, const char *
   }
   
   return true;
+}
+
+
+bool interspec_using_electron_menus()
+{
+#if( USING_ELECTRON_NATIVE_MENU )
+  return true;
+#else
+  return false;
+#endif
 }
 
 

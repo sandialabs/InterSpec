@@ -126,6 +126,13 @@ extern "C"
    
    */
   LIB_INTERFACE(bool) interspec_set_initial_file_to_open( const char *session_token, const char *file_path );
+
+  /** Returns whether this build mirrors the WMenus into Electron's native Menu.
+   
+   main.js needs this to decide whether to give windows a real frame, and whether to clear the
+   default application menu.
+   */
+  LIB_INTERFACE(bool) interspec_using_electron_menus();
 }//extern "C"
 
 #endif //#if( BUILD_AS_ELECTRON_APP )

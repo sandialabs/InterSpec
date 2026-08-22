@@ -401,6 +401,12 @@ namespace InterSpecAddOn
   }//setInitialFileToLoad
 
 
+  Napi::Boolean usingElectronMenus(const Napi::CallbackInfo& info)
+  {
+    return Napi::Boolean::New( info.Env(), interspec_using_electron_menus() );
+  }//usingElectronMenus
+
+
   Napi::Boolean openAppUrl(const Napi::CallbackInfo& info) 
   {
     Napi::Env env = info.Env();
@@ -719,6 +725,8 @@ Napi::Object InitAll(Napi::Env env, Napi::Object exports) {
   exports.Set( "openAppUrl", Napi::Function::New(env, InterSpecAddOn::openAppUrl) );
   
   exports.Set( "removeSessionToken", Napi::Function::New(env, InterSpecAddOn::removeSessionToken ));
+
+  exports.Set( "usingElectronMenus", Napi::Function::New(env, InterSpecAddOn::usingElectronMenus ));
   
   exports.Set( "setMessageToNodeJsCallback", Napi::Function::New(env, InterSpecAddOn::setMessageToNodeJsCallback));
   exports.Set( "setBrowseForDirectoryCallback", Napi::Function::New(env, InterSpecAddOn::setBrowseForDirectoryCallback));

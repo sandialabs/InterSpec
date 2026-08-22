@@ -37,11 +37,16 @@
 
 #include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpec.h"
+#include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 #include "InterSpec/InterSpecApp.h"
 
 #if(USE_OSX_NATIVE_MENU)
 #include "target/macos/NativeMenu.h"
+#endif
+
+#if( USING_ELECTRON_NATIVE_MENU )
+#include "target/electron/NativeMenu.h"
 #endif
 
 using namespace Wt;
@@ -664,6 +669,9 @@ PopupDivMenu::PopupDivMenu( const PopupDivMenu::MenuType menutype )
 #if(USE_OSX_NATIVE_MENU)
   m_nsmenu( nullptr ),
 #endif
+#if( USING_ELECTRON_NATIVE_MENU )
+  m_electronMenu(),
+#endif
   m_mobile( false ),
   m_type( menutype )
 {
@@ -746,6 +754,13 @@ void PopupDivMenu::setupAsAppMenu( Wt::WPushButton *button )
     if( buttontxt.length() )
       m_nsmenu = addOsxMenu( this, buttontxt.c_str() );
   }else
+#elif( USING_ELECTRON_NATIVE_MENU )
+  if( InterSpecApp::isPrimaryWindowInstance() )
+  {
+    const string buttontxt = button->text().toUTF8();
+    if( buttontxt.length() )
+      m_electronMenu = addElectronMenu( this, buttontxt.c_str() );
+  }else
 #endif
   {
     setupDesktopMenuStuff();
@@ -764,6 +779,31 @@ void PopupDivMenu::setupAsMobileMenu( Wt::WPushButton *button )
     button->clicked().connect( this, &PopupDivMenu::showMobile );
   }
 }//void setupAsMobileMenu(...)
+
+
+void syncNativeMenuCheckBox( Wt::WCheckBox *cb )
+{
+#if( USING_ELECTRON_NATIVE_MENU )
+  if( !cb )
+    return;
+
+  for( WWidget *w = cb->parent(); w; w = w->parent() )
+  {
+    PopupDivMenuItem * const item = dynamic_cast<PopupDivMenuItem *>( w );
+    if( !item )
+      continue;
+
+    const string &id = item->nativeMenuItemId();
+    if( !id.empty() )
+    {
+      setElectronMenuItemChecked( id, cb->isChecked() );
+      setElectronMenuItemEnabled( id, cb->isEnabled() );
+    }
+
+    return;
+  }//for( walk up to the enclosing menu item )
+#endif //USING_ELECTRON_NATIVE_MENU
+}//void syncNativeMenuCheckBox( Wt::WCheckBox *cb )
 
 
 PopupDivMenu *makeAppLevelMenu( Wt::WPushButton *button )
@@ -860,6 +900,13 @@ Wt::WMenuItem *PopupDivMenu::addSeparatorAt( int index )
   }
 #endif
   
+#if( USING_ELECTRON_NATIVE_MENU )
+  // A separator is a plain WMenuItem, so its id() is all the handle we need - nothing to stash in
+  //  setData(), and nothing to preserve when Wt destroys it.
+  if( !m_electronMenu.empty() )
+    addElectronSeparatorAt( index, m_electronMenu, item->id() );
+#endif
+  
   return item;
 }
 
@@ -882,11 +929,21 @@ bool PopupDivMenu::removeSeperator( Wt::WMenuItem *sepertor )
   void *nativeSepertor = sepertor->data();
 #endif
 
+#if( USING_ELECTRON_NATIVE_MENU )
+  // Separators are plain WMenuItems, so unlike ordinary items nothing tells the native menu about
+  //  them going away - do it here, before removeItem() frees the widget we get the id from.
+  const string electronSepertor = m_electronMenu.empty() ? string() : sepertor->id();
+#endif
+
   removeItem( sepertor );
   
 #if( USE_OSX_NATIVE_MENU )
   if( m_nsmenu )
     removeOsxSeparator( m_nsmenu, nativeSepertor );
+#endif
+
+#if( USING_ELECTRON_NATIVE_MENU )
+  removeElectronMenuItem( electronSepertor );
 #endif
 
   return true;
@@ -897,6 +954,15 @@ Wt::WMenuItem *PopupDivMenu::addSeparator()
 {
   return addSeparatorAt( -1 );
 }//void PopupDivMenu::addSeparator(void)
+
+
+#if( USING_ELECTRON_NATIVE_MENU )
+void PopupDivMenu::setNativeMenuRole( const char *role )
+{
+  setElectronMenuRole( m_electronMenu, role );
+}//void setNativeMenuRole( const char *role )
+
+#endif //USING_ELECTRON_NATIVE_MENU
 
 
 void PopupDivMenu::setHidden( bool hidden, const Wt::WAnimation &animation )
@@ -1176,6 +1242,26 @@ PopupDivMenuItem *PopupDivMenu::addWidget( Wt::WWidget *widget,
   }//if( m_nsmenu )
 #endif
   
+#if( USING_ELECTRON_NATIVE_MENU )
+  if( !item->m_electronItem.empty() )
+  {
+    // The macOS path has to destroy and re-create the native item to make it checkable; Electron
+    //  lets us change the template node in place.
+    WCheckBox * const cb = dynamic_cast<WCheckBox *>( widget );
+    if( cb )
+    {
+      makeElectronMenuItemCheckable( item->m_electronItem, cb );
+      
+      // WCheckBox::setChecked() emits nothing, so this only catches changes made through the
+      //  signals (which is what the undo/redo steps use) - see the limitations in PopupDiv.h.
+      const string itemid = item->m_electronItem;
+      cb->checked().connect( cb, [itemid](){ setElectronMenuItemChecked( itemid, true ); } );
+      cb->unChecked().connect( cb, [itemid](){ setElectronMenuItemChecked( itemid, false ); } );
+    }else
+      cerr << "PopupDivMenu::addWidget: Unsupported Widget type for the Electron native menu" << endl;
+  }//if( item has a native counterpart )
+#endif
+  
   return item;
 }//PopupDivMenuItem *addWidget( WWidget *widget, const bool closeMenuOnClick )
 
@@ -1233,6 +1319,14 @@ PopupDivMenuItem *PopupDivMenu::insertMenuItem( const int index,
                                            &item->m_nsmenuitemtarget );
     item->m_nsmenu = m_nsmenu;
     item->setData( item->m_nsmenuitem );
+  }
+#endif
+  
+#if( USING_ELECTRON_NATIVE_MENU )
+  if( !m_electronMenu.empty() )
+  {
+    item->m_electronItem = insertElectronMenuItem( m_electronMenu, item, index );
+    item->m_electronMenu = m_electronMenu;
   }
 #endif
   
@@ -1333,8 +1427,17 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
     menu->setMargin( 25, Wt::Side::Top );
 #endif
     
+#if( USING_ELECTRON_NATIVE_MENU )
+    // Build the sub-menu's parent as a PopupDivMenuItem rather than the plain WMenuItem
+    //  WMenu::addMenu() would give us, so that hiding or disabling the sub-menu reaches the native
+    //  menu - InterSpec disables the "Detectors" sub-menu until a file is loaded.  WMenu::addMenu()
+    //  is itself just addItem() followed by setMenu(), so this is the same thing done by hand.
+    menu->m_parentItem = insertMenuItem( -1, text, iconPath, true );
+    menu->m_parentItem->setMenu( std::unique_ptr<WMenu>(menu) );
+#else
     // In Wt4, addMenu takes unique_ptr<WMenu>; raw pointer `menu` remains valid after transfer
     menu->m_parentItem = addMenu( iconPath, text, std::unique_ptr<WMenu>(menu) );
+#endif
     
     menu->m_parentItem->clicked().preventPropagation();
     menu->m_parentItem->clicked().preventDefaultAction();
@@ -1348,6 +1451,15 @@ PopupDivMenu *PopupDivMenu::addPopupMenuItem( const Wt::WString &text,
     PopupDivMenu *p = parentItem() ? dynamic_cast<PopupDivMenu *>(parentItem()->menu()) : nullptr;
     if( m_nsmenu && (!p || p->m_type==PopupDivMenu::AppLevelMenu) )
       menu->m_nsmenu = addOsxSubMenu( m_nsmenu, menu, text.toUTF8().c_str() );
+#endif
+
+#if( USING_ELECTRON_NATIVE_MENU )
+    // Electron has no one-level-deep restriction, so unlike the macOS path any sub-menu of a menu
+    //  that has a native counterpart gets one too.  State changes (hide/disable) address the parent
+    //  item, while items added to the sub-menu address the sub-menu itself.
+    if( !m_electronMenu.empty() )
+      menu->m_electronMenu = addElectronSubMenu( m_electronMenu, menu, text.toUTF8().c_str(),
+                                                 menu->m_parentItem->id() );
 #endif
   }//if( m_mobile ) / else
   
@@ -1363,6 +1475,10 @@ PopupDivMenuItem::PopupDivMenuItem( const Wt::WString &text,
    , m_nsmenu( 0 )
    , m_nsmenuitem( 0 )
    , m_nsmenuitemtarget( 0 )
+#endif
+#if( USING_ELECTRON_NATIVE_MENU )
+   , m_electronMenu()
+   , m_electronItem()
 #endif
 {
   // In Wt 3, preventPropagation() on the anchor was needed to prevent double-firing.
@@ -1391,6 +1507,11 @@ PopupDivMenuItem::~PopupDivMenuItem()
   }
   if( m_nsmenu && m_nsmenuitem )
     removeOsxMenuItem( m_nsmenuitem, m_nsmenu );
+#endif
+
+#if( USING_ELECTRON_NATIVE_MENU )
+  // Drops the click registration as well, so nothing can route back to this item once it is gone.
+  removeElectronMenuItem( m_electronItem );
 #endif
 }//~PopupDivMenuItem()
 
@@ -1432,6 +1553,61 @@ void PopupDivMenuItem::propagateSetEnabled( bool enabled )
     setOsxMenuItemTargetEnabled( m_nsmenuitemtarget, isEnabled() );
 }
 #endif //USE_OSX_NATIVE_MENU
+
+
+#if( USING_ELECTRON_NATIVE_MENU )
+const std::string &PopupDivMenuItem::nativeMenuItemId() const
+{
+  return m_electronItem;
+}
+
+void PopupDivMenuItem::setHidden( bool hidden, const Wt::WAnimation &animation )
+{
+  WMenuItem::setHidden( hidden, animation );
+  setElectronMenuItemHidden( m_electronItem, hidden );
+}
+
+void PopupDivMenuItem::setDisabled( bool disabled )
+{
+  WMenuItem::setDisabled( disabled );
+  setElectronMenuItemEnabled( m_electronItem, isEnabled() );
+}
+
+void PopupDivMenuItem::propagateSetEnabled( bool enabled )
+{
+  WMenuItem::propagateSetEnabled( enabled );
+  setElectronMenuItemEnabled( m_electronItem, isEnabled() );
+}
+#endif //USING_ELECTRON_NATIVE_MENU
+
+
+void PopupDivMenuItem::setNativeAccelerator( const std::string &accelerator )
+{
+  m_accelerator = accelerator;
+  
+#if( USING_ELECTRON_NATIVE_MENU )
+  // MenuItem.accelerator is read-only once a Menu is built, so main.js treats this as a structural
+  //  change and re-builds - which is why this may be called after the item is in a menu.
+  if( !m_electronItem.empty() )
+    setElectronMenuItemAccelerator( m_electronItem, accelerator );
+#endif
+}
+
+
+const std::string &PopupDivMenuItem::nativeAccelerator() const
+{
+  return m_accelerator;
+}
+
+
+void PopupDivMenuItem::setMenuText( const Wt::WString &text )
+{
+  setText( text );
+  
+#if( USING_ELECTRON_NATIVE_MENU )
+  setElectronMenuItemLabel( m_electronItem, SpecUtils::trim_copy( text.toUTF8() ) );
+#endif
+}//void setMenuText( const Wt::WString &text )
 
 
 void PopupDivMenuItem::makeTextXHTML()

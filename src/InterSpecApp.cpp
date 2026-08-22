@@ -1774,6 +1774,29 @@ bool InterSpecApp::removeGlobalCssRule( const std::string &rulename )
 }//bool removeGlobalCssRule(...)
 
 
+#if( USING_ELECTRON_NATIVE_MENU )
+void InterSpecApp::registerElectronMenuItem( const std::string &id, PopupDivMenuItem *item )
+{
+  assert( item && !id.empty() );
+  if( item && !id.empty() )
+    m_electronMenuItems[id] = item;
+}//void registerElectronMenuItem(...)
+
+
+void InterSpecApp::unregisterElectronMenuItem( const std::string &id )
+{
+  m_electronMenuItems.erase( id );
+}//void unregisterElectronMenuItem(...)
+
+
+PopupDivMenuItem *InterSpecApp::electronMenuItem( const std::string &id ) const
+{
+  const auto pos = m_electronMenuItems.find( id );
+  return (pos == std::end(m_electronMenuItems)) ? nullptr : pos->second;
+}//PopupDivMenuItem *electronMenuItem(...)
+#endif //USING_ELECTRON_NATIVE_MENU
+
+
 void InterSpecApp::finalize()
 {
   prepareForEndOfSession();

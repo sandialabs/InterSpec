@@ -94,6 +94,19 @@ option(
     "Mirrors WMenus with OSX native NSMenu (not fully implemented)"
     OFF
 )
+option(
+    USING_ELECTRON_NATIVE_MENU
+    "Mirrors WMenus with Electrons native Menu; if off will use the HTML based menus"
+    OFF
+)
+
+if( USING_ELECTRON_NATIVE_MENU AND NOT BUILD_AS_ELECTRON_APP )
+  message( FATAL_ERROR "USING_ELECTRON_NATIVE_MENU requires BUILD_AS_ELECTRON_APP" )
+endif()
+
+if( USING_ELECTRON_NATIVE_MENU AND USE_OSX_NATIVE_MENU )
+  message( FATAL_ERROR "USING_ELECTRON_NATIVE_MENU and USE_OSX_NATIVE_MENU are mutually exclusive" )
+endif()
 
 
 if( NOT DEFINED TRY_TO_STATIC_LINK )

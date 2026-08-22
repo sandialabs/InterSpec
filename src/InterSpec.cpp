@@ -699,7 +699,11 @@ InterSpec::InterSpec()
   
   m_refLineDynamic = addChild( std::make_unique<RefLineDynamic>( m_spectrum, this ) );
   
-#if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
+#if( ELECTRON_NATIVE_APP_MENU )
+  // The native menu bar comes with a real window frame, so InterSpec draws no titlebar of its own,
+  //  and its "File" menu becomes the application menu - just like the macOS app build.
+  const bool isAppTitlebar = false;
+#elif( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   const bool isAppTitlebar = InterSpecApp::isPrimaryWindowInstance();
 #else
   const bool isAppTitlebar = false; // !isMobile()
@@ -1163,7 +1167,7 @@ InterSpec::InterSpec()
   m_timeSeries->setHidden( true );
   m_chartResizer->setHidden( m_timeSeries->isHidden() );
   
-#if( USE_OSX_NATIVE_MENU )
+#if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
   if( InterSpecApp::isPrimaryWindowInstance() )
     m_menuDiv->hide();
 #endif
@@ -3207,13 +3211,13 @@ void InterSpec::displayFeatureMarkerWindow( const bool show )
         m_spectrum->setFeatureMarkerOption( i, false );
     }
     
-    m_featureMarkerMenuItem->setText( WString::tr("app-mi-view-feature-markers") );
+    m_featureMarkerMenuItem->setMenuText( WString::tr("app-mi-view-feature-markers") );
     
     return;
   }//if( !show )
   
   
-  m_featureMarkerMenuItem->setText( WString::tr("app-mi-view-hide-feature-markers") );
+  m_featureMarkerMenuItem->setMenuText( WString::tr("app-mi-view-hide-feature-markers") );
   
   // Initing the feature marker tool can add some undo/redo steps, by calling into
   //  `InterSpec::setComptonPeakAngle(...)` or `InterSpec::displayFeatureMarkerWindow(bool)`
@@ -6619,9 +6623,14 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     m_fileMenuPopup = parentMenu->addPopupMenuItem( menuname );
   }//if( menuDiv ) / else
 
+#if( ELECTRON_NATIVE_APP_MENU )
+  //This menu *is* the application menu; the main process appends the Services/Hide/Quit block.
+  m_fileMenuPopup->setNativeMenuRole( "app" );
+#endif
+
   PopupDivMenuItem *item = (PopupDivMenuItem *)0;
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || ELECTRON_NATIVE_APP_MENU )
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
     item = m_fileMenuPopup->addMenuItem( WString::tr("app-mi-file-about") );
@@ -6659,6 +6668,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
     
     // --- new save menu ---
     m_saveState = m_fileMenuPopup->addMenuItem( WString::tr("app-mi-file-store") );
+    m_saveState->setNativeAccelerator( "CmdOrCtrl+S" );
     m_saveState->triggered().connect( this, [this](){ stateSave(); } );
     HelpSystem::attachToolTipOn(m_saveState, WString::tr("app-mi-tt-file-store"), showToolTips );
     
@@ -6733,6 +6743,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   if( !mobile )
   { 
     item = m_fileMenuPopup->addMenuItem( WString::tr("app-mi-file-open") );
+    item->setNativeAccelerator( "CmdOrCtrl+O" );
     HelpSystem::attachToolTipOn( item, WString::tr("app-mi-tt-file-open"), showToolTips );
     
 #if( ANDROID )
@@ -6745,6 +6756,7 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
   }//if( !mobile )
   
   m_exportSpecFileMenu = m_fileMenuPopup->addMenuItem( WString::tr("app-mi-export-file") );
+  m_exportSpecFileMenu->setNativeAccelerator( "CmdOrCtrl+E" );
   m_exportSpecFileMenu->triggered().connect( this, [this](){ createExportSpectrumFileDialog(); } );
   m_exportSpecFileMenu->disable();
   
@@ -6781,7 +6793,8 @@ void InterSpec::addFileMenu( WWidget *parent, const bool isAppTitlebar )
 #if( BUILD_AS_ELECTRON_APP || BUILD_AS_WX_WIDGETS_APP )
   if( InterSpecApp::isPrimaryWindowInstance() )
   {
-#if( BUILD_AS_ELECTRON_APP )
+//When the native menu bar has an application menu, Quit lives there instead of File->Exit.
+#if( BUILD_AS_ELECTRON_APP && !ELECTRON_NATIVE_APP_MENU )
   m_fileMenuPopup->addSeparator();
   PopupDivMenuItem *exitItem = m_fileMenuPopup->addMenuItem( WString::tr("Exit") );
   exitItem->triggered().connect( this, []{
@@ -6814,6 +6827,10 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
     WPushButton *button = menuDiv->addNew<WPushButton>( menuname );
     button->addStyleClass( "MenuLabel" );
     m_editMenuPopup = makeAppLevelMenu( button );
+#if( USING_ELECTRON_NATIVE_MENU )
+    //The native menu bar supplies the cut/copy/paste items for this menu.
+    m_editMenuPopup->setNativeMenuRole( "edit" );
+#endif
   }else
   {
     m_editMenuPopup = parentMenu->addPopupMenuItem( menuname );
@@ -6828,6 +6845,7 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
 #endif
     
     PopupDivMenuItem *undoMenu = m_editMenuPopup->insertMenuItem( menuindex, WString::tr("app-mi-edit-undo"), "", true );
+    undoMenu->setNativeAccelerator( "CmdOrCtrl+Z" );
     undoMenu->setDisabled( true );
     undoMenu->triggered().connect( m_undo.get(), &UndoRedoManager::executeUndo );
 
@@ -6837,6 +6855,7 @@ void InterSpec::addEditMenu( Wt::WWidget *parent )
 #endif
     
     PopupDivMenuItem *redoMenu = m_editMenuPopup->insertMenuItem( menuindex, WString::tr("app-mi-edit-redo"), "", true );
+    redoMenu->setNativeAccelerator( "Shift+CmdOrCtrl+Z" );
     redoMenu->setDisabled( true );
     redoMenu->triggered().connect( m_undo.get(), &UndoRedoManager::executeRedo );
     
@@ -6989,11 +7008,13 @@ void InterSpec::removeToolsTabToMenuItems()
     if( !m_tabToolsMenuItems[i] )
       continue;
  
+    // removeSeperator() removes *and destroys* the item, so the pointer is dangling afterwards -
+    //  only the non-separator items still need removeFromParent().
     if( m_tabToolsMenuItems[i]->isSeparator() )
       m_toolsMenuPopup->removeSeperator( m_tabToolsMenuItems[i] );
-    
-    if( m_tabToolsMenuItems[i] )
+    else
       m_tabToolsMenuItems[i]->removeFromParent();
+    
     m_tabToolsMenuItems[i] = nullptr;
   }
   
@@ -7809,12 +7830,17 @@ void InterSpec::addViewMenu( WWidget *parent )
   if (InterSpecApp::isPrimaryWindowInstance())
   {
     m_displayOptionsPopupDiv->addSeparator();
-    PopupDivMenuItem *fullScreenItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-full") );  //F11
+    PopupDivMenuItem *fullScreenItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-full") );
+#if( defined(__APPLE__) )
+    fullScreenItem->setNativeAccelerator( "Control+Command+F" );
+#else
+    fullScreenItem->setNativeAccelerator( "F11" );
+#endif
 #if( BUILD_AS_ELECTRON_APP )
     // Note: the triggered() signal a Wt::Signal, which is C++ only, so we cant just hook it up to
     //       javascript for it to run - we have to make the round-trip JS -> C++ -> JS
     fullScreenItem->triggered().connect( this, [] {
-      ElectronUtils::send_nodejs_message("ToggleMaximizeWindow", "");
+      ElectronUtils::send_nodejs_message("ToggleFullScreen", "");
     } );
 #else
     fullScreenItem->triggered().connect( this, [] {
@@ -7824,9 +7850,12 @@ void InterSpec::addViewMenu( WWidget *parent )
   }//if (InterSpecApp::isPrimaryWindowInstance())
 
   m_displayOptionsPopupDiv->addSeparator();
-  PopupDivMenuItem *resetZoomItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-act-size") ); //Ctrl+0
-  PopupDivMenuItem *zoomInItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-zin") ); //Ctrl+Shift+=
-  PopupDivMenuItem *zoomOutItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-zout") ); //Ctrl+-
+  PopupDivMenuItem *resetZoomItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-act-size") );
+  PopupDivMenuItem *zoomInItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-zin") );
+  PopupDivMenuItem *zoomOutItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-zout") );
+  resetZoomItem->setNativeAccelerator( "CmdOrCtrl+0" );
+  zoomInItem->setNativeAccelerator( "CmdOrCtrl+Plus" );
+  zoomOutItem->setNativeAccelerator( "CmdOrCtrl+-" );
 
   LOAD_JAVASCRIPT(wApp, "src/js_inline/AppHtmlMenu.js", "AppHtmlMenu", wtjsResetPageZoom);
   LOAD_JAVASCRIPT(wApp, "src/js_inline/AppHtmlMenu.js", "AppHtmlMenu", wtjsIncreasePageZoom);
@@ -7872,6 +7901,11 @@ void InterSpec::addViewMenu( WWidget *parent )
   {
     m_displayOptionsPopupDiv->addSeparator();
     PopupDivMenuItem *devToolItem = m_displayOptionsPopupDiv->addMenuItem( WString::tr("app-mi-view-dev-tool") );
+#if( defined(__APPLE__) )
+    devToolItem->setNativeAccelerator( "Alt+Command+I" );
+#else
+    devToolItem->setNativeAccelerator( "Ctrl+Shift+I" );
+#endif
     devToolItem->triggered().connect( this, []{
       ElectronUtils::send_nodejs_message( "ToggleDevTools", "" );
     } );
@@ -8438,10 +8472,10 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
   };//auto setupLabelCbCallbacks
   
   WCheckBox *cb = new WCheckBox( WString::tr("app-mi-view-lbl-usr") );
-  cb->setChecked(false);
+  // We will show user labels by default.  Set before addWidget(), which is where a native menu
+  //  reads the initial state from - setChecked() afterwards emits nothing for it to notice.
+  cb->setChecked(true);
   PopupDivMenuItem *item = menu->addWidget( cb );
-  // We will show user labels by default
-  item->setChecked( true );
   m_spectrum->setShowPeakLabel( SpectrumChart::PeakLabels::kShowPeakUserLabel, true );
   setupLabelCbCallbacks( SpectrumChart::kShowPeakUserLabel, cb );
   
@@ -8457,12 +8491,20 @@ void InterSpec::addPeakLabelSubMenu( PopupDivMenu *parentWidget )
   
   WCheckBox *nuc_energy_cb = new WCheckBox( WString::tr("app-mi-view-lbl-nuc-en") );
   nuc_energy_cb->setChecked(false);
+  nuc_energy_cb->disable();  //before addWidget(), for the same reason as the check state above
   item = menu->addWidget( nuc_energy_cb );
   
-  nuc_energy_cb->disable();
-  cb->checked().connect( nuc_energy_cb, &WCheckBox::enable );
-  cb->unChecked().connect( nuc_energy_cb, &WCheckBox::disable );
-  cb->unChecked().connect( nuc_energy_cb, &WCheckBox::setUnChecked );
+  // enable()/disable()/setUnChecked() emit nothing, so a native menu item would not hear about any
+  //  of this - hence syncNativeMenuCheckBox() (a no-op for the HTML menus).
+  cb->checked().connect( nuc_energy_cb, [nuc_energy_cb](){
+    nuc_energy_cb->enable();
+    syncNativeMenuCheckBox( nuc_energy_cb );
+  } );
+  cb->unChecked().connect( nuc_energy_cb, [nuc_energy_cb](){
+    nuc_energy_cb->setUnChecked();
+    nuc_energy_cb->disable();
+    syncNativeMenuCheckBox( nuc_energy_cb );
+  } );
   setupLabelCbCallbacks( SpectrumChart::kShowPeakNuclideEnergies, nuc_energy_cb );
 }//void addPeakLabelMenu( Wt::WContainerWidget *menuDiv )
 
@@ -8484,6 +8526,10 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     WPushButton *button = menuDiv->addNew<WPushButton>( WString::tr("app-menu-help") );
     button->addStyleClass( "MenuLabel" );
     m_helpMenuPopup = makeAppLevelMenu( button );
+#if( USING_ELECTRON_NATIVE_MENU )
+    //The native menu bar puts its Window menu just before this one.
+    m_helpMenuPopup->setNativeMenuRole( "help" );
+#endif
   }else
   {
     m_helpMenuPopup = parentMenu->addPopupMenuItem( WString::tr("app-menu-help") );
@@ -8674,7 +8720,8 @@ void InterSpec::addAboutMenu( Wt::WWidget *parent )
     }//for( const string &lang : languages )
   }//if( languages.size() > 1 )
   
-#if( BUILD_AS_OSX_APP )
+#if( BUILD_AS_OSX_APP || ELECTRON_NATIVE_APP_MENU )
+  //When there is a native application menu, "About InterSpec" is in it instead.
   const bool addAboutInterSpec = !InterSpecApp::isPrimaryWindowInstance();
 #else
     const bool addAboutInterSpec = true;
@@ -10721,7 +10768,7 @@ void InterSpec::addToolsMenu( Wt::WWidget *parent )
   item->triggered().connect( this, [this](){ showDoseTool(); } );
   
 //  item = popup->addMenuItem( WString::fromUTF8("1/r² Calculator") );  // is superscript 2
-#if( USE_OSX_NATIVE_MENU )
+#if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
   item = popup->addMenuItem( WString::fromUTF8("1/r\x0032 Calculator") );  //works on OS X at least.
 #else
   item = popup->addMenuItem( WString::tr("app-mi-tools-1r2") );
@@ -13229,6 +13276,7 @@ void InterSpec::detectorsToDisplayChangedForCb( WCheckBox *callerCb )
       if( cb )
       {
         cb->setChecked( set_checked );
+        syncNativeMenuCheckBox( cb );
         detectorsToDisplayChanged();
       }
     };//auto undo_redo = [...]
@@ -13302,7 +13350,7 @@ void InterSpec::updateGuiForPrimarySpecChange( std::set<int> display_sample_nums
 
     if( m_detectorToShowMenu )
     {
-#if( USE_OSX_NATIVE_MENU )
+#if( USE_OSX_NATIVE_MENU || USING_ELECTRON_NATIVE_MENU )
       WCheckBox *cb = new WCheckBox( title );
       cb->setChecked( true );
       PopupDivMenuItem *item = m_detectorToShowMenu->addWidget( cb, false );

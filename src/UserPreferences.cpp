@@ -41,6 +41,7 @@
 #include "SpecUtils/StringAlgo.h"
 
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/PopupDiv.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/DataBaseUtils.h"
 #include "InterSpec/InterSpecUser.h"
@@ -595,7 +596,13 @@ void UserPreferences::associateWidget( const std::string &name,
   const bool value = preferenceValue<bool>( name, viewer );
   cb->setChecked( value );
   
-  viewer->preferences()->addCallbackWhenChanged( name, cb, &WCheckBox::setChecked );
+  // Not just `&WCheckBox::setChecked`: setChecked() emits nothing, so a preference changed from
+  //  somewhere other than this check box would leave a native menu item showing the old state.
+  //  Bound to `cb` so Wt still disconnects the callback when the check box is destroyed.
+  viewer->preferences()->addCallbackWhenChanged( name, cb, [cb]( const bool value ){
+    cb->setChecked( value );
+    syncNativeMenuCheckBox( cb );
+  } );
 
   cb->checked().connect( cb, [name, viewer](){ UserPreferences::setBoolPreferenceValue( name, true, viewer ); } );
   cb->unChecked().connect( cb, [name, viewer](){ UserPreferences::setBoolPreferenceValue( name, false, viewer ); } );

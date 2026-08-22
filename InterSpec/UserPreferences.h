@@ -133,6 +133,22 @@ public:
   void addCallbackWhenChanged( const std::string &name,
                                const T &fcn );
 
+  /** Adds a function to callback when the preference changes, tying the callback's lifetime to
+   `target` - i.e. Wt disconnects it when `target` is destroyed, exactly as for the member-function
+   variant above.
+
+   Use this instead of the plain functor variant whenever the callback touches a widget: it is then
+   safe for `fcn` to capture `target`, and callbacks do not accumulate on the session-lifetime
+   signal each time a dialog is re-opened.
+
+   This function must be called from the application thread such that InterSpec::instance() will be
+   non-void.
+   */
+  template<class T>
+  void addCallbackWhenChanged( const std::string &name,
+                               const Wt::WObject *target,
+                               const T &fcn );
+
   /** Adds a function to callback when an integer preference changes.
    
    This function must be called from the application thread such that InterSpec::instance() will be
@@ -270,6 +286,20 @@ void UserPreferences::addCallbackWhenChanged( const std::string &name, const T &
   if( !signal )
     signal = std::make_shared<Wt::Signal<bool>>();
   signal->connect( fcn );
+}//addCallbackWhenChanged(...)
+
+
+template<class T>
+void UserPreferences::addCallbackWhenChanged( const std::string &name,
+                                              const Wt::WObject *target, const T &fcn )
+{
+  //Make sure a valid bool preference
+  preferenceValue<bool>( name, m_interspec );
+
+  std::shared_ptr<Wt::Signal<bool>> &signal = m_onBoolChangeSignals[name];
+  if( !signal )
+    signal = std::make_shared<Wt::Signal<bool>>();
+  signal->connect( target, fcn );
 }//addCallbackWhenChanged(...)
 
 
