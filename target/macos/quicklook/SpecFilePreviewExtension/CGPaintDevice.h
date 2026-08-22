@@ -87,7 +87,7 @@ public:
   void drawPath( const Wt::WPainterPath &path ) override;
   void drawRect( const Wt::WRectF &rectangle ) override;
   void drawText( const Wt::WRectF &rect, Wt::WFlags<Wt::AlignmentFlag> flags,
-                 Wt::TextFlag textFlag, const Wt::WString &text,
+                 Wt::TextFlag textFlag, const Wt::WTextF &text,
                  const Wt::WPointF *clipPoint ) override;
   Wt::WTextItem measureText( const Wt::WString &text, double maxWidth = -1,
                               bool wordWrap = false ) override;
