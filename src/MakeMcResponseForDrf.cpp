@@ -169,7 +169,8 @@ vector<ceelo::GroundingPoint> MakeMcResponseForDrf::groundingPointsForDrf(
 
 
 MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
-                            std::shared_ptr<const DetectorPeakResponse> seed_drf )
+                            std::shared_ptr<const DetectorPeakResponse> seed_drf,
+                            std::shared_ptr<const ceelo::GeometryDescriptor> geometry )
   : WContainerWidget(),
     m_interspec( viewer ),
     m_seedDrf( seed_drf ),
@@ -212,6 +213,8 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   geomBox->addStyleClass( "McGeomBox" );
   m_geometry = geomBox->addNew<DetectorGeometryInput>( m_interspec );
   m_geometry->seedFromDrf( m_seedDrf );
+  if( geometry )
+    m_geometry->setFromDescriptor( *geometry );   //overrides the DRF-derived guess
   m_geometry->changed().connect( this, &MakeMcResponseForDrf::handleGeometryChanged );
 
   //Characterization options
@@ -347,6 +350,13 @@ MakeMcResponseForDrf::~MakeMcResponseForDrf()
   if( m_cancelFlag )
     m_cancelFlag->store( true );
 }//~MakeMcResponseForDrf()
+
+
+void MakeMcResponseForDrf::setGeometryFromDescriptor( const ceelo::GeometryDescriptor &geometry )
+{
+  m_geometry->setFromDescriptor( geometry );
+  handleGeometryChanged();   //refresh estimate / anchor / any generated result
+}//setGeometryFromDescriptor(...)
 
 
 Wt::Signal<bool> &MakeMcResponseForDrf::validationChanged()
@@ -970,7 +980,8 @@ MakeMcResponseForDrf *MakeMcResponseForDrfWindow::tool()
 
 
 MakeMcResponseForDrfWindow::MakeMcResponseForDrfWindow(
-                          std::shared_ptr<const DetectorPeakResponse> seed_drf )
+                          std::shared_ptr<const DetectorPeakResponse> seed_drf,
+                          std::shared_ptr<const ceelo::GeometryDescriptor> geometry )
  : AuxWindow( WString::tr("window-title-mc-response"),
              (AuxWindowProperties::TabletNotFullScreen
               | AuxWindowProperties::SetCloseable
@@ -1003,7 +1014,7 @@ MakeMcResponseForDrfWindow::MakeMcResponseForDrfWindow(
   }
 
   {
-    auto toolOwner = std::make_unique<MakeMcResponseForDrf>( viewer, seed_drf );
+    auto toolOwner = std::make_unique<MakeMcResponseForDrf>( viewer, seed_drf, geometry );
     m_tool = toolOwner.get();
     stretcher()->addWidget( std::move(toolOwner), 0, 0 );
   }

@@ -3187,8 +3187,189 @@ tuple<shared_ptr<DetectorPeakResponse>,double,double>
 }//shared_ptr<DetectorPeakResponse> parseEccFile( std::istream &input )
 
 
+namespace
+{
+/** Parses `<referenceEfficiencyCurve>` (experimental points, reference
+ distance, and the fitted-region equations) into `contents`.  Best-effort: any
+ failure leaves `contents.hasReference` false and never throws out.  Lengths in
+ PhysicalUnits units; `dist_unit` is the file's length-unit factor.
+ */
+void parseAngleReferenceCurve( const rapidxml::xml_node<char> *angle_node,
+                               const double dist_unit,
+                               AngleOutxContents &contents )
+{
+  try
+  {
+    const rapidxml::xml_node<char> *ref_node = XML_FIRST_NODE( angle_node, "referenceEfficiencyCurve" );
+    if( !ref_node )
+      return;
+
+    // Measured experimental points (energy keV, absolute efficiency).
+    const rapidxml::xml_node<char> *points_node = XML_FIRST_NODE( ref_node, "experimentalPoints" );
+    if( points_node )
+    {
+      XML_FOREACH_CHILD( point, points_node, "point" )
+      {
+        const auto *e_attr = XML_FIRST_ATTRIB( point, "energy" );
+        const auto *eff_attr = XML_FIRST_ATTRIB( point, "efficiency" );
+        if( !e_attr || !e_attr->value_size() || !eff_attr || !eff_attr->value_size() )
+          continue;
+
+        float energy = 0.0f, eff = 0.0f;
+        if( !SpecUtils::parse_float( e_attr->value(), e_attr->value_size(), energy )
+            || !SpecUtils::parse_float( eff_attr->value(), eff_attr->value_size(), eff ) )
+          continue;
+
+        if( (energy > 0.0f) && (eff > 0.0f) && !IsNan(eff) && !IsInf(eff) )
+          contents.referencePoints.emplace_back( energy, eff );
+      }//XML_FOREACH_CHILD( point, ... )
+
+      std::sort( begin(contents.referencePoints), end(contents.referencePoints),
+                 []( const pair<float,float> &l, const pair<float,float> &r ) -> bool {
+                   return l.first < r.first;
+                 } );
+    }//if( points_node )
+
+    // Reference on-axis distance from the reference curve's own
+    //  <geometry>/<holder height> (NOT the top-level near-contact holder).
+    const rapidxml::xml_node<char> *geom_node = XML_FIRST_NODE( ref_node, "geometry" );
+    const rapidxml::xml_node<char> *holder_node = geom_node ? XML_FIRST_NODE( geom_node, "holder" ) : nullptr;
+    const auto *height_attr = holder_node ? XML_FIRST_ATTRIB( holder_node, "height" ) : nullptr;
+    if( height_attr && height_attr->value_size() )
+    {
+      float height = 0.0f;
+      if( SpecUtils::parse_float( height_attr->value(), height_attr->value_size(), height ) && (height > 0.0f) )
+        contents.referenceDistanceCm = (height * dist_unit) / PhysicalUnits::cm;
+    }//if( height_attr )
+
+    // Fitted-region polynomials: each <region> is followed by an XML comment
+    //  holding its equation.  Pair element with its trailing comment sibling.
+    const rapidxml::xml_node<char> *regions_node = XML_FIRST_NODE( ref_node, "regions" );
+    if( regions_node )
+    {
+      double prev_end = 0.0;
+      for( const rapidxml::xml_node<char> *ch = regions_node->first_node();
+           ch; ch = ch->next_sibling() )
+      {
+        if( ch->type() != rapidxml::node_element )
+          continue;
+        if( SpecUtils::xml_name_str(ch) != "region" )
+          continue;
+
+        AngleOutxContents::FitRegion region;
+        float start = 0.0f, end = 0.0f;
+        const auto *start_attr = XML_FIRST_ATTRIB( ch, "start" );
+        const auto *end_attr = XML_FIRST_ATTRIB( ch, "end" );
+        if( start_attr && start_attr->value_size() )
+          SpecUtils::parse_float( start_attr->value(), start_attr->value_size(), start );
+        else
+          start = static_cast<float>( prev_end );  // continues from previous region
+        if( end_attr && end_attr->value_size() )
+          SpecUtils::parse_float( end_attr->value(), end_attr->value_size(), end );
+
+        region.startKeV = start;
+        region.endKeV = end;
+        prev_end = end;
+
+        // Grab the first comment sibling before the next element.
+        for( const rapidxml::xml_node<char> *sib = ch->next_sibling();
+             sib && (sib->type() != rapidxml::node_element); sib = sib->next_sibling() )
+        {
+          if( sib->type() == rapidxml::node_comment )
+          {
+            region.equation = SpecUtils::xml_value_str( sib );
+            break;
+          }
+        }//for( following siblings )
+
+        contents.fitRegions.push_back( region );
+      }//for( children of <regions> )
+    }//if( regions_node )
+
+    contents.hasReference = (contents.referencePoints.size() >= 2);
+  }catch( std::exception &e )
+  {
+    cerr << "parseAngleOutxFile: reference-curve extraction failed: " << e.what() << endl;
+    contents.hasReference = false;
+  }//try / catch
+}//parseAngleReferenceCurve(...)
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+/** Self-consistency dev-check: evaluate each fitted-region polynomial (as
+ written in ANGLE's XML comment) with muparserx and assert it reproduces the
+ measured reference points in that region.  Purely a build-time sanity check.
+ */
+void checkAngleFitRegions( const AngleOutxContents &contents )
+{
+  if( contents.fitRegions.empty() || contents.referencePoints.empty() )
+    return;
+
+  for( const AngleOutxContents::FitRegion &region : contents.fitRegions )
+  {
+    if( region.equation.empty() )
+      continue;
+
+    // The comment is "log10 e = <RHS>", with the energy variable written as
+    //  "Eg" (a non-ASCII gamma).  Take the RHS, drop non-ASCII bytes (turning
+    //  the variable into a bare "E"), and turn "log10 E" into "log10(E)".
+    const size_t eq_pos = region.equation.find( '=' );
+    if( eq_pos == string::npos )
+      continue;
+
+    string expr;
+    for( size_t i = eq_pos + 1; i < region.equation.size(); ++i )
+    {
+      const char c = region.equation[i];
+      if( static_cast<unsigned char>(c) < 0x80 )
+        expr += c;
+    }
+    SpecUtils::ireplace_all( expr, "log10 E", "log10(E)" );
+
+    try
+    {
+      mup::Value energy_val( 100.0 );
+      mup::ParserX parser;
+      parser.DefineVar( "E", mup::Variable(&energy_val) );
+      parser.SetExpr( expr );
+
+      for( const pair<float,float> &pt : contents.referencePoints )
+      {
+        const double energy = pt.first;
+        const double measured = pt.second;
+        if( (energy < region.startKeV) || (energy > region.endKeV) || (measured <= 0.0) )
+          continue;
+
+        energy_val = energy;
+        const double predicted = std::pow( 10.0, parser.Eval().GetFloat() );
+        const double rel_diff = std::fabs( predicted - measured ) / measured;
+
+        // Loose tolerance: this validates our extraction of both the points
+        //  and the equation, not the quality of ANGLE's fit.
+        assert( rel_diff < 0.15 );
+        if( rel_diff >= 0.15 )
+          cerr << "checkAngleFitRegions: region [" << region.startKeV << "," << region.endKeV
+               << "] eqn at " << energy << " keV predicts " << predicted
+               << " vs measured " << measured << " (rel " << rel_diff << ")" << endl;
+      }//for( reference points )
+    }catch( mup::ParserError &e )
+    {
+      cerr << "checkAngleFitRegions: could not evaluate '" << expr << "': " << e.GetMsg() << endl;
+    }
+  }//for( fit regions )
+}//checkAngleFitRegions(...)
+#endif //PERFORM_DEVELOPER_CHECKS
+}//anonymous namespace
+
+
 std::shared_ptr<DetectorPeakResponse>
   DetectorPeakResponse::parseAngleOutxFile( std::istream &input )
+{
+  return parseAngleOutxFileFull( input ).fixedGeomDrf;
+}//shared_ptr<DetectorPeakResponse> parseAngleOutxFile( std::istream &input )
+
+
+AngleOutxContents DetectorPeakResponse::parseAngleOutxFileFull( std::istream &input )
 {
   static const size_t max_xml_size = 10u * 1024u * 1024u;
 
@@ -3224,7 +3405,10 @@ std::shared_ptr<DetectorPeakResponse>
   rapidxml::xml_document<char> doc;
   try
   {
-    doc.parse<rapidxml::parse_trim_whitespace>( xml_buf.data() );
+    // parse_comment_nodes: ANGLE stores each fitted-region efficiency
+    //  polynomial as an XML comment after its <region> element; we read those
+    //  for the developer-checks self-consistency test (see below).
+    doc.parse<rapidxml::parse_trim_whitespace | rapidxml::parse_comment_nodes>( xml_buf.data() );
   }catch( const rapidxml::parse_error &e )
   {
     throw runtime_error( "parseAngleOutxFile: XML parse error: " + string(e.what()) );
@@ -3239,6 +3423,8 @@ std::shared_ptr<DetectorPeakResponse>
   const string units_str = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( angle_node, "units" ) );
   if( SpecUtils::iequals_ascii( units_str, "cm" ) )
     dist_unit = 1.0 * PhysicalUnits::cm;
+
+  AngleOutxContents contents;
 
   // Extract detector metadata and geometry
   string det_name, det_desc;
@@ -3278,7 +3464,111 @@ std::shared_ptr<DetectorPeakResponse>
       setback += parse_attr_float( XML_FIRST_NODE( housing, "topUpper" ), "thickness", 9 );
       setback += parse_attr_float( XML_FIRST_NODE( housing, "topLower" ), "thickness", 9 );
     }//if( housing )
+
+    // Rich physical-geometry extraction for Mode A (CeeLo).  Best-effort: any
+    //  failure here must not stop the <results> import, so wrap in try/catch
+    //  and leave contents.hasGeometry false.  All lengths kept in PhysicalUnits
+    //  units (file value * dist_unit); materials kept by name only.
+    try
+    {
+      // Reads a child <material name="..."> node's name (layer materials are a
+      //  child node in ANGLE, not an attribute of the layer element).
+      auto layer_material = []( const rapidxml::xml_node<char> *node ) -> string
+      {
+        const rapidxml::xml_node<char> *m = node ? XML_FIRST_NODE( node, "material" ) : nullptr;
+        return m ? SpecUtils::xml_value_str( XML_FIRST_ATTRIB( m, "name" ) ) : string();
+      };//layer_material
+
+      contents.detName = det_name;
+      contents.detDescription = det_desc;
+      contents.detType = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( det_node, "type" ) );
+
+      const rapidxml::xml_node<char> *crystal = XML_FIRST_NODE( det_node, "crystal" );
+      contents.crystalRadius = parse_attr_float( crystal, "radius", 6 ) * dist_unit;
+      contents.crystalLength = parse_attr_float( crystal, "height", 6 ) * dist_unit;
+      contents.bulletizingRadius = parse_attr_float( crystal, "bulletizingRadius", 17 ) * dist_unit;
+
+      const rapidxml::xml_node<char> *core = XML_FIRST_NODE( det_node, "core" );
+      if( core )
+      {
+        contents.hasCore = true;
+        contents.coreRadius = parse_attr_float( core, "radius", 6 ) * dist_unit;
+        contents.coreDepth = parse_attr_float( core, "height", 6 ) * dist_unit;
+      }//if( core )
+
+      const rapidxml::xml_node<char> *inactive = XML_FIRST_NODE( det_node, "inactiveGe" );
+      contents.deadLayerFront = parse_attr_float( inactive, "topThickness", 12 ) * dist_unit;
+      contents.deadLayerSide = parse_attr_float( inactive, "sideThickness", 13 ) * dist_unit;
+
+      const rapidxml::xml_node<char> *contact = XML_FIRST_NODE( det_node, "contact" );
+      if( contact )
+      {
+        contents.contactSide = parse_attr_float( contact, "sideThickness", 13 ) * dist_unit;
+        contents.contactMaterial = layer_material( contact );
+      }//if( contact )
+
+      const rapidxml::xml_node<char> *vacuum = XML_FIRST_NODE( det_node, "vacuum" );
+      contents.vacuumFront = parse_attr_float( vacuum, "topThickness", 12 ) * dist_unit;
+      contents.vacuumSide = parse_attr_float( vacuum, "sideThickness", 13 ) * dist_unit;
+
+      // Concentric layers, innermost -> outermost: endCap (front+side), its
+      //  optional window (front only), then housing side/top pieces.
+      auto add_layer = []( vector<AngleOutxContents::Layer> &layers,
+                           const string &material, const double front, const double side )
+      {
+        if( (front > 0.0) || (side > 0.0) )
+        {
+          AngleOutxContents::Layer layer;
+          layer.material = material;
+          layer.front = front;
+          layer.side = side;
+          layers.push_back( layer );
+        }
+      };//add_layer
+
+      const rapidxml::xml_node<char> *endcap = XML_FIRST_NODE( det_node, "endCap" );
+      if( endcap )
+      {
+        add_layer( contents.layers, layer_material( endcap ),
+                   parse_attr_float( endcap, "topThickness", 12 ) * dist_unit,
+                   parse_attr_float( endcap, "sideThickness", 13 ) * dist_unit );
+
+        // <window> (optional; not present in all files) - a full-face window,
+        //  front only.
+        const rapidxml::xml_node<char> *window = XML_FIRST_NODE( endcap, "window" );
+        if( window )
+          add_layer( contents.layers, layer_material( window ),
+                     parse_attr_float( window, "thickness", 9 ) * dist_unit, 0.0 );
+      }//if( endcap )
+
+      if( housing )
+      {
+        const rapidxml::xml_node<char> *side_in = XML_FIRST_NODE( housing, "sideInner" );
+        const rapidxml::xml_node<char> *side_out = XML_FIRST_NODE( housing, "sideOuter" );
+        const rapidxml::xml_node<char> *top_lo = XML_FIRST_NODE( housing, "topLower" );
+        const rapidxml::xml_node<char> *top_up = XML_FIRST_NODE( housing, "topUpper" );
+
+        add_layer( contents.layers, layer_material( side_in ),
+                   0.0, parse_attr_float( side_in, "thickness", 9 ) * dist_unit );
+        add_layer( contents.layers, layer_material( side_out ),
+                   0.0, parse_attr_float( side_out, "thickness", 9 ) * dist_unit );
+        add_layer( contents.layers, layer_material( top_lo ),
+                   parse_attr_float( top_lo, "thickness", 9 ) * dist_unit, 0.0 );
+        add_layer( contents.layers, layer_material( top_up ),
+                   parse_attr_float( top_up, "thickness", 9 ) * dist_unit, 0.0 );
+      }//if( housing )
+
+      contents.hasGeometry = (contents.crystalRadius > 0.0) && (contents.crystalLength > 0.0);
+    }catch( std::exception &e )
+    {
+      cerr << "parseAngleOutxFile: geometry extraction failed: " << e.what() << endl;
+      contents.hasGeometry = false;
+    }//try / catch
   }//if( det_node )
+
+  // Extract the measured reference efficiency curve (Mode A anchor).
+  //  Best-effort, same rationale as geometry above.
+  parseAngleReferenceCurve( angle_node, dist_unit, contents );
 
   // Find <results> and parse <result> children
   const rapidxml::xml_node<char> *results_node = XML_FIRST_NODE( angle_node, "results" );
@@ -3401,8 +3691,17 @@ std::shared_ptr<DetectorPeakResponse>
 
   answer->computeHash();
 
-  return answer;
-}//shared_ptr<DetectorPeakResponse> parseAngleOutxFile( std::istream &input )
+  contents.fixedGeomDrf = answer;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Self-consistency check: ANGLE's own fitted region polynomials should
+  //  reproduce its measured reference points.  Evaluated via muparserx only in
+  //  developer builds; never affects the returned data.
+  checkAngleFitRegions( contents );
+#endif
+
+  return contents;
+}//AngleOutxContents parseAngleOutxFileFull( std::istream &input )
 
 
 DetectorPeakResponse::EffCsvParseResult

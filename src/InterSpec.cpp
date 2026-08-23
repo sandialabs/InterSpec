@@ -123,6 +123,7 @@
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/MakeFwhmForDrf.h"
+#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/DrfModifyWidget.h"
 #include "InterSpec/MakeMcResponseForDrf.h"
 #include "InterSpec/RefLineDynamic.h"
@@ -9206,16 +9207,21 @@ void InterSpec::deleteFwhmFromForegroundWindow()
 
 
 MakeMcResponseForDrfWindow *InterSpec::showMcResponseWindow(
-                          std::shared_ptr<const DetectorPeakResponse> seed_drf )
+                          std::shared_ptr<const DetectorPeakResponse> seed_drf,
+                          std::shared_ptr<const ceelo::GeometryDescriptor> geometry )
 {
   if( m_mcResponseTool )
   {
+    // Already open; re-seed its geometry when a descriptor was supplied (e.g. a
+    //  fresh ANGLE import) so the request isn't silently dropped.
+    if( geometry && m_mcResponseTool->tool() )
+      m_mcResponseTool->tool()->setGeometryFromDescriptor( *geometry );
     m_mcResponseTool->show();
     m_mcResponseTool->centerWindowHeavyHanded();
     return m_mcResponseTool.get();
   }//if( m_mcResponseTool )
 
-  m_mcResponseTool = AuxWindow::make<MakeMcResponseForDrfWindow>( seed_drf );
+  m_mcResponseTool = AuxWindow::make<MakeMcResponseForDrfWindow>( seed_drf, geometry );
   m_mcResponseTool->tool()->updatedDrf().connect( m_mcResponseTool.get(), &AuxWindow::hide );
   m_mcResponseTool->finished().connect( this, [this](){ deleteMcResponseWindow(); } );
 
@@ -9231,7 +9237,7 @@ MakeMcResponseForDrfWindow *InterSpec::showMcResponseWindow(
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
     auto undo = [this](){ deleteMcResponseWindow(); };
-    auto redo = [this](){ showMcResponseWindow( nullptr ); };
+    auto redo = [this,seed_drf,geometry](){ showMcResponseWindow( seed_drf, geometry ); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show characterize-by-MC tool" );
   }//if( undo )
 

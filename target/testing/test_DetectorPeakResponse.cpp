@@ -48,9 +48,13 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/ParseUtils.h"
 
+#include "InterSpec/CeeLoUtils.h"
+#include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/AngleOutxImport.h"
 #include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/InterSpec.h"
 
@@ -531,6 +535,135 @@ BOOST_AUTO_TEST_CASE( test_read_angle_outx_file )
   BOOST_CHECK_THROW( DetectorPeakResponse::parseAngleOutxFile(oversized_input), std::exception );
 
   cout << "Successfully parsed ANGLE .outx file" << endl;
+}
+
+
+BOOST_AUTO_TEST_CASE( test_read_angle_outx_full )
+{
+  cout << "\n\nTesting ANGLE .outx rich (geometry + reference) parsing..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Test data directory not set (use --testfiledir=...)" );
+
+  const string outx_file = SpecUtils::append_path( g_test_data_dir, "det_eff/Angle-example-efficiency.outx" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(outx_file), "OUTX file not found: " + outx_file );
+
+  ifstream input( outx_file.c_str() );
+  BOOST_REQUIRE_MESSAGE( input.is_open(), "Failed to open OUTX file" );
+
+  AngleOutxContents contents;
+  BOOST_CHECK_NO_THROW( contents = DetectorPeakResponse::parseAngleOutxFileFull(input) );
+
+  // The fixed-geometry DRF must still be produced (backward compatibility).
+  BOOST_REQUIRE_MESSAGE( contents.fixedGeomDrf != nullptr, "Full parse should still yield fixedGeomDrf" );
+  BOOST_CHECK( contents.fixedGeomDrf->geometryType() == DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
+
+  // --- Geometry ---
+  BOOST_REQUIRE_MESSAGE( contents.hasGeometry, "Fixture should yield a usable geometry" );
+
+  // Lengths are stored in PhysicalUnits units (file is in mm); assert against
+  //  the known GEM35-70 fixture with a loose tolerance.
+  const double radius_mm = contents.crystalRadius / PhysicalUnits::mm;
+  const double length_mm = contents.crystalLength / PhysicalUnits::mm;
+  BOOST_CHECK_MESSAGE( close_enough(radius_mm, 29.15, 0.01), "crystal radius mm: " + to_string(radius_mm) );
+  BOOST_CHECK_MESSAGE( close_enough(length_mm, 68.9, 0.01), "crystal length mm: " + to_string(length_mm) );
+
+  BOOST_CHECK_MESSAGE( contents.hasCore, "Fixture crystal is coaxial (has a core/bore)" );
+  BOOST_CHECK( contents.coreRadius > 0.0 );
+  BOOST_CHECK( contents.coreDepth > 0.0 );
+
+  BOOST_CHECK( contents.deadLayerFront > 0.0 );
+  BOOST_CHECK( contents.deadLayerSide > 0.0 );
+
+  // Layers (endcap/housing pieces) - count is not fixed, but every layer must
+  //  carry a material name so it can be resolved later.
+  BOOST_REQUIRE_MESSAGE( !contents.layers.empty(), "Fixture should have endcap/housing layers" );
+  for( const AngleOutxContents::Layer &layer : contents.layers )
+  {
+    BOOST_CHECK_MESSAGE( !layer.material.empty(), "Every layer should have a material name" );
+    BOOST_CHECK_MESSAGE( (layer.front > 0.0) || (layer.side > 0.0), "Every layer should have a nonzero thickness" );
+  }
+
+  // --- Reference curve ---
+  BOOST_REQUIRE_MESSAGE( contents.hasReference, "Fixture should yield a reference curve" );
+  BOOST_REQUIRE_MESSAGE( contents.referencePoints.size() >= 2, "Reference curve needs >= 2 points" );
+  for( size_t i = 0; i < contents.referencePoints.size(); ++i )
+  {
+    const pair<float,float> &pt = contents.referencePoints[i];
+    BOOST_CHECK_MESSAGE( (pt.first > 0.0f) && (pt.second > 0.0f) && (pt.second <= 1.0f),
+                         "Reference point in range at index " + to_string(i) );
+    if( i > 0 )
+      BOOST_CHECK_MESSAGE( pt.first > contents.referencePoints[i-1].first,
+                           "Reference points must be strictly ascending in energy" );
+  }
+
+  // Reference distance derived from the reference curve's holder height (~25 cm).
+  BOOST_CHECK_MESSAGE( (contents.referenceDistanceCm > 20.0) && (contents.referenceDistanceCm < 30.0),
+                       "reference distance cm: " + to_string(contents.referenceDistanceCm) );
+
+  // Fitted-region equations extracted from XML comments (dev-check consumes these).
+  BOOST_REQUIRE_MESSAGE( !contents.fitRegions.empty(), "Fixture has fitted-region equations" );
+  for( const AngleOutxContents::FitRegion &region : contents.fitRegions )
+    BOOST_CHECK_MESSAGE( !region.equation.empty(), "Each fitted region should have its equation comment" );
+
+  cout << "Successfully parsed rich ANGLE contents ("
+       << contents.layers.size() << " layers, "
+       << contents.referencePoints.size() << " reference points, "
+       << contents.fitRegions.size() << " fit regions)" << endl;
+
+  // --- Stage 2: map onto a CeeLo geometry + build a seed DRF ---
+  // Material resolution needs the MaterialDB singleton; initialize it from the
+  //  static data directory (set by GlobalFixture).  Skip the build assertions
+  //  if the DB is unavailable in this environment.
+  try
+  {
+    MaterialDB::initialize();
+  }catch( std::exception & )
+  {
+  }
+
+  if( MaterialDB::initialized() )
+  {
+    vector<string> warnings;
+    ceelo::GeometryDescriptor gd;
+    BOOST_CHECK_NO_THROW( gd = CeeLoUtils::buildAngleGeometry( contents, warnings ) );
+
+    BOOST_CHECK( gd.shape == ceelo::DetectorShape::Cylinder );
+    BOOST_REQUIRE_MESSAGE( gd.dimensions_cm.size() >= 2, "Cylinder needs radius+length" );
+    BOOST_CHECK_MESSAGE( close_enough(gd.dimensions_cm[0], 29.15/10.0, 0.01),
+                         "geom radius cm: " + to_string(gd.dimensions_cm[0]) );
+    BOOST_CHECK_MESSAGE( close_enough(gd.dimensions_cm[1], 68.9/10.0, 0.01),
+                         "geom length cm: " + to_string(gd.dimensions_cm[1]) );
+
+    BOOST_CHECK_MESSAGE( gd.bore.has_value(), "Coaxial fixture should yield a bore" );
+    BOOST_CHECK_MESSAGE( gd.dead_layer.has_value(), "Fixture should yield a dead layer" );
+    BOOST_CHECK_MESSAGE( !gd.layers.empty(), "Fixture should yield endcap/housing layers" );
+
+    // Crystal material and every layer material should have resolved.
+    BOOST_CHECK_MESSAGE( gd.crystal_material_index >= 0, "Crystal material should resolve" );
+    for( const string &w : warnings )
+      cout << "  buildAngleGeometry warning: " << w << endl;
+    BOOST_CHECK_MESSAGE( warnings.empty(), "All fixture materials should resolve without warnings" );
+
+    // Seed DRF from the reference points (far-field absolute).
+    shared_ptr<DetectorPeakResponse> seed;
+    BOOST_CHECK_NO_THROW( seed = CeeLoUtils::buildAngleSeedDrf( contents ) );
+    BOOST_REQUIRE( seed != nullptr );
+    BOOST_CHECK( seed->isValid() );
+    BOOST_CHECK( !seed->isFixedGeometry() );
+    BOOST_CHECK( seed->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+    BOOST_CHECK_MESSAGE( seed->measuredPoints() && !seed->measuredPoints()->empty(),
+                         "Seed DRF should carry the measured reference points" );
+
+    // The seed DRF must be a valid EFFTRAN transfer anchor at the reference distance.
+    BOOST_CHECK_NO_THROW(
+      CeeLoUtils::transferAnchorForDrf( seed, gd, contents.referenceDistanceCm ) );
+
+    cout << "Built CeeLo geometry (" << gd.layers.size() << " layers, "
+         << gd.materials.size() << " materials) and seed DRF from ANGLE contents" << endl;
+  }else
+  {
+    cout << "  (MaterialDB unavailable - skipping Stage 2 geometry-build checks)" << endl;
+  }
 }
 
 

@@ -286,6 +286,14 @@ public:
   void handleEfficiencyCsvUpload();
   void handleGadrasDetectorDotDatUpload();
   void handleEfficiencyTypeChange();
+
+  /** For an uploaded ANGLE `.outx`/`.xml` file that carries a full physical
+   detector model and a measured reference curve, offers the user a choice:
+   import as a "generic detector" (Mode A: map the geometry + reference onto a
+   CeeLo geometry and seed the Make MC Response tool) or keep this
+   measurement's fixed-geometry curve (Mode B: the current default, already
+   applied).  No-op when `filename` is not a geometry-bearing ANGLE file. */
+  void offerAngleImportModeChoice( const std::string &filename );
   
   /** Returns a detector from the currently selected upload - returns nullptr if not fully specified (e.g., no diameter, or wahtever)*/
   std::shared_ptr<DetectorPeakResponse> detectorFromEffUpload() const;

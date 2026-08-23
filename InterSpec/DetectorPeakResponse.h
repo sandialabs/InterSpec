@@ -51,6 +51,7 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/AngleOutxImport.h"
 
 
 class PeakDef;
@@ -546,6 +547,22 @@ public:
    @returns a valid DRF with (efficiencyFcnType() == kEnergyEfficiencyPairs)
    */
   static std::shared_ptr<DetectorPeakResponse> parseAngleOutxFile( std::istream &input );
+
+  /** Parses an ANGLE .outx XML file into a rich `AngleOutxContents`.
+
+   Extends #parseAngleOutxFile: in addition to the fixed-geometry DRF (in
+   `AngleOutxContents::fixedGeomDrf`, built exactly as #parseAngleOutxFile does),
+   it extracts the full `<detector>` physical model and the measured
+   `<referenceEfficiencyCurve>` so callers can drive InterSpec's own MC /
+   efficiency-transfer stack (see AngleOutxImport.h).
+
+   Geometry and reference parsing are best-effort: a malformed/absent
+   `<detector>` or `<referenceEfficiencyCurve>` leaves `hasGeometry` /
+   `hasReference` false but never prevents the `<results>` import.  Throws only
+   when the `<results>` import itself fails (same conditions as
+   #parseAngleOutxFile).
+   */
+  static AngleOutxContents parseAngleOutxFileFull( std::istream &input );
 
   /** Result struct from parsing an efficiency CSV file. */
   struct EffCsvParseResult

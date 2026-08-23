@@ -38,7 +38,9 @@
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/AngleOutxImport.h"
 #include "InterSpec/DetectorEfficiency.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
 using namespace std;
@@ -311,5 +313,176 @@ std::shared_ptr<ceelo::DetectorResponse> makeTransferResponse(
 
   return ceelo::make_transfer_response( geom, anchor.curve, ref_pos, tot_anchor, opts );
 }//makeTransferResponse(...)
+
+
+ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
+                                              std::vector<std::string> &warnings )
+{
+  if( !contents.hasGeometry )
+    throw runtime_error( "buildAngleGeometry: ANGLE file has no detector geometry." );
+
+  const double radius_cm = contents.crystalRadius / PhysicalUnits::cm;
+  const double length_cm = contents.crystalLength / PhysicalUnits::cm;
+  if( (radius_cm <= 0.0) || (length_cm <= 0.0) )
+    throw runtime_error( "buildAngleGeometry: non-positive crystal dimensions." );
+
+  const shared_ptr<const MaterialDB> matDb = MaterialDB::initialized()
+                                              ? MaterialDB::instance() : nullptr;
+  const SandiaDecay::SandiaDecayDataBase * const nucDb = DecayDataBaseServer::database();
+
+  // Resolve an ANGLE material name to a CeeLo material spec: try MaterialDB by
+  //  name, then a chemical-formula fallback (covers ANGLE trade names, density
+  //  inline).  Notes a warning and returns false when unresolved.
+  auto resolve = [&]( const string &name, ceelo::MaterialSpec &out ) -> bool {
+    if( name.empty() || !matDb )
+      return false;
+
+    shared_ptr<const Material> mat;
+    try { mat = matDb->material( name ); }catch( std::exception & ){}
+
+    if( !mat )
+    {
+      // Chemical-formula fallbacks (each element needs an explicit count for
+      //  Material::parseChemicalFormula; density inline as "d=").
+      static const std::map<string,string> fallbacks = {
+        { "Aluminium",    "Al1 d=2.699" },   // British spelling ANGLE uses
+        { "Mylar/PET",    "C10H8O4 d=1.38" },
+        { "Mylar",        "C10H8O4 d=1.38" },
+        { "PET",          "C10H8O4 d=1.38" },
+        { "Brass",        "Cu0.63Zn0.37 d=8.5" },
+        { "Carbon fiber", "C1 d=1.8" },
+        { "Carbon Fiber", "C1 d=1.8" },
+      };
+      const auto it = fallbacks.find( name );
+      const string formula = (it != end(fallbacks)) ? it->second : name;
+      try { mat = MaterialDB::materialFromChemicalFormula( formula, nucDb ); }
+      catch( std::exception & ){}
+    }//if( !mat )
+
+    if( !mat )
+    {
+      warnings.push_back( "Could not resolve material '" + name + "'; skipped." );
+      return false;
+    }
+
+    try { out = to_ceelo_material( *mat ); }
+    catch( std::exception &e )
+    {
+      warnings.push_back( "Material '" + name + "': " + string(e.what()) );
+      return false;
+    }
+    return true;
+  };//resolve lambda
+
+  ceelo::GeometryDescriptor gd;
+  gd.shape = ceelo::DetectorShape::Cylinder;
+  gd.dimensions_cm = { radius_cm, length_cm };
+  gd.symmetry = ceelo::ResponseSymmetry::Axial;
+  gd.reference_point = ceelo::ReferencePoint::EndcapFront;
+
+  // Crystal: ANGLE HPGe detectors are germanium.
+  ceelo::MaterialSpec ge;
+  if( resolve( "Ge", ge ) )
+  {
+    gd.crystal_material_index = static_cast<int>( gd.materials.size() );
+    gd.materials.push_back( ge );
+  }else
+  {
+    gd.crystal_material_index = -1;
+    warnings.push_back( "Could not resolve crystal germanium material." );
+  }
+
+  // Coaxial bore from the core (bulletizing / rounding not represented by CeeLo).
+  if( contents.hasCore && (contents.coreRadius > 0.0) && (contents.coreDepth > 0.0) )
+    gd.bore = ceelo::BoreHoleConfig{ contents.coreRadius / PhysicalUnits::cm,
+                                     contents.coreDepth / PhysicalUnits::cm };
+
+  // Dead layer (inactive Ge); the thin germanium contact reads as dead Ge, so
+  //  fold it into the side dead layer.
+  {
+    const double front = contents.deadLayerFront / PhysicalUnits::cm;
+    double side = contents.deadLayerSide / PhysicalUnits::cm;
+    if( contents.contactSide > 0.0 )
+      side += contents.contactSide / PhysicalUnits::cm;
+    if( (front > 0.0) || (side > 0.0) )
+      gd.dead_layer = ceelo::DeadLayerConfig{ front, side, 0.0 };
+  }
+
+  // Endcap / window / housing layers, innermost -> outermost.  The vacuum gap
+  //  is a spacing (attenuation ~ 0), not a layer, so it is dropped; the user
+  //  reviews / corrects the seeded geometry before generating a response.
+  for( const AngleOutxContents::Layer &layer : contents.layers )
+  {
+    const double front = layer.front / PhysicalUnits::cm;
+    const double side = layer.side / PhysicalUnits::cm;
+    if( (front <= 0.0) && (side <= 0.0) )
+      continue;
+
+    ceelo::MaterialSpec mspec;
+    if( !resolve( layer.material, mspec ) )
+      continue;
+
+    ceelo::LayerSpec spec;
+    spec.material_index = static_cast<int>( gd.materials.size() );
+    gd.materials.push_back( mspec );
+    spec.front_thickness_cm = front;
+    spec.side_thickness_cm = side;
+    spec.z_start_cm = 0.0;
+    spec.z_end_cm = length_cm;
+    gd.layers.push_back( spec );
+  }//for( const AngleOutxContents::Layer &layer : contents.layers )
+
+  return gd;
+}//buildAngleGeometry(...)
+
+
+std::shared_ptr<DetectorPeakResponse> buildAngleSeedDrf(
+                      const AngleOutxContents &contents )
+{
+  if( contents.referencePoints.size() < 2 )
+    throw runtime_error( "buildAngleSeedDrf: need at least two reference points." );
+
+  const double diameter = 2.0 * contents.crystalRadius;      // PhysicalUnits
+  const double dist = contents.referenceDistanceCm * PhysicalUnits::cm;
+  if( (diameter <= 0.0) || (dist <= 0.0) )
+    throw runtime_error( "buildAngleSeedDrf: non-positive crystal diameter or"
+                         " reference distance." );
+
+  vector<DetectorPeakResponse::EnergyEffPoint> effpts;
+  vector<MeasuredEffPoint> measpts;
+  for( const pair<float,float> &ep : contents.referencePoints )
+  {
+    if( (ep.first <= 0.0f) || (ep.second <= 0.0f) )
+      continue;
+
+    DetectorPeakResponse::EnergyEffPoint e;
+    e.energy = ep.first;
+    e.efficiency = ep.second;
+    effpts.push_back( e );
+
+    MeasuredEffPoint m;
+    m.energy = ep.first;
+    m.efficiency = ep.second;
+    m.distance = static_cast<float>( dist );
+    measpts.push_back( m );
+  }//for( const pair<float,float> &ep : contents.referencePoints )
+
+  if( effpts.size() < 2 )
+    throw runtime_error( "buildAngleSeedDrf: fewer than two positive reference"
+                         " points." );
+
+  auto drf = make_shared<DetectorPeakResponse>();
+  drf->setEfficiencyPoints( effpts, static_cast<float>(diameter), dist,
+                        DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+  drf->setName( contents.detName.empty() ? string("ANGLE detector") : contents.detName );
+  if( !contents.detDescription.empty() )
+    drf->setDescription( contents.detDescription );
+
+  auto meas = make_shared<MeasuredDrfPoints>();
+  meas->setPoints( measpts );
+  drf->setMeasuredPoints( meas );
+
+  return drf;
+}//buildAngleSeedDrf(...)
 
 }//namespace CeeLoUtils

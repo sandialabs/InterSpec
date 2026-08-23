@@ -27,11 +27,13 @@
 
 #include <memory>
 #include <string>
+#include <vector>
 
 #include "io/DetectorResponse.h"
 #include "io/EfficiencyTransfer.h"
 
 struct Material;
+struct AngleOutxContents;
 class DetectorPeakResponse;
 
 /** Small shared helpers for mapping InterSpec objects onto the CeeLo
@@ -116,6 +118,35 @@ namespace CeeLoUtils
                       const TransferAnchor &anchor,
                       const ceelo::AnchorCurve &tot_curve,
                       const std::string &detector_name );
+
+  /** Maps the physical detector model parsed from an ANGLE file (see
+   InterSpec/AngleOutxImport.h) onto a CeeLo geometry descriptor - used to seed
+   the Make MC Response tool ("generic detector" import mode).
+
+   Materials are resolved via the session `MaterialDB` singleton, with
+   chemical-formula fallbacks for ANGLE trade names (Mylar/PET, Brass, Carbon
+   fiber); anything still unresolved is skipped and a human-readable note
+   appended to `warnings`.  The germanium contact is folded into the side dead
+   layer; `bulletizingRadius`, `contactPin`, and the vacuum gap (attenuation
+   ~ 0) are dropped.  Lengths in `contents` are PhysicalUnits and converted to
+   cm here.  `reference_point` is set to EndcapFront (ANGLE's convention).
+
+   Throws std::runtime_error when `contents.hasGeometry` is false or the
+   crystal dimensions are non-positive.
+   */
+  ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
+                                                std::vector<std::string> &warnings );
+
+  /** Builds a far-field-absolute seed DRF from an ANGLE file's measured
+   reference efficiency points, pinned at `contents.referenceDistanceCm`.  The
+   points are also attached as raw measured points, so #transferAnchorForDrf
+   can anchor an EFFTRAN-style transfer directly on them.
+
+   Throws std::runtime_error when fewer than two positive reference points are
+   present, or the crystal diameter / reference distance are non-positive.
+   */
+  std::shared_ptr<DetectorPeakResponse> buildAngleSeedDrf(
+                      const AngleOutxContents &contents );
 }//namespace CeeLoUtils
 
 #endif //CeeLoUtils_h

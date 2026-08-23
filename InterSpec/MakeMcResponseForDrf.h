@@ -92,9 +92,15 @@ public:
   };//enum class Method
 
   MakeMcResponseForDrf( InterSpec *viewer,
-                        std::shared_ptr<const DetectorPeakResponse> seed_drf );
+                        std::shared_ptr<const DetectorPeakResponse> seed_drf,
+                        std::shared_ptr<const ceelo::GeometryDescriptor> geometry = nullptr );
 
   virtual ~MakeMcResponseForDrf() override;
+
+  /** Pre-populates the geometry form from a physical descriptor (e.g. an
+   imported ANGLE detector model), overriding the DRF-derived guess.  Safe to
+   call after construction to re-seed an already-open tool. */
+  void setGeometryFromDescriptor( const ceelo::GeometryDescriptor &geometry );
 
   /** Emitted when a generated response becomes available/unavailable
    (enables the windows "Use Response" button).
@@ -235,7 +241,9 @@ public:
 
 protected:
   // Constructor is protected; use AuxWindow::make<MakeMcResponseForDrfWindow>().
-  explicit MakeMcResponseForDrfWindow( std::shared_ptr<const DetectorPeakResponse> seed_drf );
+  explicit MakeMcResponseForDrfWindow(
+                std::shared_ptr<const DetectorPeakResponse> seed_drf,
+                std::shared_ptr<const ceelo::GeometryDescriptor> geometry = nullptr );
 
   MakeMcResponseForDrf *m_tool;
 };//class MakeMcResponseForDrfWindow

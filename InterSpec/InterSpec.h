@@ -100,6 +100,7 @@ class ReferencePhotopeakDisplay;
 class DetectionLimitSimpleWindow;
 class SimpleActivityCalcWindow;
 class LicenseAndDisclaimersWindow;
+namespace ceelo{ struct GeometryDescriptor; }
 namespace HelpSystem{ class HelpWindow; }
 namespace D3SpectrumExport{ struct D3SpectrumChartOptions; }
 
@@ -915,9 +916,14 @@ public:
    just returns the existing window.
    @param seed_drf The DRF to seed the geometry from and attach the response
           to; pass nullptr to use the current foreground detector.
+   @param geometry Optional physical geometry to pre-populate the geometry form
+          with (e.g. mapped from an imported ANGLE detector model); overrides
+          the cylinder guess derived from `seed_drf`.  If the tool window is
+          already open, its geometry form is re-seeded from this.
    */
   MakeMcResponseForDrfWindow *showMcResponseWindow(
-                        std::shared_ptr<const DetectorPeakResponse> seed_drf );
+                        std::shared_ptr<const DetectorPeakResponse> seed_drf,
+                        std::shared_ptr<const ceelo::GeometryDescriptor> geometry = nullptr );
 
   /** If a `MakeMcResponseForDrfWindow` is showing, deletes it. */
   void deleteMcResponseWindow();

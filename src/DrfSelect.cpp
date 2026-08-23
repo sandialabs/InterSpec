@@ -86,6 +86,9 @@
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/CeeLoUtils.h"
+#include "InterSpec/AngleOutxImport.h"
+#include "InterSpec/MakeMcResponseForDrf.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
@@ -5184,7 +5187,65 @@ void DrfSelect::handleEfficiencyCsvUpload()
     updateUserNameFromCurrentDetEff();
     emitChangedSignal();
   }
+
+  // If this was an ANGLE file carrying a full detector model + reference curve,
+  //  offer the "generic detector" import mode (the fixed-geometry curve set
+  //  above is the default / Mode B).
+  offerAngleImportModeChoice( filename );
 }//void handleEfficiencyCsvUpload()
+
+
+void DrfSelect::offerAngleImportModeChoice( const string &filename )
+{
+  // Full-parse the file as ANGLE; bail quietly on anything that isn't a
+  //  geometry-bearing ANGLE file (so non-ANGLE uploads never see a dialog).
+  AngleOutxContents contents;
+  try
+  {
+#ifdef _WIN32
+    const std::wstring wfilename = SpecUtils::convert_from_utf8_to_utf16(filename);
+    ifstream outxfile( wfilename.c_str(), ios_base::binary | ios_base::in );
+#else
+    ifstream outxfile( filename.c_str(), ios_base::binary | ios_base::in );
+#endif
+    contents = DetectorPeakResponse::parseAngleOutxFileFull( outxfile );
+  }catch( std::exception & )
+  {
+    return;
+  }
+
+  if( !contents.hasGeometry || !contents.hasReference )
+    return;
+
+  // Build the CeeLo geometry + a far-field seed DRF now, so the dialog only
+  //  offers Mode A when it can actually be delivered.
+  shared_ptr<const ceelo::GeometryDescriptor> geometry;
+  shared_ptr<DetectorPeakResponse> seedDrf;
+  try
+  {
+    vector<string> warnings;
+    geometry = make_shared<const ceelo::GeometryDescriptor>(
+                                CeeLoUtils::buildAngleGeometry( contents, warnings ) );
+    seedDrf = CeeLoUtils::buildAngleSeedDrf( contents );
+  }catch( std::exception & )
+  {
+    return;  //Mode B (already applied) is the only offer we can honor
+  }
+
+  if( !geometry || !seedDrf )
+    return;
+
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("ds-angle-mode-title"),
+                                             WString::tr("ds-angle-mode-txt") );
+  WPushButton *generic = dialog->addButton( WString::tr("ds-angle-mode-generic") );
+  dialog->addButton( WString::tr("ds-angle-mode-fixed") );
+
+  InterSpec * const viewer = m_interspec;
+  generic->clicked().connect( std::function<void()>( [viewer, geometry, seedDrf](){
+    if( viewer )
+      viewer->showMcResponseWindow( seedDrf, geometry );
+  } ) );
+}//offerAngleImportModeChoice(...)
 
 
 void DrfSelect::handleEfficiencyTypeChange()

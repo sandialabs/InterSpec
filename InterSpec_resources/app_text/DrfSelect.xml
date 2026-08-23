@@ -155,4 +155,10 @@
   <message id="ds-eff-type-intrinsic">Intrinsic Efficiency</message>
   <message id="ds-eff-type-farfield">Far-Field Efficiency</message>
   <message id="ds-eff-type-gadras">GADRAS</message>
+
+  <!-- Mode choice dialog when an ANGLE file carries a full detector model + reference curve -->
+  <message id="ds-angle-mode-title">ANGLE detector model</message>
+  <message id="ds-angle-mode-txt">This ANGLE file also contains the detector's physical model and a measured reference efficiency curve. You can use it as a generic detector (recommended, so you can compute efficiencies for arbitrary geometries), or keep this measurement's fixed-geometry curve.</message>
+  <message id="ds-angle-mode-generic">Generic detector</message>
+  <message id="ds-angle-mode-fixed">This measurement's fixed geometry</message>
 </messages>

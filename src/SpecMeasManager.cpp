@@ -119,7 +119,10 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/DrfSelect.h"
+#include "InterSpec/AngleOutxImport.h"
+#include "InterSpec/MakeMcResponseForDrf.h"
 #include "InterSpec/ZipArchive.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/SimpleDialog.h"
@@ -3627,18 +3630,39 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     det.reset();
   }//try / catch
 
-  // If not ECC, try parsing as ANGLE .outx file
+  // If not ECC, try parsing as ANGLE .outx file.  For ANGLE files we also
+  //  attempt the rich parse (physical detector model + measured reference
+  //  curve) so we can offer the "generic detector" import mode alongside the
+  //  fixed-geometry curve.
+  shared_ptr<const ceelo::GeometryDescriptor> angle_geometry;
+  shared_ptr<DetectorPeakResponse> angle_seed_drf;
   if( !det )
   {
     input.clear();
     input.seekg( start_pos );
     try
     {
-      det = DetectorPeakResponse::parseAngleOutxFile( input );
+      const AngleOutxContents contents = DetectorPeakResponse::parseAngleOutxFileFull( input );
+      det = contents.fixedGeomDrf;
 
       assert( det && det->isValid() );
       if( !det || !det->isValid() )
-        throw std::logic_error( "DRF returned from parseAngleOutxFile() should be valid." );
+        throw std::logic_error( "DRF returned from parseAngleOutxFileFull() should be valid." );
+
+      if( contents.hasGeometry && contents.hasReference )
+      {
+        try
+        {
+          vector<string> warnings;
+          angle_geometry = make_shared<const ceelo::GeometryDescriptor>(
+                                CeeLoUtils::buildAngleGeometry( contents, warnings ) );
+          angle_seed_drf = CeeLoUtils::buildAngleSeedDrf( contents );
+        }catch( std::exception & )
+        {
+          angle_geometry.reset();
+          angle_seed_drf.reset();
+        }
+      }//if( contents.hasGeometry && contents.hasReference )
     }catch( std::exception & )
     {
       input.seekg( start_pos );
@@ -3723,7 +3747,16 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     geom_combo->addItem( WString::tr("smm-ecc-fix-geom-act-gram") );
     index_to_geom[geom_combo->count() - 1] = DetectorPeakResponse::EffGeometryType::FixedGeomActPerGram;
   }//if( source_mass > 0 )
-  
+
+  // ANGLE files with a full physical model: offer the "generic detector"
+  //  import (seed the Make MC Response tool from the geometry + reference).
+  int generic_geom_index = -1;
+  if( angle_geometry && angle_seed_drf )
+  {
+    geom_combo->addItem( WString::tr("smm-outx-generic-geom") );
+    generic_geom_index = geom_combo->count() - 1;
+  }//if( angle_geometry && angle_seed_drf )
+
   geom_combo->setCurrentIndex( 1 );
     
   WTable *far_field_opt = dialog->contents()->addNew<WTable>();
@@ -3829,6 +3862,19 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   
   auto update_state = [=](){
     const int index = geom_combo->currentIndex();
+
+    // "Generic detector" (ANGLE): preview the far-field seed curve; the actual
+    //  work happens when the user accepts (opens the Make MC Response tool).
+    if( (generic_geom_index >= 0) && (index == generic_geom_index) )
+    {
+      far_field_opt->hide();
+      chart->updateChart( angle_seed_drf );
+      if( angle_seed_drf && (angle_seed_drf->upperEnergy() > 10000.0) )
+        chart->setXAxisRange( std::max(angle_seed_drf->lowerEnergy(),0.0), 4000.0 );
+      accept->enable();
+      return;
+    }//if( generic detector option selected )
+
     const auto pos = index_to_geom.find(index);
     assert( pos != end(index_to_geom) );
     if( pos == end(index_to_geom) )
@@ -3883,6 +3929,18 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
 
   accept->clicked().connect( this, [=](){
     const int index = geom_combo->currentIndex();
+
+    // "Generic detector" (ANGLE): open the Make MC Response tool seeded with
+    //  the physical geometry + measured reference curve, instead of attaching a
+    //  fixed-geometry curve to the foreground.
+    if( (generic_geom_index >= 0) && (index == generic_geom_index) )
+    {
+      InterSpec *viewer = InterSpec::instance();
+      if( viewer )
+        viewer->showMcResponseWindow( angle_seed_drf, angle_geometry );
+      return;
+    }//if( generic detector option selected )
+
     const auto pos = index_to_geom.find(index);
     assert( pos != end(index_to_geom) );
     if( pos == end(index_to_geom) )
