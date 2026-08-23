@@ -1363,6 +1363,19 @@ struct RelActAutoSolution
   MassFractionResult mass_enrichment_result( const SandiaDecay::Nuclide *nuclide,
                                              const size_t rel_eff_index ) const;
 
+  /** Delta-method gradient of a within-element mass fraction with respect to every fit parameter.
+
+   This is the `u` that `mass_enrichment_result` squares against the covariance to get its one-sigma
+   (`sigma^2 = u^T C u`).  It is exposed because comparing two mass fractions FROM THE SAME FIT
+   needs their covariance, `u_a^T C u_b`, not just the two variances - see
+   `compute_curve_separation_metrics`, where treating two curves' enrichments as independent
+   inflated the separation z.
+
+   Returns an empty vector when no covariance is available.  Throws on the same conditions as
+   `mass_enrichment_result`. */
+  std::vector<double> mass_enrichment_gradient( const SandiaDecay::Nuclide *nuclide,
+                                                const size_t rel_eff_index ) const;
+
   /** Returns the mass ratio of two nuclides.
    
    Throws exception if either input \c nuclide is nullptr, or was not in the problem.

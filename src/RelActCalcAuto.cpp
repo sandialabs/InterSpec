@@ -19855,17 +19855,21 @@ std::ostream &RelActAutoSolution::print_summary( std::ostream &out ) const
             << (merged_better ? "lowers" : "raises") << " χ² by "
             << SpecUtils::printCompact(std::fabs(merged.delta_chi2), 4) << " for "
             << merged.extra_dof_of_multi << " fewer effective parameters ("
-            << (merged.single_curve_adequate
-                 ? (merged_better
-                     ? (merged.message.empty()
-                         ? "Δχ² < 0: merging removed only freedom here, so the multi-curve fit is not"
-                           " at its own optimum"
-                         : "Δχ² < 0: inconclusive - the merged model was also GRANTED freedom by the"
-                           " constraints dropped in the merge (see note), so it can legitimately fit"
-                           " better without the multi-curve fit being wrong")
-                     : "Δχ² is comparable to Δdof: a single curve describes this data about as well")
-                 : "Δχ² ≫ Δdof: one merged curve cannot describe this data - note this says more than"
-                   " one curve is needed, not that the per-curve split is well determined")
+            // Branch on the SIGN first: `single_curve_adequate` requires delta_chi2 >= 0 by
+            //  construction, so testing it first made both negative-delta sentences unreachable and
+            //  printed the "one merged curve cannot describe this data" verdict for the one case
+            //  that means the opposite (the multi-curve fit did not reach its own optimum).
+            << (merged_better
+                 ? (merged.message.empty()
+                     ? "Δχ² < 0: merging removed only freedom here, so the multi-curve fit is not"
+                       " at its own optimum"
+                     : "Δχ² < 0: inconclusive - the merged model was also GRANTED freedom by the"
+                       " constraints dropped in the merge (see note), so it can legitimately fit"
+                       " better without the multi-curve fit being wrong")
+                 : (merged.single_curve_adequate
+                     ? "Δχ² is comparable to Δdof: a single curve describes this data about as well"
+                     : "Δχ² ≫ Δdof: one merged curve cannot describe this data - note this says more"
+                       " than one curve is needed, not that the per-curve split is well determined"))
             << ").\n";
         if( !merged.message.empty() )
           out << "    Note: " << merged.message << "\n";
@@ -20592,19 +20596,20 @@ void RelActAutoSolution::print_html_report( std::ostream &out ) const
             << (merged_better ? "lowers" : "raises") << " &chi;<sup>2</sup> by "
             << SpecUtils::printCompact(std::fabs(merged.delta_chi2), 4) << " for "
             << merged.extra_dof_of_multi << " fewer effective parameters ("
-            << (merged.single_curve_adequate
-                 ? (merged_better
-                     ? (merged.message.empty()
-                         ? "&Delta;&chi;&sup2; &lt; 0: merging removed only freedom here, so the"
-                           " multi-curve fit is not at its own optimum"
-                         : "&Delta;&chi;&sup2; &lt; 0: inconclusive - the merged model was also"
-                           " GRANTED freedom by the constraints dropped in the merge (see note), so"
-                           " it can legitimately fit better without the multi-curve fit being wrong")
-                     : "&Delta;&chi;&sup2; is comparable to &Delta;dof: a single curve describes this"
-                       " data about as well")
-                 : "&Delta;&chi;&sup2; &Gt; &Delta;dof: one merged curve cannot describe this data -"
-                   " note this says more than one curve is needed, not that the per-curve split is"
-                   " well determined")
+            // Sign first - see the note on the same wording in print_summary().
+            << (merged_better
+                 ? (merged.message.empty()
+                     ? "&Delta;&chi;&sup2; &lt; 0: merging removed only freedom here, so the"
+                       " multi-curve fit is not at its own optimum"
+                     : "&Delta;&chi;&sup2; &lt; 0: inconclusive - the merged model was also"
+                       " GRANTED freedom by the constraints dropped in the merge (see note), so"
+                       " it can legitimately fit better without the multi-curve fit being wrong")
+                 : (merged.single_curve_adequate
+                     ? "&Delta;&chi;&sup2; is comparable to &Delta;dof: a single curve describes this"
+                       " data about as well"
+                     : "&Delta;&chi;&sup2; &Gt; &Delta;dof: one merged curve cannot describe this data -"
+                       " note this says more than one curve is needed, not that the per-curve split is"
+                       " well determined"))
             << ").";
           if( !merged.message.empty() )
             results_html << " Note: " << merged.message << ".";
@@ -22153,6 +22158,50 @@ pair<double,optional<double>> RelActAutoSolution::mass_enrichment_fraction( cons
 }//mass_enrichment_fraction
 
 
+/** Chunked-autodiff delta-method gradient of one within-element mass fraction, and (as an
+ out-parameter, since it falls out of the same passes) the fraction itself.  Factored out of
+ `mass_enrichment_result` so paired comparisons can also get at `u` - the variance of a DIFFERENCE
+ of two fractions from one fit needs `u_a^T C u_b`, not just the two `u^T C u`. */
+static std::vector<double> enrichment_gradient_imp(
+    const std::shared_ptr<const RelActCalcAutoImp::RelActAutoCostFcn> &cost_functor,
+    const std::vector<double> &final_parameters,
+    const SandiaDecay::Nuclide * const nuclide,
+    const size_t rel_eff_index,
+    double &fraction )
+{
+  constexpr size_t stride = RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size;
+  const size_t num_pars = final_parameters.size();
+  std::vector<double> gradient( num_pars, 0.0 );
+
+  for( size_t i = 0; i < num_pars; i += stride )
+  {
+    std::vector<ceres::Jet<double,stride>> x_local( begin(final_parameters), end(final_parameters) );
+    for( size_t j = 0; (j < stride) && (i+j < num_pars); ++j )
+      x_local[i+j].v[j] = 1.0;
+    const auto enrichment_jet
+        = cost_functor->mass_enrichment_fraction( nuclide, rel_eff_index, x_local );
+    for( size_t j = 0; (j < stride) && (i+j < num_pars); ++j )
+      gradient[i+j] = enrichment_jet.v[j];
+    fraction = enrichment_jet.a;
+  }
+
+  return gradient;
+}//enrichment_gradient_imp(...)
+
+
+std::vector<double>
+RelActAutoSolution::mass_enrichment_gradient( const SandiaDecay::Nuclide *nuclide,
+                                              const size_t rel_eff_index ) const
+{
+  if( !m_cost_functor )
+    throw std::runtime_error( "RelActAutoSolution::mass_enrichment_gradient(): cost_functor not set." );
+  if( m_covariance.empty() || (m_final_parameters.size() != m_cost_functor->number_parameters()) )
+    return {};
+  double fraction = 0.0;
+  return enrichment_gradient_imp( m_cost_functor, m_final_parameters, nuclide, rel_eff_index, fraction );
+}//mass_enrichment_gradient(...)
+
+
 RelActAutoSolution::MassFractionResult
 RelActAutoSolution::mass_enrichment_result( const SandiaDecay::Nuclide *nuclide,
                                             const size_t rel_eff_index ) const
@@ -22189,22 +22238,8 @@ RelActAutoSolution::mass_enrichment_result( const SandiaDecay::Nuclide *nuclide,
     // deliberately left untouched (including its historical uncertainty floor and mutable warning
     // bit); the structured API reports the raw covariance sigma and is therefore call-order
     // independent.
-    jacobian.assign( num_pars, 0.0 );
-    for( size_t i = 0; i < num_pars;
-         i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
-    {
-      vector<ceres::Jet<double,RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size>>
-          x_local( begin(m_final_parameters),end(m_final_parameters) );
-      for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size)
-                            && (i+j < num_pars); ++j )
-        x_local[i+j].v[j] = 1.0;
-      const auto enrichment_jet
-          = m_cost_functor->mass_enrichment_fraction(nuclide,rel_eff_index,x_local);
-      for( size_t j = 0; (j < RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size)
-                            && (i+j < num_pars); ++j )
-        jacobian[i+j] = enrichment_jet.v[j];
-      result.fraction = enrichment_jet.a;
-    }
+    jacobian = enrichment_gradient_imp( m_cost_functor, m_final_parameters,
+                                        nuclide, rel_eff_index, result.fraction );
     require_physical_fraction();
 
     double variance = 0.0;
@@ -22605,7 +22640,31 @@ void RelActAutoSolution::compute_curve_separation_metrics()
             const std::optional<double> rho = corr_of( index_a, index_b );
             if( rho.has_value() )
             {
-              const string label = "Act(" + RelActCalcAuto::to_name(src_curve.first) + ")";
+              // `fit_parameters_index_for_source` gives the source's nominal activity slot, but for
+              //  a mass-fraction-constrained nuclide that slot carries a sigma-block coordinate, not
+              //  an activity (see the block setup and the ROI warm transfer, which both special-case
+              //  it).  The correlation is still a real statement about how the two curves trade this
+              //  source off, so report it - but do not label it "Act(...)", which reads as an
+              //  activity correlation.  The shipped "HPGe U inside U" preset constrains three
+              //  nuclides, so this is the two-disk fixture's normal case, not a corner.
+              const SandiaDecay::Nuclide * const src_nuc = RelActCalcAuto::nuclide( src_curve.first );
+              const auto is_mass_constrained = [&]( const size_t curve_index ) -> bool {
+                if( !src_nuc || (curve_index >= curves.size()) )
+                  return false;
+                for( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint
+                       : curves[curve_index].mass_fraction_constraints )
+                {
+                  if( constraint.nuclide == src_nuc )
+                    return true;
+                }
+                return false;
+              };
+
+              const bool constrained = is_mass_constrained( curves_with_src[a] )
+                                       || is_mass_constrained( curves_with_src[b] );
+              const string name = RelActCalcAuto::to_name(src_curve.first);
+              const string label = constrained ? ("MassFracCoord(" + name + ")")
+                                               : ("Act(" + name + ")");
               m_cross_curve_correlations.push_back( { curves_with_src[a], curves_with_src[b],
                                                       label, label, *rho } );
             }
@@ -22754,9 +22813,36 @@ void RelActAutoSolution::compute_curve_separation_metrics()
                 || (enrich_a.covariance_quality != MassFractionCovarianceQuality::Usable)
                 || (enrich_b.covariance_quality != MassFractionCovarianceQuality::Usable) )
               continue;
-            const double sigma = std::sqrt(
-                (*enrich_a.covariance_one_sigma)*(*enrich_a.covariance_one_sigma)
-                + (*enrich_b.covariance_one_sigma)*(*enrich_b.covariance_one_sigma) );
+            // The two enrichments come out of the SAME fit, so their difference has variance
+            //  sigma_a^2 + sigma_b^2 - 2*cov(e_a,e_b), and cov is `u_a^T C u_b` with the same
+            //  delta-method gradients each sigma is built from.  Dropping that term treats the
+            //  curves as independent measurements, which they are not: for stacked same-nuclide
+            //  problems the correlation runs above 0.9, so the omitted term dominates and z came
+            //  out several times too large - the "two-disk enrichment-difference z" left open by
+            //  d7969e45, and the reason the surrounding text has to keep walking back its own
+            //  detections.  Fall back to the independent form only if a gradient is unavailable.
+            const std::vector<double> grad_a
+                = mass_enrichment_gradient( nuc_curve.first, curves_with_nuc[a] );
+            const std::vector<double> grad_b
+                = mass_enrichment_gradient( nuc_curve.first, curves_with_nuc[b] );
+
+            double variance = (*enrich_a.covariance_one_sigma)*(*enrich_a.covariance_one_sigma)
+                              + (*enrich_b.covariance_one_sigma)*(*enrich_b.covariance_one_sigma);
+            if( (grad_a.size() == m_covariance.size()) && (grad_b.size() == m_covariance.size()) )
+            {
+              double cov_ab = 0.0;
+              for( size_t row = 0; row < grad_a.size(); ++row )
+              {
+                double cov_b_row = 0.0;
+                for( size_t col = 0; col < grad_b.size(); ++col )
+                  cov_b_row += m_covariance[row][col]*grad_b[col];
+                cov_ab += grad_a[row]*cov_b_row;
+              }
+              if( std::isfinite(cov_ab) )
+                variance -= 2.0*cov_ab;
+            }
+
+            const double sigma = std::sqrt( (std::max)(0.0,variance) );
             if( (sigma <= 0.0) || std::isnan(sigma) || std::isinf(sigma) )
               continue;
             EnrichmentDiffZ diff;
