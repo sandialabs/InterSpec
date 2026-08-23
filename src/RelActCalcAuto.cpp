@@ -14147,6 +14147,24 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           // TODO: gammas right next to eachother may have exactly, or really close energies that we could combine into a single peak to save a little time - should consider doing this
           const NucInputGamma::EnergyYield &gamma = (*gammas)[gamma_index];
           const double energy = gamma.energy;
+
+          // The frozen set above is an IDENTITY set: it must cover the whole feasible calibration
+          // motion (linear range plus the deviation-pair L1 budget, tens of keV) so a line can
+          // never enter the ROI mid-fit from outside it.  That makes it far wider than the set of
+          // lines that can actually deposit counts here at THIS parameter point - for the shipped
+          // uranium preset it admitted lines from 59 keV into a 120-1001 keV problem, and, because
+          // neighbouring ROIs' widened windows overlap, made most lines be built and integrated
+          // once per ROI: 6713 peaks where the pre-d7969e45 evaluator built 300, with 62% of them
+          // carrying under a thousandth of a count.  That is the bulk of the ~25x CPU regression.
+          //
+          // So narrow the identity set to what the ROI can actually see, using exactly the
+          // coverage limits this function already computed for the purpose ("what peaks might
+          // affect this ROI", `missing_frac` of the peak area outside `max_nsigma`).  `energy` is
+          // the nominal line energy - a fixed input - and `lower_mean`/`upper_mean` are taken from
+          // scalar parts, so scalar and every Jet lane of one evaluation make the identical
+          // decision, which is the property the frozen set exists to guarantee.
+          if( (energy < lower_mean) || (energy > upper_mean) )
+            continue;
           T yield = T(gamma.yield);
           const size_t transition_index = gamma.transition_index;
           const SandiaDecay::Transition * const transition = gamma.transition;
