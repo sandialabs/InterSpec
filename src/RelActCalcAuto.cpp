@@ -3135,6 +3135,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     // Needs the parameter start indices set just above (for nuclide_parameter_index).
     build_mass_fraction_blocks();
+
+    // Size the decay memoization windows now that every source is known.  The key includes the
+    // source, so the window has to cover a full evaluation round over all of them; see
+    // recent_decay_cache_capacity().  (This sizing lived inside the since-deleted
+    // freeze_gamma_membership(); without it both caches keep their 1-source default and thrash.)
+    {
+      size_t num_sources = 0;
+      for( const std::vector<NucInputGamma> &curve_nucs : m_nuclides )
+        num_sources += curve_nucs.size();
+      m_aged_gammas_cache.set_capacity( recent_decay_cache_capacity(num_sources) );
+      m_aged_gamma_derivative_cache.set_capacity( recent_decay_cache_capacity(num_sources) );
+    }
   }//RelActAutoCostFcn constructor.
 
 
