@@ -10908,6 +10908,30 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
 
     if( solution.m_cost_functor.get() == cost_functor.get() )
     {
+      // Decay-cache effectiveness.  A window smaller than the live working set does not fail, it
+      // silently degrades into recomputing every decay, so print the tallies when asked rather than
+      // assuming the shipped ages-per-source is adequate.  Pair with
+      // INTERSPEC_REL_ACT_DECAY_CACHE_AGES to sweep the window.
+      if( RelActCalcAutoImp::profile_stats_enabled() )
+      {
+        std::lock_guard<std::mutex> gamma_lock( cost_functor->m_aged_gammas_cache_mutex );
+        std::lock_guard<std::mutex> deriv_lock( cost_functor->m_aged_gamma_derivative_cache_mutex );
+        const size_t gamma_hits = cost_functor->m_aged_gammas_cache.hits();
+        const size_t gamma_misses = cost_functor->m_aged_gammas_cache.misses();
+        const size_t deriv_hits = cost_functor->m_aged_gamma_derivative_cache.hits();
+        const size_t deriv_misses = cost_functor->m_aged_gamma_derivative_cache.misses();
+        const auto rate = []( const size_t hits, const size_t misses ) -> double {
+          const size_t total = hits + misses;
+          return total ? (static_cast<double>(hits)/static_cast<double>(total)) : 0.0;
+        };
+        cerr << "decay-cache aged_gammas cap=" << cost_functor->m_aged_gammas_cache.capacity()
+             << " hits=" << gamma_hits << " misses=" << gamma_misses
+             << " rate=" << rate(gamma_hits,gamma_misses)
+             << " | derivatives cap=" << cost_functor->m_aged_gamma_derivative_cache.capacity()
+             << " hits=" << deriv_hits << " misses=" << deriv_misses
+             << " rate=" << rate(deriv_hits,deriv_misses) << endl;
+      }
+
       solution.m_exp_continuation_evaluations
           = cost_functor->m_exp_continuation_evaluations.load(std::memory_order_relaxed);
       if( solution.m_exp_continuation_evaluations > 0 )
@@ -11015,7 +11039,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const shared_ptr<const vector<NucInputGamma::EnergyYield>> cached
                                                     = m_aged_gammas_cache.find( key );
       if( cached )
+      {
+        m_aged_gammas_cache.note_hit();
         return cached;
+      }
+      m_aged_gammas_cache.note_miss();
     }//end lock on m_aged_gammas_cache_mutex
 
     // We havent cached what we are being asked for, so compute it.  A second thread can race this
@@ -11271,7 +11299,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       const std::shared_ptr<const AgeDerivativeResult> found
                                           = m_aged_gamma_derivative_cache.find(key);
       if( found )
+      {
+        m_aged_gamma_derivative_cache.note_hit();
         return found;
+      }
+      m_aged_gamma_derivative_cache.note_miss();
     }
 
     const auto to_stable_yields = []( const vector<NucInputGamma::EnergyYield> &gammas ) {
