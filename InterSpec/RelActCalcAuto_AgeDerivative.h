@@ -220,8 +220,10 @@ private:
  cost functors the candidate search keeps alive stay in the tens of megabytes rather than the tens
  of gigabytes an unbounded map reached.
 
- MEASURED 2026-08-22 on JRC Detective_Pu CBNM_Pu/4h with the shipped Pu presets (all four ages
- fitted), chi2 bit-identical across every arm - this cache only ever costs or saves time:
+ MEASURED 2026-08-22 on JRC Detective_Pu CBNM_Pu/4h with the shipped Pu presets, chi2 bit-identical
+ across every arm - this cache only ever costs or saves time.  (Those presets set
+ `NucsOfElSameAge`, so ONE fitted age controls all four Pu isotopes; the cache still sees four
+ distinct (source, age) keys per evaluation, which is what matters here.)
 
    preset            cache off     5 ages/src      16 ages/src
    610-775 keV       244.6 s       172.3 s (0.70x) 157.4 s (0.64x)
