@@ -381,7 +381,6 @@ void LlmInteractionTurnDisplay::showJsonDialog( const WString &title,
     WLink dlLink( resource );
     dlLink.setTarget( Wt::LinkTarget::NewWindow );
     WAnchor *downloadBtn = dialog->footer()->addNew<WAnchor>( dlLink );
-    downloadBtn->setTarget( LinkTarget::NewWindow );
     downloadBtn->setStyleClass( "simple-dialog-btn DownloadLink" );
     downloadBtn->setText( "Download" );
 #else
@@ -2149,7 +2148,6 @@ void LlmInteractionDisplay::showJsonDialog( const WString &title,
     WLink dlLink( resource );
     dlLink.setTarget( Wt::LinkTarget::NewWindow );
     WAnchor *downloadBtn = dialog->footer()->addNew<WAnchor>( dlLink );
-    downloadBtn->setTarget( LinkTarget::NewWindow );
     downloadBtn->setStyleClass( "simple-dialog-btn DownloadLink" );
     downloadBtn->setText( "Download" );
 #else
