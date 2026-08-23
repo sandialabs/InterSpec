@@ -2099,12 +2099,6 @@ struct RoiRangeChannels : public RelActCalcAuto::RoiRange
   // TODO: currently if the energy calibration is adjusted - we have to keep the total number of channels (i.e. the number of residuals constant) we have to move the first/last channel the same number of channels
   size_t num_channels;
 
-  /** Frozen gamma membership `[curve][source][gamma-index]` for this ROI.  It is built once
-   from the ROI and conservative peak-width/shape limits, then used by scalar and every Jet pass;
-   trial parameters can change amplitudes and shapes, but never which line identities exist in the
-   objective. */
-  std::vector<std::vector<std::vector<char>>> frozen_gamma_membership;
-
 
 
   /** Returns the the channel range corresponding to the desired energy range.
@@ -2240,8 +2234,7 @@ struct RoiRangeChannels : public RelActCalcAuto::RoiRange
   RoiRangeChannels( const std::shared_ptr<const SpecUtils::EnergyCalibration> &energy_cal,
                     const RelActCalcAuto::RoiRange &roi_range )
   : RelActCalcAuto::RoiRange( roi_range ),
-    num_channels( 0 ),
-    frozen_gamma_membership{}
+    num_channels( 0 )
   {
     auto range = channel_range( roi_range.lower_energy, roi_range.upper_energy, 0, energy_cal );
     
@@ -3114,11 +3107,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     // Setup deviation pair anchors if enabled
     setup_deviation_pair_anchors();
 
-    // Membership is part of the outer problem definition.  Build it once, after the feasible
-    // deviation-pair motion is known but before any scalar or DynamicAutoDiff evaluation, so
-    // calibration/FWHM/skew trial values cannot add or remove line identities.
-    freeze_gamma_membership();
-
     // Start assigning where we expect to see each 'type' of parameter in Ceres par vectr
     m_energy_cal_par_start_index = 0;
     m_dev_pair_par_start_index = RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars;
@@ -3150,115 +3138,20 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
   }//RelActAutoCostFcn constructor.
 
 
-  /** Freeze a conservative gamma superset for each ROI.  `expected_peak_width_limits` is the same
-   detector/data-aware envelope used to bound the fitted peak-width model.  The shape coverage is
-   15 sigma for the ordinary shapes and 20 sigma for Crystal-Ball tails, matching the evaluation
-   coverage policy.  The interval also includes the hard feasible energy-calibration motion and
-   the L1 budget of fitted deviation-pair offsets, so a line cannot enter a native-calibration ROI
-   from outside the frozen identity set.  Once selected, even a zero-yield line remains present
-   (with zero amplitude), preserving its feasible inward age/branching-ratio derivative. */
-  void freeze_gamma_membership()
-  {
-    const bool crystal_ball = ((m_options.skew_type == PeakDef::SkewType::CrystalBall)
-                               || (m_options.skew_type == PeakDef::SkewType::DoubleSidedCrystalBall));
-    const double max_nsigma = crystal_ball ? 20.0 : 15.0;
-
-    double summed_deviation_limits_keV = 0.0;
-    for( const DeviationPairAnchor &anchor : m_dev_pair_anchors )
-      if( anchor.is_fitted )
-        summed_deviation_limits_keV += anchor.offset_limit;
-    double one_point_linear_motion_limit_keV
-      = RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV
-        + RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV;
-    if( RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2 )
-      one_point_linear_motion_limit_keV
-        += RelActCalcAuto::RelActAutoSolution::sm_energy_quad_range_keV;
-    const bool fit_linear_calibration
-      = (m_options.energy_cal_type != RelActCalcAuto::EnergyCalFitType::NoFit);
-    const bool fit_nonlinear_deviations
-      = (m_options.energy_cal_type == RelActCalcAuto::EnergyCalFitType::NonLinearFit);
-    const double calibration_guard_keV
-      = frozen_gamma_calibration_motion_guard_keV( fit_linear_calibration,
-                                                   fit_nonlinear_deviations,
-                                                   !ROI_CHANNELS_DEFINED_BY_INITIAL_ENERGY_CAL,
-                                                   one_point_linear_motion_limit_keV,
-                                                   summed_deviation_limits_keV );
-
-    // Size the decay memoization windows now that every source is known.  The key includes the
-    // source, so the window has to cover a full evaluation round over all of them; see
-    // recent_decay_cache_capacity().
-    {
-      size_t num_sources = 0;
-      for( const std::vector<NucInputGamma> &curve_nucs : m_nuclides )
-        num_sources += curve_nucs.size();
-      m_aged_gammas_cache.set_capacity( recent_decay_cache_capacity(num_sources) );
-      m_aged_gamma_derivative_cache.set_capacity( recent_decay_cache_capacity(num_sources) );
-    }
-
-    for( RoiRangeChannels &roi : m_energy_ranges )
-    {
-      float min_sigma = 0.0f, lower_max_sigma = 0.0f, upper_max_sigma = 0.0f;
-      expected_peak_width_limits( static_cast<float>(roi.lower_energy), m_det_type,
-                                  m_spectrum, min_sigma, lower_max_sigma );
-      expected_peak_width_limits( static_cast<float>(roi.upper_energy), m_det_type,
-                                  m_spectrum, min_sigma, upper_max_sigma );
-
-      // Include a little round-off guard at an exact coverage boundary.  This is an identity set,
-      // not an amplitude significance cut, so including one extra edge line is harmless.
-      const std::pair<double,double> frozen_limits = frozen_gamma_membership_energy_limits(
-          roi.lower_energy,roi.upper_energy,max_nsigma*lower_max_sigma,
-          max_nsigma*upper_max_sigma,calibration_guard_keV );
-      const double lower = frozen_limits.first;
-      const double upper = frozen_limits.second;
-
-      roi.frozen_gamma_membership.clear();
-      roi.frozen_gamma_membership.resize( m_nuclides.size() );
-      for( size_t curve_index = 0; curve_index < m_nuclides.size(); ++curve_index )
-      {
-        roi.frozen_gamma_membership[curve_index].resize( m_nuclides[curve_index].size() );
-        for( size_t source_index = 0; source_index < m_nuclides[curve_index].size(); ++source_index )
-        {
-          const std::shared_ptr<const std::vector<NucInputGamma::EnergyYield>> &gammas
-              = m_nuclides[curve_index][source_index].nominal_gammas;
-          assert( gammas );
-          std::vector<char> &membership
-              = roi.frozen_gamma_membership[curve_index][source_index];
-          membership.resize( gammas ? gammas->size() : 0, 0 );
-          if( !gammas )
-            continue;
-          for( size_t gamma_index = 0; gamma_index < gammas->size(); ++gamma_index )
-          {
-            const double energy = (*gammas)[gamma_index].energy;
-            bool include = ((energy >= lower) && (energy <= upper));
-
-            // A Physical-Model curve includes the detector response.  Lines outside a declared
-            // detector validity range are a fixed input-domain decision, not something a trial
-            // parameter vector can repair.  Exclude them while freezing membership so the live
-            // evaluator never has to make a scalar/Jet-dependent "skip this line" decision.
-            const RelActCalcAuto::RelEffCurveInput &curve
-                = m_options.rel_eff_curves[curve_index];
-            if( include && m_drf
-                && (curve.rel_eff_eqn_type == RelActCalc::RelEffEqnForm::FramPhysicalModel) )
-            {
-              const double drf_lower = m_drf->lowerEnergy();
-              const double drf_upper = m_drf->upperEnergy();
-              if( (drf_lower > 0.0) && (energy < drf_lower) )
-                include = false;
-              if( (drf_upper > 0.0) && (energy > drf_upper) )
-                include = false;
-            }
-            membership[gamma_index] = include;
-          }
-        }
-      }
-    }//for( RoiRangeChannels &roi )
-  }//freeze_gamma_membership()
 
 
+  /** Fingerprint of the gamma-line problem: the canonical curve/source identities with the exact
+   line set each source contributes, and every ROI's energy bounds and native-calibration channel
+   window.  Two solves agreeing on this evaluated the same lines against the same ROIs, which is
+   what the candidate-search and profile identity guards need.
+
+   Which of those lines a given ROI actually integrates is decided at evaluation time from the
+   peak-coverage limits (see `peaks_for_energy_range_imp`), so it is deliberately NOT part of this
+   fingerprint - it is a function of the parameters, not of the problem. */
   std::uint64_t frozen_gamma_membership_hash() const
   {
     StableProblemHash hash;
-    hash.add_string( "RelActAuto/frozen-gamma-membership/v1" );
+    hash.add_string( "RelActAuto/gamma-identity/v2" );
     hash.add_u64( m_energy_ranges.size() );
     for( const RoiRangeChannels &roi : m_energy_ranges )
     {
@@ -3270,30 +3163,23 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           roi.lower_energy, roi.upper_energy, roi.num_channels, m_energy_cal );
       hash.add_u64( channels.first );
       hash.add_u64( channels.second );
-      hash.add_u64( roi.frozen_gamma_membership.size() );
+    }
 
-      for( size_t curve_index = 0; curve_index < roi.frozen_gamma_membership.size(); ++curve_index )
+    hash.add_u64( m_nuclides.size() );
+    for( size_t curve_index = 0; curve_index < m_nuclides.size(); ++curve_index )
+    {
+      hash.add_u64( curve_index );
+      hash.add_u64( m_nuclides[curve_index].size() );
+      for( const NucInputGamma &source : m_nuclides[curve_index] )
       {
-        hash.add_u64( curve_index );
-        const auto &curve_membership = roi.frozen_gamma_membership[curve_index];
-        hash.add_u64( curve_membership.size() );
-        for( size_t source_index = 0; source_index < curve_membership.size(); ++source_index )
+        hash.add_string( semantic_source_key(source.source) );
+        assert( source.nominal_gammas );
+        const std::vector<NucInputGamma::EnergyYield> &gammas = *source.nominal_gammas;
+        hash.add_u64( gammas.size() );
+        for( const NucInputGamma::EnergyYield &gamma : gammas )
         {
-          const NucInputGamma &source = m_nuclides[curve_index][source_index];
-          hash.add_string( semantic_source_key(source.source) );
-          const auto &gammas = *source.nominal_gammas;
-          const auto &membership = curve_membership[source_index];
-          assert( membership.size() == gammas.size() );
-          hash.add_u64( membership.size() );
-          for( size_t gamma_index = 0; gamma_index < membership.size(); ++gamma_index )
-          {
-            hash.add_bool( membership[gamma_index] != 0 );
-            if( membership[gamma_index] )
-            {
-              hash.add_double( gammas[gamma_index].energy );
-              hash.add_u64( static_cast<std::uint64_t>(gammas[gamma_index].gamma_type) );
-            }
-          }
+          hash.add_double( gamma.energy );
+          hash.add_u64( static_cast<std::uint64_t>(gamma.gamma_type) );
         }
       }
     }
@@ -14125,13 +14011,9 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     for( size_t rel_eff_index = 0; rel_eff_index < m_nuclides.size(); ++rel_eff_index )
     {
       const vector<NucInputGamma> &nuclides = m_nuclides[rel_eff_index];
-      assert( rel_eff_index < range.frozen_gamma_membership.size() );
       for( size_t source_index = 0; source_index < nuclides.size(); ++source_index )
       {
         const NucInputGamma &src_info = nuclides[source_index];
-        assert( source_index < range.frozen_gamma_membership[rel_eff_index].size() );
-        const std::vector<char> &frozen_membership
-            = range.frozen_gamma_membership[rel_eff_index][source_index];
         const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide(src_info.source);
         const SandiaDecay::Element * const el = RelActCalcAuto::element(src_info.source);
         const ReactionGamma::Reaction * const rctn = RelActCalcAuto::reaction(src_info.source);
@@ -14178,35 +14060,18 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         }//if( age is fixed ) / else( age may vary )
         
         assert( gammas );
-        assert( frozen_membership.size() == gammas->size() );
-        
+
         for( size_t gamma_index = 0; gamma_index < gammas->size(); ++gamma_index )
         {
-          // This identity decision was made once in the constructor from conservative ROI and
-          // peak-shape bounds.  It is deliberately independent of scalar/Jet type, fitted age,
-          // current width/skew, yield, and evaluation call order.
-          if( (gamma_index >= frozen_membership.size()) || !frozen_membership[gamma_index] )
-            continue;
-
           // TODO: gammas right next to eachother may have exactly, or really close energies that we could combine into a single peak to save a little time - should consider doing this
           const NucInputGamma::EnergyYield &gamma = (*gammas)[gamma_index];
           const double energy = gamma.energy;
 
-          // The frozen set above is an IDENTITY set: it must cover the whole feasible calibration
-          // motion (linear range plus the deviation-pair L1 budget, tens of keV) so a line can
-          // never enter the ROI mid-fit from outside it.  That makes it far wider than the set of
-          // lines that can actually deposit counts here at THIS parameter point - for the shipped
-          // uranium preset it admitted lines from 59 keV into a 120-1001 keV problem, and, because
-          // neighbouring ROIs' widened windows overlap, made most lines be built and integrated
-          // once per ROI: 6713 peaks where the pre-d7969e45 evaluator built 300, with 62% of them
-          // carrying under a thousandth of a count.  That is the bulk of the ~25x CPU regression.
-          //
-          // So narrow the identity set to what the ROI can actually see, using exactly the
-          // coverage limits this function already computed for the purpose ("what peaks might
-          // affect this ROI", `missing_frac` of the peak area outside `max_nsigma`).  `energy` is
-          // the nominal line energy - a fixed input - and `lower_mean`/`upper_mean` are taken from
-          // scalar parts, so scalar and every Jet lane of one evaluation make the identical
-          // decision, which is the property the frozen set exists to guarantee.
+          // Which lines this ROI integrates is decided here, from the peak-coverage limits
+          // computed above for exactly this purpose ("what peaks might affect this ROI":
+          // `missing_frac` of the peak area lies outside `max_nsigma`).  `energy` is the nominal
+          // line energy - a fixed input - and `lower_mean`/`upper_mean` come from scalar parts, so
+          // scalar and every Jet lane of one evaluation make the identical decision.
           if( (energy < lower_mean) || (energy > upper_mean) )
             continue;
           T yield = T(gamma.yield);

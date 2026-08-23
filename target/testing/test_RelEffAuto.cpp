@@ -195,47 +195,6 @@ BOOST_AUTO_TEST_CASE( fwhm_continuation_is_positive_monotone_and_c1 )
 }
 
 
-BOOST_AUTO_TEST_CASE( frozen_gamma_membership_covers_calibration_motion_bounds )
-{
-  using RelActCalcAutoImp::frozen_gamma_calibration_motion_guard_keV;
-  using RelActCalcAutoImp::frozen_gamma_membership_energy_limits;
-
-  BOOST_CHECK_EQUAL( frozen_gamma_calibration_motion_guard_keV(
-                       false, false, false, 30.0, 12.5), 0.0 );
-
-  const double linear_one_point
-    = RelActCalcAuto::RelActAutoSolution::sm_energy_offset_range_keV
-      + RelActCalcAuto::RelActAutoSolution::sm_energy_gain_range_keV
-      + ((RelActCalcAuto::RelActAutoSolution::sm_num_energy_cal_pars > 2)
-         ? RelActCalcAuto::RelActAutoSolution::sm_energy_quad_range_keV : 0.0);
-  const double linear_guard = frozen_gamma_calibration_motion_guard_keV(
-                                true, false, false, linear_one_point, 12.5 );
-  BOOST_CHECK_EQUAL( linear_guard, linear_one_point );
-  BOOST_CHECK_EQUAL( frozen_gamma_calibration_motion_guard_keV(
-                       true, false, true, linear_one_point, 12.5 ),
-                     2.0*linear_one_point );
-
-  const double deviation_l1_budget = 7.5;
-  const double nonlinear_guard = frozen_gamma_calibration_motion_guard_keV(
-                                   true, true, false, linear_one_point,
-                                   deviation_l1_budget );
-  BOOST_CHECK_EQUAL( nonlinear_guard,
-                     linear_one_point + deviation_l1_budget );
-
-  // A line just beyond the peak-shape envelope is admitted through the complete feasible
-  // calibration movement, while one beyond that closed guard is not.
-  const double roi_lower = 610.0;
-  const double roi_upper = 775.0;
-  const double shape_margin = 15.0;
-  const double admitted_line = roi_lower - shape_margin - nonlinear_guard + 0.5e-6;
-  const double excluded_line = roi_lower - shape_margin - nonlinear_guard - 2.0e-6;
-  const std::pair<double,double> frozen_limits = frozen_gamma_membership_energy_limits(
-      roi_lower,roi_upper,shape_margin,shape_margin,nonlinear_guard );
-  BOOST_CHECK_GE( admitted_line, frozen_limits.first );
-  BOOST_CHECK_LT( excluded_line, frozen_limits.first );
-  BOOST_CHECK_LE( roi_upper + shape_margin + nonlinear_guard, frozen_limits.second );
-}
-
 std::string g_test_file_dir;
 
 // We need to set the static data directory, so the code knows where

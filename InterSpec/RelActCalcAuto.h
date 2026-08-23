@@ -1890,9 +1890,10 @@ struct RelActAutoSolution
 
   /** Deterministic fingerprints of the frozen optimization problem.
 
-   `m_frozen_gamma_membership_hash` covers the canonical curve/source identities, the
-   exact gamma-line membership admitted to every ROI, and the fixed native-calibration
-   channel windows.  `m_frozen_layout_hash` additionally covers the residual/parameter
+   `m_frozen_gamma_membership_hash` covers the canonical curve/source identities, the exact
+   gamma-line set each source contributes, and every ROI's energy bounds and fixed
+   native-calibration channel window.  Which of those lines a given ROI integrates is a function
+   of the fitted parameters (peak-coverage limits), not of the problem, so it is not hashed.  `m_frozen_layout_hash` additionally covers the residual/parameter
    layout, which parameters were held constant and their exact fixed values, every ROI's continuum
    basis (continuum type and channel count - the separable LLS solve is a deterministic function of
    that basis and the fit parameters), and the exact branching-ratio nuisance
