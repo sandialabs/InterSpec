@@ -36,14 +36,12 @@ const electron = require('electron')
 const interspec = require('./InterSpecAddOn.node');
 
 const {dialog} = electron;
-const {Menu, MenuItem} = electron;
+const {Menu} = electron;
 //const {systemPreferences} = electron;
 
-const http = require('http');
 const child_process = require('child_process');
 const path = require('path')
 var fs = require("fs")
-const url = require('url')
 
 // Module to control application life.
 const app = electron.app
@@ -413,7 +411,7 @@ function get_interspec_options(){
     }catch( error ){
       console.error( 'Error:', error );
 
-      dialog.showErrorBox( "Error", "Error in " + path.basename(filepath) + ":", error.message );
+      dialog.showErrorBox( "Error", "Error in " + path.basename(filepath) + ":\n" + error.message );
     }
   };//const getOptionsFromFile
 
@@ -539,6 +537,293 @@ function relaunchIfSandboxKnownBroken(){
 }//function relaunchIfSandboxKnownBroken
 
 
+/* Native menu support - the node-side half of target/electron/NativeMenu.h.
+
+   Each window owns its own menu: its Wt session pushes the menu structure over the C++ -> node
+   message channel, we keep the Electron template here as the source of truth, and install it
+   whenever that window has focus (on macOS the menu bar is global to the app, so it has to be
+   swapped rather than owned per-window).
+
+   enabled/visible/checked/label/toolTip can be set on a live MenuItem, so those take effect right
+   away.  Anything structural - and the accelerator, which Electron makes read-only - needs
+   Menu.buildFromTemplate() again (electron/electron#527).  Those are coalesced with setImmediate,
+   so the ~150 inserts a session start produces collapse into a single rebuild.
+ */
+const usingNativeMenus = ((typeof interspec.usingElectronMenus === 'function')
+                          && interspec.usingElectronMenus());
+
+/* The equivalent of the MainMenu.xib skeleton the macOS app build grafts onto: the parts of the
+   menu bar the OS supplies, that InterSpec's Wt menus know nothing about.  The Wt menus are then
+   appended in the order the session declares them (File, Edit, View, Tools, Help).
+ */
+function freshMenuChrome( window ){
+  // Held aside rather than put in the template: menuBarTemplate() slots it in ahead of the Help
+  //  menu, which is where macOS wants it.
+  window.menuWindowNode = { role: 'windowMenu' };
+  window.menuHelpNode = null;
+
+  window.menuTemplate = [];
+  window.menuNodes = new Map();
+  window.menu = null;
+  window.menuRebuildScheduled = false;
+}//freshMenuChrome
+
+
+/* The menu bar as Electron should see it: everything the session declared, with the Window menu
+   put in front of the Help menu. */
+function menuBarTemplate( window ){
+  let bar = window.menuTemplate.slice();
+  const at = (window.menuHelpNode ? bar.indexOf(window.menuHelpNode) : -1);
+  bar.splice( (at >= 0) ? at : bar.length, 0, window.menuWindowNode );
+  return bar;
+}//menuBarTemplate
+
+
+/* Inserts into a menu node, keeping any trailing role block (see roleTail) at the bottom.
+   A negative or out-of-range index appends. */
+function insertIntoMenuNode( menu, node, index ){
+  const end = menu.submenu.length - (menu.roleTail || 0);
+  const at = ((typeof index !== 'number') || (index < 0) || (index > end)) ? end : index;
+  menu.submenu.splice( at, 0, node );
+}
+
+function removeMenuNode( nodes, target ){
+  for( let i = 0; i < nodes.length; ++i ){
+    if( nodes[i] === target ){
+      nodes.splice( i, 1 );
+      return true;
+    }
+    if( nodes[i].submenu && removeMenuNode(nodes[i].submenu, target) )
+      return true;
+  }
+  return false;
+}
+
+/* Our nodes carry bookkeeping Electron does not understand (roleTail, wtId), so copy across only
+   what Menu.buildFromTemplate() takes, and attach the click that routes back to the Wt session. */
+function toMenuTemplate( window, node ){
+  let out = {};
+  for( const key of ['id','label','type','role','enabled','visible','checked','toolTip','accelerator'] ){
+    if( node[key] !== undefined )
+      out[key] = node[key];
+  }
+
+  if( node.submenu )
+    out.submenu = node.submenu.map( function(n){ return toMenuTemplate(window, n); } );
+
+  if( node.wtId && !node.submenu ){
+    const wtId = node.wtId;
+    out.click = (node.type === 'checkbox')
+      ? function( item ){
+          interspec.sendMessageToRenderer( window.appSessionToken, 'MenuItemClicked',
+                                           wtId + '|' + (item.checked ? '1' : '0') );
+        }
+      : function(){
+          interspec.sendMessageToRenderer( window.appSessionToken, 'MenuItemClicked', wtId );
+        };
+  }//if( an item that came from Wt )
+
+  return out;
+}//toMenuTemplate
+
+
+function applyMenu( window ){
+  if( !usingNativeMenus || !window || window.isDestroyed() )
+    return;
+
+  if( process.platform === 'darwin' )
+    Menu.setApplicationMenu( window.menu ? window.menu : null );
+  else
+    window.setMenu( window.menu ? window.menu : null );
+}//applyMenu
+
+
+function scheduleMenuRebuild( window ){
+  if( window.menuRebuildScheduled || window.isDestroyed() )
+    return;
+
+  window.menuRebuildScheduled = true;
+  setImmediate( function(){
+    window.menuRebuildScheduled = false;
+    if( window.isDestroyed() || !window.menuTemplate )
+      return;
+
+    try {
+      window.menu = Menu.buildFromTemplate(
+        menuBarTemplate(window).map( function(n){ return toMenuTemplate(window, n); } ) );
+    } catch( e ) {
+      console.error( "Failed to build native menu:", e );
+      return;
+    }
+
+    // During start-up the window may not have taken focus yet, so also install for the
+    //  most-recently-used window.
+    const mostRecent = (openWindows.length ? openWindows[openWindows.length-1] : null);
+    if( window.isFocused() || (mostRecent === window) )
+      applyMenu( window );
+  } );
+}//scheduleMenuRebuild
+
+
+/* Handles the "Menu*" messages sent by target/electron/NativeMenu.cpp. */
+function handleMenuMessage( window, msg_name, msg_data ){
+  if( !usingNativeMenus )
+    return;
+
+  if( !window.menuNodes )
+    freshMenuChrome( window );
+
+  let d;
+  try {
+    d = JSON.parse( msg_data );
+  } catch( e ) {
+    console.error( "Bad payload for", msg_name, ":", e );
+    return;
+  }
+
+  switch( msg_name ){
+    case 'MenuAddMenu': {
+      const node = { id: d.id, label: d.label, submenu: [], roleTail: 0 };
+      window.menuTemplate.push( node );
+      window.menuNodes.set( d.id, node );
+      scheduleMenuRebuild( window );
+      break;
+    }
+
+    case 'MenuSetMenuRole': {
+      const node = window.menuNodes.get( d.id );
+      if( !node )
+        break;
+      if( d.role === 'app' ){
+        // InterSpec's File menu doubles as the macOS application menu (its "About InterSpec" item
+        //  is already at the top); append the block the OS supplies.
+        node.submenu.push( { type: 'separator' },
+                           { role: 'services', submenu: [] },
+                           { type: 'separator' },
+                           { role: 'hide' }, { role: 'hideOthers' }, { role: 'unhide' },
+                           { type: 'separator' },
+                           { role: 'quit' } );
+        node.roleTail = 8;
+      }else if( d.role === 'edit' ){
+        // Without these, Cmd/Ctrl X/C/V stop working in text fields once Electron's default menu
+        //  is gone.  roleTail keeps them at the bottom as InterSpec appends its own items - the
+        //  same idea as addOsxMenu() re-using the Edit menu from the nib.
+        node.submenu.push( { type: 'separator' },
+                           { role: 'cut' }, { role: 'copy' },
+                           { role: 'paste' }, { role: 'selectAll' } );
+        node.roleTail = 5;
+      }else if( d.role === 'help' ){
+        // Only remembered so menuBarTemplate() can put the Window menu in front of it.  There is
+        //  no need to set Electron's 'help' role: macOS picks the menu titled "Help" up on its own
+        //  (that is where its search field comes from).
+        window.menuHelpNode = node;
+      }
+      scheduleMenuRebuild( window );
+      break;
+    }
+
+    case 'MenuAddSubMenu': {
+      // The parent item was already inserted as an ordinary item; turn it into a container.  It
+      //  keeps its id, so hiding/disabling the sub-menu still addresses it.
+      const node = window.menuNodes.get( d.item );
+      if( !node )
+        break;
+      // The type must change too: it was inserted as 'normal', and Electron honours an explicit
+      //  type over the presence of a submenu - leaving it 'normal' renders a flat, dead item.
+      node.type = 'submenu';
+      node.submenu = [];
+      node.roleTail = 0;
+      delete node.wtId;   //a sub-menu does not get a click of its own
+      window.menuNodes.set( d.id, node );   //items added to the sub-menu address the menu
+      scheduleMenuRebuild( window );
+      break;
+    }
+
+    case 'MenuInsertItem': {
+      const menu = window.menuNodes.get( d.menu );
+      if( !menu )
+        break;
+      let node = { id: d.id, wtId: d.id, type: 'normal', label: d.label,
+                   enabled: d.enabled, visible: d.visible };
+      if( d.accelerator )
+        node.accelerator = d.accelerator;
+      insertIntoMenuNode( menu, node, d.index );
+      window.menuNodes.set( d.id, node );
+      scheduleMenuRebuild( window );
+      break;
+    }
+
+    case 'MenuInsertSeparator': {
+      const menu = window.menuNodes.get( d.menu );
+      if( !menu )
+        break;
+      const node = { type: 'separator' };
+      insertIntoMenuNode( menu, node, d.index );
+      window.menuNodes.set( d.id, node );
+      scheduleMenuRebuild( window );
+      break;
+    }
+
+    case 'MenuSetCheckable': {
+      const node = window.menuNodes.get( d.id );
+      if( !node )
+        break;
+      node.type = 'checkbox';   //not live-mutable, so this one always costs a rebuild
+      node.label = d.label;
+      node.checked = d.checked;
+      node.enabled = d.enabled;
+      scheduleMenuRebuild( window );
+      break;
+    }
+
+    case 'MenuRemoveItem': {
+      const node = window.menuNodes.get( d.id );
+      if( !node )
+        break;
+      // A sub-menu is registered under both its own id and its parent item's, and its children
+      //  under theirs, so drop every key pointing into the removed subtree - otherwise later
+      //  messages would silently mutate a detached node, and the map would grow without bound.
+      let doomed = new Set();
+      (function collect(n){
+        doomed.add( n );
+        if( n.submenu ) n.submenu.forEach( collect );
+      })( node );
+      for( const [key, value] of window.menuNodes ){
+        if( doomed.has(value) )
+          window.menuNodes.delete( key );
+      }
+      removeMenuNode( window.menuTemplate, node );
+      scheduleMenuRebuild( window );
+      break;
+    }
+
+    case 'MenuSetItemState': {
+      const node = window.menuNodes.get( d.id );
+      if( !node )
+        break;
+      let needsRebuild = false;
+      const live = (window.menu && node.id) ? window.menu.getMenuItemById(node.id) : null;
+      for( const key of ['enabled','visible','checked','label','toolTip','accelerator'] ){
+        if( d[key] === undefined )
+          continue;
+        node[key] = d[key];
+        if( live && (key !== 'accelerator') )
+          live[key] = d[key];
+        else
+          needsRebuild = true;
+      }
+      if( needsRebuild )
+        scheduleMenuRebuild( window );
+      break;
+    }
+
+    default:
+      console.log( "handleMenuMessage: unrecognized msg_name:", msg_name );
+      break;
+  }//switch( msg_name )
+}//handleMenuMessage
+
+
 let setAsMostRecentWindow = function(window){
   const index = openWindows.indexOf(window);
   if( index < 0 )
@@ -586,9 +871,10 @@ function createWindow() {
   if( !windowPrefs.minHeight )  
     windowPrefs.minHeight = 200;
 
-  //To get nodeIntegration to work, there is som JS hacks in
-  //  InterSpecApp::setupDomEnvironment()
-  windowPrefs.frame = (process.platform == 'darwin');
+  //On macOS we get the native frame; elsewhere the window is frameless and InterSpec draws its
+  //  own titlebar and menubar in HTML (see InterSpec's `isAppTitlebar` branch) - unless this build
+  //  mirrors the menus into Electron's native Menu, which needs a real frame to hang them off of.
+  windowPrefs.frame = ((process.platform == 'darwin') || usingNativeMenus);
   windowPrefs.webPreferences = { nodeIntegration: false, contextIsolation: true, spellcheck: false };
 
   // Create the new window
@@ -608,6 +894,10 @@ function createWindow() {
 
   // Set an indicator if the InterSpec app has loaded, as messaged to us through out C++ code
   newWindow.appHasLoadConfirmed = false;
+
+  // The Wt session fills in the rest of the menu bar once it loads.
+  if( usingNativeMenus )
+    freshMenuChrome( newWindow );
   
   // Only restore the previous session for the very first window of the app launch.
   //  A --test-load run never restores, so it tests loading rather than whatever state happened
@@ -723,10 +1013,10 @@ function createWindow() {
 
   // A nice way to have the renderes console.log show up on the command line
   //  when running for development.
-  //newWindow.webContents.on('console-message', (event, level, message, line, sourceId) => {
-  //  //https://www.electronjs.org/docs/api/web-contents#event-console-message  
-  //  //console.log( sourceId+ " ("+line+"): " + message );
-  //  console.log( "From renderer: " + message );
+  //newWindow.webContents.on('console-message', (details) => {
+  //  //https://www.electronjs.org/docs/api/web-contents#event-console-message
+  //  //console.log( details.sourceId + " (" + details.lineNumber + "): " + details.message );
+  //  console.log( "From renderer: " + details.message );
   //});
 
   // Emitted when the window is closed.
@@ -743,44 +1033,57 @@ function createWindow() {
       openWindows.splice(index, 1);
     else
       console.error( "on(closed): Trying to remove window not in openWindows" );
+
+    if( usingNativeMenus )
+      applyMenu( openWindows.length ? openWindows[openWindows.length-1] : null );
   });
 
   
+  //These window events can fire before setInitialUrl() has minted the session token (and after a
+  //  reload has invalidated it), and the token is the only thing the C++ side can route on - so
+  //  skip the message rather than send one addressed to nobody.
+  const sendToRenderer = function( msg_name ){
+    if( newWindow.appSessionToken )
+      interspec.sendMessageToRenderer( newWindow.appSessionToken, msg_name );
+  };
+
   newWindow.on( 'blur', function(){ 
     //Emitted when the window loses focus.
     //Could save the work here.
-    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnBlur"); 
+    sendToRenderer( "OnBlur" );
   } );
 
   newWindow.on( 'focus', function(){ 
     //Emitted when the window gains focus.
     setAsMostRecentWindow(newWindow);
-    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnFocus"); 
+    //On macOS the menu bar belongs to the app, not the window, so swap in this session's menus.
+    applyMenu( newWindow );
+    sendToRenderer( "OnFocus" );
   } );
 
   newWindow.on( 'unmaximize', function(){ 
     //Emitted when the window exits from a maximized state.
     setAsMostRecentWindow(newWindow);
-    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnUnMaximize"); 
+    sendToRenderer( "OnUnMaximize" );
   } );
   
   newWindow.on( 'maximize', function(){ 
     //Emitted when window is maximized.
     setAsMostRecentWindow(newWindow);
-    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnMaximize"); 
+    sendToRenderer( "OnMaximize" );
   } );
   
   newWindow.on( 'leave-full-screen', function(){ 
     setAsMostRecentWindow(newWindow);
-    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnLeaveFullScreen"); 
+    sendToRenderer( "OnLeaveFullScreen" );
   } );
   
   newWindow.on( 'enter-full-screen', function(){ 
     setAsMostRecentWindow(newWindow);
-    interspec.sendMessageToRenderer( newWindow.appSessionToken, "OnEnterFullScreen"); 
+    sendToRenderer( "OnEnterFullScreen" );
   } );
 
-  newWindow.webContents.on('will-navigate', function(event, url){
+  newWindow.webContents.on('will-navigate', function(details){
     //Emitted when a user or the page wants to start navigation. It can happen
     //  when the window.location object is changed or a user clicks a link in
     //  the page.
@@ -788,11 +1091,14 @@ function createWindow() {
     //  with APIs like webContents.loadURL and webContents.back.
     //It is also not emitted for in-page navigations, such as clicking anchor
     //  links or updating the window.location.hash.
+    //Note: this listener used to take (event, url); those positional arguments are
+    //  deprecated in favour of the single `details` object.
     
+    const url = details.url;
     console.log('webContents: will-navigate');
-    if( !url.startsWith(interspec_url) ) {
+    if( !interspec_url || !url.startsWith(interspec_url) ) {
       console.log( "Will prevent Opening URL=" + url + ", newWindow.webContents.getURL()=" + newWindow.webContents.getURL() );
-      event.preventDefault();
+      details.preventDefault();
       electron.shell.openExternal(url)
     } else {
       //We seem to only get here if the JS application dies and the message saying
@@ -813,7 +1119,7 @@ function createWindow() {
     //console.log( 'frameName=' + frameName );
     //console.log( 'additionalFeatures=' + additionalFeatures );
 
-    if( url.startsWith(interspec_url) ) {
+    if( interspec_url && url.startsWith(interspec_url) ) {
       //Lets prevent a weird popup window that the user has to close...
       //  I think this is because InterSpec targets a new window for downloads.
       newWindow.webContents.downloadURL(url);
@@ -1039,6 +1345,10 @@ function messageToNodeJs( token, msg_name, msg_data ){
     
     interspec.removeSessionToken( token );
     interspec.addPrimarySessionToken( window.appSessionToken );
+    if( usingNativeMenus ){
+      freshMenuChrome( window );
+      scheduleMenuRebuild( window );
+    }
     window.loadURL( interspec_url + "?apptoken=" + window.appSessionToken + "&restore=no");
   }else if( msg_name == 'SessionFinishedLoading' ){
     window.appHasLoadConfirmed = true;
@@ -1109,8 +1419,31 @@ function messageToNodeJs( token, msg_name, msg_data ){
       window.maximize();
       interspec.sendMessageToRenderer( token, "OnMaximize");
     }
+  }else if( msg_name == "ToggleFullScreen" ){
+    window.setFullScreen( !window.isFullScreen() );
   }else if( msg_name == 'ToggleDevTools' ){
-    window.toggleDevTools();
+    window.webContents.toggleDevTools();
+  }else if( (msg_name == 'ResetPageZoom') || (msg_name == 'IncreasePageZoom')
+            || (msg_name == 'DecreasePageZoom') ){
+    //Real page zoom can only be set from the main process: `webFrame` is not reachable from the
+    //  renderer under contextIsolation.  Zoom level is logarithmic - each step is a factor of 1.2
+    //  - and Chromium applies its own limits on top (measured: it stops at a 5.0x factor), with
+    //  getZoomLevel() reporting the clamped value, so repeated steps cannot drift.  The explicit
+    //  bounds below are belt-and-braces.
+    //Note: Chromium's zoom is per-origin, and every InterSpec window is served from the same
+    //  127.0.0.1:<port>, so this necessarily applies to all open windows, and new ones inherit it.
+    const ZOOM_MIN = -8, ZOOM_MAX = 9;
+    const raw = (msg_name == 'ResetPageZoom')
+                    ? 0
+                    : window.webContents.getZoomLevel() + ((msg_name == 'IncreasePageZoom') ? 1 : -1);
+    const level = Math.max( ZOOM_MIN, Math.min( ZOOM_MAX, raw ) );
+    window.webContents.setZoomLevel( level );
+    //InterSpec sizes a lot of its layout from JS, so nudge it to re-measure.
+    window.webContents.executeJavaScript(
+      "setTimeout(function(){window.dispatchEvent(new Event('resize'));},100);" )
+      .catch( function(e){ console.error( "Failed to dispatch resize after zoom:", e ); } );
+  }else if( msg_name.startsWith('Menu') ){
+    handleMenuMessage( window, msg_name, msg_data );
   }else{
     console.log( "messageToNodeJs: unrecognized msg_name:", msg_name, ", token:", token, ", msg_data:", msg_data );
   }
@@ -1273,7 +1606,7 @@ app.on('ready', function(){
   // stealing focus from the web content.  The Alt key is used as a modifier for spectrum
   // interactions (e.g., Alt + double-click to fit a peak in the background spectrum),
   // so we remove the default menu on non-macOS platforms.
-  if( process.platform !== 'darwin' )
+  if( (process.platform !== 'darwin') && !usingNativeMenus )
     Menu.setApplicationMenu( null );
 
   const process_name = require.main.filename;

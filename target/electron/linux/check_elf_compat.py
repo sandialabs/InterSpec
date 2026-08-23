@@ -48,8 +48,12 @@ ALLOWED_NEEDED = {
   "librt.so.1",
   "libpthread.so.0",
   # The dynamic loader itself; shows up as NEEDED for some link configurations and can never be
-  # a portability problem, since a dynamically-linked binary cannot run without it.
+  # a portability problem, since a dynamically-linked binary cannot run without it.  Both names
+  # are listed because build_linux_app_from_docker.sh also supports the aarch64 manylinux image
+  # (released builds are x86_64, but aarch64 is how the script gets exercised at native speed on
+  # an arm64 host).
   "ld-linux-x86-64.so.2",
+  "ld-linux-aarch64.so.1",
 }
 
 # Note libz.so.1 is deliberately NOT in the list above.  It used to appear in DT_NEEDED as pure

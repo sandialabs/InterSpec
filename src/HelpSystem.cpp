@@ -58,6 +58,11 @@
 #include "target/macos/NativeMenu.h"
 #endif
 
+#if( USING_ELECTRON_NATIVE_MENU )
+#include "InterSpec/PopupDiv.h"
+#include "target/electron/NativeMenu.h"
+#endif
+
 
 using namespace std;
 using namespace Wt;
@@ -621,6 +626,18 @@ namespace HelpSystem
       if( menuitem && menuitem->getNsMenuItem() )
       {
         addOsxMenuItemToolTip( menuitem->getNsMenuItem(), text.toUTF8().c_str() );
+        return;
+      }//if( menuitem )
+    }//for( Wt::WWebWidget *w : widgets )
+#endif
+
+#if( USING_ELECTRON_NATIVE_MENU )
+    for( Wt::WWebWidget *w : widgets )
+    {
+      PopupDivMenuItem *menuitem = dynamic_cast<PopupDivMenuItem *>( w );
+      if( menuitem && !menuitem->nativeMenuItemId().empty() )
+      {
+        addElectronMenuItemToolTip( menuitem->nativeMenuItemId(), text.toUTF8().c_str() );
         return;
       }//if( menuitem )
     }//for( Wt::WWebWidget *w : widgets )

@@ -83,12 +83,14 @@ hash -r
 # uglify-js/uglifycss are used by cmake/DeployJsAndCss.cmake to minify our JS and CSS
 npm install -g uglify-js
 npm install -g uglifycss
-npm install -g cmake-js
+# Pinned to the major in target/electron/package.json: cmake-js 8 dropped Node < 20, and an
+#  unpinned install here would silently follow whatever is latest.
+npm install -g cmake-js@^8.0.0
 
 echo "Will install local npm packages"
 # node-addon-api supplies napi.h; the Electron runtime itself is fetched later by
 #  electron-builder, on the host, so it is not needed here.
-npm install --save-dev node-addon-api --arch=${NODE_ARCH}
+npm install --save-dev node-addon-api@^8.0.0 --arch=${NODE_ARCH}
 
 echo "CWD"
 pwd

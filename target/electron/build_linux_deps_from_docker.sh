@@ -92,7 +92,7 @@ GIT_HASH=$(git -C "${InterSpecCodePath}" rev-parse HEAD 2>/dev/null || echo "unk
 echo "=== Building dependency prefix ==="
 # Invoked via `sh` rather than executed directly, so this works when the source tree is mounted
 #  read-only (which CI does) and no `chmod +x` is possible.
-sh "${InterSpecCodePath}/target/patches/dep_build_linux.sh" \
+sh "${InterSpecCodePath}/target/dep_build/dep_build_linux.sh" \
   "${InterSpecCodePath}" "${DepsWorkDir}" "${DepsPrefix}"
 
 
@@ -104,15 +104,29 @@ sh "${InterSpecCodePath}/target/patches/dep_build_linux.sh" \
 echo "=== Checking the prefix ==="
 _bad=""
 for _f in \
-    include/Wt/WObject include/Wt/Dbo/backend/Sqlite3 include/boost/version.hpp \
+    include/Wt/WObject.h include/Wt/Dbo/backend/Sqlite3.h include/boost/version.hpp \
     include/zlib.h include/eigen3/Eigen/Core \
-    lib/libwt.a lib/libwthttp.a lib/libwtdbo.a lib/libwtdbosqlite3.a \
-    lib/libboost_thread.a lib/libboost_date_time.a lib/libboost_system.a \
-    lib/libboost_filesystem.a lib/libboost_program_options.a lib/libboost_regex.a \
-    lib/libboost_random.a lib/libz.a lib/libceres.a \
     share/Wt/resources/form.css ; do
   [ -e "${DepsPrefix}/${_f}" ] || _bad="${_bad} ${_f}"
 done
+
+# Deliberately `lib` and not `lib64`: dep_build_linux.sh passes -DCMAKE_INSTALL_LIBDIR=lib to every
+#  CMake sub-build precisely so the prefix keeps one layout (see the check further down).  If one of
+#  these turns up only under lib64, that flag was dropped somewhere - fix that rather than relaxing
+#  this, because the libz.so cleanup and cmake/FindWt.cmake's HINTS both hardcode `lib`.
+for _l in libwt.a libwthttp.a libwtdbo.a libwtdbosqlite3.a \
+    libboost_thread.a libboost_date_time.a libboost_system.a \
+    libboost_filesystem.a libboost_program_options.a libboost_regex.a \
+    libboost_random.a libz.a libceres.a ; do
+  if [ ! -e "${DepsPrefix}/lib/${_l}" ]; then
+    if [ -e "${DepsPrefix}/lib64/${_l}" ]; then
+      _bad="${_bad} lib/${_l}(found-in-lib64)"
+    else
+      _bad="${_bad} lib/${_l}"
+    fi
+  fi
+done
+
 if [ -n "${_bad}" ]; then
   echo "Error: the prefix is missing:${_bad}"
   exit 1
@@ -174,8 +188,11 @@ fi
   echo "arch=$(uname -m)"
   echo "cc=$(cc --version | head -n 1)"
   echo "cmake=$(cmake --version | head -n 1)"
-  echo "dep_script_sha256=$(sha256sum "${InterSpecCodePath}/target/patches/dep_build_linux.sh" | awk '{print $1}')"
-  echo "wt_patch_sha256=$(sha256sum "${InterSpecCodePath}/target/patches/wt/3.7.1/NormalBuild/wt_3.7.1_git.patch" | awk '{print $1}')"
+  echo "dep_script_sha256=$(sha256sum "${InterSpecCodePath}/target/dep_build/dep_build_linux.sh" | awk '{print $1}')"
+  # A digest over every patch dep_build_linux.sh applies, rather than one named patch: Wt 4 needs
+  #  no source patching, so the file this used to hash no longer exists, and the set of patches is
+  #  expected to keep changing.
+  echo "patches_sha256=$(find "${InterSpecCodePath}/target/dep_build/patches" -name '*.patch' -print0 | sort -z | xargs -0 -r sha256sum | sha256sum | awk '{print $1}')"
 } > "${Sentinel}"
 
 echo "=== Prefix complete ==="

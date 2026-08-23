@@ -48,6 +48,7 @@
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DataBaseVersionUpgrade.h"
 
+#include "target/electron/NativeMenu.h"
 #include "target/electron/ElectronUtils.h"
 #include "target/electron/InterSpecAddOn.h"
 
@@ -66,20 +67,6 @@ bool requestNewCleanSession()
   {
     //Have electron reload the page.
     ElectronUtils::send_nodejs_message("NewCleanSession", "");
-    
-#if( USING_ELECTRON_NATIVE_MENU )
-    //should check ns_externalid==oldexternalid
-    string js;
-    //Speed up loading by deferring calls to Menu.setApplicationMenu() until app
-    //  is fully reloaded.
-    js += "window._IS=window._IS||{};window._IS.HaveTriggeredMenuUpdate=null;";
-
-    //Just in case the page reload doesnt go through, make sure menus will get updated eventually
-    //  (this shouldnt be necassary, right?)
-    js += "setTimeout(function(){window._IS=window._IS||{};window._IS.HaveTriggeredMenuUpdate=true;},5000);";
-    
-    wApp->doJavaScript(js);
-#endif
     
     return true;
   }else
@@ -100,9 +87,8 @@ bool notifyNodeJsOfNewSessionLoad()
     return false;
   }
 
-  const string oldexternalid = app->externalToken();
-  if( !oldexternalid.empty() )
-    ElectronUtils::send_nodejs_message("SessionFinishedLoading", "");
+  // send_nodejs_message(...) is a no-op if there is no session token to address the message to.
+  ElectronUtils::send_nodejs_message("SessionFinishedLoading", "");
   app->triggerUpdate();
   
   return true;
@@ -118,13 +104,24 @@ void send_nodejs_message( const std::string msg_name, const std::string msg_data
     return;
   }
   
+  // The token is the address main.js routes on - it matches it against `window.appSessionToken`
+  //  over its open windows - so an empty one could only produce a message matching no window.
   const string session_token = app->externalToken();
+  if( session_token.empty() )
+  {
+    cerr << "Error: send_nodejs_message: no session token for '" << msg_name << "'." << endl;
+    return;
+  }
   
   Wt::WServer *server = Wt::WServer::instance();
   assert( server );
+  if( !server )
+  {
+    cerr << "Error: send_nodejs_message: WServer::instance() is null!!!" << endl;
+    return;
+  }
   
-  Wt::WIOService &io = server->ioService();
-  io.boost::asio::io_service::post( [=](){
+  server->ioService().post( [=](){
     InterSpecAddOn::send_nodejs_message( session_token, msg_name, msg_data );
   } );
 }//void send_nodejs_message(...)
@@ -154,31 +151,29 @@ bool handle_message_from_nodejs( const std::string &session_token,
   
 // TODO: maybe we should make a own function for each of the cases below; maybe make things both
 //       clearer here, as well as in main.js
-  if( msg_name == "..." )
+  // The window-state messages only drive the HTML titlebar, which does not exist when the window
+  //  has a native frame (macOS, or any build using the native menus), so the JS may not be loaded.
+  if( msg_name == "OnMaximize" )
   {
-    
-  }
-
-  else if( msg_name == "OnMaximize" )
-  {
-    cout << "\n\nOnMaximize\n\n";
-    app->doJavaScript( "Wt.WT.TitleBarChangeMaximized(true);" );
+    app->doJavaScript( "if(Wt.WT.TitleBarChangeMaximized)Wt.WT.TitleBarChangeMaximized(true);" );
   }else if( msg_name == "OnUnMaximize" )
   {
-    cout << "\n\nOnUnMaximize\n\n";
-    app->doJavaScript( "Wt.WT.TitleBarChangeMaximized(false);" );
+    app->doJavaScript( "if(Wt.WT.TitleBarChangeMaximized)Wt.WT.TitleBarChangeMaximized(false);" );
   }else if( msg_name == "OnBlur" )
   {
     app->doJavaScript( "var _tb=document.querySelector('.app-titlebar');if(_tb)_tb.classList.add('inactive');" );
   }else if( msg_name == "OnFocus" )
   {
     app->doJavaScript( "var _tb=document.querySelector('.app-titlebar');if(_tb)_tb.classList.remove('inactive');" );
-  }else if( msg_name == "OnLeaveFullScreen" )
+#if( USING_ELECTRON_NATIVE_MENU )
+  }else if( msg_name == "MenuItemClicked" )
   {
-    cout << "Left to fullscreen." << endl;
-  }else if( msg_name == "OnEnterFullScreen" )
+    handleElectronMenuActivation( app, msg_data );
+#endif
+  }else if( (msg_name == "OnEnterFullScreen") || (msg_name == "OnLeaveFullScreen") )
   {
-    cout << "Went to fullscreen." << endl;
+    // main.js sends these, but the HTML titlebar does not currently do anything differently in
+    //  full-screen; accepted so they do not log as unrecognized.
   }else
   {
     cerr << "Unrecognized msg_name from nodejs: '" << msg_name << "'" << endl;
@@ -239,6 +234,10 @@ bool browse_for_directory( const std::string &window_title,
   Wt::WServer *server = Wt::WServer::instance();
   assert( server );
 
+  //Deliberately the raw asio post rather than WIOService::post: the latter dispatches through
+  //  WIOService's strand, and `worker` blocks for as long as the user has the directory dialog
+  //  open - which would stall every other posted job (including send_nodejs_message) until they
+  //  dismiss it.
   Wt::WIOService &io = server->ioService();
   io.boost::asio::io_service::post( worker );
   
@@ -316,6 +315,16 @@ bool interspec_set_initial_file_to_open( const char *session_token, const char *
   }
   
   return true;
+}
+
+
+bool interspec_using_electron_menus()
+{
+#if( USING_ELECTRON_NATIVE_MENU )
+  return true;
+#else
+  return false;
+#endif
 }
 
 
