@@ -9092,6 +9092,17 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       using RelActCalc::RelEffEqnForm;
 
+      // Elimination trials inherited the main solve's 50000-iteration budget, which is a budget
+      // sized for a COLD solve.  A trial is not that: it starts at the converged parent with one
+      // more parameter pinned at its identity, so it either settles in tens of iterations or it is
+      // wandering a flat direction - and `select_backward_elimination_removal` already discards a
+      // trial that does not converge, so those iterations bought nothing.  With O(k^2) trials that
+      // was the single largest cost in the solver: over the 20-spectrum JRC uranium set,
+      // elimination was 61.5% of total CPU, and one spectrum spent 1110 of its 1122 seconds here.
+      // The staged pre-fit ladder above uses the same reasoning and the same order of budget.
+      ceres::Solver::Options elimination_trial_options = ceres_options;
+      elimination_trial_options.max_num_iterations = 300;
+
       struct AutoSimplifyCandidate
       {
         string semantic_key;
@@ -9219,7 +9230,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           problem.SetManifold(pars,new ceres::SubsetManifold(static_cast<int>(num_pars),trial_const));
 
           ceres::Solver::Summary trial_summary;
-          ceres::Solve(ceres_options,&problem,&trial_summary);
+          ceres::Solve(elimination_trial_options,&problem,&trial_summary);
           double objective = std::numeric_limits<double>::infinity();
           try { objective = (*cost_functor)(parameters); }
           catch( const std::exception & ) { objective = std::numeric_limits<double>::infinity(); }
