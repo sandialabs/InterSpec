@@ -362,31 +362,6 @@ struct DeterministicSearchScore
 };
 
 
-/** The production model-selection order when automatic simplification and basin search are both
-    enabled.  Keeping this tiny orchestration policy beside the ordering helpers lets focused tests
-    prove that candidate-specific fixed-parameter masks cannot participate in basin eligibility or
-    ranking: backward elimination does not begin until a single unsimplified basin was selected. */
-enum class SearchSimplificationStage : int
-{
-  UnsimplifiedFrozenModelSearch = 0,
-  SelectedBasinBackwardElimination
-};
-
-inline std::vector<SearchSimplificationStage> search_simplification_stages(
-    const bool auto_simplify_model,
-    const bool allow_candidate_search,
-    const SearchSeedVariant seed_variant )
-{
-  if( auto_simplify_model && allow_candidate_search
-      && (seed_variant == SearchSeedVariant::Default) )
-  {
-    return { SearchSimplificationStage::UnsimplifiedFrozenModelSearch,
-             SearchSimplificationStage::SelectedBasinBackwardElimination };
-  }
-  return {};
-}
-
-
 /** Map an ambient direction between identical semantic layouts without relying on
     caller/source order.  Repeated names are matched by occurrence, which mirrors
     the deterministic canonical parameter construction.  An empty result means

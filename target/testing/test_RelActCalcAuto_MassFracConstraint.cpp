@@ -1773,11 +1773,10 @@ BOOST_AUTO_TEST_CASE( no_shared_source_multicurve_is_deterministic )
 }
 
 
-// CONV-01/03: requesting automatic model selection is a production search trigger, but the search
-// itself belongs to the opt-in robust budget (it costs one full solve per applicable candidate), so
-// this case asks for a robust solve - it is exercising precisely that path.  In the small
-// fixed-nuisance problem above exactly four named seeds are applicable: default, the two semantic
-// activity splits, and the weakest-direction checkerboard.  The production diagnostic is
+// CONV-01/03: a robust solve always runs the complete applicable candidate matrix (candidates are
+// now warm in-frame re-solves ranked on the unsimplified model, before backward elimination).  In
+// the small fixed-nuisance problem above exactly four named seeds are applicable: default, the two
+// semantic activity splits, and the weakest-direction checkerboard.  The production diagnostic is
 // deliberately asserted here so a successful early candidate cannot silently truncate the matrix.
 BOOST_AUTO_TEST_CASE( forced_search_polishes_complete_applicable_candidate_matrix )
 {
@@ -1791,7 +1790,7 @@ BOOST_AUTO_TEST_CASE( forced_search_polishes_complete_applicable_candidate_matri
   BOOST_REQUIRE( u235 && u238 );
 
   RelActCalcAuto::Options options = small_canonical_u_options(tc.options,u235,u238);
-  options.auto_simplify_model = true; //forces the unsimplified frozen-model basin matrix first
+  options.auto_simplify_model = true; //candidates rank pre-elimination; elimination runs on the winner
   options.auto_simplify_max_dchi2 = 0.0;
   options.robust_solve = true;        //the multi-start candidate search is opt-in
 
@@ -1803,23 +1802,17 @@ BOOST_AUTO_TEST_CASE( forced_search_polishes_complete_applicable_candidate_matri
                          solution.m_error_message );
 
   bool saw_forced_complete_matrix = false;
-  bool saw_selected_basin_then_elimination = false;
   for( const string &warning : solution.m_warnings )
   {
     if( SpecUtils::icontains(warning,"Deterministic candidate search was triggered")
-        && SpecUtils::icontains(warning,"ROI/model layout change") )
+        && SpecUtils::icontains(warning,"robust solve requested") )
     {
       BOOST_CHECK_MESSAGE( SpecUtils::icontains(warning,"polished 4 named candidates"),warning );
       saw_forced_complete_matrix = SpecUtils::icontains(warning,"polished 4 named candidates");
     }
-    saw_selected_basin_then_elimination = saw_selected_basin_then_elimination
-      || SpecUtils::icontains(warning,
-          "same unsimplified frozen full model before applying backward elimination");
   }
   BOOST_CHECK_MESSAGE( saw_forced_complete_matrix,
                        "No diagnostic confirmed all four applicable semantic candidates" );
-  BOOST_CHECK_MESSAGE( saw_selected_basin_then_elimination,
-                       "Model selection did not report search-before-elimination staging" );
 }
 
 

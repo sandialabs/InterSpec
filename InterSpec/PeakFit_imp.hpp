@@ -21,42 +21,6 @@
 namespace PeakFit
 {
 
-/** Discrete state of the separable linear continuum solve.
-
- The continuum coefficients remain an analytic function of the nonlinear peak parameters, but two
- decisions in the old implementation were made afresh on every scalar/Jet call: the numerical rank
- selected by Eigen's SVD threshold and the set of channels whose fitted continuum was clamped to
- zero.  Crossing either decision surface changes the objective being differentiated.  A
- `ContinuumFitPolicy` records those decisions at a scalar outer-iteration point so all evaluations
- in the following Ceres solve use one mathematical problem.
-
- The basis fields are deliberately redundant with the call arguments.  They make an accidentally
- reused policy fail loudly instead of silently applying a rank/mask from another ROI.
- */
-struct ContinuumFitPolicy
-{
-  bool initialized = false;
-  PeakContinuum::OffsetType continuum_type = PeakContinuum::OffsetType::NoOffset;
-  size_t num_channels = 0;
-  size_t num_polynomial_terms = 0;
-  size_t num_lls_terms = 0;
-  size_t numerical_rank = 0;
-  std::vector<unsigned char> clamped_channels;
-};
-
-
-inline bool same_continuum_fit_policy( const ContinuumFitPolicy &lhs,
-                                       const ContinuumFitPolicy &rhs )
-{
-  return lhs.initialized == rhs.initialized
-      && lhs.continuum_type == rhs.continuum_type
-      && lhs.num_channels == rhs.num_channels
-      && lhs.num_polynomial_terms == rhs.num_polynomial_terms
-      && lhs.num_lls_terms == rhs.num_lls_terms
-      && lhs.numerical_rank == rhs.numerical_rank
-      && lhs.clamped_channels == rhs.clamped_channels;
-}
-
 /** Half-width, in units of the channel uncertainty, of the smooth one-sided floor applied to the
  continuum-fit target `y = max(data - peaks, 0)/uncert` in #fit_continuum.
 
@@ -130,9 +94,7 @@ void fit_continuum( const float * const x,
                     const std::vector<PeakType> &fixedAmpPeaks,
                     const bool multithread,
                     ScalarType *continuum_coeffs,
-                    ScalarType *peak_counts,
-                    const ContinuumFitPolicy * const frozen_policy = nullptr,
-                    ContinuumFitPolicy * const observed_policy = nullptr )
+                    ScalarType *peak_counts )
 {
   using namespace std;
 
@@ -155,29 +117,6 @@ void fit_continuum( const float * const x,
   // For FlatStepCDF/LinearStepCDF, we add one extra column for step_coeff (solved by LLS here since peak amps are known)
   // For BiLinearStepCDF, all 4 polynomial params are already in num_poly_terms
   const Eigen::Index num_lls_terms = cdf_step_coeff ? (num_poly_terms + 1) : num_poly_terms;
-
-  if( frozen_policy )
-  {
-    if( !frozen_policy->initialized
-       || (frozen_policy->continuum_type != cont_type)
-       || (frozen_policy->num_channels != nbin)
-       || (frozen_policy->num_polynomial_terms != static_cast<size_t>(num_poly_terms))
-       || (frozen_policy->num_lls_terms != static_cast<size_t>(num_lls_terms))
-       || (frozen_policy->numerical_rank > static_cast<size_t>(num_lls_terms))
-       || (frozen_policy->clamped_channels.size() != nbin) )
-      throw std::logic_error( "fit_continuum: frozen continuum policy does not match this ROI basis" );
-  }
-
-  if( observed_policy )
-  {
-    *observed_policy = ContinuumFitPolicy{};
-    observed_policy->initialized = true;
-    observed_policy->continuum_type = cont_type;
-    observed_policy->num_channels = nbin;
-    observed_policy->num_polynomial_terms = static_cast<size_t>(num_poly_terms);
-    observed_policy->num_lls_terms = static_cast<size_t>(num_lls_terms);
-    observed_policy->clamped_channels.assign( nbin, 0 );
-  }
 
   Eigen::VectorX<ScalarType> y( static_cast<Eigen::Index>(nbin) );
   std::vector<double> uncerts( nbin, 1.0 );
@@ -500,26 +439,6 @@ void fit_continuum( const float * const x,
   Eigen::VectorX<ScalarType> coeffs;    //The solved continuum coefficients (num_lls_terms of them)
   Eigen::VectorX<ScalarType> cont_vals; //The continuum counts, divided by `uncerts` (i.e., A*coeffs), per channel
 
-  // Apply exactly the leading singular directions selected by the scalar outer pass.  Unlike
-  // `svd.solve`, this never re-runs a value-dependent rank threshold during DynamicAutoDiff.
-  const auto solve_at_frozen_rank = [&]( const auto &svd, const auto &rhs )
-  {
-    using RhsType = std::decay_t<decltype(rhs)>;
-    const Eigen::Index rank = static_cast<Eigen::Index>(frozen_policy->numerical_rank);
-    if( rank == 0 )
-    {
-      if constexpr ( RhsType::ColsAtCompileTime == 1 )
-        return Eigen::VectorX<typename RhsType::Scalar>::Zero( num_lls_terms ).eval();
-      else
-        return Eigen::MatrixX<typename RhsType::Scalar>::Zero( num_lls_terms, rhs.cols() ).eval();
-    }
-
-    return (svd.matrixV().leftCols(rank)
-            * svd.singularValues().head(rank).cwiseInverse().asDiagonal()
-            * svd.matrixU().leftCols(rank).adjoint()
-            * rhs).eval();
-  };
-
   // The reference solve: build the design matrix in `ScalarType` and solve the LLS problem in
   //  that arithmetic (i.e., through `ceres::Jet` when auto-differentiating).
   const auto solve_generic = [&]()
@@ -534,13 +453,7 @@ void fit_continuum( const float * const x,
     const Eigen::BDCSVD<Eigen::MatrixX<ScalarType>> svd(A, Eigen::ComputeThinU | Eigen::ComputeThinV );
 #endif
 
-    if( frozen_policy )
-      coeffs = solve_at_frozen_rank( svd, y );
-    else
-      coeffs = svd.solve(y); // coeffs will contain [c_0, c_1, c_2, c_3]
-
-    if( observed_policy )
-      observed_policy->numerical_rank = static_cast<size_t>(svd.rank());
+    coeffs = svd.solve(y); // coeffs will contain [c_0, c_1, c_2, c_3]
 
     check_jet_array_for_NaN( coeffs.data(), coeffs.size() );
 
@@ -609,12 +522,8 @@ void fit_continuum( const float * const x,
             rhs(row,1+j) = y(row).v[j];
         }
 
-        const Eigen::MatrixXd solved = frozen_policy ? solve_at_frozen_rank( svd, rhs )
-                                                     : svd.solve( rhs );
+        const Eigen::MatrixXd solved = svd.solve( rhs );
         const Eigen::MatrixXd predicted = A_d * solved;   // nbin x (1 + num_deriv)
-
-        if( observed_policy )
-          observed_policy->numerical_rank = static_cast<size_t>(svd.rank());
 
         coeffs.resize( num_lls_terms );
         for( Eigen::Index i = 0; i < num_lls_terms; ++i )
@@ -709,15 +618,7 @@ void fit_continuum( const float * const x,
       else
         scalar_continuum = y_continuum.a;
 
-      if( observed_policy )
-        observed_policy->clamped_channels[bin] = (scalar_continuum < 0.0);
-
-      // With a frozen policy, this branch depends only on the outer-pass state, never on a Jet
-      // value.  Without one, preserve the legacy scalar behavior while classifying the next pass.
-      const bool clamp_channel = frozen_policy
-                              ? (frozen_policy->clamped_channels[bin] != 0)
-                              : (scalar_continuum < 0.0);
-      if( clamp_channel )
+      if( scalar_continuum < 0.0 )
         y_continuum = ScalarType(0.0);
       peak_counts[bin] += y_continuum;
     }

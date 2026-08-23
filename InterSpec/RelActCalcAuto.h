@@ -1893,8 +1893,9 @@ struct RelActAutoSolution
    `m_frozen_gamma_membership_hash` covers the canonical curve/source identities, the
    exact gamma-line membership admitted to every ROI, and the fixed native-calibration
    channel windows.  `m_frozen_layout_hash` additionally covers the residual/parameter
-   layout, which parameters were held constant and their exact fixed values, every ROI's frozen continuum basis,
-   numerical rank and non-negative-channel active set, and the exact branching-ratio nuisance
+   layout, which parameters were held constant and their exact fixed values, every ROI's continuum
+   basis (continuum type and channel count - the separable LLS solve is a deterministic function of
+   that basis and the fit parameters), and the exact branching-ratio nuisance
    range endpoints and semantic gamma membership.  `m_frozen_model_policy_hash` covers the exact
    canonical name/value policy selected by backward elimination; it remains stable when a profile
    adds its transient equality residual.  The gamma/layout hashes intentionally exclude fitted

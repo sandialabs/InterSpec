@@ -182,33 +182,6 @@ BOOST_AUTO_TEST_CASE( objective_order_is_strict_at_large_scale )
   BOOST_CHECK_EQUAL( removals[*selected].semantic_key, "z-lower" );
 }
 
-BOOST_AUTO_TEST_CASE( basin_search_precedes_candidate_specific_simplification )
-{
-  const std::vector<SearchSimplificationStage> stages
-      = search_simplification_stages(true,true,SearchSeedVariant::Default);
-  BOOST_REQUIRE_EQUAL( stages.size(), 2U );
-  BOOST_CHECK( stages[0] == SearchSimplificationStage::UnsimplifiedFrozenModelSearch );
-  BOOST_CHECK( stages[1] == SearchSimplificationStage::SelectedBasinBackwardElimination );
-
-  // These intentionally incompatible masks model what independent per-candidate elimination used
-  // to produce.  Basin eligibility/ranking accepts only unsimplified scores and therefore cannot
-  // observe the masks; all three physical candidates remain eligible and the lower objective wins.
-  const std::vector<std::vector<size_t>> candidate_fixed_masks{{1U},{2U,3U},{}};
-  const std::vector<DeterministicSearchScore> scores{
-    { "default", 12.0, {1.0}, true },
-    { "masked-a", 10.0, {2.0}, true },
-    { "masked-b", 11.0, {3.0}, true }
-  };
-  BOOST_REQUIRE_EQUAL( candidate_fixed_masks.size(), scores.size() );
-  const std::vector<size_t> order = deterministic_search_order(scores);
-  BOOST_REQUIRE_EQUAL( order.size(), scores.size() );
-  BOOST_CHECK_EQUAL( scores[order.front()].semantic_name, "masked-a" );
-
-  BOOST_CHECK( search_simplification_stages(false,true,SearchSeedVariant::Default).empty() );
-  BOOST_CHECK( search_simplification_stages(true,false,SearchSeedVariant::Default).empty() );
-  BOOST_CHECK( search_simplification_stages(true,true,SearchSeedVariant::AgeLowerQuartile).empty() );
-}
-
 BOOST_AUTO_TEST_CASE( duplicate_basins_are_collapsed_after_ranking )
 {
   const std::vector<DeterministicSearchScore> scores{
