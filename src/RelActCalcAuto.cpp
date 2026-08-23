@@ -8984,6 +8984,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           vector<double> final_parameters;
           double full_objective = std::numeric_limits<double>::infinity();
           bool usable = false;
+          /** Set only for the recursive EM-attribution candidates.  Those solve a SEPARATE frame
+           whose seeding assigns its own per-source `activity_multiple`, so its parameter vector is
+           not interchangeable with this frame's (the same number means a different activity) and
+           must not be copied into this problem.  Such a candidate is adopted whole or not at all,
+           and is scored with its own functor. */
+          std::shared_ptr<RelActCalcAuto::RelActAutoSolution> external_solution;
         };
         vector<CandidateOutcome> results;
         results.reserve( search_seed_variants().size() );
@@ -9006,7 +9012,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                              incumbent_parameters,
                              success ? fresh_objective_at(incumbent_parameters)
                                      : std::numeric_limits<double>::infinity(),
-                             success } );
+                             success, nullptr } );
 
         const std::uint64_t pre_elimination_model_hash
             = frozen_model_policy_hash( applied_frozen_model_policy );
@@ -9023,13 +9029,12 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             if( (variant == SearchSeedVariant::EmMedianAttribution)
                 || (variant == SearchSeedVariant::PreEmUnweighted) )
             {
-              // The EM pair re-runs estimation with a different cross-curve attribution; rank it
-              // unsimplified (elimination happens after adoption, in this frame) and adopt only
-              // its parameter vector after proving it solved the identical frozen problem.
-              RelActCalcAuto::Options em_options = options;
-              em_options.auto_simplify_model = false;
+              // The EM pair re-runs estimation with a different cross-curve attribution, so it is a
+              // complete separate solve of the caller's model - including its own backward
+              // elimination and covariance.  It is therefore adopted whole (see
+              // CandidateOutcome::external_solution) rather than mined for a parameter vector.
               RelActCalcAuto::RelActAutoSolution candidate = solve_ceres(
-                    em_options,foreground,background,cost_functor->m_drf,cost_functor->m_all_peaks,
+                    options,foreground,background,cost_functor->m_drf,cost_functor->m_all_peaks,
                     det_type,cancel_calc,variant,false,nullptr,false,&peak_ranges_for_pass,
                     frozen_model_policy,true,may_host_profile );
               extra_candidate_function_evals
@@ -9048,17 +9053,33 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
                 throw std::logic_error( "semantic candidate changed frozen gamma membership" );
               if( candidate.m_final_parameters.size() != num_pars )
                 throw std::logic_error( "semantic candidate changed the parameter count" );
-              if( candidate.m_frozen_layout_hash != cost_functor->frozen_layout_hash(
-                      candidate.m_final_parameters,constant_parameters,pre_elimination_model_hash) )
-                throw std::logic_error( "semantic candidate changed the frozen optimization layout" );
 
               const bool usable
                   = RelActCalcAuto::RelActAutoSolution::is_usable_status(candidate.m_status);
-              // Score with THIS frame's functor: the guards above proved it is the same objective.
-              const double objective = usable ? fresh_objective_at(candidate.m_final_parameters)
-                                              : std::numeric_limits<double>::infinity();
-              results.push_back( { search_seed_variant_name(variant),
-                                   std::move(candidate.m_final_parameters), objective, usable } );
+              // Score with the candidate's OWN functor.  Its activity parameters are expressed
+              // against its own per-source multiples, so this frame's functor would read the same
+              // numbers as different activities entirely.
+              double objective = std::numeric_limits<double>::infinity();
+              if( usable && candidate.m_cost_functor && !candidate.m_final_parameters.empty() )
+              {
+                try
+                {
+                  const double value = (*candidate.m_cost_functor)( candidate.m_final_parameters );
+                  if( std::isfinite(value) )
+                    objective = value;
+                }catch( const std::exception & )
+                {
+                }
+              }
+
+              CandidateOutcome outcome;
+              outcome.semantic_name = search_seed_variant_name(variant);
+              outcome.final_parameters = candidate.m_final_parameters;
+              outcome.full_objective = objective;
+              outcome.usable = usable;
+              outcome.external_solution
+                  = std::make_shared<RelActCalcAuto::RelActAutoSolution>( std::move(candidate) );
+              results.push_back( std::move(outcome) );
             }else
             {
               // A pure seed transform: start from the fully seeded Default vector (the incumbent
@@ -9082,7 +9103,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
               const double objective = usable ? fresh_objective_at(parameters)
                                               : std::numeric_limits<double>::infinity();
               results.push_back( { search_seed_variant_name(variant), parameters,
-                                   objective, usable } );
+                                   objective, usable, nullptr } );
             }
           }catch( const std::exception &e )
           {
@@ -9101,6 +9122,33 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         const string selected_name = results[selected].semantic_name;
         const size_t unique_basins = basin_order.size();
 
+        string reasons;
+        for( size_t i = 0; i < trigger_reasons.size(); ++i )
+          reasons += (i ? ", " : "") + trigger_reasons[i];
+
+        if( results[selected].external_solution )
+        {
+          // An EM-attribution candidate won.  It is a complete solve of the caller's model in its
+          // own frame - its own activity multiples, elimination and covariance - so it is returned
+          // as it stands.  Copying its parameters into this problem instead would silently
+          // reinterpret every activity against this frame's multiples.
+          RelActCalcAuto::RelActAutoSolution adopted
+              = std::move( *results[selected].external_solution );
+          for( const string &warning : solution.m_warnings )
+            if( std::find(begin(adopted.m_warnings),end(adopted.m_warnings),warning)
+                                                              == end(adopted.m_warnings) )
+              adopted.m_warnings.push_back( warning );
+          adopted.m_num_function_eval_total += static_cast<int>( cost_functor->m_ncalls );
+          adopted.m_warnings.push_back( "Deterministic candidate search was triggered by " + reasons
+                + "; polished " + std::to_string(results.size()) + " named candidates, retained "
+                + std::to_string(unique_basins) + " distinct usable basins, and selected '"
+                + selected_name + "' by freshly evaluated full objective with semantic"
+                  " tie-breaking." );
+          solution = std::move( adopted );
+          restore_caller_source_order( solution, caller_options );
+          return solution;
+        }//if( an externally-solved candidate won )
+
         // Adopt the winner into the live problem/parameter buffer (in place - `pars` is Ceres'
         // registered block).  Downstream elimination, covariance, and post-fit all read from here.
         assert( results[selected].final_parameters.size() == parameters.size() );
@@ -9113,10 +9161,6 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
           solution.m_error_message.clear();
           success = true;
         }
-
-        string reasons;
-        for( size_t i = 0; i < trigger_reasons.size(); ++i )
-          reasons += (i ? ", " : "") + trigger_reasons[i];
         // Say plainly when the breadth was restricted, otherwise "polished 1 named candidates" reads
         // as though a search ran and found nothing better, when in fact no alternate was eligible.
         solution.m_warnings.push_back( "Deterministic candidate search was triggered by " + reasons
