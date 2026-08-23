@@ -1395,10 +1395,18 @@ button.Wt-btn.with-label.LightButton,
   }
   
   
-  /* Tooltip styling - overrides Wt default .Wt-tooltip */
+  /* Tooltip styling - overrides Wt default .Wt-tooltip.
+     Wt's ToolTip.js (positionToolTip()) ends by setting an inline max-width equal to the
+     space between the mouse and the window edge, which - together with Wt's
+     `width: fit-content` - lets a tooltip stretch most of the way across the screen.  An
+     inline style beats a plain stylesheet rule, so `!important` is what actually keeps our
+     cap.  Positioning is unaffected: ToolTip.js measures offsetWidth after this rule applies.
+   */
   .Wt-tooltip
   {
-    max-width: 280px;
+    max-width: min( 360px, calc(100vw - 40px) ) !important;
+    overflow-wrap: break-word; /* dont let a long file path or URL blow past the cap */
+    overflow-x: auto;          /* wt.css already sets overflow-y: auto */
     font-size: 10.5px;
     line-height: 14px;
     background-color: #FFFFA3;
@@ -1409,7 +1417,16 @@ button.Wt-btn.with-label.LightButton,
     color: #555;
     z-index: 200000;
   }
-  
+
+  /* The rel.-eff. equation-form tooltips lay their formulas out in a table that cannot wrap;
+     give those the room they need, still clamped to the window.  Browsers without :has()
+     support fall back to the cap above, plus the horizontal scroll.
+   */
+  .Wt-tooltip:has(table)
+  {
+    max-width: min( 760px, calc(100vw - 40px) ) !important;
+  }
+
   /* Customize WTabWidget to look a little more modern/flat */
   br.Wt-tabs-clear
   {
