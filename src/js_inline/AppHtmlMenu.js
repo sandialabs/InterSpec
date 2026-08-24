@@ -75,23 +75,11 @@ function(){
 
 
 
-#if( BUILD_AS_ELECTRON_APP )
-WT_DECLARE_WT_MEMBER
-(ResetPageZoom, Wt::JavaScriptFunction, "ResetPageZoom",
-function(){
-  if( Wt.WT.IsElectronInstance() ){
-    let webFrame = require('electron').webFrame;
-    webFrame.setZoomFactor(1.0);
-  }else{
-    document.body.style.zoom = 1.0;
-  }
-
-  setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 100 );
-}
-);
-
-#else  //BUILD_AS_ELECTRON_APP
-
+/* Note: for the primary window of the Electron build these are not used - real page zoom is done
+   by the main process (see the 'ResetPageZoom'/'IncreasePageZoom'/'DecreasePageZoom' messages in
+   target/electron/app/main.js), since `webFrame` is not reachable from the renderer under
+   contextIsolation.  This CSS zoom is the fallback for every other case.
+ */
 WT_DECLARE_WT_MEMBER
 (ResetPageZoom, Wt::JavaScriptFunction, "ResetPageZoom",
 function(){
@@ -99,29 +87,8 @@ function(){
   setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 100 );
 }
 );
-#endif //BUILD_AS_ELECTRON_APP
 
 
-
-#if( BUILD_AS_ELECTRON_APP )
-WT_DECLARE_WT_MEMBER
-(IncreasePageZoom, Wt::JavaScriptFunction, "IncreasePageZoom",
-function(){
-  if( Wt.WT.IsElectronInstance() ){
-    let webFrame = require('electron').webFrame;
-    let level = webFrame.getZoomLevel();
-    webFrame.setZoomLevel( level + 1 );
-  }else{
-    let current = 1.0;
-    if( document.body.style.zoom )
-      current = parseFloat( document.body.style.zoom );
-    document.body.style.zoom = 1.05 * current;
-  }
-  setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 100 );
-}
-);
-
-#else  //BUILD_AS_ELECTRON_APP
 
 WT_DECLARE_WT_MEMBER
 (IncreasePageZoom, Wt::JavaScriptFunction, "IncreasePageZoom",
@@ -133,28 +100,7 @@ function(){
   setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 100 );
 }
 );
-#endif //BUILD_AS_ELECTRON_APP
 
-
-#if( BUILD_AS_ELECTRON_APP )
-WT_DECLARE_WT_MEMBER
-(DecreasePageZoom, Wt::JavaScriptFunction, "DecreasePageZoom",
-function(){
-  if( Wt.WT.IsElectronInstance() ){
-    let webFrame = require('electron').webFrame;
-    let level = webFrame.getZoomLevel();
-    webFrame.setZoomLevel( level - 1 );
-  }else{
-    let current = 1.0;
-    if( document.body.style.zoom )
-      current = parseFloat( document.body.style.zoom );
-    document.body.style.zoom = 0.95 * current;
-  }
-  setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 100 );
-}
-);
-
-#else  //BUILD_AS_ELECTRON_APP
 
 WT_DECLARE_WT_MEMBER
 (DecreasePageZoom, Wt::JavaScriptFunction, "DecreasePageZoom",
@@ -166,4 +112,3 @@ function(){
   setTimeout( function(){ window.dispatchEvent(new Event('resize')); }, 100 );
 }
 );
-#endif //BUILD_AS_ELECTRON_APP

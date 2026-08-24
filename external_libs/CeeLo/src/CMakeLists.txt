@@ -40,11 +40,19 @@ target_include_directories(CeeLo
         ${CMAKE_CURRENT_SOURCE_DIR}
 )
 
+# EfficiencyCalculator.cpp and ResponseGenerator.cpp use std::thread, which on
+# libstdc++ needs -pthread at link time; without it consumers fail with undefined
+# references to pthread_create/pthread_join.  PUBLIC so it propagates to everything
+# linking CeeLo (make_golden_response, InterSpecLib, ...).  macOS does not need it -
+# pthread lives in libSystem there - which is why this only shows up on Linux.
+find_package(Threads REQUIRED)
+
 # The library itself includes no Boost headers -- Boost is a test-only
 # dependency (Boost.Test), found in tests/CMakeLists.txt.
 target_link_libraries(CeeLo
     PUBLIC
         Eigen3::Eigen
+        Threads::Threads
 )
 
 # Strict warnings

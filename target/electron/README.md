@@ -241,11 +241,38 @@ npm run package-manylinux
 
 
 ## Minimum supported OS
-Electron 41 sets these floors for end-user systems:
-- macOS 13.3+ (Ventura), Apple Silicon (arm64) only — Intel macOS is not built. (InterSpec's own C++20 deployment target sets this floor; Electron 41 itself supports back to macOS 11.)
+Electron 43 sets these floors for end-user systems:
+- macOS 13.3+ (Ventura), Apple Silicon (arm64) only — Intel macOS is not built. (InterSpec's own C++20 deployment target sets this floor; Electron 43 itself supports back to macOS 12 / Monterey.)
 - Windows 10 1809 (build 17763) or newer, x64 only — ia32 / 32-bit Windows is no longer built (Electron dropped it after Electron 21).
+
+Note that Electron 43 is the last release series to ship prebuilt binaries for 32-bit platforms
+(Windows ia32 and Linux armv7l); we build neither.  Electron 44 raises the macOS floor to 13, which
+is at or below the floor InterSpec's own C++20 deployment target already sets.
 - Linux x64 with glibc 2.28+ — RHEL 8, Ubuntu 20.04+, Fedora 30+, Debian 11+. Older distros (CentOS 7, Ubuntu 18.04, etc.) are not supported.
 
+
+## Menus are HTML, not native
+InterSpec draws its own titlebar and menubar in HTML (`src/InterSpec.cpp`, the `isAppTitlebar`
+branch, plus `PopupDivMenu`/`PopupDivMenuItem` in `src/PopupDiv.cpp`).  On Windows and Linux the
+`BrowserWindow` is frameless (`windowPrefs.frame = (process.platform == 'darwin')` in
+`app/main.js`) and `main.js` calls `Menu.setApplicationMenu(null)` so the Alt key cannot pull focus
+away from the spectrum chart.
+
+There *was* a `USE_ELECTRON_NATIVE_MENU` CMake option that mirrored those menus into Electron's
+native `Menu`.  It was removed in commit `ddeec409` (2023-11-25, -852 lines) because the bridge
+called `Menu.getApplicationMenu()` from the renderer, which the removal of the `remote` module -
+and later `contextIsolation` - made impossible.  **Do not bring it back without a strong reason.**
+Rebuilding it on the N-API channel would mean re-creating something like
+`target/macos/NativeMenu.h`'s API and hooking ~14 sites in `PopupDiv.cpp`, and the app menus are
+heavily dynamic (items enabled/hidden/renamed at runtime, the detector submenu torn down and
+rebuilt on every file load) - which is exactly what the old bridge handled badly; see
+[electron#527](https://github.com/electron/electron/issues/527).  The HTML menus also keep this
+target in sync with the wxWidgets one, which uses the same code.  macOS is the one place a native
+menubar clearly helps, and `target/osx` - the actual macOS release path - already has it via
+`USE_OSX_NATIVE_MENU`.
+
+One consequence worth knowing: with no native menu on Windows/Linux there is no native accelerator
+table, so keyboard shortcuts work only where InterSpec binds them itself in HTML.
 
 ## Code signing & notarization (macOS)
 
@@ -369,6 +396,9 @@ immediately.
 As of Electron 41 the sandbox is broken on Ubuntu 24.04+ even *with* the AppArmor profile - the
 renderer dies on `/dev/shm` access - which appears to be an upstream Chromium regression
 (Electron 13 was fine). The relaunch fallback above is what keeps those systems usable.
+This has **not** been re-verified since the upgrade to Electron 43; the Ubuntu 24.04 `.deb`
+install-and-launch step in `.github/workflows/build_app.yml` is the check that would show it
+having been fixed upstream (it asserts `sandbox_failures.json` is never created).
 
 ### Desktop integration
 - `linux/gov.sandia.InterSpec.xml` defines the `application/gamma-spectrum` MIME type and its

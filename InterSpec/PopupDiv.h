@@ -25,11 +25,23 @@
 
 #include "InterSpec_config.h"
 
+#include <string>
+
 #include <Wt/WMenuItem.h>
 #include <Wt/WPopupMenu.h>
 
 class PopupDivMenu;
 class PopupDivMenuItem;
+
+
+/** Pushes a menu check box's current checked/enabled state to its native menu counterpart.
+
+ `WCheckBox::setChecked(bool)`, `enable()` and `disable()` are not virtual and emit nothing, so
+ changing a menu check box directly - rather than through its `checked()`/`unChecked()` signals -
+ leaves a native menu item stale.  Call this after doing so.  Does nothing if `cb` is not inside a
+ menu item, or for builds without native menus, so call sites need no `#if`.
+ */
+void syncNativeMenuCheckBox( Wt::WCheckBox *cb );
 
 namespace Wt
 {
@@ -90,13 +102,23 @@ the menus still behave well.
 */
 #define APP_MENU_STATELESS_FIX 1
 
-//Limitations of enabling USE_OSX_NATIVE_MENU:
+//Limitations shared by USE_OSX_NATIVE_MENU and USING_ELECTRON_NATIVE_MENU:
 //  -disabling the closing of the menu when an item is selected isn't supported.
 //  -CheckBox items must be created through passing a WCheckBox to
-//   PopupDivMenu::addWidget(...).
+//   PopupDivMenu::addWidget(...); WMenuItem::setCheckable() is Wt-side only.
 //  -Only WCheckBox is supported by PopupDivMenu::addWidget(...), adding any
 //   other widget to, or as, a menu item is not supported.
-//  -USE_OSX_NATIVE_MENU implementation casts the objective-c pointers to void*
+//  -A WCheckBox changed from outside the menu (e.g. a preference toggled
+//   elsewhere) does not push its new state to the native item; setChecked()
+//   emits nothing we can hook.
+//  -Items that rely on their anchor holding a URL (downloads, opening a new
+//   window) do not work; see the note in target/macos/NativeMenu.h.
+//  -XHTML labels (PopupDivMenuItem::makeTextXHTML()) render as plain text.
+//Limitations specific to USE_OSX_NATIVE_MENU:
+//  -sub-menus are only mirrored one level deep, below an app-level menu.
+//  -changing an item's text after creation is not propagated; the Electron
+//   path handles this through PopupDivMenuItem::setMenuText(...).
+//  -implementation casts the objective-c pointers to void*
 //   pointers, I tried doing some forward declartions using things similar to
 //   'typedef struct objc_object NSMenu', but then ran into linking errors.
 
@@ -171,6 +193,14 @@ public:
   bool removeSeperator( Wt::WMenuItem *sepertor );
   
   
+#if( USING_ELECTRON_NATIVE_MENU )
+  /** Tags this app-level menu with the part it plays in the native menu bar - "edit" or "help".
+   \sa setElectronMenuRole
+   */
+  void setNativeMenuRole( const char *role );
+  
+#endif
+
   virtual void setHidden( bool hidden,
                           const Wt::WAnimation &animation = Wt::WAnimation() );
   
@@ -245,6 +275,14 @@ protected:
   friend class PopupDivMenuItem;
 #endif
 
+#if( USING_ELECTRON_NATIVE_MENU )
+  /** Handle of this menu's counterpart in Electron's native Menu; empty if it has none.
+   The handle is just this widget's id() - see target/electron/NativeMenu.h.
+   */
+  std::string m_electronMenu;
+  friend class PopupDivMenuItem;
+#endif
+
   bool m_mobile;
   const MenuType m_type;
 };//class PopupDivMenu
@@ -287,12 +325,38 @@ public:
   //  happen if the anchor is clicked), we will call WMenuItem::select().
   void nonAnchorClickHack();
   
+  /** Keyboard accelerator for this item, in Electron's format (e.g. "CmdOrCtrl+O").
+   
+   Only used when the item is mirrored into a native menu; ignored by the HTML menus, so call sites
+   do not need to be guarded.  May be called before or after the item is added to a menu.
+   */
+  void setNativeAccelerator( const std::string &accelerator );
+  const std::string &nativeAccelerator() const;
+  
+  /** Changes the item's text, keeping any native counterpart in sync.
+   
+   `WMenuItem::setText()` is not virtual, so this cannot be done by an override; use this instead of
+   setText() for items whose label changes at runtime.  (The macOS native menu cannot follow label
+   changes at all - see the limitations above.)
+   */
+  void setMenuText( const Wt::WString &text );
+  
 #if( USE_OSX_NATIVE_MENU )
   void *getNsMenuItem();
   virtual void setHidden( bool hidden,
                           const Wt::WAnimation &animation = Wt::WAnimation() );
   // Keep the native menu item's cached enabled state (read by validateMenuItem on the AppKit
   //  thread) in sync with this widget's enabled state.
+  virtual void setDisabled( bool disabled ) override;
+#endif
+  
+#if( USING_ELECTRON_NATIVE_MENU )
+  /** Handle of this item's counterpart in Electron's native menu; empty if it has none. */
+  const std::string &nativeMenuItemId() const;
+  
+  // Keep the native menu item in sync with this widget's hidden/enabled state.
+  virtual void setHidden( bool hidden,
+                          const Wt::WAnimation &animation = Wt::WAnimation() ) override;
   virtual void setDisabled( bool disabled ) override;
 #endif
   
@@ -308,6 +372,19 @@ protected:
   void *m_nsmenuitemtarget;
   friend class PopupDivMenu;
 #endif
+  
+#if( USING_ELECTRON_NATIVE_MENU )
+  virtual void propagateSetEnabled( bool enabled ) override;
+  
+  /** Handle of the menu this item was inserted into, and of the item itself (which is just this
+   widget's id()); both empty if the item has no native counterpart.
+   */
+  std::string m_electronMenu;
+  std::string m_electronItem;
+  friend class PopupDivMenu;
+#endif
+  
+  std::string m_accelerator;
 };//class PopupDivMenuItem
 
 #endif //PopupDiv_h

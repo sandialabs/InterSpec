@@ -81,7 +81,12 @@ extern "C"
   */
   LIB_INTERFACE(void) interspec_add_allowed_external_session_token( const char *session_token );
   
-  /** Returns 0 if authorized but not alive, 1 if session is alive, -1 if dead, -2 if nor authorized. */
+  /** Deauthorizes a session token; see InterSpecServer::remove_allowed_session_token.
+
+   Returns the state the session was in before this call: -1 unknown token, -2 invalid session,
+   0 if it had been loaded (or was dead), 1 if authorized but never loaded, 2 if already
+   deauthorized.
+   */
   LIB_INTERFACE(int) interspec_remove_allowed_session_token( const char *session_token );
   
   /** Returns 1 if a session with the specified token is loaded (alive),
@@ -121,6 +126,13 @@ extern "C"
    
    */
   LIB_INTERFACE(bool) interspec_set_initial_file_to_open( const char *session_token, const char *file_path );
+
+  /** Returns whether this build mirrors the WMenus into Electron's native Menu.
+   
+   main.js needs this to decide whether to give windows a real frame, and whether to clear the
+   default application menu.
+   */
+  LIB_INTERFACE(bool) interspec_using_electron_menus();
 }//extern "C"
 
 #endif //#if( BUILD_AS_ELECTRON_APP )

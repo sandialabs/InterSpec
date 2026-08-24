@@ -108,10 +108,11 @@ struct SessionState
   std::chrono::system_clock::time_point deauth_time;
   std::chrono::system_clock::time_point destruct_time;
   
+  //Initializer order must match the declaration order above, or -Wreorder fires.
   SessionState()
   : current_state( State::Invalid ),
+    session_type( InterSpecServer::SessionType::ExternalBrowserInstance ),
     auth_time(),
-    session_type(InterSpecServer::SessionType::ExternalBrowserInstance),
     load_time(),
     deauth_time(),
     destruct_time()

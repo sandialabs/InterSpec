@@ -25,6 +25,13 @@ set( BUILD_AS_ELECTRON_APP ON CACHE BOOL "Set to build Electron target" )
 set( TRY_TO_STATIC_LINK ON CACHE BOOL "Lets statically link everything" )
 set( BUILD_AS_LOCAL_SERVER OFF CACHE BOOL "N/A" )
 set( USE_OSX_NATIVE_MENU OFF CACHE BOOL "N/A" )
+# On macOS the window has a real frame and a real menu bar, so mirror the WMenus into Electrons
+#  native Menu.  Windows and Linux use a frameless window with the HTML titlebar/menubar.
+if( APPLE )
+  set( USING_ELECTRON_NATIVE_MENU ON CACHE BOOL "Use Electron native menu-system" )
+else()
+  set( USING_ELECTRON_NATIVE_MENU OFF CACHE BOOL "Use Electron native menu-system" )
+endif()
 set( USE_SPECRUM_FILE_QUERY_WIDGET ON CACHE BOOL "Enable Spectrum File Query Widget" )
 set( USE_REMOTE_RID ON CACHE BOOL "Enables using remote RID tool" )
 set( USE_BATCH_CLI_TOOLS ON CACHE BOOL "Enables using command-line batch tool" )
@@ -34,7 +41,7 @@ set( USE_REL_ACT_TOOL ON CACHE BOOL "Enables using map tool" )
 
 IF(WIN32)
   add_definitions(-DBOOST_ALL_NO_LIB) #Prevent boost auto-linking, which seems to call in vc141 boost libs instead of vc142
-  add_definitions(-D _WIN32_WINNT=0x0A00 -D WINVER=0x0A00 -D _SCL_SECURE_NO_WARNINGS ) #0x0A00==Win10 (Electron 41 requires Win10 1809+)
+  add_definitions(-D _WIN32_WINNT=0x0A00 -D WINVER=0x0A00 -D _SCL_SECURE_NO_WARNINGS ) #0x0A00==Win10 (Electron 43 requires Win10 1809+)
 ENDIF(WIN32)
 
 if(MSVC)
@@ -52,7 +59,7 @@ add_subdirectory( ${CMAKE_CURRENT_SOURCE_DIR}/../.. ${CMAKE_CURRENT_BINARY_DIR}/
 
 
 include_directories( ${CMAKE_JS_INC})
-set( SOURCE_FILES InterSpecAddOn.cpp InterSpecAddOn.h ElectronUtils.cpp ElectronUtils.h ../../src/js_inline/AppHtmlMenu.js )
+set( SOURCE_FILES InterSpecAddOn.cpp InterSpecAddOn.h ElectronUtils.cpp ElectronUtils.h NativeMenu.cpp NativeMenu.h ../../src/js_inline/AppHtmlMenu.js )
 add_library(${PROJECT_NAME} SHARED ${SOURCE_FILES} ${CMAKE_JS_SRC})
 set_target_properties(${PROJECT_NAME} PROPERTIES PREFIX "" SUFFIX ".node")
 target_link_libraries(${PROJECT_NAME} PUBLIC ${CMAKE_JS_LIB} InterSpecLib )

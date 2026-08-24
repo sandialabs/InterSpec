@@ -32,6 +32,15 @@
 
 #cmakedefine01 PERFORM_DEVELOPER_CHECKS
 #cmakedefine01 USE_OSX_NATIVE_MENU
+#cmakedefine01 USING_ELECTRON_NATIVE_MENU
+
+// Only macOS gives the native menu bar an application menu (the bold one carrying About, Hide and
+//  Quit).  Where there is one, those items must not also appear in InterSpec's File and Help menus.
+#if( USING_ELECTRON_NATIVE_MENU && defined(__APPLE__) )
+  #define ELECTRON_NATIVE_APP_MENU 1
+#else
+  #define ELECTRON_NATIVE_APP_MENU 0
+#endif
 
 #cmakedefine01 USE_REL_ACT_TOOL
 

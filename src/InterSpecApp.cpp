@@ -225,14 +225,9 @@ bool InterSpecApp::checkExternalTokenFromUrl()
 void InterSpecApp::setupDomEnvironment()
 {
 #if( BUILD_AS_ELECTRON_APP )
+  // Wt.WT.IsElectronInstance() is still used by AppHtmlMenu.js to tell the Electron build apart
+  //  from the wxWidgets/browser ones.
   LOAD_JAVASCRIPT(wApp, "InterSpecApp.cpp", "InterSpecApp", wtjsIsElectronInstance);
-  
-  //To make nodeIntegration=true work:
-  //  https://stackoverflow.com/questions/32621988/electron-jquery-is-not-defined
-  const char *fixElectronJs =
-  "if( Wt.WT.IsElectronInstance() )"
-    "if (typeof module === 'object') {window.module = module; module = undefined;}";
-  doJavaScript( fixElectronJs, false );
 #endif //BUILD_AS_ELECTRON_APP
   
   // Global state object for cross-file JS communication
@@ -482,10 +477,6 @@ void InterSpecApp::setupDomEnvironment()
     doJavaScript( prevent_spinner_js );
   }//if( isMobile() )
 
-  
-#if( BUILD_AS_ELECTRON_APP )
-  doJavaScript( "if (window.module) module = window.module;", false );
-#endif
   
   // Pre-load some CSS we will likely encounter anyway; avoids some glitching when loading new
   //  widgets, especially if they are in a AuxWindow.
@@ -1781,6 +1772,29 @@ bool InterSpecApp::removeGlobalCssRule( const std::string &rulename )
 
   return true;
 }//bool removeGlobalCssRule(...)
+
+
+#if( USING_ELECTRON_NATIVE_MENU )
+void InterSpecApp::registerElectronMenuItem( const std::string &id, PopupDivMenuItem *item )
+{
+  assert( item && !id.empty() );
+  if( item && !id.empty() )
+    m_electronMenuItems[id] = item;
+}//void registerElectronMenuItem(...)
+
+
+void InterSpecApp::unregisterElectronMenuItem( const std::string &id )
+{
+  m_electronMenuItems.erase( id );
+}//void unregisterElectronMenuItem(...)
+
+
+PopupDivMenuItem *InterSpecApp::electronMenuItem( const std::string &id ) const
+{
+  const auto pos = m_electronMenuItems.find( id );
+  return (pos == std::end(m_electronMenuItems)) ? nullptr : pos->second;
+}//PopupDivMenuItem *electronMenuItem(...)
+#endif //USING_ELECTRON_NATIVE_MENU
 
 
 void InterSpecApp::finalize()

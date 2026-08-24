@@ -144,11 +144,15 @@ template<class KeyT, class ValueT>
 class RecentCache
 {
 public:
-  explicit RecentCache( const std::size_t capacity ) : m_capacity( capacity ? capacity : 1 ) {}
+  explicit RecentCache( const std::size_t capacity ) : m_capacity( capacity ) {}
 
-  /** Newest-first lookup; null when absent.  Linear, which for a small capacity beats a tree. */
+  /** Newest-first lookup; null when absent.  Linear, which for a small capacity beats a tree.
+   A zero capacity disables the cache outright, so "is this cache worth its complexity" can be
+   measured rather than assumed. */
   std::shared_ptr<const ValueT> find( const KeyT &key ) const
   {
+    if( !m_capacity )
+      return nullptr;
     for( auto iter = m_entries.rbegin(); iter != m_entries.rend(); ++iter )
       if( iter->first == key )
         return iter->second;
@@ -168,6 +172,8 @@ public:
   {
     if( const std::shared_ptr<const ValueT> existing = find(key) )
       return { existing, false };
+    if( !m_capacity )
+      return { value, true };   //disabled: hand back the caller's value, retain nothing
     m_entries.emplace_back( key, std::move(value) );
     while( m_entries.size() > m_capacity )
       m_entries.pop_front();
@@ -178,7 +184,7 @@ public:
    the shrink path below is defensive rather than exercised in production. */
   void set_capacity( const std::size_t capacity )
   {
-    m_capacity = capacity ? capacity : 1;
+    m_capacity = capacity;
     while( m_entries.size() > m_capacity )
       m_entries.pop_front();
   }
@@ -186,8 +192,19 @@ public:
   std::size_t size() const { return m_entries.size(); }
   std::size_t capacity() const { return m_capacity; }
 
+  /** Lookup tallies, for measuring whether the retained window is actually big enough.  A window
+   smaller than the live working set does not fail, it silently degrades to recomputing the decay
+   every time, so hit rate is the only way to tell a working cache from an expensive no-op.  Not
+   synchronized: callers hold the same mutex they use for the entries. */
+  std::size_t hits() const { return m_hits; }
+  std::size_t misses() const { return m_misses; }
+  void note_hit() const { ++m_hits; }
+  void note_miss() const { ++m_misses; }
+
 private:
   std::size_t m_capacity;
+  mutable std::size_t m_hits = 0;
+  mutable std::size_t m_misses = 0;
   std::deque<std::pair<KeyT,std::shared_ptr<const ValueT>>> m_entries;
 };
 
@@ -199,12 +216,44 @@ private:
  evaluation round queries an entry per nuclide before anything repeats - the window has to hold a
  few ages for *every* source at once, not just a few entries overall.
 
- At roughly 27 kB per entry, even a 40-source problem bounds each cache near 5 MB, so the sixteen
+ At roughly 27 kB per entry, even a 40-source problem bounds each cache near 17 MB, so the sixteen
  cost functors the candidate search keeps alive stay in the tens of megabytes rather than the tens
- of gigabytes an unbounded map reached. */
+ of gigabytes an unbounded map reached.
+
+ MEASURED 2026-08-22 on JRC Detective_Pu CBNM_Pu/4h with the shipped Pu presets, chi2 bit-identical
+ across every arm - this cache only ever costs or saves time.  (Those presets set
+ `NucsOfElSameAge`, so ONE fitted age controls all four Pu isotopes; the cache still sees four
+ distinct (source, age) keys per evaluation, which is what matters here.)
+
+   preset            cache off     5 ages/src      16 ages/src
+   610-775 keV       244.6 s       172.3 s (0.70x) 157.4 s (0.64x)
+   120-780 keV      1248.6 s       198.8 s (0.16x) 186.3 s (0.15x)
+
+ So the cache earns its keep decisively - 6.3x on the wide preset - and the original 5 was simply
+ undersized: the age-derivative sampler routes its probes through this same cache, so one source
+ needs its reference age plus a couple per refinement level at once.  Hit rate saturates near 27%
+ (610-775) / 61% (120-780) by 16-64 ages per source, so a larger window buys nothing - which also
+ means the unbounded map this replaced was paying its memory for almost no extra hits.
+ Sweep with INTERSPEC_REL_ACT_DECAY_CACHE_AGES (0 disables) before changing this. */
 inline std::size_t recent_decay_cache_capacity( const std::size_t num_sources )
 {
-  constexpr std::size_t ages_per_source = 5;
+  // `INTERSPEC_REL_ACT_DECAY_CACHE_AGES` overrides the ages-per-source window, so the window can be
+  // swept against CPU/hit-rate on a real corpus instead of being argued about.  The shipped value
+  // of 5 has never been measured, and the live working set is plausibly larger: the age-derivative
+  // sampler routes its probes through this same cache, so a source can need its reference age plus
+  // two per refinement level at once.
+  static const std::size_t ages_per_source = []() -> std::size_t {
+    const char * const value = std::getenv( "INTERSPEC_REL_ACT_DECAY_CACHE_AGES" );
+    if( !value )
+      return 16;
+    const int parsed = std::atoi( value );
+    if( parsed == 0 )
+      return 0;   //explicitly disable, for the with/without measurement
+    return (parsed > 0) ? static_cast<std::size_t>(parsed) : 16;
+  }();
+
+  if( !ages_per_source )
+    return 0;
   return ages_per_source * (num_sources ? num_sources : 1);
 }
 

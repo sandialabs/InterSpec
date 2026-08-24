@@ -302,7 +302,13 @@ else
   mkdir build
   cd build
 
-  cmake -DCMAKE_BUILD_TYPE=Release -DZLIB_BUILD_EXAMPLES=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" .. # cmake is an external dependency
+  # CMAKE_INSTALL_LIBDIR=lib is set on every CMake sub-build here so the whole prefix keeps one
+  #  layout.  boost's b2 and Wt always install into `lib`, but any dependency using GNUInstallDirs
+  #  would pick `lib64` on a RHEL-family distro, and two places assume `lib`: the
+  #  `rm -f .../lib/libz.so*` below, and cmake/FindWt.cmake's `HINTS ${Wt_INCLUDE_DIR}/../lib`.
+  #  (zlib 1.3.1 has its own INSTALL_LIB_DIR that already defaults to lib, so here it is belt and
+  #  braces; for abseil and Ceres it is doing real work.)
+  cmake -DCMAKE_BUILD_TYPE=Release -DZLIB_BUILD_EXAMPLES=OFF -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_LIBDIR=lib -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" .. # cmake is an external dependency
   make -j${_ncore} install # make is an external dependency
   rm -rf ./*
   rm -f "${MY_WT_PREFIX}/lib/libz.so"
@@ -422,7 +428,7 @@ else
   mkdir build
   cd build
 
-  cmake -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DABSL_BUILD_TESTING=OFF -DABSL_USE_GOOGLETEST_HEAD=OFF -DCMAKE_CXX_STANDARD=20 -DBUILD_SHARED_LIBS=OFF ..
+  cmake -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_BUILD_TYPE=Release -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_LIBDIR=lib -DABSL_BUILD_TESTING=OFF -DABSL_USE_GOOGLETEST_HEAD=OFF -DCMAKE_CXX_STANDARD=20 -DBUILD_SHARED_LIBS=OFF ..
   cmake --build . --config Release --target install --parallel ${_ncore}
 
   touch "${working_directory}/abseil.installed"
@@ -457,7 +463,7 @@ else
   mkdir build_linux
   cd build_linux
 
-  cmake -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=OFF -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_STANDARD=20 ..
+  cmake -DCMAKE_PREFIX_PATH="${MY_WT_PREFIX}" -DCMAKE_INSTALL_PREFIX="${MY_WT_PREFIX}" -DCMAKE_POSITION_INDEPENDENT_CODE=ON -DCMAKE_INSTALL_LIBDIR=lib -DACCELERATESPARSE=OFF -DUSE_CUDA=OFF -DEXPORT_BUILD_DIR=OFF -DBUILD_TESTING=OFF -DBUILD_EXAMPLES=OFF -DPROVIDE_UNINSTALL_TARGET=OFF -DBUILD_SHARED_LIBS=OFF -DCMAKE_CXX_STANDARD=20 ..
   cmake --build . --config Release --target install --parallel ${_ncore}
 
   touch "${working_directory}/Ceres.installed"
