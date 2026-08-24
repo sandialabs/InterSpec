@@ -89,11 +89,9 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
     return;
   assert( RelActCalcAutoImp::solve_may_profile(solution.m_options) );
 
-  // A profile is a conditional optimization of the selected physical problem, not a request to
-  // classify a nearby piecewise model again.  Snapshot every continuum rank/active-set decision
-  // and every BR-nuisance interval (including an intentionally empty interval set) from the main
-  // solution.  Conditional solves and a one-time better-baseline search both consume these exact
-  // values and defer their ordinary continuum outer check.
+  // A profile is a conditional optimization of the selected physical problem.  Snapshot every
+  // BR-nuisance interval (including an intentionally empty interval set) from the main solution;
+  // conditional solves and a one-time better-baseline search both consume these exact values.
   if( !solution.m_cost_functor )
   {
     solution.m_warnings.push_back( "Mass-fraction profiles were skipped because the usable solution"
@@ -116,11 +114,6 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
                                    " did not retain its detector-response input." );
     return;
   }
-  std::vector<PeakFit::ContinuumFitPolicy> frozen_profile_continuum_policies;
-  frozen_profile_continuum_policies.reserve(solution.m_cost_functor->m_energy_ranges.size());
-  for( const RelActCalcAutoImp::RoiRangeChannels &roi
-       : solution.m_cost_functor->m_energy_ranges )
-    frozen_profile_continuum_policies.push_back(roi.frozen_continuum_policy);
   const std::vector<std::pair<double,double>> frozen_profile_peak_ranges
                                       = solution.m_cost_functor->m_peak_ranges_with_uncert;
   const std::uint64_t frozen_profile_gamma_hash = solution.m_frozen_gamma_membership_hash;
@@ -204,8 +197,6 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
                                                   != frozen_profile_peaks[peak].get() )
         return false;
     return candidate.m_cost_functor
-        && candidate.m_cost_functor->continuum_policies_match(
-                                                frozen_profile_continuum_policies)
         && (candidate.m_cost_functor->m_peak_ranges_with_uncert
                                                 == frozen_profile_peak_ranges)
         && (candidate.m_frozen_gamma_membership_hash == frozen_profile_gamma_hash)
@@ -1144,8 +1135,7 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
     restarted = RelActCalcAutoImp::RelActAutoCostFcn::solve_ceres(
         restart_options,foreground,background,frozen_profile_drf,frozen_profile_peaks,det_type,
         cancel_calc,RelActCalcAutoImp::SearchSeedVariant::Default,
-        true,selected.conditional_solution.get(),true,
-        &frozen_profile_continuum_policies,0,true,&frozen_profile_peak_ranges,
+        true,selected.conditional_solution.get(),true,&frozen_profile_peak_ranges,
         &frozen_profile_model_policy,true,/*may_host_profile=*/true );
   }catch( const std::exception &e )
   {
@@ -1168,7 +1158,7 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
     assert( same_frozen_objective );
     if( !same_frozen_objective )
     {
-      fail_deferred_profiles( "Baseline reselection changed the frozen continuum, branching-ratio,"
+      fail_deferred_profiles( "Baseline reselection changed the frozen branching-ratio,"
                               " gamma-membership, or selected-model policy." );
       return;
     }

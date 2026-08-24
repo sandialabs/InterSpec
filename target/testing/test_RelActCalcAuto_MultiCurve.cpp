@@ -355,8 +355,15 @@ BOOST_AUTO_TEST_CASE( two_disk_default_seeding_reaches_truth )
   BOOST_REQUIRE_NO_THROW( sol = RelActCalcAuto::solve( options, foreground, background, drf, {},
                                     PeakFitUtils::coarse_det_type( foreground, nullptr ), nullptr ) );
 
+  // Report the status and the warnings behind it: a solve downgraded to `UsableWithWarnings`
+  //  carries no error message, so the bare message left this failure undiagnosable.
+  string status_detail = "status=" + std::to_string(static_cast<int>(sol.m_status))
+                         + " msg='" + sol.m_error_message + "'";
+  for( const string &warning : sol.m_warnings )
+    status_detail += "\n    warning: " + warning;
+
   BOOST_REQUIRE_MESSAGE( sol.m_status == RelActCalcAuto::RelActAutoSolution::Status::Success,
-                         "Solve failed: " << sol.m_error_message );
+                         "Solve failed: " << status_detail );
 
   check_fitted_areal_density_user_bounds(options,sol);
 

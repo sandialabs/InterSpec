@@ -424,6 +424,56 @@ double eval_cubic_spline_scalar( const double energy,
 }
 
 
+/** Scalar value and derivative from ONE branch search.
+
+ The deviation-pair root solve below needs both at the same point on every iteration, and this is
+ the hottest scalar path in the objective (it runs for every gamma of every ROI on every
+ evaluation), so the piecewise branch is located once and reused rather than binary-searched twice.
+ The value/derivative expressions, including the clamped end behaviour, are exactly those of
+ eval_cubic_spline_scalar() and eval_cubic_spline_scalar_derivative(). */
+template<typename T>
+void eval_cubic_spline_scalar_value_and_derivative(
+  const double energy, const std::vector<CubicSplineNodeT<T>> &nodes,
+  double &value, double &derivative )
+{
+  const auto scalar = []( const T &val ) -> double {
+    if constexpr ( std::is_same_v<T, double> )
+      return val;
+    else
+      return val.a;
+  };
+
+  value = 0.0;
+  derivative = 0.0;
+  if( nodes.empty() )
+    return;
+
+  const auto it = std::upper_bound( nodes.begin(), nodes.end(), energy,
+    [&]( const double e, const CubicSplineNodeT<T> &node ) {
+      return e < scalar(node.x);
+    } );
+
+  // Outside the spline the value clamps to the end node and the correction is constant, so the
+  // derivative is zero - matching the two functions this replaces.
+  if( it == nodes.begin() )
+  {
+    value = scalar( nodes.front().y );
+    return;
+  }
+  if( it == nodes.end() )
+  {
+    value = scalar( nodes.back().y );
+    return;
+  }
+
+  const CubicSplineNodeT<T> &node = *(it - 1);
+  const double h = energy - scalar(node.x);
+  const double na = scalar(node.a), nb = scalar(node.b), nc = scalar(node.c);
+  value = ((na * h + nb) * h + nc) * h + scalar(node.y);
+  derivative = (3.0 * na * h + 2.0 * nb) * h + nc;
+}
+
+
 /** Scalar derivative dS/dE for the same piecewise branch selected by
  eval_cubic_spline_scalar(). */
 template<typename T>
@@ -498,16 +548,37 @@ T correction_due_to_deviation_pairs( const T true_energy, const std::vector<Cubi
   constexpr double root_residual_tol = 1.0e-10;
   double a_scalar = eval_cubic_spline_scalar( true_energy_scalar, nodes );
   bool converged = false;
-  for( int iter = 0; iter < 64; ++iter )
+
+  // Newton on f(a) = a - S(E-a), whose derivative is f'(a) = 1 + S'(E-a) - the same quantity the
+  // implicit-function theorem uses below, so the iteration and the reported derivative agree by
+  // construction.  This replaced a damped average, a = (a + S(E-a))/2, which converges only
+  // LINEARLY (rate ~1/2): reaching the tolerance above took ~35-60 spline evaluations per call,
+  // and this function runs for every gamma of every ROI on every objective evaluation - it
+  // measured as the single hottest leaf in the fit (about 12% of all compute samples).  Newton is
+  // quadratic and lands on the same root in a handful of steps.  Near a fold (S' -> -1) the step
+  // is unbounded, so fall back to the damped average there; the bracketing search below still
+  // catches anything neither method resolves.
+  for( int iter = 0; iter < 32; ++iter )
   {
-    const double spline_value = eval_cubic_spline_scalar( true_energy_scalar - a_scalar, nodes );
+    double spline_value = 0.0, spline_derivative = 0.0;
+    eval_cubic_spline_scalar_value_and_derivative( true_energy_scalar - a_scalar, nodes,
+                                                   spline_value, spline_derivative );
     const double residual = a_scalar - spline_value;
     if( std::fabs(residual) <= root_residual_tol )
     {
       converged = true;
       break;
     }
-    a_scalar = 0.5 * (a_scalar + spline_value);
+
+    const double denom = 1.0 + spline_derivative;
+    if( std::fabs(denom) > 1.0e-6 )
+    {
+      const double next = a_scalar - (residual / denom);
+      a_scalar = std::isfinite(next) ? next : (0.5 * (a_scalar + spline_value));
+    }else
+    {
+      a_scalar = 0.5 * (a_scalar + spline_value);
+    }
   }
 
   // Non-contractive splines still have at least one root because S clamps at

@@ -598,7 +598,7 @@ void CGPaintDevice::updateFont( const WFont &font )
 
 
 void CGPaintDevice::drawText( const WRectF &rect, WFlags<AlignmentFlag> flags,
-                               TextFlag textFlag, const WString &text,
+                               TextFlag textFlag, const WTextF &text,
                                const WPointF *clipPoint )
 {
   // Clip-point check: if a clip point is provided and is outside the clip path, skip
@@ -612,7 +612,7 @@ void CGPaintDevice::drawText( const WRectF &rect, WFlags<AlignmentFlag> flags,
   if( !m_ctFont )
     return;
 
-  const std::string utf8 = text.toUTF8();
+  const std::string utf8 = text.text().toUTF8();
   if( utf8.empty() )
     return;
 
