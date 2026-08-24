@@ -62,6 +62,11 @@
 
 // CeeLo (external_libs/CeeLo/src)
 #include "io/DetectorResponse.h"
+#include "io/ResponseGenerator.h"
+#include "io/EfficiencyTransfer.h"
+#include "efficiency/EfficiencyCalculator.h"
+#include "cascade/AnalyticCascade.h"
+#include "cascade/SandiaDecayCascade.h"
 
 #include "SpecUtils/SpecFile.h"
 #include "SpecUtils/Filesystem.h"
@@ -70,7 +75,9 @@
 
 #include "InterSpec/PeakDef.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/MaterialDB.h"
 #include "InterSpec/CeeLoUtils.h"
+#include "InterSpec/AngleOutxImport.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/DecayDataBaseServer.h"
@@ -1000,3 +1007,755 @@ BOOST_AUTO_TEST_CASE( response_angle_series_json )
   const double intrinsic_direct = det->intrinsicEfficiencyEval( 661.7f ).value;
   BOOST_CHECK_CLOSE( intrinsic_via_abs, intrinsic_direct, 5.0 );  //percent
 }//response_angle_series_json
+
+
+// ---------------------------------------------------------------------------
+// ANGLE cross-validation: does InterSpec's transfer/MC machinery, seeded with
+// the ANGLE measured reference curve + physical detector model, reproduce
+// ANGLE's own <results> efficiency at the (near-contact) sample geometry?
+//
+// Ground truth: the <result energy=".." efficiency=".."/> block ANGLE writes
+// for the sample source (a ~point source at 0.5 cm from the endcap front for
+// this file - holder height 5 mm; the parser does not extract the sample
+// standoff, so it is taken from the file here).  0.5 cm is far inside the
+// transfer validity floor (~2*radius ~ 5.8 cm), so the transfer result is
+// expected to be flagged/extrapolated - the physically meaningful comparison
+// is the direct MC at the sample geometry.  This test PRINTS the comparison
+// (it does not gate on it) so the agreement can be inspected.
+// ---------------------------------------------------------------------------
+namespace
+{
+  struct AngleResult{ double energy_keV, efficiency, precision; };
+
+  // Re-parse the ANGLE <results> block (the sample-geometry answer) directly.
+  vector<AngleResult> parse_angle_results( const string &path )
+  {
+    string xml = read_file( path );
+    vector<AngleResult> out;
+    rapidxml::xml_document<char> doc;
+    doc.parse<rapidxml::parse_non_destructive>( &xml[0] );
+    const rapidxml::xml_node<char> *angle = doc.first_node( "angle" );
+    if( !angle )
+      return out;
+    const rapidxml::xml_node<char> *results = angle->first_node( "results" );
+    if( !results )
+      return out;
+    for( const rapidxml::xml_node<char> *r = results->first_node( "result" );
+         r; r = r->next_sibling( "result" ) )
+    {
+      const rapidxml::xml_attribute<char> *e = r->first_attribute( "energy" );
+      const rapidxml::xml_attribute<char> *eff = r->first_attribute( "efficiency" );
+      const rapidxml::xml_attribute<char> *prec = r->first_attribute( "efficiencyPrecision" );
+      if( !e || !eff )
+        continue;
+      AngleResult ar;
+      ar.energy_keV = std::stod( string(e->value(), e->value_size()) );
+      ar.efficiency = std::stod( string(eff->value(), eff->value_size()) );
+      ar.precision = prec ? std::stod( string(prec->value(), prec->value_size()) ) : 0.0;
+      out.push_back( ar );
+    }
+    return out;
+  }//parse_angle_results(...)
+
+
+  // ANGLE's true-coincidence-summing correction factors for one nuclide, from
+  //  the <cascadeSummingCorrections> block: map of gamma energy (keV) -> factor
+  //  ('value' attribute = corrected/nominal branching ratio).
+  vector<pair<double,double>> parse_angle_corrections( const string &path,
+                                                       const string &nuclide )
+  {
+    string xml = read_file( path );
+    vector<pair<double,double>> out;
+    rapidxml::xml_document<char> doc;
+    doc.parse<rapidxml::parse_non_destructive>( &xml[0] );
+    const rapidxml::xml_node<char> *angle = doc.first_node( "angle" );
+    if( !angle )
+      return out;
+    const rapidxml::xml_node<char> *csc = angle->first_node( "cascadeSummingCorrections" );
+    if( !csc )
+      return out;
+    for( const rapidxml::xml_node<char> *n = csc->first_node( "nuclide" );
+         n; n = n->next_sibling( "nuclide" ) )
+    {
+      const rapidxml::xml_attribute<char> *nm = n->first_attribute( "name" );
+      if( !nm || (string(nm->value(), nm->value_size()) != nuclide) )
+        continue;
+      for( const rapidxml::xml_node<char> *c = n->first_node( "correction" );
+           c; c = c->next_sibling( "correction" ) )
+      {
+        const rapidxml::xml_attribute<char> *e = c->first_attribute( "energy" );
+        const rapidxml::xml_attribute<char> *v = c->first_attribute( "value" );
+        if( e && v )
+          out.emplace_back( std::stod( string(e->value(), e->value_size()) ),
+                            std::stod( string(v->value(), v->value_size()) ) );
+      }
+      break;
+    }
+    return out;
+  }//parse_angle_corrections(...)
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( angle_efficiency_cross_validation )
+{
+  // buildAngleGeometry resolves layer materials through MaterialDB; without it
+  //  every endcap/vacuum/housing layer is silently dropped (crystal + dead
+  //  layer only), leaving the crystal un-recessed.
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
+
+  const string angle_path = SpecUtils::append_path(
+        SpecUtils::append_path( g_test_data_dir, "det_eff" ),
+        "Angle-example-efficiency.outx" );
+
+  ifstream in( angle_path.c_str(), ios::in | ios::binary );
+  BOOST_REQUIRE_MESSAGE( in.is_open(), "Failed to open ANGLE file '" + angle_path + "'" );
+
+  const AngleOutxContents contents = DetectorPeakResponse::parseAngleOutxFileFull( in );
+  BOOST_REQUIRE( contents.hasGeometry );
+  BOOST_REQUIRE( contents.hasReference );
+  BOOST_REQUIRE_GE( contents.referencePoints.size(), 2u );
+
+  // Physical detector model (crystal + dead layer + vacuum spacer + endcap
+  //  layers) exactly as the Mode-A import builds it.
+  vector<string> warnings;
+  const ceelo::GeometryDescriptor gd = CeeLoUtils::buildAngleGeometry( contents, warnings );
+  for( const string &w : warnings )
+    BOOST_TEST_MESSAGE( "buildAngleGeometry warning: " << w );
+
+  const double offset_cm = gd.endcap_front_offset_cm();
+  BOOST_TEST_MESSAGE( "Reference distance (from file) = " << contents.referenceDistanceCm
+                      << " cm;  crystal radius = " << (contents.crystalRadius/PhysicalUnits::cm)
+                      << " cm, length = " << (contents.crystalLength/PhysicalUnits::cm)
+                      << " cm;  endcap_front_offset = " << offset_cm << " cm" );
+
+  // Transfer response anchored to the measured reference curve.
+  CeeLoUtils::TransferAnchor anchor;
+  anchor.ref_distance_cm = contents.referenceDistanceCm;
+  anchor.curve_derived = false;
+  for( const pair<float,float> &ep : contents.referencePoints )
+  {
+    if( (ep.first > 0.0f) && (ep.second > 0.0f) )
+    {
+      anchor.curve.energies_keV.push_back( ep.first );
+      anchor.curve.eff.push_back( ep.second );
+    }
+  }
+  BOOST_REQUIRE_GE( anchor.curve.energies_keV.size(), 2u );
+
+  const shared_ptr<ceelo::DetectorResponse> resp
+        = CeeLoUtils::makeTransferResponse( gd, anchor, ceelo::AnchorCurve{}, "ANGLE-xfer" );
+  BOOST_REQUIRE( resp );
+
+  // ANGLE's own sample-geometry answer.  Sample = ~point source (r=1.5mm) at
+  //  the holder height (5 mm = 0.5 cm) from the endcap front.
+  const vector<AngleResult> angle = parse_angle_results( angle_path );
+  BOOST_REQUIRE_GE( angle.size(), 10u );
+  const double sample_standoff_cm = 0.5;
+
+  // Direct MC at the sample geometry (a point source at the sample standoff),
+  //  configured from the SAME descriptor.  Crystal-face frame: z = 0 at the
+  //  crystal face, source in front at negative z.
+  std::vector<std::unique_ptr<ceelo::Material>> owned;
+  ceelo::EfficiencyCalculator calc;
+  ceelo::ResponseGenerator::configure_calculator( calc, gd, owned );
+  const Eigen::Vector3d src( 0.0, 0.0, -( offset_cm + sample_standoff_cm ) );
+  calc.set_point_source( src );
+
+  // A second calculator at the reference geometry (point source at the
+  //  reference distance), for the anchored-MC (double-ratio) column: the
+  //  common-mode absolute-MC bias cancels in MC_sample/MC_ref, and the
+  //  measured reference curve supplies the absolute scale.  This is the MC-based
+  //  transfer InterSpec actually ships (never the raw absolute MC).
+  std::vector<std::unique_ptr<ceelo::Material>> owned_ref;
+  ceelo::EfficiencyCalculator calc_ref;
+  ceelo::ResponseGenerator::configure_calculator( calc_ref, gd, owned_ref );
+  calc_ref.set_point_source(
+        Eigen::Vector3d( 0.0, 0.0, -( offset_cm + contents.referenceDistanceCm ) ) );
+
+  // Log-linear interpolation of the measured reference curve (the absolute
+  //  anchor for both shipped methods).
+  auto measured_eff = [&]( const double e ) -> double {
+    const std::vector<double> &xe = anchor.curve.energies_keV;
+    const std::vector<double> &xf = anchor.curve.eff;
+    if( e <= xe.front() ) return xf.front();
+    if( e >= xe.back() )  return xf.back();
+    const size_t j = std::upper_bound( begin(xe), end(xe), e ) - begin(xe);
+    const double e0 = xe[j-1], e1 = xe[j];
+    const double f = (std::log(e) - std::log(e0)) / (std::log(e1) - std::log(e0));
+    return std::exp( std::log(xf[j-1]) + f*(std::log(xf[j]) - std::log(xf[j-1])) );
+  };//measured_eff
+
+  auto run_mc = []( ceelo::EfficiencyCalculator &c, const double energy_keV )
+                                                    -> ceelo::EfficiencyResult {
+    ceelo::SimulationConfig cfg;
+    cfg.energy_keV = energy_keV;
+    cfg.termination.target_fep_rel_precision = 0.01;
+    cfg.termination.target_total_rel_precision = 0.02;
+    cfg.termination.max_events = 4000000;
+    cfg.termination.min_events = 40000;
+    cfg.seed = 12345;
+    return c.compute( cfg );
+  };//run_mc
+
+  BOOST_TEST_MESSAGE( "" );
+  BOOST_TEST_MESSAGE( "ANGLE sample-geometry efficiency vs the two InterSpec shipped methods:" );
+  BOOST_TEST_MESSAGE( "  'EFFTRAN' = analytic efficiency transfer of the measured curve (24.8->0.5cm);" );
+  BOOST_TEST_MESSAGE( "  'ancMC'   = measured curve x MC_sample/MC_ref (anchored MC, double-ratio)." );
+  BOOST_TEST_MESSAGE( "   E(keV)     ANGLE   EFFTRAN  ET/ANGLE    ancMC  aMC/ANGLE  rawMC  flag" );
+
+  std::vector<double> mc_ratio_errs, efftran_errs, ancmc_errs;
+  for( size_t i = 0; i < angle.size(); ++i )
+  {
+    const AngleResult &ar = angle[i];
+    const ceelo::EffResult x = resp->eps_fep( ar.energy_keV, 0.0, 0.0, sample_standoff_cm );
+    const double xfer_ratio = (ar.efficiency > 0.0) ? (x.value / ar.efficiency) : 0.0;
+    if( xfer_ratio > 0.0 ) efftran_errs.push_back( std::fabs( xfer_ratio - 1.0 ) );
+
+    // MC (both the sample and reference geometry) on every 8th energy, to keep
+    //  the run to ~10 points across 30-2900 keV.  Reported as the anchored-MC
+    //  double-ratio; the raw absolute MC is shown only for reference.
+    string mc_str = "     -        -        -   ";
+    if( (i % 8) == 0 )
+    {
+      const ceelo::EfficiencyResult mc = run_mc( calc, ar.energy_keV );
+      const ceelo::EfficiencyResult mc_ref = run_mc( calc_ref, ar.energy_keV );
+      const double mc_ratio = (ar.efficiency > 0.0)
+                              ? (mc.full_energy_peak_efficiency / ar.efficiency) : 0.0;
+      if( mc_ratio > 0.0 )
+        mc_ratio_errs.push_back( std::fabs( mc_ratio - 1.0 ) );
+
+      double anc = 0.0, anc_ratio = 0.0;
+      if( mc_ref.full_energy_peak_efficiency > 0.0 )
+      {
+        anc = measured_eff( ar.energy_keV )
+              * (mc.full_energy_peak_efficiency / mc_ref.full_energy_peak_efficiency);
+        anc_ratio = (ar.efficiency > 0.0) ? (anc / ar.efficiency) : 0.0;
+        if( anc_ratio > 0.0 ) ancmc_errs.push_back( std::fabs( anc_ratio - 1.0 ) );
+      }
+
+      char buf[96];
+      std::snprintf( buf, sizeof(buf), "%8.5f  %7.3f  %8.5f",
+                     anc, anc_ratio, mc.full_energy_peak_efficiency );
+      mc_str = buf;
+    }
+
+    char line[192];
+    std::snprintf( line, sizeof(line),
+                   "%9.2f  %8.5f  %8.5f  %7.3f   %s   %d",
+                   ar.energy_keV, ar.efficiency, x.value, xfer_ratio,
+                   mc_str.c_str(), static_cast<int>(x.flag) );
+    BOOST_TEST_MESSAGE( line );
+  }//for( each ANGLE result energy )
+
+  if( !efftran_errs.empty() )
+  {
+    std::sort( begin(efftran_errs), end(efftran_errs) );
+    BOOST_TEST_MESSAGE( "EFFTRAN   vs ANGLE |ratio-1|: median=" << 100.0*efftran_errs[efftran_errs.size()/2]
+                        << "%  max=" << 100.0*efftran_errs.back() << "%  (n=" << efftran_errs.size() << ")" );
+  }
+  if( !ancmc_errs.empty() )
+  {
+    std::sort( begin(ancmc_errs), end(ancmc_errs) );
+    BOOST_TEST_MESSAGE( "anchoredMC vs ANGLE |ratio-1|: median=" << 100.0*ancmc_errs[ancmc_errs.size()/2]
+                        << "%  max=" << 100.0*ancmc_errs.back() << "%  (n=" << ancmc_errs.size() << ")" );
+  }
+
+  if( !mc_ratio_errs.empty() )
+  {
+    std::sort( begin(mc_ratio_errs), end(mc_ratio_errs) );
+    const double med = mc_ratio_errs[mc_ratio_errs.size()/2];
+    const double mx = mc_ratio_errs.back();
+    BOOST_TEST_MESSAGE( "MC vs ANGLE |ratio-1|: median=" << 100.0*med
+                        << "%  max=" << 100.0*mx << "%  (n=" << mc_ratio_errs.size() << ")" );
+  }
+
+  // Sanity: the transfer must reproduce its own anchor at the reference
+  //  distance (identity) - a floor check that the pipeline is wired correctly.
+  const double e_mid = anchor.curve.energies_keV[anchor.curve.energies_keV.size()/2];
+  const double eff_mid = anchor.curve.eff[anchor.curve.eff.size()/2];
+  const ceelo::EffResult at_ref = resp->eps_fep( e_mid, 0.0, 0.0, contents.referenceDistanceCm );
+  BOOST_CHECK_CLOSE( at_ref.value, eff_mid, 1.0 );  //percent
+}//angle_efficiency_cross_validation
+
+
+/** RACCOONS extended-source cross-validation (developer-only; needs a scratch
+ file that cannot be committed).  The sample is a DENSE stainless-steel disk
+ (rho=8, r=1.725 cm, h=2 cm) resting ~1.13 mm above a huge (r=3.79 cm, L=9.75
+ cm) HPGe endcap - an extended, self-attenuating, near-contact source.  A
+ point transfer cannot represent it; the correct tool is the extended-source
+ MC with the source matrix set.  Skipped (not failed) when the file is absent.
+ */
+BOOST_AUTO_TEST_CASE( angle_extended_source_cross_validation )
+{
+  const string angle_path =
+        "/workspace/scratch/RacoonsAngle/Eff_NANC_0cm_RACCOONS-26_SS-1297_260713.xml";
+  ifstream in( angle_path.c_str(), ios::in | ios::binary );
+  if( !in.is_open() )
+  {
+    BOOST_TEST_MESSAGE( "RACCOONS scratch file not present - skipping extended-source"
+                        " cross-validation." );
+    return;
+  }
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
+
+  const AngleOutxContents contents = DetectorPeakResponse::parseAngleOutxFileFull( in );
+  BOOST_REQUIRE( contents.hasGeometry );
+
+  vector<string> warnings;
+  const ceelo::GeometryDescriptor gd = CeeLoUtils::buildAngleGeometry( contents, warnings );
+  for( const string &w : warnings )
+    BOOST_TEST_MESSAGE( "buildAngleGeometry warning: " << w );
+
+  const double offset_cm = gd.endcap_front_offset_cm();
+  BOOST_TEST_MESSAGE( "RACCOONS: crystal radius=" << (contents.crystalRadius/PhysicalUnits::cm)
+                      << " length=" << (contents.crystalLength/PhysicalUnits::cm)
+                      << " endcap_front_offset=" << offset_cm << " cm" );
+
+  const vector<AngleResult> angle = parse_angle_results( angle_path );
+  BOOST_REQUIRE_GE( angle.size(), 10u );
+
+  // The measured reference curve (point source at contents.referenceDistanceCm),
+  //  as a log-linear interpolator - this is the "start with the measured curve"
+  //  input to the transfer.
+  BOOST_REQUIRE_GE( contents.referencePoints.size(), 2u );
+  std::vector<double> ref_e, ref_eff;
+  for( const pair<float,float> &ep : contents.referencePoints )
+  {
+    if( (ep.first > 0.0f) && (ep.second > 0.0f) )
+    {
+      ref_e.push_back( ep.first );
+      ref_eff.push_back( ep.second );
+    }
+  }
+  BOOST_REQUIRE_GE( ref_e.size(), 2u );
+  auto measured_eff = [&]( const double e ) -> double {
+    if( e <= ref_e.front() ) return ref_eff.front();
+    if( e >= ref_e.back() )  return ref_eff.back();
+    const size_t j = std::upper_bound( begin(ref_e), end(ref_e), e ) - begin(ref_e);
+    const double e0 = ref_e[j-1], e1 = ref_e[j];
+    const double f = (std::log(e) - std::log(e0)) / (std::log(e1) - std::log(e0));
+    return std::exp( std::log(ref_eff[j-1]) + f*(std::log(ref_eff[j]) - std::log(ref_eff[j-1])) );
+  };//measured_eff
+
+  // Analytic efficiency-transfer response (EFFTRAN-style) anchored to the same
+  //  measured curve.  It is a POINT transfer, so for this extended dense disk it
+  //  can only approximate the source as a point at the standoff - shown so the
+  //  user can see the two shipped methods side by side, but the anchored MC is
+  //  the correct tool for an extended self-attenuating source.
+  CeeLoUtils::TransferAnchor anchor;
+  anchor.ref_distance_cm = contents.referenceDistanceCm;
+  anchor.curve_derived = false;
+  for( size_t k = 0; k < ref_e.size(); ++k )
+  {
+    anchor.curve.energies_keV.push_back( ref_e[k] );
+    anchor.curve.eff.push_back( ref_eff[k] );
+  }
+  const shared_ptr<ceelo::DetectorResponse> resp
+        = CeeLoUtils::makeTransferResponse( gd, anchor, ceelo::AnchorCurve{}, "ANGLE-xfer" );
+  BOOST_REQUIRE( resp );
+
+  // Sample disk: r=1.725 cm, half-length 1.0 cm, bottom 0.113 cm off the
+  //  endcap front.  Crystal-face frame: z=0 at the crystal face, source in
+  //  front at negative z; disk center = -(offset + standoff + half_length).
+  const double disk_radius_cm = 1.725;
+  const double disk_half_len_cm = 1.0;
+  const double disk_standoff_cm = 0.113;
+  const double center_z = -( offset_cm + disk_standoff_cm + disk_half_len_cm );
+
+  // Dense self-attenuating matrix (SS-304: Fe70/Cr20/Ni10, rho=8) - must be
+  //  modeled or low-energy efficiency is badly overestimated.
+  ceelo::MaterialSpec ss;
+  ss.name = "SS304";
+  ss.density_g_per_cm3 = 8.0;
+  ss.composition = { {26, 0.70}, {24, 0.20}, {28, 0.10} };
+  const ceelo::Material ss_mat = ss.to_material();
+
+  std::vector<std::unique_ptr<ceelo::Material>> owned;
+  ceelo::EfficiencyCalculator calc;      //extended SS disk at the sample geometry
+  ceelo::ResponseGenerator::configure_calculator( calc, gd, owned );
+  calc.set_cylindrical_source( Eigen::Vector3d( 0.0, 0.0, center_z ),
+                               disk_radius_cm, disk_half_len_cm );
+  calc.set_source_material( &ss_mat );
+
+  std::vector<std::unique_ptr<ceelo::Material>> owned_ref;
+  ceelo::EfficiencyCalculator calc_ref;  //point source at the reference geometry
+  ceelo::ResponseGenerator::configure_calculator( calc_ref, gd, owned_ref );
+  calc_ref.set_point_source(
+        Eigen::Vector3d( 0.0, 0.0, -( offset_cm + contents.referenceDistanceCm ) ) );
+
+  auto run_mc = []( ceelo::EfficiencyCalculator &c, const double energy_keV )
+                                                    -> ceelo::EfficiencyResult {
+    ceelo::SimulationConfig cfg;
+    cfg.energy_keV = energy_keV;
+    cfg.termination.target_fep_rel_precision = 0.01;
+    cfg.termination.target_total_rel_precision = 0.02;
+    cfg.termination.max_events = 8000000;
+    cfg.termination.min_events = 40000;
+    cfg.seed = 12345;
+    return c.compute( cfg );
+  };//run_mc
+
+  BOOST_TEST_MESSAGE( "" );
+  BOOST_TEST_MESSAGE( "RACCOONS extended SS disk: ANGLE vs the two InterSpec shipped methods." );
+  BOOST_TEST_MESSAGE( "  'EFFTRAN' = analytic point transfer of the measured curve @ standoff" );
+  BOOST_TEST_MESSAGE( "             (approximate for an extended source);" );
+  BOOST_TEST_MESSAGE( "  'ancMC'   = measured curve x MC_disk/MC_pointref (anchored MC, the" );
+  BOOST_TEST_MESSAGE( "             correct tool for the extended self-attenuating disk)." );
+  BOOST_TEST_MESSAGE( "   E(keV)     ANGLE   EFFTRAN  ET/ANGLE    ancMC  aMC/ANGLE   rawMC  rMC/ANG" );
+
+  std::vector<double> mc_errs, ancmc_errs, efftran_errs;
+  for( size_t i = 0; i < angle.size(); ++i )
+  {
+    if( (i % 6) != 0 )      //~12 energies across 60-2600 keV
+      continue;
+    const AngleResult &ar = angle[i];
+    const ceelo::EfficiencyResult mc = run_mc( calc, ar.energy_keV );
+    const ceelo::EfficiencyResult mc_ref = run_mc( calc_ref, ar.energy_keV );
+
+    const double mc_ratio = (ar.efficiency > 0.0)
+                         ? (mc.full_energy_peak_efficiency / ar.efficiency) : 0.0;
+
+    // Anchored MC (double ratio): the geometry-independent absolute-MC bias in
+    //  MC_disk cancels against the same bias in MC_pointref.
+    double anc = 0.0, anc_ratio = 0.0;
+    if( mc_ref.full_energy_peak_efficiency > 0.0 )
+    {
+      anc = measured_eff( ar.energy_keV )
+            * (mc.full_energy_peak_efficiency / mc_ref.full_energy_peak_efficiency);
+      anc_ratio = (ar.efficiency > 0.0) ? (anc / ar.efficiency) : 0.0;
+    }
+
+    // EFFTRAN analytic transfer, source approximated as a point at the standoff.
+    const ceelo::EffResult et = resp->eps_fep( ar.energy_keV, 0.0, 0.0, disk_standoff_cm );
+    const double et_ratio = (ar.efficiency > 0.0) ? (et.value / ar.efficiency) : 0.0;
+
+    if( mc_ratio > 0.0 )   mc_errs.push_back( std::fabs( mc_ratio - 1.0 ) );
+    if( anc_ratio > 0.0 )  ancmc_errs.push_back( std::fabs( anc_ratio - 1.0 ) );
+    if( et_ratio > 0.0 )   efftran_errs.push_back( std::fabs( et_ratio - 1.0 ) );
+
+    char line[192];
+    std::snprintf( line, sizeof(line),
+                   "%9.2f  %8.5f  %8.5f  %7.3f  %8.5f  %7.3f  %8.5f  %7.3f",
+                   ar.energy_keV, ar.efficiency, et.value, et_ratio,
+                   anc, anc_ratio, mc.full_energy_peak_efficiency, mc_ratio );
+    BOOST_TEST_MESSAGE( line );
+  }//for( each sampled energy )
+
+  if( !efftran_errs.empty() )
+  {
+    std::sort( begin(efftran_errs), end(efftran_errs) );
+    BOOST_TEST_MESSAGE( "EFFTRAN    vs ANGLE |ratio-1|: median=" << 100.0*efftran_errs[efftran_errs.size()/2]
+                        << "%  max=" << 100.0*efftran_errs.back() << "%  (n=" << efftran_errs.size() << ")" );
+  }
+  if( !ancmc_errs.empty() )
+  {
+    std::sort( begin(ancmc_errs), end(ancmc_errs) );
+    BOOST_TEST_MESSAGE( "anchoredMC vs ANGLE |ratio-1|: median=" << 100.0*ancmc_errs[ancmc_errs.size()/2]
+                        << "%  max=" << 100.0*ancmc_errs.back() << "%  (n=" << ancmc_errs.size() << ")" );
+  }
+  if( !mc_errs.empty() )
+  {
+    std::sort( begin(mc_errs), end(mc_errs) );
+    BOOST_TEST_MESSAGE( "absolute MC vs ANGLE |ratio-1|: median=" << 100.0*mc_errs[mc_errs.size()/2]
+                        << "%  max=" << 100.0*mc_errs.back() << "%  (n=" << mc_errs.size() << ")" );
+  }
+}//angle_extended_source_cross_validation
+
+
+/** Cross-check InterSpec's analytic true-coincidence-summing (TCS) factors
+ against ANGLE's own <cascadeSummingCorrections> for the RACCOONS contact
+ geometry, where summing is large (factors ~0.7-0.8, plus a summing-IN line
+ >1).  We feed OUR self-consistent disk-MC efficiency (FEP + total) into
+ compute_cascade_analytic, so the ~7% absolute-efficiency offset largely
+ cancels in the summing factor (a ratio); the residual reflects the cascade
+ physics + level scheme (SandiaDecay vs ANGLE) and the total/FEP ratio.
+ Developer-only; needs the scratch file.  */
+BOOST_AUTO_TEST_CASE( angle_cascade_summing_cross_validation )
+{
+  const string angle_path =
+        "/workspace/scratch/RacoonsAngle/Eff_NANC_0cm_RACCOONS-26_SS-1297_260713.xml";
+  ifstream in( angle_path.c_str(), ios::in | ios::binary );
+  if( !in.is_open() )
+  {
+    BOOST_TEST_MESSAGE( "RACCOONS scratch file not present - skipping cascade-summing"
+                        " cross-validation." );
+    return;
+  }
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
+  BOOST_REQUIRE( !g_data_dir.empty() );
+
+  SandiaDecay::SandiaDecayDataBase db( SpecUtils::append_path( g_data_dir, "sandia.decay.xml" ) );
+  BOOST_REQUIRE( db.initialized() );
+
+  const AngleOutxContents contents = DetectorPeakResponse::parseAngleOutxFileFull( in );
+  BOOST_REQUIRE( contents.hasGeometry );
+
+  vector<string> warnings;
+  const ceelo::GeometryDescriptor gd = CeeLoUtils::buildAngleGeometry( contents, warnings );
+  const double offset_cm = gd.endcap_front_offset_cm();
+
+  // Same SS-304 disk at the sample (contact) geometry as the efficiency test.
+  ceelo::MaterialSpec ss;
+  ss.name = "SS304";
+  ss.density_g_per_cm3 = 8.0;
+  ss.composition = { {26, 0.70}, {24, 0.20}, {28, 0.10} };
+  const ceelo::Material ss_mat = ss.to_material();
+
+  std::vector<std::unique_ptr<ceelo::Material>> owned;
+  ceelo::EfficiencyCalculator calc;
+  ceelo::ResponseGenerator::configure_calculator( calc, gd, owned );
+  calc.set_cylindrical_source( Eigen::Vector3d( 0.0, 0.0, -( offset_cm + 0.113 + 1.0 ) ),
+                               1.725, 1.0 );
+  calc.set_source_material( &ss_mat );
+
+  // Lazy MC efficiency provider (FEP + total) over the disk geometry, caching
+  //  by 0.1 keV so each cascade-member energy is simulated once.
+  struct DiskMcProvider : public ceelo::EfficiencyProvider
+  {
+    ceelo::EfficiencyCalculator *calc = nullptr;
+    mutable std::map<long long,std::pair<double,double>> cache;
+    std::pair<double,double> run( double E ) const
+    {
+      const long long key = std::llround( E * 10.0 );
+      const std::map<long long,std::pair<double,double>>::const_iterator it = cache.find( key );
+      if( it != cache.end() )
+        return it->second;
+      ceelo::SimulationConfig cfg;
+      cfg.energy_keV = E;
+      cfg.termination.target_fep_rel_precision = 0.02;
+      cfg.termination.target_total_rel_precision = 0.03;
+      cfg.termination.max_events = 3000000;
+      cfg.termination.min_events = 30000;
+      cfg.seed = 12345;
+      const ceelo::EfficiencyResult r = calc->compute( cfg );
+      const std::pair<double,double> v( r.full_energy_peak_efficiency, r.total_efficiency );
+      cache[key] = v;
+      return v;
+    }
+    double fep( double E ) const override { return run(E).first; }
+    double total( double E ) const override { return run(E).second; }
+    bool has( double /*E*/ ) const override { return true; }
+  };//DiskMcProvider
+
+  DiskMcProvider provider;
+  provider.calc = &calc;
+
+  struct NucCase{ string label; string angleName; vector<double> energies; };
+  const vector<NucCase> cases = {
+    { "Co60",  "Co-60",  { 1173.2, 1332.5 } },
+    { "Y88",   "Y-88",   { 898.0, 1836.1 } },
+    { "Cs134", "Cs-134", { 604.7, 795.9, 1365.2 } },   //1365 is summing-IN (>1)
+  };
+
+  auto angle_val = [&]( const vector<pair<double,double>> &corr, const double E ) -> double {
+    double best = -1.0, bd = 0.8;
+    for( const pair<double,double> &pr : corr )
+    {
+      const double d = std::fabs( pr.first - E );
+      if( d < bd ){ bd = d; best = pr.second; }
+    }
+    return best;
+  };//angle_val
+
+  BOOST_TEST_MESSAGE( "" );
+  BOOST_TEST_MESSAGE( "TCS factors at RACCOONS contact geometry: InterSpec analytic vs ANGLE." );
+  BOOST_TEST_MESSAGE( "  nuclide   E(keV)   ANGLE   InterSpec   InterSpec/ANGLE" );
+
+  std::vector<double> errs;
+  for( const NucCase &nc : cases )
+  {
+    const vector<ceelo::DecayCascade> casc =
+          ceelo::cascade_adapter::build_cascades( db, nc.label, ceelo::cascade_adapter::CascadeOptions{} );
+    BOOST_REQUIRE_MESSAGE( !casc.empty(), "no cascades for " + nc.label );
+
+    const vector<pair<double,double>> corr = parse_angle_corrections( angle_path, nc.angleName );
+    BOOST_REQUIRE_MESSAGE( !corr.empty(), "no ANGLE corrections for " + nc.angleName );
+
+    vector<ceelo::PeakWindow> windows;
+    for( const double e : nc.energies )
+      windows.push_back( ceelo::PeakWindow{ e, 1.5 } );
+
+    const vector<ceelo::AnalyticPeakResult> res =
+          ceelo::compute_cascade_analytic( casc, windows, provider, ceelo::AnalyticCascadeOptions{} );
+    BOOST_REQUIRE_EQUAL( res.size(), nc.energies.size() );
+
+    for( size_t i = 0; i < res.size(); ++i )
+    {
+      const double a = angle_val( corr, nc.energies[i] );
+      const double ours = res[i].summing_factor;
+      const double ratio = (a > 0.0) ? (ours / a) : 0.0;
+      if( a > 0.0 )
+        errs.push_back( std::fabs( ratio - 1.0 ) );
+
+      char line[160];
+      std::snprintf( line, sizeof(line), "  %-7s %8.1f  %6.4f    %6.4f      %7.4f%s",
+                     nc.angleName.c_str(), nc.energies[i], a, ours, ratio,
+                     res[i].found ? "" : "  [no gamma match!]" );
+      BOOST_TEST_MESSAGE( line );
+    }
+  }//for( each nuclide )
+
+  if( !errs.empty() )
+  {
+    std::sort( begin(errs), end(errs) );
+    BOOST_TEST_MESSAGE( "InterSpec vs ANGLE TCS |ratio-1|: median=" << 100.0*errs[errs.size()/2]
+                        << "%  max=" << 100.0*errs.back() << "%  (n=" << errs.size() << ")" );
+  }
+}//angle_cascade_summing_cross_validation
+
+
+/** Committable true-coincidence-summing cross-validation on the unit-test ANGLE
+ file (test_data/det_eff/Angle-example-efficiency.outx).  The sample there is a
+ near-point source (r=1.5 mm) at the holder height (5 mm = 0.5 cm) from the
+ endcap front, so a POINT-source MC provider is faithful.  We feed our own
+ self-consistent MC FEP+total efficiencies into `compute_cascade_analytic` and
+ compare the resulting summing factors to ANGLE's `<cascadeSummingCorrections>`
+ `value` attributes.  Unlike the RACCOONS test this needs no scratch file. */
+BOOST_AUTO_TEST_CASE( angle_cascade_summing_unit_test )
+{
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
+  BOOST_REQUIRE( !g_data_dir.empty() );
+
+  SandiaDecay::SandiaDecayDataBase db( SpecUtils::append_path( g_data_dir, "sandia.decay.xml" ) );
+  BOOST_REQUIRE( db.initialized() );
+
+  const string angle_path = SpecUtils::append_path(
+        SpecUtils::append_path( g_test_data_dir, "det_eff" ),
+        "Angle-example-efficiency.outx" );
+
+  ifstream in( angle_path.c_str(), ios::in | ios::binary );
+  BOOST_REQUIRE_MESSAGE( in.is_open(), "Failed to open ANGLE file '" + angle_path + "'" );
+
+  const AngleOutxContents contents = DetectorPeakResponse::parseAngleOutxFileFull( in );
+  BOOST_REQUIRE( contents.hasGeometry );
+
+  vector<string> warnings;
+  const ceelo::GeometryDescriptor gd = CeeLoUtils::buildAngleGeometry( contents, warnings );
+  for( const string &w : warnings )
+    BOOST_TEST_MESSAGE( "buildAngleGeometry warning: " << w );
+  const double offset_cm = gd.endcap_front_offset_cm();
+
+  // Point source at the sample standoff (0.5 cm), configured from the same
+  //  descriptor Mode-A import builds.  Crystal-face frame: z=0 at the crystal
+  //  face, source in front at negative z.
+  const double sample_standoff_cm = 0.5;
+  std::vector<std::unique_ptr<ceelo::Material>> owned;
+  ceelo::EfficiencyCalculator calc;
+  ceelo::ResponseGenerator::configure_calculator( calc, gd, owned );
+  calc.set_point_source( Eigen::Vector3d( 0.0, 0.0, -( offset_cm + sample_standoff_cm ) ) );
+
+  // Lazy MC efficiency provider (FEP + total), caching by 0.1 keV so each
+  //  cascade-member energy is simulated once.
+  struct PointMcProvider : public ceelo::EfficiencyProvider
+  {
+    ceelo::EfficiencyCalculator *calc = nullptr;
+    mutable std::map<long long,std::pair<double,double>> cache;
+    std::pair<double,double> run( double E ) const
+    {
+      const long long key = std::llround( E * 10.0 );
+      const std::map<long long,std::pair<double,double>>::const_iterator it = cache.find( key );
+      if( it != cache.end() )
+        return it->second;
+      ceelo::SimulationConfig cfg;
+      cfg.energy_keV = E;
+      cfg.termination.target_fep_rel_precision = 0.02;
+      cfg.termination.target_total_rel_precision = 0.03;
+      cfg.termination.max_events = 3000000;
+      cfg.termination.min_events = 30000;
+      cfg.seed = 12345;
+      const ceelo::EfficiencyResult r = calc->compute( cfg );
+      const std::pair<double,double> v( r.full_energy_peak_efficiency, r.total_efficiency );
+      cache[key] = v;
+      return v;
+    }
+    double fep( double E ) const override { return run(E).first; }
+    double total( double E ) const override { return run(E).second; }
+    bool has( double /*E*/ ) const override { return true; }
+  };//PointMcProvider
+
+  PointMcProvider provider;
+  provider.calc = &calc;
+
+  struct NucCase{ string label; string angleName; vector<double> energies; };
+  const vector<NucCase> cases = {
+    { "Co60",  "Co-60",  { 1173.2, 1332.5 } },
+    { "Y88",   "Y-88",   { 898.0, 1836.1 } },
+    { "Cs134", "Cs-134", { 604.7, 795.9, 1365.2 } },   //1365 is summing-IN (>1)
+  };
+
+  auto angle_val = [&]( const vector<pair<double,double>> &corr, const double E ) -> double {
+    double best = -1.0, bd = 0.8;
+    for( const pair<double,double> &pr : corr )
+    {
+      const double d = std::fabs( pr.first - E );
+      if( d < bd ){ bd = d; best = pr.second; }
+    }
+    return best;
+  };//angle_val
+
+  BOOST_TEST_MESSAGE( "" );
+  BOOST_TEST_MESSAGE( "TCS factors at unit-test outx sample geometry (point @0.5cm):"
+                      " InterSpec analytic vs ANGLE." );
+  BOOST_TEST_MESSAGE( "  nuclide   E(keV)   ANGLE   InterSpec   InterSpec/ANGLE" );
+
+  std::vector<double> errs;
+  for( const NucCase &nc : cases )
+  {
+    const vector<ceelo::DecayCascade> casc =
+          ceelo::cascade_adapter::build_cascades( db, nc.label, ceelo::cascade_adapter::CascadeOptions{} );
+    BOOST_REQUIRE_MESSAGE( !casc.empty(), "no cascades for " + nc.label );
+
+    const vector<pair<double,double>> corr = parse_angle_corrections( angle_path, nc.angleName );
+    BOOST_REQUIRE_MESSAGE( !corr.empty(), "no ANGLE corrections for " + nc.angleName );
+
+    vector<ceelo::PeakWindow> windows;
+    for( const double e : nc.energies )
+      windows.push_back( ceelo::PeakWindow{ e, 1.5 } );
+
+    const vector<ceelo::AnalyticPeakResult> res =
+          ceelo::compute_cascade_analytic( casc, windows, provider, ceelo::AnalyticCascadeOptions{} );
+    BOOST_REQUIRE_EQUAL( res.size(), nc.energies.size() );
+
+    for( size_t i = 0; i < res.size(); ++i )
+    {
+      const double a = angle_val( corr, nc.energies[i] );
+      const double ours = res[i].summing_factor;
+      const double ratio = (a > 0.0) ? (ours / a) : 0.0;
+      if( a > 0.0 )
+        errs.push_back( std::fabs( ratio - 1.0 ) );
+
+      char line[160];
+      std::snprintf( line, sizeof(line), "  %-7s %8.1f  %6.4f    %6.4f      %7.4f%s",
+                     nc.angleName.c_str(), nc.energies[i], a, ours, ratio,
+                     res[i].found ? "" : "  [no gamma match!]" );
+      BOOST_TEST_MESSAGE( line );
+    }
+  }//for( each nuclide )
+
+  BOOST_REQUIRE( !errs.empty() );
+  std::sort( begin(errs), end(errs) );
+  const double median = errs[errs.size()/2];
+  BOOST_TEST_MESSAGE( "InterSpec vs ANGLE TCS |ratio-1|: median=" << 100.0*median
+                      << "%  max=" << 100.0*errs.back() << "%  (n=" << errs.size() << ")" );
+
+  // The summing-IN line (Cs-134 1365 keV) is the sharpest cross-check of the
+  //  cascade combinatorics + W(theta) correlations, and (being a ratio fed by
+  //  our own efficiencies) is nearly independent of the absolute efficiency
+  //  model - it should match ANGLE tightly.
+  const vector<ceelo::DecayCascade> cs134 =
+        ceelo::cascade_adapter::build_cascades( db, "Cs134", ceelo::cascade_adapter::CascadeOptions{} );
+  const vector<ceelo::AnalyticPeakResult> cs134_res =
+        ceelo::compute_cascade_analytic( cs134, { ceelo::PeakWindow{ 1365.2, 1.5 } },
+                                         provider, ceelo::AnalyticCascadeOptions{} );
+  BOOST_REQUIRE_EQUAL( cs134_res.size(), 1u );
+  BOOST_CHECK_GT( cs134_res[0].summing_factor, 1.0 );  //summing-IN raises the peak
+
+  // Overall: our per-line factors should track ANGLE's to well within 20%.
+  BOOST_CHECK_LT( median, 0.20 );
+}//angle_cascade_summing_unit_test

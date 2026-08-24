@@ -25,6 +25,7 @@
 
 #include <map>
 #include <cmath>
+#include <cstdio>
 #include <limits>
 #include <string>
 #include <vector>
@@ -32,6 +33,8 @@
 #include <stdexcept>
 
 #include <Eigen/Core>
+
+#include "SpecUtils/StringAlgo.h"
 
 #include "SandiaDecay.h"
 
@@ -330,49 +333,60 @@ ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
                                               ? MaterialDB::instance() : nullptr;
   const SandiaDecay::SandiaDecayDataBase * const nucDb = DecayDataBaseServer::database();
 
-  // Resolve an ANGLE material name to a CeeLo material spec: try MaterialDB by
-  //  name, then a chemical-formula fallback (covers ANGLE trade names, density
-  //  inline).  Notes a warning and returns false when unresolved.
-  auto resolve = [&]( const string &name, ceelo::MaterialSpec &out ) -> bool {
-    if( name.empty() || !matDb )
+  // Resolve an ANGLE material name to a CeeLo material spec.  ANGLE uses trade /
+  //  alternate names that must map onto real InterSpec MaterialDB names so the
+  //  seeded descriptor round-trips through the geometry form (i.e. the stored
+  //  name must re-resolve there).  We map the name, try MaterialDB, then a
+  //  chemical-formula fallback; a warning is noted and false returned if still
+  //  unresolved.
+  auto resolve = [&]( const string &angle_name, ceelo::MaterialSpec &out ) -> bool {
+    if( angle_name.empty() || !matDb )
       return false;
+
+    // ANGLE trade / alternate name -> MaterialDB name (see data/MaterialDataBase.txt).
+    static const std::map<string,string> name_map = {
+      { "Aluminium",    "Aluminum" },   // British spelling ANGLE uses
+      { "Carbon fiber", "CFRP" },
+      { "Carbon Fiber", "CFRP" },
+      { "Mylar/PET",    "Mylar" },
+      { "PET",          "Mylar" },
+    };
+    const auto nit = name_map.find( angle_name );
+    const string name = (nit != end(name_map)) ? nit->second : angle_name;
 
     shared_ptr<const Material> mat;
     try { mat = matDb->material( name ); }catch( std::exception & ){}
 
     if( !mat )
     {
-      // Chemical-formula fallbacks (each element needs an explicit count for
-      //  Material::parseChemicalFormula; density inline as "d=").
-      static const std::map<string,string> fallbacks = {
-        { "Aluminium",    "Al1 d=2.699" },   // British spelling ANGLE uses
-        { "Mylar/PET",    "C10H8O4 d=1.38" },
-        { "Mylar",        "C10H8O4 d=1.38" },
-        { "PET",          "C10H8O4 d=1.38" },
-        { "Brass",        "Cu0.63Zn0.37 d=8.5" },
-        { "Carbon fiber", "C1 d=1.8" },
-        { "Carbon Fiber", "C1 d=1.8" },
-      };
-      const auto it = fallbacks.find( name );
-      const string formula = (it != end(fallbacks)) ? it->second : name;
-      try { mat = MaterialDB::materialFromChemicalFormula( formula, nucDb ); }
+      // Last-resort chemical-formula fallback (each element an explicit count;
+      //  density inline as "d=").
+      try { mat = MaterialDB::materialFromChemicalFormula( name, nucDb ); }
       catch( std::exception & ){}
     }//if( !mat )
 
     if( !mat )
-    {
-      warnings.push_back( "Could not resolve material '" + name + "'; skipped." );
       return false;
-    }
 
     try { out = to_ceelo_material( *mat ); }
     catch( std::exception &e )
     {
-      warnings.push_back( "Material '" + name + "': " + string(e.what()) );
+      warnings.push_back( "Material '" + angle_name + "': " + string(e.what()) );
       return false;
     }
     return true;
   };//resolve lambda
+
+  // A near-transparent spacer (rho ~ 1e-25, single H): preserves a layer's
+  //  physical extent (and thus the crystal recess) while contributing ~zero
+  //  attenuation.  MaterialDB-independent, so it works even with no DB.
+  auto make_transparent = []() -> ceelo::MaterialSpec {
+    ceelo::MaterialSpec s;
+    s.name = "unresolved-spacer";
+    s.density_g_per_cm3 = 1.0e-25;
+    s.composition = { ceelo::MaterialComponent{ 1, 1.0 } };
+    return s;
+  };//make_transparent lambda
 
   ceelo::GeometryDescriptor gd;
   gd.shape = ceelo::DetectorShape::Cylinder;
@@ -380,17 +394,20 @@ ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
   gd.symmetry = ceelo::ResponseSymmetry::Axial;
   gd.reference_point = ceelo::ReferencePoint::EndcapFront;
 
-  // Crystal: ANGLE HPGe detectors are germanium.
-  ceelo::MaterialSpec ge;
-  if( resolve( "Ge", ge ) )
-  {
-    gd.crystal_material_index = static_cast<int>( gd.materials.size() );
-    gd.materials.push_back( ge );
-  }else
-  {
-    gd.crystal_material_index = -1;
-    warnings.push_back( "Could not resolve crystal germanium material." );
-  }
+  // Crystal material from the ANGLE detector type, using the same CeeLo built-ins
+  //  the geometry form offers (so its Crystal combo matches the seeded name by
+  //  `.name`).  Defaults to HPGe (covers "coaxial"/"HPGe"/"germanium"/unknown).
+  ceelo::Material crystalMat = ceelo::make_HPGe();
+  if( SpecUtils::icontains( contents.detType, "NaI" ) )
+    crystalMat = ceelo::make_NaI();
+  else if( SpecUtils::icontains( contents.detType, "CZT" )
+           || SpecUtils::icontains( contents.detType, "CdZnTe" ) )
+    crystalMat = ceelo::make_CZT();
+  else if( SpecUtils::icontains( contents.detType, "LaBr" ) )
+    crystalMat = ceelo::make_LaBr3();
+
+  gd.crystal_material_index = static_cast<int>( gd.materials.size() );
+  gd.materials.push_back( ceelo::MaterialSpec::from( crystalMat ) );
 
   // Coaxial bore from the core (bulletizing / rounding not represented by CeeLo).
   if( contents.hasCore && (contents.coreRadius > 0.0) && (contents.coreDepth > 0.0) )
@@ -408,9 +425,32 @@ ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
       gd.dead_layer = ceelo::DeadLayerConfig{ front, side, 0.0 };
   }
 
-  // Endcap / window / housing layers, innermost -> outermost.  The vacuum gap
-  //  is a spacing (attenuation ~ 0), not a layer, so it is dropped; the user
-  //  reviews / corrects the seeded geometry before generating a response.
+  // Vacuum gap between the crystal and the endcap.  CeeLo has no dedicated gap
+  //  field, so represent it as a near-transparent spacer layer ("galactic
+  //  vacuum", rho ~ 1e-25): it adds to endcap_front_offset_cm() - correctly
+  //  recessing the crystal behind the endcap - while contributing ~zero
+  //  attenuation.  Ordered innermost, ahead of the endcap layers.
+  {
+    const double front = contents.vacuumFront / PhysicalUnits::cm;
+    const double side = contents.vacuumSide / PhysicalUnits::cm;
+    ceelo::MaterialSpec vac;
+    if( (front > 0.0) || (side > 0.0) )
+    {
+      if( !resolve( "galactic vacuum", vac ) )
+        vac = make_transparent();
+      ceelo::LayerSpec spec;
+      spec.material_index = static_cast<int>( gd.materials.size() );
+      gd.materials.push_back( vac );
+      spec.front_thickness_cm = front;
+      spec.side_thickness_cm = side;
+      spec.z_start_cm = 0.0;
+      spec.z_end_cm = length_cm;
+      gd.layers.push_back( spec );
+    }
+  }
+
+  // Endcap / window / housing layers, innermost -> outermost.  The user reviews
+  //  / corrects the seeded geometry before generating a response.
   for( const AngleOutxContents::Layer &layer : contents.layers )
   {
     const double front = layer.front / PhysicalUnits::cm;
@@ -418,9 +458,19 @@ ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
     if( (front <= 0.0) && (side <= 0.0) )
       continue;
 
+    // For an unresolvable material still insert a layer so the physical extent
+    //  (and hence the crystal recess / endcap-front offset) is preserved; use a
+    //  near-transparent spacer (rho ~ 1e-25) so it contributes ~zero
+    //  attenuation.  This is MaterialDB-independent, so it works even when the
+    //  named material cannot be resolved.
     ceelo::MaterialSpec mspec;
     if( !resolve( layer.material, mspec ) )
-      continue;
+    {
+      warnings.push_back( "Material '" + layer.material + "' unresolved; inserting a"
+                          " transparent spacer to preserve its physical extent (its"
+                          " attenuation is NOT modeled - please set the material)." );
+      mspec = make_transparent();
+    }//if( !resolve( layer.material, mspec ) )
 
     ceelo::LayerSpec spec;
     spec.material_index = static_cast<int>( gd.materials.size() );
@@ -431,6 +481,35 @@ ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
     spec.z_end_cm = length_cm;
     gd.layers.push_back( spec );
   }//for( const AngleOutxContents::Layer &layer : contents.layers )
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Self-consistency check on the assembled endcap-front offset: since every
+  //  front-stack element (dead layer, vacuum gap, each endcap/window layer) is
+  //  now always represented (unresolved materials become transparent spacers
+  //  rather than being dropped), the descriptor's endcap_front_offset_cm() must
+  //  equal the sum of front thicknesses parsed from the file.  A mismatch means
+  //  a layer was silently lost - the bug class that collapsed the crystal
+  //  recess and produced a flat ~20-30% efficiency error.
+  {
+    double expect_front = contents.deadLayerFront / PhysicalUnits::cm
+                          + contents.vacuumFront / PhysicalUnits::cm;
+    for( const AngleOutxContents::Layer &layer : contents.layers )
+    {
+      const double f = layer.front / PhysicalUnits::cm;
+      if( f > 0.0 )
+        expect_front += f;
+    }
+    const double got = gd.endcap_front_offset_cm();
+    if( std::fabs( got - expect_front ) > (1.0e-4 + 1.0e-3*expect_front) )
+    {
+      char msg[256];
+      snprintf( msg, sizeof(msg), "endcap_front_offset (%.4f cm) != sum of parsed"
+                " front thicknesses (%.4f cm) - a front-stack layer was dropped.",
+                got, expect_front );
+      log_developer_error( __func__, msg );
+    }
+  }
+#endif //PERFORM_DEVELOPER_CHECKS
 
   return gd;
 }//buildAngleGeometry(...)

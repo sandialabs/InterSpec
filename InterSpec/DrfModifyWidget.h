@@ -48,6 +48,8 @@ namespace Wt
   class WStackedWidget;
 }//namespace Wt
 
+namespace ceelo{ struct GeometryDescriptor; }
+
 /** A single "Modify Detector" editor consolidating the actions that used to
  crowd the Detector Response Select footer: renaming, geometry + Monte-Carlo
  characterization, FWHM fitting, and a baseline (energy-range-band) efficiency
@@ -63,7 +65,8 @@ class DrfModifyWidget : public Wt::WContainerWidget
 {
 public:
   DrfModifyWidget( InterSpec *viewer,
-                   std::shared_ptr<const DetectorPeakResponse> drf );
+                   std::shared_ptr<const DetectorPeakResponse> drf,
+                   std::shared_ptr<const ceelo::GeometryDescriptor> geometry = nullptr );
   virtual ~DrfModifyWidget() override;
 
   /** Builds the modified DRF from all tabs and emits #updatedDrf. */
@@ -77,8 +80,20 @@ protected:
                    const float fracUncert );
   void removeBandRow();
 
+  /** Appends one measured-anchor row (energy keV / absolute efficiency /
+   fractional-uncert %); blank cells fall back to the default-uncert on apply. */
+  void addAnchorRow( const float energy, const float efficiency,
+                     const float fracUncert );
+  void removeAnchorRow();
+
+  /** Rebuilds `working`'s measured points + far-field absolute efficiency from
+   the anchor editor (energy/efficiency/uncert rows, reference distance, and the
+   default uncert %).  No-op when the anchor editor was not built. */
+  void applyAnchorEdits( DetectorPeakResponse &working );
+
   InterSpec *m_interspec;
   std::shared_ptr<const DetectorPeakResponse> m_orig;
+  std::shared_ptr<const ceelo::GeometryDescriptor> m_geometry;
 
   Wt::WMenu *m_tabMenu;
   Wt::WStackedWidget *m_tabStack;
@@ -94,6 +109,16 @@ protected:
   Wt::WPushButton *m_addBand, *m_removeBand;
   struct BandRow{ Wt::WLineEdit *lower, *upper, *frac; };
   std::vector<BandRow> m_bands;
+
+  /** Measured-curve anchor editor (only built when seeded with an ANGLE-style
+   geometry + measured points): one row per reference point, plus an editable
+   reference distance and a single default fractional-uncert %. */
+  Wt::WTable *m_anchorTable;
+  Wt::WPushButton *m_addAnchor, *m_removeAnchor;
+  Wt::WLineEdit *m_anchorRefDistance;
+  Wt::WLineEdit *m_anchorDefaultUncert;
+  struct AnchorRow{ Wt::WLineEdit *energy, *eff, *uncert; };
+  std::vector<AnchorRow> m_anchors;
 
   Wt::Signal<std::shared_ptr<DetectorPeakResponse>> m_updatedDrf;
 };//class DrfModifyWidget
@@ -111,7 +136,8 @@ public:
 
 protected:
   DrfModifyWindow( InterSpec *viewer,
-                   std::shared_ptr<const DetectorPeakResponse> drf );
+                   std::shared_ptr<const DetectorPeakResponse> drf,
+                   std::shared_ptr<const ceelo::GeometryDescriptor> geometry = nullptr );
 
   DrfModifyWidget *m_tool;
 };//class DrfModifyWindow

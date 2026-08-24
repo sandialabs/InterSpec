@@ -3371,6 +3371,12 @@ void DrfSelect::handleMcResponseFinished( std::shared_ptr<DetectorPeakResponse> 
 
 void DrfSelect::handleModifyRequested()
 {
+  openModifyWindow( nullptr );
+}//void handleModifyRequested()
+
+
+void DrfSelect::openModifyWindow( std::shared_ptr<const ceelo::GeometryDescriptor> geometry )
+{
   if( m_modifyWindow )
   {
     m_modifyWindow->show();
@@ -3378,7 +3384,7 @@ void DrfSelect::handleModifyRequested()
     return;
   }
 
-  m_modifyWindow = AuxWindow::make<DrfModifyWindow>( m_interspec, m_detector );
+  m_modifyWindow = AuxWindow::make<DrfModifyWindow>( m_interspec, m_detector, geometry );
   m_modifyWindow->tool()->updatedDrf().connect( this, &DrfSelect::handleModifyFinished );
   m_modifyWindow->tool()->updatedDrf().connect( m_modifyWindow.get(), &AuxWindow::hide );
   m_modifyWindow->finished().connect( this, [this](){
@@ -3388,7 +3394,7 @@ void DrfSelect::handleModifyRequested()
       assert( !m_modifyWindow );
     }
   } );
-}//void handleModifyRequested()
+}//void openModifyWindow(...)
 
 
 void DrfSelect::handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf )
@@ -5240,10 +5246,13 @@ void DrfSelect::offerAngleImportModeChoice( const string &filename )
   WPushButton *generic = dialog->addButton( WString::tr("ds-angle-mode-generic") );
   dialog->addButton( WString::tr("ds-angle-mode-fixed") );
 
-  InterSpec * const viewer = m_interspec;
-  generic->clicked().connect( std::function<void()>( [viewer, geometry, seedDrf](){
-    if( viewer )
-      viewer->showMcResponseWindow( seedDrf, geometry );
+  // Mode A: seed the consolidated "Modify Detector Response" dialog with the
+  //  far-field DRF built from the reference curve AND the physical geometry, so
+  //  the user can review/correct the geometry, edit the measured-curve anchor,
+  //  and generate a full response - all in one place.
+  generic->clicked().connect( std::function<void()>( [this, geometry, seedDrf](){
+    setDetector( seedDrf );
+    openModifyWindow( geometry );
   } ) );
 }//offerAngleImportModeChoice(...)
 

@@ -104,6 +104,10 @@
 .DrfModifyRow > label { min-width: 90px; }
 .DrfModifyBandTable td { padding: 1px 4px; }
 .DrfModifyUncert .DrfModifyBandTable { margin: 6px 0; }
+.DrfModifyAnchor { margin-top: 8px; }
+.DrfModifyAnchor .DrfModifyRow > label { min-width: 120px; }
+.DrfModifyAnchorTable { display: block; max-height: 220px; overflow-y: auto; margin: 6px 0; }
+.DrfModifyAnchorTable td { padding: 1px 4px; }
 .DrfModifyNote
 {
   margin-top: 4px;

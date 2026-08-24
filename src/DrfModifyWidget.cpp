@@ -45,6 +45,7 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/DrfModifyWidget.h"
 #include "InterSpec/DetectorEfficiency.h"
@@ -56,10 +57,12 @@ using namespace std;
 
 
 DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
-                                  std::shared_ptr<const DetectorPeakResponse> drf )
+                                  std::shared_ptr<const DetectorPeakResponse> drf,
+                                  std::shared_ptr<const ceelo::GeometryDescriptor> geometry )
   : WContainerWidget(),
     m_interspec( viewer ),
     m_orig( drf ),
+    m_geometry( geometry ),
     m_tabMenu( nullptr ),
     m_tabStack( nullptr ),
     m_name( nullptr ),
@@ -69,6 +72,11 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_bandTable( nullptr ),
     m_addBand( nullptr ),
     m_removeBand( nullptr ),
+    m_anchorTable( nullptr ),
+    m_addAnchor( nullptr ),
+    m_removeAnchor( nullptr ),
+    m_anchorRefDistance( nullptr ),
+    m_anchorDefaultUncert( nullptr ),
     m_updatedDrf()
 {
   assert( m_interspec );
@@ -112,12 +120,78 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_description->setRows( 3 );
     m_description->setText( WString::fromUTF8( m_orig ? m_orig->description() : string() ) );
 
+    // Measured-curve anchor editor: only when seeded with a physical geometry
+    //  (e.g. an ANGLE import) AND the DRF carries raw measured points.  This is
+    //  the source-of-truth editor for the reference curve the response is
+    //  anchored to; edits are folded into the working DRF on apply().
+    const shared_ptr<const MeasuredDrfPoints> measured
+        = m_orig ? m_orig->measuredPoints() : nullptr;
+    if( m_geometry && measured && !measured->empty() )
+    {
+      WGroupBox *box = panel->addNew<WGroupBox>( WString::tr("dmw-anchor-title") );
+      box->addStyleClass( "DrfModifyAnchor" );
+      box->addNew<WText>( WString::tr("dmw-anchor-help") )->setInline( false );
+
+      // Reference distance the curve is anchored at (cm).
+      const vector<MeasuredEffPoint> &pts = measured->points();
+      double refDistCm = 0.0;
+      for( const MeasuredEffPoint &p : pts )
+      {
+        if( p.distance > 0.0f )
+        {
+          refDistCm = p.distance / PhysicalUnits::cm;
+          break;
+        }
+      }//for( find a positive reference distance )
+      if( refDistCm <= 0.0 )
+        refDistCm = m_orig->absoluteEfficiencyDistance() / PhysicalUnits::cm;
+
+      WContainerWidget *distRow = box->addNew<WContainerWidget>();
+      distRow->addStyleClass( "DrfModifyRow" );
+      distRow->addNew<WLabel>( WString::tr("dmw-anchor-ref-dist") );
+      m_anchorRefDistance = distRow->addNew<WLineEdit>();
+      m_anchorRefDistance->setTextSize( 8 );
+      if( refDistCm > 0.0 )
+      {
+        char buf[32];
+        snprintf( buf, sizeof(buf), "%.4g", refDistCm );
+        m_anchorRefDistance->setText( buf );
+      }
+      distRow->addNew<WLabel>( WString::tr("dmw-anchor-cm") );
+
+      WContainerWidget *defRow = box->addNew<WContainerWidget>();
+      defRow->addStyleClass( "DrfModifyRow" );
+      defRow->addNew<WLabel>( WString::tr("dmw-anchor-default-uncert") );
+      m_anchorDefaultUncert = defRow->addNew<WLineEdit>();
+      m_anchorDefaultUncert->setTextSize( 6 );
+      m_anchorDefaultUncert->setText( "5" );
+      defRow->addNew<WLabel>( WString::tr("dmw-anchor-percent") );
+
+      m_anchorTable = box->addNew<WTable>();
+      m_anchorTable->addStyleClass( "DrfModifyAnchorTable" );
+      m_anchorTable->elementAt(0,0)->addNew<WText>( WString::tr("dmw-anchor-energy") );
+      m_anchorTable->elementAt(0,1)->addNew<WText>( WString::tr("dmw-anchor-eff") );
+      m_anchorTable->elementAt(0,2)->addNew<WText>( WString::tr("dmw-anchor-uncert") );
+
+      WContainerWidget *btns = box->addNew<WContainerWidget>();
+      m_addAnchor = btns->addNew<WPushButton>( WString::tr("dmw-anchor-add") );
+      m_addAnchor->addStyleClass( "LinkBtn" );
+      m_addAnchor->clicked().connect( this, [this](){ addAnchorRow( 0.0f, 0.0f, 0.0f ); } );
+      m_removeAnchor = btns->addNew<WPushButton>( WString::tr("dmw-anchor-remove") );
+      m_removeAnchor->addStyleClass( "LinkBtn" );
+      m_removeAnchor->clicked().connect( this, &DrfModifyWidget::removeAnchorRow );
+
+      for( const MeasuredEffPoint &p : pts )
+        addAnchorRow( p.energy, p.efficiency, p.fracStatUncert );
+      m_removeAnchor->setEnabled( !m_anchors.empty() );
+    }//if( seeded with geometry + measured points )
+
     m_tabMenu->addItem( WString::tr("dmw-tab-name"), std::move(panelOwned) );
   }
 
   // --- Tab: Geometry & MC characterization ---------------------------------
   {
-    auto toolOwned = make_unique<MakeMcResponseForDrf>( m_interspec, m_orig );
+    auto toolOwned = make_unique<MakeMcResponseForDrf>( m_interspec, m_orig, m_geometry );
     m_mcTool = toolOwned.get();
     m_tabMenu->addItem( WString::tr("dmw-tab-geometry"), std::move(toolOwned) );
   }
@@ -241,6 +315,143 @@ void DrfModifyWidget::removeBandRow()
 }//removeBandRow()
 
 
+void DrfModifyWidget::addAnchorRow( const float energy, const float efficiency,
+                                    const float fracUncert )
+{
+  const int row = m_anchorTable->rowCount();  //row 0 is the header
+
+  auto make_edit = [this,row]( const int col, const float value, const bool blankZero ) -> WLineEdit * {
+    WLineEdit *edit = m_anchorTable->elementAt(row,col)->addNew<WLineEdit>();
+    edit->setTextSize( 10 );
+    if( !blankZero || (value != 0.0f) )
+    {
+      char buf[32];
+      snprintf( buf, sizeof(buf), "%.6g", value );
+      edit->setText( buf );
+    }
+    return edit;
+  };
+
+  AnchorRow r;
+  r.energy = make_edit( 0, energy, true );
+  r.eff    = make_edit( 1, efficiency, true );
+  // Store the per-point uncertainty as a percentage; leave blank to inherit the
+  //  default uncert % on apply.
+  r.uncert = make_edit( 2, 100.0f*fracUncert, true );
+  m_anchors.push_back( r );
+  if( m_removeAnchor )
+    m_removeAnchor->setEnabled( !m_anchors.empty() );
+}//addAnchorRow(...)
+
+
+void DrfModifyWidget::removeAnchorRow()
+{
+  if( m_anchors.empty() )
+    return;
+  m_anchorTable->removeRow( m_anchorTable->rowCount() - 1 );
+  m_anchors.pop_back();
+  m_removeAnchor->setEnabled( !m_anchors.empty() );
+}//removeAnchorRow()
+
+
+void DrfModifyWidget::applyAnchorEdits( DetectorPeakResponse &working )
+{
+  if( !m_anchorTable )
+    return;  //anchor editor was not built
+
+  // Default fractional uncertainty for blank per-point cells.
+  float defaultFrac = 0.0f;
+  {
+    const string ds = m_anchorDefaultUncert->text().toUTF8();
+    try{ defaultFrac = 0.01f * std::stof( ds ); }catch( std::exception & ){ defaultFrac = 0.0f; }
+    if( defaultFrac < 0.0f )
+      defaultFrac = 0.0f;
+  }
+
+  // Reference distance (cm) the curve is anchored at.
+  double refDistCm = 0.0;
+  {
+    const string rs = m_anchorRefDistance->text().toUTF8();
+    try{ refDistCm = std::stod( rs ); }catch( std::exception & ){ refDistCm = 0.0; }
+  }
+  if( refDistCm <= 0.0 )
+    return;  //can't build absolute efficiency without a valid distance
+
+  const double refDist = refDistCm * PhysicalUnits::cm;
+
+  vector<DetectorPeakResponse::EnergyEffPoint> effpts;
+  vector<MeasuredEffPoint> measpts;
+  bool anyUncert = false;
+  for( const AnchorRow &r : m_anchors )
+  {
+    const string es = r.energy->text().toUTF8();
+    const string fs = r.eff->text().toUTF8();
+    const string us = r.uncert->text().toUTF8();
+    if( es.empty() && fs.empty() && us.empty() )
+      continue;  //blank row
+
+    float energy = 0.0f, eff = 0.0f;
+    try
+    {
+      energy = std::stof( es );
+      eff = std::stof( fs );
+    }catch( std::exception & )
+    {
+      continue;  //skip malformed rows
+    }
+    if( (energy <= 0.0f) || (eff <= 0.0f) )
+      continue;
+
+    float frac = defaultFrac;
+    if( !us.empty() )
+    {
+      try{ frac = 0.01f * std::stof( us ); }catch( std::exception & ){ frac = defaultFrac; }
+    }
+    if( frac < 0.0f )
+      frac = 0.0f;
+
+    DetectorPeakResponse::EnergyEffPoint e;
+    e.energy = energy;
+    e.efficiency = eff;
+    if( frac > 0.0f )
+    {
+      e.efficiencyUncert = eff * frac;
+      anyUncert = true;
+    }
+    effpts.push_back( e );
+
+    MeasuredEffPoint m;
+    m.energy = energy;
+    m.efficiency = eff;
+    m.fracStatUncert = frac;
+    m.distance = static_cast<float>( refDist );
+    measpts.push_back( m );
+  }//for( const AnchorRow &r : m_anchors )
+
+  if( effpts.size() < 2 )
+    return;  //need at least two points for a curve; leave the DRF untouched
+
+  (void)anyUncert;
+
+  const float diameter = working.detectorDiameter();
+  if( diameter <= 0.0f )
+    return;  //FarFieldAbsolute needs a positive diameter; leave the DRF as-is
+
+  try
+  {
+    working.setEfficiencyPoints( effpts, diameter, refDist,
+                          DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+
+    auto meas = make_shared<MeasuredDrfPoints>();
+    meas->setPoints( measpts );
+    working.setMeasuredPoints( meas );
+  }catch( std::exception & )
+  {
+    //Malformed edits (e.g. duplicate/degenerate energies): keep the seed curve.
+  }
+}//applyAnchorEdits(...)
+
+
 void DrfModifyWidget::apply()
 {
   // One working copy that every tab writes onto.
@@ -255,6 +466,11 @@ void DrfModifyWidget::apply()
   if( !name.empty() )
     working->setName( name );
   working->setDescription( m_description->text().toUTF8() );
+
+  // Measured-curve anchor edits (energy/efficiency/uncert + reference distance):
+  //  rebuild the far-field absolute efficiency and measured points before the
+  //  MC/uncertainty steps read them.
+  applyAnchorEdits( *working );
 
   // FWHM: pull the fitted coefficients (if any) without triggering the tool's
   //  own detector-changed emit.
@@ -324,7 +540,8 @@ DrfModifyWidget *DrfModifyWindow::tool()
 
 
 DrfModifyWindow::DrfModifyWindow( InterSpec *viewer,
-                                  std::shared_ptr<const DetectorPeakResponse> drf )
+                                  std::shared_ptr<const DetectorPeakResponse> drf,
+                                  std::shared_ptr<const ceelo::GeometryDescriptor> geometry )
  : AuxWindow( WString::tr("window-title-modify-drf"),
              (AuxWindowProperties::TabletNotFullScreen
               | AuxWindowProperties::SetCloseable
@@ -348,7 +565,7 @@ DrfModifyWindow::DrfModifyWindow( InterSpec *viewer,
   }//if( ww > 100 && wh > 100 )
 
   {
-    auto toolOwned = make_unique<DrfModifyWidget>( viewer, drf );
+    auto toolOwned = make_unique<DrfModifyWidget>( viewer, drf, geometry );
     m_tool = toolOwned.get();
     stretcher()->addWidget( std::move(toolOwned), 0, 0 );
   }

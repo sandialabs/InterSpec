@@ -9262,7 +9262,8 @@ void InterSpec::deleteMcResponseWindow()
 }//void deleteMcResponseWindow()
 
 
-DrfModifyWindow *InterSpec::showDrfModifyWindow( std::shared_ptr<DetectorPeakResponse> drf )
+DrfModifyWindow *InterSpec::showDrfModifyWindow( std::shared_ptr<DetectorPeakResponse> drf,
+                        std::shared_ptr<const ceelo::GeometryDescriptor> geometry )
 {
   if( m_drfModifyWindow )
   {
@@ -9277,7 +9278,7 @@ DrfModifyWindow *InterSpec::showDrfModifyWindow( std::shared_ptr<DetectorPeakRes
     drf = foreground ? foreground->detector() : nullptr;
   }
 
-  m_drfModifyWindow = AuxWindow::make<DrfModifyWindow>( this, drf );
+  m_drfModifyWindow = AuxWindow::make<DrfModifyWindow>( this, drf, geometry );
   m_drfModifyWindow->tool()->updatedDrf().connect( this,
                           [this]( std::shared_ptr<DetectorPeakResponse> new_drf ){
     if( new_drf )

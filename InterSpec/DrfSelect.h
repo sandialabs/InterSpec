@@ -59,6 +59,8 @@ class DrfChart;
 class InterSpec;
 class InterSpecUser;
 class DrfModifyWindow;
+
+namespace ceelo{ struct GeometryDescriptor; }
 class RelEffDetSelect;
 class GadrasDetSelect;
 class SpectraFileModel;
@@ -334,6 +336,12 @@ public:
    characterization, FWHM, baseline uncertainty), seeded with the current DRF.
    */
   void handleModifyRequested();
+
+  /** Opens (or re-shows) the "Modify..." dialog seeded with the current DRF and
+   an optional physical geometry descriptor (e.g. an imported ANGLE model),
+   which pre-populates the geometry form and enables the measured-anchor editor.
+   */
+  void openModifyWindow( std::shared_ptr<const ceelo::GeometryDescriptor> geometry );
 
   /** Receives the modified DRF from the Modify dialog and makes it this
    dialog's current detector (the user still Accepts to apply app-wide).

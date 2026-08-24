@@ -3930,14 +3930,15 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
   accept->clicked().connect( this, [=](){
     const int index = geom_combo->currentIndex();
 
-    // "Generic detector" (ANGLE): open the Make MC Response tool seeded with
-    //  the physical geometry + measured reference curve, instead of attaching a
-    //  fixed-geometry curve to the foreground.
+    // "Generic detector" (ANGLE): open the consolidated "Modify Detector
+    //  Response" dialog seeded with the physical geometry + measured reference
+    //  curve (geometry review/correction, editable measured-curve anchor, and
+    //  full response generation), instead of attaching a fixed-geometry curve.
     if( (generic_geom_index >= 0) && (index == generic_geom_index) )
     {
       InterSpec *viewer = InterSpec::instance();
       if( viewer )
-        viewer->showMcResponseWindow( angle_seed_drf, angle_geometry );
+        viewer->showDrfModifyWindow( angle_seed_drf, angle_geometry );
       return;
     }//if( generic detector option selected )
 

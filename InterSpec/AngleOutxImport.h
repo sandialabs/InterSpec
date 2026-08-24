@@ -100,6 +100,38 @@ struct AngleOutxContents
    curve's `<holder height>`); approximate, meant to be user-editable. */
   double referenceDistanceCm = 0.0;
 
+  // --- sample source geometry (the top-level `<geometry>`/`<source>` block) ---
+  /** These describe the SAMPLE the file's `<results>` efficiency is for (not the
+   reference curve).  They are not used to build the DRF, but let callers (e.g.
+   cross-validation tests, or a future "seed the Activity/Shielding source
+   geometry" link) reconstruct the measured source.  Zero/empty when absent. */
+
+  /** On-axis standoff from the endcap front (i.e. the outer detector face) to
+   the sample's NEAR (bottom) face - where the sample begins, not its center.
+   This is the empty gap between detector and sample, taken from the sample
+   holder's `<height>` (the sample rests on top of the holder).  For an extended
+   source, add half of `sourceHeight` to reach the source center; for a
+   point/thin source the two coincide.  In cm. */
+  double sampleDistanceCm = 0.0;
+
+  /** Sample source radius / height, in cm (0 for a point/unspecified source). */
+  double sourceRadius = 0.0;
+  double sourceHeight = 0.0;
+
+  /** Sample source matrix material: ANGLE trade name and (if given) density. */
+  std::string sourceMaterialName;
+  double sourceDensity = 0.0;
+
+  /** One element of the sample source material composition. `massFraction` is
+   a fraction in [0,1] (ANGLE mass-percent divided by 100). */
+  struct SourceElement
+  {
+    std::string symbol;
+    double massFraction = 0.0;
+  };//struct SourceElement
+
+  std::vector<SourceElement> sourceComposition;
+
   // --- fitted region equations (developer-checks only) ---
   /** One fitted log-log efficiency region.  `equation` is the raw text of the
    XML comment ANGLE writes after each `<region>` (e.g.

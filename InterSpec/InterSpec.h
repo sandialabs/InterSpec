@@ -933,7 +933,8 @@ public:
    detector.  An accepted edit becomes the session detector.  Used e.g. by the
    Act/Shield cascade-summing option when the DRF lacks total-efficiency info.
    */
-  DrfModifyWindow *showDrfModifyWindow( std::shared_ptr<DetectorPeakResponse> drf );
+  DrfModifyWindow *showDrfModifyWindow( std::shared_ptr<DetectorPeakResponse> drf,
+                        std::shared_ptr<const ceelo::GeometryDescriptor> geometry = nullptr );
 
   /** If a `DrfModifyWindow` opened via #showDrfModifyWindow is showing, deletes it. */
   void deleteDrfModifyWindow();

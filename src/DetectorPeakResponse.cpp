@@ -3529,13 +3529,28 @@ AngleOutxContents DetectorPeakResponse::parseAngleOutxFileFull( std::istream &in
       const rapidxml::xml_node<char> *endcap = XML_FIRST_NODE( det_node, "endCap" );
       if( endcap )
       {
-        add_layer( contents.layers, layer_material( endcap ),
-                   parse_attr_float( endcap, "topThickness", 12 ) * dist_unit,
-                   parse_attr_float( endcap, "sideThickness", 13 ) * dist_unit );
-
-        // <window> (optional; not present in all files) - a full-face window,
-        //  front only.
+        // <window> (optional; not present in all files) - a thin full-face
+        //  window let into the endcap front over a hole of radius `holeRadius`.
+        //  When holeRadius >= crystal radius the window replaces the endcap
+        //  front on-axis (the endcap has been bored out there), so on-axis the
+        //  true front is only the window - counting BOTH the endcap top and the
+        //  window over-recesses the crystal.  In that case take the endcap SIDE
+        //  only, and the window as the front; otherwise take the endcap front
+        //  (an intact endcap, no on-axis hole).
         const rapidxml::xml_node<char> *window = XML_FIRST_NODE( endcap, "window" );
+        const double endcap_front = parse_attr_float( endcap, "topThickness", 12 ) * dist_unit;
+        const double endcap_side = parse_attr_float( endcap, "sideThickness", 13 ) * dist_unit;
+
+        bool window_replaces_front = false;
+        if( window )
+        {
+          const double hole_radius = parse_attr_float( window, "holeRadius", 10 ) * dist_unit;
+          window_replaces_front = (hole_radius > 0.0) && (hole_radius >= contents.crystalRadius);
+        }//if( window )
+
+        add_layer( contents.layers, layer_material( endcap ),
+                   window_replaces_front ? 0.0 : endcap_front, endcap_side );
+
         if( window )
           add_layer( contents.layers, layer_material( window ),
                      parse_attr_float( window, "thickness", 9 ) * dist_unit, 0.0 );
@@ -3565,6 +3580,61 @@ AngleOutxContents DetectorPeakResponse::parseAngleOutxFileFull( std::istream &in
       contents.hasGeometry = false;
     }//try / catch
   }//if( det_node )
+
+  // Sample source geometry: the TOP-LEVEL <geometry>/<source> block describes
+  //  the sample the <results> efficiency is for (distinct from the reference
+  //  curve's own block nested in <referenceEfficiencyCurve>).  Not used to build
+  //  the DRF, but captured so tests / a future "seed source geometry" feature
+  //  can reconstruct the measured source.  Best-effort; never fatal.
+  try
+  {
+    auto attr_float = []( const rapidxml::xml_node<char> *node, const char *attr ) -> double
+    {
+      float val = 0.0f;
+      const rapidxml::xml_attribute<char> *a = node ? node->first_attribute( attr ) : nullptr;
+      if( a && a->value_size() )
+        SpecUtils::parse_float( a->value(), a->value_size(), val );
+      return val;
+    };//attr_float
+
+    // Sample standoff = the sample holder's on-axis height.
+    const rapidxml::xml_node<char> *geom_node = XML_FIRST_NODE( angle_node, "geometry" );
+    const rapidxml::xml_node<char> *holder_node = geom_node ? XML_FIRST_NODE( geom_node, "holder" ) : nullptr;
+    if( holder_node )
+      contents.sampleDistanceCm = (attr_float( holder_node, "height" ) * dist_unit) / PhysicalUnits::cm;
+
+    const rapidxml::xml_node<char> *source_node = XML_FIRST_NODE( angle_node, "source" );
+    if( source_node )
+    {
+      contents.sourceRadius = attr_float( source_node, "radius" ) * dist_unit;
+      contents.sourceHeight = attr_float( source_node, "height" ) * dist_unit;
+
+      const rapidxml::xml_node<char> *mat_node = XML_FIRST_NODE( source_node, "material" );
+      if( mat_node )
+      {
+        contents.sourceMaterialName = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( mat_node, "name" ) );
+        contents.sourceDensity = attr_float( mat_node, "density" );
+
+        // Elemental composition (mass-PERCENT, sums to 100).  Only the explicit
+        //  <elements>/<element symbol massFraction> form is captured; the
+        //  <compound>/<element atoms> form is left for the material name.
+        const rapidxml::xml_node<char> *elems_node = XML_FIRST_NODE( mat_node, "elements" );
+        if( elems_node )
+        {
+          XML_FOREACH_CHILD( elem, elems_node, "element" )
+          {
+            const string sym = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( elem, "symbol" ) );
+            const double mass_pct = attr_float( elem, "massFraction" );
+            if( !sym.empty() && (mass_pct > 0.0) )
+              contents.sourceComposition.push_back( { sym, mass_pct / 100.0 } );
+          }//XML_FOREACH_CHILD( elem, ... )
+        }//if( elems_node )
+      }//if( mat_node )
+    }//if( source_node )
+  }catch( std::exception &e )
+  {
+    cerr << "parseAngleOutxFile: sample source extraction failed: " << e.what() << endl;
+  }//try / catch
 
   // Extract the measured reference efficiency curve (Mode A anchor).
   //  Best-effort, same rationale as geometry above.

@@ -17,6 +17,19 @@
   <message id="dmw-band-frac">Frac. uncertainty</message>
   <message id="dmw-add-band">Add band</message>
   <message id="dmw-remove-band">Remove band</message>
+  <message id="dmw-anchor-title">Measured reference curve</message>
+  <message id="dmw-anchor-help">The measured efficiency curve this response is anchored to
+    (imported from the detector model). Edit the reference distance, the per-point efficiencies
+    and their uncertainties, or add/remove points. Blank uncertainty cells use the default below.</message>
+  <message id="dmw-anchor-ref-dist">Reference distance:</message>
+  <message id="dmw-anchor-cm">cm</message>
+  <message id="dmw-anchor-default-uncert">Default uncertainty:</message>
+  <message id="dmw-anchor-percent">%</message>
+  <message id="dmw-anchor-energy">Energy (keV)</message>
+  <message id="dmw-anchor-eff">Efficiency</message>
+  <message id="dmw-anchor-uncert">Uncert %</message>
+  <message id="dmw-anchor-add">Add point</message>
+  <message id="dmw-anchor-remove">Remove point</message>
   <message id="dmw-export-note">Tip: after choosing &quot;Use&quot;, you can download this
     detector as an XML file or a QR code (buttons on the Detector Select dialog), or find it
     again later under the &quot;Previous&quot; tab of Detector Select.</message>
