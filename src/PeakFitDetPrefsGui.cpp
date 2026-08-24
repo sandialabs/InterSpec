@@ -69,7 +69,7 @@ PeakFitDetPrefsGui::PeakFitDetPrefsGui( InterSpec *viewer, const bool compactMod
 {
   assert( m_viewer );
 
-  for( int i = 0; i < 4; ++i )
+  for( int i = 0; i < 6; ++i )
   {
     m_lowerSkewSpin[i] = nullptr;
     m_upperSkewSpin[i] = nullptr;
@@ -377,6 +377,22 @@ namespace
         if( paramIndex == 1 ){ labelId = "pe-label-skew-doublebortel-deltatau2"; tooltipId = "pe-tt-skew-doublebortel-deltatau2"; }
         if( paramIndex == 2 ){ labelId = "pe-label-skew-doublebortel-eta"; tooltipId = "pe-tt-skew-doublebortel-eta"; }
         return;
+
+      case PeakDef::GadrasGeneric:
+      case PeakDef::GadrasCZT:
+      {
+        // GADRAS types use 6 parameters (low/high skew, low/high power, low/high extent).
+        static const char * const s_gadras_label_ids[6] = {
+          "pe-label-skew-gadras-0", "pe-label-skew-gadras-1", "pe-label-skew-gadras-2",
+          "pe-label-skew-gadras-3", "pe-label-skew-gadras-4", "pe-label-skew-gadras-5"
+        };
+        static const char * const s_gadras_tt_ids[6] = {
+          "pe-tt-skew-gadras-0", "pe-tt-skew-gadras-1", "pe-tt-skew-gadras-2",
+          "pe-tt-skew-gadras-3", "pe-tt-skew-gadras-4", "pe-tt-skew-gadras-5"
+        };
+        if( paramIndex < 6 ){ labelId = s_gadras_label_ids[paramIndex]; tooltipId = s_gadras_tt_ids[paramIndex]; }
+        return;
+      }
     }//switch( skewType )
   }//void skew_param_msg_ids(...)
 
@@ -392,10 +408,10 @@ namespace
    */
   void default_skew_values( const PeakDef::SkewType skewType,
                              const PeakFitUtils::CoarseResolutionType detType,
-                             std::optional<double> lower[4],
-                             std::optional<double> upper[4] )
+                             std::optional<double> lower[6],
+                             std::optional<double> upper[6] )
   {
-    for( int i = 0; i < 4; ++i )
+    for( int i = 0; i < 6; ++i )
     {
       lower[i] = std::nullopt;
       upper[i] = std::nullopt;
@@ -585,6 +601,19 @@ namespace
           default: break;
         }
         return;
+
+      case PeakDef::GadrasGeneric:
+      case PeakDef::GadrasCZT:
+        // low_skew, high_skew (fittable amplitudes); low/high power, low/high extent (fixed
+        // detector characteristics).  None are energy dependent, so only lower[] is used.  The
+        // powers/extents default to 0 and are meant to be overridden by detector-specific values.
+        lower[0] = 5.0; // low_skew
+        lower[1] = 5.0; // high_skew
+        lower[2] = 0.0; // low_skew_power
+        lower[3] = 0.0; // high_skew_power
+        lower[4] = 0.0; // low_skew_extent
+        lower[5] = 0.0; // high_skew_extent
+        return;
     }//switch( skewType )
   }//void default_skew_values(...)
 }//anonymous namespace
@@ -594,7 +623,7 @@ void PeakFitDetPrefsGui::updateSkewParamRows()
 {
   // Clear existing param widgets
   m_skewParamsDiv->clear();
-  for( int i = 0; i < 4; ++i )
+  for( int i = 0; i < 6; ++i )
   {
     m_lowerSkewSpin[i] = nullptr;
     m_upperSkewSpin[i] = nullptr;
@@ -766,7 +795,7 @@ void PeakFitDetPrefsGui::updateSkewParamRows()
       default: break;
     }
 
-    std::optional<double> defLower[4], defUpper[4];
+    std::optional<double> defLower[6], defUpper[6];
     default_skew_values( skewType, detType, defLower, defUpper);
 
     for( size_t p = 0; p < nparams; ++p )
@@ -840,7 +869,7 @@ void PeakFitDetPrefsGui::userChangedValue()
   // When ROI-independent, fixed skew values don't apply — clear them
   if( newPrefs->m_roi_independent_skew )
   {
-    for( size_t i = 0; i < 4; ++i )
+    for( size_t i = 0; i < 6; ++i )
     {
       newPrefs->m_lower_energy_skew[i] = std::nullopt;
       newPrefs->m_upper_energy_skew[i] = std::nullopt;
@@ -1025,7 +1054,7 @@ void PeakFitDetPrefsGui::setControlsEnabled( const bool enabled )
   m_skewTypeCombo->setEnabled( enabled);
   m_roiIndepCb->setEnabled( enabled);
 
-  for( int i = 0; i < 4; ++i )
+  for( int i = 0; i < 6; ++i )
   {
     if( m_lowerSkewSpin[i] )
       m_lowerSkewSpin[i]->setEnabled( enabled);

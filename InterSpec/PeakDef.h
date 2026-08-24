@@ -651,6 +651,33 @@ public:
      */
     DoubleBortel,
 
+    // ========== GADRAS peak-shape distributions ==========
+
+    /** GADRAS peak shape for "generic" detector materials (NaI, HPGe, CsI, LaBr3, ...).
+
+     A re-implementation of the GADRASw discrete-line peak shape (a Gaussian mixture that reproduces the
+     Fortran shape).  The tails are described by low/high skew magnitudes whose energy dependence is
+     intrinsic to the distribution (via the skew "power" terms), so this type does NOT use InterSpec's
+     generic energy-dependent-skew machinery.
+
+     Uses 6 skew parameters:
+     - SkewPar0: `low_skew`         - low-energy tail amplitude (GADRAS magnitude @ 661 keV).  Fittable.
+     - SkewPar1: `high_skew`        - high-energy tail amplitude (GADRAS magnitude @ 661 keV).  Fittable.
+     - SkewPar2: `low_skew_power`   - low-tail energy-dependence exponent.  Fixed detector characteristic.
+     - SkewPar3: `high_skew_power`  - high-tail energy-dependence exponent.  Fixed detector characteristic.
+     - SkewPar4: `low_skew_extent`  - low-tail slope shaping.  Fixed detector characteristic.
+     - SkewPar5: `high_skew_extent` - high-tail slope shaping.  Fixed detector characteristic.
+     */
+    GadrasGeneric,
+
+    /** GADRAS peak shape for CZT / CdTe detector materials.
+
+     Same parameterization as `GadrasGeneric`, but uses the CZT/CdTe tail construction internally.
+
+     Uses 6 skew parameters, identical meaning to `GadrasGeneric` (see above).
+     */
+    GadrasCZT,
+
     /** Sentinel value for bounds checking and iteration. Not a valid skew type. */
     NumSkewType
   };//enum SkewType
@@ -676,6 +703,8 @@ public:
     SkewPar1,
     SkewPar2,
     SkewPar3,
+    SkewPar4,
+    SkewPar5,
     Chi2DOF,           //for peaks that share a ROI/Continuum, this values is for entire ROI/Continuum
     NumCoefficientTypes
   };//enum CoefficientType
@@ -732,13 +761,13 @@ public:
                                    double &starting_value, double &step_size );
   
   /** Returns the number of parameters required to describe the skew type.
-   Will return 0, 1, 2, 3, or 4
+   Will return 0, 1, 2, 3, 4, or 6 (the GADRAS types use 6).
    */
   static size_t num_skew_parameters( const SkewType skew_type );
-  
+
   /** Returns if a skew parameter has an energy dependence across the spectrum, or if the parameter should have
    the same value, no matter the energy of the peak.
-   
+
    This is currently experimental - I dont actually know!!!
    */
   static bool is_energy_dependent( const SkewType skew_type, const CoefficientType coefficient );
@@ -760,6 +789,15 @@ public:
    */
   static bool skew_no_skew_value( const SkewType skew_type, const CoefficientType coefficient,
                                   double &no_skew_value );
+
+  /** Returns whether a given skew parameter should be fit (varied) by default, versus held fixed.
+
+   Most skew types fit all their parameters by default, so this returns true for any parameter within
+   `num_skew_parameters(skew_type)`.  The GADRAS types are an exception: only the two amplitude parameters
+   (SkewPar0=low_skew, SkewPar1=high_skew) are fit by default; the energy-dependence powers and tail extents
+   (SkewPar2..SkewPar5) are fixed detector characteristics.
+   */
+  static bool skew_parameter_fit_by_default( const SkewType skew_type, const CoefficientType coefficient );
 
 public:
   PeakDef();

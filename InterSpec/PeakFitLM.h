@@ -312,8 +312,8 @@ struct FitPeaksResults
     std::optional<std::pair<double,double>> energy_range;
     
     /** The maximum number of skew paramaters any of the skew types might have. */
-    static constexpr size_t sm_max_num_skew_pars = 1 + PeakDef::CoefficientType::SkewPar3 - PeakDef::CoefficientType::SkewPar0;
-    static_assert( sm_max_num_skew_pars == 4 );
+    static constexpr size_t sm_max_num_skew_pars = 1 + PeakDef::CoefficientType::SkewPar5 - PeakDef::CoefficientType::SkewPar0;
+    static_assert( sm_max_num_skew_pars == 6 );
     
     /** The values of energy-dependent skew paramaters at the lower and upper energies.
      See `PeakDef::is_energy_dependent(SkewType,CoefficientType)`.

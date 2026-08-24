@@ -58,7 +58,7 @@ struct PeakDefImp
   T m_mean = T(0.0);
   T m_sigma = T(0.0);
   T m_amplitude = T(0.0);
-  T m_skew_pars[4] = { T(0.0), T(0.0), T(0.0), T(0.0) };
+  T m_skew_pars[6] = { T(0.0), T(0.0), T(0.0), T(0.0), T(0.0), T(0.0) };
 
   const SandiaDecay::Nuclide *m_parent_nuclide = nullptr;
   const SandiaDecay::Transition *m_transition = nullptr;
@@ -100,7 +100,7 @@ struct PeakDefImp
       return; //Like Chi2Dof
     }
 
-    assert( (index >= 0) && (index < 4) );
+    assert( (index >= 0) && (index < 6) );
     m_skew_pars[index] = val;
   }
 
@@ -158,6 +158,16 @@ struct PeakDefImp
       case PeakDef::SkewType::DoubleBortel:
         PeakDists::double_bortel_integral( m_mean, m_sigma, m_amplitude, m_skew_pars[0], m_skew_pars[1], m_skew_pars[2], energies, channels, nchannel );
         break;
+
+      case PeakDef::SkewType::GadrasGeneric:
+        PeakDists::gadras_integral( m_mean, m_sigma, m_amplitude, m_skew_pars,
+                                    PeakDists::GadrasMaterial::Generic, energies, channels, nchannel );
+        break;
+
+      case PeakDef::SkewType::GadrasCZT:
+        PeakDists::gadras_integral( m_mean, m_sigma, m_amplitude, m_skew_pars,
+                                    PeakDists::GadrasMaterial::CZT_CdTe, energies, channels, nchannel );
+        break;
     }//switch( skew_type )
 
     check_jet_array_for_NaN( channels, nchannel );
@@ -181,7 +191,7 @@ struct PeakDefImp
   {
     using namespace std;
 
-    double skew_pars[4] = { 0.0 };
+    double skew_pars[6] = { 0.0 };
 
     double mean, sigma;
     if constexpr ( !std::is_same_v<T, double> )
@@ -328,6 +338,21 @@ struct PeakDefImp
           const boost::math::normal_distribution gaus_dist( 1.0 );
           vis_limits.second = mean + sigma*boost::math::quantile( gaus_dist, 1.0 - missing_frac );
         }
+      break;
+
+      case PeakDef::SkewType::GadrasGeneric:
+      case PeakDef::SkewType::GadrasCZT:
+        try
+        {
+          const PeakDists::GadrasMaterial mat = (m_skew_type == PeakDef::SkewType::GadrasCZT)
+                                    ? PeakDists::GadrasMaterial::CZT_CdTe
+                                    : PeakDists::GadrasMaterial::Generic;
+          vis_limits = PeakDists::gadras_coverage_limits( mean, sigma, skew_pars, mat, missing_frac );
+        }catch( std::exception & )
+        {
+          vis_limits.first  = mean - 15.0*sigma;
+          vis_limits.second = mean + 15.0*sigma;
+        }//try / catch
       break;
     }//switch( m_skew_type )
 

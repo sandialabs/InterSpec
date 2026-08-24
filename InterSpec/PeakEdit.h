@@ -90,6 +90,8 @@ public:
     SkewPar1,
     SkewPar2,
     SkewPar3,
+    SkewPar4,
+    SkewPar5,
     Chi2DOF,
     RangeStartEnergy,
     RangeEndEnergy,

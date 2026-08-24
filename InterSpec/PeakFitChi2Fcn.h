@@ -90,6 +90,8 @@ public:
     SkewPar1           = PeakDef::CoefficientType::SkewPar1,
     SkewPar2           = PeakDef::CoefficientType::SkewPar2,
     SkewPar3           = PeakDef::CoefficientType::SkewPar3,
+    SkewPar4           = PeakDef::CoefficientType::SkewPar4,
+    SkewPar5           = PeakDef::CoefficientType::SkewPar5,
     Chi2DOF            = PeakDef::CoefficientType::Chi2DOF,
     ContinuumInfoField = PeakDef::CoefficientType::NumCoefficientTypes,
     SkewInfoField,

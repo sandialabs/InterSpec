@@ -71,6 +71,7 @@
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 
@@ -1597,122 +1598,44 @@ function<float(float)> DetectorPeakResponse::makeEfficiencyFunctionFromFormula(
 void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
                                                  std::istream &detDatFile )
 {
-  float detWidth = 0.0, heightToWidth = 0.0;
-  float lowerEnergy = 0.0, upperEnergy = 0.0;
-  float detSetback = 0.0;
+  // Parse the Detector.dat (either legacy text or XML variant) into a single representation.
+  const GadrasDetectorDat dat = GadrasDetectorDat::fromStream( detDatFile );
+
+  const float detWidth = dat.width();
+  const float heightToWidth = dat.heightToWidth();
+  const float detSetback = dat.setbackCm();
+
+  // Min/max valid energy (params 62/63 integer columns).  Read for both formats now that a
+  //  single parser exposes them (the legacy text path historically left these at 0).
+  const float lowerEnergy = dat.lowerEnergyKeV();
+  const float upperEnergy = dat.upperEnergyKeV();
+
+  // GADRAS peak-shape (skew/tailing) coefficients and detector material; fed into a
+  //  PeakFitDetPrefs so peaks can default to the GADRAS peak shape.
+  const float gadrasLowSkew = dat.lowSkew();
+  const float gadrasHighSkew = dat.highSkew();
+  const float gadrasLowSkewPower = dat.lowSkewPower();
+  const float gadrasHighSkewPower = dat.highSkewPower();
+  const float gadrasLowSkewExtent = dat.lowSkewExtent();
+  const float gadrasHighSkewExtent = dat.highSkewExtent();
+  const int gadrasMaterialIdx = dat.materialIndex();  // DetectorData.gadras index; 8=CZT, 9=CdTe
+  const string gadrasMaterialName = dat.m_material_name;  // material name (from XML), if available
+
+  // Seed the GADRAS peak shape when a nonzero skew coefficient was present, or whenever the
+  //  file was XML (matches the prior behavior of always seeding a shape for XML files).
+  const bool haveGadrasShape = (dat.m_format == GadrasDetectorDat::SourceFormat::Xml)
+      || (gadrasLowSkew != 0.0f) || (gadrasHighSkew != 0.0f)
+      || (gadrasLowSkewPower != 0.0f) || (gadrasHighSkewPower != 0.0f)
+      || (gadrasLowSkewExtent != 0.0f) || (gadrasHighSkewExtent != 0.0f);
 
   // Note: the efficiency representation (incl. energy units) is set below by
   //  the fromEnergyEfficiencyCsv call.
-  m_resolutionCoeffs.clear();
   m_resolutionForm = kGadrasResolutionFcn;
+  m_resolutionCoeffs.clear();
   m_resolutionCoeffs.resize( 3, 0.0 );
-
-  
-  // First decide if old style Detector.dat, or the newer XML Detector.dat
-  const istream::pos_type orig_pos = detDatFile.tellg();
-  
-  string line;
-  if( !SpecUtils::safe_get_line( detDatFile, line, 64 * 1024 ) )
-    throw std::runtime_error( "Couldnt read first line of Detector.dat" );
-
-  const bool is_xml = (line.find("xml") != string::npos);
-  
-  if( is_xml )
-  {
-    try
-    {
-      // A helper function to grab float values from Detector.dat xml.
-      auto get_float_value = []( const rapidxml::xml_node<char> * const parent, const string &name ) -> float {
-        const auto target = parent->first_node( name.c_str(), name.size() );
-        const auto value = SpecUtils::xml_first_node( target, "value" );
-        const string val_str = SpecUtils::xml_value_str( value );
-        
-        float val;
-        //will fail if val_str empty (which we want), but will parse strings like " 19.2 as", which
-        //  maybe its debatable if we want this behavior, but I dont think this matters much.
-        if( !(stringstream(val_str) >> val) )
-          throw runtime_error( "Missing <" + name + "> node." );
-        return val;
-      };//get_float_value lambda
-      
-      
-      detDatFile.seekg(orig_pos); //probably not really needed
-      rapidxml::file<char> input_file( detDatFile );
-      
-      rapidxml::xml_document<char> doc;
-      doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
-      
-      const auto gamma_detector = doc.first_node( "gamma_detector" );
-      if( !gamma_detector )
-        throw runtime_error( "Missing <gamma_detector> node." );
-      
-      lowerEnergy = get_float_value( gamma_detector, "weight_range_lower" );  //template error / min energy, keV
-      upperEnergy = get_float_value( gamma_detector, "weight_range_upper" );  //chi-square / max energy, keV
-      
-      const auto dimensions = XML_FIRST_NODE( gamma_detector, "dimensions" );
-      if( !dimensions )
-        throw runtime_error( "Missing <dimensions> node." );
-      
-      detWidth = get_float_value( dimensions, "width" );
-      heightToWidth = get_float_value( dimensions, "height_to_width_ratio" );
-      
-      const auto peak_shape = XML_FIRST_NODE( gamma_detector, "peak_shape" );
-      if( !peak_shape )
-        throw runtime_error( "Missing <peak_shape> node." );
-      
-      m_resolutionCoeffs[0] = get_float_value( peak_shape, "fwhm_offset" );
-      m_resolutionCoeffs[1] = get_float_value( peak_shape, "fwhm_at_661keV" );
-      m_resolutionCoeffs[2] = get_float_value( peak_shape, "fwhm_power" );
-
-      // Try to read setback from "setback" node, if present
-      try
-      {
-        detSetback = get_float_value( gamma_detector, "setback" );
-      }catch(...)
-      {
-        // "setback" node may not be present in older XML Detector.dat files
-      }
-    }catch( std::exception &e )
-    {
-      throw std::runtime_error( "Failed to read XML Detector.dat: " + std::string(e.what()) );
-    }//try / catch
-  }else
-  {
-    
-    do  //We've already got the first line
-    {
-      vector<string> parts;
-      SpecUtils::trim( line );
-      if( line.empty() || !isdigit(line[0]) )
-        continue;
-      
-      SpecUtils::split( parts, line, " \t" );
-      
-      try
-      {
-        const int parnum = std::stoi( parts.at(0) );
-        const float value = static_cast<float>( std::stod( parts.at(1) ) );
-        //      const int value2 = std::stoi( parts.at(2) );
-        //      const string descrip = parts.at(3);
-        switch( parnum )
-        {
-          case 6:  m_resolutionCoeffs[0] = value; break;
-          case 7:  m_resolutionCoeffs[1] = value; break;
-          case 8:  m_resolutionCoeffs[2] = value; break;
-          case 11: detWidth = value;              break;
-          case 12: heightToWidth = value;         break;
-          //case 35: lowerEnergy = value;           break;  //LLD(keV)
-          //case ??: upperEnergy = value;           break;  //chi-square / max energy, keV
-          case 40: detSetback = value;            break;
-        }//switch( parnum )
-      }catch(...)
-      {
-        cerr << "\nError reading line \"" << line << "\"" << endl;
-        continue;
-      }
-    }while( SpecUtils::safe_get_line( detDatFile, line, 64 * 1024 ) );
-  }//if( is_xml ) / else
-
+  m_resolutionCoeffs[0] = dat.resOffset();
+  m_resolutionCoeffs[1] = dat.resFWHM661();
+  m_resolutionCoeffs[2] = dat.resPower();
 
   if( detWidth<=0.0 || heightToWidth<=0.0 )
     throw runtime_error( "Couldnt find detector dimensions in the Detector.dat file" );
@@ -1734,10 +1657,54 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   m_upperEnergy = upperEnergy;
 
   m_efficiencySource = DrfSource::UserAddedGadrasDrf;
-  
+
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   m_geomType = geometry_type;
-  
+
+  // If we parsed GADRAS peak-shape coefficients, seed a PeakFitDetPrefs so peaks default to the
+  //  appropriate GADRAS peak shape (Generic vs CZT/CdTe), with the shape coefficients fixed.
+  if( haveGadrasShape )
+  {
+    string matname = gadrasMaterialName;
+    SpecUtils::to_lower_ascii( matname );
+    const bool is_czt = (gadrasMaterialIdx == 8) || (gadrasMaterialIdx == 9)
+                        || (matname.find("czt") != string::npos)
+                        || (matname.find("cdte") != string::npos)
+                        || (matname.find("cadmium") != string::npos);
+
+    auto prefs = make_shared<PeakFitDetPrefs>();
+    prefs->m_peak_skew_type = is_czt ? PeakDef::SkewType::GadrasCZT
+                                     : PeakDef::SkewType::GadrasGeneric;
+
+    // Coarse resolution type from material (best-effort).
+    if( is_czt )
+      prefs->m_det_type = PeakFitUtils::CoarseResolutionType::CZT;
+    else if( (gadrasMaterialIdx == 3)
+             || (matname.find("hpge") != string::npos) || (matname.find("germanium") != string::npos) )
+      prefs->m_det_type = PeakFitUtils::CoarseResolutionType::High;
+    else if( (gadrasMaterialIdx == 10) || (gadrasMaterialIdx == 11)
+             || (matname.find("labr") != string::npos) || (matname.find("lacl") != string::npos) )
+      prefs->m_det_type = PeakFitUtils::CoarseResolutionType::LaBr;
+    else if( (gadrasMaterialIdx == 1) || (gadrasMaterialIdx == 2) || (gadrasMaterialIdx == 5)
+             || (matname.find("nai") != string::npos) || (matname.find("csi") != string::npos)
+             || (matname.find("bgo") != string::npos) )
+      prefs->m_det_type = PeakFitUtils::CoarseResolutionType::Low;
+    else
+      prefs->m_det_type = PeakFitUtils::CoarseResolutionType::Unknown;
+
+    // SkewPar0=low_skew, 1=high_skew, 2=low_power, 3=high_power, 4=low_extent, 5=high_extent.
+    prefs->m_lower_energy_skew[0] = gadrasLowSkew;
+    prefs->m_lower_energy_skew[1] = gadrasHighSkew;
+    prefs->m_lower_energy_skew[2] = gadrasLowSkewPower;
+    prefs->m_lower_energy_skew[3] = gadrasHighSkewPower;
+    prefs->m_lower_energy_skew[4] = gadrasLowSkewExtent;
+    prefs->m_lower_energy_skew[5] = gadrasHighSkewExtent;
+
+    prefs->m_source = PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse;
+
+    m_peakFitDetPrefs = prefs;
+  }//if( haveGadrasShape )
+
   computeHash();
 }//void fromGadrasDefinition(...)
 
@@ -4168,95 +4135,16 @@ void DetectorPeakResponse::parseDetectorDatGeometry( std::istream &detDatFile,
   diameter = 0.0f;
   setback = 0.0f;
 
-  float detWidth = 0.0f, heightToWidth = 0.0f;
-  float detSetback = 0.0f;
+  // Parse the Detector.dat (legacy text or XML) and pull out just the geometry.
+  const GadrasDetectorDat dat = GadrasDetectorDat::fromStream( detDatFile );
 
-  const istream::pos_type orig_pos = detDatFile.tellg();
-
-  string line;
-  if( !SpecUtils::safe_get_line( detDatFile, line, 64 * 1024 ) )
-    throw runtime_error( "Could not read first line of Detector.dat" );
-
-  const bool is_xml = (line.find( "xml" ) != string::npos);
-
-  if( is_xml )
-  {
-    try
-    {
-      auto get_float_value = []( const rapidxml::xml_node<char> * const parent,
-                                 const string &name ) -> float {
-        const auto target = parent->first_node( name.c_str(), name.size() );
-        const auto value = SpecUtils::xml_first_node( target, "value" );
-        const string val_str = SpecUtils::xml_value_str( value );
-        float val;
-        if( !(stringstream( val_str ) >> val) )
-          throw runtime_error( "Missing <" + name + "> node." );
-        return val;
-      };
-
-      detDatFile.seekg( orig_pos );
-      rapidxml::file<char> input_file( detDatFile );
-
-      rapidxml::xml_document<char> doc;
-      doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
-
-      const auto gamma_detector = doc.first_node( "gamma_detector" );
-      if( !gamma_detector )
-        throw runtime_error( "Missing <gamma_detector> node." );
-
-      const auto dimensions = XML_FIRST_NODE( gamma_detector, "dimensions" );
-      if( !dimensions )
-        throw runtime_error( "Missing <dimensions> node." );
-
-      detWidth = get_float_value( dimensions, "width" );
-      heightToWidth = get_float_value( dimensions, "height_to_width_ratio" );
-
-      try
-      {
-        detSetback = get_float_value( gamma_detector, "setback" );
-      }catch( ... )
-      {
-      }
-    }catch( std::exception &e )
-    {
-      throw runtime_error( "Failed to read XML Detector.dat: " + string( e.what() ) );
-    }
-  }else
-  {
-    do
-    {
-      SpecUtils::trim( line );
-      if( line.empty() || !isdigit( static_cast<unsigned char>(line[0]) ) )
-        continue;
-
-      vector<string> parts;
-      SpecUtils::split( parts, line, " \t" );
-
-      try
-      {
-        const int parnum = std::stoi( parts.at( 0 ) );
-        const float value = static_cast<float>( std::stod( parts.at( 1 ) ) );
-        switch( parnum )
-        {
-          case 11: detWidth = value;      break;
-          case 12: heightToWidth = value;  break;
-          case 40: detSetback = value;    break;
-        }
-      }catch( ... )
-      {
-        continue;
-      }
-    }while( SpecUtils::safe_get_line( detDatFile, line, 64 * 1024 ) );
-  }//if( is_xml ) / else
-
-  if( (detWidth <= 0.0f) || (heightToWidth <= 0.0f) )
+  if( (dat.width() <= 0.0f) || (dat.heightToWidth() <= 0.0f) )
     throw runtime_error( "Could not find detector dimensions in Detector.dat" );
 
-  const float surfaceArea = detWidth * detWidth * heightToWidth;
-  diameter = 2.0f * sqrt( surfaceArea / 3.14159265359f ) * static_cast<float>( PhysicalUnits::cm );
+  diameter = dat.equivalentCircularDiameterCm() * static_cast<float>( PhysicalUnits::cm );
 
-  if( detSetback > 0.0f )
-    setback = detSetback * static_cast<float>( PhysicalUnits::cm );
+  if( dat.setbackCm() > 0.0f )
+    setback = dat.setbackCm() * static_cast<float>( PhysicalUnits::cm );
 }//void parseDetectorDatGeometry(...)
 
 
@@ -5579,47 +5467,29 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
         throw std::runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
                                  " pars not defined" );
       assert( PhysicalUnits::keV == 1.0 );
-      
-      /*
-       TODO: 20260723 - should update to instead use the belo
-       const double resolutionOffset = pars[0];
-       const double resolution661 = pars[1];
-       const double resolutionPower = pars[2];
 
-       const double E = std::max(1.0, energy);
-       if( E > 661 )
-         return static_cast<float>( 6.61 * resolution661 * pow((E / 661.), resolutionPower) );
+      // Straight-forward translation of the GADRAS Fortran GetFWHM (the "form C" shared with
+      //  PeakDists::gadras_fwhm).  This replaces an earlier variant that used a different
+      //  low-energy positive-offset branch (A7 = sqrt((6.61b)^2 - a^2)/6.61); the two agree for
+      //  E > 661 and for negative offset (aside from the max(30,E) floor below), but differ for
+      //  positive resolution-offset detectors (e.g. HPGe, LaBr3) below 661 keV.  Form C is the
+      //  Fortran-faithful form and is now used everywhere GADRAS FWHM is computed.
+      const double a = pars[0];   // resolution offset ("FWHM @ 0")
+      const double b = pars[1];   // resolution @ 661 (percent)
+      const double c = pars[2];   // resolution power
 
-       if( resolutionOffset >= 0 )
-       {
-          double ZeroLimit = std::max(0., std::abs(resolutionOffset) * (661. - E) / 661.);
-          double FWHM = 6.61 * resolution661 * pow((E / 661.), resolutionPower);
-          return sqrt(pow(ZeroLimit, 2) + pow(FWHM, 2));
-       }
-
-
-        double p = pow(resolutionPower, (1. / log(1. - resolutionOffset)));
-        return 6.61 * resolution661 * pow((std::max(30., E) / 661.), P);
-       */
-      
-      const double a = pars[0];
-      const double b = pars[1];
-      const double c = pars[2];
-      
-      if( energy >= 661.0f || fabs(a)<float(1.0E-6) )
+      if( energy > 661.0f )
         return static_cast<float>( 6.61 * b * pow(energy/661.0, c) );
 
-      if( a < 0.0 )
+      if( a >= 0.0 )
       {
-        const double p = pow( c, 1.0/log(1.0-a) );
-        return static_cast<float>( 6.61 * b * pow(energy/661.0, p) );
-      }//if( a < 0.0 )
-      
-      if( a > 6.61*b )
-        return static_cast<float>( a );
+        const double zero_limit = std::max( 0.0, fabs(a) * (661.0 - energy) / 661.0 );
+        const double fwhm = 6.61 * b * pow( energy/661.0, c );
+        return static_cast<float>( sqrt( zero_limit*zero_limit + fwhm*fwhm ) );
+      }//if( a >= 0.0 )
 
-      const double A7 = sqrt( pow( 6.61*b, 2.0) - a*a ) / 6.61;
-      return static_cast<float>( sqrt(a*a + pow( 6.61 * A7 * pow(energy/661.0, c), 2.0)) );
+      const double p = pow( c, 1.0/log(1.0-a) );
+      return static_cast<float>( 6.61 * b * pow( std::max(30.0,static_cast<double>(energy))/661.0, p ) );
     }//case kGadrasResolutionFcn:
     
     case kSqrtEnergyPlusInverse:

@@ -883,6 +883,70 @@ double peak_cdf( const double x, const double mean, const double sigma,
                                                            const double eta, const double p );
 
 
+  // ========== GADRAS Peak Shape Distribution Functions ==========
+  //
+  // A re-implementation of the GADRASw discrete-line peak shape (a Gaussian mixture that reproduces
+  // the Fortran shape).  See the well-marked GADRAS section in PeakDists_imp.hpp for the math (this
+  // section is expected to receive a math upgrade to an analytic form).
+  //
+  // The six skew parameters (SkewPar0..SkewPar5) are:
+  //   [0] low_skew         (low-energy tail amplitude @ 661 keV)  - fittable
+  //   [1] high_skew        (high-energy tail amplitude @ 661 keV) - fittable
+  //   [2] low_skew_power   (low-tail energy-dependence exponent)  - fixed detector characteristic
+  //   [3] high_skew_power  (high-tail energy-dependence exponent) - fixed detector characteristic
+  //   [4] low_skew_extent  (low-tail slope shaping)               - fixed detector characteristic
+  //   [5] high_skew_extent (high-tail slope shaping)              - fixed detector characteristic
+
+  /** Detector material categories that change the GADRAS tail construction. */
+  enum class GadrasMaterial
+  {
+    Generic,   // NaI, HPGe, CsI, LaBr3, ...
+    CZT_CdTe   // CZT or CdTe
+  };
+
+  /** Returns the integral of a GADRAS peak-shape distribution between x0 and x1 (unit area).
+
+   @param mean  Peak mean in keV (also the energy at which the shape is resolved).
+   @param sigma Gaussian width, in keV.
+   @param skew  Pointer to the 6 skew parameters (see above).
+   @param material  Generic vs CZT/CdTe.
+   @param x0    Lower integration limit.
+   @param x1    Upper integration limit.
+   */
+  double gadras_integral( const double mean, const double sigma,
+                          const double * const skew, const GadrasMaterial material,
+                          const double x0, const double x1 );
+
+  /** Optimized array-filling version of the GADRAS integral (accumulates into `channels`).
+
+   @param peak_mean       Peak mean in keV.
+   @param sigma           Gaussian width, in keV.
+   @param peak_amplitude  Peak amplitude (use 1.0 for unit-area peak).
+   @param skew            Pointer to the 6 skew parameters.
+   @param material        Generic vs CZT/CdTe.
+   @param energies        Channel lower energies (nchannel+1 entries).
+   @param channels        Output array (nchannel entries); values are added to.
+   @param nchannel        Number of channels.
+   */
+  template<typename T>
+  void gadras_integral( const T peak_mean, const T sigma, const T peak_amplitude,
+                        const T * const skew, const GadrasMaterial material,
+                        const float * const energies, T *channels, const size_t nchannel );
+
+  extern template void gadras_integral<double>( const double, const double, const double,
+                                                const double * const, const GadrasMaterial,
+                                                const float * const, double *, const size_t );
+
+  /** Return the limits so that `1-p` of the GADRAS distribution is covered.
+
+   @returns limits so that `0.5*p` of the distribution will be below the first element, and
+   `0.5*p` will be above the second element.  Throws error on invalid input.
+   */
+  std::pair<double,double> gadras_coverage_limits( const double mean, const double sigma,
+                                                   const double * const skew,
+                                                   const GadrasMaterial material, const double p );
+
+
   /** Returns [lower, upper] energy limits such that fraction `p` of the peak's area lies outside
    the range (i.e., `p/2` below lower, `p/2` above upper), dispatching to the appropriate
    distribution's coverage-limits function based on skew type.

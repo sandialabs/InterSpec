@@ -1477,6 +1477,7 @@ struct PeakFitDiffCostFunction
           case PeakDef::NoSkew:   case PeakDef::Bortel:
           case PeakDef::DoubleBortel: case PeakDef::GaussPlusBortel:
           case PeakDef::GaussExp: case PeakDef::ExpGaussExp:
+          case PeakDef::GadrasGeneric: case PeakDef::GadrasCZT:
             break;
 
           case PeakDef::CrystalBall:
@@ -1487,6 +1488,7 @@ struct PeakFitDiffCostFunction
               case PeakDef::Mean:           case PeakDef::Sigma:
               case PeakDef::GaussAmplitude: case PeakDef::NumCoefficientTypes:
               case PeakDef::Chi2DOF:
+              case PeakDef::SkewPar4:       case PeakDef::SkewPar5:
               case PeakDef::SkewPar0:
               case PeakDef::SkewPar2:
                 if( (val > 3.0) && fit_parameter[i] )
@@ -1862,6 +1864,7 @@ struct PeakFitDiffCostFunction
                 case PeakDef::NoSkew:   case PeakDef::Bortel:
                 case PeakDef::DoubleBortel: case PeakDef::GaussPlusBortel:
                 case PeakDef::GaussExp: case PeakDef::ExpGaussExp:
+                case PeakDef::GadrasGeneric: case PeakDef::GadrasCZT:
                   break;
 
                 case PeakDef::CrystalBall:
@@ -1872,6 +1875,7 @@ struct PeakFitDiffCostFunction
                     case PeakDef::Mean:           case PeakDef::Sigma:
                     case PeakDef::GaussAmplitude: case PeakDef::NumCoefficientTypes:
                     case PeakDef::Chi2DOF:
+                    case PeakDef::SkewPar4:       case PeakDef::SkewPar5:
                     case PeakDef::SkewPar0:
                     case PeakDef::SkewPar2:
                       if( val > 3.0 )

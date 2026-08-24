@@ -22,6 +22,8 @@
   <message id="pe-label-skew1">Skew 1</message>
   <message id="pe-label-skew2">Skew 2</message>
   <message id="pe-label-skew3">Skew 3</message>
+  <message id="pe-label-skew4">Skew 4</message>
+  <message id="pe-label-skew5">Skew 5</message>
   <message id="pe-label-cont-p0">Cont. P0</message>
   <message id="pe-label-cont-p1">Cont. P1</message>
   <message id="pe-label-cont-p2">Cont. P2</message>
@@ -76,6 +78,14 @@
   <message id="pe-label-skew-voigtplusbortel-r">Mix Ratio R</message>
   <message id="pe-label-skew-voigtplusbortel-tau">Bortel &tau;</message>
 
+  <!-- Skew parameter labels for GADRAS (generic and CZT/CdTe) -->
+  <message id="pe-label-skew-gadras-0">Low skew</message>
+  <message id="pe-label-skew-gadras-1">High skew</message>
+  <message id="pe-label-skew-gadras-2">Low skew power</message>
+  <message id="pe-label-skew-gadras-3">High skew power</message>
+  <message id="pe-label-skew-gadras-4">Low skew extent</message>
+  <message id="pe-label-skew-gadras-5">High skew extent</message>
+
   <!-- Tooltips for skew parameters -->
   <message id="pe-tt-skew-bortel-tau">Exponential decay constant for Exp*Gauss (Exponentially Modified Gaussian). Represents the characteristic length scale of the low-energy tail. Valid range: 0.0-15 σ, typical values: 0.5-3 σ.</message>
 
@@ -112,5 +122,18 @@
   <message id="pe-tt-skew-voigtplusbortel-r">Mixing ratio between Voigt profile and Exp*Gauss. R=0 is pure Voigt (natural linewidth only), R=1 is pure Exp*Gauss (detector tail only). Valid range: 0.0-1.0.</message>
 
   <message id="pe-tt-skew-voigtplusbortel-tau">Exponential decay constant for the Exp*Gauss component, representing incomplete charge collection tail. Valid range: 0.01-10 σ.</message>
+
+  <!-- Tooltips for GADRAS skew parameters (generic and CZT/CdTe) -->
+  <message id="pe-tt-skew-gadras-0">Low-energy tail amplitude (GADRAS skew magnitude at 661 keV). Larger values give a more pronounced low-energy tail. Fittable parameter.</message>
+
+  <message id="pe-tt-skew-gadras-1">High-energy tail amplitude (GADRAS skew magnitude at 661 keV). Larger values give a more pronounced high-energy tail. Fittable parameter.</message>
+
+  <message id="pe-tt-skew-gadras-2">Energy-dependence exponent for the low-energy tail amplitude. Fixed detector characteristic.</message>
+
+  <message id="pe-tt-skew-gadras-3">Energy-dependence exponent for the high-energy tail amplitude. Fixed detector characteristic.</message>
+
+  <message id="pe-tt-skew-gadras-4">Low-energy tail slope/extent shaping. Fixed detector characteristic.</message>
+
+  <message id="pe-tt-skew-gadras-5">High-energy tail slope/extent shaping. Fixed detector characteristic.</message>
 
 </messages>

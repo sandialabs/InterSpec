@@ -55,7 +55,7 @@ class DetectorPeakResponse;
 /** Holds coarse detector resolution type, default peak skew type, and optional
  fixed skew parameters for peak fitting.
 
- The skew parameters (SkewPar0..SkewPar3) may be energy-dependent or fixed:
+ The skew parameters (SkewPar0..SkewPar5) may be energy-dependent or fixed:
  - If a parameter is energy-dependent (see `PeakDef::is_energy_dependent`), both
    lower and upper energy values must be specified. The parameter value will be
    linearly interpolated between these for any given peak energy.
@@ -72,15 +72,15 @@ struct PeakFitDetPrefs
   /** Skew type to default to fitting new peaks with. */
   PeakDef::SkewType m_peak_skew_type;
 
-  /** Lower-energy skew parameter values (index 0..3 => SkewPar0..SkewPar3).
+  /** Lower-energy skew parameter values (index 0..5 => SkewPar0..SkewPar5).
    See class-level comment for semantics of energy-dependent vs fixed params.
    */
-  std::optional<double> m_lower_energy_skew[4];
+  std::optional<double> m_lower_energy_skew[6];
 
-  /** Upper-energy skew parameter values (index 0..3 => SkewPar0..SkewPar3).
+  /** Upper-energy skew parameter values (index 0..5 => SkewPar0..SkewPar5).
    Only meaningful for energy-dependent parameters.
    */
-  std::optional<double> m_upper_energy_skew[4];
+  std::optional<double> m_upper_energy_skew[6];
 
   /** If true, each ROI will have its own independently fit skew parameters.
    If false, skew parameters are shared/related across ROIs.

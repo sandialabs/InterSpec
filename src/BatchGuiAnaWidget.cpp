@@ -1925,7 +1925,7 @@ BatchGuiIsotopicsByNuclidesWidget::BatchGuiIsotopicsByNuclidesWidget()
   m_override_skew_type = skew_row->addNew<WCheckBox>( WString::tr( "bgw-iso-override-skew-type" ) );
   m_override_skew_type->addStyleClass( "CbNoLineBreak" );
   m_skew_type_combo = skew_row->addNew<WComboBox>();
-  for( int i = 0; i <= static_cast<int>(PeakDef::SkewType::DoubleSidedCrystalBall); ++i )
+  for( int i = 0; i < static_cast<int>(PeakDef::SkewType::NumSkewType); ++i )
     m_skew_type_combo->addItem( PeakDef::to_string( static_cast<PeakDef::SkewType>(i) ) );
   m_skew_type_combo->setHidden( true );
   m_override_skew_type->checked().connect( this, &BatchGuiIsotopicsByNuclidesWidget::optionsChanged );

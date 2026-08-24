@@ -14570,10 +14570,10 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
     {
       const size_t num_par = x.size();
       const size_t num_peaks = computed_peaks.peaks.size();
-      peak_uncertainties.resize(num_peaks, vector<double>(4 + 4, 0.0)); // mean, sigma, amplitude, 4 skew pars
-      
+      peak_uncertainties.resize(num_peaks, vector<double>(3 + 6, 0.0)); // mean, sigma, amplitude, 6 skew pars
+
       // For each peak, compute jacobians for each parameter (mean, sigma, amplitude, skew_pars)
-      vector<vector<vector<double>>> peak_jacobians(num_peaks, vector<vector<double>>(8, vector<double>(num_par, 0.0)));
+      vector<vector<vector<double>>> peak_jacobians(num_peaks, vector<vector<double>>(3 + 6, vector<double>(num_par, 0.0)));
       
       for( size_t i = 0; i < num_par; i += RelActCalcAutoImp::RelActAutoCostFcn::sm_auto_diff_stride_size )
       {
@@ -14596,7 +14596,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
             peak_jacobians[peak_idx][1][i+j] = peak_jet.m_sigma.v[j];       // sigma jacobian  
             peak_jacobians[peak_idx][2][i+j] = peak_jet.m_amplitude.v[j];   // amplitude jacobian
             
-            for( size_t skew_idx = 0; skew_idx < 4; ++skew_idx )
+            for( size_t skew_idx = 0; skew_idx < 6; ++skew_idx )
               peak_jacobians[peak_idx][3 + skew_idx][i+j] = peak_jet.m_skew_pars[skew_idx].v[j];
           }
         }
@@ -14605,7 +14605,7 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
       // Compute uncertainties using full covariance propagation: uncertainty = sqrt(J^T * Cov * J)
       for( size_t peak_idx = 0; peak_idx < num_peaks; ++peak_idx )
       {
-        for( size_t param_idx = 0; param_idx < 8; ++param_idx )
+        for( size_t param_idx = 0; param_idx < (3 + 6); ++param_idx )
         {
           const vector<double> &jacobian = peak_jacobians[peak_idx][param_idx];
           double uncertainty = 0.0, abs_sum = 0.0;
@@ -14686,11 +14686,11 @@ struct RelActAutoCostFcn /* : ROOT::Minuit2::FCNBase() */
         peak.set_coefficient( comp_peak.m_skew_pars[skew_index], coef );
 
         // If this skew parameter was fixed (not fit), mark fitFor as false
-        const bool was_fixed = (skew_index < 4) && m_options.fixed_lower_skew[skew_index].has_value();
+        const bool was_fixed = (skew_index < 6) && m_options.fixed_lower_skew[skew_index].has_value();
         peak.setFitFor( coef, !was_fixed );
 
         // Set skew parameter uncertainty if computed
-        if( i < peak_uncertainties.size() && skew_index < 4 )
+        if( i < peak_uncertainties.size() && skew_index < 6 )
         {
           peak.set_uncertainty( peak_uncertainties[i][3 + skew_index], coef );
         }
@@ -16783,24 +16783,32 @@ T peakResolutionFWHM( T energy, DetectorPeakResponse::ResolutionFnctForm fcnFrm,
       if( num_pars != 3 )
         throw std::runtime_error( "RelActCalcAuto::peakResolutionSigma():"
                                  " pars not defined" );
-      const T &a = pars[0];
-      const T &b = pars[1];
-      const T &c = pars[2];
-      
-      if( (energy >= 661.0) || (abs(a) < T(1.0E-6)) )
+      // Straight-forward translation of the GADRAS Fortran GetFWHM ("form C", shared with
+      //  PeakDists::gadras_fwhm and DetectorPeakResponse::peakResolutionFWHM).  See the note in
+      //  DetectorPeakResponse.cpp: this replaces an earlier A7 variant so all GADRAS FWHM
+      //  computations use the same Fortran-faithful form.
+      const T &a = pars[0];   // resolution offset ("FWHM @ 0")
+      const T &b = pars[1];   // resolution @ 661 (percent)
+      const T &c = pars[2];   // resolution power
+
+      if( energy > 661.0 )
         return 6.61 * b * pow(energy/661.0, c);
-      
-      if( a < 0.0 )
+
+      if( a >= 0.0 )
       {
-        const T p = pow( c, T(1.0/log(1.0-a)) );
-        return 6.61 * b * pow(energy/661.0, p);
-      }//if( a < 0.0 )
-      
-      if( a > 6.61*b )
-        return a;
-      
-      const T A7 = sqrt( pow(6.61*b, 2.0) - a*a )/6.61;
-      return sqrt(a*a + pow(6.61 * A7 * pow(energy/661.0, c), 2.0));
+        // a >= 0 here, so fabs(a) == a; (661 - energy) >= 0 since energy <= 661 in this branch.
+        T zero_limit = a * (661.0 - energy) / 661.0;
+        if( zero_limit < 0.0 )
+          zero_limit = T( 0.0 );
+        const T fwhm = 6.61 * b * pow( energy/661.0, c );
+        return sqrt( zero_limit*zero_limit + fwhm*fwhm );
+      }//if( a >= 0.0 )
+
+      T e_clamped = energy;
+      if( e_clamped < 30.0 )
+        e_clamped = T( 30.0 );
+      const T p = pow( c, T(1.0)/log(1.0-a) );
+      return 6.61 * b * pow( e_clamped/661.0, p );
     }//case kGadrasResolutionFcn:
       
     case DetectorPeakResponse::ResolutionFnctForm::kSqrtEnergyPlusInverse:
@@ -18079,11 +18087,13 @@ rapidxml::xml_node<char> *Options::toXml( rapidxml::xml_node<char> *parent ) con
 
   // Serialize fixed skew parameter values (only write if any are set)
   {
-    const char *lower_names[4] = { "FixedLowerSkew0", "FixedLowerSkew1",
-                                   "FixedLowerSkew2", "FixedLowerSkew3" };
-    const char *upper_names[4] = { "FixedUpperSkew0", "FixedUpperSkew1",
-                                   "FixedUpperSkew2", "FixedUpperSkew3" };
-    for( size_t i = 0; i < 4; ++i )
+    const char *lower_names[6] = { "FixedLowerSkew0", "FixedLowerSkew1",
+                                   "FixedLowerSkew2", "FixedLowerSkew3",
+                                   "FixedLowerSkew4", "FixedLowerSkew5" };
+    const char *upper_names[6] = { "FixedUpperSkew0", "FixedUpperSkew1",
+                                   "FixedUpperSkew2", "FixedUpperSkew3",
+                                   "FixedUpperSkew4", "FixedUpperSkew5" };
+    for( size_t i = 0; i < 6; ++i )
     {
       if( fixed_lower_skew[i].has_value() )
         append_float_node( base_node, lower_names[i], fixed_lower_skew[i].value() );
@@ -18233,11 +18243,13 @@ void Options::fromXml( const ::rapidxml::xml_node<char> *parent )
 
     // fixed skew parameters - optional, default to nullopt
     {
-      const char *lower_names[4] = { "FixedLowerSkew0", "FixedLowerSkew1",
-                                     "FixedLowerSkew2", "FixedLowerSkew3" };
-      const char *upper_names[4] = { "FixedUpperSkew0", "FixedUpperSkew1",
-                                     "FixedUpperSkew2", "FixedUpperSkew3" };
-      for( size_t i = 0; i < 4; ++i )
+      const char *lower_names[6] = { "FixedLowerSkew0", "FixedLowerSkew1",
+                                     "FixedLowerSkew2", "FixedLowerSkew3",
+                                     "FixedLowerSkew4", "FixedLowerSkew5" };
+      const char *upper_names[6] = { "FixedUpperSkew0", "FixedUpperSkew1",
+                                     "FixedUpperSkew2", "FixedUpperSkew3",
+                                     "FixedUpperSkew4", "FixedUpperSkew5" };
+      for( size_t i = 0; i < 6; ++i )
       {
         fixed_lower_skew[i] = std::nullopt;
         fixed_upper_skew[i] = std::nullopt;
@@ -26403,7 +26415,7 @@ void Options::equalEnough( const Options &lhs, const Options &rhs )
   if( lhs.skew_type != rhs.skew_type )
     throw std::runtime_error( "Skew type in lhs and rhs are not the same" );
 
-  for( size_t i = 0; i < 4; ++i )
+  for( size_t i = 0; i < 6; ++i )
   {
     if( lhs.fixed_lower_skew[i] != rhs.fixed_lower_skew[i] )
       throw std::runtime_error( "Fixed lower skew[" + std::to_string(i) + "] in lhs and rhs are not the same" );
