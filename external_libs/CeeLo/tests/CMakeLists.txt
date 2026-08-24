@@ -36,6 +36,7 @@ endfunction()
 
 # Unit tests
 add_ceelo_test(test_geometry test_geometry.cpp)
+add_ceelo_test(test_geant4_export test_geant4_export.cpp)
 add_ceelo_test(test_materials test_materials.cpp)
 add_ceelo_test(test_cross_sections test_cross_sections.cpp)
 add_ceelo_test(test_compton test_compton.cpp)

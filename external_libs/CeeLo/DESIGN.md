@@ -45,6 +45,18 @@ validated empirical gate; `tails`/`gs` are first-principles A/B variants — see
 "Source-electron skin escape" for the per-config accuracy comparison),
 `CEELO_BUILD_RESPONSE=ON` (storable detector-response payload — needs header-only **rapidxml**).
 
+**Portability notes** (both learned getting the vendored copy to build with GCC 12 on Linux —
+neither shows up on macOS/libc++, so do not "clean them up" without a Linux build):
+
+- The library links `Threads::Threads` **PUBLIC**. `EfficiencyCalculator.cpp` and
+  `ResponseGenerator.cpp` use `std::thread`, which on libstdc++ needs `-pthread` at link
+  time; on macOS pthread lives in libSystem, so the omission is invisible there.
+- RNGs are seeded through the `seeded_rng()` helper in `EfficiencyCalculator.cpp`, which
+  uses `std::seed_seq`'s **iterator** constructor. libstdc++ rejects the `initializer_list`
+  form for `uint64_t` arguments. Its three words are chosen to reproduce the streams the
+  `initializer_list` form produced, bit for bit — adding or reordering words would move
+  every seeded result in the library, including the GEANT4-gated validation numbers.
+
 **rapidxml** (only for `CEELO_BUILD_RESPONSE`): NOT vendored — for ODR safety the host
 application's own copy is used. The CMake configure searches a few sibling `3rdparty`
 directories for `rapidxml/rapidxml.hpp` (SandiaDecay bundles a copy, as does SpecUtils);
@@ -139,6 +151,18 @@ visualization/      Dependency-free WebGL viewer for exported GDML geometries
 
 - **Detector shapes**: Cylinder and box. Defined by dimensions (radius+length or x/y/z half-widths). Crystal front face at z=0, extends along +z.
 
+- **Bulletized (rounded) front edge**: HPGe crystals are usually *bulletized* -- the outer front edge is a quarter-torus fillet rather than a sharp 90° corner (ANGLE `.outx` files call it `bulletizingRadius`). `set_bullet_radius(r_b)` turns it on for cylinders; 0 (the default) is a sharp edge. The fillet's ring circle has radius `rho_c = R - r_b` and lies in the plane `z = r_b`, tangent to the front face and to the side wall. Removed material, by Pappus: `V = 2 pi rho_c r_b^2 (1 - pi/4) + pi r_b^3 / 3` (1.28% of the crystal for the GEM35-70 example: R=2.915, L=6.89, r_b=0.8 cm).
+
+  The solid is **convex and a subset of the sharp cylinder**, and `Cylinder.cpp` exploits that rather than intersecting a torus outright: the sharp interval is computed exactly as before, and only an endpoint that lands *inside the removed corner* is moved onto the fillet. Endpoints on a shared surface (front face inside `rho_c`, side wall above `z_c`, back face) are already exact and are left untouched bit for bit. The fillet root is found by safeguarded Newton on `G(t) = (rho - rho_c)^2 + (z - z_c)^2 - r_b^2`, which is **convex wherever rho >= rho_c** -- i.e. on every corner-zone sub-segment -- and whose bracket is guaranteed because every corner-zone exit point inside the sharp cylinder is within `r_b` of the ring centre. Chords that stay in the corner zone end to end (grazing corner clips) are resolved by minimising the same convex `G`. The closed-form ray-torus quartic is deliberately **not** used: its coefficients cancel catastrophically for near-double roots, which is exactly the grazing-corner case. It is kept as a comment and as an independent test oracle.
+
+  Because every consumer -- photon transport, the electron CSDA/Molière walk (which re-traces per substep), `ResponseKernel`, the stochastic-Rayleigh re-trace -- goes through `Geometry::trace_ray`, implementing the shape in `trace_cylinder_geometry` covers all of them. Cone biasing and solid angle are untouched: they use the bounding cylinder, which bulletization only shrinks material inside of. Attenuator shells stay sharp, which is physically right -- the endcap does not follow the crystal fillet.
+
+  With a dead layer, the active volume gets the inward-offset fillet: radius `r_b - max(t_front, t_side)` about a centre placed to stay tangent to both offset faces. For equal front/side thicknesses (the usual case) that is the exact offset surface -- same ring centre, radius `r_b - t`. Dead layers are ~0.1 mm against an ~8 mm fillet, so the convention for unequal thicknesses is far below any measurable effect.
+
+  **Performance**: sharp crystals pay one predicate (`bullet_radius_ > 0.0`) and take the original code paths, verified bit-identical on fixed-seed runs of a bare-NaI and a bored-HPGe geometry. Timing on config 1 (2M events, single thread, min of 3) went 9.03 s -> 8.20 s across the change: no regression -- the small speedup is a code-layout side effect, since the results are unchanged bit for bit.
+
+- **Rounded bore tip**: `set_bore_hole(r, depth, rounded_tip=true)` caps the bore's closed end with a hemisphere of the bore radius (a round-tipped drill; ANGLE's `<core rounded="yes"/>`). The stated depth is preserved -- the hemisphere's apex sits where the flat bottom would -- so rounding returns `pi r^3 / 3` of crystal (0.13 cm³, ~0.07%, for the GEM35-70 bore). The capped bore is convex and its upper half lies inside the straight part, so the ray interval is just the hull of the straight tube's and the ball's intervals: a closed-form quadratic, no iteration.
+
 - **Attenuators** (detector shielding): Cup-shaped shells around the crystal, added via `add_attenuator(material, front_thickness, side_thickness, z_start, z_end)`. These are concentric -- each layer wraps around the previous. Attenuators are part of the detector geometry and are always traversed in ray tracing.
 
 - **Source shielding** (around the source): Spherical shells (point source) or concentric shells matching source shape. Added via `add_source_shield(material, thickness)` (uniform), `add_source_shield(material, t_radial, t_end)` (cylindrical sources), or `add_source_shield(material, t_x, t_y, t_z)` (rectangular sources). Per-dimension thicknesses apply symmetrically to both ± faces of each axis; individual components may be zero (but not all), e.g. `(t_radial, 0)` = side wall with open ends. Call `set_*_source()` before adding per-dimension shields. Source shielding uses full MC transport in full mode (Compton/PE/Rayleigh with re-tracing after scatter) and stochastic Rayleigh in FEP-only mode.
@@ -146,6 +170,12 @@ visualization/      Dependency-free WebGL viewer for exported GDML geometries
   Full-mode source transport also generates **secondaries** for all source shapes (`SourceFullTransportResult::secondaries`, processed by the detector-transport loop in `simulate_thread`): (1) 511 keV annihilation gammas from pair production in source material/shields; (2) bremsstrahlung from Compton-recoil / photo / pair electrons stopping in the source geometry (Seltzer-Berger sampling along a Molière condensed-history walk, `ElectronCsda::walk_in_source_geometry`); and (3) escaped electrons that cross the gap into the crystal (Molière walk escape detection; enabled per-config via `enable_source_electron_transport`). The Molière direction diffusion is essential for the electron-escape channel — straight-line CSDA overestimates escape from dense shields (Fe) by 2.4–10x. **All source shapes (incl. Marinelli) now use this walk** for electron escape — the legacy straight-line `try_source_electron` was retired when Marinelli migrated to `walk_in_source_geometry` (water → the regime-aware exit-state gate runs fully analog), which let config 8 join the gated set; `min_distance_to_boundary` has a Marinelli case so the containment fast-path applies there too. These channels matter only above the 1022 keV PP threshold and/or for recoil electrons > 200 keV; for config 11 (0.5 cm Fe) at 3 MeV they contribute ~+4.2% (annihilation), ~+3% (brems), and ~+1% (electron escape) of total efficiency. A `set_source_brems(false)` toggle and `benchmark_mc_configs --no-source-brems` exist for A/B quantification. **Perf**: the geometry-tracing Molière walk (it re-traces the source segments every substep) dominated these channels' cost. `process_electron` now takes a cheap path for electrons that stop inside their birth material — the common case: an exact containment test (the electron's CSDA range in its birth material `mat`, `range/density`, < distance to the `mat`-region surface, `SourceGeometry::min_distance_to_boundary`) routes them to the geometry-free `sample_brems_in_material` (same SB physics, creation-point emission — the Marinelli sampler) and skips escape (provably impossible). Only electrons that can reach an interface or escape take the full walk. ~1.2–1.25x faster on configs 11/12 above 1 MeV; totals unchanged within statistics. Further speedups would have to touch the genuine transport of escape-capable electrons and emitted brems photons.
 
 - **GDML export**: Attenuators are exported as cup-shaped subtraction solids (outer full cylinder minus shorter inner cylinder) to properly cover the crystal front face. This avoids the hollow-tube bug that caused -26% discrepancy at 30 keV.
+
+  A crystal with a **bore and/or a bulletized front edge** is a surface of revolution, so it is exported as one native `<polycone>` named `CrystalSolid` rather than a stack of boolean solids: the `rmax` profile follows the fillet arc up to `R` over the first `r_b` of depth, and the `rmin` profile is 0 until the bore starts and then the bore radius (via the tip hemisphere first, if round-tipped). Circular arcs become 64 chord segments, which keeps the sagitta well under a micron (~1e-4 % of the crystal volume — verified against the tracer's own volume across bore/fillet combinations). Plain cylinders still export as a single `<tube>`, so every pre-existing config's GDML is byte-for-byte what it was.
+
+  This is not just tidiness. An earlier subtraction-based version of this export (tube minus a corner-ring-minus-torus cutter, plus a tube∪orb bore) produced **~3250 stuck-track warnings per million** under cone-biased runs — GEANT4 navigation struggles with tracks skimming a subtracted surface — which both floods the log and risks biasing the very comparison the export exists to support. The polycone produces ~25 per million, the same rate as a plain tube. Two consequences worth remembering: the two profiles must be merged onto the *union* of their z values rather than truncating one at the other's start (otherwise a bore whose closed end reaches into the front fillet silently cuts the arc short), and the harness's `--cone-bias` bounds parser has to understand `<polycone>` as well as `<tube>`.
+
+  **The bore cavity must not be filled with a daughter volume.** The bore is already subtracted from the crystal solid, so an `Air` daughter placed in it lies *outside* its mother and G4 navigation gets stuck on it. The cavity is left to the world material, which matches the MC (the bore region gets no material there either) whenever the export uses `vacuum_world=true`, as the validation configs do. This bug was latent until configs 25/26: no earlier exported config used `set_bore_hole`. (Note also that GDML resolves `volumeref` only against volumes already read, so any daughter must be *defined before* the volume that places it.)
 
 ### Simulation Modes
 
@@ -444,10 +474,73 @@ fluorescence X-rays from heavy-element attenuators are produced (else killed by 
 | 8 | 3"x3" NaI | 0.5mm Al | Marinelli beaker, water | ≤ 1.2% (≥ 100 keV); −2.3% @ 59* | ≤ 1.1%* |
 | 11 | 3"x3" NaI | bare | point, 10cm + 0.5cm Fe shield | ≤ 0.6% (200-2000); −1.7% @ 3000** | ≤ 0.6%** |
 | 12 | 3"x3" NaI | bare | 10x15x20cm SS304 box, cellulose | ≤ 0.2% (≥ 200 keV); −3.8% @ 59 | ≤ 1.4% (≥ 200 keV); −3.0% @ 59 |
+| 25 | GEM35-70 HPGe coax, sharp edge | bare | point, 5cm on-axis | ≤ 0.34% | ≤ 0.10% |
+| 26 | GEM35-70 HPGe coax, **bulletized** + round-tipped bore | bare | point, 5cm on-axis | ≤ 0.74% | ≤ 0.14%† |
 
 **Measured Aug 2026** against the committed GEANT4 references, from
 `tests/data/ceelo_reference/` regenerated at ~0.3% precision on the EPICS2023
 photon data. A few tenths of a percent of every entry is Monte Carlo statistics.
+
+**Configs 25/26 are a matched pair** (added Aug 2026 with bulletization support):
+the same GEM35-70 HPGe coax with a sharp and a bulletized front edge, 4M
+cone-biased G4 events per energy (12M for config 26 at 45 and 88 keV) and
+CeeLo at ~0.03% precision below 122 keV, ~0.1–0.35% above, over 45–1332 keV. Each config agrees with GEANT4 on its own (above), but the
+quantity the pair exists to measure is the **bulletization effect itself**,
+Δ = 1 − ε(26)/ε(25), computed independently in each code:
+
+| E (keV) | Δ FEP CeeLo | Δ FEP G4 | difference | z | Δ total CeeLo | Δ total G4 | difference | z |
+|---------|-------------|----------|------------|---|---------------|------------|------------|---|
+| 45 | 16.43% | 16.39% | +0.04 pp | 1.09 | 16.16% | 16.17% | −0.01 pp | −0.19 |
+| 59.5 | 15.27% | 15.19% | +0.08 pp | 1.84 | 15.11% | 15.06% | +0.04 pp | 1.03 |
+| 88 | 12.25% | 12.25% | −0.00 pp | −0.01 | 12.26% | 12.28% | −0.02 pp | −0.41 |
+| 122 | 9.03% | 9.09% | −0.05 pp | −0.90 | 9.39% | 9.42% | −0.04 pp | −0.70 |
+| 344 | 4.16% | 4.09% | +0.07 pp | 0.26 | 5.26% | 5.25% | +0.01 pp | 0.07 |
+| 662 | 2.94% | 3.15% | −0.21 pp | −0.50 | 4.24% | 4.42% | −0.18 pp | −1.19 |
+| 1332 | 2.03% | 2.47% | −0.44 pp | −0.81 | 3.86% | 3.84% | +0.02 pp | 0.14 |
+
+† **The apparent config-26 low-energy residual was statistics plus a shared
+offset — not bulletization.** The first pass showed config 26 running +0.16 to
++0.28% above GEANT4 at 45 and 88 keV where config 25 did not, which looked
+geometry-specific. Re-running CeeLo at ~0.03% precision (two independent
+seeds, 45–122 keV; the committed rows are those runs combined) resolved it:
+
+- At **45 keV** the excess vanished — it was CeeLo statistics. The original
+  run carried ~0.10% uncertainty and the "excess" was ~2.4σ of it. Config 26
+  now sits −0.08% FEP / −0.01% total.
+- At **88 keV** a real +0.135% FEP offset survives and sharpens (z = 3.5–3.9),
+  but it is **identical in both configs** — cfg 25 +0.135%, cfg 26 +0.136%, a
+  difference of +0.000 pp. It has nothing to do with the fillet. 122 keV
+  carries a similar shared offset of about −0.1%.
+
+So what remains is a ~0.1% CeeLo-vs-GEANT4 offset on germanium with energy
+structure across 60–122 keV, common to sharp and bulletized crystals alike and
+therefore outside the scope of this feature. The leading candidate is the
+photon-evaluation difference already documented above: CeeLo is on EPICS2023
+while GEANT4 11.4.0 ships EPICS2017, which produced exactly this kind of
+energy-structured sub-percent difference for iron in config 12. Confirming it
+for germanium means comparing µ/ρ(Ge) against NIST XCOM the way commit 1ad196c
+did for Fe/Cr/Ni. Tracked in TODO.md; it is well inside the ~1% goal.
+
+**What the pair does and does not establish.** GEANT4's transport is
+independent, but the *solid* it navigates comes from `write_gdml()` in the same
+change, built from the same arc parameterisation the tracer uses. So the pair
+validates "CeeLo's tracer agrees with CeeLo's exported solid, under GEANT4
+physics" — it does not, by itself, establish that either matches ANGLE's
+`bulletizingRadius`. That last link rests on the Pappus closed form and the unit
+tests in `tests/test_geometry.cpp` (chords against an independent
+point-in-solid oracle) and `tests/test_geant4_export.cpp` (exported profile
+against the traced solid).
+
+Every point agrees within |z| ≤ 1.9, on an effect that runs from 16% down to
+2%. The effect is far larger than the 1.28% of crystal volume the fillet
+removes, and strongly energy dependent, for a geometric reason worth recording:
+from this source position bulletization removes **17% of the rays that hit the
+crystal at all** but only **2.4% of the total path length**, because the rays it
+eliminates are short grazing corner clips. At 45 keV, where photons stop within
+the first millimetres, losing those rays (and pushing the entrance surface
+deeper for the rest) costs ~16%. By 1332 keV a 0.5 cm chord interacts only
+~14% of the time against ~64% for an average chord, so dropping them costs only
+a few percent. That, not the volume fraction, sets the high-energy limit.
 
 **EPICS2023 vs GEANT4's EPICS2017.** CeeLo's photon magnitudes now come from a
 *newer* evaluation than the one GEANT4 11.4.0 ships, so exact agreement is no

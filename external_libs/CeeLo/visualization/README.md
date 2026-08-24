@@ -37,5 +37,21 @@ and exposes the camera/slice controls.
 
 Pure WebGL and vanilla JavaScript — no three.js, no CDN, no build step. Supported
 GDML solids are the ones CeeLo emits: boxes, tubes (including cup-shaped
-attenuator subtraction solids), spheres, and the Marinelli beaker's L-shaped
-source region.
+attenuator subtraction solids), spheres, the Marinelli beaker's L-shaped source
+region, and **polycones** — which is how a crystal with a bore and/or a
+bulletized (rounded) front edge is exported, so those detectors draw with the
+fillet and the bore tip in place. The tooltip reports the polycone's radius,
+length, bulletizing radius and bore dimensions read back from the z-planes.
+
+## Cross-checking against GEANT4
+
+The viewer shows what *CeeLo exported*. To see what *GEANT4 built* from it — a
+different question, and the one that catches export bugs — dump G4's own
+polyhedron and render that:
+
+```bash
+ceelo_g4val detector_26.gdml \
+    ../../tools/geant4_validation/macros/vis_crystal_vrml.mac out.csv --vis-batch
+python3 ../../tools/geant4_validation/render_vrml.py g4_00.wrl \
+    -o crystal.png --view side --clip x-      # --clip cuts away the near half
+```

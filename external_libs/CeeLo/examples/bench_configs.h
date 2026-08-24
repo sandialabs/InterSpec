@@ -83,6 +83,11 @@ inline std::vector<double> default_energies_for_cfg(int cfg) {
             return {662, 1332};
         case 19:
             return {300, 662};
+        // HPGe sharp/bulletized pair: weighted low, where the front-edge
+        // geometry matters most.
+        case 25:
+        case 26:
+            return {45, 59.5, 88, 122, 344, 662, 1332};
         default:
             return {};
     }
@@ -370,6 +375,33 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             calc.add_source_shield(pe, 0.2);
             calc.enable_source_electron_transport(true);
             setup.description = "3\"x3\" NaI, 10x15x20cm PE-wall box + cellulose, 15cm";
+            return true;
+        }
+
+        // Configs 25/26 are a matched pair: the same coaxial HPGe with a sharp
+        // and a bulletized front edge.  Efficiencies are compared against
+        // GEANT4 individually, but the quantity the pair exists to validate is
+        // the *difference* between them -- the geometry change, isolated from
+        // the physics residuals both configs share.  Dimensions follow the
+        // ANGLE GEM35-70 crystal.  No dead layer: write_gdml() does not export
+        // one, so including it would make the two codes model different solids.
+        case 25: {
+            const Material* ge = add_mat(make_HPGe());
+            calc.set_detector(DetectorShape::Cylinder, ge, {2.915, 6.89});
+            calc.set_bore_hole(0.495, 5.54);
+            calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
+            setup.description = "GEM35-70 HPGe coax, SHARP front edge, point source 5cm";
+            return true;
+        }
+
+        case 26: {
+            const Material* ge = add_mat(make_HPGe());
+            calc.set_detector(DetectorShape::Cylinder, ge, {2.915, 6.89});
+            calc.set_bullet_radius(0.8);
+            calc.set_bore_hole(0.495, 5.54, /*rounded_tip=*/true);
+            calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
+            setup.description =
+                "GEM35-70 HPGe coax, BULLETIZED front edge + rounded bore tip, point source 5cm";
             return true;
         }
 

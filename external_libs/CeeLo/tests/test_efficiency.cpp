@@ -124,6 +124,44 @@ BOOST_AUTO_TEST_CASE(fep_leq_total_hpge_with_bore) {
     BOOST_CHECK_LE(res.total_efficiency, 1.0);
 }
 
+BOOST_AUTO_TEST_CASE(bulletized_efficiency_is_bracketed_by_sharp_cylinders) {
+    // A bulletized crystal has less material than the sharp cylinder it is cut
+    // from, but more than the sharp cylinder inscribed at the fillet's ring
+    // radius, so its efficiency must fall between the two.  At 60 keV, where
+    // photons stop within the first millimetres, the front edge dominates and
+    // the gap is large enough to resolve with modest statistics.
+    Material hpge = make_HPGe();
+    const double R = 2.915, L = 6.89, r_b = 0.8;
+
+    auto efficiency = [&](double radius, double bullet) {
+        EfficiencyCalculator calc;
+        calc.set_detector(DetectorShape::Cylinder, &hpge, {radius, L});
+        if (bullet > 0.0) calc.set_bullet_radius(bullet);
+        calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
+        SimulationConfig sim;
+        sim.energy_keV = 60.0;
+        sim.num_threads = 1;
+        sim.seed = 20260824ULL;
+        sim.termination.max_events = 120000;
+        return calc.compute(sim);
+    };
+
+    const auto sharp    = efficiency(R, 0.0);
+    const auto bullet   = efficiency(R, r_b);
+    const auto inscribed = efficiency(R - r_b, 0.0);
+
+    // Significance against the combined statistical uncertainty of each pair.
+    auto z = [](const EfficiencyResult& a, const EfficiencyResult& b) {
+        const double d = a.full_energy_peak_efficiency - b.full_energy_peak_efficiency;
+        const double s = std::sqrt(a.fep_uncertainty * a.fep_uncertainty
+                                   + b.fep_uncertainty * b.fep_uncertainty);
+        return d / s;
+    };
+
+    BOOST_CHECK_GT(z(sharp, bullet), 3.0);      // bulletizing removes material
+    BOOST_CHECK_GT(z(bullet, inscribed), 3.0);  // but far less than R -> R - r_b
+}
+
 BOOST_AUTO_TEST_SUITE_END()
 
 

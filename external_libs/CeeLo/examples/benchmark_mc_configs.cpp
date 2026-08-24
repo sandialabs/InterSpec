@@ -219,8 +219,11 @@ bool run_config(int cfg,
     // configs (source-effect configs are exported by generate_all_spectra).
     // cfg 20/21 (high-Z skin-escape validation, box + Pb/W wall) opt in here so
     // their GEANT4 inputs can be generated directly.
+    // cfg 25/26 (sharp vs bulletized HPGe) are point-source detector-only
+    // configs, so they export directly like configs 1-7.
     const bool can_export = (cfg <= 7) || cfg == 12 || cfg == 20 ||
-                            cfg == 21 || cfg == 22 || cfg == 23 || cfg == 24;
+                            cfg == 21 || cfg == 22 || cfg == 23 || cfg == 24 ||
+                            cfg == 25 || cfg == 26;
     if (!skip_export && can_export) {
         // vacuum_world=true matches the validated generate_all_spectra
         // reference export (air in the source-detector gap would otherwise
