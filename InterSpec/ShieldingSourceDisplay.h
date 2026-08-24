@@ -797,6 +797,14 @@ public:
   void accountForDrfUncertChanged();
   void correctForCascadeChanged();
 
+  /** Handler for the volumetric-efficiency method combo; records undo/redo and refits the chart. */
+  void volEffMethodChanged();
+
+  /** Enables the volumetric-efficiency method combo only when a volumetric (trace / self-attenuating)
+   source exists and the DRF is not fixed-geometry; enables the MC / EFFTRAN items per-DRF, and sets
+   the status text to the resolved active method.  Called on detector / geometry / source changes. */
+  void updateVolEffMethodAvailability();
+
   /** "Compute DRF for this geometry (MC)": runs CeeLo over the current scene
    (worker thread) and switches to the resulting fixed-geometry DRF, which
    embeds the scene (displayed read-only afterwards).  Only available when no
@@ -952,6 +960,19 @@ protected:
   Wt::WCheckBox  *m_decayCorrect;
   Wt::WCheckBox  *m_accountForDrfUncert;
   Wt::WCheckBox  *m_correctForCascade;
+
+  /** Volumetric-source detector-efficiency method override (Auto / Monte Carlo / EFFTRAN /
+   Flat-disk); items are enabled per-DRF by #updateVolEffMethodAvailability.  Maps to
+   ShieldingSourceFitOptions::volumetric_eff_method. */
+  Wt::WComboBox *m_volEffMethodCombo;
+
+  /** Shows the resolved active method for volumetric sources (e.g. "Auto -> EFFTRAN"); reflects
+   what the fit will actually use, given the current DRF. */
+  Wt::WText *m_volEffMethodStatus;
+
+  /** The combo index before the most recent #volEffMethodChanged, for undo/redo. */
+  int m_lastVolEffMethodIndex = 0;
+
   Wt::WPushButton *m_fixedGeomMcBtn;
   Wt::WText *m_fixedGeomLockedNote;
   SwitchCheckbox *m_showChiOnChart;

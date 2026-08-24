@@ -1884,6 +1884,17 @@ void ShieldingSourceFitOptions::serialize( rapidxml::xml_node<char> *parent_node
   node = doc->allocate_node( rapidxml::node_element, name, value );
   parent_node->append_node( node );
 
+  name = "VolumetricEffMethod";
+  switch( volumetric_eff_method )
+  {
+    case VolumetricEffMethod::Auto:       value = "auto";     break;
+    case VolumetricEffMethod::MCTransfer: value = "mc";       break;
+    case VolumetricEffMethod::EffTran:    value = "efftran";  break;
+    case VolumetricEffMethod::FlatDisk:   value = "flatdisk"; break;
+  }//switch( volumetric_eff_method )
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  parent_node->append_node( node );
+
   name = "PhotopeakClusterSigma";
   char buffer[64] = { '\0' };
   snprintf( buffer, sizeof(buffer), "%.9g", photopeak_cluster_sigma );
@@ -1946,6 +1957,22 @@ void ShieldingSourceFitOptions::deSerialize( const rapidxml::xml_node<char> *par
   if( node )
     correct_for_cascade_summing = boolval( node );  //absent in older XML -> keeps the default (false)
 
+  node = XML_FIRST_NODE( parent_node, "VolumetricEffMethod" );
+  if( node )
+  {
+    const string val = SpecUtils::xml_value_str( node );
+    if( SpecUtils::iequals_ascii(val, "auto") )
+      volumetric_eff_method = VolumetricEffMethod::Auto;
+    else if( SpecUtils::iequals_ascii(val, "mc") )
+      volumetric_eff_method = VolumetricEffMethod::MCTransfer;
+    else if( SpecUtils::iequals_ascii(val, "efftran") )
+      volumetric_eff_method = VolumetricEffMethod::EffTran;
+    else if( SpecUtils::iequals_ascii(val, "flatdisk") )
+      volumetric_eff_method = VolumetricEffMethod::FlatDisk;
+    else
+      throw runtime_error( "ShieldingSourceFitOptions invalid VolumetricEffMethod: '" + val + "'" );
+  }//if( node )  //absent in older XML -> keeps the default (Auto)
+
   node = XML_FIRST_NODE( parent_node, "PhotopeakClusterSigma" );
   if( node )
   {
@@ -1989,6 +2016,9 @@ void ShieldingSourceFitOptions::equalEnough( const ShieldingSourceFitOptions &lh
 
   if( lhs.correct_for_cascade_summing != rhs.correct_for_cascade_summing )
     throw runtime_error( "ShieldingSourceFitOptions LHS correct_for_cascade_summing != RHS correct_for_cascade_summing" );
+
+  if( lhs.volumetric_eff_method != rhs.volumetric_eff_method )
+    throw runtime_error( "ShieldingSourceFitOptions LHS volumetric_eff_method != RHS volumetric_eff_method" );
 }//void equalEnough( const ShieldingSourceFitOptions &lhs, const ShieldingSourceFitOptions &rhs )
 #endif
   

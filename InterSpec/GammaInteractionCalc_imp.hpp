@@ -75,6 +75,8 @@
 #include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/MassAttenuationTool_imp.hpp"
 
+#include "io/DetectorResponse.h"  // ceelo::DetectorResponse::eps_fep for the near-field/off-axis volumetric response
+
 namespace ceres
 {
   /* dummy namespace for when using this file for only doubles, and ceres.h hasnt been included */
@@ -1180,6 +1182,14 @@ struct DistributedSrcCalcT
 
   DetectorGeomT<T> m_detector;
 
+  /** Resolved volumetric-efficiency method (never Auto during evaluation) and the resolved
+   absolute-FEP-efficiency response to query per element (null for FlatDisk).  See
+   #DistributedSrcCalc::m_effMethod / #DistributedSrcCalc::m_effResponse and
+   #eff_response_factor.  Built once per problem; only const eps_fep runs in the fit threads. */
+  ShieldingSourceFitCalc::VolumetricEffMethod m_effMethod
+                                    = ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk;
+  std::shared_ptr<const ceelo::DetectorResponse> m_effResponse;
+
   bool m_attenuateForAir = false;
   double m_airTransLenCoef = 0.0;
 
@@ -1348,6 +1358,21 @@ struct DistributedSrcCalcT
    Defined after this struct.
    */
   T cascade_correction_factor( const T &det_factor ) const;
+
+  /** Maps the flat-disk geometric factor `flat` (from #detector_response_factor at `eval_point`,
+   with `det` the detector geometry that produced it) to the per-element efficiency actually applied
+   to the integrand.
+
+   FlatDisk (or null #m_effResponse): returns `flat` unchanged (post-integration intrinsicEfficiency
+   then reproduces the legacy result).  MCTransfer/EffTran: returns the absolute FEP efficiency
+   `m_effResponse->eps_fep( m_energy, incidence-angle, 0, dist/cm )` - solid angle and intrinsic
+   response already folded in, so intrinsicEfficiency must NOT be applied afterward.
+
+   Autodiff-safe: the value equals eps_fep exactly, while the (dominant) 1/r^2 gradient is carried by
+   the exact Jet-differentiated `flat`, scaled by the frozen-double near-field/off-axis correction
+   ratio.  Cascade summing keeps using the geometric `flat` factor (its internal model folds intrinsic
+   efficiency in separately). */
+  T eff_response_factor( const T &flat, const DetectorGeomT<T> &det, const T eval_point[3] ) const;
 };//struct DistributedSrcCalcT
 
 
@@ -1419,6 +1444,42 @@ T DistributedSrcCalcT<T>::cascade_correction_factor( const T &det_factor ) const
 
   return results[0].c_net;
 }//cascade_correction_factor(...)
+
+
+template<typename T>
+T DistributedSrcCalcT<T>::eff_response_factor( const T &flat,
+                                               const DetectorGeomT<T> &det,
+                                               const T eval_point[3] ) const
+{
+  if( (m_effMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk) || !m_effResponse )
+    return flat;
+
+  // Incidence polar angle of the element as seen from the detector: the angle between the
+  //  (eval_point - det.position) ray and the detector axis (which points detector -> assembly).
+  //  Only the scalar geometry enters the (frozen) near-field/off-axis correction; the 1/r^2
+  //  gradient is carried by `flat`.
+  const T dist = distance_imp( eval_point, det.position );
+  const double dscal = scalar_of( dist );
+  double cos_theta = 1.0;
+  if( dscal > 0.0 )
+  {
+    const double rx = scalar_of(eval_point[0]) - scalar_of(det.position[0]);
+    const double ry = scalar_of(eval_point[1]) - scalar_of(det.position[1]);
+    const double rz = scalar_of(eval_point[2]) - scalar_of(det.position[2]);
+    cos_theta = (rx*det.axis[0] + ry*det.axis[1] + rz*det.axis[2]) / dscal;
+    cos_theta = std::max( -1.0, std::min( 1.0, cos_theta ) );
+  }
+
+  const double theta = std::acos( cos_theta );
+  const double dist_cm = dscal / PhysicalUnits::cm;
+  const ceelo::EffResult res = m_effResponse->eps_fep( m_energy, theta, 0.0, dist_cm );
+
+  // value == res.value exactly (for T=double, flat*(res.value/flat)); for Jet the derivative is the
+  //  frozen ratio times the exact 1/r^2 gradient in `flat`.
+  const double flat_scalar = scalar_of( flat );
+  const double ratio = (flat_scalar > 0.0) ? (res.value / flat_scalar) : 0.0;
+  return flat * ratio;
+}//eff_response_factor(...)
 
 
 template<typename T>
@@ -1647,7 +1708,7 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
 
     const T eval_point[3] = { x, y, z };
     const T det_factor = detector_response_factor( rotated_det, eval_point );
-    trans *= det_factor;
+    trans *= eff_response_factor( det_factor, rotated_det, eval_point );
     if( m_cascade )
       trans *= cascade_correction_factor( det_factor );
   }// end apply detector response
@@ -1762,7 +1823,10 @@ T DistributedSrcCalcT<T>::eval_single_cyl_end_on( const double xx[], const int n
   // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to detector).
   const T eval_dist_to_det = sqrt( r*r + eval_z_dist_to_det*eval_z_dist_to_det );
   const T det_factor = fractional_solid_angle_imp( 2.0*m_detector.radius, eval_dist_to_det + m_detector.setback );
-  trans *= det_factor;
+  // Detector is on-axis here; by theta-symmetry an element at radius r, height z sits at {r,0,z}
+  //  (distance & incidence angle to the detector match #eff_response_factor's generic formula).
+  const T eval_point[3] = { r, T(0.0), z };
+  trans *= eff_response_factor( det_factor, m_detector, eval_point );
   if( m_cascade )
     trans *= cascade_correction_factor( det_factor );
 
@@ -1962,7 +2026,7 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
   // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to detector).
   {
     const T det_factor = detector_response_factor( m_detector, eval_point );
-    trans *= det_factor;
+    trans *= eff_response_factor( det_factor, m_detector, eval_point );
     if( m_cascade )
       trans *= cascade_correction_factor( det_factor );
   }
@@ -2146,7 +2210,7 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
 
   {
     const T det_factor = detector_response_factor( m_detector, eval_loc );
-    trans *= det_factor;
+    trans *= eff_response_factor( det_factor, m_detector, eval_loc );
     if( m_cascade )
       trans *= cascade_correction_factor( det_factor );
   }
@@ -3837,6 +3901,10 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
                                                            det_radius, det_setback,
                                                            m_sourceOffsets[0], m_sourceOffsets[1] );
 
+    // Resolved once (single-threaded) in #create; null response => legacy flat-disk behavior.
+    baseCalculator.m_effMethod = m_resolvedVolEffMethod;
+    baseCalculator.m_effResponse = m_volEffResponse;
+
     for( size_t src_index = 0; src_index < combined_srcs.size(); ++src_index )
     {
       const SandiaDecay::Nuclide *src = combined_srcs[src_index];
@@ -4395,7 +4463,11 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
     {
       T contrib = calculator->integral * calculator->m_srcVolumetricActivity;
 
-      if( m_detector && m_detector->isValid() )
+      // FlatDisk folds intrinsic efficiency in here (the integrand carried only the flat-disk solid
+      //  angle); MCTransfer/EffTran already applied the absolute FEP efficiency per element, so
+      //  applying intrinsicEfficiency again would double-count it.
+      if( m_detector && m_detector->isValid()
+          && (calculator->m_effMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk) )
         contrib *= m_detector->intrinsicEfficiency( static_cast<float>(calculator->m_energy) );
 
       energy_count_map[calculator->m_energy] += contrib;

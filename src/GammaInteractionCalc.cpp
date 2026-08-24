@@ -67,6 +67,7 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 
 #include "InterSpec/DrfSelect.h"
+#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/PeakModel.h"
 #include "InterSpec/Integrate.h"
 #include "InterSpec/MaterialDB.h"
@@ -679,6 +680,30 @@ DistributedSrcCalc::DistributedSrcCalc()
   m_normalizeByVolume = false;
   m_nuclide = NULL;
 }//DistributedSrcCalc()
+
+
+double DistributedSrcCalc::detEffFactor( const double dist_to_det, const double cos_theta ) const
+{
+  const double flat = DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius,
+                                                             dist_to_det + m_detectorSetback );
+
+  // FlatDisk (or no resolved response): the legacy flat-disk solid angle; intrinsicEfficiency is
+  //  folded in after integration.
+  if( (m_effMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk) || !m_effResponse )
+    return flat;
+
+  // MCTransfer/EffTran: the absolute FEP efficiency (solid angle + intrinsic already included).
+  //  ceelo wants energy in keV (m_energy is keV) and distance in cm, without the setback (matching
+  //  the point-source ceelo convention).
+  const double c = std::max( -1.0, std::min( 1.0, cos_theta ) );
+  const double theta = std::acos( c );
+  const double dist_cm = dist_to_det / PhysicalUnits::cm;
+  const ceelo::EffResult res = m_effResponse->eps_fep( m_energy, theta, 0.0, dist_cm );
+
+  return res.value;
+}//DistributedSrcCalc::detEffFactor(...)
+
+
 void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
                         double ff[], const int *ncompptr ) const
 {
@@ -922,7 +947,8 @@ void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
   
   // Note: previous to 20211104 obs_dist was used instead of dist_to_det; I believe this
   //       change is an appropriate correction, but still needs to be validated/ensured.
-  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, dist_to_det + m_detectorSetback );
+  // Detector at {0,0,obs_dist}, axis -z: cos(incidence) = (obs_dist - z)/dist_to_det.
+  trans *= detEffFactor( dist_to_det, (obs_dist - z) / dist_to_det );
 
   if( m_normalizeByVolume )
   {
@@ -1044,8 +1070,9 @@ void DistributedSrcCalc::eval_single_cyl_end_on( const double xx[], const int *n
   }
   
   // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to to detector).
+  // On-axis end-on detector: cos(incidence) = eval_z_dist_to_det/eval_dist_to_det (matches eval_cylinder).
   const double eval_dist_to_det = sqrt( r*r + eval_z_dist_to_det*eval_z_dist_to_det );
-  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det + m_detectorSetback );
+  trans *= detEffFactor( eval_dist_to_det, eval_z_dist_to_det / eval_dist_to_det );
 
 
   // For debug builds, also check against the more general transport.  The two should agree to
@@ -1333,8 +1360,11 @@ void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
   
   
   // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to to detector).
+  // Detector axis is -x for CylinderSideOn, else -z: cos(incidence) = (det - eval)_axis / dist.
   const double eval_dist_to_det = distance( eval_point, detector_pos );
-  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det + m_detectorSetback );
+  const double cyl_cos_theta = (is_side_on ? (detector_pos[0] - eval_point[0])
+                                           : (detector_pos[2] - eval_point[2])) / eval_dist_to_det;
+  trans *= detEffFactor( eval_dist_to_det, cyl_cos_theta );
 
   if( m_normalizeByVolume )
   {
@@ -1544,8 +1574,9 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
     trans *= exp( -(half_depth - eval_z) / m_inSituRelaxationLength );
   }
   
+  // Detector axis is -z: cos(incidence) = (detector_loc - eval_loc)_z / dist.
   const double eval_dist_to_det = distance(eval_loc, detector_loc);
-  trans *= DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius, eval_dist_to_det + m_detectorSetback );
+  trans *= detEffFactor( eval_dist_to_det, (detector_loc[2] - eval_loc[2]) / eval_dist_to_det );
 
   if( m_normalizeByVolume )
   {
@@ -1570,6 +1601,111 @@ void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
 
   ff[0] = trans * dV;
 }//void eval_rect(...)
+
+
+void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
+{
+  using ShieldingSourceFitCalc::VolumetricEffMethod;
+
+  // Default: legacy flat-disk (solid angle * intrinsic efficiency).
+  m_resolvedVolEffMethod = VolumetricEffMethod::FlatDisk;
+  m_volEffResponse.reset();
+  m_volEffResolveNote.clear();
+
+  const VolumetricEffMethod requested = m_options.volumetric_eff_method;
+
+  // Not applicable without a usable, non-fixed-geometry DRF (volume sources are already rejected
+  //  for fixed-geometry DRFs); flat-disk it is.
+  if( !m_detector || !m_detector->isValid() || m_detector->isFixedGeometry() )
+    return;
+
+  if( requested == VolumetricEffMethod::FlatDisk )
+    return;
+
+  const std::shared_ptr<const ceelo::DetectorResponse> ceeloResp = m_detector->ceeloResponse();
+
+  // Both MCTransfer and EffTran need the DRF's CeeLo geometry descriptor; without a CeeLo response
+  //  there is nothing to evaluate or to anchor a transfer on -> flat-disk.
+  if( !ceeloResp )
+  {
+    if( requested != VolumetricEffMethod::Auto )
+      m_volEffResolveNote = "requested near-field method, but the DRF has no CeeLo response; using flat-disk";
+    return;
+  }//if( !ceeloResp )
+
+  const bool has_near_model = (ceeloResp->provenance.profile != ceelo::ResponseProfile::FarField);
+
+  // Builds an EFFTRAN transfer response from the DRF (measured points / fitted curve), anchored at
+  //  the DRF's pinned reference distance.  Returns null (with a note) on failure.
+  const std::function<std::shared_ptr<const ceelo::DetectorResponse>()> build_efftran
+      = [this,&ceeloResp]() -> std::shared_ptr<const ceelo::DetectorResponse>
+  {
+    try
+    {
+      const ceelo::GeometryDescriptor geom = ceeloResp->descriptor;
+      const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( m_detector, geom, 0.0 );
+      const ceelo::AnchorCurve tot_curve = CeeLoUtils::totalTransferAnchorForDrf( m_detector, anchor );
+      return CeeLoUtils::makeTransferResponse( geom, anchor, tot_curve,
+                                               m_detector->name() + " (EFFTRAN transfer)" );
+    }catch( std::exception &e )
+    {
+      m_volEffResolveNote = std::string("EFFTRAN transfer unavailable (") + e.what() + ")";
+      return nullptr;
+    }
+  };//build_efftran
+
+  switch( requested )
+  {
+    case VolumetricEffMethod::MCTransfer:
+      m_resolvedVolEffMethod = VolumetricEffMethod::MCTransfer;
+      m_volEffResponse = ceeloResp;
+      if( !has_near_model )
+        m_volEffResolveNote = "MC response is far-field-only; near-field elements will be flagged";
+      break;
+
+    case VolumetricEffMethod::EffTran:
+    {
+      const std::shared_ptr<const ceelo::DetectorResponse> transfer = build_efftran();
+      if( transfer )
+      {
+        m_resolvedVolEffMethod = VolumetricEffMethod::EffTran;
+        m_volEffResponse = transfer;
+      }// else: note set in build_efftran; stays flat-disk
+      break;
+    }//case EffTran
+
+    case VolumetricEffMethod::Auto:
+    {
+      // Prefer a full near-field MC response when the DRF has one; otherwise transfer the DRF's
+      //  measured efficiency (EFFTRAN) for a geometry-correct near-field; else fall back to the
+      //  far-field MC response (still off-axis aware) before flat-disk.
+      if( has_near_model )
+      {
+        m_resolvedVolEffMethod = VolumetricEffMethod::MCTransfer;
+        m_volEffResponse = ceeloResp;
+        m_volEffResolveNote = "Auto -> MC transfer";
+      }else
+      {
+        const std::shared_ptr<const ceelo::DetectorResponse> transfer = build_efftran();
+        if( transfer )
+        {
+          m_resolvedVolEffMethod = VolumetricEffMethod::EffTran;
+          m_volEffResponse = transfer;
+          m_volEffResolveNote = "Auto -> EFFTRAN transfer";
+        }else
+        {
+          m_resolvedVolEffMethod = VolumetricEffMethod::MCTransfer;
+          m_volEffResponse = ceeloResp;
+          m_volEffResolveNote = "Auto -> MC transfer (far-field; EFFTRAN unavailable)";
+        }
+      }//if( has_near_model ) / else
+      break;
+    }//case Auto
+
+    case VolumetricEffMethod::FlatDisk:
+      break;  // handled above
+  }//switch( requested )
+}//resolveVolumetricEffMethod()
 
 
 std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> ShieldingSourceChi2Fcn::create(
@@ -1747,6 +1883,10 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   // Hold onto the input verbatim, so the per-peak supplemental information can be computed after
   //  the fit; see `ShieldingSourceChi2Fcn::SupplementalInfoOptions`.
   answer->m_create_input = input;
+
+  // Resolve the volumetric-source efficiency method (Auto -> a concrete method) and build the
+  //  transfer response if needed - once here, single-threaded, before any integration.
+  answer->resolveVolumetricEffMethod();
 
 #if( PERFORM_DEVELOPER_CHECKS )
   // Synthetic peaks stand in for peaks that werent actually observed, so they must not be fit to.
@@ -5728,6 +5868,10 @@ vector<PeakResultPlotInfo>
     baseCalculator.m_srcOffsetY = m_sourceOffsets[1];
     baseCalculator.m_attenuateForAir = m_options.attenuate_for_air;
     baseCalculator.m_materialIndex = material_index;
+
+    // Resolved once (single-threaded) in #create; null response => legacy flat-disk behavior.
+    baseCalculator.m_effMethod = m_resolvedVolEffMethod;
+    baseCalculator.m_effResponse = m_volEffResponse;
     
     baseCalculator.m_isInSituExponential = false;
     baseCalculator.m_inSituRelaxationLength = -1.0;
@@ -6080,16 +6224,36 @@ vector<PeakResultPlotInfo>
         msg += "Trace and Self Attenuating";
       
       msg += " Source Info (after accounting for shielding, distance, detector and live time):";
-      
+
       info->push_back( std::move(msg) );
+
+      // Note which volumetric detector-efficiency method is active (and, for Auto, how it resolved).
+      const char *methodStr = "Flat-disk (solid angle x intrinsic efficiency)";
+      switch( m_resolvedVolEffMethod )
+      {
+        case ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer:
+          methodStr = "Monte-Carlo transfer (near-field & off-axis correct)";  break;
+        case ShieldingSourceFitCalc::VolumetricEffMethod::EffTran:
+          methodStr = "EFFTRAN transfer (near-field & off-axis correct)";       break;
+        case ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk:
+        case ShieldingSourceFitCalc::VolumetricEffMethod::Auto:
+          break;
+      }//switch( m_resolvedVolEffMethod )
+
+      string effmsg = string("\tVolumetric detector-efficiency method: ") + methodStr;
+      if( !m_volEffResolveNote.empty() )
+        effmsg += " [" + m_volEffResolveNote + "]";
+      info->push_back( std::move(effmsg) );
     }//if( info )
     
     for( const unique_ptr<DistributedSrcCalc> &calculator : calculators )
     {
       double contrib = calculator->integral * calculator->m_srcVolumetricActivity;
 
-      
-      if( m_detector && m_detector->isValid() )
+      // FlatDisk folds intrinsic efficiency in here; MCTransfer/EffTran already applied the
+      //  absolute FEP efficiency per element, so applying it again would double-count.
+      if( m_detector && m_detector->isValid()
+          && (calculator->m_effMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk) )
         contrib *= m_detector->intrinsicEfficiency( calculator->m_energy );
 
       if( energy_count_map.find( calculator->m_energy ) != energy_count_map.end() )

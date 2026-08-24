@@ -423,12 +423,33 @@ struct DistributedSrcCalc
   double m_energy;
   
   /** The nuclide responsible for gamma being integrated over.
-   
+
    Not used during integration - only for debug writing out; may be nullptr.
    */
   const SandiaDecay::Nuclide *m_nuclide;
-  
-  
+
+  /** The resolved volumetric-efficiency method for this problem (never #VolumetricEffMethod::Auto -
+   the fit resolves Auto to a concrete method before the integration).  #VolumetricEffMethod::FlatDisk
+   reproduces the legacy flat-disk solid-angle * intrinsicEfficiency behavior. */
+  ShieldingSourceFitCalc::VolumetricEffMethod m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk;
+
+  /** The near-field/off-axis-correct absolute-FEP-efficiency response to query per volume element
+   (the DRF's Monte-Carlo response for MCTransfer, a freshly-built EFFTRAN transfer response for
+   EffTran, or null for FlatDisk).  Only its const, thread-safe #ceelo::DetectorResponse::eps_fep is
+   used during the (multithreaded) integration; built once per problem. */
+  std::shared_ptr<const ceelo::DetectorResponse> m_effResponse;
+
+  /** Per-volume-element detector efficiency factor at the given straight-line distance to the detector
+   face and cosine of the incidence angle (measured from the detector axis).
+
+   FlatDisk (or null #m_effResponse): the legacy flat-disk fractional solid angle
+   `fractionalSolidAngle( 2*m_detectorRadius, dist_to_det + m_detectorSetback )` - intrinsicEfficiency is
+   folded in after integration.  MCTransfer/EffTran: the absolute FEP efficiency
+   `m_effResponse->eps_fep( m_energy, acos(cos_theta), 0, dist_to_det/cm )` (solid angle + intrinsic
+   already included), so intrinsicEfficiency must NOT be folded in afterward. */
+  double detEffFactor( const double dist_to_det, const double cos_theta ) const;
+
+
   /** TODO: Setting the integral value as part of the DistributedSrcCalc is poor form - need to fix */
   double integral;
 };//struct DistributedSrcCalc
@@ -1589,6 +1610,28 @@ protected:
    safe for the fit worker threads.
    */
   std::shared_ptr<const CascadeSummingCalc> m_cascadeCalc;
+
+  /** The volumetric-efficiency method actually used for this problem, after resolving
+   `m_options.volumetric_eff_method` (Auto -> a concrete method) against the DRF.  Never
+   #VolumetricEffMethod::Auto once #create has run.  Copied into every #DistributedSrcCalc /
+   #DistributedSrcCalcT built for the integration. */
+  ShieldingSourceFitCalc::VolumetricEffMethod m_resolvedVolEffMethod
+                                    = ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk;
+
+  /** The resolved absolute-FEP-efficiency response for volumetric sources (null for FlatDisk); built
+   once by #resolveVolumetricEffMethod and shared (const) with the fit worker threads. */
+  std::shared_ptr<const ceelo::DetectorResponse> m_volEffResponse;
+
+  /** Human-readable note describing how the volumetric-efficiency method was resolved (e.g.
+   "Auto -> MC transfer", or a fallback reason); appended to the volumetric calc-log. */
+  std::string m_volEffResolveNote;
+
+  /** Resolves #m_options.volumetric_eff_method against #m_detector into #m_resolvedVolEffMethod +
+   #m_volEffResponse (+ #m_volEffResolveNote).  Builds the EFFTRAN transfer response when needed -
+   so must run once, single-threaded, at the end of #create (the EFFTRAN build is not safe to
+   construct concurrently, though the const evaluation is).  No-op for fixed-geometry DRFs (volume
+   sources are already rejected for those). */
+  void resolveVolumetricEffMethod();
 
 public:
   /** Per-material attenuation-coefficient functions (energy -> mu*chord) along

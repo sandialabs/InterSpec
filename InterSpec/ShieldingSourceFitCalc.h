@@ -287,6 +287,41 @@ namespace ShieldingSourceFitCalc
   };//struct FitShieldingInfo : ShieldingInfo
   
   
+  /** Which detector-efficiency model to apply to VOLUMETRIC (trace and
+   self-attenuating) sources during the activity/shielding integration.
+
+   The point-source path already branches on the DRF: a near-field/off-axis
+   CeeLo response is evaluated per-angle, else the legacy flat-disk solid
+   angle is used.  The volumetric integrand historically only ever used the
+   flat-disk solid angle (times the intrinsic efficiency), which is the
+   far-field approximation - wrong at short standoff and inconsistent with the
+   point path.  This selects which per-element efficiency the volumetric
+   integrand uses.
+   */
+  enum class VolumetricEffMethod : int
+  {
+    /** Pick the highest-fidelity method the DRF supports: MC transfer if the
+     DRF carries a full-MC CeeLo response, else EFFTRAN transfer if a transfer
+     anchor can be built from it, else flat-disk. */
+    Auto,
+
+    /** Evaluate the DRF's stored full-MC `ceelo::DetectorResponse` per element
+     (`eps_fep(energy,theta,phi,dist)`): near-field distance factor and
+     off-axis eta.  Falls back to FlatDisk (with a calc-log note) if the DRF
+     has no MC response. */
+    MCTransfer,
+
+    /** Build a deterministic EFFTRAN-style transfer response anchored on the
+     DRF's measured (or curve-sampled) efficiency, and evaluate it per element.
+     Falls back to FlatDisk (with a calc-log note) if no transfer anchor can be
+     built. */
+    EffTran,
+
+    /** Legacy behavior: flat-disk fractional solid angle times the intrinsic
+     efficiency; bit-for-bit unchanged from before this option existed. */
+    FlatDisk
+  };//enum class VolumetricEffMethod
+
   struct ShieldingSourceFitOptions
   {
     bool multiple_nucs_contribute_to_peaks = true;
@@ -355,6 +390,15 @@ namespace ShieldingSourceFitCalc
      Default false: the historical (uncorrected) behavior.
      */
     bool correct_for_cascade_summing = false;
+
+    /** The detector-efficiency model applied to volumetric sources; see
+     #VolumetricEffMethod.  Default #VolumetricEffMethod::Auto: use the
+     highest-fidelity method the DRF supports.  Absent from serialized XML
+     (older files) also resolves to Auto - but note the historical numerical
+     behavior was flat-disk, so Auto can change results for near-field CeeLo
+     DRFs relative to pre-option files.  Only volumetric sources are affected;
+     point sources are unchanged. */
+    VolumetricEffMethod volumetric_eff_method = VolumetricEffMethod::Auto;
 
 
     void serialize( rapidxml::xml_node<char> *parent_node ) const;

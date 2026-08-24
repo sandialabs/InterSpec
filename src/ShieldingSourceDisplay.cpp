@@ -61,6 +61,7 @@
 #include <Wt/WFileUpload.h>
 #include <Wt/Http/Response.h>
 #include <Wt/WSplitButton.h>
+#include <Wt/WComboBox.h>
 #include <Wt/WSelectionBox.h>
 #include <Wt/WItemDelegate.h>
 #include <Wt/WAbstractItemDelegate.h>
@@ -76,6 +77,8 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 
 #include <nlohmann/json.hpp>
+
+#include "io/DetectorResponse.h"  // ceelo::DetectorResponse::provenance for the volumetric-eff method preview
 
 #include "external_libs/SpecUtils/3rdparty/inja/inja.hpp"
 
@@ -3442,6 +3445,22 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_correctForCascade->checked().connect( this, &ShieldingSourceDisplay::correctForCascadeChanged );
   m_correctForCascade->unChecked().connect( this, &ShieldingSourceDisplay::correctForCascadeChanged );
 
+  lineDiv = m_optionsDiv->addNew<WContainerWidget>();
+  lineDiv->addStyleClass( "FitOptionsRow" );
+  WLabel *volEffLabel = lineDiv->addNew<WLabel>( WString::tr("ssd-lbl-vol-eff") );
+  HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-vol-eff"), showToolTips );
+  m_volEffMethodCombo = lineDiv->addNew<WComboBox>();
+  volEffLabel->setBuddy( m_volEffMethodCombo );
+  // Items must match the VolumetricEffMethod enum order (Auto, MCTransfer, EffTran, FlatDisk).
+  m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-auto") );
+  m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-mc") );
+  m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-efftran") );
+  m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-flatdisk") );
+  m_volEffMethodCombo->setCurrentIndex( 0 );  //matches ShieldingSourceFitOptions default (Auto)
+  m_volEffMethodCombo->changed().connect( this, &ShieldingSourceDisplay::volEffMethodChanged );
+  m_volEffMethodStatus = lineDiv->addNew<WText>();
+  m_volEffMethodStatus->addStyleClass( "VolEffMethodStatus" );
+
 
   WContainerWidget *detectorDiv = new WContainerWidget();
   WGridLayout *detectorLayout = detectorDiv->setLayout( std::make_unique<WGridLayout>() );
@@ -3839,6 +3858,11 @@ ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOpt
   options.account_for_drf_uncert = m_accountForDrfUncert->isChecked();
   options.correct_for_cascade_summing = (m_correctForCascade->isChecked()
                                          && m_correctForCascade->isEnabled());
+
+  // Combo index maps directly to the VolumetricEffMethod enum (Auto, MCTransfer, EffTran, FlatDisk).
+  const int volEffIdx = m_volEffMethodCombo->isEnabled() ? m_volEffMethodCombo->currentIndex() : 0;
+  options.volumetric_eff_method = static_cast<ShieldingSourceFitCalc::VolumetricEffMethod>(
+                                        std::max( 0, volEffIdx ) );
 
   return options;
 }//ShieldingSourceFitOptions fitOptions() const
@@ -6015,7 +6039,113 @@ void ShieldingSourceDisplay::updateFixedGeomMcAvailability()
 
   m_fixedGeomMcBtn->setHidden( det && det->isFixedGeometry() );
   m_fixedGeomMcBtn->setDisabled( !enable );
+
+  updateVolEffMethodAvailability();
 }//void updateFixedGeomMcAvailability()
+
+
+void ShieldingSourceDisplay::volEffMethodChanged()
+{
+  const int new_index = m_volEffMethodCombo->currentIndex();
+  const int old_index = m_lastVolEffMethodIndex;
+  m_lastVolEffMethodIndex = new_index;
+
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() && (old_index != new_index) )
+  {
+    auto set_to = []( const int index ){
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display )
+      {
+        display->m_volEffMethodCombo->setCurrentIndex( index );
+        display->volEffMethodChanged();
+      }
+    };
+    undoRedo->addUndoRedoStep( std::bind(set_to, old_index), std::bind(set_to, new_index),
+                               "Volumetric efficiency method changed." );
+  }//if( undoRedo )
+
+  updateVolEffMethodAvailability();
+  updateChi2Chart();
+}//void volEffMethodChanged()
+
+
+void ShieldingSourceDisplay::updateVolEffMethodAvailability()
+{
+  using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+  using ShieldingSourceFitCalc::VolumetricEffMethod;
+
+  // A volumetric source exists when any (non-generic) shielding carries a trace or self-attenuating
+  //  nuclide - only then does the volumetric integration (and this option) apply.
+  bool has_volumetric = false;
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
+    if( select && (!select->traceSourceNuclides().empty()
+                   || !select->selfAttenNuclides().empty()) )
+    {
+      has_volumetric = true;
+      break;
+    }
+  }//for( shieldings )
+
+  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  const bool enable = ( has_volumetric && det && det->isValid() && !det->isFixedGeometry() );
+
+  if( enable != m_volEffMethodCombo->isEnabled() )
+    m_volEffMethodCombo->setDisabled( !enable );
+
+  if( !enable )
+  {
+    m_volEffMethodStatus->setText( WString() );
+    return;
+  }
+
+  // Preview how the current selection resolves against this DRF (authoritative resolution and any
+  //  fallback note are produced by ShieldingSourceChi2Fcn::resolveVolumetricEffMethod at fit time).
+  const VolumetricEffMethod requested
+        = static_cast<VolumetricEffMethod>( std::max(0, m_volEffMethodCombo->currentIndex()) );
+  const shared_ptr<const ceelo::DetectorResponse> ceeloResp = det->ceeloResponse();
+  const bool has_near_model = ceeloResp
+                    && (ceeloResp->provenance.profile != ceelo::ResponseProfile::FarField);
+
+  VolumetricEffMethod resolved = VolumetricEffMethod::FlatDisk;
+  switch( requested )
+  {
+    case VolumetricEffMethod::FlatDisk:
+      resolved = VolumetricEffMethod::FlatDisk;
+      break;
+    case VolumetricEffMethod::MCTransfer:
+      resolved = ceeloResp ? VolumetricEffMethod::MCTransfer : VolumetricEffMethod::FlatDisk;
+      break;
+    case VolumetricEffMethod::EffTran:
+      resolved = ceeloResp ? VolumetricEffMethod::EffTran : VolumetricEffMethod::FlatDisk;
+      break;
+    case VolumetricEffMethod::Auto:
+      if( has_near_model )
+        resolved = VolumetricEffMethod::MCTransfer;
+      else if( ceeloResp )
+        resolved = VolumetricEffMethod::EffTran;   // else falls back to MC at fit time
+      else
+        resolved = VolumetricEffMethod::FlatDisk;
+      break;
+  }//switch( requested )
+
+  const char *resolvedKey = "ssd-vol-eff-name-flatdisk";
+  switch( resolved )
+  {
+    case VolumetricEffMethod::MCTransfer: resolvedKey = "ssd-vol-eff-name-mc";       break;
+    case VolumetricEffMethod::EffTran:    resolvedKey = "ssd-vol-eff-name-efftran";  break;
+    case VolumetricEffMethod::FlatDisk:
+    case VolumetricEffMethod::Auto:       resolvedKey = "ssd-vol-eff-name-flatdisk"; break;
+  }//switch( resolved )
+
+  // Show the resolved method for Auto, or whenever the selection falls back to something else.
+  if( (requested == VolumetricEffMethod::Auto) || (resolved != requested) )
+    m_volEffMethodStatus->setText( WString::tr("ssd-vol-eff-resolved").arg( WString::tr(resolvedKey) ) );
+  else
+    m_volEffMethodStatus->setText( WString() );
+}//void updateVolEffMethodAvailability()
 
 
 void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
@@ -8528,6 +8658,8 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_accountForDrfUncert->setChecked( options.account_for_drf_uncert );
   m_correctForCascade->setChecked( options.correct_for_cascade_summing );
   updateCascadeAvailability();
+  m_volEffMethodCombo->setCurrentIndex( static_cast<int>( options.volumetric_eff_method ) );
+  updateVolEffMethodAvailability();
   m_showChiOnChart->setChecked( state.showChiOnChart );
   m_chi2Plot->setShowChi( state.showChiOnChart );
   string dist_str = PhysicalUnits::printToBestLengthUnitsCompact( state.config->distance );  //e.g. "1 m", not "1.000000 m"
@@ -9150,6 +9282,9 @@ void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
   //Update activity displayed
   updateActivityOfShieldingIsotope( caller, nuc );
 
+  //A volumetric source now exists: refresh the volumetric-efficiency method availability/indicator.
+  updateVolEffMethodAvailability();
+
   //Update the Chi2
   updateChi2Chart();
 }//isotopeIsBecomingVolumetricSourceCallback(...)
@@ -9173,7 +9308,10 @@ void ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback(
     if( select )
       select->setTraceSourceBtnStatus();
   }//for( WWidget *widget : children )
-  
+
+  //A volumetric source may no longer exist: refresh the volumetric-efficiency method availability.
+  updateVolEffMethodAvailability();
+
   //Update the Chi2
   updateChi2Chart();
 }//isotopeRemovedAsVolumetricSourceCallback(...)
