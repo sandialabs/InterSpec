@@ -1,0 +1,12 @@
+# CeeLo simulation results
+# 45-122 keV: two independent precision-targeted runs combined (~0.03%),
+#   to settle whether the low-energy offsets were statistics. They were, at
+#   45 keV. Higher energies are the original ~0.1-0.35% run.
+energy_keV,fep_efficiency,fep_uncertainty,total_efficiency,total_uncertainty,num_events
+45.0000,5.499205e-02,1.594683e-05,5.630129e-02,1.547875e-05,3550000
+59.5000,5.514097e-02,1.582908e-05,5.620183e-02,1.545076e-05,3580000
+88.0000,5.385991e-02,1.581275e-05,5.546541e-02,1.529504e-05,3780000
+122.0000,4.982331e-02,1.552838e-05,5.322635e-02,1.473051e-05,4460000
+344.0000,2.382336e-02,4.459637e-05,4.247073e-02,4.643436e-05,570000
+662.0000,1.367621e-02,3.859846e-05,3.755095e-02,3.951883e-05,400000
+1332.0000,7.904341e-03,2.781055e-05,3.185768e-02,3.374830e-05,440000

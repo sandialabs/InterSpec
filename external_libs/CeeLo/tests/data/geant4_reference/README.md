@@ -66,7 +66,17 @@ CSV headers.
 | `nai_3x3_al05mm_marinelli_water_multi.csv` | 3"×3" NaI, 0.5 mm Al | Marinelli beaker, water fill | 8 |
 | `nai_3x3_fe05cm_shield_10cm_multi.csv` | 3"×3" NaI, bare | point, 10 cm, 0.5 cm Fe shield | 11 |
 | `nai_3x3_ss304box_cellulose_15cm_multi.csv` | 3"×3" NaI, bare | SS304 box + cellulose, 15 cm | 12 |
+| `hpge_gem35_coax_sharp_5cm_multi.csv` | GEM35-70 HPGe coax, sharp front edge | point, on-axis 5 cm | 25 |
+| `hpge_gem35_coax_bullet_5cm_multi.csv` | GEM35-70 HPGe coax, bulletized edge + round-tipped bore | point, on-axis 5 cm | 26 |
 | `cascade_summing_multi.csv` | 3"×3" NaI | Al cylinder, full-decay ion source | cascade-summing gate |
+
+Configs 25 and 26 are a **matched pair**: the same crystal with a sharp and a
+bulletized front edge. Each is gated against GEANT4 on its own, but the point of
+the pair is the *difference* between them, which isolates the geometry change
+from the physics residuals both configs share. They carry no dead layer, because
+`write_gdml()` does not export one (see TODO.md), and their crystal is exported
+as a single G4Polycone rather than boolean solids — a subtraction-based export
+produced ~0.3% stuck-track warnings under cone bias, the polycone none.
 
 The authoritative, up-to-date agreement figures are the tolerances encoded in
 `profiling/compare_validation.py` and the validated-configuration table in

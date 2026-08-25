@@ -311,13 +311,30 @@ void write_gdml(const Geometry& geom, const std::string& filename,
     double world_hxy = outer_r * 3.0 + 5.0;
     double world_hz  = (std::max(std::abs(z_min_geom), std::abs(z_max_geom)) + 5.0) * 3.0;
 
-    // Bore hole data.
+    // Bore hole data.  The bore is part of the crystal polycone's profile, so
+    // no separate bore solid or placement is needed.
     const bool has_bore = geom.has_bore_hole();
     double R_bore = 0.0, D_bore = 0.0;
+    bool round_bore_tip = false;
     if (has_bore && is_cyl) {
         R_bore = geom.bore_hole()->radius;
         D_bore = geom.bore_hole()->depth;
+        round_bore_tip = geom.bore_hole()->rounded_tip;
     }
+
+    // Bulletized (rounded) front outer edge.  The fillet's ring circle has
+    // radius `bullet_rho_c` and sits at local z = -L/2 + r_b.
+    const double bullet_r   = is_cyl ? geom.bullet_radius() : 0.0;
+    const bool has_bullet   = (bullet_r > 0.0);
+    const double bullet_rho_c = R - bullet_r;
+    // Material the fillet removes, by Pappus: 2 pi rho_c r_b^2 (1 - pi/4)
+    // + pi r_b^3 / 3.  Reported in a comment for the validation logs.
+    constexpr double kPi = 3.14159265358979323846;
+    const double bullet_removed_vol =
+        has_bullet ? (2.0 * kPi * bullet_rho_c * bullet_r * bullet_r
+                          * (1.0 - kPi / 4.0)
+                      + kPi * bullet_r * bullet_r * bullet_r / 3.0)
+                   : 0.0;
 
     // Dead layer data.
     double dl_front = 0.0, dl_side = 0.0, dl_back = 0.0;
@@ -392,15 +409,6 @@ void write_gdml(const Geometry& geom, const std::string& filename,
         << "    <!-- Crystal center in world frame (front face at z=0, center at z=L/2) -->\n"
         << "    <position name=\"crystal_center\" x=\"0\" y=\"0\" z=\"" << fmt(L/2.0) << "\" unit=\"cm\"/>\n";
 
-    if (has_bore && is_cyl) {
-        // Bore center relative to crystal center (crystal local: front=-L/2, back=+L/2).
-        // Bore opens at back face (local +L/2) and extends inward by D_bore.
-        double bore_z_in_crystal = L/2.0 - D_bore/2.0;
-        out << "    <!-- Bore center relative to crystal center -->\n"
-            << "    <position name=\"bore_center_in_crystal\" x=\"0\" y=\"0\""
-            << " z=\"" << fmt(bore_z_in_crystal) << "\" unit=\"cm\"/>\n";
-    }
-
     // Attenuator inner-cavity offset positions (used in subtraction solids for cup-shaped endcaps).
     for (size_t i = 0; i < att_gdml.size(); ++i) {
         if (att_gdml[i].use_subtraction) {
@@ -450,30 +458,136 @@ void write_gdml(const Geometry& geom, const std::string& filename,
         << " z=\"" << fmt(2.0*world_hz) << "\""
         << " lunit=\"cm\"/>\n\n";
 
-    if (is_cyl) {
-        // Main crystal outer tube.
+    if (is_cyl && (has_bore || has_bullet)) {
+        // A coaxial and/or bulletized crystal is a surface of revolution, so it
+        // exports as ONE native G4Polycone rather than a stack of boolean
+        // solids.  That matters for more than tidiness: an earlier
+        // subtraction-based version of this export produced ~0.3% stuck-track
+        // warnings under cone-biased runs (G4 navigation struggles with tracks
+        // skimming a subtracted surface), which both floods the log and risks
+        // biasing the very comparison the export exists to support.  The
+        // polycone has none.
+        //
+        // Profile in crystal-local z (front face at -L/2, back at +L/2):
+        //   rmax  follows the front fillet from rho_c up to R over the first
+        //         r_b of depth, then stays at R.
+        //   rmin  is 0 until the bore starts, then the bore radius (via the
+        //         tip hemisphere first, if the bore is round-tipped).
+        // Circular arcs become chord segments; kArcSeg keeps the sagitta well
+        // under a micron, i.e. ~1e-4 % of the crystal volume.
+        constexpr int kArcSeg = 64;
+        struct ZPlane { double z, rmin, rmax; };
+        std::vector<ZPlane> profile;
+
+        const double z_front = -L / 2.0;
+        const double z_back  =  L / 2.0;
+
+        // --- rmax: front fillet, then the straight side wall ---
+        if (has_bullet) {
+            // Arc centre at (rho_c, z_front + r_b); walk the quarter circle
+            // from the front face outward to the side wall.
+            for (int i = 0; i <= kArcSeg; ++i) {
+                const double ang = (kPi / 2.0) * i / kArcSeg;   // 0 -> 90 deg
+                const double z = z_front + bullet_r * (1.0 - std::cos(ang));
+                const double r = bullet_rho_c + bullet_r * std::sin(ang);
+                profile.push_back({z, 0.0, r});
+            }
+        } else {
+            profile.push_back({z_front, 0.0, R});
+        }
+        profile.push_back({z_back, 0.0, R});
+
+        // --- rmin: the bore, cut into the profile from the back ---
+        if (has_bore) {
+            const double z_bore_start = z_back - D_bore;   // apex of the bore
+            std::vector<ZPlane> bore;
+            if (round_bore_tip) {
+                const double z_tip = z_bore_start + R_bore;  // hemisphere centre
+                for (int i = 0; i <= kArcSeg; ++i) {
+                    const double ang = (kPi / 2.0) * i / kArcSeg;
+                    bore.push_back({z_tip - R_bore * std::cos(ang),
+                                    R_bore * std::sin(ang), 0.0});
+                }
+            } else {
+                bore.push_back({z_bore_start, 0.0, 0.0});      // flat bottom:
+                bore.push_back({z_bore_start, R_bore, 0.0});   // rmin steps up
+            }
+            bore.push_back({z_back, R_bore, 0.0});
+
+            // Merge onto the union of both profiles' z values, evaluating each
+            // profile at the other's planes.  Evaluating rather than
+            // truncating is what keeps a deep bore -- one whose closed end
+            // reaches back into the front fillet -- from cutting the arc short
+            // and interpolating rmax straight to the back face.
+            auto rmax_at = [&](double z) {
+                if (!has_bullet) return R;
+                if (z >= z_front + bullet_r) return R;
+                const double dz = (z_front + bullet_r) - z;
+                return bullet_rho_c
+                     + std::sqrt(std::max(0.0, bullet_r * bullet_r - dz * dz));
+            };
+            auto rmin_at = [&](double z) {
+                if (z <= z_bore_start) return 0.0;
+                const double z_tip = z_bore_start + R_bore;
+                if (!round_bore_tip || z >= z_tip) return R_bore;
+                const double dz = z_tip - z;
+                return std::sqrt(std::max(0.0, R_bore * R_bore - dz * dz));
+            };
+
+            std::vector<ZPlane> merged;
+            merged.reserve(profile.size() + bore.size());
+            size_t oi = 0, bj = 0;
+            while (oi < profile.size() || bj < bore.size()) {
+                // On a tie take the outer plane first, so a flat bore's rmin
+                // step stays the last thing to happen at that z.
+                const bool take_outer = (bj >= bore.size())
+                    || (oi < profile.size() && profile[oi].z <= bore[bj].z);
+                if (take_outer) {
+                    merged.push_back({profile[oi].z, rmin_at(profile[oi].z),
+                                      profile[oi].rmax});
+                    ++oi;
+                } else {
+                    merged.push_back({bore[bj].z, bore[bj].rmin,
+                                      rmax_at(bore[bj].z)});
+                    ++bj;
+                }
+            }
+            // Both profiles end at the back face, so drop the duplicate.
+            profile.clear();
+            for (const auto& p : merged) {
+                if (!profile.empty()) {
+                    const ZPlane& q = profile.back();
+                    if (q.z == p.z && q.rmin == p.rmin && q.rmax == p.rmax) continue;
+                }
+                profile.push_back(p);
+            }
+        }
+
+        out << "    <!-- Detector crystal (polycone: "
+            << (has_bullet ? "bulletized front edge" : "sharp front edge")
+            << (has_bore ? (round_bore_tip ? ", round-tipped bore" : ", flat-bottomed bore")
+                         : "")
+            << ") -->\n";
+        if (has_bullet) {
+            out << "    <!-- Bulletizing radius " << fmt(bullet_r,4)
+                << " cm about ring radius " << fmt(bullet_rho_c,4) << " cm;"
+                << " removes " << fmt(bullet_removed_vol,4) << " cm^3 of crystal -->\n";
+        }
+        out << "    <polycone name=\"CrystalSolid\""
+            << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\">\n";
+        for (const auto& p : profile) {
+            out << "      <zplane rmin=\"" << fmt(p.rmin) << "\""
+                << " rmax=\"" << fmt(p.rmax) << "\""
+                << " z=\"" << fmt(p.z) << "\"/>\n";
+        }
+        out << "    </polycone>\n";
+    } else if (is_cyl) {
+        // Plain cylinder: a single tube, exactly as before.
         out << "    <!-- Detector crystal outer solid -->\n"
             << "    <tube name=\"CrystalOuterTube\""
             << " rmin=\"0\" rmax=\"" << fmt(R) << "\""
             << " z=\"" << fmt(L) << "\""
             << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\"/>\n";
-
-        if (has_bore) {
-            // Bore solid.
-            out << "\n    <!-- Bore hole solid -->\n"
-                << "    <tube name=\"BoreSolid\""
-                << " rmin=\"0\" rmax=\"" << fmt(R_bore) << "\""
-                << " z=\"" << fmt(D_bore) << "\""
-                << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\"/>\n"
-                << "\n    <!-- Crystal with bore (subtraction) -->\n"
-                << "    <subtraction name=\"CrystalSolid\">\n"
-                << "      <first ref=\"CrystalOuterTube\"/>\n"
-                << "      <second ref=\"BoreSolid\"/>\n"
-                << "      <positionref ref=\"bore_center_in_crystal\"/>\n"
-                << "    </subtraction>\n";
-        } else {
-            out << "\n    <!-- (no bore hole; using outer tube as crystal solid) -->\n";
-        }
     } else {
         // Box detector.
         out << "    <!-- Detector crystal box solid -->\n"
@@ -809,32 +923,24 @@ void write_gdml(const Geometry& geom, const std::string& filename,
     }
 
     // Crystal logical volume (named "active_crystal" for SteppingAction scoring).
-    const std::string crystal_solid_ref = has_bore ? "CrystalSolid" :
-                                           (is_cyl ? "CrystalOuterTube" : "CrystalSolid");
+    const std::string crystal_solid_ref =
+        (is_cyl && !has_bore && !has_bullet) ? "CrystalOuterTube" : "CrystalSolid";
     out << "    <!-- Active crystal: SteppingAction scores energy deposited here -->\n"
         << "    <volume name=\"active_crystal\">\n"
         << "      <materialref ref=\"" << crystal_mat_name << "\"/>\n"
         << "      <solidref ref=\"" << crystal_solid_ref << "\"/>\n";
 
-    // If bore hole: place air daughter volume inside crystal to remove bore region.
+    // The bore is part of the crystal polycone's profile, so the cavity belongs
+    // to the world (vacuum for the validation exports -- which matches the MC,
+    // where the bore region carries no material either).  It must NOT also be
+    // filled with a daughter volume: that daughter would lie outside its mother
+    // solid, and G4 navigation gets stuck on it.
     if (has_bore && is_cyl) {
-        double bore_z_in_crystal = L/2.0 - D_bore/2.0;
-        out << "\n      <!-- Bore hole (Air): removes bore region from scoring -->\n"
-            << "      <physvol>\n"
-            << "        <volumeref ref=\"BoreAirLV\"/>\n"
-            << "        <position x=\"0\" y=\"0\" z=\"" << fmt(bore_z_in_crystal) << "\" unit=\"cm\"/>\n"
-            << "      </physvol>\n";
+        out << "\n      <!-- Bore cavity is part of the crystal polycone;"
+            << " it is filled by the world material. -->\n";
     }
 
     out << "    </volume>\n\n";
-
-    // Bore air logical volume (placed inside crystal to mark bore as air).
-    if (has_bore && is_cyl) {
-        out << "    <volume name=\"BoreAirLV\">\n"
-            << "      <materialref ref=\"Air\"/>\n"
-            << "      <solidref ref=\"BoreSolid\"/>\n"
-            << "    </volume>\n\n";
-    }
 
     // Attenuator logical volumes.
     for (size_t i = 0; i < geom.attenuators().size(); ++i) {

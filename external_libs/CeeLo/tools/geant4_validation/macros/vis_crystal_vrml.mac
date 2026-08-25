@@ -1,0 +1,16 @@
+# Dump the exported crystal as VRML, for eyeballing the geometry GEANT4 built.
+#
+#   ceelo_g4val detector_26.gdml macros/vis_crystal_vrml.mac out.csv --vis-batch
+#
+# Writes g4_NN.wrl in the working directory.  The mesh in that file is G4's own
+# polyhedron for each solid -- i.e. what GEANT4 made of the GDML, not what the
+# GDML says -- so it is a genuine check of the export.  Render it with
+# tools/geant4_validation/render_vrml.py, or open it in any VRML viewer.
+#
+# Note: do NOT use the RayTracer driver here; see the comment on the run
+# manager in src/main.cc for why it cannot work from this executable.
+
+/vis/open VRML2FILE
+/vis/viewer/set/culling global false
+/vis/drawVolume
+/vis/viewer/flush

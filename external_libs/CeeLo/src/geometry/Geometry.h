@@ -80,6 +80,10 @@ struct PathSegment {
 struct BoreHoleConfig {
     double radius;    ///< Bore radius in cm
     double depth;     ///< Bore depth from back face in cm
+    bool rounded_tip = false;  ///< Hemispherical closed end (round-tipped drill)
+                               ///< instead of a flat bottom; the stated depth is
+                               ///< kept, so the hemisphere's apex sits at the
+                               ///< same z the flat bottom would.
 };
 
 /// Configuration for the dead layer.
@@ -108,12 +112,29 @@ public:
     /// Set the detector crystal shape and dimensions.
     /// For Cylinder: dimensions = {radius, length}
     /// For Box: dimensions = {half_width_x, half_width_y, length}
+    ///
+    /// Clears any bore hole, dead layer and bulletization radius: those are
+    /// sized against the crystal, so redefining it invalidates them. Call this
+    /// first, then declare the rest.
     void set_detector(DetectorShape shape, const Material* material,
                       const std::vector<double>& dimensions);
 
     /// Set bore hole for coaxial HPGe.
     /// Bore extends from the back face inward along the z-axis.
-    void set_bore_hole(double bore_radius, double bore_depth);
+    /// With `rounded_tip` the closed end is a hemisphere of the bore radius
+    /// (a round-tipped drill) rather than a flat bottom; the bore depth is
+    /// measured to the apex either way.
+    void set_bore_hole(double bore_radius, double bore_depth,
+                       bool rounded_tip = false);
+
+    /// Round ("bulletize") the outer front edge of a cylindrical crystal with
+    /// a quarter-torus fillet of the given radius, as HPGe crystals usually
+    /// are.  Pass 0 (the default) for a sharp 90-degree edge -- that path is
+    /// bit-for-bit the same as before this feature existed.
+    ///
+    /// Composes with a bore hole and with a dead layer: the active volume gets
+    /// the inward-offset fillet (see trace_cylinder_geometry).
+    void set_bullet_radius(double bullet_radius);
 
     /// Set dead layer thicknesses.
     /// The dead layer uses the same material as the detector crystal.
@@ -164,6 +185,8 @@ public:
     const Material* detector_material() const { return detector_material_; }
     bool has_bore_hole() const { return bore_hole_.has_value(); }
     bool has_dead_layer() const { return dead_layer_.has_value(); }
+    bool has_bullet_radius() const { return bullet_radius_ > 0.0; }
+    double bullet_radius() const { return bullet_radius_; }
     size_t num_attenuators() const { return attenuators_.size(); }
 
     // Accessors for geometry export
@@ -187,6 +210,10 @@ private:
     double half_x_ = 0.0;
     double half_y_ = 0.0;
     double length_ = 0.0;
+
+    /// Rounded front outer edge; 0 = sharp corner (the common case, and the
+    /// only value the pre-bulletization code paths ever see).
+    double bullet_radius_ = 0.0;
 
     std::optional<BoreHoleConfig> bore_hole_;
     std::optional<DeadLayerConfig> dead_layer_;

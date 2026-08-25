@@ -622,9 +622,16 @@ public:
 
     void set_detector(DetectorShape type, const Material* material,
                       const std::vector<double>& dimensions);
-    void set_bore_hole(double bore_radius, double bore_depth);
+    /// Coaxial bore from the back face. `rounded_tip` gives the closed end a
+    /// hemispherical cap (round-tipped drill) instead of a flat bottom.
+    void set_bore_hole(double bore_radius, double bore_depth,
+                       bool rounded_tip = false);
     void set_dead_layer(double front_thickness, double side_thickness,
                         double back_thickness = 0.0);
+
+    /// Round ("bulletize") the outer front edge of a cylindrical crystal, as
+    /// HPGe crystals usually are. 0 (the default) = sharp edge.
+    void set_bullet_radius(double bullet_radius);
     void add_attenuator(const Material* material,
                         double front_thickness, double side_thickness,
                         double z_start, double z_end);
