@@ -4829,9 +4829,16 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
                                            vector<string> *info,
                                            vector<GammaInteractionCalc::PeakDetail> *log_info,
                                            const std::vector<double> *eff_frac_uncerts,
-                                           const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags )
+                                           const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags,
+                                           const std::vector<double> *expected_counts_override,
+                                           const std::vector<double> *eff_whitening )
 {
   size_t included_peak_index = 0;  //parallels #includedPeakEnergies ordering
+
+  // Parallel to `answer`: the PeakDetail log entry for each included peak (or
+  //  null when not logging), so the whitened-residual overwrite below can update
+  //  both the plot info and the log without re-matching by energy.
+  std::vector<GammaInteractionCalc::PeakDetail *> answer_log_ptrs;
 
   typedef map<double,double> EnergyCountMap;
 
@@ -4880,13 +4887,43 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
       throw std::runtime_error( msg.str() );
     }//if( energy_count_map.count( energy ) == 0 )
 
-    double expected_counts = 0.0;
+    // Sum the point-source (and, historically, volumetric) contributions the
+    //  descriptive breakdown accumulated into `energy_count_map`.  This is used
+    //  to apportion counts among sources below, and - when no override is given
+    //  - as the displayed prediction.
+    double map_expected_counts = 0.0;
     for( const EnergyCountMap::value_type &energy_count : energy_count_map )
     {
       const double sigma = peak.gausPeak() ? peak.sigma() : 0.25*peak.roiWidth();
       if( fabs(energy_count.first-energy) < (0.1*sigma) )  //XXX - in principle we have already clustered phootpopeaks, and could just quicly access the energies
-        expected_counts += energy_count.second;
+        map_expected_counts += energy_count.second;
     }
+
+    // Prefer the fit's own forward model (`expected_peak_counts_imp`) when it
+    //  was supplied, so the displayed prediction/pulls match what was minimized
+    //  (the map does not cascade-correct volumetric sources).
+    double expected_counts = map_expected_counts;
+    if( expected_counts_override && (included_peak_index < expected_counts_override->size()) )
+    {
+      expected_counts = (*expected_counts_override)[included_peak_index];
+
+#if( PERFORM_DEVELOPER_CHECKS )
+      // The two forward models legitimately differ for cascade-summed volumetric
+      //  sources and (slightly) for off-axis geometry; only an order-of-magnitude
+      //  divergence signals a real fit/display mismatch worth flagging.
+      const double larger = std::max( fabs(expected_counts), fabs(map_expected_counts) );
+      if( (larger > 1.0)
+          && ((expected_counts < 0.2*map_expected_counts) || (expected_counts > 5.0*map_expected_counts)) )
+      {
+        char buffer[512];
+        snprintf( buffer, sizeof(buffer),
+                 "expected_observed_chis: fit model (%.4g) and descriptive map (%.4g)"
+                 " diverge by more than can be explained by cascade/geometry at %.2f keV.",
+                 expected_counts, map_expected_counts, energy/SandiaDecay::keV );
+        log_developer_error( __func__, buffer );
+      }
+#endif //#if( PERFORM_DEVELOPER_CHECKS )
+    }//if( expected_counts_override && ... )
 
     if( backCounts > 0.0 )
     {
@@ -4933,7 +4970,8 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
     peak_info.backgroundCounts = backCounts;
     peak_info.backgroundUncert = sqrt( backUncert2 );
     answer.push_back( peak_info );
-    
+    answer_log_ptrs.push_back( nullptr );  //filled below when logging (log_info is not resized here)
+
     if( info )
     {
       stringstream msg;
@@ -4968,7 +5006,8 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
         if( pos != end(*log_info) )
         {
           GammaInteractionCalc::PeakDetail &log_peak = *pos;
-          
+          answer_log_ptrs.back() = &log_peak;  //parallels answer.back(); used by whitened-residual overwrite
+
           assert( log_peak.energy == peak.mean() );  //This will not be strictly true if the same particle is assigned to multiple peaks
           assert( log_peak.decayParticleEnergy == peak.gammaParticleEnergy() );
           assert( (peak.type() != PeakDef::GaussianDefined) || (log_peak.fwhm == peak.fwhm()) );
@@ -5010,6 +5049,32 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
       }
     }//if( log_info )
   }//for( const PeakDef &peak : m_peaks )
+
+  // When a GLS whitening matrix is supplied, replace the per-peak (uncorrelated)
+  //  chi with the whitened residual r_i = sum_{j<=i} L^{-1}(i,j)*(obs_j - exp_j).
+  //  This is exactly the residual the correlated fit minimizes (sum r_i^2 = chi2),
+  //  so the displayed pulls center on zero even for a highly-correlated near-field
+  //  efficiency covariance, where the raw per-peak pulls look large and one-signed.
+  if( eff_whitening )
+  {
+    const size_t n = answer.size();
+    if( eff_whitening->size() == (n*n) )
+    {
+      for( size_t i = 0; i < n; ++i )
+      {
+        double r = 0.0;
+        for( size_t j = 0; j <= i; ++j )  //L^{-1} is lower-triangular
+          r += (*eff_whitening)[i*n + j] * (answer[j].observedCounts - answer[j].expectedCounts);
+
+        answer[i].numSigmaOff = r;
+        if( answer_log_ptrs[i] )
+          answer_log_ptrs[i]->numSigmaOff = r;
+      }//for( size_t i = 0; i < n; ++i )
+    }else
+    {
+      assert( eff_whitening->empty() );  //size must be n*n or unset
+    }
+  }//if( eff_whitening )
 
   return answer;
 }//expected_observed_chis(...)
@@ -5113,24 +5178,18 @@ void ShieldingSourceChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calcu
         break;
         
       case GeometryType::CylinderEndOn:
-        if( (calculator.m_dimensionsTransLenAndType.size() == 1)
-            && (calculator.m_srcOffsetX == 0.0) && (calculator.m_srcOffsetY == 0.0) )
-        {
-          // For a single end-on cylinder we can use the ever-so-slightly faster function
-          //  to evaluate this (debug builds will validate gives same answer as
-          //  DistributedSrcCalc::eval_cylinder)
-          
-          Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_single_cyl_end_on, userdata, epsrel, epsabs,
-                                    Integrate::LastImportanceFcnt,
-                                    mineval, maxeval, nregions, neval,
-                                    fail, calculator.integral, error, prob );
-        }else
-        {
-          Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_cylindrical, userdata, epsrel, epsabs,
-                                    Integrate::LastImportanceFcnt,
-                                    mineval, maxeval, nregions, neval,
-                                    fail, calculator.integral, error, prob );
-        }
+        // Always use the general cylindrical integrand (DistributedSrcCalc::eval_cylinder).  A
+        //  single-cylinder on-axis "fast path" (#eval_single_cyl_end_on) exists, but it assumes
+        //  every ray exits the top face, which is wrong for wide-angle near-field geometry (source
+        //  radius comparable to the source-to-detector distance) - exactly where its debug
+        //  cross-check against eval_cylinder trips.  eval_cylinder finds the true side/top exit and
+        //  is what the templated fit path (DistributedSrcCalcT<T>) mirrors, so this keeps the
+        //  display's legacy model consistent with the fit.  This calculator runs once per result
+        //  (not in the fit hot loop), so the fast path's minor speed edge does not matter.
+        Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_cylindrical, userdata, epsrel, epsabs,
+                                  Integrate::LastImportanceFcnt,
+                                  mineval, maxeval, nregions, neval,
+                                  fail, calculator.integral, error, prob );
         break;
         
       case GeometryType::CylinderSideOn:
@@ -5239,7 +5298,8 @@ vector<PeakResultPlotInfo>
                                                         const std::vector<double> &error_params,
                                          ShieldingSourceChi2Fcn::NucMixtureCache &mixturecache,
                                          std::vector<std::string> *info,
-                                         std::vector<GammaInteractionCalc::PeakDetail> *log_info ) const
+                                         std::vector<GammaInteractionCalc::PeakDetail> *log_info,
+                                         const std::vector<double> *eff_whitening ) const
 {
   //XXX - this function compares a lot of doubles, and this always makes me
   //      queezy - this should be checked on!
@@ -6570,10 +6630,30 @@ vector<PeakResultPlotInfo>
   if( log_info )
     eff_flags = peakDrfEffFlags();
 
+  // Use the fit's own forward model for the displayed prediction/pulls so they
+  //  match what was minimized - in particular cascade-summed volumetric sources,
+  //  which the descriptive `energy_count_map` above does not correct.  Fall back
+  //  to the map sum (override stays empty) if the model throws, so the report
+  //  never dies.
+  vector<double> imp_expected;
+  try
+  {
+    imp_expected = expected_peak_counts_imp<double>( x, mixturecache );
+  }catch( std::exception &e )
+  {
+    imp_expected.clear();
+#if( PERFORM_DEVELOPER_CHECKS )
+    log_developer_error( __func__, ("expected_peak_counts_imp threw, falling back to"
+                                    " descriptive map sum: " + string(e.what())).c_str() );
+#endif
+  }//try / catch
+
   return expected_observed_chis( m_peaks, m_backgroundPeaks, energy_count_map,
                           info, log_info,
                           eff_frac_uncerts.empty() ? nullptr : &eff_frac_uncerts,
-                          eff_flags.empty() ? nullptr : &eff_flags );
+                          eff_flags.empty() ? nullptr : &eff_flags,
+                          imp_expected.empty() ? nullptr : &imp_expected,
+                          eff_whitening );
 }//vector<PeakResultPlotInfo> energy_chi_contributions(...) const
 
   

@@ -583,6 +583,12 @@ namespace ShieldingSourceFitCalc
     
     std::unique_ptr<const std::vector<GammaInteractionCalc::PeakResultPlotInfo>> peak_comparisons;
 
+    /** The GLS whitening matrix L^{-1} (row-major n x n, n = number of peaks in `peak_comparisons`)
+     used to fold the detector-efficiency covariance into the fit and into the displayed pulls -
+     see `ShieldingSourceChi2Fcn::expected_observed_chis`.  Empty when detector-efficiency
+     uncertainty was not accounted for, or the covariance was unusable (statistics-only pulls). */
+    std::vector<double> efficiency_whitening;
+
     /** Diagnosis of the per-peak pull ("chi") trend vs energy - fitted trend curve(s) and an
      interpretation (too much/little shielding, wrong effective atomic number).  May be null if
      the analysis could not be run.  See ShieldSourcePullTrend.h.

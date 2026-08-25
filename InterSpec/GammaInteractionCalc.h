@@ -1174,6 +1174,11 @@ public:
    @param mixturecache Used to speed up multiple calls to this function, and may be empty at first.
    @param info If non-null, will be filled with computation notes.
    @param log_info If non-null, filled out with details about the computation.
+   @param eff_whitening If non-null, the GLS whitening matrix L^{-1} (row-major
+          n x n, n = number of included peaks) built from the detector-efficiency
+          covariance - see #expected_observed_chis.  When supplied, each peak's
+          reported `numSigmaOff` becomes the whitened residual so the displayed
+          pulls match what the (correlated) fit actually minimized.
    */
   typedef std::map< const SandiaDecay::Nuclide *, SandiaDecay::NuclideMixture> NucMixtureCache;
   std::vector<PeakResultPlotInfo> energy_chi_contributions(
@@ -1181,7 +1186,8 @@ public:
                                   const std::vector<double> &error_params,
                                   NucMixtureCache &mixturecache,
                                   std::vector<std::string> *info = nullptr,
-                                  std::vector<PeakDetail> *log_info = nullptr ) const;
+                                  std::vector<PeakDetail> *log_info = nullptr,
+                                  const std::vector<double> *eff_whitening = nullptr ) const;
 
   /** Templated (double or ceres::Jet<>) core of the expected-counts computation,
    used by the auto-differentiated (Ceres) fit; definitions are in
@@ -1538,6 +1544,22 @@ public:
   //  `eff_flags`, when non-null, holds the per-peak detector-efficiency
   //  validity flags (from #peakDrfEffFlags, same inclusion rule and order) to
   //  record on the PeakDetail log entries.
+  //  `expected_counts_override`, when non-null, supplies the per-peak expected
+  //  counts (from #expected_peak_counts_imp, the exact model the fit minimizes,
+  //  same inclusion rule and order) to use in place of the `energy_count_map`
+  //  sum.  This keeps the displayed prediction/pulls in lock-step with the fit
+  //  (notably for cascade-summed volumetric sources, which the map does not
+  //  correct).  The map sum is still computed to apportion counts among sources
+  //  and, under PERFORM_DEVELOPER_CHECKS, cross-checked against the override.
+  //  `eff_whitening`, when non-null, is the GLS whitening matrix L^{-1}
+  //  (row-major n x n, n = number of included peaks; Sigma = L L^T with
+  //  Sigma = diag(stat^2) + diag(obs).C_efffrac.diag(obs)).  When supplied,
+  //  each peak's reported `numSigmaOff` is replaced by the whitened residual
+  //  r_i = sum_{j<=i} L^{-1}(i,j)*(obs_j - exp_j), i.e. the exact per-peak
+  //  contribution the correlated fit minimizes - so displayed pulls center on
+  //  zero even when the near-field efficiency covariance is highly correlated.
+  //  (`eff_frac_uncerts` still governs the displayed observed-uncertainty
+  //  column; `eff_whitening` only supersedes the sigma-off value.)
   static std::vector<PeakResultPlotInfo> expected_observed_chis(
                               const std::vector<PeakDef> &peaks,
                               const std::vector<PeakDef> &backgroundPeaks,
@@ -1545,7 +1567,9 @@ public:
                               std::vector<std::string> *info = 0,
                               std::vector<GammaInteractionCalc::PeakDetail> *log_info = nullptr,
                               const std::vector<double> *eff_frac_uncerts = nullptr,
-                              const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags = nullptr );
+                              const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags = nullptr,
+                              const std::vector<double> *expected_counts_override = nullptr,
+                              const std::vector<double> *eff_whitening = nullptr );
 protected:
   
   void zombieCallback( const boost::system::error_code &ec );
