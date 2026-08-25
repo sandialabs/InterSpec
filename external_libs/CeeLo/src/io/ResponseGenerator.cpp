@@ -1909,6 +1909,14 @@ void ResponseGenerator::certify(DetectorResponse& resp,
 void ResponseGenerator::configure_calculator(
     EfficiencyCalculator& calc, const GeometryDescriptor& gd,
     std::vector<std::unique_ptr<Material>>& owned_materials) {
+    // Validate before instantiating anything, so a bad descriptor cannot leave
+    // half-built materials in the caller's vector (same ordering rule as
+    // GeometryDescriptor::build_geometry).
+    const std::vector<GeometryProblem> probs = gd.problems();
+    if (!probs.empty())
+        throw std::runtime_error(std::string("configure_calculator: ")
+                                 + to_string(probs.front()));
+
     // Instantiate the descriptor's material table; the calculator keeps raw
     // pointers, so the caller owns their lifetime via owned_materials.
     const size_t base = owned_materials.size();
@@ -1923,7 +1931,12 @@ void ResponseGenerator::configure_calculator(
 
     calc.set_detector(gd.shape, mat(gd.crystal_material_index),
                       gd.dimensions_cm);
-    if (gd.bore) calc.set_bore_hole(gd.bore->radius, gd.bore->depth);
+    // set_detector() clears the fillet/bore/dead layer, so declare them after
+    // it; fillet first, so bore_fits() sees the final crystal profile.
+    if (gd.bullet_radius_cm > 0.0) calc.set_bullet_radius(gd.bullet_radius_cm);
+    if (gd.bore)
+        calc.set_bore_hole(gd.bore->radius, gd.bore->depth,
+                           gd.bore->rounded_tip);
     if (gd.dead_layer)
         calc.set_dead_layer(gd.dead_layer->front, gd.dead_layer->side,
                             gd.dead_layer->back);

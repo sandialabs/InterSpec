@@ -52,7 +52,18 @@
 
 namespace ceelo {
 
-const int DetectorResponse::sm_xmlSerializationVersion = 1;
+// v2 added the crystal fillet radius and the rounded bore tip. A pre-v2 reader
+// would not merely lose them, it would MISREAD the file -- silently tracing a
+// sharp-edged, flat-bored crystal (worth up to ~30% efficiency at the worst
+// near-field angles) and computing a different content_hash than the writer.
+//
+// So the version is written PER FILE, not per build: serialize_xml() emits "1"
+// whenever every v2 field is at its default, and "2" only when a fillet or a
+// rounded tip is actually present. Old builds therefore keep reading every file
+// they can read correctly, and hard-fail (via the range test in from_xml)
+// on exactly the ones they would get wrong. Existing responses keep their bytes
+// and their hash. Follow this pattern for the next additive field.
+const int DetectorResponse::sm_xmlSerializationVersion = 2;
 
 namespace {
 
@@ -156,6 +167,13 @@ double attrib_double(const XmlNode* node, const char* name, double fallback) {
     return v ? std::strtod(v, nullptr) : fallback;
 }
 
+bool attrib_bool(const XmlNode* node, const char* name, bool fallback) {
+    const char* v = attrib_value(node, name);
+    if (!v) return fallback;
+    return (v[0] == '1' || v[0] == 't' || v[0] == 'T'
+            || v[0] == 'y' || v[0] == 'Y');
+}
+
 const char* child_value(const XmlNode* node, const char* name) {
     const XmlNode* c = node->first_node(name);
     return c ? c->value() : nullptr;
@@ -215,6 +233,16 @@ Geometry GeometryDescriptor::build_geometry(
         crystal_material_index >= static_cast<int>(materials.size()))
         throw std::runtime_error("GeometryDescriptor: bad crystal material index");
 
+    // Validate BEFORE rebuilding `owned`: finalize() assigns geometry_ only on
+    // success, so throwing after the clear would leave a previously-finalized
+    // response holding Material* into the vector we just freed. Geometry's own
+    // preconditions are asserts, so in a release build this is the only thing
+    // standing between a bad descriptor and a silently garbage trace.
+    const std::vector<GeometryProblem> probs = problems();
+    if (!probs.empty())
+        throw std::runtime_error(std::string("GeometryDescriptor: ")
+                                 + to_string(probs.front()));
+
     owned.clear();
     owned.reserve(materials.size());
     for (const MaterialSpec& spec : materials)
@@ -228,7 +256,10 @@ Geometry GeometryDescriptor::build_geometry(
 
     Geometry g;
     g.set_detector(shape, mat_at(crystal_material_index), dimensions_cm);
-    if (bore) g.set_bore_hole(bore->radius, bore->depth);
+    // set_detector() clears the fillet/bore/dead layer, so declare them after
+    // it; fillet first, so bore_fits() sees the final crystal profile.
+    if (bullet_radius_cm > 0.0) g.set_bullet_radius(bullet_radius_cm);
+    if (bore) g.set_bore_hole(bore->radius, bore->depth, bore->rounded_tip);
     if (dead_layer)
         g.set_dead_layer(dead_layer->front, dead_layer->side, dead_layer->back);
     for (const LayerSpec& l : layers)
@@ -239,6 +270,142 @@ Geometry GeometryDescriptor::build_geometry(
                          collimator->side_thickness_cm, collimator->z_start_cm,
                          collimator->z_end_cm);
     return g;
+}
+
+const char* to_string(GeometryProblem p) {
+    switch (p) {
+        case GeometryProblem::DimensionsMissing:
+            return "the crystal dimensions are missing (need radius+length, or 3 half-widths)";
+        case GeometryProblem::DeadLayerTooThick:
+            return "the dead layer consumes the whole crystal";
+        case GeometryProblem::BulletOnNonCylinder:
+            return "a front-edge fillet needs a cylindrical crystal";
+        case GeometryProblem::BulletNotFinite:
+            return "the front-edge fillet radius is not a finite, non-negative length";
+        case GeometryProblem::BulletTooWide:
+            return "the front-edge fillet radius is not less than the crystal radius";
+        case GeometryProblem::BulletTooLong:
+            return "the front-edge fillet radius is not less than the crystal length";
+        case GeometryProblem::BulletNoDeadLayerRoom:
+            return "the dead layer leaves no room for the front-edge fillet";
+        case GeometryProblem::BoreOnNonCylinder:
+            return "a bore hole needs a cylindrical crystal";
+        case GeometryProblem::BoreNotFinite:
+            return "the bore radius and depth are not finite, positive lengths";
+        case GeometryProblem::BoreTooWide:
+            return "the bore radius is not less than the crystal radius";
+        case GeometryProblem::BoreTooDeep:
+            return "the bore depth is not less than the crystal length";
+        case GeometryProblem::BoreTipTooBlunt:
+            return "a rounded bore tip needs the bore at least as deep as its radius";
+        case GeometryProblem::BoreOutsideFillet:
+            return "the bore ends where the filleted crystal is narrower than the bore";
+        case GeometryProblem::BoreInsideDeadLayer:
+            return "the bore radius is not less than the active (post dead layer) radius";
+    }
+    assert(0 && "unhandled GeometryProblem");
+    return "invalid geometry";
+}
+
+std::vector<GeometryProblem> GeometryDescriptor::problems() const {
+    std::vector<GeometryProblem> out;
+
+    const bool cyl = (shape == DetectorShape::Cylinder);
+    const double R = (cyl && dimensions_cm.size() > 0) ? dimensions_cm[0] : 0.0;
+    const double L = cyl ? (dimensions_cm.size() > 1 ? dimensions_cm[1] : 0.0)
+                         : (dimensions_cm.size() > 2 ? dimensions_cm[2] : 0.0);
+    const double df = dead_layer ? dead_layer->front : 0.0;
+    const double ds = dead_layer ? dead_layer->side : 0.0;
+    const double db = dead_layer ? dead_layer->back : 0.0;
+    const double rb = bullet_radius_cm;
+
+    // --- crystal itself: set_detector() indexes dimensions_cm unchecked ---
+    // Its only guard is assert(size() >= 2 / >= 3), so a short vector (a saved
+    // response with a missing or truncated <Dimensions>) would read past the
+    // end of the vector in a release build.
+    const size_t need = cyl ? 2u : 3u;
+    if (dimensions_cm.size() < need) {
+        out.push_back(GeometryProblem::DimensionsMissing);
+        return out;   // every check below reads R / L
+    }
+
+    // A dead layer at least as thick as the crystal leaves the tracer working
+    // on a negative-extent solid. Checked here rather than only inside the
+    // fillet branch, since it is wrong with or without a fillet. NOTE the
+    // transverse extent is shape-dependent -- R is meaningless for a box, and
+    // using it here would reject every box outright.
+    const double half_extent = cyl ? R
+                                   : std::min(dimensions_cm[0], dimensions_cm[1]);
+    if (!std::isfinite(half_extent) || !std::isfinite(L)
+        || half_extent <= 0.0 || L <= 0.0
+        || (half_extent - ds) <= 0.0 || (L - df - db) <= 0.0)
+        out.push_back(GeometryProblem::DeadLayerTooThick);
+
+    // --- front-edge fillet: Geometry::set_bullet_radius asserts ---
+    // Anything but an exact 0 is a request for a fillet, so negatives and NaN
+    // get reported rather than silently reading as "sharp edge".
+    if (rb != 0.0) {
+        if (!cyl) {
+            out.push_back(GeometryProblem::BulletOnNonCylinder);
+        } else if (!std::isfinite(rb) || rb < 0.0) {
+            out.push_back(GeometryProblem::BulletNotFinite);
+        } else {
+            if (rb >= R) out.push_back(GeometryProblem::BulletTooWide);
+            if (rb >= L) out.push_back(GeometryProblem::BulletTooLong);
+            // The active volume gets the fillet offset inward by the dead
+            // layer; trace_cylinder_geometry asserts it still has room.
+            const double dl_r = R - ds;
+            const double rba = std::max(0.0, rb - std::max(df, ds));
+            if (!(dl_r > 0.0 && rba < dl_r && (df + rba) <= (L - db)))
+                out.push_back(GeometryProblem::BulletNoDeadLayerRoom);
+        }
+    }
+
+    // --- bore: Geometry::set_bore_hole asserts, plus the active-radius one
+    // that RayTrace relies on but no assert covers ---
+    if (bore) {
+        const double br = bore->radius;
+        const double bd = bore->depth;
+        if (!cyl) {
+            out.push_back(GeometryProblem::BoreOnNonCylinder);
+        } else if (!std::isfinite(br) || !std::isfinite(bd)
+                   || br <= 0.0 || bd <= 0.0) {
+            out.push_back(GeometryProblem::BoreNotFinite);
+        } else {
+            if (br >= R) out.push_back(GeometryProblem::BoreTooWide);
+            if (bd >= L) out.push_back(GeometryProblem::BoreTooDeep);
+            if (bore->rounded_tip && br > bd)
+                out.push_back(GeometryProblem::BoreTipTooBlunt);
+            // Only meaningful once the bore is narrower than the crystal:
+            // bore_fits() returns false for br >= R too, and blaming that on
+            // the fillet would make relaxGeometryFeatures() drop a perfectly
+            // good fillet for a problem it cannot fix.
+            if (br < R && rb > 0.0 && std::isfinite(rb)) {
+                // The outer solid, and then the dead-layer-offset active solid
+                // -- which carries a tighter fillet (radius rb - max(df,ds)
+                // about a centre at z = df), so it can be violated when the
+                // outer one is not. trace_cylinder_geometry cuts the bore out
+                // of that one.
+                const double act_r = R - ds;
+                const double act_len = L - df - db;
+                const double act_rb = std::max(0.0, rb - std::max(df, ds));
+                if (!bore_fits(br, bd, R, L, rb)
+                    || (act_r > 0.0 && act_len > 0.0
+                        && !bore_fits(br, bd - db, act_r, act_len, act_rb)))
+                    out.push_back(GeometryProblem::BoreOutsideFillet);
+            }
+            // trace_cylinder_geometry cuts the bore out of the ACTIVE cylinder
+            // (radius R - side dead layer), which set_bore_hole never checks.
+            // No assert covers this: such a bore simply yields zero active
+            // volume. Rejecting is a deliberate policy choice -- a response
+            // that silently computes zero efficiency is worse than one that
+            // refuses to load -- so unlike the fillet it is NOT relaxable.
+            if (br >= (R - ds))
+                out.push_back(GeometryProblem::BoreInsideDeadLayer);
+        }
+    }
+
+    return out;
 }
 
 double GeometryDescriptor::transverse_half_extent() const {
@@ -259,7 +426,14 @@ double GeometryDescriptor::transverse_half_extent() const {
 
 double GeometryDescriptor::endcap_front_offset_cm() const {
     double front = 0.0;
-    if (dead_layer) front += dead_layer->front;
+    // ONLY the attenuator shells: they are what stands between the endcap front
+    // and the crystal. The dead layer must NOT be added -- it is carved out of
+    // the INSIDE of the crystal solid (trace_cylinder_geometry insets the
+    // active volume within [0, L]; the solid still starts at z = 0), so it does
+    // not push the crystal face away from the endcap. Adding it made
+    // query_position() place every EndcapFront-referenced source one dead-layer
+    // thickness too far away -- ~0.7 mm on a typical HPGe, worth ~3% of the
+    // efficiency at contact geometry, and nothing at all in the far field.
     for (const LayerSpec& l : layers) front += l.front_thickness_cm;
     // A collimator extending past the face does NOT define the endcap front
     // (it is an open tube); the reference plane is the front surface stack.
@@ -1121,8 +1295,14 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
     XmlNode* root = doc.allocate_node(rapidxml::node_element, "CeeLoResponse");
     doc.append_node(root);
     {
+        // Lowest version that can read this file correctly -- see the comment on
+        // sm_xmlSerializationVersion. Only a file that actually carries a v2
+        // field is stamped v2, so responses that predate the fillet keep their
+        // exact bytes (and content_hash) and stay loadable by older builds.
+        const bool needs_v2 = (descriptor.bullet_radius_cm > 0.0)
+                              || (descriptor.bore && descriptor.bore->rounded_tip);
         char buf[16];
-        std::snprintf(buf, sizeof(buf), "%i", sm_xmlSerializationVersion);
+        std::snprintf(buf, sizeof(buf), "%i", needs_v2 ? 2 : 1);
         append_attrib(doc, root, "version", buf);
     }
 
@@ -1162,10 +1342,18 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
                           ? "quadrant" : "axial");
         append_value_node(doc, d, "Dimensions",
                           join_doubles(descriptor.dimensions_cm));
+        // Both of the following are written only when non-default, so files
+        // for sharp-edged, flat-bored crystals stay byte-identical (and keep
+        // their content_hash) across this feature being added.
+        if (descriptor.bullet_radius_cm > 0.0)
+            append_attrib(doc, d, "bulletRadius",
+                          fmt_double(descriptor.bullet_radius_cm));
         if (descriptor.bore) {
             XmlNode* b = append_node(doc, d, "Bore");
             append_attrib(doc, b, "radius", fmt_double(descriptor.bore->radius));
             append_attrib(doc, b, "depth", fmt_double(descriptor.bore->depth));
+            if (descriptor.bore->rounded_tip)
+                append_attrib(doc, b, "roundedTip", "1");
         }
         if (descriptor.dead_layer) {
             XmlNode* dl = append_node(doc, d, "DeadLayer");
@@ -1405,10 +1593,14 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
         gd.symmetry = (sym && std::strcmp(sym, "quadrant") == 0)
                           ? ResponseSymmetry::Quadrant : ResponseSymmetry::Axial;
         gd.dimensions_cm = parse_doubles(child_value(d, "Dimensions"));
+        // Absent in files written before the fillet/rounded-tip feature; the
+        // defaults are what those crystals actually were.
+        gd.bullet_radius_cm = attrib_double(d, "bulletRadius", 0.0);
         if (const XmlNode* b = d->first_node("Bore")) {
             BoreHoleConfig bc;
             bc.radius = attrib_double(b, "radius", 0.0);
             bc.depth = attrib_double(b, "depth", 0.0);
+            bc.rounded_tip = attrib_bool(b, "roundedTip", false);
             gd.bore = bc;
         }
         if (const XmlNode* dl = d->first_node("DeadLayer")) {

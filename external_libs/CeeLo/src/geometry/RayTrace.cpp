@@ -69,23 +69,8 @@ void Geometry::set_detector(DetectorShape shape, const Material* material,
     }
 }
 
-/// The bore must stay inside the crystal wall over its whole depth.  With a
-/// bulletized front edge the crystal narrows to `radius_ - bullet_radius` near
-/// the front face, so a deep enough bore can be admissible against the full
-/// radius and still be wider than the crystal where it ends.
-static bool bore_fits(double bore_radius, double bore_depth,
-                      double radius, double length, double bullet_radius) {
-    if (bore_radius >= radius) return false;
-    if (bullet_radius <= 0.0) return true;
-    const double z_bore_start = length - bore_depth;   // apex, from the front
-    if (z_bore_start >= bullet_radius) return true;    // ends behind the fillet
-    // Crystal radius at the bore's apex, on the fillet arc.
-    const double rho_c = radius - bullet_radius;
-    const double dz = bullet_radius - z_bore_start;
-    const double r_here = rho_c + std::sqrt(std::max(
-        0.0, bullet_radius * bullet_radius - dz * dz));
-    return bore_radius < r_here;
-}
+// bore_fits() now lives in Geometry.h so GeometryDescriptor::problems() can
+// apply the same admissibility test these asserts do.
 
 void Geometry::set_bore_hole(double bore_radius, double bore_depth,
                              bool rounded_tip) {

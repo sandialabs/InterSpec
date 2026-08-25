@@ -147,6 +147,57 @@ visualization/      Dependency-free WebGL viewer for exported GDML geometries
 
 - **Compton scattering**: Butcher-Messel method (same as GEANT4 G4LowEPComptonModel) for the scattering angle, with S(x,Z) bound-electron rejection. A previous implementation using Kahn's method had a subtle bug that caused +5-7% FEP overestimates. The scattered-photon energy is Doppler-broadened by the bound electron's momentum (impulse approximation, analytic subshell profiles) — see Known Limitations → Doppler broadening.
 
+### Distances, frames and reference points
+
+Every distance in CeeLo is one of three things, and confusing them is the single
+easiest way to introduce a silent few-percent bias. They do not crash and no
+test of internal self-consistency catches them — only a comparison against an
+external truth does.
+
+- **The crystal frame.** The one frame the tracer works in. `z = 0` is the front
+  face of the **crystal solid**, `z = L` its back face; a source in front is at
+  **negative z**. Radial distance is from the symmetry axis.
+
+- **The dead layer is carved out of the inside of the crystal.** With a dead
+  layer the solid still spans `[0, L]` at radius `R`; only the *active* volume
+  shrinks, to `[t_front, L - t_back]` and radius `R - t_side`. Two consequences
+  that have each already caused a bug: the crystal face stays at `z = 0` no
+  matter how thick the dead layer is, and **a dead layer must never be added to
+  an outward distance**. "The front of the crystal" and "the front of the active
+  volume" are different planes `t_front` apart — always say which you mean.
+
+- **Only attenuator shells sit in front of the crystal.** Each extends its front
+  thickness toward negative z, so the outermost front surface — the "endcap
+  front", the face a user can touch — is at `z = -Σ(layer front thicknesses)`.
+
+`ReferencePoint` selects which plane a caller's `dist_cm` is measured from, and
+`GeometryDescriptor::endcap_front_offset_cm()` is the **only** conversion
+between them, applied in `DetectorResponse::query_position()`. Anything else
+building a source position from a user distance must go through that function or
+reproduce it exactly.
+
+That function used to add the dead layer to the offset, which placed every
+`EndcapFront`-referenced source one dead-layer thickness too far from the
+crystal — ~0.7 mm on a typical HPGe. In the far field that is invisible; at
+contact geometry it is a near-uniform ~3 % efficiency deficit above ~100 keV,
+which is exactly what it looked like when finally caught against ANGLE's own
+numbers for a GEM35-70 (`EFFTRAN` vs ANGLE went from a 2.5 % median error to
+0.9 % when it was fixed). Below ~50 keV it does not show up at all: the crystal
+is effectively large enough there that its solid angle has saturated and is
+insensitive to a fraction of a millimetre.
+
+Two nearby functions look like the same bug and are **not** — do not "fix" them:
+
+| function | includes dead layer? | why |
+|---|---|---|
+| `endcap_front_offset_cm()` | **no** (fixed) | a real distance, query-time only, so correcting it costs nothing |
+| `transverse_half_extent()` | yes, deliberately | a *scale parameter*, not a dimension; computed identically at generation and query time, so changing it desynchronises stored responses |
+| `Geometry::outer_bounding_radius()` | yes, deliberately | a sampling *bound*; over-estimating is safe, under-estimating loses paths |
+
+The rule of thumb: if a quantity is used at generation **and** query it is a
+model parameter and must not change; if it is used only at query time it is an
+interpretation and can be corrected.
+
 ### Geometry
 
 - **Detector shapes**: Cylinder and box. Defined by dimensions (radius+length or x/y/z half-widths). Crystal front face at z=0, extends along +z.
@@ -162,6 +213,10 @@ visualization/      Dependency-free WebGL viewer for exported GDML geometries
   **Performance**: sharp crystals pay one predicate (`bullet_radius_ > 0.0`) and take the original code paths, verified bit-identical on fixed-seed runs of a bare-NaI and a bored-HPGe geometry. Timing on config 1 (2M events, single thread, min of 3) went 9.03 s -> 8.20 s across the change: no regression -- the small speedup is a code-layout side effect, since the results are unchanged bit for bit.
 
 - **Rounded bore tip**: `set_bore_hole(r, depth, rounded_tip=true)` caps the bore's closed end with a hemisphere of the bore radius (a round-tipped drill; ANGLE's `<core rounded="yes"/>`). The stated depth is preserved -- the hemisphere's apex sits where the flat bottom would -- so rounding returns `pi r^3 / 3` of crystal (0.13 cm³, ~0.07%, for the GEM35-70 bore). The capped bore is convex and its upper half lies inside the straight part, so the ray interval is just the hull of the straight tube's and the ball's intervals: a closed-form quadratic, no iteration.
+
+- **Stored geometry (`GeometryDescriptor`)**: the serializable form of all of the above, and the only thing a saved response carries -- `build_geometry()` (and `ResponseGenerator::configure_calculator()`) replay it onto a `Geometry` / `EfficiencyCalculator`. It holds `bullet_radius_cm` alongside `dimensions_cm`, and the rounded-tip flag inside its `BoreHoleConfig`. Both are written to XML only when non-default (`bulletRadius` on `<Detector>`, `roundedTip` on `<Bore>`), so responses for sharp-edged, flat-bored crystals keep their exact bytes and `content_hash`; a reader that predates the attributes, or a file that predates them, defaults to sharp-and-flat, which is what those crystals actually were. `sm_xmlSerializationVersion` is deliberately **not** bumped for such purely additive attributes -- the only version logic is a range check, so a higher version would be rejected outright by existing builds instead of degrading gracefully.
+
+  `Geometry`'s preconditions (fillet vs radius/length/dead layer, bore vs radius/depth/fillet) are `assert`s, so a bad descriptor would trace silent garbage in a release build. `GeometryDescriptor::problems()` is the release-safe mirror of those asserts, plus the cases they miss: a `dimensions_cm` too short for the shape (`set_detector` only asserts its length, then indexes it), a dead layer that consumes the crystal, a bore wider than the *active* radius `R - t_side`, and a bore that clears the outer fillet but not the dead-layer-offset *active* fillet. The last two are policy as much as mirroring -- they produce zero active volume rather than tripping an assert, and refusing to load beats silently computing zero efficiency. `build_geometry()` and `configure_calculator()` both run it and throw. Callers building geometry from user input or an imported file should consult it first and report or relax rather than throw (InterSpec's ANGLE import drops an unrepresentable fillet or rounded tip, with a warning, instead of failing the import).
 
 - **Attenuators** (detector shielding): Cup-shaped shells around the crystal, added via `add_attenuator(material, front_thickness, side_thickness, z_start, z_end)`. These are concentric -- each layer wraps around the previous. Attenuators are part of the detector geometry and are always traversed in ray tracing.
 

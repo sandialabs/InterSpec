@@ -173,15 +173,56 @@ enum class ResponseSymmetry : uint8_t {
     Quadrant   ///< boxes: phi axis over one quadrant (reflect by symmetry)
 };
 
-/// Which point distances are measured from. Distances and the kernel must
-/// share one origin -- mismatch silently corrupts everything (master plan
-/// sec 3.2 warning). InterSpec's user-facing convention is the front of the
-/// outermost front surface ("endcap front"); the crystal frame puts the
-/// crystal face at z = 0.
+/// Which plane a caller's `dist_cm` is measured FROM. Distances and the kernel
+/// must share one origin -- a mismatch silently corrupts everything (master
+/// plan sec 3.2 warning) rather than failing.
+///
+/// Both data below are planes perpendicular to the axis, and BOTH are measured
+/// to the source, so a larger value always means further away:
+///
+///   CrystalFace  -- the front face of the CRYSTAL SOLID, z = 0 in the crystal
+///                   frame. NOT the front of the active volume: with a dead
+///                   layer the active volume starts a further t_front behind
+///                   this plane (see Geometry::set_dead_layer).
+///   EndcapFront  -- the outermost front surface of the attenuator stack, i.e.
+///                   the face a user can physically touch. This is InterSpec's
+///                   user-facing convention. It sits
+///                   endcap_front_offset_cm() in FRONT of CrystalFace.
+///
+/// The conversion between them is GeometryDescriptor::endcap_front_offset_cm(),
+/// applied in DetectorResponse::query_position(). Nothing else should be doing
+/// that arithmetic by hand.
 enum class ReferencePoint : uint8_t {
     CrystalFace,
     EndcapFront
 };
+
+/// Ways a GeometryDescriptor violates a Geometry/RayTrace precondition.
+///
+/// Those preconditions are asserts, so they vanish in a release build and a
+/// violating descriptor traces silent garbage instead of failing. Every
+/// descriptor must therefore be run through GeometryDescriptor::problems()
+/// before it reaches a Geometry.
+enum class GeometryProblem : uint8_t {
+    DimensionsMissing,     ///< dimensions_cm too short for the shape
+    BulletOnNonCylinder,   ///< fillet requested on a box
+    BulletNotFinite,       ///< NaN / inf / negative
+    BulletTooWide,         ///< bullet_radius_cm >= crystal radius (rho_c <= 0)
+    BulletTooLong,         ///< bullet_radius_cm >= crystal length
+    BulletNoDeadLayerRoom, ///< dead layer leaves no active fillet
+    DeadLayerTooThick,     ///< dead layer consumes the whole crystal
+    BoreOnNonCylinder,
+    BoreNotFinite,
+    BoreTooWide,           ///< bore radius >= crystal radius
+    BoreTooDeep,           ///< bore depth >= crystal length
+    BoreTipTooBlunt,       ///< rounded_tip && radius > depth
+    BoreOutsideFillet,     ///< bore_fits() fails against the fillet
+    BoreInsideDeadLayer    ///< bore radius >= (crystal radius - side dead layer)
+};
+
+/// Short English description of `p`; for developer-facing messages (InterSpec
+/// maps the enum onto its own localized strings).
+const char* to_string(GeometryProblem p);
 
 /// The storable geometry: shape, dimensions, bore, dead layer, layers,
 /// collimator, symmetry, reference point + the material table they index.
@@ -189,6 +230,11 @@ struct GeometryDescriptor {
     DetectorShape shape = DetectorShape::Cylinder;
     /// Cylinder: {radius, length}; Box: {half_x, half_y, length} (cm).
     std::vector<double> dimensions_cm;
+    /// Cylinder only: quarter-torus fillet radius on the outer FRONT edge
+    /// ("bulletization", ANGLE's `bulletizingRadius`), cm. 0 = a sharp
+    /// 90-degree edge -- the default, and bit-for-bit the pre-feature trace.
+    /// Must be < radius and < length; see problems().
+    double bullet_radius_cm = 0.0;
     int crystal_material_index = -1;
     std::optional<BoreHoleConfig> bore;          ///< coax HPGe finger
     std::optional<DeadLayerConfig> dead_layer;   ///< cm, crystal material
@@ -203,18 +249,38 @@ struct GeometryDescriptor {
     /// the Geometry (DetectorResponse holds both).
     Geometry build_geometry(std::vector<std::unique_ptr<Material>>& owned) const;
 
-    /// Transverse half-extent a of the outermost shell (cylinder: outer
-    /// radius; box: half-diagonal) -- the near/far regime parameter.
+    /// Transverse half-extent `a` -- the near/far regime SCALE PARAMETER
+    /// (cylinder: outer radius; box: half-diagonal), not a physical dimension.
+    ///
+    /// It intentionally includes the side dead layer, even though the dead
+    /// layer is internal to the crystal (Geometry::set_dead_layer), so it runs
+    /// slightly large. That is harmless and must stay: `a` is computed from the
+    /// descriptor at BOTH generation time (ResponseGenerator picks its far
+    /// reference distance as far_distance_a * a) and query time (the
+    /// near-regime test is d < near_regime_a * a). Changing the value would
+    /// desynchronise every already-generated response from the code that made
+    /// it. Contrast endcap_front_offset_cm(), which is query-time only and so
+    /// could be -- and was -- corrected in place.
+    ///
+    /// If you need a true physical outer radius, sum the layer side
+    /// thicknesses onto dimensions_cm yourself; do not use this.
     double transverse_half_extent() const;
 
-    /// Crystal length + front stack: |z_min| of the outermost front surface,
-    /// i.e. the (positive) offset from the endcap front to the crystal face.
+    /// |z_min| of the outermost front surface: the (positive) offset from the
+    /// endcap front to the CRYSTAL SOLID's face (z = 0), i.e. the summed front
+    /// thicknesses of the attenuator shells. The dead layer is deliberately
+    /// excluded -- it is carved out of the inside of the crystal, so it sets
+    /// where the ACTIVE volume starts, not where the crystal face is.
     double endcap_front_offset_cm() const;
 
     /// Crystal K-edges within (e_min, e_max) keV -- the mandatory segment
     /// breaks for any ln-eta(E) interpolation (both flanks become nodes).
     std::vector<double> crystal_k_edges(double e_min_keV,
                                         double e_max_keV) const;
+
+    /// Every Geometry/RayTrace precondition this descriptor violates; empty
+    /// means it is safe to build. See GeometryProblem.
+    std::vector<GeometryProblem> problems() const;
 };
 
 // ---------------------------------------------------------------------------
@@ -545,8 +611,17 @@ public:
     const Geometry& geometry() const { return geometry_; }
     double transverse_half_extent() const { return descriptor.transverse_half_extent(); }
 
-    /// Convert a (theta, phi, distance-from-reference-point) query to a
-    /// source position in the crystal-face frame (z = 0 at crystal face).
+    /// Convert a (theta, phi, distance-from-reference-point) query to a source
+    /// position in the crystal frame (z = 0 at the CRYSTAL SOLID's face, source
+    /// in front at negative z).
+    ///
+    /// `dist_cm` is interpreted in descriptor.reference_point's convention;
+    /// this is the ONLY place that applies endcap_front_offset_cm(). Every
+    /// caller that builds a source position from a user-supplied distance must
+    /// go through here (or reproduce it exactly, as
+    /// CeeLoUtils::makeTransferResponse does for the anchor position) --
+    /// otherwise the response is queried at a different place than it was
+    /// generated for, which biases results silently.
     Eigen::Vector3d query_position(double theta_rad, double phi_rad,
                                    double dist_cm) const;
 

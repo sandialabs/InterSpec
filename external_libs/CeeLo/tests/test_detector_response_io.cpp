@@ -36,7 +36,11 @@
 
 #include <Eigen/Core>
 #include <cmath>
+#include <limits>
+#include <memory>
 #include <vector>
+#include <algorithm>
+#include <stdexcept>
 
 using namespace ceelo;
 
@@ -386,6 +390,10 @@ BOOST_AUTO_TEST_CASE(sigma_transfer_shape) {
 
 BOOST_AUTO_TEST_CASE(xml_round_trip_bit_stable) {
     auto r = make_synthetic_nai(0.5, /*with_grounding=*/true);
+    // Give the crystal a filleted front edge and a round-tipped bore so the
+    // equality/hash checks below actually cover those two attributes.
+    r->descriptor.bullet_radius_cm = 0.8;
+    r->descriptor.bore = BoreHoleConfig{0.495, 5.54, /*rounded_tip=*/true};
     // Exercise the optional blocks too: a small 2 x 3 x 4 near-field table.
     NearFieldModel& nf = r->near_field;
     nf.energies_keV = {60.0, 662.0};
@@ -398,6 +406,7 @@ BOOST_AUTO_TEST_CASE(xml_round_trip_bit_stable) {
     nf.break_cos_thetas = {0.02, 1.0};
     nf.break_d_cm = {8.0, 6.0, 7.0, 5.0};
     nf.finalize();   // r was finalized before these fields were set
+    r->finalize();   // ...and so was the geometry, before the bore/fillet above
 
     const std::string xml1 = r->to_xml_string();
     std::shared_ptr<DetectorResponse> r2 = DetectorResponse::from_xml_string(xml1);
@@ -413,6 +422,306 @@ BOOST_AUTO_TEST_CASE(xml_round_trip_bit_stable) {
         BOOST_CHECK_CLOSE(a.sigma, b.sigma, 1e-12);
         BOOST_CHECK(a.flag == b.flag);
     }
+}
+
+// --- GeometryDescriptor::problems() -----------------------------------------
+//
+// These live here rather than in test_geometry.cpp because GeometryDescriptor
+// is part of the io layer, which test_geometry does not link.
+
+namespace {
+
+/// The ANGLE GEM35-70: R = 2.915, L = 6.89, 8 mm fillet, 4.95 mm rounded bore
+/// 55.4 mm deep, 0.7 mm dead layer.  A real, legal crystal.
+GeometryDescriptor gem35_descriptor() {
+    GeometryDescriptor gd;
+    gd.shape = DetectorShape::Cylinder;
+    gd.dimensions_cm = {2.915, 6.89};
+    gd.bullet_radius_cm = 0.8;
+    gd.bore = BoreHoleConfig{0.495, 5.54, /*rounded_tip=*/true};
+    gd.dead_layer = DeadLayerConfig{0.07, 0.07003, 0.0};
+    gd.crystal_material_index = 0;
+    gd.materials = {MaterialSpec::from(make_HPGe())};
+    return gd;
+}
+
+bool has_problem(const GeometryDescriptor& gd, GeometryProblem p) {
+    const std::vector<GeometryProblem> probs = gd.problems();
+    return std::find(probs.begin(), probs.end(), p) != probs.end();
+}
+
+} // namespace
+
+BOOST_AUTO_TEST_CASE(problems_accepts_real_gem35) {
+    const GeometryDescriptor gd = gem35_descriptor();
+    BOOST_CHECK(gd.problems().empty());
+    // ...and it really does build, asserts and all.
+    std::vector<std::unique_ptr<Material>> owned;
+    BOOST_CHECK_NO_THROW(gd.build_geometry(owned));
+}
+
+BOOST_AUTO_TEST_CASE(problems_flags_bad_fillet) {
+    {   // A fillet is a cylinder feature.
+        GeometryDescriptor gd = gem35_descriptor();
+        gd.shape = DetectorShape::Box;
+        gd.dimensions_cm = {2.0, 2.0, 6.89};
+        gd.bore.reset();
+        BOOST_CHECK(has_problem(gd, GeometryProblem::BulletOnNonCylinder));
+    }
+    {   // NaN must be caught rather than compared its way past every test.
+        GeometryDescriptor gd = gem35_descriptor();
+        gd.bullet_radius_cm = std::numeric_limits<double>::quiet_NaN();
+        BOOST_CHECK(has_problem(gd, GeometryProblem::BulletNotFinite));
+    }
+    {   // rho_c = R - r_b must stay positive.
+        GeometryDescriptor gd = gem35_descriptor();
+        gd.bullet_radius_cm = 3.0;
+        BOOST_CHECK(has_problem(gd, GeometryProblem::BulletTooWide));
+    }
+    {   // A squat crystal: the fillet is admissible radially but not axially.
+        GeometryDescriptor gd = gem35_descriptor();
+        gd.dimensions_cm = {5.0, 1.0};
+        gd.bullet_radius_cm = 2.0;
+        gd.bore.reset();
+        gd.dead_layer.reset();
+        BOOST_CHECK(has_problem(gd, GeometryProblem::BulletTooLong));
+    }
+    {   // The dead layer offsets the fillet inward until it no longer fits.
+        GeometryDescriptor gd = gem35_descriptor();
+        gd.dimensions_cm = {2.915, 0.5};
+        gd.bullet_radius_cm = 0.4;
+        gd.bore.reset();
+        gd.dead_layer = DeadLayerConfig{0.2, 0.05, 0.2};
+        BOOST_CHECK(has_problem(gd, GeometryProblem::BulletNoDeadLayerRoom));
+    }
+}
+
+BOOST_AUTO_TEST_CASE(problems_flags_bad_bore) {
+    {
+        GeometryDescriptor gd = gem35_descriptor();
+        gd.shape = DetectorShape::Box;
+        gd.dimensions_cm = {2.0, 2.0, 6.89};
+        gd.bullet_radius_cm = 0.0;
+        BOOST_CHECK(has_problem(gd, GeometryProblem::BoreOnNonCylinder));
+    }
+    {
+        GeometryDescriptor gd = gem35_descriptor();
+        gd.bore = BoreHoleConfig{0.0, 5.54};
+        BOOST_CHECK(has_problem(gd, GeometryProblem::BoreNotFinite));
+    }
+    {
+        GeometryDescriptor gd = gem35_descriptor();
+        gd.bore = BoreHoleConfig{3.0, 5.54};
+        BOOST_CHECK(has_problem(gd, GeometryProblem::BoreTooWide));
+    }
+    {
+        GeometryDescriptor gd = gem35_descriptor();
+        gd.bore = BoreHoleConfig{0.495, 7.0};
+        BOOST_CHECK(has_problem(gd, GeometryProblem::BoreTooDeep));
+    }
+    {   // The tip hemisphere has to fit inside the bore it caps.
+        GeometryDescriptor gd = gem35_descriptor();
+        gd.bore = BoreHoleConfig{0.6, 0.5, /*rounded_tip=*/true};
+        BOOST_CHECK(has_problem(gd, GeometryProblem::BoreTipTooBlunt));
+    }
+    {   // Deep enough that the bore ends inside the fillet, where the crystal
+        // has narrowed to less than the bore radius.  Admissible against the
+        // full radius, which is exactly why bore_fits() exists.
+        GeometryDescriptor gd = gem35_descriptor();
+        gd.bore = BoreHoleConfig{2.85, 6.5};
+        gd.dead_layer.reset();
+        BOOST_REQUIRE_LT(gd.bore->radius, gd.dimensions_cm[0]);
+        BOOST_CHECK(has_problem(gd, GeometryProblem::BoreOutsideFillet));
+    }
+    {   // RayTrace cuts the bore out of the ACTIVE cylinder, so the side dead
+        // layer -- not the full radius -- is what the bore has to fit inside.
+        GeometryDescriptor gd = gem35_descriptor();
+        gd.bullet_radius_cm = 0.0;
+        gd.bore = BoreHoleConfig{2.5, 5.54};
+        gd.dead_layer = DeadLayerConfig{0.07, 0.5, 0.0};
+        BOOST_REQUIRE_LT(gd.bore->radius, gd.dimensions_cm[0]);
+        BOOST_CHECK(has_problem(gd, GeometryProblem::BoreInsideDeadLayer));
+    }
+}
+
+// build_geometry()/configure_calculator() must fail loudly in a release build,
+// where the Geometry asserts these mirror are compiled out.
+BOOST_AUTO_TEST_CASE(build_geometry_rejects_illegal_descriptor) {
+    GeometryDescriptor gd = gem35_descriptor();
+    gd.bullet_radius_cm = 3.0;   // >= crystal radius
+    std::vector<std::unique_ptr<Material>> owned;
+    BOOST_CHECK_THROW(gd.build_geometry(owned), std::runtime_error);
+}
+
+// set_detector() indexes dimensions_cm behind nothing but an assert, so a
+// truncated <Dimensions> would read past the end of the vector in a release
+// build. Catching it is the whole reason problems() exists.
+BOOST_AUTO_TEST_CASE(problems_flags_short_dimensions) {
+    GeometryDescriptor gd = gem35_descriptor();
+    gd.bore.reset();
+    gd.bullet_radius_cm = 0.0;
+    gd.dead_layer.reset();
+    for (const size_t n : {size_t(0), size_t(1)}) {
+        gd.dimensions_cm.assign(n, 2.915);
+        BOOST_CHECK_MESSAGE(has_problem(gd, GeometryProblem::DimensionsMissing),
+                            "dimensions_cm of size " << n << " must be reported");
+        std::vector<std::unique_ptr<Material>> owned;
+        BOOST_CHECK_THROW(gd.build_geometry(owned), std::runtime_error);
+    }
+    // A box needs three.
+    gd.shape = DetectorShape::Box;
+    gd.dimensions_cm = {2.0, 2.0};
+    BOOST_CHECK(has_problem(gd, GeometryProblem::DimensionsMissing));
+}
+
+// --- distance / reference-point conventions ---------------------------------
+//
+// These pin the rules documented in Geometry.h and DESIGN.md. The failure they
+// guard against is silent: nothing crashes, every internal self-consistency
+// check still passes, and only a comparison against external truth shows the
+// few-percent bias. So they are asserted here explicitly.
+BOOST_AUTO_TEST_CASE(endcap_offset_excludes_the_dead_layer) {
+    GeometryDescriptor gd = gem35_descriptor();
+    gd.reference_point = ReferencePoint::EndcapFront;
+    gd.dead_layer.reset();
+    gd.layers.clear();
+
+    LayerSpec endcap;                 // one 1 mm shell in front of the crystal
+    endcap.material_index = 0;
+    endcap.front_thickness_cm = 0.1;
+    endcap.side_thickness_cm = 0.1;
+    endcap.z_start_cm = 0.0;
+    endcap.z_end_cm = gd.dimensions_cm[1];
+    gd.layers.push_back(endcap);
+
+    const double without_dl = gd.endcap_front_offset_cm();
+    BOOST_CHECK_CLOSE(without_dl, 0.1, 1e-9);
+
+    // Adding a dead layer must NOT move the crystal face: it is carved out of
+    // the inside of the crystal, so it changes where the ACTIVE volume starts,
+    // never how far the crystal is from the endcap.
+    gd.dead_layer = DeadLayerConfig{0.07, 0.07, 0.0};
+    BOOST_CHECK_MESSAGE(gd.endcap_front_offset_cm() == without_dl,
+                        "a dead layer must not change endcap_front_offset_cm: "
+                        << gd.endcap_front_offset_cm() << " vs " << without_dl);
+}
+
+// The same rule, one level up: a source at a given endcap-referenced distance
+// must land at the same place in the crystal frame with or without a dead
+// layer. This is the assertion that would have caught the original bug.
+BOOST_AUTO_TEST_CASE(query_position_is_unmoved_by_a_dead_layer) {
+    auto r = make_synthetic_nai();
+    r->descriptor.reference_point = ReferencePoint::EndcapFront;
+    r->finalize();
+    const Eigen::Vector3d sharp = r->query_position(0.0, 0.0, 5.0);
+
+    r->descriptor.dead_layer = DeadLayerConfig{0.07, 0.07, 0.0};
+    r->finalize();
+    const Eigen::Vector3d dead = r->query_position(0.0, 0.0, 5.0);
+
+    BOOST_CHECK_MESSAGE(std::fabs(sharp.z() - dead.z()) < 1e-12,
+                        "dead layer moved an endcap-referenced source by "
+                        << 10.0*std::fabs(sharp.z() - dead.z()) << " mm");
+
+    // And the sign convention: a source in front of the detector is at -z, and
+    // further away means more negative.
+    BOOST_CHECK_LT(dead.z(), 0.0);
+    BOOST_CHECK_LT(r->query_position(0.0, 0.0, 25.0).z(), dead.z());
+}
+
+// A box has no radius; problems() must not read one. This guards the whole
+// class of "new check rejects a geometry CeeLo has always accepted".
+BOOST_AUTO_TEST_CASE(problems_accepts_a_plain_box) {
+    GeometryDescriptor gd;
+    gd.shape = DetectorShape::Box;
+    gd.dimensions_cm = {0.5, 0.5, 0.5};
+    gd.crystal_material_index = 0;
+    gd.materials = {MaterialSpec::from(make_CZT())};
+    BOOST_CHECK_MESSAGE(gd.problems().empty(),
+                        "a plain box must be accepted; first problem: "
+                        << (gd.problems().empty() ? "none"
+                                                  : to_string(gd.problems().front())));
+    gd.dead_layer = DeadLayerConfig{0.01, 0.01, 0.0};
+    BOOST_CHECK(gd.problems().empty());
+}
+
+BOOST_AUTO_TEST_CASE(problems_flags_crystal_eating_dead_layer) {
+    GeometryDescriptor gd = gem35_descriptor();
+    gd.bore.reset();
+    gd.bullet_radius_cm = 0.0;
+    gd.dead_layer = DeadLayerConfig{0.07, 3.0, 0.0};   // side >= crystal radius
+    BOOST_CHECK(has_problem(gd, GeometryProblem::DeadLayerTooThick));
+}
+
+// A bore wider than the crystal is the bore's problem, not the fillet's --
+// otherwise relaxGeometryFeatures() throws away a good fillet for a defect it
+// cannot repair.
+BOOST_AUTO_TEST_CASE(overwide_bore_is_not_blamed_on_the_fillet) {
+    GeometryDescriptor gd = gem35_descriptor();
+    gd.bore = BoreHoleConfig{3.0, 5.54};   // >= crystal radius 2.915
+    BOOST_CHECK(has_problem(gd, GeometryProblem::BoreTooWide));
+    BOOST_CHECK_MESSAGE(!has_problem(gd, GeometryProblem::BoreOutsideFillet),
+                        "an over-wide bore must not be reported as a fillet clash");
+}
+
+// A failed re-finalize() must not leave the response pointing at freed
+// materials: build_geometry() has to validate before it rebuilds `owned`.
+BOOST_AUTO_TEST_CASE(failed_refinalize_leaves_response_usable) {
+    auto r = make_synthetic_nai();
+    const EffResult before = r->eps_fep(662.0, 0.0, 0.0, 12.0);
+
+    r->descriptor.bullet_radius_cm = 99.0;      // illegal: >= crystal radius
+    BOOST_CHECK_THROW(r->finalize(), std::runtime_error);
+
+    // The old geometry and material table must still be intact and queryable.
+    const EffResult after = r->eps_fep(662.0, 0.0, 0.0, 12.0);
+    BOOST_CHECK_CLOSE(before.value, after.value, 1e-9);
+}
+
+BOOST_AUTO_TEST_CASE(every_problem_has_a_description) {
+    for (int i = 0; i <= static_cast<int>(GeometryProblem::BoreInsideDeadLayer); ++i) {
+        const char* d = to_string(static_cast<GeometryProblem>(i));
+        BOOST_REQUIRE(d != nullptr);
+        BOOST_CHECK_GT(std::string(d).size(), 0u);
+    }
+}
+
+// A sharp-edged, flat-bored crystal must serialize exactly as it did before
+// the fillet/rounded-tip feature existed -- otherwise every golden fixture's
+// bytes and content_hash move, for a geometry that did not change.
+BOOST_AUTO_TEST_CASE(xml_defaults_are_omitted) {
+    auto r = make_synthetic_nai();
+    r->descriptor.bore = BoreHoleConfig{0.495, 5.54};   // flat bottom
+    const std::string xml = r->to_xml_string();
+    BOOST_CHECK(xml.find("bulletRadius") == std::string::npos);
+    BOOST_CHECK(xml.find("roundedTip") == std::string::npos);
+}
+
+// The mirror of the above, and why sm_xmlSerializationVersion is not bumped
+// for these attributes: a file written before they existed describes a crystal
+// that really was sharp-edged and flat-bottomed, so the defaults are correct.
+BOOST_AUTO_TEST_CASE(xml_old_file_defaults_to_sharp) {
+    auto r = make_synthetic_nai();
+    r->descriptor.bullet_radius_cm = 0.8;
+    r->descriptor.bore = BoreHoleConfig{0.495, 5.54, /*rounded_tip=*/true};
+
+    std::string xml = r->to_xml_string();
+    BOOST_REQUIRE(xml.find("bulletRadius") != std::string::npos);
+    BOOST_REQUIRE(xml.find("roundedTip") != std::string::npos);
+
+    // Strip both attributes, as a pre-feature writer would have left them.
+    for (const char* attrib : {"bulletRadius", "roundedTip"}) {
+        const size_t pos = xml.find(attrib);
+        BOOST_REQUIRE(pos != std::string::npos);
+        const size_t end = xml.find('"', xml.find('"', pos) + 1);
+        BOOST_REQUIRE(end != std::string::npos);
+        xml.erase(pos, end + 1 - pos);
+    }
+
+    std::shared_ptr<DetectorResponse> r2 = DetectorResponse::from_xml_string(xml);
+    BOOST_CHECK_EQUAL(r2->descriptor.bullet_radius_cm, 0.0);
+    BOOST_REQUIRE(r2->descriptor.bore.has_value());
+    BOOST_CHECK(!r2->descriptor.bore->rounded_tip);
 }
 
 BOOST_AUTO_TEST_CASE(near_field_table_eval) {

@@ -31,15 +31,39 @@
 ///   2. A dead layer (innermost non-scoring shell, same material as detector)
 ///   3. N attenuator layers (concentric shells around the detector)
 ///
-/// All geometry is centered on the z-axis with the detector front face at z=0.
-/// The detector extends from z=0 to z=L.
+/// ---------------------------------------------------------------------------
+/// FRAME AND DISTANCE CONVENTIONS -- read this before touching anything that
+/// computes a distance.  Getting these confused does not crash; it silently
+/// biases every efficiency, and only shows up against external truth.
+///
+///   * The CRYSTAL FRAME is the one frame this file works in. The z-axis is the
+///     symmetry axis; the CRYSTAL SOLID's front face is at z = 0 and its back
+///     face at z = L. A source in front of the detector is at NEGATIVE z.
+///
+///   * The DEAD LAYER IS CARVED OUT OF THE INSIDE of that solid. It does not
+///     move the crystal face and it does not grow the crystal: with a dead
+///     layer the solid still spans [0, L] and radius R, while the ACTIVE
+///     (scoring) volume shrinks to [t_front, L - t_back] and radius R - t_side.
+///     So the front of the crystal is always z = 0; the front of the ACTIVE
+///     volume is z = t_front. These are different planes -- say which you mean.
+///
+///   * ATTENUATOR SHELLS are the only thing that sits in FRONT of the crystal.
+///     Each extends its front thickness toward negative z, so the outermost
+///     front surface (the "endcap front") is at z = -sum(front thicknesses).
+///     The dead layer contributes NOTHING to that sum.
+///
+/// GeometryDescriptor::endcap_front_offset_cm() is the one place that converts
+/// between the endcap-front datum and this frame; see the warning on it.
+/// ---------------------------------------------------------------------------
 
 #include <Eigen/Core>
 #include <vector>
+#include <cmath>
 #include <cstdint>
 #include <optional>
 #include <limits>
 #include <string>
+#include <algorithm>
 
 namespace ceelo {
 
@@ -85,6 +109,28 @@ struct BoreHoleConfig {
                                ///< kept, so the hemisphere's apex sits at the
                                ///< same z the flat bottom would.
 };
+
+/// The bore must stay inside the crystal wall over its whole depth.  With a
+/// bulletized front edge the crystal narrows to `radius - bullet_radius` near
+/// the front face, so a deep enough bore can be admissible against the full
+/// radius and still be wider than the crystal where it ends.
+///
+/// Lives here rather than in RayTrace.cpp so Geometry::set_bore_hole,
+/// Geometry::set_bullet_radius and GeometryDescriptor::problems() all decide
+/// admissibility with one implementation instead of drifting copies.
+inline bool bore_fits(double bore_radius, double bore_depth,
+                      double radius, double length, double bullet_radius) {
+    if (bore_radius >= radius) return false;
+    if (bullet_radius <= 0.0) return true;
+    const double z_bore_start = length - bore_depth;   // apex, from the front
+    if (z_bore_start >= bullet_radius) return true;    // ends behind the fillet
+    // Crystal radius at the bore's apex, on the fillet arc.
+    const double rho_c = radius - bullet_radius;
+    const double dz = bullet_radius - z_bore_start;
+    const double r_here = rho_c + std::sqrt(std::max(
+        0.0, bullet_radius * bullet_radius - dz * dz));
+    return bore_radius < r_here;
+}
 
 /// Configuration for the dead layer.
 struct DeadLayerConfig {
@@ -136,8 +182,16 @@ public:
     /// the inward-offset fillet (see trace_cylinder_geometry).
     void set_bullet_radius(double bullet_radius);
 
-    /// Set dead layer thicknesses.
-    /// The dead layer uses the same material as the detector crystal.
+    /// Set dead layer thicknesses, in cm, measured INWARD from the crystal
+    /// surface. The dead layer uses the same material as the detector crystal.
+    ///
+    /// It is carved out of the inside of the crystal: the solid still spans
+    /// [0, L] with radius R, and the ACTIVE volume shrinks to
+    /// [front, L - back] with radius R - side. The crystal therefore does NOT
+    /// get bigger, and its front face does NOT move away from the source --
+    /// a dead layer must never be added to any outward distance or offset.
+    /// (It was, once, in endcap_front_offset_cm(); that put every
+    /// endcap-referenced source one dead-layer thickness too far away.)
     void set_dead_layer(double front, double side, double back = 0.0);
 
     /// Add an attenuator layer (call from innermost to outermost).
@@ -172,9 +226,14 @@ public:
     bool ray_hits_outer_boundary(const Eigen::Vector3d& origin,
                                  const Eigen::Vector3d& direction) const;
 
-    /// Get the bounding radius of the outermost shell (for cone sampling).
-    /// For a cylindrical detector, this is the outer radius including all attenuators.
-    /// For a box detector, this is the half-diagonal of the outermost shell.
+    /// Bounding radius of the outermost shell, for cone sampling.
+    /// Cylinder: outer radius including all attenuators. Box: half-diagonal.
+    ///
+    /// NOTE this deliberately adds the side dead layer even though the dead
+    /// layer is internal (see set_dead_layer). That makes the value a slight
+    /// OVER-estimate, which is exactly what a sampling bound wants -- a cone
+    /// that is too wide costs a little efficiency, one that is too narrow
+    /// loses real paths. Do not "correct" it: it is a bound, not a dimension.
     double outer_bounding_radius() const;
 
     /// Get the full axial extent [z_min, z_max] of the outermost shell.
