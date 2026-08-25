@@ -25,7 +25,9 @@
 
 #include "InterSpec_config.h"
 
+#include <atomic>
 #include <memory>
+#include <string>
 #include <vector>
 #include <utility>
 
@@ -75,7 +77,16 @@ public:
    */
   void restrictToConstantPlusSqrtEnergy();
 
-  
+  /** Starts the (multi-threaded, off-session-thread) automated peak search whose results seed the
+   FWHM fit.  Called from the constructor when `auto_fit_peaks` is true; otherwise callers that
+   embed this widget can defer the search until the user actually looks at it (see
+   `DrfModifyWidget`s FWHM tab), so opening a dialog doesnt cost a full peak search.
+
+   A no-op if a search is already running, or one has already been started.
+   */
+  void startAutomatedPeakSearch();
+
+
 public: //Some stuff for undo/redo support
   struct TableRow
   {
@@ -113,18 +124,36 @@ protected:
   void setEquationToChart();
   
   std::vector<std::shared_ptr<const PeakDef>> get_user_peaks();
-  void startAutomatedPeakSearch();
+
+  /** Installs the results of #startAutomatedPeakSearch (or of the trivial no-search case) into the
+   peak table, and takes the tool out of the "searching" state.
+
+   `error_msg`, when non-empty, is the reason the search failed; the search results will then be
+   empty, and the message is shown to the user.  Must be called on the session thread.
+   */
   void setPeaksFromAutoSearch( std::vector<std::shared_ptr<const PeakDef>> user_peaks,
-                               std::shared_ptr<std::vector<std::shared_ptr<const PeakDef>>> auto_search_peaks );
+                               std::shared_ptr<std::vector<std::shared_ptr<const PeakDef>>> auto_search_peaks,
+                               std::string error_msg = std::string() );
   
   void doAddUndoRedoStep();
   void scheduleUndoRedoStep();
   
 protected:
   InterSpec *m_interspec;
-  
+
   bool m_currently_searching;
-  
+
+  /** Set once an automated peak search has been kicked off, so selecting the FWHM tab a second
+   time doesnt start another one. */
+  bool m_auto_search_started;
+
+  /** Set true by the destructor, so the peak-search completion callback - which is posted from a
+   worker thread and runs on the session thread - can tell "this widget is gone" from "this widget
+   is alive, but I couldnt find it".  See `WidgetUtils::WidgetHandle`, and the same pattern in
+   `SpecFileQueryWidget`.  Only an atomic in a shared control block crosses the thread boundary.
+   */
+  std::shared_ptr<std::atomic<bool>> m_widget_deleted;
+
   bool m_refit_scheduled;
   bool m_undo_redo_scheduled;
   

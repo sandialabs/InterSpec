@@ -32,6 +32,7 @@
 #include <Wt/WMenu.h>
 #include <Wt/WTable.h>
 #include <Wt/WLabel.h>
+#include <Wt/WCheckBox.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WTextArea.h>
 #include <Wt/WMenuItem.h>
@@ -45,6 +46,8 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/HelpSystem.h"
+#include "InterSpec/InterSpecApp.h"
+#include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/DrfModifyWidget.h"
@@ -69,6 +72,9 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_description( nullptr ),
     m_mcTool( nullptr ),
     m_fwhmTool( nullptr ),
+    m_fwhmTabItem( nullptr ),
+    m_fwhmApply( nullptr ),
+    m_fwhmTabVisited( false ),
     m_bandTable( nullptr ),
     m_addBand( nullptr ),
     m_removeBand( nullptr ),
@@ -193,7 +199,12 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
   {
     auto toolOwned = make_unique<MakeMcResponseForDrf>( m_interspec, m_orig, m_geometry );
     m_mcTool = toolOwned.get();
-    m_tabMenu->addItem( WString::tr("dmw-tab-geometry"), std::move(toolOwned) );
+
+    // ContentLoading::Eager: this tool posts work to a worker thread and gets back to itself with
+    //  `findById(...)`; a Lazy tab parks its contents in `WMenuItem::uContents_`, outside the
+    //  widget tree, where `findById` can not see it - see the FWHM tab below.
+    m_tabMenu->addItem( WString::tr("dmw-tab-geometry"), std::move(toolOwned),
+                        ContentLoading::Eager );
   }
 
   // --- Tab: FWHM -----------------------------------------------------------
@@ -208,13 +219,39 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
                       : nullptr;
     if( foreground )
     {
+      auto panelOwned = make_unique<WContainerWidget>();
+      WContainerWidget *panel = panelOwned.get();
+      WGridLayout *fwhmLayout = panel->setLayout( make_unique<WGridLayout>() );
+      fwhmLayout->setContentsMargins( 0, 0, 0, 0 );
+
       // MakeFwhmForDrf edits a (non-const) DRF; give it a private clone - we
       //  only read its fitted coefficients back out on apply().
       shared_ptr<DetectorPeakResponse> fwhm_seed
           = m_orig ? make_shared<DetectorPeakResponse>( *m_orig ) : nullptr;
-      auto toolOwned = make_unique<MakeFwhmForDrf>( true, m_interspec, fwhm_seed );
+
+      // `auto_fit_peaks == false`: the automated peak search is a multi-threaded fit of the whole
+      //  spectrum, so dont pay for it every time this dialog is opened - #handleTabSelected kicks
+      //  it off the first time the user actually looks at this tab.
+      auto toolOwned = make_unique<MakeFwhmForDrf>( false, m_interspec, fwhm_seed );
       m_fwhmTool = toolOwned.get();
-      m_tabMenu->addItem( WString::tr("dmw-tab-fwhm"), std::move(toolOwned) );
+      fwhmLayout->addWidget( std::move(toolOwned), 0, 0 );
+      fwhmLayout->setRowStretch( 0, 1 );
+
+      // Looking at this tab must not silently cost the user the FWHM their detector already has,
+      //  so replacing it is opt-in.  Starts un-checked even for a DRF with no FWHM at all, so that
+      //  what "Use" does never depends on whether the user happened to visit this tab (the fit
+      //  differs before and after the automated peak search): #handleTabSelected checks it, once,
+      //  when the tab is first opened and the DRF has no FWHM to lose.  #apply honors this.
+      m_fwhmApply = fwhmLayout->addWidget( make_unique<WCheckBox>( WString::tr("dmw-fwhm-apply-cb") ), 1, 0 );
+      m_fwhmApply->addStyleClass( "DrfModifyFwhmApply" );
+      HelpSystem::attachToolTipOn( m_fwhmApply, WString::tr("dmw-fwhm-apply-cb-tt"), true );
+
+      // ContentLoading::Eager, so the tool is in the widget tree (and hence resolvable by
+      //  `findById`) while its peak search runs; with the default Lazy policy the widget sits in
+      //  `WMenuItem::uContents_` with no widget parent, the search completion silently no-ops, and
+      //  the tab shows "Currently searching for peaks..." forever.
+      m_fwhmTabItem = m_tabMenu->addItem( WString::tr("dmw-tab-fwhm"), std::move(panelOwned),
+                                          ContentLoading::Eager );
     }else
     {
       auto placeholder = make_unique<WContainerWidget>();
@@ -259,6 +296,8 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_tabMenu->addItem( WString::tr("dmw-tab-uncert"), std::move(panelOwned) );
   }
 
+  m_tabMenu->itemSelected().connect( this, &DrfModifyWidget::handleTabSelected );
+
   m_tabMenu->select( 0 );
 
   WText *note = new WText( WString::tr("dmw-export-note") );
@@ -271,6 +310,23 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
 DrfModifyWidget::~DrfModifyWidget()
 {
 }
+
+
+void DrfModifyWidget::handleTabSelected( Wt::WMenuItem *item )
+{
+  // Only the first opening of the FWHM tab does anything; `WMenu::itemSelected()` also fires for
+  //  the initial `select(0)`, and re-visiting the tab must not re-search or re-tick the checkbox.
+  if( m_fwhmTabVisited || !item || (item != m_fwhmTabItem) || !m_fwhmTool )
+    return;
+
+  m_fwhmTabVisited = true;
+
+  // Nothing to lose -> offer the fit by default, now that the user is looking at it.
+  if( m_fwhmApply && (!m_orig || !m_orig->hasResolutionInfo()) )
+    m_fwhmApply->setChecked( true );
+
+  m_fwhmTool->startAutomatedPeakSearch();
+}//void handleTabSelected( Wt::WMenuItem *item )
 
 
 Wt::Signal<std::shared_ptr<DetectorPeakResponse>> &DrfModifyWidget::updatedDrf()
@@ -473,15 +529,32 @@ void DrfModifyWidget::apply()
   applyAnchorEdits( *working );
 
   // FWHM: pull the fitted coefficients (if any) without triggering the tool's
-  //  own detector-changed emit.
+  //  own detector-changed emit.  Only when the user asked for it - see where the
+  //  checkbox is created; un-checked leaves whatever FWHM the DRF came in with.
+  const bool useFwhmFit = m_fwhmApply && m_fwhmApply->isChecked();
   const shared_ptr<MakeFwhmForDrf::ToolState> fwhm
-      = m_fwhmTool ? m_fwhmTool->currentState() : nullptr;
+      = (useFwhmFit && m_fwhmTool) ? m_fwhmTool->currentState() : nullptr;
   if( fwhm && !fwhm->m_parameters.empty() && m_fwhmTool->isValidFwhm() )
   {
-    const auto form = DetectorPeakResponse::ResolutionFnctForm(
-                          std::max( 0, fwhm->m_fwhm_index ) );
-    working->setFwhmCoefficients( fwhm->m_parameters, form );
-  }//if( have a valid FWHM fit )
+    const DetectorPeakResponse::ResolutionFnctForm form
+        = DetectorPeakResponse::ResolutionFnctForm( std::max( 0, fwhm->m_fwhm_index ) );
+
+    // `setFwhmCoefficients` throws if the coefficients dont match the forms arity - dont let that
+    //  escape into a signal handler and take the rest of the users edits with it.
+    try
+    {
+      working->setFwhmCoefficients( fwhm->m_parameters, form );
+    }catch( std::exception &e )
+    {
+      passMessage( WString::tr("dmw-err-fwhm-not-applied").arg(e.what()),
+                   WarningWidget::WarningMsgHigh );
+    }
+  }else if( useFwhmFit )
+  {
+    // The user asked for the fit, but there isnt a usable one (fit failed, or the peak search is
+    //  still running) - say so rather than closing as if it had been applied.
+    passMessage( WString::tr("dmw-err-no-fwhm-fit"), WarningWidget::WarningMsgHigh );
+  }//if( have a valid FWHM fit ) / else if( the user wanted one )
 
   // Monte-Carlo response: attach + ground (to the DRF's measured points if it
   //  has them; otherwise the MC tool already grounded to a sampled curve).

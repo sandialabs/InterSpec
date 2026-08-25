@@ -19,4 +19,5 @@
   <message id="mffd-tt-par">With uncertainty: {1}</message>
   <message id="mffd-err-fail-fit">Failed to fit FWHM equation: {1}</message>
   <message id="mffd-err-waiting-for-search">Currently searching for peaks - please be patient</message>
+  <message id="mffd-err-search-failed">Automated peak search failed: {1}</message>
 </messages>

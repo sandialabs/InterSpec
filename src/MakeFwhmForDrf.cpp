@@ -44,10 +44,11 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/GroupBox.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/MakeDrfChart.h"
 #include "InterSpec/PeakFitUtils.h"
-#include "InterSpec/GroupBox.h"
+#include "InterSpec/WarningWidget.h"
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -449,6 +450,8 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
  : WContainerWidget(),
   m_interspec( viewer ),
   m_currently_searching( false ),
+  m_auto_search_started( false ),
+  m_widget_deleted( make_shared<std::atomic<bool>>(false) ),
   m_refit_scheduled( false ),
   m_undo_redo_scheduled( false ),
   m_orig_drf( drf ),
@@ -621,6 +624,31 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   m_model->rowsRemoved().connect( this, &MakeFwhmForDrf::handleTableDataChange );
   m_model->layoutChanged().connect( this, &MakeFwhmForDrf::handleTableDataChange );
     
+  // If the DRF already has a FWHM, start from its functional form (and number of terms), so what
+  //  gets fit here is directly comparable to what the user already has, rather than always
+  //  offering a 2-term sqrt-polynomial.
+  if( m_orig_drf && m_orig_drf->hasResolutionInfo() )
+  {
+    const DetectorPeakResponse::ResolutionFnctForm form = m_orig_drf->resolutionFcnType();
+    const int form_index = static_cast<int>( form );
+
+    // ...except GADRAS: it is the one form `MakeDrfFit::performResolutionFit` has no linear
+    //  least-squares solution for (see `fit_using_lls` there), so it is a bound-constrained
+    //  Minuit-only fit that throws when Minuit doesnt converge.  Not worth defaulting users into.
+    if( (form != DetectorPeakResponse::kGadrasResolutionFcn)
+       && (form_index >= 0) && (form_index < m_fwhmEqnType->count()) )
+      m_fwhmEqnType->setCurrentIndex( form_index );
+
+    if( form == DetectorPeakResponse::kSqrtPolynomial )
+    {
+      const size_t num_coefs = m_orig_drf->resolutionFcnCoefficients().size();
+      if( (num_coefs > 0) && (static_cast<int>(num_coefs) <= m_sqrtEqnOrder->count()) )
+        m_sqrtEqnOrder->setCurrentIndex( static_cast<int>(num_coefs) - 1 );
+    }//if( sqrt-polynomial )
+
+    handleFwhmEqnTypeChange();  //sync which parameter edits are shown
+  }//if( the DRF already has FWHM info )
+
   if( auto_fit_peaks )
   {
     startAutomatedPeakSearch();
@@ -629,6 +657,11 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
     const vector<shared_ptr<const PeakDef>> user_peaks = get_user_peaks();
     const auto dummy_auto_fit_peaks = make_shared<vector<shared_ptr<const PeakDef>>>();
     setPeaksFromAutoSearch( user_peaks, dummy_auto_fit_peaks );
+
+    // `setPeaksFromAutoSearch` recorded a state that predates the first fit; keeping it would make
+    //  the first `render()` register an undo/redo step for merely constructing the tool.  Let that
+    //  render re-baseline instead (`doAddUndoRedoStep` bails out when there is no current state).
+    m_current_state.reset();
   }//if( auto_fit_peaks )
     
   scheduleUndoRedoStep();  //Fills in initial m_current_state
@@ -639,7 +672,8 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
 
 MakeFwhmForDrf::~MakeFwhmForDrf()
 {
-  
+  // Let any in-flight peak-search completion know not to touch this object; see `m_widget_deleted`.
+  m_widget_deleted->store( true );
 }//~MakeFwhmForDrf()
 
 
@@ -678,6 +712,11 @@ vector<shared_ptr<const PeakDef>> MakeFwhmForDrf::get_user_peaks()
 
 void MakeFwhmForDrf::startAutomatedPeakSearch()
 {
+  // May be called from the constructor, or deferred until the user actually looks at this tool
+  //  (see `DrfModifyWidget`s FWHM tab) - either way, only ever search once.
+  if( m_currently_searching || m_auto_search_started )
+    return;
+
   auto dataPtr = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
   assert( dataPtr );
   if( !dataPtr )
@@ -685,32 +724,50 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
     passMessage( WString::tr("mffd-err-no-foreground"), 1 );
     return;
   }//if( !dataPtr )
-    
+
   vector<shared_ptr<const PeakDef>> user_peaks = get_user_peaks();
-  
+
   std::shared_ptr<SpecMeas> foreground = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
   std::shared_ptr<const PeakFitDetPrefs> fitPrefs = foreground ? foreground->peakFitDetPrefs() : nullptr;
 
   //The results of the peak search will be placed into the vector pointed to by searchresults
   auto searchresults = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
-    
+
+  //Non-empty if the search threw; the callback then just takes us out of the searching state.
+  auto search_error = std::make_shared<string>();
+
   // Wt4: the worker re-posts this to the session thread; this widget/dialog may be closed by then.
-  //  Re-resolve via findById() (thread-safe) instead of capturing a raw `this` -> avoids UAF.
-  const string thisid = id();
+  //  `deleted_flag` is the "is this object still alive" answer: the destructor sets it, and both
+  //  the set and this check happen on the session thread (the continuation runs under the
+  //  `WApplication::UpdateLock`), so a false flag means `this` is still good.  Only the atomic - in
+  //  its own shared control block - crosses the thread boundary; an `observing_ptr`/`bindSafe`
+  //  would race `observable::observers_` (see `WidgetUtils.h`), and the id + `findById` pattern
+  //  silently resolves to null for a widget that is alive but not currently in the widget tree,
+  //  which is exactly how this tool used to hang in a lazily-loaded tab.  Same shape as
+  //  `SpecFileQueryWidget`s `m_widgetDeleted`.
+  const shared_ptr<std::atomic<bool>> deleted_flag = m_widget_deleted;
+  MakeFwhmForDrf * const self = this;
   std::function<void(void)> callback
-    = [thisid, user_peaks, searchresults](){
-        MakeFwhmForDrf *self = dynamic_cast<MakeFwhmForDrf *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
-        if( self )
-          self->setPeaksFromAutoSearch( user_peaks, searchresults );
+    = [self, deleted_flag, user_peaks, searchresults, search_error](){
+        if( deleted_flag->load() )
+          return;
+
+        self->setPeaksFromAutoSearch( user_peaks, searchresults, *search_error );
       };
-    
-  
+
+
   Wt::WServer *server = Wt::WServer::instance();
   assert( server );
   if( !server )
     return;
-  
+
   m_currently_searching = true;
+  m_auto_search_started = true;
+
+  // So the user gets "Currently searching for peaks..." rather than whatever the fit of the
+  //  (probably empty) starting peaks had to say; matters when the search is started after this
+  //  widget has already been rendered once - i.e. deferred until its tab was selected.
+  scheduleRefit();
 
   const string seshid = wApp->sessionId();
   const shared_ptr<const DetectorPeakResponse> drf = m_orig_drf;
@@ -722,11 +779,25 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
     = foreground_meas ? foreground_meas->peak_search_cancel_flag() : nullptr;
 
   server->ioService().boost::asio::io_service::post( std::bind( [=](){
-    const bool singleThread = false;
-    auto existingPeaks = make_shared<deque<shared_ptr<const PeakDef>>>();
-    existingPeaks->insert( end(*existingPeaks), begin(user_peaks), end(user_peaks) );
+    // The callback MUST be posted on every path out of here (see `search_error`) - if it isnt,
+    //  `m_currently_searching` never gets cleared, and the tool is stuck showing the "searching"
+    //  message for the rest of the session.
+    try
+    {
+      const bool singleThread = false;
+      auto existingPeaks = make_shared<deque<shared_ptr<const PeakDef>>>();
+      existingPeaks->insert( end(*existingPeaks), begin(user_peaks), end(user_peaks) );
 
-    *searchresults = ExperimentalAutomatedPeakSearch::search_for_peaks( dataPtr, drf, existingPeaks, singleThread, fitPrefs, cancel_flag );
+      *searchresults = ExperimentalAutomatedPeakSearch::search_for_peaks( dataPtr, drf, existingPeaks, singleThread, fitPrefs, cancel_flag );
+    }catch( std::exception &e )
+    {
+      searchresults->clear();
+      *search_error = e.what();
+    }catch( ... )
+    {
+      searchresults->clear();
+      *search_error = "unknown exception";
+    }//try / catch
 
     Wt::WServer *server = Wt::WServer::instance();
     if( server )
@@ -959,12 +1030,17 @@ void MakeFwhmForDrf::setEquationToChart()
 
 
 void MakeFwhmForDrf::setPeaksFromAutoSearch( vector<shared_ptr<const PeakDef>> user_peaks,
-                             shared_ptr<vector<shared_ptr<const PeakDef>>> auto_search_peaks )
+                             shared_ptr<vector<shared_ptr<const PeakDef>>> auto_search_peaks,
+                             string error_msg )
 {
   assert( auto_search_peaks );
-  
+
   m_currently_searching = false;
-  
+
+  if( !error_msg.empty() )
+    passMessage( WString::tr("mffd-err-search-failed").arg(error_msg),
+                 WarningWidget::WarningMsgHigh );
+
   // `auto_search_peaks` will contain both the original users peaks, as well as the auto-fit
   //  peaks, but we want to keep them separate to indicate to the user, so we'll just remove
   //  the peaks in `auto_search_peaks` that overlap with the user peaks.  Not perfect, but
@@ -1041,6 +1117,13 @@ void MakeFwhmForDrf::setPeaksFromAutoSearch( vector<shared_ptr<const PeakDef>> u
   
   
   m_current_state = currentState();
+
+  // `FwhmPeaksModel::set_peaks` emits nothing when there were no rows and there are still none
+  //  (e.g. a search that found nothing, with no user peaks), so schedule the refit ourselves -
+  //  otherwise the "Currently searching for peaks..." message would stay up even though we are
+  //  no longer searching.
+  scheduleRefit();
+
   wApp->triggerUpdate();
 }//setPeaksFromAutoSearch(...)
 

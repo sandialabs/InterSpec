@@ -42,6 +42,8 @@ namespace Wt
   class WText;
   class WTable;
   class WMenu;
+  class WMenuItem;
+  class WCheckBox;
   class WLineEdit;
   class WTextArea;
   class WPushButton;
@@ -76,6 +78,10 @@ public:
   Wt::Signal<std::shared_ptr<DetectorPeakResponse>> &updatedDrf();
 
 protected:
+  /** Kicks off the FWHM tools automated peak search the first time its tab is selected - see the
+   comments where that tab is created. */
+  void handleTabSelected( Wt::WMenuItem *item );
+
   void addBandRow( const float lowerEnergy, const float upperEnergy,
                    const float fracUncert );
   void removeBandRow();
@@ -103,6 +109,17 @@ protected:
 
   MakeMcResponseForDrf *m_mcTool;
   MakeFwhmForDrf *m_fwhmTool;
+
+  /** The FWHM tabs menu item; null when there is no foreground (the tab is then a placeholder). */
+  Wt::WMenuItem *m_fwhmTabItem;
+
+  /** Whether #apply should replace the DRFs FWHM with the fit from the FWHM tab.  Defaults to
+   checked only when the DRF has no FWHM of its own, so simply looking at that tab never costs the
+   user a FWHM they already had.  Null when the FWHM tab is the no-foreground placeholder. */
+  Wt::WCheckBox *m_fwhmApply;
+
+  /** Whether the user has opened the FWHM tab yet - see #handleTabSelected. */
+  bool m_fwhmTabVisited;
 
   /** Baseline uncertainty band editor: one row per energy band. */
   Wt::WTable *m_bandTable;
