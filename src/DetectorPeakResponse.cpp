@@ -3461,6 +3461,13 @@ AngleOutxContents DetectorPeakResponse::parseAngleOutxFileFull( std::istream &in
         contents.hasCore = true;
         contents.coreRadius = parse_attr_float( core, "radius", 6 ) * dist_unit;
         contents.coreDepth = parse_attr_float( core, "height", 6 ) * dist_unit;
+
+        // ANGLE writes yes/no; accept the other usual truthy spellings so a
+        //  hand-edited or future-version file isn't silently read as flat.
+        const string rounded = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( core, "rounded" ) );
+        contents.coreRounded = SpecUtils::iequals_ascii( rounded, "yes" )
+                                || SpecUtils::iequals_ascii( rounded, "true" )
+                                || (rounded == "1");
       }//if( core )
 
       const rapidxml::xml_node<char> *inactive = XML_FIRST_NODE( det_node, "inactiveGe" );

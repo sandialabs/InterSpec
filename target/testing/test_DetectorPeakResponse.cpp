@@ -567,9 +567,15 @@ BOOST_AUTO_TEST_CASE( test_read_angle_outx_full )
   BOOST_CHECK_MESSAGE( close_enough(radius_mm, 29.15, 0.01), "crystal radius mm: " + to_string(radius_mm) );
   BOOST_CHECK_MESSAGE( close_enough(length_mm, 68.9, 0.01), "crystal length mm: " + to_string(length_mm) );
 
+  // <crystal bulletizingRadius="8"> - the rounded outer front edge.
+  const double bullet_mm = contents.bulletizingRadius / PhysicalUnits::mm;
+  BOOST_CHECK_MESSAGE( close_enough(bullet_mm, 8.0, 0.01),
+                       "bulletizing radius mm: " + to_string(bullet_mm) );
+
   BOOST_CHECK_MESSAGE( contents.hasCore, "Fixture crystal is coaxial (has a core/bore)" );
   BOOST_CHECK( contents.coreRadius > 0.0 );
   BOOST_CHECK( contents.coreDepth > 0.0 );
+  BOOST_CHECK_MESSAGE( contents.coreRounded, "Fixture core is rounded=\"yes\"" );
 
   BOOST_CHECK( contents.deadLayerFront > 0.0 );
   BOOST_CHECK( contents.deadLayerSide > 0.0 );
@@ -634,8 +640,18 @@ BOOST_AUTO_TEST_CASE( test_read_angle_outx_full )
     BOOST_CHECK_MESSAGE( close_enough(gd.dimensions_cm[1], 68.9/10.0, 0.01),
                          "geom length cm: " + to_string(gd.dimensions_cm[1]) );
 
-    BOOST_CHECK_MESSAGE( gd.bore.has_value(), "Coaxial fixture should yield a bore" );
+    BOOST_CHECK_MESSAGE( close_enough(gd.bullet_radius_cm, 0.8, 0.01),
+                         "geom bullet radius cm: " + to_string(gd.bullet_radius_cm) );
+
+    BOOST_REQUIRE_MESSAGE( gd.bore.has_value(), "Coaxial fixture should yield a bore" );
+    BOOST_CHECK_MESSAGE( gd.bore->rounded_tip, "Fixture core is rounded=\"yes\"" );
     BOOST_CHECK_MESSAGE( gd.dead_layer.has_value(), "Fixture should yield a dead layer" );
+
+    // Nothing about this fixture may be relaxed away; if this fires, either the
+    //  parse or relaxGeometryFeatures silently dropped a real geometry feature.
+    for( const ceelo::GeometryProblem p : gd.problems() )
+      cout << "  gd.problems(): " << ceelo::to_string(p) << endl;
+    BOOST_CHECK_MESSAGE( gd.problems().empty(), "Fixture geometry must be CeeLo-legal" );
     BOOST_CHECK_MESSAGE( !gd.layers.empty(), "Fixture should yield endcap/housing layers" );
 
     // Crystal material and every layer material should have resolved.
@@ -663,6 +679,106 @@ BOOST_AUTO_TEST_CASE( test_read_angle_outx_full )
   }else
   {
     cout << "  (MaterialDB unavailable - skipping Stage 2 geometry-build checks)" << endl;
+  }
+}
+
+
+/** The front-edge fillet and the rounded bore tip are refinements on top of a
+ plain cylinder, and CeeLo only guards their preconditions with asserts.  An
+ imported file whose values violate one must therefore lose that single feature
+ (with a warning) rather than fail the import or - far worse - reach a release
+ build's ray tracer and silently produce garbage.
+ */
+namespace
+{
+  bool has_warning( const vector<string> &warnings, const string &needle )
+  {
+    for( const string &w : warnings )
+    {
+      if( SpecUtils::icontains( w, needle ) )
+        return true;
+    }
+    return false;
+  }//has_warning(...)
+
+  string join_warnings( const vector<string> &warnings )
+  {
+    string out;
+    for( const string &w : warnings )
+      out += (out.empty() ? "" : " | ") + w;
+    return out.empty() ? "(none)" : out;
+  }//join_warnings(...)
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( test_angle_geometry_relaxes_illegal_features )
+{
+  const string outx_file = SpecUtils::append_path( g_test_data_dir, "det_eff/Angle-example-efficiency.outx" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(outx_file), "OUTX file not found: " + outx_file );
+
+  ifstream input( outx_file.c_str() );
+  BOOST_REQUIRE( input.good() );
+
+  AngleOutxContents contents;
+  BOOST_REQUIRE_NO_THROW( contents = DetectorPeakResponse::parseAngleOutxFileFull( input ) );
+  BOOST_REQUIRE( contents.hasGeometry );
+
+  // Material resolution needs the MaterialDB singleton (see the note in
+  //  test_read_angle_outx_full); skip if it is unavailable in this environment.
+  try
+  {
+    MaterialDB::initialize();
+  }catch( std::exception & )
+  {
+  }
+
+  if( !MaterialDB::initialized() )
+  {
+    cout << "  (MaterialDB unavailable - skipping relax checks)" << endl;
+    return;
+  }
+
+  // A fillet wider than the crystal itself: drop it, keep everything else.
+  {
+    AngleOutxContents bad = contents;
+    bad.bulletizingRadius = 5.0 * PhysicalUnits::cm;   //crystal radius is 2.915 cm
+
+    vector<string> warnings;
+    ceelo::GeometryDescriptor gd;
+    BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildAngleGeometry( bad, warnings ) );
+
+    BOOST_CHECK_MESSAGE( gd.bullet_radius_cm == 0.0,
+                         "An unrepresentable fillet should fall back to a sharp edge" );
+    BOOST_CHECK_MESSAGE( has_warning( warnings, "bulletizing" ),
+                         "Dropping the fillet should say so; got: " + join_warnings(warnings) );
+    BOOST_CHECK_MESSAGE( gd.problems().empty(), "Relaxed geometry must be CeeLo-legal" );
+    // The primary content of the file must survive untouched.
+    BOOST_REQUIRE_MESSAGE( gd.bore.has_value(), "Relaxing must not drop the bore" );
+    BOOST_CHECK( gd.bore->rounded_tip );
+    BOOST_CHECK( gd.dead_layer.has_value() );
+    BOOST_CHECK( !gd.layers.empty() );
+  }
+
+  // A bore shallower than it is wide can't carry a hemispherical tip: flatten
+  //  the tip, but keep the bore.
+  {
+    AngleOutxContents bad = contents;
+    bad.coreRadius = 0.6 * PhysicalUnits::cm;
+    bad.coreDepth = 0.5 * PhysicalUnits::cm;
+
+    vector<string> warnings;
+    ceelo::GeometryDescriptor gd;
+    BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildAngleGeometry( bad, warnings ) );
+
+    BOOST_REQUIRE_MESSAGE( gd.bore.has_value(), "Relaxing must not drop the bore" );
+    BOOST_CHECK_MESSAGE( !gd.bore->rounded_tip,
+                         "A tip that cannot fit its bore should flatten" );
+    BOOST_CHECK_MESSAGE( has_warning( warnings, "rounded" ),
+                         "Flattening the tip should say so; got: " + join_warnings(warnings) );
+    BOOST_CHECK_MESSAGE( gd.problems().empty(), "Relaxed geometry must be CeeLo-legal" );
+    // The fillet is legal here and must NOT be collateral damage.
+    BOOST_CHECK_MESSAGE( gd.bullet_radius_cm > 0.0,
+                         "Flattening the bore tip must not drop the fillet" );
   }
 }
 

@@ -62,11 +62,20 @@ struct AngleOutxContents
 
   double crystalRadius = 0.0;
   double crystalLength = 0.0;
+  /** ANGLE `<crystal bulletizingRadius>`: the outer front edge is rounded off
+   with a quarter-torus fillet of this radius, as HPGe crystals usually are.
+   Zero means a sharp 90-degree edge.  Maps to
+   `ceelo::GeometryDescriptor::bullet_radius_cm`. */
   double bulletizingRadius = 0.0;
 
   bool hasCore = false;
   double coreRadius = 0.0;
   double coreDepth = 0.0;
+  /** ANGLE `<core rounded="yes">`: the core was drilled with a round-tipped
+   bit, so its closed end is a hemisphere of the core radius rather than a flat
+   bottom.  The depth is measured to the apex either way.  Maps to
+   `ceelo::BoreHoleConfig::rounded_tip`. */
+  bool coreRounded = false;
 
   double deadLayerFront = 0.0;
   double deadLayerSide = 0.0;

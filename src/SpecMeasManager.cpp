@@ -3657,6 +3657,11 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
           angle_geometry = make_shared<const ceelo::GeometryDescriptor>(
                                 CeeLoUtils::buildAngleGeometry( contents, warnings ) );
           angle_seed_drf = CeeLoUtils::buildAngleSeedDrf( contents );
+
+          // See the matching comment in DrfSelect::offerAngleImportModeChoice():
+          //  a silently simplified geometry is worse than a noisy one.
+          for( const string &warning : warnings )
+            passMessage( warning, WarningWidget::WarningMsgMedium );
         }catch( std::exception & )
         {
           angle_geometry.reset();

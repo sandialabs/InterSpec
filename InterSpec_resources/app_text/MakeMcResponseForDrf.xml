@@ -145,9 +145,12 @@
   <message id="dgi-dim-length">Crystal length:</message>
   <message id="dgi-dim-width">Crystal width:</message>
   <message id="dgi-dim-height">Crystal height:</message>
+  <message id="dgi-bullet">Front edge fillet:</message>
+  <message id="dgi-bullet-ph">radius</message>
   <message id="dgi-bore">Bore (dia., depth):</message>
   <message id="dgi-bore-diam-ph">diameter</message>
   <message id="dgi-bore-depth-ph">depth</message>
+  <message id="dgi-bore-rounded">rounded tip</message>
   <message id="dgi-dead-layer">Dead layer (front, side):</message>
   <message id="dgi-dead-front-ph">front</message>
   <message id="dgi-dead-side-ph">side</message>
@@ -168,6 +171,18 @@
   <message id="dgi-err-invalid">The {1} is not a valid distance.</message>
   <message id="dgi-err-bore">Please give both a bore diameter and depth (or neither).</message>
   <message id="dgi-err-bore-size">The bore must be smaller than the crystal.</message>
+  <message id="dgi-err-bore-shape">A bore hole only applies to cylindrical crystals.</message>
+  <message id="dgi-err-bore-invalid">The bore diameter and depth are not valid distances.</message>
+  <message id="dgi-err-bore-round">A rounded bore tip needs the bore to be at least as deep as its radius.</message>
+  <message id="dgi-err-bore-fillet">The bore ends inside the rounded front edge, where the crystal is narrower than the bore - reduce the bore diameter, the bore depth, or the fillet radius.</message>
+  <message id="dgi-err-bore-dead">The bore is wider than the active crystal - reduce the bore diameter or the side dead layer.</message>
+  <message id="dgi-err-dims">Please give the crystal dimensions.</message>
+  <message id="dgi-err-dead-thick">The dead layer is as thick as the crystal - reduce it.</message>
+  <message id="dgi-err-bullet-shape">A front edge fillet only applies to cylindrical crystals.</message>
+  <message id="dgi-err-bullet-invalid">The front edge fillet radius is not a valid distance.</message>
+  <message id="dgi-err-bullet-wide">The front edge fillet radius must be less than the crystal radius.</message>
+  <message id="dgi-err-bullet-long">The front edge fillet radius must be less than the crystal length.</message>
+  <message id="dgi-err-bullet-dead">The dead layer leaves no room for the front edge fillet - reduce the fillet radius or the dead layer.</message>
   <message id="dgi-err-layer">Each layer needs a material and a front and/or side thickness.</message>
   <message id="dgi-err-material">Material &apos;{1}&apos; was not found in the material database.</message>
 </messages>

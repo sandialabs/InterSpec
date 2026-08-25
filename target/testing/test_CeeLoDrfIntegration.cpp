@@ -1123,6 +1123,15 @@ BOOST_AUTO_TEST_CASE( angle_efficiency_cross_validation )
   for( const string &w : warnings )
     BOOST_TEST_MESSAGE( "buildAngleGeometry warning: " << w );
 
+  // The ANGLE crystal is bulletized (8 mm front-edge fillet) with a round-
+  //  tipped bore.  Both are what the gates at the end of this test are set
+  //  against, so fail loudly and early if the import ever stops carrying them.
+  BOOST_CHECK_MESSAGE( gd.bullet_radius_cm > 0.0,
+                       "ANGLE import dropped the crystal's bulletizing radius" );
+  BOOST_REQUIRE( gd.bore.has_value() );
+  BOOST_CHECK_MESSAGE( gd.bore->rounded_tip,
+                       "ANGLE import dropped the core's rounded tip" );
+
   const double offset_cm = gd.endcap_front_offset_cm();
   BOOST_TEST_MESSAGE( "Reference distance (from file) = " << contents.referenceDistanceCm
                       << " cm;  crystal radius = " << (contents.crystalRadius/PhysicalUnits::cm)
@@ -1248,17 +1257,43 @@ BOOST_AUTO_TEST_CASE( angle_efficiency_cross_validation )
     BOOST_TEST_MESSAGE( line );
   }//for( each ANGLE result energy )
 
+  // Gates below are set from measured values.  EFFTRAN is closed-form and so
+  //  fully deterministic; the anchored-MC column varies ~0.7 points run to run,
+  //  so its gates carry more room.
+  //
+  //  Two geometry corrections got the agreement here to sub-percent, and both
+  //  are worth guarding:
+  //   - modelling the crystal's bulletized front edge and round-tipped bore.
+  //     Dropping them (measured against the then-current geometry) moved
+  //     EFFTRAN max 8.0% -> 30.2% and anchoredMC max 9.8% -> 24.3%, almost all
+  //     of it below ~90 keV, where the short attenuation length in Ge means
+  //     photons stop at whatever surface they enter and the front corner
+  //     dominates.  The max gates are the regression detector for that.
+  //   - excluding the dead layer from endcap_front_offset_cm(), which had been
+  //     placing the source one dead-layer thickness too far from the crystal.
+  //     That moved the EFFTRAN median 2.5% -> 0.9%, as a near-uniform ~3%
+  //     scale above 100 keV, so the median gate is the detector for it.
+  //     Below ~50 keV the crystal is effectively large enough that its solid
+  //     angle has saturated, and neither correction shows up there.
   if( !efftran_errs.empty() )
   {
     std::sort( begin(efftran_errs), end(efftran_errs) );
-    BOOST_TEST_MESSAGE( "EFFTRAN   vs ANGLE |ratio-1|: median=" << 100.0*efftran_errs[efftran_errs.size()/2]
-                        << "%  max=" << 100.0*efftran_errs.back() << "%  (n=" << efftran_errs.size() << ")" );
+    const double median = efftran_errs[efftran_errs.size()/2];
+    const double max = efftran_errs.back();
+    BOOST_TEST_MESSAGE( "EFFTRAN   vs ANGLE |ratio-1|: median=" << 100.0*median
+                        << "%  max=" << 100.0*max << "%  (n=" << efftran_errs.size() << ")" );
+    BOOST_CHECK_LT( median, 0.020 );   //measured 0.86%
+    BOOST_CHECK_LT( max, 0.120 );      //measured 8.40%; 30.2% with a sharp edge
   }
   if( !ancmc_errs.empty() )
   {
     std::sort( begin(ancmc_errs), end(ancmc_errs) );
-    BOOST_TEST_MESSAGE( "anchoredMC vs ANGLE |ratio-1|: median=" << 100.0*ancmc_errs[ancmc_errs.size()/2]
-                        << "%  max=" << 100.0*ancmc_errs.back() << "%  (n=" << ancmc_errs.size() << ")" );
+    const double median = ancmc_errs[ancmc_errs.size()/2];
+    const double max = ancmc_errs.back();
+    BOOST_TEST_MESSAGE( "anchoredMC vs ANGLE |ratio-1|: median=" << 100.0*median
+                        << "%  max=" << 100.0*max << "%  (n=" << ancmc_errs.size() << ")" );
+    BOOST_CHECK_LT( median, 0.060 );   //measured 3.1-3.4%
+    BOOST_CHECK_LT( max, 0.130 );      //measured 7.8-8.1%; 24.3% with a sharp edge
   }
 
   if( !mc_ratio_errs.empty() )
@@ -1756,6 +1791,13 @@ BOOST_AUTO_TEST_CASE( angle_cascade_summing_unit_test )
   BOOST_REQUIRE_EQUAL( cs134_res.size(), 1u );
   BOOST_CHECK_GT( cs134_res[0].summing_factor, 1.0 );  //summing-IN raises the peak
 
-  // Overall: our per-line factors should track ANGLE's to well within 20%.
-  BOOST_CHECK_LT( median, 0.20 );
+  // Overall: our per-line factors should track ANGLE's closely.  A summing
+  //  factor is a ratio of our own efficiencies, so most of any crystal-shape
+  //  error cancels here - modeling the fillet and rounded bore tip only moves
+  //  this median 1.25% -> 0.75% (and the endcap-offset fix moved it back to
+  //  ~1.45%, which is that cancellation working as advertised).  Gated at 2%
+  //  rather than at the measured
+  //  value: it is a genuine accuracy check, but the regression detector for
+  //  that geometry is the max-error gate in angle_efficiency_cross_validation.
+  BOOST_CHECK_LT( median, 0.02 );
 }//angle_cascade_summing_unit_test

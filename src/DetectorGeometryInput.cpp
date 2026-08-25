@@ -141,8 +141,12 @@ DetectorGeometryInput::DetectorGeometryInput( InterSpec *viewer )
     m_dim1Label( nullptr ), m_dim2Label( nullptr ), m_dim3Label( nullptr ),
     m_dim1( nullptr ), m_dim2( nullptr ), m_dim3( nullptr ),
     m_dim3Row( nullptr ),
+    m_bulletLabel( nullptr ),
+    m_bulletRadius( nullptr ),
+    m_bulletRow( nullptr ),
     m_boreLabel( nullptr ),
     m_boreDiam( nullptr ), m_boreDepth( nullptr ),
+    m_boreRounded( nullptr ),
     m_boreRow( nullptr ),
     m_deadLabel( nullptr ),
     m_deadFront( nullptr ), m_deadSide( nullptr ),
@@ -242,6 +246,17 @@ void DetectorGeometryInput::init()
     }
   }
 
+  //Front-edge fillet ("bulletization"); any cylindrical crystal, coax or not
+  {
+    WTableCell *cell = add_row( WString::tr("dgi-bullet") );
+    m_bulletLabel = dynamic_cast<WLabel *>( table->elementAt(row-1,0)->widget(0) );
+    m_bulletRow = table->rowAt( row-1 );
+    m_bulletRadius = make_dist_edit( cell );
+    m_bulletRadius->setPlaceholderText( WString::tr("dgi-bullet-ph") );
+    m_bulletRadius->changed().connect( this, &DetectorGeometryInput::handleUserInput );
+    m_bulletRadius->enterPressed().connect( this, &DetectorGeometryInput::handleUserInput );
+  }
+
   //Bore (coax only)
   {
     WTableCell *cell = add_row( WString::tr("dgi-bore") );
@@ -251,8 +266,11 @@ void DetectorGeometryInput::init()
     m_boreDiam->setPlaceholderText( WString::tr("dgi-bore-diam-ph") );
     m_boreDepth = make_dist_edit( cell );
     m_boreDepth->setPlaceholderText( WString::tr("dgi-bore-depth-ph") );
+    m_boreRounded = cell->addNew<WCheckBox>( WString::tr("dgi-bore-rounded") );
+    m_boreRounded->addStyleClass( "DgiBoreRounded" );
     m_boreDiam->changed().connect( this, &DetectorGeometryInput::handleUserInput );
     m_boreDepth->changed().connect( this, &DetectorGeometryInput::handleUserInput );
+    m_boreRounded->changed().connect( this, &DetectorGeometryInput::handleUserInput );
   }
 
   //Dead layer (coax/planar HPGe-style; optional)
@@ -352,7 +370,8 @@ void DetectorGeometryInput::handleShapeChange()
   //Show/hide whole table rows (WTableRow::setHidden) - NOT by walking widget
   //  parents, which for a table cell is not a reliable row handle.
   m_dim3Row->setHidden( !box );          //third dimension only for boxes
-  m_boreRow->setHidden( !coax );         //bore only for coaxial HPGe
+  m_bulletRow->setHidden( box );         //a fillet is a cylinder-crystal feature
+  m_boreRow->setHidden( !coax );         //bore (and its rounded tip) only for coaxial HPGe
   m_deadRow->setHidden( box );           //dead layer for cylinders/HPGe, not boxes
 
   handleUserInput();
@@ -461,6 +480,9 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
     gd.dimensions_cm = { 0.5*diam, crystal_len };
     gd.symmetry = ceelo::ResponseSymmetry::Axial;
 
+    //Read before the bore, so the bore checks below see the final crystal profile
+    gd.bullet_radius_cm = distance_cm( m_bulletRadius, "front edge fillet radius", true );
+
     if( coax )
     {
       const double bore_diam = distance_cm( m_boreDiam, "bore diameter", true );
@@ -471,7 +493,8 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
       {
         if( (0.5*bore_diam >= 0.5*diam) || (bore_depth >= crystal_len) )
           throw runtime_error( WString::tr("dgi-err-bore-size").toUTF8() );
-        gd.bore = ceelo::BoreHoleConfig{ 0.5*bore_diam, bore_depth };
+        gd.bore = ceelo::BoreHoleConfig{ 0.5*bore_diam, bore_depth,
+                                         m_boreRounded->isChecked() };
       }
     }//if( coax )
   }//if( box ) / else
@@ -482,6 +505,18 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
     const double dead_side = distance_cm( m_deadSide, "side dead layer", true );
     if( (dead_front > 0.0) || (dead_side > 0.0) )
       gd.dead_layer = ceelo::DeadLayerConfig{ dead_front, dead_side, 0.0 };
+  }
+
+  //Everything CeeLo asserts on (fillet vs radius/length/dead layer, bore vs
+  //  fillet and vs the active radius), checked once from the library's own
+  //  list, so this form and the ANGLE import can't disagree about what's legal.
+  //  Those preconditions are asserts, so without this a release build would
+  //  silently trace garbage instead of telling the user what's wrong.
+  {
+    const vector<ceelo::GeometryProblem> problems = gd.problems();
+    if( !problems.empty() )
+      throw runtime_error(
+          WString::tr( CeeLoUtils::geometryProblemMsgId( problems.front() ) ).toUTF8() );
   }
 
   const shared_ptr<const MaterialDB> matDb = MaterialDB::initialized()
@@ -578,14 +613,19 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
     m_dim3->setText( "" );
   }
 
+  m_bulletRadius->setText( (gd.bullet_radius_cm > 0.0)
+                           ? cm_to_str( gd.bullet_radius_cm ) : string() );
+
   if( gd.bore )
   {
     m_boreDiam->setText( cm_to_str( 2.0*gd.bore->radius ) );
     m_boreDepth->setText( cm_to_str( gd.bore->depth ) );
+    m_boreRounded->setChecked( gd.bore->rounded_tip );
   }else
   {
     m_boreDiam->setText( "" );
     m_boreDepth->setText( "" );
+    m_boreRounded->setChecked( false );
   }
 
   if( gd.dead_layer )

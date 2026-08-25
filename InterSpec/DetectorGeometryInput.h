@@ -113,8 +113,13 @@ protected:
   Wt::WLineEdit *m_dim1, *m_dim2, *m_dim3;
   Wt::WTableRow *m_dim3Row;   //shown only for boxes
 
+  Wt::WLabel *m_bulletLabel;
+  Wt::WLineEdit *m_bulletRadius;
+  Wt::WTableRow *m_bulletRow;   //hidden for boxes; a fillet is a cylinder feature
+
   Wt::WLabel *m_boreLabel;
   Wt::WLineEdit *m_boreDiam, *m_boreDepth;
+  Wt::WCheckBox *m_boreRounded;  //in the bore row, so it follows its visibility
   Wt::WTableRow *m_boreRow;   //shown only for coaxial
   Wt::WLabel *m_deadLabel;
   Wt::WLineEdit *m_deadFront, *m_deadSide;

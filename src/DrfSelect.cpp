@@ -5233,6 +5233,14 @@ void DrfSelect::offerAngleImportModeChoice( const string &filename )
     geometry = make_shared<const ceelo::GeometryDescriptor>(
                                 CeeLoUtils::buildAngleGeometry( contents, warnings ) );
     seedDrf = CeeLoUtils::buildAngleSeedDrf( contents );
+
+    // Anything the import could not represent - an unresolvable layer material,
+    //  or a front-edge fillet / rounded bore tip that doesn't fit this crystal.
+    //  Without this the geometry is silently simplified and the user has no way
+    //  to know the detector they're about to characterize isn't what the file
+    //  described.  (English by design: CeeLoUtils is deliberately Wt-free.)
+    for( const string &warning : warnings )
+      passMessage( warning, WarningWidget::WarningMsgMedium );
   }catch( std::exception & )
   {
     return;  //Mode B (already applied) is the only offer we can honor

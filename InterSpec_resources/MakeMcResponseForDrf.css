@@ -34,6 +34,15 @@
   margin-left: 6px;
 }
 
+/* The rounded-tip checkbox shares the bore cell with the diameter/depth edits,
+   so it follows the bore row's show/hide for free; keep it on their baseline. */
+.DetectorGeometryInput .DgiBoreRounded
+{
+  margin-left: 8px;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
 .DetectorGeometryInput .DgiNote
 {
   color: var(--interspec-warning-color, #a35d00);

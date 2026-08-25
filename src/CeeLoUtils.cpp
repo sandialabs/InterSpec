@@ -26,6 +26,7 @@
 #include <map>
 #include <cmath>
 #include <cstdio>
+#include <cassert>
 #include <limits>
 #include <string>
 #include <vector>
@@ -318,6 +319,108 @@ std::shared_ptr<ceelo::DetectorResponse> makeTransferResponse(
 }//makeTransferResponse(...)
 
 
+const char *geometryProblemMsgId( const ceelo::GeometryProblem problem )
+{
+  switch( problem )
+  {
+    case ceelo::GeometryProblem::DimensionsMissing:     return "dgi-err-dims";
+    case ceelo::GeometryProblem::DeadLayerTooThick:    return "dgi-err-dead-thick";
+    case ceelo::GeometryProblem::BulletOnNonCylinder:  return "dgi-err-bullet-shape";
+    case ceelo::GeometryProblem::BulletNotFinite:       return "dgi-err-bullet-invalid";
+    case ceelo::GeometryProblem::BulletTooWide:         return "dgi-err-bullet-wide";
+    case ceelo::GeometryProblem::BulletTooLong:         return "dgi-err-bullet-long";
+    case ceelo::GeometryProblem::BulletNoDeadLayerRoom: return "dgi-err-bullet-dead";
+    case ceelo::GeometryProblem::BoreOnNonCylinder:     return "dgi-err-bore-shape";
+    case ceelo::GeometryProblem::BoreNotFinite:         return "dgi-err-bore-invalid";
+    case ceelo::GeometryProblem::BoreTooWide:           return "dgi-err-bore-size";
+    case ceelo::GeometryProblem::BoreTooDeep:           return "dgi-err-bore-size";
+    case ceelo::GeometryProblem::BoreTipTooBlunt:       return "dgi-err-bore-round";
+    case ceelo::GeometryProblem::BoreOutsideFillet:     return "dgi-err-bore-fillet";
+    case ceelo::GeometryProblem::BoreInsideDeadLayer:   return "dgi-err-bore-dead";
+  }//switch( problem )
+
+  assert( 0 );  //a GeometryProblem was added without a message for it
+  return "dgi-err-bore-size";
+}//geometryProblemMsgId(...)
+
+
+void relaxGeometryFeatures( ceelo::GeometryDescriptor &gd,
+                            std::vector<std::string> &warnings )
+{
+  const std::vector<ceelo::GeometryProblem> problems = gd.problems();
+
+  bool drop_fillet = false, drop_round_tip = false;
+  for( const ceelo::GeometryProblem problem : problems )
+  {
+    switch( problem )
+    {
+      case ceelo::GeometryProblem::BulletOnNonCylinder:
+      case ceelo::GeometryProblem::BulletNotFinite:
+      case ceelo::GeometryProblem::BulletTooWide:
+      case ceelo::GeometryProblem::BulletTooLong:
+      case ceelo::GeometryProblem::BulletNoDeadLayerRoom:
+      case ceelo::GeometryProblem::BoreOutsideFillet:
+        drop_fillet = true;
+        break;
+
+      case ceelo::GeometryProblem::BoreTipTooBlunt:
+        drop_round_tip = true;
+        break;
+
+      // Everything else is about the crystal, bore or dead layer themselves,
+      //  which we won't silently rewrite - left for the caller to report.
+      case ceelo::GeometryProblem::DimensionsMissing:
+      case ceelo::GeometryProblem::DeadLayerTooThick:
+      case ceelo::GeometryProblem::BoreOnNonCylinder:
+      case ceelo::GeometryProblem::BoreNotFinite:
+      case ceelo::GeometryProblem::BoreTooWide:
+      case ceelo::GeometryProblem::BoreTooDeep:
+      case ceelo::GeometryProblem::BoreInsideDeadLayer:
+        break;
+    }//switch( problem )
+  }//for( const ceelo::GeometryProblem problem : problems )
+
+  if( drop_fillet && (gd.bullet_radius_cm != 0.0) )
+  {
+    char msg[256];
+    snprintf( msg, sizeof(msg), "The crystal's %.3g cm front-edge bulletizing radius"
+              " doesn't fit this crystal, so a sharp front edge was used instead.",
+              gd.bullet_radius_cm );
+    warnings.push_back( msg );
+    gd.bullet_radius_cm = 0.0;
+  }//if( drop_fillet && ... )
+
+  if( drop_round_tip && gd.bore && gd.bore->rounded_tip )
+  {
+    warnings.push_back( "The bore hole is shallower than it is wide, so its rounded"
+                        " tip couldn't be modeled; a flat-bottomed bore was used." );
+    gd.bore->rounded_tip = false;
+  }//if( drop_round_tip && ... )
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Dropping the fillet can only remove problems, never add one, so one
+  //  re-check confirms we're done; anything left is about the crystal, bore or
+  //  dead layer, which we deliberately don't rewrite.
+  {
+    const std::vector<ceelo::GeometryProblem> remaining = gd.problems();
+    for( const ceelo::GeometryProblem problem : remaining )
+    {
+      const bool is_feature = (problem == ceelo::GeometryProblem::BoreTipTooBlunt)
+                              || (problem == ceelo::GeometryProblem::BoreOutsideFillet)
+                              || (problem == ceelo::GeometryProblem::BulletTooWide)
+                              || (problem == ceelo::GeometryProblem::BulletTooLong)
+                              || (problem == ceelo::GeometryProblem::BulletNotFinite)
+                              || (problem == ceelo::GeometryProblem::BulletOnNonCylinder)
+                              || (problem == ceelo::GeometryProblem::BulletNoDeadLayerRoom);
+      if( is_feature )
+        log_developer_error( __func__, ("relaxGeometryFeatures left a droppable problem: "
+                                        + std::string(ceelo::to_string(problem))).c_str() );
+    }//for( const ceelo::GeometryProblem problem : remaining )
+  }
+#endif //PERFORM_DEVELOPER_CHECKS
+}//relaxGeometryFeatures(...)
+
+
 ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
                                               std::vector<std::string> &warnings )
 {
@@ -409,10 +512,16 @@ ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
   gd.crystal_material_index = static_cast<int>( gd.materials.size() );
   gd.materials.push_back( ceelo::MaterialSpec::from( crystalMat ) );
 
-  // Coaxial bore from the core (bulletizing / rounding not represented by CeeLo).
+  // Front-edge bulletization: a quarter-torus fillet rounding off the outer
+  //  front edge of the crystal.  Zero is a sharp 90-degree edge.
+  gd.bullet_radius_cm = contents.bulletizingRadius / PhysicalUnits::cm;
+
+  // Coaxial bore from the core; `rounded` means a round-tipped drill, so the
+  //  closed end is a hemisphere of the bore radius (depth is to the apex).
   if( contents.hasCore && (contents.coreRadius > 0.0) && (contents.coreDepth > 0.0) )
     gd.bore = ceelo::BoreHoleConfig{ contents.coreRadius / PhysicalUnits::cm,
-                                     contents.coreDepth / PhysicalUnits::cm };
+                                     contents.coreDepth / PhysicalUnits::cm,
+                                     contents.coreRounded };
 
   // Dead layer (inactive Ge); the thin germanium contact reads as dead Ge, so
   //  fold it into the side dead layer.
@@ -482,17 +591,25 @@ ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
     gd.layers.push_back( spec );
   }//for( const AngleOutxContents::Layer &layer : contents.layers )
 
+  // The fillet and the rounded bore tip are refinements on top of a plain
+  //  cylinder; if this file's values can't be represented, drop them and keep
+  //  the import rather than failing it.  Done last, since the fillet check
+  //  needs the dead layer.
+  relaxGeometryFeatures( gd, warnings );
+
 #if( PERFORM_DEVELOPER_CHECKS )
   // Self-consistency check on the assembled endcap-front offset: since every
-  //  front-stack element (dead layer, vacuum gap, each endcap/window layer) is
-  //  now always represented (unresolved materials become transparent spacers
-  //  rather than being dropped), the descriptor's endcap_front_offset_cm() must
-  //  equal the sum of front thicknesses parsed from the file.  A mismatch means
-  //  a layer was silently lost - the bug class that collapsed the crystal
-  //  recess and produced a flat ~20-30% efficiency error.
+  //  front-stack element (vacuum gap, each endcap/window layer) is now always
+  //  represented (unresolved materials become transparent spacers rather than
+  //  being dropped), the descriptor's endcap_front_offset_cm() must equal the
+  //  sum of front thicknesses parsed from the file.  A mismatch means a layer
+  //  was silently lost - the bug class that collapsed the crystal recess and
+  //  produced a flat ~20-30% efficiency error.
+  //
+  //  The inactive-Ge thickness is NOT part of this sum: it is carved out of the
+  //  inside of the crystal, so it moves the active face, not the crystal face.
   {
-    double expect_front = contents.deadLayerFront / PhysicalUnits::cm
-                          + contents.vacuumFront / PhysicalUnits::cm;
+    double expect_front = contents.vacuumFront / PhysicalUnits::cm;
     for( const AngleOutxContents::Layer &layer : contents.layers )
     {
       const double f = layer.front / PhysicalUnits::cm;

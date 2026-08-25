@@ -127,15 +127,47 @@ namespace CeeLoUtils
    chemical-formula fallbacks for ANGLE trade names (Mylar/PET, Brass, Carbon
    fiber); anything still unresolved is skipped and a human-readable note
    appended to `warnings`.  The germanium contact is folded into the side dead
-   layer; `bulletizingRadius`, `contactPin`, and the vacuum gap (attenuation
-   ~ 0) are dropped.  Lengths in `contents` are PhysicalUnits and converted to
-   cm here.  `reference_point` is set to EndcapFront (ANGLE's convention).
+   layer; `contactPin` is dropped.  The crystal's front-edge bulletization and
+   the core's rounded tip are carried through (`bullet_radius_cm` /
+   `BoreHoleConfig::rounded_tip`), and dropped with a warning only when they
+   violate a CeeLo geometry precondition (see #relaxGeometryFeatures).  The
+   vacuum gap becomes a near-transparent spacer layer, so the crystal's recess
+   behind the endcap is preserved.  Lengths in `contents` are PhysicalUnits and
+   converted to cm here.  `reference_point` is set to EndcapFront (ANGLE's
+   convention).
 
    Throws std::runtime_error when `contents.hasGeometry` is false or the
    crystal dimensions are non-positive.
    */
   ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
                                                 std::vector<std::string> &warnings );
+
+  /** Maps a `ceelo::GeometryProblem` onto the MakeMcResponseForDrf.xml message
+   id ("dgi-err-...") that explains it to the user.
+
+   Kept here rather than in CeeLo so the library stays free of InterSpec and Wt
+   string resources; `ceelo::to_string()` is the developer-facing counterpart.
+   */
+  const char *geometryProblemMsgId( const ceelo::GeometryProblem problem );
+
+  /** Drops the optional CeeLo crystal-shape features `gd` cannot legally carry
+   - the front-edge fillet and/or the rounded bore tip - so `build_geometry()`
+   and `configure_calculator()` cannot trip a (debug-only) precondition and
+   trace garbage in a release build.  Each drop appends a note to `warnings`.
+
+   Features are dropped, never clamped: a clamped fillet is a silently wrong
+   number, whereas a dropped one is the sharp-edged approximation InterSpec
+   shipped before the fillet was modeled at all.  The crystal, bore and dead
+   layer are never modified - those are the file's primary content, and a
+   descriptor still reporting problems() afterwards is a hard error for the
+   caller.
+
+   For IMPORTED geometry only.  User-entered geometry is validated in
+   DetectorGeometryInput::toDescriptor(), which rejects rather than silently
+   rewrites what was typed.
+   */
+  void relaxGeometryFeatures( ceelo::GeometryDescriptor &gd,
+                              std::vector<std::string> &warnings );
 
   /** Builds a far-field-absolute seed DRF from an ANGLE file's measured
    reference efficiency points, pinned at `contents.referenceDistanceCm`.  The
