@@ -39,6 +39,8 @@
 #include <Wt/WGroupBox.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WGridLayout.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
 #include <Wt/WStackedWidget.h>
 #include <Wt/WContainerWidget.h>
 
@@ -57,6 +59,25 @@
 
 using namespace Wt;
 using namespace std;
+
+namespace
+{
+/** A click landing on the body of a menu item, but outside its anchor, does not reach Wt's own
+ wiring, so the tab does not change - which with the roomy `.SideMenu` padding is most of the
+ button.  Connecting the item's `clicked()` to `WMenu::select(...)` covers those clicks.
+
+ No explicit `triggered()`/`itemSelected()` emit: `WMenu::select()` emits when the selected index
+ actually changes, and nothing when it does not, so doing it here would just double-fire.
+ */
+void make_item_selectable( WMenu *menu, WMenuItem *item )
+{
+  assert( menu && item );
+  if( !menu || !item )
+    return;
+
+  item->clicked().connect( menu, [menu,item](){ menu->select( item ); } );
+}//void make_item_selectable( WMenu *menu, WMenuItem *item )
+}//namespace
 
 
 DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
@@ -91,40 +112,82 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
 
   addStyleClass( "DrfModifyWidget" );
 
+  // Own our stylesheet, rather than relying on the MakeMcResponseForDrf we happen to always create.
+  wApp->useStyleSheet( "InterSpec_resources/MakeMcResponseForDrf.css" );
+
+  // A side menu needs horizontal room; when there isnt any (phone, or just a narrow window), put
+  //  the sections in a row of tabs across the top instead - same as DrfSelect does.
+  int screen_width = m_interspec ? m_interspec->renderedWidth() : 0;
+  if( (screen_width < 100) && m_interspec && m_interspec->isMobile() )
+    screen_width = wApp->environment().screenWidth();  //not rendered yet - best guess
+  const bool narrow_layout = ((screen_width > 100) && (screen_width < 600));
+
   WGridLayout *layout = setLayout( make_unique<WGridLayout>() );
   layout->setContentsMargins( 0, 0, 0, 0 );
 
   auto stackOwned = make_unique<WStackedWidget>();
   m_tabStack = stackOwned.get();
   m_tabStack->addStyleClass( "DrfModifyStack" );
+  if( !narrow_layout )
+    m_tabStack->addStyleClass( "UseInfoStack" );  //divider between the side menu and the content
+
+  // Wt4's WStackedWidget ctor sets an inline `overflow:hidden` that beats the stylesheet, so the
+  //  scrolling has to be set through the API - see the same note in DrfSelect.cpp.
+  m_tabStack->setOverflow( Overflow::Auto, Wt::Orientation::Vertical );
 
   auto menuOwned = make_unique<WMenu>( m_tabStack );
   m_tabMenu = menuOwned.get();
-  m_tabMenu->addStyleClass( "VerticalNavMenu HeavyNavMenu HorizontalMenu" );
-  layout->addWidget( std::move(menuOwned), 0, 0 );
-  layout->addWidget( std::move(stackOwned), 1, 0 );
-  layout->setRowStretch( 1, 1 );
 
-  // --- Tab: Name & Description ---------------------------------------------
+  // The menu goes in its own container so the menu itself, and not the whole dialog, is what
+  //  scrolls when the sections dont all fit.
+  auto menuHolderOwned = make_unique<WContainerWidget>();
+  WContainerWidget *menuHolder = menuHolderOwned.get();
+  menuHolder->addWidget( std::move(menuOwned) );
+
+  if( narrow_layout )
+  {
+    m_tabMenu->addStyleClass( "VerticalNavMenu HorizontalMenu HeavyNavMenu DrfModifyMenuHorizontal" );
+    menuHolder->setOverflow( Overflow::Auto, Wt::Orientation::Horizontal );
+    menuHolder->setOverflow( Overflow::Hidden, Wt::Orientation::Vertical );
+
+    layout->addWidget( std::move(menuHolderOwned), 0, 0 );
+    layout->addWidget( std::move(stackOwned), 1, 0 );
+    layout->setRowStretch( 1, 1 );
+  }else
+  {
+    m_tabMenu->addStyleClass( "VerticalNavMenu SideMenu HeavyNavMenu DrfModifyMenu" );
+    menuHolder->setOverflow( Overflow::Auto, Wt::Orientation::Vertical );
+    menuHolder->setOverflow( Overflow::Hidden, Wt::Orientation::Horizontal );
+
+    layout->addWidget( std::move(menuHolderOwned), 0, 0 );
+    layout->addWidget( std::move(stackOwned), 0, 1 );
+    layout->setColumnStretch( 1, 1 );
+    layout->setRowStretch( 0, 1 );
+  }//if( narrow_layout ) / else
+
+  // --- Tab: General (name / description / measured-curve anchors) ----------
   {
     auto panelOwned = make_unique<WContainerWidget>();
     WContainerWidget *panel = panelOwned.get();
     panel->addStyleClass( "DrfModifyPanel" );
 
-    WContainerWidget *nameRow = panel->addNew<WContainerWidget>();
-    nameRow->addStyleClass( "DrfModifyRow" );
-    nameRow->addNew<WLabel>( WString::tr("Name") );
-    m_name = nameRow->addNew<WLineEdit>();
+    // Both label/field pairs go in a single grid, so the labels share one column and the fields
+    //  line up on both edges - a row-per-pair cannot do that, since each row sizes independently.
+    WContainerWidget *idGrid = panel->addNew<WContainerWidget>();
+    idGrid->addStyleClass( "DrfModifyFieldGrid" );
+
+    WLabel *nameLabel = idGrid->addNew<WLabel>( WString::tr("Name") );
+    m_name = idGrid->addNew<WLineEdit>();
     m_name->setTextSize( 32 );
     m_name->setText( WString::fromUTF8( m_orig ? m_orig->name() : string() ) );
+    nameLabel->setBuddy( m_name );
 
-    WContainerWidget *descRow = panel->addNew<WContainerWidget>();
-    descRow->addStyleClass( "DrfModifyRow" );
-    descRow->addNew<WLabel>( WString::tr("Description") );
-    m_description = descRow->addNew<WTextArea>();
+    WLabel *descLabel = idGrid->addNew<WLabel>( WString::tr("Description") );
+    m_description = idGrid->addNew<WTextArea>();
     m_description->setColumns( 40 );
     m_description->setRows( 3 );
     m_description->setText( WString::fromUTF8( m_orig ? m_orig->description() : string() ) );
+    descLabel->setBuddy( m_description );
 
     // Measured-curve anchor editor: only when seeded with a physical geometry
     //  (e.g. an ANGLE import) AND the DRF carries raw measured points.  This is
@@ -192,10 +255,11 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
       m_removeAnchor->setEnabled( !m_anchors.empty() );
     }//if( seeded with geometry + measured points )
 
-    m_tabMenu->addItem( WString::tr("dmw-tab-name"), std::move(panelOwned) );
+    WMenuItem *item = m_tabMenu->addItem( WString::tr("dmw-tab-name"), std::move(panelOwned) );
+    make_item_selectable( m_tabMenu, item );
   }
 
-  // --- Tab: Geometry & MC characterization ---------------------------------
+  // --- Tab: Geom & MC characterization -------------------------------------
   {
     auto toolOwned = make_unique<MakeMcResponseForDrf>( m_interspec, m_orig, m_geometry );
     m_mcTool = toolOwned.get();
@@ -203,8 +267,9 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     // ContentLoading::Eager: this tool posts work to a worker thread and gets back to itself with
     //  `findById(...)`; a Lazy tab parks its contents in `WMenuItem::uContents_`, outside the
     //  widget tree, where `findById` can not see it - see the FWHM tab below.
-    m_tabMenu->addItem( WString::tr("dmw-tab-geometry"), std::move(toolOwned),
-                        ContentLoading::Eager );
+    WMenuItem *item = m_tabMenu->addItem( WString::tr("dmw-tab-geometry"), std::move(toolOwned),
+                                          ContentLoading::Eager );
+    make_item_selectable( m_tabMenu, item );
   }
 
   // --- Tab: FWHM -----------------------------------------------------------
@@ -232,7 +297,9 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
       // `auto_fit_peaks == false`: the automated peak search is a multi-threaded fit of the whole
       //  spectrum, so dont pay for it every time this dialog is opened - #handleTabSelected kicks
       //  it off the first time the user actually looks at this tab.
-      auto toolOwned = make_unique<MakeFwhmForDrf>( false, m_interspec, fwhm_seed );
+      // Always narrow: even at this dialog's widest, the tool shares its row with the equation
+      //  controls, so the peak table never has room for the full-width column headers.
+      auto toolOwned = make_unique<MakeFwhmForDrf>( false, m_interspec, fwhm_seed, true );
       m_fwhmTool = toolOwned.get();
       fwhmLayout->addWidget( std::move(toolOwned), 0, 0 );
       fwhmLayout->setRowStretch( 0, 1 );
@@ -252,12 +319,14 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
       //  the tab shows "Currently searching for peaks..." forever.
       m_fwhmTabItem = m_tabMenu->addItem( WString::tr("dmw-tab-fwhm"), std::move(panelOwned),
                                           ContentLoading::Eager );
+      make_item_selectable( m_tabMenu, m_fwhmTabItem );
     }else
     {
       auto placeholder = make_unique<WContainerWidget>();
       placeholder->addStyleClass( "DrfModifyPanel" );
       placeholder->addNew<WText>( WString::tr("dmw-fwhm-no-foreground") )->setInline( false );
-      m_tabMenu->addItem( WString::tr("dmw-tab-fwhm"), std::move(placeholder) );
+      WMenuItem *item = m_tabMenu->addItem( WString::tr("dmw-tab-fwhm"), std::move(placeholder) );
+      make_item_selectable( m_tabMenu, item );
     }
   }
 
@@ -293,17 +362,21 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     }
     m_removeBand->setEnabled( !m_bands.empty() );
 
-    m_tabMenu->addItem( WString::tr("dmw-tab-uncert"), std::move(panelOwned) );
+    WMenuItem *item = m_tabMenu->addItem( WString::tr("dmw-tab-uncert"), std::move(panelOwned) );
+    make_item_selectable( m_tabMenu, item );
   }
 
   m_tabMenu->itemSelected().connect( this, &DrfModifyWidget::handleTabSelected );
 
   m_tabMenu->select( 0 );
 
-  WText *note = new WText( WString::tr("dmw-export-note") );
-  note->addStyleClass( "DrfModifyNote" );
-  note->setInline( false );
-  layout->addWidget( std::unique_ptr<WText>(note), 2, 0 );
+  auto noteOwned = make_unique<WText>( WString::tr("dmw-export-note") );
+  noteOwned->addStyleClass( "DrfModifyNote" );
+  noteOwned->setInline( false );
+  if( narrow_layout )
+    layout->addWidget( std::move(noteOwned), 2, 0 );        //below menu-row and stack-row
+  else
+    layout->addWidget( std::move(noteOwned), 1, 0, 1, 2 );  //below, spanning menu and stack columns
 }//DrfModifyWidget constructor
 
 

@@ -493,18 +493,46 @@ padding-left:10px;
   padding-right: 5px;
 }
 
+/* The horizontal counterpart of .SideMenu: same "sizing" layer, but lays the items out as a row of
+   tabs instead of a column.  Used by tools that put their nav on top when the display is too narrow
+   for a side menu.
+*/
+ul.HorizontalMenu {
+  font-size: 12px;
+  margin: 0px;
+  padding-top: 5px;
+  padding-left: 1px;
+  padding-right:1px;
+  padding-bottom: 2px;
+  height: 25px;
+  display: block;
+}
+
+ul.HorizontalMenu > li {
+  display: inline;
+  margin-right: 5px;
+
+  font-weight: bold;
+  padding-top: 4px;
+  padding-left: 4px;
+  padding-right: 4px;
+  padding-bottom: 2px;
+  border-radius: 5px;
+}
+
 
 /* For navigation-style menu, we break the CSS into two parts:
- The coloring part: .HeavyNavMenu and .LightNavMenu . These are affected by the color theming (e.g,
-   dark.css has to override).  .HeavyNavMenu is dark buttons and light text in default "light" color
-   theme
+ The coloring part: .HeavyNavMenu and .LightNavMenu . These take their colors from the color-theme
+   CSS variables, so light/dark follows the theme with no theme-specific stylesheet.  The one
+   exception is the `.itemselected` background, which has no matching theme variable yet and so is
+   still overridden in dark.css.
  The actual layout part: .VerticalNavMenu
- 
+
  */
 
 .HeavyNavMenu li
 {
-  color: #ffffff;
+  color: var(--interspec-button-text-color, #ffffff);
   
   white-space: nowrap;
   overflow: hidden;
@@ -513,7 +541,7 @@ padding-left:10px;
 
 .HeavyNavMenu li.item > a
 {
-  color: white;
+  color: var(--interspec-button-text-color, white);
 }
 
 .HeavyNavMenu li.itemselected > a
@@ -537,7 +565,7 @@ padding-left:10px;
 
 .HeavyNavMenu li.item
 {
-  background: #888888;
+  background: var(--interspec-button-background, #888888);
 }
 
 .HeavyNavMenu li.item:hover

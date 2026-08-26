@@ -1,8 +1,10 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- dmw- is short for DrfModifyWidget / DrfModifyWindow -->
-  <message id="dmw-tab-name">Name &amp; Description</message>
-  <message id="dmw-tab-geometry">Geometry &amp; MC</message>
+  <!-- Kept short so the side menu stays narrow, and so all four still fit one row of tabs when the
+       display is too narrow for a side menu. -->
+  <message id="dmw-tab-name">General</message>
+  <message id="dmw-tab-geometry">Geom &amp; MC</message>
   <message id="dmw-tab-fwhm">FWHM</message>
   <message id="dmw-fwhm-apply-cb">Use this FWHM fit for the detector</message>
   <message id="dmw-fwhm-apply-cb-tt">When checked, choosing &quot;Use&quot; replaces the detector&apos;s

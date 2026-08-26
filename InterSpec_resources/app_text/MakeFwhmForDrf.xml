@@ -6,6 +6,10 @@
   -->
   <message id="fpm-fwhm-uncert">FWHM Uncert</message>
   <message id="fpm-peak-source">Peak Source</message>
+  <!-- The -narrow variants are used where the table has little horizontal room; the Energy column
+       falls back to the shared "Energy" string there. -->
+  <message id="fpm-fwhm-uncert-narrow">Uncert</message>
+  <message id="fpm-peak-source-narrow">Peak Src</message>
   <message id="fpm-user">User</message>
   <message id="fpm-auto-fit">Auto-fit</message>
   

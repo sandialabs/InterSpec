@@ -57,9 +57,16 @@ namespace Wt
 class MakeFwhmForDrf : public Wt::WContainerWidget
 {
 public:
+  /** @param narrow_layout When true the peak table uses abbreviated column headers and turns off
+   sorting, so the columns fit where there is little horizontal room (phones, and the
+   "Modify Detector Response" dialog, where this tool shares the width with a side menu and the
+   equation controls).  Wt only renders the header sort handle for sortable columns, so turning
+   sorting off is what reclaims that space.
+   */
   MakeFwhmForDrf( const bool auto_fit_peaks,
                  InterSpec *viewer,
-                 std::shared_ptr<DetectorPeakResponse> drf );
+                 std::shared_ptr<DetectorPeakResponse> drf,
+                 const bool narrow_layout );
   
   virtual ~MakeFwhmForDrf() override;
 

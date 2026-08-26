@@ -96,17 +96,15 @@ ul.Wt-tv-root > li:nth-child(odd) {
   background: rgba(110, 110, 110, 0.5) !important;
 }
 
+/* `li.item` background/text now come from --interspec-button-background /
+   --interspec-button-text-color, so they need no override here.  The selected-item background and
+   its hover color have no matching theme variable yet, so they still do. */
 ul.HeavyNavMenu > li.itemselected  {
   background: rgb(175,175,175) !important;
 }
 
 ul.HeavyNavMenu > li.itemselected > a {
   color: rgb(115, 115, 255) !important;
-}
-
-
-ul.HeavyNavMenu > li.item {
-  background: rgb(124,124,124) !important;
 }
 
 ul.HeavyNavMenu > li.item:hover  {

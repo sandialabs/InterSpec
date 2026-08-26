@@ -33,6 +33,8 @@
 #include <Wt/WIOService.h>
 #include <Wt/WGridLayout.h>
 #include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
 #include <Wt/WAbstractItemModel.h>
 
 #include "SpecUtils/SpecFile.h"
@@ -68,12 +70,14 @@ protected:
   Column m_sort_col;
   SortOrder m_sort_order = SortOrder::Ascending;
   std::vector<MakeFwhmForDrf::TableRow> m_rows;
+  const bool m_narrow;  //abbreviate the column headers - see #headerData
   
   
 public:
-  FwhmPeaksModel()
+  FwhmPeaksModel( const bool narrow )
   : Wt::WAbstractItemModel(),
-  m_sort_col( Column::Energy )
+  m_sort_col( Column::Energy ),
+  m_narrow( narrow )
   {
   }
   
@@ -151,12 +155,18 @@ public:
     
     switch( Column(section) )
     {
-      case Column::Energy:     return WString::tr("Energy (keV)");
-      case Column::Fwhm:       return WString::tr("FWHM");
-      case Column::FWhmUncert: return WString::tr("fpm-fwhm-uncert");
-      case Column::UserOrAuto: return WString::tr("fpm-peak-source");
-      case Column::UseForFit:  return WString::tr("Use");
-      case Column::NumColumn: break;
+      case Column::Energy:
+        return m_narrow ? WString::tr("Energy") : WString::tr("Energy (keV)");
+      case Column::Fwhm:
+        return WString::tr("FWHM");
+      case Column::FWhmUncert:
+        return m_narrow ? WString::tr("fpm-fwhm-uncert-narrow") : WString::tr("fpm-fwhm-uncert");
+      case Column::UserOrAuto:
+        return m_narrow ? WString::tr("fpm-peak-source-narrow") : WString::tr("fpm-peak-source");
+      case Column::UseForFit:
+        return WString::tr("Use");
+      case Column::NumColumn:
+        break;
     }
     assert( 0 );
     return Wt::cpp17::any();
@@ -410,7 +420,11 @@ MakeFwhmForDrfWindow::MakeFwhmForDrfWindow( const bool use_auto_fit_peaks_too )
   shared_ptr<DetectorPeakResponse> drf = foreground ? foreground->detector() : nullptr;
   
   {
-    auto toolOwner = std::make_unique<MakeFwhmForDrf>( use_auto_fit_peaks_too, viewer, drf );
+    // This window gives the table nearly its full width, so only actually-narrow displays need the
+    //  abbreviated columns.
+    const bool narrow_layout = ((ww > 100) && (ww < 600));
+    auto toolOwner = std::make_unique<MakeFwhmForDrf>( use_auto_fit_peaks_too, viewer, drf,
+                                                      narrow_layout );
     m_tool = toolOwner.get();
     window->stretcher()->addWidget( std::move(toolOwner), 0, 0 );
   }
@@ -446,7 +460,8 @@ MakeFwhmForDrf *MakeFwhmForDrfWindow::tool()
 
 MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
                                InterSpec *viewer,
-               std::shared_ptr<DetectorPeakResponse> drf )
+               std::shared_ptr<DetectorPeakResponse> drf,
+                               const bool narrow_layout )
  : WContainerWidget(),
   m_interspec( viewer ),
   m_currently_searching( false ),
@@ -472,6 +487,17 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   
   addStyleClass( "MakeFwhmForDrf" );
   
+  // `narrow_layout` is about how much room the *table* gets (it is on even in the wide
+  //  "Modify Detector Response" dialog); this is about how much the *display* has.  On a phone
+  //  there is no room for the options and the peak table side-by-side, so they stack, and the
+  //  chart gives up some height to pay for it.
+  int screen_width = m_interspec ? m_interspec->renderedWidth() : 0;
+  if( (screen_width < 100) && m_interspec && m_interspec->isMobile() )
+    screen_width = wApp->environment().screenWidth();  //not rendered yet - best guess
+  const bool stack_options = ((screen_width > 100) && (screen_width < 600));
+  if( stack_options )
+    addStyleClass( "MakeFwhmForDrfNarrow" );
+  
   m_interspec->useMessageResourceBundle( "MakeFwhmForDrf" );
     
   // Using a Wt layout since the chart requires this
@@ -486,7 +512,7 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
     m_chart = chartOwned.get();
     m_chart->showEfficiencyPoints( false );
     DrfChartHolder *chartholder = layout->addWidget( std::make_unique<DrfChartHolder>( std::move(chartOwned) ), layout->rowCount(), 0 );
-    chartholder->setHeight( 250 );
+    chartholder->setHeight( stack_options ? 165 : 250 );
   }
   //layout->setRowResizable( 0, true, WLength(250, WLength::Unit::Pixel) );
   //layout->setRowStretch( 1, 1 );
@@ -596,27 +622,59 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
       m_parEdits.push_back( sb );
     }//for( int i = 0; i < m_sqrtEqnOrder->count(); ++i )
 
-    lowerLayout->addWidget( std::move(paramsDivOwner), 1, 0, Wt::AlignmentFlag::Top );
-    lowerLayout->setRowStretch( 1, 1 );
+    if( stack_options )
+      lowerLayout->addWidget( std::move(paramsDivOwner), 0, 1, Wt::AlignmentFlag::Top );
+    else
+      lowerLayout->addWidget( std::move(paramsDivOwner), 1, 0, Wt::AlignmentFlag::Top );
   }
     
   {
-    auto modelOwned = std::make_shared<FwhmPeaksModel>();
+    auto modelOwned = std::make_shared<FwhmPeaksModel>( narrow_layout );
     m_model = modelOwned.get();
     auto tableOwner = std::make_unique<RowStretchTreeView>();
     m_table = tableOwner.get();
     m_table->setRootIsDecorated( false ); //makes the tree look like a table! :)
     m_table->addStyleClass( "PeakTable" );
-    lowerLayout->addWidget( std::move(tableOwner), 0, 1, 2, 1 );
+    if( narrow_layout )
+      m_table->addStyleClass( "PeakTableNarrow" );
+    if( stack_options )
+      lowerLayout->addWidget( std::move(tableOwner), 1, 0, 1, 2 );  //full width, under the options
+    else
+      lowerLayout->addWidget( std::move(tableOwner), 0, 1, 2, 1 );  //right of the options
     m_table->setModel( modelOwned );
   }
-  lowerLayout->setColumnStretch( 1, 1 );
   
-  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Energy), 115 );
-  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Fwhm), 85 );
-  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::FWhmUncert), 125 );
-  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UserOrAuto), 105 );
-  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UseForFit), 60 );
+  if( stack_options )
+  {
+    lowerLayout->setRowStretch( 1, 1 );     //the table takes what the options dont
+    lowerLayout->setColumnStretch( 0, 1 );  //equation-type/terms drop-downs
+    lowerLayout->setColumnStretch( 1, 1 );  //coefficient inputs
+  }else
+  {
+    lowerLayout->setRowStretch( 1, 1 );
+    lowerLayout->setColumnStretch( 1, 1 );
+  }//if( stack_options ) / else
+  
+  if( narrow_layout )
+  {
+    // Wt only puts the sort handle in a header when that column is sortable, so dropping sorting is
+    //  what buys back the width for the (already abbreviated) labels.  Must come after setModel(),
+    //  since it walks the columns.  The rows arrive sorted by energy anyway.
+    m_table->setSortingEnabled( false );
+    
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Energy), 70 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Fwhm), 60 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::FWhmUncert), 60 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UserOrAuto), 75 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UseForFit), 45 );
+  }else
+  {
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Energy), 115 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Fwhm), 85 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::FWhmUncert), 125 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UserOrAuto), 105 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UseForFit), 60 );
+  }//if( narrow_layout ) / else
   
     
   m_model->dataChanged().connect( this, &MakeFwhmForDrf::handleTableDataChange );

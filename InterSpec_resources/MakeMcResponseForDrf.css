@@ -108,9 +108,31 @@
 /* DrfModifyWidget: the consolidated "Modify Detector" editor */
 .DrfModifyWidget { padding: 4px 6px; }
 .DrfModifyWidget .DrfModifyStack { padding-top: 6px; }
+
+/* Sizing for the section nav; the layout/coloring comes from .VerticalNavMenu + .HeavyNavMenu, and
+   the orientation from .SideMenu (wide) or ul.HorizontalMenu (narrow) - see InterSpec.css.
+*/
+.DrfModifyMenu { width: 8.5em; }
+.DrfModifyMenu li { height: 1.6em; padding-top: 5px; padding-bottom: 5px; }
+.DrfModifyMenuHorizontal { }
+
 .DrfModifyPanel { padding: 6px 4px; overflow-y: auto; }
 .DrfModifyRow { margin-bottom: 6px; display: flex; align-items: center; }
 .DrfModifyRow > label { min-width: 90px; }
+
+/* Name / Description: one grid for both pairs, so the labels share a column (sized to the widest)
+   and the fields line up on the left and stretch to a common right edge. */
+.DrfModifyFieldGrid
+{
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+.DrfModifyFieldGrid > label { justify-self: end; }
+.DrfModifyFieldGrid > input,
+.DrfModifyFieldGrid > textarea { width: 100%; box-sizing: border-box; }
 .DrfModifyBandTable td { padding: 1px 4px; }
 .DrfModifyUncert .DrfModifyBandTable { margin: 6px 0; }
 .DrfModifyFwhmApply { margin: 6px 2px 2px 2px; display: block; }
