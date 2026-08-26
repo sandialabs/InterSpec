@@ -5203,8 +5203,8 @@ void DrfSelect::handleEfficiencyCsvUpload()
 
 void DrfSelect::offerAngleImportModeChoice( const string &filename )
 {
-  // Full-parse the file as ANGLE; bail quietly on anything that isn't a
-  //  geometry-bearing ANGLE file (so non-ANGLE uploads never see a dialog).
+  // Full-parse the file as ANGLE; bail quietly on anything that isn't an ANGLE
+  //  file (so non-ANGLE uploads never see a dialog).
   AngleOutxContents contents;
   try
   {
@@ -5220,34 +5220,55 @@ void DrfSelect::offerAngleImportModeChoice( const string &filename )
     return;
   }
 
-  if( !contents.hasGeometry || !contents.hasReference )
+  // Nothing to offer beyond the fixed-geometry curve already applied.
+  if( !contents.hasGeometry )
     return;
+
+  // Anything the file said that we could not model is the user's business: a
+  //  silently simplified detector is worse than a noisy one.
+  for( const string &note : contents.parseNotes )
+    passMessage( WString::tr("ds-angle-note").arg(note), WarningWidget::WarningMsgMedium );
+
+  string obstruction = contents.modeAObstruction;
+  shared_ptr<const ceelo::GeometryDescriptor> geometry;
+  shared_ptr<DetectorPeakResponse> seedDrf;
+
+  if( contents.modeASupported && !contents.hasReference )
+    obstruction = WString::tr("ds-angle-no-refcurve").toUTF8();
 
   // Build the CeeLo geometry + a far-field seed DRF now, so the dialog only
   //  offers Mode A when it can actually be delivered.
-  shared_ptr<const ceelo::GeometryDescriptor> geometry;
-  shared_ptr<DetectorPeakResponse> seedDrf;
-  try
+  if( contents.modeASupported && contents.hasReference )
   {
-    vector<string> warnings;
-    geometry = make_shared<const ceelo::GeometryDescriptor>(
-                                CeeLoUtils::buildAngleGeometry( contents, warnings ) );
-    seedDrf = CeeLoUtils::buildAngleSeedDrf( contents );
+    try
+    {
+      vector<string> warnings;
+      geometry = make_shared<const ceelo::GeometryDescriptor>(
+                                  CeeLoUtils::buildAngleGeometry( contents, warnings ) );
+      seedDrf = CeeLoUtils::buildAngleSeedDrf( contents );
 
-    // Anything the import could not represent - an unresolvable layer material,
-    //  or a front-edge fillet / rounded bore tip that doesn't fit this crystal.
-    //  Without this the geometry is silently simplified and the user has no way
-    //  to know the detector they're about to characterize isn't what the file
-    //  described.  (English by design: CeeLoUtils is deliberately Wt-free.)
-    for( const string &warning : warnings )
-      passMessage( warning, WarningWidget::WarningMsgMedium );
-  }catch( std::exception & )
-  {
-    return;  //Mode B (already applied) is the only offer we can honor
-  }
+      for( const string &warning : warnings )
+        passMessage( WString::tr("ds-angle-note").arg(warning), WarningWidget::WarningMsgMedium );
+    }catch( std::exception &e )
+    {
+      geometry.reset();
+      seedDrf.reset();
+      obstruction = e.what();
+    }
+  }//if( contents.modeASupported && contents.hasReference )
 
   if( !geometry || !seedDrf )
+  {
+    // Mode B has already been applied.  Say why the better import is not on
+    //  offer rather than showing nothing at all and leaving the user to wonder.
+    if( obstruction.empty() )
+      return;
+
+    SimpleDialog * const why = SimpleDialog::make( WString::tr("ds-angle-mode-title"),
+                                  WString::tr("ds-angle-mode-unavailable").arg(obstruction) );
+    why->addButton( WString::tr("ds-angle-ok") );
     return;
+  }//if( !geometry || !seedDrf )
 
   SimpleDialog *dialog = SimpleDialog::make( WString::tr("ds-angle-mode-title"),
                                              WString::tr("ds-angle-mode-txt") );

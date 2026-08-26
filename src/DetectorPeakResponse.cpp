@@ -3156,110 +3156,39 @@ tuple<shared_ptr<DetectorPeakResponse>,double,double>
 
 namespace
 {
-/** Parses `<referenceEfficiencyCurve>` (experimental points, reference
- distance, and the fitted-region equations) into `contents`.  Best-effort: any
- failure leaves `contents.hasReference` false and never throws out.  Lengths in
- PhysicalUnits units; `dist_unit` is the file's length-unit factor.
- */
-void parseAngleReferenceCurve( const rapidxml::xml_node<char> *angle_node,
-                               const double dist_unit,
-                               AngleOutxContents &contents )
+/** Explains why an ANGLE file yielded no usable efficiency curve.  ANGLE only
+ writes per-energy efficiencies when the calculation had a reference efficiency
+ curve to transfer from, and several of its file types carry no results at all,
+ so name the actual reason rather than the count that came up short. */
+std::string angleNoCurveReason( const AngleOutxContents &contents )
 {
-  try
+  if( contents.results.empty() )
   {
-    const rapidxml::xml_node<char> *ref_node = XML_FIRST_NODE( angle_node, "referenceEfficiencyCurve" );
-    if( !ref_node )
-      return;
+    if( contents.hasGeometry && !contents.hasReference )
+      return "This ANGLE file describes a detector, but contains no calculated results"
+             " (it looks like an ANGLE detector definition, '.detx').  Its physical detector"
+             " model can still be used, but there is no efficiency curve to import.";
+    if( contents.hasReference )
+      return "This ANGLE file contains a reference efficiency curve, but no calculated"
+             " results (it looks like an ANGLE reference curve, '.recx', or a set of"
+             " calculation parameters, '.savx').";
+    return "This ANGLE file contains no <results> element, so there is no efficiency"
+           " curve to import.";
+  }//if( contents.results.empty() )
 
-    // Measured experimental points (energy keV, absolute efficiency).
-    const rapidxml::xml_node<char> *points_node = XML_FIRST_NODE( ref_node, "experimentalPoints" );
-    if( points_node )
-    {
-      XML_FOREACH_CHILD( point, points_node, "point" )
-      {
-        const auto *e_attr = XML_FIRST_ATTRIB( point, "energy" );
-        const auto *eff_attr = XML_FIRST_ATTRIB( point, "efficiency" );
-        if( !e_attr || !e_attr->value_size() || !eff_attr || !eff_attr->value_size() )
-          continue;
+  size_t n_eff = 0;
+  for( const AngleResultRow &row : contents.results )
+    n_eff += row.hasEfficiency ? 1u : 0u;
 
-        float energy = 0.0f, eff = 0.0f;
-        if( !SpecUtils::parse_float( e_attr->value(), e_attr->value_size(), energy )
-            || !SpecUtils::parse_float( eff_attr->value(), eff_attr->value_size(), eff ) )
-          continue;
+  if( !n_eff )
+    return "This ANGLE calculation was run without a reference efficiency curve, so its"
+           " results give solid angles only - ANGLE did not compute any efficiencies to"
+           " import.";
 
-        if( (energy > 0.0f) && (eff > 0.0f) && !IsNan(eff) && !IsInf(eff) )
-          contents.referencePoints.emplace_back( energy, eff );
-      }//XML_FOREACH_CHILD( point, ... )
-
-      std::sort( begin(contents.referencePoints), end(contents.referencePoints),
-                 []( const pair<float,float> &l, const pair<float,float> &r ) -> bool {
-                   return l.first < r.first;
-                 } );
-    }//if( points_node )
-
-    // Reference on-axis distance from the reference curve's own
-    //  <geometry>/<holder height> (NOT the top-level near-contact holder).
-    const rapidxml::xml_node<char> *geom_node = XML_FIRST_NODE( ref_node, "geometry" );
-    const rapidxml::xml_node<char> *holder_node = geom_node ? XML_FIRST_NODE( geom_node, "holder" ) : nullptr;
-    const auto *height_attr = holder_node ? XML_FIRST_ATTRIB( holder_node, "height" ) : nullptr;
-    if( height_attr && height_attr->value_size() )
-    {
-      float height = 0.0f;
-      if( SpecUtils::parse_float( height_attr->value(), height_attr->value_size(), height ) && (height > 0.0f) )
-        contents.referenceDistanceCm = (height * dist_unit) / PhysicalUnits::cm;
-    }//if( height_attr )
-
-    // Fitted-region polynomials: each <region> is followed by an XML comment
-    //  holding its equation.  Pair element with its trailing comment sibling.
-    const rapidxml::xml_node<char> *regions_node = XML_FIRST_NODE( ref_node, "regions" );
-    if( regions_node )
-    {
-      double prev_end = 0.0;
-      for( const rapidxml::xml_node<char> *ch = regions_node->first_node();
-           ch; ch = ch->next_sibling() )
-      {
-        if( ch->type() != rapidxml::node_element )
-          continue;
-        if( SpecUtils::xml_name_str(ch) != "region" )
-          continue;
-
-        AngleOutxContents::FitRegion region;
-        float start = 0.0f, end = 0.0f;
-        const auto *start_attr = XML_FIRST_ATTRIB( ch, "start" );
-        const auto *end_attr = XML_FIRST_ATTRIB( ch, "end" );
-        if( start_attr && start_attr->value_size() )
-          SpecUtils::parse_float( start_attr->value(), start_attr->value_size(), start );
-        else
-          start = static_cast<float>( prev_end );  // continues from previous region
-        if( end_attr && end_attr->value_size() )
-          SpecUtils::parse_float( end_attr->value(), end_attr->value_size(), end );
-
-        region.startKeV = start;
-        region.endKeV = end;
-        prev_end = end;
-
-        // Grab the first comment sibling before the next element.
-        for( const rapidxml::xml_node<char> *sib = ch->next_sibling();
-             sib && (sib->type() != rapidxml::node_element); sib = sib->next_sibling() )
-        {
-          if( sib->type() == rapidxml::node_comment )
-          {
-            region.equation = SpecUtils::xml_value_str( sib );
-            break;
-          }
-        }//for( following siblings )
-
-        contents.fitRegions.push_back( region );
-      }//for( children of <regions> )
-    }//if( regions_node )
-
-    contents.hasReference = (contents.referencePoints.size() >= 2);
-  }catch( std::exception &e )
-  {
-    cerr << "parseAngleOutxFile: reference-curve extraction failed: " << e.what() << endl;
-    contents.hasReference = false;
-  }//try / catch
-}//parseAngleReferenceCurve(...)
+  return "This ANGLE file has only " + std::to_string(n_eff)
+         + " result(s) with an efficiency; at least 4 are needed to build a detector"
+           " response.";
+}//angleNoCurveReason(...)
 
 
 #if( PERFORM_DEVELOPER_CHECKS )
@@ -3338,349 +3267,60 @@ std::shared_ptr<DetectorPeakResponse>
 
 AngleOutxContents DetectorPeakResponse::parseAngleOutxFileFull( std::istream &input )
 {
-  static const size_t max_xml_size = 10u * 1024u * 1024u;
-
-  // rapidxml needs one mutable, null-terminated buffer.  Read directly into
-  // that buffer so the untrusted XML is not duplicated in memory, and enforce
-  // the limit while reading so non-seekable streams are bounded as well.
-  vector<char> xml_buf;
-  xml_buf.reserve( 64u * 1024u );
-  std::array<char,16u * 1024u> chunk;
-
-  while( input )
-  {
-    input.read( chunk.data(), static_cast<std::streamsize>(chunk.size()) );
-    const std::streamsize count = input.gcount();
-    if( count <= 0 )
-      break;
-
-    const size_t nread = static_cast<size_t>(count);
-    if( nread > (max_xml_size - xml_buf.size()) )
-      throw runtime_error( "parseAngleOutxFile: input exceeds 10 MiB limit." );
-
-    xml_buf.insert( xml_buf.end(), chunk.data(), chunk.data() + nread );
-  }
-
-  if( input.bad() )
-    throw runtime_error( "parseAngleOutxFile: failed reading input." );
-
-  if( xml_buf.size() < 50 )
-    throw runtime_error( "parseAngleOutxFile: input too small." );
-
-  xml_buf.push_back( '\0' );
-
-  rapidxml::xml_document<char> doc;
-  try
-  {
-    // parse_comment_nodes: ANGLE stores each fitted-region efficiency
-    //  polynomial as an XML comment after its <region> element; we read those
-    //  for the developer-checks self-consistency test (see below).
-    doc.parse<rapidxml::parse_trim_whitespace | rapidxml::parse_comment_nodes>( xml_buf.data() );
-  }catch( const rapidxml::parse_error &e )
-  {
-    throw runtime_error( "parseAngleOutxFile: XML parse error: " + string(e.what()) );
-  }
-
-  const rapidxml::xml_node<char> *angle_node = XML_FIRST_NODE( (&doc), "angle" );
-  if( !angle_node )
-    throw runtime_error( "parseAngleOutxFile: no <angle> root element." );
-
-  // Extract distance unit from <angle units="mm|cm">; default to mm
-  double dist_unit = 1.0 * PhysicalUnits::mm;
-  const string units_str = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( angle_node, "units" ) );
-  if( SpecUtils::iequals_ascii( units_str, "cm" ) )
-    dist_unit = 1.0 * PhysicalUnits::cm;
-
-  AngleOutxContents contents;
-
-  // Extract detector metadata and geometry
-  string det_name, det_desc;
-  float crystal_radius = 0.0f;
-  float setback = 0.0f;
-
-  const rapidxml::xml_node<char> *det_node = XML_FIRST_NODE( angle_node, "detector" );
-  if( det_node )
-  {
-    det_name = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( det_node, "name" ) );
-    det_desc = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( det_node, "description" ) );
-
-    // Extract crystal radius from <crystal radius="...">
-    const auto *r_attr = SpecUtils::xml_first_attribute( XML_FIRST_NODE( det_node, "crystal" ), "radius" );
-    if( r_attr )
-      SpecUtils::parse_float( r_attr->value(), r_attr->value_size(), crystal_radius );
-
-    // Calculate setback: sum of material layers from outer enclosure to active Ge surface.
-    //  housing/topUpper + housing/topLower + endCap top + vacuum top + inactiveGe top
-    auto parse_attr_float = []( const rapidxml::xml_node<char> *node, const char *attr,
-                                size_t attr_len ) -> float
-    {
-      float val = 0.0f;
-      const auto *a = node ? node->first_attribute( attr, attr_len ) : nullptr;
-      if( a && a->value_size() )
-        SpecUtils::parse_float( a->value(), a->value_size(), val );
-      return val;
-    };//parse_attr_float
-
-    setback += parse_attr_float( XML_FIRST_NODE( det_node, "endCap" ), "topThickness", 12 );
-    setback += parse_attr_float( XML_FIRST_NODE( det_node, "vacuum" ), "topThickness", 12 );
-    setback += parse_attr_float( XML_FIRST_NODE( det_node, "inactiveGe" ), "topThickness", 12 );
-
-    const rapidxml::xml_node<char> *housing = XML_FIRST_NODE( det_node, "housing" );
-    if( housing )
-    {
-      setback += parse_attr_float( XML_FIRST_NODE( housing, "topUpper" ), "thickness", 9 );
-      setback += parse_attr_float( XML_FIRST_NODE( housing, "topLower" ), "thickness", 9 );
-    }//if( housing )
-
-    // Rich physical-geometry extraction for Mode A (CeeLo).  Best-effort: any
-    //  failure here must not stop the <results> import, so wrap in try/catch
-    //  and leave contents.hasGeometry false.  All lengths kept in PhysicalUnits
-    //  units (file value * dist_unit); materials kept by name only.
-    try
-    {
-      // Reads a child <material name="..."> node's name (layer materials are a
-      //  child node in ANGLE, not an attribute of the layer element).
-      auto layer_material = []( const rapidxml::xml_node<char> *node ) -> string
-      {
-        const rapidxml::xml_node<char> *m = node ? XML_FIRST_NODE( node, "material" ) : nullptr;
-        return m ? SpecUtils::xml_value_str( XML_FIRST_ATTRIB( m, "name" ) ) : string();
-      };//layer_material
-
-      contents.detName = det_name;
-      contents.detDescription = det_desc;
-      contents.detType = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( det_node, "type" ) );
-
-      const rapidxml::xml_node<char> *crystal = XML_FIRST_NODE( det_node, "crystal" );
-      contents.crystalRadius = parse_attr_float( crystal, "radius", 6 ) * dist_unit;
-      contents.crystalLength = parse_attr_float( crystal, "height", 6 ) * dist_unit;
-      contents.bulletizingRadius = parse_attr_float( crystal, "bulletizingRadius", 17 ) * dist_unit;
-
-      const rapidxml::xml_node<char> *core = XML_FIRST_NODE( det_node, "core" );
-      if( core )
-      {
-        contents.hasCore = true;
-        contents.coreRadius = parse_attr_float( core, "radius", 6 ) * dist_unit;
-        contents.coreDepth = parse_attr_float( core, "height", 6 ) * dist_unit;
-
-        // ANGLE writes yes/no; accept the other usual truthy spellings so a
-        //  hand-edited or future-version file isn't silently read as flat.
-        const string rounded = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( core, "rounded" ) );
-        contents.coreRounded = SpecUtils::iequals_ascii( rounded, "yes" )
-                                || SpecUtils::iequals_ascii( rounded, "true" )
-                                || (rounded == "1");
-      }//if( core )
-
-      const rapidxml::xml_node<char> *inactive = XML_FIRST_NODE( det_node, "inactiveGe" );
-      contents.deadLayerFront = parse_attr_float( inactive, "topThickness", 12 ) * dist_unit;
-      contents.deadLayerSide = parse_attr_float( inactive, "sideThickness", 13 ) * dist_unit;
-
-      const rapidxml::xml_node<char> *contact = XML_FIRST_NODE( det_node, "contact" );
-      if( contact )
-      {
-        contents.contactSide = parse_attr_float( contact, "sideThickness", 13 ) * dist_unit;
-        contents.contactMaterial = layer_material( contact );
-      }//if( contact )
-
-      const rapidxml::xml_node<char> *vacuum = XML_FIRST_NODE( det_node, "vacuum" );
-      contents.vacuumFront = parse_attr_float( vacuum, "topThickness", 12 ) * dist_unit;
-      contents.vacuumSide = parse_attr_float( vacuum, "sideThickness", 13 ) * dist_unit;
-
-      // Concentric layers, innermost -> outermost: endCap (front+side), its
-      //  optional window (front only), then housing side/top pieces.
-      auto add_layer = []( vector<AngleOutxContents::Layer> &layers,
-                           const string &material, const double front, const double side )
-      {
-        if( (front > 0.0) || (side > 0.0) )
-        {
-          AngleOutxContents::Layer layer;
-          layer.material = material;
-          layer.front = front;
-          layer.side = side;
-          layers.push_back( layer );
-        }
-      };//add_layer
-
-      const rapidxml::xml_node<char> *endcap = XML_FIRST_NODE( det_node, "endCap" );
-      if( endcap )
-      {
-        // <window> (optional; not present in all files) - a thin full-face
-        //  window let into the endcap front over a hole of radius `holeRadius`.
-        //  When holeRadius >= crystal radius the window replaces the endcap
-        //  front on-axis (the endcap has been bored out there), so on-axis the
-        //  true front is only the window - counting BOTH the endcap top and the
-        //  window over-recesses the crystal.  In that case take the endcap SIDE
-        //  only, and the window as the front; otherwise take the endcap front
-        //  (an intact endcap, no on-axis hole).
-        const rapidxml::xml_node<char> *window = XML_FIRST_NODE( endcap, "window" );
-        const double endcap_front = parse_attr_float( endcap, "topThickness", 12 ) * dist_unit;
-        const double endcap_side = parse_attr_float( endcap, "sideThickness", 13 ) * dist_unit;
-
-        bool window_replaces_front = false;
-        if( window )
-        {
-          const double hole_radius = parse_attr_float( window, "holeRadius", 10 ) * dist_unit;
-          window_replaces_front = (hole_radius > 0.0) && (hole_radius >= contents.crystalRadius);
-        }//if( window )
-
-        add_layer( contents.layers, layer_material( endcap ),
-                   window_replaces_front ? 0.0 : endcap_front, endcap_side );
-
-        if( window )
-          add_layer( contents.layers, layer_material( window ),
-                     parse_attr_float( window, "thickness", 9 ) * dist_unit, 0.0 );
-      }//if( endcap )
-
-      if( housing )
-      {
-        const rapidxml::xml_node<char> *side_in = XML_FIRST_NODE( housing, "sideInner" );
-        const rapidxml::xml_node<char> *side_out = XML_FIRST_NODE( housing, "sideOuter" );
-        const rapidxml::xml_node<char> *top_lo = XML_FIRST_NODE( housing, "topLower" );
-        const rapidxml::xml_node<char> *top_up = XML_FIRST_NODE( housing, "topUpper" );
-
-        add_layer( contents.layers, layer_material( side_in ),
-                   0.0, parse_attr_float( side_in, "thickness", 9 ) * dist_unit );
-        add_layer( contents.layers, layer_material( side_out ),
-                   0.0, parse_attr_float( side_out, "thickness", 9 ) * dist_unit );
-        add_layer( contents.layers, layer_material( top_lo ),
-                   parse_attr_float( top_lo, "thickness", 9 ) * dist_unit, 0.0 );
-        add_layer( contents.layers, layer_material( top_up ),
-                   parse_attr_float( top_up, "thickness", 9 ) * dist_unit, 0.0 );
-      }//if( housing )
-
-      contents.hasGeometry = (contents.crystalRadius > 0.0) && (contents.crystalLength > 0.0);
-    }catch( std::exception &e )
-    {
-      cerr << "parseAngleOutxFile: geometry extraction failed: " << e.what() << endl;
-      contents.hasGeometry = false;
-    }//try / catch
-  }//if( det_node )
-
-  // Sample source geometry: the TOP-LEVEL <geometry>/<source> block describes
-  //  the sample the <results> efficiency is for (distinct from the reference
-  //  curve's own block nested in <referenceEfficiencyCurve>).  Not used to build
-  //  the DRF, but captured so tests / a future "seed source geometry" feature
-  //  can reconstruct the measured source.  Best-effort; never fatal.
-  try
-  {
-    auto attr_float = []( const rapidxml::xml_node<char> *node, const char *attr ) -> double
-    {
-      float val = 0.0f;
-      const rapidxml::xml_attribute<char> *a = node ? node->first_attribute( attr ) : nullptr;
-      if( a && a->value_size() )
-        SpecUtils::parse_float( a->value(), a->value_size(), val );
-      return val;
-    };//attr_float
-
-    // Sample standoff = the sample holder's on-axis height.
-    const rapidxml::xml_node<char> *geom_node = XML_FIRST_NODE( angle_node, "geometry" );
-    const rapidxml::xml_node<char> *holder_node = geom_node ? XML_FIRST_NODE( geom_node, "holder" ) : nullptr;
-    if( holder_node )
-      contents.sampleDistanceCm = (attr_float( holder_node, "height" ) * dist_unit) / PhysicalUnits::cm;
-
-    const rapidxml::xml_node<char> *source_node = XML_FIRST_NODE( angle_node, "source" );
-    if( source_node )
-    {
-      contents.sourceRadius = attr_float( source_node, "radius" ) * dist_unit;
-      contents.sourceHeight = attr_float( source_node, "height" ) * dist_unit;
-
-      const rapidxml::xml_node<char> *mat_node = XML_FIRST_NODE( source_node, "material" );
-      if( mat_node )
-      {
-        contents.sourceMaterialName = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( mat_node, "name" ) );
-        contents.sourceDensity = attr_float( mat_node, "density" );
-
-        // Elemental composition (mass-PERCENT, sums to 100).  Only the explicit
-        //  <elements>/<element symbol massFraction> form is captured; the
-        //  <compound>/<element atoms> form is left for the material name.
-        const rapidxml::xml_node<char> *elems_node = XML_FIRST_NODE( mat_node, "elements" );
-        if( elems_node )
-        {
-          XML_FOREACH_CHILD( elem, elems_node, "element" )
-          {
-            const string sym = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( elem, "symbol" ) );
-            const double mass_pct = attr_float( elem, "massFraction" );
-            if( !sym.empty() && (mass_pct > 0.0) )
-              contents.sourceComposition.push_back( { sym, mass_pct / 100.0 } );
-          }//XML_FOREACH_CHILD( elem, ... )
-        }//if( elems_node )
-      }//if( mat_node )
-    }//if( source_node )
-  }catch( std::exception &e )
-  {
-    cerr << "parseAngleOutxFile: sample source extraction failed: " << e.what() << endl;
-  }//try / catch
-
-  // Extract the measured reference efficiency curve (Mode A anchor).
-  //  Best-effort, same rationale as geometry above.
-  parseAngleReferenceCurve( angle_node, dist_unit, contents );
-
-  // Find <results> and parse <result> children
-  const rapidxml::xml_node<char> *results_node = XML_FIRST_NODE( angle_node, "results" );
-  if( !results_node )
-    throw runtime_error( "parseAngleOutxFile: no <results> element." );
+  // All of the XML work lives in src/AngleOutxImport.cpp; what is left here is
+  //  turning the <results> rows into the fixed-geometry DRF (Mode B), which is
+  //  the only part that needs DetectorPeakResponse's private state.
+  AngleOutxContents contents = AngleOutx::parse( input );
 
   vector<EnergyEfficiencyPair> energy_efficiencies;
   vector<pair<float,float>> energy_precision;
 
-  XML_FOREACH_CHILD( result, results_node, "result" )
+  for( const AngleResultRow &row : contents.results )
   {
-    const auto *energy_attr = XML_FIRST_ATTRIB( result, "energy" );
-    const auto *eff_attr = XML_FIRST_ATTRIB( result, "efficiency" );
-
-    if( !energy_attr || !energy_attr->value_size() || !eff_attr || !eff_attr->value_size() )
+    if( !row.hasEfficiency )
       continue;
 
-    float energy = 0.0f, efficiency = 0.0f;
-    if( !SpecUtils::parse_float( energy_attr->value(), energy_attr->value_size(), energy ) )
-      throw runtime_error( "parseAngleOutxFile: failed to parse energy attribute." );
-    if( !SpecUtils::parse_float( eff_attr->value(), eff_attr->value_size(), efficiency ) )
-      throw runtime_error( "parseAngleOutxFile: failed to parse efficiency attribute." );
-
-    if( energy <= 1.0f )
-      throw runtime_error( "parseAngleOutxFile: energy <= 1 keV (" + to_string(energy) + ")" );
-    if( energy > 14000.0f )
-      throw runtime_error( "parseAngleOutxFile: energy > 14 MeV (" + to_string(energy) + ")" );
-    if( (efficiency < 0.0f) || IsNan(efficiency) || IsInf(efficiency) )
-      throw runtime_error( "parseAngleOutxFile: invalid efficiency ("
-                          + to_string(efficiency) + " at " + to_string(energy) + " keV)" );
-
     EnergyEfficiencyPair eep;
-    eep.energy = energy;
-    eep.efficiency = efficiency;
+    eep.energy = static_cast<float>( row.energyKeV );
+    eep.efficiency = static_cast<float>( row.efficiency );
     energy_efficiencies.push_back( eep );
 
-    // The "efficiencyPrecision" attribute is a multiplicative precision factor
-    //  (e.g., 1.03 means the efficiency is known to within ~3%).
-    const auto *prec_attr = XML_FIRST_ATTRIB( result, "efficiencyPrecision" );
-    if( prec_attr && prec_attr->value_size() )
-    {
-      float precision = 0.0f;
-      if( SpecUtils::parse_float( prec_attr->value(), prec_attr->value_size(), precision ) )
-        energy_precision.emplace_back( energy, precision );
-    }
-  }//for( loop over <result> nodes )
+    // "efficiencyPrecision" is the precision ANGLE actually achieved at this
+    //  energy, IN PERCENT - the same unit as the requested `<precision>`, per
+    //  https://www.angle.me/calculation-results-data-specification.html.  (The
+    //  shipped test fixture makes this unambiguous: it requests
+    //  `<precision>1</precision>` and its 75 results come back 1.028 - 1.414,
+    //  i.e. a hair worse than the 1% asked for.)
+    if( row.efficiencyPrecision > 0.0 )
+      energy_precision.emplace_back( eep.energy, static_cast<float>(row.efficiencyPrecision) );
+  }//for( const AngleResultRow &row : contents.results )
 
   if( energy_efficiencies.size() < 4 )
-    throw runtime_error( "parseAngleOutxFile: not enough energy/efficiency pairs (got "
-                        + to_string(energy_efficiencies.size()) + ")." );
+    throw runtime_error( angleNoCurveReason(contents) );
 
-  std::sort( begin(energy_efficiencies), end(energy_efficiencies),
-    []( const EnergyEfficiencyPair &lhs, const EnergyEfficiencyPair &rhs ) -> bool {
-    return lhs.energy < rhs.energy;
-  } );
+  // Distance from the outer detector face in to the ACTIVE germanium: every
+  //  front-facing layer of the housing / gap / endcap stack, plus the dead
+  //  layer carved out of the crystal's front.  (CeeLo's endcap_front_offset_cm()
+  //  is the same sum without the dead layer, since that moves the active face
+  //  rather than the crystal face.)
+  double setback = contents.deadLayerFront;
+  for( const AngleOutxContents::Layer &layer : contents.layers )
+  {
+    if( !layer.behindCrystal )
+      setback += layer.front;
+  }
 
   shared_ptr<DetectorPeakResponse> answer = make_shared<DetectorPeakResponse>();
-  answer->m_name = det_name;
-  if( !det_desc.empty() )
-    answer->m_name += (answer->m_name.empty() ? "" : " - ") + det_desc;
+  answer->m_name = contents.detName;
+  if( !contents.detDescription.empty() )
+    answer->m_name += (answer->m_name.empty() ? "" : " - ") + contents.detDescription;
 
   answer->m_description = "ANGLE .outx";
-  const double setback_pu = setback * dist_unit;
-  if( setback_pu > 0.0 )
-    answer->m_description += ", setback=" + to_string( setback_pu / PhysicalUnits::mm ) + "mm";
+  if( setback > 0.0 )
+    answer->m_description += ", setback=" + to_string( setback / PhysicalUnits::mm ) + "mm";
 
-  answer->m_detectorDiameter = static_cast<float>( 2.0 * crystal_radius * dist_unit );
-  answer->m_detectorSetback = setback_pu;
+  answer->m_detectorDiameter = static_cast<float>( 2.0 * contents.crystalRadius );
+  answer->m_detectorSetback = setback;
   {
     std::shared_ptr<DetectorEfficiencyCurve> eff = std::make_shared<DetectorEfficiencyCurve>();
     eff->setFromPairs( energy_efficiencies, static_cast<float>(PhysicalUnits::keV) );
@@ -3706,10 +3346,8 @@ AngleOutxContents DetectorPeakResponse::parseAngleOutxFileFull( std::istream &in
     vector<float> uncert_energies, frac_uncerts;
     for( const pair<float,float> &ep : energy_precision )
     {
-      // Values are multiplicative factors >= 1.0 (e.g. 1.03 -> ~3%); if a
-      //  value below 1.0 is ever encountered, treat it as already-fractional.
-      const float p = ep.second;
-      const float frac = (p >= 1.0f) ? (p - 1.0f) : p;
+      // Percent -> the fractional 1-sigma `fromPointUncerts` wants.
+      const float frac = 0.01f * ep.second;
       if( (frac >= 0.0f) && !IsNan(frac) && !IsInf(frac) )
       {
         uncert_energies.push_back( ep.first );
@@ -3746,6 +3384,7 @@ AngleOutxContents DetectorPeakResponse::parseAngleOutxFileFull( std::istream &in
 
   return contents;
 }//AngleOutxContents parseAngleOutxFileFull( std::istream &input )
+
 
 
 DetectorPeakResponse::EffCsvParseResult

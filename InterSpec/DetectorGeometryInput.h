@@ -26,6 +26,7 @@
 #include "InterSpec_config.h"
 
 #include <memory>
+#include <string>
 #include <vector>
 
 #include <Wt/WContainerWidget.h>
@@ -46,7 +47,7 @@ namespace Wt
   class WPushButton;
 }//namespace Wt
 
-namespace ceelo{ struct GeometryDescriptor; }
+namespace ceelo{ struct GeometryDescriptor; struct MaterialSpec; }
 
 /** A form for entering/editing the physical geometry of a detector - shape,
  crystal dimensions and material, bore hole (coax HPGe), dead layers, one or
@@ -93,7 +94,8 @@ protected:
   void handleShapeChange();
   void handleUserInput();
   void addLayerRow( const Wt::WString &material, const Wt::WString &frontThick,
-                    const Wt::WString &sideThick );
+                    const Wt::WString &sideThick,
+                    const std::shared_ptr<const ceelo::MaterialSpec> &seeded = nullptr );
   void removeLayerRow();
 
   /** One concentric endcap/housing layer input row. */
@@ -102,6 +104,15 @@ protected:
     Wt::WLineEdit *material;
     Wt::WLineEdit *frontThickness;
     Wt::WLineEdit *sideThickness;
+
+    /** The material this row was seeded with by #setFromDescriptor, kept so a
+     descriptor that carries a full composition InterSpec's `MaterialDB` has no
+     name for - an ANGLE file's own user-defined material, say - survives a
+     round trip through this form.  Used only while `material`'s text still
+     matches `seededName`; the moment the user edits the name, the name is what
+     counts and this is ignored. */
+    std::shared_ptr<const ceelo::MaterialSpec> seeded;
+    std::string seededName;
   };//struct LayerRow
 
   InterSpec *m_interspec;

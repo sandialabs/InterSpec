@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<angle generator="ANGLE" version="5.0" build="5.0.0.480" units="mm">
+  <detector type="Closed-end coaxial HPGe" name="marinelli-test" description="">
+    <crystal height="60" radius="30" bulletizingRadius="6" />
+    <core height="45" radius="5" rounded="yes" />
+    <inactiveGe topThickness="0.6" sideThickness="0.8" />
+    <endCap topThickness="1.2" sideThickness="1.4"><material name="Aluminium" /></endCap>
+    <vacuum topThickness="3" sideThickness="4" />
+      <housing>
+      <sideInner thickness="0" />
+      <sideOuter thickness="0" />
+      <topLower thickness="0" />
+      <topUpper thickness="0" />
+    </housing>
+  </detector>
+  <container type="Marinelli" name="1L Marinelli" description="standard 1 litre beaker">
+    <shape innerRadius="60" cavityRadius="35" cavityDepth="80" sideInnerThickness="1.5"
+           bottomUpperThickness="2" bottomLowerThickness="2.5" />
+    <material name="Plastic" />
+    <coatings>
+      <coating sideThickness="0.05" bottomUpperThickness="0.05" bottomLowerThickness="0.05">
+        <material name="Mylar/PET" />
+      </coating>
+    </coatings>
+  </container>
+  <geometry type="Marinelli" name="beaker on cap" description="">
+    <holder outerRadius="60" height="2">
+      <cap thickness="1.5">
+        <material name="Plastic" />
+      </cap>
+      <wall thickness="1">
+        <material name="Plastic" />
+      </wall>
+    </holder>
+    <absorbingLayers>
+      <absorbingLayer topThickness="0.17" sideThickness="0.17">
+        <material name="Silicone" />
+      </absorbingLayer>
+      <absorbingLayer topThickness="0.2" sideThickness="0.2">
+        <material name="Aluminium" />
+      </absorbingLayer>
+    </absorbingLayers>
+  </geometry>
+  <source radius="55" height="75">
+    <material name="Water" />
+  </source>
+  <precision>1</precision>
+  <referenceEfficiencyCurve name="Eff_25cm" description="fixture">
+    <experimentalPoints>
+      <point energy="59.5" efficiency="0.0110" />
+      <point energy="122.1" efficiency="0.0240" />
+      <point energy="661.7" efficiency="0.00800" />
+      <point energy="1332.5" efficiency="0.00480" />
+    </experimentalPoints>
+    <regions>
+      <region start="50" end="1500" polynomOrder="3" />
+    </regions>
+    <detector name="marinelli-test" />
+    <geometry type="General" name="" description="">
+      <holder outerRadius="45" height="250">
+        <cap thickness="0" />
+        <wall thickness="0" />
+      </holder>
+    </geometry>
+    <source radius="1.5" height="0" />
+  </referenceEfficiencyCurve>
+  <results>
+    <result energy="59.5" solidAngle="2.5" solidAnglePrecision="0.4" efficiency="0.0110" efficiencyPrecision="1.01" />
+    <result energy="122.1" solidAngle="2.8" solidAnglePrecision="0.4" efficiency="0.0240" efficiencyPrecision="1.01" />
+    <result energy="661.7" solidAngle="2.1" solidAnglePrecision="0.4" efficiency="0.00800" efficiencyPrecision="1.01" />
+    <result energy="1332.5" solidAngle="1.8" solidAnglePrecision="0.4" efficiency="0.00480" efficiencyPrecision="1.01" />
+  </results>
+</angle>

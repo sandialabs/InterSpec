@@ -402,11 +402,14 @@ void DetectorGeometryInput::handleUserInput()
 
 void DetectorGeometryInput::addLayerRow( const Wt::WString &material,
                                          const Wt::WString &frontThick,
-                                         const Wt::WString &sideThick )
+                                         const Wt::WString &sideThick,
+                                         const shared_ptr<const ceelo::MaterialSpec> &seeded )
 {
   const int row = m_layersTable->rowCount();
 
   LayerRow layer;
+  layer.seeded = seeded;
+  layer.seededName = material.toUTF8();
   layer.material = m_layersTable->elementAt( row, 0 )->addNew<WLineEdit>( material );
   layer.material->setTextSize( 10 );
   m_materialSuggestion->forEdit( layer.material,
@@ -534,24 +537,35 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
     if( mat_name.empty() || ((front <= 0.0) && (side <= 0.0)) )
       throw runtime_error( WString::tr("dgi-err-layer").toUTF8() );
 
-    shared_ptr<const Material> mat = matDb ? matDb->material( mat_name ) : nullptr;
-    if( !mat && matDb )
+    // A layer seeded from an imported descriptor may name a material this
+    //  session's MaterialDB has never heard of (an ANGLE file defines its own
+    //  materials inline, for instance).  As long as the user has not changed the
+    //  name, the composition it came in with is the right answer.
+    const bool use_seeded = layer.seeded && (mat_name == layer.seededName);
+
+    shared_ptr<const Material> mat;
+    if( !use_seeded )
     {
-      try
+      mat = matDb ? matDb->material( mat_name ) : nullptr;
+      if( !mat && matDb )
       {
-        // Allows chemical formulas like "C0.5H0.5 d=1.2"
-        const SandiaDecay::SandiaDecayDataBase * const nucDb = DecayDataBaseServer::database();
-        mat = matDb->materialFromChemicalFormula( mat_name, nucDb );
-      }catch( std::exception & )
-      {
+        try
+        {
+          // Allows chemical formulas like "C0.5H0.5 d=1.2"
+          const SandiaDecay::SandiaDecayDataBase * const nucDb = DecayDataBaseServer::database();
+          mat = matDb->materialFromChemicalFormula( mat_name, nucDb );
+        }catch( std::exception & )
+        {
+        }
       }
-    }
-    if( !mat )
-      throw runtime_error( WString::tr("dgi-err-material").arg(mat_name).toUTF8() );
+      if( !mat )
+        throw runtime_error( WString::tr("dgi-err-material").arg(mat_name).toUTF8() );
+    }//if( !use_seeded )
 
     ceelo::LayerSpec spec;
     spec.material_index = static_cast<int>( gd.materials.size() );
-    gd.materials.push_back( CeeLoUtils::to_ceelo_material(*mat) );
+    gd.materials.push_back( use_seeded ? *layer.seeded
+                                       : CeeLoUtils::to_ceelo_material(*mat) );
     spec.front_thickness_cm = front;
     spec.side_thickness_cm = side;
     spec.z_start_cm = 0.0;
@@ -647,11 +661,16 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
     if( (layer.material_index < 0)
         || (layer.material_index >= static_cast<int>(gd.materials.size())) )
       continue;
-    const string name = gd.materials[static_cast<size_t>(layer.material_index)].name;
+    const ceelo::MaterialSpec &mspec = gd.materials[static_cast<size_t>(layer.material_index)];
+    const string name = mspec.name;
     const string front = cm_to_str( layer.front_thickness_cm );
     const string side = cm_to_str( layer.side_thickness_cm );
+    const shared_ptr<const ceelo::MaterialSpec> seeded
+                            = make_shared<const ceelo::MaterialSpec>( mspec );
     if( first )
     {
+      m_layers[0].seeded = seeded;
+      m_layers[0].seededName = name;
       m_layers[0].material->setText( WString::fromUTF8(name) );
       m_layers[0].frontThickness->setText( WString::fromUTF8(front) );
       m_layers[0].sideThickness->setText( WString::fromUTF8(side) );
@@ -659,12 +678,14 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
     }else
     {
       addLayerRow( WString::fromUTF8(name), WString::fromUTF8(front),
-                   WString::fromUTF8(side) );
+                   WString::fromUTF8(side), seeded );
     }
   }//for( const ceelo::LayerSpec &layer : gd.layers )
 
   if( first )  //no layers
   {
+    m_layers[0].seeded.reset();
+    m_layers[0].seededName.clear();
     m_layers[0].material->setText( "" );
     m_layers[0].frontThickness->setText( "" );
     m_layers[0].sideThickness->setText( "" );

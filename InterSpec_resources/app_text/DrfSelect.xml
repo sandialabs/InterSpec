@@ -161,4 +161,8 @@
   <message id="ds-angle-mode-txt">This ANGLE file also contains the detector's physical model and a measured reference efficiency curve. You can use it as a generic detector (recommended, so you can compute efficiencies for arbitrary geometries), or keep this measurement's fixed-geometry curve.</message>
   <message id="ds-angle-mode-generic">Generic detector</message>
   <message id="ds-angle-mode-fixed">This measurement's fixed geometry</message>
+  <message id="ds-angle-mode-unavailable">This ANGLE file also contains the detector&apos;s physical model, but InterSpec cannot use it as a generic detector. {1} This measurement&apos;s fixed-geometry efficiency curve has been imported instead.</message>
+  <message id="ds-angle-no-refcurve">The file has no measured reference efficiency curve for the response to be anchored on.</message>
+  <message id="ds-angle-note">ANGLE file: {1}</message>
+  <message id="ds-angle-ok">Ok</message>
 </messages>

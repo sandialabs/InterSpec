@@ -33,8 +33,11 @@
 #include "io/EfficiencyTransfer.h"
 
 struct Material;
+struct AngleMaterial;
 struct AngleOutxContents;
 class DetectorPeakResponse;
+
+namespace SandiaDecay{ class SandiaDecayDataBase; }
 
 /** Small shared helpers for mapping InterSpec objects onto the CeeLo
  Monte-Carlo library's types.  Used by the detector-geometry MC UI
@@ -48,6 +51,20 @@ namespace CeeLoUtils
    their element).  Throws for elements CeeLo has no data for (Z > 92).
    */
   ceelo::MaterialSpec to_ceelo_material( const Material &mat );
+
+  /** Builds a CeeLo material straight from an ANGLE inline material definition
+   (a density plus `<elements>`, `<compound>` or `<compounds>`), with no
+   `MaterialDB` involved - ANGLE files routinely define their own materials, and
+   those definitions are more authoritative than any name lookup.
+
+   `<compound>` atom counts are converted to mass fractions using SandiaDecay's
+   natural atomic masses, and `<compounds>` are merged mass-weighted.
+
+   Throws std::runtime_error if `mat` has no usable composition or density, or
+   names an element outside Z in [1,92] (which the Monte Carlo has no
+   cross-sections for). */
+  ceelo::MaterialSpec toCeeloMaterial( const AngleMaterial &mat,
+                                       const SandiaDecay::SandiaDecayDataBase *db );
 
   /** The single-position absolute-efficiency curve a DRF pins to data, ready
    to anchor an EFFTRAN-style efficiency transfer (see
@@ -123,11 +140,14 @@ namespace CeeLoUtils
    InterSpec/AngleOutxImport.h) onto a CeeLo geometry descriptor - used to seed
    the Make MC Response tool ("generic detector" import mode).
 
-   Materials are resolved via the session `MaterialDB` singleton, with
-   chemical-formula fallbacks for ANGLE trade names (Mylar/PET, Brass, Carbon
-   fiber); anything still unresolved is skipped and a human-readable note
-   appended to `warnings`.  The germanium contact is folded into the side dead
-   layer; `contactPin` is dropped.  The crystal's front-edge bulletization and
+   Materials are resolved in three steps: an inline ANGLE definition is used
+   directly (see #toCeeloMaterial - no `MaterialDB` needed); otherwise the name
+   is mapped through ANGLE's 19 predefined materials onto a `MaterialDB` entry,
+   with a chemical-formula fallback; anything still unresolved becomes a
+   near-transparent spacer that preserves the layer's physical extent but not
+   its attenuation, and a human-readable note is appended to `warnings`.  A thin
+   implanted contact is folded into the dead layer; `contactPin` and any piece
+   behind the crystal are dropped with a warning.  The crystal's front-edge bulletization and
    the core's rounded tip are carried through (`bullet_radius_cm` /
    `BoreHoleConfig::rounded_tip`), and dropped with a warning only when they
    violate a CeeLo geometry precondition (see #relaxGeometryFeatures).  The

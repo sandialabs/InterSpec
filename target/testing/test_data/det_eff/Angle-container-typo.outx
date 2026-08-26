@@ -1,0 +1,49 @@
+<?xml version="1.0" encoding="utf-8"?>
+<angle generator="ANGLE" version="5.0" build="5.0.0.480" units="mm">
+  <detector type="Closed-end coaxial HPGe" name="typo-test" description="">
+    <crystal height="68.9" radius="29.15" bulletizingRadius="8" />
+    <core height="55.4" radius="4.95" rounded="yes" />
+    <inactiveGe topThickness="0.7" sideThickness="0.7" />
+    <endCap topThickness="1" sideThickness="1"><material name="Aluminium" /></endCap>
+    <vacuum topThickness="3" sideThickness="4.05" />
+      <housing>
+      <sideInner thickness="0" />
+      <sideOuter thickness="0" />
+      <topLower thickness="0" />
+      <topUpper thickness="0" />
+    </housing>
+  </detector>
+  <container type="Cylindrical" name="spec-spelling" description="uses botomThickness">
+    <shape innerRadius="12.8" sideThickness="1" botomThickness="0.5" footHeight="0" />
+    <material name="Plastic" />
+  </container>
+  <source radius="1.5" height="0" />
+  <precision>1</precision>
+  <referenceEfficiencyCurve name="Eff_25cm" description="inches fixture">
+    <experimentalPoints>
+      <point energy="59.5" efficiency="0.0125" />
+      <point energy="122.1" efficiency="0.0258" />
+      <point energy="661.7" efficiency="0.00855" />
+      <point energy="1332.5" efficiency="0.00512" />
+    </experimentalPoints>
+    <regions>
+      <region start="50" end="1500" polynomOrder="3" />
+    </regions>
+    <detector name="typo-test" />
+    <geometry type="General" name="" description="">
+      <holder outerRadius="45" height="250">
+        <cap thickness="0" />
+        <wall thickness="0" />
+      </holder>
+    </geometry>
+    <source radius="1.5" height="0" />
+  </referenceEfficiencyCurve>
+  <results>
+    <result energy="59.5" solidAngle="2.503782" solidAnglePrecision="0.4" efficiency="0.0121" efficiencyPrecision="1.01" />
+    <result energy="88.0" solidAngle="2.835979" solidAnglePrecision="0.4" efficiency="0.0233" efficiencyPrecision="1.01" />
+    <result energy="122.1" solidAngle="2.871599" solidAnglePrecision="0.4" efficiency="0.0251" efficiencyPrecision="1.01" />
+    <result energy="661.7" solidAngle="2.103782" solidAnglePrecision="0.4" efficiency="0.00841" efficiencyPrecision="1.01" />
+    <result energy="1173.2" solidAngle="1.852958" solidAnglePrecision="0.4" efficiency="0.00553" efficiencyPrecision="1.01" />
+    <result energy="1332.5" solidAngle="1.794529" solidAnglePrecision="0.4" efficiency="0.00504" efficiencyPrecision="1.01" />
+  </results>
+</angle>

@@ -137,6 +137,8 @@
   <message id="smm-outx-curve">ANGLE Efficiency Calibration Curve DRF</message>
   <message id="smm-outx-error">Error creating DRF from ANGLE .outx: {1}</message>
   <message id="smm-outx-generic-geom">Generic detector (physical geometry + reference)</message>
+  <message id="smm-outx-note">ANGLE file: {1}</message>
+  <message id="smm-outx-no-generic">This ANGLE file also contains the detector&apos;s physical model, but InterSpec cannot use it as a generic detector. {1}</message>
 
   <!-- Text for dialog when user drag-n-drop an efficiency CSV file onto app -->
   <message id="smm-eff-csv-curve">Efficiency CSV Curve DRF</message>

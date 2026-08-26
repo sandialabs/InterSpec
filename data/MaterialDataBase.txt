@@ -3679,3 +3679,15 @@ Cu
 63
 Zn
 37
+!
+Silicone
+Silicone rubber / PDMS ((C2H6OSi)n)
+4 0 1.05
+C
+32.39
+H
+8.156
+O
+21.58
+Si
+37.87

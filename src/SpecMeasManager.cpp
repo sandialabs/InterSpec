@@ -3649,7 +3649,12 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
       if( !det || !det->isValid() )
         throw std::logic_error( "DRF returned from parseAngleOutxFileFull() should be valid." );
 
-      if( contents.hasGeometry && contents.hasReference )
+      // Anything the file said that we could not model is the user's business:
+      //  a silently simplified detector is worse than a noisy one.
+      for( const string &note : contents.parseNotes )
+        passMessage( WString::tr("smm-outx-note").arg(note), WarningWidget::WarningMsgMedium );
+
+      if( contents.hasGeometry && contents.hasReference && contents.modeASupported )
       {
         try
         {
@@ -3661,15 +3666,27 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
           // See the matching comment in DrfSelect::offerAngleImportModeChoice():
           //  a silently simplified geometry is worse than a noisy one.
           for( const string &warning : warnings )
-            passMessage( warning, WarningWidget::WarningMsgMedium );
-        }catch( std::exception & )
+            passMessage( WString::tr("smm-outx-note").arg(warning), WarningWidget::WarningMsgMedium );
+        }catch( std::exception &e )
         {
           angle_geometry.reset();
           angle_seed_drf.reset();
+          passMessage( WString::tr("smm-outx-note").arg(e.what()), WarningWidget::WarningMsgMedium );
         }
-      }//if( contents.hasGeometry && contents.hasReference )
+      }else if( contents.hasGeometry && !contents.modeASupported
+                && !contents.modeAObstruction.empty() )
+      {
+        // The file carries a physical detector model we cannot represent; say
+        //  so, rather than silently offering only the fixed-geometry curve.
+        passMessage( WString::tr("smm-outx-no-generic").arg(contents.modeAObstruction),
+                     WarningWidget::WarningMsgMedium );
+      }//if( Mode A might work ) / else if( it definitely cannot )
     }catch( std::exception & )
     {
+      // The ANGLE reader consumes to EOF, so `failbit` is set as well as
+      //  `eofbit`; without the clear() the seek is a silent no-op and the next
+      //  handler would be handed a stream still parked at EOF.
+      input.clear();
       input.seekg( start_pos );
       return false;
     }//try / catch

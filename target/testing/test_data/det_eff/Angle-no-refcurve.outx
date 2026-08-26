@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<angle generator="ANGLE" version="5.0" build="5.0.0.480" units="mm">
+  <detector type="Closed-end coaxial HPGe" name="no-refcurve" description="">
+    <crystal height="68.9" radius="29.15" bulletizingRadius="8" />
+    <core height="55.4" radius="4.95" rounded="yes" />
+    <inactiveGe topThickness="0.7" sideThickness="0.7" />
+    <endCap topThickness="1" sideThickness="1">
+      <material name="Aluminium" />
+    </endCap>
+    <vacuum topThickness="3" sideThickness="4.05" />
+    <housing>
+      <sideInner thickness="0.8"><material name="Aluminium" /></sideInner>
+      <sideOuter thickness="0" />
+      <topLower thickness="0" />
+      <topUpper thickness="0" />
+    </housing>
+  </detector>
+  <source radius="1.5" height="0" />
+  <precision>1</precision>
+  <results>
+    <result energy="59.5" solidAngle="2.503782" solidAnglePrecision="0.4" />
+    <result energy="88.0" solidAngle="2.835979" solidAnglePrecision="0.4" />
+    <result energy="122.1" solidAngle="2.871599" solidAnglePrecision="0.4" />
+    <result energy="661.7" solidAngle="2.103782" solidAnglePrecision="0.4" />
+    <result energy="1173.2" solidAngle="1.852958" solidAnglePrecision="0.4" />
+    <result energy="1332.5" solidAngle="1.794529" solidAnglePrecision="0.4" />
+  </results>
+  <elapsedTime>0.5</elapsedTime>
+</angle>

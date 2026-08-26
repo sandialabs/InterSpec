@@ -1027,72 +1027,45 @@ namespace
 {
   struct AngleResult{ double energy_keV, efficiency, precision; };
 
-  // Re-parse the ANGLE <results> block (the sample-geometry answer) directly.
-  vector<AngleResult> parse_angle_results( const string &path )
+  // ANGLE's own <results> for the sample geometry.  The reader hands these back
+  //  verbatim (AngleOutxContents::results), so there is nothing to re-parse -
+  //  this just narrows them to the rows that carry an efficiency.
+  vector<AngleResult> angle_results( const AngleOutxContents &contents )
   {
-    string xml = read_file( path );
     vector<AngleResult> out;
-    rapidxml::xml_document<char> doc;
-    doc.parse<rapidxml::parse_non_destructive>( &xml[0] );
-    const rapidxml::xml_node<char> *angle = doc.first_node( "angle" );
-    if( !angle )
-      return out;
-    const rapidxml::xml_node<char> *results = angle->first_node( "results" );
-    if( !results )
-      return out;
-    for( const rapidxml::xml_node<char> *r = results->first_node( "result" );
-         r; r = r->next_sibling( "result" ) )
+    for( const AngleResultRow &row : contents.results )
     {
-      const rapidxml::xml_attribute<char> *e = r->first_attribute( "energy" );
-      const rapidxml::xml_attribute<char> *eff = r->first_attribute( "efficiency" );
-      const rapidxml::xml_attribute<char> *prec = r->first_attribute( "efficiencyPrecision" );
-      if( !e || !eff )
+      if( !row.hasEfficiency )
         continue;
-      AngleResult ar;
-      ar.energy_keV = std::stod( string(e->value(), e->value_size()) );
-      ar.efficiency = std::stod( string(eff->value(), eff->value_size()) );
-      ar.precision = prec ? std::stod( string(prec->value(), prec->value_size()) ) : 0.0;
-      out.push_back( ar );
+      out.push_back( AngleResult{ row.energyKeV, row.efficiency, row.efficiencyPrecision } );
     }
     return out;
-  }//parse_angle_results(...)
+  }//angle_results(...)
 
 
-  // ANGLE's true-coincidence-summing correction factors for one nuclide, from
-  //  the <cascadeSummingCorrections> block: map of gamma energy (keV) -> factor
-  //  ('value' attribute = corrected/nominal branching ratio).
-  vector<pair<double,double>> parse_angle_corrections( const string &path,
-                                                       const string &nuclide )
+  // ANGLE's true-coincidence-summing correction factors for one nuclide:
+  //  gamma energy (keV) -> factor ('value' = corrected/nominal branching ratio).
+  vector<pair<double,double>> angle_corrections( const AngleOutxContents &contents,
+                                                 const string &nuclide )
   {
-    string xml = read_file( path );
     vector<pair<double,double>> out;
-    rapidxml::xml_document<char> doc;
-    doc.parse<rapidxml::parse_non_destructive>( &xml[0] );
-    const rapidxml::xml_node<char> *angle = doc.first_node( "angle" );
-    if( !angle )
-      return out;
-    const rapidxml::xml_node<char> *csc = angle->first_node( "cascadeSummingCorrections" );
-    if( !csc )
-      return out;
-    for( const rapidxml::xml_node<char> *n = csc->first_node( "nuclide" );
-         n; n = n->next_sibling( "nuclide" ) )
+    for( const AngleCascadeNuclide &nuc : contents.cascadeCorrections )
     {
-      const rapidxml::xml_attribute<char> *nm = n->first_attribute( "name" );
-      if( !nm || (string(nm->value(), nm->value_size()) != nuclide) )
+      if( nuc.nuclide != nuclide )
         continue;
-      for( const rapidxml::xml_node<char> *c = n->first_node( "correction" );
-           c; c = c->next_sibling( "correction" ) )
+      for( const AngleCascadeCorrection &c : nuc.corrections )
       {
-        const rapidxml::xml_attribute<char> *e = c->first_attribute( "energy" );
-        const rapidxml::xml_attribute<char> *v = c->first_attribute( "value" );
-        if( e && v )
-          out.emplace_back( std::stod( string(e->value(), e->value_size()) ),
-                            std::stod( string(v->value(), v->value_size()) ) );
+        // A row with no `value` parses as 0, and both consumers skip zeros - so
+        // without this the test would silently compare nothing at all.
+        BOOST_REQUIRE_MESSAGE( c.value > 0.0,
+                               "ANGLE correction for " + nuclide + " at "
+                               + std::to_string(c.energyKeV) + " keV has no value" );
+        out.emplace_back( c.energyKeV, c.value );
       }
       break;
     }
     return out;
-  }//parse_angle_corrections(...)
+  }//angle_corrections(...)
 }//namespace
 
 
@@ -1156,11 +1129,22 @@ BOOST_AUTO_TEST_CASE( angle_efficiency_cross_validation )
         = CeeLoUtils::makeTransferResponse( gd, anchor, ceelo::AnchorCurve{}, "ANGLE-xfer" );
   BOOST_REQUIRE( resp );
 
-  // ANGLE's own sample-geometry answer.  Sample = ~point source (r=1.5mm) at
-  //  the holder height (5 mm = 0.5 cm) from the endcap front.
-  const vector<AngleResult> angle = parse_angle_results( angle_path );
+  // ANGLE's own sample-geometry answer.  Sample = ~point source (r=1.5mm)
+  //  sitting in an E&Z mount on the holder.
+  const vector<AngleResult> angle = angle_results( contents );
   BOOST_REQUIRE_GE( angle.size(), 10u );
-  const double sample_standoff_cm = 0.5;
+
+  // Take the standoff from the file rather than hard-coding the holder height:
+  //  the source sits INSIDE the container, so it stands off by the holder
+  //  height PLUS the container's foot, bottom wall and any bottom coatings
+  //  (sampleSourceDistanceCm).  For this fixture that is 5 mm + 0.06475 mm of
+  //  Mylar = 0.506475 cm - a 0.065 mm difference that is invisible in the far
+  //  field and worth ~0.4% of the efficiency at this contact geometry.
+  const double sample_standoff_cm = contents.sampleSourceDistanceCm;
+  BOOST_REQUIRE_MESSAGE( sample_standoff_cm > 0.0,
+                         "sample source standoff should have been parsed" );
+  BOOST_TEST_MESSAGE( "Sample standoff: holder " << contents.sampleDistanceCm
+                      << " cm -> source " << sample_standoff_cm << " cm" );
 
   // Direct MC at the sample geometry (a point source at the sample standoff),
   //  configured from the SAME descriptor.  Crystal-face frame: z = 0 at the
@@ -1209,7 +1193,8 @@ BOOST_AUTO_TEST_CASE( angle_efficiency_cross_validation )
 
   BOOST_TEST_MESSAGE( "" );
   BOOST_TEST_MESSAGE( "ANGLE sample-geometry efficiency vs the two InterSpec shipped methods:" );
-  BOOST_TEST_MESSAGE( "  'EFFTRAN' = analytic efficiency transfer of the measured curve (24.8->0.5cm);" );
+  BOOST_TEST_MESSAGE( "  'EFFTRAN' = analytic efficiency transfer of the measured curve ("
+                      << contents.referenceDistanceCm << "->" << sample_standoff_cm << "cm);" );
   BOOST_TEST_MESSAGE( "  'ancMC'   = measured curve x MC_sample/MC_ref (anchored MC, double-ratio)." );
   BOOST_TEST_MESSAGE( "   E(keV)     ANGLE   EFFTRAN  ET/ANGLE    ancMC  aMC/ANGLE  rawMC  flag" );
 
@@ -1273,6 +1258,10 @@ BOOST_AUTO_TEST_CASE( angle_efficiency_cross_validation )
   //     placing the source one dead-layer thickness too far from the crystal.
   //     That moved the EFFTRAN median 2.5% -> 0.9%, as a near-uniform ~3%
   //     scale above 100 keV, so the median gate is the detector for it.
+  //   - taking the standoff from contents.sampleSourceDistanceCm rather than
+  //     the holder height, i.e. counting the 0.065 mm container bottom the
+  //     source rests on: median 0.9% -> 0.55%.  All three are pure geometry,
+  //     and all three are invisible in the far field.
   //     Below ~50 keV the crystal is effectively large enough that its solid
   //     angle has saturated, and neither correction shows up there.
   if( !efftran_errs.empty() )
@@ -1282,7 +1271,7 @@ BOOST_AUTO_TEST_CASE( angle_efficiency_cross_validation )
     const double max = efftran_errs.back();
     BOOST_TEST_MESSAGE( "EFFTRAN   vs ANGLE |ratio-1|: median=" << 100.0*median
                         << "%  max=" << 100.0*max << "%  (n=" << efftran_errs.size() << ")" );
-    BOOST_CHECK_LT( median, 0.020 );   //measured 0.86%
+    BOOST_CHECK_LT( median, 0.015 );   //measured 0.55%
     BOOST_CHECK_LT( max, 0.120 );      //measured 8.40%; 30.2% with a sharp edge
   }
   if( !ancmc_errs.empty() )
@@ -1292,8 +1281,8 @@ BOOST_AUTO_TEST_CASE( angle_efficiency_cross_validation )
     const double max = ancmc_errs.back();
     BOOST_TEST_MESSAGE( "anchoredMC vs ANGLE |ratio-1|: median=" << 100.0*median
                         << "%  max=" << 100.0*max << "%  (n=" << ancmc_errs.size() << ")" );
-    BOOST_CHECK_LT( median, 0.060 );   //measured 3.1-3.4%
-    BOOST_CHECK_LT( max, 0.130 );      //measured 7.8-8.1%; 24.3% with a sharp edge
+    BOOST_CHECK_LT( median, 0.060 );   //measured 3.7%
+    BOOST_CHECK_LT( max, 0.130 );      //measured 6.9-7.4%; 24.3% with a sharp edge
   }
 
   if( !mc_ratio_errs.empty() )
@@ -1349,7 +1338,7 @@ BOOST_AUTO_TEST_CASE( angle_extended_source_cross_validation )
                       << " length=" << (contents.crystalLength/PhysicalUnits::cm)
                       << " endcap_front_offset=" << offset_cm << " cm" );
 
-  const vector<AngleResult> angle = parse_angle_results( angle_path );
+  const vector<AngleResult> angle = angle_results( contents );
   BOOST_REQUIRE_GE( angle.size(), 10u );
 
   // The measured reference curve (point source at contents.referenceDistanceCm),
@@ -1608,7 +1597,7 @@ BOOST_AUTO_TEST_CASE( angle_cascade_summing_cross_validation )
           ceelo::cascade_adapter::build_cascades( db, nc.label, ceelo::cascade_adapter::CascadeOptions{} );
     BOOST_REQUIRE_MESSAGE( !casc.empty(), "no cascades for " + nc.label );
 
-    const vector<pair<double,double>> corr = parse_angle_corrections( angle_path, nc.angleName );
+    const vector<pair<double,double>> corr = angle_corrections( contents, nc.angleName );
     BOOST_REQUIRE_MESSAGE( !corr.empty(), "no ANGLE corrections for " + nc.angleName );
 
     vector<ceelo::PeakWindow> windows;
@@ -1676,10 +1665,12 @@ BOOST_AUTO_TEST_CASE( angle_cascade_summing_unit_test )
     BOOST_TEST_MESSAGE( "buildAngleGeometry warning: " << w );
   const double offset_cm = gd.endcap_front_offset_cm();
 
-  // Point source at the sample standoff (0.5 cm), configured from the same
-  //  descriptor Mode-A import builds.  Crystal-face frame: z=0 at the crystal
-  //  face, source in front at negative z.
-  const double sample_standoff_cm = 0.5;
+  // Point source at the sample standoff, taken from the file (holder height
+  //  plus whatever the container puts under the source), configured from the
+  //  same descriptor Mode-A import builds.  Crystal-face frame: z=0 at the
+  //  crystal face, source in front at negative z.
+  const double sample_standoff_cm = contents.sampleSourceDistanceCm;
+  BOOST_REQUIRE( sample_standoff_cm > 0.0 );
   std::vector<std::unique_ptr<ceelo::Material>> owned;
   ceelo::EfficiencyCalculator calc;
   ceelo::ResponseGenerator::configure_calculator( calc, gd, owned );
@@ -1735,7 +1726,8 @@ BOOST_AUTO_TEST_CASE( angle_cascade_summing_unit_test )
   };//angle_val
 
   BOOST_TEST_MESSAGE( "" );
-  BOOST_TEST_MESSAGE( "TCS factors at unit-test outx sample geometry (point @0.5cm):"
+  BOOST_TEST_MESSAGE( "TCS factors at unit-test outx sample geometry (point source"
+                      " at the file's standoff):"
                       " InterSpec analytic vs ANGLE." );
   BOOST_TEST_MESSAGE( "  nuclide   E(keV)   ANGLE   InterSpec   InterSpec/ANGLE" );
 
@@ -1746,7 +1738,7 @@ BOOST_AUTO_TEST_CASE( angle_cascade_summing_unit_test )
           ceelo::cascade_adapter::build_cascades( db, nc.label, ceelo::cascade_adapter::CascadeOptions{} );
     BOOST_REQUIRE_MESSAGE( !casc.empty(), "no cascades for " + nc.label );
 
-    const vector<pair<double,double>> corr = parse_angle_corrections( angle_path, nc.angleName );
+    const vector<pair<double,double>> corr = angle_corrections( contents, nc.angleName );
     BOOST_REQUIRE_MESSAGE( !corr.empty(), "no ANGLE corrections for " + nc.angleName );
 
     vector<ceelo::PeakWindow> windows;

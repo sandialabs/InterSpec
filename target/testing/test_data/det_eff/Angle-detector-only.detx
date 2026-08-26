@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<angle generator="ANGLE" version="5.0" build="5.0.0.480" units="mm">
+  <detector type="Closed-end coaxial HPGe" name="detx-only" description="a .detx">
+    <crystal height="50" radius="25" bulletizingRadius="5" />
+    <core height="35" radius="5" rounded="no" />
+    <inactiveGe topThickness="0.5" sideThickness="0.5" />
+    <endCap topThickness="1.5" sideThickness="1.5">
+      <material name="Aluminium" />
+    </endCap>
+    <vacuum topThickness="4" sideThickness="5" />
+    <housing>
+      <sideInner thickness="0"/>
+      <sideOuter thickness="0"/>
+      <topLower thickness="0"/>
+      <topUpper thickness="0"/>
+    </housing>
+  </detector>
+</angle>
