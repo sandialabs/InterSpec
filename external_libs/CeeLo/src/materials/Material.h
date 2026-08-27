@@ -33,6 +33,7 @@
 /// Material objects are intended to be constructed once and then used as const
 /// throughout the simulation (thread-safe by design).
 
+#include <atomic>
 #include <string>
 #include <vector>
 #include <cstdint>
@@ -66,6 +67,15 @@ public:
     Material(std::string name, double density_g_per_cm3,
              std::vector<MaterialComponent> composition);
 
+    /// Copy/move give the new object its OWN cache identity (see cache_id_);
+    /// otherwise a copy would inherit the source's cached cross-sections, and an
+    /// assigned-over object would keep serving its previous composition's.
+    Material(const Material& rhs);
+    Material(Material&& rhs) noexcept;
+    Material& operator=(const Material& rhs);
+    Material& operator=(Material&& rhs) noexcept;
+    ~Material() = default;
+
     /// Compute macroscopic cross-sections at a given energy.
     /// The formula is: Σ_type = ρ * N_A * Σ_i (w_i / A_i) * σ_type_i(E)
     /// where w_i is mass fraction, A_i is atomic weight, σ_type_i is microscopic XS.
@@ -97,6 +107,12 @@ public:
     /// n_i = ρ * N_A * w_i / A_i
     double number_density(size_t component_index) const;
 
+    /// Process-unique identity for memo caches keyed on "which material is this"
+    /// (see cache_id_). Fresh on every construction and assignment, so it cannot
+    /// alias across a destroyed-and-rebuilt Material the way an address can.
+    /// Use this rather than a `const Material*` for any such cache.
+    uint64_t cache_key() const { return cache_id_; }
+
 private:
     std::string name_;
     double density_g_per_cm3_;
@@ -105,6 +121,23 @@ private:
     // Pre-computed: ρ * N_A * w_i / A_i for each component (atoms/cm³ / barn-to-cm²)
     // Actually: ρ * N_A * w_i / A_i  in atoms/(cm³), then σ (barn) * 1e-24 → Σ (1/cm)
     std::vector<double> number_densities_;  // atoms/cm³ for each component
+
+    /// Process-unique identity for the macroscopic_xs() memo, assigned fresh by
+    /// every constructor and assignment.
+    ///
+    /// The memo used to key on `this`, guarded by the density, on the reasoning
+    /// that two materials at one address must differ in density. They need not:
+    /// a short-lived Material destroyed and another built at the same address
+    /// with the same density but a DIFFERENT composition read back the first
+    /// one's cross-sections. That is silent and wrong, so identity is now
+    /// explicit rather than inferred from storage.
+    ///
+    /// Never serialized and never part of equality - two Materials that differ
+    /// only here are physically the same material; the id exists so a cache can
+    /// tell one OBJECT from another. Exposed through cache_key().
+    uint64_t cache_id_;
+
+    static uint64_t next_cache_id();
 };
 
 // Avogadro's number

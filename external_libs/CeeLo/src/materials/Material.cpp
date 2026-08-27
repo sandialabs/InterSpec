@@ -27,17 +27,63 @@
 
 #include <cassert>
 #include <array>
+#include <atomic>
 #include <cmath>
 #include <numeric>
 #include <stdexcept>
 
 namespace ceelo {
 
+uint64_t Material::next_cache_id() {
+    // Materials are built once and then queried millions of times, so one
+    // relaxed increment per construction costs nothing measurable. Starts at 1
+    // so a zero id can never be mistaken for a live one.
+    static std::atomic<uint64_t> counter{1};
+    return counter.fetch_add(1, std::memory_order_relaxed);
+}
+
+Material::Material(const Material& rhs)
+    : name_(rhs.name_)
+    , density_g_per_cm3_(rhs.density_g_per_cm3_)
+    , composition_(rhs.composition_)
+    , number_densities_(rhs.number_densities_)
+    , cache_id_(next_cache_id()) {}
+
+Material::Material(Material&& rhs) noexcept
+    : name_(std::move(rhs.name_))
+    , density_g_per_cm3_(rhs.density_g_per_cm3_)
+    , composition_(std::move(rhs.composition_))
+    , number_densities_(std::move(rhs.number_densities_))
+    , cache_id_(next_cache_id()) {}
+
+Material& Material::operator=(const Material& rhs) {
+    if (this != &rhs) {
+        name_ = rhs.name_;
+        density_g_per_cm3_ = rhs.density_g_per_cm3_;
+        composition_ = rhs.composition_;
+        number_densities_ = rhs.number_densities_;
+        cache_id_ = next_cache_id();   // the composition changed; the memo must not follow
+    }
+    return *this;
+}
+
+Material& Material::operator=(Material&& rhs) noexcept {
+    if (this != &rhs) {
+        name_ = std::move(rhs.name_);
+        density_g_per_cm3_ = rhs.density_g_per_cm3_;
+        composition_ = std::move(rhs.composition_);
+        number_densities_ = std::move(rhs.number_densities_);
+        cache_id_ = next_cache_id();
+    }
+    return *this;
+}
+
 Material::Material(std::string name, double density_g_per_cm3,
                    std::vector<MaterialComponent> composition)
     : name_(std::move(name))
     , density_g_per_cm3_(density_g_per_cm3)
     , composition_(std::move(composition))
+    , cache_id_(next_cache_id())
 {
     if (density_g_per_cm3_ <= 0.0) {
         throw std::invalid_argument("Material density must be positive");
@@ -73,34 +119,37 @@ Material::Material(std::string name, double density_g_per_cm3,
 }
 
 MacroscopicXS Material::macroscopic_xs(double energy_MeV) const {
-    // Per-thread LRU cache keyed on (Material*, exact energy, density).
+    // Per-thread LRU cache keyed on (cache_id_, exact energy).
     // simulate_thread runs at a single fixed primary energy that only changes at
-    // Compton vertices, so the same (this, energy) recurs across every transport
+    // Compton vertices, so the same (material, energy) recurs across every transport
     // step / boundary crossing / segment.  macroscopic_xs is a pure function of
     // those inputs (number_densities_ are const after construction;
     // all_cross_sections reads immutable tables, no RNG), so an EXACT-match reuse
     // returns a value bit-for-bit identical to a recompute -- the FEP/total
     // results are unchanged.  The struct is returned BY VALUE (copied out of the
     // entry) because callers mutate their local copy (e.g. PhotonTransport zeroes
-    // mu_rs/mu_pp).  density_ guards the rare Material* address reuse across
-    // compute() calls (same convention as ElectronCsda::compound_range_table); a
-    // worker thread's cache lives only for one compute(), the main thread's may
-    // persist.  Bounded LRU (kN entries): secondary energies (Compton/brems
+    // mu_rs/mu_pp).  Keyed on cache_id_, a per-object identity assigned by every
+    // constructor and assignment: keying on `this` guarded only by the density
+    // was not enough, because a destroyed Material and a new one built at the
+    // same address with the same density but a DIFFERENT composition collided
+    // and silently served the first one's cross-sections.  A worker thread's
+    // cache lives only for one compute(), the main thread's may persist - which
+    // is exactly the lifetime over which addresses get recycled.
+    // Bounded LRU (kN entries): secondary energies (Compton/brems
     // continuum) produce many distinct doubles, so an unbounded map would grow
     // without bound -- kN covers the small per-thread working set of materials at
     // the locally-stable current energy.
-    struct Entry { const Material* mat; double e; double density; MacroscopicXS xs; };
+    struct Entry { uint64_t id; double e; MacroscopicXS xs; };
     static constexpr int kN = 8;
     static thread_local std::array<Entry, kN> cache{};
     static thread_local int n_filled = 0;
 
     for (int i = 0; i < n_filled; ++i) {
-        if (cache[i].mat == this && cache[i].e == energy_MeV &&
-            cache[i].density == density_g_per_cm3_) {
+        if (cache[i].id == cache_id_ && cache[i].e == energy_MeV) {
             MacroscopicXS hit = cache[i].xs;          // copy out, never a reference
             if (i != 0) {                              // move-to-front (keep hot)
                 for (int j = i; j > 0; --j) cache[j] = cache[j - 1];
-                cache[0] = Entry{this, energy_MeV, density_g_per_cm3_, hit};
+                cache[0] = Entry{cache_id_, energy_MeV, hit};
             }
             return hit;
         }
@@ -125,7 +174,7 @@ MacroscopicXS Material::macroscopic_xs(double energy_MeV) const {
     // Insert at front (LRU eviction of the last slot).
     if (n_filled < kN) ++n_filled;
     for (int j = n_filled - 1; j > 0; --j) cache[j] = cache[j - 1];
-    cache[0] = Entry{this, energy_MeV, density_g_per_cm3_, result};
+    cache[0] = Entry{cache_id_, energy_MeV, result};
 
     return result;
 }

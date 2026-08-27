@@ -635,35 +635,32 @@ ElectronCsda::compound_range_table(const Material& mat, bool is_positron) const
 {
     // Per-thread cache of compound (Bragg-additive) range tables.  The set of
     // materials in a run is tiny; worker threads are created per compute(), so a
-    // thread_local cache has the right lifetime with no locking.  A small
-    // composition signature guards against a Material address being reused for a
-    // different material across runs.
+    // thread_local cache has the right lifetime with no locking.  Keyed on
+    // Material::cache_key(), which is unique per OBJECT and so cannot alias
+    // across a destroyed-and-rebuilt Material; this used to be the address plus
+    // a partial composition signature (count, first element, density), which
+    // narrowed the collision window without closing it.
     struct Entry {
-        const Material* key;
-        size_t n; int z0; double mf0; double density; bool positron;
+        uint64_t key; bool positron;
         std::array<double, kNGrid> R;
     };
     static thread_local std::vector<Entry> cache = [] {
         std::vector<Entry> v; v.reserve(32); return v;   // reserve => stable refs
     }();
 
-    const auto& comp = mat.composition();
-    size_t n   = comp.size();
-    int    z0  = n ? static_cast<int>(comp[0].Z) : 0;
-    double mf0 = n ? comp[0].mass_fraction : 0.0;
-    double den = mat.density();
+    const uint64_t key = mat.cache_key();
 
     for (auto& e : cache) {
-        if (e.key == &mat && e.n == n && e.z0 == z0 &&
-            e.mf0 == mf0 && e.density == den && e.positron == is_positron) {
+        if (e.key == key && e.positron == is_positron) {
             return e.R;
         }
     }
 
     cache.emplace_back();
     Entry& e = cache.back();
-    e.key = &mat; e.n = n; e.z0 = z0; e.mf0 = mf0; e.density = den;
+    e.key = key;
     e.positron = is_positron;
+    const auto& comp = mat.composition();
     const auto& src_table = is_positron ? range_table_pos_ : range_table_;
 
     // Bragg additivity for ranges at each grid energy: 1/R_compound = Σᵢ wᵢ / Rᵢ.
@@ -692,32 +689,26 @@ const std::array<double, ElectronCsda::kNGrid>&
 ElectronCsda::compound_radcorr_table(const Material& mat) const
 {
     // Per-thread cache of compound radiative-correction tables (deterministic in
-    // (material, KE)); same lifetime/signature scheme as compound_range_table.
+    // (material, KE)); same lifetime/key scheme as compound_range_table.
     struct Entry {
-        const Material* key;
-        size_t n; int z0; double mf0; double density;
+        uint64_t key;
         std::array<double, kNGrid> C;
     };
     static thread_local std::vector<Entry> cache = [] {
         std::vector<Entry> v; v.reserve(32); return v;
     }();
 
-    const auto& comp = mat.composition();
-    size_t n   = comp.size();
-    int    z0  = n ? static_cast<int>(comp[0].Z) : 0;
-    double mf0 = n ? comp[0].mass_fraction : 0.0;
-    double den = mat.density();
+    const uint64_t key = mat.cache_key();
 
     for (auto& e : cache) {
-        if (e.key == &mat && e.n == n && e.z0 == z0 &&
-            e.mf0 == mf0 && e.density == den) {
+        if (e.key == key) {
             return e.C;
         }
     }
 
     cache.emplace_back();
     Entry& e = cache.back();
-    e.key = &mat; e.n = n; e.z0 = z0; e.mf0 = mf0; e.density = den;
+    e.key = key;
     for (int i = 0; i < kNGrid; ++i) {
         e.C[i] = radiative_correction_compound(mat, energy_grid_keV_[i]);
     }
