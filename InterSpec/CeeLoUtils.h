@@ -33,6 +33,7 @@
 #include "io/EfficiencyTransfer.h"
 
 struct Material;
+struct GadrasDetectorDat;
 struct AngleMaterial;
 struct AngleOutxContents;
 class DetectorPeakResponse;
@@ -199,6 +200,112 @@ namespace CeeLoUtils
    */
   std::shared_ptr<DetectorPeakResponse> buildAngleSeedDrf(
                       const AngleOutxContents &contents );
+
+
+  //=========================== GADRAS Detector.dat ===========================
+  // A GADRAS `Detector.dat` describes the same thing an ANGLE file does - a
+  //  physical detector - so it maps onto a CeeLo geometry the same way (see
+  //  #buildAngleGeometry).  The differences are all in what GADRAS does NOT
+  //  record: no bore geometry, attenuators given only as an effective atomic
+  //  number plus an areal density, and (usually) no crystal material at all.
+
+  /** Builds a `ceelo::MaterialSpec` from a GADRAS stoichiometric formula, e.g.
+   "Bi4Ge3O12", "CsI", "Cd0.96Zn0.04Te", "C14[H2]12".
+
+   The subscripts are ATOM COUNTS (fractional counts allowed; a missing count
+   means 1), converted to mass fractions through the natural atomic masses.
+   `[H2]`-style isotope brackets are folded onto their element.
+
+   Deliberately NOT `MaterialDB::materialFromChemicalFormula`, whose
+   `Material::parseChemicalFormula` treats the subscripts as MASS FRACTIONS and
+   requires an explicit count on every element - it would read "Bi4Ge3O12" as
+   masses 4:3:12 and would throw outright on "CsI".
+
+   Throws std::runtime_error on an unparseable formula, an unknown element, a
+   non-positive density, or an element the Monte Carlo has no data for (Z > 92).
+   */
+  ceelo::MaterialSpec materialFromGadrasFormula( const std::string &formula,
+                                                 const double density_g_per_cm3,
+                                                 const std::string &name );
+
+  /** The crystal material for a GADRAS material-table name (e.g. "NaI", "BGO").
+
+   Prefers the CeeLo built-ins - whose names match the GADRAS table spellings
+   exactly - so the geometry form's crystal combo matches by `.name`; otherwise
+   builds from the table's formula and density via #materialFromGadrasFormula.
+
+   Throws std::runtime_error when the name is empty or not in the table.
+   */
+  ceelo::MaterialSpec gadrasCrystalMaterial( const std::string &gadras_material_name );
+
+  /** Resolves what the crystal is made of, which `Detector.dat` often does not
+   say: the XML `<material>` name, else the param-59 material index, else
+   `name_hint` (the detector directory / file name) matched against the GADRAS
+   material table and the usual family spellings.
+
+   The hint matters more than it looks: every detector shipped in
+   `data/GenericGadrasDetectors` has a material index of 0, so without it
+   `GadrasDetectorDat::inferShape()` falls through to its shape-factor
+   heuristic and calls a 3x3 NaI a box.
+
+   Returns an empty string when nothing resolves (Mode A is then unavailable);
+   appends an explanatory note whenever the answer came from the hint.
+   */
+  std::string resolveGadrasCrystalName( const GadrasDetectorDat &dat,
+                                        const std::string &name_hint,
+                                        std::vector<std::string> &notes );
+
+  /** A stand-in material for a GADRAS attenuator, which is specified only as an
+   effective atomic number and an areal density (g/cm2) - never a composition or
+   a thickness.
+
+   CeeLo has no generic areal-density attenuator (`Geometry::add_attenuator`
+   takes a real material plus thicknesses), so one is synthesized: the two
+   elements bracketing `atomic_number`, mass-weighted so the mixture's mass
+   attenuation coefficient interpolates between them, at the density
+   `areal_density_g_cm2 / thickness_cm` that makes the layer's areal density
+   come out exactly right.
+
+   Mass-weighting is what makes this correct: a mixture's mu/rho is the
+   mass-weighted sum of its components' mu/rho, which is the same quantity
+   InterSpec's own `MassAttenuation::massAttenuationCoefficientFracAN`
+   interpolates across atomic number.
+
+   Throws std::runtime_error unless `areal_density_g_cm2` and `thickness_cm` are
+   both positive and `atomic_number` is within [1,92].
+   */
+  ceelo::MaterialSpec genericAttenuatorMaterial( const double atomic_number,
+                                                 const double areal_density_g_cm2,
+                                                 const double thickness_cm );
+
+  /** Maps a parsed GADRAS `Detector.dat` onto a CeeLo geometry descriptor - the
+   counterpart of #buildAngleGeometry, and the basis of the "generic detector"
+   import mode.
+
+   `name_hint` is the detector directory or uploaded file name; see
+   #resolveGadrasCrystalName for why it is not optional in practice.
+
+   The crystal shape and dimensions come from `GadrasDetectorDat::inferShape()`,
+   the dead layer from param 51 (applied to the front AND sides - the file gives
+   one thickness with no direction), and the inner/outer attenuators become
+   synthesized generic layers (#genericAttenuatorMaterial) whose thicknesses
+   divide the GADRAS setback in proportion to their areal densities, so that
+   `endcap_front_offset_cm()` reproduces `setbackCm()` exactly and
+   `reference_point` can be EndcapFront - GADRAS's own convention.
+
+   Everything GADRAS cannot express is dropped with a note in `warnings`, never
+   silently defaulted: the coaxial bore (absent from the format), the side
+   shield when its per-face coverage is partial (CeeLo layers are concentric,
+   with no azimuthal coverage), and the back shield (CeeLo models no attenuator
+   behind the crystal).
+
+   Throws std::runtime_error when the crystal dimensions are non-positive (e.g.
+   the shipped "HPGe 40%", whose length is 0) or the crystal material cannot be
+   resolved.
+   */
+  ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
+                                                 const std::string &name_hint,
+                                                 std::vector<std::string> &warnings );
 }//namespace CeeLoUtils
 
 #endif //CeeLoUtils_h

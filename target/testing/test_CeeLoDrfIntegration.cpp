@@ -47,12 +47,15 @@
 #define BOOST_TEST_MODULE test_CeeLoDrfIntegration_suite
 #include <boost/test/included/unit_test.hpp>
 
+#include <map>
 #include <cmath>
 #include <string>
 #include <vector>
 #include <memory>
+#include <limits>
 #include <fstream>
 #include <sstream>
+#include <utility>
 #include <iostream>
 #include <algorithm>
 
@@ -69,6 +72,8 @@
 #include "cascade/SandiaDecayCascade.h"
 
 #include "SpecUtils/SpecFile.h"
+#include "SpecUtils/StringAlgo.h"
+#include "SpecUtils/ParseUtils.h"
 #include "SpecUtils/Filesystem.h"
 
 #include "SandiaDecay.h"
@@ -80,6 +85,7 @@
 #include "InterSpec/AngleOutxImport.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectorEfficiency.h"
+#include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
@@ -1302,6 +1308,587 @@ BOOST_AUTO_TEST_CASE( angle_efficiency_cross_validation )
   BOOST_CHECK_CLOSE( at_ref.value, eff_mid, 1.0 );  //percent
 }//angle_efficiency_cross_validation
 
+
+
+//========================= GADRAS Efficiency.csv cross-validation ============
+// Does our Monte Carlo reproduce the intrinsic efficiency GADRAS reports for
+//  the same detector?  Everything downstream - importing a Detector.dat with no
+//  Efficiency.csv at all - rests on the answer, so it is measured here rather
+//  than assumed.
+//
+// GADRAS's Efficiency.csv "Peak" column is the INTRINSIC full-energy-peak
+//  efficiency: the probability that a photon striking the detector's front face
+//  produces a full-energy count, for a source at the Detector.dat distance
+//  (param 17).  Our MC gives an ABSOLUTE efficiency per emitted photon, so the
+//  comparison divides by the fractional solid angle of the round-face-equivalent
+//  crystal at that distance PLUS the setback - which is exactly how GADRAS
+//  computes its own param-9 solid angle (asserted below before any MC runs).
+namespace
+{
+  struct GadrasEffRow
+  {
+    double energy_keV = 0.0;
+    double intrinsic_fep = 0.0;   //the "Peak" column, as a fraction
+  };
+
+  vector<GadrasEffRow> read_gadras_efficiency_csv( const string &path )
+  {
+    vector<GadrasEffRow> rows;
+
+    ifstream in( path.c_str(), ios::in | ios::binary );
+    if( !in.is_open() )
+      return rows;
+
+    string line;
+    while( SpecUtils::safe_get_line( in, line ) )
+    {
+      SpecUtils::trim( line );
+      if( line.empty() || (line[0] == '#') )
+        continue;
+
+      vector<string> fields;
+      SpecUtils::split( fields, line, "," );
+      if( fields.size() < 2 )
+        continue;
+
+      double energy = 0.0, peak = 0.0;
+      if( !(stringstream(fields[0]) >> energy) )   //skips the two header lines
+        continue;
+      if( !(stringstream(fields[1]) >> peak) )
+        continue;
+
+      GadrasEffRow row;
+      row.energy_keV = energy;
+      row.intrinsic_fep = 0.01 * peak;   //the column is a percentage
+      rows.push_back( row );
+    }//while( more lines )
+
+    return rows;
+  }//read_gadras_efficiency_csv(...)
+
+
+  /** Every detector directory holding BOTH a Detector.dat and an
+   Efficiency.csv, from the shipped generic set and the test fixtures. */
+  vector<pair<string,string>> gadras_both_file_dirs()   //(display name, path)
+  {
+    vector<pair<string,string>> answer;
+
+    const vector<string> bases = {
+      SpecUtils::append_path( g_data_dir, "GenericGadrasDetectors" ),
+      SpecUtils::append_path( g_test_data_dir, "gadras_detectors" )
+    };
+
+    for( const string &base : bases )
+    {
+      if( !SpecUtils::is_directory(base) )
+        continue;
+
+      vector<string> dirs = SpecUtils::ls_directories_in_directory( base );
+      std::sort( begin(dirs), end(dirs) );
+      for( const string &dir : dirs )
+      {
+        if( SpecUtils::is_file( SpecUtils::append_path(dir, "Detector.dat") )
+            && SpecUtils::is_file( SpecUtils::append_path(dir, "Efficiency.csv") ) )
+          answer.push_back( make_pair( SpecUtils::filename(dir), dir ) );
+      }
+    }//for( const string &base : bases )
+
+    return answer;
+  }//gadras_both_file_dirs()
+
+
+  /** Which accuracy family a detector belongs to; GADRAS's fitted effective
+   dimensions degrade the comparison differently per crystal type, so the gates
+   are per-family rather than global. */
+  string gadras_family( const string &crystal )
+  {
+    if( SpecUtils::icontains(crystal, "HPGe") )  return "HPGe";
+    if( SpecUtils::icontains(crystal, "NaI") )   return "NaI";
+    if( SpecUtils::icontains(crystal, "LaBr") )  return "LaBr3";
+    if( SpecUtils::icontains(crystal, "CZT")
+        || SpecUtils::icontains(crystal, "CdTe") ) return "CZT";
+    return "other";
+  }
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( gadras_efficiency_cross_validation )
+{
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
+
+  const vector<pair<string,string>> dets = gadras_both_file_dirs();
+  BOOST_REQUIRE_MESSAGE( dets.size() >= 10,
+                         "Found only " + std::to_string(dets.size())
+                         + " GADRAS detector directories with both files" );
+
+  BOOST_TEST_MESSAGE( "" );
+  BOOST_TEST_MESSAGE( "MC intrinsic FEP efficiency vs the GADRAS Efficiency.csv 'Peak'"
+                      " column, for " << dets.size() << " detectors." );
+
+  map<string,vector<double>> errs_by_family;   //|ratio-1|
+  size_t n_modeled = 0, n_refused = 0;
+
+  for( const pair<string,string> &det : dets )
+  {
+    const string &name = det.first;
+    const string &dir = det.second;
+
+    const GadrasDetectorDat dat = GadrasDetectorDat::fromFile(
+                                    SpecUtils::append_path(dir, "Detector.dat") );
+
+    vector<string> notes;
+    const string crystal = CeeLoUtils::resolveGadrasCrystalName( dat, name, notes );
+
+    ceelo::GeometryDescriptor gd;
+    vector<string> warnings;
+    try
+    {
+      gd = CeeLoUtils::buildGadrasGeometry( dat, name, warnings );
+    }catch( std::exception &e )
+    {
+      BOOST_TEST_MESSAGE( "  " << name << ": no geometry - " << e.what() );
+      n_refused += 1;
+      continue;
+    }
+
+    const vector<ceelo::GeometryProblem> problems = gd.problems();
+    for( const ceelo::GeometryProblem p : problems )
+      BOOST_ERROR( name + ": geometry problem " + ceelo::to_string(p) );
+
+    const vector<GadrasEffRow> csv = read_gadras_efficiency_csv(
+                                    SpecUtils::append_path(dir, "Efficiency.csv") );
+    BOOST_REQUIRE_MESSAGE( csv.size() > 10, name + ": could not read Efficiency.csv" );
+
+    const double dist_cm = dat.distanceCm();
+    const double setback_cm = dat.setbackCm();
+    const double diam = dat.equivalentCircularDiameterCm() * PhysicalUnits::cm;
+    BOOST_REQUIRE_MESSAGE( (dist_cm > 0.0) && (diam > 0.0), name + ": bad distance/diameter" );
+
+    const double omega = DetectorPeakResponse::fractionalSolidAngle(
+                                  diam, (dist_cm + setback_cm) * PhysicalUnits::cm );
+    BOOST_REQUIRE( omega > 0.0 );
+
+    // Cross-check against GADRAS's own stored solid angle (param 9) - reported,
+    //  not asserted.  It agrees to 0.02% on files that recompute it (NaI 3x3),
+    //  but several shipped files carry a stale value: "LaBr 5%" is off by a
+    //  factor of 3.9 while its efficiency still cross-validates to 2-7%.  So a
+    //  disagreement here says the parameter was not refreshed, not that the
+    //  geometry or the distance convention is wrong - the efficiency ratios
+    //  below are the real evidence.  (test_GadrasDetectorDat asserts the
+    //  identity on the fixture files that do keep it current.)
+    const double stated_omega = 0.01 * dat.solidAnglePercent();
+    if( (stated_omega > 0.0) && (std::fabs(omega - stated_omega) > 0.05*stated_omega) )
+      BOOST_TEST_MESSAGE( "  " << name << ": stored solid angle " << stated_omega
+                          << " disagrees with the geometry's " << omega
+                          << " (x" << (omega/stated_omega) << ") - stale param 9." );
+
+    // Detector-side geometry from the descriptor; source on-axis in front, at
+    //  the GADRAS distance measured from the endcap face (z=0 is the CRYSTAL
+    //  face, so the setback is added).
+    std::vector<std::unique_ptr<ceelo::Material>> owned;
+    ceelo::EfficiencyCalculator calc;
+    ceelo::ResponseGenerator::configure_calculator( calc, gd, owned );
+    calc.set_point_source( Eigen::Vector3d( 0.0, 0.0,
+                                  -( gd.endcap_front_offset_cm() + dist_cm ) ) );
+
+    // ~8 energies spanning where the detector is actually used.
+    const vector<double> want = { 60.0, 122.0, 200.0, 400.0, 662.0, 1000.0, 1332.0, 2000.0 };
+
+    BOOST_TEST_MESSAGE( "" );
+    BOOST_TEST_MESSAGE( "  " << name << "  (" << (crystal.empty() ? string("?") : crystal)
+                        << ", " << ((gd.shape == ceelo::DetectorShape::Box) ? "box" : "cylinder")
+                        << ", d=" << dist_cm
+                        << " cm, setback=" << setback_cm << " cm)" );
+    for( const string &w : warnings )
+      BOOST_TEST_MESSAGE( "      note: " << w );
+    BOOST_TEST_MESSAGE( "      E(keV)    GADRAS       MC    MC/GADRAS" );
+
+    const string family = gadras_family( crystal );
+
+    for( const double energy : want )
+    {
+      // Nearest CSV row, log-interpolating would hide a mismatch, so use the
+      //  tabulated point itself.
+      const GadrasEffRow *row = nullptr;
+      double best = std::numeric_limits<double>::max();
+      for( const GadrasEffRow &r : csv )
+      {
+        const double d = std::fabs( r.energy_keV - energy );
+        if( (d < best) && (r.intrinsic_fep > 0.0) )
+        {
+          best = d;
+          row = &r;
+        }
+      }
+
+      if( !row || (best > 0.1*energy) )
+        continue;
+
+      ceelo::SimulationConfig cfg;
+      cfg.energy_keV = row->energy_keV;
+      cfg.termination.target_fep_rel_precision = 0.01;
+      cfg.termination.max_events = 4000000;
+      cfg.termination.min_events = 40000;
+      cfg.seed = 12345;
+      const ceelo::EfficiencyResult mc = calc.compute( cfg );
+
+      const double mc_intrinsic = mc.full_energy_peak_efficiency / omega;
+      const double ratio = mc_intrinsic / row->intrinsic_fep;
+
+      char line[160];
+      std::snprintf( line, sizeof(line), "   %9.1f  %8.5f  %8.5f  %8.3f",
+                     row->energy_keV, row->intrinsic_fep, mc_intrinsic, ratio );
+      BOOST_TEST_MESSAGE( line );
+
+      errs_by_family[family].push_back( std::fabs(ratio - 1.0) );
+    }//for( const double energy : want )
+
+    n_modeled += 1;
+  }//for( const pair<string,string> &det : dets )
+
+  BOOST_TEST_MESSAGE( "" );
+  BOOST_TEST_MESSAGE( "Summary (" << n_modeled << " detectors modeled, "
+                      << n_refused << " refused):" );
+
+  for( auto &fam : errs_by_family )
+  {
+    vector<double> &e = fam.second;
+    if( e.empty() )
+      continue;
+    std::sort( begin(e), end(e) );
+    const double median = e[e.size()/2];
+    const double max = e.back();
+    BOOST_TEST_MESSAGE( "  " << fam.first << ": median=" << 100.0*median
+                        << "%  max=" << 100.0*max << "%  (n=" << e.size() << ")" );
+  }
+
+  BOOST_CHECK( n_modeled >= 18 );
+
+  // Gates set from the measured run (|MC/GADRAS - 1| over 8 energies from 60
+  //  keV to 2 MeV, 20 detectors):
+  //
+  //      family   median   max
+  //      CZT       2.7%   13.6%
+  //      HPGe      6.9%   23.0%
+  //      LaBr3     2.4%    6.9%
+  //      NaI       2.8%   22.6%
+  //
+  //  i.e. a geometry recovered from nothing but a Detector.dat reproduces
+  //  GADRAS's own intrinsic efficiency to a few percent in the median.  That is
+  //  what makes a Detector.dat-only import worth offering at all - though an
+  //  Efficiency.csv, when present, is still the better anchor.
+  //
+  //  Where the tails come from:
+  //   - NaI 2x2 is tabulated at 10 cm, which is near-field for a 5 cm crystal.
+  //     There the point-source-on-a-disk fractionalSolidAngle used to convert MC
+  //     absolute -> intrinsic is itself the limiting approximation (ratios 0.77
+  //     to 0.99), so that detector measures the COMPARISON, not the geometry.
+  //   - HPGe carries the widest spread because Detector.dat has no bore
+  //     geometry, so a coaxial crystal is modeled solid.
+  //
+  //  The gates are ~2x the measured medians: loose enough not to be flaky on MC
+  //  noise, tight enough to catch a systematic geometry regression.  For scale,
+  //  building the cylinder on inferShape()'s nominal width/2 instead of the
+  //  equal-area diameter - a one-line slip - put every non-box family at a 24%
+  //  to 29% median, which these gates would have caught immediately.
+  const map<string,pair<double,double>> gates = {   //family -> (median, max)
+    { "CZT",   { 0.06, 0.25 } },
+    { "HPGe",  { 0.14, 0.35 } },
+    { "LaBr3", { 0.06, 0.15 } },
+    { "NaI",   { 0.06, 0.30 } }
+  };
+
+  for( const auto &g : gates )
+  {
+    const auto pos = errs_by_family.find( g.first );
+    BOOST_REQUIRE_MESSAGE( pos != end(errs_by_family),
+                           "No " + g.first + " detectors were cross-validated" );
+
+    const vector<double> &e = pos->second;   //already sorted above
+    BOOST_REQUIRE( !e.empty() );
+    const double median = e[e.size()/2];
+    const double max = e.back();
+
+    BOOST_CHECK_MESSAGE( median < g.second.first,
+                        g.first + " median |MC/GADRAS-1| = " + std::to_string(100.0*median)
+                        + "%, over the " + std::to_string(100.0*g.second.first) + "% gate" );
+    BOOST_CHECK_MESSAGE( max < g.second.second,
+                        g.first + " max |MC/GADRAS-1| = " + std::to_string(100.0*max)
+                        + "%, over the " + std::to_string(100.0*g.second.second) + "% gate" );
+  }//for( const auto &g : gates )
+}//gadras_efficiency_cross_validation
+
+
+/** Dumps the full efficiency curves - GADRAS's Efficiency.csv against our MC -
+ as JSON, for visual comparison.  Slow (a few hundred MC points), so it is not
+ part of a normal run: invoke it explicitly with
+
+   ./test_CeeLoDrfIntegration --run_test=gadras_efficiency_curve_dump \
+       -- --datadir=... --testfiledir=... --curvedump=/path/to/out.json
+
+ The energy span per detector is the one Detector.dat declares (params 62/63),
+ falling back to the LLD and then to the CSV's own range when a file leaves
+ those at zero - which most of the shipped ones do - and capped at 3 MeV.
+ */
+BOOST_AUTO_TEST_CASE( gadras_efficiency_curve_dump )
+{
+  string outpath;
+  {
+    const int argc = boost::unit_test::framework::master_test_suite().argc;
+    char **argv = boost::unit_test::framework::master_test_suite().argv;
+    for( int i = 1; i < argc; ++i )
+    {
+      const string arg = argv[i];
+      if( arg.find("--curvedump=") == 0 )
+        outpath = arg.substr( 12 );
+    }
+  }
+
+  if( outpath.empty() )
+  {
+    BOOST_TEST_MESSAGE( "No --curvedump=<file> given; skipping the curve dump." );
+    return;
+  }
+
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE( MaterialDB::initialized() );
+
+  const vector<pair<string,string>> dets = gadras_both_file_dirs();
+  BOOST_REQUIRE( !dets.empty() );
+
+  ofstream out( outpath.c_str(), ios::out | ios::binary );
+  BOOST_REQUIRE_MESSAGE( out.is_open(), "Could not open " + outpath );
+
+  out << "{\n  \"detectors\": [\n";
+  bool first_det = true;
+
+  for( const pair<string,string> &det : dets )
+  {
+    const string &name = det.first;
+    const string &dir = det.second;
+
+    const GadrasDetectorDat dat = GadrasDetectorDat::fromFile(
+                                    SpecUtils::append_path(dir, "Detector.dat") );
+
+    vector<string> warnings;
+    const string crystal = CeeLoUtils::resolveGadrasCrystalName( dat, name, warnings );
+
+    ceelo::GeometryDescriptor gd;
+    try
+    {
+      gd = CeeLoUtils::buildGadrasGeometry( dat, name, warnings );
+    }catch( std::exception & )
+    {
+      continue;   //e.g. "HPGe 40%", whose crystal length is zero
+    }
+
+    const vector<GadrasEffRow> csv = read_gadras_efficiency_csv(
+                                    SpecUtils::append_path(dir, "Efficiency.csv") );
+    if( csv.size() < 5 )
+      continue;
+
+    const double dist_cm = dat.distanceCm();
+    const double setback_cm = dat.setbackCm();
+    const double diam = dat.equivalentCircularDiameterCm() * PhysicalUnits::cm;
+    if( (dist_cm <= 0.0) || (diam <= 0.0) )
+      continue;
+
+    const double omega = DetectorPeakResponse::fractionalSolidAngle(
+                                  diam, (dist_cm + setback_cm) * PhysicalUnits::cm );
+
+    // The declared valid range, with the fallbacks the shipped files need.
+    double e_lo = dat.lowerEnergyKeV();
+    if( e_lo <= 0.0 )
+      e_lo = dat.lldKeV();
+    double e_hi = dat.upperEnergyKeV();
+    if( e_hi <= 0.0 )
+      e_hi = 3000.0;
+    e_hi = std::min( e_hi, 3000.0 );
+
+    // Never past what the CSV actually tabulates.
+    double csv_lo = std::numeric_limits<double>::max(), csv_hi = 0.0;
+    for( const GadrasEffRow &r : csv )
+    {
+      if( r.intrinsic_fep <= 0.0 )
+        continue;
+      csv_lo = std::min( csv_lo, r.energy_keV );
+      csv_hi = std::max( csv_hi, r.energy_keV );
+    }
+    e_lo = std::max( std::max( e_lo, csv_lo ), 10.0 );
+    e_hi = std::min( e_hi, csv_hi );
+    if( !(e_hi > e_lo) )
+      continue;
+
+    std::vector<std::unique_ptr<ceelo::Material>> owned;
+    ceelo::EfficiencyCalculator calc;
+    ceelo::ResponseGenerator::configure_calculator( calc, gd, owned );
+    calc.set_point_source( Eigen::Vector3d( 0.0, 0.0,
+                                  -( gd.endcap_front_offset_cm() + dist_cm ) ) );
+
+    // Log-spaced MC points across the span, plus every crystal K-edge flank so
+    //  the sharpest real structure is not interpolated over.
+    vector<double> energies;
+    const int n_pts = 28;
+    for( int i = 0; i < n_pts; ++i )
+    {
+      const double f = static_cast<double>(i) / (n_pts - 1);
+      energies.push_back( std::exp( std::log(e_lo) + f*(std::log(e_hi) - std::log(e_lo)) ) );
+    }
+    for( const double edge : gd.crystal_k_edges( e_lo, e_hi ) )
+    {
+      energies.push_back( 0.995*edge );
+      energies.push_back( 1.005*edge );
+    }
+    std::sort( begin(energies), end(energies) );
+
+    BOOST_TEST_MESSAGE( "  " << name << ": " << energies.size() << " MC points over "
+                        << e_lo << " - " << e_hi << " keV" );
+
+    if( !first_det )
+      out << ",\n";
+    first_det = false;
+
+    out << "    {\n";
+    out << "      \"name\": \"" << name << "\",\n";
+    out << "      \"crystal\": \"" << (crystal.empty() ? string("unknown") : crystal) << "\",\n";
+    out << "      \"shape\": \"" << ((gd.shape == ceelo::DetectorShape::Box) ? "box" : "cylinder") << "\",\n";
+    out << "      \"distance_cm\": " << dist_cm << ",\n";
+    out << "      \"setback_cm\": " << setback_cm << ",\n";
+    out << "      \"diameter_cm\": " << dat.equivalentCircularDiameterCm() << ",\n";
+    out << "      \"length_cm\": " << gd.dimensions_cm.back() << ",\n";
+    out << "      \"solid_angle\": " << omega << ",\n";
+    out << "      \"e_lo\": " << e_lo << ",\n";
+    out << "      \"e_hi\": " << e_hi << ",\n";
+
+    out << "      \"notes\": [";
+    for( size_t i = 0; i < warnings.size(); ++i )
+    {
+      string w = warnings[i];
+      // JSON-escape the few characters these notes can contain.
+      string esc;
+      for( const char c : w )
+      {
+        if( (c == '"') || (c == '\\') ) esc += '\\';
+        esc += c;
+      }
+      out << (i ? ", " : "") << "\"" << esc << "\"";
+    }
+    out << "],\n";
+
+    out << "      \"gadras\": [";
+    bool first = true;
+    for( const GadrasEffRow &r : csv )
+    {
+      if( (r.intrinsic_fep <= 0.0) || (r.energy_keV < e_lo) || (r.energy_keV > e_hi) )
+        continue;
+      out << (first ? "" : ", ") << "[" << r.energy_keV << ", " << r.intrinsic_fep << "]";
+      first = false;
+    }
+    out << "],\n";
+
+    out << "      \"mc\": [";
+    first = true;
+    for( const double energy : energies )
+    {
+      ceelo::SimulationConfig cfg;
+      cfg.energy_keV = energy;
+      cfg.termination.target_fep_rel_precision = 0.01;
+      cfg.termination.max_events = 4000000;
+      cfg.termination.min_events = 40000;
+      cfg.seed = 12345;
+      const ceelo::EfficiencyResult mc = calc.compute( cfg );
+
+      const double eff = mc.full_energy_peak_efficiency / omega;
+      const double sigma = mc.fep_uncertainty / omega;
+      out << (first ? "" : ", ") << "[" << energy << ", " << eff << ", " << sigma << "]";
+      first = false;
+    }
+    out << "]\n    }";
+  }//for( const pair<string,string> &det : dets )
+
+  out << "\n  ]\n}\n";
+  out.close();
+
+  BOOST_TEST_MESSAGE( "Wrote " << outpath );
+}//gadras_efficiency_curve_dump
+
+
+/** Is "NaI 2x2" disagreeing because of its geometry, or because of the 10 cm
+ distance it is tabulated at?  It is the only detector in the corpus tabulated
+ close in (10 cm from a 5 cm crystal), and the MC -> intrinsic conversion goes
+ through fractionalSolidAngle, a point-source-on-a-disk approximation that is
+ only good in the far field.
+
+ If the conversion is the problem, the intrinsic efficiency we recover will move
+ with distance; if the geometry is wrong, it will not.  Run explicitly:
+   --run_test=gadras_nearfield_probe
+ */
+BOOST_AUTO_TEST_CASE( gadras_nearfield_probe )
+{
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const vector<pair<string,string>> dets = gadras_both_file_dirs();
+  for( const pair<string,string> &det : dets )
+  {
+    if( (det.first != "NaI 2x2") && (det.first != "NaI 25%") )
+      continue;   //NaI 25% is the far-field control: same crystal class, d = 100 cm
+
+    const GadrasDetectorDat dat = GadrasDetectorDat::fromFile(
+                                    SpecUtils::append_path(det.second, "Detector.dat") );
+    vector<string> warnings;
+    const ceelo::GeometryDescriptor gd = CeeLoUtils::buildGadrasGeometry( dat, det.first, warnings );
+
+    const vector<GadrasEffRow> csv = read_gadras_efficiency_csv(
+                                    SpecUtils::append_path(det.second, "Efficiency.csv") );
+
+    const double setback = dat.setbackCm();
+    const double diam = dat.equivalentCircularDiameterCm() * PhysicalUnits::cm;
+    const double tabulated = dat.distanceCm();
+
+    BOOST_TEST_MESSAGE( "" );
+    BOOST_TEST_MESSAGE( det.first << ": tabulated at " << tabulated << " cm, crystal Ø"
+                        << dat.equivalentCircularDiameterCm() << " cm" );
+    BOOST_TEST_MESSAGE( "   E(keV)   GADRAS   intrinsic@tabulated   intrinsic@400cm    ratio 400/tab" );
+
+    for( const double energy : { 122.0, 400.0, 662.0, 1332.0, 2000.0 } )
+    {
+      const GadrasEffRow *row = nullptr;
+      double best = 1e30;
+      for( const GadrasEffRow &r : csv )
+        if( (r.intrinsic_fep > 0.0) && (std::fabs(r.energy_keV - energy) < best) )
+        { best = std::fabs(r.energy_keV - energy); row = &r; }
+      if( !row || (best > 0.1*energy) )
+        continue;
+
+      double eff[2];
+      const double dists[2] = { tabulated, 400.0 };
+      for( int i = 0; i < 2; ++i )
+      {
+        std::vector<std::unique_ptr<ceelo::Material>> owned;
+        ceelo::EfficiencyCalculator calc;
+        ceelo::ResponseGenerator::configure_calculator( calc, gd, owned );
+        calc.set_point_source( Eigen::Vector3d( 0.0, 0.0,
+                                    -( gd.endcap_front_offset_cm() + dists[i] ) ) );
+        ceelo::SimulationConfig cfg;
+        cfg.energy_keV = row->energy_keV;
+        cfg.termination.target_fep_rel_precision = 0.005;
+        cfg.termination.max_events = 8000000;
+        cfg.termination.min_events = 40000;
+        cfg.seed = 12345;
+        const ceelo::EfficiencyResult mc = calc.compute( cfg );
+        const double omega = DetectorPeakResponse::fractionalSolidAngle(
+                                diam, (dists[i] + setback) * PhysicalUnits::cm );
+        eff[i] = mc.full_energy_peak_efficiency / omega;
+      }
+
+      char line[192];
+      std::snprintf( line, sizeof(line), "  %8.1f %8.4f %18.4f %18.4f %14.3f",
+                     row->energy_keV, row->intrinsic_fep, eff[0], eff[1], eff[1]/eff[0] );
+      BOOST_TEST_MESSAGE( line );
+    }
+  }//for( const pair<string,string> &det : dets )
+}//gadras_nearfield_probe
 
 /** RACCOONS extended-source cross-validation (developer-only; needs a scratch
  file that cannot be committed).  The sample is a DENSE stainless-steel disk
