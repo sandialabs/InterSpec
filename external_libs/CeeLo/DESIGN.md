@@ -115,7 +115,7 @@ visualization/      Dependency-free WebGL viewer for exported GDML geometries
 
 ### Physics
 
-- **Analog MC transport**: No variance reduction inside the detector crystal. Each photon interaction (Compton, PE, Rayleigh, pair production) is sampled explicitly. Electron energy deposition uses CSDA (continuous slowing-down approximation) with Moliere multiple scattering for KE > 200 keV.
+- **Analog MC transport**: No variance reduction inside the detector crystal. Each photon interaction (Compton, PE, Rayleigh, pair production) is sampled explicitly. Electron energy deposition uses CSDA (continuous slowing-down approximation) with Moliere multiple scattering for KE > 200 keV; the condensed-history walk applies the Highland log term on the accumulated path (not per sub-step) and per-step Bohr energy-loss straggling for steps above 500 keV (Aug 2026 — closed the ≥2 MeV FEP family and most of the CZT electron-escape deficit; see Known Limitations).
 
 - **Cone importance sampling**: For point sources with no shielding, photons are emitted within a cone subtending the detector (not isotropic 4pi). Each event carries a weight = cone solid angle fraction. This gives ~100x speedup for typical geometries. The standard IS estimator is `(1/N) * sum(w_i * I_i)` -- the denominator is N (number of events), NOT sum of weights.
 
@@ -520,21 +520,23 @@ fluorescence X-rays from heavy-element attenuators are produced (else killed by 
 
 | Config | Detector | Attenuator | Source | FEP agreement | Total agreement |
 |--------|----------|------------|--------|---------------|-----------------|
-| 1 | 3"x3" NaI | bare | point, 10cm on-axis | ≤ 0.9% | ≤ 0.6% |
-| 2 | 3"x3" NaI | 1mm Al | point, 10cm on-axis | ≤ 0.7% (≤1173); −2.1% @ 3000 | ≤ 0.6% |
-| 3 | 2"x2" LaBr3 | 0.5mm Al | point, 5cm on-axis | ≤ 0.6% | ≤ 0.5% |
-| 5 | 1x1x0.5cm CZT | bare | point, 5cm on-axis | ≤ 1.3% (30-662 keV); −5.3% @ 1500 | ≤ 0.5% |
-| 6 | 3"x3" NaI | bare | point, 15cm 45deg off-axis | ≤ 0.6% | ≤ 0.6% |
-| 7 | 3"x3" NaI | 1mm Al + 2mm Pb | point, 15cm on-axis | ≤ 0.8% (≥ 200 keV) | ≤ 0.9% (≥ 200 keV)*** |
-| 8 | 3"x3" NaI | 0.5mm Al | Marinelli beaker, water | ≤ 1.2% (≥ 100 keV); −2.3% @ 59* | ≤ 1.1%* |
-| 11 | 3"x3" NaI | bare | point, 10cm + 0.5cm Fe shield | ≤ 0.6% (200-2000); −1.7% @ 3000** | ≤ 0.6%** |
-| 12 | 3"x3" NaI | bare | 10x15x20cm SS304 box, cellulose | ≤ 0.2% (≥ 200 keV); −3.8% @ 59 | ≤ 1.4% (≥ 200 keV); −3.0% @ 59 |
-| 25 | GEM35-70 HPGe coax, sharp edge | bare | point, 5cm on-axis | ≤ 0.34% | ≤ 0.10% |
-| 26 | GEM35-70 HPGe coax, **bulletized** + round-tipped bore | bare | point, 5cm on-axis | ≤ 0.74% | ≤ 0.14%† |
+| 1 | 3"x3" NaI | bare | point, 10cm on-axis | ≤ 0.6% | ≤ 0.6% |
+| 2 | 3"x3" NaI | 1mm Al | point, 10cm on-axis | ≤ 0.8% | ≤ 0.5% |
+| 3 | 2"x2" LaBr3 | 0.5mm Al | point, 5cm on-axis | ≤ 0.9% (<1 MeV); +0.8 to +1.5% ≥1 MeV (LaBr3 residual, TODO.md) | ≤ 0.5% |
+| 5 | 1x1x0.5cm CZT | bare | point, 5cm on-axis | ≤ 1.4% (30-1500 keV; e⁻-escape deficit resolved Aug 2026) | ≤ 0.7% |
+| 6 | 3"x3" NaI | bare | point, 15cm 45deg off-axis | ≤ 1.6% | ≤ 0.5% |
+| 7 | 3"x3" NaI | 1mm Al + 2mm Pb | point, 15cm on-axis | ≤ 0.6% (≥ 200 keV) | ≤ 0.6% (≥ 200 keV)*** |
+| 8 | 3"x3" NaI | 0.5mm Al | Marinelli beaker, water | ≤ 0.8% (≥ 100 keV); −2.3% @ 59* | ≤ 0.8%* |
+| 11 | 3"x3" NaI | bare | point, 10cm + 0.5cm Fe shield | ≤ 0.4% (200-3000)** | ≤ 0.5%** |
+| 12 | 3"x3" NaI | bare | 10x15x20cm SS304 box, cellulose | ≤ 0.2% (≥ 200 keV); −4.0% @ 59 | ≤ 1.6% (≥ 200 keV); −2.5% @ 59 |
+| 25 | GEM35-70 HPGe coax, sharp edge | bare | point, 5cm on-axis | ≤ 1.1% | ≤ 0.6% |
+| 26 | GEM35-70 HPGe coax, **bulletized** + round-tipped bore | bare | point, 5cm on-axis | ≤ 1.0% | ≤ 0.3%† |
 
 **Measured Aug 2026** against the committed GEANT4 references, from
 `tests/data/ceelo_reference/` regenerated at ~0.3% precision on the EPICS2023
-photon data. A few tenths of a percent of every entry is Monte Carlo statistics.
+photon data **after the Aug 2026 crystal-electron-walk fixes** (path-consistent
+Highland + Bohr straggling + step-budget guard; `studies/high_e_fep/FINDINGS.md`).
+A few tenths of a percent of every entry is Monte Carlo statistics.
 
 **Configs 25/26 are a matched pair** (added Aug 2026 with bulletization support):
 the same GEM35-70 HPGe coax with a sharp and a bulletized front edge, 4M
@@ -629,7 +631,7 @@ water; MC's ≤3-bounce photon-only re-entry + one-way electron escape miss it) 
 smaller than the previously documented −2.5%. See the reference CSV header for the regeneration record. Config 8's Marinelli electron-escape path
 uses the regime-aware `walk_in_source_geometry` (water is light-Z → fully analog).
 
-\*\* Config 11 GDML uses `rmin=1e-4 cm` for the Fe source shield sphere to avoid G4 navigation issues when a GPS source is at the exact center of a solid sphere (`rmin=0`). Configs 11/12 cover 200–3000 / 59–2614 keV; total agreement above the 1022 keV PP threshold requires the source-shield secondary channels (annihilation gammas, shield bremsstrahlung, electron escape — see Source Geometry section), which together contribute up to ~6% of total efficiency at 3 MeV. References upgraded June 2026: cfg 11 {2000, 3000} and cfg 12 {662, 1173, 2614} rows are 64M-event G4 runs (old-vs-new G4 z ≤ 1.3); the previously documented "−1.3% FEP at 3000" was an old-reference fluctuation (vs 64M: −0.4 to −1.1% across repeat runs, part of the high-energy SB/CSDA family). **Config 12 totals agreed to −0.5 to +0.8% across 59–2614 keV (z ≤ 1.5)** on the then-current photon data; on EPICS2023 (Aug 2026) 200–2614 keV is +0.01 to +1.32% while 59 keV moved to −3.02% (see the Validated Configurations note) after the June 2026 skin-escape-transmission fix (`ElectronCsda::walk_in_source_geometry`). The pre-fix excess was +1.8–2.5% ABOVE G4 at 662–1173 keV (z = 4–7) — root-caused (June 2026 residual triage) to the source-electron *escape* channel delivering ~5× G4's electron-arrival rate (MC 8.7e-5/event vs the G4 electron-entry-with-deposit rate 1.96e-5 ± 0.11e-5) for sub-MeV skin escape from dense shields (the Gaussian-core Molière walk lacks large-angle tails/backscatter). The fix is an analog surface-emergence (1 − albedo) survival gate, A(E, Z_eff), applied to the escape outcome only (bremsstrahlung is kept): it suppresses the near-surface τ≈0 sub-MeV escapers G4 backscatters, while saturating to ≈1 above ~1.5 MeV so the MeV channel is preserved. Post-fix electron channel (`TOT` − `--no-source-electrons`): cfg 12 @662 = 2.11e-5 ± 0.35e-5/event vs the G4 electron-entry target 2.0e-5 ± 0.1e-5 (z = 0.3, was 8.7e-5 pre-fix); cfg 11 @3000 = 3.03% of total vs the G4-implied +3.05% (×1.21 → ×1.0 vs G4). The channel must stay enabled (without it, cfg 11 @3000 total is −3.05% ± 0.18%, z = 17). See Known Limitations → "Source-electron skin escape".
+\*\* Config 11 GDML uses `rmin=1e-4 cm` for the Fe source shield sphere to avoid G4 navigation issues when a GPS source is at the exact center of a solid sphere (`rmin=0`). Configs 11/12 cover 200–3000 / 59–2614 keV; total agreement above the 1022 keV PP threshold requires the source-shield secondary channels (annihilation gammas, shield bremsstrahlung, electron escape — see Source Geometry section), which together contribute up to ~6% of total efficiency at 3 MeV. References upgraded June 2026: cfg 11 {2000, 3000} and cfg 12 {662, 1173, 2614} rows are 64M-event G4 runs (old-vs-new G4 z ≤ 1.3); the previously documented "−1.3% FEP at 3000" was an old-reference fluctuation (vs 64M: −0.4 to −1.1% across repeat runs, part of the high-energy electron-transport family — resolved Aug 2026, post-fix +0.33%, z 0.7). **Config 12 totals agreed to −0.5 to +0.8% across 59–2614 keV (z ≤ 1.5)** on the then-current photon data; on EPICS2023 (Aug 2026) 200–2614 keV is +0.01 to +1.32% while 59 keV moved to −3.02% (see the Validated Configurations note) after the June 2026 skin-escape-transmission fix (`ElectronCsda::walk_in_source_geometry`). The pre-fix excess was +1.8–2.5% ABOVE G4 at 662–1173 keV (z = 4–7) — root-caused (June 2026 residual triage) to the source-electron *escape* channel delivering ~5× G4's electron-arrival rate (MC 8.7e-5/event vs the G4 electron-entry-with-deposit rate 1.96e-5 ± 0.11e-5) for sub-MeV skin escape from dense shields (the Gaussian-core Molière walk lacks large-angle tails/backscatter). The fix is an analog surface-emergence (1 − albedo) survival gate, A(E, Z_eff), applied to the escape outcome only (bremsstrahlung is kept): it suppresses the near-surface τ≈0 sub-MeV escapers G4 backscatters, while saturating to ≈1 above ~1.5 MeV so the MeV channel is preserved. Post-fix electron channel (`TOT` − `--no-source-electrons`): cfg 12 @662 = 2.11e-5 ± 0.35e-5/event vs the G4 electron-entry target 2.0e-5 ± 0.1e-5 (z = 0.3, was 8.7e-5 pre-fix); cfg 11 @3000 = 3.03% of total vs the G4-implied +3.05% (×1.21 → ×1.0 vs G4). The channel must stay enabled (without it, cfg 11 @3000 total is −3.05% ± 0.18%, z = 17). See Known Limitations → "Source-electron skin escape".
 
 \*\*\* Config 7 at 100 keV: ~−25–31% total discrepancy, excluded from the automated gate (`SKIP` in `profiling/compare_validation.py`). **Localized June 2026** to a G4-side effect: G4's *in-tracking* μ_total(Pb) is smeared across the K-edge (88 keV) relative to its own G4EmCalculator export, while the exported table matches NIST XCOM to 0.23% (5.536 vs 5.549 cm²/g at 100 keV). Measured via cone-biased uncollided-FEP ratios through the 2 mm Pb stack (Δμ/μ = ln(FEP_G4/FEP_MC)/τ): **+0.35% ± 0.15% at 80 keV (below edge, μ pulled up), −18% ± 1.5% at 90 keV (just above, pulled down), −4.4% ± 0.5% at 100 keV (recovering)** — the classic λ-table edge-interpolation signature; 73.5/75 keV agree to ±0.2–1%. Consequences: G4 transmits/escapes far more just-above-edge flux; the K-escape channel gains ~+10–15% from the deeper PE-production profile (forward K escape ∝ μ_PE/(μ₁−μ₂), front-face dominated — NOT e^(−μ₁t)). The Kα-specific ratio (G4/MC ×1.50, Kβ ×1.22) is additionally driven by the escaped Kα/Kβ ratio: G4's 0.82 matches a simple emission×attenuation estimate (BR_Kβ/Kα ≈ 0.30, Δμ₂t ≈ 1.4), MC's 0.67 is low — follow-up: verify MC's Pb K-line branching ratios/energies from EADL. G4's run-to-run scatter resolved: three runs {1.366 ± 0.006, 1.476 ± 0.025, 1.377 ± 0.013}e-5; the high one was the outlier; G4 ≈ 1.371e-5 ± 0.6%. NOT an MC transport bug (MC tables = XCOM; below-edge transmission matches G4). Exclusion retained.
 
@@ -643,9 +645,9 @@ sphere (R=2 cm), **G-B** trace source in a soil sphere (R=3 cm) + Al(0.2)/Fe(0.5
 void-center soil shell [2,3] cm + Fe(0.5) — at near (~2 cm gap) and far (~50 cm); Th-232 chain energies.
 Vacuum world. G4 = 4M-event isotropic GPS volume source.
 
-- **FEP agrees across all geometries/energies**: |z| ≤ 1.4 at 238.6/583/911 keV (e.g. G-A FEP z = −0.5/0.4/0.7; G-B/G-C within ±1.5). FEP is the priority metric and validates the geometry, sampling, and self-attenuation path. (G-A FEP at 2614 keV is −4.2%, z≈−3.3 — the high-energy SB/pair/CSDA family, amplified by the thick high-Z source, not geometry.)
+- **FEP agrees across all geometries/energies**: |z| ≤ 1.4 at 238.6/583/911 keV (e.g. G-A FEP z = −0.5/0.4/0.7; G-B/G-C within ±1.5). FEP is the priority metric and validates the geometry, sampling, and self-attenuation path. (G-A FEP at 2614 keV was −4.2%, z≈−3.3 on the pre-Aug-2026 engine — then attributed to the high-energy electron-transport family, amplified by the thick high-Z source, not geometry. The crystal-side share of that family is fixed (see Known Limitations); the sphere anchors have not been re-run since.)
 - **Low-Z trace-source totals agree**: G-B and G-C total efficiency match G4 to ≲1.5% (|z| mostly ≤2) across 238.6–2614 keV — validates the trace + void-center-shell geometry and shielding.
-- **High-Z self-attenuating total is low**: G-A (Thorium) total is **−22% / −4.1% / −2.6%** at 238.6/583/911 keV — the source-material **K-fluorescence** that is not emitted (Th Kα ≈90/93 keV escaping the source), confirmed by the G4 histogram and FEP-clean. See Known Limitations. (G-A 2614 keV total −4.0% is the coherent FEP+total high-energy family, separate from fluorescence.)
+- **High-Z self-attenuating total is low**: G-A (Thorium) total is **−22% / −4.1% / −2.6%** at 238.6/583/911 keV — the source-material **K-fluorescence** that is not emitted (Th Kα ≈90/93 keV escaping the source), confirmed by the G4 histogram and FEP-clean. See Known Limitations. (G-A 2614 keV total −4.0% was measured pre-Aug-2026-fix; see the FEP note above.)
 
 The far (~50 cm) MC efficiencies converge well via the auto two-stream/cone direct stream; a matching G4 cross-check at 50 cm needs much higher isotropic stats (cone bias is invalid with source scatter) and is left for a dedicated high-stats run. The cascade path on a sphere is exercised by `tests/test_spherical_source.cpp` (`co60_summing_out_on_sphere`); `compute_cascade` is geometry-agnostic (routes through `sample_source_position` + `transport_source_photon`).
 
@@ -693,14 +695,31 @@ single source of truth. Add new shortcomings there, not here. Detailed root-caus
 is in the git history.
 
 Standing notes that are easy to trip over:
-- **High-energy FEP family.** Above ~2 MeV the FEP residual is negative and *coherent in sign across
-  NaI/LaBr3 configurations*, growing with energy. Measured on the EPICS2023 data (Aug 2026): −2.06%
-  (cfg 2 @3000), −1.65% (cfg 11 @3000), −0.62% (cfg 1 @2000), −0.21% (cfg 3 @3000), −0.06%
-  (cfg 12 @2614). **Below ~1.3 MeV the residual is small** (|Δ| ≤ 0.6% for cfgs 1/2/3/6/11/12 at
-  0.3–0.5% combined σ). The coherence across configurations points at the Seltzer-Berger
-  bremsstrahlung + CSDA electron-escape approximations rather than anything configuration-specific.
-  This supersedes the older, vaguer "−1 to −2% FEP residual, root cause unknown". CZT (cfg 5) is
-  separate: −2.28/−4.12/−5.34% at 800/1000/1500 keV from thin-crystal electron escape.
+- **High-energy FEP family — RESOLVED (Aug 2026).** Above ~2 MeV the FEP residual used to be
+  negative and coherent across NaI/LaBr3 configurations, growing with energy: measured at ~0.1% MC
+  precision (Aug 2026 triage, `studies/high_e_fep/FINDINGS.md`) the true family was pooled
+  −0.37% (z −6.5) over the eleven ≥2 MeV gate rows, −0.535% ± 0.089% pooled at 3000 keV with
+  χ²/ndf 1.9/4 (the old headline "−2.06% cfg 2 @3000" was 0.3%-precision noise on top of this).
+  Root cause was the crystal condensed-history electron walk, established by three independent
+  A/Bs plus a matched process-isolation GEANT4 decomposition (16M `noEBrem`/`noMSC`/`noBoth` runs
+  at 2614/3000): the Seltzer-Berger brems *sampling* share matched G4 to ≤0.2% throughout
+  (exonerated), while the electron-transport share suppressed FEP 0.64%/0.98% more than G4 at
+  2614/3000 (z 3.6/5.0). Three defects, all fixed in `ElectronCsda::deposited_in_scoring`:
+  1. the Highland log term was evaluated per sub-step instead of on the accumulated path
+     (θ0 ~13% low for 20 steps) — fix worth +0.22% ± 0.08% FEP pooled at ≥2.6 MeV;
+  2. no per-step energy-loss straggling (deterministic escape threshold) — Bohr straggling
+     (KE > 500 keV steps; final budgeted step deterministic; ~1% CPU at 3 MeV, ~0% at 662,
+     `CEELO_NO_CRYSTAL_STRAGGLE`/`CEELO_DIAG_STRAGGLE_ALL_KE` env A/B knobs) — worth
+     +0.4–0.5% FEP at 3 MeV;
+  3. walks could exhaust their sub-step budget with residual KE silently dropped (0.02% of walks
+     @3 MeV; also the mechanism that had sunk an earlier straggling A/B as "4–5% contained-U
+     deficits") — fixed by continuing the walk to KE → 0.
+  Post-fix: pooled ≥2 MeV **+0.24% (z +4.2)**, 3000-only +0.21% (z +2.4), no coherent family;
+  <2 MeV pooled shift +0.013% (z +0.4, 103 rows). Null A/Bs recorded for the pair-lepton
+  n_steps=20 floor and the forward-only brems angle. Remaining structure: LaBr3 (cfg 3)
+  +0.5–0.6% ≥1 MeV, and the cfg 7 Pb-attenuator total +0.25% (z≈3) — see TODO.md. CZT (cfg 5),
+  formerly −2.28/−4.12/−5.34% at 800/1000/1500 keV, is largely fixed by the same changes:
+  +0.66/−0.31/−1.31% (|z| < 0.7) — thin-crystal escape was straggling-starved.
 - **Config 12 at 59 keV is a data difference, not a transport defect** (attributed Aug 2026;
   probe in the dev-only `studies/xs_probe/`). cfg 12 @59 keV moved from −0.05% to −3.76% FEP
   (−3.72% ± 0.42%, z = 8.9) across the EPICS2023 migration. Measuring μ at 59 keV on both data

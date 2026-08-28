@@ -79,12 +79,12 @@ struct TransportConfig {
     /// Improvement over "deposit locally":
     ///   200 keV: ~2%  |  662 keV: ~7–9%  |  1.5 MeV: ~12–15%  |  3 MeV: ~20%
     ///
-    /// Residual GEANT4 discrepancy with CSDA (shell corrections, bremsstrahlung,
-    /// multiple scattering not yet modelled):
-    ///   < 200 keV: ~1–3%  |  662 keV: ~3–6%  |  > 1 MeV: ~5–10%
-    ///
-    /// TODO (future): full electron transport via Molière multiple scattering,
-    ///   discrete bremsstrahlung photon generation, delta-ray production.
+    /// The walk now includes Molière (Highland) multiple scattering, discrete
+    /// Seltzer-Berger bremsstrahlung with recursive photon transport, and
+    /// per-step Bohr energy-loss straggling (Aug 2026); residual FEP
+    /// discrepancy vs GEANT4 is ≤ ~0.3% pooled at 2–3 MeV
+    /// (studies/high_e_fep/FINDINGS.md).  Delta-ray production is still not
+    /// modelled.
     bool enable_electron_csda = true;
 
     // --- Diagnostic flags for GEANT4 comparison ---

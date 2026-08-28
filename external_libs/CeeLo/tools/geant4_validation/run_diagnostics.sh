@@ -42,7 +42,9 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
 HARNESS="${G4VAL:-ceelo_g4val}"   # override: G4VAL=/path/to/ceelo_g4val
-DIAG_SPECTRUM="$PROJECT_DIR/build/examples/diag_spectrum"
+# Override with DIAG_SPECTRUM=/path/to/diag_spectrum (a Release build is strongly
+# recommended for the 10M-event >=2 MeV rows).
+DIAG_SPECTRUM="${DIAG_SPECTRUM:-$PROJECT_DIR/build/examples/diag_spectrum}"
 GDML="$PROJECT_DIR/build/examples/detector_1.gdml"
 MACROS="$PROJECT_DIR/tools/geant4_validation/macros"
 OUTDIR="$PROJECT_DIR/build/diagnostics"
@@ -58,9 +60,11 @@ echo ""
 # Part 1: Our MC — energy deposit spectra
 # =============================================
 echo "--- Our MC: energy deposit spectra ---"
-N_EVENTS=500000
 
-for E in 662 1173; do
+# FEP efficiency falls to ~3e-3 by 3 MeV, so the >=2 MeV rows need far more
+# events than the sub-MeV ones to resolve the brems/MSC shares.
+for E in 662 1173 2614 3000; do
+    if [ "$E" -ge 2000 ]; then N_EVENTS=10000000; else N_EVENTS=500000; fi
     for MODE in full no_moliere no_brems no_both; do
         echo "  Our MC: ${E} keV, mode=${MODE}..."
         "$DIAG_SPECTRUM" "$E" "$N_EVENTS" "$MODE"
@@ -87,9 +91,11 @@ fi
 echo ""
 echo "--- GEANT4: baseline + process isolation runs ---"
 
+# noRayl exists only for 662/1173 (Rayleigh is negligible >=2 MeV); the loop
+# below skips absent macros.
 VARIANTS="baseline noEBrem noMSC noBoth noRayl"
 
-for E in 662 1173; do
+for E in 662 1173 2614 3000; do
     for VAR in $VARIANTS; do
         MAC="$MACROS/diag_${E}keV_${VAR}.mac"
         if [ ! -f "$MAC" ]; then

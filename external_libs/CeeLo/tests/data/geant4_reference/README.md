@@ -105,8 +105,18 @@ to reproduce them.  The historical summary below is kept for context.
 
 | Effect | Energy range | Δ FEP | Root cause |
 |--------|-------------|-------|------------|
-| Doppler broadening | ≥1 MeV (all configs) | −0.5 to −1.0% | Missing bound-electron Compton profiles |
-| Electron escape | ≥1 MeV (CZT only) | −3 to −7% | Thin detector; CSDA tracking vs G4 full e⁻ transport |
+| LaBr3 FEP residual | ≥1 MeV (cfg 3 only) | +0.5 to +0.6% | Small over-recovery after the Aug 2026 electron-transport fixes (Bohr straggling amplitude / possible small reference offset) |
+| Pb-attenuator total | ≥2 MeV (cfg 7 only) | total +0.25% (z≈3) | Untriaged small residual behind 2 mm Pb |
+
+The former entries here — a "Doppler broadening −0.5 to −1.0% ≥1 MeV" line and
+the CZT −3 to −7% electron escape — are gone. The first was a misattribution
+(Doppler broadening affects the Compton-edge shape only; its FEP effect is far
+below the ±1.5 keV window): the real cause of the ≥2 MeV FEP family was the
+crystal condensed-history electron walk (per-sub-step Highland log term, no
+energy-loss straggling, and a silent residual-KE drop), fixed Aug 2026 —
+post-fix pooled ≥2 MeV FEP agreement is +0.24% (z +4.2 across 11 rows at
+~0.1% MC precision), with no coherent negative family. The same fixes brought
+CZT >1 MeV FEP from −3..−5% to |Δ| ≤ 1.3% (|z| < 0.7).
 
 ## Cascade true-coincidence summing reference
 

@@ -1146,10 +1146,14 @@ ElectronDepositResult ElectronCsda::deposited_in_scoring(
     Eigen::Vector3d dir = direction;
     double KE = KE_keV;
     int steps_remaining = n_steps;
+    double sum_x_X0 = 0.0;  // accumulated thickness for the Highland log term
+    const Material* straggle_mat = nullptr;   // per-walk Z/A cache
+    double straggle_ZoverA = 0.0;
     std::normal_distribution<double> gauss(0.0, 1.0);
     thread_local std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
-    while (steps_remaining > 0 && KE > 0.01) {
+    int iter_guard = 20 * n_steps;  // hard cap: degenerate-geometry backstop
+    while (steps_remaining > 0 && KE > 0.01 && iter_guard-- > 0) {
         geometry.trace_ray(pos, dir, segments);
         if (segments.empty()) break;
 
@@ -1281,6 +1285,11 @@ ElectronDepositResult ElectronCsda::deposited_in_scoring(
                     }
                 }
                 if (accepted) {
+                    // Emitted along the electron direction; an A/B with a
+                    // G4ModifiedTsai opening angle moved FEP by −0.12% ± 0.13
+                    // @2614 and +0.08% ± 0.14 @3000 (null) — the crystal is
+                    // large compared to the ~m_e/E cone, so the zero-angle
+                    // approximation is fine (studies/high_e_fep/FINDINGS.md).
                     result.brems_photons.push_back({pos, dir, E_brems});
                     brems_keV = E_brems;
                 }
@@ -1292,6 +1301,40 @@ ElectronDepositResult ElectronCsda::deposited_in_scoring(
         double KE_exit  = residual_energy_keV(mat, KE, step_gcm2, is_positron);
         double delta_KE = KE - KE_exit;
         if (delta_KE < 0.0) delta_KE = 0.0;
+
+        // Per-step Gaussian energy-loss straggling (Bohr variance, same formula
+        // as the principled source walk).  Contained electrons still deposit
+        // their full KE — the walk continues until KE -> 0 (see the budget
+        // guard below), so straggling moves only stop/escape endpoints, never
+        // the contained-event total.  Without it the escape threshold is a
+        // deterministic step function of birth depth, which under-predicts FEP
+        // at >=2 MeV (measured +0.23% @2614, +0.50% @3000 on config 1).
+        // The FINAL budgeted step is left deterministic: it is planned as the
+        // full remaining range, so straggling it would leave residual KE ~half
+        // the time and force costly walk extensions (measured +13% CPU @3 MeV)
+        // for ~1/n_steps of the variance.  CEELO_NO_CRYSTAL_STRAGGLE=1
+        // disables straggling entirely (A/B and debugging).
+        static const bool kNoCrystalStraggle =
+            std::getenv("CEELO_NO_CRYSTAL_STRAGGLE") != nullptr;
+        static const bool kStraggleAllKE =
+            std::getenv("CEELO_DIAG_STRAGGLE_ALL_KE") != nullptr;
+        if (!kNoCrystalStraggle && steps_remaining > 1 && step_gcm2 > 1e-12 &&
+            (KE > 500.0 || kStraggleAllKE)) {
+            double beta2  = KE * (KE + 2.0 * m_e) / ((KE + m_e) * (KE + m_e));
+            if (&mat != straggle_mat) {   // per-walk cache: material rarely changes
+                straggle_ZoverA = 0.0;
+                for (const auto& c : mat.composition())
+                    straggle_ZoverA += c.mass_fraction * c.Z / atomic_weight(c.Z);
+                straggle_mat = &mat;
+            }
+            double sigma2 = kBohrXi_MeV2cm2g * straggle_ZoverA * step_gcm2
+                          * (1.0 - 0.5 * beta2);                 // MeV²
+            if (sigma2 > 0.0) {
+                delta_KE += gauss(rng) * std::sqrt(sigma2) * 1000.0;  // keV
+                if (delta_KE < 0.0)  delta_KE = 0.0;
+                if (delta_KE > KE)   delta_KE = KE;
+            }
+        }
 
         // Collision energy is deposited locally (as heat).
         // Brems photon carries away energy that may escape the crystal.
@@ -1316,11 +1359,17 @@ ElectronDepositResult ElectronCsda::deposited_in_scoring(
         // Highland-Molière scattering kick
         // θ₀ = (13.6 MeV / βcp) × √(x/X₀) × (1 + 0.038 ln(x/X₀))
         // βcp = √(KE × (KE + 2mₑ))   [all in keV]
+        // The log term is evaluated on the ACCUMULATED path thickness, not the
+        // per-sub-step thickness: the (1 + 0.038 ln x) correction is not
+        // additive in variance, and applying it to x/n_steps under-scatters the
+        // summed walk by ~0.038·ln(n_steps) (~13% in θ₀ for 20 steps).  Same
+        // convention as the B2 source-geometry walk above.
         if (X0 > 0.0) {
             double x_X0  = step_gcm2 / X0;
+            sum_x_X0    += x_X0;
             double bcp   = std::sqrt(KE * (KE + 2.0 * m_e));  // β×p×c in keV
             if (bcp > 1e-6 && x_X0 > 0.0) {
-                double ln_x   = std::log(x_X0);
+                double ln_x   = std::log(sum_x_X0);
                 double theta0 = (13600.0 / bcp) * std::sqrt(x_X0)
                                 * (1.0 + 0.038 * ln_x);  // radians
                 if (theta0 > 1e-10) {
@@ -1341,6 +1390,13 @@ ElectronDepositResult ElectronCsda::deposited_in_scoring(
         }
 
         steps_remaining--;
+        // A walk that still carries KE when the budget empties must keep
+        // walking (the budget is a discretization aid, not a physics limit);
+        // exiting here silently drops the residual KE.  With straggling the
+        // final full-range step under-deposits ~half the time, so this guard
+        // is what makes per-step straggling energy-conserving for contained
+        // electrons.
+        if (steps_remaining == 0 && KE > 0.01) steps_remaining = 1;
     }
 
     // Terminal position of the condensed-history walk: the rest point if the

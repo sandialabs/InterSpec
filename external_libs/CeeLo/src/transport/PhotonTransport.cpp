@@ -643,10 +643,8 @@ TransportResult transport_photon(
             double deposited_local = energy_keV - kPairThreshold;
             if (deposited_local < 0.0) deposited_local = 0.0; // guard
 
-            // CSDA tracking for the e⁺/e⁻ pair.
-            // Approximation: both particles travel in the photon direction
-            // (valid for energies well above threshold where the pair is forward-boosted).
-            // TODO: improve with Koch-Motz pair opening-angle distribution.
+            // CSDA tracking for the e⁺/e⁻ pair, with G4ModifiedTsai-sampled
+            // lepton opening angles (sample_pair_lepton_cos_theta below).
             // Site of the back-to-back 511 keV annihilation pair.  Defaults to
             // the pair-production vertex; when the positron is CSDA-tracked it is
             // updated to the positron's rest point below (B1: the 511 source is

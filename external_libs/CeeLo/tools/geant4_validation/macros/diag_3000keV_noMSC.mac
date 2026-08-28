@@ -1,0 +1,12 @@
+# Diagnostic: Config 1 at 3000 keV — multiple scattering disabled
+# Tests effect of electron MSC on FEP peak shape
+
+/process/inactivate msc
+/gps/particle gamma
+/gps/pos/type Point
+/gps/pos/centre 0.000000 0.000000 -10.000000 cm
+/gps/ang/type iso
+/gps/ene/type Mono
+/gps/ene/mono 3.000000 MeV
+
+/run/beamOn 16000000

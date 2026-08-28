@@ -4511,7 +4511,15 @@ PeakCascadeResult EfficiencyCalculator::conditional_peak_result(
             const double term = var_x / (N * xbar * xbar)
                               + (1.0 - p_no) / (N * p_no)
                               - 2.0 * cov_xd / (N * xbar * p_no);
-            pr.summing_factor_unc = std::sqrt(std::max(0.0, k * k * term));
+            // X == I_nosum eventwise (e.g. a single-gamma cascade): the ratio
+            // is exactly 1 with zero variance, but the three-term cancellation
+            // above only vanishes to rounding (~1e-20 in `term`), so
+            // short-circuit the degenerate case to an exact zero.
+            const bool x_is_indicator =
+                agg.sum_x == static_cast<double>(agg.n_nosum) &&
+                agg.sum_xx == agg.sum_x && agg.sum_xd == agg.sum_x;
+            pr.summing_factor_unc = x_is_indicator
+                ? 0.0 : std::sqrt(std::max(0.0, k * k * term));
         } else {
             pr.summing_factor = (p_no > 0.0) ? 0.0 : 1.0;
             pr.summing_factor_unc = 0.0;
