@@ -24,6 +24,7 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <limits>
 #include <array>
 #include <cstdio>
 #include <string>
@@ -41,6 +42,7 @@
 #include "rapidxml/rapidxml_utils.hpp"
 
 #include "SpecUtils/ParseUtils.h"
+#include "SpecUtils/Filesystem.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
 
@@ -473,6 +475,7 @@ const GadrasDetectorDat::MaterialInfo *GadrasDetectorDat::materialByName( const 
 }
 
 
+
 GadrasDetectorDat::InferredShape
 GadrasDetectorDat::inferShape( const std::string &materialOverride ) const
 {
@@ -679,6 +682,45 @@ GadrasDetectorDat GadrasDetectorDat::fromFile( const std::string &path )
 
   return fromStream( input );
 }
+
+
+bool GadrasDetectorDat::isCandidateDetectorDat( std::istream &input )
+{
+  const std::istream::pos_type start = input.tellg();
+
+  bool answer = false;
+  try
+  {
+    const GadrasDetectorDat dat = GadrasDetectorDat::fromStream( input );
+
+    if( dat.m_format == SourceFormat::Xml )
+    {
+      // fromStream only reaches the XML branch on a <gamma_detector> root.
+      answer = true;
+    }else
+    {
+      // A text file has to look like a real parameter table, not just contain a
+      //  line that happens to start with an integer.
+      int populated = 0;
+      for( int i = 1; i <= sm_num_params; ++i )
+      {
+        if( (dat.m_params[i].value != 0.0f) || (dat.m_params[i].int_col != 0) )
+          populated += 1;
+      }
+
+      answer = (dat.m_highest_param >= 40) && (populated >= 10)
+               && (dat.resFWHM661() > 0.0f) && (dat.width() > 0.0f);
+    }
+  }catch( std::exception & )
+  {
+    answer = false;
+  }
+
+  input.clear();
+  input.seekg( start );
+
+  return answer;
+}//isCandidateDetectorDat(...)
 
 
 void GadrasDetectorDat::parseText( std::istream &input )

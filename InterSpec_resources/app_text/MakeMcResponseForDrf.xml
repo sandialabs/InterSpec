@@ -106,6 +106,7 @@
   <message id="mmr-estimate-transfer">About {1} Monte-Carlo nodes ({2} minute(s) or so) -
     a full characterization of this geometry would need about {3} nodes.</message>
   <message id="mmr-estimate-instant">No Monte Carlo - builds instantly from the measured curve.</message>
+  <message id="mmr-err-no-backbone">Could not build an efficiency curve from the generated response, so the detector was not changed: {1}</message>
   <message id="mmr-generate-btn">Generate Response</message>
   <message id="mmr-use-response-btn">Use Response</message>
   <message id="mmr-status-running">Running Monte Carlo...</message>
@@ -166,7 +167,7 @@
   <message id="dgi-ref-point">Distances measured from:</message>
   <message id="dgi-ref-endcap">Detector face (endcap front)</message>
   <message id="dgi-ref-crystal">Crystal face</message>
-  <message id="dgi-seeded-note">Crystal length is a guess (taken equal to the diameter) - please correct it.</message>
+  <message id="dgi-seeded-note">This detector has no geometry recorded, so only its diameter is known: the crystal length shown is a guess (taken equal to the diameter) and the crystal material is just the default. Please set both before generating a response.</message>
   <message id="dgi-err-missing">Please enter the {1}.</message>
   <message id="dgi-err-invalid">The {1} is not a valid distance.</message>
   <message id="dgi-err-bore">Please give both a bore diameter and depth (or neither).</message>

@@ -54,6 +54,7 @@
 #include "InterSpec/AngleOutxImport.h"
 
 
+struct GadrasDetectorDat;
 class PeakDef;
 class PeakModel;
 class InterSpecUser;
@@ -252,6 +253,12 @@ public:
      GADRAS Efficiency.csv).
      */
     UserImportedEfficiencyCsvDrf = 12,
+
+    /** From a GADRAS Detector.dat with no Efficiency.csv beside it: the crystal
+     geometry, FWHM and peak shape come from the file, and the efficiency from a
+     Monte-Carlo characterization of that geometry.
+     */
+    GadrasDetectorDatOnly = 13,
   };//enum DrfSource
   
 public:
@@ -400,11 +407,32 @@ public:
   void fromGadrasDefinition( std::istream &efficiencyCsvFile,
                              std::istream &detDatFile );
 
+  /** Everything a GADRAS `Detector.dat` defines on its own: crystal diameter and
+   setback, the FWHM curve, the valid energy range, and the GADRAS peak-shape
+   (skew) coefficients - but NOT an efficiency, which the file does not contain.
+
+   The result is deliberately *not* `isValid()`.  It is the seed for a
+   Monte-Carlo characterization of the parsed geometry, which supplies the
+   efficiency curve (see `CeeLoUtils::buildGadrasGeometry` and
+   `CeeLoUtils::setLegacyEfficiencyFromResponse`); until then the detector has a
+   shape but no sensitivity, and callers must not hand it to a user as finished.
+
+   Recomputes the hash value.
+   */
+  void fromGadrasDatOnly( std::istream &detDatFile );
+
   /** Convience function that calls #fromGadrasDefinition with the
       Efficiency.csv and Detector.dat files in the specified directory.
+
+      @param allow_missing_efficiency_csv When true and the directory holds only
+             a `Detector.dat`, falls back to #fromGadrasDatOnly and returns a DRF
+             that is NOT `isValid()` - see there.  The default keeps every
+             existing caller's contract: both files or an exception.
+
       Throws exception on issue.
    */
-  void fromGadrasDirectory( const std::string &dir );
+  void fromGadrasDirectory( const std::string &dir,
+                            const bool allow_missing_efficiency_csv = false );
   
   
   /** Sets the detectors as a kExpOfLogPowerSeries effiency detector, using the
@@ -1143,6 +1171,14 @@ public:
   int m_user;
   
 protected:
+  /** The shared body of #fromGadrasDefinition and #fromGadrasDatOnly.
+
+   @param efficiencyCsv The Efficiency.csv to take the efficiency curve from, or
+          null for a Detector.dat on its own - in which case the crystal diameter
+          is still recorded but no efficiency is set.
+   */
+  void applyGadrasDat( const GadrasDetectorDat &dat, std::istream *efficiencyCsv );
+
   void computeHash();
   
 protected:

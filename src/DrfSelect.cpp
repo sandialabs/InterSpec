@@ -88,6 +88,7 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/AngleOutxImport.h"
+#include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/MakeMcResponseForDrf.h"
 #include "InterSpec/ColorTheme.h"
 #include "InterSpec/HelpSystem.h"
@@ -1554,8 +1555,19 @@ std::shared_ptr<DetectorPeakResponse> GadrasDetSelect::selectedDetector()
       {
         std::shared_ptr<WAbstractItemModel> m = d->m_detectorSelect->model();
         const string p = Wt::cpp17::any_cast<std::string>( m->data( currentIndex, 0, Wt::ItemDataRole::User ) );
-        auto answer = DrfSelect::initAGadrasDetectorFromDirectory( p );
-        
+        auto answer = DrfSelect::initAGadrasDetectorFromDirectory( p, true );
+
+        // A directory with no Efficiency.csv gives a geometry with no
+        //  sensitivity.  Handing that back would install a detector that cannot
+        //  answer an efficiency query, so instead start the Monte-Carlo
+        //  characterization that can give it one - the same place the ANGLE
+        //  "generic detector" import lands.
+        if( !answer->isValid() )
+        {
+          m_drfSelect->startGadrasGeometryImport( p, answer );
+          return nullptr;
+        }
+
         if( p.find("GenericGadrasDetectors") != string::npos )
           answer->setDrfSource( DetectorPeakResponse::DrfSource::DefaultGadrasDrf );
         else
@@ -1916,7 +1928,13 @@ std::shared_ptr<DetectorPeakResponse> GadrasDirectory::parseDetector( string pat
   {
     const string name = SpecUtils::filename( path );
     auto drf = make_shared<DetectorPeakResponse>( name, "" );
-    drf->fromGadrasDirectory( path );
+    drf->fromGadrasDirectory( path, true /*allow a missing Efficiency.csv*/ );
+
+    // Without an Efficiency.csv the DRF carries a geometry but no efficiency, so
+    //  say so in the list: picking it starts a Monte-Carlo characterization
+    //  rather than handing over a finished detector.
+    if( !drf->isValid() )
+      drf->setName( name + " " + WString::tr("reds-gadras-geometry-only").toUTF8() );
     
 //#if( PERFORM_DEVELOPER_CHECKS )
 //    check_url_serialization( drf );
@@ -4135,10 +4153,14 @@ std::vector<std::string> DrfSelect::recursive_list_gadras_drfs( const std::strin
   if( !SpecUtils::is_directory( sourcedir ) )
     return files;
 
-  const string csv_file = SpecUtils::append_path( sourcedir, "Efficiency.csv");
   const string dat_file = SpecUtils::append_path( sourcedir, "Detector.dat");
 
-  if( SpecUtils::is_file(csv_file) && SpecUtils::is_file(dat_file) )
+  // A Detector.dat is enough on its own: it defines the crystal, and a
+  //  Monte-Carlo characterization of that geometry supplies the efficiency an
+  //  Efficiency.csv would have.  Such a directory is listed as "geometry only"
+  //  and opens the Modify dialog rather than installing a detector that has no
+  //  sensitivity yet - see GadrasDirectory::initDetectors.
+  if( SpecUtils::is_file(dat_file) )
     files.push_back( sourcedir );
 
   //ToDo: Maybe we should use the Android implemenatation always.
@@ -4587,6 +4609,12 @@ void DrfSelect::handleGadrasDetectorDotDatUpload()
     setAcceptButtonEnabled( true );
     updateUserNameFromCurrentDetEff();
     emitChangedSignal();
+
+    // Mode B is now applied.  The Detector.dat also describes the crystal, so
+    //  offer to use it as a generic detector - the measured curve then anchors an
+    //  efficiency transfer, which answers off-axis and near-field geometries the
+    //  fixed curve cannot.
+    offerGadrasImportModeChoice( dat_spool, csv_spool );
   }catch( std::exception &e )
   {
     passMessage( WString::tr("ds-err-parsing-gadras").arg(e.what()), WarningWidget::WarningMsgHigh );
@@ -5284,6 +5312,90 @@ void DrfSelect::offerAngleImportModeChoice( const string &filename )
     openModifyWindow( geometry );
   } ) );
 }//offerAngleImportModeChoice(...)
+
+
+void DrfSelect::startGadrasGeometryImport( const std::string &directory,
+                                           std::shared_ptr<DetectorPeakResponse> seedDrf )
+{
+  const string datpath = SpecUtils::append_path( directory, "Detector.dat" );
+
+  shared_ptr<const ceelo::GeometryDescriptor> geometry;
+  vector<string> warnings;
+  try
+  {
+    const GadrasDetectorDat dat = GadrasDetectorDat::fromFile( datpath );
+    geometry = make_shared<const ceelo::GeometryDescriptor>(
+                            CeeLoUtils::buildGadrasGeometry( dat, warnings ) );
+  }catch( std::exception &e )
+  {
+    passMessage( WString::tr("ds-gadras-no-geometry").arg(e.what()),
+                 WarningWidget::WarningMsgHigh );
+    return;
+  }
+
+  if( !geometry )
+    return;
+
+  // Everything the file could not express - a coaxial bore it does not record, a
+  //  partial side shield, an efficiency scalar.  The user is about to be asked
+  //  to review this geometry, so these belong in front of them.
+  //  (English by design: CeeLoUtils is deliberately Wt-free.)
+  for( const string &warning : warnings )
+    passMessage( warning, WarningWidget::WarningMsgMedium );
+
+  if( seedDrf )
+    setDetector( seedDrf );
+
+  openModifyWindow( geometry );
+}//startGadrasGeometryImport(...)
+
+
+void DrfSelect::offerGadrasImportModeChoice( const std::string &datFilename,
+                                             const std::string &csvFilename )
+{
+  // Bail quietly on anything that is not a geometry-bearing Detector.dat, so an
+  //  ordinary efficiency-CSV upload never sees a dialog.
+  GadrasDetectorDat dat;
+  try
+  {
+    dat = GadrasDetectorDat::fromFile( datFilename );
+  }catch( std::exception & )
+  {
+    return;
+  }
+
+  shared_ptr<const ceelo::GeometryDescriptor> geometry;
+  vector<string> warnings;
+  try
+  {
+    geometry = make_shared<const ceelo::GeometryDescriptor>(
+                            CeeLoUtils::buildGadrasGeometry( dat, warnings ) );
+  }catch( std::exception & )
+  {
+    return;  //Mode B is already applied, and is the only offer we can honor
+  }
+
+  if( !geometry )
+    return;
+
+  // The DRF Mode B produced, which already carries the measured curve; Mode A
+  //  keeps it and adds the geometry, so the curve anchors the transfer.
+  shared_ptr<DetectorPeakResponse> seedDrf = m_detector;
+  if( !seedDrf || !seedDrf->isValid() )
+    return;
+
+  SimpleDialog *dialog = SimpleDialog::make( WString::tr("ds-gadras-mode-title"),
+                                             WString::tr("ds-gadras-mode-txt") );
+  WPushButton *generic = dialog->addButton( WString::tr("ds-gadras-mode-generic") );
+  dialog->addButton( WString::tr("ds-gadras-mode-fixed") );
+
+  generic->clicked().connect( std::function<void()>( [this, geometry, seedDrf, warnings](){
+    for( const string &warning : warnings )
+      passMessage( warning, WarningWidget::WarningMsgMedium );
+    setDetector( seedDrf );
+    openModifyWindow( geometry );
+  } ) );
+}//offerGadrasImportModeChoice(...)
 
 
 void DrfSelect::handleEfficiencyTypeChange()
@@ -6206,7 +6318,9 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetector( const std:
 }//std::shared_ptr<DetectorPeakResponse> initAGadrasDetector( const std::string &name );
 
 
-std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetectorFromDirectory( const std::string &path )
+std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetectorFromDirectory(
+                                          const std::string &path,
+                                          const bool allow_missing_efficiency_csv )
 {
   auto det = std::make_shared<DetectorPeakResponse>();
 
@@ -6225,12 +6339,20 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetectorFromDirector
       thisdat = files[i];
   }//for( size_t i = 0; i < files.size(); ++i )
   
-  if( thiscsv.empty() )
+  if( thiscsv.empty() && !allow_missing_efficiency_csv )
     throw runtime_error( "Could not find a Efficiency.csv file in '" + path + "'" );
   
   if( thisdat.empty() )
     throw runtime_error( "Could not find a Detector.dat file in '" + path + "'" );
   
+  if( thiscsv.empty() )
+  {
+    // Geometry only: everything the Detector.dat defines, and no efficiency.
+    //  The caller is responsible for not presenting this as a finished detector.
+    det->fromGadrasDirectory( path, true );
+    return det;
+  }//if( no Efficiency.csv )
+
 #ifdef _WIN32
   const std::wstring wthiscsv = SpecUtils::convert_from_utf8_to_utf16(thiscsv);
   ifstream effstrm( wthiscsv.c_str(), ios_base::binary|ios_base::in );
@@ -6252,7 +6374,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::initAGadrasDetectorFromDirector
     throw runtime_error( "Could not open '" + thisdat + "'" );
 
   det->fromGadrasDefinition( effstrm, datstrm );
-  det->setName( SpecUtils::filename( SpecUtils::parent_path(thiscsv) ) );
+  det->setName( SpecUtils::filename( path ) );
 
 //#if( PERFORM_DEVELOPER_CHECKS )
 //  check_url_serialization( det );

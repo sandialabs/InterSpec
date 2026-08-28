@@ -48,6 +48,7 @@
 #include <boost/test/included/unit_test.hpp>
 
 #include <map>
+#include <set>
 #include <cmath>
 #include <string>
 #include <vector>
@@ -96,6 +97,13 @@ using namespace std;
 namespace
 {
   string g_data_dir, g_test_data_dir;
+
+  /** --gadras-full: Monte-Carlo every GADRAS detector in the corpus rather than
+   the four-detector default.  The full sweep is ~5.5 minutes, which is too slow
+   to pay on every run of this suite; the default subset covers one detector per
+   crystal family, which is what the per-family gates are actually asserted on.
+   */
+  bool g_gadras_full = false;
 
   struct ProbeRow
   {
@@ -294,6 +302,8 @@ struct TestFixture
         g_data_dir = arg.substr( 10 );
       else if( arg.find("--testfiledir=") == 0 )
         g_test_data_dir = arg.substr( 14 );
+      else if( arg == "--gadras-full" )
+        g_gadras_full = true;
     }
 
     if( !g_data_dir.empty() )
@@ -1310,11 +1320,92 @@ BOOST_AUTO_TEST_CASE( angle_efficiency_cross_validation )
 
 
 
+
+/** A DRF characterized from geometry alone has no efficiency curve of its own.
+ It used to be handed the placeholder `setIntrinsicEfficiencyFormula("1.0")`,
+ which answered every EffEval query correctly (they dispatch to the attached
+ response) but left a detector that was not valid, could not be serialized and
+ could not be exported.  #setLegacyEfficiencyFromResponse samples the response
+ into a real curve instead - the Monte-Carlo "backbone" points.
+ */
+BOOST_AUTO_TEST_CASE( backbone_efficiency_from_response )
+{
+  const shared_ptr<DetectorPeakResponse> golden = drf_with_golden( "nai3x3" );
+  BOOST_REQUIRE( golden );
+  const shared_ptr<const ceelo::DetectorResponse> resp = golden->ceeloResponse();
+  BOOST_REQUIRE( resp );
+
+  // A DRF with nothing but the response attached: this is what a Detector.dat
+  //  or .detx geometry-only import produces before the backbone is filled in.
+  auto bare = make_shared<DetectorPeakResponse>( "geometry only", "no measured curve" );
+  BOOST_REQUIRE( !bare->isValid() );
+
+  BOOST_REQUIRE_NO_THROW( CeeLoUtils::setLegacyEfficiencyFromResponse( *bare, resp ) );
+  BOOST_CHECK_MESSAGE( bare->isValid(), "the DRF is still invalid after filling the backbone" );
+
+  const double a_cm = resp->transverse_half_extent();
+  BOOST_CHECK_CLOSE( bare->detectorDiameter() / PhysicalUnits::cm, 2.0*a_cm, 0.1 );
+  BOOST_CHECK( bare->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  // The curve and the response must not disagree: attach the response and check
+  //  that the stored curve reproduces what the CeeLo dispatch answers.  A
+  //  mismatch would mean the two paths sample different geometry.
+  auto backed = make_shared<DetectorPeakResponse>( *bare );
+  backed->setCeeloResponse( resp );
+
+  double worst = 0.0;
+  double worst_energy = 0.0;
+  for( const double energy : { 60.0, 122.0, 300.0, 662.0, 1332.0, 2500.0 } )
+  {
+    const float curve = bare->intrinsicEfficiency( static_cast<float>(energy) );
+    const DetectorPeakResponse::EffEval mc
+                  = backed->intrinsicEfficiencyEval( static_cast<float>(energy) );
+    BOOST_REQUIRE_MESSAGE( mc.value > 0.0, "no CeeLo efficiency at "
+                           + std::to_string(energy) + " keV" );
+    const double rel = std::fabs( curve - mc.value ) / mc.value;
+    if( rel > worst ){ worst = rel; worst_energy = energy; }
+  }
+
+  BOOST_TEST_MESSAGE( "backbone curve vs CeeLo dispatch: worst " << 100.0*worst
+                      << "% at " << worst_energy << " keV" );
+  // The gap is interpolation between backbone points, not a different geometry,
+  //  so it is small; a frame or solid-angle error would be tens of percent.
+  BOOST_CHECK_MESSAGE( worst < 0.05, "backbone curve departs from the CeeLo dispatch by "
+                       + std::to_string(100.0*worst) + "% at "
+                       + std::to_string(worst_energy) + " keV" );
+
+  // Per-point MC sigma should have come across as efficiency uncertainty.
+  BOOST_CHECK_MESSAGE( !!bare->efficiencyUncert(),
+                       "the response's MC sigma did not reach the DRF" );
+
+  // Setback and provenance survive setEfficiencyPoints, which resets them.
+  auto with_setback = make_shared<DetectorPeakResponse>( "geometry only", "" );
+  with_setback->setDetectorSetback( 2.0*PhysicalUnits::cm );
+  with_setback->setDrfSource( DetectorPeakResponse::DrfSource::UserImportedGadrasDrf );
+  BOOST_REQUIRE_NO_THROW( CeeLoUtils::setLegacyEfficiencyFromResponse( *with_setback, resp ) );
+  BOOST_CHECK_CLOSE( with_setback->detectorSetback() / PhysicalUnits::cm, 2.0, 0.01 );
+  BOOST_CHECK( with_setback->drfSource()
+               == DetectorPeakResponse::DrfSource::UserImportedGadrasDrf );
+
+  // And the filled-in DRF must survive a round trip, which the placeholder
+  //  version could not.
+  auto roundtrip = make_shared<DetectorPeakResponse>( *backed );
+  BOOST_CHECK( roundtrip->isValid() );
+
+  BOOST_CHECK_THROW( CeeLoUtils::setLegacyEfficiencyFromResponse( *bare, nullptr ),
+                     std::exception );
+}//backbone_efficiency_from_response
+
 //========================= GADRAS Efficiency.csv cross-validation ============
 // Does our Monte Carlo reproduce the intrinsic efficiency GADRAS reports for
 //  the same detector?  Everything downstream - importing a Detector.dat with no
 //  Efficiency.csv at all - rests on the answer, so it is measured here rather
 //  than assumed.
+//
+// By default the Monte Carlo runs on one detector per crystal family (~1 minute);
+//  every geometry check that costs nothing still covers the whole corpus.  Pass
+//  --gadras-full for the complete ~5.5 minute sweep, which is what the recorded
+//  per-family numbers below came from.
 //
 // GADRAS's Efficiency.csv "Peak" column is the INTRINSIC full-energy-peak
 //  efficiency: the probability that a photon striking the detector's front face
@@ -1437,14 +1528,13 @@ BOOST_AUTO_TEST_CASE( gadras_efficiency_cross_validation )
     const GadrasDetectorDat dat = GadrasDetectorDat::fromFile(
                                     SpecUtils::append_path(dir, "Detector.dat") );
 
-    vector<string> notes;
-    const string crystal = CeeLoUtils::resolveGadrasCrystalName( dat, name, notes );
+    const string crystal = dat.materialName();
 
     ceelo::GeometryDescriptor gd;
     vector<string> warnings;
     try
     {
-      gd = CeeLoUtils::buildGadrasGeometry( dat, name, warnings );
+      gd = CeeLoUtils::buildGadrasGeometry( dat, warnings );
     }catch( std::exception &e )
     {
       BOOST_TEST_MESSAGE( "  " << name << ": no geometry - " << e.what() );
@@ -1460,10 +1550,29 @@ BOOST_AUTO_TEST_CASE( gadras_efficiency_cross_validation )
                                     SpecUtils::append_path(dir, "Efficiency.csv") );
     BOOST_REQUIRE_MESSAGE( csv.size() > 10, name + ": could not read Efficiency.csv" );
 
-    const double dist_cm = dat.distanceCm();
+    const double tabulated_cm = dat.distanceCm();
     const double setback_cm = dat.setbackCm();
     const double diam = dat.equivalentCircularDiameterCm() * PhysicalUnits::cm;
-    BOOST_REQUIRE_MESSAGE( (dist_cm > 0.0) && (diam > 0.0), name + ": bad distance/diameter" );
+    BOOST_REQUIRE_MESSAGE( (tabulated_cm > 0.0) && (diam > 0.0), name + ": bad distance/diameter" );
+
+    // GADRAS's Peak column behaves as a FAR-FIELD intrinsic efficiency whatever
+    //  param 17 says: `NaI 2x2` is tabulated at 10 cm from a 5 cm crystal, and
+    //  recomputing the same geometry at 400 cm moves the recovered efficiency
+    //  5-41% while the far-field control (`NaI 25%`, 100 cm) moves 0.5-3.2% -
+    //  with GADRAS's own number sitting nearer our far-field value.  So for a
+    //  detector tabulated close in, comparing at the tabulated distance measures
+    //  the point-source-on-a-disk solid angle rather than the geometry.
+    //
+    //  Below this distance the comparison is made in the far field instead.  It
+    //  is a property of the COMPARISON, not of the import: the DRF still records
+    //  the file's own distance.
+    const double sm_near_field_cm = 25.0;
+    const bool near_field = (tabulated_cm < sm_near_field_cm);
+    const double dist_cm = near_field ? 400.0 : tabulated_cm;
+    if( near_field )
+      BOOST_TEST_MESSAGE( "  " << name << ": tabulated at " << tabulated_cm
+                          << " cm, which is near-field for this crystal; comparing at "
+                          << dist_cm << " cm instead." );
 
     const double omega = DetectorPeakResponse::fractionalSolidAngle(
                                   diam, (dist_cm + setback_cm) * PhysicalUnits::cm );
@@ -1477,11 +1586,31 @@ BOOST_AUTO_TEST_CASE( gadras_efficiency_cross_validation )
     //  geometry or the distance convention is wrong - the efficiency ratios
     //  below are the real evidence.  (test_GadrasDetectorDat asserts the
     //  identity on the fixture files that do keep it current.)
+    //  Checked at the file's OWN distance, not the comparison distance, since
+    //  param 9 describes the geometry the file was written for.
     const double stated_omega = 0.01 * dat.solidAnglePercent();
-    if( (stated_omega > 0.0) && (std::fabs(omega - stated_omega) > 0.05*stated_omega) )
+    const double omega_at_tabulated = DetectorPeakResponse::fractionalSolidAngle(
+                          diam, (tabulated_cm + setback_cm) * PhysicalUnits::cm );
+    if( (stated_omega > 0.0)
+        && (std::fabs(omega_at_tabulated - stated_omega) > 0.05*stated_omega) )
       BOOST_TEST_MESSAGE( "  " << name << ": stored solid angle " << stated_omega
-                          << " disagrees with the geometry's " << omega
-                          << " (x" << (omega/stated_omega) << ") - stale param 9." );
+                          << " disagrees with the geometry's " << omega_at_tabulated
+                          << " (x" << (omega_at_tabulated/stated_omega) << ") - stale param 9." );
+
+    n_modeled += 1;
+
+    // Everything above here is free, so it runs for the whole corpus.  The
+    //  Monte Carlo is not: a full sweep is ~5.5 minutes, so by default only one
+    //  detector per crystal family is simulated - which is the granularity the
+    //  gates below are asserted at anyway.  --gadras-full does all of them.
+    static const std::set<string> sm_mc_subset = {
+      "HPGe 20%",              //HPGe, no dead layer declared
+      "NaI 3x3",               //NaI, the reference scintillator
+      "LaBr 10%",              //LaBr3
+      "Kromek_GR1_CZT_text"    //CZT, a box
+    };
+    if( !g_gadras_full && !sm_mc_subset.count(name) )
+      continue;
 
     // Detector-side geometry from the descriptor; source on-axis in front, at
     //  the GADRAS distance measured from the endcap face (z=0 is the CRYSTAL
@@ -1492,8 +1621,15 @@ BOOST_AUTO_TEST_CASE( gadras_efficiency_cross_validation )
     calc.set_point_source( Eigen::Vector3d( 0.0, 0.0,
                                   -( gd.endcap_front_offset_cm() + dist_cm ) ) );
 
-    // ~8 energies spanning where the detector is actually used.
-    const vector<double> want = { 60.0, 122.0, 200.0, 400.0, 662.0, 1000.0, 1332.0, 2000.0 };
+    // Energies spanning where the detector is actually used.  The default run
+    //  takes four of them at looser MC precision: its job is to catch a
+    //  SYSTEMATIC geometry regression (the pi/4 crystal-area slip this test was
+    //  written after was a flat 21% across every energy), which does not need
+    //  tight statistics.  --gadras-full is the accuracy measurement.
+    const vector<double> want = g_gadras_full
+        ? vector<double>{ 60.0, 122.0, 200.0, 400.0, 662.0, 1000.0, 1332.0, 2000.0 }
+        : vector<double>{ 60.0, 200.0, 662.0, 2000.0 };
+    const double mc_precision = g_gadras_full ? 0.01 : 0.02;
 
     BOOST_TEST_MESSAGE( "" );
     BOOST_TEST_MESSAGE( "  " << name << "  (" << (crystal.empty() ? string("?") : crystal)
@@ -1527,7 +1663,7 @@ BOOST_AUTO_TEST_CASE( gadras_efficiency_cross_validation )
 
       ceelo::SimulationConfig cfg;
       cfg.energy_keV = row->energy_keV;
-      cfg.termination.target_fep_rel_precision = 0.01;
+      cfg.termination.target_fep_rel_precision = mc_precision;
       cfg.termination.max_events = 4000000;
       cfg.termination.min_events = 40000;
       cfg.seed = 12345;
@@ -1543,13 +1679,13 @@ BOOST_AUTO_TEST_CASE( gadras_efficiency_cross_validation )
 
       errs_by_family[family].push_back( std::fabs(ratio - 1.0) );
     }//for( const double energy : want )
-
-    n_modeled += 1;
   }//for( const pair<string,string> &det : dets )
 
   BOOST_TEST_MESSAGE( "" );
-  BOOST_TEST_MESSAGE( "Summary (" << n_modeled << " detectors modeled, "
-                      << n_refused << " refused):" );
+  BOOST_TEST_MESSAGE( "Summary (" << n_modeled << " geometries built, "
+                      << n_refused << " refused; Monte Carlo on "
+                      << (g_gadras_full ? "all of them" : "the 4-detector default subset")
+                      << "):" );
 
   for( auto &fam : errs_by_family )
   {
@@ -1566,13 +1702,18 @@ BOOST_AUTO_TEST_CASE( gadras_efficiency_cross_validation )
   BOOST_CHECK( n_modeled >= 18 );
 
   // Gates set from the measured run (|MC/GADRAS - 1| over 8 energies from 60
-  //  keV to 2 MeV, 20 detectors):
+  //  keV to 2 MeV, 20 detectors).  Re-measured 2026-08-27 against the CeeLo
+  //  above-2-MeV fix and with near-field detectors compared in the far field:
   //
-  //      family   median   max
-  //      CZT       2.7%   13.6%
-  //      HPGe      6.9%   23.0%
-  //      LaBr3     2.4%    6.9%
-  //      NaI       2.8%   22.6%
+  //      family   median   max     (previous)
+  //      CZT       3.0%   12.3%    2.7% / 13.6%
+  //      HPGe      6.1%   21.7%    6.9% / 23.0%
+  //      LaBr3     2.4%    6.7%    2.4% /  6.9%
+  //      NaI       2.5%   13.8%    2.8% / 22.6%
+  //
+  //  NaI's max fell by 9 points because `NaI 2x2` is now compared in the far
+  //  field (see the near-field note above); the CeeLo fix moved the >1.5 MeV
+  //  medians from 0.96 to 0.982 (NaI) and 0.86 to 0.881 (HPGe).
   //
   //  i.e. a geometry recovered from nothing but a Detector.dat reproduces
   //  GADRAS's own intrinsic efficiency to a few percent in the median.  That is
@@ -1580,12 +1721,13 @@ BOOST_AUTO_TEST_CASE( gadras_efficiency_cross_validation )
   //  Efficiency.csv, when present, is still the better anchor.
   //
   //  Where the tails come from:
-  //   - NaI 2x2 is tabulated at 10 cm, which is near-field for a 5 cm crystal.
-  //     There the point-source-on-a-disk fractionalSolidAngle used to convert MC
-  //     absolute -> intrinsic is itself the limiting approximation (ratios 0.77
-  //     to 0.99), so that detector measures the COMPARISON, not the geometry.
   //   - HPGe carries the widest spread because Detector.dat has no bore
-  //     geometry, so a coaxial crystal is modeled solid.
+  //     geometry, so a coaxial crystal is modeled solid.  It also holds a ~12%
+  //     deficit above 1.5 MeV that the CeeLo fix narrowed but did not close, and
+  //     that neither crystal size nor Z explains.
+  //   - Below 100 keV every detector runs high (band median 1.042), because the
+  //     answer there is set by the front dead layer, which Detector.dat
+  //     routinely understates.
   //
   //  The gates are ~2x the measured medians: loose enough not to be flaky on MC
   //  noise, tight enough to catch a systematic geometry regression.  For scale,
@@ -1672,12 +1814,12 @@ BOOST_AUTO_TEST_CASE( gadras_efficiency_curve_dump )
                                     SpecUtils::append_path(dir, "Detector.dat") );
 
     vector<string> warnings;
-    const string crystal = CeeLoUtils::resolveGadrasCrystalName( dat, name, warnings );
+    const string crystal = dat.materialName();
 
     ceelo::GeometryDescriptor gd;
     try
     {
-      gd = CeeLoUtils::buildGadrasGeometry( dat, name, warnings );
+      gd = CeeLoUtils::buildGadrasGeometry( dat, warnings );
     }catch( std::exception & )
     {
       continue;   //e.g. "HPGe 40%", whose crystal length is zero
@@ -1821,11 +1963,23 @@ BOOST_AUTO_TEST_CASE( gadras_efficiency_curve_dump )
  only good in the far field.
 
  If the conversion is the problem, the intrinsic efficiency we recover will move
- with distance; if the geometry is wrong, it will not.  Run explicitly:
-   --run_test=gadras_nearfield_probe
+ with distance; if the geometry is wrong, it will not.
+
+ ANSWERED (2026-08-26): the conversion.  NaI 2x2 moves 5-41% between its tabulated
+ 10 cm and 400 cm, rising with energy, while the far-field control NaI 25% (100 cm)
+ moves 0.5-3.2% - and GADRAS's own number sits nearer our far-field value, which
+ says its Peak column is a far-field quantity whatever param 17 holds.  Kept as a
+ diagnostic rather than deleted, but it costs real MC, so it only runs under
+ --gadras-full.
  */
 BOOST_AUTO_TEST_CASE( gadras_nearfield_probe )
 {
+  if( !g_gadras_full )
+  {
+    BOOST_TEST_MESSAGE( "gadras_nearfield_probe: skipped (pass --gadras-full to run it)." );
+    return;
+  }
+
   BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
 
   const vector<pair<string,string>> dets = gadras_both_file_dirs();
@@ -1837,7 +1991,7 @@ BOOST_AUTO_TEST_CASE( gadras_nearfield_probe )
     const GadrasDetectorDat dat = GadrasDetectorDat::fromFile(
                                     SpecUtils::append_path(det.second, "Detector.dat") );
     vector<string> warnings;
-    const ceelo::GeometryDescriptor gd = CeeLoUtils::buildGadrasGeometry( dat, det.first, warnings );
+    const ceelo::GeometryDescriptor gd = CeeLoUtils::buildGadrasGeometry( dat, warnings );
 
     const vector<GadrasEffRow> csv = read_gadras_efficiency_csv(
                                     SpecUtils::append_path(det.second, "Efficiency.csv") );

@@ -55,6 +55,7 @@
 #include "InterSpec/DrfChart.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/CeeLoUtils.h"
+#include "InterSpec/WarningWidget.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/UndoRedoManager.h"
@@ -352,9 +353,10 @@ MakeMcResponseForDrf::~MakeMcResponseForDrf()
 }//~MakeMcResponseForDrf()
 
 
-void MakeMcResponseForDrf::setGeometryFromDescriptor( const ceelo::GeometryDescriptor &geometry )
+void MakeMcResponseForDrf::setGeometryFromDescriptor( const ceelo::GeometryDescriptor &geometry,
+                                                      const std::vector<std::string> &notes )
 {
-  m_geometry->setFromDescriptor( geometry );
+  m_geometry->setFromDescriptor( geometry, notes );
   handleGeometryChanged();   //refresh estimate / anchor / any generated result
 }//setGeometryFromDescriptor(...)
 
@@ -944,14 +946,27 @@ void MakeMcResponseForDrf::acceptResponse()
     new_det->setParentHashValue( base->hashValue() );
   }else
   {
-    // No existing DRF: make a minimal legacy shell around the MC response.
-    const double a_cm = m_result->transverse_half_extent();
     new_det = make_shared<DetectorPeakResponse>( "MC characterized detector",
                                           "Monte-Carlo parameterized response" );
-    new_det->setIntrinsicEfficiencyFormula( "1.0", 2.0*a_cm*PhysicalUnits::cm,
-                    PhysicalUnits::keV, 0.0f, 0.0f,
-                    DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
   }//if( base ) / else
+
+  // Sample the response into an ordinary efficiency curve whenever the DRF has
+  //  none of its own - a geometry-only characterization, or no seed DRF at all.
+  //  This used to be a flat `setIntrinsicEfficiencyFormula("1.0")` placeholder,
+  //  which left a DRF that answered every EffEval query correctly through the
+  //  attached response but was not valid, serializable or exportable.
+  if( !new_det->isValid() )
+  {
+    try
+    {
+      CeeLoUtils::setLegacyEfficiencyFromResponse( *new_det, m_result );
+    }catch( std::exception &e )
+    {
+      passMessage( WString::tr("mmr-err-no-backbone").arg(e.what()),
+                   WarningWidget::WarningMsgHigh );
+      return;
+    }
+  }//if( !new_det->isValid() )
 
   new_det->setCeeloResponse( m_result );
 

@@ -74,8 +74,14 @@ public:
   /** Sets the GUI state from a descriptor (e.g., an existing MC responses
    geometry).  Layer materials are matched back to their stored
    name/density/composition.
+
+   `notes`, when given, are import warnings to show beneath the form - things the
+   source file could not express (an unrecoverable bore, a dropped shield), which
+   are only actionable where the user can act on them.
    */
-  void setFromDescriptor( const ceelo::GeometryDescriptor &descriptor );
+  void setFromDescriptor( const ceelo::GeometryDescriptor &descriptor,
+                          const std::vector<std::string> &notes = {} );
+
 
   /** Seeds the form from a legacy DRF: a cylinder with diameter =
    `drf->detectorDiameter()` and (estimated) length = diameter; a note is
@@ -147,6 +153,15 @@ protected:
   Wt::WComboBox *m_referencePoint;   //Endcap front | Crystal face
 
   Wt::WText *m_note;
+
+  /** Import notes rendered beneath the form; empty/hidden when there are none. */
+  Wt::WText *m_importNotes;
+
+  /** The crystal a #setFromDescriptor named that this form has no entry for, and
+   therefore substituted NaI for; empty when nothing was substituted.  Rendered
+   into the import notes, since a substituted crystal changes what gets
+   simulated. */
+  std::string m_substitutedCrystal;
 
   ShieldMaterialSuggestion *m_materialSuggestion;
 

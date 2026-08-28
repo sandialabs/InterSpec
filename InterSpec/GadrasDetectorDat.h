@@ -243,7 +243,6 @@ struct GadrasDetectorDat
   /** Table row for a material name (case-insensitive), or nullptr if not found. */
   static const MaterialInfo *materialByName( const std::string &name );
 
-
   //=========================== Shape inference (doc §5.1) ===========================
 
   /** Recovered physical crystal shape class. */
@@ -293,11 +292,27 @@ struct GadrasDetectorDat
 
   /** Parse a Detector.dat from @p input, auto-detecting the text vs XML variant by sniffing the
    first line for "xml".  Throws std::runtime_error on failure.  The stream must be seekable
-   (the first line is read to detect the variant, then the stream is rewound). */
+   (the first line is read to detect the variant, then the stream is rewound).
+
+   */
   static GadrasDetectorDat fromStream( std::istream &input );
 
   /** Convenience: open @p path and parse it via #fromStream. */
   static GadrasDetectorDat fromFile( const std::string &path );
+
+  /** Whether @p input plausibly IS a `Detector.dat`, for classifying an uploaded
+   or dropped file of unknown type.
+
+   Deliberately stricter than "#fromStream did not throw": the text parser needs
+   only one well-formed `<index> <value>` line and skips everything else, so it
+   accepts a great many CSVs and logs.  This requires either the XML variant's
+   `<gamma_detector>` root, or a text file with a substantial number of parameter
+   lines AND the two values every real detector has - a positive %FWHM at 661 keV
+   (param 7) and a positive crystal width (param 11).
+
+   Never throws; leaves @p input's read position where it found it.
+   */
+  static bool isCandidateDetectorDat( std::istream &input );
 
   /** Write this detector as a GADRAS XML `Detector.dat` (the real GADRAS schema).  Numeric
    leaves are emitted as `<value>` + `<varying>` under their proper sub-blocks. */

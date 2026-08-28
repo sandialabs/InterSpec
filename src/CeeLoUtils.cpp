@@ -39,6 +39,8 @@
 
 #include <Eigen/Core>
 
+#include "io/SolidAngle.h"
+
 #include "SpecUtils/StringAlgo.h"
 
 #include "SandiaDecay.h"
@@ -1040,80 +1042,6 @@ ceelo::MaterialSpec gadrasCrystalMaterial( const std::string &gadras_material_na
 }//gadrasCrystalMaterial(...)
 
 
-std::string resolveGadrasCrystalName( const GadrasDetectorDat &dat,
-                                      const std::string &name_hint,
-                                      std::vector<std::string> &notes )
-{
-  // What the file actually says, when it says anything: the XML <material>
-  //  name, or the param-59 index into the material table.
-  const string stated = dat.materialName();
-  if( !stated.empty() )
-    return stated;
-
-  if( name_hint.empty() )
-    return string();
-
-  // Nothing stated - fall back to the detector's name.  Longest table name
-  //  first, so "LaBr3" is preferred over a stray "La" style prefix match, and
-  //  "CLYC(95%)" over "CLYC(nat)" only when actually spelled out.
-  const std::array<GadrasDetectorDat::MaterialInfo,36> &table
-                                          = GadrasDetectorDat::materialTable();
-  vector<const GadrasDetectorDat::MaterialInfo *> by_len;
-  for( const GadrasDetectorDat::MaterialInfo &info : table )
-    by_len.push_back( &info );
-  std::sort( begin(by_len), end(by_len),
-            []( const GadrasDetectorDat::MaterialInfo *a,
-                const GadrasDetectorDat::MaterialInfo *b ) -> bool {
-    return strlen(a->name) > strlen(b->name);
-  } );
-
-  for( const GadrasDetectorDat::MaterialInfo * const info : by_len )
-  {
-    if( SpecUtils::icontains( name_hint, info->name ) )
-    {
-      notes.push_back( "Detector.dat does not say what the crystal is made of;"
-                       " '" + string(info->name) + "' was taken from the detector"
-                       " name ('" + name_hint + "').  Please correct it if that"
-                       " is wrong - the crystal material drives the whole"
-                       " efficiency." );
-      return info->name;
-    }
-  }//for( const GadrasDetectorDat::MaterialInfo * const info : by_len )
-
-  // Spellings the table names do not cover.  Mostly detectors named for the
-  //  crystal family without its stoichiometry - "LaBr 10%" does not contain the
-  //  table's "LaBr3" - which is how every shipped LaBr detector is named.
-  static const std::vector<std::pair<string,string>> sm_alias = {
-    { "cadmium zinc telluride", "CZT"   },
-    { "sodium iodide",          "NaI"   },
-    { "cesium iodide",          "CsI"   },
-    { "germanium",              "HPGe"  },
-    { "cdznte",                 "CZT"   },
-    { "cebr",                   "CeBr3" },
-    { "labr",                   "LaBr3" },
-    { "lacl",                   "LaCl3" },
-    { "srii",                   "SrI2"  },
-    { "sri2",                   "SrI2"  },
-    { "gagg",                   "GAGG:Ce" }
-  };
-
-  for( const auto &alias : sm_alias )
-  {
-    if( SpecUtils::icontains( name_hint, alias.first ) )
-    {
-      notes.push_back( "Detector.dat does not say what the crystal is made of;"
-                       " '" + alias.second + "' was taken from the detector name"
-                       " ('" + name_hint + "').  Please correct it if that is"
-                       " wrong - the crystal material drives the whole"
-                       " efficiency." );
-      return alias.second;
-    }
-  }//for( const auto &alias : sm_alias )
-
-  return string();
-}//resolveGadrasCrystalName(...)
-
-
 ceelo::MaterialSpec genericAttenuatorMaterial( const double atomic_number,
                                                const double areal_density_g_cm2,
                                                const double thickness_cm )
@@ -1140,9 +1068,7 @@ ceelo::MaterialSpec genericAttenuatorMaterial( const double atomic_number,
   if( f_hi > 0.0 )
     mass_by_z[z_hi] += f_hi;
 
-  char namebuf[64] = { '\0' };
-  snprintf( namebuf, sizeof(namebuf), "AN=%.4g, AD=%.4g g/cm2",
-            atomic_number, areal_density_g_cm2 );
+  const string namebuf = genericAttenuatorName( atomic_number, areal_density_g_cm2 );
 
   // The density is whatever makes this thickness carry the file's areal
   //  density; only their product enters the attenuation.
@@ -1204,14 +1130,32 @@ ceelo::MaterialSpec genericAttenuatorMaterial( const double atomic_number,
 
 
 ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
-                                               const std::string &name_hint,
                                                std::vector<std::string> &warnings )
 {
-  const string crystal_name = resolveGadrasCrystalName( dat, name_hint, warnings );
+  string crystal_name = dat.materialName();
   if( crystal_name.empty() )
-    throw runtime_error( "Detector.dat does not say what the detector crystal is"
-                         " made of, and it could not be guessed from the detector"
-                         " name, so the detector's geometry cannot be modeled." );
+  {
+    // Not fatal.  A dropped file is usually just named "Detector.dat", so there
+    //  is no directory name to recover the material from, and refusing would
+    //  leave the user with nothing - when the geometry form has a crystal
+    //  dropdown they can simply set.  So pick a stand-in and say plainly that it
+    //  is one.
+    //
+    //  The resolution the file DOES state at least separates germanium from the
+    //  scintillators, which is the difference that matters most here.
+    const float fwhm661 = dat.resFWHM661();
+    crystal_name = ((fwhm661 > 0.0f) && (fwhm661 < 1.5f)) ? "HPGe" : "NaI";
+
+    warnings.push_back( "Detector.dat does not say what the crystal is made of,"
+                        " and there is no detector name to infer it from, so "
+                        + crystal_name + " was assumed."
+                        + ((fwhm661 > 0.0f)
+                            ? (" (Its " + SpecUtils::printCompact(fwhm661,3)
+                               + "% resolution at 661 keV is the only clue.)")
+                            : string())
+                        + "  Set the crystal material in the geometry form - it"
+                        " drives the whole efficiency, and the crystal shape with it." );
+  }//if( crystal_name.empty() )
 
   // GADRAS stores an *effective* box (a fitted shape its analytic chord-length
   //  model reproduces the measured efficiency with), not the true crystal; the
@@ -1457,5 +1401,140 @@ ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
 
   return gd;
 }//buildGadrasGeometry(...)
+
+
+void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
+                    const std::shared_ptr<const ceelo::DetectorResponse> &response,
+                    const size_t num_points )
+{
+  if( !response )
+    throw runtime_error( "setLegacyEfficiencyFromResponse: null response." );
+
+  const double a_cm = response->transverse_half_extent();
+  if( a_cm <= 0.0 )
+    throw runtime_error( "setLegacyEfficiencyFromResponse: response has no extent." );
+
+  double e_lo = response->provenance.valid_e_min_keV;
+  double e_hi = response->provenance.valid_e_max_keV;
+  if( !(e_hi > e_lo) || (e_lo <= 0.0) )
+  {
+    e_lo = 35.0;      //the generator's own defaults, when provenance is unset
+    e_hi = 3000.0;
+  }
+
+  // Log-spaced, plus a pair either side of each crystal K-edge: the stored
+  //  response is segmented at the edges, and a curve fit through points that
+  //  straddle one would smooth away a real discontinuity.
+  vector<double> energies;
+  energies.reserve( num_points + 8 );
+  const size_t n = std::max<size_t>( 8, num_points );
+  for( size_t i = 0; i < n; ++i )
+  {
+    const double f = static_cast<double>(i) / (n - 1);
+    energies.push_back( std::exp( std::log(e_lo) + f*(std::log(e_hi) - std::log(e_lo)) ) );
+  }
+
+  for( const double edge : response->descriptor.crystal_k_edges( e_lo, e_hi ) )
+  {
+    energies.push_back( 0.995*edge );
+    energies.push_back( 1.005*edge );
+  }
+  std::sort( begin(energies), end(energies) );
+
+  // Exactly what DetectorPeakResponse::intrinsicEfficiencyEval does for a
+  //  CeeLo-backed DRF: on axis, in the response's own far field, over the same
+  //  disk solid angle.  Any divergence here would put the stored curve and the
+  //  live query at odds.
+  const double d_cm = std::max( 1000.0 * a_cm, 100.0 );
+  const double omega = ceelo::disk_solid_angle_fraction( d_cm, a_cm );
+  if( omega <= 0.0 )
+    throw runtime_error( "setLegacyEfficiencyFromResponse: degenerate solid angle." );
+
+  vector<DetectorPeakResponse::EnergyEffPoint> points;
+  points.reserve( energies.size() );
+  for( const double energy : energies )
+  {
+    const ceelo::EffResult res = response->eps_fep( energy, 0.0, 0.0, d_cm );
+    const double eff = res.value / omega;
+    if( (eff <= 0.0) || IsInf(eff) || IsNan(eff) )
+      continue;
+
+    DetectorPeakResponse::EnergyEffPoint p;
+    p.energy = static_cast<float>( energy );
+    p.efficiency = static_cast<float>( eff );
+    if( res.sigma > 0.0 )
+      p.efficiencyUncert = static_cast<float>( res.sigma / omega );
+    points.push_back( p );
+  }//for( const double energy : energies )
+
+  if( points.size() < 2 )
+    throw runtime_error( "setLegacyEfficiencyFromResponse: the response gave fewer"
+                         " than two positive efficiencies." );
+
+  // setEfficiencyPoints resets the setback, the flags and the DRF source along
+  //  with the curve, so carry them across ourselves.
+  const double setback = drf.detectorSetback();
+  const DetectorPeakResponse::DrfSource source = drf.drfSource();
+
+  drf.setEfficiencyPoints( points, static_cast<float>( 2.0 * a_cm * PhysicalUnits::cm ),
+                          -1.0, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+
+  if( setback > 0.0 )
+    drf.setDetectorSetback( setback );
+  drf.setDrfSource( source );
+}//setLegacyEfficiencyFromResponse(...)
+
+
+std::string genericAttenuatorName( const double atomic_number,
+                                   const double areal_density_g_cm2 )
+{
+  char buf[64] = { '\0' };
+  snprintf( buf, sizeof(buf), "AN=%.4g, AD=%.4g g/cm2",
+            atomic_number, areal_density_g_cm2 );
+  return buf;
+}//genericAttenuatorName(...)
+
+
+bool parseGenericAttenuatorName( const std::string &text, double &atomic_number,
+                                 double &areal_density_g_cm2 )
+{
+  // "AN=13.2, AD=1.35 g/cm2" - tolerant of spacing, case, and a missing unit.
+  string t = text;
+  SpecUtils::trim( t );
+  SpecUtils::to_lower_ascii( t );
+
+  const size_t an_pos = t.find( "an" );
+  const size_t ad_pos = t.find( "ad" );
+  if( (an_pos == string::npos) || (ad_pos == string::npos) || (ad_pos < an_pos) )
+    return false;
+
+  auto value_after = []( const string &s, size_t from, double &out ) -> bool {
+    const size_t eq = s.find( '=', from );
+    if( eq == string::npos )
+      return false;
+    size_t i = eq + 1;
+    while( (i < s.size()) && std::isspace( static_cast<unsigned char>(s[i]) ) )
+      i += 1;
+    const size_t start = i;
+    while( (i < s.size())
+           && (std::isdigit( static_cast<unsigned char>(s[i]) ) || (s[i] == '.')
+               || (s[i] == 'e') || (s[i] == '+') || (s[i] == '-')) )
+      i += 1;
+    if( i == start )
+      return false;
+    return !!(stringstream( s.substr(start, i - start) ) >> out);
+  };//value_after lambda
+
+  double an = 0.0, ad = 0.0;
+  if( !value_after( t, an_pos, an ) || !value_after( t, ad_pos, ad ) )
+    return false;
+
+  if( (an < 1.0) || (an > 92.0) || (ad <= 0.0) )
+    return false;
+
+  atomic_number = an;
+  areal_density_g_cm2 = ad;
+  return true;
+}//parseGenericAttenuatorName(...)
 
 }//namespace CeeLoUtils

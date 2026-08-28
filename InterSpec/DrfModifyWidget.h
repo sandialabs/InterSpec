@@ -77,6 +77,17 @@ public:
   /** Emitted (by #apply) with the modified DRF. */
   Wt::Signal<std::shared_ptr<DetectorPeakResponse>> &updatedDrf();
 
+  /** Emitted with whether the embedded Monte-Carlo tool currently holds a
+   generated response.  The window uses it to hold "Use" closed for a DRF that
+   arrived with no efficiency of its own (a geometry-only import), where a
+   response is the only thing that can give it one.
+   */
+  Wt::Signal<bool> &mcResponseAvailable();
+
+  /** Whether the DRF being modified needs a Monte-Carlo response before it can
+   be used at all, i.e. it came in with no efficiency curve. */
+  bool needsMcResponse() const;
+
 protected:
   /** Kicks off the FWHM tools automated peak search the first time its tab is selected - see the
    comments where that tab is created. */

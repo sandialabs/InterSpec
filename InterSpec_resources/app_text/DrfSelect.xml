@@ -26,7 +26,7 @@
   <message id="reds-tt-add-drf-btn">Click the plus button to add an additional relative efficiency detector response function file.</message>
   <message id="reds-tt-add-dir">Click the plus button to add an additional directory to recursively look for detector response functions in.</message>
   <message id="reds-gadras-drf-info-ios">You can place detector response functions imported from GADRAS-DRF into <code>InterSpec</code>s directory within the <b>Files</b> app.</message>
-  <message id="reds-gadras-drf-info">These are detector response functions imported from GADRAS-DRF.  Currently only the detector dimensions,  absolute efficiencies, and FWHM resolutions are used.</message>
+  <message id="reds-gadras-drf-info">These are detector response functions imported from GADRAS-DRF.  The crystal shape and material, dead layer, endcap attenuators, setback, FWHM and peak shape are all read from <code>Detector.dat</code>, and the efficiency from <code>Efficiency.csv</code>.  A directory holding only a <code>Detector.dat</code> is listed as &quot;geometry only&quot;: picking it opens the Monte-Carlo characterization that gives it an efficiency.  Coaxial bore geometry and partial side or back shields are not recorded by the format, so they are not modeled.</message>
   <message id="reds-failed-parse-gadras-det">Failed to parse a GADRAS detector: {1}</message>
   <message id="reds-err-saving-gad-path">Error saving GADRAS path to user preferences: {1}</message>
   <message id="reds-tt-remove-gad-dir">Remove directory from list of directories InterSpec will look in for detector response functions in.</message>
@@ -165,4 +165,11 @@
   <message id="ds-angle-no-refcurve">The file has no measured reference efficiency curve for the response to be anchored on.</message>
   <message id="ds-angle-note">ANGLE file: {1}</message>
   <message id="ds-angle-ok">Ok</message>
+
+  <message id="ds-gadras-mode-title">GADRAS detector model</message>
+  <message id="ds-gadras-mode-txt">This detector&apos;s <code>Detector.dat</code> also describes the crystal itself - its shape, material, dead layer and window. You can use that as a generic detector, with the measured efficiency curve anchoring it, so efficiencies can be computed for other geometries; or keep just the fixed efficiency curve.</message>
+  <message id="ds-gadras-mode-generic">Generic detector</message>
+  <message id="ds-gadras-mode-fixed">Fixed efficiency curve</message>
+  <message id="ds-gadras-no-geometry">Could not build a detector geometry from this Detector.dat: {1}</message>
+  <message id="reds-gadras-geometry-only">(geometry only)</message>
 </messages>

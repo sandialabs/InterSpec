@@ -238,23 +238,6 @@ namespace CeeLoUtils
    */
   ceelo::MaterialSpec gadrasCrystalMaterial( const std::string &gadras_material_name );
 
-  /** Resolves what the crystal is made of, which `Detector.dat` often does not
-   say: the XML `<material>` name, else the param-59 material index, else
-   `name_hint` (the detector directory / file name) matched against the GADRAS
-   material table and the usual family spellings.
-
-   The hint matters more than it looks: every detector shipped in
-   `data/GenericGadrasDetectors` has a material index of 0, so without it
-   `GadrasDetectorDat::inferShape()` falls through to its shape-factor
-   heuristic and calls a 3x3 NaI a box.
-
-   Returns an empty string when nothing resolves (Mode A is then unavailable);
-   appends an explanatory note whenever the answer came from the hint.
-   */
-  std::string resolveGadrasCrystalName( const GadrasDetectorDat &dat,
-                                        const std::string &name_hint,
-                                        std::vector<std::string> &notes );
-
   /** A stand-in material for a GADRAS attenuator, which is specified only as an
    effective atomic number and an areal density (g/cm2) - never a composition or
    a thickness.
@@ -282,8 +265,9 @@ namespace CeeLoUtils
    counterpart of #buildAngleGeometry, and the basis of the "generic detector"
    import mode.
 
-   `name_hint` is the detector directory or uploaded file name; see
-   #resolveGadrasCrystalName for why it is not optional in practice.
+   The crystal material comes from `GadrasDetectorDat::materialName()`; when the
+   file names none, a stand-in is used and noted in `warnings` rather than
+   failing the import - the geometry form lets the user set it.
 
    The crystal shape and dimensions come from `GadrasDetectorDat::inferShape()`,
    the dead layer from param 51 (applied to the front AND sides - the file gives
@@ -304,8 +288,54 @@ namespace CeeLoUtils
    resolved.
    */
   ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
-                                                 const std::string &name_hint,
                                                  std::vector<std::string> &warnings );
+
+
+  //====================== MC response -> legacy DRF curve =====================
+
+  /** Fills @p drf's ordinary (non-CeeLo) intrinsic efficiency curve by sampling
+   @p response - the "backbone" efficiency points a Monte-Carlo characterization
+   produces.
+
+   Needed because a DRF built from geometry alone has no measured curve of its
+   own: without this it carries the placeholder `setIntrinsicEfficiencyFormula("1.0")`
+   and is not valid, serializable or exportable on its own, even though every
+   #DetectorPeakResponse::EffEval query would have answered correctly through the
+   attached response.
+
+   Sampling reproduces `intrinsicEfficiencyEval`'s CeeLo branch exactly - on
+   axis, at the response's own far field, divided by the same disk solid angle -
+   so the curve and the CeeLo dispatch cannot disagree.  Points are log-spaced
+   over the response's validated energy range, plus a pair either side of each
+   crystal K-edge so the interpolated curve never bridges one.  The per-point MC
+   sigma is carried into `EnergyEffPoint::efficiencyUncert`.
+
+   The detector diameter, geometry type and energy range are taken from the
+   response; @p drf's setback and DRF-source are preserved across the call (they
+   are members #DetectorPeakResponse::setEfficiencyPoints otherwise resets).
+
+   Throws std::runtime_error for a null response, or if fewer than two positive
+   points can be sampled.
+   */
+  void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
+                      const std::shared_ptr<const ceelo::DetectorResponse> &response,
+                      const size_t num_points = 48 );
+
+  /** The canonical text for a generic attenuator - one specified only by an
+   effective atomic number and an areal density, as GADRAS does.  Used as the
+   material name in a #genericAttenuatorMaterial and shown in the geometry
+   form's layer rows, where it reads as an editable value rather than a material
+   name nothing can resolve.
+   */
+  std::string genericAttenuatorName( const double atomic_number,
+                                     const double areal_density_g_cm2 );
+
+  /** Reads #genericAttenuatorName back.  Returns false (leaving the outputs
+   untouched) when @p text is not in that form, so a caller can fall through to
+   resolving it as an ordinary material name.
+   */
+  bool parseGenericAttenuatorName( const std::string &text, double &atomic_number,
+                                   double &areal_density_g_cm2 );
 }//namespace CeeLoUtils
 
 #endif //CeeLoUtils_h

@@ -36,6 +36,7 @@
 #include <Wt/WTableCell.h>
 #include <Wt/WLabel.h>
 #include <Wt/WCheckBox.h>
+#include <Wt/Utils.h>
 #include <Wt/WComboBox.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WPushButton.h>
@@ -57,6 +58,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/CeeLoUtils.h"
+#include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/DetectorGeometryInput.h"
 #include "InterSpec/ShieldMaterialSuggestion.h"
 
@@ -95,24 +97,53 @@ namespace
 
 
 
-  /** The crystal-material combo entries, mapped to CeeLo built-ins. */
+  /** The crystal-material combo entries, taken from the GADRAS material table.
+
+   Driven by the table rather than hand-listed so the two cannot drift: any
+   crystal a `Detector.dat` can name is a crystal this form offers, so importing
+   one never has to substitute something else for it.
+   `CeeLoUtils::gadrasCrystalMaterial` resolves each name - preferring a CeeLo
+   built-in where one exists, else building it from the table's formula and
+   density - which is the same path the import itself takes, so an imported
+   descriptor matches an entry here by name.
+   */
+  const std::vector<std::string> &crystal_names()
+  {
+    static const std::vector<std::string> names = []() -> std::vector<std::string> {
+      std::vector<std::string> n;
+      for( const GadrasDetectorDat::MaterialInfo &info : GadrasDetectorDat::materialTable() )
+      {
+        // Only what can actually be built; a table entry whose formula does not
+        //  resolve would throw the moment it was selected.
+        try
+        {
+          CeeLoUtils::gadrasCrystalMaterial( info.name );
+          n.push_back( info.name );
+        }catch( std::exception & )
+        {
+        }
+      }
+      return n;
+    }();
+
+    return names;
+  }//crystal_names()
+
+
   ceelo::MaterialSpec crystal_material_spec( const int index )
   {
-    switch( index )
-    {
-      case 0: return ceelo::MaterialSpec::from( ceelo::make_HPGe() );
-      case 1: return ceelo::MaterialSpec::from( ceelo::make_NaI() );
-      case 2: return ceelo::MaterialSpec::from( ceelo::make_CZT() );
-      case 3: return ceelo::MaterialSpec::from( ceelo::make_LaBr3() );
-    }
+    const std::vector<std::string> &names = crystal_names();
+    if( (index >= 0) && (index < static_cast<int>(names.size())) )
+      return CeeLoUtils::gadrasCrystalMaterial( names[static_cast<size_t>(index)] );
+
     throw runtime_error( "Please select a crystal material." );
   }//crystal_material_spec(...)
 
 
-  /** Best-effort match of a stored MaterialSpec back to the crystal combo. */
+  /** Exact match of a stored MaterialSpec back to a crystal combo entry, or -1. */
   int crystal_index_for_name( const std::string &name )
   {
-    for( int i = 0; i < 4; ++i )
+    for( int i = 0; i < static_cast<int>(crystal_names().size()); ++i )
     {
       try
       {
@@ -127,6 +158,7 @@ namespace
 
 
   string cm_to_str( const double cm )
+
   {
     return PhysicalUnits::printToBestLengthUnits( cm * PhysicalUnits::cm, 4 );
   }
@@ -159,6 +191,7 @@ DetectorGeometryInput::DetectorGeometryInput( InterSpec *viewer )
     m_collimatorExtension( nullptr ),
     m_referencePoint( nullptr ),
     m_note( nullptr ),
+    m_importNotes( nullptr ),
     m_materialSuggestion( nullptr ),
     m_changed()
 {
@@ -216,11 +249,12 @@ void DetectorGeometryInput::init()
   {
     WTableCell *cell = add_row( WString::tr("dgi-crystal-material") );
     m_crystalMaterial = cell->addNew<WComboBox>();
-    m_crystalMaterial->addItem( "HPGe" );
-    m_crystalMaterial->addItem( "NaI(Tl)" );
-    m_crystalMaterial->addItem( "CZT" );
-    m_crystalMaterial->addItem( "LaBr3" );
-    m_crystalMaterial->setCurrentIndex( 1 );
+    for( const std::string &name : crystal_names() )
+      m_crystalMaterial->addItem( WString::fromUTF8(name) );
+
+    // Default to NaI, the most common crystal, when the table offers it.
+    const int nai = crystal_index_for_name( "NaI" );
+    m_crystalMaterial->setCurrentIndex( (nai >= 0) ? nai : 0 );
     m_crystalMaterial->activated().connect( this, &DetectorGeometryInput::handleUserInput );
   }
 
@@ -346,6 +380,14 @@ void DetectorGeometryInput::init()
   m_note = addNew<WText>( "" );
   m_note->addStyleClass( "DgiNote" );
   m_note->setInline( false );
+
+  // Import warnings - what the source file could not express.  Sits with the
+  //  form the user is being asked to correct, rather than only in a toast that
+  //  is gone by the time they look at the geometry.
+  m_importNotes = addNew<WText>( "" );
+  m_importNotes->addStyleClass( "DgiImportNotes" );
+  m_importNotes->setInline( false );
+  m_importNotes->hide();
 
   handleShapeChange();
 }//init()
@@ -543,6 +585,31 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
     //  name, the composition it came in with is the right answer.
     const bool use_seeded = layer.seeded && (mat_name == layer.seededName);
 
+    // A generic attenuator - "AN=13.2, AD=1.35 g/cm2" - is not a material name
+    //  and never will resolve as one; it is how a GADRAS import expresses a
+    //  layer the file gives only an effective atomic number and an areal density
+    //  for.  Rebuilding it from the edited text is what lets the user change
+    //  either number and have it mean something.
+    double gen_an = 0.0, gen_ad = 0.0;
+    if( !use_seeded
+        && CeeLoUtils::parseGenericAttenuatorName( mat_name, gen_an, gen_ad ) )
+    {
+      const double thickness = (front > 0.0) ? front : side;
+      if( thickness <= 0.0 )
+        throw runtime_error( WString::tr("dgi-err-layer").toUTF8() );
+
+      ceelo::LayerSpec gspec;
+      gspec.material_index = static_cast<int>( gd.materials.size() );
+      gd.materials.push_back(
+            CeeLoUtils::genericAttenuatorMaterial( gen_an, gen_ad, thickness ) );
+      gspec.front_thickness_cm = front;
+      gspec.side_thickness_cm = side;
+      gspec.z_start_cm = 0.0;
+      gspec.z_end_cm = crystal_len;
+      gd.layers.push_back( gspec );
+      continue;
+    }//if( a generic AN/AD attenuator )
+
     shared_ptr<const Material> mat;
     if( !use_seeded )
     {
@@ -600,20 +667,35 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
 }//toDescriptor()
 
 
-void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &gd )
+void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &gd,
+                                               const std::vector<std::string> &notes )
 {
   const bool box = (gd.shape == ceelo::DetectorShape::Box);
   const bool coax = !box && gd.bore.has_value();
   m_shape->setCurrentIndex( box ? 2 : (coax ? 1 : 0) );
 
+  m_substitutedCrystal.clear();
   if( gd.crystal_material_index >= 0
       && (gd.crystal_material_index < static_cast<int>(gd.materials.size())) )
   {
-    const int idx = crystal_index_for_name(
-                gd.materials[static_cast<size_t>(gd.crystal_material_index)].name );
+    const ceelo::MaterialSpec &crystal
+                  = gd.materials[static_cast<size_t>(gd.crystal_material_index)];
+    const int idx = crystal_index_for_name( crystal.name );
     if( idx >= 0 )
+    {
       m_crystalMaterial->setCurrentIndex( idx );
-  }
+    }else
+    {
+      // Nothing in the list is this material.  The list covers every crystal
+      //  GADRAS knows, so in practice this is only reachable from an ANGLE file,
+      //  which defines its materials inline and so can name anything at all.
+      //  Leaving the combo where it was would quietly rebuild the crystal as
+      //  whatever it happened to show, so fall back to NaI and say so.
+      const int nai = crystal_index_for_name( "NaI" );
+      m_crystalMaterial->setCurrentIndex( (nai >= 0) ? nai : 0 );
+      m_substitutedCrystal = crystal.name;
+    }
+  }//if( the descriptor names a crystal )
 
   if( box && (gd.dimensions_cm.size() >= 3) )
   {
@@ -705,6 +787,33 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
   m_referencePoint->setCurrentIndex(
       (gd.reference_point == ceelo::ReferencePoint::CrystalFace) ? 1 : 0 );
 
+  // Import warnings, plus the crystal substitution if there was one - the
+  //  substitution changes what gets simulated, so it belongs with them.
+  vector<string> all_notes = notes;
+  if( !m_substitutedCrystal.empty() )
+  {
+    const int idx = m_crystalMaterial->currentIndex();
+    const string used = ((idx >= 0) && (idx < static_cast<int>(crystal_names().size())))
+                        ? crystal_names()[static_cast<size_t>(idx)] : string();
+    all_notes.push_back( "This detector's crystal is " + m_substitutedCrystal
+                         + ", which is not a material this form offers, so " + used
+                         + " was selected instead.  Its efficiency will differ -"
+                         " please set the crystal material yourself." );
+  }//if( a crystal was substituted )
+
+  if( all_notes.empty() )
+  {
+    m_importNotes->setText( "" );
+    m_importNotes->hide();
+  }else
+  {
+    string html;
+    for( const string &n : all_notes )
+      html += "<div>" + Wt::Utils::htmlEncode(n) + "</div>";
+    m_importNotes->setText( WString::fromUTF8(html) );
+    m_importNotes->show();
+  }
+
   handleShapeChange();
 }//setFromDescriptor(...)
 
@@ -724,6 +833,7 @@ void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakRespo
   m_shape->setCurrentIndex( 0 );
   m_dim1->setText( cm_to_str( diam_cm ) );
   m_dim2->setText( cm_to_str( diam_cm ) );  //length unknown: guess = diameter
+
   m_note->setText( WString::tr("dgi-seeded-note") );
   handleShapeChange();
 }//seedFromDrf(...)

@@ -29,6 +29,7 @@
 #define BOOST_TEST_MODULE test_GadrasDetectorDat_suite
 #include <boost/test/included/unit_test.hpp>
 
+#include <map>
 #include <array>
 #include <cmath>
 #include <string>
@@ -42,6 +43,9 @@
 
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/CeeLoUtils.h"
+#include "InterSpec/PeakFitDetPrefs.h"
+#include "InterSpec/PeakFitUtils.h"
+#include "InterSpec/PeakDef.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/GadrasDetectorDat.h"
@@ -78,6 +82,16 @@ namespace
     BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(path), "Missing fixture: " + path );
     return GadrasDetectorDat::fromFile( path );
   }
+
+  /** A copy of @p dat with the crystal material stripped - no XML name and no
+   param-59 index.  Exercises what happens for a file that states nothing, which
+   a hand-edited or very old Detector.dat still can. */
+  GadrasDetectorDat without_material( GadrasDetectorDat dat )
+  {
+    dat.m_material_name.clear();
+    dat.m_params[59].int_col = 0;
+    return dat;
+  }//without_material(...)
 }//namespace
 
 
@@ -444,69 +458,22 @@ BOOST_AUTO_TEST_CASE( test_generic_attenuator_material )
 }
 
 
-BOOST_AUTO_TEST_CASE( test_resolve_crystal_from_name_hint )
-{
-  // Every detector shipped in data/GenericGadrasDetectors has a material index
-  //  of 0, so without a name hint inferShape() falls through to its
-  //  shape-factor heuristic and calls a 3x3 NaI a box.  This is the guard on
-  //  that: the hint must recover the material, and the material must fix the
-  //  shape.
-  GadrasDetectorDat bare;
-  bare.setValue( 10, 7.62f );    //length
-  bare.setValue( 11, 6.35f );    //width
-  bare.setValue( 12, 1.0f );     //height/width
-  bare.setValue( 13, 100.0f );   //shape factor -> "Box" without a material
-  BOOST_REQUIRE( bare.materialName().empty() );
-  BOOST_CHECK( bare.inferShape().shape == GadrasDetectorDat::Shape::Box );
-
-  vector<string> notes;
-  const string nai = CeeLoUtils::resolveGadrasCrystalName( bare, "NaI 3x3", notes );
-  BOOST_CHECK_EQUAL( nai, string("NaI") );
-  BOOST_CHECK( !notes.empty() );   //a guessed material must always be reported
-  BOOST_CHECK( bare.inferShape( nai ).shape == GadrasDetectorDat::Shape::Cylinder );
-
-  notes.clear();
-  BOOST_CHECK_EQUAL( CeeLoUtils::resolveGadrasCrystalName( bare, "HPGe 40%", notes ),
-                     string("HPGe") );
-  notes.clear();
-  BOOST_CHECK_EQUAL( CeeLoUtils::resolveGadrasCrystalName( bare, "LaBr 10%", notes ),
-                     string("LaBr3") );
-  notes.clear();
-  BOOST_CHECK_EQUAL( CeeLoUtils::resolveGadrasCrystalName( bare, "Kromek GR1 CZT", notes ),
-                     string("CZT") );
-
-  // Nothing to go on -> empty, so the caller can refuse the geometry import
-  //  rather than model the wrong crystal.
-  notes.clear();
-  BOOST_CHECK( CeeLoUtils::resolveGadrasCrystalName( bare, "Detector 17", notes ).empty() );
-  BOOST_CHECK( CeeLoUtils::resolveGadrasCrystalName( bare, "", notes ).empty() );
-
-  // A material stated in the file always wins over the name.
-  GadrasDetectorDat stated = bare;
-  stated.m_material_name = "CsI";
-  notes.clear();
-  BOOST_CHECK_EQUAL( CeeLoUtils::resolveGadrasCrystalName( stated, "NaI 3x3", notes ),
-                     string("CsI") );
-  BOOST_CHECK( notes.empty() );
-}
-
-
 BOOST_AUTO_TEST_CASE( test_build_gadras_geometry )
 {
   BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
 
-  struct Expect { const char *dir; const char *hint; ceelo::DetectorShape shape; };
+  struct Expect { const char *dir; ceelo::DetectorShape shape; };
   const vector<Expect> cases = {
-    { "NaI_3x3_text",          "NaI 3x3",        ceelo::DetectorShape::Cylinder },
-    { "NaI_2x2_text",          "NaI 2x2",        ceelo::DetectorShape::Cylinder },
-    { "CZT_1cm_text",          "CZT 1cm",        ceelo::DetectorShape::Box },
-    { "CZT_1.5x2x2_text",      "CZT 1.5x2x2",    ceelo::DetectorShape::Box },
-    { "Kromek_GR1_CZT_text",   "Kromek GR1 CZT", ceelo::DetectorShape::Box },
-    { "HPGe_Planar50_text",    "HPGe Planar50",  ceelo::DetectorShape::Cylinder },
-    { "Detective_X_xml",       "Detective X",    ceelo::DetectorShape::Cylinder },
-    { "IdentiFINDER_NGH_xml",  "IdentiFINDER NGH", ceelo::DetectorShape::Cylinder },
-    { "IdentiFINDER_LaBr3_xml","IdentiFINDER LaBr3", ceelo::DetectorShape::Cylinder },
-    { "MikesCzt_xml",          "MikesCzt",       ceelo::DetectorShape::Box },
+    { "NaI_3x3_text", ceelo::DetectorShape::Cylinder },
+    { "NaI_2x2_text", ceelo::DetectorShape::Cylinder },
+    { "CZT_1cm_text", ceelo::DetectorShape::Box },
+    { "CZT_1.5x2x2_text", ceelo::DetectorShape::Box },
+    { "Kromek_GR1_CZT_text", ceelo::DetectorShape::Box },
+    { "HPGe_Planar50_text", ceelo::DetectorShape::Cylinder },
+    { "Detective_X_xml", ceelo::DetectorShape::Cylinder },
+    { "IdentiFINDER_NGH_xml", ceelo::DetectorShape::Cylinder },
+    { "IdentiFINDER_LaBr3_xml", ceelo::DetectorShape::Cylinder },
+    { "MikesCzt_xml", ceelo::DetectorShape::Box },
   };
 
   for( const Expect &e : cases )
@@ -515,7 +482,7 @@ BOOST_AUTO_TEST_CASE( test_build_gadras_geometry )
 
     vector<string> warnings;
     ceelo::GeometryDescriptor gd;
-    BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildGadrasGeometry( dat, e.hint, warnings ) );
+    BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildGadrasGeometry( dat, warnings ) );
 
     for( const string &w : warnings )
       BOOST_TEST_MESSAGE( string(e.dir) + ": " + w );
@@ -583,7 +550,7 @@ BOOST_AUTO_TEST_CASE( test_build_gadras_geometry_shipped_detectors )
     vector<string> warnings;
     try
     {
-      const ceelo::GeometryDescriptor gd = CeeLoUtils::buildGadrasGeometry( dat, name, warnings );
+      const ceelo::GeometryDescriptor gd = CeeLoUtils::buildGadrasGeometry( dat, warnings );
 
       const vector<ceelo::GeometryProblem> problems = gd.problems();
       for( const ceelo::GeometryProblem p : problems )
@@ -670,6 +637,601 @@ const vector<string> dets = { "NaI_3x3_text", "NaI_2x2_text", "HPGe_Planar50_tex
   }//for( const string &det : dets )
 }
 
+
+/** Every DRF InterSpec ships must come out of a refactor byte-identical.
+
+ `fromGadrasDefinition` is about to be split into a Detector.dat half and an
+ Efficiency.csv half so a `.dat` can be imported on its own; the hash covers the
+ efficiency curve, FWHM, diameter, setback, energy range and geometry type, so a
+ mismatch here means the split changed a shipped detector.
+
+ Recording rather than asserting fixed values: the point is that the number does
+ not MOVE, and pinning literals would just have to be rewritten whenever the
+ hash's own definition changes.  Run with --record-gadras-hashes to print the
+ current set.
+ */
+BOOST_AUTO_TEST_CASE( test_shipped_gadras_drfs_unchanged )
+{
+  BOOST_REQUIRE_MESSAGE( !g_data_dir.empty(), "Need --datadir" );
+  const string base = SpecUtils::append_path( g_data_dir, "GenericGadrasDetectors" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_directory(base), "Missing " + base );
+
+  // name -> hash, captured 2026-08-26 before the fromGadrasDefinition split.
+  static const std::map<string,uint64_t> sm_expected = {
+    { "HPGe 10%", 7510061018782862820ull },
+    { "HPGe 20%", 796235728156705766ull },
+    { "HPGe 40%", 11793998863736797277ull },
+    { "LaBr 10%", 7224873908720907362ull },
+    { "LaBr 5%", 14056778455063695226ull },
+    { "NaI 10%", 12293132907226806266ull },
+    { "NaI 12%", 11442386257812586975ull },
+    { "NaI 1x1", 13548353314295837442ull },
+    { "NaI 25%", 12071477012891740898ull },
+    { "NaI 2x2", 15603649696888427249ull },
+    { "NaI 30%", 2812407564691516213ull },
+    { "NaI 3x3", 12364293647212064842ull },
+    { "NaI 5%", 2419841097339912955ull }
+  };
+
+  bool record = false;
+  {
+    const int argc = boost::unit_test::framework::master_test_suite().argc;
+    char **argv = boost::unit_test::framework::master_test_suite().argv;
+    for( int i = 1; i < argc; ++i )
+      if( string(argv[i]) == "--record-gadras-hashes" )
+        record = true;
+  }
+
+  vector<string> dirs = SpecUtils::ls_directories_in_directory( base );
+  std::sort( begin(dirs), end(dirs) );
+  BOOST_REQUIRE( dirs.size() >= 13 );
+
+  size_t checked = 0;
+  for( const string &dir : dirs )
+  {
+    const string name = SpecUtils::filename( dir );
+    if( !SpecUtils::is_file( SpecUtils::append_path(dir, "Efficiency.csv") ) )
+      continue;
+
+    DetectorPeakResponse drf;
+    BOOST_REQUIRE_NO_THROW( drf.fromGadrasDirectory( dir ) );
+    BOOST_REQUIRE_MESSAGE( drf.isValid(), name + ": DRF is not valid" );
+
+    const uint64_t hash = drf.hashValue();
+    if( record )
+    {
+      cout << "    { \"" << name << "\", " << hash << "ull }," << endl;
+      continue;
+    }
+
+    const auto pos = sm_expected.find( name );
+    BOOST_REQUIRE_MESSAGE( pos != end(sm_expected),
+                           name + " is not in the recorded set - add it" );
+    BOOST_CHECK_MESSAGE( hash == pos->second,
+                        name + ": hash changed, " + std::to_string(pos->second)
+                        + " -> " + std::to_string(hash)
+                        + ".  A shipped detector response is no longer what it was." );
+    checked += 1;
+  }//for( const string &dir : dirs )
+
+  if( !record )
+    BOOST_CHECK_MESSAGE( checked >= 13, "Only checked " + std::to_string(checked)
+                         + " shipped detectors" );
+}//test_shipped_gadras_drfs_unchanged
+
+
+/** A Detector.dat with no Efficiency.csv beside it.
+
+ `IdentiFINDER_LaBr3_xml` and `NaI_3x3_text` are the two fixtures shipped without
+ an Efficiency.csv, so they are what a geometry-only import actually looks like.
+ */
+BOOST_AUTO_TEST_CASE( test_gadras_dat_only_import )
+{
+  const vector<string> dat_only = { "IdentiFINDER_LaBr3_xml", "NaI_3x3_text" };
+
+  for( const string &det : dat_only )
+  {
+    const string dir = SpecUtils::append_path( gadras_dir(), det );
+    BOOST_REQUIRE_MESSAGE( SpecUtils::is_directory(dir), "Missing fixture " + dir );
+    BOOST_REQUIRE_MESSAGE( !SpecUtils::is_file( SpecUtils::append_path(dir,"Efficiency.csv") ),
+                           det + " unexpectedly has an Efficiency.csv" );
+
+    // The default still refuses, so no existing caller can be handed a detector
+    //  that has no efficiency.
+    {
+      DetectorPeakResponse strict;
+      BOOST_CHECK_THROW( strict.fromGadrasDirectory( dir ), std::exception );
+    }
+
+    DetectorPeakResponse drf;
+    BOOST_REQUIRE_NO_THROW( drf.fromGadrasDirectory( dir, true ) );
+
+    // Deliberately not valid: it has a shape but no sensitivity yet.
+    BOOST_CHECK_MESSAGE( !drf.isValid(),
+                         det + ": a geometry-only DRF must not report itself valid" );
+    BOOST_CHECK( drf.drfSource() == DetectorPeakResponse::DrfSource::GadrasDetectorDatOnly );
+
+    // ...but everything the file DOES define must have come across.
+    const GadrasDetectorDat dat = GadrasDetectorDat::fromFile(
+                                    SpecUtils::append_path(dir, "Detector.dat") );
+    BOOST_CHECK_MESSAGE( drf.detectorDiameter() > 0.0f, det + ": no crystal diameter" );
+    BOOST_CHECK( close_enough( drf.detectorDiameter() / PhysicalUnits::cm,
+                               dat.equivalentCircularDiameterCm(), 0.01 ) );
+    BOOST_CHECK( close_enough( drf.detectorSetback() / PhysicalUnits::cm,
+                               dat.setbackCm(), 0.01 ) );
+
+    BOOST_CHECK( drf.resolutionFcnType() == DetectorPeakResponse::kGadrasResolutionFcn );
+    BOOST_CHECK_MESSAGE( drf.peakResolutionFWHM( 661.0f ) > 0.0f,
+                         det + ": no usable FWHM at 661 keV" );
+
+    // A GADRAS characterization always states a peak shape - "no skew" is one of
+    //  the shapes it can state - so the preferences come across either way.
+    const shared_ptr<const PeakFitDetPrefs> prefs = drf.peakFitDetPrefs();
+    BOOST_REQUIRE_MESSAGE( !!prefs, det + ": no GADRAS peak-shape preferences" );
+    BOOST_CHECK( (prefs->m_peak_skew_type == PeakDef::SkewType::GadrasGeneric)
+                 || (prefs->m_peak_skew_type == PeakDef::SkewType::GadrasCZT) );
+
+    // GADRAS fit this shape against the real detector, so all six coefficients
+    //  are FIXED - a nullopt would mean "fit it per-ROI" and would throw that
+    //  measurement away.
+    for( int i = 0; i < 6; ++i )
+      BOOST_CHECK_MESSAGE( prefs->m_lower_energy_skew[i].has_value(),
+                          det + ": skew parameter " + std::to_string(i)
+                          + " was left to be fit rather than taken from the file" );
+
+    // The description carries the provenance and the low-energy caveat, since
+    //  there is no measured curve to speak for this detector.
+    BOOST_CHECK( SpecUtils::icontains( drf.description(), "Monte-Carlo" ) );
+    BOOST_CHECK( SpecUtils::icontains( drf.description(), "60 keV" ) );
+
+    BOOST_TEST_MESSAGE( "  " << det << ": " << drf.description() );
+  }//for( const string &det : dat_only )
+}
+
+
+
+/** The sniffer must not call a spectrum or an efficiency CSV a Detector.dat -
+ the text parser itself is far too permissive to use for classification. */
+BOOST_AUTO_TEST_CASE( test_is_candidate_detector_dat )
+{
+  for( const string &det : { "NaI_3x3_text", "Detective_X_xml", "CZT_1cm_text" } )
+  {
+    ifstream in( dat_path(det).c_str(), ios::in | ios::binary );
+    BOOST_REQUIRE( in.is_open() );
+    BOOST_CHECK_MESSAGE( GadrasDetectorDat::isCandidateDetectorDat( in ),
+                         det + ": a real Detector.dat was not recognized" );
+    // The stream must be left usable.
+    BOOST_CHECK( !!GadrasDetectorDat::fromStream( in ).width() );
+  }
+
+  const string effcsv = SpecUtils::append_path(
+        SpecUtils::append_path( gadras_dir(), "Detective_X_xml" ), "Efficiency.csv" );
+  if( SpecUtils::is_file(effcsv) )
+  {
+    ifstream in( effcsv.c_str(), ios::in | ios::binary );
+    BOOST_CHECK_MESSAGE( !GadrasDetectorDat::isCandidateDetectorDat( in ),
+                         "an Efficiency.csv was mistaken for a Detector.dat" );
+  }
+
+  {
+    stringstream empty( "" );
+    BOOST_CHECK( !GadrasDetectorDat::isCandidateDetectorDat( empty ) );
+
+    stringstream prose( "This is just some text.\n1 2 3\n" );
+    BOOST_CHECK( !GadrasDetectorDat::isCandidateDetectorDat( prose ) );
+  }
+
+  // Leading '!' / '#' comment lines must not hide the table from the sniffer -
+  //  the drag-and-drop classifier applies the same rule on its header buffer.
+  {
+    string commented = "! a comment GADRAS might write\n# another\n";
+    ifstream real( dat_path("NaI_3x3_text").c_str(), ios::in | ios::binary );
+    BOOST_REQUIRE( real.is_open() );
+    stringstream body;
+    body << real.rdbuf();
+    commented += body.str();
+
+    stringstream withcomments( commented );
+    BOOST_CHECK_MESSAGE( GadrasDetectorDat::isCandidateDetectorDat( withcomments ),
+                         "leading comments hid a real Detector.dat from the sniffer" );
+  }
+}
+
+
+BOOST_AUTO_TEST_CASE( test_generic_attenuator_name_round_trip )
+{
+  // The geometry form shows a GADRAS attenuator as this text and rebuilds it
+  //  from whatever the user leaves there, so the two must agree exactly.
+  for( const double an : { 6.0, 13.0, 13.2, 26.0, 82.0 } )
+  {
+    for( const double ad : { 0.05, 0.5, 1.35, 12.0 } )
+    {
+      const string text = CeeLoUtils::genericAttenuatorName( an, ad );
+      double got_an = 0.0, got_ad = 0.0;
+      BOOST_REQUIRE_MESSAGE( CeeLoUtils::parseGenericAttenuatorName( text, got_an, got_ad ),
+                             "could not read back '" + text + "'" );
+      BOOST_CHECK_CLOSE( got_an, an, 0.1 );
+      BOOST_CHECK_CLOSE( got_ad, ad, 0.1 );
+
+      // Whatever thickness it is given, the areal density must survive.
+      const ceelo::MaterialSpec spec
+              = CeeLoUtils::genericAttenuatorMaterial( got_an, got_ad, 0.3 );
+      BOOST_CHECK_CLOSE( spec.density_g_per_cm3 * 0.3, ad, 0.01 );
+    }
+  }
+
+  // Tolerant of how a user might retype it.
+  double an = 0.0, ad = 0.0;
+  BOOST_CHECK( CeeLoUtils::parseGenericAttenuatorName( "an=13, ad=0.5", an, ad ) );
+  BOOST_CHECK_CLOSE( an, 13.0, 0.1 );
+  BOOST_CHECK( CeeLoUtils::parseGenericAttenuatorName( "AN = 26  AD = 2.5 g/cm2", an, ad ) );
+  BOOST_CHECK_CLOSE( ad, 2.5, 0.1 );
+
+  // ...and must NOT swallow ordinary material names, which fall through to the
+  //  MaterialDB lookup.
+  for( const char *notgeneric : { "Aluminum", "Fe", "C0.5H0.5 d=1.2", "", "AN=0, AD=1" } )
+    BOOST_CHECK_MESSAGE( !CeeLoUtils::parseGenericAttenuatorName( notgeneric, an, ad ),
+                         string("'") + notgeneric + "' was mistaken for a generic attenuator" );
+}
+
+
+/** Every GADRAS attenuator must survive the geometry form: the descriptor built
+ from a Detector.dat, rendered into the form, and read back out again has to
+ carry the same areal densities and the same crystal.  This is the round trip
+ that used to turn an imported BGO detector into NaI. */
+BOOST_AUTO_TEST_CASE( test_gadras_geometry_names_are_recoverable )
+{
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  for( const string &det : { "NaI_3x3_text", "Detective_X_xml", "CZT_1cm_text" } )
+  {
+    const GadrasDetectorDat dat = load( det );
+    vector<string> warnings;
+    const ceelo::GeometryDescriptor gd = CeeLoUtils::buildGadrasGeometry( dat, warnings );
+
+    // The crystal must be a material the geometry form actually offers, or it
+    //  will be substituted when the user opens the form.
+    BOOST_REQUIRE( gd.crystal_material_index >= 0 );
+    const string crystal = gd.materials[static_cast<size_t>(gd.crystal_material_index)].name;
+    BOOST_CHECK_MESSAGE( CeeLoUtils::gadrasCrystalMaterial( crystal ).name == crystal,
+                        det + ": crystal '" + crystal + "' does not resolve back to itself" );
+
+    // Every synthesized attenuator must read back as the AN/AD it was built
+    //  from, at whatever thickness it was given.
+    for( const ceelo::LayerSpec &layer : gd.layers )
+    {
+      const ceelo::MaterialSpec &m = gd.materials[static_cast<size_t>(layer.material_index)];
+      double an = 0.0, ad = 0.0;
+      if( !CeeLoUtils::parseGenericAttenuatorName( m.name, an, ad ) )
+        continue;   //the transparent standoff spacer
+
+      const double t = (layer.front_thickness_cm > 0.0) ? layer.front_thickness_cm
+                                                        : layer.side_thickness_cm;
+      BOOST_REQUIRE( t > 0.0 );
+
+      // The text is what the user reads and edits, so it carries four
+      //  significant figures rather than the full double.  That is only the
+      //  precision of an EDITED row: a row the user leaves alone keeps the exact
+      //  composition it was seeded with (DetectorGeometryInput's `use_seeded`
+      //  path), so nothing is lost by opening the form and closing it.
+      BOOST_CHECK_MESSAGE( std::fabs( m.density_g_per_cm3*t - ad ) <= 1.0e-3*ad,
+                          det + ": layer '" + m.name + "' carries areal density "
+                          + std::to_string(m.density_g_per_cm3*t) + ", not " + std::to_string(ad) );
+    }
+  }//for( const string &det : ... )
+}
+
+
+/** Every material GADRAS knows must classify, and the classes that are not a
+ question of resolution must not be decided by one.
+
+ The corpus only exercises four materials; this covers all 36 table entries, so
+ a new one (or a re-ordered table) cannot quietly fall through to Unknown. */
+BOOST_AUTO_TEST_CASE( test_coarse_type_for_every_gadras_material )
+{
+  const std::array<GadrasDetectorDat::MaterialInfo,36> &table
+                                          = GadrasDetectorDat::materialTable();
+
+  // Named expectations for the ones whose class is a physics statement rather
+  //  than a resolution: semiconductors tail, germanium is HPGe, the lanthanum
+  //  and cerium halides are their own class.
+  const std::map<string,PeakFitUtils::CoarseResolutionType> expect = {
+    { "CZT",   PeakFitUtils::CoarseResolutionType::CZT  },
+    { "CdTe",  PeakFitUtils::CoarseResolutionType::CZT  },
+    { "TlBr",  PeakFitUtils::CoarseResolutionType::CZT  },
+    { "HgI",   PeakFitUtils::CoarseResolutionType::CZT  },
+    { "HPGe",  PeakFitUtils::CoarseResolutionType::High },
+    { "Si",    PeakFitUtils::CoarseResolutionType::High },
+    { "LaBr3", PeakFitUtils::CoarseResolutionType::LaBr },
+    { "LaCl3", PeakFitUtils::CoarseResolutionType::LaBr },
+    { "CeBr3", PeakFitUtils::CoarseResolutionType::LaBr },
+    { "NaI",   PeakFitUtils::CoarseResolutionType::Low  },
+    { "CsI",   PeakFitUtils::CoarseResolutionType::Low  },
+    { "BGO",   PeakFitUtils::CoarseResolutionType::Low  },
+  };
+
+  size_t unknown = 0;
+  for( const GadrasDetectorDat::MaterialInfo &info : table )
+  {
+    DetectorPeakResponse drf;
+    // Drive it through the real path: a minimal Detector.dat naming this
+    //  material, with a resolution that would classify it differently, so the
+    //  material must be what decides.
+    GadrasDetectorDat dat;
+    dat.setValue( 10, 5.0f );          //length
+    dat.setValue( 11, 5.0f );          //width
+    dat.setValue( 12, 1.0f );          //height/width
+    dat.setValue( 7, info.resolution661 );
+    dat.m_material_name = info.name;
+    dat.m_format = GadrasDetectorDat::SourceFormat::Xml;
+
+    stringstream xml;
+    dat.toXml( xml );
+    DetectorPeakResponse built;
+    BOOST_REQUIRE_NO_THROW( built.fromGadrasDatOnly( xml ) );
+
+    const shared_ptr<const PeakFitDetPrefs> prefs = built.peakFitDetPrefs();
+    BOOST_REQUIRE_MESSAGE( !!prefs, string(info.name) + ": no preferences" );
+
+    const auto pos = expect.find( info.name );
+    if( pos != end(expect) )
+      BOOST_CHECK_MESSAGE( prefs->m_det_type == pos->second,
+                          string(info.name) + ": classified as "
+                          + PeakFitDetPrefs::to_str(prefs->m_det_type) );
+
+    if( prefs->m_det_type == PeakFitUtils::CoarseResolutionType::Unknown )
+    {
+      unknown += 1;
+      BOOST_TEST_MESSAGE( "  unclassified: " << info.name
+                          << " (nominal " << info.resolution661 << "% FWHM)" );
+    }
+
+    // A semiconductor gets the CZT tail construction; nothing else does.
+    const bool want_czt = (prefs->m_det_type == PeakFitUtils::CoarseResolutionType::CZT);
+    BOOST_CHECK_MESSAGE( (prefs->m_peak_skew_type == PeakDef::SkewType::GadrasCZT) == want_czt,
+                        string(info.name) + ": peak-shape family does not follow its class" );
+  }//for( every material )
+
+  BOOST_CHECK_MESSAGE( unknown == 0, std::to_string(unknown)
+                       + " GADRAS materials could not be classified" );
+}
+
+
+/** Every crystal a Detector.dat can name has to be one the geometry form offers,
+ or opening the form would substitute a different crystal for it.
+
+ The form's list is built from GadrasDetectorDat::materialTable(), so this holds
+ by construction - but only as long as every table entry actually resolves.  A
+ new table row whose formula does not parse would silently drop off the list and
+ take its detectors' crystals with it. */
+BOOST_AUTO_TEST_CASE( test_every_gadras_crystal_is_offered )
+{
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  size_t offered = 0;
+  for( const GadrasDetectorDat::MaterialInfo &info : GadrasDetectorDat::materialTable() )
+  {
+    ceelo::MaterialSpec spec;
+    BOOST_REQUIRE_NO_THROW( spec = CeeLoUtils::gadrasCrystalMaterial( info.name ) );
+
+    // The name the import stores must resolve back to the same material, which
+    //  is what lets the form match it rather than substitute.
+    ceelo::MaterialSpec again;
+    BOOST_REQUIRE_NO_THROW( again = CeeLoUtils::gadrasCrystalMaterial( spec.name ) );
+    BOOST_CHECK_MESSAGE( again.name == spec.name,
+                        string(info.name) + " stores as '" + spec.name
+                        + "', which resolves to '" + again.name + "'" );
+    BOOST_CHECK( !spec.composition.empty() );
+    offered += 1;
+  }
+
+  BOOST_CHECK_EQUAL( offered, GadrasDetectorDat::materialTable().size() );
+  BOOST_TEST_MESSAGE( "  all " << offered << " GADRAS crystals resolve" );
+}
+
+
+/** A drag-and-dropped Detector.dat.
+
+ The browser sends only the base name, which for this format is the useless
+ "Detector.dat" - so there is no directory to recover the crystal material from.
+ That must not be fatal: the geometry form has a crystal dropdown the user can
+ set, so an assumed crystal plus a loud note beats refusing the import.
+ (Reported from a real drag-and-drop of "LaBr 10%/Detector.dat", which failed
+ with "the detector's geometry cannot be modeled".)
+ */
+BOOST_AUTO_TEST_CASE( test_dropped_detector_dat_has_no_directory )
+{
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  BOOST_REQUIRE_MESSAGE( !g_data_dir.empty(), "Need --datadir" );
+
+  for( const char * const det : { "LaBr 10%", "NaI 3x3", "HPGe 20%" } )
+  {
+    const string path = SpecUtils::append_path(
+        SpecUtils::append_path( SpecUtils::append_path(g_data_dir, "GenericGadrasDetectors"), det ),
+        "Detector.dat" );
+    if( !SpecUtils::is_file(path) )
+      continue;
+
+    ifstream in( path.c_str(), ios::in | ios::binary );
+    BOOST_REQUIRE( in.is_open() );
+
+    // Exactly what the drop path has to work with: the bytes, and the name
+    //  "Detector.dat" - and, for this half of the test, a file that names no
+    //  crystal, so there is genuinely nothing to go on.
+    const GadrasDetectorDat dat = without_material(
+                              GadrasDetectorDat::fromStream( in ) );
+    BOOST_CHECK_MESSAGE( dat.materialName().empty(),
+                        string(det) + ": nothing should identify this crystal" );
+
+    vector<string> warnings;
+    ceelo::GeometryDescriptor gd;
+    BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildGadrasGeometry( dat, warnings ) );
+
+    // A usable geometry, not an exception.
+    BOOST_CHECK( gd.problems().empty() );
+    BOOST_REQUIRE( gd.crystal_material_index >= 0 );
+    BOOST_CHECK( !gd.dimensions_cm.empty() );
+
+    // ...and the assumption has to be stated, not silent.
+    bool said_so = false;
+    for( const string &w : warnings )
+      said_so |= SpecUtils::icontains( w, "was assumed" );
+    BOOST_CHECK_MESSAGE( said_so, string(det) + ": assumed a crystal without saying so" );
+
+    const string crystal = gd.materials[static_cast<size_t>(gd.crystal_material_index)].name;
+    BOOST_TEST_MESSAGE( "  " << det << " dropped with no directory -> assumed "
+                        << crystal << " (" << dat.resFWHM661() << "% FWHM@661)" );
+
+    // The resolution at least has to separate germanium from the scintillators.
+    if( dat.resFWHM661() < 1.5f )
+      BOOST_CHECK_EQUAL( crystal, string("HPGe") );
+    else
+      BOOST_CHECK_EQUAL( crystal, string("NaI") );
+  }//for( each detector )
+
+  // ...but assuming is strictly the LAST resort.  A file that states its
+  //  material - as a param-59 index or an XML <material> - must be believed even
+  //  when dropped with no directory to go on.  (Only 2 of the 13 detectors
+  //  InterSpec ships state one; the fixtures, which came from real GADRAS
+  //  installs, mostly do.)
+  struct Stated { const char *fixture; const char *material; };
+  const vector<Stated> stated = {
+    { "NaI_3x3_text",           "NaI"   },   //param-59 index 5
+    { "CZT_1cm_text",           "CZT"   },   //param-59 index 8
+    { "HPGe_Planar50_text",     "HPGe"  },   //param-59 index 3
+    { "IdentiFINDER_LaBr3_xml", "LaBr3" },   //XML <material>
+    { "MikesCzt_xml",           "CZT"   },   //XML <material>
+  };
+
+  for( const Stated &e : stated )
+  {
+    const string path = dat_path( e.fixture );
+    (void)path;
+    if( !SpecUtils::is_file(path) )
+      continue;
+
+    ifstream in( path.c_str(), ios::in | ios::binary );
+    BOOST_REQUIRE( in.is_open() );
+    const GadrasDetectorDat dat = GadrasDetectorDat::fromStream( in );
+
+    vector<string> notes;
+    BOOST_CHECK_MESSAGE( dat.materialName() == string(e.material),
+                        string(e.fixture) + ": states '" + e.material
+                        + "' but resolved to '" + dat.materialName() + "'" );
+    BOOST_CHECK_MESSAGE( notes.empty(),
+                        string(e.fixture) + ": a stated material must not be reported"
+                        " as inferred" );
+
+    vector<string> warnings;
+    ceelo::GeometryDescriptor gd;
+    BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildGadrasGeometry( dat, warnings ) );
+    for( const string &w : warnings )
+      BOOST_CHECK_MESSAGE( !SpecUtils::icontains( w, "was assumed" ),
+                          string(e.fixture) + ": assumed a crystal despite the file"
+                          " stating one" );
+
+    BOOST_TEST_MESSAGE( "  " << e.fixture << " dropped with no directory -> "
+                        << gd.materials[static_cast<size_t>(gd.crystal_material_index)].name
+                        << " (from the file)" );
+  }//for( const Stated &e : stated )
+
+  // The detectors InterSpec ships now state their material too, so dropping one
+  //  identifies its crystal from the file rather than assuming - which is what a
+  //  real user's Detector.dat does, and what a dropped "LaBr 10%" failed to do
+  //  before the material indices were filled in.
+  for( const char * const det : { "LaBr 10%", "LaBr 5%", "NaI 3x3", "HPGe 20%" } )
+  {
+    const string path = SpecUtils::append_path(
+        SpecUtils::append_path( SpecUtils::append_path(g_data_dir, "GenericGadrasDetectors"), det ),
+        "Detector.dat" );
+    if( !SpecUtils::is_file(path) )
+      continue;
+
+    ifstream in( path.c_str(), ios::in | ios::binary );
+    BOOST_REQUIRE( in.is_open() );
+    const GadrasDetectorDat dat = GadrasDetectorDat::fromStream( in );
+
+    vector<string> notes;
+    const string crystal = dat.materialName();
+    BOOST_CHECK_MESSAGE( !crystal.empty(),
+                        string(det) + ": the shipped file no longer identifies its crystal" );
+    BOOST_CHECK_MESSAGE( notes.empty(),
+                        string(det) + ": a stated material was reported as inferred" );
+    BOOST_TEST_MESSAGE( "  " << det << " dropped with no directory -> " << crystal
+                        << " (from the file)" );
+  }
+}
+
+
+/** An Efficiency.csv imported with its Detector.dat beside it must end up with
+ the .dat's FWHM, peak shape and crystal type on the finished DRF - the
+ "Modify Detector Response" dialog reads the crystal back off those preferences,
+ so losing them shows the detector as NaI whatever it really is.
+
+ Reproduces what SpecMeasManager's efficiency-CSV dialog does on accept.
+ */
+BOOST_AUTO_TEST_CASE( test_eff_csv_plus_dat_keeps_detector_type )
+{
+  BOOST_REQUIRE_MESSAGE( !g_data_dir.empty(), "Need --datadir" );
+
+  struct Expect { const char *dir; PeakFitUtils::CoarseResolutionType type; };
+  const vector<Expect> cases = {
+    { "LaBr 10%", PeakFitUtils::CoarseResolutionType::LaBr },
+    { "HPGe 20%", PeakFitUtils::CoarseResolutionType::High },
+    { "NaI 3x3",  PeakFitUtils::CoarseResolutionType::Low  },
+  };
+
+  for( const Expect &e : cases )
+  {
+    const string dir = SpecUtils::append_path(
+                        SpecUtils::append_path(g_data_dir, "GenericGadrasDetectors"), e.dir );
+    const string csvpath = SpecUtils::append_path( dir, "Efficiency.csv" );
+    const string datpath = SpecUtils::append_path( dir, "Detector.dat" );
+    if( !SpecUtils::is_file(csvpath) || !SpecUtils::is_file(datpath) )
+      continue;
+
+    // 1. The CSV alone, as the dialog first parses it.
+    ifstream csv( csvpath.c_str(), ios::in | ios::binary );
+    BOOST_REQUIRE( csv.is_open() );
+    DetectorPeakResponse::EffCsvParseResult parsed;
+    BOOST_REQUIRE_NO_THROW( parsed = DetectorPeakResponse::parseEfficiencyCsvFile( csv ) );
+    BOOST_REQUIRE( parsed.drf );
+    BOOST_CHECK_MESSAGE( !parsed.drf->peakFitDetPrefs(),
+                        string(e.dir) + ": an efficiency CSV alone cannot know the crystal" );
+
+    // 2. The Detector.dat uploaded alongside it.
+    ifstream datf( datpath.c_str(), ios::in | ios::binary );
+    BOOST_REQUIRE( datf.is_open() );
+    auto enriched = make_shared<DetectorPeakResponse>();
+    BOOST_REQUIRE_NO_THROW( enriched->fromGadrasDatOnly( datf ) );
+
+    const shared_ptr<const PeakFitDetPrefs> from_dat = enriched->peakFitDetPrefs();
+    BOOST_REQUIRE_MESSAGE( !!from_dat, string(e.dir) + ": the .dat gave no preferences" );
+    BOOST_CHECK_MESSAGE( from_dat->m_det_type == e.type,
+                        string(e.dir) + ": the .dat itself has the wrong detector type" );
+
+    // 3. What the dialog builds on accept: reinterpret the CSV curve at the
+    //    .dat's diameter, then carry the .dat's own values across.
+    shared_ptr<DetectorPeakResponse> final_drf;
+    BOOST_REQUIRE_NO_THROW( final_drf = parsed.drf->reinterpretAsFarFieldIntrinsicEfficiency(
+                                                    enriched->detectorDiameter() ) );
+    BOOST_REQUIRE( final_drf );
+    final_drf->setPeakFitDetPrefs( from_dat );
+    if( enriched->detectorSetback() > 0.0 )
+      final_drf->setDetectorSetback( enriched->detectorSetback() );
+
+    // 4. This is what the Modify dialog reads to choose the crystal.
+    const shared_ptr<const PeakFitDetPrefs> prefs = final_drf->peakFitDetPrefs();
+    BOOST_REQUIRE_MESSAGE( !!prefs, string(e.dir) + ": preferences lost building the final DRF" );
+    BOOST_CHECK_MESSAGE( prefs->m_det_type == e.type,
+                        string(e.dir) + ": final DRF has detector type "
+                        + PeakFitDetPrefs::to_str(prefs->m_det_type)
+                        + ", so the geometry form would show the wrong crystal" );
+
+    BOOST_TEST_MESSAGE( "  " << e.dir << ": CSV+dat -> "
+                        << PeakFitDetPrefs::to_str(prefs->m_det_type) );
+  }//for( const Expect &e : cases )
+}
 
 // Parse the command-line data directories (mirrors other InterSpec Boost tests).
 struct GlobalFixture

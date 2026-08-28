@@ -71,6 +71,7 @@
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
@@ -1595,12 +1596,74 @@ function<float(float)> DetectorPeakResponse::makeEfficiencyFunctionFromFormula(
 }
 
 
-void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
-                                                 std::istream &detDatFile )
-{
-  // Parse the Detector.dat (either legacy text or XML variant) into a single representation.
-  const GadrasDetectorDat dat = GadrasDetectorDat::fromStream( detDatFile );
 
+namespace
+{
+/** Coarse resolution class implied by a %FWHM at 661 keV.
+
+ The fallback for a GADRAS detector whose material is not stated.  Measured
+ across the detectors InterSpec ships: HPGe 0.21-0.28%, CZT 0.90-3.40%, LaBr3
+ 3.00-3.50%, NaI 6.30-9.00%.  CZT and LaBr3 overlap, which is exactly what
+ CoarseResolutionType::MedRes exists to say.
+ */
+PeakFitUtils::CoarseResolutionType coarse_type_from_fwhm661( const float pct )
+{
+  if( pct <= 0.0f )
+    return PeakFitUtils::CoarseResolutionType::Unknown;
+  if( pct < 1.5f )
+    return PeakFitUtils::CoarseResolutionType::High;
+  if( pct > 5.0f )
+    return PeakFitUtils::CoarseResolutionType::Low;
+  return PeakFitUtils::CoarseResolutionType::MedRes;
+}//coarse_type_from_fwhm661(...)
+
+
+/** Coarse resolution class for a GADRAS material-table name.
+
+ Only the cases where the class is NOT a question of resolution are named here -
+ the semiconductors, germanium, and the lanthanum halides.  Everything else
+ (every scintillator, and the elpasolites) is decided by the nominal resolution
+ the material table already carries, so all 36 entries are covered without
+ enumerating them.
+
+ Returns Unknown when the name is not a GADRAS material at all.
+ */
+PeakFitUtils::CoarseResolutionType coarse_type_for_gadras_material( const std::string &name )
+{
+  if( name.empty() )
+    return PeakFitUtils::CoarseResolutionType::Unknown;
+
+  std::string lower = name;
+  SpecUtils::to_lower_ascii( lower );
+  auto has = [&lower]( const char * const s ) -> bool {
+    return lower.find(s) != std::string::npos;
+  };
+
+  // Room-temperature semiconductors: a distinct peak shape (hole tailing), not
+  //  just a resolution.
+  if( has("czt") || has("cdte") || has("cadmium zinc") || has("tlbr") || has("hgi") )
+    return PeakFitUtils::CoarseResolutionType::CZT;
+
+  if( has("hpge") || has("germanium") || (lower == "si") )
+    return PeakFitUtils::CoarseResolutionType::High;
+
+  // Lanthanum/cerium halides, which resolve better than NaI but are scintillators.
+  if( has("labr") || has("lacl") || has("cebr") )
+    return PeakFitUtils::CoarseResolutionType::LaBr;
+
+  // Anything else the table knows: let its nominal resolution decide.
+  const GadrasDetectorDat::MaterialInfo * const info
+                                    = GadrasDetectorDat::materialByName( name );
+  if( info )
+    return coarse_type_from_fwhm661( info->resolution661 );
+
+  return PeakFitUtils::CoarseResolutionType::Unknown;
+}//coarse_type_for_gadras_material(...)
+}//namespace
+
+void DetectorPeakResponse::applyGadrasDat( const GadrasDetectorDat &dat,
+                                          std::istream *efficiencyCsv )
+{
   const float detWidth = dat.width();
   const float heightToWidth = dat.heightToWidth();
   const float detSetback = dat.setbackCm();
@@ -1618,15 +1681,14 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   const float gadrasHighSkewPower = dat.highSkewPower();
   const float gadrasLowSkewExtent = dat.lowSkewExtent();
   const float gadrasHighSkewExtent = dat.highSkewExtent();
-  const int gadrasMaterialIdx = dat.materialIndex();  // DetectorData.gadras index; 8=CZT, 9=CdTe
-  const string gadrasMaterialName = dat.m_material_name;  // material name (from XML), if available
+  // What the crystal is made of, which decides the peak-shape and resolution
+  //  defaults below.  The XML variant names it; the text variant carries only a
+  //  material index, and every detector InterSpec ships leaves that at 0 - so
+  //  without the detector's own name there is nothing to go on.
+  const string gadrasMaterialName = dat.materialName();
 
   // Seed the GADRAS peak shape when a nonzero skew coefficient was present, or whenever the
   //  file was XML (matches the prior behavior of always seeding a shape for XML files).
-  const bool haveGadrasShape = (dat.m_format == GadrasDetectorDat::SourceFormat::Xml)
-      || (gadrasLowSkew != 0.0f) || (gadrasHighSkew != 0.0f)
-      || (gadrasLowSkewPower != 0.0f) || (gadrasHighSkewPower != 0.0f)
-      || (gadrasLowSkewExtent != 0.0f) || (gadrasHighSkewExtent != 0.0f);
 
   // Note: the efficiency representation (incl. energy units) is set below by
   //  the fromEnergyEfficiencyCsv call.
@@ -1646,7 +1708,18 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   
   //const bool fixed_geom = false;
   const EffGeometryType geometry_type = EffGeometryType::FarFieldIntrinsic;
-  fromEnergyEfficiencyCsv( csvFile, diam, -1.0, static_cast<float>(PhysicalUnits::keV), geometry_type );
+  if( efficiencyCsv )
+  {
+    fromEnergyEfficiencyCsv( *efficiencyCsv, diam, -1.0,
+                            static_cast<float>(PhysicalUnits::keV), geometry_type );
+  }else
+  {
+    // A Detector.dat on its own: the file defines the crystal but says nothing
+    //  about how efficiently it counts, so record the geometry and leave the
+    //  efficiency for a Monte-Carlo characterization to fill in.  The DRF is
+    //  deliberately left not-valid until then.
+    m_detectorDiameter = diam;
+  }
 
   if( detSetback > 0.0f )
     m_detectorSetback = detSetback * PhysicalUnits::cm;
@@ -1656,43 +1729,46 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   m_lowerEnergy = lowerEnergy;
   m_upperEnergy = upperEnergy;
 
-  m_efficiencySource = DrfSource::UserAddedGadrasDrf;
+  m_efficiencySource = efficiencyCsv ? DrfSource::UserAddedGadrasDrf
+                                     : DrfSource::GadrasDetectorDatOnly;
 
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   m_geomType = geometry_type;
 
-  // If we parsed GADRAS peak-shape coefficients, seed a PeakFitDetPrefs so peaks default to the
-  //  appropriate GADRAS peak shape (Generic vs CZT/CdTe), with the shape coefficients fixed.
-  if( haveGadrasShape )
+  // Seed a PeakFitDetPrefs so peaks default to the GADRAS peak shape this
+  //  detector was characterized with (Generic vs CZT/CdTe).
+  //
+  //  Done unconditionally, including when every skew coefficient is zero: a
+  //  GADRAS characterization is a statement ABOUT the peak shape, and "no skew"
+  //  is one of the shapes it can state - not an absence of information.  It also
+  //  carries the coarse resolution type, which the fitter needs whatever the
+  //  skew is.  (Previously this was skipped for a text file with all-zero skew,
+  //  which is every detector InterSpec ships, so those got no preferences at
+  //  all.)
   {
-    string matname = gadrasMaterialName;
-    SpecUtils::to_lower_ascii( matname );
-    const bool is_czt = (gadrasMaterialIdx == 8) || (gadrasMaterialIdx == 9)
-                        || (matname.find("czt") != string::npos)
-                        || (matname.find("cdte") != string::npos)
-                        || (matname.find("cadmium") != string::npos);
+    // The material decides the class where it is known; the resolution the file
+    //  always states is the fallback where it is not.
+    PeakFitUtils::CoarseResolutionType det_type
+                          = coarse_type_for_gadras_material( gadrasMaterialName );
+    if( det_type == PeakFitUtils::CoarseResolutionType::Unknown )
+      det_type = coarse_type_from_fwhm661( dat.resFWHM661() );
 
     auto prefs = make_shared<PeakFitDetPrefs>();
-    prefs->m_peak_skew_type = is_czt ? PeakDef::SkewType::GadrasCZT
-                                     : PeakDef::SkewType::GadrasGeneric;
+    prefs->m_det_type = det_type;
 
-    // Coarse resolution type from material (best-effort).
-    if( is_czt )
-      prefs->m_det_type = PeakFitUtils::CoarseResolutionType::CZT;
-    else if( (gadrasMaterialIdx == 3)
-             || (matname.find("hpge") != string::npos) || (matname.find("germanium") != string::npos) )
-      prefs->m_det_type = PeakFitUtils::CoarseResolutionType::High;
-    else if( (gadrasMaterialIdx == 10) || (gadrasMaterialIdx == 11)
-             || (matname.find("labr") != string::npos) || (matname.find("lacl") != string::npos) )
-      prefs->m_det_type = PeakFitUtils::CoarseResolutionType::LaBr;
-    else if( (gadrasMaterialIdx == 1) || (gadrasMaterialIdx == 2) || (gadrasMaterialIdx == 5)
-             || (matname.find("nai") != string::npos) || (matname.find("csi") != string::npos)
-             || (matname.find("bgo") != string::npos) )
-      prefs->m_det_type = PeakFitUtils::CoarseResolutionType::Low;
-    else
-      prefs->m_det_type = PeakFitUtils::CoarseResolutionType::Unknown;
+    // GADRAS builds the CZT/CdTe tail differently, so the skew family follows
+    //  the same classification rather than a second string match.
+    prefs->m_peak_skew_type = (det_type == PeakFitUtils::CoarseResolutionType::CZT)
+                                ? PeakDef::SkewType::GadrasCZT
+                                : PeakDef::SkewType::GadrasGeneric;
 
     // SkewPar0=low_skew, 1=high_skew, 2=low_power, 3=high_power, 4=low_extent, 5=high_extent.
+    //
+    //  All six are given values, which in PeakFitDetPrefs means FIXED - a
+    //  nullopt would be fit per-ROI instead.  That is deliberate: GADRAS fit
+    //  this shape against the real detector, so it is better information than
+    //  anything a per-ROI fit would recover, and re-fitting it would throw that
+    //  away.
     prefs->m_lower_energy_skew[0] = gadrasLowSkew;
     prefs->m_lower_energy_skew[1] = gadrasHighSkew;
     prefs->m_lower_energy_skew[2] = gadrasLowSkewPower;
@@ -1703,13 +1779,55 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
     prefs->m_source = PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse;
 
     m_peakFitDetPrefs = prefs;
-  }//if( haveGadrasShape )
+  }//seed the GADRAS peak-shape preferences
 
   computeHash();
+  computeHash();
+}//void applyGadrasDat(...)
+
+
+void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
+                                                 std::istream &detDatFile )
+{
+  // Parse the Detector.dat (either legacy text or XML variant) into a single representation.
+  const GadrasDetectorDat dat = GadrasDetectorDat::fromStream( detDatFile );
+  applyGadrasDat( dat, &csvFile );
 }//void fromGadrasDefinition(...)
 
 
-void DetectorPeakResponse::fromGadrasDirectory( const std::string &dir )
+void DetectorPeakResponse::fromGadrasDatOnly( std::istream &detDatFile )
+{
+  const GadrasDetectorDat dat = GadrasDetectorDat::fromStream( detDatFile );
+  applyGadrasDat( dat, nullptr );
+
+  if( m_detectorDiameter <= 0.0f )
+    throw runtime_error( "Detector.dat does not give usable crystal dimensions." );
+
+  // Provenance, since there is no measured curve to speak for this one.  Only
+  //  set here: the description is part of the DRF hash, and touching it on the
+  //  Efficiency.csv path would change the identity of every shipped detector.
+  string desc = "GADRAS geometry";
+  const string mat = dat.materialName();
+  if( !mat.empty() )
+    desc += ", " + mat;
+  if( !dat.m_response_version.empty() )
+    desc += "; response version " + dat.m_response_version;
+  if( dat.lldKeV() > 0.0f )
+    desc += "; LLD " + SpecUtils::printCompact( dat.lldKeV(), 3 ) + " keV";
+  desc += ".  Efficiency requires a Monte-Carlo characterization,";
+  // Measured against every GADRAS Efficiency.csv InterSpec ships (2026-08-26):
+  //  above 60 keV a geometry-derived efficiency tracks GADRAS's own to a few
+  //  percent in the median, but below it the answer is set almost entirely by
+  //  the front dead layer - which Detector.dat routinely understates or omits -
+  //  and the median error runs 7.6% by 30-60 keV and 26.8% below 30 keV.
+  desc += " which is trustworthy above about 60 keV; below that the front dead"
+          " layer dominates and Detector.dat rarely states it accurately.";
+  setDescription( desc );
+}//void fromGadrasDatOnly(...)
+
+
+void DetectorPeakResponse::fromGadrasDirectory( const std::string &dir,
+                                               const bool allow_missing_efficiency_csv )
 {
   string eff_file, dat_file;
   
@@ -1730,8 +1848,23 @@ void DetectorPeakResponse::fromGadrasDirectory( const std::string &dir )
   if( dat_file.empty() )
     throw runtime_error( "Directory '" + dir + "' did not contain a Detector.dat file." );
   
-  if( eff_file.empty() )
+  if( eff_file.empty() && !allow_missing_efficiency_csv )
     throw runtime_error( "Directory '" + dir + "' did not contain a Efficiency.csv file." );
+
+  if( eff_file.empty() )
+  {
+#ifdef _WIN32
+    const std::wstring wonly_dat = SpecUtils::convert_from_utf8_to_utf16(dat_file);
+    ifstream onlyDat( wonly_dat.c_str(), ios_base::binary|ios_base::in );
+#else
+    ifstream onlyDat( dat_file.c_str(), ios_base::binary|ios_base::in );
+#endif
+    if( !onlyDat.is_open() )
+      throw runtime_error( "Could not open file '" + dat_file + "'." );
+
+    fromGadrasDatOnly( onlyDat );
+    return;
+  }//if( eff_file.empty() )
   
 #ifdef _WIN32
   const std::wstring weff_file = SpecUtils::convert_from_utf8_to_utf16(eff_file);

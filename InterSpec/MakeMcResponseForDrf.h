@@ -98,9 +98,14 @@ public:
   virtual ~MakeMcResponseForDrf() override;
 
   /** Pre-populates the geometry form from a physical descriptor (e.g. an
-   imported ANGLE detector model), overriding the DRF-derived guess.  Safe to
-   call after construction to re-seed an already-open tool. */
-  void setGeometryFromDescriptor( const ceelo::GeometryDescriptor &geometry );
+   imported ANGLE or GADRAS detector model), overriding the DRF-derived guess.
+   Safe to call after construction to re-seed an already-open tool.
+
+   `notes` are import warnings - what the source file could not express - shown
+   beneath the geometry form, where the user can act on them.
+   */
+  void setGeometryFromDescriptor( const ceelo::GeometryDescriptor &geometry,
+                                  const std::vector<std::string> &notes = {} );
 
   /** Emitted when a generated response becomes available/unavailable
    (enables the windows "Use Response" button).

@@ -25,6 +25,7 @@
 
 #include <memory>
 #include <string>
+#include <functional>
 #include <vector>
 #include <algorithm>
 
@@ -47,6 +48,7 @@
 #include "SpecUtils/SpecFile.h"
 
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/HelpSystem.h"
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/WarningWidget.h"
@@ -408,6 +410,18 @@ Wt::Signal<std::shared_ptr<DetectorPeakResponse>> &DrfModifyWidget::updatedDrf()
 }
 
 
+Wt::Signal<bool> &DrfModifyWidget::mcResponseAvailable()
+{
+  return m_mcTool->validationChanged();
+}
+
+
+bool DrfModifyWidget::needsMcResponse() const
+{
+  return (!m_orig || !m_orig->isValid());
+}
+
+
 void DrfModifyWidget::addBandRow( const float lowerEnergy, const float upperEnergy,
                                   const float fracUncert )
 {
@@ -633,7 +647,28 @@ void DrfModifyWidget::apply()
   //  has them; otherwise the MC tool already grounded to a sampled curve).
   const shared_ptr<const ceelo::DetectorResponse> resp = m_mcTool->generatedResponse();
   if( resp )
+  {
+    // A DRF built from geometry alone has no efficiency curve of its own, so
+    //  sample the response into one - the Monte-Carlo "backbone" points.  Every
+    //  EffEval query would already dispatch to the response, but without a curve
+    //  the DRF is not valid, cannot be serialized, and cannot be exported; a
+    //  Detector.dat or .detx import with no measured efficiency lands here.
+    //  Done BEFORE setCeeloResponse: setEfficiencyPoints recomputes the hash and
+    //  resets flags, and the response should be attached to the finished curve.
+    if( !working->isValid() )
+    {
+      try
+      {
+        CeeLoUtils::setLegacyEfficiencyFromResponse( *working, resp );
+      }catch( std::exception &e )
+      {
+        passMessage( WString::tr("dmw-err-no-backbone").arg(e.what()),
+                     WarningWidget::WarningMsgHigh );
+      }
+    }//if( !working->isValid() )
+
     working->setCeeloResponse( resp );
+  }//if( resp )
 
   // Baseline uncertainty bands: keep any existing node covariance, replace the
   //  piecewise bands with the edited set.
@@ -724,6 +759,19 @@ DrfModifyWindow::DrfModifyWindow( InterSpec *viewer,
 
   WPushButton *use = footer()->addNew<WPushButton>( WString::tr("dmw-use-btn") );
   use->clicked().connect( m_tool, &DrfModifyWidget::apply );
+
+  // A DRF with no efficiency curve of its own - a Detector.dat or .detx imported
+  //  for its geometry alone - is not usable until the Monte Carlo has produced
+  //  one.  Hold "Use" closed until it has, rather than letting the dialog be
+  //  dismissed with an invalid detector.
+  if( m_tool->needsMcResponse() )
+  {
+    use->disable();
+    HelpSystem::attachToolTipOn( use, WString::tr("dmw-tt-use-needs-mc"), true );
+    m_tool->mcResponseAvailable().connect( std::bind( [use]( const bool have ){
+      use->setEnabled( have );
+    }, std::placeholders::_1 ) );
+  }//if( m_tool->needsMcResponse() )
 
   show();
   resizeToFitOnScreen();

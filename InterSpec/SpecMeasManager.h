@@ -253,6 +253,13 @@ public:
    */
   bool handleEfficiencyCsvFile( std::istream &input, SimpleDialog *dialog );
 
+  /** A dropped GADRAS `Detector.dat`: the crystal geometry, FWHM and peak shape,
+   but no efficiency - which a Monte-Carlo characterization of that geometry
+   supplies.  Offers to open the Modify dialog seeded with the parsed geometry.
+   */
+  bool handleGadrasDetectorDatFile( std::istream &input, SimpleDialog *dialog,
+                                    const std::string &displayName );
+
   /** Some input files contain duplicate data - we will ask the user how they want to handle
    this, first handling "Derived Data", then "Multiple Energy Calibration Types", then
    "Multiple Virtual Detectors"
@@ -562,6 +569,7 @@ private:
     RelActAutoXml,
     EccOrOutxFile,       ///< ISOCS .ECC or ANGLE .outx
     EfficiencyCsv,       ///< GADRAS Efficiency.csv / gamEff CSV / Run_effoutput
+    GadrasDetectorDat,   ///< GADRAS Detector.dat (crystal geometry, FWHM, peak shape)
     ShieldingSourceXml,
     SourceLib
 #if( USE_LLM_INTERFACE )

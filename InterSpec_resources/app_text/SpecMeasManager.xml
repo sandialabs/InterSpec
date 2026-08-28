@@ -141,6 +141,17 @@
   <message id="smm-outx-no-generic">This ANGLE file also contains the detector&apos;s physical model, but InterSpec cannot use it as a generic detector. {1}</message>
 
   <!-- Text for dialog when user drag-n-drop an efficiency CSV file onto app -->
+  <message id="smm-ecc-dat-ok">Valid Detector.dat - its FWHM and peak shape were taken too.</message>
+  <message id="smm-ecc-dat-ok-material">Valid Detector.dat ({1} crystal) - its FWHM and peak shape were taken too.</message>
+  <message id="smm-ecc-dat-err">Could not read that Detector.dat: {1}</message>
+  <message id="smm-gadras-dat-title">GADRAS Detector.dat</message>
+  <message id="smm-gadras-dat-txt">This file describes a detector&apos;s crystal - its shape, material, dead layer and window - along with its FWHM and peak shape, but it does not contain an efficiency. A Monte-Carlo characterization of the geometry can supply one.</message>
+  <message id="smm-gadras-dat-characterize">Characterize detector</message>
+  <message id="smm-gadras-dat-use">Use detector</message>
+  <message id="smm-gadras-dat-eff-label">Have its Efficiency.csv? </message>
+  <message id="smm-gadras-dat-eff-ok">Efficiency curve loaded - this detector is ready to use.</message>
+  <message id="smm-gadras-dat-eff-err">Could not read that efficiency file: {1}</message>
+  <message id="smm-gadras-dat-no-geom">This Detector.dat could not be turned into a detector geometry: {1}</message>
   <message id="smm-eff-csv-curve">Efficiency CSV Curve DRF</message>
   <message id="smm-eff-csv-error">Error creating DRF from efficiency CSV: {1}</message>
   <message id="smm-eff-csv-det-dat-label">Detector.dat (optional)</message>

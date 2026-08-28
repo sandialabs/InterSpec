@@ -17,6 +17,8 @@
   <message id="dmw-fwhm-no-foreground">Load a foreground spectrum (with fitted peaks) to fit the detector&apos;s FWHM here.</message>
   <message id="dmw-tab-uncert">Uncertainty</message>
   <message id="dmw-use-btn">Use</message>
+  <message id="dmw-tt-use-needs-mc">This detector was imported for its geometry only, so it has no efficiency yet. Generate a response on the Monte Carlo tab to give it one.</message>
+  <message id="dmw-err-no-backbone">Could not build an efficiency curve from the generated response: {1}</message>
   <message id="dmw-uncert-help">Optional baseline efficiency uncertainty: a fractional
     (e.g. 0.05 = 5%) 1-sigma uncertainty that applies, and is fully correlated, within
     each energy band, and is uncorrelated between bands. The Activity/Shielding fit can
