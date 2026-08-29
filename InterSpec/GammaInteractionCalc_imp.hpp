@@ -4240,7 +4240,7 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
     cluster_peak_activities_imp( nuc_map, energie_widths, mixturecache[nuclide],
                                  act, thisage, m_options.photopeak_cluster_sigma, energyToCluster,
                                  m_options.account_for_decay_during_meas, m_realTime );
-    applyCascadeToClusterMap( nuc_map, nuclide, thisage, cascade_atten_ctx, nullptr, nullptr );
+    applyCascadeToClusterMap( nuc_map, nuclide, thisage, cascade_atten_ctx, nullptr );
     for( const typename EnergyCountMapT::value_type &ec : nuc_map )
       energy_count_map[ec.first] += ec.second;
   };//cluster_one_nuclide
@@ -4824,7 +4824,6 @@ void ShieldingSourceChi2Fcn::applyCascadeToClusterMap( std::map<double,T> &clust
                                  const SandiaDecay::Nuclide *nuclide,
                                  const T &age,
                                  const PointSrcAttenContext<T> &atten_ctx,
-                                 std::vector<std::string> *info,
                                  std::vector<GammaInteractionCalc::PeakDetail> *log_info ) const
 {
   if( !m_cascadeCalc || !nuclide || cluster_map.empty() )
@@ -4884,18 +4883,6 @@ void ShieldingSourceChi2Fcn::applyCascadeToClusterMap( std::map<double,T> &clust
       continue;
 
     pos->second *= corr.c_net;
-
-    if( info )
-    {
-      char buffer[256];
-      snprintf( buffer, sizeof(buffer),
-                "\tCascade summing multiplier %.4f (out %.4f, in +%.4f) for"
-                " %.1f keV [%s]",
-                scalar_of(corr.c_net), scalar_of(corr.c_out),
-                scalar_of(corr.c_in), corr.energy_keV,
-                nuclide->symbol.c_str() );
-      info->push_back( buffer );
-    }//if( info )
 
     if( log_info )
     {

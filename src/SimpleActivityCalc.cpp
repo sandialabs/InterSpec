@@ -1198,7 +1198,7 @@ void SimpleActivityCalc::updateNuclideInfo()
   
   map<double,double> energy_gammas_map;
   GammaInteractionCalc::ShieldingSourceChi2Fcn::cluster_peak_activities( energy_gammas_map, energy_widths,
-                mixture, activity, age, cluster_num_sigma, gamma_energy, decay_correct, real_time, nullptr, nullptr );
+                mixture, activity, age, cluster_num_sigma, gamma_energy, decay_correct, real_time, nullptr );
   
   
   assert( energy_gammas_map.size() == 1 );

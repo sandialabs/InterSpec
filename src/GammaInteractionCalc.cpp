@@ -81,7 +81,6 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/DetectorPeakResponse.h"
-#include "InterSpec/PhysicalUnitsLocalized.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 // For the shared templated helpers used by this double-only legacy mirror so it stays consistent
 //  with the templated Ceres path: one_minus_exp_neg_over_x, sphere_exp_norm_factor,
@@ -4430,7 +4429,17 @@ const ShieldingSourceFitCalc::ShieldingSourceFitOptions &ShieldingSourceChi2Fcn:
 {
   return m_options;
 }
-  
+
+ShieldingSourceFitCalc::VolumetricEffMethod ShieldingSourceChi2Fcn::resolvedVolumetricEffMethod() const
+{
+  return m_resolvedVolEffMethod;
+}
+
+const std::string &ShieldingSourceChi2Fcn::volumetricEffResolveNote() const
+{
+  return m_volEffResolveNote;
+}
+
 const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &ShieldingSourceChi2Fcn::initialShieldings() const
 {
   return m_initial_shieldings;
@@ -4508,7 +4517,7 @@ double ShieldingSourceChi2Fcn::DoEval( const std::vector<double> &x ) const
       m_mixtureCache.clear();
     
     const vector<PeakResultPlotInfo> chi2s
-                          = energy_chi_contributions( x, {}, m_mixtureCache, nullptr, nullptr );
+                          = energy_chi_contributions( x, {}, m_mixtureCache );
     double chi2 = 0.0;
     
     const size_t npoints = chi2s.size();
@@ -4551,7 +4560,6 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
                                                            const double energyToCluster,
                                                            const bool accountForDecayDuringMeas,
                                                            const double measDuration,
-                                                           vector<string> *info,
                                                            vector<PeakDetail> *log_info )
 {
   typedef pair<double,double> DoublePair;
@@ -4565,29 +4573,6 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
       energy_count_map[dp.first] = 0.0;
   }//if( energy_count_map.empty() )
 
-  if( info )
-  {
-    stringstream msg;
-    msg << "For ";
-    for( int n = 0; n < mixture.numInitialNuclides(); ++n )
-      msg << (n ? ", " : "") << mixture.initialNuclide(n)->symbol;
-    msg << " at age " << PhysicalUnitsLocalized::printToBestTimeUnits(age) << ":";
-    info->push_back( msg.str() );
-  }//if( info )
-
-  /*
-  if( log_info )
-  {
-    for( int n = 0; n < mixture.numInitialNuclides(); ++n )
-    {
-      GammaInteractionCalc::ActShieldCalcLogInfo::SrcDef &src_def
-                                          = log_info->m_sources[mixture.initialNuclide(n)->symbol];
-      src_def.act = act;
-      src_def.age = age;
-    }
-  }//if( log_info )
-   */
-  
   if( mixture.numInitialNuclides() != 1 )
     throw runtime_error( "ShieldingSourceChi2Fcn::cluster_peak_activities():"
                          " passed in mixture must have exactly one parent nuclide" );
@@ -4599,8 +4584,8 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
   // We'll calculate our gammas differently if we are correcting for decays during the measurement 
   //  or not.
   //  We will only fill the `non_decay_cor_gammas` if we are correcting for decays during
-  //  measurement, and we are creating log info (we only use non-corrected gammas to put
-  //  the correction factor into the log file).
+  //  measurement, and we are creating log info (we only use non-corrected gammas to record
+  //  the correction factor in the log).
   vector<SandiaDecay::EnergyRatePair> gammas, non_decay_cor_gammas;
   
   assert( !accountForDecayDuringMeas || (measDuration > 0.0) );  //This could happen, I guess if foreground real-time is zero, but it shouldnt, so I'll leave this assert in to check for things.
@@ -4610,7 +4595,7 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
     gammas = decay_during_meas_corrected_gammas( mixture, age, measDuration );
     
     // We will only use non-decay-corrected gammas if we are logging information
-    if( info || log_info )
+    if( log_info )
       non_decay_cor_gammas = mixture.photons( age, SandiaDecay::NuclideMixture::OrderByEnergy );
   }else
   {
@@ -4728,32 +4713,6 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities( std::map<double,double> &e
     const double contribution = aep.numPerSecond * act * age_sf / sm_activityUnits;
     energy_count_map[energy] += contribution;
     
-    if( info )
-    {
-      stringstream msg;
-      msg << "\tPeak attributed to " << energy << " keV received "
-          << contribution*PhysicalUnits::second
-          << " cps from " << aep.energy << " keV line, which has I="
-          << age_sf * aep.numPerSecond/sm_activityUnits;
-      
-      if( !non_decay_cor_gammas.empty() )
-      {
-        //Find same-energy gamma, and get correction factor
-        const auto non_corr_pos = std::find_if( begin(non_decay_cor_gammas), end(non_decay_cor_gammas),
-          [&aep]( const SandiaDecay::EnergyRatePair &v ) {
-            return fabs(v.energy - aep.energy) < 0.00001;
-        });
-        
-        assert( non_corr_pos != end(non_decay_cor_gammas) );
-        if( non_corr_pos != end(non_decay_cor_gammas) )
-        {
-          msg << " (decay correction " << aep.numPerSecond/non_corr_pos->numPerSecond << ")";
-        }
-      }//if( we are correcting for decays during measurement )
-      
-      info->push_back( msg.str() );
-    }//if( info )
-    
     if( log_info )
     {
       assert( mixture.numInitialNuclides() == 1 );
@@ -4826,7 +4785,6 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
                                            const std::vector<PeakDef> &peaks,
                                            const std::vector<PeakDef> &backPeaks,
                                            const std::map<double,double> &energy_count_map,
-                                           vector<string> *info,
                                            vector<GammaInteractionCalc::PeakDetail> *log_info,
                                            const std::vector<double> *eff_frac_uncerts,
                                            const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags,
@@ -4842,10 +4800,6 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
 
   typedef map<double,double> EnergyCountMap;
 
-  
-  if( info )
-    info->push_back( "Chi2 Contributions Of Peaks" );
-  
   //Go through and match the predicted number of counts to the observed number
   //  of counts and get the chi2.
   //Note that matching between expected and observed peaks is done via energy
@@ -4972,22 +4926,6 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
     answer.push_back( peak_info );
     answer_log_ptrs.push_back( nullptr );  //filled below when logging (log_info is not resized here)
 
-    if( info )
-    {
-      stringstream msg;
-      msg << "\tAt " << energy/SandiaDecay::keV << " expected "
-          << expected_counts << " counts, received " << observed_counts
-          << " +- " << observed_uncertainty << " counts.";
-      if( backCounts > 0.0 )
-        msg << " (after correcting for " << backCounts << " +- "
-            << sqrt(backUncert2) << " counts in background)";
-      if( eff_frac_uncert > 0.0 )
-        msg << " (uncert incl. " << 100.0*eff_frac_uncert
-            << "% detector-efficiency uncert)";
-      msg << " giving (observed-expected)/uncert=" << chi;
-      info->push_back( msg.str() );
-    }//if( info )
-    
     if( log_info )
     {
       try
@@ -5297,7 +5235,6 @@ vector<PeakResultPlotInfo>
        ShieldingSourceChi2Fcn::energy_chi_contributions( const std::vector<double> &x,
                                                         const std::vector<double> &error_params,
                                          ShieldingSourceChi2Fcn::NucMixtureCache &mixturecache,
-                                         std::vector<std::string> *info,
                                          std::vector<GammaInteractionCalc::PeakDetail> *log_info,
                                          const std::vector<double> *eff_whitening ) const
 {
@@ -5314,38 +5251,6 @@ vector<PeakResultPlotInfo>
 //  for( size_t i = 0; i < x.size(); ++i )
 //    cerr << x[i] << ", ";
 //  cerr << "}; size=" << x.size() << endl;
-  
-  if( info )
-  {
-    info->push_back( "LiveTime="
-                    + std::to_string(m_liveTime/PhysicalUnits::second)
-                    + " s (" + PhysicalUnitsLocalized::printToBestTimeUnits(m_liveTime)
-                    + ")" );
-    info->push_back( "Distance to source center from detector: "
-                      + PhysicalUnits::printToBestLengthUnits(m_distance) );
-    if( m_detector && m_detector->isValid() )
-    {
-      if( m_detector->isFixedGeometry() )
-      {
-        info->push_back( "Detector: " + m_detector->name() + ", fixed geometry" );
-      }else
-      {
-        info->push_back( "Detector: " + m_detector->name() + " radius "
-                        + std::to_string( 0.5*m_detector->detectorDiameter()/PhysicalUnits::cm )
-                        + " cm" );
-      }
-    }//if( m_detector && m_detector->isValid() )
-    
-    if( m_options.multiple_nucs_contribute_to_peaks )
-      info->push_back( "Allowing multiple nuclides being fit for to potentially contribute to the same photopeak" );
-    else
-      info->push_back( "Not allowing multiple nuclides being fit for to contribute to the same photopeak" );
-    
-    if( m_options.account_for_decay_during_meas )
-      info->push_back( "Branching ratios are being corrected for nuclide decay during measurement" );
-    
-    //Should put in information about the shielding here
-  }//if( info )
   
   if( log_info )
   {
@@ -5408,17 +5313,17 @@ vector<PeakResultPlotInfo>
                                mixcache[nuclide], act, thisage,
                                m_options.photopeak_cluster_sigma, energyToCluster,
                                m_options.account_for_decay_during_meas, m_realTime,
-                               info, log_info );
+                               log_info );
       return;
     }
-    
+
     EnergyCountMap nuc_map;
     cluster_peak_activities( nuc_map, energie_widths,
                              mixcache[nuclide], act, thisage,
                              m_options.photopeak_cluster_sigma, energyToCluster,
                              m_options.account_for_decay_during_meas, m_realTime,
-                             info, log_info );
-    applyCascadeToClusterMap( nuc_map, nuclide, thisage, cascade_atten_ctx, info, log_info );
+                             log_info );
+    applyCascadeToClusterMap( nuc_map, nuclide, thisage, cascade_atten_ctx, log_info );
     for( const EnergyCountMap::value_type &ec : nuc_map )
       energy_count_map[ec.first] += ec.second;
   };//cluster_one_nuclide
@@ -5581,86 +5486,7 @@ vector<PeakResultPlotInfo>
 */
 
     assert( att_coef_fcn );
-    
-    if( info )
-    {
-      if( isGenericMaterial(materialN) )
-      {
-        const double adUnits = PhysicalUnits::gram / PhysicalUnits::cm2;
-        const double ad = arealDensity(materialN, x) / adUnits;
-        const double an = atomicNumber(materialN, x);
-        
-        char buffer[256];
-        snprintf( buffer, sizeof(buffer),
-                 "Shielding %i: AN=%.2f, AD=%.3f g/cm2", static_cast<int>(materialN), an, ad );
-        info->push_back( buffer );
-      }else
-      {
-        stringstream title;
-        title << "Shielding: " << material->name << ", "
-              << material->chemicalFormula() << ", density="
-              << material->density *PhysicalUnits::cm3/PhysicalUnits::gram
-              << " g/cm3, ";
-        
-        title << to_str(m_geometry) << ": {";
-        switch( m_geometry )
-        {
-          case GeometryType::Spherical:
-          {
-            const double thickness = sphericalThickness(materialN,x);
-            title << "rad_thickness=" << PhysicalUnits::printToBestLengthUnits(thickness);
-            break;
-          }
-          
-          case GeometryType::CylinderSideOn:
-          case GeometryType::CylinderEndOn:
-          {
-            const double r = cylindricalRadiusThickness(materialN,x);
-            const double z = cylindricalLengthThickness(materialN,x);
-            
-            title << "rad_thickness=" << PhysicalUnits::printToBestLengthUnits(r)
-                  << ", len_thickness=" << PhysicalUnits::printToBestLengthUnits(z);
-            break;
-          }
-            
-          case GeometryType::Rectangular:
-          {
-            const double w = rectangularWidthThickness(materialN,x);
-            const double h = rectangularHeightThickness(materialN,x);
-            const double d = rectangularDepthThickness(materialN,x);
-            
-            title << "width_thickness=" << PhysicalUnits::printToBestLengthUnits(w)
-                  << ", height_thickness=" << PhysicalUnits::printToBestLengthUnits(h)
-                  << ", depth_thickness=" << PhysicalUnits::printToBestLengthUnits(d);
-            break;
-          }
-            
-          case GeometryType::NumGeometryType:
-            assert( 0 );
-            break;
-        }//switch( m_geometry )
-        
-        title << "}";
-        
-        info->push_back( title.str() );
-      }//if( isGenericMaterial(materialN) ) / else
-      
-      for( EnergyCountMap::value_type &energy_count : energy_count_map )
-      {
-        if( energy_count.second <= 0.0 )
-          continue;
-        
-        const double f = exp( -1.0 * att_coef_fcn( energy_count.first ) );
-        stringstream msg;
-        msg << "\tReduced counts of " << energy_count.first
-            << " keV photopeak by " << f << " from "
-            << energy_count.second * PhysicalUnits::second << " cps, to "
-            << f * energy_count.second * PhysicalUnits::second << " cps";
-        info->push_back( msg.str() );
-      }//for( EnergyCountMap::value_type &energy_count : energy_count_map )
-    }//if( info )
-    
-    
+
     if( log_info )
     {
       for( EnergyCountMap::value_type &energy_count : energy_count_map )
@@ -5726,10 +5552,7 @@ vector<PeakResultPlotInfo>
   if( m_detector && m_detector->isValid() )
   {
     const bool fixed_geom = m_detector->isFixedGeometry();
-    if( info )
-      info->push_back( "Detector Efficiency Effects"
-                      + string(fixed_geom ? " (Fixed Geometry)" : "") );
-    
+
     for( EnergyCountMap::value_type &energy_count : energy_count_map )
     {
 //      cerr << "Absolute efficiency at " << energy_count.first << " keV is "
@@ -5737,7 +5560,6 @@ vector<PeakResultPlotInfo>
 //           << " total efficiency is " << m_detector->efficiency( energy_count.first, m_distance ) << endl;
       
       double eff;
-      DetectorPeakResponse::EffFlag eff_flag = DetectorPeakResponse::EffFlag::Ok;
       if( fixed_geom )
       {
         eff = m_detector->intrinsicEfficiency( energy_count.first );
@@ -5751,38 +5573,11 @@ vector<PeakResultPlotInfo>
         const DetectorPeakResponse::EffEval eval = m_detector->fepEfficiencyEval(
                           energy_count.first, eval_theta, eval_phi, trueDist );
         eff = eval.value;
-        eff_flag = eval.flag;
       }else
       {
         eff = m_detector->efficiency( energy_count.first, trueDist );
       }
 
-      if( info )
-      {
-        if( energy_count.second > 0.0 )
-        {
-          double deteff = m_detector->intrinsicEfficiency( energy_count.first );
-          stringstream msg;
-          msg << "\t" << energy_count.first << " keV photopeak reduced by "
-              << eff/deteff << " * " << deteff
-              << " (solid angle)*(det intrinsic eff) from "
-              << energy_count.second*PhysicalUnits::second << " cps "
-              << "to " << energy_count.second*PhysicalUnits::second*eff << " cps";
-          if( eff_flag != DetectorPeakResponse::EffFlag::Ok )
-            msg << " [" << DetectorPeakResponse::effFlagName(eff_flag)
-                << ": outside the responses validated regime, uncertainty inflated]";
-          info->push_back( msg.str() );
-        }else
-        {
-          double deteff = m_detector->intrinsicEfficiency( energy_count.first );
-          stringstream msg;
-          msg << "\t" << energy_count.first << " keV photopeak reduced by "
-              << deteff << " by the detectors absolute efficiency.";
-          info->push_back( msg.str() );
-        }
-      }//if( info )
-      
-      
       if( log_info )
       {
         const double energy = energy_count.first;
@@ -5811,10 +5606,7 @@ vector<PeakResultPlotInfo>
     const double fracAngle = 0.5*(1.0 - (D/sqrt(D*D+r*r)));
     for( EnergyCountMap::value_type &energy_count : energy_count_map )
       energy_count.second *= fracAngle;
-    
-    if( info )
-      info->push_back( "Solid angle reduces counts by a factor of " + std::to_string(fracAngle) );
-    
+
     if( log_info )
     {
       for( EnergyCountMap::value_type &energy_count : energy_count_map )
@@ -5837,45 +5629,19 @@ vector<PeakResultPlotInfo>
   }//if( m_detector && m_detector->isValid() ) / else
 
 
-  //This is where contributions from self-attenuating and traces source are calculated
-  if( info )
-  {
-    for( const auto &shield : m_initial_shieldings )
-    {
-      if( !shield.m_material )
-        continue;
-      
-      size_t num_volume_src = 0;
-      for( const auto &el_nucs : shield.m_nuclideFractions_ )
-      {
-        for( const auto &nucs : el_nucs.second )
-          num_volume_src += (get<0>(nucs) != nullptr);
-      }
-      num_volume_src += shield.m_traceSources.size();
-      
-      if( num_volume_src )
-      {
-        info->push_back( "Self Attenuating Source Info (shielding, detector,"
-                        " distance, live time, and amount of material not-accounted for):" );
-        break;
-      }
-    }//for( int materialN = 0; materialN < nMaterials; ++materialN )
-  }//if( info )
-
   using GammaInteractionCalc::transmition_length_coefficient;
-  
+
+  //This is where contributions from self-attenuating and traces source are calculated
+
   // For mass-varied materials, particularly involving multiple elements, we need to
   //  create a version of the material that will give the correct cross-section, for
   //  the current mass-fraction variation
   vector<std::shared_ptr<const Material>> local_materials;
   
   vector<std::unique_ptr<DistributedSrcCalc>> calculators;
-  std::map<const DistributedSrcCalc *, bool> is_trace_src; //only used for logging
-  std::map<const DistributedSrcCalc *, size_t> vol_src_material_index; //only used for logging
-  
-  
-  bool has_trace = false, has_self_atten = false;
-  
+  std::map<const DistributedSrcCalc *, bool> is_trace_src; //only used to fill out `log_info`
+  std::map<const DistributedSrcCalc *, size_t> vol_src_material_index; //only used to fill out `log_info`
+
   for( size_t material_index = 0; material_index < nMaterials; ++material_index )
   {
     const ShieldingSourceFitCalc::ShieldingInfo &shield = m_initial_shieldings[material_index];
@@ -5958,7 +5724,6 @@ vector<PeakResultPlotInfo>
 
       if( is_trace )
       {
-        has_trace = true;
         assert( src_index < trace_srcs.size() );
         
         const double act = activity(src, x);
@@ -6078,8 +5843,6 @@ vector<PeakResultPlotInfo>
         }//switch ( trace_srcs[src_index].second )
       }else //if( is_trace )
       {
-        has_self_atten = true;
-        
         const double actPerMass = src->activityPerGram() / PhysicalUnits::gram;
         const double massFract = massFractionOfElement( material_index, src, x );
         
@@ -6104,7 +5867,7 @@ vector<PeakResultPlotInfo>
                                  mixturecache[src], actPerVol, thisage,
                                  m_options.photopeak_cluster_sigma, -1.0,
                                  m_options.account_for_decay_during_meas, m_realTime,
-                                 info, log_info );
+                                 log_info );
       }else
       {
         for( const PeakDef &peak : m_peaks )
@@ -6117,7 +5880,7 @@ vector<PeakResultPlotInfo>
                                     m_options.photopeak_cluster_sigma,
                                     peak.gammaParticleEnergy(),
                                     m_options.account_for_decay_during_meas, m_realTime,
-                                    info, log_info );
+                                    log_info );
           }
         }//for( const PeakDef &peak : m_peaks )
       }//if( m_options.multiple_nucs_contribute_to_peaks ) / else
@@ -6273,39 +6036,6 @@ vector<PeakResultPlotInfo>
 //    }//for( size_t i = 0; i < calculators.size(); ++i )
 //    SpecUtils::do_asyncronous_work( workers, false );
 
-    if( info )
-    {
-      string msg;
-      if( !has_self_atten )
-        msg += "Trace";
-      else if( !has_trace )
-        msg += "Self Attenuating";
-      else
-        msg += "Trace and Self Attenuating";
-      
-      msg += " Source Info (after accounting for shielding, distance, detector and live time):";
-
-      info->push_back( std::move(msg) );
-
-      // Note which volumetric detector-efficiency method is active (and, for Auto, how it resolved).
-      const char *methodStr = "Flat-disk (solid angle x intrinsic efficiency)";
-      switch( m_resolvedVolEffMethod )
-      {
-        case ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer:
-          methodStr = "Monte-Carlo transfer (near-field & off-axis correct)";  break;
-        case ShieldingSourceFitCalc::VolumetricEffMethod::EffTran:
-          methodStr = "EFFTRAN transfer (near-field & off-axis correct)";       break;
-        case ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk:
-        case ShieldingSourceFitCalc::VolumetricEffMethod::Auto:
-          break;
-      }//switch( m_resolvedVolEffMethod )
-
-      string effmsg = string("\tVolumetric detector-efficiency method: ") + methodStr;
-      if( !m_volEffResolveNote.empty() )
-        effmsg += " [" + m_volEffResolveNote + "]";
-      info->push_back( std::move(effmsg) );
-    }//if( info )
-    
     for( const unique_ptr<DistributedSrcCalc> &calculator : calculators )
     {
       double contrib = calculator->integral * calculator->m_srcVolumetricActivity;
@@ -6330,57 +6060,6 @@ vector<PeakResultPlotInfo>
 //             << " cm" << endl;
         energy_count_map[calculator->m_energy] = contrib;
       }
-      
-      if( info )
-      {
-        assert( calculator->m_materialIndex < m_initial_shieldings.size() );
-        const shared_ptr<const Material> &material = m_initial_shieldings[calculator->m_materialIndex].m_material;
-        const int index = static_cast<int>( calculator->m_materialIndex );
-        
-        stringstream msg;
-        msg << "\tAttributing " << contrib*PhysicalUnits::second << " cps to "
-            << calculator->m_energy/PhysicalUnits::keV << " keV photopeak ";
-        if( calculator->m_nuclide )
-          msg << "(from " << calculator->m_nuclide->symbol << ") ";
-        
-        msg << "for thicknesses {";
-        const array<double,3> &dims = std::get<0>(calculator->m_dimensionsTransLenAndType[index]);
-        double dx = dims[0];
-        double dy = dims[1];
-        double dz = dims[2];
-        if( index > 0 )
-        {
-          const array<double,3> &inner_dims = std::get<0>(calculator->m_dimensionsTransLenAndType[index-1]);
-          dx -= inner_dims[0];
-          dy -= inner_dims[1];
-          dz -= inner_dims[2];
-        }
-        
-        switch( m_geometry )
-        {
-          case GeometryType::Spherical:
-            msg << "rad=" << PhysicalUnits::printToBestLengthUnits(dx);
-            break;
-            
-          case GeometryType::CylinderEndOn:
-          case GeometryType::CylinderSideOn:
-            msg << "rad=" << PhysicalUnits::printToBestLengthUnits(dx)
-                << ", len=" << PhysicalUnits::printToBestLengthUnits(dy);
-            break;
-          
-          case GeometryType::Rectangular:
-            msg << "width=" << PhysicalUnits::printToBestLengthUnits(dx)
-                << ", height=" << PhysicalUnits::printToBestLengthUnits(dy)
-                << ", depth=" << PhysicalUnits::printToBestLengthUnits(dy);
-            break;
-          case GeometryType::NumGeometryType:
-            break;
-        }//switch( m_geometry )
-        
-        msg << "} " << material->name;
-        
-        info->push_back( msg.str() );
-      }//if( info )
       
       if( log_info )
       {
@@ -6649,7 +6328,7 @@ vector<PeakResultPlotInfo>
   }//try / catch
 
   return expected_observed_chis( m_peaks, m_backgroundPeaks, energy_count_map,
-                          info, log_info,
+                          log_info,
                           eff_frac_uncerts.empty() ? nullptr : &eff_frac_uncerts,
                           eff_flags.empty() ? nullptr : &eff_flags,
                           imp_expected.empty() ? nullptr : &imp_expected,

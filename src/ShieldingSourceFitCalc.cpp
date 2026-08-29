@@ -2294,7 +2294,6 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
 static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
                               const std::vector<double> &params,
                               const std::vector<double> &errors,
-                              const unsigned int ndof,
                               std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results )
 {
   // Complaints from the supplemental-peak-info pass; merged into `results->warnings` at the end
@@ -2604,6 +2603,11 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
   {// Begin logging detailed info, we'll later use to template reports
     GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
 
+    // Which volumetric-efficiency method the integration actually used, and why - so a request the
+    //  DRF could not honor (e.g. near-field asked for, but no CeeLo response) shows up in reports.
+    results->volumetric_eff_method = chi2Fcn->resolvedVolumetricEffMethod();
+    results->volumetric_eff_note = chi2Fcn->volumetricEffResolveNote();
+
     // GLS whitening for the displayed pulls: when detector-efficiency uncertainty was folded into
     //  the (correlated) fit, recompute the same L^{-1} here from the data + fixed geometry so the
     //  reported per-peak "sigma off" is the whitened residual the fit minimized - otherwise the raw
@@ -2620,7 +2624,6 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
 
     auto peak_calc_details = make_unique<vector<GammaInteractionCalc::PeakDetail>>();
     const auto peak_comparisons = chi2Fcn->energy_chi_contributions( params, errors, mixcache,
-                                                                    &(results->peak_calc_log),
                                                                     peak_calc_details.get(),
                                                                     eff_whitening.empty() ? nullptr : &eff_whitening );
 
@@ -2665,16 +2668,6 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
       results->pull_trend = nullptr;
     }
 
-
-    if( !results->peak_calc_log.empty() )
-    {
-      char buffer[64];
-      snprintf( buffer, sizeof(buffer), "There %s %i parameter%s fit for",
-               (ndof>1 ? "were" : "was"), int(ndof), (ndof>1 ? "s" : "") );
-      results->peak_calc_log.push_back( "&nbsp;" );
-      results->peak_calc_log.push_back( buffer );
-    }//if( !m_calcLog.empty() )
-      
     try
     {
       auto shielding_details = make_unique<vector<GammaInteractionCalc::ShieldingDetails>>();
@@ -2960,7 +2953,7 @@ vector<SupplementalPeakInfo> compute_supplemental_peak_info(
       errors.resize( params.size(), 0.0 );
 
     GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
-    aug_fcn->energy_chi_contributions( params, errors, mixcache, nullptr, &details );
+    aug_fcn->energy_chi_contributions( params, errors, mixcache, &details );
   }catch( std::exception &e )
   {
     warnings.push_back( "Failed to evaluate the fitted model for the peaks not used in the fit: "
@@ -3530,7 +3523,7 @@ void fit_model_minuit2( const std::string wtsession,
     const vector<double> params = fitParams.Params();
     const vector<double> errors = fitParams.Errors();
     const unsigned int num_fit_pars = inputPrams->VariableParameters();
-    unsigned int ndof = (num_fit_pars > chi2Fcn->peaks().size()) ? static_cast<unsigned int>(0)
+    const unsigned int ndof = (num_fit_pars > chi2Fcn->peaks().size()) ? static_cast<unsigned int>(0)
                                                                  : static_cast<unsigned int>(chi2Fcn->peaks().size() - num_fit_pars);
     
     results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final;
@@ -3542,7 +3535,7 @@ void fit_model_minuit2( const std::string wtsession,
     results->chi2 = minimum.Fval();  //chi2Fcn->DoEval( results->paramValues );
     
     
-    fill_fit_results( chi2Fcn, params, errors, ndof, results );
+    fill_fit_results( chi2Fcn, params, errors, results );
   }catch( GammaInteractionCalc::ShieldingSourceChi2Fcn::CancelException &e )
   {
     const size_t nFunctionCallsSoFar = gui_progress_info->numFunctionCallsSoFar();
@@ -4724,7 +4717,7 @@ void fit_model_ceres( const std::string wtsession,
     results->num_fcn_calls = static_cast<int>( num_evals );
     results->numDOF = ndof;
 
-    fill_fit_results( chi2Fcn, fit_full, errors, ndof, results );
+    fill_fit_results( chi2Fcn, fit_full, errors, results );
   }catch( GammaInteractionCalc::ShieldingSourceChi2Fcn::CancelException &e )
   {
     std::lock_guard<std::mutex> lock( results->m_mutex );

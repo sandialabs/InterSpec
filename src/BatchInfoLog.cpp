@@ -932,6 +932,29 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       }
     }
 
+    // Which per-element detector efficiency the volumetric-source integration actually used, and
+    //  why - `Auto`, or a request the DRF cannot honor, resolves to a concrete method, and that
+    //  fallback (e.g. down to flat-disk, which is far-field-only) materially affects the answer.
+    //  Only meaningful when a volumetric source is present; always emitted so templates are safe.
+    {
+      auto &vj = data["VolumetricEff"];
+      const char *method_str = "Flat-disk (solid angle x intrinsic efficiency)";
+      switch( results.volumetric_eff_method )
+      {
+        case ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer:
+          method_str = "Monte-Carlo transfer (near-field & off-axis correct)";  break;
+        case ShieldingSourceFitCalc::VolumetricEffMethod::EffTran:
+          method_str = "EFFTRAN transfer (near-field & off-axis correct)";      break;
+        case ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk:
+        case ShieldingSourceFitCalc::VolumetricEffMethod::Auto:
+          break;
+      }//switch( results.volumetric_eff_method )
+
+      vj["Method"] = method_str;
+      vj["Note"] = results.volumetric_eff_note;
+      vj["HasNote"] = !results.volumetric_eff_note.empty();
+    }
+
     int num_sources = 0;
     bool hasAnyTraceSrc = false, hasAnyVolumetricSrc = false, hasFitAnyAge = false;
     if( results.source_calc_details )

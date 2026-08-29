@@ -109,7 +109,6 @@
   <message id="ssd-calc-log-html-title">Log Perhitungan</message>
   <message id="ssd-template-text-log">Log Standar (Teks)</message>
   <message id="ssd-template-html-report">Laporan Pencocokan Aktivitas (HTML)</message>
-  <message id="ssd-template-deprecated-txt">Teks Usang</message>
   <message id="ssd-no-fit-results">Tidak ada hasil pencocokan yang tersedia untuk ditampilkan.</message>
   <message id="ssd-error-creating-html-log">Kesalahan membuat log perhitungan HTML: {1}</message>
   <message id="ssd-err-opening-import-model">Kesalahan membuka Model Pencocokan Perisai Sumber yang diunggah: {1}</message>

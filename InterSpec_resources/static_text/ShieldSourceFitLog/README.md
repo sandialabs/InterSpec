@@ -22,7 +22,7 @@
 > assets, application metadata, the Inja env, the two custom callbacks `printFixed` /
 > `printCompact`); see §5.4 / §5.5 / §5.14 / §5.15 / §7 / §8 / §9.
 >
-> **Last updated:** 2026-05-20
+> **Last updated:** 2026-08-29
 
 ## 1. What this is
 
@@ -324,6 +324,10 @@ it does not exist in the payload.
   "background": { ... },            // §5.4 (only if a background is loaded)
   "Sources": [ ... ],               // §5.6
   "Shieldings": { ... },            // §5.9
+  "PullTrend": { ... },             // §5.18 (automatic diagnosis of the per-peak residual
+                                    //  trend vs energy - "too much shielding", etc.)
+  "VolumetricEff": { ... },         // §5.19 (which per-element efficiency the volumetric-
+                                    //  source integration actually used, and why)
   "PeaksUsedForActivityFitting": { "Peaks": [ ... ] },  // §5.12
   "PeakToModelComparison": { "UsedPeaks": [ ... ] },    // §5.13
   "AnyNotFitPeakMda": true,
@@ -1122,6 +1126,80 @@ have been fit, not used in the fit, and its nuclide to have a non-zero fitted ac
 Note that an activity family member is **omitted entirely** when the value works out non-positive —
 `printToBestActivityUnits` renders those as an unreadable string of femtocuries.  Guard individual
 members with `existsIn(peak,"ImpliedActivityUncert")` when a zero uncertainty is possible.
+
+### 5.18 `PullTrend`
+
+An automatic diagnosis of the per-peak pulls ("chi" values, i.e. `(observed-model)/uncertainty`)
+as a function of energy.  The physics: if the model has the wrong *amount* of shielding, the
+attenuation-vs-energy mismatch tilts the pulls monotonically with energy; if it has the wrong
+effective *atomic number*, the photoelectric term (~Z⁴·⁵/E³) versus the nearly Z-independent
+Compton term bends them (a low-energy "hook") even after the fit compensates the overall amount.
+A low-order polynomial is fit to the pulls and the coefficient t-statistics are compared against
+calibrated thresholds.  The GUI shows `Message` under the χ² chart; the bundled templates put it
+in the same place.
+
+```json
+"PullTrend": {
+  "HasConclusion": true,
+  "Message": "Peak residuals probably indicate too much modeled shielding.",
+  "SlopeT": 3.72,
+  "CurvatureT": 0.41,
+  "ReducedChi2": 1.18,
+  "NumPeaksUsed": 12,
+  "AtomicNumberDiscriminationPower": 4.83,
+  "AtomicNumberDiscriminable": true
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `HasConclusion`  | bool   | A conclusion was reached *and* is worth reporting. **Always emitted.** False both when the analysis could not run at all and when it ran but found nothing conclusive — guard `Message` with this. |
+| `Message`        | string | Plain-English one-sentence conclusion, e.g. `"Peak residuals probably indicate too much modeled shielding."`, `"Peak residuals may indicate the shielding's effective atomic number is too low."`, or `"A residual energy trend remains despite fitting shielding; the distance, geometry, source age, or detector response may be slightly off."`  **Always emitted**; empty string when `HasConclusion` is false.  Not localized (the GUI renders its own localized wording from the same result). |
+| `SlopeT`         | number | t-statistic of the fitted linear term.  Large magnitude ⇒ a monotonic pull trend with energy ⇒ the modeled shielding *amount* is likely wrong.  Sign indicates direction. |
+| `CurvatureT`     | number | t-statistic of the fitted quadratic term.  Large magnitude ⇒ the pull *shape* is wrong ⇒ the effective atomic number is likely wrong.  Only asserted as a Z conclusion when `AtomicNumberDiscriminable` is true. |
+| `ReducedChi2`    | number | Reduced χ² of the trend fit itself (a measure of how well the low-order trend describes the pulls).  Values > 1 mean scatter beyond the trend; the coefficient uncertainties are already inflated by `sqrt(max(1,ReducedChi2))` so the t-statistics stay calibrated. |
+| `NumPeaksUsed`   | int    | Number of pull points that survived filtering and entered the trend fit. |
+| `AtomicNumberDiscriminationPower` | number | How well **this dataset** *could* resolve a reference-sized (1.5×) atomic-number error — a property of the peak energies, significances and model shielding, not of the observed pulls.  Above ~250 keV attenuation is Compton-dominated and nearly Z-independent, so only low-energy, high-significance peaks carry Z information.  0 when not computed. |
+| `AtomicNumberDiscriminable`       | bool   | `AtomicNumberDiscriminationPower` cleared the calibrated gate (~2.5).  **When false, a null Z result means "could not tell", not "atomic number is fine"** — and any curvature that does appear is suppressed rather than reported as a Z signature.  Worth saying so explicitly in a report. |
+
+> **Guarding.**  `HasConclusion` and `Message` are always present.  **The other six fields are
+> present only when the trend analysis actually ran** (it is skipped, and may fail, e.g. with too
+> few peaks).  Use `existsIn(PullTrend,"SlopeT")` before touching any of them:
+>
+> ```
+> {% if exists("PullTrend") and PullTrend.HasConclusion %}{{ PullTrend.Message }}{% endif %}
+> {% if exists("PullTrend") and existsIn(PullTrend,"SlopeT") %}
+>   (slope t={{ printFixed(PullTrend.SlopeT,1) }}, curvature t={{ printFixed(PullTrend.CurvatureT,1) }},
+>    {{ PullTrend.NumPeaksUsed }} points{% if PullTrend.AtomicNumberDiscriminable %}{% else %};
+>    these peaks cannot resolve the effective atomic number{% endif %})
+> {% endif %}
+> ```
+>
+> The empty-then/`{% else %}` shape above is deliberate: a `not` operator is **not** part of the
+> supported subset documented in §7 — negate with an empty `{% if %}` arm instead.
+
+### 5.19 `VolumetricEff`
+
+Which per-element detector efficiency the volumetric-source (self-attenuating / trace) integration
+actually used, and why.  Always emitted, but only meaningful when `HasVolumetricSource` is true.
+
+```json
+"VolumetricEff": {
+  "Method": "EFFTRAN transfer (near-field & off-axis correct)",
+  "Note": "Auto -> EFFTRAN transfer",
+  "HasNote": true
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `Method`   | string | Human-readable name of the *resolved* method — the `Auto` setting, or a method the DRF cannot honor, has already been reduced to exactly one of: `"Monte-Carlo transfer (near-field & off-axis correct)"`, `"EFFTRAN transfer (near-field & off-axis correct)"`, `"Flat-disk (solid angle x intrinsic efficiency)"`. |
+| `Note`     | string | Why it resolved that way — e.g. `"Auto -> MC transfer"`, `"EFFTRAN transfer unavailable (<reason>)"`, or `"requested near-field method, but the DRF has no CeeLo response; using flat-disk"`.  Empty when the requested method was used as-is. |
+| `HasNote`  | bool   | `Note` is non-empty.  Always emitted. |
+
+> Worth surfacing in any report covering a volumetric source: flat-disk is the legacy far-field
+> approximation, so a silent fallback to it can bias a near-field (source close to the detector)
+> result.  `HasNote` being true is exactly the "something was not what you asked for" signal.
 
 ## 6. JSON data model — batch peak-fit
 
@@ -2056,6 +2134,9 @@ For LLMs that have web access, the authoritative source for everything above is 
 - [`InterSpec/DetectionLimitCalc.h`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/InterSpec/DetectionLimitCalc.h) —
   `PeakCurrieCheck` and `currie_check_for_peak()`, the shared per-peak detection-limit check
   behind both `Mda` (§6.6.1) and `CurrieCheck` (§5.17.1).
+- [`InterSpec/ShieldSourcePullTrend.h`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/InterSpec/ShieldSourcePullTrend.h) —
+  `TrendResult` and `conclusion_report_text()`, the pull-trend diagnosis behind §5.18 (the
+  header comments cover the physics and the calibrated thresholds).
 - [`src/BatchPeak.cpp`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/src/BatchPeak.cpp) —
   the batch peak-fit driver and `Files[]` wrapping.
 - [`InterSpec/BatchPeak.h`](https://raw.githubusercontent.com/sandialabs/InterSpec/refs/heads/master/InterSpec/BatchPeak.h) —

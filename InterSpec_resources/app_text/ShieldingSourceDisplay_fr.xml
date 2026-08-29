@@ -105,7 +105,6 @@
   <message id="ssd-calc-log-html-title">Journal de calcul</message>
   <message id="ssd-template-text-log">Journal standard (texte)</message>
   <message id="ssd-template-html-report">Rapport d'ajustement d'activité (HTML)</message>
-  <message id="ssd-template-deprecated-txt">Texte obsolète</message>
   <message id="ssd-no-fit-results">Aucun résultat d'ajustement disponible à afficher.</message>
   <message id="ssd-error-creating-html-log">Erreur lors de la création du journal de calcul HTML : {1}</message>
   <message id="ssd-err-opening-import-model">Erreur lors de l'ouverture du modèle d'ajustement source/blindage téléchargé : {1}</message>

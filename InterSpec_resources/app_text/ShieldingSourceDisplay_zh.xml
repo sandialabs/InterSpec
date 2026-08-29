@@ -104,7 +104,6 @@
   <message id="ssd-calc-log-html-title">计算日志</message>
   <message id="ssd-template-text-log">标准日志（文本）</message>
   <message id="ssd-template-html-report">活度拟合报告 (HTML)</message>
-  <message id="ssd-template-deprecated-txt">已弃用文本</message>
   <message id="ssd-no-fit-results">没有可用的拟合结果供显示。</message>
   <message id="ssd-error-creating-html-log">创建HTML计算日志时出错：{1}</message>
   <message id="ssd-err-opening-import-model">打开上传的源屏蔽拟合模型时出错：{1}</message>

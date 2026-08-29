@@ -109,7 +109,6 @@
   <message id="ssd-calc-log-html-title">سجل الحساب</message>
   <message id="ssd-template-text-log">سجل قياسي (نص)</message>
   <message id="ssd-template-html-report">تقرير ملاءمة النشاط (HTML)</message>
-  <message id="ssd-template-deprecated-txt">نص قديم</message>
   <message id="ssd-no-fit-results">لا توجد نتائج ملاءمة متاحة للعرض.</message>
   <message id="ssd-error-creating-html-log">خطأ في إنشاء سجل حساب HTML: {1}</message>
   <message id="ssd-err-opening-import-model">خطأ في فتح نموذج ملاءمة التدريع المصدر المرفوع: {1}</message>

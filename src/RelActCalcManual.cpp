@@ -650,7 +650,7 @@ void fit_rel_eff_eqn_lls_imp( const RelActCalc::RelEffEqnForm fcn_form,
     GammaInteractionCalc::ShieldingSourceChi2Fcn::cluster_peak_activities( energy_gammas_map,
                                                                           energy_widths, mixture, n.rel_activity, n.age,
                                                                           photopeakClusterSigma, energyToCluster,
-                                                                          accountForDecayDuringMeas, realTime, nullptr, nullptr );
+                                                                          accountForDecayDuringMeas, realTime, nullptr );
   }//for( const auto &n : nuclides )
   
   // Convert energy_gammas_map to a vector for convenience
@@ -2513,7 +2513,7 @@ vector<GenericPeakInfo> add_nuclides_to_peaks( const std::vector<GenericPeakInfo
       
       GammaInteractionCalc::ShieldingSourceChi2Fcn::cluster_peak_activities( energy_gammas_map,
                                                                             energy_widths, mixture, activity, n.age, cluster_sigma, -1,
-                                                                            decay_correct, real_time, nullptr, nullptr );
+                                                                            decay_correct, real_time, nullptr );
     }else if( n.element )
     {
       for( const pair<double,double> &p : energy_widths )
@@ -2736,7 +2736,7 @@ void fit_rel_eff_eqn_lls( const RelActCalc::RelEffEqnForm fcn_form,
     GammaInteractionCalc::ShieldingSourceChi2Fcn::cluster_peak_activities( energy_gammas_map,
                                             energy_widths, mixture, n.rel_activity, n.age,
                                             photopeakClusterSigma, energyToCluster,
-                                            accountForDecayDuringMeas, realTime, nullptr, nullptr );
+                                            accountForDecayDuringMeas, realTime, nullptr );
   }//for( const auto &n : nuclides )
   
   // Convert energy_gammas_map to a vector for convenience
