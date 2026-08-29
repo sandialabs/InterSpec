@@ -90,7 +90,6 @@
   <message id="ssd-calc-log-html-title">গণনা লগ</message>
   <message id="ssd-template-text-log">স্ট্যান্ডার্ড লগ (টেক্সট)</message>
   <message id="ssd-template-html-report">কার্যকলাপ ফিট রিপোর্ট (HTML)</message>
-  <message id="ssd-template-deprecated-txt">অপ্রচলিত টেক্সট</message>
   <message id="ssd-no-fit-results">প্রদর্শনের জন্য কোনো ফিট ফলাফল উপলব্ধ নেই।</message>
   <message id="ssd-error-creating-html-log">HTML গণনা লগ তৈরি করতে ত্রুটি: {1}</message>
   <message id="ssd-err-opening-import-model">আপলোড করা উৎস শিল্ডিং ফিট মডেল খুলতে ত্রুটি: {1}</message>

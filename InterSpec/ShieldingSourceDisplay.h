@@ -476,12 +476,6 @@ public:
    */
   void updateGuiWithModelFitResults( std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results );
   
-  //updateCalcLogWithFitResults(): adds in fit for values and their
-  //  uncertainties in the calculation log.
-  static void updateCalcLogWithFitResults( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2,
-                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results,
-                                    std::vector<std::string> &calcLog );
-  
   //initialSizeHint(...) gives the initial hint about the size so which widgets
   //  should be shown can be decided on.  Furthermore, calling this function
   //  resets m_nResizeSinceHint, so that the next 4 calls to
@@ -857,7 +851,8 @@ protected:
 
   /** Updates the passive `m_trendTxt` from a pull-trend result; hides it when there is no
    conclusion (or when `from_completed_fit` is false, i.e. the model is stale / mid-edit and the
-   interpretation would be misleading), and mirrors the conclusion into `m_calcLog`.
+   interpretation would be misleading).  The reports get the same conclusion from
+   `ModelFitResults::pull_trend`, via `BatchInfoLog::shield_src_fit_results_to_json(...)`.
    */
   void updateTrendMessage( const std::shared_ptr<const ShieldSourcePullTrend::TrendResult> &trend,
                            const bool from_completed_fit );
@@ -993,8 +988,6 @@ protected:
 
   InjaLogDialog *m_logDiv;
   ShieldingDiagramDialog *m_diagramDialog;
-  std::vector<std::string> m_calcLog;
-  std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> m_peakCalcLogInfo;
   std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> m_lastFitResults;
   
   Wt::Core::observing_ptr<AuxWindow> m_modelUploadWindow;

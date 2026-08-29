@@ -872,7 +872,7 @@ deque<shared_ptr<const PeakDef>> peaks_with_model_expected_areas(
 
   GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mix_cache;
   const vector<GammaInteractionCalc::PeakResultPlotInfo> peak_infos
-        = fcn_pars.first->energy_chi_contributions( truth_pars, {}, mix_cache, nullptr, nullptr );
+        = fcn_pars.first->energy_chi_contributions( truth_pars, {}, mix_cache );
 
   BOOST_REQUIRE_EQUAL( peak_infos.size(), input.foreground_peaks.size() );
 
@@ -2216,7 +2216,7 @@ void check_expected_counts_parity( const GammaInteractionCalc::ShieldingSourceCh
 
   GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache_legacy, cache_imp;
   const vector<GammaInteractionCalc::PeakResultPlotInfo> legacy
-        = fcn_pars.first->energy_chi_contributions( params, {}, cache_legacy, nullptr, nullptr );
+        = fcn_pars.first->energy_chi_contributions( params, {}, cache_legacy );
   const vector<double> templated
         = fcn_pars.first->expected_peak_counts_imp<double>( params, cache_imp );
 

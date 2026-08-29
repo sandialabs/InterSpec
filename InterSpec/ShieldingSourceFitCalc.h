@@ -595,7 +595,17 @@ namespace ShieldingSourceFitCalc
      */
     std::shared_ptr<const ShieldSourcePullTrend::TrendResult> pull_trend;
 
-    std::vector<std::string> peak_calc_log;
+    /** The volumetric-source detector-efficiency method actually used, after `Auto` (or a request
+     the DRF cannot honor) was resolved against the DRF - never `VolumetricEffMethod::Auto`.
+     Only meaningful when the model has a volumetric (self-attenuating or trace) source.
+     See `ShieldingSourceChi2Fcn::resolvedVolumetricEffMethod`. */
+    VolumetricEffMethod volumetric_eff_method = VolumetricEffMethod::FlatDisk;
+
+    /** Why `volumetric_eff_method` came out the way it did (e.g. "Auto -> MC transfer", or
+     "EFFTRAN transfer unavailable (...)"); empty when the requested method was used as-is.
+     Surfaced in the reports so a silent fallback is visible. */
+    std::string volumetric_eff_note;
+
     std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> peak_calc_details;
     std::unique_ptr<const std::vector<GammaInteractionCalc::ShieldingDetails>> shield_calc_details;
     std::unique_ptr<const std::vector<GammaInteractionCalc::SourceDetails>> source_calc_details;

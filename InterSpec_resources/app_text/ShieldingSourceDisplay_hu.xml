@@ -106,7 +106,6 @@
   <message id="ssd-calc-log-html-title">Számítási napló</message>
   <message id="ssd-template-text-log">Standard napló (szöveg)</message>
   <message id="ssd-template-html-report">Aktivitás illesztési jelentés (HTML)</message>
-  <message id="ssd-template-deprecated-txt">Elavult szöveges</message>
   <message id="ssd-no-fit-results">Nincsenek megjeleníthető illesztési eredmények.</message>
   <message id="ssd-error-creating-html-log">Hiba a HTML számítási napló létrehozásakor: {1}</message>
   <message id="ssd-err-opening-import-model">Hiba a feltöltött forrás-árnyékolás illesztési modell megnyitásakor: {1}</message>

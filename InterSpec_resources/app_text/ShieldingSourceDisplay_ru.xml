@@ -108,7 +108,6 @@
   <message id="ssd-calc-log-html-title">Журнал вычислений</message>
   <message id="ssd-template-text-log">Стандартный журнал (текст)</message>
   <message id="ssd-template-html-report">Отчёт подгонки активности (HTML)</message>
-  <message id="ssd-template-deprecated-txt">Устаревший текст</message>
   <message id="ssd-no-fit-results">Нет доступных результатов подгонки для отображения.</message>
   <message id="ssd-error-creating-html-log">Ошибка создания HTML-журнала вычислений: {1}</message>
   <message id="ssd-err-opening-import-model">Ошибка открытия загруженной модели подгонки источник-экранирование: {1}</message>

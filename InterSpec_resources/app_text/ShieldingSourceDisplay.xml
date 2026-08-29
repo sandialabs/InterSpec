@@ -240,7 +240,6 @@
   <message id="ssd-calc-log-html-title">Calculation Log</message>
   <message id="ssd-template-text-log">Standard Log (Text)</message>
   <message id="ssd-template-html-report">Activity Fit Report (HTML)</message>
-  <message id="ssd-template-deprecated-txt">Deprecated Txt</message>
   <message id="ssd-no-fit-results">No fit results available to display.</message>
   <message id="ssd-error-creating-html-log">Error creating HTML calculation log: {1}</message>
   <message id="ssd-err-opening-import-model">Error opening uploaded Source Shielding Fit Model: {1}</message>

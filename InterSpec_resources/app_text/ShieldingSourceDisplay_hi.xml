@@ -106,7 +106,6 @@
   <message id="ssd-calc-log-html-title">गणना लॉग</message>
   <message id="ssd-template-text-log">मानक लॉग (टेक्स्ट)</message>
   <message id="ssd-template-html-report">सक्रियता फिट रिपोर्ट (HTML)</message>
-  <message id="ssd-template-deprecated-txt">पुराना टेक्स्ट</message>
   <message id="ssd-no-fit-results">प्रदर्शित करने के लिए कोई फिट परिणाम उपलब्ध नहीं।</message>
   <message id="ssd-error-creating-html-log">HTML गणना लॉग बनाने में त्रुटि: {1}</message>
   <message id="ssd-err-opening-import-model">अपलोड किए गए स्रोत परिरक्षण फिट मॉडल को खोलने में त्रुटि: {1}</message>

@@ -135,6 +135,12 @@
   </div>
   {% endif %}
 
+  {% if HasVolumetricSource and exists("VolumetricEff") %}
+  <div id="vol-eff-note" style="text-align: center; font-style: italic; color: #444; margin: -8px auto 16px auto; width: 90vw;">
+    Volumetric detector-efficiency method: {{ VolumetricEff.Method }}{% if VolumetricEff.HasNote %} [{{ VolumetricEff.Note }}]{% endif %}
+  </div>
+  {% endif %}
+
   <div id="results" style="margin-top: 15px">
 
 

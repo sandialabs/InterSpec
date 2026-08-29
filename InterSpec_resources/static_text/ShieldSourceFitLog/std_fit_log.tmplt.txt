@@ -20,6 +20,9 @@ Warnings:
 {% if exists("PullTrend") and PullTrend.HasConclusion %}
 Pull-trend interpretation: {{ PullTrend.Message }}
 {% endif %}
+{% if HasVolumetricSource and exists("VolumetricEff") %}
+Volumetric detector-efficiency method: {{ VolumetricEff.Method }}{% if VolumetricEff.HasNote %} [{{ VolumetricEff.Note }}]{% endif %}
+{% endif %}
 {% if exists("Sources") %}
 Sources:
 ## for src in Sources

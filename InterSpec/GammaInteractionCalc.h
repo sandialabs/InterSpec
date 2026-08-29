@@ -1172,7 +1172,6 @@ public:
    @param params The parameters currently defining the model.
    @param error_params The errors on the parameters - only used if `log_info` is non-null
    @param mixturecache Used to speed up multiple calls to this function, and may be empty at first.
-   @param info If non-null, will be filled with computation notes.
    @param log_info If non-null, filled out with details about the computation.
    @param eff_whitening If non-null, the GLS whitening matrix L^{-1} (row-major
           n x n, n = number of included peaks) built from the detector-efficiency
@@ -1185,7 +1184,6 @@ public:
                                   const std::vector<double> &params,
                                   const std::vector<double> &error_params,
                                   NucMixtureCache &mixturecache,
-                                  std::vector<std::string> *info = nullptr,
                                   std::vector<PeakDetail> *log_info = nullptr,
                                   const std::vector<double> *eff_whitening = nullptr ) const;
 
@@ -1482,7 +1480,18 @@ public:
   const std::shared_ptr<const DetectorPeakResponse> &detector() const;
 
   const ShieldingSourceFitCalc::ShieldingSourceFitOptions &options() const;
-  
+
+  /** The volumetric-efficiency method actually used, after resolving
+   `options().volumetric_eff_method` against the DRF - never #VolumetricEffMethod::Auto.
+   Reported so a fit that silently fell back (e.g. to flat-disk) is visible in the results.
+   */
+  ShieldingSourceFitCalc::VolumetricEffMethod resolvedVolumetricEffMethod() const;
+
+  /** Human-readable note on how #resolvedVolumetricEffMethod was arrived at (e.g.
+   "Auto -> MC transfer", or a fallback reason); empty when the request was used as-is.
+   */
+  const std::string &volumetricEffResolveNote() const;
+
   const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &initialShieldings() const;
   
   static void selfShieldingIntegration( DistributedSrcCalc &calculator );
@@ -1525,7 +1534,6 @@ public:
                   const double energyToCluster,
                   const bool accountForDecayDuringMeas,
                   const double measDuration,
-                  std::vector<std::string> *info,
                   std::vector<GammaInteractionCalc::PeakDetail> *log_info
               );
 
@@ -1564,7 +1572,6 @@ public:
                               const std::vector<PeakDef> &peaks,
                               const std::vector<PeakDef> &backgroundPeaks,
                               const std::map<double,double> &energy_count_map,
-                              std::vector<std::string> *info = 0,
                               std::vector<GammaInteractionCalc::PeakDetail> *log_info = nullptr,
                               const std::vector<double> *eff_frac_uncerts = nullptr,
                               const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags = nullptr,
@@ -1647,7 +1654,9 @@ protected:
   std::shared_ptr<const ceelo::DetectorResponse> m_volEffResponse;
 
   /** Human-readable note describing how the volumetric-efficiency method was resolved (e.g.
-   "Auto -> MC transfer", or a fallback reason); appended to the volumetric calc-log. */
+   "Auto -> MC transfer", or a fallback reason); empty when the request was used as-is.
+   Exposed by #volumetricEffResolveNote, and carried into the reports via
+   `ModelFitResults::volumetric_eff_note`. */
   std::string m_volEffResolveNote;
 
   /** Resolves #m_options.volumetric_eff_method against #m_detector into #m_resolvedVolEffMethod +
@@ -1682,8 +1691,8 @@ public:
   /** Multiplies each entry of a single nuclides cluster map (keyed exactly by
    the #observedPeakEnergyWidths energies) by that nuclides cascade-summing
    net correction at the fit geometry.  No-op when #m_cascadeCalc is null.
-   When `log_info`/`info` are provided (the logging double path), the per-peak
-   cascade fields / log lines are also filled.
+   When `log_info` is provided (the logging double path), the per-peak
+   cascade fields are also filled.
    Defined in GammaInteractionCalc_imp.hpp.
    */
   template <typename T>
@@ -1691,7 +1700,6 @@ public:
                                  const SandiaDecay::Nuclide *nuclide,
                                  const T &age,
                                  const PointSrcAttenContext<T> &atten_ctx,
-                                 std::vector<std::string> *info,
                                  std::vector<GammaInteractionCalc::PeakDetail> *log_info ) const;
 
 protected:
