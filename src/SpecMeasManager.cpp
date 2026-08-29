@@ -201,6 +201,60 @@ SpectrumType typeFromInt( int id ){ return SpectrumType(id); }
 
 namespace
 {
+  /** Makes `target` a drag-n-drop (and click-to-pick) area for the ONE file a companion-file
+   dialog is asking for - the Efficiency.csv a Detector.dat came without, or vice-versa.
+
+   Re-uses the batch tool's upload plumbing wholesale: `BatchInputDropUploadSetup` turns the element
+   into a drop target with a hidden file input behind a click, `setupOnDragEnterDom` highlights it
+   the moment a drag starts anywhere in the window, and `window._IS.BlockFileDrops` takes the app's
+   normal spectrum-file handling out of the way so a file dropped anywhere in the window lands here
+   rather than being opened as a spectrum.
+
+   `on_file` is called on the session thread with (display name, spool path); the spool file is
+   valid only for that call.  Everything is torn down when `dialog` finishes.
+   */
+  void setup_pair_file_drop( SimpleDialog *dialog,
+                             Wt::WContainerWidget *target,
+                             FileDragUploadResource *resource,
+                             std::function<void(const std::string &, const std::string &)> on_file )
+  {
+    assert( dialog && target && resource );
+    if( !dialog || !target || !resource )
+      return;
+
+    WApplication * const app = WApplication::instance();
+    app->useStyleSheet( "InterSpec_resources/BatchGuiWidget.css" );
+    app->require( "InterSpec_resources/BatchGuiWidget.js" );
+
+    target->addStyleClass( "PairFileDrop" );
+
+    resource->clearSpooledFiles();  //anything left from a previous dialog is not ours
+
+    app->doJavaScript( "window._IS=window._IS||{};window._IS.BlockFileDrops=true;" );
+    target->doJavaScript( "BatchInputDropUploadSetup(" + target->jsRef() + ", '"
+                          + resource->url() + "');" );
+    app->doJavaScript( "setupOnDragEnterDom(['" + target->id() + "']);" );
+
+    // Tracked to `target`, so the connection dies with the dialog - the resource outlives both.
+    resource->fileDrop().connect( target,
+      [resource, on_file]( std::string display_name, std::string spool_name ){
+        on_file( display_name, spool_name );
+        resource->clearSpooledFiles();
+      } );
+
+    const std::string target_id = target->id();
+    dialog->finished().connect( std::function<void(Wt::DialogCode)>(
+      [resource, target_id]( Wt::DialogCode ){
+        WApplication * const app = WApplication::instance();
+        if( !app )
+          return;
+        app->doJavaScript( "if(window._IS)window._IS.BlockFileDrops=null;" );
+        app->doJavaScript( "removeOnDragEnterDom(['" + target_id + "']);" );
+        resource->clearSpooledFiles();
+      } ) );
+  }//setup_pair_file_drop(...)
+
+
   struct ZipSecurityLimits
   {
     ZipArchive::ExtractionLimits member;
@@ -1650,6 +1704,10 @@ SpecMeasManager::SpecMeasManager( InterSpec *viewer )
   m_batchDragNDrop = std::make_unique<FileDragUploadResource>();
   m_batchDragNDrop->fileDrop().connect( this, &SpecMeasManager::showBatchDialog );
 #endif
+
+  // No handler here: each companion-file dialog connects (and, being tracked to one of its own
+  //  widgets, disconnects) for as long as it is showing.
+  m_pairFileDragNDrop = std::make_unique<FileDragUploadResource>();
 }// SpecMeasManager
 
 //Moved what use to be SpecMeasManager, out to a startSpectrumManager() to correct modal issues
@@ -1814,6 +1872,12 @@ FileDragUploadResource *SpecMeasManager::batchDragNDrop()
   return m_batchDragNDrop.get();
 }
 #endif
+
+
+FileDragUploadResource *SpecMeasManager::pairFileDragNDrop()
+{
+  return m_pairFileDragNDrop.get();
+}
 
 
 void SpecMeasManager::extractAndOpenFromZip( const std::string &spoolName,
@@ -4024,7 +4088,11 @@ bool SpecMeasManager::handleEccFile( std::istream &input, SimpleDialog *dialog )
     {
       InterSpec *viewer = InterSpec::instance();
       if( viewer )
-        viewer->showDrfModifyWindow( angle_seed_drf, angle_geometry );
+      {
+        //The DRF carries its own shape from here on - see DetectorPeakResponse::geometry().
+        angle_seed_drf->setGeometry( angle_geometry );
+        viewer->showDrfModifyWindow( angle_seed_drf );
+      }
       return;
     }//if( generic detector option selected )
 
@@ -4166,6 +4234,11 @@ bool SpecMeasManager::handleGadrasDetectorDatFile( std::istream &input, SimpleDi
     seed.reset();
   }
 
+  // The geometry belongs to the detector, not to this dialog: attaching it here is what lets it
+  //  survive an efficiency upload, a "Use", a save, and a later re-open of the Modify editor.
+  if( seed )
+    seed->setGeometry( geometry );
+
   dialog->setWindowTitle( WString::tr("smm-gadras-dat-title") );
   dialog->contents()->addNew<WText>( WString::tr("smm-gadras-dat-txt") );
 
@@ -4183,16 +4256,20 @@ bool SpecMeasManager::handleGadrasDetectorDatFile( std::istream &input, SimpleDi
   WContainerWidget *effRow = dialog->contents()->addNew<WContainerWidget>();
   effRow->addStyleClass( "GadrasEffUploadRow" );
   WText *effLabel = effRow->addNew<WText>( WString::tr("smm-gadras-dat-eff-label") );
-  effLabel->setInline( true );
-  WFileUpload *effUpload = effRow->addNew<WFileUpload>();
-  effUpload->setInline( true );
-  effUpload->changed().connect( effUpload, &WFileUpload::upload );
+  effLabel->setInline( false );
 
   WText *effStatus = dialog->contents()->addNew<WText>( "" );
   effStatus->setInline( false );
   effStatus->addStyleClass( "GadrasImportNote" );
 
   WPushButton *characterize = dialog->addButton( WString::tr("smm-gadras-dat-characterize") );
+
+  // Accept AND go straight to the editor.  Only shown once there is a finished detector to accept -
+  //  without an efficiency, "Characterize..." already opens the editor, so this would be a second
+  //  button doing the same thing.
+  WPushButton *further = dialog->addButton( WString::tr("smm-further-options") );
+  further->hide();
+
   dialog->addButton( WString::tr("Cancel") );
 
   InterSpec * const viewer = m_viewer;
@@ -4202,11 +4279,14 @@ bool SpecMeasManager::handleGadrasDetectorDatFile( std::istream &input, SimpleDi
   auto seedHolder = make_shared<shared_ptr<DetectorPeakResponse>>( seed );
   const string datPath = displayName;
 
-  effUpload->uploaded().connect( std::function<void()>(
-      [this, effUpload, effStatus, characterize, seedHolder](){
+  // Drop area (also click-to-pick) for the companion file - see setup_pair_file_drop.
+  WContainerWidget *effDrop = effRow->addNew<WContainerWidget>();
+  effDrop->addNew<WText>( WString::tr("smm-pair-drop-txt") );
+
+  auto handle_eff_file = [this, effStatus, characterize, further, seedHolder]
+                         ( const string &/*display_name*/, const string &spool ){
     try
     {
-      const string spool = effUpload->spoolFileName();
 #ifdef _WIN32
       const std::wstring wspool = SpecUtils::convert_from_utf8_to_utf16(spool);
       ifstream csv( wspool.c_str(), ios_base::binary | ios_base::in );
@@ -4227,14 +4307,25 @@ bool SpecMeasManager::handleGadrasDetectorDatFile( std::istream &input, SimpleDi
       if( !updated->isValid() )
         throw runtime_error( "the file held no usable efficiency" );
 
+      // Both halves of a proper efficiency transfer are now in hand - the geometry from the
+      //  Detector.dat and the measured curve from the CSV - so give the detector real off-axis and
+      //  near-field support instead of leaving it on the flat-disk approximation.  No Monte Carlo.
+      const bool transferred = CeeLoUtils::attachCurveTransferResponse( *updated );
+
       *seedHolder = updated;
-      effStatus->setText( WString::tr("smm-gadras-dat-eff-ok") );
+      effStatus->setText( WString::tr( transferred ? "smm-gadras-dat-eff-ok-transfer"
+                                                   : "smm-gadras-dat-eff-ok" ) );
       characterize->setText( WString::tr("smm-gadras-dat-use") );
+      further->show();
     }catch( std::exception &e )
     {
       effStatus->setText( WString::tr("smm-gadras-dat-eff-err").arg(e.what()) );
     }
-  } ) );
+
+    wApp->triggerUpdate();
+  };//handle_eff_file
+
+  setup_pair_file_drop( dialog, effDrop, pairFileDragNDrop(), handle_eff_file );
 
   characterize->clicked().connect( std::function<void()>( [viewer, geometry, seedHolder](){
     if( !viewer )
@@ -4247,7 +4338,19 @@ bool SpecMeasManager::handleGadrasDetectorDatFile( std::istream &input, SimpleDi
     if( drf && drf->isValid() )
       viewer->detectorChanged().emit( drf );
     else
-      viewer->showDrfModifyWindow( drf, geometry );
+      viewer->showDrfModifyWindow( drf );
+  } ) );
+
+  // Take the detector AND open the editor on it, for a user who wants to review the imported
+  //  geometry, upgrade the response with Monte Carlo, or set a FWHM before moving on.
+  further->clicked().connect( std::function<void()>( [viewer, seedHolder](){
+    if( !viewer )
+      return;
+
+    const shared_ptr<DetectorPeakResponse> drf = *seedHolder;
+    if( drf && drf->isValid() )
+      viewer->detectorChanged().emit( drf );
+    viewer->showDrfModifyWindow( drf );
   } ) );
 
   return true;
@@ -4344,19 +4447,22 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
 
   // For GADRAS format, add optional Detector.dat upload
   // We create the widgets here for layout order, but connect signals after diameter_edit exists
-  WFileUpload *det_dat_upload = nullptr;
+  WContainerWidget *det_dat_div = nullptr;
+  WContainerWidget *det_dat_drop = nullptr;
   WText *det_dat_status = nullptr;
   WText *setback_text = nullptr;
 
   if( is_gadras )
   {
-    WContainerWidget *det_dat_div = dialog->contents()->addNew<WContainerWidget>();
+    det_dat_div = dialog->contents()->addNew<WContainerWidget>();
     det_dat_div->addStyleClass( "DetDatUploadDiv" );
 
-    det_dat_div->addNew<WLabel>( WString::tr("smm-eff-csv-det-dat-label") );
+    WLabel *det_dat_label = det_dat_div->addNew<WLabel>( WString::tr("smm-eff-csv-det-dat-label") );
+    det_dat_label->setInline( false );
 
-    det_dat_upload = det_dat_div->addNew<WFileUpload>();
-    det_dat_upload->changed().connect( det_dat_upload, &Wt::WFileUpload::upload );
+    // Drop area (also click-to-pick) for the companion file - see setup_pair_file_drop.
+    det_dat_drop = det_dat_div->addNew<WContainerWidget>();
+    det_dat_drop->addNew<WText>( WString::tr("smm-pair-drop-txt") );
 
     det_dat_status = det_dat_div->addNew<WText>();
     det_dat_status->setInline( false );
@@ -4434,10 +4540,9 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
   auto datPrefs = make_shared<shared_ptr<DetectorPeakResponse>>();
 
   // Now that diameter_edit and update_field_visibility exist, connect the Detector.dat upload signal
-  if( is_gadras && det_dat_upload )
+  if( is_gadras && det_dat_drop )
   {
-    det_dat_upload->uploaded().connect( this, [=](){
-      const std::string spool = det_dat_upload->spoolFileName();
+    auto handle_dat_file = [=]( const std::string &/*display_name*/, const std::string &spool ){
       if( spool.empty() )
         return;
 
@@ -4463,6 +4568,18 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
         dat_strm.clear();
         dat_strm.seekg( 0, ios::beg );
         enriched->fromGadrasDatOnly( dat_strm );
+
+        // The crystal geometry the .dat states, carried onto the DRF so the efficiency curve from
+        //  the CSV can be transferred through it (see apply_dat_prefs).
+        try
+        {
+          vector<string> geom_warnings;
+          enriched->setGeometry( make_shared<const ceelo::GeometryDescriptor>(
+                                    CeeLoUtils::buildGadrasGeometry( dat, geom_warnings ) ) );
+        }catch( std::exception & )
+        {
+          //A geometry the ray-tracer cannot use; everything else the .dat gives still applies.
+        }
 
         const float diam = enriched->detectorDiameter();
         const float sb = static_cast<float>( enriched->detectorSetback() );
@@ -4494,8 +4611,12 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
         if( setback_text )
           setback_text->setText( "" );
       }
-    } );
-  }//if( is_gadras && det_dat_upload )
+
+      wApp->triggerUpdate();
+    };//handle_dat_file
+
+    setup_pair_file_drop( dialog, det_dat_drop, pairFileDragNDrop(), handle_dat_file );
+  }//if( is_gadras && det_dat_drop )
 
   auto fore = InterSpec::instance()->measurment( SpecUtils::SpectrumType::Foreground );
   shared_ptr<DetectorPeakResponse> prev = fore ? fore->detector() : nullptr;
@@ -4539,6 +4660,11 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
   }//if( makeSerialNumCb || makeModelCb )
 
   dialog->addButton( WString::tr("Cancel") );
+
+  // Accept AND go straight to the editor - for reviewing an imported geometry, upgrading the
+  //  response with Monte Carlo, or setting a FWHM, without hunting for the tool afterwards.
+  WPushButton *further = dialog->addButton( WString::tr("smm-further-options") );
+
   WPushButton *accept = dialog->addButton( WString::tr("smm-ecc-use-drf") );
 
 
@@ -4566,6 +4692,16 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
 
     if( from_dat->detectorSetback() > 0.0 )
       drf->setDetectorSetback( from_dat->detectorSetback() );
+
+    // With the .dat's geometry and the CSV's measured curve both present, the detector can answer
+    //  off-axis and near-field for free - see CeeLoUtils::attachCurveTransferResponse.  Only
+    //  reached for the far-field interpretations; a fixed-geometry DRF has no geometry to transfer
+    //  through.
+    if( from_dat->geometry() )
+    {
+      drf->setGeometry( from_dat->geometry() );
+      CeeLoUtils::attachCurveTransferResponse( *drf );
+    }
 
     return drf;
   };//apply_dat_prefs
@@ -4627,10 +4763,12 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
         chart->setXAxisRange( std::max(new_drf->lowerEnergy(),0.0), 4000.0 );
 
       accept->enable();
+      further->enable();
     }catch( std::exception & )
     {
       chart->updateChart( nullptr );
       accept->disable();
+      further->disable();
     }
   };//update_state lambda
 
@@ -4639,7 +4777,8 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
   diameter_edit->textInput().connect( this, update_state );
 
 
-  accept->clicked().connect( this, [=](){
+  // Shared by "Use DRF" and "Further options..."; the latter also opens the editor on the result.
+  auto accept_drf = [=]( const bool open_modify ){
     const int index = geom_combo->currentIndex();
     const auto pos = index_to_geom.find( index );
     assert( pos != end( index_to_geom ) );
@@ -4701,7 +4840,13 @@ bool SpecMeasManager::handleEfficiencyCsvFile( std::istream &input, SimpleDialog
 
       undoManager->addUndoRedoStep( undo, redo, "Change to efficiency CSV DRF" );
     }
-  } );
+
+    if( open_modify )
+      interspec->showDrfModifyWindow( new_drf );
+  };//accept_drf
+
+  accept->clicked().connect( this, [accept_drf](){ accept_drf( false ); } );
+  further->clicked().connect( this, [accept_drf](){ accept_drf( true ); } );
 
   return true;
 }//bool handleEfficiencyCsvFile( std::istream &input, SimpleDialog *dialog )

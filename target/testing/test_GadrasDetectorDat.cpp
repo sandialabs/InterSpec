@@ -656,21 +656,28 @@ BOOST_AUTO_TEST_CASE( test_shipped_gadras_drfs_unchanged )
   const string base = SpecUtils::append_path( g_data_dir, "GenericGadrasDetectors" );
   BOOST_REQUIRE_MESSAGE( SpecUtils::is_directory(base), "Missing " + base );
 
-  // name -> hash, captured 2026-08-26 before the fromGadrasDefinition split.
+  // name -> hash, re-recorded 2026-08-29 (--record-gadras-hashes), when `applyGadrasDat` began
+  //  recording the crystal geometry on the DRF and attaching a measured-curve transfer response to
+  //  it.  Both feed computeHash(), so every shipped detector that HAS an Efficiency.csv and a
+  //  usable geometry changed hash - deliberately: they answer off-axis and near-field now.
+  //
+  //  "HPGe 40%" is the one entry that did NOT change: its Detector.dat states a zero crystal length
+  //  (parameter 10), so no geometry can be built for it and it keeps the flat-disk treatment.  If
+  //  that data file is ever corrected, this hash moves too.
   static const std::map<string,uint64_t> sm_expected = {
-    { "HPGe 10%", 7510061018782862820ull },
-    { "HPGe 20%", 796235728156705766ull },
+    { "HPGe 10%", 12999987909897955040ull },
+    { "HPGe 20%", 15942574301746852451ull },
     { "HPGe 40%", 11793998863736797277ull },
-    { "LaBr 10%", 7224873908720907362ull },
-    { "LaBr 5%", 14056778455063695226ull },
-    { "NaI 10%", 12293132907226806266ull },
-    { "NaI 12%", 11442386257812586975ull },
-    { "NaI 1x1", 13548353314295837442ull },
-    { "NaI 25%", 12071477012891740898ull },
-    { "NaI 2x2", 15603649696888427249ull },
-    { "NaI 30%", 2812407564691516213ull },
-    { "NaI 3x3", 12364293647212064842ull },
-    { "NaI 5%", 2419841097339912955ull }
+    { "LaBr 10%", 3405271502809736741ull },
+    { "LaBr 5%", 9533508627378423206ull },
+    { "NaI 10%", 12710450218362030861ull },
+    { "NaI 12%", 13838579886097982910ull },
+    { "NaI 1x1", 9444249551207657343ull },
+    { "NaI 25%", 14359049774689294627ull },
+    { "NaI 2x2", 17708187484627074873ull },
+    { "NaI 30%", 3282691297936797345ull },
+    { "NaI 3x3", 12212646696940897187ull },
+    { "NaI 5%", 7940542305173954851ull }
   };
 
   bool record = false;

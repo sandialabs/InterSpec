@@ -3389,11 +3389,57 @@ void DrfSelect::handleMcResponseFinished( std::shared_ptr<DetectorPeakResponse> 
 
 void DrfSelect::handleModifyRequested()
 {
-  openModifyWindow( nullptr );
+  openModifyWindow();
 }//void handleModifyRequested()
 
 
-void DrfSelect::openModifyWindow( std::shared_ptr<const ceelo::GeometryDescriptor> geometry )
+namespace
+{
+/** Undo/redo helpers for the DRF-select dialogs "Modify..." window.
+
+ Both resolve the dialog when the step runs, rather than capturing it: the DRF-select window itself
+ is undoable, so by the time one of these executes the `DrfSelect` that recorded it may be a
+ different instance (or gone).  See the comments on `UndoRedoManager::addUndoRedoStep`.
+ */
+void reopenDrfSelectModifyWindow()
+{
+  InterSpec *viewer = InterSpec::instance();
+  DrfSelectWindow *window = viewer ? viewer->showDrfSelectWindow() : nullptr;
+  if( window && window->widget() )
+    window->widget()->openModifyWindow();
+}//reopenDrfSelectModifyWindow()
+
+
+void closeDrfSelectModifyWindow()
+{
+  InterSpec *viewer = InterSpec::instance();
+  DrfSelectWindow *window = viewer ? viewer->drfSelectWindow() : nullptr;
+  if( window && window->widget() )
+    window->widget()->programmaticallyCloseModifyWindow();
+}//closeDrfSelectModifyWindow()
+}//namespace
+
+
+DrfModifyWindow *DrfSelect::modifyWindow()
+{
+  return m_modifyWindow.get();
+}//DrfModifyWindow *modifyWindow()
+
+
+void DrfSelect::programmaticallyCloseModifyWindow()
+{
+  if( !m_modifyWindow )
+    return;
+
+  // Null the member first, so the `finished()` handler below early-returns rather than adding a
+  //  second (recursive) undo step.
+  DrfModifyWindow *window = m_modifyWindow.get();
+  m_modifyWindow = nullptr;
+  AuxWindow::deleteAuxWindow( window );
+}//void programmaticallyCloseModifyWindow()
+
+
+void DrfSelect::openModifyWindow()
 {
   if( m_modifyWindow )
   {
@@ -3402,16 +3448,32 @@ void DrfSelect::openModifyWindow( std::shared_ptr<const ceelo::GeometryDescripto
     return;
   }
 
-  m_modifyWindow = AuxWindow::make<DrfModifyWindow>( m_interspec, m_detector, geometry );
+  m_modifyWindow = AuxWindow::make<DrfModifyWindow>( m_interspec, m_detector );
   m_modifyWindow->tool()->updatedDrf().connect( this, &DrfSelect::handleModifyFinished );
   m_modifyWindow->tool()->updatedDrf().connect( m_modifyWindow.get(), &AuxWindow::hide );
   m_modifyWindow->finished().connect( this, [this](){
-    if( m_modifyWindow )
+    if( !m_modifyWindow )
+      return;
+
+    AuxWindow::deleteAuxWindow( m_modifyWindow.get() );
+    assert( !m_modifyWindow );
+
+    UndoRedoManager *undoRedo = m_interspec->undoRedoManager();
+    if( undoRedo && undoRedo->canAddUndoRedoNow() )
     {
-      AuxWindow::deleteAuxWindow( m_modifyWindow.get() );
-      assert( !m_modifyWindow );
-    }
+      undoRedo->addUndoRedoStep( [](){ reopenDrfSelectModifyWindow(); },
+                                 [](){ closeDrfSelectModifyWindow(); },
+                                 "Close modify-DRF tool" );
+    }//if( undoRedo )
   } );
+
+  UndoRedoManager *undoRedo = m_interspec->undoRedoManager();
+  if( undoRedo && undoRedo->canAddUndoRedoNow() )
+  {
+    undoRedo->addUndoRedoStep( [](){ closeDrfSelectModifyWindow(); },
+                               [](){ reopenDrfSelectModifyWindow(); },
+                               "Show modify-DRF tool" );
+  }//if( undoRedo )
 }//void openModifyWindow(...)
 
 
@@ -5308,8 +5370,9 @@ void DrfSelect::offerAngleImportModeChoice( const string &filename )
   //  the user can review/correct the geometry, edit the measured-curve anchor,
   //  and generate a full response - all in one place.
   generic->clicked().connect( std::function<void()>( [this, geometry, seedDrf](){
+    seedDrf->setGeometry( geometry );  //the DRF carries its own shape from here on
     setDetector( seedDrf );
-    openModifyWindow( geometry );
+    openModifyWindow();
   } ) );
 }//offerAngleImportModeChoice(...)
 
@@ -5344,9 +5407,12 @@ void DrfSelect::startGadrasGeometryImport( const std::string &directory,
     passMessage( warning, WarningWidget::WarningMsgMedium );
 
   if( seedDrf )
+  {
+    seedDrf->setGeometry( geometry );  //the DRF carries its own shape from here on
     setDetector( seedDrf );
+  }
 
-  openModifyWindow( geometry );
+  openModifyWindow();
 }//startGadrasGeometryImport(...)
 
 
@@ -5392,8 +5458,9 @@ void DrfSelect::offerGadrasImportModeChoice( const std::string &datFilename,
   generic->clicked().connect( std::function<void()>( [this, geometry, seedDrf, warnings](){
     for( const string &warning : warnings )
       passMessage( warning, WarningWidget::WarningMsgMedium );
+    seedDrf->setGeometry( geometry );  //the DRF carries its own shape from here on
     setDetector( seedDrf );
-    openModifyWindow( geometry );
+    openModifyWindow();
   } ) );
 }//offerGadrasImportModeChoice(...)
 

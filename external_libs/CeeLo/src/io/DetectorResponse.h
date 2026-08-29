@@ -281,6 +281,15 @@ struct GeometryDescriptor {
     /// Every Geometry/RayTrace precondition this descriptor violates; empty
     /// means it is safe to build. See GeometryProblem.
     std::vector<GeometryProblem> problems() const;
+
+    /// Standalone XML for JUST the geometry, so a host can store a detector's
+    /// shape before (or without) any response having been generated for it.
+    ///
+    /// The payload is the same <Detector> element DetectorResponse's own codec
+    /// writes -- shared code, so the two cannot drift -- wrapped in a
+    /// <CeeLoGeometry> root. Round-trips through from_xml_string().
+    std::string to_xml_string() const;
+    static GeometryDescriptor from_xml_string(const std::string& xml);
 };
 
 // ---------------------------------------------------------------------------
@@ -502,7 +511,21 @@ enum class ResponseProfile : uint8_t {
 
 const char* to_string(ResponseProfile p);
 
+/// How a response was produced. Recorded rather than inferred: a quick-MC
+/// transfer and a measured-curve transfer both leave an angle-flat eta table
+/// and a model_transfer envelope, so the payload alone cannot tell them apart,
+/// and a host that wants to show a stored detector's current method (rather
+/// than a default) would be guessing.
+enum class ProductionMethod : int {
+    FullMc = 0,           ///< ResponseGenerator::generate(), full energy x angle(x distance) scan
+    QuickMcTransfer = 1,  ///< ResponseGenerator::generate() with transfer_mode
+    CurveTransfer = 2     ///< make_transfer_response(): no Monte Carlo at all
+};
+
+const char* to_string(ProductionMethod m);
+
 struct ResponseProvenance {
+    ProductionMethod method = ProductionMethod::FullMc;
     std::string ceelo_version;        ///< library version string
     std::string created_utc;          ///< ISO-8601, informational
     ResponseProfile profile = ResponseProfile::General;

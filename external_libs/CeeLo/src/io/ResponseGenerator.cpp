@@ -1058,6 +1058,8 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
     for (size_t i = 0; i < gd.materials.size(); ++i)
         resp->mu_tables.push_back(
             MuTable::sample(*run.mat(static_cast<int>(i)), static_cast<int>(i)));
+    resp->provenance.method = opts.transfer_mode ? ProductionMethod::QuickMcTransfer
+                                                 : ProductionMethod::FullMc;
     resp->provenance.profile = opts.profile;
     resp->provenance.node_fep_precision = opts.node_fep_precision;
     resp->provenance.generation_seed = opts.base_seed;

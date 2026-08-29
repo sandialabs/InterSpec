@@ -33,15 +33,17 @@
 #include <Wt/WContainerWidget.h>
 
 #include "InterSpec/AuxWindow.h"
+#include "InterSpec/DetectorGeometryInput.h"
 
 class DrfChart;
 class InterSpec;
 class DetectorPeakResponse;
-class DetectorGeometryInput;
 
 namespace Wt
 {
   class WText;
+  class WCheckBox;
+  class WTableRow;
   class WGroupBox;
   class WComboBox;
   class WLineEdit;
@@ -91,9 +93,10 @@ public:
     CurveTransfer = 2
   };//enum class Method
 
+  /** The geometry form is seeded from `seed_drf->geometry()` when the DRF knows its shape, and
+   otherwise guessed from its diameter - see DetectorGeometryInput::seedFromDrf. */
   MakeMcResponseForDrf( InterSpec *viewer,
-                        std::shared_ptr<const DetectorPeakResponse> seed_drf,
-                        std::shared_ptr<const ceelo::GeometryDescriptor> geometry = nullptr );
+                        std::shared_ptr<const DetectorPeakResponse> seed_drf );
 
   virtual ~MakeMcResponseForDrf() override;
 
@@ -148,15 +151,56 @@ public:
   /** The currently selected build method. */
   Method selectedMethod() const;
 
+
+  /** A snapshot of this tools GUI state (plus the response it currently holds), for an owner that
+   records undo/redo steps for the dialog this tool is a section of. */
+  struct State
+  {
+    int method = 0, profile = 0, precision = 0, anchorAngles = 0, chartMode = 0;
+    bool groundToMeasured = true;
+    std::string customPrecision, refDistance, chartDistance;
+    std::shared_ptr<const ceelo::DetectorResponse> result;
+    std::string status;
+    DetectorGeometryInput::State geometry;
+
+    bool operator==( const State &rhs ) const;
+    bool operator!=( const State &rhs ) const{ return !((*this) == rhs); }
+  };//struct State
+
+  State currentState() const;
+
+  /** Restores a #currentState snapshot; abandons any in-flight generation, and does not emit
+   #userChanged. */
+  void setState( const State &state );
+
+  /** Emitted when a user edit changes what #currentState would return - i.e. when an owner that
+   records undo/redo for this tool should take a new snapshot. */
+  Wt::Signal<> &userChanged();
+
 protected:
   void handleGeometryChanged();
   void handleMethodChanged();
   void handlePrecisionChanged();
+
+  /** An option that only affects a future generation (profile, anchor angles, custom precision)
+   changed: refresh the estimate, and tell any undo/redo owner. */
+  void handleOptionChanged();
+
+  /** A chart display option (mode, distance) changed: re-draw, and tell any undo/redo owner. */
+  void handleChartOptionChanged();
+
   void updateEstimate();
 
   /** Refreshes the measured-curve anchor description row (source label +
    reference-distance edit) from the seed DRF and current geometry. */
   void updateAnchorInfo();
+
+  /** Refreshes the "ground to measured efficiency" row: what the DRF offers as an anchor (raw
+   measured points, a sampled efficiency curve, or nothing), and whether the checkbox can be used. */
+  void updateGroundingInfo();
+
+  /** Whether the generated response should be corrected to the DRFs measured efficiency. */
+  bool groundToMeasured() const;
 
   /** Refreshes the response-preview chart (per-angle efficiency curves) from
    the currently generated response, or hides it when there is none. */
@@ -194,15 +238,22 @@ protected:
   Wt::WComboBox *m_precision;   //Fast (1%) | Normal (0.3%) | Balanced (relax_mild) | Thorough (0.1%) | Custom
   Wt::WLineEdit *m_customPrecision;
   Wt::WComboBox *m_anchorAngles;    //On-axis only | 3 cos-theta anchors
+
+  /** Whether the generated response is corrected (k(E) + covariance) to the DRFs measured
+   efficiency; disabled, and forced off, for a DRF that has none. */
+  Wt::WCheckBox *m_groundCb;
+  Wt::WText *m_groundInfo;          //what the response would be grounded on
+  Wt::WTableRow *m_groundRow, *m_groundInfoRow;
   Wt::WText *m_anchorInfo;          //measured-curve anchor source description
   Wt::WLineEdit *m_refDistance;     //measured-curve anchor reference distance
   Wt::WText *m_estimate;
 
-  //Rows shown/hidden per selected method:
-  Wt::WContainerWidget *m_profileRow;
-  Wt::WContainerWidget *m_precRow;
-  Wt::WContainerWidget *m_anchorAnglesRow;
-  Wt::WContainerWidget *m_anchorRow;
+  //Rows of the Characterization table, shown/hidden per selected method:
+  Wt::WTableRow *m_profileRow;
+  Wt::WTableRow *m_precRow;
+  Wt::WTableRow *m_anchorAnglesRow;
+  Wt::WTableRow *m_anchorInfoRow;   //full-width description of the measured-curve anchor
+  Wt::WTableRow *m_anchorRow;       //the anchor reference-distance input
 
   Wt::WPushButton *m_generate;
   Wt::WPushButton *m_cancelBtn;
@@ -216,6 +267,11 @@ protected:
   Wt::WComboBox *m_chartMode;       //Absolute | Intrinsic
   Wt::WLineEdit *m_chartDistance;   //source distance for the absolute curves
 
+  /** Whether the charts initial energy range has been set; only the first time
+   the chart is shown picks a range, so later re-draws (mode/distance changes)
+   dont undo the users zooming. */
+  bool m_chartRangeSet;
+
   /** Identifies the current generation; results/progress from stale runs
    (user re-started or changed things) are discarded.  Only touched from the
    session thread.
@@ -227,7 +283,15 @@ protected:
 
   std::shared_ptr<const ceelo::DetectorResponse> m_result;
 
+  /** Set while #setState is restoring, so the widget changes it makes dont each look like an edit. */
+  bool m_restoringState;
+
+  /** Set while the constructor is seeding from the DRF, so the measured-curve method's automatic
+   rebuild does not fire on top of a response the DRF already carries. */
+  bool m_seedingFromDrf;
+
   Wt::Signal<bool> m_validationChanged;
+  Wt::Signal<> m_userChanged;
   Wt::Signal<std::shared_ptr<ceelo::DetectorResponse>> m_responseGenerated;
   Wt::Signal<std::shared_ptr<DetectorPeakResponse>> m_updatedDrf;
 };//class MakeMcResponseForDrf
@@ -247,8 +311,7 @@ public:
 protected:
   // Constructor is protected; use AuxWindow::make<MakeMcResponseForDrfWindow>().
   explicit MakeMcResponseForDrfWindow(
-                std::shared_ptr<const DetectorPeakResponse> seed_drf,
-                std::shared_ptr<const ceelo::GeometryDescriptor> geometry = nullptr );
+                std::shared_ptr<const DetectorPeakResponse> seed_drf );
 
   MakeMcResponseForDrf *m_tool;
 };//class MakeMcResponseForDrfWindow

@@ -1682,3 +1682,43 @@ button.Wt-btn.with-label.LightButton,
   width: 100%;
   box-sizing: border-box; /* Include padding in width calculation */
 }
+
+
+/* Companion-file drop area in the Detector.dat / Efficiency.csv import dialogs; see
+   `setup_pair_file_drop` in SpecMeasManager.cpp.  The drag/upload behavior is the batch tool's
+   (BatchGuiWidget.js), but its CSS is scoped to .BatchGuiWidget, so the visual states are repeated
+   here for the dialog. */
+.PairFileDrop
+{
+  margin: 4px 0;
+  padding: 10px;
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  cursor: pointer;
+  border: 2px dashed var(--interspec-outline-color, #b0b0b0);
+  border-radius: 8px;
+  color: var(--interspec-fainter-text-color, #777);
+  font-size: smaller;
+}
+
+.PairFileDrop.DomIsDrugOver
+{
+  border: 3px dashed grey;
+  background-color: rgba(128, 128, 128, 0.5);
+}
+
+.PairFileDrop.DragedOver,
+.PairFileDrop.DragedOver.DomIsDrugOver
+{
+  border: 3px dashed green;
+  background-color: transparent;
+}
+
+.PairFileDrop.Uploading
+{
+  border: 3px dashed green;
+  animation: blink 1s infinite;
+}

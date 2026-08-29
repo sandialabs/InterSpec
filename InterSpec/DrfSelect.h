@@ -361,16 +361,25 @@ public:
    */
   void handleModifyRequested();
 
-  /** Opens (or re-shows) the "Modify..." dialog seeded with the current DRF and
-   an optional physical geometry descriptor (e.g. an imported ANGLE model),
-   which pre-populates the geometry form and enables the measured-anchor editor.
+  /** Opens (or re-shows) the "Modify..." dialog seeded with the current DRF.  The geometry form
+   and the measured-anchor editor come from the DRF's own `geometry()`, which an importer
+   (an ANGLE model, a GADRAS Detector.dat) sets when it knows the detector's shape.
    */
-  void openModifyWindow( std::shared_ptr<const ceelo::GeometryDescriptor> geometry );
+  void openModifyWindow();
 
   /** Receives the modified DRF from the Modify dialog and makes it this
    dialog's current detector (the user still Accepts to apply app-wide).
    */
   void handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf );
+
+  /** The "Modify..." dialog this widget owns, or nullptr when it is not open.
+   \sa InterSpec::drfModifyWidget
+   */
+  DrfModifyWindow *modifyWindow();
+
+  /** Closes the "Modify..." dialog without recording an undo/redo step - for use *from* an
+   undo/redo step, whose counterpart already covers the close. */
+  void programmaticallyCloseModifyWindow();
 
   /** Rebuilds the "chips" summarizing what the current DRF contains (FWHM,
    uncertainties, total efficiency, raw measured points, MC parameterization,

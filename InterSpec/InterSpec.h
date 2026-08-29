@@ -92,6 +92,7 @@ class DetectorPeakResponse;
 class ExportSpecFileWindow;
 class MakeFwhmForDrfWindow;
 class MakeMcResponseForDrfWindow;
+class DrfModifyWidget;
 class DrfModifyWindow;
 class IsotopeSearchByEnergy;
 class ShieldingSourceDisplay;
@@ -703,6 +704,9 @@ public:
   
   DrfSelectWindow *showDrfSelectWindow();
   void closeDrfSelectWindow();
+
+  /** The DRF-select window if one is open, else nullptr; never creates one. */
+  DrfSelectWindow *drfSelectWindow() const;
   
   void showCompactFileManagerWindow();
   
@@ -915,15 +919,13 @@ public:
    entry + CeeLo MC run + attach response to the DRF).  If already showing,
    just returns the existing window.
    @param seed_drf The DRF to seed the geometry from and attach the response
-          to; pass nullptr to use the current foreground detector.
-   @param geometry Optional physical geometry to pre-populate the geometry form
-          with (e.g. mapped from an imported ANGLE detector model); overrides
-          the cylinder guess derived from `seed_drf`.  If the tool window is
-          already open, its geometry form is re-seeded from this.
+          to; pass nullptr to use the current foreground detector.  Its
+          `DetectorPeakResponse::geometry()` pre-populates the geometry form
+          when it has one, overriding the cylinder guess; if the tool window is
+          already open, its form is re-seeded from it.
    */
   MakeMcResponseForDrfWindow *showMcResponseWindow(
-                        std::shared_ptr<const DetectorPeakResponse> seed_drf,
-                        std::shared_ptr<const ceelo::GeometryDescriptor> geometry = nullptr );
+                        std::shared_ptr<const DetectorPeakResponse> seed_drf );
 
   /** If a `MakeMcResponseForDrfWindow` is showing, deletes it. */
   void deleteMcResponseWindow();
@@ -932,12 +934,26 @@ public:
    uncertainty bands) for `drf`; pass nullptr for the current foreground
    detector.  An accepted edit becomes the session detector.  Used e.g. by the
    Act/Shield cascade-summing option when the DRF lacks total-efficiency info.
+
+   The geometry comes from the DRF itself (`DetectorPeakResponse::geometry()`), so an importer
+   that knows the detector's shape sets it there rather than passing it alongside.
    */
-  DrfModifyWindow *showDrfModifyWindow( std::shared_ptr<DetectorPeakResponse> drf,
-                        std::shared_ptr<const ceelo::GeometryDescriptor> geometry = nullptr );
+  DrfModifyWindow *showDrfModifyWindow( std::shared_ptr<DetectorPeakResponse> drf );
 
   /** If a `DrfModifyWindow` opened via #showDrfModifyWindow is showing, deletes it. */
   void deleteDrfModifyWindow();
+
+  /** Closes a #showDrfModifyWindow dialog without recording an undo/redo step - for use *from* an
+   undo/redo step, whose counterpart already covers the close. */
+  void programmaticallyCloseDrfModifyWindow();
+
+  /** The `DrfModifyWidget` of whichever "Modify Detector Response" dialog is currently open - the
+   one this class owns, or the one the DRF-select dialog owns - or nullptr when none is.
+
+   The canonical lookup for undo/redo steps that need to reach into that dialog; they must not
+   capture it, since it may have been closed and re-created since the step was recorded.
+   */
+  DrfModifyWidget *drfModifyWidget() const;
 
 #if( USE_LLM_INTERFACE )
   /** Create and show the LLM tool widget in the tools tab, if its not already created. */

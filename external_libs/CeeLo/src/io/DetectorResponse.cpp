@@ -272,6 +272,16 @@ Geometry GeometryDescriptor::build_geometry(
     return g;
 }
 
+const char* to_string(ProductionMethod m) {
+    switch (m) {
+        case ProductionMethod::FullMc:          return "full_mc";
+        case ProductionMethod::QuickMcTransfer: return "quick_mc_transfer";
+        case ProductionMethod::CurveTransfer:   return "curve_transfer";
+    }
+    return "full_mc";
+}
+
+
 const char* to_string(GeometryProblem p) {
     switch (p) {
         case GeometryProblem::DimensionsMissing:
@@ -1284,7 +1294,180 @@ void eta_from_xml(const XmlNode* n, EtaTable& t) {
     t.frac_sigma = parse_doubles(child_value(n, "FracSigma"));
 }
 
+/// Writes the <Detector> element - the whole storable geometry, materials
+/// included - under `parent`.  Shared by DetectorResponse::serialize_xml and
+/// GeometryDescriptor::to_xml_string, so a geometry stored on its own and the
+/// geometry inside a stored response cannot drift apart.  Factoring it out left
+/// the emitted bytes unchanged, so every existing response keeps its
+/// content_hash.
+void write_detector_node(XmlDoc& doc, XmlNode* parent,
+                         const GeometryDescriptor& descriptor) {
+    XmlNode* d = append_node(doc, parent, "Detector");
+    append_attrib(doc, d, "shape",
+                  descriptor.shape == DetectorShape::Cylinder ? "cylinder"
+                                                              : "box");
+    append_attrib(doc, d, "crystalMaterial",
+                  std::to_string(descriptor.crystal_material_index));
+    append_attrib(doc, d, "referencePoint",
+                  descriptor.reference_point == ReferencePoint::EndcapFront
+                      ? "endcap_front" : "crystal_face");
+    append_attrib(doc, d, "symmetry",
+                  descriptor.symmetry == ResponseSymmetry::Quadrant
+                      ? "quadrant" : "axial");
+    append_value_node(doc, d, "Dimensions",
+                      join_doubles(descriptor.dimensions_cm));
+    // Both of the following are written only when non-default, so files
+    // for sharp-edged, flat-bored crystals stay byte-identical (and keep
+    // their content_hash) across this feature being added.
+    if (descriptor.bullet_radius_cm > 0.0)
+        append_attrib(doc, d, "bulletRadius",
+                      fmt_double(descriptor.bullet_radius_cm));
+    if (descriptor.bore) {
+        XmlNode* b = append_node(doc, d, "Bore");
+        append_attrib(doc, b, "radius", fmt_double(descriptor.bore->radius));
+        append_attrib(doc, b, "depth", fmt_double(descriptor.bore->depth));
+        if (descriptor.bore->rounded_tip)
+            append_attrib(doc, b, "roundedTip", "1");
+    }
+    if (descriptor.dead_layer) {
+        XmlNode* dl = append_node(doc, d, "DeadLayer");
+        append_attrib(doc, dl, "front", fmt_double(descriptor.dead_layer->front));
+        append_attrib(doc, dl, "side", fmt_double(descriptor.dead_layer->side));
+        append_attrib(doc, dl, "back", fmt_double(descriptor.dead_layer->back));
+    }
+    for (const LayerSpec& l : descriptor.layers) {
+        XmlNode* ln = append_node(doc, d, "Layer");
+        append_attrib(doc, ln, "material", std::to_string(l.material_index));
+        append_attrib(doc, ln, "frontThickness", fmt_double(l.front_thickness_cm));
+        append_attrib(doc, ln, "sideThickness", fmt_double(l.side_thickness_cm));
+        append_attrib(doc, ln, "zStart", fmt_double(l.z_start_cm));
+        append_attrib(doc, ln, "zEnd", fmt_double(l.z_end_cm));
+    }
+    if (descriptor.collimator) {
+        XmlNode* c = append_node(doc, d, "Collimator");
+        append_attrib(doc, c, "material",
+                      std::to_string(descriptor.collimator->material_index));
+        append_attrib(doc, c, "sideThickness",
+                      fmt_double(descriptor.collimator->side_thickness_cm));
+        append_attrib(doc, c, "zStart", fmt_double(descriptor.collimator->z_start_cm));
+        append_attrib(doc, c, "zEnd", fmt_double(descriptor.collimator->z_end_cm));
+    }
+    XmlNode* mats = append_node(doc, d, "Materials");
+    for (size_t i = 0; i < descriptor.materials.size(); ++i) {
+        const MaterialSpec& m = descriptor.materials[i];
+        XmlNode* mn = append_node(doc, mats, "Material");
+        append_attrib(doc, mn, "index", std::to_string(i));
+        append_attrib(doc, mn, "name", m.name);
+        append_attrib(doc, mn, "density", fmt_double(m.density_g_per_cm3));
+        for (const MaterialComponent& c : m.composition) {
+            XmlNode* el = append_node(doc, mn, "El");
+            append_attrib(doc, el, "Z", std::to_string(int(c.Z)));
+            append_attrib(doc, el, "frac", fmt_double(c.mass_fraction));
+        }
+    }
+
+}
+
+/// Reads a <Detector> element written by write_detector_node.
+GeometryDescriptor read_detector_node(const XmlNode* d) {
+    GeometryDescriptor gd;
+    const char* shape = attrib_value(d, "shape");
+    gd.shape = (shape && std::strcmp(shape, "box") == 0)
+                   ? DetectorShape::Box : DetectorShape::Cylinder;
+    gd.crystal_material_index =
+        static_cast<int>(attrib_double(d, "crystalMaterial", -1));
+    const char* rp = attrib_value(d, "referencePoint");
+    gd.reference_point = (rp && std::strcmp(rp, "endcap_front") == 0)
+                             ? ReferencePoint::EndcapFront
+                             : ReferencePoint::CrystalFace;
+    const char* sym = attrib_value(d, "symmetry");
+    gd.symmetry = (sym && std::strcmp(sym, "quadrant") == 0)
+                      ? ResponseSymmetry::Quadrant : ResponseSymmetry::Axial;
+    gd.dimensions_cm = parse_doubles(child_value(d, "Dimensions"));
+    // Absent in files written before the fillet/rounded-tip feature; the
+    // defaults are what those crystals actually were.
+    gd.bullet_radius_cm = attrib_double(d, "bulletRadius", 0.0);
+    if (const XmlNode* b = d->first_node("Bore")) {
+        BoreHoleConfig bc;
+        bc.radius = attrib_double(b, "radius", 0.0);
+        bc.depth = attrib_double(b, "depth", 0.0);
+        bc.rounded_tip = attrib_bool(b, "roundedTip", false);
+        gd.bore = bc;
+    }
+    if (const XmlNode* dl = d->first_node("DeadLayer")) {
+        DeadLayerConfig dc;
+        dc.front = attrib_double(dl, "front", 0.0);
+        dc.side = attrib_double(dl, "side", 0.0);
+        dc.back = attrib_double(dl, "back", 0.0);
+        gd.dead_layer = dc;
+    }
+    for (const XmlNode* ln = d->first_node("Layer"); ln;
+         ln = ln->next_sibling("Layer")) {
+        LayerSpec l;
+        l.material_index = static_cast<int>(attrib_double(ln, "material", -1));
+        l.front_thickness_cm = attrib_double(ln, "frontThickness", 0.0);
+        l.side_thickness_cm = attrib_double(ln, "sideThickness", 0.0);
+        l.z_start_cm = attrib_double(ln, "zStart", 0.0);
+        l.z_end_cm = attrib_double(ln, "zEnd", 0.0);
+        gd.layers.push_back(l);
+    }
+    if (const XmlNode* c = d->first_node("Collimator")) {
+        CollimatorSpec cs;
+        cs.material_index = static_cast<int>(attrib_double(c, "material", -1));
+        cs.side_thickness_cm = attrib_double(c, "sideThickness", 0.0);
+        cs.z_start_cm = attrib_double(c, "zStart", 0.0);
+        cs.z_end_cm = attrib_double(c, "zEnd", 0.0);
+        gd.collimator = cs;
+    }
+    if (const XmlNode* mats = d->first_node("Materials")) {
+        for (const XmlNode* mn = mats->first_node("Material"); mn;
+             mn = mn->next_sibling("Material")) {
+            MaterialSpec m;
+            if (const char* v = attrib_value(mn, "name")) m.name = v;
+            m.density_g_per_cm3 = attrib_double(mn, "density", 0.0);
+            for (const XmlNode* el = mn->first_node("El"); el;
+                 el = el->next_sibling("El")) {
+                MaterialComponent c;
+                c.Z = static_cast<uint8_t>(attrib_double(el, "Z", 0));
+                c.mass_fraction = attrib_double(el, "frac", 0.0);
+                m.composition.push_back(c);
+            }
+            gd.materials.push_back(std::move(m));
+        }
+    }
+
+    return gd;
+}
+
 }  // namespace
+
+std::string GeometryDescriptor::to_xml_string() const {
+    XmlDoc doc;
+    XmlNode* root = doc.allocate_node(rapidxml::node_element, "CeeLoGeometry");
+    doc.append_node(root);
+    write_detector_node(doc, root, *this);
+
+    std::string out;
+    rapidxml::print(std::back_inserter(out), doc, 0);
+    return out;
+}
+
+
+GeometryDescriptor GeometryDescriptor::from_xml_string(const std::string& xml) {
+    std::vector<char> buf(xml.begin(), xml.end());
+    buf.push_back('\0');
+    XmlDoc doc;
+    doc.parse<rapidxml::parse_trim_whitespace>(buf.data());
+
+    const XmlNode* root = doc.first_node("CeeLoGeometry");
+    if (!root) throw std::runtime_error("CeeLoGeometry: missing root node");
+
+    const XmlNode* d = root->first_node("Detector");
+    if (!d) throw std::runtime_error("CeeLoGeometry: missing Detector node");
+
+    return read_detector_node(d);
+}
+
 
 std::string DetectorResponse::to_xml_string() const {
     return serialize_xml(/*include_certificate=*/true);
@@ -1324,74 +1507,11 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         append_attrib(doc, ve, "maxKeV", fmt_double(provenance.valid_e_max_keV));
         append_value_node(doc, p, "MinDistanceCm",
                           fmt_double(provenance.min_distance_cm));
+        append_attrib(doc, p, "method", to_string(provenance.method));
     }
 
     // Detector geometry
-    {
-        XmlNode* d = append_node(doc, root, "Detector");
-        append_attrib(doc, d, "shape",
-                      descriptor.shape == DetectorShape::Cylinder ? "cylinder"
-                                                                  : "box");
-        append_attrib(doc, d, "crystalMaterial",
-                      std::to_string(descriptor.crystal_material_index));
-        append_attrib(doc, d, "referencePoint",
-                      descriptor.reference_point == ReferencePoint::EndcapFront
-                          ? "endcap_front" : "crystal_face");
-        append_attrib(doc, d, "symmetry",
-                      descriptor.symmetry == ResponseSymmetry::Quadrant
-                          ? "quadrant" : "axial");
-        append_value_node(doc, d, "Dimensions",
-                          join_doubles(descriptor.dimensions_cm));
-        // Both of the following are written only when non-default, so files
-        // for sharp-edged, flat-bored crystals stay byte-identical (and keep
-        // their content_hash) across this feature being added.
-        if (descriptor.bullet_radius_cm > 0.0)
-            append_attrib(doc, d, "bulletRadius",
-                          fmt_double(descriptor.bullet_radius_cm));
-        if (descriptor.bore) {
-            XmlNode* b = append_node(doc, d, "Bore");
-            append_attrib(doc, b, "radius", fmt_double(descriptor.bore->radius));
-            append_attrib(doc, b, "depth", fmt_double(descriptor.bore->depth));
-            if (descriptor.bore->rounded_tip)
-                append_attrib(doc, b, "roundedTip", "1");
-        }
-        if (descriptor.dead_layer) {
-            XmlNode* dl = append_node(doc, d, "DeadLayer");
-            append_attrib(doc, dl, "front", fmt_double(descriptor.dead_layer->front));
-            append_attrib(doc, dl, "side", fmt_double(descriptor.dead_layer->side));
-            append_attrib(doc, dl, "back", fmt_double(descriptor.dead_layer->back));
-        }
-        for (const LayerSpec& l : descriptor.layers) {
-            XmlNode* ln = append_node(doc, d, "Layer");
-            append_attrib(doc, ln, "material", std::to_string(l.material_index));
-            append_attrib(doc, ln, "frontThickness", fmt_double(l.front_thickness_cm));
-            append_attrib(doc, ln, "sideThickness", fmt_double(l.side_thickness_cm));
-            append_attrib(doc, ln, "zStart", fmt_double(l.z_start_cm));
-            append_attrib(doc, ln, "zEnd", fmt_double(l.z_end_cm));
-        }
-        if (descriptor.collimator) {
-            XmlNode* c = append_node(doc, d, "Collimator");
-            append_attrib(doc, c, "material",
-                          std::to_string(descriptor.collimator->material_index));
-            append_attrib(doc, c, "sideThickness",
-                          fmt_double(descriptor.collimator->side_thickness_cm));
-            append_attrib(doc, c, "zStart", fmt_double(descriptor.collimator->z_start_cm));
-            append_attrib(doc, c, "zEnd", fmt_double(descriptor.collimator->z_end_cm));
-        }
-        XmlNode* mats = append_node(doc, d, "Materials");
-        for (size_t i = 0; i < descriptor.materials.size(); ++i) {
-            const MaterialSpec& m = descriptor.materials[i];
-            XmlNode* mn = append_node(doc, mats, "Material");
-            append_attrib(doc, mn, "index", std::to_string(i));
-            append_attrib(doc, mn, "name", m.name);
-            append_attrib(doc, mn, "density", fmt_double(m.density_g_per_cm3));
-            for (const MaterialComponent& c : m.composition) {
-                XmlNode* el = append_node(doc, mn, "El");
-                append_attrib(doc, el, "Z", std::to_string(int(c.Z)));
-                append_attrib(doc, el, "frac", fmt_double(c.mass_fraction));
-            }
-        }
-    }
+    write_detector_node(doc, root, descriptor);
 
     // Mu tables
     {
@@ -1574,77 +1694,19 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
         }
         if (const char* v = child_value(p, "MinDistanceCm"))
             pr.min_distance_cm = std::strtod(v, nullptr);
+        if (const char* v = attrib_value(p, "method")) {
+            if (std::strcmp(v, "quick_mc_transfer") == 0)
+                pr.method = ProductionMethod::QuickMcTransfer;
+            else if (std::strcmp(v, "curve_transfer") == 0)
+                pr.method = ProductionMethod::CurveTransfer;
+            else
+                pr.method = ProductionMethod::FullMc;
+        }
     }
 
     const XmlNode* d = root->first_node("Detector");
     if (!d) throw std::runtime_error("CeeLoResponse: missing Detector node");
-    {
-        GeometryDescriptor& gd = resp->descriptor;
-        const char* shape = attrib_value(d, "shape");
-        gd.shape = (shape && std::strcmp(shape, "box") == 0)
-                       ? DetectorShape::Box : DetectorShape::Cylinder;
-        gd.crystal_material_index =
-            static_cast<int>(attrib_double(d, "crystalMaterial", -1));
-        const char* rp = attrib_value(d, "referencePoint");
-        gd.reference_point = (rp && std::strcmp(rp, "endcap_front") == 0)
-                                 ? ReferencePoint::EndcapFront
-                                 : ReferencePoint::CrystalFace;
-        const char* sym = attrib_value(d, "symmetry");
-        gd.symmetry = (sym && std::strcmp(sym, "quadrant") == 0)
-                          ? ResponseSymmetry::Quadrant : ResponseSymmetry::Axial;
-        gd.dimensions_cm = parse_doubles(child_value(d, "Dimensions"));
-        // Absent in files written before the fillet/rounded-tip feature; the
-        // defaults are what those crystals actually were.
-        gd.bullet_radius_cm = attrib_double(d, "bulletRadius", 0.0);
-        if (const XmlNode* b = d->first_node("Bore")) {
-            BoreHoleConfig bc;
-            bc.radius = attrib_double(b, "radius", 0.0);
-            bc.depth = attrib_double(b, "depth", 0.0);
-            bc.rounded_tip = attrib_bool(b, "roundedTip", false);
-            gd.bore = bc;
-        }
-        if (const XmlNode* dl = d->first_node("DeadLayer")) {
-            DeadLayerConfig dc;
-            dc.front = attrib_double(dl, "front", 0.0);
-            dc.side = attrib_double(dl, "side", 0.0);
-            dc.back = attrib_double(dl, "back", 0.0);
-            gd.dead_layer = dc;
-        }
-        for (const XmlNode* ln = d->first_node("Layer"); ln;
-             ln = ln->next_sibling("Layer")) {
-            LayerSpec l;
-            l.material_index = static_cast<int>(attrib_double(ln, "material", -1));
-            l.front_thickness_cm = attrib_double(ln, "frontThickness", 0.0);
-            l.side_thickness_cm = attrib_double(ln, "sideThickness", 0.0);
-            l.z_start_cm = attrib_double(ln, "zStart", 0.0);
-            l.z_end_cm = attrib_double(ln, "zEnd", 0.0);
-            gd.layers.push_back(l);
-        }
-        if (const XmlNode* c = d->first_node("Collimator")) {
-            CollimatorSpec cs;
-            cs.material_index = static_cast<int>(attrib_double(c, "material", -1));
-            cs.side_thickness_cm = attrib_double(c, "sideThickness", 0.0);
-            cs.z_start_cm = attrib_double(c, "zStart", 0.0);
-            cs.z_end_cm = attrib_double(c, "zEnd", 0.0);
-            gd.collimator = cs;
-        }
-        if (const XmlNode* mats = d->first_node("Materials")) {
-            for (const XmlNode* mn = mats->first_node("Material"); mn;
-                 mn = mn->next_sibling("Material")) {
-                MaterialSpec m;
-                if (const char* v = attrib_value(mn, "name")) m.name = v;
-                m.density_g_per_cm3 = attrib_double(mn, "density", 0.0);
-                for (const XmlNode* el = mn->first_node("El"); el;
-                     el = el->next_sibling("El")) {
-                    MaterialComponent c;
-                    c.Z = static_cast<uint8_t>(attrib_double(el, "Z", 0));
-                    c.mass_fraction = attrib_double(el, "frac", 0.0);
-                    m.composition.push_back(c);
-                }
-                gd.materials.push_back(std::move(m));
-            }
-        }
-    }
+    resp->descriptor = read_detector_node(d);
 
     if (const XmlNode* ms = root->first_node("MuTables")) {
         for (const XmlNode* mn = ms->first_node("MuTable"); mn;
