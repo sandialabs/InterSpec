@@ -73,11 +73,14 @@ BOOST_AUTO_TEST_CASE( pending_baseline_selection_is_independent_of_discovery_ord
 BOOST_AUTO_TEST_CASE( baseline_discoveries_are_deferred_for_exactly_one_profile_pass )
 {
   using Disposition = PL::BaselineDiscoveryDisposition;
-  BOOST_CHECK( PL::baseline_discovery_disposition(0)
-               == Disposition::DeferUntilPassComplete );
-  BOOST_CHECK( PL::baseline_discovery_disposition(1)
+  // Each accepted reselection must strictly lower the frozen objective, so descent is monotone;
+  // the budget is a runaway backstop, and exhausting it is an explicit failure.
+  for( unsigned restarts = 0; restarts < PL::sm_max_baseline_restarts; ++restarts )
+    BOOST_CHECK( PL::baseline_discovery_disposition(restarts)
+                 == Disposition::DeferUntilPassComplete );
+  BOOST_CHECK( PL::baseline_discovery_disposition(PL::sm_max_baseline_restarts)
                == Disposition::RejectAfterRestart );
-  BOOST_CHECK( PL::baseline_discovery_disposition(2)
+  BOOST_CHECK( PL::baseline_discovery_disposition(PL::sm_max_baseline_restarts + 1)
                == Disposition::RejectAfterRestart );
 
   // Mimic the production first pass: every eligible target can contribute before selection.  The

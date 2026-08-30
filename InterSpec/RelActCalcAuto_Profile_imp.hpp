@@ -13,23 +13,25 @@ namespace
 /** Add bounded profiles after the final ROI/model/basin solve.
 
  A conditional fixes one coordinate and reoptimizes every nuisance parameter under it.  Which
- coordinate is fixed is the central design trade of this file: constraining the REPORTED coordinate
- - the one an interval is quoted in, after Pu-242 correlation, age correction and renormalization -
- keeps the statistic exact, but needs a residual row whose Jacobian couples the whole problem.
- Pinning the target's own fit PARAMETER instead is roughly two orders of magnitude cheaper and is
- what ships; it reports intervals that are somewhat too narrow, by an amount the endpoint-refit
- harness measures rather than assumes.
+ coordinate is fixed is the central design trade of this file: the interval is quoted in the
+ REPORTED coordinate (the mass fraction, after Pu-242 correlation and renormalization), so a scan
+ that fixes anything else is biased narrow by the misalignment between the two - measured (2026-08
+ coverage study) as 95% coverage tracking the squared pin/reported correlation in lockstep.
 
- Conditional points run one way: PINNED, in place.  The winning solve hands its converged
- `ceres::Problem` forward on the solution; the target's own parameter is removed from the tangent
- space with a `ceres::SubsetManifold`, and each point loads the previous point's parameter vector,
- writes the pinned coordinate, and re-solves.  No residual is added, so the Jacobian sparsity is
- untouched and a point costs about a second rather than minutes.  The statistic is
- `min over {a == a0}` rather than `min over {q == q0}` - an upper bound, so intervals come out
- somewhat narrow, which is why the endpoint-refit harness measures the shortfall directly and the
- level-set refinement recovers most of it.  There is no slower fallback engine: a target
- `pin_index_for` refuses, or a solve that retained no problem to pin within, reports a structured
- `Failed` profile carrying the reason.
+ Conditional points run one way: PINNED, in place, on the CARRIER chart.  The winning solve hands
+ its converged `ceres::Problem` forward on the solution; `install_carrier_reparam` reparameterizes
+ the target's element (through a temporary wide, non-binding [0,1] mass-fraction constraint, or a
+ user constraint that already has that shape) so the target's own slot IS its pre-Pu242-correction
+ mass fraction; that slot is removed from the tangent space with a `ceres::SubsetManifold`, and
+ each point loads the previous point's parameter vector, writes the pinned coordinate, and
+ re-solves.  The pinned statistic is therefore `min over {q_pre == q0}` - the exact profile of the
+ reported coordinate, aligned by construction (for Pu the correlation renormalizes on top, a
+ second-order effect measured negligible on the validation corpus).  No residual is
+ added, so the Jacobian sparsity is untouched and a point costs about a second rather than minutes.
+
+ There is deliberately NO inexact engine below this: a target the carrier route refuses (no slot
+ scans the reported fraction exactly), or a solve that retained no problem to pin within, reports
+ a structured `Failed` profile carrying the reason.
  */
 void add_mass_fraction_profiles( RelActAutoSolution &solution,
                                  std::shared_ptr<const SpecUtils::Measurement> foreground,
@@ -91,7 +93,7 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
 
   // A profile is a conditional optimization of the selected physical problem.  Snapshot every
   // BR-nuisance interval (including an intentionally empty interval set) from the main solution;
-  // conditional solves and a one-time better-baseline search both consume these exact values.
+  // conditional solves and any better-baseline reselection both consume these exact values.
   if( !solution.m_cost_functor )
   {
     solution.m_warnings.push_back( "Mass-fraction profiles were skipped because the usable solution"
@@ -153,7 +155,7 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
 
   // Backward elimination is part of the selected physical model, but its fixed mask is not
   // encoded by Options.  Snapshot it by canonical name and exact value so every conditional solve
-  // (and a one-time better-baseline search) uses precisely the same nuisance-parameter manifold.
+  // (and any better-baseline reselection) uses precisely the same nuisance-parameter manifold.
   if( (solution.m_parameter_fixed_by_model_selection.size()
                                                 != solution.m_final_parameters.size())
       || (solution.m_parameter_names.size() != solution.m_final_parameters.size()) )
@@ -203,7 +205,7 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
         && (candidate.m_frozen_model_policy_hash == frozen_profile_model_hash);
   };
 
-  // Do not let the first weak quantity visited choose the one permitted baseline restart.  A
+  // Do not let the first weak quantity visited choose a baseline restart on its own.  A
   // different quantity can enter a still lower basin (the Pu free-age problem is a concrete
   // example), and source/caller order must not decide which of those seeds reaches final candidate
   // selection.  Collect one independently evaluated discovery per interrupted profile, rank all
@@ -217,6 +219,9 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
     std::string target_symbol;
   };
   std::vector<DeferredBaselineDiscovery> deferred_baseline_discoveries;
+  // Warn only once per pass when the reselection budget was exhausted (see the RejectAfterRestart
+  // branch): the taint applies to the whole solution, not per discovering target.
+  bool budget_exhaustion_warned = false;
 
   for( size_t curve_index = 0; curve_index < num_curves; ++curve_index )
   {
@@ -233,6 +238,10 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
       const SandiaDecay::Nuclide *nuclide = nullptr;
       const NucInputInfo *input = nullptr;   //!< never null
     };
+    // INVARIANT: only nuclides EXPLICITLY in the input list are ever profiled - in every
+    // conditional engine.  In particular, correlation-generated Pu-242 is never a target: users
+    // accept that it is known only by correlation, and care about it only as a small correction
+    // to the enrichment of the modeled isotopes.
     std::vector<TargetNuclide> profile_targets;
     profile_targets.reserve( base_curve.nuclides.size() );
     for( const NucInputInfo &input : base_curve.nuclides )
@@ -316,15 +325,10 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
         continue;
       }
 
-      bool ratio_constrained = false;
-      for( const RelEffCurveInput::ActRatioConstraint &constraint : base_curve.act_ratio_constraints )
-        ratio_constrained = ratio_constrained || (constraint.controlling_source == target_source)
-                            || (constraint.constrained_source == target_source);
       const bool has_pu_reporting_transform
           = (target->atomicNumber == 94)
             && (base_curve.pu242_correlation_method
                 != RelActCalc::PuCorrMethod::NotApplicable);
-      (void)ratio_constrained;   //the pin walks ratio chains to their root; see `pin_index_for`
       double control_baseline = has_pu_reporting_transform
                               ? nominal.fraction
                               : nominal.uncorrected_fraction.value_or(nominal.fraction);
@@ -560,38 +564,35 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
         solution.m_cov_scale * 3.841458820694124
       }};
 
-      // --- The production engine: pin a fit parameter and re-solve in place ---------------------
+      // --- The carrier engine: pin the reported coordinate itself and re-solve in place ---------
       //
-      // The alternative - the deleted augmented-Lagrangian engine - constrained the REPORTED
-      // coordinate exactly, but did so with a residual row whose Jacobian touched every activity
-      // and every age of the element, so one dense row coupled the whole problem and each
-      // conditional point cost seconds.  Restricting a parameter instead adds no residual and
-      // leaves the sparsity untouched.  Measured on JRC Pu70: 1.09 s/point against a
-      // whole-scan-set cost of 6,532 s.
-      //
-      // The statistic is not identical.  Pinning gives `min over {a == a0}`, which is a feasible
-      // point of the reported-coordinate constraint set and therefore an UPPER bound on
-      // `min over {q == q0}`: delta-chi2 is overstated at a given q, the threshold is crossed too
-      // early, and the interval comes out somewhat NARROW.  That is accepted only because it is
-      // measured - see the endpoint-refit harness - and because the one case where the two
-      // genuinely diverge (correlation-generated Pu-242, whose reported value depends on Pu-239 as
-      // well) is no longer a profile target at all.
-      std::optional<size_t> pin_index;
+      // `install_carrier_reparam` makes the target the sole range nuclide of its element (through
+      // a temporary wide, non-binding [0,1] mass-fraction constraint, or a user constraint that
+      // already has that shape), so the target's own slot IS its pre-Pu242-correction mass
+      // fraction.  Pinning that slot scans the REPORTED coordinate directly - the textbook exact
+      // profile, aligned by construction (a dev-check below verifies the gradient structure).
+      // Measured (2026-08 coverage study): pinning an ACTIVITY instead biased the interval narrow
+      // by ~|r|, with 95% coverage tracking the squared pin/reported correlation r^2 in lockstep
+      // (U-235 r^2 ~ 0.09 covered 0.17 of a nominal 0.95), while this construction
+      // restored coverage to the exact reference at the same per-point cost - so an inexact scan
+      // is refused rather than run.  No residual is added and the layout is untouched, so a
+      // conditional point stays one warm in-place `ceres::Solve`.
+      RelActCalcAutoImp::ProfileConditionalHost::CarrierReparam carrier;
       std::string pin_refusal;
       if( profile_host )
       {
-        const RelActCalcAutoImp::ProfileConditionalHost::PinSelection selection
-            = profile_host->pin_index_for( target_source, curve_index );
-        pin_index = selection.index;
-        pin_refusal = selection.why_not;
+        carrier = profile_host->install_carrier_reparam( target_source, curve_index );
+        pin_refusal = carrier.why_not;
       }
+      const std::optional<size_t> pin_index = carrier.index;
 
       RelActCalcAutoImp::ProfileLikelihood::ScanResult scan;
       bool used_pinned_engine = false;
 
       if( pin_index )
       {
-        // One manifold for the whole of this target's scan, restored on every exit path.
+        // One manifold for the whole of this target's scan; the restore also unwinds any installed
+        // carrier reparameterization, on every exit path.
         struct PinGuard
         {
           RelActCalcAutoImp::ProfileConditionalHost *host;
@@ -600,10 +601,7 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
 
         used_pinned_engine = profile_host->set_pin( *pin_index );
         if( !used_pinned_engine )
-        {
-          pin_guard.host = nullptr;
           pin_refusal = "The profile manifold could not be installed.";
-        }
 
         if( used_pinned_engine )
         {
@@ -612,155 +610,68 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
           const std::pair<double,double> parameter_box
               = profile_host->parameter_bounds( *pin_index );
 
-          // The slope of the ACHIEVED reported quantity with respect to the pinned coordinate.
-          //
-          // This must be the CONDITIONAL response `(Cov u)_k / Cov_kk`, not the partial derivative
-          // `dq/da` at fixed everything-else.  A conditional solve reoptimizes the siblings, and the
-          // covariance cross-terms are the entire difference between the two: a frozen finite
-          // difference under-measured the true response by about sevenfold on Pu-240, which put the
-          // opening probe in the wrong place.
-          //
-          // Alongside it, `r^2 = (Cov u)_k^2 / (Cov_kk * u.Cov.u)` - the squared correlation between
-          // the pinned parameter and the delta-method linearization of `q`, a cosine in the
-          // covariance metric.  In the quadratic regime the pinned profile overstates delta chi2 by
-          // exactly `1/r^2`, so the interval is narrow by `|r|`: `r^2 == 1` means the pin IS the
-          // reported coordinate and there is no bias at all (the sole-range-nuclide carrier case),
-          // while a smaller value predicts, for free, how much the level-set refinement below has to
-          // recover.
-          double reported_per_parameter = 0.0;
-          double pin_alignment_r2 = std::numeric_limits<double>::quiet_NaN();
-          std::vector<double> reported_gradient;
+          // The slope of the reported quantity with respect to the pinned coordinate is the
+          // chart's own scale, exactly: `q_pre = sig_lo + (x - offset)*chart_scale` (for Pu the
+          // correlation renormalizes on top, a small correction irrelevant to probe placement).
+          const double reported_per_parameter = carrier.chart_scale;
+
           const bool have_covariance
               = (solution.m_covariance.size() == optimum.size())
                 && (*pin_index < optimum.size());
-          if( have_covariance )
+
+#if( PERFORM_DEVELOPER_CHECKS )
+          // The derivative-structure counterpart of the install's nominal-invariance check: on the
+          // carrier chart the reported (pre-correction) fraction is a function of the pinned slot
+          // ALONE, so its gradient must have support only there.  Off-slot support would mean some
+          // eval-path consumer routes the fraction through another parameter - the scan would then
+          // silently be of the wrong coordinate.  Pu is exempt only because the Pu-242 correlation
+          // legitimately couples the REPORTED coordinate to the siblings downstream of the carrier.
+          if( !has_pu_reporting_transform )
           {
             try
             {
-              reported_gradient = profile_host->reported_gradient( target_source,curve_index,optimum );
-              const size_t num_pars = optimum.size();
-              double cov_u_k = 0.0, u_cov_u = 0.0;
-              for( size_t row = 0; row < num_pars; ++row )
-              {
-                double cov_u_row = 0.0;
-                for( size_t col = 0; col < num_pars; ++col )
-                  cov_u_row += solution.m_covariance[row][col]*reported_gradient[col];
-                u_cov_u += reported_gradient[row]*cov_u_row;
-                if( row == *pin_index )
-                  cov_u_k = cov_u_row;
-              }
-              const double cov_kk = solution.m_covariance[*pin_index][*pin_index];
-              if( std::isfinite(cov_u_k) && std::isfinite(cov_kk) && (cov_kk > 0.0) )
-                reported_per_parameter = cov_u_k/cov_kk;
-              if( std::isfinite(u_cov_u) && (u_cov_u > 0.0) && (cov_kk > 0.0) )
-                pin_alignment_r2 = (cov_u_k*cov_u_k)/(cov_kk*u_cov_u);
+              const std::vector<double> gradient
+                  = profile_host->reported_gradient( target_source, curve_index, optimum );
+              double off_slot = 0.0;
+              for( size_t par = 0; par < gradient.size(); ++par )
+                if( par != *pin_index )
+                  off_slot = (std::max)( off_slot, std::fabs(gradient[par]) );
+              assert( (*pin_index < gradient.size())
+                      && (std::fabs(gradient[*pin_index]) > 0.0)
+                      && (off_slot <= 1.0e-9*std::fabs(gradient[*pin_index])) );
             }catch( const std::exception & )
             {
-              reported_per_parameter = 0.0;
+              //an unevaluable gradient is not a structure violation
             }
           }
+#endif
 
-          // Fall back to the frozen partial derivative only when the covariance is unavailable; it
-          // is a poor estimate of the response, but it is better than no scale at all.
-          if( !(std::fabs(reported_per_parameter) > 0.0) )
-          {
-            const double step = (std::max)( 1.0e-8, 1.0e-5*std::fabs(baseline_parameter) );
-            std::vector<double> probe = optimum;
-            probe[*pin_index] = (std::min)( (std::max)(baseline_parameter + step,
-                                                       parameter_box.first), parameter_box.second );
-            const double actual_step = probe[*pin_index] - baseline_parameter;
-            try
-            {
-              if( actual_step != 0.0 )
-              {
-                const double probe_fraction = profile_host->reported_mass_fraction(
-                                                    target_source, curve_index, probe );
-                reported_per_parameter = (probe_fraction - nominal.fraction)/actual_step;
-              }
-            }catch( const std::exception & )
-            {
-              reported_per_parameter = 0.0;
-            }
-          }
-
-          // Scan limits in the pinned coordinate.  A genuine Ceres box edge is a real feasible
-          // limit and is used directly.  Where the box is open there is no such limit at all - a
-          // mass fraction approaches 1 asymptotically as its activity grows, so the "distance to
-          // the feasible bound" is genuinely infinite and any cap is a choice rather than a fact.
-          //
-          // The choice is deliberately MODEST: four times the local linear estimate of the distance
-          // to the reported limit.  For a target at fraction 0.7 that is roughly an activity of
-          // 5.7x nominal, i.e. a fraction near 0.93 - far outside any plausible 95% crossing, while
-          // still a place the optimizer can actually solve.  A larger cap (an earlier draft used
-          // 20x) buys nothing and costs a great deal: it puts the outermost ladder point at ~30x
-          // nominal activity, a badly conditioned corner where each conditional solve is slow and
-          // the sample it produces is far outside the region the fit cares about.
-          //
-          // The honest bound detection is the read-back below, never this cap.
-          //
-          // Whatever the estimate says, the excursion is capped at ten times the parameter's own
-          // natural scale.  Without that cap a target already near saturation - a mass fraction of
-          // 0.94, where the remaining 0.06 costs a THOUSANDFOLD activity increase - produces a span
-          // of thousands, and then even the modest `0.02*span` opening probe lands at forty times
-          // nominal activity, in a corner where the model cannot be evaluated at all and every
-          // sample on the side is discarded.  Ten times the parameter scale is far outside any
-          // plausible crossing while remaining somewhere the optimizer can work; a side that
-          // genuinely does not reach the threshold inside it is correctly `BoundaryLimited`.
-          // Ceres represents "no bound" with `numeric_limits<double>::max()` and `lowest()`, NOT
-          // with an infinity - so `std::isfinite` accepts the sentinel as a genuine bound, and the
-          // scan then marches the pin out toward 1e308.  Every sample there is unevaluable, which
-          // is how an entire side comes back empty on a problem whose other side is perfectly
-          // clean: five converged points below the optimum, nothing at all above it.
+          // Scan limits: a carrier slot always has a genuine finite box (the chart's [offset,
+          // 1+offset], possibly narrowed by the user's window), so the box edges ARE the feasible
+          // limits - unlike the open activity boxes the pre-carrier engine had to cap.  The honest
+          // bound detection is still the read-back in the evaluator, never these edges.
           const auto has_real_bound = []( const double edge ){
             return std::isfinite(edge)
                    && (std::fabs(edge) < 0.5*std::numeric_limits<double>::max());
           };
-
-          const double parameter_scale = (std::max)( 1.0e-9,
-              has_real_bound(parameter_box.first) ? (baseline_parameter - parameter_box.first)
-                                                  : std::fabs(baseline_parameter) );
-
-          const auto scan_limit = [&]( const double box_edge, const double fraction_limit ){
-            if( has_real_bound(box_edge) )
-              return box_edge;
-
-            const double direction = (fraction_limit < nominal.fraction) ? -1.0 : 1.0;
-            const double ceiling = baseline_parameter + direction*10.0*parameter_scale;
-            if( (reported_per_parameter != 0.0) && std::isfinite(reported_per_parameter) )
-            {
-              const double linear = (fraction_limit - nominal.fraction)/reported_per_parameter;
-              if( std::isfinite(linear) && (linear != 0.0) )
-              {
-                const double estimate = baseline_parameter + 4.0*linear;
-                return (direction > 0.0) ? (std::min)(estimate,ceiling)
-                                         : (std::max)(estimate,ceiling);
-              }
-            }
-            return ceiling;
-          };
+          assert( has_real_bound(parameter_box.first) && has_real_bound(parameter_box.second) );
 
           if( RelActCalcAutoImp::profile_stats_enabled() )
-            std::cerr << "profile-pin " << target->symbol << " curve=" << curve_index
+            std::cerr << "profile-scan " << target->symbol << " curve=" << curve_index
                       << " index=" << *pin_index
                       << " a0=" << baseline_parameter
                       << " box=[" << parameter_box.first << "," << parameter_box.second << "]"
                       << " dq_da=" << reported_per_parameter
-                      << " r2=" << pin_alignment_r2
                       << " q0=" << nominal.fraction << std::endl;
 
-          double lower_parameter = scan_limit( parameter_box.first, control_lower );
-          double upper_parameter = scan_limit( parameter_box.second, control_upper );
-          if( lower_parameter > baseline_parameter )
-            lower_parameter = baseline_parameter;
-          if( upper_parameter < baseline_parameter )
-            upper_parameter = baseline_parameter;
+          const double lower_parameter = (std::min)( parameter_box.first, baseline_parameter );
+          const double upper_parameter = (std::max)( parameter_box.second, baseline_parameter );
 
           // The local one-sigma, carried into the pinned coordinate so the probe starts somewhere
           // sensible.  Absent for a weak quantity, which is the common case; the placement is
           // self-calibrating and falls back to a fraction of the span.
           double parameter_one_sigma = 0.0;
-          if( nominal.covariance_one_sigma && (reported_per_parameter != 0.0)
-              && std::isfinite(reported_per_parameter) )
+          if( nominal.covariance_one_sigma && (reported_per_parameter > 0.0) )
             parameter_one_sigma
                 = std::fabs( *nominal.covariance_one_sigma / reported_per_parameter );
 
@@ -837,7 +748,7 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
             std::vector<double> sample_parameters = point.parameters;
             double sample_chi2 = point.physical_chi2;
             const double refine_floor = 0.3*thresholds[0];
-            if( have_covariance && !reported_gradient.empty() && std::isfinite(pinned_fraction)
+            if( have_covariance && std::isfinite(pinned_fraction)
                 && ((point.physical_chi2 - profile_host->optimum_objective()) >= refine_floor) )
             {
               const RelActCalcAutoImp::ProfileConditionalHost::LevelSetStep refined
@@ -946,11 +857,13 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
         }//if( used_pinned_engine )
       }//if( pin_index )
 
-      // Pinning is the only conditional mechanism there is.  When a target has no coordinate to pin
-      // - a mass fraction fixed by input, a slot held constant by the selected model, or no retained
-      // problem to pin within - there is nothing to fall back to, and saying so plainly is the whole
-      // point: a structured `Failed` carrying the reason is honest, where silence would read as a
-      // quantity nobody thought to profile.
+      // The carrier scan is the only conditional mechanism there is.  When no slot scans the
+      // reported fraction exactly - a mass fraction fixed by input, an element whose constraints
+      // leave the target sharing its block, a ratio-involved or activity-bounded target, a slot
+      // held constant by the selected model, or no retained problem to pin within - there is
+      // deliberately nothing to fall back to, and saying so plainly is the whole point: a
+      // structured `Failed` carrying the reason is honest, where an inexact scan would quote a
+      // confidently narrow interval.
       if( !used_pinned_engine )
       {
         profile.status = ProfileStatus::Failed;
@@ -984,12 +897,22 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
             == RelActCalcAutoImp::ProfileLikelihood::BaselineDiscoveryDisposition::RejectAfterRestart )
         {
           profile.status = ProfileStatus::Failed;
-          profile.message = "A profile found a second better point after baseline reselection;"
-                            " the selected baseline is still not optimal."
+          profile.message = "A profile found a still better point after the baseline-reselection"
+                            " budget was exhausted; the selected baseline is still not optimal."
                             + (scan.diagnostic.empty() ? std::string()
                                                        : std::string(" ") + scan.diagnostic);
           solution.m_mass_fraction_profiles[curve_index][target->symbol] = profile;
           solution.m_warnings.push_back( target->symbol + " mass-fraction profile: " + profile.message );
+          // The proof of non-optimality taints every interval of this pass, not just the
+          // discovering target's - their delta-chi2 baselines are the same nominal.  Say so once.
+          if( !budget_exhaustion_warned )
+          {
+            budget_exhaustion_warned = true;
+            solution.m_warnings.push_back( "The reported baseline is known not to be the global"
+                " optimum (the baseline-reselection budget was exhausted while profiles kept"
+                " finding better points), so every profile interval of this solution is measured"
+                " against a non-optimal nominal and may be unreliable." );
+          }
           continue;
         }
 
@@ -1179,6 +1102,7 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
   }
 
   const double old_objective = solution.m_chi2;
+  const double seed_objective = selected.rank.full_objective;
   const size_t num_discoveries = deferred_baseline_discoveries.size();
   const std::string selected_target = selected.target_symbol;
   std::vector<size_t> discovery_order;
@@ -1199,13 +1123,39 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
     discovery_summary += discovery.target_symbol + "="
         + SpecUtils::printCompact(discovery.rank.full_objective,12);
   }
+
+  // The reselection trail must survive the move below: `restarted` is a fresh solve carrying only
+  // its own warnings, so without this a multi-hop chain would report only its final hop.
+  std::vector<std::string> reselection_trail;
+  for( const std::string &warning : solution.m_warnings )
+    if( warning.rfind("Baseline reselection ",0) == 0 )
+      reselection_trail.push_back( warning );
+
   solution = std::move(restarted);
-  solution.m_warnings.push_back( std::to_string(num_discoveries)
+  for( const std::string &warning : reselection_trail )
+    solution.m_warnings.push_back( warning );
+  solution.m_warnings.push_back( "Baseline reselection "
+      + std::to_string(baseline_restart_count + 1) + " of "
+      + std::to_string(RelActCalcAutoImp::ProfileLikelihood::sm_max_baseline_restarts) + ": "
+      + std::to_string(num_discoveries)
       + " mass-fraction profile(s) found better points; deterministic final candidate selection"
-        " used the best frozen-objective seed (" + selected_target + "; first-pass discoveries: "
+        " used the best frozen-objective seed (" + selected_target + "; discoveries: "
       + discovery_summary + ") and lowered the objective from "
       + std::to_string(old_objective) + " to " + std::to_string(solution.m_chi2)
-      + ", so covariance and all profiles were restarted once." );
+      + ", so covariance and all profiles were restarted against the new baseline." );
+
+  // The seed is a physically realizable point of the SAME unconstrained problem, so a re-solve
+  // warm-started from it finishing ABOVE it is proof the semantic warm start did not reach the
+  // discovered basin (or the solve terminated on a plateau).  The improved baseline is still kept
+  // - it beat the old one - but say so loudly: this is the signature that separates genuine
+  // basin chains from a restart crawling toward one basin it keeps rediscovering.
+  if( std::isfinite(seed_objective)
+      && (solution.m_chi2 > seed_objective + baseline_improvement_tolerance) )
+    solution.m_warnings.push_back( "Baseline reselection "
+        + std::to_string(baseline_restart_count + 1) + " did not reach its seed's known objective ("
+        + std::to_string(solution.m_chi2) + " vs " + std::to_string(seed_objective)
+        + "); the warm start likely failed to enter the discovered basin, which may be"
+          " rediscovered on the next profile pass." );
   add_merged_single_curve_comparison( solution,restart_options,foreground,background,
                                       solution.m_drf,solution.m_spectrum_peaks,
                                       det_type,cancel_calc );

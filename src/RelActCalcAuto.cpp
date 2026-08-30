@@ -15059,8 +15059,14 @@ struct ProfileConditionalHost
   ProfileConditionalHost( const ProfileConditionalHost & ) = delete;
   ProfileConditionalHost &operator=( const ProfileConditionalHost & ) = delete;
 
-  /** The unconstrained optimum this host was built at. */
-  const std::vector<double> &optimum() const { return m_optimum; }
+  /** The unconstrained optimum this host was built at, in the LIVE parameter encoding: while a
+   carrier reparameterization is installed the target's slot holds the re-encoded mass-fraction
+   coordinate (see `install_carrier_reparam`), so scan machinery reading this after the install is
+   automatically in the right chart. */
+  const std::vector<double> &optimum() const
+  {
+    return m_carrier_reparam ? m_carrier_reparam->scan_optimum : m_optimum;
+  }
 
   /** The physical objective at `optimum()`; the delta-chi2 baseline for every conditional. */
   double optimum_objective() const { return m_optimum_objective; }
@@ -15085,7 +15091,7 @@ struct ProfileConditionalHost
   /** Builds a solution that seeds a fresh cold `solve_ceres` at `parameters`.
 
    A conditional point discovered in place is only a parameter vector, but the one thing that
-   consumes a better-baseline discovery - the single permitted baseline reselection - wants a
+   consumes a better-baseline discovery - a baseline reselection - wants a
    `RelActAutoSolution` to warm start from.  Fill exactly the fields that warm start reads:
    the named parameter values, and the per-curve legacy relative-efficiency coefficients and
    source activities/ages that let it re-express the point in a possibly different QR frame.
@@ -15131,126 +15137,6 @@ struct ProfileConditionalHost
     return seed;
   }//RelActAutoSolution warm_start_solution(...)
 
-  /** Which parameter a profile of `source` on `curve` should pin, or why none can be.
-
-   Every profilable target has a coordinate of its own; the table below is section 3.1 of the plan.
-   The exactness of the pin varies (an activity pin moves the reported fraction only as the siblings
-   reoptimize), but the mechanism does not: pin one index, re-solve, read the achieved quantity back.
-   */
-  struct PinSelection
-  {
-    std::optional<size_t> index;
-    /** Empty exactly when `index` is set. */
-    std::string why_not;
-  };
-
-  PinSelection pin_index_for( const RelActCalcAuto::SrcVariant &source, const size_t curve ) const
-  {
-    PinSelection answer;
-    const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( source );
-    if( !nuc )
-    {
-      answer.why_not = "Only a nuclide has an isotopic coordinate to profile.";
-      return answer;
-    }
-
-    if( curve >= m_cost_functor->m_options.rel_eff_curves.size() )
-    {
-      answer.why_not = "The profile target names a relative efficiency curve that does not exist.";
-      return answer;
-    }
-
-    // An ActRatioConstraint-controlled source's own slot is inert (`activity_multiple == -1`), so
-    // pinning it would do nothing at all and every scan point would land on the same place.  Walk
-    // the chain to its ROOT and pin that instead: it scales the whole rigid group, which is the
-    // only handle the group has.
-    RelActCalcAuto::SrcVariant pin_source = source;
-    const RelActCalcAuto::RelEffCurveInput &curve_input
-        = m_cost_functor->m_options.rel_eff_curves[curve];
-    for( size_t hop = 0; hop <= curve_input.act_ratio_constraints.size(); ++hop )
-    {
-      const auto controlled = std::find_if( begin(curve_input.act_ratio_constraints),
-                                            end(curve_input.act_ratio_constraints),
-          [&pin_source]( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint ){
-            return constraint.constrained_source == pin_source;
-          } );
-      if( controlled == end(curve_input.act_ratio_constraints) )
-        break;
-      pin_source = controlled->controlling_source;
-    }
-
-    // A mass-fraction-constrained source is parameterized through the element's sigma block, not
-    // through an activity.  Which slot carries it depends on the block's shape.
-    for( const RelActAutoCostFcn::MassFracBlock &block : m_cost_functor->m_mass_frac_blocks[curve] )
-    {
-      if( block.atomic_number != nuc->atomicNumber )
-        continue;
-
-      const bool is_fixed = std::count( begin(block.fixed_nucs), end(block.fixed_nucs), nuc ) > 0;
-      if( is_fixed )
-      {
-        answer.why_not = std::string(nuc->symbol) + "'s mass fraction is fixed by input, so it has"
-                         " no free coordinate and no likelihood direction to profile.";
-        return answer;
-      }
-
-      const auto ranged = std::find( begin(block.range_nucs), end(block.range_nucs), nuc );
-      if( ranged == end(block.range_nucs) )
-        continue;   //unconstrained nuclide of a partly-constrained element: ordinary activity slot
-
-      // With exactly one range nuclide the carrier slot IS the reported fraction (`this_frac ==
-      // sigma`), so the pin is exact - but only where no Pu correlation is renormalizing the
-      // reported coordinate on top of it.  With two or more, the carrier pins the constrained TOTAL
-      // and a `dist_par` pins one stick-breaking coordinate; neither pins `q`, which simply moves.
-      const size_t position = static_cast<size_t>( std::distance(begin(block.range_nucs),ranged) );
-      const size_t slot = (position == 0) ? block.carrier_par : block.dist_pars[position-1];
-      if( slot >= m_parameters.size() )
-      {
-        answer.why_not = std::string(nuc->symbol) + "'s mass-fraction block has no usable slot.";
-        return answer;
-      }
-      if( std::binary_search(begin(m_constant_parameters),end(m_constant_parameters),
-                             static_cast<int>(slot)) )
-      {
-        answer.why_not = std::string(nuc->symbol) + "'s mass-fraction coordinate is held constant by"
-                         " the selected model, so every scan point would be the same point.";
-        return answer;
-      }
-      answer.index = slot;
-      return answer;
-    }//for( mass-fraction blocks of this curve )
-
-    size_t activity_index = 0;
-    try
-    {
-      activity_index = m_cost_functor->nuclide_parameter_index( pin_source, curve );
-    }catch( const std::exception &e )
-    {
-      answer.why_not = std::string("No activity parameter for the profile target: ") + e.what();
-      return answer;
-    }
-
-    if( activity_index >= m_parameters.size() )
-    {
-      answer.why_not = "The profile target's activity parameter is out of range.";
-      return answer;
-    }
-
-    // Refuse LOUDLY rather than scanning a constant: every point would be the same point, every
-    // delta-chi2 zero, the fitted curvature zero, and the interval would span the whole feasible
-    // range - a confident-looking `NonIdentifiable` that is simply wrong.
-    if( std::binary_search(begin(m_constant_parameters),end(m_constant_parameters),
-                           static_cast<int>(activity_index)) )
-    {
-      answer.why_not = std::string(nuc->symbol) + "'s activity is held constant (a fixed activity"
-                       " range, a ratio-constrained slot, or a degenerate mass-fraction carrier), so"
-                       " it has no direction to profile along.";
-      return answer;
-    }
-
-    answer.index = activity_index;
-    return answer;
-  }//PinSelection pin_index_for( const SrcVariant &, size_t ) const
 
 
   /** The feasible box for a parameter, as Ceres holds it. */
@@ -15260,10 +15146,11 @@ struct ProfileConditionalHost
              m_problem.GetParameterUpperBound(m_parameter_block,static_cast<int>(index)) };
   }
 
+  /** The optimum's value for one parameter, in the live encoding (see `optimum()`). */
   double optimum_parameter( const size_t index ) const
   {
-    return (index < m_optimum.size()) ? m_optimum[index]
-                                      : std::numeric_limits<double>::quiet_NaN();
+    const std::vector<double> &opt = optimum();
+    return (index < opt.size()) ? opt[index] : std::numeric_limits<double>::quiet_NaN();
   }
 
   /** Install a manifold pinning `index`, for the whole of one target's scan.
@@ -15312,6 +15199,337 @@ struct ProfileConditionalHost
     m_pinned_index.reset();
   }//void clear_pin()
 
+
+  /** Outcome of attempting the carrier reparameterization for one profile target. */
+  struct CarrierReparam
+  {
+    /** The carrier slot to pin; set exactly when a chart is available (installed, or an existing
+     user sole-range chart). */
+    std::optional<size_t> index;
+    /** The chart scale `dq_pre/dx` of the pinned slot: `spec.sig_hi - spec.sig_lo` of the block
+     (`1 - 1e-6` for the installed synthetic [0,1] window). */
+    double chart_scale = 0.0;
+    /** Why the reparameterization was refused; set exactly when `index` is not. */
+    std::string why_not;
+  };
+
+  /** Temporarily reparameterize `source`'s element so the source's own parameter slot IS its
+   (pre-Pu242-correction) mass fraction, making a pinned scan of that slot an EXACT profile of the
+   reported coordinate (aligned by construction, instead of the ~|r|-narrow bias of
+   pinning an activity).
+
+   Mechanism: append one wide, non-binding `[0,1]` mass-fraction constraint for `source` to the
+   functor's own options copy plus the matching sole-range-nuclide sigma-block, so the eval path
+   (`relative_activity` / `mass_enrichment_fraction`, via `constrained_element_mass_frac`) decodes
+   the slot as `q_pre = (x - sm_activity_par_offset)*sig_hi`.  The slot's Ceres bounds become the
+   chart box `[offset, 1+offset]`, and the optimum is re-encoded in place of nothing: the same
+   physical point is exactly representable, which the install VERIFIES by requiring the re-encoded
+   optimum to reproduce both the objective and the reported fraction to tight tolerance before any
+   scan may trust an interval from it.  Everything is undone by `remove_carrier_reparam` (invoked
+   from `restore_optimum`, so the existing per-target guards unwind it on every exit path).
+
+   Mutations happen only between solves (invariant 8); parameter count, layout, and residual
+   structure are untouched, so no rebuild and no re-solve is needed - the host is already converged
+   at the same physical point.
+
+   When the element already carries user constraints that make `source` the sole range nuclide,
+   the EXISTING chart is returned directly (no mutation, nothing to unwind) - the same exactness
+   through the user's own window.
+
+   Refuses (returning `why_not`, which the caller reports as a structured Failed profile - there is
+   deliberately no inexact fallback engine) whenever no slot scans the reported fraction exactly:
+   the synthetic constraint would not make `source` the SOLE range nuclide of its element, or it
+   would be invalid input by the rules `RelEffCurveInput::check_nuclide_constraints` enforces for
+   real constraints - see the body.  Only ever call for a source explicitly present in the curve's
+   input `nuclides`; correlation-generated Pu-242 is never a target.
+   */
+  CarrierReparam install_carrier_reparam( const RelActCalcAuto::SrcVariant &source, const size_t curve )
+  {
+    assert( !m_solve_in_flight );
+    assert( !m_pinned_index );
+    assert( !m_carrier_reparam );
+
+    CarrierReparam answer;
+
+    const SandiaDecay::Nuclide * const nuc = RelActCalcAuto::nuclide( source );
+    if( !nuc )
+    {
+      answer.why_not = "Only a nuclide has a mass-fraction coordinate.";
+      return answer;
+    }
+    if( curve >= m_cost_functor->m_options.rel_eff_curves.size() )
+    {
+      answer.why_not = "The profile target names a relative efficiency curve that does not exist.";
+      return answer;
+    }
+
+    const RelActCalcAuto::RelEffCurveInput &curve_input
+        = m_cost_functor->m_options.rel_eff_curves[curve];
+
+    // When the element already carries user constraints, the ONLY exactly-scannable shape is the
+    // one this install would otherwise create: the target as the block's sole range nuclide, whose
+    // carrier slot IS the (pre-correction) fraction.  Use that existing chart directly - nothing
+    // to install, nothing to unwind.  Every other shape (target fixed, target sharing the block
+    // with other range nuclides, a constrained sibling) has no slot that scans the reported
+    // coordinate, and a profile that cannot be exact is refused rather than approximated.
+    if( m_cost_functor->mass_fraction_constraint( source, curve )
+        || std::any_of( begin(curve_input.mass_fraction_constraints),
+                        end(curve_input.mass_fraction_constraints),
+             [nuc]( const RelActCalcAuto::RelEffCurveInput::MassFractionConstraint &constraint ){
+               return constraint.nuclide
+                      && (constraint.nuclide->atomicNumber == nuc->atomicNumber);
+             } ) )
+    {
+      const RelActAutoCostFcn::MassFracBlock * const block
+          = m_cost_functor->mass_frac_block( nuc->atomicNumber, curve );
+      assert( block ); //a same-element constraint exists, so the element must have a block
+      if( block && (block->range_nucs.size() == 1) && (block->range_nucs[0] == nuc)
+          && !block->spec.all_constrained
+          && (block->spec.sig_hi > block->spec.sig_lo)
+          && (block->carrier_par < m_parameters.size())
+          && !std::binary_search( begin(m_constant_parameters), end(m_constant_parameters),
+                                  static_cast<int>(block->carrier_par) ) )
+      {
+        answer.index = block->carrier_par;
+        answer.chart_scale = block->spec.sig_hi - block->spec.sig_lo;
+        return answer;
+      }
+      answer.why_not = std::string(nuc->symbol) + "'s element has mass-fraction constraints that"
+                       " leave no slot scanning the reported fraction exactly (the target is fixed,"
+                       " shares its block with other range isotopes, or its carrier is constant).";
+      return answer;
+    }//if( the element already has mass-fraction constraints )
+
+    // A ratio-constrained source's own slot is inert; and a target that (transitively) controls a
+    // same-element sibling would make the sibling's activity a function of the target's fraction,
+    // i.e. a circular decode - both are invalid inputs for a real constraint too.
+    for( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint
+         : curve_input.act_ratio_constraints )
+    {
+      if( constraint.constrained_source == source )
+      {
+        answer.why_not = std::string(nuc->symbol) + "'s activity is controlled by an activity"
+                         " ratio, so its slot cannot carry a mass fraction.";
+        return answer;
+      }
+    }
+    for( const RelActCalcAuto::NucInputInfo &member : curve_input.nuclides )
+    {
+      const SandiaDecay::Nuclide * const member_nuc = RelActCalcAuto::nuclide( member.source );
+      if( !member_nuc || (member_nuc == nuc) || (member_nuc->atomicNumber != nuc->atomicNumber) )
+        continue;
+
+      // Walk this same-element sibling's ratio chain to its root.
+      RelActCalcAuto::SrcVariant root = member.source;
+      for( size_t hop = 0; hop <= curve_input.act_ratio_constraints.size(); ++hop )
+      {
+        const auto controlled = std::find_if( begin(curve_input.act_ratio_constraints),
+                                              end(curve_input.act_ratio_constraints),
+            [&root]( const RelActCalcAuto::RelEffCurveInput::ActRatioConstraint &constraint ){
+              return constraint.constrained_source == root;
+            } );
+        if( controlled == end(curve_input.act_ratio_constraints) )
+          break;
+        root = controlled->controlling_source;
+      }
+      if( root == source )
+      {
+        answer.why_not = std::string(nuc->symbol) + " controls the activity of a same-element"
+                         " isotope, so its slot cannot carry a mass fraction.";
+        return answer;
+      }
+    }//for( same-element siblings )
+
+    const auto target_input = std::find_if( begin(curve_input.nuclides), end(curve_input.nuclides),
+        [&source]( const RelActCalcAuto::NucInputInfo &candidate ){
+          return candidate.source == source;
+        } );
+    if( target_input == end(curve_input.nuclides) )
+    {
+      answer.why_not = std::string(nuc->symbol) + " is not an input nuclide of this curve.";
+      return answer;
+    }
+    // min/max are real Ceres bounds on the very slot whose bounds the install swaps; a start value
+    // is meaningless combined with a constraint.  All three are invalid with a real constraint.
+    if( target_input->min_rel_act.has_value() || target_input->max_rel_act.has_value()
+        || target_input->starting_rel_act.has_value() )
+    {
+      answer.why_not = std::string(nuc->symbol) + " carries activity bounds or a start value,"
+                       " which cannot combine with a mass-fraction parameterization.";
+      return answer;
+    }
+
+    size_t slot = 0;
+    try
+    {
+      slot = m_cost_functor->nuclide_parameter_index( source, curve );
+    }catch( const std::exception &e )
+    {
+      answer.why_not = std::string("No activity parameter for the profile target: ") + e.what();
+      return answer;
+    }
+    if( slot >= m_parameters.size() )
+    {
+      answer.why_not = "The profile target's activity parameter is out of range.";
+      return answer;
+    }
+    if( std::binary_search(begin(m_constant_parameters),end(m_constant_parameters),
+                           static_cast<int>(slot)) )
+    {
+      answer.why_not = std::string(nuc->symbol) + "'s activity is held constant by the selected"
+                       " model, so it has no direction to profile along.";
+      return answer;
+    }
+
+    // The pre-correction nominal fraction, from the same relative-activity sums the unconstrained
+    // reporting path uses, and the reported (post-correction, for Pu) nominal for the invariance
+    // check below - both at the optimum, before any mutation.
+    double q0_pre = std::numeric_limits<double>::quiet_NaN();
+    double reported_nominal = std::numeric_limits<double>::quiet_NaN();
+    try
+    {
+      double target_mass = std::numeric_limits<double>::quiet_NaN(), total_mass = 0.0;
+      size_t num_element_members = 0;
+      for( const RelActCalcAuto::NucInputInfo &member : curve_input.nuclides )
+      {
+        const SandiaDecay::Nuclide * const member_nuc = RelActCalcAuto::nuclide( member.source );
+        if( !member_nuc || (member_nuc->atomicNumber != nuc->atomicNumber) )
+          continue;
+        num_element_members += 1;
+        const double rel_act = m_cost_functor->relative_activity( member.source, curve, m_optimum );
+        const double rel_mass = rel_act / member_nuc->activityPerGram();
+        if( member.source == source )
+          target_mass = rel_mass;
+        total_mass += (std::max)( rel_mass, 0.0 );
+      }
+      if( num_element_members < 2 )
+      {
+        answer.why_not = std::string(nuc->symbol) + " is the only modeled isotope of its element.";
+        return answer;
+      }
+      q0_pre = target_mass/total_mass;
+      reported_nominal = reported_mass_fraction( source, curve, m_optimum );
+    }catch( const std::exception &e )
+    {
+      answer.why_not = std::string("The nominal mass fraction could not be evaluated: ") + e.what();
+      return answer;
+    }
+
+    const RelActCalc::MassFracBlockSpec spec
+        = RelActCalc::make_mass_frac_block_spec( {{0.0,1.0}}, 0.0, false );
+    assert( (spec.sig_lo == 0.0) && (spec.sig_hi > 0.0) && (spec.sig_hi < 1.0) );
+
+    // `sig_hi = 1 - delta` reserves an unconstrained remainder, so a nominal within `delta` of 1
+    // is not representable in the new chart (and would sit against the box edge anyway).
+    if( !std::isfinite(q0_pre) || (q0_pre < 0.0) || (q0_pre > spec.sig_hi*(1.0 - 1.0e-9))
+        || !std::isfinite(reported_nominal) )
+    {
+      answer.why_not = std::string(nuc->symbol) + "'s nominal mass fraction ("
+                       + SpecUtils::printCompact(q0_pre,6)
+                       + ") is not representable in the carrier chart.";
+      return answer;
+    }
+
+    // --- Mutate (all undone by `remove_carrier_reparam`) --------------------------------------
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint synthetic;
+    synthetic.nuclide = nuc;
+    synthetic.lower_mass_fraction = 0.0;
+    synthetic.upper_mass_fraction = 1.0;
+    m_cost_functor->m_options.rel_eff_curves[curve].mass_fraction_constraints.push_back( synthetic );
+
+    RelActAutoCostFcn::MassFracBlock block;
+    block.atomic_number = nuc->atomicNumber;
+    block.spec = spec;
+    block.carrier_par = slot;
+    block.range_nucs.push_back( nuc );
+    m_cost_functor->m_mass_frac_blocks[curve].push_back( std::move(block) );
+
+    CarrierReparamState state;
+    state.curve = curve;
+    state.slot = slot;
+    state.saved_bounds = parameter_bounds( slot );
+    state.sig_hi = spec.sig_hi;
+    state.scan_optimum = m_optimum;
+    state.scan_optimum[slot] = RelActAutoCostFcn::sm_activity_par_offset + q0_pre/spec.sig_hi;
+    m_carrier_reparam = std::move(state);
+
+    m_problem.SetParameterLowerBound( m_parameter_block, static_cast<int>(slot),
+                                      RelActAutoCostFcn::sm_activity_par_offset );
+    m_problem.SetParameterUpperBound( m_parameter_block, static_cast<int>(slot),
+                                      1.0 + RelActAutoCostFcn::sm_activity_par_offset );
+
+    // The same physical point must be exactly representable in the new chart; anything beyond
+    // roundoff here means some consumer of the slot was missed, and no interval from this
+    // parameterization can be trusted.  Refusing (and unwinding) reports a structured Failed.
+    double reencoded_objective = std::numeric_limits<double>::quiet_NaN();
+    double reencoded_reported = std::numeric_limits<double>::quiet_NaN();
+    try
+    {
+      reencoded_objective = physical_objective( m_carrier_reparam->scan_optimum );
+      reencoded_reported = reported_mass_fraction( source, curve, m_carrier_reparam->scan_optimum );
+    }catch( const std::exception & )
+    {
+      //non-finite values below handle this
+    }
+    const double objective_tolerance = 1.0e-8*(1.0 + std::fabs(m_optimum_objective));
+    if( !std::isfinite(reencoded_objective) || !std::isfinite(reencoded_reported)
+        || (std::fabs(reencoded_objective - m_optimum_objective) > objective_tolerance)
+        || (std::fabs(reencoded_reported - reported_nominal) > 1.0e-9) )
+    {
+      remove_carrier_reparam();
+      answer.why_not = "The carrier reparameterization did not reproduce the nominal point"
+                       " (objective " + SpecUtils::printCompact(reencoded_objective,12) + " vs "
+                       + SpecUtils::printCompact(m_optimum_objective,12) + ", fraction "
+                       + SpecUtils::printCompact(reencoded_reported,12) + " vs "
+                       + SpecUtils::printCompact(reported_nominal,12) + ").";
+      return answer;
+    }
+
+    if( profile_stats_enabled() )
+      std::cerr << "profile-carrier " << nuc->symbol << " curve=" << curve
+                << " slot=" << slot << " q0_pre=" << q0_pre
+                << " sig_hi=" << spec.sig_hi
+                << " chi2_resid=" << (reencoded_objective - m_optimum_objective)
+                << " q_resid=" << (reencoded_reported - reported_nominal) << std::endl;
+
+    answer.index = slot;
+    answer.chart_scale = spec.sig_hi;   //sig_lo == 0 for the synthetic [0,1] window
+    return answer;
+  }//CarrierReparam install_carrier_reparam(...)
+
+
+  /** Undo `install_carrier_reparam`: pop the synthetic constraint and block, restore the slot's
+   Ceres bounds.  Idempotent; also invoked from `restore_optimum`, so the per-target scan guards
+   unwind the reparameterization on every exit path. */
+  void remove_carrier_reparam()
+  {
+    assert( !m_solve_in_flight );
+    if( !m_carrier_reparam )
+      return;
+
+    const CarrierReparamState &state = *m_carrier_reparam;
+
+    std::vector<RelActCalcAuto::RelEffCurveInput::MassFractionConstraint> &constraints
+        = m_cost_functor->m_options.rel_eff_curves[state.curve].mass_fraction_constraints;
+    assert( !constraints.empty() );
+    if( !constraints.empty() )
+      constraints.pop_back();
+
+    std::vector<RelActAutoCostFcn::MassFracBlock> &blocks
+        = m_cost_functor->m_mass_frac_blocks[state.curve];
+    assert( !blocks.empty() && (blocks.back().carrier_par == state.slot) );
+    if( !blocks.empty() )
+      blocks.pop_back();
+
+    m_problem.SetParameterLowerBound( m_parameter_block, static_cast<int>(state.slot),
+                                      state.saved_bounds.first );
+    m_problem.SetParameterUpperBound( m_parameter_block, static_cast<int>(state.slot),
+                                      state.saved_bounds.second );
+
+    m_carrier_reparam.reset();
+  }//void remove_carrier_reparam()
+
+
   /** Gradient of the reported mass fraction with respect to every parameter, by autodiff.
 
    Chunked over `sm_auto_diff_stride_size` exactly as `RelActAutoSolution::mass_enrichment_fraction`
@@ -15352,12 +15570,12 @@ struct ProfileConditionalHost
 
   /** Reduce the objective while holding the REPORTED quantity fixed, from a pinned conditional point.
 
-   This corrects the one known bias of profiling by pinning a parameter.  Pinning `a == a0` picks
-   *some* feasible point of `{q == q(a0)}`, so the objective there is an UPPER bound on the exact
-   conditional minimum at that same `q`.  Delta chi2 is overstated, the threshold is crossed early,
-   and the reported interval comes out too narrow.  In the quadratic/linear regime the overstatement
-   is exactly `1/r^2`, where `r` is the correlation between the pinned parameter and the delta-method
-   linearization of `q` - a cosine in the covariance metric, so the interval is narrow by `|r|`.
+   With the carrier reparameterization the pinned slot IS the reported (pre-correction) coordinate,
+   so at a WELL-CONVERGED conditional point this recovers nothing (measured: 95-98% of corpus
+   points recover exactly zero).  What it still repairs is the imperfectly converged remainder - a
+   conditional solve that stalled above its true minimum quotes an overstated delta-chi2 for its
+   `q`, biasing the interval narrow, and a few percent of far-from-nominal points were measured
+   recovering large amounts.  Cost when unneeded is a handful of residual evaluations, no solves.
 
    The target point is the in-model constrained minimum at the ACHIEVED reported value:
 
@@ -15399,8 +15617,12 @@ struct ProfileConditionalHost
   {
     LevelSetStep answer;
 
+    // The live-encoding optimum: under a carrier reparameterization the retreat leg must be
+    // measured in the same chart the conditional point `x` lives in.
+    const std::vector<double> &optimum_view = optimum();
+
     const size_t num_pars = m_parameters.size();
-    if( (x.size() != num_pars) || (covariance.size() != num_pars) || (m_optimum.size() != num_pars)
+    if( (x.size() != num_pars) || (covariance.size() != num_pars) || (optimum_view.size() != num_pars)
         || !std::isfinite(x_chi2) || !std::isfinite(x_reported) || !std::isfinite(baseline_reported) )
       return answer;
 
@@ -15439,7 +15661,7 @@ struct ProfileConditionalHost
     double direction_norm = 0.0;
     for( size_t i = 0; i < num_pars; ++i )
     {
-      direction[i] = (m_optimum[i] + target_scale*p[i]) - x[i];
+      direction[i] = (optimum_view[i] + target_scale*p[i]) - x[i];
       if( !std::isfinite(direction[i]) )
         return answer;
       direction_norm += direction[i]*direction[i];
@@ -16032,7 +16254,7 @@ struct ProfileConditionalHost
       // JRC Pu70 fixed-age harness, where the opening probe sits well inside one sigma of the
       // optimum), and the dead-pinned-slot failure this would otherwise catch - a constant
       // coordinate whose every scan point is the same point - is already refused up front by
-      // `pin_index_for`.  Note Ceres counts the INITIAL EVALUATION as a successful step
+      // `install_carrier_reparam`.  Note Ceres counts the INITIAL EVALUATION as a successful step
       // (`TrustRegionMinimizer::IterationZero` sets `step_is_successful`, and
       // `FinalizeIterationAndCheckIfMinimizerCanContinue` counts it), so seed-convergence reports
       // `num_successful_steps == 1`, not 0.
@@ -16072,11 +16294,12 @@ struct ProfileConditionalHost
   }
 
 
-  /** Puts the parameter buffer back at the unconstrained optimum, clears any pin, and restores
-   the production manifold (invariant 7). */
+  /** Puts the parameter buffer back at the unconstrained optimum, clears any pin, unwinds any
+   carrier reparameterization, and restores the production manifold and bounds (invariant 7). */
   void restore_optimum()
   {
     clear_pin();
+    remove_carrier_reparam();
     assert( m_parameters.size() == m_optimum.size() );
     std::copy( begin(m_optimum), end(m_optimum), begin(m_parameters) );
     assert( m_parameters.data() == m_parameter_block );
@@ -16103,6 +16326,21 @@ private:
   std::vector<int> m_constant_parameters;
   /** Which parameter the current per-target manifold pins, if any. */
   std::optional<size_t> m_pinned_index;
+
+  /** Everything `remove_carrier_reparam` needs to undo `install_carrier_reparam`. */
+  struct CarrierReparamState
+  {
+    size_t curve = 0;
+    /** The target's activity slot, doubling as the synthetic block's carrier. */
+    size_t slot = 0;
+    /** The slot's Ceres bounds before the swap to the `[offset, 1+offset]` chart box. */
+    std::pair<double,double> saved_bounds{ 0.0, 0.0 };
+    /** `m_optimum` with the slot re-encoded: `x = offset + q0_pre/sig_hi` (`m_optimum` is const). */
+    std::vector<double> scan_optimum;
+    double sig_hi = 0.0;
+  };
+  std::optional<CarrierReparamState> m_carrier_reparam;
+
   const std::vector<double> m_optimum;
   double m_optimum_objective;
   bool m_solve_in_flight;

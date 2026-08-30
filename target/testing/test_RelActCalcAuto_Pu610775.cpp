@@ -973,6 +973,20 @@ BOOST_AUTO_TEST_CASE( pinned_pu_endpoints_reproduce_the_threshold_on_a_fixed_fra
       pinned.upper_mass_fraction = pinned_uncorrected;
       curve.mass_fraction_constraints.push_back( pinned );
 
+      // Seed every unconstrained nuclide at the baseline's fitted activity.  A fully cold refit
+      // was measured to land, deterministically, in a shallow basin ~120 chi2 ABOVE conditional
+      // points the profile scan itself evaluated at larger displacement - and a stuck oracle then
+      // reports "interval too wide" against a correct interval.  Seeding only chooses the basin
+      // the descent starts in; the objective being measured is unchanged.
+      for( RelActCalcAuto::NucInputInfo &input : curve.nuclides )
+      {
+        if( RelActCalcAuto::nuclide(input.source) == pu240 )
+          continue;   //a mass-constrained nuclide may not carry a start value
+        for( const RelActCalcAuto::NuclideRelAct &fitted : baseline.m_rel_activities.at(0) )
+          if( fitted.source == input.source )
+            input.starting_rel_act = fitted.rel_activity;
+      }
+
       RelActCalcAuto::RelActAutoSolution refit;
       BOOST_REQUIRE_NO_THROW( refit = RelActCalcAuto::solve(
           trial,foreground,background,nullptr,frozen_peaks,
@@ -1017,3 +1031,59 @@ BOOST_AUTO_TEST_CASE( pinned_pu_endpoints_reproduce_the_threshold_on_a_fixed_fra
   BOOST_CHECK_MESSAGE( endpoints_checked > 0,
                        "no 95% likelihood-crossing endpoint was available to validate" );
 }
+
+
+/** The profile contract on plutonium, and the hard target-enumeration invariant.
+
+ Every INPUT nuclide with an explicit profile request must produce a structured profile result,
+ and correlation-generated Pu-242 must NEVER be profiled: users accept it is known only by
+ correlation, and only nuclides explicitly in the input list are profile targets.
+ */
+BOOST_AUTO_TEST_CASE( every_input_nuclide_profiles_and_pu242_never_does )
+{
+  initialize_paths();
+  const PuCase &test_case = sm_cases[1];  //Pu70: inside the Pu-242 correlation validation range.
+
+  // Explicitly force a profile on every INPUT nuclide, with ages known and no robust search: the
+  // diagnostics contract is what is under test, so the fixture avoids the degenerate free-age
+  // basin exploration (whose extreme candidate points trip unrelated Debug-only dev-check
+  // asserts) and guarantees every input nuclide gets a profile whatever its covariance quality.
+  RelActCalcAuto::Options options = preset_options();
+  options.auto_profile_weak_mass_fractions = false;
+  options.robust_solve = false;
+  for( RelActCalcAuto::NucInputInfo &input : options.rel_eff_curves.at(0).nuclides )
+  {
+    input.age = effective_age_years(test_case) * PhysicalUnits::year;
+    input.fit_age = false;
+    input.fit_age_min.reset();
+    input.fit_age_max.reset();
+    input.force_profile_mass_fraction = true;
+  }
+
+  const auto foreground = load_measurement(test_case.spectrum);
+  const auto background = load_measurement(test_case.background);
+  RelActCalcAuto::RelActAutoSolution solution;
+  BOOST_REQUIRE_NO_THROW( solution = RelActCalcAuto::solve(
+      options,foreground,background,nullptr,{},PeakFitUtils::CoarseResolutionType::High,nullptr) );
+  BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status),
+                         solution.m_error_message );
+
+  const array<const SandiaDecay::Nuclide *,5> nuclides = pu_nuclides();
+  for( size_t i = 0; i < 4; ++i )  //the four INPUT nuclides: Pu238, Pu239, Pu240, Pu241
+  {
+    const RelActCalcAuto::RelActAutoSolution::MassFractionResult result
+        = solution.mass_enrichment_result( nuclides[i], 0 );
+    BOOST_REQUIRE_MESSAGE( result.profile.has_value(),
+                           nuclides[i]->symbol << " had no profile result" );
+
+    BOOST_CHECK_MESSAGE( !result.profile->message.empty()
+                         || !result.profile->intervals.empty(),
+                         nuclides[i]->symbol << " profile carried neither intervals nor a reason" );
+  }
+
+  // The hard invariant: correlation-generated Pu-242 is never a profile target.
+  const RelActCalcAuto::RelActAutoSolution::MassFractionResult pu242
+      = solution.mass_enrichment_result( nuclides[4], 0 );
+  BOOST_CHECK_MESSAGE( !pu242.profile.has_value(),
+                       "correlation-generated Pu242 must never be profiled" );
+}//BOOST_AUTO_TEST_CASE( every_input_nuclide_profiles_and_pu242_never_does )
