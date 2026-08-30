@@ -530,6 +530,12 @@ struct ResponseProvenance {
     std::string created_utc;          ///< ISO-8601, informational
     ResponseProfile profile = ResponseProfile::General;
     double node_fep_precision = 0.003;///< per-node MC precision target
+    /// Half-width (keV) of the full-energy-peak window this response's FEP was
+    /// scored with (physics/FepWindow.h).  A model that credits in-window
+    /// Compton must use the SAME window, or it is calibrated against the wrong
+    /// truth - which is why this travels with the response instead of being
+    /// assumed.
+    double fep_window_keV = kDefaultFepWindowKeV;
     uint64_t generation_seed = 0;     ///< base seed (per-node seeds derive)
     int kernel_n_rays = 2048;         ///< quadrature rays used in evaluation
     double valid_e_min_keV = 0.0, valid_e_max_keV = 0.0;

@@ -232,6 +232,40 @@ interpretation and can be corrected.
 
   **The bore cavity must not be filled with a daughter volume.** The bore is already subtracted from the crystal solid, so an `Air` daughter placed in it lies *outside* its mother and G4 navigation gets stuck on it. The cavity is left to the world material, which matches the MC (the bore region gets no material there either) whenever the export uses `vacuum_world=true`, as the validation configs do. This bug was latent until configs 25/26: no earlier exported config used `set_bore_hole`. (Note also that GDML resolves `volumeref` only against volumes already read, so any daughter must be *defined before* the volume that places it.)
 
+### The full-energy window
+
+`src/physics/FepWindow.h` holds the single definition of "in the peak":
+`ceelo::kDefaultFepWindowKeV` (0.75 keV half-width, suited to HPGe). Everything
+that has to agree on it reads from there -- the MC's FEP tally, the transport
+layer's FEP-only early kill (`TransportConfig::fep_window_keV`), the cascade
+`PeakWindow` default, and the analytic in-window Compton fraction
+(`kn_in_window_fraction`). `EfficiencyCalculator::set_fep_window_keV()` moves
+the tally and the early kill together; the kill must never assume a window
+narrower than the one being scored, or it discards events that would have
+counted and FEP comes out low with no error and no flag.
+`ResponseGenerator` applies the window to every node it builds and records it in
+`ResponseProvenance::fep_window_keV`, so a consumer crediting in-window Compton
+can match the window a response was actually scored at instead of assuming one.
+
+Callers that know the peak should override it, and do: `CascadeSummingCalc`
+takes each window from the fitted peak's own sigma, which is what a
+lower-resolution detector needs.
+
+**The committed GEANT4 references were generated at 1.5 keV**, the window that
+predates this consolidation. Until they are regenerated, everything compared
+against them pins that window rather than the default:
+`tests/test_fep_window.h` (`kTestFepWindowKeV`) for the C++ suite and
+`cascade_ref_common.h`, and `kReferenceFepWindowKeV` in
+`examples/benchmark_mc_configs.cpp` for the `compare_validation.py` gate. The
+difference is not cosmetic -- config 8 at 59.5 keV measures FEP
+7.479e-02 +/- 0.161% at 1.5 keV versus 7.248e-02 +/- 0.163% at 0.75 keV, a
+-3.09% shift at z = -13.5, which would read as a physics regression against a
+1.5 keV reference. Bare-NaI config 1 at 60/662/1332 keV shows no significant
+shift (|z| <= 1.0 at 0.1% precision); the sensitivity is concentrated where
+near-peak forward scatter is (low energy, scattering geometry). Regenerating the
+references means moving the harness (`EventAction::SetFepWindowKeV`) and CeeLo
+to the same value and dropping these pins together.
+
 ### Simulation Modes
 
 - **Full mode** (default): Tracks all photon interactions through attenuators and crystal. Electron CSDA with bremsstrahlung. Gives both FEP and total efficiency, plus pulse-height spectrum.

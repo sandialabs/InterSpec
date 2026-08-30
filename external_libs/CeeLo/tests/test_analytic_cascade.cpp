@@ -36,6 +36,7 @@
 #include "cascade/CascadeTypes.h"
 #include "cascade/LevelDag.h"
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 
 #include <cmath>
 #include <limits>
@@ -235,6 +236,7 @@ BOOST_AUTO_TEST_CASE(malformed_gamma_member_references_fail_closed) {
             std::invalid_argument);
 
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         CascadeConfig cfg;
         cfg.cascades = {dc};
         cfg.peaks = {{100.0, 0.1}};

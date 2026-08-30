@@ -1497,6 +1497,8 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         append_attrib(doc, p, "profile", to_string(provenance.profile));
         append_attrib(doc, p, "nodeFepPrecision",
                       fmt_double(provenance.node_fep_precision));
+        append_attrib(doc, p, "fepWindowKeV",
+                      fmt_double(provenance.fep_window_keV));
         append_attrib(doc, p, "generationSeed",
                       std::to_string(provenance.generation_seed));
         append_attrib(doc, p, "kernelNRays",
@@ -1683,6 +1685,8 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
         if (const char* v = attrib_value(p, "createdUtc")) pr.created_utc = v;
         pr.profile = profile_from_string(attrib_value(p, "profile"));
         pr.node_fep_precision = attrib_double(p, "nodeFepPrecision", 0.003);
+        pr.fep_window_keV =
+            attrib_double(p, "fepWindowKeV", kDefaultFepWindowKeV);
         if (const char* v = attrib_value(p, "generationSeed"))
             pr.generation_seed = std::strtoull(v, nullptr, 10);
         pr.kernel_n_rays =

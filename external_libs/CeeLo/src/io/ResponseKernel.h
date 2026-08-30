@@ -52,6 +52,7 @@
 /// (d sin(t) cos(p), d sin(t) sin(p), -d cos(t)) for distance d measured to
 /// the crystal-face origin, polar angle t from the detector axis, azimuth p.
 
+#include "physics/FepWindow.h"
 #include "geometry/Geometry.h"
 #include "materials/Material.h"
 
@@ -168,7 +169,7 @@ inline Eigen::Vector3d source_position(double d_cm, double cos_theta,
 /// Free-electron KN only -- S(x,Z) suppresses forward scatter, so this
 /// slightly overestimates the surviving fraction (measured +1..2% mid-E
 /// overshoot, S9b). Simpson integration over cos(theta).
-double kn_in_window_fraction(double E_keV, double win_keV = 1.5);
+double kn_in_window_fraction(double E_keV, double win_keV = kDefaultFepWindowKeV);
 
 /// Material-aware in-window fraction: weights the Klein-Nishina integrand by
 /// the incoherent scattering function of the material's elements,

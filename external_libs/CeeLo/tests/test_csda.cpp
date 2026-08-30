@@ -39,6 +39,7 @@
 #include "materials/Material.h"
 #include "geometry/Geometry.h"
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 
 #include <Eigen/Core>
 #include <random>
@@ -314,6 +315,7 @@ BOOST_AUTO_TEST_CASE(fep_leq_total_invariant_holds_with_csda)
     const uint64_t N = 15000;
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc.enable_electron_csda(true);

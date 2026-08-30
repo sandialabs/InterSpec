@@ -77,8 +77,13 @@ void EventAction::AddInteraction(G4InteractionRecord rec) {
 }
 
 void EventAction::EndOfEventAction(const G4Event*) {
-    // Tolerance for full-energy peak classification: 1.5 keV = 1.5e-3 MeV.
-    static constexpr double kFepTol = 1.5e-3;
+    // Half-width of the full-energy-peak window, in MeV.  MUST match the window
+    //  CeeLo scores with (ceelo::kDefaultFepWindowKeV, physics/FepWindow.h) or
+    //  the comparison is apples-to-oranges: a reference generated at a wider
+    //  window counts events CeeLo does not.  Settable so a reference set can be
+    //  regenerated at whatever window CeeLo currently uses -- and so the value
+    //  can be recorded alongside the data it produced.
+    const double kFepTol = fep_window_keV_ * 1.0e-3;
 
     // Get importance weight from primary generator (1.0 if no cone bias)
     double weight = 1.0;

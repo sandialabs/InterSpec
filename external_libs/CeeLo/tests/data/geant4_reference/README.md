@@ -6,6 +6,16 @@ without requiring a GEANT4 installation: `profiling/compare_validation.py` gates
 these references against CeeLo's own results in `../ceelo_reference/`, and
 `tests/test_cascade_summing.cpp` reads `cascade_summing_multi.csv` directly.
 
+## FEP window
+
+These references were generated with the harness scoring a **1.5 keV** half-window
+for full-energy classification.  CeeLo's own default is
+`ceelo::kDefaultFepWindowKeV` (physics/FepWindow.h), which is narrower — so any
+comparison against this data must pin CeeLo to 1.5 keV
+(`EfficiencyCalculator::set_fep_window_keV(1.5)`, as `cascade_ref_common.h` does)
+until the references are regenerated.  When regenerating, set the harness and
+CeeLo to the same window and update this note.
+
 ## How to regenerate reference data
 
 1.  Build the GEANT4 validation harness:

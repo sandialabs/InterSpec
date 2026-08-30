@@ -26,6 +26,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "geometry/SourceGeometry.h"
 #include "materials/Material.h"
 
@@ -71,12 +72,14 @@ BOOST_AUTO_TEST_CASE(point_source_pb_spherical_shell) {
 
     // Without shielding
     EfficiencyCalculator calc_bare;
+    calc_bare.set_fep_window_keV(kTestFepWindowKeV);
     calc_bare.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_bare.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     auto res_bare = calc_bare.compute(precision_config(energy_keV));
 
     // With Pb shielding
     EfficiencyCalculator calc_pb;
+    calc_pb.set_fep_window_keV(kTestFepWindowKeV);
     calc_pb.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_pb.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc_pb.add_source_shield(&pb, thickness);
@@ -116,12 +119,14 @@ BOOST_AUTO_TEST_CASE(source_material_reduces_efficiency) {
     Material water = make_Water();
 
     EfficiencyCalculator calc_bare;
+    calc_bare.set_fep_window_keV(kTestFepWindowKeV);
     calc_bare.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_bare.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -15.0),
                                      3.0, 3.0);
     auto res_bare = calc_bare.compute(precision_config(200.0));
 
     EfficiencyCalculator calc_water;
+    calc_water.set_fep_window_keV(kTestFepWindowKeV);
     calc_water.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_water.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -15.0),
                                       3.0, 3.0);
@@ -139,12 +144,14 @@ BOOST_AUTO_TEST_CASE(multi_shield_layers) {
     double energy_keV = 200.0;
 
     EfficiencyCalculator calc_1;
+    calc_1.set_fep_window_keV(kTestFepWindowKeV);
     calc_1.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_1.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc_1.add_source_shield(&pb, 0.05); // 0.5 mm
     auto res_1 = calc_1.compute(precision_config(energy_keV));
 
     EfficiencyCalculator calc_2;
+    calc_2.set_fep_window_keV(kTestFepWindowKeV);
     calc_2.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_2.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc_2.add_source_shield(&pb, 0.05);
@@ -160,6 +167,7 @@ BOOST_AUTO_TEST_CASE(gdml_export_point_source_shielding) {
     Material nai = make_NaI();
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc.add_source_shield(&pb, 0.1);
@@ -186,6 +194,7 @@ BOOST_AUTO_TEST_CASE(gdml_export_cylindrical_source_with_material) {
     Material water = make_Water();
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -15.0), 3.0, 3.0);
     calc.set_source_material(&water);

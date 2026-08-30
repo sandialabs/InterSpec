@@ -31,6 +31,7 @@
 /// plus analytic unit checks of the forced-collision weight.
 
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "geometry/Geometry.h"
 #include "materials/Material.h"
 #include "transport/ComptonScatter.h"
@@ -194,6 +195,7 @@ BOOST_AUTO_TEST_SUITE(ForcedCollisionGateA)
 BOOST_AUTO_TEST_CASE(nai_bare_662) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     gate_a_forced(calc, 662.0, "config1 662 keV");
@@ -202,6 +204,7 @@ BOOST_AUTO_TEST_CASE(nai_bare_662) {
 BOOST_AUTO_TEST_CASE(nai_bare_2614) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     gate_a_forced(calc, 2614.0, "config1 2614 keV");
@@ -210,6 +213,7 @@ BOOST_AUTO_TEST_CASE(nai_bare_2614) {
 BOOST_AUTO_TEST_CASE(czt_box_662) {
     Material czt = make_CZT();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Box, &czt, {0.5, 0.5, 0.5});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
     gate_a_forced(calc, 662.0, "config5 662 keV");
@@ -221,6 +225,7 @@ BOOST_AUTO_TEST_CASE(nai_al_pb_attenuators_662) {
     Material al = make_Aluminum();
     Material pb = make_Lead();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.add_attenuator(&al, 0.1, 0.1, 0.0, 7.62);
     calc.add_attenuator(&pb, 0.2, 0.2, 0.0, 7.62);
@@ -231,6 +236,7 @@ BOOST_AUTO_TEST_CASE(nai_al_pb_attenuators_662) {
 BOOST_AUTO_TEST_CASE(fep_only_mode_2614) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc.enable_fep_only_mode(true);
@@ -256,6 +262,7 @@ BOOST_AUTO_TEST_CASE(fe_source_shield_662) {
     Material nai = make_NaI();
     Material fe = make_Iron();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc.add_source_shield(&fe, 0.5);
@@ -271,6 +278,7 @@ BOOST_AUTO_TEST_CASE(fe_source_shield_2000) {
     Material nai = make_NaI();
     Material fe = make_Iron();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc.add_source_shield(&fe, 0.5);
@@ -315,6 +323,7 @@ BOOST_AUTO_TEST_CASE(fe_source_shield_multi_energy) {
     Material nai = make_NaI();
     Material fe = make_Iron();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc.add_source_shield(&fe, 0.5);
@@ -329,6 +338,7 @@ BOOST_AUTO_TEST_CASE(steel_box_cellulose_662) {
     Material ss = make_StainlessSteel304();
     Material cellulose = make_Cellulose();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_rectangular_source(
         Eigen::Vector3d(0.0, 0.0, -12.0),
@@ -345,6 +355,7 @@ BOOST_AUTO_TEST_CASE(mixture_alpha_one_equals_isotropic) {
     Material nai = make_NaI();
     Material fe = make_Iron();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc.add_source_shield(&fe, 0.5);
@@ -368,6 +379,7 @@ BOOST_AUTO_TEST_CASE(auto_enable_policy) {
     {
         Material nai = make_NaI();
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
         fixed_n.energy_keV = 662.0;
@@ -384,6 +396,7 @@ BOOST_AUTO_TEST_CASE(auto_enable_policy) {
     {
         Material czt = make_CZT();
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         calc.set_detector(DetectorShape::Box, &czt, {0.5, 0.5, 0.5});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
         fixed_n.energy_keV = 662.0;
@@ -399,6 +412,7 @@ BOOST_AUTO_TEST_CASE(auto_enable_policy) {
         Material nai = make_NaI();
         Material fe = make_Iron();
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
         calc.add_source_shield(&fe, 0.5);
@@ -430,6 +444,7 @@ BOOST_AUTO_TEST_CASE(auto_enable_policy) {
         Material water = make_Water();
         Material pe = make_Polyethylene();
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
         calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -1.6), 2.5, 0.5);
         calc.set_source_material(&water);
@@ -447,6 +462,7 @@ BOOST_AUTO_TEST_CASE(auto_enable_policy) {
         Material water = make_Water();
         Material pe = make_Polyethylene();
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
         calc.add_attenuator(&al, 0.05, 0.05, 0.0, 7.62);
         calc.set_marinelli_beaker(4.3, 6.0, 7.5, 4.0, 0.5, &water, &pe, 0.2);
@@ -468,6 +484,7 @@ BOOST_AUTO_TEST_CASE(marinelli_with_mixture_is_unbiased) {
     Material water = make_Water();
     Material pe = make_Polyethylene();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.add_attenuator(&al, 0.05, 0.05, 0.0, 7.62);
     calc.set_marinelli_beaker(4.3, 6.0, 7.5, 4.0, 0.5, &water, &pe, 0.2);
@@ -521,6 +538,7 @@ BOOST_AUTO_TEST_CASE(no_interaction_probability_matches_analytic) {
         Material nai = make_NaI();
         Material fe = make_Iron();
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
         calc.add_source_shield(&fe, 0.5);
@@ -540,6 +558,7 @@ BOOST_AUTO_TEST_CASE(no_interaction_probability_matches_analytic) {
         Material ss = make_StainlessSteel304();
         Material cellulose = make_Cellulose();
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
         calc.set_rectangular_source(Eigen::Vector3d(0.0, 0.0, -12.0),
                                     Eigen::Vector3d(2.5, 2.5, 4.0),
@@ -562,6 +581,7 @@ BOOST_AUTO_TEST_CASE(no_interaction_probability_matches_analytic) {
         Material nai = make_NaI();
         Material water = make_Water();
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
         calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -10.0),
                                     2.0, 1.5);
@@ -584,6 +604,7 @@ BOOST_AUTO_TEST_CASE(fe_source_shield_662) {
     Material nai = make_NaI();
     Material fe = make_Iron();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc.add_source_shield(&fe, 0.5);
@@ -600,6 +621,7 @@ BOOST_AUTO_TEST_CASE(fe_source_shield_2000_pp_secondaries) {
     Material nai = make_NaI();
     Material fe = make_Iron();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc.add_source_shield(&fe, 0.5);
@@ -613,6 +635,7 @@ BOOST_AUTO_TEST_CASE(steel_box_cellulose_662) {
     Material ss = make_StainlessSteel304();
     Material cellulose = make_Cellulose();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_rectangular_source(Eigen::Vector3d(0.0, 0.0, -12.0),
                                 Eigen::Vector3d(2.5, 2.5, 4.0),
@@ -632,6 +655,7 @@ BOOST_AUTO_TEST_CASE(low_energy_fep_s_channel) {
     Material ss = make_StainlessSteel304();
     Material cellulose = make_Cellulose();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_rectangular_source(Eigen::Vector3d(0.0, 0.0, -12.0),
                                 Eigen::Vector3d(2.5, 2.5, 4.0),
@@ -648,6 +672,7 @@ BOOST_AUTO_TEST_CASE(close_water_puck_122) {
     Material water = make_Water();
     Material pe = make_Polyethylene();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -1.6), 2.5, 0.5);
     calc.set_source_material(&water);
@@ -668,6 +693,7 @@ BOOST_AUTO_TEST_CASE(absorbed_primary_electron_channel_662) {
     Material water = make_Water();
     Material pe = make_Polyethylene();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -1.6), 2.5, 0.5);
     calc.set_source_material(&water);
@@ -715,6 +741,7 @@ BOOST_AUTO_TEST_CASE(off_axis_fe_662) {
     Material nai = make_NaI();
     Material fe = make_Iron();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     const double d = 15.0, th = 45.0 * M_PI / 180.0;
     calc.set_point_source(
@@ -732,6 +759,7 @@ BOOST_AUTO_TEST_CASE(spectrum_consistency_662) {
     Material nai = make_NaI();
     Material fe = make_Iron();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc.add_source_shield(&fe, 0.5);
@@ -889,6 +917,7 @@ BOOST_AUTO_TEST_CASE(fe_source_shield_662) {
     Material nai = make_NaI();
     Material fe = make_Iron();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc.add_source_shield(&fe, 0.5);
@@ -902,6 +931,7 @@ BOOST_AUTO_TEST_CASE(thick_pb_shield_662) {
     Material nai = make_NaI();
     Material pb = make_Lead();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     calc.add_source_shield(&pb, 2.0);
@@ -917,6 +947,7 @@ BOOST_AUTO_TEST_CASE(steel_box_cellulose_2614_pp) {
     Material ss = make_StainlessSteel304();
     Material cellulose = make_Cellulose();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_rectangular_source(Eigen::Vector3d(0.0, 0.0, -12.0),
                                 Eigen::Vector3d(2.5, 2.5, 4.0),
@@ -969,6 +1000,7 @@ BOOST_AUTO_TEST_SUITE(DopplerConsistencyGateA)
 BOOST_AUTO_TEST_CASE(nai_bare_662) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     gate_a_doppler(calc, 662.0, "doppler config1 662 keV");
@@ -977,6 +1009,7 @@ BOOST_AUTO_TEST_CASE(nai_bare_662) {
 BOOST_AUTO_TEST_CASE(nai_bare_2614) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     gate_a_doppler(calc, 2614.0, "doppler config1 2614 keV");

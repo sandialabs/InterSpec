@@ -63,7 +63,6 @@ namespace {
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kTwoPi = 2.0 * kPi;
 constexpr double kFourPi = 4.0 * kPi;
-constexpr double kFepTolerance = 1.5; // keV tolerance for full-energy peak
 
 // Below this kinetic energy an internal-conversion / Auger electron is treated
 // as depositing locally (or dropped): its CSDA range is sub-mm and it cannot
@@ -1428,7 +1427,7 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
                     tally.dbg_src.any_w2_u += w * w;
                 }
                 if (std::abs(tr.energy_deposited_scoring - energy_keV) <
-                    kFepTolerance) {
+                    fep_window_keV_) {
                     tally.num_fep++;
                     tally.sum_fep_weights += w;
                     tally.sum_fep_w_sq += w * w;
@@ -1894,7 +1893,7 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
                 }
             }
 
-            if (std::abs(total_dep_scoring - energy_keV) < kFepTolerance) {
+            if (std::abs(total_dep_scoring - energy_keV) < fep_window_keV_) {
                 tally.num_fep++;
                 tally.sum_fep_weights += src_air_w;
                 tally.sum_fep_w_sq += src_air_w * src_air_w;
@@ -2052,7 +2051,7 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
             total_weight *= transport_result.weight;
             if (transport_result.forced_absorption) tally.num_forced_absorption++;
 
-            if (std::abs(transport_result.energy_deposited_scoring - energy_keV) < kFepTolerance) {
+            if (std::abs(transport_result.energy_deposited_scoring - energy_keV) < fep_window_keV_) {
                 tally.num_fep++;
                 tally.sum_fep_weights += total_weight;
                 tally.sum_fep_w_sq += total_weight * total_weight;
@@ -2072,7 +2071,7 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
                 tally.sum_any_w_sq += total_weight * total_weight;
             }
 
-            if (std::abs(transport_result.energy_deposited_scoring - energy_keV) < kFepTolerance) {
+            if (std::abs(transport_result.energy_deposited_scoring - energy_keV) < fep_window_keV_) {
                 tally.num_fep++;
                 tally.sum_fep_weights += total_weight;
                 tally.sum_fep_w_sq += total_weight * total_weight;

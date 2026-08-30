@@ -278,6 +278,7 @@ BOOST_AUTO_TEST_CASE(recapture_response_reproduces_total_anchor) {
 
 #ifdef CEELO_RUN_MC_TESTS
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "io/ResponseGenerator.h"
 
 // Coarse MC anchor on-axis, transfer to two far-field targets, compare to
@@ -288,6 +289,7 @@ BOOST_AUTO_TEST_CASE(mc_consistency) {
     const Geometry geom = gd.build_geometry(owned);
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     ResponseGenerator::configure_calculator(calc, gd, owned);
 
     const double a_ext = 3.81 + 0.05;

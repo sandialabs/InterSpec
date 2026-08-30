@@ -124,6 +124,11 @@ struct Runner {
         // Same mapping as the public helper, but reusing this Runner's
         // already-instantiated materials (one instantiation per run, not per
         // node).
+        //
+        // Every calculator the generator builds routes through here, so setting
+        //  the FEP window once here is what makes ResponseProvenance's recorded
+        //  value true of every node that went into the response.
+        calc.set_fep_window_keV(opts.fep_window_keV);
         calc.set_detector(gd.shape, mat(gd.crystal_material_index),
                           gd.dimensions_cm);
         if (gd.bore) calc.set_bore_hole(gd.bore->radius, gd.bore->depth);
@@ -1064,6 +1069,9 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
     resp->provenance.node_fep_precision = opts.node_fep_precision;
     resp->provenance.generation_seed = opts.base_seed;
     resp->provenance.kernel_n_rays = opts.kernel_n_rays;
+    // Record the window the FEP tallies were actually scored with, so a consumer
+    //  crediting in-window Compton can match it rather than assume it.
+    resp->provenance.fep_window_keV = opts.fep_window_keV;
     resp->provenance.detector_name = opts.detector_name;
     resp->provenance.valid_e_min_keV = opts.e_min_keV;
     resp->provenance.valid_e_max_keV = opts.e_max_keV;

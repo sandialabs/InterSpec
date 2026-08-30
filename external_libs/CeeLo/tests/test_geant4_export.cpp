@@ -41,6 +41,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "export/Geant4Export.h"
 #include "geometry/Geometry.h"
 #include "materials/Material.h"
@@ -154,6 +155,7 @@ BOOST_AUTO_TEST_CASE(exported_polycone_matches_traced_solid) {
     Material ge = make_HPGe();
     for (const auto& c : cases) {
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         calc.set_detector(DetectorShape::Cylinder, &ge, {R, L});
         if (c.r_b > 0.0) calc.set_bullet_radius(c.r_b);
         if (c.bore_r > 0.0) calc.set_bore_hole(c.bore_r, c.depth, c.tip);
@@ -192,6 +194,7 @@ BOOST_AUTO_TEST_CASE(exported_fillet_volume_is_right_not_just_close) {
 
     auto exported_volume = [&](double r_b) {
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         calc.set_detector(DetectorShape::Cylinder, &ge, {R, L});
         if (r_b > 0.0) calc.set_bullet_radius(r_b);
         // No bore: isolate the fillet.
@@ -223,6 +226,7 @@ BOOST_AUTO_TEST_CASE(plain_cylinder_still_exports_as_a_tube) {
     // with a bore and/or a fillet become polycones.
     Material ge = make_HPGe();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &ge, {R, L});
 
     const std::string path = tmp_gdml("plain");
