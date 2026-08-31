@@ -205,7 +205,8 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
         && (candidate.m_frozen_model_policy_hash == frozen_profile_model_hash);
   };
 
-  // Do not let the first weak quantity visited choose a baseline restart on its own.  A
+  // Do not let the first weak quantity visited choose a baseline restart on its own (each pass
+  // performs at most one reselection, from the best deferred discovery).  A
   // different quantity can enter a still lower basin (the Pu free-age problem is a concrete
   // example), and source/caller order must not decide which of those seeds reaches final candidate
   // selection.  Collect one independently evaluated discovery per interrupted profile, rank all
@@ -1126,6 +1127,10 @@ void add_mass_fraction_profiles( RelActAutoSolution &solution,
 
   // The reselection trail must survive the move below: `restarted` is a fresh solve carrying only
   // its own warnings, so without this a multi-hop chain would report only its final hop.
+  // CONTRACT: every warning this flow wants carried across restarts - the hop summaries and the
+  // seed-fidelity note pushed below - must begin with exactly "Baseline reselection ", because
+  // that prefix is the only thing selecting them here.  Reword the prefix in ALL places or hops
+  // silently vanish from the trail.
   std::vector<std::string> reselection_trail;
   for( const std::string &warning : solution.m_warnings )
     if( warning.rfind("Baseline reselection ",0) == 0 )

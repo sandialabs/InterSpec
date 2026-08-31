@@ -15295,8 +15295,9 @@ struct ProfileConditionalHost
         return answer;
       }
       answer.why_not = std::string(nuc->symbol) + "'s element has mass-fraction constraints that"
-                       " leave no slot scanning the reported fraction exactly (the target is fixed,"
-                       " shares its block with other range isotopes, or its carrier is constant).";
+                       " leave no slot scanning the reported fraction exactly (a same-element"
+                       " isotope is constrained, or the target is fixed, shares its block with"
+                       " other range isotopes, or its carrier is constant).";
       return answer;
     }//if( the element already has mass-fraction constraints )
 

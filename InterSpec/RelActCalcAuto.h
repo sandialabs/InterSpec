@@ -883,10 +883,11 @@ struct Options
    runs the deterministic multi-start basin search and computes automatic bounded
    profile-likelihood intervals for weak mass fractions.
 
-   Note the one profile-triggered baseline reselection is NOT gated on this flag: it is gated on a
+   Note profile-triggered baseline reselection is NOT gated on this flag: it is gated on a
    profile having run at all.  An explicitly forced per-nuclide profile therefore can still trigger
    it in a non-robust solve, which is deliberate - having discovered that the retained baseline is
-   not optimal, silently keeping it would be worse than spending the one permitted restart.
+   not optimal, silently keeping it would be worse than spending a reselection (up to
+   `ProfileLikelihood::sm_max_baseline_restarts` of them; see `baseline_discovery_disposition`).
 
    A default solve still runs the narrow EM-attribution rescue pair: that is the known remedy for a
    degeneracy in all-physical multi-curve fits sharing sources, not exploratory breadth.
@@ -967,22 +968,19 @@ struct Options
   /** Names one quantity a post-fit profile-likelihood scan can be run over.
 
    A pure descriptor: which source, which curve, which kind of quantity.  It carries no numeric
-   target, because the engine does not impose an equality on the reported quantity at all - it
-   restricts the target's own fit PARAMETER with a `ceres::SubsetManifold` and reads back whatever
-   reported value that produces.
+   target, because the engine does not impose an equality residual on the reported quantity - it
+   reparameterizes so that one fit PARAMETER *is* the reported (pre-Pu242-correction) coordinate
+   (see `ProfileConditionalHost::install_carrier_reparam`), restricts that slot with a
+   `ceres::SubsetManifold`, and reads back the achieved reported value at each conditional point.
+   The pinned statistic is therefore the exact profile `min over {q_pre == q0}`; a target for which
+   no slot can scan the reported coordinate exactly reports a structured `Failed` rather than an
+   approximate interval.
 
-   The statistic that results, and its known bias: let `q(x)` be the reported quantity and `a` the
-   target's activity parameter.  A point minimizing subject to `a == a0` is merely *some* feasible
-   point of `{q == q(a0)}`, so `min over {q == q0} <= min over {a == a0}`.  Pinning therefore
-   upper-bounds the true profile of `q`: delta chi2 is overstated at a given `q`, the threshold is
-   crossed too early, and reported intervals come out somewhat too NARROW.  The two coincide when
-   `q` is effectively a function of `a` alone, which is the ordinary case for a fitted isotope
-   against its siblings.  It was least true for correlation-generated Pu-242, where `q` depends on
-   Pu-239 as well - and that quantity is no longer offered as a profile target, because it has no
-   free parameter and hence no likelihood direction of its own.
+   The exactness is measured rather than assumed, by unit tests that refit with the mass fraction
+   held fixed at each claimed endpoint and check the objective lands on the threshold.
 
-   The size of the remaining bias is measured rather than assumed, by unit tests that refit with the
-   mass fraction held fixed at each claimed endpoint and check the objective lands on the threshold.
+   Only `MassFraction` currently has a scan executor; the other kinds are classification
+   descriptors (see `profilable_quantity_kinds`).
    */
   struct ProfileTarget
   {
