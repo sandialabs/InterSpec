@@ -4818,6 +4818,10 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
     }
   }//if( !det ) -- try .outx
 
+  // The XML attempt below is the last resort, so its error is the one that gets printed -
+  //  keep why the CSV attempt failed, since for a CSV that is the informative reason.
+  string csv_parse_error;
+
   if( !det )
   {
 #ifdef _WIN32
@@ -4826,7 +4830,7 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
 #else
     ifstream csvfile( filename.c_str(), ios_base::binary|ios_base::in );
 #endif
-    
+
     DetectorPeakResponse::EffGeometryType eff_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
     if( (m_efficiencyType->currentIndex() == 0) || (m_efficiencyType->currentIndex() == 2) )
     {
@@ -4843,18 +4847,19 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
       diameter = 2.54*3*PhysicalUnits::cm;
       eff_type = DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
     }
-    
+
     try
     {
       shared_ptr<DetectorPeakResponse> trial_det = make_shared<DetectorPeakResponse>();
       trial_det->fromEnergyEfficiencyCsv( csvfile, diameter, abs_eff_dist, float(PhysicalUnits::keV), eff_type );
       if( trial_det->isValid() )
         det = trial_det;
-    }catch( std::exception & )
+    }catch( std::exception &e )
     {
+      csv_parse_error = e.what();
     }
   }//if( !det )
-  
+
   if( !det )
   {
     try
@@ -4866,37 +4871,40 @@ std::shared_ptr<DetectorPeakResponse> DrfSelect::detectorFromEffUpload() const
       ifstream infile( filename.c_str(), ios_base::binary|ios_base::in );
 #endif
       rapidxml::file<char> input_file( infile );
-      
+
       rapidxml::xml_document<char> doc;
       doc.parse<rapidxml::parse_default>( input_file.data() );
       auto *node = doc.first_node( "DetectorPeakResponse" );
       if( !node )
         throw runtime_error( "No DetectorPeakResponse node" );
-      
+
       shared_ptr<DetectorPeakResponse> xml_det = make_shared<DetectorPeakResponse>();
       xml_det->fromXml( node );
-      
+
       if( (diameter > 0.0) && (fabs(diameter - xml_det->detectorDiameter()) > 0.001*std::max(diameter,xml_det->detectorDiameter())) )
         xml_det->setDetectorDiameter( diameter );
-      
+
       if( (xml_det->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute)
          && (abs_eff_dist >= 0.0)
          && (fabs(abs_eff_dist - xml_det->absoluteEfficiencyDistance()) > 0.001*std::max(abs_eff_dist,xml_det->absoluteEfficiencyDistance())) )
       {
         xml_det->setAbsoluteEfficiencyDistance( abs_eff_dist );
       }
-      
+
       if( xml_det->isValid() )
         det = xml_det;
     }catch( std::exception &e )
     {
-      cerr << "Failed to parse uploaded DRF XML: " << e.what() << endl;
+      cerr << "Failed to parse uploaded DRF XML: " << e.what();
+      if( !csv_parse_error.empty() )
+        cerr << " (CSV parsing said: " << csv_parse_error << ")";
+      cerr << endl;
     }
   }//if( !det )
-  
+
   if( !det )
     return nullptr;
-  
+
   if( !m_uploadedDetName->text().empty() )
     det->setName( m_uploadedDetName->text().toUTF8() );
 
@@ -5043,7 +5051,11 @@ void DrfSelect::handleEfficiencyCsvUpload()
 
   const bool fixed_geometry = (det && det->isFixedGeometry());
   bool can_accept = fixed_geometry;
-  
+
+  // The XML attempt below is the last resort, so its error is the one that gets printed -
+  //  keep why the CSV attempt failed, since for a CSV that is the informative reason.
+  string csv_parse_error;
+
   if( !det )
   {
     try
@@ -5103,8 +5115,9 @@ void DrfSelect::handleEfficiencyCsvUpload()
         det = trial_det;
       else
         can_accept = false;
-    }catch( std::exception & )
+    }catch( std::exception &e )
     {
+      csv_parse_error = e.what();
     }
   }//if( !det )
   
@@ -5160,7 +5173,10 @@ void DrfSelect::handleEfficiencyCsvUpload()
       can_accept = true;
     }catch( std::exception &e )
     {
-      cerr << "Failed to parse uploaded DRF XML: " << e.what() << endl;
+      cerr << "Failed to parse uploaded DRF XML: " << e.what();
+      if( !csv_parse_error.empty() )
+        cerr << " (CSV parsing said: " << csv_parse_error << ")";
+      cerr << endl;
     }
   }//if( !det )
 

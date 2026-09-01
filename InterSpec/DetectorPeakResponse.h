@@ -1138,6 +1138,13 @@ public:
     { return energy==rhs.energy && efficiency==rhs.efficiency; }
   };//struct EnergyEfficiencyPair
 
+  /** Whether two efficiency-curve energies are close enough to be the same point
+   (~1e-5 relative).  Duplicate energies must be collapsed before an efficiency curve
+   is built, since #akimaInterpolate and its slope helper divide by the gaps between
+   neighboring points - a zero gap gives a NaN efficiency.
+   */
+  static bool nearlySameEnergy( const float lhs, const float rhs );
+
   /** Out-of-line helpers used by the (templated) #persist to marshal the
    #m_efficiency representation to/from the frozen database columns - kept
    out of the template so it only needs the forward-declared curve type.

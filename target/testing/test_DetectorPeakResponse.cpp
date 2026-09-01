@@ -3132,6 +3132,92 @@ BOOST_AUTO_TEST_CASE( test_eff_csv_uncert_column )
 }//test_eff_csv_uncert_column
 
 
+BOOST_AUTO_TEST_CASE( test_eff_csv_duplicate_energies )
+{
+  cout << "\n\nTesting efficiency CSV with duplicated energies..." << endl;
+
+  // Real-world files sometimes repeat their first data row.  The sort direction must not be
+  //  taken from that (equal) pair, and the duplicate must be dropped before the curve is
+  //  built, else the Akima interpolator divides by a zero-width interval and gives NaN.
+  const char *csv =
+    "Energy (keV),Efficiency\n"
+    "53.268,1.24E-03\n"
+    "53.268,1.24E-03\n"
+    "58.268,1.84E-03\n"
+    "63.268,2.49E-03\n"
+    "68.268,3.15E-03\n"
+    "73.268,3.78E-03\n"
+    "78.268,4.37E-03\n"
+    "83.268,4.88E-03\n"
+    "88.268,5.01E-03\n";
+
+  stringstream input( csv );
+  DetectorPeakResponse::EffCsvParseResult result;
+  BOOST_REQUIRE_NO_THROW( result = DetectorPeakResponse::parseEfficiencyCsvFile( input ) );
+  BOOST_REQUIRE( result.drf && result.drf->isValid() );
+
+  // Nine data rows, one of which is a duplicate energy
+  BOOST_CHECK_EQUAL( result.drf->getEnergyEfficiencyPair().size(), 8u );
+  BOOST_CHECK( close_enough( result.drf->lowerEnergy(), 53.268, 1.0e-4 ) );
+  BOOST_CHECK( close_enough( result.drf->upperEnergy(), 88.268, 1.0e-4 ) );
+
+  // The duplicate used to make calcA(...) compute 0/0, giving NaN over [58.268, 63.268)
+  for( const float energy : { 54.0f, 56.0f, 58.268f, 60.0f, 62.0f, 63.268f, 70.0f, 85.0f } )
+  {
+    const float eff = result.drf->intrinsicEfficiency( energy );
+    BOOST_CHECK_MESSAGE( std::isfinite(eff),
+      "Efficiency at " + to_string(energy) + " keV is not finite: " + to_string(eff) );
+    BOOST_CHECK_MESSAGE( (eff > 1.0e-4f) && (eff < 1.0e-2f),
+      "Efficiency at " + to_string(energy) + " keV out of expected range: " + to_string(eff) );
+  }//for( each test energy )
+
+  // Same file in decreasing energy order, again with the first row duplicated: the direction
+  //  scan must look past the equal pair, and the result must come out ascending.
+  const char *decreasing_csv =
+    "Energy (keV),Efficiency\n"
+    "88.268,5.01E-03\n"
+    "88.268,5.01E-03\n"
+    "83.268,4.88E-03\n"
+    "78.268,4.37E-03\n"
+    "73.268,3.78E-03\n"
+    "68.268,3.15E-03\n"
+    "63.268,2.49E-03\n"
+    "58.268,1.84E-03\n"
+    "53.268,1.24E-03\n";
+
+  stringstream dec_input( decreasing_csv );
+  DetectorPeakResponse::EffCsvParseResult dec_result;
+  BOOST_REQUIRE_NO_THROW( dec_result = DetectorPeakResponse::parseEfficiencyCsvFile( dec_input ) );
+  BOOST_REQUIRE( dec_result.drf && dec_result.drf->isValid() );
+
+  BOOST_CHECK_EQUAL( dec_result.drf->getEnergyEfficiencyPair().size(), 8u );
+  BOOST_CHECK( close_enough( dec_result.drf->lowerEnergy(), 53.268, 1.0e-4 ) );
+  BOOST_CHECK( close_enough( dec_result.drf->upperEnergy(), 88.268, 1.0e-4 ) );
+
+  // Both orderings describe the same curve, so they must evaluate the same
+  for( const float energy : { 54.0f, 60.0f, 70.0f, 85.0f } )
+  {
+    const float inc_eff = result.drf->intrinsicEfficiency( energy );
+    const float dec_eff = dec_result.drf->intrinsicEfficiency( energy );
+    BOOST_CHECK_MESSAGE( close_enough( inc_eff, dec_eff, 1.0e-4 ),
+      "Ascending vs descending CSV disagree at " + to_string(energy) + " keV: "
+      + to_string(inc_eff) + " vs " + to_string(dec_eff) );
+  }//for( each test energy )
+
+  // A file whose energies are all the same has no curve in it at all
+  const char *same_csv =
+    "Energy (keV),Efficiency\n"
+    "100.0,1.0E-03\n"
+    "100.0,1.0E-03\n"
+    "100.0,1.0E-03\n";
+
+  stringstream same_input( same_csv );
+  BOOST_CHECK_THROW( DetectorPeakResponse::parseEfficiencyCsvFile( same_input ), std::exception );
+
+  cout << "Efficiency CSV duplicate-energy handling passed" << endl;
+}//test_eff_csv_duplicate_energies
+
+
 BOOST_AUTO_TEST_CASE( test_drfextra_blob_roundtrip )
 {
   cout << "\n\nTesting DrfExtra database-blob round-trip..." << endl;
