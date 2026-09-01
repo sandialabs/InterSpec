@@ -28,7 +28,7 @@
 
  These are transcriptions of the double-valued functions in
  GammaInteractionCalc.cpp (exit_point_of_sphere_z, cylinder_line_intersection,
- rectangle_exit_location/intersections, and DistributedSrcCalc's eval_*), made
+ rectangle_exit_location/intersections, and the volumetric eval_*), made
  generic on the scalar type so that, with T = ceres::Jet<>, the derivatives of
  the volumetric integrals with respect to fit parameters (shell dimensions,
  generic-shield AN/AD, source activity) come out of the integration
@@ -75,6 +75,7 @@
 #include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/MassAttenuationTool_imp.hpp"
 
+#include "io/ResponseKernel.h"    // ceelo::make_aperture_quadrature for the per-element aperture
 #include "io/DetectorResponse.h"  // ceelo::DetectorResponse::eps_fep for the near-field/off-axis volumetric response
 
 namespace ceres
@@ -101,13 +102,11 @@ inline double scalar_of( const T &val )
 
  A function-local static in an inline function, so there is exactly one instance across all
  translation units.  (This was a file-static in GammaInteractionCalc.cpp before the ray-trace
- tracing moved into the templates below, so that it covers the Ceres/Jet path too.)  It is
- recursive because DistributedSrcCalc::eval_single_cyl_end_on holds it while calling into
- #cylinder_line_intersection_imp.
+ tracing moved into the templates below, so that it covers the Ceres/Jet path too.)
  */
-inline std::recursive_mutex &raytrace_debug_mutex()
+inline std::mutex &raytrace_debug_mutex()
 {
-  static std::recursive_mutex s_mutex;
+  static std::mutex s_mutex;
   return s_mutex;
 }
 #endif //DEBUG_RAYTRACE_CALCS
@@ -277,7 +276,7 @@ struct DetectorGeomT
  assembly-centered coordinates.
 
  The detector is along +z, except for CylinderSideOn where it is along +x
- (matching DistributedSrcCalc::eval_cylinder).
+ (matching DistributedSrcCalcT::eval_cylinder).
  */
 template<typename T>
 DetectorGeomT<T> detector_geom_from_config( const GeometryType geometry,
@@ -333,6 +332,7 @@ T detector_response_factor( const DetectorGeomT<T> &det, const T eval_point[3] )
   const T dist = distance_imp( eval_point, det.position );
   return fractional_solid_angle_imp( 2.0*det.radius, dist + det.setback );
 }//detector_response_factor(...)
+
 
 
 // Forward declaration; #exit_point_of_sphere_z_imp (below) validates its inputs and forwards here.
@@ -478,7 +478,7 @@ T cylinder_line_intersection_imp( const T &radius, const T &half_length,
 
 // When debugging we will grab a static mutex so we dont get jumbled stdout
 #if( DEBUG_RAYTRACE_CALCS )
-  std::lock_guard<std::recursive_mutex> scoped_lock( raytrace_debug_mutex() );
+  std::lock_guard<std::mutex> scoped_lock( raytrace_debug_mutex() );
 #endif
 
   assert( scalar_of(radius) >= 0.0 );
@@ -875,7 +875,7 @@ bool rectangle_intersections_imp( const T &half_width, const T &half_height,
 
   // Contract checks ported from the retired double #rectangle_intersections.  Unlike
   //  #rectangle_exit_location_imp these keep the strict `> 0` half-extent requirement: the one
-  //  production caller (DistributedSrcCalc::eval_rect) always has a real box, and this function has
+  //  production caller (DistributedSrcCalcT::eval_rect) always has a real box, and this function has
   //  *not* received the zero-extent fix (see the TODO below), so the strict contract is the honest one.
   assert( (scalar_of(half_width) > 0.0) && (scalar_of(half_height) > 0.0)
           && (scalar_of(half_depth) > 0.0) );
@@ -1120,7 +1120,7 @@ T center_ray_exit_distance( const GeometryType geometry,
 }//center_ray_exit_distance(...)
 
 
-/** Templated version of #DistributedSrcCalc - the description of one
+/** The volumetric (trace / self-attenuating) source calculator - the description of one
  volumetric source (one source nuclide at one gamma energy) and its
  surrounding shells, with everything that depends on fit parameters
  (dimensions, transmission coefficients, activity) carried as T.
@@ -1128,19 +1128,45 @@ T center_ray_exit_distance( const GeometryType geometry,
 template<typename T>
 struct DistributedSrcCalcT
 {
-  using ShellType = DistributedSrcCalc::ShellType;
+  using ShellType = GammaInteractionCalc::ShellType;
 
   struct ShellInfo
   {
     /** Cumulative outer dimensions (not thicknesses); meaning per geometry
-     matches DistributedSrcCalc::m_dimensionsTransLenAndType.
+     meaning per geometry is documented on #GeometryType.
      */
     std::array<T,3> dims;
 
     /** Transmission length coefficient (per length) for Material shells; the
      total (dimensionless) attenuation for zero-extent Generic shells.
+
+     This is mu_TOTAL.  It stays the coefficient used for the effective-AN/AD report and the
+     cascade-summing total leg, both of which want the full removal.
      */
     T trans_len_coef;
+
+    /** The same, but for the FULL-ENERGY-PEAK leg: the survival-removal coefficient
+
+         mu_rem = mu_total - f_win(E, material) * mu_Compton
+
+     Rayleigh is elastic so it cannot remove a photon from the peak, and forward Compton scatters
+     whose energy loss stays inside the peak window are still counted in it (plan 3.4).
+
+     NOTE InterSpec's `transmition_length_coefficient` ALREADY excludes Rayleigh
+     (`massAttenuationCoefficientElement` returns compton+photoelectric+pair, and the SNL path
+     returns 0 for RayleighScatter), so - unlike CeeLo's formulation - there is no Rayleigh term to
+     subtract here.  Subtracting one would double-count, silently, since it currently returns 0.
+
+     Set equal to #trans_len_coef when no credit applies (Generic AN/AD shells).
+
+     Defaults to a NEGATIVE SENTINEL, and #self_shielding_integration_imp replaces any unset value
+     with #trans_len_coef before integrating (asserting under PERFORM_DEVELOPER_CHECKS).  There are
+     several places that build shells - the fit, the NORM soil-sphere reference lines, and the test
+     fixtures - and a plain uninitialised member here would feed garbage straight into the optical
+     depth.  With the sentinel, a construction site that has not been taught about the survival
+     credit degrades to plain mu_total, which is exactly the pre-3.4 behaviour.
+     */
+    T fep_trans_len_coef = T(-1.0);
 
     ShellType type = ShellType::Material;
 
@@ -1184,11 +1210,20 @@ struct DistributedSrcCalcT
 
   /** Resolved volumetric-efficiency method (never Auto during evaluation) and the resolved
    absolute-FEP-efficiency response to query per element (null for FlatDisk).  See
-   #DistributedSrcCalc::m_effMethod / #DistributedSrcCalc::m_effResponse and
+   #m_effMethod / #m_effResponse and
    #eff_response_factor.  Built once per problem; only const eps_fep runs in the fit threads. */
   ShieldingSourceFitCalc::VolumetricEffMethod m_effMethod
                                     = ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk;
   std::shared_ptr<const ceelo::DetectorResponse> m_effResponse;
+
+  /** Aperture rays per source element for the per-ray kernel (#m_effResponse set).  Tunable because
+   it trades cost against the discretization of the inner (aperture) integral; see the convergence
+   study in test_VolumetricNearField. */
+  int m_effNumRays = 512;
+
+  /** How far along a ray direction the shell-walk's target point is placed.  Only the direction
+   matters; this just has to exceed any source/shield extent. */
+  static const double sm_ray_target_dist;
 
   bool m_attenuateForAir = false;
   double m_airTransLenCoef = 0.0;
@@ -1197,6 +1232,26 @@ struct DistributedSrcCalcT
   double m_inSituRelaxationLength = -1.0;
 
   std::vector<ShellInfo> m_shells;
+
+  /** Replaces any unset #ShellInfo::fep_trans_len_coef with #ShellInfo::trans_len_coef.
+
+   MUST be called by every entry point that walks the shells, before it does so - there is more
+   than one (`self_shielding_integration_imp` and `integrate_effective_shielding`), and an unset
+   sentinel is NEGATIVE, which would turn exp(-tau) into exponential GROWTH rather than merely
+   losing the survival credit.  That is precisely how `EffectiveShieldingAnalyticSlab` caught this:
+   effective areal density came out 3.71 g/cm2 against an analytic 1.79.
+   */
+  void finalize_shell_coefficients()
+  {
+    for( ShellInfo &shell : m_shells )
+    {
+      if( scalar_of(shell.fep_trans_len_coef) < 0.0 )
+      {
+        assert( scalar_of(shell.fep_trans_len_coef) == -1.0 );  //sentinel, not corruption
+        shell.fep_trans_len_coef = shell.trans_len_coef;
+      }
+    }
+  }//finalize_shell_coefficients()
 
   T m_srcVolumetricActivity;
 
@@ -1270,7 +1325,6 @@ struct DistributedSrcCalcT
   mutable T m_ray_air_dist{ 0.0 };
 
   T eval_spherical( const double xx[], const int ndim ) const;
-  T eval_single_cyl_end_on( const double xx[], const int ndim ) const;
   T eval_cylinder( const double xx[], const int ndim ) const;
   T eval_rect( const double xx[], const int ndim ) const;
 
@@ -1357,7 +1411,13 @@ struct DistributedSrcCalcT
    isotropic detector-response assumption of these integrands).
    Defined after this struct.
    */
-  T cascade_correction_factor( const T &det_factor ) const;
+  /** @param det_factor the flat-disk geometric factor at this element.
+   @param near_field_ratio the primary leg's R = prefactor*sum(w)/flat at this element, i.e. how
+          much the real (ray-traced, near-field) response differs from the flat-disk solid angle
+          here.  Pass 1.0 on the flat-disk path.  See the note in the implementation on why the
+          partner legs need it and why it is applied energy-independently for now.
+   */
+  T cascade_correction_factor( const T &det_factor, double near_field_ratio ) const;
 
   /** Maps the flat-disk geometric factor `flat` (from #detector_response_factor at `eval_point`,
    with `det` the detector geometry that produced it) to the per-element efficiency actually applied
@@ -1377,7 +1437,8 @@ struct DistributedSrcCalcT
 
 
 template<typename T>
-T DistributedSrcCalcT<T>::cascade_correction_factor( const T &det_factor ) const
+T DistributedSrcCalcT<T>::cascade_correction_factor( const T &det_factor,
+                                                     const double near_field_ratio ) const
 {
   if( !m_cascade || !m_cascade->calc || !m_nuclide )
     return T(1.0);
@@ -1413,11 +1474,25 @@ T DistributedSrcCalcT<T>::cascade_correction_factor( const T &det_factor ) const
   const T ad_gcm2 = m_ray_cascade_ad * (PhysicalUnits::cm2 / PhysicalUnits::g);
   const T eff_an = (ad_scalar > 0.0) ? T(m_ray_cascade_an_ad / m_ray_cascade_ad) : T(0.0);
 
+  // The partner legs used the FLAT-DISK solid angle while the primary leg uses the ray-traced
+  //  near-field kernel.  That inconsistency is not small: the per-ray kernel moves near-field
+  //  volumetric results by 20-60% versus flat-disk, so the summing correction was being computed on
+  //  a geometry model measured to be badly wrong exactly where summing matters most (contact).
+  //
+  //  `near_field_ratio` is the primary line's R = prefactor*sum(w)/flat at this element, applied to
+  //  both legs.  It is ENERGY-INDEPENDENT here, which is a first-order fix, not the final one: R's
+  //  energy dependence is real (the chord-dependent peak fraction - see the transfer validation
+  //  study).  Doing it properly means per-partner-energy weights on the shared aperture, which for
+  //  Eu-152 is ~100 partners x 2 legs x ~400 active rays per element against ~200 exponentials
+  //  today - it needs a contribution-based partner cap first.  Applying one ratio to both legs
+  //  also partly cancels in c_net, which is a ratio, so the first-order form captures most of it.
+  const T nf = T(near_field_ratio);
+
   const std::function<T(double)> eps_fep = [&]( const double energy ) -> T {
     const int j = idx_of( energy );
     if( j < 0 )
       return T(0.0);
-    T v = det_factor * cb.partner_fep_int[j] * exp( -m_ray_partner_mu_d[j] );
+    T v = nf * det_factor * cb.partner_fep_int[j] * exp( -m_ray_partner_mu_d[j] );
     if( m_attenuateForAir )
       v *= exp( -cb.air_mu[j] * m_ray_air_dist );
     return v;
@@ -1430,7 +1505,7 @@ T DistributedSrcCalcT<T>::cascade_correction_factor( const T &det_factor ) const
     T shield_part = exp( -m_ray_partner_mu_d[j] );
     if( scatter.valid() )
       shield_part += scatter.evaluate( energy, eff_an, ad_gcm2 );
-    T v = det_factor * cb.partner_tot_int[j] * shield_part;
+    T v = nf * det_factor * cb.partner_tot_int[j] * shield_part;
     if( m_attenuateForAir )
       v *= exp( -cb.air_mu[j] * m_ray_air_dist );
     return v;
@@ -1447,11 +1522,119 @@ T DistributedSrcCalcT<T>::cascade_correction_factor( const T &det_factor ) const
 
 
 template<typename T>
+const double DistributedSrcCalcT<T>::sm_ray_target_dist = 1.0e4 * PhysicalUnits::cm;
+
+
+/** The detector aperture as seen from one source element, expressed in the ASSEMBLY frame.
+
+ CeeLo builds its quadrature in the crystal-face frame (z = 0 at the crystal face, source in front at
+ negative z), so its ray directions have to be rotated before InterSpec's ray-tracer can follow them
+ through the source and shielding.  For an axially symmetric detector the azimuth about the
+ element->detector axis is a free rotation, so the minimal rotation taking CeeLo's element->detector
+ direction onto InterSpec's is the whole mapping.
+
+ `weights` and `dirs` come back parallel; `prefactor` is everything in eps_fep except the kernel, so
+     eps_fep(element) == prefactor * sum_i weights[i] * t_src(dirs[i])
+ with t_src == 1 for a bare element.  Scalar throughout: these depend on the element POSITION, which
+ the caller supplies as a scalar - see the note on the frozen Jacobian in #eff_response_factor.
+ */
+struct ElementAperture
+{
+  std::vector<double> weights;
+  std::vector<std::array<double,3>> dirs;   //unit, assembly frame, element -> detector hemisphere
+  double prefactor = 0.0;
+  DetectorPeakResponse::EffFlag flag = DetectorPeakResponse::EffFlag::Ok;
+  double frac_sigma = 0.0;
+};//struct ElementAperture
+
+
+/** Builds #ElementAperture for one element.  `to_det` is the (unit) element->detector direction in
+ the assembly frame, `dist` their separation in PhysicalUnits, `cos_theta` the incidence cosine. */
+inline ElementAperture build_element_aperture( const ceelo::DetectorResponse &resp,
+                                               const double energy_keV,
+                                               const double dist,
+                                               const double cos_theta,
+                                               const double to_det[3],
+                                               const int n_rays )
+{
+  ElementAperture answer;
+
+  // Position in the crystal-face frame, through query_position so the reference-point convention
+  //  (endcap front vs crystal face) is applied exactly as eps_fep applies it.
+  const double theta = std::acos( std::max(-1.0, std::min(1.0, cos_theta)) );
+  const Eigen::Vector3d pos = resp.query_position( theta, 0.0, dist / PhysicalUnits::cm );
+
+  const ceelo::ApertureQuadrature q = ceelo::make_aperture_quadrature( resp.geometry(), pos, n_rays );
+
+  std::vector<Eigen::Vector3d> ceelo_dirs;
+  resp.fep_ray_weights( energy_keV, q, answer.weights, ceelo_dirs );
+
+  const ceelo::EffResult pre = resp.fep_prefactor( energy_keV, pos, q );
+  answer.prefactor = pre.value;
+  answer.frac_sigma = (pre.value > 0.0) ? (pre.sigma / pre.value) : 0.0;
+
+  // CeeLo's element->detector direction: the detector sits at the origin-ward end, so the element
+  //  looks back along -pos.  Plain arithmetic rather than Eigen::Geometry - cross()/Rodrigues are a
+  //  few lines, and this header is included in every translation unit that fits.
+  const double pn = pos.norm();
+  double u_c[3] = { 0.0, 0.0, 1.0 };
+  if( pn > 0.0 )
+  {
+    u_c[0] = -pos.x()/pn;  u_c[1] = -pos.y()/pn;  u_c[2] = -pos.z()/pn;
+  }
+
+  // Minimal rotation u_c -> to_det (Rodrigues).  Axial symmetry makes the residual azimuth free.
+  const double v[3] = { u_c[1]*to_det[2] - u_c[2]*to_det[1],
+                        u_c[2]*to_det[0] - u_c[0]*to_det[2],
+                        u_c[0]*to_det[1] - u_c[1]*to_det[0] };
+  const double c = u_c[0]*to_det[0] + u_c[1]*to_det[1] + u_c[2]*to_det[2];
+  const double vlen2 = v[0]*v[0] + v[1]*v[1] + v[2]*v[2];
+
+  double R[3][3] = { {1.0,0.0,0.0}, {0.0,1.0,0.0}, {0.0,0.0,1.0} };
+  if( vlen2 > 1.0e-24 )
+  {
+    const double k = 1.0 / (1.0 + c);
+    const double K[3][3] = { {   0.0, -v[2],  v[1] },
+                             {  v[2],   0.0, -v[0] },
+                             { -v[1],  v[0],   0.0 } };
+    for( int i = 0; i < 3; ++i )
+    {
+      for( int j = 0; j < 3; ++j )
+      {
+        double k2 = 0.0;
+        for( int m = 0; m < 3; ++m )
+          k2 += K[i][m] * K[m][j];
+        R[i][j] += K[i][j] + k2*k;
+      }
+    }
+  }else if( c < 0.0 )
+  {
+    // Antiparallel: any 180-degree rotation will do, again by axial symmetry.
+    R[0][0] = R[1][1] = R[2][2] = -1.0;
+  }
+
+  answer.dirs.reserve( ceelo_dirs.size() );
+  for( const Eigen::Vector3d &d : ceelo_dirs )
+  {
+    answer.dirs.push_back( { R[0][0]*d.x() + R[0][1]*d.y() + R[0][2]*d.z(),
+                             R[1][0]*d.x() + R[1][1]*d.y() + R[1][2]*d.z(),
+                             R[2][0]*d.x() + R[2][1]*d.y() + R[2][2]*d.z() } );
+  }
+
+  return answer;
+}//build_element_aperture(...)
+
+
+template<typename T>
 T DistributedSrcCalcT<T>::eff_response_factor( const T &flat,
                                                const DetectorGeomT<T> &det,
                                                const T eval_point[3] ) const
 {
-  if( (m_effMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk) || !m_effResponse )
+  // #m_effResponse is the SINGLE predicate for which efficiency model is in play: a non-FlatDisk
+  //  method with a null response would skip the post-integration intrinsic efficiency and be
+  //  wrong by exactly that factor.  resolveVolumetricEffMethod() asserts the two agree.
+  assert( (m_effMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk) == !m_effResponse );
+  if( !m_effResponse )
     return flat;
 
   // Incidence polar angle of the element as seen from the detector: the angle between the
@@ -1541,7 +1724,7 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
   {//begin code-block to compute distance through source
     T exit_point[3];
     const T srcRad = m_shells[m_materialIndex].dims[0];
-    const T srcTransCoef = m_shells[m_materialIndex].trans_len_coef;
+    const T srcTransCoef = m_shells[m_materialIndex].fep_trans_len_coef;
 
     T dist_in_src;
     if( m_materialIndex == 0 )
@@ -1629,14 +1812,14 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
             if( index != m_materialIndex )
               dist = 2.0*dist;
 
-            trans += (shell.trans_len_coef * dist);
+            trans += (shell.fep_trans_len_coef * dist);
             record_path( shell, dist );
             break;
           }//case ShellType::Material:
 
           case ShellType::Generic:
           {
-            trans += shell.trans_len_coef;
+            trans += shell.fep_trans_len_coef;
             record_generic( shell );
             break;
           }//case ShellType::Generic:
@@ -1662,14 +1845,14 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
       {
         const T dist_in_sphere = exit_point_of_sphere_z_imp( source_point, source_point,
                                                              shell.dims[0], obs_dist );
-        trans += (shell.trans_len_coef * dist_in_sphere);
+        trans += (shell.fep_trans_len_coef * dist_in_sphere);
         record_path( shell, dist_in_sphere );
         break;
       }//case ShellType::Material:
 
       case ShellType::Generic:
       {
-        trans += shell.trans_len_coef;
+        trans += shell.fep_trans_len_coef;
         record_generic( shell );
         break;
       }//case ShellType::Generic:
@@ -1708,9 +1891,19 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
 
     const T eval_point[3] = { x, y, z };
     const T det_factor = detector_response_factor( rotated_det, eval_point );
-    trans *= eff_response_factor( det_factor, rotated_det, eval_point );
+    const T eff_factor = eff_response_factor( det_factor, rotated_det, eval_point );
+    trans *= eff_factor;
     if( m_cascade )
-      trans *= cascade_correction_factor( det_factor );
+    {
+      // The cascade legs are built on the flat-disk solid angle, so hand them the same
+      //  response-vs-flat-disk ratio the primary line just used.  NOTE this geometry is still on
+      //  the CENTRE-RAY path - the per-ray kernel (plan 3.2) is implemented for cylinders only,
+      //  because a sphere needs a per-ray rotation (exit_point_of_sphere_z_imp only traces toward
+      //  {0,0,obs_dist}).  The truth bank is all cylinders, so nothing tests this yet.
+      const double flat = scalar_of( det_factor );
+      const double ratio = (flat > 0.0) ? (scalar_of(eff_factor)/flat) : 1.0;
+      trans *= cascade_correction_factor( det_factor, ratio );
+    }
   }// end apply detector response
 
   if( m_normalizeByVolume )
@@ -1739,120 +1932,6 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
 
 
 template<typename T>
-T DistributedSrcCalcT<T>::eval_single_cyl_end_on( const double xx[], const int ndim ) const
-{
-  using namespace std;
-  using namespace ceres;
-
-  assert( m_materialIndex == 0 );
-  assert( m_geometry == GeometryType::CylinderEndOn );
-  assert( m_shells.size() == 1 );
-  assert( m_shells[0].type == ShellType::Material );
-  assert( (ndim == 2) || (ndim == 3) );
-
-  // This fast path additionally relies on the detector being on the cylinder axis.
-  assert( scalar_of(m_detector.position[0]) == 0.0 );
-  assert( scalar_of(m_detector.position[1]) == 0.0 );
-
-  const T source_outer_rad = m_shells[m_materialIndex].dims[0];
-  const T source_half_z = m_shells[m_materialIndex].dims[1];
-  const T total_height = 2.0 * source_half_z;
-  const T trans_len_coef = m_shells[m_materialIndex].trans_len_coef;
-  const T &obs_dist = m_detector.position[2];
-
-  const T source_inner_rad(0.0);
-
-  //integration coordinates go from 0 to one for each dimension:
-  //  r:     goes from cylindrical inner radius, to outer radius
-  //  theta: goes from 0 to 2pi
-  //  z:     goes from the negative half-height to positive half-height
-  const double max_theta = 2.0 * PhysicalUnits::pi;
-
-  const double x_r = xx[0];
-  const double x_z = xx[ ((ndim==3) ? 2 : 1) ];
-
-  const T r = source_inner_rad + x_r * (source_outer_rad - source_inner_rad);
-  const T z = total_height * (x_z - 0.5);
-
-  const T j = (source_outer_rad - source_inner_rad) * max_theta * total_height;
-  const T dV = j * r;
-
-  const T eval_z_dist_to_det = obs_dist - z;
-
-  T exit_radius(0.0);
-  T trans(0.0);
-
-  reset_ray_accumulators();
-
-  {//begin code-block to compute distance through source
-    // Take advantage of theta symmetry here
-    const T z_dist_in_src = source_half_z - z;
-    const T r_dist_in_src = r * z_dist_in_src / eval_z_dist_to_det;
-    exit_radius = r - r_dist_in_src;
-
-    // Factor the z extent (which vanishes with the half-length) out of the radical so the path length
-    //  and its derivative stay finite as source_half_z -> 0:
-    //  sqrt(z_d^2 + (z_d*r/Z)^2) = z_d*sqrt(1 + (r/Z)^2), with z_d = z_dist_in_src >= 0.
-    const T inv_slope = r / eval_z_dist_to_det;
-    const T dist_in_src = z_dist_in_src * sqrt( T(1.0) + inv_slope*inv_slope );
-
-    trans += (trans_len_coef * dist_in_src);
-    record_path( m_shells[m_materialIndex], dist_in_src );
-  }//end codeblock to compute distance through source
-
-  trans = exp( -trans );
-
-  if( m_attenuateForAir )
-  {
-    const T dz = obs_dist - source_half_z;
-
-    const T air_dist = sqrt( exit_radius*exit_radius + dz*dz );
-
-    trans *= exp( -m_airTransLenCoef * air_dist );
-
-    if( m_cascade )
-      m_ray_air_dist = air_dist;
-  }//if( m_attenuateForAir )
-
-  if( m_isInSituExponential )
-  {
-    assert( m_inSituRelaxationLength > 0.0 );
-    trans *= exp( -(source_half_z - z) / m_inSituRelaxationLength );
-  }
-
-  // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to detector).
-  const T eval_dist_to_det = sqrt( r*r + eval_z_dist_to_det*eval_z_dist_to_det );
-  const T det_factor = fractional_solid_angle_imp( 2.0*m_detector.radius, eval_dist_to_det + m_detector.setback );
-  // Detector is on-axis here; by theta-symmetry an element at radius r, height z sits at {r,0,z}
-  //  (distance & incidence angle to the detector match #eff_response_factor's generic formula).
-  const T eval_point[3] = { r, T(0.0), z };
-  trans *= eff_response_factor( det_factor, m_detector, eval_point );
-  if( m_cascade )
-    trans *= cascade_correction_factor( det_factor );
-
-  if( m_normalizeByVolume )
-  {
-    // Variant 2 (single source shell from origin - this fast path requires m_materialIndex==0).
-    //  vol = 2pi*R_o^2*L_o -> dV/vol = 2*x_r; norm = 2*L_o*g(2L_o/L) (end-on exponential).
-    T w;
-    if( m_isInSituExponential )
-    {
-      const T u = total_height / T(m_inSituRelaxationLength);   // R = 2*L_o = total_height
-      w = (T(2.0*PhysicalUnits::pi*x_r) * (source_outer_rad*source_outer_rad))
-          / one_minus_exp_neg_over_x( u );
-    }else
-    {
-      w = T(2.0*x_r);   // dV/vol, R_o^2 and L_o cancelled
-    }
-
-    return trans * w;
-  }//if( m_normalizeByVolume )
-
-  return trans * dV;
-}//eval_single_cyl_end_on(...)
-
-
-template<typename T>
 T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) const
 {
   using namespace std;
@@ -1868,7 +1947,7 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
   const T source_outer_rad = m_shells[m_materialIndex].dims[0];
   const T source_half_z = m_shells[m_materialIndex].dims[1];
   const T total_height = 2.0 * source_half_z;
-  const T trans_len_coef = m_shells[m_materialIndex].trans_len_coef;
+  const T trans_len_coef = m_shells[m_materialIndex].fep_trans_len_coef;
 
   //integration coordinates go from 0 to one for each dimension:
   //  r:     goes from cylindrical inner radius, to outer radius
@@ -1910,6 +1989,21 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
   const T detector_pos[3] = { m_detector.position[0], m_detector.position[1], m_detector.position[2] };
 
   T exit_point[3];
+
+  // Optical depth (sum of mu_l * chord_l) from `eval_point` toward `target`, through the inner
+  //  shells, the source shell, and the outer shielding.  Factored out of the single centre-ray walk
+  //  it used to be so the per-ray path below can call it once per aperture ray.
+  //
+  //  `record` gates the per-ray scratch accumulators (effective AN/AD, cascade partner mu*d).  Only
+  //  the centre ray feeds those: they describe "the" shielding for diagnostics and for the cascade
+  //  correction, which is still a centre-ray quantity.  Letting every aperture ray accumulate into
+  //  them would silently multiply them by the ray count.
+  //
+  //  `exit_out` receives the point where the ray leaves the outermost material shell, for the air
+  //  gap; only the centre ray needs it.
+  const auto optical_depth_toward = [&]( const T target[3], const bool record,
+                                         T exit_out[3] ) -> T
+  {
   T dist_in_cyl;
   if( m_materialIndex == 0 )
   {
@@ -1919,16 +2013,17 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
     //  as either source dimension -> 0 (variant-2 zero-thickness limit).
     const T s_xy[2] = { T(xx[0]*std::cos(theta)), T(xx[0]*std::sin(theta)) };
     dist_in_cyl = cylinder_source_exit_scaled( s_xy, z, source_outer_rad, source_half_z,
-                                               detector_pos, exit_point );
+                                               target, exit_point );
   }else
   {
     dist_in_cyl = cylinder_line_intersection_imp( source_outer_rad, source_half_z, eval_point,
-                                              detector_pos, CylExitDir::TowardDetector, exit_point );
+                                              target, CylExitDir::TowardDetector, exit_point );
   }
 
-  T trans(0.0);
+  T tau(0.0);
 
-  reset_ray_accumulators();
+  if( record )
+    reset_ray_accumulators();
 
   // Do transport through inner cylinders, and also subtract off that distance through source
   //  cylinder
@@ -1939,35 +2034,38 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
 
     T local_exit_point[3];
     const T dist_to_exit = cylinder_line_intersection_imp( shell.dims[0], shell.dims[1], eval_point,
-                                      detector_pos, CylExitDir::TowardDetector, local_exit_point );
+                                      target, CylExitDir::TowardDetector, local_exit_point );
 
     if( dist_to_exit <= 0.0 ) //Line doesnt intersect cylinder
       continue;
 
     T local_enter_point[3];
     const T dist_to_enter = cylinder_line_intersection_imp( shell.dims[0], shell.dims[1], eval_point,
-                                   detector_pos, CylExitDir::AwayFromDetector, local_enter_point );
+                                   target, CylExitDir::AwayFromDetector, local_enter_point );
 
     const T local_distance = dist_to_exit - dist_to_enter;
 
     switch( shell.type )
     {
       case ShellType::Material:
-        trans += (shell.trans_len_coef * (local_distance - inner_distance));
-        record_path( shell, local_distance - inner_distance );
+        tau += (shell.fep_trans_len_coef * (local_distance - inner_distance));
+        if( record )
+          record_path( shell, local_distance - inner_distance );
         break;
 
       case ShellType::Generic:
-        trans += shell.trans_len_coef;
-        record_generic( shell );
+        tau += shell.fep_trans_len_coef;
+        if( record )
+          record_generic( shell );
         break;
     }//switch( type )
 
     inner_distance = local_distance;
   }//for( size_t i = 0; i < m_materialIndex; ++i )
 
-  trans += (trans_len_coef * (dist_in_cyl - inner_distance));
-  record_path( m_shells[m_materialIndex], dist_in_cyl - inner_distance );
+  tau += (trans_len_coef * (dist_in_cyl - inner_distance));
+  if( record )
+    record_path( m_shells[m_materialIndex], dist_in_cyl - inner_distance );
 
   // Do transport through outer cylinders
   for( size_t i = m_materialIndex + 1; i < m_shells.size(); ++i )
@@ -1978,8 +2076,9 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
     {
       case ShellType::Generic:
       {
-        trans += shell.trans_len_coef;
-        record_generic( shell );
+        tau += shell.fep_trans_len_coef;
+        if( record )
+          record_generic( shell );
         break;
       }//case ShellType::Generic:
 
@@ -1987,11 +2086,12 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
       {
         T outer_exit_point[3];
         const T dist_in_shield = cylinder_line_intersection_imp( shell.dims[0], shell.dims[1],
-                                                                 exit_point, detector_pos,
+                                                                 exit_point, target,
                                                                  CylExitDir::TowardDetector, outer_exit_point );
 
-        trans += (shell.trans_len_coef * dist_in_shield);
-        record_path( shell, dist_in_shield );
+        tau += (shell.fep_trans_len_coef * dist_in_shield);
+        if( record )
+          record_path( shell, dist_in_shield );
 
         exit_point[0] = outer_exit_point[0];
         exit_point[1] = outer_exit_point[1];
@@ -2002,11 +2102,24 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
     }//switch( type )
   }//for( loop over outer shielding )
 
-  trans = exp( -trans );
+    if( exit_out )
+    {
+      exit_out[0] = exit_point[0];
+      exit_out[1] = exit_point[1];
+      exit_out[2] = exit_point[2];
+    }
+
+    return tau;
+  };//optical_depth_toward
+
+  T centre_exit[3];
+  const T centre_tau = optical_depth_toward( detector_pos, true, centre_exit );
+
+  T trans = exp( -centre_tau );
 
   if( m_attenuateForAir )
   {
-    const T air_dist = distance_imp( exit_point, detector_pos );
+    const T air_dist = distance_imp( centre_exit, detector_pos );
 
     trans *= exp( -m_airTransLenCoef * air_dist );
 
@@ -2023,12 +2136,111 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
       trans *= exp( -(source_half_z - z) / m_inSituRelaxationLength );
   }//if( m_isInSituExponential )
 
-  // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to detector).
+  // Finally the detector response.
   {
     const T det_factor = detector_response_factor( m_detector, eval_point );
-    trans *= eff_response_factor( det_factor, m_detector, eval_point );
+    double near_field_ratio = 1.0;   //flat-disk: cascade legs keep the plain solid angle
+
+    if( !m_effResponse )
+    {
+      // Legacy flat-disk: one centre ray, geometric solid angle, intrinsic efficiency folded in
+      //  after the integration.
+      trans *= eff_response_factor( det_factor, m_detector, eval_point );
+    }else
+    {
+      // Per-ray extended-source kernel.  The centre-ray `trans` above answered "what fraction of
+      //  photons leaving along the line to the detector centre survive?"; that is wrong whenever
+      //  the exit directions fan out, because at depth the path length varies steeply with
+      //  direction.  Here each aperture ray carries its own attenuation:
+      //
+      //      eps = prefactor * sum_i w_i * exp(-tau_i)
+      //
+      //  with w_i and prefactor from the response (parameter-free for a fixed quadrature) and
+      //  tau_i traced through InterSpec's own geometry in T, so the attenuation - which is where
+      //  the fit parameters actually live - keeps an exact derivative.
+      //
+      //  The `det_factor / scalar` ratio is not cosmetic: it carries the exact 1/r^2 Jacobian of
+      //  the element position, which the (frozen, scalar) w_i cannot.  See eff_response_factor.
+      //
+      //  Factored, the composition is
+      //
+      //      contribution = flat_T * R(d, cos_theta) * < exp(-tau) >_w
+      //
+      //  where R = prefactor*sum(w_i)/flat is the near-field/off-axis correction to the plain
+      //  solid angle.  `flat_T` and `< exp(-tau) >_w` are exact in T; R is built from a scalar
+      //  quadrature and is frozen, so the autodiff gradient omits dR/d(dims).
+      //
+      //  KNOWN LIMITATION, measured rather than assumed - PerRayGradientVsFiniteDifference
+      //  finite-differences the model against the Jet gradient at contact:
+      //    - d/d(shield thickness): agrees to ~1e-7 relative.  Shield thickness does not move the
+      //      elements, so R is genuinely constant and the gradient is exact.
+      //    - d/d(source radius): 7.3% at 60 keV, 5.9% at 122 keV, 2.2% at 662 keV, against a
+      //      finite difference verified converged over steps spanning 1e-5..3e-2 of the radius.
+      //      Sign is always right, so a dimension fit converges, but dimension uncertainties are
+      //      optimistic.  (Quote these only against the swept FD - a single small step measures
+      //      the per-element quadrature noise, not the derivative.)
+      //
+      //  Expanding R to first order in (d, cos_theta) by finite differences was tried and made
+      //  things WORSE at 122/662 keV (to 7.2%/6.0%), at both 1e-4 and 5e-2 relative steps: ray
+      //  membership in the aperture changes discretely as the silhouette moves, so R is a
+      //  staircase in position and no step size gives a trustworthy slope.  The root cause is the
+      //  quadrature's discontinuity (see the n_rays/adaptive-integrator work), so the fix is to
+      //  make the aperture weights continuous - or T-valued - not to difference them.
+      const double dist_scalar = scalar_of( distance_imp( eval_point, m_detector.position ) );
+      const double flat_scalar = scalar_of( det_factor );
+
+      if( (dist_scalar > 0.0) && (flat_scalar > 0.0) )
+      {
+        double to_det[3] = { scalar_of(m_detector.position[0]) - scalar_of(eval_point[0]),
+                             scalar_of(m_detector.position[1]) - scalar_of(eval_point[1]),
+                             scalar_of(m_detector.position[2]) - scalar_of(eval_point[2]) };
+        for( int k = 0; k < 3; ++k )
+          to_det[k] /= dist_scalar;
+
+        // Incidence cosine, measured the same way eff_response_factor measures it.
+        double cos_theta = -(to_det[0]*m_detector.axis[0] + to_det[1]*m_detector.axis[1]
+                             + to_det[2]*m_detector.axis[2]);
+        cos_theta = std::max( -1.0, std::min( 1.0, cos_theta ) );
+
+        const ElementAperture ap = build_element_aperture( *m_effResponse, m_energy, dist_scalar,
+                                                           cos_theta, to_det, m_effNumRays );
+
+        T kernel(0.0);
+        for( size_t i = 0; i < ap.weights.size(); ++i )
+        {
+          // A point far enough along the ray that the shell walk's "toward the target" tests pick
+          //  the correct exit; only the direction matters.
+          const T ray_target[3] = { eval_point[0] + T(ap.dirs[i][0] * sm_ray_target_dist),
+                                    eval_point[1] + T(ap.dirs[i][1] * sm_ray_target_dist),
+                                    eval_point[2] + T(ap.dirs[i][2] * sm_ray_target_dist) };
+
+          kernel += T(ap.weights[i]) * exp( -optical_depth_toward( ray_target, false, nullptr ) );
+        }//for( loop over aperture rays )
+
+        // Sum of the (frozen) weights: the normalizer that turns `kernel` into the
+        //  attenuation-weighted mean transmission.
+        double sum_w = 0.0;
+        for( const double w : ap.weights )
+          sum_w += w;
+
+        // R at the scalar element position.
+        const double R0 = (ap.prefactor * sum_w) / flat_scalar;
+        near_field_ratio = R0;   //hand the primary's near-field correction to the cascade legs
+
+        // `trans` currently holds the CENTRE-ray attenuation; the per-ray kernel replaces it, so
+        //  divide it back out rather than double-attenuating.  (Air and the in-situ weight above
+        //  are common factors and stay.)
+        const T centre_atten = exp( -centre_tau );
+        const T mean_trans = (sum_w > 0.0) ? (kernel / T(sum_w)) : T(0.0);
+        trans = (trans / centre_atten) * det_factor * T(R0) * mean_trans;
+      }else
+      {
+        trans *= eff_response_factor( det_factor, m_detector, eval_point );
+      }
+    }//if( flat-disk ) / else
+
     if( m_cascade )
-      trans *= cascade_correction_factor( det_factor );
+      trans *= cascade_correction_factor( det_factor, near_field_ratio );
   }
 
   if( m_normalizeByVolume )
@@ -2085,7 +2297,7 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
   const T half_height = m_shells[m_materialIndex].dims[1];
   const T half_depth  = m_shells[m_materialIndex].dims[2];
 
-  const T trans_len_coef = m_shells[m_materialIndex].trans_len_coef;
+  const T trans_len_coef = m_shells[m_materialIndex].fep_trans_len_coef;
 
   // Translate the [0,1.0] integration coordinates to the world coordinates.
   T eval_x, eval_y, eval_z, dV;
@@ -2145,14 +2357,14 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
       {
         case ShellType::Generic:
         {
-          trans += shell.trans_len_coef;
+          trans += shell.fep_trans_len_coef;
           record_generic( shell );
           break;
         }//case ShellType::Generic:
 
         case ShellType::Material:
         {
-          trans += (shell.trans_len_coef * (dist - inner_rect_dist));
+          trans += (shell.fep_trans_len_coef * (dist - inner_rect_dist));
           record_path( shell, dist - inner_rect_dist );
           break;
         }//case ShellType::Material:
@@ -2174,7 +2386,7 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
     {
       case ShellType::Generic:
       {
-        trans += shell.trans_len_coef;
+        trans += shell.fep_trans_len_coef;
         record_generic( shell );
         break;
       }
@@ -2184,7 +2396,7 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
         const T dist_in_shield = rectangle_exit_location_imp( shell.dims[0], shell.dims[1],
                                               shell.dims[2], exit_point, detector_loc, exit_point );
 
-        trans += (shell.trans_len_coef * dist_in_shield);
+        trans += (shell.fep_trans_len_coef * dist_in_shield);
         record_path( shell, dist_in_shield );
         break;
       }//case ShellType::Material:
@@ -2210,9 +2422,15 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
 
   {
     const T det_factor = detector_response_factor( m_detector, eval_loc );
-    trans *= eff_response_factor( det_factor, m_detector, eval_loc );
+    const T eff_factor = eff_response_factor( det_factor, m_detector, eval_loc );
+    trans *= eff_factor;
     if( m_cascade )
-      trans *= cascade_correction_factor( det_factor );
+    {
+      // See the note in eval_sphere: centre-ray path, cascade legs get the response-vs-flat ratio.
+      const double flat = scalar_of( det_factor );
+      const double ratio = (flat > 0.0) ? (scalar_of(eff_factor)/flat) : 1.0;
+      trans *= cascade_correction_factor( det_factor, ratio );
+    }
   }
 
   if( m_normalizeByVolume )
@@ -2740,7 +2958,7 @@ std::vector<DistributedSrcCalcT<T>> split_source_subdomains( const DistributedSr
 }//split_source_subdomains(...)
 
 
-/** Templated equivalent of #ShieldingSourceChi2Fcn::selfShieldingIntegration:
+/** Integrates one volumetric (trace / self-attenuating) source calculator:
  integrates `calculator` over its source volume, filling
  `calculator.integral` (plus m_num_evals / m_est_rel_error).
 
@@ -2752,6 +2970,8 @@ void self_shielding_integration_imp( DistributedSrcCalcT<T> &calculator,
                                      const double epsrel = 1.0E-4,
                                      const size_t max_evals = 5000000 )
 {
+  calculator.finalize_shell_coefficients();
+
   int ndim = -1;  //the number of dimensions of the integral.
 
   switch( calculator.m_geometry )
@@ -2800,17 +3020,6 @@ void self_shielding_integration_imp( DistributedSrcCalcT<T> &calculator,
 
       case GeometryType::CylinderEndOn:
       {
-        if( (sub.m_shells.size() == 1)
-            && (scalar_of(sub.m_detector.position[0]) == 0.0)
-            && (scalar_of(sub.m_detector.position[1]) == 0.0) )
-        {
-          // For a single, on-axis, end-on cylinder we can use the ever-so-slightly faster evaluator
-          const auto f = [&sub,ndim]( const double xx[3] ) -> T {
-            return sub.eval_single_cyl_end_on( xx, ndim );
-          };
-          return adaptive_unit_cube_integrate<T>( f, ndim, sub_epsrel, sub_max_evals, &sub_error, &sub_evals, sub_epsabs );
-        }
-
         const auto f = [&sub,ndim]( const double xx[3] ) -> T {
           return sub.eval_cylinder( xx, ndim );
         };
@@ -3063,6 +3272,8 @@ inline EffShieldComponents integrate_effective_shielding( DistributedSrcCalcT<do
                                                           const double epsrel = 1.0E-4,
                                                           const size_t max_evals = 5000000 )
 {
+  calculator.finalize_shell_coefficients();
+
   int ndim = -1;
   switch( calculator.m_geometry )
   {
@@ -3749,9 +3960,45 @@ template<typename T>
 std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::build_volumetric_calculators(
                         const std::vector<T> &params,
                         NucMixtureCache &mixturecache,
-                        const std::vector<std::pair<double,double>> &energie_widths ) const
+                        const std::vector<std::pair<double,double>> &energie_widths,
+                        std::vector<PeakDetail> *log_info ) const
 {
   using namespace std;
+
+  /** Half-width of the full-energy-peak window at `energy`, for the survival-removal coefficient
+   (plan 3.4).  CeeLo's convention is a +-half-window, so this is FWHM/2 = 1.17741*sigma - pinning
+   a definition that otherwise has a factor-2.35 of ambiguity between sigma, FWHM and FWHM/2.
+
+   Preference order: the width of the FITTED peak this model energy belongs to (that is the actual
+   window the observable was integrated over), else the detector's resolution function, else no
+   credit at all.  Never guess a width: too wide a window over-credits forward Compton scatters
+   that in reality landed outside the peak, and the credit grows steeply with the window.
+   */
+  const auto fep_window_keV = [this,&energie_widths]( const double energy ) -> double {
+    double best_sigma = -1.0, best_dE = std::numeric_limits<double>::max();
+    for( const std::pair<double,double> &ew : energie_widths )
+    {
+      const double dE = std::fabs( ew.first - energy );
+      if( (ew.second > 0.0) && (dE < best_dE) ){ best_dE = dE; best_sigma = ew.second; }
+    }
+
+    // Only trust a peak that really is this line - a few sigma away it is a different peak.
+    if( (best_sigma > 0.0) && (best_dE <= 4.0*best_sigma) )
+      return 1.17741 * best_sigma;
+
+    if( m_detector && m_detector->hasResolutionInfo() )
+    {
+      try
+      {
+        const float fwhm = m_detector->peakResolutionFWHM( static_cast<float>(energy) );
+        if( fwhm > 0.0f )
+          return 0.5 * fwhm;
+      }catch( std::exception & ){ }
+    }
+
+    return -1.0;   //no credit
+  };
+
   using namespace ceres;
 
   typedef std::map<double,T> EnergyCountMapT;
@@ -4035,11 +4282,31 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
 
       EnergyCountMapT local_energy_count_map;
 
+      // Clusters this source's emissions into `local_energy_count_map`.  When a log was asked for
+      //  (display path, T=double only), route through the logging overload so the PeakDetailSrc
+      //  entries get filled; the arithmetic is otherwise identical.
+      const auto cluster_src = [&]( const double energyToCluster ) {
+        if constexpr ( std::is_same_v<T,double> )
+        {
+          if( log_info )
+          {
+            cluster_peak_activities( local_energy_count_map, energie_widths, mixturecache[src],
+                                     actPerVol, thisage, m_options.photopeak_cluster_sigma,
+                                     energyToCluster, m_options.account_for_decay_during_meas,
+                                     m_realTime, log_info );
+            return;
+          }
+        }
+
+        cluster_peak_activities_imp( local_energy_count_map, energie_widths, mixturecache[src],
+                                     actPerVol, thisage, m_options.photopeak_cluster_sigma,
+                                     energyToCluster, m_options.account_for_decay_during_meas,
+                                     m_realTime );
+      };//cluster_src
+
       if( m_options.multiple_nucs_contribute_to_peaks )
       {
-        cluster_peak_activities_imp( local_energy_count_map, energie_widths, mixturecache[src],
-                                     actPerVol, thisage, m_options.photopeak_cluster_sigma, -1.0,
-                                     m_options.account_for_decay_during_meas, m_realTime );
+        cluster_src( -1.0 );
       }else
       {
         for( const PeakDef &peak : m_peaks )
@@ -4047,10 +4314,7 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
           if( (peak.parentNuclide() == src)
               && (peak.decayParticle() || (peak.sourceGammaType() == PeakDef::AnnihilationGamma)) )
           {
-            cluster_peak_activities_imp( local_energy_count_map, energie_widths, mixturecache[src],
-                                         actPerVol, thisage, m_options.photopeak_cluster_sigma,
-                                         peak.gammaParticleEnergy(),
-                                         m_options.account_for_decay_during_meas, m_realTime );
+            cluster_src( peak.gammaParticleEnergy() );
           }
         }//for( const PeakDef &peak : m_peaks )
       }//if( m_options.multiple_nucs_contribute_to_peaks ) / else
@@ -4096,7 +4360,10 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
 
             shell.dims = outer_dims;
             shell.trans_len_coef = transmission_coefficient_generic_imp( an, ad, static_cast<float>(calculator->m_energy) );
-            shell.type = DistributedSrcCalc::ShellType::Generic;
+            // No survival credit for AN/AD shells: the generic parameterization has no Compton
+            //  sub-coefficient to credit, so this degrades to mu_total by construction.
+            shell.fep_trans_len_coef = shell.trans_len_coef;
+            shell.type = ShellType::Generic;
             shell.areal_density = scalar_of( ad );
             shell.effective_an = scalar_of( an );
 
@@ -4173,7 +4440,10 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
           shell.dims = outer_dims;
           shell.trans_len_coef = T( transmition_length_coefficient( sub_material.get(),
                                                   static_cast<float>(calculator->m_energy) ) );
-          shell.type = DistributedSrcCalc::ShellType::Material;
+          shell.fep_trans_len_coef = T( fep_survival_removal_coefficient( sub_material.get(),
+                                              static_cast<float>(calculator->m_energy),
+                                              fep_window_keV( calculator->m_energy ) ) );
+          shell.type = ShellType::Material;
           shell.density = sub_material->density;
           shell.effective_an = material_mass_weighted_atomic_number( *sub_material );
           shell.hydrogen_mass_frac = material_hydrogen_mass_fraction( *sub_material );
@@ -4389,28 +4659,46 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
     }
   }//if( m_options.attenuate_for_air )
 
-  // 4) Detector response (at the true line-of-sight distance).  With a
-  //    Monte-Carlo-parameterized (CeeLo) response attached, use the near-field/
-  //    off-axis-aware evaluation; else the legacy finite-disk x intrinsic form.
+  // 4) Detector response (at the true line-of-sight distance).
+  //
+  // The efficiency-correction setting applies here as well as to the volumetric integrand: an
+  //  off-axis or near-field POINT source needs the same near-field/off-axis treatment, and the
+  //  legacy `efficiency()` fallback is theta-blind (it would silently drop the angular correction
+  //  for an off-axis source).  Two rules, per the tool's contract:
+  //   - An explicit FlatDisk request forces solid-angle x intrinsic here too, so the control means
+  //     what its label says and is a usable escape hatch.
+  //   - `Auto` never picks something less accurate than the DRF natively offers: when it resolves
+  //     to FlatDisk (far-field, on-axis) a DRF carrying its own CeeLo response still gets the full
+  //     evaluation, exactly as before this setting existed.
   if( m_detector && m_detector->isValid() )
   {
     const bool fixed_geom = m_detector->isFixedGeometry();
-    const bool mc_eval = (!fixed_geom && !!m_detector->ceeloResponse());
+    const bool forced_flat = (m_options.volumetric_eff_method
+                              == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk);
     const double offset_r = std::sqrt( m_sourceOffsets[0]*m_sourceOffsets[0]
                                        + m_sourceOffsets[1]*m_sourceOffsets[1] );
     const double eval_theta = (offset_r > 0.0) ? std::atan2(offset_r, m_distance) : 0.0;
     const double eval_phi = (offset_r > 0.0) ? std::atan2(m_sourceOffsets[1], m_sourceOffsets[0]) : 0.0;
 
+    // The resolved response (an EFFTRAN transfer, or the DRF's own MC) when one was built; it is
+    //  what lets a geometry-plus-measured-curve DRF be off-axis correct at all.
+    const std::shared_ptr<const ceelo::DetectorResponse> resolved
+                                  = forced_flat ? nullptr : m_volEffResponse;
+    const bool mc_eval = (!fixed_geom && !forced_flat && !!m_detector->ceeloResponse());
+
     for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
     {
+      const float energy = static_cast<float>(energy_count.first);
       double eff;
       if( fixed_geom )
-        eff = m_detector->intrinsicEfficiency( static_cast<float>(energy_count.first) );
+        eff = m_detector->intrinsicEfficiency( energy );
+      else if( resolved )
+        eff = resolved->eps_fep( energy_count.first, eval_theta, eval_phi,
+                                 true_dist / PhysicalUnits::cm ).value;
       else if( mc_eval )
-        eff = m_detector->fepEfficiencyEval( static_cast<float>(energy_count.first),
-                                             eval_theta, eval_phi, true_dist ).value;
+        eff = m_detector->fepEfficiencyEval( energy, eval_theta, eval_phi, true_dist ).value;
       else
-        eff = m_detector->efficiency( static_cast<float>(energy_count.first), true_dist );
+        eff = m_detector->efficiency( energy, true_dist );
       energy_count.second *= eff;
     }
   }else
@@ -4465,9 +4753,11 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
 
       // FlatDisk folds intrinsic efficiency in here (the integrand carried only the flat-disk solid
       //  angle); MCTransfer/EffTran already applied the absolute FEP efficiency per element, so
-      //  applying intrinsicEfficiency again would double-count it.
-      if( m_detector && m_detector->isValid()
-          && (calculator->m_effMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk) )
+      //  applying intrinsicEfficiency again would double-count it.  Keyed on the RESPONSE, not the
+      //  method enum, so this can never disagree with what eff_response_factor actually did.
+      assert( (calculator->m_effMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk)
+              == !calculator->m_effResponse );
+      if( m_detector && m_detector->isValid() && !calculator->m_effResponse )
         contrib *= m_detector->intrinsicEfficiency( static_cast<float>(calculator->m_energy) );
 
       energy_count_map[calculator->m_energy] += contrib;

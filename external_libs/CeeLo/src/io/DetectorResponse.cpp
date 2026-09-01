@@ -920,9 +920,9 @@ ApertureQuadrature DetectorResponse::make_quadrature(
                                     provenance.kernel_n_rays);
 }
 
-double DetectorResponse::kernel_K(
-    double energy_keV, const ApertureQuadrature& q, MuChoice mu,
-    const std::function<double(const Eigen::Vector3d&)>* t_src) const {
+void DetectorResponse::kernel_ray_weights_impl(
+    double energy_keV, const ApertureQuadrature& q, MuChoice mu, double recap,
+    std::vector<double>& w_out, std::vector<Eigen::Vector3d>& dirs_out) const {
     // Same recurrence as ApertureQuadrature::interaction_omega, but with the
     // STORED generation-time mu tables (self-containment guarantee).
     struct MuT { double tot, nors, cs; };
@@ -941,11 +941,62 @@ double DetectorResponse::kernel_K(
         return v;
     };
 
+    w_out.clear();
+    dirs_out.clear();
+    w_out.reserve(q.rays.size());
+    dirs_out.reserve(q.rays.size());
+
+    for (const KernelRay& r : q.rays) {
+        if (r.active_len <= 0.0f) continue;
+        double tau_before = 0.0;
+        double p_int = 0.0;
+        for (const RaySegment& s : r.segs) {
+            const MuT m = mu_of(s.material);
+            if (s.is_scoring) {
+                const double mu_star = (mu == MuChoice::Total) ? m.tot : m.nors;
+                p_int += std::exp(-tau_before) *
+                         (1.0 - std::exp(-mu_star * s.length));
+                tau_before += m.tot * s.length;
+            } else {
+                tau_before += (m.tot - recap * m.cs) * s.length;
+            }
+        }
+        if (p_int <= 0.0) continue;
+        w_out.push_back(r.omega_w * p_int);
+        dirs_out.push_back(r.dir.cast<double>().eval());
+    }
+}
+
+double DetectorResponse::kernel_K(
+    double energy_keV, const ApertureQuadrature& q, MuChoice mu,
+    const std::function<double(const Eigen::Vector3d&)>* t_src) const {
     // Dead-layer / endcap scatter-in credit (total kernel only); see
     // ApertureQuadrature::interaction_omega. Uses the stored recapture so the
     // anchor and target kernels are folded with the same coefficient.
     const double recap = (mu == MuChoice::NoRayleigh)
         ? std::max(0.0, std::min(1.0, scatter_in_recapture)) : 0.0;
+
+    // Deliberately the inline loop rather than a call to kernel_ray_weights_impl: this runs per
+    //  volumetric element per fit iteration, and routing it through the vector-filling form would
+    //  add two heap allocations and a per-ray Vector3d materialization even when t_src is null.
+    //  The risk that the two bodies drift is covered by
+    //  tests/test_efficiency_transfer.cpp::ray_weight_decomposition_matches_full_query, which pins
+    //  prefactor * sum(weights) == the full query exactly.
+    struct MuT { double tot, nors, cs; };
+    std::vector<std::pair<const Material*, MuT>> cache;
+    auto mu_of = [&](const Material* m) -> MuT {
+        for (const auto& e : cache)
+            if (e.first == m) return e.second;
+        size_t table = SIZE_MAX;
+        for (const auto& mm : mat_to_mu_)
+            if (mm.first == m) { table = mm.second; break; }
+        if (table == SIZE_MAX)
+            throw std::runtime_error("DetectorResponse::kernel_K: unknown material");
+        const MacroscopicXS xs = mu_tables[table].eval(energy_keV);
+        const MuT v{xs.mu_total(), xs.mu_pe + xs.mu_cs + xs.mu_pp, xs.mu_cs};
+        cache.push_back({m, v});
+        return v;
+    };
 
     double total = 0.0;
     for (const KernelRay& r : q.rays) {
@@ -969,6 +1020,26 @@ double DetectorResponse::kernel_K(
         total += w;
     }
     return total;
+}
+
+void DetectorResponse::fep_ray_weights(
+    double energy_keV, const ApertureQuadrature& q,
+    std::vector<double>& w_out, std::vector<Eigen::Vector3d>& dirs_out) const {
+    // FEP always uses the total mu on the scoring segments, and takes no scatter-in credit: a
+    // degraded Compton photon cannot land in the full-energy peak.
+    kernel_ray_weights_impl(energy_keV, q, MuChoice::Total, 0.0, w_out, dirs_out);
+}
+
+void DetectorResponse::total_ray_weights(
+    double energy_keV, const ApertureQuadrature& q,
+    std::vector<double>& w_out, std::vector<Eigen::Vector3d>& dirs_out) const {
+    // Mirrors eps_total_impl's tier dispatch - the EtaTotTable tier folds a measured eta_tot over
+    // the FULL-mu kernel, the other tiers use the Rayleigh-free one.
+    const MuChoice mu = (tot_eff.tier == TotEffTier::EtaTotTable) ? MuChoice::Total
+                                                                  : MuChoice::NoRayleigh;
+    const double recap = (mu == MuChoice::NoRayleigh)
+        ? std::max(0.0, std::min(1.0, scatter_in_recapture)) : 0.0;
+    kernel_ray_weights_impl(energy_keV, q, mu, recap, w_out, dirs_out);
 }
 
 // ---------------------------------------------------------------------------
@@ -1069,6 +1140,97 @@ double DetectorResponse::kernel_transmitted(double energy_keV,
         total += r.omega_w * std::exp(-tau);
     }
     return total;
+}
+
+EffResult DetectorResponse::fep_prefactor(
+    double energy_keV, const Eigen::Vector3d& src_cm,
+    const ApertureQuadrature& q) const {
+    // Deliberately the same body as eps_fep_impl with the `* K` dropped, so a host that assembles
+    // K itself still gets the near-field gate, the grounding, the sigma budget and the flag.
+    EvalCommon ec = common_eval(energy_keV, src_cm, q);
+
+    bool clamped = false;
+    const double ln_eta =
+        eta_fep.eval_ln(energy_keV, ec.cos_theta, ec.phi_deg, clamped);
+    if (clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
+
+    double ln_N = 0.0;
+    const double d_break = near_field.breakpoint_d_cm(energy_keV, ec.cos_theta);
+    const double d_gate = std::max(d_break, provenance.min_distance_cm);
+    if (ec.d_cm < d_gate) {
+        if (!near_field.empty()) {
+            ln_N = near_field.ln_boost(energy_keV, ec.cos_theta, ec.d_cm);
+            const double nf_sig =
+                near_field.node_frac_sigma(energy_keV, ec.cos_theta, ec.d_cm);
+            ec.extra_sigma2 += nf_sig * nf_sig;
+        } else {
+            raise_flag(ec.flag, ResponseFlag::NearFieldUnmodeled);
+            ec.extra_sigma2 += 0.05 * 0.05;
+        }
+    }
+
+    double ln_k = 0.0, ground_var = 0.0;
+    if (!grounding.empty()) {
+        bool k_clamped = false;
+        ln_k = grounding.eval_ln_k(energy_keV, k_clamped);
+        if (k_clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
+        const double st = grounding.transfer.eval(
+            ec.a_cm > 0.0 ? ec.d_cm / ec.a_cm : 1e6, ec.cos_theta, energy_keV);
+        ground_var = grounding.var_ln_k(energy_keV) + st * st;
+    }
+
+    EffResult res;
+    res.value = std::exp(ln_eta + ln_N + ln_k);
+    const double node_sig =
+        eta_fep.node_frac_sigma(energy_keV, ec.cos_theta, ec.phi_deg);
+    const double floor = ec.near_regime ? floors.fep_near : floors.fep_far;
+    const double frac2 = node_sig * node_sig + floor * floor + ground_var +
+                         ec.extra_sigma2;
+    res.sigma = res.value * std::sqrt(frac2);
+    res.flag = ec.flag;
+    return res;
+}
+
+EffResult DetectorResponse::total_prefactor(
+    double energy_keV, const Eigen::Vector3d& src_cm,
+    const ApertureQuadrature& q) const {
+    // Mirrors eps_total_impl's tier dispatch with the kernel factored out.  The build-up seam is
+    // NOT applied here: it needs a ShieldContext the host supplies, and folding it in silently
+    // would double-count against a host that applies its own scatter augment.
+    EvalCommon ec = common_eval(energy_keV, src_cm, q);
+
+    double value = 1.0, node_sig = 0.0;
+    switch (tot_eff.tier) {
+        case TotEffTier::KernelExact:
+            break;                                   //bare kernel; multiplier is 1
+        case TotEffTier::BCurve:
+            value = std::exp(tot_eff.ln_b_at(energy_keV));
+            break;
+        case TotEffTier::EtaTotTable: {
+            bool clamped = false;
+            const double ln_eta = tot_eff.eta_tot.eval_ln(
+                energy_keV, ec.cos_theta, ec.phi_deg, clamped);
+            if (clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
+            double ln_k = 0.0;
+            if (!grounding.empty()) {
+                bool k_clamped = false;
+                ln_k = grounding.eval_ln_k(energy_keV, k_clamped);
+                if (k_clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
+            }
+            value = std::exp(ln_eta + ln_k);
+            node_sig = tot_eff.eta_tot.node_frac_sigma(energy_keV, ec.cos_theta,
+                                                       ec.phi_deg);
+            break;
+        }
+    }
+
+    EffResult res;
+    res.value = value;
+    const double floor = ec.near_regime ? floors.tot_near : floors.tot_far;
+    const double frac2 = node_sig * node_sig + floor * floor + ec.extra_sigma2;
+    res.sigma = res.value * std::sqrt(frac2);
+    res.flag = ec.flag;
+    return res;
 }
 
 EffResult DetectorResponse::eps_fep_impl(

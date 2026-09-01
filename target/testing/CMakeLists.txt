@@ -394,6 +394,19 @@ add_test( NAME TCeeLoDrfIntegration
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+# Volumetric (trace / self-attenuating) source efficiency against extended-source Monte-Carlo truth.
+#  The MC itself is a disabled generator that records a goldens bank; the enabled cases only read it,
+#  so this target does NOT run Monte Carlo.  Some rows are KNOWN-FAILING - they mark where the
+#  centre-ray attenuation model stops being adequate (see the file header); they are meant to go
+#  green as the per-ray kernel and survival-removal-mu work lands, not to be tuned away.
+add_executable( test_VolumetricNearField test_VolumetricNearField.cpp
+                VolumetricNearFieldScenarios.h VolumetricNearFieldTruth.h )
+target_link_libraries( test_VolumetricNearField PRIVATE InterSpecLib )
+add_test( NAME TVolumetricNearField
+  COMMAND $<TARGET_FILE:test_VolumetricNearField> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 # Regenerating the CeeLo golden fixtures runs REAL Monte Carlo (several
 # minutes); opt in with -DINTERSPEC_REGEN_CEELO_GOLDENS=ON, then build the
 # `regen_ceelo_goldens` target.  Deterministic seeds: regenerated probe

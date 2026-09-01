@@ -3753,6 +3753,11 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
                                       this, &ShieldingSourceDisplay::handleAutoFitPrefChanged );
   updateFitButtonState();  // set the split-button's initial text/check-state for the current mode
 
+  // Nothing else calls this during construction (its only other entry point is
+  //  updateFixedGeomMcAvailability(), first reached long after), so without this the volumetric-eff
+  //  combo would start enabled with an empty status even when no volumetric source exists.
+  updateVolEffMethodAvailability();
+
   // Everything is built; from here on, user-driven changes may (re)launch the auto-fit.
   m_autoFitArmed = true;
 }//ShieldingSourceDisplay constructor
@@ -3855,9 +3860,11 @@ ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOpt
                                          && m_correctForCascade->isEnabled());
 
   // Combo index maps directly to the VolumetricEffMethod enum (Auto, MCTransfer, EffTran, FlatDisk).
-  const int volEffIdx = m_volEffMethodCombo->isEnabled() ? m_volEffMethodCombo->currentIndex() : 0;
+  //  Read unconditionally: fitOptions() also feeds serialization, so gating on the widget's enabled
+  //  state would silently rewrite a saved "Flat-disk" to "Auto" whenever the model happens to have
+  //  no volumetric source (and WWidget::isEnabled() is ancestor-sensitive besides).
   options.volumetric_eff_method = static_cast<ShieldingSourceFitCalc::VolumetricEffMethod>(
-                                        std::max( 0, volEffIdx ) );
+                                    std::max( 0, m_volEffMethodCombo->currentIndex() ) );
 
   return options;
 }//ShieldingSourceFitOptions fitOptions() const
@@ -6070,22 +6077,12 @@ void ShieldingSourceDisplay::updateVolEffMethodAvailability()
   using GammaInteractionCalc::ShieldingSourceChi2Fcn;
   using ShieldingSourceFitCalc::VolumetricEffMethod;
 
-  // A volumetric source exists when any (non-generic) shielding carries a trace or self-attenuating
-  //  nuclide - only then does the volumetric integration (and this option) apply.
-  bool has_volumetric = false;
-  for( WWidget *widget : m_shieldingSelects->children() )
-  {
-    ShieldingSelect *select = dynamic_cast<ShieldingSelect *>( widget );
-    if( select && (!select->traceSourceNuclides().empty()
-                   || !select->selfAttenNuclides().empty()) )
-    {
-      has_volumetric = true;
-      break;
-    }
-  }//for( shieldings )
-
+  // Enabled for ANY usable DRF, not just when a volumetric source is present: an off-axis or
+  //  near-field point source needs the same correction, and the flat-disk fallback is theta-blind.
+  //  Whether the correction actually costs anything is decided by the Auto policy below, which
+  //  steps down to flat-disk at/beyond the DRF's characterization distance.
   const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
-  const bool enable = ( has_volumetric && det && det->isValid() && !det->isFixedGeometry() );
+  const bool enable = ( det && det->isValid() && !det->isFixedGeometry() );
 
   if( enable != m_volEffMethodCombo->isEnabled() )
     m_volEffMethodCombo->setDisabled( !enable );
@@ -6096,35 +6093,59 @@ void ShieldingSourceDisplay::updateVolEffMethodAvailability()
     return;
   }
 
-  // Preview how the current selection resolves against this DRF (authoritative resolution and any
-  //  fallback note are produced by ShieldingSourceChi2Fcn::resolveVolumetricEffMethod at fit time).
+  // The Auto policy is geometry-dependent (it steps down to flat-disk only at/beyond the DRF's
+  //  characterization distance and on-axis), so the preview needs the same distance/offset the fit
+  //  will see.  A distance the user is mid-edit parses to 0, which the resolver reads as "unknown"
+  //  and therefore keeps the correction - the safe direction.
+  double resolve_distance = 0.0;
+  try
+  {
+    resolve_distance = PhysicalUnits::stringToDistance( m_distanceEdit->valueText().toUTF8() );
+  }catch( const std::exception & )
+  {
+    resolve_distance = 0.0;
+  }
+
+  double off_dx = 0.0, off_dy = 0.0;
+  sourceOffsets( off_dx, off_dy );
+  const double resolve_offset = std::sqrt( off_dx*off_dx + off_dy*off_dy );
+
+  // The source's transverse extent is part of the far-field test, so the preview needs it too -
+  //  through the same helper the fit uses, or the two could disagree about the same model.
+  std::vector<ShieldingSourceFitCalc::ShieldingInfo> resolve_shieldings;
+  bool resolve_extent_known = true;
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    const ShieldingSelect *select = dynamic_cast<const ShieldingSelect *>( widget );
+    if( select )
+    {
+      try
+      {
+        resolve_shieldings.push_back( select->toShieldingInfo() );
+      }catch( const std::exception & )
+      {
+        // A shielding the user is mid-edit.  Dropping it would UNDER-estimate the extent, which
+        //  would wrongly permit the flat-disk step-down - so report the extent as unknown (-1),
+        //  which keeps the correction.  (An empty list is a genuine zero extent, not unknown.)
+        resolve_extent_known = false;
+        break;
+      }
+    }//if( select )
+  }//for( shieldings )
+
+  const double resolve_extent = resolve_extent_known
+        ? ShieldingSourceChi2Fcn::assemblyTransverseHalfExtent( resolve_shieldings, geometry() )
+        : -1.0;
+
+  // What the fit will actually use, from the SAME resolution the fit runs - so this status can never
+  //  claim one method while the fit quietly picks another.  (The fit can still downgrade further if
+  //  *building* the transfer response throws; that shows up as an error on the results.)
   const VolumetricEffMethod requested
         = static_cast<VolumetricEffMethod>( std::max(0, m_volEffMethodCombo->currentIndex()) );
-  const shared_ptr<const ceelo::DetectorResponse> ceeloResp = det->ceeloResponse();
-  const bool has_near_model = ceeloResp
-                    && (ceeloResp->provenance.profile != ceelo::ResponseProfile::FarField);
-
-  VolumetricEffMethod resolved = VolumetricEffMethod::FlatDisk;
-  switch( requested )
-  {
-    case VolumetricEffMethod::FlatDisk:
-      resolved = VolumetricEffMethod::FlatDisk;
-      break;
-    case VolumetricEffMethod::MCTransfer:
-      resolved = ceeloResp ? VolumetricEffMethod::MCTransfer : VolumetricEffMethod::FlatDisk;
-      break;
-    case VolumetricEffMethod::EffTran:
-      resolved = ceeloResp ? VolumetricEffMethod::EffTran : VolumetricEffMethod::FlatDisk;
-      break;
-    case VolumetricEffMethod::Auto:
-      if( has_near_model )
-        resolved = VolumetricEffMethod::MCTransfer;
-      else if( ceeloResp )
-        resolved = VolumetricEffMethod::EffTran;   // else falls back to MC at fit time
-      else
-        resolved = VolumetricEffMethod::FlatDisk;
-      break;
-  }//switch( requested )
+  const VolumetricEffMethod resolved
+        = ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf( det, requested,
+                                                                    resolve_distance, resolve_offset,
+                                                                    resolve_extent );
 
   const char *resolvedKey = "ssd-vol-eff-name-flatdisk";
   switch( resolved )
@@ -8586,6 +8607,7 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_correctForCascade->setChecked( options.correct_for_cascade_summing );
   updateCascadeAvailability();
   m_volEffMethodCombo->setCurrentIndex( static_cast<int>( options.volumetric_eff_method ) );
+  m_lastVolEffMethodIndex = m_volEffMethodCombo->currentIndex();  //else the next user change undoes to a stale index
   updateVolEffMethodAvailability();
   m_showChiOnChart->setChecked( state.showChiOnChart );
   m_chi2Plot->setShowChi( state.showChiOnChart );

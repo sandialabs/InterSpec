@@ -124,6 +124,20 @@
 
 }
 
+/* The volumetric-source efficiency row: label, method combo, and the resolved-method status text
+   ("-> EFFTRAN transfer") laid out on one line.  The status is secondary information about what the
+   fit will actually do, so it is de-emphasized rather than competing with the control it annotates,
+   using the file's own de-emphasized-ink variable so it tracks the light/dark themes. */
+.ShieldingSourceDisplay .FitOptionsRow > .VolEffMethodStatus
+{
+  margin-left: 6px;
+  font-size: smaller;
+  font-style: italic;
+  opacity: 0.8;
+  color: var(--ssd-ink-3, var(--interspec-label-color, #86868f));
+  white-space: nowrap;
+}
+
 /* The "Off-axis" checkbox is added to a WGridLayout cell with an alignment flag, so Wt positions it
    absolutely with an inline display:block that overrides .CbNoLineBreak's flex (the inline style can
    only be beaten with !important).  Re-assert flex so its label vertically centers with the box,

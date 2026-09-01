@@ -959,11 +959,11 @@ protected:
   /** Volumetric-source detector-efficiency method override (Auto / Monte Carlo / EFFTRAN /
    Flat-disk); items are enabled per-DRF by #updateVolEffMethodAvailability.  Maps to
    ShieldingSourceFitOptions::volumetric_eff_method. */
-  Wt::WComboBox *m_volEffMethodCombo;
+  Wt::WComboBox *m_volEffMethodCombo = nullptr;
 
   /** Shows the resolved active method for volumetric sources (e.g. "Auto -> EFFTRAN"); reflects
    what the fit will actually use, given the current DRF. */
-  Wt::WText *m_volEffMethodStatus;
+  Wt::WText *m_volEffMethodStatus = nullptr;
 
   /** The combo index before the most recent #volEffMethodChanged, for undo/redo. */
   int m_lastVolEffMethodIndex = 0;

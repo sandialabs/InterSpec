@@ -2608,46 +2608,32 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
     results->volumetric_eff_method = chi2Fcn->resolvedVolumetricEffMethod();
     results->volumetric_eff_note = chi2Fcn->volumetricEffResolveNote();
 
-    // GLS whitening for the displayed pulls: when detector-efficiency uncertainty was folded into
-    //  the (correlated) fit, recompute the same L^{-1} here from the data + fixed geometry so the
-    //  reported per-peak "sigma off" is the whitened residual the fit minimized - otherwise the raw
-    //  per-peak pulls look large and one-signed even for a perfectly good correlated fit.
-    vector<double> eff_whitening;
+    // A near-field method the user asked for by name but did not get is an error, not a footnote:
+    //  the answer is quietly less accurate than requested, which is exactly what should not pass
+    //  unremarked.  (`Auto` fallbacks stay in the note above.)
+    if( !chi2Fcn->volumetricEffResolveError().empty() )
+      results->errormsgs.push_back( chi2Fcn->volumetricEffResolveError() );
+
+    // Report the GLS whitening matrix the (correlated) fit used, so a consumer that wants the exact
+    //  correlated chi2 decomposition can have it.  It is deliberately NOT used for the displayed
+    //  per-peak pulls: a whitened residual mixes peaks in Cholesky order, so it is not a property of
+    //  any one peak - the chart and ShieldSourcePullTrend show the marginal pull instead
+    //  (see `expected_observed_chis`).
     if( chi2Fcn->options().account_for_drf_uncert )
     {
       vector<double> obs, obs_uncert;
       assemble_included_observed( *chi2Fcn, obs, obs_uncert );
       const vector<double> eff_cov = chi2Fcn->peakEffFracCovariance();
-      eff_whitening = compute_efficiency_whitening( obs, obs_uncert, eff_cov );
-      results->efficiency_whitening = eff_whitening;
+      results->efficiency_whitening = compute_efficiency_whitening( obs, obs_uncert, eff_cov );
     }//if( account_for_drf_uncert )
 
     auto peak_calc_details = make_unique<vector<GammaInteractionCalc::PeakDetail>>();
     const auto peak_comparisons = chi2Fcn->energy_chi_contributions( params, errors, mixcache,
-                                                                    peak_calc_details.get(),
-                                                                    eff_whitening.empty() ? nullptr : &eff_whitening );
+                                                                    peak_calc_details.get() );
 
     results->peak_calc_details = std::move(peak_calc_details);
     results->peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>(peak_comparisons) );
 
-#if( PERFORM_DEVELOPER_CHECKS )
-    // The whitened per-peak residuals should reproduce the fit chi2 (sum r_i^2 = chi2); a mismatch
-    //  means the display and fit forward models (or their whitening) have drifted apart.
-    if( !eff_whitening.empty() && (results->chi2 > 0.0) )
-    {
-      double sum_sq = 0.0;
-      for( const GammaInteractionCalc::PeakResultPlotInfo &pc : peak_comparisons )
-        sum_sq += pc.numSigmaOff * pc.numSigmaOff;
-      if( fabs(sum_sq - results->chi2) > (0.05*results->chi2 + 1.0) )
-      {
-        char buffer[256];
-        snprintf( buffer, sizeof(buffer),
-                 "fill_fit_results: whitened per-peak residuals (sum sq=%.4g) do not reproduce the"
-                 " fit chi2 (%.4g).", sum_sq, results->chi2 );
-        log_developer_error( __func__, buffer );
-      }
-    }//if( have whitening and a positive chi2 )
-#endif //#if( PERFORM_DEVELOPER_CHECKS )
 
     // Diagnose the per-peak pull trend vs energy (never let a diagnostic fail the fit).
     //  Uses the *fitted* shieldings and sources - the conclusions ("too much/little shielding",

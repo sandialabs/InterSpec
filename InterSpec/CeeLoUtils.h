@@ -87,6 +87,20 @@ namespace CeeLoUtils
     bool curve_derived = false;
   };//struct TransferAnchor
 
+  /** The on-axis distance (cm) the DRF's efficiency is pinned at - i.e. the geometry it was
+   characterized for, and therefore the geometry at which a flat-disk extrapolation is exactly what
+   the curve already encodes.
+
+   Cheap: no anchor is built and no curve is sampled, so it is safe to call on every UI change.
+   Follows the same rule #transferAnchorForDrf uses to choose its reference distance - raw measured
+   points taken at a single distance (within 1%), else the pinned absolute-efficiency distance for a
+   far-field-absolute DRF, else max(50 cm, 10 x the geometry's transverse half-extent).
+
+   Returns <= 0 when it cannot be determined.
+   */
+  double pinnedEfficiencyDistanceCm( const std::shared_ptr<const DetectorPeakResponse> &drf,
+                                     const ceelo::GeometryDescriptor &geom );
+
   /** Builds the efficiency-transfer anchor for a DRF.
 
    Prefers the DRF's raw measured points when they exist and were all taken at

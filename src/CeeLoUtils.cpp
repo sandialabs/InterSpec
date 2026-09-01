@@ -167,6 +167,42 @@ ceelo::MaterialSpec toCeeloMaterial( const AngleMaterial &mat,
 }//toCeeloMaterial(...)
 
 
+double pinnedEfficiencyDistanceCm( const std::shared_ptr<const DetectorPeakResponse> &drf,
+                                   const ceelo::GeometryDescriptor &geom )
+{
+  if( !drf || !drf->isValid() )
+    return -1.0;
+
+  // Raw measured points all taken at one distance: that IS the characterization geometry.
+  const std::shared_ptr<const MeasuredDrfPoints> raw = drf->measuredPoints();
+  if( raw )
+  {
+    double min_d = std::numeric_limits<double>::max(), max_d = 0.0, sum_d = 0.0;
+    size_t n = 0;
+    for( const MeasuredEffPoint &p : raw->points() )
+    {
+      if( (p.distance > 0.0f) && (p.efficiency > 0.0f) && (p.energy > 0.0f) )
+      {
+        min_d = std::min( min_d, double(p.distance) );
+        max_d = std::max( max_d, double(p.distance) );
+        sum_d += p.distance;
+        n += 1;
+      }
+    }
+
+    if( (n >= 2) && (max_d < 1.01*min_d) )
+      return (sum_d / n) / PhysicalUnits::cm;
+  }//if( raw )
+
+  if( (drf->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute)
+      && (drf->absoluteEfficiencyDistance() > 0.0) )
+    return drf->absoluteEfficiencyDistance() / PhysicalUnits::cm;
+
+  const double a_cm = geom.transverse_half_extent();
+  return std::max( 50.0, 10.0 * a_cm );
+}//pinnedEfficiencyDistanceCm(...)
+
+
 TransferAnchor transferAnchorForDrf(
                       const std::shared_ptr<const DetectorPeakResponse> &drf,
                       const ceelo::GeometryDescriptor &geom,

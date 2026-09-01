@@ -112,6 +112,36 @@ const char *to_str( const GeometryType type );
 //  material of given thickness.
 //Energy units should be in SandiaDecay/PhysicalUnits units.
 double transmition_length_coefficient( const Material *material, float energy );
+
+
+/** The FULL-ENERGY-PEAK survival-removal coefficient (plan 3.4):
+
+      mu_rem = transmition_length_coefficient(material, energy) - f_win * mu_Compton
+
+ Rayleigh scattering is elastic, so it cannot move a photon out of the peak window, and forward
+ Compton scatters whose energy loss stays inside the window are still counted in the peak.  Using
+ plain mu_total therefore OVER-attenuates the peak; CeeLo measures that at -8..-16% at 60 keV for
+ low-Z contents at depth.
+
+ IMPORTANT: InterSpec's mu already excludes Rayleigh - `massAttenuationCoefficientElement` returns
+ compton+photoelectric+pair and the SNL path returns 0.0 for RayleighScatter - so CeeLo's
+ `mu_total - mu_Rayleigh - f_win*mu_Compton` has no Rayleigh term to subtract here.  Subtracting one
+ would double-count, and would do so silently because that call currently returns zero.
+
+ `window_keV` is a HALF-width (CeeLo's +-win convention), i.e. FWHM/2 of the detector the response
+ is anchored on.  Pass <= 0 to get no credit (returns mu_total unchanged).
+
+ The in-window fraction is a quadrature over the Klein-Nishina distribution weighted by the
+ material's incoherent scattering function, so this is NOT cheap: it is memoised per
+ (material, energy, window) and must never be called inside a per-ray or per-element loop.
+
+ Headroom, so nobody expects more of this than it can give: the whole correction is bounded by
+ f_win * (mu_Compton/mu_total).  Measured at a 0.35 keV half-window and 60 keV that is 0.30% of mu
+ for steel (photoelectric dominates, so there is almost nothing to credit) versus 3.1% for water;
+ above 344 keV it is under 0.3% for both.
+ */
+double fep_survival_removal_coefficient( const Material *material, float energy,
+                                         double window_keV );
 double transmition_coefficient_material( const Material *material, float energy,
                                 float length );
 
@@ -168,32 +198,6 @@ void example_integration();
 // When debugging we will grab a static mutex so we dont get jumbled stdout
 #define DEBUG_RAYTRACE_CALCS 0
 
-
-/** Integrand for Cuba library; just calls #DistributedSrcCalc::eval_spherical .
- @param userdata must be pointer to a DistributedSrcCalc object.
- */
-int DistributedSrcCalc_integrand_spherical( const int *ndim, const double xx[],
-                         const int *ncomp, double ff[], void *userdata );
-
-/** Integrand for Cuba library; just calls #DistributedSrcCalc::eval_cylinder.
- @param userdata must be pointer to a DistributedSrcCalc object.
- */
-int DistributedSrcCalc_integrand_cylindrical( const int *ndim, const double xx[],
-                                           const int *ncomp, double ff[], void *userdata );
-
-/** Integrand for Cuba library; just calls #DistributedSrcCalc::eval_single_cyl_end_on.
- @param userdata must be pointer to a DistributedSrcCalc object.
- 
- Requires ((DistributedSrcCalc *)userdata)->m_dimensionsTransLenAndType.size() == 1 (checked by assert on debug builds)
- */
-int DistributedSrcCalc_integrand_single_cyl_end_on( const int *ndim, const double xx[],
-                                             const int *ncomp, double ff[], void *userdata );
-
-/** Integrand for Cuba library; just calls #DistributedSrcCalc::eval_rect.
- @param userdata must be pointer to a DistributedSrcCalc object.
- */
-int DistributedSrcCalc_integrand_rectangular( const int *ndim, const double xx[],
-                                                   const int *ncomp, double ff[], void *userdata );
 
 
 //exit_point_of_sphere_z(...): Makes exit_point[3]=<x1,y1,z1> be the point of
@@ -318,141 +322,21 @@ double len_in_sphere_x( double r, double theta,
                         double phi, double sphere_rad, double observation_dist );
 */
 
-/** Templated (double or ceres::Jet<>) version of #DistributedSrcCalc - defined in
- GammaInteractionCalc_imp.hpp. */
+/** The volumetric (trace / self-attenuating) source calculator, over `double` for the display and
+ `ceres::Jet<>` for the auto-differentiated fit - defined in GammaInteractionCalc_imp.hpp. */
 template<typename T>
 struct DistributedSrcCalcT;
 
-struct DistributedSrcCalc
+/** Which kind of shell a #DistributedSrcCalcT layer is: an attenuating material of finite extent,
+ or a zero-extent "generic" shielding given directly as an areal density.
+
+ Namespace-scope (it used to live inside the now-deleted double-only `DistributedSrcCalc`) so the
+ templated calculator, which is the single volumetric model, owns no vestigial dependency.
+ */
+enum class ShellType
 {
-  //Right now this struct assumes sources are solid, in terms of the attenuation
-  //  calculation
-  DistributedSrcCalc();
-  
-  /** Evaluates the probability of gamma originating at specified coordinates making it to the detector.
-   
-   @param [in] xx Array of coordinates for the location to evaluate.  The coordinates are specified on interval [0,1] (which this function maps to physical location)
-   @param [in] ndimptr A pointer that specifies how many dimensions is being integrated over.  The integer value must either be 2, or three.  If 2 then the corrdinates coorespond to {radius, theta}, and if 3 then {radius, theta, phi}, where the input coordinate values of [0,1] are mapped to go from [0 to sphere_rad], [0, pi] and optionally [0 to 2pi].
-   @par [out] ff Pointer to where the result is placed.
-   @par ncompptr unused.
-   */
-  void eval_spherical( const double xx[], const int *ndimptr,
-                       double ff[], const int *ncompptr ) const;
-  
-  void eval_single_cyl_end_on( const double xx[], const int *ndimptr,
-                      double ff[], const int *ncompptr ) const noexcept;
-  
-  void eval_cylinder( const double xx[], const int *ndimptr,
-                       double ff[], const int *ncompptr ) const noexcept;
-  
-  void eval_rect( const double xx[], const int *ndimptr,
-                        double ff[], const int *ncompptr ) const noexcept;
-
-  GeometryType m_geometry;
-  
-  size_t m_materialIndex;
-  double m_detectorRadius;
-  double m_detectorSetback;
-  double m_observationDist;
-  
-  /** Lateral offsets of the source assembly from the detector axis (user-set; see
-   #ShieldSourceConfig::source_offsets); the detector center is at
-   {-m_srcOffsetX, -m_srcOffsetY, m_observationDist} in assembly coordinates
-   (CylinderSideOn: {m_observationDist, -m_srcOffsetX, -m_srcOffsetY}).
-   */
-  double m_srcOffsetX;
-  double m_srcOffsetY;
-  
-  /** Whether to account for attenuation in air.  If you want this, you must also set m_airTransLenCoef to the appropriate value. */
-  bool m_attenuateForAir;
-  
-  /** The length attenuation factor for air at the energy of this object.
-   
-   If you want attenuation in air you must set this value when you set m_attenuateForAir to true.
-   
-   To get the attenuation from air using this factor you would do: exp( -m_airTransLenCoef * air_dist );
-   */
-  double m_airTransLenCoef;
-  
-  /** Wether the #m_srcVolumetricActivity should be interpreted as a surface contamination, per unit area, divided by relaxation length (L),
-   with an exponential distribution (e.g. exp(-r/L) ) in the depth from surface.  E.g., for InSitu soil contamination measurements.
-   If false, #m_srcVolumetricActivity is interpreted as activity per cubic-area (as its name suggests).
-   */
-  bool m_isInSituExponential;
-  
-  /** The relaxation length for in-situ exponential distribution.
-   
-   E.g., where ~63% of the contamination is within this distance of the surface.
-   
-   Not used when #m_isInSituExponential is false.
-   */
-  double m_inSituRelaxationLength;
-  
-  enum class ShellType
-  {
-    Material, Generic
-  };
-  
-  /** The dimensions of this shielding, and also the transmission length coefficient for it, and if it is a material shielding or a
-   generic shielding.
-   
-   Note that the dimensions for each layer of shielding are the outer dimensions, and not the thicknesses.
-   */
-  std::vector<std::tuple<std::array<double,3>,double,ShellType> > m_dimensionsTransLenAndType;
-
-  /** The photons (i.e., sum of activities times br) per volume of the shielding.
-   Is not used during integration; used to multiple integral by to get number of expected peak counts.
-
-   Variant 2 (VOL_CALC_VARIANT, see GammaInteractionCalc_imp.hpp): when #m_normalizeByVolume is
-   set this instead carries the un-divided numerator (total activity, or activity per m^2 for an
-   in-situ exponential), and eval_* folds 1/vol (or 1/norm) into the integrand.
-   */
-  double m_srcVolumetricActivity;
-
-  /** Variant 2: when true, eval_* returns trans*(dV/vol) for TotalActivity (or trans*(dV/norm)
-   for an in-situ exponential) instead of trans*dV, folding the source-shell normalization into
-   the integrand with the vanishing source dimension cancelled symbolically.  Mirrors
-   DistributedSrcCalcT<T>::m_normalizeByVolume.  Left false in variants 0/1.
-   */
-  bool m_normalizeByVolume = false;
-
-  /** The energy of gamma being integrated over.
-   
-   Doesnt look to be used in the integration, but used for debug writing out.
-   */
-  double m_energy;
-  
-  /** The nuclide responsible for gamma being integrated over.
-
-   Not used during integration - only for debug writing out; may be nullptr.
-   */
-  const SandiaDecay::Nuclide *m_nuclide;
-
-  /** The resolved volumetric-efficiency method for this problem (never #VolumetricEffMethod::Auto -
-   the fit resolves Auto to a concrete method before the integration).  #VolumetricEffMethod::FlatDisk
-   reproduces the legacy flat-disk solid-angle * intrinsicEfficiency behavior. */
-  ShieldingSourceFitCalc::VolumetricEffMethod m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk;
-
-  /** The near-field/off-axis-correct absolute-FEP-efficiency response to query per volume element
-   (the DRF's Monte-Carlo response for MCTransfer, a freshly-built EFFTRAN transfer response for
-   EffTran, or null for FlatDisk).  Only its const, thread-safe #ceelo::DetectorResponse::eps_fep is
-   used during the (multithreaded) integration; built once per problem. */
-  std::shared_ptr<const ceelo::DetectorResponse> m_effResponse;
-
-  /** Per-volume-element detector efficiency factor at the given straight-line distance to the detector
-   face and cosine of the incidence angle (measured from the detector axis).
-
-   FlatDisk (or null #m_effResponse): the legacy flat-disk fractional solid angle
-   `fractionalSolidAngle( 2*m_detectorRadius, dist_to_det + m_detectorSetback )` - intrinsicEfficiency is
-   folded in after integration.  MCTransfer/EffTran: the absolute FEP efficiency
-   `m_effResponse->eps_fep( m_energy, acos(cos_theta), 0, dist_to_det/cm )` (solid angle + intrinsic
-   already included), so intrinsicEfficiency must NOT be folded in afterward. */
-  double detEffFactor( const double dist_to_det, const double cos_theta ) const;
-
-
-  /** TODO: Setting the integral value as part of the DistributedSrcCalc is poor form - need to fix */
-  double integral;
-};//struct DistributedSrcCalc
+  Material, Generic
+};//enum class ShellType
   
 
 /** A struct to hold enough information for each point on the pulls chart that shows comparison of
@@ -1173,19 +1057,13 @@ public:
    @param error_params The errors on the parameters - only used if `log_info` is non-null
    @param mixturecache Used to speed up multiple calls to this function, and may be empty at first.
    @param log_info If non-null, filled out with details about the computation.
-   @param eff_whitening If non-null, the GLS whitening matrix L^{-1} (row-major
-          n x n, n = number of included peaks) built from the detector-efficiency
-          covariance - see #expected_observed_chis.  When supplied, each peak's
-          reported `numSigmaOff` becomes the whitened residual so the displayed
-          pulls match what the (correlated) fit actually minimized.
    */
   typedef std::map< const SandiaDecay::Nuclide *, SandiaDecay::NuclideMixture> NucMixtureCache;
   std::vector<PeakResultPlotInfo> energy_chi_contributions(
                                   const std::vector<double> &params,
                                   const std::vector<double> &error_params,
                                   NucMixtureCache &mixturecache,
-                                  std::vector<PeakDetail> *log_info = nullptr,
-                                  const std::vector<double> *eff_whitening = nullptr ) const;
+                                  std::vector<PeakDetail> *log_info = nullptr ) const;
 
   /** Templated (double or ceres::Jet<>) core of the expected-counts computation,
    used by the auto-differentiated (Ceres) fit; definitions are in
@@ -1214,10 +1092,17 @@ public:
    GammaInteractionCalc_imp.hpp.
    */
   template<typename T>
+  /** `log_info`, when non-null (only meaningful for the T=double instantiation), routes the
+   per-source clustering through the logging #cluster_peak_activities overload so the
+   `PeakDetailSrc` entries (cpsAtSource / countsAtSource) get filled.  That is the only thing the
+   display path needs from this that the fit path does not - so both can share one builder rather
+   than keeping a second, cascade-blind copy of the volumetric model.
+   */
   std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> build_volumetric_calculators(
                           const std::vector<T> &params,
                           NucMixtureCache &mixturecache,
-                          const std::vector<std::pair<double,double>> &energie_widths ) const;
+                          const std::vector<std::pair<double,double>> &energie_widths,
+                          std::vector<PeakDetail> *log_info = nullptr ) const;
 
   /** The user-set lateral offsets of the source assembly from the detector axis -
    see #ShieldSourceConfig::source_offsets.
@@ -1446,6 +1331,7 @@ public:
    */
   std::vector<double> peakEffFracUncerts() const;
 
+
   /** Detector-efficiency validity flag for each included peak (same ordering
    as #includedPeakEnergies), evaluated at the fit geometry (distance and any
    source offset) - i.e. the DetectorPeakResponse::EffEval::flag the forward
@@ -1492,9 +1378,66 @@ public:
    */
   const std::string &volumetricEffResolveNote() const;
 
+  /** Non-empty when an EXPLICITLY requested near-field method (MCTransfer / EffTran) could not be
+   honored and the fit fell back to flat-disk.  Distinct from #volumetricEffResolveNote: a note is
+   informational (including every `Auto` resolution), whereas this says the user asked for something
+   specific and did not get it, and is surfaced in `ModelFitResults::errormsgs`.
+   */
+  const std::string &volumetricEffResolveError() const;
+
+  /** Which volumetric-efficiency method `requested` resolves to for `drf`, considering only what the
+   DRF can offer - no transfer response is built, nothing is cached, and it is safe to call on every
+   UI change.
+
+   Shared by #resolveVolumetricEffMethod and by the GUI's "-> EFFTRAN transfer" status text, so the
+   status cannot claim one thing while the fit does another.  The fit may still downgrade further if
+   *building* the chosen response throws, which this (deliberately) cannot predict.
+
+   `Auto` policy: the transfer is strictly the more accurate model, so it is preferred by default and
+   only stepped down to flat-disk where flat-disk is *known* to be right - at or beyond the distance
+   the DRF's efficiency was characterized at (see `CeeLoUtils::pinnedEfficiencyDistanceCm`), because
+   there the flat-disk extrapolation is precisely what the measured curve already encodes.
+
+   "Far enough" is judged against everything that sets the angular scale, not distance alone:
+     - at or beyond the DRF's characterization distance,
+     - on-axis (zero lateral offset),
+     - and far compared to the DETECTOR's own half-width plus the SOURCE's transverse half-extent,
+       using the response's near-field gate (`SigmaFloors::near_regime_a`, d < a*that is near).
+   Off-axis eta(E,theta) is not a near-field effect and does not fall off with distance, so a wide
+   source still subtends real angles however far away it is - which is why its extent enters here.
+
+   Bias is deliberately one-way: any input that is unknown or non-positive keeps the correction.  A
+   needless transfer only costs time, whereas a wrongly-chosen flat-disk is a silent accuracy loss.
+
+   @param source_distance Source-to-detector distance (PhysicalUnits); <= 0 when unknown.
+   @param off_axis_offset Radial offset of the source from the detector axis (PhysicalUnits); 0 is
+          on-axis.
+   @param source_half_extent Transverse half-extent of the source assembly (PhysicalUnits), from
+          #assemblyTransverseHalfExtent; <= 0 when unknown.
+   */
+  static ShieldingSourceFitCalc::VolumetricEffMethod resolveVolumetricEffMethodForDrf(
+                      const std::shared_ptr<const DetectorPeakResponse> &drf,
+                      const ShieldingSourceFitCalc::VolumetricEffMethod requested,
+                      const double source_distance,
+                      const double off_axis_offset,
+                      const double source_half_extent );
+
+  /** Largest transverse (perpendicular to the detector axis) half-extent of the source assembly, in
+   PhysicalUnits - i.e. how far off the axis a source element can possibly sit.
+
+   Per-layer `m_dimensions` are thicknesses (half-dimensions for the innermost layer), so this sums
+   them; generic layers have no physical extent and are skipped.  Transverse means radial for a
+   sphere or an end-on cylinder, but spans the length for a side-on cylinder and the width/height for
+   a box, since the detector axis differs.
+
+   Shared by the fit and the GUI so both feed #resolveVolumetricEffMethodForDrf the same number.
+   */
+  static double assemblyTransverseHalfExtent(
+                      const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
+                      const GeometryType geometry );
+
   const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &initialShieldings() const;
   
-  static void selfShieldingIntegration( DistributedSrcCalc &calculator );
 
   //observedPeakEnergyWidths(): get energy sorted pairs of peak means and widths
   static std::vector< std::pair<double,double> > observedPeakEnergyWidths(
@@ -1552,31 +1495,21 @@ public:
   //  `eff_flags`, when non-null, holds the per-peak detector-efficiency
   //  validity flags (from #peakDrfEffFlags, same inclusion rule and order) to
   //  record on the PeakDetail log entries.
-  //  `expected_counts_override`, when non-null, supplies the per-peak expected
-  //  counts (from #expected_peak_counts_imp, the exact model the fit minimizes,
-  //  same inclusion rule and order) to use in place of the `energy_count_map`
-  //  sum.  This keeps the displayed prediction/pulls in lock-step with the fit
-  //  (notably for cascade-summed volumetric sources, which the map does not
-  //  correct).  The map sum is still computed to apportion counts among sources
-  //  and, under PERFORM_DEVELOPER_CHECKS, cross-checked against the override.
-  //  `eff_whitening`, when non-null, is the GLS whitening matrix L^{-1}
-  //  (row-major n x n, n = number of included peaks; Sigma = L L^T with
-  //  Sigma = diag(stat^2) + diag(obs).C_efffrac.diag(obs)).  When supplied,
-  //  each peak's reported `numSigmaOff` is replaced by the whitened residual
-  //  r_i = sum_{j<=i} L^{-1}(i,j)*(obs_j - exp_j), i.e. the exact per-peak
-  //  contribution the correlated fit minimizes - so displayed pulls center on
-  //  zero even when the near-field efficiency covariance is highly correlated.
-  //  (`eff_frac_uncerts` still governs the displayed observed-uncertainty
-  //  column; `eff_whitening` only supersedes the sigma-off value.)
+  //  `eff_frac_uncerts` governs the displayed observed-uncertainty column, and
+  //  hence `numSigmaOff`, which is the MARGINAL pull
+  //  (obs - exp)/sqrt(stat^2 + obs^2*C_ii) - a genuine per-peak sigma taken from
+  //  the diagonal of the same covariance the correlated fit minimizes.  A GLS
+  //  whitened residual would NOT be usable here: it mixes peaks in Cholesky
+  //  order, so it is not a property of any one peak and cannot be read as a
+  //  pull-vs-energy trend (see ShieldSourcePullTrend).  The full whitening
+  //  matrix is still reported, on `ModelFitResults::efficiency_whitening`.
   static std::vector<PeakResultPlotInfo> expected_observed_chis(
                               const std::vector<PeakDef> &peaks,
                               const std::vector<PeakDef> &backgroundPeaks,
                               const std::map<double,double> &energy_count_map,
                               std::vector<GammaInteractionCalc::PeakDetail> *log_info = nullptr,
                               const std::vector<double> *eff_frac_uncerts = nullptr,
-                              const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags = nullptr,
-                              const std::vector<double> *expected_counts_override = nullptr,
-                              const std::vector<double> *eff_whitening = nullptr );
+                              const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags = nullptr );
 protected:
   
   void zombieCallback( const boost::system::error_code &ec );
@@ -1644,7 +1577,7 @@ protected:
 
   /** The volumetric-efficiency method actually used for this problem, after resolving
    `m_options.volumetric_eff_method` (Auto -> a concrete method) against the DRF.  Never
-   #VolumetricEffMethod::Auto once #create has run.  Copied into every #DistributedSrcCalc /
+   #VolumetricEffMethod::Auto once #create has run.  Copied into every
    #DistributedSrcCalcT built for the integration. */
   ShieldingSourceFitCalc::VolumetricEffMethod m_resolvedVolEffMethod
                                     = ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk;
@@ -1659,11 +1592,21 @@ protected:
    `ModelFitResults::volumetric_eff_note`. */
   std::string m_volEffResolveNote;
 
+  /** See #volumetricEffResolveError - set only when an explicitly requested near-field method could
+   not be honored. */
+  std::string m_volEffResolveError;
+
   /** Resolves #m_options.volumetric_eff_method against #m_detector into #m_resolvedVolEffMethod +
-   #m_volEffResponse (+ #m_volEffResolveNote).  Builds the EFFTRAN transfer response when needed -
-   so must run once, single-threaded, at the end of #create (the EFFTRAN build is not safe to
-   construct concurrently, though the const evaluation is).  No-op for fixed-geometry DRFs (volume
-   sources are already rejected for those). */
+   #m_volEffResponse (+ #m_volEffResolveNote / #m_volEffResolveError).  Builds the EFFTRAN transfer
+   response when needed - so must run once, single-threaded, at the end of #create (the EFFTRAN build
+   is not safe to construct concurrently, though the const evaluation is).
+
+   NOT gated on there being a volumetric source: an off-axis or near-field point source needs the
+   same correction.  No-op (leaving flat-disk) for a missing/invalid/fixed-geometry DRF, and whenever
+   #resolveVolumetricEffMethodForDrf resolves to FlatDisk - which is what keeps the cost off the
+   common far-field case.  The EFFTRAN anchor comes from `DetectorPeakResponse::geometry()`, which a
+   DRF can carry without ever having been Monte-Carlo characterized, so a measured curve plus a known
+   detector is enough. */
   void resolveVolumetricEffMethod();
 
 public:

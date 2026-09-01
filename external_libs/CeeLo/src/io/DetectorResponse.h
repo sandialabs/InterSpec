@@ -701,6 +701,37 @@ public:
     double kernel_K(double energy_keV, const ApertureQuadrature& q, MuChoice mu,
                     const std::function<double(const Eigen::Vector3d&)>* t_src = nullptr) const;
 
+    /// The kernel, decomposed so a host can supply a per-ray source transmission of its OWN type -
+    /// e.g. an autodiff scalar, which the std::function above cannot carry.
+    ///
+    ///     K = sum_i w_out[i] * t_src(dirs_out[i])
+    ///
+    /// and with no t_src, sum(w_out) == kernel_K(...).  The weights depend only on (energy, ray,
+    /// stored mu tables): no fit parameter enters them, so a host may hold them fixed while
+    /// differentiating through its own t_src.
+    ///
+    /// Use the fep_/total_ pair rather than picking a MuChoice: the eps_total kernel is
+    /// TIER-DEPENDENT (the EtaTotTable tier uses MuChoice::Total, not NoRayleigh) and applies
+    /// scatter_in_recapture, and getting that wrong is silent.
+    void fep_ray_weights(double energy_keV, const ApertureQuadrature& q,
+                         std::vector<double>& w_out,
+                         std::vector<Eigen::Vector3d>& dirs_out) const;
+    void total_ray_weights(double energy_keV, const ApertureQuadrature& q,
+                           std::vector<double>& w_out,
+                           std::vector<Eigen::Vector3d>& dirs_out) const;
+
+    /// Everything in eps_fep EXCEPT the kernel: exp(ln_eta + ln_N + ln_k), with the flag and the
+    /// fractional sigma the full query would have reported.  So
+    ///     eps_fep(E, pos) == fep_prefactor(E, pos, q).value * kernel_K(E, q, MuChoice::Total)
+    /// and a host assembling K itself keeps the near-field/off-axis/grounding physics - and the
+    /// validity flag - rather than silently dropping them.
+    EffResult fep_prefactor(double energy_keV, const Eigen::Vector3d& src_cm,
+                            const ApertureQuadrature& q) const;
+
+    /// The eps_total counterpart of #fep_prefactor (tier-dependent; 1.0 for the bare-crystal tier).
+    EffResult total_prefactor(double energy_keV, const Eigen::Vector3d& src_cm,
+                              const ApertureQuadrature& q) const;
+
     /// Passive-layer transmission envelope over a quadrature with the stored
     /// mu tables (used for the collimator hole-fraction gate).
     double kernel_transmitted(double energy_keV, const ApertureQuadrature& q) const;
@@ -737,6 +768,12 @@ private:
     struct EvalCommon;  // internal per-query bundle
     EvalCommon common_eval(double energy_keV, const Eigen::Vector3d& src_cm,
                            const ApertureQuadrature& q) const;
+    /// Shared ray loop behind kernel_K and the *_ray_weights accessors, so the decomposition and
+    /// the thing it decomposes cannot drift apart.
+    void kernel_ray_weights_impl(double energy_keV, const ApertureQuadrature& q, MuChoice mu,
+                                 double recap, std::vector<double>& w_out,
+                                 std::vector<Eigen::Vector3d>& dirs_out) const;
+
     EffResult eps_fep_impl(double energy_keV, const Eigen::Vector3d& src_cm,
                            const ApertureQuadrature& q,
                            const std::function<double(const Eigen::Vector3d&)>* t_src) const;
