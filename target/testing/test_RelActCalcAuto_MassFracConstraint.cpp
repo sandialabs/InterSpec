@@ -1955,6 +1955,23 @@ EndpointOracleOutcome check_u235_endpoint_oracle( const UProfileFixture &fixture
 
   BOOST_CHECK_MESSAGE( outcome.endpoints_checked > 0,
                        "no likelihood-crossing endpoint was available to validate" );
+
+  // The loop above SKIPS every endpoint that is not a likelihood crossing, so an endpoint wrongly
+  // demoted to a bound would be silently un-validated rather than failed - and the endpoint kind
+  // is itself reported (as `lower_endpoint`/`upper_endpoint` in the report and LLM JSON), so a
+  // misclassification asserts a feasibility bound that does not exist.  Pin both the count and
+  // the classification: this U-235 fixture is well determined on both sides, so every endpoint of
+  // both intervals must be a genuine crossing, and none may claim the scan's synthetic range cap
+  // (which only an open activity/ratio box can reach - never the carrier chart).
+  BOOST_CHECK_EQUAL( outcome.endpoints_checked, 4u );
+  for( const auto &interval : baseline.mass_enrichment_result(fixture.u235,0).profile->intervals )
+  {
+    BOOST_CHECK( interval.lower_kind
+                 != RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind::ScanRangeLimit );
+    BOOST_CHECK( interval.upper_kind
+                 != RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind::ScanRangeLimit );
+  }
+
   return outcome;
 }//check_u235_endpoint_oracle(...)
 
@@ -2127,4 +2144,269 @@ BOOST_AUTO_TEST_CASE( carrier_refuses_bounded_slot_with_structured_failure )
   BOOST_CHECK_MESSAGE( !result.profile->message.empty(),
                        "a refusal must say why the fraction cannot be scanned exactly" );
   BOOST_CHECK( result.profile->intervals.empty() );
+}
+
+
+/** The refit oracle for the `RelativeActivity` executor: fixing the activity at each claimed
+ crossing endpoint must land the objective on the threshold - the same exactness discipline as
+ the mass-fraction carrier (`check_u235_endpoint_oracle`), through the identity chart (the
+ activity slot IS the reported coordinate, so there is no reparameterization to distrust). */
+BOOST_AUTO_TEST_CASE( relative_activity_profile_endpoints_reproduce_the_threshold_on_refit )
+{
+  using Target = RelActCalcAuto::Options::ProfileTarget;
+  using ProfileStatus = RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus;
+  using EndpointKind = RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind;
+
+  UProfileFixture fixture;
+  BOOST_REQUIRE_MESSAGE( load_u_profile_fixture(fixture),
+                         "Failed to load U235_Unshielded_6000.n42 test case." );
+  const ULoadResult &tc = fixture.tc;
+  const SandiaDecay::Nuclide * const u235 = fixture.u235;
+  const vector<shared_ptr<const PeakDef>> &input_peaks = fixture.input_peaks;
+
+  RelActCalcAuto::Options options
+      = u235_forced_profile_options( tc, u235, false, /*add_constraint=*/false );
+  Target target;
+  target.kind = Target::Kind::RelativeActivity;
+  target.source = RelActCalcAuto::SrcVariant(u235);
+  target.rel_eff_curve_index = 0;
+  options.profile_targets = { target };
+
+  RelActCalcAuto::RelActAutoSolution baseline;
+  BOOST_REQUIRE_NO_THROW( baseline = RelActCalcAuto::solve(
+      options,tc.foreground,tc.background,tc.det,input_peaks,
+      PeakFitUtils::coarse_det_type(tc.foreground,nullptr),nullptr) );
+  BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(baseline.m_status),
+                         baseline.m_error_message );
+
+  const RelActCalcAuto::RelActAutoSolution::ProfileResultEntry * const entry
+      = baseline.profile_result( target );
+  BOOST_REQUIRE_MESSAGE( entry, "the explicit RelativeActivity request produced no result" );
+  BOOST_REQUIRE_MESSAGE( (entry->profile.status == ProfileStatus::Complete)
+                          || (entry->profile.status == ProfileStatus::BoundaryLimited),
+                         "unexpected profile status " << static_cast<int>(entry->profile.status)
+                          << ": " << entry->profile.message );
+  BOOST_REQUIRE_EQUAL( entry->profile.intervals.size(), 2u );
+  BOOST_REQUIRE( std::isfinite(baseline.m_chi2) );
+  const double cov_scale = (std::max)( 1.0, baseline.m_cov_scale );
+
+  size_t endpoints_checked = 0;
+  double worst_shortfall = -std::numeric_limits<double>::infinity();
+  for( const RelActCalcAuto::RelActAutoSolution::MassFractionProfileInterval &interval
+            : entry->profile.intervals )
+  {
+    const double threshold = interval.delta_chi2;
+    const std::pair<double,EndpointKind> sides[2] = {
+      { interval.lower, interval.lower_kind }, { interval.upper, interval.upper_kind } };
+    for( const std::pair<double,EndpointKind> &side : sides )
+    {
+      // A physical or input bound says the scan ran out of feasible room - a different statement.
+      if( side.second != EndpointKind::LikelihoodCrossing )
+        continue;
+      const double requested = side.first;
+      if( !std::isfinite(requested) || (requested <= 0.0) )
+        continue;
+
+      RelActCalcAuto::Options trial
+          = u235_forced_profile_options( tc, u235, false, /*add_constraint=*/false );
+      for( RelActCalcAuto::NucInputInfo &input : trial.rel_eff_curves.at(0).nuclides )
+      {
+        if( RelActCalcAuto::nuclide(input.source) == u235 )
+        {
+          input.min_rel_act = requested;
+          input.max_rel_act = requested;
+        }
+      }
+
+      RelActCalcAuto::RelActAutoSolution refit;
+      BOOST_REQUIRE_NO_THROW( refit = RelActCalcAuto::solve(
+          trial,tc.foreground,tc.background,baseline.m_drf,baseline.m_spectrum_peaks,
+          PeakFitUtils::coarse_det_type(tc.foreground,nullptr),nullptr) );
+      BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(refit.m_status),
+                             refit.m_error_message );
+
+      const double achieved = refit.rel_activity( target.source, 0 );
+      BOOST_REQUIRE_MESSAGE(
+          std::fabs(achieved - requested) <= 1.0e-5*(std::max)(1.0,std::fabs(requested)),
+          "oracle refit landed at " << achieved << " rather than " << requested );
+
+      const double delta = refit.m_chi2 - baseline.m_chi2;
+      const double shortfall = threshold - delta;
+      worst_shortfall = (std::max)( worst_shortfall, shortfall );
+      BOOST_TEST_MESSAGE( "relact-shortfall q=" << requested << " threshold=" << threshold
+                          << " refit_delta=" << delta << " shortfall=" << shortfall
+                          << " cov_scale=" << cov_scale );
+
+      const double loose = cov_scale*(std::max)( 0.25, 0.15*threshold/cov_scale );
+      BOOST_CHECK_MESSAGE( std::fabs(delta - threshold) <= loose,
+          "endpoint " << requested << " missed the threshold: delta=" << delta
+           << " vs " << threshold );
+      BOOST_CHECK_MESSAGE( delta <= (threshold + 0.25*cov_scale),
+          "endpoint " << requested << " refit sits above threshold: interval too WIDE" );
+      ++endpoints_checked;
+    }//for( each side )
+  }//for( each interval )
+
+  BOOST_CHECK_MESSAGE( endpoints_checked > 0,
+                       "no likelihood-crossing endpoints existed to check" );
+  BOOST_CHECK_MESSAGE( worst_shortfall <= 0.25*cov_scale,
+                       "worst shortfall " << worst_shortfall << " vs " << 0.25*cov_scale );
+}
+
+
+/** The refit oracle for the `ActivityRatio` executor: refitting with a fixed
+ `ActRatioConstraint` at each claimed crossing endpoint must land the objective on the threshold.
+ This is the acceptance gate for the slot-driven ratio reparameterization
+ (`install_ratio_reparam`): a pinned bare numerator would under-cover because the denominator
+ re-optimizes, and this oracle would catch exactly that. */
+BOOST_AUTO_TEST_CASE( activity_ratio_profile_endpoints_reproduce_the_threshold_on_refit )
+{
+  using Target = RelActCalcAuto::Options::ProfileTarget;
+  using ProfileStatus = RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus;
+  using EndpointKind = RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind;
+
+  UProfileFixture fixture;
+  BOOST_REQUIRE_MESSAGE( load_u_profile_fixture(fixture),
+                         "Failed to load U235_Unshielded_6000.n42 test case." );
+  const ULoadResult &tc = fixture.tc;
+  const SandiaDecay::Nuclide * const u235 = fixture.u235;
+  const SandiaDecay::Nuclide * const u238 = DecayDataBaseServer::database()->nuclide("U238");
+  BOOST_REQUIRE( u235 && u238 );
+  const vector<shared_ptr<const PeakDef>> &input_peaks = fixture.input_peaks;
+
+  RelActCalcAuto::Options options
+      = u235_forced_profile_options( tc, u235, false, /*add_constraint=*/false );
+  Target target;
+  target.kind = Target::Kind::ActivityRatio;
+  target.source = RelActCalcAuto::SrcVariant(u235);
+  target.denominator = RelActCalcAuto::SrcVariant(u238);
+  target.rel_eff_curve_index = 0;
+  target.denominator_curve_index = 0;
+  options.profile_targets = { target };
+
+  RelActCalcAuto::RelActAutoSolution baseline;
+  BOOST_REQUIRE_NO_THROW( baseline = RelActCalcAuto::solve(
+      options,tc.foreground,tc.background,tc.det,input_peaks,
+      PeakFitUtils::coarse_det_type(tc.foreground,nullptr),nullptr) );
+  BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(baseline.m_status),
+                         baseline.m_error_message );
+
+  const RelActCalcAuto::RelActAutoSolution::ProfileResultEntry * const entry
+      = baseline.profile_result( target );
+  BOOST_REQUIRE_MESSAGE( entry, "the explicit ActivityRatio request produced no result" );
+  BOOST_REQUIRE_MESSAGE( (entry->profile.status == ProfileStatus::Complete)
+                          || (entry->profile.status == ProfileStatus::BoundaryLimited),
+                         "unexpected profile status " << static_cast<int>(entry->profile.status)
+                          << ": " << entry->profile.message );
+  BOOST_REQUIRE_EQUAL( entry->profile.intervals.size(), 2u );
+  const double cov_scale = (std::max)( 1.0, baseline.m_cov_scale );
+
+  size_t endpoints_checked = 0;
+  double worst_shortfall = -std::numeric_limits<double>::infinity();
+  for( const RelActCalcAuto::RelActAutoSolution::MassFractionProfileInterval &interval
+            : entry->profile.intervals )
+  {
+    const double threshold = interval.delta_chi2;
+    const std::pair<double,EndpointKind> sides[2] = {
+      { interval.lower, interval.lower_kind }, { interval.upper, interval.upper_kind } };
+    for( const std::pair<double,EndpointKind> &side : sides )
+    {
+      if( side.second != EndpointKind::LikelihoodCrossing )
+        continue;
+      const double requested = side.first;
+      if( !std::isfinite(requested) || (requested <= 0.0) )
+        continue;
+
+      RelActCalcAuto::Options trial
+          = u235_forced_profile_options( tc, u235, false, /*add_constraint=*/false );
+      RelActCalcAuto::RelEffCurveInput::ActRatioConstraint pin;
+      pin.controlling_source = RelActCalcAuto::SrcVariant(u238);
+      pin.constrained_source = RelActCalcAuto::SrcVariant(u235);
+      pin.constrained_to_controlled_activity_ratio = requested;
+      trial.rel_eff_curves.at(0).act_ratio_constraints.push_back( pin );
+
+      RelActCalcAuto::RelActAutoSolution refit;
+      BOOST_REQUIRE_NO_THROW( refit = RelActCalcAuto::solve(
+          trial,tc.foreground,tc.background,baseline.m_drf,baseline.m_spectrum_peaks,
+          PeakFitUtils::coarse_det_type(tc.foreground,nullptr),nullptr) );
+      BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(refit.m_status),
+                             refit.m_error_message );
+
+      const double achieved_num = refit.rel_activity( target.source, 0 );
+      const double achieved_den = refit.rel_activity( target.denominator, 0 );
+      BOOST_REQUIRE( std::isfinite(achieved_num) && std::isfinite(achieved_den)
+                     && (achieved_den > 0.0) );
+      const double achieved = achieved_num/achieved_den;
+      BOOST_REQUIRE_MESSAGE(
+          std::fabs(achieved - requested) <= 1.0e-5*(std::max)(1.0,std::fabs(requested)),
+          "oracle refit landed at ratio " << achieved << " rather than " << requested );
+
+      const double delta = refit.m_chi2 - baseline.m_chi2;
+      const double shortfall = threshold - delta;
+      worst_shortfall = (std::max)( worst_shortfall, shortfall );
+      BOOST_TEST_MESSAGE( "ratio-shortfall q=" << requested << " threshold=" << threshold
+                          << " refit_delta=" << delta << " shortfall=" << shortfall
+                          << " cov_scale=" << cov_scale );
+
+      const double loose = cov_scale*(std::max)( 0.25, 0.15*threshold/cov_scale );
+      BOOST_CHECK_MESSAGE( std::fabs(delta - threshold) <= loose,
+          "endpoint " << requested << " missed the threshold: delta=" << delta
+           << " vs " << threshold );
+      BOOST_CHECK_MESSAGE( delta <= (threshold + 0.25*cov_scale),
+          "endpoint " << requested << " refit sits above threshold: interval too WIDE" );
+      ++endpoints_checked;
+    }//for( each side )
+  }//for( each interval )
+
+  BOOST_CHECK_MESSAGE( endpoints_checked > 0,
+                       "no likelihood-crossing endpoints existed to check" );
+  BOOST_CHECK_MESSAGE( worst_shortfall <= 0.25*cov_scale,
+                       "worst shortfall " << worst_shortfall << " vs " << 0.25*cov_scale );
+}
+
+
+/** Schema smoke for the `Age` identity-chart executor: an explicit age target on a fitted age
+ must produce a structured result (intervals or a reason), whatever the age's identifiability in
+ this small frozen fixture. */
+BOOST_AUTO_TEST_CASE( age_profile_target_produces_structured_result )
+{
+  using Target = RelActCalcAuto::Options::ProfileTarget;
+
+  UProfileFixture fixture;
+  BOOST_REQUIRE_MESSAGE( load_u_profile_fixture(fixture),
+                         "Failed to load U235_Unshielded_6000.n42 test case." );
+  const ULoadResult &tc = fixture.tc;
+  const SandiaDecay::Nuclide * const u235 = fixture.u235;
+  const vector<shared_ptr<const PeakDef>> &input_peaks = fixture.input_peaks;
+
+  RelActCalcAuto::Options options
+      = u235_forced_profile_options( tc, u235, false, /*add_constraint=*/false );
+  options.rel_eff_curves.at(0).nucs_of_el_same_age = false;
+  for( RelActCalcAuto::NucInputInfo &input : options.rel_eff_curves.at(0).nuclides )
+  {
+    if( RelActCalcAuto::nuclide(input.source) == u235 )
+    {
+      input.age = 20.0*PhysicalUnits::year;
+      input.fit_age = true;
+    }
+  }
+  Target target;
+  target.kind = Target::Kind::Age;
+  target.source = RelActCalcAuto::SrcVariant(u235);
+  target.rel_eff_curve_index = 0;
+  options.profile_targets = { target };
+  BOOST_REQUIRE_EQUAL( target.why_not_usable(options), string() );
+
+  RelActCalcAuto::RelActAutoSolution solution;
+  BOOST_REQUIRE_NO_THROW( solution = RelActCalcAuto::solve(
+      options,tc.foreground,tc.background,tc.det,input_peaks,
+      PeakFitUtils::coarse_det_type(tc.foreground,nullptr),nullptr) );
+  BOOST_REQUIRE_MESSAGE( RelActCalcAuto::RelActAutoSolution::is_usable_status(solution.m_status),
+                         solution.m_error_message );
+
+  const RelActCalcAuto::RelActAutoSolution::ProfileResultEntry * const entry
+      = solution.profile_result( target );
+  BOOST_REQUIRE_MESSAGE( entry, "the explicit Age request produced no result" );
+  BOOST_CHECK_MESSAGE( !entry->profile.intervals.empty() || !entry->profile.message.empty(),
+                       "age profile carried neither intervals nor a reason" );
 }

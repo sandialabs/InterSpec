@@ -655,6 +655,48 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
     data["warnings_html"].push_back( sanitized );
   }
 
+  // ---- Non-mass-fraction profile-likelihood results ----
+  // (mass-fraction entries surface through each nuclide's `enrichment_profile_*` fields)
+  data["profile_results"] = json::array();
+  for( const RelActCalcAuto::RelActAutoSolution::ProfileResultEntry &entry : sol.m_profile_results )
+  {
+    using ProfileTarget = RelActCalcAuto::Options::ProfileTarget;
+    if( entry.target.kind == ProfileTarget::Kind::MassFraction )
+      continue;
+    json result;
+    result["kind"] = ProfileTarget::to_str( entry.target.kind );
+    result["source"] = RelActCalcAuto::to_name( entry.target.source );
+    result["rel_eff_curve_index"] = static_cast<int64_t>( entry.target.rel_eff_curve_index );
+    if( entry.target.kind == ProfileTarget::Kind::ActivityRatio )
+    {
+      result["denominator"] = RelActCalcAuto::to_name( entry.target.denominator );
+      result["denominator_curve_index"]
+          = static_cast<int64_t>( entry.target.denominator_curve_index );
+    }
+    result["status"]
+        = RelActCalcAuto::RelActAutoSolution::to_str( entry.profile.status );
+    result["name"] = entry.target.display_name();
+    if( !entry.profile.message.empty() )
+      result["message"] = entry.profile.message;
+    result["num_fits"] = static_cast<int64_t>( entry.profile.num_fits );
+    result["intervals"] = json::array();
+    for( const RelActCalcAuto::RelActAutoSolution::MassFractionProfileInterval &interval
+              : entry.profile.intervals )
+    {
+      json row;
+      row["confidence_level"] = interval.confidence_level;
+      row["delta_chi2"] = interval.delta_chi2;
+      row["lower"] = interval.lower;
+      row["upper"] = interval.upper;
+      row["lower_endpoint"]
+          = RelActCalcAuto::RelActAutoSolution::to_str( interval.lower_kind );
+      row["upper_endpoint"]
+          = RelActCalcAuto::RelActAutoSolution::to_str( interval.upper_kind );
+      result["intervals"].push_back( row );
+    }
+    data["profile_results"].push_back( result );
+  }//for( non-mass-fraction profile results )
+
   // ---- Rel-eff curves ----
   data["rel_eff_curves"] = json::array();
   for( size_t i = 0; i < sol.m_rel_eff_forms.size(); ++i )
@@ -863,38 +905,17 @@ nlohmann::json solution_to_json( const RelActCalcAuto::RelActAutoSolution &sol )
           if( enr.profile )
           {
             const auto &profile = *enr.profile;
-            const char *profile_status = "failed";
-            switch( profile.status )
-            {
-              case RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::NotRequested:
-                profile_status = "not_requested"; break;
-              case RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::Complete:
-                profile_status = "complete"; break;
-              case RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::BoundaryLimited:
-                profile_status = "boundary_limited"; break;
-              case RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::NonIdentifiable:
-                profile_status = "non_identifiable"; break;
-              case RelActCalcAuto::RelActAutoSolution::MassFractionProfileStatus::Failed:
-                profile_status = "failed"; break;
-            }
-            nuc_info["enrichment_profile_status"] = profile_status;
+            nuc_info["enrichment_profile_status"]
+                = RelActCalcAuto::RelActAutoSolution::to_str( profile.status );
             nuc_info["enrichment_profile_reason"]
                 = (profile.reason == RelActCalcAuto::RelActAutoSolution::MassFractionProfileReason::Forced)
                   ? "forced" : "automatic_weak";
             nuc_info["enrichment_profile_message"] = profile.message;
             nuc_info["enrichment_profile_num_fits"] = profile.num_fits;
 
-            const auto endpoint_name = [](const RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind kind){
-              switch( kind )
-              {
-                case RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind::LikelihoodCrossing:
-                  return "likelihood_crossing";
-                case RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind::PhysicalLimit:
-                  return "physical_limit";
-                case RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind::InputConstraintLimit:
-                  return "input_constraint_limit";
-              }
-              return "physical_limit";
+            const auto endpoint_name
+                = []( const RelActCalcAuto::RelActAutoSolution::MassFractionProfileEndpointKind kind ){
+              return RelActCalcAuto::RelActAutoSolution::to_str( kind );
             };
 
             for( const auto &interval : profile.intervals )

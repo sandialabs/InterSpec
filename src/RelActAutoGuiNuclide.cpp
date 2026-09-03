@@ -1173,6 +1173,19 @@ void RelActAutoGuiNuclide::setAgeRange( Wt::WString min_age, Wt::WString max_age
 }//void setAgeRange( Wt::WString min_age, Wt::WString max_age )
 
 
+void RelActAutoGuiNuclide::setProfileEligibility( const bool allowed, const Wt::WString &reason )
+{
+  if( !m_force_profile_mass_fraction )
+    return;
+  m_force_profile_mass_fraction->setDisabled( !allowed );
+  if( allowed )
+    m_force_profile_mass_fraction->setToolTip( WString::tr("raagn-force-profile-tt") );
+  else
+    m_force_profile_mass_fraction->setToolTip(
+                WString::tr("raagn-force-profile-ineligible-tt").arg(reason) );
+}//void setProfileEligibility( const bool allowed, const Wt::WString &reason )
+
+
 std::pair<Wt::WString,Wt::WString> RelActAutoGuiNuclide::ageRangeStr() const
 {
   return std::make_pair( m_fit_age_min_edit->text(), m_fit_age_max_edit->text() );

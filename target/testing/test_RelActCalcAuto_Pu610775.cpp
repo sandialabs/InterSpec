@@ -379,14 +379,16 @@ void check_pu_report_uncertainty_contract(
   interval95.upper_kind = Solution::MassFractionProfileEndpointKind::LikelihoodCrossing;
 
   Solution with_profile = solution;
-  if( with_profile.m_mass_fraction_profiles.empty() )
-    with_profile.m_mass_fraction_profiles.resize(1);
   Solution::MassFractionProfileResult profile;
   profile.status = Solution::MassFractionProfileStatus::BoundaryLimited;
   profile.reason = Solution::MassFractionProfileReason::Forced;
   profile.intervals = {interval68,interval95};
   profile.num_fits = 7;
-  with_profile.m_mass_fraction_profiles[0][target->symbol] = profile;
+  RelActCalcAuto::Options::ProfileTarget profile_target;
+  profile_target.kind = RelActCalcAuto::Options::ProfileTarget::Kind::MassFraction;
+  profile_target.source = RelActCalcAuto::SrcVariant(target);
+  profile_target.rel_eff_curve_index = 0;
+  with_profile.m_profile_results.push_back( { profile_target, profile } );
 
   // The structured result itself is the schema oracle for the injected intervals.
   const Solution::MassFractionResult structured = with_profile.mass_enrichment_result(target,0);
@@ -409,8 +411,10 @@ void check_pu_report_uncertainty_contract(
   for( vector<double> &row : unreliable.m_covariance )
     for( double &entry : row )
       entry *= covariance_scale;
-  if( !unreliable.m_mass_fraction_profiles.empty() )
-    unreliable.m_mass_fraction_profiles[0].erase(target->symbol);
+  std::erase_if( unreliable.m_profile_results,
+      [target]( const Solution::ProfileResultEntry &entry ){
+        return entry.target.source == RelActCalcAuto::SrcVariant(target);
+      } );
 
   const Solution::MassFractionResult weak = unreliable.mass_enrichment_result(target,0);
   BOOST_REQUIRE( weak.covariance_one_sigma.has_value() );
