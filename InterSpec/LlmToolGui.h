@@ -37,7 +37,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include <functional>
 
 #include <Wt/WSignal.h>
-#include <Wt/WLineEdit.h>
+#include <Wt/WJavaScript.h>
 #include <Wt/WContainerWidget.h>
 #include <Wt/Core/observing_ptr.hpp>
 
@@ -61,6 +61,7 @@ class LlmInteractionTurn;
 
 namespace Wt
 {
+  class WTextArea;
   class WPushButton;
   class WGridLayout;
 }
@@ -226,8 +227,8 @@ private:
    clearConversationDisplays() so the pointer can never dangle after a container ->clear(). */
   Wt::WContainerWidget *m_welcomeMessage = nullptr;
 
-  Wt::WLineEdit *m_inputEdit;             ///< Input field for user messages
-  Wt::WPushButton *m_sendButton;          ///< Button to send messages
+  Wt::WTextArea *m_inputEdit;             ///< Auto-growing input field for user messages
+  Wt::WPushButton *m_sendButton;          ///< Icon button to submit (arrow) / cancel (stop) messages
   Wt::WPushButton *m_menuIcon;            ///< Menu icon for conversation-level actions
   Wt::WGridLayout *m_layout;              ///< Main layout manager
 
@@ -264,11 +265,30 @@ private:
   /** Container for thumbnail previews of staged images, shown above the input field. */
   Wt::WContainerWidget *m_imagePreviewContainer;
 
+  /** Emitted from client-side JS when the user pastes an image into the focused input.
+   Carries (base64Data, mimeType, widthPx, heightPx); connected to stage the pasted image. */
+  Wt::JSignal<std::string, std::string, int, int> m_pasteImageSignal;
+
   /** Remove a staged image by index and update the preview strip. */
   void removeStagedImage( size_t index );
 
   /** Remove all staged images and hide the preview strip. */
   void clearStagedImages();
+
+  /** Stage an image pasted from the clipboard (connected to m_pasteImageSignal). */
+  void handlePastedImage( const std::string &base64Data, const std::string &mimeType,
+                          int widthPx, int heightPx );
+
+  /** Wire the client-side behavior on the input text area: auto-grow, Enter-to-submit,
+   submit-button enable/disable, and clipboard-image paste. */
+  void setupInputJavaScript();
+
+  /** Enable the submit button iff there is input text or a staged image (client-side + server-side).
+   No-op while a request is pending (the button then acts as an always-enabled Stop). */
+  void updateSendButtonEnabled();
+
+  /** Reset the input text area back to its minimal one-row height (called after submit). */
+  void resetInputHeight();
 
   /** Initialize the configured chat UI (conversation, input, menu) into m_root. */
   void initializeUI();

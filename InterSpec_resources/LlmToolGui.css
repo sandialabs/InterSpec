@@ -34,14 +34,55 @@
   background-color: var(--interspec-background-color, #ffffff);
 }
 
-/* Container holding all interaction displays */
+/* Container holding all interaction displays.  The bottom padding keeps the last turn clear of the
+   floating input area; the setup JS overrides it with the live input height, this is the fallback. */
 .LlmConversationContainer {
   padding: 10px;
+  padding-bottom: 56px;
 }
 
-/* Input field styles */
+/* Drop the last turn's bottom margin so it doesn't add to the clearance below the last content;
+   the container's bottom padding alone clears the floating input. */
+.LlmConversationContainer > :last-child {
+  margin-bottom: 0;
+}
+
+/* ============================================ */
+/* Floating input area (overlays the scroll area) */
+/* ============================================ */
+
+/* Horizontal row pinned to the bottom of the scroll wrapper, floating over the conversation.  The
+   text-area column grows on the left; the icon submit/stop button stays pinned bottom-right. */
+.LlmInputArea {
+  position: absolute;
+  left: 8px;
+  right: 22px;   /* leave room for the scrollbar / menu icon */
+  bottom: 8px;
+  z-index: 50;
+  display: flex;
+  flex-direction: row;
+  align-items: flex-end;
+  gap: 6px;
+  padding: 6px;
+  background-color: var(--interspec-background-color, #ffffff);
+  border: 1px solid var(--interspec-border-color, #d0d0d0);
+  border-radius: 8px;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.18);
+}
+
+/* Auto-growing text area */
 .llm-input-edit {
   font-size: 14px;
+  width: 100%;
+  box-sizing: border-box;
+  resize: none;
+  overflow-y: hidden;   /* grow JS toggles to auto once the max height is reached */
+  line-height: 1.4;
+  padding: 6px 8px;
+  border: 1px solid var(--interspec-border-color, #ced4da);
+  border-radius: 6px;
+  background-color: var(--interspec-input-background, #ffffff);
+  color: var(--interspec-text-color, #212529);
 }
 
 .llm-input-edit.disabled {
@@ -50,18 +91,57 @@
   cursor: not-allowed;
 }
 
-/* Send button styles */
-.llm-send-button {
-  min-width: 80px;
+/* ============================================ */
+/* Icon submit / stop button                     */
+/* ============================================ */
+
+/* Square icon-only button (both the submit-arrow and stop states).  Transparent by default so it
+   shows the input-area background (white in the light theme, dark in the dark theme); a subtle tint
+   appears on hover.  Mirrors the PopupMenuParentButton pattern so it themes via --interspec-* vars.
+   The :hover selector is included so the global `button:hover { height:23px; padding:2px }` rule
+   (higher specificity than a bare class) can't shrink it on mouseover. */
+.llm-send-button,
+.llm-send-button:hover {
+  flex-shrink: 0;
+  min-width: 0;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  box-shadow: none;
 }
 
-.llm-send-button.disabled {
-  opacity: 0.6;
-  background-color: var(--interspec-button-background, #f5f5f5);
+/* Subtle hover tint (skipped while disabled). */
+.llm-send-button:hover:not([disabled]) {
+  background: var(--interspec-menubar-hover-color, rgba(128, 128, 128, 0.25));
+}
+
+/* The icon <img> Wt renders inside the button (override the global .Wt-icon margin/padding). */
+.llm-send-button img {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  padding: 0;
+}
+
+/* Disabled submit button (JS sets the native `disabled` attribute when there is nothing to send):
+   just dim the icon, keep the transparent background.  Scoped with .LlmToolGui so it outranks the
+   generic .LlmToolGui button[disabled] rule below. */
+.LlmToolGui .llm-send-button.disabled,
+.LlmToolGui .llm-send-button[disabled] {
+  opacity: 0.4;
   cursor: not-allowed;
+  background: transparent;
 }
 
-/* The dark theme has a global disabled-button rule; keep assistant controls tied to the active theme. */
+/* The dark theme has a global disabled-button rule; keep the other assistant controls (menu, config
+   buttons) tied to the active theme.  The icon send/stop button opts out via the rule above. */
 .LlmToolGui button[disabled] {
   color: var(--interspec-button-text-color, white);
   background-color: var(--interspec-button-background, #888888);
@@ -533,11 +613,12 @@
 /* Staged Image Preview Strip                    */
 /* ============================================ */
 
-/* Vertical container wrapping preview strip + input edit */
+/* Vertical container wrapping preview strip + input edit; takes the remaining row width. */
 .LlmInputColumn {
   display: flex;
   flex-direction: column;
-  width: 100%;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
 /* Horizontal strip showing staged image thumbnails */
