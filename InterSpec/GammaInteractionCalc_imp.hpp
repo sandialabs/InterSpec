@@ -86,6 +86,10 @@ namespace ceres
 namespace GammaInteractionCalc
 {
 
+/** Detector-side line set for the volumetric line integration - see
+ VolumetricLineIntegration_imp.hpp (included at the end of this header). */
+struct VolumetricLineCache;
+
 /** The scalar part of a double or ceres::Jet<> value. */
 template<typename T>
 inline double scalar_of( const T &val )
@@ -1226,8 +1230,18 @@ struct DistributedSrcCalcT
 
   /** Aperture rays per source element for the per-ray kernel (#m_effResponse set).  Tunable because
    it trades cost against the discretization of the inner (aperture) integral; see the convergence
-   study in test_VolumetricNearField. */
-  int m_effNumRays = 512;
+   study in test_VolumetricNearField.
+
+   128 (2026-09-03, was 512): the volume-integrated efficiency at 128 rays sits within 0.13% of an
+   8192-ray reference (ApertureRayConvergence, with the active-crystal bounding cone), and the cost
+   is linear in the ray count (5.8e-4 -> 1.5e-4 s per element, CostPerEnergy).  Per-element scatter
+   is larger (PerElementAperturePrecision) but averages out over the outer quadrature. */
+  int m_effNumRays = 128;
+
+  /** The detector-side line set for the LINE integration path (VolumetricLineIntegration_imp.hpp);
+   null keeps this calculator on the per-element path.  Set by
+   ShieldingSourceChi2Fcn::build_volumetric_calculators from the fit's per-source cache. */
+  std::shared_ptr<const VolumetricLineCache> m_lineCache;
 
   /** How far along a ray direction the shell-walk's target point is placed.  Only the direction
    matters; this just has to exceed any source/shield extent. */
@@ -4294,6 +4308,13 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities_imp( std::map<double,T> &en
 
 
 
+/** Integrates every calculator on the line path where it applies, else the element path.
+ Defined in VolumetricLineIntegration_imp.hpp (included at the end of this header). */
+template<typename T>
+void integrate_volumetric_calculators( const std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> &calculators,
+                                       const bool multithread );
+
+
 template<typename T>
 std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::build_volumetric_calculators(
                         const std::vector<T> &params,
@@ -4817,6 +4838,17 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
           calculator->m_cascade_age = scalar_of( thisage );
         }
 
+        // The line path needs the fit's detector-side line set for this source shell (built once
+        //  per scalar geometry, shared by every energy).  Cascade-corrected calculators stay on the
+        //  element path, so they do not need it.
+        if( calculator->m_effResponse && !calculator->m_cascade )
+        {
+          const std::array<T,3> &src_dims = calculator->m_shells[material_index].dims;
+          const std::array<double,3> scalar_dims = { scalar_of(src_dims[0]), scalar_of(src_dims[1]),
+                                                     scalar_of(src_dims[2]) };
+          calculator->m_lineCache = volumetricLineCache( material_index, scalar_dims );
+        }
+
         calculators.push_back( std::move(calculator) );
       }//for( loop over local_energy_count_map )
     }//for( loop over combined_srcs )
@@ -5071,35 +5103,7 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
 
   if( !calculators.empty() )
   {
-    if( m_options.multithread_self_atten && (calculators.size() > 1) )
-    {
-      std::mutex error_mutex;
-      std::exception_ptr first_error;
-
-      SpecUtilsAsync::ThreadPool pool;
-      for( const std::unique_ptr<DistributedSrcCalcT<T>> &calculator : calculators )
-      {
-        pool.post( [&calculator, &error_mutex, &first_error](){
-          try
-          {
-            self_shielding_integration_imp( *calculator );
-          }catch( std::exception & )
-          {
-            std::lock_guard<std::mutex> lock( error_mutex );
-            if( !first_error )
-              first_error = std::current_exception();
-          }
-        } );
-      }//for( loop over calculators )
-      pool.join();
-
-      if( first_error )
-        std::rethrow_exception( first_error );
-    }else
-    {
-      for( const std::unique_ptr<DistributedSrcCalcT<T>> &calculator : calculators )
-        self_shielding_integration_imp( *calculator );
-    }//if( multithread ) / else
+    integrate_volumetric_calculators( calculators, m_options.multithread_self_atten );
 
     for( const std::unique_ptr<DistributedSrcCalcT<T>> &calculator : calculators )
     {
@@ -5547,5 +5551,8 @@ void ShieldingSourceChi2Fcn::applyCascadeToClusterMap( std::map<double,T> &clust
 }//applyCascadeToClusterMap(...)
 
 }//namespace GammaInteractionCalc
+
+// The detector-side line integration; needs everything above.
+#include "InterSpec/VolumetricLineIntegration_imp.hpp"
 
 #endif //GammaInteractionCalc_imp_hpp

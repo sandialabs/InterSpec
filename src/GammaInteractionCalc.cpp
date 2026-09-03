@@ -3861,6 +3861,37 @@ double ShieldingSourceChi2Fcn::trueSourceToDetectorDistance() const
 }
 
 
+std::shared_ptr<const VolumetricLineCache> ShieldingSourceChi2Fcn::volumetricLineCache(
+                                            const size_t material_index,
+                                            const std::array<double,3> &source_outer_dims ) const
+{
+  if( !m_volEffResponse || (m_volumetricNumLines <= 0) )
+    return nullptr;
+
+  // Scalar detector placement: the same construction the calculators use (with T = double).
+  const double det_radius = (m_detector ? 0.5*m_detector->detectorDiameter() : 0.5*PhysicalUnits::cm);
+  const double det_setback = (m_detector ? m_detector->detectorSetback() : 0.0);
+  const DetectorGeomT<double> det = detector_geom_from_config<double>( m_geometry, m_distance,
+                                        det_radius, det_setback, m_sourceOffsets[0], m_sourceOffsets[1] );
+  const std::array<double,3> det_pos = { det.position[0], det.position[1], det.position[2] };
+  const std::array<double,3> det_axis = { det.axis[0], det.axis[1], det.axis[2] };
+  const double azimuth = 0.0;
+
+  std::lock_guard<std::mutex> lock( m_lineCacheMutex );
+  const auto pos = m_lineCaches.find( material_index );
+  if( (pos != end(m_lineCaches)) && pos->second
+      && pos->second->matches( m_volEffResponse.get(), m_geometry, material_index, source_outer_dims,
+                               det_pos, det_axis, azimuth, m_volumetricNumLines ) )
+    return pos->second;
+
+  std::shared_ptr<const VolumetricLineCache> cache
+        = build_volumetric_line_cache( m_volEffResponse, m_geometry, material_index, source_outer_dims,
+                                       det_pos, det_axis, azimuth, m_volumetricNumLines );
+  m_lineCaches[material_index] = cache;
+  return cache;
+}//volumetricLineCache(...)
+
+
 void ShieldingSourceChi2Fcn::reportCompletedEval( const double chi2, const std::vector<double> &params ) const
 {
   if( m_isFitting && m_guiUpdateInfo )
@@ -4813,17 +4844,7 @@ vector<PeakResultPlotInfo>
 
   if( calculators.size() )
   {
-    if( m_options.multithread_self_atten && (calculators.size() > 1) )
-    {
-      SpecUtilsAsync::ThreadPool pool;
-      for( const unique_ptr<DistributedSrcCalcT<double>> &calculator : calculators )
-        pool.post( [&calculator](){ self_shielding_integration_imp<double>( *calculator ); } );
-      pool.join();
-    }else
-    {
-      for( const unique_ptr<DistributedSrcCalcT<double>> &calculator : calculators )
-        self_shielding_integration_imp<double>( *calculator );
-    }
+    integrate_volumetric_calculators<double>( calculators, m_options.multithread_self_atten );
 
     for( const unique_ptr<DistributedSrcCalcT<double>> &calculator : calculators )
     {

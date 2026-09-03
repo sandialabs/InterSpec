@@ -57,6 +57,8 @@
 #define BOOST_TEST_MODULE VolumetricLadder_suite
 #include <boost/test/included/unit_test.hpp>
 
+#include "ceres/jet.h"
+
 #include "VolumetricNearFieldHarness.h"
 
 
@@ -1261,7 +1263,7 @@ BOOST_AUTO_TEST_CASE( CostPerEnergy )
     BOOST_TEST_MESSAGE( o.str() );
   }
 
-  // (2) One per-element aperture at the shipped 512 rays, and at 128, so the scaling is visible.
+  // (2) One per-element aperture at the shipped 128 rays (was 512 until 2026-09-03), 512 and 2048, so the scaling is visible.
   for( const int rays : { 128, 512, 2048 } )
   {
     const int n = 200;
@@ -1304,6 +1306,96 @@ BOOST_AUTO_TEST_CASE( CostPerEnergy )
     }
   }
 
+  // (3b) The LINE path: what one cost-function evaluation of a whole fit costs.  This is the number
+  //      that matters, and it is not (3) divided by anything: the detector-side line set is built
+  //      ONCE per fit, every energy of a source shares it, and the fit runs the whole thing in
+  //      ceres::Jet<double,16> for the Jacobian.  So: the one-off build, then one evaluation of
+  //      `num_energies` energies together, in double and in Jet.
+  {
+    using Jet16 = ceres::Jet<double,16>;
+    BOOST_TEST_MESSAGE( "" );
+    BOOST_TEST_MESSAGE( "  LINE path, per cost-function evaluation (one shared line set, all energies):" );
+    const std::vector<double> energies = { 60.0, 88.0, 122.0, 344.0, 411.0, 661.7, 778.0, 964.0,
+                                           1112.0, 1332.5 };
+    for( const char *name : { "large-near-dense", "box-large-near-dense" } )
+    {
+      const Scenario s = find_scenario( name );
+      for( const int num_lines : { 1 << 16, 1 << 17 } )
+      {
+        DistributedSrcCalcT<double> proto = build_scenario_calc( det, s, energies.front(), det.mc_transfer );
+        const double tb0 = cpu_now();
+        attach_line_cache( proto, num_lines );
+        const double build_s = cpu_now() - tb0;
+
+        // One evaluation = every energy of this source, integrated together.
+        std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> dcalcs;
+        for( const double e : energies )
+        {
+          auto c = std::make_unique<DistributedSrcCalcT<double>>( proto );
+          c->m_energy = e;
+          dcalcs.push_back( std::move(c) );
+        }
+        const VolumetricIntegrator prev = sm_volumetric_integrator_override;
+        sm_volumetric_integrator_override = VolumetricIntegrator::Line;
+        const double t0 = cpu_now();
+        integrate_volumetric_calculators<double>( dcalcs, true );
+        const double dbl_s = cpu_now() - t0;
+
+        // The same, with the source dimensions carrying autodiff seeds (as a dimension fit does).
+        std::vector<std::unique_ptr<DistributedSrcCalcT<Jet16>>> jcalcs;
+        for( const double e : energies )
+        {
+          auto c = std::make_unique<DistributedSrcCalcT<Jet16>>();
+          c->m_geometry = proto.m_geometry;
+          c->m_materialIndex = proto.m_materialIndex;
+          c->m_attenuateForAir = proto.m_attenuateForAir;
+          c->m_airTransLenCoef = proto.m_airTransLenCoef;
+          c->m_isInSituExponential = false;
+          c->m_inSituRelaxationLength = -1.0;
+          c->m_srcVolumetricActivity = Jet16( 1.0 );
+          c->m_normalizeByVolume = false;
+          c->m_energy = e;
+          c->m_effResponse = proto.m_effResponse;
+          c->m_effMethod = proto.m_effMethod;
+          c->m_lineCache = proto.m_lineCache;
+          for( int i = 0; i < 3; ++i )
+          {
+            c->m_detector.position[i] = Jet16( proto.m_detector.position[i] );
+            c->m_detector.axis[i] = proto.m_detector.axis[i];
+          }
+          c->m_detector.radius = proto.m_detector.radius;
+          c->m_detector.setback = proto.m_detector.setback;
+          for( size_t sh = 0; sh < proto.m_shells.size(); ++sh )
+          {
+            DistributedSrcCalcT<Jet16>::ShellInfo info;
+            for( int i = 0; i < 3; ++i )
+            {
+              info.dims[i] = Jet16( proto.m_shells[sh].dims[i] );
+              if( sh == proto.m_materialIndex )
+                info.dims[i].v[i] = 1.0;      //seed d/d(source dims)
+            }
+            info.trans_len_coef = Jet16( proto.m_shells[sh].trans_len_coef );
+            info.type = proto.m_shells[sh].type;
+            c->m_shells.push_back( info );
+          }
+          jcalcs.push_back( std::move(c) );
+        }
+        const double t1 = cpu_now();
+        integrate_volumetric_calculators<Jet16>( jcalcs, true );
+        const double jet_s = cpu_now() - t1;
+        sm_volumetric_integrator_override = prev;
+
+        ostringstream o;
+        o << "  " << left << setw(22) << s.name << right << "  " << setw(7) << num_lines
+          << " lines:  build " << fixed << setprecision(3) << build_s << " s (once)"
+          << ",  eval " << setprecision(3) << dbl_s << " s double"
+          << ",  " << setprecision(3) << jet_s << " s Jet<16>"
+          << "   [" << energies.size() << " energies]";
+        BOOST_TEST_MESSAGE( o.str() );
+      }
+    }
+  }
+
   // (4) The flat-disk model on the same scenarios, as the baseline the per-ray kernel is paid against.
   BOOST_TEST_MESSAGE( "" );
   BOOST_TEST_MESSAGE( "  flat-disk (no response, no per-ray kernel), same scenarios:" );
@@ -1324,6 +1416,157 @@ BOOST_AUTO_TEST_CASE( CostPerEnergy )
     }
   }
 }//BOOST_AUTO_TEST_CASE( CostPerEnergy )
+
+
+/** LINE vs ELEMENT - the detector-side line integration against the per-element aperture path.
+
+ Both quadratures evaluate the SAME integral (VolumetricLineIntegration_imp.hpp derives the
+ reversal), on the same transfer response, the same shells and the same attenuation
+ coefficients; only the discretisation differs.  The element path's own aperture discretisation
+ is ~0.1% (ApertureRayConvergence), so the two must agree to a few tenths of a percent across the
+ whole scenario matrix - cylinders, boxes, off-axis and side-on, shielded, transparent - or one of
+ them is wrong.  Reports the cost of each per energy as well.
+ */
+BOOST_AUTO_TEST_CASE( LineVsElementScenarioMatrix )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+
+  const auto cpu_now = []() -> double {
+    return static_cast<double>( std::clock() ) / CLOCKS_PER_SEC;
+  };
+
+  const int num_lines = 1 << 16;
+  const std::vector<double> energies = { 60.0, 122.0, 661.7, 1332.5 };
+
+  double worst = 0.0;
+  string worst_where;
+  double elem_cpu = 0.0, line_cpu = 0.0;
+
+  // The element path costs 20-40 s per energy on a box, so the whole matrix is an hours-long run.
+  //  INTERSPEC_LINE_AB_SCENARIOS=name[,name...] restricts it while iterating; unset runs everything.
+  std::set<string> only;
+  if( const char *env = std::getenv("INTERSPEC_LINE_AB_SCENARIOS") )
+  {
+    string spec = env;
+    size_t pos = 0;
+    while( pos <= spec.size() )
+    {
+      const size_t comma = spec.find( ',', pos );
+      const string name = spec.substr( pos, (comma == string::npos) ? string::npos : (comma - pos) );
+      if( !name.empty() )
+        only.insert( name );
+      if( comma == string::npos )
+        break;
+      pos = comma + 1;
+    }
+    BOOST_TEST_MESSAGE( "  (restricted to " << only.size() << " scenario(s) by INTERSPEC_LINE_AB_SCENARIOS)" );
+  }
+
+  BOOST_TEST_MESSAGE( "  line/element - 1 (%), and CPU s per energy (element | line):" );
+  for( const Scenario &s : scenarios() )
+  {
+    if( !only.empty() && !only.count(s.name) )
+      continue;
+    for( const bool transparent : { false, true } )
+    {
+      ostringstream row;
+      row << "  " << left << setw(28) << (s.name + (transparent ? " (transp)" : "")) << right;
+      for( const double e : energies )
+      {
+        size_t evals_e = 0, evals_l = 0;
+        double err_e = 0.0, err_l = 0.0;
+        const double t0 = cpu_now();
+        const double elem = interspec_volumetric_eff( det, s, e, det.mc_transfer, -1, -1.0, -1.0,
+                                                      transparent, &evals_e, &err_e );
+        const double t1 = cpu_now();
+        const double line = interspec_volumetric_eff( det, s, e, det.mc_transfer, -1, -1.0, -1.0,
+                                                      transparent, &evals_l, &err_l, num_lines );
+        const double t2 = cpu_now();
+        elem_cpu += (t1 - t0);
+        line_cpu += (t2 - t1);
+        BOOST_REQUIRE( (elem > 0.0) && (line > 0.0) );
+        const double rel = 100.0*(line/elem - 1.0);
+        row << "  " << fixed << setprecision(0) << setw(5) << e << ":" << showpos << setprecision(2)
+            << setw(6) << rel << "%" << noshowpos << " (" << setprecision(2) << (t1-t0) << "|"
+            << (t2-t1) << "s)";
+        if( fabs(rel) > worst )
+        {
+          worst = fabs( rel );
+          worst_where = s.name + (transparent ? " (transp)" : "") + " @ " + to_string( e ) + " keV";
+        }
+      }//for( energies )
+      BOOST_TEST_MESSAGE( row.str() );
+    }//for( transparent )
+  }//for( scenarios )
+
+  ostringstream tail;
+  tail << "  worst |line/element - 1|: " << fixed << setprecision(3) << worst << "% (" << worst_where
+       << ");  total CPU element " << setprecision(1) << elem_cpu << " s, line " << line_cpu
+       << " s (" << num_lines << " lines; the line set is rebuilt per call here - a fit builds it once)";
+  BOOST_TEST_MESSAGE( tail.str() );
+
+  // The gate is the two quadratures' COMBINED discretisation, measured rather than hoped for:
+  //  the element path sits within 0.13% of its own 8192-ray reference (ApertureRayConvergence) and
+  //  the line path within 0.21% of its 2^18-line one (LineCountConvergence), and the worst row here
+  //  measured 0.44% (transparent box at 122 keV, 2026-09-03).  0.75% leaves about one part in three
+  //  of headroom over that - enough for platform floating-point drift, not enough to hide a real
+  //  disagreement, which for two quadratures of the same integral would show up as a systematic
+  //  trend across a scenario family rather than one loose row.
+  BOOST_CHECK_MESSAGE( worst < 0.75,
+                       "line and element quadratures disagree by " << worst << "% at " << worst_where );
+}//BOOST_AUTO_TEST_CASE( LineVsElementScenarioMatrix )
+
+
+/** LINE COUNT - how many lines the line path needs: value against a 2^18-line reference, on the
+ contact rows (the hardest: short chords, steep prefactor), so the production default can be set
+ where the change drops below 0.1%. */
+BOOST_AUTO_TEST_CASE( LineCountConvergence )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+
+  const std::vector<int> counts = { 1 << 12, 1 << 13, 1 << 14, 1 << 15, 1 << 16, 1 << 17 };
+  const int reference = 1 << 18;
+
+  double worst_64k = 0.0;
+  string worst_where;
+  for( const char *name : { "small-near-dense", "large-near-dense", "box-large-near-dense",
+                            "shielded-near-dense", "large-far-dense" } )
+  {
+    const Scenario s = find_scenario( name );
+    for( const double e : { 60.0, 661.7 } )
+    {
+      const double ref = interspec_volumetric_eff( det, s, e, det.mc_transfer, -1, -1.0, -1.0, false,
+                                                   nullptr, nullptr, reference );
+      ostringstream row;
+      row << "  " << left << setw(22) << s.name << right << " @ " << setw(6) << fixed
+          << setprecision(1) << e << " keV:";
+      for( const int n : counts )
+      {
+        const double v = interspec_volumetric_eff( det, s, e, det.mc_transfer, -1, -1.0, -1.0, false,
+                                                   nullptr, nullptr, n );
+        const double rel = 100.0*(v/ref - 1.0);
+        row << "  n=" << n << ":" << showpos << setprecision(3) << rel << "%" << noshowpos;
+        if( (n == (1 << 16)) && (fabs(rel) > worst_64k) )
+        {
+          worst_64k = fabs( rel );
+          worst_where = s.name + " @ " + to_string( e ) + " keV";
+        }
+      }
+      BOOST_TEST_MESSAGE( row.str() );
+    }
+  }
+  BOOST_TEST_MESSAGE( "  worst deviation of 65536 lines from the " << reference << "-line reference: "
+                      << fixed << setprecision(3) << worst_64k << "% (" << worst_where << ")" );
+  BOOST_CHECK_MESSAGE( worst_64k < 0.3, "65536 lines are not converged: " << worst_64k << "% at " << worst_where );
+}//BOOST_AUTO_TEST_CASE( LineCountConvergence )
 
 
 /** RUNG 6 - OFF-AXIS cylinders against Monte Carlo.

@@ -31,6 +31,7 @@
 #include <deque>
 #include <tuple>
 #include <memory>
+#include <mutex>
 #include <atomic>
 #include <vector>
 #include <utility>
@@ -64,6 +65,7 @@ namespace GammaInteractionCalc
 {
 
 class CascadeSummingCalc;
+struct VolumetricLineCache;
 
 /** Maximum areal density allowed for computations, in units of g/cm2 -
  
@@ -1655,6 +1657,22 @@ protected:
   //A cache of nuclide mixtures to
   mutable NucMixtureCache m_mixtureCache;
   static const size_t sm_maxMixtureCacheSize = 10000;
+
+  /** Detector-side line sets for the volumetric LINE integration path, one per source shell,
+   keyed on the source material index and rebuilt whenever the scalar source dimensions (or the
+   detector placement) change - i.e. once per optimizer step for a dimension fit, once per fit
+   otherwise.  See VolumetricLineIntegration_imp.hpp.  Shared (const) with the fit threads. */
+  mutable std::mutex m_lineCacheMutex;
+  mutable std::map<size_t,std::shared_ptr<const VolumetricLineCache>> m_lineCaches;
+
+  /** Lines per source shell for the line path; a cost/accuracy knob (see the convergence study in
+   test_VolumetricLadder.cpp). */
+  int m_volumetricNumLines = 65536;
+
+  /** The line set for the given source shell at the given SCALAR cumulative outer dims, building
+   or rebuilding it as needed.  Null when there is no resolved volumetric response. */
+  std::shared_ptr<const VolumetricLineCache> volumetricLineCache( const size_t material_index,
+                                                    const std::array<double,3> &source_outer_dims ) const;
 };//class ShieldingSourceChi2Fcn
 
 }//namespace GammaInteractionCalc

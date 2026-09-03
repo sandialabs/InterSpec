@@ -42,6 +42,7 @@
  */
 
 #include <array>
+#include <algorithm>
 #include <cmath>
 #include <string>
 #include <map>
@@ -1002,8 +1003,10 @@ BOOST_AUTO_TEST_CASE( ApertureRayConvergence )
   }
   BOOST_REQUIRE_EQUAL( probe.size(), 3u );
 
-  double worst_512 = 0.0;
-  std::string worst_512_where;
+  const int shipped_rays = GammaInteractionCalc::DistributedSrcCalcT<double>().m_effNumRays;   //the production default
+  BOOST_REQUIRE( std::find( begin(ray_counts), end(ray_counts), shipped_rays ) != end(ray_counts) );
+  double worst_shipped = 0.0;
+  std::string worst_shipped_where;
 
   for( const Scenario &s : probe )
   {
@@ -1023,12 +1026,12 @@ BOOST_AUTO_TEST_CASE( ApertureRayConvergence )
         row << "  n=" << n << ":" << std::fixed << std::setprecision(2) << std::showpos << rel
             << "%" << std::noshowpos;
 
-        if( n == 512 )
+        if( n == shipped_rays )
         {
-          if( std::fabs(rel) > worst_512 )
+          if( std::fabs(rel) > worst_shipped )
           {
-            worst_512 = std::fabs(rel);
-            worst_512_where = s.name + " @ " + std::to_string(energy) + " keV";
+            worst_shipped = std::fabs(rel);
+            worst_shipped_where = s.name + " @ " + std::to_string(energy) + " keV";
           }
         }
       }//for( loop over ray counts )
@@ -1036,17 +1039,18 @@ BOOST_AUTO_TEST_CASE( ApertureRayConvergence )
     }//for( loop over energies )
   }//for( loop over probe scenarios )
 
-  BOOST_TEST_MESSAGE( "  worst deviation of the shipped 512-ray setting from the "
-                      << reference_rays << "-ray reference: " << worst_512 << "% (" << worst_512_where << ")" );
+  BOOST_TEST_MESSAGE( "  worst deviation of the shipped " << shipped_rays << "-ray setting from the "
+                      << reference_rays << "-ray reference: " << worst_shipped << "% (" << worst_shipped_where << ")" );
 
-  // MEASURED: 512 rays sits within 0.10% of the 8192-ray reference across all six contact probes
-  //  (128 rays is already within 0.76%).  So the low active-ray fraction at contact costs nothing
+  // MEASURED: 512 rays sits within 0.10% of the 8192-ray reference across all six contact probes,
+  //  and 128 (the shipped default since 2026-09-03) within 0.13% with the active-crystal bounding cone.
+  //  So the low active-ray fraction at contact costs nothing
   //  in the integrated value - per-element aperture error averages out over the volume integral -
   //  and the ~7-9% residual against MC truth on the near rows is MODEL error, not quadrature.
   //  The budget below is a regression guard set well above the measured 0.10%, not a target.
-  BOOST_CHECK_MESSAGE( worst_512 < 0.5,
-                       "The default aperture ray count is not converged: 512 rays differ from "
-                       << reference_rays << " by " << worst_512 << "% at " << worst_512_where
+  BOOST_CHECK_MESSAGE( worst_shipped < 0.5,
+                       "The default aperture ray count is not converged: " << shipped_rays << " rays differ from "
+                       << reference_rays << " by " << worst_shipped << "% at " << worst_shipped_where
                        << ".  Raise DistributedSrcCalcT::m_effNumRays." );
 }//BOOST_AUTO_TEST_CASE( ApertureRayConvergence )
 
@@ -1321,7 +1325,9 @@ BOOST_AUTO_TEST_CASE( PerElementAperturePrecision )
     return std::make_pair( pre.value * sum_w, n_active );
   };
 
-  double worst_512 = 0.0;
+  const int shipped_rays = GammaInteractionCalc::DistributedSrcCalcT<double>().m_effNumRays;
+  BOOST_REQUIRE( std::find( begin(counts), end(counts), shipped_rays ) != end(counts) );
+  double worst_shipped = 0.0;
   std::string worst_where;
 
   BOOST_TEST_MESSAGE( "  crystal radius " << r_cryst << " cm, bulletized r="
@@ -1343,9 +1349,9 @@ BOOST_AUTO_TEST_CASE( PerElementAperturePrecision )
       const double rel = 100.0*(v.first/ref.first - 1.0);
       row << "  n=" << n << ":" << std::showpos << std::fixed << std::setprecision(2) << rel << "%"
           << std::noshowpos << "(" << v.second << " act)";
-      if( n == 512 && std::fabs(rel) > worst_512 )
+      if( n == shipped_rays && std::fabs(rel) > worst_shipped )
       {
-        worst_512 = std::fabs(rel);
+        worst_shipped = std::fabs(rel);
         std::ostringstream w; w << "d=" << p.first << " r=" << p.second;
         worst_where = w.str();
       }
@@ -1353,13 +1359,15 @@ BOOST_AUTO_TEST_CASE( PerElementAperturePrecision )
     BOOST_TEST_MESSAGE( row.str() );
   }//for( loop over probes )
 
-  BOOST_TEST_MESSAGE( "  worst PER-ELEMENT error of the shipped 512-ray setting: "
-                      << worst_512 << "% (" << worst_where << ")" );
+  BOOST_TEST_MESSAGE( "  worst PER-ELEMENT error of the shipped " << shipped_rays << "-ray setting: "
+                      << worst_shipped << "% (" << worst_where << ")" );
 
-  // Pinned as a report, generously: this is the number that should drive any decision to raise
-  //  m_effNumRays, and it must not silently drift.
-  BOOST_CHECK_MESSAGE( worst_512 < 5.0,
-                       "Per-element aperture error at 512 rays is " << worst_512 << "% at "
+  // Pinned as a report: this is the number that should drive any decision to raise m_effNumRays, and
+  //  it must not silently drift.  MEASURED 2026-09-03 at the shipped 128 rays: worst 1.30% (d=1 cm at
+  //  the rim, 80 active rays), against 0.37% at 512.  The volume-INTEGRATED error is what gates the
+  //  count (ApertureRayConvergence: 0.13%); the budget here sits about one point over the worst row.
+  BOOST_CHECK_MESSAGE( worst_shipped < 2.5,
+                       "Per-element aperture error at " << shipped_rays << " rays is " << worst_shipped << "% at "
                        << worst_where << " - large enough that m_effNumRays should be raised." );
 }//BOOST_AUTO_TEST_CASE( PerElementAperturePrecision )
 
@@ -2319,7 +2327,9 @@ BOOST_AUTO_TEST_CASE( BoxApertureRayConvergence, * boost::unit_test::disabled() 
 
   BOOST_TEST_MESSAGE( "  Deviation from the 2048-ray reference (boxes first, then cylinder twins):" );
 
-  double worst_box_512 = 0.0;
+  const int shipped_rays = GammaInteractionCalc::DistributedSrcCalcT<double>().m_effNumRays;
+  BOOST_REQUIRE( std::find( begin(ray_counts), end(ray_counts), shipped_rays ) != end(ray_counts) );
+  double worst_box_shipped = 0.0;
   std::string worst_box_where;
 
   for( const char * const want : probe_names )
@@ -2341,9 +2351,9 @@ BOOST_AUTO_TEST_CASE( BoxApertureRayConvergence, * boost::unit_test::disabled() 
         const double rel = 100.0*(v/ref - 1.0);
         row << "  n=" << n << ":" << fixed << setprecision(2) << showpos << rel << "%" << noshowpos;
 
-        if( (n == 512) && (s.shape == Shape::Box) && (fabs(rel) > worst_box_512) )
+        if( (n == shipped_rays) && (s.shape == Shape::Box) && (fabs(rel) > worst_box_shipped) )
         {
-          worst_box_512 = fabs( rel );
+          worst_box_shipped = fabs( rel );
           worst_box_where = string(want) + " @ " + to_string(energy) + " keV";
         }
       }//for( loop over ray counts )
@@ -2352,8 +2362,8 @@ BOOST_AUTO_TEST_CASE( BoxApertureRayConvergence, * boost::unit_test::disabled() 
   }//for( probes )
 
   ostringstream tail;
-  tail << "  worst BOX deviation of the shipped 512-ray setting from " << reference_rays
-       << " rays: " << fixed << setprecision(2) << worst_box_512 << "% (" << worst_box_where << ")";
+  tail << "  worst BOX deviation of the shipped " << shipped_rays << "-ray setting from " << reference_rays
+       << " rays: " << fixed << setprecision(2) << worst_box_shipped << "% (" << worst_box_where << ")";
   BOOST_TEST_MESSAGE( tail.str() );
 }//BOOST_AUTO_TEST_CASE( BoxApertureRayConvergence )
 

@@ -272,6 +272,36 @@ to the same value and dropping these pins together.
 
 - **FEP-only mode**: Full MC transport inside the scoring crystal (same Compton/PE/fluorescence physics as full mode), but uses importance-weighted stochastic Rayleigh through non-scoring segments (attenuators, source shielding) -- treating Compton/PE as absorption and only sampling Rayleigh scattering. Photons that exit the crystal boundary are immediately killed (can't contribute to FEP). Faster than full mode but only computes FEP efficiency (no spectrum or total efficiency).
 
+### Detector-side line sets / etendue (`CEELO_BUILD_RESPONSE`)
+
+`src/io/DetectorEtendue.h` builds a fixed set of LINES through the active
+crystal, for hosts that integrate an EXTENDED source. The per-element kernel
+(`eps_fep_element`, Eq. 5) integrates over source points and, at each, over a fan
+of rays toward the crystal; reversing the order of integration gives an integral
+over lines parameterised on the DETECTOR side by a hull point `x` and a direction
+`w`, with the etendue measure `dA |w·n| dΩ` — the same number, since
+`dV dΩ = dA |w·n| dΩ ds`.
+
+Why that helps: everything on the detector side of a line (hull point, direction,
+the material segments through endcap / dead layer / crystal) depends on neither
+the source nor the energy, so one line set serves every energy and every
+iteration of a fit, and the source integral along each line is analytic for a
+uniform source. `build_etendue_lines` samples hull point and direction from a
+4-D Halton set (`src/io/LowDiscrepancy.h`) aimed at a target sphere;
+`sample_hull_points` + `append_etendue_line` are the two halves, so a host with a
+better direction proposal (aimed at its own source solid, say) composes them
+itself. `line_interaction_probabilities` (live cross sections) and
+`DetectorResponse::fep_line_probabilities` (stored mu tables) give the per-line
+kernel, parallel to the rays.
+
+Directions that do not leave the hull, and lines with no active-crystal chord,
+are dropped WITHOUT renormalising — they are counted in `n`, which is what keeps
+the estimator unbiased. Validated in `tests/test_detector_etendue.cpp` against
+the per-point aperture kernel (transparent sphere sources, cylinder and box
+crystals, on and off axis: within ~0.4% at 2^16 lines) and against the analytic
+hull measure. InterSpec's volumetric Activity/Shielding fit is the first
+consumer.
+
 ### Efficiency transfer (EFFTRAN-style, `CEELO_BUILD_RESPONSE`)
 
 `src/io/EfficiencyTransfer.h` packages the classic EFFTRAN workflow: anchor an

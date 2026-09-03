@@ -734,6 +734,14 @@ public:
                            std::vector<double>& w_out,
                            std::vector<Eigen::Vector3d>& dirs_out) const;
 
+    /// Per-ray FEP interaction probability from the STORED mu tables, PARALLEL to `q.rays` (0 for
+    /// a ray without an active chord) - the counterpart of fep_ray_weights for an etendue line set
+    /// (io/DetectorEtendue.h), where the host keeps per-line bookkeeping and needs one entry per
+    /// line rather than the compacted weights.  Identity, pinned by tests/test_detector_etendue:
+    ///     sum_i q.rays[i].omega_w * p_out[i] == sum(w_out) of fep_ray_weights(...)
+    void fep_line_probabilities(double energy_keV, const ApertureQuadrature& q,
+                                std::vector<double>& p_out) const;
+
     /// Everything in eps_fep EXCEPT the kernel: exp(ln_eta + ln_N + ln_k), with the flag and the
     /// fractional sigma the full query would have reported.  So
     ///     eps_fep(E, pos) == fep_prefactor(E, pos, q).value * kernel_K(E, q, MuChoice::Total)

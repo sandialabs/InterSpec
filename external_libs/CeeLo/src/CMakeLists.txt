@@ -26,6 +26,7 @@ add_library(CeeLo
 # top-level CMakeLists, which also locates rapidxml in CEELO_RAPIDXML_DIR).
 if(CEELO_BUILD_RESPONSE)
     target_sources(CeeLo PRIVATE
+        io/DetectorEtendue.cpp
         io/DetectorResponse.cpp
         io/EfficiencyTransfer.cpp
         io/Pchip.cpp

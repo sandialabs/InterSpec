@@ -37,6 +37,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <ctime>
 #include <string>
 #include <map>
@@ -367,6 +368,71 @@ shared_ptr<const ceelo::DetectorResponse> centre_anchored_response( const AngleD
 }//centre_anchored_response(...)
 
 
+/** Attaches a detector-side line set (the LINE integration path) to a calculator built by
+ #build_scenario_calc, from the calculator's own scalar source dims and detector placement - the
+ same construction ShieldingSourceChi2Fcn::volumetricLineCache does inside a fit.
+ */
+void attach_line_cache( GammaInteractionCalc::DistributedSrcCalcT<double> &calc, const int num_lines )
+{
+  using namespace GammaInteractionCalc;
+  BOOST_REQUIRE( calc.m_effResponse );
+  const std::array<double,3> &src = calc.m_shells[calc.m_materialIndex].dims;
+  const std::array<double,3> det_pos = { calc.m_detector.position[0], calc.m_detector.position[1],
+                                         calc.m_detector.position[2] };
+  const std::array<double,3> det_axis = { calc.m_detector.axis[0], calc.m_detector.axis[1],
+                                          calc.m_detector.axis[2] };
+  calc.m_lineCache = build_volumetric_line_cache( calc.m_effResponse, calc.m_geometry,
+                                                  calc.m_materialIndex, src, det_pos, det_axis, 0.0,
+                                                  num_lines );
+}//attach_line_cache(...)
+
+
+/** Integrates a calculator on the requested path (Element = the per-element aperture reference;
+ Line = the detector-side line set with `num_lines` lines), through the production dispatcher. */
+void integrate_on_path( GammaInteractionCalc::DistributedSrcCalcT<double> &calc,
+                        const GammaInteractionCalc::VolumetricIntegrator path,
+                        const int num_lines = -1 )
+{
+  using namespace GammaInteractionCalc;
+  if( path == VolumetricIntegrator::Line )
+    attach_line_cache( calc, (num_lines > 0) ? num_lines : 65536 );
+  const VolumetricIntegrator prev = sm_volumetric_integrator_override;
+  sm_volumetric_integrator_override = path;
+  std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> calcs;
+  calcs.push_back( std::make_unique<DistributedSrcCalcT<double>>( calc ) );
+  try
+  {
+    integrate_volumetric_calculators<double>( calcs, true );
+  }catch( ... )
+  {
+    sm_volumetric_integrator_override = prev;
+    throw;
+  }
+  sm_volumetric_integrator_override = prev;
+  calc.integral = calcs.front()->integral;
+  calc.m_num_evals = calcs.front()->m_num_evals;
+  calc.m_est_rel_error = calcs.front()->m_est_rel_error;
+}//integrate_on_path(...)
+
+
+/** Harness-wide override: when > 0 (INTERSPEC_HARNESS_LINE_COUNT), every #interspec_volumetric_eff
+ call that has a response and was not given an explicit line count runs on the LINE path with this
+ many lines, so any existing rung can be re-run against the line quadrature without being rewritten.
+ -1 (unset) keeps the element path. */
+int harness_line_count()
+{
+  static const int value = [](){
+    const char *env = std::getenv( "INTERSPEC_HARNESS_LINE_COUNT" );
+    const int n = env ? std::atoi( env ) : -1;
+    if( n > 0 )
+      BOOST_TEST_MESSAGE( "  (INTERSPEC_HARNESS_LINE_COUNT=" << n << ": volumetric integrals run on"
+                          " the LINE path)" );
+    return n;
+  }();
+  return value;
+}
+
+
 double interspec_volumetric_eff( const AngleDetector &det,
                                  const Scenario &s,
                                  const double energy_keV,
@@ -376,7 +442,8 @@ double interspec_volumetric_eff( const AngleDetector &det,
                                  const double epsrel = -1.0,
                                  const bool transparent = false,
                                  size_t *num_evals_out = nullptr,
-                                 double *est_rel_error_out = nullptr )
+                                 double *est_rel_error_out = nullptr,
+                                 const int num_lines = -1 )
 {
   using namespace GammaInteractionCalc;
   const double cm = PhysicalUnits::cm;
@@ -384,10 +451,21 @@ double interspec_volumetric_eff( const AngleDetector &det,
   DistributedSrcCalcT<double> calc = build_scenario_calc( det, s, energy_keV, eff_response,
                                                           n_rays, fep_window_keV, transparent );
 
-  if( epsrel > 0.0 )
+  const int use_lines = (num_lines > 0) ? num_lines
+                        : ((eff_response && (epsrel <= 0.0)) ? harness_line_count() : -1);
+
+  if( use_lines > 0 )
+  {
+    // The LINE path (VolumetricLineIntegration_imp.hpp); epsrel does not apply.
+    BOOST_REQUIRE( eff_response );
+    integrate_on_path( calc, VolumetricIntegrator::Line, use_lines );
+  }else if( epsrel > 0.0 )
+  {
     self_shielding_integration_imp<double>( calc, epsrel, 200000000 );
-  else
+  }else
+  {
     self_shielding_integration_imp<double>( calc );
+  }
 
   if( num_evals_out )
     *num_evals_out = calc.m_num_evals;

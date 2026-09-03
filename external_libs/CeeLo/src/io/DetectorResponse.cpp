@@ -1030,6 +1030,41 @@ void DetectorResponse::fep_ray_weights(
     kernel_ray_weights_impl(energy_keV, q, MuChoice::Total, 0.0, w_out, dirs_out);
 }
 
+void DetectorResponse::fep_line_probabilities(
+    double energy_keV, const ApertureQuadrature& q, std::vector<double>& p_out) const {
+    // Same mu lookup and chord model as kernel_ray_weights_impl (FEP: total mu on the scoring
+    // segments, no scatter-in credit), but one entry per ray, in order.
+    struct MuT { double tot; };
+    std::vector<std::pair<const Material*, MuT>> cache;
+    auto mu_of = [&](const Material* m) -> MuT {
+        for (const auto& e : cache)
+            if (e.first == m) return e.second;
+        size_t table = SIZE_MAX;
+        for (const auto& mm : mat_to_mu_)
+            if (mm.first == m) { table = mm.second; break; }
+        if (table == SIZE_MAX)
+            throw std::runtime_error("DetectorResponse::fep_line_probabilities: unknown material");
+        const MuT v{mu_tables[table].eval(energy_keV).mu_total()};
+        cache.push_back({m, v});
+        return v;
+    };
+
+    p_out.assign(q.rays.size(), 0.0);
+    for (size_t i = 0; i < q.rays.size(); ++i) {
+        const KernelRay& r = q.rays[i];
+        if (r.active_len <= 0.0f) continue;
+        double tau_before = 0.0;
+        double p_int = 0.0;
+        for (const RaySegment& s : r.segs) {
+            const double mu_tot = mu_of(s.material).tot;
+            if (s.is_scoring)
+                p_int += std::exp(-tau_before) * (1.0 - std::exp(-mu_tot * s.length));
+            tau_before += mu_tot * s.length;
+        }
+        p_out[i] = p_int;
+    }
+}
+
 void DetectorResponse::total_ray_weights(
     double energy_keV, const ApertureQuadrature& q,
     std::vector<double>& w_out, std::vector<Eigen::Vector3d>& dirs_out) const {
