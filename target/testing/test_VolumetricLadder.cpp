@@ -49,6 +49,7 @@
 #include <vector>
 #include <iomanip>
 #include <sstream>
+#include <ctime>
 #include <iostream>
 
 #define BOOST_TEST_MODULE VolumetricLadder_suite
@@ -1005,3 +1006,319 @@ BOOST_AUTO_TEST_CASE( Rung4_ScenarioMatrixTruth, * boost::unit_test::disabled() 
   cout << "};\n" << flush;
   sm_aperture_frame_legacy_origin = saved;
 }//BOOST_AUTO_TEST_CASE( Rung4_ScenarioMatrixTruth )
+
+
+namespace
+{
+/** The mu the FEP leg should use, as a function of the window half-width and of how deep the photon
+ already is, so the credit can be studied as a one-line policy rather than a hard-wired choice.
+
+   `win_keV <= 0`     : mu_total.  No credit - the choice every model/truth number before 2026-09-02
+                        was silently making.
+   `win_keV > 0`      : mu_total - f_win*mu_Compton (`fep_removal_coefficient`), the flat credit.
+   `tau_c > 0`        : the same, with the Compton term scaled by exp(-tau_src/tau_c) - CeeLo's
+                        depth-aware form (`fep_depth_survival_credit`, kFepDepthTauC = 5 mfp).  A
+                        photon that has already crossed many mean free paths is unlikely to have
+                        stayed in the peak while doing so, so the in-window credit must fade.
+
+ `tau_src` is the mu_total optical depth the photon has to cross to leave, i.e. what the flat credit
+ implicitly assumes is zero.  The shell walk carries ONE coefficient per shell, so a genuinely
+ per-ray depth-aware mu is a kernel change; this evaluates the policy at the geometry's own tau
+ first, which is what decides whether that change is worth making.
+ */
+double fep_leg_mu( const Material &mat, const double energy_keV, const double win_keV,
+                   const double tau_src, const double tau_c )
+{
+  const double mu_total = GammaInteractionCalc::transmition_length_coefficient(
+                                                  &mat, static_cast<float>(energy_keV) );
+  if( !(win_keV > 0.0) )
+    return mu_total;
+
+  const double flat = fep_removal_coefficient( mat, energy_keV, win_keV );
+  if( !(tau_c > 0.0) )
+    return flat;
+
+  // flat == mu_total - f_win*mu_cs, so (mu_total - flat) IS the credit; fade it with depth.
+  return mu_total - (mu_total - flat)*std::exp( -std::max(0.0,tau_src)/tau_c );
+}//fep_leg_mu(...)
+
+}//namespace
+
+
+/** RUNG 5 - the full-energy-peak window credit, studied against the CACHED Monte Carlo.
+
+ Every model-vs-truth number in this project before 2026-09-02 used `mu_rem = mu_total`, which is not
+ the neutral choice it looks like: it attenuates away the forward Compton scatters that lose less than
+ the peak window and therefore stay in the peak.  Rung 3 showed the credit closing water at 60 keV from
+ -6.4% to +0.5%, and over-crediting deep steel.  This case measures the policy across the whole cached
+ grid so the choice is made on data:
+
+   mu_total, then the flat credit at 0.375 / 0.75 / 1.5 keV half-windows (the truth bank was generated
+   at CeeLo's 0.75 keV default, so that column is the like-for-like one and the other two are the
+   sensitivity), then the depth-aware credit at 0.75 keV with tau_c = 5 mfp.
+
+ Runs entirely off the Monte-Carlo cache: no new MC, so it is cheap to re-run after any model change.
+ */
+BOOST_AUTO_TEST_CASE( Rung5_FepWindowCredit, * boost::unit_test::disabled() )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  McCache cache;
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+
+  const shared_ptr<ceelo::DetectorResponse> far_anchor
+        = ladder_anchor_response( det, cache, 25.0, anchor_energies() );
+  map<long long,shared_ptr<ceelo::DetectorResponse>> near_anchors;
+  const auto anchor_for = [&]( const double d ) {
+    const long long k = llround( d*1.0e6 );
+    if( !near_anchors.count(k) )
+      near_anchors[k] = ladder_anchor_response( det, cache, d, scenario_energies() );
+    return near_anchors[k];
+  };
+
+  BOOST_TEST_MESSAGE( "model/MC - 1, transfer anchored at the source's own distance.  win = FEP"
+                      " half-window (keV); depth = the same 0.75 keV credit faded by"
+                      " exp(-tau/5mfp)." );
+  BOOST_TEST_MESSAGE( "material depth lateral standoff  E(keV)   tau   | mu_total   win0.375   win0.75"
+                      "   win1.50    depth0.75" );
+
+  // (a) The point-at-depth grid: one eval_rect per row, no outer quadrature at all.
+  for( const bool dense : { true, false } )
+  {
+    const shared_ptr<const Material> mat = matdb->material( scenario_matrix_material( dense ) );
+    BOOST_REQUIRE( mat );
+    const vector<double> depths = dense ? vector<double>{ 0.02, 0.05, 0.1, 0.2, 0.5 }
+                                        : vector<double>{ 0.5, 1.0, 2.0, 5.0 };
+    const vector<double> energies = dense ? vector<double>{ 60.0, 344.0, 1332.5 }
+                                          : vector<double>{ 60.0 };
+    for( const double standoff : { 1.0, 5.0, 50.0 } )
+    {
+      for( const double lateral : { 0.0, 2.0, 4.0 } )
+      {
+        for( const double depth : depths )
+        {
+          PointAtDepth p;
+          p.depth_cm = depth;  p.lateral_cm = lateral;  p.standoff_cm = standoff;  p.dense = dense;
+
+          for( const double e : energies )
+          {
+            const double mu_tot = transmition_length_coefficient( mat.get(), static_cast<float>(e) );
+            const double tau = mu_tot * depth * PhysicalUnits::cm;
+            if( (standoff > 20.0) && (tau > 1.6) )
+              continue;   //the row rung 3 skipped; its MC is not in the cache
+            const double target = (standoff > 20.0) ? 0.01 : 0.0025;
+
+            ScenarioMcMaterials mats;
+            ceelo::EfficiencyCalculator mc_calc;
+            configure_point_at_depth_mc( mc_calc, det, p, mats );
+            const McResult mc = run_mc( mc_calc, cache, point_at_depth_key( p ), e, target );
+            BOOST_CHECK_MESSAGE( mc.from_cache, "Rung5 ran Monte Carlo (cache miss) - it is meant to"
+                                 " re-score rung 3/4a results, so a miss means the key drifted" );
+
+            const shared_ptr<ceelo::DetectorResponse> resp = anchor_for( point_center_distance_cm( p ) );
+
+            ostringstream o;
+            o << left << setw(8) << (dense ? "steel" : "water") << right << fixed
+              << setprecision(2) << setw(6) << depth << setw(8) << lateral << setw(9) << standoff
+              << setprecision(1) << setw(8) << e << setprecision(2) << setw(7) << tau << "  |";
+
+            // mu_total, three flat windows, then the depth-aware one.
+            const double wins[4] = { -1.0, 0.375, 0.75, 1.5 };
+            for( int i = 0; i < 5; ++i )
+            {
+              const double win = (i < 4) ? wins[i] : 0.75;
+              const double tau_c = (i < 4) ? -1.0 : ceelo::kFepDepthTauC;
+              DistributedSrcCalcT<double> c = build_point_at_depth_calc( det, p, e, resp );
+              const double mu = fep_leg_mu( *mat, e, win, tau, tau_c );
+              for( DistributedSrcCalcT<double>::ShellInfo &sh : c.m_shells )
+                sh.trans_len_coef = mu;
+              o << " " << pct( point_kernel_eff( c )/mc.eff - 1.0 );
+            }
+            BOOST_TEST_MESSAGE( o.str() );
+          }//for( energies )
+        }//for( depths )
+      }//for( lateral )
+    }//for( standoff )
+  }//for( dense )
+
+  // (b) The slab volume grid, so the same policy is read on a whole integral rather than one point.
+  BOOST_TEST_MESSAGE( "" );
+  BOOST_TEST_MESSAGE( "volume slabs (r=4 cm cylinders):" );
+  BOOST_TEST_MESSAGE( "material  t(cm) standoff  E(keV)   tau   | mu_total   win0.375   win0.75"
+                      "   win1.50    depth0.75" );
+  for( const bool dense : { true, false } )
+  {
+    const shared_ptr<const Material> mat = matdb->material( scenario_matrix_material( dense ) );
+    for( const double standoff : { 1.0, 15.0, 50.0 } )
+    {
+      for( const double e : { 60.0, 344.0, 1332.5 } )
+      {
+        const double mu_per_cm = transmition_length_coefficient( mat.get(), static_cast<float>(e) )
+                                 * PhysicalUnits::cm;
+        for( const double tau : { 0.1, 0.3, 1.0, 3.0, 10.0 } )
+        {
+          const double t = tau / mu_per_cm;
+          if( t > 20.0 )
+            continue;
+          if( (standoff > 20.0) && (tau > 3.5) )
+            continue;
+          const double target = (standoff > 20.0) ? 0.01 : 0.0025;
+
+          Scenario s;
+          ostringstream nm;
+          nm << "slab-" << (dense ? "steel" : "water") << "-t" << fixed << setprecision(4) << t
+             << "-d" << standoff;
+          s.name = nm.str();
+          s.radius_cm = 4.0;
+          s.half_length_cm = 0.5*t;
+          s.standoff_cm = standoff;
+          s.dense = dense;
+          s.shield_cm = 0.0;
+
+          ScenarioMcMaterials mats;
+          ceelo::EfficiencyCalculator mc_calc;
+          configure_scenario_mc( mc_calc, det, s, mats );
+          const McResult mc = run_mc( mc_calc, cache, scenario_mc_key( s ), e, target );
+          BOOST_CHECK_MESSAGE( mc.from_cache, "Rung5 ran Monte Carlo (cache miss)" );
+
+          const shared_ptr<ceelo::DetectorResponse> resp
+                = anchor_for( scenario_center_distance_cm( s ) );
+
+          ostringstream o;
+          o << left << setw(8) << (dense ? "steel" : "water") << right << fixed
+            << setprecision(3) << setw(7) << t << setprecision(1) << setw(8) << standoff
+            << setw(8) << e << setprecision(2) << setw(7) << tau << "  |";
+
+          const double wins[4] = { -1.0, 0.375, 0.75, 1.5 };
+          for( int i = 0; i < 5; ++i )
+          {
+            const double win = (i < 4) ? wins[i] : 0.75;
+            const double tau_c = (i < 4) ? -1.0 : ceelo::kFepDepthTauC;
+            // interspec_volumetric_eff builds its own shells, so drive it through fep_window_keV for
+            //  the flat columns and fall back to a hand-built calculator for the depth-aware one.
+            double v = 0.0;
+            if( tau_c <= 0.0 )
+            {
+              v = interspec_volumetric_eff( det, s, e, resp, -1, win );
+            }else
+            {
+              DistributedSrcCalcT<double> c = build_scenario_calc( det, s, e, resp );
+              const double mu = fep_leg_mu( *mat, e, win, tau, tau_c );
+              for( DistributedSrcCalcT<double>::ShellInfo &sh : c.m_shells )
+                sh.trans_len_coef = mu;
+              self_shielding_integration_imp<double>( c );
+              v = c.integral / (scenario_volume_cm3(s) * pow(PhysicalUnits::cm,3.0));
+            }
+            o << " " << pct( v/mc.eff - 1.0 );
+          }
+          BOOST_TEST_MESSAGE( o.str() );
+        }//for( tau )
+      }//for( energies )
+    }//for( standoff )
+  }//for( dense )
+}//BOOST_AUTO_TEST_CASE( Rung5_FepWindowCredit )
+
+
+/** COST: what one energy of the volumetric model actually costs, split into its pieces.
+
+ The per-element aperture is the unit of work: each element asks the response for a fan of
+ `m_effNumRays` ray directions (a CeeLo ray trace apiece) and then ray-traces every one of them
+ through InterSpec's shells.  So the cost of a volume integral is
+ (number of elements the adaptive rule uses) x (rays) x (one CeeLo trace + one InterSpec walk), and
+ the useful numbers are the per-element cost, the element count, and the total.
+
+ Reported as CPU seconds (the model is single-threaded, so CPU == wall here).
+ */
+BOOST_AUTO_TEST_CASE( CostPerEnergy )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+  const double cm = PhysicalUnits::cm;
+
+  const auto cpu_now = []() -> double {
+    return static_cast<double>( std::clock() ) / CLOCKS_PER_SEC;
+  };
+
+  // (1) One bare transfer query: eps_fep at a point.  This is what the FLAT-disk-plus-response model
+  //     costs per element, and what a point-source efficiency costs outright.
+  {
+    const int n = 2000;
+    const double t0 = cpu_now();
+    double sink = 0.0;
+    for( int i = 0; i < n; ++i )
+      sink += det.mc_transfer->eps_fep( 60.0 + 0.001*i, 0.3, 0.0, 3.0 ).value;
+    const double dt = (cpu_now() - t0) / n;
+    ostringstream o;
+    o << "  one eps_fep transfer query: " << scientific << setprecision(3) << dt << " s"
+      << " (2048-ray internal quadrature)   [sink " << sink << "]";
+    BOOST_TEST_MESSAGE( o.str() );
+  }
+
+  // (2) One per-element aperture at the shipped 512 rays, and at 128, so the scaling is visible.
+  for( const int rays : { 128, 512, 2048 } )
+  {
+    const int n = 200;
+    const double to_det[3] = { 0.6, 0.0, 0.8 };
+    const double axis[3] = { 0.0, 0.0, -1.0 };
+    const double t0 = cpu_now();
+    size_t sink = 0;
+    for( int i = 0; i < n; ++i )
+      sink += build_element_aperture( *det.mc_transfer, 60.0 + 0.001*i, 3.0*cm, 0.8, to_det, axis,
+                                      rays ).weights.size();
+    const double dt = (cpu_now() - t0) / n;
+    ostringstream o;
+    o << "  one element aperture, " << setw(4) << rays << " rays: " << scientific << setprecision(3)
+      << dt << " s   [" << (sink/n) << " rays kept]";
+    BOOST_TEST_MESSAGE( o.str() );
+  }
+
+  // (3) A whole volume integral per energy, for representative scenarios: total, element count, and
+  //     the cost per element (which should be the aperture cost plus the shell walk).
+  BOOST_TEST_MESSAGE( "" );
+  BOOST_TEST_MESSAGE( "  scenario                   E(keV)   CPU s   elements   s/element  ndim" );
+  for( const char *name : { "small-near-light", "large-near-dense", "shielded-near-dense",
+                            "box-large-near-dense", "box-slab-near-dense", "large-far-dense" } )
+  {
+    const Scenario s = find_scenario( name );
+    for( const double e : { 60.0, 1332.5 } )
+    {
+      size_t evals = 0;
+      double est_err = 0.0;
+      const double t0 = cpu_now();
+      const double eff = interspec_volumetric_eff( det, s, e, det.mc_transfer, -1, -1.0, -1.0, false,
+                                                   &evals, &est_err );
+      const double dt = cpu_now() - t0;
+      ostringstream o;
+      o << "  " << left << setw(26) << s.name << right << fixed << setprecision(1) << setw(7) << e
+        << setprecision(2) << setw(9) << dt << setw(11) << evals << "  " << scientific
+        << setprecision(2) << (evals ? dt/evals : 0.0) << "   "
+        << ((s.shape == Shape::Box) ? 3 : 2) << "   [eff " << setprecision(3) << eff << "]";
+      BOOST_TEST_MESSAGE( o.str() );
+    }
+  }
+
+  // (4) The flat-disk model on the same scenarios, as the baseline the per-ray kernel is paid against.
+  BOOST_TEST_MESSAGE( "" );
+  BOOST_TEST_MESSAGE( "  flat-disk (no response, no per-ray kernel), same scenarios:" );
+  for( const char *name : { "large-near-dense", "box-large-near-dense" } )
+  {
+    const Scenario s = find_scenario( name );
+    for( const double e : { 60.0, 1332.5 } )
+    {
+      size_t evals = 0;
+      double est_err = 0.0;
+      const double t0 = cpu_now();
+      interspec_volumetric_eff( det, s, e, nullptr, -1, -1.0, -1.0, false, &evals, &est_err );
+      const double dt = cpu_now() - t0;
+      ostringstream o;
+      o << "  " << left << setw(26) << s.name << right << fixed << setprecision(1) << setw(7) << e
+        << setprecision(4) << setw(11) << dt << setw(11) << evals;
+      BOOST_TEST_MESSAGE( o.str() );
+    }
+  }
+}//BOOST_AUTO_TEST_CASE( CostPerEnergy )
