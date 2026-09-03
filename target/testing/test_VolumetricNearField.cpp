@@ -259,19 +259,32 @@ BOOST_AUTO_TEST_CASE( VolumetricNearFieldVsTruth )
       const bool low_energy = (row.energy_keV < 130.0);
       const bool contact = (s.standoff_cm < 5.0);
 
-      // Measured over the 0.25% bank, centre-anchored (n=144):
+      // Measured over the 0.25% bank, centre-anchored (n=144), split by the MECHANISM that limits
+      //  each group rather than by convenience:
       //
-      //      far field / wide angle        median 0.47%   max 2.51%
-      //      contact, E >= 130 keV         median 0.48%   max 1.56%
-      //      contact, E <  130 keV         median 0.70%   max 5.75%
+      //      group                                  n    median   p90    max   allowance
+      //      far field / wide angle                36     0.47   2.03   2.51     3.5%
+      //      contact, E >= 130 keV                 60     0.48   1.16   1.56     2.5%
+      //      contact, E <  130 keV, unshielded     36     0.64   1.33   2.91     4%
+      //      contact, E <  130 keV, SHIELDED       12     1.32   4.74   5.75     7%
       //
-      //  The only rows above ~3% are the four SHIELDED ones at 60 keV (+4.7 to +5.8%, tau 4.6-12.8),
-      //  where the model transports the uncollided photon through many mean free paths of iron and
-      //  the truth counts scatter it has no term for.  Everything else is inside 3%.
+      //  Splitting the shielded rows out is the point.  They are the only ones that need a large
+      //  allowance - at 60 keV behind 5 mm of iron the model transports an UNCOLLIDED photon through
+      //  4.6-12.8 mean free paths while the truth counts the scatter that reaches the peak anyway, a
+      //  physics term the model does not have - and lumping them in with the rest was inflating the
+      //  budget for 48 rows to cover a limitation of 12.  The other 132 rows sit under 2.6%.
+      //
+      //  Every allowance leaves about one point over the worst row it must admit, on top of the
+      //  3-sigma term.  That is deliberately thin: the model side is deterministic (same binary, same
+      //  recorded truth, same answer), so the headroom is there for platform floating-point drift and
+      //  for a truth regeneration moving rows by their own sigma, not for run-to-run noise.
       //
       //  If this fails, the volume integral or the per-ray kernel moved.  That is the finding; do
       //  not widen it.
-      const double centre_allowance = contact ? (low_energy ? 0.07 : 0.03) : 0.04;
+      const bool shielded = (s.shield_cm > 0.0);
+      const double centre_allowance = !contact ? 0.035
+                                    : (!low_energy ? 0.025
+                                    : (shielded ? 0.07 : 0.04));
       const double centre_tol = centre_allowance + mc_3sigma;
       BOOST_CHECK_MESSAGE( fabs(centre - truth) <= centre_tol*truth,
                            s.name << " @ " << row.energy_keV << " keV: centre-anchored model "
