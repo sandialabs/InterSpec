@@ -70,12 +70,13 @@
  per Jet pass - see that function for why holding one proposal across a neighbourhood matters more
  than aiming it perfectly.
 
- LIMIT.  A source extent that is a vanishing fraction of the standoff makes chord/volume a 0/0 here,
- and the ray/quadric chord loses precision long before that, so the dispatcher
- (#integrate_volumetric_calculators) hands such a source to the element path, blending over one
- decade of the extent/distance ratio so the objective stays continuous through the hand-off (see
- #sm_line_path_extent_ratio_lo; test_ShieldingDimLimit pins the element path's own zero-thickness
- behaviour and the continuity of the blend).
+ LIMIT.  A source extent that is a vanishing fraction of the standoff makes chord/volume a 0/0 here.
+ The intervals are computed from each line's closest approach to the assembly origin
+ (#line_shell_intervals_imp), which keeps the chords accurate down to an extent/distance ratio of
+ ~1e-10; below that the dispatcher (#integrate_volumetric_calculators) integrates a copy of the
+ source whose vanishing extent is floored at that ratio (#sm_line_path_extent_ratio_floor), so the
+ value and derivative stay finite and continuous all the way to exactly zero and the line path owns
+ the whole domain (test_ShieldingDimLimit pins this).
 
  UNITS.  CeeLo works in cm; everything here is in PhysicalUnits.  The etendue weight of a line is
  `omega_w` (cm^2, already divided by 4 pi) times cm^2 in PhysicalUnits; multiplied by an emission
@@ -91,6 +92,7 @@
 #include <vector>
 #include <cassert>
 #include <algorithm>
+#include <type_traits>
 
 #include "io/DetectorEtendue.h"
 #include "io/LowDiscrepancy.h"
@@ -119,19 +121,22 @@ inline VolumetricIntegrator sm_volumetric_integrator_override = VolumetricIntegr
  (2 = exact for a linear remainder; radial in-situ profiles use 4 - see #line_source_integration_imp). */
 inline int sm_line_chord_gl_points = 2;
 
-/** Hand-off to the element path, as a RATIO of the smallest source extent to the source-detector
- distance: below `lo` a calculator is integrated purely on the element path, above `hi` purely on
- the line path, and between them the two are blended with a smoothstep in the log of the ratio.
+/** Smallest source extent the line path integrates, as a RATIO of the extent to the source-detector
+ distance: a source shell thinner than this in any dimension is integrated as if it were exactly
+ this thick (the SCALAR part of the dimension is floored, its derivative lane is kept - see
+ #integrate_volumetric_calculators), so the value and derivative stay finite and continuous down to
+ an extent of exactly zero.
 
- The ratio, not an absolute size, is what matters.  A line's chord through the source comes out of
- a ray/quadric intersection whose discriminant is a difference of terms of order (distance)^2, so
- the chord carries a relative error of about eps*(distance/extent)^2: at 100 cm a 1e-2 cm source is
- good to 1e-8, a 1e-4 cm source to 1e-4, and a 1e-6 cm source is numerical noise (measured: the
- sphere sweep in test_ShieldingDimLimit swung 38% at extent/distance = 1e-8).  The window below
- keeps the line path a decade clear of any of that, and the element path - whose source-shell
- walkers factor the vanishing radius out of the discriminant on purpose - takes it from there. */
-inline double sm_line_path_extent_ratio_lo = 1.0e-5;
-inline double sm_line_path_extent_ratio_hi = 1.0e-4;
+ The ratio, not an absolute size, is what matters.  Computed from a detector-side origin, a line's
+ chord through the source comes out of a ray/quadric intersection whose discriminant is a
+ difference of terms of order (distance)^2, i.e. a relative error of eps*(distance/extent)^2
+ (measured: the sphere sweep in test_ShieldingDimLimit swung 38% at extent/distance = 1e-8).
+ #line_shell_intervals_imp therefore re-origins every line at its closest approach to the assembly
+ origin first: the single subtraction that involves the detector-side origin then costs
+ eps*(distance/extent) - about 1e-6 at this ratio - and nothing downstream sees a distance-sized
+ term.  Below the floor the chord/volume quotient the integrand needs is a genuine 0/0 (both vanish
+ together); its limit is what the floored source reproduces, to O(ratio). */
+inline double sm_line_path_extent_ratio_floor = 1.0e-10;
 
 
 /** Picks the argument with the larger / smaller SCALAR part (a kink, not a smoothing - the
@@ -145,12 +150,15 @@ inline const T &select_min( const T &x, const T &y ) { return (scalar_of(x) <= s
 /** Interval [a,b] of the line point(s) = o - s*d (s the distance BACK from `o` toward the source;
  d the unit photon direction) inside the slab |coord| <= half, on one axis.  False when the line
  misses the slab.  A ray parallel to the slab's planes is inside (unbounded interval, with large
- sentinels) or outside for every s. */
-template<typename T>
-inline bool line_slab_interval_imp( const T &o_c, const double d_c, const T &half, T &a, T &b )
+ sentinels) or outside for every s.
+
+ `D` is the direction's type: double for the cached detector-side lines, T for a ray whose direction
+ depends on the fit parameters (#shell_path_to_point_imp). */
+template<typename T, typename D>
+inline bool line_slab_interval_imp( const T &o_c, const D &d_c, const T &half, T &a, T &b )
 {
   static const double big = 1.0e300;
-  if( d_c == 0.0 )
+  if( scalar_of(d_c) == 0.0 )
   {
     if( std::fabs(scalar_of(o_c)) >= std::fabs(scalar_of(half)) )
       return false;
@@ -168,41 +176,58 @@ inline bool line_slab_interval_imp( const T &o_c, const double d_c, const T &hal
 
 
 /** Interval of the line inside the quadric |o_perp - s d_perp|^2 <= R^2 over the given axes
- (two axes: an infinite cylinder along the third; three: a sphere).  False when missed. */
-template<typename T, int NAxes>
-inline bool line_quadric_interval_imp( const T o[3], const double d[3], const T &radius, T &a, T &b )
+ (two axes: an infinite cylinder along the third; three: a sphere).  False when missed.
+
+ Solved through the closest approach s* = (o.d)/(d.d) and the impact parameter |o_perp - s* d_perp|
+ formed as a VECTOR, rather than through the textbook discriminant B^2 - A C: that discriminant is a
+ difference of two terms of order |o|^2 whose result is of order R^2, so it loses
+ eps*(|o|/R)^2 of relative precision, while the vector form's only cancellation is the linear
+ o - s* d.  See #sm_line_path_extent_ratio_floor for why this matters. */
+template<int NAxes, typename T, typename D>
+inline bool line_quadric_interval_imp( const T o[3], const D d[3], const T &radius, T &a, T &b )
 {
   using namespace std;
   using namespace ceres;
   static const double big = 1.0e300;
 
-  double A = 0.0;
-  T B(0.0), C(0.0);
+  // The direction may be scalar (cached lines) or T (a node ray); A follows it.
+  using AType = std::conditional_t<std::is_same_v<D,double>,double,T>;
+  AType A( 0.0 );
+  T B( 0.0 );
   for( int i = 0; i < NAxes; ++i )
   {
     A += d[i]*d[i];
     B += o[i]*d[i];
-    C += o[i]*o[i];
   }
-  C -= radius*radius;
 
-  if( A < 1.0e-24 )
+  if( scalar_of(A) < 1.0e-24 )
   {
     // Parallel to the cylinder axis: inside for every s, or never.
-    if( scalar_of(C) >= 0.0 )
+    T C( 0.0 );
+    for( int i = 0; i < NAxes; ++i )
+      C += o[i]*o[i];
+    if( scalar_of(C) >= scalar_of(radius*radius) )
       return false;
     a = T(-big);
     b = T(big);
     return true;
   }
 
-  // s^2 A - 2 s B + C = 0
-  const T disc = B*B - A*C;
+  // Closest approach, and the squared impact parameter from the vector o_perp - s* d_perp.
+  const T s_star = B / A;
+  T b2( 0.0 );
+  for( int i = 0; i < NAxes; ++i )
+  {
+    const T q = o[i] - s_star*d[i];
+    b2 += q*q;
+  }
+
+  const T disc = radius*radius - b2;
   if( scalar_of(disc) <= 0.0 )
     return false;
-  const T root = sqrt( disc );
-  a = (B - root) / A;
-  b = (B + root) / A;
+  const T root = sqrt( disc / A );
+  a = s_star - root;
+  b = s_star + root;
   return true;
 }//line_quadric_interval_imp(...)
 
@@ -210,14 +235,14 @@ inline bool line_quadric_interval_imp( const T o[3], const double d[3], const T 
 /** Interval of the line inside one shell of the given geometry (dims per #GeometryType:
  cylinders {radius, half_z}, box {hx, hy, hz}, sphere {radius}).  False when missed.
  The assembly frame is used throughout: cylinders along z, box axis-aligned, sphere at the origin. */
-template<typename T>
+template<typename T, typename D>
 inline bool line_shell_interval_imp( const GeometryType geometry, const std::array<T,3> &dims,
-                                     const T o[3], const double d[3], T &a, T &b )
+                                     const T o[3], const D d[3], T &a, T &b )
 {
   switch( geometry )
   {
     case GeometryType::Spherical:
-      return line_quadric_interval_imp<T,3>( o, d, dims[0], a, b )
+      return line_quadric_interval_imp<3>( o, d, dims[0], a, b )
              && (scalar_of(a) < scalar_of(b));
 
     case GeometryType::CylinderEndOn:
@@ -226,7 +251,7 @@ inline bool line_shell_interval_imp( const GeometryType geometry, const std::arr
       T az, bz, as, bs;
       if( !line_slab_interval_imp( o[2], d[2], dims[1], az, bz ) )
         return false;
-      if( !line_quadric_interval_imp<T,2>( o, d, dims[0], as, bs ) )
+      if( !line_quadric_interval_imp<2>( o, d, dims[0], as, bs ) )
         return false;
       a = select_max( az, as );
       b = select_min( bz, bs );
@@ -252,6 +277,61 @@ inline bool line_shell_interval_imp( const GeometryType geometry, const std::arr
   assert( 0 );
   return false;
 }//line_shell_interval_imp(...)
+
+
+/** Intervals [a_l, b_l] of the line point(s) = o - s d through every shell of a nested stack,
+ outermost first: `crossed[l]` is set for each shell the line enters, a_l is clamped at zero (nothing
+ on the far side of `o`, which is a detector-side point), and once a shell is missed every shell
+ inside it is too.  The single place both the per-line integration and the per-point shell walk
+ (#shell_path_to_point_imp) get their intervals from.
+
+ RE-ORIGIN.  `o` is a whole source-detector distance from the source, and computed from it the
+ intervals lose precision as the source shrinks - quadratically for the quadrics, linearly for the
+ slabs (see #line_quadric_interval_imp).  So every interval is computed from the foot of the
+ perpendicular from the assembly origin, o' = o - s* d with s* = (o.d)/(d.d), whose magnitude is of
+ order the source extent for any line that hits the source, and shifted back by s*.  The only
+ operation that still sees a distance-sized term is the one subtraction forming o', which costs
+ eps*(distance/extent) - the linear sensitivity #sm_line_path_extent_ratio_floor is set by. */
+template<typename T, typename D>
+inline void line_shell_intervals_imp( const GeometryType geometry,
+                                      const std::vector<typename DistributedSrcCalcT<T>::ShellInfo> &shells,
+                                      const T o[3], const D d[3],
+                                      std::vector<T> &a, std::vector<T> &b, std::vector<char> &crossed )
+{
+  const size_t num_shells = shells.size();
+  a.resize( num_shells );
+  b.resize( num_shells );
+  crossed.assign( num_shells, 0 );
+
+  using AType = std::conditional_t<std::is_same_v<D,double>,double,T>;
+  AType dd( 0.0 );
+  T od( 0.0 );
+  for( int i = 0; i < 3; ++i )
+  {
+    dd += d[i]*d[i];
+    od += o[i]*d[i];
+  }
+  const T s_star = od / dd;
+  const T o_near[3] = { o[0] - s_star*d[0], o[1] - s_star*d[1], o[2] - s_star*d[2] };
+
+  for( size_t l = num_shells; l-- > 0; )
+  {
+    T al, bl;
+    if( !line_shell_interval_imp( geometry, shells[l].dims, o_near, d, al, bl ) )
+      break;
+    al += s_star;
+    bl += s_star;
+    // A shell entirely behind `o` cannot happen for a detector-side origin (pastDetector guard);
+    //  treat it as missed anyway.
+    if( scalar_of(bl) <= 0.0 )
+      break;
+    if( scalar_of(al) < 0.0 )
+      al = T(0.0);
+    a[l] = al;
+    b[l] = bl;
+    crossed[l] = 1;
+  }
+}//line_shell_intervals_imp(...)
 
 
 /** The response prefactor P(E; d, cos_theta, phi) = exp(ln_eta + ln_N + ln_k) tabulated on a
@@ -480,7 +560,17 @@ struct VolumetricLineCache
    lines) whenever the dimensions move at all - and an objective that jumps by 0.2% between
    optimizer steps is one Levenberg-Marquardt cannot take clean steps on.  Holding one proposal
    across a whole neighbourhood makes the objective smooth there, which is what the optimizer
-   actually needs; the tolerance is well inside the 1.5x padding, so coverage is never at risk. */
+   actually needs; the tolerance is well inside the 1.5x padding, so coverage is never at risk.
+
+   MEASURED, and this is the known weakness of the scheme: the window makes rebuilds RARE, it does
+   not make them free.  `LineCacheRebuildContinuity` sweeps a source radius across a boundary and
+   finds a step of ~1.6e-3 in the integral there - the proposal is re-aimed by the whole width of
+   the window at once, so the sets either side are effectively independent quadratures and the
+   estimate moves by their discretisation.  A fit that walks a source dimension across a boundary
+   therefore meets a ~0.16% discontinuity, which is exactly what this window was meant to avoid and
+   only defers.  The fix is NOT a wider window - a fit crosses it eventually - but to build the
+   proposal ONCE per fit, padded to the dimension parameters' upper BOUNDS instead of their current
+   value, so it spans the whole search domain and never needs rebuilding.  Tracked in TODO.md. */
   bool matches( const ceelo::DetectorResponse *resp, const GeometryType geom, const size_t mat_index,
                 const std::array<double,3> &outer_dims, const std::array<double,3> &det_pos,
                 const std::array<double,3> &axis, const double azimuth, const int n ) const
@@ -490,13 +580,16 @@ struct VolumetricLineCache
         || (num_lines != n) )
       return false;
 
+    // Dimensions at or below the extent floor all describe the same proposal (the floor is what the
+    //  sampler aimed at), so a shell collapsing to zero does not rebuild on every evaluation.
+    const double ext_floor = sm_line_path_extent_ratio_floor
+                             * std::sqrt( det_pos[0]*det_pos[0] + det_pos[1]*det_pos[1] + det_pos[2]*det_pos[2] );
     for( size_t i = 0; i < 3; ++i )
     {
-      const double have = source_outer_dims[i], want = outer_dims[i];
+      const double have = std::max( source_outer_dims[i], ext_floor );
+      const double want = std::max( outer_dims[i], ext_floor );
       if( have == want )
         continue;
-      if( !(have > 0.0) || !(want > 0.0) )
-        return false;           //one of them is degenerate: rebuild rather than guess
       const double ratio = want/have;
       if( (ratio < 0.8) || (ratio > 1.2) )
         return false;
@@ -639,13 +732,15 @@ inline std::shared_ptr<const VolumetricLineCache> build_volumetric_line_cache(
   const Eigen::Vector3d r0 = response->reference_point_position();
   cache->ref_c = { r0.x(), r0.y(), r0.z() };
 
-  // Proposal solid: the source padded in every dimension, floored so a vanishing extent still
-  //  gives the sampler something to aim at (the dispatcher hands truly degenerate sources to
-  //  the element path before this matters).
+  // Proposal solid: the source padded in every dimension, floored at the same extent ratio the
+  //  dispatcher floors the source itself at, so the proposal always covers the (floored) source.
+  const double det_dist = std::sqrt( det_position[0]*det_position[0] + det_position[1]*det_position[1]
+                                     + det_position[2]*det_position[2] );
+  const double ext_floor = sm_line_path_extent_ratio_floor * det_dist;
   std::array<double,3> pdims = source_outer_dims;
   const int ndims = (geometry == GeometryType::Spherical) ? 1 : ((geometry == GeometryType::Rectangular) ? 3 : 2);
   for( int i = 0; i < ndims; ++i )
-    pdims[i] = std::max( pad*std::fabs(pdims[i]), 1.0e-9*cm );
+    pdims[i] = pad * std::max( std::fabs(pdims[i]), ext_floor );
   cache->proposal_dims = pdims;
   const double vol_p = solid_volume( geometry, pdims );
 
@@ -967,20 +1062,7 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
                        lead.m_detector.position[1] + orel[1],
                        lead.m_detector.position[2] + orel[2] };
 
-      // Intervals of every shell; nested, so once a shell is missed everything inside it is too.
-      for( size_t l = 0; l < num_shells; ++l )
-        crossed[l] = 0;
-      for( size_t l = num_shells; l-- > 0; )
-      {
-        if( !line_shell_interval_imp( geometry, shells[l].dims, o, d.data(), a[l], b[l] ) )
-          break;
-        // A shell behind the detector (b <= 0) cannot happen (pastDetector guard); clamp anyway.
-        if( scalar_of(b[l]) <= 0.0 )
-          break;
-        if( scalar_of(a[l]) < 0.0 )
-          a[l] = T(0.0);
-        crossed[l] = 1;
-      }
+      line_shell_intervals_imp( geometry, shells, o, d.data(), a, b, crossed );
       if( !crossed[m] )
         continue;
 
@@ -1206,33 +1288,31 @@ double smallest_source_extent( const DistributedSrcCalcT<T> &calc )
 }//smallest_source_extent(...)
 
 
-/** Blend weight of the ELEMENT path for a calculator: 0 above #sm_line_path_extent_ratio_hi,
- 1 below #sm_line_path_extent_ratio_lo, a smoothstep in the log of the extent/distance ratio
- between.  See those two for why the ratio is the right variable. */
+/** Raises every source-shell extent of `calc` that is below `ext_floor` to it: the SCALAR part of
+ the dimension moves, its derivative lane does not, and the same shift is applied to every shell
+ outside the source so the nesting order and the outer thicknesses are unchanged.  Returns whether
+ anything was floored.  See #sm_line_path_extent_ratio_floor. */
 template<typename T>
-double element_path_blend_weight( const DistributedSrcCalcT<T> &calc )
+bool floor_source_extent( DistributedSrcCalcT<T> &calc, const double ext_floor )
 {
-  const double ext = smallest_source_extent( calc );
-  if( !(ext > 0.0) )
-    return 1.0;
-
-  double dist = 0.0;
-  for( int i = 0; i < 3; ++i )
+  const size_t m = calc.m_materialIndex;
+  const int ndims = (calc.m_geometry == GeometryType::Spherical) ? 1
+                    : ((calc.m_geometry == GeometryType::Rectangular) ? 3 : 2);
+  bool floored = false;
+  for( int i = 0; i < ndims; ++i )
   {
-    const double c = scalar_of( calc.m_detector.position[i] );
-    dist += c*c;
+    const double outer = std::fabs( scalar_of(calc.m_shells[m].dims[i]) );
+    const double inner = (m > 0) ? std::fabs( scalar_of(calc.m_shells[m-1].dims[i]) ) : 0.0;
+    const double ext = outer - inner;
+    if( ext >= ext_floor )
+      continue;
+    const T delta( ext_floor - ext );
+    for( size_t l = m; l < calc.m_shells.size(); ++l )
+      calc.m_shells[l].dims[i] += delta;
+    floored = true;
   }
-  dist = std::sqrt( dist );
-  const double ratio = (dist > 0.0) ? (ext/dist) : 1.0;
-
-  if( ratio >= sm_line_path_extent_ratio_hi )
-    return 0.0;
-  if( ratio <= sm_line_path_extent_ratio_lo )
-    return 1.0;
-  const double u = (std::log(sm_line_path_extent_ratio_hi) - std::log(ratio))
-                   / (std::log(sm_line_path_extent_ratio_hi) - std::log(sm_line_path_extent_ratio_lo));
-  return u*u*(3.0 - 2.0*u);
-}//element_path_blend_weight(...)
+  return floored;
+}//floor_source_extent(...)
 
 
 /** Whether the line path can serve this calculator at all. */
@@ -1250,8 +1330,9 @@ bool line_path_applicable( const DistributedSrcCalcT<T> &calc )
 
 
 /** Integrates every calculator: line groups where the line path applies, the element path
- elsewhere (and blended in near a vanishing source extent).  Replaces the per-calculator
- `self_shielding_integration_imp` loops in the fit and display paths. */
+ elsewhere.  A calculator whose source extent is below #sm_line_path_extent_ratio_floor is
+ integrated through a floored copy (#floor_source_extent) and receives that copy's result.
+ Replaces the per-calculator `self_shielding_integration_imp` loops in the fit and display paths. */
 template<typename T>
 void integrate_volumetric_calculators( const std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> &calculators,
                                        const bool multithread )
@@ -1273,7 +1354,7 @@ void integrate_volumetric_calculators( const std::vector<std::unique_ptr<Distrib
 
   vector<DistributedSrcCalcT<T>*> element_only;
   map<GroupKey,vector<DistributedSrcCalcT<T>*>> groups;
-  vector<pair<DistributedSrcCalcT<T>*,double>> blended;   //(calc, element weight)
+  vector<pair<DistributedSrcCalcT<T>*,unique_ptr<DistributedSrcCalcT<T>>>> floored;   //(original, floored copy)
 
   for( const unique_ptr<DistributedSrcCalcT<T>> &calc : calculators )
   {
@@ -1285,18 +1366,27 @@ void integrate_volumetric_calculators( const std::vector<std::unique_ptr<Distrib
       continue;
     }
 
-    const double alpha = element_path_blend_weight( *calc );
-    if( alpha >= 1.0 )
-    {
-      element_only.push_back( calc.get() );
-      continue;
-    }
-    if( alpha > 0.0 )
-      blended.emplace_back( calc.get(), alpha );
+    DistributedSrcCalcT<T> *target = calc.get();
 
-    const GroupKey key{ calc->m_lineCache.get(), calc->m_isInSituExponential,
-                        calc->m_inSituRelaxationLength, calc->m_normalizeByVolume };
-    groups[key].push_back( calc.get() );
+    // Vanishing extent: integrate a copy floored at the ratio the chords are still accurate at.
+    double dist = 0.0;
+    for( int i = 0; i < 3; ++i )
+    {
+      const double c = scalar_of( calc->m_detector.position[i] );
+      dist += c*c;
+    }
+    const double ext_floor = sm_line_path_extent_ratio_floor * std::sqrt( dist );
+    if( smallest_source_extent( *calc ) < ext_floor )
+    {
+      unique_ptr<DistributedSrcCalcT<T>> copy = make_unique<DistributedSrcCalcT<T>>( *calc );
+      floor_source_extent( *copy, ext_floor );
+      target = copy.get();
+      floored.emplace_back( calc.get(), std::move(copy) );
+    }
+
+    const GroupKey key{ target->m_lineCache.get(), target->m_isInSituExponential,
+                        target->m_inSituRelaxationLength, target->m_normalizeByVolume };
+    groups[key].push_back( target );
   }//for( calculators )
 
   // Element-path calculators in parallel (one per task), as before.
@@ -1331,22 +1421,15 @@ void integrate_volumetric_calculators( const std::vector<std::unique_ptr<Distrib
     }
   }//if( !element_only.empty() )
 
-  // Blended calculators: element result first (the line path overwrites `integral` next).
-  map<const DistributedSrcCalcT<T>*,T> element_result;
-  for( const pair<DistributedSrcCalcT<T>*,double> &bl : blended )
-  {
-    self_shielding_integration_imp( *bl.first );
-    element_result[bl.first] = bl.first->integral;
-  }
-
   // Line groups (each parallel over line chunks internally).
   for( typename map<GroupKey,vector<DistributedSrcCalcT<T>*>>::value_type &g : groups )
     line_source_integration_imp( g.second, multithread );
 
-  for( const pair<DistributedSrcCalcT<T>*,double> &bl : blended )
+  for( const pair<DistributedSrcCalcT<T>*,unique_ptr<DistributedSrcCalcT<T>>> &fl : floored )
   {
-    const double alpha = bl.second;
-    bl.first->integral = T(1.0 - alpha)*bl.first->integral + T(alpha)*element_result[bl.first];
+    fl.first->integral = fl.second->integral;
+    fl.first->m_num_evals = fl.second->m_num_evals;
+    fl.first->m_est_rel_error = fl.second->m_est_rel_error;
   }
 }//integrate_volumetric_calculators(...)
 

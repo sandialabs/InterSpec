@@ -460,12 +460,15 @@ BOOST_AUTO_TEST_CASE( VolumetricContributionZeroThicknessLimit )
 //  than by the integrand (see the rect-innervoid follow-up).
 /** The same zero-thickness sweep on the LINE integration path (VolumetricLineIntegration_imp.hpp).
 
- The line path divides a chord by a source volume, so both go to zero together as a dimension does;
- the production dispatcher therefore hands a vanishing source to the element path, blending over one
- decade so the objective stays continuous across the hand-off.  This case exercises exactly that: a
- volumetric calculator with a (synthetic, MC-free) transfer response attached, swept to zero through
- `integrate_volumetric_calculators`, must keep a finite value and derivative all the way down, and
- must agree with the pure element path once the blend completes.
+ The line path divides a chord by a source volume, so both go to zero together as a dimension does.
+ The dispatcher keeps the line path in charge of the whole domain: the intervals are computed from
+ each line's closest approach (precision linear, not quadratic, in distance/extent), and below
+ `sm_line_path_extent_ratio_floor` the source is integrated through a copy whose vanishing extent is
+ floored at that ratio.  This case exercises exactly that: a volumetric calculator with a (synthetic,
+ MC-free) transfer response attached, swept through the floor to exactly zero via
+ `integrate_volumetric_calculators`, must keep a finite value and derivative all the way down, must
+ not jump between neighbouring sweep points, and must give the same value at exactly zero as at the
+ floor itself (both are integrated through the same floored copy).
 
  The response is built with ceelo::make_transfer_response from an arbitrary positive anchor curve -
  no Monte Carlo and no data files, so this stays a fast unit test.  Absolute efficiencies are
@@ -506,10 +509,11 @@ BOOST_AUTO_TEST_CASE( VolumetricLinePathZeroThicknessLimit )
     { "sph-line-radius",     GeometryType::Spherical,     0, { 1.0*cm, 0, 0 } },
   };
 
-  // Down through the blend window (1e-6 .. 1e-7 cm) to exactly zero.
-  const vector<double> sweep = { 1.0*cm, 1.0e-2*cm, 1.0e-4*cm, 1.0e-6*cm, 5.0e-7*cm,
-                                 1.0e-7*cm, 1.0e-9*cm, 0.0 };
+  // Down through the extent floor (1e-10 of the 100 cm standoff = 1e-8 cm) to exactly zero.
   const double dist = 100.0*cm;
+  const double floor_ext = sm_line_path_extent_ratio_floor * dist;
+  const vector<double> sweep = { 1.0*cm, 1.0e-2*cm, 1.0e-4*cm, 1.0e-6*cm, 1.0e-7*cm, 3.0e-8*cm,
+                                 floor_ext, 1.0e-9*cm, 1.0e-11*cm, 0.0 };
   const double act = 3.7e10;
   const int num_lines = 1 << 14;
 
@@ -530,7 +534,8 @@ BOOST_AUTO_TEST_CASE( VolumetricLinePathZeroThicknessLimit )
       calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
 
       // The line set is built from the SCALAR dims, as ShieldingSourceChi2Fcn::volumetricLineCache
-      //  does; a degenerate one is simply not used (the dispatcher blends to the element path).
+      //  does; the proposal is floored at the same ratio the dispatcher floors the source at, so it
+      //  must build even for a dimension of exactly zero.
       const std::array<double,3> scalar_dims = { scalar_of(calc.m_shells[0].dims[0]),
                                                  scalar_of(calc.m_shells[0].dims[1]),
                                                  scalar_of(calc.m_shells[0].dims[2]) };
@@ -539,14 +544,9 @@ BOOST_AUTO_TEST_CASE( VolumetricLinePathZeroThicknessLimit )
                                              scalar_of(calc.m_detector.position[2]) };
       const std::array<double,3> det_axis = { calc.m_detector.axis[0], calc.m_detector.axis[1],
                                               calc.m_detector.axis[2] };
-      try
-      {
-        calc.m_lineCache = build_volumetric_line_cache( response, c.geom, 0, scalar_dims, det_pos,
-                                                        det_axis, 0.0, num_lines );
-      }catch( std::exception & )
-      {
-        calc.m_lineCache = nullptr;   //no line reaches the crystal: the element path takes it
-      }
+      BOOST_REQUIRE_NO_THROW( calc.m_lineCache = build_volumetric_line_cache( response, c.geom, 0,
+                                                    scalar_dims, det_pos, det_axis, 0.0, num_lines ) );
+      BOOST_REQUIRE( calc.m_lineCache );
 
       std::vector<std::unique_ptr<DistributedSrcCalcT<Jet1>>> calcs;
       calcs.push_back( std::make_unique<DistributedSrcCalcT<Jet1>>( calc ) );
@@ -568,15 +568,64 @@ BOOST_AUTO_TEST_CASE( VolumetricLinePathZeroThicknessLimit )
           c.name << " @ t=" << sweep[i]/cm << "cm: non-finite derivative " << derivs[i] );
     }
 
-    // Continuity ACROSS the blend: the value must not jump between neighbouring sweep points once
-    //  the source is thin enough that the contribution is settling toward its zero-thickness limit.
+    // Continuity THROUGH the floor: the value must not jump between neighbouring sweep points once
+    //  the source is thin enough that the contribution is settling toward its zero-thickness limit
+    //  (the last unfloored point and the first floored one included).
     for( size_t i = 3; i + 1 < sweep.size(); ++i )
     {
       const double a = vals[i], b = vals[i+1];
       const double scale = std::max( std::fabs(a), std::fabs(b) );
       BOOST_CHECK_MESSAGE( std::fabs(a - b) <= 0.05*scale + 1.0e-9,
-        c.name << ": value jumps across the element/line blend, " << a << " -> " << b
+        c.name << ": value jumps through the extent floor, " << a << " -> " << b
                << " between t=" << sweep[i]/cm << " and " << sweep[i+1]/cm << " cm" );
+    }
+
+    // Everything at or below the floor is the same floored source, so exactly zero must reproduce
+    //  the value AT the floor to round-off (the sweep entry at index 6 is floor_ext itself).
+    {
+      const double at_floor = vals[6], at_zero = vals.back();
+      BOOST_CHECK_MESSAGE( std::fabs(at_zero - at_floor) <= 1.0e-6*std::fabs(at_floor),
+        c.name << ": value at t=0 (" << at_zero << ") differs from the value at the extent floor ("
+               << at_floor << ")" );
+    }
+
+    // REPORTED, NOT GATED: the same sweep on the element path, for the derivative.  The line
+    //  path's d/dt is a sum over a FROZEN line set, and a line grazing the shrinking source has
+    //  d(chord)/dt ~ t/sqrt(t^2 - b^2): the estimator is unbiased but its variance diverges at
+    //  tangency, so the derivative's sampling noise scales as (value/t)/sqrt(N) while the true
+    //  derivative stays finite - measured 2026-09-03, the line derivative is noise-dominated below
+    //  an extent/distance ratio of ~1e-5 (see TODO.md, "line-path derivative of a vanishing
+    //  extent").  The VALUE is unaffected, which is what the floor above is for.
+    {
+      const VolumetricIntegrator prev = sm_volumetric_integrator_override;
+      sm_volumetric_integrator_override = VolumetricIntegrator::Element;
+      for( size_t i = 0; i < sweep.size(); ++i )
+      {
+        const double t = sweep[i];
+        std::array<double,3> dims = c.fixed;
+        dims[c.swept] = t;
+        DistributedSrcCalcT<Jet1> calc = make_vol_calc( c.geom, dims, c.swept, dist, false, 1.0*cm );
+        calc.m_srcVolumetricActivity = Jet1( act );
+        calc.m_normalizeByVolume = true;
+        calc.m_energy = 661.7;
+        calc.m_effResponse = response;
+        calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+        std::vector<std::unique_ptr<DistributedSrcCalcT<Jet1>>> calcs;
+        calcs.push_back( std::make_unique<DistributedSrcCalcT<Jet1>>( calc ) );
+        try
+        {
+          integrate_volumetric_calculators<Jet1>( calcs, false );
+        }catch( std::exception &e )
+        {
+          BOOST_TEST_MESSAGE( "    element @ t=" << t/cm << "cm: threw " << e.what() );
+          continue;
+        }
+        const Jet1 contrib = calcs.front()->integral * calcs.front()->m_srcVolumetricActivity;
+        BOOST_TEST_MESSAGE( "    element @ t=" << t/cm << "cm: contrib=" << contrib.a
+                            << " d/dt=" << contrib.v[0] << "   (line/element: value "
+                            << vals[i]/contrib.a << ", d/dt " << derivs[i]/contrib.v[0] << ")" );
+      }
+      sm_volumetric_integrator_override = prev;
     }
   }//for( cases )
 }//VolumetricLinePathZeroThicknessLimit
