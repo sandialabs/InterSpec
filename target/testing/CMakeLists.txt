@@ -407,6 +407,17 @@ add_test( NAME TVolumetricNearField
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+# The incremental validation LADDER for the volumetric-source per-ray kernel: geometry audits (enabled,
+#  no Monte Carlo) plus developer-only rungs that compare against CeeLo MC at 0.25% through an on-disk
+#  cache (`--cachedir=`).  Shares VolumetricNearFieldHarness.h with test_VolumetricNearField.
+add_executable( test_VolumetricLadder test_VolumetricLadder.cpp
+                VolumetricNearFieldHarness.h VolumetricNearFieldScenarios.h VolumetricNearFieldTruth.h )
+target_link_libraries( test_VolumetricLadder PRIVATE InterSpecLib )
+add_test( NAME TVolumetricLadder
+  COMMAND $<TARGET_FILE:test_VolumetricLadder> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 # Regenerating the CeeLo golden fixtures runs REAL Monte Carlo (several
 # minutes); opt in with -DINTERSPEC_REGEN_CEELO_GOLDENS=ON, then build the
 # `regen_ceelo_goldens` target.  Deterministic seeds: regenerated probe

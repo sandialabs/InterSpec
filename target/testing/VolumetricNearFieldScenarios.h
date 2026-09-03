@@ -22,6 +22,8 @@
  */
 
 
+#pragma once
+
 /** The scenario matrix for the near-field volumetric-efficiency validation, plus the geometry
  helpers shared by the (developer-only) Monte-Carlo truth generator and the fast committable test
  that checks InterSpec's integration against the recorded truth.
@@ -55,17 +57,41 @@
 namespace VolNearField
 {
 
+/** Source shape.  Cylinders are end-on (InterSpec CylinderEndOn); boxes are axis-aligned with the
+ detector (InterSpec Rectangular), which is CeeLo's identity rotation. */
+enum class Shape
+{
+  Cylinder,
+  Box
+};//enum class Shape
+
+
 /** One source geometry, in the CeeLo crystal-face frame convention (z = 0 at the crystal face,
  source in front at negative z).  Distances in cm, matching CeeLo. */
 struct Scenario
 {
   std::string name;
-  double radius_cm = 0.0;        ///< source cylinder outer radius
-  double half_length_cm = 0.0;   ///< source cylinder half-length along the detector axis
+  double radius_cm = 0.0;        ///< Cylinder only: source outer radius.  Unused for a Box.
+  double half_length_cm = 0.0;   ///< Half-extent ALONG THE DETECTOR AXIS: the cylinder half-length,
+                                 ///<  or the box half-depth.  Shared between the shapes on purpose -
+                                 ///<  it is the only dimension scenario_center() and
+                                 ///<  scenario_center_distance_cm() need, so they stay shape-free.
   double standoff_cm = 0.0;      ///< endcap front to the NEAR face of the source
   bool   dense = false;          ///< dense (steel) vs light (water) source matrix
   double shield_cm = 0.0;        ///< external Fe shield around the source; 0 = bare
+  // Appended after shield_cm so the positional initializers of the cylinder rows below keep
+  //  working unchanged; the shapes' defaults make an un-annotated row a cylinder.
+  Shape  shape = Shape::Cylinder;
+  double half_width_cm = 0.0;    ///< Box only: x half-extent (transverse)
+  double half_height_cm = 0.0;   ///< Box only: y half-extent (transverse)
 };//struct Scenario
+
+
+/** Box half-dimensions in CeeLo's (hx, hy, hz) order, hz being along the detector axis. */
+inline Eigen::Vector3d scenario_box_half_dims( const Scenario &s )
+{
+  return Eigen::Vector3d( s.half_width_cm, s.half_height_cm, s.half_length_cm );
+}
 
 
 /** On-axis distance (cm) the Monte-Carlo anchor curve is recorded at.
@@ -98,6 +124,23 @@ inline std::vector<double> scenario_energies()
  test_data), so "small" is well inside it and "large" comfortably exceeds it. */
 inline std::vector<Scenario> scenarios()
 {
+  // Named factory rather than designated initializers: the box fields sit at the end of Scenario
+  //  (so the cylinder rows keep their positional braces) and spelling them positionally would mean
+  //  writing out the unused cylinder radius every time.
+  const auto box = []( std::string nm, const double hx, const double hy, const double hz,
+                       const double standoff, const bool d, const double shield ) -> Scenario {
+    Scenario s;
+    s.name = std::move( nm );
+    s.half_width_cm = hx;
+    s.half_height_cm = hy;
+    s.half_length_cm = hz;
+    s.standoff_cm = standoff;
+    s.dense = d;
+    s.shield_cm = shield;
+    s.shape = Shape::Box;
+    return s;
+  };
+
   std::vector<Scenario> v;
   for( const bool dense : { false, true } )
   {
@@ -110,6 +153,22 @@ inline std::vector<Scenario> scenarios()
     // Far on-axis, but a wide flat disc still subtends ~40 degrees at its rim.
     v.push_back( { std::string("wide-angle-far-") + tag, 12.0,  0.5,  15.0, dense, 0.0 } );
     v.push_back( { std::string("shielded-near-") + tag,   2.0,  1.0,   1.0, dense, 0.5 } );
+
+    // Boxes.  Transverse half-extent = the twin cylinder's radius, axial half-extent = its
+    //  half-length, so each box row reads directly against its cylinder twin (the box holds 4/pi
+    //  the volume; scenario_volume_cm3 handles that).
+    //
+    //  Boxes exist here because eval_rect had no per-ray aperture kernel and nothing caught it -
+    //  every pre-existing row is a cylinder.  Deliberately only the CONTACT corners: a box is
+    //  always a 3D integration and each element now costs ~500 ray traces, so a box row is 20-35 s
+    //  against ~1 s for its cylinder twin even after the on-axis quarter-box reduction.  The
+    //  far-field corners would mostly re-measure what the cylinders already cover, at that price.
+    v.push_back( box( std::string("box-large-near-") + tag,      4.0,  4.0, 2.0,  1.0, dense, 0.0 ) );
+    v.push_back( box( std::string("box-shielded-near-") + tag,   2.0,  2.0, 1.0,  1.0, dense, 0.5 ) );
+    // Deliberately ANISOTROPIC - wide in x, narrow in y.  A cylinder cannot produce this, and it is
+    //  the case where WHICH of the three exit planes wins genuinely varies with ray direction, so
+    //  it is what would catch an x/y transposition or a centre-ray leftover in eval_rect.
+    v.push_back( box( std::string("box-slab-near-") + tag,       4.0,  1.0, 0.5,  1.0, dense, 0.0 ) );
   }//for( dense / light )
 
   return v;
@@ -139,6 +198,9 @@ inline const char *scenario_shield_material()
  over the source, so the model's volume integral has to be divided by this to compare. */
 inline double scenario_volume_cm3( const Scenario &s )
 {
+  if( s.shape == Shape::Box )
+    return 8.0 * s.half_width_cm * s.half_height_cm * s.half_length_cm;
+
   return 3.14159265358979323846 * s.radius_cm * s.radius_cm * (2.0 * s.half_length_cm);
 }
 

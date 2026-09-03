@@ -41,12 +41,14 @@
  source volume.  See VolumetricNearFieldScenarios.h for the scenario matrix and why those corners.
  */
 
+#include <array>
 #include <cmath>
 #include <string>
 #include <map>
 #include <vector>
 #include <fstream>
 #include <iomanip>
+#include <sstream>
 #include <iostream>
 
 #define BOOST_TEST_MODULE VolumetricNearField_suite
@@ -78,294 +80,7 @@
 using namespace std;
 using namespace VolNearField;
 
-namespace
-{
-string g_data_dir, g_test_data_dir;
-
-void set_data_dir()
-{
-  if( !g_data_dir.empty() )
-    return;
-
-  const vector<string> args = boost::unit_test::framework::master_test_suite().argv
-        ? vector<string>( boost::unit_test::framework::master_test_suite().argv + 1,
-                          boost::unit_test::framework::master_test_suite().argv
-                            + boost::unit_test::framework::master_test_suite().argc )
-        : vector<string>{};
-
-  for( const string &arg : args )
-  {
-    if( SpecUtils::starts_with( arg, "--datadir=" ) )
-      g_data_dir = arg.substr( 10 );
-    else if( SpecUtils::starts_with( arg, "--testfiledir=" ) )
-      g_test_data_dir = arg.substr( 14 );
-  }
-
-  BOOST_REQUIRE_MESSAGE( !g_data_dir.empty(), "Pass --datadir=..." );
-  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Pass --testfiledir=..." );
-  BOOST_REQUIRE_NO_THROW( InterSpec::setStaticDataDirectory( g_data_dir ) );
-}
-
-
-/** The ANGLE GEM35-70 from test_data: its physical geometry and its measured reference efficiency
- curve.  The curve is what an EFFTRAN transfer is anchored on, so this one file supplies both halves
- of the comparison - a real detector and a real characterization. */
-struct AngleDetector
-{
-  ceelo::GeometryDescriptor gd;
-  double endcap_front_offset_cm = 0.0;
-  shared_ptr<ceelo::DetectorResponse> measured_transfer; ///< anchored on the file's MEASURED curve
-  shared_ptr<ceelo::DetectorResponse> mc_transfer;      ///< anchored on the recorded MC curve
-};
-
-
-AngleDetector load_angle_detector()
-{
-  const string angle_path = SpecUtils::append_path(
-        SpecUtils::append_path( g_test_data_dir, "det_eff" ), "Angle-example-efficiency.outx" );
-
-  ifstream in( angle_path.c_str(), ios::in | ios::binary );
-  BOOST_REQUIRE_MESSAGE( in.is_open(), "Failed to open ANGLE file '" + angle_path + "'" );
-
-  const AngleOutxContents contents = DetectorPeakResponse::parseAngleOutxFileFull( in );
-  BOOST_REQUIRE( contents.hasGeometry );
-  BOOST_REQUIRE( contents.hasReference );
-
-  AngleDetector det;
-  vector<string> warnings;
-  det.gd = CeeLoUtils::buildAngleGeometry( contents, warnings );
-  det.endcap_front_offset_cm = det.gd.endcap_front_offset_cm();
-
-  // Anchor an EFFTRAN transfer on the file's own measured curve.
-  CeeLoUtils::TransferAnchor anchor;
-  anchor.ref_distance_cm = contents.referenceDistanceCm;
-  anchor.curve_derived = false;
-  for( const pair<float,float> &ep : contents.referencePoints )
-  {
-    if( (ep.first > 0.0f) && (ep.second > 0.0f) )
-    {
-      anchor.curve.energies_keV.push_back( ep.first );
-      anchor.curve.eff.push_back( ep.second );
-    }
-  }
-  BOOST_REQUIRE_GE( anchor.curve.energies_keV.size(), size_t(2) );
-
-  det.measured_transfer = CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{},
-                                                            "ANGLE GEM35-70 (EFFTRAN, measured)" );
-  BOOST_REQUIRE( det.measured_transfer );
-
-  // The transfer used for the MODEL comparison is anchored on the recorded Monte-Carlo curve
-  //  instead.  Anchoring on the measured curve would make every volumetric row inherit the
-  //  ANGLE-measured-vs-CeeLo-MC scale difference (up to ~8.5% at high energy - see
-  //  TransferVsMcMeasuredAnchor), which has nothing to do with the volumetric model under test.
-  //  Same MC that produced the truth => the comparison isolates the volume integral.
-  if( !sm_mc_anchor.empty() )
-  {
-    CeeLoUtils::TransferAnchor mc_anchor;
-    mc_anchor.ref_distance_cm = kMcAnchorDistanceCm;
-    mc_anchor.curve_derived = false;
-    for( const AnchorRow &row : sm_mc_anchor )
-    {
-      mc_anchor.curve.energies_keV.push_back( row.energy_keV );
-      mc_anchor.curve.eff.push_back( row.eff );
-      mc_anchor.curve.frac_sigma.push_back( row.frac_sigma );
-    }
-    det.mc_transfer = CeeLoUtils::makeTransferResponse( det.gd, mc_anchor, ceelo::AnchorCurve{},
-                                                        "ANGLE GEM35-70 (EFFTRAN, MC-anchored)" );
-    BOOST_REQUIRE( det.mc_transfer );
-  }//if( an MC anchor has been recorded )
-
-  return det;
-}
-
-
-/** InterSpec's volumetric efficiency for one scenario at one energy: the volume-integrated
- per-element detector response, divided by the source volume, so it is directly comparable to the
- MC's efficiency-per-emitted-gamma.
-
- `eff_response` null => the legacy flat-disk model (solid angle x intrinsic efficiency); non-null =>
- that response is evaluated per element and already carries the intrinsic efficiency.
- */
-/** Plan 3.4: survival-removal mu for the FEP leg.
-
- CeeLo: mu_rem = mu_total - mu_Rayleigh - f_win(E, material) * mu_Compton.  Rayleigh is elastic so
- it cannot remove a photon from the FEP window, and forward Compton scatters whose energy loss
- stays inside the window are still counted in the peak.
-
- CAREFUL: InterSpec's `transmition_length_coefficient` already EXCLUDES Rayleigh
- (`massAttenuationCoefficientElement` returns compton+photoelectric+pair, and the SNL path returns
- 0 for RayleighScatter), so subtracting it again would double-count.  In InterSpec terms:
-
-     mu_rem = transmition_length_coefficient(mat, E) - f_win * mu_Compton(mat, E)
-
- `win_keV` is a HALF-width, matching CeeLo's +-win convention - which is why its 0.75 keV default
- is about FWHM/2 for an HPGe.
- */
-double fep_removal_coefficient( const Material &mat, const double energy_keV, const double win_keV )
-{
-  const double mu_total = GammaInteractionCalc::transmition_length_coefficient(
-                                                    &mat, static_cast<float>(energy_keV) );
-
-  double mu_compton = 0.0;
-  for( const Material::ElementFractionPair &p : mat.elements )
-    mu_compton += p.second * mat.density
-                  * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
-                        static_cast<float>(energy_keV),
-                        MassAttenuation::GammaEmProcces::ComptonScatter );
-  for( const Material::NuclideFractionPair &p : mat.nuclides )
-    mu_compton += p.second * mat.density
-                  * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
-                        static_cast<float>(energy_keV),
-                        MassAttenuation::GammaEmProcces::ComptonScatter );
-
-  // Material-aware in-window fraction: S(x,Z) suppresses forward scatter, most strongly at high Z
-  //  (@60 keV: water 0.89, Fe 0.77, Pb 0.63), so the free-electron form over-credits exactly where
-  //  the shielding is heaviest.  This is a Simpson integration - hoisted per (E, material) by the
-  //  caller, never inside a per-ray loop.
-  const ceelo::Material cm = CeeLoUtils::to_ceelo_material( mat ).to_material();
-  const double f_win = ceelo::kn_in_window_fraction( energy_keV, win_keV, cm );
-
-  return mu_total - f_win*mu_compton;
-}
-
-
-double interspec_volumetric_eff( const AngleDetector &det,
-                                 const Scenario &s,
-                                 const double energy_keV,
-                                 const shared_ptr<const ceelo::DetectorResponse> &eff_response,
-                                 const int n_rays = -1,
-                                 const double fep_window_keV = -1.0,
-                                 const double epsrel = -1.0 )
-{
-  using namespace GammaInteractionCalc;
-  const double cm = PhysicalUnits::cm;
-
-  // Source matrix, as an InterSpec material, so the model attenuates with InterSpec's own tables -
-  //  the SAME material the MC truth was generated through (see scenario_matrix_material).
-  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
-  BOOST_REQUIRE( matdb );
-  const shared_ptr<const Material> matrix = matdb->material( scenario_matrix_material( s.dense ) );
-  BOOST_REQUIRE( matrix );
-
-  DistributedSrcCalcT<double> calc;
-  calc.m_geometry = GeometryType::CylinderEndOn;
-  calc.m_materialIndex = 0;
-  calc.m_attenuateForAir = false;
-  calc.m_airTransLenCoef = 0.0;
-  calc.m_isInSituExponential = false;
-  calc.m_inSituRelaxationLength = -1.0;
-  calc.m_srcVolumetricActivity = 1.0;
-  calc.m_normalizeByVolume = false;
-  calc.m_energy = energy_keV;
-  calc.m_nuclide = nullptr;
-  calc.integral = 0.0;
-  calc.m_effResponse = eff_response;
-  calc.m_effMethod = eff_response ? ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer
-                                  : ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk;
-  if( n_rays > 0 )
-    calc.m_effNumRays = n_rays;
-
-  const double det_radius = 0.5 * det.gd.transverse_half_extent() * 2.0 * cm;
-  calc.m_detector = detector_geom_from_config<double>( GeometryType::CylinderEndOn,
-                                                       scenario_center_distance_cm( s ) * cm,
-                                                       det_radius, 0.0 );
-
-  DistributedSrcCalcT<double>::ShellInfo src_shell;
-  src_shell.dims = { s.radius_cm*cm, s.half_length_cm*cm, 0.0 };
-  src_shell.trans_len_coef = (fep_window_keV > 0.0)
-        ? fep_removal_coefficient( *matrix, energy_keV, fep_window_keV )
-        : transmition_length_coefficient( matrix.get(), static_cast<float>(energy_keV) );
-  src_shell.type = ShellType::Material;
-  calc.m_shells.push_back( src_shell );
-
-  if( s.shield_cm > 0.0 )
-  {
-    const shared_ptr<const Material> iron = matdb->material( scenario_shield_material() );
-    BOOST_REQUIRE( iron );
-    DistributedSrcCalcT<double>::ShellInfo shield;
-    shield.dims = { (s.radius_cm + s.shield_cm)*cm, (s.half_length_cm + s.shield_cm)*cm, 0.0 };
-    shield.trans_len_coef = (fep_window_keV > 0.0)
-          ? fep_removal_coefficient( *iron, energy_keV, fep_window_keV )
-          : transmition_length_coefficient( iron.get(), static_cast<float>(energy_keV) );
-    shield.type = ShellType::Material;
-    calc.m_shells.push_back( shield );
-  }//if( shielded )
-
-  if( epsrel > 0.0 )
-    self_shielding_integration_imp<double>( calc, epsrel, 200000000 );
-  else
-    self_shielding_integration_imp<double>( calc );
-
-  double eff = calc.integral / (scenario_volume_cm3(s) * cm*cm*cm);
-
-  // FlatDisk carries only the geometric solid angle; the intrinsic efficiency is folded in after
-  //  the integration, exactly as expected_peak_counts_imp does.
-  if( !eff_response )
-  {
-    // Back the intrinsic efficiency out of the same response the near-field column uses, so the
-    //  near-vs-flat difference is purely the geometry model and carries no anchor offset.
-    //
-    // CAVEAT - do not read the flat-disk column as "how a flat-disk DRF performs".  The intrinsic
-    //  efficiency here is taken at 1000 cm, i.e. the model is pinned at infinity, so it carries the
-    //  full near-field difference at EVERY distance including the far ones.  A real flat-disk DRF is
-    //  characterized AT some distance (50 cm, say) and is ~exact there by construction, degrading
-    //  only as the geometry moves away from that point.  Testing that properly means building a
-    //  flat-disk efficiency at a stated distance and extrapolating from it; until then this column
-    //  shows only that flat-disk-from-infinity is inadequate near-field - it says nothing
-    //  quantitative about where a real one should or should not be used.
-    const shared_ptr<const ceelo::DetectorResponse> ref = det.mc_transfer ? det.mc_transfer
-                                                                          : det.measured_transfer;
-    const ceelo::EffResult far = ref->eps_fep( energy_keV, 0.0, 0.0, 1000.0 );
-    const double a_cm = ref->transverse_half_extent();
-    const double omega = ceelo::disk_solid_angle_fraction( 1000.0, a_cm );
-    eff *= (omega > 0.0) ? (far.value / omega) : 0.0;
-  }
-
-  return eff;
-}//interspec_volumetric_eff(...)
-
-}//namespace
-
-
-/** Characteristic optical depth (mean free paths) a full-energy photon must survive to leave the
- source and its shield, at `energy_keV`.  A bound on the escape path, not the largest chord.
-
- This is the single number that says whether a row is even representable: the model transports the
- UNCOLLIDED photon (plus, once the survival-removal mu lands, a credit for small-angle Compton that
- stays in the peak).  Past a few mfp the surviving signal is dominated by scatter the removal kernel
- cannot represent at all - CeeLo puts that limit explicitly at its 9-mfp / 60 keV case, which its
- depth-aware credit improves but "physically cannot" close.  Printing tau next to each comparison is
- what makes a failing row legible as "outside the model" rather than "model is broken".
- */
-double scenario_optical_depth( const Scenario &s, const double energy_keV )
-{
-  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
-  if( !matdb )
-    return 0.0;
-
-  const shared_ptr<const Material> matrix = matdb->material( scenario_matrix_material( s.dense ) );
-  const shared_ptr<const Material> shield = matdb->material( scenario_shield_material() );
-  if( !matrix || !shield )
-    return 0.0;
-
-  const float e = static_cast<float>( energy_keV );
-
-  // The escape path for an END-ON detector is axial, not radial: a photon heads toward the detector
-  //  face, so what it must cross is at most the source's full length.  Using the radius instead
-  //  wildly overstates a pancake - the wide-angle-far scenario (r=12 cm, half-length 0.5 cm) would
-  //  read ~101 mfp while the model in fact tracks truth to a few percent, because no photon ever
-  //  crosses 12 cm of material on its way out.  Take the smaller of the two half-extents as the
-  //  characteristic depth: it is the one that bounds the escape path.
-  const double half_extent_cm = std::min( s.radius_cm, s.half_length_cm );
-  const double tau_src = GammaInteractionCalc::transmition_length_coefficient( matrix.get(), e )
-                         * half_extent_cm * PhysicalUnits::cm;
-  const double tau_shield = (s.shield_cm > 0.0)
-        ? GammaInteractionCalc::transmition_length_coefficient( shield.get(), e )
-          * s.shield_cm * PhysicalUnits::cm
-        : 0.0;
-
-  return tau_src + tau_shield;
-}//scenario_optical_depth(...)
+#include "VolumetricNearFieldHarness.h"
 
 
 /** DEVELOPER-ONLY: regenerates the truth bank and prints a paste-ready table.
@@ -440,50 +155,41 @@ BOOST_AUTO_TEST_CASE( VolumetricNearFieldTruth, * boost::unit_test::disabled() )
 
   cout << "static const std::vector<TruthRow> sm_truth = {\n";
 
-  for( const Scenario &s : scenarios() )
-  {
-    vector<unique_ptr<ceelo::Material>> owned;
-    ceelo::EfficiencyCalculator calc;
-    ceelo::ResponseGenerator::configure_calculator( calc, det.gd, owned );
-
-    calc.set_cylindrical_source( scenario_center( s, det.endcap_front_offset_cm ),
-                                 s.radius_cm, s.half_length_cm );
-
-    const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
-    BOOST_REQUIRE( matdb );
-    const shared_ptr<const Material> matrix_mat = matdb->material( scenario_matrix_material(s.dense) );
-    BOOST_REQUIRE_MESSAGE( matrix_mat, "No material '"
-                           << scenario_matrix_material(s.dense) << "'" );
-
-    const ceelo::Material matrix = CeeLoUtils::to_ceelo_material( *matrix_mat ).to_material();
-    calc.set_source_material( &matrix );
-
-    const shared_ptr<const Material> shield_mat = matdb->material( scenario_shield_material() );
-    BOOST_REQUIRE( shield_mat );
-    const ceelo::Material shield = CeeLoUtils::to_ceelo_material( *shield_mat ).to_material();
-    if( s.shield_cm > 0.0 )
-      calc.add_source_shield( &shield, s.shield_cm, s.shield_cm );
-
-    for( const double energy : energies )
-    {
-      ceelo::SimulationConfig cfg;
-      cfg.energy_keV = energy;
-      cfg.termination.target_fep_rel_precision = 0.01;
-      cfg.termination.max_events = 20000000;
-      cfg.termination.min_events = 50000;
-      cfg.seed = 20260829;
-
-      const ceelo::EfficiencyResult r = calc.compute( cfg );
-
-      cout << "  { \"" << s.name << "\", " << setprecision(12) << energy << ", "
-           << setprecision(10) << r.full_energy_peak_efficiency << ", "
-           << setprecision(4) << r.fep_uncertainty << " },\n";
-      cout.flush();
-    }//for( energies )
-  }//for( scenarios )
+  print_truth_rows( det, energies, scenarios() );
 
   cout << "};\n";
 }//BOOST_AUTO_TEST_CASE( VolumetricNearFieldTruth )
+
+
+/** DEVELOPER-ONLY: prints ONLY the BOX rows, to be APPENDED to sm_truth.
+
+ Separate from VolumetricNearFieldTruth on purpose.  A fixed `cfg.seed` does NOT make a run
+ reproducible: EfficiencyCalculator::compute races hardware_concurrency() threads against a shared
+ stop flag pulling geometrically-growing batches, so how many batches each thread finishes depends
+ on machine load.  Re-running the full generator therefore moves every cylinder row by ~its own
+ 1-sigma and the anchor curve by ~0.4% - and the anchor feeds det.mc_transfer, so it shifts the
+ MODEL column too.  Generating only the new rows keeps the truth-bank diff purely additive.
+ */
+BOOST_AUTO_TEST_CASE( VolumetricNearFieldBoxTruth, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const AngleDetector det = load_angle_detector();
+
+  vector<Scenario> boxes;
+  for( const Scenario &s : scenarios() )
+  {
+    if( s.shape == Shape::Box )
+      boxes.push_back( s );
+  }
+  BOOST_REQUIRE( !boxes.empty() );
+
+  cout << "// Box rows, from VolumetricNearFieldBoxTruth.  FEP window: "
+       << ceelo::kDefaultFepWindowKeV << " keV.  APPEND to sm_truth.\n";
+
+  print_truth_rows( det, scenario_energies(), boxes );
+}//BOOST_AUTO_TEST_CASE( VolumetricNearFieldBoxTruth )
 
 
 /** Checks InterSpec's volumetric integration against the recorded MC truth.
@@ -635,7 +341,7 @@ BOOST_AUTO_TEST_CASE( ElementApertureFrameAndClosure )
   const AngleDetector det = load_angle_detector();
   BOOST_REQUIRE( det.mc_transfer );
 
-  double worst_closure = 0.0, worst_axis = 0.0;
+  double worst_closure = 0.0, worst_axis = 0.0, worst_axis_image = 0.0;
 
   for( const double dist_cm : { 2.0, 10.0, 50.0 } )
   {
@@ -645,13 +351,16 @@ BOOST_AUTO_TEST_CASE( ElementApertureFrameAndClosure )
       //  detector axis points detector->assembly, so the element looks back along -axis.
       const double sin_theta = std::sqrt( std::max(0.0, 1.0 - cos_theta*cos_theta) );
       const double to_det[3] = { sin_theta, 0.0, cos_theta };
+      // Matches detector_geom_from_config's end-on convention, under which
+      //  cos_theta == -(to_det . axis) - i.e. exactly the cos_theta swept above.
+      const double det_axis[3] = { 0.0, 0.0, -1.0 };
 
       for( const double energy : { 60.0, 344.0, 1332.5 } )
       {
         const GammaInteractionCalc::ElementAperture ap
               = GammaInteractionCalc::build_element_aperture( *det.mc_transfer, energy,
                                                               dist_cm*PhysicalUnits::cm,
-                                                              cos_theta, to_det, 2048 );
+                                                              cos_theta, to_det, det_axis, 2048 );
         BOOST_REQUIRE( !ap.weights.empty() );
         BOOST_REQUIRE_EQUAL( ap.weights.size(), ap.dirs.size() );
 
@@ -692,20 +401,43 @@ BOOST_AUTO_TEST_CASE( ElementApertureFrameAndClosure )
         const double mc = mean_c.norm();
         BOOST_REQUIRE( (mi > 0.0) && (mc > 0.0) );
 
-        // element->detector direction in each frame
-        const double pn = pos.norm();
+        // element->detector direction in each frame.  In CeeLo's frame "the detector" is the
+        //  response's REFERENCE POINT - the same physical plane `to_det` aims at - which is the
+        //  origin only for a CrystalFace response.  Using the origin here instead was the mistake
+        //  build_element_aperture used to make, and it would make this check agree with the buggy
+        //  rotation and disagree with the correct one.
+        const Eigen::Vector3d elem_to_ref = det.mc_transfer->reference_point_position() - pos;
+        const double pn = elem_to_ref.norm();
         BOOST_REQUIRE( pn > 0.0 );
-        const Eigen::Vector3d u_c( -pos.x()/pn, -pos.y()/pn, -pos.z()/pn );
+        const Eigen::Vector3d u_c = elem_to_ref / pn;
 
         const double ang_i = (mean_i[0]*to_det[0] + mean_i[1]*to_det[1] + mean_i[2]*to_det[2]) / mi;
         const double ang_c = mean_c.dot( u_c ) / mc;
         worst_axis = std::max( worst_axis, fabs(ang_i - ang_c) );
+
+        // (3) Where the rotation puts CeeLo's DETECTOR AXIS.  Check (2) is blind to this: it
+        //  reconstructs `u_c` the same way build_element_aperture does, so it holds for ANY
+        //  orthogonal rotation carrying that vector onto `to_det` - including one that got `u_c`
+        //  itself wrong.  Aiming at CeeLo's origin (the crystal face) while `to_det` aims at the
+        //  assembly's reference point (the endcap front) is exactly such a mistake, and it tilts
+        //  the whole fan in the plane of incidence by the parallax of the endcap offset: 5-9 deg
+        //  for a contact element, measured, with 1-2% of the ray weight then aimed outside the
+        //  crystal entirely.  The frame mapping is a pure azimuthal rotation, so it must carry
+        //  CeeLo's axis exactly onto the assembly's.
+        const double a_c[3] = { 0.0, 0.0, -1.0 };
+        double r_ac[3] = { 0.0, 0.0, 0.0 };
+        for( int i = 0; i < 3; ++i )
+          for( int j = 0; j < 3; ++j )
+            r_ac[i] += ap.rotation[i][j] * a_c[j];
+        const double axis_dot = r_ac[0]*det_axis[0] + r_ac[1]*det_axis[1] + r_ac[2]*det_axis[2];
+        worst_axis_image = std::max( worst_axis_image, fabs( axis_dot - 1.0 ) );
       }//for( energies )
     }//for( cos_theta )
   }//for( distances )
 
   BOOST_TEST_MESSAGE( "element aperture: worst closure rel-diff " << worst_closure
-                      << ", worst frame angle mismatch " << worst_axis );
+                      << ", worst frame angle mismatch " << worst_axis
+                      << ", worst detector-axis image error " << worst_axis_image );
 
   BOOST_CHECK_MESSAGE( worst_closure < 1.0e-12,
                        "prefactor*sum(w) does not reproduce eps_fep: " << worst_closure );
@@ -714,7 +446,293 @@ BOOST_AUTO_TEST_CASE( ElementApertureFrameAndClosure )
                        "cos(mean ray, element->detector) differs between CeeLo's frame and the"
                        " assembly frame by " << worst_axis << ": the rotation is not angle-"
                        "preserving, i.e. it is not the rotation it claims to be." );
+  BOOST_CHECK_MESSAGE( worst_axis_image < 1.0e-12,
+                       "The frame rotation does not carry CeeLo's detector axis onto the assembly's"
+                       " (1-cos = " << worst_axis_image << "): the fan is tilted in the plane of"
+                       " incidence, so every per-ray source chord is wrong." );
 }//BOOST_AUTO_TEST_CASE( ElementApertureFrameAndClosure )
+
+
+/** The per-ray composition, checked with no Monte-Carlo and no ray tracing on the reference side.
+
+ Make the source TRANSPARENT (mu = 0) and the kernel collapses exactly: every tau_i is zero, so
+ centre_atten = 1 and <exp(-tau)>_w = 1, and the per-element integrand reduces to
+
+     det_factor * R0  =  flat * (prefactor*sum_w / flat)  =  prefactor*sum_w
+
+ i.e. the aperture-assembled response at the element.  Note the flat-disk solid angle CANCELS
+ exactly, so a transparent source's integral must equal a plain tensor Gauss-Legendre sum of that
+ quantity over the source volume - which the reference below computes with no InterSpec geometry or
+ ray-tracing code on its side at all.
+
+ What this catches in a second, without spending any MC: a missing `/ centre_atten` (i.e. the
+ centre-ray attenuation left in and double-counted), a dropped det_factor, a wrong R0
+ normalization, and a wrong aperture rotation.  Run for the box (the newly converted path) and for
+ the cylinder, so the pre-existing path keeps a cheap guard too.
+ */
+BOOST_AUTO_TEST_CASE( PerRayTransparentSourceIdentity )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+
+  const double cm = PhysicalUnits::cm;
+  const double det_radius = det.gd.transverse_half_extent() * cm;
+
+  using namespace GammaInteractionCalc;
+  using QuadDetail::gl5_x;
+  using QuadDetail::gl5_w;
+
+  // The aperture-assembled response at an element: prefactor * sum(w).  Deliberately NOT eps_fep():
+  //  the two agree only in the many-ray limit (measured 0.57% apart at 32 rays, 0.18% at 128,
+  //  0.023% at the production 512), because prefactor*sum_w is a finite-order quadrature OF
+  //  eps_fep.  That gap IS the quadrature order, which ElementApertureFrameAndClosure already
+  //  measures at 2048 rays; folding it in here would make this a second, worse copy of that test
+  //  and force either a loose tolerance or a slow ray count.  Assembling both sides the same way
+  //  leaves exactly the composition under test - det_factor, R0, and the centre-ray divide-out.
+  const int kNumRays = 32;
+  const auto eps_at = [&]( const DetectorGeomT<double> &dg, const double energy,
+                           const double x, const double y, const double z ) -> double
+  {
+    const double dx = dg.position[0] - x, dy = dg.position[1] - y, dz = dg.position[2] - z;
+    const double d = std::sqrt( dx*dx + dy*dy + dz*dz );
+    if( !(d > 0.0) )
+      return 0.0;
+
+    const double to_det[3] = { dx/d, dy/d, dz/d };
+    double cos_theta = -(to_det[0]*dg.axis[0] + to_det[1]*dg.axis[1] + to_det[2]*dg.axis[2]);
+    cos_theta = std::max( -1.0, std::min( 1.0, cos_theta ) );
+
+    const ElementAperture ap = build_element_aperture( *det.mc_transfer, energy, d, cos_theta,
+                                                       to_det, dg.axis, kNumRays );
+    double sum_w = 0.0;
+    for( const double w : ap.weights )
+      sum_w += w;
+    return ap.prefactor * sum_w;
+  };
+
+  // The InterSpec side: a single transparent shell, integrated through the production path.
+  const auto interspec_transparent = [&]( const GeometryType geom,
+                                          const std::array<double,3> &dims,
+                                          const double centre_dist_cm,
+                                          const double energy ) -> double
+  {
+    DistributedSrcCalcT<double> calc;
+    calc.m_geometry = geom;
+    calc.m_materialIndex = 0;
+    calc.m_attenuateForAir = false;
+    calc.m_airTransLenCoef = 0.0;
+    calc.m_isInSituExponential = false;
+    calc.m_inSituRelaxationLength = -1.0;
+    calc.m_srcVolumetricActivity = 1.0;
+    calc.m_normalizeByVolume = false;
+    calc.m_energy = energy;
+    calc.m_nuclide = nullptr;
+    calc.integral = 0.0;
+    calc.m_effResponse = det.mc_transfer;
+    calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+    // Must match the ray count the reference assembles with (see eps_at): the collapsed kernel is
+    //  prefactor*sum_w, which is quadrature-order dependent, so both sides have to use the same
+    //  order for the identity to be exact.
+    calc.m_effNumRays = kNumRays;
+    calc.m_detector = detector_geom_from_config<double>( geom, centre_dist_cm*cm, det_radius, 0.0 );
+
+    DistributedSrcCalcT<double>::ShellInfo src_shell;
+    src_shell.dims = dims;
+    src_shell.trans_len_coef = 0.0;   //TRANSPARENT - this is what collapses the kernel
+    src_shell.type = ShellType::Material;
+    calc.m_shells.push_back( src_shell );
+
+    self_shielding_integration_imp<double>( calc, 1.0e-4, 20000000 );
+    return calc.integral;
+  };
+
+  // Composite (8 cells x GL5) tensor reference over the box.
+  const auto reference_box = [&]( const double hx, const double hy, const double hz,
+                                  const double centre_dist_cm, const double energy ) -> double
+  {
+    const DetectorGeomT<double> dg = detector_geom_from_config<double>( GeometryType::Rectangular,
+                                                          centre_dist_cm*cm, det_radius, 0.0 );
+    const int nc = 4;   //x GL5 per axis; eps_fep is smooth, and it is the expensive call here
+    const double wx = 2.0*hx*cm/nc, wy = 2.0*hy*cm/nc, wz = 2.0*hz*cm/nc;
+    const double cell_vol = wx*wy*wz;
+    double total = 0.0;
+    for( int ix = 0; ix < nc; ++ix ){
+      for( int iy = 0; iy < nc; ++iy ){
+        for( int iz = 0; iz < nc; ++iz ){
+          for( int a = 0; a < 5; ++a ){
+            const double x = -hx*cm + (ix + gl5_x[a])*wx;
+            for( int b = 0; b < 5; ++b ){
+              const double y = -hy*cm + (iy + gl5_x[b])*wy;
+              for( int c = 0; c < 5; ++c ){
+                const double z = -hz*cm + (iz + gl5_x[c])*wz;
+                total += gl5_w[a]*gl5_w[b]*gl5_w[c]*cell_vol * eps_at( dg, energy, x, y, z );
+              }}}}}}
+    return total;
+  };
+
+  // Same, for an on-axis end-on cylinder: azimuthally symmetric, so 2pi * int r dr dz.
+  const auto reference_cyl = [&]( const double rad, const double hz,
+                                  const double centre_dist_cm, const double energy ) -> double
+  {
+    const DetectorGeomT<double> dg = detector_geom_from_config<double>( GeometryType::CylinderEndOn,
+                                                          centre_dist_cm*cm, det_radius, 0.0 );
+    const int nc = 8;   //x GL5 per axis
+    const double wr = rad*cm/nc, wz = 2.0*hz*cm/nc;
+    double total = 0.0;
+    for( int ir = 0; ir < nc; ++ir ){
+      for( int iz = 0; iz < nc; ++iz ){
+        for( int a = 0; a < 5; ++a ){
+          const double r = (ir + gl5_x[a])*wr;
+          for( int b = 0; b < 5; ++b ){
+            const double z = -hz*cm + (iz + gl5_x[b])*wz;
+            total += gl5_w[a]*gl5_w[b]*wr*wz * 2.0*PhysicalUnits::pi * r
+                     * eps_at( dg, energy, r, 0.0, z );
+          }}}}
+    return total;
+  };
+
+  double worst = 0.0;
+  string worst_where;
+
+  for( const double energy : { 60.0, 661.7 } )
+  {
+    // Near (contact) and far, on the box: near is where the aperture fans out hardest.
+    for( const double standoff : { 1.0, 25.0 } )
+    {
+      // Anisotropic on purpose - a square box would not catch an x/y transposition.
+      const double hx = 4.0, hy = 1.0, hz = 0.5;
+      const double dist = standoff + hz;
+      const double got = interspec_transparent( GeometryType::Rectangular,
+                              { hx*cm, hy*cm, hz*cm }, dist, energy );
+      const double want = reference_box( hx, hy, hz, dist, energy );
+      BOOST_REQUIRE( want > 0.0 );
+      const double rel = fabs( got/want - 1.0 );
+      if( rel > worst ){ worst = rel; worst_where = "box @ " + to_string(standoff) + " cm, "
+                                                   + to_string(energy) + " keV"; }
+      BOOST_CHECK_MESSAGE( rel < 5.0e-3,
+                           "Transparent BOX @ standoff " << standoff << " cm, " << energy
+                           << " keV: per-ray integral " << setprecision(10) << got
+                           << " vs tensor-GL reference " << want
+                           << " (" << setprecision(3) << 100.0*rel << "%)" );
+
+      const double rad = 2.0, chz = 1.0;
+      const double cdist = standoff + chz;
+      const double cgot = interspec_transparent( GeometryType::CylinderEndOn,
+                              { rad*cm, chz*cm, 0.0 }, cdist, energy );
+      const double cwant = reference_cyl( rad, chz, cdist, energy );
+      BOOST_REQUIRE( cwant > 0.0 );
+      const double crel = fabs( cgot/cwant - 1.0 );
+      if( crel > worst ){ worst = crel; worst_where = "cyl @ " + to_string(standoff) + " cm, "
+                                                      + to_string(energy) + " keV"; }
+      BOOST_CHECK_MESSAGE( crel < 5.0e-3,
+                           "Transparent CYLINDER @ standoff " << standoff << " cm, " << energy
+                           << " keV: per-ray integral " << setprecision(10) << cgot
+                           << " vs tensor-GL reference " << cwant
+                           << " (" << setprecision(3) << 100.0*crel << "%)" );
+    }//for( standoff )
+  }//for( energy )
+
+  BOOST_TEST_MESSAGE( "  worst transparent-source closure: " << setprecision(3) << 100.0*worst
+                      << "% (" << worst_where << ")" );
+}//BOOST_AUTO_TEST_CASE( PerRayTransparentSourceIdentity )
+
+
+/** The on-axis quarter-box reduction must be EXACT, not merely close.
+
+ self_shielding_integration_imp folds an on-axis rectangular source onto its +x,+y quarter (see
+ `rect_quarter`).  If that fold is wrong - a bad substitution, a missing factor, or a symmetry that
+ does not actually hold for some weighting - every rectangular volumetric result is silently wrong,
+ with no crash and no obviously bad number.
+
+ Checked without any test hook into the flag: nudging the detector off-axis by 1e-9 cm DISABLES the
+ fold (the guard tests the offsets for exact zero) while changing the physical answer by O(1e-9).
+ So the folded and unfolded integrals must agree to integration tolerance.  Run across the
+ weightings eval_rect can apply, since the whole point of doing the fold in unit-cube coordinates is
+ that it should not care which one is active.  A deliberately asymmetric box (hx != hy) is used so a
+ fold that mixed the two axes up could not pass.
+ */
+BOOST_AUTO_TEST_CASE( RectQuarterBoxSymmetry )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+
+  const double cm = PhysicalUnits::cm;
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> steel = matdb->material( scenario_matrix_material( true ) );
+  BOOST_REQUIRE( steel );
+
+  using namespace GammaInteractionCalc;
+
+  // Small box, far standoff, few rays: the symmetry is independent of all of those, and this keeps
+  //  the case cheap enough to sit in the committed suite (a contact-sized box costs ~100 s).
+  const double hx = 1.0, hy = 0.6, hz = 0.4, standoff = 25.0, energy = 661.7;
+
+  const auto integrate = [&]( const bool normalize, const bool in_situ,
+                              const double offset_x_cm ) -> double
+  {
+    DistributedSrcCalcT<double> calc;
+    calc.m_geometry = GeometryType::Rectangular;
+    calc.m_materialIndex = 0;
+    calc.m_attenuateForAir = false;
+    calc.m_airTransLenCoef = 0.0;
+    calc.m_isInSituExponential = in_situ;
+    calc.m_inSituRelaxationLength = in_situ ? (0.5*cm) : -1.0;
+    calc.m_srcVolumetricActivity = 1.0;
+    calc.m_normalizeByVolume = normalize;
+    calc.m_energy = energy;
+    calc.m_nuclide = nullptr;
+    calc.integral = 0.0;
+    calc.m_effResponse = det.mc_transfer;
+    calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+    calc.m_effNumRays = 32;
+    calc.m_detector = detector_geom_from_config<double>( GeometryType::Rectangular,
+                            (standoff + hz)*cm, det.gd.transverse_half_extent()*cm, 0.0,
+                            offset_x_cm*cm, 0.0 );
+
+    DistributedSrcCalcT<double>::ShellInfo src;
+    src.dims = { hx*cm, hy*cm, hz*cm };
+    src.trans_len_coef = transmition_length_coefficient( steel.get(), static_cast<float>(energy) );
+    src.type = ShellType::Material;
+    calc.m_shells.push_back( src );
+
+    self_shielding_integration_imp<double>( calc, 1.0e-5, 20000000 );
+    return calc.integral;
+  };
+
+  double worst = 0.0;
+  for( const bool normalize : { false, true } )
+  {
+    for( const bool in_situ : { false, true } )
+    {
+      if( in_situ && !normalize )
+        continue;   //in-situ exponential is only meaningful with the volume normalization
+
+      const double folded = integrate( normalize, in_situ, 0.0 );
+      // 1e-9 cm off-axis: disables the fold, but is physically the same source.
+      const double unfolded = integrate( normalize, in_situ, 1.0e-9 );
+
+      BOOST_REQUIRE( unfolded > 0.0 );
+      const double rel = fabs( folded/unfolded - 1.0 );
+      worst = std::max( worst, rel );
+
+      BOOST_CHECK_MESSAGE( rel < 1.0e-3,
+                           "Quarter-box fold changed the answer (normalize=" << normalize
+                           << ", in_situ=" << in_situ << "): folded " << setprecision(10) << folded
+                           << " vs unfolded " << unfolded << " (" << setprecision(3)
+                           << 100.0*rel << "%)" );
+    }//for( in_situ )
+  }//for( normalize )
+
+  BOOST_TEST_MESSAGE( "  worst quarter-box fold discrepancy: " << setprecision(3)
+                      << 100.0*worst << "%" );
+}//BOOST_AUTO_TEST_CASE( RectQuarterBoxSymmetry )
 
 
 /** Verification item 7: the ceres::Jet gradient of the per-ray model must match a finite difference
@@ -998,7 +1016,7 @@ BOOST_AUTO_TEST_CASE( ApertureRayConvergence )
    - active          : rays with a non-zero ACTIVE-crystal chord - the only ones that carry FEP
                        weight, and therefore the true order of the aperture quadrature.
  */
-BOOST_AUTO_TEST_CASE( ApertureSamplingEfficiency )
+BOOST_AUTO_TEST_CASE( ApertureSamplingEfficiency, * boost::unit_test::disabled() )
 {
   set_data_dir();
   const AngleDetector det = load_angle_detector();
@@ -1081,7 +1099,7 @@ BOOST_AUTO_TEST_CASE( ApertureSamplingEfficiency )
  circles (a cylinder is the convex hull of them, so the enclosing cone is determined by them),
  aiming the axis at the mean direction, then one bisector refinement.
  */
-BOOST_AUTO_TEST_CASE( CylinderExactConeHeadroom )
+BOOST_AUTO_TEST_CASE( CylinderExactConeHeadroom, * boost::unit_test::disabled() )
 {
   set_data_dir();
   const AngleDetector det = load_angle_detector();
@@ -1303,7 +1321,7 @@ BOOST_AUTO_TEST_CASE( PerElementAperturePrecision )
 
 
 /** TEMPORARY A/B (plan 3.4): does the survival-removal mu close the low-energy near-field gap? */
-BOOST_AUTO_TEST_CASE( SurvivalRemovalMuSweep )
+BOOST_AUTO_TEST_CASE( SurvivalRemovalMuSweep, * boost::unit_test::disabled() )
 {
   set_data_dir();
   BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
@@ -1323,6 +1341,13 @@ BOOST_AUTO_TEST_CASE( SurvivalRemovalMuSweep )
   {
     const std::map<std::string,Scenario>::const_iterator it = byname.find( row.scenario );
     if( it == byname.end() ) continue;
+
+    // Restricted to the CONTACT rows at the three low energies - that is where the residual lives
+    //  and where the credit is largest.  The far rows are already within ~2% on mu_total, so there
+    //  is nothing for a credit to fix there, and a box row costs ~20 s per variant.
+    if( row.scenario.find("-near-") == std::string::npos ) continue;
+    if( row.energy_keV > 130.0 ) continue;
+
     const double fwhm = std::sqrt( 0.359 + 0.00230*row.energy_keV );
     const std::vector<double> windows = { 0.5*fwhm, 0.75, 1.5 };
     std::ostringstream o;
@@ -1345,7 +1370,7 @@ BOOST_AUTO_TEST_CASE( SurvivalRemovalMuSweep )
 /** How much can the survival credit possibly move the answer?  mu_rem = mu_total - f_win*mu_CS, so
  the ENTIRE headroom is f_win * (mu_CS/mu_total). Where photoelectric dominates, there is almost
  nothing to credit no matter how the window is chosen. */
-BOOST_AUTO_TEST_CASE( RemovalMuHeadroom )
+BOOST_AUTO_TEST_CASE( RemovalMuHeadroom, * boost::unit_test::disabled() )
 {
   set_data_dir();
   BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
@@ -1440,7 +1465,7 @@ BOOST_AUTO_TEST_CASE( PointSourceNearFieldTransferAccuracy, * boost::unit_test::
  * energy-dependent (worse where mu is large), material-dependent (dense worse than light) and
  * roughly geometry-independent - which is exactly the observed pattern.
  */
-BOOST_AUTO_TEST_CASE( IntegrationResolutionSweep )
+BOOST_AUTO_TEST_CASE( IntegrationResolutionSweep, * boost::unit_test::disabled() )
 {
   set_data_dir();
   BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
@@ -1839,7 +1864,7 @@ BOOST_AUTO_TEST_CASE( NearFieldFlagIsRaised )
  * chord-dependent peak fraction is the right fix; if the distribution barely moves, the bias is
  * something else and the fix would be misdirected.
  */
-BOOST_AUTO_TEST_CASE( ApertureChordDistribution )
+BOOST_AUTO_TEST_CASE( ApertureChordDistribution, * boost::unit_test::disabled() )
 {
   set_data_dir();
   const AngleDetector det = load_angle_detector();
@@ -1883,7 +1908,7 @@ BOOST_AUTO_TEST_CASE( ApertureChordDistribution )
  * from the anchor.  Only the NearFieldUnmodeled penalty (a hard-coded 0.05 in quadrature) is
  * missing from it.  Measure both so the size of the inflation is a number, not an inference.
  */
-BOOST_AUTO_TEST_CASE( CovarianceVsPerQuerySigma )
+BOOST_AUTO_TEST_CASE( CovarianceVsPerQuerySigma, * boost::unit_test::disabled() )
 {
   set_data_dir();
   const AngleDetector det = load_angle_detector();
@@ -1908,3 +1933,1544 @@ BOOST_AUTO_TEST_CASE( CovarianceVsPerQuerySigma )
     }
   }
 }
+
+
+/** EXPERIMENT: anchor the transfer AT the source, and see what error survives.
+ *
+ * Every volumetric comparison so far anchors the response on a point source at 25 cm and then asks
+ * it about a source sitting ~1 cm off the endcap.  That bundles two error sources:
+ *
+ *   (a) the transfer extrapolating 25 cm -> contact, independently measured at +7.7% (high energy)
+ *       and -1..-3% (low energy) for bare POINT sources, and
+ *   (b) InterSpec's volume integration and per-ray kernel.
+ *
+ * Anchoring instead on a point source at the SOURCE CENTRE makes the transfer distance essentially
+ * zero for the middle of the source, so (a) is largely removed by construction.  Whatever error is
+ * left is (b).
+ *
+ * Shape-agnostic on purpose.  The probe list is two boxes and the two CYLINDER TWINS of those boxes -
+ * same transverse extent, same half-length, same standoff, same matrix, same shield - so the gap
+ * between a box row and its twin is a pure SHAPE difference in the integrator, not a difference in
+ * how much transfer error each one happens to be carrying.  The deficit has the same signature on
+ * both shapes (boxes roughly twice the magnitude, which is what their longer diagonal chords would
+ * predict), so measuring only the boxes leaves the cylinder residual as an unseparated sum of two
+ * errors of opposite sign.
+ *
+ * The twins also share their anchor EXACTLY: the anchor is a bare point source in vacuum, so it
+ * depends only on the on-axis centre distance, and a box and its twin have the same one.  Hence the
+ * cache - the two cylinder rows cost no extra Monte Carlo at all.
+ *
+ * If the error collapses, the extrapolation was the problem and the kernels are fine.  If it
+ * survives, the problem is in the integration - and the next question is not "which attenuation term"
+ * but TransparentTransferFloor below, which bounds what the integral could achieve with no
+ * attenuation anywhere.
+ */
+BOOST_AUTO_TEST_CASE( NearAnchorExperiment, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+
+  vector<unique_ptr<ceelo::Material>> owned;
+  ceelo::EfficiencyCalculator pt;
+  ceelo::ResponseGenerator::configure_calculator( pt, det.gd, owned );
+
+  const vector<double> energies = scenario_energies();
+
+  // Anchors keyed on the centre distance, NOT on the scenario: a box and its cylinder twin have the
+  //  same centre distance and the anchor is a bare point in vacuum, so they are the same MC run.
+  //  Exactly two misses should be reported below; four means the key rounding is broken and the run
+  //  is paying double for nothing.
+  map<long long,shared_ptr<ceelo::DetectorResponse>> anchors;
+  const auto anchor_for = [&]( const double d_cm ) -> shared_ptr<ceelo::DetectorResponse> {
+    const long long key = llround( d_cm * 1.0e6 );
+    const map<long long,shared_ptr<ceelo::DetectorResponse>>::const_iterator it = anchors.find( key );
+    if( it != anchors.end() )
+      return it->second;
+
+    ostringstream miss;
+    miss << "  [anchor cache MISS] Monte-Carloing a point source at d=" << fixed << setprecision(2)
+         << d_cm << " cm";
+    BOOST_TEST_MESSAGE( miss.str() );
+    const shared_ptr<ceelo::DetectorResponse> r = make_centre_anchor_response( det, pt, d_cm );
+    anchors[key] = r;
+    return r;
+  };
+
+  // Twins adjacent, so the two tables read directly against each other.
+  for( const char * const want : { "box-shielded-near-light", "shielded-near-light",
+                                   "box-large-near-dense",    "large-near-dense" } )
+  {
+    const Scenario sc = find_scenario( want );
+    const double d_cm = scenario_center_distance_cm( sc );
+
+    // NOTE: every formatted line here goes through an ostringstream and is handed to
+    //  BOOST_TEST_MESSAGE as a finished string.  Boost's log stream does NOT honour manipulators
+    //  streamed into the macro - it pins precision at max_digits10 - so streaming setw/setprecision
+    //  directly produces an unreadable wall of 17-digit numbers.
+    ostringstream hdr;
+    hdr << "== " << want << ": " << scenario_description( sc ) << "; anchor at the centre, d="
+        << fixed << setprecision(2) << d_cm << " cm ==";
+    BOOST_TEST_MESSAGE( "" );
+    BOOST_TEST_MESSAGE( hdr.str() );
+
+    const shared_ptr<ceelo::DetectorResponse> near_resp = anchor_for( d_cm );
+
+    BOOST_TEST_MESSAGE( "   E(keV)     truth      far-anchor(25cm)   near-anchor(centre)   tau(mfp)" );
+    for( const double e : energies )
+    {
+      double truth = -1.0;
+      for( const TruthRow &row : sm_truth )
+        if( (row.scenario == want) && (fabs(row.energy_keV - e) < 0.1) )
+          truth = row.fep_eff;
+      if( truth <= 0.0 )
+        continue;
+
+      const double far_v  = interspec_volumetric_eff( det, sc, e, det.mc_transfer );
+      const double near_v = interspec_volumetric_eff( det, sc, e, near_resp );
+
+      ostringstream o;
+      o << "  " << setw(8) << fixed << setprecision(1) << e
+        << setw(13) << scientific << setprecision(4) << truth
+        << setw(14) << fixed << showpos << setprecision(1) << 100.0*(far_v/truth - 1.0) << "%"
+        << setw(17) << 100.0*(near_v/truth - 1.0) << "%" << noshowpos
+        << setw(11) << setprecision(2) << scenario_optical_depth( sc, e );
+      BOOST_TEST_MESSAGE( o.str() );
+    }//for( energies )
+  }//for( probed scenarios )
+}//BOOST_AUTO_TEST_CASE( NearAnchorExperiment )
+
+
+/** THE FLOOR: with NO attenuating material anywhere, how well can the volume integral possibly do?
+ *
+ * NearAnchorExperiment removes the AXIAL extrapolation, but not the rest of the transfer's job: an
+ * element at the rim of `large-near-dense` is 4 cm off the axis the anchor was taken on and subtends
+ * a completely different angle.  So before attributing a surviving deficit to the optical depth, ask
+ * whether the transfer is even good enough over this volume for an accurate volume integral to be
+ * possible - measured with no source matrix and no shield, so not one line of attenuation code is in
+ * the loop.  Whatever is missing here is an upper bound on how good the attenuating result can be.
+ *
+ * Two parts, both against Monte Carlo and both using the SAME centre-anchored response the
+ * near-anchor column uses:
+ *
+ *   (a) bare POINT sources at positions spanning the source volume - near face / centre / far face,
+ *       on-axis out to the rim, plus the box CORNER, which is the part of a box a cylinder has no
+ *       analogue for and the stated reason boxes are worse.  Localizes any error.
+ *   (b) the WHOLE volume integral, transparent on both sides: every shell's trans_len_coef forced to
+ *       zero against an extended-source MC with no source material and no shield.  This is the
+ *       summary number.
+ *
+ * Reading it: (b) within ~1-2% means the transfer and the geometric assembly are sound over this
+ * volume and the attenuating deficit really is in the optical depth.  (b) several percent short, in
+ * the same direction as the attenuating deficit, means no fix to the optical depth can close the gap
+ * and the floor must be fixed first - with (a) saying where.
+ *
+ * Deliberate overlap with PerRayTransparentSourceIdentity, which also checks transparent assembly -
+ * but per ray, against a Gauss-Legendre reference.  (b) closes the WHOLE integral against Monte
+ * Carlo, so it can see an outer-quadrature or volume-measure error that a per-ray identity cannot.
+ *
+ * Developer-only: real Monte Carlo.  Transparent sources are high-efficiency, so this is far cheaper
+ * than the truth bank, but it is still minutes.
+ */
+BOOST_AUTO_TEST_CASE( TransparentTransferFloor, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+
+  const vector<double> energies = scenario_energies();
+
+  vector<unique_ptr<ceelo::Material>> owned;
+  ceelo::EfficiencyCalculator pt;
+  ceelo::ResponseGenerator::configure_calculator( pt, det.gd, owned );
+
+  map<long long,shared_ptr<ceelo::DetectorResponse>> anchors;
+  const auto anchor_for = [&]( const double d_cm ) -> shared_ptr<ceelo::DetectorResponse> {
+    const long long key = llround( d_cm * 1.0e6 );
+    const map<long long,shared_ptr<ceelo::DetectorResponse>>::const_iterator it = anchors.find( key );
+    if( it != anchors.end() )
+      return it->second;
+    ostringstream miss;
+    miss << "  [anchor cache MISS] Monte-Carloing a point source at d=" << fixed << setprecision(2)
+         << d_cm << " cm";
+    BOOST_TEST_MESSAGE( miss.str() );
+    const shared_ptr<ceelo::DetectorResponse> r = make_centre_anchor_response( det, pt, d_cm );
+    anchors[key] = r;
+    return r;
+  };
+
+  // Point-source MC results, keyed on (dist, theta, energy) so the twins - which share most of their
+  //  grid - share the runs too.  Returns (eff, achieved fractional sigma).
+  map<array<long long,3>,pair<double,double>> mc_cache;
+  const auto mc_point = [&]( const double dist_cm, const double theta,
+                             const double energy ) -> pair<double,double> {
+    const array<long long,3> key = { llround(dist_cm*1.0e6), llround(theta*1.0e6),
+                                     llround(energy*1.0e3) };
+    const map<array<long long,3>,pair<double,double>>::const_iterator it = mc_cache.find( key );
+    if( it != mc_cache.end() )
+      return it->second;
+
+    // Both sides are driven from query_position(), so the endcap-front-vs-crystal-face reference
+    //  convention cannot drift between the model and the MC (commit 9c5e9c5f was exactly that bug).
+    //  Which response it is asked of does not matter - query_position() reads only `descriptor`, and
+    //  every response here is built from the same det.gd - so the cache can key on position alone.
+    const Eigen::Vector3d pos = det.mc_transfer->query_position( theta, 0.0, dist_cm );
+    pt.set_point_source( pos );
+    ceelo::SimulationConfig cfg;
+    cfg.energy_keV = energy;
+    cfg.termination.target_fep_rel_precision = 0.01;
+    cfg.termination.max_events = 20000000;
+    cfg.termination.min_events = 50000;
+    cfg.seed = 20260902;
+
+    const ceelo::EfficiencyResult r = pt.compute( cfg );
+    const double eff = r.full_energy_peak_efficiency;
+    const pair<double,double> out( eff, (eff > 0.0) ? (r.fep_uncertainty/eff) : 1.0 );
+    mc_cache[key] = out;
+    return out;
+  };
+
+  for( const char * const want : { "box-shielded-near-light", "shielded-near-light",
+                                   "box-large-near-dense",    "large-near-dense" } )
+  {
+    const Scenario sc = find_scenario( want );
+    const double d_cm = scenario_center_distance_cm( sc );
+    const shared_ptr<ceelo::DetectorResponse> near_resp = anchor_for( d_cm );
+
+    BOOST_TEST_MESSAGE( "" );
+    BOOST_TEST_MESSAGE( "======== " << want << ": " << scenario_description( sc )
+                        << " ========" );
+    BOOST_TEST_MESSAGE( "  (source matrix and shield IGNORED here - transparent on both sides)" );
+
+    // ---- (a) point sources spanning the source volume ----
+    //
+    // Transverse offsets: axis, half way out, the rim - and for a box also the CORNER, which is the
+    //  farthest-off-axis material a box has and which no cylinder can produce.
+    vector<double> offsets;
+    if( sc.shape == Shape::Box )
+    {
+      offsets = { 0.0, 0.5*sc.half_width_cm, sc.half_width_cm,
+                  sqrt( sc.half_width_cm*sc.half_width_cm + sc.half_height_cm*sc.half_height_cm ) };
+    }else
+    {
+      offsets = { 0.0, 0.5*sc.radius_cm, sc.radius_cm };
+    }
+
+    // Axial: the near face (closest material, dominates the integral), the centre (where the anchor
+    //  is, so this row should be ~0 by construction and is the sanity check), and the far face.
+    const vector<double> axials = { sc.standoff_cm, sc.standoff_cm + sc.half_length_cm,
+                                    sc.standoff_cm + 2.0*sc.half_length_cm };
+
+    BOOST_TEST_MESSAGE( "  (a) bare point sources, (transfer/MC - 1) with achieved MC sigma in ():" );
+    for( const double z : axials )
+    {
+      for( const double off : offsets )
+      {
+        const double dist = sqrt( z*z + off*off );
+        const double theta = (dist > 0.0) ? atan2( off, z ) : 0.0;
+
+        ostringstream o;
+        o << "    z=" << fixed << setprecision(2) << setw(5) << z << " off=" << setw(5) << off
+          << " (d=" << setw(5) << dist << ", th=" << setw(5) << setprecision(1)
+          << theta*180.0/M_PI << "deg):";
+
+        for( const double e : energies )
+        {
+          const pair<double,double> mc = mc_point( dist, theta, e );
+          const ceelo::EffResult tr = near_resp->eps_fep( e, theta, 0.0, dist );
+          const double rel = (mc.first > 0.0) ? 100.0*(tr.value/mc.first - 1.0) : 0.0;
+          o << " " << setw(5) << setprecision(0) << e << ":" << showpos << setprecision(1)
+            << setw(6) << rel << "%" << noshowpos << "(" << setprecision(1)
+            << 100.0*mc.second << ")";
+        }//for( energies )
+        BOOST_TEST_MESSAGE( o.str() );
+      }//for( transverse offsets )
+    }//for( axial positions )
+
+    // ---- (b) the whole volume integral, transparent on both sides ----
+    //
+    // No set_source_material and no add_source_shield: a null source material is a supported
+    //  transparent source in CeeLo (every use site guards on has_source_effects()/source_material()),
+    //  so this is an emitting volume in vacuum rather than an assertion.  The InterSpec side keeps
+    //  the shells - including the shield shell - but with trans_len_coef zeroed, so the multi-shell
+    //  traversal runs the same path the attenuating case does.
+    vector<unique_ptr<ceelo::Material>> ext_owned;
+    ceelo::EfficiencyCalculator ext;
+    ceelo::ResponseGenerator::configure_calculator( ext, det.gd, ext_owned );
+    if( sc.shape == Shape::Box )
+      ext.set_rectangular_source( scenario_center( sc, det.endcap_front_offset_cm ),
+                                  scenario_box_half_dims( sc ) );
+    else
+      ext.set_cylindrical_source( scenario_center( sc, det.endcap_front_offset_cm ),
+                                  sc.radius_cm, sc.half_length_cm );
+
+    BOOST_TEST_MESSAGE( "  (b) whole volume integral, transparent:" );
+    BOOST_TEST_MESSAGE( "     E(keV)      MC(transparent)     model/MC-1   (MC sigma)" );
+    for( const double e : energies )
+    {
+      ceelo::SimulationConfig cfg;
+      cfg.energy_keV = e;
+      cfg.termination.target_fep_rel_precision = 0.005;
+      cfg.termination.max_events = 400000000;
+      cfg.termination.min_events = 100000;
+      cfg.seed = 20260902;
+
+      const ceelo::EfficiencyResult mc = ext.compute( cfg );
+      const double mc_eff = mc.full_energy_peak_efficiency;
+      if( !(mc_eff > 0.0) )
+        continue;
+
+      const double model = interspec_volumetric_eff( det, sc, e, near_resp, -1, -1.0, -1.0,
+                                                     true /*transparent*/ );
+
+      ostringstream o;
+      o << "    " << setw(8) << fixed << setprecision(1) << e
+        << setw(18) << scientific << setprecision(4) << mc_eff
+        << setw(13) << fixed << showpos << setprecision(2) << 100.0*(model/mc_eff - 1.0) << "%"
+        << noshowpos << setw(12) << setprecision(2) << 100.0*(mc.fep_uncertainty/mc_eff) << "%";
+      BOOST_TEST_MESSAGE( o.str() );
+    }//for( energies )
+  }//for( probed scenarios )
+}//BOOST_AUTO_TEST_CASE( TransparentTransferFloor )
+
+
+/** DEVELOPER-ONLY: the BOX counterpart of ApertureRayConvergence.
+ 
+ ApertureRayConvergence probes `small-near-dense`, `large-near-dense` and `shielded-near-dense` -
+ all three are CYLINDERS.  Box aperture convergence has never been measured, and its comment's
+ conclusion ("per-element aperture error averages out over the volume integral") is exactly the
+ claim that needs testing for a box, because:
+
+   - the 512-ray Fibonacci spiral has a DETERMINISTIC phase, identical at every element, and is
+     rotated onto the element->detector direction by a Rodrigues MINIMAL rotation whose residual
+     azimuth is only "free" for an axially symmetric DETECTOR.  The source box is not symmetric
+     about that axis, so the residual azimuth is not free and the per-element error does not
+     obviously average out; and
+   - a box's chord-vs-azimuth function has four-fold CORNER kinks where a cylinder's is smooth, so
+     whatever error the fixed spiral makes can add coherently over the volume.
+
+ Cylinder twins are integrated in the same table so the two shapes are read against each other at
+ the same ray counts.  Low energies only: this is a self-attenuation effect and 60/122 keV is where
+ the chord spread across the aperture matters.
+ */
+BOOST_AUTO_TEST_CASE( BoxApertureRayConvergence, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+
+  // 2048 as the reference rather than 8192: a box element costs ~500 ray traces already and a box
+  //  row is 20-35 s at the shipped 512, so 8192 would be ~5 minutes per cell of this table.  If the
+  //  fixed spiral is the box-specific term, 512-vs-2048 will show it - the question is whether a
+  //  box moves by percent where a cylinder moves by 0.1%, not the fourth decimal of the limit.
+  const std::vector<int> ray_counts = { 128, 512, 2048 };
+  const int reference_rays = ray_counts.back();
+
+  const char * const probe_names[] = { "box-slab-near-dense",     "box-shielded-near-light",
+                                       "box-large-near-dense",
+                                       "shielded-near-light",     "large-near-dense" };
+
+  BOOST_TEST_MESSAGE( "  Deviation from the 2048-ray reference (boxes first, then cylinder twins):" );
+
+  double worst_box_512 = 0.0;
+  std::string worst_box_where;
+
+  for( const char * const want : probe_names )
+  {
+    const Scenario s = find_scenario( want );
+
+    for( const double energy : { 60.0, 122.0 } )
+    {
+      const double ref = interspec_volumetric_eff( det, s, energy, det.mc_transfer, reference_rays );
+      BOOST_REQUIRE( ref > 0.0 );
+
+      ostringstream row;
+      row << "  " << setw(24) << want << " @ " << setw(6) << fixed << setprecision(1) << energy
+          << " keV:";
+      for( const int n : ray_counts )
+      {
+        const double v = (n == reference_rays)
+                            ? ref : interspec_volumetric_eff( det, s, energy, det.mc_transfer, n );
+        const double rel = 100.0*(v/ref - 1.0);
+        row << "  n=" << n << ":" << fixed << setprecision(2) << showpos << rel << "%" << noshowpos;
+
+        if( (n == 512) && (s.shape == Shape::Box) && (fabs(rel) > worst_box_512) )
+        {
+          worst_box_512 = fabs( rel );
+          worst_box_where = string(want) + " @ " + to_string(energy) + " keV";
+        }
+      }//for( loop over ray counts )
+      BOOST_TEST_MESSAGE( row.str() );
+    }//for( energies )
+  }//for( probes )
+
+  ostringstream tail;
+  tail << "  worst BOX deviation of the shipped 512-ray setting from " << reference_rays
+       << " rays: " << fixed << setprecision(2) << worst_box_512 << "% (" << worst_box_where << ")";
+  BOOST_TEST_MESSAGE( tail.str() );
+}//BOOST_AUTO_TEST_CASE( BoxApertureRayConvergence )
+
+
+/** DEVELOPER-ONLY: RectQuarterBoxSymmetry, but in the regime the box rows actually fail in.
+ 
+ The committed RectQuarterBoxSymmetry runs a SMALL box at standoff 25 cm, 661.7 keV, 32 rays - far
+ field, high energy, low tau - and measures 0.0021%.  That does not cover the fold where it is used
+ in anger.  The fold asserts f(u0,u1,u2) == f(1-u0,u1,u2), which is true of the CONTINUUM integrand
+ but not obviously of the DISCRETISED one: the aperture is a fixed spiral rotated by a minimal
+ rotation, and the ray SET for an element at +x is not the mirror image of the set at -x.  With no
+ attenuation the kernel collapses to prefactor*sum_w - direction-independent - so the fold is exact
+ transparent no matter what the rays do, and only a strongly attenuating contact case can see it.
+
+ Contact, dense, 60 keV, hx != hy, at the shipped 512 rays.  One weighting combination only; the
+ point here is tau, not the volume normalisation, which the committed case already covers.
+ */
+BOOST_AUTO_TEST_CASE( RectQuarterBoxSymmetryContact, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+
+  const double cm = PhysicalUnits::cm;
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> steel = matdb->material( scenario_matrix_material( true ) );
+  BOOST_REQUIRE( steel );
+
+  using namespace GammaInteractionCalc;
+
+  const double hx = 2.0, hy = 1.0, hz = 0.5, standoff = 1.0, energy = 60.0;
+
+  const auto integrate = [&]( const double offset_x_cm, const double epsrel ) -> double
+  {
+    DistributedSrcCalcT<double> calc;
+    calc.m_geometry = GeometryType::Rectangular;
+    calc.m_materialIndex = 0;
+    calc.m_attenuateForAir = false;
+    calc.m_airTransLenCoef = 0.0;
+    calc.m_isInSituExponential = false;
+    calc.m_inSituRelaxationLength = -1.0;
+    calc.m_srcVolumetricActivity = 1.0;
+    calc.m_normalizeByVolume = false;
+    calc.m_energy = energy;
+    calc.m_nuclide = nullptr;
+    calc.integral = 0.0;
+    calc.m_effResponse = det.mc_transfer;
+    calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+    calc.m_effNumRays = 512;
+    calc.m_detector = detector_geom_from_config<double>( GeometryType::Rectangular,
+                            (standoff + hz)*cm, det.gd.transverse_half_extent()*cm, 0.0,
+                            offset_x_cm*cm, 0.0 );
+
+    DistributedSrcCalcT<double>::ShellInfo src;
+    src.dims = { hx*cm, hy*cm, hz*cm };
+    src.trans_len_coef = transmition_length_coefficient( steel.get(), static_cast<float>(energy) );
+    src.type = ShellType::Material;
+    calc.m_shells.push_back( src );
+
+    self_shielding_integration_imp<double>( calc, epsrel, 200000000 );
+    return calc.integral;
+  };
+
+  // Swept, because folded-vs-unfolded at ONE tolerance cannot tell a broken symmetry from an
+  //  under-converged integral.  If the fold is invalid the gap is tolerance-independent; if the
+  //  full-domain 3D integration is simply not converged at the shipped default (the folded domain
+  //  is 4x smaller, so it resolves the attenuation skin better for the same cell budget) the two
+  //  must close as epsrel tightens.
+  double worst = 0.0;
+  for( const double epsrel : { 1.0e-4, 1.0e-5 } )   //1e-6 in 3D costs hours and adds nothing
+  {
+    const double folded = integrate( 0.0, epsrel );
+    const double unfolded = integrate( 1.0e-9, epsrel ); //disables the fold; same source physically
+    BOOST_REQUIRE( unfolded > 0.0 );
+
+    const double rel = fabs( folded/unfolded - 1.0 );
+    worst = std::max( worst, rel );
+
+    ostringstream o;
+    o << "  epsrel " << scientific << setprecision(0) << epsrel << ":  folded "
+      << setprecision(8) << folded << "  unfolded " << unfolded
+      << "   (" << fixed << setprecision(4) << 100.0*rel << "%)";
+    BOOST_TEST_MESSAGE( o.str() );
+  }//for( epsrel sweep )
+
+  BOOST_CHECK_MESSAGE( worst < 1.0e-2, "Quarter-box fold moves the contact/dense answer by "
+                       << 100.0*worst << "% - the discretised integrand is not mirror symmetric, "
+                       "or the box integration is not converged." );
+}//BOOST_AUTO_TEST_CASE( RectQuarterBoxSymmetryContact )
+
+
+/** DEVELOPER-ONLY: THE decisive experiment - is the volumetric deficit a code bug or missing
+ physics?
+
+ The truth bank is generated with CeeLo's FULL transport (SourceGeometry::transport_source_photon):
+ photons that Compton-scatter inside the source are followed, and one that scatters by a small
+ enough angle to stay inside the 0.75 keV FEP window and then reaches the crystal IS COUNTED in the
+ peak.  InterSpec's analytic model has no in-scatter or build-up term on the FEP leg at all - the
+ only scatter augment in GammaInteractionCalc_imp.hpp is on the cascade TOTAL leg.  So part of the
+ model/truth residual may not be an InterSpec error at all.
+
+ RemovalMuHeadroom does NOT bound this.  It bounds the LINE-OF-SIGHT credit `f_win * mu_Compton` -
+ photons already aimed at the detector that forward-scatter and stay in the window - which is a
+ correction to mu along one ray.  In-scatter is the different and much larger term: photons emitted
+ in directions that would MISS the detector, scattering INTO it.  At 60 keV a Compton scatter stays
+ inside a 0.75 keV window out to ~26 degrees (dE ~ E^2 (1-cos)/511), and incoherent scattering is
+ ~79% of mu_total in water, so at contact - where the detector subtends a large solid angle - the
+ feed-in cone is wide and the term is large.  It grows with tau, with density, with shielding and
+ with source thickness, and vanishes when the source is transparent: the entire observed ordering.
+
+ `enable_fep_only_mode(true)` switches CeeLo's source side to SourceGeometry::compute_transmission_
+ fep_only - deterministic exp(-(mu_pe+mu_cs+mu_pp)*L) with Rayleigh as a stochastic DEFLECTION and
+ no Compton in-scatter - which is precisely the physics InterSpec claims to implement.  The crystal
+ side stays full MC, so the detector response is unchanged between the two MC columns.  That splits
+ the residual:
+
+     model / fep-only MC - 1   =  InterSpec's OWN error (geometry, chords, quadrature, aperture)
+     fep-only MC / full MC - 1 =  the physics the model does not have
+
+ A residual difference remains even in the first column, because fep-only mode still deflects
+ photons by Rayleigh scattering while InterSpec's mu excludes Rayleigh entirely (i.e. InterSpec
+ treats it as perfectly transparent).  That is second order next to Compton in-scatter, but it is
+ why this column is not expected to be exactly zero.
+
+ The anchor is a BARE POINT SOURCE in vacuum, so has_source_effects() is false for it and the
+ fep-only switch cannot touch it - the model column is anchored identically either way.  Reuses
+ NearAnchorExperiment's centre anchor so the numbers read directly against that table's near column.
+ */
+BOOST_AUTO_TEST_CASE( FepOnlyTruthComparison, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+
+  vector<unique_ptr<ceelo::Material>> anchor_owned;
+  ceelo::EfficiencyCalculator pt;
+  ceelo::ResponseGenerator::configure_calculator( pt, det.gd, anchor_owned );
+
+  const vector<double> energies = scenario_energies();
+
+  // Twins share a centre distance, so they share one anchor MC run; exactly two misses expected.
+  map<long long,shared_ptr<ceelo::DetectorResponse>> anchors;
+  const auto anchor_for = [&]( const double d_cm ) -> shared_ptr<ceelo::DetectorResponse> {
+    const long long key = llround( d_cm * 1.0e6 );
+    const map<long long,shared_ptr<ceelo::DetectorResponse>>::const_iterator it = anchors.find( key );
+    if( it != anchors.end() )
+      return it->second;
+    ostringstream miss;
+    miss << "  [anchor cache MISS] Monte-Carloing a point source at d=" << fixed << setprecision(2)
+         << d_cm << " cm";
+    BOOST_TEST_MESSAGE( miss.str() );
+    const shared_ptr<ceelo::DetectorResponse> r = make_centre_anchor_response( det, pt, d_cm );
+    anchors[key] = r;
+    return r;
+  };
+
+  for( const char * const want : { "box-shielded-near-light", "shielded-near-light",
+                                   "box-large-near-dense",    "large-near-dense" } )
+  {
+    const Scenario sc = find_scenario( want );
+    const double d_cm = scenario_center_distance_cm( sc );
+
+    ostringstream hdr;
+    hdr << "== " << want << ": " << scenario_description( sc ) << "; anchor at the centre, d="
+        << fixed << setprecision(2) << d_cm << " cm ==";
+    BOOST_TEST_MESSAGE( "" );
+    BOOST_TEST_MESSAGE( hdr.str() );
+
+    const shared_ptr<ceelo::DetectorResponse> near_resp = anchor_for( d_cm );
+
+    // Configured exactly as print_truth_rows does - shape BEFORE add_source_shield, since the
+    //  3-thickness overload asserts a rectangular source - then switched to FEP-only.  The FEP
+    //  window is left at kDefaultFepWindowKeV, which is what the truth bank was generated with, so
+    //  the two MC columns agree on what "in the peak" means.
+    vector<unique_ptr<ceelo::Material>> owned;
+    ceelo::EfficiencyCalculator calc;
+    ceelo::ResponseGenerator::configure_calculator( calc, det.gd, owned );
+
+    if( sc.shape == Shape::Box )
+      calc.set_rectangular_source( scenario_center( sc, det.endcap_front_offset_cm ),
+                                   scenario_box_half_dims( sc ) );
+    else
+      calc.set_cylindrical_source( scenario_center( sc, det.endcap_front_offset_cm ),
+                                   sc.radius_cm, sc.half_length_cm );
+
+    const shared_ptr<const Material> matrix_mat = matdb->material( scenario_matrix_material(sc.dense) );
+    BOOST_REQUIRE( matrix_mat );
+    const ceelo::Material matrix = CeeLoUtils::to_ceelo_material( *matrix_mat ).to_material();
+    calc.set_source_material( &matrix );
+
+    const shared_ptr<const Material> shield_mat = matdb->material( scenario_shield_material() );
+    BOOST_REQUIRE( shield_mat );
+    const ceelo::Material shield = CeeLoUtils::to_ceelo_material( *shield_mat ).to_material();
+    if( sc.shield_cm > 0.0 )
+    {
+      if( sc.shape == Shape::Box )
+        calc.add_source_shield( &shield, sc.shield_cm, sc.shield_cm, sc.shield_cm );
+      else
+        calc.add_source_shield( &shield, sc.shield_cm, sc.shield_cm );
+    }//if( shielded )
+
+    calc.enable_fep_only_mode( true );
+
+    BOOST_TEST_MESSAGE( "   E(keV)   full-MC(truth)   fepOnly-MC   model/fepOnly-1   fepOnly/full-1"
+                        "   model/full-1   (fepOnly sigma)  tau(mfp)" );
+    for( const double e : energies )
+    {
+      double truth = -1.0;
+      for( const TruthRow &row : sm_truth )
+        if( (row.scenario == want) && (fabs(row.energy_keV - e) < 0.1) )
+          truth = row.fep_eff;
+      if( truth <= 0.0 )
+        continue;
+
+      ceelo::SimulationConfig cfg;
+      cfg.energy_keV = e;
+      cfg.termination.target_fep_rel_precision = 0.005;
+      cfg.termination.max_events = 4000000000ULL;
+      cfg.termination.min_events = 50000;
+      cfg.seed = 20260903;
+
+      const ceelo::EfficiencyResult r = calc.compute( cfg );
+      const double fep_only = r.full_energy_peak_efficiency;
+      if( !(fep_only > 0.0) )
+        continue;
+
+      const double model = interspec_volumetric_eff( det, sc, e, near_resp );
+
+      ostringstream o;
+      o << "  " << setw(8) << fixed << setprecision(1) << e
+        << setw(16) << scientific << setprecision(4) << truth
+        << setw(14) << fep_only
+        << setw(16) << fixed << showpos << setprecision(1) << 100.0*(model/fep_only - 1.0) << "%"
+        << setw(16) << 100.0*(fep_only/truth - 1.0) << "%"
+        << setw(14) << 100.0*(model/truth - 1.0) << "%" << noshowpos
+        << setw(16) << setprecision(2) << 100.0*(r.fep_uncertainty/fep_only) << "%"
+        << setw(10) << scenario_optical_depth( sc, e );
+      BOOST_TEST_MESSAGE( o.str() );
+    }//for( energies )
+  }//for( probed scenarios )
+}//BOOST_AUTO_TEST_CASE( FepOnlyTruthComparison )
+
+
+/** DEVELOPER-ONLY: calibrates FepOnlyTruthComparison's oracle against itself.
+
+ `enable_fep_only_mode(true)` does two things, and only one of them is wanted.  On the SOURCE side
+ it swaps full transport for deterministic attenuation - the point of the experiment.  On the
+ DETECTOR side it also switches `transport_photon` into `fep_only_mode`, which applies a
+ boundary-exit kill in the scoring volume.  If that kill prunes histories that would have reached
+ the full-energy peak, the fep-only column is biased low by an amount that has nothing to do with
+ the source at all, and `fepOnly/full - 1` cannot be read as "the in-scatter the model is missing".
+
+ A BARE POINT SOURCE isolates exactly that: `has_source_effects()` is false, so there is no source
+ material for the mode to change, and any residual is the detector-side kill.  Whatever this table
+ shows must be subtracted from FepOnlyTruthComparison's `fepOnly/full` column before it is
+ interpreted.  Run at the two scenario centre distances plus the anchor distance.
+ */
+BOOST_AUTO_TEST_CASE( FepOnlyModeBias, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+
+  vector<unique_ptr<ceelo::Material>> owned;
+  ceelo::EfficiencyCalculator calc;
+  ceelo::ResponseGenerator::configure_calculator( calc, det.gd, owned );
+
+  BOOST_TEST_MESSAGE( "  Bare point source, no source material: fep-only mode vs full transport." );
+  BOOST_TEST_MESSAGE( "  Any non-zero column here is the DETECTOR-side boundary-exit kill, not physics." );
+
+  for( const double d_cm : { 2.0, 3.0, 25.0 } )
+  {
+    ostringstream hdr;
+    hdr << "";
+    BOOST_TEST_MESSAGE( "" );
+    hdr << "== bare point source at d=" << fixed << setprecision(2) << d_cm << " cm ==";
+    BOOST_TEST_MESSAGE( hdr.str() );
+    BOOST_TEST_MESSAGE( "   E(keV)      full-MC      fepOnly-MC    fepOnly/full-1   (sigmas)" );
+
+    for( const double e : scenario_energies() )
+    {
+      const auto run = [&]( const bool fep_only ) -> ceelo::EfficiencyResult {
+        calc.enable_fep_only_mode( fep_only );
+        calc.set_point_source( Eigen::Vector3d( 0.0, 0.0, -(det.endcap_front_offset_cm + d_cm) ) );
+        ceelo::SimulationConfig cfg;
+        cfg.energy_keV = e;
+        cfg.termination.target_fep_rel_precision = 0.003;
+        cfg.termination.max_events = 400000000;
+        cfg.termination.min_events = 100000;
+        cfg.seed = 20260904;
+        return calc.compute( cfg );
+      };
+
+      const ceelo::EfficiencyResult full = run( false );
+      const ceelo::EfficiencyResult fep = run( true );
+
+      const double fv = full.full_energy_peak_efficiency;
+      const double pv = fep.full_energy_peak_efficiency;
+      if( !(fv > 0.0) || !(pv > 0.0) )
+        continue;
+
+      ostringstream o;
+      o << "  " << setw(8) << fixed << setprecision(1) << e
+        << setw(15) << scientific << setprecision(4) << fv
+        << setw(15) << pv
+        << setw(16) << fixed << showpos << setprecision(2) << 100.0*(pv/fv - 1.0) << "%" << noshowpos
+        << setw(10) << setprecision(2) << 100.0*(full.fep_uncertainty/fv) << "/"
+        << 100.0*(fep.fep_uncertainty/pv) << "%";
+      BOOST_TEST_MESSAGE( o.str() );
+    }//for( energies )
+  }//for( distances )
+}//BOOST_AUTO_TEST_CASE( FepOnlyModeBias )
+
+
+/** DEVELOPER-ONLY: is the BOX volume integral actually converged at the shipped tolerance?
+
+ RectQuarterBoxSymmetryContact showed folded and unfolded integrations of the SAME contact/dense box
+ disagreeing at the default epsrel.  Two routes to one integral cannot disagree unless at least one
+ of them is not converged, so this asks the question directly, and prints what the integrator
+ BELIEVES about itself alongside the answer.
+
+ The distinction that matters: a value that moves as epsrel tightens is simply under-converged; a
+ value that moves while `est_rel_error` claims it was already converged means the embedded GL3/GL5
+ error estimate is BLIND, and no amount of tightening the shipped default is a safe fix.  Both rules
+ are open (neither samples the cell boundary), so a boundary layer of thickness ~1/mu pinned to the
+ exit face is exactly the shape they can miss the same way - and the layer gets thinner as mu grows,
+ which is the observed ordering of the deficit.
+
+ Cylinder twins are swept alongside: `CylinderEndOn` collapses to ndim==2 on axis while a box is
+ stuck at ndim==3, so if resolution is the box-specific term the two shapes must separate here.
+ */
+BOOST_AUTO_TEST_CASE( BoxIntegrationConvergence, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+
+  BOOST_TEST_MESSAGE( "  value vs epsrel, with the integrator's own eval count and error estimate." );
+  BOOST_TEST_MESSAGE( "  'vs truth' is against the recorded full-transport MC row." );
+
+  for( const char * const want : { "box-large-near-dense", "large-near-dense",
+                                   "box-shielded-near-light", "shielded-near-light" } )
+  {
+    const Scenario sc = find_scenario( want );
+
+    for( const double e : { 60.0, 122.0 } )
+    {
+      double truth = -1.0;
+      for( const TruthRow &row : sm_truth )
+        if( (row.scenario == want) && (fabs(row.energy_keV - e) < 0.1) )
+          truth = row.fep_eff;
+
+      ostringstream hdr;
+      hdr << "";
+      BOOST_TEST_MESSAGE( "" );
+      hdr << "== " << want << " @ " << fixed << setprecision(1) << e << " keV ==";
+      BOOST_TEST_MESSAGE( hdr.str() );
+      BOOST_TEST_MESSAGE( "    epsrel        eff          evals     est_rel_err   vs 1e-6    vs truth" );
+
+      double tightest = -1.0;
+      vector<double> vals;
+      vector<size_t> evals_v;
+      vector<double> est_v;
+      const vector<double> eps_list = { 1.0e-4, 1.0e-5, 1.0e-6 };
+
+      for( const double eps : eps_list )
+      {
+        size_t nev = 0;
+        double est = 0.0;
+        const double v = interspec_volumetric_eff( det, sc, e, det.mc_transfer, -1, -1.0,
+                                                   eps, false, &nev, &est );
+        vals.push_back( v );
+        evals_v.push_back( nev );
+        est_v.push_back( est );
+        tightest = v;
+      }//for( epsrel )
+
+      for( size_t i = 0; i < eps_list.size(); ++i )
+      {
+        ostringstream o;
+        o << "  " << scientific << setprecision(0) << setw(8) << eps_list[i]
+          << setw(15) << setprecision(5) << vals[i]
+          << setw(12) << evals_v[i]
+          << setw(15) << setprecision(2) << est_v[i]
+          << setw(11) << fixed << showpos << setprecision(2)
+          << ((tightest > 0.0) ? 100.0*(vals[i]/tightest - 1.0) : 0.0) << "%";
+        if( truth > 0.0 )
+          o << setw(11) << 100.0*(vals[i]/truth - 1.0) << "%";
+        o << noshowpos;
+        BOOST_TEST_MESSAGE( o.str() );
+      }//for( print )
+    }//for( energies )
+  }//for( scenarios )
+}//BOOST_AUTO_TEST_CASE( BoxIntegrationConvergence )
+
+
+/** DEVELOPER-ONLY: integrate the SAME integrand with an independent, non-adaptive rule.
+
+ The shipped integrator is globally adaptive with an embedded GL3/GL5 pair, and it stops when its
+ OWN error estimate falls below epsrel.  Sweeping epsrel therefore only asks the estimator to grade
+ its own homework: if both rules miss a feature the same way, `cell.err` is small, the sweep reports
+ "converged" and the value never moves.  Both rules are open - neither samples a cell boundary - and
+ a strongly self-attenuating source is precisely a boundary layer of thickness ~1/mu pinned to the
+ exit face, which is the shape they can miss together.  That failure gets worse as mu grows, and
+ worse in 3D (a box) than in 2D (an on-axis cylinder, which collapses to ndim==2).
+
+ So this brute-forces it: a plain tensor product of GL5 cells over the whole unit cube, no
+ adaptivity, no error estimate, refined until the value stops moving.  It shares the integrand with
+ production through build_scenario_calc, so there is nothing to drift.
+
+ 32 aperture rays on BOTH sides, as PerRayTransparentSourceIdentity does: the aperture order then
+ cancels out of the comparison and what is left is purely the outer rule.  (Box ray convergence is a
+ separate question, measured by BoxApertureRayConvergence.)
+ */
+BOOST_AUTO_TEST_CASE( BoxOuterQuadratureVsTensorGL, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+
+  using namespace GammaInteractionCalc;
+
+  const int kNumRays = 32;
+
+  // GL5 on [0,1], written out rather than reached for from QuadDetail: an independent reference
+  //  that shared the production node table would not be independent where it matters.
+  const double gx[5] = { 0.046910077030668, 0.230765344947158, 0.5,
+                         0.769234655052842, 0.953089922969332 };
+  const double gw[5] = { 0.118463442528095, 0.239314335249683, 0.284444444444444,
+                         0.239314335249683, 0.118463442528095 };
+
+  for( const char * const want : { "box-large-near-dense", "large-near-dense",
+                                   "box-shielded-near-light", "shielded-near-light" } )
+  {
+    const Scenario sc = find_scenario( want );
+    const bool is_box = (sc.shape == Shape::Box);
+    const int ndim = is_box ? 3 : 2;
+
+    for( const double e : { 60.0, 122.0 } )
+    {
+      // Production path, exactly as shipped (quarter fold active for an on-axis box).
+      DistributedSrcCalcT<double> adaptive = build_scenario_calc( det, sc, e, det.mc_transfer,
+                                                                  kNumRays );
+      self_shielding_integration_imp<double>( adaptive );
+      const double adaptive_val = adaptive.integral;
+
+      ostringstream hdr;
+      hdr << "";
+      BOOST_TEST_MESSAGE( "" );
+      hdr << "== " << want << " @ " << fixed << setprecision(1) << e << " keV  (ndim=" << ndim
+          << ", " << kNumRays << " rays) ==";
+      BOOST_TEST_MESSAGE( hdr.str() );
+
+      ostringstream a;
+      a << "   adaptive (shipped): " << scientific << setprecision(8) << adaptive_val
+        << "   evals=" << adaptive.m_num_evals
+        << "   est_rel_err=" << setprecision(2) << adaptive.m_est_rel_error;
+      BOOST_TEST_MESSAGE( a.str() );
+
+      // Independent tensor GL5, full domain, no adaptivity and no fold.
+      DistributedSrcCalcT<double> ref = build_scenario_calc( det, sc, e, det.mc_transfer, kNumRays );
+      ref.finalize_shell_coefficients();   //fep_trans_len_coef is a negative sentinel until this runs
+
+      double prev = 0.0;
+      for( const int n : { 4, 8, 16, 24 } )
+      {
+        const double h = 1.0 / n;
+        double total = 0.0;
+
+        // ndim==2 collapses the middle loop; eval_cylinder folds the 2*pi into its own Jacobian.
+        const int n1 = (ndim == 3) ? n : 1;
+        for( int i0 = 0; i0 < n; ++i0 )
+        {
+          for( int i1 = 0; i1 < n1; ++i1 )
+          {
+            for( int i2 = 0; i2 < n; ++i2 )
+            {
+              for( int a0 = 0; a0 < 5; ++a0 )
+              {
+                for( int a1 = 0; a1 < ((ndim == 3) ? 5 : 1); ++a1 )
+                {
+                  for( int a2 = 0; a2 < 5; ++a2 )
+                  {
+                    double xx[3] = { 0.0, 0.0, 0.0 };
+                    double w = gw[a0] * gw[a2] * h * h;
+                    if( ndim == 3 )
+                    {
+                      xx[0] = (i0 + gx[a0]) * h;
+                      xx[1] = (i1 + gx[a1]) * h;
+                      xx[2] = (i2 + gx[a2]) * h;
+                      w *= gw[a1] * h;
+                    }else
+                    {
+                      xx[0] = (i0 + gx[a0]) * h;
+                      xx[1] = (i2 + gx[a2]) * h;
+                    }
+
+                    total += w * (is_box ? ref.eval_rect( xx, ndim )
+                                         : ref.eval_cylinder( xx, ndim ));
+                  }//for( a2 )
+                }//for( a1 )
+              }//for( a0 )
+            }//for( i2 )
+          }//for( i1 )
+        }//for( i0 )
+
+        ostringstream o;
+        o << "   tensor GL5 " << setw(3) << n << "^" << ndim << ": " << scientific
+          << setprecision(8) << total << "   vs adaptive " << fixed << showpos << setprecision(2)
+          << ((adaptive_val != 0.0) ? 100.0*(total/adaptive_val - 1.0) : 0.0) << "%";
+        if( prev > 0.0 )
+          o << "   vs previous n " << 100.0*(total/prev - 1.0) << "%";
+        o << noshowpos;
+        BOOST_TEST_MESSAGE( o.str() );
+        prev = total;
+      }//for( grid resolutions )
+    }//for( energies )
+  }//for( scenarios )
+}//BOOST_AUTO_TEST_CASE( BoxOuterQuadratureVsTensorGL )
+
+
+/** DEVELOPER-ONLY: tests the quarter-box fold's PREMISE pointwise, instead of inferring it from
+ integrals.
+
+ BoxOuterQuadratureVsTensorGL showed the shipped box integral running +10.7% to +24.1% above an
+ independent non-adaptive tensor rule, while the CYLINDER rows agree with that same rule to 0.00%.
+ The adaptive machinery is therefore sound; what differs on the box path is the on-axis quarter
+ fold.  The fold's arithmetic is exact (the 1/4 Jacobian and the 4 mirror images cancel), so the
+ only way it can be wrong is if its premise fails:
+
+     f(u0,u1,u2) == f(1-u0,u1,u2) == f(u0,1-u1,u2)
+
+ That holds for the CONTINUUM integrand - with the detector on axis nothing downstream sees more
+ than |x| and |y|.  It need not hold for the DISCRETISED one: the aperture is a fixed-phase
+ Fibonacci spiral rotated onto the element->detector direction by a Rodrigues MINIMAL rotation,
+ whose residual azimuth is free only for an axially symmetric DETECTOR.  A box is not symmetric
+ about that axis, so the ray SET at +x need not mirror the set at -x.
+
+ Evaluated at several depths and at both ray counts, because the sensitivity should grow with tau:
+ at 16.8 mfp, sum_i w_i exp(-tau_i) is carried by a handful of shortest-chord rays at the edge of
+ the fan, so the value becomes acutely sensitive to where the spiral happens to put them.
+ */
+BOOST_AUTO_TEST_CASE( BoxFoldSymmetryProbe, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+
+  using namespace GammaInteractionCalc;
+
+  for( const char * const want : { "box-large-near-dense", "box-shielded-near-light" } )
+  {
+    const Scenario sc = find_scenario( want );
+
+    for( const double e : { 60.0, 122.0 } )
+    {
+      for( const int rays : { 32, 512 } )
+      {
+        DistributedSrcCalcT<double> calc = build_scenario_calc( det, sc, e, det.mc_transfer, rays );
+        calc.finalize_shell_coefficients();
+
+        ostringstream hdr;
+        hdr << "";
+        BOOST_TEST_MESSAGE( "" );
+        hdr << "== " << want << " @ " << fixed << setprecision(1) << e << " keV, " << rays
+            << " rays ==";
+        BOOST_TEST_MESSAGE( hdr.str() );
+        BOOST_TEST_MESSAGE( "     u0     u1     u2        f(u)         f(1-u0)      mirror-x    "
+                            " f(1-u1)      mirror-y" );
+
+        double worst = 0.0;
+        for( const double u2 : { 0.60, 0.80, 0.95, 0.99 } )   //depth: 0.5 is mid, 1.0 the near face
+        {
+          for( const double u0 : { 0.62, 0.85 } )
+          {
+            const double u1 = 0.73;
+
+            const double a[3]  = { u0, u1, u2 };
+            const double mx[3] = { 1.0 - u0, u1, u2 };
+            const double my[3] = { u0, 1.0 - u1, u2 };
+
+            const double fa  = calc.eval_rect( a, 3 );
+            const double fmx = calc.eval_rect( mx, 3 );
+            const double fmy = calc.eval_rect( my, 3 );
+
+            const double rx = (fa != 0.0) ? (fmx/fa - 1.0) : 0.0;
+            const double ry = (fa != 0.0) ? (fmy/fa - 1.0) : 0.0;
+            worst = std::max( worst, std::max( fabs(rx), fabs(ry) ) );
+
+            ostringstream o;
+            o << "  " << fixed << setprecision(2) << setw(6) << u0 << setw(7) << u1 << setw(7) << u2
+              << setw(14) << scientific << setprecision(5) << fa
+              << setw(14) << fmx
+              << setw(12) << fixed << showpos << setprecision(2) << 100.0*rx << "%"
+              << setw(14) << scientific << noshowpos << setprecision(5) << fmy
+              << setw(12) << fixed << showpos << setprecision(2) << 100.0*ry << "%" << noshowpos;
+            BOOST_TEST_MESSAGE( o.str() );
+          }//for( u0 )
+        }//for( u2 )
+
+        ostringstream t;
+        t << "   worst mirror asymmetry: " << fixed << setprecision(2) << 100.0*worst << "%";
+        BOOST_TEST_MESSAGE( t.str() );
+      }//for( ray counts )
+    }//for( energies )
+  }//for( scenarios )
+}//BOOST_AUTO_TEST_CASE( BoxFoldSymmetryProbe )
+
+
+/** DEVELOPER-ONLY: is the aperture fan correctly ORIENTED about the element->detector axis?
+
+ BoxFoldSymmetryProbe showed eval_rect is mirror-symmetric in y to 0.00% at 512 rays but off by
+ 13-97% in x, and the x error does NOT shrink with ray count - so it is systematic, not quadrature.
+ Nothing in eval_rect or rectangle_exit_location_imp distinguishes x from y, which leaves
+ build_element_aperture's frame mapping.
+
+ That mapping is a Rodrigues MINIMAL rotation taking CeeLo's element->detector direction `u_c` onto
+ InterSpec's `to_det` (GammaInteractionCalc_imp.hpp:1601), justified by "for an axially symmetric
+ detector the azimuth about the element->detector axis is a free rotation".  A minimal rotation pins
+ ONE vector; where it sends the rest of the frame - in particular CeeLo's detector AXIS - is
+ whatever falls out.  The claim is only that the DETECTOR does not care.
+
+ But the aperture is the cone subtending the CRYSTAL, and from an off-axis element the crystal's
+ projection is not circular - the fan is flattened, and the flattening plane is the plane of
+ incidence (the plane containing the element, the detector centre, and the detector axis).  So the
+ fan's azimuth about `to_det` is NOT free for the SOURCE: it decides which of the box's chords each
+ ray sees.  This measures it directly, with no replication of the production rotation: it takes the
+ second moment of the returned directions transverse to `to_det`, and reports the angle between that
+ principal axis and the true plane of incidence.  Zero means the frame was carried correctly.
+ */
+BOOST_AUTO_TEST_CASE( ApertureFanOrientation, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+
+  using namespace GammaInteractionCalc;
+
+  const double axis[3] = { 0.0, 0.0, -1.0 };   //assembly detector axis, as detector_geom_from_config sets it
+  const double det_pos[3] = { 0.0, 0.0, 3.0 }; //cm; box-large-near-dense centre distance
+
+  BOOST_TEST_MESSAGE( "  element (cm)          cos_theta   fan principal axis vs plane of incidence" );
+
+  for( const double ex : { 0.96, -0.96, 2.72, -2.72 } )
+  {
+    for( const double ey : { 1.84, -1.84 } )
+    {
+      const double e[3] = { ex, ey, 0.4 };
+      double to_det[3] = { det_pos[0]-e[0], det_pos[1]-e[1], det_pos[2]-e[2] };
+      const double d = sqrt( to_det[0]*to_det[0] + to_det[1]*to_det[1] + to_det[2]*to_det[2] );
+      for( int k = 0; k < 3; ++k )
+        to_det[k] /= d;
+
+      double cos_theta = -(to_det[0]*axis[0] + to_det[1]*axis[1] + to_det[2]*axis[2]);
+      cos_theta = std::max( -1.0, std::min( 1.0, cos_theta ) );
+
+      const ElementAperture ap = build_element_aperture( *det.mc_transfer, 60.0,
+                                                         d*PhysicalUnits::cm, cos_theta, to_det,
+                                                         axis, 512 );
+      BOOST_REQUIRE( !ap.dirs.empty() );
+
+      // Basis transverse to to_det, with b1 IN the plane of incidence (span{to_det, axis}).
+      double b1[3] = { axis[0] - cos_theta*(-to_det[0]),
+                       axis[1] - cos_theta*(-to_det[1]),
+                       axis[2] - cos_theta*(-to_det[2]) };
+      const double b1n = sqrt( b1[0]*b1[0] + b1[1]*b1[1] + b1[2]*b1[2] );
+      if( !(b1n > 1.0e-9) )
+        continue;   //on-axis element: the plane of incidence is degenerate, nothing to orient
+      for( int k = 0; k < 3; ++k )
+        b1[k] /= b1n;
+      const double b2[3] = { to_det[1]*b1[2] - to_det[2]*b1[1],
+                             to_det[2]*b1[0] - to_det[0]*b1[2],
+                             to_det[0]*b1[1] - to_det[1]*b1[0] };
+
+      // Weighted second moment of the fan in that transverse basis.
+      double m11 = 0.0, m12 = 0.0, m22 = 0.0, sw = 0.0;
+      for( size_t i = 0; i < ap.dirs.size(); ++i )
+      {
+        const double w = ap.weights[i];
+        const double p1 = ap.dirs[i][0]*b1[0] + ap.dirs[i][1]*b1[1] + ap.dirs[i][2]*b1[2];
+        const double p2 = ap.dirs[i][0]*b2[0] + ap.dirs[i][1]*b2[1] + ap.dirs[i][2]*b2[2];
+        m11 += w*p1*p1;  m12 += w*p1*p2;  m22 += w*p2*p2;  sw += w;
+      }
+      if( !(sw > 0.0) )
+        continue;
+      m11 /= sw;  m12 /= sw;  m22 /= sw;
+
+      // Principal axis angle of the 2x2 moment, measured from the plane of incidence.
+      const double ang = 0.5 * atan2( 2.0*m12, m11 - m22 ) * 180.0 / 3.14159265358979323846;
+
+      ostringstream o;
+      o << "  (" << fixed << setprecision(2) << setw(6) << ex << "," << setw(6) << ey
+        << ", 0.40)" << setw(12) << setprecision(4) << cos_theta
+        << setw(20) << setprecision(2) << ang << " deg";
+      BOOST_TEST_MESSAGE( o.str() );
+    }//for( ey )
+  }//for( ex )
+}//BOOST_AUTO_TEST_CASE( ApertureFanOrientation )
+
+
+/** DEVELOPER-ONLY: STEP-1 GATE for the chord-dependent peak fraction (scratch/chord_prompt.md).
+
+ `ceelo::DetectorResponse` builds eps_fep = k(E)*eta(E,theta)*N*K with
+ K = sum_i omega_w_i * p_int(E, L_i), and p_int = 1 - exp(-mu*L) is the probability of INTERACTING
+ in the active-crystal chord L.  But the FEP counts only events that deposit the FULL energy.  At
+ low energy those coincide (photoelectric, P/T ~ 0.93); at high energy a first Compton deposits part
+ of the energy and the scattered photon must ALSO be caught, which depends on how much crystal
+ surrounds the interaction point.  Far field every ray has a similar long chord, so one average peak
+ fraction covers the fan and the anchor grounding absorbs it; at contact the fan is a MIXTURE of very
+ different chords and the 25 cm average is the wrong number for that mixture.
+
+ THE GATE: is CHORD LENGTH ALONE enough to predict peak-to-total?  Posit a per-ray peak fraction
+ phi(E, L) and ask whether ONE phi per energy reproduces the MC P/T at ALL distances at once:
+
+     P/T(d)  ?=  sum_i omega_w_i * p_int(L_i) * phi(L_i)  /  sum_i omega_w_i * p_int(L_i)
+
+ PASS: a single parameter per energy fits every distance to ~1%.  Chord is then sufficient AND the
+ correction has been derived rather than guessed.
+ FAIL: the fitted parameter drifts systematically with distance.  Escape is 3D - what matters is the
+ material SURROUNDING the interaction point, not the remaining distance along the incoming ray - and
+ the fix needs a position-dependent treatment (or a real NearFieldModel, the expensive MC route).
+ Report and STOP in that case; do not wire a fit that does not hold.
+
+ Two smooth monotone one-parameter families are tried, because a family that fits only because it
+ has the right number of knobs proves nothing:  phi = L/(L+c)  and  phi = 1-exp(-L/lambda).
+
+ The ANGLE check is separate and equally important: the measured bias is angle-driven, not just
+ distance-driven (at the 25 cm anchor distance, 5 cm offset = 11 deg is +0.6% but 22 cm = 41 deg is
+ +5.1%).  A phi fitted on the on-axis distance series is asked to predict the off-axis points too;
+ if chord explains distance but not angle, that is stated explicitly rather than averaged away.
+
+ p_int uses InterSpec's Ge mu against the ray's ACTIVE chord.  CrossSectionConsistency measures
+ InterSpec and CeeLo agreeing to 0.068% on mu, so the table choice cannot carry this result.
+ */
+BOOST_AUTO_TEST_CASE( ChordPeakFractionGate, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+
+  std::vector<std::unique_ptr<ceelo::Material>> owned;
+  ceelo::EfficiencyCalculator calc;
+  ceelo::ResponseGenerator::configure_calculator( calc, det.gd, owned );
+
+  const int kRays = 8192;
+
+  // One probe = a source position plus the MC peak-to-total measured there.
+  struct Probe
+  {
+    double d_cm;
+    double theta_deg;
+    double pt_mc;
+    double pt_sigma;              //fractional, propagated from the FEP and total uncertainties
+    std::vector<double> chord;    //active-crystal chord per surviving ray
+    std::vector<double> omega;    //that ray's solid-angle weight
+    std::vector<double> pint;     //that ray's interaction probability, kernel-faithful
+  };
+
+  const auto measure = [&]( const double d_cm, const double theta_deg,
+                            const double energy_keV ) -> Probe
+  {
+    Probe p;
+    p.d_cm = d_cm;
+    p.theta_deg = theta_deg;
+
+    const Eigen::Vector3d pos = det.mc_transfer->query_position( theta_deg*3.14159265358979323846/180.0,
+                                                                 0.0, d_cm );
+    calc.set_point_source( pos );
+    ceelo::SimulationConfig cfg;
+    cfg.energy_keV = 0.0;   //filled by the caller loop
+    p.pt_mc = -1.0;
+
+    const ceelo::ApertureQuadrature q = ceelo::make_aperture_quadrature( det.mc_transfer->geometry(),
+                                                                         pos, kRays );
+    // p_int EXACTLY as kernel_ray_weights_impl computes it - walk the ray's own segments using
+    //  CeeLo's own material tables.  Do NOT reach for InterSpec's MassAttenuation here: its
+    //  coefficients are in InterSpec's internal units while `length` is plain cm, and the silent
+    //  unit mismatch collapses p_int to mu*L, which turns the weighting below into "weight by
+    //  chord" and quietly biases the whole gate.
+    for( const ceelo::KernelRay &r : q.rays )
+    {
+      if( r.active_len <= 0.0f )
+        continue;
+
+      double tau_before = 0.0, p_int = 0.0;
+      for( const ceelo::RaySegment &sg : r.segs )
+      {
+        const ceelo::MacroscopicXS xs = sg.material->macroscopic_xs( 1.0e-3*energy_keV );
+        const double mu_tot = xs.mu_total();
+        if( sg.is_scoring )
+          p_int += std::exp( -tau_before ) * (1.0 - std::exp( -mu_tot * sg.length ));
+        tau_before += mu_tot * sg.length;
+      }
+
+      if( p_int <= 0.0 )
+        continue;
+
+      p.chord.push_back( r.active_len );
+      p.omega.push_back( r.omega_w );
+      p.pint.push_back( p_int );
+    }
+    return p;
+  };
+
+  // Predicted P/T for a candidate phi: the p_int-weighted mean of phi over the fan.
+  const auto predict_pt = [&]( const Probe &p,
+                               const std::function<double(double)> &phi ) -> double
+  {
+    double num = 0.0, den = 0.0;
+    for( size_t i = 0; i < p.chord.size(); ++i )
+    {
+      const double w = p.omega[i] * p.pint[i];
+      num += w * phi( p.chord[i] );
+      den += w;
+    }
+    return (den > 0.0) ? (num/den) : 0.0;
+  };
+
+  const std::vector<double> on_axis_d = { 0.0, 1.0, 3.0, 5.0, 10.0, 25.0 };
+  const std::vector<std::pair<double,double>> off_axis = { {25.0, 11.0}, {25.0, 41.0}, {5.0, 41.0} };
+
+  for( const double e : { 60.0, 344.0, 1332.5, 2614.0 } )
+  {
+    std::vector<Probe> probes;
+    for( const double d : on_axis_d )
+      probes.push_back( measure( d, 0.0, e ) );
+    for( const std::pair<double,double> &oa : off_axis )
+      probes.push_back( measure( oa.first, oa.second, e ) );
+
+    // MC each probe position at this energy.
+    for( Probe &p : probes )
+    {
+      const Eigen::Vector3d pos = det.mc_transfer->query_position(
+                                        p.theta_deg*3.14159265358979323846/180.0, 0.0, p.d_cm );
+      calc.set_point_source( pos );
+      ceelo::SimulationConfig cfg;
+      cfg.energy_keV = e;
+      cfg.termination.target_fep_rel_precision = 0.003;
+      cfg.termination.max_events = 200000000;
+      cfg.termination.min_events = 200000;
+      cfg.seed = 20260905;
+      const ceelo::EfficiencyResult r = calc.compute( cfg );
+      p.pt_mc = (r.total_efficiency > 0.0) ? (r.full_energy_peak_efficiency/r.total_efficiency) : 0.0;
+      const double f_fep = (r.full_energy_peak_efficiency > 0.0)
+                             ? (r.fep_uncertainty/r.full_energy_peak_efficiency) : 0.0;
+      const double f_tot = (r.total_efficiency > 0.0)
+                             ? (r.total_uncertainty/r.total_efficiency) : 0.0;
+      p.pt_sigma = std::sqrt( f_fep*f_fep + f_tot*f_tot );   //conservative: ignores correlation
+    }
+
+    // Fit each family's single parameter on the ON-AXIS series only, by a log scan then a local
+    //  refinement.  Least squares on the RELATIVE residual, so all six distances count equally.
+    const char * const fam_name[2] = { "phi = L/(L+c)      ", "phi = 1-exp(-L/lam)" };
+    for( int fam = 0; fam < 2; ++fam )
+    {
+      const auto make_phi = [fam]( const double c ) {
+        return std::function<double(double)>( [fam,c]( const double L ) -> double {
+          return (fam == 0) ? (L/(L+c)) : (1.0 - std::exp(-L/c));
+        } );
+      };
+
+      double best_c = -1.0, best_sse = std::numeric_limits<double>::max();
+      for( int k = 0; k <= 400; ++k )
+      {
+        const double c = std::pow( 10.0, -3.0 + 5.0*k/400.0 );   //1e-3 .. 1e2 cm
+        double sse = 0.0;
+        for( size_t i = 0; i < on_axis_d.size(); ++i )
+        {
+          if( probes[i].pt_mc <= 0.0 ) continue;
+          const double rel = predict_pt( probes[i], make_phi(c) )/probes[i].pt_mc - 1.0;
+          sse += rel*rel;
+        }
+        if( sse < best_sse ){ best_sse = sse; best_c = c; }
+      }
+
+      std::ostringstream hdr;
+      hdr << "";
+      BOOST_TEST_MESSAGE( "" );
+      hdr << "== E=" << std::fixed << std::setprecision(1) << e << " keV,  " << fam_name[fam]
+          << "  best-fit " << (fam == 0 ? "c" : "lambda") << " = " << std::setprecision(3) << best_c
+          << " cm ==";
+      BOOST_TEST_MESSAGE( hdr.str() );
+      BOOST_TEST_MESSAGE( "    d(cm)  theta   MC P/T   (sigma)    pred P/T   pred/MC-1   "
+                          "per-point best c" );
+
+      double worst_onaxis = 0.0;
+      for( size_t i = 0; i < probes.size(); ++i )
+      {
+        const Probe &p = probes[i];
+        if( p.pt_mc <= 0.0 ) continue;
+        const double pred = predict_pt( p, make_phi(best_c) );
+        const double rel = pred/p.pt_mc - 1.0;
+        if( i < on_axis_d.size() )
+          worst_onaxis = std::max( worst_onaxis, std::fabs(rel) );
+
+        // The parameter this ONE point would have chosen: if chord is sufficient these agree; a
+        //  systematic drift with distance is the FAIL signature.
+        double pc = -1.0, pbest = std::numeric_limits<double>::max();
+        for( int k = 0; k <= 400; ++k )
+        {
+          const double c = std::pow( 10.0, -3.0 + 5.0*k/400.0 );
+          const double r2 = std::fabs( predict_pt( p, make_phi(c) )/p.pt_mc - 1.0 );
+          if( r2 < pbest ){ pbest = r2; pc = c; }
+        }
+
+        std::ostringstream o;
+        o << "  " << std::setw(7) << std::fixed << std::setprecision(1) << p.d_cm
+          << std::setw(7) << std::setprecision(0) << p.theta_deg
+          << std::setw(10) << std::setprecision(4) << p.pt_mc
+          << std::setw(10) << std::setprecision(2) << 100.0*p.pt_sigma << "%"
+          << std::setw(12) << std::setprecision(4) << pred
+          << std::setw(12) << std::showpos << std::setprecision(2) << 100.0*rel << "%"
+          << std::noshowpos << std::setw(16) << std::setprecision(3) << pc
+          << ((i >= on_axis_d.size()) ? "   <- off-axis, not fitted" : "");
+        BOOST_TEST_MESSAGE( o.str() );
+      }
+
+      std::ostringstream v;
+      v << "   worst ON-AXIS residual: " << std::fixed << std::setprecision(2) << 100.0*worst_onaxis
+        << "%   ->  " << ((worst_onaxis < 0.01) ? "GATE PASSES for this family/energy"
+                                                : "GATE FAILS for this family/energy");
+      BOOST_TEST_MESSAGE( v.str() );
+    }//for( families )
+  }//for( energies )
+}//BOOST_AUTO_TEST_CASE( ChordPeakFractionGate )
+
+
+/** DEVELOPER-ONLY: STEP-1b.  `ChordPeakFractionGate` failed - chord length alone cannot predict
+ peak-to-total (best-fit c drifts ~1.5x from contact to 25 cm, and 25 cm at 41 deg wants a different
+ c than 25 cm on axis).  The stated reason is that a scattered photon escapes in 3D, so what governs
+ the peak fraction is how much crystal SURROUNDS the interaction point, not the chord remaining
+ along the incoming ray.
+
+ This tests that claim before any of it is implemented, using the same gate structure - does the
+ drift COLLAPSE when the ray is described by a surroundedness variable instead of by L?
+
+ Three descriptions per ray, in increasing order of physics content:
+
+   A) L            - the shipped variable.  Baseline; known to drift.
+   B) S            - "surroundedness": from the mean first-interaction point, the ISOTROPIC mean
+                     active-crystal path available to a photon leaving that point.  One free
+                     parameter, fitted exactly as A was.
+   C) phi directly - no free parameter at all:
+                        phi = f_PE + (1 - f_PE) * P_catch
+                     with f_PE = mu_PE/(mu_PE+mu_CS+mu_PP) straight from the tables, and P_catch the
+                     Klein-Nishina-weighted probability that the once-scattered photon interacts
+                     again before leaving the crystal.  If C predicts P/T across every distance AND
+                     angle with nothing fitted, it IS the model and Step 2 is done.
+
+ C is deliberately FIRST-ORDER (one scatter, and "interacts again" stands in for "is fully
+ absorbed"), so it should sit BELOW the MC in absolute terms.  What matters here is not the offset
+ but whether the residual is FLAT across distance and angle - a constant offset is absorbed by the
+ anchor grounding exactly as the current uniform peak fraction is, whereas a drift is not.
+ */
+BOOST_AUTO_TEST_CASE( SurroundednessPeakFractionProbe, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+
+  std::vector<std::unique_ptr<ceelo::Material>> owned;
+  ceelo::EfficiencyCalculator calc;
+  ceelo::ResponseGenerator::configure_calculator( calc, det.gd, owned );
+
+  const ceelo::Geometry &geom = det.mc_transfer->geometry();
+  const int kRays = 512;      //ApertureRayConvergence/BoxApertureRayConvergence: 512 is converged
+  const int kEscDirs = 48;    //directions sampled from the interaction point
+  const double kPi = 3.14159265358979323846;
+
+  // Fibonacci sphere - isotropic, deterministic, no RNG in a test.
+  std::vector<Eigen::Vector3d> esc_dirs;
+  {
+    const double golden = kPi * (3.0 - std::sqrt(5.0));
+    for( int i = 0; i < kEscDirs; ++i )
+    {
+      const double ct = 1.0 - 2.0*(i + 0.5)/kEscDirs;
+      const double st = std::sqrt( std::max(0.0, 1.0 - ct*ct) );
+      const double ph = golden * i;
+      esc_dirs.push_back( Eigen::Vector3d( st*std::cos(ph), st*std::sin(ph), ct ) );
+    }
+  }
+
+  // Klein-Nishina differential cross section (arbitrary normalisation) at incident energy E and
+  //  scattering angle cos_ts, plus the scattered energy.
+  const auto kn = []( const double E_keV, const double cos_ts, double &E_out ) -> double {
+    const double a = E_keV/510.998950;
+    const double ratio = 1.0/(1.0 + a*(1.0 - cos_ts));
+    E_out = E_keV*ratio;
+    return ratio*ratio*( ratio + 1.0/ratio - (1.0 - cos_ts*cos_ts) );
+  };
+
+  struct Probe { double d_cm, theta_deg, pt_mc; std::vector<double> w, L, S, phiC; };
+
+  const std::vector<double> on_axis_d = { 0.0, 1.0, 3.0, 5.0, 10.0, 25.0 };
+  const std::vector<std::pair<double,double>> off_axis = { {25.0,11.0}, {25.0,41.0}, {5.0,41.0} };
+
+  for( const double e : { 60.0, 344.0, 1332.5, 2614.0 } )
+  {
+    std::vector<Probe> probes;
+    std::vector<std::pair<double,double>> positions;
+    for( const double d : on_axis_d ) positions.push_back( {d, 0.0} );
+    for( const std::pair<double,double> &oa : off_axis ) positions.push_back( oa );
+
+    for( const std::pair<double,double> &pd : positions )
+    {
+      Probe p; p.d_cm = pd.first; p.theta_deg = pd.second;
+      const Eigen::Vector3d pos = det.mc_transfer->query_position( p.theta_deg*kPi/180.0, 0.0, p.d_cm );
+
+      // MC peak-to-total at this position.
+      calc.set_point_source( pos );
+      ceelo::SimulationConfig cfg;
+      cfg.energy_keV = e;
+      cfg.termination.target_fep_rel_precision = 0.003;
+      cfg.termination.max_events = 200000000;
+      cfg.termination.min_events = 200000;
+      cfg.seed = 20260906;
+      const ceelo::EfficiencyResult r = calc.compute( cfg );
+      p.pt_mc = (r.total_efficiency > 0.0) ? (r.full_energy_peak_efficiency/r.total_efficiency) : 0.0;
+
+      const ceelo::ApertureQuadrature q = ceelo::make_aperture_quadrature( geom, pos, kRays );
+
+      std::vector<ceelo::PathSegment> segs, esegs;
+      for( const ceelo::KernelRay &kr : q.rays )
+      {
+        if( kr.active_len <= 0.0f ) continue;
+        const Eigen::Vector3d dir = kr.dir.cast<double>().normalized();
+        geom.trace_ray( pos, dir, segs );
+        std::sort( segs.begin(), segs.end(),
+                   []( const ceelo::PathSegment &a, const ceelo::PathSegment &b ){
+                     return a.t_start < b.t_start; } );
+
+        // First-interaction pdf along the ray, restricted to scoring segments.  Numerically, so it
+        //  stays right for a bored/segmented crystal with more than one scoring stretch.
+        const ceelo::Material *cry = nullptr;
+        double tau = 0.0, p_int = 0.0, wsum_t = 0.0, active = 0.0;
+        for( const ceelo::PathSegment &sg : segs )
+        {
+          if( !sg.material ) continue;
+          const ceelo::MacroscopicXS xs = sg.material->macroscopic_xs( 1.0e-3*e );
+          const double mu_t = xs.mu_total();
+          const double len = sg.length();
+          if( !sg.is_scoring ){ tau += mu_t*len; continue; }
+
+          cry = sg.material;
+          active += len;
+          const int NSUB = 8;
+          for( int k = 0; k < NSUB; ++k )
+          {
+            const double t0 = sg.t_start + len*k/NSUB, dt = len/NSUB;
+            const double wgt = std::exp(-tau - mu_t*(t0 - sg.t_start))*(1.0 - std::exp(-mu_t*dt));
+            p_int += wgt;
+            wsum_t += wgt*(t0 + 0.5*dt);
+          }
+          tau += mu_t*len;
+        }
+        if( (p_int <= 0.0) || !cry ) continue;
+
+        const Eigen::Vector3d P = pos + dir*(wsum_t/p_int);   //mean first-interaction point
+        const ceelo::MacroscopicXS xs0 = cry->macroscopic_xs( 1.0e-3*e );
+        const double mu_nors0 = xs0.mu_pe + xs0.mu_cs + xs0.mu_pp;
+        const double f_pe = (mu_nors0 > 0.0) ? (xs0.mu_pe/mu_nors0) : 1.0;
+
+        double s_iso = 0.0, kn_num = 0.0, kn_den = 0.0;
+        for( const Eigen::Vector3d &u : esc_dirs )
+        {
+          geom.trace_ray( P, u, esegs );
+          double s_act = 0.0;
+          for( const ceelo::PathSegment &sg : esegs )
+            if( sg.is_scoring && sg.material ) s_act += sg.length();
+          s_iso += s_act;
+
+          double Eout = e;
+          const double wkn = kn( e, dir.dot(u), Eout );
+          const ceelo::MacroscopicXS xs1 = cry->macroscopic_xs( 1.0e-3*Eout );
+          const double mu1 = xs1.mu_pe + xs1.mu_cs + xs1.mu_pp;
+          kn_num += wkn*(1.0 - std::exp(-mu1*s_act));
+          kn_den += wkn;
+        }
+        s_iso /= kEscDirs;
+        const double p_catch = (kn_den > 0.0) ? (kn_num/kn_den) : 0.0;
+
+        p.w.push_back( kr.omega_w * p_int );
+        p.L.push_back( kr.active_len );
+        p.S.push_back( s_iso );
+        p.phiC.push_back( f_pe + (1.0 - f_pe)*p_catch );
+      }//for( aperture rays )
+      probes.push_back( std::move(p) );
+    }//for( positions )
+
+    const auto pred = [&]( const Probe &p, const std::vector<double> &var,
+                           const std::function<double(double)> &phi ) -> double {
+      double n = 0.0, d = 0.0;
+      for( size_t i = 0; i < p.w.size(); ++i ){ n += p.w[i]*phi(var[i]); d += p.w[i]; }
+      return (d > 0.0) ? (n/d) : 0.0;
+    };
+    const auto pred_direct = [&]( const Probe &p ) -> double {
+      double n = 0.0, d = 0.0;
+      for( size_t i = 0; i < p.w.size(); ++i ){ n += p.w[i]*p.phiC[i]; d += p.w[i]; }
+      return (d > 0.0) ? (n/d) : 0.0;
+    };
+
+    // Per-point best c for a variable, so the DRIFT is visible independent of any global fit.
+    const auto best_c_for = [&]( const Probe &p, const std::vector<double> &var ) -> double {
+      double bc = -1.0, be = std::numeric_limits<double>::max();
+      for( int k = 0; k <= 400; ++k ){
+        const double c = std::pow( 10.0, -3.0 + 5.0*k/400.0 );
+        const std::function<double(double)> f = [c]( const double x ){ return x/(x+c); };
+        const double r = std::fabs( pred(p,var,f)/p.pt_mc - 1.0 );
+        if( r < be ){ be = r; bc = c; }
+      }
+      return bc;
+    };
+
+    std::ostringstream hdr; hdr << "";
+    BOOST_TEST_MESSAGE( "" );
+    hdr << "=== E=" << std::fixed << std::setprecision(1) << e << " keV ===";
+    BOOST_TEST_MESSAGE( hdr.str() );
+    BOOST_TEST_MESSAGE( "   d(cm) theta   MC P/T   |  A: best c(L)   |  B: best c(S)   |"
+                        "  C: phi (no fit) pred   C/MC-1" );
+
+    std::vector<double> cA, cB;
+    for( size_t i = 0; i < probes.size(); ++i )
+    {
+      const Probe &p = probes[i];
+      if( p.pt_mc <= 0.0 || p.w.empty() ) continue;
+      const double ca = best_c_for( p, p.L ), cb = best_c_for( p, p.S );
+      const double pc = pred_direct( p );
+      if( i < on_axis_d.size() ){ cA.push_back(ca); cB.push_back(cb); }
+
+      std::ostringstream o;
+      o << "  " << std::setw(6) << std::setprecision(1) << p.d_cm
+        << std::setw(6) << std::setprecision(0) << p.theta_deg
+        << std::setw(10) << std::setprecision(4) << p.pt_mc
+        << "   |" << std::setw(14) << std::setprecision(3) << ca
+        << "   |" << std::setw(14) << cb
+        << "   |" << std::setw(14) << std::setprecision(4) << pc
+        << std::setw(11) << std::showpos << std::setprecision(2) << 100.0*(pc/p.pt_mc - 1.0) << "%"
+        << std::noshowpos << ((i >= on_axis_d.size()) ? "   <- off-axis" : "");
+      BOOST_TEST_MESSAGE( o.str() );
+    }
+
+    const auto spread = []( const std::vector<double> &v ) -> double {
+      if( v.empty() ) return 0.0;
+      return *std::max_element(v.begin(),v.end()) / *std::min_element(v.begin(),v.end());
+    };
+    std::ostringstream v;
+    v << "   on-axis drift of the fitted parameter:   L: " << std::fixed << std::setprecision(2)
+      << spread(cA) << "x     S: " << spread(cB) << "x"
+      << "   (1.00x = no drift = the variable is sufficient)";
+    BOOST_TEST_MESSAGE( v.str() );
+  }//for( energies )
+}//BOOST_AUTO_TEST_CASE( SurroundednessPeakFractionProbe )

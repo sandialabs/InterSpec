@@ -654,6 +654,20 @@ public:
     Eigen::Vector3d query_position(double theta_rad, double phi_rad,
                                    double dist_cm) const;
 
+    /// The REFERENCE POINT itself, in the crystal frame: the origin for a
+    /// CrystalFace response, (0, 0, -endcap_front_offset_cm()) for EndcapFront.
+    /// Equivalently query_position(0, 0, 0).
+    ///
+    /// A caller that needs a DIRECTION between a queried source position and
+    /// "the detector" must use this, not the origin: the two differ by the
+    /// endcap offset, which is a several-degree parallax for a source at
+    /// contact. Aiming at the origin instead tilts anything built on that
+    /// direction (e.g. an aperture fan mapped into the caller's own frame)
+    /// away from the geometry the caller thinks it is describing.
+    Eigen::Vector3d reference_point_position() const {
+        return query_position(0.0, 0.0, 0.0);
+    }
+
     // --- point-source evaluation ---
     /// dist_cm measured from descriptor.reference_point along the (theta,
     /// phi) direction; theta from the detector axis (0 = on-axis front).
