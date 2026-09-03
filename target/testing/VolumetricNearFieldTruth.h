@@ -195,4 +195,55 @@ static const std::vector<TruthRow> sm_truth = {
   { "box-slab-near-dense", 344, 0.03323242105, 8.224e-05 },
   { "box-slab-near-dense", 661.7, 0.02083458517, 5.167e-05 },
   { "box-slab-near-dense", 1332.5, 0.01324086649, 3.291e-05 },
+
+  // Off-axis and SIDE-ON cylinders (added 2026-09-03).  Every other row here puts the detector on the
+  //  source axis, where an end-on cylinder is azimuthally symmetric and the integration collapses to
+  //  2D - so no cylinder had ever been compared to Monte Carlo with elements at general azimuth, and
+  //  the side-on geometry (detector on +x, looking at the curved surface) had never been compared to
+  //  Monte Carlo at all.
+  //
+  //  Recorded at 122 keV and above ONLY, deliberately.  These are 3D integrations and the 60 and
+  //  88 keV dense rows cost 50-220 CPU s EACH in the model; even without them these 32 rows double
+  //  this test's runtime (934 -> 1939 s).  The tau coverage they would add is already provided
+  //  exhaustively by the on-axis matrix and by the ladder's slab sweep - what these rows are for is
+  //  AZIMUTH and ORIENTATION, which every energy exercises equally.
+  //
+  //  Do not mistake them for the aperture-frame gate.  The frame is gated by two cheap ENABLED
+  //  geometry cases - FanGeometryAudit (test_VolumetricLadder, sub-second) and
+  //  ElementApertureFrameAndClosure below - both of which fail hard on a misoriented fan; the rows
+  //  here sit well inside the tolerance under both frames and so only measure accuracy.  The full
+  //  six-energy table, including the 60 keV rows where the fix moves side-on dense by 7.9 points
+  //  (-8.95% -> -1.06%), is in scratch/20260902_volumetric_ladder/FINDINGS.md.
+  { "offaxis-small-near-light", 122, 0.0790994898, 0.0001928 },
+  { "offaxis-small-near-light", 344, 0.04410308989, 0.0001088 },
+  { "offaxis-small-near-light", 661.7, 0.0259101473, 6.427e-05 },
+  { "offaxis-small-near-light", 1332.5, 0.01528057692, 3.804e-05 },
+  { "offaxis-large-near-light", 122, 0.04815582822, 0.0001186 },
+  { "offaxis-large-near-light", 344, 0.02917638376, 7.229e-05 },
+  { "offaxis-large-near-light", 661.7, 0.01763218646, 4.385e-05 },
+  { "offaxis-large-near-light", 1332.5, 0.01071202957, 2.669e-05 },
+  { "sideon-tall-near-light", 122, 0.09971298701, 0.0002414 },
+  { "sideon-tall-near-light", 344, 0.05172442244, 0.0001272 },
+  { "sideon-tall-near-light", 661.7, 0.02946408311, 7.286e-05 },
+  { "sideon-tall-near-light", 1332.5, 0.01724851903, 4.281e-05 },
+  { "sideon-squat-near-light", 122, 0.07361327014, 0.0001798 },
+  { "sideon-squat-near-light", 344, 0.03874778325, 9.578e-05 },
+  { "sideon-squat-near-light", 661.7, 0.02253358336, 5.585e-05 },
+  { "sideon-squat-near-light", 1332.5, 0.01320758106, 3.283e-05 },
+  { "offaxis-small-near-dense", 122, 0.04419295775, 0.0001091 },
+  { "offaxis-small-near-dense", 344, 0.03452932166, 8.541e-05 },
+  { "offaxis-small-near-dense", 661.7, 0.02149837178, 5.343e-05 },
+  { "offaxis-small-near-dense", 1332.5, 0.01339410774, 3.335e-05 },
+  { "offaxis-large-near-dense", 122, 0.01857438596, 4.617e-05 },
+  { "offaxis-large-near-dense", 344, 0.01869305065, 4.648e-05 },
+  { "offaxis-large-near-dense", 661.7, 0.01253617021, 3.123e-05 },
+  { "offaxis-large-near-dense", 1332.5, 0.008301666667, 2.071e-05 },
+  { "sideon-tall-near-dense", 122, 0.0439535014, 0.0001085 },
+  { "sideon-tall-near-dense", 344, 0.03588587699, 8.878e-05 },
+  { "sideon-tall-near-dense", 661.7, 0.02253423752, 5.584e-05 },
+  { "sideon-tall-near-dense", 1332.5, 0.01405430175, 3.492e-05 },
+  { "sideon-squat-near-dense", 122, 0.02637883333, 6.543e-05 },
+  { "sideon-squat-near-dense", 344, 0.02313036496, 5.743e-05 },
+  { "sideon-squat-near-dense", 661.7, 0.01488984686, 3.703e-05 },
+  { "sideon-squat-near-dense", 1332.5, 0.009695023036, 2.414e-05 },
 };

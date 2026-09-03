@@ -1322,3 +1322,84 @@ BOOST_AUTO_TEST_CASE( CostPerEnergy )
     }
   }
 }//BOOST_AUTO_TEST_CASE( CostPerEnergy )
+
+
+/** RUNG 6 - OFF-AXIS cylinders against Monte Carlo.
+
+ Every other scenario in the matrix puts the detector on the source axis, where an end-on cylinder is
+ azimuthally symmetric and the integration collapses to 2D: all its elements live in one half-plane.
+ A radial offset forces the full 3D integral and puts elements at every azimuth, which is the only
+ cylinder configuration where the aperture fan's AZIMUTHAL placement enters rather than just its
+ polar orientation.  A SIDE-ON cylinder adds the other thing the matrix never had: the detector on
+ +x rather than +z, looking at the curved surface - a first-class production geometry, with its own
+ detector placement and its own in-situ depth convention, that no Monte-Carlo-backed test had ever
+ exercised.  Until this case existed, off-axis cylinders were covered only by a
+ self-consistency invariant (`OffAxisEndOnAzimuthalSymmetry` in test_VolumetricIntegration, which
+ checks that an x offset equals a y offset - and runs the FLAT-DISK path, so it never touches the
+ per-ray kernel at all) and by the ray-march identity in `PerRayKernelIdentityVsRayMarch` (which
+ shares its aperture with the thing under test, so it cannot see an orientation error).
+
+ Prints paste-ready TruthRow initializers for the off-axis scenarios plus the legacy/fixed
+ comparison, so the frame fix is measured in the one geometry that isolates the azimuth.
+ */
+BOOST_AUTO_TEST_CASE( Rung6_OffAxisAndSideOnCylinderTruth, * boost::unit_test::disabled() )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  McCache cache;
+  const bool saved = sm_aperture_frame_legacy_origin;
+
+  const shared_ptr<ceelo::DetectorResponse> far_anchor
+        = ladder_anchor_response( det, cache, 25.0, anchor_energies() );
+
+  // Both orientations the on-axis end-on matrix never reached: a radial offset (elements at general
+  //  azimuth) and a side-on cylinder (the detector on +x rather than +z, looking at the curved
+  //  surface).  Both are always 3D integrations.
+  vector<Scenario> offaxis;
+  for( const Scenario &s : scenarios() )
+  {
+    if( (s.offset_cm != 0.0) || (s.shape == Shape::CylinderSideOn) )
+      offaxis.push_back( s );
+  }
+  BOOST_REQUIRE( !offaxis.empty() );
+
+  cout << "  // Off-axis and side-on cylinders - the orientations the on-axis end-on matrix,\n"
+          "  //  which collapses to a 2D integration, could never reach.\n" << flush;
+  BOOST_TEST_MESSAGE( "scenario                       E(keV)   tau    MC eff      sigma   |"
+                      " legacy/MC-1  fixed/MC-1   CPU s" );
+  for( const Scenario &s : offaxis )
+  {
+    ScenarioMcMaterials mats;
+    ceelo::EfficiencyCalculator mc_calc;
+    configure_scenario_mc( mc_calc, det, s, mats );
+
+    for( const double e : scenario_energies() )
+    {
+      const McResult mc = run_mc( mc_calc, cache, scenario_mc_key( s ), e );
+      cout << "  { \"" << s.name << "\", " << setprecision(12) << e << ", "
+           << setprecision(10) << mc.eff << ", " << setprecision(4) << mc.eff*mc.frac_sigma << " },"
+           << (mc.hit_cap() ? "  // stopped on a cap" : "") << "\n" << flush;
+
+      const clock_t t0 = std::clock();
+      sm_aperture_frame_legacy_origin = true;
+      const double legacy = interspec_volumetric_eff( det, s, e, far_anchor );
+      sm_aperture_frame_legacy_origin = false;
+      const double fixed_v = interspec_volumetric_eff( det, s, e, far_anchor );
+      sm_aperture_frame_legacy_origin = saved;
+      const double cpu = 0.5*static_cast<double>(std::clock() - t0)/CLOCKS_PER_SEC;
+
+      ostringstream o;
+      o << left << setw(31) << s.name << right << fixed << setprecision(1) << setw(7) << e
+        << setprecision(2) << setw(7) << scenario_optical_depth( s, e )
+        << "  " << scientific << setprecision(4) << mc.eff << fixed << "  " << setprecision(2)
+        << 100.0*mc.frac_sigma << "%" << (mc.hit_cap() ? "CAP" : "   ")
+        << " | " << pct( legacy/mc.eff - 1.0 ) << " " << pct( fixed_v/mc.eff - 1.0 )
+        << "  " << setprecision(1) << setw(7) << cpu;
+      BOOST_TEST_MESSAGE( o.str() );
+    }//for( energies )
+  }//for( off-axis scenarios )
+
+  sm_aperture_frame_legacy_origin = saved;
+}//BOOST_AUTO_TEST_CASE( Rung6_OffAxisAndSideOnCylinderTruth )

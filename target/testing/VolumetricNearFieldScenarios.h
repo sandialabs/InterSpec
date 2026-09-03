@@ -50,6 +50,7 @@
 #include <vector>
 
 #include <Eigen/Core>
+#include <Eigen/Geometry>
 
 #include "io/DetectorResponse.h"
 #include "efficiency/EfficiencyCalculator.h"
@@ -61,9 +62,17 @@ namespace VolNearField
  detector (InterSpec Rectangular), which is CeeLo's identity rotation. */
 enum class Shape
 {
-  Cylinder,
-  Box
+  Cylinder,        ///< end-on: the detector looks down the cylinder's own axis
+  Box,
+  CylinderSideOn   ///< the detector looks at the cylinder's curved SIDE, axis across the field
 };//enum class Shape
+
+
+/** True for either cylinder orientation. */
+inline bool is_cylinder( const Shape s )
+{
+  return (s == Shape::Cylinder) || (s == Shape::CylinderSideOn);
+}
 
 
 /** One source geometry, in the CeeLo crystal-face frame convention (z = 0 at the crystal face,
@@ -84,6 +93,20 @@ struct Scenario
   Shape  shape = Shape::Cylinder;
   double half_width_cm = 0.0;    ///< Box only: x half-extent (transverse)
   double half_height_cm = 0.0;   ///< Box only: y half-extent (transverse)
+
+  /** Lateral displacement (cm) between the source axis and the detector axis; 0 = on axis.
+   
+   An on-axis end-on cylinder is azimuthally symmetric and collapses to a 2D integration, so its
+   elements all live in one half-plane.  A radial offset breaks that: the integration goes to 3D and
+   elements appear at every azimuth, which is the only cylinder configuration where the aperture
+   fan's AZIMUTHAL placement matters rather than just its polar orientation.  Nothing else in the
+   matrix exercises that against Monte Carlo.
+   
+   The two sides express it with opposite sign - InterSpec displaces the DETECTOR
+   (`detector_geom_from_config` offset_x), CeeLo displaces the SOURCE centre - which is the same
+   geometry by mirror symmetry.
+   */
+  double offset_cm = 0.0;
 };//struct Scenario
 
 
@@ -169,6 +192,55 @@ inline std::vector<Scenario> scenarios()
     //  the case where WHICH of the three exit planes wins genuinely varies with ray direction, so
     //  it is what would catch an x/y transposition or a centre-ray leftover in eval_rect.
     v.push_back( box( std::string("box-slab-near-") + tag,       4.0,  1.0, 0.5,  1.0, dense, 0.0 ) );
+
+    // OFF-AXIS cylinders.  Every other row puts the detector on the source axis, so the end-on
+    //  cylinder always took the 2D reduction and no cylinder was ever compared to Monte Carlo with
+    //  elements at general azimuth.  Both offsets straddle the crystal rim (radius ~2.9 cm): the
+    //  first is a small source sitting off to one side, the second a large one whose near edge is
+    //  still over the crystal and whose far edge is well outside it - the case where the aperture
+    //  varies most steeply across the source.  Contact only, since the effect is a near-field one
+    //  and these are 3D integrations (as expensive per energy as a box).
+    const auto offaxis = []( std::string nm, const double rad, const double hl,
+                             const double standoff, const bool d, const double off ) -> Scenario {
+      Scenario s;
+      s.name = std::move( nm );
+      s.radius_cm = rad;
+      s.half_length_cm = hl;
+      s.standoff_cm = standoff;
+      s.dense = d;
+      s.offset_cm = off;
+      return s;
+    };
+    //  DELIBERATELY SMALL.  An off-axis cylinder is a 3D integration whose integrand varies steeply
+    //  in azimuth, so a full-size one costs 10-330 CPU s per energy (measured) and 24 such rows would
+    //  add ~45 minutes to the committed comparison.  Size is not what these rows test - azimuth is -
+    //  and both of these still straddle the crystal rim (radius ~2.9 cm), which is where the aperture
+    //  changes fastest across the source.  The full-size measurement is recorded once in
+    //  scratch/20260902_volumetric_ladder/FINDINGS.md rather than paid for on every run.
+    v.push_back( offaxis( std::string("offaxis-small-near-") + tag, 0.75, 0.4,  1.0, dense, 2.5 ) );
+    v.push_back( offaxis( std::string("offaxis-large-near-") + tag, 1.5,  0.75, 1.0, dense, 3.5 ) );
+
+    // SIDE-ON cylinders.  Nothing in this matrix - or in any other Monte-Carlo-backed test - has ever
+    //  looked at a cylinder's curved side, yet CylinderSideOn is a first-class production geometry
+    //  with its own detector placement (+x rather than +z) and its own in-situ depth convention.  It
+    //  is always a 3D integration, so keep the sources small and stay at contact, where the
+    //  near-field effect being tested actually lives.  The two rows differ in which dimension faces
+    //  the detector: `tall` is longer than it is wide (the detector sees a narrow strip of a long
+    //  object), `squat` is the reverse.
+    const auto sideon = []( std::string nm, const double rad, const double hl,
+                            const double standoff, const bool d ) -> Scenario {
+      Scenario s;
+      s.name = std::move( nm );
+      s.radius_cm = rad;
+      s.half_length_cm = hl;
+      s.standoff_cm = standoff;
+      s.dense = d;
+      s.shape = Shape::CylinderSideOn;
+      return s;
+    };
+    //  Small for the same reason as the off-axis rows above.
+    v.push_back( sideon( std::string("sideon-tall-near-") + tag,  0.75, 1.5, 1.0, dense ) );
+    v.push_back( sideon( std::string("sideon-squat-near-") + tag, 1.5,  0.5, 1.0, dense ) );
   }//for( dense / light )
 
   return v;
@@ -205,20 +277,58 @@ inline double scenario_volume_cm3( const Scenario &s )
 }
 
 
+/** AXIAL distance from the detector's reference point to the source CENTRE, in cm.
+
+ `standoff_cm` is always to the NEAREST source surface, so what has to be added to reach the centre
+ depends on which surface faces the detector: the end cap for an end-on cylinder or a box (half the
+ axial extent), but the curved SIDE for a side-on cylinder (one radius).
+ */
+inline double scenario_center_offset_cm( const Scenario &s )
+{
+  return (s.shape == Shape::CylinderSideOn) ? s.radius_cm : s.half_length_cm;
+}
+
+
 /** Centre of the source cylinder in the crystal-face frame, given the endcap-front offset.
  `standoff_cm` is to the NEAR face, so the centre is one half-length further out. */
 inline Eigen::Vector3d scenario_center( const Scenario &s, const double endcap_front_offset_cm )
 {
-  return Eigen::Vector3d( 0.0, 0.0,
-                          -( endcap_front_offset_cm + s.standoff_cm + s.half_length_cm ) );
+  // `offset_cm` displaces the source laterally; the AXIAL distance is unchanged by it, which is why
+  //  scenario_center_distance_cm below stays offset-free.
+  return Eigen::Vector3d( s.offset_cm, 0.0,
+                          -( endcap_front_offset_cm + s.standoff_cm
+                             + scenario_center_offset_cm( s ) ) );
 }
 
 
-/** Distance from the detector's reference point to the source CENTRE, in cm - what the InterSpec
- side uses as its source-to-detector distance. */
+/** Rotation CeeLo wants for the source: it maps DETECTOR-frame vectors into the source's LOCAL frame
+ (`local = rotation * (world - centre)`, SourceGeometry.cpp), where a cylinder's axis is local z.
+
+ Identity leaves the source axis along the detector axis, i.e. END-ON.  For SIDE-ON the axis has to
+ come to rest perpendicular to the detector axis, which is a -90 degree rotation about y: it carries
+ the detector frame's x onto local z, so the cylinder lies across the field of view.  Which
+ perpendicular direction is chosen does not matter - the detector is axially symmetric, so rotating
+ the source about the detector axis is a symmetry of the whole problem.
+
+ This is the CeeLo-side mirror of what InterSpec does by moving the DETECTOR to +x for
+ CylinderSideOn (detector_geom_from_config) while leaving the source axis along assembly z.
+ */
+inline Eigen::Matrix3d scenario_source_rotation( const Scenario &s )
+{
+  if( s.shape != Shape::CylinderSideOn )
+    return Eigen::Matrix3d::Identity();
+  return Eigen::Matrix3d( Eigen::AngleAxisd( -0.5*3.14159265358979323846,
+                                             Eigen::Vector3d::UnitY() ) );
+}
+
+
+/** AXIAL distance from the detector's reference point to the plane of the source centre, in cm -
+ what the InterSpec side passes as its source-to-detector distance.  Deliberately offset-free: a
+ lateral offset is carried separately (see Scenario::offset_cm), because that is exactly how
+ detector_geom_from_config takes it. */
 inline double scenario_center_distance_cm( const Scenario &s )
 {
-  return s.standoff_cm + s.half_length_cm;
+  return s.standoff_cm + scenario_center_offset_cm( s );
 }
 
 }//namespace VolNearField

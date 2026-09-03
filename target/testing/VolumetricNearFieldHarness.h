@@ -256,7 +256,8 @@ build_scenario_calc( const AngleDetector &det,
   BOOST_REQUIRE( matrix );
 
   const GeometryType geom = (s.shape == Shape::Box) ? GeometryType::Rectangular
-                                                    : GeometryType::CylinderEndOn;
+                          : ((s.shape == Shape::CylinderSideOn) ? GeometryType::CylinderSideOn
+                                                                : GeometryType::CylinderEndOn);
 
   DistributedSrcCalcT<double> calc;
   calc.m_geometry = geom;
@@ -277,9 +278,11 @@ build_scenario_calc( const AngleDetector &det,
     calc.m_effNumRays = n_rays;
 
   const double det_radius = 0.5 * det.gd.transverse_half_extent() * 2.0 * cm;
+  // The lateral offset goes in as the detector-side offset; CeeLo displaces the SOURCE by the same
+  //  magnitude (configure_scenario_mc, via scenario_center) - mirror images of one geometry.
   calc.m_detector = detector_geom_from_config<double>( geom,
                                                        scenario_center_distance_cm( s ) * cm,
-                                                       det_radius, 0.0 );
+                                                       det_radius, 0.0, s.offset_cm * cm, 0.0 );
 
   DistributedSrcCalcT<double>::ShellInfo src_shell;
   src_shell.dims = (s.shape == Shape::Box)
@@ -452,9 +455,13 @@ string scenario_description( const Scenario &s )
     o << "box " << 2.0*s.half_width_cm << " x " << 2.0*s.half_height_cm
       << " x " << 2.0*s.half_length_cm << " cm";
   else
-    o << "cylinder r=" << s.radius_cm << " cm, len=" << 2.0*s.half_length_cm << " cm";
+    o << ((s.shape == Shape::CylinderSideOn) ? "side-on cylinder r=" : "cylinder r=")
+      << s.radius_cm << " cm, len=" << 2.0*s.half_length_cm << " cm";
 
-  o << ", standoff " << s.standoff_cm << " cm, " << scenario_matrix_material( s.dense );
+  o << ", standoff " << s.standoff_cm << " cm";
+  if( s.offset_cm != 0.0 )
+    o << ", " << s.offset_cm << " cm off axis";
+  o << ", " << scenario_matrix_material( s.dense );
   if( s.shield_cm > 0.0 )
     o << ", " << s.shield_cm << " cm " << scenario_shield_material() << " shield";
 
@@ -493,9 +500,12 @@ double scenario_optical_depth( const Scenario &s, const double energy_keV )
   //  read ~101 mfp while the model in fact tracks truth to a few percent, because no photon ever
   //  crosses 12 cm of material on its way out.  Take the smaller of the two half-extents as the
   //  characteristic depth: it is the one that bounds the escape path.
+  // For a SIDE-ON cylinder the escape path toward the detector is RADIAL, so the radius is the
+  //  characteristic depth outright - taking the min would understate a long thin pipe seen sideways.
   const double half_extent_cm = (s.shape == Shape::Box)
         ? std::min( std::min( s.half_width_cm, s.half_height_cm ), s.half_length_cm )
-        : std::min( s.radius_cm, s.half_length_cm );
+        : ((s.shape == Shape::CylinderSideOn) ? s.radius_cm
+                                              : std::min( s.radius_cm, s.half_length_cm ));
   const double tau_src = GammaInteractionCalc::transmition_length_coefficient( matrix.get(), e )
                          * half_extent_cm * PhysicalUnits::cm;
   const double tau_shield = (s.shield_cm > 0.0)
@@ -540,7 +550,8 @@ void configure_scenario_mc( ceelo::EfficiencyCalculator &calc, const AngleDetect
                                  scenario_box_half_dims( s ) );
   else
     calc.set_cylindrical_source( scenario_center( s, det.endcap_front_offset_cm ),
-                                 s.radius_cm, s.half_length_cm );
+                                 s.radius_cm, s.half_length_cm,
+                                 scenario_source_rotation( s ) );
 
   if( transparent )
     return;
@@ -558,6 +569,7 @@ void configure_scenario_mc( ceelo::EfficiencyCalculator &calc, const AngleDetect
     if( s.shape == Shape::Box )
       calc.add_source_shield( mats.shield.get(), s.shield_cm, s.shield_cm, s.shield_cm );
     else
+      // (radial, end) thicknesses in the source's OWN frame, so this is orientation-independent.
       calc.add_source_shield( mats.shield.get(), s.shield_cm, s.shield_cm );
   }//if( shielded )
 }//configure_scenario_mc(...)
@@ -571,8 +583,11 @@ string scenario_mc_key( const Scenario &s, const bool transparent = false )
   if( s.shape == Shape::Box )
     o << "box(hx=" << s.half_width_cm << ",hy=" << s.half_height_cm << ",hz=" << s.half_length_cm << ")";
   else
-    o << "cyl(r=" << s.radius_cm << ",hl=" << s.half_length_cm << ")";
+    o << ((s.shape == Shape::CylinderSideOn) ? "cylSideOn(r=" : "cyl(r=") << s.radius_cm
+      << ",hl=" << s.half_length_cm << ")";
   o << ";standoff=" << s.standoff_cm;
+  if( s.offset_cm != 0.0 )
+    o << ";offset=" << s.offset_cm;
   if( transparent )
     o << ";transparent";
   else
