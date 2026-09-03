@@ -7824,6 +7824,14 @@ void SpecMeasManager::checkIfPreviouslyOpened( const std::string sessionID,
     
     
     // If we are here, the user has either modified the file, or has it as part of the save-state.
+#if( USE_LLM_INTERFACE )
+    // Don't interrupt an automated LLM benchmark run with the "previously stored
+    //  states" dialog - the benchmark re-loads spectra it has seen before.
+    LlmToolGui * const llmTool = m_viewer ? m_viewer->currentLlmTool() : nullptr;
+    if( llmTool && llmTool->isBenchmarkRunning() )
+      return;
+#endif
+
     WServer::instance()->post( sessionID,
                               [this, header, type, modifiedFiles, unModifiedFiles, userStatesWithFile](){
                                 showPreviousSpecFileUsesDialog( header, type, modifiedFiles, unModifiedFiles, userStatesWithFile );
