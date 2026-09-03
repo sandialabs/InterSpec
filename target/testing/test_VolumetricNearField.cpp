@@ -234,14 +234,27 @@ BOOST_AUTO_TEST_CASE( VolumetricNearFieldVsTruth )
       const double near = interspec_volumetric_eff( det, s, row.energy_keV, det.mc_transfer );
       const double flat = interspec_volumetric_eff( det, s, row.energy_keV, nullptr );
 
-      // Tolerance: the MC's own 1-sigma, plus a model allowance.  The allowance is per-corner -
-      //  a dense source at contact at 60 keV is where the removal-mu approximation is weakest, so
-      //  holding it to the same budget as a far-field point would just be pinning noise.
+      // Tolerance: the MC's own 1-sigma, plus a model allowance, set from the MEASURED distribution
+      //  against the 0.25% bank (test_VolumetricLadder findings, 2026-09-02):
+      //
+      //      far field / wide angle      median 0.87%   max 3.02%   (n=36)
+      //      contact, E < 130 keV        median 0.82%   max 5.34%   (n=36)
+      //      contact, E >= 130 keV       median 5.05%   max 7.38%   (n=36)
+      //
+      //  The high-energy contact rows are the loosest, and NOT because the volume integral is worse
+      //  there - those rows sit at tau 0.03-0.28, i.e. nearly transparent.  They carry the detector
+      //  RESPONSE's near-field high-energy bias, measured independently at +4.6 to +6.4% for the same
+      //  scenarios with no attenuating material anywhere (ladder rung 2) and at +5 to +7% for bare
+      //  points (rung 1).  It is a transfer problem (scratch/chord_prompt.md), not an integration
+      //  one.  When that is fixed this allowance should come down to the low-energy one, and the fact
+      //  that it CANNOT be tightened today is the honest statement of where the model stands.
+      //
+      //  The old ladder was 5 / 10 / 25%; the 25% corner (contact, low energy, dense) existed to
+      //  cover the aperture-frame bug and is gone - those rows now run under 5.4%.
       const bool low_energy = (row.energy_keV < 130.0);
       const bool contact = (s.standoff_cm < 5.0);
-      double allowance = 0.05;
-      if( contact )     allowance = 0.10;
-      if( contact && low_energy && s.dense ) allowance = 0.25;
+      double allowance = 0.04;
+      if( contact )      allowance = low_energy ? 0.07 : 0.09;
 
       const double tol = allowance + 3.0*(row.fep_uncert / std::max(truth, 1.0E-30));
 
