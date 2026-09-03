@@ -431,7 +431,11 @@ BOOST_AUTO_TEST_CASE( SrcFitOptionsSerialization )
     test.background_peak_subtract = (rand() % 2);
     test.same_age_isotopes = (rand() % 2);
     test.account_for_drf_uncert = (rand() % 2);
-    
+    test.correct_for_cascade_summing = (rand() % 2);
+    // Every enumerator, so a serializer that forgets one (or maps it to the wrong string) fails here
+    //  rather than silently reverting a user's choice on reload.
+    test.volumetric_eff_method = static_cast<ShieldingSourceFitCalc::VolumetricEffMethod>( rand() % 4 );
+
     rapidxml::xml_document<char> doc;
     BOOST_REQUIRE_NO_THROW( test.serialize( &doc ) );
     
@@ -872,7 +876,7 @@ deque<shared_ptr<const PeakDef>> peaks_with_model_expected_areas(
 
   GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mix_cache;
   const vector<GammaInteractionCalc::PeakResultPlotInfo> peak_infos
-        = fcn_pars.first->energy_chi_contributions( truth_pars, {}, mix_cache, nullptr, nullptr );
+        = fcn_pars.first->energy_chi_contributions( truth_pars, {}, mix_cache );
 
   BOOST_REQUIRE_EQUAL( peak_infos.size(), input.foreground_peaks.size() );
 
@@ -2216,7 +2220,7 @@ void check_expected_counts_parity( const GammaInteractionCalc::ShieldingSourceCh
 
   GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache_legacy, cache_imp;
   const vector<GammaInteractionCalc::PeakResultPlotInfo> legacy
-        = fcn_pars.first->energy_chi_contributions( params, {}, cache_legacy, nullptr, nullptr );
+        = fcn_pars.first->energy_chi_contributions( params, {}, cache_legacy );
   const vector<double> templated
         = fcn_pars.first->expected_peak_counts_imp<double>( params, cache_imp );
 

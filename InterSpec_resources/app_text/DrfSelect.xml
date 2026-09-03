@@ -26,7 +26,7 @@
   <message id="reds-tt-add-drf-btn">Click the plus button to add an additional relative efficiency detector response function file.</message>
   <message id="reds-tt-add-dir">Click the plus button to add an additional directory to recursively look for detector response functions in.</message>
   <message id="reds-gadras-drf-info-ios">You can place detector response functions imported from GADRAS-DRF into <code>InterSpec</code>s directory within the <b>Files</b> app.</message>
-  <message id="reds-gadras-drf-info">These are detector response functions imported from GADRAS-DRF.  Currently only the detector dimensions,  absolute efficiencies, and FWHM resolutions are used.</message>
+  <message id="reds-gadras-drf-info">These are detector response functions imported from GADRAS-DRF.  The crystal shape and material, dead layer, endcap attenuators, setback, FWHM and peak shape are all read from <code>Detector.dat</code>, and the efficiency from <code>Efficiency.csv</code>.  A directory holding only a <code>Detector.dat</code> is listed as &quot;geometry only&quot;: picking it opens the Monte-Carlo characterization that gives it an efficiency.  Coaxial bore geometry and partial side or back shields are not recorded by the format, so they are not modeled.</message>
   <message id="reds-failed-parse-gadras-det">Failed to parse a GADRAS detector: {1}</message>
   <message id="reds-err-saving-gad-path">Error saving GADRAS path to user preferences: {1}</message>
   <message id="reds-tt-remove-gad-dir">Remove directory from list of directories InterSpec will look in for detector response functions in.</message>
@@ -134,7 +134,7 @@
   <message id="ds-chip-tt-mc">Full Monte-Carlo-parameterized response ({1} profile; valid {2}-{3} keV): off-axis and near-field efficiencies with honest uncertainties.</message>
   <message id="ds-chip-tt-no-mc">No Monte-Carlo parameterization - efficiencies are on-axis far-field only. Use "Characterize by MC..." to add one.</message>
   <message id="ds-chip-transfer">Transfer</message>
-  <message id="ds-chip-tt-transfer">Efficiency-transfer response (an anchored efficiency curve carried to other distances/angles through the exact ray-traced detector geometry; valid {1}-{2} keV). Best accuracy on-axis at distances beyond {3}; closer or well off-axis queries are flagged and carry an honestly inflated uncertainty. For the best near-field / off-axis accuracy run a Full MC characterization ("Modify...", Geometry &amp; MC tab).</message>
+  <message id="ds-chip-tt-transfer">Efficiency-transfer response (an anchored efficiency curve carried to other distances/angles through the exact ray-traced detector geometry; valid {1}-{2} keV). Best accuracy on-axis at distances beyond {3}; closer or well off-axis queries are flagged and carry an honestly inflated uncertainty. For the best near-field / off-axis accuracy run a Full MC characterization ("Modify...", Geom &amp; MC tab).</message>
   <message id="ds-chip-grounded">Grounded</message>
   <message id="ds-chip-grounded-curve">Grounded (curve)</message>
   <message id="ds-chip-tt-grounded">Whether the Monte-Carlo response has been anchored to measured efficiencies (k(E) correction with covariance). "(curve)" means it was anchored to a fitted curve rather than raw measured points - slightly lower quality.</message>
@@ -155,4 +155,21 @@
   <message id="ds-eff-type-intrinsic">Intrinsic Efficiency</message>
   <message id="ds-eff-type-farfield">Far-Field Efficiency</message>
   <message id="ds-eff-type-gadras">GADRAS</message>
+
+  <!-- Mode choice dialog when an ANGLE file carries a full detector model + reference curve -->
+  <message id="ds-angle-mode-title">ANGLE detector model</message>
+  <message id="ds-angle-mode-txt">This ANGLE file also contains the detector's physical model and a measured reference efficiency curve. You can use it as a generic detector (recommended, so you can compute efficiencies for arbitrary geometries), or keep this measurement's fixed-geometry curve.</message>
+  <message id="ds-angle-mode-generic">Generic detector</message>
+  <message id="ds-angle-mode-fixed">This measurement's fixed geometry</message>
+  <message id="ds-angle-mode-unavailable">This ANGLE file also contains the detector&apos;s physical model, but InterSpec cannot use it as a generic detector. {1} This measurement&apos;s fixed-geometry efficiency curve has been imported instead.</message>
+  <message id="ds-angle-no-refcurve">The file has no measured reference efficiency curve for the response to be anchored on.</message>
+  <message id="ds-angle-note">ANGLE file: {1}</message>
+  <message id="ds-angle-ok">Ok</message>
+
+  <message id="ds-gadras-mode-title">GADRAS detector model</message>
+  <message id="ds-gadras-mode-txt">This detector&apos;s <code>Detector.dat</code> also describes the crystal itself - its shape, material, dead layer and window. You can use that as a generic detector, with the measured efficiency curve anchoring it, so efficiencies can be computed for other geometries; or keep just the fixed efficiency curve.</message>
+  <message id="ds-gadras-mode-generic">Generic detector</message>
+  <message id="ds-gadras-mode-fixed">Fixed efficiency curve</message>
+  <message id="ds-gadras-no-geometry">Could not build a detector geometry from this Detector.dat: {1}</message>
+  <message id="reds-gadras-geometry-only">(geometry only)</message>
 </messages>

@@ -23,6 +23,8 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#include "physics/FepWindow.h"
+
 /// @file PhotonTransport.h
 /// @brief Photon transport loop inside detector materials.
 ///
@@ -69,6 +71,15 @@ struct TransportConfig {
     /// deposition keeps the FEP indicator intact.
     bool enable_doppler_broadening = true;
 
+    /// Half-width (keV) of the full-energy-peak window the CALLER will score
+    /// with.  Used only by the fep_only_mode early kill, which abandons a
+    /// photon once enough energy has escaped that FEP is impossible - so this
+    /// must never be SMALLER than the window the caller actually scores, or
+    /// the kill discards events that would have counted and FEP comes out
+    /// biased low with no error and no flag.  EfficiencyCalculator keeps the
+    /// two in lockstep via set_fep_window_keV(); see physics/FepWindow.h.
+    double fep_window_keV = kDefaultFepWindowKeV;
+
     /// Enable CSDA electron tracking at interaction sites.
     ///
     /// When true, photoelectrons, Compton recoil electrons, and pair e⁺/e⁻ are
@@ -79,12 +90,12 @@ struct TransportConfig {
     /// Improvement over "deposit locally":
     ///   200 keV: ~2%  |  662 keV: ~7–9%  |  1.5 MeV: ~12–15%  |  3 MeV: ~20%
     ///
-    /// Residual GEANT4 discrepancy with CSDA (shell corrections, bremsstrahlung,
-    /// multiple scattering not yet modelled):
-    ///   < 200 keV: ~1–3%  |  662 keV: ~3–6%  |  > 1 MeV: ~5–10%
-    ///
-    /// TODO (future): full electron transport via Molière multiple scattering,
-    ///   discrete bremsstrahlung photon generation, delta-ray production.
+    /// The walk now includes Molière (Highland) multiple scattering, discrete
+    /// Seltzer-Berger bremsstrahlung with recursive photon transport, and
+    /// per-step Bohr energy-loss straggling (Aug 2026); residual FEP
+    /// discrepancy vs GEANT4 is ≤ ~0.3% pooled at 2–3 MeV
+    /// (studies/high_e_fep/FINDINGS.md).  Delta-ray production is still not
+    /// modelled.
     bool enable_electron_csda = true;
 
     // --- Diagnostic flags for GEANT4 comparison ---

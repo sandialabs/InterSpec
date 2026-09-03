@@ -1,0 +1,13 @@
+# Diagnostic: Config 1 at 2614 keV — eBrem + MSC both disabled
+# Closest to deterministic CSDA (pure ionization stopping)
+
+/process/inactivate eBrem
+/process/inactivate msc
+/gps/particle gamma
+/gps/pos/type Point
+/gps/pos/centre 0.000000 0.000000 -10.000000 cm
+/gps/ang/type iso
+/gps/ene/type Mono
+/gps/ene/mono 2.614000 MeV
+
+/run/beamOn 16000000

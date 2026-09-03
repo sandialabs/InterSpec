@@ -71,6 +71,8 @@
 #include "InterSpec/PeakFitDetPrefs.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/InterSpec.h"
+#include "InterSpec/CeeLoUtils.h"
+#include "InterSpec/GadrasDetectorDat.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
 
@@ -144,6 +146,40 @@ namespace
   }//append_ceelo_response_node(...)
 
 
+  /** Serializes a ceelo::GeometryDescriptor and embeds the resulting
+   "CeeLoGeometry" element under `parent` - the same shape as
+   #append_ceelo_response_node, for a DRF that knows its geometry but has no
+   generated response.
+   */
+  void append_ceelo_geometry_node( ::rapidxml::xml_node<char> *parent,
+                                   ::rapidxml::xml_document<char> *doc,
+                                   const ceelo::GeometryDescriptor &geometry )
+  {
+    const std::string xml = geometry.to_xml_string();
+    std::vector<char> buf( xml.begin(), xml.end() );
+    buf.push_back( '\0' );
+
+    ::rapidxml::xml_document<char> ceelo_doc;
+    ceelo_doc.parse<0>( buf.data() );
+    const ::rapidxml::xml_node<char> *root = ceelo_doc.first_node( "CeeLoGeometry" );
+    if( !root )
+      throw std::runtime_error( "append_ceelo_geometry_node: codec produced no root" );
+
+    parent->append_node( deep_clone_xml_node( doc, root ) );
+  }//append_ceelo_geometry_node(...)
+
+
+  /** Re-prints a "CeeLoGeometry" element and hands it to the CeeLo codec. */
+  std::shared_ptr<const ceelo::GeometryDescriptor> parse_ceelo_geometry_node(
+                                        const ::rapidxml::xml_node<char> *node )
+  {
+    std::string xml;
+    ::rapidxml::print( std::back_inserter(xml), *node, ::rapidxml::print_no_indenting );
+    return std::make_shared<const ceelo::GeometryDescriptor>(
+                                  ceelo::GeometryDescriptor::from_xml_string( xml ) );
+  }//parse_ceelo_geometry_node(...)
+
+
   /** Re-prints a "CeeLoResponse" element to a standalone string and hands it
    to the CeeLo codec.  Throws on invalid content.
    */
@@ -191,6 +227,16 @@ namespace
 
 
 
+  //Slope between two efficiency points; guards the zero-width interval a duplicated
+  //  energy would give (which would otherwise poison calcA with a NaN).
+  float effSlope( const DetectorPeakResponse::EnergyEfficiencyPair &lhs,
+                 const DetectorPeakResponse::EnergyEfficiencyPair &rhs )
+  {
+    const float dx = rhs.energy - lhs.energy;
+    return (dx == 0.0f) ? 0.0f : ((rhs.efficiency - lhs.efficiency) / dx);
+  }//float effSlope(...)
+
+
   //calcA(...) is for use from DetectorPeakResponse::akimaInterpolate(...).
   //  This function does not to any error checking that the input is valid.
   float calcA( const size_t i,
@@ -198,41 +244,31 @@ namespace
   {
     assert( i >= 2 );
     assert( (i + 2) < xy.size() );
-    
+
     const size_t n = xy.size();
-    const float x_i  = xy[i].energy;
-    const float x_m1 = xy[i-1].energy;
-    const float x_m2 = xy[i-2].energy;
-    const float x_p1 = xy[i+1].energy;
-    const float x_p2 = xy[i+2].energy;
-    const float y_i  = xy[i].efficiency;
-    const float y_m1 = xy[i-1].efficiency;
-    const float y_m2 = xy[i-2].efficiency;
-    const float y_p1 = xy[i+1].efficiency;
-    const float y_p2 = xy[i+2].efficiency;
-    const float p_i = (y_p1 - y_i) / (x_p1 - x_i);
-    
+    const float p_i = effSlope( xy[i], xy[i+1] );
+
     float A_i;
     if( i == 0 )
     {
       A_i = p_i;
     }else if( i == 1 )
     {
-      const float p_0 = (xy[1].efficiency - xy[0].efficiency) / (xy[1].energy - xy[0].energy);
+      const float p_0 = effSlope( xy[0], xy[1] );
       A_i = (p_0+p_i)/2.0f;
     }else if( i == (n-1) )
     {
       A_i = p_i;
     }else if( i == (n-2) )
     {
-      const float p = (xy[n-2].efficiency - xy[n-3].efficiency) / (xy[n-2].energy - xy[n-3].energy);
+      const float p = effSlope( xy[n-3], xy[n-2] );
       A_i = (p_i + p)/2.0f;
     }else
     {
-      const float p_1 = (y_p2 - y_p1) / (x_p2 - x_p1);
-      const float p_m1 = (y_i - y_m1) / (x_i - x_m1);
-      const float p_m2 = (y_m1 - y_m2) / (x_m1 - x_m2);
-      
+      const float p_1 = effSlope( xy[i+1], xy[i+2] );
+      const float p_m1 = effSlope( xy[i-1], xy[i] );
+      const float p_m2 = effSlope( xy[i-2], xy[i-1] );
+
       const float w1 = fabs( p_1 - p_i );
       const float w2 = fabs( p_m1 - p_m2 );
       if( (w1+w2) == 0.0f )
@@ -729,6 +765,8 @@ void DetectorPeakResponse::computeHash()
 
   if( m_ceeloResponse )
     boost::hash_combine( seed, m_ceeloResponse->content_hash() );
+  else if( m_geometry )
+    boost::hash_combine( seed, m_geometry->to_xml_string() );
 
   // Embedded fixed-geometry source setup: only hashed when present, so legacy
   //  DRFs keep their hashes.
@@ -787,6 +825,7 @@ void DetectorPeakResponse::reset()
   m_geomType = EffGeometryType::FarFieldIntrinsic;
   m_totalEfficiency.reset();
   m_ceeloResponse.reset();
+  m_geometry.reset();
   m_measuredPoints.reset();
 }//void reset()
 
@@ -821,6 +860,9 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && ((!m_ceeloResponse && !rhs.m_ceeloResponse)
               || (m_ceeloResponse && rhs.m_ceeloResponse
                   && (m_ceeloResponse->content_hash() == rhs.m_ceeloResponse->content_hash())))
+          && ((!m_geometry && !rhs.m_geometry)
+              || (m_geometry && rhs.m_geometry
+                  && (m_geometry->to_xml_string() == rhs.m_geometry->to_xml_string())))
           );
 }//operator==
 
@@ -985,6 +1027,24 @@ void DetectorPeakResponse::setCeeloResponse( shared_ptr<const ceelo::DetectorRes
 }//setCeeloResponse(...)
 
 
+shared_ptr<const ceelo::GeometryDescriptor> DetectorPeakResponse::geometry() const
+{
+  // A generated response was ray-traced for a specific geometry; that one wins.  Aliasing
+  //  shared_ptr, so the returned descriptor lives as long as the response holding it.
+  if( m_ceeloResponse )
+    return shared_ptr<const ceelo::GeometryDescriptor>( m_ceeloResponse,
+                                                        &m_ceeloResponse->descriptor );
+  return m_geometry;
+}//geometry()
+
+
+void DetectorPeakResponse::setGeometry( shared_ptr<const ceelo::GeometryDescriptor> geometry )
+{
+  m_geometry = std::move( geometry );
+  computeHash();
+}//setGeometry(...)
+
+
 shared_ptr<const MeasuredDrfPoints> DetectorPeakResponse::measuredPoints() const
 {
   return m_measuredPoints;
@@ -1014,6 +1074,29 @@ const char *DetectorPeakResponse::effFlagName( const EffFlag flag )
   assert( 0 );
   return "unknown";
 }//effFlagName(...)
+
+
+const char *DetectorPeakResponse::effFlagDescription( const EffFlag flag )
+{
+  switch( flag )
+  {
+    case EffFlag::Ok:
+      return "ok";
+
+    // The query fell outside the energy (or angle) range the response actually models - past its
+    //  validated energy range, past the tabulated eta nodes, or past the energies the measured
+    //  points constrain k(E) over.  The value is the nearest modeled one held constant, not a
+    //  computed one.
+    case EffFlag::OutOfRangeClamped:  return "extrapolated";
+
+    case EffFlag::NearFieldUnmodeled: return "no near-field model";
+    case EffFlag::Shadowed:           return "collimator shadowed";
+    case EffFlag::NeedsMc:            return "unreliable - needs MC";
+  }//switch( flag )
+
+  assert( 0 );
+  return "unknown";
+}//effFlagDescription(...)
 
 
 namespace
@@ -1156,7 +1239,7 @@ string DetectorPeakResponse::drfExtraToXmlString() const
   const bool have_uncert = (eff_uncert && !eff_uncert->isEmpty());
   const bool have_points = (m_measuredPoints && !m_measuredPoints->empty());
   if( !have_uncert && !m_totalEfficiency && !have_points && !m_ceeloResponse
-      && m_fixedGeomSetupXml.empty() )
+      && !m_geometry && m_fixedGeomSetupXml.empty() )
     return "";
 
   rapidxml::xml_document<char> doc;
@@ -1174,6 +1257,8 @@ string DetectorPeakResponse::drfExtraToXmlString() const
 
   if( m_ceeloResponse )
     append_ceelo_response_node( base_node, &doc, *m_ceeloResponse );
+  else if( m_geometry )
+    append_ceelo_geometry_node( base_node, &doc, *m_geometry );  //a response carries its own
 
   if( !m_fixedGeomSetupXml.empty() )
   {
@@ -1261,6 +1346,10 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     if( ceelo_node )
       m_ceeloResponse = parse_ceelo_response_node( ceelo_node );
 
+    const rapidxml::xml_node<char> *geom_node = base_node->first_node( "CeeLoGeometry" );
+    if( geom_node )
+      m_geometry = parse_ceelo_geometry_node( geom_node );
+
     const rapidxml::xml_node<char> *setup_node = base_node->first_node( "FixedGeomSourceSetup" );
     if( setup_node )
       m_fixedGeomSetupXml.assign( setup_node->value(), setup_node->value_size() );
@@ -1269,6 +1358,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     m_totalEfficiency.reset();
     m_measuredPoints.reset();
     m_ceeloResponse.reset();
+    m_geometry.reset();
     cerr << "DetectorPeakResponse::setDrfExtraFromXmlString: failed to parse"
             " extras ('" << e.what() << "') - ignoring." << endl;
   }//try / catch
@@ -1594,125 +1684,108 @@ function<float(float)> DetectorPeakResponse::makeEfficiencyFunctionFromFormula(
 }
 
 
-void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
-                                                 std::istream &detDatFile )
+
+namespace
 {
-  float detWidth = 0.0, heightToWidth = 0.0;
-  float lowerEnergy = 0.0, upperEnergy = 0.0;
-  float detSetback = 0.0;
+/** Coarse resolution class implied by a %FWHM at 661 keV.
+
+ The fallback for a GADRAS detector whose material is not stated.  Measured
+ across the detectors InterSpec ships: HPGe 0.21-0.28%, CZT 0.90-3.40%, LaBr3
+ 3.00-3.50%, NaI 6.30-9.00%.  CZT and LaBr3 overlap, which is exactly what
+ CoarseResolutionType::MedRes exists to say.
+ */
+PeakFitUtils::CoarseResolutionType coarse_type_from_fwhm661( const float pct )
+{
+  if( pct <= 0.0f )
+    return PeakFitUtils::CoarseResolutionType::Unknown;
+  if( pct < 1.5f )
+    return PeakFitUtils::CoarseResolutionType::High;
+  if( pct > 5.0f )
+    return PeakFitUtils::CoarseResolutionType::Low;
+  return PeakFitUtils::CoarseResolutionType::MedRes;
+}//coarse_type_from_fwhm661(...)
+
+
+/** Coarse resolution class for a GADRAS material-table name.
+
+ Only the cases where the class is NOT a question of resolution are named here -
+ the semiconductors, germanium, and the lanthanum halides.  Everything else
+ (every scintillator, and the elpasolites) is decided by the nominal resolution
+ the material table already carries, so all 36 entries are covered without
+ enumerating them.
+
+ Returns Unknown when the name is not a GADRAS material at all.
+ */
+PeakFitUtils::CoarseResolutionType coarse_type_for_gadras_material( const std::string &name )
+{
+  if( name.empty() )
+    return PeakFitUtils::CoarseResolutionType::Unknown;
+
+  std::string lower = name;
+  SpecUtils::to_lower_ascii( lower );
+  auto has = [&lower]( const char * const s ) -> bool {
+    return lower.find(s) != std::string::npos;
+  };
+
+  // Room-temperature semiconductors: a distinct peak shape (hole tailing), not
+  //  just a resolution.
+  if( has("czt") || has("cdte") || has("cadmium zinc") || has("tlbr") || has("hgi") )
+    return PeakFitUtils::CoarseResolutionType::CZT;
+
+  if( has("hpge") || has("germanium") || (lower == "si") )
+    return PeakFitUtils::CoarseResolutionType::High;
+
+  // Lanthanum/cerium halides, which resolve better than NaI but are scintillators.
+  if( has("labr") || has("lacl") || has("cebr") )
+    return PeakFitUtils::CoarseResolutionType::LaBr;
+
+  // Anything else the table knows: let its nominal resolution decide.
+  const GadrasDetectorDat::MaterialInfo * const info
+                                    = GadrasDetectorDat::materialByName( name );
+  if( info )
+    return coarse_type_from_fwhm661( info->resolution661 );
+
+  return PeakFitUtils::CoarseResolutionType::Unknown;
+}//coarse_type_for_gadras_material(...)
+}//namespace
+
+void DetectorPeakResponse::applyGadrasDat( const GadrasDetectorDat &dat,
+                                          std::istream *efficiencyCsv )
+{
+  const float detWidth = dat.width();
+  const float heightToWidth = dat.heightToWidth();
+  const float detSetback = dat.setbackCm();
+
+  // Min/max valid energy (params 62/63 integer columns).  Read for both formats now that a
+  //  single parser exposes them (the legacy text path historically left these at 0).
+  const float lowerEnergy = dat.lowerEnergyKeV();
+  const float upperEnergy = dat.upperEnergyKeV();
+
+  // GADRAS peak-shape (skew/tailing) coefficients and detector material; fed into a
+  //  PeakFitDetPrefs so peaks can default to the GADRAS peak shape.
+  const float gadrasLowSkew = dat.lowSkew();
+  const float gadrasHighSkew = dat.highSkew();
+  const float gadrasLowSkewPower = dat.lowSkewPower();
+  const float gadrasHighSkewPower = dat.highSkewPower();
+  const float gadrasLowSkewExtent = dat.lowSkewExtent();
+  const float gadrasHighSkewExtent = dat.highSkewExtent();
+  // What the crystal is made of, which decides the peak-shape and resolution
+  //  defaults below.  The XML variant names it; the text variant carries only a
+  //  material index, and every detector InterSpec ships leaves that at 0 - so
+  //  without the detector's own name there is nothing to go on.
+  const string gadrasMaterialName = dat.materialName();
+
+  // Seed the GADRAS peak shape when a nonzero skew coefficient was present, or whenever the
+  //  file was XML (matches the prior behavior of always seeding a shape for XML files).
 
   // Note: the efficiency representation (incl. energy units) is set below by
   //  the fromEnergyEfficiencyCsv call.
-  m_resolutionCoeffs.clear();
   m_resolutionForm = kGadrasResolutionFcn;
+  m_resolutionCoeffs.clear();
   m_resolutionCoeffs.resize( 3, 0.0 );
-
-  
-  // First decide if old style Detector.dat, or the newer XML Detector.dat
-  const istream::pos_type orig_pos = detDatFile.tellg();
-  
-  string line;
-  if( !SpecUtils::safe_get_line( detDatFile, line, 64 * 1024 ) )
-    throw std::runtime_error( "Couldnt read first line of Detector.dat" );
-
-  const bool is_xml = (line.find("xml") != string::npos);
-  
-  if( is_xml )
-  {
-    try
-    {
-      // A helper function to grab float values from Detector.dat xml.
-      auto get_float_value = []( const rapidxml::xml_node<char> * const parent, const string &name ) -> float {
-        const auto target = parent->first_node( name.c_str(), name.size() );
-        const auto value = SpecUtils::xml_first_node( target, "value" );
-        const string val_str = SpecUtils::xml_value_str( value );
-        
-        float val;
-        //will fail if val_str empty (which we want), but will parse strings like " 19.2 as", which
-        //  maybe its debatable if we want this behavior, but I dont think this matters much.
-        if( !(stringstream(val_str) >> val) )
-          throw runtime_error( "Missing <" + name + "> node." );
-        return val;
-      };//get_float_value lambda
-      
-      
-      detDatFile.seekg(orig_pos); //probably not really needed
-      rapidxml::file<char> input_file( detDatFile );
-      
-      rapidxml::xml_document<char> doc;
-      doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
-      
-      const auto gamma_detector = doc.first_node( "gamma_detector" );
-      if( !gamma_detector )
-        throw runtime_error( "Missing <gamma_detector> node." );
-      
-      lowerEnergy = get_float_value( gamma_detector, "weight_range_lower" );  //template error / min energy, keV
-      upperEnergy = get_float_value( gamma_detector, "weight_range_upper" );  //chi-square / max energy, keV
-      
-      const auto dimensions = XML_FIRST_NODE( gamma_detector, "dimensions" );
-      if( !dimensions )
-        throw runtime_error( "Missing <dimensions> node." );
-      
-      detWidth = get_float_value( dimensions, "width" );
-      heightToWidth = get_float_value( dimensions, "height_to_width_ratio" );
-      
-      const auto peak_shape = XML_FIRST_NODE( gamma_detector, "peak_shape" );
-      if( !peak_shape )
-        throw runtime_error( "Missing <peak_shape> node." );
-      
-      m_resolutionCoeffs[0] = get_float_value( peak_shape, "fwhm_offset" );
-      m_resolutionCoeffs[1] = get_float_value( peak_shape, "fwhm_at_661keV" );
-      m_resolutionCoeffs[2] = get_float_value( peak_shape, "fwhm_power" );
-
-      // Try to read setback from "setback" node, if present
-      try
-      {
-        detSetback = get_float_value( gamma_detector, "setback" );
-      }catch(...)
-      {
-        // "setback" node may not be present in older XML Detector.dat files
-      }
-    }catch( std::exception &e )
-    {
-      throw std::runtime_error( "Failed to read XML Detector.dat: " + std::string(e.what()) );
-    }//try / catch
-  }else
-  {
-    
-    do  //We've already got the first line
-    {
-      vector<string> parts;
-      SpecUtils::trim( line );
-      if( line.empty() || !isdigit(line[0]) )
-        continue;
-      
-      SpecUtils::split( parts, line, " \t" );
-      
-      try
-      {
-        const int parnum = std::stoi( parts.at(0) );
-        const float value = static_cast<float>( std::stod( parts.at(1) ) );
-        //      const int value2 = std::stoi( parts.at(2) );
-        //      const string descrip = parts.at(3);
-        switch( parnum )
-        {
-          case 6:  m_resolutionCoeffs[0] = value; break;
-          case 7:  m_resolutionCoeffs[1] = value; break;
-          case 8:  m_resolutionCoeffs[2] = value; break;
-          case 11: detWidth = value;              break;
-          case 12: heightToWidth = value;         break;
-          //case 35: lowerEnergy = value;           break;  //LLD(keV)
-          //case ??: upperEnergy = value;           break;  //chi-square / max energy, keV
-          case 40: detSetback = value;            break;
-        }//switch( parnum )
-      }catch(...)
-      {
-        cerr << "\nError reading line \"" << line << "\"" << endl;
-        continue;
-      }
-    }while( SpecUtils::safe_get_line( detDatFile, line, 64 * 1024 ) );
-  }//if( is_xml ) / else
-
+  m_resolutionCoeffs[0] = dat.resOffset();
+  m_resolutionCoeffs[1] = dat.resFWHM661();
+  m_resolutionCoeffs[2] = dat.resPower();
 
   if( detWidth<=0.0 || heightToWidth<=0.0 )
     throw runtime_error( "Couldnt find detector dimensions in the Detector.dat file" );
@@ -1723,7 +1796,18 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   
   //const bool fixed_geom = false;
   const EffGeometryType geometry_type = EffGeometryType::FarFieldIntrinsic;
-  fromEnergyEfficiencyCsv( csvFile, diam, -1.0, static_cast<float>(PhysicalUnits::keV), geometry_type );
+  if( efficiencyCsv )
+  {
+    fromEnergyEfficiencyCsv( *efficiencyCsv, diam, -1.0,
+                            static_cast<float>(PhysicalUnits::keV), geometry_type );
+  }else
+  {
+    // A Detector.dat on its own: the file defines the crystal but says nothing
+    //  about how efficiently it counts, so record the geometry and leave the
+    //  efficiency for a Monte-Carlo characterization to fill in.  The DRF is
+    //  deliberately left not-valid until then.
+    m_detectorDiameter = diam;
+  }
 
   if( detSetback > 0.0f )
     m_detectorSetback = detSetback * PhysicalUnits::cm;
@@ -1733,16 +1817,127 @@ void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
   m_lowerEnergy = lowerEnergy;
   m_upperEnergy = upperEnergy;
 
-  m_efficiencySource = DrfSource::UserAddedGadrasDrf;
-  
+  m_efficiencySource = efficiencyCsv ? DrfSource::UserAddedGadrasDrf
+                                     : DrfSource::GadrasDetectorDatOnly;
+
   m_lastUsedUtc = m_createdUtc = std::time(nullptr);
   m_geomType = geometry_type;
-  
+
+  // Seed a PeakFitDetPrefs so peaks default to the GADRAS peak shape this
+  //  detector was characterized with (Generic vs CZT/CdTe).
+  //
+  //  Done unconditionally, including when every skew coefficient is zero: a
+  //  GADRAS characterization is a statement ABOUT the peak shape, and "no skew"
+  //  is one of the shapes it can state - not an absence of information.  It also
+  //  carries the coarse resolution type, which the fitter needs whatever the
+  //  skew is.  (Previously this was skipped for a text file with all-zero skew,
+  //  which is every detector InterSpec ships, so those got no preferences at
+  //  all.)
+  {
+    // The material decides the class where it is known; the resolution the file
+    //  always states is the fallback where it is not.
+    PeakFitUtils::CoarseResolutionType det_type
+                          = coarse_type_for_gadras_material( gadrasMaterialName );
+    if( det_type == PeakFitUtils::CoarseResolutionType::Unknown )
+      det_type = coarse_type_from_fwhm661( dat.resFWHM661() );
+
+    auto prefs = make_shared<PeakFitDetPrefs>();
+    prefs->m_det_type = det_type;
+
+    // GADRAS builds the CZT/CdTe tail differently, so the skew family follows
+    //  the same classification rather than a second string match.
+    prefs->m_peak_skew_type = (det_type == PeakFitUtils::CoarseResolutionType::CZT)
+                                ? PeakDef::SkewType::GadrasCZT
+                                : PeakDef::SkewType::GadrasGeneric;
+
+    // SkewPar0=low_skew, 1=high_skew, 2=low_power, 3=high_power, 4=low_extent, 5=high_extent.
+    //
+    //  All six are given values, which in PeakFitDetPrefs means FIXED - a
+    //  nullopt would be fit per-ROI instead.  That is deliberate: GADRAS fit
+    //  this shape against the real detector, so it is better information than
+    //  anything a per-ROI fit would recover, and re-fitting it would throw that
+    //  away.
+    prefs->m_lower_energy_skew[0] = gadrasLowSkew;
+    prefs->m_lower_energy_skew[1] = gadrasHighSkew;
+    prefs->m_lower_energy_skew[2] = gadrasLowSkewPower;
+    prefs->m_lower_energy_skew[3] = gadrasHighSkewPower;
+    prefs->m_lower_energy_skew[4] = gadrasLowSkewExtent;
+    prefs->m_lower_energy_skew[5] = gadrasHighSkewExtent;
+
+    prefs->m_source = PeakFitDetPrefs::LoadingSource::FromDetectorPeakResponse;
+
+    m_peakFitDetPrefs = prefs;
+  }//seed the GADRAS peak-shape preferences
+
+  // The crystal geometry the file states.  Recorded on every path that reads a Detector.dat - the
+  //  shipped GADRAS detectors included - so the Modify editor shows the real crystal instead of
+  //  guessing a cylinder, and so an efficiency curve can be transferred through it.  Best-effort:
+  //  a .dat whose geometry the ray-tracer cannot use still gives everything else.
+  try
+  {
+    std::vector<std::string> geom_warnings;
+    m_geometry = std::make_shared<const ceelo::GeometryDescriptor>(
+                                    CeeLoUtils::buildGadrasGeometry( dat, geom_warnings ) );
+  }catch( std::exception & )
+  {
+    m_geometry.reset();
+  }
+
+  // A Detector.dat that came with its Efficiency.csv has both halves of a proper efficiency
+  //  transfer, so give the detector off-axis and near-field support rather than leaving it on the
+  //  flat-disk approximation.  Deterministic and MC-free; a no-op when there is no efficiency
+  //  (a geometry-only .dat) or no usable geometry.
+  //
+  //  Note this runs for every shipped GADRAS detector as the DRF list is built - which happens on
+  //  a worker thread pool (see GadrasDirectory::parseDetector), not the session thread.
+  CeeLoUtils::attachCurveTransferResponse( *this );
+
   computeHash();
+}//void applyGadrasDat(...)
+
+
+void DetectorPeakResponse::fromGadrasDefinition( std::istream &csvFile,
+                                                 std::istream &detDatFile )
+{
+  // Parse the Detector.dat (either legacy text or XML variant) into a single representation.
+  const GadrasDetectorDat dat = GadrasDetectorDat::fromStream( detDatFile );
+  applyGadrasDat( dat, &csvFile );
 }//void fromGadrasDefinition(...)
 
 
-void DetectorPeakResponse::fromGadrasDirectory( const std::string &dir )
+void DetectorPeakResponse::fromGadrasDatOnly( std::istream &detDatFile )
+{
+  const GadrasDetectorDat dat = GadrasDetectorDat::fromStream( detDatFile );
+  applyGadrasDat( dat, nullptr );
+
+  if( m_detectorDiameter <= 0.0f )
+    throw runtime_error( "Detector.dat does not give usable crystal dimensions." );
+
+  // Provenance, since there is no measured curve to speak for this one.  Only
+  //  set here: the description is part of the DRF hash, and touching it on the
+  //  Efficiency.csv path would change the identity of every shipped detector.
+  string desc = "GADRAS geometry";
+  const string mat = dat.materialName();
+  if( !mat.empty() )
+    desc += ", " + mat;
+  if( !dat.m_response_version.empty() )
+    desc += "; response version " + dat.m_response_version;
+  if( dat.lldKeV() > 0.0f )
+    desc += "; LLD " + SpecUtils::printCompact( dat.lldKeV(), 3 ) + " keV";
+  desc += ".  Efficiency requires a Monte-Carlo characterization,";
+  // Measured against every GADRAS Efficiency.csv InterSpec ships (2026-08-26):
+  //  above 60 keV a geometry-derived efficiency tracks GADRAS's own to a few
+  //  percent in the median, but below it the answer is set almost entirely by
+  //  the front dead layer - which Detector.dat routinely understates or omits -
+  //  and the median error runs 7.6% by 30-60 keV and 26.8% below 30 keV.
+  desc += " which is trustworthy above about 60 keV; below that the front dead"
+          " layer dominates and Detector.dat rarely states it accurately.";
+  setDescription( desc );
+}//void fromGadrasDatOnly(...)
+
+
+void DetectorPeakResponse::fromGadrasDirectory( const std::string &dir,
+                                               const bool allow_missing_efficiency_csv )
 {
   string eff_file, dat_file;
   
@@ -1763,8 +1958,23 @@ void DetectorPeakResponse::fromGadrasDirectory( const std::string &dir )
   if( dat_file.empty() )
     throw runtime_error( "Directory '" + dir + "' did not contain a Detector.dat file." );
   
-  if( eff_file.empty() )
+  if( eff_file.empty() && !allow_missing_efficiency_csv )
     throw runtime_error( "Directory '" + dir + "' did not contain a Efficiency.csv file." );
+
+  if( eff_file.empty() )
+  {
+#ifdef _WIN32
+    const std::wstring wonly_dat = SpecUtils::convert_from_utf8_to_utf16(dat_file);
+    ifstream onlyDat( wonly_dat.c_str(), ios_base::binary|ios_base::in );
+#else
+    ifstream onlyDat( dat_file.c_str(), ios_base::binary|ios_base::in );
+#endif
+    if( !onlyDat.is_open() )
+      throw runtime_error( "Could not open file '" + dat_file + "'." );
+
+    fromGadrasDatOnly( onlyDat );
+    return;
+  }//if( eff_file.empty() )
   
 #ifdef _WIN32
   const std::wstring weff_file = SpecUtils::convert_from_utf8_to_utf16(eff_file);
@@ -3187,166 +3397,173 @@ tuple<shared_ptr<DetectorPeakResponse>,double,double>
 }//shared_ptr<DetectorPeakResponse> parseEccFile( std::istream &input )
 
 
+namespace
+{
+/** Explains why an ANGLE file yielded no usable efficiency curve.  ANGLE only
+ writes per-energy efficiencies when the calculation had a reference efficiency
+ curve to transfer from, and several of its file types carry no results at all,
+ so name the actual reason rather than the count that came up short. */
+std::string angleNoCurveReason( const AngleOutxContents &contents )
+{
+  if( contents.results.empty() )
+  {
+    if( contents.hasGeometry && !contents.hasReference )
+      return "This ANGLE file describes a detector, but contains no calculated results"
+             " (it looks like an ANGLE detector definition, '.detx').  Its physical detector"
+             " model can still be used, but there is no efficiency curve to import.";
+    if( contents.hasReference )
+      return "This ANGLE file contains a reference efficiency curve, but no calculated"
+             " results (it looks like an ANGLE reference curve, '.recx', or a set of"
+             " calculation parameters, '.savx').";
+    return "This ANGLE file contains no <results> element, so there is no efficiency"
+           " curve to import.";
+  }//if( contents.results.empty() )
+
+  size_t n_eff = 0;
+  for( const AngleResultRow &row : contents.results )
+    n_eff += row.hasEfficiency ? 1u : 0u;
+
+  if( !n_eff )
+    return "This ANGLE calculation was run without a reference efficiency curve, so its"
+           " results give solid angles only - ANGLE did not compute any efficiencies to"
+           " import.";
+
+  return "This ANGLE file has only " + std::to_string(n_eff)
+         + " result(s) with an efficiency; at least 4 are needed to build a detector"
+           " response.";
+}//angleNoCurveReason(...)
+
+
+#if( PERFORM_DEVELOPER_CHECKS )
+/** Self-consistency dev-check: evaluate each fitted-region polynomial (as
+ written in ANGLE's XML comment) with muparserx and assert it reproduces the
+ measured reference points in that region.  Purely a build-time sanity check.
+ */
+void checkAngleFitRegions( const AngleOutxContents &contents )
+{
+  if( contents.fitRegions.empty() || contents.referencePoints.empty() )
+    return;
+
+  for( const AngleOutxContents::FitRegion &region : contents.fitRegions )
+  {
+    if( region.equation.empty() )
+      continue;
+
+    // The comment is "log10 e = <RHS>", with the energy variable written as
+    //  "Eg" (a non-ASCII gamma).  Take the RHS, drop non-ASCII bytes (turning
+    //  the variable into a bare "E"), and turn "log10 E" into "log10(E)".
+    const size_t eq_pos = region.equation.find( '=' );
+    if( eq_pos == string::npos )
+      continue;
+
+    string expr;
+    for( size_t i = eq_pos + 1; i < region.equation.size(); ++i )
+    {
+      const char c = region.equation[i];
+      if( static_cast<unsigned char>(c) < 0x80 )
+        expr += c;
+    }
+    SpecUtils::ireplace_all( expr, "log10 E", "log10(E)" );
+
+    try
+    {
+      mup::Value energy_val( 100.0 );
+      mup::ParserX parser;
+      parser.DefineVar( "E", mup::Variable(&energy_val) );
+      parser.SetExpr( expr );
+
+      for( const pair<float,float> &pt : contents.referencePoints )
+      {
+        const double energy = pt.first;
+        const double measured = pt.second;
+        if( (energy < region.startKeV) || (energy > region.endKeV) || (measured <= 0.0) )
+          continue;
+
+        energy_val = energy;
+        const double predicted = std::pow( 10.0, parser.Eval().GetFloat() );
+        const double rel_diff = std::fabs( predicted - measured ) / measured;
+
+        // Loose tolerance: this validates our extraction of both the points
+        //  and the equation, not the quality of ANGLE's fit.
+        assert( rel_diff < 0.15 );
+        if( rel_diff >= 0.15 )
+          cerr << "checkAngleFitRegions: region [" << region.startKeV << "," << region.endKeV
+               << "] eqn at " << energy << " keV predicts " << predicted
+               << " vs measured " << measured << " (rel " << rel_diff << ")" << endl;
+      }//for( reference points )
+    }catch( mup::ParserError &e )
+    {
+      cerr << "checkAngleFitRegions: could not evaluate '" << expr << "': " << e.GetMsg() << endl;
+    }
+  }//for( fit regions )
+}//checkAngleFitRegions(...)
+#endif //PERFORM_DEVELOPER_CHECKS
+}//anonymous namespace
+
+
 std::shared_ptr<DetectorPeakResponse>
   DetectorPeakResponse::parseAngleOutxFile( std::istream &input )
 {
-  static const size_t max_xml_size = 10u * 1024u * 1024u;
+  return parseAngleOutxFileFull( input ).fixedGeomDrf;
+}//shared_ptr<DetectorPeakResponse> parseAngleOutxFile( std::istream &input )
 
-  // rapidxml needs one mutable, null-terminated buffer.  Read directly into
-  // that buffer so the untrusted XML is not duplicated in memory, and enforce
-  // the limit while reading so non-seekable streams are bounded as well.
-  vector<char> xml_buf;
-  xml_buf.reserve( 64u * 1024u );
-  std::array<char,16u * 1024u> chunk;
 
-  while( input )
-  {
-    input.read( chunk.data(), static_cast<std::streamsize>(chunk.size()) );
-    const std::streamsize count = input.gcount();
-    if( count <= 0 )
-      break;
-
-    const size_t nread = static_cast<size_t>(count);
-    if( nread > (max_xml_size - xml_buf.size()) )
-      throw runtime_error( "parseAngleOutxFile: input exceeds 10 MiB limit." );
-
-    xml_buf.insert( xml_buf.end(), chunk.data(), chunk.data() + nread );
-  }
-
-  if( input.bad() )
-    throw runtime_error( "parseAngleOutxFile: failed reading input." );
-
-  if( xml_buf.size() < 50 )
-    throw runtime_error( "parseAngleOutxFile: input too small." );
-
-  xml_buf.push_back( '\0' );
-
-  rapidxml::xml_document<char> doc;
-  try
-  {
-    doc.parse<rapidxml::parse_trim_whitespace>( xml_buf.data() );
-  }catch( const rapidxml::parse_error &e )
-  {
-    throw runtime_error( "parseAngleOutxFile: XML parse error: " + string(e.what()) );
-  }
-
-  const rapidxml::xml_node<char> *angle_node = XML_FIRST_NODE( (&doc), "angle" );
-  if( !angle_node )
-    throw runtime_error( "parseAngleOutxFile: no <angle> root element." );
-
-  // Extract distance unit from <angle units="mm|cm">; default to mm
-  double dist_unit = 1.0 * PhysicalUnits::mm;
-  const string units_str = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( angle_node, "units" ) );
-  if( SpecUtils::iequals_ascii( units_str, "cm" ) )
-    dist_unit = 1.0 * PhysicalUnits::cm;
-
-  // Extract detector metadata and geometry
-  string det_name, det_desc;
-  float crystal_radius = 0.0f;
-  float setback = 0.0f;
-
-  const rapidxml::xml_node<char> *det_node = XML_FIRST_NODE( angle_node, "detector" );
-  if( det_node )
-  {
-    det_name = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( det_node, "name" ) );
-    det_desc = SpecUtils::xml_value_str( XML_FIRST_ATTRIB( det_node, "description" ) );
-
-    // Extract crystal radius from <crystal radius="...">
-    const auto *r_attr = SpecUtils::xml_first_attribute( XML_FIRST_NODE( det_node, "crystal" ), "radius" );
-    if( r_attr )
-      SpecUtils::parse_float( r_attr->value(), r_attr->value_size(), crystal_radius );
-
-    // Calculate setback: sum of material layers from outer enclosure to active Ge surface.
-    //  housing/topUpper + housing/topLower + endCap top + vacuum top + inactiveGe top
-    auto parse_attr_float = []( const rapidxml::xml_node<char> *node, const char *attr,
-                                size_t attr_len ) -> float
-    {
-      float val = 0.0f;
-      const auto *a = node ? node->first_attribute( attr, attr_len ) : nullptr;
-      if( a && a->value_size() )
-        SpecUtils::parse_float( a->value(), a->value_size(), val );
-      return val;
-    };//parse_attr_float
-
-    setback += parse_attr_float( XML_FIRST_NODE( det_node, "endCap" ), "topThickness", 12 );
-    setback += parse_attr_float( XML_FIRST_NODE( det_node, "vacuum" ), "topThickness", 12 );
-    setback += parse_attr_float( XML_FIRST_NODE( det_node, "inactiveGe" ), "topThickness", 12 );
-
-    const rapidxml::xml_node<char> *housing = XML_FIRST_NODE( det_node, "housing" );
-    if( housing )
-    {
-      setback += parse_attr_float( XML_FIRST_NODE( housing, "topUpper" ), "thickness", 9 );
-      setback += parse_attr_float( XML_FIRST_NODE( housing, "topLower" ), "thickness", 9 );
-    }//if( housing )
-  }//if( det_node )
-
-  // Find <results> and parse <result> children
-  const rapidxml::xml_node<char> *results_node = XML_FIRST_NODE( angle_node, "results" );
-  if( !results_node )
-    throw runtime_error( "parseAngleOutxFile: no <results> element." );
+AngleOutxContents DetectorPeakResponse::parseAngleOutxFileFull( std::istream &input )
+{
+  // All of the XML work lives in src/AngleOutxImport.cpp; what is left here is
+  //  turning the <results> rows into the fixed-geometry DRF (Mode B), which is
+  //  the only part that needs DetectorPeakResponse's private state.
+  AngleOutxContents contents = AngleOutx::parse( input );
 
   vector<EnergyEfficiencyPair> energy_efficiencies;
   vector<pair<float,float>> energy_precision;
 
-  XML_FOREACH_CHILD( result, results_node, "result" )
+  for( const AngleResultRow &row : contents.results )
   {
-    const auto *energy_attr = XML_FIRST_ATTRIB( result, "energy" );
-    const auto *eff_attr = XML_FIRST_ATTRIB( result, "efficiency" );
-
-    if( !energy_attr || !energy_attr->value_size() || !eff_attr || !eff_attr->value_size() )
+    if( !row.hasEfficiency )
       continue;
 
-    float energy = 0.0f, efficiency = 0.0f;
-    if( !SpecUtils::parse_float( energy_attr->value(), energy_attr->value_size(), energy ) )
-      throw runtime_error( "parseAngleOutxFile: failed to parse energy attribute." );
-    if( !SpecUtils::parse_float( eff_attr->value(), eff_attr->value_size(), efficiency ) )
-      throw runtime_error( "parseAngleOutxFile: failed to parse efficiency attribute." );
-
-    if( energy <= 1.0f )
-      throw runtime_error( "parseAngleOutxFile: energy <= 1 keV (" + to_string(energy) + ")" );
-    if( energy > 14000.0f )
-      throw runtime_error( "parseAngleOutxFile: energy > 14 MeV (" + to_string(energy) + ")" );
-    if( (efficiency < 0.0f) || IsNan(efficiency) || IsInf(efficiency) )
-      throw runtime_error( "parseAngleOutxFile: invalid efficiency ("
-                          + to_string(efficiency) + " at " + to_string(energy) + " keV)" );
-
     EnergyEfficiencyPair eep;
-    eep.energy = energy;
-    eep.efficiency = efficiency;
+    eep.energy = static_cast<float>( row.energyKeV );
+    eep.efficiency = static_cast<float>( row.efficiency );
     energy_efficiencies.push_back( eep );
 
-    // The "efficiencyPrecision" attribute is a multiplicative precision factor
-    //  (e.g., 1.03 means the efficiency is known to within ~3%).
-    const auto *prec_attr = XML_FIRST_ATTRIB( result, "efficiencyPrecision" );
-    if( prec_attr && prec_attr->value_size() )
-    {
-      float precision = 0.0f;
-      if( SpecUtils::parse_float( prec_attr->value(), prec_attr->value_size(), precision ) )
-        energy_precision.emplace_back( energy, precision );
-    }
-  }//for( loop over <result> nodes )
+    // "efficiencyPrecision" is the precision ANGLE actually achieved at this
+    //  energy, IN PERCENT - the same unit as the requested `<precision>`, per
+    //  https://www.angle.me/calculation-results-data-specification.html.  (The
+    //  shipped test fixture makes this unambiguous: it requests
+    //  `<precision>1</precision>` and its 75 results come back 1.028 - 1.414,
+    //  i.e. a hair worse than the 1% asked for.)
+    if( row.efficiencyPrecision > 0.0 )
+      energy_precision.emplace_back( eep.energy, static_cast<float>(row.efficiencyPrecision) );
+  }//for( const AngleResultRow &row : contents.results )
 
   if( energy_efficiencies.size() < 4 )
-    throw runtime_error( "parseAngleOutxFile: not enough energy/efficiency pairs (got "
-                        + to_string(energy_efficiencies.size()) + ")." );
+    throw runtime_error( angleNoCurveReason(contents) );
 
-  std::sort( begin(energy_efficiencies), end(energy_efficiencies),
-    []( const EnergyEfficiencyPair &lhs, const EnergyEfficiencyPair &rhs ) -> bool {
-    return lhs.energy < rhs.energy;
-  } );
+  // Distance from the outer detector face in to the ACTIVE germanium: every
+  //  front-facing layer of the housing / gap / endcap stack, plus the dead
+  //  layer carved out of the crystal's front.  (CeeLo's endcap_front_offset_cm()
+  //  is the same sum without the dead layer, since that moves the active face
+  //  rather than the crystal face.)
+  double setback = contents.deadLayerFront;
+  for( const AngleOutxContents::Layer &layer : contents.layers )
+  {
+    if( !layer.behindCrystal )
+      setback += layer.front;
+  }
 
   shared_ptr<DetectorPeakResponse> answer = make_shared<DetectorPeakResponse>();
-  answer->m_name = det_name;
-  if( !det_desc.empty() )
-    answer->m_name += (answer->m_name.empty() ? "" : " - ") + det_desc;
+  answer->m_name = contents.detName;
+  if( !contents.detDescription.empty() )
+    answer->m_name += (answer->m_name.empty() ? "" : " - ") + contents.detDescription;
 
   answer->m_description = "ANGLE .outx";
-  const double setback_pu = setback * dist_unit;
-  if( setback_pu > 0.0 )
-    answer->m_description += ", setback=" + to_string( setback_pu / PhysicalUnits::mm ) + "mm";
+  if( setback > 0.0 )
+    answer->m_description += ", setback=" + to_string( setback / PhysicalUnits::mm ) + "mm";
 
-  answer->m_detectorDiameter = static_cast<float>( 2.0 * crystal_radius * dist_unit );
-  answer->m_detectorSetback = setback_pu;
+  answer->m_detectorDiameter = static_cast<float>( 2.0 * contents.crystalRadius );
+  answer->m_detectorSetback = setback;
   {
     std::shared_ptr<DetectorEfficiencyCurve> eff = std::make_shared<DetectorEfficiencyCurve>();
     eff->setFromPairs( energy_efficiencies, static_cast<float>(PhysicalUnits::keV) );
@@ -3372,10 +3589,8 @@ std::shared_ptr<DetectorPeakResponse>
     vector<float> uncert_energies, frac_uncerts;
     for( const pair<float,float> &ep : energy_precision )
     {
-      // Values are multiplicative factors >= 1.0 (e.g. 1.03 -> ~3%); if a
-      //  value below 1.0 is ever encountered, treat it as already-fractional.
-      const float p = ep.second;
-      const float frac = (p >= 1.0f) ? (p - 1.0f) : p;
+      // Percent -> the fractional 1-sigma `fromPointUncerts` wants.
+      const float frac = 0.01f * ep.second;
       if( (frac >= 0.0f) && !IsNan(frac) && !IsInf(frac) )
       {
         uncert_energies.push_back( ep.first );
@@ -3401,8 +3616,18 @@ std::shared_ptr<DetectorPeakResponse>
 
   answer->computeHash();
 
-  return answer;
-}//shared_ptr<DetectorPeakResponse> parseAngleOutxFile( std::istream &input )
+  contents.fixedGeomDrf = answer;
+
+#if( PERFORM_DEVELOPER_CHECKS )
+  // Self-consistency check: ANGLE's own fitted region polynomials should
+  //  reproduce its measured reference points.  Evaluated via muparserx only in
+  //  developer builds; never affects the returned data.
+  checkAngleFitRegions( contents );
+#endif
+
+  return contents;
+}//AngleOutxContents parseAngleOutxFileFull( std::istream &input )
+
 
 
 DetectorPeakResponse::EffCsvParseResult
@@ -3664,8 +3889,25 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
   for( EnergyEfficiencyPair &point : energy_efficiencies )
     point.energy *= energy_units_scale;
 
+  // Determine whether the file is in increasing or decreasing energy order.  Repeated
+  //  energies (files sometimes duplicate their first row) carry no ordering information,
+  //  so the direction has to come from the first pair that actually differ.
+  bool increasing = true, found_direction = false;
+  for( size_t i = 1; !found_direction && (i < energy_efficiencies.size()); ++i )
+  {
+    const float prev_e = energy_efficiencies[i - 1].energy;
+    const float this_e = energy_efficiencies[i].energy;
+    if( !nearlySameEnergy( prev_e, this_e ) )
+    {
+      increasing = (this_e > prev_e);
+      found_direction = true;
+    }
+  }//for( find the first pair of differing energies )
+
+  if( !found_direction )
+    throw runtime_error( "All energies in efficiency CSV are the same." );
+
   // Validate: check monotonicity and value ranges
-  const bool increasing = (energy_efficiencies[1].energy > energy_efficiencies[0].energy);
   for( size_t i = 1; i < energy_efficiencies.size(); ++i )
   {
     const float prev_e = energy_efficiencies[i - 1].energy;
@@ -3688,7 +3930,7 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
       throw runtime_error( "Efficiency value out of range [0, 1.2] in CSV." );
 
     // Allow very close energies (within ~1e-5 relative tolerance)
-    if( fabs( prev_e - this_e ) < 1.0E-5f * std::max( fabs( this_e ), fabs( prev_e ) ) )
+    if( nearlySameEnergy( prev_e, this_e ) )
       continue;
 
     const bool bigger = (this_e > prev_e);
@@ -3702,6 +3944,30 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
     std::reverse( frac_uncertainties.begin(), frac_uncertainties.end() );
     std::reverse( total_efficiencies.begin(), total_efficiencies.end() );
   }
+
+  // Collapse repeated energies down to their first occurrence; interpolating a curve with
+  //  a zero-width interval yields NaN.  The three vectors are parallel, so they all shrink
+  //  together to keep the uncertainty and PTOT loops below aligned with the efficiencies.
+  {
+    size_t nkept = 1;
+    for( size_t i = 1; i < energy_efficiencies.size(); ++i )
+    {
+      if( nearlySameEnergy( energy_efficiencies[nkept - 1].energy, energy_efficiencies[i].energy ) )
+        continue;
+
+      energy_efficiencies[nkept] = energy_efficiencies[i];
+      frac_uncertainties[nkept] = frac_uncertainties[i];
+      total_efficiencies[nkept] = total_efficiencies[i];
+      nkept += 1;
+    }//for( each point )
+
+    energy_efficiencies.resize( nkept );
+    frac_uncertainties.resize( nkept );
+    total_efficiencies.resize( nkept );
+  }
+
+  if( energy_efficiencies.size() < 2 )
+    throw runtime_error( "Efficiency CSV file has fewer than 2 distinct energies." );
 
   // Build the DRF
   auto answer = make_shared<DetectorPeakResponse>();
@@ -3799,95 +4065,16 @@ void DetectorPeakResponse::parseDetectorDatGeometry( std::istream &detDatFile,
   diameter = 0.0f;
   setback = 0.0f;
 
-  float detWidth = 0.0f, heightToWidth = 0.0f;
-  float detSetback = 0.0f;
+  // Parse the Detector.dat (legacy text or XML) and pull out just the geometry.
+  const GadrasDetectorDat dat = GadrasDetectorDat::fromStream( detDatFile );
 
-  const istream::pos_type orig_pos = detDatFile.tellg();
-
-  string line;
-  if( !SpecUtils::safe_get_line( detDatFile, line, 64 * 1024 ) )
-    throw runtime_error( "Could not read first line of Detector.dat" );
-
-  const bool is_xml = (line.find( "xml" ) != string::npos);
-
-  if( is_xml )
-  {
-    try
-    {
-      auto get_float_value = []( const rapidxml::xml_node<char> * const parent,
-                                 const string &name ) -> float {
-        const auto target = parent->first_node( name.c_str(), name.size() );
-        const auto value = SpecUtils::xml_first_node( target, "value" );
-        const string val_str = SpecUtils::xml_value_str( value );
-        float val;
-        if( !(stringstream( val_str ) >> val) )
-          throw runtime_error( "Missing <" + name + "> node." );
-        return val;
-      };
-
-      detDatFile.seekg( orig_pos );
-      rapidxml::file<char> input_file( detDatFile );
-
-      rapidxml::xml_document<char> doc;
-      doc.parse<rapidxml::parse_trim_whitespace>( input_file.data() );
-
-      const auto gamma_detector = doc.first_node( "gamma_detector" );
-      if( !gamma_detector )
-        throw runtime_error( "Missing <gamma_detector> node." );
-
-      const auto dimensions = XML_FIRST_NODE( gamma_detector, "dimensions" );
-      if( !dimensions )
-        throw runtime_error( "Missing <dimensions> node." );
-
-      detWidth = get_float_value( dimensions, "width" );
-      heightToWidth = get_float_value( dimensions, "height_to_width_ratio" );
-
-      try
-      {
-        detSetback = get_float_value( gamma_detector, "setback" );
-      }catch( ... )
-      {
-      }
-    }catch( std::exception &e )
-    {
-      throw runtime_error( "Failed to read XML Detector.dat: " + string( e.what() ) );
-    }
-  }else
-  {
-    do
-    {
-      SpecUtils::trim( line );
-      if( line.empty() || !isdigit( static_cast<unsigned char>(line[0]) ) )
-        continue;
-
-      vector<string> parts;
-      SpecUtils::split( parts, line, " \t" );
-
-      try
-      {
-        const int parnum = std::stoi( parts.at( 0 ) );
-        const float value = static_cast<float>( std::stod( parts.at( 1 ) ) );
-        switch( parnum )
-        {
-          case 11: detWidth = value;      break;
-          case 12: heightToWidth = value;  break;
-          case 40: detSetback = value;    break;
-        }
-      }catch( ... )
-      {
-        continue;
-      }
-    }while( SpecUtils::safe_get_line( detDatFile, line, 64 * 1024 ) );
-  }//if( is_xml ) / else
-
-  if( (detWidth <= 0.0f) || (heightToWidth <= 0.0f) )
+  if( (dat.width() <= 0.0f) || (dat.heightToWidth() <= 0.0f) )
     throw runtime_error( "Could not find detector dimensions in Detector.dat" );
 
-  const float surfaceArea = detWidth * detWidth * heightToWidth;
-  diameter = 2.0f * sqrt( surfaceArea / 3.14159265359f ) * static_cast<float>( PhysicalUnits::cm );
+  diameter = dat.equivalentCircularDiameterCm() * static_cast<float>( PhysicalUnits::cm );
 
-  if( detSetback > 0.0f )
-    setback = detSetback * static_cast<float>( PhysicalUnits::cm );
+  if( dat.setbackCm() > 0.0f )
+    setback = dat.setbackCm() * static_cast<float>( PhysicalUnits::cm );
 }//void parseDetectorDatGeometry(...)
 
 
@@ -5095,6 +5282,14 @@ float DetectorPeakResponse::absoluteToIntrinsicMultiple( const float energy ) co
 }//absoluteToIntrinsicMultiple(...)
 
 
+bool DetectorPeakResponse::nearlySameEnergy( const float lhs, const float rhs )
+{
+  // The relative test alone would call 0 and 0 different, so check equality first.
+  return (lhs == rhs)
+         || (fabs( lhs - rhs ) < 1.0E-5f * std::max( fabs(lhs), fabs(rhs) ));
+}//bool nearlySameEnergy( const float lhs, const float rhs )
+
+
 float DetectorPeakResponse::akimaInterpolate( const float z,
             const std::vector<DetectorPeakResponse::EnergyEfficiencyPair> &xy )
 {
@@ -5115,14 +5310,17 @@ float DetectorPeakResponse::akimaInterpolate( const float z,
   const float y_i = xy[i].efficiency;
   const float y_p1 = xy[i+1].efficiency;
   
+  const float h_i = (x_p1 - x_i);
+  if( h_i == 0.0f ) //duplicate energies - nothing to interpolate between
+    return y_i;
+
   if( (n < 6) || (i < 2) || ((n-i) <= 3)  ) //We'll just use linear interpolation here
   {
-    const float d = (z - x_i) / (x_p1 - x_i);
+    const float d = (z - x_i) / h_i;
     return y_i + d*(y_p1 - y_i);
   }//if( n < 6 )
-  
+
   const float dx = z - x_i;
-  const float h_i = (x_p1 - x_i);
   const float A_i = calcA( i, xy );
   const float A_p1 = calcA( i+1, xy );
   const float p_i = (y_p1 - y_i) / h_i;
@@ -5210,47 +5408,29 @@ float DetectorPeakResponse::peakResolutionFWHM( float energy,
         throw std::runtime_error( "DetectorPeakResponse::peakResolutionSigma():"
                                  " pars not defined" );
       assert( PhysicalUnits::keV == 1.0 );
-      
-      /*
-       TODO: 20260723 - should update to instead use the belo
-       const double resolutionOffset = pars[0];
-       const double resolution661 = pars[1];
-       const double resolutionPower = pars[2];
 
-       const double E = std::max(1.0, energy);
-       if( E > 661 )
-         return static_cast<float>( 6.61 * resolution661 * pow((E / 661.), resolutionPower) );
+      // Straight-forward translation of the GADRAS Fortran GetFWHM (the "form C" shared with
+      //  PeakDists::gadras_fwhm).  This replaces an earlier variant that used a different
+      //  low-energy positive-offset branch (A7 = sqrt((6.61b)^2 - a^2)/6.61); the two agree for
+      //  E > 661 and for negative offset (aside from the max(30,E) floor below), but differ for
+      //  positive resolution-offset detectors (e.g. HPGe, LaBr3) below 661 keV.  Form C is the
+      //  Fortran-faithful form and is now used everywhere GADRAS FWHM is computed.
+      const double a = pars[0];   // resolution offset ("FWHM @ 0")
+      const double b = pars[1];   // resolution @ 661 (percent)
+      const double c = pars[2];   // resolution power
 
-       if( resolutionOffset >= 0 )
-       {
-          double ZeroLimit = std::max(0., std::abs(resolutionOffset) * (661. - E) / 661.);
-          double FWHM = 6.61 * resolution661 * pow((E / 661.), resolutionPower);
-          return sqrt(pow(ZeroLimit, 2) + pow(FWHM, 2));
-       }
-
-
-        double p = pow(resolutionPower, (1. / log(1. - resolutionOffset)));
-        return 6.61 * resolution661 * pow((std::max(30., E) / 661.), P);
-       */
-      
-      const double a = pars[0];
-      const double b = pars[1];
-      const double c = pars[2];
-      
-      if( energy >= 661.0f || fabs(a)<float(1.0E-6) )
+      if( energy > 661.0f )
         return static_cast<float>( 6.61 * b * pow(energy/661.0, c) );
 
-      if( a < 0.0 )
+      if( a >= 0.0 )
       {
-        const double p = pow( c, 1.0/log(1.0-a) );
-        return static_cast<float>( 6.61 * b * pow(energy/661.0, p) );
-      }//if( a < 0.0 )
-      
-      if( a > 6.61*b )
-        return static_cast<float>( a );
+        const double zero_limit = std::max( 0.0, fabs(a) * (661.0 - energy) / 661.0 );
+        const double fwhm = 6.61 * b * pow( energy/661.0, c );
+        return static_cast<float>( sqrt( zero_limit*zero_limit + fwhm*fwhm ) );
+      }//if( a >= 0.0 )
 
-      const double A7 = sqrt( pow( 6.61*b, 2.0) - a*a ) / 6.61;
-      return static_cast<float>( sqrt(a*a + pow( 6.61 * A7 * pow(energy/661.0, c), 2.0)) );
+      const double p = pow( c, 1.0/log(1.0-a) );
+      return static_cast<float>( 6.61 * b * pow( std::max(30.0,static_cast<double>(energy))/661.0, p ) );
     }//case kGadrasResolutionFcn:
     
     case kSqrtEnergyPlusInverse:
@@ -6229,7 +6409,7 @@ std::string DetectorPeakResponse::responseAngleSeriesJSON( const double distance
     }//for( energy grid )
 
     json << "{\"thetaDeg\":" << angles_deg[a]
-         << ",\"worstFlag\":\"" << effFlagName( worst ) << "\""
+         << ",\"worstFlag\":\"" << effFlagDescription( worst ) << "\""
          << ",\"pairs\":[" << pairs.str() << "]}";
   }//for( angle )
 

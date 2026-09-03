@@ -309,6 +309,17 @@ std::string ShieldingSourceFitPlot::jsonForData( const ShieldingSourceFitCalc::M
     json_obj["trend"] = stats;
   }//if( have a trend model )
 
+  // The average per-peak deviation "<dev>" shown on the chart, single-sourced from the fit chi2 so
+  //  it matches the C++ fit-warning value (see `average_peak_deviation`): dev = sqrt(chi2 / N), N =
+  //  number of plotted peaks.  The JS falls back to computing it from the pulls if this is absent.
+  //
+  // Only a COMPLETED fit has a chi2 to single-source from; the live-edit chart passes a stack
+  //  `ModelFitResults` that never sets one, and must take the JS fallback deliberately rather than
+  //  by accident.
+  if( (results.successful == ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final)
+      && (peak_comparisons->size() > 0) && std::isfinite(results.chi2) && (results.chi2 > 0.0) )
+    json_obj["dev"] = std::sqrt( results.chi2 / static_cast<double>(peak_comparisons->size()) );
+
   return json_obj.dump();
 }
 

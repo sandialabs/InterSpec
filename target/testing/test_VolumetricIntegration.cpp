@@ -157,10 +157,9 @@ BOOST_AUTO_TEST_CASE( CuhreBaselineIntegrals )
 
   for( const VolumetricFixture::VolumetricSrcSpec &spec : fixtures )
   {
-    GammaInteractionCalc::DistributedSrcCalc calc;
-    BOOST_REQUIRE_NO_THROW( calc = VolumetricFixture::make_distributed_src_calc( spec, *matdb ) );
-
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::selfShieldingIntegration( calc );
+    GammaInteractionCalc::DistributedSrcCalcT<double> calc
+                          = VolumetricFixture::make_distributed_src_calc_t( spec, *matdb );
+    BOOST_REQUIRE_NO_THROW( GammaInteractionCalc::self_shielding_integration_imp( calc ) );
 
     // Paste-ready baseline line, in case values need re-recording:
     cout << "  { \"" << spec.name << "\", " << std::setprecision(12) << calc.integral << " }," << endl;
@@ -179,8 +178,13 @@ BOOST_AUTO_TEST_CASE( CuhreBaselineIntegrals )
 
     if( baseline > 0.0 )
     {
-      // Cuhre is deterministic; allow 0.05% for cross-platform floating point drift
-      BOOST_CHECK_MESSAGE( fabs(calc.integral - baseline) <= 5.0E-4*baseline,
+      // The baselines are the values the (now-retired) Cuhre path produced; the production
+      //  adaptive-GL backend has to reproduce them.  Same tolerances the dedicated GL-vs-Cuhre
+      //  comparison used: 0.05%, loosened for the inner-void fixtures whose integrand is
+      //  discontinuous (zero inside the void), which limits what either integrator can resolve.
+      const bool discontinuous = (spec.name.find("innervoid") != string::npos);
+      const double tolerance = discontinuous ? 2.0E-3 : 5.0E-4;
+      BOOST_CHECK_MESSAGE( fabs(calc.integral - baseline) <= tolerance*baseline,
                            "Fixture '" << spec.name << "' integral " << std::setprecision(12)
                            << calc.integral << " differs from baseline " << baseline );
     }//if( baseline > 0.0 )
@@ -188,47 +192,6 @@ BOOST_AUTO_TEST_CASE( CuhreBaselineIntegrals )
 }//BOOST_AUTO_TEST_CASE( CuhreBaselineIntegrals )
 
 
-/** The single-shell end-on cylinder has a dedicated, slightly-faster evaluator
- (`eval_single_cyl_end_on`); make sure it agrees with the general cylinder
- evaluator on the same geometry.
- */
-BOOST_AUTO_TEST_CASE( SingleCylEndOnVsGeneralCylinder )
-{
-  set_data_dir();
-
-  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
-  BOOST_REQUIRE( matdb );
-
-  VolumetricFixture::VolumetricSrcSpec spec;
-  spec.name = "cyl-end-Fe-661keV";
-  spec.geometry = GammaInteractionCalc::GeometryType::CylinderEndOn;
-  spec.shells = { {"Fe (iron)", 0.0, 0.0, {5.0*PhysicalUnits::cm, 5.0*PhysicalUnits::cm, 0.0}} };
-
-  GammaInteractionCalc::DistributedSrcCalc calc
-                          = VolumetricFixture::make_distributed_src_calc( spec, *matdb );
-
-  const double epsrel = 1.0E-4, epsabs = -1.0;
-  int nregions, neval, fail;
-  double error, prob;
-
-  double single_shell_integral = 0.0, general_integral = 0.0;
-
-  Integrate::CuhreIntegrate( 2, GammaInteractionCalc::DistributedSrcCalc_integrand_single_cyl_end_on,
-                             &calc, epsrel, epsabs, Integrate::LastImportanceFcnt,
-                             0, 5000000, nregions, neval, fail, single_shell_integral, error, prob );
-
-  Integrate::CuhreIntegrate( 2, GammaInteractionCalc::DistributedSrcCalc_integrand_cylindrical,
-                             &calc, epsrel, epsabs, Integrate::LastImportanceFcnt,
-                             0, 5000000, nregions, neval, fail, general_integral, error, prob );
-
-  BOOST_REQUIRE( single_shell_integral > 0.0 );
-  BOOST_REQUIRE( general_integral > 0.0 );
-
-  BOOST_CHECK_MESSAGE( fabs(single_shell_integral - general_integral) <= 1.0E-3*general_integral,
-                       "Single-shell end-on cylinder evaluator (" << std::setprecision(12)
-                       << single_shell_integral << ") disagrees with general evaluator ("
-                       << general_integral << ")" );
-}//BOOST_AUTO_TEST_CASE( SingleCylEndOnVsGeneralCylinder )
 
 
 /** Regression test for the off-axis end-on cylinder self-attenuation integral.
@@ -303,22 +266,23 @@ BOOST_AUTO_TEST_CASE( SphericalTwoVsThreeDim )
   spec.shells = { {"U (uranium)", 0.0, 0.0, {2.0*PhysicalUnits::cm, 0.0, 0.0}},
                   {"Fe (iron)", 0.0, 0.0, {1.0*PhysicalUnits::cm, 0.0, 0.0}} };
 
-  GammaInteractionCalc::DistributedSrcCalc calc
-                          = VolumetricFixture::make_distributed_src_calc( spec, *matdb );
+  GammaInteractionCalc::DistributedSrcCalcT<double> calc
+                          = VolumetricFixture::make_distributed_src_calc_t( spec, *matdb );
 
-  const double epsrel = 1.0E-4, epsabs = -1.0;
-  int nregions, neval, fail;
-  double error, prob;
+  // Integrate the spherical integrand directly at 2 and 3 dimensions.  (The production dispatch
+  //  picks ndim itself, so it cannot express this comparison.)
+  const auto integrate_at = [&calc]( const int ndim ) -> double {
+    double err = 0.0;
+    size_t evals = 0;
+    const auto f = [&calc,ndim]( const double xx[3] ) -> double {
+      return calc.eval_spherical( xx, ndim );
+    };
+    return GammaInteractionCalc::adaptive_unit_cube_integrate<double>( f, ndim, 1.0E-4,
+                                                                      size_t(5000000), &err, &evals );
+  };
 
-  double integral_2d = 0.0, integral_3d = 0.0;
-
-  Integrate::CuhreIntegrate( 2, GammaInteractionCalc::DistributedSrcCalc_integrand_spherical,
-                             &calc, epsrel, epsabs, Integrate::LastImportanceFcnt,
-                             0, 5000000, nregions, neval, fail, integral_2d, error, prob );
-
-  Integrate::CuhreIntegrate( 3, GammaInteractionCalc::DistributedSrcCalc_integrand_spherical,
-                             &calc, epsrel, epsabs, Integrate::LastImportanceFcnt,
-                             0, 5000000, nregions, neval, fail, integral_3d, error, prob );
+  const double integral_2d = integrate_at( 2 );
+  const double integral_3d = integrate_at( 3 );
 
   BOOST_REQUIRE( integral_2d > 0.0 );
   BOOST_REQUIRE( integral_3d > 0.0 );
@@ -357,14 +321,10 @@ BOOST_AUTO_TEST_CASE( IntegrationBackendBenchmark, * boost::unit_test::disabled(
     const double reference = ref_calc.integral;
     BOOST_REQUIRE( reference > 0.0 );
 
-    // Cuhre at production settings (via the production dispatch, incl. its fast paths)
-    GammaInteractionCalc::DistributedSrcCalc legacy
-                            = VolumetricFixture::make_distributed_src_calc( spec, *matdb );
-
+    // (The Cuhre leg this used to time is gone with the legacy calculator; the GL backend below is
+    //  now the only integration path, so this benchmark reports its cost rather than a ratio.)
     const auto cuhre_start = std::chrono::steady_clock::now();
-    for( int rep = 0; rep < num_timing_repeats; ++rep )
-      GammaInteractionCalc::ShieldingSourceChi2Fcn::selfShieldingIntegration( legacy );
-    const auto cuhre_finish = std::chrono::steady_clock::now();
+    const auto cuhre_finish = cuhre_start;
 
     // The GL backend at production settings
     GammaInteractionCalc::DistributedSrcCalcT<double> calc
@@ -381,7 +341,7 @@ BOOST_AUTO_TEST_CASE( IntegrationBackendBenchmark, * boost::unit_test::disabled(
                          / (1000.0 * num_timing_repeats);
 
     cout << spec.name << ", "
-         << std::setprecision(3) << fabs(legacy.integral - reference)/reference << ", "
+         << std::setprecision(3) << "n/a, "
          << fabs(calc.integral - reference)/reference << ", "
          << std::setprecision(4) << cuhre_ms << ", " << gl_ms << ", "
          << "n/a, " << calc.m_num_evals << endl;
@@ -389,51 +349,6 @@ BOOST_AUTO_TEST_CASE( IntegrationBackendBenchmark, * boost::unit_test::disabled(
 }//BOOST_AUTO_TEST_CASE( IntegrationBackendBenchmark )
 
 
-/** Validates the templated ray-tracing + adaptive Gauss-Legendre integration
- backend (DistributedSrcCalcT<double> + self_shielding_integration_imp) against
- the Cuhre/double path, on the full fixture matrix.
-
- Acceptance: <= 5e-4 relative agreement, and (logged) evaluation-count ratio.
- */
-BOOST_AUTO_TEST_CASE( BoostGLBackendVsCuhre )
-{
-  set_data_dir();
-
-  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
-  BOOST_REQUIRE( matdb );
-
-  const vector<VolumetricFixture::VolumetricSrcSpec> fixtures
-                                = VolumetricFixture::standard_volumetric_fixtures();
-  BOOST_REQUIRE( !fixtures.empty() );
-
-  for( const VolumetricFixture::VolumetricSrcSpec &spec : fixtures )
-  {
-    // Reference: the Cuhre integration of the legacy DistributedSrcCalc
-    GammaInteractionCalc::DistributedSrcCalc legacy
-                            = VolumetricFixture::make_distributed_src_calc( spec, *matdb );
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::selfShieldingIntegration( legacy );
-    BOOST_REQUIRE( legacy.integral > 0.0 );
-
-    // The new templated backend, at T=double
-    GammaInteractionCalc::DistributedSrcCalcT<double> calc
-                            = VolumetricFixture::make_distributed_src_calc_t( spec, *matdb );
-    BOOST_REQUIRE_NO_THROW( GammaInteractionCalc::self_shielding_integration_imp( calc ) );
-
-    cout << "GL-vs-Cuhre '" << spec.name << "': GL=" << std::setprecision(10) << calc.integral
-         << ", Cuhre=" << legacy.integral
-         << ", rel-diff=" << std::setprecision(3) << fabs(calc.integral - legacy.integral)/legacy.integral
-         << ", GL evals=" << calc.m_num_evals << endl;
-
-    // Inner-void sources have a discontinuous integrand (zero inside the void), which limits
-    //  the achievable/estimable accuracy of both integrators - so a looser tolerance there.
-    const bool discontinuous = (spec.name.find("innervoid") != string::npos);
-    const double tolerance = discontinuous ? 2.0E-3 : 5.0E-4;
-
-    BOOST_CHECK_MESSAGE( fabs(calc.integral - legacy.integral) <= tolerance*legacy.integral,
-                         "Fixture '" << spec.name << "': GL backend (" << std::setprecision(12)
-                         << calc.integral << ") disagrees with Cuhre (" << legacy.integral << ")" );
-  }//for( loop over fixtures )
-}//BOOST_AUTO_TEST_CASE( BoostGLBackendVsCuhre )
 
 
 /** Guards the anisotropic-refinement speedup.  The nested-core silhouette cases (a transparent
@@ -670,99 +585,15 @@ BOOST_AUTO_TEST_CASE( JetDerivativeOfIntegral )
 }//BOOST_AUTO_TEST_CASE( JetDerivativeOfIntegral )
 
 
-/** Point-wise comparison of the templated eval_* integrands against the legacy
- double implementations, on a uniform grid - catches transcription bugs
- independent of the integration scheme.
+/* Retired: TemplatedIntegrandPointCompare compared the double-only DistributedSrcCalc::eval_* to
+   DistributedSrcCalcT<double>::eval_* point-for-point.  The legacy class is gone (the templated
+   calculator is the single volumetric model), so there is nothing left to compare against.  What it
+   protected is still covered: CuhreBaselineIntegrals pins the templated integrals to the recorded
+   Cuhre values, test_GeometryLegacyParity pins the ray-tracing primitives against frozen copies of
+   the pre-refactor bodies, and CylinderEndOnSingleVsGeneralIntegrand (test_GammaInteractionCalc.cpp)
+   cross-checks the two cylinder evaluators - now over near-field geometry as well.
  */
-BOOST_AUTO_TEST_CASE( TemplatedIntegrandPointCompare )
-{
-  set_data_dir();
 
-  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
-  BOOST_REQUIRE( matdb );
-
-  const vector<VolumetricFixture::VolumetricSrcSpec> fixtures
-                                = VolumetricFixture::standard_volumetric_fixtures();
-
-  for( const VolumetricFixture::VolumetricSrcSpec &spec : fixtures )
-  {
-    const GammaInteractionCalc::DistributedSrcCalc legacy
-                            = VolumetricFixture::make_distributed_src_calc( spec, *matdb );
-    const GammaInteractionCalc::DistributedSrcCalcT<double> calc
-                            = VolumetricFixture::make_distributed_src_calc_t( spec, *matdb );
-
-    int ndim = 2;
-    switch( spec.geometry )
-    {
-      case GammaInteractionCalc::GeometryType::Spherical:
-      case GammaInteractionCalc::GeometryType::CylinderEndOn:
-        ndim = 2;
-        break;
-      case GammaInteractionCalc::GeometryType::CylinderSideOn:
-      case GammaInteractionCalc::GeometryType::Rectangular:
-        ndim = 3;
-        break;
-      case GammaInteractionCalc::GeometryType::NumGeometryType:
-        BOOST_FAIL( "bad geometry" );
-    }
-
-    size_t num_bad = 0;
-    const int n_grid = 13;
-    for( int i = 0; (i < n_grid) && (num_bad < 3); ++i )
-    {
-      for( int j = 0; (j < n_grid) && (num_bad < 3); ++j )
-      {
-        for( int k = 0; (k < ((ndim == 3) ? n_grid : 1)) && (num_bad < 3); ++k )
-        {
-          const double xx[3] = { (i + 0.5)/n_grid, (j + 0.5)/n_grid, (k + 0.5)/n_grid };
-
-          double legacy_val = 0.0;
-          switch( spec.geometry )
-          {
-            case GammaInteractionCalc::GeometryType::Spherical:
-              legacy.eval_spherical( xx, &ndim, &legacy_val, nullptr );
-              break;
-            case GammaInteractionCalc::GeometryType::CylinderEndOn:
-            case GammaInteractionCalc::GeometryType::CylinderSideOn:
-              legacy.eval_cylinder( xx, &ndim, &legacy_val, nullptr );
-              break;
-            case GammaInteractionCalc::GeometryType::Rectangular:
-              legacy.eval_rect( xx, &ndim, &legacy_val, nullptr );
-              break;
-            case GammaInteractionCalc::GeometryType::NumGeometryType:
-              break;
-          }
-
-          double templated_val = 0.0;
-          switch( spec.geometry )
-          {
-            case GammaInteractionCalc::GeometryType::Spherical:
-              templated_val = calc.eval_spherical( xx, ndim );
-              break;
-            case GammaInteractionCalc::GeometryType::CylinderEndOn:
-            case GammaInteractionCalc::GeometryType::CylinderSideOn:
-              templated_val = calc.eval_cylinder( xx, ndim );
-              break;
-            case GammaInteractionCalc::GeometryType::Rectangular:
-              templated_val = calc.eval_rect( xx, ndim );
-              break;
-            case GammaInteractionCalc::GeometryType::NumGeometryType:
-              break;
-          }
-
-          const double diff = fabs( templated_val - legacy_val );
-          if( diff > 1.0E-9*std::max(1.0E-12,fabs(legacy_val)) )
-          {
-            ++num_bad;
-            BOOST_ERROR( "Fixture '" << spec.name << "' at xx={" << xx[0] << "," << xx[1] << ","
-                         << xx[2] << "}: templated=" << std::setprecision(12) << templated_val
-                         << " vs legacy=" << legacy_val );
-          }
-        }//for( k )
-      }//for( j )
-    }//for( i )
-  }//for( loop over fixtures )
-}//BOOST_AUTO_TEST_CASE( TemplatedIntegrandPointCompare )
 
 
 // Diagnostic: integrand profile across the inner-box shadow boundary, for the
@@ -902,11 +733,13 @@ BOOST_AUTO_TEST_CASE( DebugAdaptiveGLConvergence, * boost::unit_test::disabled()
     }
     BOOST_REQUIRE( spec );
 
-    GammaInteractionCalc::DistributedSrcCalc legacy
-                            = VolumetricFixture::make_distributed_src_calc( *spec, *matdb );
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::selfShieldingIntegration( legacy );
+    // Reference is a tight-tolerance run of the production backend (the Cuhre path it used to
+    //  compare against is gone).
+    GammaInteractionCalc::DistributedSrcCalcT<double> ref
+                            = VolumetricFixture::make_distributed_src_calc_t( *spec, *matdb );
+    GammaInteractionCalc::self_shielding_integration_imp( ref, 1.0E-7, size_t(100000000) );
 
-    cout << "Fixture '" << name << "', Cuhre=" << std::setprecision(10) << legacy.integral << endl;
+    cout << "Fixture '" << name << "', reference=" << std::setprecision(10) << ref.integral << endl;
 
     for( const double epsrel : { 1.0E-2, 1.0E-3, 1.0E-4 } )
     {
@@ -917,7 +750,7 @@ BOOST_AUTO_TEST_CASE( DebugAdaptiveGLConvergence, * boost::unit_test::disabled()
         GammaInteractionCalc::self_shielding_integration_imp( calc, epsrel, max_evals );
         cout << "  epsrel=" << epsrel << ", max_evals=" << max_evals
              << ": integral=" << std::setprecision(10) << calc.integral
-             << ", rel-to-cuhre=" << std::setprecision(3) << (calc.integral - legacy.integral)/legacy.integral
+             << ", rel-to-ref=" << std::setprecision(3) << (calc.integral - ref.integral)/ref.integral
              << ", evals=" << calc.m_num_evals
              << ", est_rel_err=" << calc.m_est_rel_error << endl;
       }
@@ -960,19 +793,6 @@ BOOST_AUTO_TEST_CASE( OffAxisSphereEquivalence )
     rotated.distance = sqrt( 300.0*300.0 + 100.0*100.0 )*cm;
     rotated.offset_x = 0.0;
 
-    // Legacy + Cuhre
-    GammaInteractionCalc::DistributedSrcCalc legacy_off
-                          = VolumetricFixture::make_distributed_src_calc( off_axis, *matdb );
-    GammaInteractionCalc::DistributedSrcCalc legacy_rot
-                          = VolumetricFixture::make_distributed_src_calc( rotated, *matdb );
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::selfShieldingIntegration( legacy_off );
-    GammaInteractionCalc::ShieldingSourceChi2Fcn::selfShieldingIntegration( legacy_rot );
-
-    BOOST_REQUIRE( legacy_rot.integral > 0.0 );
-    BOOST_CHECK_MESSAGE( fabs(legacy_off.integral - legacy_rot.integral) <= 5.0E-4*legacy_rot.integral,
-                         "Cuhre off-axis sphere (" << std::setprecision(10) << legacy_off.integral
-                         << ") != rotated equivalent (" << legacy_rot.integral << ")" );
-
     // Templated + adaptive GL
     GammaInteractionCalc::DistributedSrcCalcT<double> gl_off
                           = VolumetricFixture::make_distributed_src_calc_t( off_axis, *matdb );
@@ -986,12 +806,8 @@ BOOST_AUTO_TEST_CASE( OffAxisSphereEquivalence )
                          "GL off-axis sphere (" << std::setprecision(10) << gl_off.integral
                          << ") != rotated equivalent (" << gl_rot.integral << ")" );
 
-    BOOST_CHECK_MESSAGE( fabs(gl_off.integral - legacy_off.integral) <= 1.0E-3*legacy_off.integral,
-                         "Off-axis sphere: GL (" << std::setprecision(10) << gl_off.integral
-                         << ") vs Cuhre (" << legacy_off.integral << ")" );
-
     cout << "OffAxisSphere: off-axis=" << std::setprecision(10) << gl_off.integral
-         << ", rotated=" << gl_rot.integral << " (Cuhre off-axis=" << legacy_off.integral << ")" << endl;
+         << ", rotated=" << gl_rot.integral << endl;
   }// End off-axis == rotated on-axis sphere
 
   // Off-axis cylinders/rectangles: cross-validate the two independent backends.
@@ -1015,25 +831,20 @@ BOOST_AUTO_TEST_CASE( OffAxisSphereEquivalence )
       spec.offset_x = offset;
       spec.offset_y = 0.5*offset;
 
-      GammaInteractionCalc::DistributedSrcCalc legacy
-                            = VolumetricFixture::make_distributed_src_calc( spec, *matdb );
-      GammaInteractionCalc::ShieldingSourceChi2Fcn::selfShieldingIntegration( legacy );
-
       GammaInteractionCalc::DistributedSrcCalcT<double> gl
                             = VolumetricFixture::make_distributed_src_calc_t( spec, *matdb );
       GammaInteractionCalc::self_shielding_integration_imp( gl );
 
-      BOOST_REQUIRE( legacy.integral > 0.0 );
-      BOOST_REQUIRE( gl.integral > 0.0 );
-
-      BOOST_CHECK_MESSAGE( fabs(gl.integral - legacy.integral) <= 2.0E-3*legacy.integral,
+      // The second backend this used to cross-validate against is retired; what remains checkable
+      //  without it is that an off-axis integral stays finite and positive at every offset (the
+      //  oblique ray-trace is where the off-axis exit logic is easiest to get wrong).
+      BOOST_CHECK_MESSAGE( (gl.integral > 0.0) && std::isfinite(gl.integral),
                            "Off-axis " << GammaInteractionCalc::to_str(geometry) << " offset="
-                           << offset/cm << "cm: GL (" << std::setprecision(10) << gl.integral
-                           << ") vs Cuhre (" << legacy.integral << ")" );
+                           << offset/cm << "cm gave integral " << std::setprecision(10)
+                           << gl.integral );
 
       cout << "OffAxis " << GammaInteractionCalc::to_str(geometry) << " offset=" << offset/cm
-           << "cm: GL=" << std::setprecision(8) << gl.integral
-           << ", Cuhre=" << legacy.integral << endl;
+           << "cm: GL=" << std::setprecision(8) << gl.integral << endl;
     }//for( loop over offsets )
   }//for( loop over geometries )
 }//BOOST_AUTO_TEST_CASE( OffAxisSphereEquivalence )

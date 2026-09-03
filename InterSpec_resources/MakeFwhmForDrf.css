@@ -45,3 +45,14 @@
 {
   border: 2px solid #e1e1e1;
 }
+/* "Fit FWHM" + "Original FWHM" - only present where the tool opens on the DRFs existing FWHM (the
+   "Modify Detector Response" dialog), so fitting to the spectrum is an explicit request.  They sit
+   below the coefficients, which is what they act on. */
+.MakeFwhmForDrf .Parameters .FitFwhmRow
+{
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 6px;
+}

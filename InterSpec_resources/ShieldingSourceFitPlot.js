@@ -564,12 +564,18 @@ ShieldingSourceFitPlot.prototype.setData = function( data ) {
         Wt.emit( self.chart, 'dataPointClicked', d.energy );
     });
 
-  // Calculate and display <dev> statistic
-  let sum_chi_sq = 0;
-  for( const d of data_points ) {
-    sum_chi_sq += d.chi * d.chi;
+  // Display the <dev> statistic.  Prefer the server value (single-sourced from the fit chi2 so it
+  //  matches the C++ fit-warning), falling back to computing it from the displayed pulls.
+  let dev;
+  if( typeof data.dev === 'number' && isFinite(data.dev) ) {
+    dev = data.dev;
+  } else {
+    let sum_chi_sq = 0;
+    for( const d of data_points ) {
+      sum_chi_sq += d.chi * d.chi;
+    }
+    dev = Math.sqrt( sum_chi_sq / data_points.length );
   }
-  const dev = Math.sqrt( sum_chi_sq / data_points.length );
 
   // Remove old dev text if it exists
   this.svg.selectAll(".devtext").remove();

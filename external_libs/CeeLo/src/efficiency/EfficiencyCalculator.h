@@ -622,9 +622,16 @@ public:
 
     void set_detector(DetectorShape type, const Material* material,
                       const std::vector<double>& dimensions);
-    void set_bore_hole(double bore_radius, double bore_depth);
+    /// Coaxial bore from the back face. `rounded_tip` gives the closed end a
+    /// hemispherical cap (round-tipped drill) instead of a flat bottom.
+    void set_bore_hole(double bore_radius, double bore_depth,
+                       bool rounded_tip = false);
     void set_dead_layer(double front_thickness, double side_thickness,
                         double back_thickness = 0.0);
+
+    /// Round ("bulletize") the outer front edge of a cylindrical crystal, as
+    /// HPGe crystals usually are. 0 (the default) = sharp edge.
+    void set_bullet_radius(double bullet_radius);
     void add_attenuator(const Material* material,
                         double front_thickness, double side_thickness,
                         double z_start, double z_end);
@@ -778,6 +785,17 @@ public:
     void enable_cone_sampling(bool on) { use_cone_sampling_ = on; }
     void enable_fep_only_mode(bool on) { fep_only_mode_ = on; }
     void set_disable_fep_early_kill(bool on) { transport_config_.disable_fep_early_kill = on; }
+
+    /// Half-width (keV) of the full-energy-peak window used to tally FEP.
+    ///
+    /// Writes the transport config too: the fep_only_mode early kill has to use
+    /// the same window, or it discards events this would have counted (see
+    /// TransportConfig::fep_window_keV).  Defaults to kDefaultFepWindowKeV.
+    void set_fep_window_keV(double w) {
+        fep_window_keV_ = w;
+        transport_config_.fep_window_keV = w;
+    }
+    double fep_window_keV() const { return fep_window_keV_; }
 
     /// Enable optional source electron transport. Compton recoil electrons
     /// from source material are tracked through source geometry to the
@@ -1060,6 +1078,9 @@ public:
 
 private:
     Geometry geometry_;
+    /// See set_fep_window_keV(); mirrored into transport_config_.fep_window_keV.
+    double fep_window_keV_ = kDefaultFepWindowKeV;
+
     TransportConfig transport_config_;
 
     // Source configuration

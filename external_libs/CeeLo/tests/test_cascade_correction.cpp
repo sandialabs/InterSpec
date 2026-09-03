@@ -26,6 +26,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "materials/Material.h"
 #include "geometry/Geometry.h"
 
@@ -663,6 +664,7 @@ BOOST_AUTO_TEST_CASE(cs137_no_cascade_correction_is_unity) {
     // empty (PLAN.md §8.5); the result is literature-exact by definition.
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -696,6 +698,7 @@ BOOST_AUTO_TEST_CASE(co60_close_geometry_expected_range) {
     //   At 2 cm the correction is somewhat smaller: C_out ≈ 0.70-0.87.
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -2.0));
 
@@ -750,6 +753,7 @@ BOOST_AUTO_TEST_CASE(co60_1cm_correction_matches_literature) {
     // placeholder cross-section approximations, giving C_out ∈ [0.50, 0.82].
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -1.0));
 
@@ -786,6 +790,7 @@ BOOST_AUTO_TEST_CASE(co60_far_geometry_summing_out_near_unity) {
     //   → C_out ≈ 1 - 0.00029 = 0.99971
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -100.0));
 
@@ -818,6 +823,7 @@ BOOST_AUTO_TEST_CASE(co60_close_correction_less_than_far) {
 
     // Close geometry
     EfficiencyCalculator calc_close;
+    calc_close.set_fep_window_keV(kTestFepWindowKeV);
     calc_close.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_close.set_point_source(Eigen::Vector3d(0.0, 0.0, -2.0));
     auto r1173_close = calc_close.compute(1173.2, 20000, 1);
@@ -832,6 +838,7 @@ BOOST_AUTO_TEST_CASE(co60_close_correction_less_than_far) {
 
     // Far geometry
     EfficiencyCalculator calc_far;
+    calc_far.set_fep_window_keV(kTestFepWindowKeV);
     calc_far.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_far.set_point_source(Eigen::Vector3d(0.0, 0.0, -50.0));
     auto r1173_far = calc_far.compute(1173.2, 20000, 1);
@@ -860,6 +867,7 @@ BOOST_AUTO_TEST_CASE(y88_two_gamma_cascade) {
     // Reference: PLAN.md §8.7: "Y-88, close geometry: Strong 2-gamma cascade."
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
 
@@ -904,6 +912,7 @@ BOOST_AUTO_TEST_CASE(summing_in_increases_corrected_fep) {
     // summing-in adds events to the photopeak → corrected_fep > uncorrected_fep.
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     // Use a close geometry to ensure non-trivial efficiency
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -3.0));
@@ -954,6 +963,7 @@ BOOST_AUTO_TEST_CASE(nai_fep_efficiency_10cm_662keV) {
     //   → ε_total < 0.08  (bounded by solid-angle × interaction probability)
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -987,6 +997,7 @@ BOOST_AUTO_TEST_CASE(nai_fep_efficiency_25cm_662keV) {
     // Lower bound set to accept placeholder output.
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
 
@@ -1006,6 +1017,7 @@ BOOST_AUTO_TEST_CASE(nai_fep_efficiency_decreases_with_distance) {
 
     for (double d : distances) {
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -d));
         auto res = calc.compute(661.7, 50000, 1);
@@ -1028,11 +1040,13 @@ BOOST_AUTO_TEST_CASE(nai_fep_efficiency_inverse_square_scaling) {
     Material nai = make_NaI();
 
     EfficiencyCalculator calc25;
+    calc25.set_fep_window_keV(kTestFepWindowKeV);
     calc25.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc25.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
     auto res25 = calc25.compute(661.7, 80000, 1);
 
     EfficiencyCalculator calc50;
+    calc50.set_fep_window_keV(kTestFepWindowKeV);
     calc50.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc50.set_point_source(Eigen::Vector3d(0.0, 0.0, -50.0));
     auto res50 = calc50.compute(661.7, 80000, 1);
@@ -1068,6 +1082,7 @@ BOOST_AUTO_TEST_CASE(compton_edge_and_fep_visible_at_662keV) {
     //   FEP:               bin 66 (660–670 keV)
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -1105,6 +1120,7 @@ BOOST_AUTO_TEST_CASE(backscatter_peak_region_has_counts) {
     // We verify that the 100–250 keV region has more counts than zero.
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -1126,6 +1142,7 @@ BOOST_AUTO_TEST_CASE(spectrum_integrates_to_total_efficiency_wide_bins) {
     // deposited energy range. (Re-test with wider coverage and different geometry.)
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -15.0));
 
@@ -1153,6 +1170,7 @@ BOOST_AUTO_TEST_CASE(high_energy_spectrum_shows_pair_production_peaks) {
     // This re-verifies from a cascade-correction perspective.
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {5.0, 10.0});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -1191,6 +1209,7 @@ BOOST_AUTO_TEST_CASE(single_gamma_factor_is_unity) {
     // the summing factor is exactly 1.0 (deterministic, no statistics needed).
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
 
@@ -1235,6 +1254,7 @@ BOOST_AUTO_TEST_CASE(two_gamma_summing_out_close_then_recovers) {
 
     auto run_factor = [&](double dist, uint64_t nev) {
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -dist));
         CascadeConfig cfg;
@@ -1284,6 +1304,7 @@ BOOST_AUTO_TEST_CASE(cascade_progress_callback_invoked) {
     for (CascadeMethod method : {CascadeMethod::Conditional,
                                  CascadeMethod::FullRealization}) {
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -2.0));
 
@@ -1327,6 +1348,7 @@ BOOST_AUTO_TEST_CASE(full_realization_sum_peak_and_summing_out) {
     // 1173+1332 = 2505 keV sum peak.
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -2.0));
 
@@ -1365,6 +1387,7 @@ BOOST_AUTO_TEST_CASE(full_realization_sum_peak_and_summing_out) {
 BOOST_AUTO_TEST_CASE(full_realization_normalizes_all_overlapping_primary_lines) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -2.0));
 
@@ -1400,6 +1423,7 @@ BOOST_AUTO_TEST_CASE(full_realization_normalizes_all_overlapping_primary_lines) 
 BOOST_AUTO_TEST_CASE(conditional_ambiguous_window_uses_full_realization) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -1.0));
 
@@ -1460,6 +1484,7 @@ BOOST_AUTO_TEST_CASE(conditional_ambiguous_window_uses_full_realization) {
 BOOST_AUTO_TEST_CASE(summed_spectrum_reports_fallback_completeness) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -2.0));
 
@@ -1523,6 +1548,7 @@ BOOST_AUTO_TEST_CASE(source_shield_attenuates_cascade) {
 
     auto run = [&](bool shield) {
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -3.0));
         if (shield) calc.add_source_shield(&pb, 0.5);  // 5 mm Pb shell
@@ -1560,6 +1586,7 @@ BOOST_AUTO_TEST_CASE(extended_cylindrical_source_runs) {
     dc.members = {g1, g2};
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -4.0), 1.0, 1.0);
     calc.set_source_material(&water);

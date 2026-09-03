@@ -29,10 +29,13 @@
 #include <Wt/WText.h>
 #include <Wt/WLabel.h>
 #include <Wt/WServer.h>
+#include <Wt/WCheckBox.h>
 #include <Wt/WComboBox.h>
 #include <Wt/WIOService.h>
 #include <Wt/WGridLayout.h>
 #include <Wt/WPushButton.h>
+#include <Wt/WApplication.h>
+#include <Wt/WEnvironment.h>
 #include <Wt/WAbstractItemModel.h>
 
 #include "SpecUtils/SpecFile.h"
@@ -44,10 +47,12 @@
 #include "InterSpec/AuxWindow.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/PeakModel.h"
+#include "InterSpec/GroupBox.h"
+#include "InterSpec/HelpSystem.h"
 #include "InterSpec/MakeDrfFit.h"
 #include "InterSpec/MakeDrfChart.h"
 #include "InterSpec/PeakFitUtils.h"
-#include "InterSpec/GroupBox.h"
+#include "InterSpec/WarningWidget.h"
 #include "InterSpec/MakeFwhmForDrf.h"
 #include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/NativeFloatSpinBox.h"
@@ -67,12 +72,14 @@ protected:
   Column m_sort_col;
   SortOrder m_sort_order = SortOrder::Ascending;
   std::vector<MakeFwhmForDrf::TableRow> m_rows;
+  const bool m_narrow;  //abbreviate the column headers - see #headerData
   
   
 public:
-  FwhmPeaksModel()
+  FwhmPeaksModel( const bool narrow )
   : Wt::WAbstractItemModel(),
-  m_sort_col( Column::Energy )
+  m_sort_col( Column::Energy ),
+  m_narrow( narrow )
   {
   }
   
@@ -150,12 +157,18 @@ public:
     
     switch( Column(section) )
     {
-      case Column::Energy:     return WString::tr("Energy (keV)");
-      case Column::Fwhm:       return WString::tr("FWHM");
-      case Column::FWhmUncert: return WString::tr("fpm-fwhm-uncert");
-      case Column::UserOrAuto: return WString::tr("fpm-peak-source");
-      case Column::UseForFit:  return WString::tr("Use");
-      case Column::NumColumn: break;
+      case Column::Energy:
+        return m_narrow ? WString::tr("Energy") : WString::tr("Energy (keV)");
+      case Column::Fwhm:
+        return WString::tr("FWHM");
+      case Column::FWhmUncert:
+        return m_narrow ? WString::tr("fpm-fwhm-uncert-narrow") : WString::tr("fpm-fwhm-uncert");
+      case Column::UserOrAuto:
+        return m_narrow ? WString::tr("fpm-peak-source-narrow") : WString::tr("fpm-peak-source");
+      case Column::UseForFit:
+        return WString::tr("Use");
+      case Column::NumColumn:
+        break;
     }
     assert( 0 );
     return Wt::cpp17::any();
@@ -409,7 +422,13 @@ MakeFwhmForDrfWindow::MakeFwhmForDrfWindow( const bool use_auto_fit_peaks_too )
   shared_ptr<DetectorPeakResponse> drf = foreground ? foreground->detector() : nullptr;
   
   {
-    auto toolOwner = std::make_unique<MakeFwhmForDrf>( use_auto_fit_peaks_too, viewer, drf );
+    // This window gives the table nearly its full width, so only actually-narrow displays need the
+    //  abbreviated columns.
+    const bool narrow_layout = ((ww > 100) && (ww < 600));
+    const MakeFwhmForDrf::InitialFit initial_fit = use_auto_fit_peaks_too
+                                       ? MakeFwhmForDrf::InitialFit::SearchAndFit
+                                       : MakeFwhmForDrf::InitialFit::FitUserPeaks;
+    auto toolOwner = std::make_unique<MakeFwhmForDrf>( initial_fit, viewer, drf, narrow_layout );
     m_tool = toolOwner.get();
     window->stretcher()->addWidget( std::move(toolOwner), 0, 0 );
   }
@@ -443,12 +462,17 @@ MakeFwhmForDrf *MakeFwhmForDrfWindow::tool()
 }
   
 
-MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
+MakeFwhmForDrf::MakeFwhmForDrf( const InitialFit initial_fit,
                                InterSpec *viewer,
-               std::shared_ptr<DetectorPeakResponse> drf )
+               std::shared_ptr<DetectorPeakResponse> drf,
+                               const bool narrow_layout )
  : WContainerWidget(),
   m_interspec( viewer ),
+  m_initial_fit( initial_fit ),
+  m_owner_handles_undo_redo( false ),
   m_currently_searching( false ),
+  m_auto_search_started( false ),
+  m_widget_deleted( make_shared<std::atomic<bool>>(false) ),
   m_refit_scheduled( false ),
   m_undo_redo_scheduled( false ),
   m_orig_drf( drf ),
@@ -457,6 +481,11 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   m_chart( nullptr ),
   m_fwhmEqnType( nullptr ),
   m_sqrtEqnOrder( nullptr ),
+  m_fitCb( nullptr ),
+  m_originalBtn( nullptr ),
+  m_original_form_index( DetectorPeakResponse::kNumResolutionFnctForm ),
+  m_original_sqrt_order( -1 ),
+  m_original_parameters{},
   m_parEdits{},
   m_error( nullptr ),
   m_equation( nullptr ),
@@ -468,6 +497,17 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   wApp->useStyleSheet( "InterSpec_resources/MakeFwhmForDrf.css" );
   
   addStyleClass( "MakeFwhmForDrf" );
+  
+  // `narrow_layout` is about how much room the *table* gets (it is on even in the wide
+  //  "Modify Detector Response" dialog); this is about how much the *display* has.  On a phone
+  //  there is no room for the options and the peak table side-by-side, so they stack, and the
+  //  chart gives up some height to pay for it.
+  int screen_width = m_interspec ? m_interspec->renderedWidth() : 0;
+  if( (screen_width < 100) && m_interspec && m_interspec->isMobile() )
+    screen_width = wApp->environment().screenWidth();  //not rendered yet - best guess
+  const bool stack_options = ((screen_width > 100) && (screen_width < 600));
+  if( stack_options )
+    addStyleClass( "MakeFwhmForDrfNarrow" );
   
   m_interspec->useMessageResourceBundle( "MakeFwhmForDrf" );
     
@@ -483,7 +523,7 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
     m_chart = chartOwned.get();
     m_chart->showEfficiencyPoints( false );
     DrfChartHolder *chartholder = layout->addWidget( std::make_unique<DrfChartHolder>( std::move(chartOwned) ), layout->rowCount(), 0 );
-    chartholder->setHeight( 250 );
+    chartholder->setHeight( stack_options ? 165 : 250 );
   }
   //layout->setRowResizable( 0, true, WLength(250, WLength::Unit::Pixel) );
   //layout->setRowStretch( 1, 1 );
@@ -551,7 +591,11 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
         break;
     }//switch( fcnfrm )
   }//for( loop over functional forms )
-    
+
+  // "None" - the DRF has (or should have) no FWHM at all.  Appended last, so the combo index still
+  //  equals the `ResolutionFnctForm` value, with `kNumResolutionFnctForm` meaning "none".
+  m_fwhmEqnType->addItem( WString::tr("mffd-eqn-none") );
+
   m_fwhmEqnType->setCurrentIndex( DetectorPeakResponse::kSqrtPolynomial );
   m_fwhmEqnType->activated().connect( this, &MakeFwhmForDrf::handleFwhmEqnTypeChange );
   
@@ -569,6 +613,7 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
     m_sqrtEqnOrder->activated().connect( this, &MakeFwhmForDrf::handleSqrtEqnOrderChange );
     optionsDiv->addWidget( std::move(b) );
   }
+
   
   {
     auto paramsDivOwner = std::make_unique<GroupBox>( WString::tr("mffd-par-vals-label") );
@@ -593,27 +638,77 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
       m_parEdits.push_back( sb );
     }//for( int i = 0; i < m_sqrtEqnOrder->count(); ++i )
 
-    lowerLayout->addWidget( std::move(paramsDivOwner), 1, 0, Wt::AlignmentFlag::Top );
-    lowerLayout->setRowStretch( 1, 1 );
+    // In `ShowExisting` mode the tool opens on the DRFs own FWHM; fitting the spectrum replaces
+    //  what the user already had, so it is opt-in - and reversible, through "Original FWHM".
+    //  Below the coefficients, since that is what these two act on.
+    if( m_initial_fit == InitialFit::ShowExisting )
+    {
+      WContainerWidget *fitRow = parametersDiv->addNew<WContainerWidget>();
+      fitRow->addStyleClass( "FitFwhmRow" );
+
+      m_fitCb = fitRow->addNew<WCheckBox>( WString::tr("mffd-fit-cb") );
+      m_fitCb->changed().connect( this, &MakeFwhmForDrf::handleFitCheckChanged );
+      HelpSystem::attachToolTipOn( m_fitCb, WString::tr("mffd-tt-fit-cb"), true );
+
+      m_originalBtn = fitRow->addNew<WPushButton>( WString::tr("mffd-original-btn") );
+      m_originalBtn->addStyleClass( "LinkBtn" );
+      m_originalBtn->clicked().connect( this, &MakeFwhmForDrf::restoreOriginalFwhm );
+      m_originalBtn->hide();
+    }//if( InitialFit::ShowExisting )
+
+    if( stack_options )
+      lowerLayout->addWidget( std::move(paramsDivOwner), 0, 1, Wt::AlignmentFlag::Top );
+    else
+      lowerLayout->addWidget( std::move(paramsDivOwner), 1, 0, Wt::AlignmentFlag::Top );
   }
     
   {
-    auto modelOwned = std::make_shared<FwhmPeaksModel>();
+    auto modelOwned = std::make_shared<FwhmPeaksModel>( narrow_layout );
     m_model = modelOwned.get();
     auto tableOwner = std::make_unique<RowStretchTreeView>();
     m_table = tableOwner.get();
     m_table->setRootIsDecorated( false ); //makes the tree look like a table! :)
     m_table->addStyleClass( "PeakTable" );
-    lowerLayout->addWidget( std::move(tableOwner), 0, 1, 2, 1 );
+    if( narrow_layout )
+      m_table->addStyleClass( "PeakTableNarrow" );
+    if( stack_options )
+      lowerLayout->addWidget( std::move(tableOwner), 1, 0, 1, 2 );  //full width, under the options
+    else
+      lowerLayout->addWidget( std::move(tableOwner), 0, 1, 2, 1 );  //right of the options
     m_table->setModel( modelOwned );
   }
-  lowerLayout->setColumnStretch( 1, 1 );
   
-  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Energy), 115 );
-  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Fwhm), 85 );
-  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::FWhmUncert), 125 );
-  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UserOrAuto), 105 );
-  m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UseForFit), 60 );
+  if( stack_options )
+  {
+    lowerLayout->setRowStretch( 1, 1 );     //the table takes what the options dont
+    lowerLayout->setColumnStretch( 0, 1 );  //equation-type/terms drop-downs
+    lowerLayout->setColumnStretch( 1, 1 );  //coefficient inputs
+  }else
+  {
+    lowerLayout->setRowStretch( 1, 1 );
+    lowerLayout->setColumnStretch( 1, 1 );
+  }//if( stack_options ) / else
+  
+  if( narrow_layout )
+  {
+    // Wt only puts the sort handle in a header when that column is sortable, so dropping sorting is
+    //  what buys back the width for the (already abbreviated) labels.  Must come after setModel(),
+    //  since it walks the columns.  The rows arrive sorted by energy anyway.
+    m_table->setSortingEnabled( false );
+    
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Energy), 70 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Fwhm), 60 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::FWhmUncert), 60 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UserOrAuto), 75 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UseForFit), 45 );
+  }else
+  {
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Energy), 115 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::Fwhm), 85 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::FWhmUncert), 125 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UserOrAuto), 105 );
+    m_table->setColumnWidth( static_cast<int>(FwhmPeaksModel::Column::UseForFit), 60 );
+  }//if( narrow_layout ) / else
   
     
   m_model->dataChanged().connect( this, &MakeFwhmForDrf::handleTableDataChange );
@@ -621,7 +716,41 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
   m_model->rowsRemoved().connect( this, &MakeFwhmForDrf::handleTableDataChange );
   m_model->layoutChanged().connect( this, &MakeFwhmForDrf::handleTableDataChange );
     
-  if( auto_fit_peaks )
+  // If the DRF already has a FWHM, start from its functional form (and number of terms), so what
+  //  gets fit here is directly comparable to what the user already has, rather than always
+  //  offering a 2-term sqrt-polynomial.
+  const bool show_existing = (m_initial_fit == InitialFit::ShowExisting);
+  if( m_orig_drf && m_orig_drf->hasResolutionInfo() )
+  {
+    const DetectorPeakResponse::ResolutionFnctForm form = m_orig_drf->resolutionFcnType();
+    const int form_index = static_cast<int>( form );
+
+    // ...except GADRAS: it is the one form `MakeDrfFit::performResolutionFit` has no linear
+    //  least-squares solution for (see `fit_using_lls` there), so it is a bound-constrained
+    //  Minuit-only fit that throws when Minuit doesnt converge.  Not worth defaulting users into -
+    //  unless we are only *displaying* the DRFs FWHM, where showing something other than what the
+    //  detector actually has would be a lie.
+    if( (show_existing || (form != DetectorPeakResponse::kGadrasResolutionFcn))
+       && (form_index >= 0) && (form_index < m_fwhmEqnType->count()) )
+      m_fwhmEqnType->setCurrentIndex( form_index );
+
+    if( form == DetectorPeakResponse::kSqrtPolynomial )
+    {
+      const size_t num_coefs = m_orig_drf->resolutionFcnCoefficients().size();
+      if( (num_coefs > 0) && (static_cast<int>(num_coefs) <= m_sqrtEqnOrder->count()) )
+        m_sqrtEqnOrder->setCurrentIndex( static_cast<int>(num_coefs) - 1 );
+    }//if( sqrt-polynomial )
+
+    handleFwhmEqnTypeChange();  //sync which parameter edits are shown
+  }else if( show_existing )
+  {
+    // Nothing to show: start on "None", rather than implying a 2-term sqrt-polynomial the detector
+    //  does not have.
+    m_fwhmEqnType->setCurrentIndex( DetectorPeakResponse::kNumResolutionFnctForm );
+    handleFwhmEqnTypeChange();
+  }//if( the DRF already has FWHM info ) / else if( show_existing )
+
+  if( m_initial_fit == InitialFit::SearchAndFit )
   {
     startAutomatedPeakSearch();
   }else
@@ -629,17 +758,60 @@ MakeFwhmForDrf::MakeFwhmForDrf( const bool auto_fit_peaks,
     const vector<shared_ptr<const PeakDef>> user_peaks = get_user_peaks();
     const auto dummy_auto_fit_peaks = make_shared<vector<shared_ptr<const PeakDef>>>();
     setPeaksFromAutoSearch( user_peaks, dummy_auto_fit_peaks );
-  }//if( auto_fit_peaks )
-    
+
+    // `setPeaksFromAutoSearch` recorded a state that predates the first fit; keeping it would make
+    //  the first `render()` register an undo/redo step for merely constructing the tool.  Let that
+    //  render re-baseline instead (`doAddUndoRedoStep` bails out when there is no current state).
+    m_current_state.reset();
+  }//if( InitialFit::SearchAndFit ) / else
+
   scheduleUndoRedoStep();  //Fills in initial m_current_state
-    
-  scheduleRefit();
+
+  if( show_existing )
+  {
+    // Remember what the DRF arrived with, so "Original FWHM" can always get back to it, then put
+    //  it on screen.  A detector with no FWHM of its own has nothing to lose, so start fitting.
+    m_original_form_index = m_fwhmEqnType->currentIndex();
+    m_original_sqrt_order = (m_original_form_index == DetectorPeakResponse::kSqrtPolynomial)
+                              ? m_sqrtEqnOrder->currentIndex() : -1;
+    if( m_orig_drf && m_orig_drf->hasResolutionInfo() )
+      m_original_parameters = m_orig_drf->resolutionFcnCoefficients();
+
+    // Always start un-checked: with a FWHM to lose, fitting must be asked for; without one the
+    //  equation type starts at "None", which is nothing to fit either.  Checking the box is what
+    //  moves off "None" - see `handleFitCheckChanged`.
+    const bool had_fwhm = !m_original_parameters.empty();
+    if( m_fitCb )
+      m_fitCb->setChecked( false );
+
+    // `handleFwhmEqnTypeChange` above cleared the coefficients (they belong to whatever form was
+    //  selected before); put the DRFs back, and show them.  Uncertainties are unknown - the DRF
+    //  does not carry them - so the parameter tool-tips stay blank.
+    m_parameters = m_original_parameters;
+    m_uncertainties.clear();
+    m_refit_scheduled = false;
+    updateEquationDisplay();
+    updateFitControls();
+
+#if( PERFORM_DEVELOPER_CHECKS )
+    // Opening this tool must never lose the FWHM the detector came in with.
+    if( had_fwhm )
+    {
+      assert( m_fwhmEqnType->currentIndex() == static_cast<int>(m_orig_drf->resolutionFcnType()) );
+      assert( m_parameters == m_orig_drf->resolutionFcnCoefficients() );
+    }
+#endif
+  }else
+  {
+    scheduleRefit();
+  }//if( show_existing ) / else
 }//MakeFwhmForDrf( constructor )
 
 
 MakeFwhmForDrf::~MakeFwhmForDrf()
 {
-  
+  // Let any in-flight peak-search completion know not to touch this object; see `m_widget_deleted`.
+  m_widget_deleted->store( true );
 }//~MakeFwhmForDrf()
 
 
@@ -678,6 +850,11 @@ vector<shared_ptr<const PeakDef>> MakeFwhmForDrf::get_user_peaks()
 
 void MakeFwhmForDrf::startAutomatedPeakSearch()
 {
+  // May be called from the constructor, or deferred until the user actually looks at this tool
+  //  (see `DrfModifyWidget`s FWHM tab) - either way, only ever search once.
+  if( m_currently_searching || m_auto_search_started )
+    return;
+
   auto dataPtr = m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
   assert( dataPtr );
   if( !dataPtr )
@@ -685,32 +862,50 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
     passMessage( WString::tr("mffd-err-no-foreground"), 1 );
     return;
   }//if( !dataPtr )
-    
+
   vector<shared_ptr<const PeakDef>> user_peaks = get_user_peaks();
-  
+
   std::shared_ptr<SpecMeas> foreground = m_interspec->measurment( SpecUtils::SpectrumType::Foreground );
   std::shared_ptr<const PeakFitDetPrefs> fitPrefs = foreground ? foreground->peakFitDetPrefs() : nullptr;
 
   //The results of the peak search will be placed into the vector pointed to by searchresults
   auto searchresults = std::make_shared< vector<std::shared_ptr<const PeakDef> > >();
-    
+
+  //Non-empty if the search threw; the callback then just takes us out of the searching state.
+  auto search_error = std::make_shared<string>();
+
   // Wt4: the worker re-posts this to the session thread; this widget/dialog may be closed by then.
-  //  Re-resolve via findById() (thread-safe) instead of capturing a raw `this` -> avoids UAF.
-  const string thisid = id();
+  //  `deleted_flag` is the "is this object still alive" answer: the destructor sets it, and both
+  //  the set and this check happen on the session thread (the continuation runs under the
+  //  `WApplication::UpdateLock`), so a false flag means `this` is still good.  Only the atomic - in
+  //  its own shared control block - crosses the thread boundary; an `observing_ptr`/`bindSafe`
+  //  would race `observable::observers_` (see `WidgetUtils.h`), and the id + `findById` pattern
+  //  silently resolves to null for a widget that is alive but not currently in the widget tree,
+  //  which is exactly how this tool used to hang in a lazily-loaded tab.  Same shape as
+  //  `SpecFileQueryWidget`s `m_widgetDeleted`.
+  const shared_ptr<std::atomic<bool>> deleted_flag = m_widget_deleted;
+  MakeFwhmForDrf * const self = this;
   std::function<void(void)> callback
-    = [thisid, user_peaks, searchresults](){
-        MakeFwhmForDrf *self = dynamic_cast<MakeFwhmForDrf *>( wApp->domRoot() ? wApp->domRoot()->findById(thisid) : nullptr );
-        if( self )
-          self->setPeaksFromAutoSearch( user_peaks, searchresults );
+    = [self, deleted_flag, user_peaks, searchresults, search_error](){
+        if( deleted_flag->load() )
+          return;
+
+        self->setPeaksFromAutoSearch( user_peaks, searchresults, *search_error );
       };
-    
-  
+
+
   Wt::WServer *server = Wt::WServer::instance();
   assert( server );
   if( !server )
     return;
-  
+
   m_currently_searching = true;
+  m_auto_search_started = true;
+
+  // So the user gets "Currently searching for peaks..." rather than whatever the fit of the
+  //  (probably empty) starting peaks had to say; matters when the search is started after this
+  //  widget has already been rendered once - i.e. deferred until its tab was selected.
+  scheduleRefit();
 
   const string seshid = wApp->sessionId();
   const shared_ptr<const DetectorPeakResponse> drf = m_orig_drf;
@@ -722,11 +917,25 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
     = foreground_meas ? foreground_meas->peak_search_cancel_flag() : nullptr;
 
   server->ioService().boost::asio::io_service::post( std::bind( [=](){
-    const bool singleThread = false;
-    auto existingPeaks = make_shared<deque<shared_ptr<const PeakDef>>>();
-    existingPeaks->insert( end(*existingPeaks), begin(user_peaks), end(user_peaks) );
+    // The callback MUST be posted on every path out of here (see `search_error`) - if it isnt,
+    //  `m_currently_searching` never gets cleared, and the tool is stuck showing the "searching"
+    //  message for the rest of the session.
+    try
+    {
+      const bool singleThread = false;
+      auto existingPeaks = make_shared<deque<shared_ptr<const PeakDef>>>();
+      existingPeaks->insert( end(*existingPeaks), begin(user_peaks), end(user_peaks) );
 
-    *searchresults = ExperimentalAutomatedPeakSearch::search_for_peaks( dataPtr, drf, existingPeaks, singleThread, fitPrefs, cancel_flag );
+      *searchresults = ExperimentalAutomatedPeakSearch::search_for_peaks( dataPtr, drf, existingPeaks, singleThread, fitPrefs, cancel_flag );
+    }catch( std::exception &e )
+    {
+      searchresults->clear();
+      *search_error = e.what();
+    }catch( ... )
+    {
+      searchresults->clear();
+      *search_error = "unknown exception";
+    }//try / catch
 
     Wt::WServer *server = Wt::WServer::instance();
     if( server )
@@ -737,6 +946,16 @@ void MakeFwhmForDrf::startAutomatedPeakSearch()
 
 void MakeFwhmForDrf::scheduleRefit()
 {
+  // `ShowExisting` opens on the FWHM the DRF already has; fitting the spectrum would replace
+  //  exactly what the user came to look at, so nothing fits unless "Fit FWHM" is checked.  The peak
+  //  search still runs (the table is useful either way); everything that would have triggered a fit
+  //  just refreshes what is displayed.
+  if( !fittingEnabled() )
+  {
+    updateEquationDisplay();
+    return;
+  }//if( fitting is turned off )
+
   m_refit_scheduled = true;
   scheduleRender();
 }//void scheduleRefit()
@@ -746,9 +965,18 @@ void MakeFwhmForDrf::doRefitWork()
 {
   m_parameters.clear();
   m_uncertainties.clear();
-  
+
+  // "None" is a valid choice, not a failed fit - there is simply nothing to fit.
+  if( m_fwhmEqnType->currentIndex() == DetectorPeakResponse::kNumResolutionFnctForm )
+  {
+    m_error->hide();
+    m_error->setText( "" );
+    updateEquationDisplay();
+    return;
+  }//if( the "None" equation form )
+
   bool error_because_searching = false;
-  
+
   try
   {
     vector<shared_ptr<const PeakDef>> peaks = m_model->peaks_to_use();
@@ -771,46 +999,87 @@ void MakeFwhmForDrf::doRefitWork()
       throw runtime_error( "Invalid function type" );
     
     const auto fwhm_type = DetectorPeakResponse::ResolutionFnctForm( fwhm_type_int );
-    
-    string eqn;
-    switch( fwhm_type )
-    {
-      case DetectorPeakResponse::kGadrasResolutionFcn:
-      case DetectorPeakResponse::kConstantPlusSqrtEnergy:
-        eqn = "FWHM(x): ";
-        break;
-        
-      case DetectorPeakResponse::kSqrtEnergyPlusInverse:
-        //sqrt(pars[0] + pars[1]*energy + pars[2]/energy);
-        eqn = "FWHM(x) = sqrt( ";
-        break;
-        
-      case DetectorPeakResponse::kSqrtPolynomial:
-        //FWHM = sqrt( Sum_i{A_i*pow(x/1000,i)} );
-        eqn = "FWHM(x) = sqrt( ";
-        sqrtEqnOrder = m_sqrtEqnOrder->currentIndex() + 1;
-        break;
-        
-      case DetectorPeakResponse::kNumResolutionFnctForm:
-        assert( 0 );
-        break;
-    }//switch( fwhm_type )
-    
-    auto meas = m_interspec->displayedHistogram(SpecUtils::SpectrumType::Foreground);
-    
+
+    //The sqrt-polynomial is the one form whose number of terms the user picks.
+    if( fwhm_type == DetectorPeakResponse::kSqrtPolynomial )
+      sqrtEqnOrder = m_sqrtEqnOrder->currentIndex() + 1;
+
     vector<float> result, uncerts;
     const double chi2 = MakeDrfFit::performResolutionFit( peaks_deque, fwhm_type,
                                                          sqrtEqnOrder, result, uncerts );
-    
+
     m_parameters = result;
     m_uncertainties = uncerts;
-    
+  }catch( std::exception &e )
+  {
+    m_parameters.clear();
+    m_uncertainties.clear();
+
+    m_error->show();
+    if( error_because_searching )
+      m_error->setText( WString::tr("mffd-err-waiting-for-search") );
+    else
+      m_error->setText( WString::tr("mffd-err-fail-fit").arg(e.what()) );
+  }//try / catch
+
+  updateEquationDisplay();
+}//void doRefitWork()
+
+
+void MakeFwhmForDrf::updateEquationDisplay()
+{
+  const int fwhm_type_int = m_fwhmEqnType->currentIndex();
+  const bool have_eqn = (!m_parameters.empty()
+                         && (fwhm_type_int >= 0)
+                         && (fwhm_type_int < DetectorPeakResponse::kNumResolutionFnctForm));
+
+  if( !have_eqn )
+  {
+    m_equation->hide();
+    m_equation->setText( "" );
+
+    for( NativeFloatSpinBox *sb : m_parEdits )
+    {
+      sb->disable();
+      sb->setText( "" );
+      sb->setToolTip( "" );
+    }
+
+    m_validationChanged.emit( false );
+    setEquationToChart();
+    updateFitControls();
+    return;
+  }//if( nothing to display )
+
+  const auto fwhm_type = DetectorPeakResponse::ResolutionFnctForm( fwhm_type_int );
+
+  string eqn;
+  switch( fwhm_type )
+  {
+    case DetectorPeakResponse::kGadrasResolutionFcn:
+    case DetectorPeakResponse::kConstantPlusSqrtEnergy:
+      eqn = "FWHM(x): ";
+      break;
+
+    case DetectorPeakResponse::kSqrtEnergyPlusInverse:
+    case DetectorPeakResponse::kSqrtPolynomial:
+      eqn = "FWHM(x) = sqrt( ";
+      break;
+
+    case DetectorPeakResponse::kNumResolutionFnctForm:
+      assert( 0 );
+      break;
+  }//switch( fwhm_type )
+
+  {
+    const vector<float> &result = m_parameters;
+    const vector<float> &uncerts = m_uncertainties;
+
     for( size_t i = 0; (i < m_parEdits.size()) && (i < result.size()); ++i )
     {
       m_parEdits[i]->setValue( result[i] );
       m_parEdits[i]->enable();
-      assert( !m_parEdits[i]->isHidden() );
-      m_parEdits[i]->setHidden(false);
+      m_parEdits[i]->setHidden( false );
       if( i < uncerts.size() )
         m_parEdits[i]->setToolTip( WString::tr("mffd-tt-par").arg(SpecUtils::printCompact(uncerts[i], 5)) );
       else
@@ -860,35 +1129,18 @@ void MakeFwhmForDrf::doRefitWork()
     
     if( fwhm_type != DetectorPeakResponse::kGadrasResolutionFcn )
       eqn += " )";
-    
-    m_error->hide();
-    m_error->setText( "" );
-    m_equation->show();
-    m_equation->setText( eqn );
-    
-    m_validationChanged.emit(true);
-  }catch( std::exception &e )
-  {
-    m_error->show();
-    m_equation->hide();
-    m_equation->setText( "" );
-    
-    for( NativeFloatSpinBox *sb : m_parEdits )
-    {
-      sb->disable();
-      sb->setText( "" );
-    }
-    
-    if( error_because_searching )
-      m_error->setText( WString::tr("mffd-err-waiting-for-search") );
-    else
-      m_error->setText( WString::tr("mffd-err-fail-fit").arg(e.what()) );
-    
-    m_validationChanged.emit(false);
-  }//try / catch
-  
+  }
+
+  m_error->hide();
+  m_error->setText( "" );
+  m_equation->show();
+  m_equation->setText( eqn );
+
+  m_validationChanged.emit( true );
+
   setEquationToChart();
-}//void doRefitWork()
+  updateFitControls();
+}//void updateEquationDisplay()
 
 
 void MakeFwhmForDrf::setEquationToChart()
@@ -899,7 +1151,7 @@ void MakeFwhmForDrf::setEquationToChart()
   const int fwhm_type_int = m_fwhmEqnType->currentIndex();
   
   if( (fwhm_type_int < 0)
-     || (fwhm_type_int >= DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm) )
+     || (fwhm_type_int > DetectorPeakResponse::ResolutionFnctForm::kNumResolutionFnctForm) )
     throw runtime_error( "Invalid function type" );
   
   const auto fwhm_type = DetectorPeakResponse::ResolutionFnctForm( fwhm_type_int );
@@ -921,7 +1173,7 @@ void MakeFwhmForDrf::setEquationToChart()
       break;
       
     case DetectorPeakResponse::kNumResolutionFnctForm:
-      assert( 0 );
+      //"None" - the peak data still charts, just with no equation drawn through it.
       break;
   }//switch( fwhm_type )
   
@@ -959,12 +1211,17 @@ void MakeFwhmForDrf::setEquationToChart()
 
 
 void MakeFwhmForDrf::setPeaksFromAutoSearch( vector<shared_ptr<const PeakDef>> user_peaks,
-                             shared_ptr<vector<shared_ptr<const PeakDef>>> auto_search_peaks )
+                             shared_ptr<vector<shared_ptr<const PeakDef>>> auto_search_peaks,
+                             string error_msg )
 {
   assert( auto_search_peaks );
-  
+
   m_currently_searching = false;
-  
+
+  if( !error_msg.empty() )
+    passMessage( WString::tr("mffd-err-search-failed").arg(error_msg),
+                 WarningWidget::WarningMsgHigh );
+
   // `auto_search_peaks` will contain both the original users peaks, as well as the auto-fit
   //  peaks, but we want to keep them separate to indicate to the user, so we'll just remove
   //  the peaks in `auto_search_peaks` that overlap with the user peaks.  Not perfect, but
@@ -1041,6 +1298,13 @@ void MakeFwhmForDrf::setPeaksFromAutoSearch( vector<shared_ptr<const PeakDef>> u
   
   
   m_current_state = currentState();
+
+  // `FwhmPeaksModel::set_peaks` emits nothing when there were no rows and there are still none
+  //  (e.g. a search that found nothing, with no user peaks), so schedule the refit ourselves -
+  //  otherwise the "Currently searching for peaks..." message would stay up even though we are
+  //  no longer searching.
+  scheduleRefit();
+
   wApp->triggerUpdate();
 }//setPeaksFromAutoSearch(...)
 
@@ -1078,11 +1342,16 @@ void MakeFwhmForDrf::handleFwhmEqnTypeChange()
       break;
       
     case DetectorPeakResponse::kNumResolutionFnctForm:
-      assert( 0 );
-      return;
+      //"None" - no equation, hence no coefficients to show.
+      num_pars = 0;
       break;
   }//switch( fwhm_type )
   
+  // The coefficients belong to the form they came from; a different form (or term count) needs its
+  //  own.  Callers either re-fit, or restore/seed the coefficients right after calling us.
+  m_parameters.clear();
+  m_uncertainties.clear();
+
   if( m_sqrtEqnOrder->parent() )
     m_sqrtEqnOrder->parent()->setHidden( !showSqrtEqn );
   
@@ -1148,6 +1417,94 @@ Wt::Signal<bool> &MakeFwhmForDrf::validationChanged()
 {
   return m_validationChanged;
 }
+
+
+Wt::Signal<> &MakeFwhmForDrf::stateChanged()
+{
+  return m_stateChanged;
+}
+
+
+void MakeFwhmForDrf::setOwnerHandlesUndoRedo( const bool owner_handles )
+{
+  m_owner_handles_undo_redo = owner_handles;
+}//void setOwnerHandlesUndoRedo( const bool )
+
+
+bool MakeFwhmForDrf::fittingEnabled() const
+{
+  return (!m_fitCb || m_fitCb->isChecked());
+}//bool fittingEnabled() const
+
+
+void MakeFwhmForDrf::handleFitCheckChanged()
+{
+  if( m_fitCb->isChecked() )
+  {
+    // Fitting needs an equation to fit, and "None" is the one form that has none - move to the
+    //  general-purpose default rather than leaving a checked box that cannot do anything.
+    if( m_fwhmEqnType->currentIndex() == DetectorPeakResponse::kNumResolutionFnctForm )
+    {
+      m_fwhmEqnType->setCurrentIndex( DetectorPeakResponse::kSqrtPolynomial );
+      handleFwhmEqnTypeChange();
+    }
+
+    startAutomatedPeakSearch();  //no-op if already searching, or already searched
+    scheduleRefit();
+  }else
+  {
+    // Turning fitting off keeps whatever is on screen; the user can hand-edit it, or take the
+    //  detectors own FWHM back with "Original FWHM".
+    updateEquationDisplay();
+  }
+
+  updateFitControls();
+  scheduleUndoRedoStep();
+}//void handleFitCheckChanged()
+
+
+void MakeFwhmForDrf::restoreOriginalFwhm()
+{
+  if( (m_original_form_index >= 0) && (m_original_form_index < m_fwhmEqnType->count()) )
+    m_fwhmEqnType->setCurrentIndex( m_original_form_index );
+
+  if( (m_original_sqrt_order >= 0) && (m_original_sqrt_order < m_sqrtEqnOrder->count()) )
+    m_sqrtEqnOrder->setCurrentIndex( m_original_sqrt_order );
+
+  handleFwhmEqnTypeChange();  //shows the right coefficient edits, and clears their values
+
+  m_parameters = m_original_parameters;
+  m_uncertainties.clear();
+  m_refit_scheduled = false;  //`handleFwhmEqnTypeChange` may have asked for a fit; we are restoring
+
+  updateEquationDisplay();
+  updateFitControls();
+  scheduleUndoRedoStep();
+}//void restoreOriginalFwhm()
+
+
+void MakeFwhmForDrf::updateFitControls()
+{
+  if( m_fitCb )
+  {
+    // Only a foreground is required: checking the box with "None" selected picks an equation form
+    //  to fit, rather than being unusable.
+    const bool have_data = !!m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground );
+
+    m_fitCb->setEnabled( have_data );
+    m_fitCb->setToolTip( have_data ? WString::tr("mffd-tt-fit-cb")
+                                   : WString::tr("mffd-tt-fit-needs-foreground") );
+  }//if( m_fitCb )
+
+  if( m_originalBtn )
+  {
+    // Only an escape hatch: nothing to go back to while the fit is driving the equation, and
+    //  nothing to go back from when it already matches the detector.
+    const bool differs = (m_fwhmEqnType->currentIndex() != m_original_form_index)
+                         || (m_parameters != m_original_parameters);
+    m_originalBtn->setHidden( fittingEnabled() || !differs );
+  }//if( m_originalBtn )
+}//void updateFitControls()
 
 
 bool MakeFwhmForDrf::isValidFwhm() const
@@ -1241,25 +1598,36 @@ void MakeFwhmForDrf::setState( shared_ptr<const MakeFwhmForDrf::ToolState> state
   
   m_model->setRowData( state->m_rows );
   
-  if( state->m_uncertainties.empty() && !state->m_parameters.empty() )
-  {
-    m_parameters = state->m_parameters;
-    m_uncertainties = state->m_uncertainties;
-    for( size_t i = 0; (i < m_parEdits.size()) && (i < m_parameters.size()); ++i )
-    {
-      m_parEdits[i]->setValue( m_parameters[i] );
-      m_parEdits[i]->setToolTip( "" );
-    }
-  }//if( the user manually set parameter values )
-  
+  m_parameters = state->m_parameters;
+  m_uncertainties = state->m_uncertainties;
+
   m_orig_drf = state->m_orig_drf;
-  
-  scheduleRefit(); //It should already be scheduled, but just to be explicit
+
+  // In `ShowExisting` mode the coefficients are the state - re-fitting them from the spectrum would
+  //  throw away exactly what the undo step is restoring.  `handleFwhmEqnTypeChange` above may have
+  //  scheduled such a refit (it does once the user has asked for a fit at least once), so take it
+  //  back before it can land.
+  if( m_initial_fit == InitialFit::ShowExisting )
+  {
+    m_refit_scheduled = false;
+    updateEquationDisplay();
+  }else
+  {
+    scheduleRefit(); //It should already be scheduled, but just to be explicit
+  }
 }//void setState( std::shared_ptr<const ToolState> state )
 
 
 void MakeFwhmForDrf::doAddUndoRedoStep()
 {
+  // An owner that records steps for us keeps them in ITS state, since our own steps below resolve
+  //  their target through the standalone FWHM window - which, embedded, is not where we live.
+  if( m_owner_handles_undo_redo )
+  {
+    m_stateChanged.emit();
+    return;
+  }//if( m_owner_handles_undo_redo )
+
   UndoRedoManager *undoManager = m_interspec->undoRedoManager();
   if( !undoManager || !undoManager->canAddUndoRedoNow() )
     return;

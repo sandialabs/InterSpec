@@ -26,6 +26,8 @@
 #include "G4UserEventAction.hh"
 #include "SteppingAction.hh"  // for G4InteractionRecord
 
+#include "physics/FepWindow.h"  // ceelo::kDefaultFepWindowKeV - must match what CeeLo scores
+
 #include <cstdint>
 #include <vector>
 
@@ -102,7 +104,16 @@ public:
     /// Enable crystal entry diagnostics.
     void EnableEntryDiag(bool on) { entry_diag_enabled_ = on; }
 
+    /// Half-width (keV) of the full-energy-peak window; see EndOfEventAction.
+    /// Defaults to CeeLo's kDefaultFepWindowKeV so the two agree unless a run
+    /// deliberately asks otherwise (e.g. regenerating a reference set at the
+    /// window an older one used).
+    void SetFepWindowKeV(double w) { fep_window_keV_ = w; }
+    double GetFepWindowKeV() const { return fep_window_keV_; }
+
 private:
+    double fep_window_keV_ = ceelo::kDefaultFepWindowKeV;
+
     RunAction* run_action_;
     PrimaryGeneratorAction* primary_gen_;
     double     energy_deposited_MeV_ = 0.0;

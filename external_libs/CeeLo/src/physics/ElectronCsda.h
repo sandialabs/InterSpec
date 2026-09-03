@@ -125,9 +125,12 @@ static_assert(kMoliereBremsThreshold_keV >= kSB_min_energy_keV,
 
 /// Singleton that provides pre-computed CSDA range tables for Z = 1..92.
 ///
-/// Stopping power: Bethe-Bloch collision formula (ICRU Report 37).
-/// Shell corrections are omitted → ~8% underestimate at 1 MeV vs NIST PSTAR,
-/// improving to ~1% at 10 MeV.  Adequate for CSDA range integration.
+/// Stopping power: NIST ESTAR collision stopping power read directly from the
+/// generated fixtures (`estar_stopping_data.h`), with the positron obtained
+/// from the electron via the analytic Bhabha/Møller F⁺/F⁻ ratio; ranges by
+/// trapezoid integration of 1/S over a 200-point log grid.  (The original
+/// Bethe-Bloch/ICRU-37 implementation this doc-block used to describe was
+/// replaced in the stopping-power migration.)
 ///
 /// Usage:
 ///   double R = ElectronCsda::instance().range_gcm2(53, 662.0); // I at 662 keV

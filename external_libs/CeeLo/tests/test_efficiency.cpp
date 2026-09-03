@@ -26,6 +26,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "materials/Material.h"
 #include "geometry/Geometry.h"
 
@@ -62,6 +63,7 @@ BOOST_AUTO_TEST_SUITE(Invariants)
 BOOST_AUTO_TEST_CASE(fep_leq_total_efficiency) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
 
@@ -75,6 +77,7 @@ BOOST_AUTO_TEST_CASE(fep_leq_total_efficiency) {
 BOOST_AUTO_TEST_CASE(efficiencies_non_negative) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
 
@@ -88,6 +91,7 @@ BOOST_AUTO_TEST_CASE(efficiencies_non_negative) {
 BOOST_AUTO_TEST_CASE(efficiencies_leq_one) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
 
@@ -101,6 +105,7 @@ BOOST_AUTO_TEST_CASE(efficiencies_leq_one) {
 BOOST_AUTO_TEST_CASE(event_count_reported_correctly) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
 
@@ -112,6 +117,7 @@ BOOST_AUTO_TEST_CASE(event_count_reported_correctly) {
 BOOST_AUTO_TEST_CASE(fep_leq_total_hpge_with_bore) {
     Material hpge = make_HPGe();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &hpge, {5.0, 8.0});
     calc.set_bore_hole(0.5, 7.0);
     calc.set_dead_layer(0.03, 0.03);
@@ -122,6 +128,45 @@ BOOST_AUTO_TEST_CASE(fep_leq_total_hpge_with_bore) {
                    res.full_energy_peak_efficiency - 1e-9);
     BOOST_CHECK_GE(res.full_energy_peak_efficiency, 0.0);
     BOOST_CHECK_LE(res.total_efficiency, 1.0);
+}
+
+BOOST_AUTO_TEST_CASE(bulletized_efficiency_is_bracketed_by_sharp_cylinders) {
+    // A bulletized crystal has less material than the sharp cylinder it is cut
+    // from, but more than the sharp cylinder inscribed at the fillet's ring
+    // radius, so its efficiency must fall between the two.  At 60 keV, where
+    // photons stop within the first millimetres, the front edge dominates and
+    // the gap is large enough to resolve with modest statistics.
+    Material hpge = make_HPGe();
+    const double R = 2.915, L = 6.89, r_b = 0.8;
+
+    auto efficiency = [&](double radius, double bullet) {
+        EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
+        calc.set_detector(DetectorShape::Cylinder, &hpge, {radius, L});
+        if (bullet > 0.0) calc.set_bullet_radius(bullet);
+        calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
+        SimulationConfig sim;
+        sim.energy_keV = 60.0;
+        sim.num_threads = 1;
+        sim.seed = 20260824ULL;
+        sim.termination.max_events = 120000;
+        return calc.compute(sim);
+    };
+
+    const auto sharp    = efficiency(R, 0.0);
+    const auto bullet   = efficiency(R, r_b);
+    const auto inscribed = efficiency(R - r_b, 0.0);
+
+    // Significance against the combined statistical uncertainty of each pair.
+    auto z = [](const EfficiencyResult& a, const EfficiencyResult& b) {
+        const double d = a.full_energy_peak_efficiency - b.full_energy_peak_efficiency;
+        const double s = std::sqrt(a.fep_uncertainty * a.fep_uncertainty
+                                   + b.fep_uncertainty * b.fep_uncertainty);
+        return d / s;
+    };
+
+    BOOST_CHECK_GT(z(sharp, bullet), 3.0);      // bulletizing removes material
+    BOOST_CHECK_GT(z(bullet, inscribed), 3.0);  // but far less than R -> R - r_b
 }
 
 BOOST_AUTO_TEST_SUITE_END()
@@ -137,6 +182,7 @@ BOOST_AUTO_TEST_SUITE(PhysicalPlausibility)
 BOOST_AUTO_TEST_CASE(nonzero_efficiency_at_662keV) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
 
@@ -150,6 +196,7 @@ BOOST_AUTO_TEST_CASE(nonzero_efficiency_at_662keV) {
 BOOST_AUTO_TEST_CASE(total_efficiency_decreases_with_energy) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
 
@@ -162,6 +209,7 @@ BOOST_AUTO_TEST_CASE(total_efficiency_decreases_with_energy) {
 BOOST_AUTO_TEST_CASE(peak_to_total_ratio_higher_at_low_energy) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
 
@@ -180,11 +228,13 @@ BOOST_AUTO_TEST_CASE(dead_layer_reduces_efficiency) {
     Material nai = make_NaI();
 
     EfficiencyCalculator calc_nodl;
+    calc_nodl.set_fep_window_keV(kTestFepWindowKeV);
     calc_nodl.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_nodl.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
     auto res_nodl = calc_nodl.compute(precision_config(100.0));
 
     EfficiencyCalculator calc_dl;
+    calc_dl.set_fep_window_keV(kTestFepWindowKeV);
     calc_dl.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_dl.set_dead_layer(2.0, 0.0, 0.0);
     calc_dl.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
@@ -196,6 +246,7 @@ BOOST_AUTO_TEST_CASE(dead_layer_reduces_efficiency) {
 BOOST_AUTO_TEST_CASE(batch_returns_correct_size) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
 
@@ -226,12 +277,14 @@ BOOST_AUTO_TEST_CASE(cone_sampling_consistent_with_isotropic) {
     Eigen::Vector3d src(0.0, 0.0, -5.0);
 
     EfficiencyCalculator calc_cone;
+    calc_cone.set_fep_window_keV(kTestFepWindowKeV);
     calc_cone.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_cone.set_point_source(src);
     calc_cone.enable_cone_sampling(true);
     auto res_cone = calc_cone.compute(precision_config(662.0));
 
     EfficiencyCalculator calc_iso;
+    calc_iso.set_fep_window_keV(kTestFepWindowKeV);
     calc_iso.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_iso.set_point_source(src);
     calc_iso.enable_cone_sampling(false);
@@ -328,6 +381,7 @@ BOOST_AUTO_TEST_SUITE(PulseHeight)
 BOOST_AUTO_TEST_CASE(bin_values_non_negative) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
 
@@ -345,6 +399,7 @@ BOOST_AUTO_TEST_CASE(bin_values_non_negative) {
 BOOST_AUTO_TEST_CASE(bin_sum_consistent_with_total_eff) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
 
@@ -365,6 +420,7 @@ BOOST_AUTO_TEST_CASE(bin_sum_consistent_with_total_eff) {
 BOOST_AUTO_TEST_CASE(fep_bin_has_counts) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
 
@@ -385,6 +441,7 @@ BOOST_AUTO_TEST_CASE(fep_bin_has_counts) {
 BOOST_AUTO_TEST_CASE(uncertainty_array_well_formed) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
 
@@ -410,6 +467,7 @@ BOOST_AUTO_TEST_CASE(analog_unweighted_recovers_poisson) {
     // identity (not a statistical estimate), so the tolerance can be tight.
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));  // close -> hit rate
     calc.enable_cone_sampling(false);                        // isotropic, w == 1
@@ -448,6 +506,7 @@ BOOST_AUTO_TEST_CASE(weighted_cone_differs_from_poisson) {
     // dispersion that the bare counts cannot capture).
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
     calc.enable_cone_sampling(true);     // cone -> constant weight omega_frac

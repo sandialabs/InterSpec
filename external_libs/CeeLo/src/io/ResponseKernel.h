@@ -52,6 +52,7 @@
 /// (d sin(t) cos(p), d sin(t) sin(p), -d cos(t)) for distance d measured to
 /// the crystal-face origin, polar angle t from the detector axis, azimuth p.
 
+#include "physics/FepWindow.h"
 #include "geometry/Geometry.h"
 #include "materials/Material.h"
 
@@ -90,6 +91,8 @@ enum class MuChoice : uint8_t {
 /// Built by make_aperture_quadrature(); all evaluations are MC-free.
 struct ApertureQuadrature {
     double cone_omega_frac = 0.0;   ///< sampling-cone Omega/4pi (1.0 = full sphere)
+    Eigen::Vector3d cone_axis{0.0, 0.0, 1.0}; ///< sampling-cone axis (unit); meaningless when
+                                    ///< cone_omega_frac == 1.0 (full sphere)
     int n_rays_total = 0;           ///< rays sampled (incl. misses)
     std::vector<KernelRay> rays;    ///< rays with any geometry intersection
     double omega_frac_active = 0.0; ///< Omega/4pi of the ACTIVE crystal (chord > 0)
@@ -144,11 +147,28 @@ struct ApertureQuadrature {
 };
 
 /// Build the quadrature from a source point. n_rays is the ray count in the
-/// sampling cone (Fibonacci spiral; deterministic). The cone subtends the
-/// geometry bounding sphere; if the source is inside it, the full sphere is
-/// used. Cost ~ n_rays ray traces (sub-ms at 1k-8k rays); cacheable per
-/// position, and in fit loops the position set is fixed so kernels are
-/// computed once.
+/// sampling cone (Fibonacci spiral; deterministic). Cost ~ n_rays ray traces
+/// (sub-ms at 1k-8k rays); cacheable per position, and in fit loops the
+/// position set is fixed so kernels are computed once.
+///
+/// The cone contains the ACTIVE CRYSTAL envelope
+/// (radius/half-extents x [0, length]) -- not the outer shell, and not its
+/// circumscribed sphere. Every consumer of the resulting rays skips rays with
+/// no active chord (`active_len <= 0`), so a ray that clips only the endcap or
+/// an attenuator contributes to nothing and need not be sampled.
+///
+/// This matters most at contact. The sphere circumscribing a roughly
+/// equilateral crystal is ~40% wider than it and protrudes IN FRONT of the
+/// crystal face, so a source within ~2 cm of the endcap used to fall back to
+/// sampling the full 4pi with only ~20-30% of rays scoring. Bounding the
+/// crystal instead keeps a valid cone there and roughly triples the useful ray
+/// yield, which raises per-element precision at fixed cost (the estimator was
+/// already unbiased either way -- `w_per_ray = cone_omega_frac / n_rays`
+/// carries the sampling measure).
+///
+/// Falls back to the full sphere when the source is inside the crystal envelope
+/// (no bounding cone exists) and, conservatively, whenever the construction
+/// cannot certify the cone -- see the safety note on active_bounding_cone.
 ApertureQuadrature make_aperture_quadrature(const Geometry& geom,
                                             const Eigen::Vector3d& src,
                                             int n_rays = 8192);
@@ -168,7 +188,7 @@ inline Eigen::Vector3d source_position(double d_cm, double cos_theta,
 /// Free-electron KN only -- S(x,Z) suppresses forward scatter, so this
 /// slightly overestimates the surviving fraction (measured +1..2% mid-E
 /// overshoot, S9b). Simpson integration over cos(theta).
-double kn_in_window_fraction(double E_keV, double win_keV = 1.5);
+double kn_in_window_fraction(double E_keV, double win_keV = kDefaultFepWindowKeV);
 
 /// Material-aware in-window fraction: weights the Klein-Nishina integrand by
 /// the incoherent scattering function of the material's elements,

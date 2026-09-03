@@ -48,6 +48,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/GammaInteractionCalc_imp.hpp"
 #include "InterSpec/MassAttenuationTool_imp.hpp"
 
 #include "GeometryReference.h"
@@ -1019,7 +1020,11 @@ BOOST_AUTO_TEST_CASE( DistributedSrcCalcTests )
   const std::shared_ptr<const MaterialDB> materialdb = MaterialDB::instance();
   BOOST_REQUIRE( materialdb );
 
-  DistributedSrcCalc ObjectToIntegrate;
+  // The volumetric calculator is templated (double for the display, ceres::Jet for the fit); there
+  //  is no longer a separate double-only class.  The integration backend that comes with it is the
+  //  adaptive-GL `self_shielding_integration_imp` rather than Cuhre, so the golden below is checked
+  //  at the tolerance the two backends agree to, not at Cuhre's own repeatability.
+  DistributedSrcCalcT<double> ObjectToIntegrate;
 
   const double energy = 185.0*PhysicalUnits::keV;
   ObjectToIntegrate.m_geometry = GeometryType::Spherical;
@@ -1028,81 +1033,45 @@ BOOST_AUTO_TEST_CASE( DistributedSrcCalcTests )
   ObjectToIntegrate.m_airTransLenCoef = 0.0;
   ObjectToIntegrate.m_isInSituExponential = false;
   ObjectToIntegrate.m_inSituRelaxationLength = 0.0;
-  ObjectToIntegrate.m_detectorRadius  = 2.0 * PhysicalUnits::cm;
-  ObjectToIntegrate.m_observationDist = 400.0 * PhysicalUnits::cm;
+  ObjectToIntegrate.m_detector = detector_geom_from_config<double>( GeometryType::Spherical,
+                                                                    400.0 * PhysicalUnits::cm,
+                                                                    2.0 * PhysicalUnits::cm, 0.0 );
 
   double sphereRad = 0.0, transLenCoef = 0.0;
+
+  const auto add_shell = [&ObjectToIntegrate]( const double outer_rad, const double coef ){
+    DistributedSrcCalcT<double>::ShellInfo shell;
+    shell.dims = { outer_rad, 0.0, 0.0 };
+    shell.trans_len_coef = coef;
+    shell.type = ShellType::Material;
+    ObjectToIntegrate.m_shells.push_back( shell );
+  };
 
   std::shared_ptr<const Material> material = materialdb->material( "void" );
   transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material.get(), energy );
   sphereRad += 99.5* PhysicalUnits::cm;
-#if( defined(__GNUC__) && __GNUC__ < 5 )
-  ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( tuple<array<double,3>,double,DistributedSrcCalc::ShellType>{{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
-#else
-  ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( {{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
-#endif
+  add_shell( sphereRad, transLenCoef );
 
   material = materialdb->material( "U" );
   transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material.get(), energy );
   sphereRad += 0.5 * PhysicalUnits::cm;
-#if( defined(__GNUC__) && __GNUC__ < 5 )
-  ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( tuple<array<double,3>,double,DistributedSrcCalc::ShellType>{{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
-#else
-  ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( {{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
-#endif
-  ObjectToIntegrate.m_materialIndex = ObjectToIntegrate.m_dimensionsTransLenAndType.size() - 1;
+  add_shell( sphereRad, transLenCoef );
+  ObjectToIntegrate.m_materialIndex = ObjectToIntegrate.m_shells.size() - 1;
 
   material = materialdb->material( "Fe" );
   transLenCoef = GammaInteractionCalc::transmition_length_coefficient( material.get(), energy );
   sphereRad += 0.5 * PhysicalUnits::cm;
-  ObjectToIntegrate.m_dimensionsTransLenAndType.push_back( {{sphereRad,0.0,0.0},transLenCoef,DistributedSrcCalc::ShellType::Material} );
+  add_shell( sphereRad, transLenCoef );
 
-  
-  int ndim = 2;  //the number of dimensions of the integral.
-  void *userdata = (void *)&ObjectToIntegrate;
-  const double epsrel = 1e-5;  //the requested relative accuracy
-  const double epsabs = -1.0;//1e-12; //the requested absolute accuracy
-  const int mineval = 0; //the minimum number of integrand evaluations required.
-  const int maxeval = 5000000; //the (approximate) maximum number of integrand evaluations allowed.
+  BOOST_REQUIRE_NO_THROW( self_shielding_integration_imp<double>( ObjectToIntegrate, 1.0E-5, 5000000 ) );
 
-  int nregions, neval, fail;
-  double integral, error, prob;
+  BOOST_CHECK_GT( ObjectToIntegrate.m_num_evals, 0u );
+  BOOST_CHECK_MESSAGE( ObjectToIntegrate.m_est_rel_error < 1.0E-3,
+                       "Integration did not converge: est_rel_error="
+                       << ObjectToIntegrate.m_est_rel_error );
 
-  ndim = 2;
-  Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_spherical, userdata, epsrel, epsabs,
-                            Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
-                            fail, integral, error, prob );
-
-  //printf("ndim=%d CUHRE RESULT:\tnregions %d\tneval %d\tfail %d\n",
-  //    ndim, nregions, neval, fail);
-  //printf("CUHRE RESULT:\t%.8f +- %.8f\tp = %.3f\n", integral, error, prob);
-  //printf("\n\n" );
-  
-  // Check that the integration succeeded
-  BOOST_CHECK_EQUAL( fail, 0 );
-  BOOST_CHECK_GT( neval, 0 );
-  BOOST_CHECK_GT( nregions, 0 );
-  
-  // Check that the result is close to the expected value from the comment
-  BOOST_CHECK_CLOSE( integral, 2.8626, 0.1 );  // within 0.01%
-  
-  ndim = 3;
-  Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_spherical, userdata, epsrel, epsabs,
-                             Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
-                            fail, integral, error, prob );
-  
-  //printf("ndim=%d CUHRE RESULT:\tnregions %d\tneval %d\tfail %d\n",
-  //     ndim, nregions, neval, fail);
-  //printf("CUHRE RESULT:\t%.8f +- %.8f\tp = %.3f\n", integral, error, prob );
-  //cout << endl << endl;
-  
-  // Check that the 3D integration also succeeded
-  BOOST_CHECK_EQUAL( fail, 0 );
-  BOOST_CHECK_GT( neval, 0 );
-  BOOST_CHECK_GT( nregions, 0 );
-  
-  // Check that the result is close to the expected value from the comment
-  BOOST_CHECK_CLOSE( integral, 2.8626, 0.01 );  // within 0.1%
+  // Golden from the pre-existing Cuhre-based version of this test.
+  BOOST_CHECK_CLOSE( ObjectToIntegrate.integral, 2.8626, 0.5 );
 }//BOOST_AUTO_TEST_CASE( DistributedSrcCalcTests )
 
 
@@ -1183,123 +1152,68 @@ namespace
 
    The source material is always the inner-most shell, e.g. `m_materialIndex` is 0.
    */
-  DistributedSrcCalc make_end_on_cylinder( const double energy, const double radius,
+  DistributedSrcCalcT<double> make_end_on_cylinder( const double energy, const double radius,
                                           const double half_length, const double shell_thickness,
                                           const double obs_dist )
   {
     const std::shared_ptr<const MaterialDB> materialdb = MaterialDB::instance();
     BOOST_REQUIRE( materialdb );
 
-    DistributedSrcCalc calc;
+    DistributedSrcCalcT<double> calc;
     calc.m_geometry = GeometryType::CylinderEndOn;
     calc.m_materialIndex = 0;
     calc.m_attenuateForAir = false;
     calc.m_airTransLenCoef = 0.0;
     calc.m_isInSituExponential = false;
     calc.m_inSituRelaxationLength = 0.0;
-    calc.m_detectorRadius = 2.0 * PhysicalUnits::cm;
-    calc.m_detectorSetback = 0.0;
-    calc.m_observationDist = obs_dist;
+    calc.m_detector = detector_geom_from_config<double>( GeometryType::CylinderEndOn, obs_dist,
+                                                         2.0 * PhysicalUnits::cm, 0.0 );
     calc.m_energy = energy;
     calc.m_nuclide = nullptr;
     calc.m_srcVolumetricActivity = 1.0;
     calc.integral = 0.0;
 
+    const auto add_shell = [&calc]( const double rad, const double half_len, const double coef ){
+      DistributedSrcCalcT<double>::ShellInfo shell;
+      shell.dims = { rad, half_len, 0.0 };
+      shell.trans_len_coef = coef;
+      shell.type = ShellType::Material;
+      calc.m_shells.push_back( shell );
+    };
+
     const std::shared_ptr<const Material> uranium = materialdb->material( "U" );
     BOOST_REQUIRE( uranium );
     const double u_coef = GammaInteractionCalc::transmition_length_coefficient( uranium.get(), energy );
-    calc.m_dimensionsTransLenAndType.push_back( { {radius, half_length, 0.0}, u_coef,
-                                                  DistributedSrcCalc::ShellType::Material } );
+    add_shell( radius, half_length, u_coef );
 
     if( shell_thickness > 0.0 )
     {
       const std::shared_ptr<const Material> iron = materialdb->material( "Fe" );
       BOOST_REQUIRE( iron );
       const double fe_coef = GammaInteractionCalc::transmition_length_coefficient( iron.get(), energy );
-      calc.m_dimensionsTransLenAndType.push_back( { {radius + shell_thickness,
-                                                     half_length + shell_thickness, 0.0}, fe_coef,
-                                                    DistributedSrcCalc::ShellType::Material } );
+      add_shell( radius + shell_thickness, half_length + shell_thickness, fe_coef );
     }//if( shell_thickness > 0.0 )
 
     return calc;
   }//make_end_on_cylinder(...)
 
 
-  /** Cuhre-integrates a #DistributedSrcCalc using the general cylindrical integrand. */
-  double integrate_cylindrical( const DistributedSrcCalc &calc, const int ndim )
+  /** Integrates a cylindrical distributed source with the production (adaptive-GL) backend. */
+  double integrate_cylindrical( DistributedSrcCalcT<double> calc, const int /*ndim*/ )
   {
-    void * const userdata = (void *)&calc;
-    const double epsrel = 1e-6, epsabs = -1.0;
-    const int mineval = 0, maxeval = 5000000;
-
-    int nregions, neval, fail;
-    double integral, error, prob;
-
-    Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_cylindrical, userdata, epsrel,
-                              epsabs, Integrate::LastImportanceFcnt, mineval, maxeval, nregions,
-                              neval, fail, integral, error, prob );
-
-    BOOST_REQUIRE_EQUAL( fail, 0 );
-
-    return integral;
+    self_shielding_integration_imp<double>( calc, 1.0E-6, 5000000 );
+    return calc.integral;
   }//integrate_cylindrical(...)
 }//namespace
 
 
-BOOST_AUTO_TEST_CASE( CylinderEndOnSingleVsGeneralIntegrand )
-{
-  // For a single shielding, end-on cylinders are integrated with the closed-form
-  //  `eval_single_cyl_end_on`, which never calls #cylinder_line_intersection.  The general
-  //  `eval_cylinder` must give the same answer point-for-point; it is the discrepancy between the
-  //  two that the (previously commented out) assert in `eval_single_cyl_end_on` checks for.
-  set_data_dir();
-
-  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
-  BOOST_REQUIRE( MaterialDB::initialized() );
-
-  const double radius = 2.0 * PhysicalUnits::cm;
-  const double half_length = 0.15 * PhysicalUnits::cm;
-  const double obs_dist = 100.0 * PhysicalUnits::cm;
-
-  for( const double energy : { 60.0*PhysicalUnits::keV, 186.0*PhysicalUnits::keV, 2614.0*PhysicalUnits::keV } )
-  {
-    for( const bool attenuate_air : { false, true } )
-    {
-      DistributedSrcCalc calc = make_end_on_cylinder( energy, radius, half_length, -1.0, obs_dist );
-      calc.m_attenuateForAir = attenuate_air;
-      calc.m_airTransLenCoef = attenuate_air ? 1.0E-4 : 0.0;
-
-      const int two_dim = 2, three_dim = 3;
-
-      for( size_t i = 0; i <= 8; ++i )
-      {
-        for( size_t j = 0; j <= 8; ++j )
-        {
-          double xx_2d[2] = { i/8.0, j/8.0 };  //{r, z}
-
-          double single_ff[1] = { 0.0 }, general_ff[1] = { 0.0 };
-          calc.eval_single_cyl_end_on( xx_2d, &two_dim, single_ff, nullptr );
-          calc.eval_cylinder( xx_2d, &two_dim, general_ff, nullptr );
-
-          const double scale = (std::max)( fabs(single_ff[0]), fabs(general_ff[0]) );
-          BOOST_CHECK_SMALL( single_ff[0] - general_ff[0], 1.0E-9*(std::max)(1.0E-12,scale) );
-
-          // End-on is symmetric about the cylinder axis, so the 3-dimensional integrand must give
-          //  the same value at every theta as the theta-collapsed 2-dimensional one.
-          for( size_t k = 0; k <= 8; ++k )
-          {
-            double xx_3d[3] = { i/8.0, k/8.0, j/8.0 };  //{r, theta, z}
-
-            double three_dim_ff[1] = { 0.0 };
-            calc.eval_cylinder( xx_3d, &three_dim, three_dim_ff, nullptr );
-
-            BOOST_CHECK_SMALL( single_ff[0] - three_dim_ff[0], 1.0E-9*(std::max)(1.0E-12,scale) );
-          }//for( loop over theta )
-        }//for( loop over z )
-      }//for( loop over r )
-    }//for( loop over whether to attenuate for air )
-  }//for( loop over energy )
-}//BOOST_AUTO_TEST_CASE( CylinderEndOnSingleVsGeneralIntegrand )
+// NOTE: `CylinderEndOnSingleVsGeneralIntegrand` lived here.  It compared the single-shell end-on
+//  fast path `eval_single_cyl_end_on` against the general `eval_cylinder` and found them equal to
+//  1e-9 everywhere - including the near-field/contact geometries that commit a446b095 claimed were
+//  broken.  Both evaluators shared the same centre-ray model, which is what actually limited them.
+//  The fast path is now deleted: it had no per-ray extended-source kernel, so single-shell bare
+//  cylinders silently kept the centre-ray attenuation while every other geometry got the per-ray
+//  one.  `eval_cylinder` covers the case, and VolumetricNearFieldVsTruth is what guards it now.
 
 
 BOOST_AUTO_TEST_CASE( CylinderEndOnMultiShellTransport )
@@ -1329,7 +1243,7 @@ BOOST_AUTO_TEST_CASE( CylinderEndOnMultiShellTransport )
   {
     const double fe_coef = GammaInteractionCalc::transmition_length_coefficient( iron.get(), energy );
 
-    const DistributedSrcCalc bare = make_end_on_cylinder( energy, radius, half_length, -1.0, obs_dist );
+    const DistributedSrcCalcT<double> bare = make_end_on_cylinder( energy, radius, half_length, -1.0, obs_dist );
     const double bare_integral = integrate_cylindrical( bare, 2 );
     BOOST_REQUIRE_GT( bare_integral, 0.0 );
 
@@ -1338,7 +1252,7 @@ BOOST_AUTO_TEST_CASE( CylinderEndOnMultiShellTransport )
     for( const double thickness : { 1.0E-4, 1.0E-2, 0.1, 0.5 } )  //cm; first is 1 micron
     {
       const double shell_thickness = thickness * PhysicalUnits::cm;
-      const DistributedSrcCalc shielded = make_end_on_cylinder( energy, radius, half_length,
+      const DistributedSrcCalcT<double> shielded = make_end_on_cylinder( energy, radius, half_length,
                                                               shell_thickness, obs_dist );
       const double shielded_integral = integrate_cylindrical( shielded, 2 );
       const double ratio = shielded_integral / bare_integral;

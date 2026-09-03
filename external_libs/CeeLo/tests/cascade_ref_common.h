@@ -36,6 +36,7 @@
 #define CEELO_CASCADE_REF_COMMON_H
 
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "materials/Material.h"
 #include "cascade/SandiaDecayCascade.h"
 #include "SandiaDecay.h"
@@ -111,6 +112,14 @@ inline double area_unc(const std::vector<float>& u, int lo, int hi) {
 inline void configure_alcyl(EfficiencyCalculator& calc, double source_cm) {
     static Material nai = make_NaI();
     static Material al = make_Aluminum();
+    // The committed GEANT4 references in data/geant4_reference/ were produced by
+    //  the harness scoring FEP at a 1.5 keV half-window (see that directory's
+    //  README).  Score CeeLo at the same window or the comparison is
+    //  apples-to-oranges - CeeLo would come out systematically low by whatever
+    //  the references count in 0.75..1.5 keV that CeeLo does not.  Pinned here
+    //  rather than tracking kDefaultFepWindowKeV: this number belongs to the
+    //  reference data, and changes only when that data is regenerated.
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -2.0), source_cm, source_cm);
     calc.set_source_material(&al);
@@ -125,6 +134,7 @@ inline FullResult run_fullrealization(const std::string& nuc, int emax_keV,
     const auto casc = build_cascades(db(), nuc, opt);
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     configure_alcyl(calc, source_cm);
 
     CascadeConfig cfg;
@@ -159,6 +169,7 @@ inline void run_conditional(const std::string& nuc, uint64_t num_events,
     const auto casc = build_cascades(db(), nuc, opt);
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     configure_alcyl(calc, source_cm);
 
     CascadeConfig cfg;

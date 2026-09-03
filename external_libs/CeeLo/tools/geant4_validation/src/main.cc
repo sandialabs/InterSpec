@@ -43,6 +43,18 @@
 ///                    (e.g., 0.01 for 1%). Safety cap: 100M events.
 ///   --vis            Open interactive OpenGL visualization (no simulation).
 ///                    The macro file should contain /vis/ commands (e.g., vis.mac).
+///   --vis-batch      Same, but headless: runs the /vis/ macro and exits without
+///                    opening a session, so it works over ssh and in CI. Use a
+///                    file-writing driver that needs no tracking -- VRML2FILE
+///                    dumps G4's own polyhedron for every solid, which is the
+///                    honest check that G4 read a solid the way the exporter
+///                    intended:
+///                      /vis/open VRML2FILE
+///                      /vis/drawVolume
+///                      /vis/viewer/flush      -> writes g4_NN.wrl
+///                    See macros/vis_crystal_vrml.mac, and render_vrml.py to
+///                    turn the .wrl into a PNG.  RayTracer does NOT work from
+///                    this executable -- see the run manager below for why.
 ///
 /// Physics list: G4EmStandardPhysics_option4 (most accurate EM) by default.
 
@@ -198,6 +210,46 @@ static bool get_detector_bounds_from_gdml(const std::string& gdml_file,
         pos = end + 2;
     }
 
+    // Also check <polycone> elements.  Coaxial and/or bulletized crystals are
+    // exported as a single polycone (a surface of revolution) rather than a
+    // tube, so the bounds come from the widest rmax and the z-plane span.
+    // Unlike <tube>, whose z attribute is a full height about its own centre,
+    // polycone z-planes are already in the solid's local frame.
+    pos = 0;
+    while ((pos = content.find("<polycone", pos)) != std::string::npos) {
+        size_t end = content.find("</polycone>", pos);
+        if (end == std::string::npos) break;
+        std::string block = content.substr(pos, end - pos);
+
+        std::string name = parse_name(block.substr(0, block.find('>')));
+        if (name.find("World") != std::string::npos ||
+            name.find("world") != std::string::npos) {
+            pos = end + 1;
+            continue;
+        }
+
+        double z_lo = 0.0, z_hi = 0.0;
+        bool first = true;
+        size_t zp = 0;
+        while ((zp = block.find("<zplane", zp)) != std::string::npos) {
+            size_t zend = block.find("/>", zp);
+            if (zend == std::string::npos) break;
+            std::string tag = block.substr(zp, zend - zp);
+
+            double rmax = parse_attr(tag, "rmax");
+            double z    = parse_attr(tag, "z");
+            if (rmax > max_r) max_r = rmax;
+            if (first) { z_lo = z_hi = z; first = false; }
+            else { z_lo = std::min(z_lo, z); z_hi = std::max(z_hi, z); }
+
+            zp = zend + 2;
+        }
+        // Express as a full height, matching how <tube> z is treated above.
+        if (!first && (z_hi - z_lo) > max_z) max_z = z_hi - z_lo;
+
+        pos = end + 1;
+    }
+
     // Also check <box> elements for box detectors.
     // Skip the WorldBox solid.
     pos = 0;
@@ -285,6 +337,7 @@ int main(int argc, char** argv) {
     bool entry_diag_mode = false;
     bool low_cut = false;
     bool vis_mode = false;
+    bool vis_batch = false;
     double bin_width_keV = 1.0;
     double fep_precision_target = 0.0; // 0 = disabled
     bool correlated_gamma = false; // --correlated-gamma: enable G4 gamma-gamma angular correlation
@@ -296,6 +349,7 @@ int main(int argc, char** argv) {
         if (std::string(argv[i]) == "--entry-diag") entry_diag_mode = true;
         if (std::string(argv[i]) == "--lowcut") low_cut = true;
         if (std::string(argv[i]) == "--vis") vis_mode = true;
+        if (std::string(argv[i]) == "--vis-batch") vis_batch = true;
         if (std::string(argv[i]) == "--correlated-gamma") correlated_gamma = true;
         if (std::string(argv[i]) == "--bin-width" && i + 1 < argc) {
             bin_width_keV = std::atof(argv[++i]);
@@ -306,6 +360,17 @@ int main(int argc, char** argv) {
     }
 
     // Build run manager (Serial mode).
+    //
+    // NOTE for visualization: do NOT use the RayTracer driver from this
+    // executable.  In an MT-enabled GEANT4, G4RayTracerViewer unconditionally
+    // instantiates G4TheMTRayTracer, whose StoreUserActions() dereferences
+    // G4RunManagerFactory::GetMTMasterRunManager() -- null here -- and
+    // segfaults; switching this manager to MT only trades that for RayTracer's
+    // worker threads having no primary generator, since this harness sets user
+    // actions directly rather than through a G4VUserActionInitialization.  Use
+    // the file-writing drivers (VRML2FILE, HepRepFile) instead: they traverse
+    // the geometry and write G4's own polyhedron for each solid without
+    // tracking anything.  See macros/vis_crystal_vrml.mac.
     auto* run_manager = G4RunManagerFactory::CreateRunManager(
         G4RunManagerType::Serial);
 
@@ -432,7 +497,19 @@ int main(int argc, char** argv) {
     // Execute GPS macro (or in cone-bias mode, the macro's /run/beamOn triggers events).
     G4UImanager* ui = G4UImanager::GetUIpointer();
 
-    if (vis_mode) {
+    if (vis_batch) {
+        // Headless visualization: run the /vis/ macro and exit.  No
+        // G4UIExecutive, so there is no window and no session to close --
+        // usable over ssh and from scripts.  Use a file-writing driver
+        // (VRML2FILE); it writes G4's own polyhedron for each solid, which is
+        // what makes it a real check of the exported geometry rather than of
+        // the GDML parser alone.  RayTracer is not usable here -- see the run
+        // manager comment above.
+        auto* vis_manager = new G4VisExecutive;
+        vis_manager->Initialize();
+        ui->ApplyCommand("/control/execute " + macro_file);
+        delete vis_manager;
+    } else if (vis_mode) {
         // Interactive visualization mode.
         // G4UIExecutive MUST be created first so Qt application context exists
         // before G4VisExecutive tries to register Qt-based OpenGL drivers.

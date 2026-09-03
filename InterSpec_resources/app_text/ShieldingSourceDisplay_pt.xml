@@ -109,7 +109,6 @@
   <message id="ssd-calc-log-html-title">Log de Cálculo</message>
   <message id="ssd-template-text-log">Log Padrão (Texto)</message>
   <message id="ssd-template-html-report">Relatório de Ajuste de Atividade (HTML)</message>
-  <message id="ssd-template-deprecated-txt">Txt Obsoleto</message>
   <message id="ssd-no-fit-results">Nenhum resultado de ajuste disponível para exibir.</message>
   <message id="ssd-error-creating-html-log">Erro ao criar log de cálculo HTML: {1}</message>
   <message id="ssd-err-opening-import-model">Erro ao abrir Modelo de Ajuste de Blindagem de Fonte enviado: {1}</message>

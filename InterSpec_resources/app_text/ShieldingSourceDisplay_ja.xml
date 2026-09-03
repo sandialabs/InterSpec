@@ -106,7 +106,6 @@
   <message id="ssd-calc-log-html-title">計算ログ</message>
   <message id="ssd-template-text-log">標準ログ（テキスト）</message>
   <message id="ssd-template-html-report">放射能フィットレポート (HTML)</message>
-  <message id="ssd-template-deprecated-txt">非推奨テキスト</message>
   <message id="ssd-no-fit-results">表示可能なフィット結果がありません。</message>
   <message id="ssd-error-creating-html-log">HTML計算ログ作成エラー: {1}</message>
   <message id="ssd-err-opening-import-model">アップロードされた線源遮蔽フィットモデルの読み込みエラー: {1}</message>

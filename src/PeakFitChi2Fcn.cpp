@@ -55,6 +55,8 @@ static_assert( int(PeakFitChi2Fcn::SkewPar0)         == int(PeakDef::SkewPar0), 
 static_assert( int(PeakFitChi2Fcn::SkewPar1)         == int(PeakDef::SkewPar1), "PeakFitChi2Fcn::SkewPar1 != PeakDef::SkewPar1" );
 static_assert( int(PeakFitChi2Fcn::SkewPar2)         == int(PeakDef::SkewPar2), "PeakFitChi2Fcn::SkewPar2 != PeakDef::SkewPar2" );
 static_assert( int(PeakFitChi2Fcn::SkewPar3)         == int(PeakDef::SkewPar3), "PeakFitChi2Fcn::SkewPar3 != PeakDef::SkewPar3" );
+static_assert( int(PeakFitChi2Fcn::SkewPar4)         == int(PeakDef::SkewPar4), "PeakFitChi2Fcn::SkewPar4 != PeakDef::SkewPar4" );
+static_assert( int(PeakFitChi2Fcn::SkewPar5)         == int(PeakDef::SkewPar5), "PeakFitChi2Fcn::SkewPar5 != PeakDef::SkewPar5" );
 static_assert( int(PeakFitChi2Fcn::Chi2DOF)          == int(PeakDef::Chi2DOF), "PeakFitChi2Fcn::Chi2DOF != PeakDef::Chi2DOF" );
 
 
@@ -376,6 +378,8 @@ size_t PeakFitChi2Fcn::parametersToPeaks( std::vector<PeakDef> &peaks,
       case PeakDef::ExpGaussExp:
       case PeakDef::DoubleSidedCrystalBall:
       case PeakDef::VoigtPlusBortel:
+      case PeakDef::GadrasGeneric:
+      case PeakDef::GadrasCZT:
         valid_skew_type = true;
         break;
     }//switch( skew_type_t )
@@ -2077,8 +2081,9 @@ void LinearProblemSubSolveChi2Fcn::addSkewParameters( ROOT::Minuit2::MnUserParam
         case PeakDef::NoSkew:   case PeakDef::Bortel:
         case PeakDef::DoubleBortel: case PeakDef::GaussPlusBortel:
         case PeakDef::GaussExp: case PeakDef::ExpGaussExp:
+        case PeakDef::GadrasGeneric: case PeakDef::GadrasCZT:
           break;
-          
+
         case PeakDef::CrystalBall:
         case PeakDef::DoubleSidedCrystalBall:
         {
@@ -2087,6 +2092,7 @@ void LinearProblemSubSolveChi2Fcn::addSkewParameters( ROOT::Minuit2::MnUserParam
             case PeakDef::Mean:           case PeakDef::Sigma:
             case PeakDef::GaussAmplitude: case PeakDef::NumCoefficientTypes:
             case PeakDef::Chi2DOF:
+            case PeakDef::SkewPar4:       case PeakDef::SkewPar5:
 
             case PeakDef::SkewPar0:
             case PeakDef::SkewPar2:

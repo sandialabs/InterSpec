@@ -26,6 +26,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "materials/Material.h"
 #include "geometry/Geometry.h"
 
@@ -64,6 +65,7 @@ BOOST_AUTO_TEST_CASE(distribution_shape_strongly_peaked) {
     // lambda << D: strong exponential, most activity near surface
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
 
     double half_length = 10.0;  // D = 20 cm
@@ -87,6 +89,7 @@ BOOST_AUTO_TEST_CASE(distribution_shape_nearly_uniform) {
     // lambda >> D: nearly uniform distribution
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
 
     double half_length = 5.0;   // D = 10 cm
@@ -101,6 +104,7 @@ BOOST_AUTO_TEST_CASE(distribution_shape_nearly_uniform) {
 
     // Compare with uniform distribution
     EfficiencyCalculator calc_uni;
+    calc_uni.set_fep_window_keV(kTestFepWindowKeV);
     calc_uni.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_uni.set_cylindrical_source(
         Eigen::Vector3d(0.0, 0.0, -(distance + half_length)),
@@ -122,6 +126,7 @@ BOOST_AUTO_TEST_CASE(small_lambda_higher_efficiency_than_uniform) {
 
     // Exponential with small lambda (concentrated near surface)
     EfficiencyCalculator calc_exp;
+    calc_exp.set_fep_window_keV(kTestFepWindowKeV);
     calc_exp.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_exp.set_cylindrical_source(
         Eigen::Vector3d(0.0, 0.0, -(distance + half_length)),
@@ -131,6 +136,7 @@ BOOST_AUTO_TEST_CASE(small_lambda_higher_efficiency_than_uniform) {
 
     // Uniform
     EfficiencyCalculator calc_uni;
+    calc_uni.set_fep_window_keV(kTestFepWindowKeV);
     calc_uni.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_uni.set_cylindrical_source(
         Eigen::Vector3d(0.0, 0.0, -(distance + half_length)),
@@ -155,6 +161,7 @@ BOOST_AUTO_TEST_SUITE(ExponentialInvariants)
 BOOST_AUTO_TEST_CASE(fep_leq_total) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_cylindrical_source(
         Eigen::Vector3d(0.0, 0.0, -15.0), 5.0, 5.0);
@@ -177,6 +184,7 @@ BOOST_AUTO_TEST_CASE(exponential_efficiency_geq_uniform_with_source_material) {
     double half_length = 10.0;
 
     EfficiencyCalculator calc_exp;
+    calc_exp.set_fep_window_keV(kTestFepWindowKeV);
     calc_exp.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_exp.set_cylindrical_source(
         Eigen::Vector3d(0.0, 0.0, -(distance + half_length)),
@@ -186,6 +194,7 @@ BOOST_AUTO_TEST_CASE(exponential_efficiency_geq_uniform_with_source_material) {
     auto res_exp = calc_exp.compute(precision_config(662.0, 0.01));
 
     EfficiencyCalculator calc_uni;
+    calc_uni.set_fep_window_keV(kTestFepWindowKeV);
     calc_uni.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_uni.set_cylindrical_source(
         Eigen::Vector3d(0.0, 0.0, -(distance + half_length)),
@@ -204,6 +213,7 @@ BOOST_AUTO_TEST_CASE(rectangular_source_exponential) {
     // Verify exponential depth works with rectangular sources too
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_rectangular_source(
         Eigen::Vector3d(0.0, 0.0, -15.0),
@@ -223,6 +233,7 @@ BOOST_AUTO_TEST_CASE(reset_to_uniform) {
     double half_length = 5.0;
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_cylindrical_source(
         Eigen::Vector3d(0.0, 0.0, -(distance + half_length)),
@@ -233,6 +244,7 @@ BOOST_AUTO_TEST_CASE(reset_to_uniform) {
     auto res_reset = calc.compute(precision_config(662.0));
 
     EfficiencyCalculator calc_uni;
+    calc_uni.set_fep_window_keV(kTestFepWindowKeV);
     calc_uni.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_uni.set_cylindrical_source(
         Eigen::Vector3d(0.0, 0.0, -(distance + half_length)),

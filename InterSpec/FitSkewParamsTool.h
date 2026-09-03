@@ -134,9 +134,10 @@ protected:
   // Controls
   Wt::WComboBox *m_skewTypeCombo;
   Wt::WContainerWidget *m_paramsDiv;
-  NativeFloatSpinBox *m_lowerSpin[4];
-  NativeFloatSpinBox *m_upperSpin[4];
-  Wt::WCheckBox *m_fitCb[4];
+  // GADRAS skew types use 6 parameters; other types use 4 or fewer.
+  NativeFloatSpinBox *m_lowerSpin[6];
+  NativeFloatSpinBox *m_upperSpin[6];
+  Wt::WCheckBox *m_fitCb[6];
   Wt::WCheckBox *m_updatePeaksCb;
   Wt::WPushButton *m_fitBtn;
   Wt::WText *m_statusText;

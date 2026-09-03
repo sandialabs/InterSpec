@@ -1,0 +1,63 @@
+<?xml version="1.0" encoding="utf-8"?>
+<angle generator="ANGLE" version="5.0" build="5.0.0.480" units="mm">
+  <detector type="NaI" name="nai-3x3" description="3x3 NaI">
+    <crystal height="76.2" radius="38.1" />
+    <reflectingLayer topThickness="1.6" sideThickness="1.6">
+      <material name="Aluminium oxide" />
+    </reflectingLayer>
+    <opticalCoupling thickness="2">
+      <material name="Silicone" />
+    </opticalCoupling>
+    <photomultiplierTube>
+      <wall thickness="1">
+        <material name="Glass" />
+      </wall>
+      <window thickness="2">
+        <material name="Glass" />
+      </window>
+    </photomultiplierTube>
+    <endCap topThickness="0.5" sideThickness="0.5">
+      <material name="Aluminium" />
+    </endCap>
+    <vacuum topThickness="0.5" sideThickness="0.5" />
+    <housing>
+      <sideInner thickness="0" />
+      <sideOuter thickness="0" />
+      <topLower thickness="0" />
+      <topUpper thickness="0" />
+    </housing>
+  </detector>
+  <geometry type="General" name="" description="">
+    <holder outerRadius="45" height="250">
+      <cap thickness="0" />
+      <wall thickness="0" />
+    </holder>
+  </geometry>
+  <source radius="1.5" height="0" />
+  <precision>1</precision>
+  <referenceEfficiencyCurve name="Eff_25cm" description="fixture">
+    <experimentalPoints>
+      <point energy="59.5" efficiency="0.0110" />
+      <point energy="122.1" efficiency="0.0240" />
+      <point energy="661.7" efficiency="0.00800" />
+      <point energy="1332.5" efficiency="0.00480" />
+    </experimentalPoints>
+    <regions>
+      <region start="50" end="1500" polynomOrder="3" />
+    </regions>
+    <detector name="nai-3x3" />
+    <geometry type="General" name="" description="">
+      <holder outerRadius="45" height="250">
+        <cap thickness="0" />
+        <wall thickness="0" />
+      </holder>
+    </geometry>
+    <source radius="1.5" height="0" />
+  </referenceEfficiencyCurve>
+  <results>
+    <result energy="59.5" solidAngle="2.5" solidAnglePrecision="0.4" efficiency="0.0110" efficiencyPrecision="1.01" />
+    <result energy="122.1" solidAngle="2.8" solidAnglePrecision="0.4" efficiency="0.0240" efficiencyPrecision="1.01" />
+    <result energy="661.7" solidAngle="2.1" solidAnglePrecision="0.4" efficiency="0.00800" efficiencyPrecision="1.01" />
+    <result energy="1332.5" solidAngle="1.8" solidAnglePrecision="0.4" efficiency="0.00480" efficiencyPrecision="1.01" />
+  </results>
+</angle>

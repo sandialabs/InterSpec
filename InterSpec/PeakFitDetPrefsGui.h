@@ -117,13 +117,13 @@ protected:
   /** Container for the dynamically generated skew parameter rows. */
   Wt::WContainerWidget *m_skewParamsDiv;
 
-  /** Lower-energy spin boxes for skew params (index 0..3). May be nullptr if
-   the parameter is not used by the current skew type.
+  /** Lower-energy spin boxes for skew params (index 0..5; GADRAS types use 6). May be nullptr
+   if the parameter is not used by the current skew type.
    */
-  NativeFloatSpinBox *m_lowerSkewSpin[4];
+  NativeFloatSpinBox *m_lowerSkewSpin[6];
 
-  /** Upper-energy spin boxes for skew params (index 0..3). */
-  NativeFloatSpinBox *m_upperSkewSpin[4];
+  /** Upper-energy spin boxes for skew params (index 0..5; GADRAS types use 6). */
+  NativeFloatSpinBox *m_upperSkewSpin[6];
 
   /** Checkbox for ROI-independent skew. */
   Wt::WCheckBox *m_roiIndepCb;

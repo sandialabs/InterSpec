@@ -903,6 +903,8 @@ std::ostream &operator<<( std::ostream &stream, const PeakDef &peak )
          << ", Skew1=" << peak.m_coefficients[PeakDef::SkewPar1]
          << ", Skew2=" << peak.m_coefficients[PeakDef::SkewPar2]
          << ", Skew3=" << peak.m_coefficients[PeakDef::SkewPar3]
+         << ", Skew4=" << peak.m_coefficients[PeakDef::SkewPar4]
+         << ", Skew5=" << peak.m_coefficients[PeakDef::SkewPar5]
          << std::flush;
   return stream;
 }//std::ostream &operator<<( std::ostream &stream, const PeakDef &peak )
@@ -975,6 +977,7 @@ void PeakDef::equalEnough( const PeakDef &lhs, const PeakDef &rhs )
     {
       case PeakDef::SkewPar0: case PeakDef::SkewPar1:
       case PeakDef::SkewPar2: case PeakDef::SkewPar3:
+      case PeakDef::SkewPar4: case PeakDef::SkewPar5:
       {
         const int skew_par_num = static_cast<int>(t) - static_cast<int>(PeakDef::SkewPar0);
         const int nskew = static_cast<int>( PeakDef::num_skew_parameters( lhs.m_skewType ));
@@ -1296,9 +1299,11 @@ void PeakDef::reset()
       case PeakDef::SkewPar1:
       case PeakDef::SkewPar2:
       case PeakDef::SkewPar3:
+      case PeakDef::SkewPar4:
+      case PeakDef::SkewPar5:
         m_fitFor[t] = true;
       break;
-        
+
       case PeakDef::Chi2DOF:
       case PeakDef::NumCoefficientTypes:
         m_fitFor[t] = false;
@@ -1351,6 +1356,8 @@ const char *PeakDef::to_string( const CoefficientType type )
     case PeakDef::SkewPar1:            return "Skew1";
     case PeakDef::SkewPar2:            return "Skew2";
     case PeakDef::SkewPar3:            return "Skew3";
+    case PeakDef::SkewPar4:            return "Skew4";
+    case PeakDef::SkewPar5:            return "Skew5";
     case PeakDef::Chi2DOF:             return "Chi2";
     case PeakDef::NumCoefficientTypes: return "";
   }//switch( type )
@@ -1377,6 +1384,8 @@ const char *PeakDef::to_string( const SkewType type )
     case PeakDef::ExpGaussExp:            return "ExpGaussExp";
     case PeakDef::DoubleSidedCrystalBall: return "DoubleSidedCrystalBall";
     case PeakDef::VoigtPlusBortel:        return "VoigtPlusExGauss";
+    case PeakDef::GadrasGeneric:          return "GadrasGeneric";
+    case PeakDef::GadrasCZT:              return "GadrasCZT";
   }//switch( skew_type )
 
   assert( 0 );
@@ -1403,6 +1412,8 @@ const char *PeakDef::to_label( const SkewType type )
     case PeakDef::ExpGaussExp:            return "ExpGaussExp";
     case PeakDef::DoubleSidedCrystalBall: return "Double Crystal Ball";
     case PeakDef::VoigtPlusBortel:        return "Voigt+Exp*Gauss";
+    case PeakDef::GadrasGeneric:          return "GADRAS (generic)";
+    case PeakDef::GadrasCZT:              return "GADRAS (CZT/CdTe)";
   }//switch( skew_type )
 
   assert( 0 );
@@ -1462,6 +1473,17 @@ PeakDef::SkewType PeakDef::skew_from_string( const string &skew_type_str )
           || SpecUtils::iequals_ascii(skew_type_str,"VoigtBortel")
           || SpecUtils::iequals_ascii(skew_type_str,"Voigt+Exp*Gauss") )
     return PeakDef::SkewType::VoigtPlusBortel;
+
+  // GADRAS peak shapes
+  if( SpecUtils::iequals_ascii(skew_type_str,"GadrasGeneric")
+          || SpecUtils::iequals_ascii(skew_type_str,"GADRAS (generic)")
+          || SpecUtils::iequals_ascii(skew_type_str,"GadrasGen") )
+    return PeakDef::SkewType::GadrasGeneric;
+
+  if( SpecUtils::iequals_ascii(skew_type_str,"GadrasCZT")
+          || SpecUtils::iequals_ascii(skew_type_str,"GADRAS (CZT/CdTe)")
+          || SpecUtils::iequals_ascii(skew_type_str,"GadrasCdTe") )
+    return PeakDef::SkewType::GadrasCZT;
 
 
   throw runtime_error( "Invalid peak skew type: " + string(skew_type_str) );
@@ -1668,6 +1690,45 @@ bool PeakDef::skew_parameter_range( const SkewType skew_type, const CoefficientT
 
       break;
     }//case SkewType::DoubleBortel:
+
+    case SkewType::GadrasGeneric:
+    case SkewType::GadrasCZT:
+    {
+      // SkewPar0=low_skew, SkewPar1=high_skew (fittable amplitudes, GADRAS magnitudes @ 661 keV).
+      // SkewPar2/3 = low/high skew power (energy-dependence exponent, fixed detector characteristic).
+      // SkewPar4/5 = low/high skew extent (tail slope shaping, fixed detector characteristic).
+      switch( coef )
+      {
+        case CoefficientType::SkewPar0: // low_skew amplitude
+        case CoefficientType::SkewPar1: // high_skew amplitude
+          starting_value = 5.0;
+          step_size = 0.5;
+          lower_value = 0.0;
+          upper_value = 100.0;
+          break;
+
+        case CoefficientType::SkewPar2: // low_skew_power
+        case CoefficientType::SkewPar3: // high_skew_power
+          starting_value = 0.0;
+          step_size = 0.1;
+          lower_value = 0.0;
+          upper_value = 5.0;
+          break;
+
+        case CoefficientType::SkewPar4: // low_skew_extent
+        case CoefficientType::SkewPar5: // high_skew_extent
+          starting_value = 0.0;
+          step_size = 0.5;
+          lower_value = -10.0;
+          upper_value = 10.0;
+          break;
+
+        default:
+          return false;
+      }//switch( coef )
+
+      break;
+    }//case SkewType::GadrasGeneric, SkewType::GadrasCZT:
   }//switch( skew_type )
 
   return true;
@@ -1727,6 +1788,14 @@ bool PeakDef::skew_no_skew_value( const SkewType skew_type, const CoefficientTyp
       // Always a sum of two exponential-Gaussian tails - there is no pure-Gaussian limit, so do not
       //  offer a skew removal for it.
       return false;
+
+    case SkewType::GadrasGeneric:
+    case SkewType::GadrasCZT:
+      // GADRAS shapes carry an intrinsic, energy-dependent skew (the low/high tail amplitudes are
+      //  fixed detector characteristics, not a generic Gaussian-plus-skew add-on), and do not use
+      //  InterSpec's generic skew machinery - so there is no pure-Gaussian value to snap to.  Do
+      //  not offer generic skew removal for them.
+      return false;
   }//switch( skew_type )
 
   return false;
@@ -1751,6 +1820,8 @@ size_t PeakDef::num_skew_parameters( const SkewType skew_type )
     case ExpGaussExp:            return 2;
     case DoubleSidedCrystalBall: return 4;
     case VoigtPlusBortel:        return 3; // gamma_lor, R, tau
+    case GadrasGeneric:          return 6; // low_skew, high_skew, low/high power, low/high extent
+    case GadrasCZT:              return 6; // low_skew, high_skew, low/high power, low/high extent
   }//switch ( skew_type )
 
   assert( 0 );
@@ -1804,11 +1875,48 @@ bool PeakDef::is_energy_dependent( const SkewType skew_type, const CoefficientTy
       // R (SkewPar1) and tau (SkewPar2) are energy dependent for RelActAuto
       return ((coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1)
               || (coef == CoefficientType::SkewPar2));
+
+    case SkewType::GadrasGeneric:
+    case SkewType::GadrasCZT:
+      // The GADRAS shape applies its energy dependence intrinsically (via the skew "power" terms and
+      // each peak's own energy), so we do NOT use InterSpec's generic energy-dependent-skew machinery -
+      // doing so would double-count the energy dependence.
+      return false;
   }//switch( skew_type )
 
   assert( 0 );
   return false;
 }//bool is_energy_dependent( const SkewType skew_type, const CoefficientType coefficient )
+
+
+bool PeakDef::skew_parameter_fit_by_default( const SkewType skew_type, const CoefficientType coef )
+{
+  switch( skew_type )
+  {
+    case SkewType::GadrasGeneric:
+    case SkewType::GadrasCZT:
+      // Only the two amplitude parameters are fit by default; the powers/extents are fixed
+      // detector characteristics.
+      return ((coef == CoefficientType::SkewPar0) || (coef == CoefficientType::SkewPar1));
+
+    case NoSkew:
+    case Bortel:
+    case GaussExp:
+    case CrystalBall:
+    case ExpGaussExp:
+    case DoubleSidedCrystalBall:
+    case VoigtPlusBortel:
+    case GaussPlusBortel:
+    case DoubleBortel:
+    case NumSkewType:
+      break;
+  }//switch( skew_type )
+
+  // Default: any parameter within the skew type's parameter count is fit.
+  const size_t par_num = static_cast<size_t>(coef) - static_cast<size_t>(CoefficientType::SkewPar0);
+  return ((coef >= CoefficientType::SkewPar0) && (coef <= CoefficientType::SkewPar5)
+          && (par_num < num_skew_parameters(skew_type)));
+}//bool skew_parameter_fit_by_default(...)
 
 
 double PeakDef::extract_energy_from_peak_source_string( std::string &str )
@@ -2287,7 +2395,9 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
   // For backward compatibility, write version 0.2 for peaks without newer skew types
   const bool uses_new_skew = (m_skewType == SkewType::VoigtPlusBortel)
                              || (m_skewType == SkewType::GaussPlusBortel)
-                             || (m_skewType == SkewType::DoubleBortel);
+                             || (m_skewType == SkewType::DoubleBortel)
+                             || (m_skewType == SkewType::GadrasGeneric)
+                             || (m_skewType == SkewType::GadrasCZT);
   const int majorVersion = uses_new_skew ? PeakDef::sm_xmlSerializationMajorVersion
                                          : pre_Voigt_serialization_major;
   const int minorVersion = uses_new_skew ? PeakDef::sm_xmlSerializationMinorVersion
@@ -2335,6 +2445,8 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
     case ExpGaussExp:            val = "ExpGaussExp";            break;
     case DoubleSidedCrystalBall: val = "DoubleSidedCrystalBall"; break;
     case VoigtPlusBortel:        val = "VoigtPlusBortel";        break;
+    case GadrasGeneric:          val = "GadrasGeneric";          break;
+    case GadrasCZT:              val = "GadrasCZT";              break;
   }//switch( m_skewType )
 
   node = doc->allocate_node( node_element, "Skew", val );
@@ -2372,7 +2484,9 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
            && (m_skewType != ExpGaussExp)
            && (m_skewType != VoigtPlusBortel)
            && (m_skewType != GaussPlusBortel)
-           && (m_skewType != DoubleBortel) )
+           && (m_skewType != DoubleBortel)
+           && (m_skewType != GadrasGeneric)
+           && (m_skewType != GadrasCZT) )
         {
           label = nullptr;
         }
@@ -2383,12 +2497,23 @@ rapidxml::xml_node<char> *PeakDef::toXml( rapidxml::xml_node<char> *parent,
           extra_label = "LandauSigma";
         if( (m_skewType != DoubleSidedCrystalBall)
            && (m_skewType != VoigtPlusBortel)
-           && (m_skewType != DoubleBortel) )
+           && (m_skewType != DoubleBortel)
+           && (m_skewType != GadrasGeneric)
+           && (m_skewType != GadrasCZT) )
           label = nullptr;
         break;
 
       case SkewPar3:
-        if( m_skewType != DoubleSidedCrystalBall )
+        if( (m_skewType != DoubleSidedCrystalBall)
+           && (m_skewType != GadrasGeneric)
+           && (m_skewType != GadrasCZT) )
+          label = nullptr;
+        break;
+
+      case SkewPar4:
+      case SkewPar5:
+        if( (m_skewType != GadrasGeneric)
+           && (m_skewType != GadrasCZT) )
           label = nullptr;
         break;
     }//switch( t )
@@ -2698,6 +2823,10 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
     m_skewType = GaussPlusBortel;
   else if( compare(node->value(),node->value_size(),"DoubleBortel",12,false) )
     m_skewType = DoubleBortel;
+  else if( compare(node->value(),node->value_size(),"GadrasGeneric",13,false) )
+    m_skewType = GadrasGeneric;
+  else if( compare(node->value(),node->value_size(),"GadrasCZT",9,false) )
+    m_skewType = GadrasCZT;
   else
     throw runtime_error( "Invalid peak skew type" );
   
@@ -2721,16 +2850,24 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
         want_par = ((m_skewType == CrystalBall) || (m_skewType == DoubleSidedCrystalBall)
                     || (m_skewType == ExpGaussExp)
                     || (m_skewType == VoigtPlusBortel) || (m_skewType == GaussPlusBortel)
-                    || (m_skewType == DoubleBortel));
+                    || (m_skewType == DoubleBortel)
+                    || (m_skewType == GadrasGeneric) || (m_skewType == GadrasCZT));
         break;
 
       case SkewPar2:
         want_par = ((m_skewType == DoubleSidedCrystalBall)
-                    || (m_skewType == VoigtPlusBortel) || (m_skewType == DoubleBortel));
+                    || (m_skewType == VoigtPlusBortel) || (m_skewType == DoubleBortel)
+                    || (m_skewType == GadrasGeneric) || (m_skewType == GadrasCZT));
         break;
 
       case SkewPar3:
-        want_par = (m_skewType == DoubleSidedCrystalBall);
+        want_par = ((m_skewType == DoubleSidedCrystalBall)
+                    || (m_skewType == GadrasGeneric) || (m_skewType == GadrasCZT));
+        break;
+
+      case SkewPar4:
+      case SkewPar5:
+        want_par = ((m_skewType == GadrasGeneric) || (m_skewType == GadrasCZT));
         break;
     }//switch( t )
     
@@ -2762,6 +2899,7 @@ void PeakDef::fromXml( const rapidxml::xml_node<char> *peak_node,
       {
         case Mean: case Sigma: case GaussAmplitude:
         case SkewPar0: case SkewPar1: case SkewPar2: case SkewPar3:
+        case SkewPar4: case SkewPar5:
           throw runtime_error( "No fit attribute for " + string(label) );
           break;
           
@@ -3431,6 +3569,16 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         answer << q << "DoubleBortel" << q << ",";
         dist_norm = 1.0;  //Distribution should already be normed
         break;
+
+      case GadrasGeneric:
+        answer << q << "GadrasGeneric" << q << ",";
+        dist_norm = 1.0;  //Distribution should already be normed
+        break;
+
+      case GadrasCZT:
+        answer << q << "GadrasCZT" << q << ",";
+        dist_norm = 1.0;  //Distribution should already be normed
+        break;
     }//switch( p.type() )
 
     if( (p.skewType() != PeakDef::NoSkew) && (!IsNan(dist_norm) && !IsInf(dist_norm)) )
@@ -3573,6 +3721,25 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
               vis_limits.second = p.upperX();
             }//try / catch
             break; //case DoubleBortel:
+
+          case GadrasGeneric:
+          case GadrasCZT:
+            try
+            {
+              const PeakDists::GadrasMaterial mat = (p.skewType() == GadrasCZT)
+                                    ? PeakDists::GadrasMaterial::CZT_CdTe
+                                    : PeakDists::GadrasMaterial::Generic;
+              double skew[6];
+              for( int i = 0; i < 6; ++i )
+                skew[i] = p.coefficient( CoefficientType(CoefficientType::SkewPar0 + i) );
+
+              vis_limits = PeakDists::gadras_coverage_limits( p.mean(), p.sigma(), skew, mat, hidden_frac );
+            }catch( std::exception & )
+            {
+              vis_limits.first = p.lowerX();
+              vis_limits.second = p.upperX();
+            }//try / catch
+            break; //case GadrasGeneric, GadrasCZT:
         }//switch( p.skewType() )
         
         answer << q << "visRange" << q << ":[" << vis_limits.first << "," << vis_limits.second << "],";
@@ -3601,11 +3768,13 @@ std::string PeakDef::gaus_peaks_to_json(const std::vector<std::shared_ptr<const 
         case SkewPar1:
         case SkewPar2:
         case SkewPar3:
+        case SkewPar4:
+        case SkewPar5:
         {
           double lower, upper, starting, step;
           if( !PeakDef::skew_parameter_range( p.m_skewType, t, lower, upper, starting, step ) )
             continue;
-          
+
           break;
         }//case A Skew Parameter
           
@@ -4578,6 +4747,7 @@ void PeakDef::inheritUserSelectedOptions( const PeakDef &parent,
         case PeakDef::GaussAmplitude:
         case PeakDef::SkewPar0: case PeakDef::SkewPar1:
         case PeakDef::SkewPar2: case PeakDef::SkewPar3:
+        case PeakDef::SkewPar4: case PeakDef::SkewPar5:
           m_coefficients[t]  = parent.m_coefficients[t];
           m_uncertainties[t] = parent.m_uncertainties[t];
         break;
@@ -4855,6 +5025,26 @@ double PeakDef::lowerX() const
         return mean - (8.0*sigma + std::max(tau1, tau2)*sigma*10.0);
       }
     }//case DoubleBortel:
+
+    case GadrasGeneric:
+    case GadrasCZT:
+    {
+      const PeakDists::GadrasMaterial mat = (m_skewType == GadrasCZT)
+                            ? PeakDists::GadrasMaterial::CZT_CdTe
+                            : PeakDists::GadrasMaterial::Generic;
+      double skew[6];
+      for( int i = 0; i < 6; ++i )
+        skew[i] = m_coefficients[PeakDef::SkewPar0 + i];
+
+      try
+      {
+        const auto limits = PeakDists::gadras_coverage_limits( mean, sigma, skew, mat, 0.05 );
+        return limits.first;
+      }catch( std::exception & )
+      {
+        return mean - 8.0*sigma;
+      }
+    }//case GadrasGeneric, GadrasCZT:
   }//switch( m_skewType )
 
   assert( 0 );
@@ -4992,6 +5182,26 @@ double PeakDef::upperX() const
         return mean + 8.0*sigma;
       }
     }//case DoubleBortel:
+
+    case GadrasGeneric:
+    case GadrasCZT:
+    {
+      const PeakDists::GadrasMaterial mat = (m_skewType == GadrasCZT)
+                            ? PeakDists::GadrasMaterial::CZT_CdTe
+                            : PeakDists::GadrasMaterial::Generic;
+      double skew[6];
+      for( int i = 0; i < 6; ++i )
+        skew[i] = m_coefficients[PeakDef::SkewPar0 + i];
+
+      try
+      {
+        const auto limits = PeakDists::gadras_coverage_limits( mean, sigma, skew, mat, 0.05 );
+        return limits.second;
+      }catch( std::exception & )
+      {
+        return mean + 8.0*sigma;
+      }
+    }//case GadrasGeneric, GadrasCZT:
   }//switch( m_skewType )
 
   assert( 0 );
@@ -5069,6 +5279,17 @@ double PeakDef::gauss_integral( const double x0, const double x1 ) const
                                                     m_coefficients[CoefficientType::SkewPar2],
                                                     x0, x1 );
       break;
+
+    case SkewType::GadrasGeneric:
+    case SkewType::GadrasCZT:
+    {
+      const PeakDists::GadrasMaterial mat = (m_skewType == SkewType::GadrasCZT)
+                            ? PeakDists::GadrasMaterial::CZT_CdTe
+                            : PeakDists::GadrasMaterial::Generic;
+      return amp*PeakDists::gadras_integral( mean, sigma,
+                                             m_coefficients + CoefficientType::SkewPar0,
+                                             mat, x0, x1 );
+    }
   };//enum SkewType
 
   assert( 0 );

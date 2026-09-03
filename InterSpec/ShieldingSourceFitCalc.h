@@ -287,6 +287,41 @@ namespace ShieldingSourceFitCalc
   };//struct FitShieldingInfo : ShieldingInfo
   
   
+  /** Which detector-efficiency model to apply to VOLUMETRIC (trace and
+   self-attenuating) sources during the activity/shielding integration.
+
+   The point-source path already branches on the DRF: a near-field/off-axis
+   CeeLo response is evaluated per-angle, else the legacy flat-disk solid
+   angle is used.  The volumetric integrand historically only ever used the
+   flat-disk solid angle (times the intrinsic efficiency), which is the
+   far-field approximation - wrong at short standoff and inconsistent with the
+   point path.  This selects which per-element efficiency the volumetric
+   integrand uses.
+   */
+  enum class VolumetricEffMethod : int
+  {
+    /** Pick the highest-fidelity method the DRF supports: MC transfer if the
+     DRF carries a full-MC CeeLo response, else EFFTRAN transfer if a transfer
+     anchor can be built from it, else flat-disk. */
+    Auto,
+
+    /** Evaluate the DRF's stored full-MC `ceelo::DetectorResponse` per element
+     (`eps_fep(energy,theta,phi,dist)`): near-field distance factor and
+     off-axis eta.  Falls back to FlatDisk (with a calc-log note) if the DRF
+     has no MC response. */
+    MCTransfer,
+
+    /** Build a deterministic EFFTRAN-style transfer response anchored on the
+     DRF's measured (or curve-sampled) efficiency, and evaluate it per element.
+     Falls back to FlatDisk (with a calc-log note) if no transfer anchor can be
+     built. */
+    EffTran,
+
+    /** Legacy behavior: flat-disk fractional solid angle times the intrinsic
+     efficiency; bit-for-bit unchanged from before this option existed. */
+    FlatDisk
+  };//enum class VolumetricEffMethod
+
   struct ShieldingSourceFitOptions
   {
     bool multiple_nucs_contribute_to_peaks = true;
@@ -355,6 +390,15 @@ namespace ShieldingSourceFitCalc
      Default false: the historical (uncorrected) behavior.
      */
     bool correct_for_cascade_summing = false;
+
+    /** The detector-efficiency model applied to volumetric sources; see
+     #VolumetricEffMethod.  Default #VolumetricEffMethod::Auto: use the
+     highest-fidelity method the DRF supports.  Absent from serialized XML
+     (older files) also resolves to Auto - but note the historical numerical
+     behavior was flat-disk, so Auto can change results for near-field CeeLo
+     DRFs relative to pre-option files.  Only volumetric sources are affected;
+     point sources are unchanged. */
+    VolumetricEffMethod volumetric_eff_method = VolumetricEffMethod::Auto;
 
 
     void serialize( rapidxml::xml_node<char> *parent_node ) const;
@@ -503,12 +547,15 @@ namespace ShieldingSourceFitCalc
     std::mutex m_mutex;
     
     enum class FitStatus{ UserCancelled, TimedOut, InvalidOther, InterMediate, Final };
-    FitStatus successful;
-    
-    double edm;  //estimated distance to minimum.
-    double chi2;
-    int num_fcn_calls;
-    unsigned int numDOF;
+    /** Default-initialized: callers build a stack `ModelFitResults` for the live (pre-fit) chart
+     (see ShieldingSourceDisplay::updateChi2ChartActual) and only fill some fields, so every scalar
+     must read as a defined "nothing computed yet" rather than whatever was on the stack. */
+    FitStatus successful = FitStatus::InvalidOther;
+
+    double edm = -1.0;  //estimated distance to minimum.
+    double chi2 = -1.0;
+    int num_fcn_calls = 0;
+    unsigned int numDOF = 0;
     std::vector<double> paramValues;
     std::vector<double> paramErrors;
     std::vector<std::string> errormsgs;
@@ -539,13 +586,29 @@ namespace ShieldingSourceFitCalc
     
     std::unique_ptr<const std::vector<GammaInteractionCalc::PeakResultPlotInfo>> peak_comparisons;
 
+    /** The GLS whitening matrix L^{-1} (row-major n x n, n = number of peaks in `peak_comparisons`)
+     used to fold the detector-efficiency covariance into the fit and into the displayed pulls -
+     see `ShieldingSourceChi2Fcn::expected_observed_chis`.  Empty when detector-efficiency
+     uncertainty was not accounted for, or the covariance was unusable (statistics-only pulls). */
+    std::vector<double> efficiency_whitening;
+
     /** Diagnosis of the per-peak pull ("chi") trend vs energy - fitted trend curve(s) and an
      interpretation (too much/little shielding, wrong effective atomic number).  May be null if
      the analysis could not be run.  See ShieldSourcePullTrend.h.
      */
     std::shared_ptr<const ShieldSourcePullTrend::TrendResult> pull_trend;
 
-    std::vector<std::string> peak_calc_log;
+    /** The volumetric-source detector-efficiency method actually used, after `Auto` (or a request
+     the DRF cannot honor) was resolved against the DRF - never `VolumetricEffMethod::Auto`.
+     Only meaningful when the model has a volumetric (self-attenuating or trace) source.
+     See `ShieldingSourceChi2Fcn::resolvedVolumetricEffMethod`. */
+    VolumetricEffMethod volumetric_eff_method = VolumetricEffMethod::FlatDisk;
+
+    /** Why `volumetric_eff_method` came out the way it did (e.g. "Auto -> MC transfer", or
+     "EFFTRAN transfer unavailable (...)"); empty when the requested method was used as-is.
+     Surfaced in the reports so a silent fallback is visible. */
+    std::string volumetric_eff_note;
+
     std::unique_ptr<const std::vector<GammaInteractionCalc::PeakDetail>> peak_calc_details;
     std::unique_ptr<const std::vector<GammaInteractionCalc::ShieldingDetails>> shield_calc_details;
     std::unique_ptr<const std::vector<GammaInteractionCalc::SourceDetails>> source_calc_details;

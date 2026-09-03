@@ -5,32 +5,37 @@
   -->
 
   <message id="mmr-geometry-title">Detector geometry</message>
-  <message id="mmr-options-title">Characterization</message>
+  <message id="mmr-options-title">Location Support</message>
   <message id="mmr-method">Method:</message>
   <message id="mmr-method-full-mc">Full MC characterization</message>
   <message id="mmr-method-quick-mc">Quick MC (transfer)</message>
-  <message id="mmr-method-curve-transfer">From measured curve (instant, no MC)</message>
-  <message id="mmr-tt-method">&lt;p&gt;How the parameterized response is built:&lt;/p&gt;
+  <message id="mmr-method-curve-transfer">No MC support (instant, from measured curve)</message>
+  <message id="mmr-tt-method">&lt;p&gt;How the response that answers off-axis, near-field and
+    other-distance queries is built.  All three use this detector&apos;s measured efficiency where it
+    has one - what differs is how much Monte Carlo backs the distance and angle dependence.&lt;/p&gt;
     &lt;ul&gt;
     &lt;li&gt;&lt;b&gt;Full MC characterization&lt;/b&gt; - Monte Carlo over the full
-    energy&#215;angle(&#215;distance) grid of the selected profile. Most accurate,
-    especially near the detector and off-axis; most run time.&lt;/li&gt;
+    energy&#215;angle(&#215;distance) grid of the selected profile, then corrected to the measured
+    efficiency (see &quot;Measured eff.&quot; below).  Most accurate, especially near the detector
+    and off-axis; most run time.&lt;/li&gt;
     &lt;li&gt;&lt;b&gt;Quick MC (transfer)&lt;/b&gt; - Monte Carlo only along the on-axis energy
     backbone (plus, optionally, a few source-angle anchors); the exact ray-traced
     geometry then carries the response to other distances and angles
-    (EFFTRAN-style efficiency transfer). Roughly a tenth of the Monte Carlo -
-    typically around a minute. On-axis accuracy is about 1% beyond a few
-    detector-widths; queries near contact or far off-axis are flagged and carry an
+    (EFFTRAN-style efficiency transfer).  Corrected to the measured efficiency the same way Full MC
+    is.  Roughly a tenth of the Monte Carlo - typically around a minute.  On-axis accuracy is about
+    1% beyond a few detector-widths; queries near contact or far off-axis are flagged and carry an
     honestly inflated uncertainty.&lt;/li&gt;
-    &lt;li&gt;&lt;b&gt;From measured curve&lt;/b&gt; - no Monte Carlo at all: the DRF&apos;s own
-    measured efficiency points (or its fitted curve) are anchored at their
-    measurement distance and transferred to other distances/angles through the
-    ray-traced geometry. Instant and deterministic - it rebuilds automatically as
-    you edit the geometry. The classic lab efficiency-transfer workflow, made 3-D
-    and Rayleigh-aware.&lt;/li&gt;
-    &lt;/ul&gt;</message>
-  <message id="mmr-upgrade-note">This DRF currently uses a quick transfer response; run a
-    Full MC characterization for the best near-field / off-axis accuracy.</message>
+    &lt;li&gt;&lt;b&gt;No MC support&lt;/b&gt; - no Monte Carlo at all: the measured efficiency points (or the
+    fitted curve) are anchored at their measurement distance and transferred to other
+    distances/angles through the ray-traced geometry - so here the measured efficiency IS the
+    anchor, rather than a correction applied to a computed response.  Instant and deterministic, and
+    it rebuilds automatically as you edit the geometry.  The classic lab efficiency-transfer
+    workflow, made 3-D and Rayleigh-aware.  Needs a measured efficiency to work from.&lt;/li&gt;
+    &lt;/ul&gt;
+    &lt;p&gt;With no method at all, a detector answers every distance with its on-axis efficiency scaled
+    by solid angle, and cannot answer off-axis at all.&lt;/p&gt;</message>
+  <message id="mmr-upgrade-note">Currently a quick transfer response; a Full MC characterization
+    is more accurate near-field and off-axis.</message>
   <message id="mmr-profile">Profile:</message>
   <message id="mmr-profile-general">General (default)</message>
   <message id="mmr-profile-farfield">Far-field only</message>
@@ -77,6 +82,19 @@
     &lt;p&gt;This is the &lt;i&gt;statistical&lt;/i&gt; precision only; the response&apos;s overall
     accuracy also depends on how finely the energy/angle/distance grids are placed,
     so tightening precision helps but has diminishing returns.&lt;/p&gt;</message>
+  <message id="mmr-grounding">Measured eff.:</message>
+  <message id="mmr-grounding-cb">Correct to this detector&apos;s measured efficiency</message>
+  <message id="mmr-tt-grounding">&lt;p&gt;A Monte-Carlo response says what a detector of this
+    &lt;em&gt;shape&lt;/em&gt; would do; the measured efficiency says what &lt;em&gt;this&lt;/em&gt; detector actually
+    does.  When checked, the generated response is corrected by an energy-dependent factor (and its
+    covariance) so it reproduces the measured efficiency, while the Monte Carlo keeps supplying the
+    distance and angle dependence.&lt;/p&gt;
+    &lt;p&gt;Un-check to get the raw computed response, uncorrected - useful for judging how well the
+    geometry alone reproduces the measurement.&lt;/p&gt;</message>
+  <message id="mmr-ground-points">Will be corrected to the {1} measured efficiency points this detector carries.</message>
+  <message id="mmr-ground-curve">Will be corrected to this detector&apos;s efficiency curve, sampled at {1} energies (lower quality than raw measured points).</message>
+  <message id="mmr-ground-none">This detector has no measured efficiency, so the response will be entirely Monte Carlo.</message>
+  <message id="mmr-ground-off">The response will be entirely Monte Carlo - not corrected to the measured efficiency.</message>
   <message id="mmr-anchor-angles">Off-axis anchors:</message>
   <message id="mmr-anchor-angles-1">On-axis only (fastest)</message>
   <message id="mmr-anchor-angles-3">3 angles (recommended)</message>
@@ -106,6 +124,7 @@
   <message id="mmr-estimate-transfer">About {1} Monte-Carlo nodes ({2} minute(s) or so) -
     a full characterization of this geometry would need about {3} nodes.</message>
   <message id="mmr-estimate-instant">No Monte Carlo - builds instantly from the measured curve.</message>
+  <message id="mmr-err-no-backbone">Could not build an efficiency curve from the generated response, so the detector was not changed: {1}</message>
   <message id="mmr-generate-btn">Generate Response</message>
   <message id="mmr-use-response-btn">Use Response</message>
   <message id="mmr-status-running">Running Monte Carlo...</message>
@@ -119,6 +138,7 @@
     distances beyond {1}; closer or well off-axis queries are flagged and carry an
     honestly inflated uncertainty.</message>
   <message id="mmr-status-stale">Geometry changed - generate again to update the response.</message>
+  <message id="mmr-status-existing">Showing the response already attached to this detector.</message>
 
   <message id="mmr-chart-title">Response preview</message>
   <message id="mmr-chart-mode">Show:</message>
@@ -145,9 +165,12 @@
   <message id="dgi-dim-length">Crystal length:</message>
   <message id="dgi-dim-width">Crystal width:</message>
   <message id="dgi-dim-height">Crystal height:</message>
+  <message id="dgi-bullet">Front edge fillet:</message>
+  <message id="dgi-bullet-ph">radius</message>
   <message id="dgi-bore">Bore (dia., depth):</message>
   <message id="dgi-bore-diam-ph">diameter</message>
   <message id="dgi-bore-depth-ph">depth</message>
+  <message id="dgi-bore-rounded">rounded tip</message>
   <message id="dgi-dead-layer">Dead layer (front, side):</message>
   <message id="dgi-dead-front-ph">front</message>
   <message id="dgi-dead-side-ph">side</message>
@@ -163,11 +186,23 @@
   <message id="dgi-ref-point">Distances measured from:</message>
   <message id="dgi-ref-endcap">Detector face (endcap front)</message>
   <message id="dgi-ref-crystal">Crystal face</message>
-  <message id="dgi-seeded-note">Crystal length is a guess (taken equal to the diameter) - please correct it.</message>
+  <message id="dgi-seeded-note">This detector has no geometry recorded, so only its diameter is known: the crystal length shown is a guess (taken equal to the diameter) and the crystal material is just the default. Please set both before generating a response.</message>
   <message id="dgi-err-missing">Please enter the {1}.</message>
   <message id="dgi-err-invalid">The {1} is not a valid distance.</message>
   <message id="dgi-err-bore">Please give both a bore diameter and depth (or neither).</message>
   <message id="dgi-err-bore-size">The bore must be smaller than the crystal.</message>
+  <message id="dgi-err-bore-shape">A bore hole only applies to cylindrical crystals.</message>
+  <message id="dgi-err-bore-invalid">The bore diameter and depth are not valid distances.</message>
+  <message id="dgi-err-bore-round">A rounded bore tip needs the bore to be at least as deep as its radius.</message>
+  <message id="dgi-err-bore-fillet">The bore ends inside the rounded front edge, where the crystal is narrower than the bore - reduce the bore diameter, the bore depth, or the fillet radius.</message>
+  <message id="dgi-err-bore-dead">The bore is wider than the active crystal - reduce the bore diameter or the side dead layer.</message>
+  <message id="dgi-err-dims">Please give the crystal dimensions.</message>
+  <message id="dgi-err-dead-thick">The dead layer is as thick as the crystal - reduce it.</message>
+  <message id="dgi-err-bullet-shape">A front edge fillet only applies to cylindrical crystals.</message>
+  <message id="dgi-err-bullet-invalid">The front edge fillet radius is not a valid distance.</message>
+  <message id="dgi-err-bullet-wide">The front edge fillet radius must be less than the crystal radius.</message>
+  <message id="dgi-err-bullet-long">The front edge fillet radius must be less than the crystal length.</message>
+  <message id="dgi-err-bullet-dead">The dead layer leaves no room for the front edge fillet - reduce the fillet radius or the dead layer.</message>
   <message id="dgi-err-layer">Each layer needs a material and a front and/or side thickness.</message>
   <message id="dgi-err-material">Material &apos;{1}&apos; was not found in the material database.</message>
 </messages>

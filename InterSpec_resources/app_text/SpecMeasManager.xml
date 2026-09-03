@@ -131,13 +131,30 @@
   <message id="smm-ecc-det-setback">Det. setback</message>
   <message id="smm-ecc-dist">Distance</message>
   <message id="smm-ecc-use-drf">Use DRF</message>
+  <message id="smm-further-options">Further options...</message>
   <message id="smm-ecc-error">Error creating DRF from ECC: {1}</message>
 
   <!-- Text for dialog when user drag-n-drop an ANGLE .outx file onto app -->
   <message id="smm-outx-curve">ANGLE Efficiency Calibration Curve DRF</message>
   <message id="smm-outx-error">Error creating DRF from ANGLE .outx: {1}</message>
+  <message id="smm-outx-generic-geom">Generic detector (physical geometry + reference)</message>
+  <message id="smm-outx-note">ANGLE file: {1}</message>
+  <message id="smm-outx-no-generic">This ANGLE file also contains the detector&apos;s physical model, but InterSpec cannot use it as a generic detector. {1}</message>
 
   <!-- Text for dialog when user drag-n-drop an efficiency CSV file onto app -->
+  <message id="smm-ecc-dat-ok">Valid Detector.dat - its FWHM and peak shape were taken too.</message>
+  <message id="smm-ecc-dat-ok-material">Valid Detector.dat ({1} crystal) - its FWHM and peak shape were taken too.</message>
+  <message id="smm-ecc-dat-err">Could not read that Detector.dat: {1}</message>
+  <message id="smm-gadras-dat-title">GADRAS Detector.dat</message>
+  <message id="smm-gadras-dat-txt">This file describes a detector&apos;s crystal - its shape, material, dead layer and window - along with its FWHM and peak shape, but it does not contain an efficiency. A Monte-Carlo characterization of the geometry can supply one.</message>
+  <message id="smm-gadras-dat-characterize">Characterize detector</message>
+  <message id="smm-gadras-dat-use">Use detector</message>
+  <message id="smm-gadras-dat-eff-label">Have its Efficiency.csv?</message>
+  <message id="smm-pair-drop-txt">Drop the file here, or click to browse.</message>
+  <message id="smm-gadras-dat-eff-ok">Efficiency curve loaded - this detector is ready to use.</message>
+  <message id="smm-gadras-dat-eff-ok-transfer">Efficiency loaded, and transferred through the geometry from Detector.dat - this detector can now answer off-axis and near-field, with no Monte Carlo needed.</message>
+  <message id="smm-gadras-dat-eff-err">Could not read that efficiency file: {1}</message>
+  <message id="smm-gadras-dat-no-geom">This Detector.dat could not be turned into a detector geometry: {1}</message>
   <message id="smm-eff-csv-curve">Efficiency CSV Curve DRF</message>
   <message id="smm-eff-csv-error">Error creating DRF from efficiency CSV: {1}</message>
   <message id="smm-eff-csv-det-dat-label">Detector.dat (optional)</message>

@@ -121,6 +121,22 @@ namespace
         if( paramIndex == 1 ){ labelId = "pe-label-skew-doublebortel-deltatau2"; tooltipId = "pe-tt-skew-doublebortel-deltatau2"; }
         if( paramIndex == 2 ){ labelId = "pe-label-skew-doublebortel-eta"; tooltipId = "pe-tt-skew-doublebortel-eta"; }
         return;
+
+      case PeakDef::GadrasGeneric:
+      case PeakDef::GadrasCZT:
+      {
+        // GADRAS types use 6 parameters (low/high skew, low/high power, low/high extent).
+        static const char * const s_gadras_label_ids[6] = {
+          "pe-label-skew-gadras-0", "pe-label-skew-gadras-1", "pe-label-skew-gadras-2",
+          "pe-label-skew-gadras-3", "pe-label-skew-gadras-4", "pe-label-skew-gadras-5"
+        };
+        static const char * const s_gadras_tt_ids[6] = {
+          "pe-tt-skew-gadras-0", "pe-tt-skew-gadras-1", "pe-tt-skew-gadras-2",
+          "pe-tt-skew-gadras-3", "pe-tt-skew-gadras-4", "pe-tt-skew-gadras-5"
+        };
+        if( paramIndex < 6 ){ labelId = s_gadras_label_ids[paramIndex]; tooltipId = s_gadras_tt_ids[paramIndex]; }
+        return;
+      }
     }//switch( skewType )
   }//void skew_param_msg_ids(...)
 }//anonymous namespace
@@ -140,7 +156,7 @@ FitSkewParamsTool::FitSkewParamsTool( InterSpec *viewer )
 {
   assert( m_viewer );
 
-  for( int i = 0; i < 4; ++i )
+  for( int i = 0; i < 6; ++i )
   {
     m_lowerSpin[i] = nullptr;
     m_upperSpin[i] = nullptr;
@@ -333,7 +349,7 @@ void FitSkewParamsTool::initWidgets()
 void FitSkewParamsTool::updateSkewParamRows()
 {
   m_paramsDiv->clear();
-  for( int i = 0; i < 4; ++i )
+  for( int i = 0; i < 6; ++i )
   {
     m_lowerSpin[i] = nullptr;
     m_upperSpin[i] = nullptr;

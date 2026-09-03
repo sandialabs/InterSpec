@@ -261,6 +261,13 @@ add_test( NAME TPeakFitLM_MultiPeak
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+add_executable( test_GadrasPeakDists test_GadrasPeakDists.cpp )
+target_link_libraries( test_GadrasPeakDists PRIVATE InterSpecLib )
+add_test( NAME TGadrasPeakDists
+  COMMAND $<TARGET_FILE:test_GadrasPeakDists> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 add_executable( test_RelActCalcAuto_EnergyCal_imp test_RelActCalcAuto_EnergyCal_imp.cpp )
 target_link_libraries( test_RelActCalcAuto_EnergyCal_imp PRIVATE InterSpecLib )
 add_test( NAME TRelActCalcAuto_EnergyCal_imp
@@ -384,6 +391,30 @@ add_executable( test_CeeLoDrfIntegration test_CeeLoDrfIntegration.cpp )
 target_link_libraries( test_CeeLoDrfIntegration PRIVATE InterSpecLib )
 add_test( NAME TCeeLoDrfIntegration
   COMMAND $<TARGET_FILE:test_CeeLoDrfIntegration> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+# Volumetric (trace / self-attenuating) source efficiency against extended-source Monte-Carlo truth.
+#  The MC itself is a disabled generator that records a goldens bank; the enabled cases only read it,
+#  so this target does NOT run Monte Carlo.  Some rows are KNOWN-FAILING - they mark where the
+#  centre-ray attenuation model stops being adequate (see the file header); they are meant to go
+#  green as the per-ray kernel and survival-removal-mu work lands, not to be tuned away.
+add_executable( test_VolumetricNearField test_VolumetricNearField.cpp
+                VolumetricNearFieldScenarios.h VolumetricNearFieldTruth.h )
+target_link_libraries( test_VolumetricNearField PRIVATE InterSpecLib )
+add_test( NAME TVolumetricNearField
+  COMMAND $<TARGET_FILE:test_VolumetricNearField> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+# The incremental validation LADDER for the volumetric-source per-ray kernel: geometry audits (enabled,
+#  no Monte Carlo) plus developer-only rungs that compare against CeeLo MC at 0.25% through an on-disk
+#  cache (`--cachedir=`).  Shares VolumetricNearFieldHarness.h with test_VolumetricNearField.
+add_executable( test_VolumetricLadder test_VolumetricLadder.cpp
+                VolumetricNearFieldHarness.h VolumetricNearFieldScenarios.h VolumetricNearFieldTruth.h )
+target_link_libraries( test_VolumetricLadder PRIVATE InterSpecLib )
+add_test( NAME TVolumetricLadder
+  COMMAND $<TARGET_FILE:test_VolumetricLadder> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
@@ -710,6 +741,13 @@ add_executable( test_SecurityHardening test_SecurityHardening.cpp )
 target_link_libraries( test_SecurityHardening PRIVATE InterSpecLib )
 add_test( NAME TSecurityHardening
   COMMAND $<TARGET_FILE:test_SecurityHardening> ${BOOST_TEST_CL_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
+add_executable( test_GadrasDetectorDat test_GadrasDetectorDat.cpp )
+target_link_libraries( test_GadrasDetectorDat PRIVATE InterSpecLib )
+add_test( NAME TGadrasDetectorDat
+  COMMAND $<TARGET_FILE:test_GadrasDetectorDat> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 

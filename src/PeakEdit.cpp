@@ -137,6 +137,8 @@ PeakDef::CoefficientType PeakEdit::row_to_peak_coef_type( const PeakEdit::PeakPa
     case PeakPars::SkewPar1:       return PeakDef::CoefficientType::SkewPar1;
     case PeakPars::SkewPar2:      return PeakDef::CoefficientType::SkewPar2;
     case PeakPars::SkewPar3:      return PeakDef::CoefficientType::SkewPar3;
+    case PeakPars::SkewPar4:      return PeakDef::CoefficientType::SkewPar4;
+    case PeakPars::SkewPar5:      return PeakDef::CoefficientType::SkewPar5;
     case PeakPars::Chi2DOF:          return PeakDef::CoefficientType::Chi2DOF;
     case PeakPars::SigmaDrfPredicted:
     case PeakPars::RangeStartEnergy:
@@ -211,6 +213,8 @@ Wt::WString PeakEdit::rowLabel( const PeakPars t )
     case PeakEdit::SkewPar1:          return WString::tr("pe-label-skew1");
     case PeakEdit::SkewPar2:          return WString::tr("pe-label-skew2");
     case PeakEdit::SkewPar3:          return WString::tr("pe-label-skew3");
+    case PeakEdit::SkewPar4:          return WString::tr("pe-label-skew4");
+    case PeakEdit::SkewPar5:          return WString::tr("pe-label-skew5");
     case PeakEdit::OffsetPolynomial0: return WString::tr("pe-label-cont-p0");
     case PeakEdit::OffsetPolynomial1: return WString::tr("pe-label-cont-p1");
     case PeakEdit::OffsetPolynomial2: return WString::tr("pe-label-cont-p2");
@@ -280,6 +284,7 @@ void PeakEdit::init()
       case PeakEdit::Mean: case PeakEdit::Sigma: case PeakEdit::GaussAmplitude:
       case PeakEdit::SkewPar0: case PeakEdit::SkewPar1:
       case PeakEdit::SkewPar2: case PeakEdit::SkewPar3:
+      case PeakEdit::SkewPar4: case PeakEdit::SkewPar5:
       case PeakEdit::OffsetPolynomial0:
       case PeakEdit::OffsetPolynomial1: case PeakEdit::OffsetPolynomial2:
       case PeakEdit::OffsetPolynomial3: case PeakEdit::OffsetPolynomial4:
@@ -320,6 +325,7 @@ void PeakEdit::init()
       break;
       case PeakEdit::SkewPar0:   case PeakEdit::SkewPar1:
       case PeakEdit::SkewPar2: case PeakEdit::SkewPar3:
+      case PeakEdit::SkewPar4: case PeakEdit::SkewPar5:
       case PeakEdit::OffsetPolynomial0: case PeakEdit::OffsetPolynomial1:
       case PeakEdit::OffsetPolynomial2: case PeakEdit::OffsetPolynomial3:
       case PeakEdit::OffsetPolynomial4:
@@ -345,6 +351,7 @@ void PeakEdit::init()
       case PeakEdit::Sigma: case PeakEdit::GaussAmplitude:
       case PeakEdit::SkewPar0: case PeakEdit::SkewPar1:
       case PeakEdit::SkewPar2: case PeakEdit::SkewPar3:
+      case PeakEdit::SkewPar4: case PeakEdit::SkewPar5:
       case PeakEdit::PeakPars::SigmaDrfPredicted:
       case PeakPars::SetContinuumToLinear:
       case PeakEdit::NumPeakPars:
@@ -533,10 +540,13 @@ void PeakEdit::init()
   m_skewType = row->elementAt(1)->addNew<WComboBox>();
   m_skewType->activated().connect( this, &PeakEdit::skewTypeChanged );
   
-  static_assert( PeakDef::DoubleBortel > PeakDef::ExpGaussExp, "SkewType ordering changed DoubleBortel should be largest" );
-  static_assert( PeakDef::DoubleBortel > PeakDef::CrystalBall, "SkewType ordering changed DoubleBortel should be largest" );
-  static_assert( PeakDef::DoubleBortel > PeakDef::GaussExp, "SkewType ordering changed DoubleBortel should be largest" );
-  static_assert( PeakDef::DoubleBortel > PeakDef::Bortel, "SkewType ordering changed DoubleBortel should be largest" );
+  static_assert( PeakDef::GadrasCZT > PeakDef::ExpGaussExp, "SkewType ordering changed - GadrasCZT should be largest valid type" );
+  static_assert( PeakDef::GadrasCZT > PeakDef::CrystalBall, "SkewType ordering changed - GadrasCZT should be largest valid type" );
+  static_assert( PeakDef::GadrasCZT > PeakDef::GaussExp, "SkewType ordering changed - GadrasCZT should be largest valid type" );
+  static_assert( PeakDef::GadrasCZT > PeakDef::Bortel, "SkewType ordering changed - GadrasCZT should be largest valid type" );
+  static_assert( PeakDef::GadrasCZT > PeakDef::DoubleBortel, "SkewType ordering changed - GadrasCZT should be largest valid type" );
+  static_assert( PeakDef::GadrasCZT > PeakDef::GadrasGeneric, "SkewType ordering changed - GadrasCZT should be largest valid type" );
+  static_assert( PeakDef::NumSkewType > PeakDef::GadrasCZT, "SkewType ordering changed - NumSkewType should be largest" );
   static_assert( PeakDef::NumSkewType > PeakDef::DoubleBortel, "SkewType ordering changed - NumSkewType should be largest" );
   static_assert( PeakDef::NumSkewType > PeakDef::DoubleSidedCrystalBall, "SkewType ordering changed - NumSkewType should be largest" );
   static_assert( PeakDef::NumSkewType > PeakDef::VoigtPlusBortel, "SkewType ordering changed - NumSkewType should be largest" );
@@ -1026,6 +1036,7 @@ void PeakEdit::refreshPeakInfo()
       case PeakPars::Mean: case PeakPars::Sigma: case PeakPars::GaussAmplitude:
       case PeakPars::SkewPar0: case PeakPars::SkewPar1:
       case PeakEdit::SkewPar2: case PeakEdit::SkewPar3:
+      case PeakEdit::SkewPar4: case PeakEdit::SkewPar5:
       case PeakPars::Chi2DOF:
       {
         const PeakDef::CoefficientType ct = row_to_peak_coef_type( t );
@@ -1106,6 +1117,8 @@ void PeakEdit::refreshPeakInfo()
       case PeakEdit::SkewPar1:
       case PeakEdit::SkewPar2:
       case PeakEdit::SkewPar3:
+      case PeakEdit::SkewPar4:
+      case PeakEdit::SkewPar5:
       {
         const int i = t - PeakEdit::PeakPars::SkewPar0;
         const PeakDef::CoefficientType ct = row_to_peak_coef_type( t );
@@ -1257,6 +1270,7 @@ void PeakEdit::refreshPeakInfo()
         case PeakPars::Mean: case PeakPars::Sigma: case PeakPars::GaussAmplitude:
         case PeakPars::SkewPar0: case PeakPars::SkewPar1:
         case PeakPars::SkewPar2: case PeakPars::SkewPar3:
+        case PeakPars::SkewPar4: case PeakPars::SkewPar5:
         case PeakPars::Chi2DOF:
         {
           const PeakDef::CoefficientType ct = row_to_peak_coef_type( t );
@@ -1293,6 +1307,7 @@ void PeakEdit::refreshPeakInfo()
       case PeakPars::Mean: case PeakPars::Sigma: case PeakPars::GaussAmplitude:
       case PeakPars::SkewPar0: case PeakPars::SkewPar1:
       case PeakPars::SkewPar2: case PeakPars::SkewPar3:
+      case PeakPars::SkewPar4: case PeakPars::SkewPar5:
       case PeakPars::OffsetPolynomial0: case PeakPars::OffsetPolynomial1:
       case PeakPars::OffsetPolynomial2: case PeakPars::OffsetPolynomial3:
       case PeakPars::OffsetPolynomial4: case PeakPars::PeakColor:
@@ -1701,6 +1716,7 @@ void PeakEdit::fitTypeChanged( PeakPars t )
     case Mean: case Sigma: case GaussAmplitude:
     case SkewPar0: case SkewPar1:
     case PeakPars::SkewPar2: case PeakPars::SkewPar3:
+    case PeakPars::SkewPar4: case PeakPars::SkewPar5:
     case Chi2DOF:
     {
       const PeakDef::CoefficientType coef = row_to_peak_coef_type( t );
@@ -1762,19 +1778,31 @@ void PeakEdit::peakTypeChanged()
                            && (m_currentPeak.skewType()!=PeakDef::ExpGaussExp)
                            && (m_currentPeak.skewType()!=PeakDef::VoigtPlusBortel)
                            && (m_currentPeak.skewType()!=PeakDef::GaussPlusBortel)
-                           && (m_currentPeak.skewType()!=PeakDef::DoubleBortel) );
+                           && (m_currentPeak.skewType()!=PeakDef::DoubleBortel)
+                           && (m_currentPeak.skewType()!=PeakDef::GadrasGeneric)
+                           && (m_currentPeak.skewType()!=PeakDef::GadrasCZT) );
             break;
 
           case PeakEdit::SkewPar2:
             row->setHidden( (m_currentPeak.skewType()!=PeakDef::DoubleSidedCrystalBall)
                            && (m_currentPeak.skewType()!=PeakDef::VoigtPlusBortel)
-                           && (m_currentPeak.skewType()!=PeakDef::DoubleBortel) );
+                           && (m_currentPeak.skewType()!=PeakDef::DoubleBortel)
+                           && (m_currentPeak.skewType()!=PeakDef::GadrasGeneric)
+                           && (m_currentPeak.skewType()!=PeakDef::GadrasCZT) );
             break;
-            
+
           case PeakEdit::SkewPar3:
-            row->setHidden( (m_currentPeak.skewType()!=PeakDef::DoubleSidedCrystalBall) );
+            row->setHidden( (m_currentPeak.skewType()!=PeakDef::DoubleSidedCrystalBall)
+                           && (m_currentPeak.skewType()!=PeakDef::GadrasGeneric)
+                           && (m_currentPeak.skewType()!=PeakDef::GadrasCZT) );
             break;
-            
+
+          case PeakEdit::SkewPar4:
+          case PeakEdit::SkewPar5:
+            row->setHidden( (m_currentPeak.skewType()!=PeakDef::GadrasGeneric)
+                           && (m_currentPeak.skewType()!=PeakDef::GadrasCZT) );
+            break;
+
           case PeakEdit::OffsetPolynomial0: case PeakEdit::OffsetPolynomial1:
           case PeakEdit::OffsetPolynomial2: case PeakEdit::OffsetPolynomial3:
           {
@@ -1817,6 +1845,8 @@ void PeakEdit::peakTypeChanged()
           case PeakEdit::SkewPar1:
           case PeakPars::SkewPar2:
           case PeakPars::SkewPar3:
+          case PeakPars::SkewPar4:
+          case PeakPars::SkewPar5:
             row->setHidden( true );
             break;
             
@@ -1911,13 +1941,16 @@ void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
 {
   const bool showToolTips = UserPreferences::preferenceValue<bool>( "ShowTooltips", m_viewer );
 
-  WLabel *label[4] = { nullptr, nullptr, nullptr, nullptr };
-  WTableCell *cell[4][4] = { { nullptr, nullptr, nullptr, nullptr },
+  // GADRAS skew types use 6 parameters; all other types use 4 or fewer.
+  WLabel *label[6] = { nullptr, nullptr, nullptr, nullptr, nullptr, nullptr };
+  WTableCell *cell[6][4] = { { nullptr, nullptr, nullptr, nullptr },
+                              { nullptr, nullptr, nullptr, nullptr },
+                              { nullptr, nullptr, nullptr, nullptr },
                               { nullptr, nullptr, nullptr, nullptr },
                               { nullptr, nullptr, nullptr, nullptr },
                               { nullptr, nullptr, nullptr, nullptr } };
 
-  for( int i = 0; i < 4; ++i )
+  for( int i = 0; i < 6; ++i )
   {
     // Get all cells in this row (parameter label, value, uncertainty, fit checkbox)
     for( int col = 0; col < 4; ++col )
@@ -1930,11 +1963,11 @@ void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
 
     label[i] = dynamic_cast<WLabel *>( labelCell->children()[0] );
     assert( label[i] );
-  }//for( int i = 0; i < 4; ++i )
+  }//for( int i = 0; i < 6; ++i )
 
-  
+
   auto attachRowTooltip = [&cell, showToolTips]( const int row_index, const WString &tooltipText ){
-    if( row_index >= 0 && row_index < 4 )
+    if( row_index >= 0 && row_index < 6 )
       HelpSystem::attachToolTipOn( { cell[row_index][0], cell[row_index][1],
                                     cell[row_index][2], cell[row_index][3] },
                                 tooltipText, showToolTips );
@@ -2036,6 +2069,16 @@ void PeakEdit::updateSkewParameterLabels( const PeakDef::SkewType skewType )
       attachRowTooltip( 1, WString::tr("pe-tt-skew-doublebortel-deltatau2") );
       attachRowTooltip( 2, WString::tr("pe-tt-skew-doublebortel-eta") );
       break;
+
+    case PeakDef::SkewType::GadrasGeneric:
+    case PeakDef::SkewType::GadrasCZT:
+      for( int i = 0; i < 6; ++i )
+      {
+        if( label[i] )
+          label[i]->setText( WString::tr("pe-label-skew-gadras-" + std::to_string(i)) );
+        attachRowTooltip( i, WString::tr("pe-tt-skew-gadras-" + std::to_string(i)) );
+      }//for( int i = 0; i < 6; ++i )
+      break;
   }//switch( skewType )
 }//void updateSkewParameterLabels();
 
@@ -2062,8 +2105,10 @@ void PeakEdit::skewTypeChanged()
       m_valueTable->rowAt(1+PeakEdit::SkewPar1)->setHidden( true );
       m_valueTable->rowAt(1+PeakEdit::SkewPar2)->setHidden( true );
       m_valueTable->rowAt(1+PeakEdit::SkewPar3)->setHidden( true );
+      m_valueTable->rowAt(1+PeakEdit::SkewPar4)->setHidden( true );
+      m_valueTable->rowAt(1+PeakEdit::SkewPar5)->setHidden( true );
     break;
-      
+
     case PeakDef::SkewType::Bortel:
     case PeakDef::SkewType::CrystalBall:
     case PeakDef::SkewType::DoubleSidedCrystalBall:
@@ -2072,22 +2117,24 @@ void PeakEdit::skewTypeChanged()
     case PeakDef::SkewType::VoigtPlusBortel:
     case PeakDef::SkewType::GaussPlusBortel:
     case PeakDef::SkewType::DoubleBortel:
+    case PeakDef::SkewType::GadrasGeneric:
+    case PeakDef::SkewType::GadrasCZT:
     {
-      const int num_skew_pars = static_cast<int>(PeakDef::CoefficientType::SkewPar3)
+      const int num_skew_pars = static_cast<int>(PeakDef::CoefficientType::SkewPar5)
                                 - static_cast<int>(PeakDef::CoefficientType::SkewPar0);
-      
+
       for( int i = 0; i <= num_skew_pars; ++i )
       {
         const auto index = static_cast<PeakEdit::PeakPars>( PeakEdit::PeakPars::SkewPar0 + i );
         const PeakDef::CoefficientType ct = row_to_peak_coef_type( index );
-        
+
         double lower, upper, starting_val, step_size;
         if( PeakDef::skew_parameter_range( type, ct, lower, upper, starting_val, step_size ) )
         {
           m_values[index]->setHidden( false );
           m_valueTable->rowAt(1+index)->setHidden( false );
           m_values[index]->setText( SpecUtils::printCompact(starting_val, 4) );
-          m_fitFors[index]->setChecked( true );
+          m_fitFors[index]->setChecked( PeakDef::skew_parameter_fit_by_default( type, ct ) );
           auto validator = std::dynamic_pointer_cast<WDoubleValidator>( m_values[index]->validator() ).get();
           assert( validator );
           if( validator )
@@ -2178,7 +2225,7 @@ void PeakEdit::updateDrfFwhmTxt()
 
 void PeakEdit::setSkewInputValueRanges( const PeakDef::SkewType type )
 {
-  const int num_skew_pars = static_cast<int>(PeakDef::CoefficientType::SkewPar3)
+  const int num_skew_pars = static_cast<int>(PeakDef::CoefficientType::SkewPar5)
                             - static_cast<int>(PeakDef::CoefficientType::SkewPar0);
   
   for( int i = 0; i <= num_skew_pars; ++i )
@@ -2709,6 +2756,8 @@ void PeakEdit::apply()
         case PeakDef::SkewType::ExpGaussExp:
         case PeakDef::SkewType::DoubleSidedCrystalBall:
         case PeakDef::SkewType::VoigtPlusBortel:
+        case PeakDef::SkewType::GadrasGeneric:
+        case PeakDef::SkewType::GadrasCZT:
           valid_skew = true;
           break;
       }//switch( skewType )
@@ -2720,10 +2769,10 @@ void PeakEdit::apply()
       setSkewInputValueRanges( skewType );
       updateSkewParameterLabels( skewType );
       
-      for( PeakPars t : {SkewPar0, SkewPar1, SkewPar2, SkewPar3} )
+      for( PeakPars t : {SkewPar0, SkewPar1, SkewPar2, SkewPar3, SkewPar4, SkewPar5} )
       {
         const PeakDef::CoefficientType ct = row_to_peak_coef_type( t );
-      
+
         double lower, upper, starting_val, step_size;
         if( PeakDef::skew_parameter_range( skewType, ct, lower, upper, starting_val, step_size ) )
         {
@@ -2741,7 +2790,7 @@ void PeakEdit::apply()
           m_currentPeak.set_uncertainty( uncert, ct );
           m_currentPeak.setFitFor( ct, m_fitFors[t]->isChecked() );
         }//if( use this parameter )
-      }//for( loop over {SkewPar0, SkewPar1, SkewPar2, SkewPar3} )
+      }//for( loop over {SkewPar0, SkewPar1, SkewPar2, SkewPar3, SkewPar4, SkewPar5} )
       
     }//if( skewType != m_currentPeak.skewType() )
     
@@ -2788,6 +2837,8 @@ void PeakEdit::apply()
           case PeakEdit::SkewPar1:
           case PeakEdit::SkewPar2:
           case PeakEdit::SkewPar3:
+          case PeakEdit::SkewPar4:
+          case PeakEdit::SkewPar5:
             m_currentPeak.set_coefficient( val, row_to_peak_coef_type(t) );
             quantity_changed = true;
             break;
@@ -2901,6 +2952,8 @@ void PeakEdit::apply()
           case PeakEdit::SkewPar1:
           case PeakEdit::SkewPar2:
           case PeakEdit::SkewPar3:
+          case PeakEdit::SkewPar4:
+          case PeakEdit::SkewPar5:
             m_currentPeak.set_uncertainty( val, row_to_peak_coef_type(t) );
             break;
             

@@ -74,7 +74,7 @@ bool PeakFitDetPrefs::operator==( const PeakFitDetPrefs &rhs ) const
   if( m_fwhm_method != rhs.m_fwhm_method )
     return false;
 
-  for( int i = 0; i < 4; ++i )
+  for( int i = 0; i < 6; ++i )
   {
     if( m_lower_energy_skew[i] != rhs.m_lower_energy_skew[i] )
       return false;
@@ -211,16 +211,18 @@ void PeakFitDetPrefs::toXml( ::rapidxml::xml_node<char> *parent_node,
   XmlUtils::append_string_node( base_node, "DetType", to_str( m_det_type ) );
   XmlUtils::append_string_node( base_node, "SkewType", PeakDef::to_string( m_peak_skew_type ) );
 
-  static const char * const lower_names[] = { "LowerSkew0", "LowerSkew1", "LowerSkew2", "LowerSkew3" };
-  static const char * const upper_names[] = { "UpperSkew0", "UpperSkew1", "UpperSkew2", "UpperSkew3" };
+  static const char * const lower_names[] = { "LowerSkew0", "LowerSkew1", "LowerSkew2",
+                                              "LowerSkew3", "LowerSkew4", "LowerSkew5" };
+  static const char * const upper_names[] = { "UpperSkew0", "UpperSkew1", "UpperSkew2",
+                                              "UpperSkew3", "UpperSkew4", "UpperSkew5" };
 
-  for( int i = 0; i < 4; ++i )
+  for( int i = 0; i < 6; ++i )
   {
     if( m_lower_energy_skew[i].has_value() )
       XmlUtils::append_float_node( base_node, lower_names[i], m_lower_energy_skew[i].value() );
     if( m_upper_energy_skew[i].has_value() )
       XmlUtils::append_float_node( base_node, upper_names[i], m_upper_energy_skew[i].value() );
-  }//for( int i = 0; i < 4; ++i )
+  }//for( int i = 0; i < 6; ++i )
 
   XmlUtils::append_bool_node( base_node, "RoiIndepSkew", m_roi_independent_skew );
   XmlUtils::append_string_node( base_node, "FwhmMethod", to_str( m_fwhm_method ) );
@@ -253,17 +255,19 @@ void PeakFitDetPrefs::fromXml( const ::rapidxml::xml_node<char> *node )
   m_peak_skew_type = PeakDef::skew_from_string( skew_type_str );
 
   // Reset skew parameters
-  for( int i = 0; i < 4; ++i )
+  for( int i = 0; i < 6; ++i )
   {
     m_lower_energy_skew[i].reset();
     m_upper_energy_skew[i].reset();
   }
 
   // Parse optional skew parameters
-  static const char * const lower_names[] = { "LowerSkew0", "LowerSkew1", "LowerSkew2", "LowerSkew3" };
-  static const char * const upper_names[] = { "UpperSkew0", "UpperSkew1", "UpperSkew2", "UpperSkew3" };
+  static const char * const lower_names[] = { "LowerSkew0", "LowerSkew1", "LowerSkew2",
+                                              "LowerSkew3", "LowerSkew4", "LowerSkew5" };
+  static const char * const upper_names[] = { "UpperSkew0", "UpperSkew1", "UpperSkew2",
+                                              "UpperSkew3", "UpperSkew4", "UpperSkew5" };
 
-  for( int i = 0; i < 4; ++i )
+  for( int i = 0; i < 6; ++i )
   {
     // Use XML_FIRST_NODE directly rather than get_float_node_value (which throws if missing)
     const rapidxml::xml_node<char> *lower_node = node->first_node( lower_names[i] );
@@ -285,7 +289,7 @@ void PeakFitDetPrefs::fromXml( const ::rapidxml::xml_node<char> *node )
       else
         throw runtime_error( "PeakFitDetPrefs::fromXml: invalid value for " + string( upper_names[i] ) );
     }//if( upper_node )
-  }//for( int i = 0; i < 4; ++i )
+  }//for( int i = 0; i < 6; ++i )
 
   // ROI-independent skew (default true for backward compatibility)
   const rapidxml::xml_node<char> *roi_indep_node = node->first_node( "RoiIndepSkew" );
@@ -297,7 +301,7 @@ void PeakFitDetPrefs::fromXml( const ::rapidxml::xml_node<char> *node )
   // When ROI-independent, fixed skew values don't apply — clear them
   if( m_roi_independent_skew )
   {
-    for( size_t i = 0; i < 4; ++i )
+    for( size_t i = 0; i < 6; ++i )
     {
       assert( !m_lower_energy_skew[i].has_value() && !m_upper_energy_skew[i].has_value() );
       m_lower_energy_skew[i] = std::nullopt;
@@ -336,10 +340,10 @@ string PeakFitDetPrefs::toUrlQueryParts() const
   }
 
   // Skew parameters - only include if set
-  static const char * const lower_keys[] = { "LS0", "LS1", "LS2", "LS3" };
-  static const char * const upper_keys[] = { "US0", "US1", "US2", "US3" };
+  static const char * const lower_keys[] = { "LS0", "LS1", "LS2", "LS3", "LS4", "LS5" };
+  static const char * const upper_keys[] = { "US0", "US1", "US2", "US3", "US4", "US5" };
 
-  for( int i = 0; i < 4; ++i )
+  for( int i = 0; i < 6; ++i )
   {
     if( m_lower_energy_skew[i].has_value() )
     {
@@ -354,7 +358,7 @@ string PeakFitDetPrefs::toUrlQueryParts() const
       snprintf( buf, sizeof( buf ), "&%s=%1.8e", upper_keys[i], m_upper_energy_skew[i].value() );
       result += buf;
     }
-  }//for( int i = 0; i < 4; ++i )
+  }//for( int i = 0; i < 6; ++i )
 
   return result;
 }//toUrlQueryParts
@@ -379,16 +383,16 @@ void PeakFitDetPrefs::fromUrlQueryParts( const map<string,string> &parts )
   }
 
   // Reset and parse optional skew parameters
-  for( int i = 0; i < 4; ++i )
+  for( int i = 0; i < 6; ++i )
   {
     m_lower_energy_skew[i].reset();
     m_upper_energy_skew[i].reset();
   }
 
-  static const char * const lower_keys[] = { "LS0", "LS1", "LS2", "LS3" };
-  static const char * const upper_keys[] = { "US0", "US1", "US2", "US3" };
+  static const char * const lower_keys[] = { "LS0", "LS1", "LS2", "LS3", "LS4", "LS5" };
+  static const char * const upper_keys[] = { "US0", "US1", "US2", "US3", "US4", "US5" };
 
-  for( int i = 0; i < 4; ++i )
+  for( int i = 0; i < 6; ++i )
   {
     {
       const auto it = parts.find( lower_keys[i] );
@@ -411,7 +415,7 @@ void PeakFitDetPrefs::fromUrlQueryParts( const map<string,string> &parts )
         m_upper_energy_skew[i] = val;
       }
     }
-  }//for( int i = 0; i < 4; ++i )
+  }//for( int i = 0; i < 6; ++i )
 
   // FWHM method (optional, defaults to Normal)
   {

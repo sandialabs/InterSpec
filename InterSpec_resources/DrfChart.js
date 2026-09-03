@@ -196,7 +196,9 @@ DrfChart = function (elem, options) {
   // Per-angle response visualization state.
   this.responseSeries = null;     // parsed {angles, onAxisSolidAngleFraction, ...} or null
   this.effMode = "absolute";      // "absolute" (per emitted gamma) | "intrinsic"
-  this.effIsLog = false;          // efficiency Y-axis currently logarithmic?
+  // Whether the DRFs FWHM curve (and its right-hand axis) is drawn at all; the response-preview
+  // chart in the MC tool turns it off, since FWHM says nothing about the geometry being previewed.
+  this.showFwhm = true;
   // Colors for 0, 22.5, 45, 62.5, 90 degrees.
   this.angleColors = ["#1f77b4", "#2ca02c", "#ff7f0e", "#9467bd", "#d62728"];
 
@@ -414,7 +416,7 @@ DrfChart.prototype.updateYAxisRanges = function() {
   }
 
   // Update FWHM scale if we have FWHM data
-  if (this.fwhmData && this.fwhmData.length > 0) {
+  if (this.showFwhm !== false && this.fwhmData && this.fwhmData.length > 0) {
     const visibleFwhmData = this.fwhmData.filter(d => 
       d.energy >= xDomain[0] && d.energy <= xDomain[1]
     );
@@ -501,8 +503,8 @@ DrfChart.prototype.updateEfficiencyLine = function() {
     return;
   }
 
-  // Update efficiency scale based on the generated points (linear view only;
-  // in angle mode updateAngleSeries owns the (log) efficiency domain).
+  // Update efficiency scale based on the generated points (in angle mode
+  // updateAngleSeries owns the efficiency domain).
   if (!angleMode) {
     const efficiencyExtent = d3.extent(efficiencyPoints, d => d.efficiency);
     if (efficiencyExtent[0] !== undefined && efficiencyExtent[1] !== undefined) {
@@ -513,7 +515,7 @@ DrfChart.prototype.updateEfficiencyLine = function() {
   }
 
   // Update the efficiency line (in intrinsic angle mode this is the far-field
-  // reference; skip points that fall outside a log domain).
+  // reference; a non-positive efficiency is not a meaningful reference point).
   if (angleMode)
     efficiencyPoints = efficiencyPoints.filter(d => d.efficiency > 0);
   this.efficiencyPath.datum(efficiencyPoints)
@@ -526,23 +528,11 @@ DrfChart.prototype.updateEfficiencyLine = function() {
 // --- per-angle response visualization --------------------------------------
 
 // Receives the JSON from DetectorPeakResponse::responseAngleSeriesJSON (or null
-// to clear). Switches the efficiency Y-axis to logarithmic while angle curves
-// are shown (efficiency spans decades), and restores linear otherwise.
+// to clear).  The efficiency Y-axis stays linear in every mode - the angle curves span
+// enough of a range to tempt a log axis, but a log efficiency axis reads badly for the
+// side-by-side comparison these curves are for.
 DrfChart.prototype.setResponseSeries = function(series) {
-  const hadSeries = !!this.responseSeries;
   this.responseSeries = (series && series.angles && series.angles.length) ? series : null;
-  const haveSeries = !!this.responseSeries;
-
-  if (haveSeries !== hadSeries) {
-    // Swap the efficiency scale type; keep its pixel range.
-    const range = this.efficiencyScale.range();
-    this.efficiencyScale = (haveSeries ? d3.scale.log().clamp(true) : d3.scale.linear())
-      .range(range);
-    this.leftYAxis.scale(this.efficiencyScale);
-    this.effIsLog = haveSeries;
-    if (!haveSeries)
-      this.leftYAxis.tickFormat(d => drfChartFormatSigFigs(d, 2));
-  }
 
   this.updateEfficiencyLine();  // flat reference (intrinsic) / hidden (absolute)
   this.updateAngleSeries();
@@ -603,8 +593,8 @@ DrfChart.prototype.updateAngleSeries = function() {
     return;
   }
 
-  // Efficiency (log) Y-domain over every plotted point (+ its upper band), and
-  // the flat far-field reference when it is shown (intrinsic mode).
+  // Efficiency Y-domain over every plotted point (+ its upper band), and the flat
+  // far-field reference when it is shown (intrinsic mode).
   let vmin = Infinity, vmax = -Infinity;
   series.forEach(s => s.pts.forEach(function(d){
     vmin = Math.min(vmin, d.val); vmax = Math.max(vmax, d.hi);
@@ -619,12 +609,8 @@ DrfChart.prototype.updateAngleSeries = function() {
   if (!isFinite(vmin) || !isFinite(vmax) || vmax <= 0) {
     g.selectAll("*").remove(); this.angleLegend.selectAll("*").remove(); return;
   }
-  vmin = Math.max(vmin, vmax * 1e-4);  // keep the log axis to ~4 decades
-  this.efficiencyScale.domain([vmin, vmax]);
-  this.leftYAxis.tickFormat(function(d){
-    const l = Math.log10(d);
-    return (Math.abs(l - Math.round(l)) < 1e-6) ? d.toExponential(0) : "";
-  });
+  this.efficiencyScale.domain( drfChartEfficiencyDomain([vmin, vmax]) );
+  this.leftYAxis.tickFormat(d => drfChartFormatSigFigs(d, 2));
   this.leftYAxisGroup.call(this.leftYAxis);
   this.leftYAxisLabel.text(this.effMode === "intrinsic"
       ? "Intrinsic efficiency"
@@ -694,7 +680,7 @@ DrfChart.prototype.drawAngleLegend = function(series) {
 
 
 DrfChart.prototype.updateFwhmLine = function() {
-  if (!this.detector || !this.detector.hasFwhm()) {
+  if (this.showFwhm === false || !this.detector || !this.detector.hasFwhm()) {
     this.fwhmPath.style("display", "none");
     this.rightYAxisGroup.style("display", "none");
     this.rightYAxisLabel.style("display", "none");
@@ -768,7 +754,7 @@ DrfChart.prototype.updateTooltip = function(mouse) {
   
   // Calculate FWHM using the detector class
   let fwhm = null;
-  if (this.detector.hasFwhm()) {
+  if (this.showFwhm !== false && this.detector.hasFwhm()) {
     fwhm = this.detector.fwhm(energy);
     
     // Validate FWHM value
@@ -876,17 +862,6 @@ DrfChart.prototype.reformatLeftYAxisLabels = function() {
   const tickNodes = this.leftYAxisGroup.selectAll("text");
   if (tickNodes.empty()) return 0;
 
-  // In log (angle) mode the axis tickFormat already labels only the decade
-  // ticks (blank elsewhere); leave the labels as-is and just measure width.
-  if (this.effIsLog) {
-    let maxWidth = 0;
-    tickNodes.each(function() {
-      const w = this.getBBox().width;
-      if (w > maxWidth) maxWidth = w;
-    });
-    return maxWidth;
-  }
-
   // Collect the numeric values D3 bound to each tick element.
   const values = [];
   tickNodes.each(function(d) { values.push(d); });
@@ -987,6 +962,13 @@ DrfChart.prototype.adjustLeftMargin = function() {
 // Method to set x-axis range from C++
 DrfChart.prototype.setXRange = function(minEnergy, maxEnergy) {
   this.setXAxisRange(minEnergy, maxEnergy);
+};
+
+// Enables/disables drawing the FWHM curve and its right-hand axis.
+DrfChart.prototype.setShowFwhm = function(show) {
+  this.showFwhm = !!show;
+  this.updateYAxisRanges();
+  this.updateFwhmLine();
 };
 
 // Method to get current x-axis range

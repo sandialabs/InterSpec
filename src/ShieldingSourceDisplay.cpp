@@ -61,6 +61,7 @@
 #include <Wt/WFileUpload.h>
 #include <Wt/Http/Response.h>
 #include <Wt/WSplitButton.h>
+#include <Wt/WComboBox.h>
 #include <Wt/WSelectionBox.h>
 #include <Wt/WItemDelegate.h>
 #include <Wt/WAbstractItemDelegate.h>
@@ -76,6 +77,8 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 
 #include <nlohmann/json.hpp>
+
+#include "io/DetectorResponse.h"  // ceelo::DetectorResponse::provenance for the volumetric-eff method preview
 
 #include "external_libs/SpecUtils/3rdparty/inja/inja.hpp"
 
@@ -574,12 +577,9 @@ const int ShieldingSourceDisplay::sm_xmlSerializationMinorVersion = 1;
 
 
 using GammaInteractionCalc::GeometryType;
-using GammaInteractionCalc::TraceActivityType;
 
 namespace
 {
-  const std::string ns_no_uncert_info_txt = "Perform model fit to update and get uncertainties.";
-
   /** If a distance WLineEdit has a number, but no distance units, will add a " cm" to the text value. */
   void make_sure_distance_units_present( Wt::WLineEdit *edit )
   {
@@ -2976,8 +2976,6 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
     m_showLog( nullptr ),
     m_logDiv( nullptr ),
     m_diagramDialog( nullptr ),
-    m_calcLog{},
-    m_peakCalcLogInfo{},
     m_modelUploadWindow( nullptr ),
 #if( USE_DB_TO_STORE_SPECTRA )
     m_modelDbBrowseWindow( nullptr ),
@@ -3442,6 +3440,22 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
   m_correctForCascade->checked().connect( this, &ShieldingSourceDisplay::correctForCascadeChanged );
   m_correctForCascade->unChecked().connect( this, &ShieldingSourceDisplay::correctForCascadeChanged );
 
+  lineDiv = m_optionsDiv->addNew<WContainerWidget>();
+  lineDiv->addStyleClass( "FitOptionsRow" );
+  WLabel *volEffLabel = lineDiv->addNew<WLabel>( WString::tr("ssd-lbl-vol-eff") );
+  HelpSystem::attachToolTipOn( lineDiv, WString::tr("ssd-tt-vol-eff"), showToolTips );
+  m_volEffMethodCombo = lineDiv->addNew<WComboBox>();
+  volEffLabel->setBuddy( m_volEffMethodCombo );
+  // Items must match the VolumetricEffMethod enum order (Auto, MCTransfer, EffTran, FlatDisk).
+  m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-auto") );
+  m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-mc") );
+  m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-efftran") );
+  m_volEffMethodCombo->addItem( WString::tr("ssd-vol-eff-flatdisk") );
+  m_volEffMethodCombo->setCurrentIndex( 0 );  //matches ShieldingSourceFitOptions default (Auto)
+  m_volEffMethodCombo->changed().connect( this, &ShieldingSourceDisplay::volEffMethodChanged );
+  m_volEffMethodStatus = lineDiv->addNew<WText>();
+  m_volEffMethodStatus->addStyleClass( "VolEffMethodStatus" );
+
 
   WContainerWidget *detectorDiv = new WContainerWidget();
   WGridLayout *detectorLayout = detectorDiv->setLayout( std::make_unique<WGridLayout>() );
@@ -3739,6 +3753,11 @@ ShieldingSourceDisplay::ShieldingSourceDisplay( std::shared_ptr<PeakModel> peakM
                                       this, &ShieldingSourceDisplay::handleAutoFitPrefChanged );
   updateFitButtonState();  // set the split-button's initial text/check-state for the current mode
 
+  // Nothing else calls this during construction (its only other entry point is
+  //  updateFixedGeomMcAvailability(), first reached long after), so without this the volumetric-eff
+  //  combo would start enabled with an empty status even when no volumetric source exists.
+  updateVolEffMethodAvailability();
+
   // Everything is built; from here on, user-driven changes may (re)launch the auto-fit.
   m_autoFitArmed = true;
 }//ShieldingSourceDisplay constructor
@@ -3839,6 +3858,13 @@ ShieldingSourceFitCalc::ShieldingSourceFitOptions ShieldingSourceDisplay::fitOpt
   options.account_for_drf_uncert = m_accountForDrfUncert->isChecked();
   options.correct_for_cascade_summing = (m_correctForCascade->isChecked()
                                          && m_correctForCascade->isEnabled());
+
+  // Combo index maps directly to the VolumetricEffMethod enum (Auto, MCTransfer, EffTran, FlatDisk).
+  //  Read unconditionally: fitOptions() also feeds serialization, so gating on the widget's enabled
+  //  state would silently rewrite a saved "Flat-disk" to "Auto" whenever the model happens to have
+  //  no volumetric source (and WWidget::isEnabled() is ancestor-sensitive besides).
+  options.volumetric_eff_method = static_cast<ShieldingSourceFitCalc::VolumetricEffMethod>(
+                                    std::max( 0, m_volEffMethodCombo->currentIndex() ) );
 
   return options;
 }//ShieldingSourceFitOptions fitOptions() const
@@ -6015,7 +6041,127 @@ void ShieldingSourceDisplay::updateFixedGeomMcAvailability()
 
   m_fixedGeomMcBtn->setHidden( det && det->isFixedGeometry() );
   m_fixedGeomMcBtn->setDisabled( !enable );
+
+  updateVolEffMethodAvailability();
 }//void updateFixedGeomMcAvailability()
+
+
+void ShieldingSourceDisplay::volEffMethodChanged()
+{
+  const int new_index = m_volEffMethodCombo->currentIndex();
+  const int old_index = m_lastVolEffMethodIndex;
+  m_lastVolEffMethodIndex = new_index;
+
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( undoRedo && !undoRedo->isInUndoOrRedo() && (old_index != new_index) )
+  {
+    auto set_to = []( const int index ){
+      ShieldingSourceDisplay *display = InterSpec::instance()->shieldingSourceFit();
+      if( display )
+      {
+        display->m_volEffMethodCombo->setCurrentIndex( index );
+        display->volEffMethodChanged();
+      }
+    };
+    undoRedo->addUndoRedoStep( std::bind(set_to, old_index), std::bind(set_to, new_index),
+                               "Volumetric efficiency method changed." );
+  }//if( undoRedo )
+
+  updateVolEffMethodAvailability();
+  updateChi2Chart();
+}//void volEffMethodChanged()
+
+
+void ShieldingSourceDisplay::updateVolEffMethodAvailability()
+{
+  using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+  using ShieldingSourceFitCalc::VolumetricEffMethod;
+
+  // Enabled for ANY usable DRF, not just when a volumetric source is present: an off-axis or
+  //  near-field point source needs the same correction, and the flat-disk fallback is theta-blind.
+  //  Whether the correction actually costs anything is decided by the Auto policy below, which
+  //  steps down to flat-disk at/beyond the DRF's characterization distance.
+  const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
+  const bool enable = ( det && det->isValid() && !det->isFixedGeometry() );
+
+  if( enable != m_volEffMethodCombo->isEnabled() )
+    m_volEffMethodCombo->setDisabled( !enable );
+
+  if( !enable )
+  {
+    m_volEffMethodStatus->setText( WString() );
+    return;
+  }
+
+  // The Auto policy is geometry-dependent (it steps down to flat-disk only at/beyond the DRF's
+  //  characterization distance and on-axis), so the preview needs the same distance/offset the fit
+  //  will see.  A distance the user is mid-edit parses to 0, which the resolver reads as "unknown"
+  //  and therefore keeps the correction - the safe direction.
+  double resolve_distance = 0.0;
+  try
+  {
+    resolve_distance = PhysicalUnits::stringToDistance( m_distanceEdit->valueText().toUTF8() );
+  }catch( const std::exception & )
+  {
+    resolve_distance = 0.0;
+  }
+
+  double off_dx = 0.0, off_dy = 0.0;
+  sourceOffsets( off_dx, off_dy );
+  const double resolve_offset = std::sqrt( off_dx*off_dx + off_dy*off_dy );
+
+  // The source's transverse extent is part of the far-field test, so the preview needs it too -
+  //  through the same helper the fit uses, or the two could disagree about the same model.
+  std::vector<ShieldingSourceFitCalc::ShieldingInfo> resolve_shieldings;
+  bool resolve_extent_known = true;
+  for( WWidget *widget : m_shieldingSelects->children() )
+  {
+    const ShieldingSelect *select = dynamic_cast<const ShieldingSelect *>( widget );
+    if( select )
+    {
+      try
+      {
+        resolve_shieldings.push_back( select->toShieldingInfo() );
+      }catch( const std::exception & )
+      {
+        // A shielding the user is mid-edit.  Dropping it would UNDER-estimate the extent, which
+        //  would wrongly permit the flat-disk step-down - so report the extent as unknown (-1),
+        //  which keeps the correction.  (An empty list is a genuine zero extent, not unknown.)
+        resolve_extent_known = false;
+        break;
+      }
+    }//if( select )
+  }//for( shieldings )
+
+  const double resolve_extent = resolve_extent_known
+        ? ShieldingSourceChi2Fcn::assemblyTransverseHalfExtent( resolve_shieldings, geometry() )
+        : -1.0;
+
+  // What the fit will actually use, from the SAME resolution the fit runs - so this status can never
+  //  claim one method while the fit quietly picks another.  (The fit can still downgrade further if
+  //  *building* the transfer response throws; that shows up as an error on the results.)
+  const VolumetricEffMethod requested
+        = static_cast<VolumetricEffMethod>( std::max(0, m_volEffMethodCombo->currentIndex()) );
+  const VolumetricEffMethod resolved
+        = ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf( det, requested,
+                                                                    resolve_distance, resolve_offset,
+                                                                    resolve_extent );
+
+  const char *resolvedKey = "ssd-vol-eff-name-flatdisk";
+  switch( resolved )
+  {
+    case VolumetricEffMethod::MCTransfer: resolvedKey = "ssd-vol-eff-name-mc";       break;
+    case VolumetricEffMethod::EffTran:    resolvedKey = "ssd-vol-eff-name-efftran";  break;
+    case VolumetricEffMethod::FlatDisk:
+    case VolumetricEffMethod::Auto:       resolvedKey = "ssd-vol-eff-name-flatdisk"; break;
+  }//switch( resolved )
+
+  // Show the resolved method for Auto, or whenever the selection falls back to something else.
+  if( (requested == VolumetricEffMethod::Auto) || (resolved != requested) )
+    m_volEffMethodStatus->setText( WString::tr("ssd-vol-eff-resolved").arg( WString::tr(resolvedKey) ) );
+  else
+    m_volEffMethodStatus->setText( WString() );
+}//void updateVolEffMethodAvailability()
 
 
 void ShieldingSourceDisplay::computeFixedGeomDrfRequested()
@@ -6916,38 +7062,14 @@ void ShieldingSourceDisplay::updateTrendMessage( const std::shared_ptr<const Shi
   {
     m_trendTxt->hide();
     m_trendTxt->setText( WString() );
-
-    // Even with no conclusion, note the atomic-number discrimination power in the log when it is
-    //  low - so a "silent" result reads as "could not tell" rather than "atomic number is fine".
-    if( from_completed_fit && trend && (trend->anDiscriminationT > 0.0) && !trend->anDiscriminable )
-    {
-      char buf[256];
-      snprintf( buf, sizeof(buf),
-               "Pull-trend: no conclusion; atomic-number discrimination power is low (t=%.1f) - "
-               "these peaks cannot resolve the effective atomic number (need lower-energy peaks).",
-               trend->anDiscriminationT );
-      m_calcLog.push_back( "&nbsp;" );
-      m_calcLog.push_back( buf );
-    }
     return;
   }
 
+  // The driving statistics (slope/curvature t, atomic-number discrimination power) are not shown
+  //  here - the reports carry them, from `ModelFitResults::pull_trend`.
   const char * const conf_key = ShieldSourcePullTrend::confidence_txt_key( trend->confidence );
-  WString msg = WString::tr(key).arg( WString::tr(conf_key) );
-  m_trendTxt->setText( msg );
+  m_trendTxt->setText( WString::tr(key).arg( WString::tr(conf_key) ) );
   m_trendTxt->show();
-
-  // Mirror the conclusion into the calc log (with the driving statistics and the atomic-number
-  //  discrimination power - the curvature t a reference Z error would produce for these peaks).
-  char buffer[320];
-  snprintf( buffer, sizeof(buffer),
-           "Pull-trend diagnosis: %s (slope t=%.1f, curvature t=%.1f, %zu points; "
-           "atomic-number discrimination power t=%.1f, %s)",
-           msg.toUTF8().c_str(), trend->slopeT, trend->curvatureT, trend->numPointsUsed,
-           trend->anDiscriminationT,
-           (trend->anDiscriminable ? "can resolve Z" : "cannot resolve Z - need lower-energy peaks") );
-  m_calcLog.push_back( "&nbsp;" );
-  m_calcLog.push_back( buffer );
 }//updateTrendMessage(...)
 
 
@@ -6976,8 +7098,6 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
       m_logDiv->hide();
     }//if( m_logDiv )
 
-    unsigned int ndof = 1;
-
     // Create a temporary results object if we don't have final results
     ShieldingSourceFitCalc::ModelFitResults temp_results;
     const ShieldingSourceFitCalc::ModelFitResults *results_to_use = results.get();
@@ -6985,29 +7105,23 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
     if( !results || !results->peak_comparisons || !results->peak_calc_details
        || (results->successful != ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final) )
     {
-      m_calcLog.clear();
-      m_peakCalcLogInfo.reset();
-
       auto fcnAndPars = shieldingFitnessFcn();
 
       std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &chi2Fcn = fcnAndPars.first;
       ROOT::Minuit2::MnUserParameters &inputPrams = fcnAndPars.second;
 
-      ndof = inputPrams.VariableParameters();
-
       const vector<double> params = inputPrams.Params();
       const vector<double> errors = inputPrams.Errors();
       GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
 
-      vector<GammaInteractionCalc::PeakDetail> calcLog;
-      vector<GammaInteractionCalc::PeakResultPlotInfo> chis = chi2Fcn->energy_chi_contributions( params, errors, mixcache, &m_calcLog, &calcLog );
-
-      m_peakCalcLogInfo.reset( new vector<GammaInteractionCalc::PeakDetail>( calcLog ) );
+      vector<GammaInteractionCalc::PeakDetail> peak_details;
+      const vector<GammaInteractionCalc::PeakResultPlotInfo> chis
+              = chi2Fcn->energy_chi_contributions( params, errors, mixcache, &peak_details );
 
       // Build temporary results object for the chart
-      temp_results.numDOF = ndof;
+      temp_results.numDOF = inputPrams.VariableParameters();
       temp_results.peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>( chis ) );
-      temp_results.peak_calc_details.reset( new vector<GammaInteractionCalc::PeakDetail>( calcLog ) );
+      temp_results.peak_calc_details.reset( new vector<GammaInteractionCalc::PeakDetail>( peak_details ) );
 
       // Diagnose the pull trend from the live (interactive) fit configuration, so the trend
       //  curve and message update as the user edits.  Uses the current fit-checkbox states.
@@ -7026,24 +7140,9 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
       }
 
       results_to_use = &temp_results;
-    }else
-    {
-      ndof = results->numDOF;
-      m_calcLog = results->peak_calc_log;
-      m_peakCalcLogInfo.reset( new vector<GammaInteractionCalc::PeakDetail>( *results->peak_calc_details ) );
-    }
+    }//if( we need to compute the peak comparisons ourselves )
 
     m_showLog->setHidden( !m_lastFitResults );
-
-    // Add info about number of parameters to calc log
-    if( !m_calcLog.empty() )
-    {
-      char buffer[64];
-      snprintf( buffer, sizeof(buffer), "There %s %i parameter%s fit for",
-                (ndof>1 ? "were" : "was"), int(ndof), (ndof>1 ? "s" : "") );
-      m_calcLog.push_back( "&nbsp;" );
-      m_calcLog.push_back( buffer );
-    }//if( !m_calcLog.empty() )
 
     // Pass the results directly to the new chart
     m_chi2Plot->setData( *results_to_use );
@@ -7058,8 +7157,6 @@ void ShieldingSourceDisplay::updateChi2ChartActual( std::shared_ptr<const Shield
   {
     cerr << "ShieldingSourceDisplay::updateChi2ChartActual()\n\tCaught:" << e.what() << endl;
   }
-
-  m_calcLog.push_back( ns_no_uncert_info_txt );
 }//void ShieldingSourceDisplay::updateChi2ChartActual()
 
 
@@ -7193,14 +7290,14 @@ void ShieldingSourceDisplay::showCalcLog()
         const vector<double> errors = inputPrams.Errors();
         GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
 
-        vector<string> calc_log;
-        vector<GammaInteractionCalc::PeakDetail> calcLog;
-        vector<GammaInteractionCalc::PeakResultPlotInfo> chis = chi2Fcn->energy_chi_contributions( params, errors, mixcache, &calc_log, &calcLog );
+        vector<GammaInteractionCalc::PeakDetail> peak_details;
+        const vector<GammaInteractionCalc::PeakResultPlotInfo> chis
+                = chi2Fcn->energy_chi_contributions( params, errors, mixcache, &peak_details );
 
         // Create a temporary results object with just the peak comparison data for the plot
         ShieldingSourceFitCalc::ModelFitResults temp_results;
         temp_results.peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>( chis ) );
-        temp_results.peak_calc_details.reset( new vector<GammaInteractionCalc::PeakDetail>( calcLog ) );
+        temp_results.peak_calc_details.reset( new vector<GammaInteractionCalc::PeakDetail>( peak_details ) );
 
         // Generate the plot JSON and add it to data
         const string plot_json_str = ShieldingSourceFitPlot::jsonForData( temp_results );
@@ -7240,25 +7337,6 @@ void ShieldingSourceDisplay::showCalcLog()
       InjaLogDialog::LogType::Text,
       []( inja::Environment &env, const nlohmann::json &data ) -> string {
         return env.render_file( "std_fit_log.tmplt.txt", data );
-      }
-    ) );
-
-    // Add deprecated text log (captured from m_calcLog)
-    // Copy m_calcLog to avoid capturing 'this'
-    const vector<string> deprecated_log_copy = m_calcLog;
-    templates.push_back( make_tuple(
-      WString::tr( "ssd-template-deprecated-txt" ),
-      "_deprecated_log.txt",
-      InjaLogDialog::LogType::Text,
-      [deprecated_log_copy]( inja::Environment &env, const nlohmann::json &data ) -> string {
-        // env and data are unused - just return the captured log text
-        string result;
-        for( const string &line : deprecated_log_copy )
-        {
-          result += line;
-          result += "\n";
-        }
-        return result;
       }
     ) );
 
@@ -8528,6 +8606,9 @@ void ShieldingSourceDisplay::deSerialize( const ShieldingSourceDisplayState &sta
   m_accountForDrfUncert->setChecked( options.account_for_drf_uncert );
   m_correctForCascade->setChecked( options.correct_for_cascade_summing );
   updateCascadeAvailability();
+  m_volEffMethodCombo->setCurrentIndex( static_cast<int>( options.volumetric_eff_method ) );
+  m_lastVolEffMethodIndex = m_volEffMethodCombo->currentIndex();  //else the next user change undoes to a stale index
+  updateVolEffMethodAvailability();
   m_showChiOnChart->setChecked( state.showChiOnChart );
   m_chi2Plot->setShowChi( state.showChiOnChart );
   string dist_str = PhysicalUnits::printToBestLengthUnitsCompact( state.config->distance );  //e.g. "1 m", not "1.000000 m"
@@ -8651,7 +8732,7 @@ ShieldingSourceDisplay::ShieldingSourceDisplayState ShieldingSourceDisplay::seri
       const vector<double> errors = inputPrams.Errors();
       GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
       const vector<GammaInteractionCalc::PeakResultPlotInfo> chis
-      = chi2Fcn->energy_chi_contributions( params, errors, mixcache, nullptr, nullptr );
+      = chi2Fcn->energy_chi_contributions( params, errors, mixcache );
       
       if( chis.size() )
       {
@@ -9150,6 +9231,9 @@ void ShieldingSourceDisplay::isotopeIsBecomingVolumetricSourceCallback(
   //Update activity displayed
   updateActivityOfShieldingIsotope( caller, nuc );
 
+  //A volumetric source now exists: refresh the volumetric-efficiency method availability/indicator.
+  updateVolEffMethodAvailability();
+
   //Update the Chi2
   updateChi2Chart();
 }//isotopeIsBecomingVolumetricSourceCallback(...)
@@ -9173,7 +9257,10 @@ void ShieldingSourceDisplay::isotopeRemovedAsVolumetricSourceCallback(
     if( select )
       select->setTraceSourceBtnStatus();
   }//for( WWidget *widget : children )
-  
+
+  //A volumetric source may no longer exist: refresh the volumetric-efficiency method availability.
+  updateVolEffMethodAvailability();
+
   //Update the Chi2
   updateChi2Chart();
 }//isotopeRemovedAsVolumetricSourceCallback(...)
@@ -9703,12 +9790,13 @@ void ShieldingSourceDisplay::showPhoneFitResults()
     }//if( !msgs.empty() )
   }//if( m_lastFitResults )
 
-  if( !m_calcLog.empty() )
+  // `showCalcLog()` requires fit results, same as the desktop `m_showLog` button.
+  if( m_lastFitResults )
   {
     WPushButton *logBtn = contents->addNew<WPushButton>( WString::tr("ssd-phone-view-log") );
     logBtn->addStyleClass( "LinkBtn SsdViewLog" );
     logBtn->clicked().connect( this, &ShieldingSourceDisplay::showCalcLog );
-  }//if( !m_calcLog.empty() )
+  }//if( m_lastFitResults )
 
   dialog->addButton( WString::tr("ssd-phone-done") );
 }//void showPhoneFitResults()
@@ -10488,7 +10576,6 @@ void ShieldingSourceDisplay::updateGuiWithModelFitResults( std::shared_ptr<Shiel
     
     updateChi2ChartActual( results );
     m_chi2ChartNeedsUpdating = false;
-    updateCalcLogWithFitResults( m_currentFitFcn, results, m_calcLog );
   }catch( std::exception &e )
   {
     passMessage( "Programming issue - caught exception: " + string(e.what())
@@ -10701,277 +10788,6 @@ std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> ShieldingSourceDisplay:
 }//void doModelFit()
 
 
-
-
-
-void ShieldingSourceDisplay::updateCalcLogWithFitResults(
-                                  shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
-                                    std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results,
-                                                         vector<string> &calcLog )
-{
-  // This function is not internationalized - the plan is to eventually totally overhaul this
-  //  how results are logged, so it isnt worth internationalizing this function now (and also,
-  //  probably only the primary developer uses this calc log).
-  assert( chi2Fcn );
-  assert( results );
-  const std::vector<double> &params = results->paramValues;
-  const std::vector<double> &errors = results->paramErrors;
-  
-  if( calcLog.size() && calcLog.back() == ns_no_uncert_info_txt )
-    calcLog.erase( calcLog.end()-1, calcLog.end() );
-  
-  const shared_ptr<const DetectorPeakResponse> &det = chi2Fcn->detector();
-  
-  const DetectorPeakResponse::EffGeometryType detType = (det && det->isValid())
-                                                  ? det->geometryType()
-                                                  : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
-  
-  try
-  {
-    for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
-    {
-      if( !chi2Fcn->hasVariableMassFraction(shielding_index) )
-        continue;
-      
-      const shared_ptr<const Material> mat = chi2Fcn->material(shielding_index);
-      assert( mat );
-      if( !mat )
-        continue;
-
-      stringstream msg;
-      msg << "Shielding material " << mat->name << " fit mass fractions for isotopes:";
-      
-      const map<const SandiaDecay::Element *,vector<const SandiaDecay::Nuclide *>> el_to_nucs
-                                            = chi2Fcn->nuclideFittingMassFracFor( shielding_index );
-      for( const auto &el_nuc : el_to_nucs )
-      {
-        const SandiaDecay::Element * const el = el_nuc.first;
-        
-        for( const SandiaDecay::Nuclide *n : el_nuc.second )
-        {
-          double frac, uncert;
-          chi2Fcn->massFractionOfElement( frac, uncert, shielding_index, n, el, params, errors );
-          
-          msg << " " << n->symbol << "(massfrac=" << frac << "+-" << uncert << "),";
-        }//for( size_t shielding_index = 0; shielding_index < chi2Fcn->numMaterials(); ++shielding_index )
-      }
-      
-      calcLog.push_back( msg.str() );
-    }//for( const Material *mat : chi2Fcn->materialsFittingMassFracsFor() )
-    
-  {//begin add chi2 line
-    stringstream msg;
-    msg << "It took " << results->num_fcn_calls
-        << " solution trials to reach chi2=" << results->chi2;
-    // The Ceres driver doesn't produce a Minuit-style EDM; it leaves edm < 0 as a sentinel.
-    if( results->edm >= 0.0 )
-      msg << " with an estimated distance to minimum of " << results->edm;
-    calcLog.push_back( msg.str() );
-  }//end add chi2 line
-    
-  //Need to list fit parameters and uncertainties here
-  const size_t nnuc = chi2Fcn->numNuclides();
-  for( size_t nucn = 0; nucn < nnuc; ++nucn )
-  {
-    const SandiaDecay::Nuclide *nuc = chi2Fcn->nuclide( nucn );
-    if( nuc )
-    {
-      const bool useCi = !UserPreferences::preferenceValue<bool>( "DisplayBecquerel", InterSpec::instance() );
-      const double act = chi2Fcn->activity( nuc, params );
-      const string actStr = PhysicalUnits::printToBestActivityUnits( act, 2, useCi );
-      
-      const double actUncert = chi2Fcn->activityUncertainty( nuc, params, errors );
-      const string actUncertStr = PhysicalUnits::printToBestActivityUnits( actUncert, 2, useCi );
-      
-      const double mass = (act / nuc->activityPerGram()) * PhysicalUnits::gram;
-      const std::string massStr = PhysicalUnits::printToBestMassUnits( mass, 2, PhysicalUnits::gram );
-      
-      const double age = chi2Fcn->age( nuc, params );
-      const double ageUncert = chi2Fcn->age( nuc, errors );
-      const string ageStr = PhysicalUnitsLocalized::printToBestTimeUnits( age, 2 );
-      const string ageUncertStr = PhysicalUnitsLocalized::printToBestTimeUnits( ageUncert, 2 );
-  
-      string act_postfix = DetectorPeakResponse::det_eff_geom_type_postfix(detType), trace_total = "";
-      if( chi2Fcn->isTraceSource(nuc) )
-      {
-        const double total_act = chi2Fcn->totalActivity(nuc,params);
-        trace_total = "Total activity "
-                      + PhysicalUnits::printToBestActivityUnits( total_act, 2, useCi )
-                      + DetectorPeakResponse::det_eff_geom_type_postfix(detType) + ", ";
-        
-        switch( chi2Fcn->traceSourceActivityType(nuc) )
-        {
-          case TraceActivityType::TotalActivity:
-            trace_total = "";
-            break;
-            
-          case TraceActivityType::ActivityPerCm3:
-            act_postfix = " per cm3";
-            break;
-          
-          case TraceActivityType::ExponentialDistribution:
-            act_postfix = " per m2, with relaxation length "
-                          + PhysicalUnits::printToBestLengthUnits(chi2Fcn->relaxationLength(nuc) );
-            break;
-            
-          case GammaInteractionCalc::TraceActivityType::ActivityPerGram:
-            act_postfix = " per gram shielding";
-            break;
-            
-          case GammaInteractionCalc::TraceActivityType::NumTraceActivityType:
-            assert(0);
-            break;
-        }//switch( chi2Fcn->traceSourceActivityType(nuc) )
-      }//if( chi2Fcn->isTraceSource(nuc) )
-      
-      stringstream msg;
-      msg << nuc->symbol << " fit activity " << actStr << act_postfix
-          << " (" << trace_total << nuc->symbol << " mass: " << massStr
-          << act_postfix << ") with uncertainty " << actUncertStr << act_postfix
-          << " (" << floor(0.5 + 10000*actUncert/act)/100.0 << "%)";
-      
-      if( ageUncert <= DBL_EPSILON )
-        msg << " at assumed age " << ageStr;
-      else
-        msg << " with age " << ageStr << "+- " << ageUncertStr;
-      
-      if( chi2Fcn->isSelfAttenSource(nuc) )
-        msg << ", a self attenuating source";
-      else if( chi2Fcn->isTraceSource(nuc) )
-        msg << ", a trace source";
-  
-      msg << ".";
-      
-      calcLog.push_back( msg.str() );
-    }//if( nuc )
-  }//for( size_t nucn = 0; nucn < nnuc; ++nucn )
-  
-    calcLog.push_back( "Geometry: " + string(GammaInteractionCalc::to_str(chi2Fcn->geometry())) );
-    
-  const int nmat = static_cast<int>( chi2Fcn->numMaterials() );
-  for( int matn = 0; matn < nmat; ++matn )
-  {
-    stringstream msg;
-    const shared_ptr<const Material> mat = chi2Fcn->material( matn );
-    if( !mat )
-    {
-      const double adUnits = PhysicalUnits::gram / PhysicalUnits::cm2;
-      const double ad = chi2Fcn->arealDensity( matn, params ) / adUnits;
-      const double adUncert = chi2Fcn->arealDensity( matn, errors ) / adUnits;
-      
-      const double an = chi2Fcn->atomicNumber( matn, params );
-      const double anUncert = chi2Fcn->atomicNumber( matn, errors );
-      
-      msg << std::setprecision(3) << "Shielding " << matn+1 << " has "
-      << "AtomicNumber=" << an;
-      if( anUncert > DBL_EPSILON )
-        msg << " (+-" << anUncert << ")";
-      msg << " and ArealDensity=" << ad;
-      if( adUncert > DBL_EPSILON )
-        msg << " (+-" << adUncert << ")";
-      msg << " g/cm2";
-      
-    }else //if( !mat )
-    {
-      //assert( geometry() == chi2Fcn->geometry() );
-      
-      const double density = mat->density * PhysicalUnits::cm3 / PhysicalUnits::gram;
-      msg << mat->name << " has density " << std::setprecision(3) << density << "g/cm3 ";
-      
-      switch( chi2Fcn->geometry() )
-      {
-        case GeometryType::Spherical:
-        {
-          const double thickness = chi2Fcn->sphericalThickness( matn, params );
-          const double thicknessUncert = chi2Fcn->sphericalThickness( matn, errors );
-          
-          if( thicknessUncert > DBL_EPSILON )
-          {
-            msg << "and fit thickness "
-                << PhysicalUnits::printToBestLengthUnits(thickness,thicknessUncert) << ".";
-          }else
-          {
-            msg << "and has fixed thickness " << PhysicalUnits::printToBestLengthUnits(thickness)
-                 << ".";
-          }
-          
-          break;
-        }//case GeometryType::Spherical:
-          
-        case GeometryType::CylinderEndOn:
-        case GeometryType::CylinderSideOn:
-        {
-          msg << "and dimensions [";
-          const double radThickness = chi2Fcn->cylindricalRadiusThickness( matn, params );
-          const double radThicknessUncert = chi2Fcn->cylindricalRadiusThickness( matn, errors );
-          const double lenThickness = chi2Fcn->cylindricalLengthThickness( matn, errors );
-          const double halfLenUncert = chi2Fcn->cylindricalLengthThickness( matn, errors );
-          
-          const char *radLabel = matn ? "radial-thickness=" : "radius=";
-          const char *lengthLabel = matn ? "length-thickness=" : "half-length=";
-          
-          if( radThicknessUncert > DBL_EPSILON )
-            msg << radLabel << PhysicalUnits::printToBestLengthUnits(radThickness,radThicknessUncert);
-          else
-            msg << radLabel << PhysicalUnits::printToBestLengthUnits(radThickness) << " (fixed), ";
-          
-          if( lenThickness > DBL_EPSILON )
-            msg << lengthLabel << PhysicalUnits::printToBestLengthUnits(radThickness,radThicknessUncert);
-          else
-            msg << lengthLabel << PhysicalUnits::printToBestLengthUnits(radThickness) << " (fixed)";
-          
-          msg << "]";
-          
-          break;
-        }//case GeometryType::CylinderEndOn and CylinderSideOn:
-                    
-        case GeometryType::Rectangular:
-        {
-          const double widthThickness = chi2Fcn->rectangularWidthThickness( matn, params );
-          const double widthThicknessUncert = chi2Fcn->rectangularWidthThickness( matn, errors );
-          const double heightThickness = chi2Fcn->rectangularHeightThickness( matn, params );
-          const double heightThicknessUncert = chi2Fcn->rectangularHeightThickness( matn, errors );
-          const double depthThickness = chi2Fcn->rectangularDepthThickness( matn, params );
-          const double depthThicknessUncert = chi2Fcn->rectangularDepthThickness( matn, errors );
-          
-          const char *widthLabel  = matn ? "width-thickness="  : "half-width=";
-          const char *heightLabel = matn ? "height-thickness=" : "half-height=";
-          const char *depthLabel  = matn ? "depth-thickness="  : "half-depth=";
-          
-          msg << widthLabel;
-          if( widthThicknessUncert > DBL_EPSILON )
-            msg << PhysicalUnits::printToBestLengthUnits(widthThickness,widthThicknessUncert) << ", ";
-          else
-            msg << PhysicalUnits::printToBestLengthUnits(widthThickness) << " (fixed), ";
-          
-          msg << heightLabel;
-          if( heightThicknessUncert > DBL_EPSILON )
-            msg << PhysicalUnits::printToBestLengthUnits(heightThickness,heightThicknessUncert) << ", ";
-          else
-            msg << PhysicalUnits::printToBestLengthUnits(heightThickness) << " (fixed), ";
-          
-          msg << depthLabel;
-          if( depthThicknessUncert > DBL_EPSILON )
-            msg << PhysicalUnits::printToBestLengthUnits(depthThickness,depthThicknessUncert);
-          else
-            msg << PhysicalUnits::printToBestLengthUnits(depthThickness) << " (fixed)";
-          
-          break;
-        }//case GeometryType::Rectangular:
-          
-        case GammaInteractionCalc::GeometryType::NumGeometryType:
-          assert( 0 );
-          break;
-      }//switch( geometry() )
-    }//if( !mat ) / else
-    
-    calcLog.push_back( msg.str() );
-  }//for( size_t matn = 0; matn < nmat; ++matn )
-  }catch( std::exception & )
-  {
-    calcLog.push_back( "There was an error and log may not be complete." );
-  }
-}//updateCalcLogWithFitResults(...)
 
 
 void ShieldingSourceDisplay::showShieldSourceDiagram()

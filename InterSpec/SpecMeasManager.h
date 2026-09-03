@@ -253,6 +253,13 @@ public:
    */
   bool handleEfficiencyCsvFile( std::istream &input, SimpleDialog *dialog );
 
+  /** A dropped GADRAS `Detector.dat`: the crystal geometry, FWHM and peak shape,
+   but no efficiency - which a Monte-Carlo characterization of that geometry
+   supplies.  Offers to open the Modify dialog seeded with the parsed geometry.
+   */
+  bool handleGadrasDetectorDatFile( std::istream &input, SimpleDialog *dialog,
+                                    const std::string &displayName );
+
   /** Some input files contain duplicate data - we will ask the user how they want to handle
    this, first handling "Derived Data", then "Multiple Energy Calibration Types", then
    "Multiple Virtual Detectors"
@@ -410,6 +417,12 @@ public:
   FileDragUploadResource *batchDragNDrop();
 #endif
 
+  /** The upload target for the "companion file" drop areas - the Efficiency.csv a Detector.dat is
+   missing, and vice-versa.  While such a dialog is showing, the app's normal spectrum-file drop
+   handling is blocked, so a file dropped anywhere lands in the dialog.
+   */
+  FileDragUploadResource *pairFileDragNDrop();
+
   //handleZippedFile:  presents the user with a dialog to extract and use one
   //  of the spectrum files in a zip archive.  Returns true if a valid zip file.
   //  'name' is the display name of the original file, while 'spoolName' is
@@ -562,6 +575,7 @@ private:
     RelActAutoXml,
     EccOrOutxFile,       ///< ISOCS .ECC or ANGLE .outx
     EfficiencyCsv,       ///< GADRAS Efficiency.csv / gamEff CSV / Run_effoutput
+    GadrasDetectorDat,   ///< GADRAS Detector.dat (crystal geometry, FWHM, peak shape)
     ShieldingSourceXml,
     SourceLib
 #if( USE_LLM_INTERFACE )
@@ -717,6 +731,9 @@ protected:
 #if( USE_BATCH_GUI_TOOLS )
   std::unique_ptr<FileDragUploadResource> m_batchDragNDrop;
 #endif
+
+  /** See #pairFileDragNDrop. */
+  std::unique_ptr<FileDragUploadResource> m_pairFileDragNDrop;
   
   Wt::Core::observing_ptr<SimpleDialog> m_multiUrlSpectrumDialog;
   

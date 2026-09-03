@@ -123,6 +123,7 @@
 #include "InterSpec/DoseCalcWidget.h"
 #include "InterSpec/ExportSpecFile.h"
 #include "InterSpec/MakeFwhmForDrf.h"
+#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/DrfModifyWidget.h"
 #include "InterSpec/MakeMcResponseForDrf.h"
 #include "InterSpec/RefLineDynamic.h"
@@ -9277,8 +9278,15 @@ void InterSpec::deleteFwhmFromForegroundWindow()
 MakeMcResponseForDrfWindow *InterSpec::showMcResponseWindow(
                           std::shared_ptr<const DetectorPeakResponse> seed_drf )
 {
+  const std::shared_ptr<const ceelo::GeometryDescriptor> geometry
+                                            = seed_drf ? seed_drf->geometry() : nullptr;
+
   if( m_mcResponseTool )
   {
+    // Already open; re-seed its geometry when the DRF carries one (e.g. a fresh
+    //  ANGLE import) so the request isn't silently dropped.
+    if( geometry && m_mcResponseTool->tool() )
+      m_mcResponseTool->tool()->setGeometryFromDescriptor( *geometry );
     m_mcResponseTool->show();
     m_mcResponseTool->centerWindowHeavyHanded();
     return m_mcResponseTool.get();
@@ -9300,7 +9308,7 @@ MakeMcResponseForDrfWindow *InterSpec::showMcResponseWindow(
   if( m_undo && m_undo->canAddUndoRedoNow() )
   {
     auto undo = [this](){ deleteMcResponseWindow(); };
-    auto redo = [this](){ showMcResponseWindow( nullptr ); };
+    auto redo = [this,seed_drf](){ showMcResponseWindow( seed_drf ); };
     m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show characterize-by-MC tool" );
   }//if( undo )
 
@@ -9340,14 +9348,38 @@ DrfModifyWindow *InterSpec::showDrfModifyWindow( std::shared_ptr<DetectorPeakRes
     drf = foreground ? foreground->detector() : nullptr;
   }
 
+  const std::shared_ptr<const DetectorPeakResponse> seed_drf = drf;
+
   m_drfModifyWindow = AuxWindow::make<DrfModifyWindow>( this, drf );
   m_drfModifyWindow->tool()->updatedDrf().connect( this,
                           [this]( std::shared_ptr<DetectorPeakResponse> new_drf ){
-    if( new_drf )
-      detectorChanged().emit( new_drf );
+    if( !new_drf )
+      return;
+
+    const std::shared_ptr<SpecMeas> foreground = measurment( SpecUtils::SpectrumType::Foreground );
+    const std::shared_ptr<DetectorPeakResponse> prev_drf = foreground ? foreground->detector()
+                                                                      : nullptr;
+    detectorChanged().emit( new_drf );
+
+    if( m_undo && m_undo->canAddUndoRedoNow() )
+    {
+      // Values only - the same shape `DrfSelect::emitChangedSignal` uses.
+      auto undo = [prev_drf](){ InterSpec::instance()->detectorChanged().emit( prev_drf ); };
+      auto redo = [new_drf](){ InterSpec::instance()->detectorChanged().emit( new_drf ); };
+      m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Modify DRF" );
+    }//if( undo )
   } );
   m_drfModifyWindow->tool()->updatedDrf().connect( m_drfModifyWindow.get(), &AuxWindow::hide );
   m_drfModifyWindow->finished().connect( this, &InterSpec::deleteDrfModifyWindow );
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this](){ programmaticallyCloseDrfModifyWindow(); };
+    auto redo = [this,seed_drf](){
+      showDrfModifyWindow( std::const_pointer_cast<DetectorPeakResponse>(seed_drf) );
+    };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show modify-DRF tool" );
+  }//if( undo )
 
   return m_drfModifyWindow.get();
 }//DrfModifyWindow *showDrfModifyWindow(...)
@@ -9358,9 +9390,49 @@ void InterSpec::deleteDrfModifyWindow()
   if( !m_drfModifyWindow )
     return;
 
+  const std::shared_ptr<const DetectorPeakResponse> seed_drf
+                                                  = m_drfModifyWindow->tool()->originalDrf();
+
   AuxWindow::deleteAuxWindow( m_drfModifyWindow.get() );
   assert( !m_drfModifyWindow );
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this,seed_drf](){
+      showDrfModifyWindow( std::const_pointer_cast<DetectorPeakResponse>(seed_drf) );
+    };
+    auto redo = [this](){ programmaticallyCloseDrfModifyWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close modify-DRF tool" );
+  }//if( undo )
 }//void deleteDrfModifyWindow()
+
+
+void InterSpec::programmaticallyCloseDrfModifyWindow()
+{
+  if( !m_drfModifyWindow )
+    return;
+
+  // Null the member first, so `deleteDrfModifyWindow` (wired to `finished()`) early-returns rather
+  //  than adding a second, recursive undo step.
+  DrfModifyWindow *window = m_drfModifyWindow.get();
+  m_drfModifyWindow = nullptr;
+  AuxWindow::deleteAuxWindow( window );
+}//void programmaticallyCloseDrfModifyWindow()
+
+
+DrfModifyWidget *InterSpec::drfModifyWidget() const
+{
+  if( m_drfModifyWindow )
+    return m_drfModifyWindow->tool();
+
+  if( m_drfSelectWindow && m_drfSelectWindow->widget()
+     && m_drfSelectWindow->widget()->modifyWindow() )
+  {
+    return m_drfSelectWindow->widget()->modifyWindow()->tool();
+  }
+
+  return nullptr;
+}//DrfModifyWidget *drfModifyWidget() const
 
 
 #if( USE_DETECTION_LIMIT_TOOL )
@@ -11062,6 +11134,12 @@ DrfSelectWindow *InterSpec::showDrfSelectWindow()
   
   return m_drfSelectWindow.get();
 }//void showDrfSelectWindow()
+
+
+DrfSelectWindow *InterSpec::drfSelectWindow() const
+{
+  return m_drfSelectWindow.get();
+}//DrfSelectWindow *drfSelectWindow() const
 
 
 void InterSpec::closeDrfSelectWindow()

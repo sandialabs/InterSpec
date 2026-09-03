@@ -26,6 +26,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "cascade/CascadeTypes.h"
 #include "materials/Material.h"
 #include "geometry/Geometry.h"
@@ -77,6 +78,7 @@ BOOST_AUTO_TEST_SUITE(SphericalSource)
 BOOST_AUTO_TEST_CASE(basic_invariants) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_spherical_source(Eigen::Vector3d(0.0, 0.0, -10.0), 2.0);
 
@@ -94,11 +96,13 @@ BOOST_AUTO_TEST_CASE(point_like_sphere_matches_point_source) {
     Eigen::Vector3d center(0.0, 0.0, -10.0);
 
     EfficiencyCalculator calc_pt;
+    calc_pt.set_fep_window_keV(kTestFepWindowKeV);
     calc_pt.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_pt.set_point_source(center);
     auto res_pt = calc_pt.compute(precision_config(662.0));
 
     EfficiencyCalculator calc_sph;
+    calc_sph.set_fep_window_keV(kTestFepWindowKeV);
     calc_sph.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_sph.set_spherical_source(center, 0.001);
     auto res_sph = calc_sph.compute(precision_config(662.0));
@@ -113,16 +117,19 @@ BOOST_AUTO_TEST_CASE(efficiency_bracketed_by_near_and_far_endpoints) {
     Material nai = make_NaI();
 
     EfficiencyCalculator calc_near;
+    calc_near.set_fep_window_keV(kTestFepWindowKeV);
     calc_near.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_near.set_point_source(Eigen::Vector3d(0.0, 0.0, -8.0));
     auto res_near = calc_near.compute(precision_config(662.0));
 
     EfficiencyCalculator calc_far;
+    calc_far.set_fep_window_keV(kTestFepWindowKeV);
     calc_far.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_far.set_point_source(Eigen::Vector3d(0.0, 0.0, -12.0));
     auto res_far = calc_far.compute(precision_config(662.0));
 
     EfficiencyCalculator calc_sph;
+    calc_sph.set_fep_window_keV(kTestFepWindowKeV);
     calc_sph.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_sph.set_spherical_source(Eigen::Vector3d(0.0, 0.0, -10.0), 1.0);
     auto res_sph = calc_sph.compute(precision_config(662.0));
@@ -140,11 +147,13 @@ BOOST_AUTO_TEST_CASE(self_attenuating_sphere_below_bare) {
     Eigen::Vector3d center(0.0, 0.0, -8.0);
 
     EfficiencyCalculator calc_bare;
+    calc_bare.set_fep_window_keV(kTestFepWindowKeV);
     calc_bare.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_bare.set_spherical_source(center, 3.0);
     auto res_bare = calc_bare.compute(precision_config(662.0));
 
     EfficiencyCalculator calc_self;
+    calc_self.set_fep_window_keV(kTestFepWindowKeV);
     calc_self.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_self.set_spherical_source(center, 3.0);
     calc_self.set_source_material(&pb);
@@ -166,11 +175,13 @@ BOOST_AUTO_TEST_CASE(spherical_shield_attenuates) {
     Eigen::Vector3d center(0.0, 0.0, -8.0);
 
     EfficiencyCalculator calc0;
+    calc0.set_fep_window_keV(kTestFepWindowKeV);
     calc0.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc0.set_spherical_source(center, 1.0);
     auto res0 = calc0.compute(precision_config(662.0));
 
     EfficiencyCalculator calc1;
+    calc1.set_fep_window_keV(kTestFepWindowKeV);
     calc1.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc1.set_spherical_source(center, 1.0);
     calc1.add_source_shield(&fe, 1.0);   // 1 cm Fe shell
@@ -198,12 +209,14 @@ BOOST_AUTO_TEST_CASE(hollow_shell_higher_than_solid_ball) {
     Eigen::Vector3d center(0.0, 0.0, -8.0);
 
     EfficiencyCalculator calc_solid;
+    calc_solid.set_fep_window_keV(kTestFepWindowKeV);
     calc_solid.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_solid.set_spherical_source(center, 3.0);          // solid ball
     calc_solid.set_source_material(&pb);
     auto res_solid = calc_solid.compute(precision_config(662.0));
 
     EfficiencyCalculator calc_shell;
+    calc_shell.set_fep_window_keV(kTestFepWindowKeV);
     calc_shell.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_shell.set_spherical_source(center, 3.0, Eigen::Matrix3d::Identity(), 2.0);  // shell [2,3]
     calc_shell.set_source_material(&pb);
@@ -226,12 +239,14 @@ BOOST_AUTO_TEST_CASE(annular_cylinder_higher_than_solid_sideon) {
     Eigen::Matrix3d rot = side_on_rotation();
 
     EfficiencyCalculator calc_solid;
+    calc_solid.set_fep_window_keV(kTestFepWindowKeV);
     calc_solid.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_solid.set_cylindrical_source(center, 3.0, 3.0, rot);   // solid
     calc_solid.set_source_material(&pb);
     auto res_solid = calc_solid.compute(precision_config(662.0));
 
     EfficiencyCalculator calc_tube;
+    calc_tube.set_fep_window_keV(kTestFepWindowKeV);
     calc_tube.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_tube.set_cylindrical_source(center, 3.0, 3.0, rot, 2.0);  // bore r_in=2
     calc_tube.set_source_material(&pb);
@@ -248,6 +263,7 @@ BOOST_AUTO_TEST_CASE(annular_cylinder_higher_than_solid_sideon) {
 BOOST_AUTO_TEST_CASE(annular_cylinder_basic_invariants) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -10.0), 2.0, 2.0,
                                 Eigen::Matrix3d::Identity(), 1.0);  // bore r_in=1
@@ -276,11 +292,13 @@ BOOST_AUTO_TEST_CASE(endon_differs_from_sideon) {
     Eigen::Vector3d center(0.0, 0.0, -10.0);
 
     EfficiencyCalculator calc_end;
+    calc_end.set_fep_window_keV(kTestFepWindowKeV);
     calc_end.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_end.set_cylindrical_source(center, 0.5, 6.0);  // identity = EndOn
     auto res_end = calc_end.compute(precision_config(662.0));
 
     EfficiencyCalculator calc_side;
+    calc_side.set_fep_window_keV(kTestFepWindowKeV);
     calc_side.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_side.set_cylindrical_source(center, 0.5, 6.0, side_on_rotation());
     auto res_side = calc_side.compute(precision_config(662.0));
@@ -305,6 +323,7 @@ BOOST_AUTO_TEST_SUITE(SphericalCascade)
 BOOST_AUTO_TEST_CASE(co60_summing_out_on_sphere) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     // Close geometry maximises true-coincidence summing-out.
     calc.set_spherical_source(Eigen::Vector3d(0.0, 0.0, -2.0), 0.5);
@@ -320,7 +339,10 @@ BOOST_AUTO_TEST_CASE(co60_summing_out_on_sphere) {
 
     CascadeConfig cfg;
     cfg.cascades = {co60};
-    cfg.peaks = {PeakWindow{1173.2}, PeakWindow{1332.5}};
+    // Explicit: this was written against the old 1.5 keV PeakWindow default, so
+    //  spell it out rather than silently tracking whatever the default becomes.
+    cfg.peaks = {PeakWindow{1173.2, kTestFepWindowKeV},
+                 PeakWindow{1332.5, kTestFepWindowKeV}};
     cfg.num_events = 200000;
     cfg.method = CascadeMethod::Conditional;
 

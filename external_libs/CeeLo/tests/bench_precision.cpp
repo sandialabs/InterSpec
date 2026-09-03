@@ -30,6 +30,7 @@
 /// source at z = -10 cm, across six energies.
 
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "materials/Material.h"
 
 #include <Eigen/Core>
@@ -92,6 +93,7 @@ int main() {
 
         for (double E : energies) {
             EfficiencyCalculator calc;
+            calc.set_fep_window_keV(kTestFepWindowKeV);
             calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
             calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -117,6 +119,7 @@ int main() {
 
     for (double E : energies) {
         EfficiencyCalculator calc;
+        calc.set_fep_window_keV(kTestFepWindowKeV);
         calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 

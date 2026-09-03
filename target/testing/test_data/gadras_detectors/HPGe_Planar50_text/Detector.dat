@@ -1,0 +1,81 @@
+  1      0.00000      0   A1: e-cal ord. 1
+  2   6000.00000      0   A2: e-cal ord. 2
+  3      0.00000      0   A3: e-cal ord. 3
+  4      0.00000      0   A4: e-cal ord. 4
+  5      0.00000      0   A5: e-cal, low-E
+  6      0.90900      0   res. @ E=0 (keV)
+  7      0.24300      0   % FWHM @ 661 keV
+  8      0.48700      0   resolution Power
+  9      0.03892      0   solid angle (%)
+ 10      2.97000      0   det. length (cm)
+ 11      7.14000      0   det. width (cm)
+ 12      1.00000      0   height/width
+ 13      8.00000      0   shape factor
+ 14      5.00000      0   attenuator Z
+ 15      0.50000      0   attenuator g/cm2
+ 16      0.00000      0   porosity (%)
+ 17    100.00000      0   distance (cm)
+ 18      1.00000      0   eff. scalar
+ 19      4.00000      0   outer atten. Z
+ 20      0.00000      0   outer atten AD
+ 21      5.18525      1   attenuate scat
+ 22      4.49590      1   clutter
+ 23      1.20000      0   scat prob @ 0
+ 24      3.60108      1   scat prob @ 45
+ 25      9.57429      1   scat prob @ 90
+ 26      3.19310      1   scat prob @ 135
+ 27      3.36015      1   scat prob @ 180
+ 28      2.62000      1   scat @ E-> Edge
+ 29      0.00000      0   high-E skew
+ 30      1.77655      1   scat @ E -> 0
+ 31      4.38998      1   scat = f(E)
+ 32      0.00000      0   outer porosity
+ 33      1.00000      0   ext annihilation
+ 34    -10.00000      0   shaping time, us
+ 35      2.00000      0   LLD(keV)
+ 36      0.00000      0   low-E noise
+ 37    100.00000      0   height (cm)
+ 38      0.00000      0   Frisch grid (%)
+ 39      0.00000      0   sheild xray 1 scalar
+ 40      2.00000      0   det setback (cm)
+ 41      0.00000      0   shield angle (%)
+ 42      0.00000      0   shield thick, cm
+ 43      0.00000      0   dead layer Z
+ 44      0.00000      0   dead layer g/cm2
+ 45      0.00000      0   shield LLD (keV)
+ 46      0.00000      0   Bremsstrahlung
+ 47      3.80000      0   low-E skew
+ 48      0.00000      0   hole mu-tau (cm)
+ 49      0.00000      0   % neutron shield
+ 50      1.00000      0   neutron reflect
+ 51      0.01000      0   dead layer (mm)
+ 52      0.00000      0   bad pole zero       / INBIN
+ 53     48.90000      0   efficiency holder   / COINC
+ 54      0.00000      0   # coincidence array / PILEUP
+ 55      0.00000      0   enhance Compton escape (coincidence arrays)
+ 56      0.00000      0   alt collimator dia. / REBIN
+ 57     -0.19300      0   skew low-E power    / adjustable if value=1
+ 58      1.00000     82   neutron environment / local xray 1 Z
+ 59      0.00000      3   scatter environment / gamma detector
+ 60      0.00000      0   unused              / anticoincidence detector
+ 61      1.00000      0   air pressure, atm   / 0) AC shield; 1) CC or 2) CA imagers
+ 62      5.00000     10   template error      / min energy, keV
+ 63      3.44535   6000   chi-square          / max energy, keV
+ 64      0.00000  32768   local xray 2 scalar / # of channels
+Version 18.8.13 
+ 65      0.00000     82   side shield (%)     / local xray 2 Z
+ 66      0.00000      0   AN side shield
+ 67      0.00000      0   AD side shield
+ 68      0.00000      0   back shield (%)
+ 69      0.00000      0   AN back shield
+ 70      0.00000      0   AD back shield
+ 71      0.00000      0   low-E skew extent
+ 72      0.00000      0   LLD sharpness
+ 73     -0.50000      0   skew high-E power   / adjustable if value=1
+ 74      0.00000      0   peak scatter angle  / adjustable if value=1
+ 75      0.00000      0   peak scatter width  / adjustable if value=1
+ 76      0.00000      0   peak scatter amount / adjustable if value=1
+ 77      0.00000      0   high-E skew extent
+ 78      0.00000      0   dead time per pulse (us)
+ 79      0.00000      0   reserved
+ 80      0.00000      0   reserved

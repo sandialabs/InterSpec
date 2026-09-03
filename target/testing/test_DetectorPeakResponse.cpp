@@ -48,9 +48,13 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/ParseUtils.h"
 
+#include "InterSpec/CeeLoUtils.h"
+#include "InterSpec/MaterialDB.h"
 #include "InterSpec/PhysicalUnits.h"
+#include "InterSpec/AngleOutxImport.h"
 #include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/InterSpec.h"
 
@@ -531,6 +535,1028 @@ BOOST_AUTO_TEST_CASE( test_read_angle_outx_file )
   BOOST_CHECK_THROW( DetectorPeakResponse::parseAngleOutxFile(oversized_input), std::exception );
 
   cout << "Successfully parsed ANGLE .outx file" << endl;
+}
+
+
+BOOST_AUTO_TEST_CASE( test_read_angle_outx_full )
+{
+  cout << "\n\nTesting ANGLE .outx rich (geometry + reference) parsing..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Test data directory not set (use --testfiledir=...)" );
+
+  const string outx_file = SpecUtils::append_path( g_test_data_dir, "det_eff/Angle-example-efficiency.outx" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(outx_file), "OUTX file not found: " + outx_file );
+
+  ifstream input( outx_file.c_str() );
+  BOOST_REQUIRE_MESSAGE( input.is_open(), "Failed to open OUTX file" );
+
+  AngleOutxContents contents;
+  BOOST_CHECK_NO_THROW( contents = DetectorPeakResponse::parseAngleOutxFileFull(input) );
+
+  // The fixed-geometry DRF must still be produced (backward compatibility).
+  BOOST_REQUIRE_MESSAGE( contents.fixedGeomDrf != nullptr, "Full parse should still yield fixedGeomDrf" );
+  BOOST_CHECK( contents.fixedGeomDrf->geometryType() == DetectorPeakResponse::EffGeometryType::FixedGeomTotalAct );
+
+  // --- Geometry ---
+  BOOST_REQUIRE_MESSAGE( contents.hasGeometry, "Fixture should yield a usable geometry" );
+
+  // Lengths are stored in PhysicalUnits units (file is in mm); assert against
+  //  the known GEM35-70 fixture with a loose tolerance.
+  const double radius_mm = contents.crystalRadius / PhysicalUnits::mm;
+  const double length_mm = contents.crystalLength / PhysicalUnits::mm;
+  BOOST_CHECK_MESSAGE( close_enough(radius_mm, 29.15, 0.01), "crystal radius mm: " + to_string(radius_mm) );
+  BOOST_CHECK_MESSAGE( close_enough(length_mm, 68.9, 0.01), "crystal length mm: " + to_string(length_mm) );
+
+  // <crystal bulletizingRadius="8"> - the rounded outer front edge.
+  const double bullet_mm = contents.bulletizingRadius / PhysicalUnits::mm;
+  BOOST_CHECK_MESSAGE( close_enough(bullet_mm, 8.0, 0.01),
+                       "bulletizing radius mm: " + to_string(bullet_mm) );
+
+  BOOST_CHECK_MESSAGE( contents.hasCore, "Fixture crystal is coaxial (has a core/bore)" );
+  BOOST_CHECK( contents.coreRadius > 0.0 );
+  BOOST_CHECK( contents.coreDepth > 0.0 );
+  BOOST_CHECK_MESSAGE( contents.coreRounded, "Fixture core is rounded=\"yes\"" );
+
+  BOOST_CHECK( contents.deadLayerFront > 0.0 );
+  BOOST_CHECK( contents.deadLayerSide > 0.0 );
+
+  // Layers (endcap/housing pieces) - count is not fixed, but every layer except
+  //  the cryostat vacuum gap must carry a material name so it can be resolved
+  //  later.
+  BOOST_REQUIRE_MESSAGE( !contents.layers.empty(), "Fixture should have endcap/housing layers" );
+  for( const AngleOutxContents::Layer &layer : contents.layers )
+  {
+    const bool is_vacuum = (layer.role == AngleLayerRole::VacuumInner)
+                           || (layer.role == AngleLayerRole::VacuumOuter);
+    BOOST_CHECK_MESSAGE( is_vacuum || !layer.material.empty(),
+                         string("Every non-vacuum layer should have a material name (the ")
+                         + to_string(layer.role) + " does not)" );
+    BOOST_CHECK_MESSAGE( (layer.front > 0.0) || (layer.side > 0.0), "Every layer should have a nonzero thickness" );
+  }
+
+  // --- Reference curve ---
+  BOOST_REQUIRE_MESSAGE( contents.hasReference, "Fixture should yield a reference curve" );
+  BOOST_REQUIRE_MESSAGE( contents.referencePoints.size() >= 2, "Reference curve needs >= 2 points" );
+  for( size_t i = 0; i < contents.referencePoints.size(); ++i )
+  {
+    const pair<float,float> &pt = contents.referencePoints[i];
+    BOOST_CHECK_MESSAGE( (pt.first > 0.0f) && (pt.second > 0.0f) && (pt.second <= 1.0f),
+                         "Reference point in range at index " + to_string(i) );
+    if( i > 0 )
+      BOOST_CHECK_MESSAGE( pt.first > contents.referencePoints[i-1].first,
+                           "Reference points must be strictly ascending in energy" );
+  }
+
+  // Reference distance derived from the reference curve's holder height (~25 cm).
+  BOOST_CHECK_MESSAGE( (contents.referenceDistanceCm > 20.0) && (contents.referenceDistanceCm < 30.0),
+                       "reference distance cm: " + to_string(contents.referenceDistanceCm) );
+
+  // Fitted-region equations extracted from XML comments (dev-check consumes these).
+  BOOST_REQUIRE_MESSAGE( !contents.fitRegions.empty(), "Fixture has fitted-region equations" );
+  for( const AngleOutxContents::FitRegion &region : contents.fitRegions )
+    BOOST_CHECK_MESSAGE( !region.equation.empty(), "Each fitted region should have its equation comment" );
+
+  cout << "Successfully parsed rich ANGLE contents ("
+       << contents.layers.size() << " layers, "
+       << contents.referencePoints.size() << " reference points, "
+       << contents.fitRegions.size() << " fit regions)" << endl;
+
+  // --- Stage 2: map onto a CeeLo geometry + build a seed DRF ---
+  // Material resolution needs the MaterialDB singleton; initialize it from the
+  //  static data directory (set by GlobalFixture).  Skip the build assertions
+  //  if the DB is unavailable in this environment.
+  try
+  {
+    MaterialDB::initialize();
+  }catch( std::exception & )
+  {
+  }
+
+  if( MaterialDB::initialized() )
+  {
+    vector<string> warnings;
+    ceelo::GeometryDescriptor gd;
+    BOOST_CHECK_NO_THROW( gd = CeeLoUtils::buildAngleGeometry( contents, warnings ) );
+
+    BOOST_CHECK( gd.shape == ceelo::DetectorShape::Cylinder );
+    BOOST_REQUIRE_MESSAGE( gd.dimensions_cm.size() >= 2, "Cylinder needs radius+length" );
+    BOOST_CHECK_MESSAGE( close_enough(gd.dimensions_cm[0], 29.15/10.0, 0.01),
+                         "geom radius cm: " + to_string(gd.dimensions_cm[0]) );
+    BOOST_CHECK_MESSAGE( close_enough(gd.dimensions_cm[1], 68.9/10.0, 0.01),
+                         "geom length cm: " + to_string(gd.dimensions_cm[1]) );
+
+    BOOST_CHECK_MESSAGE( close_enough(gd.bullet_radius_cm, 0.8, 0.01),
+                         "geom bullet radius cm: " + to_string(gd.bullet_radius_cm) );
+
+    BOOST_REQUIRE_MESSAGE( gd.bore.has_value(), "Coaxial fixture should yield a bore" );
+    BOOST_CHECK_MESSAGE( gd.bore->rounded_tip, "Fixture core is rounded=\"yes\"" );
+    BOOST_CHECK_MESSAGE( gd.dead_layer.has_value(), "Fixture should yield a dead layer" );
+
+    // Nothing about this fixture may be relaxed away; if this fires, either the
+    //  parse or relaxGeometryFeatures silently dropped a real geometry feature.
+    for( const ceelo::GeometryProblem p : gd.problems() )
+      cout << "  gd.problems(): " << ceelo::to_string(p) << endl;
+    BOOST_CHECK_MESSAGE( gd.problems().empty(), "Fixture geometry must be CeeLo-legal" );
+    BOOST_CHECK_MESSAGE( !gd.layers.empty(), "Fixture should yield endcap/housing layers" );
+
+    // Crystal material and every layer material should have resolved.
+    BOOST_CHECK_MESSAGE( gd.crystal_material_index >= 0, "Crystal material should resolve" );
+    for( const string &w : warnings )
+      cout << "  buildAngleGeometry warning: " << w << endl;
+
+    // The fixture's brass contact pin fills most of the bore, which CeeLo models
+    //  as empty - that warning is expected.  No MATERIAL may go unresolved,
+    //  though: an unresolved one becomes a transparent spacer and stops
+    //  attenuating.
+    for( const ceelo::MaterialSpec &m : gd.materials )
+      BOOST_CHECK_MESSAGE( m.name != "unresolved-spacer",
+                           "All fixture materials should resolve to a real composition" );
+    for( const string &w : warnings )
+      BOOST_CHECK_MESSAGE( w.find("unresolved") == string::npos,
+                           "Unexpected material-resolution warning: " + w );
+
+    // Seed DRF from the reference points (far-field absolute).
+    shared_ptr<DetectorPeakResponse> seed;
+    BOOST_CHECK_NO_THROW( seed = CeeLoUtils::buildAngleSeedDrf( contents ) );
+    BOOST_REQUIRE( seed != nullptr );
+    BOOST_CHECK( seed->isValid() );
+    BOOST_CHECK( !seed->isFixedGeometry() );
+    BOOST_CHECK( seed->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+    BOOST_CHECK_MESSAGE( seed->measuredPoints() && !seed->measuredPoints()->empty(),
+                         "Seed DRF should carry the measured reference points" );
+
+    // The seed DRF must be a valid EFFTRAN transfer anchor at the reference distance.
+    BOOST_CHECK_NO_THROW(
+      CeeLoUtils::transferAnchorForDrf( seed, gd, contents.referenceDistanceCm ) );
+
+    cout << "Built CeeLo geometry (" << gd.layers.size() << " layers, "
+         << gd.materials.size() << " materials) and seed DRF from ANGLE contents" << endl;
+  }else
+  {
+    cout << "  (MaterialDB unavailable - skipping Stage 2 geometry-build checks)" << endl;
+  }
+}
+
+
+
+/** ANGLE writes several file types off one grammar, in three different length
+ units.  The parser was originally built from a single millimeter ".outx" that
+ happened to contain everything, so these fixtures pin the variations: inches
+ (a silent factor of 25.4 if mishandled), a calculation run without a reference
+ curve (solid angles but no efficiencies), a bare detector definition, and the
+ container attribute the published spec misspells.
+ */
+BOOST_AUTO_TEST_CASE( test_angle_file_variants )
+{
+  cout << "\n\nTesting ANGLE file-format variants..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Test data directory not set (use --testfiledir=...)" );
+
+  auto open_fixture = []( const string &name ) -> string {
+    const string path = SpecUtils::append_path( g_test_data_dir, "det_eff/" + name );
+    BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(path), "Fixture not found: " + path );
+    return path;
+  };//open_fixture
+
+  // --- units="in": the same GEM35-70 geometry, written in inches ---
+  {
+    ifstream input( open_fixture("Angle-units-inches.outx").c_str() );
+    BOOST_REQUIRE( input.is_open() );
+
+    AngleOutxContents contents;
+    BOOST_REQUIRE_NO_THROW( contents = DetectorPeakResponse::parseAngleOutxFileFull(input) );
+
+    BOOST_CHECK_EQUAL( contents.unitsStr, string("in") );
+    BOOST_CHECK_CLOSE( contents.lengthUnitPU, 25.4*PhysicalUnits::mm, 1.0e-6 );
+
+    // Must land on the same physical size as the millimeter fixture.
+    BOOST_CHECK_CLOSE( contents.crystalRadius / PhysicalUnits::mm, 29.15, 1.0e-4 );
+    BOOST_CHECK_CLOSE( contents.crystalLength / PhysicalUnits::mm, 68.9, 1.0e-4 );
+    BOOST_CHECK_CLOSE( contents.bulletizingRadius / PhysicalUnits::mm, 8.0, 1.0e-4 );
+    BOOST_CHECK_CLOSE( contents.coreRadius / PhysicalUnits::mm, 4.95, 1.0e-4 );
+    BOOST_CHECK_CLOSE( contents.deadLayerFront / PhysicalUnits::mm, 0.7, 1.0e-4 );
+
+    BOOST_REQUIRE( contents.fixedGeomDrf != nullptr );
+    BOOST_CHECK_CLOSE( contents.fixedGeomDrf->detectorDiameter() / PhysicalUnits::mm,
+                       2.0*29.15, 1.0e-4 );
+    // Same front stack as the mm fixture: 0.7 + 3.0 + 0.03 + 0.03 + 1.0 mm.
+    BOOST_CHECK_CLOSE( contents.fixedGeomDrf->detectorSetback() / PhysicalUnits::mm, 4.76, 1.0e-3 );
+
+    BOOST_CHECK( contents.hasGeometry );
+    BOOST_CHECK( contents.hasReference );
+    BOOST_CHECK( contents.modeASupported );
+  }
+
+  // --- an .outx computed with no reference curve: solid angles only ---
+  {
+    const string path = open_fixture("Angle-no-refcurve.outx");
+
+    ifstream raw( path.c_str() );
+    BOOST_REQUIRE( raw.is_open() );
+    AngleOutxContents contents;
+    BOOST_REQUIRE_NO_THROW( contents = AngleOutx::parse(raw) );
+
+    BOOST_CHECK_MESSAGE( contents.hasGeometry, "A results-less ANGLE file still has a detector" );
+    BOOST_CHECK_MESSAGE( !contents.hasReference, "This fixture has no reference curve" );
+    BOOST_CHECK_MESSAGE( contents.modeASupported,
+                         "The physical detector model is usable without an efficiency curve" );
+    BOOST_REQUIRE( !contents.results.empty() );
+    for( const AngleResultRow &row : contents.results )
+    {
+      BOOST_CHECK_MESSAGE( !row.hasEfficiency, "ANGLE omits efficiency without a reference curve" );
+      BOOST_CHECK_MESSAGE( row.solidAngle > 0.0, "Solid angles are always written" );
+    }
+
+    // The DRF entry point must explain WHY, not just count pairs.
+    ifstream again( path.c_str() );
+    BOOST_REQUIRE( again.is_open() );
+    try
+    {
+      DetectorPeakResponse::parseAngleOutxFileFull( again );
+      BOOST_ERROR( "Should not build a DRF from a file with no efficiencies" );
+    }catch( std::exception &e )
+    {
+      const string msg = e.what();
+      BOOST_CHECK_MESSAGE( msg.find("reference efficiency curve") != string::npos,
+                           "Error should name the missing reference curve, got: " + msg );
+    }
+  }
+
+  // --- a bare ".detx" detector definition ---
+  {
+    const string path = open_fixture("Angle-detector-only.detx");
+
+    ifstream raw( path.c_str() );
+    BOOST_REQUIRE( raw.is_open() );
+    AngleOutxContents contents;
+    BOOST_REQUIRE_NO_THROW( contents = AngleOutx::parse(raw) );
+
+    BOOST_CHECK( contents.hasGeometry );
+    BOOST_CHECK( contents.modeASupported );
+    BOOST_CHECK( contents.results.empty() );
+    BOOST_CHECK( contents.detTypeEnum == AngleDetectorType::ClosedEndCoaxHPGe );
+    BOOST_CHECK_MESSAGE( !contents.coreRounded, "This fixture's core is rounded=\"no\"" );
+
+    ifstream again( path.c_str() );
+    BOOST_REQUIRE( again.is_open() );
+    try
+    {
+      DetectorPeakResponse::parseAngleOutxFileFull( again );
+      BOOST_ERROR( "Should not build a DRF from a .detx" );
+    }catch( std::exception &e )
+    {
+      const string msg = e.what();
+      BOOST_CHECK_MESSAGE( msg.find(".detx") != string::npos,
+                           "Error should say this is a detector definition, got: " + msg );
+    }
+  }
+
+  // --- the container attribute the published spec spells "botomThickness" ---
+  {
+    ifstream input( open_fixture("Angle-container-typo.outx").c_str() );
+    BOOST_REQUIRE( input.is_open() );
+
+    AngleOutxContents contents;
+    BOOST_REQUIRE_NO_THROW( contents = AngleOutx::parse(input) );
+
+    BOOST_REQUIRE( contents.sampleContainer.present );
+    BOOST_CHECK_EQUAL( contents.sampleContainer.type, string("Cylindrical") );
+    BOOST_CHECK_CLOSE( contents.sampleContainer.innerRadius / PhysicalUnits::mm, 12.8, 1.0e-4 );
+    BOOST_CHECK_CLOSE( contents.sampleContainer.bottomThickness / PhysicalUnits::mm, 0.5, 1.0e-4 );
+    BOOST_CHECK_EQUAL( contents.sampleContainer.material.name, string("Plastic") );
+
+    // The source sits INSIDE the container, so the container's bottom wall (and
+    //  foot, and any coating on it) stand it off further than the holder alone.
+    //  This fixture has no holder, so the 0.5 mm bottom is the whole standoff.
+    BOOST_CHECK_SMALL( contents.sampleDistanceCm, 1.0e-9 );
+    BOOST_CHECK_CLOSE( contents.sampleSourceDistanceCm, 0.05, 1.0e-3 );
+  }
+
+  // --- malformed / hostile input must fail loudly, and say why --------------
+  {
+    auto expect_throw = []( const string &label, const string &xml, const string &expect_in_msg )
+    {
+      stringstream input( xml );
+      try
+      {
+        AngleOutx::parse( input );
+        BOOST_ERROR( label + ": should have thrown" );
+      }catch( std::exception &e )
+      {
+        const string msg = e.what();
+        BOOST_CHECK_MESSAGE( msg.find(expect_in_msg) != string::npos,
+                             label + ": message should mention '" + expect_in_msg
+                             + "', got: " + msg );
+      }
+    };//expect_throw
+
+    const string head = "<?xml version=\"1.0\" encoding=\"utf-8\"?>\n"
+      "<angle generator=\"ANGLE\" version=\"5.0\" build=\"5.0.0.480\" units=\"";
+    const string body = "\">\n"
+      "  <detector type=\"Closed-end coaxial HPGe\" name=\"x\" description=\"\">\n"
+      "    <crystal height=\"50\" radius=\"";
+    const string tail = "\" />\n  </detector>\n</angle>\n";
+
+    // A unit we do not know must never silently default to mm (a factor of 25.4).
+    expect_throw( "unknown units", head + "furlong" + body + "25" + tail, "units" );
+
+    // SpecUtils::parse_double stops at the first character it cannot use and
+    //  still reports success, so a comma decimal separator would silently read
+    //  "29,15" as 29 - a 0.5% crystal radius error with no diagnostic.
+    expect_throw( "comma decimal separator", head + "mm" + body + "29,15" + tail,
+                  "decimal separator" );
+    expect_throw( "non-numeric length", head + "mm" + body + "25mm" + tail, "not a number" );
+    expect_throw( "not-a-number length", head + "mm" + body + "nan" + tail, "not a number" );
+
+    // A negative thickness would un-recess the crystal.
+    expect_throw( "negative thickness",
+                  head + "mm" + "\">\n"
+                  "  <detector type=\"Closed-end coaxial HPGe\" name=\"x\" description=\"\">\n"
+                  "    <crystal height=\"50\" radius=\"25\" />\n"
+                  "    <endCap topThickness=\"-1\" sideThickness=\"1\">\n"
+                  "      <material name=\"Aluminium\" />\n"
+                  "    </endCap>\n  </detector>\n</angle>\n",
+                  "negative thickness" );
+
+    // Not an ANGLE file at all.
+    {
+      stringstream input( "<?xml version=\"1.0\"?>\n<somethingelse><a>1</a></somethingelse>\n"
+                          "<!-- padding to clear the minimum-size check ....... -->\n" );
+      try
+      {
+        AngleOutx::parse( input );
+        BOOST_ERROR( "A non-ANGLE XML file should be rejected" );
+      }catch( std::exception &e )
+      {
+        const string msg = e.what();
+        BOOST_CHECK_MESSAGE( msg.find("not an") != string::npos,
+                             "Should say it is not an ANGLE file, got: " + msg );
+      }
+    }
+
+    // Too small, and too large.
+    {
+      stringstream tiny( "<angle/>" );
+      BOOST_CHECK_THROW( AngleOutx::parse(tiny), std::exception );
+
+      stringstream big( string(200u*1024u, 'x') );
+      BOOST_CHECK_THROW( AngleOutx::parse(big, 100u*1024u), std::exception );
+    }
+  }
+
+  cout << "ANGLE file-format variants parsed as expected" << endl;
+}
+
+
+/** The full `<detector>` grammar: an antimicrophonic shield sandwiched inside
+ the cryostat vacuum, two end-cap coatings outside the end cap, and an implanted
+ contact that reads as dead crystal.  None of these appear in the one ANGLE file
+ the reader was originally written against, and each of them recesses the
+ crystal - the failure mode that produces a flat efficiency error.
+ */
+BOOST_AUTO_TEST_CASE( test_angle_coatings_and_shield )
+{
+  cout << "\n\nTesting ANGLE end-cap coatings + antimicrophonic shield..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Test data directory not set (use --testfiledir=...)" );
+
+  const string path = SpecUtils::append_path( g_test_data_dir, "det_eff/Angle-coatings-shield.outx" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(path), "Fixture not found: " + path );
+
+  ifstream input( path.c_str() );
+  BOOST_REQUIRE( input.is_open() );
+
+  AngleOutxContents contents;
+  BOOST_REQUIRE_NO_THROW( contents = DetectorPeakResponse::parseAngleOutxFileFull(input) );
+
+  BOOST_REQUIRE( contents.hasGeometry );
+  BOOST_CHECK( contents.modeASupported );
+
+  // The 0.4 um contact is implanted germanium, i.e. dead crystal.
+  BOOST_CHECK( contents.contact.readsAsDeadCrystal );
+
+  // The vacuum is split around the shield; the totals must still add up.
+  BOOST_CHECK_CLOSE( contents.vacuumFrontInner / PhysicalUnits::mm, 2.0, 1.0e-3 );
+  BOOST_CHECK_CLOSE( contents.vacuumFrontOuter / PhysicalUnits::mm, 1.5, 1.0e-3 );
+  BOOST_CHECK_CLOSE( contents.vacuumFront / PhysicalUnits::mm, 3.5, 1.0e-3 );
+  BOOST_CHECK_CLOSE( contents.vacuumSideInner / PhysicalUnits::mm, 2.2, 1.0e-3 );
+  BOOST_CHECK_CLOSE( contents.vacuumSideOuter / PhysicalUnits::mm, 1.8, 1.0e-3 );
+
+  // The stack must come out in physical order, innermost -> outermost, with
+  //  the housing INSIDE the vacuum and the coatings OUTSIDE the end cap.
+  vector<AngleLayerRole> front_roles;
+  double front_sum = 0.0;
+  for( const AngleOutxContents::Layer &layer : contents.layers )
+  {
+    BOOST_CHECK( !layer.behindCrystal );
+    if( layer.front > 0.0 )
+    {
+      front_roles.push_back( layer.role );
+      front_sum += layer.front;
+    }
+  }//for( const AngleOutxContents::Layer &layer : contents.layers )
+
+  const vector<AngleLayerRole> expected_front = {
+    AngleLayerRole::HousingInner, AngleLayerRole::HousingOuter,
+    AngleLayerRole::VacuumInner, AngleLayerRole::AntimicrophonicShield,
+    AngleLayerRole::VacuumOuter, AngleLayerRole::EndCap,
+    AngleLayerRole::EndCapCoating, AngleLayerRole::EndCapCoating
+  };
+
+  BOOST_REQUIRE_EQUAL( front_roles.size(), expected_front.size() );
+  for( size_t i = 0; i < expected_front.size(); ++i )
+    BOOST_CHECK_MESSAGE( front_roles[i] == expected_front[i],
+                         string("front layer ") + to_string(i) + " is the "
+                         + to_string(front_roles[i]) + ", expected the "
+                         + to_string(expected_front[i]) );
+
+  // 0.05 + 0.10 + 2.0 + 0.6 + 1.5 + 1.2 + 0.02 + 0.15 mm
+  BOOST_CHECK_CLOSE( front_sum / PhysicalUnits::mm, 5.62, 1.0e-3 );
+
+  // The DRF setback additionally includes the front dead layer, since it is
+  //  carved out of the crystal and moves the ACTIVE face.
+  BOOST_REQUIRE( contents.fixedGeomDrf );
+  BOOST_CHECK_CLOSE( contents.fixedGeomDrf->detectorSetback() / PhysicalUnits::mm,
+                     5.62 + 0.6, 1.0e-3 );
+
+  try
+  {
+    MaterialDB::initialize();
+  }catch( std::exception & )
+  {
+  }
+
+  if( !MaterialDB::initialized() )
+  {
+    cout << "  (MaterialDB unavailable - skipping geometry-build checks)" << endl;
+    return;
+  }
+
+  vector<string> warnings;
+  ceelo::GeometryDescriptor gd;
+  BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildAngleGeometry( contents, warnings ) );
+  for( const string &w : warnings )
+    cout << "  buildAngleGeometry warning: " << w << endl;
+
+  // The fixture uses ANGLE's generic "Plastic", for which a documented stand-in
+  //  is substituted with a note - but nothing here may fall through to a
+  //  transparent spacer, which would silently drop that layer's attenuation.
+  for( const ceelo::MaterialSpec &m : gd.materials )
+    BOOST_CHECK_MESSAGE( m.name != "unresolved-spacer",
+                         "Every fixture material should resolve to a real composition" );
+
+  // Every front-stack piece must survive into the descriptor: the crystal
+  //  recess is the sum of them, and dropping one is the bug this guards.
+  BOOST_CHECK_CLOSE( gd.endcap_front_offset_cm(), 0.562, 1.0e-3 );
+  BOOST_CHECK_MESSAGE( gd.problems().empty(), "Fixture geometry must be CeeLo-legal" );
+
+  BOOST_REQUIRE( gd.dead_layer.has_value() );
+  BOOST_CHECK_CLOSE( gd.dead_layer->front, 0.06004, 1.0e-2 );   //0.6 mm + 0.4 um contact
+  BOOST_CHECK_CLOSE( gd.dead_layer->side, 0.08004, 1.0e-2 );    //0.8 mm + 0.4 um contact
+  BOOST_CHECK_SMALL( gd.dead_layer->back, 1.0e-12 );
+
+  cout << "ANGLE coatings + shield stack parsed and mapped in physical order" << endl;
+}
+
+
+/** ANGLE files routinely define their own materials inline - a density plus one
+ of `<elements>`, `<compound>` or `<compounds>`.  Those definitions used to be
+ thrown away in favour of the material's name, and a name InterSpec's material
+ database did not know became a transparent spacer: the layer kept its thickness
+ but stopped attenuating anything.
+ */
+BOOST_AUTO_TEST_CASE( test_angle_user_defined_materials )
+{
+  cout << "\n\nTesting ANGLE user-defined materials..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Test data directory not set (use --testfiledir=...)" );
+
+  const string path = SpecUtils::append_path( g_test_data_dir, "det_eff/Angle-userdefined-materials.outx" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(path), "Fixture not found: " + path );
+
+  ifstream input( path.c_str() );
+  BOOST_REQUIRE( input.is_open() );
+
+  AngleOutxContents contents;
+  BOOST_REQUIRE_NO_THROW( contents = DetectorPeakResponse::parseAngleOutxFileFull(input) );
+  BOOST_REQUIRE( contents.hasGeometry );
+
+  const AngleOutxContents::Layer *endcap = nullptr, *coating = nullptr, *housing = nullptr;
+  for( const AngleOutxContents::Layer &layer : contents.layers )
+  {
+    if( layer.role == AngleLayerRole::EndCap )
+      endcap = &layer;
+    else if( layer.role == AngleLayerRole::EndCapCoating )
+      coating = &layer;
+    else if( (layer.role == AngleLayerRole::HousingInner) && (layer.front > 0.0) )
+      housing = &layer;
+  }//for( const AngleOutxContents::Layer &layer : contents.layers )
+
+  // <compound> - a single compound given by atom counts.
+  BOOST_REQUIRE( endcap );
+  BOOST_CHECK_EQUAL( endcap->material.name, string("Sapphire") );
+  BOOST_CHECK( !endcap->material.isBareReference() );
+  BOOST_CHECK_CLOSE( endcap->material.density_g_cm3, 3.98, 1.0e-6 );
+  BOOST_REQUIRE_EQUAL( endcap->material.compounds.size(), 1u );
+  BOOST_CHECK_EQUAL( endcap->material.compounds[0].chemicalFormula, string("Al2O3") );
+  BOOST_REQUIRE_EQUAL( endcap->material.compounds[0].elements.size(), 2u );
+  BOOST_CHECK_EQUAL( endcap->material.compounds[0].elements[0].atoms, 2 );
+  BOOST_CHECK_EQUAL( endcap->material.compounds[0].elements[1].atoms, 3 );
+
+  // <compounds> - a mixture, mass fractions in percent summing to 100.
+  BOOST_REQUIRE( coating );
+  BOOST_CHECK_EQUAL( coating->material.name, string("Brine") );
+  BOOST_REQUIRE_EQUAL( coating->material.compounds.size(), 2u );
+  BOOST_CHECK_CLOSE( coating->material.compounds[0].massFraction, 0.96, 1.0e-4 );
+  BOOST_CHECK_CLOSE( coating->material.compounds[1].massFraction, 0.04, 1.0e-4 );
+
+  // <elements> - mass fractions directly.
+  BOOST_REQUIRE( housing );
+  BOOST_CHECK_EQUAL( housing->material.name, string("Aluminized Mylar") );
+  BOOST_REQUIRE_EQUAL( housing->material.elements.size(), 4u );
+  BOOST_CHECK_CLOSE( housing->material.density_g_cm3, 2.035, 1.0e-6 );
+
+  try
+  {
+    MaterialDB::initialize();
+  }catch( std::exception & )
+  {
+  }
+
+  vector<string> warnings;
+  ceelo::GeometryDescriptor gd;
+  BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildAngleGeometry( contents, warnings ) );
+  for( const string &w : warnings )
+    cout << "  buildAngleGeometry warning: " << w << endl;
+
+  // Inline definitions are used as given, so nothing may degrade to a spacer -
+  //  and this must hold whether or not a MaterialDB is available.
+  const ceelo::MaterialSpec *sapphire = nullptr, *brine = nullptr;
+  for( const ceelo::MaterialSpec &m : gd.materials )
+  {
+    BOOST_CHECK_MESSAGE( m.name != "unresolved-spacer",
+                         "An inline ANGLE material should never become a transparent spacer" );
+    if( m.name == "Sapphire" )
+      sapphire = &m;
+    else if( m.name == "Brine" )
+      brine = &m;
+  }//for( const ceelo::MaterialSpec &m : gd.materials )
+
+  // The <elements> form: fractions must be the file's, not an even split.
+  const ceelo::MaterialSpec *alu_mylar = nullptr;
+  for( const ceelo::MaterialSpec &m : gd.materials )
+    if( m.name == "Aluminized Mylar" )
+      alu_mylar = &m;
+  BOOST_REQUIRE_MESSAGE( alu_mylar, "Housing material should carry the file's own definition" );
+  BOOST_CHECK_CLOSE( alu_mylar->density_g_per_cm3, 2.035, 1.0e-6 );
+  BOOST_REQUIRE_EQUAL( alu_mylar->composition.size(), 4u );
+  for( const ceelo::MaterialComponent &c : alu_mylar->composition )
+  {
+    switch( c.Z )
+    {
+      case 1:  BOOST_CHECK_CLOSE( c.mass_fraction, 0.0210, 0.1 ); break;  //H
+      case 6:  BOOST_CHECK_CLOSE( c.mass_fraction, 0.3125, 0.1 ); break;  //C
+      case 8:  BOOST_CHECK_CLOSE( c.mass_fraction, 0.1665, 0.1 ); break;  //O
+      case 13: BOOST_CHECK_CLOSE( c.mass_fraction, 0.5000, 0.1 ); break;  //Al
+      default: BOOST_ERROR( "Unexpected element Z=" + to_string(int(c.Z)) + " in Aluminized Mylar" );
+    }
+  }
+
+  // Al2O3 by atom count -> mass fractions.
+  BOOST_REQUIRE_MESSAGE( sapphire, "Endcap material should carry the file's own definition" );
+  BOOST_CHECK_CLOSE( sapphire->density_g_per_cm3, 3.98, 1.0e-6 );
+  BOOST_REQUIRE_EQUAL( sapphire->composition.size(), 2u );
+  for( const ceelo::MaterialComponent &c : sapphire->composition )
+  {
+    if( c.Z == 8 )
+      BOOST_CHECK_CLOSE( c.mass_fraction, 0.470739, 0.1 );
+    else if( c.Z == 13 )
+      BOOST_CHECK_CLOSE( c.mass_fraction, 0.529261, 0.1 );
+    else
+      BOOST_ERROR( "Unexpected element Z=" + to_string(int(c.Z)) + " in Al2O3" );
+  }
+
+  // 96% water + 4% salt, merged mass-weighted.
+  BOOST_REQUIRE( brine );
+  BOOST_REQUIRE_EQUAL( brine->composition.size(), 4u );
+  for( const ceelo::MaterialComponent &c : brine->composition )
+  {
+    switch( c.Z )
+    {
+      case 1:  BOOST_CHECK_CLOSE( c.mass_fraction, 0.107430, 0.1 ); break;
+      case 8:  BOOST_CHECK_CLOSE( c.mass_fraction, 0.852570, 0.1 ); break;
+      case 11: BOOST_CHECK_CLOSE( c.mass_fraction, 0.015736, 0.1 ); break;
+      case 17: BOOST_CHECK_CLOSE( c.mass_fraction, 0.024264, 0.1 ); break;
+      default: BOOST_ERROR( "Unexpected element Z=" + to_string(int(c.Z)) + " in the brine" );
+    }
+  }
+
+  cout << "ANGLE inline material definitions carried through to the geometry" << endl;
+}
+
+
+/** ANGLE ships 19 predefined materials, referenced by name alone.  A name that
+ does not resolve becomes a transparent spacer - the layer keeps its thickness
+ but stops attenuating - so every one of them has to land on a real composition.
+ (https://www.angle.me/material-data-specification.html)
+ */
+BOOST_AUTO_TEST_CASE( test_angle_predefined_materials )
+{
+  cout << "\n\nTesting ANGLE's 19 predefined material names..." << endl;
+
+  try
+  {
+    MaterialDB::initialize();
+  }catch( std::exception & )
+  {
+  }
+
+  if( !MaterialDB::initialized() )
+  {
+    cout << "  (MaterialDB unavailable - skipping)" << endl;
+    return;
+  }
+
+  // Exactly as ANGLE spells them; the lookup is case-sensitive on its side.
+  const vector<string> predefined = {
+    "Air", "Aluminium", "Aluminium oxide", "Beryllium", "Brass", "Calcium carbonate",
+    "Carbon fiber", "Copper", "Germanium", "Glass", "Gold", "Magnesium",
+    "Magnesium oxide", "Mylar/PET", "NaI", "Nickel", "Plastic", "Silicone", "Water"
+  };
+  BOOST_REQUIRE_EQUAL( predefined.size(), 19u );
+
+  // A minimal coaxial detector with one layer per predefined material, so each
+  //  goes through exactly the resolution path an imported file would take.
+  AngleOutxContents contents;
+  contents.detType = "Closed-end coaxial HPGe";
+  contents.detTypeEnum = AngleDetectorType::ClosedEndCoaxHPGe;
+  contents.crystalRadius = 30.0 * PhysicalUnits::mm;
+  contents.crystalLength = 60.0 * PhysicalUnits::mm;
+  contents.hasGeometry = true;
+  contents.modeASupported = true;
+
+  for( const string &name : predefined )
+  {
+    AngleOutxContents::Layer layer;
+    layer.role = AngleLayerRole::EndCap;
+    layer.material.name = name;      //a bare reference, as ANGLE writes them
+    layer.front = 0.1 * PhysicalUnits::mm;
+    layer.side = 0.1 * PhysicalUnits::mm;
+    contents.layers.push_back( layer );
+  }//for( const string &name : predefined )
+
+  vector<string> warnings;
+  ceelo::GeometryDescriptor gd;
+  BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildAngleGeometry( contents, warnings ) );
+
+  for( const string &w : warnings )
+    cout << "  buildAngleGeometry warning: " << w << endl;
+
+  for( const ceelo::MaterialSpec &m : gd.materials )
+  {
+    BOOST_CHECK_MESSAGE( m.name != "unresolved-spacer",
+                         "One of ANGLE's predefined materials did not resolve" );
+    if( m.name != "unresolved-spacer" )
+    {
+      BOOST_CHECK_MESSAGE( m.density_g_per_cm3 > 0.0, m.name + " has no density" );
+      BOOST_CHECK_MESSAGE( !m.composition.empty(), m.name + " has no composition" );
+    }
+  }//for( const ceelo::MaterialSpec &m : gd.materials )
+
+  // Crystal + 19 layers.
+  BOOST_CHECK_EQUAL( gd.materials.size(), predefined.size() + 1u );
+
+  // ANGLE publishes no composition for its two generic trade names, so those -
+  //  and only those - get a stand-in plus a note saying what was used.
+  size_t n_standin = 0;
+  for( const string &w : warnings )
+    n_standin += (w.find("does not publish a composition") != string::npos) ? 1u : 0u;
+  BOOST_CHECK_MESSAGE( n_standin == 2u,
+                       "Only 'Glass' and 'Plastic' should need a stand-in, got "
+                       + to_string(n_standin) );
+
+  cout << "All 19 ANGLE predefined materials resolve to real compositions" << endl;
+}
+
+
+/** ANGLE defines eight detector types.  Three of them exercise parts of the
+ grammar the original fixture never touched - a planar detector's back dead
+ layer, a NaI detector's reflecting layer and light path, and a well detector's
+ cavity - and the well is one of the shapes InterSpec's response calculation
+ cannot represent at all, which it must say rather than silently approximate.
+ */
+BOOST_AUTO_TEST_CASE( test_angle_detector_types )
+{
+  cout << "\n\nTesting ANGLE detector types..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Test data directory not set (use --testfiledir=...)" );
+
+  auto parse_fixture = []( const string &name ) -> AngleOutxContents {
+    const string path = SpecUtils::append_path( g_test_data_dir, "det_eff/" + name );
+    BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(path), "Fixture not found: " + path );
+    ifstream input( path.c_str() );
+    BOOST_REQUIRE( input.is_open() );
+    return AngleOutx::parse( input );
+  };//parse_fixture
+
+  try
+  {
+    MaterialDB::initialize();
+  }catch( std::exception & )
+  {
+  }
+
+  // --- Planar LEPD: no bore, a back dead layer, and a beryllium window that
+  //     replaces the end-cap front over the whole crystal.
+  {
+    const AngleOutxContents contents = parse_fixture( "Angle-planar-lepd.outx" );
+
+    BOOST_CHECK( contents.detTypeEnum == AngleDetectorType::PlanarLEPD );
+    BOOST_CHECK( !contents.hasCore );
+    BOOST_CHECK( contents.modeASupported );
+    BOOST_CHECK_CLOSE( contents.deadLayerBack / PhysicalUnits::mm, 0.6, 1.0e-3 );
+
+    vector<string> warnings;
+    ceelo::GeometryDescriptor gd;
+    BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildAngleGeometry( contents, warnings ) );
+
+    BOOST_CHECK_MESSAGE( !gd.bore.has_value(), "A planar detector has no bore" );
+    BOOST_REQUIRE( gd.dead_layer.has_value() );
+    BOOST_CHECK_CLOSE( gd.dead_layer->back, 0.06, 1.0e-3 );
+
+    // holeRadius (25 mm) covers the 19.5 mm crystal, so on-axis the front is the
+    //  0.5 mm window, NOT the window plus the 1 mm end cap.  5.0 + 0.5 mm.
+    BOOST_CHECK_CLOSE( gd.endcap_front_offset_cm(), 0.55, 1.0e-3 );
+  }
+
+  // --- Well detector: parses fine, but has no CeeLo shape.
+  {
+    const AngleOutxContents contents = parse_fixture( "Angle-well.outx" );
+
+    BOOST_CHECK( contents.detTypeEnum == AngleDetectorType::Well );
+    BOOST_CHECK_MESSAGE( contents.hasGeometry, "The well fixture still describes a crystal" );
+    BOOST_CHECK( contents.well.present );
+    BOOST_CHECK_CLOSE( contents.well.depth / PhysicalUnits::mm, 40.0, 1.0e-3 );
+    BOOST_CHECK_CLOSE( contents.well.radius / PhysicalUnits::mm, 8.0, 1.0e-3 );
+
+    // A well crystal is annular: `topUpper`/`sideOuter` face outward and become
+    //  front/side, while `topLower`/`sideInner` line the well.  They are four
+    //  different surfaces, so they must NOT be summed together.
+    BOOST_CHECK_CLOSE( contents.deadLayerFront / PhysicalUnits::mm, 0.7, 1.0e-3 );
+    BOOST_CHECK_CLOSE( contents.deadLayerSide / PhysicalUnits::mm, 0.7, 1.0e-3 );
+    BOOST_CHECK_CLOSE( contents.deadLayerTopLower / PhysicalUnits::mm, 0.0003, 1.0e-2 );
+    BOOST_CHECK_CLOSE( contents.deadLayerSideInner / PhysicalUnits::mm, 0.0003, 1.0e-2 );
+
+    // ...and the user is told the well lining is not modeled.
+    size_t n_well_notes = 0;
+    for( const string &n : contents.parseNotes )
+      n_well_notes += (n.find("well") != string::npos) ? 1u : 0u;
+    BOOST_CHECK_MESSAGE( n_well_notes > 0,
+                         "The unmodeled well dead layer should be reported to the user" );
+
+    // The <geometry type="Well"> is the one place <absorbingLayer bottomThickness>
+    //  is legal, so it should be read.
+    BOOST_REQUIRE_EQUAL( contents.sampleGeometry.absorbingLayers.size(), 1u );
+    BOOST_CHECK_CLOSE( contents.sampleGeometry.absorbingLayers[0].bottom / PhysicalUnits::mm,
+                       0.1, 1.0e-3 );
+
+    BOOST_CHECK_MESSAGE( !contents.modeASupported,
+                         "A well cavity cannot be represented, so Mode A must be refused" );
+    BOOST_CHECK_MESSAGE( SpecUtils::icontains( contents.modeAObstruction, "well" ),
+                         "The refusal should say it is because of the well: "
+                         + contents.modeAObstruction );
+
+    vector<string> warnings;
+    BOOST_CHECK_THROW( CeeLoUtils::buildAngleGeometry( contents, warnings ), std::exception );
+  }
+
+  // --- NaI: a reflecting layer wrapped on the crystal, plus an optical
+  //     coupling and photomultiplier behind it that cannot be modeled.
+  {
+    const AngleOutxContents contents = parse_fixture( "Angle-nai-pmt.outx" );
+
+    BOOST_CHECK( contents.detTypeEnum == AngleDetectorType::NaI );
+    BOOST_CHECK( contents.modeASupported );
+
+    BOOST_REQUIRE( !contents.layers.empty() );
+    BOOST_CHECK_MESSAGE( contents.layers.front().role == AngleLayerRole::ReflectingLayer,
+                         "The reflecting layer is wrapped directly on the crystal" );
+    BOOST_CHECK_EQUAL( contents.layers.front().material.name, string("Aluminium oxide") );
+
+    size_t n_behind = 0;
+    for( const AngleOutxContents::Layer &layer : contents.layers )
+      n_behind += layer.behindCrystal ? 1u : 0u;
+    BOOST_CHECK_MESSAGE( n_behind == 3u,
+                         "Optical coupling + PMT wall + PMT window sit behind the crystal, got "
+                         + to_string(n_behind) );
+
+    vector<string> warnings;
+    ceelo::GeometryDescriptor gd;
+    BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildAngleGeometry( contents, warnings ) );
+
+    // The three behind-the-crystal pieces are dropped, and each says so.
+    size_t n_behind_warnings = 0;
+    for( const string &w : warnings )
+      n_behind_warnings += (w.find("behind the") != string::npos) ? 1u : 0u;
+    BOOST_CHECK_MESSAGE( n_behind_warnings == 3u,
+                         "Each dropped piece should be reported, got "
+                         + to_string(n_behind_warnings) );
+
+    BOOST_REQUIRE( gd.crystal_material_index >= 0 );
+    const ceelo::MaterialSpec &crystal
+              = gd.materials[static_cast<size_t>(gd.crystal_material_index)];
+    BOOST_CHECK_MESSAGE( SpecUtils::icontains( crystal.name, "NaI" ),
+                         "A NaI detector's crystal should be NaI, got " + crystal.name );
+
+    // Reflecting layer 1.6 + vacuum 0.5 + end cap 0.5 mm.
+    BOOST_CHECK_CLOSE( gd.endcap_front_offset_cm(), 0.26, 1.0e-3 );
+  }
+
+  cout << "ANGLE detector types handled (planar, well refusal, NaI light path)" << endl;
+}
+
+
+/** `<container>`, `<geometry>` and `<source>` describe what sits between the
+ source and the detector, and appear once for the sample and again inside the
+ reference efficiency curve.  They are NOT part of the detector: putting the
+ sample cup into the concentric stack would attenuate as though it wrapped the
+ crystal, and would move every distance in an efficiency transfer.
+ */
+BOOST_AUTO_TEST_CASE( test_angle_source_side_blocks )
+{
+  cout << "\n\nTesting ANGLE container / holder / source parsing..." << endl;
+
+  BOOST_REQUIRE_MESSAGE( !g_test_data_dir.empty(), "Test data directory not set (use --testfiledir=...)" );
+
+  const string path = SpecUtils::append_path( g_test_data_dir, "det_eff/Angle-marinelli.outx" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(path), "Fixture not found: " + path );
+
+  ifstream input( path.c_str() );
+  BOOST_REQUIRE( input.is_open() );
+
+  AngleOutxContents contents;
+  BOOST_REQUIRE_NO_THROW( contents = AngleOutx::parse(input) );
+
+  // --- the Marinelli beaker ---
+  BOOST_REQUIRE( contents.sampleContainer.present );
+  BOOST_CHECK_EQUAL( contents.sampleContainer.type, string("Marinelli") );
+  BOOST_CHECK_CLOSE( contents.sampleContainer.innerRadius / PhysicalUnits::mm, 60.0, 1.0e-3 );
+  BOOST_CHECK_CLOSE( contents.sampleContainer.cavityRadius / PhysicalUnits::mm, 35.0, 1.0e-3 );
+  BOOST_CHECK_CLOSE( contents.sampleContainer.cavityDepth / PhysicalUnits::mm, 80.0, 1.0e-3 );
+  BOOST_CHECK_CLOSE( contents.sampleContainer.bottomUpperThickness / PhysicalUnits::mm, 2.0, 1.0e-3 );
+  BOOST_CHECK_CLOSE( contents.sampleContainer.bottomLowerThickness / PhysicalUnits::mm, 2.5, 1.0e-3 );
+  BOOST_REQUIRE_EQUAL( contents.sampleContainer.coatings.size(), 1u );
+  BOOST_CHECK_EQUAL( contents.sampleContainer.coatings[0].material.name, string("Mylar/PET") );
+
+  // --- the holder and its absorbing layers ---
+  BOOST_REQUIRE( contents.sampleGeometry.present );
+  BOOST_CHECK_EQUAL( contents.sampleGeometry.type, string("Marinelli") );
+  BOOST_CHECK_CLOSE( contents.sampleGeometry.capThickness / PhysicalUnits::mm, 1.5, 1.0e-3 );
+  BOOST_CHECK_EQUAL( contents.sampleGeometry.capMaterial.name, string("Plastic") );
+  BOOST_CHECK_CLOSE( contents.sampleGeometry.wallThickness / PhysicalUnits::mm, 1.0, 1.0e-3 );
+  BOOST_REQUIRE_EQUAL( contents.sampleGeometry.absorbingLayers.size(), 2u );
+  BOOST_CHECK_EQUAL( contents.sampleGeometry.absorbingLayers[0].material.name, string("Silicone") );
+  BOOST_CHECK_CLOSE( contents.sampleGeometry.absorbingLayers[1].side / PhysicalUnits::mm, 0.2, 1.0e-3 );
+
+  // A Marinelli source wraps around the detector rather than sitting in front of
+  //  it, so the container's bottom is NOT a standoff - the source distance stays
+  //  the holder height.
+  BOOST_CHECK_CLOSE( contents.sampleDistanceCm, 0.2, 1.0e-3 );
+  BOOST_CHECK_CLOSE( contents.sampleSourceDistanceCm, 0.2, 1.0e-3 );
+
+  // --- the source, and the reference measurement's own blocks ---
+  BOOST_REQUIRE( contents.sampleSource.present );
+  BOOST_CHECK_CLOSE( contents.sampleSource.radius / PhysicalUnits::mm, 55.0, 1.0e-3 );
+  BOOST_CHECK_CLOSE( contents.sampleSource.height / PhysicalUnits::mm, 75.0, 1.0e-3 );
+  BOOST_CHECK_EQUAL( contents.sampleSource.material.name, string("Water") );
+  BOOST_CHECK( contents.sampleSource.material.isBareReference() );
+
+  BOOST_CHECK( contents.referenceSource.present );
+  BOOST_CHECK( contents.referenceGeometry.present );
+  BOOST_CHECK_EQUAL( contents.referenceDetectorName, string("marinelli-test") );
+
+  try
+  {
+    MaterialDB::initialize();
+  }catch( std::exception & )
+  {
+  }
+
+  vector<string> warnings;
+  ceelo::GeometryDescriptor gd;
+  BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildAngleGeometry( contents, warnings ) );
+
+  // None of the source-side materials may appear in the detector's stack.
+  for( const ceelo::MaterialSpec &m : gd.materials )
+    BOOST_CHECK_MESSAGE( (m.name != "Silicone") && (m.name != "Polyethylene"),
+                         "A source-side material ('" + m.name + "') leaked into the"
+                         " detector's concentric stack" );
+
+  // Detector stack only: vacuum gap + end cap.
+  BOOST_CHECK_EQUAL( gd.layers.size(), 2u );
+  BOOST_CHECK_CLOSE( gd.endcap_front_offset_cm(), 0.42, 1.0e-3 );  //3.0 + 1.2 mm
+
+  cout << "ANGLE source-side blocks parsed, and kept out of the detector geometry" << endl;
+}
+
+
+/** The front-edge fillet and the rounded bore tip are refinements on top of a
+ plain cylinder, and CeeLo only guards their preconditions with asserts.  An
+ imported file whose values violate one must therefore lose that single feature
+ (with a warning) rather than fail the import or - far worse - reach a release
+ build's ray tracer and silently produce garbage.
+ */
+namespace
+{
+  bool has_warning( const vector<string> &warnings, const string &needle )
+  {
+    for( const string &w : warnings )
+    {
+      if( SpecUtils::icontains( w, needle ) )
+        return true;
+    }
+    return false;
+  }//has_warning(...)
+
+  string join_warnings( const vector<string> &warnings )
+  {
+    string out;
+    for( const string &w : warnings )
+      out += (out.empty() ? "" : " | ") + w;
+    return out.empty() ? "(none)" : out;
+  }//join_warnings(...)
+}//namespace
+
+
+BOOST_AUTO_TEST_CASE( test_angle_geometry_relaxes_illegal_features )
+{
+  const string outx_file = SpecUtils::append_path( g_test_data_dir, "det_eff/Angle-example-efficiency.outx" );
+  BOOST_REQUIRE_MESSAGE( SpecUtils::is_file(outx_file), "OUTX file not found: " + outx_file );
+
+  ifstream input( outx_file.c_str() );
+  BOOST_REQUIRE( input.good() );
+
+  AngleOutxContents contents;
+  BOOST_REQUIRE_NO_THROW( contents = DetectorPeakResponse::parseAngleOutxFileFull( input ) );
+  BOOST_REQUIRE( contents.hasGeometry );
+
+  // Material resolution needs the MaterialDB singleton (see the note in
+  //  test_read_angle_outx_full); skip if it is unavailable in this environment.
+  try
+  {
+    MaterialDB::initialize();
+  }catch( std::exception & )
+  {
+  }
+
+  if( !MaterialDB::initialized() )
+  {
+    cout << "  (MaterialDB unavailable - skipping relax checks)" << endl;
+    return;
+  }
+
+  // A fillet wider than the crystal itself: drop it, keep everything else.
+  {
+    AngleOutxContents bad = contents;
+    bad.bulletizingRadius = 5.0 * PhysicalUnits::cm;   //crystal radius is 2.915 cm
+
+    vector<string> warnings;
+    ceelo::GeometryDescriptor gd;
+    BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildAngleGeometry( bad, warnings ) );
+
+    BOOST_CHECK_MESSAGE( gd.bullet_radius_cm == 0.0,
+                         "An unrepresentable fillet should fall back to a sharp edge" );
+    BOOST_CHECK_MESSAGE( has_warning( warnings, "bulletizing" ),
+                         "Dropping the fillet should say so; got: " + join_warnings(warnings) );
+    BOOST_CHECK_MESSAGE( gd.problems().empty(), "Relaxed geometry must be CeeLo-legal" );
+    // The primary content of the file must survive untouched.
+    BOOST_REQUIRE_MESSAGE( gd.bore.has_value(), "Relaxing must not drop the bore" );
+    BOOST_CHECK( gd.bore->rounded_tip );
+    BOOST_CHECK( gd.dead_layer.has_value() );
+    BOOST_CHECK( !gd.layers.empty() );
+  }
+
+  // A bore shallower than it is wide can't carry a hemispherical tip: flatten
+  //  the tip, but keep the bore.
+  {
+    AngleOutxContents bad = contents;
+    bad.coreRadius = 0.6 * PhysicalUnits::cm;
+    bad.coreDepth = 0.5 * PhysicalUnits::cm;
+
+    vector<string> warnings;
+    ceelo::GeometryDescriptor gd;
+    BOOST_REQUIRE_NO_THROW( gd = CeeLoUtils::buildAngleGeometry( bad, warnings ) );
+
+    BOOST_REQUIRE_MESSAGE( gd.bore.has_value(), "Relaxing must not drop the bore" );
+    BOOST_CHECK_MESSAGE( !gd.bore->rounded_tip,
+                         "A tip that cannot fit its bore should flatten" );
+    BOOST_CHECK_MESSAGE( has_warning( warnings, "rounded" ),
+                         "Flattening the tip should say so; got: " + join_warnings(warnings) );
+    BOOST_CHECK_MESSAGE( gd.problems().empty(), "Relaxed geometry must be CeeLo-legal" );
+    // The fillet is legal here and must NOT be collateral damage.
+    BOOST_CHECK_MESSAGE( gd.bullet_radius_cm > 0.0,
+                         "Flattening the bore tip must not drop the fillet" );
+  }
 }
 
 
@@ -2021,15 +3047,26 @@ BOOST_AUTO_TEST_CASE( test_angle_outx_precision_covariance )
   BOOST_REQUIRE_MESSAGE( uncert, "ANGLE .outx with precision attributes should give uncertainty" );
   BOOST_REQUIRE( uncert->hasNodeCovariance() );
 
-  // First result in the example file: energy=30, efficiencyPrecision=1.41419957134595
-  //  -> fractional uncert ~0.4142, variance ~0.1716
+  // First result in the example file: energy=30, efficiencyPrecision=1.41419957134595.
+  //
+  //  That attribute is the precision ANGLE ACHIEVED at this energy, in PERCENT -
+  //  the same unit as the requested <precision>, which this file sets to 1.  All
+  //  75 of its results come back between 1.028 and 1.414, i.e. a hair worse than
+  //  the 1% asked for; reading them as a multiplicative factor instead would
+  //  claim a 1%-precision calculation achieved 2.8% to 41%.
+  //  -> fractional uncert ~0.01414, variance ~2.0e-4
   const vector<float> &node_energies = uncert->covarianceEnergies();
   const vector<float> &cov = uncert->covarianceMatrix();
   const size_t n = node_energies.size();
   BOOST_REQUIRE_GT( n, 4u );
 
   BOOST_CHECK( close_enough( node_energies[0], 30.0, 1e-4 ) );
-  const double expected_frac = 1.41419957134595 - 1.0;
+  const double expected_frac = 1.41419957134595 / 100.0;
+
+  // Guard the reading itself: the old factor-minus-one interpretation would put
+  //  this at ~0.414, so anything above a few percent means it has come back.
+  BOOST_CHECK_MESSAGE( expected_frac < 0.05,
+                       "efficiencyPrecision should be read as a percent" );
   BOOST_CHECK_MESSAGE( close_enough( cov[0], expected_frac*expected_frac, 1e-3 ),
     "Variance at 30 keV: got " + to_string(cov[0]) + ", expected "
     + to_string(expected_frac*expected_frac) );
@@ -2093,6 +3130,92 @@ BOOST_AUTO_TEST_CASE( test_eff_csv_uncert_column )
 
   cout << "Efficiency CSV uncertainty column passed" << endl;
 }//test_eff_csv_uncert_column
+
+
+BOOST_AUTO_TEST_CASE( test_eff_csv_duplicate_energies )
+{
+  cout << "\n\nTesting efficiency CSV with duplicated energies..." << endl;
+
+  // Real-world files sometimes repeat their first data row.  The sort direction must not be
+  //  taken from that (equal) pair, and the duplicate must be dropped before the curve is
+  //  built, else the Akima interpolator divides by a zero-width interval and gives NaN.
+  const char *csv =
+    "Energy (keV),Efficiency\n"
+    "53.268,1.24E-03\n"
+    "53.268,1.24E-03\n"
+    "58.268,1.84E-03\n"
+    "63.268,2.49E-03\n"
+    "68.268,3.15E-03\n"
+    "73.268,3.78E-03\n"
+    "78.268,4.37E-03\n"
+    "83.268,4.88E-03\n"
+    "88.268,5.01E-03\n";
+
+  stringstream input( csv );
+  DetectorPeakResponse::EffCsvParseResult result;
+  BOOST_REQUIRE_NO_THROW( result = DetectorPeakResponse::parseEfficiencyCsvFile( input ) );
+  BOOST_REQUIRE( result.drf && result.drf->isValid() );
+
+  // Nine data rows, one of which is a duplicate energy
+  BOOST_CHECK_EQUAL( result.drf->getEnergyEfficiencyPair().size(), 8u );
+  BOOST_CHECK( close_enough( result.drf->lowerEnergy(), 53.268, 1.0e-4 ) );
+  BOOST_CHECK( close_enough( result.drf->upperEnergy(), 88.268, 1.0e-4 ) );
+
+  // The duplicate used to make calcA(...) compute 0/0, giving NaN over [58.268, 63.268)
+  for( const float energy : { 54.0f, 56.0f, 58.268f, 60.0f, 62.0f, 63.268f, 70.0f, 85.0f } )
+  {
+    const float eff = result.drf->intrinsicEfficiency( energy );
+    BOOST_CHECK_MESSAGE( std::isfinite(eff),
+      "Efficiency at " + to_string(energy) + " keV is not finite: " + to_string(eff) );
+    BOOST_CHECK_MESSAGE( (eff > 1.0e-4f) && (eff < 1.0e-2f),
+      "Efficiency at " + to_string(energy) + " keV out of expected range: " + to_string(eff) );
+  }//for( each test energy )
+
+  // Same file in decreasing energy order, again with the first row duplicated: the direction
+  //  scan must look past the equal pair, and the result must come out ascending.
+  const char *decreasing_csv =
+    "Energy (keV),Efficiency\n"
+    "88.268,5.01E-03\n"
+    "88.268,5.01E-03\n"
+    "83.268,4.88E-03\n"
+    "78.268,4.37E-03\n"
+    "73.268,3.78E-03\n"
+    "68.268,3.15E-03\n"
+    "63.268,2.49E-03\n"
+    "58.268,1.84E-03\n"
+    "53.268,1.24E-03\n";
+
+  stringstream dec_input( decreasing_csv );
+  DetectorPeakResponse::EffCsvParseResult dec_result;
+  BOOST_REQUIRE_NO_THROW( dec_result = DetectorPeakResponse::parseEfficiencyCsvFile( dec_input ) );
+  BOOST_REQUIRE( dec_result.drf && dec_result.drf->isValid() );
+
+  BOOST_CHECK_EQUAL( dec_result.drf->getEnergyEfficiencyPair().size(), 8u );
+  BOOST_CHECK( close_enough( dec_result.drf->lowerEnergy(), 53.268, 1.0e-4 ) );
+  BOOST_CHECK( close_enough( dec_result.drf->upperEnergy(), 88.268, 1.0e-4 ) );
+
+  // Both orderings describe the same curve, so they must evaluate the same
+  for( const float energy : { 54.0f, 60.0f, 70.0f, 85.0f } )
+  {
+    const float inc_eff = result.drf->intrinsicEfficiency( energy );
+    const float dec_eff = dec_result.drf->intrinsicEfficiency( energy );
+    BOOST_CHECK_MESSAGE( close_enough( inc_eff, dec_eff, 1.0e-4 ),
+      "Ascending vs descending CSV disagree at " + to_string(energy) + " keV: "
+      + to_string(inc_eff) + " vs " + to_string(dec_eff) );
+  }//for( each test energy )
+
+  // A file whose energies are all the same has no curve in it at all
+  const char *same_csv =
+    "Energy (keV),Efficiency\n"
+    "100.0,1.0E-03\n"
+    "100.0,1.0E-03\n"
+    "100.0,1.0E-03\n";
+
+  stringstream same_input( same_csv );
+  BOOST_CHECK_THROW( DetectorPeakResponse::parseEfficiencyCsvFile( same_input ), std::exception );
+
+  cout << "Efficiency CSV duplicate-energy handling passed" << endl;
+}//test_eff_csv_duplicate_energies
 
 
 BOOST_AUTO_TEST_CASE( test_drfextra_blob_roundtrip )

@@ -26,6 +26,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "materials/Material.h"
 #include "geometry/Geometry.h"
 #include "transport/PhotonTransport.h"
@@ -48,6 +49,7 @@ BOOST_AUTO_TEST_CASE(fep_invariant_with_fluorescence_enabled) {
     // Also: all results must be non-negative and ≤ 1.
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -75,6 +77,7 @@ BOOST_AUTO_TEST_CASE(fluorescence_reduces_fep_above_k_edge) {
 
     // With fluorescence
     EfficiencyCalculator calc_fl_on;
+    calc_fl_on.set_fep_window_keV(kTestFepWindowKeV);
     calc_fl_on.set_detector(DetectorShape::Cylinder, &nai, {1.0, 2.0});
     calc_fl_on.set_point_source(src);
     auto res_on = calc_fl_on.compute(80.0, 50000, 1);
@@ -99,6 +102,7 @@ BOOST_AUTO_TEST_CASE(fluorescence_escape_peak_visible_in_spectrum) {
     // Thin detector: radius=2 cm, length=0.5 cm — maximises escape probability
     // Source directly in front at z = -2 cm
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {2.0, 0.5});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -2.0));
 
@@ -134,6 +138,7 @@ BOOST_AUTO_TEST_CASE(invariants_hold_at_high_energy) {
     // ε_FEP ≤ ε_total and both in [0,1] at energies that trigger pair production.
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -25.0));
 
@@ -156,6 +161,7 @@ BOOST_AUTO_TEST_CASE(escape_peaks_visible_at_2000keV) {
     // We check that the corresponding spectrum bins have nonzero counts.
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     // Moderately-sized NaI: radius=5 cm, length=10 cm
     calc.set_detector(DetectorShape::Cylinder, &nai, {5.0, 10.0});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
@@ -192,6 +198,7 @@ BOOST_AUTO_TEST_CASE(energy_deposited_never_exceeds_incident) {
     // bin edge should contain no counts above E_incident.
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -224,6 +231,7 @@ BOOST_AUTO_TEST_CASE(invariants_hold_with_rayleigh) {
     // Rayleigh scattering is elastic — ε_FEP ≤ ε_total must hold, efficiencies in [0,1].
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -254,6 +262,7 @@ BOOST_AUTO_TEST_CASE(energy_conservation_in_large_crystal) {
     // Very large NaI: radius=15 cm, length=30 cm
     // Source at z = -2 cm (very close → high geometric efficiency)
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {15.0, 30.0});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -2.0));
 
@@ -274,6 +283,7 @@ BOOST_AUTO_TEST_CASE(pulse_height_integrates_to_total_eff) {
     // Sum of all PHD bins should ≈ ε_total when the bin range covers all deposited energies.
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -298,6 +308,7 @@ BOOST_AUTO_TEST_CASE(hpge_with_bore_hole_and_fluorescence) {
     // hold with Phase 3 physics enabled (fluorescence, Rayleigh FF, PP tracking).
     Material hpge = make_HPGe();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &hpge, {4.0, 7.0});
     calc.set_bore_hole(0.5, 6.0); // 5 mm bore radius, 60 mm bore depth
     calc.set_dead_layer(0.1, 0.1); // 1 mm dead layer (p-type HPGe outer contact)

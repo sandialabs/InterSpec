@@ -36,6 +36,7 @@ endfunction()
 
 # Unit tests
 add_ceelo_test(test_geometry test_geometry.cpp)
+add_ceelo_test(test_geant4_export test_geant4_export.cpp)
 add_ceelo_test(test_materials test_materials.cpp)
 add_ceelo_test(test_cross_sections test_cross_sections.cpp)
 add_ceelo_test(test_compton test_compton.cpp)
@@ -53,6 +54,7 @@ add_ceelo_test(test_solid_angle test_solid_angle.cpp)
 # Detector-response payload tests (gated with the payload itself).
 if(CEELO_BUILD_RESPONSE)
     add_ceelo_test(test_response_kernel test_response_kernel.cpp)
+    add_ceelo_test(test_bounding_cone test_bounding_cone.cpp)
     add_ceelo_test(test_detector_response_io test_detector_response_io.cpp)
     add_ceelo_test(test_efficiency_transfer test_efficiency_transfer.cpp)
     # D-b structured probe family planner: pure (no MC), always registered.

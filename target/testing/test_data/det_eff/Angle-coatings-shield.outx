@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="utf-8"?>
+<angle generator="ANGLE" version="5.0" build="5.0.0.480" units="mm">
+  <detector type="Closed-end coaxial HPGe" name="coat-shield" description="coatings + shield">
+    <crystal height="60" radius="30" bulletizingRadius="6" />
+    <core height="45" radius="5" rounded="no" />
+    <inactiveGe topThickness="0.6" sideThickness="0.8" />
+    <contact topThickness="0.0004" sideThickness="0.0004">
+      <material name="Germanium" />
+    </contact>
+    <contactPin radius="2.5">
+      <material name="Brass" />
+    </contactPin>
+    <endCap topThickness="1.2" sideThickness="1.4">
+      <material name="Aluminium" />
+      <coatings>
+        <coating topThickness="0.02" sideThickness="0.02">
+          <material name="Mylar/PET" />
+        </coating>
+        <coating topThickness="0.15" sideThickness="0.15">
+          <material name="Plastic" />
+        </coating>
+      </coatings>
+    </endCap>
+    <antimicrophonicShield topThickness="0.6" sideThickness="0.4">
+      <material name="Aluminium" />
+    </antimicrophonicShield>
+    <vacuum topThickness="1.5" bottomThickness="2" sideOuterThickness="1.8" sideInnerThickness="2.2" />
+    <housing>
+      <sideInner thickness="0.7"><material name="Aluminium" /></sideInner>
+      <sideOuter thickness="0.1"><material name="Aluminium" /></sideOuter>
+      <topLower thickness="0.05"><material name="Mylar/PET" /></topLower>
+      <topUpper thickness="0.1"><material name="Aluminium" /></topUpper>
+    </housing>
+  </detector>
+  <geometry type="General" name="" description="">
+    <holder outerRadius="45" height="250">
+      <cap thickness="0" />
+      <wall thickness="0" />
+    </holder>
+  </geometry>
+  <source radius="1.5" height="0" />
+  <precision>1</precision>
+  <referenceEfficiencyCurve name="Eff_25cm" description="coatings+shield fixture">
+    <experimentalPoints>
+      <point energy="59.5" efficiency="0.0110" />
+      <point energy="122.1" efficiency="0.0240" />
+      <point energy="661.7" efficiency="0.00800" />
+      <point energy="1332.5" efficiency="0.00480" />
+    </experimentalPoints>
+    <regions>
+      <region start="50" end="1500" polynomOrder="3" />
+    </regions>
+    <detector name="coat-shield" />
+    <geometry type="General" name="" description="">
+      <holder outerRadius="45" height="250">
+        <cap thickness="0" />
+        <wall thickness="0" />
+      </holder>
+    </geometry>
+    <source radius="1.5" height="0" />
+  </referenceEfficiencyCurve>
+  <results>
+    <result energy="59.5" solidAngle="2.5" solidAnglePrecision="0.4" efficiency="0.0110" efficiencyPrecision="1.01" />
+    <result energy="122.1" solidAngle="2.8" solidAnglePrecision="0.4" efficiency="0.0240" efficiencyPrecision="1.01" />
+    <result energy="661.7" solidAngle="2.1" solidAnglePrecision="0.4" efficiency="0.00800" efficiencyPrecision="1.01" />
+    <result energy="1332.5" solidAngle="1.8" solidAnglePrecision="0.4" efficiency="0.00480" efficiencyPrecision="1.01" />
+  </results>
+  <elapsedTime>2.0</elapsedTime>
+</angle>

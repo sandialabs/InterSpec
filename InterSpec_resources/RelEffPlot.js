@@ -1059,7 +1059,16 @@ RelEffPlot.prototype.setRelEffData = function (datasets) {
 
         const eqn_eff = dataset.fit_eqn ? dataset.fit_eqn(d.energy) : null;
 
-        let txt = "<div>Energy: " + (d.mean ? d.mean.toFixed(2) : d.energy.toFixed(2)) + " keV</div>"
+        let txt = "";
+
+        // With multiple rel. eff. curves, name the curve this point belongs to up-front, so the later
+        //  "this curve" attribution wording (and marker coloring) is never ambiguous.
+        if( datasets.length > 1 ){
+          const curve_name = dataset.curve_name ? dataset.curve_name : ("Curve " + (datasetIndex+1));
+          txt += "<div>Curve: " + curve_name + "</div>";
+        }
+
+        txt += "<div>Energy: " + (d.mean ? d.mean.toFixed(2) : d.energy.toFixed(2)) + " keV</div>"
           + "<div>Peak Area: " + d.counts.toFixed(1) + " &plusmn; " + d.counts_uncert.toFixed(1) + "</div>";
 
 

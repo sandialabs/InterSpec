@@ -301,12 +301,14 @@ Geant4 spectra/rates remain committed as validation observables.
   sources — a thorium sphere runs −22 % / −4 % / −2.6 % in total efficiency at
   238.6 / 583 / 911 keV against GEANT4. FEP is unaffected (the X-ray cannot land
   in the primary peak), and low-Z sources are unaffected.
-- **High-energy FEP** runs low above ~2 MeV, coherently across detectors —
-  bremsstrahlung and CSDA electron-escape approximations. Worst cases are
-  −2.1 % (3″×3″ NaI + Al at 3000 keV) and −1.7 % (behind 0.5 cm Fe at
-  3000 keV). Below ~1.3 MeV the residual is ≤ 0.6 %.
-- **Thin-crystal electron escape**: CZT FEP is 2–5 % low above 800 keV
-  (−2.3 / −4.1 / −5.3 % at 800 / 1000 / 1500 keV).
+- **High-energy FEP** agrees to ≈0.2 % pooled above 2 MeV (11 gate rows at
+  ~0.1 % MC precision) after the Aug 2026 electron-transport fixes
+  (path-consistent Highland scattering + per-step energy-loss straggling in
+  the crystal walk). The largest remaining single-config residual is LaBr₃ at
+  +0.5–0.6 % ≥ 1 MeV.
+- **Thin-crystal electron escape**: CZT FEP, formerly 2–5 % low above
+  800 keV, now agrees within statistics (+0.7 / −0.3 / −1.3 % at
+  800 / 1000 / 1500 keV, |z| < 0.7) after the same fixes.
 - **Low-energy extended sources**: a water Marinelli beaker runs −2.3 % FEP at
   59 keV — small-angle Compton and forward Rayleigh that should land inside the
   peak window are under-recovered. It shrinks to ≤1.2 % by 100 keV.

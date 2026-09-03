@@ -26,6 +26,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "geometry/SourceGeometry.h"
 #include "materials/Material.h"
 
@@ -182,6 +183,7 @@ BOOST_AUTO_TEST_CASE(efficiency_calculator_marinelli_api) {
     MarinelliTestSetup s;
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
     calc.set_marinelli_beaker(
         s.well_r, s.well_depth, s.outer_r, s.fill_height,
@@ -223,6 +225,7 @@ BOOST_AUTO_TEST_CASE(marinelli_mc_run) {
     MarinelliTestSetup s;
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
     calc.set_marinelli_beaker(
         s.well_r, s.well_depth, s.outer_r, s.fill_height,
@@ -250,6 +253,7 @@ BOOST_AUTO_TEST_CASE(marinelli_no_sample_vs_with_sample) {
 
     // With water sample
     EfficiencyCalculator calc_water;
+    calc_water.set_fep_window_keV(kTestFepWindowKeV);
     calc_water.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
     calc_water.set_marinelli_beaker(
         s.well_r, s.well_depth, s.outer_r, s.fill_height,
@@ -257,6 +261,7 @@ BOOST_AUTO_TEST_CASE(marinelli_no_sample_vs_with_sample) {
 
     // Without sample material (nullptr)
     EfficiencyCalculator calc_dry;
+    calc_dry.set_fep_window_keV(kTestFepWindowKeV);
     calc_dry.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
     calc_dry.set_marinelli_beaker(
         s.well_r, s.well_depth, s.outer_r, s.fill_height,
@@ -277,6 +282,7 @@ BOOST_AUTO_TEST_CASE(marinelli_gdml_export) {
     MarinelliTestSetup s;
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
     calc.set_marinelli_beaker(
         s.well_r, s.well_depth, s.outer_r, s.fill_height,
@@ -311,6 +317,7 @@ BOOST_AUTO_TEST_CASE(source_electron_transport_increases_total) {
 
     // Without source electrons
     EfficiencyCalculator calc_no_e;
+    calc_no_e.set_fep_window_keV(kTestFepWindowKeV);
     calc_no_e.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
     calc_no_e.add_attenuator(&al, 0.05, 0.05, 0.0, 7.62);
     calc_no_e.set_marinelli_beaker(
@@ -319,6 +326,7 @@ BOOST_AUTO_TEST_CASE(source_electron_transport_increases_total) {
 
     // With source electrons
     EfficiencyCalculator calc_with_e;
+    calc_with_e.set_fep_window_keV(kTestFepWindowKeV);
     calc_with_e.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
     calc_with_e.add_attenuator(&al, 0.05, 0.05, 0.0, 7.62);
     calc_with_e.set_marinelli_beaker(
@@ -349,6 +357,7 @@ BOOST_AUTO_TEST_CASE(source_electron_no_effect_low_energy) {
     Material al = make_Aluminum();
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &s.nai, {3.81, 7.62});
     calc.add_attenuator(&al, 0.05, 0.05, 0.0, 7.62);
     calc.set_marinelli_beaker(

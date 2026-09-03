@@ -57,6 +57,20 @@ CONFIGS = {
     11: ('nai_3x3_fe05cm_shield_10cm_multi.csv', 0.6, 1.2),
     12: ('nai_3x3_ss304box_cellulose_15cm_multi.csv', 2.1, 1.9),
     8: ('nai_3x3_al05mm_marinelli_water_multi.csv', 2.5, 1.0),  # 32M ref regen Jun26; FEP bound by 59 keV -2.1% near-peak-scatter residual
+    # Matched HPGe pair (GEM35-70 coax, point source 5 cm): 25 is the sharp
+    # front edge, 26 the bulletized edge + round-tipped bore.  Gating both
+    # pins the bulletized geometry itself -- the ~2-16% efficiency difference
+    # between them is the signal, and it is only meaningful if each config
+    # independently tracks G4.
+    #
+    # Measured Aug 2026: cfg 25 FEP <= 0.34% / total <= 0.11%; cfg 26 FEP
+    # <= 0.74% / total <= 0.21%.  The bounds below sit a little above those so
+    # the gate survives regenerating the CeeLo rows at the project-standard
+    # 0.3% precision -- the committed rows are ~0.12%, and the tolerance is
+    # added to only a 3-sigma allowance, so a coarser re-run eats the margin.
+    # DESIGN.md carries the measured values; these are the trip points.
+    25: ('hpge_gem35_coax_sharp_5cm_multi.csv', 0.5, 0.3),
+    26: ('hpge_gem35_coax_bullet_5cm_multi.csv', 0.9, 0.4),
 }
 
 
@@ -137,6 +151,71 @@ def compare_cascade(mc_dir):
     return fails
 
 
+# --- Bulletization-effect gate (configs 25/26) -----------------------------------
+# Configs 25 and 26 are the same crystal with a sharp and a bulletized front
+# edge, so the difference between them isolates the geometry change from the
+# physics residuals the two share. That difference is a far sharper statistic
+# than either config's absolute agreement -- sigma of 0.1-0.5 pp on an effect
+# that runs 16 pp down to 2 pp -- and it is the thing the pair exists to
+# measure, so it gets its own gate rather than living only in DESIGN.md.
+#
+# Tolerance is in percentage points of Delta, plus the usual 3-sigma
+# statistical allowance propagated through the ratio.
+BULLET_PAIR = (25, 26, 1.0)   # sharp cfg, bulletized cfg, |dDelta| bound (pp)
+
+
+def compare_bulletization(mc_dir):
+    """Gate Delta = 1 - eps(26)/eps(25) between CeeLo and GEANT4."""
+    sharp_cfg, bullet_cfg, tol_pp = BULLET_PAIR
+    paths = {}
+    for cfg in (sharp_cfg, bullet_cfg):
+        if cfg not in CONFIGS:
+            return 0
+        mc = os.path.join(mc_dir, f'our_{cfg}_multi.csv')
+        ref = os.path.join(REF_DIR, CONFIGS[cfg][0])
+        if not (os.path.exists(mc) and os.path.exists(ref)):
+            return 0            # pair not committed -> nothing to gate
+        paths[cfg] = (read_multi(mc), read_multi(ref))
+
+    (mc_s, ref_s), (mc_b, ref_b) = paths[sharp_cfg], paths[bullet_cfg]
+    energies = sorted(set(mc_s) & set(mc_b) & set(ref_s) & set(ref_b))
+    if not energies:
+        return 0
+
+    print(f'\n=== Bulletization effect, configs {sharp_cfg}/{bullet_cfg} '
+          f'(tolerance: {tol_pp} pp + 3 sigma) ===')
+    print(f'{"E":>6} {"dCeeLo%":>9} {"dG4%":>8} {"diff_pp":>8} {"z":>6}  flag')
+
+    fails = 0
+    for e in energies:
+        row = [f'{e:>6}']
+        flag = ''
+        for idx, label in ((0, 'FEP'), (2, 'TOT')):
+            vals = []
+            for mc_a, mc_c in ((mc_b, mc_s), (ref_b, ref_s)):
+                a, sa = mc_a[e][idx], mc_a[e][idx + 1]
+                b, sb = mc_c[e][idx], mc_c[e][idx + 1]
+                if a <= 0 or b <= 0:
+                    vals.append((float('nan'), float('nan')))
+                    continue
+                ratio = a / b
+                vals.append((1.0 - ratio,
+                             ratio * math.hypot(sa / a, sb / b)))
+            (d_mc, s_mc), (d_g4, s_g4) = vals
+            if math.isnan(d_mc) or math.isnan(d_g4):
+                continue
+            diff_pp = 100.0 * (d_mc - d_g4)
+            s_pp = 100.0 * math.hypot(s_mc, s_g4)
+            if abs(diff_pp) > tol_pp + 3.0 * s_pp:
+                flag += f' {label}_DELTA_FAIL'
+                fails += 1
+            if label == 'FEP':
+                row.append(f'{100*d_mc:>9.2f} {100*d_g4:>8.2f} '
+                           f'{diff_pp:>8.3f} {diff_pp/s_pp if s_pp else 0:>6.2f}')
+        print(' '.join(row) + ' ' + flag)
+    return fails
+
+
 def main():
     mc_dir = DEFAULT_MC_DIR
     argv = sys.argv[1:]
@@ -177,6 +256,7 @@ def main():
                 flag += ' TOT_FAIL'
                 fails += 1
             print(f'{e:>6} {d_fep:>7.2f} {z_fep:>6.1f} {d_tot:>7.2f} {z_tot:>6.1f} {flag}')
+    fails += compare_bulletization(mc_dir)
     fails += compare_cascade(mc_dir)
     print(f'\n{"PASS" if fails == 0 else f"{fails} FAILURES"}')
     return 0 if fails == 0 else 1

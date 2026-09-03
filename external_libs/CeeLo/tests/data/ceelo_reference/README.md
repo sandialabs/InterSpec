@@ -25,7 +25,14 @@ discrepancies and z-scores against the G4 references.
 | `our_8_multi.csv`  | 8 — 3"×3" NaI, 0.5 mm Al, Marinelli (water) | `nai_3x3_al05mm_marinelli_water_multi.csv` |
 | `our_11_multi.csv` | 11 — 3"×3" NaI, 0.5 cm Fe shield, 10 cm | `nai_3x3_fe05cm_shield_10cm_multi.csv` |
 | `our_12_multi.csv` | 12 — 3"×3" NaI, SS304 box + cellulose | `nai_3x3_ss304box_cellulose_15cm_multi.csv` |
+| `our_25_multi.csv` | 25 — GEM35-70 HPGe coax, sharp front edge, 5 cm | `hpge_gem35_coax_sharp_5cm_multi.csv` |
+| `our_26_multi.csv` | 26 — GEM35-70 HPGe coax, bulletized edge + round-tipped bore, 5 cm | `hpge_gem35_coax_bullet_5cm_multi.csv` |
 | `our_cascade_multi.csv` | cascade summing (6 nuclides, "alcyl" geom) | `cascade_summing_multi.csv` |
+
+Configs 25 and 26 are a matched pair — the same crystal with a sharp and a
+bulletized front edge — so the difference between their rows measures the
+bulletization effect itself. See DESIGN.md → Validated Configurations for that
+comparison against GEANT4.
 
 ### `our_cascade_multi.csv` (cascade true-coincidence summing)
 

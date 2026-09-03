@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<angle generator="ANGLE" version="5.0" build="5.0.0.480" units="mm">
+  <detector type="Closed-end coaxial HPGe" name="user-materials" description="inline material definitions">
+    <crystal height="60" radius="30" bulletizingRadius="6" />
+    <core height="45" radius="5" rounded="yes" />
+    <inactiveGe topThickness="0.6" sideThickness="0.8" />
+    <endCap topThickness="1.2" sideThickness="1.4">
+      <material name="Sapphire" density="3.98">
+        <compound chemicalFormula="Al2O3">
+          <element symbol="Al" atoms="2" />
+          <element symbol="O" atoms="3" />
+        </compound>
+      </material>
+      <coatings>
+        <coating topThickness="0.05" sideThickness="0.05">
+          <material name="Brine" density="1.047">
+            <compounds>
+              <compound massFraction="96" chemicalFormula="H2O">
+                <element symbol="H" atoms="2" />
+                <element symbol="O" atoms="1" />
+              </compound>
+              <compound massFraction="4" chemicalFormula="NaCl">
+                <element symbol="Na" atoms="1" />
+                <element symbol="Cl" atoms="1" />
+              </compound>
+            </compounds>
+          </material>
+        </coating>
+      </coatings>
+    </endCap>
+    <vacuum topThickness="3" sideThickness="4" />
+    <housing>
+      <sideInner thickness="0.7"><material name="Aluminium" /></sideInner>
+      <sideOuter thickness="0" />
+      <topLower thickness="0.03">
+        <material name="Aluminized Mylar" density="2.035">
+          <elements>
+            <element symbol="C" massFraction="31.25" />
+            <element symbol="H" massFraction="2.1" />
+            <element symbol="O" massFraction="16.65" />
+            <element symbol="Al" massFraction="50" />
+          </elements>
+        </material>
+      </topLower>
+      <topUpper thickness="0" />
+    </housing>
+  </detector>
+  <geometry type="General" name="" description="">
+    <holder outerRadius="45" height="250">
+      <cap thickness="0" />
+      <wall thickness="0" />
+    </holder>
+  </geometry>
+  <source radius="1.5" height="0" />
+  <precision>1</precision>
+  <referenceEfficiencyCurve name="Eff_25cm" description="fixture">
+    <experimentalPoints>
+      <point energy="59.5" efficiency="0.0110" />
+      <point energy="122.1" efficiency="0.0240" />
+      <point energy="661.7" efficiency="0.00800" />
+      <point energy="1332.5" efficiency="0.00480" />
+    </experimentalPoints>
+    <regions>
+      <region start="50" end="1500" polynomOrder="3" />
+    </regions>
+    <detector name="user-materials" />
+    <geometry type="General" name="" description="">
+      <holder outerRadius="45" height="250">
+        <cap thickness="0" />
+        <wall thickness="0" />
+      </holder>
+    </geometry>
+    <source radius="1.5" height="0" />
+  </referenceEfficiencyCurve>
+  <results>
+    <result energy="59.5" solidAngle="2.5" solidAnglePrecision="0.4" efficiency="0.0110" efficiencyPrecision="1.01" />
+    <result energy="122.1" solidAngle="2.8" solidAnglePrecision="0.4" efficiency="0.0240" efficiencyPrecision="1.01" />
+    <result energy="661.7" solidAngle="2.1" solidAnglePrecision="0.4" efficiency="0.00800" efficiencyPrecision="1.01" />
+    <result energy="1332.5" solidAngle="1.8" solidAnglePrecision="0.4" efficiency="0.00480" efficiencyPrecision="1.01" />
+  </results>
+</angle>

@@ -6,6 +6,16 @@ without requiring a GEANT4 installation: `profiling/compare_validation.py` gates
 these references against CeeLo's own results in `../ceelo_reference/`, and
 `tests/test_cascade_summing.cpp` reads `cascade_summing_multi.csv` directly.
 
+## FEP window
+
+These references were generated with the harness scoring a **1.5 keV** half-window
+for full-energy classification.  CeeLo's own default is
+`ceelo::kDefaultFepWindowKeV` (physics/FepWindow.h), which is narrower — so any
+comparison against this data must pin CeeLo to 1.5 keV
+(`EfficiencyCalculator::set_fep_window_keV(1.5)`, as `cascade_ref_common.h` does)
+until the references are regenerated.  When regenerating, set the harness and
+CeeLo to the same window and update this note.
+
 ## How to regenerate reference data
 
 1.  Build the GEANT4 validation harness:
@@ -66,7 +76,17 @@ CSV headers.
 | `nai_3x3_al05mm_marinelli_water_multi.csv` | 3"×3" NaI, 0.5 mm Al | Marinelli beaker, water fill | 8 |
 | `nai_3x3_fe05cm_shield_10cm_multi.csv` | 3"×3" NaI, bare | point, 10 cm, 0.5 cm Fe shield | 11 |
 | `nai_3x3_ss304box_cellulose_15cm_multi.csv` | 3"×3" NaI, bare | SS304 box + cellulose, 15 cm | 12 |
+| `hpge_gem35_coax_sharp_5cm_multi.csv` | GEM35-70 HPGe coax, sharp front edge | point, on-axis 5 cm | 25 |
+| `hpge_gem35_coax_bullet_5cm_multi.csv` | GEM35-70 HPGe coax, bulletized edge + round-tipped bore | point, on-axis 5 cm | 26 |
 | `cascade_summing_multi.csv` | 3"×3" NaI | Al cylinder, full-decay ion source | cascade-summing gate |
+
+Configs 25 and 26 are a **matched pair**: the same crystal with a sharp and a
+bulletized front edge. Each is gated against GEANT4 on its own, but the point of
+the pair is the *difference* between them, which isolates the geometry change
+from the physics residuals both configs share. They carry no dead layer, because
+`write_gdml()` does not export one (see TODO.md), and their crystal is exported
+as a single G4Polycone rather than boolean solids — a subtraction-based export
+produced ~0.3% stuck-track warnings under cone bias, the polycone none.
 
 The authoritative, up-to-date agreement figures are the tolerances encoded in
 `profiling/compare_validation.py` and the validated-configuration table in
@@ -95,8 +115,18 @@ to reproduce them.  The historical summary below is kept for context.
 
 | Effect | Energy range | Δ FEP | Root cause |
 |--------|-------------|-------|------------|
-| Doppler broadening | ≥1 MeV (all configs) | −0.5 to −1.0% | Missing bound-electron Compton profiles |
-| Electron escape | ≥1 MeV (CZT only) | −3 to −7% | Thin detector; CSDA tracking vs G4 full e⁻ transport |
+| LaBr3 FEP residual | ≥1 MeV (cfg 3 only) | +0.5 to +0.6% | Small over-recovery after the Aug 2026 electron-transport fixes (Bohr straggling amplitude / possible small reference offset) |
+| Pb-attenuator total | ≥2 MeV (cfg 7 only) | total +0.25% (z≈3) | Untriaged small residual behind 2 mm Pb |
+
+The former entries here — a "Doppler broadening −0.5 to −1.0% ≥1 MeV" line and
+the CZT −3 to −7% electron escape — are gone. The first was a misattribution
+(Doppler broadening affects the Compton-edge shape only; its FEP effect is far
+below the ±1.5 keV window): the real cause of the ≥2 MeV FEP family was the
+crystal condensed-history electron walk (per-sub-step Highland log term, no
+energy-loss straggling, and a silent residual-KE drop), fixed Aug 2026 —
+post-fix pooled ≥2 MeV FEP agreement is +0.24% (z +4.2 across 11 rows at
+~0.1% MC precision), with no coherent negative family. The same fixes brought
+CZT >1 MeV FEP from −3..−5% to |Δ| ≤ 1.3% (|z| < 0.7).
 
 ## Cascade true-coincidence summing reference
 

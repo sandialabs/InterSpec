@@ -1,12 +1,18 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <messages>
   <!-- dmw- is short for DrfModifyWidget / DrfModifyWindow -->
-  <message id="dmw-tab-name">Name &amp; Description</message>
-  <message id="dmw-tab-geometry">Geometry &amp; MC</message>
+  <!-- Kept short so the side menu stays narrow, and so all four still fit one row of tabs when the
+       display is too narrow for a side menu. -->
+  <message id="dmw-tab-name">General</message>
+  <message id="dmw-tab-geometry">Geom &amp; MC</message>
   <message id="dmw-tab-fwhm">FWHM</message>
-  <message id="dmw-fwhm-no-foreground">Load a foreground spectrum (with fitted peaks) to fit the detector&apos;s FWHM here.</message>
+  <message id="dmw-err-fwhm-not-applied">The FWHM could not be applied to the detector: {1}</message>
+  <message id="dmw-err-no-fwhm-fit">The FWHM equation on the FWHM tab has no coefficients, so the detector kept the FWHM it already had.  Use &quot;Fit FWHM&quot; there, or enter the coefficients by hand.</message>
+  <message id="dmw-fwhm-no-foreground">No foreground spectrum is loaded, so there is nothing to fit the FWHM to; you can still edit the equation below by hand.</message>
   <message id="dmw-tab-uncert">Uncertainty</message>
   <message id="dmw-use-btn">Use</message>
+  <message id="dmw-tt-use-needs-mc">This detector was imported for its geometry only, so it has no efficiency yet. Generate a response on the Monte Carlo tab to give it one.</message>
+  <message id="dmw-err-no-backbone">Could not build an efficiency curve from the generated response: {1}</message>
   <message id="dmw-uncert-help">Optional baseline efficiency uncertainty: a fractional
     (e.g. 0.05 = 5%) 1-sigma uncertainty that applies, and is fully correlated, within
     each energy band, and is uncorrelated between bands. The Activity/Shielding fit can
@@ -17,6 +23,19 @@
   <message id="dmw-band-frac">Frac. uncertainty</message>
   <message id="dmw-add-band">Add band</message>
   <message id="dmw-remove-band">Remove band</message>
+  <message id="dmw-anchor-title">Measured reference curve</message>
+  <message id="dmw-anchor-help">The measured efficiency curve this response is anchored to
+    (imported from the detector model). Edit the reference distance, the per-point efficiencies
+    and their uncertainties, or add/remove points. Blank uncertainty cells use the default below.</message>
+  <message id="dmw-anchor-ref-dist">Reference distance:</message>
+  <message id="dmw-anchor-cm">cm</message>
+  <message id="dmw-anchor-default-uncert">Default uncertainty:</message>
+  <message id="dmw-anchor-percent">%</message>
+  <message id="dmw-anchor-energy">Energy (keV)</message>
+  <message id="dmw-anchor-eff">Efficiency</message>
+  <message id="dmw-anchor-uncert">Uncert %</message>
+  <message id="dmw-anchor-add">Add point</message>
+  <message id="dmw-anchor-remove">Remove point</message>
   <message id="dmw-export-note">Tip: after choosing &quot;Use&quot;, you can download this
     detector as an XML file or a QR code (buttons on the Detector Select dialog), or find it
     again later under the &quot;Previous&quot; tab of Detector Select.</message>

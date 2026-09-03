@@ -1884,6 +1884,17 @@ void ShieldingSourceFitOptions::serialize( rapidxml::xml_node<char> *parent_node
   node = doc->allocate_node( rapidxml::node_element, name, value );
   parent_node->append_node( node );
 
+  name = "VolumetricEffMethod";
+  switch( volumetric_eff_method )
+  {
+    case VolumetricEffMethod::Auto:       value = "auto";     break;
+    case VolumetricEffMethod::MCTransfer: value = "mc";       break;
+    case VolumetricEffMethod::EffTran:    value = "efftran";  break;
+    case VolumetricEffMethod::FlatDisk:   value = "flatdisk"; break;
+  }//switch( volumetric_eff_method )
+  node = doc->allocate_node( rapidxml::node_element, name, value );
+  parent_node->append_node( node );
+
   name = "PhotopeakClusterSigma";
   char buffer[64] = { '\0' };
   snprintf( buffer, sizeof(buffer), "%.9g", photopeak_cluster_sigma );
@@ -1946,6 +1957,22 @@ void ShieldingSourceFitOptions::deSerialize( const rapidxml::xml_node<char> *par
   if( node )
     correct_for_cascade_summing = boolval( node );  //absent in older XML -> keeps the default (false)
 
+  node = XML_FIRST_NODE( parent_node, "VolumetricEffMethod" );
+  if( node )
+  {
+    const string val = SpecUtils::xml_value_str( node );
+    if( SpecUtils::iequals_ascii(val, "auto") )
+      volumetric_eff_method = VolumetricEffMethod::Auto;
+    else if( SpecUtils::iequals_ascii(val, "mc") )
+      volumetric_eff_method = VolumetricEffMethod::MCTransfer;
+    else if( SpecUtils::iequals_ascii(val, "efftran") )
+      volumetric_eff_method = VolumetricEffMethod::EffTran;
+    else if( SpecUtils::iequals_ascii(val, "flatdisk") )
+      volumetric_eff_method = VolumetricEffMethod::FlatDisk;
+    else
+      throw runtime_error( "ShieldingSourceFitOptions invalid VolumetricEffMethod: '" + val + "'" );
+  }//if( node )  //absent in older XML -> keeps the default (Auto)
+
   node = XML_FIRST_NODE( parent_node, "PhotopeakClusterSigma" );
   if( node )
   {
@@ -1989,6 +2016,9 @@ void ShieldingSourceFitOptions::equalEnough( const ShieldingSourceFitOptions &lh
 
   if( lhs.correct_for_cascade_summing != rhs.correct_for_cascade_summing )
     throw runtime_error( "ShieldingSourceFitOptions LHS correct_for_cascade_summing != RHS correct_for_cascade_summing" );
+
+  if( lhs.volumetric_eff_method != rhs.volumetric_eff_method )
+    throw runtime_error( "ShieldingSourceFitOptions LHS volumetric_eff_method != RHS volumetric_eff_method" );
 }//void equalEnough( const ShieldingSourceFitOptions &lhs, const ShieldingSourceFitOptions &rhs )
 #endif
   
@@ -2003,6 +2033,120 @@ ModelFitProgress::ModelFitProgress()
 }
 
   
+/** Assembles the background-subtracted observed counts and uncertainties for the peaks used in the
+ fit, in the SAME peak-inclusion and background-subtraction order as
+ #ShieldingSourceChi2Fcn::expected_observed_chis (and #expected_peak_counts_imp).  Shared by the
+ Ceres driver and the results/whitening path so the ordering can never drift between them.
+
+ A non-positive area uncertainty is clamped to a Poisson floor (and, if `results` is non-null, noted
+ once) so downstream residuals cannot blow up to inf/NaN.
+ */
+static void assemble_included_observed( const GammaInteractionCalc::ShieldingSourceChi2Fcn &chi2Fcn,
+                                        std::vector<double> &observed,
+                                        std::vector<double> &observed_uncert,
+                                        ShieldingSourceFitCalc::ModelFitResults *results = nullptr )
+{
+  observed.clear();
+  observed_uncert.clear();
+
+  bool warned_zero_uncert = false;
+  const std::vector<PeakDef> &fit_peaks = chi2Fcn.peaks();
+  const std::vector<PeakDef> &back_peaks = chi2Fcn.backgroundPeaks();
+  for( const PeakDef &peak : fit_peaks )
+  {
+    if( !peak.decayParticle() && (peak.sourceGammaType() != PeakDef::AnnihilationGamma) )
+      continue;
+
+    double observed_counts = peak.peakArea();
+    double observed_uncertainty = peak.peakAreaUncert();
+    double backCounts = 0.0, backUncert2 = 0.0;
+    const double nsigmaNear = 1.0;
+
+    for( const PeakDef &backPeak : back_peaks )
+    {
+      const double sigma = peak.gausPeak() ? peak.sigma() : 0.25*peak.roiWidth();
+      if( fabs(backPeak.mean() - peak.mean()) < (nsigmaNear*sigma) )
+      {
+        backCounts += backPeak.peakArea();
+        backUncert2 += backPeak.peakAreaUncert()*backPeak.peakAreaUncert();
+      }
+    }//for( const PeakDef &backPeak : back_peaks )
+
+    if( backCounts > 0.0 )
+    {
+      observed_counts -= backCounts;
+      observed_uncertainty = sqrt( observed_uncertainty*observed_uncertainty + backUncert2 );
+    }
+
+    // A non-positive area uncertainty would make the residual (obs-exp)/uncert blow up to
+    //  inf/NaN and the solver would fail opaquely.  Real fit peaks always have a positive
+    //  Poisson area uncertainty; clamp to a Poisson floor so the fit can proceed, and note it.
+    if( !(observed_uncertainty > 0.0) )
+    {
+      observed_uncertainty = std::sqrt( std::max( std::fabs(observed_counts), 1.0 ) );
+      if( results && !warned_zero_uncert )
+      {
+        warned_zero_uncert = true;
+        results->errormsgs.push_back( "A peak had a non-positive area uncertainty; using a"
+                                      " Poisson estimate so the fit could proceed." );
+      }
+    }//if( non-positive area uncertainty )
+
+    observed.push_back( observed_counts );
+    observed_uncert.push_back( observed_uncertainty );
+  }//for( const PeakDef &peak : fit_peaks )
+}//assemble_included_observed(...)
+
+
+/** Builds the GLS whitening matrix L^{-1} (row-major, n x n) from the per-peak detector-efficiency
+ fractional covariance, so displayed pulls can be whitened identically to the fit objective.
+
+ Sigma = diag(stat^2) + diag(observed) . C_eff_frac . diag(observed), Sigma = L L^T; returns L^{-1}
+ (lower-triangular).  Returns an empty vector when there is no usable covariance or the Cholesky
+ fails, in which case callers keep the plain diagonal (statistics-only) behavior.
+ */
+static std::vector<double> compute_efficiency_whitening( const std::vector<double> &observed,
+                                                         const std::vector<double> &observed_uncert,
+                                                         const std::vector<double> &eff_cov )
+{
+  const size_t n = observed.size();
+  if( (n == 0) || (observed_uncert.size() != n) || (eff_cov.size() != (n*n)) )
+    return {};
+
+  Eigen::MatrixXd Sigma( n, n );
+  for( size_t i = 0; i < n; ++i )
+    for( size_t j = 0; j < n; ++j )
+      Sigma(i,j) = observed[i] * eff_cov[i*n + j] * observed[j];
+  for( size_t i = 0; i < n; ++i )
+    Sigma(i,i) += observed_uncert[i] * observed_uncert[i];
+
+  Eigen::LLT<Eigen::MatrixXd> llt( Sigma );
+  if( llt.info() != Eigen::Success )
+    return {};
+
+  const Eigen::MatrixXd Linv = llt.matrixL().solve( Eigen::MatrixXd::Identity(n,n) );
+  std::vector<double> whiten( n*n );
+  for( size_t i = 0; i < n; ++i )
+    for( size_t j = 0; j < n; ++j )
+      whiten[i*n + j] = Linv(i,j);
+  return whiten;
+}//compute_efficiency_whitening(...)
+
+
+/** The average per-peak deviation shown on the fit chart: dev = sqrt(chi2 / N), where N is the
+ number of plotted peaks (`peak_comparisons`), NOT the degrees of freedom.  Single-sourced here so
+ the C++ warning, the chart's "<dev>", and any report all use the identical numerator (fit chi2) and
+ denominator (peak count).  Returns 0 when it cannot be computed.
+ */
+static double average_peak_deviation( const ShieldingSourceFitCalc::ModelFitResults &results )
+{
+  const size_t n = results.peak_comparisons ? results.peak_comparisons->size() : 0;
+  if( (n == 0) || !(results.chi2 > 0.0) )
+    return 0.0;
+  return std::sqrt( results.chi2 / static_cast<double>(n) );
+}//average_peak_deviation(...)
+
+
 /** Detects non-fatal warning conditions for a completed (Final) fit and appends human-readable
  messages to `results->warnings`.  Centralizing this means every consumer - the desktop fit-message
  area, the phone fit bar's "issue" pill, and the text/HTML/CSV reports - picks up each warning
@@ -2052,13 +2196,11 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
   }//for( const PeakDef &peak : results.foreground_peaks )
 
   // Questionable fit: the average per-peak deviation shown on the fit chart is
-  //  dev = sqrt(chi2 / num_peaks) - it divides by the NUMBER OF PEAKS, not the degrees of freedom
-  //  (see `dev` in ShieldingSourceFitPlot.js).  A good fit is around 1 sigma, so flag dev above 3.
-  //  Compute and format it the same way so the warning's number matches the chart's "<dev>".
-  const size_t num_peaks = results.foreground_peaks.size();
-  if( (num_peaks > 0) && (results.chi2 > 0.0) )
+  //  dev = sqrt(chi2 / N) over the plotted peaks (see `average_peak_deviation` and `dev` in
+  //  ShieldingSourceFitPlot.js).  A good fit is around 1 sigma, so flag dev above 3.  Uses the same
+  //  helper (and hence numerator/denominator) as the chart so the warning's number matches "<dev>".
   {
-    const double dev = std::sqrt( results.chi2 / static_cast<double>(num_peaks) );
+    const double dev = average_peak_deviation( results );
     if( dev > 3.0 )
     {
       char devbuf[32] = { '\0' };
@@ -2067,7 +2209,7 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
         + string(devbuf) + " sigma, well above the roughly 1 sigma expected for a good fit - the"
         " model may not describe the data well." );
     }
-  }//if( num_peaks > 0 && chi2 > 0 )
+  }//average peak deviation block
 
   // Detector-efficiency validity flags: a MC/transfer-parameterized response reports when a
   //  query fell outside its validated regime (near-field below the validity floor, refuse-grade
@@ -2152,7 +2294,6 @@ static void check_for_fit_warnings( ShieldingSourceFitCalc::ModelFitResults &res
 static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> chi2Fcn,
                               const std::vector<double> &params,
                               const std::vector<double> &errors,
-                              const unsigned int ndof,
                               std::shared_ptr<ShieldingSourceFitCalc::ModelFitResults> results )
 {
   // Complaints from the supplemental-peak-info pass; merged into `results->warnings` at the end
@@ -2461,13 +2602,38 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
     
   {// Begin logging detailed info, we'll later use to template reports
     GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
+
+    // Which volumetric-efficiency method the integration actually used, and why - so a request the
+    //  DRF could not honor (e.g. near-field asked for, but no CeeLo response) shows up in reports.
+    results->volumetric_eff_method = chi2Fcn->resolvedVolumetricEffMethod();
+    results->volumetric_eff_note = chi2Fcn->volumetricEffResolveNote();
+
+    // A near-field method the user asked for by name but did not get is an error, not a footnote:
+    //  the answer is quietly less accurate than requested, which is exactly what should not pass
+    //  unremarked.  (`Auto` fallbacks stay in the note above.)
+    if( !chi2Fcn->volumetricEffResolveError().empty() )
+      results->errormsgs.push_back( chi2Fcn->volumetricEffResolveError() );
+
+    // Report the GLS whitening matrix the (correlated) fit used, so a consumer that wants the exact
+    //  correlated chi2 decomposition can have it.  It is deliberately NOT used for the displayed
+    //  per-peak pulls: a whitened residual mixes peaks in Cholesky order, so it is not a property of
+    //  any one peak - the chart and ShieldSourcePullTrend show the marginal pull instead
+    //  (see `expected_observed_chis`).
+    if( chi2Fcn->options().account_for_drf_uncert )
+    {
+      vector<double> obs, obs_uncert;
+      assemble_included_observed( *chi2Fcn, obs, obs_uncert );
+      const vector<double> eff_cov = chi2Fcn->peakEffFracCovariance();
+      results->efficiency_whitening = compute_efficiency_whitening( obs, obs_uncert, eff_cov );
+    }//if( account_for_drf_uncert )
+
     auto peak_calc_details = make_unique<vector<GammaInteractionCalc::PeakDetail>>();
     const auto peak_comparisons = chi2Fcn->energy_chi_contributions( params, errors, mixcache,
-                                                                    &(results->peak_calc_log),
                                                                     peak_calc_details.get() );
-      
+
     results->peak_calc_details = std::move(peak_calc_details);
     results->peak_comparisons.reset( new vector<GammaInteractionCalc::PeakResultPlotInfo>(peak_comparisons) );
+
 
     // Diagnose the per-peak pull trend vs energy (never let a diagnostic fail the fit).
     //  Uses the *fitted* shieldings and sources - the conclusions ("too much/little shielding",
@@ -2488,16 +2654,6 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
       results->pull_trend = nullptr;
     }
 
-
-    if( !results->peak_calc_log.empty() )
-    {
-      char buffer[64];
-      snprintf( buffer, sizeof(buffer), "There %s %i parameter%s fit for",
-               (ndof>1 ? "were" : "was"), int(ndof), (ndof>1 ? "s" : "") );
-      results->peak_calc_log.push_back( "&nbsp;" );
-      results->peak_calc_log.push_back( buffer );
-    }//if( !m_calcLog.empty() )
-      
     try
     {
       auto shielding_details = make_unique<vector<GammaInteractionCalc::ShieldingDetails>>();
@@ -2783,7 +2939,7 @@ vector<SupplementalPeakInfo> compute_supplemental_peak_info(
       errors.resize( params.size(), 0.0 );
 
     GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache mixcache;
-    aug_fcn->energy_chi_contributions( params, errors, mixcache, nullptr, &details );
+    aug_fcn->energy_chi_contributions( params, errors, mixcache, &details );
   }catch( std::exception &e )
   {
     warnings.push_back( "Failed to evaluate the fitted model for the peaks not used in the fit: "
@@ -3353,7 +3509,7 @@ void fit_model_minuit2( const std::string wtsession,
     const vector<double> params = fitParams.Params();
     const vector<double> errors = fitParams.Errors();
     const unsigned int num_fit_pars = inputPrams->VariableParameters();
-    unsigned int ndof = (num_fit_pars > chi2Fcn->peaks().size()) ? static_cast<unsigned int>(0)
+    const unsigned int ndof = (num_fit_pars > chi2Fcn->peaks().size()) ? static_cast<unsigned int>(0)
                                                                  : static_cast<unsigned int>(chi2Fcn->peaks().size() - num_fit_pars);
     
     results->successful = ShieldingSourceFitCalc::ModelFitResults::FitStatus::Final;
@@ -3365,7 +3521,7 @@ void fit_model_minuit2( const std::string wtsession,
     results->chi2 = minimum.Fval();  //chi2Fcn->DoEval( results->paramValues );
     
     
-    fill_fit_results( chi2Fcn, params, errors, ndof, results );
+    fill_fit_results( chi2Fcn, params, errors, results );
   }catch( GammaInteractionCalc::ShieldingSourceChi2Fcn::CancelException &e )
   {
     const size_t nFunctionCallsSoFar = gui_progress_info->numFunctionCallsSoFar();
@@ -3808,28 +3964,8 @@ namespace
     //  covariance) we silently keep the plain diagonal residual.
     if( chi2Fcn->options().account_for_drf_uncert )
     {
-      const size_t n = observed.size();
       const std::vector<double> eff_cov = chi2Fcn->peakEffFracCovariance();
-      if( !eff_cov.empty() && (eff_cov.size() == (n*n)) && (n > 0) )
-      {
-        Eigen::MatrixXd Sigma( n, n );
-        for( size_t i = 0; i < n; ++i )
-          for( size_t j = 0; j < n; ++j )
-            Sigma(i,j) = observed[i] * eff_cov[i*n + j] * observed[j];
-        for( size_t i = 0; i < n; ++i )
-          Sigma(i,i) += observed_uncert[i] * observed_uncert[i];
-
-        Eigen::LLT<Eigen::MatrixXd> llt( Sigma );
-        if( llt.info() == Eigen::Success )
-        {
-          const Eigen::MatrixXd Linv
-                = llt.matrixL().solve( Eigen::MatrixXd::Identity(n,n) );
-          functor->m_whiten.resize( n*n );
-          for( size_t i = 0; i < n; ++i )
-            for( size_t j = 0; j < n; ++j )
-              functor->m_whiten[i*n + j] = Linv(i,j);
-        }//if( Cholesky succeeded )
-      }//if( have a usable efficiency covariance )
+      functor->m_whiten = compute_efficiency_whitening( observed, observed_uncert, eff_cov );
     }//if( account_for_drf_uncert )
 
     // The optimizer works on unbounded internal parameters (Minuit2-style transforms);
@@ -4330,53 +4466,9 @@ void fit_model_ceres( const std::string wtsession,
 
     // The background-subtracted observed counts for each peak in the fit - same peak
     //  inclusion and background-subtraction as #ShieldingSourceChi2Fcn::expected_observed_chis
+    //  (shared helper so the ordering matches the results/whitening path exactly).
     vector<double> observed, observed_uncert;
-    bool warned_zero_uncert = false;
-    const vector<PeakDef> &fit_peaks = chi2Fcn->peaks();
-    const vector<PeakDef> &back_peaks = chi2Fcn->backgroundPeaks();
-    for( const PeakDef &peak : fit_peaks )
-    {
-      if( !peak.decayParticle() && (peak.sourceGammaType() != PeakDef::AnnihilationGamma) )
-        continue;
-
-      double observed_counts = peak.peakArea();
-      double observed_uncertainty = peak.peakAreaUncert();
-      double backCounts = 0.0, backUncert2 = 0.0;
-      const double nsigmaNear = 1.0;
-
-      for( const PeakDef &backPeak : back_peaks )
-      {
-        const double sigma = peak.gausPeak() ? peak.sigma() : 0.25*peak.roiWidth();
-        if( fabs(backPeak.mean() - peak.mean()) < (nsigmaNear*sigma) )
-        {
-          backCounts += backPeak.peakArea();
-          backUncert2 += backPeak.peakAreaUncert()*backPeak.peakAreaUncert();
-        }
-      }//for( const PeakDef &backPeak : back_peaks )
-
-      if( backCounts > 0.0 )
-      {
-        observed_counts -= backCounts;
-        observed_uncertainty = sqrt( observed_uncertainty*observed_uncertainty + backUncert2 );
-      }
-
-      // A non-positive area uncertainty would make the residual (obs-exp)/uncert blow up to
-      //  inf/NaN and the solver would fail opaquely.  Real fit peaks always have a positive
-      //  Poisson area uncertainty; clamp to a Poisson floor so the fit can proceed, and note it.
-      if( !(observed_uncertainty > 0.0) )
-      {
-        observed_uncertainty = std::sqrt( std::max( std::fabs(observed_counts), 1.0 ) );
-        if( results && !warned_zero_uncert )
-        {
-          warned_zero_uncert = true;
-          results->errormsgs.push_back( "A peak had a non-positive area uncertainty; using a"
-                                        " Poisson estimate so the fit could proceed." );
-        }
-      }//if( non-positive area uncertainty )
-
-      observed.push_back( observed_counts );
-      observed_uncert.push_back( observed_uncertainty );
-    }//for( const PeakDef &peak : fit_peaks )
+    assemble_included_observed( *chi2Fcn, observed, observed_uncert, results.get() );
 
     if( observed.empty() )
       throw runtime_error( "No peaks suitable for fitting." );
@@ -4611,7 +4703,7 @@ void fit_model_ceres( const std::string wtsession,
     results->num_fcn_calls = static_cast<int>( num_evals );
     results->numDOF = ndof;
 
-    fill_fit_results( chi2Fcn, fit_full, errors, ndof, results );
+    fill_fit_results( chi2Fcn, fit_full, errors, results );
   }catch( GammaInteractionCalc::ShieldingSourceChi2Fcn::CancelException &e )
   {
     std::lock_guard<std::mutex> lock( results->m_mutex );

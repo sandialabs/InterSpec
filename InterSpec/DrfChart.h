@@ -61,6 +61,9 @@ protected:
    absolute (per-emitted-gamma) at #m_sourceDistance. */
   bool m_intrinsic;
 
+  /** Whether the DRFs FWHM curve (and its right-hand axis) is drawn. */
+  bool m_showFwhm;
+
   /** The javascript variable name used to refer to the DrfChart object.
    Currently is `jsRef() + ".chart"`.
    */
@@ -96,6 +99,11 @@ public:
   /** Selects intrinsic (per-gamma-striking-face) vs absolute
    (per-emitted-gamma) efficiency for the per-angle curves. */
   void setIntrinsicEfficiency( const bool intrinsic );
+
+  /** Enables/disables drawing the DRFs FWHM curve and its right-hand axis;
+   defaults to enabled.  Turned off where the chart is previewing a geometry /
+   efficiency response, which the FWHM has nothing to say about. */
+  void setShowFwhm( const bool show );
 
 protected:
   /** Re-samples the per-angle series (at #m_sourceDistance) and pushes it to

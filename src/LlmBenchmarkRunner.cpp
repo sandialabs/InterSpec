@@ -25,17 +25,21 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 #if( USE_LLM_INTERFACE )
 
+#include <map>
 #include <set>
 #include <string>
 #include <vector>
 #include <fstream>
 #include <sstream>
+#include <iomanip>
 #include <iostream>
 #include <algorithm>
+#include <functional>
 
 #include <Wt/WText.h>
 #include <Wt/WTable.h>
 #include <Wt/WLabel.h>
+#include <Wt/WComboBox.h>
 #include <Wt/WLineEdit.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WApplication.h>
@@ -43,6 +47,7 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 
 #include <rapidxml/rapidxml.hpp>
 
+#include "SpecUtils/DateTime.h"
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 #include "SpecUtils/RapidXmlUtils.hpp"
@@ -60,6 +65,26 @@ Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
 #include "external_libs/SpecUtils/3rdparty/nlohmann/json.hpp"
 
 using namespace std;
+
+namespace
+{
+  /** Format a time point as YYMMDDTHHMMSS for use as a filename component. */
+  string startTimeString( const std::chrono::system_clock::time_point &tp )
+  {
+    const SpecUtils::time_point_t st
+      = std::chrono::time_point_cast<std::chrono::microseconds>( tp );
+    string iso = SpecUtils::to_iso_string( st );  // e.g. "20260902T143015.123456"
+
+    const size_t dotpos = iso.find( '.' );
+    if( dotpos != string::npos )
+      iso = iso.substr( 0, dotpos );  // drop fractional seconds
+
+    if( iso.size() >= 2 )
+      iso = iso.substr( 2 );  // drop the century -> YYMMDDTHHMMSS
+
+    return iso;
+  }//startTimeString
+}//namespace
 
 
 LlmBenchmarkRunner::LlmBenchmarkRunner( InterSpec *viewer, LlmToolGui *toolGui )
@@ -431,6 +456,95 @@ vector<pair<string,string>> LlmBenchmarkRunner::findBenchmarkFiles( const string
 
 // ---- Benchmark Execution ----
 
+std::string LlmBenchmarkRunner::benchmarkBaseName( const string &xmlPath )
+{
+  string base = SpecUtils::filename( xmlPath );
+  const string ext = SpecUtils::file_extension( base );  // includes leading '.'
+  if( !ext.empty() && (base.size() >= ext.size()) )
+    base = base.substr( 0, base.size() - ext.size() );
+  return base;
+}//benchmarkBaseName
+
+
+std::string LlmBenchmarkRunner::computeBenchmarkHash( const string &xmlPath )
+{
+  vector<char> data;
+  try
+  {
+    SpecUtils::load_file_data( xmlPath.c_str(), data );
+  }catch( const exception & )
+  {
+    return string();
+  }
+
+  // Trailing '\0' from load_file_data is not appended here, so hash raw bytes.
+  const string contents( data.begin(), data.end() );
+  const size_t h = std::hash<string>{}( contents );
+
+  std::ostringstream ss;
+  ss << std::hex << std::setw( 8 ) << std::setfill( '0' ) << h;
+  string hex = ss.str();
+  if( hex.size() > 8 )
+    hex = hex.substr( hex.size() - 8 );  // keep last 8 hex digits
+  return hex;
+}//computeBenchmarkHash
+
+
+std::string LlmBenchmarkRunner::benchmarkOutputDir()
+{
+  return SpecUtils::append_path( InterSpec::writableDataDirectory(), "llm_benchmarks" );
+}//benchmarkOutputDir
+
+
+std::vector<LlmBenchmarkRunner::InProgressRun>
+  LlmBenchmarkRunner::scanInProgress( const string &outputDir,
+                                      const string &base,
+                                      const string &hash )
+{
+  vector<InProgressRun> runs;
+
+  if( !SpecUtils::is_directory( outputDir ) )
+    return runs;
+
+  // Files named "<base>_<time>_<hash>_in_progress.json"
+  const string prefix = base + "_";
+  const string suffix = "_" + hash + "_in_progress.json";
+
+  const vector<string> files = SpecUtils::ls_files_in_directory( outputDir );
+  for( const string &filePath : files )
+  {
+    const string fname = SpecUtils::filename( filePath );
+    if( (fname.size() <= (prefix.size() + suffix.size()))
+        || !SpecUtils::istarts_with( fname, prefix )
+        || !SpecUtils::iends_with( fname, suffix ) )
+      continue;
+
+    InProgressRun run;
+    run.path = filePath;
+
+    BenchmarkResults results;
+    size_t resumeIdx = 0, totalExpected = 0;
+    if( resultsFromJson( filePath, results, resumeIdx, totalExpected ) )
+    {
+      run.numDone = static_cast<int>( results.questionResults.size() );
+      run.totalExpected = static_cast<int>( totalExpected );
+      const SpecUtils::time_point_t st
+        = std::chrono::time_point_cast<std::chrono::microseconds>( results.startTime );
+      run.startDisplay = SpecUtils::is_special( st )
+        ? string() : SpecUtils::to_common_string( st, false );
+    }
+
+    runs.push_back( run );
+  }//for( each file in outputDir )
+
+  // Most-recent first (filename embeds the start time, so lexical sort works)
+  std::sort( runs.begin(), runs.end(),
+    []( const InProgressRun &a, const InProgressRun &b ){ return a.path > b.path; } );
+
+  return runs;
+}//scanInProgress
+
+
 void LlmBenchmarkRunner::startBenchmark( const string &xmlFilePath )
 {
   if( isRunning() )
@@ -439,6 +553,25 @@ void LlmBenchmarkRunner::startBenchmark( const string &xmlFilePath )
     return;
   }
 
+  // Look for interrupted runs of this same benchmark (matched by base name and
+  //  a hash of the XML contents) and offer to resume before starting fresh.
+  const string base = benchmarkBaseName( xmlFilePath );
+  const string hash = computeBenchmarkHash( xmlFilePath );
+  const string outputDir = benchmarkOutputDir();
+  const vector<InProgressRun> inProgress = scanInProgress( outputDir, base, hash );
+
+  if( !inProgress.empty() )
+  {
+    promptResumeOrFresh( xmlFilePath, inProgress );
+    return;
+  }
+
+  runFresh( xmlFilePath );
+}//startBenchmark
+
+
+void LlmBenchmarkRunner::runFresh( const string &xmlFilePath )
+{
   log( "Starting benchmark from: " + xmlFilePath );
 
   m_benchmarkBaseDir = SpecUtils::parent_path( xmlFilePath );
@@ -517,9 +650,180 @@ void LlmBenchmarkRunner::startBenchmark( const string &xmlFilePath )
   // Create judge interface
   createJudgeInterface();
 
+  // Set up the in-progress checkpoint file so partial results survive an
+  //  interruption and can be resumed.  The filename embeds the start time and a
+  //  hash of the XML contents, so it uniquely identifies this run of this exact
+  //  benchmark.
+  m_totalExpectedQuestions = 0;
+  for( const BenchmarkProblem &p : m_problems )
+    m_totalExpectedQuestions += p.questions.size();
+
+  m_benchmarkHash = computeBenchmarkHash( xmlFilePath );
+  m_startTimeStr = startTimeString( m_results.startTime );
+  m_outputDir = benchmarkOutputDir();
+  SpecUtils::create_directory( m_outputDir );
+  {
+    const string base = benchmarkBaseName( xmlFilePath );
+    const string fname = base + "_" + m_startTimeStr + "_" + m_benchmarkHash
+                         + "_in_progress.json";
+    m_inProgressPath = SpecUtils::append_path( m_outputDir, fname );
+  }
+
+  // Write an initial (empty) checkpoint so the file exists from the outset.
+  writeInProgressCheckpoint();
+
   // Start the first step
   advanceToNextStep();
 }
+
+
+void LlmBenchmarkRunner::runResume( const string &xmlFilePath, const string &inProgressPath )
+{
+  log( "Resuming benchmark from checkpoint: " + inProgressPath );
+
+  m_benchmarkBaseDir = SpecUtils::parent_path( xmlFilePath );
+
+  try
+  {
+    m_problems = parseXml( xmlFilePath );
+  }catch( const exception &e )
+  {
+    logError( "Failed to parse benchmark XML: " + string( e.what() ) );
+    return;
+  }
+
+  // Load the saved results and the problem index to resume at.
+  size_t resumeProblemIndex = 0;
+  if( !resultsFromJson( inProgressPath, m_results, resumeProblemIndex, m_totalExpectedQuestions ) )
+  {
+    logError( "Failed to load checkpoint - starting fresh instead" );
+    runFresh( xmlFilePath );
+    return;
+  }
+
+  m_results.benchmarkFilePath = xmlFilePath;
+
+  // Refresh the model name from the current config (the run may resume against a
+  //  different model than it started with).
+  LlmInterface *llm = m_toolGui ? m_toolGui->llmInterface() : nullptr;
+  if( llm && llm->config() )
+    m_results.modelName = llm->config()->llmApi.model();
+
+  if( resumeProblemIndex > m_problems.size() )
+    resumeProblemIndex = m_problems.size();
+
+  // Keep only results belonging to fully-completed problems (those before the
+  //  resume index).  Any partial results for the problem we resume into are
+  //  discarded so its conversation context is rebuilt cleanly.
+  {
+    set<string> completedIds;
+    for( size_t i = 0; i < resumeProblemIndex; ++i )
+      completedIds.insert( m_problems[i].id );
+
+    vector<BenchmarkQuestionResult> kept;
+    for( BenchmarkQuestionResult &r : m_results.questionResults )
+    {
+      if( completedIds.count( r.problemId ) )
+        kept.push_back( std::move( r ) );
+    }
+    m_results.questionResults = std::move( kept );
+  }
+
+  log( "Resuming at problem " + to_string( resumeProblemIndex + 1 ) + "/"
+       + to_string( m_problems.size() ) + " with "
+       + to_string( m_results.questionResults.size() ) + " prior result(s)" );
+
+#if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
+  const string session = wApp ? wApp->sessionId() : string("null");
+  string quiz_progress_filename = "quiz_progress_" + session + "_" + SpecUtils::filename(m_benchmarkBaseDir) + ".log";
+  m_log_file = std::make_unique<std::ofstream>( quiz_progress_filename.c_str(), ios::binary | ios::app );
+#endif
+
+  // Reset per-question state and set the resume position.
+  m_currentProblem = resumeProblemIndex;
+  m_currentQuestion = 0;
+  m_currentSequenceStep = 0;
+  m_currentQuestionRetries = 0;
+  m_state = State::Idle;
+
+  // Clear reference photopeak lines so they dont interfere with benchmark spectra
+  ReferencePhotopeakDisplay *refLines = m_viewer->referenceLinesWidget();
+  if( refLines )
+    refLines->clearAllLines();
+
+  if( llm )
+  {
+    m_conversationFinishedConn = llm->conversationFinished().connect(
+      this, &LlmBenchmarkRunner::handleConversationFinished );
+    m_responseErrorConn = llm->responseError().connect(
+      this, &LlmBenchmarkRunner::handleResponseError );
+  }
+
+  createJudgeInterface();
+
+  // Keep writing to the same checkpoint file so we don't create a duplicate.
+  m_inProgressPath = inProgressPath;
+  m_outputDir = SpecUtils::parent_path( inProgressPath );
+
+  advanceToNextStep();
+}
+
+
+void LlmBenchmarkRunner::promptResumeOrFresh( const string &xmlFilePath,
+                                              const vector<InProgressRun> &runs )
+{
+  SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "Resume Benchmark?" );
+
+  Wt::WComboBox *combo = nullptr;
+
+  if( runs.size() == 1 )
+  {
+    const InProgressRun &r = runs.front();
+    string msg = "An interrupted run of this benchmark was found";
+    if( !r.startDisplay.empty() )
+      msg += " (started " + r.startDisplay + ")";
+    msg += ".<br/>Progress: " + to_string( r.numDone ) + "/"
+           + to_string( r.totalExpected ) + " questions completed.<br/><br/>"
+           "Resume it, or start a new run?";
+    dialog->contents()->addNew<Wt::WText>( msg, Wt::TextFormat::UnsafeXHTML );
+  }else
+  {
+    dialog->contents()->addNew<Wt::WText>(
+      "Multiple interrupted runs of this benchmark were found. "
+      "Select one to resume, or start a new run:", Wt::TextFormat::UnsafeXHTML );
+
+    combo = dialog->contents()->addNew<Wt::WComboBox>();
+    combo->setMargin( 8, Wt::Side::Top );
+    for( const InProgressRun &r : runs )
+    {
+      string label = r.startDisplay.empty() ? SpecUtils::filename( r.path ) : r.startDisplay;
+      label += "  (" + to_string( r.numDone ) + "/" + to_string( r.totalExpected ) + ")";
+      combo->addItem( Wt::WString::fromUTF8( label ) );
+    }
+    combo->setCurrentIndex( 0 );
+  }//if( single ) / else
+
+  // Copy the runs' paths so the callbacks don't dangle after this function returns.
+  vector<string> paths;
+  for( const InProgressRun &r : runs )
+    paths.push_back( r.path );
+
+  Wt::WPushButton *resumeBtn = dialog->addButton( "Resume" );
+  resumeBtn->clicked().connect( std::bind( [this,xmlFilePath,paths,combo](){
+    size_t idx = 0;
+    if( combo )
+      idx = static_cast<size_t>( std::max( 0, combo->currentIndex() ) );
+    if( idx < paths.size() )
+      runResume( xmlFilePath, paths[idx] );
+  } ) );
+
+  Wt::WPushButton *freshBtn = dialog->addButton( "Start Fresh" );
+  freshBtn->clicked().connect( std::bind( [this,xmlFilePath](){
+    runFresh( xmlFilePath );
+  } ) );
+
+  dialog->addButton( "Cancel" );
+}//promptResumeOrFresh
 
 
 void LlmBenchmarkRunner::createJudgeInterface()
@@ -553,6 +857,10 @@ void LlmBenchmarkRunner::advanceToNextStep()
     m_results.endTime = chrono::system_clock::now();
     computeSummaryStats();
     generateReport();
+
+    // Write the final _results.json and remove the in-progress checkpoint.
+    finalizeResults();
+
     showResultsDialog();
 
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
@@ -694,6 +1002,10 @@ void LlmBenchmarkRunner::loadCurrentSpectrum()
       m_currentQuestion = 0;
       m_currentSequenceStep = 0;
       m_state = State::Idle;
+
+      // Persist the error results so the run can be resumed past this problem.
+      writeInProgressCheckpoint();
+
       advanceToNextStep();
       return;
     }
@@ -1033,6 +1345,15 @@ void LlmBenchmarkRunner::extractAnswerAndJudge()
       if( !conversations.empty() )
       {
         const shared_ptr<LlmInteraction> &lastConvo = conversations.back();
+
+        // Capture token usage for this question from the conversation the answer
+        //  came from; applied to the result centrally in recordResult().
+        m_lastQuestionPromptTokens = lastConvo->promptTokens;
+        m_lastQuestionCompletionTokens = lastConvo->completionTokens;
+        m_lastQuestionTotalTokens = lastConvo->totalTokens;
+        m_lastQuestionCachedTokens = lastConvo->cachedTokens;
+        m_lastQuestionCacheCreationTokens = lastConvo->cacheCreationTokens;
+
         // Walk responses backward to find the last FinalLlmResponse
         for( int i = static_cast<int>( lastConvo->responses.size() ) - 1; i >= 0; --i )
         {
@@ -1373,6 +1694,20 @@ void LlmBenchmarkRunner::recordResult( BenchmarkQuestionResult result )
   result.errorRetries = m_currentQuestionRetries;
   m_currentQuestionRetries = 0;
 
+  // Apply token usage captured for this question (in extractAnswerAndJudge), then
+  //  clear it so the next question doesn't inherit stale counts.  Skipped or
+  //  spectrum-load-error results never set these, so they stay nullopt.
+  if( !result.promptTokens ) result.promptTokens = m_lastQuestionPromptTokens;
+  if( !result.completionTokens ) result.completionTokens = m_lastQuestionCompletionTokens;
+  if( !result.totalTokens ) result.totalTokens = m_lastQuestionTotalTokens;
+  if( !result.cachedTokens ) result.cachedTokens = m_lastQuestionCachedTokens;
+  if( !result.cacheCreationTokens ) result.cacheCreationTokens = m_lastQuestionCacheCreationTokens;
+  m_lastQuestionPromptTokens.reset();
+  m_lastQuestionCompletionTokens.reset();
+  m_lastQuestionTotalTokens.reset();
+  m_lastQuestionCachedTokens.reset();
+  m_lastQuestionCacheCreationTokens.reset();
+
   log( "Recorded result for " + result.problemId + " Q" + to_string( result.questionPart )
        + ": " + (result.hadError ? "ERROR" : (result.graded ? (result.correct ? "PASS" : "FAIL") : "UNGRADED"))
        + (result.errorRetries > 0 ? (" [after " + to_string( result.errorRetries ) + " error-retries]") : string()) );
@@ -1419,6 +1754,9 @@ void LlmBenchmarkRunner::recordResult( BenchmarkQuestionResult result )
     m_currentQuestion = 0;
     m_currentSequenceStep = 0;
   }
+
+  // Persist progress so an interruption after this question can be resumed.
+  writeInProgressCheckpoint();
 
   m_state = State::Idle;
   advanceToNextStep();
@@ -1577,22 +1915,50 @@ void LlmBenchmarkRunner::generateReport()
 }
 
 
-void LlmBenchmarkRunner::showResultsDialog()
+std::string LlmBenchmarkRunner::resultsToJsonStr( const BenchmarkResults &results,
+                                                  size_t resumeProblemIndex,
+                                                  size_t totalExpected )
 {
-  // Build results JSON
-  nlohmann::json resultsJson;
-  resultsJson["benchmarkName"] = m_results.benchmarkName;
-  resultsJson["modelName"] = m_results.modelName;
-  resultsJson["benchmarkFile"] = m_results.benchmarkFilePath;
-  resultsJson["totalQuestions"] = m_results.totalQuestions;
-  resultsJson["gradedQuestions"] = m_results.gradedQuestions;
-  resultsJson["correctCount"] = m_results.correctCount;
-  resultsJson["errorCount"] = m_results.errorCount;
-  resultsJson["totalScore"] = m_results.totalScore;
-  resultsJson["maxTotalScore"] = m_results.maxTotalScore;
+  // Serialize an optional token count as a number, or null when unavailable.
+  const auto tok = []( const std::optional<size_t> &v ) -> nlohmann::json {
+    return v.has_value() ? nlohmann::json( v.value() ) : nlohmann::json( nullptr );
+  };
+
+  nlohmann::json j;
+  j["benchmarkName"] = results.benchmarkName;
+  j["modelName"] = results.modelName;
+  j["benchmarkFile"] = results.benchmarkFilePath;
+  j["resumeProblemIndex"] = resumeProblemIndex;
+  j["totalExpectedQuestions"] = totalExpected;
+
+  {
+    const SpecUtils::time_point_t st
+      = std::chrono::time_point_cast<std::chrono::microseconds>( results.startTime );
+    const SpecUtils::time_point_t et
+      = std::chrono::time_point_cast<std::chrono::microseconds>( results.endTime );
+    j["startTimeIso"] = SpecUtils::is_special( st ) ? string() : SpecUtils::to_iso_string( st );
+    j["endTimeIso"] = SpecUtils::is_special( et ) ? string() : SpecUtils::to_iso_string( et );
+  }
+
+  j["totalQuestions"] = results.totalQuestions;
+  j["gradedQuestions"] = results.gradedQuestions;
+  j["correctCount"] = results.correctCount;
+  j["errorCount"] = results.errorCount;
+  j["totalScore"] = results.totalScore;
+  j["maxTotalScore"] = results.maxTotalScore;
+
+  // Running totals and per-problem aggregates (time each problem took + tokens).
+  size_t totPrompt = 0, totCompletion = 0, totCached = 0, totCacheCreate = 0;
+  bool anyPrompt = false, anyCompletion = false, anyCached = false, anyCacheCreate = false;
+  long long totDurationMs = 0;
+
+  // Preserve first-seen problem order for the summaries array.
+  vector<string> problemOrder;
+  struct ProblemAgg { long long durationMs = 0; size_t prompt = 0, completion = 0, cached = 0, cacheCreate = 0; int numQuestions = 0; };
+  std::map<string,ProblemAgg> aggByProblem;
 
   nlohmann::json questionsArray = nlohmann::json::array();
-  for( const BenchmarkQuestionResult &r : m_results.questionResults )
+  for( const BenchmarkQuestionResult &r : results.questionResults )
   {
     nlohmann::json qj;
     qj["problemId"] = r.problemId;
@@ -1609,11 +1975,187 @@ void LlmBenchmarkRunner::showResultsDialog()
     qj["hadError"] = r.hadError;
     qj["errorMessage"] = r.errorMessage;
     qj["errorRetries"] = r.errorRetries;
+    qj["promptTokens"] = tok( r.promptTokens );
+    qj["completionTokens"] = tok( r.completionTokens );
+    qj["totalTokens"] = tok( r.totalTokens );
+    qj["cachedTokens"] = tok( r.cachedTokens );
+    qj["cacheCreationTokens"] = tok( r.cacheCreationTokens );
     questionsArray.push_back( qj );
-  }
-  resultsJson["questions"] = questionsArray;
 
-  const string jsonStr = resultsJson.dump( 2 );
+    totDurationMs += r.duration.count();
+    if( r.promptTokens ){ totPrompt += *r.promptTokens; anyPrompt = true; }
+    if( r.completionTokens ){ totCompletion += *r.completionTokens; anyCompletion = true; }
+    if( r.cachedTokens ){ totCached += *r.cachedTokens; anyCached = true; }
+    if( r.cacheCreationTokens ){ totCacheCreate += *r.cacheCreationTokens; anyCacheCreate = true; }
+
+    if( !aggByProblem.count( r.problemId ) )
+      problemOrder.push_back( r.problemId );
+    ProblemAgg &pa = aggByProblem[r.problemId];
+    pa.durationMs += r.duration.count();
+    pa.numQuestions += 1;
+    if( r.promptTokens ) pa.prompt += *r.promptTokens;
+    if( r.completionTokens ) pa.completion += *r.completionTokens;
+    if( r.cachedTokens ) pa.cached += *r.cachedTokens;
+    if( r.cacheCreationTokens ) pa.cacheCreate += *r.cacheCreationTokens;
+  }//for( each result )
+
+  j["questions"] = questionsArray;
+
+  j["totalDurationMs"] = totDurationMs;
+  j["totalPromptTokens"] = anyPrompt ? nlohmann::json( totPrompt ) : nlohmann::json( nullptr );
+  j["totalCompletionTokens"] = anyCompletion ? nlohmann::json( totCompletion ) : nlohmann::json( nullptr );
+  j["totalCachedTokens"] = anyCached ? nlohmann::json( totCached ) : nlohmann::json( nullptr );
+  j["totalCacheCreationTokens"] = anyCacheCreate ? nlohmann::json( totCacheCreate ) : nlohmann::json( nullptr );
+
+  nlohmann::json problemSummaries = nlohmann::json::array();
+  for( const string &pid : problemOrder )
+  {
+    const ProblemAgg &pa = aggByProblem[pid];
+    nlohmann::json pj;
+    pj["problemId"] = pid;
+    pj["numQuestions"] = pa.numQuestions;
+    pj["durationMs"] = pa.durationMs;
+    pj["promptTokens"] = pa.prompt;
+    pj["completionTokens"] = pa.completion;
+    pj["cachedTokens"] = pa.cached;
+    pj["cacheCreationTokens"] = pa.cacheCreate;
+    problemSummaries.push_back( pj );
+  }
+  j["problemSummaries"] = problemSummaries;
+
+  return j.dump( 2 );
+}//resultsToJsonStr
+
+
+bool LlmBenchmarkRunner::resultsFromJson( const string &path,
+                                          BenchmarkResults &out,
+                                          size_t &resumeProblemIndex,
+                                          size_t &totalExpected )
+{
+  try
+  {
+    vector<char> data;
+    SpecUtils::load_file_data( path.c_str(), data );
+    data.push_back( '\0' );
+
+    const nlohmann::json j = nlohmann::json::parse( data.data() );
+
+    out = BenchmarkResults();
+    out.benchmarkName = j.value( "benchmarkName", string() );
+    out.modelName = j.value( "modelName", string() );
+    out.benchmarkFilePath = j.value( "benchmarkFile", string() );
+    resumeProblemIndex = j.value( "resumeProblemIndex", size_t( 0 ) );
+    totalExpected = j.value( "totalExpectedQuestions", size_t( 0 ) );
+
+    {
+      const string startIso = j.value( "startTimeIso", string() );
+      if( !startIso.empty() )
+      {
+        const SpecUtils::time_point_t st = SpecUtils::time_from_string( startIso );
+        out.startTime = std::chrono::time_point_cast<std::chrono::system_clock::duration>( st );
+      }
+    }
+
+    out.totalScore = j.value( "totalScore", 0 );
+    out.maxTotalScore = j.value( "maxTotalScore", 0 );
+
+    const auto optTok = []( const nlohmann::json &v ) -> std::optional<size_t> {
+      if( v.is_number() )
+        return static_cast<size_t>( v.get<long long>() );
+      return std::nullopt;
+    };
+
+    if( j.contains( "questions" ) && j["questions"].is_array() )
+    {
+      for( const nlohmann::json &qj : j["questions"] )
+      {
+        BenchmarkQuestionResult r;
+        r.problemId = qj.value( "problemId", string() );
+        r.questionPart = qj.value( "questionPart", 0 );
+        r.prompt = qj.value( "prompt", string() );
+        r.llmAnswer = qj.value( "llmAnswer", string() );
+        r.expectedAnswer = qj.value( "expectedAnswer", string() );
+        r.graded = qj.value( "graded", false );
+        r.correct = qj.value( "correct", false );
+        r.score = qj.value( "score", 0 );
+        r.maxScore = qj.value( "maxScore", 0 );
+        r.judgementReason = qj.value( "judgementReason", string() );
+        r.duration = chrono::milliseconds( qj.value( "durationMs", (long long)0 ) );
+        r.hadError = qj.value( "hadError", false );
+        r.errorMessage = qj.value( "errorMessage", string() );
+        r.errorRetries = qj.value( "errorRetries", 0 );
+        if( qj.contains( "promptTokens" ) ) r.promptTokens = optTok( qj["promptTokens"] );
+        if( qj.contains( "completionTokens" ) ) r.completionTokens = optTok( qj["completionTokens"] );
+        if( qj.contains( "totalTokens" ) ) r.totalTokens = optTok( qj["totalTokens"] );
+        if( qj.contains( "cachedTokens" ) ) r.cachedTokens = optTok( qj["cachedTokens"] );
+        if( qj.contains( "cacheCreationTokens" ) ) r.cacheCreationTokens = optTok( qj["cacheCreationTokens"] );
+        out.questionResults.push_back( std::move( r ) );
+      }
+    }//if( has questions array )
+
+    return true;
+  }catch( const exception &e )
+  {
+    cerr << "[LlmBenchmark] Failed to load results JSON '" << path << "': " << e.what() << endl;
+    return false;
+  }
+}//resultsFromJson
+
+
+void LlmBenchmarkRunner::writeInProgressCheckpoint()
+{
+  if( m_inProgressPath.empty() )
+    return;
+
+  // resumeProblemIndex = the problem to resume at.  m_currentProblem points at
+  //  the next problem to run after recordResult() advances on problem completion,
+  //  or at the still-in-progress problem for a mid-problem checkpoint (whose
+  //  partial results are discarded on resume).
+  const string jsonStr = resultsToJsonStr( m_results, m_currentProblem, m_totalExpectedQuestions );
+
+  std::ofstream out( m_inProgressPath.c_str(), ios::binary | ios::out | ios::trunc );
+  if( !out )
+  {
+    logError( "Failed to write checkpoint file: " + m_inProgressPath );
+    return;
+  }
+  out << jsonStr;
+}//writeInProgressCheckpoint
+
+
+void LlmBenchmarkRunner::finalizeResults()
+{
+  if( m_inProgressPath.empty() )
+    return;
+
+  // Final results file: same name with _in_progress.json -> _results.json
+  string resultsPath = m_inProgressPath;
+  const string suffix = "_in_progress.json";
+  if( SpecUtils::iends_with( resultsPath, suffix ) )
+    resultsPath = resultsPath.substr( 0, resultsPath.size() - suffix.size() ) + "_results.json";
+  else
+    resultsPath += "_results.json";
+
+  // A finished run resumes from "past the end": all problems complete.
+  const string jsonStr = resultsToJsonStr( m_results, m_problems.size(), m_totalExpectedQuestions );
+
+  {
+    std::ofstream out( resultsPath.c_str(), ios::binary | ios::out | ios::trunc );
+    if( out )
+      out << jsonStr;
+    else
+      logError( "Failed to write final results file: " + resultsPath );
+  }
+
+  // Remove the in-progress checkpoint now that the run is finalized.
+  SpecUtils::remove_file( m_inProgressPath );
+  log( "Wrote final results to: " + resultsPath );
+}//finalizeResults
+
+
+void LlmBenchmarkRunner::showResultsDialog()
+{
+  const string jsonStr = resultsToJsonStr( m_results, m_problems.size(), m_totalExpectedQuestions );
 
   // Show a summary dialog
   SimpleDialog *dialog = SimpleDialog::make<SimpleDialog>( "LLM Benchmark Results" );

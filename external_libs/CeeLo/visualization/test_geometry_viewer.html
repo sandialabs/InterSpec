@@ -563,6 +563,302 @@ var CONFIGS = {
   </structure>
   <setup name="Default" version="1.0"><world ref="WorldLV"/></setup>
 </gdml>`
+  },
+  "25": {
+    label: 'Config 25: GEM35-70 HPGe coax, SHARP front edge, point 5cm',
+    source: [0, 0, -5],
+    gdml: `<?xml version="1.0" encoding="UTF-8"?>
+<gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd">
+
+  <define>
+    <!-- Crystal center in world frame (front face at z=0, center at z=L/2) -->
+    <position name="crystal_center" x="0" y="0" z="3.445000" unit="cm"/>
+    <rotation name="identity" x="0" y="0" z="0" unit="deg"/>
+  </define>
+
+  <materials>
+    <element name="N" formula="N" Z="7">
+      <atom type="A" unit="g/mol" value="14.0070"/>
+    </element>
+    <element name="O" formula="O" Z="8">
+      <atom type="A" unit="g/mol" value="15.9990"/>
+    </element>
+    <element name="Ar" formula="Ar" Z="18">
+      <atom type="A" unit="g/mol" value="39.9480"/>
+    </element>
+    <element name="Ge" formula="Ge" Z="32">
+      <atom type="A" unit="g/mol" value="72.6300"/>
+    </element>
+
+    <material name="Air" state="gas">
+      <D type="density" unit="g/cm3" value="0.001205"/>
+      <fraction n="0.7552" ref="N"/>
+      <fraction n="0.2320" ref="O"/>
+      <fraction n="0.0128" ref="Ar"/>
+    </material>
+    <material name="Vacuum" state="gas">
+      <D type="density" unit="g/cm3" value="1.0e-25"/>
+      <fraction n="1.0" ref="N"/>
+    </material>
+
+    <material name="HPGe" state="solid">
+      <D type="density" unit="g/cm3" value="5.32300"/>
+      <fraction n="1.000000" ref="Ge"/>
+    </material>
+  </materials>
+
+  <solids>
+    <!-- World envelope -->
+    <box name="WorldBox" x="27.490000" y="27.490000" z="71.340000" lunit="cm"/>
+
+    <!-- Detector crystal (polycone: sharp front edge, flat-bottomed bore) -->
+    <polycone name="CrystalSolid" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm">
+      <zplane rmin="0.000000" rmax="2.915000" z="-3.445000"/>
+      <zplane rmin="0.000000" rmax="2.915000" z="-2.095000"/>
+      <zplane rmin="0.495000" rmax="2.915000" z="-2.095000"/>
+      <zplane rmin="0.495000" rmax="2.915000" z="3.445000"/>
+    </polycone>
+  </solids>
+
+  <structure>
+    <!-- Active crystal: SteppingAction scores energy deposited here -->
+    <volume name="active_crystal">
+      <materialref ref="HPGe"/>
+      <solidref ref="CrystalSolid"/>
+
+      <!-- Bore cavity is part of the crystal polycone; it is filled by the world material. -->
+    </volume>
+
+    <volume name="WorldLV">
+      <materialref ref="Vacuum"/>
+      <solidref ref="WorldBox"/>
+
+      <!-- Crystal physical volume (front face at z=0, back at z=6.890 cm) -->
+      <physvol name="active_crystal_PV">
+        <volumeref ref="active_crystal"/>
+        <positionref ref="crystal_center"/>
+      </physvol>
+    </volume>
+  </structure>
+
+  <setup name="Default" version="1.0">
+    <world ref="WorldLV"/>
+  </setup>
+
+</gdml>`
+  },
+  "26": {
+    label: 'Config 26: GEM35-70 HPGe coax, BULLETIZED front edge + rounded bore tip, point 5cm',
+    source: [0, 0, -5],
+    gdml: `<?xml version="1.0" encoding="UTF-8"?>
+<gdml xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:noNamespaceSchemaLocation="http://service-spi.web.cern.ch/service-spi/app/releases/GDML/schema/gdml.xsd">
+
+  <define>
+    <!-- Crystal center in world frame (front face at z=0, center at z=L/2) -->
+    <position name="crystal_center" x="0" y="0" z="3.445000" unit="cm"/>
+    <rotation name="identity" x="0" y="0" z="0" unit="deg"/>
+  </define>
+
+  <materials>
+    <element name="N" formula="N" Z="7">
+      <atom type="A" unit="g/mol" value="14.0070"/>
+    </element>
+    <element name="O" formula="O" Z="8">
+      <atom type="A" unit="g/mol" value="15.9990"/>
+    </element>
+    <element name="Ar" formula="Ar" Z="18">
+      <atom type="A" unit="g/mol" value="39.9480"/>
+    </element>
+    <element name="Ge" formula="Ge" Z="32">
+      <atom type="A" unit="g/mol" value="72.6300"/>
+    </element>
+
+    <material name="Air" state="gas">
+      <D type="density" unit="g/cm3" value="0.001205"/>
+      <fraction n="0.7552" ref="N"/>
+      <fraction n="0.2320" ref="O"/>
+      <fraction n="0.0128" ref="Ar"/>
+    </material>
+    <material name="Vacuum" state="gas">
+      <D type="density" unit="g/cm3" value="1.0e-25"/>
+      <fraction n="1.0" ref="N"/>
+    </material>
+
+    <material name="HPGe" state="solid">
+      <D type="density" unit="g/cm3" value="5.32300"/>
+      <fraction n="1.000000" ref="Ge"/>
+    </material>
+  </materials>
+
+  <solids>
+    <!-- World envelope -->
+    <box name="WorldBox" x="27.490000" y="27.490000" z="71.340000" lunit="cm"/>
+
+    <!-- Detector crystal (polycone: bulletized front edge, round-tipped bore) -->
+    <!-- Bulletizing radius 0.8000 cm about ring radius 2.1150 cm; removes 2.3613 cm^3 of crystal -->
+    <polycone name="CrystalSolid" startphi="0" deltaphi="6.2831853" aunit="rad" lunit="cm">
+      <zplane rmin="0.000000" rmax="2.115000" z="-3.445000"/>
+      <zplane rmin="0.000000" rmax="2.134633" z="-3.444759"/>
+      <zplane rmin="0.000000" rmax="2.154254" z="-3.444036"/>
+      <zplane rmin="0.000000" rmax="2.173852" z="-3.442832"/>
+      <zplane rmin="0.000000" rmax="2.193414" z="-3.441148"/>
+      <zplane rmin="0.000000" rmax="2.212929" z="-3.438984"/>
+      <zplane rmin="0.000000" rmax="2.232384" z="-3.436341"/>
+      <zplane rmin="0.000000" rmax="2.251770" z="-3.433222"/>
+      <zplane rmin="0.000000" rmax="2.271072" z="-3.429628"/>
+      <zplane rmin="0.000000" rmax="2.290281" z="-3.425562"/>
+      <zplane rmin="0.000000" rmax="2.309384" z="-3.421025"/>
+      <zplane rmin="0.000000" rmax="2.328370" z="-3.416021"/>
+      <zplane rmin="0.000000" rmax="2.347228" z="-3.410552"/>
+      <zplane rmin="0.000000" rmax="2.365945" z="-3.404623"/>
+      <zplane rmin="0.000000" rmax="2.384512" z="-3.398235"/>
+      <zplane rmin="0.000000" rmax="2.402916" z="-3.391394"/>
+      <zplane rmin="0.000000" rmax="2.421147" z="-3.384104"/>
+      <zplane rmin="0.000000" rmax="2.439193" z="-3.376368"/>
+      <zplane rmin="0.000000" rmax="2.457044" z="-3.368191"/>
+      <zplane rmin="0.000000" rmax="2.474689" z="-3.359579"/>
+      <zplane rmin="0.000000" rmax="2.492117" z="-3.350537"/>
+      <zplane rmin="0.000000" rmax="2.509319" z="-3.341070"/>
+      <zplane rmin="0.000000" rmax="2.526282" z="-3.331183"/>
+      <zplane rmin="0.000000" rmax="2.542998" z="-3.320883"/>
+      <zplane rmin="0.000000" rmax="2.559456" z="-3.310176"/>
+      <zplane rmin="0.000000" rmax="2.575647" z="-3.299068"/>
+      <zplane rmin="0.000000" rmax="2.591559" z="-3.287566"/>
+      <zplane rmin="0.000000" rmax="2.607185" z="-3.275677"/>
+      <zplane rmin="0.000000" rmax="2.622515" z="-3.263408"/>
+      <zplane rmin="0.000000" rmax="2.637538" z="-3.250767"/>
+      <zplane rmin="0.000000" rmax="2.652247" z="-3.237761"/>
+      <zplane rmin="0.000000" rmax="2.666632" z="-3.224398"/>
+      <zplane rmin="0.000000" rmax="2.680685" z="-3.210685"/>
+      <zplane rmin="0.000000" rmax="2.694398" z="-3.196632"/>
+      <zplane rmin="0.000000" rmax="2.707761" z="-3.182247"/>
+      <zplane rmin="0.000000" rmax="2.720767" z="-3.167538"/>
+      <zplane rmin="0.000000" rmax="2.733408" z="-3.152515"/>
+      <zplane rmin="0.000000" rmax="2.745677" z="-3.137185"/>
+      <zplane rmin="0.000000" rmax="2.757566" z="-3.121559"/>
+      <zplane rmin="0.000000" rmax="2.769068" z="-3.105647"/>
+      <zplane rmin="0.000000" rmax="2.780176" z="-3.089456"/>
+      <zplane rmin="0.000000" rmax="2.790883" z="-3.072998"/>
+      <zplane rmin="0.000000" rmax="2.801183" z="-3.056282"/>
+      <zplane rmin="0.000000" rmax="2.811070" z="-3.039319"/>
+      <zplane rmin="0.000000" rmax="2.820537" z="-3.022117"/>
+      <zplane rmin="0.000000" rmax="2.829579" z="-3.004689"/>
+      <zplane rmin="0.000000" rmax="2.838191" z="-2.987044"/>
+      <zplane rmin="0.000000" rmax="2.846368" z="-2.969193"/>
+      <zplane rmin="0.000000" rmax="2.854104" z="-2.951147"/>
+      <zplane rmin="0.000000" rmax="2.861394" z="-2.932916"/>
+      <zplane rmin="0.000000" rmax="2.868235" z="-2.914512"/>
+      <zplane rmin="0.000000" rmax="2.874623" z="-2.895945"/>
+      <zplane rmin="0.000000" rmax="2.880552" z="-2.877228"/>
+      <zplane rmin="0.000000" rmax="2.886021" z="-2.858370"/>
+      <zplane rmin="0.000000" rmax="2.891025" z="-2.839384"/>
+      <zplane rmin="0.000000" rmax="2.895562" z="-2.820281"/>
+      <zplane rmin="0.000000" rmax="2.899628" z="-2.801072"/>
+      <zplane rmin="0.000000" rmax="2.903222" z="-2.781770"/>
+      <zplane rmin="0.000000" rmax="2.906341" z="-2.762384"/>
+      <zplane rmin="0.000000" rmax="2.908984" z="-2.742929"/>
+      <zplane rmin="0.000000" rmax="2.911148" z="-2.723414"/>
+      <zplane rmin="0.000000" rmax="2.912832" z="-2.703852"/>
+      <zplane rmin="0.000000" rmax="2.914036" z="-2.684254"/>
+      <zplane rmin="0.000000" rmax="2.914759" z="-2.664633"/>
+      <zplane rmin="0.000000" rmax="2.915000" z="-2.645000"/>
+      <zplane rmin="0.000000" rmax="2.915000" z="-2.095000"/>
+      <zplane rmin="0.012148" rmax="2.915000" z="-2.094851"/>
+      <zplane rmin="0.024288" rmax="2.915000" z="-2.094404"/>
+      <zplane rmin="0.036414" rmax="2.915000" z="-2.093659"/>
+      <zplane rmin="0.048518" rmax="2.915000" z="-2.092616"/>
+      <zplane rmin="0.060593" rmax="2.915000" z="-2.091277"/>
+      <zplane rmin="0.072632" rmax="2.915000" z="-2.089642"/>
+      <zplane rmin="0.084626" rmax="2.915000" z="-2.087712"/>
+      <zplane rmin="0.096570" rmax="2.915000" z="-2.085489"/>
+      <zplane rmin="0.108455" rmax="2.915000" z="-2.082973"/>
+      <zplane rmin="0.120275" rmax="2.915000" z="-2.080165"/>
+      <zplane rmin="0.132023" rmax="2.915000" z="-2.077069"/>
+      <zplane rmin="0.143691" rmax="2.915000" z="-2.073685"/>
+      <zplane rmin="0.155272" rmax="2.915000" z="-2.070016"/>
+      <zplane rmin="0.166760" rmax="2.915000" z="-2.066064"/>
+      <zplane rmin="0.178148" rmax="2.915000" z="-2.061831"/>
+      <zplane rmin="0.189428" rmax="2.915000" z="-2.057320"/>
+      <zplane rmin="0.200594" rmax="2.915000" z="-2.052534"/>
+      <zplane rmin="0.211640" rmax="2.915000" z="-2.047475"/>
+      <zplane rmin="0.222558" rmax="2.915000" z="-2.042146"/>
+      <zplane rmin="0.233341" rmax="2.915000" z="-2.036551"/>
+      <zplane rmin="0.243985" rmax="2.915000" z="-2.030693"/>
+      <zplane rmin="0.254481" rmax="2.915000" z="-2.024576"/>
+      <zplane rmin="0.264824" rmax="2.915000" z="-2.018203"/>
+      <zplane rmin="0.275007" rmax="2.915000" z="-2.011577"/>
+      <zplane rmin="0.285025" rmax="2.915000" z="-2.004704"/>
+      <zplane rmin="0.294871" rmax="2.915000" z="-1.997588"/>
+      <zplane rmin="0.304540" rmax="2.915000" z="-1.990231"/>
+      <zplane rmin="0.314025" rmax="2.915000" z="-1.982640"/>
+      <zplane rmin="0.323321" rmax="2.915000" z="-1.974818"/>
+      <zplane rmin="0.332422" rmax="2.915000" z="-1.966771"/>
+      <zplane rmin="0.341323" rmax="2.915000" z="-1.958502"/>
+      <zplane rmin="0.350018" rmax="2.915000" z="-1.950018"/>
+      <zplane rmin="0.358502" rmax="2.915000" z="-1.941323"/>
+      <zplane rmin="0.366771" rmax="2.915000" z="-1.932422"/>
+      <zplane rmin="0.374818" rmax="2.915000" z="-1.923321"/>
+      <zplane rmin="0.382640" rmax="2.915000" z="-1.914025"/>
+      <zplane rmin="0.390231" rmax="2.915000" z="-1.904540"/>
+      <zplane rmin="0.397588" rmax="2.915000" z="-1.894871"/>
+      <zplane rmin="0.404704" rmax="2.915000" z="-1.885025"/>
+      <zplane rmin="0.411577" rmax="2.915000" z="-1.875007"/>
+      <zplane rmin="0.418203" rmax="2.915000" z="-1.864824"/>
+      <zplane rmin="0.424576" rmax="2.915000" z="-1.854481"/>
+      <zplane rmin="0.430693" rmax="2.915000" z="-1.843985"/>
+      <zplane rmin="0.436551" rmax="2.915000" z="-1.833341"/>
+      <zplane rmin="0.442146" rmax="2.915000" z="-1.822558"/>
+      <zplane rmin="0.447475" rmax="2.915000" z="-1.811640"/>
+      <zplane rmin="0.452534" rmax="2.915000" z="-1.800594"/>
+      <zplane rmin="0.457320" rmax="2.915000" z="-1.789428"/>
+      <zplane rmin="0.461831" rmax="2.915000" z="-1.778148"/>
+      <zplane rmin="0.466064" rmax="2.915000" z="-1.766760"/>
+      <zplane rmin="0.470016" rmax="2.915000" z="-1.755272"/>
+      <zplane rmin="0.473685" rmax="2.915000" z="-1.743691"/>
+      <zplane rmin="0.477069" rmax="2.915000" z="-1.732023"/>
+      <zplane rmin="0.480165" rmax="2.915000" z="-1.720275"/>
+      <zplane rmin="0.482973" rmax="2.915000" z="-1.708455"/>
+      <zplane rmin="0.485489" rmax="2.915000" z="-1.696570"/>
+      <zplane rmin="0.487712" rmax="2.915000" z="-1.684626"/>
+      <zplane rmin="0.489642" rmax="2.915000" z="-1.672632"/>
+      <zplane rmin="0.491277" rmax="2.915000" z="-1.660593"/>
+      <zplane rmin="0.492616" rmax="2.915000" z="-1.648518"/>
+      <zplane rmin="0.493659" rmax="2.915000" z="-1.636414"/>
+      <zplane rmin="0.494404" rmax="2.915000" z="-1.624288"/>
+      <zplane rmin="0.494851" rmax="2.915000" z="-1.612148"/>
+      <zplane rmin="0.495000" rmax="2.915000" z="-1.600000"/>
+      <zplane rmin="0.495000" rmax="2.915000" z="3.445000"/>
+    </polycone>
+  </solids>
+
+  <structure>
+    <!-- Active crystal: SteppingAction scores energy deposited here -->
+    <volume name="active_crystal">
+      <materialref ref="HPGe"/>
+      <solidref ref="CrystalSolid"/>
+
+      <!-- Bore cavity is part of the crystal polycone; it is filled by the world material. -->
+    </volume>
+
+    <volume name="WorldLV">
+      <materialref ref="Vacuum"/>
+      <solidref ref="WorldBox"/>
+
+      <!-- Crystal physical volume (front face at z=0, back at z=6.890 cm) -->
+      <physvol name="active_crystal_PV">
+        <volumeref ref="active_crystal"/>
+        <positionref ref="crystal_center"/>
+      </physvol>
+    </volume>
+  </structure>
+
+  <setup name="Default" version="1.0">
+    <world ref="WorldLV"/>
+  </setup>
+
+</gdml>`
   }
 };
 

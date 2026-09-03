@@ -1,0 +1,17 @@
+# ceelo_g4val reference data
+# geometry: detector_26.gdml (GEM35-70 HPGe coax, bulletized front edge + round-tipped bore)
+#   crystal R=2.915 cm, L=6.89 cm; bore r=0.495 cm, depth=5.54 cm; no dead layer
+#   bulletizing radius 0.8 cm; bore tip hemispherical
+# macro: run_26_<E>keV.mac, point source on-axis at z = -5 cm
+# GEANT4 11.4.0, FTFP_BERT + G4EmStandardPhysics_option4, cone-biased, 4M events/energy;
+#   45 and 88 keV are 12M (an independent 8M run combined in -- see DESIGN.md,
+#   "config 26 low-energy residual"; the two runs agree to |z| <= 1.0)
+# Generated 2026-08-24. Crystal exported as a single G4Polycone (see README).
+energy_keV,fep_efficiency,fep_uncertainty,total_efficiency,total_uncertainty,num_events
+45,0.0550349,9.53135e-06,0.0563045,9.32662e-06,12000000
+59.5,0.0551687,1.6473e-05,0.0562071,1.61826e-05,4000000
+88,0.053787,9.71499e-06,0.0554151,9.47203e-06,12000000
+122,0.0498533,1.76483e-05,0.0532561,1.69534e-05,4000000
+344,0.0238911,1.7445e-05,0.0424678,1.854e-05,4000000
+662,0.0136004,1.44303e-05,0.0374966,1.87109e-05,4000000
+1332,0.00784625,1.14638e-05,0.0318368,1.85013e-05,4000000

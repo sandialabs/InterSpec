@@ -59,6 +59,8 @@ class DrfChart;
 class InterSpec;
 class InterSpecUser;
 class DrfModifyWindow;
+
+namespace ceelo{ struct GeometryDescriptor; }
 class RelEffDetSelect;
 class GadrasDetSelect;
 class SpectraFileModel;
@@ -218,7 +220,31 @@ public:
   /** Inits adetector from a directory that has a Detector.dat and Efficiency.csv file in it
       Throws exception in error; returned detector should always be valid.
    */
-  static std::shared_ptr<DetectorPeakResponse> initAGadrasDetectorFromDirectory( const std::string &directory );
+  static std::shared_ptr<DetectorPeakResponse> initAGadrasDetectorFromDirectory(
+                              const std::string &directory,
+                              const bool allow_missing_efficiency_csv = false );
+
+  /** Starts the "generic detector" import of a GADRAS detector directory:
+   installs `seedDrf` and opens the Modify dialog with the geometry parsed from
+   the `Detector.dat`, so the user can review it and generate a response.
+
+   Used both for a directory holding only a `Detector.dat` (where there is no
+   efficiency and this is the only way forward) and for the Mode-A branch of
+   #offerGadrasImportModeChoice.  Any parse warnings are shown first.
+   */
+  void startGadrasGeometryImport( const std::string &directory,
+                                  std::shared_ptr<DetectorPeakResponse> seedDrf );
+
+  /** After a GADRAS Efficiency.csv + Detector.dat pair has been imported the
+   normal way (Mode B, already applied), offers the "generic detector" mode:
+   take the crystal geometry from the Detector.dat and let the measured curve
+   anchor an efficiency transfer, which gives off-axis and near-field answers the
+   fixed curve cannot.  No-op when the geometry cannot be modeled.
+
+   The counterpart of #offerAngleImportModeChoice.
+   */
+  void offerGadrasImportModeChoice( const std::string &datFilename,
+                                    const std::string &csvFilename );
 
   //Will init detector in the static and user data folders, and return the first DRF that matches
   //  DetectorType, or the manufacturer/model.
@@ -286,6 +312,14 @@ public:
   void handleEfficiencyCsvUpload();
   void handleGadrasDetectorDotDatUpload();
   void handleEfficiencyTypeChange();
+
+  /** For an uploaded ANGLE `.outx`/`.xml` file that carries a full physical
+   detector model and a measured reference curve, offers the user a choice:
+   import as a "generic detector" (Mode A: map the geometry + reference onto a
+   CeeLo geometry and seed the Make MC Response tool) or keep this
+   measurement's fixed-geometry curve (Mode B: the current default, already
+   applied).  No-op when `filename` is not a geometry-bearing ANGLE file. */
+  void offerAngleImportModeChoice( const std::string &filename );
   
   /** Returns a detector from the currently selected upload - returns nullptr if not fully specified (e.g., no diameter, or wahtever)*/
   std::shared_ptr<DetectorPeakResponse> detectorFromEffUpload() const;
@@ -327,10 +361,25 @@ public:
    */
   void handleModifyRequested();
 
+  /** Opens (or re-shows) the "Modify..." dialog seeded with the current DRF.  The geometry form
+   and the measured-anchor editor come from the DRF's own `geometry()`, which an importer
+   (an ANGLE model, a GADRAS Detector.dat) sets when it knows the detector's shape.
+   */
+  void openModifyWindow();
+
   /** Receives the modified DRF from the Modify dialog and makes it this
    dialog's current detector (the user still Accepts to apply app-wide).
    */
   void handleModifyFinished( std::shared_ptr<DetectorPeakResponse> drf );
+
+  /** The "Modify..." dialog this widget owns, or nullptr when it is not open.
+   \sa InterSpec::drfModifyWidget
+   */
+  DrfModifyWindow *modifyWindow();
+
+  /** Closes the "Modify..." dialog without recording an undo/redo step - for use *from* an
+   undo/redo step, whose counterpart already covers the close. */
+  void programmaticallyCloseModifyWindow();
 
   /** Rebuilds the "chips" summarizing what the current DRF contains (FWHM,
    uncertainties, total efficiency, raw measured points, MC parameterization,

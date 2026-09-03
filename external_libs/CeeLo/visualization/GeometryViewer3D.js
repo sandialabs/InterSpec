@@ -253,6 +253,104 @@ function generateTubeMesh(rmin, rmax, halfZ, segments) {
   };
 }
 
+// Surface of revolution from a list of {z, rmin, rmax} planes -- a GDML
+// <polycone>. CeeLo exports coaxial and/or bulletized crystals this way, so
+// this is what draws the bore and the rounded front edge.
+//
+// Planes are given in the solid's own frame and may repeat a z value to make a
+// step (that is how a bore mouth is expressed). Consecutive planes at the same
+// z contribute no side wall, only the annular face between their radii.
+function generatePolyconeMesh(planes, segments) {
+  var positions = [], normals = [], indices = [];
+  var TWO_PI = 2 * Math.PI;
+  var i, k;
+
+  // A polycone with no z-planes is malformed GDML; draw nothing rather than
+  // throwing, which would blank the whole viewer.
+  if (!planes || planes.length < 2) {
+    return { positions: new Float32Array(0), normals: new Float32Array(0),
+             indices: new Uint32Array(0) };
+  }
+
+  function pushVert(x, y, z, nx, ny, nz) {
+    positions.push(x, y, z);
+    normals.push(nx, ny, nz);
+  }
+
+  // Side walls (outer and inner), one quad strip per plane pair.
+  function wall(rA, zA, rB, zB, outward) {
+    if (rA < 1e-9 && rB < 1e-9) return;      // degenerate: on the axis
+    if (Math.abs(zB - zA) < 1e-12 && Math.abs(rB - rA) < 1e-12) return;
+    // Normal of the cone frustum in the meridian plane, rotated around z.
+    var dz = zB - zA, dr = rB - rA;
+    var len = Math.sqrt(dz * dz + dr * dr);
+    if (len < 1e-12) return;
+    var nr = (outward ? 1 : -1) * dz / len;
+    var nz = (outward ? -1 : 1) * dr / len;
+    var base = positions.length / 3;
+    for (i = 0; i <= segments; i++) {
+      var a = (i / segments) * TWO_PI, ca = Math.cos(a), sa = Math.sin(a);
+      pushVert(rA * ca, rA * sa, zA, nr * ca, nr * sa, nz);
+      pushVert(rB * ca, rB * sa, zB, nr * ca, nr * sa, nz);
+    }
+    for (i = 0; i < segments; i++) {
+      var idx = base + i * 2;
+      // Wind inner walls the other way so their front faces point into the
+      // bore, matching generateTubeMesh's convention for a hollow tube.
+      if (outward) indices.push(idx, idx + 1, idx + 2, idx + 2, idx + 1, idx + 3);
+      else         indices.push(idx, idx + 2, idx + 1, idx + 2, idx + 3, idx + 1);
+    }
+  }
+
+  // Annular face at constant z between two radii (end caps and bore steps).
+  function annulus(rIn, rOut, z, nz) {
+    if (rOut - rIn < 1e-9) return;
+    var base = positions.length / 3;
+    for (i = 0; i <= segments; i++) {
+      var a = (i / segments) * TWO_PI, ca = Math.cos(a), sa = Math.sin(a);
+      pushVert(rIn * ca, rIn * sa, z, 0, 0, nz);
+      pushVert(rOut * ca, rOut * sa, z, 0, 0, nz);
+    }
+    for (i = 0; i < segments; i++) {
+      var idx = base + i * 2;
+      if (nz > 0) indices.push(idx, idx + 1, idx + 2, idx + 2, idx + 1, idx + 3);
+      else        indices.push(idx, idx + 2, idx + 1, idx + 2, idx + 3, idx + 1);
+    }
+  }
+
+  for (k = 0; k + 1 < planes.length; k++) {
+    var p0 = planes[k], p1 = planes[k + 1];
+    if (Math.abs(p1.z - p0.z) < 1e-12) {
+      // A step: an annular face at constant z. The normal points away from the
+      // material, which for an opening bore (rmin growing with z) is +z.
+      if (Math.abs(p1.rmin - p0.rmin) > 1e-12) {
+        annulus(Math.min(p0.rmin, p1.rmin), Math.max(p0.rmin, p1.rmin), p0.z,
+                p1.rmin > p0.rmin ? +1 : -1);
+      }
+      if (Math.abs(p1.rmax - p0.rmax) > 1e-12) {
+        annulus(Math.min(p0.rmax, p1.rmax), Math.max(p0.rmax, p1.rmax), p0.z,
+                p1.rmax < p0.rmax ? +1 : -1);
+      }
+      continue;
+    }
+    wall(p0.rmax, p0.z, p1.rmax, p1.z, true);
+    if (p0.rmin > 1e-9 || p1.rmin > 1e-9) {
+      wall(p0.rmin, p0.z, p1.rmin, p1.z, false);
+    }
+  }
+
+  // End caps.
+  var first = planes[0], last = planes[planes.length - 1];
+  annulus(first.rmin, first.rmax, first.z, -1);
+  annulus(last.rmin, last.rmax, last.z, +1);
+
+  return {
+    positions: new Float32Array(positions),
+    normals: new Float32Array(normals),
+    indices: new Uint32Array(indices)
+  };
+}
+
 function generateBoxMesh(halfX, halfY, halfZ) {
   // 6 faces, 4 verts each, 2 triangles each
   var p = [], n = [], idx = [];
@@ -383,6 +481,20 @@ function parseGDML(xmlString) {
           startphi: parseFloat(sel.getAttribute("startphi") || "0"),
           deltaphi: parseFloat(sel.getAttribute("deltaphi") || String(2*Math.PI))
         };
+      } else if (tag === "polycone") {
+        // Surface of revolution: coaxial and/or bulletized crystals.
+        var planes = [];
+        for (var zi = 0; zi < sel.children.length; zi++) {
+          var zp = sel.children[zi];
+          if (zp.nodeType !== 1 || zp.tagName.toLowerCase() !== "zplane") continue;
+          planes.push({
+            z: parseFloat(zp.getAttribute("z")),
+            rmin: parseFloat(zp.getAttribute("rmin") || "0"),
+            rmax: parseFloat(zp.getAttribute("rmax"))
+          });
+        }
+        planes.sort(function (a, b) { return a.z - b.z; });
+        solids[sname] = { type: "polycone", name: sname, planes: planes };
       } else if (tag === "box") {
         solids[sname] = {
           type: "box",
@@ -572,6 +684,18 @@ function computeSolidVolume(solids, solidName) {
   if (!s) return 0;
   if (s.type === "tube") {
     return Math.PI * (s.rmax*s.rmax - s.rmin*s.rmin) * s.z;
+  } else if (s.type === "polycone") {
+    // Exact for the conical frusta the planes describe.
+    var v = 0;
+    for (var i = 0; i + 1 < s.planes.length; i++) {
+      var a = s.planes[i], b = s.planes[i+1];
+      var dz = b.z - a.z;
+      if (dz === 0) continue;
+      var outer = a.rmax*a.rmax + a.rmax*b.rmax + b.rmax*b.rmax;
+      var inner = a.rmin*a.rmin + a.rmin*b.rmin + b.rmin*b.rmin;
+      v += Math.PI / 3 * dz * (outer - inner);
+    }
+    return v;
   } else if (s.type === "box") {
     return s.x * s.y * s.z;
   } else if (s.type === "sphere") {
@@ -585,7 +709,25 @@ function computeSolidVolume(solids, solidName) {
 function describeSolid(solids, solidName) {
   var s = solids[solidName];
   if (!s) return "";
-  if (s.type === "tube") {
+  if (s.type === "polycone") {
+    var pl = s.planes, n = pl.length;
+    var zmin = pl[0].z, zmax = pl[n-1].z, rmax = 0, bore = 0, boreZ = zmax;
+    for (var i = 0; i < n; i++) {
+      if (pl[i].rmax > rmax) rmax = pl[i].rmax;
+      if (pl[i].rmin > bore) bore = pl[i].rmin;
+      if (pl[i].rmin > 1e-6 && pl[i].z < boreZ) boreZ = pl[i].z;
+    }
+    var d = "Polycone: R=" + rmax.toFixed(3) + " cm, L=" + (zmax - zmin).toFixed(3) + " cm";
+    // The front edge is rounded when rmax at the front face is short of R.
+    var frontR = pl[0].rmax;
+    if (rmax - frontR > 1e-4) {
+      d += ", bulletized r_b=" + (rmax - frontR).toFixed(3) + " cm";
+    }
+    if (bore > 1e-6) {
+      d += ", bore R=" + bore.toFixed(3) + " cm x " + (zmax - boreZ).toFixed(3) + " cm deep";
+    }
+    return d + " (" + n + " z-planes)";
+  } else if (s.type === "tube") {
     if (s.rmin < 0.001) {
       return "Cylinder: R=" + s.rmax.toFixed(3) + " cm, L=" + s.z.toFixed(3) + " cm";
     } else {
@@ -1175,6 +1317,8 @@ GeometryViewer3D.prototype._buildScene = function() {
 GeometryViewer3D.prototype._generateMeshesForSolid = function(solid, allSolids, segs) {
   if (solid.type === "tube") {
     return [{ mesh: generateTubeMesh(solid.rmin, solid.rmax, solid.z/2, segs), offsetZ: 0 }];
+  } else if (solid.type === "polycone") {
+    return [{ mesh: generatePolyconeMesh(solid.planes, segs), offsetZ: 0 }];
   } else if (solid.type === "box") {
     return [{ mesh: generateBoxMesh(solid.x/2, solid.y/2, solid.z/2), offsetZ: 0 }];
   } else if (solid.type === "sphere") {
@@ -1250,6 +1394,9 @@ GeometryViewer3D.prototype._getDetectorFaces = function() {
         var halfZ = 0;
         if (solid.type === "tube") halfZ = solid.z / 2;
         else if (solid.type === "box") halfZ = solid.z / 2;
+        else if (solid.type === "polycone") {
+          halfZ = (solid.planes[solid.planes.length-1].z - solid.planes[0].z) / 2;
+        }
         var fz = pv.position[2] - halfZ;
         crystalFaceCenter = [pv.position[0], pv.position[1], fz];
       }
@@ -1915,6 +2062,12 @@ GeometryViewer3D.prototype._getSolidExtent = function(renderable) {
 
   if (solid.type === "tube") {
     return { type: "cylinder", radius: solid.rmax, halfZ: solid.z / 2 };
+  } else if (solid.type === "polycone") {
+    // Bounding cylinder: bulletization only removes material inside it.
+    var pr = 0, pl = solid.planes;
+    for (var pi = 0; pi < pl.length; pi++) if (pl[pi].rmax > pr) pr = pl[pi].rmax;
+    return { type: "cylinder", radius: pr,
+             halfZ: (pl[pl.length-1].z - pl[0].z) / 2 };
   } else if (solid.type === "box") {
     return { type: "box", halfX: solid.x / 2, halfY: solid.y / 2, halfZ: solid.z / 2 };
   } else if (solid.type === "subtraction") {

@@ -23,6 +23,8 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#include "physics/FepWindow.h"
+
 // Data-agnostic core types for true-coincidence (cascade) summing.
 //
 // These describe a nuclide's correlated photon emissions in a form the MC engine
@@ -565,7 +567,12 @@ inline bool cascade_invalid_branch_can_feed_peak(
 /// A photopeak for which a summing-corrected efficiency is reported.
 struct PeakWindow {
     double energy_keV = 0.0;
-    double tolerance_keV = 1.5;  ///< +/- window (matches the engine's kFepTolerance)
+    /// +/- window; the same "what counts as in the peak" as the MC's FEP tally
+    /// (physics/FepWindow.h).  This default is a fallback: peak-dependent
+    /// callers set it from the peak's own width - CascadeSummingCalc uses
+    /// max(0.25, photopeak_cluster_sigma * sigma) - which is what a
+    /// lower-resolution detector needs.
+    double tolerance_keV = kDefaultFepWindowKeV;
 };
 
 } // namespace ceelo

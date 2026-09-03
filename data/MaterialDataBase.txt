@@ -3649,3 +3649,45 @@ O
 53.2565
 Si
 46.7435
+!
+CFRP
+Carbon fiber reinforced polymer (resin)
+4 0 1.55
+C
+83
+O
+11.5
+H
+4
+N
+1.5
+!
+Mylar
+Mylar / PET (C10H8O4)
+3 0 1.4
+C
+62.5
+H
+4.196
+O
+33.304
+!
+Brass
+Brass (Cu-Zn alloy)
+2 0 8.5
+Cu
+63
+Zn
+37
+!
+Silicone
+Silicone rubber / PDMS ((C2H6OSi)n)
+4 0 1.05
+C
+32.39
+H
+8.156
+O
+21.58
+Si
+37.87

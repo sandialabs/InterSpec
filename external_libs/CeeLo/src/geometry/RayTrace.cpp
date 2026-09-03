@@ -49,6 +49,14 @@ void Geometry::set_detector(DetectorShape shape, const Material* material,
     shape_ = shape;
     detector_material_ = material;
 
+    // Redefining the crystal invalidates everything sized against the old one:
+    // a fillet radius, bore or dead layer that no longer fits would otherwise
+    // survive silently (a stale fillet leaves rho_c <= 0 with no diagnostic in
+    // any build). Clear them all and make the caller re-declare what it wants.
+    bullet_radius_ = 0.0;
+    bore_hole_.reset();
+    dead_layer_.reset();
+
     if (shape == DetectorShape::Cylinder) {
         assert(dimensions.size() >= 2);
         radius_ = dimensions[0];
@@ -61,11 +69,34 @@ void Geometry::set_detector(DetectorShape shape, const Material* material,
     }
 }
 
-void Geometry::set_bore_hole(double bore_radius, double bore_depth) {
+// bore_fits() now lives in Geometry.h so GeometryDescriptor::problems() can
+// apply the same admissibility test these asserts do.
+
+void Geometry::set_bore_hole(double bore_radius, double bore_depth,
+                             bool rounded_tip) {
     assert(shape_ == DetectorShape::Cylinder && "Bore hole only for cylindrical detectors");
     assert(bore_radius > 0.0 && bore_radius < radius_);
     assert(bore_depth > 0.0 && bore_depth < length_);
-    bore_hole_ = BoreHoleConfig{bore_radius, bore_depth};
+    // The tip hemisphere has to fit inside the bore it caps.
+    assert(!rounded_tip || bore_radius <= bore_depth);
+    assert(bore_fits(bore_radius, bore_depth, radius_, length_, bullet_radius_)
+           && "Bore is wider than the crystal where it ends");
+    bore_hole_ = BoreHoleConfig{bore_radius, bore_depth, rounded_tip};
+}
+
+void Geometry::set_bullet_radius(double bullet_radius) {
+    assert(shape_ == DetectorShape::Cylinder &&
+           "Bulletization only for cylindrical detectors");
+    assert(bullet_radius >= 0.0);
+    // rho_c = radius_ - bullet_radius must stay positive: a fully rounded nose
+    // (bullet_radius == radius_) is a different solid and is not supported.
+    assert(bullet_radius < radius_);
+    assert(bullet_radius < length_);
+    // Checked in both setters so the order they are called in does not matter.
+    assert((!bore_hole_ || bore_fits(bore_hole_->radius, bore_hole_->depth,
+                                     radius_, length_, bullet_radius))
+           && "Fillet would narrow the crystal past the existing bore");
+    bullet_radius_ = bullet_radius;
 }
 
 void Geometry::set_dead_layer(double front, double side, double back) {
@@ -226,16 +257,51 @@ void Geometry::trace_cylinder_geometry(
         dl_z_max = active_z_max;
     }
 
+    // Rounded front outer edge, if configured.  Sharp crystals -- the common
+    // case -- pay only this predicate and take the original code paths below,
+    // bit for bit.
+    const bool bulletized = (bullet_radius_ > 0.0);
+    FrontFillet outer_fillet{0.0, 0.0, 0.0, 0.0};
+    FrontFillet active_fillet{0.0, 0.0, 0.0, 0.0};
+
+    if (bulletized) {
+        outer_fillet = make_front_fillet(crystal_r, crystal_z_min, bullet_radius_);
+
+        // The active surface is the crystal surface offset inward by the dead
+        // layer, so its fillet is the arc tangent to both offset faces.  For
+        // equal front/side thicknesses that is exactly the fillet of radius
+        // r_b - t about the same centre; for unequal ones we take the smaller
+        // (more conservative) radius.  Dead layers are ~0.1 mm against an
+        // ~8 mm fillet, so the convention is far below any measurable effect.
+        double r_b_active = bullet_radius_;
+        if (dead_layer_) {
+            r_b_active -= std::max(dead_layer_->front, dead_layer_->side);
+            if (r_b_active < 0.0) r_b_active = 0.0;
+        }
+        active_fillet = make_front_fillet(dl_r, dl_z_min, r_b_active);
+        assert(dl_r > 0.0 && r_b_active < dl_r &&
+               dl_z_min + r_b_active <= dl_z_max &&
+               "Dead layer leaves no room for the bulletized active volume");
+    }
+
     // Active crystal (innermost)
     if (bore_hole_) {
         double bore_z_start = crystal_z_max - bore_hole_->depth;
         RayHit bore_segments[2];
-        int n_seg = intersect_bored_cylinder(
-            origin, direction,
-            dl_r, bore_hole_->radius,
-            dl_z_min, dl_z_max,
-            bore_z_start, crystal_z_max,
-            bore_segments);
+        int n_seg = (bulletized || bore_hole_->rounded_tip)
+            ? intersect_shaped_bored_cylinder(
+                  origin, direction,
+                  dl_r, bore_hole_->radius,
+                  dl_z_min, dl_z_max,
+                  bore_z_start, crystal_z_max,
+                  active_fillet, bore_hole_->rounded_tip,
+                  bore_segments)
+            : intersect_bored_cylinder(
+                  origin, direction,
+                  dl_r, bore_hole_->radius,
+                  dl_z_min, dl_z_max,
+                  bore_z_start, crystal_z_max,
+                  bore_segments);
 
         for (int i = 0; i < n_seg; ++i) {
             if (bore_segments[i].valid()) {
@@ -245,7 +311,10 @@ void Geometry::trace_cylinder_geometry(
             }
         }
     } else {
-        auto hit = intersect_cylinder(origin, direction, dl_r, dl_z_min, dl_z_max);
+        auto hit = bulletized
+            ? intersect_bulletized_cylinder(origin, direction,
+                                            dl_r, dl_z_min, dl_z_max, active_fillet)
+            : intersect_cylinder(origin, direction, dl_r, dl_z_min, dl_z_max);
         if (hit && hit->valid()) {
             double t0 = std::max(hit->t_enter, 0.0);
             segments.push_back({t0, hit->t_exit, detector_material_, true});
@@ -254,10 +323,15 @@ void Geometry::trace_cylinder_geometry(
 
     // Dead layer
     if (dead_layer_) {
-        auto outer_hit = intersect_cylinder(origin, direction,
-                                            crystal_r, crystal_z_min, crystal_z_max);
-        auto inner_hit = intersect_cylinder(origin, direction,
-                                            dl_r, dl_z_min, dl_z_max);
+        auto outer_hit = bulletized
+            ? intersect_bulletized_cylinder(origin, direction, crystal_r,
+                                            crystal_z_min, crystal_z_max, outer_fillet)
+            : intersect_cylinder(origin, direction,
+                                 crystal_r, crystal_z_min, crystal_z_max);
+        auto inner_hit = bulletized
+            ? intersect_bulletized_cylinder(origin, direction, dl_r,
+                                            dl_z_min, dl_z_max, active_fillet)
+            : intersect_cylinder(origin, direction, dl_r, dl_z_min, dl_z_max);
 
         if (outer_hit && outer_hit->valid()) {
             double t0_out = std::max(outer_hit->t_enter, 0.0);

@@ -145,6 +145,21 @@
     information, which cascade-summing corrections require.  Open the detector editor and attach a
     Monte-Carlo characterization (or a total-efficiency curve), then re-enable this option.</message>
   <message id="ssd-cascade-open-drf-editor">Open detector editor</message>
+  <message id="ssd-lbl-vol-eff">Volumetric source eff.</message>
+  <message id="ssd-tt-vol-eff">Detector-efficiency method used per volume element for trace and
+    self-attenuating (volumetric) sources.  "Auto" picks the highest-fidelity method the detector
+    response supports; "Monte Carlo" evaluates the DRF's attached MC model (near-field and off-axis
+    correct); "EFFTRAN" transfers the DRF's measured efficiency to this geometry (deterministic,
+    near-field correct); "Flat-disk" is the legacy far-field solid-angle approximation.  The status
+    to the right shows which method the fit will actually use with the current detector response.</message>
+  <message id="ssd-vol-eff-auto">Auto</message>
+  <message id="ssd-vol-eff-mc">Monte Carlo</message>
+  <message id="ssd-vol-eff-efftran">EFFTRAN</message>
+  <message id="ssd-vol-eff-flatdisk">Flat-disk</message>
+  <message id="ssd-vol-eff-name-mc">MC transfer</message>
+  <message id="ssd-vol-eff-name-efftran">EFFTRAN transfer</message>
+  <message id="ssd-vol-eff-name-flatdisk">flat-disk</message>
+  <message id="ssd-vol-eff-resolved">&#8594; {1}</message>
   <message id="ssd-fixed-geom-mc-btn">Compute DRF for this geometry (MC)</message>
   <message id="ssd-tt-fixed-geom-mc">Runs a CeeLo Monte-Carlo over the exact source/shielding scene
     (including scatter, near-field response, and total efficiency), producing a fixed-geometry
@@ -225,7 +240,6 @@
   <message id="ssd-calc-log-html-title">Calculation Log</message>
   <message id="ssd-template-text-log">Standard Log (Text)</message>
   <message id="ssd-template-html-report">Activity Fit Report (HTML)</message>
-  <message id="ssd-template-deprecated-txt">Deprecated Txt</message>
   <message id="ssd-no-fit-results">No fit results available to display.</message>
   <message id="ssd-error-creating-html-log">Error creating HTML calculation log: {1}</message>
   <message id="ssd-err-opening-import-model">Error opening uploaded Source Shielding Fit Model: {1}</message>

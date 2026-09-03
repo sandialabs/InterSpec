@@ -1222,14 +1222,17 @@ namespace {
     if( j.contains("distance") && !j["distance"].is_null() )
     {
       const std::string distanceStr = j["distance"].get<std::string>();
-      try
+      if( !distanceStr.empty() )
       {
-        p.distance = PhysicalUnits::stringToDistance( distanceStr );
-      }catch( const std::exception &e )
-      {
-        throw std::runtime_error( "Invalid distance value '" + distanceStr + "': " + e.what() );
-      }
-    }
+        try
+        {
+          p.distance = PhysicalUnits::stringToDistance( distanceStr );
+        }catch( const std::exception &e )
+        {
+          throw std::runtime_error( "Invalid distance value '" + distanceStr + "': " + e.what() );
+        }
+      }//if( !distanceStr.empty() )
+    }//if( j.contains("distance") && !j["distance"].is_null() )
   }//void from_json( const json &j, AnalystChecks::SumPeakCheckOptions &p )
 
   void to_json( json &j, const AnalystChecks::SumPeakCheckStatus &p )
@@ -5966,27 +5969,33 @@ nlohmann::json ToolRegistry::executeGetSourcePhotons(const nlohmann::json& param
   const string age_key = find_case_insensitive_key( "age", params );
   
   double age_in_seconds = 0.0;
+  bool interpreted_age = false;
   const bool has_age = params.contains(age_key);
-  if( !nuc && has_age )
-    throw runtime_error( "You can only specify 'age' for a nuclide source" );
-  
-  if( has_age )
+
+  if( has_age && !params[age_key].is_null() )
   {
     const string &age_str = params[age_key];
 
-    try
+    if( !nuc && !age_str.empty() )
+      throw runtime_error( "You can only specify 'age' for a nuclide source" );
+
+    if( nuc )
     {
-      age_in_seconds = PhysicalUnits::stringToTimeDuration(age_str) / PhysicalUnits::second;
-      if( age_in_seconds < 0.0 )
-        throw runtime_error( "Nuclide age ('" + age_str + "') must be larger than zero." );
-    }catch( std::exception &e )
-    {
-      throw runtime_error( "Could not interpret '" + age_str + "' as a time duration for nuclide age." );
-    }
-  }else if( nuc )
-  {
+      try
+      {
+        age_in_seconds = PhysicalUnits::stringToTimeDuration(age_str) / PhysicalUnits::second;
+        if( age_in_seconds < 0.0 )
+          throw runtime_error( "Nuclide age ('" + age_str + "') must be larger than zero." );
+        interpreted_age = true;
+      }catch( std::exception &e )
+      {
+        throw runtime_error( "Could not interpret '" + age_str + "' as a time duration for nuclide age." );
+      }
+    }//if( nuc )
+  }//if( has_age )
+
+  if( nuc && !interpreted_age )
     age_in_seconds = PeakDef::defaultDecayTime( nuc, nullptr ) / PhysicalUnits::second;
-  }
   
   const string max_results_key = find_case_insensitive_key( "maxResults", params );
   

@@ -51,8 +51,10 @@
 #include "InterSpec/InterSpecApp.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/WarningWidget.h"
+#include "InterSpec/AngleOutxImport.h"
 
 
+struct GadrasDetectorDat;
 class PeakDef;
 class PeakModel;
 class InterSpecUser;
@@ -86,7 +88,7 @@ class MeasuredDrfPoints;
 class DetectorEfficiencyCurve;
 class DetectorEfficiencyUncert;
 
-namespace ceelo{ class DetectorResponse; }
+namespace ceelo{ class DetectorResponse; struct GeometryDescriptor; }
 
 
 class DetectorPeakResponse
@@ -251,6 +253,12 @@ public:
      GADRAS Efficiency.csv).
      */
     UserImportedEfficiencyCsvDrf = 12,
+
+    /** From a GADRAS Detector.dat with no Efficiency.csv beside it: the crystal
+     geometry, FWHM and peak shape come from the file, and the efficiency from a
+     Monte-Carlo characterization of that geometry.
+     */
+    GadrasDetectorDatOnly = 13,
   };//enum DrfSource
   
 public:
@@ -399,11 +407,32 @@ public:
   void fromGadrasDefinition( std::istream &efficiencyCsvFile,
                              std::istream &detDatFile );
 
+  /** Everything a GADRAS `Detector.dat` defines on its own: crystal diameter and
+   setback, the FWHM curve, the valid energy range, and the GADRAS peak-shape
+   (skew) coefficients - but NOT an efficiency, which the file does not contain.
+
+   The result is deliberately *not* `isValid()`.  It is the seed for a
+   Monte-Carlo characterization of the parsed geometry, which supplies the
+   efficiency curve (see `CeeLoUtils::buildGadrasGeometry` and
+   `CeeLoUtils::setLegacyEfficiencyFromResponse`); until then the detector has a
+   shape but no sensitivity, and callers must not hand it to a user as finished.
+
+   Recomputes the hash value.
+   */
+  void fromGadrasDatOnly( std::istream &detDatFile );
+
   /** Convience function that calls #fromGadrasDefinition with the
       Efficiency.csv and Detector.dat files in the specified directory.
+
+      @param allow_missing_efficiency_csv When true and the directory holds only
+             a `Detector.dat`, falls back to #fromGadrasDatOnly and returns a DRF
+             that is NOT `isValid()` - see there.  The default keeps every
+             existing caller's contract: both files or an exception.
+
       Throws exception on issue.
    */
-  void fromGadrasDirectory( const std::string &dir );
+  void fromGadrasDirectory( const std::string &dir,
+                            const bool allow_missing_efficiency_csv = false );
   
   
   /** Sets the detectors as a kExpOfLogPowerSeries effiency detector, using the
@@ -546,6 +575,22 @@ public:
    @returns a valid DRF with (efficiencyFcnType() == kEnergyEfficiencyPairs)
    */
   static std::shared_ptr<DetectorPeakResponse> parseAngleOutxFile( std::istream &input );
+
+  /** Parses an ANGLE .outx XML file into a rich `AngleOutxContents`.
+
+   Extends #parseAngleOutxFile: in addition to the fixed-geometry DRF (in
+   `AngleOutxContents::fixedGeomDrf`, built exactly as #parseAngleOutxFile does),
+   it extracts the full `<detector>` physical model and the measured
+   `<referenceEfficiencyCurve>` so callers can drive InterSpec's own MC /
+   efficiency-transfer stack (see AngleOutxImport.h).
+
+   Geometry and reference parsing are best-effort: a malformed/absent
+   `<detector>` or `<referenceEfficiencyCurve>` leaves `hasGeometry` /
+   `hasReference` false but never prevents the `<results>` import.  Throws only
+   when the `<results>` import itself fails (same conditions as
+   #parseAngleOutxFile).
+   */
+  static AngleOutxContents parseAngleOutxFileFull( std::istream &input );
 
   /** Result struct from parsing an efficiency CSV file. */
   struct EffCsvParseResult
@@ -777,6 +822,11 @@ public:
    */
   static const char *effFlagName( const EffFlag flag );
 
+  /** A phrase for an #EffFlag aimed at a user reading a chart or a message, rather than the stable
+   identifier #effFlagName gives (which batch JSON output and calc logs key on).
+   */
+  static const char *effFlagDescription( const EffFlag flag );
+
   /** An efficiency evaluation: {value, absolute 1-sigma uncertainty, flag}. */
   struct EffEval
   {
@@ -798,6 +848,31 @@ public:
    Recomputes hash value.
    */
   void setCeeloResponse( std::shared_ptr<const ceelo::DetectorResponse> response );
+
+  /** This detectors physical geometry - shape, crystal dimensions and material,
+   dead layer, endcap layers, collimator - or nullptr when it is not known.
+
+   A DRF can know its geometry without having been characterized: a GADRAS
+   `Detector.dat` or an ANGLE model states the shape, and the efficiency may
+   arrive separately (or never).  Before this existed the descriptor had to be
+   threaded alongside the DRF as a separate argument through every import path,
+   and was silently dropped whenever a flow did not walk straight into the
+   Monte-Carlo tool - which is how a LaBr detector came back as NaI.
+
+   When a #ceeloResponse is attached, ITS descriptor is authoritative and is
+   what this returns: a generated response cannot be re-pointed at a different
+   geometry than the one it was ray-traced for.
+   */
+  std::shared_ptr<const ceelo::GeometryDescriptor> geometry() const;
+
+  /** Sets (or clears, with nullptr) the physical geometry.  Ignored while a
+   #ceeloResponse is attached, since that carries its own.
+
+   NOT part of the hash: the geometry says what the detector *is*, not what it
+   answers, so recording it must not change the identity of an already-stored
+   DRF (see #hashValue).
+   */
+  void setGeometry( std::shared_ptr<const ceelo::GeometryDescriptor> geometry );
 
   /** The (optional) raw measured efficiency points this DRF was
    characterized from; may be nullptr.  Kept for provenance and for grounding
@@ -1093,6 +1168,13 @@ public:
     { return energy==rhs.energy && efficiency==rhs.efficiency; }
   };//struct EnergyEfficiencyPair
 
+  /** Whether two efficiency-curve energies are close enough to be the same point
+   (~1e-5 relative).  Duplicate energies must be collapsed before an efficiency curve
+   is built, since #akimaInterpolate and its slope helper divide by the gaps between
+   neighboring points - a zero gap gives a NaN efficiency.
+   */
+  static bool nearlySameEnergy( const float lhs, const float rhs );
+
   /** Out-of-line helpers used by the (templated) #persist to marshal the
    #m_efficiency representation to/from the frozen database columns - kept
    out of the template so it only needs the forward-declared curve type.
@@ -1126,6 +1208,14 @@ public:
   int m_user;
   
 protected:
+  /** The shared body of #fromGadrasDefinition and #fromGadrasDatOnly.
+
+   @param efficiencyCsv The Efficiency.csv to take the efficiency curve from, or
+          null for a Detector.dat on its own - in which case the crystal diameter
+          is still recorded but no efficiency is set.
+   */
+  void applyGadrasDat( const GadrasDetectorDat &dat, std::istream *efficiencyCsv );
+
   void computeHash();
   
 protected:
@@ -1269,6 +1359,9 @@ protected:
    query functions and #efficiencyFracCovariance do.
    */
   std::shared_ptr<const ceelo::DetectorResponse> m_ceeloResponse;
+
+  /** The physical geometry when no #m_ceeloResponse carries one; see #geometry. */
+  std::shared_ptr<const ceelo::GeometryDescriptor> m_geometry;
 
   /** Opaque source/shielding-setup XML for fixed-geometry DRFs computed for a
    specific scene; see #fixedGeometrySetupXml.  Serialized as the optional

@@ -329,6 +329,8 @@ set(sources
     src/MassAttenuationTool.cpp
     src/DetectorEfficiency.cpp
     src/DetectorPeakResponse.cpp
+    src/AngleOutxImport.cpp
+    src/GadrasDetectorDat.cpp
     src/GammaInteractionCalc.cpp
     src/GroupBox.cpp
     src/ShieldingSourceDisplay.cpp
@@ -473,6 +475,8 @@ set(headers
     InterSpec/MassAttenuationTool.h
     InterSpec/DetectorEfficiency.h
     InterSpec/DetectorPeakResponse.h
+    InterSpec/AngleOutxImport.h
+    InterSpec/GadrasDetectorDat.h
     InterSpec/GammaInteractionCalc.h
     InterSpec/ShieldingSourceDisplay.h
     InterSpec/SourceFitNuclideDisplay.h

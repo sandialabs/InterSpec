@@ -124,6 +124,11 @@ struct Runner {
         // Same mapping as the public helper, but reusing this Runner's
         // already-instantiated materials (one instantiation per run, not per
         // node).
+        //
+        // Every calculator the generator builds routes through here, so setting
+        //  the FEP window once here is what makes ResponseProvenance's recorded
+        //  value true of every node that went into the response.
+        calc.set_fep_window_keV(opts.fep_window_keV);
         calc.set_detector(gd.shape, mat(gd.crystal_material_index),
                           gd.dimensions_cm);
         if (gd.bore) calc.set_bore_hole(gd.bore->radius, gd.bore->depth);
@@ -1058,10 +1063,15 @@ std::shared_ptr<DetectorResponse> ResponseGenerator::generate(
     for (size_t i = 0; i < gd.materials.size(); ++i)
         resp->mu_tables.push_back(
             MuTable::sample(*run.mat(static_cast<int>(i)), static_cast<int>(i)));
+    resp->provenance.method = opts.transfer_mode ? ProductionMethod::QuickMcTransfer
+                                                 : ProductionMethod::FullMc;
     resp->provenance.profile = opts.profile;
     resp->provenance.node_fep_precision = opts.node_fep_precision;
     resp->provenance.generation_seed = opts.base_seed;
     resp->provenance.kernel_n_rays = opts.kernel_n_rays;
+    // Record the window the FEP tallies were actually scored with, so a consumer
+    //  crediting in-window Compton can match it rather than assume it.
+    resp->provenance.fep_window_keV = opts.fep_window_keV;
     resp->provenance.detector_name = opts.detector_name;
     resp->provenance.valid_e_min_keV = opts.e_min_keV;
     resp->provenance.valid_e_max_keV = opts.e_max_keV;
@@ -1909,6 +1919,14 @@ void ResponseGenerator::certify(DetectorResponse& resp,
 void ResponseGenerator::configure_calculator(
     EfficiencyCalculator& calc, const GeometryDescriptor& gd,
     std::vector<std::unique_ptr<Material>>& owned_materials) {
+    // Validate before instantiating anything, so a bad descriptor cannot leave
+    // half-built materials in the caller's vector (same ordering rule as
+    // GeometryDescriptor::build_geometry).
+    const std::vector<GeometryProblem> probs = gd.problems();
+    if (!probs.empty())
+        throw std::runtime_error(std::string("configure_calculator: ")
+                                 + to_string(probs.front()));
+
     // Instantiate the descriptor's material table; the calculator keeps raw
     // pointers, so the caller owns their lifetime via owned_materials.
     const size_t base = owned_materials.size();
@@ -1923,7 +1941,12 @@ void ResponseGenerator::configure_calculator(
 
     calc.set_detector(gd.shape, mat(gd.crystal_material_index),
                       gd.dimensions_cm);
-    if (gd.bore) calc.set_bore_hole(gd.bore->radius, gd.bore->depth);
+    // set_detector() clears the fillet/bore/dead layer, so declare them after
+    // it; fillet first, so bore_fits() sees the final crystal profile.
+    if (gd.bullet_radius_cm > 0.0) calc.set_bullet_radius(gd.bullet_radius_cm);
+    if (gd.bore)
+        calc.set_bore_hole(gd.bore->radius, gd.bore->depth,
+                           gd.bore->rounded_tip);
     if (gd.dead_layer)
         calc.set_dead_layer(gd.dead_layer->front, gd.dead_layer->side,
                             gd.dead_layer->back);

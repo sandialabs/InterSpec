@@ -835,16 +835,16 @@ struct Options
   /** Optional fixed skew parameter values for the lower energy end of the spectrum.
    If a value is set, that skew parameter will be held constant during fitting
    (not optimized), using the specified value.  If nullopt, the parameter is fit as usual.
-   Index 0..3 correspond to SkewPar0..SkewPar3.
+   Index 0..5 correspond to SkewPar0..SkewPar5.
    */
-  std::optional<double> fixed_lower_skew[4];
+  std::optional<double> fixed_lower_skew[6];
 
   /** Optional fixed skew parameter values for the upper energy end of the spectrum.
    Only meaningful for energy-dependent skew parameters (see `PeakDef::is_energy_dependent`).
    If nullopt for an energy-dependent parameter, the upper value will match the lower
    (i.e., no energy dependence for that parameter).
    */
-  std::optional<double> fixed_upper_skew[4];
+  std::optional<double> fixed_upper_skew[6];
 
   /** Whether to use Lorentzian (Voigt) peak shapes for x-ray peaks.
    *

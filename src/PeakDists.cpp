@@ -1546,6 +1546,18 @@ double peak_cdf( const double x, const double mean, const double sigma,
       const double far_left = mean - 50.0 * sigma;
       return voigt_exp_integral( mean, sigma, skew_pars[0], skew_pars[1], skew_pars[2], far_left, x );
     }
+
+    case PeakDef::SkewType::GadrasGeneric:
+    case PeakDef::SkewType::GadrasCZT:
+    {
+      assert( skew_pars );
+      const GadrasMaterial mat = (skew_type == PeakDef::SkewType::GadrasCZT)
+                                 ? GadrasMaterial::CZT_CdTe : GadrasMaterial::Generic;
+      const GadrasPeakShape shape = gadras_build_peak_shape( mean,
+                                        skew_pars[0], skew_pars[1], skew_pars[2],
+                                        skew_pars[3], skew_pars[4], skew_pars[5], mat, false );
+      return gadras_peak_shape_cdf<double>( (x - mean) / sigma, shape );
+    }
   }//switch( skew_type )
 
   assert( 0 );
@@ -1849,6 +1861,70 @@ std::pair<double,double> double_bortel_coverage_limits( const double mean, const
 }//double_bortel_coverage_limits(...)
 
 
+// ---- GADRAS peak shape (double) helpers; math lives in PeakDists_imp.hpp ----
+
+template void gadras_integral<double>( const double, const double, const double,
+                                       const double * const, const GadrasMaterial,
+                                       const float * const, double *, const size_t );
+
+double gadras_integral( const double mean, const double sigma,
+                        const double * const skew, const GadrasMaterial material,
+                        const double x0, const double x1 )
+{
+  if( sigma <= 0.0 )
+    return 0.0;
+
+  const GadrasPeakShape shape = gadras_build_peak_shape( mean, skew[0], skew[1], skew[2],
+                                                         skew[3], skew[4], skew[5], material, false );
+  const double c0 = gadras_peak_shape_cdf<double>( (x0 - mean)/sigma, shape );
+  const double c1 = gadras_peak_shape_cdf<double>( (x1 - mean)/sigma, shape );
+  return c1 - c0;
+}//gadras_integral( single interval )
+
+
+std::pair<double,double> gadras_coverage_limits( const double mean, const double sigma,
+                                                 const double * const skew,
+                                                 const GadrasMaterial material, const double p )
+{
+  if( (p <= 0.0) || (p >= 1.0) || (sigma <= 0.0) )
+    throw runtime_error( "gadras_coverage_limits: invalid input" );
+
+  const GadrasPeakShape shape = gadras_build_peak_shape( mean, skew[0], skew[1], skew[2],
+                                                         skew[3], skew[4], skew[5], material, false );
+
+  // Search window in zeta units (shape carries its own tail reach; the bisection below
+  //  expands further if needed).
+  double zlo = -8.0, zhi = 8.0;
+  if( shape.sum_skew > 0.0 )
+  {
+    zlo = std::min( zlo, -shape.low_reach_zeta );
+    zhi = std::max( zhi,  shape.high_reach_zeta );
+  }
+
+  auto find_z = [&]( const double target ) -> double {
+    double lo = zlo, hi = zhi;
+    double flo = gadras_peak_shape_cdf<double>( lo, shape ) - target;
+    double fhi = gadras_peak_shape_cdf<double>( hi, shape ) - target;
+    for( int it = 0; (flo > 0.0) && (it < 40); ++it ){ lo -= 4.0; flo = gadras_peak_shape_cdf<double>( lo, shape ) - target; }
+    for( int it = 0; (fhi < 0.0) && (it < 40); ++it ){ hi += 4.0; fhi = gadras_peak_shape_cdf<double>( hi, shape ) - target; }
+    for( int it = 0; it < 100; ++it )
+    {
+      const double mid = 0.5*(lo + hi);
+      const double fmid = gadras_peak_shape_cdf<double>( mid, shape ) - target;
+      if( (std::fabs(fmid) < 1.0e-9) || ((hi - lo) < 1.0e-7) )
+        return mid;
+      if( (flo < 0.0) == (fmid < 0.0) ) { lo = mid; flo = fmid; }
+      else { hi = mid; fhi = fmid; }
+    }
+    return 0.5*(lo + hi);
+  };
+
+  const double z_lower = find_z( 0.5*p );
+  const double z_upper = find_z( 1.0 - 0.5*p );
+  return { mean + z_lower*sigma, mean + z_upper*sigma };
+}//gadras_coverage_limits(...)
+
+
 std::pair<double,double> coverage_limits( const double p,
                                           const PeakDef::SkewType skew_type,
                                           const double mean,
@@ -1892,6 +1968,12 @@ std::pair<double,double> coverage_limits( const double p,
 
     case PeakDef::SkewType::DoubleBortel:
       return double_bortel_coverage_limits( mean, sigma, skew_pars[0], skew_pars[1], skew_pars[2], p );
+
+    case PeakDef::SkewType::GadrasGeneric:
+      return gadras_coverage_limits( mean, sigma, skew_pars, GadrasMaterial::Generic, p );
+
+    case PeakDef::SkewType::GadrasCZT:
+      return gadras_coverage_limits( mean, sigma, skew_pars, GadrasMaterial::CZT_CdTe, p );
   }//switch( skew_type )
 
   assert( 0 );

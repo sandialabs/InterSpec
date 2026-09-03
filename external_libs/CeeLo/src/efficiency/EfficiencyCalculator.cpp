@@ -63,13 +63,30 @@ namespace {
 constexpr double kPi = 3.14159265358979323846;
 constexpr double kTwoPi = 2.0 * kPi;
 constexpr double kFourPi = 4.0 * kPi;
-constexpr double kFepTolerance = 1.5; // keV tolerance for full-energy peak
 
 // Below this kinetic energy an internal-conversion / Auger electron is treated
 // as depositing locally (or dropped): its CSDA range is sub-mm and it cannot
 // bridge any real source->detector gap, so transporting it buys nothing. Also
 // the Seltzer-Berger brems tables floor at 200 keV, so no brems is lost below.
 constexpr double kIcElectronMin_keV = 15.0;
+
+/// Seeds a 64-bit Mersenne twister from one 64-bit seed.
+///
+/// Uses seed_seq's iterator constructor rather than its initializer_list one:
+/// libstdc++ (GCC 12) rejects the initializer_list form for uint64_t arguments.
+/// The standard defines that form as seed_seq(il.begin(), il.end()) with each
+/// value taken mod 2^32, so these three words reproduce the exact streams the
+/// initializer_list version produced -- do not add or reorder words, or every
+/// seeded result in the library moves.
+std::mt19937_64 seeded_rng(uint64_t seed) {
+    const uint64_t mixed = seed * 2654435761ULL;
+    const std::array<uint_least32_t, 3> words{{
+        static_cast<uint_least32_t>(seed & 0xFFFFFFFFull),
+        static_cast<uint_least32_t>((seed >> 32) & 0xFFFFFFFFull),
+        static_cast<uint_least32_t>(mixed & 0xFFFFFFFFull)}};
+    std::seed_seq seq(words.begin(), words.end());
+    return std::mt19937_64(seq);
+}
 
 /// Current efficiency estimates from a merged tally. IS variance:
 /// var(eps) = (sum_w_sq/N - eps^2)/N; reduces to binomial eps(1-eps)/N for
@@ -271,8 +288,13 @@ void EfficiencyCalculator::set_detector(DetectorShape type, const Material* mate
     geometry_.set_detector(type, material, dimensions);
 }
 
-void EfficiencyCalculator::set_bore_hole(double bore_radius, double bore_depth) {
-    geometry_.set_bore_hole(bore_radius, bore_depth);
+void EfficiencyCalculator::set_bore_hole(double bore_radius, double bore_depth,
+                                         bool rounded_tip) {
+    geometry_.set_bore_hole(bore_radius, bore_depth, rounded_tip);
+}
+
+void EfficiencyCalculator::set_bullet_radius(double bullet_radius) {
+    geometry_.set_bullet_radius(bullet_radius);
 }
 
 void EfficiencyCalculator::set_dead_layer(double front, double side, double back) {
@@ -1197,15 +1219,7 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
         tally.pulse_height_counts_sq.resize(energy_bin_edges.size() - 1, 0.0);
     }
 
-    const uint64_t seed_mixed = seed * 2654435761ULL;
-    const std::array<uint_least32_t, 6> seed_data{{
-      static_cast<uint_least32_t>(seed), static_cast<uint_least32_t>(seed >> 32),
-      static_cast<uint_least32_t>(seed_mixed), static_cast<uint_least32_t>(seed_mixed >> 32),
-      static_cast<uint_least32_t>(seed ^ (seed >> 16)),
-      static_cast<uint_least32_t>((seed >> 48) | (seed << 16))
-    }};
-    std::seed_seq seq( seed_data.begin(), seed_data.end() );
-    std::mt19937_64 rng(seq);
+    std::mt19937_64 rng = seeded_rng(seed);
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
     double energy_MeV = energy_keV * 1e-3;
@@ -1413,7 +1427,7 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
                     tally.dbg_src.any_w2_u += w * w;
                 }
                 if (std::abs(tr.energy_deposited_scoring - energy_keV) <
-                    kFepTolerance) {
+                    fep_window_keV_) {
                     tally.num_fep++;
                     tally.sum_fep_weights += w;
                     tally.sum_fep_w_sq += w * w;
@@ -1879,7 +1893,7 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
                 }
             }
 
-            if (std::abs(total_dep_scoring - energy_keV) < kFepTolerance) {
+            if (std::abs(total_dep_scoring - energy_keV) < fep_window_keV_) {
                 tally.num_fep++;
                 tally.sum_fep_weights += src_air_w;
                 tally.sum_fep_w_sq += src_air_w * src_air_w;
@@ -2037,7 +2051,7 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
             total_weight *= transport_result.weight;
             if (transport_result.forced_absorption) tally.num_forced_absorption++;
 
-            if (std::abs(transport_result.energy_deposited_scoring - energy_keV) < kFepTolerance) {
+            if (std::abs(transport_result.energy_deposited_scoring - energy_keV) < fep_window_keV_) {
                 tally.num_fep++;
                 tally.sum_fep_weights += total_weight;
                 tally.sum_fep_w_sq += total_weight * total_weight;
@@ -2057,7 +2071,7 @@ EfficiencyCalculator::ThreadTally EfficiencyCalculator::simulate_thread(
                 tally.sum_any_w_sq += total_weight * total_weight;
             }
 
-            if (std::abs(transport_result.energy_deposited_scoring - energy_keV) < kFepTolerance) {
+            if (std::abs(transport_result.energy_deposited_scoring - energy_keV) < fep_window_keV_) {
                 tally.num_fep++;
                 tally.sum_fep_weights += total_weight;
                 tally.sum_fep_w_sq += total_weight * total_weight;
@@ -3286,15 +3300,7 @@ EfficiencyCalculator::CascadePeakTally EfficiencyCalculator::cascade_peak_thread
     constexpr uint64_t kCheckMask = 0xFF;
     constexpr double kFlushSec = 0.25;
     auto last_flush = std::chrono::steady_clock::now();
-    const uint64_t seed_mixed = seed * 2654435761ULL;
-    const std::array<uint_least32_t, 6> seed_data{{
-      static_cast<uint_least32_t>(seed), static_cast<uint_least32_t>(seed >> 32),
-      static_cast<uint_least32_t>(seed_mixed), static_cast<uint_least32_t>(seed_mixed >> 32),
-      static_cast<uint_least32_t>(seed ^ (seed >> 16)),
-      static_cast<uint_least32_t>((seed >> 48) | (seed << 16))
-    }};
-    std::seed_seq seq( seed_data.begin(), seed_data.end() );
-    std::mt19937_64 rng(seq);
+    std::mt19937_64 rng = seeded_rng(seed);
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
     const DecayCascade& dc = cascades[primary_branch];
@@ -3762,15 +3768,7 @@ EfficiencyCalculator::CascadeFullTally EfficiencyCalculator::cascade_full_thread
     constexpr double kFlushSec = 0.25;
     auto last_flush = std::chrono::steady_clock::now();
 
-    const uint64_t seed_mixed = seed * 2654435761ULL;
-    const std::array<uint_least32_t, 6> seed_data{{
-      static_cast<uint_least32_t>(seed), static_cast<uint_least32_t>(seed >> 32),
-      static_cast<uint_least32_t>(seed_mixed), static_cast<uint_least32_t>(seed_mixed >> 32),
-      static_cast<uint_least32_t>(seed ^ (seed >> 16)),
-      static_cast<uint_least32_t>((seed >> 48) | (seed << 16))
-    }};
-    std::seed_seq seq( seed_data.begin(), seed_data.end() );
-    std::mt19937_64 rng(seq);
+    std::mt19937_64 rng = seeded_rng(seed);
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
     // Per-branch coherent fallback forest (constant; branches are few).
     std::vector<std::vector<CascadeFallbackNode>> fallback_forests(cascades.size());
@@ -4512,7 +4510,15 @@ PeakCascadeResult EfficiencyCalculator::conditional_peak_result(
             const double term = var_x / (N * xbar * xbar)
                               + (1.0 - p_no) / (N * p_no)
                               - 2.0 * cov_xd / (N * xbar * p_no);
-            pr.summing_factor_unc = std::sqrt(std::max(0.0, k * k * term));
+            // X == I_nosum eventwise (e.g. a single-gamma cascade): the ratio
+            // is exactly 1 with zero variance, but the three-term cancellation
+            // above only vanishes to rounding (~1e-20 in `term`), so
+            // short-circuit the degenerate case to an exact zero.
+            const bool x_is_indicator =
+                agg.sum_x == static_cast<double>(agg.n_nosum) &&
+                agg.sum_xx == agg.sum_x && agg.sum_xd == agg.sum_x;
+            pr.summing_factor_unc = x_is_indicator
+                ? 0.0 : std::sqrt(std::max(0.0, k * k * term));
         } else {
             pr.summing_factor = (p_no > 0.0) ? 0.0 : 1.0;
             pr.summing_factor_unc = 0.0;
@@ -4999,15 +5005,7 @@ EfficiencyResult EfficiencyCalculator::compute(const SimulationConfig& config)
 
     // Thread function: run batches until stop
     auto thread_fn = [&](uint64_t initial_seed) {
-        const uint64_t is_mixed = initial_seed * 2654435761ULL;
-        const std::array<uint_least32_t, 6> is_data{{
-          static_cast<uint_least32_t>(initial_seed), static_cast<uint_least32_t>(initial_seed >> 32),
-          static_cast<uint_least32_t>(is_mixed), static_cast<uint_least32_t>(is_mixed >> 32),
-          static_cast<uint_least32_t>(initial_seed ^ (initial_seed >> 16)),
-          static_cast<uint_least32_t>((initial_seed >> 48) | (initial_seed << 16))
-        }};
-        std::seed_seq seq( is_data.begin(), is_data.end() );
-        std::mt19937_64 rng(seq);
+        std::mt19937_64 rng = seeded_rng(initial_seed);
 
         double cpu_last = thread_cpu_seconds();
 

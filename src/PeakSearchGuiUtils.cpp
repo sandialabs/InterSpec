@@ -4184,9 +4184,10 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
       case PeakDef::ExpGaussExp:  case PeakDef::DoubleSidedCrystalBall:
       case PeakDef::VoigtPlusBortel: case PeakDef::GaussPlusBortel:
       case PeakDef::DoubleBortel:
+      case PeakDef::GadrasGeneric:   case PeakDef::GadrasCZT:
         valid_offset = true;
         break;
-      
+
       case PeakDef::NumSkewType:
         valid_offset = false;
         break;
@@ -4284,7 +4285,7 @@ void change_skew_type_from_right_click( InterSpec * const interspec,
         throw std::logic_error("inconsistent skew par def");
       
       double val = starting;
-      bool fit_for = true;
+      bool fit_for = PeakDef::skew_parameter_fit_by_default( type, ct );
       if( near_skew_peak )
       {
         const double peak_val = near_skew_peak->coefficient( ct );
