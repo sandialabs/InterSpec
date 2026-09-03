@@ -431,7 +431,11 @@ BOOST_AUTO_TEST_CASE( SrcFitOptionsSerialization )
     test.background_peak_subtract = (rand() % 2);
     test.same_age_isotopes = (rand() % 2);
     test.account_for_drf_uncert = (rand() % 2);
-    
+    test.correct_for_cascade_summing = (rand() % 2);
+    // Every enumerator, so a serializer that forgets one (or maps it to the wrong string) fails here
+    //  rather than silently reverting a user's choice on reload.
+    test.volumetric_eff_method = static_cast<ShieldingSourceFitCalc::VolumetricEffMethod>( rand() % 4 );
+
     rapidxml::xml_document<char> doc;
     BOOST_REQUIRE_NO_THROW( test.serialize( &doc ) );
     

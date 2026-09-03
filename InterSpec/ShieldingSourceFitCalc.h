@@ -547,12 +547,15 @@ namespace ShieldingSourceFitCalc
     std::mutex m_mutex;
     
     enum class FitStatus{ UserCancelled, TimedOut, InvalidOther, InterMediate, Final };
-    FitStatus successful;
-    
-    double edm;  //estimated distance to minimum.
-    double chi2;
-    int num_fcn_calls;
-    unsigned int numDOF;
+    /** Default-initialized: callers build a stack `ModelFitResults` for the live (pre-fit) chart
+     (see ShieldingSourceDisplay::updateChi2ChartActual) and only fill some fields, so every scalar
+     must read as a defined "nothing computed yet" rather than whatever was on the stack. */
+    FitStatus successful = FitStatus::InvalidOther;
+
+    double edm = -1.0;  //estimated distance to minimum.
+    double chi2 = -1.0;
+    int num_fcn_calls = 0;
+    unsigned int numDOF = 0;
     std::vector<double> paramValues;
     std::vector<double> paramErrors;
     std::vector<std::string> errormsgs;

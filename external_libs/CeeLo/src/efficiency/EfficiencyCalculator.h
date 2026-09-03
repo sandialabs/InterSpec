@@ -786,6 +786,17 @@ public:
     void enable_fep_only_mode(bool on) { fep_only_mode_ = on; }
     void set_disable_fep_early_kill(bool on) { transport_config_.disable_fep_early_kill = on; }
 
+    /// Half-width (keV) of the full-energy-peak window used to tally FEP.
+    ///
+    /// Writes the transport config too: the fep_only_mode early kill has to use
+    /// the same window, or it discards events this would have counted (see
+    /// TransportConfig::fep_window_keV).  Defaults to kDefaultFepWindowKeV.
+    void set_fep_window_keV(double w) {
+        fep_window_keV_ = w;
+        transport_config_.fep_window_keV = w;
+    }
+    double fep_window_keV() const { return fep_window_keV_; }
+
     /// Enable optional source electron transport. Compton recoil electrons
     /// from source material are tracked through source geometry to the
     /// detector via CSDA. Only effective in full mode (not FEP-only).
@@ -1067,6 +1078,9 @@ public:
 
 private:
     Geometry geometry_;
+    /// See set_fep_window_keV(); mirrored into transport_config_.fep_window_keV.
+    double fep_window_keV_ = kDefaultFepWindowKeV;
+
     TransportConfig transport_config_;
 
     // Source configuration

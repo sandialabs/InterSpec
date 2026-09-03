@@ -34,8 +34,12 @@
 
 #include <Wt/WText.h>
 #include <Wt/WLabel.h>
+#include <Wt/WTable.h>
 #include <Wt/WServer.h>
+#include <Wt/WCheckBox.h>
+#include <Wt/WTableRow.h>
 #include <Wt/WIOService.h>
+#include <Wt/WTableCell.h>
 #include <Wt/WGridLayout.h>
 #include <Wt/WComboBox.h>
 #include <Wt/WLineEdit.h>
@@ -170,8 +174,7 @@ vector<ceelo::GroundingPoint> MakeMcResponseForDrf::groundingPointsForDrf(
 
 
 MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
-                            std::shared_ptr<const DetectorPeakResponse> seed_drf,
-                            std::shared_ptr<const ceelo::GeometryDescriptor> geometry )
+                            std::shared_ptr<const DetectorPeakResponse> seed_drf )
   : WContainerWidget(),
     m_interspec( viewer ),
     m_seedDrf( seed_drf ),
@@ -181,12 +184,17 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_precision( nullptr ),
     m_customPrecision( nullptr ),
     m_anchorAngles( nullptr ),
+    m_groundCb( nullptr ),
+    m_groundInfo( nullptr ),
+    m_groundRow( nullptr ),
+    m_groundInfoRow( nullptr ),
     m_anchorInfo( nullptr ),
     m_refDistance( nullptr ),
     m_estimate( nullptr ),
     m_profileRow( nullptr ),
     m_precRow( nullptr ),
     m_anchorAnglesRow( nullptr ),
+    m_anchorInfoRow( nullptr ),
     m_anchorRow( nullptr ),
     m_generate( nullptr ),
     m_cancelBtn( nullptr ),
@@ -196,6 +204,9 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
     m_chart( nullptr ),
     m_chartMode( nullptr ),
     m_chartDistance( nullptr ),
+    m_chartRangeSet( false ),
+    m_restoringState( false ),
+    m_seedingFromDrf( false ),
     m_generationId( 0 ),
     m_cancelFlag( nullptr ),
     m_result( nullptr ),
@@ -213,18 +224,37 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   WGroupBox *geomBox = addNew<WGroupBox>( WString::tr("mmr-geometry-title") );
   geomBox->addStyleClass( "McGeomBox" );
   m_geometry = geomBox->addNew<DetectorGeometryInput>( m_interspec );
-  m_geometry->seedFromDrf( m_seedDrf );
-  if( geometry )
-    m_geometry->setFromDescriptor( *geometry );   //overrides the DRF-derived guess
+  m_geometry->seedFromDrf( m_seedDrf );  //uses the DRFs own geometry when it has one
   m_geometry->changed().connect( this, &MakeMcResponseForDrf::handleGeometryChanged );
 
-  //Characterization options
+  //Characterization options - a label/input table, so the inputs line up with each other and with
+  //  the geometry form above (see `DgiTable` in DetectorGeometryInput).
   WGroupBox *optsBox = addNew<WGroupBox>( WString::tr("mmr-options-title") );
   optsBox->addStyleClass( "McOptsBox" );
 
-  WContainerWidget *methodRow = optsBox->addNew<WContainerWidget>();
-  methodRow->addNew<WLabel>( WString::tr("mmr-method") );
-  m_method = methodRow->addNew<WComboBox>();
+  WTable *optsTable = optsBox->addNew<WTable>();
+  optsTable->addStyleClass( "McOptsTable" );
+
+  int opt_row = 0;
+  auto add_row = [optsTable,&opt_row]( const WString &label ) -> WTableCell * {
+    optsTable->elementAt( opt_row, 0 )->addNew<WLabel>( label );
+    WTableCell *cell = optsTable->elementAt( opt_row, 1 );
+    ++opt_row;
+    return cell;
+  };
+
+  //A full-width row, for the notes/estimates that read as prose rather than a labeled field.
+  auto add_wide_row = [optsTable,&opt_row]() -> WTableCell * {
+    WTableCell *cell = optsTable->elementAt( opt_row, 0 );
+    cell->setColumnSpan( 2 );
+    ++opt_row;
+    return cell;
+  };
+
+  {
+    WTableCell *cell = add_row( WString::tr("mmr-method") );
+    m_method = cell->addNew<WComboBox>();
+  }
   m_method->addItem( WString::tr("mmr-method-full-mc") );        //Method::FullMc
   m_method->addItem( WString::tr("mmr-method-quick-mc") );       //Method::QuickMc
   m_method->addItem( WString::tr("mmr-method-curve-transfer") ); //Method::CurveTransfer
@@ -238,24 +268,23 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
                              = m_seedDrf ? m_seedDrf->ceeloResponse() : nullptr;
   if( seed_resp && seed_resp->model_transfer.has_value() )
   {
-    WText *upgradeNote = optsBox->addNew<WText>( WString::tr("mmr-upgrade-note") );
+    WText *upgradeNote = add_wide_row()->addNew<WText>( WString::tr("mmr-upgrade-note") );
     upgradeNote->addStyleClass( "McUpgradeNote" );
     upgradeNote->setInline( false );
   }
 
-  m_profileRow = optsBox->addNew<WContainerWidget>();
-  m_profileRow->addNew<WLabel>( WString::tr("mmr-profile") );
-  m_profile = m_profileRow->addNew<WComboBox>();
+  m_profile = add_row( WString::tr("mmr-profile") )->addNew<WComboBox>();
+  m_profileRow = optsTable->rowAt( opt_row - 1 );
   m_profile->addItem( WString::tr("mmr-profile-general") );
   m_profile->addItem( WString::tr("mmr-profile-farfield") );
   m_profile->addItem( WString::tr("mmr-profile-contact") );
   m_profile->setCurrentIndex( 0 );
-  m_profile->activated().connect( this, &MakeMcResponseForDrf::updateEstimate );
+  m_profile->activated().connect( this, &MakeMcResponseForDrf::handleOptionChanged );
   HelpSystem::attachToolTipOn( m_profile, WString::tr("mmr-tt-profile"), true );
 
-  m_precRow = optsBox->addNew<WContainerWidget>();
-  m_precRow->addNew<WLabel>( WString::tr("mmr-precision") );
-  m_precision = m_precRow->addNew<WComboBox>();
+  WTableCell *precCell = add_row( WString::tr("mmr-precision") );
+  m_precRow = optsTable->rowAt( opt_row - 1 );
+  m_precision = precCell->addNew<WComboBox>();
   m_precision->addItem( WString::tr("mmr-precision-fast") );      //idx0: 1%
   m_precision->addItem( WString::tr("mmr-precision-normal") );    //idx1: 0.3%
   m_precision->addItem( WString::tr("mmr-precision-balanced") );  //idx2: relax_mild (0.3% base, relaxed high-E)
@@ -265,53 +294,68 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   m_precision->activated().connect( this, &MakeMcResponseForDrf::handlePrecisionChanged );
   HelpSystem::attachToolTipOn( m_precision, WString::tr("mmr-tt-precision"), true );
 
-  m_customPrecision = m_precRow->addNew<WLineEdit>();
+  m_customPrecision = precCell->addNew<WLineEdit>();
   m_customPrecision->setTextSize( 5 );
   m_customPrecision->setPlaceholderText( "0.3%" );
-  m_customPrecision->changed().connect( this, &MakeMcResponseForDrf::updateEstimate );
+  m_customPrecision->changed().connect( this, &MakeMcResponseForDrf::handleOptionChanged );
   m_customPrecision->hide();
 
-  m_anchorAnglesRow = optsBox->addNew<WContainerWidget>();
-  m_anchorAnglesRow->addNew<WLabel>( WString::tr("mmr-anchor-angles") );
-  m_anchorAngles = m_anchorAnglesRow->addNew<WComboBox>();
+  m_anchorAngles = add_row( WString::tr("mmr-anchor-angles") )->addNew<WComboBox>();
+  m_anchorAnglesRow = optsTable->rowAt( opt_row - 1 );
   m_anchorAngles->addItem( WString::tr("mmr-anchor-angles-1") );  //on-axis only
   m_anchorAngles->addItem( WString::tr("mmr-anchor-angles-3") );  //3 cos-theta anchors
   m_anchorAngles->setCurrentIndex( 1 );  //3 anchors: off-axis FEP + real HPGe total
-  m_anchorAngles->activated().connect( this, &MakeMcResponseForDrf::updateEstimate );
+  m_anchorAngles->activated().connect( this, &MakeMcResponseForDrf::handleOptionChanged );
   HelpSystem::attachToolTipOn( m_anchorAngles, WString::tr("mmr-tt-anchor-angles"), true );
   m_anchorAnglesRow->hide();
 
-  m_anchorRow = optsBox->addNew<WContainerWidget>();
-  m_anchorInfo = m_anchorRow->addNew<WText>( "" );
+  // Whether the MC response gets corrected to the detectors own measured efficiency, and what it
+  //  would be corrected against - the difference between "this detector, measured" and "a detector
+  //  of this shape, computed".
+  {
+    WTableCell *cell = add_row( WString::tr("mmr-grounding") );
+    m_groundRow = optsTable->rowAt( opt_row - 1 );
+    m_groundCb = cell->addNew<WCheckBox>( WString::tr("mmr-grounding-cb") );
+    m_groundCb->setChecked( true );
+    m_groundCb->changed().connect( this, &MakeMcResponseForDrf::handleOptionChanged );
+    HelpSystem::attachToolTipOn( m_groundCb, WString::tr("mmr-tt-grounding"), true );
+  }
+
+  m_groundInfo = add_wide_row()->addNew<WText>( "" );
+  m_groundInfoRow = optsTable->rowAt( opt_row - 1 );
+  m_groundInfo->addStyleClass( "McAnchorInfo" );
+  m_groundInfo->setInline( false );
+
+  m_anchorInfo = add_wide_row()->addNew<WText>( "" );
+  m_anchorInfoRow = optsTable->rowAt( opt_row - 1 );
   m_anchorInfo->addStyleClass( "McAnchorInfo" );
   m_anchorInfo->setInline( false );
-  WContainerWidget *refDistRow = m_anchorRow->addNew<WContainerWidget>();
-  refDistRow->addNew<WLabel>( WString::tr("mmr-ref-distance") );
-  m_refDistance = refDistRow->addNew<WLineEdit>();
+  m_anchorInfoRow->hide();
+
+  m_refDistance = add_row( WString::tr("mmr-ref-distance") )->addNew<WLineEdit>();
+  m_anchorRow = optsTable->rowAt( opt_row - 1 );
   m_refDistance->setTextSize( 10 );
   m_refDistance->changed().connect( this, &MakeMcResponseForDrf::handleGeometryChanged );
   HelpSystem::attachToolTipOn( m_refDistance, WString::tr("mmr-tt-ref-distance"), true );
   m_anchorRow->hide();
 
-  m_estimate = optsBox->addNew<WText>( "" );
+  m_estimate = add_wide_row()->addNew<WText>( "" );
   m_estimate->addStyleClass( "McEstimate" );
   m_estimate->setInline( false );
 
-  //Run row
-  WContainerWidget *runRow = addNew<WContainerWidget>();
+  //Run row - inside the group box, since running is what these options configure.
+  WContainerWidget *runRow = optsBox->addNew<WContainerWidget>();
   runRow->addStyleClass( "McRunRow" );
+  m_status = runRow->addNew<WText>( "" );
+  m_status->addStyleClass( "McStatus" );
   m_generate = runRow->addNew<WPushButton>( WString::tr("mmr-generate-btn") );
   m_generate->clicked().connect( this, &MakeMcResponseForDrf::startGeneration );
   m_cancelBtn = runRow->addNew<WPushButton>( WString::tr("Cancel") );
   m_cancelBtn->clicked().connect( this, &MakeMcResponseForDrf::cancelGeneration );
   m_cancelBtn->hide();
-  m_progress = runRow->addNew<WProgressBar>();
+  m_progress = optsBox->addNew<WProgressBar>();
   m_progress->setRange( 0.0, 1.0 );
   m_progress->hide();
-
-  m_status = addNew<WText>( "" );
-  m_status->addStyleClass( "McStatus" );
-  m_status->setInline( false );
 
   // Response preview: per-angle efficiency curves for the generated response.
   //  Hidden until a response exists.
@@ -325,22 +369,49 @@ MakeMcResponseForDrf::MakeMcResponseForDrf( InterSpec *viewer,
   m_chartMode->addItem( WString::tr("mmr-chart-mode-absolute") );   //idx0
   m_chartMode->addItem( WString::tr("mmr-chart-mode-intrinsic") );  //idx1
   m_chartMode->setCurrentIndex( 0 );
-  m_chartMode->activated().connect( this, &MakeMcResponseForDrf::updateResponseChart );
+  m_chartMode->activated().connect( this, &MakeMcResponseForDrf::handleChartOptionChanged );
 
   WLabel *distLabel = chartCtrlRow->addNew<WLabel>( WString::tr("mmr-chart-distance") );
   m_chartDistance = chartCtrlRow->addNew<WLineEdit>( "25 cm" );
   m_chartDistance->setTextSize( 8 );
   distLabel->setBuddy( m_chartDistance );
-  m_chartDistance->changed().connect( this, &MakeMcResponseForDrf::updateResponseChart );
-  m_chartDistance->enterPressed().connect( this, &MakeMcResponseForDrf::updateResponseChart );
+  m_chartDistance->changed().connect( this, &MakeMcResponseForDrf::handleChartOptionChanged );
+  m_chartDistance->enterPressed().connect( this, &MakeMcResponseForDrf::handleChartOptionChanged );
   HelpSystem::attachToolTipOn( m_chartDistance, WString::tr("mmr-tt-chart-distance"), true );
 
   m_chart = m_chartBox->addNew<DrfChart>();
   m_chart->addStyleClass( "McChart" );
+  m_chart->setShowFwhm( false );  //this chart previews the geometrys efficiency, not the FWHM
 
   m_chartBox->hide();
 
-  handleMethodChanged();
+  // Open on the support the detector actually has, rather than on a default the user then has to
+  //  correct: the method that produced its response, or - for a detector that states its shape and
+  //  has an efficiency but no response - the no-MC transfer, which is the only support that can be
+  //  had without a run, and which builds itself the moment the geometry is usable.
+  //
+  // Deliberately NOT for a DRF whose geometry is only the cylinder guessed from its diameter: a
+  //  transfer built on a guessed shape would be attached, silently, by the next "Use".
+  if( seed_resp )
+    m_method->setCurrentIndex( static_cast<int>(seed_resp->provenance.method) );
+  else if( m_seedDrf && m_seedDrf->isValid() && m_seedDrf->geometry() )
+    m_method->setCurrentIndex( static_cast<int>(Method::CurveTransfer) );
+
+  m_seedingFromDrf = true;
+  handleMethodChanged();   //row visibility for the selected method; clears m_result
+  m_seedingFromDrf = false;
+
+  if( seed_resp )
+  {
+    // The response the DRF already carries; showing it is the point of opening on its method.
+    m_result = seed_resp;
+    m_status->setText( WString::tr("mmr-status-existing") );
+    m_validationChanged.emit( true );
+    updateResponseChart();
+  }else
+  {
+    handleGeometryChanged();  //lets the no-MC transfer build itself, now that seeding is done
+  }
 }//MakeMcResponseForDrf constructor
 
 
@@ -391,6 +462,102 @@ Wt::Signal<std::shared_ptr<DetectorPeakResponse>> &MakeMcResponseForDrf::updated
 }
 
 
+bool MakeMcResponseForDrf::State::operator==( const State &rhs ) const
+{
+  return (method == rhs.method)
+         && (profile == rhs.profile)
+         && (precision == rhs.precision)
+         && (anchorAngles == rhs.anchorAngles)
+         && (chartMode == rhs.chartMode)
+         && (groundToMeasured == rhs.groundToMeasured)
+         && (customPrecision == rhs.customPrecision)
+         && (refDistance == rhs.refDistance)
+         && (chartDistance == rhs.chartDistance)
+         && (result == rhs.result)
+         && (status == rhs.status)
+         && (geometry == rhs.geometry);
+}//State::operator==
+
+
+MakeMcResponseForDrf::State MakeMcResponseForDrf::currentState() const
+{
+  State state;
+
+  state.method = m_method->currentIndex();
+  state.profile = m_profile->currentIndex();
+  state.precision = m_precision->currentIndex();
+  state.anchorAngles = m_anchorAngles->currentIndex();
+  state.chartMode = m_chartMode->currentIndex();
+  state.groundToMeasured = m_groundCb->isChecked();
+  state.customPrecision = m_customPrecision->text().toUTF8();
+  state.refDistance = m_refDistance->text().toUTF8();
+  state.chartDistance = m_chartDistance->text().toUTF8();
+  state.result = m_result;
+  state.status = m_status->text().toUTF8();
+  state.geometry = m_geometry->currentState();
+
+  return state;
+}//MakeMcResponseForDrf::currentState()
+
+
+void MakeMcResponseForDrf::setState( const State &state )
+{
+  m_restoringState = true;
+
+  // A generation that is still running would land on top of the state being restored; its finish
+  //  handler is stale-guarded by the generation id.
+  ++m_generationId;
+  if( m_cancelFlag )
+    m_cancelFlag->store( true );
+  m_progress->hide();
+  m_cancelBtn->hide();
+
+  m_method->setCurrentIndex( state.method );
+  m_profile->setCurrentIndex( state.profile );
+  m_precision->setCurrentIndex( state.precision );
+  m_anchorAngles->setCurrentIndex( state.anchorAngles );
+  m_chartMode->setCurrentIndex( state.chartMode );
+  m_groundCb->setChecked( state.groundToMeasured );
+  m_customPrecision->setText( WString::fromUTF8(state.customPrecision) );
+  m_refDistance->setText( WString::fromUTF8(state.refDistance) );
+  m_chartDistance->setText( WString::fromUTF8(state.chartDistance) );
+
+  m_geometry->setState( state.geometry );
+
+  const bool had_result = !!m_result;
+  m_result = state.result;
+
+  // Re-sync the per-method row visibility and the estimate/anchor text without going through
+  //  `handleMethodChanged`, which exists to *invalidate* a result on a user edit.
+  const Method method = selectedMethod();
+  m_profileRow->setHidden( method != Method::FullMc );
+  m_precRow->setHidden( method == Method::CurveTransfer );
+  m_anchorAnglesRow->setHidden( method != Method::QuickMc );
+  m_anchorInfoRow->setHidden( method != Method::CurveTransfer );
+  m_anchorRow->setHidden( method != Method::CurveTransfer );
+  m_generate->setHidden( method == Method::CurveTransfer );
+  m_generate->setEnabled( m_geometry->isValid() );
+  m_customPrecision->setHidden( m_precision->currentIndex() != 4 );
+
+  m_status->setText( WString::fromUTF8(state.status) );
+  updateAnchorInfo();
+  updateGroundingInfo();
+  updateEstimate();
+  updateResponseChart();
+
+  if( had_result != !!m_result )
+    m_validationChanged.emit( !!m_result );
+
+  m_restoringState = false;
+}//MakeMcResponseForDrf::setState(...)
+
+
+Wt::Signal<> &MakeMcResponseForDrf::userChanged()
+{
+  return m_userChanged;
+}
+
+
 MakeMcResponseForDrf::Method MakeMcResponseForDrf::selectedMethod() const
 {
   switch( m_method->currentIndex() )
@@ -409,6 +576,7 @@ void MakeMcResponseForDrf::handleMethodChanged()
   m_profileRow->setHidden( method != Method::FullMc );
   m_precRow->setHidden( method == Method::CurveTransfer );
   m_anchorAnglesRow->setHidden( method != Method::QuickMc );
+  m_anchorInfoRow->setHidden( method != Method::CurveTransfer );
   m_anchorRow->setHidden( method != Method::CurveTransfer );
 
   // The measured-curve transfer is instant and rebuilds automatically - no
@@ -433,6 +601,9 @@ void MakeMcResponseForDrf::handleMethodChanged()
   m_status->setText( "" );
 
   handleGeometryChanged();
+
+  if( !m_restoringState )
+    m_userChanged.emit();
 }//handleMethodChanged()
 
 
@@ -449,11 +620,16 @@ void MakeMcResponseForDrf::handleGeometryChanged()
 
   m_generate->setEnabled( m_geometry->isValid() );
   updateAnchorInfo();
+  updateGroundingInfo();
   updateEstimate();
 
-  // Auto-build the instant transfer whenever the inputs are usable.
-  if( (selectedMethod() == Method::CurveTransfer) && m_geometry->isValid() )
+  // Auto-build the instant transfer whenever the inputs are usable - except while the constructor
+  //  is still seeding, where a response the DRF already carries is about to be installed.
+  if( !m_seedingFromDrf && (selectedMethod() == Method::CurveTransfer) && m_geometry->isValid() )
     startGeneration();
+
+  if( !m_restoringState )
+    m_userChanged.emit();
 }//handleGeometryChanged()
 
 
@@ -501,6 +677,54 @@ void MakeMcResponseForDrf::updateAnchorInfo()
                             .arg( WString::fromUTF8(e.what()) ) );
   }
 }//updateAnchorInfo()
+
+
+bool MakeMcResponseForDrf::groundToMeasured() const
+{
+  return (m_groundCb && m_groundCb->isEnabled() && m_groundCb->isChecked());
+}//bool groundToMeasured() const
+
+
+void MakeMcResponseForDrf::updateGroundingInfo()
+{
+  if( !m_groundCb || !m_groundInfo || !m_groundRow || !m_groundInfoRow )
+    return;
+
+  // The measured-curve transfer IS anchored on the measured efficiency by construction, so a
+  //  separate grounding choice would be meaningless there - it has its own anchor row.
+  const bool applies = (selectedMethod() != Method::CurveTransfer);
+  m_groundRow->setHidden( !applies );
+  m_groundInfoRow->setHidden( !applies );
+  if( !applies )
+  {
+    m_groundInfo->setText( "" );
+    return;
+  }//if( !applies )
+
+  size_t npoints = 0;
+  bool curve_derived = false;
+  if( m_geometry->isValid() )
+  {
+    try
+    {
+      const ceelo::GeometryDescriptor gd = m_geometry->toDescriptor();
+      npoints = groundingPointsForDrf( m_seedDrf, gd, curve_derived ).size();
+    }catch( std::exception & )
+    {
+    }
+  }//if( m_geometry->isValid() )
+
+  m_groundCb->setEnabled( npoints > 0 );
+
+  if( npoints == 0 )
+    m_groundInfo->setText( WString::tr("mmr-ground-none") );
+  else if( !groundToMeasured() )
+    m_groundInfo->setText( WString::tr("mmr-ground-off") );
+  else
+    m_groundInfo->setText( WString::tr( curve_derived ? "mmr-ground-curve"
+                                                      : "mmr-ground-points" )
+                            .arg( static_cast<int>(npoints) ) );
+}//void updateGroundingInfo()
 
 
 double MakeMcResponseForDrf::refDistanceOverrideCm() const
@@ -575,14 +799,49 @@ void MakeMcResponseForDrf::updateResponseChart()
   m_chart->setSourceDistance( dist );
   m_chart->setIntrinsicEfficiency( m_chartMode->currentIndex() == 1 );
   m_chart->updateChart( preview );
+
+  // Start on the DRFs valid range, but no further than 3 MeV - above that the curves are mostly
+  //  empty chart.  Only the first showing picks a range (`updateChart` resets it from the DRFs
+  //  JSON extent), so re-draws for a mode/distance change dont undo the users zooming.
+  if( !m_chartRangeSet )
+  {
+    const double lower = std::max( 0.0, preview->lowerEnergy() );
+    double upper = preview->upperEnergy();
+    if( upper <= (lower + 100.0) )   //the DRF didnt declare a usable range
+      upper = 3000.0;
+    m_chart->setXAxisRange( lower, std::min( upper, 3000.0 ) );
+    m_chartRangeSet = true;
+  }//if( !m_chartRangeSet )
+
   m_chartBox->show();
 }//updateResponseChart()
+
+
+void MakeMcResponseForDrf::handleOptionChanged()
+{
+  updateEstimate();
+
+  if( !m_restoringState )
+    m_userChanged.emit();
+}//handleOptionChanged()
+
+
+void MakeMcResponseForDrf::handleChartOptionChanged()
+{
+  updateResponseChart();
+
+  if( !m_restoringState )
+    m_userChanged.emit();
+}//handleChartOptionChanged()
 
 
 void MakeMcResponseForDrf::handlePrecisionChanged()
 {
   m_customPrecision->setHidden( m_precision->currentIndex() != 4 );
   updateEstimate();
+
+  if( !m_restoringState )
+    m_userChanged.emit();
 }//handlePrecisionChanged()
 
 
@@ -796,8 +1055,9 @@ void MakeMcResponseForDrf::startGeneration()
   // Grounding anchors are captured NOW (value copies) - nothing from the
   //  widget tree crosses into the worker thread.
   bool curve_derived = false;
-  const vector<ceelo::GroundingPoint> ground_pts
-                      = groundingPointsForDrf( m_seedDrf, gd, curve_derived );
+  const vector<ceelo::GroundingPoint> ground_pts = groundToMeasured()
+                      ? groundingPointsForDrf( m_seedDrf, gd, curve_derived )
+                      : vector<ceelo::GroundingPoint>{};
 
   const string sessionId = wApp->sessionId();
   const string widgetId = id();
@@ -903,6 +1163,8 @@ void MakeMcResponseForDrf::handleGenerationFinished(
       m_status->setText( WString::tr("mmr-status-cancelled") );
     else
       m_status->setText( WString::tr("mmr-status-error").arg( WString::fromUTF8(errmsg) ) );
+
+    m_userChanged.emit();
     return;
   }//if( failed )
 
@@ -926,6 +1188,8 @@ void MakeMcResponseForDrf::handleGenerationFinished(
   }
 
   m_responseGenerated.emit( result );
+
+  m_userChanged.emit();   //a new response is state an undo/redo owner needs to capture
 }//handleGenerationFinished(...)
 
 
@@ -995,8 +1259,7 @@ MakeMcResponseForDrf *MakeMcResponseForDrfWindow::tool()
 
 
 MakeMcResponseForDrfWindow::MakeMcResponseForDrfWindow(
-                          std::shared_ptr<const DetectorPeakResponse> seed_drf,
-                          std::shared_ptr<const ceelo::GeometryDescriptor> geometry )
+                          std::shared_ptr<const DetectorPeakResponse> seed_drf )
  : AuxWindow( WString::tr("window-title-mc-response"),
              (AuxWindowProperties::TabletNotFullScreen
               | AuxWindowProperties::SetCloseable
@@ -1029,7 +1292,7 @@ MakeMcResponseForDrfWindow::MakeMcResponseForDrfWindow(
   }
 
   {
-    auto toolOwner = std::make_unique<MakeMcResponseForDrf>( viewer, seed_drf, geometry );
+    auto toolOwner = std::make_unique<MakeMcResponseForDrf>( viewer, seed_drf );
     m_tool = toolOwner.get();
     stretcher()->addWidget( std::move(toolOwner), 0, 0 );
   }

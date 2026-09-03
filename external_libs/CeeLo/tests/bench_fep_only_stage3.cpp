@@ -42,6 +42,7 @@
 // Usage: bench_fep_only_stage3 [out_csv] [precision=0.003] [max_cpu_s=60]
 
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "io/DetectorResponse.h"
 #include "io/ResponseGenerator.h"
 #include "materials/Material.h"
@@ -120,6 +121,7 @@ int main(int argc, char** argv) {
                 EfficiencyResult res[2];  // [0]=full, [1]=fep_only
                 for (int mode = 0; mode < 2; ++mode) {
                     EfficiencyCalculator calc;
+                    calc.set_fep_window_keV(kTestFepWindowKeV);
                     std::vector<std::unique_ptr<Material>> mats;
                     ResponseGenerator::configure_calculator(calc, gd, mats);
                     calc.set_point_source(src);

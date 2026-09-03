@@ -167,6 +167,42 @@ ceelo::MaterialSpec toCeeloMaterial( const AngleMaterial &mat,
 }//toCeeloMaterial(...)
 
 
+double pinnedEfficiencyDistanceCm( const std::shared_ptr<const DetectorPeakResponse> &drf,
+                                   const ceelo::GeometryDescriptor &geom )
+{
+  if( !drf || !drf->isValid() )
+    return -1.0;
+
+  // Raw measured points all taken at one distance: that IS the characterization geometry.
+  const std::shared_ptr<const MeasuredDrfPoints> raw = drf->measuredPoints();
+  if( raw )
+  {
+    double min_d = std::numeric_limits<double>::max(), max_d = 0.0, sum_d = 0.0;
+    size_t n = 0;
+    for( const MeasuredEffPoint &p : raw->points() )
+    {
+      if( (p.distance > 0.0f) && (p.efficiency > 0.0f) && (p.energy > 0.0f) )
+      {
+        min_d = std::min( min_d, double(p.distance) );
+        max_d = std::max( max_d, double(p.distance) );
+        sum_d += p.distance;
+        n += 1;
+      }
+    }
+
+    if( (n >= 2) && (max_d < 1.01*min_d) )
+      return (sum_d / n) / PhysicalUnits::cm;
+  }//if( raw )
+
+  if( (drf->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute)
+      && (drf->absoluteEfficiencyDistance() > 0.0) )
+    return drf->absoluteEfficiencyDistance() / PhysicalUnits::cm;
+
+  const double a_cm = geom.transverse_half_extent();
+  return std::max( 50.0, 10.0 * a_cm );
+}//pinnedEfficiencyDistanceCm(...)
+
+
 TransferAnchor transferAnchorForDrf(
                       const std::shared_ptr<const DetectorPeakResponse> &drf,
                       const ceelo::GeometryDescriptor &geom,
@@ -369,6 +405,39 @@ ceelo::AnchorCurve totalTransferAnchorForDrf(
 
   return tot_curve;
 }//totalTransferAnchorForDrf(...)
+
+
+bool attachCurveTransferResponse( DetectorPeakResponse &drf )
+{
+  if( drf.ceeloResponse() )
+    return false;   //already has support; a generated response is better than this one
+
+  const shared_ptr<const ceelo::GeometryDescriptor> geom = drf.geometry();
+  if( !geom || !drf.isValid() || drf.isFixedGeometry() )
+    return false;
+
+  try
+  {
+    // `transferAnchorForDrf` takes a shared_ptr; alias one that does not own `drf` - it only reads
+    //  it, and does not outlive this call.
+    const shared_ptr<const DetectorPeakResponse> drf_ptr( shared_ptr<const void>(), &drf );
+
+    const TransferAnchor anchor = transferAnchorForDrf( drf_ptr, *geom, -1.0 );
+    const ceelo::AnchorCurve tot_curve = totalTransferAnchorForDrf( drf_ptr, anchor );
+    const shared_ptr<ceelo::DetectorResponse> resp
+                    = makeTransferResponse( *geom, anchor, tot_curve, drf.name() );
+    if( !resp )
+      return false;
+
+    drf.setCeeloResponse( resp );
+    return true;
+  }catch( std::exception & )
+  {
+    // No usable anchor (too few points, a geometry the ray-tracer rejects, ...).  The detector is
+    //  still perfectly good; it just keeps the flat-disk treatment it would have had anyway.
+    return false;
+  }
+}//attachCurveTransferResponse(...)
 
 
 std::shared_ptr<ceelo::DetectorResponse> makeTransferResponse(

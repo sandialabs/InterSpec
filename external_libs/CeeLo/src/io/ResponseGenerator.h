@@ -209,6 +209,12 @@ struct GenerationOptions {
     unsigned num_threads = 0;       ///< per-node MC threads (0 = auto)
     int kernel_n_rays = 2048;       ///< evaluation-time quadrature rays
 
+    /// Half-width (keV) of the full-energy-peak window the MC scores FEP with.
+    /// Applied to the EfficiencyCalculator (which keeps the transport early
+    /// kill in step) and recorded in ResponseProvenance.  See
+    /// physics/FepWindow.h.
+    double fep_window_keV = kDefaultFepWindowKeV;
+
     // ---- closed-loop refinement (D-b) --------------------------------------
     /// Opt-in closed-loop generation: coarse/full start -> structured probe ->
     /// attribute -> incremental refine -> re-certify. FALSE (default) runs the

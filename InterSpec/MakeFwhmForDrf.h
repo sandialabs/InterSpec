@@ -47,8 +47,10 @@ class DetectorPeakResponse;
 namespace Wt
 {
   class WText;
+  class WCheckBox;
   class WComboBox;
   class WTableView;
+  class WPushButton;
 }//namespace Wt
 
 /* Adds FWHM functional information to the DRF passed in; resulting
@@ -57,13 +59,32 @@ namespace Wt
 class MakeFwhmForDrf : public Wt::WContainerWidget
 {
 public:
+  /** What the tool does with the DRF and the spectrum when it opens. */
+  enum class InitialFit : int
+  {
+    /** Run the automated peak search, then fit the result. */
+    SearchAndFit,
+
+    /** Fit the users existing peaks; the automated search is left to
+     #startAutomatedPeakSearch. */
+    FitUserPeaks,
+
+    /** Show the FWHM the DRF already has (or "None" when it has none), and fit only while the
+     "Fit FWHM" checkbox this mode adds is checked - which it starts out being only when the DRF has
+     no FWHM of its own.  For editors of an existing detector, where looking at the FWHM must not
+     cost the user the one they already had.  An "Original FWHM" button appears whenever fitting is
+     off and the equation has drifted from what the DRF came in with.
+     */
+    ShowExisting
+  };//enum class InitialFit
+
   /** @param narrow_layout When true the peak table uses abbreviated column headers and turns off
    sorting, so the columns fit where there is little horizontal room (phones, and the
    "Modify Detector Response" dialog, where this tool shares the width with a side menu and the
    equation controls).  Wt only renders the header sort handle for sortable columns, so turning
    sorting off is what reclaims that space.
    */
-  MakeFwhmForDrf( const bool auto_fit_peaks,
+  MakeFwhmForDrf( const InitialFit initial_fit,
                  InterSpec *viewer,
                  std::shared_ptr<DetectorPeakResponse> drf,
                  const bool narrow_layout );
@@ -72,6 +93,18 @@ public:
 
   Wt::Signal<bool> &validationChanged();
   bool isValidFwhm() const;
+
+  /** Emitted whenever a user edit changes this tools state, but only when the tool is embedded in
+   an owner that has taken over undo/redo for it (see #setOwnerHandlesUndoRedo).  Connect this, and record
+   the step from #currentState / #setState, when this tool is a section of a larger dialog.
+   */
+  Wt::Signal<> &stateChanged();
+
+  /** Tells this tool that its owner records undo/redo steps for it, so it should stop registering
+   its own.  Its own steps resolve their target through `InterSpec::fwhmFromForegroundWindow`, which
+   for an embedded tool would pop open the standalone FWHM window instead of reaching this one.
+   */
+  void setOwnerHandlesUndoRedo( const bool owner_handles );
   
   void setToDrf();
   Wt::Signal<std::shared_ptr<DetectorPeakResponse>> &updatedDrf();
@@ -125,9 +158,30 @@ protected:
   void handleSqrtEqnOrderChange();
   
   void coefficientManuallyChanged( const int coef_num );
-  
+
+  /** The "Fit FWHM" checkbox was toggled. */
+  void handleFitCheckChanged();
+
+  /** Puts the equation type, term count and coefficients back to what the DRF came in with. */
+  void restoreOriginalFwhm();
+
+  /** Whether the equation should track a fit of the peak table.  Always true where there is no
+   "Fit FWHM" checkbox (i.e. everywhere but `InitialFit::ShowExisting`). */
+  bool fittingEnabled() const;
+
+  /** Enables the "Fit FWHM" checkbox only when a fit is possible (a real equation form, and a
+   foreground to find peaks in), and shows the "Original FWHM" button only when fitting is off and
+   the equation differs from the DRFs.  A no-op when neither was created. */
+  void updateFitControls();
+
   void scheduleRefit();
   void doRefitWork();
+
+  /** Pushes #m_parameters / #m_uncertainties into the coefficient edits, the equation text and the
+   chart.  Split out of #doRefitWork so the tool can also display coefficients it did not fit -
+   e.g. the ones the DRF arrived with.
+   */
+  void updateEquationDisplay();
   void setEquationToChart();
   
   std::vector<std::shared_ptr<const PeakDef>> get_user_peaks();
@@ -147,6 +201,12 @@ protected:
   
 protected:
   InterSpec *m_interspec;
+
+  /** How the tool started up; `ShowExisting` is what adds the "Fit FWHM" button. */
+  const InitialFit m_initial_fit;
+
+  /** See #setOwnerHandlesUndoRedo. */
+  bool m_owner_handles_undo_redo;
 
   bool m_currently_searching;
 
@@ -172,6 +232,17 @@ protected:
   
   Wt::WComboBox *m_fwhmEqnType;
   Wt::WComboBox *m_sqrtEqnOrder;
+
+  /** "Fit FWHM" and "Original FWHM"; only created for `InitialFit::ShowExisting`. */
+  Wt::WCheckBox *m_fitCb;
+  Wt::WPushButton *m_originalBtn;
+
+  /** What the DRF arrived with, so "Original FWHM" can put it back: the equation-type combo index
+   (`kNumResolutionFnctForm` when the DRF had no FWHM), the term-count combo index (-1 when not a
+   sqrt-polynomial), and the coefficients. */
+  int m_original_form_index;
+  int m_original_sqrt_order;
+  std::vector<float> m_original_parameters;
   std::vector<NativeFloatSpinBox *> m_parEdits;
   std::vector<float> m_parameters;
   std::vector<float> m_uncertainties;
@@ -183,6 +254,7 @@ protected:
   FwhmPeaksModel *m_model;
   
   Wt::Signal<bool> m_validationChanged;
+  Wt::Signal<> m_stateChanged;
   Wt::Signal<std::shared_ptr<DetectorPeakResponse>> m_updatedDrf;
   
   std::shared_ptr<const ToolState> m_current_state;

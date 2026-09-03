@@ -37,6 +37,7 @@
 /// Build:
 ///   cmake --build build -j8 --target generate_all_spectra
 
+#include "physics/FepWindow.h"
 #include "efficiency/EfficiencyCalculator.h"
 #include "materials/Material.h"
 #include "transport/PhotonTransport.h"
@@ -119,7 +120,8 @@ static HistogramResult run_histogram(
     hist.bin_width_keV = bin_width_keV;
     hist.n_total = num_events;
 
-    constexpr double kFepTol = 1.5; // keV
+    // Same window CeeLo scores FEP with, so a generated spectrum and the library agree.
+    constexpr double kFepTol = ceelo::kDefaultFepWindowKeV;
 
     unsigned n_threads = std::thread::hardware_concurrency();
     if (n_threads < 1) n_threads = 1;

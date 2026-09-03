@@ -98,13 +98,13 @@ TransportResult transport_photon(
     // FEP early termination: capture initial energy so we can detect when
     // enough energy has escaped scoring to make FEP impossible.
     const double initial_energy_keV = energy_keV;
-    constexpr double kFepEscapeTol = 1.5; // keV — must match kFepTolerance in EfficiencyCalculator
 
     // Returns true if FEP is impossible: even if all remaining energy
     // (max_remaining_keV) deposits in scoring, the deficit exceeds tolerance.
     auto fep_killed = [&](double max_remaining_keV) -> bool {
         return config.fep_only_mode && !config.disable_fep_early_kill &&
-               (initial_energy_keV - result.energy_deposited_scoring - max_remaining_keV) > kFepEscapeTol;
+               (initial_energy_keV - result.energy_deposited_scoring - max_remaining_keV)
+                    > config.fep_window_keV;
     };
 
     double energy_MeV = energy_keV * 1e-3;

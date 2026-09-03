@@ -55,7 +55,6 @@
 #include "cascade/SandiaDecayCascade.h"
 
 #include "InterSpec/PeakDef.h"
-#include "InterSpec/Integrate.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/ReactionGamma.h"
@@ -67,6 +66,18 @@
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/GammaInteractionCalc.h"
+
+// Pre-computing transport just prints out `integral_energies` and `integral_values` to stdout;
+//  only used during development to regenerate those arrays.  At file scope so the conditional
+//  include below is legal (a #include inside a function body is not).
+#define PRE_COMPUTE_BACKGROUND_TRANSPORT 0
+#define USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT 1
+
+// Only that developer-only path needs the volumetric calculator's definition, so this (large)
+//  template header is pulled in just for it rather than for every build.
+#if( PRE_COMPUTE_BACKGROUND_TRANSPORT || !USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
+#include "InterSpec/GammaInteractionCalc_imp.hpp"
+#endif
 #include "InterSpec/PhysicalUnitsLocalized.h"
 
 
@@ -1304,12 +1315,6 @@ const vector<OtherRefLine> &getBackgroundRefLines()
     answer.reserve( 2100 ); //we actaully need 2062, when rel_threshold==1.0E-17;
     
     
-// Pre-computing transport just prints out `integral_energies` and `integral_values` to stdout
-//  Only used for development purposes to get the aformentioned arrays.
-#define PRE_COMPUTE_BACKGROUND_TRANSPORT 0
-    
-#define USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT 1
-    
     //const double start_wall = SpecUtils::get_wall_time();
     //const double start_cpu = SpecUtils::get_cpu_time();
     
@@ -1324,22 +1329,25 @@ const vector<OtherRefLine> &getBackgroundRefLines()
     //
     // - Using precomputed transport, and single thread: wall=0.010582, cpu=0.009713
     
-    DistributedSrcCalc soil_sphere;
+    // Uses the same templated volumetric calculator the Act/Shield fit does; there is no longer a
+    //  separate double-only one to reach for.
+    GammaInteractionCalc::DistributedSrcCalcT<double> soil_sphere;
     soil_sphere.m_geometry = GeometryType::Spherical;
     soil_sphere.m_materialIndex = 0;
     soil_sphere.m_attenuateForAir = false;
     soil_sphere.m_airTransLenCoef = 0.0;
     soil_sphere.m_isInSituExponential = false;
     soil_sphere.m_inSituRelaxationLength = 0.0;
-    soil_sphere.m_detectorRadius  = 5.0 * PhysicalUnits::cm;
-    soil_sphere.m_observationDist = 200.0 * PhysicalUnits::cm;
-    
+    soil_sphere.m_detector = GammaInteractionCalc::detector_geom_from_config<double>( GeometryType::Spherical,
+                                                                200.0 * PhysicalUnits::cm,
+                                                                5.0 * PhysicalUnits::cm, 0.0 );
+
     const double sphereRad = 100.0 * PhysicalUnits::cm;
-    soil_sphere.m_dimensionsTransLenAndType.push_back( {
-      {sphereRad,0.0,0.0},
-      0.0,
-      DistributedSrcCalc::ShellType::Material
-    } );
+    GammaInteractionCalc::DistributedSrcCalcT<double>::ShellInfo soil_shell;
+    soil_shell.dims = { sphereRad, 0.0, 0.0 };
+    soil_shell.trans_len_coef = 0.0;   //set per-energy below
+    soil_shell.type = GammaInteractionCalc::ShellType::Material;
+    soil_sphere.m_shells.push_back( soil_shell );
 #endif // !USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT
   
 #if( USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
@@ -1410,22 +1418,12 @@ const vector<OtherRefLine> &getBackgroundRefLines()
     vector<double> energies(1,0.0), integrals(1,0.0), errors(1,0.0);
     for( double energy = 5; energy < 3500; energy += (energy < 200 ? 1 : 5) )
     {
-      DistributedSrcCalc sphere = soil_sphere;
-      double transLenCoef = GammaInteractionCalc::transmition_length_coefficient( soil, energy );
-      get<1>( sphere.m_dimensionsTransLenAndType[0] ) = transLenCoef;
-      
-      int nregions, neval, fail;
-      double integral, error, prob;
-      void *userdata = (void *)&sphere;
-      
-      const int ndim = 2;  //the number of dimensions of the integral.
-      const double epsrel = 1e-8, epsabs = -1.0; //the requested relative and absolute accuracies
-      const int mineval = 0, maxeval = 5000000;   //the min and (approx) max number of integrand evaluations allowed.
-      
-      
-      Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_spherical, userdata, epsrel, epsabs,
-                                Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
-                                fail, integral, error, prob );
+      GammaInteractionCalc::DistributedSrcCalcT<double> sphere = soil_sphere;
+      sphere.m_shells[0].trans_len_coef
+                    = GammaInteractionCalc::transmition_length_coefficient( soil, energy );
+
+      GammaInteractionCalc::self_shielding_integration_imp<double>( sphere, 1.0E-8, 5000000 );
+      const double integral = sphere.integral;
       
       if( fabs(integral - prev_integral) > allowed_error_fraction*prev_integral )
       {
@@ -1540,11 +1538,11 @@ const vector<OtherRefLine> &getBackgroundRefLines()
           const SandiaDecay::ProductType part_type = particle.type;
           
 #if( !USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT )
-          // Creating a `DistributedSrcCalc` here doesnt seem any slower than trying to share them
+          // Creating a calculator here doesnt seem any slower than trying to share them
           //  between threads and such; so we'll just make a copy for each thread.
-          DistributedSrcCalc sphere = soil_sphere;
-          const double transLenCoef = GammaInteractionCalc::transmition_length_coefficient( soil, energy );
-          get<1>( sphere.m_dimensionsTransLenAndType[0] ) = transLenCoef;
+          GammaInteractionCalc::DistributedSrcCalcT<double> sphere = soil_sphere;
+          sphere.m_shells[0].trans_len_coef
+                    = GammaInteractionCalc::transmition_length_coefficient( soil, energy );
 #endif
           
           auto do_calc = [soil, energy, calc_index, transition, part_type, br,
@@ -1565,18 +1563,9 @@ const vector<OtherRefLine> &getBackgroundRefLines()
 //            << (index >= integral_energies.size() ? integral_energies[index-1] : integral_energies[index])
 //            << "] keV, with value integral=" << integral << endl;
 #else
-            int nregions, neval, fail;
-            double integral, error, prob;
-            void *userdata = (void *)&sphere;
-            
-            // Some constants for integration
-            const int ndim = 2;  //the number of dimensions of the integral.
-            const double epsrel = 1e-4, epsabs = -1.0; //the requested relative and absolute accuracies
-            const int mineval = 0, maxeval = 500000;   //the min and (approx) max number of integrand evaluations allowed.
-            
-            Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_spherical, userdata, epsrel, epsabs,
-                                      Integrate::LastImportanceFcnt, mineval, maxeval, nregions, neval,
-                                      fail, integral, error, prob );
+            GammaInteractionCalc::DistributedSrcCalcT<double> local_sphere = sphere;
+            GammaInteractionCalc::self_shielding_integration_imp<double>( local_sphere, 1.0E-4, 500000 );
+            const double integral = local_sphere.integral;
             //printf("%s: %.1f keV -> br=%.4f.\n", nuc->symbol.c_str(), energy, br*integral );
 #endif // USE_PRE_COMPUTED_BACKGROUND_LINE_TRANSPORT / else
             

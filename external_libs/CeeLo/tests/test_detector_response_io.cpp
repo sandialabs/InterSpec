@@ -876,3 +876,150 @@ BOOST_AUTO_TEST_CASE(certificate_invariant_content_hash) {
     BOOST_CHECK(!reload->certificate.empty());
     BOOST_CHECK_EQUAL(reload->content_hash(), h_bare);
 }
+
+// --- GeometryDescriptor standalone XML --------------------------------------
+//
+// A host can store a detector's shape before (or without) any response having
+// been generated for it, so the geometry has its own <CeeLoGeometry> codec.
+// It shares write_detector_node/read_detector_node with DetectorResponse's
+// codec, and these tests are what pins that sharing down.
+
+BOOST_AUTO_TEST_CASE(geometry_xml_round_trip_preserves_every_field) {
+    const GeometryDescriptor gd = gem35_descriptor();
+    const GeometryDescriptor back =
+        GeometryDescriptor::from_xml_string(gd.to_xml_string());
+
+    BOOST_CHECK(back.shape == gd.shape);
+    BOOST_CHECK(back.reference_point == gd.reference_point);
+    BOOST_CHECK(back.symmetry == gd.symmetry);
+    BOOST_CHECK_EQUAL(back.crystal_material_index, gd.crystal_material_index);
+    BOOST_REQUIRE_EQUAL(back.dimensions_cm.size(), gd.dimensions_cm.size());
+    for (size_t i = 0; i < gd.dimensions_cm.size(); ++i)
+        BOOST_CHECK_CLOSE(back.dimensions_cm[i], gd.dimensions_cm[i], 1e-9);
+    BOOST_CHECK_CLOSE(back.bullet_radius_cm, gd.bullet_radius_cm, 1e-9);
+
+    BOOST_REQUIRE(back.bore.has_value());
+    BOOST_CHECK_CLOSE(back.bore->radius, gd.bore->radius, 1e-9);
+    BOOST_CHECK_CLOSE(back.bore->depth, gd.bore->depth, 1e-9);
+    BOOST_CHECK(back.bore->rounded_tip == gd.bore->rounded_tip);
+
+    BOOST_REQUIRE(back.dead_layer.has_value());
+    BOOST_CHECK_CLOSE(back.dead_layer->front, gd.dead_layer->front, 1e-9);
+    BOOST_CHECK_CLOSE(back.dead_layer->side, gd.dead_layer->side, 1e-9);
+    BOOST_CHECK_CLOSE(back.dead_layer->back, gd.dead_layer->back, 1e-9);
+
+    BOOST_REQUIRE_EQUAL(back.materials.size(), gd.materials.size());
+    BOOST_CHECK_EQUAL(back.materials[0].name, gd.materials[0].name);
+    BOOST_CHECK_CLOSE(back.materials[0].density_g_per_cm3,
+                      gd.materials[0].density_g_per_cm3, 1e-9);
+    BOOST_REQUIRE_EQUAL(back.materials[0].composition.size(),
+                        gd.materials[0].composition.size());
+    for (size_t i = 0; i < gd.materials[0].composition.size(); ++i) {
+        BOOST_CHECK_EQUAL(int(back.materials[0].composition[i].Z),
+                          int(gd.materials[0].composition[i].Z));
+        BOOST_CHECK_CLOSE(back.materials[0].composition[i].mass_fraction,
+                          gd.materials[0].composition[i].mass_fraction, 1e-9);
+    }
+
+    // Serializing the reloaded descriptor must reproduce the same bytes --
+    // that, not field-by-field equality, is what keeps a stored geometry stable.
+    BOOST_CHECK_EQUAL(back.to_xml_string(), gd.to_xml_string());
+    // And it still builds.
+    std::vector<std::unique_ptr<Material>> owned;
+    BOOST_CHECK_NO_THROW(back.build_geometry(owned));
+}
+
+BOOST_AUTO_TEST_CASE(geometry_xml_round_trips_layers_and_collimator) {
+    // The optional blocks the GEM35 descriptor does not exercise.
+    GeometryDescriptor gd = gem35_descriptor();
+    gd.materials.push_back(MaterialSpec::from(make_Aluminum()));
+    gd.layers = {LayerSpec{1, 0.1, 0.15, -0.2, 7.0},
+                 LayerSpec{1, 0.05, 0.05, -0.3, 7.1}};
+    gd.collimator = CollimatorSpec{1, 0.4, -1.0, 0.0};
+    gd.reference_point = ReferencePoint::EndcapFront;
+    gd.symmetry = ResponseSymmetry::Quadrant;
+
+    const GeometryDescriptor back =
+        GeometryDescriptor::from_xml_string(gd.to_xml_string());
+    BOOST_CHECK(back.reference_point == ReferencePoint::EndcapFront);
+    BOOST_CHECK(back.symmetry == ResponseSymmetry::Quadrant);
+    BOOST_REQUIRE_EQUAL(back.layers.size(), 2u);
+    BOOST_CHECK_CLOSE(back.layers[1].front_thickness_cm, 0.05, 1e-9);
+    BOOST_CHECK_CLOSE(back.layers[1].z_end_cm, 7.1, 1e-9);
+    BOOST_REQUIRE(back.collimator.has_value());
+    BOOST_CHECK_CLOSE(back.collimator->side_thickness_cm, 0.4, 1e-9);
+    BOOST_CHECK_EQUAL(back.to_xml_string(), gd.to_xml_string());
+}
+
+BOOST_AUTO_TEST_CASE(geometry_xml_rejects_wrong_root) {
+    // A DetectorResponse payload is NOT a <CeeLoGeometry> document; failing
+    // loudly beats silently returning a default-constructed descriptor.
+    auto r = make_synthetic_nai();
+    BOOST_CHECK_THROW(GeometryDescriptor::from_xml_string(r->to_xml_string()),
+                      std::runtime_error);
+    BOOST_CHECK_THROW(GeometryDescriptor::from_xml_string("<CeeLoGeometry/>"),
+                      std::runtime_error);
+}
+
+BOOST_AUTO_TEST_CASE(geometry_xml_matches_response_embedded_detector) {
+    // Both codecs write the same <Detector> element; a geometry stored on its
+    // own must be byte-identical to the one inside a stored response.
+    auto r = make_synthetic_nai(0.5, /*with_grounding=*/true);
+    const std::string gxml = r->descriptor.to_xml_string();
+    const std::string rxml = r->to_xml_string();
+
+    const size_t b = gxml.find("<Detector");
+    BOOST_REQUIRE(b != std::string::npos);
+    const size_t e = gxml.rfind("</Detector>");
+    BOOST_REQUIRE(e != std::string::npos);
+    const std::string detector_block = gxml.substr(b, e + 11 - b);
+    BOOST_CHECK(rxml.find(detector_block) != std::string::npos);
+}
+
+// --- ProductionMethod -------------------------------------------------------
+
+BOOST_AUTO_TEST_CASE(production_method_round_trips) {
+    // Recorded, not inferred: a curve transfer and a quick-MC transfer leave
+    // indistinguishable payloads, so the value has to survive the file.
+    for (const ProductionMethod m : {ProductionMethod::FullMc,
+                                     ProductionMethod::QuickMcTransfer,
+                                     ProductionMethod::CurveTransfer}) {
+        auto r = make_synthetic_nai();
+        r->provenance.method = m;
+        std::shared_ptr<DetectorResponse> back =
+            DetectorResponse::from_xml_string(r->to_xml_string());
+        BOOST_CHECK(back->provenance.method == m);
+    }
+}
+
+BOOST_AUTO_TEST_CASE(production_method_absent_reads_as_full_mc) {
+    // Files written before the attribute existed are full-MC responses.
+    auto r = make_synthetic_nai();
+    std::string xml = r->to_xml_string();
+    const size_t at = xml.find(" method=\"full_mc\"");
+    BOOST_REQUIRE(at != std::string::npos);
+    xml.erase(at, std::string(" method=\"full_mc\"").size());
+    std::shared_ptr<DetectorResponse> back =
+        DetectorResponse::from_xml_string(xml);
+    BOOST_CHECK(back->provenance.method == ProductionMethod::FullMc);
+}
+
+BOOST_AUTO_TEST_CASE(fep_window_round_trips_and_defaults) {
+    auto r = make_synthetic_nai();
+    r->provenance.fep_window_keV = 1.5;
+    std::shared_ptr<DetectorResponse> back =
+        DetectorResponse::from_xml_string(r->to_xml_string());
+    BOOST_CHECK_CLOSE(back->provenance.fep_window_keV, 1.5, 1e-9);
+
+    // Absent (pre-attribute files): fall back to the library default rather
+    // than 0, which would make every stored FEP look like a delta function.
+    std::string xml = r->to_xml_string();
+    const size_t at = xml.find(" fepWindowKeV=");
+    BOOST_REQUIRE(at != std::string::npos);
+    const size_t end = xml.find('"', xml.find('"', at) + 1);
+    xml.erase(at, end + 1 - at);
+    std::shared_ptr<DetectorResponse> back2 =
+        DetectorResponse::from_xml_string(xml);
+    BOOST_CHECK_CLOSE(back2->provenance.fep_window_keV,
+                      kDefaultFepWindowKeV, 1e-9);
+}

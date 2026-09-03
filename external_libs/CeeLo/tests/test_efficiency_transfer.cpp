@@ -278,6 +278,7 @@ BOOST_AUTO_TEST_CASE(recapture_response_reproduces_total_anchor) {
 
 #ifdef CEELO_RUN_MC_TESTS
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "io/ResponseGenerator.h"
 
 // Coarse MC anchor on-axis, transfer to two far-field targets, compare to
@@ -288,6 +289,7 @@ BOOST_AUTO_TEST_CASE(mc_consistency) {
     const Geometry geom = gd.build_geometry(owned);
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     ResponseGenerator::configure_calculator(calc, gd, owned);
 
     const double a_ext = 3.81 + 0.05;
@@ -328,3 +330,96 @@ BOOST_AUTO_TEST_CASE(mc_consistency) {
     }
 }
 #endif  // CEELO_RUN_MC_TESTS
+
+
+/** The per-ray decomposition must reproduce the thing it decomposes, exactly.
+
+ A host that assembles the kernel itself - to carry a per-ray source transmission of its own scalar
+ type, which the std::function in kernel_K cannot - relies on
+     eps_fep   == fep_prefactor   * sum(fep_ray_weights)
+     eps_total == total_prefactor * sum(total_ray_weights)
+ If those ever drift apart, every such host is silently wrong with no symptom at the seam.
+
+ Covers ALL THREE total tiers.  That is the point of the test as much as the identity is: the tiers
+ disagree about which MuChoice the total kernel uses (EtaTotTable takes Total, the others
+ NoRayleigh) and about the scatter-in recapture, and a caller that assembled the wrong pair would
+ get a plausible number with no error.  Production MC-parameterized responses are EtaTotTable, which
+ make_transfer_response never produces - hence the synthesized case.
+ */
+BOOST_AUTO_TEST_CASE(ray_weight_decomposition_matches_full_query) {
+    const GeometryDescriptor gd = nai3x3_descriptor();
+    const double a_ext = 3.81 + 0.05;
+    const Eigen::Vector3d ref(0.0, 0.0, -10.0 * a_ext);
+
+    TransferResponseOptions opts;
+    opts.detector_name = "nai3x3-decomposition";
+
+    // KernelExact: no total anchor.
+    const std::shared_ptr<DetectorResponse> kernel_exact =
+        make_transfer_response(gd, make_anchor(), ref, nullptr, opts);
+    BOOST_REQUIRE(kernel_exact);
+    BOOST_REQUIRE(kernel_exact->tot_eff.tier == TotEffTier::KernelExact);
+
+    // BCurve: a total anchor scaled off the FEP one (values are irrelevant to the identity).
+    const AnchorCurve tot_anchor = make_anchor(4.0);
+    const std::shared_ptr<DetectorResponse> bcurve =
+        make_transfer_response(gd, make_anchor(), ref, &tot_anchor, opts);
+    BOOST_REQUIRE(bcurve);
+    BOOST_REQUIRE(bcurve->tot_eff.tier == TotEffTier::BCurve);
+
+    // EtaTotTable: the tier production MC responses use, which no transfer producer emits.  The
+    //  identity is algebraic, so any POPULATED eta table exercises the branch - reuse the FEP one.
+    const std::shared_ptr<DetectorResponse> etatable =
+        make_transfer_response(gd, make_anchor(), ref, &tot_anchor, opts);
+    BOOST_REQUIRE(etatable);
+    etatable->tot_eff.eta_tot = etatable->eta_fep;
+    etatable->tot_eff.tier = TotEffTier::EtaTotTable;
+    etatable->tot_eff.finalize();
+
+    struct Case { const char* name; const std::shared_ptr<DetectorResponse>* resp; };
+    const Case cases[] = { {"KernelExact", &kernel_exact},
+                           {"BCurve",      &bcurve},
+                           {"EtaTotTable", &etatable} };
+
+    for (const Case& c : cases) {
+        const DetectorResponse& resp = **c.resp;
+        double worst_fep = 0.0, worst_tot = 0.0;
+
+        for (const double d_cm : {5.0, 20.0, 80.0}) {
+            for (const double cos_theta : {1.0, 0.7, 0.2}) {
+                const Eigen::Vector3d pos =
+                    resp.query_position(std::acos(cos_theta), 0.0, d_cm);
+                const ApertureQuadrature q = resp.make_quadrature(pos);
+
+                for (const double E : {60.0, 300.0, 1000.0}) {
+                    std::vector<double> w;
+                    std::vector<Eigen::Vector3d> dirs;
+
+                    resp.fep_ray_weights(E, q, w, dirs);
+                    BOOST_REQUIRE_EQUAL(w.size(), dirs.size());
+                    double k = 0.0;
+                    for (double wi : w) k += wi;
+                    const double full = resp.eps_fep_at(E, pos, q).value;
+                    if (full > 0.0) {
+                        const double got = resp.fep_prefactor(E, pos, q).value * k;
+                        worst_fep = std::max(worst_fep, std::fabs(got / full - 1.0));
+                    }
+
+                    resp.total_ray_weights(E, q, w, dirs);
+                    double kt = 0.0;
+                    for (double wi : w) kt += wi;
+                    const double full_t = resp.eps_total_at(E, pos, q).value;
+                    if (full_t > 0.0) {
+                        const double got_t = resp.total_prefactor(E, pos, q).value * kt;
+                        worst_tot = std::max(worst_tot, std::fabs(got_t / full_t - 1.0));
+                    }
+                }
+            }
+        }
+
+        BOOST_TEST_MESSAGE("decomposition (" << c.name << "): worst FEP rel-diff " << worst_fep
+                           << ", worst total " << worst_tot);
+        BOOST_CHECK_MESSAGE(worst_fep < 1.0e-12, c.name << ": FEP decomposition off by " << worst_fep);
+        BOOST_CHECK_MESSAGE(worst_tot < 1.0e-12, c.name << ": total decomposition off by " << worst_tot);
+    }
+}

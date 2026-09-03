@@ -27,10 +27,10 @@
  trace-source integration tests.
 
  These fixtures define a matrix of {geometry, shell-stack, energy, distance}
- scenarios, and a builder that constructs a `DistributedSrcCalc` the same way
+ scenarios, and a builder that constructs a `DistributedSrcCalcT<double>` the same way
  `ShieldingSourceChi2Fcn::energy_chi_contributions` does.  They are used to:
-  - record Cuhre baseline integral values (regression net),
-  - validate any replacement integration backend against those baselines,
+  - hold the recorded Cuhre baseline integral values (regression net) that the production
+    adaptive-GL backend is checked against,
   - exercise off-axis and effective-AN/AD extensions on identical geometry.
  */
 
@@ -102,24 +102,25 @@ struct VolumetricSrcSpec
 };//struct VolumetricSrcSpec
 
 
-/** Builds a `DistributedSrcCalc` from a scenario, mirroring how
+/** Builds a `DistributedSrcCalcT<double>` from a scenario, mirroring how
  `ShieldingSourceChi2Fcn::energy_chi_contributions` populates one.
  `m_srcVolumetricActivity` is set to 1.0 so `integral` is directly comparable.
 
+ (This used to build the double-only `DistributedSrcCalc` and convert; that class is gone - the
+ templated calculator is the single volumetric model - so it is built directly now.)
+
  Throws std::runtime_error on invalid specs or unknown materials.
  */
-inline GammaInteractionCalc::DistributedSrcCalc
-   make_distributed_src_calc( const VolumetricSrcSpec &spec, const MaterialDB &matdb )
+inline GammaInteractionCalc::DistributedSrcCalcT<double>
+   make_distributed_src_calc_t( const VolumetricSrcSpec &spec, const MaterialDB &matdb )
 {
-  GammaInteractionCalc::DistributedSrcCalc calc;
+  GammaInteractionCalc::DistributedSrcCalcT<double> calc;
 
   calc.m_geometry = spec.geometry;
   calc.m_materialIndex = spec.source_shell_index;
-  calc.m_detectorRadius = spec.detector_radius;
-  calc.m_detectorSetback = spec.detector_setback;
-  calc.m_observationDist = spec.distance;
-  calc.m_srcOffsetX = spec.offset_x;
-  calc.m_srcOffsetY = spec.offset_y;
+  calc.m_detector = GammaInteractionCalc::detector_geom_from_config<double>(
+                          spec.geometry, spec.distance, spec.detector_radius, spec.detector_setback,
+                          spec.offset_x, spec.offset_y );
   calc.m_attenuateForAir = spec.attenuate_for_air;
   calc.m_airTransLenCoef = spec.attenuate_for_air
               ? GammaInteractionCalc::transmission_length_coefficient_air( static_cast<float>(spec.energy) )
@@ -132,7 +133,7 @@ inline GammaInteractionCalc::DistributedSrcCalc
   calc.integral = 0.0;
 
   if( spec.source_shell_index >= spec.shells.size() )
-    throw std::runtime_error( "make_distributed_src_calc: source_shell_index out of range" );
+    throw std::runtime_error( "make_distributed_src_calc_t: source_shell_index out of range" );
 
   std::array<double,3> outer_dims = { 0.0, 0.0, 0.0 };
 
@@ -140,28 +141,35 @@ inline GammaInteractionCalc::DistributedSrcCalc
   {
     const ShellSpec &shell = spec.shells[shell_index];
 
+    GammaInteractionCalc::DistributedSrcCalcT<double>::ShellInfo info;
+
     if( shell.material.empty() )
     {
       // Generic layers have no physical extent - same convention as production
       //  code, which skips a generic layer at the very center (zero volume).
       if( shell_index == 0 )
-        throw std::runtime_error( "make_distributed_src_calc: generic layer cant be innermost" );
+        throw std::runtime_error( "make_distributed_src_calc_t: generic layer cant be innermost" );
       if( shell_index == spec.source_shell_index )
-        throw std::runtime_error( "make_distributed_src_calc: source layer cant be generic" );
+        throw std::runtime_error( "make_distributed_src_calc_t: source layer cant be generic" );
 
-      const double trans_coef = GammaInteractionCalc::transmition_coefficient_generic(
+      info.dims = outer_dims;
+      info.trans_len_coef = GammaInteractionCalc::transmition_coefficient_generic(
                                           static_cast<float>(shell.atomic_number),
                                           static_cast<float>(shell.areal_density),
                                           static_cast<float>(spec.energy) );
+      info.type = GammaInteractionCalc::ShellType::Generic;
 
-      calc.m_dimensionsTransLenAndType.push_back( {outer_dims, trans_coef,
-                    GammaInteractionCalc::DistributedSrcCalc::ShellType::Generic} );
+      // Metadata for the effective-AN/AD/H accumulation
+      info.areal_density = shell.areal_density;
+      info.effective_an = shell.atomic_number;
+
+      calc.m_shells.push_back( info );
       continue;
     }//if( a generic layer )
 
     const std::shared_ptr<const Material> material = matdb.material( shell.material );
     if( !material )
-      throw std::runtime_error( "make_distributed_src_calc: no material '" + shell.material + "'" );
+      throw std::runtime_error( "make_distributed_src_calc_t: no material '" + shell.material + "'" );
 
     switch( spec.geometry )
     {
@@ -182,73 +190,21 @@ inline GammaInteractionCalc::DistributedSrcCalc
         break;
 
       case GammaInteractionCalc::GeometryType::NumGeometryType:
-        throw std::runtime_error( "make_distributed_src_calc: invalid geometry" );
+        throw std::runtime_error( "make_distributed_src_calc_t: invalid geometry" );
     }//switch( spec.geometry )
 
-    const double trans_len_coef = GammaInteractionCalc::transmition_length_coefficient(
+    info.dims = outer_dims;
+    info.trans_len_coef = GammaInteractionCalc::transmition_length_coefficient(
                                           material.get(), static_cast<float>(spec.energy) );
-
-    calc.m_dimensionsTransLenAndType.push_back( {outer_dims, trans_len_coef,
-                  GammaInteractionCalc::DistributedSrcCalc::ShellType::Material} );
-  }//for( loop over shells )
-
-  return calc;
-}//make_distributed_src_calc(...)
-
-
-/** Builds the templated `DistributedSrcCalcT<double>` equivalent of
- #make_distributed_src_calc, for validating the templated ray-tracing and
- Gauss-Legendre integration backend against the Cuhre/double path.
- */
-inline GammaInteractionCalc::DistributedSrcCalcT<double>
-   make_distributed_src_calc_t( const VolumetricSrcSpec &spec, const MaterialDB &matdb )
-{
-  const GammaInteractionCalc::DistributedSrcCalc legacy = make_distributed_src_calc( spec, matdb );
-
-  GammaInteractionCalc::DistributedSrcCalcT<double> calc;
-  calc.m_geometry = legacy.m_geometry;
-  calc.m_materialIndex = legacy.m_materialIndex;
-  calc.m_detector = GammaInteractionCalc::detector_geom_from_config<double>(
-                          spec.geometry, spec.distance, spec.detector_radius, spec.detector_setback,
-                          spec.offset_x, spec.offset_y );
-  calc.m_attenuateForAir = legacy.m_attenuateForAir;
-  calc.m_airTransLenCoef = legacy.m_airTransLenCoef;
-  calc.m_isInSituExponential = legacy.m_isInSituExponential;
-  calc.m_inSituRelaxationLength = legacy.m_inSituRelaxationLength;
-  calc.m_srcVolumetricActivity = legacy.m_srcVolumetricActivity;
-  calc.m_energy = legacy.m_energy;
-  calc.m_nuclide = legacy.m_nuclide;
-  calc.integral = 0.0;
-
-  size_t legacy_index = 0;
-  for( const std::tuple<std::array<double,3>,double,GammaInteractionCalc::DistributedSrcCalc::ShellType> &shell
-                                                          : legacy.m_dimensionsTransLenAndType )
-  {
-    GammaInteractionCalc::DistributedSrcCalcT<double>::ShellInfo info;
-    info.dims = std::get<0>( shell );
-    info.trans_len_coef = std::get<1>( shell );
-    info.type = std::get<2>( shell );
+    info.type = GammaInteractionCalc::ShellType::Material;
 
     // Metadata for the effective-AN/AD/H accumulation
-    const ShellSpec &shell_spec = spec.shells[legacy_index];
-    if( shell_spec.material.empty() )
-    {
-      info.areal_density = shell_spec.areal_density;
-      info.effective_an = shell_spec.atomic_number;
-    }else
-    {
-      const std::shared_ptr<const Material> mat = matdb.material( shell_spec.material );
-      if( mat )
-      {
-        info.density = mat->density;
-        info.effective_an = GammaInteractionCalc::material_mass_weighted_atomic_number( *mat );
-        info.hydrogen_mass_frac = GammaInteractionCalc::material_hydrogen_mass_fraction( *mat );
-      }
-    }//if( generic ) / else
+    info.density = material->density;
+    info.effective_an = GammaInteractionCalc::material_mass_weighted_atomic_number( *material );
+    info.hydrogen_mass_frac = GammaInteractionCalc::material_hydrogen_mass_fraction( *material );
 
     calc.m_shells.push_back( info );
-    ++legacy_index;
-  }//for( loop over legacy shells )
+  }//for( loop over shells )
 
   return calc;
 }//make_distributed_src_calc_t(...)

@@ -53,6 +53,7 @@ DrfChart::DrfChart()
   m_showAngles( false ),
   m_sourceDistance( 25.0 * PhysicalUnits::cm ),
   m_intrinsic( false ),
+  m_showFwhm( true ),
   m_jsgraph( jsRef() + ".chart" )
 {
   addStyleClass( "DrfChart" );
@@ -120,6 +121,17 @@ void DrfChart::setIntrinsicEfficiency( const bool intrinsic )
   else
     m_pendingJs.push_back( js );
 }//DrfChart::setIntrinsicEfficiency(...)
+
+
+void DrfChart::setShowFwhm( const bool show )
+{
+  m_showFwhm = show;
+  const string js = m_jsgraph + ".setShowFwhm(" + string(show ? "true" : "false") + ");";
+  if( isRendered() )
+    doJavaScript( js );
+  else
+    m_pendingJs.push_back( js );
+}//DrfChart::setShowFwhm(...)
 
 
 void DrfChart::defineJavaScript()

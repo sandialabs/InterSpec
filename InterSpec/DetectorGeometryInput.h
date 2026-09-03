@@ -95,6 +95,42 @@ public:
   /** Emitted on any user edit (after validity re-evaluation). */
   Wt::Signal<> &changed();
 
+
+  /** A verbatim snapshot of the form, for undo/redo.
+
+   Deliberately the raw widget contents rather than a `ceelo::GeometryDescriptor`: a half-typed
+   dimension is a state the user can undo back to, and would not survive a descriptor round trip.
+   */
+  struct State
+  {
+    int shape = 0, crystalMaterial = 0, referencePoint = 0;
+    std::string dim1, dim2, dim3;
+    std::string bulletRadius, boreDiam, boreDepth, deadFront, deadSide;
+    bool boreRounded = false, hasCollimator = false;
+    std::string collimatorMaterial, collimatorThickness, collimatorExtension;
+
+    struct Layer
+    {
+      std::string material, frontThickness, sideThickness;
+      /** See LayerRow::seeded - carried so a descriptor-supplied composition survives undo. */
+      std::shared_ptr<const ceelo::MaterialSpec> seeded;
+      std::string seededName;
+
+      bool operator==( const Layer &rhs ) const;
+    };//struct Layer
+
+    std::vector<Layer> layers;
+
+    bool operator==( const State &rhs ) const;
+    bool operator!=( const State &rhs ) const{ return !((*this) == rhs); }
+  };//struct State
+
+  State currentState() const;
+
+  /** Restores a #currentState snapshot.  Does not emit #changed - the caller (which is restoring,
+   not editing) is expected to do whatever refreshing it needs. */
+  void setState( const State &state );
+
 protected:
   void init();
   void handleShapeChange();
@@ -164,6 +200,10 @@ protected:
   std::string m_substitutedCrystal;
 
   ShieldMaterialSuggestion *m_materialSuggestion;
+
+  /** Set while #setState is rebuilding the form, so the many intermediate edits it makes dont each
+   emit #changed at an owner that is in the middle of restoring its own state. */
+  bool m_restoringState;
 
   Wt::Signal<> m_changed;
 };//class DetectorGeometryInput

@@ -25,9 +25,11 @@
 
 #include <map>
 #include <cmath>
+#include <cctype>
 #include <memory>
 #include <string>
 #include <vector>
+#include <algorithm>
 #include <stdexcept>
 
 #include <Wt/WText.h>
@@ -140,6 +142,61 @@ namespace
   }//crystal_material_spec(...)
 
 
+  /** The crystal a DRFs free text names, as an index into the crystal combo, or -1.
+
+   A DRF seeded from a GADRAS `Detector.dat` records the crystal in its description ("GADRAS
+   geometry, LaBr3; ..."), and shipped detectors carry it in their name ("LaBr 10%").  That text is
+   the only place the crystal survives for a DRF that reaches this form without a
+   `ceelo::GeometryDescriptor` - which is every DRF that was handed to the app as an efficiency
+   curve rather than characterized here.  Guessing from it beats silently rebuilding a LaBr detector
+   out of NaI.
+
+   Matched on the GADRAS material-table names, longest first, and only on whole tokens - so "Si"
+   does not match inside "Since", and "LaBr3" wins over any shorter prefix.
+   */
+  int crystal_index_from_text( const std::string &text )
+  {
+    if( text.empty() )
+      return -1;
+
+    std::string haystack = text;
+    SpecUtils::to_lower_ascii( haystack );
+
+    // Longest name first, so a name that contains a shorter one cannot shadow it.
+    std::vector<std::string> names = crystal_names();
+    std::sort( begin(names), end(names),
+      []( const std::string &lhs, const std::string &rhs ){ return lhs.size() > rhs.size(); } );
+
+    for( const std::string &name : names )
+    {
+      std::string needle = name;
+      SpecUtils::to_lower_ascii( needle );
+
+      for( size_t pos = haystack.find(needle);
+           pos != std::string::npos;
+           pos = haystack.find(needle, pos + 1) )
+      {
+        const bool start_ok = (pos == 0) || !std::isalnum( static_cast<unsigned char>(haystack[pos-1]) );
+        const size_t after = pos + needle.size();
+        const bool end_ok = (after >= haystack.size())
+                            || !std::isalnum( static_cast<unsigned char>(haystack[after]) );
+        if( !start_ok || !end_ok )
+          continue;
+
+        // The combo is populated from `crystal_names()` in order, so its index is the entrys.
+        const std::vector<std::string> &all = crystal_names();
+        for( int i = 0; i < static_cast<int>(all.size()); ++i )
+        {
+          if( all[i] == name )
+            return i;
+        }
+      }//for( each occurrence )
+    }//for( const std::string &name : names )
+
+    return -1;
+  }//crystal_index_from_text(...)
+
+
   /** Exact match of a stored MaterialSpec back to a crystal combo entry, or -1. */
   int crystal_index_for_name( const std::string &name )
   {
@@ -193,6 +250,7 @@ DetectorGeometryInput::DetectorGeometryInput( InterSpec *viewer )
     m_note( nullptr ),
     m_importNotes( nullptr ),
     m_materialSuggestion( nullptr ),
+    m_restoringState( false ),
     m_changed()
 {
   assert( m_interspec );
@@ -438,7 +496,8 @@ void DetectorGeometryInput::handleUserInput()
     m_note->setText( WString::fromUTF8( e.what() ) );
   }
 
-  m_changed.emit();
+  if( !m_restoringState )
+    m_changed.emit();
 }//handleUserInput()
 
 
@@ -482,6 +541,114 @@ void DetectorGeometryInput::removeLayerRow()
 
   handleUserInput();
 }//removeLayerRow()
+
+
+bool DetectorGeometryInput::State::Layer::operator==( const Layer &rhs ) const
+{
+  return (material == rhs.material)
+         && (frontThickness == rhs.frontThickness)
+         && (sideThickness == rhs.sideThickness)
+         && (seeded == rhs.seeded)
+         && (seededName == rhs.seededName);
+}//State::Layer::operator==
+
+
+bool DetectorGeometryInput::State::operator==( const State &rhs ) const
+{
+  return (shape == rhs.shape)
+         && (crystalMaterial == rhs.crystalMaterial)
+         && (referencePoint == rhs.referencePoint)
+         && (dim1 == rhs.dim1) && (dim2 == rhs.dim2) && (dim3 == rhs.dim3)
+         && (bulletRadius == rhs.bulletRadius)
+         && (boreDiam == rhs.boreDiam) && (boreDepth == rhs.boreDepth)
+         && (deadFront == rhs.deadFront) && (deadSide == rhs.deadSide)
+         && (boreRounded == rhs.boreRounded)
+         && (hasCollimator == rhs.hasCollimator)
+         && (collimatorMaterial == rhs.collimatorMaterial)
+         && (collimatorThickness == rhs.collimatorThickness)
+         && (collimatorExtension == rhs.collimatorExtension)
+         && (layers == rhs.layers);
+}//State::operator==
+
+
+DetectorGeometryInput::State DetectorGeometryInput::currentState() const
+{
+  State state;
+
+  state.shape = m_shape->currentIndex();
+  state.crystalMaterial = m_crystalMaterial->currentIndex();
+  state.referencePoint = m_referencePoint->currentIndex();
+
+  state.dim1 = m_dim1->text().toUTF8();
+  state.dim2 = m_dim2->text().toUTF8();
+  state.dim3 = m_dim3->text().toUTF8();
+  state.bulletRadius = m_bulletRadius->text().toUTF8();
+  state.boreDiam = m_boreDiam->text().toUTF8();
+  state.boreDepth = m_boreDepth->text().toUTF8();
+  state.deadFront = m_deadFront->text().toUTF8();
+  state.deadSide = m_deadSide->text().toUTF8();
+
+  state.boreRounded = m_boreRounded->isChecked();
+  state.hasCollimator = m_hasCollimator->isChecked();
+  state.collimatorMaterial = m_collimatorMaterial->text().toUTF8();
+  state.collimatorThickness = m_collimatorThickness->text().toUTF8();
+  state.collimatorExtension = m_collimatorExtension->text().toUTF8();
+
+  for( const LayerRow &row : m_layers )
+  {
+    State::Layer layer;
+    layer.material = row.material->text().toUTF8();
+    layer.frontThickness = row.frontThickness->text().toUTF8();
+    layer.sideThickness = row.sideThickness->text().toUTF8();
+    layer.seeded = row.seeded;
+    layer.seededName = row.seededName;
+    state.layers.push_back( std::move(layer) );
+  }//for( const LayerRow &row : m_layers )
+
+  return state;
+}//DetectorGeometryInput::currentState()
+
+
+void DetectorGeometryInput::setState( const State &state )
+{
+  m_restoringState = true;
+
+  m_shape->setCurrentIndex( state.shape );
+  m_crystalMaterial->setCurrentIndex( state.crystalMaterial );
+  m_referencePoint->setCurrentIndex( state.referencePoint );
+
+  m_dim1->setText( WString::fromUTF8(state.dim1) );
+  m_dim2->setText( WString::fromUTF8(state.dim2) );
+  m_dim3->setText( WString::fromUTF8(state.dim3) );
+  m_bulletRadius->setText( WString::fromUTF8(state.bulletRadius) );
+  m_boreDiam->setText( WString::fromUTF8(state.boreDiam) );
+  m_boreDepth->setText( WString::fromUTF8(state.boreDepth) );
+  m_deadFront->setText( WString::fromUTF8(state.deadFront) );
+  m_deadSide->setText( WString::fromUTF8(state.deadSide) );
+
+  m_boreRounded->setChecked( state.boreRounded );
+  m_hasCollimator->setChecked( state.hasCollimator );
+  m_collimatorMaterial->setText( WString::fromUTF8(state.collimatorMaterial) );
+  m_collimatorThickness->setText( WString::fromUTF8(state.collimatorThickness) );
+  m_collimatorExtension->setText( WString::fromUTF8(state.collimatorExtension) );
+
+  // Rebuild the layer rows; `addLayerRow` is the only place that wires their signals up.
+  while( m_layersTable->rowCount() > 1 )
+    m_layersTable->removeRow( m_layersTable->rowCount() - 1 );
+  m_layers.clear();
+  for( const State::Layer &layer : state.layers )
+    addLayerRow( WString::fromUTF8(layer.material), WString::fromUTF8(layer.frontThickness),
+                 WString::fromUTF8(layer.sideThickness), layer.seeded );
+  for( size_t i = 0; (i < m_layers.size()) && (i < state.layers.size()); ++i )
+    m_layers[i].seededName = state.layers[i].seededName;
+  m_removeLayer->setEnabled( m_layers.size() > 1 );
+
+  // Sync the shape-dependent row visibility (and, through `handleUserInput`, the validity note and
+  //  collimator row) to the restored values.
+  handleShapeChange();
+
+  m_restoringState = false;
+}//DetectorGeometryInput::setState(...)
 
 
 bool DetectorGeometryInput::isValid() const
@@ -823,9 +990,11 @@ void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakRespo
   if( !drf || !drf->isValid() || (drf->detectorDiameter() <= 0.0f) )
     return;
 
-  if( drf->ceeloResponse() )
+  // The DRFs own geometry, when it has one - from a generated response, or set by an importer
+  //  (a GADRAS Detector.dat, an ANGLE model) that knew the detector's shape.
+  if( const std::shared_ptr<const ceelo::GeometryDescriptor> gd = drf->geometry() )
   {
-    setFromDescriptor( drf->ceeloResponse()->descriptor );
+    setFromDescriptor( *gd );
     return;
   }
 
@@ -833,6 +1002,12 @@ void DetectorGeometryInput::seedFromDrf( std::shared_ptr<const DetectorPeakRespo
   m_shape->setCurrentIndex( 0 );
   m_dim1->setText( cm_to_str( diam_cm ) );
   m_dim2->setText( cm_to_str( diam_cm ) );  //length unknown: guess = diameter
+
+  // No geometry at all: the description (and often the name) still says what the crystal is, and
+  //  taking the default NaI for, say, a LaBr detector would simulate the wrong material entirely.
+  const int crystal = crystal_index_from_text( drf->description() + " " + drf->name() );
+  if( crystal >= 0 )
+    m_crystalMaterial->setCurrentIndex( crystal );
 
   m_note->setText( WString::tr("dgi-seeded-note") );
   handleShapeChange();

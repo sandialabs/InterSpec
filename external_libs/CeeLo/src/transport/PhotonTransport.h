@@ -23,6 +23,8 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+#include "physics/FepWindow.h"
+
 /// @file PhotonTransport.h
 /// @brief Photon transport loop inside detector materials.
 ///
@@ -68,6 +70,15 @@ struct TransportConfig {
     /// gating: FEP-only runs full physics inside the crystal and local-U_i
     /// deposition keeps the FEP indicator intact.
     bool enable_doppler_broadening = true;
+
+    /// Half-width (keV) of the full-energy-peak window the CALLER will score
+    /// with.  Used only by the fep_only_mode early kill, which abandons a
+    /// photon once enough energy has escaped that FEP is impossible - so this
+    /// must never be SMALLER than the window the caller actually scores, or
+    /// the kill discards events that would have counted and FEP comes out
+    /// biased low with no error and no flag.  EfficiencyCalculator keeps the
+    /// two in lockstep via set_fep_window_keV(); see physics/FepWindow.h.
+    double fep_window_keV = kDefaultFepWindowKeV;
 
     /// Enable CSDA electron tracking at interaction sites.
     ///

@@ -281,6 +281,15 @@ struct GeometryDescriptor {
     /// Every Geometry/RayTrace precondition this descriptor violates; empty
     /// means it is safe to build. See GeometryProblem.
     std::vector<GeometryProblem> problems() const;
+
+    /// Standalone XML for JUST the geometry, so a host can store a detector's
+    /// shape before (or without) any response having been generated for it.
+    ///
+    /// The payload is the same <Detector> element DetectorResponse's own codec
+    /// writes -- shared code, so the two cannot drift -- wrapped in a
+    /// <CeeLoGeometry> root. Round-trips through from_xml_string().
+    std::string to_xml_string() const;
+    static GeometryDescriptor from_xml_string(const std::string& xml);
 };
 
 // ---------------------------------------------------------------------------
@@ -502,11 +511,31 @@ enum class ResponseProfile : uint8_t {
 
 const char* to_string(ResponseProfile p);
 
+/// How a response was produced. Recorded rather than inferred: a quick-MC
+/// transfer and a measured-curve transfer both leave an angle-flat eta table
+/// and a model_transfer envelope, so the payload alone cannot tell them apart,
+/// and a host that wants to show a stored detector's current method (rather
+/// than a default) would be guessing.
+enum class ProductionMethod : int {
+    FullMc = 0,           ///< ResponseGenerator::generate(), full energy x angle(x distance) scan
+    QuickMcTransfer = 1,  ///< ResponseGenerator::generate() with transfer_mode
+    CurveTransfer = 2     ///< make_transfer_response(): no Monte Carlo at all
+};
+
+const char* to_string(ProductionMethod m);
+
 struct ResponseProvenance {
+    ProductionMethod method = ProductionMethod::FullMc;
     std::string ceelo_version;        ///< library version string
     std::string created_utc;          ///< ISO-8601, informational
     ResponseProfile profile = ResponseProfile::General;
     double node_fep_precision = 0.003;///< per-node MC precision target
+    /// Half-width (keV) of the full-energy-peak window this response's FEP was
+    /// scored with (physics/FepWindow.h).  A model that credits in-window
+    /// Compton must use the SAME window, or it is calibrated against the wrong
+    /// truth - which is why this travels with the response instead of being
+    /// assumed.
+    double fep_window_keV = kDefaultFepWindowKeV;
     uint64_t generation_seed = 0;     ///< base seed (per-node seeds derive)
     int kernel_n_rays = 2048;         ///< quadrature rays used in evaluation
     double valid_e_min_keV = 0.0, valid_e_max_keV = 0.0;
@@ -625,6 +654,20 @@ public:
     Eigen::Vector3d query_position(double theta_rad, double phi_rad,
                                    double dist_cm) const;
 
+    /// The REFERENCE POINT itself, in the crystal frame: the origin for a
+    /// CrystalFace response, (0, 0, -endcap_front_offset_cm()) for EndcapFront.
+    /// Equivalently query_position(0, 0, 0).
+    ///
+    /// A caller that needs a DIRECTION between a queried source position and
+    /// "the detector" must use this, not the origin: the two differ by the
+    /// endcap offset, which is a several-degree parallax for a source at
+    /// contact. Aiming at the origin instead tilts anything built on that
+    /// direction (e.g. an aperture fan mapped into the caller's own frame)
+    /// away from the geometry the caller thinks it is describing.
+    Eigen::Vector3d reference_point_position() const {
+        return query_position(0.0, 0.0, 0.0);
+    }
+
     // --- point-source evaluation ---
     /// dist_cm measured from descriptor.reference_point along the (theta,
     /// phi) direction; theta from the detector axis (0 = on-axis front).
@@ -672,6 +715,37 @@ public:
     double kernel_K(double energy_keV, const ApertureQuadrature& q, MuChoice mu,
                     const std::function<double(const Eigen::Vector3d&)>* t_src = nullptr) const;
 
+    /// The kernel, decomposed so a host can supply a per-ray source transmission of its OWN type -
+    /// e.g. an autodiff scalar, which the std::function above cannot carry.
+    ///
+    ///     K = sum_i w_out[i] * t_src(dirs_out[i])
+    ///
+    /// and with no t_src, sum(w_out) == kernel_K(...).  The weights depend only on (energy, ray,
+    /// stored mu tables): no fit parameter enters them, so a host may hold them fixed while
+    /// differentiating through its own t_src.
+    ///
+    /// Use the fep_/total_ pair rather than picking a MuChoice: the eps_total kernel is
+    /// TIER-DEPENDENT (the EtaTotTable tier uses MuChoice::Total, not NoRayleigh) and applies
+    /// scatter_in_recapture, and getting that wrong is silent.
+    void fep_ray_weights(double energy_keV, const ApertureQuadrature& q,
+                         std::vector<double>& w_out,
+                         std::vector<Eigen::Vector3d>& dirs_out) const;
+    void total_ray_weights(double energy_keV, const ApertureQuadrature& q,
+                           std::vector<double>& w_out,
+                           std::vector<Eigen::Vector3d>& dirs_out) const;
+
+    /// Everything in eps_fep EXCEPT the kernel: exp(ln_eta + ln_N + ln_k), with the flag and the
+    /// fractional sigma the full query would have reported.  So
+    ///     eps_fep(E, pos) == fep_prefactor(E, pos, q).value * kernel_K(E, q, MuChoice::Total)
+    /// and a host assembling K itself keeps the near-field/off-axis/grounding physics - and the
+    /// validity flag - rather than silently dropping them.
+    EffResult fep_prefactor(double energy_keV, const Eigen::Vector3d& src_cm,
+                            const ApertureQuadrature& q) const;
+
+    /// The eps_total counterpart of #fep_prefactor (tier-dependent; 1.0 for the bare-crystal tier).
+    EffResult total_prefactor(double energy_keV, const Eigen::Vector3d& src_cm,
+                              const ApertureQuadrature& q) const;
+
     /// Passive-layer transmission envelope over a quadrature with the stored
     /// mu tables (used for the collimator hole-fraction gate).
     double kernel_transmitted(double energy_keV, const ApertureQuadrature& q) const;
@@ -708,6 +782,12 @@ private:
     struct EvalCommon;  // internal per-query bundle
     EvalCommon common_eval(double energy_keV, const Eigen::Vector3d& src_cm,
                            const ApertureQuadrature& q) const;
+    /// Shared ray loop behind kernel_K and the *_ray_weights accessors, so the decomposition and
+    /// the thing it decomposes cannot drift apart.
+    void kernel_ray_weights_impl(double energy_keV, const ApertureQuadrature& q, MuChoice mu,
+                                 double recap, std::vector<double>& w_out,
+                                 std::vector<Eigen::Vector3d>& dirs_out) const;
+
     EffResult eps_fep_impl(double energy_keV, const Eigen::Vector3d& src_cm,
                            const ApertureQuadrature& q,
                            const std::function<double(const Eigen::Vector3d&)>* t_src) const;

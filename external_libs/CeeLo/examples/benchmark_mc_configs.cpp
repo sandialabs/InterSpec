@@ -26,12 +26,14 @@
 
 #include "efficiency/EfficiencyCalculator.h"
 #include "materials/Material.h"
+#include "physics/FepWindow.h"
 
 #include <Eigen/Core>
 
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -42,6 +44,17 @@
 using namespace ceelo;
 
 namespace {
+
+/// The GEANT4 references this tool is gated against
+/// (tests/data/geant4_reference/, via profiling/compare_validation.py) were
+/// generated with the harness scoring a 1.5 keV full-energy half-window, so the
+/// gate has to score at the same window or the FEP comparison is
+/// apples-to-oranges: CeeLo's default is now narrower
+/// (ceelo::kDefaultFepWindowKeV) and would silently come out low.  Same pin,
+/// same reason, as tests/test_fep_window.h.  Override with --fep-window to
+/// measure the effect, or drop the pin once the references are regenerated at
+/// whatever window the default settles on.
+constexpr double kReferenceFepWindowKeV = 1.5;
 
 constexpr uint64_t kDefaultEvents = 1'000'000;
 constexpr unsigned kDefaultThreads = 0;
@@ -74,6 +87,9 @@ void print_usage(const char* argv0) {
         << "  --label <name>           Mode label written to FOM CSV rows (default: baseline)\n"
         << "  --force-interaction      Enable forced first interaction in detector\n"
         << "  --fep-only               Run in FEP-only mode (no total efficiency)\n"
+        << "  --fep-window <keV>       Full-energy half-window (default: 1.5, the window the\n"
+        << "                           committed GEANT4 references were generated at; the\n"
+        << "                           library default is narrower)\n"
         << "  --mixture-alpha <a>      Mixture angular biasing alpha for source-effect\n"
         << "                           configs (0 = disabled)\n"
         << "  --two-stream <f>         Two-stream stratified estimator for source-effect\n"
@@ -201,6 +217,7 @@ bool run_config(int cfg,
                 bool histogram,
                 bool no_source_brems,
                 bool no_source_electrons,
+                double fep_window_keV,
                 FomWriter& fom) {
     EfficiencyCalculator calc;
     bench::ConfigSetup setup;
@@ -208,6 +225,9 @@ bool run_config(int cfg,
         std::cerr << "Unsupported config: " << cfg << "\n";
         return false;
     }
+    // Before anything else that reads it: the window the FEP tally, and the
+    // fep_only early kill, will use.  See kReferenceFepWindowKeV.
+    calc.set_fep_window_keV(fep_window_keV);
     if (biasing) calc.set_biasing(*biasing);  // null = library auto-enable
     if (fep_only) calc.enable_fep_only_mode(true);
     if (no_source_brems) calc.set_source_brems(false);
@@ -384,6 +404,7 @@ int main(int argc, char** argv) {
     bool histogram = false;
     bool no_source_brems = false;
     bool no_source_electrons = false;
+    double fep_window_keV = kReferenceFepWindowKeV;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -442,6 +463,14 @@ int main(int argc, char** argv) {
         }
         if (arg == "--fep-only") {
             fep_only = true;
+            continue;
+        }
+        if (arg == "--fep-window" && i + 1 < argc) {
+            fep_window_keV = std::atof(argv[++i]);
+            if (fep_window_keV <= 0.0) {
+                std::cerr << "--fep-window must be > 0\n";
+                return 1;
+            }
             continue;
         }
         if (arg == "--histogram") {
@@ -541,7 +570,7 @@ int main(int argc, char** argv) {
                               skip_export, macro_events, label,
                               biasing_explicit ? &biasing : nullptr,
                               fep_only, histogram, no_source_brems,
-                              no_source_electrons, fom);
+                              no_source_electrons, fep_window_keV, fom);
         ok = ok && ran;
     }
 

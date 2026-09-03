@@ -272,6 +272,16 @@ Geometry GeometryDescriptor::build_geometry(
     return g;
 }
 
+const char* to_string(ProductionMethod m) {
+    switch (m) {
+        case ProductionMethod::FullMc:          return "full_mc";
+        case ProductionMethod::QuickMcTransfer: return "quick_mc_transfer";
+        case ProductionMethod::CurveTransfer:   return "curve_transfer";
+    }
+    return "full_mc";
+}
+
+
 const char* to_string(GeometryProblem p) {
     switch (p) {
         case GeometryProblem::DimensionsMissing:
@@ -910,9 +920,9 @@ ApertureQuadrature DetectorResponse::make_quadrature(
                                     provenance.kernel_n_rays);
 }
 
-double DetectorResponse::kernel_K(
-    double energy_keV, const ApertureQuadrature& q, MuChoice mu,
-    const std::function<double(const Eigen::Vector3d&)>* t_src) const {
+void DetectorResponse::kernel_ray_weights_impl(
+    double energy_keV, const ApertureQuadrature& q, MuChoice mu, double recap,
+    std::vector<double>& w_out, std::vector<Eigen::Vector3d>& dirs_out) const {
     // Same recurrence as ApertureQuadrature::interaction_omega, but with the
     // STORED generation-time mu tables (self-containment guarantee).
     struct MuT { double tot, nors, cs; };
@@ -931,11 +941,62 @@ double DetectorResponse::kernel_K(
         return v;
     };
 
+    w_out.clear();
+    dirs_out.clear();
+    w_out.reserve(q.rays.size());
+    dirs_out.reserve(q.rays.size());
+
+    for (const KernelRay& r : q.rays) {
+        if (r.active_len <= 0.0f) continue;
+        double tau_before = 0.0;
+        double p_int = 0.0;
+        for (const RaySegment& s : r.segs) {
+            const MuT m = mu_of(s.material);
+            if (s.is_scoring) {
+                const double mu_star = (mu == MuChoice::Total) ? m.tot : m.nors;
+                p_int += std::exp(-tau_before) *
+                         (1.0 - std::exp(-mu_star * s.length));
+                tau_before += m.tot * s.length;
+            } else {
+                tau_before += (m.tot - recap * m.cs) * s.length;
+            }
+        }
+        if (p_int <= 0.0) continue;
+        w_out.push_back(r.omega_w * p_int);
+        dirs_out.push_back(r.dir.cast<double>().eval());
+    }
+}
+
+double DetectorResponse::kernel_K(
+    double energy_keV, const ApertureQuadrature& q, MuChoice mu,
+    const std::function<double(const Eigen::Vector3d&)>* t_src) const {
     // Dead-layer / endcap scatter-in credit (total kernel only); see
     // ApertureQuadrature::interaction_omega. Uses the stored recapture so the
     // anchor and target kernels are folded with the same coefficient.
     const double recap = (mu == MuChoice::NoRayleigh)
         ? std::max(0.0, std::min(1.0, scatter_in_recapture)) : 0.0;
+
+    // Deliberately the inline loop rather than a call to kernel_ray_weights_impl: this runs per
+    //  volumetric element per fit iteration, and routing it through the vector-filling form would
+    //  add two heap allocations and a per-ray Vector3d materialization even when t_src is null.
+    //  The risk that the two bodies drift is covered by
+    //  tests/test_efficiency_transfer.cpp::ray_weight_decomposition_matches_full_query, which pins
+    //  prefactor * sum(weights) == the full query exactly.
+    struct MuT { double tot, nors, cs; };
+    std::vector<std::pair<const Material*, MuT>> cache;
+    auto mu_of = [&](const Material* m) -> MuT {
+        for (const auto& e : cache)
+            if (e.first == m) return e.second;
+        size_t table = SIZE_MAX;
+        for (const auto& mm : mat_to_mu_)
+            if (mm.first == m) { table = mm.second; break; }
+        if (table == SIZE_MAX)
+            throw std::runtime_error("DetectorResponse::kernel_K: unknown material");
+        const MacroscopicXS xs = mu_tables[table].eval(energy_keV);
+        const MuT v{xs.mu_total(), xs.mu_pe + xs.mu_cs + xs.mu_pp, xs.mu_cs};
+        cache.push_back({m, v});
+        return v;
+    };
 
     double total = 0.0;
     for (const KernelRay& r : q.rays) {
@@ -959,6 +1020,26 @@ double DetectorResponse::kernel_K(
         total += w;
     }
     return total;
+}
+
+void DetectorResponse::fep_ray_weights(
+    double energy_keV, const ApertureQuadrature& q,
+    std::vector<double>& w_out, std::vector<Eigen::Vector3d>& dirs_out) const {
+    // FEP always uses the total mu on the scoring segments, and takes no scatter-in credit: a
+    // degraded Compton photon cannot land in the full-energy peak.
+    kernel_ray_weights_impl(energy_keV, q, MuChoice::Total, 0.0, w_out, dirs_out);
+}
+
+void DetectorResponse::total_ray_weights(
+    double energy_keV, const ApertureQuadrature& q,
+    std::vector<double>& w_out, std::vector<Eigen::Vector3d>& dirs_out) const {
+    // Mirrors eps_total_impl's tier dispatch - the EtaTotTable tier folds a measured eta_tot over
+    // the FULL-mu kernel, the other tiers use the Rayleigh-free one.
+    const MuChoice mu = (tot_eff.tier == TotEffTier::EtaTotTable) ? MuChoice::Total
+                                                                  : MuChoice::NoRayleigh;
+    const double recap = (mu == MuChoice::NoRayleigh)
+        ? std::max(0.0, std::min(1.0, scatter_in_recapture)) : 0.0;
+    kernel_ray_weights_impl(energy_keV, q, mu, recap, w_out, dirs_out);
 }
 
 // ---------------------------------------------------------------------------
@@ -1059,6 +1140,97 @@ double DetectorResponse::kernel_transmitted(double energy_keV,
         total += r.omega_w * std::exp(-tau);
     }
     return total;
+}
+
+EffResult DetectorResponse::fep_prefactor(
+    double energy_keV, const Eigen::Vector3d& src_cm,
+    const ApertureQuadrature& q) const {
+    // Deliberately the same body as eps_fep_impl with the `* K` dropped, so a host that assembles
+    // K itself still gets the near-field gate, the grounding, the sigma budget and the flag.
+    EvalCommon ec = common_eval(energy_keV, src_cm, q);
+
+    bool clamped = false;
+    const double ln_eta =
+        eta_fep.eval_ln(energy_keV, ec.cos_theta, ec.phi_deg, clamped);
+    if (clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
+
+    double ln_N = 0.0;
+    const double d_break = near_field.breakpoint_d_cm(energy_keV, ec.cos_theta);
+    const double d_gate = std::max(d_break, provenance.min_distance_cm);
+    if (ec.d_cm < d_gate) {
+        if (!near_field.empty()) {
+            ln_N = near_field.ln_boost(energy_keV, ec.cos_theta, ec.d_cm);
+            const double nf_sig =
+                near_field.node_frac_sigma(energy_keV, ec.cos_theta, ec.d_cm);
+            ec.extra_sigma2 += nf_sig * nf_sig;
+        } else {
+            raise_flag(ec.flag, ResponseFlag::NearFieldUnmodeled);
+            ec.extra_sigma2 += 0.05 * 0.05;
+        }
+    }
+
+    double ln_k = 0.0, ground_var = 0.0;
+    if (!grounding.empty()) {
+        bool k_clamped = false;
+        ln_k = grounding.eval_ln_k(energy_keV, k_clamped);
+        if (k_clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
+        const double st = grounding.transfer.eval(
+            ec.a_cm > 0.0 ? ec.d_cm / ec.a_cm : 1e6, ec.cos_theta, energy_keV);
+        ground_var = grounding.var_ln_k(energy_keV) + st * st;
+    }
+
+    EffResult res;
+    res.value = std::exp(ln_eta + ln_N + ln_k);
+    const double node_sig =
+        eta_fep.node_frac_sigma(energy_keV, ec.cos_theta, ec.phi_deg);
+    const double floor = ec.near_regime ? floors.fep_near : floors.fep_far;
+    const double frac2 = node_sig * node_sig + floor * floor + ground_var +
+                         ec.extra_sigma2;
+    res.sigma = res.value * std::sqrt(frac2);
+    res.flag = ec.flag;
+    return res;
+}
+
+EffResult DetectorResponse::total_prefactor(
+    double energy_keV, const Eigen::Vector3d& src_cm,
+    const ApertureQuadrature& q) const {
+    // Mirrors eps_total_impl's tier dispatch with the kernel factored out.  The build-up seam is
+    // NOT applied here: it needs a ShieldContext the host supplies, and folding it in silently
+    // would double-count against a host that applies its own scatter augment.
+    EvalCommon ec = common_eval(energy_keV, src_cm, q);
+
+    double value = 1.0, node_sig = 0.0;
+    switch (tot_eff.tier) {
+        case TotEffTier::KernelExact:
+            break;                                   //bare kernel; multiplier is 1
+        case TotEffTier::BCurve:
+            value = std::exp(tot_eff.ln_b_at(energy_keV));
+            break;
+        case TotEffTier::EtaTotTable: {
+            bool clamped = false;
+            const double ln_eta = tot_eff.eta_tot.eval_ln(
+                energy_keV, ec.cos_theta, ec.phi_deg, clamped);
+            if (clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
+            double ln_k = 0.0;
+            if (!grounding.empty()) {
+                bool k_clamped = false;
+                ln_k = grounding.eval_ln_k(energy_keV, k_clamped);
+                if (k_clamped) raise_flag(ec.flag, ResponseFlag::OutOfRangeClamped);
+            }
+            value = std::exp(ln_eta + ln_k);
+            node_sig = tot_eff.eta_tot.node_frac_sigma(energy_keV, ec.cos_theta,
+                                                       ec.phi_deg);
+            break;
+        }
+    }
+
+    EffResult res;
+    res.value = value;
+    const double floor = ec.near_regime ? floors.tot_near : floors.tot_far;
+    const double frac2 = node_sig * node_sig + floor * floor + ec.extra_sigma2;
+    res.sigma = res.value * std::sqrt(frac2);
+    res.flag = ec.flag;
+    return res;
 }
 
 EffResult DetectorResponse::eps_fep_impl(
@@ -1284,7 +1456,180 @@ void eta_from_xml(const XmlNode* n, EtaTable& t) {
     t.frac_sigma = parse_doubles(child_value(n, "FracSigma"));
 }
 
+/// Writes the <Detector> element - the whole storable geometry, materials
+/// included - under `parent`.  Shared by DetectorResponse::serialize_xml and
+/// GeometryDescriptor::to_xml_string, so a geometry stored on its own and the
+/// geometry inside a stored response cannot drift apart.  Factoring it out left
+/// the emitted bytes unchanged, so every existing response keeps its
+/// content_hash.
+void write_detector_node(XmlDoc& doc, XmlNode* parent,
+                         const GeometryDescriptor& descriptor) {
+    XmlNode* d = append_node(doc, parent, "Detector");
+    append_attrib(doc, d, "shape",
+                  descriptor.shape == DetectorShape::Cylinder ? "cylinder"
+                                                              : "box");
+    append_attrib(doc, d, "crystalMaterial",
+                  std::to_string(descriptor.crystal_material_index));
+    append_attrib(doc, d, "referencePoint",
+                  descriptor.reference_point == ReferencePoint::EndcapFront
+                      ? "endcap_front" : "crystal_face");
+    append_attrib(doc, d, "symmetry",
+                  descriptor.symmetry == ResponseSymmetry::Quadrant
+                      ? "quadrant" : "axial");
+    append_value_node(doc, d, "Dimensions",
+                      join_doubles(descriptor.dimensions_cm));
+    // Both of the following are written only when non-default, so files
+    // for sharp-edged, flat-bored crystals stay byte-identical (and keep
+    // their content_hash) across this feature being added.
+    if (descriptor.bullet_radius_cm > 0.0)
+        append_attrib(doc, d, "bulletRadius",
+                      fmt_double(descriptor.bullet_radius_cm));
+    if (descriptor.bore) {
+        XmlNode* b = append_node(doc, d, "Bore");
+        append_attrib(doc, b, "radius", fmt_double(descriptor.bore->radius));
+        append_attrib(doc, b, "depth", fmt_double(descriptor.bore->depth));
+        if (descriptor.bore->rounded_tip)
+            append_attrib(doc, b, "roundedTip", "1");
+    }
+    if (descriptor.dead_layer) {
+        XmlNode* dl = append_node(doc, d, "DeadLayer");
+        append_attrib(doc, dl, "front", fmt_double(descriptor.dead_layer->front));
+        append_attrib(doc, dl, "side", fmt_double(descriptor.dead_layer->side));
+        append_attrib(doc, dl, "back", fmt_double(descriptor.dead_layer->back));
+    }
+    for (const LayerSpec& l : descriptor.layers) {
+        XmlNode* ln = append_node(doc, d, "Layer");
+        append_attrib(doc, ln, "material", std::to_string(l.material_index));
+        append_attrib(doc, ln, "frontThickness", fmt_double(l.front_thickness_cm));
+        append_attrib(doc, ln, "sideThickness", fmt_double(l.side_thickness_cm));
+        append_attrib(doc, ln, "zStart", fmt_double(l.z_start_cm));
+        append_attrib(doc, ln, "zEnd", fmt_double(l.z_end_cm));
+    }
+    if (descriptor.collimator) {
+        XmlNode* c = append_node(doc, d, "Collimator");
+        append_attrib(doc, c, "material",
+                      std::to_string(descriptor.collimator->material_index));
+        append_attrib(doc, c, "sideThickness",
+                      fmt_double(descriptor.collimator->side_thickness_cm));
+        append_attrib(doc, c, "zStart", fmt_double(descriptor.collimator->z_start_cm));
+        append_attrib(doc, c, "zEnd", fmt_double(descriptor.collimator->z_end_cm));
+    }
+    XmlNode* mats = append_node(doc, d, "Materials");
+    for (size_t i = 0; i < descriptor.materials.size(); ++i) {
+        const MaterialSpec& m = descriptor.materials[i];
+        XmlNode* mn = append_node(doc, mats, "Material");
+        append_attrib(doc, mn, "index", std::to_string(i));
+        append_attrib(doc, mn, "name", m.name);
+        append_attrib(doc, mn, "density", fmt_double(m.density_g_per_cm3));
+        for (const MaterialComponent& c : m.composition) {
+            XmlNode* el = append_node(doc, mn, "El");
+            append_attrib(doc, el, "Z", std::to_string(int(c.Z)));
+            append_attrib(doc, el, "frac", fmt_double(c.mass_fraction));
+        }
+    }
+
+}
+
+/// Reads a <Detector> element written by write_detector_node.
+GeometryDescriptor read_detector_node(const XmlNode* d) {
+    GeometryDescriptor gd;
+    const char* shape = attrib_value(d, "shape");
+    gd.shape = (shape && std::strcmp(shape, "box") == 0)
+                   ? DetectorShape::Box : DetectorShape::Cylinder;
+    gd.crystal_material_index =
+        static_cast<int>(attrib_double(d, "crystalMaterial", -1));
+    const char* rp = attrib_value(d, "referencePoint");
+    gd.reference_point = (rp && std::strcmp(rp, "endcap_front") == 0)
+                             ? ReferencePoint::EndcapFront
+                             : ReferencePoint::CrystalFace;
+    const char* sym = attrib_value(d, "symmetry");
+    gd.symmetry = (sym && std::strcmp(sym, "quadrant") == 0)
+                      ? ResponseSymmetry::Quadrant : ResponseSymmetry::Axial;
+    gd.dimensions_cm = parse_doubles(child_value(d, "Dimensions"));
+    // Absent in files written before the fillet/rounded-tip feature; the
+    // defaults are what those crystals actually were.
+    gd.bullet_radius_cm = attrib_double(d, "bulletRadius", 0.0);
+    if (const XmlNode* b = d->first_node("Bore")) {
+        BoreHoleConfig bc;
+        bc.radius = attrib_double(b, "radius", 0.0);
+        bc.depth = attrib_double(b, "depth", 0.0);
+        bc.rounded_tip = attrib_bool(b, "roundedTip", false);
+        gd.bore = bc;
+    }
+    if (const XmlNode* dl = d->first_node("DeadLayer")) {
+        DeadLayerConfig dc;
+        dc.front = attrib_double(dl, "front", 0.0);
+        dc.side = attrib_double(dl, "side", 0.0);
+        dc.back = attrib_double(dl, "back", 0.0);
+        gd.dead_layer = dc;
+    }
+    for (const XmlNode* ln = d->first_node("Layer"); ln;
+         ln = ln->next_sibling("Layer")) {
+        LayerSpec l;
+        l.material_index = static_cast<int>(attrib_double(ln, "material", -1));
+        l.front_thickness_cm = attrib_double(ln, "frontThickness", 0.0);
+        l.side_thickness_cm = attrib_double(ln, "sideThickness", 0.0);
+        l.z_start_cm = attrib_double(ln, "zStart", 0.0);
+        l.z_end_cm = attrib_double(ln, "zEnd", 0.0);
+        gd.layers.push_back(l);
+    }
+    if (const XmlNode* c = d->first_node("Collimator")) {
+        CollimatorSpec cs;
+        cs.material_index = static_cast<int>(attrib_double(c, "material", -1));
+        cs.side_thickness_cm = attrib_double(c, "sideThickness", 0.0);
+        cs.z_start_cm = attrib_double(c, "zStart", 0.0);
+        cs.z_end_cm = attrib_double(c, "zEnd", 0.0);
+        gd.collimator = cs;
+    }
+    if (const XmlNode* mats = d->first_node("Materials")) {
+        for (const XmlNode* mn = mats->first_node("Material"); mn;
+             mn = mn->next_sibling("Material")) {
+            MaterialSpec m;
+            if (const char* v = attrib_value(mn, "name")) m.name = v;
+            m.density_g_per_cm3 = attrib_double(mn, "density", 0.0);
+            for (const XmlNode* el = mn->first_node("El"); el;
+                 el = el->next_sibling("El")) {
+                MaterialComponent c;
+                c.Z = static_cast<uint8_t>(attrib_double(el, "Z", 0));
+                c.mass_fraction = attrib_double(el, "frac", 0.0);
+                m.composition.push_back(c);
+            }
+            gd.materials.push_back(std::move(m));
+        }
+    }
+
+    return gd;
+}
+
 }  // namespace
+
+std::string GeometryDescriptor::to_xml_string() const {
+    XmlDoc doc;
+    XmlNode* root = doc.allocate_node(rapidxml::node_element, "CeeLoGeometry");
+    doc.append_node(root);
+    write_detector_node(doc, root, *this);
+
+    std::string out;
+    rapidxml::print(std::back_inserter(out), doc, 0);
+    return out;
+}
+
+
+GeometryDescriptor GeometryDescriptor::from_xml_string(const std::string& xml) {
+    std::vector<char> buf(xml.begin(), xml.end());
+    buf.push_back('\0');
+    XmlDoc doc;
+    doc.parse<rapidxml::parse_trim_whitespace>(buf.data());
+
+    const XmlNode* root = doc.first_node("CeeLoGeometry");
+    if (!root) throw std::runtime_error("CeeLoGeometry: missing root node");
+
+    const XmlNode* d = root->first_node("Detector");
+    if (!d) throw std::runtime_error("CeeLoGeometry: missing Detector node");
+
+    return read_detector_node(d);
+}
+
 
 std::string DetectorResponse::to_xml_string() const {
     return serialize_xml(/*include_certificate=*/true);
@@ -1314,6 +1659,8 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         append_attrib(doc, p, "profile", to_string(provenance.profile));
         append_attrib(doc, p, "nodeFepPrecision",
                       fmt_double(provenance.node_fep_precision));
+        append_attrib(doc, p, "fepWindowKeV",
+                      fmt_double(provenance.fep_window_keV));
         append_attrib(doc, p, "generationSeed",
                       std::to_string(provenance.generation_seed));
         append_attrib(doc, p, "kernelNRays",
@@ -1324,74 +1671,11 @@ std::string DetectorResponse::serialize_xml(bool include_certificate) const {
         append_attrib(doc, ve, "maxKeV", fmt_double(provenance.valid_e_max_keV));
         append_value_node(doc, p, "MinDistanceCm",
                           fmt_double(provenance.min_distance_cm));
+        append_attrib(doc, p, "method", to_string(provenance.method));
     }
 
     // Detector geometry
-    {
-        XmlNode* d = append_node(doc, root, "Detector");
-        append_attrib(doc, d, "shape",
-                      descriptor.shape == DetectorShape::Cylinder ? "cylinder"
-                                                                  : "box");
-        append_attrib(doc, d, "crystalMaterial",
-                      std::to_string(descriptor.crystal_material_index));
-        append_attrib(doc, d, "referencePoint",
-                      descriptor.reference_point == ReferencePoint::EndcapFront
-                          ? "endcap_front" : "crystal_face");
-        append_attrib(doc, d, "symmetry",
-                      descriptor.symmetry == ResponseSymmetry::Quadrant
-                          ? "quadrant" : "axial");
-        append_value_node(doc, d, "Dimensions",
-                          join_doubles(descriptor.dimensions_cm));
-        // Both of the following are written only when non-default, so files
-        // for sharp-edged, flat-bored crystals stay byte-identical (and keep
-        // their content_hash) across this feature being added.
-        if (descriptor.bullet_radius_cm > 0.0)
-            append_attrib(doc, d, "bulletRadius",
-                          fmt_double(descriptor.bullet_radius_cm));
-        if (descriptor.bore) {
-            XmlNode* b = append_node(doc, d, "Bore");
-            append_attrib(doc, b, "radius", fmt_double(descriptor.bore->radius));
-            append_attrib(doc, b, "depth", fmt_double(descriptor.bore->depth));
-            if (descriptor.bore->rounded_tip)
-                append_attrib(doc, b, "roundedTip", "1");
-        }
-        if (descriptor.dead_layer) {
-            XmlNode* dl = append_node(doc, d, "DeadLayer");
-            append_attrib(doc, dl, "front", fmt_double(descriptor.dead_layer->front));
-            append_attrib(doc, dl, "side", fmt_double(descriptor.dead_layer->side));
-            append_attrib(doc, dl, "back", fmt_double(descriptor.dead_layer->back));
-        }
-        for (const LayerSpec& l : descriptor.layers) {
-            XmlNode* ln = append_node(doc, d, "Layer");
-            append_attrib(doc, ln, "material", std::to_string(l.material_index));
-            append_attrib(doc, ln, "frontThickness", fmt_double(l.front_thickness_cm));
-            append_attrib(doc, ln, "sideThickness", fmt_double(l.side_thickness_cm));
-            append_attrib(doc, ln, "zStart", fmt_double(l.z_start_cm));
-            append_attrib(doc, ln, "zEnd", fmt_double(l.z_end_cm));
-        }
-        if (descriptor.collimator) {
-            XmlNode* c = append_node(doc, d, "Collimator");
-            append_attrib(doc, c, "material",
-                          std::to_string(descriptor.collimator->material_index));
-            append_attrib(doc, c, "sideThickness",
-                          fmt_double(descriptor.collimator->side_thickness_cm));
-            append_attrib(doc, c, "zStart", fmt_double(descriptor.collimator->z_start_cm));
-            append_attrib(doc, c, "zEnd", fmt_double(descriptor.collimator->z_end_cm));
-        }
-        XmlNode* mats = append_node(doc, d, "Materials");
-        for (size_t i = 0; i < descriptor.materials.size(); ++i) {
-            const MaterialSpec& m = descriptor.materials[i];
-            XmlNode* mn = append_node(doc, mats, "Material");
-            append_attrib(doc, mn, "index", std::to_string(i));
-            append_attrib(doc, mn, "name", m.name);
-            append_attrib(doc, mn, "density", fmt_double(m.density_g_per_cm3));
-            for (const MaterialComponent& c : m.composition) {
-                XmlNode* el = append_node(doc, mn, "El");
-                append_attrib(doc, el, "Z", std::to_string(int(c.Z)));
-                append_attrib(doc, el, "frac", fmt_double(c.mass_fraction));
-            }
-        }
-    }
+    write_detector_node(doc, root, descriptor);
 
     // Mu tables
     {
@@ -1563,6 +1847,8 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
         if (const char* v = attrib_value(p, "createdUtc")) pr.created_utc = v;
         pr.profile = profile_from_string(attrib_value(p, "profile"));
         pr.node_fep_precision = attrib_double(p, "nodeFepPrecision", 0.003);
+        pr.fep_window_keV =
+            attrib_double(p, "fepWindowKeV", kDefaultFepWindowKeV);
         if (const char* v = attrib_value(p, "generationSeed"))
             pr.generation_seed = std::strtoull(v, nullptr, 10);
         pr.kernel_n_rays =
@@ -1574,77 +1860,19 @@ std::shared_ptr<DetectorResponse> DetectorResponse::from_xml_string(
         }
         if (const char* v = child_value(p, "MinDistanceCm"))
             pr.min_distance_cm = std::strtod(v, nullptr);
+        if (const char* v = attrib_value(p, "method")) {
+            if (std::strcmp(v, "quick_mc_transfer") == 0)
+                pr.method = ProductionMethod::QuickMcTransfer;
+            else if (std::strcmp(v, "curve_transfer") == 0)
+                pr.method = ProductionMethod::CurveTransfer;
+            else
+                pr.method = ProductionMethod::FullMc;
+        }
     }
 
     const XmlNode* d = root->first_node("Detector");
     if (!d) throw std::runtime_error("CeeLoResponse: missing Detector node");
-    {
-        GeometryDescriptor& gd = resp->descriptor;
-        const char* shape = attrib_value(d, "shape");
-        gd.shape = (shape && std::strcmp(shape, "box") == 0)
-                       ? DetectorShape::Box : DetectorShape::Cylinder;
-        gd.crystal_material_index =
-            static_cast<int>(attrib_double(d, "crystalMaterial", -1));
-        const char* rp = attrib_value(d, "referencePoint");
-        gd.reference_point = (rp && std::strcmp(rp, "endcap_front") == 0)
-                                 ? ReferencePoint::EndcapFront
-                                 : ReferencePoint::CrystalFace;
-        const char* sym = attrib_value(d, "symmetry");
-        gd.symmetry = (sym && std::strcmp(sym, "quadrant") == 0)
-                          ? ResponseSymmetry::Quadrant : ResponseSymmetry::Axial;
-        gd.dimensions_cm = parse_doubles(child_value(d, "Dimensions"));
-        // Absent in files written before the fillet/rounded-tip feature; the
-        // defaults are what those crystals actually were.
-        gd.bullet_radius_cm = attrib_double(d, "bulletRadius", 0.0);
-        if (const XmlNode* b = d->first_node("Bore")) {
-            BoreHoleConfig bc;
-            bc.radius = attrib_double(b, "radius", 0.0);
-            bc.depth = attrib_double(b, "depth", 0.0);
-            bc.rounded_tip = attrib_bool(b, "roundedTip", false);
-            gd.bore = bc;
-        }
-        if (const XmlNode* dl = d->first_node("DeadLayer")) {
-            DeadLayerConfig dc;
-            dc.front = attrib_double(dl, "front", 0.0);
-            dc.side = attrib_double(dl, "side", 0.0);
-            dc.back = attrib_double(dl, "back", 0.0);
-            gd.dead_layer = dc;
-        }
-        for (const XmlNode* ln = d->first_node("Layer"); ln;
-             ln = ln->next_sibling("Layer")) {
-            LayerSpec l;
-            l.material_index = static_cast<int>(attrib_double(ln, "material", -1));
-            l.front_thickness_cm = attrib_double(ln, "frontThickness", 0.0);
-            l.side_thickness_cm = attrib_double(ln, "sideThickness", 0.0);
-            l.z_start_cm = attrib_double(ln, "zStart", 0.0);
-            l.z_end_cm = attrib_double(ln, "zEnd", 0.0);
-            gd.layers.push_back(l);
-        }
-        if (const XmlNode* c = d->first_node("Collimator")) {
-            CollimatorSpec cs;
-            cs.material_index = static_cast<int>(attrib_double(c, "material", -1));
-            cs.side_thickness_cm = attrib_double(c, "sideThickness", 0.0);
-            cs.z_start_cm = attrib_double(c, "zStart", 0.0);
-            cs.z_end_cm = attrib_double(c, "zEnd", 0.0);
-            gd.collimator = cs;
-        }
-        if (const XmlNode* mats = d->first_node("Materials")) {
-            for (const XmlNode* mn = mats->first_node("Material"); mn;
-                 mn = mn->next_sibling("Material")) {
-                MaterialSpec m;
-                if (const char* v = attrib_value(mn, "name")) m.name = v;
-                m.density_g_per_cm3 = attrib_double(mn, "density", 0.0);
-                for (const XmlNode* el = mn->first_node("El"); el;
-                     el = el->next_sibling("El")) {
-                    MaterialComponent c;
-                    c.Z = static_cast<uint8_t>(attrib_double(el, "Z", 0));
-                    c.mass_fraction = attrib_double(el, "frac", 0.0);
-                    m.composition.push_back(c);
-                }
-                gd.materials.push_back(std::move(m));
-            }
-        }
-    }
+    resp->descriptor = read_detector_node(d);
 
     if (const XmlNode* ms = root->first_node("MuTables")) {
         for (const XmlNode* mn = ms->first_node("MuTable"); mn;

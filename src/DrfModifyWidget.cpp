@@ -54,6 +54,7 @@
 #include "InterSpec/WarningWidget.h"
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/MakeFwhmForDrf.h"
+#include "InterSpec/UndoRedoManager.h"
 #include "InterSpec/DrfModifyWidget.h"
 #include "InterSpec/DetectorEfficiency.h"
 #include "InterSpec/MakeMcResponseForDrf.h"
@@ -83,12 +84,11 @@ void make_item_selectable( WMenu *menu, WMenuItem *item )
 
 
 DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
-                                  std::shared_ptr<const DetectorPeakResponse> drf,
-                                  std::shared_ptr<const ceelo::GeometryDescriptor> geometry )
+                                  std::shared_ptr<const DetectorPeakResponse> drf )
   : WContainerWidget(),
     m_interspec( viewer ),
     m_orig( drf ),
-    m_geometry( geometry ),
+    m_geometry( drf ? drf->geometry() : nullptr ),
     m_tabMenu( nullptr ),
     m_tabStack( nullptr ),
     m_name( nullptr ),
@@ -96,8 +96,6 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_mcTool( nullptr ),
     m_fwhmTool( nullptr ),
     m_fwhmTabItem( nullptr ),
-    m_fwhmApply( nullptr ),
-    m_fwhmTabVisited( false ),
     m_bandTable( nullptr ),
     m_addBand( nullptr ),
     m_removeBand( nullptr ),
@@ -106,7 +104,11 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_removeAnchor( nullptr ),
     m_anchorRefDistance( nullptr ),
     m_anchorDefaultUncert( nullptr ),
-    m_updatedDrf()
+    m_anchorIsAbsolute( false ),
+    m_updatedDrf(),
+    m_renderFlags(),
+    m_currentState( nullptr ),
+    m_restoringState( false )
 {
   assert( m_interspec );
   if( m_interspec )
@@ -182,6 +184,7 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_name = idGrid->addNew<WLineEdit>();
     m_name->setTextSize( 32 );
     m_name->setText( WString::fromUTF8( m_orig ? m_orig->name() : string() ) );
+    m_name->changed().connect( this, &DrfModifyWidget::scheduleUndoRedoStep );
     nameLabel->setBuddy( m_name );
 
     WLabel *descLabel = idGrid->addNew<WLabel>( WString::tr("Description") );
@@ -189,31 +192,50 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     m_description->setColumns( 40 );
     m_description->setRows( 3 );
     m_description->setText( WString::fromUTF8( m_orig ? m_orig->description() : string() ) );
+    m_description->changed().connect( this, &DrfModifyWidget::scheduleUndoRedoStep );
     descLabel->setBuddy( m_description );
 
-    // Measured-curve anchor editor: only when seeded with a physical geometry
-    //  (e.g. an ANGLE import) AND the DRF carries raw measured points.  This is
-    //  the source-of-truth editor for the reference curve the response is
-    //  anchored to; edits are folded into the working DRF on apply().
+    // Measured-curve anchor editor: the source-of-truth editor for the reference curve the
+    //  response is anchored to; edits are folded into the working DRF on apply().  Shown whenever
+    //  the DRF states a geometry and its efficiency is a table of measured points:
+    //
+    //   - raw `measuredPoints` (an ANGLE import): absolute efficiencies at a reference distance;
+    //   - failing that, an energy/efficiency-pair efficiency curve (a GADRAS Efficiency.csv):
+    //     the same measured table, just without any uncertainties, and intrinsic rather than
+    //     absolute - so no reference distance applies.
     const shared_ptr<const MeasuredDrfPoints> measured
         = m_orig ? m_orig->measuredPoints() : nullptr;
-    if( m_geometry && measured && !measured->empty() )
+    const bool have_measured = (measured && !measured->empty());
+
+    const shared_ptr<const DetectorEfficiencyCurve> eff_curve
+        = m_orig ? m_orig->efficiencyCurve() : nullptr;
+    const bool have_pairs = (!have_measured && eff_curve
+                    && (eff_curve->form() == DetectorPeakResponse::kEnergyEfficiencyPairs)
+                    && (eff_curve->energyEfficiencies().size() >= 2));
+
+    m_anchorIsAbsolute = (m_orig && (m_orig->geometryType()
+                                     == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute));
+
+    if( m_geometry && (have_measured || have_pairs) )
     {
       WGroupBox *box = panel->addNew<WGroupBox>( WString::tr("dmw-anchor-title") );
       box->addStyleClass( "DrfModifyAnchor" );
       box->addNew<WText>( WString::tr("dmw-anchor-help") )->setInline( false );
 
-      // Reference distance the curve is anchored at (cm).
-      const vector<MeasuredEffPoint> &pts = measured->points();
+      // Reference distance the curve is anchored at (cm) - only meaningful for absolute
+      //  efficiencies; an intrinsic curve is per-gamma-striking-the-face, at no distance.
       double refDistCm = 0.0;
-      for( const MeasuredEffPoint &p : pts )
+      if( have_measured )
       {
-        if( p.distance > 0.0f )
+        for( const MeasuredEffPoint &p : measured->points() )
         {
-          refDistCm = p.distance / PhysicalUnits::cm;
-          break;
-        }
-      }//for( find a positive reference distance )
+          if( p.distance > 0.0f )
+          {
+            refDistCm = p.distance / PhysicalUnits::cm;
+            break;
+          }
+        }//for( find a positive reference distance )
+      }//if( have_measured )
       if( refDistCm <= 0.0 )
         refDistCm = m_orig->absoluteEfficiencyDistance() / PhysicalUnits::cm;
 
@@ -222,6 +244,7 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
       distRow->addNew<WLabel>( WString::tr("dmw-anchor-ref-dist") );
       m_anchorRefDistance = distRow->addNew<WLineEdit>();
       m_anchorRefDistance->setTextSize( 8 );
+      m_anchorRefDistance->changed().connect( this, &DrfModifyWidget::scheduleUndoRedoStep );
       if( refDistCm > 0.0 )
       {
         char buf[32];
@@ -229,13 +252,18 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
         m_anchorRefDistance->setText( buf );
       }
       distRow->addNew<WLabel>( WString::tr("dmw-anchor-cm") );
+      distRow->setHidden( !m_anchorIsAbsolute );
 
       WContainerWidget *defRow = box->addNew<WContainerWidget>();
       defRow->addStyleClass( "DrfModifyRow" );
       defRow->addNew<WLabel>( WString::tr("dmw-anchor-default-uncert") );
       m_anchorDefaultUncert = defRow->addNew<WLineEdit>();
       m_anchorDefaultUncert->setTextSize( 6 );
-      m_anchorDefaultUncert->setText( "5" );
+      m_anchorDefaultUncert->changed().connect( this, &DrfModifyWidget::scheduleUndoRedoStep );
+      // Only a fallback for blank per-point cells.  Left blank when the source stated no
+      //  uncertainties at all (a GADRAS Efficiency.csv), rather than inventing one.
+      if( have_measured )
+        m_anchorDefaultUncert->setText( "5" );
       defRow->addNew<WLabel>( WString::tr("dmw-anchor-percent") );
 
       m_anchorTable = box->addNew<WTable>();
@@ -247,15 +275,25 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
       WContainerWidget *btns = box->addNew<WContainerWidget>();
       m_addAnchor = btns->addNew<WPushButton>( WString::tr("dmw-anchor-add") );
       m_addAnchor->addStyleClass( "LinkBtn" );
-      m_addAnchor->clicked().connect( this, [this](){ addAnchorRow( 0.0f, 0.0f, 0.0f ); } );
+      m_addAnchor->clicked().connect( this, [this](){ addAnchorRow( 0.0f, 0.0f, 0.0f ); scheduleUndoRedoStep(); } );
       m_removeAnchor = btns->addNew<WPushButton>( WString::tr("dmw-anchor-remove") );
       m_removeAnchor->addStyleClass( "LinkBtn" );
-      m_removeAnchor->clicked().connect( this, &DrfModifyWidget::removeAnchorRow );
+      m_removeAnchor->clicked().connect( this, [this](){ removeAnchorRow(); scheduleUndoRedoStep(); } );
 
-      for( const MeasuredEffPoint &p : pts )
-        addAnchorRow( p.energy, p.efficiency, p.fracStatUncert );
+      if( have_measured )
+      {
+        for( const MeasuredEffPoint &p : measured->points() )
+          addAnchorRow( p.energy, p.efficiency, p.fracStatUncert );
+      }else
+      {
+        // Energies are stored in `PhysicalUnits::keV` units, which is 1.0 - i.e. already keV,
+        //  the same units the rows and MeasuredEffPoint use.
+        for( const DetectorPeakResponse::EnergyEfficiencyPair &p : eff_curve->energyEfficiencies() )
+          addAnchorRow( p.energy, p.efficiency, 0.0f );   //no uncertainty to show
+      }//if( have_measured ) / else
+
       m_removeAnchor->setEnabled( !m_anchors.empty() );
-    }//if( seeded with geometry + measured points )
+    }//if( the DRF states a geometry, and its efficiency is a measured table )
 
     WMenuItem *item = m_tabMenu->addItem( WString::tr("dmw-tab-name"), std::move(panelOwned) );
     make_item_selectable( m_tabMenu, item );
@@ -263,7 +301,7 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
 
   // --- Tab: Geom & MC characterization -------------------------------------
   {
-    auto toolOwned = make_unique<MakeMcResponseForDrf>( m_interspec, m_orig, m_geometry );
+    auto toolOwned = make_unique<MakeMcResponseForDrf>( m_interspec, m_orig );
     m_mcTool = toolOwned.get();
 
     // ContentLoading::Eager: this tool posts work to a worker thread and gets back to itself with
@@ -276,60 +314,47 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
 
   // --- Tab: FWHM -----------------------------------------------------------
   {
-    // MakeFwhmForDrf fits FWHM from the foreground's peaks; it (and its auto
-    //  peak-search) require a loaded foreground spectrum.  Only build it when
-    //  one is present - otherwise show a placeholder, so the rest of the
-    //  Modify dialog (name, geometry/MC, uncertainty) still works with no
-    //  spectrum loaded.
+    auto panelOwned = make_unique<WContainerWidget>();
+    WContainerWidget *panel = panelOwned.get();
+    WGridLayout *fwhmLayout = panel->setLayout( make_unique<WGridLayout>() );
+    fwhmLayout->setContentsMargins( 0, 0, 0, 0 );
+
+    // Fitting the FWHM needs a foreground to find peaks in, but viewing and hand-editing the one
+    //  the detector already has does not - so the tool is always built, and only the "Fit FWHM"
+    //  button (which the tool disables itself) needs a spectrum.
     const shared_ptr<const SpecUtils::Measurement> foreground
         = m_interspec ? m_interspec->displayedHistogram( SpecUtils::SpectrumType::Foreground )
                       : nullptr;
-    if( foreground )
+    if( !foreground )
     {
-      auto panelOwned = make_unique<WContainerWidget>();
-      WContainerWidget *panel = panelOwned.get();
-      WGridLayout *fwhmLayout = panel->setLayout( make_unique<WGridLayout>() );
-      fwhmLayout->setContentsMargins( 0, 0, 0, 0 );
+      WText *note = fwhmLayout->addWidget( make_unique<WText>( WString::tr("dmw-fwhm-no-foreground") ), 0, 0 );
+      note->addStyleClass( "DrfModifyNote" );
+      note->setInline( false );
+    }//if( no foreground )
 
-      // MakeFwhmForDrf edits a (non-const) DRF; give it a private clone - we
-      //  only read its fitted coefficients back out on apply().
-      shared_ptr<DetectorPeakResponse> fwhm_seed
-          = m_orig ? make_shared<DetectorPeakResponse>( *m_orig ) : nullptr;
+    // MakeFwhmForDrf edits a (non-const) DRF; give it a private clone - we
+    //  only read its coefficients back out on apply().
+    shared_ptr<DetectorPeakResponse> fwhm_seed
+        = m_orig ? make_shared<DetectorPeakResponse>( *m_orig ) : nullptr;
 
-      // `auto_fit_peaks == false`: the automated peak search is a multi-threaded fit of the whole
-      //  spectrum, so dont pay for it every time this dialog is opened - #handleTabSelected kicks
-      //  it off the first time the user actually looks at this tab.
-      // Always narrow: even at this dialog's widest, the tool shares its row with the equation
-      //  controls, so the peak table never has room for the full-width column headers.
-      auto toolOwned = make_unique<MakeFwhmForDrf>( false, m_interspec, fwhm_seed, true );
-      m_fwhmTool = toolOwned.get();
-      fwhmLayout->addWidget( std::move(toolOwned), 0, 0 );
-      fwhmLayout->setRowStretch( 0, 1 );
+    // `ShowExisting`: open on whatever FWHM the DRF already has, so looking at this tab can never
+    //  cost the user the one they had; the automated peak search (a multi-threaded fit of the whole
+    //  spectrum) only runs when they ask for it with "Fit FWHM".
+    // Always narrow: even at this dialog's widest, the tool shares its row with the equation
+    //  controls, so the peak table never has room for the full-width column headers.
+    auto toolOwned = make_unique<MakeFwhmForDrf>( MakeFwhmForDrf::InitialFit::ShowExisting,
+                                                  m_interspec, fwhm_seed, true );
+    m_fwhmTool = toolOwned.get();
+    fwhmLayout->addWidget( std::move(toolOwned), 1, 0 );
+    fwhmLayout->setRowStretch( 1, 1 );
 
-      // Looking at this tab must not silently cost the user the FWHM their detector already has,
-      //  so replacing it is opt-in.  Starts un-checked even for a DRF with no FWHM at all, so that
-      //  what "Use" does never depends on whether the user happened to visit this tab (the fit
-      //  differs before and after the automated peak search): #handleTabSelected checks it, once,
-      //  when the tab is first opened and the DRF has no FWHM to lose.  #apply honors this.
-      m_fwhmApply = fwhmLayout->addWidget( make_unique<WCheckBox>( WString::tr("dmw-fwhm-apply-cb") ), 1, 0 );
-      m_fwhmApply->addStyleClass( "DrfModifyFwhmApply" );
-      HelpSystem::attachToolTipOn( m_fwhmApply, WString::tr("dmw-fwhm-apply-cb-tt"), true );
-
-      // ContentLoading::Eager, so the tool is in the widget tree (and hence resolvable by
-      //  `findById`) while its peak search runs; with the default Lazy policy the widget sits in
-      //  `WMenuItem::uContents_` with no widget parent, the search completion silently no-ops, and
-      //  the tab shows "Currently searching for peaks..." forever.
-      m_fwhmTabItem = m_tabMenu->addItem( WString::tr("dmw-tab-fwhm"), std::move(panelOwned),
-                                          ContentLoading::Eager );
-      make_item_selectable( m_tabMenu, m_fwhmTabItem );
-    }else
-    {
-      auto placeholder = make_unique<WContainerWidget>();
-      placeholder->addStyleClass( "DrfModifyPanel" );
-      placeholder->addNew<WText>( WString::tr("dmw-fwhm-no-foreground") )->setInline( false );
-      WMenuItem *item = m_tabMenu->addItem( WString::tr("dmw-tab-fwhm"), std::move(placeholder) );
-      make_item_selectable( m_tabMenu, item );
-    }
+    // ContentLoading::Eager, so the tool is in the widget tree (and hence resolvable by
+    //  `findById`) while its peak search runs; with the default Lazy policy the widget sits in
+    //  `WMenuItem::uContents_` with no widget parent, the search completion silently no-ops, and
+    //  the tab shows "Currently searching for peaks..." forever.
+    m_fwhmTabItem = m_tabMenu->addItem( WString::tr("dmw-tab-fwhm"), std::move(panelOwned),
+                                        ContentLoading::Eager );
+    make_item_selectable( m_tabMenu, m_fwhmTabItem );
   }
 
   // --- Tab: Baseline uncertainty (energy-range bands) ----------------------
@@ -349,10 +374,10 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
     WContainerWidget *btns = panel->addNew<WContainerWidget>();
     m_addBand = btns->addNew<WPushButton>( WString::tr("dmw-add-band") );
     m_addBand->addStyleClass( "LinkBtn" );
-    m_addBand->clicked().connect( this, [this](){ addBandRow( 0.0f, 0.0f, 0.05f ); } );
+    m_addBand->clicked().connect( this, [this](){ addBandRow( 0.0f, 0.0f, 0.05f ); scheduleUndoRedoStep(); } );
     m_removeBand = btns->addNew<WPushButton>( WString::tr("dmw-remove-band") );
     m_removeBand->addStyleClass( "LinkBtn" );
-    m_removeBand->clicked().connect( this, &DrfModifyWidget::removeBandRow );
+    m_removeBand->clicked().connect( this, [this](){ removeBandRow(); scheduleUndoRedoStep(); } );
 
     // Seed rows from any existing piecewise-band uncertainty.
     const shared_ptr<const DetectorEfficiencyUncert> uncert
@@ -369,6 +394,14 @@ DrfModifyWidget::DrfModifyWidget( InterSpec *viewer,
   }
 
   m_tabMenu->itemSelected().connect( this, &DrfModifyWidget::handleTabSelected );
+
+  // Both child tools hand their state changes here, so one undo step covers the whole dialog.
+  m_mcTool->userChanged().connect( this, &DrfModifyWidget::scheduleUndoRedoStep );
+  if( m_fwhmTool )
+  {
+    m_fwhmTool->setOwnerHandlesUndoRedo( true );
+    m_fwhmTool->stateChanged().connect( this, &DrfModifyWidget::scheduleUndoRedoStep );
+  }//if( m_fwhmTool )
 
   m_tabMenu->select( 0 );
 
@@ -389,18 +422,11 @@ DrfModifyWidget::~DrfModifyWidget()
 
 void DrfModifyWidget::handleTabSelected( Wt::WMenuItem *item )
 {
-  // Only the first opening of the FWHM tab does anything; `WMenu::itemSelected()` also fires for
-  //  the initial `select(0)`, and re-visiting the tab must not re-search or re-tick the checkbox.
-  if( m_fwhmTabVisited || !item || (item != m_fwhmTabItem) || !m_fwhmTool )
-    return;
+  scheduleUndoRedoStep();
 
-  m_fwhmTabVisited = true;
-
-  // Nothing to lose -> offer the fit by default, now that the user is looking at it.
-  if( m_fwhmApply && (!m_orig || !m_orig->hasResolutionInfo()) )
-    m_fwhmApply->setChecked( true );
-
-  m_fwhmTool->startAutomatedPeakSearch();
+  // `startAutomatedPeakSearch` is idempotent, so re-visiting the tab costs nothing.
+  if( item && (item == m_fwhmTabItem) && m_fwhmTool )
+    m_fwhmTool->startAutomatedPeakSearch();
 }//void handleTabSelected( Wt::WMenuItem *item )
 
 
@@ -419,6 +445,12 @@ Wt::Signal<bool> &DrfModifyWidget::mcResponseAvailable()
 bool DrfModifyWidget::needsMcResponse() const
 {
   return (!m_orig || !m_orig->isValid());
+}
+
+
+std::shared_ptr<const DetectorPeakResponse> DrfModifyWidget::originalDrf() const
+{
+  return m_orig;
 }
 
 
@@ -443,6 +475,8 @@ void DrfModifyWidget::addBandRow( const float lowerEnergy, const float upperEner
   r.lower = make_edit( 0, lowerEnergy );
   r.upper = make_edit( 1, upperEnergy );
   r.frac  = make_edit( 2, fracUncert );
+  for( WLineEdit *edit : { r.lower, r.upper, r.frac } )
+    edit->changed().connect( this, &DrfModifyWidget::scheduleUndoRedoStep );
   m_bands.push_back( r );
   m_removeBand->setEnabled( !m_bands.empty() );
 }//addBandRow(...)
@@ -481,6 +515,8 @@ void DrfModifyWidget::addAnchorRow( const float energy, const float efficiency,
   // Store the per-point uncertainty as a percentage; leave blank to inherit the
   //  default uncert % on apply.
   r.uncert = make_edit( 2, 100.0f*fracUncert, true );
+  for( WLineEdit *edit : { r.energy, r.eff, r.uncert } )
+    edit->changed().connect( this, &DrfModifyWidget::scheduleUndoRedoStep );
   m_anchors.push_back( r );
   if( m_removeAnchor )
     m_removeAnchor->setEnabled( !m_anchors.empty() );
@@ -517,7 +553,7 @@ void DrfModifyWidget::applyAnchorEdits( DetectorPeakResponse &working )
     const string rs = m_anchorRefDistance->text().toUTF8();
     try{ refDistCm = std::stod( rs ); }catch( std::exception & ){ refDistCm = 0.0; }
   }
-  if( refDistCm <= 0.0 )
+  if( m_anchorIsAbsolute && (refDistCm <= 0.0) )
     return;  //can't build absolute efficiency without a valid distance
 
   const double refDist = refDistCm * PhysicalUnits::cm;
@@ -582,17 +618,176 @@ void DrfModifyWidget::applyAnchorEdits( DetectorPeakResponse &working )
 
   try
   {
-    working.setEfficiencyPoints( effpts, diameter, refDist,
-                          DetectorPeakResponse::EffGeometryType::FarFieldAbsolute );
+    // Write the points back as whatever they ARE - re-interpreting an intrinsic curve as absolute
+    //  at a distance would rescale the detector by its solid angle.
+    const DetectorPeakResponse::EffGeometryType geom_type = m_anchorIsAbsolute
+                          ? DetectorPeakResponse::EffGeometryType::FarFieldAbsolute
+                          : DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic;
 
-    auto meas = make_shared<MeasuredDrfPoints>();
-    meas->setPoints( measpts );
-    working.setMeasuredPoints( meas );
+    working.setEfficiencyPoints( effpts, diameter, refDist, geom_type );
+
+    // `MeasuredDrfPoints` are read elsewhere (grounding, transfer anchors) as absolute
+    //  efficiencies at `distance`, so only absolute rows may be recorded as them.
+    if( m_anchorIsAbsolute )
+    {
+      auto meas = make_shared<MeasuredDrfPoints>();
+      meas->setPoints( measpts );
+      working.setMeasuredPoints( meas );
+    }
   }catch( std::exception & )
   {
     //Malformed edits (e.g. duplicate/degenerate energies): keep the seed curve.
   }
 }//applyAnchorEdits(...)
+
+
+bool DrfModifyWidget::ToolState::operator==( const ToolState &rhs ) const
+{
+  if( (name != rhs.name) || (description != rhs.description) || (tabIndex != rhs.tabIndex)
+     || (bands != rhs.bands) || (anchors != rhs.anchors)
+     || (anchorRefDistance != rhs.anchorRefDistance)
+     || (anchorDefaultUncert != rhs.anchorDefaultUncert)
+     || (mc != rhs.mc) )
+  {
+    return false;
+  }
+
+  if( !fwhm || !rhs.fwhm )
+    return (!fwhm == !rhs.fwhm);
+
+  return ((*fwhm) == (*rhs.fwhm));
+}//ToolState::operator==
+
+
+std::shared_ptr<DrfModifyWidget::ToolState> DrfModifyWidget::currentState() const
+{
+  auto state = make_shared<ToolState>();
+
+  state->name = m_name->text().toUTF8();
+  state->description = m_description->text().toUTF8();
+  state->tabIndex = m_tabMenu->currentIndex();
+
+  for( const BandRow &r : m_bands )
+    state->bands.push_back( { r.lower->text().toUTF8(), r.upper->text().toUTF8(),
+                              r.frac->text().toUTF8() } );
+
+  for( const AnchorRow &r : m_anchors )
+    state->anchors.push_back( { r.energy->text().toUTF8(), r.eff->text().toUTF8(),
+                                r.uncert->text().toUTF8() } );
+
+  if( m_anchorRefDistance )
+    state->anchorRefDistance = m_anchorRefDistance->text().toUTF8();
+  if( m_anchorDefaultUncert )
+    state->anchorDefaultUncert = m_anchorDefaultUncert->text().toUTF8();
+
+  state->mc = m_mcTool->currentState();
+  if( m_fwhmTool )
+    state->fwhm = m_fwhmTool->currentState();
+
+  return state;
+}//DrfModifyWidget::currentState()
+
+
+void DrfModifyWidget::setState( const std::shared_ptr<const ToolState> &state )
+{
+  if( !state )
+    return;
+
+  m_restoringState = true;
+  m_currentState = state;
+
+  m_name->setText( WString::fromUTF8(state->name) );
+  m_description->setText( WString::fromUTF8(state->description) );
+
+  while( !m_bands.empty() )
+    removeBandRow();
+  for( const std::array<string,3> &b : state->bands )
+  {
+    addBandRow( 0.0f, 0.0f, 0.0f );
+    m_bands.back().lower->setText( WString::fromUTF8(b[0]) );
+    m_bands.back().upper->setText( WString::fromUTF8(b[1]) );
+    m_bands.back().frac->setText( WString::fromUTF8(b[2]) );
+  }//for( const std::array<string,3> &b : state->bands )
+
+  if( m_anchorTable )
+  {
+    while( !m_anchors.empty() )
+      removeAnchorRow();
+    for( const std::array<string,3> &a : state->anchors )
+    {
+      addAnchorRow( 0.0f, 0.0f, 0.0f );
+      m_anchors.back().energy->setText( WString::fromUTF8(a[0]) );
+      m_anchors.back().eff->setText( WString::fromUTF8(a[1]) );
+      m_anchors.back().uncert->setText( WString::fromUTF8(a[2]) );
+    }//for( const std::array<string,3> &a : state->anchors )
+
+    m_anchorRefDistance->setText( WString::fromUTF8(state->anchorRefDistance) );
+    m_anchorDefaultUncert->setText( WString::fromUTF8(state->anchorDefaultUncert) );
+  }//if( m_anchorTable )
+
+  m_mcTool->setState( state->mc );
+  if( m_fwhmTool && state->fwhm )
+    m_fwhmTool->setState( state->fwhm );
+
+  if( (state->tabIndex >= 0) && (state->tabIndex < m_tabMenu->count()) )
+    m_tabMenu->select( state->tabIndex );
+
+  // Restoring is not a user edit, so nothing here should become the next undo step.
+  m_renderFlags.clear( RenderActions::AddUndoRedoStep );
+  m_restoringState = false;
+}//DrfModifyWidget::setState(...)
+
+
+void DrfModifyWidget::scheduleUndoRedoStep()
+{
+  if( m_restoringState )
+    return;
+
+  m_renderFlags |= RenderActions::AddUndoRedoStep;
+  scheduleRender();
+}//void scheduleUndoRedoStep()
+
+
+void DrfModifyWidget::render( Wt::WFlags<Wt::RenderFlag> flags )
+{
+  const bool add_step = m_renderFlags.test( RenderActions::AddUndoRedoStep );
+  m_renderFlags = Wt::WFlags<RenderActions>();
+
+  // Re-baseline on every render, not just flagged ones, so a change made without recording a step
+  //  (a restore, a generation landing) doesnt leave a stale baseline for the next edit to diff.
+  doAddUndoRedoStep( add_step );
+
+  WContainerWidget::render( flags );
+}//void render( Wt::WFlags<Wt::RenderFlag> flags )
+
+
+void DrfModifyWidget::doAddUndoRedoStep( const bool add_step )
+{
+  const shared_ptr<const ToolState> prev = m_currentState;
+  const shared_ptr<const ToolState> current = currentState();
+  m_currentState = current;
+
+  if( !add_step || !prev || !current || ((*prev) == (*current)) )
+    return;
+
+  UndoRedoManager *undoRedo = UndoRedoManager::instance();
+  if( !undoRedo || !undoRedo->canAddUndoRedoNow() )
+    return;
+
+  // Resolve the dialog when the step runs, rather than capturing it: this widget may well have been
+  //  closed and re-created since (see the comments on `UndoRedoManager::addUndoRedoStep`).  A step
+  //  whose dialog is gone simply does nothing.
+  auto apply = []( const shared_ptr<const ToolState> &state ){
+    InterSpec *viewer = InterSpec::instance();
+    DrfModifyWidget *tool = viewer ? viewer->drfModifyWidget() : nullptr;
+    if( tool )
+      tool->setState( state );
+  };
+
+  undoRedo->addUndoRedoStep( [prev,apply](){ apply(prev); },
+                             [current,apply](){ apply(current); },
+                             "Modify-DRF tool change" );
+}//void doAddUndoRedoStep( const bool add_step )
 
 
 void DrfModifyWidget::apply()
@@ -615,14 +810,12 @@ void DrfModifyWidget::apply()
   //  MC/uncertainty steps read them.
   applyAnchorEdits( *working );
 
-  // FWHM: pull the fitted coefficients (if any) without triggering the tool's
-  //  own detector-changed emit.  Only when the user asked for it - see where the
-  //  checkbox is created; un-checked leaves whatever FWHM the DRF came in with.
-  const bool useFwhmFit = m_fwhmApply && m_fwhmApply->isChecked();
-  const shared_ptr<MakeFwhmForDrf::ToolState> fwhm
-      = (useFwhmFit && m_fwhmTool) ? m_fwhmTool->currentState() : nullptr;
-  if( fwhm && !fwhm->m_parameters.empty() && m_fwhmTool->isValidFwhm() )
+  // FWHM: take whatever the FWHM tab is showing, without triggering the tool's own
+  //  detector-changed emit.  The tab opens seeded from this DRF, so this is a no-op unless the user
+  //  actually changed something there.
+  if( m_fwhmTool )
   {
+    const shared_ptr<MakeFwhmForDrf::ToolState> fwhm = m_fwhmTool->currentState();
     const DetectorPeakResponse::ResolutionFnctForm form
         = DetectorPeakResponse::ResolutionFnctForm( std::max( 0, fwhm->m_fwhm_index ) );
 
@@ -630,18 +823,25 @@ void DrfModifyWidget::apply()
     //  escape into a signal handler and take the rest of the users edits with it.
     try
     {
-      working->setFwhmCoefficients( fwhm->m_parameters, form );
+      if( form == DetectorPeakResponse::kNumResolutionFnctForm )
+      {
+        working->setFwhmCoefficients( {}, form );   //the user chose "None": clear the FWHM
+      }else if( !fwhm->m_parameters.empty() )
+      {
+        working->setFwhmCoefficients( fwhm->m_parameters, form );
+      }else
+      {
+        // An equation form is selected, but it has no coefficients - the user changed the form and
+        //  has not fit (or filled in) one yet.  Say so, rather than closing as if the equation
+        //  showing had been applied; the DRF keeps whatever FWHM it came in with.
+        passMessage( WString::tr("dmw-err-no-fwhm-fit"), WarningWidget::WarningMsgHigh );
+      }
     }catch( std::exception &e )
     {
       passMessage( WString::tr("dmw-err-fwhm-not-applied").arg(e.what()),
                    WarningWidget::WarningMsgHigh );
     }
-  }else if( useFwhmFit )
-  {
-    // The user asked for the fit, but there isnt a usable one (fit failed, or the peak search is
-    //  still running) - say so rather than closing as if it had been applied.
-    passMessage( WString::tr("dmw-err-no-fwhm-fit"), WarningWidget::WarningMsgHigh );
-  }//if( have a valid FWHM fit ) / else if( the user wanted one )
+  }//if( m_fwhmTool )
 
   // Monte-Carlo response: attach + ground (to the DRF's measured points if it
   //  has them; otherwise the MC tool already grounded to a sampled curve).
@@ -721,8 +921,7 @@ DrfModifyWidget *DrfModifyWindow::tool()
 
 
 DrfModifyWindow::DrfModifyWindow( InterSpec *viewer,
-                                  std::shared_ptr<const DetectorPeakResponse> drf,
-                                  std::shared_ptr<const ceelo::GeometryDescriptor> geometry )
+                                  std::shared_ptr<const DetectorPeakResponse> drf )
  : AuxWindow( WString::tr("window-title-modify-drf"),
              (AuxWindowProperties::TabletNotFullScreen
               | AuxWindowProperties::SetCloseable
@@ -746,7 +945,7 @@ DrfModifyWindow::DrfModifyWindow( InterSpec *viewer,
   }//if( ww > 100 && wh > 100 )
 
   {
-    auto toolOwned = make_unique<DrfModifyWidget>( viewer, drf, geometry );
+    auto toolOwned = make_unique<DrfModifyWidget>( viewer, drf );
     m_tool = toolOwned.get();
     stretcher()->addWidget( std::move(toolOwned), 0, 0 );
   }

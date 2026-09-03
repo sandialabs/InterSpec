@@ -417,6 +417,12 @@ public:
   FileDragUploadResource *batchDragNDrop();
 #endif
 
+  /** The upload target for the "companion file" drop areas - the Efficiency.csv a Detector.dat is
+   missing, and vice-versa.  While such a dialog is showing, the app's normal spectrum-file drop
+   handling is blocked, so a file dropped anywhere lands in the dialog.
+   */
+  FileDragUploadResource *pairFileDragNDrop();
+
   //handleZippedFile:  presents the user with a dialog to extract and use one
   //  of the spectrum files in a zip archive.  Returns true if a valid zip file.
   //  'name' is the display name of the original file, while 'spoolName' is
@@ -725,6 +731,9 @@ protected:
 #if( USE_BATCH_GUI_TOOLS )
   std::unique_ptr<FileDragUploadResource> m_batchDragNDrop;
 #endif
+
+  /** See #pairFileDragNDrop. */
+  std::unique_ptr<FileDragUploadResource> m_pairFileDragNDrop;
   
   Wt::Core::observing_ptr<SimpleDialog> m_multiUrlSpectrumDialog;
   

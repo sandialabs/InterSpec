@@ -176,6 +176,7 @@ std::shared_ptr<DetectorResponse> make_transfer_response(
                                               : fep_anchor.energies_keV.front();
     const double e_max = opts.e_max_keV > 0.0 ? opts.e_max_keV
                                               : fep_anchor.energies_keV.back();
+    resp->provenance.method = ProductionMethod::CurveTransfer;  //no Monte Carlo at all
     resp->provenance.profile = ResponseProfile::FarField;
     resp->provenance.kernel_n_rays = opts.kernel_n_rays;
     resp->provenance.detector_name = opts.detector_name;

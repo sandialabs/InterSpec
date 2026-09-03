@@ -23,6 +23,7 @@
  */
 
 #include "geometry/Cylinder.h"
+#include <cfloat>
 #include <cmath>
 #include <algorithm>
 #include <limits>
@@ -89,24 +90,36 @@ std::optional<RayHit> intersect_cylinder(
 
     double t_enter, t_exit;
 
-    if (a < kEpsilon) {
-        // Ray is parallel to the cylinder axis (along z)
-        if (c > kEpsilon) {
+    // Mirrors InterSpec's cylinder_line_intersection_imp (GammaInteractionCalc_imp.hpp), which
+    // already solved this: test the UNSQUARED direction components against DBL_EPSILON, and use
+    // the stable quadratic for everything else.
+    //
+    // The old test was `a = dx*dx + dy*dy < 1e-12`. Because `a` is a SQUARED quantity that is
+    // sin^2(theta) for a unit direction, the threshold fired for every ray within 1e-6 rad of
+    // axis-parallel -- ten orders of magnitude looser than intended -- and the companion test
+    // `c > kEpsilon` then counted a ray starting exactly ON the surface (c == 0) as inside,
+    // reporting a FULL-LENGTH phantom chord for a ray that actually tilts straight back out.
+    if (std::abs(dx) < DBL_EPSILON && std::abs(dy) < DBL_EPSILON) {
+        // Genuinely parallel to the axis.
+        if (c > 0.0) {
             return std::nullopt; // Outside the cylinder, moving parallel
         }
-        // Inside (or on surface of) the cylinder
         t_enter = -kInfinity;
         t_exit  =  kInfinity;
     } else {
-        double discriminant = b * b - 4.0 * a * c;
+        const double discriminant = b * b - 4.0 * a * c;
         if (discriminant < 0.0) {
             return std::nullopt; // No intersection with infinite cylinder
         }
 
-        double sqrt_disc = std::sqrt(discriminant);
-        double inv_2a = 0.5 / a;
-        t_enter = (-b - sqrt_disc) * inv_2a;
-        t_exit  = (-b + sqrt_disc) * inv_2a;
+        // Stable form: the textbook (-b +/- sqrt)/2a loses one root to cancellation when
+        // |b| ~ sqrt(discriminant), i.e. for rays that just glance the cylinder.
+        const double sqrt_disc = std::sqrt(discriminant);
+        const double q = -0.5 * (b + ((b < 0.0) ? -sqrt_disc : sqrt_disc));
+        const double t_root_a = q / a;
+        const double t_root_b = (q != 0.0) ? (c / q) : t_root_a;
+        t_enter = std::min(t_root_a, t_root_b);
+        t_exit  = std::max(t_root_a, t_root_b);
     }
 
     // Clip to the finite z-range

@@ -26,6 +26,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "geometry/SourceGeometry.h"
 #include "materials/Material.h"
 
@@ -273,15 +274,18 @@ BOOST_AUTO_TEST_CASE(mc_end_cap_only_attenuation) {
     };
 
     EfficiencyCalculator calc_bare;
+    calc_bare.set_fep_window_keV(kTestFepWindowKeV);
     make_calc(calc_bare);
     auto res_bare = calc_bare.compute(precision_config(energy_keV));
 
     EfficiencyCalculator calc_ends;
+    calc_ends.set_fep_window_keV(kTestFepWindowKeV);
     make_calc(calc_ends);
     calc_ends.add_source_shield(&pb, 0.0, t);
     auto res_ends = calc_ends.compute(precision_config(energy_keV));
 
     EfficiencyCalculator calc_side;
+    calc_side.set_fep_window_keV(kTestFepWindowKeV);
     make_calc(calc_side);
     calc_side.add_source_shield(&pb, t, 0.0);
     auto res_side = calc_side.compute(precision_config(energy_keV));
@@ -320,11 +324,13 @@ BOOST_AUTO_TEST_CASE(fep_only_matches_full_mode_asymmetric_shield) {
     };
 
     EfficiencyCalculator calc_full;
+    calc_full.set_fep_window_keV(kTestFepWindowKeV);
     make_calc(calc_full);
     calc_full.enable_fep_only_mode(false);
     auto res_full = calc_full.compute(precision_config(200.0));
 
     EfficiencyCalculator calc_fep;
+    calc_fep.set_fep_window_keV(kTestFepWindowKeV);
     make_calc(calc_fep);
     calc_fep.enable_fep_only_mode(true);
     auto res_fep = calc_fep.compute(precision_config(200.0));
@@ -352,6 +358,7 @@ BOOST_AUTO_TEST_CASE(gdml_export_asymmetric_cylinder) {
     Material nai = make_NaI();
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -15.0), 3.0, 3.0);
     calc.add_source_shield(&pb, 0.3, 0.1);
@@ -380,6 +387,7 @@ BOOST_AUTO_TEST_CASE(gdml_export_zero_end_cap_epsilon) {
     Material nai = make_NaI();
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -15.0), 3.0, 3.0);
     calc.add_source_shield(&pb, 0.3, 0.0);
@@ -409,6 +417,7 @@ BOOST_AUTO_TEST_CASE(gdml_export_uniform_epsilon) {
     Material nai = make_NaI();
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -15.0), 3.0, 3.0);
     calc.add_source_shield(&pb, 0.2);
@@ -436,6 +445,7 @@ BOOST_AUTO_TEST_CASE(gdml_export_asymmetric_box) {
     Material nai = make_NaI();
 
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_rectangular_source(Eigen::Vector3d(0.0, 0.0, -15.0),
                                 Eigen::Vector3d(1.0, 2.0, 3.0));

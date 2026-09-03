@@ -38,6 +38,9 @@ add_executable(ceelo_g4val ${G4VAL_SOURCES})
 
 target_include_directories(ceelo_g4val PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/src
+    # For physics/FepWindow.h only: the harness must classify full-energy with the SAME window
+    #  CeeLo scores with, and a hand-synced literal is exactly how those two drifted apart before.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../../src
 )
 
 target_link_libraries(ceelo_g4val PRIVATE

@@ -32,6 +32,7 @@
 
 #include "geometry/Geometry.h"
 #include "io/ResponseKernel.h"
+#include "test_fep_window.h"
 #include "io/SolidAngle.h"
 #include "materials/Material.h"
 
@@ -162,10 +163,10 @@ BOOST_AUTO_TEST_CASE(collimator_hole_fraction) {
 // Klein-Nishina in-window fraction: large forward-cone fraction at low E,
 // small at high E, monotonically decreasing, bounded in (0, 1).
 BOOST_AUTO_TEST_CASE(kn_in_window_fraction_behavior) {
-    const double f60 = kn_in_window_fraction(60.0);
-    const double f200 = kn_in_window_fraction(200.0);
-    const double f662 = kn_in_window_fraction(662.0);
-    const double f2614 = kn_in_window_fraction(2614.0);
+    const double f60 = kn_in_window_fraction(60.0, kTestFepWindowKeV);
+    const double f200 = kn_in_window_fraction(200.0, kTestFepWindowKeV);
+    const double f662 = kn_in_window_fraction(662.0, kTestFepWindowKeV);
+    const double f2614 = kn_in_window_fraction(2614.0, kTestFepWindowKeV);
     BOOST_CHECK_GT(f60, f200);
     BOOST_CHECK_GT(f200, f662);
     BOOST_CHECK_GT(f662, f2614);
@@ -179,7 +180,7 @@ BOOST_AUTO_TEST_CASE(kn_in_window_fraction_behavior) {
 BOOST_AUTO_TEST_CASE(survival_removal_mu_bounds) {
     for (const double E : {60.0, 200.0, 662.0}) {
         const MacroscopicXS xs = mat_Al().macroscopic_xs(E * 1e-3);
-        const double f_win = kn_in_window_fraction(E);
+        const double f_win = kn_in_window_fraction(E, kTestFepWindowKeV);
         const double mu_rem = fep_survival_removal_mu(xs, f_win);
         BOOST_CHECK_LT(mu_rem, xs.mu_total());
         BOOST_CHECK_GT(mu_rem, xs.mu_total() - xs.mu_rs - xs.mu_cs - 1e-12);
@@ -208,7 +209,7 @@ BOOST_AUTO_TEST_CASE(fep_survival_removal_mu_depth_identity_and_bounds) {
     for (const double E : {60.0, 122.0, 662.0}) {
         for (const Material* m : {&fe, &h2o}) {
             const MacroscopicXS xs = m->macroscopic_xs(E * 1e-3);
-            const double f_win = kn_in_window_fraction(E, 1.5, *m);
+            const double f_win = kn_in_window_fraction(E, kTestFepWindowKeV, *m);
             const double flat = fep_survival_removal_mu(xs, f_win);
             // tau_src = 0 must be bit-identical to the flat credit.
             BOOST_CHECK_EQUAL(fep_survival_removal_mu_depth(xs, f_win, 0.0), flat);
@@ -236,9 +237,9 @@ BOOST_AUTO_TEST_CASE(kn_in_window_material_below_free_electron) {
     const Material pb = make_Lead();
     const Material h2o = make_Water();
     for (const double E : {60.0, 122.0, 344.0, 662.0, 1332.0, 2614.0}) {
-        const double f_free = kn_in_window_fraction(E);
+        const double f_free = kn_in_window_fraction(E, kTestFepWindowKeV);
         for (const Material* m : {&h2o, &fe, &pb}) {
-            const double f_mat = kn_in_window_fraction(E, 1.5, *m);
+            const double f_mat = kn_in_window_fraction(E, kTestFepWindowKeV, *m);
             BOOST_CHECK_GT(f_mat, 0.0);
             BOOST_CHECK_LT(f_mat, 1.0);
             BOOST_CHECK_LT(f_mat, f_free);
@@ -246,10 +247,10 @@ BOOST_AUTO_TEST_CASE(kn_in_window_material_below_free_electron) {
     }
     // Suppression strengthens with Z (measured @60 keV: water 0.89, Fe 0.77,
     // Pb 0.63 of the free-electron fraction).
-    const double f_free60 = kn_in_window_fraction(60.0);
-    const double r_h2o = kn_in_window_fraction(60.0, 1.5, h2o) / f_free60;
-    const double r_fe = kn_in_window_fraction(60.0, 1.5, fe) / f_free60;
-    const double r_pb = kn_in_window_fraction(60.0, 1.5, pb) / f_free60;
+    const double f_free60 = kn_in_window_fraction(60.0, kTestFepWindowKeV);
+    const double r_h2o = kn_in_window_fraction(60.0, kTestFepWindowKeV, h2o) / f_free60;
+    const double r_fe = kn_in_window_fraction(60.0, kTestFepWindowKeV, fe) / f_free60;
+    const double r_pb = kn_in_window_fraction(60.0, kTestFepWindowKeV, pb) / f_free60;
     BOOST_CHECK_GT(r_h2o, r_fe);
     BOOST_CHECK_GT(r_fe, r_pb);
     BOOST_CHECK_LT(r_fe, 0.85);  // material correction is real at 60 keV
@@ -264,9 +265,9 @@ BOOST_AUTO_TEST_CASE(kn_in_window_material_high_E_convergence) {
     const Material fe = make_Iron();
     const Material pb = make_Lead();
     for (const double E : {1332.0, 2614.0}) {
-        const double f_free = kn_in_window_fraction(E);
+        const double f_free = kn_in_window_fraction(E, kTestFepWindowKeV);
         for (const Material* m : {&fe, &pb}) {
-            const double f_mat = kn_in_window_fraction(E, 1.5, *m);
+            const double f_mat = kn_in_window_fraction(E, kTestFepWindowKeV, *m);
             BOOST_CHECK_LT(f_free - f_mat, 1.0e-3);  // absolute gap vanishes
             const MacroscopicXS xs = m->macroscopic_xs(E * 1e-3);
             const double mr_free = fep_survival_removal_mu(xs, f_free);

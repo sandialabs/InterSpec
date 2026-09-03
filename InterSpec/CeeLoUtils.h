@@ -87,6 +87,20 @@ namespace CeeLoUtils
     bool curve_derived = false;
   };//struct TransferAnchor
 
+  /** The on-axis distance (cm) the DRF's efficiency is pinned at - i.e. the geometry it was
+   characterized for, and therefore the geometry at which a flat-disk extrapolation is exactly what
+   the curve already encodes.
+
+   Cheap: no anchor is built and no curve is sampled, so it is safe to call on every UI change.
+   Follows the same rule #transferAnchorForDrf uses to choose its reference distance - raw measured
+   points taken at a single distance (within 1%), else the pinned absolute-efficiency distance for a
+   far-field-absolute DRF, else max(50 cm, 10 x the geometry's transverse half-extent).
+
+   Returns <= 0 when it cannot be determined.
+   */
+  double pinnedEfficiencyDistanceCm( const std::shared_ptr<const DetectorPeakResponse> &drf,
+                                     const ceelo::GeometryDescriptor &geom );
+
   /** Builds the efficiency-transfer anchor for a DRF.
 
    Prefers the DRF's raw measured points when they exist and were all taken at
@@ -131,6 +145,20 @@ namespace CeeLoUtils
    so it may run on a worker thread with value-captured inputs.  No Monte
    Carlo is run - this is deterministic and sub-second.
    */
+  /** Gives `drf` off-axis and near-field support, for free, when it already has everything the
+   support needs: a stated geometry (#DetectorPeakResponse::geometry) and a measured efficiency to
+   anchor on.  Builds the measured-curve transfer (#makeTransferResponse - no Monte Carlo, sub-
+   second) and attaches it with #DetectorPeakResponse::setCeeloResponse.
+
+   Without this, a detector imported from a `Detector.dat` plus its `Efficiency.csv` answers every
+   query with the flat-disk solid angle and cannot answer off-axis at all, despite the import having
+   handed us both halves of a proper transfer.
+
+   A no-op (returning false) when the DRF already carries a response, states no geometry, is
+   fixed-geometry, or cannot produce a usable anchor.  Never throws.
+   */
+  bool attachCurveTransferResponse( DetectorPeakResponse &drf );
+
   std::shared_ptr<ceelo::DetectorResponse> makeTransferResponse(
                       const ceelo::GeometryDescriptor &geom,
                       const TransferAnchor &anchor,

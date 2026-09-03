@@ -146,6 +146,40 @@ namespace
   }//append_ceelo_response_node(...)
 
 
+  /** Serializes a ceelo::GeometryDescriptor and embeds the resulting
+   "CeeLoGeometry" element under `parent` - the same shape as
+   #append_ceelo_response_node, for a DRF that knows its geometry but has no
+   generated response.
+   */
+  void append_ceelo_geometry_node( ::rapidxml::xml_node<char> *parent,
+                                   ::rapidxml::xml_document<char> *doc,
+                                   const ceelo::GeometryDescriptor &geometry )
+  {
+    const std::string xml = geometry.to_xml_string();
+    std::vector<char> buf( xml.begin(), xml.end() );
+    buf.push_back( '\0' );
+
+    ::rapidxml::xml_document<char> ceelo_doc;
+    ceelo_doc.parse<0>( buf.data() );
+    const ::rapidxml::xml_node<char> *root = ceelo_doc.first_node( "CeeLoGeometry" );
+    if( !root )
+      throw std::runtime_error( "append_ceelo_geometry_node: codec produced no root" );
+
+    parent->append_node( deep_clone_xml_node( doc, root ) );
+  }//append_ceelo_geometry_node(...)
+
+
+  /** Re-prints a "CeeLoGeometry" element and hands it to the CeeLo codec. */
+  std::shared_ptr<const ceelo::GeometryDescriptor> parse_ceelo_geometry_node(
+                                        const ::rapidxml::xml_node<char> *node )
+  {
+    std::string xml;
+    ::rapidxml::print( std::back_inserter(xml), *node, ::rapidxml::print_no_indenting );
+    return std::make_shared<const ceelo::GeometryDescriptor>(
+                                  ceelo::GeometryDescriptor::from_xml_string( xml ) );
+  }//parse_ceelo_geometry_node(...)
+
+
   /** Re-prints a "CeeLoResponse" element to a standalone string and hands it
    to the CeeLo codec.  Throws on invalid content.
    */
@@ -731,6 +765,8 @@ void DetectorPeakResponse::computeHash()
 
   if( m_ceeloResponse )
     boost::hash_combine( seed, m_ceeloResponse->content_hash() );
+  else if( m_geometry )
+    boost::hash_combine( seed, m_geometry->to_xml_string() );
 
   // Embedded fixed-geometry source setup: only hashed when present, so legacy
   //  DRFs keep their hashes.
@@ -789,6 +825,7 @@ void DetectorPeakResponse::reset()
   m_geomType = EffGeometryType::FarFieldIntrinsic;
   m_totalEfficiency.reset();
   m_ceeloResponse.reset();
+  m_geometry.reset();
   m_measuredPoints.reset();
 }//void reset()
 
@@ -823,6 +860,9 @@ bool DetectorPeakResponse::operator==( const DetectorPeakResponse &rhs ) const
           && ((!m_ceeloResponse && !rhs.m_ceeloResponse)
               || (m_ceeloResponse && rhs.m_ceeloResponse
                   && (m_ceeloResponse->content_hash() == rhs.m_ceeloResponse->content_hash())))
+          && ((!m_geometry && !rhs.m_geometry)
+              || (m_geometry && rhs.m_geometry
+                  && (m_geometry->to_xml_string() == rhs.m_geometry->to_xml_string())))
           );
 }//operator==
 
@@ -987,6 +1027,24 @@ void DetectorPeakResponse::setCeeloResponse( shared_ptr<const ceelo::DetectorRes
 }//setCeeloResponse(...)
 
 
+shared_ptr<const ceelo::GeometryDescriptor> DetectorPeakResponse::geometry() const
+{
+  // A generated response was ray-traced for a specific geometry; that one wins.  Aliasing
+  //  shared_ptr, so the returned descriptor lives as long as the response holding it.
+  if( m_ceeloResponse )
+    return shared_ptr<const ceelo::GeometryDescriptor>( m_ceeloResponse,
+                                                        &m_ceeloResponse->descriptor );
+  return m_geometry;
+}//geometry()
+
+
+void DetectorPeakResponse::setGeometry( shared_ptr<const ceelo::GeometryDescriptor> geometry )
+{
+  m_geometry = std::move( geometry );
+  computeHash();
+}//setGeometry(...)
+
+
 shared_ptr<const MeasuredDrfPoints> DetectorPeakResponse::measuredPoints() const
 {
   return m_measuredPoints;
@@ -1016,6 +1074,29 @@ const char *DetectorPeakResponse::effFlagName( const EffFlag flag )
   assert( 0 );
   return "unknown";
 }//effFlagName(...)
+
+
+const char *DetectorPeakResponse::effFlagDescription( const EffFlag flag )
+{
+  switch( flag )
+  {
+    case EffFlag::Ok:
+      return "ok";
+
+    // The query fell outside the energy (or angle) range the response actually models - past its
+    //  validated energy range, past the tabulated eta nodes, or past the energies the measured
+    //  points constrain k(E) over.  The value is the nearest modeled one held constant, not a
+    //  computed one.
+    case EffFlag::OutOfRangeClamped:  return "extrapolated";
+
+    case EffFlag::NearFieldUnmodeled: return "no near-field model";
+    case EffFlag::Shadowed:           return "collimator shadowed";
+    case EffFlag::NeedsMc:            return "unreliable - needs MC";
+  }//switch( flag )
+
+  assert( 0 );
+  return "unknown";
+}//effFlagDescription(...)
 
 
 namespace
@@ -1158,7 +1239,7 @@ string DetectorPeakResponse::drfExtraToXmlString() const
   const bool have_uncert = (eff_uncert && !eff_uncert->isEmpty());
   const bool have_points = (m_measuredPoints && !m_measuredPoints->empty());
   if( !have_uncert && !m_totalEfficiency && !have_points && !m_ceeloResponse
-      && m_fixedGeomSetupXml.empty() )
+      && !m_geometry && m_fixedGeomSetupXml.empty() )
     return "";
 
   rapidxml::xml_document<char> doc;
@@ -1176,6 +1257,8 @@ string DetectorPeakResponse::drfExtraToXmlString() const
 
   if( m_ceeloResponse )
     append_ceelo_response_node( base_node, &doc, *m_ceeloResponse );
+  else if( m_geometry )
+    append_ceelo_geometry_node( base_node, &doc, *m_geometry );  //a response carries its own
 
   if( !m_fixedGeomSetupXml.empty() )
   {
@@ -1263,6 +1346,10 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     if( ceelo_node )
       m_ceeloResponse = parse_ceelo_response_node( ceelo_node );
 
+    const rapidxml::xml_node<char> *geom_node = base_node->first_node( "CeeLoGeometry" );
+    if( geom_node )
+      m_geometry = parse_ceelo_geometry_node( geom_node );
+
     const rapidxml::xml_node<char> *setup_node = base_node->first_node( "FixedGeomSourceSetup" );
     if( setup_node )
       m_fixedGeomSetupXml.assign( setup_node->value(), setup_node->value_size() );
@@ -1271,6 +1358,7 @@ void DetectorPeakResponse::setDrfExtraFromXmlString( const std::string &xml )
     m_totalEfficiency.reset();
     m_measuredPoints.reset();
     m_ceeloResponse.reset();
+    m_geometry.reset();
     cerr << "DetectorPeakResponse::setDrfExtraFromXmlString: failed to parse"
             " extras ('" << e.what() << "') - ignoring." << endl;
   }//try / catch
@@ -1781,7 +1869,29 @@ void DetectorPeakResponse::applyGadrasDat( const GadrasDetectorDat &dat,
     m_peakFitDetPrefs = prefs;
   }//seed the GADRAS peak-shape preferences
 
-  computeHash();
+  // The crystal geometry the file states.  Recorded on every path that reads a Detector.dat - the
+  //  shipped GADRAS detectors included - so the Modify editor shows the real crystal instead of
+  //  guessing a cylinder, and so an efficiency curve can be transferred through it.  Best-effort:
+  //  a .dat whose geometry the ray-tracer cannot use still gives everything else.
+  try
+  {
+    std::vector<std::string> geom_warnings;
+    m_geometry = std::make_shared<const ceelo::GeometryDescriptor>(
+                                    CeeLoUtils::buildGadrasGeometry( dat, geom_warnings ) );
+  }catch( std::exception & )
+  {
+    m_geometry.reset();
+  }
+
+  // A Detector.dat that came with its Efficiency.csv has both halves of a proper efficiency
+  //  transfer, so give the detector off-axis and near-field support rather than leaving it on the
+  //  flat-disk approximation.  Deterministic and MC-free; a no-op when there is no efficiency
+  //  (a geometry-only .dat) or no usable geometry.
+  //
+  //  Note this runs for every shipped GADRAS detector as the DRF list is built - which happens on
+  //  a worker thread pool (see GadrasDirectory::parseDetector), not the session thread.
+  CeeLoUtils::attachCurveTransferResponse( *this );
+
   computeHash();
 }//void applyGadrasDat(...)
 
@@ -6299,7 +6409,7 @@ std::string DetectorPeakResponse::responseAngleSeriesJSON( const double distance
     }//for( energy grid )
 
     json << "{\"thetaDeg\":" << angles_deg[a]
-         << ",\"worstFlag\":\"" << effFlagName( worst ) << "\""
+         << ",\"worstFlag\":\"" << effFlagDescription( worst ) << "\""
          << ",\"pairs\":[" << pairs.str() << "]}";
   }//for( angle )
 

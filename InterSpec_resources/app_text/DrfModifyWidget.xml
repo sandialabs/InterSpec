@@ -6,15 +6,9 @@
   <message id="dmw-tab-name">General</message>
   <message id="dmw-tab-geometry">Geom &amp; MC</message>
   <message id="dmw-tab-fwhm">FWHM</message>
-  <message id="dmw-fwhm-apply-cb">Use this FWHM fit for the detector</message>
-  <message id="dmw-fwhm-apply-cb-tt">When checked, choosing &quot;Use&quot; replaces the detector&apos;s
-    FWHM with the equation fit above.  Left un-checked, the detector keeps the FWHM it already has,
-    and this tab is just a look at what fitting the peaks would give.  Checked for you when you open
-    this tab and the detector has no FWHM of its own; a detector that already has one is never
-    changed unless you check this yourself.</message>
-  <message id="dmw-err-fwhm-not-applied">The fitted FWHM could not be applied to the detector: {1}</message>
-  <message id="dmw-err-no-fwhm-fit">No FWHM equation was fit, so the detector&apos;s FWHM was left unchanged.</message>
-  <message id="dmw-fwhm-no-foreground">Load a foreground spectrum (with fitted peaks) to fit the detector&apos;s FWHM here.</message>
+  <message id="dmw-err-fwhm-not-applied">The FWHM could not be applied to the detector: {1}</message>
+  <message id="dmw-err-no-fwhm-fit">The FWHM equation on the FWHM tab has no coefficients, so the detector kept the FWHM it already had.  Use &quot;Fit FWHM&quot; there, or enter the coefficients by hand.</message>
+  <message id="dmw-fwhm-no-foreground">No foreground spectrum is loaded, so there is nothing to fit the FWHM to; you can still edit the equation below by hand.</message>
   <message id="dmw-tab-uncert">Uncertainty</message>
   <message id="dmw-use-btn">Use</message>
   <message id="dmw-tt-use-needs-mc">This detector was imported for its geometry only, so it has no efficiency yet. Generate a response on the Monte Carlo tab to give it one.</message>

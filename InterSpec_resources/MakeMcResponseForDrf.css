@@ -11,11 +11,42 @@
 .MakeMcResponseForDrf .McOptsBox
 {
   margin-bottom: 6px;
+  /* A fieldset defaults to min-width:min-content, which lets a long unwrapped child push it past
+     its container instead of shrinking; without this the max-width on the tables inside cannot
+     take effect. */
+  min-width: 0;
 }
 
-.DetectorGeometryInput .DgiTable td
+.DetectorGeometryInput .DgiTable td,
+.MakeMcResponseForDrf .McOptsTable td
 {
   padding: 1px 4px;
+}
+
+/* Keep the inputs next to their labels, and the label column a fixed width - otherwise the column
+   re-sizes (and every input jumps sideways) as the per-method rows come and go.
+
+   `width: auto` shrink-wraps the table to its widest cell, so the max-width is what stops the
+   full-width prose rows (upgrade note, grounding info, node estimate) from setting the table's
+   width and pushing the whole section past the edge of the panel. */
+.MakeMcResponseForDrf .McOptsTable
+{
+  width: auto;
+  max-width: 100%;
+}
+
+.MakeMcResponseForDrf .McOptsTable td:first-child
+{
+  width: 8.5em;
+  min-width: 8.5em;
+  white-space: nowrap;
+}
+
+/* The prose rows span both columns; they wrap, rather than widening the table. */
+.MakeMcResponseForDrf .McOptsTable td[colspan]
+{
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .DetectorGeometryInput .DgiLayers
@@ -87,12 +118,33 @@
   height: 260px;
 }
 
+/* Inside the Location Support box: status on the left, run/cancel floated right. */
 .MakeMcResponseForDrf .McRunRow
 {
-  margin-top: 6px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 8px;
 }
 
-.MakeMcResponseForDrf .McRunRow .Wt-progressbar
+.MakeMcResponseForDrf .McRunRow .McStatus
+{
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.MakeMcResponseForDrf .McRunRow > button
+{
+  flex: 0 0 auto;
+  margin-left: auto;
+}
+
+.MakeMcResponseForDrf .McRunRow > button ~ button
+{
+  margin-left: 0;
+}
+
+.MakeMcResponseForDrf .Wt-progressbar
 {
   width: 100%;
   margin-top: 4px;
@@ -100,7 +152,6 @@
 
 .MakeMcResponseForDrf .McStatus
 {
-  margin-top: 4px;
   font-size: smaller;
 }
 
@@ -135,7 +186,6 @@
 .DrfModifyFieldGrid > textarea { width: 100%; box-sizing: border-box; }
 .DrfModifyBandTable td { padding: 1px 4px; }
 .DrfModifyUncert .DrfModifyBandTable { margin: 6px 0; }
-.DrfModifyFwhmApply { margin: 6px 2px 2px 2px; display: block; }
 .DrfModifyAnchor { margin-top: 8px; }
 .DrfModifyAnchor .DrfModifyRow > label { min-width: 120px; }
 .DrfModifyAnchorTable { display: block; max-height: 220px; overflow-y: auto; margin: 6px 0; }

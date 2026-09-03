@@ -88,7 +88,7 @@ class MeasuredDrfPoints;
 class DetectorEfficiencyCurve;
 class DetectorEfficiencyUncert;
 
-namespace ceelo{ class DetectorResponse; }
+namespace ceelo{ class DetectorResponse; struct GeometryDescriptor; }
 
 
 class DetectorPeakResponse
@@ -822,6 +822,11 @@ public:
    */
   static const char *effFlagName( const EffFlag flag );
 
+  /** A phrase for an #EffFlag aimed at a user reading a chart or a message, rather than the stable
+   identifier #effFlagName gives (which batch JSON output and calc logs key on).
+   */
+  static const char *effFlagDescription( const EffFlag flag );
+
   /** An efficiency evaluation: {value, absolute 1-sigma uncertainty, flag}. */
   struct EffEval
   {
@@ -843,6 +848,31 @@ public:
    Recomputes hash value.
    */
   void setCeeloResponse( std::shared_ptr<const ceelo::DetectorResponse> response );
+
+  /** This detectors physical geometry - shape, crystal dimensions and material,
+   dead layer, endcap layers, collimator - or nullptr when it is not known.
+
+   A DRF can know its geometry without having been characterized: a GADRAS
+   `Detector.dat` or an ANGLE model states the shape, and the efficiency may
+   arrive separately (or never).  Before this existed the descriptor had to be
+   threaded alongside the DRF as a separate argument through every import path,
+   and was silently dropped whenever a flow did not walk straight into the
+   Monte-Carlo tool - which is how a LaBr detector came back as NaI.
+
+   When a #ceeloResponse is attached, ITS descriptor is authoritative and is
+   what this returns: a generated response cannot be re-pointed at a different
+   geometry than the one it was ray-traced for.
+   */
+  std::shared_ptr<const ceelo::GeometryDescriptor> geometry() const;
+
+  /** Sets (or clears, with nullptr) the physical geometry.  Ignored while a
+   #ceeloResponse is attached, since that carries its own.
+
+   NOT part of the hash: the geometry says what the detector *is*, not what it
+   answers, so recording it must not change the identity of an already-stored
+   DRF (see #hashValue).
+   */
+  void setGeometry( std::shared_ptr<const ceelo::GeometryDescriptor> geometry );
 
   /** The (optional) raw measured efficiency points this DRF was
    characterized from; may be nullptr.  Kept for provenance and for grounding
@@ -1329,6 +1359,9 @@ protected:
    query functions and #efficiencyFracCovariance do.
    */
   std::shared_ptr<const ceelo::DetectorResponse> m_ceeloResponse;
+
+  /** The physical geometry when no #m_ceeloResponse carries one; see #geometry. */
+  std::shared_ptr<const ceelo::GeometryDescriptor> m_geometry;
 
   /** Opaque source/shielding-setup XML for fixed-geometry DRFs computed for a
    specific scene; see #fixedGeometrySetupXml.  Serialized as the optional

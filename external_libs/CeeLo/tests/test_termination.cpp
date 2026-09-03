@@ -26,6 +26,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "materials/Material.h"
 
 #include <atomic>
@@ -44,6 +45,7 @@ BOOST_AUTO_TEST_SUITE(TerminationCriteria)
 BOOST_AUTO_TEST_CASE(max_events_terminates_at_count) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -64,6 +66,7 @@ BOOST_AUTO_TEST_CASE(max_events_terminates_at_count) {
 BOOST_AUTO_TEST_CASE(fep_precision_converges) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -86,6 +89,7 @@ BOOST_AUTO_TEST_CASE(fep_precision_converges) {
 BOOST_AUTO_TEST_CASE(wall_time_terminates) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -106,6 +110,7 @@ BOOST_AUTO_TEST_CASE(wall_time_terminates) {
 BOOST_AUTO_TEST_CASE(cpu_time_terminates) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -129,6 +134,7 @@ BOOST_AUTO_TEST_CASE(cpu_time_terminates) {
 BOOST_AUTO_TEST_CASE(cpu_time_reported_without_cap) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -147,6 +153,7 @@ BOOST_AUTO_TEST_CASE(cpu_time_reported_without_cap) {
 BOOST_AUTO_TEST_CASE(progress_callback_invoked) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -186,6 +193,7 @@ BOOST_AUTO_TEST_CASE(progress_callback_invoked) {
 BOOST_AUTO_TEST_CASE(old_compute_still_works) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 

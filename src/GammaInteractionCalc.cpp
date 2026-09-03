@@ -67,9 +67,10 @@
 #include "SpecUtils/SpecUtilsAsync.h"
 
 #include "InterSpec/DrfSelect.h"
+#include "io/ResponseKernel.h"
+
 #include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/PeakModel.h"
-#include "InterSpec/Integrate.h"
 #include "InterSpec/MaterialDB.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/InterSpecApp.h"
@@ -92,6 +93,7 @@
 using namespace std;
 
 #if( DEBUG_RAYTRACE_CALCS )
+#include <map>
 #include <mutex>
 // The stdout lock now lives with the tracing, in GammaInteractionCalc_imp.hpp
 //  (#raytrace_debug_mutex), so the templated/Ceres path traces through the same lock.
@@ -344,6 +346,89 @@ double transmition_length_coefficient( const Material *material, float energy )
 
   return mu;
 }//double transmition_length_coefficient(...)
+
+
+double fep_survival_removal_coefficient( const Material *material, const float energy,
+                                         const double window_keV )
+{
+  const double mu_total = transmition_length_coefficient( material, energy );
+
+  if( !material || (window_keV <= 0.0) || (mu_total <= 0.0) )
+    return mu_total;
+
+  // Memoise the in-window fraction.  It is a quadrature over Klein-Nishina weighted by the
+  //  material's incoherent scattering function, and depends on nothing the fit varies.
+  //
+  //  The key holds the material's ADDRESS.  That is only safe because every caller passes a
+  //  material owned by the problem definition (ShieldingSourceChi2Fcn::m_initial_shieldings holds
+  //  shared_ptr<const Material>), which outlives the fit.  Do NOT call this with a stack temporary:
+  //  a freed material's address can be reused and would silently collide with a stale entry.  The
+  //  density is part of the key as a cheap guard against exactly that.
+  struct Key
+  {
+    const Material *mat; float energy; double window; double density;
+    bool operator<( const Key &o ) const
+    {
+      if( mat != o.mat ) return mat < o.mat;
+      if( energy != o.energy ) return energy < o.energy;
+      if( window != o.window ) return window < o.window;
+      return density < o.density;
+    }
+  };
+
+  static std::mutex s_mutex;
+  static std::map<Key,double> s_f_win;
+
+  const Key key{ material, energy, window_keV, material->density };
+
+  double f_win = -1.0;
+  {
+    std::lock_guard<std::mutex> lock( s_mutex );
+    const std::map<Key,double>::const_iterator pos = s_f_win.find( key );
+    if( pos != s_f_win.end() )
+      f_win = pos->second;
+  }
+
+  if( f_win < 0.0 )
+  {
+    try
+    {
+      const ceelo::Material cm = CeeLoUtils::to_ceelo_material( *material ).to_material();
+      f_win = ceelo::kn_in_window_fraction( energy, window_keV, cm );
+    }catch( std::exception & )
+    {
+      // A material CeeLo cannot represent simply gets no credit - never a wrong one.
+      f_win = 0.0;
+    }
+
+    f_win = std::max( 0.0, std::min( 1.0, f_win ) );
+
+    std::lock_guard<std::mutex> lock( s_mutex );
+    s_f_win[key] = f_win;
+  }//if( not cached )
+
+  if( f_win <= 0.0 )
+    return mu_total;
+
+  // Compton (incoherent) part of mu, summed exactly as transmition_length_coefficient sums.
+  double mu_compton = 0.0;
+  for( const Material::ElementFractionPair &p : material->elements )
+    mu_compton += p.second * material->density
+                  * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber, energy,
+                                          MassAttenuation::GammaEmProcces::ComptonScatter );
+  for( const Material::NuclideFractionPair &p : material->nuclides )
+    mu_compton += p.second * material->density
+                  * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber, energy,
+                                          MassAttenuation::GammaEmProcces::ComptonScatter );
+
+  const double mu_rem = mu_total - f_win*mu_compton;
+
+  // mu_rem can only ever be a partial credit against mu_total; anything else means the Compton
+  //  sub-coefficient and the total came from inconsistent tables.
+  assert( (mu_rem > 0.0) && (mu_rem <= mu_total*1.0000001) );
+
+  return std::max( 0.0, std::min( mu_total, mu_rem ) );
+}//double fep_survival_removal_coefficient(...)
 
 
 double transmition_coefficient_material( const Material *material, float energy,
@@ -603,506 +688,16 @@ double distance( const double a[3], const double b[3] )
 }//double distance( const double a[3], b[3] )
   
 
-int DistributedSrcCalc_integrand_spherical( const int *ndim, const double xx[],
-                                           const int *ncomp, double ff[], void *userdata )
-{
-  const DistributedSrcCalc * const objToIntegrate = (DistributedSrcCalc *)userdata;
-  
-  assert( objToIntegrate );
-  assert( objToIntegrate->m_geometry == GeometryType::Spherical );
-  
-  objToIntegrate->eval_spherical( xx, ndim, ff, ncomp );
-  
-  return 0;
-}//DistributedSrcCalc_integrand_spherical(...)
-
-
-int DistributedSrcCalc_integrand_cylindrical( const int *ndim, const double xx[],
-                                             const int *ncomp, double ff[], void *userdata )
-{
-  const DistributedSrcCalc * const objToIntegrate = (DistributedSrcCalc *)userdata;
-  
-  assert( objToIntegrate );
-  assert( (objToIntegrate->m_geometry == GeometryType::CylinderEndOn)
-          || (objToIntegrate->m_geometry == GeometryType::CylinderSideOn) );
-  
-  objToIntegrate->eval_cylinder( xx, ndim, ff, ncomp );
-  
-  return 0;
-}//DistributedSrcCalc_integrand_cylindrical(...)
-
-
-int DistributedSrcCalc_integrand_single_cyl_end_on( const int *ndim, const double xx[],
-                                                   const int *ncomp, double ff[], void *userdata )
-{
-  const DistributedSrcCalc * const objToIntegrate = (DistributedSrcCalc *)userdata;
-  
-  assert( objToIntegrate );
-  assert( objToIntegrate->m_geometry == GeometryType::CylinderEndOn );
-  assert( objToIntegrate->m_dimensionsTransLenAndType.size() == 1 );
-  
-  objToIntegrate->eval_single_cyl_end_on( xx, ndim, ff, ncomp );
-  
-  return 0;
-}//DistributedSrcCalc_integrand_single_cyl_end_on(...)
-
-
-int DistributedSrcCalc_integrand_rectangular( const int *ndim, const double xx[],
-                                          const int *ncomp, double ff[], void *userdata )
-{
-  const DistributedSrcCalc * const objToIntegrate = (DistributedSrcCalc *)userdata;
-  
-  assert( objToIntegrate );
-  assert( objToIntegrate->m_geometry == GeometryType::Rectangular );
-  
-  objToIntegrate->eval_rect( xx, ndim, ff, ncomp );
-  
-  return 0;
-}//DistributedSrcCalc_integrand_rectangular(...)
 
 
 
 
-DistributedSrcCalc::DistributedSrcCalc()
-{
-  m_geometry = GeometryType::NumGeometryType;
-  m_materialIndex = 0;
-  m_detectorRadius = -1.0;
-  m_detectorSetback = 0.0;
-  m_observationDist = -1.0;
-  m_srcOffsetX = 0.0;
-  m_srcOffsetY = 0.0;
-  m_attenuateForAir = false;
-  m_airTransLenCoef = 0.0;
-  m_isInSituExponential = false;
-  m_inSituRelaxationLength = 0.0;
-  m_normalizeByVolume = false;
-  m_nuclide = NULL;
-}//DistributedSrcCalc()
 
 
-double DistributedSrcCalc::detEffFactor( const double dist_to_det, const double cos_theta ) const
-{
-  const double flat = DetectorPeakResponse::fractionalSolidAngle( 2.0*m_detectorRadius,
-                                                             dist_to_det + m_detectorSetback );
-
-  // FlatDisk (or no resolved response): the legacy flat-disk solid angle; intrinsicEfficiency is
-  //  folded in after integration.
-  if( (m_effMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk) || !m_effResponse )
-    return flat;
-
-  // MCTransfer/EffTran: the absolute FEP efficiency (solid angle + intrinsic already included).
-  //  ceelo wants energy in keV (m_energy is keV) and distance in cm, without the setback (matching
-  //  the point-source ceelo convention).
-  const double c = std::max( -1.0, std::min( 1.0, cos_theta ) );
-  const double theta = std::acos( c );
-  const double dist_cm = dist_to_det / PhysicalUnits::cm;
-  const ceelo::EffResult res = m_effResponse->eps_fep( m_energy, theta, 0.0, dist_cm );
-
-  return res.value;
-}//DistributedSrcCalc::detEffFactor(...)
 
 
-void DistributedSrcCalc::eval_spherical( const double xx[], const int *ndimptr,
-                        double ff[], const int *ncompptr ) const
-{
-  assert( m_geometry == GeometryType::Spherical );
-  assert( m_materialIndex < m_dimensionsTransLenAndType.size() );
-  assert( std::get<2>(m_dimensionsTransLenAndType[m_materialIndex]) == ShellType::Material );
-  
-  const double pi = PhysicalUnits::pi;
-  
-  const int ndim = (ndimptr ? (*ndimptr) : 3);
-  assert( (ndim == 2) || (ndim == 3) );
-
-  // The shells are rotation-invariant and (with the current isotropic detector
-  //  response) only the line-of-sight distance matters, so an off-axis sphere is
-  //  treated as an on-axis one at the true distance.
-  const double obs_dist = sqrt( m_observationDist*m_observationDist
-                                + m_srcOffsetX*m_srcOffsetX + m_srcOffsetY*m_srcOffsetY );
-
-  const double source_inner_rad = ((m_materialIndex>0)
-                            ? std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1])[0]
-                            : 0.0);
-  
-  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex]);
-  const double source_outer_rad = dimensions[0];
-
-  //cuba goes from 0 to one, so we have to scale the variables
-  //r:     goes from zero to sphere_rad
-  //theta: goes from 0 to pi
-  //phi:   goes from 0 to 2pi
-
-  double max_theta = pi;
-  
-  const double x_r = xx[0];
-  const double x_theta = xx[1];
-  const double x_phi = (ndim<3 ? 0.5 : xx[2]);
-  
-  const double r = source_inner_rad + x_r * (source_outer_rad - source_inner_rad);
-  const double theta =  x_theta * max_theta;
-  
-  //phi should go from zero to two pi, but we could reduce this to just 0 to
-  //  pi, due to symmetry, but not doing right now (cause I'm to lazy to test it)
-  const double max_phi = 2.0 * pi;
-  const double phi = x_phi * max_phi;
-  const double j = (source_outer_rad - source_inner_rad) * max_theta * max_phi;
-  const double dV = j * r * r * sin(theta);
-
-  double source_point[3];
-  source_point[0] = r * sin( theta ) * cos( phi );
-  source_point[1] = r * sin( theta ) * sin( phi );
-  source_point[2] = r * cos( theta );
-
-  // We'll the source location since 'source_point' will get modified.
-  const double x = source_point[0], y = source_point[1], z = source_point[2];
-
-  double trans = 0.0;
-  
-  {//begin code-block to compute distance through source
-    // - this could probably be cleaned up and made more efficient
-    double exit_point[3];
-    const double srcRad = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex])[0];
-    const double srcTransCoef = std::get<1>(m_dimensionsTransLenAndType[m_materialIndex]);
-
-    double dist_in_src;
-    if( m_materialIndex == 0 )
-    {
-      // Single source shell: q = x_r*dir is radius-free, so sphere_exit_distance_scaled factors
-      //  srcRad out of the intersection discriminant (finite value+derivative as srcRad -> 0;
-      //  mirrors the templated path - see variant 2 in GammaInteractionCalc_imp.hpp).
-      const double st = sin(theta);
-      const double q_src[3] = { x_r*st*cos(phi), x_r*st*sin(phi), x_r*cos(theta) };
-      dist_in_src = sphere_exit_distance_scaled( q_src, exit_point, srcRad, obs_dist );
-    }else
-    {
-      dist_in_src = exit_point_of_sphere_z( source_point, exit_point, srcRad, obs_dist );
-    }
-    
-    double min_rad = 0.0;
-    bool needShellCompute = false;
-    double inner_shell_point[3] = { 0.0 };
-    
-    if( m_materialIndex > 0 )
-    {
-      exit_point_of_sphere_z( source_point, inner_shell_point, srcRad,
-                                           obs_dist, false );
-      
-      //Take advantage of symmetry, move the position to half way between the
-      //  positive and negative exit points, and then check if the radius of
-      //  this point is both in a sub shell, and that its closer to the detector
-      //  then the source point.
-      //We will then use this same point to calc distances through the shells
-      //  to the detectors, and then double that distance for all but the source
-      //  shell (of which we will acount for dist from originating pos to first
-      //  sub-shell)
-      inner_shell_point[0] = 0.5*(inner_shell_point[0] + exit_point[0]);
-      inner_shell_point[1] = 0.5*(inner_shell_point[1] + exit_point[1]);
-      inner_shell_point[2] = 0.5*(inner_shell_point[2] + exit_point[2]);
-      min_rad = sqrt( inner_shell_point[0]*inner_shell_point[0]
-                      + inner_shell_point[1]*inner_shell_point[1]
-                      + inner_shell_point[2]*inner_shell_point[2] );
-      
-      const array<double,3> &sub_dims = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1]);
-      const double subrad = sub_dims[0];
-      needShellCompute = ( (min_rad < subrad) && (inner_shell_point[2] > source_point[2]) );
-      // Note that if this shell is a generic shell, and the ray *just* touches it, then we wont
-      //  include the generic attenuation.
-    }//if( m_materialIndex > 0 )
-    
-    if( needShellCompute )
-    {
-      double original_point[3];
-      memcpy( original_point, source_point, 3*sizeof(double) );
-      memcpy( source_point, inner_shell_point, 3*sizeof(double) );
-      
-      //Calc how far from the gammas original position it was, to the first
-      //  inner shell it hit
-      const array<double,3> &sub_dims = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1]);
-      const double innerRad = sub_dims[0];
-      exit_point_of_sphere_z( source_point, exit_point,
-                                        innerRad, obs_dist, false );
-      double srcDist2 = 0.0;
-      for( int i = 0; i < 3; ++i )
-      {
-        const double diff = exit_point[i] - original_point[i];
-        srcDist2 += diff*diff;
-      }//for( int i = 0; i < 3; ++i )
-      trans += (srcTransCoef * sqrt(srcDist2));
-     
-      //find inner most sphere the ray passes through
-      size_t start_index = 0;
-      while( std::get<0>(m_dimensionsTransLenAndType[start_index])[0] < min_rad
-            && start_index < m_dimensionsTransLenAndType.size() )
-        ++start_index;
-      
-      //Some hopefully un-needed logic checks
-      assert( m_materialIndex != 0 );
-      assert( start_index < m_materialIndex );
-      assert( start_index < m_dimensionsTransLenAndType.size() );
-        
-      if( start_index == m_dimensionsTransLenAndType.size() )
-        throw runtime_error( "Logic error 1 in DistributedSrcCalc::eval(...)" );
-      if( start_index >= m_materialIndex )
-        throw runtime_error( "Logic error 2 in DistributedSrcCalc::eval(...)" );
-      if( m_materialIndex == 0 )
-        throw runtime_error( "Logic error 3 in DistributedSrcCalc::eval(...)" );
-      
-      //calc distance it travels through the inner spheres
-      for( size_t index = start_index; index <= m_materialIndex; ++index )
-      {
-        const std::array<double,3> &dims = std::get<0>(m_dimensionsTransLenAndType[index]);
-        const double transCoef = std::get<1>(m_dimensionsTransLenAndType[index]);
-        const ShellType type = std::get<2>(m_dimensionsTransLenAndType[index]);
-        assert( (type == ShellType::Material) || (type == ShellType::Generic) );
-        
-        switch( type )
-        {
-          case ShellType::Material:
-          {
-            const double shellRad = dims[0];
-            double dist = exit_point_of_sphere_z( source_point, source_point,
-                                                 shellRad, obs_dist );
-            if( index != m_materialIndex )
-              dist = 2.0*dist;
-            
-            trans += (transCoef * dist);
-            break;
-          }//case ShellType::Material:
-            
-          case ShellType::Generic:
-          {
-            trans += transCoef;
-            
-            // Make sure this is a zero dimension shell
-            assert( !index || (dims == std::get<0>(m_dimensionsTransLenAndType[index-1])) );
-            break;
-          }//case ShellType::Generic:
-        }//switch( type )
-        
-        
-      }//for( ++sphere_index; sphere_index < m_materialIndex; ++sphere_index )
-    }else
-    {
-      memcpy( source_point, exit_point, 3*sizeof(double) );
-      trans += (srcTransCoef * dist_in_src);
-    }//if( line actually goes into child sphere ) / else
-  }//end codeblock to compute distance through source
-  
-  for( size_t i = m_materialIndex+1; i < m_dimensionsTransLenAndType.size(); ++i )
-  {
-    const std::array<double,3> &dims = std::get<0>(m_dimensionsTransLenAndType[i]);
-    const double transLenCoef = std::get<1>(m_dimensionsTransLenAndType[i]);
-    const ShellType type = std::get<2>(m_dimensionsTransLenAndType[i]);
-    
-    const double sphereRad = dims[0];
-    
-    switch( type )
-    {
-      case ShellType::Material:
-      {
-        const double dist_in_sphere = exit_point_of_sphere_z( source_point,
-                                                             source_point, sphereRad, obs_dist );
-        trans += (transLenCoef * dist_in_sphere);
-        
-        break;
-      }//case ShellType::Material:
-        
-      case ShellType::Generic:
-      {
-        trans += transLenCoef;
-        
-        // Make sure this is a zero dimension shell
-        assert( !i || (dims == std::get<0>(m_dimensionsTransLenAndType[i-1])) );
-        break;
-      }//case ShellType::Generic:
-    }//switch( type )
-  }//for( size_t i = 0; i < m_dimensionsTransLenAndType.size(); ++i )
-
-  trans = exp( -trans );
-  
-  
-  if( m_attenuateForAir )
-  {
-    // source_point is the exit point on the last of the shielding, and the detector is at
-    //  [0,0,obs_dist]
-    const double dx = -source_point[0];
-    const double dy = -source_point[1];
-    const double dz = source_point[2] - obs_dist;
-    
-    const double air_dist = sqrt( dx*dx + dy*dy + dz*dz );
-    
-    trans *= exp( -m_airTransLenCoef * air_dist );
-  }//if( m_attenuateForAir )
-  
-  if( m_isInSituExponential )
-  {
-    assert( m_inSituRelaxationLength > 0.0 );
-    trans *= exp( -(source_outer_rad - r) / m_inSituRelaxationLength );
-  }
-  
-  const double z_dist = (z - obs_dist);
-  const double dist_to_det = sqrt( x*x + y*y + z_dist*z_dist );
-  
-  // Note: previous to 20211104 obs_dist was used instead of dist_to_det; I believe this
-  //       change is an appropriate correction, but still needs to be validated/ensured.
-  // Detector at {0,0,obs_dist}, axis -z: cos(incidence) = (obs_dist - z)/dist_to_det.
-  trans *= detEffFactor( dist_to_det, (obs_dist - z) / dist_to_det );
-
-  if( m_normalizeByVolume )
-  {
-    // Variant 2 (mirror of DistributedSrcCalcT<T>::eval_spherical): fold 1/vol (or 1/norm)
-    //  into the integrand weight, the vanishing source dimension cancelled symbolically.
-    double w;
-    if( m_isInSituExponential )
-    {
-      const double u = source_outer_rad / m_inSituRelaxationLength;
-      w = (0.5*pi*x_r*x_r*sin(theta)) / sphere_exp_norm_factor( u );
-    }else if( m_materialIndex == 0 )
-    {
-      w = 1.5*pi*x_r*x_r*sin(theta);   // single shell: dV/vol, R_o^3 cancelled
-    }else
-    {
-      const double Ri = source_inner_rad, Ro = source_outer_rad;
-      w = (1.5*pi*sin(theta) * (r*r)) / (Ro*Ro + Ro*Ri + Ri*Ri);
-    }
-
-    ff[0] = trans * w;
-    return;
-  }//if( m_normalizeByVolume )
-
-  ff[0] = trans * dV;
-}//eval_spherical(...)
 
 
-void DistributedSrcCalc::eval_single_cyl_end_on( const double xx[], const int *ndimptr,
-                                          double ff[], const int *ncompptr ) const noexcept
-{
-#if( DEBUG_RAYTRACE_CALCS )
-  std::lock_guard<std::recursive_mutex> scoped_lock( raytrace_debug_mutex() );
-#endif
-
-  assert( m_materialIndex == 0 );
-  assert( m_geometry == GeometryType::CylinderEndOn );
-  assert( m_dimensionsTransLenAndType.size() == 1 );
-  assert( std::get<2>(m_dimensionsTransLenAndType[0]) == ShellType::Material );
-  
-  //if( m_dimensionsTransLenAndType.size() != 1 )
-  //  throw runtime_error( "eval_single_cyl_end_on only supports a single shielding" );
-  
-  
-  // This just integrates a right circular cylinder
-  const int ndim = (ndimptr ? (*ndimptr) : 2);
-  assert( ndim == 2 ); // ndim==3 is also valid and this function will work for that as well
-  
-  
-  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex]);
-  const double source_outer_rad = dimensions[0];
-  const double source_half_z = dimensions[1];
-  const double total_height = 2.0 * source_half_z;
-  const double trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[m_materialIndex]);
-  
-  
-  // Right now we are only dealing with a single cylinder; however, when we move to nesting
-  //  cylinders, I think we'll integrate over the entire source cylinder volume, but just set the
-  //  source term for the inner cylinders to zero, meaning I think we will just remove this
-  //  'source_inner_rad' variable, but just leaving it in for them moment as a reminder to think
-  //  about exactly how to do things a bit more.
-  const double source_inner_rad = 0.0;
-  
-  
-  //cuba goes from 0 to one for each dimension, so we have to scale the variables
-  //  r:     goes from cylindrical inner radius, to outer radius
-  //  theta: goes from 0 to 2pi
-  //  z:     goes from the negative half-height to positive half-height
-  
-  double max_theta = 2.0 * PhysicalUnits::pi;
-  
-  const double x_r = xx[0];
-  const double x_theta = ((ndim==3) ? xx[1] : 0.0);
-  const double x_z = xx[ ((ndim==3) ? 2 : 1) ];
-  
-  const double r = source_inner_rad + x_r * (source_outer_rad - source_inner_rad);
-  const double theta = x_theta * max_theta;
-  const double z = total_height * (x_z - 0.5);
-  
-  const double j = (source_outer_rad - source_inner_rad) * max_theta * total_height;
-  const double dV = j * r;
-  
-  const double eval_z_dist_to_det = m_observationDist - z;
-  
-  //const double eval_point[3] = { r * cos(theta), r * sin(theta), z };
-
-  double exit_radius = 0.0;
-  double trans = 0.0;
-  
-  {//begin code-block to compute distance through source
-    // Take advantage of theta symmetry here
-    const double z_dist_in_src = source_half_z - z;
-    const double r_dist_in_src = r * z_dist_in_src / eval_z_dist_to_det;
-    exit_radius = r - r_dist_in_src;
-
-    // Factor the z extent (vanishes with the half-length) out of the radical so the path length and
-    //  its derivative stay finite as source_half_z -> 0 (mirrors the templated path).
-    const double inv_slope = r / eval_z_dist_to_det;
-    const double dist_in_src = z_dist_in_src * sqrt( 1.0 + inv_slope*inv_slope );
-    
-    trans += (trans_len_coef * dist_in_src);
-  }//end codeblock to compute distance through source
-
-  trans = exp( -trans );
-  
-  if( m_attenuateForAir )
-  {
-    const double dz = m_observationDist - source_half_z;
-    
-    const double air_dist = sqrt( exit_radius*exit_radius + dz*dz );
-    
-    trans *= exp( -m_airTransLenCoef * air_dist );
-  }//if( m_attenuateForAir )
-  
-  
-  if( m_isInSituExponential )
-  {
-    assert( m_inSituRelaxationLength > 0.0 );
-    trans *= exp( -(source_half_z - z) / m_inSituRelaxationLength );
-  }
-  
-  // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to to detector).
-  // On-axis end-on detector: cos(incidence) = eval_z_dist_to_det/eval_dist_to_det (matches eval_cylinder).
-  const double eval_dist_to_det = sqrt( r*r + eval_z_dist_to_det*eval_z_dist_to_det );
-  trans *= detEffFactor( eval_dist_to_det, eval_z_dist_to_det / eval_dist_to_det );
-
-
-  // For debug builds, also check against the more general transport.  The two should agree to
-  //  rounding: they use the same dV, solid angle, and air path, and the in-source path lengths
-  //  differ only by a `cos^2 + sin^2` round-trip.
-#ifndef NDEBUG
-  double test_ff[1];
-  eval_cylinder( xx, ndimptr, test_ff, ncompptr );
-  const double this_answer = trans * dV;
-  assert( fabs(test_ff[0] - this_answer) < 1.0E-6*std::max(0.001,std::max( fabs(test_ff[0]), fabs(this_answer))) );
-#endif
-
-  if( m_normalizeByVolume )
-  {
-    // Variant 2 (single source shell from origin - this fast path is m_materialIndex==0).
-    double w;
-    if( m_isInSituExponential )
-    {
-      const double u = total_height / m_inSituRelaxationLength;   // R = 2*L_o = total_height
-      w = (2.0*PhysicalUnits::pi*x_r * (source_outer_rad*source_outer_rad)) / one_minus_exp_neg_over_x( u );
-    }else
-    {
-      w = 2.0*x_r;   // dV/vol, R_o^2 and L_o cancelled
-    }
-
-    ff[0] = trans * w;
-    return;
-  }//if( m_normalizeByVolume )
-
-  ff[0] = trans * dV;
-}//void eval_single_cyl_end_on(...)
 
 
 // TODO: define/use a proper simple 3-point vector struct
@@ -1135,265 +730,6 @@ double cylinder_line_intersection( const double radius, const double half_length
 }//double cylinder_line_intersection(...)
 
 
-void DistributedSrcCalc::eval_cylinder( const double xx[], const int *ndimptr,
-                                           double ff[], const int *ncompptr ) const noexcept
-{
-  assert( m_materialIndex < m_dimensionsTransLenAndType.size() );
-  assert( (m_geometry == GeometryType::CylinderSideOn)
-          || (m_geometry == GeometryType::CylinderEndOn) );
-  assert( std::get<2>(m_dimensionsTransLenAndType[m_materialIndex]) == ShellType::Material );
-  
-  //assert( m_materialIndex == 0 );
-  //if( m_materialIndex != 0 )
-  //  throw runtime_error( "eval_cylinder currently only supports trace source in inner most shielding shielding" );
-  
-  // This just integrates a right circular cylinder
-  const int ndim = (ndimptr ? (*ndimptr) : 3);
-  assert( ((m_geometry == GeometryType::CylinderEndOn) && ((ndim == 2) || (ndim == 3)))
-         || ((m_geometry == GeometryType::CylinderSideOn) && (ndim == 3)) );
-  
-  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex]);
-  const double source_outer_rad = dimensions[0];
-  const double source_half_z = dimensions[1];
-  const double total_height = 2.0 * source_half_z;
-  const double trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[m_materialIndex]);
-  
-  
-  //cuba goes from 0 to one for each dimension, so we have to scale the variables
-  //  r:     goes from cylindrical inner radius, to outer radius
-  //  theta: goes from 0 to 2pi
-  //  z:     goes from the negative half-height to positive half-height
-  
-  double max_theta = 2.0 * PhysicalUnits::pi;
-  
-  const double r = xx[0] * source_outer_rad;
-  const double theta = ((ndim==3) ? xx[1] : 0.0) * max_theta;
-  const double z = total_height * (xx[((ndim==3) ? 2 : 1)] - 0.5);
-  
-  // If point to evaluate is within inner-cylinder, set the source term to zero and return.
-  if( m_materialIndex > 0 )
-  {
-    const array<double,3> &inner_dims = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1]);
-    const double &inner_rad = inner_dims[0];
-    const double &inner_half_height = inner_dims[1];
-    
-    if( (r < inner_rad) && (fabs(z) < inner_half_height) )
-    {
-      ff[0] = 0.0;
-      return;
-    }
-  }//if( m_materialIndex > 0 )
-  
-  
-  const double j = source_outer_rad * max_theta * total_height;
-  const double dV = j * r;
-  
-  const double eval_point[3] = { r * cos(theta), r * sin(theta), z };  //cos is hitting 5% of total function time for debug build at least
-  const bool is_side_on = (m_geometry == GeometryType::CylinderSideOn);
-  const double detector_pos[3] = {
-    (is_side_on ? m_observationDist : -m_srcOffsetX),
-    (is_side_on ? -m_srcOffsetX : -m_srcOffsetY),
-    (is_side_on ? -m_srcOffsetY : m_observationDist)
-  };
-  
-  
-  double exit_point[3];
-  double dist_in_cyl;
-  if( m_materialIndex == 0 )
-  {
-    // Single source shell: radius-free normalized source s_xy = xx[0]*(cos,sin) lets
-    //  cylinder_source_exit_scaled factor the radius out of the curved-side discriminant and keep
-    //  the half-length linear - finite value+derivative as either source dimension -> 0 (mirrors
-    //  the templated path - see variant 2 in GammaInteractionCalc_imp.hpp).
-    const double s_xy[2] = { xx[0]*cos(theta), xx[0]*sin(theta) };
-    dist_in_cyl = cylinder_source_exit_scaled( s_xy, z, source_outer_rad, source_half_z,
-                                               detector_pos, exit_point );
-  }else
-  {
-    dist_in_cyl = cylinder_line_intersection( source_outer_rad, source_half_z, eval_point, detector_pos, CylExitDir::TowardDetector, exit_point );
-  }
-  
-  //- make so cylinder_line_intersection take either a near or away from detector argument, and have it return zero if it doesnt intersect at all
-  //    - Look through cylinder_line_intersection and make sure it can be mostly independent of the two points actual values
-  //- Accoutn for inner cylinders by getting their near and far intersections, and make sure they are closer to detector than source location
-  //- Also, update the recommended dimensions txt
-  
-  double trans = 0.0;
-  
-  // Do transport through inner cylinders, and also subtract off that distance through source
-  //  cylinder
-  double inner_distance = 0.0;
-  for( size_t i = 0; i < m_materialIndex; ++i )
-  {
-    const std::array<double,3> &local_dims = std::get<0>(m_dimensionsTransLenAndType[i]);
-    const double local_rad = local_dims[0];
-    const double local_half_z = local_dims[1];
-    const double local_trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[i]);
-    const ShellType type = std::get<2>(m_dimensionsTransLenAndType[i]);
-    
-    double local_exit_point[3];
-    const double dist_to_exit = cylinder_line_intersection( local_rad, local_half_z, eval_point,
-                                      detector_pos, CylExitDir::TowardDetector, local_exit_point );
-    
-    if( dist_to_exit <= 0.0 ) //Line doesnt intersect cylinder
-    {
-      // TODO: consider eval_point is exactly at local_rad - which would return zero; do we want to
-      //       attribute this point to the inner or outer cylinder?
-#ifndef NDEBUG
-      const double dist_src_to_exit = cylinder_line_intersection( local_rad, local_half_z, eval_point,
-                                    detector_pos, CylExitDir::AwayFromDetector, local_exit_point);
-      const double eval_rad = sqrt(eval_point[0]*eval_point[0] + eval_point[1]*eval_point[1]);
-      
-      assert( (0.0 == dist_src_to_exit)
-             || (fabs(eval_rad - local_rad) < (0.000001*local_rad))
-             || (fabs(local_half_z - fabs(eval_point[2])) < (0.000001*local_half_z) ) );
-#endif
-      
-      continue;
-    }//if( we dont intersect, or source is exactly on radius )
-    
-    // Check we either exit on the end, or on radius of the cylinder
-    assert( (fabs(fabs(local_exit_point[2]) - local_half_z) < 1.0E-6*std::max(1.0,local_half_z))
-      || (fabs( local_rad - sqrt(local_exit_point[0]*local_exit_point[0]
-                                + local_exit_point[1]*local_exit_point[1]))
-            < 1.0E-9*std::max(1.0,local_rad))
-    );
-    
-    assert( fabs(local_exit_point[2]) < (1.0 + 1.0E-9)*std::max(local_half_z,1.0) );
-    
-    double local_enter_point[3];
-    const double dist_to_enter = cylinder_line_intersection( local_rad, local_half_z, eval_point,
-                                   detector_pos, CylExitDir::AwayFromDetector, local_enter_point );
-    
-    assert( dist_to_enter <= dist_to_exit );
-    
-    // Check we either enter on the end, or on radius of the cylinder
-    assert( (fabs(fabs(local_enter_point[2]) - local_half_z) < 1.0E-6*std::max(1.0,local_half_z))
-      || (fabs( local_rad - sqrt(local_enter_point[0]*local_enter_point[0]
-                                + local_enter_point[1]*local_enter_point[1]))
-              < 1.0E-9*std::max(1.0,local_rad))
-    );
-    assert( fabs(local_enter_point[2]) < (1.0 + 1.0E-9)*std::max(local_half_z,1.0) );
-    
-    const double local_distance = dist_to_exit - dist_to_enter;
-    assert( fabs(local_distance - distance(local_enter_point,local_exit_point)) < 1.0E-9*std::max(1.0,local_distance) );
-    
-    switch( type )
-    {
-      case ShellType::Material:
-        trans += (local_trans_len_coef * (local_distance - inner_distance));
-        break;
-        
-      case ShellType::Generic:
-        trans += local_trans_len_coef;
-        
-        // Make sure zero thickness shell
-        assert( !i || (local_dims == std::get<0>(m_dimensionsTransLenAndType[i-1])) );
-        break;
-    }//switch( type )
-
-    inner_distance = local_distance;
-  }//for( size_t i = 0; i < m_materialIndex; ++i )
-  
-  trans += (trans_len_coef * (dist_in_cyl - inner_distance));
-  
-  // Do transport through outer cylinders
-  for( size_t i = m_materialIndex + 1; i < m_dimensionsTransLenAndType.size(); ++i )
-  {
-    const std::array<double,3> &shield_dims = std::get<0>(m_dimensionsTransLenAndType[i]);
-    const double shield_outer_rad = shield_dims[0];
-    const double shield_half_z = shield_dims[1];
-    const double shield_trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[i]);
-    const ShellType type = std::get<2>(m_dimensionsTransLenAndType[i]);
-    
-    switch( type )
-    {
-      case ShellType::Generic:
-      {
-        trans += shield_trans_len_coef;
-        
-        // Make sure zero thickness shell
-        assert( shield_dims == std::get<0>(m_dimensionsTransLenAndType[i-1]) );
-        
-        break;
-      }//case ShellType::Generic:
-        
-      case ShellType::Material:
-      {
-        // TODO: #cylinder_line_intersection will be safe to re-use exit_point for source location and exit_point in near future - make sure to update this here by getting rid of outer_exit_point
-        double outer_exit_point[3];
-        const double dist_in_shield = cylinder_line_intersection( shield_outer_rad, shield_half_z,
-                                                                 exit_point, detector_pos,
-                                                                 CylExitDir::TowardDetector, outer_exit_point );
-        
-        trans += (shield_trans_len_coef * dist_in_shield);
-        
-        exit_point[0] = outer_exit_point[0];
-        exit_point[1] = outer_exit_point[1];
-        exit_point[2] = outer_exit_point[2];
-        
-        break;
-      }//case ShellType::Material:
-    }//switch( type )
-  }//for( loop over outer shielding )
-  
-  
-  trans = exp( -trans );
-  
-  if( m_attenuateForAir )
-  {
-    const double air_dist = distance( exit_point, detector_pos );
-
-    trans *= exp( -m_airTransLenCoef * air_dist );
-  }//if( m_attenuateForAir )
-  
-  
-  if( m_isInSituExponential )
-  {
-    assert( m_inSituRelaxationLength > 0.0 );
-    if( is_side_on )
-      trans *= exp( -(source_outer_rad - r) / m_inSituRelaxationLength );
-    else
-      trans *= exp( -(source_half_z - z) / m_inSituRelaxationLength );
-  }//if( m_isInSituExponential )
-  
-  
-  // Finally toss in the geometric factor (e.g., 1/r2 from where we are evaluating to to detector).
-  // Detector axis is -x for CylinderSideOn, else -z: cos(incidence) = (det - eval)_axis / dist.
-  const double eval_dist_to_det = distance( eval_point, detector_pos );
-  const double cyl_cos_theta = (is_side_on ? (detector_pos[0] - eval_point[0])
-                                           : (detector_pos[2] - eval_point[2])) / eval_dist_to_det;
-  trans *= detEffFactor( eval_dist_to_det, cyl_cos_theta );
-
-  if( m_normalizeByVolume )
-  {
-    // Variant 2 (mirror of DistributedSrcCalcT<T>::eval_cylinder).  vol = 2pi(R_o^2 L_o - R_i^2 L_i).
-    const double Ro = source_outer_rad;
-    const double Lo = source_half_z;
-    double w;
-    if( m_isInSituExponential )
-    {
-      const double L = m_inSituRelaxationLength;
-      if( m_geometry == GeometryType::CylinderSideOn )
-        w = (2.0*xx[0] * Lo) / cyl_side_exp_norm_factor( Ro / L );        // 2*L_o*x_r / h_side(R_o/L)
-      else
-        w = (2.0*PhysicalUnits::pi*xx[0] * (Ro*Ro)) / one_minus_exp_neg_over_x( total_height / L ); // 2pi*x_r*R_o^2 / g(2L_o/L)
-    }else if( m_materialIndex == 0 )
-    {
-      w = 2.0*xx[0];   // single shell: dV/vol, R_o^2 and L_o cancelled
-    }else
-    {
-      const std::array<double,3> &inner = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1]);
-      const double Ri = inner[0], Li = inner[1];
-      w = dV / (2.0*PhysicalUnits::pi * (Ro*Ro*Lo - Ri*Ri*Li));
-    }
-
-    ff[0] = trans * w;
-    return;
-  }//if( m_normalizeByVolume )
-
-  ff[0] = trans * dV;
-}//void eval_cylinder(...)
 
 
 
@@ -1435,171 +771,125 @@ bool rectangle_intersections( const double half_width, const double half_height,
 
 
 
-void DistributedSrcCalc::eval_rect( const double xx[], const int *ndimptr,
-               double ff[], const int *ncompptr ) const noexcept
+
+
+double ShieldingSourceChi2Fcn::assemblyTransverseHalfExtent(
+                      const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
+                      const GeometryType geometry )
 {
-  assert( m_geometry == GeometryType::Rectangular );
-  assert( m_materialIndex < m_dimensionsTransLenAndType.size() );
-  assert( std::get<2>(m_dimensionsTransLenAndType[m_materialIndex]) == ShellType::Material );
-  
-  const int ndim = (ndimptr ? (*ndimptr) : 2);
-  assert( ndim == 3 );
-  
-  const std::array<double,3> &dimensions = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex]);
-  const double half_width  = dimensions[0];
-  const double half_height = dimensions[1];
-  const double half_depth  = dimensions[2];
-  
-  const double trans_len_coef = std::get<1>(m_dimensionsTransLenAndType[m_materialIndex]);
-  
-  // Translate the [0,1.0] coordinates from Cuba, to the world coordinates we are integrating over.
-  //  (note: we would get the same answer if we integrated over just half the width/height, but it
-  //   also ends up taking same amount of evaluations, so we will leave fully integrating over
-  //   each dimensions, to not cause problems in the future if we add offsets or whatever)
-  const double eval_x = (xx[0] - 0.5) * 2.0 * half_width;
-  const double eval_y = (xx[1] - 0.5) * 2.0 * half_height;
-  const double eval_z = (xx[2] - 0.5) * 2.0 * half_depth;
+  double dim0 = 0.0, dim1 = 0.0;
 
-  
-  // Check to see if [eval_x,eval_y,eval_z] is inside an inner volume, and if so set value to zero
-  //  and return
-  if( m_materialIndex > 0 )
+  for( const ShieldingSourceFitCalc::ShieldingInfo &shield : shieldings )
   {
-    const array<double,3> &dims = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1]);
-    if( (fabs(eval_x) < dims[0]) && (fabs(eval_y) < dims[1]) && (fabs(eval_z) < dims[2]) )
-    {
-      ff[0] = 0.0;
-      return;
-    }
-  }//if( m_materialIndex > 0 )
-  
-  
-  const double dV = 8.0 * half_width * half_height * half_depth;
-  
-  const double eval_loc[3] = { eval_x, eval_y, eval_z };
-  const double detector_loc[3] = { -m_srcOffsetX, -m_srcOffsetY, m_observationDist };
+    if( shield.m_isGenericMaterial )
+      continue;  //an areal-density layer has no physical extent
 
-  double exit_point[3];
-  double dist_in_src = rectangle_exit_location( half_width, half_height, half_depth,
-                                               eval_loc, detector_loc, exit_point );
-  
-  double trans = 0.0;
-  
-  // Do transport through inner shielding's, and also subtract off that distance through source
-  //  Note: integrating over a 4cmx4cmx4cm void takes 381 evaluations; making the inner 2x2x2cm
-  //        portion an inner void, and integrating over the outer cube (with outer dimensions still
-  //        4x4x4cm, but just the inner 2x2x2cm removed) takes 11049 evaluations - 30 times longer!
-  double inner_rect_dist = 0.0;
-  for( size_t i = 0; i < m_materialIndex; ++i )
+    dim0 += shield.m_dimensions[0];
+    dim1 += shield.m_dimensions[1];
+  }//for( loop over shieldings )
+
+  switch( geometry )
   {
-    const std::array<double,3> &dims = std::get<0>(m_dimensionsTransLenAndType[i]);
-    const double trans_len_coef_shield = std::get<1>(m_dimensionsTransLenAndType[i]);
-    const ShellType type = std::get<2>(m_dimensionsTransLenAndType[i]);
-    
-    double enter_loc[3], exit_loc[3];
-    const bool intersects = rectangle_intersections( dims[0], dims[1], dims[2],
-                                                    eval_loc, detector_loc, enter_loc, exit_loc );
-    
-    if( intersects )
+    // Detector on the symmetry axis: transverse extent is the radius.
+    case GeometryType::Spherical:
+    case GeometryType::CylinderEndOn:
+      return dim0;
+
+    // Detector is off to the side, so the cylinder's LENGTH is transverse too.
+    case GeometryType::CylinderSideOn:
+      return std::max( dim0, dim1 );
+
+    // Detector along the depth axis: width and height are both transverse.
+    case GeometryType::Rectangular:
+      return std::max( dim0, dim1 );
+
+    case GeometryType::NumGeometryType:
+      break;
+  }//switch( geometry )
+
+  return 0.0;
+}//assemblyTransverseHalfExtent(...)
+
+
+ShieldingSourceFitCalc::VolumetricEffMethod ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf(
+                      const std::shared_ptr<const DetectorPeakResponse> &drf,
+                      const ShieldingSourceFitCalc::VolumetricEffMethod requested,
+                      const double source_distance,
+                      const double off_axis_offset,
+                      const double source_half_extent )
+{
+  using ShieldingSourceFitCalc::VolumetricEffMethod;
+
+  if( !drf || !drf->isValid() || drf->isFixedGeometry() )
+    return VolumetricEffMethod::FlatDisk;
+
+  if( requested == VolumetricEffMethod::FlatDisk )
+    return VolumetricEffMethod::FlatDisk;
+
+  const std::shared_ptr<const ceelo::DetectorResponse> ceeloResp = drf->ceeloResponse();
+
+  // EFFTRAN needs a physical geometry to transfer through, which a DRF can carry without ever having
+  //  been Monte-Carlo characterized (GADRAS Detector.dat, ANGLE model).  MC transfer needs an actual
+  //  MC response to evaluate.
+  const bool has_geometry = !!drf->geometry();
+  const bool has_near_model = ceeloResp
+                    && (ceeloResp->provenance.profile != ceelo::ResponseProfile::FarField);
+
+  switch( requested )
+  {
+    case VolumetricEffMethod::MCTransfer:
+      return ceeloResp ? VolumetricEffMethod::MCTransfer : VolumetricEffMethod::FlatDisk;
+
+    case VolumetricEffMethod::EffTran:
+      return has_geometry ? VolumetricEffMethod::EffTran : VolumetricEffMethod::FlatDisk;
+
+    case VolumetricEffMethod::Auto:
     {
-      const double dist = distance( enter_loc, exit_loc );
-      
-      switch( type )
+      // The transfer is strictly more accurate, so Auto keeps it unless flat-disk is KNOWN to be
+      //  right.  Every quantity that sets an angular scale has to say "far": the DRF's
+      //  characterization distance (beyond it, flat-disk is what the measured curve already
+      //  encodes), the detector's own half-width, and the source's transverse half-extent - a wide
+      //  source subtends real angles however distant it is, and off-axis eta does not fall off with
+      //  distance.  Anything unknown keeps the correction: a needless transfer costs time, a
+      //  wrongly-chosen flat-disk is a silent accuracy loss.
+      const std::shared_ptr<const ceelo::GeometryDescriptor> geom_desc = drf->geometry();
+      const double det_half_width = 0.5 * drf->detectorDiameter();
+
+      if( geom_desc
+          && (source_distance > 0.0)
+          && (off_axis_offset <= 0.0)
+          && (source_half_extent >= 0.0)
+          && (det_half_width > 0.0) )
       {
-        case ShellType::Generic:
+        const double pinned_cm = CeeLoUtils::pinnedEfficiencyDistanceCm( drf, *geom_desc );
+
+        // The response's own near-field gate: d < near_regime_a * a is "near".
+        const double near_regime_a = ceeloResp ? ceeloResp->floors.near_regime_a : 4.0;
+        const double far_enough_for_extent = near_regime_a * (det_half_width + source_half_extent);
+
+        if( (pinned_cm > 0.0)
+            && (source_distance >= (pinned_cm * PhysicalUnits::cm))
+            && (source_distance >= far_enough_for_extent) )
         {
-          trans += trans_len_coef_shield;
-          assert( !i || (dims == std::get<0>(m_dimensionsTransLenAndType[i-1])) );
-          break;
-        }//case ShellType::Generic:
-          
-        case ShellType::Material:
-        {
-          trans += (trans_len_coef_shield * (dist - inner_rect_dist));
-          break;
-        }//case ShellType::Material:
-      }//switch( type )
-      
-      inner_rect_dist = dist;
-    }//if( intersects )
-  }//for( size_t i = 0; i < m_materialIndex; ++i )
-  
-  
-  trans += (trans_len_coef * (dist_in_src - inner_rect_dist));
-  
-  
-  // Account for additional external shielding's
-  for( size_t i = m_materialIndex + 1; i < m_dimensionsTransLenAndType.size(); ++i )
-  {
-    const std::array<double,3> &outer_dims = std::get<0>(m_dimensionsTransLenAndType[i]);
-    const double trans_len_coef_shield = std::get<1>(m_dimensionsTransLenAndType[i]);
-    const ShellType type = std::get<2>(m_dimensionsTransLenAndType[i]);
-  
-    switch( type )
-    {
-      case ShellType::Generic:
-      {
-        trans += trans_len_coef_shield;
-        assert( outer_dims == std::get<0>(m_dimensionsTransLenAndType[i-1]) );
-        break;
-      }
-        
-      case ShellType::Material:
-      {
-        const double dist_in_shield = rectangle_exit_location( outer_dims[0], outer_dims[1],
-                                                              outer_dims[2], exit_point, detector_loc, exit_point );
-        
-        trans += (trans_len_coef_shield * dist_in_shield);
-        break;
-      }//case ShellType::Material:
-    }//switch( type )
-    
-    
-  }//for( loop over outer shieldings )
-  
-  
-  trans = exp( -trans );
-  
-  if( m_attenuateForAir )
-  {
-    const double air_dist = distance( exit_point, detector_loc ); 
-    trans *= exp( -m_airTransLenCoef * air_dist );
-  }//if( m_attenuateForAir )
-  
-  
-  if( m_isInSituExponential )
-  {
-    assert( m_inSituRelaxationLength > 0.0 );
-    trans *= exp( -(half_depth - eval_z) / m_inSituRelaxationLength );
-  }
-  
-  // Detector axis is -z: cos(incidence) = (detector_loc - eval_loc)_z / dist.
-  const double eval_dist_to_det = distance(eval_loc, detector_loc);
-  trans *= detEffFactor( eval_dist_to_det, (detector_loc[2] - eval_loc[2]) / eval_dist_to_det );
+          return VolumetricEffMethod::FlatDisk;
+        }
+      }//if( every far-field condition is known )
 
-  if( m_normalizeByVolume )
-  {
-    // Variant 2 (mirror of DistributedSrcCalcT<T>::eval_rect).  vol = 8(W H D - Wi Hi Di).
-    double w;
-    if( m_isInSituExponential )
-    {
-      const double u = (2.0*half_depth) / m_inSituRelaxationLength;   // R = 2*D
-      w = (4.0*half_width*half_height) / one_minus_exp_neg_over_x( u );   // 4*W*H / g(2D/L)
-    }else if( m_materialIndex == 0 )
-    {
-      w = 1.0;   // single shell: dV/vol = 1
-    }else
-    {
-      const std::array<double,3> &inner = std::get<0>(m_dimensionsTransLenAndType[m_materialIndex-1]);
-      w = dV / (8.0 * (half_width*half_height*half_depth - inner[0]*inner[1]*inner[2]));
-    }
+      // Prefer a full near-field MC response; else transfer the DRF's measured efficiency through
+      //  its geometry; else a far-field MC response (still off-axis aware) before flat-disk.
+      if( has_near_model )
+        return VolumetricEffMethod::MCTransfer;
+      if( has_geometry )
+        return VolumetricEffMethod::EffTran;
+      return ceeloResp ? VolumetricEffMethod::MCTransfer : VolumetricEffMethod::FlatDisk;
+    }//case Auto
 
-    ff[0] = trans * w;
-    return;
-  }//if( m_normalizeByVolume )
+    case VolumetricEffMethod::FlatDisk:
+      break;
+  }//switch( requested )
 
-  ff[0] = trans * dV;
-}//void eval_rect(...)
+  return VolumetricEffMethod::FlatDisk;
+}//resolveVolumetricEffMethodForDrf(...)
 
 
 void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
@@ -1610,41 +900,62 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
   m_resolvedVolEffMethod = VolumetricEffMethod::FlatDisk;
   m_volEffResponse.reset();
   m_volEffResolveNote.clear();
+  m_volEffResolveError.clear();
 
   const VolumetricEffMethod requested = m_options.volumetric_eff_method;
 
-  // Not applicable without a usable, non-fixed-geometry DRF (volume sources are already rejected
-  //  for fixed-geometry DRFs); flat-disk it is.
+  // NOT gated on there being a volumetric source: an off-axis or near-field POINT source needs the
+  //  same correction, and the flat-disk fallback is theta-blind.  The cost of resolving is bounded
+  //  by the Auto policy instead - at or beyond the DRF's characterization distance, on-axis, Auto
+  //  returns FlatDisk and nothing is built, which is the common far-field case.
+  // An explicitly-requested near-field method that cannot be honored is reported rather than
+  //  silently downgraded: a quietly less-accurate answer is worse than a visible complaint.  Only
+  //  `Auto` is allowed to fall back, since it is by definition best-effort.
+  const bool explicitly_requested = ((requested == VolumetricEffMethod::MCTransfer)
+                                     || (requested == VolumetricEffMethod::EffTran));
+
   if( !m_detector || !m_detector->isValid() || m_detector->isFixedGeometry() )
+  {
+    if( explicitly_requested )
+      m_volEffResolveError = "A near-field volumetric-source efficiency was requested, but the"
+                             " detector response is missing, invalid, or fixed-geometry; the"
+                             " far-field flat-disk approximation was used instead.";
     return;
+  }//if( no usable DRF )
 
   if( requested == VolumetricEffMethod::FlatDisk )
     return;
 
   const std::shared_ptr<const ceelo::DetectorResponse> ceeloResp = m_detector->ceeloResponse();
 
-  // Both MCTransfer and EffTran need the DRF's CeeLo geometry descriptor; without a CeeLo response
-  //  there is nothing to evaluate or to anchor a transfer on -> flat-disk.
-  if( !ceeloResp )
-  {
-    if( requested != VolumetricEffMethod::Auto )
-      m_volEffResolveNote = "requested near-field method, but the DRF has no CeeLo response; using flat-disk";
-    return;
-  }//if( !ceeloResp )
+  // The physical geometry is carried by the DRF itself, and is NOT conditional on a Monte-Carlo
+  //  response having been generated: a GADRAS Detector.dat or an ANGLE model states the shape while
+  //  the efficiency arrives separately.  That is the ordinary EFFTRAN case - measured curve plus a
+  //  known detector - so anchoring the transfer on `geometry()` (rather than on a CeeLo response's
+  //  descriptor) is what makes "EffTran" reachable at all for most DRFs.  When a CeeLo response IS
+  //  attached, `geometry()` returns its descriptor, which is authoritative.
+  const std::shared_ptr<const ceelo::GeometryDescriptor> geom = m_detector->geometry();
 
-  const bool has_near_model = (ceeloResp->provenance.profile != ceelo::ResponseProfile::FarField);
+  const bool has_near_model = ceeloResp
+                    && (ceeloResp->provenance.profile != ceelo::ResponseProfile::FarField);
 
   // Builds an EFFTRAN transfer response from the DRF (measured points / fitted curve), anchored at
-  //  the DRF's pinned reference distance.  Returns null (with a note) on failure.
+  //  the DRF's pinned reference distance.  Returns null (recording why) on failure.
   const std::function<std::shared_ptr<const ceelo::DetectorResponse>()> build_efftran
-      = [this,&ceeloResp]() -> std::shared_ptr<const ceelo::DetectorResponse>
+      = [this,&geom]() -> std::shared_ptr<const ceelo::DetectorResponse>
   {
+    if( !geom )
+    {
+      m_volEffResolveNote = "EFFTRAN transfer unavailable (the detector response does not carry a"
+                            " physical geometry)";
+      return nullptr;
+    }
+
     try
     {
-      const ceelo::GeometryDescriptor geom = ceeloResp->descriptor;
-      const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( m_detector, geom, 0.0 );
+      const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( m_detector, *geom, 0.0 );
       const ceelo::AnchorCurve tot_curve = CeeLoUtils::totalTransferAnchorForDrf( m_detector, anchor );
-      return CeeLoUtils::makeTransferResponse( geom, anchor, tot_curve,
+      return CeeLoUtils::makeTransferResponse( *geom, anchor, tot_curve,
                                                m_detector->name() + " (EFFTRAN transfer)" );
     }catch( std::exception &e )
     {
@@ -1653,57 +964,80 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
     }
   };//build_efftran
 
-  switch( requested )
+  // What the DRF can actually offer (shared with the GUI's status text, so the two cannot disagree).
+  const double off_axis_r = std::sqrt( m_sourceOffsets[0]*m_sourceOffsets[0]
+                                      + m_sourceOffsets[1]*m_sourceOffsets[1] );
+  const double src_half_extent = assemblyTransverseHalfExtent( m_initial_shieldings, m_geometry );
+  const VolumetricEffMethod resolved = resolveVolumetricEffMethodForDrf( m_detector, requested,
+                                                                        m_distance, off_axis_r,
+                                                                        src_half_extent );
+
+  switch( resolved )
   {
     case VolumetricEffMethod::MCTransfer:
       m_resolvedVolEffMethod = VolumetricEffMethod::MCTransfer;
       m_volEffResponse = ceeloResp;
-      if( !has_near_model )
+      if( requested == VolumetricEffMethod::Auto )
+        m_volEffResolveNote = has_near_model ? "Auto -> MC transfer"
+                                             : "Auto -> MC transfer (far-field; no geometry to transfer through)";
+      else if( !has_near_model )
         m_volEffResolveNote = "MC response is far-field-only; near-field elements will be flagged";
       break;
 
     case VolumetricEffMethod::EffTran:
     {
-      const std::shared_ptr<const ceelo::DetectorResponse> transfer = build_efftran();
+      // A curve-transfer response may already be attached to the DRF - InterSpec builds one at load
+      //  for any geometry-bearing DRF (CeeLoUtils::attachCurveTransferResponse).  Rebuilding an
+      //  equivalent one here would repeat that work on every create(), i.e. on every interactive
+      //  chart update.  Reuse it.
+      const std::shared_ptr<const ceelo::DetectorResponse> transfer
+            = (ceeloResp
+               && (ceeloResp->provenance.method == ceelo::ProductionMethod::CurveTransfer))
+                  ? ceeloResp : build_efftran();
       if( transfer )
       {
         m_resolvedVolEffMethod = VolumetricEffMethod::EffTran;
         m_volEffResponse = transfer;
-      }// else: note set in build_efftran; stays flat-disk
+        if( requested == VolumetricEffMethod::Auto )
+          m_volEffResolveNote = "Auto -> EFFTRAN transfer";
+      }else if( (requested == VolumetricEffMethod::Auto) && ceeloResp )
+      {
+        // Auto is best-effort: a far-field MC response still beats flat-disk.
+        m_resolvedVolEffMethod = VolumetricEffMethod::MCTransfer;
+        m_volEffResponse = ceeloResp;
+        m_volEffResolveNote = "Auto -> MC transfer (far-field; EFFTRAN unavailable)";
+      }else if( requested == VolumetricEffMethod::Auto )
+      {
+        m_volEffResolveNote = "Auto -> flat-disk (" + m_volEffResolveNote + ")";
+      }else
+      {
+        // Asked for by name and not delivered - that is an error, not a footnote.
+        m_volEffResolveError = "An EFFTRAN volumetric-source efficiency was requested, but could not"
+                               " be built (" + m_volEffResolveNote + "); the far-field flat-disk"
+                               " approximation was used instead.";
+        m_volEffResolveNote.clear();
+      }
       break;
     }//case EffTran
 
-    case VolumetricEffMethod::Auto:
-    {
-      // Prefer a full near-field MC response when the DRF has one; otherwise transfer the DRF's
-      //  measured efficiency (EFFTRAN) for a geometry-correct near-field; else fall back to the
-      //  far-field MC response (still off-axis aware) before flat-disk.
-      if( has_near_model )
-      {
-        m_resolvedVolEffMethod = VolumetricEffMethod::MCTransfer;
-        m_volEffResponse = ceeloResp;
-        m_volEffResolveNote = "Auto -> MC transfer";
-      }else
-      {
-        const std::shared_ptr<const ceelo::DetectorResponse> transfer = build_efftran();
-        if( transfer )
-        {
-          m_resolvedVolEffMethod = VolumetricEffMethod::EffTran;
-          m_volEffResponse = transfer;
-          m_volEffResolveNote = "Auto -> EFFTRAN transfer";
-        }else
-        {
-          m_resolvedVolEffMethod = VolumetricEffMethod::MCTransfer;
-          m_volEffResponse = ceeloResp;
-          m_volEffResolveNote = "Auto -> MC transfer (far-field; EFFTRAN unavailable)";
-        }
-      }//if( has_near_model ) / else
-      break;
-    }//case Auto
-
     case VolumetricEffMethod::FlatDisk:
-      break;  // handled above
-  }//switch( requested )
+      if( explicitly_requested )
+        m_volEffResolveError = "A near-field volumetric-source efficiency was requested, but this"
+                               " detector response carries neither a Monte-Carlo characterization"
+                               " nor a physical geometry to transfer through; the far-field"
+                               " flat-disk approximation was used instead.";
+      break;
+
+    case VolumetricEffMethod::Auto:
+      assert( 0 );  //resolveVolumetricEffMethodForDrf never returns Auto
+      break;
+  }//switch( resolved )
+
+  // The integration branches on #m_volEffResponse alone (see DistributedSrcCalcT::eff_response_factor),
+  //  so the two must never disagree - a non-FlatDisk
+  //  method with a null response would skip the post-integration intrinsic efficiency and be wrong
+  //  by exactly that factor.
+  assert( (m_resolvedVolEffMethod == VolumetricEffMethod::FlatDisk) == !m_volEffResponse );
 }//resolveVolumetricEffMethod()
 
 
@@ -2801,6 +2135,13 @@ ShieldingSourceChi2Fcn &ShieldingSourceChi2Fcn::operator=( const ShieldingSource
   m_detector = rhs.m_detector;
   m_nuclides = rhs.m_nuclides;
   m_options = rhs.m_options;
+
+  // Must travel with m_options/m_detector: these are what the integration actually branches on, and
+  //  a copy that kept the options but lost the resolved response would silently revert to flat-disk.
+  m_resolvedVolEffMethod = rhs.m_resolvedVolEffMethod;
+  m_volEffResponse = rhs.m_volEffResponse;
+  m_volEffResolveNote = rhs.m_volEffResolveNote;
+  m_volEffResolveError = rhs.m_volEffResolveError;
   
   //m_isFitting
   //m_guiUpdateInfo
@@ -4340,8 +3681,44 @@ std::vector<double> ShieldingSourceChi2Fcn::peakEffFracCovariance() const
 
   assert( cov.empty() || (cov.size() == (energies.size() * energies.size())) );
 
-  return cov;
+  if( cov.empty() )
+    return cov;
+
+  // Inflate the diagonal to at least the response's OWN per-query fractional sigma at this
+  //  geometry (plan 3.5).
+  //
+  //  `frac_covariance` applies only the near/far sigma FLOORS - 2.3% inside d < 4a for the FEP -
+  //  whereas a per-query `eps_fep` additionally carries the terms that say the query is outside
+  //  what the response actually models: a curve-anchored transfer has no NearFieldModel at all
+  //  (nothing in CeeLoUtils or EfficiencyTransfer ever builds one), so every query inside the
+  //  near-field gate is flagged NearFieldUnmodeled and given 5% in quadrature.
+  //
+  //  Measured on the ANGLE GEM35-70: 11.4% per-query sigma at contact against the 2.3% covariance
+  //  floor - a 5x under-statement, in exactly the regime where the transfer is independently
+  //  measured to be 5-8% biased.  Reporting a flagged, admittedly-unmodelled query as if it were
+  //  better known than the response claims is how an optimistic uncertainty reaches a user.
+  //
+  //  The WARNING half of this already exists: `peakDrfEffFlags()` feeds the per-flag messages in
+  //  ShieldingSourceFitCalc.  Only the sigma was missing, so this is deliberately just the
+  //  diagonal inflation - do not add a second warning path.
+  const size_t n = energies.size();
+  std::vector<double> inflated = cov;
+  for( size_t i = 0; i < n; ++i )
+  {
+    const DetectorPeakResponse::EffEval ev
+            = m_detector->fepEfficiencyEval( static_cast<float>(energies[i]), 0.0, 0.0, m_distance );
+    if( ev.value <= 0.0 )
+      continue;
+
+    const double frac = ev.sigma / ev.value;
+    const double diag = inflated[i*n + i];
+    if( (frac*frac) > diag )
+      inflated[i*n + i] = frac*frac;
+  }//for( each included peak )
+
+  return inflated;
 }//peakEffFracCovariance()
+
 
 
 std::vector<double> ShieldingSourceChi2Fcn::peakEffFracUncerts() const
@@ -4438,6 +3815,12 @@ ShieldingSourceFitCalc::VolumetricEffMethod ShieldingSourceChi2Fcn::resolvedVolu
 const std::string &ShieldingSourceChi2Fcn::volumetricEffResolveNote() const
 {
   return m_volEffResolveNote;
+}
+
+
+const std::string &ShieldingSourceChi2Fcn::volumetricEffResolveError() const
+{
+  return m_volEffResolveError;
 }
 
 const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &ShieldingSourceChi2Fcn::initialShieldings() const
@@ -4787,16 +4170,9 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
                                            const std::map<double,double> &energy_count_map,
                                            vector<GammaInteractionCalc::PeakDetail> *log_info,
                                            const std::vector<double> *eff_frac_uncerts,
-                                           const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags,
-                                           const std::vector<double> *expected_counts_override,
-                                           const std::vector<double> *eff_whitening )
+                                           const std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> *eff_flags )
 {
   size_t included_peak_index = 0;  //parallels #includedPeakEnergies ordering
-
-  // Parallel to `answer`: the PeakDetail log entry for each included peak (or
-  //  null when not logging), so the whitened-residual overwrite below can update
-  //  both the plot info and the log without re-matching by energy.
-  std::vector<GammaInteractionCalc::PeakDetail *> answer_log_ptrs;
 
   typedef map<double,double> EnergyCountMap;
 
@@ -4841,43 +4217,17 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
       throw std::runtime_error( msg.str() );
     }//if( energy_count_map.count( energy ) == 0 )
 
-    // Sum the point-source (and, historically, volumetric) contributions the
-    //  descriptive breakdown accumulated into `energy_count_map`.  This is used
-    //  to apportion counts among sources below, and - when no override is given
-    //  - as the displayed prediction.
-    double map_expected_counts = 0.0;
+    // Sum the contributions the caller accumulated into `energy_count_map`.  Since the volumetric
+    //  contributions now come from the same templated model the fit minimizes, this IS the fit's
+    //  prediction - there is no second forward model to reconcile against.
+    double expected_counts = 0.0;
     for( const EnergyCountMap::value_type &energy_count : energy_count_map )
     {
       const double sigma = peak.gausPeak() ? peak.sigma() : 0.25*peak.roiWidth();
       if( fabs(energy_count.first-energy) < (0.1*sigma) )  //XXX - in principle we have already clustered phootpopeaks, and could just quicly access the energies
-        map_expected_counts += energy_count.second;
+        expected_counts += energy_count.second;
     }
 
-    // Prefer the fit's own forward model (`expected_peak_counts_imp`) when it
-    //  was supplied, so the displayed prediction/pulls match what was minimized
-    //  (the map does not cascade-correct volumetric sources).
-    double expected_counts = map_expected_counts;
-    if( expected_counts_override && (included_peak_index < expected_counts_override->size()) )
-    {
-      expected_counts = (*expected_counts_override)[included_peak_index];
-
-#if( PERFORM_DEVELOPER_CHECKS )
-      // The two forward models legitimately differ for cascade-summed volumetric
-      //  sources and (slightly) for off-axis geometry; only an order-of-magnitude
-      //  divergence signals a real fit/display mismatch worth flagging.
-      const double larger = std::max( fabs(expected_counts), fabs(map_expected_counts) );
-      if( (larger > 1.0)
-          && ((expected_counts < 0.2*map_expected_counts) || (expected_counts > 5.0*map_expected_counts)) )
-      {
-        char buffer[512];
-        snprintf( buffer, sizeof(buffer),
-                 "expected_observed_chis: fit model (%.4g) and descriptive map (%.4g)"
-                 " diverge by more than can be explained by cascade/geometry at %.2f keV.",
-                 expected_counts, map_expected_counts, energy/SandiaDecay::keV );
-        log_developer_error( __func__, buffer );
-      }
-#endif //#if( PERFORM_DEVELOPER_CHECKS )
-    }//if( expected_counts_override && ... )
 
     if( backCounts > 0.0 )
     {
@@ -4899,9 +4249,16 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
 
     ++included_peak_index;
     
+    // Marginal pull: the per-peak denominator is sqrt(Sigma_ii) of the SAME covariance the
+    //  (correlated) fit minimizes - Sigma = diag(stat^2) + diag(obs).C_efffrac.diag(obs), see
+    //  `compute_efficiency_whitening`.  So the efficiency term scales with the observed counts, not
+    //  the expected: it is the data point's own uncertainty, and must not move as the model moves.
+    //  This is a genuine per-peak sigma - unlike a GLS whitened residual, which mixes peaks in
+    //  Cholesky order and so cannot be read as "how far off is THIS peak" (nor fed to
+    //  ShieldSourcePullTrend's pull-vs-energy diagnostic).
     if( eff_frac_uncert > 0.0 )
     {
-      const double eff_uncert = expected_counts * eff_frac_uncert;
+      const double eff_uncert = observed_counts * eff_frac_uncert;
       observed_uncertainty = sqrt( observed_uncertainty*observed_uncertainty
                                    + eff_uncert*eff_uncert );
     }
@@ -4924,7 +4281,6 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
     peak_info.backgroundCounts = backCounts;
     peak_info.backgroundUncert = sqrt( backUncert2 );
     answer.push_back( peak_info );
-    answer_log_ptrs.push_back( nullptr );  //filled below when logging (log_info is not resized here)
 
     if( log_info )
     {
@@ -4944,7 +4300,6 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
         if( pos != end(*log_info) )
         {
           GammaInteractionCalc::PeakDetail &log_peak = *pos;
-          answer_log_ptrs.back() = &log_peak;  //parallels answer.back(); used by whitened-residual overwrite
 
           assert( log_peak.energy == peak.mean() );  //This will not be strictly true if the same particle is assigned to multiple peaks
           assert( log_peak.decayParticleEnergy == peak.gammaParticleEnergy() );
@@ -4988,31 +4343,6 @@ vector<PeakResultPlotInfo> ShieldingSourceChi2Fcn::expected_observed_chis(
     }//if( log_info )
   }//for( const PeakDef &peak : m_peaks )
 
-  // When a GLS whitening matrix is supplied, replace the per-peak (uncorrelated)
-  //  chi with the whitened residual r_i = sum_{j<=i} L^{-1}(i,j)*(obs_j - exp_j).
-  //  This is exactly the residual the correlated fit minimizes (sum r_i^2 = chi2),
-  //  so the displayed pulls center on zero even for a highly-correlated near-field
-  //  efficiency covariance, where the raw per-peak pulls look large and one-signed.
-  if( eff_whitening )
-  {
-    const size_t n = answer.size();
-    if( eff_whitening->size() == (n*n) )
-    {
-      for( size_t i = 0; i < n; ++i )
-      {
-        double r = 0.0;
-        for( size_t j = 0; j <= i; ++j )  //L^{-1} is lower-triangular
-          r += (*eff_whitening)[i*n + j] * (answer[j].observedCounts - answer[j].expectedCounts);
-
-        answer[i].numSigmaOff = r;
-        if( answer_log_ptrs[i] )
-          answer_log_ptrs[i]->numSigmaOff = r;
-      }//for( size_t i = 0; i < n; ++i )
-    }else
-    {
-      assert( eff_whitening->empty() );  //size must be n*n or unset
-    }
-  }//if( eff_whitening )
 
   return answer;
 }//expected_observed_chis(...)
@@ -5043,163 +4373,6 @@ vector< pair<double,double> > ShieldingSourceChi2Fcn::observedPeakEnergyWidths( 
 }//observedPeakEnergyWidths()
 
 
-void ShieldingSourceChi2Fcn::selfShieldingIntegration( DistributedSrcCalc &calculator )
-{
-  // TODO: if an exponential distribution with zero relaxation length, then just integrate over
-  //       the surface
-  //if( calculator.m_isInSituExponential && (calculator.m_inSituRelaxationLength < FLT_EPSILON) )
-  //{
-  //  // Integrate over surface instead of volume
-  //}
-  
-  int ndim = -1;  //the number of dimensions of the integral.
-  
-  switch ( calculator.m_geometry )
-  {
-    case GeometryType::Spherical:
-      // Off-axis spheres use the rotation trick (true source-detector distance), so
-      //  the 2D azimuthal integral stays valid.
-      ndim = 2;
-      break;
-
-    case GeometryType::CylinderEndOn:
-      // A non-zero radial offset puts the detector off the cylinder axis and breaks
-      //  the azimuthal symmetry, so the full 3D (theta) integral is required.
-      ndim = ( (calculator.m_srcOffsetX != 0.0) || (calculator.m_srcOffsetY != 0.0) ) ? 3 : 2;
-      break;
-
-    case GeometryType::CylinderSideOn:
-    case GeometryType::Rectangular:
-      ndim = 3;
-      break;
-
-    case GeometryType::NumGeometryType:
-      assert( 0 );
-      break;
-  }//switch ( calculator.m_geometry )
-  
-  assert( (ndim == 2) || (ndim == 3) );
-  
-  void *userdata = (void *)&calculator;
-  
-  /** For an example problem, found setting the requested relative accuracy to larger values did decrease number of evaluations, but
-   only ~30% less for a relative accuracy of 100 times less than our nominal
-         epsrel {1e-6, 1e-5, 1e-4,1e-3, 1e-2},
-         neval { 2413, 2413, 2159, 1905, 1397}
-  
-   TODO: maybe it makes sense to lower relative accuracy when the current Chi2 is pretty bad.
-   */
-  const double epsrel = 1e-4;  //the requested relative accuracy
-  const double epsabs = -1.0;//1e-12; //the requested absolute accuracy
-  //const int verbose = 0;
-  //const int last = 4;  //use the importance function without smoothing (*I think*)
-  const int mineval = 0; //the minimum number of integrand evaluations required.
-  const int maxeval = 5000000; //the (approximate) maximum number of integrand evaluations allowed.
-
-  int nregions, neval, fail;
-  double error, prob;
-
-  calculator.integral = 0.0;
-
-  try
-  {
-    // For the moment, we know cylinders and rectange wont throw exception.
-    // TODO: need to make it so DistributedSrcCalc::eval_spherical doesnt ever throw exception
-    
-    switch( calculator.m_geometry )
-    {
-      case GeometryType::Spherical:
-        Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_spherical, userdata, epsrel, epsabs,
-                                  Integrate::LastImportanceFcnt,
-                                  mineval, maxeval, nregions, neval,
-                                  fail, calculator.integral, error, prob );
-        break;
-        
-      case GeometryType::CylinderEndOn:
-        // Always use the general cylindrical integrand (DistributedSrcCalc::eval_cylinder).  A
-        //  single-cylinder on-axis "fast path" (#eval_single_cyl_end_on) exists, but it assumes
-        //  every ray exits the top face, which is wrong for wide-angle near-field geometry (source
-        //  radius comparable to the source-to-detector distance) - exactly where its debug
-        //  cross-check against eval_cylinder trips.  eval_cylinder finds the true side/top exit and
-        //  is what the templated fit path (DistributedSrcCalcT<T>) mirrors, so this keeps the
-        //  display's legacy model consistent with the fit.  This calculator runs once per result
-        //  (not in the fit hot loop), so the fast path's minor speed edge does not matter.
-        Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_cylindrical, userdata, epsrel, epsabs,
-                                  Integrate::LastImportanceFcnt,
-                                  mineval, maxeval, nregions, neval,
-                                  fail, calculator.integral, error, prob );
-        break;
-        
-      case GeometryType::CylinderSideOn:
-        Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_cylindrical, userdata, epsrel, epsabs,
-                                  Integrate::LastImportanceFcnt,
-                                  mineval, maxeval, nregions, neval,
-                                  fail, calculator.integral, error, prob );
-        break;
-        
-      case GeometryType::Rectangular:
-        Integrate::CuhreIntegrate( ndim, DistributedSrcCalc_integrand_rectangular, userdata, epsrel, epsabs,
-                                  Integrate::LastImportanceFcnt,
-                                  mineval, maxeval, nregions, neval,
-                                  fail, calculator.integral, error, prob );
-        break;
-        
-      case GeometryType::NumGeometryType:
-        assert( 0 );
-        break;
-    }//switch( objToIntegrate->m_geometry )
-  }catch( std::exception &e )
-  {
-#if( PERFORM_DEVELOPER_CHECKS )
-    stringstream msg;
-    msg << "Integration failed after " << neval
-    << " evaluations got integral " << calculator.integral
-    << "\n\t calculator.energy: " << calculator.m_energy
-    << "\n\t m_srcVolumetricActivity: " << calculator.m_srcVolumetricActivity
-    << "\n\t m_geometry: " << to_str(calculator.m_geometry)
-    << "\n\t m_materialIndex: " << calculator.m_materialIndex
-    << "\n\t m_detectorRadius: " << calculator.m_detectorRadius
-    << "\n\t m_observationDist: " << calculator.m_observationDist
-    << "\n\t m_attenuateForAir: " << calculator.m_attenuateForAir
-    << "\n\t m_airTransLenCoef: " << calculator.m_airTransLenCoef
-    << "\n\t m_isInSituExponential: " << calculator.m_isInSituExponential
-    << "\n\t m_inSituRelaxationLength: " << calculator.m_inSituRelaxationLength
-    << "\n\t m_dimensionsTransLenAndType: {";
-    for( const auto &i : calculator.m_dimensionsTransLenAndType )
-    {
-      const auto &dims = std::get<0>(i);
-      msg << "{[" << dims[0] << "," << dims[1] << "," << dims[2] << "],"
-          << std::get<1>(i) << "," << static_cast<int>(std::get<2>(i)) << "}, ";
-    }
-    
-    msg << "}"
-    << "\n\t nuclide: " << (calculator.m_nuclide ? calculator.m_nuclide->symbol : string())
-    << "\n\t exception: '" << e.what() << "'"
-    << endl;
-      
-    log_developer_error( __func__, msg.str().c_str() );
-    cerr << __func__ << msg.str() << endl;
-#endif
-    
-    cerr << "Integration failed: " << e.what() << endl;
-    calculator.integral = 0.0;
-  }//try / catch
-  
-
-  
-  //should check for fails and stuff all over here
-  
-/*
-  static std::mutex m;
-  std::lock_guard<std::mutex> scoped_lock( m );
-  cerr << "After " << neval << " evaluations got integral " << calculator.integral
-       << endl << "\t calculator.energy=" << calculator.energy
-       << " calculator.m_srcVolumetricActivity=" << calculator.m_srcVolumetricActivity
-       << ", rad=" << get<0>(calculator.m_dimensionsTransLenAndType[0])[0]
-       << ", transCoef=" << calculator.m_sphereRadAndTransLenCoef[0].second
-       << endl;
-*/
-}//void selfShieldingIntegration(...)
 
   
 void ShieldingSourceChi2Fcn::setBackgroundPeaks( const std::vector<PeakDef> &peaks,
@@ -5235,8 +4408,7 @@ vector<PeakResultPlotInfo>
        ShieldingSourceChi2Fcn::energy_chi_contributions( const std::vector<double> &x,
                                                         const std::vector<double> &error_params,
                                          ShieldingSourceChi2Fcn::NucMixtureCache &mixturecache,
-                                         std::vector<GammaInteractionCalc::PeakDetail> *log_info,
-                                         const std::vector<double> *eff_whitening ) const
+                                         std::vector<GammaInteractionCalc::PeakDetail> *log_info ) const
 {
   //XXX - this function compares a lot of doubles, and this always makes me
   //      queezy - this should be checked on!
@@ -5629,421 +4801,40 @@ vector<PeakResultPlotInfo>
   }//if( m_detector && m_detector->isValid() ) / else
 
 
-  using GammaInteractionCalc::transmition_length_coefficient;
+  //This is where contributions from self-attenuating and trace sources are calculated.
+  //
+  // Built by the SAME templated builder the fit uses (`build_volumetric_calculators`), rather than a
+  //  second, double-only model.  There used to be a hand-maintained duplicate here; it had drifted -
+  //  most visibly, it had no cascade-summing support at all, so a cascade-corrected volumetric fit
+  //  disagreed with its own displayed prediction.  One model cannot drift from itself.
+  std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> calculators
+                     = build_volumetric_calculators<double>( x, mixturecache, energie_widths, log_info );
 
-  //This is where contributions from self-attenuating and traces source are calculated
-
-  // For mass-varied materials, particularly involving multiple elements, we need to
-  //  create a version of the material that will give the correct cross-section, for
-  //  the current mass-fraction variation
-  vector<std::shared_ptr<const Material>> local_materials;
-  
-  vector<std::unique_ptr<DistributedSrcCalc>> calculators;
-  std::map<const DistributedSrcCalc *, bool> is_trace_src; //only used to fill out `log_info`
-  std::map<const DistributedSrcCalc *, size_t> vol_src_material_index; //only used to fill out `log_info`
-
-  for( size_t material_index = 0; material_index < nMaterials; ++material_index )
-  {
-    const ShieldingSourceFitCalc::ShieldingInfo &shield = m_initial_shieldings[material_index];
-    shared_ptr<const Material> material = shield.m_material;
-    
-    if( !material )
-      continue;
-    
-    vector<const SandiaDecay::Nuclide *> combined_srcs;
-    const vector<ShieldingSourceFitCalc::TraceSourceInfo> &trace_srcs = shield.m_traceSources;
-    for( const auto &p : trace_srcs )
-    {
-      assert( p.m_nuclide );
-      combined_srcs.push_back( p.m_nuclide );
-    }
-    
-    for( const auto &el_nucs : shield.m_nuclideFractions_ )
-    {
-      for( const tuple<const SandiaDecay::Nuclide *,double,bool> &nuc : el_nucs.second )
-      {
-        const SandiaDecay::Nuclide * const nuclide = get<0>(nuc);
-        if( nuclide )
-          combined_srcs.push_back( nuclide );
-      }//for( const tuple<const SandiaDecay::Nuclide *,double,bool> &nuc : el_nucs.second )
-    }//for( const auto &el_nucs : shield.m_nuclideFractions_ )
-    
-    const auto &srcs = combined_srcs;
-    
-    if( srcs.empty() )
-      continue;
-     
-    assert( !m_detector || !m_detector->isFixedGeometry() );
-    if( m_detector && m_detector->isFixedGeometry() )
-      throw logic_error( "Self-attenuating and trace sources are not allowed for fixed geometry detector response functions." );
-    
-    DistributedSrcCalc baseCalculator;
-    baseCalculator.m_geometry = m_geometry;
-    
-    if( m_detector )
-    {
-      baseCalculator.m_detectorRadius = 0.5 * m_detector->detectorDiameter();
-      baseCalculator.m_detectorSetback = m_detector->detectorSetback();
-    }else
-    {
-      baseCalculator.m_detectorRadius = 0.5 * PhysicalUnits::cm;
-    }
-
-    baseCalculator.m_observationDist = m_distance;
-    baseCalculator.m_srcOffsetX = m_sourceOffsets[0];
-    baseCalculator.m_srcOffsetY = m_sourceOffsets[1];
-    baseCalculator.m_attenuateForAir = m_options.attenuate_for_air;
-    baseCalculator.m_materialIndex = material_index;
-
-    // Resolved once (single-threaded) in #create; null response => legacy flat-disk behavior.
-    baseCalculator.m_effMethod = m_resolvedVolEffMethod;
-    baseCalculator.m_effResponse = m_volEffResponse;
-    
-    baseCalculator.m_isInSituExponential = false;
-    baseCalculator.m_inSituRelaxationLength = -1.0;
-    
-    for( size_t src_index = 0; src_index < srcs.size(); ++src_index )
-    {
-      const SandiaDecay::Nuclide *src = srcs[src_index];
-      const bool is_trace = (src_index < trace_srcs.size());
-      
-#if( PERFORM_DEVELOPER_CHECKS )
-      {// begin quick sanity check
-        bool trace_check = false;
-        for( const auto &p : trace_srcs )
-          trace_check = (trace_check || (p.m_nuclide == src));
-        assert( trace_check == is_trace );
-      }// end quick sanity check
-#endif
-      
-      double actPerVol = 0.0;
-      // Variant 2: set true for the volumetric-normalized trace types so the calculators fold
-      //  1/vol (or 1/norm) into the integrand rather than dividing actPerVol here.
-      bool normalizeByVolume = false;
-      EnergyCountMap local_energy_count_map;
-
-      if( is_trace )
-      {
-        assert( src_index < trace_srcs.size() );
-        
-        const double act = activity(src, x);
-        
-        switch( trace_srcs[src_index].m_type )
-        {
-          case TraceActivityType::TotalActivity:
-          {
-            // Variant-gated; see VOL_CALC_VARIANT in GammaInteractionCalc_imp.hpp.  (Mirror of the
-            //  templated path so the displayed/uncertainty calc matches the Ceres fit residual.)
-#if( VOL_CALC_VARIANT == 2 )
-            // Reformulation: carry act, fold 1/vol into the integrand weight (see eval_*); the
-            //  per-volume normalization happens inside eval_*, so the shell volume is not needed here.
-            actPerVol = act;
-            normalizeByVolume = true;
-#elif( VOL_CALC_VARIANT == 0 )
-            const double vol = volumeOfMaterial(material_index, x);
-            actPerVol = (vol > 0.0) ? (act / vol) : 0.0;
-#else
-            #error "Unknown VOL_CALC_VARIANT"
-#endif
-            break;
-          }
-
-          case TraceActivityType::ActivityPerCm3:
-            actPerVol = act / PhysicalUnits::cm3;
-            break;
-            
-          case TraceActivityType::ActivityPerGram:
-            actPerVol = act * material->density / PhysicalUnits::g;
-            break;
-            
-          case TraceActivityType::ExponentialDistribution:
-          {
-            //actually activity of the entire soil-column, all the way down, so not an actPerVol,
-            //  strictly, but per surface area
-            actPerVol = act / PhysicalUnits::m2;
-
-#if( VOL_CALC_VARIANT == 2 )
-            // Reformulation: carry act/m^2, fold 1/norm into the integrand weight (see eval_*).
-            //  eval_* uses the single (innermost) source-shell exponential forms - the physical
-            //  in-situ case - so a nested exponential source would be mis-normalized; assert it away.
-            //  (m_inSituRelaxationLength validity is asserted below where it is set.)
-            assert( material_index == 0 );
-            normalizeByVolume = true;
-#elif( VOL_CALC_VARIANT == 0 )
-            const double relaxation_len = trace_srcs[src_index].m_relaxationDistance;
-            assert( relaxation_len > 0.0 );
-
-            // Normalize by the depth-integral `norm` (-> 0 as the shell dimension R -> 0); divided
-            //  after the geometry switch.
-            double norm = 0.0;
-            switch( m_geometry )
-            {
-              case GeometryType::Spherical:
-              {
-                // Integral from 0.0 to shielding radius R, of "r*r*exp(-(R-r)/L)" where L is
-                //  relaxation length, is L*(L*L*(2-2*exp(-R/L)) - 2*L*R + R*R)
-                //  So we will normalize by this factor (times 4pi) so the surface contamination
-                //  level (in activity/m2), multiplied by surface are will give total activity
-
-                //4 π integral_0^R e^(-(R - ρ)/L) ρ^2 dρ = 4 π L (L^2 (2 - 2 e^(-R/L)) - 2 L R + R^2)
-
-                const double R = sphericalThickness(material_index, x);
-                const double L = relaxation_len;
-                norm = 4*PhysicalUnits::pi * L * (L*L*(2 - 2*exp(-R/L)) - 2*L*R + R*R);
-                break;
-              }//case GeometryType::Spherical:
-
-              case GeometryType::Rectangular:
-              case GeometryType::CylinderEndOn:
-              {
-                // Integral from 0.0 to shielding depth R, of relaxation length L, is L - L*exp(-R/L)
-                //  So we will normalize by this factor so the activity represents the entire activity
-                //  of the column
-
-                double R = -1.0;
-                if( m_geometry == GeometryType::Rectangular )
-                  R = 2.0 * rectangularDepthThickness(material_index, x);
-                else
-                  R = 2.0 * cylindricalLengthThickness(material_index, x);
-
-                assert( R >= 0.0 );
-
-                const double L = relaxation_len;
-                norm = L * (1.0 - exp(-R / L) );
-                break;
-              }// case GeometryType::Rectangular or CylinderEndOn
-
-              case GeometryType::CylinderSideOn:
-              {
-                //integrate 2*pi*r*exp(-(R-r)/L) wrt r, from 0 to R
-                const double R = cylindricalRadiusThickness(material_index, x);
-                const double L = relaxation_len;
-
-                norm = 2 * L * PhysicalUnits::pi * (L*(exp(-R/L) - 1) + R);
-                break;
-              }//case GeometryType::CylinderSideOn:
-              
-              case GeometryType::NumGeometryType:
-                assert( 0 );
-                break;
-            }//switch( m_geometry )
-
-            actPerVol /= norm;                          // unguarded - norm -> 0 as R -> 0
-#else
-            #error "Unknown VOL_CALC_VARIANT"
-#endif
-
-            break;
-          }//case TraceActivityType::ExponentialDistribution:
-            
-          case TraceActivityType::NumTraceActivityType:
-            assert(0);
-            throw runtime_error("");
-            break;
-        }//switch ( trace_srcs[src_index].second )
-      }else //if( is_trace )
-      {
-        const double actPerMass = src->activityPerGram() / PhysicalUnits::gram;
-        const double massFract = massFractionOfElement( material_index, src, x );
-        
-        actPerVol = actPerMass * massFract * material->density;
-      }//if( is_trace ) / else
-      
-      
-      const double thisage = age( src, x );
-      
-      //      cerr << "For " << src->symbol << " actPerVol=" << actPerVol
-      //           << ", material->density=" << material->density << "("
-      //           << material->density *PhysicalUnits::cm3/PhysicalUnits::g
-      //           << "), actPerMass=" << actPerMass << ", massFraction="
-      //           << massFraction << endl;
-      
-      if( mixturecache.find(src) == mixturecache.end() )
-        mixturecache[src].addNuclideByActivity( src, sm_activityUnits );
-      
-      if( m_options.multiple_nucs_contribute_to_peaks )
-      {
-        cluster_peak_activities( local_energy_count_map, energie_widths,
-                                 mixturecache[src], actPerVol, thisage,
-                                 m_options.photopeak_cluster_sigma, -1.0,
-                                 m_options.account_for_decay_during_meas, m_realTime,
-                                 log_info );
-      }else
-      {
-        for( const PeakDef &peak : m_peaks )
-        {
-          if( (peak.parentNuclide() == src)
-             && (peak.decayParticle() || (peak.sourceGammaType() == PeakDef::AnnihilationGamma)) )
-          {
-            cluster_peak_activities( local_energy_count_map, energie_widths,
-                                    mixturecache[src], actPerVol, thisage,
-                                    m_options.photopeak_cluster_sigma,
-                                    peak.gammaParticleEnergy(),
-                                    m_options.account_for_decay_during_meas, m_realTime,
-                                    log_info );
-          }
-        }//for( const PeakDef &peak : m_peaks )
-      }//if( m_options.multiple_nucs_contribute_to_peaks ) / else
-
-      for( const EnergyCountMap::value_type &energy_count : local_energy_count_map )
-      {
-        std::unique_ptr<DistributedSrcCalc> calculator( new DistributedSrcCalc(baseCalculator) );
-
-        calculator->m_nuclide = src;
-        calculator->m_energy = energy_count.first;
-        calculator->m_srcVolumetricActivity = energy_count.second;
-        calculator->m_normalizeByVolume = normalizeByVolume;
-
-        if( m_options.attenuate_for_air )
-          calculator->m_airTransLenCoef = transmission_length_coefficient_air( energy_count.first );
-        else
-          calculator->m_airTransLenCoef = 0.0;
-        
-        if( is_trace )
-        {
-          assert( src_index < trace_srcs.size() );
-          
-          if( trace_srcs[src_index].m_type == TraceActivityType::ExponentialDistribution )
-          {
-            calculator->m_isInSituExponential = true;
-            calculator->m_inSituRelaxationLength = trace_srcs[src_index].m_relaxationDistance;
-            assert( calculator->m_inSituRelaxationLength > 0.0 );
-          }
-        }//if( is_trace )
-        
-        std::array<double,3> outer_dims = { 0.0, 0.0, 0.0 };
-        
-        for( int subMat = 0; subMat < nMaterials; ++subMat )
-        {
-          if( isGenericMaterial( subMat ) )
-          {
-            // A generic material at the very center has zero volume, so skip it
-            if( subMat == 0 )
-              continue;
-            
-            const double an = atomicNumber(subMat, x);
-            const double ad = arealDensity(subMat, x);
-            const double transLenCoef = transmition_coefficient_generic( an, ad, calculator->m_energy );
-            
-            //cout << "Adding generic material (index=" << subMat << ") with AN=" << an
-            //     << " and AD=" << ad / (PhysicalUnits::g/PhysicalUnits::cm2) << " g/cm2"
-            //     << " atten(" << calculator->m_energy << " keV-->" << transLenCoef << ") = " << exp(-1.0*transLenCoef)
-            //     << endl;
-            
-#if( defined(__GNUC__) && __GNUC__ < 5 )
-            calculator->m_dimensionsTransLenAndType.push_back( tuple<array<double,3>,double,DistributedSrcCalc::ShellType>{outer_dims, transLenCoef, DistributedSrcCalc::ShellType::Generic} );
-#else
-            calculator->m_dimensionsTransLenAndType.push_back( {outer_dims, transLenCoef, DistributedSrcCalc::ShellType::Generic} );
-#endif
-            
-            continue;
-          }//if( isGenericMaterial( subMat ) )
-
-          switch( m_geometry )
-          {
-            case GeometryType::Spherical:
-              outer_dims[0] += sphericalThickness( subMat, x );
-              break;
-              
-            case GeometryType::CylinderEndOn:
-            case GeometryType::CylinderSideOn:
-              outer_dims[0] += cylindricalRadiusThickness( subMat, x );
-              outer_dims[1] += cylindricalLengthThickness( subMat, x );
-              break;
-              
-            case GeometryType::Rectangular:
-              outer_dims[0] += rectangularWidthThickness( subMat, x );
-              outer_dims[1] += rectangularHeightThickness( subMat, x );
-              outer_dims[2] += rectangularDepthThickness( subMat, x );
-              break;
-              
-            case GeometryType::NumGeometryType:
-              assert( 0 );
-              break;
-          }//switch( m_geometry )
-          
-          const shared_ptr<const Material> &material = m_initial_shieldings[subMat].m_material;
-          
-          
-          bool pastDetector = false;
-          switch( m_geometry )
-          {
-            case GeometryType::Spherical:
-            case GeometryType::CylinderSideOn:
-              pastDetector = (outer_dims[0] > m_distance);
-              break;
-              
-            case GeometryType::CylinderEndOn:
-              pastDetector = (outer_dims[1] > m_distance);
-              break;
-              
-            case GeometryType::Rectangular:
-              pastDetector = (outer_dims[2] > m_distance);
-              break;
-              
-            case GeometryType::NumGeometryType:
-              assert( 0 );
-              break;
-          }//switch( m_geometry )
-          
-          if( pastDetector && !(m_detector && m_detector->isFixedGeometry()) )
-            throw runtime_error( "energy_chi_contributions: radius > distance" );
-          
-          const double transLenCoef = transmition_length_coefficient( material.get(), calculator->m_energy );
-
-#if( defined(__GNUC__) && __GNUC__ < 5 )
-          calculator->m_dimensionsTransLenAndType.push_back( tuple<array<double,3>,double,DistributedSrcCalc::ShellType>{outer_dims, transLenCoef, DistributedSrcCalc::ShellType::Material} );
-#else
-          calculator->m_dimensionsTransLenAndType.push_back( {outer_dims, transLenCoef, DistributedSrcCalc::ShellType::Material} );
-#endif
-        }//for( int subMat = 0; subMat < nMaterials; ++subMat )
-
-        if( calculator->m_dimensionsTransLenAndType.empty() )
-          throw std::logic_error( "No source/shielding sphere for calculator" );
-        
-        const DistributedSrcCalc * const raw_calc = calculator.get();
-        
-        if( log_info )
-        {
-          is_trace_src[raw_calc] = is_trace;
-          vol_src_material_index[raw_calc] = material_index;
-        }
-        
-        calculators.push_back( std::move(calculator) );
-      }//for( const EnergyCountMap::value_type &energy_count : local_energy_count_map )
-    }//for( const SandiaDecay::Nuclide *src : self_atten_srcs )
-  }//for( int material_index = 0; material_index < nMaterials; ++material_index )
 
   if( calculators.size() )
   {
-    if( m_options.multithread_self_atten )
+    if( m_options.multithread_self_atten && (calculators.size() > 1) )
     {
       SpecUtilsAsync::ThreadPool pool;
-      for( const unique_ptr<DistributedSrcCalc> &calculator : calculators )
-        pool.post( [&calculator](){ ShieldingSourceChi2Fcn::selfShieldingIntegration( *calculator ); } );
+      for( const unique_ptr<DistributedSrcCalcT<double>> &calculator : calculators )
+        pool.post( [&calculator](){ self_shielding_integration_imp<double>( *calculator ); } );
       pool.join();
     }else
     {
-      for( const unique_ptr<DistributedSrcCalc> &calculator : calculators )
-        selfShieldingIntegration(*calculator);
+      for( const unique_ptr<DistributedSrcCalcT<double>> &calculator : calculators )
+        self_shielding_integration_imp<double>( *calculator );
     }
-    
-//    vector<std::function<void()> > workers;
-//    for( DistributedSrcCalc &calculator : calculators )
-//    {
-//      std::function<void()> worker = boost::bind( &ShieldingSourceChi2Fcn::selfShieldingIntegration, boost::ref(calculator) );
-//      workers.push_back( worker );
-//    }//for( size_t i = 0; i < calculators.size(); ++i )
-//    SpecUtils::do_asyncronous_work( workers, false );
 
-    for( const unique_ptr<DistributedSrcCalc> &calculator : calculators )
+    for( const unique_ptr<DistributedSrcCalcT<double>> &calculator : calculators )
     {
       double contrib = calculator->integral * calculator->m_srcVolumetricActivity;
 
       // FlatDisk folds intrinsic efficiency in here; MCTransfer/EffTran already applied the
-      //  absolute FEP efficiency per element, so applying it again would double-count.
-      if( m_detector && m_detector->isValid()
-          && (calculator->m_effMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk) )
+      //  absolute FEP efficiency per element, so applying it again would double-count.  Keyed on
+      //  the RESPONSE, not the method enum - see DistributedSrcCalcT::eff_response_factor.
+      assert( (calculator->m_effMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk)
+              == !calculator->m_effResponse );
+      if( m_detector && m_detector->isValid() && !calculator->m_effResponse )
         contrib *= m_detector->intrinsicEfficiency( calculator->m_energy );
 
       if( energy_count_map.find( calculator->m_energy ) != energy_count_map.end() )
@@ -6069,10 +4860,7 @@ vector<PeakResultPlotInfo>
         });
         
         assert( pos != end(*log_info) );
-        
-        assert( is_trace_src.count(calculator.get()) );
-        assert( vol_src_material_index.count(calculator.get()) );
-        
+
         if( pos != end(*log_info) )
         {
           GammaInteractionCalc::PeakDetail &peak = *pos;
@@ -6172,7 +4960,7 @@ vector<PeakResultPlotInfo>
           }//for( PeakDetailSrc &src : peak.m_sources )
           
           PeakDetail::VolumeSrc src;
-          src.trace = is_trace_src[calculator.get()];
+          src.trace = isTraceSource( calculator->m_nuclide );
           // Variant 2 normalizes the integral by vol and carries the total activity; un-normalize
           //  the reported integral and recover the per-volume activity so the report (and
           //  averageEfficiencyPerSourceGamma) matches variants 0/1.  (Exponential keeps its own
@@ -6214,7 +5002,7 @@ vector<PeakResultPlotInfo>
           peak.m_volumetric_srcs.push_back( std::move(src) );
         }//if( pos != end(*log_info) )
       }//if( log_info )
-    }//for( DistributedSrcCalc &calculator : calculators )
+    }//for( loop over calculators )
   }//if( calculators.size() )
 
   
@@ -6309,30 +5097,11 @@ vector<PeakResultPlotInfo>
   if( log_info )
     eff_flags = peakDrfEffFlags();
 
-  // Use the fit's own forward model for the displayed prediction/pulls so they
-  //  match what was minimized - in particular cascade-summed volumetric sources,
-  //  which the descriptive `energy_count_map` above does not correct.  Fall back
-  //  to the map sum (override stays empty) if the model throws, so the report
-  //  never dies.
-  vector<double> imp_expected;
-  try
-  {
-    imp_expected = expected_peak_counts_imp<double>( x, mixturecache );
-  }catch( std::exception &e )
-  {
-    imp_expected.clear();
-#if( PERFORM_DEVELOPER_CHECKS )
-    log_developer_error( __func__, ("expected_peak_counts_imp threw, falling back to"
-                                    " descriptive map sum: " + string(e.what())).c_str() );
-#endif
-  }//try / catch
 
   return expected_observed_chis( m_peaks, m_backgroundPeaks, energy_count_map,
                           log_info,
                           eff_frac_uncerts.empty() ? nullptr : &eff_frac_uncerts,
-                          eff_flags.empty() ? nullptr : &eff_flags,
-                          imp_expected.empty() ? nullptr : &imp_expected,
-                          eff_whitening );
+                          eff_flags.empty() ? nullptr : &eff_flags );
 }//vector<PeakResultPlotInfo> energy_chi_contributions(...) const
 
   

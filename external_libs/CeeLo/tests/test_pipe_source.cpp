@@ -26,6 +26,7 @@
 #include <boost/test/unit_test.hpp>
 
 #include "efficiency/EfficiencyCalculator.h"
+#include "test_fep_window.h"
 #include "geometry/SourceGeometry.h"
 #include "materials/Material.h"
 #include "geometry/Geometry.h"
@@ -238,6 +239,7 @@ BOOST_AUTO_TEST_CASE(side_on_contents_basic_invariants) {
     Material water = make_Water();
     Material steel = make_StainlessSteel304();
     EfficiencyCalculator calc;
+    calc.set_fep_window_keV(kTestFepWindowKeV);
     calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -10.0), 2.1, 15.0,
                                 side_on_rotation());
@@ -262,6 +264,7 @@ BOOST_AUTO_TEST_CASE(end_on_open_pipe_higher_than_capped) {
     const Eigen::Vector3d center(0.0, 0.0, -20.0);
 
     EfficiencyCalculator calc_open;
+    calc_open.set_fep_window_keV(kTestFepWindowKeV);
     calc_open.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_open.set_cylindrical_source(center, 2.1, 10.0);
     calc_open.set_source_material(&water);
@@ -269,6 +272,7 @@ BOOST_AUTO_TEST_CASE(end_on_open_pipe_higher_than_capped) {
     auto res_open = calc_open.compute(precision_config(186.0, 0.01));
 
     EfficiencyCalculator calc_capped;
+    calc_capped.set_fep_window_keV(kTestFepWindowKeV);
     calc_capped.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
     calc_capped.set_cylindrical_source(center, 2.1, 10.0);
     calc_capped.set_source_material(&water);
