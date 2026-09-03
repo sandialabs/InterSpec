@@ -51,6 +51,8 @@
 #include <sstream>
 #include <ctime>
 #include <iostream>
+#include <set>
+#include <algorithm>
 
 #define BOOST_TEST_MODULE VolumetricLadder_suite
 #include <boost/test/included/unit_test.hpp>
@@ -1403,3 +1405,63 @@ BOOST_AUTO_TEST_CASE( Rung6_OffAxisAndSideOnCylinderTruth, * boost::unit_test::d
 
   sm_aperture_frame_legacy_origin = saved;
 }//BOOST_AUTO_TEST_CASE( Rung6_OffAxisAndSideOnCylinderTruth )
+
+
+/** RUNG 7 - record the CENTRE-ANCHORED transfer curves the committed comparison needs.
+
+ `VolumetricNearFieldVsTruth` grounds its transfer on one recorded Monte-Carlo point-source curve at
+ 25 cm, because the committed test runs no Monte Carlo of its own.  That single choice is where most
+ of its tolerance goes: the contact scenarios sit at 1.4-3 cm, so the transfer extrapolates inward by
+ a factor of ten, and rung 2 measured the consequence with NO attenuating material anywhere - the same
+ scenarios read within +-0.7% at every energy against a centre anchor but +4.6 to +6.4% at 344-1332
+ keV against the 25 cm one.  The allowance was therefore paying for the anchor, not for the volume
+ integral it is supposed to be gating.
+
+ So record a curve per distinct source-centre distance as well.  A centre anchor is a bare point in
+ vacuum on axis, so it depends only on that distance and the energy grid - not on the shape, matrix or
+ shield of the scenario whose centre happens to be there - which is why one curve serves every
+ scenario at that distance (a box and its cylinder twin share one exactly).
+
+ Cheap: bare points at contact are high-efficiency, so each is seconds of Monte Carlo, and they all
+ come from the ladder's cache.
+ */
+BOOST_AUTO_TEST_CASE( Rung7_CentreAnchorTruth, * boost::unit_test::disabled() )
+{
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  McCache cache;
+
+  // Every distinct centre distance in the matrix, rounded to the micron so a box and its cylinder
+  //  twin collapse onto one entry.
+  std::set<long long> keys;
+  vector<double> dists;
+  for( const Scenario &s : scenarios() )
+  {
+    const double d = scenario_center_distance_cm( s );
+    if( keys.insert( llround( d*1.0e6 ) ).second )
+      dists.push_back( d );
+  }
+  std::sort( begin(dists), end(dists) );
+  BOOST_TEST_MESSAGE( "distinct source-centre distances: " << dists.size() );
+
+  vector<unique_ptr<ceelo::Material>> owned;
+  ceelo::EfficiencyCalculator pt;
+  ceelo::ResponseGenerator::configure_calculator( pt, det.gd, owned );
+
+  cout << "static const std::vector<CentreAnchorRow> sm_centre_anchor = {\n" << flush;
+  for( const double d : dists )
+  {
+    pt.set_point_source( Eigen::Vector3d( 0.0, 0.0, -(det.endcap_front_offset_cm + d) ) );
+    ostringstream k;
+    k << "point(r=0,ze=" << setprecision(10) << d << ");bare";
+    for( const double e : scenario_energies() )
+    {
+      const McResult r = run_mc( pt, cache, k.str(), e );
+      cout << "  { " << setprecision(10) << d << ", " << setprecision(12) << e << ", "
+           << setprecision(10) << r.eff << ", " << setprecision(4) << r.frac_sigma << " },"
+           << (r.hit_cap() ? "  // stopped on a cap" : "") << "\n" << flush;
+    }
+  }
+  cout << "};\n" << flush;
+}//BOOST_AUTO_TEST_CASE( Rung7_CentreAnchorTruth )

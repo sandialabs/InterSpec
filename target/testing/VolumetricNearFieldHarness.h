@@ -322,6 +322,51 @@ build_scenario_calc( const AngleDetector &det,
 }//build_scenario_calc(...)
 
 
+/** The CENTRE-ANCHORED transfer for a scenario: an EFFTRAN response grounded on the recorded
+ point-source curve at that scenario's own source-centre distance (`sm_centre_anchor`), so the
+ transfer is not extrapolating in distance at all.
+
+ Built from RECORDED Monte Carlo, so this runs no simulation and is safe in a committed test.  Cached
+ by distance: a box and its cylinder twin share one response exactly, as does every scenario whose
+ centre happens to sit at the same place.  Returns null if the table has no curve for that distance,
+ which is what a caller should treat as "regenerate Rung7_CentreAnchorTruth".
+ */
+shared_ptr<const ceelo::DetectorResponse> centre_anchored_response( const AngleDetector &det,
+                                                                    const Scenario &s )
+{
+  static map<long long,shared_ptr<const ceelo::DetectorResponse>> cache;
+
+  const double d_cm = scenario_center_distance_cm( s );
+  const long long key = llround( d_cm * 1.0e6 );
+  const map<long long,shared_ptr<const ceelo::DetectorResponse>>::const_iterator it = cache.find( key );
+  if( it != end(cache) )
+    return it->second;
+
+  CeeLoUtils::TransferAnchor anchor;
+  anchor.ref_distance_cm = d_cm;
+  anchor.curve_derived = false;
+  for( const CentreAnchorRow &row : sm_centre_anchor )
+  {
+    if( llround( row.distance_cm * 1.0e6 ) != key )
+      continue;
+    anchor.curve.energies_keV.push_back( row.energy_keV );
+    anchor.curve.eff.push_back( row.eff );
+    anchor.curve.frac_sigma.push_back( row.frac_sigma );
+  }
+
+  shared_ptr<const ceelo::DetectorResponse> resp;
+  if( anchor.curve.energies_keV.size() >= 2 )
+  {
+    ostringstream nm;
+    nm << "centre-anchored (d=" << fixed << setprecision(2) << d_cm << " cm)";
+    resp = CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{}, nm.str() );
+  }
+
+  cache[key] = resp;
+  return resp;
+}//centre_anchored_response(...)
+
+
 double interspec_volumetric_eff( const AngleDetector &det,
                                  const Scenario &s,
                                  const double energy_keV,

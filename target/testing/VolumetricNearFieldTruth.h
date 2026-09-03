@@ -32,6 +32,29 @@ struct PointBaselineRow
   double mc_fep_eff = 0.0;
 };
 
+/** One point of a CENTRE-ANCHORED transfer curve: a bare POINT source on axis at `distance_cm`,
+ which is some scenario's own source-centre distance.
+ 
+ The 25 cm curve above (`sm_mc_anchor`) is what a detector characterized at a working distance gives
+ you, and it is what a user actually has - but transferring it in to a source at 1.4-3 cm means
+ extrapolating a factor of ten in distance, and that extrapolation, not the volume integral, is where
+ most of the model-vs-truth residual at 344-1332 keV comes from (rung 2 measured the same scenarios
+ with NO attenuating material anywhere: +-0.7% at every energy against a centre anchor, +4.6 to +6.4%
+ against the 25 cm one).  Recording centre anchors too lets the comparison GATE on the volume integral
+ while still REPORTING what the far-anchored transfer does.
+ 
+ A centre anchor is a bare point in vacuum, so it depends only on the distance and the energy - not on
+ the shape, matrix or shield of the scenario centred there - so one curve serves every scenario at
+ that distance, and a box and its cylinder twin share one exactly.
+ */
+struct CentreAnchorRow
+{
+  double distance_cm = 0.0;
+  double energy_keV = 0.0;
+  double eff = 0.0;
+  double frac_sigma = 0.0;
+};
+
 struct TruthRow
 {
   std::string scenario;
@@ -208,12 +231,19 @@ static const std::vector<TruthRow> sm_truth = {
   //  exhaustively by the on-axis matrix and by the ladder's slab sweep - what these rows are for is
   //  AZIMUTH and ORIENTATION, which every energy exercises equally.
   //
-  //  Do not mistake them for the aperture-frame gate.  The frame is gated by two cheap ENABLED
-  //  geometry cases - FanGeometryAudit (test_VolumetricLadder, sub-second) and
-  //  ElementApertureFrameAndClosure below - both of which fail hard on a misoriented fan; the rows
-  //  here sit well inside the tolerance under both frames and so only measure accuracy.  The full
-  //  six-energy table, including the 60 keV rows where the fix moves side-on dense by 7.9 points
-  //  (-8.95% -> -1.06%), is in scratch/20260902_volumetric_ladder/FINDINGS.md.
+  //  The four DENSE rows at 60 keV are the exception, and they are here on purpose: 60 keV is where
+  //  these geometries discriminate.  Measured against the 25 cm anchor, a misoriented aperture fan
+  //  moves sideon-squat-near-dense by 7.9 points (-8.95% -> -1.06%) and sideon-tall by 7.0, against
+  //  only 3.4-4.2 points at 122 keV and 1-2 points above that - so if any row in this bank is going
+  //  to notice a frame regression on its own, it is one of these.  They cost ~570 CPU s between them.
+  //  The 60 keV LIGHT rows are omitted: their legacy-vs-fixed gap is 0.2-0.6 points, so they would
+  //  guard nothing for the same price.
+  //
+  //  That said, the aperture frame's real gate is not here.  It is two cheap ENABLED geometry cases -
+  //  FanGeometryAudit (test_VolumetricLadder, sub-second) and ElementApertureFrameAndClosure below,
+  //  which reports 1-cos = 0.0145 and fails hard against the pre-2026-09-02 code.  These rows are
+  //  accuracy coverage for two geometries that had none.  The full six-energy table is in
+  //  scratch/20260902_volumetric_ladder/FINDINGS.md.
   { "offaxis-small-near-light", 122, 0.0790994898, 0.0001928 },
   { "offaxis-small-near-light", 344, 0.04410308989, 0.0001088 },
   { "offaxis-small-near-light", 661.7, 0.0259101473, 6.427e-05 },
@@ -246,4 +276,67 @@ static const std::vector<TruthRow> sm_truth = {
   { "sideon-squat-near-dense", 344, 0.02313036496, 5.743e-05 },
   { "sideon-squat-near-dense", 661.7, 0.01488984686, 3.703e-05 },
   { "sideon-squat-near-dense", 1332.5, 0.009695023036, 2.414e-05 },
+  { "offaxis-small-near-dense", 60, 0.006131386861, 1.53e-05 },
+  { "offaxis-large-near-dense", 60, 0.001925900494, 4.812e-06 },
+  { "sideon-tall-near-dense", 60, 0.005751224784, 1.435e-05 },
+  { "sideon-squat-near-dense", 60, 0.003476501305, 8.682e-06 },
+};
+
+// Centre-anchored curves, one per distinct source-centre distance in the matrix (regenerated with
+//  test_VolumetricLadder --run_test=Rung7_CentreAnchorTruth, 0.25% target, same MC cache).
+static const std::vector<CentreAnchorRow> sm_centre_anchor = {
+  { 1.4, 60, 0.06893486732, 0.002311 },
+  { 1.4, 88, 0.1227892503, 0.002138 },
+  { 1.4, 122, 0.1348979591, 0.0021 },
+  { 1.4, 344, 0.06661094732, 0.002328 },
+  { 1.4, 661.7, 0.03760668357, 0.002376 },
+  { 1.4, 1332.5, 0.02127550544, 0.002423 },
+  { 1.5, 60, 0.06625221435, 0.002317 },
+  { 1.5, 88, 0.1171716194, 0.002127 },
+  { 1.5, 122, 0.1285999916, 0.002088 },
+  { 1.5, 344, 0.06342939644, 0.002331 },
+  { 1.5, 661.7, 0.03578659653, 0.002385 },
+  { 1.5, 1332.5, 0.02039613885, 0.002428 },
+  { 1.75, 60, 0.0598050596, 0.002318 },
+  { 1.75, 88, 0.104811124, 0.002164 },
+  { 1.75, 122, 0.1147011606, 0.0021 },
+  { 1.75, 344, 0.05672978519, 0.00233 },
+  { 1.75, 661.7, 0.03220655197, 0.00238 },
+  { 1.75, 1332.5, 0.01832861631, 0.00243 },
+  { 2, 60, 0.05416470527, 0.002331 },
+  { 2, 88, 0.09379402195, 0.00217 },
+  { 2, 122, 0.1027250987, 0.002103 },
+  { 2, 344, 0.05124597595, 0.002331 },
+  { 2, 661.7, 0.02883156888, 0.002383 },
+  { 2, 1332.5, 0.0164662297, 0.002426 },
+  { 2.5, 60, 0.04453349848, 0.00232 },
+  { 2.5, 88, 0.07609594148, 0.002162 },
+  { 2.5, 122, 0.08268044491, 0.002137 },
+  { 2.5, 344, 0.04157653336, 0.002341 },
+  { 2.5, 661.7, 0.02363259213, 0.002391 },
+  { 2.5, 1332.5, 0.01355549197, 0.002434 },
+  { 3, 60, 0.03690307055, 0.002337 },
+  { 3, 88, 0.06268473045, 0.00219 },
+  { 3, 122, 0.06814389024, 0.002135 },
+  { 3, 344, 0.034512432, 0.002339 },
+  { 3, 661.7, 0.0197086373, 0.002391 },
+  { 3, 1332.5, 0.01138265452, 0.002429 },
+  { 15.5, 60, 0.002937481769, 0.002304 },
+  { 15.5, 88, 0.004874921003, 0.002152 },
+  { 15.5, 122, 0.005406987924, 0.002093 },
+  { 15.5, 344, 0.00322025107, 0.002295 },
+  { 15.5, 661.7, 0.0019361864, 0.002367 },
+  { 15.5, 1332.5, 0.001165083581, 0.00241 },
+  { 50.5, 60, 0.0003110760109, 0.002285 },
+  { 50.5, 88, 0.0005198125623, 0.002104 },
+  { 50.5, 122, 0.00058371334, 0.00206 },
+  { 50.5, 344, 0.0003705765566, 0.002242 },
+  { 50.5, 661.7, 0.0002269287469, 0.002335 },
+  { 50.5, 1332.5, 0.0001395543667, 0.002397 },
+  { 52, 60, 0.0002933811145, 0.002286 },
+  { 52, 88, 0.0004918584634, 0.002131 },
+  { 52, 122, 0.0005494906578, 0.002064 },
+  { 52, 344, 0.0003498774227, 0.002241 },
+  { 52, 661.7, 0.0002148543687, 0.002345 },
+  { 52, 1332.5, 0.0001313392472, 0.002401 },
 };

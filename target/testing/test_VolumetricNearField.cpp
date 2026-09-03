@@ -231,47 +231,65 @@ BOOST_AUTO_TEST_CASE( VolumetricNearFieldVsTruth )
       if( !(truth > 0.0) )
         continue;
 
-      const double near = interspec_volumetric_eff( det, s, row.energy_keV, det.mc_transfer );
+      // Anchored on a recorded point-source curve at this scenario's OWN source-centre distance, so
+      //  the transfer extrapolates in distance not at all and what is left is the VOLUME INTEGRAL -
+      //  which is the only thing this test can honestly gate.
+      //
+      //  The 25 cm-anchored column used to be gated here too and is deliberately gone.  It cost a
+      //  second full volume integration per row (doubling this test) to measure something this test
+      //  does not test: with the same scenarios and NO attenuating material anywhere, a 25 cm anchor
+      //  reads +4.6 to +6.4% at 344-1332 keV where a centre anchor reads +-0.7% (ladder rung 2).
+      //  Measured over this bank, contact rows at and above 130 keV run a median 5.24% / max 7.68%
+      //  far-anchored against 0.48% / 1.56% centre-anchored.  That gap is the RESPONSE's near-field
+      //  extrapolation (scratch/chord_prompt.md), and carrying it here forced a 9% allowance that
+      //  hid the integrator behind it.  Rung4_ScenarioMatrixTruth in test_VolumetricLadder still
+      //  prints the 25 cm column for anyone who wants what a working-distance characterization
+      //  actually delivers.
+      const shared_ptr<const ceelo::DetectorResponse> centre_resp = centre_anchored_response( det, s );
+      BOOST_REQUIRE_MESSAGE( centre_resp, "No recorded centre anchor at "
+                             << scenario_center_distance_cm( s ) << " cm for '" << s.name
+                             << "' - regenerate with test_VolumetricLadder"
+                             " --run_test=Rung7_CentreAnchorTruth and paste sm_centre_anchor." );
+      const double centre = interspec_volumetric_eff( det, s, row.energy_keV, centre_resp );
       const double flat = interspec_volumetric_eff( det, s, row.energy_keV, nullptr );
 
-      // Tolerance: the MC's own 1-sigma, plus a model allowance, set from the MEASURED distribution
-      //  against the 0.25% bank (test_VolumetricLadder findings, 2026-09-02):
-      //
-      //      far field / wide angle      median 0.87%   max 3.02%   (n=36)
-      //      contact, E < 130 keV        median 0.82%   max 5.34%   (n=36)
-      //      contact, E >= 130 keV       median 5.05%   max 7.38%   (n=36)
-      //
-      //  The high-energy contact rows are the loosest, and NOT because the volume integral is worse
-      //  there - those rows sit at tau 0.03-0.28, i.e. nearly transparent.  They carry the detector
-      //  RESPONSE's near-field high-energy bias, measured independently at +4.6 to +6.4% for the same
-      //  scenarios with no attenuating material anywhere (ladder rung 2) and at +5 to +7% for bare
-      //  points (rung 1).  It is a transfer problem (scratch/chord_prompt.md), not an integration
-      //  one.  When that is fixed this allowance should come down to the low-energy one, and the fact
-      //  that it CANNOT be tightened today is the honest statement of where the model stands.
-      //
-      //  The old ladder was 5 / 10 / 25%; the 25% corner (contact, low energy, dense) existed to
-      //  cover the aperture-frame bug and is gone - those rows now run under 5.4%.
+      // Every tolerance below is a model allowance PLUS three times the row's own MC sigma (0.25%,
+      //  so +0.75%).  The allowances come from the measured distribution, not from taste.
+      const double mc_3sigma = 3.0*(row.fep_uncert / std::max(truth, 1.0E-30));
       const bool low_energy = (row.energy_keV < 130.0);
       const bool contact = (s.standoff_cm < 5.0);
-      double allowance = 0.04;
-      if( contact )      allowance = low_energy ? 0.07 : 0.09;
 
-      const double tol = allowance + 3.0*(row.fep_uncert / std::max(truth, 1.0E-30));
-
-      BOOST_CHECK_MESSAGE( fabs(near - truth) <= tol*truth,
-                           s.name << " @ " << row.energy_keV << " keV: near-field model "
-                           << setprecision(6) << near << " vs MC truth " << truth
-                           << " (allowed " << setprecision(3) << 100.0*tol << "%)" );
+      // Measured over the 0.25% bank, centre-anchored (n=144):
+      //
+      //      far field / wide angle        median 0.47%   max 2.51%
+      //      contact, E >= 130 keV         median 0.48%   max 1.56%
+      //      contact, E <  130 keV         median 0.70%   max 5.75%
+      //
+      //  The only rows above ~3% are the four SHIELDED ones at 60 keV (+4.7 to +5.8%, tau 4.6-12.8),
+      //  where the model transports the uncollided photon through many mean free paths of iron and
+      //  the truth counts scatter it has no term for.  Everything else is inside 3%.
+      //
+      //  If this fails, the volume integral or the per-ray kernel moved.  That is the finding; do
+      //  not widen it.
+      const double centre_allowance = contact ? (low_energy ? 0.07 : 0.03) : 0.04;
+      const double centre_tol = centre_allowance + mc_3sigma;
+      BOOST_CHECK_MESSAGE( fabs(centre - truth) <= centre_tol*truth,
+                           s.name << " @ " << row.energy_keV << " keV: centre-anchored model "
+                           << setprecision(6) << centre << " vs MC truth " << truth
+                           << " (allowed " << setprecision(3) << 100.0*centre_tol << "%)" );
       ++n_checked;
+
 
       // The justification check: flat-disk must be far off for a large source at contact.
       if( (s.name.find("large-near") != string::npos) && (fabs(flat - truth) > 0.15*truth) )
         ++n_flat_fails_large_near;
 
-      BOOST_TEST_MESSAGE( s.name << " @ " << row.energy_keV << " keV: truth=" << setprecision(6)
-                          << truth << "  near=" << near << "  flat=" << flat
-                          << "  tau=" << setprecision(3)
-                          << scenario_optical_depth( s, row.energy_keV ) << " mfp" );
+      ostringstream line;
+      line << s.name << " @ " << row.energy_keV << " keV: truth=" << setprecision(6) << truth
+           << "  centre=" << centre << " (" << fixed << setprecision(2)
+           << 100.0*(centre/truth - 1.0) << "%)  flat=" << setprecision(6) << flat
+           << "  tau=" << setprecision(3) << scenario_optical_depth( s, row.energy_keV ) << " mfp";
+      BOOST_TEST_MESSAGE( line.str() );
     }//for( truth rows )
   }//for( scenarios )
 
