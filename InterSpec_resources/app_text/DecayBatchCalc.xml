@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<messages>
+  <!-- dbc- short for DecayBatchCalc / DecayBatchCalcWidget -->
+  <message id="dbc-window-title">Batch Decay</message>
+  <message id="dbc-qr-window-text">Current state of the Batch Decay tool.</message>
+
+  <message id="dbc-nuc-placeholder">Nuclide</message>
+  <message id="dbc-age-label">Initial Age:</message>
+  <message id="dbc-act-label">Activity:</message>
+  <message id="dbc-add-nuc-tt">Add another initial nuclide.</message>
+
+  <message id="dbc-decay-time">Decay time:</message>
+  <message id="dbc-decay-time-tt">The time to decay to.  Units of s, m, h, d, y, or half-lives (e.g. "2 HL") are accepted.</message>
+  <message id="dbc-num-steps">Steps:</message>
+  <message id="dbc-num-steps-tt">Number of time points to evaluate, from time zero to the decay time.  A value of 1 evaluates only at the decay time.</message>
+  <message id="dbc-activity-units">Activity units:</message>
+  <message id="dbc-curie">Curie</message>
+  <message id="dbc-becquerel">Becquerel</message>
+
+  <message id="dbc-mix-input">Mix inputs</message>
+  <message id="dbc-mix-input-tt">Sum all input nuclides into a single mixture and co-decay them (implies showing progeny).  This lets the decay progeny of different ultimate parents mix together and be reported as a single line per nuclide.  If not selected, each input is decayed on its own, so a progeny reached from more than one input is reported separately for each parent.</message>
+  <message id="dbc-show-progeny">Show progeny</message>
+  <message id="dbc-show-progeny-tt">Also output the activity of every decay-progeny nuclide.</message>
+
+  <message id="dbc-include">Include:</message>
+  <message id="dbc-inc-activity">Activity</message>
+  <message id="dbc-inc-xrays">X-rays</message>
+  <message id="dbc-inc-gammas">Gammas</message>
+  <message id="dbc-inc-alphas">Alphas</message>
+  <message id="dbc-inc-betas">Betas</message>
+
+  <message id="dbc-drop-hint">Drop or click to upload a CSV of nuclides.</message>
+
+  <message id="dbc-export-csv">Export CSV</message>
+  <message id="dbc-copy-clipboard">Copy to clipboard</message>
+  <message id="dbc-copied-ok">Copied results to the clipboard.</message>
+  <message id="dbc-copied-fail">Failed to copy results to the clipboard.</message>
+
+  <message id="dbc-no-inputs">Enter one or more nuclides to see decay results.</message>
+  <message id="dbc-invalid-time">Enter a valid decay time to see results.</message>
+  <message id="dbc-invalid-nuclide">One or more nuclide entries are not valid; fix them to enable export.</message>
+  <message id="dbc-calc-error">Could not compute decay: {1}</message>
+  <message id="dbc-too-large">Results are too large to preview; use Export CSV or Copy to clipboard instead.</message>
+
+  <message id="dbc-csv-error-title">Could not load CSV</message>
+  <message id="dbc-file-read-error">Could not read the uploaded file.</message>
+</messages>

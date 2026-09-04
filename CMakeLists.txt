@@ -380,6 +380,8 @@ set(sources
     src/UnitsConverterTool.cpp
     src/DecayWindow.cpp
     src/DecayActivityDiv.cpp
+    src/DecayBatchCalc.cpp
+    src/DecayBatchCalcWidget.cpp
     src/DecayChainChart.cpp
     src/DecaySelectNuclideDiv.cpp
     src/SpecFileSummary.cpp
@@ -525,6 +527,8 @@ set(headers
     InterSpec/UnitsConverterTool.h
     InterSpec/DecayWindow.h
     InterSpec/DecayActivityDiv.h
+    InterSpec/DecayBatchCalc.h
+    InterSpec/DecayBatchCalcWidget.h
     InterSpec/DecayChainChart.h
     InterSpec/DecaySelectNuclideDiv.h
     InterSpec/SpecFileSummary.h

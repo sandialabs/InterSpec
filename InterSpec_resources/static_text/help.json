@@ -158,6 +158,12 @@
         "keywords":"Information Activity Chart Decay Chain Add Nuclides Aged Descendant Reference Photopeaks Gamma Beta Alpha Production Rates Graph Information Emission Emit Particles Time Span Y Axis Type Graph Log Linear Gives Off Branching Ratio"
       },
       {
+        "id":"decay-batch-dialog",
+        "title":"Batch Decay",
+        "help-xml":"batch_decay_dialog_help.xml",
+        "keywords":"Batch Decay Multiple Nuclides Activity Progeny Mixture CSV Export Time Steps Gamma Beta Alpha X-ray Bulk Aged"
+      },
+      {
         "id":"simple-mda-dialog",
         "title": "Simple MDA",
         "help-xml":"simple_mda_help.xml",

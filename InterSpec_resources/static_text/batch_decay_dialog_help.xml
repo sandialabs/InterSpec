@@ -1,0 +1,60 @@
+    <div align="center">
+      <h1 id="decay-batch-dialog">
+            <b>Batch Decay</b>
+      </h1>
+      <hr />
+    </div>
+
+    <div>
+      The <b>Batch Decay</b> tool decays many initial nuclides at once &#8212; either to a single
+      future (or past) time, or across a number of evenly spaced time steps &#8212; and presents the
+      results as a table you can export to CSV or copy to the clipboard.
+    </div>
+
+    <div style="padding-top: 10px">
+      <b>Entering nuclides.</b> Add a row for each initial nuclide with the <b>+</b> button, or drag
+      and drop (or click to upload) a CSV onto the drop area to replace all rows at once.  Each row
+      takes a nuclide, an optional initial age (enabled only for nuclides whose result depends on
+      age), and an initial activity.  The <b>-</b> button removes a row.
+    </div>
+
+    <div style="padding-top: 10px">
+      <b>Activity units.</b> The activity accepts a value with a unit of either becquerel or curie,
+      with an optional metric prefix &#8212; for example <code>bq</code>, <code>kBq</code>,
+      <code>MBq</code>, <code>GBq</code>, <code>TBq</code>, <code>mBq</code>, <code>uBq</code>, or
+      <code>Ci</code>, <code>mCi</code>, <code>uCi</code>, <code>nCi</code>, <code>pCi</code>,
+      <code>fCi</code> (unit text is not case sensitive).  You may instead enter a bare number with no
+      unit, which is interpreted as becquerel.  Because all rows share a single units style, a bare
+      number is only kept as becquerel when <em>every</em> row is a bare number; if any row specifies
+      a unit, the bare numbers are given that same unit.
+    </div>
+
+    <div style="padding-top: 10px">
+      <b>CSV input.</b> Two formats are accepted.  A simple format with one
+      <code>nuclide,activity</code> pair per line (a bare activity number is interpreted as
+      becquerel; blank lines and lines beginning with <code>#</code> are ignored).  Or a header-keyed
+      format with <code>Product</code>, <code>Value</code>, and <code>Unit</code> columns; any
+      areal/volumetric suffix on the unit (for example <code>/m2</code>) is carried through to the
+      output labels.
+    </div>
+
+    <div style="padding-top: 10px">
+      <b>Options.</b> Choose the decay time and number of steps, the activity units (Becquerel or
+      Curie), whether to sum all inputs into a single co-decaying mixture (<b>Mix inputs</b>),
+      whether to also report every decay progeny (<b>Show progeny</b>), and which quantities to
+      include (activity, x-rays, gammas, alphas, betas).
+    </div>
+
+    <div style="padding-top: 10px">
+      <b>Mix inputs.</b> With this on, all inputs are placed into a single mixture and co-decayed, so
+      the decay progeny of different ultimate parents mix together and are reported as a single line
+      per nuclide.  With it off, each input is decayed on its own; a progeny reached from more than one
+      input is then reported separately for each parent (its activity line notes which input it came
+      from).  Gammas and x-rays are always reported for progeny; each line notes the
+      <code>parent -&gt; child</code> transition that emits it.
+    </div>
+
+    <div style="padding-top: 10px">
+      The tool's state can be captured as a link or QR code from the window footer, participates
+      in undo/redo, and is saved with (and restored from) the application state.
+    </div>

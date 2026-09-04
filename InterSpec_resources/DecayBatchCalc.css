@@ -1,0 +1,205 @@
+/* Styling for the Batch Decay tool (DecayBatchCalcWidget / DecayBatchCalcNuclide). */
+
+.DecayBatchCalcWidget
+{
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+}
+
+/* --- Nuclide input area --- */
+.DecayBatchCalcWidget .DbcNuclideArea
+{
+  border: 1px solid #e1e1e1;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Fixed height (~5 rows); rows scroll internally once there are more. */
+.DecayBatchCalcWidget .DbcNuclideRows
+{
+  display: flex;
+  flex-direction: column;
+  padding: 4px;
+  overflow-y: auto;
+  box-sizing: border-box;
+  height: 165px;  /* ~5 rows */
+}
+
+.DecayBatchCalcWidget .DecayBatchCalcNuclide
+{
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 0;
+  /* Fixed-height rows so adding/removing/toggling age never jitters neighbors. */
+  min-height: 30px;
+}
+
+/* Age / activity are label+edit groups; keep the label snug to its field, with spacing between the
+   groups so the row reads clearly. */
+.DecayBatchCalcWidget .DbcAgeContainer,
+.DecayBatchCalcWidget .DbcActContainer
+{
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  margin-left: 12px;
+}
+
+.DecayBatchCalcWidget .DecayBatchCalcNuclide label
+{
+  white-space: nowrap;
+}
+
+/* Push the remove button to the far right of each row.  The :hover variant is included (and has
+   higher specificity than the chrome rule's :hover below) so hovering does not reset margin-left to
+   the shorthand's value -- otherwise the button would jump left, lose :hover, jump back, and flicker. */
+.DecayBatchCalcWidget .DecayBatchCalcNuclide > .DeleteEnergyRangeOrNuc,
+.DecayBatchCalcWidget .DecayBatchCalcNuclide > .DeleteEnergyRangeOrNuc:hover
+{
+  margin-left: auto;
+}
+
+/* Footer bar; its top border draws the horizontal line above the "+" row. */
+.DecayBatchCalcWidget .DbcAddBar
+{
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 2px 5px;
+  border-top: 1px solid #e1e1e1;
+}
+
+/* "+" / "-" buttons: strip the default button chrome, matching "Isotopics by nuclides". */
+.DecayBatchCalcWidget .AddEnergyRangeOrNuc, .DecayBatchCalcWidget .AddEnergyRangeOrNuc:hover,
+.DecayBatchCalcWidget .DeleteEnergyRangeOrNuc, .DecayBatchCalcWidget .DeleteEnergyRangeOrNuc:hover
+{
+  opacity: 0.6;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0px;
+  margin: 2px;
+  width: 16px;
+  height: 21px;
+  flex: 0 0 auto;
+}
+
+.DecayBatchCalcWidget .AddEnergyRangeOrNuc:hover,
+.DecayBatchCalcWidget .DeleteEnergyRangeOrNuc:hover
+{
+  opacity: 1.0;
+}
+
+/* --- Options area --- */
+.DecayBatchCalcWidget .DbcOptionsArea
+{
+  flex: 0 0 auto;
+  margin-bottom: 6px;
+}
+
+.DecayBatchCalcWidget .DbcOptRow
+{
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 3px 0;
+}
+
+.DecayBatchCalcWidget .DbcOptRow > label
+{
+  margin-right: 4px;
+}
+
+.DecayBatchCalcWidget .DbcOptRow > *
+{
+  margin-right: 10px;
+}
+
+/* --- CSV drop / upload area (lives in the "+" footer row, sized to its text and floated right) --- */
+.DecayBatchCalcWidget .DbcAddBar .DbcDropArea
+{
+  flex: 0 0 auto;
+  margin-left: auto;
+  border: 1px dashed #bbb;
+  border-radius: 4px;
+  padding: 2px 8px;
+  color: #888;
+  cursor: pointer;
+  font-size: 0.85em;
+}
+
+.DecayBatchCalcWidget .DbcDropArea.DragedOver,
+.DecayBatchCalcWidget .DbcDropArea.DomIsDrugOver
+{
+  border-color: #4a90d9;
+  background: rgba(74, 144, 217, 0.08);
+}
+
+/* --- Results area --- */
+.DecayBatchCalcWidget .DbcResultArea
+{
+  flex: 1 1 auto;
+  min-height: 120px;
+  border: 1px solid #ccc;
+  border-radius: 4px;
+  padding: 4px;
+  overflow: auto;
+
+  /* Override the app-wide user-select:none so the results table can be selected/copied.  Must be an
+     explicit `text` (not `auto`): with `auto`, the used value inherits `none` from the <body> rule. */
+  user-select: text;
+  -moz-user-select: text;
+  -webkit-user-select: text;
+}
+
+.DecayBatchCalcWidget .DbcWarning
+{
+  color: #a00;
+  white-space: pre-wrap;
+  margin-bottom: 4px;
+}
+
+.DecayBatchCalcWidget table.DbcResultTable
+{
+  border-collapse: collapse;
+  font-size: 0.9em;
+}
+
+.DecayBatchCalcWidget table.DbcResultTable th,
+.DecayBatchCalcWidget table.DbcResultTable td
+{
+  border: 1px solid #ddd;
+  padding: 2px 8px;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.DecayBatchCalcWidget table.DbcResultTable thead th
+{
+  position: sticky;
+  top: 0;
+  background: #f3f3f3;
+}
+
+.DecayBatchCalcWidget table.DbcResultTable tbody th
+{
+  text-align: left;
+  background: #fafafa;
+}
+
+/* --- Export row --- */
+.DecayBatchCalcWidget .DbcExportRow
+{
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-top: 6px;
+}

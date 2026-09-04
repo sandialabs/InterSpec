@@ -234,6 +234,9 @@ public:
   void createCsvDownloadGui();
   void deleteCsvDownloadGui();
   void deleteCsvDownloadGuiTriggerUpdate();
+
+  /** Opens the "Batch Decay" tool, seeded with the currently entered nuclides. */
+  void openBatchDecayTool();
     
   void updateMouseOver( const Wt::WMouseEvent &event );
   void removeNuclide( Wt::WContainerWidget *frame );

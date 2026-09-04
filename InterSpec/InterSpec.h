@@ -51,6 +51,7 @@ class PeakModel;
 class MaterialDB;
 class D3TimeChart;
 class DecayWindow;
+class DecayBatchCalcWindow;
 struct ColorTheme;
 class UserFileInDb;
 class PopupDivMenu;
@@ -902,6 +903,10 @@ public:
   
   DecayWindow *createDecayInfoWindow();
   void deleteDecayInfoWindow();
+
+  /** Creates (blank) or shows the "Batch Decay" tool window; caller seeds nuclides afterwards. */
+  DecayBatchCalcWindow *createDecayBatchCalcWindow();
+  void deleteDecayBatchCalcWindow();
 
   /** If no `MakeFwhmForDrfWindow` is currently showing, will create one and return a pointer to it.
    If a window is currently showing, will return a pointer to it.
@@ -1838,7 +1843,10 @@ protected:
    color changes when color theme is updated
    */
   Wt::Core::observing_ptr<DecayWindow> m_decayInfoWindow;
-  
+
+  /** Ensures only one Batch Decay tool window is showing at a time. */
+  Wt::Core::observing_ptr<DecayBatchCalcWindow> m_decayBatchCalc;
+
   Wt::Core::observing_ptr<MakeFwhmForDrfWindow> m_addFwhmTool;
 
   Wt::Core::observing_ptr<MakeMcResponseForDrfWindow> m_mcResponseTool;
