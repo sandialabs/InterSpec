@@ -1255,19 +1255,8 @@ BOOST_AUTO_TEST_CASE( LineVsElementCascadeField )
     const vector<double> params = fcn_pars.second.Params();
     const vector<double> errors( params.size(), 0.0 );
     ShieldingSourceChi2Fcn::NucMixtureCache cache;
-    const VolumetricIntegrator prev = sm_volumetric_integrator_override;
-    sm_volumetric_integrator_override = path;
-    vector<PeakResultPlotInfo> answer;
-    try
-    {
-      answer = fcn_pars.first->energy_chi_contributions( params, errors, cache, nullptr );
-    }catch( ... )
-    {
-      sm_volumetric_integrator_override = prev;
-      throw;
-    }
-    sm_volumetric_integrator_override = prev;
-    return answer;
+    const ScopedVolumetricIntegratorOverride force( path );
+    return fcn_pars.first->energy_chi_contributions( params, errors, cache, nullptr );
   };
 
   double worst = 0.0;
@@ -1328,3 +1317,65 @@ BOOST_AUTO_TEST_CASE( LineVsElementCascadeField )
                        "cascade-corrected line and element predictions disagree by " << worst
                        << "% at " << worst_where );
 }//BOOST_AUTO_TEST_CASE( LineVsElementCascadeField )
+
+
+/** A line set that cannot be built at creation is reported, and the fit falls back to flat-disk -
+ exactly as an unbuildable EFFTRAN transfer is handled: a note for an `Auto` request, an error in
+ `errormsgs` for a method asked for by name.  Forced here through the line-count hook. */
+BOOST_AUTO_TEST_CASE( LineCacheBuildFailureIsReported )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+
+  const vector<TruthScene> scenes = truth_scenes();
+  const TruthScene *scene = nullptr;
+  for( const TruthScene &sc : scenes )
+    if( string(sc.id) == "co60_cyl_5" )
+      scene = &sc;
+  BOOST_REQUIRE( scene );
+
+  const int prev_lines = ShieldingSourceChi2Fcn::sm_default_volumetric_num_lines;
+  ShieldingSourceChi2Fcn::sm_default_volumetric_num_lines = 0;
+  try
+  {
+    for( const bool explicit_request : { false, true } )
+    {
+      ShieldingSourceChi2Fcn::ShieldSourceInput input = build_scene_input( *scene, false );
+      input.config.options.volumetric_eff_method = explicit_request
+              ? ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer
+              : ShieldingSourceFitCalc::VolumetricEffMethod::Auto;
+
+      pair<shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                                                   = ShieldingSourceChi2Fcn::create( input );
+      const shared_ptr<ShieldingSourceChi2Fcn> &fcn = fcn_pars.first;
+      BOOST_REQUIRE( fcn );
+
+      BOOST_CHECK( fcn->resolvedVolumetricEffMethod() == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk );
+      if( explicit_request )
+      {
+        BOOST_CHECK_MESSAGE( fcn->volumetricEffResolveError().find( "line set" ) != string::npos,
+                             "expected an error naming the line set, got '" << fcn->volumetricEffResolveError() << "'" );
+      }else
+      {
+        BOOST_CHECK( fcn->volumetricEffResolveError().empty() );
+        BOOST_CHECK_MESSAGE( fcn->volumetricEffResolveNote().find( "line set" ) != string::npos,
+                             "expected a note naming the line set, got '" << fcn->volumetricEffResolveNote() << "'" );
+      }
+      BOOST_TEST_MESSAGE( "  " << (explicit_request ? "explicit" : "Auto") << ": note='"
+                          << fcn->volumetricEffResolveNote() << "' error='" << fcn->volumetricEffResolveError() << "'" );
+
+      // And the model still evaluates, on flat-disk.
+      const vector<double> params = fcn_pars.second.Params();
+      const vector<double> errors( params.size(), 0.0 );
+      ShieldingSourceChi2Fcn::NucMixtureCache cache;
+      vector<PeakResultPlotInfo> plot;
+      BOOST_REQUIRE_NO_THROW( plot = fcn->energy_chi_contributions( params, errors, cache, nullptr ) );
+      BOOST_CHECK( !plot.empty() );
+    }
+  }catch( ... )
+  {
+    ShieldingSourceChi2Fcn::sm_default_volumetric_num_lines = prev_lines;
+    throw;
+  }
+  ShieldingSourceChi2Fcn::sm_default_volumetric_num_lines = prev_lines;
+}//BOOST_AUTO_TEST_CASE( LineCacheBuildFailureIsReported )

@@ -597,8 +597,7 @@ BOOST_AUTO_TEST_CASE( VolumetricLinePathZeroThicknessLimit )
     //  an extent/distance ratio of ~1e-5 (see TODO.md, "line-path derivative of a vanishing
     //  extent").  The VALUE is unaffected, which is what the floor above is for.
     {
-      const VolumetricIntegrator prev = sm_volumetric_integrator_override;
-      sm_volumetric_integrator_override = VolumetricIntegrator::Element;
+      const ScopedVolumetricIntegratorOverride force( VolumetricIntegrator::Element );
       for( size_t i = 0; i < sweep.size(); ++i )
       {
         const double t = sweep[i];
@@ -625,7 +624,6 @@ BOOST_AUTO_TEST_CASE( VolumetricLinePathZeroThicknessLimit )
                             << " d/dt=" << contrib.v[0] << "   (line/element: value "
                             << vals[i]/contrib.a << ", d/dt " << derivs[i]/contrib.v[0] << ")" );
       }
-      sm_volumetric_integrator_override = prev;
     }
   }//for( cases )
 }//VolumetricLinePathZeroThicknessLimit

@@ -329,10 +329,8 @@ BOOST_AUTO_TEST_CASE( EffectiveShieldingLineVsElement )
       EffShieldComponents elem;
       {
         DistributedSrcCalcT<double> ref = calc;
-        const VolumetricIntegrator prev = sm_volumetric_integrator_override;
-        sm_volumetric_integrator_override = VolumetricIntegrator::Element;
+        const ScopedVolumetricIntegratorOverride force( VolumetricIntegrator::Element );
         elem = integrate_effective_shielding( ref );
-        sm_volumetric_integrator_override = prev;
       }
 
       // Line path: through the production entry point, plus the plain integral for the identity.
@@ -343,21 +341,12 @@ BOOST_AUTO_TEST_CASE( EffectiveShieldingLineVsElement )
         attach_line_cache( lc, num_lines );
         std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> v;
         v.push_back( std::make_unique<DistributedSrcCalcT<double>>( lc ) );
-        const VolumetricIntegrator prev = sm_volumetric_integrator_override;
-        sm_volumetric_integrator_override = VolumetricIntegrator::Line;
-        try
-        {
-          const std::vector<EffShieldComponents> comps = integrate_effective_shielding_all( v, true );
-          BOOST_REQUIRE( comps.size() == 1 );
-          line = comps[0];
-          integrate_volumetric_calculators<double>( v, true );
-          line_integral = v[0]->integral;
-        }catch( ... )
-        {
-          sm_volumetric_integrator_override = prev;
-          throw;
-        }
-        sm_volumetric_integrator_override = prev;
+        const ScopedVolumetricIntegratorOverride force( VolumetricIntegrator::Line );
+        const std::vector<EffShieldComponents> comps = integrate_effective_shielding_all( v, true );
+        BOOST_REQUIRE( comps.size() == 1 );
+        line = comps[0];
+        integrate_volumetric_calculators<double>( v, true );
+        line_integral = v[0]->integral;
       }
 
       BOOST_REQUIRE( (elem.c[0] > 0.0) && (elem.c[1] > 0.0) && (elem.c[4] > 0.0) );

@@ -1611,7 +1611,21 @@ protected:
    detector is enough. */
   void resolveVolumetricEffMethod();
 
+  /** Builds the detector-side line sets the volumetric LINE integration needs, once, at creation -
+   after #resolveVolumetricEffMethod, from the initial source dimensions.  A set that cannot be
+   built is a fact about this geometry and response, and is handled exactly like an unbuildable
+   transfer: the fit falls back to the far-field flat-disk model, with a #volumetricEffResolveNote
+   for an `Auto` request and a #volumetricEffResolveError for a method asked for by name.  (A
+   rebuild during the fit - the dimensions left the set's window - that fails is an error the
+   optimizer reports instead; see build_volumetric_calculators.) */
+  void buildVolumetricLineCachesOrFallBack();
+
 public:
+  /** Lines per source shell for the line path, as new chi2 functions pick it up: a cost/accuracy
+   knob (see the convergence study in test_VolumetricLadder.cpp).  A non-positive count makes the
+   line set unbuildable, which the tests use to exercise the fallback. */
+  static inline int sm_default_volumetric_num_lines = 65536;
+
   /** Per-material attenuation-coefficient functions (energy -> mu*chord) along
    the center->detector ray at the given parameters, plus the air path length
    and the stacks along-ray (effective-AN, areal-density) for the GADRAS
@@ -1665,9 +1679,8 @@ protected:
   mutable std::mutex m_lineCacheMutex;
   mutable std::map<size_t,std::shared_ptr<const VolumetricLineCache>> m_lineCaches;
 
-  /** Lines per source shell for the line path; a cost/accuracy knob (see the convergence study in
-   test_VolumetricLadder.cpp). */
-  int m_volumetricNumLines = 65536;
+  /** Lines per source shell for the line path, from #sm_default_volumetric_num_lines. */
+  int m_volumetricNumLines = sm_default_volumetric_num_lines;
 
   /** The line set for the given source shell at the given SCALAR cumulative outer dims, building
    or rebuilding it as needed.  Null when there is no resolved volumetric response. */

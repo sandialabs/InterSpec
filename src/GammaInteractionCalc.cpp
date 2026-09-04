@@ -1220,6 +1220,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   // Resolve the volumetric-source efficiency method (Auto -> a concrete method) and build the
   //  transfer response if needed - once here, single-threaded, before any integration.
   answer->resolveVolumetricEffMethod();
+  answer->buildVolumetricLineCachesOrFallBack();
 
 #if( PERFORM_DEVELOPER_CHECKS )
   // Synthetic peaks stand in for peaks that werent actually observed, so they must not be fit to.
@@ -3884,8 +3885,11 @@ std::shared_ptr<const VolumetricLineCache> ShieldingSourceChi2Fcn::volumetricLin
                                             const size_t material_index,
                                             const std::array<double,3> &source_outer_dims ) const
 {
-  if( !m_volEffResponse || (m_volumetricNumLines <= 0) )
+  if( !m_volEffResponse )
     return nullptr;
+  if( m_volumetricNumLines <= 0 )
+    throw std::runtime_error( "the volumetric line count must be positive, not "
+                              + std::to_string(m_volumetricNumLines) );
 
   // Scalar detector placement: the same construction the calculators use (with T = double).
   const double det_radius = (m_detector ? 0.5*m_detector->detectorDiameter() : 0.5*PhysicalUnits::cm);
@@ -3909,6 +3913,59 @@ std::shared_ptr<const VolumetricLineCache> ShieldingSourceChi2Fcn::volumetricLin
   m_lineCaches[material_index] = cache;
   return cache;
 }//volumetricLineCache(...)
+
+
+void ShieldingSourceChi2Fcn::buildVolumetricLineCachesOrFallBack()
+{
+  if( !m_volEffResponse )
+    return;
+
+  const int ndims = (m_geometry == GeometryType::Spherical) ? 1
+                    : ((m_geometry == GeometryType::Rectangular) ? 3 : 2);
+
+  try
+  {
+    // Cumulative outer dims of each shell from the initial thicknesses, as build_volumetric_calculators
+    //  accumulates them from the fit parameters; generic shieldings have no extent.
+    std::array<double,3> outer = { 0.0, 0.0, 0.0 };
+    for( size_t i = 0; i < m_initial_shieldings.size(); ++i )
+    {
+      const ShieldingSourceFitCalc::ShieldingInfo &info = m_initial_shieldings[i];
+      if( info.m_isGenericMaterial )
+        continue;
+      for( int d = 0; d < ndims; ++d )
+        outer[d] += std::max( 0.0, info.m_dimensions[d] );
+
+      const bool is_source = !traceNuclidesForMaterial(i).empty() || !selfAttenuatingNuclides(i).empty();
+      if( is_source )
+        volumetricLineCache( i, outer );
+    }
+  }catch( std::exception &e )
+  {
+    const bool explicit_request
+        = (m_options.volumetric_eff_method != ShieldingSourceFitCalc::VolumetricEffMethod::Auto);
+    const std::string why = std::string("the detector-side line set could not be built: ") + e.what();
+
+    {
+      std::lock_guard<std::mutex> lock( m_lineCacheMutex );
+      m_lineCaches.clear();
+    }
+    m_volEffResponse.reset();
+    m_resolvedVolEffMethod = ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk;
+
+    if( explicit_request )
+    {
+      m_volEffResolveError = "A near-field volumetric-source efficiency was requested, but " + why
+                             + "; the far-field flat-disk approximation was used instead.";
+      m_volEffResolveNote.clear();
+    }else
+    {
+      m_volEffResolveNote = "Auto -> flat-disk (" + why + ")";
+    }
+  }//try / catch
+
+  assert( (m_resolvedVolEffMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk) == !m_volEffResponse );
+}//buildVolumetricLineCachesOrFallBack()
 
 
 void ShieldingSourceChi2Fcn::reportCompletedEval( const double chi2, const std::vector<double> &params ) const

@@ -117,6 +117,24 @@ enum class VolumetricIntegrator : int
  Auto in production; the tests use it to A/B the two quadratures on identical calculators. */
 inline VolumetricIntegrator sm_volumetric_integrator_override = VolumetricIntegrator::Auto;
 
+/** Sets #sm_volumetric_integrator_override for a scope and restores it on exit - a throw inside
+ the scope must not leave the process forcing one path for every later test case. */
+struct ScopedVolumetricIntegratorOverride
+{
+  const VolumetricIntegrator previous;
+  explicit ScopedVolumetricIntegratorOverride( const VolumetricIntegrator path )
+    : previous( sm_volumetric_integrator_override )
+  {
+    sm_volumetric_integrator_override = path;
+  }
+  ~ScopedVolumetricIntegratorOverride()
+  {
+    sm_volumetric_integrator_override = previous;
+  }
+  ScopedVolumetricIntegratorOverride( const ScopedVolumetricIntegratorOverride & ) = delete;
+  ScopedVolumetricIntegratorOverride &operator=( const ScopedVolumetricIntegratorOverride & ) = delete;
+};//struct ScopedVolumetricIntegratorOverride
+
 /** Gauss-Legendre points on a source chord, in the y = exp(-mu_eff (s1 - s)) substitution
  (2 = exact for a linear remainder; radial in-situ profiles use 4 - see #line_source_integration_imp). */
 inline int sm_line_chord_gl_points = 2;
@@ -798,8 +816,49 @@ struct PrefactorGrid
   std::vector<double> cos_t;      //ascending, in [0,1]
   std::vector<double> phi_deg;    //ascending; {0} for an Axial response
   std::vector<double> ln_p;       //[id][ic][ip], d-major
+  std::vector<ceelo::ResponseFlag> flags;   //per node, as ln_p
   ceelo::ResponseFlag worst_flag = ceelo::ResponseFlag::Ok;
   double max_frac_sigma = 0.0;
+
+  /** The worst flag over the nodes the source's chords can actually reach: the grid is padded well
+   beyond them in BOTH distance and incidence angle, and a flag raised only in that padding is not
+   one the source ever sees.  (A collimated detector is shadowed at 90 degrees whatever it is
+   looking at, so a distance-only restriction would flag every source.)  The interval is widened to
+   the enclosing grid cell, so a source lying between two nodes still picks up the flag of the
+   nodes it sits between.  Phi is not restricted - for a Quadrant response the same source can span
+   the whole folded range. */
+  ceelo::ResponseFlag worst_flag_between( const double d_lo_cm, const double d_hi_cm,
+                                          const double cos_lo, const double cos_hi ) const
+  {
+    // The nodes bracketing each end of an ascending-node interval.
+    const auto bracket = []( const std::vector<double> &nodes, const double lo, const double hi,
+                             size_t &i_lo, size_t &i_hi ){
+      i_lo = 0;
+      i_hi = nodes.empty() ? 0 : (nodes.size() - 1);
+      for( size_t i = 0; i < nodes.size(); ++i )
+      {
+        if( nodes[i] <= lo )
+          i_lo = i;
+        if( nodes[i] >= hi )
+        {
+          i_hi = i;
+          break;
+        }
+      }
+    };
+
+    size_t id_lo, id_hi, ic_lo, ic_hi;
+    bracket( ln_d, std::log( d_lo_cm ), std::log( d_hi_cm ), id_lo, id_hi );
+    bracket( cos_t, cos_lo, cos_hi, ic_lo, ic_hi );
+
+    ceelo::ResponseFlag worst = ceelo::ResponseFlag::Ok;
+    for( size_t id = id_lo; id <= id_hi; ++id )
+      for( size_t ic = ic_lo; ic <= ic_hi; ++ic )
+        for( size_t ip = 0; ip < phi_deg.size(); ++ip )
+          if( static_cast<int>(flags[index(id,ic,ip)]) > static_cast<int>(worst) )
+            worst = flags[index(id,ic,ip)];
+    return worst;
+  }//worst_flag_between(...)
 
   size_t index( const size_t id, const size_t ic, const size_t ip ) const
   {
@@ -872,16 +931,92 @@ struct PrefactorGrid
 };//struct PrefactorGrid
 
 
+/** The aperture quadratures a COLLIMATED response's shadow gate needs, on a coarse position grid.
+
+ `DetectorResponse::common_eval` gates a collimated response on the transmitted fraction of an
+ aperture quadrature at the query position - below 0.3 it flags Shadowed and inflates sigma, below
+ 0.05 NeedsMc - and skips the gate silently when handed an empty quadrature.  The gate moves only
+ the flag and the sigma, never the value (the collimator is part of the geometry every line is
+ traced through, so the kernel already carries the shadow), and its thresholds do not need position
+ resolution, so a handful of quadratures at a reduced ray count serve the whole prefactor grid:
+ #build_prefactor_grid hands each node the nearest one.  Position-only, so built once per line set. */
+struct CollimatorGateGrid
+{
+  std::vector<double> ln_d, cos_t, phi_deg;
+  std::vector<ceelo::ApertureQuadrature> q;   //[id][ic][ip]
+
+  size_t index( const size_t id, const size_t ic, const size_t ip ) const
+  {
+    return (id*cos_t.size() + ic)*phi_deg.size() + ip;
+  }
+
+  static size_t nearest_index( const std::vector<double> &nodes, const double x )
+  {
+    size_t best = 0;
+    for( size_t i = 1; i < nodes.size(); ++i )
+      if( std::fabs(nodes[i] - x) < std::fabs(nodes[best] - x) )
+        best = i;
+    return best;
+  }
+
+  const ceelo::ApertureQuadrature &nearest( const double ln_d_q, const double cos_q, const double phi_q ) const
+  {
+    return q[index( nearest_index( ln_d, ln_d_q ), nearest_index( cos_t, cos_q ),
+                    nearest_index( phi_deg, phi_q ) )];
+  }
+};//struct CollimatorGateGrid
+
+
+inline std::shared_ptr<const CollimatorGateGrid> build_collimator_gate_grid( const ceelo::DetectorResponse &resp,
+                                                                            const double d_lo_cm,
+                                                                            const double d_hi_cm,
+                                                                            const size_t num_d = 6,
+                                                                            const size_t num_cos = 5,
+                                                                            const size_t num_phi_quadrant = 3,
+                                                                            const int n_rays = 256 )
+{
+  auto grid = std::make_shared<CollimatorGateGrid>();
+  const double lo = std::log( d_lo_cm ), hi = std::log( d_hi_cm );
+  for( size_t i = 0; i < num_d; ++i )
+    grid->ln_d.push_back( lo + (hi - lo)*static_cast<double>(i)/static_cast<double>(num_d - 1) );
+  for( size_t i = 0; i < num_cos; ++i )
+    grid->cos_t.push_back( static_cast<double>(i)/static_cast<double>(num_cos - 1) );
+  if( resp.descriptor.symmetry == ceelo::ResponseSymmetry::Quadrant )
+  {
+    for( size_t i = 0; i < num_phi_quadrant; ++i )
+      grid->phi_deg.push_back( 90.0*static_cast<double>(i)/static_cast<double>(num_phi_quadrant - 1) );
+  }else
+  {
+    grid->phi_deg.push_back( 0.0 );
+  }
+
+  grid->q.resize( grid->ln_d.size() * grid->cos_t.size() * grid->phi_deg.size() );
+  for( size_t id = 0; id < grid->ln_d.size(); ++id )
+    for( size_t ic = 0; ic < grid->cos_t.size(); ++ic )
+      for( size_t ip = 0; ip < grid->phi_deg.size(); ++ip )
+      {
+        const Eigen::Vector3d pos = ceelo::source_position( std::exp( grid->ln_d[id] ), grid->cos_t[ic],
+                                                            grid->phi_deg[ip] * PhysicalUnits::pi / 180.0 );
+        grid->q[grid->index(id,ic,ip)] = ceelo::make_aperture_quadrature( resp.geometry(), pos, n_rays );
+      }
+  return grid;
+}//build_collimator_gate_grid(...)
+
+
 /** Builds #PrefactorGrid for `energy_keV` over distances [d_lo_cm, d_hi_cm] (log-spaced) and
- cos_theta in [0,1]; phi over [0,90] deg for Quadrant responses. */
+ cos_theta in [0,1]; phi over [0,90] deg for Quadrant responses.  `gates` (collimated responses)
+ supplies the shadow gate's quadrature per node, see #CollimatorGateGrid. */
 inline std::shared_ptr<const PrefactorGrid> build_prefactor_grid( const ceelo::DetectorResponse &resp,
                                                                   const double energy_keV,
                                                                   const double d_lo_cm,
                                                                   const double d_hi_cm,
+                                                                  const CollimatorGateGrid *gates = nullptr,
                                                                   const size_t num_d = 48,
                                                                   const size_t num_cos = 33,
                                                                   const size_t num_phi_quadrant = 9 )
 {
+  assert( gates || !resp.descriptor.collimator );
+
   assert( (d_lo_cm > 0.0) && (d_hi_cm > d_lo_cm) );
   auto grid = std::make_shared<PrefactorGrid>();
   grid->energy_keV = energy_keV;
@@ -900,11 +1035,12 @@ inline std::shared_ptr<const PrefactorGrid> build_prefactor_grid( const ceelo::D
     grid->phi_deg.push_back( 0.0 );
   }
 
-  // The quadrature argument of fep_prefactor only feeds the collimator shadow gate; the
-  //  dispatcher keeps collimated responses on the element path, so an empty one is correct here.
+  // The quadrature argument of fep_prefactor only feeds the collimator shadow gate (flag and sigma,
+  //  never the value); an empty one is correct for an uncollimated response.
   const ceelo::ApertureQuadrature no_quadrature;
 
   grid->ln_p.resize( grid->ln_d.size() * grid->cos_t.size() * grid->phi_deg.size() );
+  grid->flags.assign( grid->ln_p.size(), ceelo::ResponseFlag::Ok );
   for( size_t id = 0; id < grid->ln_d.size(); ++id )
   {
     const double d = std::exp( grid->ln_d[id] );
@@ -915,10 +1051,13 @@ inline std::shared_ptr<const PrefactorGrid> build_prefactor_grid( const ceelo::D
       {
         const double phi = grid->phi_deg[ip] * PhysicalUnits::pi / 180.0;
         const Eigen::Vector3d pos = ceelo::source_position( d, ct, phi );
-        const ceelo::EffResult pre = resp.fep_prefactor( energy_keV, pos, no_quadrature );
+        const ceelo::ApertureQuadrature &gate_q = gates ? gates->nearest( grid->ln_d[id], ct, grid->phi_deg[ip] )
+                                                        : no_quadrature;
+        const ceelo::EffResult pre = resp.fep_prefactor( energy_keV, pos, gate_q );
         if( !(pre.value > 0.0) )
           throw std::runtime_error( "build_prefactor_grid: non-positive prefactor" );
         grid->ln_p[grid->index(id,ic,ip)] = std::log( pre.value );
+        grid->flags[grid->index(id,ic,ip)] = pre.flag;
         if( static_cast<int>(pre.flag) > static_cast<int>(grid->worst_flag) )
           grid->worst_flag = pre.flag;
         grid->max_frac_sigma = std::max( grid->max_frac_sigma, pre.sigma / pre.value );
@@ -964,8 +1103,15 @@ struct VolumetricLineCache
   std::vector<double> weight;
   std::vector<double> s_endcap;
 
-  /** Distances (cm, from the crystal-face origin) the prefactor grids cover. */
+  /** Distances (cm, from the crystal-face origin) the prefactor grids cover, and the narrower
+   distance and incidence-cosine ranges the padded source chords actually span (flags are
+   aggregated over the latter - see #PrefactorGrid::worst_flag_between). */
   double prefactor_d_lo_cm = 0.0, prefactor_d_hi_cm = 0.0;
+  double chord_d_lo_cm = 0.0, chord_d_hi_cm = 0.0;
+  double chord_cos_lo = 0.0, chord_cos_hi = 1.0;
+
+  /** Collimated responses only: the shadow gate's quadratures (see #CollimatorGateGrid). */
+  std::shared_ptr<const CollimatorGateGrid> gate_grid;
 
   mutable std::mutex memo_mutex;
   mutable std::map<double,std::shared_ptr<const std::vector<double>>> kernel_by_energy;
@@ -996,10 +1142,21 @@ struct VolumetricLineCache
         return pos->second;
     }
     std::shared_ptr<const PrefactorGrid> g = build_prefactor_grid( *response, energy_keV,
-                                                                   prefactor_d_lo_cm, prefactor_d_hi_cm );
+                                                                   prefactor_d_lo_cm, prefactor_d_hi_cm,
+                                                                   gate_grid.get() );
     std::lock_guard<std::mutex> lock( memo_mutex );
     return prefactor_by_energy.emplace( energy_keV, g ).first->second;
   }//prefactor(...)
+
+  /** The worst response flag the source's chords can meet at `energy_keV` (near-field floor,
+   energy clamping, collimator shadowing) - what the fit's warnings report for a volumetric source,
+   which the point query at the source centre alone would miss (e.g. a collimated detector looking
+   at a source that extends into the shadow). */
+  ceelo::ResponseFlag worst_flag( const double energy_keV ) const
+  {
+    return prefactor( energy_keV )->worst_flag_between( chord_d_lo_cm, chord_d_hi_cm,
+                                                        chord_cos_lo, chord_cos_hi );
+  }
 
   /** Whether this cache can still serve the given scalar configuration.
 
@@ -1234,6 +1391,7 @@ inline std::shared_ptr<const VolumetricLineCache> build_volumetric_line_cache(
   cache->s_endcap.reserve( num_lines );
 
   double d_min_cm = 1.0e300, d_max_cm = 0.0;   //source-point distance range from the crystal origin
+  double cos_min = 1.0, cos_max = 0.0;         //and their incidence cosines, as common_eval measures them
   const double inv_n = 1.0/static_cast<double>(num_lines);
 
   for( int i = 0; i < num_lines; ++i )
@@ -1297,6 +1455,12 @@ inline std::shared_ptr<const VolumetricLineCache> build_volumetric_line_cache(
       const double d = p_c.norm();
       d_min_cm = std::min( d_min_cm, d );
       d_max_cm = std::max( d_max_cm, d );
+      if( d > 0.0 )
+      {
+        const double ct = std::max( 0.0, std::min( 1.0, -p_c.z()/d ) );
+        cos_min = std::min( cos_min, ct );
+        cos_max = std::max( cos_max, ct );
+      }
     }
   }//for( loop over lines )
 
@@ -1306,6 +1470,15 @@ inline std::shared_ptr<const VolumetricLineCache> build_volumetric_line_cache(
   // Prefactor grids span the padded chords with a further margin, and never reach 0 distance.
   cache->prefactor_d_lo_cm = std::max( 0.5*d_min_cm, 1.0e-3 );
   cache->prefactor_d_hi_cm = std::max( 2.0*d_max_cm, cache->prefactor_d_lo_cm*2.0 );
+  cache->chord_d_lo_cm = std::max( d_min_cm, cache->prefactor_d_lo_cm );
+  cache->chord_d_hi_cm = std::min( d_max_cm, cache->prefactor_d_hi_cm );
+  cache->chord_cos_lo = cos_min;
+  cache->chord_cos_hi = std::max( cos_max, cos_min );
+
+  // A collimated response needs the shadow gate's quadratures (position-only, cheap at 256 rays).
+  if( response->descriptor.collimator )
+    cache->gate_grid = build_collimator_gate_grid( *response, cache->prefactor_d_lo_cm,
+                                                   cache->prefactor_d_hi_cm );
 
   return cache;
 }//build_volumetric_line_cache(...)
@@ -1375,6 +1548,14 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
     assert( calc->m_shells.size() == lead.m_shells.size() );
     assert( calc->m_isInSituExponential == lead.m_isInSituExponential );
     assert( calc->m_normalizeByVolume == lead.m_normalizeByVolume );
+#if( PERFORM_DEVELOPER_CHECKS )
+    // The whole group is integrated on the LEAD's chords - the per-line intervals and the cascade
+    //  field's per-node walks are computed once from `lead.m_shells` - so the members must really
+    //  share their geometry, and differ only in the energy-dependent coefficients.
+    for( size_t l = 0; l < lead.m_shells.size(); ++l )
+      for( int d = 0; d < 3; ++d )
+        assert( scalar_of(calc->m_shells[l].dims[d]) == scalar_of(lead.m_shells[l].dims[d]) );
+#endif
   }
 
   const size_t num_calc = group.size();
@@ -1944,8 +2125,6 @@ bool line_path_applicable( const DistributedSrcCalcT<T> &calc )
   if( sm_volumetric_integrator_override == VolumetricIntegrator::Element )
     return false;
   if( !calc.m_effResponse || !calc.m_lineCache )
-    return false;
-  if( calc.m_effResponse->descriptor.collimator )
     return false;
   return true;
 }//line_path_applicable(...)

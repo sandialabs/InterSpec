@@ -396,19 +396,12 @@ void integrate_on_path( GammaInteractionCalc::DistributedSrcCalcT<double> &calc,
   using namespace GammaInteractionCalc;
   if( path == VolumetricIntegrator::Line )
     attach_line_cache( calc, (num_lines > 0) ? num_lines : 65536 );
-  const VolumetricIntegrator prev = sm_volumetric_integrator_override;
-  sm_volumetric_integrator_override = path;
   std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> calcs;
   calcs.push_back( std::make_unique<DistributedSrcCalcT<double>>( calc ) );
-  try
   {
+    const ScopedVolumetricIntegratorOverride force( path );
     integrate_volumetric_calculators<double>( calcs, true );
-  }catch( ... )
-  {
-    sm_volumetric_integrator_override = prev;
-    throw;
   }
-  sm_volumetric_integrator_override = prev;
   calc.integral = calcs.front()->integral;
   calc.m_num_evals = calcs.front()->m_num_evals;
   calc.m_est_rel_error = calcs.front()->m_est_rel_error;
