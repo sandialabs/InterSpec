@@ -196,35 +196,57 @@ AngleDetector load_angle_detector()
  0 for RayleighScatter), so subtracting it again would double-count.  In InterSpec terms:
 
      mu_rem = transmition_length_coefficient(mat, E) - f_win * mu_Compton(mat, E)
+              + mu_Rayleigh(mat, E) * h(E, mat, mu * normal_thickness_cm)
 
  `win_keV` is a HALF-width, matching CeeLo's +-win convention - which is why its 0.75 keV default
  is about FWHM/2 for an HPGe.
+
+ The LAST term is the Rayleigh DEFLECTION loss (2026-09-04).  "Elastic so it cannot leave the
+ window" is right about energy and wrong about geometry: in Fe at 60 keV half of the coherent
+ scatters exceed 20 degrees, and in a THICK layer that deflection lengthens the photon's remaining
+ path, so a fraction h of the Rayleigh-scattered photons are absorbed after all.  h is
+ ceelo::rayleigh_deflection_loss_fraction, evaluated at the layer's NORMAL non-Rayleigh optical
+ depth; it vanishes for a thin layer and reaches 0.25 behind 0.5 cm Fe at 60 keV, where the term is
+ worth 9% of the peak - the whole of the deep-shield over-read.  `normal_thickness_cm` <= 0 (the
+ default, and what the SOURCE shell passes) turns it off, because a self-attenuating matrix
+ self-selects a ~1 mfp skin and its full extent is the wrong depth.
  */
-double fep_removal_coefficient( const Material &mat, const double energy_keV, const double win_keV )
+double fep_removal_coefficient( const Material &mat, const double energy_keV, const double win_keV,
+                                const double normal_thickness_cm = 0.0 )
 {
   const double mu_total = GammaInteractionCalc::transmition_length_coefficient(
                                                     &mat, static_cast<float>(energy_keV) );
 
-  double mu_compton = 0.0;
-  for( const Material::ElementFractionPair &p : mat.elements )
-    mu_compton += p.second * mat.density
-                  * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
-                        static_cast<float>(energy_keV),
-                        MassAttenuation::GammaEmProcces::ComptonScatter );
-  for( const Material::NuclideFractionPair &p : mat.nuclides )
-    mu_compton += p.second * mat.density
-                  * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
-                        static_cast<float>(energy_keV),
-                        MassAttenuation::GammaEmProcces::ComptonScatter );
+  const auto process_mu = [&]( const MassAttenuation::GammaEmProcces process ) -> double {
+    double mu = 0.0;
+    for( const Material::ElementFractionPair &p : mat.elements )
+      mu += p.second * mat.density
+            * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
+                                                static_cast<float>(energy_keV), process );
+    for( const Material::NuclideFractionPair &p : mat.nuclides )
+      mu += p.second * mat.density
+            * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
+                                                static_cast<float>(energy_keV), process );
+    return mu;
+  };
+  const double mu_compton = process_mu( MassAttenuation::GammaEmProcces::ComptonScatter );
 
   // Material-aware in-window fraction: S(x,Z) suppresses forward scatter, most strongly at high Z
   //  (@60 keV: water 0.89, Fe 0.77, Pb 0.63), so the free-electron form over-credits exactly where
   //  the shielding is heaviest.  This is a Simpson integration - hoisted per (E, material) by the
   //  caller, never inside a per-ray loop.
   const ceelo::Material cm = CeeLoUtils::to_ceelo_material( mat ).to_material();
-  const double f_win = ceelo::kn_in_window_fraction( energy_keV, win_keV, cm );
+  const double f_win = (win_keV > 0.0) ? ceelo::kn_in_window_fraction( energy_keV, win_keV, cm ) : 0.0;
 
-  return mu_total - f_win*mu_compton;
+  double rayleigh_loss = 0.0;
+  if( normal_thickness_cm > 0.0 )
+  {
+    const double mu_rayleigh = process_mu( MassAttenuation::GammaEmProcces::RayleighScatter );
+    const double tau_nr = mu_total * normal_thickness_cm * PhysicalUnits::cm;
+    rayleigh_loss = mu_rayleigh * ceelo::rayleigh_deflection_loss_fraction( energy_keV, tau_nr, cm );
+  }
+
+  return mu_total - f_win*mu_compton + rayleigh_loss;
 }
 
 
@@ -310,10 +332,13 @@ build_scenario_calc( const AngleDetector &det,
                                   (s.half_length_cm + s.shield_cm)*cm }
           : std::array<double,3>{ (s.radius_cm + s.shield_cm)*cm,
                                   (s.half_length_cm + s.shield_cm)*cm, 0.0 };
+    // The Rayleigh deflection loss applies to the SHIELD only (see fep_removal_coefficient);
+    //  it rides along with the window credit so a `fep_window_keV <= 0` row stays plain mu_total,
+    //  which keeps the historical "mu_total" columns of the ladder meaning what they say.
     shield.trans_len_coef = transparent
           ? 0.0
           : ( (fep_window_keV > 0.0)
-                ? fep_removal_coefficient( *iron, energy_keV, fep_window_keV )
+                ? fep_removal_coefficient( *iron, energy_keV, fep_window_keV, s.shield_cm )
                 : transmition_length_coefficient( iron.get(), static_cast<float>(energy_keV) ) );
     shield.type = ShellType::Material;
     calc.m_shells.push_back( shield );
@@ -587,6 +612,32 @@ string scenario_description( const Scenario &s )
 }//namespace
 
 
+/** Optical depth (mean free paths) of a scenario's EXTERNAL shield alone, at `energy_keV`; 0 for a
+ bare scenario.
+
+ Separate from #scenario_optical_depth because the two depths limit the model in different ways.  A
+ deep SOURCE MATRIX self-selects: the escaping signal comes from a surface skin, so getting mu
+ slightly wrong there barely moves the integral.  A SHIELD has no such escape - every ray crosses its
+ full thickness - so an error in the removal coefficient compounds over the whole of it.  That is why
+ the truth-bank comparison groups on this number rather than on the total.
+ */
+double scenario_shield_optical_depth( const Scenario &s, const double energy_keV )
+{
+  if( !(s.shield_cm > 0.0) )
+    return 0.0;
+
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  const shared_ptr<const Material> shield = matdb ? matdb->material( scenario_shield_material() )
+                                                  : nullptr;
+  if( !shield )
+    return 0.0;
+
+  return GammaInteractionCalc::transmition_length_coefficient( shield.get(),
+                                                    static_cast<float>(energy_keV) )
+         * s.shield_cm * PhysicalUnits::cm;
+}//scenario_shield_optical_depth(...)
+
+
 /** Characteristic optical depth (mean free paths) a full-energy photon must survive to leave the
  source and its shield, at `energy_keV`.  A bound on the escape path, not the largest chord.
 
@@ -604,8 +655,7 @@ double scenario_optical_depth( const Scenario &s, const double energy_keV )
     return 0.0;
 
   const shared_ptr<const Material> matrix = matdb->material( scenario_matrix_material( s.dense ) );
-  const shared_ptr<const Material> shield = matdb->material( scenario_shield_material() );
-  if( !matrix || !shield )
+  if( !matrix )
     return 0.0;
 
   const float e = static_cast<float>( energy_keV );
@@ -624,12 +674,8 @@ double scenario_optical_depth( const Scenario &s, const double energy_keV )
                                               : std::min( s.radius_cm, s.half_length_cm ));
   const double tau_src = GammaInteractionCalc::transmition_length_coefficient( matrix.get(), e )
                          * half_extent_cm * PhysicalUnits::cm;
-  const double tau_shield = (s.shield_cm > 0.0)
-        ? GammaInteractionCalc::transmition_length_coefficient( shield.get(), e )
-          * s.shield_cm * PhysicalUnits::cm
-        : 0.0;
 
-  return tau_src + tau_shield;
+  return tau_src + scenario_shield_optical_depth( s, energy_keV );
 }//scenario_optical_depth(...)
 
 

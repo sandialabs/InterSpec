@@ -1059,7 +1059,11 @@ double fep_leg_mu( const Material &mat, const double energy_keV, const double wi
 
    mu_total, then the flat credit at 0.375 / 0.75 / 1.5 keV half-windows (the truth bank was generated
    at CeeLo's 0.75 keV default, so that column is the like-for-like one and the other two are the
-   sensitivity), then the depth-aware credit at 0.75 keV with tau_c = 5 mfp.
+   sensitivity), then the depth-aware credit at 0.75 keV with tau_c = 5 mfp, then (2026-09-04) the
+   0.75 keV credit plus the Rayleigh DEFLECTION loss evaluated at the point's own depth
+   (`rayl0.75`, see fep_removal_coefficient) - the term that turned the quadratic-in-tau over-read
+   of the deep steel rows into a flat line.  Points only: a slab has no external layer to apply it
+   to, so that column reads n/a there.
 
  Runs entirely off the Monte-Carlo cache: no new MC, so it is cheap to re-run after any model change.
  */
@@ -1084,9 +1088,10 @@ BOOST_AUTO_TEST_CASE( Rung5_FepWindowCredit, * boost::unit_test::disabled() )
 
   BOOST_TEST_MESSAGE( "model/MC - 1, transfer anchored at the source's own distance.  win = FEP"
                       " half-window (keV); depth = the same 0.75 keV credit faded by"
-                      " exp(-tau/5mfp)." );
+                      " exp(-tau/5mfp); rayl = the 0.75 keV credit plus the Rayleigh deflection"
+                      " loss at the point's depth." );
   BOOST_TEST_MESSAGE( "material depth lateral standoff  E(keV)   tau   | mu_total   win0.375   win0.75"
-                      "   win1.50    depth0.75" );
+                      "   win1.50    depth0.75   rayl0.75" );
 
   // (a) The point-at-depth grid: one eval_rect per row, no outer quadrature at all.
   for( const bool dense : { true, false } )
@@ -1128,14 +1133,16 @@ BOOST_AUTO_TEST_CASE( Rung5_FepWindowCredit, * boost::unit_test::disabled() )
               << setprecision(2) << setw(6) << depth << setw(8) << lateral << setw(9) << standoff
               << setprecision(1) << setw(8) << e << setprecision(2) << setw(7) << tau << "  |";
 
-            // mu_total, three flat windows, then the depth-aware one.
+            // mu_total, three flat windows, the depth-aware one, then the Rayleigh-deflection one.
             const double wins[4] = { -1.0, 0.375, 0.75, 1.5 };
-            for( int i = 0; i < 5; ++i )
+            for( int i = 0; i < 6; ++i )
             {
               const double win = (i < 4) ? wins[i] : 0.75;
-              const double tau_c = (i < 4) ? -1.0 : ceelo::kFepDepthTauC;
+              const double tau_c = (i == 4) ? ceelo::kFepDepthTauC : -1.0;
               DistributedSrcCalcT<double> c = build_point_at_depth_calc( det, p, e, resp );
-              const double mu = fep_leg_mu( *mat, e, win, tau, tau_c );
+              // The point sits exactly `depth` below the slab face, so its normal depth is exact.
+              const double mu = (i == 5) ? fep_removal_coefficient( *mat, e, win, p.depth_cm )
+                                         : fep_leg_mu( *mat, e, win, tau, tau_c );
               for( DistributedSrcCalcT<double>::ShellInfo &sh : c.m_shells )
                 sh.trans_len_coef = mu;
               o << " " << pct( point_kernel_eff( c )/mc.eff - 1.0 );
@@ -1151,7 +1158,7 @@ BOOST_AUTO_TEST_CASE( Rung5_FepWindowCredit, * boost::unit_test::disabled() )
   BOOST_TEST_MESSAGE( "" );
   BOOST_TEST_MESSAGE( "volume slabs (r=4 cm cylinders):" );
   BOOST_TEST_MESSAGE( "material  t(cm) standoff  E(keV)   tau   | mu_total   win0.375   win0.75"
-                      "   win1.50    depth0.75" );
+                      "   win1.50    depth0.75   rayl0.75" );
   for( const bool dense : { true, false } )
   {
     const shared_ptr<const Material> mat = matdb->material( scenario_matrix_material( dense ) );
@@ -1217,6 +1224,7 @@ BOOST_AUTO_TEST_CASE( Rung5_FepWindowCredit, * boost::unit_test::disabled() )
             }
             o << " " << pct( v/mc.eff - 1.0 );
           }
+          o << "      n/a";
           BOOST_TEST_MESSAGE( o.str() );
         }//for( tau )
       }//for( energies )
@@ -2185,6 +2193,21 @@ BOOST_AUTO_TEST_CASE( Rung7_CentreAnchorTruth, * boost::unit_test::disabled() )
  comparing a source at 4 cm would charge the volume integral for the transfer's inward extrapolation,
  which rung 2 measured at +4.6 to +6.4%.  With a centre anchor, what is left is the volumetric model.
 
+ As measured 2026-09-04, crediting at CeeLo's own 0.75 keV scoring window (model/MC - 1):
+
+     case                        E(keV)    element     line
+     solid steel, contact          60      +0.18%    +0.26%
+     solid steel, contact         661.7    +0.59%    +0.57%
+     solid water, contact          60      -0.03%    -0.07%
+     solid water, contact         661.7    +0.63%    +0.56%
+     solid water, far              60      +0.31%    +0.33%
+     solid water, far             661.7    +0.07%    -0.06%
+     hollow steel on a void        60      +0.37%    +0.45%
+     hollow steel on a void       661.7    +0.61%    +0.59%
+
+ The 60 keV water rows used to read -1.1 to -1.5% here; that was the FEP-window convention, not the
+ quadrature - see the comment on `fep_window_keV` below and Rung9_FepWindowCreditProbe.
+
  HOLLOW ROW - read the geometry.  CeeLo's spherical source takes an inner radius whose interior is a
  non-attenuating VOID, so the "steel core" of the model-vs-model test is not expressible here; the
  row below therefore puts a genuine void inside the emitting shell and the InterSpec side matches it
@@ -2228,14 +2251,15 @@ BOOST_AUTO_TEST_CASE( Rung8_SphericalSourceTruth, * boost::unit_test::disabled()
 
   // The source attenuation coefficient carries the FEP-WINDOW credit, as the truth bank does: a
   //  photon Compton-scattering by less than the peak's half-width is still in the full-energy peak,
-  //  so charging it mu_TOTAL under-counts the efficiency.  The window is not free - CeeLo scores on
-  //  a +-half-width, so it is FWHM/2 of the detector the transfer is anchored on, and for this
-  //  GEM35-70 that is FWHM = sqrt(0.359 + 0.00230*E).  Run with mu_total instead and the light
-  //  matrix reads ~2% low at 60 keV, where the Compton fraction is largest (measured 2026-09-04);
-  //  a dense matrix at 60 keV is photoelectric-dominated and barely moves.
-  const auto fep_window_keV = []( const double e ) -> double {
-    return 0.5*std::sqrt( 0.359 + 0.00230*e );
-  };
+  //  so charging it mu_TOTAL under-counts the efficiency.  The window is not free, and against an MC
+  //  truth it is the MC's OWN scoring half-width - CeeLo tallies a full-energy event on
+  //  |E_dep - E_src| < kDefaultFepWindowKeV = 0.75 keV, so those are exactly the scatters this truth
+  //  keeps.  This rung originally credited with FWHM/2 of the anchoring GEM35-70 (0.35 keV at
+  //  60 keV), which credits back too few, over-attenuates, and reads low in proportion to optical
+  //  depth; Rung9_FepWindowCreditProbe falsification-tested that and it is why the constant is used
+  //  here now.  (Predicting a REAL measurement is a separate question - see the production
+  //  `fep_window_keV` in build_volumetric_calculators.)
+  const double fep_window_keV = ceelo::kDefaultFepWindowKeV;
 
   // A bare point in vacuum at `d_cm`, as the transfer's anchor curve; cached by distance.
   map<long long,shared_ptr<const ceelo::DetectorResponse>> anchored;
@@ -2328,7 +2352,7 @@ BOOST_AUTO_TEST_CASE( Rung8_SphericalSourceTruth, * boost::unit_test::disabled()
       }
       DistributedSrcCalcT<double>::ShellInfo src;
       src.dims = { c.outer_cm*cm, 0.0, 0.0 };
-      src.trans_len_coef = fep_removal_coefficient( *c.mat, e, fep_window_keV(e) );
+      src.trans_len_coef = fep_removal_coefficient( *c.mat, e, fep_window_keV );
       src.type = ShellType::Material;
       calc.m_shells.push_back( src );
 
@@ -2354,7 +2378,11 @@ BOOST_AUTO_TEST_CASE( Rung8_SphericalSourceTruth, * boost::unit_test::disabled()
 
       // 3 sigma of the MC on top of the model allowance, as the truth bank does.  The ANCHOR's
       //  statistics are in here too - see centre_anchor - but at 0.1% they are well inside this.
-      const double allow = 3.0 + 3.0*100.0*mc.frac_sigma;
+      //
+      //  1.5% is about one point over the worst row this rung must admit (0.63%), matching the truth
+      //  bank's rule.  It was 3% while this rung credited with FWHM/2; switching to the MC's own
+      //  0.75 keV window (above) collapsed the water rows and left nothing needing the extra.
+      const double allow = 1.5 + 3.0*100.0*mc.frac_sigma;
       for( const pair<const char *,double> &m : { make_pair("element",d_elem), make_pair("line",d_line) } )
       {
         if( fabs(m.second) > worst ){ worst = fabs(m.second); worst_where = string(c.name) + " " + m.first; }

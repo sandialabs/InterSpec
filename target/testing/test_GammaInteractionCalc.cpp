@@ -1216,6 +1216,51 @@ namespace
 //  one.  `eval_cylinder` covers the case, and VolumetricNearFieldVsTruth is what guards it now.
 
 
+/** The Rayleigh DEFLECTION term of the FEP survival-removal coefficient (2026-09-04).
+
+ With no thickness the coefficient must be exactly what it was; with the thickness of a 0.5 cm Fe
+ layer at 60 keV it must add the ~9%-of-the-peak loss measured against Monte-Carlo truth
+ (mu_Rayleigh * h, h = 0.25 at 4.4 non-Rayleigh mfp), and be negligible where Rayleigh is.
+ */
+BOOST_AUTO_TEST_CASE( FepSurvivalRemovalRayleighTerm )
+{
+  set_data_dir();
+  const std::shared_ptr<const MaterialDB> materialdb = MaterialDB::instance();
+  BOOST_REQUIRE( materialdb );
+  const std::shared_ptr<const Material> iron = materialdb->material( "Fe" );
+  BOOST_REQUIRE( iron );
+
+  const double cm = PhysicalUnits::cm;
+  const double t = 0.5 * cm;
+
+  for( const float energy : { 60.0f, 88.0f, 122.0f, 1332.5f } )
+  {
+    const double mu_total = transmition_length_coefficient( iron.get(), energy );
+    const double no_thick = fep_survival_removal_coefficient( iron.get(), energy, 0.75 );
+    const double zero_thick = fep_survival_removal_coefficient( iron.get(), energy, 0.75, 0.0 );
+    BOOST_CHECK_EQUAL( no_thick, zero_thick );
+    BOOST_CHECK_EQUAL( fep_survival_removal_coefficient( iron.get(), energy, 0.0, 0.0 ), mu_total );
+
+    const double with_thick = fep_survival_removal_coefficient( iron.get(), energy, 0.75, t );
+    // The Rayleigh term only ever ADDS removal, and only for a real thickness.
+    BOOST_CHECK_GT( with_thick, no_thick );
+    BOOST_CHECK_LT( with_thick, mu_total * 1.15 );
+
+    const double extra_trans = std::exp( -(with_thick - no_thick) * t );
+    BOOST_TEST_MESSAGE( "Fe 0.5 cm @" << energy << " keV: Rayleigh-deflection survival factor "
+                        << extra_trans );
+    if( energy < 61.0f )
+      BOOST_CHECK_CLOSE( extra_trans, 0.91, 1.5 );           // 9% of the peak, +-1.4 points
+    else if( energy < 90.0f )
+      BOOST_CHECK_CLOSE( extra_trans, 0.977, 1.0 );          // 2.3%
+    else if( energy < 123.0f )
+      BOOST_CHECK_CLOSE( extra_trans, 0.992, 0.6 );          // 0.8%
+    else
+      BOOST_CHECK_GT( extra_trans, 0.999 );                  // Rayleigh is 0.05% of mu here
+  }//for( energies )
+}//BOOST_AUTO_TEST_CASE( FepSurvivalRemovalRayleighTerm )
+
+
 BOOST_AUTO_TEST_CASE( CylinderEndOnMultiShellTransport )
 {
   // A multi-layer end-on cylinder routes to `eval_cylinder`, which is where the toward/away pick

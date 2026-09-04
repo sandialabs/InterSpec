@@ -1060,15 +1060,22 @@ struct DistributedSrcCalcT
 
     /** The same, but for the FULL-ENERGY-PEAK leg: the survival-removal coefficient
 
-         mu_rem = mu_total - f_win(E, material) * mu_Compton
+         mu_rem = mu_total - f_win(E, material) * mu_Compton + h(E, material, tau) * mu_Rayleigh
 
-     Rayleigh is elastic so it cannot remove a photon from the peak, and forward Compton scatters
-     whose energy loss stays inside the peak window are still counted in it (plan 3.4).
+     Forward Compton scatters whose energy loss stays inside the peak window are still counted in
+     it (plan 3.4), hence the credit.  Rayleigh is elastic, and InterSpec's
+     `transmition_length_coefficient` ALREADY excludes it (`massAttenuationCoefficientElement`
+     returns compton+photoelectric+pair; the SNL path returns 0 for RayleighScatter) - i.e. the
+     walk treats a coherently scattered photon as undeflected.  In a THICK layer that is wrong: the
+     deflection lengthens the remaining path and a fraction h of those photons are absorbed, so
+     shells OUTSIDE the source carry the loss term, evaluated at their own normal depth (see
+     #fep_survival_removal_coefficient; 9% of the peak behind 0.5 cm Fe at 60 keV).  The emitting
+     shell does not: its escaping signal comes from a ~1 mfp skin and the term there is ~1%.
 
-     NOTE InterSpec's `transmition_length_coefficient` ALREADY excludes Rayleigh
-     (`massAttenuationCoefficientElement` returns compton+photoelectric+pair, and the SNL path
-     returns 0 for RayleighScatter), so - unlike CeeLo's formulation - there is no Rayleigh term to
-     subtract here.  Subtracting one would double-count, silently, since it currently returns 0.
+     Known approximations of the per-shell form: h is taken at the NORMAL depth (oblique rays
+     cross more), and at THIS shell's depth only (a deflection in an inner shield also lengthens
+     the path through the shields outside it).  Both under-correct slightly.  Generic AN/AD shells
+     have no Rayleigh sub-coefficient and get no term.
 
      Set equal to #trans_len_coef when no credit applies (Generic AN/AD shells).
 
@@ -4185,21 +4192,10 @@ inline std::vector<EffShieldComponents> integrate_effective_shielding_all(
                           const bool multithread );
 
 
-template<typename T>
-std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::build_volumetric_calculators(
-                        const std::vector<T> &params,
-                        NucMixtureCache &mixturecache,
-                        const std::vector<std::pair<double,double>> &energie_widths,
-                        std::vector<PeakDetail> *log_info ) const
-{
-  using namespace std;
+/** The FEP half-window policy (see the declaration): fitted peak, else detector resolution, else
+ the fallback.
 
-  /** Fallback FEP half-window when neither a fitted peak nor a detector resolution is available.
-   See the policy note on #fep_window_keV below.
-   */
-  constexpr double sm_default_fep_window_keV = 1.0;
-
-  /** Half-width of the full-energy-peak window at `energy`, for the survival-removal coefficient
+ Half-width of the full-energy-peak window at `energy`, for the survival-removal coefficient
    (plan 3.4).  CeeLo's convention is a +-half-window, so this is FWHM/2 = 1.17741*sigma - pinning
    a definition that otherwise has a factor-2.35 of ambiguity between sigma, FWHM and FWHM/2.
 
@@ -4218,31 +4214,43 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
    Note the credit grows steeply with the window, and too wide a one over-credits forward Compton
    scatters that really landed outside the peak - so the two measured branches above are always
    preferred, and this is only reached when the model has no width information at all.
-   */
-  const auto fep_window_keV = [this,&energie_widths]( const double energy ) -> double {
-    double best_sigma = -1.0, best_dE = std::numeric_limits<double>::max();
-    for( const std::pair<double,double> &ew : energie_widths )
+ */
+inline double ShieldingSourceChi2Fcn::fepWindowKeV( const double energy,
+                          const std::vector<std::pair<double,double>> &energie_widths ) const
+{
+  double best_sigma = -1.0, best_dE = std::numeric_limits<double>::max();
+  for( const std::pair<double,double> &ew : energie_widths )
+  {
+    const double dE = std::fabs( ew.first - energy );
+    if( (ew.second > 0.0) && (dE < best_dE) ){ best_dE = dE; best_sigma = ew.second; }
+  }
+
+  // Only trust a peak that really is this line - a few sigma away it is a different peak.
+  if( (best_sigma > 0.0) && (best_dE <= 4.0*best_sigma) )
+    return 1.17741 * best_sigma;
+
+  if( m_detector && m_detector->hasResolutionInfo() )
+  {
+    try
     {
-      const double dE = std::fabs( ew.first - energy );
-      if( (ew.second > 0.0) && (dE < best_dE) ){ best_dE = dE; best_sigma = ew.second; }
-    }
+      const float fwhm = m_detector->peakResolutionFWHM( static_cast<float>(energy) );
+      if( fwhm > 0.0f )
+        return 0.5 * fwhm;
+    }catch( std::exception & ){ }
+  }
 
-    // Only trust a peak that really is this line - a few sigma away it is a different peak.
-    if( (best_sigma > 0.0) && (best_dE <= 4.0*best_sigma) )
-      return 1.17741 * best_sigma;
+  return sm_default_fep_window_keV;
+}//fepWindowKeV(...)
 
-    if( m_detector && m_detector->hasResolutionInfo() )
-    {
-      try
-      {
-        const float fwhm = m_detector->peakResolutionFWHM( static_cast<float>(energy) );
-        if( fwhm > 0.0f )
-          return 0.5 * fwhm;
-      }catch( std::exception & ){ }
-    }
 
-    return sm_default_fep_window_keV;
-  };
+template<typename T>
+std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::build_volumetric_calculators(
+                        const std::vector<T> &params,
+                        NucMixtureCache &mixturecache,
+                        const std::vector<std::pair<double,double>> &energie_widths,
+                        std::vector<PeakDetail> *log_info ) const
+{
+  using namespace std;
 
   using namespace ceres;
 
@@ -4628,22 +4636,31 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
             continue;
           }//if( isGenericMaterial( subMat ) )
 
+          // `facing_thick` is this layer's thickness ALONG THE DETECTOR DIRECTION - the same
+          //  dimension `pastDetector` below tests - which is the depth the Rayleigh deflection
+          //  loss of an outer shield is evaluated at.
+          T facing_thick( 0.0 );
           switch( m_geometry )
           {
             case GeometryType::Spherical:
-              outer_dims[0] += sphericalThickness_imp( subMat, params );
+              facing_thick = sphericalThickness_imp( subMat, params );
+              outer_dims[0] += facing_thick;
               break;
 
             case GeometryType::CylinderEndOn:
             case GeometryType::CylinderSideOn:
               outer_dims[0] += cylindricalRadiusThickness_imp( subMat, params );
               outer_dims[1] += cylindricalLengthThickness_imp( subMat, params );
+              facing_thick = (m_geometry == GeometryType::CylinderEndOn)
+                               ? cylindricalLengthThickness_imp( subMat, params )
+                               : cylindricalRadiusThickness_imp( subMat, params );
               break;
 
             case GeometryType::Rectangular:
               outer_dims[0] += rectangularWidthThickness_imp( subMat, params );
               outer_dims[1] += rectangularHeightThickness_imp( subMat, params );
-              outer_dims[2] += rectangularDepthThickness_imp( subMat, params );
+              facing_thick = rectangularDepthThickness_imp( subMat, params );
+              outer_dims[2] += facing_thick;
               break;
 
             case GeometryType::NumGeometryType:
@@ -4685,9 +4702,14 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
           shell.dims = outer_dims;
           shell.trans_len_coef = T( transmition_length_coefficient( sub_material.get(),
                                                   static_cast<float>(calculator->m_energy) ) );
+          // The Rayleigh deflection loss is applied to layers OUTSIDE the emitting one only - the
+          //  matrix self-selects a skin, so its full extent would be the wrong depth.
+          const double rayleigh_thick = (subMat > calculator->m_materialIndex)
+                                          ? std::max( 0.0, scalar_of(facing_thick) ) : 0.0;
           shell.fep_trans_len_coef = T( fep_survival_removal_coefficient( sub_material.get(),
                                               static_cast<float>(calculator->m_energy),
-                                              fep_window_keV( calculator->m_energy ) ) );
+                                              fepWindowKeV( calculator->m_energy, energie_widths ),
+                                              rayleigh_thick ) );
           shell.type = ShellType::Material;
           shell.density = sub_material->density;
           shell.effective_an = material_mass_weighted_atomic_number( *sub_material );
@@ -4902,8 +4924,14 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
       const T chord = exit_dist - prev_exit_dist;
       prev_exit_dist = exit_dist;
 
-      att_coef_fcn = [mat = material.get(), chord]( float energy ) -> T {
-        return chord * transmition_length_coefficient( mat, energy );
+      // The FULL-ENERGY-PEAK removal coefficient - the in-window Compton credit and the Rayleigh
+      //  deflection loss at this layer's chord - so a point source behind a shield is attenuated
+      //  exactly as a volumetric source's outer shells are (2026-09-04; before this it used plain
+      //  mu_total with neither term, and read ~5% high behind 0.5 cm of Fe at 60 keV).
+      att_coef_fcn = [this, mat = material.get(), chord, &energie_widths]( float energy ) -> T {
+        return chord * fep_survival_removal_coefficient( mat, energy,
+                                                         fepWindowKeV( energy, energie_widths ),
+                                                         std::max( 0.0, scalar_of(chord) ) );
       };
     }//if( generic material ) / else
 
@@ -5267,6 +5295,11 @@ ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
   T prev_exit_dist(0.0);
   T an_weighted_ad(0.0);
 
+  // The functors outlive this call (the cascade corrections hold them), so the peak widths the
+  //  FEP window is chosen from travel with them by value.
+  const std::shared_ptr<const std::vector<std::pair<double,double>>> energie_widths
+        = std::make_shared<const std::vector<std::pair<double,double>>>( observedPeakEnergyWidths( m_peaks ) );
+
   for( size_t materialN = 0; materialN < nMaterials; ++materialN )
   {
     const ShieldingSourceFitCalc::ShieldingInfo &shielding = m_initial_shieldings[materialN];
@@ -5326,8 +5359,12 @@ ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
       const T chord = exit_dist - prev_exit_dist;
       prev_exit_dist = exit_dist;
 
-      ctx.att_fcns.push_back( [mat = material.get(), chord]( float energy ) -> T {
-        return chord * transmition_length_coefficient( mat, energy );
+      // Same FEP coefficient as expected_peak_counts_imp (window credit + Rayleigh deflection
+      //  loss), so the cascade functors see exactly the transmission the fit uses.
+      ctx.att_fcns.push_back( [this, mat = material.get(), chord, energie_widths]( float energy ) -> T {
+        return chord * fep_survival_removal_coefficient( mat, energy,
+                                                         fepWindowKeV( energy, *energie_widths ),
+                                                         std::max( 0.0, scalar_of(chord) ) );
       } );
 
       const T ad_gcm2 = chord * ( static_cast<double>(material->density)
