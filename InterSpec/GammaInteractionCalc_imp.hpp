@@ -1566,6 +1566,98 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
 
   reset_ray_accumulators();
 
+  // Optical depth from the emission point along an ARBITRARY direction (toward `target`), for the
+  //  per-ray kernel below.  Concentric spheres make this the simplest of the geometries: with the
+  //  emission point p at |p| = r and a unit direction w, the exit distance through a shell of radius
+  //  R is -(p.w) + sqrt((p.w)^2 + R^2 - r^2), and the ray dips inside an inner shell exactly when it
+  //  is heading inward with an impact parameter below that shell's radius, giving a chord of
+  //  2*sqrt((p.w)^2 + R^2 - r^2).  Shell l's OWN material path is its chord minus the next-inner
+  //  one's, the same nested subtraction eval_cylinder and eval_rect do.
+  //
+  //  This is DELIBERATELY a second walk, next to the centre-ray one below rather than replacing it.
+  //  The centre-ray walk is written in the rotated frame that puts the detector on +z, and its
+  //  single-source-shell branch factors the radius out of the discriminant
+  //  (sphere_exit_distance_scaled) so that value and derivative stay finite as the radius vanishes -
+  //  behaviour that TShieldingDimLimit pins and that the flat-disk goldens record bit-for-bit.  A
+  //  general direction cannot use that frame, and flat-disk must not move, so the two coexist.  They
+  //  are kept in step by the FAR-FIELD rows of LineVsElementSphericalSource: as the aperture
+  //  collapses onto the centre direction the per-ray mean must reproduce the centre-ray attenuation,
+  //  and those rows agree to 0.05%.
+  //
+  //  Only the centre ray fills the scratch accumulators (cascade partner mu*d, effective AN/AD), as
+  //  in the other geometries - they describe "the" shielding, and letting every aperture ray
+  //  accumulate into them would multiply them by the ray count.
+  const auto optical_depth_along = [&]( const T target[3] ) -> T
+  {
+    // The EMISSION point.  `source_point` is walked forward to the outermost exit by the centre-ray
+    //  block below and is long gone by the time the aperture rays run, so this reads the saved
+    //  copy - the same trap eval_rect's ray-local exit point exists to avoid.
+    const T p[3] = { x, y, z };
+
+    T w[3] = { target[0] - p[0], target[1] - p[1], target[2] - p[2] };
+    const T wlen = sqrt( w[0]*w[0] + w[1]*w[1] + w[2]*w[2] );
+    for( int i = 0; i < 3; ++i )
+      w[i] = w[i] / wlen;
+
+    const T pw = p[0]*w[0] + p[1]*w[1] + p[2]*w[2];
+    const T p2 = p[0]*p[0] + p[1]*p[1] + p[2]*p[2];
+    const bool inward = (scalar_of(pw) < 0.0);
+
+    T tau( 0.0 );
+
+    // Inner shells, innermost first: crossed only when the ray actually dips inside them.
+    T chord_inner( 0.0 );
+    for( size_t l = 0; l < m_materialIndex; ++l )
+    {
+      const ShellInfo &shell = m_shells[l];
+      const T disc = pw*pw + shell.dims[0]*shell.dims[0] - p2;
+      if( !inward || (scalar_of(disc) <= 0.0) )
+        continue;
+
+      switch( shell.type )
+      {
+        case ShellType::Material:
+        {
+          const T chord = T(2.0)*sqrt( disc );
+          tau += shell.fep_trans_len_coef * (chord - chord_inner);
+          chord_inner = chord;
+          break;
+        }//case ShellType::Material:
+
+        case ShellType::Generic:
+          tau += shell.fep_trans_len_coef;
+          break;
+      }//switch( type )
+    }//for( inner shells )
+
+    // The source shell: out to its own surface, less whatever the core took.
+    const T r_src = m_shells[m_materialIndex].dims[0];
+    T t_prev = -pw + sqrt( pw*pw + r_src*r_src - p2 );
+    tau += m_shells[m_materialIndex].fep_trans_len_coef * (t_prev - chord_inner);
+
+    // Outer shells: each contributes the segment between its surface and the one below it.
+    for( size_t l = m_materialIndex + 1; l < m_shells.size(); ++l )
+    {
+      const ShellInfo &shell = m_shells[l];
+      switch( shell.type )
+      {
+        case ShellType::Material:
+        {
+          const T t = -pw + sqrt( pw*pw + shell.dims[0]*shell.dims[0] - p2 );
+          tau += shell.fep_trans_len_coef * (t - t_prev);
+          t_prev = t;
+          break;
+        }//case ShellType::Material:
+
+        case ShellType::Generic:
+          tau += shell.fep_trans_len_coef;
+          break;
+      }//switch( type )
+    }//for( outer shells )
+
+    return tau;
+  };//optical_depth_along
+
   {//begin code-block to compute distance through source
     T exit_point[3];
     const T srcRad = m_shells[m_materialIndex].dims[0];
@@ -1706,17 +1798,26 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
 
   trans = exp( -trans );
 
+  // Everything that multiplies `trans` and is COMMON to every aperture ray, kept separately so the
+  //  per-ray kernel below can rebuild from it instead of dividing exp(-centre_tau) back out (0/0
+  //  once the centre ray is deeply attenuated) - see the same note in eval_cylinder.
+  T common_factors( 1.0 );
+
   if( m_attenuateForAir )
   {
     // source_point is now the exit point on the last of the shielding, and the (rotated)
-    //  detector is at {0,0,obs_dist}
+    //  detector is at {0,0,obs_dist}.  DELIBERATELY the centre ray: the aperture rays carry no
+    //  element->detector distance of their own, and the spread of the air path across the aperture
+    //  is negligible next to the source and shield attenuation (as in eval_rect).
     const T dx = -source_point[0];
     const T dy = -source_point[1];
     const T dz = source_point[2] - obs_dist;
 
     const T air_dist = sqrt( dx*dx + dy*dy + dz*dz );
 
-    trans *= exp( -m_airTransLenCoef * air_dist );
+    const T air_atten = exp( -m_airTransLenCoef * air_dist );
+    trans *= air_atten;
+    common_factors *= air_atten;
 
     if( m_cascade )
       m_ray_air_dist = air_dist;
@@ -1725,7 +1826,9 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
   if( m_isInSituExponential )
   {
     assert( m_inSituRelaxationLength > 0.0 );
-    trans *= exp( -(source_outer_rad - r) / m_inSituRelaxationLength );
+    const T in_situ = exp( -(source_outer_rad - r) / m_inSituRelaxationLength );
+    trans *= in_situ;
+    common_factors *= in_situ;
   }
 
   {// begin apply detector response
@@ -1736,20 +1839,75 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
 
     const T eval_point[3] = { x, y, z };
     const T det_factor = detector_response_factor( rotated_det, eval_point );
-    const T eff_factor = eff_response_factor( det_factor, rotated_det, eval_point );
-    trans *= eff_factor;
-    if( m_cascade )
+    double near_field_ratio = 1.0;   //flat-disk: cascade legs keep the plain solid angle
+
+    if( !m_effResponse )
     {
-      // The cascade legs are built on the flat-disk solid angle, so hand them the same
-      //  response-vs-flat-disk ratio the primary line just used.  NOTE this geometry is still on
-      //  the CENTRE-RAY path - the per-ray kernel (plan 3.2) is implemented for cylinders and
-      //  rectangles, but NOT spheres, because a sphere needs a per-ray rotation
-      //  (exit_point_of_sphere_z_imp only traces toward {0,0,obs_dist}).  The truth bank has
-      //  cylinder and box rows; nothing tests the sphere.
-      const double flat = scalar_of( det_factor );
-      const double ratio = (flat > 0.0) ? (scalar_of(eff_factor)/flat) : 1.0;
-      trans *= cascade_correction_factor( det_factor, ratio );
-    }
+      // Legacy flat-disk: one centre ray, geometric solid angle, intrinsic efficiency folded in
+      //  after the integration.  Bit-for-bit what this function has always returned.
+      trans *= eff_response_factor( det_factor, rotated_det, eval_point );
+    }else
+    {
+      // ---- VALIDATION REFERENCE, not production: the per-element aperture fan ----------------
+      //  (see VolumetricElementAperture_imp.hpp and the derivation in eval_cylinder).  The centre
+      //  ray asked "what fraction of photons leaving along the line to the detector centre
+      //  survive?", which is wrong wherever the exit directions fan out - and for a sphere at
+      //  contact it was wrong by up to a factor of two: measured against the line path
+      //  (LineVsElementSphericalSource), a solid steel sphere at contact came out 52% BELOW it at
+      //  60 keV and 19% below at 662 keV, a hollow one 37%/13%, water 6.6%/3.3%.  Each aperture ray
+      //  now carries its own attenuation through the concentric shells.
+      const double dist_scalar = scalar_of( distance_imp( eval_point, rotated_det.position ) );
+      const double flat_scalar = scalar_of( det_factor );
+
+      if( (dist_scalar > 0.0) && (flat_scalar > 0.0) )
+      {
+        double to_det[3] = { scalar_of(rotated_det.position[0]) - scalar_of(eval_point[0]),
+                             scalar_of(rotated_det.position[1]) - scalar_of(eval_point[1]),
+                             scalar_of(rotated_det.position[2]) - scalar_of(eval_point[2]) };
+        for( int k = 0; k < 3; ++k )
+          to_det[k] /= dist_scalar;
+
+        // Incidence cosine, measured the same way eff_response_factor measures it.  The rotated
+        //  frame puts the detector on +z, and its axis (detector -> assembly) is unchanged by that
+        //  rotation, so m_detector.axis is the right one to measure against here.
+        double cos_theta = -(to_det[0]*rotated_det.axis[0] + to_det[1]*rotated_det.axis[1]
+                             + to_det[2]*rotated_det.axis[2]);
+        cos_theta = std::max( -1.0, std::min( 1.0, cos_theta ) );
+
+        const ElementAperture ap = build_element_aperture( *m_effResponse, m_energy, dist_scalar,
+                                                           cos_theta, to_det, rotated_det.axis,
+                                                           m_effNumRays );
+
+        T kernel( 0.0 );
+        for( size_t i = 0; i < ap.weights.size(); ++i )
+        {
+          const T ray_target[3] = { eval_point[0] + T(ap.dirs[i][0] * sm_ray_target_dist),
+                                    eval_point[1] + T(ap.dirs[i][1] * sm_ray_target_dist),
+                                    eval_point[2] + T(ap.dirs[i][2] * sm_ray_target_dist) };
+          kernel += T(ap.weights[i]) * exp( -optical_depth_along( ray_target ) );
+        }//for( loop over aperture rays )
+
+        double sum_w = 0.0;
+        for( const double w : ap.weights )
+          sum_w += w;
+
+        const double R0 = (ap.prefactor * sum_w) / flat_scalar;
+        near_field_ratio = R0;   //hand the primary's near-field correction to the cascade legs
+
+        const T mean_trans = (sum_w > 0.0) ? (kernel / T(sum_w)) : T(0.0);
+        trans = common_factors * det_factor * T(R0) * mean_trans;
+      }else
+      {
+        // Degenerate element (sits at the detector point, or a non-positive solid angle).  Keep the
+        //  primary and the cascade legs on the SAME response model.
+        const T eff_factor = eff_response_factor( det_factor, rotated_det, eval_point );
+        trans *= eff_factor;
+        near_field_ratio = (flat_scalar > 0.0) ? (scalar_of(eff_factor)/flat_scalar) : 1.0;
+      }
+    }//if( flat-disk ) / else
+
+    if( m_cascade )
+      trans *= cascade_correction_factor( det_factor, near_field_ratio );
   }// end apply detector response
 
   if( m_normalizeByVolume )

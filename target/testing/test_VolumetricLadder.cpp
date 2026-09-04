@@ -1690,7 +1690,6 @@ BOOST_AUTO_TEST_CASE( LineVsElementNestedAndMultiShell )
       { "cylEnd hollow", GeometryType::CylinderEndOn,  {1.0,0.8,0}, {3.0,2.0,0}, {3.3,2.3,0}, 3.0 },
       { "cylSide hollow", GeometryType::CylinderSideOn, {1.0,1.5,0}, {2.5,3.0,0}, {2.8,3.3,0}, 4.0 },
       { "rect hollow",   GeometryType::Rectangular,    {1.0,0.8,0.6}, {2.5,2.0,1.5}, {2.8,2.3,1.8}, 4.0 },
-      // NOT gated against the element path - see the sphere note below.
       { "sphere hollow", GeometryType::Spherical,      {1.0,0,0}, {2.5,0,0}, {2.8,0,0}, 4.0 },
     };
     for( const Case &c : cases )
@@ -1711,15 +1710,12 @@ BOOST_AUTO_TEST_CASE( LineVsElementNestedAndMultiShell )
           << "  line " << line << "  (" << fixed << showpos << setprecision(2) << rel << "%"
           << noshowpos << ")";
         BOOST_TEST_MESSAGE( o.str() );
-        // SPHERES ARE REPORTED, NOT GATED.  `eval_spherical` applies the response through a single
-        //  CENTRE RAY - the per-ray kernel was only ever implemented for cylinders and rectangles
-        //  (there is a comment saying so at the call site, and TODO.md carries it as an open
-        //  defect).  The line path treats every geometry per-ray, so on a sphere it is not
-        //  reproducing the element path, it is replacing a known-wrong one; gating on agreement
-        //  here would pin the defect.  The gap has the defect's signature - largest where
-        //  attenuation is strongest - so watch that it stays that way rather than that it is small.
-        if( c.geom == GeometryType::Spherical )
-          continue;
+        // Spheres are gated like every other geometry as of 2026-09-03: `eval_spherical` used to
+        //  apply the response through a single CENTRE RAY (the per-ray kernel had only ever been
+        //  written for cylinders and rectangles), so this row was reported rather than gated
+        //  because agreement would have pinned that defect.  It now runs the same aperture fan the
+        //  other geometries do - see LineVsElementSphericalSource in test_VolumetricLinePath.cpp,
+        //  which is where spheres are covered systematically.
         if( fabs(rel) > worst ){ worst = fabs(rel); worst_where = string(c.name) + " @ " + to_string(e); }
       }
     }
@@ -1952,11 +1948,13 @@ BOOST_AUTO_TEST_CASE( LineCacheRebuildContinuity, * boost::unit_test::expected_f
 
 /** DIAGNOSTIC (developer-only): which side of the hollow-rectangle line-vs-element gap is converged?
 
- `LineVsElementNestedAndMultiShell` finds the two paths ~2.4% apart on a HOLLOW box at 60 keV, where
- both of them run a full per-ray treatment (unlike the sphere, where the element path is centre-ray
- by construction and the gap is that known defect rather than a disagreement).  Refine each side
- against itself: the line path in the number of lines, the element path in its requested relative
- error.  Whichever one moves is the one that was not converged.
+ WAS: `LineVsElementNestedAndMultiShell` found the two paths ~2.4% apart on a HOLLOW box at 60 keV.
+ RESOLVED 2026-09-03 - it was neither side's convergence but a real bug in `rectangle_intersections_imp`,
+ which reported a MISS for any ray clipping a corner of the inner core, so the element path walked
+ those rays as if the core were not there.  The rows now agree to 0.27%.  Kept because refining each
+ side against itself - the line path in its number of lines, the element path in its requested
+ relative error - is the right first move whenever a new gap appears: whichever one moves is the one
+ that was not converged.
  */
 BOOST_AUTO_TEST_CASE( NestedRectConvergenceProbe, * boost::unit_test::disabled() )
 {
@@ -2173,3 +2171,182 @@ BOOST_AUTO_TEST_CASE( Rung7_CentreAnchorTruth, * boost::unit_test::disabled() )
   }
   cout << "};\n" << flush;
 }//BOOST_AUTO_TEST_CASE( Rung7_CentreAnchorTruth )
+
+
+/** RUNG 8 - SPHERICAL sources against Monte Carlo.
+
+ The scenario matrix and its truth bank are cylinders and boxes, so until now NOTHING had ever
+ compared a spherical volumetric source against Monte Carlo - the sphere claims in
+ `LineVsElementSphericalSource` are the two model quadratures agreeing with each other, which says
+ they are consistent, not that they are right.  This rung supplies the missing leg.
+
+ Each row is grounded on its own CENTRE-ANCHORED transfer, built here from a bare point-source MC at
+ the sphere's centre distance (the argument is spelled out at Rung7): anchoring at 25 cm and
+ comparing a source at 4 cm would charge the volume integral for the transfer's inward extrapolation,
+ which rung 2 measured at +4.6 to +6.4%.  With a centre anchor, what is left is the volumetric model.
+
+ HOLLOW ROW - read the geometry.  CeeLo's spherical source takes an inner radius whose interior is a
+ non-attenuating VOID, so the "steel core" of the model-vs-model test is not expressible here; the
+ row below therefore puts a genuine void inside the emitting shell and the InterSpec side matches it
+ with a zero attenuation coefficient on the core shell.  It still exercises the two-piece chord
+ split, which is the part of the code the hollow case is there to test.
+
+ Developer-only (real Monte Carlo).  Run with --cachedir= so the rows are paid for once.
+ */
+BOOST_AUTO_TEST_CASE( Rung8_SphericalSourceTruth, * boost::unit_test::disabled() )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  McCache cache;
+  const double cm = PhysicalUnits::cm;
+
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> steel = matdb->material( "Stainless steel SS-304" );
+  const shared_ptr<const Material> water = matdb->material( "Water" );
+  BOOST_REQUIRE( steel && water );
+
+  struct Case
+  {
+    const char *name;
+    shared_ptr<const Material> mat;
+    double outer_cm;
+    double inner_cm;     ///< 0 = solid; > 0 = emitting shell around a NON-attenuating void
+    double centre_cm;    ///< endcap front to the sphere centre
+  };
+  const vector<Case> cases = {
+    { "solid steel, contact",     steel, 3.0, 0.0, 4.0 },
+    { "solid water, contact",     water, 3.0, 0.0, 4.0 },
+    { "solid water, far",         water, 3.0, 0.0, 50.0 },
+    { "hollow steel on a void",   steel, 3.0, 1.0, 4.0 },
+  };
+  const vector<double> energies = { 60.0, 661.7 };
+  const vector<double> anchor_energies = { 60.0, 88.0, 122.0, 344.0, 661.7, 1332.5 };
+  const int num_lines = 1 << 16;
+
+  // A bare point in vacuum at `d_cm`, as the transfer's anchor curve; cached by distance.
+  map<long long,shared_ptr<const ceelo::DetectorResponse>> anchored;
+  const auto centre_anchor = [&]( const double d_cm ) -> shared_ptr<const ceelo::DetectorResponse>
+  {
+    const long long key = llround( d_cm*1.0e6 );
+    const map<long long,shared_ptr<const ceelo::DetectorResponse>>::const_iterator it = anchored.find( key );
+    if( it != end(anchored) )
+      return it->second;
+
+    CeeLoUtils::TransferAnchor anchor;
+    anchor.ref_distance_cm = d_cm;
+    anchor.curve_derived = false;
+    for( const double e : anchor_energies )
+    {
+      vector<unique_ptr<ceelo::Material>> owned;
+      ceelo::EfficiencyCalculator pt;
+      ceelo::ResponseGenerator::configure_calculator( pt, det.gd, owned );
+      pt.set_point_source( Eigen::Vector3d( 0.0, 0.0, -(det.endcap_front_offset_cm + d_cm) ) );
+      ostringstream k;
+      k << "sph-anchor|point|d=" << setprecision(10) << d_cm;
+      const McResult r = run_mc( pt, cache, k.str(), e, 0.005, 4000000000ULL, 20260904, 900.0 );
+      anchor.curve.energies_keV.push_back( e );
+      anchor.curve.eff.push_back( r.eff );
+      anchor.curve.frac_sigma.push_back( r.frac_sigma );
+    }
+
+    ostringstream nm;
+    nm << "sphere centre anchor (d=" << fixed << setprecision(2) << d_cm << " cm)";
+    shared_ptr<const ceelo::DetectorResponse> resp
+          = CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{}, nm.str() );
+    BOOST_REQUIRE( resp );
+    anchored[key] = resp;
+    return resp;
+  };
+
+  BOOST_TEST_MESSAGE( "  sphere vs MC (centre-anchored transfer); model/MC - 1:" );
+  BOOST_TEST_MESSAGE( "  case                            E(keV)      MC eff   MCsig |  element      line" );
+
+  double worst = 0.0;
+  string worst_where;
+  for( const Case &c : cases )
+  {
+    const shared_ptr<const ceelo::DetectorResponse> resp = centre_anchor( c.centre_cm );
+
+    for( const double e : energies )
+    {
+      // ---- Monte Carlo truth ----
+      ScenarioMcMaterials mats;
+      ceelo::EfficiencyCalculator mc_calc;
+      ceelo::ResponseGenerator::configure_calculator( mc_calc, det.gd, mats.owned );
+      mc_calc.set_spherical_source( Eigen::Vector3d( 0.0, 0.0, -(det.endcap_front_offset_cm + c.centre_cm) ),
+                                    c.outer_cm, Eigen::Matrix3d::Identity(), c.inner_cm );
+      mats.matrix.reset( new ceelo::Material( CeeLoUtils::to_ceelo_material( *c.mat ).to_material() ) );
+      mc_calc.set_source_material( mats.matrix.get() );
+
+      ostringstream key;
+      key << "sphere(r=" << setprecision(10) << c.outer_cm << ",ri=" << c.inner_cm
+          << ",d=" << c.centre_cm << ",mat=" << c.mat->name << ")";
+      const McResult mc = run_mc( mc_calc, cache, key.str(), e, 0.0025, 16000000000ULL, 20260904, 1800.0 );
+      BOOST_REQUIRE( mc.eff > 0.0 );
+
+      // ---- InterSpec model, both quadratures ----
+      DistributedSrcCalcT<double> calc;
+      calc.m_geometry = GeometryType::Spherical;
+      calc.m_materialIndex = (c.inner_cm > 0.0) ? 1 : 0;
+      calc.m_attenuateForAir = false;
+      calc.m_isInSituExponential = false;
+      calc.m_inSituRelaxationLength = -1.0;
+      calc.m_srcVolumetricActivity = 1.0;
+      calc.m_normalizeByVolume = false;
+      calc.m_energy = e;
+      calc.m_effResponse = resp;
+      calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+      calc.m_detector = detector_geom_from_config<double>( GeometryType::Spherical, c.centre_cm*cm,
+                                              det.gd.transverse_half_extent()*cm, 0.0 );
+      if( c.inner_cm > 0.0 )
+      {
+        DistributedSrcCalcT<double>::ShellInfo core;
+        core.dims = { c.inner_cm*cm, 0.0, 0.0 };
+        core.trans_len_coef = 0.0;    //a VOID, matching CeeLo's non-attenuating inner region
+        core.type = ShellType::Material;
+        calc.m_shells.push_back( core );
+      }
+      DistributedSrcCalcT<double>::ShellInfo src;
+      src.dims = { c.outer_cm*cm, 0.0, 0.0 };
+      src.trans_len_coef = transmition_length_coefficient( c.mat.get(), static_cast<float>(e) );
+      src.type = ShellType::Material;
+      calc.m_shells.push_back( src );
+
+      const double vol_cm3 = (4.0/3.0)*PhysicalUnits::pi
+                             * (c.outer_cm*c.outer_cm*c.outer_cm - c.inner_cm*c.inner_cm*c.inner_cm);
+
+      DistributedSrcCalcT<double> elem = calc, line = calc;
+      integrate_on_path( elem, VolumetricIntegrator::Element, -1 );
+      integrate_on_path( line, VolumetricIntegrator::Line, num_lines );
+      const double eff_elem = elem.integral / (vol_cm3*cm*cm*cm);
+      const double eff_line = line.integral / (vol_cm3*cm*cm*cm);
+
+      const double d_elem = 100.0*(eff_elem/mc.eff - 1.0);
+      const double d_line = 100.0*(eff_line/mc.eff - 1.0);
+
+      ostringstream o;
+      o << "  " << left << setw(28) << c.name << right << fixed << setprecision(1) << setw(8) << e
+        << "  " << scientific << setprecision(4) << mc.eff << fixed << "  " << setprecision(2)
+        << setw(5) << 100.0*mc.frac_sigma << "%" << (mc.hit_cap() ? "CAP" : "   ")
+        << " | " << showpos << setw(7) << setprecision(2) << d_elem << "%"
+        << setw(9) << d_line << "%" << noshowpos;
+      BOOST_TEST_MESSAGE( o.str() );
+
+      // 3 sigma of the MC on top of the model allowance, as the truth bank does.
+      const double allow = 3.0 + 3.0*100.0*mc.frac_sigma;
+      for( const pair<const char *,double> &m : { make_pair("element",d_elem), make_pair("line",d_line) } )
+      {
+        if( fabs(m.second) > worst ){ worst = fabs(m.second); worst_where = string(c.name) + " " + m.first; }
+        BOOST_CHECK_MESSAGE( fabs(m.second) < allow,
+          c.name << " @ " << e << " keV: the " << m.first << " path is " << m.second
+                 << "% from MC (allowance " << allow << "%)" );
+      }
+    }//for( energies )
+  }//for( cases )
+
+  BOOST_TEST_MESSAGE( "  worst |model/MC - 1|: " << fixed << setprecision(2) << worst
+                      << "% (" << worst_where << ")" );
+}//BOOST_AUTO_TEST_CASE( Rung8_SphericalSourceTruth )

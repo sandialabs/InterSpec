@@ -39,6 +39,9 @@
  two in step, and are the reason this code still exists:
    - LineVsElementScenarioMatrix (test_VolumetricLadder.cpp): the integral itself, on a quick
      subset every run and the whole scenario matrix on request;
+   - LineVsElementSphericalSource (test_VolumetricLinePath.cpp): spheres, which the scenario matrix
+     has none of - and which is where this reference was found to be wrong by up to a factor of two
+     until eval_spherical got its own per-ray branch (2026-09-03);
    - ShellWalkMatchesElementCentreRay (test_VolumetricLinePath.cpp): the per-point shell walk
      against eval_cylinder / eval_rect / eval_spherical.
  Everything here is scalar and per element, which is exactly what made it slow (5.8e-4 s per element

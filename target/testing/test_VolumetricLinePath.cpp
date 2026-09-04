@@ -505,3 +505,115 @@ BOOST_AUTO_TEST_CASE( CollimatedResponseLinePath )
                            c.name << ": the chord-range flag should be Ok, got " << ceelo::to_string( chord_flag ) );
   }//for( cases )
 }//BOOST_AUTO_TEST_CASE( CollimatedResponseLinePath )
+
+
+/** SPHERICAL sources: the line path against the element path.
+
+ The scenario matrix has no spheres (it is cylinders and boxes), so this is the only place the two
+ quadratures are compared on the geometry that is InterSpec's DEFAULT for a shielding stack.  Solid
+ and hollow, bare and shielded, at contact and far, so the source chord, the inner-core split and the
+ outer-shell walk are each exercised.
+
+ Both paths must apply the response through the aperture the source element actually sees.  Until
+ 2026-09-03 `eval_spherical` did not: it used the flat-disk solid angle scaled by a single
+ centre-ray response, which is the same class of error the rectangles carried before their per-ray
+ kernel landed.  Measured here before the fix, the element path sat 52% below the line path on a
+ solid steel sphere at contact (60 keV), 19% below at 662 keV, 37%/13% on a hollow one and 6.6%/3.3%
+ on water - while the FAR rows already agreed to 0.05%, which is the signature of a purely
+ near-field aperture error.
+
+ Both quadratures are models.  Rung8_SphericalSourceTruth in test_VolumetricLadder.cpp is the
+ Monte-Carlo leg (developer-only, real MC); this case is the cheap consistency check that runs every
+ time.
+ */
+BOOST_AUTO_TEST_CASE( LineVsElementSphericalSource )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+  const double cm = PhysicalUnits::cm;
+
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> steel = matdb->material( "Stainless steel SS-304" );
+  const shared_ptr<const Material> water = matdb->material( "Water" );
+  BOOST_REQUIRE( steel && water );
+
+  // radii[i] is shell i's OUTER radius (cm); `src` is which of them emits.
+  struct Case
+  {
+    const char *name;
+    std::vector<std::pair<shared_ptr<const Material>,double>> shells;
+    size_t src;
+    double dist_cm;
+  };
+  const std::vector<Case> cases = {
+    { "solid water, contact",        { {water,3.0} },                        0, 4.0 },
+    { "solid water, far",            { {water,3.0} },                        0, 50.0 },
+    { "solid steel, contact",        { {steel,3.0} },                        0, 4.0 },
+    { "hollow water on steel core",  { {steel,1.0}, {water,3.0} },           1, 4.0 },
+    { "hollow steel on steel core",  { {steel,1.0}, {steel,2.5} },           1, 4.0 },
+    { "solid water in steel shield", { {water,2.5}, {steel,2.9} },           0, 4.0 },
+    { "hollow water, shielded",      { {steel,1.0}, {water,2.5}, {steel,2.9} }, 1, 4.0 },
+  };
+
+  const int num_lines = 1 << 16;
+  double worst = 0.0;
+  string worst_where;
+
+  for( const Case &c : cases )
+  {
+    for( const double e : { 60.0, 661.7 } )
+    {
+      DistributedSrcCalcT<double> calc;
+      calc.m_geometry = GeometryType::Spherical;
+      calc.m_materialIndex = c.src;
+      calc.m_attenuateForAir = false;
+      calc.m_isInSituExponential = false;
+      calc.m_inSituRelaxationLength = -1.0;
+      calc.m_srcVolumetricActivity = 1.0;
+      calc.m_normalizeByVolume = false;
+      calc.m_energy = e;
+      calc.m_effResponse = det.mc_transfer;
+      calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+      calc.m_detector = detector_geom_from_config<double>( GeometryType::Spherical, c.dist_cm*cm,
+                                              det.gd.transverse_half_extent()*cm, 0.0 );
+      for( const std::pair<shared_ptr<const Material>,double> &sh : c.shells )
+      {
+        DistributedSrcCalcT<double>::ShellInfo info;
+        info.dims = { sh.second*cm, 0.0, 0.0 };
+        info.trans_len_coef = transmition_length_coefficient( sh.first.get(), static_cast<float>(e) );
+        info.type = ShellType::Material;
+        calc.m_shells.push_back( info );
+      }
+
+      DistributedSrcCalcT<double> elem = calc, line = calc;
+      integrate_on_path( elem, VolumetricIntegrator::Element, -1 );
+      integrate_on_path( line, VolumetricIntegrator::Line, num_lines );
+      BOOST_REQUIRE( (elem.integral > 0.0) && (line.integral > 0.0) );
+
+      const double rel = 100.0*(line.integral/elem.integral - 1.0);
+      std::ostringstream row;
+      row << "    " << std::left << std::setw(30) << c.name << std::right << " @ " << std::setw(6)
+          << std::fixed << std::setprecision(1) << e << " keV:  element " << std::scientific
+          << std::setprecision(4) << elem.integral << "  line " << line.integral << "  ("
+          << std::fixed << std::showpos << std::setprecision(2) << rel << "%" << std::noshowpos << ")";
+      BOOST_TEST_MESSAGE( row.str() );
+      if( std::fabs(rel) > worst )
+      {
+        worst = std::fabs( rel );
+        worst_where = string(c.name) + " @ " + std::to_string(e) + " keV";
+      }
+    }//for( energies )
+  }//for( cases )
+
+  BOOST_TEST_MESSAGE( "  worst |line/element - 1|: " << std::fixed << std::setprecision(3) << worst
+                      << "% (" << worst_where << ")" );
+  // The same gate the other geometries carry (LineVsElementScenarioMatrix uses 0.75%), loosened to
+  //  1% because a sphere's outer quadrature is 2-D and its adaptive refinement is coarser.
+  BOOST_CHECK_MESSAGE( worst < 1.0,
+                       "line and element disagree by " << worst << "% at " << worst_where
+                       << " - spherical sources are not being integrated the same way" );
+}//BOOST_AUTO_TEST_CASE( LineVsElementSphericalSource )
