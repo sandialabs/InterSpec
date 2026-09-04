@@ -21,6 +21,9 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+// Needed so MSVC's <cmath> defines M_PI (used below); must precede any <cmath> include.
+#define _USE_MATH_DEFINES
+
 #include "InterSpec_config.h"
 
 #include <mutex>

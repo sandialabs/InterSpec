@@ -72,7 +72,11 @@ echo "Will patch from %PATCH_DIR%"
 
 cd %BUILD_DIR%
 
-set errorlevel=
+rem Note: do NOT `set errorlevel=` here - defining an environment variable named
+rem  `errorlevel` shadows the dynamic %errorlevel% pseudo-variable for the rest of
+rem  the script and does not actually reset the real exit code.  Success/failure is
+rem  checked below via `&& (...) || (...)` and the `if errorlevel N` syntax, both of
+rem  which read the true exit code regardless.
 
 rem Build/install boost
 set BOOST_TAR=boost_1_86_0.zip
@@ -128,7 +132,7 @@ if not exist %BOOST_BUILT_FILE% (
 
 
     echo "Building boost release"
-    .\b2.exe runtime-link=static link=static threading=multi variant=release address-model=64 cxxstd=17 architecture=x86 --prefix="%MY_PREFIX%" --build-dir=win_build_release -j8 install && (
+    .\b2.exe runtime-link=static link=static threading=multi variant=release address-model=64 cxxstd=20 architecture=x86 --prefix="%MY_PREFIX%" --build-dir=win_build_release -j8 install && (
         rmdir /s /q win_build_release
         echo Done building boost release
     ) || (
@@ -138,7 +142,7 @@ if not exist %BOOST_BUILT_FILE% (
 
     if defined builddebug (
         echo "Building boost debug"
-        .\b2.exe runtime-link=static link=static threading=multi variant=debug address-model=64 cxxstd=17 architecture=x86 --prefix="%MY_PREFIX%" --build-dir=win_build_debug -j8 install && (
+        .\b2.exe runtime-link=static link=static threading=multi variant=debug address-model=64 cxxstd=20 architecture=x86 --prefix="%MY_PREFIX%" --build-dir=win_build_debug -j8 install && (
             rmdir /s /q win_build_debug
             echo Done building boost debug
         ) || (
@@ -504,7 +508,7 @@ if not exist %WX_BUILT_FILE% (
     for /f %%A in ('certutil -hashfile "%WX_TAR%" SHA256 ^| find /i /v ":" ') do set "WX_SHA256=%%A"
     
     if not "!WX_SHA256!"=="%WX_REQUIRED_SHA256%" (
-        echo Invalid hash of ceres.  Expected "%WX_REQUIRED_SHA256%" and got "!WX_SHA256!"
+        echo Invalid hash of wxWidgets.  Expected "%WX_REQUIRED_SHA256%" and got "!WX_SHA256!"
         GOTO :cmderr
     )
 

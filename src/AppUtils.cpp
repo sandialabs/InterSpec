@@ -33,7 +33,11 @@
 #include <sys/ioctl.h>
 #include <unistd.h>
 #elif defined(_WIN32)
+// NOMINMAX is also set on the InterSpecLib compile command line; guard the local
+//  define so we don't trigger a C4005 macro-redefinition warning.
+#ifndef NOMINMAX
 #define NOMINMAX
+#endif
 #define WIN32_LEAN_AND_MEAN 1
 #include <Windows.h>
 #include <stdio.h>

@@ -962,8 +962,13 @@ SET(CMAKE_CXX_FLAGS  "${CMAKE_CXX_FLAGS} -D BOOST_BIND_GLOBAL_PLACEHOLDERS")
           
 if(WIN32)
   target_compile_options( InterSpecLib PUBLIC /bigobj )
-  #0x0601==Win7, 0x0501=WinXP (Wt CMakeLists.txt uses 0x0501x)
-  target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS )
+  #0x0A00==Win10 (Windows 10 is the minimum supported OS)
+  # NOMINMAX: <windows.h> otherwise defines function-like min(a,b)/max(a,b) macros that turn any
+  #  later std::max(a,b), std::numeric_limits<T>::max(), etc. into MSVC error C2589.  A couple of
+  #  translation units (e.g. InterSpecApp.cpp, RemoteRid.cpp) pull in <windows.h> without guarding
+  #  this themselves, and it is PUBLIC so it also reaches the wx/electron/batch executable sources
+  #  that include <windows.h> via wxWidgets.  (The testing target sets this too.)
+  target_compile_definitions( InterSpecLib PUBLIC -D _WIN32_WINNT=0x0A00 -D WINVER=0x0A00 -D _SCL_SECURE_NO_WARNINGS -D NOMINMAX )
   target_compile_definitions( InterSpecLib PRIVATE InterSpec_EXPORTS )
         
   if( INTERSPEC_LIB_TYPE STREQUAL "SHARED" )

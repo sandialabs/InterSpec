@@ -93,7 +93,7 @@ static_assert( USE_NATIVE_HTTP_CLIENT,
 
  \code
    brew install mingw-w64
-   x86_64-w64-mingw32-g++ -std=c++17 -c -Wall -Wextra -D_WIN32_WINNT=0x0601 \
+   x86_64-w64-mingw32-g++ -std=c++20 -c -Wall -Wextra -D_WIN32_WINNT=0x0A00 \
      -I<build-dir> -I<repo-root> src/NativeHttpClient_winhttp.cpp -o /tmp/winhttp.o
  \endcode
 

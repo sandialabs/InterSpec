@@ -26,7 +26,7 @@ endif()
 
 IF(WIN32)
   add_definitions(-DBOOST_ALL_NO_LIB) #Prevent boost auto-linking, which seems to call in vc141 boost libs instead of vc142
-  add_definitions(-D _WIN32_WINNT=0x0601 -D WINVER=0x0601 -D _SCL_SECURE_NO_WARNINGS ) #0x0601==Win7
+  add_definitions(-D _WIN32_WINNT=0x0A00 -D WINVER=0x0A00 -D _SCL_SECURE_NO_WARNINGS ) #0x0A00==Win10
 ENDIF(WIN32)
  
 
