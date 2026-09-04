@@ -863,8 +863,16 @@ T rectangle_exit_location_imp( const T &half_width, const T &half_height,
 
 /** Templated transcription of #rectangle_intersections.
 
- Both `source` and `detector` must be outside the box; fills in where the ray
- enters and exits the box, returning false if it misses entirely.
+ Both `source` and `detector` must be outside the box; fills in where the ray from `source` toward
+ `detector` enters and exits the box, returning false if it misses entirely.  Any crossing along the
+ ray's forward direction counts (the caller guarantees the detector lies beyond every shell).
+
+ The slab method: along the ray each axis admits the parameter interval between its two planes, the
+ box is their intersection, so the entry is the LAST near plane crossed and the exit the FIRST far
+ plane.  (The earlier transcription took the first near-plane crossing and reported a miss when that
+ crossing lay outside its face - which is exactly a ray clipping a corner of the box, whose true
+ entry is through a later plane.  ShellWalkMatchesElementCentreRay in test_VolumetricLinePath.cpp
+ caught it on a hollow box: the walk through the inner core was skipped for such rays.)
  */
 template<typename T>
 bool rectangle_intersections_imp( const T &half_width, const T &half_height,
@@ -877,10 +885,7 @@ bool rectangle_intersections_imp( const T &half_width, const T &half_height,
   using namespace std;
   using namespace ceres;
 
-  // Contract checks ported from the retired double #rectangle_intersections.  Unlike
-  //  #rectangle_exit_location_imp these keep the strict `> 0` half-extent requirement: the one
-  //  production caller (DistributedSrcCalcT::eval_rect) always has a real box, and this function has
-  //  *not* received the zero-extent fix (see the TODO below), so the strict contract is the honest one.
+  // The one production caller (DistributedSrcCalcT::eval_rect) always has a real box.
   assert( (scalar_of(half_width) > 0.0) && (scalar_of(half_height) > 0.0)
           && (scalar_of(half_depth) > 0.0) );
 
@@ -903,152 +908,48 @@ bool rectangle_intersections_imp( const T &half_width, const T &half_height,
   norm[1] /= total_dist;
   norm[2] /= total_dist;
 
-  // TODO: this still uses the `t = (intersect - source)*(1/norm)` form that
-  //       #rectangle_exit_location_imp was fixed away from - with a zero half-extent (or a source
-  //       exactly on a face the ray runs parallel to) it evaluates 0*DBL_MAX == 0 and wrongly picks
-  //       the degenerate plane.  Harmless today because the sole caller always passes a real box
-  //       with both endpoints well outside it, but it should get the same treatment if that changes.
-  const T inv_slope_x = (norm[0] == 0.0) ? T(DBL_MAX) : (1.0 / norm[0]);
-  const T x_intersect = (inv_slope_x >= 0.0) ? half_width : -half_width;
-  const T t_intersect_x_det = (x_intersect - source[0])*inv_slope_x;
-  const T t_intersect_x_src = (-x_intersect - source[0])*inv_slope_x;
+  const T halves[3] = { half_width, half_height, half_depth };
 
-  const T inv_slope_y = (norm[1] == 0.0) ? T(DBL_MAX) : (1.0 / norm[1]);
-  const T y_intersect = (inv_slope_y >= 0.0) ? half_height : -half_height;
-  const T t_intersect_y_det = (y_intersect - source[1])*inv_slope_y;
-  const T t_intersect_y_src = (-y_intersect - source[1])*inv_slope_y;
-
-  const T inv_slope_z = (norm[2] == 0.0) ? T(DBL_MAX) : (1.0 / norm[2]);
-  const T z_intersect = (inv_slope_z >= 0.0) ? half_depth : -half_depth;
-  const T t_intersect_z_det = (z_intersect - source[2])*inv_slope_z;
-  const T t_intersect_z_src = (-z_intersect - source[2])*inv_slope_z;
-
-  const bool intersects_x_src = (t_intersect_x_src >= 0.0);
-  const bool intersects_y_src = (t_intersect_y_src >= 0.0);
-  const bool intersects_z_src = (t_intersect_z_src >= 0.0);
-
-  const bool x_before_y_src = (!intersects_y_src || (t_intersect_x_src <= t_intersect_y_src));
-  const bool x_before_z_src = (!intersects_z_src || (t_intersect_x_src <= t_intersect_z_src));
-  const bool y_before_z_src = (!intersects_z_src || (t_intersect_y_src <= t_intersect_z_src));
-
-  if( intersects_x_src && x_before_y_src && x_before_z_src )
+  // Entry = the last near plane crossed, exit = the first far plane; a ray parallel to an axis's
+  //  planes has to start inside that slab, and then does not constrain either.
+  T t_enter( 0.0 ), t_exit( 0.0 );
+  bool have_enter = false, have_exit = false;
+  for( int ax = 0; ax < 3; ++ax )
   {
-    // We are entering through the plane perpendicular to x-axis
-    const T src_intersect_x = ((norm[0] >= 0.0) ? -half_width : half_width);
-    const T src_intersect_y = source[1] + (t_intersect_x_src * norm[1]);
-    const T src_intersect_z = source[2] + (t_intersect_x_src * norm[2]);
-
-    if( (abs(src_intersect_y) > half_height)
-       || (abs(src_intersect_z) > half_depth) )
+    if( scalar_of(norm[ax]) == 0.0 )
     {
-      assert( std::min( std::min(scalar_of(t_intersect_x_src),scalar_of(t_intersect_y_src)),
-                        scalar_of(t_intersect_z_src) )
-              <= (std::min( std::min(scalar_of(t_intersect_x_det),scalar_of(t_intersect_y_det)),
-                            scalar_of(t_intersect_z_det) ) + 1.0E-9) );
-      return false;
+      if( std::fabs(scalar_of(source[ax])) > scalar_of(halves[ax]) )
+        return false;
+      continue;
     }
-
-    enter_point[0] = src_intersect_x;
-    enter_point[1] = src_intersect_y;
-    enter_point[2] = src_intersect_z;
-
-    assert( std::fabs( std::fabs(scalar_of(source[0]) + scalar_of(t_intersect_x_src)*scalar_of(norm[0]))
-                       - scalar_of(half_width) ) < scalar_of(half_width)*1.0E-9 );
-  }else if( intersects_y_src && y_before_z_src )
-  {
-    // We are entering through the plane perpendicular to y-axis
-    const T src_intersect_x = source[0] + (t_intersect_y_src * norm[0]);
-    const T src_intersect_y = ((norm[1] >= 0.0) ? -half_height : half_height);
-    const T src_intersect_z = source[2] + (t_intersect_y_src * norm[2]);
-
-    if( (abs(src_intersect_x) > half_width)
-       || (abs(src_intersect_z) > half_depth) )
+    const T t1 = (-halves[ax] - source[ax]) / norm[ax];
+    const T t2 = ( halves[ax] - source[ax]) / norm[ax];
+    const T &t_near = (scalar_of(t1) <= scalar_of(t2)) ? t1 : t2;
+    const T &t_far  = (scalar_of(t1) <= scalar_of(t2)) ? t2 : t1;
+    if( !have_enter || (scalar_of(t_near) > scalar_of(t_enter)) )
     {
-      assert( std::min( std::min(scalar_of(t_intersect_x_src),scalar_of(t_intersect_y_src)),
-                        scalar_of(t_intersect_z_src) )
-              <= (std::min( std::min(scalar_of(t_intersect_x_det),scalar_of(t_intersect_y_det)),
-                            scalar_of(t_intersect_z_det) ) + 1.0E-9) );
-      return false;
+      t_enter = t_near;
+      have_enter = true;
     }
-
-    enter_point[0] = src_intersect_x;
-    enter_point[1] = src_intersect_y;
-    enter_point[2] = src_intersect_z;
-
-    assert( std::fabs( std::fabs(scalar_of(source[1]) + scalar_of(t_intersect_y_src)*scalar_of(norm[1]))
-                       - scalar_of(half_height) ) < scalar_of(half_height)*1.0E-9 );
-  }else if( intersects_z_src )
-  {
-    // We are entering through the plane perpendicular to z-axis
-    const T src_intersect_x = source[0] + (t_intersect_z_src * norm[0]);
-    const T src_intersect_y = source[1] + (t_intersect_z_src * norm[1]);
-    const T src_intersect_z = ((norm[2] >= 0.0) ? -half_depth : half_depth);
-
-    if( (abs(src_intersect_x) > half_width)
-       || (abs(src_intersect_y) > half_height) )
+    if( !have_exit || (scalar_of(t_far) < scalar_of(t_exit)) )
     {
-      assert( std::min( std::min(scalar_of(t_intersect_x_src),scalar_of(t_intersect_y_src)),
-                        scalar_of(t_intersect_z_src) )
-              <= (std::min( std::min(scalar_of(t_intersect_x_det),scalar_of(t_intersect_y_det)),
-                            scalar_of(t_intersect_z_det) ) + 1.0E-9) );
-      return false;
+      t_exit = t_far;
+      have_exit = true;
     }
+  }//for( axes )
 
-    enter_point[0] = src_intersect_x;
-    enter_point[1] = src_intersect_y;
-    enter_point[2] = src_intersect_z;
+  if( !have_enter || (scalar_of(t_enter) > scalar_of(t_exit)) )
+    return false;   //misses the box
+  if( scalar_of(t_exit) <= 0.0 )
+    return false;   //the box is entirely behind the source
+  if( scalar_of(t_enter) < 0.0 )
+    t_enter = T(0.0);   //source on a face to round-off
 
-    assert( std::fabs( std::fabs(scalar_of(source[2]) + scalar_of(t_intersect_z_src)*scalar_of(norm[2]))
-                       - scalar_of(half_depth) ) < scalar_of(half_depth)*1.0E-9 );
-  }else
+  for( int i = 0; i < 3; ++i )
   {
-    return false;
-  }// if / else figure out where we are entering.
-
-  const bool intersects_x_det = (t_intersect_x_det >= 0.0);
-  const bool intersects_y_det = (t_intersect_y_det >= 0.0);
-  const bool intersects_z_det = (t_intersect_z_det >= 0.0);
-
-  const bool x_before_y_det = (!intersects_y_det || (t_intersect_x_det <= t_intersect_y_det));
-  const bool x_before_z_det = (!intersects_z_det || (t_intersect_x_det <= t_intersect_z_det));
-  const bool y_before_z_det = (!intersects_z_det || (t_intersect_y_det <= t_intersect_z_det));
-
-  if( intersects_x_det && x_before_y_det && x_before_z_det )
-  {
-    exit_point[0] = ((norm[0] >= 0.0) ? half_width : -half_width);
-    exit_point[1] = source[1] + (t_intersect_x_det * norm[1]);
-    exit_point[2] = source[2] + (t_intersect_x_det * norm[2]);
-
-    assert( std::fabs( std::fabs(scalar_of(source[0]) + scalar_of(t_intersect_x_det)*scalar_of(norm[0]))
-                       - scalar_of(half_width) ) < scalar_of(half_width)*1.0E-9 );
-  }else if( intersects_y_det && y_before_z_det )
-  {
-    exit_point[0] = source[0] + (t_intersect_y_det * norm[0]);
-    exit_point[1] = ((norm[1] >= 0.0) ? half_height : -half_height);
-    exit_point[2] = source[2] + (t_intersect_y_det * norm[2]);
-
-    assert( std::fabs( std::fabs(scalar_of(source[1]) + scalar_of(t_intersect_y_det)*scalar_of(norm[1]))
-                       - scalar_of(half_height) ) < scalar_of(half_height)*1.0E-9 );
-  }else if( intersects_z_det )
-  {
-    exit_point[0] = source[0] + (t_intersect_z_det * norm[0]);
-    exit_point[1] = source[1] + (t_intersect_z_det * norm[1]);
-    exit_point[2] = ((norm[2] >= 0.0) ? half_depth : -half_depth);
-
-    assert( std::fabs( std::fabs(scalar_of(source[2]) + scalar_of(t_intersect_z_det)*scalar_of(norm[2]))
-                       - scalar_of(half_depth) ) < scalar_of(half_depth)*1.0E-9 );
-  }else
-  {
-    // No exit face selected.  Reachable only if the entry test above accepted a ray the exit tests
-    //  then all rejected, which is a floating-point grazing case.  In Release the asserts vanish and
-    //  `exit_point` would be left UNINITIALISED, and the caller turns distance(enter,exit) straight
-    //  into an optical depth - so report a miss instead of handing back stack garbage.
-    assert( 0 );
-    exit_point[0] = enter_point[0];
-    exit_point[1] = enter_point[1];
-    exit_point[2] = enter_point[2];
-    return false;
-  }// if / else figure out where we are exiting.
+    enter_point[i] = source[i] + t_enter*norm[i];
+    exit_point[i] = source[i] + t_exit*norm[i];
+  }
 
   assert( std::fabs(scalar_of(enter_point[0])) <= (scalar_of(half_width)  + 1.0E-9) );
   assert( std::fabs(scalar_of(enter_point[1])) <= (scalar_of(half_height) + 1.0E-9) );
@@ -4314,6 +4215,12 @@ template<typename T>
 void integrate_volumetric_calculators( const std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> &calculators,
                                        const bool multithread );
 
+/** The effective-shielding components of every calculator (line path where it applies, else
+ #integrate_effective_shielding).  Defined in VolumetricLineIntegration_imp.hpp. */
+inline std::vector<EffShieldComponents> integrate_effective_shielding_all(
+                          const std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> &calculators,
+                          const bool multithread );
+
 
 template<typename T>
 std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::build_volumetric_calculators(
@@ -5176,9 +5083,13 @@ inline std::vector<EffectiveShieldingInfo> ShieldingSourceChi2Fcn::computeEffect
   std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> calculators
                 = build_volumetric_calculators<double>( params, mixturecache, energie_widths );
 
-  for( const std::unique_ptr<DistributedSrcCalcT<double>> &calc : calculators )
+  const std::vector<EffShieldComponents> all_comps
+                = integrate_effective_shielding_all( calculators, m_options.multithread_self_atten );
+
+  for( size_t i = 0; i < calculators.size(); ++i )
   {
-    const EffShieldComponents comps = integrate_effective_shielding( *calc );
+    const std::unique_ptr<DistributedSrcCalcT<double>> &calc = calculators[i];
+    const EffShieldComponents &comps = all_comps[i];
 
     EffectiveShieldingInfo info;
     info.nuclide = calc->m_nuclide;

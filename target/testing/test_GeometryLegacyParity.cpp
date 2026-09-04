@@ -255,8 +255,16 @@ BOOST_AUTO_TEST_CASE( CylinderLegacyParityBitwise )
 
 
 // ------------------------------------------------------------------------------------------------
-//  Case 2 - rectangle_intersections.  Templated version is an algorithmically identical
-//  transcription (it did NOT receive the zero-extent fix), so this is also bit-exact.
+//  Case 2 - rectangle_intersections.  Production is judged against the independent slab-traversal
+//  reference on EVERY ray; the legacy transcription is compared only where it reports a hit.
+//
+//  The legacy code (and the templated transcription, until 2026-09-03) took the FIRST near-plane
+//  crossing along the ray and reported a miss when that crossing fell outside its face - which is
+//  exactly a ray clipping a corner of the box, whose true entry is through a later plane.  Some 30%
+//  of the random intersections below are of that kind, and the legacy misses every one of them
+//  (`ShellWalkMatchesElementCentreRay` in test_VolumetricLinePath.cpp found it on a hollow box).
+//  Production now uses the slab method; the legacy's misses are counted and reported here so the
+//  size of the old defect stays on record.
 // ------------------------------------------------------------------------------------------------
 BOOST_AUTO_TEST_CASE( RectIntersectionsLegacyParityBitwise )
 {
@@ -268,7 +276,7 @@ BOOST_AUTO_TEST_CASE( RectIntersectionsLegacyParityBitwise )
   };
 
   Mismatch mm;
-  int num_checked = 0, num_hits = 0;
+  int num_checked = 0, num_hits = 0, num_legacy_missed = 0;
 
   for( const std::array<double,3> &half : boxes )
   {
@@ -289,10 +297,8 @@ BOOST_AUTO_TEST_CASE( RectIntersectionsLegacyParityBitwise )
       double source[3], detector[3];
 
       // Near-grazing rays (just off a face plane) are included on purpose - they are the hardest
-      //  branch-selection cases.  Rays lying *exactly* in a face plane are not: both implementations
-      //  share the `0*DBL_MAX == 0` formulation so they agree trivially, and the result is wrong in
-      //  a way the ported contract assert (rightly) aborts a Debug build on.  That case is
-      //  documented on its own in RectIntersectionsGrazingIsKnownWrong below.
+      //  branch-selection cases.  A ray lying *exactly* in a face plane is covered on its own in
+      //  RectIntersectionsGrazing below.
       if( (iter % 7) == 0 )
       {
         // Near-face ray: aim down an axis, offset a hair off a face plane.
@@ -334,63 +340,69 @@ BOOST_AUTO_TEST_CASE( RectIntersectionsLegacyParityBitwise )
       ctx << "rect-inter half=" << vec_str(half.data()) << " src=" << vec_str(source)
           << " det=" << vec_str(detector);
 
-      if( legacy_hit != prod_hit )
+      // Production against the independent slab-traversal reference: the definition of correct.
+      double ref_enter[3], ref_exit[3];
+      const bool ref_hit = GeomRef::reference_rect_intersections( half.data(), source, detector,
+                                                                  ref_enter, ref_exit );
+      if( prod_hit != ref_hit )
       {
         ++mm.count;
         if( mm.count <= sm_max_reported )
-          BOOST_ERROR( ctx.str() << ": hit flag " << legacy_hit << " vs " << prod_hit );
+          BOOST_ERROR( ctx.str() << ": production hit flag " << prod_hit << " vs reference " << ref_hit );
         continue;
       }
       ++num_checked;
 
-      if( !prod_hit )
-        continue;
-      ++num_hits;
-
-      mm.check_ray( 0.0, legacy_enter, 0.0, prod_enter, sm_bitwise_tol, ctx.str() + " enter" );
-      mm.check_ray( 0.0, legacy_exit, 0.0, prod_exit, sm_bitwise_tol, ctx.str() + " exit" );
-
-      // Invariants, and the independent slab-traversal reference.
-      BOOST_CHECK_MESSAGE( GeomRef::in_box( prod_enter, half.data(), 1.0E-9*scale ),
-                           ctx.str() << ": enter point outside box " << vec_str(prod_enter) );
-      BOOST_CHECK_MESSAGE( GeomRef::in_box( prod_exit, half.data(), 1.0E-9*scale ),
-                           ctx.str() << ": exit point outside box " << vec_str(prod_exit) );
-
-      double ref_enter[3], ref_exit[3];
-      if( GeomRef::reference_rect_intersections( half.data(), source, detector, ref_enter, ref_exit ) )
+      if( prod_hit )
       {
+        ++num_hits;
+        BOOST_CHECK_MESSAGE( GeomRef::in_box( prod_enter, half.data(), 1.0E-9*scale ),
+                             ctx.str() << ": enter point outside box " << vec_str(prod_enter) );
+        BOOST_CHECK_MESSAGE( GeomRef::in_box( prod_exit, half.data(), 1.0E-9*scale ),
+                             ctx.str() << ": exit point outside box " << vec_str(prod_exit) );
         mm.check_ray( 0.0, prod_enter, 0.0, ref_enter, 1.0E-12, ctx.str() + " enter vs reference" );
         mm.check_ray( 0.0, prod_exit, 0.0, ref_exit, 1.0E-12, ctx.str() + " exit vs reference" );
+      }
+
+      // Legacy: every hit it reports must be the same real one (one rounding apart - it forms t as
+      //  delta*(1/norm), production as delta/norm); the hits it misses are the corner-clipping rays.
+      if( legacy_hit )
+      {
+        if( !prod_hit )
+        {
+          ++mm.count;
+          if( mm.count <= sm_max_reported )
+            BOOST_ERROR( ctx.str() << ": legacy reports a hit the reference does not" );
+        }else
+        {
+          mm.check_ray( 0.0, legacy_enter, 0.0, prod_enter, 1.0E-12, ctx.str() + " legacy enter" );
+          mm.check_ray( 0.0, legacy_exit, 0.0, prod_exit, 1.0E-12, ctx.str() + " legacy exit" );
+        }
+      }else if( prod_hit )
+      {
+        ++num_legacy_missed;
       }
     }//for( iterations )
   }//for( each box )
 
   BOOST_TEST_MESSAGE( "RectIntersectionsLegacyParityBitwise: " << num_checked << " pairs, "
-                      << num_hits << " actual intersections" );
+                      << num_hits << " actual intersections, of which the legacy code missed "
+                      << num_legacy_missed << " (corner-clipping rays)" );
   BOOST_CHECK_EQUAL( mm.count, 0 );
+  BOOST_CHECK_MESSAGE( num_legacy_missed > 0,
+                       "the legacy copy no longer misses corner-clipping rays - was it edited?" );
 }//BOOST_AUTO_TEST_CASE( RectIntersectionsLegacyParityBitwise )
 
 
 // ------------------------------------------------------------------------------------------------
-//  Case 2b - a LATENT bug both implementations share, documented so it is not rediscovered.
-//
-//  rectangle_intersections_imp did NOT receive the zero-extent fix that rectangle_exit_location_imp
-//  did: it still forms `t = (intersect - source)*(1/norm)`.  When the ray lies exactly in a face
-//  plane (`norm[i] == 0` and `|source[i]| == half[i]`) that evaluates (0)*DBL_MAX == 0, so t == 0 is
-//  the winning "crossing" and the reported entry/exit points are just the source.
-//
-//  This is NOT reachable from production today - the sole caller (DistributedSrcCalc::eval_rect)
-//  passes a real box with both endpoints well outside it - so it is out of scope for this migration.
-//  The case exists so that whoever fixes rectangle_intersections_imp gets told to update it, and so
-//  the sweep above is honest about why it excludes exactly-grazing rays.
-//
-//  Release-only: the trailing `|exit_point| <= half + 1e-9` contract assert inside
-//  rectangle_intersections_imp catches this bad result and aborts a Debug build.  That assert is
-//  doing its job, and is a second, independent record that the bug is real - so the check below
-//  simply cannot run with asserts live.
+//  Case 2b - a ray lying EXACTLY in a face plane.  The legacy transcription formed
+//  `t = (intersect - source)*(1/norm)`, which for `norm[i] == 0` and `|source[i]| == half[i]`
+//  evaluates (0)*DBL_MAX == 0, so t == 0 won and the reported entry/exit was the source itself
+//  (the trailing contract assert aborted a Debug build on it).  The slab-method rewrite treats a
+//  parallel axis as "must start inside that slab, then unconstrained", which is the right answer:
+//  the ray grazes the +y face from x = -1 to x = +1.
 // ------------------------------------------------------------------------------------------------
-#ifdef NDEBUG
-BOOST_AUTO_TEST_CASE( RectIntersectionsGrazingIsKnownWrong )
+BOOST_AUTO_TEST_CASE( RectIntersectionsGrazing )
 {
   const double half[3] = { 1.0, 1.0, 1.0 };
   const double source[3] = { -5.0, 1.0, 0.0 };     //y is exactly on the +y face plane
@@ -404,21 +416,16 @@ BOOST_AUTO_TEST_CASE( RectIntersectionsGrazingIsKnownWrong )
   const bool ref_hit = GeomRef::reference_rect_intersections( half, source, detector,
                                                               ref_enter, ref_exit );
 
-  // The truth: the ray grazes the +y face from x=-1 to x=+1.
   BOOST_REQUIRE( ref_hit );
   BOOST_CHECK_CLOSE( ref_enter[0], -1.0, 1.0E-10 );
   BOOST_CHECK_CLOSE( ref_exit[0], 1.0, 1.0E-10 );
 
-  // What production actually does: reports a hit whose "exit" is the source point.
   BOOST_CHECK( hit );
-  BOOST_CHECK_MESSAGE( exit_pt[0] == source[0],
-      "rectangle_intersections no longer exhibits the grazing-ray `0*DBL_MAX == 0` bug (exit x = "
-      << exit_pt[0] << ", expected the buggy " << source[0] << ").  If rectangle_intersections_imp"
-      " was given the same short-circuit fix as rectangle_exit_location_imp, that is good - update"
-      " this case to assert the correct answer, and drop the `grazing` skip in"
-      " RectIntersectionsLegacyParityBitwise and the TODO in GammaInteractionCalc_imp.hpp." );
-}//BOOST_AUTO_TEST_CASE( RectIntersectionsGrazingIsKnownWrong )
-#endif //NDEBUG
+  BOOST_CHECK_CLOSE( enter_pt[0], -1.0, 1.0E-10 );
+  BOOST_CHECK_CLOSE( exit_pt[0], 1.0, 1.0E-10 );
+  BOOST_CHECK_CLOSE( enter_pt[1], 1.0, 1.0E-10 );
+  BOOST_CHECK_CLOSE( exit_pt[1], 1.0, 1.0E-10 );
+}//BOOST_AUTO_TEST_CASE( RectIntersectionsGrazing )
 
 
 // ------------------------------------------------------------------------------------------------

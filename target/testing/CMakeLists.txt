@@ -418,6 +418,18 @@ add_test( NAME TVolumetricLadder
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
 
+# The detector-side LINE integration path (VolumetricLineIntegration_imp.hpp) against the element
+#  path on the pieces the line path adds beyond the plain integral: the per-point shell walk that
+#  feeds the cascade correction and the effective-shielding report, and those reports themselves.
+#  No Monte Carlo; seconds.  Shares VolumetricNearFieldHarness.h with the ladder.
+add_executable( test_VolumetricLinePath test_VolumetricLinePath.cpp
+                VolumetricNearFieldHarness.h VolumetricNearFieldScenarios.h VolumetricNearFieldTruth.h )
+target_link_libraries( test_VolumetricLinePath PRIVATE InterSpecLib )
+add_test( NAME TVolumetricLinePath
+  COMMAND $<TARGET_FILE:test_VolumetricLinePath> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
+  WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
+)
+
 # Regenerating the CeeLo golden fixtures runs REAL Monte Carlo (several
 # minutes); opt in with -DINTERSPEC_REGEN_CEELO_GOLDENS=ON, then build the
 # `regen_ceelo_goldens` target.  Deterministic seeds: regenerated probe

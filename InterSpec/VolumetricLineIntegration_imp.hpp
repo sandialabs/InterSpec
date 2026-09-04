@@ -334,6 +334,116 @@ inline void line_shell_intervals_imp( const GeometryType geometry,
 }//line_shell_intervals_imp(...)
 
 
+/** The per-shell path a photon emitted at a point travels through on its way to the detector-side
+ point `o` along the straight line between them - the CENTRE-RAY convention of the element path's
+ shell walkers (eval_cylinder / eval_rect / eval_spherical), reproduced from the line intervals so
+ that the cascade correction (#build_cascade_field) and the effective-shielding report get the same
+ quantities on the line path that `record_path` / `record_generic` accumulate on the element path.
+ Filled by #shell_path_to_point_imp; consumed by #record_shell_path_imp.
+
+ With len_l = max(0, min(b_l, s_end) - a_l) the length of shell l's interval on the near side of the
+ emission point (s_end from `o`), the element conventions map as
+
+     element walker                                   here
+     inner Generic shell counted only when crossed    crossed[l]  (len_l > 0)
+     outer Generic shell unconditional                an outer shell always has len_l > 0
+     outer Material shell = its near segment          own_len[l] = len_l - len_{l-1} = a_{l-1} - a_l
+     inner Material shell = full nested chord         own_len[l] = len_l - len_{l-1}
+     source shell = its own near piece                own_len[m] = (s_end - a_m) - len_{m-1}
+     air = outermost shell's exit -> o                air = a[N-1]
+
+ A point inside an inner core (a cascade-field node can be one) is handled by the same rule: its
+ own shell's near piece is clipped at the point, and everything outside it is walked as usual.
+ `ShellWalkMatchesElementCentreRay` (test_VolumetricLadder.cpp) pins this table against the element
+ walkers directly - that test, not shared code, is what keeps the two in step. */
+template<typename T>
+struct ShellPathT
+{
+  std::vector<T> own_len;      //per shell: the path through that shell's OWN material
+  std::vector<char> crossed;   //per shell: whether the path enters the shell's dims at all
+  T air = T(0.0);              //from the outermost shell's exit to `o` (0 when nothing is crossed)
+};//struct ShellPathT
+
+
+/** Fills #ShellPathT for the point at distance `s_end` back along the line o - s d (d the unit
+ photon direction, i.e. pointing from the source toward `o`; `d` may be T-valued). */
+template<typename T>
+inline void shell_path_to_point_imp( const GeometryType geometry,
+                                     const std::vector<typename DistributedSrcCalcT<T>::ShellInfo> &shells,
+                                     const T o[3], const T d[3], const T &s_end,
+                                     ShellPathT<T> &out )
+{
+  const size_t num_shells = shells.size();
+  std::vector<T> a, b;
+  std::vector<char> crossed;
+  line_shell_intervals_imp( geometry, shells, o, d, a, b, crossed );
+
+  out.own_len.assign( num_shells, T(0.0) );
+  out.crossed.assign( num_shells, 0 );
+  out.air = T(0.0);
+
+  T len_inner( 0.0 );
+  for( size_t l = 0; l < num_shells; ++l )
+  {
+    if( !crossed[l] )
+      continue;
+    const T len = select_min( b[l], s_end ) - a[l];
+    if( scalar_of(len) <= 0.0 )
+      continue;   //the shell lies entirely beyond the emission point
+    out.own_len[l] = len - len_inner;
+    out.crossed[l] = 1;
+    len_inner = len;
+  }
+
+  if( num_shells && crossed[num_shells-1] )
+    out.air = a[num_shells-1];
+}//shell_path_to_point_imp(...)
+
+
+/** The same walk for a calculator's own geometry: from the emission point `point` (assembly frame)
+ to the detector position, using the calculator's shells. */
+template<typename T>
+inline void shell_path_from_point_imp( const DistributedSrcCalcT<T> &calc, const T point[3],
+                                       ShellPathT<T> &out )
+{
+  using namespace std;
+  using namespace ceres;
+  const T o[3] = { calc.m_detector.position[0], calc.m_detector.position[1], calc.m_detector.position[2] };
+  T d[3] = { o[0] - point[0], o[1] - point[1], o[2] - point[2] };
+  const T s_end = sqrt( d[0]*d[0] + d[1]*d[1] + d[2]*d[2] );
+  for( int i = 0; i < 3; ++i )
+    d[i] = d[i] / s_end;
+  shell_path_to_point_imp( calc.m_geometry, calc.m_shells, o, d, s_end, out );
+}//shell_path_from_point_imp(...)
+
+
+/** Loads a #ShellPathT into the calculator's per-ray scratch exactly as the element walkers do on
+ their centre ray: reset, then `record_path` / `record_generic` per crossed shell in index order,
+ then the air distance.  After this `cascade_correction_factor` can be called for that point. */
+template<typename T>
+inline void record_shell_path_imp( const DistributedSrcCalcT<T> &calc, const ShellPathT<T> &path )
+{
+  calc.reset_ray_accumulators();
+  for( size_t l = 0; l < calc.m_shells.size(); ++l )
+  {
+    if( !path.crossed[l] )
+      continue;
+    const typename DistributedSrcCalcT<T>::ShellInfo &shell = calc.m_shells[l];
+    switch( shell.type )
+    {
+      case ShellType::Material:
+        calc.record_path( shell, path.own_len[l] );
+        break;
+      case ShellType::Generic:
+        calc.record_generic( shell );
+        break;
+    }
+  }
+  if( calc.m_cascade )
+    calc.m_ray_air_dist = path.air;
+}//record_shell_path_imp(...)
+
+
 /** The response prefactor P(E; d, cos_theta, phi) = exp(ln_eta + ln_N + ln_k) tabulated on a
  crystal-frame grid for ONE energy, so the line integrand can look it up (in T, so the position
  derivative flows) instead of paying a PCHIP evaluation per chord node.  `d` is measured from the
@@ -884,16 +994,31 @@ inline void unit_gauss_legendre( const int n, const double *&x, const double *&w
  cache, normalization and in-situ settings) and differ only in energy-dependent coefficients:
  the per-line chord bookkeeping is done once, the energies innermost.  Fills `integral`,
  `m_num_evals` and `m_est_rel_error` on each.  Chunks of lines run on `pool` when given, and are
- reduced in a fixed order so the result does not depend on the thread count. */
+ reduced in a fixed order so the result does not depend on the thread count.
+
+ `eff_out` (T = double only): when given, receives one #EffShieldComponents per calculator,
+ accumulated in the same pass - every chord node's share of the integral times the areal density,
+ AN-weighted areal density, hydrogen areal density and the mu-weighted counterparts of ITS OWN path
+ to the detector (source near piece, core when the far piece looks through it, outer shells; no
+ air) - the per-line analogue of what `integrate_effective_shielding` accumulates on the element
+ path from each element's centre ray.  `c[0]` equals `integral`. */
 template<typename T>
 void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &group,
-                                  const bool multithread )
+                                  const bool multithread,
+                                  std::vector<EffShieldComponents> *eff_out = nullptr )
 {
   using namespace std;
   using namespace ceres;
 
   if( group.empty() )
     return;
+
+  const bool accumulate_eff = (eff_out != nullptr);
+  if constexpr( !std::is_same_v<T,double> )
+  {
+    if( accumulate_eff )
+      throw logic_error( "line_source_integration_imp: effective-shielding components are double-only" );
+  }
 
   DistributedSrcCalcT<T> &lead = *group.front();
   const std::shared_ptr<const VolumetricLineCache> cache = lead.m_lineCache;
@@ -909,7 +1034,7 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
     assert( calc->m_shells.size() == lead.m_shells.size() );
     assert( calc->m_isInSituExponential == lead.m_isInSituExponential );
     assert( calc->m_normalizeByVolume == lead.m_normalizeByVolume );
-    assert( !calc->m_cascade && !calc->m_accumulateEffectiveAnAd );
+    assert( !calc->m_cascade );
   }
 
   const size_t num_calc = group.size();
@@ -1036,6 +1161,8 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
   std::vector<std::vector<T>> partial( num_chunks, std::vector<T>( num_calc, T(0.0) ) );
   std::vector<std::vector<double>> partial_even( num_chunks, std::vector<double>( num_calc, 0.0 ) );
   std::vector<std::vector<double>> partial_odd( num_chunks, std::vector<double>( num_calc, 0.0 ) );
+  std::vector<std::vector<EffShieldComponents>> partial_eff( accumulate_eff ? num_chunks : 0,
+                                                             std::vector<EffShieldComponents>( num_calc ) );
 
   const auto do_chunk = [&]( const size_t chunk )
   {
@@ -1044,6 +1171,7 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
     std::vector<T> &acc = partial[chunk];
     std::vector<double> &acc_even = partial_even[chunk];
     std::vector<double> &acc_odd = partial_odd[chunk];
+    std::vector<EffShieldComponents> * const acc_eff = accumulate_eff ? &partial_eff[chunk] : nullptr;
 
     std::vector<T> a( num_shells ), b( num_shells );
     std::vector<char> crossed( num_shells );
@@ -1116,6 +1244,41 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
       const double w_line = cache->weight[j];
       const bool even = ((j & 1) == 0);
 
+      // Effective-shielding components: the density-weighted path outside the source (and through
+      //  the core, for the far piece) is the same for every calculator; the mu-weighted one is per
+      //  calculator, below.
+      double ad_out = 0.0, an_ad_out = 0.0, ad_h_out = 0.0, ad_core = 0.0, an_ad_core = 0.0, ad_h_core = 0.0;
+      if constexpr( std::is_same_v<T,double> )
+      {
+        if( acc_eff )
+        {
+          for( const std::pair<size_t,T> &ol : outer_len )
+          {
+            const double ad = shells[ol.first].density * ol.second;
+            ad_out += ad;
+            an_ad_out += shells[ol.first].effective_an * ad;
+            ad_h_out += shells[ol.first].hydrogen_mass_frac * ad;
+          }
+          for( const size_t l : outer_generic )
+          {
+            ad_out += shells[l].areal_density;
+            an_ad_out += shells[l].effective_an * shells[l].areal_density;
+          }
+          for( const std::pair<size_t,T> &cl : core_len )
+          {
+            const double ad = shells[cl.first].density * cl.second;
+            ad_core += ad;
+            an_ad_core += shells[cl.first].effective_an * ad;
+            ad_h_core += shells[cl.first].hydrogen_mass_frac * ad;
+          }
+          for( const size_t l : core_generic )
+          {
+            ad_core += shells[l].areal_density;
+            an_ad_core += shells[l].effective_an * shells[l].areal_density;
+          }
+        }
+      }
+
       for( size_t c = 0; c < num_calc; ++c )
       {
         const double k = (*kernels[c])[j];
@@ -1124,6 +1287,42 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
         const DistributedSrcCalcT<T> &calc = *group[c];
         const std::vector<typename DistributedSrcCalcT<T>::ShellInfo> &cs = calc.m_shells;
         const T mu_src = cs[m].fep_trans_len_coef;
+
+        // Per-calculator (TOTAL-mu weighted) effective-shielding sums, see record_path.
+        double mud_out = 0.0, an_mud_out = 0.0, mud_core = 0.0, an_mud_core = 0.0;
+        double rho_src = 0.0, an_src = 0.0, h_src = 0.0, mu_tot_src = 0.0;
+        if constexpr( std::is_same_v<T,double> )
+        {
+          if( acc_eff )
+          {
+            rho_src = cs[m].density;
+            an_src = cs[m].effective_an;
+            h_src = cs[m].hydrogen_mass_frac;
+            mu_tot_src = cs[m].trans_len_coef;
+            for( const std::pair<size_t,T> &ol : outer_len )
+            {
+              const double mud = cs[ol.first].trans_len_coef * ol.second;
+              mud_out += mud;
+              an_mud_out += cs[ol.first].effective_an * mud;
+            }
+            for( const size_t l : outer_generic )
+            {
+              mud_out += cs[l].trans_len_coef;
+              an_mud_out += cs[l].effective_an * cs[l].trans_len_coef;
+            }
+            for( const std::pair<size_t,T> &cl : core_len )
+            {
+              const double mud = cs[cl.first].trans_len_coef * cl.second;
+              mud_core += mud;
+              an_mud_core += cs[cl.first].effective_an * mud;
+            }
+            for( const size_t l : core_generic )
+            {
+              mud_core += cs[l].trans_len_coef;
+              an_mud_core += cs[l].effective_an * cs[l].trans_len_coef;
+            }
+          }
+        }
 
         // Transmission through everything outside the source, common to both pieces.
         T tau_out( 0.0 );
@@ -1153,12 +1352,40 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
             tau_beyond += mu_src * pieces[0].len;
           }
 
+          // Effective shielding: everything beyond this piece's own near path.
+          double ad_b = 0.0, an_ad_b = 0.0, ad_h_b = 0.0, mud_b = 0.0, an_mud_b = 0.0;
+          if constexpr( std::is_same_v<T,double> )
+          {
+            if( acc_eff )
+            {
+              ad_b = ad_out;
+              an_ad_b = an_ad_out;
+              ad_h_b = ad_h_out;
+              mud_b = mud_out;
+              an_mud_b = an_mud_out;
+              if( pc == 1 )
+              {
+                const double near_src = pieces[0].len;
+                ad_b += ad_core + rho_src*near_src;
+                an_ad_b += an_ad_core + an_src*rho_src*near_src;
+                ad_h_b += ad_h_core + h_src*rho_src*near_src;
+                mud_b += mud_core + mu_tot_src*near_src;
+                an_mud_b += an_mud_core + an_src*mu_tot_src*near_src;
+              }
+            }
+          }
+
           // Sub-pieces: an in-situ profile whose depth is NOT linear along the line (the radial
           //  ones) is carried by the quadrature rather than the exponent, so the chord is cut into
           //  enough pieces that the profile varies by at most ~one relaxation length across each.
           int nsub = 1;
           if( radial_profile )
             nsub = std::max( 1, std::min( 8, static_cast<int>( std::ceil( scalar_of(L)/relax ) ) ) );
+          // The effective-shielding pass (post-fit, once) takes the prefactor as constant across a
+          //  sub-piece when it weights the path length, so it cuts the chord finely enough for that
+          //  to hold at contact (P varies on the cm scale there).
+          if( accumulate_eff )
+            nsub = std::max( nsub, std::min( 32, static_cast<int>( std::ceil( scalar_of(L)/(0.25*cm) ) ) ) );
           const T sub_len = L / T(static_cast<double>(nsub));
 
           for( int sub = 0; sub < nsub; ++sub )
@@ -1189,6 +1416,10 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
           const T x = mu_eff * Lp;
           const T g = one_minus_exp_neg_over_x( x );
           const T y1 = exp( -x );
+
+          // Everything nearer the detector than this sub-piece attenuates it as well.
+          const T tau_sub = tau_beyond + mu_src*(s_lo - piece.s0);
+          const T pref = exp( -tau_sub ) * rho0 * Lp * g;
 
           // Average of the smooth remainder (prefactor P, radial-profile residual) over y in [y1,1].
           T mean( 0.0 );
@@ -1224,9 +1455,39 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
             mean += T(gl_w[n]) * val;
           }//for( GL nodes )
 
-          // Everything nearer the detector than this sub-piece attenuates it as well.
-          const T tau_sub = tau_beyond + mu_src*(s_lo - piece.s0);
-          line_sum += exp( -tau_sub ) * rho0 * Lp * g * mean;
+          line_sum += pref * mean;
+
+          if constexpr( std::is_same_v<T,double> )
+          {
+            if( acc_eff )
+            {
+              // This sub-piece's share of the integral, weighting the path from its emission points
+              //  to the detector: everything beyond the piece, the near source piece up to s_lo (the
+              //  same split as tau_sub), and the contribution-weighted mean of the remaining depth
+              //  ds.  That last one is the first moment of exp(-mu_eff ds) over [0, Lp] divided by
+              //  its zeroth, M1/M0 = (1 - (1+x)e^-x) / (mu_eff (1 - e^-x)), taken ANALYTICALLY: in
+              //  the y = exp(-mu_eff ds) substitution ds is -log(y)/mu_eff, and the two-point rule
+              //  that is exact for the smooth remainder under-integrates log(y) by 10% once the
+              //  chord is optically thick (measured: <AD> 10% low on a far steel source at 60 keV).
+              //  P is taken constant across the sub-piece for this weighting - a second-order
+              //  covariance the value itself does not have to make.
+              const double ws = w_line * k * pref * mean;
+              const double xs = x, mu = mu_eff;
+              double mean_ds;
+              if( std::fabs(xs) < 1.0e-4 )
+                mean_ds = Lp * (0.5 - xs/12.0);
+              else
+                mean_ds = (1.0 - (1.0 + xs)*std::exp(-xs)) / (mu*(1.0 - std::exp(-xs)));
+              const double src_path = (s_lo - piece.s0) + mean_ds;
+              EffShieldComponents &ec = (*acc_eff)[c];
+              ec.c[0] += ws;
+              ec.c[1] += ws * (ad_b + rho_src*src_path);
+              ec.c[2] += ws * (an_ad_b + an_src*rho_src*src_path);
+              ec.c[3] += ws * (ad_h_b + h_src*rho_src*src_path);
+              ec.c[4] += ws * (mud_b + mu_tot_src*src_path);
+              ec.c[5] += ws * (an_mud_b + an_src*mu_tot_src*src_path);
+            }
+          }
           }//for( sub-pieces )
         }//for( pieces )
 
@@ -1265,6 +1526,14 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
     group[c]->m_num_evals = num_lines;
     const double tot = std::fabs( scalar_of(total) );
     group[c]->m_est_rel_error = (tot > 0.0) ? (0.5*std::fabs(even - odd)/tot) : 0.0;
+  }
+
+  if( accumulate_eff )
+  {
+    eff_out->assign( num_calc, EffShieldComponents() );
+    for( size_t c = 0; c < num_calc; ++c )
+      for( size_t chunk = 0; chunk < num_chunks; ++chunk )
+        (*eff_out)[c] += partial_eff[chunk][c];
   }
 }//line_source_integration_imp(...)
 
@@ -1321,7 +1590,7 @@ bool line_path_applicable( const DistributedSrcCalcT<T> &calc )
 {
   if( sm_volumetric_integrator_override == VolumetricIntegrator::Element )
     return false;
-  if( !calc.m_effResponse || !calc.m_lineCache || calc.m_cascade || calc.m_accumulateEffectiveAnAd )
+  if( !calc.m_effResponse || !calc.m_lineCache || calc.m_cascade )
     return false;
   if( calc.m_effResponse->descriptor.collimator )
     return false;
@@ -1329,13 +1598,24 @@ bool line_path_applicable( const DistributedSrcCalcT<T> &calc )
 }//line_path_applicable(...)
 
 
-/** Integrates every calculator: line groups where the line path applies, the element path
- elsewhere.  A calculator whose source extent is below #sm_line_path_extent_ratio_floor is
- integrated through a floored copy (#floor_source_extent) and receives that copy's result.
- Replaces the per-calculator `self_shielding_integration_imp` loops in the fit and display paths. */
+/** How #integrate_volumetric_calculators and #integrate_effective_shielding_all split a set of
+ calculators: the element-path ones, the line groups (calculators sharing a line cache, in-situ
+ settings and normalisation - the per-line chord bookkeeping is shared within a group), and the
+ floored copies (#floor_source_extent) standing in for calculators whose source extent is below
+ #sm_line_path_extent_ratio_floor.  Group members and `element_only` point at the calculators
+ themselves, or at a floored copy; `floored` says which original each copy stands for. */
 template<typename T>
-void integrate_volumetric_calculators( const std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> &calculators,
-                                       const bool multithread )
+struct VolumetricPartitionT
+{
+  std::vector<DistributedSrcCalcT<T>*> element_only;
+  std::vector<std::vector<DistributedSrcCalcT<T>*>> line_groups;
+  std::vector<std::pair<DistributedSrcCalcT<T>*,std::unique_ptr<DistributedSrcCalcT<T>>>> floored;
+};//struct VolumetricPartitionT
+
+
+template<typename T>
+VolumetricPartitionT<T> partition_volumetric_calculators(
+                        const std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> &calculators )
 {
   using namespace std;
 
@@ -1352,9 +1632,8 @@ void integrate_volumetric_calculators( const std::vector<std::unique_ptr<Distrib
     }
   };
 
-  vector<DistributedSrcCalcT<T>*> element_only;
-  map<GroupKey,vector<DistributedSrcCalcT<T>*>> groups;
-  vector<pair<DistributedSrcCalcT<T>*,unique_ptr<DistributedSrcCalcT<T>>>> floored;   //(original, floored copy)
+  VolumetricPartitionT<T> part;
+  map<GroupKey,size_t> group_index;
 
   for( const unique_ptr<DistributedSrcCalcT<T>> &calc : calculators )
   {
@@ -1362,7 +1641,7 @@ void integrate_volumetric_calculators( const std::vector<std::unique_ptr<Distrib
     {
       if( sm_volumetric_integrator_override == VolumetricIntegrator::Line )
         throw runtime_error( "integrate_volumetric_calculators: line path forced but not applicable" );
-      element_only.push_back( calc.get() );
+      part.element_only.push_back( calc.get() );
       continue;
     }
 
@@ -1381,57 +1660,132 @@ void integrate_volumetric_calculators( const std::vector<std::unique_ptr<Distrib
       unique_ptr<DistributedSrcCalcT<T>> copy = make_unique<DistributedSrcCalcT<T>>( *calc );
       floor_source_extent( *copy, ext_floor );
       target = copy.get();
-      floored.emplace_back( calc.get(), std::move(copy) );
+      part.floored.emplace_back( calc.get(), std::move(copy) );
     }
 
     const GroupKey key{ target->m_lineCache.get(), target->m_isInSituExponential,
                         target->m_inSituRelaxationLength, target->m_normalizeByVolume };
-    groups[key].push_back( target );
-  }//for( calculators )
-
-  // Element-path calculators in parallel (one per task), as before.
-  if( !element_only.empty() )
-  {
-    if( multithread && (element_only.size() > 1) )
+    const auto pos = group_index.find( key );
+    if( pos == end(group_index) )
     {
-      std::mutex error_mutex;
-      std::exception_ptr first_error;
-      SpecUtilsAsync::ThreadPool pool;
-      for( DistributedSrcCalcT<T> *calc : element_only )
-      {
-        pool.post( [calc,&error_mutex,&first_error](){
-          try
-          {
-            self_shielding_integration_imp( *calc );
-          }catch( std::exception & )
-          {
-            std::lock_guard<std::mutex> lock( error_mutex );
-            if( !first_error )
-              first_error = std::current_exception();
-          }
-        } );
-      }
-      pool.join();
-      if( first_error )
-        std::rethrow_exception( first_error );
+      group_index[key] = part.line_groups.size();
+      part.line_groups.push_back( { target } );
     }else
     {
-      for( DistributedSrcCalcT<T> *calc : element_only )
-        self_shielding_integration_imp( *calc );
+      part.line_groups[pos->second].push_back( target );
     }
-  }//if( !element_only.empty() )
+  }//for( calculators )
+
+  return part;
+}//partition_volumetric_calculators(...)
+
+
+/** Runs the element path on each calculator (one task each when multithreaded), rethrowing the
+ first failure after the pool drains. */
+template<typename T>
+void integrate_element_calculators( const std::vector<DistributedSrcCalcT<T>*> &element_only,
+                                    const bool multithread )
+{
+  if( element_only.empty() )
+    return;
+
+  if( multithread && (element_only.size() > 1) )
+  {
+    std::mutex error_mutex;
+    std::exception_ptr first_error;
+    SpecUtilsAsync::ThreadPool pool;
+    for( DistributedSrcCalcT<T> *calc : element_only )
+    {
+      pool.post( [calc,&error_mutex,&first_error](){
+        try
+        {
+          self_shielding_integration_imp( *calc );
+        }catch( std::exception & )
+        {
+          std::lock_guard<std::mutex> lock( error_mutex );
+          if( !first_error )
+            first_error = std::current_exception();
+        }
+      } );
+    }
+    pool.join();
+    if( first_error )
+      std::rethrow_exception( first_error );
+  }else
+  {
+    for( DistributedSrcCalcT<T> *calc : element_only )
+      self_shielding_integration_imp( *calc );
+  }
+}//integrate_element_calculators(...)
+
+
+/** Integrates every calculator: line groups where the line path applies, the element path
+ elsewhere.  A calculator whose source extent is below #sm_line_path_extent_ratio_floor is
+ integrated through a floored copy (#floor_source_extent) and receives that copy's result.
+ Replaces the per-calculator `self_shielding_integration_imp` loops in the fit and display paths. */
+template<typename T>
+void integrate_volumetric_calculators( const std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> &calculators,
+                                       const bool multithread )
+{
+  using namespace std;
+
+  const VolumetricPartitionT<T> part = partition_volumetric_calculators( calculators );
+
+  integrate_element_calculators( part.element_only, multithread );
 
   // Line groups (each parallel over line chunks internally).
-  for( typename map<GroupKey,vector<DistributedSrcCalcT<T>*>>::value_type &g : groups )
-    line_source_integration_imp( g.second, multithread );
+  for( const vector<DistributedSrcCalcT<T>*> &g : part.line_groups )
+    line_source_integration_imp( g, multithread );
 
-  for( const pair<DistributedSrcCalcT<T>*,unique_ptr<DistributedSrcCalcT<T>>> &fl : floored )
+  for( const pair<DistributedSrcCalcT<T>*,unique_ptr<DistributedSrcCalcT<T>>> &fl : part.floored )
   {
     fl.first->integral = fl.second->integral;
     fl.first->m_num_evals = fl.second->m_num_evals;
     fl.first->m_est_rel_error = fl.second->m_est_rel_error;
   }
 }//integrate_volumetric_calculators(...)
+
+
+/** The effective-shielding components (#EffShieldComponents) of every calculator, in the
+ calculators' order - the post-fit diagnostic pass behind `computeEffectiveShielding`.  Line groups
+ accumulate them in one line pass (#line_source_integration_imp with `eff_out`); everything the line
+ path does not serve goes through the element path's #integrate_effective_shielding.  Same
+ partition, floor and override rules as #integrate_volumetric_calculators.
+
+ The two paths define the report differently, on purpose: the element path weights each element's
+ CENTRE-RAY path by the element's whole contribution, the line path weights every line's OWN path by
+ that line's contribution - the attenuation-weighted path of the photons actually detected.  They
+ coincide far from the detector (measured 0.2%) and differ at contact for an optically thick source,
+ where the line path's <AD> is LOWER (9-42% measured on steel at 1 cm; the short paths dominate
+ exp(-tau)).  EffectiveShieldingLineVsElement in test_VolumetricLinePath.cpp records both. */
+inline std::vector<EffShieldComponents> integrate_effective_shielding_all(
+                          const std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> &calculators,
+                          const bool multithread )
+{
+  using namespace std;
+
+  vector<EffShieldComponents> answer( calculators.size() );
+  map<const DistributedSrcCalcT<double>*,size_t> index;
+  for( size_t i = 0; i < calculators.size(); ++i )
+    index[calculators[i].get()] = i;
+
+  const VolumetricPartitionT<double> part = partition_volumetric_calculators( calculators );
+  for( const pair<DistributedSrcCalcT<double>*,unique_ptr<DistributedSrcCalcT<double>>> &fl : part.floored )
+    index[fl.second.get()] = index.at( fl.first );
+
+  for( DistributedSrcCalcT<double> *calc : part.element_only )
+    answer[index.at(calc)] = integrate_effective_shielding( *calc );
+
+  for( const vector<DistributedSrcCalcT<double>*> &g : part.line_groups )
+  {
+    vector<EffShieldComponents> comps;
+    line_source_integration_imp( g, multithread, &comps );
+    for( size_t c = 0; c < g.size(); ++c )
+      answer[index.at(g[c])] = comps[c];
+  }
+
+  return answer;
+}//integrate_effective_shielding_all(...)
 
 }//namespace GammaInteractionCalc
 
