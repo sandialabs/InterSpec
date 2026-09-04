@@ -703,6 +703,38 @@ inline SideHygiene side_hygiene( const std::vector<Sample> &samples,
  `evaluate` must return the objective difference from the same independently evaluated baseline, and
  may map the control coordinate to a different reported coordinate.
  */
+/** How far from the nominal the FIRST point of a side is placed.
+
+ The probe exists to measure delta chi2 at a KNOWN distance so the ladder can be rescaled; any
+ interior point does that job, so it sits at the local one sigma (shaved slightly, to stay inside
+ the eventual crossing), floored at a small fraction of the span when no usable sigma exists, and
+ held to a quarter of the span.  That clamp matters more than it looks: where the reported
+ quantity responds only weakly to the pinned coordinate, one sigma carried into that coordinate
+ can exceed the whole span, and an unclamped probe lands exactly ON the bound - an activity of
+ zero, say - where the model cannot be evaluated at all, so every ladder point clips to the same
+ unusable extreme and the side yields no samples.
+
+ SHARED ON PURPOSE: the pre-scan basin probe pass places its probes with this same function.  Its
+ whole justification is the measurement that ~93% of better-baseline discoveries happen at a
+ side's opening points, which holds only while the probe lands where the scan's first point would
+ - so there must be exactly one definition of "the first point".
+
+ @param one_sigma  Local one sigma in the scanned coordinate; non-finite or non-positive means
+                   none is available.
+ @param span       Distance from the nominal to that side's limit.
+ @returns The distance from the nominal, or 0.0 for a degenerate span.
+ */
+inline double opening_probe_distance( const double one_sigma, const double span )
+{
+  if( !std::isfinite(span) || (span <= 0.0) )
+    return 0.0;
+  const double distance = (std::isfinite(one_sigma) && (one_sigma > 0.0))
+                        ? (std::max)( 0.98*one_sigma, 0.02*span )
+                        : 0.02*span;
+  return (std::min)( distance, 0.25*span );
+}//double opening_probe_distance( const double, const double )
+
+
 inline ScanResult fit_profile( const double baseline_control,
                                const double baseline_reported,
                                const double lower_control,
@@ -877,17 +909,9 @@ inline ScanResult fit_profile( const double baseline_control,
 
     // --- Probe -------------------------------------------------------------------------------
     //
-    // The probe exists to measure delta chi2 at a KNOWN distance so the rescale can place the
-    // ladder; any interior point does that job.  It is therefore held to a quarter of the span,
-    // which matters more than it looks: where the reported quantity responds only weakly to the
-    // pinned coordinate, the one-sigma distance carried into that coordinate can exceed the whole
-    // span, and an unclamped probe then lands exactly ON the bound - an activity of zero, say -
-    // where the model cannot be evaluated at all.  Every ladder point would clip to the same
-    // unusable extreme and the side would produce no samples whatsoever.
-    double probe_distance = (std::isfinite(control_one_sigma) && (control_one_sigma > 0.0))
-                          ? (std::max)( 0.98*control_one_sigma, 0.02*span )
-                          : 0.02*span;
-    probe_distance = (std::min)( probe_distance, 0.25*span );
+    // See `opening_probe_distance`, which owns the placement rule (the pre-scan basin probe pass
+    // places its probes with the same function, so the two can never drift apart).
+    const double probe_distance = opening_probe_distance( control_one_sigma, span );
     const bool probe_usable = take( probe_distance );
     ++ladder_used;
     if( hard_failure )

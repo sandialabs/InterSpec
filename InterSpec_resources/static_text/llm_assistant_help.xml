@@ -63,6 +63,42 @@ conversation.
 </div>
 
 <div align="center" style="padding-top: 15px">
+<h2 id="llm-assistant-images"><b>Attaching Images</b></h2>
+</div>
+<div>
+<p>
+If the configured model supports vision, you can send an image along with your message &mdash; for
+example a photograph of an instrument display, a screenshot of another program, or a plot you want
+the assistant to interpret.  There are two ways to attach an image:
+</p>
+<ul>
+  <li><b>Drag&#8209;and&#8209;drop a file onto <b>InterSpec</b></b>: drop an image file (PNG, JPEG,
+      etc.) anywhere on the app window.  <b>InterSpec</b> shows the image, along with a
+      &quot;<b>Send to AI assistant</b>&quot; button; click it to attach the image to your next
+      message.  A thumbnail of the attached image appears just above the input field.</li>
+  <li><b>Paste into the input field</b>: copy an image to your clipboard (for example with a
+      screenshot tool) and paste it directly into the message input area with
+      <b>Ctrl&#8209;V</b> (<b>Cmd&#8209;V</b> on macOS).  A thumbnail appears above the input
+      field.  Pasting text works as normal &mdash; only image clipboard content is captured as an
+      attachment.</li>
+</ul>
+<p>
+You can type a message describing what you want (for example &quot;What isotope does this
+instrument readout suggest?&quot;) together with the attached image, then press <b>Enter</b> or
+the <b>Send</b> button.  To remove a staged image before sending, click the small remove control on
+its thumbnail.
+</p>
+<p>
+<b>Image size limits.</b>  To keep requests small, images are resized in your browser before being
+sent to the provider.  An image larger than <b>2048&nbsp;pixels</b> on its longest side is scaled
+down so its longest side is 2048&nbsp;pixels, preserving the aspect ratio; smaller images are sent
+at their original size.  PNG images are kept as PNG; other formats are re&#8209;encoded as JPEG (at
+about 85% quality).  Because of this resizing and re&#8209;encoding, very fine detail or text in a
+large image may be reduced &mdash; crop to the region of interest first if the details matter.
+</p>
+</div>
+
+<div align="center" style="padding-top: 15px">
 <h2 id="llm-assistant-menu"><b>Conversation Menu</b></h2>
 </div>
 <div>

@@ -122,6 +122,7 @@ public:
 protected:
   virtual void createBodyContent() override;
   virtual Wt::WString getTitleText() const override;
+  virtual void addMenuItems( PopupDivMenu *menu ) override;
 
 private:
   std::shared_ptr<LlmInteractionFinalResponse> m_response;

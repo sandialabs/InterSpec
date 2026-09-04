@@ -127,8 +127,16 @@ struct BenchmarkQuestionResult
   int score = 0;
   int maxScore = 0;
   std::string judgementReason;
+
+  // Token usage for this question, copied from the conversation the answer came
+  //  from (accumulated across the conversation's API calls, incl. sub-agents).
+  //  nullopt when the provider did not report usage.
   std::optional<size_t> promptTokens;
   std::optional<size_t> completionTokens;
+  std::optional<size_t> totalTokens;
+  std::optional<size_t> cachedTokens;        // Prompt tokens served from cache
+  std::optional<size_t> cacheCreationTokens; // Prompt tokens written to cache
+
   std::chrono::milliseconds duration{0};
   bool hadError = false;
   std::string errorMessage;
@@ -248,6 +256,23 @@ private:
   // Timing for current question
   std::chrono::system_clock::time_point m_questionStartTime;
 
+  // Token usage of the conversation the current question's answer came from,
+  //  captured in extractAnswerAndJudge() and applied to the result in
+  //  recordResult() (so every terminal path records tokens uniformly).  Reset
+  //  per question.
+  std::optional<size_t> m_lastQuestionPromptTokens;
+  std::optional<size_t> m_lastQuestionCompletionTokens;
+  std::optional<size_t> m_lastQuestionTotalTokens;
+  std::optional<size_t> m_lastQuestionCachedTokens;
+  std::optional<size_t> m_lastQuestionCacheCreationTokens;
+
+  // Incremental-checkpoint / resume state.  Set up in runFresh()/runResume().
+  std::string m_benchmarkHash;   // Truncated hash of the benchmark XML contents
+  std::string m_startTimeStr;    // Run start time as YYMMDDTHHMMSS (filename component)
+  std::string m_outputDir;       // <writableDataDirectory>/llm_benchmarks
+  std::string m_inProgressPath;  // Path of the in-progress checkpoint JSON we write to
+  size_t m_totalExpectedQuestions = 0;  // Sum of questions across all problems
+
 #if( PERFORM_DEVELOPER_CHECKS && BUILD_AS_LOCAL_SERVER )
   std::unique_ptr<std::ostream> m_log_file;
 #endif
@@ -326,6 +351,58 @@ private:
 
   /** Show results summary in a dialog and offer save. */
   void showResultsDialog();
+
+  /** Describes a previously-started, not-yet-finished run found on disk. */
+  struct InProgressRun
+  {
+    std::string path;          // Full path to the *_in_progress.json file
+    std::string startDisplay;  // Human-readable start time for the resume dialog
+    int numDone = 0;           // Questions already recorded
+    int totalExpected = 0;     // Total questions expected in the benchmark
+  };//struct InProgressRun
+
+  /** Parse XML, set up state, and run the benchmark from the start. */
+  void runFresh( const std::string &xmlFilePath );
+
+  /** Parse XML, load saved results from \p inProgressPath, and resume the run
+   from the first not-fully-completed problem. */
+  void runResume( const std::string &xmlFilePath, const std::string &inProgressPath );
+
+  /** Prompt the user to resume one of \p runs or start fresh. */
+  void promptResumeOrFresh( const std::string &xmlFilePath,
+                            const std::vector<InProgressRun> &runs );
+
+  /** Write the current results to the in-progress checkpoint file. */
+  void writeInProgressCheckpoint();
+
+  /** Write the final _results.json and remove the in-progress checkpoint. */
+  void finalizeResults();
+
+  /** Serialize results to a pretty-printed JSON string (used for checkpoint,
+   final results file, and the results dialog's copy button). */
+  static std::string resultsToJsonStr( const BenchmarkResults &results,
+                                       size_t resumeProblemIndex,
+                                       size_t totalExpected );
+
+  /** Load results from a checkpoint/results JSON file.  Returns false on error. */
+  static bool resultsFromJson( const std::string &path,
+                               BenchmarkResults &out,
+                               size_t &resumeProblemIndex,
+                               size_t &totalExpected );
+
+  /** Truncated hex hash of the benchmark XML file contents. */
+  static std::string computeBenchmarkHash( const std::string &xmlPath );
+
+  /** Base name of a benchmark XML file (filename with trailing ".xml" removed). */
+  static std::string benchmarkBaseName( const std::string &xmlPath );
+
+  /** The directory in-progress/results files are written to. */
+  static std::string benchmarkOutputDir();
+
+  /** Scan \p outputDir for *_in_progress.json files matching \p base and \p hash. */
+  static std::vector<InProgressRun> scanInProgress( const std::string &outputDir,
+                                                    const std::string &base,
+                                                    const std::string &hash );
 
   /** Disconnect LlmToolGui::handleSpectrumChanged for SpectrumSequence. */
   void disconnectSpectrumChangedHandler();

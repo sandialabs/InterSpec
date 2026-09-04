@@ -18,6 +18,7 @@
   <message id="dad-mi-decay-chain">Decay Chain</message>
   <message id="dad-mi-calc">Calculator</message>
   <message id="dad-arbitrary">Arbitrary</message>
+  <message id="dad-batch-decay">Batch Decay...</message>
   <message id="dad-time-span-label">Time Span:</message>
   <message id="dad-tt-age">
     <div>

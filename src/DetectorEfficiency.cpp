@@ -1105,8 +1105,10 @@ void DetectorEfficiencyCurve::setFromPairs(
   if( (energyUnits <= 0.0f) || IsNan(energyUnits) || IsInf(energyUnits) )
     throw runtime_error( "DetectorEfficiencyCurve::setFromPairs: invalid energy units" );
 
+  // Stable, so that of several points sharing an energy it is the first-given one that
+  //  the de-duplication below keeps.
   vector<DetectorPeakResponse::EnergyEfficiencyPair> sorted_pairs = pairs;
-  std::sort( begin(sorted_pairs), end(sorted_pairs) );
+  std::stable_sort( begin(sorted_pairs), end(sorted_pairs) );
 
   for( const DetectorPeakResponse::EnergyEfficiencyPair &p : sorted_pairs )
   {
@@ -1116,6 +1118,20 @@ void DetectorEfficiencyCurve::setFromPairs(
       throw runtime_error( "DetectorEfficiencyCurve::setFromPairs: energies and"
                            " efficiencies must be >= 0" );
   }
+
+  // Repeated energies must not reach the curve: DetectorPeakResponse::akimaInterpolate(...)
+  //  divides by the gaps between neighboring points, so a zero-width interval would give a
+  //  NaN efficiency over the surrounding energy range.
+  const auto same_energy = []( const DetectorPeakResponse::EnergyEfficiencyPair &lhs,
+                              const DetectorPeakResponse::EnergyEfficiencyPair &rhs ){
+    return DetectorPeakResponse::nearlySameEnergy( lhs.energy, rhs.energy );
+  };
+  sorted_pairs.erase( std::unique( begin(sorted_pairs), end(sorted_pairs), same_energy ),
+                      end(sorted_pairs) );
+
+  if( sorted_pairs.size() < 2 )
+    throw runtime_error( "DetectorEfficiencyCurve::setFromPairs: need at least two"
+                         " distinct energies" );
 
   m_form = DetectorPeakResponse::kEnergyEfficiencyPairs;
   m_energyUnits = energyUnits;

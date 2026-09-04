@@ -627,3 +627,316 @@ BOOST_AUTO_TEST_CASE( profile_target_coherence_is_checked_up_front )
   // ...but with independent ages, U238's own flag is what decides.
   BOOST_CHECK( !follower_age.why_not_usable(fitted_age_options).empty() );
 }
+
+
+/** Constraint shapes that leave no slot scanning the reported quantity exactly are rejected
+ UP FRONT by `why_not_usable`, mirroring the scan-time carrier-install refusals, so callers (and
+ the GUI) can warn before paying for a solve. */
+BOOST_AUTO_TEST_CASE( constraint_shapes_are_rejected_up_front )
+{
+  using Target = RelActCalcAuto::Options::ProfileTarget;
+  using Kind = Target::Kind;
+
+  initialize_decay_database();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const u234 = db->nuclide("U234");
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
+  const SandiaDecay::Nuclide * const cs137 = db->nuclide("Cs137");
+  BOOST_REQUIRE( u234 && u235 && u238 && cs137 );
+
+  const auto input_for = []( const SandiaDecay::Nuclide * const nuc ) {
+    RelActCalcAuto::NucInputInfo input;
+    input.source = nuc;
+    input.age = 0.0;
+    input.fit_age = false;
+    return input;
+  };
+
+  RelActCalcAuto::RelEffCurveInput curve;
+  curve.nuclides = { input_for(u234),input_for(u235),input_for(u238),input_for(cs137) };
+  RelActCalcAuto::Options base_options;
+  base_options.rel_eff_curves = { curve };
+
+  Target u238_frac;
+  u238_frac.kind = Kind::MassFraction;
+  u238_frac.source = u238;
+  BOOST_REQUIRE_EQUAL( u238_frac.why_not_usable(base_options),string() );
+
+  const auto with_window = [&base_options,&input_for]( const SandiaDecay::Nuclide * const nuc,
+                                                       const double lower,const double upper ) {
+    RelActCalcAuto::Options options = base_options;
+    RelActCalcAuto::RelEffCurveInput::MassFractionConstraint constraint;
+    constraint.nuclide = nuc;
+    constraint.lower_mass_fraction = lower;
+    constraint.upper_mass_fraction = upper;
+    options.rel_eff_curves[0].mass_fraction_constraints.push_back( constraint );
+    return options;
+  };
+
+  // A windowed SIBLING makes the target unprofilable (the shared block's carrier pins the
+  // constrained total, not the target's fraction)...
+  BOOST_CHECK( !u238_frac.why_not_usable( with_window(u235,0.10,0.50) ).empty() );
+  // ...while the target's own window is the exactly-scannable sole-range chart.
+  Target u235_frac = u238_frac;
+  u235_frac.source = u235;
+  BOOST_CHECK_EQUAL( u235_frac.why_not_usable( with_window(u235,0.10,0.50) ),string() );
+  // A fixed target has no direction at all.
+  BOOST_CHECK( !u235_frac.why_not_usable( with_window(u235,0.30,0.30) ).empty() );
+  // An unconstrained target beside a FIXED sibling still has no exactly-scannable slot.
+  BOOST_CHECK( !u238_frac.why_not_usable( with_window(u235,0.30,0.30) ).empty() );
+
+  // Activity bounds / start values sit on the very slot the reparameterization would swap.
+  {
+    RelActCalcAuto::Options options = base_options;
+    options.rel_eff_curves[0].nuclides[2].min_rel_act = 0.0;
+    BOOST_CHECK( !u238_frac.why_not_usable(options).empty() );
+  }
+
+  // A ratio-constrained target's slot is inert for a mass fraction...
+  RelActCalcAuto::Options ratio_options = base_options;
+  {
+    RelActCalcAuto::RelEffCurveInput::ActRatioConstraint link;
+    link.controlling_source = u235;
+    link.constrained_source = u238;
+    link.constrained_to_controlled_activity_ratio = 2.0;
+    ratio_options.rel_eff_curves[0].act_ratio_constraints.push_back( link );
+  }
+  BOOST_CHECK( !u238_frac.why_not_usable(ratio_options).empty() );
+  // ...and the controlling same-element isotope is circular for a mass fraction too...
+  BOOST_CHECK( !u235_frac.why_not_usable(ratio_options).empty() );
+  // ...but a RELATIVE ACTIVITY of the constrained source stays profilable: the scan pins the
+  // chain root's slot, in which the reported activity is exactly linear.
+  Target u238_act = u238_frac;
+  u238_act.kind = Kind::RelativeActivity;
+  BOOST_CHECK_EQUAL( u238_act.why_not_usable(ratio_options),string() );
+
+  // A mass-fraction-constrained source's activity is not slot-linear.
+  Target u235_act = u238_act;
+  u235_act.source = u235;
+  BOOST_CHECK( !u235_act.why_not_usable( with_window(u235,0.10,0.50) ).empty() );
+
+  // Ratios: cross-curve is not gauge invariant; rigid links make the ratio a model constant.
+  Target cs_over_u235;
+  cs_over_u235.kind = Kind::ActivityRatio;
+  cs_over_u235.source = cs137;
+  cs_over_u235.denominator = u235;
+  BOOST_CHECK_EQUAL( cs_over_u235.why_not_usable(base_options),string() );
+  Target cross_curve = cs_over_u235;
+  cross_curve.denominator_curve_index = 1;
+  {
+    RelActCalcAuto::Options two_curves = base_options;
+    two_curves.rel_eff_curves.push_back( base_options.rel_eff_curves[0] );
+    BOOST_CHECK( !cross_curve.why_not_usable(two_curves).empty() );
+  }
+  Target linked_ratio;
+  linked_ratio.kind = Kind::ActivityRatio;
+  linked_ratio.source = u238;
+  linked_ratio.denominator = u235;
+  BOOST_CHECK( !linked_ratio.why_not_usable(ratio_options).empty() );
+}
+
+
+/** `Options::profile_targets` round-trips through XML, gates the v6 version bump, and feeds the
+ options-level usability check. */
+BOOST_AUTO_TEST_CASE( profile_targets_round_trip_and_gate_versioning )
+{
+  using RelActCalcAuto::Options;
+  using Target = Options::ProfileTarget;
+  using Kind = Target::Kind;
+
+  initialize_decay_database();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
+  BOOST_REQUIRE( u235 && u238 );
+
+  // An empty target list adds no element and keeps the default (v2) serialization.
+  Options defaults;
+  rapidxml::xml_document<char> default_doc;
+  const rapidxml::xml_node<char> * const default_node = defaults.toXml( new_root(default_doc) );
+  BOOST_REQUIRE( default_node );
+  BOOST_CHECK_EQUAL( xml_version(default_node), 2 );
+  BOOST_CHECK( !default_node->first_node("ProfileTargets") );
+
+  Options with_targets;
+  Target frac;
+  frac.kind = Kind::MassFraction;
+  frac.source = u235;
+  frac.rel_eff_curve_index = 0;
+  Target ratio;
+  ratio.kind = Kind::ActivityRatio;
+  ratio.source = u238;
+  ratio.denominator = u235;
+  with_targets.profile_targets = { frac,ratio };
+
+  rapidxml::xml_document<char> doc;
+  const rapidxml::xml_node<char> * const node = with_targets.toXml( new_root(doc) );
+  BOOST_REQUIRE( node );
+  BOOST_CHECK_EQUAL( xml_version(node), 6 );
+  BOOST_REQUIRE( node->first_node("ProfileTargets") );
+
+  Options restored;
+  BOOST_REQUIRE_NO_THROW( restored.fromXml(node) );
+  BOOST_REQUIRE_EQUAL( restored.profile_targets.size(), 2U );
+  BOOST_CHECK( restored.profile_targets[0] == frac );
+  BOOST_CHECK( restored.profile_targets[1] == ratio );
+  BOOST_CHECK( restored.profile_targets == with_targets.profile_targets );
+
+  // An explicitly requested target that cannot be scanned fails the options check up front, with
+  // the target's own reason.
+  RelActCalcAuto::NucInputInfo u235_input;
+  u235_input.source = u235;
+  u235_input.age = 0.0;
+  u235_input.fit_age = false;
+  RelActCalcAuto::NucInputInfo u238_input = u235_input;
+  u238_input.source = u238;
+  RelActCalcAuto::RelEffCurveInput curve;
+  curve.nuclides = { u235_input,u238_input };
+  RelActCalcAuto::RoiRange roi;
+  roi.lower_energy = 100.0;
+  roi.upper_energy = 210.0;
+  Options solve_options;
+  solve_options.rel_eff_curves = { curve };
+  solve_options.rois = { roi };
+  solve_options.profile_targets = { frac };
+  BOOST_CHECK_EQUAL( solve_options.why_not_usable(),string() );
+  Target bad = frac;
+  bad.kind = Kind::Age;                       //no age is being fitted
+  solve_options.profile_targets = { bad };
+  BOOST_CHECK( !solve_options.why_not_usable().empty() );
+}
+
+
+/** The shape that used to be an uncatchable crash: an activity ratio whose DENOMINATOR is a
+ mass-fraction-constrained isotope of the numerator's own element.  With the link installed the
+ numerator evaluates as `r * activity(denominator)`, and the denominator's sigma-block decode sums
+ the element's unconstrained members - the numerator among them - so the evaluation re-enters the
+ link and recurses until the stack dies.  It must be refused up front, before any solve. */
+BOOST_AUTO_TEST_CASE( circular_ratio_denominator_is_refused_before_solving )
+{
+  using Target = RelActCalcAuto::Options::ProfileTarget;
+  using Kind = Target::Kind;
+
+  initialize_decay_database();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const u234 = db->nuclide("U234");
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
+  const SandiaDecay::Nuclide * const cs137 = db->nuclide("Cs137");
+  BOOST_REQUIRE( u234 && u235 && u238 && cs137 );
+
+  const auto input_for = []( const SandiaDecay::Nuclide * const nuc ) {
+    RelActCalcAuto::NucInputInfo input;
+    input.source = nuc;
+    input.age = 0.0;
+    input.fit_age = false;
+    return input;
+  };
+
+  RelActCalcAuto::RelEffCurveInput curve;
+  curve.nuclides = { input_for(u234), input_for(u235), input_for(u238), input_for(cs137) };
+  RelActCalcAuto::Options options;
+  options.rel_eff_curves = { curve };
+
+  Target ratio;
+  ratio.kind = Kind::ActivityRatio;
+  ratio.source = u238;          //numerator: unconstrained, so its slot can carry the ratio
+  ratio.denominator = u234;
+  BOOST_CHECK_EQUAL( ratio.why_not_usable(options), string() );
+
+  // Constraining the DENOMINATOR, an isotope of the numerator's element, closes the cycle.
+  RelActCalcAuto::Options circular = options;
+  RelActCalcAuto::RelEffCurveInput::MassFractionConstraint window;
+  window.nuclide = u234;
+  window.lower_mass_fraction = 0.0001;
+  window.upper_mass_fraction = 0.01;
+  circular.rel_eff_curves[0].mass_fraction_constraints.push_back( window );
+  BOOST_CHECK_MESSAGE( !ratio.why_not_usable(circular).empty(),
+      "a mass-fraction-constrained same-element denominator must be refused" );
+
+  // The same constraint on a DIFFERENT element's source cannot recurse, so it stays usable.
+  RelActCalcAuto::Options other_element = options;
+  Target cs_ratio;
+  cs_ratio.kind = Kind::ActivityRatio;
+  cs_ratio.source = cs137;
+  cs_ratio.denominator = u235;
+  RelActCalcAuto::RelEffCurveInput::MassFractionConstraint u235_window;
+  u235_window.nuclide = u235;
+  u235_window.lower_mass_fraction = 0.10;
+  u235_window.upper_mass_fraction = 0.50;
+  other_element.rel_eff_curves[0].mass_fraction_constraints.push_back( u235_window );
+  BOOST_CHECK_EQUAL( cs_ratio.why_not_usable(other_element), string() );
+
+  // An explicit request for the circular shape fails the whole solve's options check rather than
+  // reaching the engine.
+  circular.profile_targets = { ratio };
+  RelActCalcAuto::RoiRange roi;
+  roi.lower_energy = 100.0;
+  roi.upper_energy = 210.0;
+  circular.rois = { roi };
+  BOOST_CHECK( !circular.why_not_usable().empty() );
+}
+
+
+/** Every profile enum spells itself through one shared `to_str`, and a target names itself one
+ way, so the report, the LLM tool, warnings, and the text summary cannot drift apart. */
+BOOST_AUTO_TEST_CASE( profile_enum_and_target_naming_is_single_sourced )
+{
+  using Solution = RelActCalcAuto::RelActAutoSolution;
+  using Target = RelActCalcAuto::Options::ProfileTarget;
+
+  initialize_decay_database();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE( db );
+  const SandiaDecay::Nuclide * const u235 = db->nuclide("U235");
+  const SandiaDecay::Nuclide * const u238 = db->nuclide("U238");
+  BOOST_REQUIRE( u235 && u238 );
+
+  const Solution::MassFractionProfileStatus statuses[] = {
+    Solution::MassFractionProfileStatus::NotRequested,
+    Solution::MassFractionProfileStatus::Complete,
+    Solution::MassFractionProfileStatus::BoundaryLimited,
+    Solution::MassFractionProfileStatus::NonIdentifiable,
+    Solution::MassFractionProfileStatus::Failed };
+  set<string> status_names;
+  for( const Solution::MassFractionProfileStatus status : statuses )
+  {
+    const string name = Solution::to_str(status);
+    BOOST_CHECK( !name.empty() );
+    status_names.insert( name );
+  }
+  BOOST_CHECK_EQUAL( status_names.size(), 5U );
+
+  // A synthetic scan cap is NOT a feasibility bound, so it must not spell itself as one.
+  const Solution::MassFractionProfileEndpointKind kinds[] = {
+    Solution::MassFractionProfileEndpointKind::LikelihoodCrossing,
+    Solution::MassFractionProfileEndpointKind::PhysicalLimit,
+    Solution::MassFractionProfileEndpointKind::InputConstraintLimit,
+    Solution::MassFractionProfileEndpointKind::ScanRangeLimit };
+  set<string> kind_names;
+  for( const Solution::MassFractionProfileEndpointKind kind : kinds )
+    kind_names.insert( Solution::to_str(kind) );
+  BOOST_CHECK_EQUAL( kind_names.size(), 4U );
+  BOOST_CHECK( string(Solution::to_str(Solution::MassFractionProfileEndpointKind::ScanRangeLimit))
+               != string(Solution::to_str(Solution::MassFractionProfileEndpointKind::PhysicalLimit)) );
+
+  Target frac;
+  frac.kind = Target::Kind::MassFraction;
+  frac.source = u235;
+  BOOST_CHECK_EQUAL( frac.display_name(), "U235 MassFraction" );
+
+  Target ratio;
+  ratio.kind = Target::Kind::ActivityRatio;
+  ratio.source = u235;
+  ratio.denominator = u238;
+  BOOST_CHECK_EQUAL( ratio.display_name(), "U235/U238 ActivityRatio" );
+
+  Target activity;
+  activity.kind = Target::Kind::RelativeActivity;
+  activity.source = u238;
+  BOOST_CHECK_EQUAL( activity.display_name(), "U238 RelativeActivity" );
+}

@@ -5760,8 +5760,77 @@ void RelActAutoGui::updateSpectrumToDefaultEnergyRange()
 }//void updateSpectrumToDefaultEnergyRange()
 
 
+void RelActAutoGui::updateProfileEligibility()
+{
+  // Whether a source's profile can be honored is an OPTIONS-level property - a mass-fraction
+  // window on a SIBLING nuclide, or a ratio constraint, can leave a target with no slot that
+  // scans its reported quantity exactly - so it is evaluated against the fully assembled options
+  // and pushed onto each force-profile checkbox.  The user then learns of the ineligibility, and
+  // its reason, BEFORE paying for a solve that could only report a structured Failed.
+  //
+  // Done here, in the render cycle, rather than from each nuclide's `updated()` signal: assembling
+  // the options walks every curve/nuclide/constraint widget, and the render cycle is where that
+  // walk happens once for the calculation anyway.
+  try
+  {
+    const RelActCalcAuto::Options options = getCalcOptions();
+    const int num_curves = m_rel_eff_nuclides_menu->count();
+    for( int rel_eff_index = 0; rel_eff_index < num_curves; ++rel_eff_index )
+    {
+      if( rel_eff_index >= static_cast<int>(options.rel_eff_curves.size()) )
+        break;
+      const RelActCalcAuto::RelEffCurveInput &curve = options.rel_eff_curves[rel_eff_index];
+      const vector<RelActAutoGuiNuclide *> nuc_displays = getNuclideDisplays( rel_eff_index );
+      for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+      {
+        if( !src_widget )
+          continue;
+        const RelActCalcAuto::SrcVariant src = src_widget->source();
+        if( RelActCalcAuto::is_null(src) )
+          continue;
+
+        const vector<RelActCalcAuto::Options::ProfileTarget::Kind> kinds
+            = RelActCalcAuto::profilable_quantity_kinds( options, src,
+                                                    static_cast<size_t>(rel_eff_index) );
+        const bool mass_frac_offered = std::find( begin(kinds), end(kinds),
+                                RelActCalcAuto::Options::ProfileTarget::Kind::MassFraction )
+                                != end(kinds);
+        const bool activity_offered = std::find( begin(kinds), end(kinds),
+                                RelActCalcAuto::Options::ProfileTarget::Kind::RelativeActivity )
+                                != end(kinds);
+        // The checkbox requests the mass fraction, or - ONLY for the sole isotope of an element,
+        // whose fraction is identically one - the relative activity.  A constraint-blocked mass
+        // fraction is never rerouted to an activity (that would silently answer a different
+        // question), so its checkbox disables with the reason instead; a fitted age alone is not
+        // what the checkbox asks for either.  This must agree with the solver's own substitution
+        // rule, which is why both ask `same_element_input_count`.
+        const bool sole_isotope = (RelActCalcAuto::same_element_input_count(
+                                       curve, RelActCalcAuto::nuclide(src) ) < 2);
+        const bool allowed = mass_frac_offered || (sole_isotope && activity_offered);
+
+        WString reason;
+        if( !allowed )
+        {
+          RelActCalcAuto::Options::ProfileTarget target;
+          target.kind = RelActCalcAuto::Options::ProfileTarget::Kind::MassFraction;
+          target.source = src;
+          target.rel_eff_curve_index = static_cast<size_t>(rel_eff_index);
+          reason = WString::fromUTF8( target.why_not_usable(options) );
+        }
+        src_widget->setProfileEligibility( allowed, reason );
+      }//for( RelActAutoGuiNuclide *src_widget : nuc_displays )
+    }//for( each rel eff curve )
+  }catch( const std::exception & )
+  {
+    // An incomplete configuration cannot be classified; leave the checkboxes as they are.
+  }
+}//void RelActAutoGui::updateProfileEligibility()
+
+
 void RelActAutoGui::updateDuringRenderForNuclideChange()
-{ 
+{
+  updateProfileEligibility();
+
   bool has_multiple_nucs_of_z = false;
   map<short,int> z_to_num_isotopes;
   
@@ -6613,7 +6682,36 @@ void RelActAutoGui::updateFromCalc( std::shared_ptr<RelActCalcAuto::RelActAutoSo
       {
       }
 
-      
+      // A profiled relative activity (an explicit request, or a forced sole-isotope source whose
+      // mass fraction is identically one) shows its bounded 68% band; the profile's message in
+      // the tooltip carries the gauge caveat - the interval is quoted per this fit's
+      // relative-activity normalization convention, not gauge-free.
+      {
+        RelActCalcAuto::Options::ProfileTarget act_target;
+        act_target.kind = RelActCalcAuto::Options::ProfileTarget::Kind::RelativeActivity;
+        act_target.source = src;
+        act_target.rel_eff_curve_index = rel_eff_index;
+        const RelActCalcAuto::RelActAutoSolution::ProfileResultEntry * const act_profile
+            = m_solution->profile_result( act_target );
+        if( act_profile )
+        {
+          for( const auto &interval : act_profile->profile.intervals )
+          {
+            if( std::fabs(interval.confidence_level - 0.6827) < 0.01 )
+            {
+              const string interval_str = " (68%: "
+                              + SpecUtils::printCompact(interval.lower, 4) + "–"
+                              + SpecUtils::printCompact(interval.upper, 4) + ")";
+              summary_text += interval_str;
+              tooltip_text += interval_str;
+              break;
+            }
+          }
+          if( !act_profile->profile.message.empty() )
+            tooltip_text += "; " + act_profile->profile.message;
+        }//if( act_profile )
+      }
+
       if( fit_nuc.age_was_fit )
       {
         const string agestr = PhysicalUnitsLocalized::printToBestTimeUnits( fit_nuc.age, 3 );

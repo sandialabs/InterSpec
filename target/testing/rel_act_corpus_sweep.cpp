@@ -671,16 +671,13 @@ int main( int argc, char **argv )
           }
         }
 
-        for( const auto &curve_profiles : solution.m_mass_fraction_profiles )
+        for( const Solution::ProfileResultEntry &entry : solution.m_profile_results )
         {
-          for( const auto &entry : curve_profiles )
-          {
-            max_profile_fits = (std::max)(max_profile_fits,entry.second.num_fits);
-            if( entry.second.status == Solution::MassFractionProfileStatus::Failed )
-              ++profiles_failed;
-            else
-              ++profiles_complete;
-          }
+          max_profile_fits = (std::max)(max_profile_fits,entry.profile.num_fits);
+          if( entry.profile.status == Solution::MassFractionProfileStatus::Failed )
+            ++profiles_failed;
+          else
+            ++profiles_complete;
         }
       }
 

@@ -108,6 +108,7 @@
 #include "InterSpec/D3TimeChart.h"
 #include "InterSpec/DecayWindow.h"
 #include "InterSpec/InterSpecApp.h"
+#include "InterSpec/DecayBatchCalcWidget.h"
 #include "InterSpec/SimpleDialog.h"
 #include "InterSpec/PeakFitUtils.h"
 #include "InterSpec/PeakFitDetPrefs.h"
@@ -513,6 +514,7 @@ InterSpec::InterSpec()
   m_licenseWindow( nullptr ),
   m_useInfoWindow( 0 ),
   m_decayInfoWindow( nullptr ),
+  m_decayBatchCalc( nullptr ),
   m_addFwhmTool( nullptr ),
   m_mcResponseTool( nullptr ),
   m_preserveCalibWindow( 0 ),
@@ -1406,6 +1408,7 @@ InterSpec::~InterSpec() noexcept(true)
   AuxWindow::deleteAuxWindow( m_helpWindow.get() );
   AuxWindow::deleteAuxWindow( m_useInfoWindow.get() );
   AuxWindow::deleteAuxWindow( m_decayInfoWindow.get() );
+  AuxWindow::deleteAuxWindow( m_decayBatchCalc.get() );
   AuxWindow::deleteAuxWindow( m_addFwhmTool.get() );
   AuxWindow::deleteAuxWindow( m_preserveCalibWindow.get() );
   AuxWindow::deleteAuxWindow( m_drfSelectWindow.get() );
@@ -1691,6 +1694,8 @@ void InterSpec::layoutSizeChanged( int w, int h )
           deleteWelcomeDialog( true );
         if( m_decayInfoWindow )
           deleteDecayInfoWindow();
+        if( m_decayBatchCalc )
+          deleteDecayBatchCalcWindow();
         if( m_addFwhmTool )
           deleteFwhmFromForegroundWindow();
         if( m_mcResponseTool )
@@ -3797,6 +3802,12 @@ void InterSpec::saveStateToDb( Wt::Dbo::ptr<UserState> entry )
       entry.modify()->shownDisplayFeatures |= UserState::kShowingNucDecayInfo;
       entry.modify()->nucDecayInfoUri = m_decayInfoWindow->encodeStateToUrl();
     }
+
+    if( m_decayBatchCalc )
+    {
+      entry.modify()->shownDisplayFeatures |= UserState::kShowingDecayBatch;
+      entry.modify()->decayBatchUri = m_decayBatchCalc->encodeStateToUrl();
+    }
     
     if( m_gammaCountDialog )
     {
@@ -4467,6 +4478,20 @@ void InterSpec::loadStateFromDb( Wt::Dbo::ptr<UserState> entry )
         cerr << "Failed to set decay info GUI state with error: " << e.what() << endl;
       }
     }//if( show nuclide decay window )
+
+    if( (entry->shownDisplayFeatures & UserState::kShowingDecayBatch)
+       && !entry->decayBatchUri.empty() )
+    {
+      try
+      {
+        DecayBatchCalcWindow *batch = createDecayBatchCalcWindow();
+        if( batch )
+          batch->handleAppUrl( entry->decayBatchUri );
+      }catch( std::exception &e )
+      {
+        cerr << "Failed to set batch decay GUI state with error: " << e.what() << endl;
+      }
+    }//if( show batch decay window )
     
     if( (entry->shownDisplayFeatures & UserState::kShowingEnergyRangeSum)
        && !entry->energyRangeSumUri.empty() )
@@ -9865,6 +9890,67 @@ void InterSpec::deleteDecayInfoWindow()
 }//void deleteDecayInfoWindow()
 
 
+DecayBatchCalcWindow *InterSpec::createDecayBatchCalcWindow()
+{
+  string initial_uri;
+
+  if( m_decayBatchCalc )
+  {
+    initial_uri = m_decayBatchCalc->encodeStateToUrl();
+  }else
+  {
+    m_decayBatchCalc = AuxWindow::make<DecayBatchCalcWindow>( this );
+    m_decayBatchCalc->finished().connect( this, [this](){ deleteDecayBatchCalcWindow(); } );
+
+    // Only position/show when newly created; calling this to look the tool back up (e.g. an in-tool
+    //  undo/redo restore, which fires many times) must not re-center the already-open window.
+    m_decayBatchCalc->show();
+    m_decayBatchCalc->resizeToFitOnScreen();
+    m_decayBatchCalc->centerWindowHeavyHanded();
+  }
+
+  if( m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    auto undo = [this,initial_uri](){
+      if( initial_uri.empty() )
+      {
+        deleteDecayBatchCalcWindow();
+      }else
+      {
+        DecayBatchCalcWindow *dialog = createDecayBatchCalcWindow();
+        if( dialog )
+          dialog->handleAppUrl( initial_uri );
+      }
+    };
+    auto redo = [this](){ createDecayBatchCalcWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Show batch decay tool" );
+  }//if( undo )
+
+  return m_decayBatchCalc.get();
+}//DecayBatchCalcWindow *createDecayBatchCalcWindow()
+
+
+void InterSpec::deleteDecayBatchCalcWindow()
+{
+  if( m_decayBatchCalc && m_undo && m_undo->canAddUndoRedoNow() )
+  {
+    const string initial_uri = m_decayBatchCalc->encodeStateToUrl();
+
+    auto undo = [this,initial_uri](){
+      DecayBatchCalcWindow *dialog = createDecayBatchCalcWindow();
+      if( dialog )
+        dialog->handleAppUrl( initial_uri );
+    };
+    auto redo = [this](){ deleteDecayBatchCalcWindow(); };
+    m_undo->addUndoRedoStep( std::move(undo), std::move(redo), "Close batch decay tool" );
+  }//if( m_decayBatchCalc && m_undo && m_undo->canAddUndoRedoNow() )
+
+  if( m_decayBatchCalc )
+    AuxWindow::deleteAuxWindow( m_decayBatchCalc.get() );
+  assert( !m_decayBatchCalc );
+}//void deleteDecayBatchCalcWindow()
+
+
 void InterSpec::createFileParameterWindow( const SpecUtils::SpectrumType type )
 {
   SpecFileSummary *window = AuxWindow::make<SpecFileSummary>( type, this );
@@ -13145,6 +13231,11 @@ void InterSpec::handleAppUrl( const std::string &url_encoded_url )
     DecayWindow *decay = InterSpec::createDecayInfoWindow();
     if( decay )
       decay->handleAppUrl( path, query_str );
+  }else if( SpecUtils::iequals_ascii(host,"decaybatch") )
+  {
+    DecayBatchCalcWindow *batch = createDecayBatchCalcWindow();
+    if( batch )
+      batch->handleAppUrl( path, query_str );
   }else if( SpecUtils::iequals_ascii(host,"specexport") )
   {
     ExportSpecFileWindow *w = createExportSpectrumFileDialog();

@@ -32,7 +32,8 @@
   <message id="raagn-nuclide-tt">ex. <b>U235</b>, <b>235 Uranium</b>, <b>U-235m</b> (meta stable state), <b>Cs137</b>, Pb, Fe(n,n), etc.</message>
   <message id="raagn-remove-constraint-tt">Remove this constraint</message>
   <message id="raagn-add-constraint-tt">Add a constraint to this nuclide</message>
-  <message id="raagn-force-profile-tt">Always compute bounded profile-likelihood intervals for this nuclide's mass fraction, even when the local covariance appears reliable.</message>
+  <message id="raagn-force-profile-tt">Always compute bounded profile-likelihood intervals for this nuclide's mass fraction, even when the local covariance appears reliable.  For the only modeled isotope of its element (whose mass fraction is identically one), the relative activity is profiled instead.</message>
+  <message id="raagn-force-profile-ineligible-tt">This quantity cannot be profiled for the current configuration: {1}</message>
   
   <!-- Result summary -->
   <message id="raagn-result-pending">relative activity pending calculation update</message>

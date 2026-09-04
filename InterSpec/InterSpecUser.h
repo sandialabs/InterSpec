@@ -120,7 +120,7 @@ class InterSpecUser;
 //The database this InterSpec is using; if higher than database registry, will
 //  automatically update tables at next execution
 //  See DataBaseVersionUpgrade.cpp/.h
-#define DB_SCHEMA_VERSION 14
+#define DB_SCHEMA_VERSION 15
 
 
 namespace Wt
@@ -764,6 +764,7 @@ struct UserState
 #if( USE_LLM_INTERFACE )
   , kShowingLlmAssistant    = 0x200000
 #endif //USE_LLM_INTERFACE
+  , kShowingDecayBatch      = 0x400000
   };//enum ShownDisplayFeatures
   
   //UserState(): default constructor, initializes values to reasonable defaults
@@ -827,7 +828,8 @@ struct UserState
   std::string fluxToolUri;
   std::string detectionSensitivityToolUri;
   std::string simpleMdaUri;
-  
+  std::string decayBatchUri;
+
   int showingMarkers;        //bitwise or of FeatureMarkers (not implemented yet)
   int disabledNotifications; //bitwise or of (0x1<<WarningWidget::WarningMsgLevel)
   int showingPeakLabels;     //bitwise or of PeakLabels
@@ -897,6 +899,7 @@ struct UserState
     Wt::Dbo::field( a, fluxToolUri, "FluxToolUri" );
     Wt::Dbo::field( a, detectionSensitivityToolUri, "DetectionSensitivityToolUri" );
     Wt::Dbo::field( a, simpleMdaUri, "SimpleMdaUri" );
+    Wt::Dbo::field( a, decayBatchUri, "DecayBatchUri" );
   }//void persist( Action &a )
 };//struct UserState
 

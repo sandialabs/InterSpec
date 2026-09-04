@@ -73,11 +73,14 @@ BOOST_AUTO_TEST_CASE( pending_baseline_selection_is_independent_of_discovery_ord
 BOOST_AUTO_TEST_CASE( baseline_discoveries_are_deferred_for_exactly_one_profile_pass )
 {
   using Disposition = PL::BaselineDiscoveryDisposition;
-  BOOST_CHECK( PL::baseline_discovery_disposition(0)
-               == Disposition::DeferUntilPassComplete );
-  BOOST_CHECK( PL::baseline_discovery_disposition(1)
+  // Each accepted reselection must strictly lower the frozen objective, so descent is monotone;
+  // the budget is a runaway backstop, and exhausting it is an explicit failure.
+  for( unsigned restarts = 0; restarts < PL::sm_max_baseline_restarts; ++restarts )
+    BOOST_CHECK( PL::baseline_discovery_disposition(restarts)
+                 == Disposition::DeferUntilPassComplete );
+  BOOST_CHECK( PL::baseline_discovery_disposition(PL::sm_max_baseline_restarts)
                == Disposition::RejectAfterRestart );
-  BOOST_CHECK( PL::baseline_discovery_disposition(2)
+  BOOST_CHECK( PL::baseline_discovery_disposition(PL::sm_max_baseline_restarts + 1)
                == Disposition::RejectAfterRestart );
 
   // Mimic the production first pass: every eligible target can contribute before selection.  The
@@ -171,88 +174,6 @@ BOOST_AUTO_TEST_CASE( better_baseline_gate_clears_optimizer_noise_but_not_a_real
 }
 
 
-BOOST_AUTO_TEST_CASE( deferred_discoveries_order_best_first_independently_of_caller_order )
-{
-  // One warm seed cannot cover basins that different profile targets entered independently, so the
-  // single permitted reselection is offered several deterministic seeds.  The ordering must agree
-  // with the single-best selector on its first element, and must not depend on caller order.
-  const std::array<PL::PendingBaselineDiscovery,5> candidates{{
-      {3045.0,"curve-a|target=Pu239"},
-      {3044.5,"curve-a|target=Pu238"},
-      {std::numeric_limits<double>::quiet_NaN(),"curve-a|target=Pu241"},
-      {3044.8,"curve-a|target=Pu242"},
-      {-std::numeric_limits<double>::infinity(),"curve-a|target=Pu240"}
-  }};
-
-  std::array<std::size_t,5> permutation{{0,1,2,3,4}};
-  do
-  {
-    std::vector<PL::PendingBaselineDiscovery> permuted;
-    for( const std::size_t index : permutation )
-      permuted.push_back(candidates[index]);
-
-    const std::vector<std::size_t> order = PL::ordered_pending_baseline_discoveries(permuted);
-    // Both non-finite entries are dropped: neither can seed anything.
-    BOOST_REQUIRE_EQUAL( order.size(),3u );
-    BOOST_CHECK_EQUAL( permuted[order[0]].semantic_key,"curve-a|target=Pu238" );
-    BOOST_CHECK_EQUAL( permuted[order[1]].semantic_key,"curve-a|target=Pu242" );
-    BOOST_CHECK_EQUAL( permuted[order[2]].semantic_key,"curve-a|target=Pu239" );
-
-    // The many-seed and one-seed paths must never disagree about the winner.
-    const auto best = PL::best_pending_baseline_discovery_index(permuted);
-    BOOST_REQUIRE( best );
-    BOOST_CHECK_EQUAL( order.front(),*best );
-
-    for( std::size_t i = 1; i < order.size(); ++i )
-      BOOST_CHECK_LE( permuted[order[i-1]].full_objective,permuted[order[i]].full_objective );
-  }while( std::next_permutation(permutation.begin(),permutation.end()) );
-
-  BOOST_CHECK( PL::ordered_pending_baseline_discoveries({}).empty() );
-}
-
-
-BOOST_AUTO_TEST_CASE( deferred_discovery_ordering_breaks_exact_ties_semantically )
-{
-  const double objective = 3045.177;
-  const double strictly_lower = std::nextafter(objective,
-                                  -std::numeric_limits<double>::infinity());
-  const std::vector<PL::PendingBaselineDiscovery> candidates{
-      {objective,"0:Pu241"},
-      {objective,"0:Pu238"},
-      {strictly_lower,"0:Pu242"}
-  };
-  const std::vector<std::size_t> order = PL::ordered_pending_baseline_discoveries(candidates);
-  BOOST_REQUIRE_EQUAL( order.size(),3u );
-  // One representable step lower still beats every semantic key.
-  BOOST_CHECK_EQUAL( candidates[order[0]].semantic_key,"0:Pu242" );
-  BOOST_CHECK_EQUAL( candidates[order[1]].semantic_key,"0:Pu238" );
-  BOOST_CHECK_EQUAL( candidates[order[2]].semantic_key,"0:Pu241" );
-}
-
-
-BOOST_AUTO_TEST_CASE( deferred_discoveries_deduplicate_by_semantic_key_keeping_the_best )
-{
-  // Two profile targets routinely fall into the same basin; seeding the reselection twice from it
-  // wastes a bounded candidate slot that a genuinely different basin could have used.
-  const std::vector<PL::PendingBaselineDiscovery> candidates{
-      {3045.0,"curve-a|target=Pu239"},
-      {3044.5,"curve-a|target=Pu239"},
-      {3044.8,"curve-b|target=Pu239"},
-      {3044.9,"curve-a|target=Pu239"}
-  };
-  const std::vector<std::size_t> order = PL::ordered_pending_baseline_discoveries(candidates);
-  const std::vector<std::size_t> unique
-      = PL::unique_pending_baseline_discoveries(candidates,order);
-
-  BOOST_REQUIRE_EQUAL( order.size(),4u );
-  BOOST_REQUIRE_EQUAL( unique.size(),2u );
-  // The retained entry for a repeated key is that key's lowest objective, and overall order holds.
-  BOOST_CHECK_EQUAL( unique[0],1u );
-  BOOST_CHECK_EQUAL( candidates[unique[0]].full_objective,3044.5 );
-  BOOST_CHECK_EQUAL( candidates[unique[1]].semantic_key,"curve-b|target=Pu239" );
-
-  BOOST_CHECK( PL::unique_pending_baseline_discoveries(candidates,{}).empty() );
-}
 
 
 

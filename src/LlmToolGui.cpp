@@ -14,8 +14,8 @@
 #include <Wt/WText.h>
 #include <Wt/WImage.h>
 #include <Wt/WAnchor.h>
+#include <Wt/WTextArea.h>
 #include <Wt/WResource.h>
-#include <Wt/WLineEdit.h>
 #include <Wt/WPushButton.h>
 #include <Wt/WGridLayout.h>
 #include <Wt/WApplication.h>
@@ -23,6 +23,7 @@
 #include <Wt/Utils.h>
 #include <Wt/WMemoryResource.h>
 #include <Wt/WContainerWidget.h>
+#include <Wt/WJavaScriptPreamble.h>
 
 #include "SpecUtils/DateTime.h"
 #include "SpecUtils/Filesystem.h"
@@ -47,6 +48,137 @@
 using namespace std;
 using namespace Wt;
 
+namespace
+{
+/** Enable/disable the submit button from the current input state.
+ Leaves the button enabled while it is acting as a "Stop" button (a request is in flight);
+ otherwise enables it iff there is non-empty text or a staged image (data-llm-has-image="1").
+ */
+WT_DECLARE_WT_MEMBER
+(LlmEvalSend, Wt::JavaScriptFunction, "LlmEvalSend",
+ function( ta, btn )
+{
+  if( !ta || !btn )
+    return;
+  if( btn.classList.contains('llm-stop-button') ){ btn.disabled = false; return; }
+  var hasText = (ta.value.trim().length > 0);
+  var hasImg = (ta.getAttribute('data-llm-has-image') === '1');
+  btn.disabled = !(hasText || hasImg);
+}
+);
+
+/** Wire the input text area: auto-grow, Enter-to-submit (Shift/Ctrl/Meta+Enter = newline),
+ submit-button enable/disable, and clipboard-image paste.
+   ta          - the input textarea element
+   btn         - the submit/stop button element
+   scrollArea  - the scrollable conversation container (overflow:auto)
+   container   - the inner conversation container (whose bottom padding we adjust)
+   wrapper     - the relatively-positioned wrapper (used to cap the grow height)
+   inputArea   - the floating input area (its height sets the container's bottom padding)
+   acceptImages- whether pasted images should be captured
+   pasteCb     - function(base64, mimeType, widthPx, heightPx) to stage a pasted image
+ */
+WT_DECLARE_WT_MEMBER
+(LlmSetupInput, Wt::JavaScriptFunction, "LlmSetupInput",
+ function( ta, btn, scrollArea, container, wrapper, inputArea, acceptImages, pasteCb )
+{
+  if( !ta )
+    return;
+
+  function grow(){
+    ta.style.height = 'auto';
+    var max = Math.max( 60, Math.round( (wrapper ? wrapper.clientHeight : 300) * 0.4 ) );
+    var h = Math.min( ta.scrollHeight, max );
+    ta.style.height = h + 'px';
+    ta.style.overflowY = (ta.scrollHeight > max) ? 'auto' : 'hidden';
+    // Just enough to clear the floating input (its 8px bottom inset + height) plus a 4px gap, so the
+    // newest content sits right above the input instead of behind a tall empty pad.
+    if( container && inputArea )
+      container.style.paddingBottom = (inputArea.offsetHeight + 12) + 'px';
+    if( scrollArea && scrollArea._llmAutoScroll )
+      scrollArea.scrollTop = scrollArea.scrollHeight;
+  }
+  ta._llmGrow = grow;
+
+  ta.addEventListener( 'input', function(){
+    grow();
+    Wt.WT.LlmEvalSend( ta, btn );
+  } );
+
+  ta.addEventListener( 'keydown', function( e ){
+    if( e.key === 'Enter' && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey ){
+      e.preventDefault();
+      if( btn && !btn.disabled )
+        btn.click();
+    }
+  } );
+
+  if( acceptImages ){
+    ta.addEventListener( 'paste', function( e ){
+      var items = (e.clipboardData && e.clipboardData.items) ? e.clipboardData.items : [];
+      for( var i = 0; i < items.length; ++i ){
+        if( items[i].type && items[i].type.indexOf('image/') === 0 ){
+          var blob = items[i].getAsFile();
+          if( !blob )
+            continue;
+          e.preventDefault();
+          var reader = new FileReader();
+          reader.onload = function( ev ){
+            var img = new Image();
+            img.onload = function(){
+              var maxSize = 2048;
+              var w = img.naturalWidth, h = img.naturalHeight;
+              if( w > maxSize || h > maxSize ){
+                var scale = maxSize / Math.max(w, h);
+                w = Math.round(w*scale); h = Math.round(h*scale);
+              }
+              var canvas = document.createElement('canvas');
+              canvas.width = w; canvas.height = h;
+              canvas.getContext('2d').drawImage( img, 0, 0, w, h );
+              var outMime = (blob.type === 'image/png') ? 'image/png' : 'image/jpeg';
+              var quality = (outMime === 'image/jpeg') ? 0.85 : undefined;
+              var dataUrl = canvas.toDataURL( outMime, quality );
+              var base64 = dataUrl.split(',')[1];
+              if( pasteCb ) pasteCb( base64, outMime, w, h );
+            };
+            img.src = ev.target.result;
+          };
+          reader.readAsDataURL( blob );
+          return;
+        }
+      }
+    } );
+  }
+
+  // Initialize sizing and button state.
+  grow();
+  Wt.WT.LlmEvalSend( ta, btn );
+}
+);
+
+/** Set up auto-scroll on the conversation scroll area: stay pinned to the bottom as content
+ streams in, unless the user has scrolled up; scrolling back to the bottom re-enables it. */
+WT_DECLARE_WT_MEMBER
+(LlmSetupAutoScroll, Wt::JavaScriptFunction, "LlmSetupAutoScroll",
+ function( scrollArea, container )
+{
+  if( !scrollArea || !container )
+    return;
+  scrollArea._llmAutoScroll = true;
+  scrollArea.addEventListener( 'scroll', function(){
+    var atBottom = (scrollArea.scrollHeight - scrollArea.scrollTop - scrollArea.clientHeight) < 24;
+    scrollArea._llmAutoScroll = atBottom;
+  } );
+  var obs = new MutationObserver( function(){
+    if( scrollArea._llmAutoScroll )
+      scrollArea.scrollTop = scrollArea.scrollHeight;
+  } );
+  obs.observe( container, { childList:true, subtree:true, characterData:true } );
+}
+);
+}//namespace
+
+
 LlmToolGui::LlmToolGui(InterSpec *viewer)
   : WContainerWidget(),
     m_viewer(viewer),
@@ -60,6 +192,7 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
     m_layout(nullptr),
     m_isRequestPending(false),
     m_imagePreviewContainer(nullptr),
+    m_pasteImageSignal( this, "LlmPasteImage", false ),
     m_benchmarkRunner( nullptr ),
     m_jsSandboxBridge( nullptr )
 {
@@ -80,6 +213,10 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
   m_root = outer->addWidget( std::make_unique<WContainerWidget>(), 0, 0 );
   outer->setRowStretch( 0, 1 );
   outer->setColumnStretch( 0, 1 );
+
+  // Connect the clipboard-image paste signal once; it persists across UI rebuilds (the input widgets
+  // that emit it are recreated by initializeUI(), but this JSignal belongs to the tool).
+  m_pasteImageSignal.connect( this, &LlmToolGui::handlePastedImage );
 
   std::shared_ptr<const LlmConfig> config;
   try
@@ -498,13 +635,18 @@ void LlmToolGui::initializeUI()
   m_conversationContainer = scrollArea->addNew<WContainerWidget>();
   m_conversationContainer->addStyleClass("LlmConversationContainer");
 
-  // Add scroll wrapper to layout (row 0, spans 2 columns)
-  m_layout->addWidget(std::move(scrollWrapperOwned), 0, 0, 1, 2);
-  m_layout->setRowStretch(0, 1); // Make conversation display expand
+  // Add scroll wrapper to layout (fills the whole tool; the input area floats over it)
+  m_layout->addWidget(std::move(scrollWrapperOwned), 0, 0);
+  m_layout->setRowStretch(0, 1);    // Make conversation display expand
+  m_layout->setColumnStretch(0, 1);
 
-  // Create a vertical container for the image preview strip + input edit
-  auto inputColumnOwned = std::make_unique<WContainerWidget>();
-  WContainerWidget *inputColumn = inputColumnOwned.get();
+  // Floating input area, laid over the bottom of the scroll wrapper (CSS position:absolute).  It is
+  // a horizontal flex row: the input column (image previews + growing text area) on the left, and
+  // the icon submit/stop button pinned to the right.
+  WContainerWidget *inputArea = scrollWrapper->addNew<WContainerWidget>();
+  inputArea->addStyleClass( "LlmInputArea" );
+
+  WContainerWidget *inputColumn = inputArea->addNew<WContainerWidget>();
   inputColumn->addStyleClass( "LlmInputColumn" );
 
   // Image preview strip (hidden by default)
@@ -512,28 +654,29 @@ void LlmToolGui::initializeUI()
   m_imagePreviewContainer->addStyleClass( "LlmStagedImagePreview" );
   m_imagePreviewContainer->hide();
 
-  // Create input line edit
-  m_inputEdit = inputColumn->addNew<WLineEdit>();
+  // Auto-growing text area (replaces the old single-line edit)
+  m_inputEdit = inputColumn->addNew<WTextArea>();
   m_inputEdit->addStyleClass("llm-input-edit");
+  m_inputEdit->setRows( 1 );
   m_inputEdit->setPlaceholderText( WString( "Type your question here..." ) );
-  m_inputEdit->setAutoComplete(false);
+  m_inputEdit->setAttributeValue( "autocomplete", "off" );
 
 #if( BUILD_AS_OSX_APP || IOS )
   m_inputEdit->setAttributeValue("autocorrect", "off");
   m_inputEdit->setAttributeValue("spellcheck", "off");
 #endif
 
-  // Add input column to layout (row 1, column 0)
-  m_layout->addWidget(std::move(inputColumnOwned), 1, 0);
-  m_layout->setColumnStretch(0, 1); // Make input expand horizontally
+  // Icon submit/stop button, pinned to the right of the text area.  The button is transparent/
+  // borderless, so the standard "InvertInDark" class inverts just the icon glyph for the dark theme.
+  m_sendButton = inputArea->addNew<WPushButton>();
+  m_sendButton->addStyleClass("llm-send-button InvertInDark");
+  m_sendButton->setIcon( "InterSpec_resources/images/llm_submit_arrow.svg" );
 
-  // Create send button (bottom right)
-  m_sendButton = m_layout->addWidget( std::make_unique<WPushButton>("Send"), 1, 1 );
-  m_sendButton->addStyleClass("llm-send-button");
-
-  // Connect signals
-  m_inputEdit->enterPressed().connect(this, &LlmToolGui::handleInputSubmit);
+  // Connect signals (Enter-to-submit is handled client-side in setupInputJavaScript)
   m_sendButton->clicked().connect(this, &LlmToolGui::handleSendButton);
+
+  // Wire client-side behavior: auto-grow, Enter submit, enable/disable, paste, and auto-scroll.
+  setupInputJavaScript();
 
   // Show the getting-started panel when the conversation area is still empty.  Any subsequent
   // restore of saved history (setConversationHistory) reconciles this away.
@@ -546,6 +689,81 @@ void LlmToolGui::focusInput()
   if( m_inputEdit )
     m_inputEdit->setFocus(true);
 }
+
+
+void LlmToolGui::setupInputJavaScript()
+{
+  if( !m_inputEdit || !m_sendButton || !m_conversationContainer )
+    return;
+
+  LOAD_JAVASCRIPT(wApp, "LlmToolGui.cpp", "LlmToolGui", wtjsLlmEvalSend);
+  LOAD_JAVASCRIPT(wApp, "LlmToolGui.cpp", "LlmToolGui", wtjsLlmSetupInput);
+  LOAD_JAVASCRIPT(wApp, "LlmToolGui.cpp", "LlmToolGui", wtjsLlmSetupAutoScroll);
+
+  const bool acceptImages = canAcceptImages();
+
+  // When images are supported, hand the setup a JS callback that emits the paste signal back to us.
+  const string pasteCb = acceptImages
+    ? ("function(b64,mime,w,h){" + m_pasteImageSignal.createCall( {"b64","mime","w","h"} ) + ";}")
+    : string("null");
+
+  ostringstream js;
+  js << "(function(){"
+     << "var ta=" << m_inputEdit->jsRef() << ", btn=" << m_sendButton->jsRef()
+     << ", container=" << m_conversationContainer->jsRef() << ";"
+     << "if(!ta||!btn||!container) return;"
+     << "var scrollArea=container.parentElement;"
+     << "var wrapper=scrollArea?scrollArea.parentElement:null;"
+     << "var inputArea=btn.parentElement;"
+     << "Wt.WT.LlmSetupAutoScroll(scrollArea, container);"
+     << "Wt.WT.LlmSetupInput(ta, btn, scrollArea, container, wrapper, inputArea, "
+     << (acceptImages ? "true" : "false") << ", " << pasteCb << ");"
+     << "})();";
+
+  doJavaScript( js.str() );
+}//setupInputJavaScript()
+
+
+void LlmToolGui::updateSendButtonEnabled()
+{
+  if( !m_inputEdit || !m_sendButton )
+    return;
+
+  const bool hasImg = !m_stagedImages.empty();
+
+  ostringstream js;
+  js << "(function(){var ta=" << m_inputEdit->jsRef() << ", btn=" << m_sendButton->jsRef() << ";"
+     << "if(!ta||!btn) return;"
+     << "ta.setAttribute('data-llm-has-image','" << (hasImg ? "1" : "0") << "');"
+     << "if(Wt.WT.LlmEvalSend) Wt.WT.LlmEvalSend(ta, btn);"
+     << "})();";
+  doJavaScript( js.str() );
+}//updateSendButtonEnabled()
+
+
+void LlmToolGui::resetInputHeight()
+{
+  if( !m_inputEdit )
+    return;
+
+  ostringstream js;
+  js << "(function(){var ta=" << m_inputEdit->jsRef() << ";"
+     << "if(!ta) return;"
+     << "ta.style.height='auto';"
+     << "if(ta._llmGrow) ta._llmGrow();"
+     << "})();";
+  doJavaScript( js.str() );
+}//resetInputHeight()
+
+
+void LlmToolGui::handlePastedImage( const string &base64Data, const string &mimeType,
+                                    int widthPx, int heightPx )
+{
+  if( base64Data.empty() )
+    return;
+
+  stageImage( base64Data, mimeType, "Pasted image", widthPx, heightPx );
+}//handlePastedImage(...)
 
 void LlmToolGui::clearHistory()
 {
@@ -613,6 +831,9 @@ void LlmToolGui::stageImage( const string &base64Data, const string &mimeType,
   removeBtn->clicked().connect( std::bind( [this]( size_t idx ){ removeStagedImage( idx ); }, index ) );
 
   m_imagePreviewContainer->show();
+
+  // A staged image is enough to allow sending even with no typed text.
+  updateSendButtonEnabled();
 }//void stageImage(...)
 
 
@@ -631,6 +852,7 @@ void LlmToolGui::removeStagedImage( const size_t index )
     if( m_stagedImages.empty() )
     {
       m_imagePreviewContainer->hide();
+      updateSendButtonEnabled();
       return;
     }
 
@@ -659,6 +881,8 @@ void LlmToolGui::removeStagedImage( const size_t index )
       removeBtn->clicked().connect( std::bind( [this]( size_t idx ){ removeStagedImage( idx ); }, i ) );
     }
   }
+
+  updateSendButtonEnabled();
 }//void removeStagedImage(...)
 
 
@@ -670,6 +894,8 @@ void LlmToolGui::clearStagedImages()
     m_imagePreviewContainer->clear();
     m_imagePreviewContainer->hide();
   }
+
+  updateSendButtonEnabled();
 }//void clearStagedImages()
 
 
@@ -695,8 +921,10 @@ void LlmToolGui::handleSendButton()
   if( message.empty() && m_stagedImages.empty() )
     return;
 
-  // Clear the input field
+  // Clear the input field and shrink it back to its minimal one-row height.  (The button's
+  // enabled/Stop state is set authoritatively by sendMessage() -> setInputEnabled(false) below.)
   m_inputEdit->setText("");
+  resetInputHeight();
 
   // Send the message
   sendMessage(message);
@@ -746,10 +974,10 @@ void LlmToolGui::sendMessage(const std::string& message)
       // Remove the getting-started panel now that there is a real interaction
       updateWelcomeMessage();
 
-      // Scroll to bottom
+      // Sending resumes auto-scroll and jumps to the bottom.
       const string js = "setTimeout(function() {"
       "  var scrollArea = " + m_conversationContainer->jsRef() + ".parentElement;"
-      "  if (scrollArea) scrollArea.scrollTop = scrollArea.scrollHeight;"
+      "  if (scrollArea){ scrollArea._llmAutoScroll = true; scrollArea.scrollTop = scrollArea.scrollHeight; }"
       "}, 100);";
       doJavaScript( js );
     }//if( convo )
@@ -982,13 +1210,14 @@ void LlmToolGui::handleConversationFinished()
 
 void LlmToolGui::handleResponseError()
 {
-  // Keep input disabled when we receive an error response
-  // User must click "Retry" or "Continue Anyway" to proceed
+  // The request is over, so return the input to its idle state: this swaps the button back to the
+  // submit arrow (dropping the now-meaningless "Stop" icon), restores the normal placeholder, and
+  // re-enables typing.  The errored turn's own Retry / Continue Anyway buttons remain available.
   if( m_isRequestPending )
   {
     m_isRequestPending = false;
-    cout << "Error response received, keeping input disabled" << endl;
-    // Input stays disabled - user must use retry/continue buttons
+    cout << "Error response received, re-enabling input" << endl;
+    setInputEnabled( true );
   }
 
   // If this errored turn was an MCP-submitted prompt, resolve its callback with an error and keep
@@ -1191,10 +1420,10 @@ void LlmToolGui::handleCompactConversation()
     // Remove the getting-started panel now that there is a real interaction
     updateWelcomeMessage();
 
-    // Scroll to bottom
+    // Resume auto-scroll and jump to the bottom.
     const string js = "setTimeout(function() {"
     "  var scrollArea = " + m_conversationContainer->jsRef() + ".parentElement;"
-    "  if (scrollArea) scrollArea.scrollTop = scrollArea.scrollHeight;"
+    "  if (scrollArea){ scrollArea._llmAutoScroll = true; scrollArea.scrollTop = scrollArea.scrollHeight; }"
     "}, 100);";
     doJavaScript( js );
 
@@ -1223,16 +1452,20 @@ void LlmToolGui::setInputEnabled(bool enabled)
       m_inputEdit->setPlaceholderText( WString( "Working..." ) );
   }
 
-  // While working, keep the button enabled but relabel it "Stop" so the user can cancel the request
-  // (handleSendButton() routes to cancelAll() when a request is pending).
+  // While working, keep the button clickable but swap its icon to a "Stop" square so the user can
+  // cancel the request (handleSendButton() routes to cancelAll() when a request is pending).
   if( m_sendButton )
   {
     m_sendButton->setEnabled( true );
-    m_sendButton->setText( enabled ? "Send" : "Stop" );
     if( enabled )
+    {
+      m_sendButton->setIcon( "InterSpec_resources/images/llm_submit_arrow.svg" );
       m_sendButton->removeStyleClass( "llm-stop-button" );
-    else
+    }else
+    {
+      m_sendButton->setIcon( "InterSpec_resources/images/llm_stop.svg" );
       m_sendButton->addStyleClass( "llm-stop-button" );
+    }
   }
 
   // Update visual appearance.  Only the input is greyed out while working; the button stays active
@@ -1246,6 +1479,18 @@ void LlmToolGui::setInputEnabled(bool enabled)
   }
   if( m_sendButton )
     m_sendButton->removeStyleClass("disabled");
+
+  // Sync the button's client-side clickability.  When returning to idle, re-apply the empty/non-empty
+  // enable state.  While working, force the Stop button enabled directly (don't route through
+  // LlmEvalSend, whose result would depend on the "llm-stop-button" class DOM diff having already been
+  // applied client-side) so the user can always cancel an in-flight request.
+  if( enabled )
+  {
+    updateSendButtonEnabled();
+  }else if( m_sendButton )
+  {
+    doJavaScript( "(function(){var btn=" + m_sendButton->jsRef() + ";if(btn) btn.disabled=false;})();" );
+  }
 }
 
 void LlmToolGui::handleSpectrumChanged( SpecUtils::SpectrumType specType,

@@ -21,6 +21,9 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
+// Needed so MSVC's <cmath> defines M_PI (used below); must precede any <cmath> include.
+#define _USE_MATH_DEFINES
+
 #include "InterSpec_config.h"
 
 #include <mutex>
@@ -227,6 +230,16 @@ namespace
 
 
 
+  //Slope between two efficiency points; guards the zero-width interval a duplicated
+  //  energy would give (which would otherwise poison calcA with a NaN).
+  float effSlope( const DetectorPeakResponse::EnergyEfficiencyPair &lhs,
+                 const DetectorPeakResponse::EnergyEfficiencyPair &rhs )
+  {
+    const float dx = rhs.energy - lhs.energy;
+    return (dx == 0.0f) ? 0.0f : ((rhs.efficiency - lhs.efficiency) / dx);
+  }//float effSlope(...)
+
+
   //calcA(...) is for use from DetectorPeakResponse::akimaInterpolate(...).
   //  This function does not to any error checking that the input is valid.
   float calcA( const size_t i,
@@ -234,41 +247,31 @@ namespace
   {
     assert( i >= 2 );
     assert( (i + 2) < xy.size() );
-    
+
     const size_t n = xy.size();
-    const float x_i  = xy[i].energy;
-    const float x_m1 = xy[i-1].energy;
-    const float x_m2 = xy[i-2].energy;
-    const float x_p1 = xy[i+1].energy;
-    const float x_p2 = xy[i+2].energy;
-    const float y_i  = xy[i].efficiency;
-    const float y_m1 = xy[i-1].efficiency;
-    const float y_m2 = xy[i-2].efficiency;
-    const float y_p1 = xy[i+1].efficiency;
-    const float y_p2 = xy[i+2].efficiency;
-    const float p_i = (y_p1 - y_i) / (x_p1 - x_i);
-    
+    const float p_i = effSlope( xy[i], xy[i+1] );
+
     float A_i;
     if( i == 0 )
     {
       A_i = p_i;
     }else if( i == 1 )
     {
-      const float p_0 = (xy[1].efficiency - xy[0].efficiency) / (xy[1].energy - xy[0].energy);
+      const float p_0 = effSlope( xy[0], xy[1] );
       A_i = (p_0+p_i)/2.0f;
     }else if( i == (n-1) )
     {
       A_i = p_i;
     }else if( i == (n-2) )
     {
-      const float p = (xy[n-2].efficiency - xy[n-3].efficiency) / (xy[n-2].energy - xy[n-3].energy);
+      const float p = effSlope( xy[n-3], xy[n-2] );
       A_i = (p_i + p)/2.0f;
     }else
     {
-      const float p_1 = (y_p2 - y_p1) / (x_p2 - x_p1);
-      const float p_m1 = (y_i - y_m1) / (x_i - x_m1);
-      const float p_m2 = (y_m1 - y_m2) / (x_m1 - x_m2);
-      
+      const float p_1 = effSlope( xy[i+1], xy[i+2] );
+      const float p_m1 = effSlope( xy[i-1], xy[i] );
+      const float p_m2 = effSlope( xy[i-2], xy[i-1] );
+
       const float w1 = fabs( p_1 - p_i );
       const float w2 = fabs( p_m1 - p_m2 );
       if( (w1+w2) == 0.0f )
@@ -3895,8 +3898,25 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
   for( EnergyEfficiencyPair &point : energy_efficiencies )
     point.energy *= energy_units_scale;
 
+  // Determine whether the file is in increasing or decreasing energy order.  Repeated
+  //  energies (files sometimes duplicate their first row) carry no ordering information,
+  //  so the direction has to come from the first pair that actually differ.
+  bool increasing = true, found_direction = false;
+  for( size_t i = 1; !found_direction && (i < energy_efficiencies.size()); ++i )
+  {
+    const float prev_e = energy_efficiencies[i - 1].energy;
+    const float this_e = energy_efficiencies[i].energy;
+    if( !nearlySameEnergy( prev_e, this_e ) )
+    {
+      increasing = (this_e > prev_e);
+      found_direction = true;
+    }
+  }//for( find the first pair of differing energies )
+
+  if( !found_direction )
+    throw runtime_error( "All energies in efficiency CSV are the same." );
+
   // Validate: check monotonicity and value ranges
-  const bool increasing = (energy_efficiencies[1].energy > energy_efficiencies[0].energy);
   for( size_t i = 1; i < energy_efficiencies.size(); ++i )
   {
     const float prev_e = energy_efficiencies[i - 1].energy;
@@ -3919,7 +3939,7 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
       throw runtime_error( "Efficiency value out of range [0, 1.2] in CSV." );
 
     // Allow very close energies (within ~1e-5 relative tolerance)
-    if( fabs( prev_e - this_e ) < 1.0E-5f * std::max( fabs( this_e ), fabs( prev_e ) ) )
+    if( nearlySameEnergy( prev_e, this_e ) )
       continue;
 
     const bool bigger = (this_e > prev_e);
@@ -3933,6 +3953,30 @@ DetectorPeakResponse::parseEfficiencyCsvFile( std::istream &input )
     std::reverse( frac_uncertainties.begin(), frac_uncertainties.end() );
     std::reverse( total_efficiencies.begin(), total_efficiencies.end() );
   }
+
+  // Collapse repeated energies down to their first occurrence; interpolating a curve with
+  //  a zero-width interval yields NaN.  The three vectors are parallel, so they all shrink
+  //  together to keep the uncertainty and PTOT loops below aligned with the efficiencies.
+  {
+    size_t nkept = 1;
+    for( size_t i = 1; i < energy_efficiencies.size(); ++i )
+    {
+      if( nearlySameEnergy( energy_efficiencies[nkept - 1].energy, energy_efficiencies[i].energy ) )
+        continue;
+
+      energy_efficiencies[nkept] = energy_efficiencies[i];
+      frac_uncertainties[nkept] = frac_uncertainties[i];
+      total_efficiencies[nkept] = total_efficiencies[i];
+      nkept += 1;
+    }//for( each point )
+
+    energy_efficiencies.resize( nkept );
+    frac_uncertainties.resize( nkept );
+    total_efficiencies.resize( nkept );
+  }
+
+  if( energy_efficiencies.size() < 2 )
+    throw runtime_error( "Efficiency CSV file has fewer than 2 distinct energies." );
 
   // Build the DRF
   auto answer = make_shared<DetectorPeakResponse>();
@@ -5247,6 +5291,14 @@ float DetectorPeakResponse::absoluteToIntrinsicMultiple( const float energy ) co
 }//absoluteToIntrinsicMultiple(...)
 
 
+bool DetectorPeakResponse::nearlySameEnergy( const float lhs, const float rhs )
+{
+  // The relative test alone would call 0 and 0 different, so check equality first.
+  return (lhs == rhs)
+         || (fabs( lhs - rhs ) < 1.0E-5f * std::max( fabs(lhs), fabs(rhs) ));
+}//bool nearlySameEnergy( const float lhs, const float rhs )
+
+
 float DetectorPeakResponse::akimaInterpolate( const float z,
             const std::vector<DetectorPeakResponse::EnergyEfficiencyPair> &xy )
 {
@@ -5267,14 +5319,17 @@ float DetectorPeakResponse::akimaInterpolate( const float z,
   const float y_i = xy[i].efficiency;
   const float y_p1 = xy[i+1].efficiency;
   
+  const float h_i = (x_p1 - x_i);
+  if( h_i == 0.0f ) //duplicate energies - nothing to interpolate between
+    return y_i;
+
   if( (n < 6) || (i < 2) || ((n-i) <= 3)  ) //We'll just use linear interpolation here
   {
-    const float d = (z - x_i) / (x_p1 - x_i);
+    const float d = (z - x_i) / h_i;
     return y_i + d*(y_p1 - y_i);
   }//if( n < 6 )
-  
+
   const float dx = z - x_i;
-  const float h_i = (x_p1 - x_i);
   const float A_i = calcA( i, xy );
   const float A_p1 = calcA( i+1, xy );
   const float p_i = (y_p1 - y_i) / h_i;

@@ -361,8 +361,22 @@ namespace DataBaseVersionUpgrade
       setDBVersion( version, sqlSession );
     }//if( version<14 && version<DB_SCHEMA_VERSION )
 
+    if( version<15 && version<DB_SCHEMA_VERSION )
+    {
+      std::shared_ptr<Wt::Dbo::Session> sqlSession = getSession( database );
+
+      // Holds the Batch Decay tool's URI-encoded state so it can be saved/restored with app state.
+      //  The following has only been checked for SQLite3; ADD COLUMN appends after the last column,
+      //  which Dbo needs.
+      const char *sql_statement = "ALTER TABLE UserState ADD COLUMN DecayBatchUri text;";
+      executeSQL( sql_statement, sqlSession );
+
+      version = 15;
+      setDBVersion( version, sqlSession );
+    }//if( version<15 && version<DB_SCHEMA_VERSION )
+
     /// ******************************************************************
-    /// DB_SCHEMA_VERSION is at 14.  Add Version 15 here.  Update InterSpecUser.h!
+    /// DB_SCHEMA_VERSION is at 15.  Add Version 16 here.  Update InterSpecUser.h!
     /// ******************************************************************
   }//void checkAndUpgradeVersion()
   

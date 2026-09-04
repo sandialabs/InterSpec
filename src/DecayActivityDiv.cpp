@@ -81,6 +81,7 @@
 #include "InterSpec/UserPreferences.h"
 #include "InterSpec/DecayActivityDiv.h"
 #include "InterSpec/DecayDataBaseServer.h"
+#include "InterSpec/DecayBatchCalcWidget.h"
 #include "InterSpec/MassAttenuationTool.h"
 #include "InterSpec/DecaySelectNuclideDiv.h"
 #include "InterSpec/PhysicalUnitsLocalized.h"
@@ -540,7 +541,10 @@ class DateLengthCalculator : public WContainerWidget
     //m_updateParent = new WPushButton( "Update Chart");
     //m_updateParent->clicked().connect( this, &DateLengthCalculator::pushCurrentToParent );
     //m_layout->addWidget( m_updateParent, 2, 2, Wt::AlignmentFlag::Center );
-    m_layout->addWidget( make_unique<WContainerWidget>(), 2, 2, Wt::AlignmentFlag::Center );
+    WPushButton *batchButton = m_layout->addWidget( make_unique<WPushButton>( WString::tr("dad-batch-decay") ),
+                                                    2, 2, Wt::AlignmentFlag::Right );
+    batchButton->setStyleClass( "LinkBtn" );
+    batchButton->clicked().connect( [this](){ m_activityDiv->openBatchDecayTool(); } );
 
     m_error = m_layout->addWidget( make_unique<WText>( "" ), 3, 0, 1, 3 );
     m_error->setInline( false );
@@ -2250,6 +2254,10 @@ Wt::WContainerWidget *DecayActivityDiv::initDisplayOptionWidgets()
     WContainerWidget *spacer = displOptLower->addNew<WContainerWidget>();
     spacer->addStyleClass( "LowerOptionsSpacer" );
 
+    WPushButton *batchButton = displOptLower->addNew<WPushButton>( WString::tr("dad-batch-decay") );
+    batchButton->setStyleClass( "LinkBtn" );
+    batchButton->clicked().connect( this, &DecayActivityDiv::openBatchDecayTool );
+
     WPushButton *csvButton = displOptLower->addNew<WPushButton>();
     csvButton->setIcon( "InterSpec_resources/images/download_small.svg" );
     csvButton->setText( WString("{1}...").arg( WString::tr("CSV") ) );
@@ -2269,6 +2277,29 @@ void DecayActivityDiv::createCsvDownloadGui()
   deleteCsvDownloadGui();
   m_csvDownloadDialog = AuxWindow::make<CsvDownloadGui>( this );
 }//void createCsvDownloadGui()
+
+
+void DecayActivityDiv::openBatchDecayTool()
+{
+  InterSpec *viewer = m_viewer ? m_viewer : InterSpec::instance();
+  if( !viewer )
+    return;
+
+  DecayBatchCalcWindow *win = viewer->createDecayBatchCalcWindow();
+  if( !win )
+    return;
+
+  win->clearNuclides();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  for( const Nuclide &nuc : m_nuclides )
+  {
+    const SandiaDecay::Nuclide * const n = db ? db->nuclide( nuc.z, nuc.a, nuc.iso ) : nullptr;
+    if( !n )
+      continue;
+    win->addNuclide( nuc.z, nuc.a, nuc.iso, nuc.activity, nuc.useCurie, nuc.age, nuc.activityStr );
+  }//for( const Nuclide &nuc : m_nuclides )
+}//void openBatchDecayTool()
 
 
 void DecayActivityDiv::deleteCsvDownloadGui()

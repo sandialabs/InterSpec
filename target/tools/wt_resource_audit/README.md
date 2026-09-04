@@ -38,7 +38,7 @@ forget. Procedure:
 1. **Bump the Wt pin in both places:**
    - FetchContent: `GIT_TAG` (+ the `# ---- Wt <ver> ----` header) in
      `cmake/FetchInterSpecDeps.cmake`.
-   - Prebuilt install scripts: `target/dep_build/dep_build_{macOS.sh,linux.sh,msvc2022.bat,msvc2022_x86.bat}`.
+   - Prebuilt install scripts: `target/dep_build/dep_build_{macOS.sh,linux.sh,msvc2022.bat}`.
    Reconfigure so the new Wt is fetched/installed.
 
 2. **See what changed in the resource set** (in a Wt checkout):
