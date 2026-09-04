@@ -88,6 +88,12 @@ inline std::vector<double> default_energies_for_cfg(int cfg) {
         case 25:
         case 26:
             return {45, 59.5, 88, 122, 344, 662, 1332};
+        // Deep-Fe-shield low-energy pair (2026-09-04): where the analytic
+        // Rayleigh-deflection loss lives, and where CeeLo's own scattered-FEP
+        // stream had never been checked against GEANT4 (cfg 11 starts at 200 keV).
+        case 27:
+        case 28:
+            return {60, 88, 122};
         default:
             return {};
     }
@@ -402,6 +408,28 @@ inline bool make_config(int cfg, ceelo::EfficiencyCalculator& calc,
             calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
             setup.description =
                 "GEM35-70 HPGe coax, BULLETIZED front edge + rounded bore tip, point source 5cm";
+            return true;
+        }
+
+        // Configs 27/28: the cfg-26 crystal behind a 0.5 cm Fe spherical shell
+        // around a point source, at contact-like (2 cm) and 10 cm.  At 60 keV
+        // the shell is 4.4 non-Rayleigh mfp and 0.36 Rayleigh mfp, so ~9% of the
+        // peak is Rayleigh-deflected photons that are then absorbed - the term
+        // InterSpec's analytic model was missing.  This pair measures how well
+        // CeeLo places the scattered-into-peak stream there (u/s split printed
+        // by both codes), since its cfg 8/12 stream reads 2-4% low at 59 keV.
+        case 27:
+        case 28: {
+            const Material* ge = add_mat(make_HPGe());
+            const Material* fe = add_mat(make_Iron());
+            calc.set_detector(DetectorShape::Cylinder, ge, {2.915, 6.89});
+            calc.set_bullet_radius(0.8);
+            calc.set_bore_hole(0.495, 5.54, /*rounded_tip=*/true);
+            const double d_cm = (cfg == 27) ? 2.0 : 10.0;
+            calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -d_cm));
+            calc.add_source_shield(fe, 0.5);
+            setup.description = std::string("GEM35-70 HPGe coax bulletized, point source + 0.5 cm Fe shell, ")
+                                + ((cfg == 27) ? "2 cm" : "10 cm");
             return true;
         }
 

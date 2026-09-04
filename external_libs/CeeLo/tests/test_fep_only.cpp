@@ -520,6 +520,32 @@ BOOST_AUTO_TEST_CASE(rayleigh_mean_cos_theta_aluminum_200keV) {
     BOOST_CHECK_LT(mean_cos, 1.0);
 }
 
+// Fe at 60 keV pinned to xraylib's EPDL form factors (2026-09-04): p(cos) ~ (1+cos^2) F(x,26)^2
+// with x = sin(theta/2)/lambda gives <cos> = 0.801, P(theta > 20 deg) = 0.488,
+// P(theta > 30 deg) = 0.330.  This is the angular law the deep-shield FEP loss hinges on, so
+// a table-provenance or momentum-transfer-convention slip has to fail here, not in a truth bank.
+BOOST_AUTO_TEST_CASE(rayleigh_fe_60keV_matches_xraylib) {
+    const int N = 200000;
+    std::mt19937_64 rng(20260904);
+    const double c20 = std::cos(20.0 * M_PI / 180.0);
+    const double c30 = std::cos(30.0 * M_PI / 180.0);
+    double sum_cos = 0.0;
+    int n20 = 0, n30 = 0;
+    for (int i = 0; i < N; ++i) {
+        const double ct = sample_rayleigh_cos_theta(26, 60.0, rng);
+        sum_cos += ct;
+        n20 += (ct < c20);
+        n30 += (ct < c30);
+    }
+    const double mean_cos = sum_cos / N;
+    const double p20 = static_cast<double>(n20) / N;
+    const double p30 = static_cast<double>(n30) / N;
+    BOOST_TEST_MESSAGE("Fe @60 keV Rayleigh: <cos>=" << mean_cos << " P(>20)=" << p20 << " P(>30)=" << p30);
+    BOOST_CHECK_SMALL(mean_cos - 0.801, 0.006);
+    BOOST_CHECK_SMALL(p20 - 0.488, 0.007);
+    BOOST_CHECK_SMALL(p30 - 0.330, 0.007);
+}
+
 BOOST_AUTO_TEST_CASE(rayleigh_mean_cos_theta_lead_100keV) {
     // At 100 keV for Pb (Z=82), form factor still causes forward peaking.
     const int N = 100000;

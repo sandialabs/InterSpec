@@ -229,6 +229,43 @@ BOOST_AUTO_TEST_CASE(fep_survival_removal_mu_depth_identity_and_bounds) {
     }
 }
 
+// Rayleigh deflection loss h(T): the fraction of a layer's Rayleigh scatters lost to the peak
+// because the deflection lengthens the remaining path.  Fe is pinned to an independent xraylib
+// form-factor quadrature of the same definition (2026-09-04), at the depths 0.5 cm of Fe has at
+// each energy: 60 keV h(0.84)=0.125, h(1.68)=0.168, h(4.38)=0.256; 88 keV h(1.71)=0.133;
+// 122 keV h(0.93)=0.078.  Zero at T<=0, then the backward fraction as T->0+, rising monotonically
+// with T; deterministic; negligible at high energy where Rayleigh is tiny.
+BOOST_AUTO_TEST_CASE(rayleigh_deflection_loss_fraction_fe) {
+    const Material fe = make_Iron();
+    BOOST_CHECK_EQUAL(rayleigh_deflection_loss_fraction(60.0, 0.0, fe), 0.0);
+    BOOST_CHECK_EQUAL(rayleigh_deflection_loss_fraction(60.0, -1.0, fe), 0.0);
+
+    const double h084 = rayleigh_deflection_loss_fraction(60.0, 0.84, fe);
+    const double h168 = rayleigh_deflection_loss_fraction(60.0, 1.68, fe);
+    const double h438 = rayleigh_deflection_loss_fraction(60.0, 4.38, fe);
+    BOOST_TEST_MESSAGE("Fe @60 keV: h(0.84)=" << h084 << " h(1.68)=" << h168 << " h(4.38)=" << h438);
+    BOOST_CHECK_SMALL(h084 - 0.125, 0.012);
+    BOOST_CHECK_SMALL(h168 - 0.168, 0.012);
+    BOOST_CHECK_SMALL(h438 - 0.256, 0.012);
+    BOOST_CHECK_SMALL(rayleigh_deflection_loss_fraction(88.0, 1.71, fe) - 0.133, 0.012);
+    BOOST_CHECK_SMALL(rayleigh_deflection_loss_fraction(122.0, 0.93, fe) - 0.078, 0.012);
+
+    const double h0 = rayleigh_deflection_loss_fraction(60.0, 1e-9, fe);
+    BOOST_CHECK_GT(h0, 0.0);
+    BOOST_CHECK_LT(h0, 0.08);   // only the >= 90 deg tail is lost from a vanishing layer
+
+    double prev = h0;
+    for (const double T : {0.25, 0.5, 1.0, 2.0, 4.0, 8.0, 16.0}) {
+        const double h = rayleigh_deflection_loss_fraction(60.0, T, fe);
+        BOOST_CHECK_GT(h, prev);
+        BOOST_CHECK_LT(h, 1.0);
+        prev = h;
+    }
+
+    BOOST_CHECK_EQUAL(rayleigh_deflection_loss_fraction(60.0, 4.38, fe), h438);  // deterministic
+    BOOST_CHECK_LT(rayleigh_deflection_loss_fraction(1332.0, 1.0, fe), 0.02);
+}
+
 // S(x,Z)-corrected in-window fraction (stage E1): bound electrons suppress
 // forward scatter, so the material-aware fraction is a proper fraction BELOW
 // the free-electron value, ordered by Z at low energy.
