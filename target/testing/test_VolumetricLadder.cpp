@@ -2368,3 +2368,271 @@ BOOST_AUTO_TEST_CASE( Rung8_SphericalSourceTruth, * boost::unit_test::disabled()
   BOOST_TEST_MESSAGE( "  worst |model/MC - 1|: " << fixed << setprecision(2) << worst
                       << "% (" << worst_where << ")" );
 }//BOOST_AUTO_TEST_CASE( Rung8_SphericalSourceTruth )
+
+
+/** RUNG 9 - is the light-matrix residual really the FEP-WINDOW CREDIT, and if so WHY?
+
+ Rung 8 leaves both quadratures reading ~1.1-1.5% LOW on a water sphere at 60 keV, at contact and at
+ 50 cm alike, while steel at the same energy is within 0.3%.  "Changing the credit changes the
+ answer" is not evidence for the credit being the cause - it is nearly a tautology - so this rung
+ tries to FALSIFY it, and then to pin the mechanism.
+
+ The lever is that `f_win` is a property of (energy, window, material) ONLY.  It cannot depend on how
+ far away the detector is or how big the source is.  So SOLVE for the credit each configuration
+ demands - the f that makes model == MC - and see whether one value explains them all:
+
+   - GEOMETRY: the same water sphere at 4, 6 and 50 cm.  Same material, same optical depth, very
+     different solid angle and near-field regime.
+   - OPTICAL DEPTH: water spheres of radius 1, 3 and 5 cm at one distance.  The credit acts through
+     exp(-f*mu_Compton*chord), so an error in f shows up in proportion to tau; a geometric error
+     does not.
+   - MATERIAL: steel at 60 keV, photoelectric-dominated, so mu_Compton is a small share of mu_total.
+   - TRANSPARENT TWIN for every geometry: mu_src = 0, so the credit is inert by construction and
+     what is left is the geometry-and-response floor.  A transparent source is the same object
+     whatever material it nominally is, so one twin serves every probe at that (radius, distance).
+     The demanded f is solved on the residual AFTER that floor is removed - without this the contact
+     rows are charged for a near-field response error that has nothing to do with attenuation.
+
+ THE MECHANISM ON TRIAL.  The window is not a free parameter here: CeeLo's MC scores a full-energy
+ event as |E_dep - E_src| < kDefaultFepWindowKeV, a HALF-width of 0.75 keV.  When the model is
+ compared against THAT truth it must credit back the Compton scatters that same window keeps, i.e.
+ it must use 0.75 keV - whereas the truth-bank convention (and rung 8) uses FWHM/2 of the anchoring
+ detector, 0.35 keV at 60 keV.  Too narrow a window credits back too little, over-attenuates, and
+ reads LOW in proportion to tau, which is the observed sign and the observed scaling.
+
+ PREDICTIONS, stated before the numbers:
+   1. the demanded f agrees across all six configurations once the floor is removed;
+   2. it lands near kn_in_window_fraction(60 keV, 0.75 keV, water), NOT near the FWHM/2 value;
+   3. re-running the model at the MC's own 0.75 keV window collapses the tau-proportional residual,
+      leaving each row at its transparent floor.
+ The credit explanation FAILS if the demanded f values disagree beyond their uncertainties, or if
+ any exceeds 1 (f is a fraction of Compton scatters, so no physical credit could close the gap).
+
+ Developer-only (real Monte Carlo); run with --cachedir=.
+ */
+BOOST_AUTO_TEST_CASE( Rung9_FepWindowCreditProbe, * boost::unit_test::disabled() )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  McCache cache;
+  const double cm = PhysicalUnits::cm;
+
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> steel = matdb->material( "Stainless steel SS-304" );
+  const shared_ptr<const Material> water = matdb->material( "Water" );
+  BOOST_REQUIRE( steel && water );
+
+  const double energy = 60.0;
+  const int num_lines = 1 << 16;
+  const vector<double> anchor_energies = { 60.0, 88.0, 122.0, 344.0, 661.7, 1332.5 };
+  const double win_fwhm_half = 0.5*std::sqrt( 0.359 + 0.00230*energy );   //the truth-bank convention
+  const double win_mc = ceelo::kDefaultFepWindowKeV;                      //what the MC actually scores
+
+  const auto mu_compton_of = []( const Material &mat, const double e ) -> double {
+    double mu = 0.0;
+    for( const Material::ElementFractionPair &p : mat.elements )
+      mu += p.second * mat.density
+            * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
+                  static_cast<float>(e), MassAttenuation::GammaEmProcces::ComptonScatter );
+    for( const Material::NuclideFractionPair &p : mat.nuclides )
+      mu += p.second * mat.density
+            * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
+                  static_cast<float>(e), MassAttenuation::GammaEmProcces::ComptonScatter );
+    return mu;
+  };
+
+  map<long long,shared_ptr<const ceelo::DetectorResponse>> anchored;
+  const auto centre_anchor = [&]( const double d_cm ) -> shared_ptr<const ceelo::DetectorResponse>
+  {
+    const long long key = llround( d_cm*1.0e6 );
+    const map<long long,shared_ptr<const ceelo::DetectorResponse>>::const_iterator it = anchored.find( key );
+    if( it != end(anchored) )
+      return it->second;
+    CeeLoUtils::TransferAnchor anchor;
+    anchor.ref_distance_cm = d_cm;
+    anchor.curve_derived = false;
+    for( const double e : anchor_energies )
+    {
+      vector<unique_ptr<ceelo::Material>> owned;
+      ceelo::EfficiencyCalculator pt;
+      ceelo::ResponseGenerator::configure_calculator( pt, det.gd, owned );
+      pt.set_point_source( Eigen::Vector3d( 0.0, 0.0, -(det.endcap_front_offset_cm + d_cm) ) );
+      ostringstream k;
+      k << "sph-anchor|point|d=" << setprecision(10) << d_cm;
+      const McResult r = run_mc( pt, cache, k.str(), e, 0.001, 4000000000ULL, 20260904, 900.0 );
+      anchor.curve.energies_keV.push_back( e );
+      anchor.curve.eff.push_back( r.eff );
+      anchor.curve.frac_sigma.push_back( r.frac_sigma );
+    }
+    ostringstream nm;
+    nm << "sphere centre anchor (d=" << fixed << setprecision(2) << d_cm << " cm)";
+    shared_ptr<const ceelo::DetectorResponse> resp
+          = CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{}, nm.str() );
+    BOOST_REQUIRE( resp );
+    anchored[key] = resp;
+    return resp;
+  };
+
+  // One MC row: a sphere of radius r at centre distance d, of `mat` (null => transparent).
+  const auto sphere_mc = [&]( const shared_ptr<const Material> &mat, const double r_cm,
+                              const double d_cm ) -> McResult
+  {
+    ScenarioMcMaterials mats;
+    ceelo::EfficiencyCalculator c;
+    ceelo::ResponseGenerator::configure_calculator( c, det.gd, mats.owned );
+    c.set_spherical_source( Eigen::Vector3d( 0.0, 0.0, -(det.endcap_front_offset_cm + d_cm) ),
+                            r_cm, Eigen::Matrix3d::Identity(), 0.0 );
+    ostringstream key;
+    key << "sphere(r=" << setprecision(10) << r_cm << ",ri=0,d=" << d_cm
+        << ",mat=" << (mat ? mat->name : string("TRANSPARENT")) << ")";
+    if( mat )
+    {
+      mats.matrix.reset( new ceelo::Material( CeeLoUtils::to_ceelo_material( *mat ).to_material() ) );
+      c.set_source_material( mats.matrix.get() );
+    }
+    return run_mc( c, cache, key.str(), energy, 0.0025, 16000000000ULL, 20260904, 1800.0 );
+  };
+
+  // The model at a given source removal coefficient.
+  const auto model_eff = [&]( const shared_ptr<const ceelo::DetectorResponse> &resp,
+                              const double r_cm, const double d_cm, const double mu_rem ) -> double
+  {
+    DistributedSrcCalcT<double> calc;
+    calc.m_geometry = GeometryType::Spherical;
+    calc.m_materialIndex = 0;
+    calc.m_attenuateForAir = false;
+    calc.m_isInSituExponential = false;
+    calc.m_inSituRelaxationLength = -1.0;
+    calc.m_srcVolumetricActivity = 1.0;
+    calc.m_normalizeByVolume = false;
+    calc.m_energy = energy;
+    calc.m_effResponse = resp;
+    calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+    calc.m_detector = detector_geom_from_config<double>( GeometryType::Spherical, d_cm*cm,
+                                            det.gd.transverse_half_extent()*cm, 0.0 );
+    DistributedSrcCalcT<double>::ShellInfo src;
+    src.dims = { r_cm*cm, 0.0, 0.0 };
+    src.trans_len_coef = mu_rem;
+    src.type = ShellType::Material;
+    calc.m_shells.push_back( src );
+    integrate_on_path( calc, VolumetricIntegrator::Line, num_lines );
+    return calc.integral / ((4.0/3.0)*PhysicalUnits::pi*r_cm*r_cm*r_cm*cm*cm*cm);
+  };
+
+  {
+    const ceelo::Material cw = CeeLoUtils::to_ceelo_material( *water ).to_material();
+    ostringstream o;
+    o << "  60 keV.  window conventions: FWHM/2 = " << fixed << setprecision(3) << win_fwhm_half
+      << " keV -> f_win(water) = " << setprecision(4)
+      << ceelo::kn_in_window_fraction( energy, win_fwhm_half, cw )
+      << ";  the MC's own scoring window = " << setprecision(3) << win_mc << " keV -> f_win(water) = "
+      << setprecision(4) << ceelo::kn_in_window_fraction( energy, win_mc, cw );
+    BOOST_TEST_MESSAGE( o.str() );
+  }
+  BOOST_TEST_MESSAGE( "  probe                      tau_d  transparent |  m/MC-1 @FWHM/2  @MC window |  f demanded" );
+
+  struct Probe { const char *name; shared_ptr<const Material> mat; double r_cm; double centre_cm; };
+  const vector<Probe> probes = {
+    { "water R=3, d=4 cm",   water, 3.0,  4.0 },
+    { "water R=3, d=6 cm",   water, 3.0,  6.0 },
+    { "water R=3, d=50 cm",  water, 3.0, 50.0 },
+    { "water R=1, d=6 cm",   water, 1.0,  6.0 },
+    { "water R=5, d=6 cm",   water, 5.0,  6.0 },
+    { "steel R=3, d=4 cm",   steel, 3.0,  4.0 },
+  };
+
+  vector<double> demanded_water;
+  double worst_at_mc_window = 0.0;
+  string worst_where;
+
+  for( const Probe &p : probes )
+  {
+    const shared_ptr<const ceelo::DetectorResponse> resp = centre_anchor( p.centre_cm );
+    const double mu_tot = transmition_length_coefficient( p.mat.get(), static_cast<float>(energy) );
+    const double mu_c = mu_compton_of( *p.mat, energy );
+    const ceelo::Material cmat = CeeLoUtils::to_ceelo_material( *p.mat ).to_material();
+    const double f_fwhm = ceelo::kn_in_window_fraction( energy, win_fwhm_half, cmat );
+    const double f_mcwin = ceelo::kn_in_window_fraction( energy, win_mc, cmat );
+
+    const McResult mc = sphere_mc( p.mat, p.r_cm, p.centre_cm );
+    const McResult mc_tr = sphere_mc( nullptr, p.r_cm, p.centre_cm );
+    BOOST_REQUIRE( (mc.eff > 0.0) && (mc_tr.eff > 0.0) );
+
+    // The geometry+response floor at THIS geometry, from the transparent twin.
+    const double floor_ratio = model_eff( resp, p.r_cm, p.centre_cm, 0.0 ) / mc_tr.eff;
+
+    const double at_fwhm = model_eff( resp, p.r_cm, p.centre_cm, mu_tot - f_fwhm*mu_c ) / mc.eff;
+    const double at_mcwin = model_eff( resp, p.r_cm, p.centre_cm, mu_tot - f_mcwin*mu_c ) / mc.eff;
+
+    // Solve for the f that closes the gap AFTER removing the floor: the attenuation model alone.
+    double f_star = std::numeric_limits<double>::quiet_NaN();
+    {
+      double lo = 0.0, hi = 2.0;
+      const auto resid = [&]( const double f ){
+        return model_eff( resp, p.r_cm, p.centre_cm, mu_tot - f*mu_c )/mc.eff - floor_ratio;
+      };
+      if( (resid(lo)*resid(hi)) < 0.0 )
+      {
+        for( int it = 0; it < 40; ++it )
+        {
+          const double mid = 0.5*(lo + hi);
+          if( (resid(lo)*resid(mid)) <= 0.0 ) hi = mid; else lo = mid;
+        }
+        f_star = 0.5*(lo + hi);
+      }
+    }
+
+    ostringstream o;
+    o << "  " << left << setw(24) << p.name << right << fixed << setprecision(2) << setw(7)
+      << (mu_tot*2.0*p.r_cm*cm) << "  " << showpos << setprecision(2) << setw(8)
+      << 100.0*(floor_ratio - 1.0) << "%" << " | " << setw(11) << 100.0*(at_fwhm - 1.0) << "%"
+      << setw(11) << 100.0*(at_mcwin - 1.0) << "%" << noshowpos << " | ";
+    if( std::isfinite(f_star) ) o << setprecision(4) << setw(8) << f_star; else o << "     n/a";
+    o << "   (f_win " << setprecision(4) << f_fwhm << " -> " << f_mcwin << ")";
+    BOOST_TEST_MESSAGE( o.str() );
+
+    if( std::isfinite(f_star) && (p.mat == water) )
+      demanded_water.push_back( f_star );
+
+    // Prediction 3: at the MC's own window each row should sit at its transparent floor.  Judged on
+    //  the rows that can actually see the credit - a steel sphere at tau = 50 is opaque, its integral
+    //  is a surface skin, and changing mu barely moves it (which is itself the material lever's
+    //  prediction, and is why its "demanded f" below is meaningless rather than discrepant).
+    const double left_over = 100.0*(at_mcwin - floor_ratio);
+    if( (p.mat == water) && (fabs(left_over) > worst_at_mc_window) )
+    {
+      worst_at_mc_window = fabs(left_over);
+      worst_where = p.name;
+    }
+  }//for( probes )
+
+  double f_min = 1.0e9, f_max = -1.0e9, f_sum = 0.0;
+  for( const double f : demanded_water ){ f_min = std::min(f_min,f); f_max = std::max(f_max,f); f_sum += f; }
+  const double f_mean = f_sum/std::max<size_t>(1,demanded_water.size());
+  const ceelo::Material cw = CeeLoUtils::to_ceelo_material( *water ).to_material();
+  const double f_mcwin_water = ceelo::kn_in_window_fraction( energy, win_mc, cw );
+
+  BOOST_TEST_MESSAGE( "  water rows demand f = " << fixed << setprecision(4) << f_min << " .. " << f_max
+                      << " (mean " << f_mean << ") over " << demanded_water.size()
+                      << " configurations; f_win at the MC's own window = " << f_mcwin_water );
+  BOOST_TEST_MESSAGE( "  after switching to the MC's window, the worst SENSITIVE row sits "
+                      << setprecision(2) << worst_at_mc_window << "% from its transparent floor ("
+                      << worst_where << "); steel is opaque at this energy and is reported as the"
+                      " insensitivity check, not as a discrepancy" );
+
+  BOOST_CHECK_MESSAGE( f_max <= 1.0,
+    "a credit fraction above 1 is unphysical - no FEP-window credit can close this gap (max "
+    << f_max << ")" );
+  BOOST_CHECK_MESSAGE( (f_max - f_min) < 0.5*f_mean,
+    "the demanded credit fraction is not consistent across geometry/optical depth (" << f_min
+    << " .. " << f_max << "), so the residual is not the window credit" );
+  BOOST_CHECK_MESSAGE( fabs(f_mean/f_mcwin_water - 1.0) < 0.35,
+    "the demanded credit (" << f_mean << ") does not match the fraction the MC's own 0.75 keV"
+    " scoring window implies (" << f_mcwin_water << ")" );
+  BOOST_CHECK_MESSAGE( worst_at_mc_window < 0.75,
+    "using the MC's own window does not collapse the residual onto the transparent floor; worst "
+    << worst_at_mc_window << "% at " << worst_where );
+}//BOOST_AUTO_TEST_CASE( Rung9_FepWindowCreditProbe )
