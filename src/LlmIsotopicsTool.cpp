@@ -1082,21 +1082,7 @@ nlohmann::json massFractionResultToJson(
   if( mass_frac.profile )
   {
     const Solution::MassFractionProfileResult &profile = *mass_frac.profile;
-    const char *profile_status = "failed";
-    switch( profile.status )
-    {
-      case Solution::MassFractionProfileStatus::NotRequested:
-        profile_status = "not_requested"; break;
-      case Solution::MassFractionProfileStatus::Complete:
-        profile_status = "complete"; break;
-      case Solution::MassFractionProfileStatus::BoundaryLimited:
-        profile_status = "boundary_limited"; break;
-      case Solution::MassFractionProfileStatus::NonIdentifiable:
-        profile_status = "non_identifiable"; break;
-      case Solution::MassFractionProfileStatus::Failed:
-        profile_status = "failed"; break;
-    }
-    result["mass_fraction_profile_status"] = profile_status;
+    result["mass_fraction_profile_status"] = Solution::to_str( profile.status );
     result["mass_fraction_profile_reason"]
         = (profile.reason == Solution::MassFractionProfileReason::Forced)
           ? "forced" : "automatic_weak";
@@ -1104,17 +1090,8 @@ nlohmann::json massFractionResultToJson(
     result["mass_fraction_profile_num_fits"] = profile.num_fits;
     result["mass_fraction_profile_intervals"] = json::array();
 
-    const auto endpoint_name = []( const Solution::MassFractionProfileEndpointKind kind ) {
-      switch( kind )
-      {
-        case Solution::MassFractionProfileEndpointKind::LikelihoodCrossing:
-          return "likelihood_crossing";
-        case Solution::MassFractionProfileEndpointKind::PhysicalLimit:
-          return "physical_limit";
-        case Solution::MassFractionProfileEndpointKind::InputConstraintLimit:
-          return "input_constraint_limit";
-      }
-      return "physical_limit";
+    const auto endpoint_name = []( const Solution::MassFractionProfileEndpointKind kind ){
+      return Solution::to_str( kind );
     };
     for( const Solution::MassFractionProfileInterval &interval : profile.intervals )
       result["mass_fraction_profile_intervals"].push_back({
@@ -1336,6 +1313,47 @@ nlohmann::json executePerformIsotopics(
     // Warnings
     if( !solution.m_warnings.empty() )
       result["warnings"] = solution.m_warnings;
+
+    // Non-mass-fraction profile-likelihood results (RelativeActivity / ActivityRatio / Age
+    // requests); mass-fraction profiles surface per nuclide via `mass_fraction_profile_*`.
+    {
+      json profile_results = json::array();
+      for( const RelActCalcAuto::RelActAutoSolution::ProfileResultEntry &entry
+                : solution.m_profile_results )
+      {
+        using ProfileTarget = RelActCalcAuto::Options::ProfileTarget;
+        using Solution = RelActCalcAuto::RelActAutoSolution;
+        if( entry.target.kind == ProfileTarget::Kind::MassFraction )
+          continue;
+        json row;
+        row["kind"] = ProfileTarget::to_str( entry.target.kind );
+        row["source"] = RelActCalcAuto::to_name( entry.target.source );
+        row["rel_eff_curve_index"] = static_cast<int64_t>( entry.target.rel_eff_curve_index );
+        if( entry.target.kind == ProfileTarget::Kind::ActivityRatio )
+        {
+          row["denominator"] = RelActCalcAuto::to_name( entry.target.denominator );
+          row["denominator_curve_index"]
+              = static_cast<int64_t>( entry.target.denominator_curve_index );
+        }
+        row["status"] = Solution::to_str( entry.profile.status );
+        row["name"] = entry.target.display_name();
+        row["num_fits"] = static_cast<int64_t>( entry.profile.num_fits );
+        if( !entry.profile.message.empty() )
+          row["message"] = entry.profile.message;
+        row["intervals"] = json::array();
+        for( const Solution::MassFractionProfileInterval &interval : entry.profile.intervals )
+          row["intervals"].push_back({
+            {"confidence_level", interval.confidence_level},
+            {"delta_chi2", interval.delta_chi2},
+            {"lower", interval.lower}, {"upper", interval.upper},
+            {"lower_endpoint", Solution::to_str(interval.lower_kind)},
+            {"upper_endpoint", Solution::to_str(interval.upper_kind)}
+          });
+        profile_results.push_back( row );
+      }//for( solution.m_profile_results )
+      if( !profile_results.empty() )
+        result["profile_results"] = profile_results;
+    }
 
     // Add ROI information with chi²/dof for each ROI
     if( !solution.m_fit_peaks_in_spectrums_cal.empty() )

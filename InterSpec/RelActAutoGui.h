@@ -99,6 +99,10 @@ public:
   void updateDuringRenderForSpectrumChange();
   void updateSpectrumToDefaultEnergyRange();
   void updateDuringRenderForNuclideChange();
+
+  /** Pushes each nuclide's force-profile checkbox state (enabled, and the reason when not) from
+   the assembled options; see the implementation for why this belongs to the render cycle. */
+  void updateProfileEligibility();
   void updateDuringRenderForRefGammaLineChange();
   void updateDuringRenderForEnergyRangeChange();
   void updateDuringRenderForFreePeakChange();

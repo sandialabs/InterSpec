@@ -67,6 +67,14 @@ public:
     Does not emit the `updated()` or `age_changed()` signals.
    */
   void setAgeRange( Wt::WString min_age, Wt::WString max_age );
+
+  /** Enables/disables the force-profile checkbox per the current configuration's eligibility
+   (an options-level property - e.g. a mass-fraction window on a SIBLING nuclide removes it - so
+   `RelActAutoGui` evaluates it against the assembled options and pushes it here), swapping the
+   tooltip for `reason` while disabled.  A checked-but-ineligible box keeps its checked state:
+   the intent survives the user later removing the constraint, and a solve run meanwhile honors
+   the request with a structured Failed carrying the same reason. */
+  void setProfileEligibility( const bool allowed, const Wt::WString &reason );
   
   
   void setNuclideEditFocus();

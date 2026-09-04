@@ -883,10 +883,11 @@ struct Options
    runs the deterministic multi-start basin search and computes automatic bounded
    profile-likelihood intervals for weak mass fractions.
 
-   Note the one profile-triggered baseline reselection is NOT gated on this flag: it is gated on a
+   Note profile-triggered baseline reselection is NOT gated on this flag: it is gated on a
    profile having run at all.  An explicitly forced per-nuclide profile therefore can still trigger
    it in a non-robust solve, which is deliberate - having discovered that the retained baseline is
-   not optimal, silently keeping it would be worse than spending the one permitted restart.
+   not optimal, silently keeping it would be worse than spending a reselection (up to
+   `ProfileLikelihood::sm_max_baseline_restarts` of them; see `baseline_discovery_disposition`).
 
    A default solve still runs the narrow EM-attribution rescue pair: that is the known remedy for a
    degeneracy in all-physical multi-curve fits sharing sources, not exploratory breadth.
@@ -967,22 +968,22 @@ struct Options
   /** Names one quantity a post-fit profile-likelihood scan can be run over.
 
    A pure descriptor: which source, which curve, which kind of quantity.  It carries no numeric
-   target, because the engine does not impose an equality on the reported quantity at all - it
-   restricts the target's own fit PARAMETER with a `ceres::SubsetManifold` and reads back whatever
-   reported value that produces.
+   target, because the engine does not impose an equality residual on the reported quantity - it
+   reparameterizes so that one fit PARAMETER *is* the reported (pre-Pu242-correction) coordinate
+   (see `ProfileConditionalHost::install_carrier_reparam`), restricts that slot with a
+   `ceres::SubsetManifold`, and reads back the achieved reported value at each conditional point.
+   The pinned statistic is therefore the exact profile `min over {q_pre == q0}`; a target for which
+   no slot can scan the reported coordinate exactly reports a structured `Failed` rather than an
+   approximate interval.
 
-   The statistic that results, and its known bias: let `q(x)` be the reported quantity and `a` the
-   target's activity parameter.  A point minimizing subject to `a == a0` is merely *some* feasible
-   point of `{q == q(a0)}`, so `min over {q == q0} <= min over {a == a0}`.  Pinning therefore
-   upper-bounds the true profile of `q`: delta chi2 is overstated at a given `q`, the threshold is
-   crossed too early, and reported intervals come out somewhat too NARROW.  The two coincide when
-   `q` is effectively a function of `a` alone, which is the ordinary case for a fitted isotope
-   against its siblings.  It was least true for correlation-generated Pu-242, where `q` depends on
-   Pu-239 as well - and that quantity is no longer offered as a profile target, because it has no
-   free parameter and hence no likelihood direction of its own.
+   The exactness is measured rather than assumed, by unit tests that refit with the quantity
+   held fixed at each claimed endpoint and check the objective lands on the threshold.
 
-   The size of the remaining bias is measured rather than assumed, by unit tests that refit with the
-   mass fraction held fixed at each claimed endpoint and check the objective lands on the threshold.
+   Every kind has an exact executor: `MassFraction` through the carrier chart above,
+   `RelativeActivity` and `Age` through identity charts (the reported quantity is exactly linear
+   in one existing slot), and `ActivityRatio` through a slot-driven ratio reparameterization of
+   the numerator (`ProfileConditionalHost::install_ratio_reparam`).  A target no chart can scan
+   exactly still reports a structured `Failed` with the reason.
    */
   struct ProfileTarget
   {
@@ -1013,12 +1014,18 @@ struct Options
        must not present a profiled single activity as if it were gauge-free. */
       RelativeActivity = 1,
 
-      /** `source`'s relative activity divided by `denominator`'s.
+      /** `source`'s relative activity divided by `denominator`'s, on ONE curve.
 
        Gauge invariant when both sources sit on the same curve (the shared normalization cancels),
        and therefore the physically meaningful choice whenever the question is "how do these two
-       compare".  A cross-curve ratio is NOT gauge invariant - each curve carries its own
-       normalization - and is offered only because a caller may deliberately want it. */
+       compare".
+
+       A cross-curve ratio is NOT gauge invariant - each curve carries its own normalization, so
+       the number would be a convention rather than a measurement - and is therefore REJECTED:
+       `why_not_usable` refuses `denominator_curve_index != rel_eff_curve_index`, and because an
+       explicit request that cannot be honored fails `Options::why_not_usable()`, naming one
+       rejects the whole solve rather than silently profiling something else.  Compare two curves
+       through their own reported activities instead. */
       ActivityRatio = 2,
 
       /** The fitted age of `source`, in PhysicalUnits (1.0 == second).
@@ -1055,10 +1062,43 @@ struct Options
      Covers invariant 9 of the profile design: `MassFraction` needs an element with at least two
      fitted isotopes, `ActivityRatio` needs a distinct denominator that is actually present, and
      `Age` needs a source whose age is fitted and which is its own age-controlling nuclide.
+     Also rejects, per kind, every constraint shape knowable from the OPTIONS alone that leaves no
+     slot scanning the reported quantity exactly (e.g. a same-element mass-fraction window for
+     `MassFraction`, a rigid ratio link between numerator and denominator for `ActivityRatio`) -
+     so callers can warn BEFORE solving.  Conditions only knowable from a solved model (a slot
+     held constant by model selection, a degenerate carrier) still surface as a structured
+     `Failed` profile at scan time.
 
      @returns An empty string when usable, otherwise a short untranslated reason why not. */
     std::string why_not_usable( const Options &options ) const;
+
+    /** How this target is named to the user - "U235 MassFraction", "Cs137 RelativeActivity",
+     "U235/U238 ActivityRatio".  The ONE composer of that label: warnings, reports, JSON, and the
+     text summary all quote it, so a target never reads as a different quantity than it is. */
+    std::string display_name() const;
+
+    /** Serialized as a `<ProfileTarget>` element (kind, source, curve index, and for ratios the
+     denominator and its curve). */
+    static const int sm_xmlSerializationVersion = 0;
+    rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
+    void fromXml( const ::rapidxml::xml_node<char> *parent );
+
+    bool operator==( const ProfileTarget &rhs ) const;
+    bool operator!=( const ProfileTarget &rhs ) const;
   };//struct ProfileTarget
+
+  /** Explicitly requested profile-likelihood scans, run after the final ROI/model/basin solve.
+
+   The request surface for every `ProfileTarget::Kind`, mirroring the manual engine's
+   `RelEffInput::profile_targets`.  Entries must name sources explicitly in the input (a target
+   `why_not_usable` rejects fails the solve's options check), and duplicate the per-nuclide
+   `NucInputInfo::force_profile_mass_fraction` sugar, which is folded into this list at solve
+   time.  An empty list plus no forced/automatic profiling means the solve does not retain its
+   optimizer problem.
+
+   Serialized (v6) as an optional `<ProfileTargets>` element; absent means empty, so configs that
+   do not use it keep their lower version. */
+  std::vector<ProfileTarget> profile_targets;
 
   /** If using the same Hoerl function, or external shielding for all relative efficiency curves,
    * this will check that the specifications are consistent.
@@ -1089,11 +1129,11 @@ struct Options
    `background_filename`, `foreground_sample_numbers`, and `background_sample_numbers`. v2
    XML still parses (the new fields default to empty / no samples). v4 adds
    `auto_profile_weak_mass_fractions` and permits v1 `NucInputInfo` children.  v5 adds
-   `robust_solve`.
+   `robust_solve`.  v6 adds `profile_targets`.
 
    Serialization writes the lowest version a reader actually needs, so a config that leaves the
    newer options at their defaults stays byte-identical and keeps parsing in older builds. */
-  static const int sm_xmlSerializationVersion = 5;
+  static const int sm_xmlSerializationVersion = 6;
   rapidxml::xml_node<char> *toXml( ::rapidxml::xml_node<char> *parent ) const;
   
   /** Sets the member variables from an XML element created by `toXml(...)`.
@@ -1134,6 +1174,31 @@ std::vector<Options::ProfileTarget::Kind> profilable_quantity_kinds(
                                                   const Options &options,
                                                   const SrcVariant &source,
                                                   const size_t rel_eff_curve_index );
+
+
+/** How many input nuclides of `curve` are isotopes of `nuclide`'s element (counting `nuclide`).
+
+ The ONE definition of "sole isotope of its element" - a count below two means the within-element
+ mass fraction is identically one, so it cannot be profiled and a forced request is honored
+ through the source's relative activity instead.  The eligibility check, the GUI checkbox, and
+ both profile passes must answer that question identically or the checkbox promises what the
+ solve refuses (or vice versa), so they all call this.
+
+ @returns 0 when `nuclide` is null or is not itself an input of the curve. */
+size_t same_element_input_count( const RelEffCurveInput &curve,
+                                 const SandiaDecay::Nuclide * const nuclide );
+
+
+/** Walks `source` up its activity-ratio constraint chain and returns the chain's root - the one
+ source whose own slot actually scales the whole rigid group.
+
+ A constrained source's activity slot is inert (`activity_multiple == -1`), so anything reasoning
+ about "which parameter moves this source" - the eligibility rules, the identity chart, the
+ carrier install's circularity check - must ask this, and must agree.  Terminates on the chain
+ length even if the input contained a cycle (`check_nuclide_constraints()` rejects those).
+
+ @returns `source` itself when it is not ratio constrained. */
+SrcVariant ratio_chain_root( const RelEffCurveInput &curve, const SrcVariant &source );
 
 
 /** Populates `opts.foreground_filename / foreground_sample_numbers` (and the background equivalents)
@@ -1291,8 +1356,21 @@ struct RelActAutoSolution
   {
     LikelihoodCrossing,
     PhysicalLimit,
-    InputConstraintLimit
+    InputConstraintLimit,
+    /** The scan stopped at its own synthetic range cap, which is NOT a feasibility statement.
+
+     Only quantities whose fit parameter has no upper bound (a relative activity or an activity
+     ratio with no `max_rel_act`) can reach this: the scan needs a finite range, so it caps the
+     excursion at ten times the parameter's natural scale - far outside any plausible crossing,
+     but an arbitrary choice rather than a limit the data or the input imposes.  Quoting such an
+     endpoint as a `PhysicalLimit` would assert a bound that does not exist. */
+    ScanRangeLimit
   };
+
+  /** String form of the enums above; returns a static string, so do not delete it.  Report, LLM,
+   and text surfaces all quote these, so the spellings are a wire format - do not reword them. */
+  static const char *to_str( const MassFractionProfileStatus status );
+  static const char *to_str( const MassFractionProfileEndpointKind kind );
 
   /** Overall usability of the reported mass-fraction uncertainty. */
   enum class MassFractionStatus : int
@@ -1952,9 +2030,23 @@ struct RelActAutoSolution
    */
   std::vector<std::shared_ptr<const RelActCalc::Pu242ByCorrelationInput<double>>> m_uncorrected_pu;
 
-  /** Profile-likelihood results keyed by curve index and nuclide symbol.  Filled only for
-   automatically weak or explicitly requested quantities, after the final ROI/model/basin solve. */
-  std::vector<std::map<std::string,MassFractionProfileResult>> m_mass_fraction_profiles;
+  /** One profile-likelihood result, keyed by its full target descriptor so every
+   `ProfileTarget::Kind` (and, for ratios, the denominator) is expressible.  The scan payload is
+   kind-agnostic: `MassFractionProfileResult` carries the intervals/status/message for whatever
+   reported quantity the target names. */
+  struct ProfileResultEntry
+  {
+    Options::ProfileTarget target;
+    MassFractionProfileResult profile;
+  };
+
+  /** Profile-likelihood results, filled only for automatically weak or explicitly requested
+   quantities, after the final ROI/model/basin solve.  Mass-fraction entries also surface through
+   `mass_enrichment_result`. */
+  std::vector<ProfileResultEntry> m_profile_results;
+
+  /** The entry whose target matches exactly, or nullptr. */
+  const ProfileResultEntry *profile_result( const Options::ProfileTarget &target ) const;
   
   /** We will allow corrections to the first following number of energy calibration coefficients.
  

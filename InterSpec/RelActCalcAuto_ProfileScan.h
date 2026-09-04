@@ -262,9 +262,15 @@ struct PendingBaselineDiscovery
 /** Policy for a conditional point which improves the retained physical objective.
 
  The first profile pass must defer every such point until all eligible targets have been visited;
- only then is the deterministic best seed selected.  Profiles restarted from that selected
- baseline are the one permitted retry, so another discovery is an explicit baseline-not-optimal
- failure rather than a second restart.
+ only then is the deterministic best seed selected, the baseline re-minimized unconstrained from
+ that seed's basin, and every requested profile restarted against the new nominal.  The exact
+ conditional scans are effective basin probers (a free-age plutonium corpus found a better basin on
+ ~25% of spectra), so a further discovery on the restarted scan gets the same treatment - up to
+ `sm_max_baseline_restarts` reselections.  Termination is guaranteed without the cap: a restart is
+ accepted only when it lowers the frozen physical objective by more than
+ `baseline_improvement_tolerance`, so the sequence descends monotonically; the cap is a runaway
+ backstop, and exhausting it is an explicit baseline-not-optimal failure rather than a quiet
+ interval against a wrong nominal.
 
  Note on the conditional-fit budget: the cap passed to `scan` is per scan on a given baseline, so a
  baseline reselection deliberately grants the same semantic target a fresh budget rather than
@@ -279,10 +285,22 @@ enum class BaselineDiscoveryDisposition
   RejectAfterRestart
 };
 
+/** Most baseline reselections one solve may perform; see `baseline_discovery_disposition`.
+
+ MEASURED (2026-08-31, Pu 4h wide-band free-age, 80 spectra): with the pre-scan probe pass the
+ lead-shielded (Fe00-Cd00-Pb04) basin chains run DEEPER than three hops - 18 spectra still
+ exhausted a cap of 3 while every hop kept lowering the objective - and probe-discovered hops
+ became cheap (matrix-free unless they miss their seed and escalate).  Eight gives those chains
+ room at a per-hop cost far below the historical full-matrix restart; termination never depended
+ on the cap (each accepted hop must lower the frozen objective by more than
+ `baseline_improvement_tolerance`, a strictly positive amount), so it remains purely the runaway
+ backstop, and exhausting it is still an explicit baseline-not-optimal failure. */
+constexpr unsigned sm_max_baseline_restarts = 8;
+
 inline BaselineDiscoveryDisposition baseline_discovery_disposition(
     const unsigned completed_baseline_restarts )
 {
-  return completed_baseline_restarts == 0
+  return completed_baseline_restarts < sm_max_baseline_restarts
       ? BaselineDiscoveryDisposition::DeferUntilPassComplete
       : BaselineDiscoveryDisposition::RejectAfterRestart;
 }
@@ -307,8 +325,9 @@ inline BaselineDiscoveryDisposition baseline_discovery_disposition(
  arbitrary rather than more accurate.  The honest report of a flat direction is the bounded or
  non-identifiable interval that spans it, which is exactly what this scanner produces.
 
- The guard this feeds is unchanged - one deferred reselection, then a visible failure - and a real
- alternative basin clears these scales by orders of magnitude.
+ The guard this feeds - deferred reselection up to `sm_max_baseline_restarts`, then a visible
+ failure - depends on it being strictly positive for termination, and a real alternative basin
+ clears these scales by orders of magnitude.
  */
 inline double baseline_improvement_tolerance( const double objective, const double cov_scale )
 {
@@ -350,65 +369,12 @@ inline std::optional<std::size_t> best_pending_baseline_discovery_index(
 }
 
 
-/** Order every finite deferred discovery best-first using exactly the rule of
- `best_pending_baseline_discovery_index`.
-
- One warm seed cannot cover basins that different profile targets entered independently, so the
- single permitted baseline reselection is given several deterministic seeds.  Non-finite entries are
- dropped rather than sorted to the end: they can never seed anything.  Entries whose objective and
- semantic key are both equal keep their original relative order, so the result is a total order that
- never depends on caller/source ordering.
-
- The returned indices refer to `discoveries`.  `front()` is always the same entry
- `best_pending_baseline_discovery_index` would return, which keeps the one-seed and many-seed paths
- provably consistent.
- */
-inline std::vector<std::size_t> ordered_pending_baseline_discoveries(
-    const std::vector<PendingBaselineDiscovery> &discoveries )
-{
-  std::vector<std::size_t> order;
-  order.reserve(discoveries.size());
-  for( std::size_t index = 0; index < discoveries.size(); ++index )
-    if( std::isfinite(discoveries[index].full_objective) )
-      order.push_back(index);
-
-  std::stable_sort( order.begin(), order.end(),
-    [&discoveries]( const std::size_t lhs, const std::size_t rhs ) {
-      const PendingBaselineDiscovery &a = discoveries[lhs], &b = discoveries[rhs];
-      if( a.full_objective < b.full_objective )
-        return true;
-      if( b.full_objective < a.full_objective )
-        return false;
-      return a.semantic_key < b.semantic_key;
-    } );
-  return order;
-}
-
-
-/** De-duplicate an ordered discovery list by semantic key, keeping the best entry per key.
-
- Two profile targets in the same curve routinely fall into the same basin, and seeding the search
- twice from it wastes a candidate slot that a genuinely different basin could use.  Input must
- already be ordered by `ordered_pending_baseline_discoveries`, so the retained entry per key is that
- key's lowest objective.
- */
-inline std::vector<std::size_t> unique_pending_baseline_discoveries(
-    const std::vector<PendingBaselineDiscovery> &discoveries,
-    const std::vector<std::size_t> &order )
-{
-  std::vector<std::size_t> unique;
-  unique.reserve(order.size());
-  for( const std::size_t index : order )
-  {
-    bool duplicate = false;
-    for( const std::size_t retained : unique )
-      duplicate = duplicate
-                || (discoveries[index].semantic_key == discoveries[retained].semantic_key);
-    if( !duplicate )
-      unique.push_back(index);
-  }
-  return unique;
-}
+// NOTE: `ordered_pending_baseline_discoveries` / `unique_pending_baseline_discoveries` (a full
+// best-first ordering + per-basin dedup, anticipating a multi-seed reselection) were removed
+// 2026-08: production only ever consumed the single best seed, and the measured hop data showed
+// the restart from that seed already reached objectives below every same-pass discovery - a
+// second seed never had a win to offer.  Recover them from git history if a multi-seed
+// reselection is ever measured to be worth it.
 
 namespace detail
 {
