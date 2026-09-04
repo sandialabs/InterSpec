@@ -2226,6 +2226,17 @@ BOOST_AUTO_TEST_CASE( Rung8_SphericalSourceTruth, * boost::unit_test::disabled()
   const vector<double> anchor_energies = { 60.0, 88.0, 122.0, 344.0, 661.7, 1332.5 };
   const int num_lines = 1 << 16;
 
+  // The source attenuation coefficient carries the FEP-WINDOW credit, as the truth bank does: a
+  //  photon Compton-scattering by less than the peak's half-width is still in the full-energy peak,
+  //  so charging it mu_TOTAL under-counts the efficiency.  The window is not free - CeeLo scores on
+  //  a +-half-width, so it is FWHM/2 of the detector the transfer is anchored on, and for this
+  //  GEM35-70 that is FWHM = sqrt(0.359 + 0.00230*E).  Run with mu_total instead and the light
+  //  matrix reads ~2% low at 60 keV, where the Compton fraction is largest (measured 2026-09-04);
+  //  a dense matrix at 60 keV is photoelectric-dominated and barely moves.
+  const auto fep_window_keV = []( const double e ) -> double {
+    return 0.5*std::sqrt( 0.359 + 0.00230*e );
+  };
+
   // A bare point in vacuum at `d_cm`, as the transfer's anchor curve; cached by distance.
   map<long long,shared_ptr<const ceelo::DetectorResponse>> anchored;
   const auto centre_anchor = [&]( const double d_cm ) -> shared_ptr<const ceelo::DetectorResponse>
@@ -2246,7 +2257,13 @@ BOOST_AUTO_TEST_CASE( Rung8_SphericalSourceTruth, * boost::unit_test::disabled()
       pt.set_point_source( Eigen::Vector3d( 0.0, 0.0, -(det.endcap_front_offset_cm + d_cm) ) );
       ostringstream k;
       k << "sph-anchor|point|d=" << setprecision(10) << d_cm;
-      const McResult r = run_mc( pt, cache, k.str(), e, 0.005, 4000000000ULL, 20260904, 900.0 );
+      // 0.1%, not the 0.5% a bare anchor would normally get: the model prediction scales DIRECTLY
+      //  with the anchor value at that energy, so the anchor's own statistics land in the quoted
+      //  model/MC difference one-for-one.  At 0.5% the floor was 0.47% (anchor 0.40% + sphere MC
+      //  0.25% in quadrature), which is bigger than most of the differences being reported; at 0.1%
+      //  the floor is 0.27% and is dominated by the sphere MC, where it belongs.  A point source is
+      //  cheap, so this costs seconds.
+      const McResult r = run_mc( pt, cache, k.str(), e, 0.001, 4000000000ULL, 20260904, 900.0 );
       anchor.curve.energies_keV.push_back( e );
       anchor.curve.eff.push_back( r.eff );
       anchor.curve.frac_sigma.push_back( r.frac_sigma );
@@ -2311,7 +2328,7 @@ BOOST_AUTO_TEST_CASE( Rung8_SphericalSourceTruth, * boost::unit_test::disabled()
       }
       DistributedSrcCalcT<double>::ShellInfo src;
       src.dims = { c.outer_cm*cm, 0.0, 0.0 };
-      src.trans_len_coef = transmition_length_coefficient( c.mat.get(), static_cast<float>(e) );
+      src.trans_len_coef = fep_removal_coefficient( *c.mat, e, fep_window_keV(e) );
       src.type = ShellType::Material;
       calc.m_shells.push_back( src );
 
@@ -2335,7 +2352,8 @@ BOOST_AUTO_TEST_CASE( Rung8_SphericalSourceTruth, * boost::unit_test::disabled()
         << setw(9) << d_line << "%" << noshowpos;
       BOOST_TEST_MESSAGE( o.str() );
 
-      // 3 sigma of the MC on top of the model allowance, as the truth bank does.
+      // 3 sigma of the MC on top of the model allowance, as the truth bank does.  The ANCHOR's
+      //  statistics are in here too - see centre_anchor - but at 0.1% they are well inside this.
       const double allow = 3.0 + 3.0*100.0*mc.frac_sigma;
       for( const pair<const char *,double> &m : { make_pair("element",d_elem), make_pair("line",d_line) } )
       {
