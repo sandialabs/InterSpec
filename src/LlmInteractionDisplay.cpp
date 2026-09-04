@@ -64,15 +64,16 @@ namespace
 {
 WT_DECLARE_WT_MEMBER
 (LlmCopyTextToClipboard, Wt::JavaScriptFunction, "LlmCopyTextToClipboard",
-  function( sender, event, textAreaId )
+  function( sender, event, textAreaIdOrText )
 {
-  var textArea = document.getElementById(textAreaId);
-  if( !textArea ) {
-    console.warn('Could not find text area with id:', textAreaId);
+  // `textAreaIdOrText` is either the id of an element to copy the .value of, or (when no such
+  //  element exists) the literal text to copy - the latter lets callers copy a string directly.
+  var el = document.getElementById(textAreaIdOrText);
+  var text = el ? el.value : textAreaIdOrText;
+  if( text === null || text === undefined ) {
+    console.warn('LlmCopyTextToClipboard: nothing to copy for:', textAreaIdOrText);
     return;
   }
-
-  var text = textArea.value;
 
   if( !navigator.clipboard )
   {
@@ -202,6 +203,72 @@ namespace
     }
   }//formatJsonString(...)
 
+
+  /** Whether a turn's rawContent() is a request sent *to* the LLM (true) or a response received
+   *from* the LLM (false).  A turn stores exactly one raw JSON blob; its direction is fixed by type:
+   InitialRequest/ToolResult hold the request body sent to the API; AutoReply is an automatic
+   prompt sent to the LLM; everything else (FinalLlmResponse/ToolCall/Error) holds the API response.
+   */
+  bool isRequestDirectionTurn( LlmInteractionTurn::Type type )
+  {
+    switch( type )
+    {
+      case LlmInteractionTurn::Type::InitialRequest:
+      case LlmInteractionTurn::Type::ToolResult:
+      case LlmInteractionTurn::Type::AutoReply:
+      case LlmInteractionTurn::Type::ConversationSummary:
+        return true;
+
+      case LlmInteractionTurn::Type::FinalLlmResponse:
+      case LlmInteractionTurn::Type::ToolCall:
+      case LlmInteractionTurn::Type::Error:
+        return false;
+    }//switch( type )
+
+    return false;
+  }//isRequestDirectionTurn(...)
+
+
+  /** Returns rawContent() of the nearest turn adjacent to `turn` in the same interaction, in the
+   given direction (`dir` = -1 to search backwards, +1 to search forwards), whose direction matches
+   `wantRequestDir`.  Used to pair a response turn with the request that produced it (search
+   backwards for a request-direction turn), or a request turn with its response (search forwards for
+   a response-direction turn).  Returns empty string if the interaction is gone, `turn` is not found
+   (e.g. the AutoReply wrapper, which is not stored in `responses`), or no matching turn exists.
+   */
+  string adjacentTurnRawJson( const shared_ptr<LlmInteractionTurn> &turn,
+                              const int dir, const bool wantRequestDir )
+  {
+    const shared_ptr<LlmInteraction> convo = turn ? turn->conversation().lock() : nullptr;
+    if( !convo )
+      return string();
+
+    const vector<shared_ptr<LlmInteractionTurn>> &turns = convo->responses;
+    size_t index = turns.size();
+    for( size_t i = 0; i < turns.size(); ++i )
+    {
+      if( turns[i] == turn )
+      {
+        index = i;
+        break;
+      }
+    }
+
+    if( index >= turns.size() )
+      return string();  // `turn` not found in the interaction (e.g. a display-only wrapper)
+
+    for( long long i = static_cast<long long>(index) + dir;
+         (i >= 0) && (i < static_cast<long long>(turns.size()));
+         i += dir )
+    {
+      const shared_ptr<LlmInteractionTurn> &other = turns[static_cast<size_t>(i)];
+      if( other && (isRequestDirectionTurn( other->type() ) == wantRequestDir) )
+        return other->rawContent();
+    }
+
+    return string();
+  }//adjacentTurnRawJson(...)
+
 }//namespace
 
 
@@ -285,51 +352,33 @@ void LlmInteractionTurnDisplay::showMenu()
 
 void LlmInteractionTurnDisplay::addMenuItems( PopupDivMenu *menu )
 {
-  // Add "Show Full Content" menu item for all turn types
-  PopupDivMenuItem *showFullContent = menu->addMenuItem( "Show Full Content" );
-  showFullContent->triggered().connect( std::bind( [this]() {
-    const string rawContent = m_turn->rawContent();
-    if( rawContent.empty() )
-    {
-      showJsonDialog( "Full Content", "{\"note\": \"Content not available\"}", false );
-    }else
-    {
-      showJsonDialog( "Full Content", rawContent, true );
-    }
-  }));
+  // Each turn stores exactly one raw JSON blob (m_turn->rawContent()) - either the request sent to
+  // the LLM or the response received from it, depending on the turn type (see isRequestDirectionTurn).
+  // The opposite direction is not stored on this turn, but can be recovered from the adjacent turn:
+  // a response turn's request is the nearest preceding request-direction turn's payload, and a
+  // request turn's response is the following response-direction turn's payload.
+  const bool thisIsRequest = isRequestDirectionTurn( m_turn->type() );
 
-  // Add "Show Request JSON" option
+  // Show Request JSON
   PopupDivMenuItem *showRequestJson = menu->addMenuItem( "Show Request JSON" );
-  showRequestJson->triggered().connect( std::bind( [this]() {
-    const string rawContent = m_turn->rawContent();
-    if( rawContent.empty() )
-    {
-      // Try to get from parent conversation
-      if( const shared_ptr<LlmInteraction> convo = m_turn->conversation().lock() )
-      {
-        // TODO: Build request JSON from conversation context
-        showJsonDialog( "Request JSON", "{\"note\": \"Request JSON not available\"}", false );
-      }else
-      {
-        showJsonDialog( "Request JSON", "{\"note\": \"Request JSON not available\"}", false );
-      }
-    }else
-    {
-      showJsonDialog( "Request JSON", rawContent, true );
-    }
+  showRequestJson->triggered().connect( std::bind( [this,thisIsRequest]() {
+    const string json = thisIsRequest ? m_turn->rawContent()
+                                       : adjacentTurnRawJson( m_turn, -1, true );
+    if( json.empty() )
+      showJsonDialog( "Request JSON", "{\"note\": \"Request JSON not available\"}", false );
+    else
+      showJsonDialog( "Request JSON", json, true );
   }));
 
-  // Add "Show Response JSON" option
+  // Show Response JSON
   PopupDivMenuItem *showResponseJson = menu->addMenuItem( "Show Response JSON" );
-  showResponseJson->triggered().connect( std::bind( [this]() {
-    const string rawContent = m_turn->rawContent();
-    if( rawContent.empty() )
-    {
+  showResponseJson->triggered().connect( std::bind( [this,thisIsRequest]() {
+    const string json = thisIsRequest ? adjacentTurnRawJson( m_turn, +1, false )
+                                       : m_turn->rawContent();
+    if( json.empty() )
       showJsonDialog( "Response JSON", "{\"note\": \"Response JSON not available\"}", false );
-    }else
-    {
-      showJsonDialog( "Response JSON", rawContent, true );
-    }
+    else
+      showJsonDialog( "Response JSON", json, true );
   }));
 }//addMenuItems()
 
@@ -438,6 +487,24 @@ LlmInteractionFinalResponseDisplay::LlmInteractionFinalResponseDisplay(
 LlmInteractionFinalResponseDisplay::~LlmInteractionFinalResponseDisplay()
 {
 }//~LlmInteractionFinalResponseDisplay()
+
+
+void LlmInteractionFinalResponseDisplay::addMenuItems( PopupDivMenu *menu )
+{
+  // Base items (Request/Response JSON) first, then a convenience "Copy Response Text" that puts the
+  // human-readable assistant text (not the raw JSON) on the clipboard.
+  LlmInteractionTurnDisplay::addMenuItems( menu );
+
+  PopupDivMenuItem *copyText = menu->addMenuItem( "Copy Response Text" );
+  copyText->triggered().connect( std::bind( [this]() {
+    LOAD_JAVASCRIPT(wApp, "LlmInteractionDisplay.cpp", "LlmInteractionDisplay", wtjsLlmCopyTextToClipboard );
+    // Passing the literal text (not an element id) - LlmCopyTextToClipboard falls back to copying it
+    //  directly when no element with that "id" exists.
+    const string js = "Wt.WT.LlmCopyTextToClipboard(null,null,"
+                      + WString(m_response->content()).jsStringLiteral() + ");";
+    wApp->doJavaScript( js );
+  }));
+}//addMenuItems()
 
 
 WString LlmInteractionFinalResponseDisplay::getTitleText() const
