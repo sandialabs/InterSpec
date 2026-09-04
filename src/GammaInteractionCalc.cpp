@@ -3755,7 +3755,26 @@ std::vector<std::pair<double,DetectorPeakResponse::EffFlag>>
   {
     const DetectorPeakResponse::EffEval eval = m_detector->fepEfficiencyEval(
                     static_cast<float>(energy), eval_theta, eval_phi, true_dist );
-    answer.emplace_back( energy, eval.flag );
+    DetectorPeakResponse::EffFlag flag = eval.flag;
+
+    // A volumetric source extends away from the point that query stands at.  The line sets built
+    //  for it know the worst flag anywhere along their chords - a collimated detector's shadow, the
+    //  near-field floor, energy clamping - so fold that in; the point query alone would say Ok for a
+    //  source whose centre is on axis and whose rim is in the shadow.
+    {
+      std::lock_guard<std::mutex> lock( m_lineCacheMutex );
+      for( const std::pair<const size_t,std::shared_ptr<const VolumetricLineCache>> &lc : m_lineCaches )
+      {
+        if( !lc.second )
+          continue;
+        const DetectorPeakResponse::EffFlag vol_flag
+                      = DetectorPeakResponse::effFlagFromCeelo( lc.second->worst_flag( energy ) );
+        if( static_cast<int>(vol_flag) > static_cast<int>(flag) )
+          flag = vol_flag;
+      }
+    }
+
+    answer.emplace_back( energy, flag );
   }
 
   return answer;

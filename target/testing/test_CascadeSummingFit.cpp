@@ -59,6 +59,7 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <chrono>
 #include <string>
 #include <fstream>
 #include <sstream>
@@ -100,6 +101,7 @@
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/GammaInteractionCalc_imp.hpp"
 #include "InterSpec/MakeMcResponseForDrf.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
 
@@ -783,7 +785,11 @@ void regenerate_truth()
 // The actual fit-vs-truth check for one scene.
 // ---------------------------------------------------------------------------
 
-double fit_activity( const TruthScene &sc, const bool cascade_option )
+/** The Activity/Shielding fit input for a truth scene: peaks from the truth areas, the source
+ definition, geometry + shieldings, every option pinned.  Shared by #fit_activity (which runs the
+ fit) and the line-vs-element cascade evaluation (which evaluates the model once per path). */
+GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput build_scene_input( const TruthScene &sc,
+                                                                                   const bool cascade_option )
 {
   const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
   BOOST_REQUIRE( db );
@@ -966,6 +972,15 @@ double fit_activity( const TruthScene &sc, const bool cascade_option )
   //  fits here costs real time while nothing reads the result.  `TShieldingSourceFitCalc` and
   //  `TBatchPeakMda` are what cover that pass.
   chi_input.supplemental_options.compute = false;
+
+  return chi_input;
+}//build_scene_input(...)
+
+
+double fit_activity( const TruthScene &sc, const bool cascade_option )
+{
+  const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input
+                                                        = build_scene_input( sc, cascade_option );
 
   pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters>
         fcn_pars = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
@@ -1205,3 +1220,111 @@ BOOST_AUTO_TEST_CASE( CascadeScatterQuantification )
     BOOST_TEST_MESSAGE( line );
   }//for( configs )
 }//BOOST_AUTO_TEST_CASE( CascadeScatterQuantification )
+
+
+/** The cascade-summing correction on the LINE path against the element path.
+
+ The element path evaluates `cascade_correction_factor` once per element from a centre-ray walk;
+ the line path tabulates it on a coarse field over the source and interpolates it along every
+ chord (CascadeFieldT, VolumetricLineIntegration_imp.hpp).  Both are applied to the same
+ grounded Detective-X response and the same fixtures, so the per-peak predicted counts must agree
+ to about the line/element quadrature difference plus the field's interpolation error; the
+ cascade-off prediction is evaluated too so the test can see the correction is actually active.
+ No fit, no Monte Carlo: one model evaluation per path per scene.
+ */
+BOOST_AUTO_TEST_CASE( LineVsElementCascadeField )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+
+  const vector<TruthScene> scenes = truth_scenes();
+  vector<const TruthScene*> chosen;
+  for( const TruthScene &sc : scenes )
+  {
+    const string id = sc.id;
+    if( (id == "co60_cyl_5") || (id == "eu152_cyl_5") || (id == "ba133_trace_5") || (id == "y88_trace_5") )
+      chosen.push_back( &sc );
+  }
+  BOOST_REQUIRE( !chosen.empty() );
+
+  const auto evaluate = [&]( const ShieldingSourceChi2Fcn::ShieldSourceInput &input,
+                             const VolumetricIntegrator path ) -> vector<PeakResultPlotInfo>
+  {
+    pair<shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                                                     = ShieldingSourceChi2Fcn::create( input );
+    const vector<double> params = fcn_pars.second.Params();
+    const vector<double> errors( params.size(), 0.0 );
+    ShieldingSourceChi2Fcn::NucMixtureCache cache;
+    const VolumetricIntegrator prev = sm_volumetric_integrator_override;
+    sm_volumetric_integrator_override = path;
+    vector<PeakResultPlotInfo> answer;
+    try
+    {
+      answer = fcn_pars.first->energy_chi_contributions( params, errors, cache, nullptr );
+    }catch( ... )
+    {
+      sm_volumetric_integrator_override = prev;
+      throw;
+    }
+    sm_volumetric_integrator_override = prev;
+    return answer;
+  };
+
+  double worst = 0.0;
+  string worst_where;
+  for( const TruthScene *sc : chosen )
+  {
+    const ShieldingSourceChi2Fcn::ShieldSourceInput on = build_scene_input( *sc, true );
+    const ShieldingSourceChi2Fcn::ShieldSourceInput off = build_scene_input( *sc, false );
+
+    const auto t0 = std::chrono::steady_clock::now();
+    const vector<PeakResultPlotInfo> elem = evaluate( on, VolumetricIntegrator::Element );
+    const auto t1 = std::chrono::steady_clock::now();
+    const vector<PeakResultPlotInfo> line = evaluate( on, VolumetricIntegrator::Line );
+    const auto t2 = std::chrono::steady_clock::now();
+    const vector<PeakResultPlotInfo> line_off = evaluate( off, VolumetricIntegrator::Line );
+
+    BOOST_REQUIRE_EQUAL( elem.size(), line.size() );
+    BOOST_REQUIRE_EQUAL( elem.size(), line_off.size() );
+    BOOST_REQUIRE( !elem.empty() );
+
+    const double elem_s = std::chrono::duration<double>( t1 - t0 ).count();
+    const double line_s = std::chrono::duration<double>( t2 - t1 ).count();
+    BOOST_TEST_MESSAGE( "  " << sc->id << " (element " << std::fixed << std::setprecision(2) << elem_s
+                        << " s, line " << line_s << " s):" );
+
+    double max_correction = 0.0;
+    for( size_t i = 0; i < elem.size(); ++i )
+    {
+      BOOST_REQUIRE( std::fabs(elem[i].energy - line[i].energy) < 0.01 );
+      BOOST_REQUIRE( (elem[i].expectedCounts > 0.0) && (line[i].expectedCounts > 0.0)
+                     && (line_off[i].expectedCounts > 0.0) );
+      const double rel = 100.0*(line[i].expectedCounts/elem[i].expectedCounts - 1.0);
+      const double c_line = line[i].expectedCounts/line_off[i].expectedCounts;
+      max_correction = std::max( max_correction, std::fabs(c_line - 1.0) );
+      std::ostringstream row;
+      row << "    " << std::fixed << std::setprecision(1) << std::setw(8) << elem[i].energy
+          << " keV:  line/element - 1 = " << std::showpos << std::setprecision(3) << rel << "%"
+          << std::noshowpos << "   (summing factor on the line path " << std::setprecision(4)
+          << c_line << ")";
+      BOOST_TEST_MESSAGE( row.str() );
+      if( std::fabs(rel) > worst )
+      {
+        worst = std::fabs( rel );
+        worst_where = string(sc->id) + " @ " + std::to_string( elem[i].energy ) + " keV";
+      }
+    }//for( peaks )
+
+    // The correction must be doing something on these scenes, or the agreement is vacuous.
+    BOOST_CHECK_MESSAGE( max_correction > 0.01,
+                         sc->id << ": the cascade correction moved no peak by more than 1%" );
+  }//for( scenes )
+
+  BOOST_TEST_MESSAGE( "  worst |line/element - 1|: " << std::fixed << std::setprecision(3) << worst
+                      << "% (" << worst_where << ")" );
+  // Line vs element quadrature (LineVsElementScenarioMatrix gates 0.75%) plus the field's
+  //  trilinear interpolation of a correction that is itself a few tens of percent at contact.
+  BOOST_CHECK_MESSAGE( worst < 1.0,
+                       "cascade-corrected line and element predictions disagree by " << worst
+                       << "% at " << worst_where );
+}//BOOST_AUTO_TEST_CASE( LineVsElementCascadeField )

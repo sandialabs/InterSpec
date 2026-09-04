@@ -1569,6 +1569,426 @@ BOOST_AUTO_TEST_CASE( LineCountConvergence )
 }//BOOST_AUTO_TEST_CASE( LineCountConvergence )
 
 
+/** NESTED and MULTI-SHELL sources: line vs element on configurations the scenario matrix has none of.
+
+ `LineVsElementScenarioMatrix` only ever builds ONE source shell at index 0, so two real
+ Activity/Shielding configurations go unexercised by it:
+   - a HOLLOW self-attenuating source (a non-source core inside the emitting shell), where the line
+     path has to split each chord into the two pieces either side of the core and attenuate the far
+     piece through it, and the element path takes a completely different route - it tiles the shell
+     into smooth sub-domains (`split_source_subdomains`) to keep the inner-void indicator from
+     wrecking the adaptive rule;
+   - TWO self-attenuating materials in one problem, which produces two independent calculator groups
+     with different `m_materialIndex`, hence two different line caches that must not be confused
+     with each other.
+
+ Both are integrated here through the production dispatcher, so the grouping and the per-material
+ cache keying are under test along with the arithmetic.
+ */
+BOOST_AUTO_TEST_CASE( LineVsElementNestedAndMultiShell )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+  const double cm = PhysicalUnits::cm;
+
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> steel = matdb->material( "Stainless steel SS-304" );
+  const shared_ptr<const Material> water = matdb->material( "Water" );
+  BOOST_REQUIRE( steel && water );
+
+  // Builds a calculator whose source is shell `src_index` of a nested stack.
+  const auto make_calc = [&]( const GeometryType geom,
+                              const vector<pair<shared_ptr<const Material>,array<double,3>>> &shells,
+                              const size_t src_index, const double energy,
+                              const double standoff_cm ) -> DistributedSrcCalcT<double>
+  {
+    DistributedSrcCalcT<double> calc;
+    calc.m_geometry = geom;
+    calc.m_materialIndex = src_index;
+    calc.m_attenuateForAir = false;
+    calc.m_airTransLenCoef = 0.0;
+    calc.m_isInSituExponential = false;
+    calc.m_inSituRelaxationLength = -1.0;
+    calc.m_srcVolumetricActivity = 1.0;
+    calc.m_normalizeByVolume = false;
+    calc.m_energy = energy;
+    calc.m_effResponse = det.mc_transfer;
+    calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+
+    // Detector far enough out that the outermost shell is comfortably inside it.
+    const double det_radius = det.gd.transverse_half_extent() * cm;
+    calc.m_detector = detector_geom_from_config<double>( geom, standoff_cm*cm, det_radius, 0.0 );
+
+    for( const auto &sh : shells )
+    {
+      DistributedSrcCalcT<double>::ShellInfo info;
+      for( int i = 0; i < 3; ++i )
+        info.dims[i] = sh.second[i]*cm;
+      info.trans_len_coef = transmition_length_coefficient( sh.first.get(),
+                                                            static_cast<float>(energy) );
+      info.type = ShellType::Material;
+      calc.m_shells.push_back( info );
+    }
+    return calc;
+  };
+
+  const auto run = [&]( DistributedSrcCalcT<double> calc, const VolumetricIntegrator path,
+                        const int num_lines ) -> double
+  {
+    integrate_on_path( calc, path, num_lines );
+    return calc.integral;
+  };
+
+  double worst = 0.0;
+  string worst_where;
+  const int num_lines = 1 << 16;
+
+  // ---- (a) HOLLOW source: steel core, emitting water shell, steel outer shield ----
+  BOOST_TEST_MESSAGE( "  hollow source (non-source core inside the emitting shell):" );
+  {
+    struct Case { const char *name; GeometryType geom; array<double,3> in, mid, out; double standoff; };
+    const vector<Case> cases = {
+      { "cylEnd hollow", GeometryType::CylinderEndOn,  {1.0,0.8,0}, {3.0,2.0,0}, {3.3,2.3,0}, 3.0 },
+      { "cylSide hollow", GeometryType::CylinderSideOn, {1.0,1.5,0}, {2.5,3.0,0}, {2.8,3.3,0}, 4.0 },
+      { "rect hollow",   GeometryType::Rectangular,    {1.0,0.8,0.6}, {2.5,2.0,1.5}, {2.8,2.3,1.8}, 4.0 },
+      // NOT gated against the element path - see the sphere note below.
+      { "sphere hollow", GeometryType::Spherical,      {1.0,0,0}, {2.5,0,0}, {2.8,0,0}, 4.0 },
+    };
+    for( const Case &c : cases )
+    {
+      for( const double e : { 60.0, 661.7 } )
+      {
+        const DistributedSrcCalcT<double> calc = make_calc( c.geom,
+              { {steel,c.in}, {water,c.mid}, {steel,c.out} }, 1 /*source is the middle shell*/,
+              e, c.standoff );
+        const double elem = run( calc, VolumetricIntegrator::Element, -1 );
+        const double line = run( calc, VolumetricIntegrator::Line, num_lines );
+        BOOST_REQUIRE( elem > 0.0 );
+        BOOST_REQUIRE( line > 0.0 );
+        const double rel = 100.0*(line/elem - 1.0);
+        ostringstream o;
+        o << "    " << left << setw(16) << c.name << right << " @ " << setw(6) << fixed
+          << setprecision(1) << e << " keV:  element " << scientific << setprecision(4) << elem
+          << "  line " << line << "  (" << fixed << showpos << setprecision(2) << rel << "%"
+          << noshowpos << ")";
+        BOOST_TEST_MESSAGE( o.str() );
+        // SPHERES ARE REPORTED, NOT GATED.  `eval_spherical` applies the response through a single
+        //  CENTRE RAY - the per-ray kernel was only ever implemented for cylinders and rectangles
+        //  (there is a comment saying so at the call site, and TODO.md carries it as an open
+        //  defect).  The line path treats every geometry per-ray, so on a sphere it is not
+        //  reproducing the element path, it is replacing a known-wrong one; gating on agreement
+        //  here would pin the defect.  The gap has the defect's signature - largest where
+        //  attenuation is strongest - so watch that it stays that way rather than that it is small.
+        if( c.geom == GeometryType::Spherical )
+          continue;
+        if( fabs(rel) > worst ){ worst = fabs(rel); worst_where = string(c.name) + " @ " + to_string(e); }
+      }
+    }
+  }
+
+  // ---- (b) TWO self-attenuating materials, integrated together through the dispatcher ----
+  BOOST_TEST_MESSAGE( "  two self-attenuating shells in one problem (both source at once):" );
+  {
+    const vector<pair<shared_ptr<const Material>,array<double,3>>> stack =
+        { {water,{1.5,1.2,0}}, {steel,{3.0,2.5,0}} };
+
+    for( const double e : { 60.0, 661.7 } )
+    {
+      // One calculator per source shell, exactly as build_volumetric_calculators would emit.
+      vector<unique_ptr<DistributedSrcCalcT<double>>> both;
+      for( size_t src = 0; src < 2; ++src )
+      {
+        DistributedSrcCalcT<double> c = make_calc( GeometryType::CylinderEndOn, stack, src, e, 4.0 );
+        attach_line_cache( c, num_lines );
+        both.push_back( std::make_unique<DistributedSrcCalcT<double>>( c ) );
+      }
+      // The two source shells must have been given DIFFERENT line caches.
+      BOOST_CHECK( both[0]->m_lineCache.get() != both[1]->m_lineCache.get() );
+
+      const VolumetricIntegrator prev = sm_volumetric_integrator_override;
+      sm_volumetric_integrator_override = VolumetricIntegrator::Line;
+      integrate_volumetric_calculators<double>( both, true );
+      sm_volumetric_integrator_override = prev;
+
+      for( size_t src = 0; src < 2; ++src )
+      {
+        DistributedSrcCalcT<double> ref = make_calc( GeometryType::CylinderEndOn, stack, src, e, 4.0 );
+        const double elem = run( ref, VolumetricIntegrator::Element, -1 );
+        const double line = both[src]->integral;
+        BOOST_REQUIRE( elem > 0.0 );
+        BOOST_REQUIRE( line > 0.0 );
+        const double rel = 100.0*(line/elem - 1.0);
+        ostringstream o;
+        o << "    source shell " << src << " @ " << setw(6) << fixed << setprecision(1) << e
+          << " keV:  element " << scientific << setprecision(4) << elem << "  line " << line
+          << "  (" << fixed << showpos << setprecision(2) << rel << "%" << noshowpos << ")";
+        BOOST_TEST_MESSAGE( o.str() );
+        if( fabs(rel) > worst ){ worst = fabs(rel); worst_where = "multi-shell src " + to_string(src); }
+      }
+    }
+  }
+
+  BOOST_TEST_MESSAGE( "  worst |line/element - 1|: " << fixed << setprecision(3) << worst
+                      << "% (" << worst_where << ")" );
+  BOOST_CHECK_MESSAGE( worst < 1.0,
+    "line and element disagree by " << worst << "% at " << worst_where
+    << " - nested/multi-shell sources are not being integrated the same way" );
+}//BOOST_AUTO_TEST_CASE( LineVsElementNestedAndMultiShell )
+
+
+/** Is the objective CONTINUOUS in a source dimension across a line-set rebuild?
+
+ The line set is a fixed importance-sampling proposal aimed at the (padded) source, and
+ `VolumetricLineCache::matches` holds one set across a +-20% dimension window before rebuilding.
+ A rebuild is the thing to be suspicious of: if it produced an INDEPENDENT quadrature the objective
+ would step by that quadrature's own discretisation error (~0.2%) as a fitted dimension crossed the
+ window edge, and Levenberg-Marquardt would be comparing a predicted reduction against an actual one
+ that contains a jump it cannot model.
+
+ It should NOT be independent - the Halton indices are the same, the hull points depend on the
+ detector geometry rather than the source, and each line's direction is aimed at a point that moves
+ CONTINUOUSLY with the proposal dimensions - so a rebuilt set is a small deformation of the old one
+ and the estimate should carry across.  This measures that rather than assuming it: sweep a source
+ radius finely across the rebuild boundary, driving the cache exactly as a fit does, and compare
+ each step against its neighbour and against the (rebuild-free) element path.
+ */
+BOOST_AUTO_TEST_CASE( LineCacheRebuildContinuity )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+  const double cm = PhysicalUnits::cm;
+
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  const shared_ptr<const Material> water = matdb->material( "Water" );
+  BOOST_REQUIRE( water );
+
+  const double energy = 661.7;
+  const int num_lines = 1 << 16;
+  const double half_len = 2.0;
+
+  // Stand in for ShieldingSourceChi2Fcn::volumetricLineCache: hold one cache and rebuild it only
+  //  when `matches` says the current dimensions have left its window.
+  std::shared_ptr<const VolumetricLineCache> cache;
+  int rebuilds = 0;
+
+  const auto eff_at = [&]( const double radius_cm ) -> double
+  {
+    DistributedSrcCalcT<double> calc;
+    calc.m_geometry = GeometryType::CylinderEndOn;
+    calc.m_materialIndex = 0;
+    calc.m_attenuateForAir = false;
+    calc.m_isInSituExponential = false;
+    calc.m_inSituRelaxationLength = -1.0;
+    calc.m_srcVolumetricActivity = 1.0;
+    calc.m_normalizeByVolume = true;      //fit-like: divide by the (changing) source volume
+    calc.m_energy = energy;
+    calc.m_effResponse = det.mc_transfer;
+    calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+    const double det_radius = det.gd.transverse_half_extent() * cm;
+    calc.m_detector = detector_geom_from_config<double>( GeometryType::CylinderEndOn, 4.0*cm,
+                                                         det_radius, 0.0 );
+    DistributedSrcCalcT<double>::ShellInfo info;
+    info.dims = { radius_cm*cm, half_len*cm, 0.0 };
+    info.trans_len_coef = transmition_length_coefficient( water.get(),
+                                                          static_cast<float>(energy) );
+    info.type = ShellType::Material;
+    calc.m_shells.push_back( info );
+
+    const std::array<double,3> dims = { radius_cm*cm, half_len*cm, 0.0 };
+    const std::array<double,3> det_pos = { calc.m_detector.position[0], calc.m_detector.position[1],
+                                           calc.m_detector.position[2] };
+    const std::array<double,3> det_axis = { calc.m_detector.axis[0], calc.m_detector.axis[1],
+                                            calc.m_detector.axis[2] };
+    if( !cache || !cache->matches( det.mc_transfer.get(), GeometryType::CylinderEndOn, 0, dims,
+                                   det_pos, det_axis, 0.0, num_lines ) )
+    {
+      cache = build_volumetric_line_cache( det.mc_transfer, GeometryType::CylinderEndOn, 0, dims,
+                                           det_pos, det_axis, 0.0, num_lines );
+      ++rebuilds;
+    }
+    calc.m_lineCache = cache;
+
+    const VolumetricIntegrator prev = sm_volumetric_integrator_override;
+    sm_volumetric_integrator_override = VolumetricIntegrator::Line;
+    std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> v;
+    v.push_back( std::make_unique<DistributedSrcCalcT<double>>( calc ) );
+    integrate_volumetric_calculators<double>( v, true );
+    sm_volumetric_integrator_override = prev;
+    return v.front()->integral;
+  };
+
+  // Start at 2.0 cm; the window is +-20%, so 2.4 cm and 1.6 cm are the edges.  Sweep well past both.
+  const double r0 = 2.0;
+  vector<double> radii;
+  for( double r = 1.50; r < 3.001; r += 0.025 )
+    radii.push_back( r );
+
+  cache.reset();
+  (void)eff_at( r0 );          //seed the cache at the centre of the window, as a fit would
+  const int rebuilds_before = rebuilds;
+
+  vector<double> line_vals, elem_vals;
+  for( const double r : radii )
+    line_vals.push_back( eff_at( r ) );
+
+  BOOST_TEST_MESSAGE( "  swept radius " << radii.front() << " -> " << radii.back() << " cm in "
+                      << radii.size() << " steps; line-set rebuilds: "
+                      << (rebuilds - rebuilds_before) );
+  BOOST_CHECK_MESSAGE( (rebuilds - rebuilds_before) > 0,
+                       "the sweep never crossed a rebuild boundary - it is not testing anything" );
+
+  // The element path for the same sweep: no proposal, so any structure here is physical.
+  {
+    std::shared_ptr<const VolumetricLineCache> keep = cache;
+    cache.reset();
+    for( const double r : radii )
+    {
+      DistributedSrcCalcT<double> calc;
+      calc.m_geometry = GeometryType::CylinderEndOn;
+      calc.m_materialIndex = 0;
+      calc.m_attenuateForAir = false;
+      calc.m_isInSituExponential = false;
+      calc.m_inSituRelaxationLength = -1.0;
+      calc.m_srcVolumetricActivity = 1.0;
+      calc.m_normalizeByVolume = true;
+      calc.m_energy = energy;
+      calc.m_effResponse = det.mc_transfer;
+      calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+      const double det_radius = det.gd.transverse_half_extent() * cm;
+      calc.m_detector = detector_geom_from_config<double>( GeometryType::CylinderEndOn, 4.0*cm,
+                                                           det_radius, 0.0 );
+      DistributedSrcCalcT<double>::ShellInfo info;
+      info.dims = { r*cm, half_len*cm, 0.0 };
+      info.trans_len_coef = transmition_length_coefficient( water.get(),
+                                                            static_cast<float>(energy) );
+      info.type = ShellType::Material;
+      calc.m_shells.push_back( info );
+      integrate_on_path( calc, VolumetricIntegrator::Element, -1 );
+      elem_vals.push_back( calc.integral );
+    }
+    cache = keep;
+  }
+
+  // Second difference of the RATIO line/element: the physical curvature cancels, so what is left is
+  //  the proposal's own contribution.  A rebuild that reset the quadrature would show up here as a
+  //  single large spike at the window edge.
+  double worst_jump = 0.0;
+  size_t worst_i = 0;
+  for( size_t i = 1; i + 1 < radii.size(); ++i )
+  {
+    const double a = line_vals[i-1]/elem_vals[i-1];
+    const double b = line_vals[i]  /elem_vals[i];
+    const double c = line_vals[i+1]/elem_vals[i+1];
+    const double second = fabs( c - 2.0*b + a );
+    if( second > worst_jump ){ worst_jump = second; worst_i = i; }
+  }
+
+  ostringstream o;
+  o << "  worst second difference of line/element over the sweep: " << scientific
+    << setprecision(3) << worst_jump << " at r = " << fixed << setprecision(3) << radii[worst_i]
+    << " cm (ratio there " << setprecision(5) << line_vals[worst_i]/elem_vals[worst_i] << ")";
+  BOOST_TEST_MESSAGE( o.str() );
+
+  // An independent re-draw of the proposal would put a ~2e-3 step in the ratio, hence a second
+  //  difference of the same order.  Anything at or below 1e-3 means the rebuild carried across.
+  BOOST_CHECK_MESSAGE( worst_jump < 1.0e-3,
+    "the line/element ratio jumps by " << worst_jump << " at r = " << radii[worst_i]
+    << " cm - a line-set rebuild is resetting the quadrature instead of deforming it, which puts a"
+    " step in the objective that Levenberg-Marquardt cannot model" );
+}//BOOST_AUTO_TEST_CASE( LineCacheRebuildContinuity )
+
+
+/** DIAGNOSTIC (developer-only): which side of the hollow-rectangle line-vs-element gap is converged?
+
+ `LineVsElementNestedAndMultiShell` finds the two paths ~2.4% apart on a HOLLOW box at 60 keV, where
+ both of them run a full per-ray treatment (unlike the sphere, where the element path is centre-ray
+ by construction and the gap is that known defect rather than a disagreement).  Refine each side
+ against itself: the line path in the number of lines, the element path in its requested relative
+ error.  Whichever one moves is the one that was not converged.
+ */
+BOOST_AUTO_TEST_CASE( NestedRectConvergenceProbe, * boost::unit_test::disabled() )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const AngleDetector det = load_angle_detector();
+  BOOST_REQUIRE( det.mc_transfer );
+  const double cm = PhysicalUnits::cm;
+
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  const shared_ptr<const Material> steel = matdb->material( "Stainless steel SS-304" );
+  const shared_ptr<const Material> water = matdb->material( "Water" );
+  BOOST_REQUIRE( steel && water );
+
+  const auto make_calc = [&]( const double energy ) -> DistributedSrcCalcT<double>
+  {
+    DistributedSrcCalcT<double> calc;
+    calc.m_geometry = GeometryType::Rectangular;
+    calc.m_materialIndex = 1;
+    calc.m_attenuateForAir = false;
+    calc.m_isInSituExponential = false;
+    calc.m_inSituRelaxationLength = -1.0;
+    calc.m_srcVolumetricActivity = 1.0;
+    calc.m_normalizeByVolume = false;
+    calc.m_energy = energy;
+    calc.m_effResponse = det.mc_transfer;
+    calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+    const double det_radius = det.gd.transverse_half_extent() * cm;
+    calc.m_detector = detector_geom_from_config<double>( GeometryType::Rectangular, 4.0*cm,
+                                                         det_radius, 0.0 );
+    const array<array<double,3>,3> dims = { array<double,3>{1.0,0.8,0.6},
+                                            array<double,3>{2.5,2.0,1.5},
+                                            array<double,3>{2.8,2.3,1.8} };
+    const array<shared_ptr<const Material>,3> mats = { steel, water, steel };
+    for( size_t i = 0; i < 3; ++i )
+    {
+      DistributedSrcCalcT<double>::ShellInfo info;
+      for( int k = 0; k < 3; ++k )
+        info.dims[k] = dims[i][k]*cm;
+      info.trans_len_coef = transmition_length_coefficient( mats[i].get(),
+                                                            static_cast<float>(energy) );
+      info.type = ShellType::Material;
+      calc.m_shells.push_back( info );
+    }
+    return calc;
+  };
+
+  for( const double energy : { 60.0, 661.7 } )
+  {
+    BOOST_TEST_MESSAGE( "  hollow rect @ " << energy << " keV" );
+
+    ostringstream lrow;
+    lrow << "    line ";
+    for( const int n : { 1<<14, 1<<16, 1<<18, 1<<20 } )
+    {
+      DistributedSrcCalcT<double> calc = make_calc( energy );
+      integrate_on_path( calc, VolumetricIntegrator::Line, n );
+      lrow << "  n=" << n << ":" << scientific << setprecision(6) << calc.integral;
+    }
+    BOOST_TEST_MESSAGE( lrow.str() );
+
+    ostringstream erow;
+    erow << "    elem ";
+    for( const double epsrel : { 1.0e-3, 1.0e-4, 1.0e-5 } )
+    {
+      DistributedSrcCalcT<double> calc = make_calc( energy );
+      self_shielding_integration_imp<double>( calc, epsrel, 400000000 );
+      erow << "  eps=" << scientific << setprecision(0) << epsrel << ":" << setprecision(6)
+           << calc.integral << " (" << calc.m_num_evals << " evals, est "
+           << setprecision(1) << calc.m_est_rel_error << ")";
+    }
+    BOOST_TEST_MESSAGE( erow.str() );
+  }
+}//BOOST_AUTO_TEST_CASE( NestedRectConvergenceProbe )
+
+
 /** RUNG 6 - OFF-AXIS cylinders against Monte Carlo.
 
  Every other scenario in the matrix puts the detector on the source axis, where an end-on cylinder is

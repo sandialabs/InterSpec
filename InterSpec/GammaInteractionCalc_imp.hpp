@@ -4746,9 +4746,8 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
         }
 
         // The line path needs the fit's detector-side line set for this source shell (built once
-        //  per scalar geometry, shared by every energy).  Cascade-corrected calculators stay on the
-        //  element path, so they do not need it.
-        if( calculator->m_effResponse && !calculator->m_cascade )
+        //  per scalar geometry, shared by every energy).
+        if( calculator->m_effResponse )
         {
           const std::array<T,3> &src_dims = calculator->m_shells[material_index].dims;
           const std::array<double,3> scalar_dims = { scalar_of(src_dims[0]), scalar_of(src_dims[1]),

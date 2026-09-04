@@ -401,3 +401,118 @@ BOOST_AUTO_TEST_CASE( EffectiveShieldingLineVsElement )
     }//for( energies )
   }//for( cases )
 }//BOOST_AUTO_TEST_CASE( EffectiveShieldingLineVsElement )
+
+
+/** A COLLIMATED response on the line path.
+
+ The collimator is part of the geometry every line is traced through, so the line kernel carries
+ its shadow in the VALUE already; what the line path lacked was the shadow gate in
+ `DetectorResponse::common_eval`, which only sets the flag and the sigma and which the prefactor grid
+ used to skip by handing it an empty quadrature.  The line cache now builds a coarse grid of gate
+ quadratures (#CollimatorGateGrid) for a collimated response, and the fit's per-peak flags take the
+ worst flag along the source's chords into account.
+
+ Synthetic, MC-free transfer response (as VolumetricLinePathZeroThicknessLimit builds): a 3"x3" NaI
+ in an Al can with a 1 cm lead collimator tube reaching 5 cm in front of the crystal.  A small source
+ on the axis sees the whole crystal - line and element agree, flag Ok; a wide disc centred on the same
+ axis reaches out into the shadow - line and element still agree (both trace the lead), the point
+ query at its centre still says Ok, and the line cache's chord-range flag says Shadowed or worse,
+ which is the case the point query alone cannot see.
+ */
+BOOST_AUTO_TEST_CASE( CollimatedResponseLinePath )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const double cm = PhysicalUnits::cm;
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> water = matdb->material( "Water" );
+  BOOST_REQUIRE( water );
+
+  ceelo::GeometryDescriptor gd;
+  gd.shape = ceelo::DetectorShape::Cylinder;
+  gd.dimensions_cm = { 3.81, 7.62 };
+  gd.materials = { ceelo::MaterialSpec::from( ceelo::make_NaI() ),
+                   ceelo::MaterialSpec::from( ceelo::make_Aluminum() ),
+                   ceelo::MaterialSpec::from( ceelo::make_Lead() ) };
+  gd.crystal_material_index = 0;
+  ceelo::LayerSpec can;
+  can.material_index = 1;
+  can.front_thickness_cm = 0.05;
+  can.side_thickness_cm = 0.05;
+  can.z_end_cm = 7.62;
+  gd.layers.push_back( can );
+  ceelo::CollimatorSpec collimator;
+  collimator.material_index = 2;
+  collimator.side_thickness_cm = 1.0;
+  collimator.z_start_cm = -5.0;
+  collimator.z_end_cm = 7.62;
+  gd.collimator = collimator;
+
+  ceelo::AnchorCurve anchor;
+  anchor.energies_keV = { 60.0, 100.0, 300.0, 662.0, 1000.0 };
+  anchor.eff = { 2.0e-2, 1.3e-2, 5.0e-3, 3.0e-3, 2.2e-3 };
+  anchor.frac_sigma = { 0.003, 0.003, 0.003, 0.003, 0.003 };
+
+  std::shared_ptr<const ceelo::DetectorResponse> response;
+  BOOST_REQUIRE_NO_THROW( response = ceelo::make_transfer_response( gd, anchor, Eigen::Vector3d( 0.0, 0.0, -30.0 ) ) );
+  BOOST_REQUIRE( response );
+  BOOST_REQUIRE( response->descriptor.collimator );
+
+  const double energy = 661.7;
+  struct Case { const char *name; double radius_cm, half_len_cm, dist_cm; bool expect_shadow; };
+  const std::vector<Case> cases = {
+    { "small on-axis source at 30 cm",   1.0, 0.5, 30.0, false },
+    { "wide disc reaching into the shadow", 12.0, 0.5, 20.0, true },
+  };
+
+  for( const Case &c : cases )
+  {
+    DistributedSrcCalcT<double> calc;
+    calc.m_geometry = GeometryType::CylinderEndOn;
+    calc.m_materialIndex = 0;
+    calc.m_attenuateForAir = false;
+    calc.m_isInSituExponential = false;
+    calc.m_inSituRelaxationLength = -1.0;
+    calc.m_srcVolumetricActivity = 1.0;
+    calc.m_normalizeByVolume = false;
+    calc.m_energy = energy;
+    calc.m_effResponse = response;
+    calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+    calc.m_detector = detector_geom_from_config<double>( GeometryType::CylinderEndOn, c.dist_cm*cm,
+                                                         response->transverse_half_extent()*cm, 0.0 );
+    DistributedSrcCalcT<double>::ShellInfo shell;
+    shell.dims = { c.radius_cm*cm, c.half_len_cm*cm, 0.0 };
+    shell.trans_len_coef = transmition_length_coefficient( water.get(), static_cast<float>(energy) );
+    shell.type = ShellType::Material;
+    calc.m_shells.push_back( shell );
+
+    DistributedSrcCalcT<double> elem = calc, line = calc;
+    integrate_on_path( elem, VolumetricIntegrator::Element, -1 );
+    integrate_on_path( line, VolumetricIntegrator::Line, 1 << 15 );
+    BOOST_REQUIRE( line.m_lineCache );
+    BOOST_CHECK( line_path_applicable( line ) );
+    BOOST_REQUIRE( (elem.integral > 0.0) && (line.integral > 0.0) );
+    const double rel = 100.0*(line.integral/elem.integral - 1.0);
+
+    const ceelo::EffResult centre = response->eps_fep( energy, 0.0, 0.0, c.dist_cm );
+    const ceelo::ResponseFlag chord_flag = line.m_lineCache->worst_flag( energy );
+
+    BOOST_TEST_MESSAGE( "  " << c.name << ": line/element - 1 = " << std::fixed << std::showpos
+                        << std::setprecision(3) << rel << "%" << std::noshowpos << "; point-query flag "
+                        << ceelo::to_string( centre.flag ) << ", chord-range flag "
+                        << ceelo::to_string( chord_flag ) );
+
+    BOOST_CHECK_MESSAGE( std::fabs(rel) < 1.0, c.name << ": line and element disagree by " << rel << "%" );
+    BOOST_CHECK_MESSAGE( centre.flag == ceelo::ResponseFlag::Ok,
+                         c.name << ": the on-axis point query should be Ok, got " << ceelo::to_string( centre.flag ) );
+    if( c.expect_shadow )
+      BOOST_CHECK_MESSAGE( static_cast<int>(chord_flag) >= static_cast<int>(ceelo::ResponseFlag::Shadowed),
+                           c.name << ": the chord-range flag should report the shadow, got "
+                                  << ceelo::to_string( chord_flag ) );
+    else
+      BOOST_CHECK_MESSAGE( chord_flag == ceelo::ResponseFlag::Ok,
+                           c.name << ": the chord-range flag should be Ok, got " << ceelo::to_string( chord_flag ) );
+  }//for( cases )
+}//BOOST_AUTO_TEST_CASE( CollimatedResponseLinePath )

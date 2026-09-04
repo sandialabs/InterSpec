@@ -444,6 +444,347 @@ inline void record_shell_path_imp( const DistributedSrcCalcT<T> &calc, const She
 }//record_shell_path_imp(...)
 
 
+/** The cascade-summing correction C(r) of one calculator, tabulated on a coarse grid over the
+ source and interpolated along every chord - how the line path applies `cascade_correction_factor`,
+ which the element path evaluates once per element from a centre-ray walk.
+
+ WHY A FIELD.  The correction needs, per emission point, the per-partner optical depths of the
+ centre ray to the detector (the scratch `record_path` fills) and then a run of the cascade engine
+ for this calculator's window; per line node that is far too expensive, but C is a smooth ratio of
+ order 0.8-1 over the source, so a handful of nodes and trilinear interpolation carry it.  The grid
+ is in NORMALISED source coordinates, so it rides on the (T-valued) dimensions and every node's C
+ keeps its derivative lanes: the walk, the flat-disk factor and the engine all run in T.
+
+ NODES are equally spaced INCLUDING the end points (interpolation, not quadrature: the face nearest
+ the detector is where C changes fastest, and Gauss-Legendre nodes would leave it to clamped
+ extrapolation).  On-axis detectors get the symmetric reductions the element integrator uses (no
+ theta axis for a cylinder, |x|,|y| for a box), so 16-36 nodes; off-axis 64.  A hollow shell is
+ gridded over the OUTER solid: nodes inside the core are walked like any other point (the walk is
+ well defined from there) and only anchor the interpolation, since no chord node lies in the core.
+ Trilinear interpolation smears the kink C has at the core's silhouette - second order in a
+ correction that is itself a few percent; `LineVsElementCascadeField` measures it on a hollow case.
+ */
+template<typename T>
+struct CascadeFieldT
+{
+  GeometryType geometry = GeometryType::NumGeometryType;
+  bool on_axis = false;
+  bool periodic1 = false;     //axis 1 is the cylinder azimuth: nodes at k/n, wrapping
+  int n[3] = { 1, 1, 1 };
+  std::vector<T> C;           //[i0][i1][i2]
+
+  bool empty() const { return C.empty(); }
+
+  size_t index( const int i0, const int i1, const int i2 ) const
+  {
+    return static_cast<size_t>( (i0*n[1] + i1)*n[2] + i2 );
+  }
+
+  /** Trilinear C at normalised coordinates u (each in [0,1]; the periodic axis wraps). */
+  T eval( const T u[3] ) const
+  {
+    int i0[3], i1[3];
+    T t[3];
+    for( int ax = 0; ax < 3; ++ax )
+    {
+      const int na = n[ax];
+      if( na <= 1 )
+      {
+        i0[ax] = i1[ax] = 0;
+        t[ax] = T(0.0);
+        continue;
+      }
+      if( periodic1 && (ax == 1) )
+      {
+        T v = u[ax] * T(static_cast<double>(na));
+        const double vs = scalar_of( v );
+        const double wrapped = vs - std::floor( vs/na )*na;
+        const int lo = std::min( na - 1, std::max( 0, static_cast<int>( std::floor( wrapped ) ) ) );
+        i0[ax] = lo;
+        i1[ax] = (lo + 1) % na;
+        t[ax] = v - T( vs - (wrapped - lo) );   //fractional part, derivative lane kept
+        continue;
+      }
+      const T v = u[ax] * T(static_cast<double>(na - 1));
+      const double vs = scalar_of( v );
+      int lo = static_cast<int>( std::floor( vs ) );
+      lo = std::max( 0, std::min( na - 2, lo ) );
+      i0[ax] = lo;
+      i1[ax] = lo + 1;
+      t[ax] = v - T(static_cast<double>(lo));
+      // Clamp (flat) outside the grid; the sources never put a chord node there by more than round-off.
+      if( scalar_of(t[ax]) < 0.0 )
+        t[ax] = T(0.0);
+      else if( scalar_of(t[ax]) > 1.0 )
+        t[ax] = T(1.0);
+    }
+
+    const T one( 1.0 );
+    T val( 0.0 );
+    for( int c = 0; c < 8; ++c )
+    {
+      const bool b0 = c & 1, b1 = c & 2, b2 = c & 4;
+      const T w = (b0 ? t[0] : one - t[0]) * (b1 ? t[1] : one - t[1]) * (b2 ? t[2] : one - t[2]);
+      val += w * C[index( b0 ? i1[0] : i0[0], b1 ? i1[1] : i0[1], b2 ? i1[2] : i0[2] )];
+    }
+    return val;
+  }//eval(...)
+};//struct CascadeFieldT
+
+
+/** Normalised-coordinate <-> assembly-frame maps of #CascadeFieldT for a calculator's source shell
+ (the OUTER solid of shell `m`; the sphere's radial axis spans the shell itself). */
+template<typename T>
+struct CascadeFieldFrameT
+{
+  GeometryType geometry;
+  bool on_axis;
+  std::array<T,3> outer;     //outer dims of the source shell
+  T inner_radius;            //sphere only: inner radius (0 for a full sphere)
+  T det_dir[3];              //unit direction to the detector (sphere polar axis)
+  T det_perp[3];             //a unit vector perpendicular to it
+
+  CascadeFieldFrameT( const DistributedSrcCalcT<T> &calc )
+  {
+    using namespace std;
+    using namespace ceres;
+    geometry = calc.m_geometry;
+    outer = calc.m_shells[calc.m_materialIndex].dims;
+    inner_radius = ((geometry == GeometryType::Spherical) && (calc.m_materialIndex > 0))
+                     ? calc.m_shells[calc.m_materialIndex-1].dims[0] : T(0.0);
+    on_axis = (scalar_of(calc.m_detector.position[0]) == 0.0) && (scalar_of(calc.m_detector.position[1]) == 0.0);
+    if( geometry == GeometryType::CylinderSideOn )
+      on_axis = (scalar_of(calc.m_detector.position[1]) == 0.0) && (scalar_of(calc.m_detector.position[2]) == 0.0);
+
+    T dist( 0.0 );
+    for( int i = 0; i < 3; ++i )
+      dist += calc.m_detector.position[i]*calc.m_detector.position[i];
+    dist = sqrt( dist );
+    for( int i = 0; i < 3; ++i )
+      det_dir[i] = calc.m_detector.position[i] / dist;
+    // Any perpendicular: cross with the axis least aligned with det_dir.
+    const int k = (std::fabs(scalar_of(det_dir[0])) < 0.6) ? 0 : ((std::fabs(scalar_of(det_dir[1])) < 0.6) ? 1 : 2);
+    T e[3] = { T(0.0), T(0.0), T(0.0) };
+    e[k] = T(1.0);
+    T p[3] = { det_dir[1]*e[2] - det_dir[2]*e[1], det_dir[2]*e[0] - det_dir[0]*e[2], det_dir[0]*e[1] - det_dir[1]*e[0] };
+    const T pn = sqrt( p[0]*p[0] + p[1]*p[1] + p[2]*p[2] );
+    for( int i = 0; i < 3; ++i )
+      det_perp[i] = p[i] / pn;
+  }
+
+  /** Grid shape and periodicity for this frame. */
+  void shape( int n[3], bool &periodic1 ) const
+  {
+    periodic1 = false;
+    switch( geometry )
+    {
+      case GeometryType::Spherical:
+        n[0] = 4; n[1] = 4; n[2] = 1;
+        break;
+      case GeometryType::CylinderEndOn:
+      case GeometryType::CylinderSideOn:
+        n[0] = 4; n[1] = on_axis ? 1 : 4; n[2] = 4;
+        periodic1 = !on_axis;
+        break;
+      case GeometryType::Rectangular:
+        n[0] = on_axis ? 3 : 4; n[1] = on_axis ? 3 : 4; n[2] = 4;
+        break;
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        n[0] = n[1] = n[2] = 1;
+        break;
+    }
+  }
+
+  /** Assembly-frame point of normalised coordinates u. */
+  void point( const double u[3], T p[3] ) const
+  {
+    using namespace std;
+    using namespace ceres;
+    const double two_pi = 2.0*PhysicalUnits::pi;
+    switch( geometry )
+    {
+      case GeometryType::Spherical:
+      {
+        const T r = inner_radius + T(u[0])*(outer[0] - inner_radius);
+        const double ct = 2.0*u[1] - 1.0;
+        const double st = std::sqrt( std::max( 0.0, 1.0 - ct*ct ) );
+        for( int i = 0; i < 3; ++i )
+          p[i] = r*(T(ct)*det_dir[i] + T(st)*det_perp[i]);
+        break;
+      }
+      case GeometryType::CylinderEndOn:
+      case GeometryType::CylinderSideOn:
+      {
+        const T r = T(u[0])*outer[0];
+        const double th = on_axis ? 0.0 : two_pi*u[1];
+        p[0] = r*T(std::cos(th));
+        p[1] = r*T(std::sin(th));
+        p[2] = T(2.0*u[2] - 1.0)*outer[1];
+        break;
+      }
+      case GeometryType::Rectangular:
+        p[0] = on_axis ? T(u[0])*outer[0] : T(2.0*u[0] - 1.0)*outer[0];
+        p[1] = on_axis ? T(u[1])*outer[1] : T(2.0*u[1] - 1.0)*outer[1];
+        p[2] = T(2.0*u[2] - 1.0)*outer[2];
+        break;
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }
+  }//point(...)
+
+  /** Normalised coordinates of an assembly-frame point (T). */
+  void coords( const T p[3], T u[3] ) const
+  {
+    using namespace std;
+    using namespace ceres;
+    const double two_pi = 2.0*PhysicalUnits::pi;
+    u[0] = u[1] = u[2] = T(0.0);
+    switch( geometry )
+    {
+      case GeometryType::Spherical:
+      {
+        const T r = sqrt( p[0]*p[0] + p[1]*p[1] + p[2]*p[2] );
+        const T dr = outer[0] - inner_radius;
+        u[0] = (scalar_of(dr) > 0.0) ? (r - inner_radius)/dr : T(0.0);
+        const T ct = (scalar_of(r) > 0.0) ? (p[0]*det_dir[0] + p[1]*det_dir[1] + p[2]*det_dir[2])/r : T(0.0);
+        u[1] = T(0.5)*(ct + T(1.0));
+        break;
+      }
+      case GeometryType::CylinderEndOn:
+      case GeometryType::CylinderSideOn:
+      {
+        const T r = sqrt( p[0]*p[0] + p[1]*p[1] );
+        u[0] = r / outer[0];
+        if( !on_axis )
+        {
+          T th = atan2( p[1], p[0] );
+          if( scalar_of(th) < 0.0 )
+            th += T(two_pi);
+          u[1] = th / T(two_pi);
+        }
+        u[2] = T(0.5)*(p[2]/outer[1] + T(1.0));
+        break;
+      }
+      case GeometryType::Rectangular:
+        if( on_axis )
+        {
+          u[0] = ((scalar_of(p[0]) < 0.0) ? -p[0] : p[0]) / outer[0];
+          u[1] = ((scalar_of(p[1]) < 0.0) ? -p[1] : p[1]) / outer[1];
+        }else
+        {
+          u[0] = T(0.5)*(p[0]/outer[0] + T(1.0));
+          u[1] = T(0.5)*(p[1]/outer[1] + T(1.0));
+        }
+        u[2] = T(0.5)*(p[2]/outer[2] + T(1.0));
+        break;
+      case GeometryType::NumGeometryType:
+        assert( 0 );
+        break;
+    }
+  }//coords(...)
+};//struct CascadeFieldFrameT
+
+
+/** Builds the cascade fields of a line group: one #CascadeFieldT per calculator (empty for a
+ calculator without `m_cascade`).  The per-node shell walk is shared by the group (identical shells
+ and partner coefficients - `cascade_mu` is per material and partner energy, not per calculator);
+ each calculator then runs its own window through the cascade engine at every node, in parallel
+ over calculators when `multithread` (each has its own scratch; the engine's cascade memo is
+ mutex-guarded). */
+template<typename T>
+std::vector<CascadeFieldT<T>> build_cascade_fields( const std::vector<DistributedSrcCalcT<T>*> &group,
+                                                    const bool multithread )
+{
+  using namespace std;
+
+  vector<CascadeFieldT<T>> fields( group.size() );
+  vector<size_t> with_cascade;
+  for( size_t c = 0; c < group.size(); ++c )
+    if( group[c]->m_cascade )
+      with_cascade.push_back( c );
+  if( with_cascade.empty() )
+    return fields;
+
+  const DistributedSrcCalcT<T> &lead = *group.front();
+  const CascadeFieldFrameT<T> frame( lead );
+  int n[3];
+  bool periodic1;
+  frame.shape( n, periodic1 );
+  const size_t num_nodes = static_cast<size_t>( n[0]*n[1]*n[2] );
+
+  // Node positions, walks and flat-disk factors: once per group.
+  vector<ShellPathT<T>> walks( num_nodes );
+  vector<T> det_factors( num_nodes );
+  for( int i0 = 0; i0 < n[0]; ++i0 )
+  {
+    for( int i1 = 0; i1 < n[1]; ++i1 )
+    {
+      for( int i2 = 0; i2 < n[2]; ++i2 )
+      {
+        const double u[3] = { (n[0] > 1) ? static_cast<double>(i0)/(n[0] - 1) : 0.0,
+                              periodic1 ? static_cast<double>(i1)/n[1]
+                                        : ((n[1] > 1) ? static_cast<double>(i1)/(n[1] - 1) : 0.0),
+                              (n[2] > 1) ? static_cast<double>(i2)/(n[2] - 1) : 0.0 };
+        T p[3];
+        frame.point( u, p );
+        const size_t idx = static_cast<size_t>( (i0*n[1] + i1)*n[2] + i2 );
+        shell_path_from_point_imp( lead, p, walks[idx] );
+        det_factors[idx] = detector_response_factor( lead.m_detector, p );
+      }
+    }
+  }
+
+  const auto build_one = [&]( const size_t c )
+  {
+    const DistributedSrcCalcT<T> &calc = *group[c];
+    CascadeFieldT<T> &f = fields[c];
+    f.geometry = frame.geometry;
+    f.on_axis = frame.on_axis;
+    f.periodic1 = periodic1;
+    for( int ax = 0; ax < 3; ++ax )
+      f.n[ax] = n[ax];
+    f.C.resize( num_nodes );
+    for( size_t idx = 0; idx < num_nodes; ++idx )
+    {
+      record_shell_path_imp( calc, walks[idx] );
+      f.C[idx] = calc.cascade_correction_factor( det_factors[idx], 1.0 );
+    }
+  };
+
+  if( multithread && (with_cascade.size() > 1) )
+  {
+    std::mutex error_mutex;
+    std::exception_ptr first_error;
+    SpecUtilsAsync::ThreadPool pool;
+    for( const size_t c : with_cascade )
+    {
+      pool.post( [c,&build_one,&error_mutex,&first_error](){
+        try
+        {
+          build_one( c );
+        }catch( std::exception & )
+        {
+          std::lock_guard<std::mutex> lock( error_mutex );
+          if( !first_error )
+            first_error = std::current_exception();
+        }
+      } );
+    }
+    pool.join();
+    if( first_error )
+      std::rethrow_exception( first_error );
+  }else
+  {
+    for( const size_t c : with_cascade )
+      build_one( c );
+  }
+
+  return fields;
+}//build_cascade_fields(...)
+
+
 /** The response prefactor P(E; d, cos_theta, phi) = exp(ln_eta + ln_N + ln_k) tabulated on a
  crystal-frame grid for ONE energy, so the line integrand can look it up (in T, so the position
  derivative flows) instead of paying a PCHIP evaluation per chord node.  `d` is measured from the
@@ -1034,7 +1375,6 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
     assert( calc->m_shells.size() == lead.m_shells.size() );
     assert( calc->m_isInSituExponential == lead.m_isInSituExponential );
     assert( calc->m_normalizeByVolume == lead.m_normalizeByVolume );
-    assert( !calc->m_cascade );
   }
 
   const size_t num_calc = group.size();
@@ -1135,6 +1475,13 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
     kernels[c] = cache->kernel( group[c]->m_energy );
     grids[c] = cache->prefactor( group[c]->m_energy );
   }
+
+  // Cascade-summing corrections, tabulated once per group and interpolated along the chords.
+  const std::vector<CascadeFieldT<T>> cascade_fields = build_cascade_fields( group, multithread );
+  bool any_cascade = false;
+  for( const CascadeFieldT<T> &f : cascade_fields )
+    any_cascade = any_cascade || !f.empty();
+  const CascadeFieldFrameT<T> cascade_frame( lead );
 
   const int n_gl = radial_profile ? 4 : std::max( 2, std::min( 4, sm_line_chord_gl_points ) );
   const double *gl_x = nullptr, *gl_w = nullptr;
@@ -1452,6 +1799,12 @@ void line_source_integration_imp( const std::vector<DistributedSrcCalcT<T>*> &gr
             T val = grids[c]->eval( log( dist ), cos_t, phi );
             if( radial_profile )
               val *= exp( -(depth_at( p ) - depth0)/T(relax) );
+            if( any_cascade && !cascade_fields[c].empty() )
+            {
+              T u[3];
+              cascade_frame.coords( p, u );
+              val *= cascade_fields[c].eval( u );
+            }
             mean += T(gl_w[n]) * val;
           }//for( GL nodes )
 
@@ -1590,7 +1943,7 @@ bool line_path_applicable( const DistributedSrcCalcT<T> &calc )
 {
   if( sm_volumetric_integrator_override == VolumetricIntegrator::Element )
     return false;
-  if( !calc.m_effResponse || !calc.m_lineCache || calc.m_cascade )
+  if( !calc.m_effResponse || !calc.m_lineCache )
     return false;
   if( calc.m_effResponse->descriptor.collimator )
     return false;
