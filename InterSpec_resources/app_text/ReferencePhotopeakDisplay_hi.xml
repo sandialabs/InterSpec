@@ -36,6 +36,7 @@
   <message id="rpd-opt-betas">बीटा दिखाएं</message>
   <message id="rpd-opt-cascade">कैस्केड योग</message>
   <message id="rpd-cascade-dist">दूरी:</message>
+  <message id="rpd-tt-cascade-dist">संयोग योग अनुमान के लिए मानी गई स्रोत-से-डिटेक्टर दूरी; दूरी जितनी कम, योग उतना अधिक।  इकाई सहित दूरी दर्ज करें, जैसे 2.54 cm।</message>
   <message id="rpd-warn-cascade-example-drf">कोई डिटेक्टर नहीं; योग हेतु उदाहरण HPGe दक्षता।</message>
   <message id="rpd-warn-cascade-approx-drf">योग की कुल दक्षता उदाहरण डिटेक्टर से।</message>
   <message id="rpd-opt-escapes">एस्केप शिखर</message>

@@ -204,6 +204,9 @@ LlmToolGui::LlmToolGui(InterSpec *viewer)
   wApp->useStyleSheet( "InterSpec_resources/LlmConfigWindow.css" );
   m_viewer->useMessageResourceBundle( "LlmConfigWindow" );
 
+  // Get marked/KaTeX loading now, so they are ready before the first response comes back.
+  LlmMarkdown::load_resources( wApp );
+
   // A single-cell outer layout holds m_root, which we swap between the configured chat UI and
   // the "not configured" panel.
   WGridLayout *outer = setLayout( std::make_unique<WGridLayout>() );

@@ -38,6 +38,7 @@
   <message id="rpd-opt-betas">Show Betas</message>
   <message id="rpd-opt-cascade">Cascade Sums</message>
   <message id="rpd-cascade-dist">Dist:</message>
+  <message id="rpd-tt-cascade-dist">Assumed source-to-detector distance for the coincidence-summing estimate; closer distances give more summing.  Enter a distance with units, e.g. 2.54 cm.</message>
   <message id="rpd-warn-cascade-example-drf">No detector; summing uses an example HPGe efficiency.</message>
   <message id="rpd-warn-cascade-approx-drf">Summing total-efficiency from an example detector.</message>
   <message id="rpd-opt-escapes">Escape Peaks</message>

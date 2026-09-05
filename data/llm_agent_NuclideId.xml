@@ -482,7 +482,8 @@ Once all sources are verified to make sense together and wont be improved, trans
 * List all identified sources (ultimate parents) with confidence levels.
 * List any peaks that remain unidentified and explain why they could not be resolved (do not add them to analysis state with "Unknown" source).
 * Note any non-peak signatures detected: neutron excess, neutron reaction indicators, alpha-Be features, HPGe ski-slope, beta continuum elevation, Doppler-broadened features, etc.
-* Note any anomalies observed (unusual NORM ratios, unexpected sources, failed peak fits, etc.).</PromptGuidance>
+* Note any anomalies observed (unusual NORM ratios, unexpected sources, failed peak fits, etc.).
+* Format the summary as Markdown - use a table for the per-peak / per-source list, and LaTeX for equations and symbols (`$...$` inline, `$$...$$` displayed; e.g. `$^{137}$Cs`). Do not write raw HTML, links or images.</PromptGuidance>
           <EphemeralMessageTxt>Finalizing nuclide identification results.</EphemeralMessageTxt>
           <IsFinal>true</IsFinal>
         </State>

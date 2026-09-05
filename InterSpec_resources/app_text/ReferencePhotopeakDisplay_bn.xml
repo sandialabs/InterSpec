@@ -35,6 +35,7 @@
   <message id="rpd-opt-betas">বিটা দেখান</message>
   <message id="rpd-opt-cascade">ক্যাসকেড যোগফল</message>
   <message id="rpd-cascade-dist">দূরত্ব:</message>
+  <message id="rpd-tt-cascade-dist">কাকতালীয় যোগফল অনুমানের জন্য ধরে নেওয়া উৎস-থেকে-ডিটেক্টর দূরত্ব; দূরত্ব যত কম, যোগফল তত বেশি।  এককসহ দূরত্ব লিখুন, যেমন 2.54 cm।</message>
   <message id="rpd-warn-cascade-example-drf">কোনো ডিটেক্টর নেই; যোগফলে উদাহরণ HPGe দক্ষতা ব্যবহৃত।</message>
   <message id="rpd-warn-cascade-approx-drf">যোগফলের মোট দক্ষতা একটি উদাহরণ ডিটেক্টর থেকে।</message>
   <message id="rpd-opt-escapes">এস্কেপ পিক</message>

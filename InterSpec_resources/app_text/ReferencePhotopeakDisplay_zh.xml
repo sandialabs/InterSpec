@@ -37,6 +37,7 @@
   <message id="rpd-opt-betas">显示贝塔</message>
   <message id="rpd-opt-cascade">级联和</message>
   <message id="rpd-cascade-dist">距离:</message>
+  <message id="rpd-tt-cascade-dist">用于符合相加估算的假定源-探测器距离；距离越近，相加效应越强。请输入带单位的距离，例如 2.54 cm。</message>
   <message id="rpd-warn-cascade-example-drf">无探测器；求和使用示例 HPGe 效率。</message>
   <message id="rpd-warn-cascade-approx-drf">求和总效率来自示例探测器。</message>
   <message id="rpd-opt-escapes">逃逸峰</message>

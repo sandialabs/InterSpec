@@ -129,12 +129,6 @@ namespace
     ~UpdateGuard(){ m_guard = false; }
   };
 
-  /** Fixed source-to-detector distance used for cascade (true-coincidence)
-   summing.  The summing magnitude scales with solid angle, so a near distance
-   makes the effect visible.  TODO: expose as a user option.
-   */
-  const double sm_cascade_summing_distance = 1.0 * PhysicalUnits::cm;
-
   /** An example full-response detector (HPGe Monte-Carlo response with total
    efficiency + angular response), used as a fallback for cascade summing when
    the current DRF lacks total-efficiency info (borrow its total efficiency,
@@ -1218,10 +1212,20 @@ ReferencePhotopeakDisplay::ReferencePhotopeakDisplay(
     m_cascadeDistanceRow->addStyleClass( "CascadeDistRow" );
     m_cascadeDistanceRow->hide();
     WLabel *cascadeDistLabel = m_cascadeDistanceRow->addNew<WLabel>( WString::tr("rpd-cascade-dist") );
-    m_cascadeDistance = m_cascadeDistanceRow->addNew<WLineEdit>( "1 cm" );
+    m_cascadeDistance = m_cascadeDistanceRow->addNew<WLineEdit>( RefLineInput::sm_default_cascade_distance );
     m_cascadeDistance->addStyleClass( "CascadeDistEdit" );
     cascadeDistLabel->setBuddy( m_cascadeDistance );
     m_cascadeDistance->setAutoComplete( false );
+    m_cascadeDistance->setAttributeValue( "spellcheck", "off" );
+#if( BUILD_AS_OSX_APP || IOS )
+    m_cascadeDistance->setAttributeValue( "autocorrect", "off" );
+#endif
+    //Require the units, so anything the validator accepts also parses.
+    std::shared_ptr<WRegExpValidator> cascadeDistValidator
+        = std::make_shared<WRegExpValidator>( PhysicalUnits::sm_distanceRegex );
+    cascadeDistValidator->setFlags( Wt::RegExpFlag::MatchCaseInsensitive );
+    m_cascadeDistance->setValidator( cascadeDistValidator );
+    HelpSystem::attachToolTipOn( m_cascadeDistance, WString::tr("rpd-tt-cascade-dist"), showToolTips );
 
     // Warning shown when a default/example detector efficiency is being used.
     m_cascadeWarn = m_optionsContent->addNew<WText>( WString::tr("rpd-warn-cascade-example-drf") );
@@ -2468,6 +2472,102 @@ void ReferencePhotopeakDisplay::updateOtherNucsDisplay()
 }//void updateOtherNucsDisplay()
 
 
+void ReferencePhotopeakDisplay::setCascadeSummingFcns( RefLineInput &input ) const
+{
+  if( !input.m_showCascades )
+    return;
+
+  using GammaInteractionCalc::CascadeSummingCalc;
+
+  //#userInput and RefLineInput::deSerialize both leave a parseable distance, but
+  //  this is the only place that depends on it, so fall back rather than throw.
+  double dist = 0.0;
+  try
+  {
+    dist = PhysicalUnits::stringToDistance( input.m_cascade_distance );
+  }catch( std::exception & )
+  {
+    dist = 0.0;
+  }
+
+  if( dist <= 0.0 )
+  {
+    input.m_cascade_distance = RefLineInput::sm_default_cascade_distance;
+    dist = PhysicalUnits::stringToDistance( input.m_cascade_distance );
+  }
+
+  const std::shared_ptr<const DetectorPeakResponse> cur = m_detectorDisplay->detector();
+  const std::shared_ptr<const DetectorPeakResponse> ex = example_summing_detector();
+
+  const bool cur_has_fep = cur && cur->isValid()
+      && (CascadeSummingCalc::detectorFepEffAbs( cur, 500.0, 0.0, 0.0, dist ) > 0.0);
+
+  std::shared_ptr<const DetectorPeakResponse> fep_src, tot_src;
+  bool scale_total_by_fep = false;
+  if( cur_has_fep )
+  {
+    fep_src = cur;
+    if( CascadeSummingCalc::drfHasNeededInfo( cur ) )
+    {
+      tot_src = cur;
+      input.m_summing_det_source = RefLineInput::SummingDetSource::Current;
+    }else if( ex )
+    {
+      tot_src = ex;
+      scale_total_by_fep = true;
+      input.m_summing_det_source = RefLineInput::SummingDetSource::CurrentFepExampleTotal;
+    }
+  }else if( ex )
+  {
+    fep_src = ex;
+    tot_src = ex;
+    input.m_summing_det_source = RefLineInput::SummingDetSource::Example;
+  }
+
+  if( fep_src )
+  {
+    std::function<double(double)> fep_fcn = [fep_src, dist]( double energy ) -> double {
+      return CascadeSummingCalc::detectorFepEffAbs( fep_src, energy, 0.0, 0.0, dist );
+    };
+
+    std::function<double(double)> tot_fcn;
+    if( tot_src && scale_total_by_fep && ex )
+    {
+      tot_fcn = [ex, fep_src, dist]( double energy ) -> double {
+        const double ex_tot = CascadeSummingCalc::detectorTotEffAbs( ex, energy, 0.0, 0.0, dist );
+        const double ex_fep = CascadeSummingCalc::detectorFepEffAbs( ex, energy, 0.0, 0.0, dist );
+        const double cur_fep = CascadeSummingCalc::detectorFepEffAbs( fep_src, energy, 0.0, 0.0, dist );
+        return (ex_fep > 0.0) ? (ex_tot * cur_fep / ex_fep) : ex_tot;
+      };
+    }else if( tot_src )
+    {
+      tot_fcn = [tot_src, dist]( double energy ) -> double {
+        return CascadeSummingCalc::detectorTotEffAbs( tot_src, energy, 0.0, 0.0, dist );
+      };
+    }
+
+    //Go through an interpolation table: a detector-response evaluation is
+    //  ~0.5 ms, and summing asks for a thousand energies on a decay chain.
+    char keybuf[128] = { '\0' };
+    snprintf( keybuf, sizeof(keybuf), "fep-%llu-%.6f",
+              static_cast<unsigned long long>( fep_src->hashValue() ),
+              dist/PhysicalUnits::cm );
+    input.m_summing_fep_eff = CascadeSummingCalc::interpolatedEff( keybuf, std::move(fep_fcn) );
+
+    if( tot_src )
+    {
+      snprintf( keybuf, sizeof(keybuf), "tot-%llu-%llu-%d-%.6f",
+                static_cast<unsigned long long>( tot_src->hashValue() ),
+                static_cast<unsigned long long>( fep_src->hashValue() ),
+                (scale_total_by_fep ? 1 : 0), dist/PhysicalUnits::cm );
+      input.m_summing_total_eff = CascadeSummingCalc::interpolatedEff( keybuf, std::move(tot_fcn) );
+    }
+  }//if( fep_src )
+
+  input.m_do_cascade_summing = static_cast<bool>( input.m_summing_fep_eff );
+}//void setCascadeSummingFcns( RefLineInput &input )
+
+
 RefLineInput ReferencePhotopeakDisplay::userInput() const
 {
   RefLineInput input;
@@ -2570,86 +2670,44 @@ RefLineInput ReferencePhotopeakDisplay::userInput() const
   //   - current DRF has FEP but no total -> current FEP, example detector total
   //                                         scaled by the FEP ratio;
   //   - no usable current DRF            -> example detector for both.
-  if( input.m_showCascades )
+  // The user-settable source-to-detector distance for cascade summing.  Resolved
+  //  whether or not summing is switched on, so that turning "Cascade Sums" off and
+  //  back on - or clearing the nuclide - does not lose what the user typed.
+  //  While the user is mid-edit the field is often not a valid distance, so fall
+  //  back to the last distance that did parse (and only then to the default),
+  //  rather than jumping the display to the default on every keystroke.  The
+  //  resolved string is stored on the input, so it round-trips and serializes.
   {
-    using GammaInteractionCalc::CascadeSummingCalc;
+    string diststr = SpecUtils::trim_copy( m_currentlyShowingNuclide.m_input.m_cascade_distance );
+    if( diststr.empty() )
+      diststr = RefLineInput::sm_default_cascade_distance;
 
-    // User-settable source-to-detector distance (defaults to 1 cm).  The
-    //  validated string is stored on the input so it round-trips / serializes.
-    double dist = sm_cascade_summing_distance;
-    input.m_cascade_distance = "1 cm";
     if( m_cascadeDistance )
     {
-      const string diststr = SpecUtils::trim_copy( m_cascadeDistance->text().toUTF8() );
+      const string entered = SpecUtils::trim_copy( m_cascadeDistance->text().toUTF8() );
       try
       {
-        if( !diststr.empty() )
-        {
-          const double d = PhysicalUnits::stringToDistance( diststr );
-          if( d > 0.0 )
-          {
-            dist = d;
-            input.m_cascade_distance = diststr;
-          }
-        }
+        if( !entered.empty() && (PhysicalUnits::stringToDistance(entered) > 0.0) )
+          diststr = entered;
       }catch( std::exception & )
       {
-        //keep the 1 cm default for an unparseable distance
+        //keep the previous distance for an unparseable entry
       }
     }//if( m_cascadeDistance )
 
-    const std::shared_ptr<const DetectorPeakResponse> cur = m_detectorDisplay->detector();
-    const std::shared_ptr<const DetectorPeakResponse> ex = example_summing_detector();
-
-    const bool cur_has_fep = cur && cur->isValid()
-        && (CascadeSummingCalc::detectorFepEffAbs( cur, 500.0, 0.0, 0.0, dist ) > 0.0);
-
-    std::shared_ptr<const DetectorPeakResponse> fep_src, tot_src;
-    bool scale_total_by_fep = false;
-    if( cur_has_fep )
+    try
     {
-      fep_src = cur;
-      if( CascadeSummingCalc::drfHasNeededInfo( cur ) )
-      {
-        tot_src = cur;
-        input.m_summing_det_source = RefLineInput::SummingDetSource::Current;
-      }else if( ex )
-      {
-        tot_src = ex;
-        scale_total_by_fep = true;
-        input.m_summing_det_source = RefLineInput::SummingDetSource::CurrentFepExampleTotal;
-      }
-    }else if( ex )
+      if( PhysicalUnits::stringToDistance( diststr ) <= 0.0 )
+        diststr = RefLineInput::sm_default_cascade_distance;
+    }catch( std::exception & )
     {
-      fep_src = ex;
-      tot_src = ex;
-      input.m_summing_det_source = RefLineInput::SummingDetSource::Example;
+      diststr = RefLineInput::sm_default_cascade_distance;
     }
 
-    if( fep_src )
-    {
-      input.m_summing_fep_eff = [fep_src, dist]( double energy ) -> double {
-        return CascadeSummingCalc::detectorFepEffAbs( fep_src, energy, 0.0, 0.0, dist );
-      };
-    }
+    input.m_cascade_distance = diststr;
+  }
 
-    if( tot_src && scale_total_by_fep && fep_src && ex )
-    {
-      input.m_summing_total_eff = [ex, fep_src, dist]( double energy ) -> double {
-        const double ex_tot = CascadeSummingCalc::detectorTotEffAbs( ex, energy, 0.0, 0.0, dist );
-        const double ex_fep = CascadeSummingCalc::detectorFepEffAbs( ex, energy, 0.0, 0.0, dist );
-        const double cur_fep = CascadeSummingCalc::detectorFepEffAbs( fep_src, energy, 0.0, 0.0, dist );
-        return (ex_fep > 0.0) ? (ex_tot * cur_fep / ex_fep) : ex_tot;
-      };
-    }else if( tot_src )
-    {
-      input.m_summing_total_eff = [tot_src, dist]( double energy ) -> double {
-        return CascadeSummingCalc::detectorTotEffAbs( tot_src, energy, 0.0, 0.0, dist );
-      };
-    }
-
-    input.m_do_cascade_summing = static_cast<bool>( input.m_summing_fep_eff );
-  }//if( input.m_showCascades )
+  setCascadeSummingFcns( input );
 
 
   SpecUtils::trim( input.m_age );
@@ -3104,21 +3162,15 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
                                 && ref_lines->m_input.m_do_cascade_summing);
   m_cascadeDistanceRow->setHidden( !showingCascades );
 
-  // Reset an invalid/empty/zero distance back to the 1 cm default (the summing
-  //  calc already fell back to 1 cm; here we just keep the field consistent).
+  // Show the distance the summing actually used, which for an unusable entry is
+  //  the last good one (or the default) - see userInput().
   if( m_cascadeDistance )
   {
-    const string diststr = SpecUtils::trim_copy( m_cascadeDistance->text().toUTF8() );
-    bool valid = false;
-    try
-    {
-      valid = (!diststr.empty() && (PhysicalUnits::stringToDistance( diststr ) > 0.0));
-    }catch( std::exception & )
-    {
-      valid = false;
-    }
-    if( !valid )
-      m_cascadeDistance->setText( "1 cm" );
+    string resolved = ref_lines ? ref_lines->m_input.m_cascade_distance : string();
+    if( resolved.empty() )
+      resolved = RefLineInput::sm_default_cascade_distance;
+    if( SpecUtils::trim_copy( m_cascadeDistance->text().toUTF8() ) != resolved )
+      m_cascadeDistance->setText( resolved );
   }//if( m_cascadeDistance )
 
   using SummingDetSource = RefLineInput::SummingDetSource;
@@ -3142,11 +3194,6 @@ void ReferencePhotopeakDisplay::updateDisplayFromInput( RefLineInput user_input 
     m_showBetas->setChecked( ref_lines->m_input.m_showBetas );
     m_showCascadeSums->setChecked( ref_lines->m_input.m_showCascades );
     m_showEscapes->setChecked( ref_lines->m_input.m_showEscapes );
-
-    // Reflect the resolved cascade distance (e.g. after a restored/serialized state).
-    if( m_cascadeDistance && !ref_lines->m_input.m_cascade_distance.empty()
-       && (SpecUtils::trim_copy( m_cascadeDistance->text().toUTF8() ) != ref_lines->m_input.m_cascade_distance) )
-      m_cascadeDistance->setText( ref_lines->m_input.m_cascade_distance );
   }
   
   
@@ -3728,6 +3775,11 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
         //
         //m_currentlyShowingNuclide = *ref_line;
         
+        //The summing efficiency functors are not serializable, so rebuild them for
+        //  the restored state - otherwise "Cascade Sums" comes back checked while
+        //  nothing is computed and the distance row stays hidden.
+        setCascadeSummingFcns( input );
+
         updateDisplayFromInput( input );
       }
     }//if( showing_node )
@@ -3745,7 +3797,33 @@ void ReferencePhotopeakDisplay::deSerialize( std::string &xml_data  )
       {
         RefLineInput input;
         input.deSerialize( node );
-        
+
+        // Same non-serializable pieces the currently-showing lines get above: the
+        //  detector efficiency, the shielding attenuation, and the summing
+        //  functors.  They have to be restored together - summing switches the
+        //  amplitudes to an absolute basis, so doing it without the shielding
+        //  would draw these lines differently from how they were saved.
+        const shared_ptr<const DetectorPeakResponse> pers_drf = m_detectorDisplay
+                                                                  ? m_detectorDisplay->detector()
+                                                                  : nullptr;
+        if( pers_drf && pers_drf->isValid() )
+        {
+          input.m_detector_name = pers_drf->name();
+          input.m_det_intrinsic_eff = pers_drf->intrinsicEfficiencyFcn();
+        }else
+        {
+          input.m_detector_name = "";
+          input.m_det_intrinsic_eff = nullptr;
+        }
+
+        if( (!input.m_shielding_name.empty() && !input.m_shielding_thickness.empty())
+           || (!input.m_shielding_an.empty() && !input.m_shielding_ad.empty()) )
+        {
+          input.setShieldingAttFcn();
+        }
+
+        setCascadeSummingFcns( input );
+
         shared_ptr<ReferenceLineInfo> ref_line = ReferenceLineInfo::generateRefLineInfo( input );
         if( !ref_line || (ref_line->m_validity != ReferenceLineInfo::InputValidity::Valid) )
           throw runtime_error( "Couldn't generate persisted reference lines from source '" + input.m_input_txt + "'" );

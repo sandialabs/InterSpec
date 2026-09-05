@@ -113,6 +113,43 @@ WT_DECLARE_WT_MEMBER
   });
 }
 );
+
+
+WT_DECLARE_WT_MEMBER
+(LlmRenderMarkdown, Wt::JavaScriptFunction, "LlmRenderMarkdown",
+  function( elemId, markdown )
+{
+  // InterSpec_resources/LlmMarkdown.js is pulled in with WApplication::require(), so it may not have
+  //  finished loading when this runs.  This function is inlined into the JavaScript stream (not
+  //  fetched), so it is always defined; it waits for LlmMarkdown, then shows plain text if the
+  //  libraries never arrive.
+  var tries = 0;
+  var attempt = function(){
+    if( typeof LlmMarkdown !== 'undefined' ){
+      LlmMarkdown.render( elemId, markdown );
+      return;
+    }
+
+    tries += 1;
+    if( tries > 100 ){  // ~5 seconds
+      console.warn( 'LlmRenderMarkdown: LlmMarkdown.js never loaded; showing plain text.' );
+      var el = document.getElementById( elemId );
+      if( el ){
+        // Stash the source too: if LlmMarkdown.js does turn up later, "Show Raw Text" reads it from
+        //  here, and would otherwise blank the response.
+        el.llmMarkdownSource = markdown;
+        el.textContent = markdown;
+        el.classList.add( 'LlmMarkdownRaw' );
+      }
+      return;
+    }
+
+    setTimeout( attempt, 50 );
+  };
+
+  attempt();
+}
+);
 }//namespace
 
 
@@ -270,6 +307,62 @@ namespace
   }//adjacentTurnRawJson(...)
 
 }//namespace
+
+
+namespace LlmMarkdown
+{
+void load_resources( WApplication *app )
+{
+  if( !app )
+    return;
+
+  // Order matters: the marked-katex bridge resolves the `katex` global inside its UMD factory, so
+  //  KaTeX must be loaded before it.  Wt de-duplicates these by URI, so repeat calls cost nothing.
+  app->useStyleSheet( "InterSpec_resources/assets/js/katex-0.18.5/katex.min.css" );
+  app->require( "InterSpec_resources/assets/js/katex-0.18.5/katex.min.js" );
+  app->require( "InterSpec_resources/assets/js/marked-18.0.11/marked.umd.js" );
+  app->require( "InterSpec_resources/assets/js/marked-katex-extension-5.1.12/index.umd.js" );
+  app->require( "InterSpec_resources/LlmMarkdown.js" );
+}//load_resources(...)
+
+
+WContainerWidget *add_text( WContainerWidget *parent, const string &markdown,
+                            const string &style_class )
+{
+  assert( parent );
+  if( !parent )
+    return nullptr;
+
+  load_resources( wApp );
+
+  WContainerWidget *div = parent->addNew<WContainerWidget>();
+  div->addStyleClass( "LlmMarkdownBody" );
+  if( !style_class.empty() )
+    div->addStyleClass( style_class );
+
+  // LlmRenderMarkdown waits for LlmMarkdown.js, which in turn waits for marked/KaTeX, and either one
+  //  falls back to showing the plain text - so the content can not be lost here.
+  LOAD_JAVASCRIPT( wApp, "LlmInteractionDisplay.cpp", "LlmInteractionDisplay", wtjsLlmRenderMarkdown );
+  div->doJavaScript( "Wt.WT.LlmRenderMarkdown('" + div->id() + "',"
+                     + WString(markdown).jsStringLiteral() + ");" );
+
+  return div;
+}//add_text(...)
+
+
+void set_raw_mode( WWidget *widget, const bool raw )
+{
+  assert( widget );
+  if( !widget )
+    return;
+
+  // This only ever runs from a user click, long after the scripts have loaded, but guard anyway so a
+  //  failed load leaves the (already plain) text alone rather than throwing.
+  widget->doJavaScript( "if(typeof LlmMarkdown!=='undefined')"
+                        " LlmMarkdown.setRawMode('" + widget->id() + "',"
+                        + string(raw ? "true" : "false") + ");" );
+}//set_raw_mode(...)
+}//namespace LlmMarkdown
 
 
 
@@ -464,7 +557,9 @@ void LlmInteractionTurnDisplay::showJsonDialog( const WString &title,
 LlmInteractionFinalResponseDisplay::LlmInteractionFinalResponseDisplay(
   shared_ptr<LlmInteractionFinalResponse> response )
   : LlmInteractionTurnDisplay( response ),
-    m_response( response )
+    m_response( response ),
+    m_contentDiv( nullptr ),
+    m_showRawText( false )
 {
   addStyleClass( "LlmFinalResponseDisplay" );
 
@@ -504,6 +599,18 @@ void LlmInteractionFinalResponseDisplay::addMenuItems( PopupDivMenu *menu )
                       + WString(m_response->content()).jsStringLiteral() + ");";
     wApp->doJavaScript( js );
   }));
+
+  // Escape hatch to see the Markdown/LaTeX the model actually wrote (and for when rendering it
+  //  obscures something).  "Copy Response Text" above always copies the raw source, either way.
+  PopupDivMenuItem *rawText = menu->addMenuItem( "Show Raw Text" );
+  rawText->triggered().connect( std::bind( [this,rawText](){
+    if( !m_contentDiv )
+      return;
+
+    m_showRawText = !m_showRawText;
+    LlmMarkdown::set_raw_mode( m_contentDiv, m_showRawText );
+    rawText->setText( m_showRawText ? "Show Rendered Text" : "Show Raw Text" );
+  }));
 }//addMenuItems()
 
 
@@ -521,11 +628,11 @@ WString LlmInteractionFinalResponseDisplay::getTitleText() const
 
 void LlmInteractionFinalResponseDisplay::createBodyContent()
 {
-  // Display the full response content.  Pass TextFormat::Plain in the constructor: the 3-arg WText ctor sets
-  // the format BEFORE the text, so the raw model content is never run through Wt's XHTML parser (which
-  // would log "Error reading XHTML string" on a bare '&' or '<' before silently falling back).
-  WText *contentText = m_bodyContainer->addNew<WText>( m_response->content(), TextFormat::Plain );
-  contentText->addStyleClass( "LlmResponseContent" );
+  // Display the full response content, rendered as Markdown + LaTeX client-side.  The raw model text
+  // deliberately never goes through Wt's XHTML parser (a bare '&' or '<' makes it log
+  // "Error reading XHTML string" before silently falling back); LlmMarkdown.js escapes everything it
+  // does not explicitly allow.
+  m_contentDiv = LlmMarkdown::add_text( m_bodyContainer, m_response->content(), "LlmResponseContent" );
 
   // Add metadata section
   WContainerWidget *metadataDiv = m_bodyContainer->addNew<WContainerWidget>();
@@ -568,8 +675,8 @@ void LlmInteractionFinalResponseDisplay::createBodyContent()
     WText *thinkingLabel = thinkingDiv->addNew<WText>( "Thinking:" );
     thinkingLabel->addStyleClass( "LlmThinkingLabel" );
 
-    // TextFormat::Plain via the 3-arg ctor (format before text) so raw thinking content skips the XHTML parser.
-    WText *thinkingText = thinkingDiv->addNew<WText>( m_response->thinkingContent(), TextFormat::Plain );
+    // Thinking content is also Markdown/LaTeX from the model, so render it the same way.
+    LlmMarkdown::add_text( thinkingDiv, m_response->thinkingContent(), "" );
   }
 }//createBodyContent()
 

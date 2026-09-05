@@ -137,6 +137,7 @@ Provide:
 * Fit quality (χ²/DOF, number of peaks used)
 * Shielding atomic-number check: if `too_low`/`too_high`, note the material's AN may be wrong; if `consistent`, note the AN is supported by the data; if `not_determinable`, make no AN claim.
 * Any warnings or recommendations
+* **Formatting:** Reply in Markdown - use a table when reporting more than a couple of peaks, nuclides or fit values, and LaTeX for equations and symbols (`$...$` inline, `$$...$$` displayed; e.g. `$^{235}$U`, `$\chi^2/\mathrm{DOF}$`). Do not write raw HTML, links or images.
 
 Before returning final results, call the `close_activity_shielding_display` to close the currently opened GUI, unless you only called the one-off activity fit.
 

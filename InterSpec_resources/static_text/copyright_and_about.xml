@@ -179,6 +179,24 @@ IT &quot;AS IS.&quot;
       </div>
     </li>
 
+    <li>The LLM Assistant renders the assistants replies as Markdown and LaTeX using three Javascript libraries.
+      All three run entirely locally - nothing is fetched from, or sent to, the network:
+      <ul>
+        <li><b><a href="https://github.com/markedjs/marked" target="_blank">marked</a> (version 18.0.11):</b>
+          a Markdown parser, used to render headings, lists, tables and code in the assistants replies.
+          <b>marked</b> is a <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> javascript library.
+        </li>
+        <li><b><a href="https://katex.org/" target="_blank">KaTeX</a> (version 0.18.5):</b>
+          math typesetting for the web, used to typeset the LaTeX equations in the assistants replies.
+          <b>KaTeX</b> is a <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> javascript library.
+        </li>
+        <li><b><a href="https://github.com/UziTech/marked-katex-extension" target="_blank">marked-katex-extension</a> (version 5.1.12):</b>
+          hands the math expressions <b>marked</b> finds to <b>KaTeX</b>.
+          <b>marked-katex-extension</b> is a <a href="https://opensource.org/licenses/MIT" target="_blank">MIT licensed</a> javascript library.
+        </li>
+      </ul>
+    </li>
+
     <li><b><a href="https://zlib.net" target="_blank">zlib</a>:</b> A Massively Spiffy Yet Delicately Unobtrusive Compression Library.
       <div style="margin-left: 1em; font-size: small;">
         <b>zlib</b> is used to open user uploaded zip files that contain spectrum files.

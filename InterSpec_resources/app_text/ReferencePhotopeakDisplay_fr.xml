@@ -37,6 +37,7 @@
   <message id="rpd-opt-betas">Afficher les bêtas</message>
   <message id="rpd-opt-cascade">Sommes en cascade</message>
   <message id="rpd-cascade-dist">Dist. :</message>
+  <message id="rpd-tt-cascade-dist">Distance source-détecteur supposée pour l'estimation de la sommation en coïncidence ; plus la distance est courte, plus la sommation est forte.  Entrez une distance avec unité, p. ex. 2.54 cm.</message>
   <message id="rpd-warn-cascade-example-drf">Aucun détecteur ; sommation avec une efficacité HPGe d'exemple.</message>
   <message id="rpd-warn-cascade-approx-drf">Efficacité totale de sommation d'un détecteur d'exemple.</message>
   <message id="rpd-opt-escapes">Pics d'échappement</message>
