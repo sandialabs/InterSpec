@@ -72,6 +72,7 @@
 #include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/GammaInteractionCalc.h"
+#include "InterSpec/CeeLoUtils.h"
 #include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/MassAttenuationTool_imp.hpp"
 
@@ -98,6 +99,23 @@ inline double scalar_of( const T &val )
     return val;
   else
     return val.a;
+}
+
+
+/** True when `val` carries a non-zero derivative lane - i.e. it moves with one of the parameters
+ THIS evaluation is differentiating with respect to.  Always false for `T = double`.
+
+ Note the exact-zero comparison: `Eigen::isZero()`s default argument is a precision tolerance, and
+ a tolerance here would be a correctness bug, not a convenience - a lane that is merely small still
+ carries a derivative that a caller must not discard.
+ */
+template<typename T>
+inline bool has_active_lanes( const T &val )
+{
+  if constexpr ( std::is_same_v<T,double> )
+    return false;
+  else
+    return !val.v.isZero( 0.0 );
 }
 
 
@@ -1507,7 +1525,11 @@ T DistributedSrcCalcT<T>::eff_response_factor( const T &flat,
 
   const double theta = std::acos( cos_theta );
   const double dist_cm = dscal / PhysicalUnits::cm;
-  const ceelo::EffResult res = m_effResponse->eps_fep( m_energy, theta, 0.0, dist_cm );
+  // `dist_cm` is from the DETECTOR FACE; the position is formed face-referenced, as everywhere
+  //  in InterSpec (CeeLoUtils::sourcePositionFromFace), not through the descriptor's own
+  //  reference point.
+  const ceelo::EffResult res = m_effResponse->eps_fep_at( m_energy,
+                CeeLoUtils::sourcePositionFromFace( m_effResponse->descriptor, theta, 0.0, dist_cm ) );
 
   // value == res.value exactly (for T=double, flat*(res.value/flat)); for Jet the derivative is the
   //  frozen ratio times the exact 1/r^2 gradient in `flat`.
@@ -4742,7 +4764,7 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
             calculator->m_lineCache = volumetricLineCache( material_index, scalar_dims );
           }catch( std::exception &e )
           {
-            // The set built at creation (buildVolumetricLineCachesOrFallBack) could not be rebuilt
+            // The set built at creation (buildDetectorSideRays) could not be rebuilt
             //  at the dimensions the optimizer has moved to: an evaluation failure it reports, never
             //  a silent change of model.
             throw std::runtime_error( "The volumetric line set could not be rebuilt at the current"
@@ -4955,46 +4977,15 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
 
   // 4) Detector response (at the true line-of-sight distance).
   //
-  // The efficiency-correction setting applies here as well as to the volumetric integrand: an
-  //  off-axis or near-field POINT source needs the same near-field/off-axis treatment, and the
-  //  legacy `efficiency()` fallback is theta-blind (it would silently drop the angular correction
-  //  for an off-axis source).  Two rules, per the tool's contract:
-  //   - An explicit FlatDisk request forces solid-angle x intrinsic here too, so the control means
-  //     what its label says and is a usable escape hatch.
-  //   - `Auto` never picks something less accurate than the DRF natively offers: when it resolves
-  //     to FlatDisk (far-field, on-axis) a DRF carrying its own CeeLo response still gets the full
-  //     evaluation, exactly as before this setting existed.
+  // One rule for a point source's efficiency, shared with the display path, the cascade legs, the
+  //  DRF flags and the efficiency covariance - see pointSourceFepEff: the resolved response (the
+  //  same one the volumetric integrand uses) through a ray fan traced once per fit, else flat-disk,
+  //  or the intrinsic curve for a fixed geometry.  An explicit FlatDisk request forces solid-angle
+  //  x intrinsic here too, so the control means what its label says and is a usable escape hatch.
   if( m_detector && m_detector->isValid() )
   {
-    const bool fixed_geom = m_detector->isFixedGeometry();
-    const bool forced_flat = (m_options.volumetric_eff_method
-                              == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk);
-    const double offset_r = std::sqrt( m_sourceOffsets[0]*m_sourceOffsets[0]
-                                       + m_sourceOffsets[1]*m_sourceOffsets[1] );
-    const double eval_theta = (offset_r > 0.0) ? std::atan2(offset_r, m_distance) : 0.0;
-    const double eval_phi = (offset_r > 0.0) ? std::atan2(m_sourceOffsets[1], m_sourceOffsets[0]) : 0.0;
-
-    // The resolved response (an EFFTRAN transfer, or the DRF's own MC) when one was built; it is
-    //  what lets a geometry-plus-measured-curve DRF be off-axis correct at all.
-    const std::shared_ptr<const ceelo::DetectorResponse> resolved
-                                  = forced_flat ? nullptr : m_volEffResponse;
-    const bool mc_eval = (!fixed_geom && !forced_flat && !!m_detector->ceeloResponse());
-
     for( typename EnergyCountMapT::value_type &energy_count : energy_count_map )
-    {
-      const float energy = static_cast<float>(energy_count.first);
-      double eff;
-      if( fixed_geom )
-        eff = m_detector->intrinsicEfficiency( energy );
-      else if( resolved )
-        eff = resolved->eps_fep( energy_count.first, eval_theta, eval_phi,
-                                 true_dist / PhysicalUnits::cm ).value;
-      else if( mc_eval )
-        eff = m_detector->fepEfficiencyEval( energy, eval_theta, eval_phi, true_dist ).value;
-      else
-        eff = m_detector->efficiency( energy, true_dist );
-      energy_count.second *= eff;
-    }
+      energy_count.second *= pointSourceFepEff( energy_count.first ).value;
   }else
   {
     const double detDiam = 1.0 * PhysicalUnits::cm;
@@ -5066,7 +5057,8 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
 
 inline std::vector<EffectiveShieldingInfo> ShieldingSourceChi2Fcn::computeEffectiveShielding(
                                                     const std::vector<double> &params,
-                                                    NucMixtureCache &mixturecache ) const
+                                                    NucMixtureCache &mixturecache,
+                                                    std::vector<std::string> *warnings ) const
 {
   using namespace std;
 
@@ -5118,10 +5110,14 @@ inline std::vector<EffectiveShieldingInfo> ShieldingSourceChi2Fcn::computeEffect
 
     answer.push_back( info );
   }//for( loop over volumetric source calculators )
-  }catch( std::exception & )
+  }catch( std::exception &e )
   {
     // Degenerate final geometry for the diagnostic pass - skip volumetric effective
-    //  shielding and continue with the point sources below.
+    //  shielding and continue with the point sources below, but say so: a table that is
+    //  quietly missing its volumetric rows reads as if there were none.
+    if( warnings )
+      warnings->push_back( "Effective shielding for the volumetric sources was not computed: "
+                           + std::string(e.what()) );
   }//try / catch building+integrating volumetric calculators
 
   // Point sources: the ray from the assembly center to the detector crosses each
@@ -5325,6 +5321,9 @@ ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
         return transmission_coefficient_generic_imp( atomic_number, areal_density, energy );
       } );
 
+      ctx.note_input( atomic_number );
+      ctx.note_input( areal_density );
+
       const T ad_gcm2 = areal_density * (PhysicalUnits::cm2 / PhysicalUnits::g);
       ctx.total_ad_gcm2 += ad_gcm2;
       an_weighted_ad += atomic_number * ad_gcm2;
@@ -5367,6 +5366,12 @@ ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
                                                          std::max( 0.0, scalar_of(chord) ) );
       } );
 
+      // `mat` is m_initial_shieldings' material, fixed for the life of this function object, so the
+      //  chord is the only thing this shell contributes to the cascade cache key.  (That also means
+      //  a FITTED MASS FRACTION does not reach these functors at all - a pre-existing approximation
+      //  the cache neither introduces nor worsens.)
+      ctx.note_input( chord );
+
       const T ad_gcm2 = chord * ( static_cast<double>(material->density)
                                   * PhysicalUnits::cm2 / PhysicalUnits::g );
       ctx.total_ad_gcm2 += ad_gcm2;
@@ -5384,6 +5389,12 @@ ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
       ctx.air_dist = T(0.0);
   }
 
+  // The three derived quantities the cascade functors read directly, so the signature covers every
+  //  path from `params` into the correction, not just the per-shell chords.
+  ctx.note_input( ctx.total_ad_gcm2 );
+  ctx.note_input( ctx.eff_an );
+  ctx.note_input( ctx.air_dist );
+
   return ctx;
 }//pointSourceAttenContext(...)
 
@@ -5398,36 +5409,31 @@ void ShieldingSourceChi2Fcn::applyCascadeToClusterMap( std::map<double,T> &clust
   if( !m_cascadeCalc || !nuclide || cluster_map.empty() )
     return;
 
-  const std::shared_ptr<const DetectorPeakResponse> &drf = m_detector;
-  if( !drf || !drf->isValid() )
+  if( !m_detector || !m_detector->isValid() )
     return;
-
-  const double true_dist = trueSourceToDetectorDistance();
-  const double off_r = std::sqrt( m_sourceOffsets[0]*m_sourceOffsets[0]
-                                  + m_sourceOffsets[1]*m_sourceOffsets[1] );
-  const double theta = (off_r > 0.0) ? std::atan2( off_r, m_distance ) : 0.0;
-  const double phi = (off_r > 0.0) ? std::atan2( m_sourceOffsets[1], m_sourceOffsets[0] ) : 0.0;
 
   const bool do_air = (m_options.attenuate_for_air && (scalar_of(atten_ctx.air_dist) > 0.0));
   const ShieldScatterAugment &scatter = m_cascadeCalc->scatterAugment();
 
   // Absolute FEP efficiency at the fit geometry: shields x air x detector.
   //  The parameter (Jet) dependence enters through the shield chords / AD.
-  const auto eps_fep_abs = std::function<T(double)>( [&]( const double energy ) -> T {
+  const auto fep_raw = [&]( const double energy ) -> T {
     T att(0.0);
     for( const std::function<T(float)> &f : atten_ctx.att_fcns )
       att += f( static_cast<float>(energy) );
     T result = exp( -att );
     if( do_air )
       result *= exp( -transmission_length_coefficient_air( static_cast<float>(energy) ) * atten_ctx.air_dist );
-    return result * CascadeSummingCalc::detectorFepEffAbs( drf, energy, theta, phi, true_dist );
-  } );
+    // The partner legs see the SAME response, model and geometry as the primary (pointSourceFepEff)
+    //  - and the same memoised ray fan, so this is a lookup, not a ray trace.
+    return result * std::max( 0.0, pointSourceFepEff( energy ).value );
+  };
 
   // Absolute total (any-deposit) efficiency: the shield-scatter continuum
   //  keeps this higher than pure transmission -
   //    eps_tot = eps_tot_bare * ( T_shield + A(E; AN, AD) ) * air
   //  (see ShieldScatterAugment / the GADRAS benchmark recipe).
-  const auto eps_tot_abs = std::function<T(double)>( [&]( const double energy ) -> T {
+  const auto tot_raw = [&]( const double energy ) -> T {
     T att(0.0);
     for( const std::function<T(float)> &f : atten_ctx.att_fcns )
       att += f( static_cast<float>(energy) );
@@ -5436,39 +5442,148 @@ void ShieldingSourceChi2Fcn::applyCascadeToClusterMap( std::map<double,T> &clust
       shield_part += scatter.evaluate( energy, atten_ctx.eff_an, atten_ctx.total_ad_gcm2 );
     if( do_air )
       shield_part *= exp( -transmission_length_coefficient_air( static_cast<float>(energy) ) * atten_ctx.air_dist );
-    return shield_part * CascadeSummingCalc::detectorTotEffAbs( drf, energy, theta, phi, true_dist );
+    return shield_part * std::max( 0.0, pointSourceTotEff( energy ).value );
+  };
+
+  // The cascade engine queries these once per emission of every enumerated cascade, which for a
+  //  cascade-rich nuclide is thousands of calls at the ~100 distinct energies the cascades contain
+  //  (`EffLookup` in CeeLo's AnalyticCascade_imp.hpp is the funnel).  Every call re-enters
+  //  ceelo::DetectorResponse::eps_total, which ray-traces a FRESH aperture quadrature - sampling an
+  //  Eu-152 point fit put ~80% of the entire fit in make_aperture_quadrature/intersect_cylinder
+  //  underneath these two functors.  So memoise per energy for the life of this evaluation: both
+  //  are pure in the energy at these parameters, so a hit returns exactly what a recompute would,
+  //  Jet derivative lanes included (same call, same point, same active lanes).  The volumetric
+  //  twin does not need this - DistributedSrcCalcT::cascade_correction_factor's functors index
+  //  pre-integrated per-partner tables instead of querying the response.
+  std::map<double,T> fep_memo, tot_memo;
+
+  const bool eff_memo = sm_use_cascade_eff_memo;
+
+  const auto eps_fep_abs = std::function<T(double)>( [&fep_raw,&fep_memo,eff_memo]( const double energy ) -> T {
+    if( !eff_memo )
+      return fep_raw( energy );
+    const typename std::map<double,T>::const_iterator pos = fep_memo.find( energy );
+    if( pos != std::end(fep_memo) )
+      return pos->second;
+    return fep_memo.emplace( energy, fep_raw(energy) ).first->second;
   } );
 
-  const std::vector<ceelo::AnalyticPeakResultT<T>> corrections
-        = m_cascadeCalc->evaluate<T>( nuclide, scalar_of(age), eps_fep_abs, eps_tot_abs );
+  const auto eps_tot_abs = std::function<T(double)>( [&tot_raw,&tot_memo,eff_memo]( const double energy ) -> T {
+    if( !eff_memo )
+      return tot_raw( energy );
+    const typename std::map<double,T>::const_iterator pos = tot_memo.find( energy );
+    if( pos != std::end(tot_memo) )
+      return pos->second;
+    return tot_memo.emplace( energy, tot_raw(energy) ).first->second;
+  } );
 
-  for( const ceelo::AnalyticPeakResultT<T> &corr : corrections )
+  // Applies one correction to the cluster map (and the calc log).  `c_net` is `T` on the
+  //  freshly-computed path, which is what carries the derivative when a shield IS being fitted, and
+  //  `T(scalar)` on the cached path, where the guard below guarantees that derivative is zero.
+  const auto apply_one = [&cluster_map,log_info]( const double energy_keV, const T &c_net,
+                                                 const double c_out, const double c_in )
   {
-    if( !corr.found )
-      continue;
-
-    const auto pos = cluster_map.find( corr.energy_keV );
+    const auto pos = cluster_map.find( energy_keV );
     if( pos == std::end(cluster_map) )
-      continue;
+      return;
 
-    pos->second *= corr.c_net;
+    pos->second *= c_net;
 
     if( log_info )
     {
       for( GammaInteractionCalc::PeakDetail &log_peak : *log_info )
       {
-        if( std::fabs(log_peak.decayParticleEnergy - corr.energy_keV) > 0.01 )
+        if( std::fabs(log_peak.decayParticleEnergy - energy_keV) > 0.01 )
           continue;
         // Emission-weighted merge if several source nuclides feed this peak
         //  (each nuclide's factor applies to its own contribution; for the
         //  log, report the product of applied multipliers).
         log_peak.cascadeCorrApplied = true;
-        log_peak.cascadeNetMult *= scalar_of( corr.c_net );
-        log_peak.cascadeSummingOut *= scalar_of( corr.c_out );
-        log_peak.cascadeSummingIn += scalar_of( corr.c_in );
+        log_peak.cascadeNetMult *= scalar_of( c_net );
+        log_peak.cascadeSummingOut *= c_out;
+        log_peak.cascadeSummingIn += c_in;
       }
     }//if( log_info )
-  }//for( corrections )
+  };//apply_one
+
+  // The correction never depends on activity, so when nothing it DOES depend on carries a derivative
+  //  lane it is the same number on every optimizer iteration and every autodiff pass - see
+  //  #m_cascadeCorrCache for the key, the guard, and why the guard is what makes storing scalars
+  //  sound.  Without the guard we run the engine and apply the Jet the engine returned, exactly as
+  //  before: those lanes are the correction's real derivative and must not be dropped.
+  if( !sm_use_cascade_corr_memo || !atten_ctx.constant_in_params )
+  {
+    const std::vector<ceelo::AnalyticPeakResultT<T>> corrections
+          = m_cascadeCalc->evaluate<T>( nuclide, scalar_of(age), eps_fep_abs, eps_tot_abs );
+
+    for( const ceelo::AnalyticPeakResultT<T> &corr : corrections )
+    {
+      if( corr.found )
+        apply_one( corr.energy_keV, corr.c_net, scalar_of(corr.c_out), scalar_of(corr.c_in) );
+    }
+    return;
+  }//if( the correction moves with a fitted parameter )
+
+  // Keyed on the age BUCKET `CascadeSummingCalc::cascades` itself uses, not the raw age: two ages
+  //  in one bucket enumerate the same cascades and so give the same correction, whereas a raw-age
+  //  key would miss on every iteration of an age fit AND grow the map without bound.
+  const std::pair<const SandiaDecay::Nuclide *,int> nuc_key( nuclide,
+                                            CascadeSummingCalc::ageCacheBucket( scalar_of(age) ) );
+
+  std::vector<CascadeCorrEntry> entries;
+  bool have_entries = false;
+
+  {
+    std::lock_guard<std::mutex> lock( m_cascadeCorrMutex );
+    const auto nuc_pos = m_cascadeCorrCache.find( nuc_key );
+    if( nuc_pos != std::end(m_cascadeCorrCache) )
+    {
+      const auto sig_pos = nuc_pos->second.find( atten_ctx.signature );
+      if( sig_pos != std::end(nuc_pos->second) )
+      {
+        entries = sig_pos->second;
+        have_entries = true;
+      }
+    }
+  }
+
+  if( !have_entries )
+  {
+    const std::vector<ceelo::AnalyticPeakResultT<T>> corrections
+          = m_cascadeCalc->evaluate<T>( nuclide, scalar_of(age), eps_fep_abs, eps_tot_abs );
+
+    entries.reserve( corrections.size() );
+    for( const ceelo::AnalyticPeakResultT<T> &corr : corrections )
+    {
+      if( !corr.found )
+        continue;
+
+      // The guard held, so every one of these is lane-free; assert it rather than trust it, since a
+      //  new path from the parameters into the correction that skipped `note_input` would show up
+      //  here as a silently dropped Jacobian.
+      assert( !has_active_lanes( corr.c_net ) );
+
+      CascadeCorrEntry entry;
+      entry.energy_keV = corr.energy_keV;
+      entry.c_net = scalar_of( corr.c_net );
+      entry.c_out = scalar_of( corr.c_out );
+      entry.c_in = scalar_of( corr.c_in );
+      entries.push_back( entry );
+    }
+
+    std::lock_guard<std::mutex> lock( m_cascadeCorrMutex );
+    // A concurrent evaluation may have inserted this key meanwhile; the values are identical, so
+    //  either one winning is fine.  Bounded: a fit with a free shielding dimension produces a new
+    //  signature on every plain-double evaluation, so the per-nuclide map is cleared when it fills
+    //  rather than growing with the iteration count (see sm_cascade_corr_cache_max_signatures).
+    std::map<std::vector<double>,std::vector<CascadeCorrEntry>> &by_signature = m_cascadeCorrCache[nuc_key];
+    if( by_signature.size() >= sm_cascade_corr_cache_max_signatures )
+      by_signature.clear();
+    by_signature[atten_ctx.signature] = entries;
+  }//if( the correction had to be computed )
+
+  for( const CascadeCorrEntry &corr : entries )
+    apply_one( corr.energy_keV, T(corr.c_net), corr.c_out, corr.c_in );
 }//applyCascadeToClusterMap(...)
 
 }//namespace GammaInteractionCalc

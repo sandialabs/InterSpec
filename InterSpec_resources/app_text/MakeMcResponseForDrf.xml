@@ -115,8 +115,7 @@
     the curve is pinned to data: its stated measurement distance when it has one,
     otherwise a comfortably far-field distance. When the DRF carries raw measured
     points at a single distance, the points pin it and it cannot be edited.&lt;/p&gt;
-    &lt;p&gt;Distances are measured from the detector face (or the geometry&apos;s
-    selected reference point).&lt;/p&gt;</message>
+    &lt;p&gt;Distances are measured from the detector face (the front of the endcap).&lt;/p&gt;</message>
   <message id="mmr-anchor-src-points">Anchoring on the {1} measured efficiency points at {2}.</message>
   <message id="mmr-anchor-src-curve">Anchoring on the DRF efficiency curve, sampled at {1} energies, at {2}.</message>
   <message id="mmr-anchor-unusable">This DRF cannot anchor a transfer: {1}</message>
@@ -183,9 +182,6 @@
   <message id="dgi-collimator-cb">Collimator (side shield)</message>
   <message id="dgi-collimator-thickness">Thickness</message>
   <message id="dgi-collimator-extension">Extends past face</message>
-  <message id="dgi-ref-point">Distances measured from:</message>
-  <message id="dgi-ref-endcap">Detector face (endcap front)</message>
-  <message id="dgi-ref-crystal">Crystal face</message>
   <message id="dgi-seeded-note">This detector has no geometry recorded, so only its diameter is known: the crystal length shown is a guess (taken equal to the diameter) and the crystal material is just the default. Please set both before generating a response.</message>
   <message id="dgi-err-missing">Please enter the {1}.</message>
   <message id="dgi-err-invalid">The {1} is not a valid distance.</message>

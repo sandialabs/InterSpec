@@ -220,13 +220,18 @@ namespace
       const ceelo::EffResult res = fep ? resp->eps_fep_at( row.energy_keV, pos )
                                        : resp->eps_total_at( row.energy_keV, pos );
 
-      // Cross-check the DetectorPeakResponse dispatch agrees with the direct
-      //  evaluation when the reference point is the crystal face.
-      if( fep && (resp->descriptor.reference_point == ceelo::ReferencePoint::CrystalFace) )
+      // Cross-check the DetectorPeakResponse dispatch agrees with the direct evaluation at the
+      //  SAME physical point.  The DRF's distance is measured from the detector FACE - InterSpec's
+      //  one convention, whatever the descriptor's own reference point says - so describe the
+      //  probe position relative to the face point rather than the crystal-face origin.
+      if( fep )
       {
+        const Eigen::Vector3d from_face = pos - CeeLoUtils::detectorFacePosition( resp->descriptor );
+        const double face_dist_cm = from_face.norm();
+        const double face_theta = std::acos( std::min( 1.0, std::max( -1.0, -from_face.z()/face_dist_cm ) ) );
         //(theta -> position round trip costs a few ULP; 1e-4 percent = 1e-6 relative)
         const DetectorPeakResponse::EffEval through_drf
-                        = drf->fepEfficiencyEval( row.energy_keV, theta, phi, dist );
+                        = drf->fepEfficiencyEval( row.energy_keV, face_theta, phi, face_dist_cm*PhysicalUnits::cm );
         BOOST_CHECK_CLOSE( through_drf.value, res.value, 1.0E-4 );
       }
 

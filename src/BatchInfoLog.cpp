@@ -932,25 +932,36 @@ void add_basic_src_details( const GammaInteractionCalc::SourceDetails &src,
       }
     }
 
-    // Which per-element detector efficiency the volumetric-source integration actually used, and
-    //  why - `Auto`, or a request the DRF cannot honor, resolves to a concrete method, and that
-    //  fallback (e.g. down to flat-disk, which is far-field-only) materially affects the answer.
-    //  Only meaningful when a volumetric source is present; always emitted so templates are safe.
+    // Which detector-efficiency model the fit actually used - for the volumetric sources (which
+    //  response the line integration evaluated per element) and for the point sources (which
+    //  response the point query went through) - and why: `Auto`, or a request the DRF cannot
+    //  honor, resolves to a concrete method, and that fallback (e.g. down to flat-disk, which is
+    //  far-field-only) materially affects the answer.  One resolution serves both source kinds, so
+    //  the two names always describe the same response.  Always emitted so templates are safe;
+    //  `VolumetricEff` is the same information under its pre-2026-09 name.
     {
-      auto &vj = data["VolumetricEff"];
-      const char *method_str = "Flat-disk (solid angle x intrinsic efficiency)";
+      const char *volumetric_str = "Flat-disk (solid angle x intrinsic efficiency)";
       switch( results.volumetric_eff_method )
       {
         case ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer:
-          method_str = "Monte-Carlo transfer (near-field & off-axis correct)";  break;
+          volumetric_str = "Monte-Carlo transfer (near-field & off-axis correct)";  break;
         case ShieldingSourceFitCalc::VolumetricEffMethod::EffTran:
-          method_str = "EFFTRAN transfer (near-field & off-axis correct)";      break;
+          volumetric_str = "EFFTRAN transfer (near-field & off-axis correct)";      break;
         case ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk:
         case ShieldingSourceFitCalc::VolumetricEffMethod::Auto:
           break;
       }//switch( results.volumetric_eff_method )
 
-      vj["Method"] = method_str;
+      const char *point_str = GammaInteractionCalc::ShieldingSourceChi2Fcn::pointEffModelName( results.point_eff_model );
+
+      auto &dj = data["DetectorEff"];
+      dj["PointModel"] = point_str;
+      dj["VolumetricModel"] = volumetric_str;
+      dj["Note"] = results.volumetric_eff_note;
+      dj["HasNote"] = !results.volumetric_eff_note.empty();
+
+      auto &vj = data["VolumetricEff"];
+      vj["Method"] = volumetric_str;
       vj["Note"] = results.volumetric_eff_note;
       vj["HasNote"] = !results.volumetric_eff_note.empty();
     }

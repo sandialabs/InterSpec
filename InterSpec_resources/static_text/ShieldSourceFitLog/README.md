@@ -1178,10 +1178,29 @@ in the same place.
 > The empty-then/`{% else %}` shape above is deliberate: a `not` operator is **not** part of the
 > supported subset documented in §7 — negate with an empty `{% if %}` arm instead.
 
-### 5.19 `VolumetricEff`
+### 5.19 `DetectorEff` (and its older alias `VolumetricEff`)
 
-Which per-element detector efficiency the volumetric-source (self-attenuating / trace) integration
-actually used, and why.  Always emitted, but only meaningful when `HasVolumetricSource` is true.
+Which detector-efficiency model the fit actually used, for the point sources and for the volumetric
+(self-attenuating / trace) sources, and why.  One resolution serves both source kinds, so the two
+names always describe the same response.  Always emitted.
+
+```json
+"DetectorEff": {
+  "PointModel": "detector response at the source position (near-field & off-axis correct)",
+  "VolumetricModel": "EFFTRAN transfer (near-field & off-axis correct)",
+  "Note": "Auto -> EFFTRAN transfer (the one attached to the detector response)",
+  "HasNote": true
+}
+```
+
+| Field | Type | Notes |
+|---|---|---|
+| `PointModel` | string | How the point sources' efficiency was evaluated: `"detector response at the source position (near-field & off-axis correct)"` (the resolved response, through a ray fan traced once per fit), `"flat-disk (solid angle x intrinsic efficiency)"`, `"fixed-geometry intrinsic efficiency"`, or `"none (solid angle of a 1 cm disk)"`. |
+| `VolumetricModel` | string | The `Method` of `VolumetricEff` below; only meaningful when `HasVolumetricSource` is true. |
+| `Note` / `HasNote` | string / bool | As for `VolumetricEff`. |
+
+`VolumetricEff` is the same information under the name the reports used before 2026-09 (kept so
+older templates keep rendering):
 
 ```json
 "VolumetricEff": {

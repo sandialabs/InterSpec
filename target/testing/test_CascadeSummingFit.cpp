@@ -58,6 +58,7 @@
 
 #include "InterSpec_config.h"
 
+#include <set>
 #include <cmath>
 #include <chrono>
 #include <string>
@@ -1004,6 +1005,33 @@ double fit_activity( const TruthScene &sc, const bool cascade_option )
 }//fit_activity(...)
 
 
+/** Runs a fit and hands back the whole fitted parameter vector and its uncertainties, for tests that
+ need more than the activity (see #CascadeMemoInvarianceWithFittedShield).
+ */
+void fit_params( const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput &chi_input,
+                 vector<double> &values, vector<double> &errors )
+{
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters>
+        fcn_pars = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( chi_input );
+
+  auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>();
+  *inputPrams = fcn_pars.second;
+
+  auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+  auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+  auto progress_fcn = [](){};
+  bool finished_called = false;
+  auto finished_fcn = [&finished_called](){ finished_called = true; };
+
+  ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress,
+                                     progress_fcn, results, finished_fcn );
+
+  BOOST_REQUIRE( finished_called );
+  values = results->paramValues;
+  errors = results->paramErrors;
+}//fit_params(...)
+
+
 bool is_extended_scene( const TruthScene &sc )
 {
   return (sc.shape != SrcShape::Point);
@@ -1043,11 +1071,13 @@ void check_scene( const TruthScene &sc )
   if( !is_extended_scene( sc ) )
   {
     const bool cascade = !SpecUtils::istarts_with( sc.id, "cs137" );
+    const std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
     const double fit_act = fit_activity( sc, cascade );
+    const double fit_s = std::chrono::duration<double>( std::chrono::steady_clock::now() - t0 ).count();
     const double frac_off = fabs( fit_act - sc.activity ) / sc.activity;
 
     BOOST_TEST_MESSAGE( sc.id << ": " << 100.0*frac_off << "% off (gate "
-                        << 100.0*sc.gate << "%)" );
+                        << 100.0*sc.gate << "%) [" << fit_s << " s]" );
 
     if( sc.assert_now )
     {
@@ -1063,15 +1093,21 @@ void check_scene( const TruthScene &sc )
 
   // Extended scene: ratio validation.
   const double truth_sf = truth_summing_factor( truth );
+  const std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
   const double a_off = fit_activity( sc, false );
+  const std::chrono::steady_clock::time_point t1 = std::chrono::steady_clock::now();
   const double a_on = fit_activity( sc, true );
+  const std::chrono::steady_clock::time_point t2 = std::chrono::steady_clock::now();
+  const double off_s = std::chrono::duration<double>( t1 - t0 ).count();
+  const double on_s = std::chrono::duration<double>( t2 - t1 ).count();
   const double model_sf = (a_on > 0.0) ? (a_off / a_on) : 1.0;
   const double sf_frac_off = (truth_sf > 0.0) ? fabs(model_sf - truth_sf)/truth_sf : 0.0;
 
   BOOST_TEST_MESSAGE( sc.id << ": summing factor model=" << model_sf
                       << " truth=" << truth_sf << " (" << 100.0*sf_frac_off
                       << "% off; gate " << 100.0*sc.gate << "%); baseline abs "
-                      << 100.0*fabs(a_on - sc.activity)/sc.activity << "% (advisory)" );
+                      << 100.0*fabs(a_on - sc.activity)/sc.activity << "% (advisory)"
+                      << " [" << off_s << " s off, " << on_s << " s on]" );
 
   if( sc.assert_now )
     BOOST_CHECK_MESSAGE( sf_frac_off <= sc.gate,
@@ -1080,6 +1116,68 @@ void check_scene( const TruthScene &sc )
         + " (" + std::to_string(100.0*sf_frac_off) + "% off; gate "
         + std::to_string(100.0*sc.gate) + "%)" );
 }//check_scene(...)
+
+
+/** The scenes a run should check.
+
+ Every scene by default.  `INTERSPEC_CASCADE_FIT_SCENES=id[,id...]` restricts the run to those
+ scene ids (`=all` is the default set spelled out), which is the only way to run a single scene -
+ needed for profiling, since one Eu-152 point fit is minutes on its own.  Mirrors
+ `INTERSPEC_LINE_AB_SCENARIOS` in test_VolumetricLadder.cpp.
+ */
+vector<const TruthScene *> select_scenes( const vector<TruthScene> &all )
+{
+  std::set<string> only;
+  if( const char * const env = std::getenv( "INTERSPEC_CASCADE_FIT_SCENES" ) )
+  {
+    vector<string> names;
+    SpecUtils::split( names, env, "," );
+    for( const string &name : names )
+      only.insert( name );
+
+    if( only.count( "all" ) )
+      only.clear();
+  }//if( the environment restricts the set )
+
+  vector<const TruthScene *> chosen;
+  for( const TruthScene &sc : all )
+  {
+    if( only.empty() || only.count( string(sc.id) ) )
+      chosen.push_back( &sc );
+  }
+
+  if( !only.empty() )
+  {
+    BOOST_TEST_MESSAGE( "  (restricted to " << chosen.size() << " scene(s) by"
+                        " INTERSPEC_CASCADE_FIT_SCENES)" );
+    BOOST_CHECK_MESSAGE( chosen.size() == only.size(),
+        "INTERSPEC_CASCADE_FIT_SCENES named " + std::to_string(only.size())
+        + " scene(s) but only " + std::to_string(chosen.size()) + " matched" );
+  }
+
+  return chosen;
+}//select_scenes(...)
+
+
+/** `INTERSPEC_CASCADE_NO_MEMO=1` turns both point-source cascade memos off, which restores the
+ pre-memo algorithm - the A/B that shows the memos change no fitted number.  Returns what it did so
+ the caller can say so in the log.
+ */
+bool apply_memo_override()
+{
+  using GammaInteractionCalc::ShieldingSourceChi2Fcn;
+
+  const char * const env = std::getenv( "INTERSPEC_CASCADE_NO_MEMO" );
+  const bool disable = (env && (string(env) == "1"));
+
+  ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo = !disable;
+  ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo = !disable;
+
+  if( disable )
+    BOOST_TEST_MESSAGE( "  (INTERSPEC_CASCADE_NO_MEMO=1: cascade memos OFF - the pre-memo algorithm)" );
+
+  return disable;
+}//apply_memo_override()
 
 }//namespace
 
@@ -1100,18 +1198,23 @@ BOOST_AUTO_TEST_CASE( TruthActivityFits )
 {
   set_data_dir();
 
-  size_t n_checked = 0;
-  for( const TruthScene &sc : truth_scenes() )
-  {
-    BOOST_TEST_CONTEXT( "scene " << sc.id )
-    {
-      check_scene( sc );
-    }
-    ++n_checked;
-  }//for( scenes )
+  apply_memo_override();
 
-  BOOST_TEST_MESSAGE( "Checked " << n_checked << " truth scenes" );
-  BOOST_CHECK_GT( n_checked, 0 );
+  const vector<TruthScene> all = truth_scenes();
+  const vector<const TruthScene *> scenes = select_scenes( all );
+
+  const std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+  for( const TruthScene * const sc : scenes )
+  {
+    BOOST_TEST_CONTEXT( "scene " << sc->id )
+    {
+      check_scene( *sc );
+    }
+  }//for( scenes )
+  const double total_s = std::chrono::duration<double>( std::chrono::steady_clock::now() - t0 ).count();
+
+  BOOST_TEST_MESSAGE( "Checked " << scenes.size() << " truth scenes in " << total_s << " s" );
+  BOOST_CHECK_GT( scenes.size(), 0 );
 }//TruthActivityFits
 
 
@@ -1242,10 +1345,14 @@ BOOST_AUTO_TEST_CASE( LineVsElementCascadeField )
   for( const TruthScene &sc : scenes )
   {
     const string id = sc.id;
-    if( (id == "co60_cyl_5") || (id == "eu152_cyl_5") || (id == "ba133_trace_5") || (id == "y88_trace_5") )
+    // Only Ba-133 and Co-60 have extended scenes, so an id naming any other nuclide here silently
+    //  matches nothing (this list used to name eu152_cyl_5 and y88_trace_5, and so covered half of
+    //  what it looks like it covers).  BOOST_REQUIRE_EQUAL below pins the count.
+    if( (id == "co60_cyl_5") || (id == "ba133_cyl_5")
+       || (id == "ba133_trace_5") || (id == "co60_trace_5") )
       chosen.push_back( &sc );
   }
-  BOOST_REQUIRE( !chosen.empty() );
+  BOOST_REQUIRE_EQUAL( chosen.size(), 4 );
 
   const auto evaluate = [&]( const ShieldingSourceChi2Fcn::ShieldSourceInput &input,
                              const VolumetricIntegrator path ) -> vector<PeakResultPlotInfo>
@@ -1317,6 +1424,80 @@ BOOST_AUTO_TEST_CASE( LineVsElementCascadeField )
                        "cascade-corrected line and element predictions disagree by " << worst
                        << "% at " << worst_where );
 }//BOOST_AUTO_TEST_CASE( LineVsElementCascadeField )
+
+
+/** The point-source cascade memos change no fitted number, INCLUDING when a shield dimension is
+ being fitted - the case none of the other cascade tests cover, because they all pin the shielding.
+
+ Two memos are involved (both in `applyCascadeToClusterMap`): a per-energy memo on the efficiency
+ functors, which is a pure-function cache and always safe; and `m_cascadeCorrCache`, which reuses a
+ SCALAR correction across evaluations and is therefore consulted only while nothing the correction
+ depends on carries a derivative lane.  Fitting the shield thickness is exactly the case where that
+ guard must bite: the Jacobian passes have to fall through to the engine, or the correction's
+ derivative with respect to the thickness would be silently dropped.
+
+ A dropped Jacobian shows up in the reported UNCERTAINTIES before it shows up in the fitted values,
+ so both are compared - and compared tightly, since a memo is a cache and not an approximation.
+ */
+BOOST_AUTO_TEST_CASE( CascadeMemoInvarianceWithFittedShield )
+{
+  using namespace GammaInteractionCalc;
+  set_data_dir();
+
+  const vector<TruthScene> scenes = truth_scenes();
+  const TruthScene *scene = nullptr;
+  for( const TruthScene &sc : scenes )
+    if( string(sc.id) == "ba133_fe10mm_10" )
+      scene = &sc;
+  BOOST_REQUIRE( scene );
+
+  // Same scene, but the Fe shell's thickness is now a free parameter alongside the activity.
+  ShieldingSourceChi2Fcn::ShieldSourceInput input = build_scene_input( *scene, true );
+  BOOST_REQUIRE_EQUAL( input.config.shieldings.size(), 1 );
+  input.config.shieldings[0].m_forFitting = true;
+  input.config.shieldings[0].m_fitDimensions[0] = true;
+
+  const bool prev_corr = ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo;
+  const bool prev_eff = ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo;
+
+  vector<double> memo_vals, memo_errs, plain_vals, plain_errs;
+  try
+  {
+    ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo = true;
+    ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo = true;
+    fit_params( input, memo_vals, memo_errs );
+
+    ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo = false;
+    ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo = false;
+    fit_params( input, plain_vals, plain_errs );
+  }catch( ... )
+  {
+    ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo = prev_corr;
+    ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo = prev_eff;
+    throw;
+  }
+  ShieldingSourceChi2Fcn::sm_use_cascade_corr_memo = prev_corr;
+  ShieldingSourceChi2Fcn::sm_use_cascade_eff_memo = prev_eff;
+
+  BOOST_REQUIRE_EQUAL( memo_vals.size(), plain_vals.size() );
+  BOOST_REQUIRE_EQUAL( memo_errs.size(), plain_errs.size() );
+
+  for( size_t i = 0; i < memo_vals.size(); ++i )
+  {
+    const double scale = std::max( 1.0e-12, std::fabs(plain_vals[i]) );
+    BOOST_CHECK_MESSAGE( fabs(memo_vals[i] - plain_vals[i]) <= 1.0e-9*scale,
+        "parameter " + std::to_string(i) + " value differs: memo=" + std::to_string(memo_vals[i])
+        + " vs no-memo=" + std::to_string(plain_vals[i]) );
+
+    const double err_scale = std::max( 1.0e-12, std::fabs(plain_errs[i]) );
+    BOOST_CHECK_MESSAGE( fabs(memo_errs[i] - plain_errs[i]) <= 1.0e-9*err_scale,
+        "parameter " + std::to_string(i) + " UNCERTAINTY differs: memo=" + std::to_string(memo_errs[i])
+        + " vs no-memo=" + std::to_string(plain_errs[i]) + " - a stale Jacobian shows up here first" );
+
+    BOOST_TEST_MESSAGE( "  par " << i << ": " << plain_vals[i] << " +- " << plain_errs[i]
+                        << " (memo " << memo_vals[i] << " +- " << memo_errs[i] << ")" );
+  }
+}//BOOST_AUTO_TEST_CASE( CascadeMemoInvarianceWithFittedShield )
 
 
 /** A line set that cannot be built at creation is reported, and the fit falls back to flat-disk -

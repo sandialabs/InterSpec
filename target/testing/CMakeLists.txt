@@ -383,6 +383,10 @@ add_test( NAME TCascadeSummingFit
   COMMAND $<TARGET_FILE:test_CascadeSummingFit> ${BOOST_TEST_CL_ARGS} -- ${DATA_DIR_ARGS}
   WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}"
 )
+# The whole 46-scene matrix runs in well under a minute; the generous ceiling is there so that a
+#  regression in the cascade memos (which are what make it fast - see applyCascadeToClusterMap)
+#  reports as a slow test rather than as a bare ctest timeout, which is how it read before them.
+set_tests_properties( TCascadeSummingFit PROPERTIES TIMEOUT 1800 )
 
 # CeeLo MC-parameterized detector-response validation: golden response XMLs +
 # fresh MC probe banks live in test_data/ceelo_drf/ (committed fixtures); the

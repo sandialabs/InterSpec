@@ -617,3 +617,228 @@ BOOST_AUTO_TEST_CASE( LineVsElementSphericalSource )
                        "line and element disagree by " << worst << "% at " << worst_where
                        << " - spherical sources are not being integrated the same way" );
 }//BOOST_AUTO_TEST_CASE( LineVsElementSphericalSource )
+
+
+/** A vanishingly small volumetric source must reproduce the POINT query at its centre.
+
+ The point-source path evaluates a ray fan from the point (`eps_fep`); the volumetric path
+ integrates the detector-side line set over the source volume.  They are two quadratures of the same
+ CeeLo kernel, and for a transparent sphere of radius 1e-3 (and 1e-5) of the standoff the volume
+ average of the efficiency equals its value at the centre to O(1e-6) - so all three must agree:
+ the point query, the element path (adaptive, within 1e-3) and the line path (65536 lines, within its
+ own ~0.2% quadrature noise).
+
+ The descriptor's `reference_point` is then flipped and the response rebuilt around the SAME
+ physical anchor position: InterSpec measures every distance from the detector face and forms the
+ query positions itself, so nothing on the InterSpec side may change - the field is an internal
+ CeeLo convention InterSpec never consults.
+ */
+BOOST_AUTO_TEST_CASE( TinySourceMatchesPointQuery )
+{
+  using namespace GammaInteractionCalc;
+  const double cm = PhysicalUnits::cm;
+
+  // A 3"x3" NaI with a thin Al can, and a plausible decreasing anchor curve (no data files).
+  ceelo::GeometryDescriptor gd;
+  gd.shape = ceelo::DetectorShape::Cylinder;
+  gd.dimensions_cm = { 3.81, 7.62 };
+  gd.materials = { ceelo::MaterialSpec::from( ceelo::make_NaI() ),
+                   ceelo::MaterialSpec::from( ceelo::make_Aluminum() ) };
+  gd.crystal_material_index = 0;
+  ceelo::LayerSpec can;
+  can.material_index = 1;
+  can.front_thickness_cm = 0.05;
+  can.side_thickness_cm = 0.05;
+  can.z_end_cm = 7.62;
+  gd.layers.push_back( can );
+  gd.reference_point = ceelo::ReferencePoint::EndcapFront;
+
+  ceelo::AnchorCurve anchor;
+  anchor.energies_keV = { 60.0, 100.0, 300.0, 662.0, 1000.0 };
+  anchor.eff = { 2.0e-2, 1.3e-2, 5.0e-3, 3.0e-3, 2.2e-3 };
+  anchor.frac_sigma = { 0.003, 0.003, 0.003, 0.003, 0.003 };
+  const Eigen::Vector3d anchor_pos( 0.0, 0.0, -25.0 );   //crystal-face frame: a POSITION, not a distance
+
+  ceelo::GeometryDescriptor gd_crystal = gd;
+  gd_crystal.reference_point = ceelo::ReferencePoint::CrystalFace;
+
+  const std::shared_ptr<const ceelo::DetectorResponse> resp_endcap
+        = ceelo::make_transfer_response( gd, anchor, anchor_pos );
+  const std::shared_ptr<const ceelo::DetectorResponse> resp_crystal
+        = ceelo::make_transfer_response( gd_crystal, anchor, anchor_pos );
+  BOOST_REQUIRE( resp_endcap && resp_crystal );
+
+  const double dist_cm = 20.0;
+  const int num_lines = 1 << 16;
+
+  // Face-referenced point query: the distance InterSpec means, through the EndcapFront descriptor.
+  const auto point_query = [&]( const double energy ) -> double {
+    return resp_endcap->eps_fep( energy, 0.0, 0.0, dist_cm ).value;
+  };
+
+  const auto tiny_calc = [&]( const std::shared_ptr<const ceelo::DetectorResponse> &resp,
+                              const double radius_cm, const double energy ) -> DistributedSrcCalcT<double>
+  {
+    DistributedSrcCalcT<double> calc;
+    calc.m_geometry = GeometryType::Spherical;
+    calc.m_materialIndex = 0;
+    calc.m_attenuateForAir = false;
+    calc.m_isInSituExponential = false;
+    calc.m_inSituRelaxationLength = -1.0;
+    calc.m_srcVolumetricActivity = 1.0;
+    calc.m_normalizeByVolume = true;      //integral = volume-average efficiency
+    calc.m_energy = energy;
+    calc.m_effResponse = resp;
+    calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+    calc.m_detector = detector_geom_from_config<double>( GeometryType::Spherical, dist_cm*cm,
+                                                         gd.transverse_half_extent()*cm, 0.0 );
+    DistributedSrcCalcT<double>::ShellInfo info;
+    info.dims = { radius_cm*cm, 0.0, 0.0 };
+    info.trans_len_coef = 0.0;            //transparent
+    info.type = ShellType::Material;
+    calc.m_shells.push_back( info );
+    return calc;
+  };
+
+  for( const double ratio : { 1.0e-3, 1.0e-5 } )
+  {
+    for( const double e : { 60.0, 661.7 } )
+    {
+      const double point = point_query( e );
+      BOOST_REQUIRE( point > 0.0 );
+
+      DistributedSrcCalcT<double> elem = tiny_calc( resp_endcap, ratio*dist_cm, e );
+      DistributedSrcCalcT<double> line = tiny_calc( resp_endcap, ratio*dist_cm, e );
+      integrate_on_path( elem, VolumetricIntegrator::Element, -1 );
+      integrate_on_path( line, VolumetricIntegrator::Line, num_lines );
+
+      const double elem_rel = 100.0*(elem.integral/point - 1.0);
+      const double line_rel = 100.0*(line.integral/point - 1.0);
+      std::ostringstream row;
+      row << "    r/d=" << std::scientific << std::setprecision(0) << ratio << " @ " << std::fixed
+          << std::setprecision(1) << e << " keV: point " << std::scientific << std::setprecision(5)
+          << point << "  element " << elem.integral << " (" << std::fixed << std::showpos
+          << std::setprecision(3) << elem_rel << "%)  line " << std::scientific << std::setprecision(5)
+          << line.integral << " (" << std::fixed << std::showpos << std::setprecision(3) << line_rel
+          << "%)" << std::noshowpos;
+      BOOST_TEST_MESSAGE( row.str() );
+      BOOST_CHECK_MESSAGE( std::fabs(elem_rel) < 0.1,
+                           "element path on a tiny source differs from the point query by " << elem_rel << "%" );
+      BOOST_CHECK_MESSAGE( std::fabs(line_rel) < 0.5,
+                           "line path on a tiny source differs from the point query by " << line_rel << "%" );
+
+      // The reference-point field must be inert on the InterSpec side.
+      DistributedSrcCalcT<double> elem_c = tiny_calc( resp_crystal, ratio*dist_cm, e );
+      DistributedSrcCalcT<double> line_c = tiny_calc( resp_crystal, ratio*dist_cm, e );
+      integrate_on_path( elem_c, VolumetricIntegrator::Element, -1 );
+      integrate_on_path( line_c, VolumetricIntegrator::Line, num_lines );
+      BOOST_CHECK_MESSAGE( std::fabs(elem_c.integral/elem.integral - 1.0) < 1.0e-9,
+                           "element path depends on the descriptor's reference_point: "
+                           << elem_c.integral << " vs " << elem.integral );
+      BOOST_CHECK_MESSAGE( std::fabs(line_c.integral/line.integral - 1.0) < 1.0e-9,
+                           "line path depends on the descriptor's reference_point: "
+                           << line_c.integral << " vs " << line.integral );
+    }//for( energies )
+  }//for( ratio )
+}//BOOST_AUTO_TEST_CASE( TinySourceMatchesPointQuery )
+
+
+/** DEVELOPER PROBE (2026-09-05): a deeply opaque self-attenuating sphere on the FLAT-DISK path.
+
+ Motivated by a real fit that moved between app builds: 18 cm of enriched uranium at 1 m, where the
+ escaping signal comes from a skin of 1/mu.  At 1001 keV that skin is ~7 mm (4% of the radius) and
+ the volume quadrature resolves it; at 121 keV it is ~0.1 mm (7e-6 of the radius) and no globally
+ adaptive rule can find it within its evaluation budget.  Prints, per energy, the coefficient the
+ model uses, what the quadrature returns, and the analytic deep-opacity limit 3/(4 mu R) that the
+ volume-averaged escape probability must approach - so an unconverged row is visible as a departure
+ from that limit rather than as a plausible-looking number.
+ */
+BOOST_AUTO_TEST_CASE( OpaqueSphereSelfAttenConvergence, * boost::unit_test::disabled() )
+{
+  using namespace GammaInteractionCalc;
+  const double cm = PhysicalUnits::cm;
+  set_data_dir();
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const std::shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const std::shared_ptr<const Material> mat = matdb->material( "Enriched uranium alloy" );
+  BOOST_REQUIRE( mat );
+
+  struct Row { double energy, fwhm; };
+  const std::vector<Row> rows = {
+    {120.91,0.626},{143.76,0.661},{163.33,0.698},{185.68,0.726},{205.27,0.755},{238.63,0.844},
+    {258.18,0.854},{583.21,1.087},{742.89,1.396},{766.48,1.445},{1001.09,1.713} };
+
+  const AngleDetector det = load_angle_detector();
+  const std::shared_ptr<const ceelo::DetectorResponse> resp = det.mc_transfer;
+  BOOST_REQUIRE( resp );
+
+  const double dist = 100.0*cm, det_rad = 3.2*cm;
+  const double omega = DetectorPeakResponse::fractionalSolidAngle( 2.0*det_rad, dist );
+
+  std::ostringstream hdr;
+  hdr << "  density " << mat->density/(PhysicalUnits::g/PhysicalUnits::cm3) << " g/cm3, centre solid angle "
+      << std::scientific << std::setprecision(5) << omega;
+  BOOST_TEST_MESSAGE( hdr.str() );
+  BOOST_TEST_MESSAGE( "   E(keV)   mu/rho   mu_fep/mu |   R(cm)   quadrature      analytic 3/(4muR)   quad/analytic" );
+
+  for( const double radius_cm : { 18.01006 } )
+  {
+    for( const Row &r : rows )
+    {
+      const double mu = transmition_length_coefficient( mat.get(), static_cast<float>(r.energy) );
+      const double mu_fep = fep_survival_removal_coefficient( mat.get(), static_cast<float>(r.energy),
+                                                              0.5*r.fwhm, 0.0 );
+      DistributedSrcCalcT<double> calc;
+      calc.m_geometry = GeometryType::Spherical;
+      calc.m_materialIndex = 0;
+      calc.m_attenuateForAir = false;
+      calc.m_isInSituExponential = false;
+      calc.m_inSituRelaxationLength = -1.0;
+      calc.m_srcVolumetricActivity = 1.0;
+      calc.m_normalizeByVolume = false;
+      calc.m_energy = r.energy;
+      calc.m_detector = detector_geom_from_config<double>( GeometryType::Spherical, dist, det_rad, 0.0 );
+      DistributedSrcCalcT<double>::ShellInfo info;
+      info.dims = { radius_cm*cm, 0.0, 0.0 };
+      info.trans_len_coef = mu;
+      info.fep_trans_len_coef = mu_fep;
+      info.type = ShellType::Material;
+      info.density = mat->density;
+      calc.m_shells.push_back( info );
+
+      integrate_on_path( calc, VolumetricIntegrator::Element, -1 );
+
+      // The same source through the LINE path, whose chord integral of exp(-mu s) is analytic and
+      //  therefore cannot miss a thin skin.  It needs a response, so this leg is a RATIO test of
+      //  the two quadratures on the identical integrand, not of absolute values.
+      double line_over_elem = -1.0;
+      {
+        DistributedSrcCalcT<double> e2 = calc, l2 = calc;
+        e2.m_effResponse = resp;  l2.m_effResponse = resp;
+        e2.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+        l2.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+        integrate_on_path( e2, VolumetricIntegrator::Element, -1 );
+        integrate_on_path( l2, VolumetricIntegrator::Line, 1 << 16 );
+        if( e2.integral > 0.0 )
+          line_over_elem = l2.integral / e2.integral;
+      }
+
+      const double volume = (4.0/3.0)*M_PI*std::pow( radius_cm*cm, 3.0 );
+      const double quad = (calc.integral/volume)/omega;              //the reports "Shield Atten. Factor"
+      const double analytic = 3.0/(4.0*mu_fep*radius_cm*cm);         //deep-opacity limit of <exp(-mu t)>
+
+      std::ostringstream o;
+      o << "  " << std::fixed << std::setw(8) << std::setprecision(2) << r.energy
+        << std::setw(9) << std::setprecision(4) << mu/(mat->density*PhysicalUnits::cm2/PhysicalUnits::g)
+        << std::setw(11) << std::setprecision(5) << (mu_fep/mu)
+        << " | " << std::setw(8) << std::setprecision(3) << radius_cm
+        << "  " << std::scientific << std::setprecision(4) << quad
+        << "      " << analytic
+        << "      " << std::fixed << std::setprecision(3) << (quad/analytic)
+        << "   line/elem " << std::setprecision(3) << line_over_elem;
+      BOOST_TEST_MESSAGE( o.str() );
+    }
+    BOOST_TEST_MESSAGE( "" );
+  }
+}//BOOST_AUTO_TEST_CASE( OpaqueSphereSelfAttenConvergence )

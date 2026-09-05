@@ -40,6 +40,7 @@
 #include <Eigen/Core>
 
 #include "io/SolidAngle.h"
+#include "io/ResponseKernel.h"
 
 #include "SpecUtils/StringAlgo.h"
 
@@ -165,42 +166,6 @@ ceelo::MaterialSpec toCeeloMaterial( const AngleMaterial &mat,
 
   return spec;
 }//toCeeloMaterial(...)
-
-
-double pinnedEfficiencyDistanceCm( const std::shared_ptr<const DetectorPeakResponse> &drf,
-                                   const ceelo::GeometryDescriptor &geom )
-{
-  if( !drf || !drf->isValid() )
-    return -1.0;
-
-  // Raw measured points all taken at one distance: that IS the characterization geometry.
-  const std::shared_ptr<const MeasuredDrfPoints> raw = drf->measuredPoints();
-  if( raw )
-  {
-    double min_d = std::numeric_limits<double>::max(), max_d = 0.0, sum_d = 0.0;
-    size_t n = 0;
-    for( const MeasuredEffPoint &p : raw->points() )
-    {
-      if( (p.distance > 0.0f) && (p.efficiency > 0.0f) && (p.energy > 0.0f) )
-      {
-        min_d = std::min( min_d, double(p.distance) );
-        max_d = std::max( max_d, double(p.distance) );
-        sum_d += p.distance;
-        n += 1;
-      }
-    }
-
-    if( (n >= 2) && (max_d < 1.01*min_d) )
-      return (sum_d / n) / PhysicalUnits::cm;
-  }//if( raw )
-
-  if( (drf->geometryType() == DetectorPeakResponse::EffGeometryType::FarFieldAbsolute)
-      && (drf->absoluteEfficiencyDistance() > 0.0) )
-    return drf->absoluteEfficiencyDistance() / PhysicalUnits::cm;
-
-  const double a_cm = geom.transverse_half_extent();
-  return std::max( 50.0, 10.0 * a_cm );
-}//pinnedEfficiencyDistanceCm(...)
 
 
 TransferAnchor transferAnchorForDrf(
@@ -449,14 +414,10 @@ std::shared_ptr<ceelo::DetectorResponse> makeTransferResponse(
   if( anchor.curve.energies_keV.size() < 2 )
     throw runtime_error( "makeTransferResponse: need at least two anchor points." );
 
-  // The kernel positions are in the crystal-face frame (z = 0 at the crystal
-  //  face, source in front at negative z); the anchor distance is in the
-  //  descriptor's reference-point convention - convert exactly the way
-  //  DetectorResponse::query_position() does for evaluation-time queries.
-  double z_cm = anchor.ref_distance_cm;
-  if( geom.reference_point == ceelo::ReferencePoint::EndcapFront )
-    z_cm += geom.endcap_front_offset_cm();
-  const Eigen::Vector3d ref_pos( 0.0, 0.0, -z_cm );
+  // The kernel positions are in the crystal-face frame (z = 0 at the crystal face, source in front
+  //  at negative z); the anchor distance is from the DETECTOR FACE, as every InterSpec distance is
+  //  (see sourcePositionFromFace - the descriptor's reference_point is not consulted).
+  const Eigen::Vector3d ref_pos = sourcePositionFromFace( geom, 0.0, 0.0, anchor.ref_distance_cm );
 
   ceelo::TransferResponseOptions opts;
   opts.detector_name = detector_name;
@@ -466,6 +427,31 @@ std::shared_ptr<ceelo::DetectorResponse> makeTransferResponse(
 
   return ceelo::make_transfer_response( geom, anchor.curve, ref_pos, tot_anchor, opts );
 }//makeTransferResponse(...)
+
+
+Eigen::Vector3d sourcePositionFromFace( const ceelo::GeometryDescriptor &gd,
+                                        const double theta_rad, const double phi_rad,
+                                        const double dist_from_face_cm )
+{
+  // The arithmetic DetectorResponse::query_position applies for an EndcapFront descriptor, applied
+  //  unconditionally: the face is one endcap offset in front of the crystal face, so a source
+  //  `dist` from the face sits `dist + offset` from the crystal-face origin.
+  Eigen::Vector3d pos = ceelo::source_position( dist_from_face_cm, std::cos(theta_rad), phi_rad );
+  pos.z() -= gd.endcap_front_offset_cm();
+  return pos;
+}//sourcePositionFromFace(...)
+
+
+Eigen::Vector3d detectorFacePosition( const ceelo::GeometryDescriptor &gd )
+{
+  return Eigen::Vector3d( 0.0, 0.0, -gd.endcap_front_offset_cm() );
+}//detectorFacePosition(...)
+
+
+double faceDistanceFromCrystalOrigin( const ceelo::GeometryDescriptor &gd, const double d_crystal_cm )
+{
+  return std::max( 0.0, d_crystal_cm - gd.endcap_front_offset_cm() );
+}//faceDistanceFromCrystalOrigin(...)
 
 
 const char *geometryProblemMsgId( const ceelo::GeometryProblem problem )
@@ -1523,7 +1509,8 @@ void setLegacyEfficiencyFromResponse( DetectorPeakResponse &drf,
   points.reserve( energies.size() );
   for( const double energy : energies )
   {
-    const ceelo::EffResult res = response->eps_fep( energy, 0.0, 0.0, d_cm );
+    const ceelo::EffResult res = response->eps_fep_at( energy,
+                                    sourcePositionFromFace( response->descriptor, 0.0, 0.0, d_cm ) );
     const double eff = res.value / omega;
     if( (eff <= 0.0) || IsInf(eff) || IsNan(eff) )
       continue;

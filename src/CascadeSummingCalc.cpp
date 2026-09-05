@@ -185,6 +185,12 @@ namespace
 }//namespace
 
 
+int CascadeSummingCalc::ageCacheBucket( const double age )
+{
+  return age_bucket( age );
+}//ageCacheBucket(...)
+
+
 CascadeSummingCalc::CascadeSummingCalc(
               const std::vector<std::pair<const SandiaDecay::Nuclide *,double>> &nuclide_initial_ages,
               const std::vector<std::pair<double,double>> &peak_energy_widths,

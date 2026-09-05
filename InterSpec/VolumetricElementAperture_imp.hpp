@@ -111,10 +111,12 @@ inline ElementAperture build_element_aperture( const ceelo::DetectorResponse &re
 {
   ElementAperture answer;
 
-  // Position in the crystal-face frame, through query_position so the reference-point convention
-  //  (endcap front vs crystal face) is applied exactly as eps_fep applies it.
+  // Position in the crystal-face frame: `dist` is from the DETECTOR FACE (InterSpec's one distance
+  //  convention), formed through CeeLoUtils::sourcePositionFromFace exactly as the point-source
+  //  query and the line cache form theirs - never through the descriptor's own reference point.
   const double theta = std::acos( std::max(-1.0, std::min(1.0, cos_theta)) );
-  const Eigen::Vector3d pos = resp.query_position( theta, 0.0, dist / PhysicalUnits::cm );
+  const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( resp.descriptor, theta, 0.0,
+                                                                  dist / PhysicalUnits::cm );
 
   const ceelo::ApertureQuadrature q = ceelo::make_aperture_quadrature( resp.geometry(), pos, n_rays );
 
@@ -127,15 +129,15 @@ inline ElementAperture build_element_aperture( const ceelo::DetectorResponse &re
 
   // CeeLo's element->detector direction, toward the SAME physical point InterSpec's `to_det` aims
   //  at: the assembly's detector reference point, whose CeeLo-frame image is
-  //  resp.reference_point_position() (the origin for a CrystalFace response,
-  //  (0,0,-endcap_front_offset) for EndcapFront).  Aiming at
+  //  CeeLoUtils::detectorFacePosition( resp.descriptor ), i.e.
+  //  (0,0,-endcap_front_offset) - the detector FACE, InterSpec's one distance convention.  Aiming at
   //  CeeLo's origin instead - the legacy behaviour, see #sm_aperture_frame_legacy_origin - disagrees
   //  with `to_det` on the element's polar angle by the parallax of the endcap offset, and the frame
   //  rotation below then tilts the whole fan by that angle in the plane of incidence.
   //  Plain arithmetic rather than Eigen::Geometry - cross()/Rodrigues are a few lines, and this
   //  header is included in every translation unit that fits.
   const Eigen::Vector3d ref = sm_aperture_frame_legacy_origin ? Eigen::Vector3d( 0.0, 0.0, 0.0 )
-                                                              : resp.reference_point_position();
+                                                              : CeeLoUtils::detectorFacePosition( resp.descriptor );
   const Eigen::Vector3d elem_to_ref = ref - pos;
   const double pn = elem_to_ref.norm();
   double u_c[3] = { 0.0, 0.0, 1.0 };

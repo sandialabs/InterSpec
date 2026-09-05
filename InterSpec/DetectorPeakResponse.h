@@ -906,7 +906,9 @@ public:
   /** Absolute full-energy-peak efficiency of a point source at polar angle
    `theta` (radians, from the detector axis), azimuth `phi` (radians; only
    meaningful for non-axially-symmetric detectors), and `distance`
-   (PhysicalUnits, from the detector reference point).
+   (PhysicalUnits, from the detector FACE - InterSpec's one distance convention; the CeeLo
+   response's own reference-point setting is never consulted, see
+   CeeLoUtils::sourcePositionFromFace).
 
    With a ceelo response this is the full off-axis/near-field evaluation.
    Legacy path: the theta-blind on-axis value, flagged NeedsMc when theta is

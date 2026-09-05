@@ -44,6 +44,7 @@
 
 #include <array>
 #include <cmath>
+#include <chrono>
 #include <string>
 #include <map>
 #include <vector>
@@ -1771,6 +1772,143 @@ BOOST_AUTO_TEST_CASE( LineVsElementNestedAndMultiShell )
     }
   }
 
+  // ---- (c) TWO inner cores: source is shell 2 of four, so the chord splits around a NESTED core ----
+  BOOST_TEST_MESSAGE( "  two inner cores (source is the third of four shells):" );
+  {
+    struct Case { const char *name; GeometryType geom; array<double,3> s0, s1, s2, s3; double standoff; };
+    const vector<Case> cases = {
+      { "cylEnd 4-shell",  GeometryType::CylinderEndOn,  {0.6,0.5,0}, {1.2,0.9,0}, {2.4,1.8,0}, {2.8,2.2,0}, 3.5 },
+      // No side-on row either: the chord split around nested cores is the same code for every
+      //  geometry, and side-on's element reference is the next slowest after the box.
+      // No box row: its element-path reference costs ~20 min at contact, and the hollow-box row in
+      //  (a) already exercises the box corner-clip path the inner cores depend on.
+      { "sphere 4-shell",  GeometryType::Spherical,      {0.6,0,0}, {1.2,0,0}, {2.4,0,0}, {2.8,0,0}, 4.0 },
+    };
+    for( const Case &c : cases )
+    {
+      for( const double e : { 60.0, 661.7 } )
+      {
+        const DistributedSrcCalcT<double> calc = make_calc( c.geom,
+              { {steel,c.s0}, {water,c.s1}, {steel,c.s2}, {water,c.s3} }, 2 /*source*/, e, c.standoff );
+        const std::chrono::steady_clock::time_point t0 = std::chrono::steady_clock::now();
+        const double elem = run( calc, VolumetricIntegrator::Element, -1 );
+        const double elem_s = std::chrono::duration<double>( std::chrono::steady_clock::now() - t0 ).count();
+        const double line = run( calc, VolumetricIntegrator::Line, num_lines );
+        BOOST_REQUIRE( elem > 0.0 );
+        BOOST_REQUIRE( line > 0.0 );
+        const double rel = 100.0*(line/elem - 1.0);
+        ostringstream o;
+        o << "    " << left << setw(16) << c.name << right << " @ " << setw(6) << fixed
+          << setprecision(1) << e << " keV:  element " << scientific << setprecision(4) << elem
+          << "  line " << line << "  (" << fixed << showpos << setprecision(2) << rel << "%"
+          << noshowpos << ")  [element " << setprecision(1) << elem_s << " s]";
+        BOOST_TEST_MESSAGE( o.str() );
+        if( fabs(rel) > worst ){ worst = fabs(rel); worst_where = string(c.name) + " @ " + to_string(e); }
+      }
+    }
+  }
+
+  // ---- (d) ONE shell carrying both a self-attenuating nuclide and a trace source ----
+  //  Same geometry, so the two calculators must SHARE a line set (same material index) while the
+  //  dispatcher keeps their integrands apart (m_normalizeByVolume is in its group key, not the
+  //  cache key).
+  BOOST_TEST_MESSAGE( "  self-attenuating + trace source in the same shell (shared line set):" );
+  {
+    const vector<pair<shared_ptr<const Material>,array<double,3>>> stack = { {water,{2.0,1.5,0}} };
+    for( const double e : { 60.0, 661.7 } )
+    {
+      vector<unique_ptr<DistributedSrcCalcT<double>>> both;
+      for( const bool normalize : { false, true } )
+      {
+        DistributedSrcCalcT<double> c = make_calc( GeometryType::CylinderEndOn, stack, 0, e, 4.0 );
+        c.m_normalizeByVolume = normalize;
+        attach_line_cache( c, num_lines );
+        both.push_back( std::make_unique<DistributedSrcCalcT<double>>( c ) );
+      }
+      // attach_line_cache builds a fresh set each time; in a fit both come from the same
+      //  ShieldingSourceChi2Fcn::volumetricLineCache entry.  Share explicitly, as the fit would.
+      both[1]->m_lineCache = both[0]->m_lineCache;
+      BOOST_CHECK( both[0]->m_lineCache.get() == both[1]->m_lineCache.get() );
+      {
+        const ScopedVolumetricIntegratorOverride force( VolumetricIntegrator::Line );
+        integrate_volumetric_calculators<double>( both, true );
+      }
+      // One element reference: the per-volume (trace) integrand is the self-attenuating one over
+      //  the shell volume, exactly, so the second reference is derived rather than re-integrated.
+      const double volume = M_PI * 2.0*2.0 * (2.0*1.5) * cm*cm*cm;
+      DistributedSrcCalcT<double> ref = make_calc( GeometryType::CylinderEndOn, stack, 0, e, 4.0 );
+      const double elem_self = run( ref, VolumetricIntegrator::Element, -1 );
+      for( size_t k = 0; k < 2; ++k )
+      {
+        const double elem = k ? (elem_self / volume) : elem_self;
+        const double line = both[k]->integral;
+        BOOST_REQUIRE( (elem > 0.0) && (line > 0.0) );
+        const double rel = 100.0*(line/elem - 1.0);
+        ostringstream o;
+        o << "    " << (k ? "trace (per volume)" : "self-atten        ") << " @ " << setw(6) << fixed
+          << setprecision(1) << e << " keV:  element " << scientific << setprecision(4) << elem
+          << "  line " << line << "  (" << fixed << showpos << setprecision(2) << rel << "%" << noshowpos << ")";
+        BOOST_TEST_MESSAGE( o.str() );
+        if( fabs(rel) > worst ){ worst = fabs(rel); worst_where = string("same-shell ") + (k ? "trace" : "self-atten"); }
+      }
+      // And on the line path too, the trace integral is the self-atten one over the shell volume.
+      BOOST_CHECK_CLOSE( both[1]->integral * volume, both[0]->integral, 1.0e-6 );
+    }
+  }
+
+  // ---- (e) THIN outer shell: two source shells whose outer dims are inside the +-20% reuse window ----
+  //  The material index is in the cache key, so they must still get their own sets.
+  BOOST_TEST_MESSAGE( "  two source shells with outer dims within 20% (distinct line sets):" );
+  {
+    const vector<pair<shared_ptr<const Material>,array<double,3>>> stack =
+        { {water,{2.0,1.5,0}}, {water,{2.3,1.8,0}} };
+    for( const double e : { 60.0, 661.7 } )
+    {
+      vector<unique_ptr<DistributedSrcCalcT<double>>> both;
+      for( size_t src = 0; src < 2; ++src )
+      {
+        DistributedSrcCalcT<double> c = make_calc( GeometryType::CylinderEndOn, stack, src, e, 4.0 );
+        attach_line_cache( c, num_lines );
+        both.push_back( std::make_unique<DistributedSrcCalcT<double>>( c ) );
+      }
+      BOOST_CHECK( both[0]->m_lineCache.get() != both[1]->m_lineCache.get() );
+      BOOST_CHECK( !both[0]->m_lineCache->matches( det.mc_transfer.get(), GeometryType::CylinderEndOn, 1,
+                                                    both[1]->m_lineCache->source_outer_dims,
+                                                    both[1]->m_lineCache->det_position,
+                                                    both[1]->m_lineCache->det_axis, 0.0, num_lines,
+                                                    both[1]->m_lineCache->pad ) );
+      // And the padding factor is part of the key too.
+      BOOST_CHECK( both[0]->m_lineCache->matches( det.mc_transfer.get(), GeometryType::CylinderEndOn, 0,
+                                                   both[0]->m_lineCache->source_outer_dims,
+                                                   both[0]->m_lineCache->det_position,
+                                                   both[0]->m_lineCache->det_axis, 0.0, num_lines,
+                                                   both[0]->m_lineCache->pad ) );
+      BOOST_CHECK( !both[0]->m_lineCache->matches( det.mc_transfer.get(), GeometryType::CylinderEndOn, 0,
+                                                    both[0]->m_lineCache->source_outer_dims,
+                                                    both[0]->m_lineCache->det_position,
+                                                    both[0]->m_lineCache->det_axis, 0.0, num_lines,
+                                                    2.0*both[0]->m_lineCache->pad ) );
+      {
+        const ScopedVolumetricIntegratorOverride force( VolumetricIntegrator::Line );
+        integrate_volumetric_calculators<double>( both, true );
+      }
+      for( size_t src = 0; src < 2; ++src )
+      {
+        DistributedSrcCalcT<double> ref = make_calc( GeometryType::CylinderEndOn, stack, src, e, 4.0 );
+        const double elem = run( ref, VolumetricIntegrator::Element, -1 );
+        const double line = both[src]->integral;
+        BOOST_REQUIRE( (elem > 0.0) && (line > 0.0) );
+        const double rel = 100.0*(line/elem - 1.0);
+        ostringstream o;
+        o << "    thin-stack source " << src << " @ " << setw(6) << fixed << setprecision(1) << e
+          << " keV:  element " << scientific << setprecision(4) << elem << "  line " << line
+          << "  (" << fixed << showpos << setprecision(2) << rel << "%" << noshowpos << ")";
+        BOOST_TEST_MESSAGE( o.str() );
+        if( fabs(rel) > worst ){ worst = fabs(rel); worst_where = "thin-stack src " + to_string(src); }
+      }
+    }
+  }
+
   BOOST_TEST_MESSAGE( "  worst |line/element - 1|: " << fixed << setprecision(3) << worst
                       << "% (" << worst_where << ")" );
   BOOST_CHECK_MESSAGE( worst < 1.0,
@@ -1856,7 +1994,7 @@ BOOST_AUTO_TEST_CASE( LineCacheRebuildContinuity, * boost::unit_test::expected_f
     const std::array<double,3> det_axis = { calc.m_detector.axis[0], calc.m_detector.axis[1],
                                             calc.m_detector.axis[2] };
     if( !cache || !cache->matches( det.mc_transfer.get(), GeometryType::CylinderEndOn, 0, dims,
-                                   det_pos, det_axis, 0.0, num_lines ) )
+                                   det_pos, det_axis, 0.0, num_lines, 1.5 ) )
     {
       cache = build_volumetric_line_cache( det.mc_transfer, GeometryType::CylinderEndOn, 0, dims,
                                            det_pos, det_axis, 0.0, num_lines );

@@ -2607,6 +2607,7 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
     //  DRF could not honor (e.g. near-field asked for, but no CeeLo response) shows up in reports.
     results->volumetric_eff_method = chi2Fcn->resolvedVolumetricEffMethod();
     results->volumetric_eff_note = chi2Fcn->volumetricEffResolveNote();
+    results->point_eff_model = chi2Fcn->pointSourceEffModel();
 
     // A near-field method the user asked for by name but did not get is an error, not a footnote:
     //  the answer is quietly less accurate than requested, which is exactly what should not pass
@@ -2703,7 +2704,7 @@ static void fill_fit_results( std::shared_ptr<GammaInteractionCalc::ShieldingSou
       {
         GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache eff_mixcache;
         results->effective_shielding = make_unique<vector<GammaInteractionCalc::EffectiveShieldingInfo>>(
-                                chi2Fcn->computeEffectiveShielding( params, eff_mixcache ) );
+                                chi2Fcn->computeEffectiveShielding( params, eff_mixcache, &results->warnings ) );
       }catch( std::exception &e )
       {
         results->errormsgs.push_back( "Failed to compute effective shielding: " + string(e.what()) );

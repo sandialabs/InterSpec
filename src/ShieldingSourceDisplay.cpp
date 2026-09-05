@@ -6077,10 +6077,9 @@ void ShieldingSourceDisplay::updateVolEffMethodAvailability()
   using GammaInteractionCalc::ShieldingSourceChi2Fcn;
   using ShieldingSourceFitCalc::VolumetricEffMethod;
 
-  // Enabled for ANY usable DRF, not just when a volumetric source is present: an off-axis or
-  //  near-field point source needs the same correction, and the flat-disk fallback is theta-blind.
-  //  Whether the correction actually costs anything is decided by the Auto policy below, which
-  //  steps down to flat-disk at/beyond the DRF's characterization distance.
+  // Enabled for ANY usable DRF, not just when a volumetric source is present: the model governs
+  //  every emitter in the fit - a point source needs the same near-field / off-axis treatment, and
+  //  the flat-disk fallback is theta-blind.
   const shared_ptr<const DetectorPeakResponse> det = m_detectorDisplay->detector();
   const bool enable = ( det && det->isValid() && !det->isFixedGeometry() );
 
@@ -6093,59 +6092,14 @@ void ShieldingSourceDisplay::updateVolEffMethodAvailability()
     return;
   }
 
-  // The Auto policy is geometry-dependent (it steps down to flat-disk only at/beyond the DRF's
-  //  characterization distance and on-axis), so the preview needs the same distance/offset the fit
-  //  will see.  A distance the user is mid-edit parses to 0, which the resolver reads as "unknown"
-  //  and therefore keeps the correction - the safe direction.
-  double resolve_distance = 0.0;
-  try
-  {
-    resolve_distance = PhysicalUnits::stringToDistance( m_distanceEdit->valueText().toUTF8() );
-  }catch( const std::exception & )
-  {
-    resolve_distance = 0.0;
-  }
-
-  double off_dx = 0.0, off_dy = 0.0;
-  sourceOffsets( off_dx, off_dy );
-  const double resolve_offset = std::sqrt( off_dx*off_dx + off_dy*off_dy );
-
-  // The source's transverse extent is part of the far-field test, so the preview needs it too -
-  //  through the same helper the fit uses, or the two could disagree about the same model.
-  std::vector<ShieldingSourceFitCalc::ShieldingInfo> resolve_shieldings;
-  bool resolve_extent_known = true;
-  for( WWidget *widget : m_shieldingSelects->children() )
-  {
-    const ShieldingSelect *select = dynamic_cast<const ShieldingSelect *>( widget );
-    if( select )
-    {
-      try
-      {
-        resolve_shieldings.push_back( select->toShieldingInfo() );
-      }catch( const std::exception & )
-      {
-        // A shielding the user is mid-edit.  Dropping it would UNDER-estimate the extent, which
-        //  would wrongly permit the flat-disk step-down - so report the extent as unknown (-1),
-        //  which keeps the correction.  (An empty list is a genuine zero extent, not unknown.)
-        resolve_extent_known = false;
-        break;
-      }
-    }//if( select )
-  }//for( shieldings )
-
-  const double resolve_extent = resolve_extent_known
-        ? ShieldingSourceChi2Fcn::assemblyTransverseHalfExtent( resolve_shieldings, geometry() )
-        : -1.0;
-
   // What the fit will actually use, from the SAME resolution the fit runs - so this status can never
   //  claim one method while the fit quietly picks another.  (The fit can still downgrade further if
-  //  *building* the transfer response throws; that shows up as an error on the results.)
+  //  *building* the transfer response or its ray sets throws; that shows up as a note or error on
+  //  the results.)  The resolution depends only on the DRF: one model per fit, at any distance.
   const VolumetricEffMethod requested
         = static_cast<VolumetricEffMethod>( std::max(0, m_volEffMethodCombo->currentIndex()) );
   const VolumetricEffMethod resolved
-        = ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf( det, requested,
-                                                                    resolve_distance, resolve_offset,
-                                                                    resolve_extent );
+        = ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf( det, requested );
 
   const char *resolvedKey = "ssd-vol-eff-name-flatdisk";
   switch( resolved )

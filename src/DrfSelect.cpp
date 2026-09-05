@@ -3548,8 +3548,10 @@ void DrfSelect::updateDrfContentSummary()
     //  off-axis/near sigma envelope attached; full MC remains the upgrade.
     if( mc->model_transfer.has_value() )
     {
+      // CeeLo quotes its floor from the crystal-face origin; the user is told a face distance.
       const string min_dist = PhysicalUnits::printToBestLengthUnits(
-                            mc->provenance.min_distance_cm * PhysicalUnits::cm );
+                  CeeLoUtils::faceDistanceFromCrystalOrigin( mc->descriptor, mc->provenance.min_distance_cm )
+                  * PhysicalUnits::cm );
       WString transfer_tip = WString::tr("ds-chip-tt-transfer")
                               .arg( mc->provenance.valid_e_min_keV )
                               .arg( mc->provenance.valid_e_max_keV )

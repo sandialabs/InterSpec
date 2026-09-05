@@ -65,6 +65,7 @@ namespace GammaInteractionCalc
 {
 
 class CascadeSummingCalc;
+struct PointSourceRays;
 struct VolumetricLineCache;
 
 /** Maximum areal density allowed for computations, in units of g/cm2 -
@@ -158,6 +159,19 @@ double fep_survival_removal_coefficient( const Material *material, float energy,
                                          double window_keV, double normal_thickness = 0.0 );
 double transmition_coefficient_material( const Material *material, float energy,
                                 float length );
+
+
+/** The value of a quantity that is either a plain `double` or a `ceres::Jet` - i.e. its scalar part.
+ Defined in GammaInteractionCalc_imp.hpp; declared here so the templates in this header can use it.
+ */
+template<typename T>
+inline double scalar_of( const T &val );
+
+/** Whether a `double`-or-`ceres::Jet` quantity carries a non-zero derivative lane.
+ Defined in GammaInteractionCalc_imp.hpp; declared here so the templates in this header can use it.
+ */
+template<typename T>
+inline bool has_active_lanes( const T &val );
 
 
 /** A convenience call to #transmition_coefficient_material that uses a static (compile-time defined) definition of air.
@@ -1137,7 +1151,8 @@ public:
    GammaInteractionCalc_imp.hpp.
    */
   std::vector<EffectiveShieldingInfo> computeEffectiveShielding( const std::vector<double> &params,
-                                                                 NucMixtureCache &mixturecache ) const;
+                                                     NucMixtureCache &mixturecache,
+                                                     std::vector<std::string> *warnings = nullptr ) const;
 
   /** Templated equivalents of the same-named double-valued accessors below;
    defined in GammaInteractionCalc_imp.hpp.
@@ -1356,6 +1371,36 @@ public:
    */
   std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> peakDrfEffFlags() const;
 
+  /** The detector-efficiency model the POINT sources of this fit are evaluated with - the same
+   resolution as #resolvedVolumetricEffMethod, so one model serves every emitter in the problem:
+   the resolved response when there is one (#PointEffModel::Response), else the flat-disk model, or
+   the intrinsic curve for a fixed-geometry DRF.  See #pointSourceFepEff.
+   */
+  ShieldingSourceFitCalc::PointEffModel pointSourceEffModel() const;
+
+  /** Human-readable name of a #ShieldingSourceFitCalc::PointEffModel, for the calc log. */
+  static const char *pointEffModelName( const ShieldingSourceFitCalc::PointEffModel model );
+
+  /** Absolute full-energy-peak / total efficiency for a POINT source of this fit - at the assembly
+   centre, offset by the source offsets, seen from the detector face at the fit distance - through
+   the model #pointSourceEffModel names.
+
+   THE single rule for a point source's efficiency, used by the fit path
+   (#expected_peak_counts_imp), the display path (#energy_chi_contributions), the cascade-summing
+   partner legs (#applyCascadeToClusterMap), #peakDrfEffFlags and #peakEffFracCovariance - so the
+   numbers the user sees cannot come from a different model than the fit used.  When the resolved
+   CeeLo response is in play the query goes through the ray fan #buildDetectorSideRays traced once
+   for this fit, and the result is memoised per energy (the geometry is fixed for the life of the
+   function object), so repeated evaluations cost a map lookup rather than a 2048-ray trace.
+   Thread-safe.  Requires a valid detector (callers keep the no-detector fallback themselves).
+   */
+  DetectorPeakResponse::EffEval pointSourceFepEff( const double energy ) const;
+  DetectorPeakResponse::EffEval pointSourceTotEff( const double energy ) const;
+
+  /** The query geometry the point-source evaluations use: polar angle from the detector axis and
+   azimuth of the source offsets, and the straight-line source-to-detector-face distance. */
+  void pointSourceEvalGeometry( double &theta, double &phi, double &true_dist ) const;
+
   double distance() const;
 
   double liveTime() const;
@@ -1405,50 +1450,20 @@ public:
 
    Shared by #resolveVolumetricEffMethod and by the GUI's "-> EFFTRAN transfer" status text, so the
    status cannot claim one thing while the fit does another.  The fit may still downgrade further if
-   *building* the chosen response throws, which this (deliberately) cannot predict.
+   *building* the chosen response (or its detector-side ray sets) throws, which this (deliberately)
+   cannot predict.
 
-   `Auto` policy: the transfer is strictly the more accurate model, so it is preferred by default and
-   only stepped down to flat-disk where flat-disk is *known* to be right - at or beyond the distance
-   the DRF's efficiency was characterized at (see `CeeLoUtils::pinnedEfficiencyDistanceCm`), because
-   there the flat-disk extrapolation is precisely what the measured curve already encodes.
-
-   "Far enough" is judged against everything that sets the angular scale, not distance alone:
-     - at or beyond the DRF's characterization distance,
-     - on-axis (zero lateral offset),
-     - and far compared to the DETECTOR's own half-width plus the SOURCE's transverse half-extent,
-       using the response's near-field gate (`SigmaFloors::near_regime_a`, d < a*that is near).
-   Off-axis eta(E,theta) is not a near-field effect and does not fall off with distance, so a wide
-   source still subtends real angles however far away it is - which is why its extent enters here.
-
-   Bias is deliberately one-way: any input that is unknown or non-positive keeps the correction.  A
-   needless transfer only costs time, whereas a wrongly-chosen flat-disk is a silent accuracy loss.
-
-   @param source_distance Source-to-detector distance (PhysicalUnits); <= 0 when unknown.
-   @param off_axis_offset Radial offset of the source from the detector axis (PhysicalUnits); 0 is
-          on-axis.
-   @param source_half_extent Transverse half-extent of the source assembly (PhysicalUnits), from
-          #assemblyTransverseHalfExtent; <= 0 when unknown.
+   `Auto` policy - ONE model per fit, for point and volumetric sources alike: the response the DRF
+   carries (its attached MC or transfer response, whatever its profile - the user or the loader put
+   it there deliberately, and it is what the DRF's own queries already use), else an EFFTRAN transfer
+   through the DRF's geometry, else flat-disk.  There is no far-field step-down to flat-disk: the
+   line quadrature makes the response cheap at any distance, and a far-field transfer reproduces the
+   measured curve to within its anchor, so stepping down would only buy a second model in the same
+   fit.  Flat-disk remains available by name, for both source kinds, as the escape hatch.
    */
   static ShieldingSourceFitCalc::VolumetricEffMethod resolveVolumetricEffMethodForDrf(
                       const std::shared_ptr<const DetectorPeakResponse> &drf,
-                      const ShieldingSourceFitCalc::VolumetricEffMethod requested,
-                      const double source_distance,
-                      const double off_axis_offset,
-                      const double source_half_extent );
-
-  /** Largest transverse (perpendicular to the detector axis) half-extent of the source assembly, in
-   PhysicalUnits - i.e. how far off the axis a source element can possibly sit.
-
-   Per-layer `m_dimensions` are thicknesses (half-dimensions for the innermost layer), so this sums
-   them; generic layers have no physical extent and are skipped.  Transverse means radial for a
-   sphere or an end-on cylinder, but spans the length for a side-on cylinder and the width/height for
-   a box, since the detector axis differs.
-
-   Shared by the fit and the GUI so both feed #resolveVolumetricEffMethodForDrf the same number.
-   */
-  static double assemblyTransverseHalfExtent(
-                      const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                      const GeometryType geometry );
+                      const ShieldingSourceFitCalc::VolumetricEffMethod requested );
 
   const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &initialShieldings() const;
   
@@ -1601,6 +1616,43 @@ protected:
    */
   std::shared_ptr<const CascadeSummingCalc> m_cascadeCalc;
 
+  /** One nuclide's point-source cascade correction, reduced to scalars.  See #m_cascadeCorrCache. */
+  struct CascadeCorrEntry
+  {
+    double energy_keV = 0.0;
+    double c_net = 1.0, c_out = 1.0, c_in = 0.0;
+  };
+
+  /** Cross-evaluation memo of the point-source cascade corrections.
+
+   The correction is a RATIO of efficiencies, so it depends on the geometry, the shieldings, the age
+   and the DRF - and never on the source ACTIVITIES.  In the common case of fitting activities behind
+   a fixed shield it is therefore the same number on every optimizer iteration and every autodiff
+   pass, yet #applyCascadeToClusterMap recomputed it each time; that was ~14x the cost of a
+   cascade-rich fit (Eu-152 at 10 cm: 70 s of engine work per fit, one evaluation's worth of it
+   useful).
+
+   Keyed on the nuclide, the scalar age and `PointSrcAttenContext::signature` - the exact scalar
+   values of every quantity derived from the fit parameters that the correction reads.  Everything
+   else the correction depends on (the response, the peak windows, the source offsets, the distance,
+   the scatter augmentation, the shielding MATERIALS) is fixed for the life of this function object.
+
+   Consulted ONLY when `PointSrcAttenContext::constant_in_params` holds, i.e. when nothing the
+   correction depends on carries a derivative lane.  That guard is what makes it sound to store
+   plain `double`s and lift them back with `T(c)`: with no active lane reaching the correction its
+   derivative is exactly zero, so the cached scalar IS the value a recomputation would produce, Jets
+   included.  An exact-scalar key alone would NOT be enough - `DynamicAutoDiffCostFunction` evaluates
+   the residual ceil(N/16) times per Jacobian, each pass carrying a different active-lane subset at
+   the SAME scalar point, so a value cached in one pass and reused in another would silently zero the
+   derivatives belonging to that other pass.  With the guard, such a call simply misses the cache.
+
+   `mutable` + mutex-guarded because evaluation is `const` and may be concurrent, following
+   #m_lineCaches / #m_lineCacheMutex and `CascadeSummingCalc::m_cascades`.
+   */
+  mutable std::mutex m_cascadeCorrMutex;
+  mutable std::map<std::pair<const SandiaDecay::Nuclide *,int>,
+                   std::map<std::vector<double>,std::vector<CascadeCorrEntry>>> m_cascadeCorrCache;
+
   /** The volumetric-efficiency method actually used for this problem, after resolving
    `m_options.volumetric_eff_method` (Auto -> a concrete method) against the DRF.  Never
    #VolumetricEffMethod::Auto once #create has run.  Copied into every
@@ -1635,20 +1687,67 @@ protected:
    detector is enough. */
   void resolveVolumetricEffMethod();
 
-  /** Builds the detector-side line sets the volumetric LINE integration needs, once, at creation -
-   after #resolveVolumetricEffMethod, from the initial source dimensions.  A set that cannot be
-   built is a fact about this geometry and response, and is handled exactly like an unbuildable
-   transfer: the fit falls back to the far-field flat-disk model, with a #volumetricEffResolveNote
-   for an `Auto` request and a #volumetricEffResolveError for a method asked for by name.  (A
-   rebuild during the fit - the dimensions left the set's window - that fails is an error the
-   optimizer reports instead; see build_volumetric_calculators.) */
-  void buildVolumetricLineCachesOrFallBack();
+  /** Builds every detector-side ray set this fit needs, once, at creation - after
+   #resolveVolumetricEffMethod, when a response was resolved: one line set per volumetric source
+   shell (#m_lineCaches, from the initial source dimensions) for the LINE integration, and ONE
+   aperture fan from the point sources' position (#m_pointRays) for #pointSourceFepEff.  The two are
+   different quadratures of the same CeeLo kernel (a line set is parameterised on the detector side
+   and is degenerate at a point; a point needs a fan from the source), and test_ShieldingSourceFitCalc's
+   PointVsTinyTraceSourceIdentity pins that they agree in the vanishing-extent limit.
+
+   A set that cannot be built is a fact about this geometry and response, and is handled exactly
+   like an unbuildable transfer: the fit falls back to the far-field flat-disk model - for point AND
+   volumetric sources, one model per fit - with a #volumetricEffResolveNote for an `Auto` request and
+   a #volumetricEffResolveError for a method asked for by name.  (A line-set rebuild during the fit -
+   the dimensions left the set's window - that fails is an error the optimizer reports instead; see
+   build_volumetric_calculators.) */
+  void buildDetectorSideRays();
+
+  /** Drops every detector-side ray set and the memos built on them (#m_lineCaches, #m_pointRays,
+   the #pointSourceFepEff memos) - the single place they are invalidated: whenever the resolved
+   response or the geometry they were traced for changes. */
+  void clearDetectorSideRays();
+
+  /** The point sources' ray fan (see #buildDetectorSideRays); null when no response is resolved. */
+  std::shared_ptr<const PointSourceRays> m_pointRays;
+
+  /** Per-energy memo of #pointSourceFepEff / #pointSourceTotEff.  The energies a fit asks about are
+   a fixed finite set (the nuclides' gamma lines and their cascade partners), so this stays small;
+   #sm_point_eff_memo_max_entries bounds it regardless. */
+  mutable std::mutex m_pointEffMutex;
+  mutable std::map<double,DetectorPeakResponse::EffEval> m_pointFepEffMemo, m_pointTotEffMemo;
 
 public:
   /** Lines per source shell for the line path, as new chi2 functions pick it up: a cost/accuracy
    knob (see the convergence study in test_VolumetricLadder.cpp).  A non-positive count makes the
    line set unbuildable, which the tests use to exercise the fallback. */
   static inline int sm_default_volumetric_num_lines = 65536;
+
+  /** Padding factor of the line sets' direction proposal around the source (see
+   build_volumetric_line_cache); part of #VolumetricLineCache's key. */
+  static inline double sm_default_volumetric_line_pad = 1.5;
+
+  /** Hard ceiling on the per-energy point-efficiency memos; reaching it clears them (a cache, never
+   a correctness dependency).  Far above the few hundred distinct energies a fit ever asks about. */
+  static inline size_t sm_point_eff_memo_max_entries = 4096;
+
+  /** Ceiling on the number of parameter signatures kept per nuclide in #m_cascadeCorrCache; reaching
+   it clears that nuclide's entries.  An activity-only fit needs one signature; a fit with a FREE
+   shielding dimension produces a new one on every plain-double cost evaluation, so without a ceiling
+   the cache would grow with the iteration count. */
+  static inline size_t sm_cascade_corr_cache_max_signatures = 64;
+
+  /** Test hook: set false to bypass the point-source cascade-correction memo (#m_cascadeCorrCache),
+   so a test can assert the memoised and un-memoised fits agree.  Production always leaves it true.
+   */
+  static inline bool sm_use_cascade_corr_memo = true;
+
+  /** Test hook: set false to bypass the per-energy memo on the point-source cascade efficiency
+   functors in #applyCascadeToClusterMap.  Both memos off is the pre-memo algorithm, which is how the
+   A/B in test_CascadeSummingFit.cpp shows the memos change no fitted number.  Production always
+   leaves it true - a hit returns exactly what a recompute would, the functors being pure in energy.
+   */
+  static inline bool sm_use_cascade_eff_memo = true;
 
   /** Per-material attenuation-coefficient functions (energy -> mu*chord) along
    the center->detector ray at the given parameters, plus the air path length
@@ -1666,6 +1765,28 @@ public:
     T air_dist = T(0.0);        //length units
     T total_ad_gcm2 = T(0.0);   //along-ray areal density, g/cm2
     T eff_an = T(0.0);          //AD-weighted effective atomic number
+
+    /** Scalar values of every quantity derived from the fit parameters that the cascade functors
+     read, in construction order - the cache key for #applyCascadeToClusterMap.  See #note_input.
+     */
+    std::vector<double> signature;
+
+    /** False as soon as any of those quantities carries a derivative lane, i.e. the correction moves
+     with a parameter this evaluation is differentiating.  True in the common case of fitting only
+     activities behind a fixed shield, which is what makes the correction cacheable.
+     */
+    bool constant_in_params = true;
+
+    /** Records one parameter-derived input: its scalar value into #signature, and whether it carries
+     a derivative lane into #constant_in_params.  Every path from the fit parameters into the cascade
+     correction must go through here, or the cache key would not separate two different geometries.
+     */
+    void note_input( const T &val )
+    {
+      signature.push_back( scalar_of(val) );
+      if( has_active_lanes(val) )
+        constant_in_params = false;
+    }
   };
 
   template <typename T>

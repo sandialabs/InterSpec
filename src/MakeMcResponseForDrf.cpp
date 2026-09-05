@@ -1178,7 +1178,9 @@ void MakeMcResponseForDrf::handleGenerationFinished(
     // A transfer (quick-MC or measured-curve) response: state the validity
     //  floor - off-axis/near queries carry an honest, inflated uncertainty.
     const string min_dist = PhysicalUnits::printToBestLengthUnits(
-                    result->provenance.min_distance_cm * PhysicalUnits::cm );
+                    CeeLoUtils::faceDistanceFromCrystalOrigin( result->descriptor,
+                                                               result->provenance.min_distance_cm )
+                    * PhysicalUnits::cm );
     m_status->setText( WString::tr("mmr-status-transfer-done")
                         .arg( min_dist ) );
   }else

@@ -803,53 +803,9 @@ bool rectangle_intersections( const double half_width, const double half_height,
 }//rectangle_intersections( ... )
 
 
-
-
-
-double ShieldingSourceChi2Fcn::assemblyTransverseHalfExtent(
-                      const std::vector<ShieldingSourceFitCalc::ShieldingInfo> &shieldings,
-                      const GeometryType geometry )
-{
-  double dim0 = 0.0, dim1 = 0.0;
-
-  for( const ShieldingSourceFitCalc::ShieldingInfo &shield : shieldings )
-  {
-    if( shield.m_isGenericMaterial )
-      continue;  //an areal-density layer has no physical extent
-
-    dim0 += shield.m_dimensions[0];
-    dim1 += shield.m_dimensions[1];
-  }//for( loop over shieldings )
-
-  switch( geometry )
-  {
-    // Detector on the symmetry axis: transverse extent is the radius.
-    case GeometryType::Spherical:
-    case GeometryType::CylinderEndOn:
-      return dim0;
-
-    // Detector is off to the side, so the cylinder's LENGTH is transverse too.
-    case GeometryType::CylinderSideOn:
-      return std::max( dim0, dim1 );
-
-    // Detector along the depth axis: width and height are both transverse.
-    case GeometryType::Rectangular:
-      return std::max( dim0, dim1 );
-
-    case GeometryType::NumGeometryType:
-      break;
-  }//switch( geometry )
-
-  return 0.0;
-}//assemblyTransverseHalfExtent(...)
-
-
 ShieldingSourceFitCalc::VolumetricEffMethod ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf(
                       const std::shared_ptr<const DetectorPeakResponse> &drf,
-                      const ShieldingSourceFitCalc::VolumetricEffMethod requested,
-                      const double source_distance,
-                      const double off_axis_offset,
-                      const double source_half_extent )
+                      const ShieldingSourceFitCalc::VolumetricEffMethod requested )
 {
   using ShieldingSourceFitCalc::VolumetricEffMethod;
 
@@ -863,10 +819,10 @@ ShieldingSourceFitCalc::VolumetricEffMethod ShieldingSourceChi2Fcn::resolveVolum
 
   // EFFTRAN needs a physical geometry to transfer through, which a DRF can carry without ever having
   //  been Monte-Carlo characterized (GADRAS Detector.dat, ANGLE model).  MC transfer needs an actual
-  //  MC response to evaluate.
+  //  response to evaluate.
   const bool has_geometry = !!drf->geometry();
-  const bool has_near_model = ceeloResp
-                    && (ceeloResp->provenance.profile != ceelo::ResponseProfile::FarField);
+  const bool attached_is_transfer = ceeloResp
+                    && (ceeloResp->provenance.method == ceelo::ProductionMethod::CurveTransfer);
 
   switch( requested )
   {
@@ -877,45 +833,12 @@ ShieldingSourceFitCalc::VolumetricEffMethod ShieldingSourceChi2Fcn::resolveVolum
       return has_geometry ? VolumetricEffMethod::EffTran : VolumetricEffMethod::FlatDisk;
 
     case VolumetricEffMethod::Auto:
-    {
-      // The transfer is strictly more accurate, so Auto keeps it unless flat-disk is KNOWN to be
-      //  right.  Every quantity that sets an angular scale has to say "far": the DRF's
-      //  characterization distance (beyond it, flat-disk is what the measured curve already
-      //  encodes), the detector's own half-width, and the source's transverse half-extent - a wide
-      //  source subtends real angles however distant it is, and off-axis eta does not fall off with
-      //  distance.  Anything unknown keeps the correction: a needless transfer costs time, a
-      //  wrongly-chosen flat-disk is a silent accuracy loss.
-      const std::shared_ptr<const ceelo::GeometryDescriptor> geom_desc = drf->geometry();
-      const double det_half_width = 0.5 * drf->detectorDiameter();
-
-      if( geom_desc
-          && (source_distance > 0.0)
-          && (off_axis_offset <= 0.0)
-          && (source_half_extent >= 0.0)
-          && (det_half_width > 0.0) )
-      {
-        const double pinned_cm = CeeLoUtils::pinnedEfficiencyDistanceCm( drf, *geom_desc );
-
-        // The response's own near-field gate: d < near_regime_a * a is "near".
-        const double near_regime_a = ceeloResp ? ceeloResp->floors.near_regime_a : 4.0;
-        const double far_enough_for_extent = near_regime_a * (det_half_width + source_half_extent);
-
-        if( (pinned_cm > 0.0)
-            && (source_distance >= (pinned_cm * PhysicalUnits::cm))
-            && (source_distance >= far_enough_for_extent) )
-        {
-          return VolumetricEffMethod::FlatDisk;
-        }
-      }//if( every far-field condition is known )
-
-      // Prefer a full near-field MC response; else transfer the DRF's measured efficiency through
-      //  its geometry; else a far-field MC response (still off-axis aware) before flat-disk.
-      if( has_near_model )
-        return VolumetricEffMethod::MCTransfer;
-      if( has_geometry )
-        return VolumetricEffMethod::EffTran;
-      return ceeloResp ? VolumetricEffMethod::MCTransfer : VolumetricEffMethod::FlatDisk;
-    }//case Auto
+      // One model per fit, at any distance: whatever response the DRF carries (an attached curve
+      //  transfer IS an EFFTRAN transfer, and is labelled as one), else a transfer through its
+      //  geometry, else flat-disk.  See the header for why there is no far-field step-down.
+      if( ceeloResp )
+        return attached_is_transfer ? VolumetricEffMethod::EffTran : VolumetricEffMethod::MCTransfer;
+      return has_geometry ? VolumetricEffMethod::EffTran : VolumetricEffMethod::FlatDisk;
 
     case VolumetricEffMethod::FlatDisk:
       break;
@@ -934,13 +857,12 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
   m_volEffResponse.reset();
   m_volEffResolveNote.clear();
   m_volEffResolveError.clear();
+  clearDetectorSideRays();
 
   const VolumetricEffMethod requested = m_options.volumetric_eff_method;
 
-  // NOT gated on there being a volumetric source: an off-axis or near-field POINT source needs the
-  //  same correction, and the flat-disk fallback is theta-blind.  The cost of resolving is bounded
-  //  by the Auto policy instead - at or beyond the DRF's characterization distance, on-axis, Auto
-  //  returns FlatDisk and nothing is built, which is the common far-field case.
+  // NOT gated on there being a volumetric source: the resolved response serves the POINT sources
+  //  too (pointSourceFepEff) - one model per fit - and the flat-disk fallback is theta-blind.
   // An explicitly-requested near-field method that cannot be honored is reported rather than
   //  silently downgraded: a quietly less-accurate answer is worse than a visible complaint.  Only
   //  `Auto` is allowed to fall back, since it is by definition best-effort.
@@ -998,12 +920,7 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
   };//build_efftran
 
   // What the DRF can actually offer (shared with the GUI's status text, so the two cannot disagree).
-  const double off_axis_r = std::sqrt( m_sourceOffsets[0]*m_sourceOffsets[0]
-                                      + m_sourceOffsets[1]*m_sourceOffsets[1] );
-  const double src_half_extent = assemblyTransverseHalfExtent( m_initial_shieldings, m_geometry );
-  const VolumetricEffMethod resolved = resolveVolumetricEffMethodForDrf( m_detector, requested,
-                                                                        m_distance, off_axis_r,
-                                                                        src_half_extent );
+  const VolumetricEffMethod resolved = resolveVolumetricEffMethodForDrf( m_detector, requested );
 
   switch( resolved )
   {
@@ -1032,7 +949,9 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
         m_resolvedVolEffMethod = VolumetricEffMethod::EffTran;
         m_volEffResponse = transfer;
         if( requested == VolumetricEffMethod::Auto )
-          m_volEffResolveNote = "Auto -> EFFTRAN transfer";
+          m_volEffResolveNote = (transfer == ceeloResp)
+                  ? "Auto -> EFFTRAN transfer (the one attached to the detector response)"
+                  : "Auto -> EFFTRAN transfer (built from the detector response's efficiency and geometry)";
       }else if( (requested == VolumetricEffMethod::Auto) && ceeloResp )
       {
         // Auto is best-effort: a far-field MC response still beats flat-disk.
@@ -1253,7 +1172,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   // Resolve the volumetric-source efficiency method (Auto -> a concrete method) and build the
   //  transfer response if needed - once here, single-threaded, before any integration.
   answer->resolveVolumetricEffMethod();
-  answer->buildVolumetricLineCachesOrFallBack();
+  answer->buildDetectorSideRays();
 
 #if( PERFORM_DEVELOPER_CHECKS )
   // Synthetic peaks stand in for peaks that werent actually observed, so they must not be fit to.
@@ -2169,6 +2088,8 @@ ShieldingSourceChi2Fcn &ShieldingSourceChi2Fcn::operator=( const ShieldingSource
   m_detector = rhs.m_detector;
   m_nuclides = rhs.m_nuclides;
   m_options = rhs.m_options;
+  m_sourceOffsets[0] = rhs.m_sourceOffsets[0];
+  m_sourceOffsets[1] = rhs.m_sourceOffsets[1];
 
   // Must travel with m_options/m_detector: these are what the integration actually branches on, and
   //  a copy that kept the options but lost the resolved response would silently revert to flat-disk.
@@ -2176,6 +2097,11 @@ ShieldingSourceChi2Fcn &ShieldingSourceChi2Fcn::operator=( const ShieldingSource
   m_volEffResponse = rhs.m_volEffResponse;
   m_volEffResolveNote = rhs.m_volEffResolveNote;
   m_volEffResolveError = rhs.m_volEffResolveError;
+
+  // The ray sets are immutable and traced for the same geometry, so they are shared; the memos are
+  //  rebuilt lazily.
+  clearDetectorSideRays();
+  m_pointRays = rhs.m_pointRays;
   
   //m_isFitting
   //m_guiUpdateInfo
@@ -3706,12 +3632,14 @@ std::vector<double> ShieldingSourceChi2Fcn::peakEffFracCovariance() const
   if( energies.empty() )
     return {};
 
-  // On-axis at the fit distance; the covariance of a Monte-Carlo-
-  //  parameterized response depends (mildly) on geometry, while the legacy
-  //  DetectorEfficiencyUncert path ignores it.
+  // At the fit geometry (the point sources' polar angle and true distance, as the forward model
+  //  evaluates them); the covariance of a Monte-Carlo-parameterized response depends (mildly) on
+  //  geometry, while the legacy DetectorEfficiencyUncert path ignores it.
+  double theta = 0.0, phi = 0.0, true_dist = m_distance;
+  pointSourceEvalGeometry( theta, phi, true_dist );
   const std::vector<double> cov = m_detector->isFixedGeometry()
                     ? m_detector->efficiencyFracCovariance( energies )
-                    : m_detector->efficiencyFracCovariance( energies, 0.0, m_distance );
+                    : m_detector->efficiencyFracCovariance( energies, theta, true_dist );
 
   assert( cov.empty() || (cov.size() == (energies.size() * energies.size())) );
 
@@ -3739,8 +3667,8 @@ std::vector<double> ShieldingSourceChi2Fcn::peakEffFracCovariance() const
   std::vector<double> inflated = cov;
   for( size_t i = 0; i < n; ++i )
   {
-    const DetectorPeakResponse::EffEval ev
-            = m_detector->fepEfficiencyEval( static_cast<float>(energies[i]), 0.0, 0.0, m_distance );
+    // Through the same model and geometry the forward model uses for the point sources.
+    const DetectorPeakResponse::EffEval ev = pointSourceFepEff( energies[i] );
     if( ev.value <= 0.0 )
       continue;
 
@@ -3776,20 +3704,11 @@ std::vector<std::pair<double,DetectorPeakResponse::EffFlag>>
   if( !m_detector || !m_detector->isValid() || m_detector->isFixedGeometry() )
     return {};
 
-  // Same geometry the forward model evaluates each peak at (see the detector
-  //  fold-in in energy_chi_contributions()).
-  const double off_r = std::sqrt( m_sourceOffsets[0]*m_sourceOffsets[0]
-                                  + m_sourceOffsets[1]*m_sourceOffsets[1] );
-  const double eval_theta = (off_r > 0.0) ? std::atan2(off_r, m_distance) : 0.0;
-  const double eval_phi = (off_r > 0.0) ? std::atan2(m_sourceOffsets[1], m_sourceOffsets[0]) : 0.0;
-  const double true_dist = trueSourceToDetectorDistance();
-
   std::vector<std::pair<double,DetectorPeakResponse::EffFlag>> answer;
   for( const double energy : includedPeakEnergies() )
   {
-    const DetectorPeakResponse::EffEval eval = m_detector->fepEfficiencyEval(
-                    static_cast<float>(energy), eval_theta, eval_phi, true_dist );
-    DetectorPeakResponse::EffFlag flag = eval.flag;
+    // The same query, model and geometry the forward model evaluates each peak at.
+    DetectorPeakResponse::EffFlag flag = pointSourceFepEff( energy ).flag;
 
     // A volumetric source extends away from the point that query stands at.  The line sets built
     //  for it know the worst flag anywhere along their chords - a collimated detector's shadow, the
@@ -3937,19 +3856,52 @@ std::shared_ptr<const VolumetricLineCache> ShieldingSourceChi2Fcn::volumetricLin
   const auto pos = m_lineCaches.find( material_index );
   if( (pos != end(m_lineCaches)) && pos->second
       && pos->second->matches( m_volEffResponse.get(), m_geometry, material_index, source_outer_dims,
-                               det_pos, det_axis, azimuth, m_volumetricNumLines ) )
+                               det_pos, det_axis, azimuth, m_volumetricNumLines,
+                               sm_default_volumetric_line_pad ) )
     return pos->second;
 
   std::shared_ptr<const VolumetricLineCache> cache
         = build_volumetric_line_cache( m_volEffResponse, m_geometry, material_index, source_outer_dims,
-                                       det_pos, det_axis, azimuth, m_volumetricNumLines );
+                                       det_pos, det_axis, azimuth, m_volumetricNumLines,
+                                       sm_default_volumetric_line_pad );
   m_lineCaches[material_index] = cache;
   return cache;
 }//volumetricLineCache(...)
 
 
-void ShieldingSourceChi2Fcn::buildVolumetricLineCachesOrFallBack()
+/** Detector-side rays for the point sources of one fit - see ShieldingSourceChi2Fcn::buildDetectorSideRays. */
+struct PointSourceRays
 {
+  std::shared_ptr<const ceelo::DetectorResponse> response;   //the resolved response the fan was traced for
+  double theta = 0.0, phi = 0.0, dist_from_face_cm = 0.0;    //query geometry, fixed for the life of the fit
+  Eigen::Vector3d position_cm = Eigen::Vector3d::Zero();     //crystal-face frame (CeeLoUtils::sourcePositionFromFace)
+  ceelo::ApertureQuadrature quadrature;                      //response->make_quadrature( position_cm ), traced once
+};//struct PointSourceRays
+
+
+void ShieldingSourceChi2Fcn::clearDetectorSideRays()
+{
+  {
+    std::lock_guard<std::mutex> lock( m_lineCacheMutex );
+    m_lineCaches.clear();
+  }
+  m_pointRays.reset();
+  {
+    std::lock_guard<std::mutex> lock( m_cascadeCorrMutex );
+    m_cascadeCorrCache.clear();   //keyed on chords/AD only - a new detector or distance invalidates it
+  }
+  {
+    std::lock_guard<std::mutex> lock( m_pointEffMutex );
+    m_pointFepEffMemo.clear();
+    m_pointTotEffMemo.clear();
+  }
+}//clearDetectorSideRays()
+
+
+void ShieldingSourceChi2Fcn::buildDetectorSideRays()
+{
+  clearDetectorSideRays();
+
   if( !m_volEffResponse )
     return;
 
@@ -3958,8 +3910,9 @@ void ShieldingSourceChi2Fcn::buildVolumetricLineCachesOrFallBack()
 
   try
   {
-    // Cumulative outer dims of each shell from the initial thicknesses, as build_volumetric_calculators
-    //  accumulates them from the fit parameters; generic shieldings have no extent.
+    // One line set per volumetric source shell.  Cumulative outer dims of each shell from the
+    //  initial thicknesses, as build_volumetric_calculators accumulates them from the fit
+    //  parameters; generic shieldings have no extent.
     std::array<double,3> outer = { 0.0, 0.0, 0.0 };
     for( size_t i = 0; i < m_initial_shieldings.size(); ++i )
     {
@@ -3973,22 +3926,39 @@ void ShieldingSourceChi2Fcn::buildVolumetricLineCachesOrFallBack()
       if( is_source )
         volumetricLineCache( i, outer );
     }
+
+    // One ray fan for the point sources: they all sit at the assembly centre (offset by the source
+    //  offsets), and the position never moves during a fit, so the SAME rays eps_fep would trace on
+    //  every call are traced once here and reused by every energy and evaluation.
+    double theta = 0.0, phi = 0.0, true_dist = 0.0;
+    pointSourceEvalGeometry( theta, phi, true_dist );
+
+    auto rays = std::make_shared<PointSourceRays>();
+    rays->response = m_volEffResponse;
+    rays->theta = theta;
+    rays->phi = phi;
+    rays->dist_from_face_cm = true_dist / PhysicalUnits::cm;
+    rays->position_cm = CeeLoUtils::sourcePositionFromFace( m_volEffResponse->descriptor,
+                                                            theta, phi, rays->dist_from_face_cm );
+    rays->quadrature = m_volEffResponse->make_quadrature( rays->position_cm );
+    if( rays->quadrature.rays.empty() )
+      throw std::runtime_error( "no ray from the source position reaches the active crystal" );
+    m_pointRays = rays;
   }catch( std::exception &e )
   {
+    // One model per fit: an unbuildable ray set takes BOTH source kinds to flat-disk.
     const bool explicit_request
         = (m_options.volumetric_eff_method != ShieldingSourceFitCalc::VolumetricEffMethod::Auto);
-    const std::string why = std::string("the detector-side line set could not be built: ") + e.what();
+    const std::string why = std::string("the detector-side line sets / point-source ray fan could not"
+                                        " be built: ") + e.what();
 
-    {
-      std::lock_guard<std::mutex> lock( m_lineCacheMutex );
-      m_lineCaches.clear();
-    }
+    clearDetectorSideRays();
     m_volEffResponse.reset();
     m_resolvedVolEffMethod = ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk;
 
     if( explicit_request )
     {
-      m_volEffResolveError = "A near-field volumetric-source efficiency was requested, but " + why
+      m_volEffResolveError = "A near-field detector-efficiency model was requested, but " + why
                              + "; the far-field flat-disk approximation was used instead.";
       m_volEffResolveNote.clear();
     }else
@@ -3998,7 +3968,219 @@ void ShieldingSourceChi2Fcn::buildVolumetricLineCachesOrFallBack()
   }//try / catch
 
   assert( (m_resolvedVolEffMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk) == !m_volEffResponse );
-}//buildVolumetricLineCachesOrFallBack()
+  assert( !m_volEffResponse || m_pointRays );
+}//buildDetectorSideRays()
+
+
+void ShieldingSourceChi2Fcn::pointSourceEvalGeometry( double &theta, double &phi, double &true_dist ) const
+{
+  const double offset_r = std::sqrt( m_sourceOffsets[0]*m_sourceOffsets[0]
+                                     + m_sourceOffsets[1]*m_sourceOffsets[1] );
+  theta = (offset_r > 0.0) ? std::atan2( offset_r, m_distance ) : 0.0;
+  phi = (offset_r > 0.0) ? std::atan2( m_sourceOffsets[1], m_sourceOffsets[0] ) : 0.0;
+  true_dist = trueSourceToDetectorDistance();
+}//pointSourceEvalGeometry(...)
+
+
+ShieldingSourceFitCalc::PointEffModel ShieldingSourceChi2Fcn::pointSourceEffModel() const
+{
+  using ShieldingSourceFitCalc::PointEffModel;
+
+  if( !m_detector || !m_detector->isValid() )
+    return PointEffModel::NoDetector;
+  if( m_detector->isFixedGeometry() )
+    return PointEffModel::FixedGeomIntrinsic;
+
+  // #m_volEffResponse is the single predicate for which model is in play - the same one the
+  //  volumetric integrand branches on (DistributedSrcCalcT::eff_response_factor).  An explicit
+  //  FlatDisk request, or a DRF nothing better could be built for, leaves it null.
+  return m_volEffResponse ? PointEffModel::Response : PointEffModel::FlatDisk;
+}//pointSourceEffModel()
+
+
+const char *ShieldingSourceChi2Fcn::pointEffModelName( const ShieldingSourceFitCalc::PointEffModel model )
+{
+  using ShieldingSourceFitCalc::PointEffModel;
+
+  switch( model )
+  {
+    case PointEffModel::NoDetector:          return "none (solid angle of a 1 cm disk)";
+    case PointEffModel::FixedGeomIntrinsic:  return "fixed-geometry intrinsic efficiency";
+    case PointEffModel::Response:            return "detector response at the source position (near-field & off-axis correct)";
+    case PointEffModel::FlatDisk:            return "flat-disk (solid angle x intrinsic efficiency)";
+  }//switch( model )
+
+  return "";
+}//pointEffModelName(...)
+
+
+DetectorPeakResponse::EffEval ShieldingSourceChi2Fcn::pointSourceFepEff( const double energy ) const
+{
+  using ShieldingSourceFitCalc::PointEffModel;
+  typedef DetectorPeakResponse::EffEval EffEval;
+
+  {
+    std::lock_guard<std::mutex> lock( m_pointEffMutex );
+    const auto pos = m_pointFepEffMemo.find( energy );
+    if( pos != std::end(m_pointFepEffMemo) )
+      return pos->second;
+  }
+
+  double theta = 0.0, phi = 0.0, true_dist = 0.0;
+  pointSourceEvalGeometry( theta, phi, true_dist );
+  const float energy_f = static_cast<float>( energy );
+
+  EffEval answer;
+  switch( pointSourceEffModel() )
+  {
+    case PointEffModel::NoDetector:
+      assert( 0 );  //callers keep the no-detector fallback themselves
+      answer.flag = DetectorPeakResponse::EffFlag::NeedsMc;
+      break;
+
+    case PointEffModel::FixedGeomIntrinsic:
+    {
+      // The curve IS the answer for a fixed geometry; only its fractional sigma and flag are
+      //  borrowed from the Eval.
+      answer.value = m_detector->intrinsicEfficiency( energy_f );
+      const EffEval ev = m_detector->intrinsicEfficiencyEval( energy_f );
+      if( ev.value > 0.0 )
+        answer.sigma = answer.value * (ev.sigma / ev.value);
+      answer.flag = ev.flag;
+      break;
+    }
+
+    case PointEffModel::Response:
+    {
+      // Through the fan traced once for this fit (buildDetectorSideRays); the energy is passed as
+      //  the double it is, as the fit path always did.
+      assert( m_pointRays && (m_pointRays->response == m_volEffResponse) );
+      const ceelo::EffResult res = m_volEffResponse->eps_fep_at( energy, m_pointRays->position_cm,
+                                                                 m_pointRays->quadrature );
+      answer.value = res.value;
+      answer.sigma = res.sigma;
+      answer.flag = DetectorPeakResponse::effFlagFromCeelo( res.flag );
+
+#if( PERFORM_DEVELOPER_CHECKS && !defined(NDEBUG) )
+      // The fan traced at creation must give exactly what a fresh query at the position gives.
+      //  NDEBUG-gated as well as PERFORM_DEVELOPER_CHECKS-gated: the bare query re-traces the whole
+      //  aperture, which is the cost this memo exists to remove, and with `assert` compiled out the
+      //  result would be discarded.
+      {
+        const ceelo::EffResult bare = m_volEffResponse->eps_fep_at( energy, m_pointRays->position_cm );
+        assert( std::fabs(bare.value - res.value) <= 1.0e-12*std::max(std::fabs(bare.value), 1.0e-300) );
+      }
+#endif
+      break;
+    }
+
+    case PointEffModel::FlatDisk:
+    {
+      // Intrinsic curve x flat-disk solid angle - the legacy, theta-blind model.  A response the
+      //  DRF may carry is deliberately NOT consulted: the model was chosen by name, or nothing
+      //  better could be built, and the volumetric sources are on flat-disk for the same reason.
+      answer.value = m_detector->efficiency( energy_f, true_dist );
+      const EffEval intr = m_detector->intrinsicEfficiencyEval( energy_f );
+      if( intr.value > 0.0 )
+        answer.sigma = answer.value * (intr.sigma / intr.value);
+      answer.flag = intr.flag;
+      if( std::fabs(theta) > 0.087 )   //~5 degrees: the model cannot represent an off-axis source
+        answer.flag = DetectorPeakResponse::EffFlag::NeedsMc;
+      break;
+    }
+  }//switch( pointSourceEffModel() )
+
+  {
+    std::lock_guard<std::mutex> lock( m_pointEffMutex );
+    if( m_pointFepEffMemo.size() >= sm_point_eff_memo_max_entries )
+      m_pointFepEffMemo.clear();
+    m_pointFepEffMemo.emplace( energy, answer );
+  }
+
+  return answer;
+}//pointSourceFepEff(...)
+
+
+DetectorPeakResponse::EffEval ShieldingSourceChi2Fcn::pointSourceTotEff( const double energy ) const
+{
+  using ShieldingSourceFitCalc::PointEffModel;
+  typedef DetectorPeakResponse::EffEval EffEval;
+
+  {
+    std::lock_guard<std::mutex> lock( m_pointEffMutex );
+    const auto pos = m_pointTotEffMemo.find( energy );
+    if( pos != std::end(m_pointTotEffMemo) )
+      return pos->second;
+  }
+
+  double theta = 0.0, phi = 0.0, true_dist = 0.0;
+  pointSourceEvalGeometry( theta, phi, true_dist );
+  const float energy_f = static_cast<float>( energy );
+
+  EffEval answer;
+  switch( pointSourceEffModel() )
+  {
+    case PointEffModel::NoDetector:
+      assert( 0 );
+      answer.flag = DetectorPeakResponse::EffFlag::NeedsMc;
+      break;
+
+    case PointEffModel::FixedGeomIntrinsic:
+      try
+      {
+        answer.value = m_detector->totalIntrinsicEfficiency( energy_f );
+      }catch( std::exception & )
+      {
+        answer.flag = DetectorPeakResponse::EffFlag::NeedsMc;  //no total-efficiency information
+      }
+      break;
+
+    case PointEffModel::Response:
+    {
+      // The resolved response's own total efficiency - anchored on the DRF's total curve when one
+      //  was available to the transfer (CeeLoUtils::totalTransferAnchorForDrf), else its kernel tier.
+      assert( m_pointRays && (m_pointRays->response == m_volEffResponse) );
+      const ceelo::EffResult res = m_volEffResponse->eps_total_at( energy, m_pointRays->position_cm,
+                                                                   m_pointRays->quadrature );
+      answer.value = res.value;
+      answer.sigma = res.sigma;
+      answer.flag = DetectorPeakResponse::effFlagFromCeelo( res.flag );
+      break;
+    }
+
+    case PointEffModel::FlatDisk:
+    {
+      // Flat-disk must be a COARSER model here, never NO model.  `hasTotalEfficiency()` is the
+      //  legacy curve alone, while `CascadeSummingCalc::drfHasNeededInfo` admits a DRF whose total
+      //  efficiency lives only in its CeeLo response - so gating on the former returned zero for an
+      //  MC-characterized DRF, and a zero total efficiency turns a cascade correction the user
+      //  asked for into a silent no-op (c_net collapses to 1).  `totalIntrinsicEfficiencyAny`
+      //  returns the legacy curve when there is one, so legacy DRFs are unchanged.
+      const float tot_intrinsic = m_detector->totalIntrinsicEfficiencyAny( energy_f );
+      if( tot_intrinsic > 0.0f )
+      {
+        const double frac_solid_angle = DetectorPeakResponse::fractionalSolidAngle(
+                        m_detector->detectorDiameter(), true_dist + m_detector->detectorSetback() );
+        answer.value = frac_solid_angle * tot_intrinsic;
+        if( std::fabs(theta) > 0.087 )
+          answer.flag = DetectorPeakResponse::EffFlag::NeedsMc;
+      }else
+      {
+        answer.flag = DetectorPeakResponse::EffFlag::NeedsMc;
+      }
+      break;
+    }
+  }//switch( pointSourceEffModel() )
+
+  {
+    std::lock_guard<std::mutex> lock( m_pointEffMutex );
+    if( m_pointTotEffMemo.size() >= sm_point_eff_memo_max_entries )
+      m_pointTotEffMemo.clear();
+    m_pointTotEffMemo.emplace( energy, answer );
+  }
+
+  return answer;
+}//pointSourceTotEff(...)
 
 
 void ShieldingSourceChi2Fcn::reportCompletedEval( const double chi2, const std::vector<double> &params ) const
@@ -4863,32 +5045,11 @@ vector<PeakResultPlotInfo>
   //Fold in the detector response
   if( m_detector && m_detector->isValid() )
   {
-    const bool fixed_geom = m_detector->isFixedGeometry();
-
     for( EnergyCountMap::value_type &energy_count : energy_count_map )
     {
-//      cerr << "Absolute efficiency at " << energy_count.first << " keV is "
-//           << m_detector->intrinsicEfficiency( energy_count.first ) << " and the "
-//           << " total efficiency is " << m_detector->efficiency( energy_count.first, m_distance ) << endl;
-      
-      double eff;
-      if( fixed_geom )
-      {
-        eff = m_detector->intrinsicEfficiency( energy_count.first );
-      }else if( m_detector->ceeloResponse() )
-      {
-        // Monte-Carlo-parameterized response: near-field / off-axis aware.
-        const double off_r = std::sqrt( m_sourceOffsets[0]*m_sourceOffsets[0]
-                                        + m_sourceOffsets[1]*m_sourceOffsets[1] );
-        const double eval_theta = (off_r > 0.0) ? std::atan2(off_r, m_distance) : 0.0;
-        const double eval_phi = (off_r > 0.0) ? std::atan2(m_sourceOffsets[1], m_sourceOffsets[0]) : 0.0;
-        const DetectorPeakResponse::EffEval eval = m_detector->fepEfficiencyEval(
-                          energy_count.first, eval_theta, eval_phi, trueDist );
-        eff = eval.value;
-      }else
-      {
-        eff = m_detector->efficiency( energy_count.first, trueDist );
-      }
+      // The one rule for a point source's efficiency - the same call, model and geometry the fit
+      //  path uses (see pointSourceFepEff), so the displayed prediction cannot drift from the fit.
+      const double eff = pointSourceFepEff( energy_count.first ).value;
 
       if( log_info )
       {
@@ -5116,17 +5277,27 @@ vector<PeakResultPlotInfo>
             peak.m_airAttenFactor = exp( -1.0 * coef * air_dist );
           }
               
+          // The absolute efficiency the integration folded in, from the SAME model it used: with a
+          //  response, the integrand carried the absolute per-element efficiency, so the reference is
+          //  that response at the assembly centre; on flat-disk the integrand carried the solid angle
+          //  only (intrinsic folded in afterwards).  Dividing the integral by its own model's
+          //  efficiency is what leaves a pure attenuation factor either way - dividing an absolute
+          //  integral by a bare solid angle used to leave an intrinsic-efficiency factor behind.
           double det_intrinsic = 1.0, det_total_eff = 1.0;
           if( m_detector && m_detector->isValid() )
           {
             det_intrinsic = m_detector->intrinsicEfficiency( peak.energy );
-            det_total_eff = m_detector->isFixedGeometry() ? det_intrinsic : m_detector->efficiency(peak.energy, m_distance);
+            if( calculator->m_effResponse )
+              det_total_eff = pointSourceFepEff( peak.energy ).value;
+            else
+              det_total_eff = m_detector->isFixedGeometry() ? det_intrinsic
+                                                            : m_detector->efficiency( peak.energy, m_distance );
           }
-          const double geom_factor = det_total_eff / det_intrinsic;
+          const double model_eff = calculator->m_effResponse ? det_total_eff : (det_total_eff / det_intrinsic);
           peak.detIntrinsicEff = det_intrinsic;
           peak.detEff = det_total_eff;
           peak.detSolidAngle = det_total_eff / det_intrinsic;
-          peak.m_totalAttenFactor = src.averageEfficiencyPerSourceGamma / geom_factor;
+          peak.m_totalAttenFactor = src.averageEfficiencyPerSourceGamma / model_eff;
           peak.m_totalShieldAttenFactor = peak.m_totalAttenFactor / peak.m_airAttenFactor;
           
           peak.m_volumetric_srcs.push_back( std::move(src) );

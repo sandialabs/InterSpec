@@ -135,9 +135,9 @@
   </div>
   {% endif %}
 
-  {% if HasVolumetricSource and exists("VolumetricEff") %}
-  <div id="vol-eff-note" style="text-align: center; font-style: italic; color: #444; margin: -8px auto 16px auto; width: 90vw;">
-    Volumetric detector-efficiency method: {{ VolumetricEff.Method }}{% if VolumetricEff.HasNote %} [{{ VolumetricEff.Note }}]{% endif %}
+  {% if exists("DetectorEff") %}
+  <div id="det-eff-note" style="text-align: center; font-style: italic; color: #444; margin: -8px auto 16px auto; width: 90vw;">
+    Detector efficiency model - point sources: {{ DetectorEff.PointModel }}{% if HasVolumetricSource %}; volumetric sources: {{ DetectorEff.VolumetricModel }}{% endif %}{% if DetectorEff.HasNote %} [{{ DetectorEff.Note }}]{% endif %}
   </div>
   {% endif %}
 

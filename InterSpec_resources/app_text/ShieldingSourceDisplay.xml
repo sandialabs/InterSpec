@@ -145,13 +145,18 @@
     information, which cascade-summing corrections require.  Open the detector editor and attach a
     Monte-Carlo characterization (or a total-efficiency curve), then re-enable this option.</message>
   <message id="ssd-cascade-open-drf-editor">Open detector editor</message>
-  <message id="ssd-lbl-vol-eff">Volumetric source eff.</message>
-  <message id="ssd-tt-vol-eff">Detector-efficiency method used per volume element for trace and
-    self-attenuating (volumetric) sources.  "Auto" picks the highest-fidelity method the detector
-    response supports; "Monte Carlo" evaluates the DRF's attached MC model (near-field and off-axis
-    correct); "EFFTRAN" transfers the DRF's measured efficiency to this geometry (deterministic,
-    near-field correct); "Flat-disk" is the legacy far-field solid-angle approximation.  The status
-    to the right shows which method the fit will actually use with the current detector response.</message>
+  <message id="ssd-lbl-vol-eff">Detector eff. model</message>
+  <message id="ssd-tt-vol-eff">The detector-efficiency model used for every source in the fit -
+    point sources at the assembly centre, and trace or self-attenuating (volumetric) sources
+    integrated over their volume.  "Auto" uses the best the detector response carries: its attached
+    Monte-Carlo or transfer model, else an EFFTRAN transfer of its measured efficiency through its
+    geometry, else flat-disk.  "Monte Carlo" evaluates the DRF's attached MC model (near-field and
+    off-axis correct); "EFFTRAN" transfers the DRF's measured efficiency to this geometry
+    (deterministic, near-field correct); "Flat-disk" is the legacy far-field solid-angle
+    approximation, applied to point and volumetric sources alike.  The status to the right shows
+    which model the fit will actually use with the current detector response; the calculation log
+    names it for both source kinds.  All distances are measured from the front face of the
+    detector.</message>
   <message id="ssd-vol-eff-auto">Auto</message>
   <message id="ssd-vol-eff-mc">Monte Carlo</message>
   <message id="ssd-vol-eff-efftran">EFFTRAN</message>

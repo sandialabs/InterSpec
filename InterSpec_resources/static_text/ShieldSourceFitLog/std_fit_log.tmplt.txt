@@ -20,8 +20,8 @@ Warnings:
 {% if exists("PullTrend") and PullTrend.HasConclusion %}
 Pull-trend interpretation: {{ PullTrend.Message }}
 {% endif %}
-{% if HasVolumetricSource and exists("VolumetricEff") %}
-Volumetric detector-efficiency method: {{ VolumetricEff.Method }}{% if VolumetricEff.HasNote %} [{{ VolumetricEff.Note }}]{% endif %}
+{% if exists("DetectorEff") %}
+Detector efficiency model - point sources: {{ DetectorEff.PointModel }}{% if HasVolumetricSource %}; volumetric sources: {{ DetectorEff.VolumetricModel }}{% endif %}{% if DetectorEff.HasNote %} [{{ DetectorEff.Note }}]{% endif %}
 {% endif %}
 {% if exists("Sources") %}
 Sources:

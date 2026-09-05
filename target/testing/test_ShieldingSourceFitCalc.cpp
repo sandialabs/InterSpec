@@ -23,6 +23,7 @@
 #include "InterSpec_config.h"
 
 #include <cmath>
+#include <chrono>
 #include <random>
 #include <string>
 #include <iostream>
@@ -74,6 +75,11 @@
 #include "InterSpec/ShieldingSourceFitCalc.h"
 #include "InterSpec/ShieldingSourceDisplay.h"
 #include "InterSpec/GammaInteractionCalc_imp.hpp"
+#include "InterSpec/CeeLoUtils.h"
+#include "InterSpec/BatchInfoLog.h"
+
+#include "io/DetectorResponse.h"
+#include "io/EfficiencyTransfer.h"
 
 
 using namespace std;
@@ -2235,6 +2241,93 @@ void check_expected_counts_parity( const GammaInteractionCalc::ShieldingSourceCh
                          << legacy[i].expectedCounts );
   }//for( loop over peaks )
 }//check_expected_counts_parity(...)
+
+
+/** A 3"x3" NaI in a thin Al can with a smooth synthetic far-field intrinsic curve - no data files.
+ With `attach_transfer` the curve is transferred through that geometry and attached, which is what
+ CeeLoUtils::attachCurveTransferResponse gives every geometry-bearing DRF at load; without it the DRF
+ states its geometry but carries no response, so an EFFTRAN transfer has to be built by the fit.
+ */
+std::shared_ptr<DetectorPeakResponse> make_synthetic_nai_drf( const bool attach_transfer )
+{
+  ceelo::GeometryDescriptor gd;
+  gd.shape = ceelo::DetectorShape::Cylinder;
+  gd.dimensions_cm = { 3.81, 7.62 };
+  gd.materials = { ceelo::MaterialSpec::from( ceelo::make_NaI() ),
+                   ceelo::MaterialSpec::from( ceelo::make_Aluminum() ) };
+  gd.crystal_material_index = 0;
+  ceelo::LayerSpec can;
+  can.material_index = 1;
+  can.front_thickness_cm = 0.05;
+  can.side_thickness_cm = 0.05;
+  can.z_end_cm = 7.62;
+  gd.layers.push_back( can );
+  gd.reference_point = ceelo::ReferencePoint::EndcapFront;
+
+  auto det = make_shared<DetectorPeakResponse>( "synthetic NaI", "efficiency-consistency test" );
+  det->setIntrinsicEfficiencyFormula( "exp(-0.5 - 0.1*log(x) - 0.05*log(x)^2)",
+                                      2.0*3.81*PhysicalUnits::cm, PhysicalUnits::keV, 20.0f, 3000.0f,
+                                      DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  det->setDetectorSetback( can.front_thickness_cm * PhysicalUnits::cm );
+  det->setGeometry( make_shared<const ceelo::GeometryDescriptor>( gd ) );
+  BOOST_REQUIRE( det->isValid() );
+
+  if( attach_transfer )
+  {
+    const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( det, gd, -1.0 );
+    det->setCeeloResponse( CeeLoUtils::makeTransferResponse( gd, anchor, ceelo::AnchorCurve{},
+                                                             "synthetic NaI" ) );
+    BOOST_REQUIRE( det->ceeloResponse() );
+  }
+
+  return det;
+}//make_synthetic_nai_drf(...)
+
+
+/** The point-source scaffold the consistency cases share: a Ba-133 point source (five peaks) at
+ `distance`, optionally offset off-axis, no air attenuation. */
+GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput make_ba133_point_input(
+                                  const std::shared_ptr<DetectorPeakResponse> &det,
+                                  const double distance, const double offset_x,
+                                  const ShieldingSourceFitCalc::VolumetricEffMethod method )
+{
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+
+  auto foreground = make_shared<SpecUtils::Measurement>();
+  auto spec = make_shared<vector<float>>( 16, 1.0f );
+  foreground->set_gamma_counts( spec, 600.0f, 600.0f );
+
+  ShieldingSourceFitCalc::SourceFitDef ba133_src;
+  ba133_src.nuclide = db->nuclide( "Ba133" );
+  ba133_src.activity = 10.0*PhysicalUnits::microCi;
+  ba133_src.fitActivity = true;
+  ba133_src.age = 5.0*PhysicalUnits::year;
+  ba133_src.fitAge = false;
+  ba133_src.ageDefiningNuc = nullptr;
+  ba133_src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Point;
+
+  deque<shared_ptr<const PeakDef>> peaks;
+  for( const double energy : { 80.9979, 276.3989, 302.8508, 356.0129, 383.8485 } )
+    peaks.push_back( make_test_peak( ba133_src.nuclide, energy, 1.0, 1.0E4 ) );
+
+  ShieldingSourceFitCalc::ShieldingSourceFitOptions options;
+  options.attenuate_for_air = false;
+  options.volumetric_eff_method = method;
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input;
+  chi_input.config.distance = distance;
+  chi_input.config.source_offsets[0] = offset_x;
+  chi_input.config.source_offsets[1] = 0.0;
+  chi_input.config.geometry = GammaInteractionCalc::GeometryType::Spherical;
+  chi_input.config.shieldings = {};
+  chi_input.config.sources = { ba133_src };
+  chi_input.config.options = options;
+  chi_input.detector = det;
+  chi_input.foreground = foreground;
+  chi_input.foreground_peaks = peaks;
+
+  return chi_input;
+}//make_ba133_point_input(...)
 }//namespace
 
 
@@ -2352,7 +2445,406 @@ BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
 
     check_expected_counts_parity( chi_input, 2.0E-3, "U-Np-self-atten" );
   }// End Case D
+
+  // Cases E-G: a DRF that carries (or can build) a CeeLo response.  The fit path and the display
+  //  path must evaluate the POINT source through the same response and the same rule - the
+  //  efficiency-model choice is a property of the fit, not of whichever code path is asking.
+  //  Point source at 5 cm (inside the 4a near gate of a 3.81 cm NaI, so Auto keeps the response),
+  //  on-axis and 2 cm off-axis.
+  for( const double offset : { 0.0, 2.0*PhysicalUnits::cm } )
+  {
+    const double near_dist = 5.0*PhysicalUnits::cm;
+    const string where = (offset > 0.0) ? " (off-axis)" : " (on-axis)";
+
+    {// Case E: transfer response attached, Auto
+      const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( true );
+      const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input
+            = make_ba133_point_input( det, near_dist, offset, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+      check_expected_counts_parity( chi_input, 1.0E-9, "NaI-transfer-Auto" + where );
+    }
+
+    {// Case F: same DRF, flat-disk asked for by name - the escape hatch must reach the display too
+      const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( true );
+      const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input
+            = make_ba133_point_input( det, near_dist, offset, ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk );
+      check_expected_counts_parity( chi_input, 1.0E-9, "NaI-transfer-FlatDisk" + where );
+    }
+
+    {// Case G: geometry only, no attached response - the fit builds an EFFTRAN transfer itself
+      const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( false );
+      BOOST_REQUIRE( det->geometry() && !det->ceeloResponse() );
+      const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput chi_input
+            = make_ba133_point_input( det, near_dist, offset, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+      check_expected_counts_parity( chi_input, 1.0E-9, "NaI-geometry-only-Auto" + where );
+    }
+  }//for( on-axis, off-axis )
 }//BOOST_AUTO_TEST_CASE( ExpectedPeakCountsImpParity )
+
+
+/** A point source and a vanishingly small volumetric (trace) source at the same place must give
+ the same expected counts.  They come from two different quadratures of the same detector response -
+ a ray fan from the point, versus the detector-side line integral over the tiny volume - so this is a
+ real identity, and the one check that keeps the two mechanisms from drifting apart.  It also pins
+ that BOTH source kinds resolve to the same efficiency model in one fit.
+
+ The trace shell is Air of radius 1e-3 x distance: far above the line path's extent floor (1e-10 of
+ the distance), transparent, and small enough that the efficiency's variation across it averages
+ out at O(1e-6).  The line quadrature's own noise is ~0.2% at the shipped line count, hence 0.5%.
+
+ The per-peak volumetric log fields are checked too: the tiny transparent shell must report a total
+ attenuation factor of ~1, which it only does when the log divides the integral by the same absolute
+ efficiency the integration multiplied in.
+ */
+BOOST_AUTO_TEST_CASE( PointVsTinyTraceSourceIdentity )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> air = matdb->material( "Air" );
+  BOOST_REQUIRE( air );
+
+  const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( true );
+
+  for( const double distance : { 5.0*PhysicalUnits::cm, 100.0*PhysicalUnits::cm } )
+  {
+    const string where = " @ " + to_string( distance/PhysicalUnits::cm ) + " cm";
+
+    // A: the point source.
+    const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput point_input
+          = make_ba133_point_input( det, distance, 0.0, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+
+    // B: the same activity as a TotalActivity trace source in a tiny Air sphere.
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput trace_input = point_input;
+    {
+      ShieldingSourceFitCalc::TraceSourceInfo trace;
+      trace.m_type = GammaInteractionCalc::TraceActivityType::TotalActivity;
+      trace.m_fitActivity = true;
+      trace.m_nuclide = db->nuclide( "Ba133" );
+      trace.m_activity = 10.0*PhysicalUnits::microCi;
+      trace.m_relaxationDistance = 0.0f;
+
+      ShieldingSourceFitCalc::ShieldingInfo shell;
+      shell.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+      shell.m_isGenericMaterial = false;
+      shell.m_forFitting = true;
+      shell.m_material = air;
+      shell.m_dimensions[0] = 1.0E-3 * distance;
+      shell.m_dimensions[1] = shell.m_dimensions[2] = 0.0;
+      shell.m_fitDimensions[0] = shell.m_fitDimensions[1] = shell.m_fitDimensions[2] = false;
+      shell.m_traceSources.push_back( trace );
+
+      trace_input.config.shieldings = { shell };
+      trace_input.config.sources[0].sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
+    }
+
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> point_fcn
+                              = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( point_input );
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> trace_fcn
+                              = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( trace_input );
+    BOOST_REQUIRE( point_fcn.first && trace_fcn.first );
+
+    // One efficiency model per fit, and the same one for both source kinds.
+    BOOST_CHECK_MESSAGE( point_fcn.first->resolvedVolumetricEffMethod()
+                            == trace_fcn.first->resolvedVolumetricEffMethod(),
+                         "point and trace fits resolved different efficiency models" << where );
+    BOOST_CHECK_MESSAGE( trace_fcn.first->resolvedVolumetricEffMethod()
+                            != ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk,
+                         "a DRF with an attached response resolved to flat-disk" << where
+                         << " [" << trace_fcn.first->volumetricEffResolveNote() << "]" );
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache_a, cache_b;
+    const vector<double> point_counts
+          = point_fcn.first->expected_peak_counts_imp<double>( point_fcn.second.Params(), cache_a );
+    const vector<double> trace_counts
+          = trace_fcn.first->expected_peak_counts_imp<double>( trace_fcn.second.Params(), cache_b );
+    BOOST_REQUIRE_EQUAL( point_counts.size(), trace_counts.size() );
+    BOOST_REQUIRE_EQUAL( point_counts.size(), point_input.foreground_peaks.size() );
+
+    for( size_t i = 0; i < point_counts.size(); ++i )
+    {
+      BOOST_REQUIRE( point_counts[i] > 0.0 );
+      const double rel = 100.0*(trace_counts[i]/point_counts[i] - 1.0);
+      BOOST_TEST_MESSAGE( "  " << point_input.foreground_peaks[i]->mean() << " keV" << where
+                          << ": point " << std::setprecision(6) << point_counts[i]
+                          << "  tiny-trace " << trace_counts[i] << "  (" << std::showpos
+                          << std::setprecision(3) << rel << "%" << std::noshowpos << ")" );
+      BOOST_CHECK_MESSAGE( fabs(rel) < 0.5,
+                           "point vs vanishing trace source differ by " << rel << "%" << where );
+    }
+
+    // The volumetric per-peak log: a transparent shell has (total attenuation) ~ 1.
+    {
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache_log;
+      vector<GammaInteractionCalc::PeakDetail> details;
+      trace_fcn.first->energy_chi_contributions( trace_fcn.second.Params(), {}, cache_log, &details );
+      BOOST_REQUIRE_EQUAL( details.size(), trace_counts.size() );
+      for( const GammaInteractionCalc::PeakDetail &d : details )
+      {
+        BOOST_CHECK_MESSAGE( fabs(d.m_totalAttenFactor - 1.0) < 0.01,
+                             "tiny transparent trace shell logged AttenuationTotalFactor="
+                             << d.m_totalAttenFactor << " at " << d.energy << " keV" << where
+                             << " (the log is dividing by the wrong efficiency model)" );
+      }
+    }
+
+    // Cost: the point-source efficiency query is fixed for the life of the fit, so repeated
+    //  evaluations must not re-trace the detector each time (memoised: microseconds).
+    {
+      const int n = 50;
+      const auto t0 = std::chrono::steady_clock::now();
+      double sink = 0.0;
+      for( int i = 0; i < n; ++i )
+      {
+        GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache_t;
+        const vector<double> c = point_fcn.first->expected_peak_counts_imp<double>( point_fcn.second.Params(), cache_t );
+        sink += c.front();
+      }
+      const double per_eval = std::chrono::duration<double>( std::chrono::steady_clock::now() - t0 ).count() / n;
+      BOOST_TEST_MESSAGE( "  point-source expected_peak_counts_imp, 5 peaks" << where << ": "
+                          << std::scientific << std::setprecision(2) << per_eval << " s per evaluation"
+                          << "  [sink " << sink << "]" );
+      // Memoised on the per-fit ray fan: microseconds.  Un-memoised it was ~1.7 ms (a 2048-ray
+      //  trace per peak); 1 ms leaves room for a loaded machine while still catching a regression.
+      BOOST_CHECK_MESSAGE( per_eval < 1.0e-3,
+                           "point-source evaluation costs " << per_eval << " s - the efficiency query"
+                           " is being re-traced instead of memoised" );
+    }
+  }//for( distance )
+}//BOOST_AUTO_TEST_CASE( PointVsTinyTraceSourceIdentity )
+
+
+/** Every trace-activity type through the production dispatcher: the LINE path against the ELEMENT
+ path on the same chi2 function.  The per-type normalisation (`m_normalizeByVolume`, the in-situ
+ exponential profile) is set by build_volumetric_calculators, so this runs the whole forward model
+ rather than a hand-built calculator; the dispatcher's group key is what keeps the types apart while
+ they share one line set.
+ */
+BOOST_AUTO_TEST_CASE( TraceTypesLineVsElement )
+{
+  using GammaInteractionCalc::TraceActivityType;
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> water = matdb->material( "Water" );
+  BOOST_REQUIRE( water );
+
+  const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( true );
+  const double distance = 6.0*PhysicalUnits::cm;
+
+  struct TraceCase { TraceActivityType type; double activity; float relax; const char *name; };
+  const vector<TraceCase> cases = {
+    { TraceActivityType::TotalActivity,           10.0*PhysicalUnits::microCi,                        0.0f, "TotalActivity" },
+    { TraceActivityType::ActivityPerCm3,          0.1*PhysicalUnits::microCi/PhysicalUnits::cm3,      0.0f, "ActivityPerCm3" },
+    { TraceActivityType::ActivityPerGram,         0.1*PhysicalUnits::microCi/PhysicalUnits::gram,     0.0f, "ActivityPerGram" },
+    { TraceActivityType::ExponentialDistribution, 1.0*PhysicalUnits::microCi/PhysicalUnits::cm2,      1.0f, "ExponentialDistribution" },
+  };
+
+  double worst = 0.0;
+  string worst_where;
+  for( const TraceCase &c : cases )
+  {
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+          = make_ba133_point_input( det, distance, 0.0, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+
+    ShieldingSourceFitCalc::TraceSourceInfo trace;
+    trace.m_type = c.type;
+    trace.m_fitActivity = true;
+    trace.m_nuclide = db->nuclide( "Ba133" );
+    trace.m_activity = c.activity;
+    trace.m_relaxationDistance = c.relax * static_cast<float>(PhysicalUnits::cm);
+
+    ShieldingSourceFitCalc::ShieldingInfo shell;
+    shell.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+    shell.m_isGenericMaterial = false;
+    shell.m_forFitting = true;
+    shell.m_material = water;
+    shell.m_dimensions[0] = 3.0*PhysicalUnits::cm;
+    shell.m_dimensions[1] = shell.m_dimensions[2] = 0.0;
+    shell.m_fitDimensions[0] = shell.m_fitDimensions[1] = shell.m_fitDimensions[2] = false;
+    shell.m_traceSources.push_back( trace );
+
+    input.config.shieldings = { shell };
+    input.config.sources[0].sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
+
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn
+                              = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+    BOOST_REQUIRE( fcn.first );
+    BOOST_REQUIRE_MESSAGE( fcn.first->resolvedVolumetricEffMethod()
+                              != ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk,
+                           c.name << ": resolved to flat-disk, so there is no line set to compare" );
+
+    vector<double> elem, line;
+    {
+      const GammaInteractionCalc::ScopedVolumetricIntegratorOverride force( GammaInteractionCalc::VolumetricIntegrator::Element );
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
+      elem = fcn.first->expected_peak_counts_imp<double>( fcn.second.Params(), cache );
+    }
+    {
+      const GammaInteractionCalc::ScopedVolumetricIntegratorOverride force( GammaInteractionCalc::VolumetricIntegrator::Line );
+      GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
+      line = fcn.first->expected_peak_counts_imp<double>( fcn.second.Params(), cache );
+    }
+    BOOST_REQUIRE_EQUAL( elem.size(), line.size() );
+
+    for( size_t i = 0; i < elem.size(); ++i )
+    {
+      BOOST_REQUIRE( elem[i] > 0.0 );
+      const double rel = 100.0*(line[i]/elem[i] - 1.0);
+      BOOST_TEST_MESSAGE( "  " << std::left << std::setw(24) << c.name << std::right
+                          << input.foreground_peaks[i]->mean() << " keV: element "
+                          << std::setprecision(6) << elem[i] << "  line " << line[i] << "  ("
+                          << std::showpos << std::setprecision(3) << rel << "%" << std::noshowpos << ")" );
+      if( fabs(rel) > worst )
+      {
+        worst = fabs(rel);
+        worst_where = string(c.name) + " @ " + to_string( input.foreground_peaks[i]->mean() );
+      }
+    }
+  }//for( trace types )
+
+  BOOST_TEST_MESSAGE( "  worst |line/element - 1|: " << std::setprecision(3) << worst << "% (" << worst_where << ")" );
+  BOOST_CHECK_MESSAGE( worst < 0.75,
+                       "line and element disagree by " << worst << "% at " << worst_where
+                       << " - a trace-activity type is not integrated the same way on the two paths" );
+}//BOOST_AUTO_TEST_CASE( TraceTypesLineVsElement )
+
+
+/** A volumetric effective-shielding pass that cannot run (degenerate geometry) says so in the
+ warnings instead of silently returning a table without its volumetric rows.
+ */
+BOOST_AUTO_TEST_CASE( EffectiveShieldingSkipIsReported )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> water = matdb->material( "Water" );
+  BOOST_REQUIRE( water );
+
+  const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( true );
+  const double distance = 6.0*PhysicalUnits::cm;
+
+  GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+        = make_ba133_point_input( det, distance, 0.0, ShieldingSourceFitCalc::VolumetricEffMethod::Auto );
+
+  ShieldingSourceFitCalc::TraceSourceInfo trace;
+  trace.m_type = GammaInteractionCalc::TraceActivityType::TotalActivity;
+  trace.m_fitActivity = true;
+  trace.m_nuclide = db->nuclide( "Ba133" );
+  trace.m_activity = 10.0*PhysicalUnits::microCi;
+  trace.m_relaxationDistance = 0.0f;
+
+  ShieldingSourceFitCalc::ShieldingInfo shell;
+  shell.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+  shell.m_isGenericMaterial = false;
+  shell.m_forFitting = true;
+  shell.m_material = water;
+  shell.m_dimensions[0] = 3.0*PhysicalUnits::cm;
+  shell.m_dimensions[1] = shell.m_dimensions[2] = 0.0;
+  shell.m_fitDimensions[0] = true;
+  shell.m_fitDimensions[1] = shell.m_fitDimensions[2] = false;
+  shell.m_traceSources.push_back( trace );
+
+  input.config.shieldings = { shell };
+  input.config.sources[0].sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
+
+  pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn
+                            = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+  BOOST_REQUIRE( fcn.first );
+
+  // Healthy geometry: rows, no warning.
+  {
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
+    vector<string> warnings;
+    const vector<GammaInteractionCalc::EffectiveShieldingInfo> rows
+          = fcn.first->computeEffectiveShielding( fcn.second.Params(), cache, &warnings );
+    BOOST_CHECK( !rows.empty() );
+    BOOST_CHECK_MESSAGE( warnings.empty(), "unexpected warning: " << (warnings.empty() ? "" : warnings[0]) );
+  }
+
+  // The shell grown past the detector (parameter layout: 2 per nuclide, then 3 per shielding):
+  //  build_volumetric_calculators throws, and the skip must be reported.
+  {
+    vector<double> params = fcn.second.Params();
+    const size_t dim_index = 2*1 + 3*0;
+    BOOST_REQUIRE_LT( dim_index, params.size() );
+    params[dim_index] = 10.0*PhysicalUnits::cm;
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
+    vector<string> warnings;
+    const vector<GammaInteractionCalc::EffectiveShieldingInfo> rows
+          = fcn.first->computeEffectiveShielding( params, cache, &warnings );
+    BOOST_REQUIRE_EQUAL( warnings.size(), 1u );
+    BOOST_CHECK_MESSAGE( warnings[0].find( "Effective shielding" ) != string::npos,
+                         "warning does not name the skipped report: '" << warnings[0] << "'" );
+    BOOST_TEST_MESSAGE( "  degenerate geometry -> " << rows.size() << " rows, warning: " << warnings[0] );
+  }
+}//BOOST_AUTO_TEST_CASE( EffectiveShieldingSkipIsReported )
+
+
+/** The fit report names the detector-efficiency model for the POINT sources even when the fit has
+ no volumetric source at all, and names the model the fit actually used.
+ */
+BOOST_AUTO_TEST_CASE( ReportNamesDetectorEffModel )
+{
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( true );
+
+  struct Variant { ShieldingSourceFitCalc::VolumetricEffMethod method; ShieldingSourceFitCalc::PointEffModel model; const char *phrase; };
+  const vector<Variant> variants = {
+    { ShieldingSourceFitCalc::VolumetricEffMethod::Auto,     ShieldingSourceFitCalc::PointEffModel::Response, "detector response" },
+    { ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk, ShieldingSourceFitCalc::PointEffModel::FlatDisk, "flat-disk" },
+  };
+
+  for( const Variant &v : variants )
+  {
+    const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+          = make_ba133_point_input( det, 5.0*PhysicalUnits::cm, 0.0, v.method );
+
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                              = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+    BOOST_REQUIRE( fcn_pars.first );
+    BOOST_CHECK( fcn_pars.first->pointSourceEffModel() == v.model );
+
+    auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>( fcn_pars.second );
+    auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+    auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+    bool finished_called = false;
+    ShieldingSourceFitCalc::fit_model( "", fcn_pars.first, inputPrams, progress, [](){},
+                                       results, [&finished_called](){ finished_called = true; } );
+    BOOST_REQUIRE( finished_called );
+    BOOST_CHECK( results->point_eff_model == v.model );
+
+    nlohmann::json data;
+    BOOST_REQUIRE_NO_THROW( BatchInfoLog::shield_src_fit_results_to_json( *results, det, true, data ) );
+    BOOST_REQUIRE( data.contains( "DetectorEff" ) );
+    BOOST_CHECK( data.contains( "VolumetricEff" ) );   //the pre-2026-09 alias stays
+    BOOST_CHECK( !data["HasVolumetricSource"].get<bool>() );
+    const string point_model = data["DetectorEff"]["PointModel"].get<string>();
+    BOOST_CHECK_MESSAGE( point_model.find( v.phrase ) != string::npos,
+                         "report names the point-source model as '" << point_model
+                         << "', expected it to mention '" << v.phrase << "'" );
+    BOOST_TEST_MESSAGE( "  " << v.phrase << ": PointModel='" << point_model << "' VolumetricModel='"
+                        << data["DetectorEff"]["VolumetricModel"].get<string>() << "' note='"
+                        << data["DetectorEff"]["Note"].get<string>() << "'" );
+  }//for( variants )
+}//BOOST_AUTO_TEST_CASE( ReportNamesDetectorEffModel )
 
 
 /** Validates the ceres::Jet derivative lanes of `expected_peak_counts_imp` - including

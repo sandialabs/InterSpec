@@ -87,20 +87,6 @@ namespace CeeLoUtils
     bool curve_derived = false;
   };//struct TransferAnchor
 
-  /** The on-axis distance (cm) the DRF's efficiency is pinned at - i.e. the geometry it was
-   characterized for, and therefore the geometry at which a flat-disk extrapolation is exactly what
-   the curve already encodes.
-
-   Cheap: no anchor is built and no curve is sampled, so it is safe to call on every UI change.
-   Follows the same rule #transferAnchorForDrf uses to choose its reference distance - raw measured
-   points taken at a single distance (within 1%), else the pinned absolute-efficiency distance for a
-   far-field-absolute DRF, else max(50 cm, 10 x the geometry's transverse half-extent).
-
-   Returns <= 0 when it cannot be determined.
-   */
-  double pinnedEfficiencyDistanceCm( const std::shared_ptr<const DetectorPeakResponse> &drf,
-                                     const ceelo::GeometryDescriptor &geom );
-
   /** Builds the efficiency-transfer anchor for a DRF.
 
    Prefers the DRF's raw measured points when they exist and were all taken at
@@ -164,6 +150,36 @@ namespace CeeLoUtils
                       const TransferAnchor &anchor,
                       const ceelo::AnchorCurve &tot_curve,
                       const std::string &detector_name );
+
+  /** InterSpec measures every source-to-detector distance from the DETECTOR FACE - the endcap
+   front, the surface a user can put a ruler against.  That is the only convention the user ever
+   sees.  CeeLo's `GeometryDescriptor::reference_point` is a convention internal to the library that
+   InterSpec never consults: every query position is formed HERE, face-referenced, and handed to the
+   position-taking CeeLo API (`eps_fep_at`, `eps_total_at`, `make_quadrature`).  Nothing in InterSpec
+   may call the distance-taking `eps_fep` / `eps_total` / `query_position` /
+   `reference_point_position`, which would silently re-interpret the distance in whatever convention
+   the descriptor happens to carry (a CrystalFace descriptor would put the source one endcap offset
+   too close).  The flat-disk model lives in the same convention: `DetectorPeakResponse::efficiency`
+   adds the detector setback to the face distance to reach the crystal.
+
+   Returns the source position in CeeLo's crystal-face frame (cm; z = 0 at the crystal face, the
+   source in front at negative z) for a source `dist_from_face_cm` from the detector face along the
+   (theta, phi) direction, theta measured from the detector axis.
+   */
+  Eigen::Vector3d sourcePositionFromFace( const ceelo::GeometryDescriptor &gd,
+                                          double theta_rad, double phi_rad,
+                                          double dist_from_face_cm );
+
+  /** The detector face (endcap front) in the crystal-face frame, (0, 0, -endcap_front_offset_cm):
+   the point InterSpec's distances are measured to, and the point a source-side ray aims at.
+   */
+  Eigen::Vector3d detectorFacePosition( const ceelo::GeometryDescriptor &gd );
+
+  /** Converts a distance CeeLo quotes from the crystal-face origin (`Provenance::min_distance_cm`,
+   `EvalCommon::d_cm`, ...) into the on-axis distance from the detector face that InterSpec shows the
+   user; clamped at zero.
+   */
+  double faceDistanceFromCrystalOrigin( const ceelo::GeometryDescriptor &gd, double d_crystal_cm );
 
   /** Maps the physical detector model parsed from an ANGLE file (see
    InterSpec/AngleOutxImport.h) onto a CeeLo geometry descriptor - used to seed

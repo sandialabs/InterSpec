@@ -215,6 +215,14 @@ public:
   /** Whether the DRF carries the total-efficiency info corrections need. */
   static bool drfHasNeededInfo( const std::shared_ptr<const DetectorPeakResponse> &drf );
 
+  /** The age bucket #cascades() keys its enumeration on - ~2% steps in log-age, so fitting an age
+   does not force a re-enumeration every iteration.  Exposed so callers that memoise anything
+   derived from a cascade set key on the same bucket: two ages in one bucket produce an identical
+   set and therefore an identical correction, while keying on the raw age both never hits and grows
+   without bound during an age fit.
+   */
+  static int ageCacheBucket( const double age );
+
   /** Cheap pre-fit estimate of the maximum possible summing magnitude
    |1 - C|, for GUI gating: fractionalSolidAngle x max total intrinsic
    efficiency (sampled 150-1500 keV).  For fixed-geometry DRFs, just the max

@@ -246,7 +246,6 @@ DetectorGeometryInput::DetectorGeometryInput( InterSpec *viewer )
     m_collimatorRow( nullptr ),
     m_collimatorMaterial( nullptr ), m_collimatorThickness( nullptr ),
     m_collimatorExtension( nullptr ),
-    m_referencePoint( nullptr ),
     m_note( nullptr ),
     m_importNotes( nullptr ),
     m_materialSuggestion( nullptr ),
@@ -424,17 +423,6 @@ void DetectorGeometryInput::init()
     m_collimatorRow->hide();
   }
 
-  //Reference point
-  {
-    WContainerWidget *refRow = addNew<WContainerWidget>();
-    refRow->addNew<WLabel>( WString::tr("dgi-ref-point") );
-    m_referencePoint = refRow->addNew<WComboBox>();
-    m_referencePoint->addItem( WString::tr("dgi-ref-endcap") );
-    m_referencePoint->addItem( WString::tr("dgi-ref-crystal") );
-    m_referencePoint->setCurrentIndex( 0 );  //InterSpec convention: detector face
-    m_referencePoint->activated().connect( this, &DetectorGeometryInput::handleUserInput );
-  }
-
   m_note = addNew<WText>( "" );
   m_note->addStyleClass( "DgiNote" );
   m_note->setInline( false );
@@ -557,7 +545,6 @@ bool DetectorGeometryInput::State::operator==( const State &rhs ) const
 {
   return (shape == rhs.shape)
          && (crystalMaterial == rhs.crystalMaterial)
-         && (referencePoint == rhs.referencePoint)
          && (dim1 == rhs.dim1) && (dim2 == rhs.dim2) && (dim3 == rhs.dim3)
          && (bulletRadius == rhs.bulletRadius)
          && (boreDiam == rhs.boreDiam) && (boreDepth == rhs.boreDepth)
@@ -577,7 +564,6 @@ DetectorGeometryInput::State DetectorGeometryInput::currentState() const
 
   state.shape = m_shape->currentIndex();
   state.crystalMaterial = m_crystalMaterial->currentIndex();
-  state.referencePoint = m_referencePoint->currentIndex();
 
   state.dim1 = m_dim1->text().toUTF8();
   state.dim2 = m_dim2->text().toUTF8();
@@ -615,7 +601,6 @@ void DetectorGeometryInput::setState( const State &state )
 
   m_shape->setCurrentIndex( state.shape );
   m_crystalMaterial->setCurrentIndex( state.crystalMaterial );
-  m_referencePoint->setCurrentIndex( state.referencePoint );
 
   m_dim1->setText( WString::fromUTF8(state.dim1) );
   m_dim2->setText( WString::fromUTF8(state.dim2) );
@@ -826,9 +811,10 @@ ceelo::GeometryDescriptor DetectorGeometryInput::toDescriptor() const
     gd.collimator = spec;
   }//if( m_hasCollimator->isChecked() )
 
-  gd.reference_point = (m_referencePoint->currentIndex() == 1)
-                          ? ceelo::ReferencePoint::CrystalFace
-                          : ceelo::ReferencePoint::EndcapFront;
+  // InterSpec measures every distance from the detector face, and forms CeeLo query positions
+  //  itself (CeeLoUtils::sourcePositionFromFace), so the descriptor's reference point is never
+  //  consulted by InterSpec; it is set to the face for anything else that reads the descriptor.
+  gd.reference_point = ceelo::ReferencePoint::EndcapFront;
 
   return gd;
 }//toDescriptor()
@@ -950,9 +936,6 @@ void DetectorGeometryInput::setFromDescriptor( const ceelo::GeometryDescriptor &
     m_collimatorThickness->setText( cm_to_str( gd.collimator->side_thickness_cm ) );
     m_collimatorExtension->setText( cm_to_str( std::max(0.0, -gd.collimator->z_start_cm) ) );
   }
-
-  m_referencePoint->setCurrentIndex(
-      (gd.reference_point == ceelo::ReferencePoint::CrystalFace) ? 1 : 0 );
 
   // Import warnings, plus the crystal substitution if there was one - the
   //  substitution changes what gets simulated, so it belongs with them.

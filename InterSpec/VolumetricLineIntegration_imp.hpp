@@ -98,14 +98,17 @@
 #include "io/LowDiscrepancy.h"
 #include "io/DetectorResponse.h"
 
+#include "InterSpec/CeeLoUtils.h"
+
 namespace GammaInteractionCalc
 {
 
 /** Which quadrature a volumetric calculator is integrated with. */
 enum class VolumetricIntegrator : int
 {
-  /** Production choice: the line path wherever it applies (a response is attached, no cascade
-   correction, no effective-AN/AD accumulation, no collimator), else the element path. */
+  /** Production choice: the line path whenever a response and a line set are attached (cascade
+   summing, the effective-shielding report and collimated responses are all served by it), else -
+   flat-disk, i.e. no response - the element quadrature underneath eval_*. */
   Auto,
   /** Force the per-element aperture path (the reference implementation). */
   Element,
@@ -1084,6 +1087,7 @@ struct VolumetricLineCache
   std::array<double,3> det_axis = { 0.0, 0.0, -1.0 };
   double det_azimuth = 0.0;
   int num_lines = 0;
+  double pad = 1.5;   //proposal padding factor the directions were aimed with
 
   /** Crystal (CeeLo) -> assembly rotation, and the reference point in the crystal frame (cm). */
   double M[3][3] = { {1.0,0.0,0.0}, {0.0,1.0,0.0}, {0.0,0.0,1.0} };
@@ -1181,11 +1185,12 @@ struct VolumetricLineCache
    value, so it spans the whole search domain and never needs rebuilding.  Tracked in TODO.md. */
   bool matches( const ceelo::DetectorResponse *resp, const GeometryType geom, const size_t mat_index,
                 const std::array<double,3> &outer_dims, const std::array<double,3> &det_pos,
-                const std::array<double,3> &axis, const double azimuth, const int n ) const
+                const std::array<double,3> &axis, const double azimuth, const int n,
+                const double pad_factor ) const
   {
     if( (response.get() != resp) || (geometry != geom) || (material_index != mat_index)
         || (det_position != det_pos) || (det_axis != axis) || (det_azimuth != azimuth)
-        || (num_lines != n) )
+        || (num_lines != n) || (pad != pad_factor) )
       return false;
 
     // Dimensions at or below the extent floor all describe the same proposal (the floor is what the
@@ -1335,9 +1340,13 @@ inline std::shared_ptr<const VolumetricLineCache> build_volumetric_line_cache(
   cache->det_axis = det_axis;
   cache->det_azimuth = det_azimuth;
   cache->num_lines = num_lines;
+  cache->pad = pad;
 
   detector_frame_rotation( det_axis.data(), det_azimuth, cache->M );
-  const Eigen::Vector3d r0 = response->reference_point_position();
+  // The assembly's detector placement is measured to the DETECTOR FACE (InterSpec's one distance
+  //  convention); its image in the crystal frame is the face position, whatever the descriptor's
+  //  own reference_point says - see CeeLoUtils::sourcePositionFromFace.
+  const Eigen::Vector3d r0 = CeeLoUtils::detectorFacePosition( response->descriptor );
   cache->ref_c = { r0.x(), r0.y(), r0.z() };
 
   // Proposal solid: the source padded in every dimension, floored at the same extent ratio the

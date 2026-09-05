@@ -926,7 +926,13 @@ vector<double> DetectorPeakResponse::efficiencyFracCovariance( const vector<doub
                                                                const double distance ) const
 {
   if( m_ceeloResponse )
-    return m_ceeloResponse->frac_covariance( energies, theta, distance / PhysicalUnits::cm );
+  {
+    // `distance` is from the detector face (InterSpec's one convention); CeeLo's covariance wants
+    //  the source's distance from the crystal-face origin, which only gates its near/far regime.
+    const double d_cm = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor, theta, 0.0,
+                                                            distance / PhysicalUnits::cm ).norm();
+    return m_ceeloResponse->frac_covariance( energies, theta, d_cm );
+  }
 
   const shared_ptr<const DetectorEfficiencyUncert> uncert = efficiencyUncert();
   if( !uncert )
@@ -1007,7 +1013,8 @@ float DetectorPeakResponse::totalIntrinsicEfficiencyAny( const float energy ) co
     //  eps_total ~= (solid angle) x (intrinsic total).
     const double a_cm = m_ceeloResponse->transverse_half_extent();
     const double d_cm = std::max( 100.0, 20.0*a_cm );
-    const ceelo::EffResult tot = m_ceeloResponse->eps_total( energy, 0.0, 0.0, d_cm );
+    const ceelo::EffResult tot = m_ceeloResponse->eps_total_at( energy,
+              CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor, 0.0, 0.0, d_cm ) );
     const double omega = fractionalSolidAngle( m_detectorDiameter,
                                 d_cm*PhysicalUnits::cm + m_detectorSetback );
     return (omega > 0.0) ? static_cast<float>( tot.value / omega ) : 0.0f;
@@ -1139,7 +1146,8 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::intrinsicEfficiencyEval( con
     //  face radius the solid angle is defined against).
     const double a_cm = m_ceeloResponse->transverse_half_extent();
     const double d_cm = std::max( 1000.0 * a_cm, 100.0 );
-    const ceelo::EffResult res = m_ceeloResponse->eps_fep( energy, 0.0, 0.0, d_cm );
+    const ceelo::EffResult res = m_ceeloResponse->eps_fep_at( energy,
+              CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor, 0.0, 0.0, d_cm ) );
     const double omega = ceelo::disk_solid_angle_fraction( d_cm, a_cm );
 
     answer.value = (omega > 0.0) ? (res.value / omega) : 0.0;
@@ -1185,8 +1193,12 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::fepEfficiencyEval( const flo
 
   if( m_ceeloResponse )
   {
-    const double dist_cm = distance / PhysicalUnits::cm;
-    const ceelo::EffResult res = m_ceeloResponse->eps_fep( energy, theta, phi, dist_cm );
+    // `distance` is from the detector face - InterSpec's one convention - so the query position is
+    //  formed here (CeeLoUtils::sourcePositionFromFace), never through the descriptor's own
+    //  reference point.
+    const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor,
+                                                    theta, phi, distance / PhysicalUnits::cm );
+    const ceelo::EffResult res = m_ceeloResponse->eps_fep_at( energy, pos );
     answer.value = res.value;
     answer.sigma = res.sigma;
     answer.flag = to_eff_flag( res.flag );
@@ -1219,8 +1231,9 @@ DetectorPeakResponse::EffEval DetectorPeakResponse::totalEfficiencyEval( const f
 
   if( m_ceeloResponse )
   {
-    const double dist_cm = distance / PhysicalUnits::cm;
-    const ceelo::EffResult res = m_ceeloResponse->eps_total( energy, theta, phi, dist_cm );
+    const Eigen::Vector3d pos = CeeLoUtils::sourcePositionFromFace( m_ceeloResponse->descriptor,
+                                                    theta, phi, distance / PhysicalUnits::cm );
+    const ceelo::EffResult res = m_ceeloResponse->eps_total_at( energy, pos );
     answer.value = res.value;
     answer.sigma = res.sigma;
     answer.flag = to_eff_flag( res.flag );
@@ -6383,7 +6396,8 @@ std::string DetectorPeakResponse::responseAngleSeriesJSON( const double distance
   json << "{\"distanceCm\":" << (dist / PhysicalUnits::cm)
        << ",\"detectorDiameter\":" << (diam / PhysicalUnits::cm)
        << ",\"onAxisSolidAngleFraction\":" << on_axis_frac
-       << ",\"minDistanceCm\":" << m_ceeloResponse->provenance.min_distance_cm
+       << ",\"minDistanceCm\":" << CeeLoUtils::faceDistanceFromCrystalOrigin(
+                                      m_ceeloResponse->descriptor, m_ceeloResponse->provenance.min_distance_cm )
        << ",\"angles\":[";
 
   for( size_t a = 0; a < angles_deg.size(); ++a )

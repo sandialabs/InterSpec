@@ -103,7 +103,7 @@ public:
    */
   struct State
   {
-    int shape = 0, crystalMaterial = 0, referencePoint = 0;
+    int shape = 0, crystalMaterial = 0;
     std::string dim1, dim2, dim3;
     std::string bulletRadius, boreDiam, boreDepth, deadFront, deadSide;
     bool boreRounded = false, hasCollimator = false;
@@ -185,8 +185,6 @@ protected:
   Wt::WCheckBox *m_hasCollimator;
   Wt::WContainerWidget *m_collimatorRow;
   Wt::WLineEdit *m_collimatorMaterial, *m_collimatorThickness, *m_collimatorExtension;
-
-  Wt::WComboBox *m_referencePoint;   //Endcap front | Crystal face
 
   Wt::WText *m_note;
 

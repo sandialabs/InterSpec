@@ -287,16 +287,15 @@ namespace ShieldingSourceFitCalc
   };//struct FitShieldingInfo : ShieldingInfo
   
   
-  /** Which detector-efficiency model to apply to VOLUMETRIC (trace and
-   self-attenuating) sources during the activity/shielding integration.
+  /** Which detector-efficiency model to apply during the activity/shielding fit - to the
+   VOLUMETRIC (trace and self-attenuating) sources' per-element efficiency, AND to the point
+   sources at the assembly centre: one resolution picks one response for every emitter in the
+   problem (see `ShieldingSourceChi2Fcn::resolveVolumetricEffMethod` and `pointSourceFepEff`).
 
-   The point-source path already branches on the DRF: a near-field/off-axis
-   CeeLo response is evaluated per-angle, else the legacy flat-disk solid
-   angle is used.  The volumetric integrand historically only ever used the
-   flat-disk solid angle (times the intrinsic efficiency), which is the
-   far-field approximation - wrong at short standoff and inconsistent with the
-   point path.  This selects which per-element efficiency the volumetric
-   integrand uses.
+   Historically the volumetric integrand only ever used the flat-disk solid angle (times the
+   intrinsic efficiency), the far-field approximation - wrong at short standoff and inconsistent
+   with the point path, which was already evaluating the DRF's CeeLo response per angle when it had
+   one.  The name is historical; the choice governs both source kinds.
    */
   enum class VolumetricEffMethod : int
   {
@@ -321,6 +320,28 @@ namespace ShieldingSourceFitCalc
      efficiency; bit-for-bit unchanged from before this option existed. */
     FlatDisk
   };//enum class VolumetricEffMethod
+
+  /** The detector-efficiency model the POINT sources of a fit were evaluated with.  The same
+   resolution that picks #VolumetricEffMethod picks this (one model per fit - see
+   `ShieldingSourceChi2Fcn::pointSourceFepEff`), so the two are reported side by side in the
+   calc log.
+   */
+  enum class PointEffModel : int
+  {
+    /** No usable detector response: the solid angle of a 1 cm disk stands in (legacy). */
+    NoDetector,
+
+    /** Fixed-geometry DRF: the intrinsic curve already is the whole answer. */
+    FixedGeomIntrinsic,
+
+    /** The resolved CeeLo response - the DRF's own MC / transfer, or an EFFTRAN transfer built for
+     this fit - evaluated at the source position through a ray fan traced once per fit. */
+    Response,
+
+    /** Intrinsic curve times the flat-disk solid angle (an explicit Flat-disk request, or a DRF
+     that carries neither a response nor a geometry). */
+    FlatDisk
+  };//enum class PointEffModel
 
   struct ShieldingSourceFitOptions
   {
@@ -391,13 +412,14 @@ namespace ShieldingSourceFitCalc
      */
     bool correct_for_cascade_summing = false;
 
-    /** The detector-efficiency model applied to volumetric sources; see
-     #VolumetricEffMethod.  Default #VolumetricEffMethod::Auto: use the
-     highest-fidelity method the DRF supports.  Absent from serialized XML
-     (older files) also resolves to Auto - but note the historical numerical
-     behavior was flat-disk, so Auto can change results for near-field CeeLo
-     DRFs relative to pre-option files.  Only volumetric sources are affected;
-     point sources are unchanged. */
+    /** The detector-efficiency model applied to EVERY emitter in the fit - point sources and
+     volumetric (trace / self-attenuating) sources alike; see #VolumetricEffMethod and
+     #PointEffModel.  Default #VolumetricEffMethod::Auto: the best response the DRF carries (its
+     attached MC / transfer response, else an EFFTRAN transfer through its geometry, else flat-disk).
+     Absent from serialized XML (older files) also resolves to Auto - note the historical numerical
+     behavior for volumetric sources was flat-disk, so Auto can change results relative to
+     pre-option files for DRFs that carry a response or a geometry.  An explicit FlatDisk forces the
+     far-field solid-angle model for point sources too, so the control is a usable escape hatch. */
     VolumetricEffMethod volumetric_eff_method = VolumetricEffMethod::Auto;
 
 
@@ -603,6 +625,10 @@ namespace ShieldingSourceFitCalc
      Only meaningful when the model has a volumetric (self-attenuating or trace) source.
      See `ShieldingSourceChi2Fcn::resolvedVolumetricEffMethod`. */
     VolumetricEffMethod volumetric_eff_method = VolumetricEffMethod::FlatDisk;
+
+    /** The model the POINT sources were evaluated with - from the same resolution, so it names the
+     response above when one was resolved.  See `ShieldingSourceChi2Fcn::pointSourceEffModel`. */
+    PointEffModel point_eff_model = PointEffModel::FlatDisk;
 
     /** Why `volumetric_eff_method` came out the way it did (e.g. "Auto -> MC transfer", or
      "EFFTRAN transfer unavailable (...)"); empty when the requested method was used as-is.
