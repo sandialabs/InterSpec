@@ -38,6 +38,7 @@
   <message id="rpd-opt-betas">Tampilkan Beta</message>
   <message id="rpd-opt-cascade">Jumlah Cascade</message>
   <message id="rpd-cascade-dist">Jarak:</message>
+  <message id="rpd-tt-cascade-dist">Jarak sumber-ke-detektor yang diasumsikan untuk perkiraan penjumlahan koinsidensi; semakin dekat, semakin besar penjumlahan.  Masukkan jarak dengan satuan, mis. 2.54 cm.</message>
   <message id="rpd-warn-cascade-example-drf">Tanpa detektor; penjumlahan memakai efisiensi HPGe contoh.</message>
   <message id="rpd-warn-cascade-approx-drf">Efisiensi total penjumlahan dari detektor contoh.</message>
   <message id="rpd-opt-escapes">Puncak Lepas</message>

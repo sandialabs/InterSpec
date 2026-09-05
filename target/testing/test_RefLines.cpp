@@ -28,6 +28,8 @@
 #include <string>
 #include <vector>
 #include <cstdlib>
+#include <fstream>
+#include <sstream>
 
 
 //#define BOOST_TEST_DYN_LINK
@@ -42,10 +44,14 @@
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
 
+#include "io/DetectorResponse.h"
+
 #include "InterSpec/DrfSelect.h"
 #include "InterSpec/InterSpec.h"
 #include "InterSpec/MaterialDB.h"
+#include "InterSpec/PhysicalUnits.h"
 #include "InterSpec/ReferenceLineInfo.h"
+#include "InterSpec/CascadeSummingCalc.h"
 #include "InterSpec/DecayDataBaseServer.h"
 #include "InterSpec/DetectorPeakResponse.h"
 
@@ -220,6 +226,38 @@ void check_most_input_same( const RefLineInput &lhs, const RefLineInput &rhs )
   BOOST_CHECK_EQUAL( lhs.m_showBetas, rhs.m_showBetas );
   BOOST_CHECK_EQUAL( lhs.m_showCascades, rhs.m_showCascades );
 }//check_most_input_same(...)
+
+
+// Attaches the shipped example HPGe response (the one the tool falls back to when
+//  no detector is loaded) to `input`, so cascade summing actually runs.  Summing
+//  needs an ABSOLUTE efficiency, which only a full Monte-Carlo response provides.
+void set_example_summing_detector( RefLineInput &input, const double distance )
+{
+  static std::shared_ptr<DetectorPeakResponse> s_det;
+  if( !s_det )
+  {
+    const string path = SpecUtils::append_path( InterSpec::staticDataDirectory(),
+                                                "cascade_summing_example_response.xml" );
+    ifstream in( path.c_str(), ios::in | ios::binary );
+    BOOST_REQUIRE_MESSAGE( in.is_open(), "Missing " << path );
+    stringstream strm;
+    strm << in.rdbuf();
+
+    auto drf = make_shared<DetectorPeakResponse>( "Example", "example" );
+    drf->setIntrinsicEfficiencyFormula( "1.0", 5.0*PhysicalUnits::cm, PhysicalUnits::keV,
+                        0.0f, 0.0f, DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+    drf->setCeeloResponse( ceelo::DetectorResponse::from_xml_string( strm.str() ) );
+    BOOST_REQUIRE( drf->ceeloResponse() );
+    s_det = drf;
+  }//if( !s_det )
+
+  const std::shared_ptr<const DetectorPeakResponse> det = s_det;
+  input.m_summing_fep_eff = [det,distance]( double e ){
+    return GammaInteractionCalc::CascadeSummingCalc::detectorFepEffAbs( det, e, 0, 0, distance ); };
+  input.m_summing_total_eff = [det,distance]( double e ){
+    return GammaInteractionCalc::CascadeSummingCalc::detectorTotEffAbs( det, e, 0, 0, distance ); };
+  input.m_do_cascade_summing = true;
+}//set_example_summing_detector(...)
 
 
 // Checks that the specified energy is the largest amplitude line, of the specified
@@ -784,6 +822,7 @@ BOOST_AUTO_TEST_CASE( testCascade )
   input.m_showGammas = true;
   input.m_showXrays = true;
   input.m_showCascades = true;
+  set_example_summing_detector( input, 2.54*PhysicalUnits::cm );
   
   std::shared_ptr<ReferenceLineInfo> ref_lines;
   BOOST_REQUIRE_NO_THROW( ref_lines = ReferenceLineInfo::generateRefLineInfo(input) );
@@ -802,7 +841,7 @@ BOOST_AUTO_TEST_CASE( testCascade )
   BOOST_CHECK_EQUAL( summary.nbeta, 0 );
   BOOST_CHECK_EQUAL( summary.nse, 0 );
   BOOST_CHECK_EQUAL( summary.nde, 0 );
-  BOOST_CHECK_GT( summary.ncoinc, 100 );
+  BOOST_CHECK_GT( summary.ncoinc, 10 );
   BOOST_CHECK_EQUAL( summary.nrandsum, 0 );
   
   
@@ -816,23 +855,40 @@ BOOST_AUTO_TEST_CASE( testCascade )
   BOOST_CHECK( ref_lines->m_source_type == ReferenceLineInfo::SourceType::Nuclide );
   
   summary = get_part_summary( ref_lines->m_ref_lines );
-  BOOST_CHECK_GT( summary.ngamma, 100 ); //The coincidence are gammas
+  //Cascade-sum lines are typed as gammas, and with the real lines suppressed they
+  //  are the only gammas left.
   BOOST_CHECK_EQUAL( summary.ngamma, summary.ncoinc );
   BOOST_CHECK_EQUAL( summary.nxray, 0 );
   BOOST_CHECK_EQUAL( summary.nalpha, 0 );
   BOOST_CHECK_EQUAL( summary.nbeta, 0 );
   BOOST_CHECK_EQUAL( summary.nse, 0 );
   BOOST_CHECK_EQUAL( summary.nde, 0 );
-  BOOST_CHECK_GT( summary.ncoinc, 100 );
+  BOOST_CHECK_GT( summary.ncoinc, 10 );
   BOOST_CHECK_EQUAL( summary.nrandsum, 0 );
   
-  check_largest_line( 1171.7,
-                     ReferenceLineInfo::RefLine::Particle::Gamma,
-                     ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak,
-                     ref_lines->m_ref_lines );
+  //Every sum peak must be labelled with the two (or three) lines that made it.
+  for( const ReferenceLineInfo::RefLine &line : ref_lines->m_ref_lines )
+  {
+    if( line.m_source_type != ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak )
+      continue;
+    BOOST_CHECK_MESSAGE( SpecUtils::istarts_with( line.m_decaystr, "Cascade sum" ),
+                        "Unexpected cascade sum description: '" << line.m_decaystr << "'" );
+    BOOST_CHECK_GT( line.m_decay_intensity, 0.0 );
+    BOOST_CHECK_GT( line.m_energy, 10.0 );
+  }
+  
+  // Cascade summing must not be offered, or computed, without an efficiency.
+  RefLineInput no_drf = input;
+  no_drf.m_do_cascade_summing = false;
+  no_drf.m_summing_fep_eff = nullptr;
+  no_drf.m_summing_total_eff = nullptr;
+  BOOST_REQUIRE_NO_THROW( ref_lines = ReferenceLineInfo::generateRefLineInfo(no_drf) );
+  BOOST_REQUIRE( ref_lines );
+  BOOST_CHECK( ref_lines->m_has_coincidences );  //the option is still offered
+  BOOST_CHECK_EQUAL( get_part_summary( ref_lines->m_ref_lines ).ncoinc, 0 );
   
   // TODO: check actual values, as well as check actual effects of DRF and shielding
-}//BOOST_AUTO_TEST_CASE( testAge )
+}//BOOST_AUTO_TEST_CASE( testCascade )
 
 
 

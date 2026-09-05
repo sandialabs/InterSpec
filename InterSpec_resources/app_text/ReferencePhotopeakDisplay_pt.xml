@@ -38,6 +38,7 @@
   <message id="rpd-opt-betas">Mostrar Betas</message>
   <message id="rpd-opt-cascade">Somas em Cascata</message>
   <message id="rpd-cascade-dist">Dist.:</message>
+  <message id="rpd-tt-cascade-dist">Distância fonte-detector assumida para a estimativa da soma por coincidência; distâncias menores produzem mais soma.  Introduza uma distância com unidades, p. ex. 2.54 cm.</message>
   <message id="rpd-warn-cascade-example-drf">Sem detector; a soma usa uma eficiência HPGe de exemplo.</message>
   <message id="rpd-warn-cascade-approx-drf">Eficiência total da soma de um detector de exemplo.</message>
   <message id="rpd-opt-escapes">Picos de Escape</message>

@@ -246,6 +246,26 @@ public:
                                    const double energy, const double theta,
                                    const double phi, const double distance );
 
+  /** Wraps an absolute-efficiency function in a cached, log-spaced interpolation
+   table, for callers that need an efficiency at many energies.
+
+   A detector-response evaluation costs on the order of half a millisecond, and
+   cascade summing asks for an efficiency at every emitted line and every cascade
+   partner energy - about a thousand of each for a decay chain, i.e. roughly a
+   second of pure response evaluation per update.  The table uses 256 log-spaced
+   points between 5 keV and 3.5 MeV, interpolated in log-log; measured against the
+   example HPGe response that is within 0.31% everywhere and 0.06% above 60 keV,
+   which is far inside what a qualitative display or a summing correction needs.
+   Energies outside the tabulated range fall through to `fcn`.
+
+   Points are evaluated on first use, and tables are cached (the last few) under
+   `key`, so repeated calls with the same detector and geometry are nearly free.
+   `key` must therefore capture everything `fcn` depends on - detector identity,
+   distance, and any fallback tier.  Thread-safe.
+   */
+  static std::function<double(double)> interpolatedEff( const std::string &key,
+                                                        std::function<double(double)> fcn );
+
   /** The cascades for `nuc` at `age` (PhysicalUnits); enumerated on first use
    per (nuclide, age bucket) and cached (thread-safe).
    */

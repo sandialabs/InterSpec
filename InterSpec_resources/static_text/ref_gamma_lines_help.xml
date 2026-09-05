@@ -80,7 +80,8 @@ Options for using the tool:
 <p>
 By default, reference lines for x-ray (dashed lines) and gammas are shown.
 However, if you select the sub menu, to the right of the color select (see the circled in the below image),
-you can select to see alpha energies, beta endpoints, true-coincidence sums (i.e., when two gammas are emitted at nearly same time, so may be summed by the detector), as well as a few other options.
+you can select to see alpha energies, beta endpoints, cascade (true-coincidence) sums, as well as a few other options.
+Cascade sums are gammas and x-rays emitted at nearly the same time in one decay, which a detector may record as a single summed event: the extra sum peaks are drawn as dashed lines, and the real photopeaks are shaded to show how much of their amplitude is lost to summing (or gained, when a sum lands on top of them).  The "Dist:" input sets the assumed source-to-detector distance; summing grows as the source gets closer, and the amplitudes are only indicative (the current detector response is used when it has total-efficiency information, otherwise an example HPGe response is assumed).
 <div style="padding-top: 1px" align="center">
 <img src="InterSpec_resources/static_text/images/ref_gamma_lines_sub_menu.png"  class="imageBorder" style="max-width:45%;" />
 </div>

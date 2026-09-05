@@ -395,6 +395,19 @@ protected:
  
   RefLineInput userInput() const;
 
+  /** Fills in the cascade (true-coincidence) summing members of `input` -
+   #RefLineInput::m_summing_fep_eff, #m_summing_total_eff, #m_summing_det_source and
+   #m_do_cascade_summing - from the currently loaded detector and the distance
+   already resolved into #RefLineInput::m_cascade_distance.
+
+   Called both when reading the widgets (#userInput) and when restoring a saved
+   state (#deSerialize), since those functions cannot be serialized and a restored
+   state would otherwise show the option enabled while computing nothing.
+
+   A no-op when #RefLineInput::m_showCascades is false.
+   */
+  void setCascadeSummingFcns( RefLineInput &input ) const;
+
   static std::vector<DecayParticleModel::RowData> createTableRows( const ReferenceLineInfo &refLine );
   
   /** Function called when a new source is entered into the GUI.

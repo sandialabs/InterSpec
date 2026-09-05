@@ -381,6 +381,108 @@ double CascadeSummingCalc::detectorTotEffAbs( const std::shared_ptr<const Detect
 }//detectorTotEffAbs(...)
 
 
+namespace
+{
+  /** Lazily-filled log-spaced interpolation of one efficiency function.
+   See CascadeSummingCalc::interpolatedEff for why this exists.
+   */
+  class EffTable
+  {
+  public:
+    EffTable( std::function<double(double)> fcn )
+    : m_fcn( std::move(fcn) )
+    {
+      m_energies.resize( sm_num_points );
+      for( size_t i = 0; i < sm_num_points; ++i )
+        m_energies[i] = sm_min_energy * std::pow( sm_max_energy/sm_min_energy,
+                                                  double(i)/double(sm_num_points - 1) );
+      m_values.assign( sm_num_points, -1.0 );   //-1 -> not yet evaluated
+    }
+
+    double value( const double energy ) const
+    {
+      if( !m_fcn )
+        return 0.0;
+
+      if( (energy < sm_min_energy) || (energy > sm_max_energy) )
+        return std::max( 0.0, m_fcn(energy) );
+
+      std::lock_guard<std::mutex> lock( m_mutex );
+
+      const std::vector<double>::const_iterator pos
+            = std::lower_bound( begin(m_energies), end(m_energies), energy );
+      if( pos == begin(m_energies) )
+        return evaluate( 0 );
+
+      //The last grid point can land a hair below sm_max_energy after rounding.
+      if( pos == end(m_energies) )
+        return evaluate( m_energies.size() - 1 );
+
+      const size_t hi = static_cast<size_t>( pos - begin(m_energies) );
+      const double e0 = m_energies[hi-1], e1 = m_energies[hi];
+      const double v0 = evaluate( hi-1 ), v1 = evaluate( hi );
+
+      //Efficiency is close to a power law in energy, so interpolate in log-log
+      //  where both ends are positive; fall back to linear across a zero.
+      const double f = (std::log(energy) - std::log(e0)) / (std::log(e1) - std::log(e0));
+      if( (v0 > 0.0) && (v1 > 0.0) )
+        return std::exp( std::log(v0) + f*(std::log(v1) - std::log(v0)) );
+      return v0 + f*(v1 - v0);
+    }//value(...)
+
+  private:
+    double evaluate( const size_t i ) const
+    {
+      if( m_values[i] < 0.0 )
+        m_values[i] = std::max( 0.0, m_fcn( m_energies[i] ) );
+      return m_values[i];
+    }
+
+    static const size_t sm_num_points = 256;
+    static constexpr double sm_min_energy = 5.0;     //keV
+    static constexpr double sm_max_energy = 3500.0;  //keV
+
+    const std::function<double(double)> m_fcn;
+    std::vector<double> m_energies;
+    mutable std::mutex m_mutex;
+    mutable std::vector<double> m_values;
+  };//class EffTable
+}//namespace
+
+
+std::function<double(double)> CascadeSummingCalc::interpolatedEff(
+                                          const std::string &key,
+                                          std::function<double(double)> fcn )
+{
+  if( !fcn )
+    return fcn;
+
+  static std::mutex s_mutex;
+  static std::vector<std::pair<std::string,std::shared_ptr<const EffTable>>> s_cache;
+
+  std::shared_ptr<const EffTable> table;
+
+  {
+    std::lock_guard<std::mutex> lock( s_mutex );
+    for( const std::pair<std::string,std::shared_ptr<const EffTable>> &kv : s_cache )
+    {
+      if( kv.first == key )
+        table = kv.second;
+    }
+
+    if( !table )
+    {
+      table = std::make_shared<const EffTable>( std::move(fcn) );
+      s_cache.emplace_back( key, table );
+      if( s_cache.size() > 8 )   //a handful of detector/distance combinations
+        s_cache.erase( begin(s_cache) );
+    }
+  }
+
+  return [table]( double energy ) -> double { return table->value( energy ); };
+}//interpolatedEff(...)
+
+
 std::shared_ptr<const std::vector<ceelo::DecayCascade>> CascadeSummingCalc::cascades(
                             const SandiaDecay::Nuclide *nuc, const double age ) const
 {

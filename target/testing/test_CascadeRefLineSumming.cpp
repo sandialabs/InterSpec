@@ -21,34 +21,42 @@
  Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA  02110-1301  USA
  */
 
-// Validates the Reference-Photopeak tool's cascade-summing integration.  Real
-// lines are scaled by the exact level-scheme engine's net factor
-// (ceelo::AnalyticPeakResult::summing_factor = c_out + c_in): summing-out shrinks
-// the line, and a coincidence sum that lands within the tight (0.25 keV) window
-// folds in as summing-in.  This test confirms that the factor that comes out of
-// ReferenceLineInfo::generateRefLineInfo (extracted as normalized/uncorrected line
-// height) reproduces a direct engine call on the same cascades and detector - i.e.
-// that the window building, memoized efficiency provider, and energy-to-line
-// mapping are wired correctly.  (Resolvable sums beyond the window are shown as
-// their own separate peaks, not folded here.)  Since both sides run the exact
-// engine, agreement is to floating-point (a small memoization rounding aside), so
-// the tolerance is tight and covers ALL strong lines, including cascade-sum
-// targets (a real line that also receives summing-in from two other lines).
+// Validates the Reference-Photopeak tool's cascade-summing integration.
 //
-// It also pins a couple of physical values (Co-60 1173/1332 summing-out at 1 cm)
-// so a detector-fixture or engine change that breaks the magnitude is caught.
+// A displayed line is scaled by the summing-OUT survival the CeeLo engine reports
+// for its energy window, and then grown by any coincidence sum that lands on top
+// of it; sums that fall clear of every line are drawn as their own peaks.  The
+// cases here check each half against an independently written reconstruction on
+// the same cascades and detector, so a regression in the window building, the
+// memoized efficiency provider, the energy-to-line mapping, or the sum
+// enumeration shows up.  A couple of physical values are pinned (Co-60 1173/1332
+// summing-out at 1 cm) so a detector-fixture or engine change that breaks the
+// magnitude is caught.
+//
+// CascadeTimingReport is a report, not a check: pass `--timing` after the `--`
+// to print the CPU time of a display update.  It is worth re-running in a Release
+// build after any change to the summing path - the tool recomputes on every
+// option change, so this has to stay well under a second.  Measured on an M-series
+// Mac at 2.54 cm, first use / repeat: Co-60 0.014 / 0.000 s, Ba-133 0.023 / 0.000,
+// Eu-152 0.10 / 0.002, Ra-226 0.18 / 0.013, U-238 chain 0.22 / 0.020.  The first
+// use of a detector and distance fills the efficiency interpolation table
+// (CascadeSummingCalc::interpolatedEff); everything after that reuses it.
 
 #include <cmath>
+#include <ctime>
 #include <map>
 #include <string>
 #include <vector>
 #include <memory>
 #include <fstream>
 #include <sstream>
+#include <iostream>
 #include <algorithm>
 
 #define BOOST_TEST_MODULE CascadeRefLineSumming_suite
 #include <boost/test/included/unit_test.hpp>
+
+#include "rapidxml/rapidxml.hpp"
 
 #include "SpecUtils/StringAlgo.h"
 #include "SpecUtils/Filesystem.h"
@@ -75,7 +83,9 @@ namespace
 {
   using GammaInteractionCalc::CascadeSummingCalc;
 
-  const double kDist = 1.0 * PhysicalUnits::cm;  //must match sm_cascade_summing_distance
+  //A near-contact distance, where summing is large enough to pin values against.
+  //  This test builds its own efficiency functors, so it need not match the GUI default.
+  const double kDist = 1.0 * PhysicalUnits::cm;
 
   void set_data_dir()
   {
@@ -207,11 +217,28 @@ namespace
       return best;
     };
     auto eps = [&det]( const double e ){ return CascadeSummingCalc::detectorFepEffAbs( det, e, 0, 0, kDist ); };
+    auto tot = [&det]( const double e ){ return CascadeSummingCalc::detectorTotEffAbs( det, e, 0, 0, kDist ); };
 
     map<long long,double> out;
     for( const ceelo::DecayCascade &dc : cascades )
     {
       const size_t n = dc.members.size();
+
+      //Survival of the summed pair against the branch's other coincident photons.
+      vector<double> msurv( n, 1.0 );
+      double bsurv = 1.0;
+      for( size_t m = 0; m < n; ++m )
+      {
+        const double e = dc.members[m].energy_keV;
+        if( (e < 5.0) || (dc.members[m].type == ceelo::CascadeParticleType::Annih511) )
+          continue;
+        const double dep = std::min( 1.0, dc.members[m].intensity ) * tot(e);
+        if( dep <= 1.0E-6 )
+          continue;
+        msurv[m] = std::max( 1.0E-6, 1.0 - dep );
+        bsurv *= msurv[m];
+      }
+
       std::set<std::pair<uint16_t,uint16_t>> seen;
       for( size_t a = 0; a < n; ++a )
       {
@@ -226,6 +253,7 @@ namespace
           if( eb < 5.0 ) continue;
           double gain = dc.branch_weight * dc.members[a].intensity * lk.prob * eps(ea) * eps(eb);
           if( lk.has_correlation ) gain *= std::max( 0.0, 1.0 + lk.a2 + lk.a4 );
+          gain *= bsurv / (msurv[ai] * msurv[bi]);
           if( gain <= 0.0 ) continue;
           const double rl = nearest( ea + eb );
           if( !std::isnan(rl) )
@@ -404,3 +432,346 @@ BOOST_AUTO_TEST_CASE( PairwiseVsExactEngine )
   BOOST_CHECK_MESSAGE( gain_lines > 0,
       "no strong line received a net summing-IN gain across all nuclides" );
 }//BOOST_AUTO_TEST_CASE( PairwiseVsExactEngine )
+
+
+// The separate (pure) sum peaks now come from the engine as well: each accepted
+// candidate energy is handed to compute_cascade_analytic as a window holding no
+// emitted line, and the returned absolute rate is the peak amplitude.  Check the
+// peaks the user actually looks for are present, labelled, and match a direct
+// engine call on the same cascades and detector.
+BOOST_AUTO_TEST_CASE( SumPeaksMatchEngine )
+{
+  set_data_dir();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const shared_ptr<DetectorPeakResponse> det = example_detector();
+
+  //Sums that are NOT on top of an emitted line, so they are drawn as their own
+  //  peaks.  (Co-60's famous 2505.7 keV sum is deliberately not here: Co-60 really
+  //  does emit a very weak 2505.7 keV crossover gamma, so the sum folds into that
+  //  line instead - checked separately below.)
+  struct Expect { const char *nuc; double energy; const char *what; };
+  const Expect expected[] = {
+    { "Ba133",  357.4, "276.4 + 81.0" },          //resolvable, just above the 356 line
+    { "Co60",  1679.6, "347.1 + 1332.5" },        //a weaker branch, no line at the sum
+  };
+
+  size_t n_triple_labels = 0;
+  for( const Expect &ex : expected )
+  {
+    const SandiaDecay::Nuclide * const nuc = db->nuclide( ex.nuc );
+    BOOST_REQUIRE( nuc );
+
+    RefLineInput input;
+    input.m_input_txt = ex.nuc;
+    input.m_age = "20 y";
+    input.m_showGammas = true;
+    input.m_showXrays = true;
+    input.m_showCascades = true;
+    input.m_lower_br_cutt_off = 0.0;
+    input.m_do_cascade_summing = true;
+    input.m_summing_fep_eff = [det]( double e ){ return CascadeSummingCalc::detectorFepEffAbs( det, e, 0, 0, kDist ); };
+    input.m_summing_total_eff = [det]( double e ){ return CascadeSummingCalc::detectorTotEffAbs( det, e, 0, 0, kDist ); };
+
+    const shared_ptr<ReferenceLineInfo> info = ReferenceLineInfo::generateRefLineInfo( input );
+    BOOST_REQUIRE( info && (info->m_validity == ReferenceLineInfo::InputValidity::Valid) );
+
+    const ReferenceLineInfo::RefLine *found = nullptr;
+    for( const ReferenceLineInfo::RefLine &l : info->m_ref_lines )
+    {
+      if( l.m_source_type != ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak )
+        continue;
+      if( std::fabs(l.m_energy - ex.energy) < 0.5 )
+        found = &l;
+      //Count triple-labelled sums seen anywhere in the set.
+      if( std::count( begin(l.m_decaystr), end(l.m_decaystr), '+' ) == 2 )
+        ++n_triple_labels;
+    }
+
+    BOOST_REQUIRE_MESSAGE( found, ex.nuc << ": no cascade-sum peak near " << ex.energy
+                          << " keV (" << ex.what << ")" );
+    BOOST_CHECK_GT( found->m_decay_intensity, 0.0 );
+    BOOST_CHECK_MESSAGE( SpecUtils::icontains( found->m_decaystr, "Cascade sum" ),
+                        "Unexpected label: '" << found->m_decaystr << "'" );
+
+    // Recompute the amplitude here from the same cascades and detector: the joint
+    //  full-energy rate of the labelled pair, times the survival of the pair
+    //  against every other coincident photon of that decay.  This is the same
+    //  formula production uses, so it pins the WIRING - that the labelled pair is
+    //  really the one that made the peak, that the peak carries that pair's rate,
+    //  and that the window/energy bookkeeping in between is right - rather than
+    //  independently validating the physics.  The physics itself is checked
+    //  against the CeeLo engine in PairwiseVsExactEngine (summing-out) and in
+    //  CeeLo's own suite.
+    ceelo::cascade_adapter::CascadeOptions copt;
+    copt.age_seconds = PhysicalUnitsLocalized::stringToTimeDurationPossibleHalfLife(
+                          info->m_input.m_age, nuc->halfLife ) / PhysicalUnits::second;
+    copt.prompt_equilibrium = false;
+    copt.include_xrays = true;
+    copt.vacancy_xray_model = false;   //match production
+    const vector<ceelo::DecayCascade> cascades = ceelo::cascade_adapter::build_cascades( nuc, copt );
+
+    auto fep = [&det]( double e ){ return CascadeSummingCalc::detectorFepEffAbs( det, e, 0, 0, kDist ); };
+    auto tot = [&det]( double e ){ return CascadeSummingCalc::detectorTotEffAbs( det, e, 0, 0, kDist ); };
+
+    double recon = 0.0;
+    for( const ceelo::DecayCascade &dc : cascades )
+    {
+      const size_t nmem = dc.members.size();
+      vector<double> msurv( nmem, 1.0 );
+      double bsurv = 1.0;
+      for( size_t m = 0; m < nmem; ++m )
+      {
+        const double e = dc.members[m].energy_keV;
+        if( (e < 5.0) || (dc.members[m].type == ceelo::CascadeParticleType::Annih511) )
+          continue;
+        const double dep = std::min( 1.0, dc.members[m].intensity ) * tot(e);
+        if( dep <= 1.0E-6 )
+          continue;
+        msurv[m] = std::max( 1.0E-6, 1.0 - dep );
+        bsurv *= msurv[m];
+      }
+
+      std::set<std::pair<uint16_t,uint16_t>> seen;
+      for( size_t a = 0; a < nmem; ++a )
+      {
+        const double ea = dc.members[a].energy_keV;
+        if( ea < 5.0 ) continue;
+        for( const ceelo::CoincidenceLink &lk : dc.members[a].coincident )
+        {
+          if( lk.partner >= nmem ) continue;
+          const uint16_t ai = static_cast<uint16_t>(a), bi = lk.partner;
+          if( !seen.insert( make_pair( std::min(ai,bi), std::max(ai,bi) ) ).second ) continue;
+          const double eb = dc.members[bi].energy_keV;
+          if( eb < 5.0 ) continue;
+          if( std::fabs( (ea + eb) - found->m_energy ) > 0.25 ) continue;
+
+          double g = dc.branch_weight * dc.members[a].intensity * lk.prob * fep(ea) * fep(eb);
+          if( lk.has_correlation )
+            g *= std::max( 0.0, 1.0 + lk.a2 + lk.a4 );
+          g *= bsurv / (msurv[ai] * msurv[bi]);
+          recon += g;
+        }
+      }
+    }//for( cascades )
+
+    BOOST_CHECK_MESSAGE( recon > 0.0, ex.nuc << ": reconstruction found no pair at "
+                        << found->m_energy << " keV" );
+    BOOST_CHECK_CLOSE( found->m_decay_intensity, recon, 0.5 );
+
+  }//for( expected )
+
+  // Eu-152 has enough coincident gammas that some three-photon sums survive the
+  //  ranking; that is the path the pairwise-only predecessor could not produce.
+  {
+    RefLineInput input;
+    input.m_input_txt = "Eu152";
+    input.m_age = "20 y";
+    input.m_showGammas = true;
+    input.m_showXrays = true;
+    input.m_showCascades = true;
+    input.m_lower_br_cutt_off = 0.0;
+    input.m_do_cascade_summing = true;
+    input.m_summing_fep_eff = [det]( double e ){ return CascadeSummingCalc::detectorFepEffAbs( det, e, 0, 0, kDist ); };
+    input.m_summing_total_eff = [det]( double e ){ return CascadeSummingCalc::detectorTotEffAbs( det, e, 0, 0, kDist ); };
+
+    const shared_ptr<ReferenceLineInfo> info = ReferenceLineInfo::generateRefLineInfo( input );
+    BOOST_REQUIRE( info );
+    for( const ReferenceLineInfo::RefLine &l : info->m_ref_lines )
+      if( (l.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak)
+         && (std::count( begin(l.m_decaystr), end(l.m_decaystr), '+' ) == 2) )
+        ++n_triple_labels;
+  }
+  BOOST_CHECK_MESSAGE( n_triple_labels > 0,
+      "no three-photon cascade sum was produced for any test nuclide" );
+
+  // Co-60's 2505.7 keV: the nuclide emits a real but almost immeasurably weak
+  //  crossover gamma there, and at contact essentially everything seen at that
+  //  energy is the 1173+1332 coincidence sum.  So it must stay a Normal line and
+  //  be lifted enormously above its own branching ratio, rather than being
+  //  duplicated as a separate sum peak.
+  {
+    RefLineInput input;
+    input.m_input_txt = "Co60";
+    input.m_age = "20 y";
+    input.m_showGammas = true;
+    input.m_showXrays = true;
+    input.m_showCascades = true;
+    input.m_lower_br_cutt_off = 0.0;
+    input.m_do_cascade_summing = true;
+    input.m_summing_fep_eff = [det]( double e ){ return CascadeSummingCalc::detectorFepEffAbs( det, e, 0, 0, kDist ); };
+    input.m_summing_total_eff = [det]( double e ){ return CascadeSummingCalc::detectorTotEffAbs( det, e, 0, 0, kDist ); };
+
+    const shared_ptr<ReferenceLineInfo> info = ReferenceLineInfo::generateRefLineInfo( input );
+    BOOST_REQUIRE( info );
+
+    const ReferenceLineInfo::RefLine *crossover = nullptr;
+    size_t n_at_energy = 0;
+    for( const ReferenceLineInfo::RefLine &l : info->m_ref_lines )
+    {
+      if( std::fabs(l.m_energy - 2505.7) > 0.5 )
+        continue;
+      ++n_at_energy;
+      if( l.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::Normal )
+        crossover = &l;
+    }
+
+    BOOST_REQUIRE_MESSAGE( crossover, "Co60: no 2505.7 keV line" );
+    BOOST_CHECK_MESSAGE( n_at_energy == 1,
+        "Co60: 2505.7 keV should be one line, but there are " << n_at_energy );
+    BOOST_CHECK_MESSAGE( crossover->m_normalized_intensity > 10.0*crossover->m_uncorrected_intensity,
+        "Co60 2505.7 keV should be dominated by summing-in, but grew only from "
+        << crossover->m_uncorrected_intensity << " to " << crossover->m_normalized_intensity );
+  }
+}//BOOST_AUTO_TEST_CASE( SumPeaksMatchEngine )
+
+
+// The assumed summing distance defaults to a near-contact 2.54 cm, and a stored
+// state without one (or with an unusable one) comes back to that same default.
+BOOST_AUTO_TEST_CASE( DefaultCascadeDistance )
+{
+  set_data_dir();
+
+  const RefLineInput fresh;
+  BOOST_CHECK_EQUAL( fresh.m_cascade_distance, string(RefLineInput::sm_default_cascade_distance) );
+  double dist = 0.0;
+  BOOST_REQUIRE_NO_THROW( dist = PhysicalUnits::stringToDistance( fresh.m_cascade_distance ) );
+  BOOST_CHECK_CLOSE( dist, 2.54*PhysicalUnits::cm, 1.0E-6 );
+
+  //A stored state that predates the field, and one holding a junk value, both come
+  //  back as the default rather than as a zero distance.
+  {
+    RefLineInput input;
+    input.m_input_txt = "Co60";
+    input.m_cascade_distance = "not a distance";
+
+    rapidxml::xml_document<char> doc;
+    BOOST_REQUIRE_NO_THROW( input.serialize( &doc ) );
+
+    RefLineInput restored;
+    BOOST_REQUIRE_NO_THROW( restored.deSerialize( doc.first_node() ) );
+    BOOST_CHECK_EQUAL( restored.m_cascade_distance,
+                       string(RefLineInput::sm_default_cascade_distance) );
+  }
+
+  {
+    RefLineInput input;
+    input.m_input_txt = "Co60";
+    input.m_cascade_distance = "";   //as a state written before the field existed
+
+    rapidxml::xml_document<char> doc;
+    BOOST_REQUIRE_NO_THROW( input.serialize( &doc ) );
+
+    RefLineInput restored;
+    BOOST_REQUIRE_NO_THROW( restored.deSerialize( doc.first_node() ) );
+    BOOST_CHECK_EQUAL( restored.m_cascade_distance,
+                       string(RefLineInput::sm_default_cascade_distance) );
+  }
+
+  //A good value must of course survive.
+  {
+    RefLineInput input;
+    input.m_input_txt = "Co60";
+    input.m_cascade_distance = "10 cm";
+
+    rapidxml::xml_document<char> doc;
+    BOOST_REQUIRE_NO_THROW( input.serialize( &doc ) );
+
+    RefLineInput restored;
+    BOOST_REQUIRE_NO_THROW( restored.deSerialize( doc.first_node() ) );
+    BOOST_CHECK_EQUAL( restored.m_cascade_distance, string("10 cm") );
+  }
+}//BOOST_AUTO_TEST_CASE( DefaultCascadeDistance )
+
+
+// Timing report for the interactive path: the Reference Photopeak tool re-runs
+//  generateRefLineInfo (with cascade summing) on the session thread for every
+//  option change, so it must stay well under a second in a Release build.  Only
+//  runs when `--timing` is passed after the `--` on the command line; prints CPU
+//  time (std::clock, min/median of 5 repeats after a warm-up) per nuclide.
+BOOST_AUTO_TEST_CASE( CascadeTimingReport )
+{
+  bool want_timing = false;
+  const int argc = framework::master_test_suite().argc;
+  char ** const argv = framework::master_test_suite().argv;
+  for( int i = 1; i < argc; ++i )
+    want_timing |= (string(argv[i]) == "--timing");
+  if( !want_timing )
+    return;
+
+  set_data_dir();
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  const shared_ptr<DetectorPeakResponse> det = example_detector();
+  const double dist = 2.54 * PhysicalUnits::cm;  //the GUI default
+
+  struct TimeCase { const char *nuc; const char *age; };
+  const TimeCase cases[] = {
+    {"Co60","20 y"}, {"Cs137","20 y"}, {"Ba133","20 y"}, {"Am241","20 y"},
+    {"Eu152","20 y"}, {"Ra226","20 y"}, {"Th232","20 y"}, {"U238","20 y"}, {"U238","1 y"}
+  };
+
+  cout << "\nCascade ref-line timing (CPU seconds, example HPGe at 2.54 cm):\n"
+       << "  nuclide  age    no-casc  1st-use  repeat  real-lines  sum-peaks\n";
+  for( const TimeCase &tc : cases )
+  {
+    BOOST_REQUIRE_MESSAGE( db->nuclide( tc.nuc ), "no nuclide " << tc.nuc );
+
+    RefLineInput input;
+    input.m_input_txt = tc.nuc;
+    input.m_age = tc.age;
+    input.m_showGammas = true;
+    input.m_showXrays = true;
+    input.m_showCascades = true;
+    input.m_lower_br_cutt_off = 0.0;
+    input.m_do_cascade_summing = true;
+    //Through the same interpolation the GUI uses, so the timing is the real one.
+    //  A key unique to this case makes the first call below pay the full
+    //  efficiency-table fill, which is what a user sees on their first toggle.
+    const string key = string(tc.nuc) + tc.age;
+    input.m_summing_fep_eff = CascadeSummingCalc::interpolatedEff( key + "-fep",
+        [det,dist]( double e ){ return CascadeSummingCalc::detectorFepEffAbs( det, e, 0, 0, dist ); } );
+    input.m_summing_total_eff = CascadeSummingCalc::interpolatedEff( key + "-tot",
+        [det,dist]( double e ){ return CascadeSummingCalc::detectorTotEffAbs( det, e, 0, 0, dist ); } );
+
+    const std::clock_t cold_start = std::clock();
+    shared_ptr<ReferenceLineInfo> info = ReferenceLineInfo::generateRefLineInfo( input );
+    const double cold = double(std::clock() - cold_start) / CLOCKS_PER_SEC;
+    BOOST_REQUIRE( info && (info->m_validity == ReferenceLineInfo::InputValidity::Valid) );
+
+    //The same lines with cascade summing off, to separate the summing cost from
+    //  the (unavoidable) decay/line enumeration cost.
+    RefLineInput plain = input;
+    plain.m_showCascades = false;
+    plain.m_do_cascade_summing = false;
+    plain.m_summing_fep_eff = nullptr;
+    plain.m_summing_total_eff = nullptr;
+    ReferenceLineInfo::generateRefLineInfo( plain );  //warm-up
+
+    vector<double> secs, plain_secs;
+    for( int rep = 0; rep < 5; ++rep )
+    {
+      std::clock_t start = std::clock();
+      ReferenceLineInfo::generateRefLineInfo( plain );
+      plain_secs.push_back( double(std::clock() - start) / CLOCKS_PER_SEC );
+
+      start = std::clock();
+      info = ReferenceLineInfo::generateRefLineInfo( input );
+      secs.push_back( double(std::clock() - start) / CLOCKS_PER_SEC );
+    }
+    std::sort( begin(secs), end(secs) );
+    std::sort( begin(plain_secs), end(plain_secs) );
+
+    size_t nreal = 0, nsum = 0;
+    for( const ReferenceLineInfo::RefLine &l : info->m_ref_lines )
+    {
+      nreal += (l.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::Normal);
+      nsum += (l.m_source_type == ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak);
+    }
+
+    char line[256];
+    const double casc = secs[secs.size()/2], plainmed = plain_secs[plain_secs.size()/2];
+    snprintf( line, sizeof(line), "  %-8s %-5s  %7.3f  %7.3f  %6.3f  %10zu  %9zu\n",
+              tc.nuc, tc.age, plainmed, cold, casc, nreal, nsum );
+    cout << line;
+  }//for( cases )
+  cout << endl;
+}//BOOST_AUTO_TEST_CASE( CascadeTimingReport )

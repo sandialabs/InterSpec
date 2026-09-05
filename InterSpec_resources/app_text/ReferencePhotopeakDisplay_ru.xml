@@ -38,6 +38,7 @@
   <message id="rpd-opt-betas">Показать беты</message>
   <message id="rpd-opt-cascade">Каскадные суммы</message>
   <message id="rpd-cascade-dist">Расст.:</message>
+  <message id="rpd-tt-cascade-dist">Предполагаемое расстояние источник–детектор для оценки суммирования совпадений; чем ближе, тем сильнее суммирование.  Введите расстояние с единицами, напр. 2.54 cm.</message>
   <message id="rpd-warn-cascade-example-drf">Нет детектора; суммирование использует примерную эффективность HPGe.</message>
   <message id="rpd-warn-cascade-approx-drf">Полная эффективность суммирования по примерному детектору.</message>
   <message id="rpd-opt-escapes">Пики ухода</message>

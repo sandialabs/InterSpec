@@ -38,6 +38,7 @@
   <message id="rpd-opt-betas">Béták mutatása</message>
   <message id="rpd-opt-cascade">Kaszkád összegek</message>
   <message id="rpd-cascade-dist">Táv.:</message>
+  <message id="rpd-tt-cascade-dist">A koincidencia-összegzés becsléséhez feltételezett forrás–detektor távolság; kisebb távolság nagyobb összegzést ad.  Adjon meg egy távolságot mértékegységgel, pl. 2.54 cm.</message>
   <message id="rpd-warn-cascade-example-drf">Nincs detektor; az összegzés példa HPGe hatásfokot használ.</message>
   <message id="rpd-warn-cascade-approx-drf">Az összegzés teljes hatásfoka példa detektorból.</message>
   <message id="rpd-opt-escapes">Kiszökési csúcsok</message>

@@ -25,6 +25,7 @@
 
 #include <map>
 #include <set>
+#include <array>
 #include <deque>
 #include <mutex>
 #include <tuple>
@@ -33,6 +34,7 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <functional>
 #include <stdexcept>
 
 #include <Wt/WLocale.h>
@@ -88,6 +90,8 @@ using namespace std;
  version 2: implemented 20221220 serializes just RefLineInput - you can then use this to generate ReferenceLineInfo
  */
 const int RefLineInput::sm_xmlSerializationVersion = 2;
+
+const char * const RefLineInput::sm_default_cascade_distance = "2.54 cm";
 
 
 namespace
@@ -978,32 +982,76 @@ std::shared_ptr<const vector<FissionLine>> fission_photons( const SandiaDecay::N
 }//shared_ptr<vector<FissionLine>> fission_photons(...)
 
 
+// A pure coincidence-sum reference line.  `e_c` is 0 for a two-photon sum.
+// `rate` is the absolute per-parent-decay detected rate (already activity weighted).
+ReferenceLineInfo::RefLine make_sum_ref_line( const SandiaDecay::Nuclide * const nuc,
+                                             const double e_a, const double e_b,
+                                             const double e_c, const double rate )
+{
+  ReferenceLineInfo::RefLine line;
+  line.m_energy = e_a + e_b + e_c;
+  line.m_decay_intensity = rate;
+  line.m_parent_nuclide = nuc;
+  line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
+  line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak;
+
+  char buffer[128] = { '\0' };
+  if( e_c > 0.0 )
+    snprintf( buffer, sizeof(buffer), "Cascade sum %s (%.1f + %.1f + %.1f keV)",
+              nuc->symbol.c_str(), e_a, e_b, e_c );
+  else
+    snprintf( buffer, sizeof(buffer), "Cascade sum %s (%.1f + %.1f keV)",
+              nuc->symbol.c_str(), e_a, e_b );
+  line.m_decaystr = buffer;
+
+  return line;
+}//make_sum_ref_line(...)
+
+
 // ===================== True-coincidence (cascade) summing ====================
 //
-// Analytic cascade summing via the CeeLo engine (ceelo::compute_cascade_analytic):
-// gamma-gamma, gamma-xray, and xray-xray summing-IN, plus summing-OUT.  The caller
-// supplies bare absolute FEP/total efficiency functors (RefLineInput::
-// m_summing_fep_eff / m_summing_total_eff) at a fixed near distance; here we fold
-// in the shielding (uncollided transmission for FEP; transmission + GADRAS
-// down-scatter for total) and evaluate the per-line net summing factor plus any
-// pure sum peaks.  The intent is to show WHERE summing effects are, not to be
-// rigorously correct in amplitude.
+// Covers both halves of true-coincidence summing, for gamma-gamma, gamma-xray and
+// xray-xray coincidences plus gamma triples:
 //
-// Fills cnet_map[(nuclide, round(energy))] with the net summing factor for each
-// real line, and appends pure sum peaks to `sum_peaks` (m_decay_intensity =
-// absolute per-parent-decay detected gain, already scaled by the caller's
-// activity-fraction `weight`).
+//   - summing-OUT, the loss from a real photopeak when a coincident photon also
+//     deposits, comes from the CeeLo engine (ceelo::compute_cascade_analytic),
+//     which is asked for one energy window per (cluster of) displayed line; and
+//   - summing-IN, the gain where coincident photons land together, is enumerated
+//     here from the cascade coincidence links.  A sum that falls on a displayed
+//     line makes that line taller; one that falls clear of every line becomes a
+//     peak of its own.
+//
+// Summing-IN is enumerated here rather than taken from the engine because the
+// engine only does so for a branch carrying a daughter level scheme, and the
+// x-ray model this uses rules that out for every branch - see the CascadeOptions
+// below for why that trade is made.  If the display can ever afford the vacancy
+// model, the engine's own (exact) summing-IN becomes available and this
+// enumeration can go away.
+//
+// The caller supplies bare absolute FEP/total efficiency functors
+// (RefLineInput::m_summing_fep_eff / m_summing_total_eff) at the user's assumed
+// distance; the shielding is folded in here - uncollided transmission for FEP,
+// transmission plus GADRAS down-scatter for total.
+//
+// The intent is to show WHERE summing effects are, not to be rigorously correct
+// in amplitude.
+//
+// Fills cnet_map[(nuclide, round(energy))] with the summing-OUT survival for each
+// real line, sum_in_map with the absolute rate folded onto a real line, and
+// appends pure sum peaks to `sum_peaks` (m_decay_intensity = absolute
+// per-parent-decay detected rate, already scaled by the caller's activity-fraction
+// `weight`).
 void compute_cascade_summing_for_nuclide(
         const SandiaDecay::Nuclide * const nuc,
         const double age,
         const double weight,
         const RefLineInput &input,
-        const std::vector<double> &real_line_energies,
+        const std::vector<std::pair<double,double>> &real_lines,
         std::map<std::pair<const SandiaDecay::Nuclide *,long long>,double> &cnet_map,
         std::map<std::pair<const SandiaDecay::Nuclide *,long long>,double> &sum_in_map,
         std::vector<ReferenceLineInfo::RefLine> &sum_peaks )
 {
-  if( !nuc || !input.m_summing_fep_eff )
+  if( !nuc || !input.m_summing_fep_eff || (weight <= 0.0) )
     return;
 
   auto energy_key = []( const double e ) -> long long {
@@ -1021,11 +1069,18 @@ void compute_cascade_summing_for_nuclide(
     //  so decay-chain daughter summing sits on the same activity scale as the
     //  daughter's own displayed lines.
     copt.prompt_equilibrium = input.m_promptLinesOnly;
-    // Use the transition-group x-ray model (flat x-ray members with coincidence
-    //  links to their transition's gammas) rather than the vacancy-level model,
-    //  which stores x-rays as k_vacancies the pairwise loop below does not read.
-    //  This gives us gamma-xray and xray-xray summing (near-exact for the
-    //  electron-capture emitters that dominate x-ray summing).
+    // Use the transition-group x-ray model (flat x-ray members carrying coincidence
+    //  links) rather than the vacancy-level model.  This is a deliberate speed
+    //  trade: the vacancy model is what lets the adapter build a daughter level
+    //  scheme, which in turn lets the engine do exact summing-IN, but it expands
+    //  every converting transition into ~25 x-ray line occurrences and the engine's
+    //  pair enumeration then costs (measured, Release, at contact) 36-78 ms per
+    //  energy window for Eu-152 and 0.36-0.85 s for Am-241, against 0.01-0.06 ms
+    //  with flat members - seconds to minutes for one update of a display that has
+    //  to redraw on every option change.  With flat members the engine still gives
+    //  the per-line summing-OUT (its pairwise model for a branch with no level
+    //  scheme), and the coincidence sums are enumerated below, which is also what
+    //  keeps gamma-xray and xray-xray sums available.
     copt.include_xrays = true;
     copt.vacancy_xray_model = false;
     cascades = ceelo::cascade_adapter::build_cascades( nuc, copt );
@@ -1065,19 +1120,22 @@ void compute_cascade_summing_for_nuclide(
     return v;
   };
 
-  // Half-width of the per-line summing window handed to the engine.  It decides
-  //  (a) which emitted lines the engine groups into one "peak" (sharing one net
-  //  factor), and (b) which coincidence SUMS the engine folds into that line as
-  //  summing-IN.  We keep it tight (0.25 keV, resolvable on HPGe) rather than
-  //  CeeLo's NaI-scale 1.5 keV default: only a sum that is essentially on top of a
-  //  real line (e.g. Ra-226 1120.3+609.3 = 1729.60 vs the 1729.595 gamma) folds in
-  //  and makes that line taller (summing-in); a resolvable sum (e.g. 276.4+81 =
-  //  357.4, next to the 356 gamma) stays a separate sum peak.
+  // Half-width of the energy windows handed to the engine.  It decides (a) which
+  //  emitted lines the engine groups into one "peak" (sharing one summing factor),
+  //  and (b) which coincidence SUMS count as landing on that peak.  We keep it
+  //  tight (0.25 keV, resolvable on HPGe) rather than CeeLo's NaI-scale 1.5 keV
+  //  default: only a sum essentially on top of a real line (e.g. Ra-226
+  //  1120.3+609.3 = 1729.60 vs the 1729.595 gamma) folds into it and makes it
+  //  taller; a resolvable sum (e.g. Ba-133 276.4+81 = 357.4, next to the 356
+  //  gamma) stays a separate sum peak.
   const double match_tol = 0.25;  //keV
 
   // Sorted displayed-line energies for O(log n) nearest-line lookup.  Returns the
   //  nearest real line within match_tol, or NaN if none.
-  std::vector<double> sorted_real( real_line_energies );
+  std::vector<double> sorted_real;
+  sorted_real.reserve( real_lines.size() );
+  for( const std::pair<double,double> &rl : real_lines )
+    sorted_real.push_back( rl.first );
   std::sort( begin(sorted_real), end(sorted_real) );
   auto nearest_real = [&sorted_real,match_tol]( const double e ) -> double {
     if( sorted_real.empty() )
@@ -1120,29 +1178,383 @@ void compute_cascade_summing_for_nuclide(
     return cached_tot(e) * shield;
   };
 
-  // --- Per-line summing-OUT factor: the EXACT level-scheme engine ---
-  //  Real lines are scaled by the summing-OUT survival (c_out) only.  The
-  //  summing-IN is shown separately as its own sum peaks (below), even when a sum
-  //  energy is close to a real line (e.g. Ba-133 276.4+81 = 357.4, just above the
-  //  356 gamma) - so those distinct, resolvable coincidence-sum peaks stay
-  //  visible.  Using the net factor (c_out+c_in) here instead would fold that
-  //  summing-in into the nearby real line and hide the separate peak.
-  //  (The engine is only seconds-slow when un-memoized or given duplicate/phantom
-  //  windows; with the memoized provider + deduplicated real-line windows it is
-  //  ~0.3 s even for U-238.)
-  std::set<long long> win_seen;
-  std::vector<ceelo::PeakWindow> windows;
-  for( const double e : real_line_energies )
+  //Brightest line: the scale everything below is judged against.  The chart
+  //  normalizes photon amplitudes to the strongest line, so a rate far below this
+  //  can never be seen no matter what summing does to it.  The user can hide the
+  //  real lines and keep the sums, in which case there is nothing displayed to
+  //  measure against and the brightest emission of the cascades is used instead.
+  //
+  //  The passed-in line intensities are already scaled by the caller's activity
+  //  fraction, while the coincidence gains below are per parent decay (`weight` is
+  //  applied to them at the end), so divide it back out here - otherwise every
+  //  threshold is off by `weight` for a nuclide-mixture component.
+  double max_line_rate = 0.0;
+  for( const std::pair<double,double> &rl : real_lines )
+    max_line_rate = std::max( max_line_rate, (rl.second/weight) * eps_fep_sh(rl.first) );
+
+  if( max_line_rate <= 0.0 )
   {
-    if( (e >= 5.0) && win_seen.insert( energy_key(e) ).second )
+    for( const ceelo::DecayCascade &dc : cascades )
     {
-      ceelo::PeakWindow w;
-      w.energy_keV = e;
-      w.tolerance_keV = match_tol;
-      windows.push_back( w );
+      for( const ceelo::CascadeMember &m : dc.members )
+      {
+        if( m.energy_keV >= 5.0 )
+          max_line_rate = std::max( max_line_rate,
+                                    dc.branch_weight * m.intensity * eps_fep_sh(m.energy_keV) );
+      }
+    }
+  }//if( no displayed lines to measure against )
+
+  if( max_line_rate <= 0.0 )
+    return;
+
+  //The faintest coincidence sum worth carrying, relative to the strongest line the
+  //  chart normalizes to.  The SAME floor decides whether a sum is drawn as its own
+  //  peak and whether a sum folded onto a faint line is kept, so that nudging a sum
+  //  energy across a real line cannot make it appear or vanish.
+  const double min_cand_rate = 1.0E-7 * max_line_rate;
+  //A third coincident photon costs another efficiency factor (~1e-2 at contact,
+  //  smaller further out), so only a pair already this bright can seed a visible
+  //  triple - which keeps the triple search off the dense, weak part of a chain.
+  const double min_triple_seed = 100.0 * min_cand_rate;
+
+  // --- Coincidence sums, from the cascade coincidence links ---
+  //  Each coincident pair (and each mutually-coincident triple) contributes the
+  //  joint probability that all of its photons are emitted and each fully
+  //  detected, reduced by the chance some OTHER photon of the same decay also
+  //  deposits and pushes the event out of the peak.  Sums that land on a
+  //  displayed line make that line taller; the rest become their own peaks.
+  //
+  //  `gain` is the drawn rate, and doubles as the ranking key for which sums are
+  //  worth showing at all.
+  //
+  //  The engine is not asked for these: it enumerates summing-IN only for a branch
+  //  carrying a daughter level scheme, and the x-ray model chosen above rules that
+  //  out for every branch (see the CascadeOptions note).
+  struct SumCand
+  {
+    double gain = 0.0;                       //summed rate at this energy
+    double e_a = 0.0, e_b = 0.0, e_c = 0.0;  //strongest contributing components (e_c==0 -> a pair)
+    double best = 0.0;                       //gain of the components recorded above
+  };
+  std::map<long long,SumCand> sum_cands;      //sums NOT on a real line -> their own peaks
+  std::map<long long,double> fold_onto_line;  //sums that land on a real line -> make it taller
+
+  //Only the strongest few gammas of a branch can make a visible triple, and the
+  // triple search is over pairs x links, so cap how many members it considers.
+  const size_t max_triple_members = 12;
+
+  for( const ceelo::DecayCascade &dc : cascades )
+  {
+    const size_t nmem = dc.members.size();
+
+    //A pair that sums into a peak is itself knocked out of that peak if any OTHER
+    //  coincident photon of the same decay also deposits - the near-field term a
+    //  bare product of full-energy efficiencies misses (at contact it removes tens
+    //  of percent).  The branch-wide survival is computed once and the pair's own
+    //  two factors divided back out, which keeps this O(1) per pair.
+    double branch_survival = 1.0;
+    std::vector<double> member_survival( nmem, 1.0 );
+    for( size_t m = 0; m < nmem; ++m )
+    {
+      const double e = dc.members[m].energy_keV;
+      if( (e < 5.0) || (dc.members[m].type == ceelo::CascadeParticleType::Annih511) )
+        continue;
+      const double dep = std::min( 1.0, dc.members[m].intensity ) * eps_tot_sh(e);
+      if( dep <= 1.0E-6 )
+        continue;   //cannot matter, and keeps the divide below well conditioned
+      member_survival[m] = std::max( 1.0E-6, 1.0 - dep );
+      branch_survival *= member_survival[m];
+    }
+
+    //Coincident partners of each member, kept only for the pairs strong enough to
+    //  seed a triple (the full link set of a decay chain is far too dense to walk).
+    std::map<uint16_t,std::set<uint16_t>> links;
+    struct TripleSeed { uint16_t a = 0, b = 0; double pair_gain = 0.0; };
+    std::vector<TripleSeed> triple_seeds;
+    std::set<std::pair<uint16_t,uint16_t>> seen_pairs;
+
+    //Record one candidate (pair or triple) at `esum`.
+    auto add_cand = [&]( const double esum, const double gain, const double ea,
+                         const double eb, const double ec ) {
+      if( (gain <= 0.0) || IsNan(gain) || IsInf(gain) )
+        return;
+      const double rl = nearest_real( esum );
+      if( !IsNan(rl) )
+      {
+        //Lands on a displayed line: it makes that line taller rather than
+        //  appearing as a peak of its own.
+        fold_onto_line[ energy_key(rl) ] += gain;
+        return;
+      }
+
+      SumCand &cand = sum_cands[ energy_key(esum) ];
+      cand.gain += gain;
+      if( gain > cand.best )
+      {
+        cand.best = gain;
+        cand.e_a = ea;
+        cand.e_b = eb;
+        cand.e_c = ec;
+      }
+    };//add_cand(...)
+
+    for( size_t a = 0; a < nmem; ++a )
+    {
+      const double ea = dc.members[a].energy_keV;
+      if( ea < 5.0 )
+        continue;
+
+      for( const ceelo::CoincidenceLink &lnk : dc.members[a].coincident )
+      {
+        if( lnk.partner >= nmem )
+          continue;
+        const uint16_t ai = static_cast<uint16_t>(a), bi = lnk.partner;
+        const double eb = dc.members[bi].energy_keV;
+        if( eb < 5.0 )
+          continue;
+
+        if( !seen_pairs.insert( std::make_pair( std::min(ai,bi), std::max(ai,bi) ) ).second )
+          continue;
+
+        // Both photons must go into the detector to both be full-energy detected,
+        //  so they are near-collinear: weight by the gamma-gamma angular
+        //  correlation in the collinear limit W(0) = 1 + a2 + a4 (the same factor
+        //  the engine applies; ~1.16 for Co-60).  Isotropic pairs carry
+        //  a2 = a4 = 0 -> W(0) = 1.
+        double gain = dc.branch_weight * dc.members[a].intensity * lnk.prob
+                      * eps_fep_sh(ea) * eps_fep_sh(eb);
+        if( lnk.has_correlation )
+          gain *= std::max( 0.0, 1.0 + lnk.a2 + lnk.a4 );
+
+        //Survival of the summed pair against every other coincident photon.
+        gain *= branch_survival / (member_survival[a] * member_survival[bi]);
+
+        if( gain <= min_cand_rate )
+          continue;
+
+        add_cand( ea + eb, gain, ea, eb, 0.0 );
+
+        if( gain > min_triple_seed )
+        {
+          links[ai].insert( bi );
+          links[bi].insert( ai );
+          TripleSeed seed;
+          seed.a = ai;
+          seed.b = bi;
+          seed.pair_gain = gain;
+          triple_seeds.push_back( seed );
+        }
+      }//for( coincidence links )
+    }//for( members a )
+
+    //Triples: three mutually-coincident members.  Only the strongest members are
+    //  considered (a triple is eps^3-small, so a weak third partner cannot show).
+    if( links.size() > 1 )
+    {
+      std::vector<uint16_t> strong;
+      strong.reserve( links.size() );
+      for( const std::pair<const uint16_t,std::set<uint16_t>> &lp : links )
+        strong.push_back( lp.first );
+      std::sort( begin(strong), end(strong), [&dc]( uint16_t l, uint16_t r ){
+        return dc.members[l].intensity > dc.members[r].intensity; } );
+      if( strong.size() > max_triple_members )
+        strong.resize( max_triple_members );
+      const std::set<uint16_t> considered( begin(strong), end(strong) );
+
+      //P(to emitted | from emitted).  Coincidence links are stored in one
+      //  direction only, so when the forward link is missing invert the reverse
+      //  one: P(to|from) = P(from|to) * I_to / I_from.
+      auto link_prob = [&dc]( const uint16_t from, const uint16_t to ) -> double {
+        for( const ceelo::CoincidenceLink &lnk : dc.members[from].coincident )
+        {
+          if( lnk.partner == to )
+            return lnk.prob;
+        }
+        return 0.0;
+      };
+
+      auto cond_prob = [&dc,&link_prob]( const uint16_t from, const uint16_t to ) -> double {
+        const double fwd = link_prob( from, to );
+        if( fwd > 0.0 )
+          return fwd;
+
+        const double rev = link_prob( to, from );
+        const double i_from = dc.members[from].intensity;
+        const double i_to = dc.members[to].intensity;
+        if( (rev > 0.0) && (i_from > 0.0) )
+          return std::min( 1.0, rev * i_to / i_from );
+        return 0.0;
+      };
+
+      //A triple can be reached from any of its three pairs, but only the pairs
+      //  bright enough to seed are available, so it must not be tied to one of
+      //  them: dedupe on the member set instead of on index order.
+      std::set<std::array<uint16_t,3>> seen_triples;
+
+      for( const TripleSeed &pr : triple_seeds )
+      {
+        if( !considered.count(pr.a) || !considered.count(pr.b) )
+          continue;
+        const std::set<uint16_t> &la = links[pr.a];
+        const std::set<uint16_t> &lb = links[pr.b];
+        for( const uint16_t ci : la )
+        {
+          if( (ci == pr.a) || (ci == pr.b) || !considered.count(ci) || !lb.count(ci) )
+            continue;
+
+          std::array<uint16_t,3> tri = { pr.a, pr.b, ci };
+          std::sort( begin(tri), end(tri) );
+          if( !seen_triples.insert( tri ).second )
+            continue;
+
+          const double e0 = dc.members[pr.a].energy_keV;
+          const double e1 = dc.members[pr.b].energy_keV;
+          const double e2 = dc.members[ci].energy_keV;
+          if( (e0 < 5.0) || (e1 < 5.0) || (e2 < 5.0) )
+            continue;
+
+          //Extend the pair's joint rate by the third photon, conditioned on the
+          //  pair rather than assumed independent of it: multiply by P(c|b), its
+          //  full-energy efficiency, and its share of the coincident survival
+          //  (which the pair's gain already divided out for its own two members).
+          const double p_c = std::max( cond_prob(pr.b, ci), cond_prob(pr.a, ci) );
+          if( p_c <= 0.0 )
+            continue;
+
+          const double gain = pr.pair_gain * p_c * eps_fep_sh(e2) / member_survival[ci];
+          add_cand( e0 + e1 + e2, gain, e0, e1, e2 );
+        }//for( third member )
+      }//for( pairs )
+    }//if( links.size() > 1 )
+  }//for( cascades )
+
+
+  // --- Windows: the real lines worth correcting, plus the candidate sum peaks ---
+  //  Feeding every emitted line to the engine is the dominant cost for a decay
+  //  chain (U-238 has ~1000 displayed lines, nearly all of them invisibly weak), so
+  //  only lines that could actually be seen get a window; the rest keep c_out = 1,
+  //  which can misdraw them by at most their own (invisible) height.  A line that
+  //  RECEIVES a coincidence sum always gets a window, however weak, since that is
+  //  where summing can make a faint line grow.
+  //A line fainter than this is not worth a summing-OUT correction: the correction
+  //  can only shrink it, and it is already far below anything visible.
+  const double min_line_rate = 1.0E-6 * max_line_rate;
+
+  //But a faint line DOES earn a window when a coincidence sum lands on it, which is
+  //  how a faint line gets lifted into view (Ra-226's 1729.6 keV nearly doubles).
+  //  Same floor as a free-standing sum peak, so the two stay consistent.
+  const double min_fold_rate = min_cand_rate;
+
+  //Lines to give a window to, sorted by energy.
+  std::vector<std::pair<double,double>> kept;   //(energy, rate)
+  kept.reserve( real_lines.size() );
+  for( const std::pair<double,double> &rl : real_lines )
+  {
+    const double rate = (rl.second/weight) * eps_fep_sh(rl.first);
+    bool keep = (rate > min_line_rate);
+    if( !keep )
+    {
+      const std::map<long long,double>::const_iterator pos
+            = fold_onto_line.find( energy_key(rl.first) );
+      keep = (pos != end(fold_onto_line)) && (pos->second > min_fold_rate);
+    }
+    if( keep )
+      kept.emplace_back( rl.first, rate );
+  }
+  std::sort( begin(kept), end(kept) );
+
+  //Cluster lines within match_tol; the window sits on the strongest of a cluster,
+  //  and every line of the cluster shares its summing-OUT factor.
+  struct RealWindow { double energy = 0.0; std::vector<double> members; };
+  std::vector<RealWindow> real_windows;
+  for( const std::pair<double,double> &kl : kept )
+  {
+    if( !real_windows.empty()
+       && (std::fabs(kl.first - real_windows.back().members.front()) <= match_tol) )
+    {
+      RealWindow &w = real_windows.back();
+      w.members.push_back( kl.first );
+      continue;
+    }
+    RealWindow w;
+    w.energy = kl.first;
+    w.members.push_back( kl.first );
+    real_windows.push_back( w );
+  }
+  //Put each window on its strongest member (so a fold lands on the visible line).
+  {
+    std::map<long long,double> rate_of;
+    for( const std::pair<double,double> &kl : kept )
+      rate_of[ energy_key(kl.first) ] = kl.second;
+    for( RealWindow &w : real_windows )
+    {
+      double best_rate = -1.0;
+      for( const double e : w.members )
+      {
+        const double r = rate_of[ energy_key(e) ];
+        if( r > best_rate ){ best_rate = r; w.energy = e; }
+      }
     }
   }
 
+  //Rank the sums and cap how many are drawn.  A little headroom is kept while
+  //  accepting, so that near-duplicates merging into an accepted peak (below) do
+  //  not cost a slot that a distinct, weaker sum could have used.
+  const size_t max_sum_peaks = 300;
+  const size_t max_candidates = 2*max_sum_peaks;
+  std::vector<std::pair<long long,SumCand>> ranked( begin(sum_cands), end(sum_cands) );
+  std::sort( begin(ranked), end(ranked),
+      []( const std::pair<long long,SumCand> &l, const std::pair<long long,SumCand> &r ){
+        return l.second.gain > r.second.gain; } );
+
+  std::vector<SumCand> accepted;
+  std::vector<double> accepted_energies;
+  for( const std::pair<long long,SumCand> &rc : ranked )
+  {
+    if( rc.second.gain <= min_cand_rate )
+      break;  //ranked descending: everything after this is fainter still
+
+    //Sums from neighbouring energy buckets are one peak on screen, so fold a close
+    //  candidate into the one already accepted rather than dropping its rate.
+    //  Checked before the cap, so a merge never costs a slot.
+    const double esum = rc.second.e_a + rc.second.e_b + rc.second.e_c;
+    size_t existing = accepted.size();
+    for( size_t i = 0; i < accepted_energies.size(); ++i )
+    {
+      if( std::fabs(accepted_energies[i] - esum) <= match_tol )
+      {
+        existing = i;
+        break;
+      }
+    }
+
+    if( existing < accepted.size() )
+    {
+      accepted[existing].gain += rc.second.gain;   //ranked descending, so the
+      continue;                                    // components already recorded are the stronger
+    }
+
+    if( accepted.size() >= max_candidates )
+      continue;   //no room for a new peak, but a later candidate may still merge
+
+    accepted.push_back( rc.second );
+    accepted_energies.push_back( esum );
+  }//for( ranked candidates )
+
+
+  // --- Ask the engine for the summing-OUT survival of each displayed line ---
+  std::vector<ceelo::PeakWindow> windows;
+  windows.reserve( real_windows.size() );
+  for( const RealWindow &w : real_windows )
+  {
+    ceelo::PeakWindow pw;
+    pw.energy_keV = w.energy;
+    pw.tolerance_keV = match_tol;
+    windows.push_back( pw );
+  }
+
+  std::vector<ceelo::AnalyticPeakResult> results;
   if( !windows.empty() )
   {
     struct Provider : public ceelo::EfficiencyProvider
@@ -1157,109 +1569,77 @@ void compute_cascade_summing_for_nuclide(
 
     try
     {
-      ceelo::AnalyticCascadeOptions opts;   //exact; triples add negligible cost here
-      const std::vector<ceelo::AnalyticPeakResult> results
-          = ceelo::compute_cascade_analytic( cascades, windows, provider, opts );
-      for( const ceelo::AnalyticPeakResult &res : results )
-      {
-        if( !res.found || IsNan(res.c_out) || IsInf(res.c_out) )
-          continue;
-        //Summing-OUT survival only.  Summing-IN is added below (the engine's own
-        //  c_in does not reliably fold a crossover+cascade coincidence such as
-        //  Ra-226 1120.3+609.3 into the direct 1729.6 line), so we do it ourselves.
-        cnet_map[ std::make_pair(nuc, energy_key(res.energy_keV)) ] = std::max( 0.0, res.c_out );
-      }
+      const ceelo::AnalyticCascadeOptions opts;  //defaults: triples + W(0) angular on
+      results = ceelo::compute_cascade_analytic( cascades, windows, provider, opts );
     }catch( std::exception & )
     {
-      //leave cnet_map empty -> lines shown uncorrected
+      results.clear();
     }
   }//if( !windows.empty() )
 
-  // --- Separate sum peaks (pairwise) ---
-  //  Coincidence sums whose energy is NOT within match_tol of a real line (so the
-  //  engine did not fold them into a line as summing-in above) are shown as their
-  //  own peaks.  Joint full-energy detection gain at E_a+E_b.
-  struct SumCand { double gain = 0.0; double e_a = 0.0; double e_b = 0.0; };
-  std::map<long long,SumCand> sum_cands;
-  for( const ceelo::DecayCascade &dc : cascades )
+  //A window the engine could not answer for just keeps c_out = 1; the coincidence
+  //  sums are ours and are applied either way.
+  const bool have_results = (results.size() == windows.size());
+
+  for( size_t i = 0; i < real_windows.size(); ++i )
   {
-    const size_t nmem = dc.members.size();
-    std::set<std::pair<uint16_t,uint16_t>> seen_pairs;
-    for( size_t a = 0; a < nmem; ++a )
+    const RealWindow &w = real_windows[i];
+
+    if( have_results )
     {
-      const double ea = dc.members[a].energy_keV;
-      if( ea < 5.0 )
-        continue;
-      for( const ceelo::CoincidenceLink &lnk : dc.members[a].coincident )
+      const ceelo::AnalyticPeakResult &res = results[i];
+      if( res.found && !IsNan(res.c_out) && !IsInf(res.c_out) )
       {
-        if( lnk.partner >= nmem )
-          continue;
-        const uint16_t ai = static_cast<uint16_t>(a), bi = lnk.partner;
-        if( !seen_pairs.insert( std::make_pair( std::min(ai,bi), std::max(ai,bi) ) ).second )
-          continue;
-        const double eb = dc.members[bi].energy_keV;
-        if( eb < 5.0 )
-          continue;
-        const double esum = ea + eb;
-        // Both photons must go into the detector to both be full-energy detected,
-        //  so they are near-collinear: weight by the gamma-gamma angular
-        //  correlation in the collinear limit W(0) = 1 + a2 + a4 (the same factor
-        //  the engine applies to summing-in; ~1.16 for Co-60).  Isotropic pairs
-        //  carry a2 = a4 = 0 -> W(0) = 1.
-        double gain = dc.branch_weight * dc.members[a].intensity * lnk.prob
-                      * eps_fep_sh(ea) * eps_fep_sh(eb);
-        if( lnk.has_correlation )
-          gain *= std::max( 0.0, 1.0 + lnk.a2 + lnk.a4 );
-        if( (gain <= 0.0) || IsNan(gain) || IsInf(gain) )
-          continue;
+        //Summing-OUT survival, shared by every line of the cluster.
+        const double c_out = std::max( 0.0, res.c_out );
+        for( const double e : w.members )
+          cnet_map[ std::make_pair(nuc, energy_key(e)) ] = c_out;
+      }
+    }//if( have_results )
 
-        // A sum that is essentially on top of a real line (within match_tol) is
-        //  folded into that line as summing-in (making it taller); otherwise it is
-        //  its own separate sum peak.
-        const double rl = nearest_real( esum );
-        if( !IsNan(rl) )
-        {
-          sum_in_map[ std::make_pair(nuc, energy_key(rl)) ] += gain * weight;
-          continue;
-        }
+    //Rate of the coincidence sums that land on this line.  A window can cover
+    //  more than one displayed line and a sum may have landed on any of them, so
+    //  collect the fold from every member.
+    double gain = 0.0;
+    std::set<long long> counted;
+    for( const double e : w.members )
+    {
+      //Two transitions can emit the same energy, so the same map entry can be
+      //  reached twice through one cluster - take it once.
+      if( !counted.insert( energy_key(e) ).second )
+        continue;
+      const std::map<long long,double>::const_iterator fpos
+            = fold_onto_line.find( energy_key(e) );
+      if( fpos != end(fold_onto_line) )
+        gain += fpos->second;
+    }
 
-        SumCand &cand = sum_cands[ energy_key(esum) ];
-        if( gain > cand.gain ){ cand.e_a = ea; cand.e_b = eb; }
-        cand.gain += gain;
-      }//for( coincidence links )
-    }//for( members a )
-  }//for( cascades )
+    if( gain > 0.0 )
+      sum_in_map[ std::make_pair(nuc, energy_key(w.energy)) ] += gain * weight;
+  }//for( real-line windows )
 
-  // Pure sum peaks (ranked by gain, capped).
-  const size_t max_sum_peaks = 300;
-  std::vector<std::pair<long long,SumCand>> ranked( begin(sum_cands), end(sum_cands) );
-  if( ranked.size() > max_sum_peaks )
+  //Draw the strongest sums as their own peaks.
+  std::vector<std::pair<double,size_t>> by_rate;   //(rate, index into accepted)
+  by_rate.reserve( accepted.size() );
+  for( size_t i = 0; i < accepted.size(); ++i )
   {
-    std::partial_sort( begin(ranked), begin(ranked) + max_sum_peaks, end(ranked),
-        []( const std::pair<long long,SumCand> &l, const std::pair<long long,SumCand> &r ){
-          return l.second.gain > r.second.gain; } );
-    ranked.resize( max_sum_peaks );
+    const double gain = accepted[i].gain;
+    if( (gain > min_cand_rate) && !IsNan(gain) && !IsInf(gain) )
+      by_rate.emplace_back( gain, i );
   }
-  for( const std::pair<long long,SumCand> &rc : ranked )
+
+  if( by_rate.size() > max_sum_peaks )
   {
-    const double gain = rc.second.gain;
-    if( (gain <= 0.0) || IsNan(gain) || IsInf(gain) )
-      continue;
+    std::partial_sort( begin(by_rate), begin(by_rate) + max_sum_peaks, end(by_rate),
+                       std::greater<std::pair<double,size_t>>() );
+    by_rate.resize( max_sum_peaks );
+  }
 
-    ReferenceLineInfo::RefLine line;
-    line.m_energy = rc.second.e_a + rc.second.e_b;
-    line.m_decay_intensity = gain * weight;
-    line.m_parent_nuclide = nuc;
-    line.m_particle_type = ReferenceLineInfo::RefLine::Particle::Gamma;
-    line.m_source_type = ReferenceLineInfo::RefLine::RefGammaType::CoincidenceSumPeak;
-
-    char buffer[128] = { '\0' };
-    snprintf( buffer, sizeof(buffer), "Cascade sum %s (%.1f + %.1f keV)",
-              nuc->symbol.c_str(), rc.second.e_a, rc.second.e_b );
-    line.m_decaystr = buffer;
-
-    sum_peaks.push_back( std::move(line) );
-  }//for( ranked sum peaks )
+  for( const std::pair<double,size_t> &br : by_rate )
+  {
+    const SumCand &sc = accepted[br.second];
+    sum_peaks.push_back( make_sum_ref_line( nuc, sc.e_a, sc.e_b, sc.e_c, br.first*weight ) );
+  }//for( kept sum peaks )
 }//compute_cascade_summing_for_nuclide(...)
 
 }//namespace
@@ -2429,8 +2809,8 @@ void RefLineInput::deSerialize( const rapidxml::xml_node<char> *base_node )
   node = base_node->first_node("ShowEscapes", 11);
   input.m_showEscapes = node && node->value_size() && (node->value()[0] == '1');
 
-  // Cascade-summing distance; any parse/validation problem falls back to 1 cm.
-  input.m_cascade_distance = "1 cm";
+  // Cascade-summing distance; any parse/validation problem falls back to the default.
+  input.m_cascade_distance = RefLineInput::sm_default_cascade_distance;
   node = base_node->first_node( "CascadeDistance", 15 );
   if( node && node->value_size() )
   {
@@ -2441,7 +2821,7 @@ void RefLineInput::deSerialize( const rapidxml::xml_node<char> *base_node )
         input.m_cascade_distance = diststr;
     }catch( std::exception & )
     {
-      //keep the 1 cm default
+      //keep the default
     }
   }//if( CascadeDistance node )
 
@@ -3412,7 +3792,16 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
         for( const SandiaDecay::RadParticle &particle : transition->products )
         {
           assert( particle.type <= SandiaDecay::ProductType::XrayParticle );
-          
+
+          // Whether the "Cascade Sums" option is offered at all.  Checked before any
+          //  of the skips below, and for x-rays as well as gammas: the summing engine
+          //  handles gamma-xray and xray-xray coincidences, so an electron-capture
+          //  emitter whose coincidences all involve x-rays still qualifies.
+          if( !has_coincidences && !particle.coincidences.empty()
+             && ((particle.type == SandiaDecay::GammaParticle)
+                 || (particle.type == SandiaDecay::XrayParticle)) )
+            has_coincidences = true;
+
           if( !use_particle[particle.type] )
             continue;
           
@@ -3470,9 +3859,6 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
           }//if( particle.type == SandiaDecay::XrayParticle )
           
           
-          if( !has_coincidences && (particle.type == SandiaDecay::GammaParticle) )
-            has_coincidences = !particle.coincidences.empty();
-
           const double br = activity * particle.intensity * transition->branchRatio / parent_activity;
 
           line.m_decay_intensity = br;
@@ -3952,7 +4338,8 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
     {
       const SandiaDecay::Nuclide * const cnuc = std::get<0>(na);
 
-      vector<double> real_energies;
+      //(energy, per-decay intensity) of this nuclide's displayed photon lines
+      vector<pair<double,double>> real_lines;
       for( const ReferenceLineInfo::RefLine &line : lines )
       {
         if( (line.m_parent_nuclide == cnuc)
@@ -3960,12 +4347,12 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
            && ((line.m_particle_type == ReferenceLineInfo::RefLine::Particle::Gamma)
                || (line.m_particle_type == ReferenceLineInfo::RefLine::Particle::Xray)) )
         {
-          real_energies.push_back( line.m_energy );
+          real_lines.emplace_back( line.m_energy, line.m_decay_intensity );
         }
       }//for( lines )
 
       compute_cascade_summing_for_nuclide( cnuc, std::get<1>(na), std::get<2>(na),
-                                           input, real_energies, cnet_map, sum_in_map, sum_peaks );
+                                           input, real_lines, cnet_map, sum_in_map, sum_peaks );
     }//for( nuclides )
 
     lines.insert( end(lines), begin(sum_peaks), end(sum_peaks) );
@@ -3977,6 +4364,32 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
   //  For each photon line we compute both the uncorrected amplitude and (when
   //  summing) the net-corrected amplitude; both feed the normalization max so a
   //  shrunk line's uncorrected top stays on-scale for the "lost" shading.
+  //A nuclide can emit the same energy from more than one transition, so several
+  //  displayed lines can share a summing-map key.  The mapped summing-IN is a
+  //  single absolute rate for that energy, so give it to exactly one of them -
+  //  the strongest, which is the line the user sees - rather than to each.  (At
+  //  one energy the amplitude is proportional to the emission intensity, so the
+  //  strongest intensity is the strongest line.)  Only the photon lines the
+  //  summing calculation was given are eligible.
+  std::map<std::pair<const SandiaDecay::Nuclide *,long long>,const ReferenceLineInfo::RefLine *> fold_target;
+  if( do_summing )
+  {
+    for( const ReferenceLineInfo::RefLine &line : lines )
+    {
+      if( !line.m_parent_nuclide
+         || (line.m_source_type != ReferenceLineInfo::RefLine::RefGammaType::Normal)
+         || ((line.m_particle_type != ReferenceLineInfo::RefLine::Particle::Gamma)
+             && (line.m_particle_type != ReferenceLineInfo::RefLine::Particle::Xray)) )
+        continue;
+
+      const std::pair<const SandiaDecay::Nuclide *,long long> key( line.m_parent_nuclide,
+                                                       photon_energy_key(line.m_energy) );
+      const ReferenceLineInfo::RefLine * &best = fold_target[key];
+      if( !best || (line.m_decay_intensity > best->m_decay_intensity) )
+        best = &line;
+    }
+  }//if( do_summing )
+
   double max_alpha_br = 0.0, max_beta_br = 0.0, max_photon_br = 0.0;
   for( ReferenceLineInfo::RefLine &line : lines )
   {
@@ -4067,8 +4480,11 @@ std::shared_ptr<ReferenceLineInfo> ReferenceLineInfo::generateRefLineInfo( RefLi
           const auto pos = cnet_map.find( key );
           if( pos != end(cnet_map) )
             cnet = pos->second;
+          const std::map<std::pair<const SandiaDecay::Nuclide *,long long>,
+                         const ReferenceLineInfo::RefLine *>::const_iterator tgt
+                = fold_target.find( key );
           const auto sin = sum_in_map.find( key );
-          if( sin != end(sum_in_map) )
+          if( (sin != end(sum_in_map)) && (tgt != end(fold_target)) && (tgt->second == &line) )
             sum_in = sin->second;
         }
 

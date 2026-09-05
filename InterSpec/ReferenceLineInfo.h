@@ -130,11 +130,16 @@ struct RefLineInput
   bool m_showCascades;
   bool m_showEscapes;
 
-  /** The assumed source-to-detector distance used for cascade (true-coincidence)
-   summing, as a user-entered distance string (e.g. "1 cm").  Defaults to "1 cm";
-   an empty or unparseable value is treated as 1 cm.  Serialized.
+  /** The default #m_cascade_distance: a near contact geometry, where summing is
+   large enough to be worth showing.
    */
-  std::string m_cascade_distance = "1 cm";
+  static const char * const sm_default_cascade_distance;
+
+  /** The assumed source-to-detector distance used for cascade (true-coincidence)
+   summing, as a user-entered distance string (e.g. "2.54 cm").  An empty or
+   unparseable value is treated as #sm_default_cascade_distance.  Serialized.
+   */
+  std::string m_cascade_distance = sm_default_cascade_distance;
 
 
   /** The name of the detector to display as having had the reference
@@ -221,9 +226,9 @@ struct RefLineInput
   std::function<double( double )> m_summing_total_eff;
 
   /** Whether cascade (true-coincidence) summing should be computed.  This is the
-   resolved capability: the user checkbox (#m_showCascades) is ON, the source is a
-   nuclide or nuclide-mixture, and #m_summing_fep_eff is available.  Recomputed by
-   #ReferenceLineInfo::generateRefLineInfo; NOT serialized.
+   resolved capability: the user checkbox (#m_showCascades) is ON and a usable
+   efficiency was found for #m_summing_fep_eff.  Set by whoever fills in the
+   efficiency functors (ReferencePhotopeakDisplay::userInput); NOT serialized.
    */
   bool m_do_cascade_summing = false;
 
@@ -356,7 +361,7 @@ struct ReferenceLineInfo
 
     /** This is a string that describes to the user where this particle was generated.
      Examples:
-     - "Cascade sum Pa234 to U234 (131.3 + 456.7 leV, coinc=0.0514) decay"
+     - "Cascade sum Ba133 (276.4 + 81.0 keV)"
      - "Th234 to Pa234m via Beta decay"
      */
     std::string m_decaystr;
