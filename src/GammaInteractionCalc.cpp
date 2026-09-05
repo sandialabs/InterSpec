@@ -349,15 +349,20 @@ double transmition_length_coefficient( const Material *material, float energy )
 
 
 double fep_survival_removal_coefficient( const Material *material, const float energy,
-                                         const double window_keV )
+                                         const double window_keV, const double normal_thickness )
 {
   const double mu_total = transmition_length_coefficient( material, energy );
 
-  if( !material || (window_keV <= 0.0) || (mu_total <= 0.0) )
+  const bool want_window = (window_keV > 0.0);
+  const bool want_rayleigh = (normal_thickness > 0.0);
+  if( !material || (mu_total <= 0.0) || (!want_window && !want_rayleigh) )
     return mu_total;
 
-  // Memoise the in-window fraction.  It is a quadrature over Klein-Nishina weighted by the
-  //  material's incoherent scattering function, and depends on nothing the fit varies.
+  // Memoise the per-(material, energy, window) pieces: the in-window fraction is a quadrature
+  //  over Klein-Nishina weighted by the material's incoherent scattering function, and the CeeLo
+  //  material conversion walks the composition; neither depends on anything the fit varies.  The
+  //  THICKNESS is deliberately not in the key - it changes every iteration - so the Rayleigh term
+  //  below is evaluated per call from the cached material (a ~100-exp sum, cheap).
   //
   //  The key holds the material's ADDRESS.  That is only safe because every caller passes a
   //  material owned by the problem definition (ShieldingSourceChi2Fcn::m_initial_shieldings holds
@@ -376,58 +381,86 @@ double fep_survival_removal_coefficient( const Material *material, const float e
     }
   };
 
+  struct Cached
+  {
+    double f_win = 0.0;                          ///< in-window Compton fraction (0 if no window)
+    std::shared_ptr<const ceelo::Material> mat;  ///< null if CeeLo cannot represent the material
+  };
+
   static std::mutex s_mutex;
-  static std::map<Key,double> s_f_win;
+  static std::map<Key,Cached> s_cache;
 
-  const Key key{ material, energy, window_keV, material->density };
+  const Key key{ material, energy, want_window ? window_keV : 0.0, material->density };
 
-  double f_win = -1.0;
+  Cached cached;
+  bool have_cached = false;
   {
     std::lock_guard<std::mutex> lock( s_mutex );
-    const std::map<Key,double>::const_iterator pos = s_f_win.find( key );
-    if( pos != s_f_win.end() )
-      f_win = pos->second;
+    const std::map<Key,Cached>::const_iterator pos = s_cache.find( key );
+    if( pos != s_cache.end() )
+    {
+      cached = pos->second;
+      have_cached = true;
+    }
   }
 
-  if( f_win < 0.0 )
+  if( !have_cached )
   {
     try
     {
-      const ceelo::Material cm = CeeLoUtils::to_ceelo_material( *material ).to_material();
-      f_win = ceelo::kn_in_window_fraction( energy, window_keV, cm );
+      cached.mat = std::make_shared<ceelo::Material>(
+                                    CeeLoUtils::to_ceelo_material( *material ).to_material() );
+      if( want_window )
+        cached.f_win = ceelo::kn_in_window_fraction( energy, window_keV, *cached.mat );
     }catch( std::exception & )
     {
-      // A material CeeLo cannot represent simply gets no credit - never a wrong one.
-      f_win = 0.0;
+      // A material CeeLo cannot represent simply gets no credit and no loss - never a wrong one.
+      cached.mat.reset();
+      cached.f_win = 0.0;
     }
 
-    f_win = std::max( 0.0, std::min( 1.0, f_win ) );
+    cached.f_win = std::max( 0.0, std::min( 1.0, cached.f_win ) );
 
     std::lock_guard<std::mutex> lock( s_mutex );
-    s_f_win[key] = f_win;
+    s_cache[key] = cached;
   }//if( not cached )
 
-  if( f_win <= 0.0 )
-    return mu_total;
+  // A sub-process coefficient, summed exactly as transmition_length_coefficient sums.
+  const auto process_mu = [material,energy]( const MassAttenuation::GammaEmProcces process ) -> double {
+    double mu = 0.0;
+    for( const Material::ElementFractionPair &p : material->elements )
+      mu += p.second * material->density
+            * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber, energy, process );
+    for( const Material::NuclideFractionPair &p : material->nuclides )
+      mu += p.second * material->density
+            * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber, energy, process );
+    return mu;
+  };
 
-  // Compton (incoherent) part of mu, summed exactly as transmition_length_coefficient sums.
-  double mu_compton = 0.0;
-  for( const Material::ElementFractionPair &p : material->elements )
-    mu_compton += p.second * material->density
-                  * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber, energy,
-                                          MassAttenuation::GammaEmProcces::ComptonScatter );
-  for( const Material::NuclideFractionPair &p : material->nuclides )
-    mu_compton += p.second * material->density
-                  * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber, energy,
-                                          MassAttenuation::GammaEmProcces::ComptonScatter );
+  const double mu_compton = (cached.f_win > 0.0)
+                              ? process_mu( MassAttenuation::GammaEmProcces::ComptonScatter ) : 0.0;
 
-  const double mu_rem = mu_total - f_win*mu_compton;
+  // Rayleigh DEFLECTION loss: the fraction h of this layer's coherent scatters that are absorbed
+  //  because the deflection lengthened their remaining path, evaluated at the layer's normal
+  //  non-Rayleigh depth.  Zero for a thin layer; 0.25 behind 0.5 cm of Fe at 60 keV.
+  double mu_rayleigh = 0.0, h_loss = 0.0;
+  if( want_rayleigh && cached.mat )
+  {
+    mu_rayleigh = process_mu( MassAttenuation::GammaEmProcces::RayleighScatter );
+    if( mu_rayleigh > 0.0 )
+      h_loss = ceelo::rayleigh_deflection_loss_fraction( energy, mu_total * normal_thickness,
+                                                         *cached.mat );
+    h_loss = std::max( 0.0, std::min( 1.0, h_loss ) );
+  }
 
-  // mu_rem can only ever be a partial credit against mu_total; anything else means the Compton
-  //  sub-coefficient and the total came from inconsistent tables.
-  assert( (mu_rem > 0.0) && (mu_rem <= mu_total*1.0000001) );
+  const double mu_rem = mu_total - cached.f_win*mu_compton + h_loss*mu_rayleigh;
 
-  return std::max( 0.0, std::min( mu_total, mu_rem ) );
+  // The credit is a partial one against mu_total and the loss a partial one of mu_Rayleigh;
+  //  anything outside [mu_total - mu_Compton, mu_total + mu_Rayleigh] means the sub-coefficients
+  //  and the total came from inconsistent tables.
+  assert( (mu_rem > 0.0) && (mu_rem <= (mu_total + mu_rayleigh)*1.0000001) );
+
+  return std::max( 0.0, std::min( mu_total + mu_rayleigh, mu_rem ) );
 }//double fep_survival_removal_coefficient(...)
 
 
@@ -1220,6 +1253,7 @@ std::pair<std::shared_ptr<ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParamete
   // Resolve the volumetric-source efficiency method (Auto -> a concrete method) and build the
   //  transfer response if needed - once here, single-threaded, before any integration.
   answer->resolveVolumetricEffMethod();
+  answer->buildVolumetricLineCachesOrFallBack();
 
 #if( PERFORM_DEVELOPER_CHECKS )
   // Synthetic peaks stand in for peaks that werent actually observed, so they must not be fit to.
@@ -3755,7 +3789,26 @@ std::vector<std::pair<double,DetectorPeakResponse::EffFlag>>
   {
     const DetectorPeakResponse::EffEval eval = m_detector->fepEfficiencyEval(
                     static_cast<float>(energy), eval_theta, eval_phi, true_dist );
-    answer.emplace_back( energy, eval.flag );
+    DetectorPeakResponse::EffFlag flag = eval.flag;
+
+    // A volumetric source extends away from the point that query stands at.  The line sets built
+    //  for it know the worst flag anywhere along their chords - a collimated detector's shadow, the
+    //  near-field floor, energy clamping - so fold that in; the point query alone would say Ok for a
+    //  source whose centre is on axis and whose rim is in the shadow.
+    {
+      std::lock_guard<std::mutex> lock( m_lineCacheMutex );
+      for( const std::pair<const size_t,std::shared_ptr<const VolumetricLineCache>> &lc : m_lineCaches )
+      {
+        if( !lc.second )
+          continue;
+        const DetectorPeakResponse::EffFlag vol_flag
+                      = DetectorPeakResponse::effFlagFromCeelo( lc.second->worst_flag( energy ) );
+        if( static_cast<int>(vol_flag) > static_cast<int>(flag) )
+          flag = vol_flag;
+      }
+    }
+
+    answer.emplace_back( energy, flag );
   }
 
   return answer;
@@ -3859,6 +3912,93 @@ double ShieldingSourceChi2Fcn::trueSourceToDetectorDistance() const
   return sqrt( m_distance*m_distance + m_sourceOffsets[0]*m_sourceOffsets[0]
                + m_sourceOffsets[1]*m_sourceOffsets[1] );
 }
+
+
+std::shared_ptr<const VolumetricLineCache> ShieldingSourceChi2Fcn::volumetricLineCache(
+                                            const size_t material_index,
+                                            const std::array<double,3> &source_outer_dims ) const
+{
+  if( !m_volEffResponse )
+    return nullptr;
+  if( m_volumetricNumLines <= 0 )
+    throw std::runtime_error( "the volumetric line count must be positive, not "
+                              + std::to_string(m_volumetricNumLines) );
+
+  // Scalar detector placement: the same construction the calculators use (with T = double).
+  const double det_radius = (m_detector ? 0.5*m_detector->detectorDiameter() : 0.5*PhysicalUnits::cm);
+  const double det_setback = (m_detector ? m_detector->detectorSetback() : 0.0);
+  const DetectorGeomT<double> det = detector_geom_from_config<double>( m_geometry, m_distance,
+                                        det_radius, det_setback, m_sourceOffsets[0], m_sourceOffsets[1] );
+  const std::array<double,3> det_pos = { det.position[0], det.position[1], det.position[2] };
+  const std::array<double,3> det_axis = { det.axis[0], det.axis[1], det.axis[2] };
+  const double azimuth = 0.0;
+
+  std::lock_guard<std::mutex> lock( m_lineCacheMutex );
+  const auto pos = m_lineCaches.find( material_index );
+  if( (pos != end(m_lineCaches)) && pos->second
+      && pos->second->matches( m_volEffResponse.get(), m_geometry, material_index, source_outer_dims,
+                               det_pos, det_axis, azimuth, m_volumetricNumLines ) )
+    return pos->second;
+
+  std::shared_ptr<const VolumetricLineCache> cache
+        = build_volumetric_line_cache( m_volEffResponse, m_geometry, material_index, source_outer_dims,
+                                       det_pos, det_axis, azimuth, m_volumetricNumLines );
+  m_lineCaches[material_index] = cache;
+  return cache;
+}//volumetricLineCache(...)
+
+
+void ShieldingSourceChi2Fcn::buildVolumetricLineCachesOrFallBack()
+{
+  if( !m_volEffResponse )
+    return;
+
+  const int ndims = (m_geometry == GeometryType::Spherical) ? 1
+                    : ((m_geometry == GeometryType::Rectangular) ? 3 : 2);
+
+  try
+  {
+    // Cumulative outer dims of each shell from the initial thicknesses, as build_volumetric_calculators
+    //  accumulates them from the fit parameters; generic shieldings have no extent.
+    std::array<double,3> outer = { 0.0, 0.0, 0.0 };
+    for( size_t i = 0; i < m_initial_shieldings.size(); ++i )
+    {
+      const ShieldingSourceFitCalc::ShieldingInfo &info = m_initial_shieldings[i];
+      if( info.m_isGenericMaterial )
+        continue;
+      for( int d = 0; d < ndims; ++d )
+        outer[d] += std::max( 0.0, info.m_dimensions[d] );
+
+      const bool is_source = !traceNuclidesForMaterial(i).empty() || !selfAttenuatingNuclides(i).empty();
+      if( is_source )
+        volumetricLineCache( i, outer );
+    }
+  }catch( std::exception &e )
+  {
+    const bool explicit_request
+        = (m_options.volumetric_eff_method != ShieldingSourceFitCalc::VolumetricEffMethod::Auto);
+    const std::string why = std::string("the detector-side line set could not be built: ") + e.what();
+
+    {
+      std::lock_guard<std::mutex> lock( m_lineCacheMutex );
+      m_lineCaches.clear();
+    }
+    m_volEffResponse.reset();
+    m_resolvedVolEffMethod = ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk;
+
+    if( explicit_request )
+    {
+      m_volEffResolveError = "A near-field volumetric-source efficiency was requested, but " + why
+                             + "; the far-field flat-disk approximation was used instead.";
+      m_volEffResolveNote.clear();
+    }else
+    {
+      m_volEffResolveNote = "Auto -> flat-disk (" + why + ")";
+    }
+  }//try / catch
+
+  assert( (m_resolvedVolEffMethod == ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk) == !m_volEffResponse );
+}//buildVolumetricLineCachesOrFallBack()
 
 
 void ShieldingSourceChi2Fcn::reportCompletedEval( const double chi2, const std::vector<double> &params ) const
@@ -4813,17 +4953,7 @@ vector<PeakResultPlotInfo>
 
   if( calculators.size() )
   {
-    if( m_options.multithread_self_atten && (calculators.size() > 1) )
-    {
-      SpecUtilsAsync::ThreadPool pool;
-      for( const unique_ptr<DistributedSrcCalcT<double>> &calculator : calculators )
-        pool.post( [&calculator](){ self_shielding_integration_imp<double>( *calculator ); } );
-      pool.join();
-    }else
-    {
-      for( const unique_ptr<DistributedSrcCalcT<double>> &calculator : calculators )
-        self_shielding_integration_imp<double>( *calculator );
-    }
+    integrate_volumetric_calculators<double>( calculators, m_options.multithread_self_atten );
 
     for( const unique_ptr<DistributedSrcCalcT<double>> &calculator : calculators )
     {

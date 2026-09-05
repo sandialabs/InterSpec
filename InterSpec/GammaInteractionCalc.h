@@ -31,6 +31,7 @@
 #include <deque>
 #include <tuple>
 #include <memory>
+#include <mutex>
 #include <atomic>
 #include <vector>
 #include <utility>
@@ -64,6 +65,7 @@ namespace GammaInteractionCalc
 {
 
 class CascadeSummingCalc;
+struct VolumetricLineCache;
 
 /** Maximum areal density allowed for computations, in units of g/cm2 -
  
@@ -114,34 +116,46 @@ const char *to_str( const GeometryType type );
 double transmition_length_coefficient( const Material *material, float energy );
 
 
-/** The FULL-ENERGY-PEAK survival-removal coefficient (plan 3.4):
+/** The FULL-ENERGY-PEAK survival-removal coefficient (plan 3.4, Rayleigh term 2026-09-04):
 
       mu_rem = transmition_length_coefficient(material, energy) - f_win * mu_Compton
+               + h(energy, material, mu * normal_thickness) * mu_Rayleigh
 
- Rayleigh scattering is elastic, so it cannot move a photon out of the peak window, and forward
- Compton scatters whose energy loss stays inside the window are still counted in the peak.  Using
- plain mu_total therefore OVER-attenuates the peak; CeeLo measures that at -8..-16% at 60 keV for
- low-Z contents at depth.
+ Forward Compton scatters whose energy loss stays inside the peak window are still counted in the
+ peak, so plain mu_total OVER-attenuates the peak (CeeLo: -8..-16% at 60 keV for low-Z contents at
+ depth); `f_win` credits them back.
 
- IMPORTANT: InterSpec's mu already excludes Rayleigh - `massAttenuationCoefficientElement` returns
- compton+photoelectric+pair and the SNL path returns 0.0 for RayleighScatter - so CeeLo's
- `mu_total - mu_Rayleigh - f_win*mu_Compton` has no Rayleigh term to subtract here.  Subtracting one
- would double-count, and would do so silently because that call currently returns zero.
+ Rayleigh scattering is elastic, so it cannot move a photon out of the peak window BY ENERGY - and
+ InterSpec's mu already excludes it (`massAttenuationCoefficientElement` returns
+ compton+photoelectric+pair; the SNL path returns 0.0 for RayleighScatter), i.e. the model treats
+ a coherently scattered photon as continuing undeflected.  That is right for a THIN layer and wrong
+ for a thick one: in Fe at 60 keV half the coherent scatters exceed 20 degrees, the deflection
+ lengthens the photon's remaining path through the layer, and a fraction h of those photons is
+ absorbed after all.  Left out, the model read +10% against Monte-Carlo truth behind 0.5 cm of Fe at
+ 60 keV (h = 0.25, mu_Rayleigh*h*t = 9% of the peak); with it the residual is the transfer's own
+ ~1% floor, flat from 60 to 1332 keV.  h is evaluated at the layer's NORMAL non-Rayleigh optical
+ depth by ceelo::rayleigh_deflection_loss_fraction, from the same form-factor angular law CeeLo
+ transports.  It vanishes as the thickness does, so a thin layer is unchanged.
 
  `window_keV` is a HALF-width (CeeLo's +-win convention), i.e. FWHM/2 of the detector the response
- is anchored on.  Pass <= 0 to get no credit (returns mu_total unchanged).
+ is anchored on.  Pass <= 0 to get no credit.  `normal_thickness` (PhysicalUnits length) is the
+ thickness of THIS layer along the detector direction; pass <= 0 (the default) for no Rayleigh
+ term.  With both off this returns mu_total unchanged.  Callers pass the thickness for layers
+ OUTSIDE the emitting volume only: a self-attenuating matrix self-selects a ~1 mfp skin and its full
+ extent would be the wrong depth (the skin's own term is ~1% and is not modelled).
 
  The in-window fraction is a quadrature over the Klein-Nishina distribution weighted by the
  material's incoherent scattering function, so this is NOT cheap: it is memoised per
- (material, energy, window) and must never be called inside a per-ray or per-element loop.
+ (material, energy, window) and must never be called inside a per-ray or per-element loop.  The
+ thickness is NOT part of the memo key; the Rayleigh term is a cheap per-call sum.
 
- Headroom, so nobody expects more of this than it can give: the whole correction is bounded by
- f_win * (mu_Compton/mu_total).  Measured at a 0.35 keV half-window and 60 keV that is 0.30% of mu
- for steel (photoelectric dominates, so there is almost nothing to credit) versus 3.1% for water;
- above 344 keV it is under 0.3% for both.
+ Headroom, so nobody expects more of this than it can give: the Compton credit is bounded by
+ f_win * (mu_Compton/mu_total) - at a 0.35 keV half-window and 60 keV that is 0.30% of mu for
+ steel versus 3.1% for water, under 0.3% for both above 344 keV - and the Rayleigh term by
+ mu_Rayleigh/mu_total, about 10-13% in Fe from 60 to 150 keV, 4% at 344 keV.
  */
 double fep_survival_removal_coefficient( const Material *material, float energy,
-                                         double window_keV );
+                                         double window_keV, double normal_thickness = 0.0 );
 double transmition_coefficient_material( const Material *material, float energy,
                                 float length );
 
@@ -1443,6 +1457,18 @@ public:
   static std::vector< std::pair<double,double> > observedPeakEnergyWidths(
                                                               const std::vector<PeakDef> &peaks );
 
+  /** The full-energy-peak HALF-window (keV) the survival-removal coefficient credits at, for a
+   line of `energy` (keV): the fitted peak's FWHM/2 when a fitted peak sits on the line, else the
+   detector's resolution, else #sm_default_fep_window_keV.  `energie_widths` is
+   #observedPeakEnergyWidths of the fit's peaks.  Shared by the volumetric and point-source paths
+   so both credit the same window (see the policy note at the definition).
+   */
+  double fepWindowKeV( const double energy,
+                       const std::vector<std::pair<double,double>> &energie_widths ) const;
+
+  /** Fallback FEP half-window when neither a fitted peak nor a detector resolution is available. */
+  static constexpr double sm_default_fep_window_keV = 1.0;
+
   //cluster_peak_activities(...): clusters the number of decays per second
   //  by energies.  If photopeakClusterSigma>0.0, then all gamma lines nearby
   //  a peaks mean will be considered to contribute to that peak.  'Nearby'
@@ -1609,7 +1635,21 @@ protected:
    detector is enough. */
   void resolveVolumetricEffMethod();
 
+  /** Builds the detector-side line sets the volumetric LINE integration needs, once, at creation -
+   after #resolveVolumetricEffMethod, from the initial source dimensions.  A set that cannot be
+   built is a fact about this geometry and response, and is handled exactly like an unbuildable
+   transfer: the fit falls back to the far-field flat-disk model, with a #volumetricEffResolveNote
+   for an `Auto` request and a #volumetricEffResolveError for a method asked for by name.  (A
+   rebuild during the fit - the dimensions left the set's window - that fails is an error the
+   optimizer reports instead; see build_volumetric_calculators.) */
+  void buildVolumetricLineCachesOrFallBack();
+
 public:
+  /** Lines per source shell for the line path, as new chi2 functions pick it up: a cost/accuracy
+   knob (see the convergence study in test_VolumetricLadder.cpp).  A non-positive count makes the
+   line set unbuildable, which the tests use to exercise the fallback. */
+  static inline int sm_default_volumetric_num_lines = 65536;
+
   /** Per-material attenuation-coefficient functions (energy -> mu*chord) along
    the center->detector ray at the given parameters, plus the air path length
    and the stacks along-ray (effective-AN, areal-density) for the GADRAS
@@ -1655,6 +1695,21 @@ protected:
   //A cache of nuclide mixtures to
   mutable NucMixtureCache m_mixtureCache;
   static const size_t sm_maxMixtureCacheSize = 10000;
+
+  /** Detector-side line sets for the volumetric LINE integration path, one per source shell,
+   keyed on the source material index and rebuilt whenever the scalar source dimensions (or the
+   detector placement) change - i.e. once per optimizer step for a dimension fit, once per fit
+   otherwise.  See VolumetricLineIntegration_imp.hpp.  Shared (const) with the fit threads. */
+  mutable std::mutex m_lineCacheMutex;
+  mutable std::map<size_t,std::shared_ptr<const VolumetricLineCache>> m_lineCaches;
+
+  /** Lines per source shell for the line path, from #sm_default_volumetric_num_lines. */
+  int m_volumetricNumLines = sm_default_volumetric_num_lines;
+
+  /** The line set for the given source shell at the given SCALAR cumulative outer dims, building
+   or rebuilding it as needed.  Null when there is no resolved volumetric response. */
+  std::shared_ptr<const VolumetricLineCache> volumetricLineCache( const size_t material_index,
+                                                    const std::array<double,3> &source_outer_dims ) const;
 };//class ShieldingSourceChi2Fcn
 
 }//namespace GammaInteractionCalc

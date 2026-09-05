@@ -28,10 +28,17 @@
 #include "io/ResponseKernel.h"
 
 #include "cross_sections/CrossSectionData.h"
+#include "transport/ComptonScatter.h"   // sample_rayleigh_cos_theta
 
 #include <Eigen/Geometry>  // .cross()
 
 #include <algorithm>
+#include <cmath>
+#include <cstdint>
+#include <map>
+#include <mutex>
+#include <random>
+#include <utility>
 #include <vector>
 
 namespace ceelo {
@@ -469,6 +476,81 @@ double kn_in_window_fraction(double E_keV, double win_keV, const Material& mat) 
     };
     const double denom = integrate(-1.0, 1.0);
     return (denom > 0.0) ? integrate(mu_lo, 1.0) / denom : 0.0;
+}
+
+// ---- Rayleigh deflection loss ---------------------------------------------------------------
+
+namespace {
+
+/// Histogram of a = sec(theta) - 1 over the Rayleigh angular law of one (Z, E): forward samples
+/// binned in log(a), the backward (theta >= 90 deg) fraction kept separately.  Weights sum to 1.
+struct RayleighDeflectionHist {
+    std::vector<double> a;     ///< bin centre, sec(theta) - 1
+    std::vector<double> w;     ///< bin weight
+    double backward = 0.0;     ///< fraction scattered through >= 90 deg
+};
+
+const RayleighDeflectionHist& rayleigh_deflection_hist(int Z, double E_keV) {
+    static std::mutex mutex;
+    static std::map<std::pair<int, long long>, RayleighDeflectionHist> cache;
+
+    const std::pair<int, long long> key(Z, std::llround(E_keV * 1000.0));
+    std::lock_guard<std::mutex> lock(mutex);
+    const auto it = cache.find(key);
+    if (it != cache.end()) return it->second;
+
+    constexpr int kSamples = 50000;
+    constexpr int kBins = 128;
+    constexpr double kLogAMin = -4.0, kLogAMax = 3.0;   // a in [1e-4, 1e3]; below => ~no loss
+    constexpr double kLogSpan = kLogAMax - kLogAMin;
+
+    RayleighDeflectionHist h;
+    h.a.resize(kBins);
+    h.w.assign(kBins, 0.0);
+    for (int b = 0; b < kBins; ++b)
+        h.a[b] = std::pow(10.0, kLogAMin + (b + 0.5) * kLogSpan / kBins);
+
+    // Fixed seed: the histogram (and so every downstream coefficient) is reproducible.
+    std::mt19937_64 rng(0x5EED2026ULL ^ (static_cast<uint64_t>(Z) << 32)
+                        ^ static_cast<uint64_t>(key.second));
+    const double dw = 1.0 / kSamples;
+    for (int i = 0; i < kSamples; ++i) {
+        const double ct = sample_rayleigh_cos_theta(Z, E_keV, rng);
+        if (ct <= 0.0) { h.backward += dw; continue; }
+        const double a = std::max(1.0 / ct - 1.0, 1e-300);
+        int b = static_cast<int>(std::floor((std::log10(a) - kLogAMin) / kLogSpan * kBins));
+        b = std::max(0, std::min(kBins - 1, b));
+        h.w[b] += dw;
+    }
+    return cache.emplace(key, std::move(h)).first->second;
+}
+
+}  // namespace
+
+double rayleigh_deflection_loss_fraction(double E_keV, double tau_nr, const Material& mat) {
+    if (!(tau_nr > 0.0) || !(E_keV > 0.0)) return 0.0;
+
+    const CrossSectionData& xsd = CrossSectionData::instance();
+    const double E_MeV = E_keV * 1e-3;
+
+    // Per-element weights n_i * sigma_R,i: each element's share of the Rayleigh interactions.
+    double num = 0.0, den = 0.0;
+    for (const MaterialComponent& c : mat.composition()) {
+        const double w = c.mass_fraction / xsd.atomic_weight(c.Z) * xsd.sigma_rayleigh(c.Z, E_MeV);
+        if (!(w > 0.0)) continue;
+        const RayleighDeflectionHist& h = rayleigh_deflection_hist(c.Z, E_keV);
+        // For a scatter uniformly placed along the layer, the surviving fraction of the
+        //  lengthened remaining path averages to (1 - e^{-aT}) / (aT).
+        double lost = h.backward;
+        for (size_t b = 0; b < h.a.size(); ++b) {
+            const double x = h.a[b] * tau_nr;
+            const double surv = (x < 1e-8) ? 1.0 : (-std::expm1(-x) / x);
+            lost += h.w[b] * (1.0 - surv);
+        }
+        num += w * lost;
+        den += w;
+    }
+    return (den > 0.0) ? num / den : 0.0;
 }
 
 } // namespace ceelo

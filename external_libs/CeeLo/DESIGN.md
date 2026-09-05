@@ -247,6 +247,27 @@ counted and FEP comes out low with no error and no flag.
 `ResponseProvenance::fep_window_keV`, so a consumer crediting in-window Compton
 can match the window a response was actually scored at instead of assuming one.
 
+**Rayleigh in the analytic FEP transmission (2026-09-04).** `fep_survival_removal_mu`
+drops `mu_rs` entirely -- coherent scatter is elastic, so it cannot leave the
+window by energy -- which silently treats a Rayleigh-scattered photon as
+continuing UNDEFLECTED. That is right for a thin layer and wrong for a thick
+one: in Fe at 60 keV half the coherent scatters exceed 20 deg (`<cos> = 0.80`,
+pinned to xraylib in `test_fep_only`), the deflection lengthens the remaining
+path, and the fraction of those photons then absorbed grows with the layer's
+depth. `rayleigh_deflection_loss_fraction(E, tau_nr, mat)` (ResponseKernel.h)
+gives that fraction h(T) from the same form-factor sampler the transport uses:
+h -> P(theta >= 90 deg) as T -> 0, 0.25 at the 4.4 non-Rayleigh mfp of 0.5 cm
+Fe at 60 keV, where `mu_rs * h * t` is 9% of the peak. An analytic consumer
+adds `mu_rs * h(mu_rem * t)` for each layer OUTSIDE the emitting volume (an
+emitting matrix self-selects a ~1 mfp skin, where the term is ~1%). This was the
+whole of InterSpec's +10% model-over-MC residual behind 0.5 cm Fe at 60 keV:
+with the term, the residual is the transfer's own ~1% floor from 60 to
+1332 keV, and a point-behind-steel depth sweep that was quadratic in tau
+(+4% at tau 4.2) is flat. Known approximations: h is taken at the layer's
+NORMAL depth and per layer (oblique rays and stacked shields under-correct a
+little), and the flat in-window Compton credit still carries no deflection
+penalty of its own (`fep_survival_removal_mu_depth` is the empirical stand-in).
+
 Callers that know the peak should override it, and do: `CascadeSummingCalc`
 takes each window from the fitted peak's own sigma, which is what a
 lower-resolution detector needs.
@@ -565,6 +586,8 @@ fluorescence X-rays from heavy-element attenuators are produced (else killed by 
 | 12 | 3"x3" NaI | bare | 10x15x20cm SS304 box, cellulose | ≤ 0.2% (≥ 200 keV); −4.0% @ 59 | ≤ 1.6% (≥ 200 keV); −2.5% @ 59 |
 | 25 | GEM35-70 HPGe coax, sharp edge | bare | point, 5cm on-axis | ≤ 1.1% | ≤ 0.6% |
 | 26 | GEM35-70 HPGe coax, **bulletized** + round-tipped bore | bare | point, 5cm on-axis | ≤ 1.0% | ≤ 0.3%† |
+| 27 | GEM35-70 HPGe coax, bulletized | bare | point, 2cm + 0.5cm Fe shell | −0.4% @122; −2.1% @88, −8.5% @60‡ | −0.5% @122‡ |
+| 28 | GEM35-70 HPGe coax, bulletized | bare | point, 10cm + 0.5cm Fe shell | −0.2% @122; −1.3% @88, −8.6% @60‡ | −0.3% @122‡ |
 
 **Measured Aug 2026** against the committed GEANT4 references, from
 `tests/data/ceelo_reference/` regenerated at ~0.3% precision on the EPICS2023
@@ -644,6 +667,21 @@ closer and the rest further. The two largest movements are **config 12 @ 59 keV*
 1.6447% worst contribution-weighted attenuation change, with independent NIST
 XCOM spot checks favouring the direct EPICS values over the historical fit; see
 `tools/prepare_cross_sections/reports/migration_acceptance.json`.
+
+‡ **Configs 27/28 (2026-09-04) are the deep-iron low-energy probe**, added when InterSpec's
+analytic model was found to be missing the Rayleigh-deflection loss (see the FEP-window section)
+and the question became whether CeeLo places the scattered-into-peak stream right behind thick
+iron.  Scored at a 0.75 keV window on BOTH sides (the harness default; `--fep-window 0.75` for
+CeeLo).  The absolute FEP gap is the documented EPICS2023-vs-EPICS2014 iron photoelectric
+difference (~2% in μ near 58 keV, CeeLo = NIST) compounded through the shell's 4.6 mfp at 60 keV
+and 1.9 mfp at 88 keV, and it is the same at 2 cm and 10 cm, as a cross-section effect must be.
+The u/s decomposition on both sides says the same: at 60 keV the unscattered FEP stream is
+−7.6% / −8.2% (2 / 10 cm) and the scattered one −10.4% / −9.5%, i.e. the two streams move
+together, and the scattered SHARE of the peak is 30.0% vs 30.6% (2 cm) and 30.5% vs 30.8% (10 cm);
+at 88 keV 18.1% vs 17.8% and 17.5% vs 18.0%; at 122 keV 10.5% vs 10.5% and 10.2% vs 10.4%.
+So the forward-Rayleigh / small-angle-Compton placement agrees with GEANT4 to ~2% of that stream
+in a Rayleigh-dominated case, and the cfg-8 "eps_s ~15% low" residual does not generalise to iron.
+60/88 keV are `SKIP`ped in `compare_validation.py` with that reason; 122 keV gates at 1%.
 
 \* **Config 8 reference was regenerated at 32M on the CURRENT geometry (June 26 2026).** The previous
 March `g4_cfg8_*_v2` reference was **stale**: it predated the June source-effect/biasing/cascade

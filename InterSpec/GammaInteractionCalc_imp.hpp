@@ -86,6 +86,10 @@ namespace ceres
 namespace GammaInteractionCalc
 {
 
+/** Detector-side line set for the volumetric line integration - see
+ VolumetricLineIntegration_imp.hpp (included at the end of this header). */
+struct VolumetricLineCache;
+
 /** The scalar part of a double or ceres::Jet<> value. */
 template<typename T>
 inline double scalar_of( const T &val )
@@ -859,8 +863,16 @@ T rectangle_exit_location_imp( const T &half_width, const T &half_height,
 
 /** Templated transcription of #rectangle_intersections.
 
- Both `source` and `detector` must be outside the box; fills in where the ray
- enters and exits the box, returning false if it misses entirely.
+ Both `source` and `detector` must be outside the box; fills in where the ray from `source` toward
+ `detector` enters and exits the box, returning false if it misses entirely.  Any crossing along the
+ ray's forward direction counts (the caller guarantees the detector lies beyond every shell).
+
+ The slab method: along the ray each axis admits the parameter interval between its two planes, the
+ box is their intersection, so the entry is the LAST near plane crossed and the exit the FIRST far
+ plane.  (The earlier transcription took the first near-plane crossing and reported a miss when that
+ crossing lay outside its face - which is exactly a ray clipping a corner of the box, whose true
+ entry is through a later plane.  ShellWalkMatchesElementCentreRay in test_VolumetricLinePath.cpp
+ caught it on a hollow box: the walk through the inner core was skipped for such rays.)
  */
 template<typename T>
 bool rectangle_intersections_imp( const T &half_width, const T &half_height,
@@ -873,10 +885,7 @@ bool rectangle_intersections_imp( const T &half_width, const T &half_height,
   using namespace std;
   using namespace ceres;
 
-  // Contract checks ported from the retired double #rectangle_intersections.  Unlike
-  //  #rectangle_exit_location_imp these keep the strict `> 0` half-extent requirement: the one
-  //  production caller (DistributedSrcCalcT::eval_rect) always has a real box, and this function has
-  //  *not* received the zero-extent fix (see the TODO below), so the strict contract is the honest one.
+  // The one production caller (DistributedSrcCalcT::eval_rect) always has a real box.
   assert( (scalar_of(half_width) > 0.0) && (scalar_of(half_height) > 0.0)
           && (scalar_of(half_depth) > 0.0) );
 
@@ -899,152 +908,48 @@ bool rectangle_intersections_imp( const T &half_width, const T &half_height,
   norm[1] /= total_dist;
   norm[2] /= total_dist;
 
-  // TODO: this still uses the `t = (intersect - source)*(1/norm)` form that
-  //       #rectangle_exit_location_imp was fixed away from - with a zero half-extent (or a source
-  //       exactly on a face the ray runs parallel to) it evaluates 0*DBL_MAX == 0 and wrongly picks
-  //       the degenerate plane.  Harmless today because the sole caller always passes a real box
-  //       with both endpoints well outside it, but it should get the same treatment if that changes.
-  const T inv_slope_x = (norm[0] == 0.0) ? T(DBL_MAX) : (1.0 / norm[0]);
-  const T x_intersect = (inv_slope_x >= 0.0) ? half_width : -half_width;
-  const T t_intersect_x_det = (x_intersect - source[0])*inv_slope_x;
-  const T t_intersect_x_src = (-x_intersect - source[0])*inv_slope_x;
+  const T halves[3] = { half_width, half_height, half_depth };
 
-  const T inv_slope_y = (norm[1] == 0.0) ? T(DBL_MAX) : (1.0 / norm[1]);
-  const T y_intersect = (inv_slope_y >= 0.0) ? half_height : -half_height;
-  const T t_intersect_y_det = (y_intersect - source[1])*inv_slope_y;
-  const T t_intersect_y_src = (-y_intersect - source[1])*inv_slope_y;
-
-  const T inv_slope_z = (norm[2] == 0.0) ? T(DBL_MAX) : (1.0 / norm[2]);
-  const T z_intersect = (inv_slope_z >= 0.0) ? half_depth : -half_depth;
-  const T t_intersect_z_det = (z_intersect - source[2])*inv_slope_z;
-  const T t_intersect_z_src = (-z_intersect - source[2])*inv_slope_z;
-
-  const bool intersects_x_src = (t_intersect_x_src >= 0.0);
-  const bool intersects_y_src = (t_intersect_y_src >= 0.0);
-  const bool intersects_z_src = (t_intersect_z_src >= 0.0);
-
-  const bool x_before_y_src = (!intersects_y_src || (t_intersect_x_src <= t_intersect_y_src));
-  const bool x_before_z_src = (!intersects_z_src || (t_intersect_x_src <= t_intersect_z_src));
-  const bool y_before_z_src = (!intersects_z_src || (t_intersect_y_src <= t_intersect_z_src));
-
-  if( intersects_x_src && x_before_y_src && x_before_z_src )
+  // Entry = the last near plane crossed, exit = the first far plane; a ray parallel to an axis's
+  //  planes has to start inside that slab, and then does not constrain either.
+  T t_enter( 0.0 ), t_exit( 0.0 );
+  bool have_enter = false, have_exit = false;
+  for( int ax = 0; ax < 3; ++ax )
   {
-    // We are entering through the plane perpendicular to x-axis
-    const T src_intersect_x = ((norm[0] >= 0.0) ? -half_width : half_width);
-    const T src_intersect_y = source[1] + (t_intersect_x_src * norm[1]);
-    const T src_intersect_z = source[2] + (t_intersect_x_src * norm[2]);
-
-    if( (abs(src_intersect_y) > half_height)
-       || (abs(src_intersect_z) > half_depth) )
+    if( scalar_of(norm[ax]) == 0.0 )
     {
-      assert( std::min( std::min(scalar_of(t_intersect_x_src),scalar_of(t_intersect_y_src)),
-                        scalar_of(t_intersect_z_src) )
-              <= (std::min( std::min(scalar_of(t_intersect_x_det),scalar_of(t_intersect_y_det)),
-                            scalar_of(t_intersect_z_det) ) + 1.0E-9) );
-      return false;
+      if( std::fabs(scalar_of(source[ax])) > scalar_of(halves[ax]) )
+        return false;
+      continue;
     }
-
-    enter_point[0] = src_intersect_x;
-    enter_point[1] = src_intersect_y;
-    enter_point[2] = src_intersect_z;
-
-    assert( std::fabs( std::fabs(scalar_of(source[0]) + scalar_of(t_intersect_x_src)*scalar_of(norm[0]))
-                       - scalar_of(half_width) ) < scalar_of(half_width)*1.0E-9 );
-  }else if( intersects_y_src && y_before_z_src )
-  {
-    // We are entering through the plane perpendicular to y-axis
-    const T src_intersect_x = source[0] + (t_intersect_y_src * norm[0]);
-    const T src_intersect_y = ((norm[1] >= 0.0) ? -half_height : half_height);
-    const T src_intersect_z = source[2] + (t_intersect_y_src * norm[2]);
-
-    if( (abs(src_intersect_x) > half_width)
-       || (abs(src_intersect_z) > half_depth) )
+    const T t1 = (-halves[ax] - source[ax]) / norm[ax];
+    const T t2 = ( halves[ax] - source[ax]) / norm[ax];
+    const T &t_near = (scalar_of(t1) <= scalar_of(t2)) ? t1 : t2;
+    const T &t_far  = (scalar_of(t1) <= scalar_of(t2)) ? t2 : t1;
+    if( !have_enter || (scalar_of(t_near) > scalar_of(t_enter)) )
     {
-      assert( std::min( std::min(scalar_of(t_intersect_x_src),scalar_of(t_intersect_y_src)),
-                        scalar_of(t_intersect_z_src) )
-              <= (std::min( std::min(scalar_of(t_intersect_x_det),scalar_of(t_intersect_y_det)),
-                            scalar_of(t_intersect_z_det) ) + 1.0E-9) );
-      return false;
+      t_enter = t_near;
+      have_enter = true;
     }
-
-    enter_point[0] = src_intersect_x;
-    enter_point[1] = src_intersect_y;
-    enter_point[2] = src_intersect_z;
-
-    assert( std::fabs( std::fabs(scalar_of(source[1]) + scalar_of(t_intersect_y_src)*scalar_of(norm[1]))
-                       - scalar_of(half_height) ) < scalar_of(half_height)*1.0E-9 );
-  }else if( intersects_z_src )
-  {
-    // We are entering through the plane perpendicular to z-axis
-    const T src_intersect_x = source[0] + (t_intersect_z_src * norm[0]);
-    const T src_intersect_y = source[1] + (t_intersect_z_src * norm[1]);
-    const T src_intersect_z = ((norm[2] >= 0.0) ? -half_depth : half_depth);
-
-    if( (abs(src_intersect_x) > half_width)
-       || (abs(src_intersect_y) > half_height) )
+    if( !have_exit || (scalar_of(t_far) < scalar_of(t_exit)) )
     {
-      assert( std::min( std::min(scalar_of(t_intersect_x_src),scalar_of(t_intersect_y_src)),
-                        scalar_of(t_intersect_z_src) )
-              <= (std::min( std::min(scalar_of(t_intersect_x_det),scalar_of(t_intersect_y_det)),
-                            scalar_of(t_intersect_z_det) ) + 1.0E-9) );
-      return false;
+      t_exit = t_far;
+      have_exit = true;
     }
+  }//for( axes )
 
-    enter_point[0] = src_intersect_x;
-    enter_point[1] = src_intersect_y;
-    enter_point[2] = src_intersect_z;
+  if( !have_enter || (scalar_of(t_enter) > scalar_of(t_exit)) )
+    return false;   //misses the box
+  if( scalar_of(t_exit) <= 0.0 )
+    return false;   //the box is entirely behind the source
+  if( scalar_of(t_enter) < 0.0 )
+    t_enter = T(0.0);   //source on a face to round-off
 
-    assert( std::fabs( std::fabs(scalar_of(source[2]) + scalar_of(t_intersect_z_src)*scalar_of(norm[2]))
-                       - scalar_of(half_depth) ) < scalar_of(half_depth)*1.0E-9 );
-  }else
+  for( int i = 0; i < 3; ++i )
   {
-    return false;
-  }// if / else figure out where we are entering.
-
-  const bool intersects_x_det = (t_intersect_x_det >= 0.0);
-  const bool intersects_y_det = (t_intersect_y_det >= 0.0);
-  const bool intersects_z_det = (t_intersect_z_det >= 0.0);
-
-  const bool x_before_y_det = (!intersects_y_det || (t_intersect_x_det <= t_intersect_y_det));
-  const bool x_before_z_det = (!intersects_z_det || (t_intersect_x_det <= t_intersect_z_det));
-  const bool y_before_z_det = (!intersects_z_det || (t_intersect_y_det <= t_intersect_z_det));
-
-  if( intersects_x_det && x_before_y_det && x_before_z_det )
-  {
-    exit_point[0] = ((norm[0] >= 0.0) ? half_width : -half_width);
-    exit_point[1] = source[1] + (t_intersect_x_det * norm[1]);
-    exit_point[2] = source[2] + (t_intersect_x_det * norm[2]);
-
-    assert( std::fabs( std::fabs(scalar_of(source[0]) + scalar_of(t_intersect_x_det)*scalar_of(norm[0]))
-                       - scalar_of(half_width) ) < scalar_of(half_width)*1.0E-9 );
-  }else if( intersects_y_det && y_before_z_det )
-  {
-    exit_point[0] = source[0] + (t_intersect_y_det * norm[0]);
-    exit_point[1] = ((norm[1] >= 0.0) ? half_height : -half_height);
-    exit_point[2] = source[2] + (t_intersect_y_det * norm[2]);
-
-    assert( std::fabs( std::fabs(scalar_of(source[1]) + scalar_of(t_intersect_y_det)*scalar_of(norm[1]))
-                       - scalar_of(half_height) ) < scalar_of(half_height)*1.0E-9 );
-  }else if( intersects_z_det )
-  {
-    exit_point[0] = source[0] + (t_intersect_z_det * norm[0]);
-    exit_point[1] = source[1] + (t_intersect_z_det * norm[1]);
-    exit_point[2] = ((norm[2] >= 0.0) ? half_depth : -half_depth);
-
-    assert( std::fabs( std::fabs(scalar_of(source[2]) + scalar_of(t_intersect_z_det)*scalar_of(norm[2]))
-                       - scalar_of(half_depth) ) < scalar_of(half_depth)*1.0E-9 );
-  }else
-  {
-    // No exit face selected.  Reachable only if the entry test above accepted a ray the exit tests
-    //  then all rejected, which is a floating-point grazing case.  In Release the asserts vanish and
-    //  `exit_point` would be left UNINITIALISED, and the caller turns distance(enter,exit) straight
-    //  into an optical depth - so report a miss instead of handing back stack garbage.
-    assert( 0 );
-    exit_point[0] = enter_point[0];
-    exit_point[1] = enter_point[1];
-    exit_point[2] = enter_point[2];
-    return false;
-  }// if / else figure out where we are exiting.
+    enter_point[i] = source[i] + t_enter*norm[i];
+    exit_point[i] = source[i] + t_exit*norm[i];
+  }
 
   assert( std::fabs(scalar_of(enter_point[0])) <= (scalar_of(half_width)  + 1.0E-9) );
   assert( std::fabs(scalar_of(enter_point[1])) <= (scalar_of(half_height) + 1.0E-9) );
@@ -1155,15 +1060,22 @@ struct DistributedSrcCalcT
 
     /** The same, but for the FULL-ENERGY-PEAK leg: the survival-removal coefficient
 
-         mu_rem = mu_total - f_win(E, material) * mu_Compton
+         mu_rem = mu_total - f_win(E, material) * mu_Compton + h(E, material, tau) * mu_Rayleigh
 
-     Rayleigh is elastic so it cannot remove a photon from the peak, and forward Compton scatters
-     whose energy loss stays inside the peak window are still counted in it (plan 3.4).
+     Forward Compton scatters whose energy loss stays inside the peak window are still counted in
+     it (plan 3.4), hence the credit.  Rayleigh is elastic, and InterSpec's
+     `transmition_length_coefficient` ALREADY excludes it (`massAttenuationCoefficientElement`
+     returns compton+photoelectric+pair; the SNL path returns 0 for RayleighScatter) - i.e. the
+     walk treats a coherently scattered photon as undeflected.  In a THICK layer that is wrong: the
+     deflection lengthens the remaining path and a fraction h of those photons are absorbed, so
+     shells OUTSIDE the source carry the loss term, evaluated at their own normal depth (see
+     #fep_survival_removal_coefficient; 9% of the peak behind 0.5 cm Fe at 60 keV).  The emitting
+     shell does not: its escaping signal comes from a ~1 mfp skin and the term there is ~1%.
 
-     NOTE InterSpec's `transmition_length_coefficient` ALREADY excludes Rayleigh
-     (`massAttenuationCoefficientElement` returns compton+photoelectric+pair, and the SNL path
-     returns 0 for RayleighScatter), so - unlike CeeLo's formulation - there is no Rayleigh term to
-     subtract here.  Subtracting one would double-count, silently, since it currently returns 0.
+     Known approximations of the per-shell form: h is taken at the NORMAL depth (oblique rays
+     cross more), and at THIS shell's depth only (a deflection in an inner shield also lengthens
+     the path through the shields outside it).  Both under-correct slightly.  Generic AN/AD shells
+     have no Rayleigh sub-coefficient and get no term.
 
      Set equal to #trans_len_coef when no credit applies (Generic AN/AD shells).
 
@@ -1224,10 +1136,22 @@ struct DistributedSrcCalcT
                                     = ShieldingSourceFitCalc::VolumetricEffMethod::FlatDisk;
   std::shared_ptr<const ceelo::DetectorResponse> m_effResponse;
 
-  /** Aperture rays per source element for the per-ray kernel (#m_effResponse set).  Tunable because
-   it trades cost against the discretization of the inner (aperture) integral; see the convergence
-   study in test_VolumetricNearField. */
-  int m_effNumRays = 512;
+  /** Aperture rays per source element for the per-ray kernel (#m_effResponse set) - the VALIDATION
+   REFERENCE path only (VolumetricElementAperture_imp.hpp); production integrates such a source on
+   the line path and never builds an aperture.  Tunable because it trades cost against the
+   discretization of the inner (aperture) integral; see the convergence study in
+   test_VolumetricNearField.
+
+   128 (2026-09-03, was 512): the volume-integrated efficiency at 128 rays sits within 0.13% of an
+   8192-ray reference (ApertureRayConvergence, with the active-crystal bounding cone), and the cost
+   is linear in the ray count (5.8e-4 -> 1.5e-4 s per element, CostPerEnergy).  Per-element scatter
+   is larger (PerElementAperturePrecision) but averages out over the outer quadrature. */
+  int m_effNumRays = 128;
+
+  /** The detector-side line set for the LINE integration path (VolumetricLineIntegration_imp.hpp);
+   null keeps this calculator on the per-element path.  Set by
+   ShieldingSourceChi2Fcn::build_volumetric_calculators from the fit's per-source cache. */
+  std::shared_ptr<const VolumetricLineCache> m_lineCache;
 
   /** How far along a ray direction the shell-walk's target point is placed.  Only the direction
    matters; this just has to exceed any source/shield extent. */
@@ -1548,214 +1472,9 @@ template<typename T>
 const double DistributedSrcCalcT<T>::sm_ray_target_dist = 1.0e4 * PhysicalUnits::cm;
 
 
-/** The detector aperture as seen from one source element, expressed in the ASSEMBLY frame.
-
- CeeLo builds its quadrature in the crystal-face frame (z = 0 at the crystal face, source in front at
- negative z), so its ray directions have to be rotated before InterSpec's ray-tracer can follow them
- through the source and shielding.  For an axially symmetric detector the azimuth about the
- element->detector axis is a free rotation, so the minimal rotation taking CeeLo's element->detector
- direction onto InterSpec's is the whole mapping.
-
- `weights` and `dirs` come back parallel; `prefactor` is everything in eps_fep except the kernel, so
-     eps_fep(element) == prefactor * sum_i weights[i] * t_src(dirs[i])
- with t_src == 1 for a bare element.  Scalar throughout: these depend on the element POSITION, which
- the caller supplies as a scalar - see the note on the frozen Jacobian in #eff_response_factor.
- */
-struct ElementAperture
-{
-  std::vector<double> weights;
-  std::vector<std::array<double,3>> dirs;   //unit, assembly frame, element -> detector hemisphere
-  double prefactor = 0.0;
-  DetectorPeakResponse::EffFlag flag = DetectorPeakResponse::EffFlag::Ok;
-  double frac_sigma = 0.0;
-
-  /** The crystal-face-frame -> assembly-frame rotation the directions were mapped through.  Kept so
-   a geometry audit can ask where CeeLo's detector axis landed (test_VolumetricLadder.cpp). */
-  std::array<std::array<double,3>,3> rotation = { { {1.0,0.0,0.0}, {0.0,1.0,0.0}, {0.0,0.0,1.0} } };
-};//struct ElementAperture
-
-
-/** TEST HOOK - selects how #build_element_aperture defines CeeLo's element->detector direction.
-
- `false` (production): the direction from the element to the CeeLo-frame image of the assembly's
- detector reference point (`reference_point_position()`, i.e. the endcap front for an EndcapFront
- response) - the same physical point InterSpec's `to_det` aims at, so the two frames agree on the
- element's polar angle and the rotation reduces to the azimuthal one it should be.
-
- `true` (legacy, 2026-09-02 and earlier): the direction to CeeLo's ORIGIN (the crystal-face centre),
- which is `endcap_front_offset_cm` behind the point `to_det` aims at.  Off axis the two directions
- differ, and the full-frame rotation then tilts the whole fan in the plane of incidence by that
- parallax angle - several degrees for a contact element - toward more oblique source chords.  Kept
- only so the before/after can be measured (VolumetricLadder rung 0d); never set it in production.
- */
-inline bool sm_aperture_frame_legacy_origin = false;
-
-
-/** Builds #ElementAperture for one element.  `to_det` is the (unit) element->detector direction in
- the assembly frame, `dist` their separation in PhysicalUnits, `cos_theta` the incidence cosine. */
-inline ElementAperture build_element_aperture( const ceelo::DetectorResponse &resp,
-                                               const double energy_keV,
-                                               const double dist,
-                                               const double cos_theta,
-                                               const double to_det[3],
-                                               const double det_axis[3],
-                                               const int n_rays )
-{
-  ElementAperture answer;
-
-  // Position in the crystal-face frame, through query_position so the reference-point convention
-  //  (endcap front vs crystal face) is applied exactly as eps_fep applies it.
-  const double theta = std::acos( std::max(-1.0, std::min(1.0, cos_theta)) );
-  const Eigen::Vector3d pos = resp.query_position( theta, 0.0, dist / PhysicalUnits::cm );
-
-  const ceelo::ApertureQuadrature q = ceelo::make_aperture_quadrature( resp.geometry(), pos, n_rays );
-
-  std::vector<Eigen::Vector3d> ceelo_dirs;
-  resp.fep_ray_weights( energy_keV, q, answer.weights, ceelo_dirs );
-
-  const ceelo::EffResult pre = resp.fep_prefactor( energy_keV, pos, q );
-  answer.prefactor = pre.value;
-  answer.frac_sigma = (pre.value > 0.0) ? (pre.sigma / pre.value) : 0.0;
-
-  // CeeLo's element->detector direction, toward the SAME physical point InterSpec's `to_det` aims
-  //  at: the assembly's detector reference point, whose CeeLo-frame image is
-  //  resp.reference_point_position() (the origin for a CrystalFace response,
-  //  (0,0,-endcap_front_offset) for EndcapFront).  Aiming at
-  //  CeeLo's origin instead - the legacy behaviour, see #sm_aperture_frame_legacy_origin - disagrees
-  //  with `to_det` on the element's polar angle by the parallax of the endcap offset, and the frame
-  //  rotation below then tilts the whole fan by that angle in the plane of incidence.
-  //  Plain arithmetic rather than Eigen::Geometry - cross()/Rodrigues are a few lines, and this
-  //  header is included in every translation unit that fits.
-  const Eigen::Vector3d ref = sm_aperture_frame_legacy_origin ? Eigen::Vector3d( 0.0, 0.0, 0.0 )
-                                                              : resp.reference_point_position();
-  const Eigen::Vector3d elem_to_ref = ref - pos;
-  const double pn = elem_to_ref.norm();
-  double u_c[3] = { 0.0, 0.0, 1.0 };
-  if( pn > 0.0 )
-  {
-    u_c[0] = elem_to_ref.x()/pn;  u_c[1] = elem_to_ref.y()/pn;  u_c[2] = elem_to_ref.z()/pn;
-  }
-
-#if( PERFORM_DEVELOPER_CHECKS )
-  if( !sm_aperture_frame_legacy_origin && (pn > 0.0) )
-  {
-    // Both frames must now agree on the element's polar angle: -(u_c . a_c) == -(to_det . det_axis)
-    //  == cos_theta.  a_c is (0,0,-1), so -(u_c . a_c) is just u_c[2].
-    const double ceelo_cos = u_c[2];
-    if( std::fabs( ceelo_cos - cos_theta ) > 1.0e-6 )
-    {
-      char msg[256];
-      snprintf( msg, sizeof(msg), "build_element_aperture: CeeLo/assembly polar-angle mismatch"
-                " (cos %.8f vs %.8f)", ceelo_cos, cos_theta );
-      log_developer_error( __func__, msg );
-    }
-  }
-#endif
-
-  // FULL-FRAME rotation, not a minimal one-vector rotation.
-  //
-  //  A minimal rotation pins only u_c -> to_det and lets the residual azimuth about that axis fall
-  //  out of the arithmetic.  That azimuth was justified as "free by axial symmetry", and it IS free
-  //  for the detector - `weights` and `prefactor` are computed in CeeLo's own frame before any
-  //  rotation, so no amount of spinning the fan changes eps_fep.  It is NOT free for the SOURCE.
-  //  From an off-axis element the crystal's projection is not circular, so the fan is flattened,
-  //  and the flattening plane is the plane of incidence.  Spin the fan about to_det and each ray
-  //  points somewhere else through the source, which changes its chord and hence exp(-tau_i).
-  //
-  //  MEASURED consequence of getting this wrong (ApertureFanOrientation): four elements at one
-  //  cos_theta = 0.7815, i.e. physically identical up to a rotation about the detector axis, got
-  //  fan orientations of -51.8, +52.0, +74.2 and -74.0 degrees relative to the plane of incidence.
-  //  A y-mirrored pair happened to map onto exact negatives, so a y-mirror preserved the chord
-  //  distribution, but an x-mirrored pair did not - which made eval_rect mirror-symmetric in y to
-  //  0.00% and asymmetric in x by 13-97% (BoxFoldSymmetryProbe), silently invalidating the
-  //  quarter-box fold in self_shielding_integration_imp and inflating box integrals by 10-24%
-  //  against an independent tensor rule (BoxOuterQuadratureVsTensorGL).
-  //
-  //  So map the whole frame: (element->detector, plane of incidence) in CeeLo's coordinates onto
-  //  the same pair in the assembly's.  CeeLo builds `pos` at azimuth 0 with the crystal axis along
-  //  z and the source in front at negative z, so its detector axis is -z under the same sign
-  //  convention InterSpec uses for `det.axis` (cos_theta == -(to_det . axis) in both).
-  const double a_c[3] = { 0.0, 0.0, -1.0 };
-
-  // Orthonormal frame from a primary direction p and a secondary a: (p, in-plane, normal).
-  const auto make_frame = []( const double p[3], const double a[3], double e[3][3] ) -> bool {
-    e[0][0] = p[0];  e[0][1] = p[1];  e[0][2] = p[2];
-    const double ap = a[0]*p[0] + a[1]*p[1] + a[2]*p[2];
-    double t[3] = { a[0] - ap*p[0], a[1] - ap*p[1], a[2] - ap*p[2] };
-    const double tn = std::sqrt( t[0]*t[0] + t[1]*t[1] + t[2]*t[2] );
-    if( !(tn > 1.0e-9) )
-      return false;   //element on the detector axis: the plane of incidence is degenerate
-    for( int i = 0; i < 3; ++i )
-      e[1][i] = t[i]/tn;
-    e[2][0] = e[0][1]*e[1][2] - e[0][2]*e[1][1];
-    e[2][1] = e[0][2]*e[1][0] - e[0][0]*e[1][2];
-    e[2][2] = e[0][0]*e[1][1] - e[0][1]*e[1][0];
-    return true;
-  };
-
-  double ec[3][3], ea[3][3];
-  const bool have_frames = make_frame( u_c, a_c, ec ) && make_frame( to_det, det_axis, ea );
-
-  double R[3][3] = { {1.0,0.0,0.0}, {0.0,1.0,0.0}, {0.0,0.0,1.0} };
-  if( have_frames )
-  {
-    // R = sum_k  ea[k] (outer) ec[k]  - the unique rotation carrying one frame onto the other.
-    for( int i = 0; i < 3; ++i )
-    {
-      for( int j = 0; j < 3; ++j )
-      {
-        double v = 0.0;
-        for( int k = 0; k < 3; ++k )
-          v += ea[k][i] * ec[k][j];
-        R[i][j] = v;
-      }
-    }
-  }else
-  {
-    // On-axis element (either frame degenerate): the crystal projection really is circular here, so
-    //  the azimuth genuinely is free and the minimal rotation is correct and sufficient.
-    const double v[3] = { u_c[1]*to_det[2] - u_c[2]*to_det[1],
-                          u_c[2]*to_det[0] - u_c[0]*to_det[2],
-                          u_c[0]*to_det[1] - u_c[1]*to_det[0] };
-    const double c = u_c[0]*to_det[0] + u_c[1]*to_det[1] + u_c[2]*to_det[2];
-    const double vlen2 = v[0]*v[0] + v[1]*v[1] + v[2]*v[2];
-
-    if( vlen2 > 1.0e-24 )
-    {
-      const double k = 1.0 / (1.0 + c);
-      const double K[3][3] = { {   0.0, -v[2],  v[1] },
-                               {  v[2],   0.0, -v[0] },
-                               { -v[1],  v[0],   0.0 } };
-      for( int i = 0; i < 3; ++i )
-      {
-        for( int j = 0; j < 3; ++j )
-        {
-          double k2 = 0.0;
-          for( int m = 0; m < 3; ++m )
-            k2 += K[i][m] * K[m][j];
-          R[i][j] += K[i][j] + k2*k;
-        }
-      }
-    }else if( c < 0.0 )
-    {
-      R[0][0] = R[1][1] = R[2][2] = -1.0;
-    }
-  }//if( have_frames ) / else
-
-  answer.dirs.reserve( ceelo_dirs.size() );
-  for( const Eigen::Vector3d &d : ceelo_dirs )
-  {
-    answer.dirs.push_back( { R[0][0]*d.x() + R[0][1]*d.y() + R[0][2]*d.z(),
-                             R[1][0]*d.x() + R[1][1]*d.y() + R[1][2]*d.z(),
-                             R[2][0]*d.x() + R[2][1]*d.y() + R[2][2]*d.z() } );
-  }
-
-  for( int i = 0; i < 3; ++i )
-    for( int j = 0; j < 3; ++j )
-      answer.rotation[i][j] = R[i][j];
-
-  return answer;
-}//build_element_aperture(...)
+// The per-element aperture fan - the VALIDATION REFERENCE for the line path, not production.  See
+//  the banner in that header for what it is and which tests keep it in step.
+#include "InterSpec/VolumetricElementAperture_imp.hpp"
 
 
 template<typename T>
@@ -1853,6 +1572,98 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
   T trans(0.0);
 
   reset_ray_accumulators();
+
+  // Optical depth from the emission point along an ARBITRARY direction (toward `target`), for the
+  //  per-ray kernel below.  Concentric spheres make this the simplest of the geometries: with the
+  //  emission point p at |p| = r and a unit direction w, the exit distance through a shell of radius
+  //  R is -(p.w) + sqrt((p.w)^2 + R^2 - r^2), and the ray dips inside an inner shell exactly when it
+  //  is heading inward with an impact parameter below that shell's radius, giving a chord of
+  //  2*sqrt((p.w)^2 + R^2 - r^2).  Shell l's OWN material path is its chord minus the next-inner
+  //  one's, the same nested subtraction eval_cylinder and eval_rect do.
+  //
+  //  This is DELIBERATELY a second walk, next to the centre-ray one below rather than replacing it.
+  //  The centre-ray walk is written in the rotated frame that puts the detector on +z, and its
+  //  single-source-shell branch factors the radius out of the discriminant
+  //  (sphere_exit_distance_scaled) so that value and derivative stay finite as the radius vanishes -
+  //  behaviour that TShieldingDimLimit pins and that the flat-disk goldens record bit-for-bit.  A
+  //  general direction cannot use that frame, and flat-disk must not move, so the two coexist.  They
+  //  are kept in step by the FAR-FIELD rows of LineVsElementSphericalSource: as the aperture
+  //  collapses onto the centre direction the per-ray mean must reproduce the centre-ray attenuation,
+  //  and those rows agree to 0.05%.
+  //
+  //  Only the centre ray fills the scratch accumulators (cascade partner mu*d, effective AN/AD), as
+  //  in the other geometries - they describe "the" shielding, and letting every aperture ray
+  //  accumulate into them would multiply them by the ray count.
+  const auto optical_depth_along = [&]( const T target[3] ) -> T
+  {
+    // The EMISSION point.  `source_point` is walked forward to the outermost exit by the centre-ray
+    //  block below and is long gone by the time the aperture rays run, so this reads the saved
+    //  copy - the same trap eval_rect's ray-local exit point exists to avoid.
+    const T p[3] = { x, y, z };
+
+    T w[3] = { target[0] - p[0], target[1] - p[1], target[2] - p[2] };
+    const T wlen = sqrt( w[0]*w[0] + w[1]*w[1] + w[2]*w[2] );
+    for( int i = 0; i < 3; ++i )
+      w[i] = w[i] / wlen;
+
+    const T pw = p[0]*w[0] + p[1]*w[1] + p[2]*w[2];
+    const T p2 = p[0]*p[0] + p[1]*p[1] + p[2]*p[2];
+    const bool inward = (scalar_of(pw) < 0.0);
+
+    T tau( 0.0 );
+
+    // Inner shells, innermost first: crossed only when the ray actually dips inside them.
+    T chord_inner( 0.0 );
+    for( size_t l = 0; l < m_materialIndex; ++l )
+    {
+      const ShellInfo &shell = m_shells[l];
+      const T disc = pw*pw + shell.dims[0]*shell.dims[0] - p2;
+      if( !inward || (scalar_of(disc) <= 0.0) )
+        continue;
+
+      switch( shell.type )
+      {
+        case ShellType::Material:
+        {
+          const T chord = T(2.0)*sqrt( disc );
+          tau += shell.fep_trans_len_coef * (chord - chord_inner);
+          chord_inner = chord;
+          break;
+        }//case ShellType::Material:
+
+        case ShellType::Generic:
+          tau += shell.fep_trans_len_coef;
+          break;
+      }//switch( type )
+    }//for( inner shells )
+
+    // The source shell: out to its own surface, less whatever the core took.
+    const T r_src = m_shells[m_materialIndex].dims[0];
+    T t_prev = -pw + sqrt( pw*pw + r_src*r_src - p2 );
+    tau += m_shells[m_materialIndex].fep_trans_len_coef * (t_prev - chord_inner);
+
+    // Outer shells: each contributes the segment between its surface and the one below it.
+    for( size_t l = m_materialIndex + 1; l < m_shells.size(); ++l )
+    {
+      const ShellInfo &shell = m_shells[l];
+      switch( shell.type )
+      {
+        case ShellType::Material:
+        {
+          const T t = -pw + sqrt( pw*pw + shell.dims[0]*shell.dims[0] - p2 );
+          tau += shell.fep_trans_len_coef * (t - t_prev);
+          t_prev = t;
+          break;
+        }//case ShellType::Material:
+
+        case ShellType::Generic:
+          tau += shell.fep_trans_len_coef;
+          break;
+      }//switch( type )
+    }//for( outer shells )
+
+    return tau;
+  };//optical_depth_along
 
   {//begin code-block to compute distance through source
     T exit_point[3];
@@ -1994,17 +1805,26 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
 
   trans = exp( -trans );
 
+  // Everything that multiplies `trans` and is COMMON to every aperture ray, kept separately so the
+  //  per-ray kernel below can rebuild from it instead of dividing exp(-centre_tau) back out (0/0
+  //  once the centre ray is deeply attenuated) - see the same note in eval_cylinder.
+  T common_factors( 1.0 );
+
   if( m_attenuateForAir )
   {
     // source_point is now the exit point on the last of the shielding, and the (rotated)
-    //  detector is at {0,0,obs_dist}
+    //  detector is at {0,0,obs_dist}.  DELIBERATELY the centre ray: the aperture rays carry no
+    //  element->detector distance of their own, and the spread of the air path across the aperture
+    //  is negligible next to the source and shield attenuation (as in eval_rect).
     const T dx = -source_point[0];
     const T dy = -source_point[1];
     const T dz = source_point[2] - obs_dist;
 
     const T air_dist = sqrt( dx*dx + dy*dy + dz*dz );
 
-    trans *= exp( -m_airTransLenCoef * air_dist );
+    const T air_atten = exp( -m_airTransLenCoef * air_dist );
+    trans *= air_atten;
+    common_factors *= air_atten;
 
     if( m_cascade )
       m_ray_air_dist = air_dist;
@@ -2013,7 +1833,9 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
   if( m_isInSituExponential )
   {
     assert( m_inSituRelaxationLength > 0.0 );
-    trans *= exp( -(source_outer_rad - r) / m_inSituRelaxationLength );
+    const T in_situ = exp( -(source_outer_rad - r) / m_inSituRelaxationLength );
+    trans *= in_situ;
+    common_factors *= in_situ;
   }
 
   {// begin apply detector response
@@ -2024,20 +1846,75 @@ T DistributedSrcCalcT<T>::eval_spherical( const double xx[], const int ndim ) co
 
     const T eval_point[3] = { x, y, z };
     const T det_factor = detector_response_factor( rotated_det, eval_point );
-    const T eff_factor = eff_response_factor( det_factor, rotated_det, eval_point );
-    trans *= eff_factor;
-    if( m_cascade )
+    double near_field_ratio = 1.0;   //flat-disk: cascade legs keep the plain solid angle
+
+    if( !m_effResponse )
     {
-      // The cascade legs are built on the flat-disk solid angle, so hand them the same
-      //  response-vs-flat-disk ratio the primary line just used.  NOTE this geometry is still on
-      //  the CENTRE-RAY path - the per-ray kernel (plan 3.2) is implemented for cylinders and
-      //  rectangles, but NOT spheres, because a sphere needs a per-ray rotation
-      //  (exit_point_of_sphere_z_imp only traces toward {0,0,obs_dist}).  The truth bank has
-      //  cylinder and box rows; nothing tests the sphere.
-      const double flat = scalar_of( det_factor );
-      const double ratio = (flat > 0.0) ? (scalar_of(eff_factor)/flat) : 1.0;
-      trans *= cascade_correction_factor( det_factor, ratio );
-    }
+      // Legacy flat-disk: one centre ray, geometric solid angle, intrinsic efficiency folded in
+      //  after the integration.  Bit-for-bit what this function has always returned.
+      trans *= eff_response_factor( det_factor, rotated_det, eval_point );
+    }else
+    {
+      // ---- VALIDATION REFERENCE, not production: the per-element aperture fan ----------------
+      //  (see VolumetricElementAperture_imp.hpp and the derivation in eval_cylinder).  The centre
+      //  ray asked "what fraction of photons leaving along the line to the detector centre
+      //  survive?", which is wrong wherever the exit directions fan out - and for a sphere at
+      //  contact it was wrong by up to a factor of two: measured against the line path
+      //  (LineVsElementSphericalSource), a solid steel sphere at contact came out 52% BELOW it at
+      //  60 keV and 19% below at 662 keV, a hollow one 37%/13%, water 6.6%/3.3%.  Each aperture ray
+      //  now carries its own attenuation through the concentric shells.
+      const double dist_scalar = scalar_of( distance_imp( eval_point, rotated_det.position ) );
+      const double flat_scalar = scalar_of( det_factor );
+
+      if( (dist_scalar > 0.0) && (flat_scalar > 0.0) )
+      {
+        double to_det[3] = { scalar_of(rotated_det.position[0]) - scalar_of(eval_point[0]),
+                             scalar_of(rotated_det.position[1]) - scalar_of(eval_point[1]),
+                             scalar_of(rotated_det.position[2]) - scalar_of(eval_point[2]) };
+        for( int k = 0; k < 3; ++k )
+          to_det[k] /= dist_scalar;
+
+        // Incidence cosine, measured the same way eff_response_factor measures it.  The rotated
+        //  frame puts the detector on +z, and its axis (detector -> assembly) is unchanged by that
+        //  rotation, so m_detector.axis is the right one to measure against here.
+        double cos_theta = -(to_det[0]*rotated_det.axis[0] + to_det[1]*rotated_det.axis[1]
+                             + to_det[2]*rotated_det.axis[2]);
+        cos_theta = std::max( -1.0, std::min( 1.0, cos_theta ) );
+
+        const ElementAperture ap = build_element_aperture( *m_effResponse, m_energy, dist_scalar,
+                                                           cos_theta, to_det, rotated_det.axis,
+                                                           m_effNumRays );
+
+        T kernel( 0.0 );
+        for( size_t i = 0; i < ap.weights.size(); ++i )
+        {
+          const T ray_target[3] = { eval_point[0] + T(ap.dirs[i][0] * sm_ray_target_dist),
+                                    eval_point[1] + T(ap.dirs[i][1] * sm_ray_target_dist),
+                                    eval_point[2] + T(ap.dirs[i][2] * sm_ray_target_dist) };
+          kernel += T(ap.weights[i]) * exp( -optical_depth_along( ray_target ) );
+        }//for( loop over aperture rays )
+
+        double sum_w = 0.0;
+        for( const double w : ap.weights )
+          sum_w += w;
+
+        const double R0 = (ap.prefactor * sum_w) / flat_scalar;
+        near_field_ratio = R0;   //hand the primary's near-field correction to the cascade legs
+
+        const T mean_trans = (sum_w > 0.0) ? (kernel / T(sum_w)) : T(0.0);
+        trans = common_factors * det_factor * T(R0) * mean_trans;
+      }else
+      {
+        // Degenerate element (sits at the detector point, or a non-positive solid angle).  Keep the
+        //  primary and the cascade legs on the SAME response model.
+        const T eff_factor = eff_response_factor( det_factor, rotated_det, eval_point );
+        trans *= eff_factor;
+        near_field_ratio = (flat_scalar > 0.0) ? (scalar_of(eff_factor)/flat_scalar) : 1.0;
+      }
+    }//if( flat-disk ) / else
+
+    if( m_cascade )
+      trans *= cascade_correction_factor( det_factor, near_field_ratio );
   }// end apply detector response
 
   if( m_normalizeByVolume )
@@ -2293,6 +2170,11 @@ T DistributedSrcCalcT<T>::eval_cylinder( const double xx[], const int ndim ) con
       trans *= eff_response_factor( det_factor, m_detector, eval_point );
     }else
     {
+      // ---- VALIDATION REFERENCE, not production: the per-element aperture fan ----------------
+      //  (see VolumetricElementAperture_imp.hpp).  Production integrates a source with a response
+      //  on the LINE path; this branch runs only under sm_volumetric_integrator_override == Element
+      //  and in the tests that cross-check the two quadratures.
+      //
       // Per-ray extended-source kernel.  The centre-ray `trans` above answered "what fraction of
       //  photons leaving along the line to the detector centre survive?"; that is wrong whenever
       //  the exit directions fan out, because at depth the path length varies steeply with
@@ -2638,6 +2520,9 @@ T DistributedSrcCalcT<T>::eval_rect( const double xx[], const int ndim ) const
       trans *= eff_response_factor( det_factor, m_detector, eval_loc );
     }else
     {
+      // ---- VALIDATION REFERENCE, not production: the per-element aperture fan ----------------
+      //  (see VolumetricElementAperture_imp.hpp and the matching note in eval_cylinder).
+      //
       // Per-ray extended-source kernel; the box counterpart of the one in eval_cylinder, which
       //  carries the full derivation.  The centre-ray `trans` above answered "what fraction of
       //  photons leaving along the line to the detector centre survive?", which is wrong whenever
@@ -4294,21 +4179,23 @@ void ShieldingSourceChi2Fcn::cluster_peak_activities_imp( std::map<double,T> &en
 
 
 
+/** Integrates every calculator on the line path where it applies, else the element path.
+ Defined in VolumetricLineIntegration_imp.hpp (included at the end of this header). */
 template<typename T>
-std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::build_volumetric_calculators(
-                        const std::vector<T> &params,
-                        NucMixtureCache &mixturecache,
-                        const std::vector<std::pair<double,double>> &energie_widths,
-                        std::vector<PeakDetail> *log_info ) const
-{
-  using namespace std;
+void integrate_volumetric_calculators( const std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> &calculators,
+                                       const bool multithread );
 
-  /** Fallback FEP half-window when neither a fitted peak nor a detector resolution is available.
-   See the policy note on #fep_window_keV below.
-   */
-  constexpr double sm_default_fep_window_keV = 1.0;
+/** The effective-shielding components of every calculator (line path where it applies, else
+ #integrate_effective_shielding).  Defined in VolumetricLineIntegration_imp.hpp. */
+inline std::vector<EffShieldComponents> integrate_effective_shielding_all(
+                          const std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> &calculators,
+                          const bool multithread );
 
-  /** Half-width of the full-energy-peak window at `energy`, for the survival-removal coefficient
+
+/** The FEP half-window policy (see the declaration): fitted peak, else detector resolution, else
+ the fallback.
+
+ Half-width of the full-energy-peak window at `energy`, for the survival-removal coefficient
    (plan 3.4).  CeeLo's convention is a +-half-window, so this is FWHM/2 = 1.17741*sigma - pinning
    a definition that otherwise has a factor-2.35 of ambiguity between sigma, FWHM and FWHM/2.
 
@@ -4327,31 +4214,43 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
    Note the credit grows steeply with the window, and too wide a one over-credits forward Compton
    scatters that really landed outside the peak - so the two measured branches above are always
    preferred, and this is only reached when the model has no width information at all.
-   */
-  const auto fep_window_keV = [this,&energie_widths]( const double energy ) -> double {
-    double best_sigma = -1.0, best_dE = std::numeric_limits<double>::max();
-    for( const std::pair<double,double> &ew : energie_widths )
+ */
+inline double ShieldingSourceChi2Fcn::fepWindowKeV( const double energy,
+                          const std::vector<std::pair<double,double>> &energie_widths ) const
+{
+  double best_sigma = -1.0, best_dE = std::numeric_limits<double>::max();
+  for( const std::pair<double,double> &ew : energie_widths )
+  {
+    const double dE = std::fabs( ew.first - energy );
+    if( (ew.second > 0.0) && (dE < best_dE) ){ best_dE = dE; best_sigma = ew.second; }
+  }
+
+  // Only trust a peak that really is this line - a few sigma away it is a different peak.
+  if( (best_sigma > 0.0) && (best_dE <= 4.0*best_sigma) )
+    return 1.17741 * best_sigma;
+
+  if( m_detector && m_detector->hasResolutionInfo() )
+  {
+    try
     {
-      const double dE = std::fabs( ew.first - energy );
-      if( (ew.second > 0.0) && (dE < best_dE) ){ best_dE = dE; best_sigma = ew.second; }
-    }
+      const float fwhm = m_detector->peakResolutionFWHM( static_cast<float>(energy) );
+      if( fwhm > 0.0f )
+        return 0.5 * fwhm;
+    }catch( std::exception & ){ }
+  }
 
-    // Only trust a peak that really is this line - a few sigma away it is a different peak.
-    if( (best_sigma > 0.0) && (best_dE <= 4.0*best_sigma) )
-      return 1.17741 * best_sigma;
+  return sm_default_fep_window_keV;
+}//fepWindowKeV(...)
 
-    if( m_detector && m_detector->hasResolutionInfo() )
-    {
-      try
-      {
-        const float fwhm = m_detector->peakResolutionFWHM( static_cast<float>(energy) );
-        if( fwhm > 0.0f )
-          return 0.5 * fwhm;
-      }catch( std::exception & ){ }
-    }
 
-    return sm_default_fep_window_keV;
-  };
+template<typename T>
+std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::build_volumetric_calculators(
+                        const std::vector<T> &params,
+                        NucMixtureCache &mixturecache,
+                        const std::vector<std::pair<double,double>> &energie_widths,
+                        std::vector<PeakDetail> *log_info ) const
+{
+  using namespace std;
 
   using namespace ceres;
 
@@ -4737,22 +4636,31 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
             continue;
           }//if( isGenericMaterial( subMat ) )
 
+          // `facing_thick` is this layer's thickness ALONG THE DETECTOR DIRECTION - the same
+          //  dimension `pastDetector` below tests - which is the depth the Rayleigh deflection
+          //  loss of an outer shield is evaluated at.
+          T facing_thick( 0.0 );
           switch( m_geometry )
           {
             case GeometryType::Spherical:
-              outer_dims[0] += sphericalThickness_imp( subMat, params );
+              facing_thick = sphericalThickness_imp( subMat, params );
+              outer_dims[0] += facing_thick;
               break;
 
             case GeometryType::CylinderEndOn:
             case GeometryType::CylinderSideOn:
               outer_dims[0] += cylindricalRadiusThickness_imp( subMat, params );
               outer_dims[1] += cylindricalLengthThickness_imp( subMat, params );
+              facing_thick = (m_geometry == GeometryType::CylinderEndOn)
+                               ? cylindricalLengthThickness_imp( subMat, params )
+                               : cylindricalRadiusThickness_imp( subMat, params );
               break;
 
             case GeometryType::Rectangular:
               outer_dims[0] += rectangularWidthThickness_imp( subMat, params );
               outer_dims[1] += rectangularHeightThickness_imp( subMat, params );
-              outer_dims[2] += rectangularDepthThickness_imp( subMat, params );
+              facing_thick = rectangularDepthThickness_imp( subMat, params );
+              outer_dims[2] += facing_thick;
               break;
 
             case GeometryType::NumGeometryType:
@@ -4794,9 +4702,14 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
           shell.dims = outer_dims;
           shell.trans_len_coef = T( transmition_length_coefficient( sub_material.get(),
                                                   static_cast<float>(calculator->m_energy) ) );
+          // The Rayleigh deflection loss is applied to layers OUTSIDE the emitting one only - the
+          //  matrix self-selects a skin, so its full extent would be the wrong depth.
+          const double rayleigh_thick = (subMat > calculator->m_materialIndex)
+                                          ? std::max( 0.0, scalar_of(facing_thick) ) : 0.0;
           shell.fep_trans_len_coef = T( fep_survival_removal_coefficient( sub_material.get(),
                                               static_cast<float>(calculator->m_energy),
-                                              fep_window_keV( calculator->m_energy ) ) );
+                                              fepWindowKeV( calculator->m_energy, energie_widths ),
+                                              rayleigh_thick ) );
           shell.type = ShellType::Material;
           shell.density = sub_material->density;
           shell.effective_an = material_mass_weighted_atomic_number( *sub_material );
@@ -4815,6 +4728,27 @@ std::vector<std::unique_ptr<DistributedSrcCalcT<T>>> ShieldingSourceChi2Fcn::bui
         {
           calculator->m_cascade = cascade_block;
           calculator->m_cascade_age = scalar_of( thisage );
+        }
+
+        // The line path needs the fit's detector-side line set for this source shell (built once
+        //  per scalar geometry, shared by every energy).
+        if( calculator->m_effResponse )
+        {
+          const std::array<T,3> &src_dims = calculator->m_shells[material_index].dims;
+          const std::array<double,3> scalar_dims = { scalar_of(src_dims[0]), scalar_of(src_dims[1]),
+                                                     scalar_of(src_dims[2]) };
+          try
+          {
+            calculator->m_lineCache = volumetricLineCache( material_index, scalar_dims );
+          }catch( std::exception &e )
+          {
+            // The set built at creation (buildVolumetricLineCachesOrFallBack) could not be rebuilt
+            //  at the dimensions the optimizer has moved to: an evaluation failure it reports, never
+            //  a silent change of model.
+            throw std::runtime_error( "The volumetric line set could not be rebuilt at the current"
+                                      " source dimensions: " + std::string(e.what()) );
+          }
+          assert( calculator->m_lineCache );
         }
 
         calculators.push_back( std::move(calculator) );
@@ -4990,8 +4924,14 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
       const T chord = exit_dist - prev_exit_dist;
       prev_exit_dist = exit_dist;
 
-      att_coef_fcn = [mat = material.get(), chord]( float energy ) -> T {
-        return chord * transmition_length_coefficient( mat, energy );
+      // The FULL-ENERGY-PEAK removal coefficient - the in-window Compton credit and the Rayleigh
+      //  deflection loss at this layer's chord - so a point source behind a shield is attenuated
+      //  exactly as a volumetric source's outer shells are (2026-09-04; before this it used plain
+      //  mu_total with neither term, and read ~5% high behind 0.5 cm of Fe at 60 keV).
+      att_coef_fcn = [this, mat = material.get(), chord, &energie_widths]( float energy ) -> T {
+        return chord * fep_survival_removal_coefficient( mat, energy,
+                                                         fepWindowKeV( energy, energie_widths ),
+                                                         std::max( 0.0, scalar_of(chord) ) );
       };
     }//if( generic material ) / else
 
@@ -5071,35 +5011,7 @@ std::vector<T> ShieldingSourceChi2Fcn::expected_peak_counts_imp( const std::vect
 
   if( !calculators.empty() )
   {
-    if( m_options.multithread_self_atten && (calculators.size() > 1) )
-    {
-      std::mutex error_mutex;
-      std::exception_ptr first_error;
-
-      SpecUtilsAsync::ThreadPool pool;
-      for( const std::unique_ptr<DistributedSrcCalcT<T>> &calculator : calculators )
-      {
-        pool.post( [&calculator, &error_mutex, &first_error](){
-          try
-          {
-            self_shielding_integration_imp( *calculator );
-          }catch( std::exception & )
-          {
-            std::lock_guard<std::mutex> lock( error_mutex );
-            if( !first_error )
-              first_error = std::current_exception();
-          }
-        } );
-      }//for( loop over calculators )
-      pool.join();
-
-      if( first_error )
-        std::rethrow_exception( first_error );
-    }else
-    {
-      for( const std::unique_ptr<DistributedSrcCalcT<T>> &calculator : calculators )
-        self_shielding_integration_imp( *calculator );
-    }//if( multithread ) / else
+    integrate_volumetric_calculators( calculators, m_options.multithread_self_atten );
 
     for( const std::unique_ptr<DistributedSrcCalcT<T>> &calculator : calculators )
     {
@@ -5172,9 +5084,13 @@ inline std::vector<EffectiveShieldingInfo> ShieldingSourceChi2Fcn::computeEffect
   std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> calculators
                 = build_volumetric_calculators<double>( params, mixturecache, energie_widths );
 
-  for( const std::unique_ptr<DistributedSrcCalcT<double>> &calc : calculators )
+  const std::vector<EffShieldComponents> all_comps
+                = integrate_effective_shielding_all( calculators, m_options.multithread_self_atten );
+
+  for( size_t i = 0; i < calculators.size(); ++i )
   {
-    const EffShieldComponents comps = integrate_effective_shielding( *calc );
+    const std::unique_ptr<DistributedSrcCalcT<double>> &calc = calculators[i];
+    const EffShieldComponents &comps = all_comps[i];
 
     EffectiveShieldingInfo info;
     info.nuclide = calc->m_nuclide;
@@ -5379,6 +5295,11 @@ ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
   T prev_exit_dist(0.0);
   T an_weighted_ad(0.0);
 
+  // The functors outlive this call (the cascade corrections hold them), so the peak widths the
+  //  FEP window is chosen from travel with them by value.
+  const std::shared_ptr<const std::vector<std::pair<double,double>>> energie_widths
+        = std::make_shared<const std::vector<std::pair<double,double>>>( observedPeakEnergyWidths( m_peaks ) );
+
   for( size_t materialN = 0; materialN < nMaterials; ++materialN )
   {
     const ShieldingSourceFitCalc::ShieldingInfo &shielding = m_initial_shieldings[materialN];
@@ -5438,8 +5359,12 @@ ShieldingSourceChi2Fcn::PointSrcAttenContext<T>
       const T chord = exit_dist - prev_exit_dist;
       prev_exit_dist = exit_dist;
 
-      ctx.att_fcns.push_back( [mat = material.get(), chord]( float energy ) -> T {
-        return chord * transmition_length_coefficient( mat, energy );
+      // Same FEP coefficient as expected_peak_counts_imp (window credit + Rayleigh deflection
+      //  loss), so the cascade functors see exactly the transmission the fit uses.
+      ctx.att_fcns.push_back( [this, mat = material.get(), chord, energie_widths]( float energy ) -> T {
+        return chord * fep_survival_removal_coefficient( mat, energy,
+                                                         fepWindowKeV( energy, *energie_widths ),
+                                                         std::max( 0.0, scalar_of(chord) ) );
       } );
 
       const T ad_gcm2 = chord * ( static_cast<double>(material->density)
@@ -5547,5 +5472,8 @@ void ShieldingSourceChi2Fcn::applyCascadeToClusterMap( std::map<double,T> &clust
 }//applyCascadeToClusterMap(...)
 
 }//namespace GammaInteractionCalc
+
+// The detector-side line integration; needs everything above.
+#include "InterSpec/VolumetricLineIntegration_imp.hpp"
 
 #endif //GammaInteractionCalc_imp_hpp

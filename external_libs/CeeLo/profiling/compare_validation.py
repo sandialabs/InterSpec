@@ -44,6 +44,14 @@ SKIP = {
     # at 32M on the current geometry (see the reference CSV header) brought MC into
     # <=0.7% total / <=1.1% FEP agreement for 100-2614 keV; 59 keV FEP carries a
     # genuine -2.1% near-peak-scatter residual (covered by the FEP tolerance below).
+    # cfg 27/28 (0.5 cm Fe shell around a point source): the FEP gap at 60/88 keV is the documented
+    # EPICS2023-vs-EPICS2014 iron photoelectric difference (~2% in mu near 58 keV; CeeLo = NIST),
+    # compounded through 4.6 mfp: -8.5% at 60 keV, -1..-2% at 88 keV.  The scattered-into-peak
+    # SHARE agrees to <0.6 points (DESIGN.md), which is what these configs exist to check.
+    (27, 60): 'EPICS2023-vs-G4 iron photoelectric through 4.6 mfp; documented exclusion',
+    (27, 88): 'EPICS2023-vs-G4 iron photoelectric through 1.9 mfp; documented exclusion',
+    (28, 60): 'EPICS2023-vs-G4 iron photoelectric through 4.6 mfp; documented exclusion',
+    (28, 88): 'EPICS2023-vs-G4 iron photoelectric through 1.9 mfp; documented exclusion',
 }
 
 # config -> (reference csv, documented max |FEP| %, max |total| %)
@@ -71,6 +79,12 @@ CONFIGS = {
     # DESIGN.md carries the measured values; these are the trip points.
     25: ('hpge_gem35_coax_sharp_5cm_multi.csv', 0.5, 0.3),
     26: ('hpge_gem35_coax_bullet_5cm_multi.csv', 0.9, 0.4),
+    # Deep 0.5 cm Fe shell around a point source, 60/88/122 keV (2026-09-04), the
+    # regime where CeeLo's scattered-into-peak stream had never been checked.
+    # Both sides scored at a 0.75 keV window (see the reference headers).  Only
+    # 122 keV gates (measured -0.40% / -0.15% FEP); 60/88 are SKIPped above.
+    27: ('hpge_gem35_bullet_fe05cm_2cm_multi.csv', 1.0, 1.0),
+    28: ('hpge_gem35_bullet_fe05cm_10cm_multi.csv', 1.0, 1.0),
 }
 
 

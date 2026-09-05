@@ -1,0 +1,7 @@
+# ceelo_g4val reference, config 28: GEM35-70 bulletized HPGe (cfg 26 crystal), point source in a 0.5 cm Fe spherical shell, 10 cm (2026-09-04)
+# FEP window: 0.75 keV half-width (harness default = ceelo::kDefaultFepWindowKeV), NOT the 1.5 keV of the older references; the paired our_28_multi.csv was run with --fep-window 0.75
+# isotropic GPS, 16M events (cfg 27) / 64M (cfg 28), --entry-diag; physics option4
+energy_keV,fep_efficiency,fep_uncertainty,total_efficiency,total_uncertainty,num_events
+60,0.000231656,1.90231e-06,0.000264125,2.03122e-06,64000000
+88,0.00307944,6.9259e-06,0.00398242,7.87258e-06,64000000
+122,0.00623136,9.83658e-06,0.00902627,1.18221e-05,64000000

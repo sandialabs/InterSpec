@@ -209,6 +209,23 @@ double kn_in_window_fraction(double E_keV, double win_keV = kDefaultFepWindowKeV
 /// per-element/per-ray loops.
 double kn_in_window_fraction(double E_keV, double win_keV, const Material& mat);
 
+/// Fraction h(T) of the Rayleigh scatters occurring in a layer of NON-Rayleigh
+/// optical depth T (measured along the normal) that are LOST to the full-energy
+/// peak because the elastic deflection lengthens the photon's remaining path:
+///
+///     h(T) = (1/T) int_0^T [ 1 - < exp(-t (sec theta - 1)) >_theta ] dt
+///
+/// theta from the material's EPICS2023 form-factor law (the same
+/// sample_rayleigh_cos_theta the transport uses); theta >= 90 deg counts as
+/// lost.  Elements are weighted by n_i * sigma_R,i(E).  Multiply by the layer's
+/// Rayleigh mu to get the extra removal coefficient, i.e. the correction to
+/// "Rayleigh is transparent" (fep_survival_removal_mu) for THICK layers:
+/// h -> P(theta >= 90 deg) as T -> 0, so a thin layer is unaffected, while
+/// 0.5 cm of Fe at 60 keV (T = 4.4, T_R = 0.36) loses T_R*h ~ 9% of the peak.
+/// Returns 0 for T <= 0.  Deterministic: a fixed-seed sampler histogram, built
+/// once per (Z, E) in a mutex-guarded cache; the T evaluation is ~100 exps.
+double rayleigh_deflection_loss_fraction(double E_keV, double tau_nr, const Material& mat);
+
 /// Survival removal cross-section for per-element extended-source FEP
 /// transmission (spec Eq. 8):
 ///     mu_rem = mu_total - mu_Rayleigh - f_win(E) * mu_Compton
@@ -218,6 +235,11 @@ double kn_in_window_fraction(double E_keV, double win_keV, const Material& mat);
 /// case within +-2.4% FEP across 60-2614 keV (plain mu_total gave -8..-16%
 /// at 60 keV). For eps_tot transmission use mu_total (no survival credit).
 /// Pass f_win = kn_in_window_fraction(E) (hoist out of per-element loops).
+/// CAVEAT: treating Rayleigh as fully transparent is only right for THIN
+/// layers; in a thick one the deflection lengthens the remaining path and a
+/// fraction of the Rayleigh-scattered photons are absorbed - add
+/// mu_rs * rayleigh_deflection_loss_fraction(E, mu_rem * t, mat) for a layer
+/// of normal thickness t (9% of the peak behind 0.5 cm Fe at 60 keV).
 inline double fep_survival_removal_mu(const MacroscopicXS& xs, double f_win) {
     return xs.mu_total() - xs.mu_rs - f_win * xs.mu_cs;
 }

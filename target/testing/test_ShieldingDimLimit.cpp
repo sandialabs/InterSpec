@@ -43,6 +43,9 @@
 #include "InterSpec/GammaInteractionCalc.h"
 #include "InterSpec/GammaInteractionCalc_imp.hpp"
 
+#include "io/DetectorResponse.h"
+#include "io/EfficiencyTransfer.h"
+
 using namespace std;
 using namespace boost::unit_test;
 
@@ -455,6 +458,177 @@ BOOST_AUTO_TEST_CASE( VolumetricContributionZeroThicknessLimit )
 //  is observe-only: it is a known degenerate corner (the sphere derivative is NaN there; cylinder/rect
 //  collapse the value to 0), guarded in production by the trace-source dimension lower bound rather
 //  than by the integrand (see the rect-innervoid follow-up).
+/** The same zero-thickness sweep on the LINE integration path (VolumetricLineIntegration_imp.hpp).
+
+ The line path divides a chord by a source volume, so both go to zero together as a dimension does.
+ The dispatcher keeps the line path in charge of the whole domain: the intervals are computed from
+ each line's closest approach (precision linear, not quadratic, in distance/extent), and below
+ `sm_line_path_extent_ratio_floor` the source is integrated through a copy whose vanishing extent is
+ floored at that ratio.  This case exercises exactly that: a volumetric calculator with a (synthetic,
+ MC-free) transfer response attached, swept through the floor to exactly zero via
+ `integrate_volumetric_calculators`, must keep a finite value and derivative all the way down, must
+ not jump between neighbouring sweep points, and must give the same value at exactly zero as at the
+ floor itself (both are integrated through the same floored copy).
+
+ The response is built with ceelo::make_transfer_response from an arbitrary positive anchor curve -
+ no Monte Carlo and no data files, so this stays a fast unit test.  Absolute efficiencies are
+ therefore not physical; only the limit behaviour is under test.
+ */
+BOOST_AUTO_TEST_CASE( VolumetricLinePathZeroThicknessLimit )
+{
+  using namespace GammaInteractionCalc;
+
+  // A 3"x3" NaI with a thin Al can, and a plausible decreasing anchor curve.
+  ceelo::GeometryDescriptor gd;
+  gd.shape = ceelo::DetectorShape::Cylinder;
+  gd.dimensions_cm = { 3.81, 7.62 };
+  gd.materials = { ceelo::MaterialSpec::from( ceelo::make_NaI() ),
+                   ceelo::MaterialSpec::from( ceelo::make_Aluminum() ) };
+  gd.crystal_material_index = 0;
+  ceelo::LayerSpec can;
+  can.material_index = 1;
+  can.front_thickness_cm = 0.05;
+  can.side_thickness_cm = 0.05;
+  can.z_end_cm = 7.62;
+  gd.layers.push_back( can );
+
+  ceelo::AnchorCurve anchor;
+  anchor.energies_keV = { 60.0, 100.0, 300.0, 662.0, 1000.0 };
+  anchor.eff = { 2.0e-2, 1.3e-2, 5.0e-3, 3.0e-3, 2.2e-3 };
+  anchor.frac_sigma = { 0.003, 0.003, 0.003, 0.003, 0.003 };
+
+  std::shared_ptr<const ceelo::DetectorResponse> response
+        = ceelo::make_transfer_response( gd, anchor, Eigen::Vector3d( 0.0, 0.0, -25.0 ) );
+  BOOST_REQUIRE( response );
+
+  struct LineCase { string name; GeometryType geom; int swept; std::array<double,3> fixed; };
+  const vector<LineCase> cases = {
+    { "cylEnd-line-radius",  GeometryType::CylinderEndOn, 0, { 1.0*cm, 2.0*cm, 0 } },
+    { "cylEnd-line-halflen", GeometryType::CylinderEndOn, 1, { 2.0*cm, 1.0*cm, 0 } },
+    { "rect-line-depth",     GeometryType::Rectangular,   2, { 2.0*cm, 2.0*cm, 1.0*cm } },
+    { "sph-line-radius",     GeometryType::Spherical,     0, { 1.0*cm, 0, 0 } },
+  };
+
+  // Down through the extent floor (1e-10 of the 100 cm standoff = 1e-8 cm) to exactly zero.
+  const double dist = 100.0*cm;
+  const double floor_ext = sm_line_path_extent_ratio_floor * dist;
+  const vector<double> sweep = { 1.0*cm, 1.0e-2*cm, 1.0e-4*cm, 1.0e-6*cm, 1.0e-7*cm, 3.0e-8*cm,
+                                 floor_ext, 1.0e-9*cm, 1.0e-11*cm, 0.0 };
+  const double act = 3.7e10;
+  const int num_lines = 1 << 14;
+
+  for( const LineCase &c : cases )
+  {
+    BOOST_TEST_MESSAGE( "  line-path case: " << c.name );
+    vector<double> vals, derivs;
+    for( const double t : sweep )
+    {
+      std::array<double,3> dims = c.fixed;
+      dims[c.swept] = t;
+
+      DistributedSrcCalcT<Jet1> calc = make_vol_calc( c.geom, dims, c.swept, dist, false, 1.0*cm );
+      calc.m_srcVolumetricActivity = Jet1( act );
+      calc.m_normalizeByVolume = true;
+      calc.m_energy = 661.7;
+      calc.m_effResponse = response;
+      calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+
+      // The line set is built from the SCALAR dims, as ShieldingSourceChi2Fcn::volumetricLineCache
+      //  does; the proposal is floored at the same ratio the dispatcher floors the source at, so it
+      //  must build even for a dimension of exactly zero.
+      const std::array<double,3> scalar_dims = { scalar_of(calc.m_shells[0].dims[0]),
+                                                 scalar_of(calc.m_shells[0].dims[1]),
+                                                 scalar_of(calc.m_shells[0].dims[2]) };
+      const std::array<double,3> det_pos = { scalar_of(calc.m_detector.position[0]),
+                                             scalar_of(calc.m_detector.position[1]),
+                                             scalar_of(calc.m_detector.position[2]) };
+      const std::array<double,3> det_axis = { calc.m_detector.axis[0], calc.m_detector.axis[1],
+                                              calc.m_detector.axis[2] };
+      BOOST_REQUIRE_NO_THROW( calc.m_lineCache = build_volumetric_line_cache( response, c.geom, 0,
+                                                    scalar_dims, det_pos, det_axis, 0.0, num_lines ) );
+      BOOST_REQUIRE( calc.m_lineCache );
+
+      std::vector<std::unique_ptr<DistributedSrcCalcT<Jet1>>> calcs;
+      calcs.push_back( std::make_unique<DistributedSrcCalcT<Jet1>>( calc ) );
+      integrate_volumetric_calculators<Jet1>( calcs, false );
+
+      const Jet1 contrib = calcs.front()->integral * calcs.front()->m_srcVolumetricActivity;
+      vals.push_back( contrib.a );
+      derivs.push_back( contrib.v[0] );
+      BOOST_TEST_MESSAGE( "    " << c.name << " @ t=" << t/cm << "cm: contrib=" << contrib.a
+                          << " d/dt=" << contrib.v[0] );
+    }//for( sweep )
+
+    for( size_t i = 0; i < sweep.size(); ++i )
+    {
+      BOOST_CHECK_MESSAGE( std::isfinite(vals[i]),
+        c.name << " @ t=" << sweep[i]/cm << "cm: non-finite value " << vals[i] );
+      if( sweep[i] > 0.0 )
+        BOOST_CHECK_MESSAGE( std::isfinite(derivs[i]),
+          c.name << " @ t=" << sweep[i]/cm << "cm: non-finite derivative " << derivs[i] );
+    }
+
+    // Continuity THROUGH the floor: the value must not jump between neighbouring sweep points once
+    //  the source is thin enough that the contribution is settling toward its zero-thickness limit
+    //  (the last unfloored point and the first floored one included).
+    for( size_t i = 3; i + 1 < sweep.size(); ++i )
+    {
+      const double a = vals[i], b = vals[i+1];
+      const double scale = std::max( std::fabs(a), std::fabs(b) );
+      BOOST_CHECK_MESSAGE( std::fabs(a - b) <= 0.05*scale + 1.0e-9,
+        c.name << ": value jumps through the extent floor, " << a << " -> " << b
+               << " between t=" << sweep[i]/cm << " and " << sweep[i+1]/cm << " cm" );
+    }
+
+    // Everything at or below the floor is the same floored source, so exactly zero must reproduce
+    //  the value AT the floor to round-off (the sweep entry at index 6 is floor_ext itself).
+    {
+      const double at_floor = vals[6], at_zero = vals.back();
+      BOOST_CHECK_MESSAGE( std::fabs(at_zero - at_floor) <= 1.0e-6*std::fabs(at_floor),
+        c.name << ": value at t=0 (" << at_zero << ") differs from the value at the extent floor ("
+               << at_floor << ")" );
+    }
+
+    // REPORTED, NOT GATED: the same sweep on the element path, for the derivative.  The line
+    //  path's d/dt is a sum over a FROZEN line set, and a line grazing the shrinking source has
+    //  d(chord)/dt ~ t/sqrt(t^2 - b^2): the estimator is unbiased but its variance diverges at
+    //  tangency, so the derivative's sampling noise scales as (value/t)/sqrt(N) while the true
+    //  derivative stays finite - measured 2026-09-03, the line derivative is noise-dominated below
+    //  an extent/distance ratio of ~1e-5 (see TODO.md, "line-path derivative of a vanishing
+    //  extent").  The VALUE is unaffected, which is what the floor above is for.
+    {
+      const ScopedVolumetricIntegratorOverride force( VolumetricIntegrator::Element );
+      for( size_t i = 0; i < sweep.size(); ++i )
+      {
+        const double t = sweep[i];
+        std::array<double,3> dims = c.fixed;
+        dims[c.swept] = t;
+        DistributedSrcCalcT<Jet1> calc = make_vol_calc( c.geom, dims, c.swept, dist, false, 1.0*cm );
+        calc.m_srcVolumetricActivity = Jet1( act );
+        calc.m_normalizeByVolume = true;
+        calc.m_energy = 661.7;
+        calc.m_effResponse = response;
+        calc.m_effMethod = ShieldingSourceFitCalc::VolumetricEffMethod::MCTransfer;
+        std::vector<std::unique_ptr<DistributedSrcCalcT<Jet1>>> calcs;
+        calcs.push_back( std::make_unique<DistributedSrcCalcT<Jet1>>( calc ) );
+        try
+        {
+          integrate_volumetric_calculators<Jet1>( calcs, false );
+        }catch( std::exception &e )
+        {
+          BOOST_TEST_MESSAGE( "    element @ t=" << t/cm << "cm: threw " << e.what() );
+          continue;
+        }
+        const Jet1 contrib = calcs.front()->integral * calcs.front()->m_srcVolumetricActivity;
+        BOOST_TEST_MESSAGE( "    element @ t=" << t/cm << "cm: contrib=" << contrib.a
+                            << " d/dt=" << contrib.v[0] << "   (line/element: value "
+                            << vals[i]/contrib.a << ", d/dt " << derivs[i]/contrib.v[0] << ")" );
+      }
+    }
+  }//for( cases )
+}//VolumetricLinePathZeroThicknessLimit
+
+
 BOOST_AUTO_TEST_CASE( NestedShellZeroThicknessProbe )
 {
   const double dist = 100.0*cm;

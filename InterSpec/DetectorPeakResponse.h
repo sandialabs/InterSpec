@@ -27,6 +27,7 @@
 
 #include <deque>
 #include <cmath>
+#include <cstdint>
 #include <tuple>
 #include <thread>
 #include <memory>
@@ -88,7 +89,7 @@ class MeasuredDrfPoints;
 class DetectorEfficiencyCurve;
 class DetectorEfficiencyUncert;
 
-namespace ceelo{ class DetectorResponse; struct GeometryDescriptor; }
+namespace ceelo{ class DetectorResponse; struct GeometryDescriptor; enum class ResponseFlag : uint8_t; }
 
 
 class DetectorPeakResponse
@@ -821,6 +822,9 @@ public:
    unmodeled") - for calc logs, fit warnings, and error messages.
    */
   static const char *effFlagName( const EffFlag flag );
+
+  /** The #EffFlag for a CeeLo response flag (the two enumerations mirror each other). */
+  static EffFlag effFlagFromCeelo( const ceelo::ResponseFlag flag );
 
   /** A phrase for an #EffFlag aimed at a user reading a chart or a message, rather than the stable
    identifier #effFlagName gives (which batch JSON output and calc logs key on).

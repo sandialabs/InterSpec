@@ -37,6 +37,7 @@
 
 #include <array>
 #include <cmath>
+#include <cstdlib>
 #include <ctime>
 #include <string>
 #include <map>
@@ -195,35 +196,57 @@ AngleDetector load_angle_detector()
  0 for RayleighScatter), so subtracting it again would double-count.  In InterSpec terms:
 
      mu_rem = transmition_length_coefficient(mat, E) - f_win * mu_Compton(mat, E)
+              + mu_Rayleigh(mat, E) * h(E, mat, mu * normal_thickness_cm)
 
  `win_keV` is a HALF-width, matching CeeLo's +-win convention - which is why its 0.75 keV default
  is about FWHM/2 for an HPGe.
+
+ The LAST term is the Rayleigh DEFLECTION loss (2026-09-04).  "Elastic so it cannot leave the
+ window" is right about energy and wrong about geometry: in Fe at 60 keV half of the coherent
+ scatters exceed 20 degrees, and in a THICK layer that deflection lengthens the photon's remaining
+ path, so a fraction h of the Rayleigh-scattered photons are absorbed after all.  h is
+ ceelo::rayleigh_deflection_loss_fraction, evaluated at the layer's NORMAL non-Rayleigh optical
+ depth; it vanishes for a thin layer and reaches 0.25 behind 0.5 cm Fe at 60 keV, where the term is
+ worth 9% of the peak - the whole of the deep-shield over-read.  `normal_thickness_cm` <= 0 (the
+ default, and what the SOURCE shell passes) turns it off, because a self-attenuating matrix
+ self-selects a ~1 mfp skin and its full extent is the wrong depth.
  */
-double fep_removal_coefficient( const Material &mat, const double energy_keV, const double win_keV )
+double fep_removal_coefficient( const Material &mat, const double energy_keV, const double win_keV,
+                                const double normal_thickness_cm = 0.0 )
 {
   const double mu_total = GammaInteractionCalc::transmition_length_coefficient(
                                                     &mat, static_cast<float>(energy_keV) );
 
-  double mu_compton = 0.0;
-  for( const Material::ElementFractionPair &p : mat.elements )
-    mu_compton += p.second * mat.density
-                  * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
-                        static_cast<float>(energy_keV),
-                        MassAttenuation::GammaEmProcces::ComptonScatter );
-  for( const Material::NuclideFractionPair &p : mat.nuclides )
-    mu_compton += p.second * mat.density
-                  * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
-                        static_cast<float>(energy_keV),
-                        MassAttenuation::GammaEmProcces::ComptonScatter );
+  const auto process_mu = [&]( const MassAttenuation::GammaEmProcces process ) -> double {
+    double mu = 0.0;
+    for( const Material::ElementFractionPair &p : mat.elements )
+      mu += p.second * mat.density
+            * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
+                                                static_cast<float>(energy_keV), process );
+    for( const Material::NuclideFractionPair &p : mat.nuclides )
+      mu += p.second * mat.density
+            * MassAttenuation::massAttenuationCoefficientElement( p.first->atomicNumber,
+                                                static_cast<float>(energy_keV), process );
+    return mu;
+  };
+  const double mu_compton = process_mu( MassAttenuation::GammaEmProcces::ComptonScatter );
 
   // Material-aware in-window fraction: S(x,Z) suppresses forward scatter, most strongly at high Z
   //  (@60 keV: water 0.89, Fe 0.77, Pb 0.63), so the free-electron form over-credits exactly where
   //  the shielding is heaviest.  This is a Simpson integration - hoisted per (E, material) by the
   //  caller, never inside a per-ray loop.
   const ceelo::Material cm = CeeLoUtils::to_ceelo_material( mat ).to_material();
-  const double f_win = ceelo::kn_in_window_fraction( energy_keV, win_keV, cm );
+  const double f_win = (win_keV > 0.0) ? ceelo::kn_in_window_fraction( energy_keV, win_keV, cm ) : 0.0;
 
-  return mu_total - f_win*mu_compton;
+  double rayleigh_loss = 0.0;
+  if( normal_thickness_cm > 0.0 )
+  {
+    const double mu_rayleigh = process_mu( MassAttenuation::GammaEmProcces::RayleighScatter );
+    const double tau_nr = mu_total * normal_thickness_cm * PhysicalUnits::cm;
+    rayleigh_loss = mu_rayleigh * ceelo::rayleigh_deflection_loss_fraction( energy_keV, tau_nr, cm );
+  }
+
+  return mu_total - f_win*mu_compton + rayleigh_loss;
 }
 
 
@@ -256,7 +279,8 @@ build_scenario_calc( const AngleDetector &det,
   BOOST_REQUIRE( matrix );
 
   const GeometryType geom = (s.shape == Shape::Box) ? GeometryType::Rectangular
-                                                    : GeometryType::CylinderEndOn;
+                          : ((s.shape == Shape::CylinderSideOn) ? GeometryType::CylinderSideOn
+                                                                : GeometryType::CylinderEndOn);
 
   DistributedSrcCalcT<double> calc;
   calc.m_geometry = geom;
@@ -277,9 +301,11 @@ build_scenario_calc( const AngleDetector &det,
     calc.m_effNumRays = n_rays;
 
   const double det_radius = 0.5 * det.gd.transverse_half_extent() * 2.0 * cm;
+  // The lateral offset goes in as the detector-side offset; CeeLo displaces the SOURCE by the same
+  //  magnitude (configure_scenario_mc, via scenario_center) - mirror images of one geometry.
   calc.m_detector = detector_geom_from_config<double>( geom,
                                                        scenario_center_distance_cm( s ) * cm,
-                                                       det_radius, 0.0 );
+                                                       det_radius, 0.0, s.offset_cm * cm, 0.0 );
 
   DistributedSrcCalcT<double>::ShellInfo src_shell;
   src_shell.dims = (s.shape == Shape::Box)
@@ -306,10 +332,13 @@ build_scenario_calc( const AngleDetector &det,
                                   (s.half_length_cm + s.shield_cm)*cm }
           : std::array<double,3>{ (s.radius_cm + s.shield_cm)*cm,
                                   (s.half_length_cm + s.shield_cm)*cm, 0.0 };
+    // The Rayleigh deflection loss applies to the SHIELD only (see fep_removal_coefficient);
+    //  it rides along with the window credit so a `fep_window_keV <= 0` row stays plain mu_total,
+    //  which keeps the historical "mu_total" columns of the ladder meaning what they say.
     shield.trans_len_coef = transparent
           ? 0.0
           : ( (fep_window_keV > 0.0)
-                ? fep_removal_coefficient( *iron, energy_keV, fep_window_keV )
+                ? fep_removal_coefficient( *iron, energy_keV, fep_window_keV, s.shield_cm )
                 : transmition_length_coefficient( iron.get(), static_cast<float>(energy_keV) ) );
     shield.type = ShellType::Material;
     calc.m_shells.push_back( shield );
@@ -317,6 +346,109 @@ build_scenario_calc( const AngleDetector &det,
 
   return calc;
 }//build_scenario_calc(...)
+
+
+/** The CENTRE-ANCHORED transfer for a scenario: an EFFTRAN response grounded on the recorded
+ point-source curve at that scenario's own source-centre distance (`sm_centre_anchor`), so the
+ transfer is not extrapolating in distance at all.
+
+ Built from RECORDED Monte Carlo, so this runs no simulation and is safe in a committed test.  Cached
+ by distance: a box and its cylinder twin share one response exactly, as does every scenario whose
+ centre happens to sit at the same place.  Returns null if the table has no curve for that distance,
+ which is what a caller should treat as "regenerate Rung7_CentreAnchorTruth".
+ */
+shared_ptr<const ceelo::DetectorResponse> centre_anchored_response( const AngleDetector &det,
+                                                                    const Scenario &s )
+{
+  static map<long long,shared_ptr<const ceelo::DetectorResponse>> cache;
+
+  const double d_cm = scenario_center_distance_cm( s );
+  const long long key = llround( d_cm * 1.0e6 );
+  const map<long long,shared_ptr<const ceelo::DetectorResponse>>::const_iterator it = cache.find( key );
+  if( it != end(cache) )
+    return it->second;
+
+  CeeLoUtils::TransferAnchor anchor;
+  anchor.ref_distance_cm = d_cm;
+  anchor.curve_derived = false;
+  for( const CentreAnchorRow &row : sm_centre_anchor )
+  {
+    if( llround( row.distance_cm * 1.0e6 ) != key )
+      continue;
+    anchor.curve.energies_keV.push_back( row.energy_keV );
+    anchor.curve.eff.push_back( row.eff );
+    anchor.curve.frac_sigma.push_back( row.frac_sigma );
+  }
+
+  shared_ptr<const ceelo::DetectorResponse> resp;
+  if( anchor.curve.energies_keV.size() >= 2 )
+  {
+    ostringstream nm;
+    nm << "centre-anchored (d=" << fixed << setprecision(2) << d_cm << " cm)";
+    resp = CeeLoUtils::makeTransferResponse( det.gd, anchor, ceelo::AnchorCurve{}, nm.str() );
+  }
+
+  cache[key] = resp;
+  return resp;
+}//centre_anchored_response(...)
+
+
+/** Attaches a detector-side line set (the LINE integration path) to a calculator built by
+ #build_scenario_calc, from the calculator's own scalar source dims and detector placement - the
+ same construction ShieldingSourceChi2Fcn::volumetricLineCache does inside a fit.
+ */
+void attach_line_cache( GammaInteractionCalc::DistributedSrcCalcT<double> &calc, const int num_lines )
+{
+  using namespace GammaInteractionCalc;
+  BOOST_REQUIRE( calc.m_effResponse );
+  const std::array<double,3> &src = calc.m_shells[calc.m_materialIndex].dims;
+  const std::array<double,3> det_pos = { calc.m_detector.position[0], calc.m_detector.position[1],
+                                         calc.m_detector.position[2] };
+  const std::array<double,3> det_axis = { calc.m_detector.axis[0], calc.m_detector.axis[1],
+                                          calc.m_detector.axis[2] };
+  calc.m_lineCache = build_volumetric_line_cache( calc.m_effResponse, calc.m_geometry,
+                                                  calc.m_materialIndex, src, det_pos, det_axis, 0.0,
+                                                  num_lines );
+}//attach_line_cache(...)
+
+
+/** Integrates a calculator on the requested path (Element = the per-element aperture reference;
+ Line = the detector-side line set with `num_lines` lines), through the production dispatcher. */
+void integrate_on_path( GammaInteractionCalc::DistributedSrcCalcT<double> &calc,
+                        const GammaInteractionCalc::VolumetricIntegrator path,
+                        const int num_lines = -1 )
+{
+  using namespace GammaInteractionCalc;
+  if( path == VolumetricIntegrator::Line )
+    attach_line_cache( calc, (num_lines > 0) ? num_lines : 65536 );
+  std::vector<std::unique_ptr<DistributedSrcCalcT<double>>> calcs;
+  calcs.push_back( std::make_unique<DistributedSrcCalcT<double>>( calc ) );
+  {
+    const ScopedVolumetricIntegratorOverride force( path );
+    integrate_volumetric_calculators<double>( calcs, true );
+  }
+  calc.integral = calcs.front()->integral;
+  calc.m_num_evals = calcs.front()->m_num_evals;
+  calc.m_est_rel_error = calcs.front()->m_est_rel_error;
+}//integrate_on_path(...)
+
+
+/** Harness-wide override: when > 0 (INTERSPEC_HARNESS_LINE_COUNT), every #interspec_volumetric_eff
+ call that has a response and was not given an explicit line count runs on the LINE path with this
+ many lines, so any existing rung can be re-run against the line quadrature without being rewritten.
+ -1 (unset) keeps the element path. */
+int harness_line_count()
+{
+  static const int value = [](){
+    const char *env = std::getenv( "INTERSPEC_HARNESS_LINE_COUNT" );
+    const int n = env ? std::atoi( env ) : -1;
+    if( n > 0 )
+      BOOST_TEST_MESSAGE( "  (INTERSPEC_HARNESS_LINE_COUNT=" << n << ": volumetric integrals run on"
+                          " the LINE path)" );
+    return n;
+  }();
+  return value;
+}
 
 
 double interspec_volumetric_eff( const AngleDetector &det,
@@ -328,7 +460,8 @@ double interspec_volumetric_eff( const AngleDetector &det,
                                  const double epsrel = -1.0,
                                  const bool transparent = false,
                                  size_t *num_evals_out = nullptr,
-                                 double *est_rel_error_out = nullptr )
+                                 double *est_rel_error_out = nullptr,
+                                 const int num_lines = -1 )
 {
   using namespace GammaInteractionCalc;
   const double cm = PhysicalUnits::cm;
@@ -336,10 +469,21 @@ double interspec_volumetric_eff( const AngleDetector &det,
   DistributedSrcCalcT<double> calc = build_scenario_calc( det, s, energy_keV, eff_response,
                                                           n_rays, fep_window_keV, transparent );
 
-  if( epsrel > 0.0 )
+  const int use_lines = (num_lines > 0) ? num_lines
+                        : ((eff_response && (epsrel <= 0.0)) ? harness_line_count() : -1);
+
+  if( use_lines > 0 )
+  {
+    // The LINE path (VolumetricLineIntegration_imp.hpp); epsrel does not apply.
+    BOOST_REQUIRE( eff_response );
+    integrate_on_path( calc, VolumetricIntegrator::Line, use_lines );
+  }else if( epsrel > 0.0 )
+  {
     self_shielding_integration_imp<double>( calc, epsrel, 200000000 );
-  else
+  }else
+  {
     self_shielding_integration_imp<double>( calc );
+  }
 
   if( num_evals_out )
     *num_evals_out = calc.m_num_evals;
@@ -452,9 +596,13 @@ string scenario_description( const Scenario &s )
     o << "box " << 2.0*s.half_width_cm << " x " << 2.0*s.half_height_cm
       << " x " << 2.0*s.half_length_cm << " cm";
   else
-    o << "cylinder r=" << s.radius_cm << " cm, len=" << 2.0*s.half_length_cm << " cm";
+    o << ((s.shape == Shape::CylinderSideOn) ? "side-on cylinder r=" : "cylinder r=")
+      << s.radius_cm << " cm, len=" << 2.0*s.half_length_cm << " cm";
 
-  o << ", standoff " << s.standoff_cm << " cm, " << scenario_matrix_material( s.dense );
+  o << ", standoff " << s.standoff_cm << " cm";
+  if( s.offset_cm != 0.0 )
+    o << ", " << s.offset_cm << " cm off axis";
+  o << ", " << scenario_matrix_material( s.dense );
   if( s.shield_cm > 0.0 )
     o << ", " << s.shield_cm << " cm " << scenario_shield_material() << " shield";
 
@@ -462,6 +610,32 @@ string scenario_description( const Scenario &s )
 }//scenario_description(...)
 
 }//namespace
+
+
+/** Optical depth (mean free paths) of a scenario's EXTERNAL shield alone, at `energy_keV`; 0 for a
+ bare scenario.
+
+ Separate from #scenario_optical_depth because the two depths limit the model in different ways.  A
+ deep SOURCE MATRIX self-selects: the escaping signal comes from a surface skin, so getting mu
+ slightly wrong there barely moves the integral.  A SHIELD has no such escape - every ray crosses its
+ full thickness - so an error in the removal coefficient compounds over the whole of it.  That is why
+ the truth-bank comparison groups on this number rather than on the total.
+ */
+double scenario_shield_optical_depth( const Scenario &s, const double energy_keV )
+{
+  if( !(s.shield_cm > 0.0) )
+    return 0.0;
+
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  const shared_ptr<const Material> shield = matdb ? matdb->material( scenario_shield_material() )
+                                                  : nullptr;
+  if( !shield )
+    return 0.0;
+
+  return GammaInteractionCalc::transmition_length_coefficient( shield.get(),
+                                                    static_cast<float>(energy_keV) )
+         * s.shield_cm * PhysicalUnits::cm;
+}//scenario_shield_optical_depth(...)
 
 
 /** Characteristic optical depth (mean free paths) a full-energy photon must survive to leave the
@@ -481,8 +655,7 @@ double scenario_optical_depth( const Scenario &s, const double energy_keV )
     return 0.0;
 
   const shared_ptr<const Material> matrix = matdb->material( scenario_matrix_material( s.dense ) );
-  const shared_ptr<const Material> shield = matdb->material( scenario_shield_material() );
-  if( !matrix || !shield )
+  if( !matrix )
     return 0.0;
 
   const float e = static_cast<float>( energy_keV );
@@ -493,17 +666,16 @@ double scenario_optical_depth( const Scenario &s, const double energy_keV )
   //  read ~101 mfp while the model in fact tracks truth to a few percent, because no photon ever
   //  crosses 12 cm of material on its way out.  Take the smaller of the two half-extents as the
   //  characteristic depth: it is the one that bounds the escape path.
+  // For a SIDE-ON cylinder the escape path toward the detector is RADIAL, so the radius is the
+  //  characteristic depth outright - taking the min would understate a long thin pipe seen sideways.
   const double half_extent_cm = (s.shape == Shape::Box)
         ? std::min( std::min( s.half_width_cm, s.half_height_cm ), s.half_length_cm )
-        : std::min( s.radius_cm, s.half_length_cm );
+        : ((s.shape == Shape::CylinderSideOn) ? s.radius_cm
+                                              : std::min( s.radius_cm, s.half_length_cm ));
   const double tau_src = GammaInteractionCalc::transmition_length_coefficient( matrix.get(), e )
                          * half_extent_cm * PhysicalUnits::cm;
-  const double tau_shield = (s.shield_cm > 0.0)
-        ? GammaInteractionCalc::transmition_length_coefficient( shield.get(), e )
-          * s.shield_cm * PhysicalUnits::cm
-        : 0.0;
 
-  return tau_src + tau_shield;
+  return tau_src + scenario_shield_optical_depth( s, energy_keV );
 }//scenario_optical_depth(...)
 
 
@@ -540,7 +712,8 @@ void configure_scenario_mc( ceelo::EfficiencyCalculator &calc, const AngleDetect
                                  scenario_box_half_dims( s ) );
   else
     calc.set_cylindrical_source( scenario_center( s, det.endcap_front_offset_cm ),
-                                 s.radius_cm, s.half_length_cm );
+                                 s.radius_cm, s.half_length_cm,
+                                 scenario_source_rotation( s ) );
 
   if( transparent )
     return;
@@ -558,6 +731,7 @@ void configure_scenario_mc( ceelo::EfficiencyCalculator &calc, const AngleDetect
     if( s.shape == Shape::Box )
       calc.add_source_shield( mats.shield.get(), s.shield_cm, s.shield_cm, s.shield_cm );
     else
+      // (radial, end) thicknesses in the source's OWN frame, so this is orientation-independent.
       calc.add_source_shield( mats.shield.get(), s.shield_cm, s.shield_cm );
   }//if( shielded )
 }//configure_scenario_mc(...)
@@ -571,8 +745,11 @@ string scenario_mc_key( const Scenario &s, const bool transparent = false )
   if( s.shape == Shape::Box )
     o << "box(hx=" << s.half_width_cm << ",hy=" << s.half_height_cm << ",hz=" << s.half_length_cm << ")";
   else
-    o << "cyl(r=" << s.radius_cm << ",hl=" << s.half_length_cm << ")";
+    o << ((s.shape == Shape::CylinderSideOn) ? "cylSideOn(r=" : "cyl(r=") << s.radius_cm
+      << ",hl=" << s.half_length_cm << ")";
   o << ";standoff=" << s.standoff_cm;
+  if( s.offset_cm != 0.0 )
+    o << ";offset=" << s.offset_cm;
   if( transparent )
     o << ";transparent";
   else

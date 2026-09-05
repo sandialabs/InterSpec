@@ -1,0 +1,5 @@
+# CeeLo simulation results (FEP window 0.75 keV, --fep-window 0.75, precision-targeted)
+energy_keV,fep_efficiency,fep_uncertainty,total_efficiency,total_uncertainty,num_events
+60.0000,2.157013e-03,9.234487e-06,2.479754e-03,9.899665e-06,25240000
+88.0000,3.081438e-02,1.366219e-04,3.997375e-02,1.548706e-04,1600000
+122.0000,6.228889e-02,2.848220e-04,9.120833e-02,3.392995e-04,720000

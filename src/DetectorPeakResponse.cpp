@@ -1102,22 +1102,28 @@ const char *DetectorPeakResponse::effFlagDescription( const EffFlag flag )
 }//effFlagDescription(...)
 
 
+DetectorPeakResponse::EffFlag DetectorPeakResponse::effFlagFromCeelo( const ceelo::ResponseFlag flag )
+{
+  switch( flag )
+  {
+    case ceelo::ResponseFlag::Ok:                 return DetectorPeakResponse::EffFlag::Ok;
+    case ceelo::ResponseFlag::OutOfRangeClamped:  return DetectorPeakResponse::EffFlag::OutOfRangeClamped;
+    case ceelo::ResponseFlag::NearFieldUnmodeled: return DetectorPeakResponse::EffFlag::NearFieldUnmodeled;
+    case ceelo::ResponseFlag::Shadowed:           return DetectorPeakResponse::EffFlag::Shadowed;
+    case ceelo::ResponseFlag::NeedsMc:            return DetectorPeakResponse::EffFlag::NeedsMc;
+  }//switch( flag )
+
+  assert( 0 );
+  return DetectorPeakResponse::EffFlag::NeedsMc;
+}//effFlagFromCeelo(...)
+
+
 namespace
 {
   /** Maps the CeeLo provenance flag to the DetectorPeakResponse one. */
   DetectorPeakResponse::EffFlag to_eff_flag( const ceelo::ResponseFlag flag )
   {
-    switch( flag )
-    {
-      case ceelo::ResponseFlag::Ok:                 return DetectorPeakResponse::EffFlag::Ok;
-      case ceelo::ResponseFlag::OutOfRangeClamped:  return DetectorPeakResponse::EffFlag::OutOfRangeClamped;
-      case ceelo::ResponseFlag::NearFieldUnmodeled: return DetectorPeakResponse::EffFlag::NearFieldUnmodeled;
-      case ceelo::ResponseFlag::Shadowed:           return DetectorPeakResponse::EffFlag::Shadowed;
-      case ceelo::ResponseFlag::NeedsMc:            return DetectorPeakResponse::EffFlag::NeedsMc;
-    }//switch( flag )
-
-    assert( 0 );
-    return DetectorPeakResponse::EffFlag::NeedsMc;
+    return DetectorPeakResponse::effFlagFromCeelo( flag );
   }//to_eff_flag(...)
 }//namespace
 

@@ -29,6 +29,7 @@
 
 #include "cross_sections/CrossSectionData.h"
 #include "efficiency/EfficiencyCalculator.h"
+#include "io/LowDiscrepancy.h"
 #include "io/EfficiencyTransfer.h"  // kTotalScatterInRecapture
 
 #include <Eigen/Dense>
@@ -57,16 +58,6 @@ uint64_t node_seed(uint64_t base, uint32_t stage, uint32_t node) {
     s *= 0xBF58476D1CE4E5B9ULL;
     s ^= s >> 27;
     return s | 1ULL;
-}
-
-// Halton low-discrepancy value: index i (>=0), prime base.
-double halton(uint64_t i, uint32_t base) {
-    double f = 1.0, r = 0.0;
-    for (uint64_t n = i + 1; n > 0; n /= base) {
-        f /= base;
-        r += f * static_cast<double>(n % base);
-    }
-    return r;
 }
 
 // Per-node termination budget + batch sizing from the generation options.
