@@ -2328,6 +2328,35 @@ GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput make_ba133_point
 
   return chi_input;
 }//make_ba133_point_input(...)
+
+
+/** Turns the point-source scaffold of make_ba133_point_input into its volumetric twin: the same
+ nuclide and activity as a TotalActivity trace source in a `material` sphere of `radius`. */
+void add_ba133_trace_shell( GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput &input,
+                            const std::shared_ptr<const Material> &material, const double radius )
+{
+  ShieldingSourceFitCalc::SourceFitDef &src = input.config.sources.at( 0 );
+
+  ShieldingSourceFitCalc::TraceSourceInfo trace;
+  trace.m_type = GammaInteractionCalc::TraceActivityType::TotalActivity;
+  trace.m_fitActivity = true;
+  trace.m_nuclide = src.nuclide;
+  trace.m_activity = src.activity;
+  trace.m_relaxationDistance = 0.0f;
+
+  ShieldingSourceFitCalc::ShieldingInfo shell;
+  shell.m_geometry = GammaInteractionCalc::GeometryType::Spherical;
+  shell.m_isGenericMaterial = false;
+  shell.m_forFitting = true;
+  shell.m_material = material;
+  shell.m_dimensions[0] = radius;
+  shell.m_dimensions[1] = shell.m_dimensions[2] = 0.0;
+  shell.m_fitDimensions[0] = shell.m_fitDimensions[1] = shell.m_fitDimensions[2] = false;
+  shell.m_traceSources.push_back( trace );
+
+  input.config.shieldings = { shell };
+  src.sourceType = ShieldingSourceFitCalc::ModelSourceType::Trace;
+}//add_ba133_trace_shell(...)
 }//namespace
 
 
@@ -2617,6 +2646,191 @@ BOOST_AUTO_TEST_CASE( PointVsTinyTraceSourceIdentity )
 }//BOOST_AUTO_TEST_CASE( PointVsTinyTraceSourceIdentity )
 
 
+/** How far the `Auto` detector-efficiency model (an EFFTRAN transfer through the DRF's geometry -
+ built by the fit, or the one attached at load) drifts from the legacy flat-disk answer (measured
+ curve x disk solid angle) as the source moves away from the distance the transfer is anchored at.
+ `Auto` no longer steps down to flat-disk at distance, so this drift IS the change users see between
+ releases for a DRF that carries a geometry.
+
+ What the two models disagree about is WHERE the interaction happens: flat-disk puts the whole
+ crystal at its endcap face and scales as 1/d^2 from there, while the transfer knows the gamma
+ interacts some depth z inside the crystal and scales as 1/(d+z)^2.  Pinned at the anchor distance,
+ the ratio is therefore (d/(d+z))^2 * ((d_anchor+z)/d_anchor)^2 - unity at the anchor, below it
+ closer in, above it farther out, saturating with distance and growing with energy as z does.
+
+ Measured here (3"x3" NaI, anchor 50 cm = max(50 cm, 10a); worst peak of the five, 383.8 keV):
+
+     distance     point source     3 cm Water trace sphere
+      25 cm         -6.13 %              -6.30 %
+      50 cm         +0.02 %              -0.05 %      <- anchor: the models agree
+     200 cm         +5.60 %              +5.60 %
+
+ (at 81 keV the same columns are -0.38 / -0.02 / +0.27 %, i.e. the drift follows the interaction
+ depth, which is ~0.1 cm at 81 keV and ~1.6 cm at 384 keV in NaI.)
+
+ So the gates below are: the transfer reproduces the measured curve where the curve is authoritative
+ (its anchor), the drift away from the anchor has the sign the depth term demands and stays bounded,
+ and both source kinds and both DRF flavours see the SAME drift - one efficiency model per fit.
+ A change in any of those is a real change in what the fit reports, not test noise.
+ */
+BOOST_AUTO_TEST_CASE( FarFieldAutoMatchesFlatDisk )
+{
+  using ShieldingSourceFitCalc::VolumetricEffMethod;
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+  const shared_ptr<const MaterialDB> matdb = MaterialDB::instance();
+  BOOST_REQUIRE( matdb );
+  const shared_ptr<const Material> water = matdb->material( "Water" );
+  BOOST_REQUIRE( water );
+
+  // CeeLoUtils::transferAnchorForDrf's curve-derived anchor for this DRF: max( 50 cm, 10a ).
+  const double anchor_distance = 50.0*PhysicalUnits::cm;
+
+  /** One (distance, DRF flavour, source kind) combination's per-peak (Auto/flat-disk - 1), in %. */
+  struct Row
+  {
+    double distance;
+    bool attach, volumetric;
+    string label;
+    vector<double> rel_percent;
+  };
+  vector<Row> rows;
+
+  for( const double distance : { 25.0*PhysicalUnits::cm, anchor_distance, 200.0*PhysicalUnits::cm } )
+  {
+    for( const bool attach : { false, true } )
+    {
+      for( const bool volumetric : { false, true } )
+      {
+        Row row;
+        row.distance = distance;
+        row.attach = attach;
+        row.volumetric = volumetric;
+        row.label = string(attach ? "attached-transfer DRF" : "geometry-only DRF")
+                    + (volumetric ? ", 3 cm Water trace sphere" : ", point source")
+                    + " @ " + to_string( int(distance/PhysicalUnits::cm) ) + " cm";
+
+        vector<double> counts[2];   //[0]: Auto, [1]: FlatDisk by name
+        vector<double> energies;
+        for( int k = 0; k < 2; ++k )
+        {
+          const VolumetricEffMethod method = k ? VolumetricEffMethod::FlatDisk : VolumetricEffMethod::Auto;
+          const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( attach );
+          GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+                = make_ba133_point_input( det, distance, 0.0, method );
+          if( volumetric )
+            add_ba133_trace_shell( input, water, 3.0*PhysicalUnits::cm );
+
+          pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn
+                                    = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+          BOOST_REQUIRE( fcn.first );
+
+          // Both DRF flavours must land on a transfer (the attached one IS a transfer); by-name
+          //  flat-disk must stay flat-disk, or the row is comparing a model against itself.
+          const VolumetricEffMethod resolved = fcn.first->resolvedVolumetricEffMethod();
+          if( k == 0 )
+            BOOST_REQUIRE_MESSAGE( resolved == VolumetricEffMethod::EffTran,
+                                   row.label << ": Auto did not resolve to an EFFTRAN transfer ["
+                                   << fcn.first->volumetricEffResolveNote() << "]" );
+          else
+            BOOST_REQUIRE( resolved == VolumetricEffMethod::FlatDisk );
+
+          GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
+          counts[k] = fcn.first->expected_peak_counts_imp<double>( fcn.second.Params(), cache );
+          BOOST_REQUIRE_EQUAL( counts[k].size(), input.foreground_peaks.size() );
+          if( k == 0 )
+            for( const shared_ptr<const PeakDef> &peak : input.foreground_peaks )
+              energies.push_back( peak->mean() );
+        }//for( Auto, FlatDisk )
+
+        for( size_t i = 0; i < counts[0].size(); ++i )
+        {
+          BOOST_REQUIRE( counts[1][i] > 0.0 );
+          row.rel_percent.push_back( 100.0*(counts[0][i]/counts[1][i] - 1.0) );
+          BOOST_TEST_MESSAGE( "  " << std::left << std::setw(54) << row.label << std::right
+                              << std::setprecision(6) << energies[i] << " keV: flat-disk "
+                              << counts[1][i] << "  Auto " << counts[0][i] << "  (" << std::showpos
+                              << std::setprecision(3) << row.rel_percent.back() << "%"
+                              << std::noshowpos << ")" );
+        }
+
+        rows.push_back( row );
+      }//for( point, volumetric )
+    }//for( geometry-only, attached )
+  }//for( distance )
+
+  // Measured max |drift|: 0.12% at the anchor, 6.30% at 25 cm, 5.60% at 200 cm.  The gates leave
+  //  ~2x margin at the anchor and a flat 8% bound away from it - tight enough that a changed depth
+  //  term or a changed anchor shows up, loose enough not to chase quadrature noise.
+  const double anchor_tolerance_percent = 0.25;
+  const double drift_bound_percent = 8.0;
+
+  for( const Row &row : rows )
+  {
+    for( size_t i = 0; i < row.rel_percent.size(); ++i )
+    {
+      const double rel = row.rel_percent[i];
+      BOOST_CHECK_MESSAGE( fabs(rel) < drift_bound_percent,
+                           row.label << ", peak " << i << ": Auto differs from flat-disk by " << rel
+                           << "%, beyond the " << drift_bound_percent << "% the interaction-depth"
+                           " term can account for" );
+
+      if( row.distance == anchor_distance )
+      {
+        BOOST_CHECK_MESSAGE( fabs(rel) < anchor_tolerance_percent,
+                             row.label << ", peak " << i << ": the transfer misses the measured curve"
+                             " by " << rel << "% AT ITS OWN ANCHOR DISTANCE, where the curve is"
+                             " authoritative" );
+      }else
+      {
+        // Closer than the anchor the transfer must read LOW, farther it must read HIGH; the 81 keV
+        //  peak's drift is small but its sign is just as determined.
+        const bool farther = (row.distance > anchor_distance);
+        BOOST_CHECK_MESSAGE( farther ? (rel > 0.0) : (rel < 0.0),
+                             row.label << ", peak " << i << ": drift of " << rel << "% has the wrong"
+                             " sign for a source " << (farther ? "farther from" : "closer than")
+                             << " the anchor distance" );
+      }
+    }//for( peaks )
+  }//for( rows )
+
+  // One model per fit: the drift cannot depend on whether the transfer was attached at load or built
+  //  by the fit, nor (beyond the shell's own extent) on the source being a point or a volume.
+  for( const Row &a : rows )
+  {
+    for( const Row &b : rows )
+    {
+      if( (a.distance != b.distance) || (a.volumetric != b.volumetric) || (a.attach >= b.attach) )
+        continue;
+      BOOST_REQUIRE_EQUAL( a.rel_percent.size(), b.rel_percent.size() );
+      for( size_t i = 0; i < a.rel_percent.size(); ++i )
+        BOOST_CHECK_MESSAGE( fabs(a.rel_percent[i] - b.rel_percent[i]) < 1.0E-6,
+                             "peak " << i << ": '" << a.label << "' drifts " << a.rel_percent[i]
+                             << "% but '" << b.label << "' drifts " << b.rel_percent[i] << "%" );
+    }
+  }
+
+  for( const Row &a : rows )
+  {
+    for( const Row &b : rows )
+    {
+      if( (a.distance != b.distance) || (a.attach != b.attach) || a.volumetric || !b.volumetric )
+        continue;
+      BOOST_REQUIRE_EQUAL( a.rel_percent.size(), b.rel_percent.size() );
+      for( size_t i = 0; i < a.rel_percent.size(); ++i )
+        BOOST_CHECK_MESSAGE( fabs(a.rel_percent[i] - b.rel_percent[i]) < 0.5,
+                             "peak " << i << " @ " << int(a.distance/PhysicalUnits::cm) << " cm: the"
+                             " point source drifts " << a.rel_percent[i] << "% but the trace sphere"
+                             " drifts " << b.rel_percent[i] << "% - the two source kinds are not on"
+                             " the same efficiency model" );
+    }
+  }
+}//BOOST_AUTO_TEST_CASE( FarFieldAutoMatchesFlatDisk )
+
+
 /** Every trace-activity type through the production dispatcher: the LINE path against the ELEMENT
  path on the same chi2 function.  The per-type normalisation (`m_normalizeByVolume`, the in-situ
  exponential profile) is set by build_volumetric_calculators, so this runs the whole forward model
@@ -2845,6 +3059,109 @@ BOOST_AUTO_TEST_CASE( ReportNamesDetectorEffModel )
                         << data["DetectorEff"]["Note"].get<string>() << "'" );
   }//for( variants )
 }//BOOST_AUTO_TEST_CASE( ReportNamesDetectorEffModel )
+
+
+/** An EFFTRAN transfer asked for BY NAME that cannot be built must not leave the fit on a WORSE model
+ than `Auto` would have picked.  The DRF here carries a (Monte-Carlo-labelled) response but an
+ intrinsic curve with no usable anchor point, so resolveVolumetricEffMethodForDrf promises EffTran and
+ the build then fails.  The request is still reported as an error - the user did not get what they
+ asked for - but both source kinds fall back to the attached response, exactly as `Auto` does.
+ */
+BOOST_AUTO_TEST_CASE( EffTranByNameFailureKeepsAttachedResponse )
+{
+  using ShieldingSourceFitCalc::PointEffModel;
+  using ShieldingSourceFitCalc::VolumetricEffMethod;
+  set_data_dir();
+
+  const SandiaDecay::SandiaDecayDataBase * const db = DecayDataBaseServer::database();
+  BOOST_REQUIRE_MESSAGE( db, "Error initing SandiaDecayDataBase" );
+  BOOST_REQUIRE_NO_THROW( MaterialDB::initialize() );
+
+  const shared_ptr<DetectorPeakResponse> det = make_synthetic_nai_drf( false );
+  const shared_ptr<const ceelo::GeometryDescriptor> gd = det->geometry();
+  BOOST_REQUIRE( gd && !det->ceeloResponse() );
+
+  // A transfer response posing as a full MC characterization: the EffTran arm then has to BUILD a
+  //  transfer rather than reuse this one.
+  const CeeLoUtils::TransferAnchor anchor = CeeLoUtils::transferAnchorForDrf( det, *gd, -1.0 );
+  const shared_ptr<ceelo::DetectorResponse> resp
+        = CeeLoUtils::makeTransferResponse( *gd, anchor, ceelo::AnchorCurve{}, "synthetic NaI (posing as MC)" );
+  BOOST_REQUIRE( resp );
+  resp->provenance.method = ceelo::ProductionMethod::FullMc;
+  det->setCeeloResponse( resp );
+
+  // ...and an intrinsic curve that is zero everywhere, so the curve-derived anchor has no usable
+  //  point and CeeLoUtils::transferAnchorForDrf throws.  The attached response stays in place.
+  det->setIntrinsicEfficiencyFormula( "0.0*x", 2.0*3.81*PhysicalUnits::cm, PhysicalUnits::keV, 20.0f, 3000.0f,
+                                      DetectorPeakResponse::EffGeometryType::FarFieldIntrinsic );
+  BOOST_REQUIRE( det->isValid() && det->ceeloResponse() && det->geometry() );
+  BOOST_REQUIRE_THROW( CeeLoUtils::transferAnchorForDrf( det, *gd, 0.0 ), std::exception );
+
+  // The pre-check promises EffTran (a geometry is present); the corner under test is the build failing.
+  BOOST_REQUIRE( GammaInteractionCalc::ShieldingSourceChi2Fcn::resolveVolumetricEffMethodForDrf( det, VolumetricEffMethod::EffTran )
+                 == VolumetricEffMethod::EffTran );
+
+  vector<double> by_name_counts, auto_counts;
+  for( const VolumetricEffMethod requested : { VolumetricEffMethod::EffTran, VolumetricEffMethod::Auto } )
+  {
+    const bool by_name = (requested == VolumetricEffMethod::EffTran);
+    const string label = by_name ? "EffTran-by-name" : "Auto";
+
+    const GammaInteractionCalc::ShieldingSourceChi2Fcn::ShieldSourceInput input
+          = make_ba133_point_input( det, 5.0*PhysicalUnits::cm, 0.0, requested );
+    pair<shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn>, ROOT::Minuit2::MnUserParameters> fcn_pars
+                              = GammaInteractionCalc::ShieldingSourceChi2Fcn::create( input );
+    const shared_ptr<GammaInteractionCalc::ShieldingSourceChi2Fcn> &fcn = fcn_pars.first;
+    BOOST_REQUIRE( fcn );
+
+    BOOST_TEST_MESSAGE( "  " << label << ": note='" << fcn->volumetricEffResolveNote()
+                        << "' error='" << fcn->volumetricEffResolveError() << "'" );
+
+    BOOST_CHECK_MESSAGE( fcn->resolvedVolumetricEffMethod() == VolumetricEffMethod::MCTransfer,
+                         label << ": did not fall back to the attached response" );
+    BOOST_CHECK_MESSAGE( fcn->pointSourceEffModel() == PointEffModel::Response,
+                         label << ": point sources dropped to a worse model than Auto gives" );
+    if( by_name )
+    {
+      BOOST_CHECK_MESSAGE( fcn->volumetricEffResolveError().find( "EFFTRAN" ) != string::npos,
+                           "expected an error naming EFFTRAN, got '" << fcn->volumetricEffResolveError() << "'" );
+    }else
+    {
+      BOOST_CHECK( fcn->volumetricEffResolveError().empty() );
+      BOOST_CHECK( !fcn->volumetricEffResolveNote().empty() );
+    }
+
+    GammaInteractionCalc::ShieldingSourceChi2Fcn::NucMixtureCache cache;
+    (by_name ? by_name_counts : auto_counts) = fcn->expected_peak_counts_imp<double>( fcn_pars.second.Params(), cache );
+
+    if( by_name )
+    {
+      // And the error reaches the fit results, alongside the model actually used.
+      auto inputPrams = make_shared<ROOT::Minuit2::MnUserParameters>( fcn_pars.second );
+      auto progress = make_shared<ShieldingSourceFitCalc::ModelFitProgress>();
+      auto results = make_shared<ShieldingSourceFitCalc::ModelFitResults>();
+      bool finished_called = false;
+      ShieldingSourceFitCalc::fit_model( "", fcn, inputPrams, progress, [](){}, results,
+                                         [&finished_called](){ finished_called = true; } );
+      BOOST_REQUIRE( finished_called );
+      BOOST_CHECK( results->point_eff_model == PointEffModel::Response );
+      BOOST_CHECK( results->volumetric_eff_method == VolumetricEffMethod::MCTransfer );
+      bool reported = false;
+      for( const string &msg : results->errormsgs )
+        reported = reported || (msg.find( "EFFTRAN" ) != string::npos);
+      BOOST_CHECK_MESSAGE( reported, "the refused EFFTRAN request is missing from errormsgs" );
+    }
+  }//for( requested )
+
+  // A refused by-name request gives exactly what Auto gives - no worse.
+  BOOST_REQUIRE_EQUAL( by_name_counts.size(), auto_counts.size() );
+  for( size_t i = 0; i < by_name_counts.size(); ++i )
+  {
+    BOOST_REQUIRE( auto_counts[i] > 0.0 );
+    BOOST_CHECK_MESSAGE( fabs(by_name_counts[i]/auto_counts[i] - 1.0) < 1.0E-12,
+                         "peak " << i << ": EffTran-by-name " << by_name_counts[i] << " vs Auto " << auto_counts[i] );
+  }
+}//BOOST_AUTO_TEST_CASE( EffTranByNameFailureKeepsAttachedResponse )
 
 
 /** Validates the ceres::Jet derivative lanes of `expected_peak_counts_imp` - including

@@ -1082,7 +1082,8 @@ public:
   /** Gives the chi2 contributions for each peak
    
    @param params The parameters currently defining the model.
-   @param error_params The errors on the parameters - only used if `log_info` is non-null
+   @param error_params The errors on the parameters - only used if `log_info` is non-null; may be
+          empty, in which case the logged uncertainties are left at their defaults
    @param mixturecache Used to speed up multiple calls to this function, and may be empty at first.
    @param log_info If non-null, filled out with details about the computation.
    */
@@ -1213,7 +1214,13 @@ public:
                         std::vector<SourceDetails> &info ) const;
   
   
-  ShieldingSourceChi2Fcn&	operator=( const ShieldingSourceChi2Fcn & );
+  /** Not copyable: the resolved response and the detector-side ray sets are memoised against the
+   `const` geometry and shielding stack, which an assignment could not carry over (and the copy
+   constructor is already implicitly deleted by the mutex members).  Build a fresh object through
+   #create instead. */
+  ShieldingSourceChi2Fcn( const ShieldingSourceChi2Fcn & ) = delete;
+  ShieldingSourceChi2Fcn &operator=( const ShieldingSourceChi2Fcn & ) = delete;
+
   virtual double Up() const;
 
   size_t numExpectedFitParameters() const;
@@ -1438,9 +1445,10 @@ public:
   const std::string &volumetricEffResolveNote() const;
 
   /** Non-empty when an EXPLICITLY requested near-field method (MCTransfer / EffTran) could not be
-   honored and the fit fell back to flat-disk.  Distinct from #volumetricEffResolveNote: a note is
-   informational (including every `Auto` resolution), whereas this says the user asked for something
-   specific and did not get it, and is surfaced in `ModelFitResults::errormsgs`.
+   honored and the fit fell back to the best model the DRF still offers (its attached response, else
+   flat-disk).  Distinct from #volumetricEffResolveNote: a note is informational (including every
+   `Auto` resolution), whereas this says the user asked for something specific and did not get it,
+   and is surfaced in `ModelFitResults::errormsgs`.
    */
   const std::string &volumetricEffResolveError() const;
 

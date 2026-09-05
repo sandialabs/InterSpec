@@ -952,18 +952,29 @@ void ShieldingSourceChi2Fcn::resolveVolumetricEffMethod()
           m_volEffResolveNote = (transfer == ceeloResp)
                   ? "Auto -> EFFTRAN transfer (the one attached to the detector response)"
                   : "Auto -> EFFTRAN transfer (built from the detector response's efficiency and geometry)";
-      }else if( (requested == VolumetricEffMethod::Auto) && ceeloResp )
+      }else if( ceeloResp )
       {
-        // Auto is best-effort: a far-field MC response still beats flat-disk.
+        // A response the DRF already carries still beats flat-disk, so it is the fallback for BOTH
+        //  request kinds: a method asked for by name and refused must never leave the fit on a
+        //  WORSE model than `Auto` would have picked for the same DRF.  Only the reporting differs.
         m_resolvedVolEffMethod = VolumetricEffMethod::MCTransfer;
         m_volEffResponse = ceeloResp;
-        m_volEffResolveNote = "Auto -> MC transfer (far-field; EFFTRAN unavailable)";
+        if( requested == VolumetricEffMethod::Auto )
+        {
+          m_volEffResolveNote = "Auto -> MC transfer (far-field; EFFTRAN unavailable)";
+        }else
+        {
+          // Asked for by name and not delivered - that is an error, not a footnote.
+          m_volEffResolveError = "An EFFTRAN volumetric-source efficiency was requested, but could"
+                                 " not be built (" + m_volEffResolveNote + "); the detector"
+                                 " response's own characterization was used instead.";
+          m_volEffResolveNote.clear();
+        }
       }else if( requested == VolumetricEffMethod::Auto )
       {
         m_volEffResolveNote = "Auto -> flat-disk (" + m_volEffResolveNote + ")";
       }else
       {
-        // Asked for by name and not delivered - that is an error, not a footnote.
         m_volEffResolveError = "An EFFTRAN volumetric-source efficiency was requested, but could not"
                                " be built (" + m_volEffResolveNote + "); the far-field flat-disk"
                                " approximation was used instead.";
@@ -2077,38 +2088,6 @@ double ShieldingSourceChi2Fcn::operator()( const std::vector<double> &x ) const
 {
   return DoEval( x );
 }//double operator()(...)
-
-
-ShieldingSourceChi2Fcn &ShieldingSourceChi2Fcn::operator=( const ShieldingSourceChi2Fcn &rhs )
-{
-  m_cancel = rhs.m_cancel.load();
-  m_distance = rhs.m_distance;
-  m_liveTime = rhs.m_liveTime;
-  m_peaks = rhs.m_peaks;
-  m_detector = rhs.m_detector;
-  m_nuclides = rhs.m_nuclides;
-  m_options = rhs.m_options;
-  m_sourceOffsets[0] = rhs.m_sourceOffsets[0];
-  m_sourceOffsets[1] = rhs.m_sourceOffsets[1];
-
-  // Must travel with m_options/m_detector: these are what the integration actually branches on, and
-  //  a copy that kept the options but lost the resolved response would silently revert to flat-disk.
-  m_resolvedVolEffMethod = rhs.m_resolvedVolEffMethod;
-  m_volEffResponse = rhs.m_volEffResponse;
-  m_volEffResolveNote = rhs.m_volEffResolveNote;
-  m_volEffResolveError = rhs.m_volEffResolveError;
-
-  // The ray sets are immutable and traced for the same geometry, so they are shared; the memos are
-  //  rebuilt lazily.
-  clearDetectorSideRays();
-  m_pointRays = rhs.m_pointRays;
-  
-  //m_isFitting
-  //m_guiUpdateInfo
-  //m_zombieCheckTimer
-  
-  return *this;
-}//operator=
 
 
 double ShieldingSourceChi2Fcn::Up() const
@@ -4739,7 +4718,9 @@ vector<PeakResultPlotInfo>
   // Make sure attenuate_for_air isnt set for fixed geometry DRFs
   assert( !m_options.attenuate_for_air || !m_detector || !m_detector->isFixedGeometry() );
 
-  assert( !log_info || (x.size() == error_params.size()) );
+  // Empty error_params is a supported caller state (no uncertainties available yet - every use of
+  //  them below is guarded on it); a WRONG-SIZED one is not.
+  assert( !log_info || error_params.empty() || (x.size() == error_params.size()) );
   
 //  cerr << "energy_chi_contributions: vals={ ";
 //  for( size_t i = 0; i < x.size(); ++i )
