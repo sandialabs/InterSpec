@@ -159,6 +159,7 @@ The workflow is guided by a state machine with 7 states. Use `set_workflow_state
 * Note any caveats or limitations
 * Mention any Pu-242 corrections if available
 * Provide age information if fitted
+* **Formatting:** Reply in Markdown - use a table when reporting more than a couple of peaks, nuclides or fit values, and LaTeX for equations and symbols (`$...$` inline, `$$...$$` displayed; e.g. `$^{235}$U`, `$\chi^2/\mathrm{DOF}$`). Do not write raw HTML, links or images.
 
 **Typical Output Format:**
 ```

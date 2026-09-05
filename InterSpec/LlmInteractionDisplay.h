@@ -39,8 +39,10 @@
 namespace Wt
 {
   class WText;
+  class WWidget;
   class WTextArea;
   class WPushButton;
+  class WApplication;
 }
 class PopupDivMenu;
 struct LlmInteraction;
@@ -49,6 +51,36 @@ class LlmToolRequest;
 class LlmToolResults;
 class LlmInteractionError;
 class LlmInteractionFinalResponse;
+
+
+/** Client-side rendering of LLM-authored text as Markdown + LaTeX.
+ *
+ * Assistant text is not rendered by Wt; it is handed to InterSpec_resources/LlmMarkdown.js, which
+ * parses it with marked, typesets math with KaTeX, and injects the result.  That file's renderer
+ * overrides are an allowlist - no anchors, images, scripts or iframes are produced, and no attribute
+ * value comes from model text unescaped - which is why it is safe to inject model output as HTML at
+ * all.  See the SECURITY note at the top of LlmMarkdown.js before changing any of this.
+ */
+namespace LlmMarkdown
+{
+  /** Loads marked, KaTeX, the KaTeX stylesheet, and LlmMarkdown.js into `app` (in that order; the
+   marked-katex bridge needs the `katex` global at load time).  Cheap to call repeatedly - Wt
+   de-duplicates by URI.  Call it early (e.g. from the LlmToolGui constructor) so the scripts are in
+   flight before the first response is rendered.
+   */
+  void load_resources( Wt::WApplication *app );
+
+  /** Adds a container to `parent` that renders `markdown` as Markdown + LaTeX.
+
+   The Markdown source is kept on the DOM element so the display can be toggled back to raw text.
+   Returns the container, whose id() is needed by set_raw_mode().
+   */
+  Wt::WContainerWidget *add_text( Wt::WContainerWidget *parent, const std::string &markdown,
+                                  const std::string &style_class );
+
+  /** Switches an element made by add_text() between the raw Markdown source and rendered output. */
+  void set_raw_mode( Wt::WWidget *widget, const bool raw );
+}//namespace LlmMarkdown
 
 
 /** Base class for displaying a single LLM interaction turn (response, tool call, result, or error).
@@ -126,6 +158,12 @@ protected:
 
 private:
   std::shared_ptr<LlmInteractionFinalResponse> m_response;
+
+  /** The div holding the response text; rendered as Markdown+LaTeX by LlmMarkdown.js. */
+  Wt::WContainerWidget *m_contentDiv;
+
+  /** Whether the user has asked to see the raw Markdown source instead of the rendered output. */
+  bool m_showRawText;
 };//class LlmInteractionFinalResponseDisplay
 
 
