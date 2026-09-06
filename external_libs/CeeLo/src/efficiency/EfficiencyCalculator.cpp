@@ -283,9 +283,18 @@ struct SimulationState {
 
 EfficiencyCalculator::EfficiencyCalculator() = default;
 
-void EfficiencyCalculator::set_detector(DetectorShape type, const Material* material,
-                                        const std::vector<double>& dimensions) {
-    geometry_.set_detector(type, material, dimensions);
+void EfficiencyCalculator::set_detector(const Material* material, const CylinderDims& dims) {
+    geometry_.set_detector(material, dims);
+}
+
+void EfficiencyCalculator::set_detector(const Material* material, const BoxDims& dims) {
+    geometry_.set_detector(material, dims);
+}
+
+void EfficiencyCalculator::set_detector_from_dimensions_vector(
+        DetectorShape type, const Material* material,
+        const std::vector<double>& dimensions_cm) {
+    geometry_.set_detector_from_dimensions_vector(type, material, dimensions_cm);
 }
 
 void EfficiencyCalculator::set_bore_hole(double bore_radius, double bore_depth,
@@ -345,7 +354,7 @@ void EfficiencyCalculator::set_spherical_source(
     sph_src_.radius = radius;
     sph_src_.rotation = rotation;
     source_position_ = center;
-    source_geometry_.configure_spherical(center, inner_radius, radius, rotation);
+    source_geometry_.configure_spherical(center, radius, inner_radius, rotation);
 }
 
 void EfficiencyCalculator::set_rectangular_source(

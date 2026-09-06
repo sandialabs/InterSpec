@@ -94,7 +94,7 @@ BOOST_AUTO_TEST_CASE(on_axis_point_source_15cm) {
 
     Material nai = make_NaI();
     Geometry geom;
-    geom.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    geom.set_detector(&nai, CylinderDims{3.81, 7.62});
 
     Eigen::Vector3d source_pos(0.0, 0.0, -15.0);
 
@@ -132,7 +132,7 @@ BOOST_AUTO_TEST_CASE(on_axis_point_source_5cm_close) {
 
     Material nai = make_NaI();
     Geometry geom;
-    geom.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    geom.set_detector(&nai, CylinderDims{3.81, 7.62});
 
     Eigen::Vector3d source_pos(0.0, 0.0, -5.0);
 
@@ -160,7 +160,7 @@ BOOST_AUTO_TEST_CASE(off_axis_point_source_reduces_solid_angle) {
 
     Material nai = make_NaI();
     Geometry geom;
-    geom.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    geom.set_detector(&nai, CylinderDims{3.81, 7.62});
 
     const uint64_t N = 500000;
 
@@ -203,7 +203,7 @@ BOOST_AUTO_TEST_CASE(cylindrical_source_geometric_hit_fraction) {
 
     Material nai = make_NaI();
     Geometry geom;
-    geom.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    geom.set_detector(&nai, CylinderDims{3.81, 7.62});
 
     const uint64_t N = 1000000;
     std::mt19937_64 rng(999);
@@ -272,7 +272,7 @@ BOOST_AUTO_TEST_CASE(wider_source_at_fixed_z_reduces_average_solid_angle) {
 
     Material nai = make_NaI();
     Geometry geom;
-    geom.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    geom.set_detector(&nai, CylinderDims{3.81, 7.62});
 
     const uint64_t N = 500000;
     const Eigen::Vector3d center(0.0, 0.0, -15.0);

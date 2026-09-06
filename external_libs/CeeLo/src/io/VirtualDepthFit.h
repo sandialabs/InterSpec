@@ -60,15 +60,23 @@ struct DetectorDescriptor {
     double crystal_length_cm = 0.0;    ///< full crystal length along the axis
     double half_x_cm = 0.0;            ///< box only (0 for cylinder)
     double half_y_cm = 0.0;            ///< box only (0 for cylinder)
+
+    /// The crystal this descriptor names, ready to hand back to set_detector().
+    /// These are the single source of truth for fit_virtual_depth(), so the
+    /// crystal simulated and the crystal advertised cannot drift apart.
+    CylinderDims cylinder_dims() const;  ///< Cylinder shape only
+    BoxDims box_dims() const;            ///< Box shape only
 };
 
-/// Build a descriptor from a detector spec. `dimensions` follow set_detector():
-/// Cylinder = {radius, half_length}; Box = {half_x, half_y, length}. For a box,
-/// crystal_radius_cm is the area-equivalent disk radius R_eff = 2*sqrt(hx*hy/pi)
-/// (an approximation; the CV fit absorbs residual face-shape error).
-DetectorDescriptor make_descriptor(std::string name, DetectorShape shape,
-                                   const Material& material,
-                                   const std::vector<double>& dimensions);
+/// Build a descriptor from a detector spec.  See CRYSTAL DIMENSION CONVENTION
+/// in geometry/Geometry.h -- the length is the FULL crystal length, as
+/// set_detector() reads it.  For a box, crystal_radius_cm is the
+/// area-equivalent disk radius R_eff = 2*sqrt(hx*hy/pi) (an approximation; the
+/// CV fit absorbs residual face-shape error).
+DetectorDescriptor make_descriptor(std::string name, const Material& material,
+                                   const CylinderDims& dims);
+DetectorDescriptor make_descriptor(std::string name, const Material& material,
+                                   const BoxDims& dims);
 
 /// Configuration for a full delta(E) fit.
 struct VpdFitConfig {
@@ -136,12 +144,14 @@ double eval_exp_log(const std::vector<double>& coeffs, double energy_keV);
 
 // ---- Full pipeline (drives MC) ----
 
-/// Configure an EfficiencyCalculator for `descriptor`/`material`/`dimensions`,
-/// run compute() over the (energy x distance) grid, fit delta per energy, and
-/// fit the exp-of-log coefficients. This is the only function here that runs MC.
+/// Configure an EfficiencyCalculator for `descriptor`/`material`, run compute()
+/// over the (energy x distance) grid, fit delta per energy, and fit the
+/// exp-of-log coefficients. This is the only function here that runs MC.
+///
+/// The crystal comes from `descriptor` alone -- deliberately, so there is no
+/// second, independently supplied dimension vector to disagree with it.
 VpdFit fit_virtual_depth(const DetectorDescriptor& descriptor,
                          const Material& material,
-                         const std::vector<double>& dimensions,
                          const VpdFitConfig& cfg);
 
 // ---- Self-describing text I/O (CSV-with-#-comments, no JSON) ----

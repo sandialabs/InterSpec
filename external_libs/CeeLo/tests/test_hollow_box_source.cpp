@@ -218,7 +218,7 @@ BOOST_AUTO_TEST_CASE(samples_uniform_in_shell) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     const Eigen::Vector3d center(0.0, 0.0, -10.0);
     const Eigen::Vector3d outer(3.0, 3.0, 3.0);
     const Eigen::Vector3d inner(2.0, 2.0, 2.0);
@@ -264,7 +264,7 @@ BOOST_AUTO_TEST_CASE(exponential_depth_respects_void) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     const Eigen::Vector3d center(0.0, 0.0, -10.0);
     const Eigen::Vector3d inner(1.5, 1.5, 1.5);
     calc.set_rectangular_source(center, Eigen::Vector3d(2.0, 2.0, 2.0),
@@ -289,12 +289,12 @@ BOOST_AUTO_TEST_CASE(solid_sampling_identical_default_vs_zero) {
 
     EfficiencyCalculator calc_a;
     calc_a.set_fep_window_keV(kTestFepWindowKeV);
-    calc_a.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_a.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_a.set_rectangular_source(center, Eigen::Vector3d(3.0, 2.0, 1.0));
 
     EfficiencyCalculator calc_b;
     calc_b.set_fep_window_keV(kTestFepWindowKeV);
-    calc_b.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_b.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_b.set_rectangular_source(center, Eigen::Vector3d(3.0, 2.0, 1.0),
                                   Eigen::Matrix3d::Identity(),
                                   Eigen::Vector3d::Zero());
@@ -321,7 +321,7 @@ BOOST_AUTO_TEST_CASE(basic_invariants) {
     Material nai = make_NaI();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_rectangular_source(Eigen::Vector3d(0.0, 0.0, -10.0),
                                 Eigen::Vector3d(2.0, 2.0, 2.0),
                                 Eigen::Matrix3d::Identity(),
@@ -345,14 +345,14 @@ BOOST_AUTO_TEST_CASE(hollow_box_higher_than_solid_self_attenuating) {
 
     EfficiencyCalculator calc_solid;
     calc_solid.set_fep_window_keV(kTestFepWindowKeV);
-    calc_solid.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_solid.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_solid.set_rectangular_source(center, Eigen::Vector3d(3.0, 3.0, 3.0));
     calc_solid.set_source_material(&pb);
     auto res_solid = calc_solid.compute(precision_config(662.0));
 
     EfficiencyCalculator calc_shell;
     calc_shell.set_fep_window_keV(kTestFepWindowKeV);
-    calc_shell.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_shell.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_shell.set_rectangular_source(center, Eigen::Vector3d(3.0, 3.0, 3.0),
                                       Eigen::Matrix3d::Identity(),
                                       Eigen::Vector3d(2.0, 2.0, 2.0));
@@ -375,7 +375,7 @@ BOOST_AUTO_TEST_CASE(biasing_consistency_hollow_box) {
     Material wood = make_Cellulose();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_rectangular_source(Eigen::Vector3d(0.0, 0.0, -12.0),
                                 Eigen::Vector3d(4.0, 4.0, 4.0),
                                 Eigen::Matrix3d::Identity(),
@@ -386,7 +386,7 @@ BOOST_AUTO_TEST_CASE(biasing_consistency_hollow_box) {
 
     EfficiencyCalculator calc_iso;
     calc_iso.set_fep_window_keV(kTestFepWindowKeV);
-    calc_iso.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_iso.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_iso.set_rectangular_source(Eigen::Vector3d(0.0, 0.0, -12.0),
                                     Eigen::Vector3d(4.0, 4.0, 4.0),
                                     Eigen::Matrix3d::Identity(),

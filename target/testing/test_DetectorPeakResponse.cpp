@@ -640,10 +640,15 @@ BOOST_AUTO_TEST_CASE( test_read_angle_outx_full )
 
     BOOST_CHECK( gd.shape == ceelo::DetectorShape::Cylinder );
     BOOST_REQUIRE_MESSAGE( gd.dimensions_cm.size() >= 2, "Cylinder needs radius+length" );
-    BOOST_CHECK_MESSAGE( close_enough(gd.dimensions_cm[0], 29.15/10.0, 0.01),
-                         "geom radius cm: " + to_string(gd.dimensions_cm[0]) );
-    BOOST_CHECK_MESSAGE( close_enough(gd.dimensions_cm[1], 68.9/10.0, 0.01),
-                         "geom length cm: " + to_string(gd.dimensions_cm[1]) );
+    // A radius (half) and a FULL length; see CRYSTAL DIMENSION CONVENTION in
+    //  CeeLo's geometry/Geometry.h.  The ANGLE file's values are in
+    //  PhysicalUnits and buildAngleGeometry divides them by PhysicalUnits::cm,
+    //  so what lands here is 29.15 mm and 68.9 mm expressed in cm.
+    const ceelo::CylinderDims dims = gd.cylinder_dims();
+    BOOST_CHECK_MESSAGE( close_enough(dims.radius_cm, 29.15/10.0, 0.01),
+                         "geom radius cm: " + to_string(dims.radius_cm) );
+    BOOST_CHECK_MESSAGE( close_enough(dims.full_length_cm, 68.9/10.0, 0.01),
+                         "geom length cm: " + to_string(dims.full_length_cm) );
 
     BOOST_CHECK_MESSAGE( close_enough(gd.bullet_radius_cm, 0.8, 0.01),
                          "geom bullet radius cm: " + to_string(gd.bullet_radius_cm) );

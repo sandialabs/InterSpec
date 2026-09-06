@@ -228,7 +228,12 @@ const char* to_string(GeometryProblem p);
 /// collimator, symmetry, reference point + the material table they index.
 struct GeometryDescriptor {
     DetectorShape shape = DetectorShape::Cylinder;
-    /// Cylinder: {radius, length}; Box: {half_x, half_y, length} (cm).
+    /// The serialized crystal dimensions, in cm: Cylinder {radius, FULL length};
+    /// Box {half_x, half_y, FULL length}.  See CRYSTAL DIMENSION CONVENTION in
+    /// geometry/Geometry.h -- and prefer set_dimensions() / cylinder_dims() /
+    /// box_dims() below, which name the fields, over indexing this by hand.
+    ///
+    /// This layout is written into every response file; it does not change.
     std::vector<double> dimensions_cm;
     /// Cylinder only: quarter-torus fillet radius on the outer FRONT edge
     /// ("bulletization", ANGLE's `bulletizingRadius`), cm. 0 = a sharp
@@ -243,6 +248,16 @@ struct GeometryDescriptor {
     ResponseSymmetry symmetry = ResponseSymmetry::Axial;
     ReferencePoint reference_point = ReferencePoint::CrystalFace;
     std::vector<MaterialSpec> materials;
+
+    /// Set `shape` and `dimensions_cm` together, so a Box can never end up
+    /// declared with two numbers.  See CRYSTAL DIMENSION CONVENTION.
+    void set_dimensions(const CylinderDims& dims);
+    void set_dimensions(const BoxDims& dims);
+
+    /// Named read-back of `dimensions_cm`.  Asserts the shape matches and the
+    /// vector is long enough; consult problems() first for untrusted input.
+    CylinderDims cylinder_dims() const;
+    BoxDims box_dims() const;
 
     /// Build the ray-trace geometry. The returned Geometry references the
     /// Material instances appended to `owned` -- keep them alive as long as

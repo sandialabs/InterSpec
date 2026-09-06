@@ -45,7 +45,7 @@ int main() {
     Material nai = make_NaI();
 
     EfficiencyCalculator calc;
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));  // 10 cm from front face
 
     // Simulate 100k events per energy using all available hardware threads.

@@ -72,7 +72,7 @@ SimulationConfig precision_config(double energy_keV, double target = 0.005) {
 void configure(EfficiencyCalculator& calc, const Material* nai, const Material* th,
                const Material* soil, const Material* al, const Material* fe,
                const std::string& geom, double center_z) {
-    calc.set_detector(DetectorShape::Cylinder, nai, {3.81, 7.62});  // 3"x3" NaI
+    calc.set_detector(nai, CylinderDims{3.81, 7.62});  // 3"x3" NaI
     Eigen::Vector3d c(0.0, 0.0, center_z);
     if (geom == "GA") {
         // Bare self-attenuating thorium sphere, R=2 cm.

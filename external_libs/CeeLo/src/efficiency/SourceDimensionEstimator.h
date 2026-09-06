@@ -48,7 +48,7 @@
 ///   // Use result directly:
 ///   calc.set_cylindrical_source(result.center,
 ///                               result.recommended_radius_cm,
-///                               result.recommended_depth_cm / 2.0);
+///                               result.half_depth_cm());
 /// @endcode
 
 #include "efficiency/EfficiencyCalculator.h"  // for DepthDistribution
@@ -77,8 +77,14 @@ struct DimensionEstimatorResult {
     /// Placed on-axis at z = -(distance + depth/2).
     Eigen::Vector3d center{0, 0, 0};
 
-    /// Recommended source depth (total, not half). Use depth/2 as half_length or half_z.
+    /// Recommended source depth -- the FULL depth, unlike the half-widths
+    /// below and unlike every source setter. Feed half_depth_cm() to
+    /// set_cylindrical_source()/set_rectangular_source(), not this.
     double recommended_depth_cm = 0.0;
+
+    /// `recommended_depth_cm` as the half-extent the source setters want, so
+    /// no caller has to remember the factor of two.
+    double half_depth_cm() const { return 0.5 * recommended_depth_cm; }
 
     /// Recommended source radius (for cylindrical source).
     double recommended_radius_cm = 0.0;

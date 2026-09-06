@@ -508,6 +508,57 @@ BOOST_AUTO_TEST_CASE( test_build_gadras_geometry )
                           + std::to_string(gd.endcap_front_offset_cm())
                           + " cm != setback " + std::to_string(setback) + " cm" );
 
+    // The crystal-dimension convention itself.  Nothing else here would catch a
+    //  half/full swap: the descriptor would still build, still report no
+    //  problems, and only show up as a systematically wrong efficiency.
+    //
+    //  Both sides are already plain cm - GadrasDetectorDat stores cm and
+    //  buildGadrasGeometry applies no PhysicalUnits factor - so these compare
+    //  directly, with no division by PhysicalUnits::cm.
+    //
+    //  Referenced against the raw Detector.dat values rather than a second
+    //  inferShape() call: buildGadrasGeometry passes a material-name override
+    //  that this test cannot see, and inferShape() branches on it, so re-running
+    //  it here could disagree with the code under test and fail spuriously.
+    //  Every inferShape() branch is axially dat.length(), and every box branch
+    //  is dat.width() transversely, so these hold whichever branch was taken.
+    if( gd.shape == ceelo::DetectorShape::Cylinder )
+    {
+      const ceelo::CylinderDims dims = gd.cylinder_dims();
+      BOOST_CHECK_MESSAGE( close_enough( 2.0*dims.radius_cm,
+                                         dat.equivalentCircularDiameterCm(), 1.0e-3 ),
+                          string(e.dir) + ": crystal diameter "
+                          + std::to_string(2.0*dims.radius_cm) + " cm != equal-area "
+                          + std::to_string(dat.equivalentCircularDiameterCm()) + " cm" );
+      BOOST_CHECK_MESSAGE( close_enough( dims.full_length_cm, dat.length(), 1.0e-3 ),
+                          string(e.dir) + ": crystal length "
+                          + std::to_string(dims.full_length_cm)
+                          + " cm != Detector.dat length "
+                          + std::to_string(dat.length()) + " cm" );
+    }else
+    {
+      // Rectangular carries a real height; Box is square by construction, so
+      //  its second transverse extent is the width again.
+      const bool rectangular = (std::fabs(dat.heightToWidth() - 1.0f) > 0.01f);
+      const double expect_height = rectangular ? dat.height() : dat.width();
+
+      const ceelo::BoxDims dims = gd.box_dims();
+      BOOST_CHECK_MESSAGE( close_enough( 2.0*dims.half_x_cm, dat.width(), 1.0e-3 ),
+                          string(e.dir) + ": crystal width "
+                          + std::to_string(2.0*dims.half_x_cm)
+                          + " cm != Detector.dat width "
+                          + std::to_string(dat.width()) + " cm" );
+      BOOST_CHECK_MESSAGE( close_enough( 2.0*dims.half_y_cm, expect_height, 1.0e-3 ),
+                          string(e.dir) + ": crystal height "
+                          + std::to_string(2.0*dims.half_y_cm)
+                          + " cm != expected " + std::to_string(expect_height) + " cm" );
+      BOOST_CHECK_MESSAGE( close_enough( dims.full_length_cm, dat.length(), 1.0e-3 ),
+                          string(e.dir) + ": crystal length "
+                          + std::to_string(dims.full_length_cm)
+                          + " cm != Detector.dat length "
+                          + std::to_string(dat.length()) + " cm" );
+    }
+
     // Each synthesized attenuator must carry the file's areal density exactly.
     for( const ceelo::LayerSpec &layer : gd.layers )
     {

@@ -620,8 +620,16 @@ public:
 
     // --- Geometry Configuration ---
 
-    void set_detector(DetectorShape type, const Material* material,
-                      const std::vector<double>& dimensions);
+    /// Set the detector crystal material and dimensions.  The shape follows
+    /// from the dimension type.  See CRYSTAL DIMENSION CONVENTION in
+    /// geometry/Geometry.h for what the fields mean -- in short, transverse
+    /// extents are halves and the axial extent is the FULL crystal length.
+    void set_detector(const Material* material, const CylinderDims& dims);
+    void set_detector(const Material* material, const BoxDims& dims);
+
+    /// Deserialization entry point ONLY; see Geometry::set_detector_from_dimensions_vector().
+    void set_detector_from_dimensions_vector(DetectorShape type, const Material* material,
+                                             const std::vector<double>& dimensions_cm);
     /// Coaxial bore from the back face. `rounded_tip` gives the closed end a
     /// hemispherical cap (round-tipped drill) instead of a flat bottom.
     void set_bore_hole(double bore_radius, double bore_depth,

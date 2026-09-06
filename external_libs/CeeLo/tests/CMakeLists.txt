@@ -51,6 +51,7 @@ add_ceelo_test(test_analytic_cascade_regression test_analytic_cascade_regression
 add_ceelo_test(test_csda test_csda.cpp)
 add_ceelo_test(test_transmission test_transmission.cpp)
 add_ceelo_test(test_solid_angle test_solid_angle.cpp)
+add_ceelo_test(test_dimension_convention test_dimension_convention.cpp)
 # Detector-response payload tests (gated with the payload itself).
 if(CEELO_BUILD_RESPONSE)
     add_ceelo_test(test_response_kernel test_response_kernel.cpp)

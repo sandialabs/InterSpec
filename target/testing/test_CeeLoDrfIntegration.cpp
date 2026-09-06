@@ -574,6 +574,86 @@ namespace
 }//namespace
 
 
+/** The stored <Dimensions> of every golden response must still trace the
+ crystal they name.
+
+ This is the end-to-end guard on CeeLo's CRYSTAL DIMENSION CONVENTION
+ (geometry/Geometry.h): transverse entries are halves, the trailing axial entry
+ is the FULL crystal length.  Re-interpreting either one does not throw and does
+ not fail problems() - it silently simulates a different detector - so the only
+ way to catch it is to build the geometry from the stored bytes and measure what
+ comes out.  A failure here means either the convention moved or the goldens did.
+ */
+BOOST_AUTO_TEST_CASE( golden_dimensions_trace_the_crystal_they_name )
+{
+  // Values are as written in target/testing/test_data/ceelo_drf/*_response.xml.
+  struct Expect { const char *preset; ceelo::DetectorShape shape; double a, b, c; };
+  const vector<Expect> cases = {
+    { "nai3x3",      ceelo::DetectorShape::Cylinder, 3.81, 7.62, 0.0 },
+    { "hpge_coax",   ceelo::DetectorShape::Cylinder, 4.00, 8.00, 0.0 },
+    { "detective_x", ceelo::DetectorShape::Cylinder, 3.25, 5.00, 0.0 },
+    { "czt_box",     ceelo::DetectorShape::Box,      0.50, 0.50, 0.5 },
+  };
+
+  for( const Expect &e : cases )
+  {
+    const ceelo::GeometryDescriptor gd = golden_descriptor( e.preset );
+    BOOST_REQUIRE_MESSAGE( gd.shape == e.shape, string(e.preset) + ": shape moved" );
+
+    double stated_len_cm = 0.0;
+    if( e.shape == ceelo::DetectorShape::Cylinder )
+    {
+      const ceelo::CylinderDims dims = gd.cylinder_dims();
+      BOOST_CHECK_MESSAGE( std::fabs( dims.radius_cm - e.a ) < 1.0e-6,
+                          string(e.preset) + ": radius " + to_string(dims.radius_cm) );
+      BOOST_CHECK_MESSAGE( std::fabs( dims.full_length_cm - e.b ) < 1.0e-6,
+                          string(e.preset) + ": length " + to_string(dims.full_length_cm) );
+      stated_len_cm = dims.full_length_cm;
+    }else
+    {
+      const ceelo::BoxDims dims = gd.box_dims();
+      BOOST_CHECK_MESSAGE( std::fabs( dims.half_x_cm - e.a ) < 1.0e-6,
+                          string(e.preset) + ": half_x " + to_string(dims.half_x_cm) );
+      BOOST_CHECK_MESSAGE( std::fabs( dims.half_y_cm - e.b ) < 1.0e-6,
+                          string(e.preset) + ": half_y " + to_string(dims.half_y_cm) );
+      BOOST_CHECK_MESSAGE( std::fabs( dims.full_length_cm - e.c ) < 1.0e-6,
+                          string(e.preset) + ": length " + to_string(dims.full_length_cm) );
+      stated_len_cm = dims.full_length_cm;
+    }
+
+    // Now trace it.  Strip everything that eats into the crystal - bore, dead
+    //  layer, fillet, endcap - so the traced scoring length IS the stated
+    //  length.  Re-deriving how much a bore removes would just be a second copy
+    //  of CeeLo's model, which is the failure mode this convention work exists
+    //  to remove.
+    ceelo::GeometryDescriptor bare = gd;
+    bare.bore.reset();
+    bare.dead_layer.reset();
+    bare.collimator.reset();
+    bare.layers.clear();
+    bare.bullet_radius_cm = 0.0;
+
+    vector<unique_ptr<ceelo::Material>> owned;
+    ceelo::Geometry geom;
+    BOOST_REQUIRE_NO_THROW( geom = bare.build_geometry( owned ) );
+
+    const vector<ceelo::PathSegment> segs =
+        geom.trace_ray( Eigen::Vector3d(0.0, 0.0, -100.0), Eigen::Vector3d(0.0, 0.0, 1.0) );
+    double active_cm = 0.0;
+    for( const ceelo::PathSegment &seg : segs )
+    {
+      if( seg.is_scoring )
+        active_cm += seg.length();
+    }
+
+    BOOST_CHECK_MESSAGE( std::fabs( active_cm - stated_len_cm ) < 1.0e-9,
+                        string(e.preset) + ": an on-axis ray crosses "
+                        + to_string(active_cm) + " cm of crystal, but the stored"
+                          " <Dimensions> say " + to_string(stated_len_cm) + " cm" );
+  }//for( const Expect &e : cases )
+}
+
+
 /** The transfer must reproduce its anchor exactly at the anchor position -
  this fails loudly if the crystal-face/endcap-front frame conversion (or the
  detector-setback handling) is wrong.

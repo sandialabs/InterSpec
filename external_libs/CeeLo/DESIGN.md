@@ -200,7 +200,7 @@ interpretation and can be corrected.
 
 ### Geometry
 
-- **Detector shapes**: Cylinder and box. Defined by dimensions (radius+length or x/y/z half-widths). Crystal front face at z=0, extends along +z.
+- **Detector shapes**: Cylinder and box. Declared with `set_detector(material, CylinderDims{radius, full_length})` or `set_detector(material, BoxDims{half_x, half_y, full_length})` -- transverse extents are HALVES, the axial extent is the FULL crystal length. That mix is deliberate and is what `GeometryDescriptor::dimensions_cm` serializes; the convention is stated once, in the CRYSTAL DIMENSION CONVENTION block of `src/geometry/Geometry.h`, and nowhere else. (Sources are a separate, uniformly half-extent convention -- `half_length`, `half_dims`.) Crystal front face at z=0, extends along +z.
 
 - **Bulletized (rounded) front edge**: HPGe crystals are usually *bulletized* -- the outer front edge is a quarter-torus fillet rather than a sharp 90° corner (ANGLE `.outx` files call it `bulletizingRadius`). `set_bullet_radius(r_b)` turns it on for cylinders; 0 (the default) is a sharp edge. The fillet's ring circle has radius `rho_c = R - r_b` and lies in the plane `z = r_b`, tangent to the front face and to the side wall. Removed material, by Pappus: `V = 2 pi rho_c r_b^2 (1 - pi/4) + pi r_b^3 / 3` (1.28% of the crystal for the GEM35-70 example: R=2.915, L=6.89, r_b=0.8 cm).
 
@@ -216,7 +216,7 @@ interpretation and can be corrected.
 
 - **Stored geometry (`GeometryDescriptor`)**: the serializable form of all of the above, and the only thing a saved response carries -- `build_geometry()` (and `ResponseGenerator::configure_calculator()`) replay it onto a `Geometry` / `EfficiencyCalculator`. It holds `bullet_radius_cm` alongside `dimensions_cm`, and the rounded-tip flag inside its `BoreHoleConfig`. Both are written to XML only when non-default (`bulletRadius` on `<Detector>`, `roundedTip` on `<Bore>`), so responses for sharp-edged, flat-bored crystals keep their exact bytes and `content_hash`; a reader that predates the attributes, or a file that predates them, defaults to sharp-and-flat, which is what those crystals actually were. `sm_xmlSerializationVersion` is deliberately **not** bumped for such purely additive attributes -- the only version logic is a range check, so a higher version would be rejected outright by existing builds instead of degrading gracefully.
 
-  `Geometry`'s preconditions (fillet vs radius/length/dead layer, bore vs radius/depth/fillet) are `assert`s, so a bad descriptor would trace silent garbage in a release build. `GeometryDescriptor::problems()` is the release-safe mirror of those asserts, plus the cases they miss: a `dimensions_cm` too short for the shape (`set_detector` only asserts its length, then indexes it), a dead layer that consumes the crystal, a bore wider than the *active* radius `R - t_side`, and a bore that clears the outer fillet but not the dead-layer-offset *active* fillet. The last two are policy as much as mirroring -- they produce zero active volume rather than tripping an assert, and refusing to load beats silently computing zero efficiency. `build_geometry()` and `configure_calculator()` both run it and throw. Callers building geometry from user input or an imported file should consult it first and report or relax rather than throw (InterSpec's ANGLE import drops an unrepresentable fillet or rounded tip, with a warning, instead of failing the import).
+  `Geometry`'s preconditions (fillet vs radius/length/dead layer, bore vs radius/depth/fillet) are `assert`s, so a bad descriptor would trace silent garbage in a release build. `GeometryDescriptor::problems()` is the release-safe mirror of those asserts, plus the cases they miss: a `dimensions_cm` too short for the shape (`set_detector_from_dimensions_vector` only asserts its length, then indexes it), a dead layer that consumes the crystal, a bore wider than the *active* radius `R - t_side`, and a bore that clears the outer fillet but not the dead-layer-offset *active* fillet. The last two are policy as much as mirroring -- they produce zero active volume rather than tripping an assert, and refusing to load beats silently computing zero efficiency. `build_geometry()` and `configure_calculator()` both run it and throw. Callers building geometry from user input or an imported file should consult it first and report or relax rather than throw (InterSpec's ANGLE import drops an unrepresentable fillet or rounded tip, with a warning, instead of failing the import).
 
 - **Attenuators** (detector shielding): Cup-shaped shells around the crystal, added via `add_attenuator(material, front_thickness, side_thickness, z_start, z_end)`. These are concentric -- each layer wraps around the previous. Attenuators are part of the detector geometry and are always traversed in ray tracing.
 
@@ -292,6 +292,36 @@ to the same value and dropping these pins together.
 - **Full mode** (default): Tracks all photon interactions through attenuators and crystal. Electron CSDA with bremsstrahlung. Gives both FEP and total efficiency, plus pulse-height spectrum.
 
 - **FEP-only mode**: Full MC transport inside the scoring crystal (same Compton/PE/fluorescence physics as full mode), but uses importance-weighted stochastic Rayleigh through non-scoring segments (attenuators, source shielding) -- treating Compton/PE as absorption and only sampling Rayleigh scattering. Photons that exit the crystal boundary are immediately killed (can't contribute to FEP). Faster than full mode but only computes FEP efficiency (no spectrum or total efficiency).
+
+### Detector-side line sets / etendue (`CEELO_BUILD_RESPONSE`)
+
+`src/io/DetectorEtendue.h` builds a fixed set of LINES through the active
+crystal, for hosts that integrate an EXTENDED source. The per-element kernel
+(`eps_fep_element`, Eq. 5) integrates over source points and, at each, over a fan
+of rays toward the crystal; reversing the order of integration gives an integral
+over lines parameterised on the DETECTOR side by a hull point `x` and a direction
+`w`, with the etendue measure `dA |w·n| dΩ` — the same number, since
+`dV dΩ = dA |w·n| dΩ ds`.
+
+Why that helps: everything on the detector side of a line (hull point, direction,
+the material segments through endcap / dead layer / crystal) depends on neither
+the source nor the energy, so one line set serves every energy and every
+iteration of a fit, and the source integral along each line is analytic for a
+uniform source. `build_etendue_lines` samples hull point and direction from a
+4-D Halton set (`src/io/LowDiscrepancy.h`) aimed at a target sphere;
+`sample_hull_points` + `append_etendue_line` are the two halves, so a host with a
+better direction proposal (aimed at its own source solid, say) composes them
+itself. `line_interaction_probabilities` (live cross sections) and
+`DetectorResponse::fep_line_probabilities` (stored mu tables) give the per-line
+kernel, parallel to the rays.
+
+Directions that do not leave the hull, and lines with no active-crystal chord,
+are dropped WITHOUT renormalising — they are counted in `n`, which is what keeps
+the estimator unbiased. Validated in `tests/test_detector_etendue.cpp` against
+the per-point aperture kernel (transparent sphere sources, cylinder and box
+crystals, on and off axis: within ~0.4% at 2^16 lines) and against the analytic
+hull measure. InterSpec's volumetric Activity/Shielding fit is the first
+consumer.
 
 ### Efficiency transfer (EFFTRAN-style, `CEELO_BUILD_RESPONSE`)
 

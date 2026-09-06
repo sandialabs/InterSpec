@@ -120,7 +120,7 @@ inline void configure_alcyl(EfficiencyCalculator& calc, double source_cm) {
     //  rather than tracking kDefaultFepWindowKeV: this number belongs to the
     //  reference data, and changes only when that data is regenerated.
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -2.0), source_cm, source_cm);
     calc.set_source_material(&al);
 }

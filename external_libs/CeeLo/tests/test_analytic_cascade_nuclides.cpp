@@ -189,7 +189,7 @@ void check_nuclide(const std::string& nuc, double dist_cm,
 #if REGENERATE_MC_VALUES
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -dist_cm));
     const auto cache = build_cache(calc, casc, kRegenEpsEvents);   // MC
     CascadeConfig cfg;

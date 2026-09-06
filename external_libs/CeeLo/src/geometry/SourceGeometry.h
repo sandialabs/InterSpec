@@ -109,13 +109,18 @@ public:
                                    = Eigen::Vector3d::Zero());
 
     /// Configure for a spherical extended source.
+    ///
+    /// Outer radius first, matching configure_cylindrical() and
+    /// EfficiencyCalculator::set_spherical_source(); the two radii used to be
+    /// in opposite orders on either side of that boundary.
+    /// @param outer_radius  Outer radius.
     /// @param inner_radius  Inner (void) radius for a hollow spherical shell.
     ///   0 = solid ball. The active material occupies the shell
     ///   [inner_radius, outer_radius]; the central void is non-attenuating.
     /// @param rotation  Stored for API symmetry; physically irrelevant for a
     ///   sphere (the volume is rotation-invariant).
-    void configure_spherical(const Eigen::Vector3d& center, double inner_radius,
-                             double outer_radius, const Eigen::Matrix3d& rotation);
+    void configure_spherical(const Eigen::Vector3d& center, double outer_radius,
+                             double inner_radius, const Eigen::Matrix3d& rotation);
 
     /// Configure for a Marinelli beaker source.
     /// All z-coordinates are absolute (in detector frame), pre-computed by

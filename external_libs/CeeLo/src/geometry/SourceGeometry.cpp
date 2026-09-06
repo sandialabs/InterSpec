@@ -168,8 +168,8 @@ void SourceGeometry::configure_cylindrical(const Eigen::Vector3d& center, double
     configured_ = true;
 }
 
-void SourceGeometry::configure_spherical(const Eigen::Vector3d& center, double inner_radius,
-                                          double outer_radius, const Eigen::Matrix3d& rotation) {
+void SourceGeometry::configure_spherical(const Eigen::Vector3d& center, double outer_radius,
+                                          double inner_radius, const Eigen::Matrix3d& rotation) {
     assert(inner_radius >= 0.0 && inner_radius < outer_radius);
     shape_ = Shape::Sphere;
     sphere_center_ = center;

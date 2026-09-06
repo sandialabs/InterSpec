@@ -156,7 +156,7 @@ BOOST_AUTO_TEST_CASE(exported_polycone_matches_traced_solid) {
     for (const auto& c : cases) {
         EfficiencyCalculator calc;
         calc.set_fep_window_keV(kTestFepWindowKeV);
-        calc.set_detector(DetectorShape::Cylinder, &ge, {R, L});
+        calc.set_detector(&ge, CylinderDims{R, L});
         if (c.r_b > 0.0) calc.set_bullet_radius(c.r_b);
         if (c.bore_r > 0.0) calc.set_bore_hole(c.bore_r, c.depth, c.tip);
 
@@ -195,7 +195,7 @@ BOOST_AUTO_TEST_CASE(exported_fillet_volume_is_right_not_just_close) {
     auto exported_volume = [&](double r_b) {
         EfficiencyCalculator calc;
         calc.set_fep_window_keV(kTestFepWindowKeV);
-        calc.set_detector(DetectorShape::Cylinder, &ge, {R, L});
+        calc.set_detector(&ge, CylinderDims{R, L});
         if (r_b > 0.0) calc.set_bullet_radius(r_b);
         // No bore: isolate the fillet.
         const std::string path = tmp_gdml(r_b > 0.0 ? "fv_bullet" : "fv_sharp");
@@ -227,7 +227,7 @@ BOOST_AUTO_TEST_CASE(plain_cylinder_still_exports_as_a_tube) {
     Material ge = make_HPGe();
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &ge, {R, L});
+    calc.set_detector(&ge, CylinderDims{R, L});
 
     const std::string path = tmp_gdml("plain");
     calc.export_geant4_gdml(path, /*vacuum_world=*/true);

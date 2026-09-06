@@ -59,13 +59,33 @@ namespace {
 constexpr double kPi = 3.14159265358979323846;
 uint64_t g_events = 400000;
 
+// Dimensions follow CRYSTAL DIMENSION CONVENTION (geometry/Geometry.h): the
+// radius / half-widths are halves, the length is the FULL crystal length.
+// Exactly one of `cyl` / `box` is used, per `shape`.
 struct DetSpec {
     std::string name;
     Material (*make)();
     DetectorShape shape;
-    std::vector<double> dims; // Cylinder {R, halflen}; Box {hx, hy, len}
+    CylinderDims cyl;
+    BoxDims box;
     std::vector<double> energies_keV;
 };
+
+DetectorDescriptor describe(const DetSpec& spec, const Material& mat) {
+    return (spec.shape == DetectorShape::Cylinder)
+               ? make_descriptor(spec.name, mat, spec.cyl)
+               : make_descriptor(spec.name, mat, spec.box);
+}
+
+// Configure the crystal FROM THE DESCRIPTOR, so what is simulated is always
+// what the run advertises.
+void configure_crystal(EfficiencyCalculator& calc, const DetectorDescriptor& d,
+                       const Material& mat) {
+    if (d.shape == DetectorShape::Cylinder)
+        calc.set_detector(&mat, d.cylinder_dims());
+    else
+        calc.set_detector(&mat, d.box_dims());
+}
 
 // FEP efficiency + 1-sigma at an off-axis point source (theta about +x, measured
 // from the -z axis toward the face, matching the efficiency-grid study convention).
@@ -88,12 +108,12 @@ int main(int argc, char** argv) {
     const std::vector<double> ge_E = {60, 122, 344, 662, 1173, 1332};
     const std::vector<double> czt_E = {60, 122, 344, 662, 1000, 1332};
     std::vector<DetSpec> zoo = {
-        {"NaI_2x2", make_NaI, DetectorShape::Cylinder, {2.54, 2.54}, nai_E},
-        {"NaI_3x3", make_NaI, DetectorShape::Cylinder, {3.81, 3.81}, nai_E},
-        {"NaI_4x4", make_NaI, DetectorShape::Cylinder, {5.08, 5.08}, nai_E},
-        {"HPGe_small", make_HPGe, DetectorShape::Cylinder, {2.5, 2.0}, ge_E},
-        {"HPGe_large", make_HPGe, DetectorShape::Cylinder, {3.5, 3.0}, ge_E},
-        {"CZT_1x1x0.5", make_CZT, DetectorShape::Box, {0.5, 0.5, 0.5}, czt_E},
+        {"NaI_2x2", make_NaI, DetectorShape::Cylinder, {2.54, 5.08}, {}, nai_E},
+        {"NaI_3x3", make_NaI, DetectorShape::Cylinder, {3.81, 7.62}, {}, nai_E},
+        {"NaI_4x4", make_NaI, DetectorShape::Cylinder, {5.08, 10.16}, {}, nai_E},
+        {"HPGe_small", make_HPGe, DetectorShape::Cylinder, {2.5, 4.0}, {}, ge_E},
+        {"HPGe_large", make_HPGe, DetectorShape::Cylinder, {3.5, 6.0}, {}, ge_E},
+        {"CZT_1x1x0.5", make_CZT, DetectorShape::Box, {}, {0.5, 0.5, 0.5}, czt_E},
     };
 
     // Fit grid + independent validation grid.
@@ -106,8 +126,7 @@ int main(int argc, char** argv) {
 
     for (const DetSpec& spec : zoo) {
         Material mat = spec.make();
-        DetectorDescriptor desc =
-            make_descriptor(spec.name, spec.shape, mat, spec.dims);
+        const DetectorDescriptor desc = describe(spec, mat);
 
         printf("\n========================================================\n");
         printf("Detector: %s  (%s, R=%.3f cm, R%s, len=%.2f cm)\n",
@@ -122,7 +141,7 @@ int main(int argc, char** argv) {
         cfg.distance_ladder_cm = fit_ladder;
         cfg.events_per_point = g_events;
         cfg.poly_order = 3;
-        VpdFit fit = fit_virtual_depth(desc, mat, spec.dims, cfg);
+        VpdFit fit = fit_virtual_depth(desc, mat, cfg);
 
         const std::string fname = "vpd_" + spec.name + ".txt";
         save_vpd(fit, fname);
@@ -137,7 +156,7 @@ int main(int argc, char** argv) {
         // ---- 2. Validation vs fresh direct MC (on-axis), + naive delta=0 ----
         // Reference intrinsic for the naive baseline: anchor at d=10 cm, delta=0.
         EfficiencyCalculator calc;
-        calc.set_detector(spec.shape, &mat, spec.dims);
+        configure_crystal(calc, desc, mat);
         printf("\n  [validate on-axis] eps_pred(delta) vs fresh MC; "
                "naive=delta0 anchored @10cm\n");
         printf("  %8s %6s %12s %12s %9s %8s %7s %9s\n", "E[keV]", "d[cm]",

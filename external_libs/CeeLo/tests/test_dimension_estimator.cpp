@@ -40,7 +40,7 @@ namespace {
 Geometry make_nai_3x3() {
     Material nai = make_NaI();
     Geometry geo;
-    geo.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    geo.set_detector(&nai, CylinderDims{3.81, 7.62});
     return geo;
 }
 
@@ -308,11 +308,11 @@ BOOST_AUTO_TEST_CASE(center_position_correct) {
     BOOST_CHECK_CLOSE(result.center.y(), 0.0, 1e-10);
 
     // Center z = -(distance + depth/2)
-    double expected_z = -(config.distance_cm + result.recommended_depth_cm / 2.0);
+    double expected_z = -(config.distance_cm + result.half_depth_cm());
     BOOST_CHECK_CLOSE(result.center.z(), expected_z, 1e-6);
 
     // Verify the source surface is at -distance (nearest to detector)
-    double surface_z = result.center.z() + result.recommended_depth_cm / 2.0;
+    double surface_z = result.center.z() + result.half_depth_cm();
     BOOST_CHECK_CLOSE(surface_z, -config.distance_cm, 1e-6);
 }
 
@@ -320,7 +320,7 @@ BOOST_AUTO_TEST_CASE(box_detector_works) {
     // Verify the estimator works with a box detector too
     Material czt = make_CZT();
     Geometry geo;
-    geo.set_detector(DetectorShape::Box, &czt, {0.5, 0.5, 0.5});
+    geo.set_detector(&czt, BoxDims{0.5, 0.5, 0.5});
 
     Material soil = make_Soil();
 

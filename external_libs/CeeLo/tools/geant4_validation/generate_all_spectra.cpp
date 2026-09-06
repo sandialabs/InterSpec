@@ -474,7 +474,7 @@ int main(int argc, char** argv) {
     {
         Material nai = make_NaI();
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
         cone_bias_configs.insert(1);
@@ -489,7 +489,7 @@ int main(int argc, char** argv) {
         Material nai = make_NaI();
         Material al = make_Aluminum();
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc.add_attenuator(&al, 0.1, 0.1, 0.0, 7.62);
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -505,7 +505,7 @@ int main(int argc, char** argv) {
         Material labr3 = make_LaBr3();
         Material al = make_Aluminum();
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &labr3, {2.54, 5.08});
+        calc.set_detector(&labr3, CylinderDims{2.54, 5.08});
         calc.add_attenuator(&al, 0.05, 0.05, 0.0, 5.08);
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
 
@@ -520,7 +520,7 @@ int main(int argc, char** argv) {
     {
         Material czt = make_CZT();
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Box, &czt, {0.5, 0.5, 0.5});
+        calc.set_detector(&czt, BoxDims{0.5, 0.5, 0.5});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -5.0));
 
         cone_bias_configs.insert(5);
@@ -534,7 +534,7 @@ int main(int argc, char** argv) {
     {
         Material nai = make_NaI();
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         const double d = 15.0;
         const double theta = 45.0 * M_PI / 180.0;
         calc.set_point_source(Eigen::Vector3d(d * std::sin(theta), 0.0, -d * std::cos(theta)));
@@ -556,7 +556,7 @@ int main(int argc, char** argv) {
         Material al = make_Aluminum();
         Material pb = make_Lead();
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc.add_attenuator(&al, 0.1, 0.1, 0.0, 7.62);
         calc.add_attenuator(&pb, 0.2, 0.2, 0.0, 7.62);
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -15.0));
@@ -577,7 +577,7 @@ int main(int argc, char** argv) {
         Material water = make_Water();
         Material pe = make_Polyethylene();
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         // 0.5mm aluminum detector housing (industry standard for NaI)
         calc.add_attenuator(&al, 0.05, 0.05, 0.0, 7.62);
         // Marinelli: well_r=4.3cm, well_depth=6cm, outer_r=7.5cm,
@@ -607,7 +607,7 @@ int main(int argc, char** argv) {
         Material soil = make_Soil();
         Material pyrex = make_Pyrex();
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc.add_attenuator(&al, 0.05, 0.05, 0.0, 7.62);
         calc.set_marinelli_beaker(
             /*well_inner_radius=*/4.3,
@@ -639,7 +639,7 @@ int main(int argc, char** argv) {
         EfficiencyCalculator calc;
 
         // HPGe crystal: 3cm radius x 6cm length (typical 50% relative efficiency)
-        calc.set_detector(DetectorShape::Cylinder, &hpge, {3.0, 6.0});
+        calc.set_detector(&hpge, CylinderDims{3.0, 6.0});
 
         // Bore hole: 0.5cm radius, 4cm depth from back face
         calc.set_bore_hole(0.5, 4.0);
@@ -679,7 +679,7 @@ int main(int argc, char** argv) {
         Material nai = make_NaI();
         Material fe = make_Iron();
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
         calc.add_source_shield(&fe, 0.5);  // 0.5 cm iron source shielding
 
@@ -700,7 +700,7 @@ int main(int argc, char** argv) {
         Material ss = make_StainlessSteel304();
         Material cellulose = make_Cellulose();
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
 
         // Rectangular source: 10x15x20 cm box → half-dims 5x7.5x10 cm
         // Center the source 15cm + half-depth in front of detector.

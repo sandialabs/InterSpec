@@ -69,7 +69,7 @@ int main() {
 
     for (double d : distances) {
         EfficiencyCalculator calc;
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc.set_point_source(Eigen::Vector3d(0.0, 0.0, -d));
 
         auto res1173 = calc.compute(1173.2, N_per_energy, 0);

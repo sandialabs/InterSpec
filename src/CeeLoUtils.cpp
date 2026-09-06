@@ -683,8 +683,7 @@ ceelo::GeometryDescriptor buildAngleGeometry( const AngleOutxContents &contents,
   };//make_transparent lambda
 
   ceelo::GeometryDescriptor gd;
-  gd.shape = ceelo::DetectorShape::Cylinder;
-  gd.dimensions_cm = { radius_cm, length_cm };
+  gd.set_dimensions( ceelo::CylinderDims{ radius_cm, length_cm } );
   gd.symmetry = ceelo::ResponseSymmetry::Axial;
   gd.reference_point = ceelo::ReferencePoint::EndcapFront;
 
@@ -1224,7 +1223,6 @@ ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
   {
     case GadrasDetectorDat::Shape::Cylinder:
     case GadrasDetectorDat::Shape::CoaxialCylinder:
-      gd.shape = ceelo::DetectorShape::Cylinder;
       gd.symmetry = ceelo::ResponseSymmetry::Axial;
       // The radius is the EQUAL-AREA one, not inferShape()'s nominal width/2.
       //  GADRAS stores an effective box and reports efficiency per photon
@@ -1234,17 +1232,18 @@ ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
       //  over).  Using width/2 instead shrinks the face by a factor of pi/4 and
       //  the computed intrinsic efficiency comes out ~21% low across the board -
       //  measured, before this was fixed, as MC/GADRAS ratios clustered at 0.78.
-      gd.dimensions_cm = { 0.5*dat.equivalentCircularDiameterCm(), shape.dimB };
+      gd.set_dimensions( ceelo::CylinderDims{ 0.5*dat.equivalentCircularDiameterCm(),
+                                              shape.dimB } );
       break;
 
     case GadrasDetectorDat::Shape::Box:
     case GadrasDetectorDat::Shape::Rectangular:
-      gd.shape = ceelo::DetectorShape::Box;
       gd.symmetry = ceelo::ResponseSymmetry::Quadrant;
       // A box needs no equal-area correction: its face already IS width x
       //  height.  InferredShape gives depth x width x height; CeeLo wants the
-      //  two transverse half-widths, then the axial length.
-      gd.dimensions_cm = { 0.5*shape.dimB, 0.5*shape.dimC, shape.dimA };
+      //  two transverse half-widths, then the FULL axial length.
+      //  set_dimensions() sets gd.shape too, so the two cannot disagree.
+      gd.set_dimensions( ceelo::BoxDims{ 0.5*shape.dimB, 0.5*shape.dimC, shape.dimA } );
       break;
 
     case GadrasDetectorDat::Shape::Unknown:
@@ -1259,6 +1258,11 @@ ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
                            + " cm, width " + std::to_string(dat.width())
                            + " cm), so its geometry cannot be modeled." );
   }
+
+  // The crystal's FULL axial length; every layer below spans it.
+  const double crystal_len_cm = (gd.shape == ceelo::DetectorShape::Cylinder)
+                                  ? gd.cylinder_dims().full_length_cm
+                                  : gd.box_dims().full_length_cm;
 
   gd.crystal_material_index = static_cast<int>( gd.materials.size() );
   gd.materials.push_back( gadrasCrystalMaterial( crystal_name ) );
@@ -1339,7 +1343,7 @@ ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
     spec.front_thickness_cm = t;
     spec.side_thickness_cm = t;
     spec.z_start_cm = 0.0;
-    spec.z_end_cm = gd.dimensions_cm.back();
+    spec.z_end_cm = crystal_len_cm;
     gd.layers.push_back( spec );
 
     used_front += t;
@@ -1371,7 +1375,7 @@ ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
       spec.front_thickness_cm = 0.0;   //a side shield, not part of the front stack
       spec.side_thickness_cm = t;
       spec.z_start_cm = 0.0;
-      spec.z_end_cm = gd.dimensions_cm.back();
+      spec.z_end_cm = crystal_len_cm;
       gd.layers.push_back( spec );
     }else
     {
@@ -1409,7 +1413,7 @@ ceelo::GeometryDescriptor buildGadrasGeometry( const GadrasDetectorDat &dat,
     spec.front_thickness_cm = setback_cm - used_front;
     spec.side_thickness_cm = 0.0;
     spec.z_start_cm = 0.0;
-    spec.z_end_cm = gd.dimensions_cm.back();
+    spec.z_end_cm = crystal_len_cm;
     gd.layers.push_back( spec );
   }else if( used_front > (setback_cm + 1.0e-6) )
   {

@@ -269,7 +269,7 @@ BOOST_AUTO_TEST_CASE(mc_end_cap_only_attenuation) {
     double expected_trans = std::exp(-mu * t);
 
     auto make_calc = [&](EfficiencyCalculator& calc) {
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -15.0), 0.5, 0.5);
     };
 
@@ -318,7 +318,7 @@ BOOST_AUTO_TEST_CASE(fep_only_matches_full_mode_asymmetric_shield) {
     Material pb = make_Lead();
 
     auto make_calc = [&](EfficiencyCalculator& calc) {
-        calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc.set_detector(&nai, CylinderDims{3.81, 7.62});
         calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -10.0), 0.5, 0.5);
         calc.add_source_shield(&pb, 0.1, 0.025);  // 1 mm side, 0.25 mm ends
     };
@@ -359,7 +359,7 @@ BOOST_AUTO_TEST_CASE(gdml_export_asymmetric_cylinder) {
 
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -15.0), 3.0, 3.0);
     calc.add_source_shield(&pb, 0.3, 0.1);
 
@@ -388,7 +388,7 @@ BOOST_AUTO_TEST_CASE(gdml_export_zero_end_cap_epsilon) {
 
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -15.0), 3.0, 3.0);
     calc.add_source_shield(&pb, 0.3, 0.0);
 
@@ -418,7 +418,7 @@ BOOST_AUTO_TEST_CASE(gdml_export_uniform_epsilon) {
 
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -15.0), 3.0, 3.0);
     calc.add_source_shield(&pb, 0.2);
 
@@ -446,7 +446,7 @@ BOOST_AUTO_TEST_CASE(gdml_export_asymmetric_box) {
 
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_rectangular_source(Eigen::Vector3d(0.0, 0.0, -15.0),
                                 Eigen::Vector3d(1.0, 2.0, 3.0));
     calc.add_source_shield(&pb, 0.1, 0.0, 0.3);

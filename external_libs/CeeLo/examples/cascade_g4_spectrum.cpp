@@ -86,7 +86,7 @@ int main(int argc, char** argv) {
     CascadeOptions opt; opt.angular_correlations = corr;
     const auto casc = build_cascades(db(), nuc, opt);
     EfficiencyCalculator calc;
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     if (srcmode == "alcyl") {
       calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -dist), shield_cm, shield_cm);
       calc.set_source_material(&al);

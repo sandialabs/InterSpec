@@ -104,13 +104,13 @@ BOOST_AUTO_TEST_CASE(ratio_matches_beer_lambert_2mm_Pb_351keV)
     // --- Calculator WITHOUT Pb ---
     EfficiencyCalculator calc_bare;
     calc_bare.set_fep_window_keV(kTestFepWindowKeV);
-    calc_bare.set_detector(DetectorShape::Cylinder, &nai, {3.81, length_cm});
+    calc_bare.set_detector(&nai, CylinderDims{3.81, length_cm});
     calc_bare.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
     // --- Calculator WITH 2 mm Pb front cap ---
     EfficiencyCalculator calc_pb;
     calc_pb.set_fep_window_keV(kTestFepWindowKeV);
-    calc_pb.set_detector(DetectorShape::Cylinder, &nai, {3.81, length_cm});
+    calc_pb.set_detector(&nai, CylinderDims{3.81, length_cm});
     calc_pb.add_attenuator(&lead, 0.2, 0.0, 0.0, length_cm);
     calc_pb.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -140,12 +140,12 @@ BOOST_AUTO_TEST_CASE(ratio_matches_beer_lambert_5mm_Pb_662keV)
 
     EfficiencyCalculator calc_bare;
     calc_bare.set_fep_window_keV(kTestFepWindowKeV);
-    calc_bare.set_detector(DetectorShape::Cylinder, &nai, {3.81, length_cm});
+    calc_bare.set_detector(&nai, CylinderDims{3.81, length_cm});
     calc_bare.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
     EfficiencyCalculator calc_pb;
     calc_pb.set_fep_window_keV(kTestFepWindowKeV);
-    calc_pb.set_detector(DetectorShape::Cylinder, &nai, {3.81, length_cm});
+    calc_pb.set_detector(&nai, CylinderDims{3.81, length_cm});
     calc_pb.add_attenuator(&lead, 0.5, 0.0, 0.0, length_cm);
     calc_pb.set_point_source(Eigen::Vector3d(0.0, 0.0, -10.0));
 
@@ -180,7 +180,7 @@ BOOST_AUTO_TEST_CASE(efficiency_positive_and_bounded)
 
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_cylindrical_source(
         Eigen::Vector3d(0.0, 0.0, -15.0),
         5.0, 5.0
@@ -200,7 +200,7 @@ BOOST_AUTO_TEST_CASE(deeper_source_gives_lower_efficiency_per_photon)
 
     EfficiencyCalculator calc_near, calc_far;
     for (auto* calc : {&calc_near, &calc_far}) {
-        calc->set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc->set_detector(&nai, CylinderDims{3.81, 7.62});
     }
 
     calc_near.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -8.0), 3.0, 2.0);
@@ -219,7 +219,7 @@ BOOST_AUTO_TEST_CASE(no_soil_attenuation_matches_geometric_only)
 
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -10.0), 3.0, 3.0);
 
     auto res = calc.compute(precision_config(662.0));
@@ -241,7 +241,7 @@ BOOST_AUTO_TEST_CASE(efficiency_positive_and_bounded)
 
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_rectangular_source(
         Eigen::Vector3d(0.0, 0.0, -15.0),
         Eigen::Vector3d(10.0, 10.0, 5.0)
@@ -261,7 +261,7 @@ BOOST_AUTO_TEST_CASE(efficiency_decreases_with_source_depth)
 
     EfficiencyCalculator calc_near, calc_far;
     for (auto* calc : {&calc_near, &calc_far}) {
-        calc->set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+        calc->set_detector(&nai, CylinderDims{3.81, 7.62});
     }
 
     calc_near.set_rectangular_source(Eigen::Vector3d(0.0, 0.0, -10.0),
@@ -282,7 +282,7 @@ BOOST_AUTO_TEST_CASE(fep_leq_total_invariant_holds)
 
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_rectangular_source(Eigen::Vector3d(0.0, 0.0, -12.0),
                                  Eigen::Vector3d(6.0, 6.0, 4.0));
 
@@ -308,12 +308,12 @@ BOOST_AUTO_TEST_CASE(point_vs_extended_efficiency_ratio_351keV)
 
     EfficiencyCalculator calc_point;
     calc_point.set_fep_window_keV(kTestFepWindowKeV);
-    calc_point.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_point.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_point.set_point_source(Eigen::Vector3d(0.0, 0.0, -12.0));
 
     EfficiencyCalculator calc_thin;
     calc_thin.set_fep_window_keV(kTestFepWindowKeV);
-    calc_thin.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc_thin.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc_thin.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -12.0), 0.1, 0.1);
 
     auto res_point = calc_point.compute(precision_config(351.0));
@@ -334,7 +334,7 @@ BOOST_AUTO_TEST_CASE(thick_soil_attenuates_properly_at_351keV)
 
     EfficiencyCalculator calc;
     calc.set_fep_window_keV(kTestFepWindowKeV);
-    calc.set_detector(DetectorShape::Cylinder, &nai, {3.81, 7.62});
+    calc.set_detector(&nai, CylinderDims{3.81, 7.62});
     calc.set_cylindrical_source(Eigen::Vector3d(0.0, 0.0, -15.0), 10.0, 15.0);
 
     auto res = calc.compute(precision_config(351.0));
