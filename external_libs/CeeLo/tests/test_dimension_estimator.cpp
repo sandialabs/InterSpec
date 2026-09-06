@@ -36,11 +36,15 @@ using namespace ceelo;
 
 namespace {
 
+/// Geometry only borrows the crystal material, so it has to outlive every
+/// Geometry built from it -- a local would leave the returned geo holding a
+/// dangling detector_material_. Same idiom as test_bounding_cone.cpp et al.
+const Material& mat_NaI() { static Material m = make_NaI(); return m; }
+
 /// Helper: set up a standard 3"x3" NaI detector.
 Geometry make_nai_3x3() {
-    Material nai = make_NaI();
     Geometry geo;
-    geo.set_detector(&nai, CylinderDims{3.81, 7.62});
+    geo.set_detector(&mat_NaI(), CylinderDims{3.81, 7.62});
     return geo;
 }
 
