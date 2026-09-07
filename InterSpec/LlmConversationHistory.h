@@ -44,7 +44,7 @@ struct LlmInteraction;
 class AgentStateMachine;
 enum class AgentType : int;
 
-namespace SpecUtils { class EnergyCalibration; class Measurement; }
+namespace SpecUtils { struct EnergyCalibration; class Measurement; }
 
 // Forward declarations
 namespace rapidxml {

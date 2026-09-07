@@ -42,7 +42,7 @@ class DetectorPeakResponse;
 namespace SpecUtils
 {
   class Measurement;
-  class EnergyCalibration;
+  struct EnergyCalibration;
 }//namespace SpecUtils
 
 namespace SandiaDecay

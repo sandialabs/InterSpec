@@ -33,7 +33,7 @@
 class PeakDef;
 class SpecMeas;
 class InterSpec;
-class PeakFitDetPrefs;
+struct PeakFitDetPrefs;
 namespace SpecUtils
 {
   class Measurement;

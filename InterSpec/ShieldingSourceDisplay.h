@@ -248,8 +248,6 @@ public:
    fit this quantity will become non-visible, as the ShieldingSelect controls this option via fitting for thickness and/or trace activity.
    */
   void setSourceType( const SandiaDecay::Nuclide *nuc, ShieldingSourceFitCalc::ModelSourceType type );
-  
-  void makeActivityNonEditable( const SandiaDecay::Nuclide *nuc );
 
   void peakModelRowsInsertedCallback( Wt::WModelIndex index,
                                       int firstRow, int lastRow );

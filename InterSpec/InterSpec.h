@@ -129,7 +129,7 @@ class LeafletRadMapWindow;
 
 namespace SpecUtils{ class SpecFile; }
 namespace SpecUtils{ class Measurement; }
-namespace SpecUtils{ class EnergyCalibration; }
+namespace SpecUtils{ struct EnergyCalibration; }
 namespace SpecUtils{ enum class SpectrumType : int; }
 namespace SpecUtils{ enum class DetectorType : int; }
 namespace SpecUtils{ enum class OccupancyStatus : int; }

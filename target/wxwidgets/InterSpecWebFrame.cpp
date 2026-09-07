@@ -196,9 +196,9 @@ namespace
 }//namespace
 
 
-InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore, const wxString& file_to_open) :
+InterSpecWebFrame::InterSpecWebFrame(const wxString& input_url, const bool no_restore, const wxString& file_to_open) :
   wxFrame(NULL, wxID_ANY, "InterSpec", wxDefaultPosition, wxDefaultSize, wxRESIZE_BORDER | wxSYSTEM_MENU),
-  m_url( url ),
+  m_url( input_url ),
   m_token( "" ),
   m_dragging_window( false ),
   m_mouse_down_pos( 0, 0 ),

@@ -72,7 +72,7 @@ namespace BatchPeak
 namespace SpecUtils
 {
   class Measurement;
-  class EnergyCalibration;
+  struct EnergyCalibration;
 }
 
 namespace BatchActivity
