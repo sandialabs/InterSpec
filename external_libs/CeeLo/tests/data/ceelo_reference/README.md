@@ -53,11 +53,22 @@ Built with `-DCMAKE_BUILD_TYPE=RelWithDebInfo` (or Release), auto-enabled biasin
 target ~0.3%. From `build/examples/`:
 
 ```bash
-for c in 1 2 3 5 6 7 8 11 12; do
+for c in 1 2 3 5 6 7 8 11 12 25 26 27 28; do
     ./benchmark_mc_configs --config $c --precision 0.003     # writes our_${c}_multi.csv (cwd)
 done
 cp our_*_multi.csv ../../tests/data/ceelo_reference/         # commit the refreshed snapshot
 ```
+
+`--precision p` targets p on **both** FEP and total, and the run continues until **both** are
+met. That was not always true: the two targets used to stop the run independently, so a run
+ended at whichever converged first — always `total`, being the larger efficiency — and left FEP
+short of the precision it was asked for. The set committed before Sep 7 2026 carries that:
+FEP relative precision a median 1.44x worse than total, and worse than 2x on 29 of 122 rows.
+Pass only the metric you care about (`target_fep_rel_precision` alone) if you want the cheaper
+run; FEP is the binding one, so `total` comes along for free.
+
+Config 7 at 100 keV cannot reach 0.3% on FEP: it is already `max_events`-limited at 200M events
+and ~4.5%, and would need ~44 billion. It is a documented SKIP in the gate.
 
 To compare a **fresh** dev run without overwriting this committed record:
 

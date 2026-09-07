@@ -211,8 +211,10 @@ BOOST_AUTO_TEST_CASE(gdml_export_cylindrical_source_with_material) {
     BOOST_CHECK(content.find("SrcMaterialLV") != std::string::npos);
     BOOST_CHECK(content.find("SrcMaterialPV") != std::string::npos);
     BOOST_CHECK(content.find("SrcShieldSolid0") != std::string::npos);
-    BOOST_CHECK(content.find("SrcShieldOuterSolid0") != std::string::npos);
-    BOOST_CHECK(content.find("SrcShieldInnerSolid0") != std::string::npos);
+    // The shield is a full tube carrying the source volume as its daughter -
+    // no subtraction solids, and so no coincident-surface epsilon.
+    BOOST_CHECK(content.find("<subtraction") == std::string::npos);
+    BOOST_CHECK(content.find("<physvol name=\"SrcMaterialPV\">") != std::string::npos);
     BOOST_CHECK(content.find("Water") != std::string::npos);
     BOOST_CHECK(content.find("<sphere") == std::string::npos);
 

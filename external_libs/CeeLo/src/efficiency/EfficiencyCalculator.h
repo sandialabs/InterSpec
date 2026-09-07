@@ -84,8 +84,13 @@ using ProgressCallback = std::function<void(const Progress&)>;
 /// Multiple criteria can be active simultaneously; whichever is met first stops the run.
 struct TerminationCriteria {
     uint64_t max_events = 0;                 ///< 0 = no limit
-    double target_fep_rel_precision = 0.0;   ///< e.g., 0.01 for 1%; 0 = disabled
-    double target_total_rel_precision = 0.0; ///< e.g., 0.01 for 1%; 0 = disabled
+    /// Relative-precision targets (e.g. 0.01 for 1%); 0 = disabled.  When BOTH
+    /// are set the run continues until BOTH are met - it does not stop at
+    /// whichever arrives first.  Set only the metric you care about if you want
+    /// the cheaper run: `total` almost always converges before `fep`, because it
+    /// is the larger efficiency.
+    double target_fep_rel_precision = 0.0;
+    double target_total_rel_precision = 0.0;
     double max_wall_seconds = 0.0;           ///< 0 = no limit
     /// Cap on CPU time summed across worker threads (0 = no limit). Unlike
     /// max_wall_seconds this is invariant to machine load and to how many

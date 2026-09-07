@@ -370,19 +370,21 @@ BOOST_AUTO_TEST_CASE(gdml_export_asymmetric_cylinder) {
     std::string content((std::istreambuf_iterator<char>(f)),
                          std::istreambuf_iterator<char>());
 
-    // Outer solid grows by t_radial in r and t_end in half-z.
-    BOOST_CHECK(content.find("SrcShieldOuterSolid0\" rmin=\"0\" rmax=\"3.300000\" z=\"6.200000\"")
+    // The shield grows by t_radial in r and t_end in half-z, and is a FULL
+    // solid: the source volume is its daughter and displaces its material, so
+    // the wall is exactly t thick.  (It used to be a subtraction whose
+    // subtracted solid was inflated by 1e-4 cm to dodge coincident SIBLING
+    // faces - which also thinned the wall by a micron.  Nesting removes both.)
+    BOOST_CHECK(content.find("SrcShieldSolid0\" rmin=\"0\" rmax=\"3.300000\" z=\"6.200000\"")
                 != std::string::npos);
-    // Inner (subtracted) solid is inflated by kZeroDimEps = 1e-4 cm on BOTH
-    // axes so its faces never coincide with the source-material surface it
-    // wraps (the validated coincident-surface fix; thins the wall ~1 micron).
-    BOOST_CHECK(content.find("SrcShieldInnerSolid0\" rmin=\"0\" rmax=\"3.000100\" z=\"6.000200\"")
+    BOOST_CHECK(content.find("SrcMaterialSolid\" rmin=\"0\" rmax=\"3.000000\" z=\"6.000000\"")
                 != std::string::npos);
+    BOOST_CHECK(content.find("<subtraction") == std::string::npos);
 
     std::remove(fname.c_str());
 }
 
-BOOST_AUTO_TEST_CASE(gdml_export_zero_end_cap_epsilon) {
+BOOST_AUTO_TEST_CASE(gdml_export_zero_end_cap_is_flush) {
     Material pb = make_Lead();
     Material nai = make_NaI();
 
@@ -399,20 +401,21 @@ BOOST_AUTO_TEST_CASE(gdml_export_zero_end_cap_epsilon) {
     std::string content((std::istreambuf_iterator<char>(f)),
                          std::istreambuf_iterator<char>());
 
-    // Outer half-z unchanged (t_end = 0); subtracted solid inflated by the
-    // epsilon on both axes (radial and z) to avoid coincident boolean surfaces.
-    BOOST_CHECK(content.find("SrcShieldOuterSolid0\" rmin=\"0\" rmax=\"3.300000\" z=\"6.000000\"")
+    // t_end = 0, so the shield's half-z is unchanged and the source volume's
+    // end faces are FLUSH with it - a side-wall-only shield.  That coincidence
+    // is fine for a mother and its daughter (unlike two siblings): measured
+    // against GEANT4 it produces zero navigation warnings.
+    BOOST_CHECK(content.find("SrcShieldSolid0\" rmin=\"0\" rmax=\"3.300000\" z=\"6.000000\"")
                 != std::string::npos);
-    BOOST_CHECK(content.find("SrcShieldInnerSolid0\" rmin=\"0\" rmax=\"3.000100\" z=\"6.000200\"")
+    BOOST_CHECK(content.find("SrcMaterialSolid\" rmin=\"0\" rmax=\"3.000000\" z=\"6.000000\"")
                 != std::string::npos);
 
     std::remove(fname.c_str());
 }
 
-BOOST_AUTO_TEST_CASE(gdml_export_uniform_epsilon) {
-    // Uniform shields are ALSO inflated by the epsilon: shield 0's inner face
-    // coincides with the source-material surface regardless of symmetry, so the
-    // subtracted solid grows by kZeroDimEps = 1e-4 cm on every axis.
+BOOST_AUTO_TEST_CASE(gdml_export_uniform_is_exact) {
+    // A uniform shield is the same nested full solid as an asymmetric one; the
+    // wall is exactly the requested thickness on every axis.
     Material pb = make_Lead();
     Material nai = make_NaI();
 
@@ -429,13 +432,13 @@ BOOST_AUTO_TEST_CASE(gdml_export_uniform_epsilon) {
     std::string content((std::istreambuf_iterator<char>(f)),
                          std::istreambuf_iterator<char>());
 
-    BOOST_CHECK(content.find("SrcShieldOuterSolid0\" rmin=\"0\" rmax=\"3.200000\" z=\"6.400000\"")
+    BOOST_CHECK(content.find("SrcShieldSolid0\" rmin=\"0\" rmax=\"3.200000\" z=\"6.400000\"")
                 != std::string::npos);
-    BOOST_CHECK(content.find("SrcShieldInnerSolid0\" rmin=\"0\" rmax=\"3.000100\" z=\"6.000200\"")
+    BOOST_CHECK(content.find("SrcMaterialSolid\" rmin=\"0\" rmax=\"3.000000\" z=\"6.000000\"")
                 != std::string::npos);
-    // The un-inflated source dims must NOT appear as the subtracted solid.
-    BOOST_CHECK(content.find("SrcShieldInnerSolid0\" rmin=\"0\" rmax=\"3.000000\" z=\"6.000000\"")
-                == std::string::npos);
+    // Exact dimensions: no epsilon anywhere in the source region any more.
+    BOOST_CHECK(content.find("3.000100") == std::string::npos);
+    BOOST_CHECK(content.find("6.000200") == std::string::npos);
 
     std::remove(fname.c_str());
 }
@@ -458,12 +461,13 @@ BOOST_AUTO_TEST_CASE(gdml_export_asymmetric_box) {
     std::string content((std::istreambuf_iterator<char>(f)),
                          std::istreambuf_iterator<char>());
 
-    BOOST_CHECK(content.find("SrcShieldOuterSolid0\" x=\"2.200000\" y=\"4.000000\" z=\"6.600000\"")
+    // Per-axis thicknesses (0.1, 0.0, 0.3) applied to both faces of each axis.
+    // y is zero, so the daughter is flush on y and strictly inside on x and z.
+    BOOST_CHECK(content.find("SrcShieldSolid0\" x=\"2.200000\" y=\"4.000000\" z=\"6.600000\"")
                 != std::string::npos);
-    // Subtracted solid inflated by epsilon on ALL axes (x, y, z), not just the
-    // zero-thickness y face.
-    BOOST_CHECK(content.find("SrcShieldInnerSolid0\" x=\"2.000200\" y=\"4.000200\" z=\"6.000200\"")
+    BOOST_CHECK(content.find("SrcMaterialSolid\" x=\"2.000000\" y=\"4.000000\" z=\"6.000000\"")
                 != std::string::npos);
+    BOOST_CHECK(content.find("<subtraction") == std::string::npos);
 
     std::remove(fname.c_str());
 }

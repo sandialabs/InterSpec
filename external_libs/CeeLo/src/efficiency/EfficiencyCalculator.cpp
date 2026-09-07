@@ -223,15 +223,29 @@ struct SimulationState {
 
         // Precision checks (only after min_events)
         if (merged.num_events >= termination.min_events) {
-            if (termination.target_fep_rel_precision > 0.0 && est.eps_fep > 0.0 &&
-                est.sig_fep / est.eps_fep <= termination.target_fep_rel_precision) {
-                stop_reason = StopReason::FepPrecision;
-                stop_flag.store(true, std::memory_order_release);
-            }
+            // EVERY requested target must be met, not just one of them.  These
+            //  used to stop the run independently, so asking for p on both FEP
+            //  and total stopped at whichever converged first - always `total`,
+            //  the larger efficiency - and left FEP short of the precision it
+            //  was asked for while reporting StopReason::TotalPrecision.  The
+            //  committed references show the damage: FEP relative precision was
+            //  a median 1.44x worse than total, and >2x worse on 29 of 122 rows
+            //  (worst: config 7 at 100 keV, 4.47% FEP against 0.306% total).
+            //  A target that is not set (<= 0) imposes no constraint.
+            const bool want_fep = termination.target_fep_rel_precision > 0.0;
+            const bool want_tot = termination.target_total_rel_precision > 0.0;
+            const bool fep_ok = !want_fep
+                || (est.eps_fep > 0.0
+                    && est.sig_fep / est.eps_fep <= termination.target_fep_rel_precision);
+            const bool tot_ok = !want_tot
+                || (est.eps_tot > 0.0
+                    && est.sig_tot / est.eps_tot <= termination.target_total_rel_precision);
 
-            if (termination.target_total_rel_precision > 0.0 && est.eps_tot > 0.0 &&
-                est.sig_tot / est.eps_tot <= termination.target_total_rel_precision) {
-                stop_reason = StopReason::TotalPrecision;
+            if ((want_fep || want_tot) && fep_ok && tot_ok) {
+                // FEP is the binding constraint whenever it is requested, and
+                //  the priority metric, so name it.
+                stop_reason = want_fep ? StopReason::FepPrecision
+                                       : StopReason::TotalPrecision;
                 stop_flag.store(true, std::memory_order_release);
             }
         }

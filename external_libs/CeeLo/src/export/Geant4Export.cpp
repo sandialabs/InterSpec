@@ -217,6 +217,92 @@ void write_gdml_material(std::ostream& out, const Material* mat) {
     out << "    </material>\n";
 }
 
+/// One volume of a concentric source's NESTED chain.  Each entry's solid is a
+/// FULL solid (ball / tube / box) at its own outer boundary, and the next entry
+/// in is placed inside it as a daughter - which is how GEANT4 is meant to
+/// express nested materials.  The daughter displaces the mother's material
+/// exactly, so there is no hollow solid, no boolean subtraction, and no
+/// coincident-surface epsilon: a point on a mother/daughter face is
+/// unambiguous, where a point on the shared face of two SIBLINGS is not.
+///
+/// It is also what makes `/gps/pos/confine SrcMaterialPV` sample the emitting
+/// shell alone: G4SPSPosDistribution::IsSourceConfined() locates the point with
+/// LocateGlobalPointAndSetup(), which returns the DEEPEST volume containing it,
+/// and compares that volume's name - so anything inside a core daughter is
+/// rejected automatically.
+struct SrcVolume {
+    std::string prefix;        ///< "SrcMaterial", "SrcShield", "SrcCore", "SrcVoid"
+    int index;                 ///< -1 when the prefix is unique (source, void)
+    const Material* material;  ///< nullptr => a genuine void (Vacuum)
+    Eigen::Vector3d dims;      ///< outer boundary, per shape (SourceLayer::dims)
+    Eigen::Vector3d thick;     ///< the layer's own (tx,ty,tz), for the comment
+    bool uniform;              ///< tx == ty == tz
+
+    /// Index LAST, matching the names this export has always written
+    /// (SrcShieldSolid0 / SrcShieldLV0 / SrcShieldPV0).
+    std::string name(const char* suffix) const {
+        return index < 0 ? prefix + suffix
+                         : prefix + suffix + std::to_string(index);
+    }
+};
+
+/// Does this layer have a real extent in the dimensions its shape actually uses?
+bool layer_has_extent(SourceGeometry::Shape shape, const Eigen::Vector3d& d) {
+    switch (shape) {
+    case SourceGeometry::Shape::Cylindrical: return d[0] > 1e-10 && d[1] > 1e-10;
+    case SourceGeometry::Shape::Rectangular: return d.minCoeff() > 1e-10;
+    default:                                 return d[0] > 1e-10;  //sphere, point
+    }
+}
+
+/// Build the nested chain, INNERMOST FIRST (so GDML defines each volume before
+/// the mother that references it).  Degenerate layers - a point source's own
+/// zero-size emitting layer, or a core that consumed its whole cavity - are
+/// dropped rather than emitted as zero-size solids.
+std::vector<SrcVolume> source_chain(const SourceGeometry& sg) {
+    std::vector<SrcVolume> chain;
+    const std::vector<SourceLayer>& layers = sg.layers();
+    const std::size_t src_at = sg.source_layer_index();
+
+    for (std::size_t i = 0; i < layers.size(); ++i) {
+        if (!layer_has_extent(sg.shape(), layers[i].dims)) continue;
+        // Indices are derived from the layer's position in the stack, not from
+        //  its position in `chain`, so dropping a degenerate layer does not
+        //  renumber the ones around it.
+        std::string prefix;
+        int index = -1;
+        if (i == src_at) {
+            // An extended source with no set_source_material() is a real but
+            //  NON-self-attenuating volume: the MC charges it nothing, and the
+            //  tracer treats it as empty.  It still has to appear, as vacuum, or
+            //  the shield around it would be exported as a SOLID and silently
+            //  fill the source region with shield material.  Emitting it also
+            //  gives `/gps/pos/confine SrcMaterialPV` something to resolve to.
+            //  (A point source has zero extent and is dropped above.)
+            prefix = "SrcMaterial";
+        } else if (i < src_at) {
+            if (layers[i].material) {
+                prefix = "SrcCore";
+                // Numbered the way add_core() was called: 0 is the layer
+                //  immediately inside the emitting shell.
+                index = static_cast<int>(src_at - 1 - i);
+            } else {
+                // A cavity the cores did not reach.  Emitted as vacuum so the
+                //  MC's non-attenuating void is reproduced whatever the world
+                //  is made of.
+                prefix = "SrcVoid";
+            }
+        } else {
+            prefix = "SrcShield";
+            index = static_cast<int>(i - src_at - 1);
+        }
+        chain.push_back({prefix, index, layers[i].material, layers[i].dims,
+                         Eigen::Vector3d(layers[i].tx, layers[i].ty, layers[i].tz),
+                         layers[i].is_uniform()});
+    }
+    return chain;
+}
+
 void write_gdml_air(std::ostream& out) {
     // Standard dry air composition by mass: N2(75.52%), O2(23.20%), Ar(1.28%).
     // Fractions sum to 1.0 to avoid GEANT4 material normalization warnings.
@@ -238,14 +324,6 @@ void write_gdml_air(std::ostream& out) {
 void write_gdml(const Geometry& geom, const std::string& filename,
                 const SourceGeometry* source_geom,
                 bool vacuum_world) {
-    // Source cores (attenuating layers inside a hollow source) are not emitted
-    //  below, and a GDML that silently omits them would be a validation geometry
-    //  that does not match what CeeLo simulated - worse than no export at all.
-    if (source_geom && !source_geom->cores().empty()) {
-        throw std::runtime_error("write_gdml: source cores are not exported yet;"
-            " the GDML would omit them and misrepresent the simulated scene.");
-    }
-
     std::ofstream out(filename);
     if (!out) {
         throw std::runtime_error("write_gdml: cannot open file: " + filename);
@@ -265,8 +343,10 @@ void write_gdml(const Geometry& geom, const std::string& filename,
         if (source_geom->source_material()) {
             all_mats.push_back(source_geom->source_material());
         }
-        for (const auto& layer : source_geom->shields()) {
-            all_mats.push_back(layer.material);
+        // Every layer, not just the shields: a core's material has to reach
+        //  <materials> or its <materialref> dangles.
+        for (const SourceLayer& layer : source_geom->layers()) {
+            if (layer.material) all_mats.push_back(layer.material);
         }
     }
 
@@ -436,7 +516,15 @@ void write_gdml(const Geometry& geom, const std::string& filename,
     write_gdml_elements(out, zs);
     out << "\n";
     write_gdml_air(out);
-    if (vacuum_world) {
+    // The Vacuum material is also what a source cavity is filled with, so it has
+    //  to exist even when the world is air.
+    bool needs_vacuum = vacuum_world;
+    if (!needs_vacuum && has_source_geom
+        && source_geom->shape() != SourceGeometry::Shape::Marinelli) {
+        for (const SrcVolume& v : source_chain(*source_geom))
+            if (!v.material) { needs_vacuum = true; break; }
+    }
+    if (needs_vacuum) {
         out << "    <material name=\"Vacuum\" state=\"gas\">\n"
             << "      <D type=\"density\" unit=\"g/cm3\" value=\"1.0e-25\"/>\n"
             << "      <fraction n=\"1.0\" ref=\"N\"/>\n"
@@ -582,7 +670,7 @@ void write_gdml(const Geometry& geom, const std::string& filename,
                 << " removes " << fmt(bullet_removed_vol,4) << " cm^3 of crystal -->\n";
         }
         out << "    <polycone name=\"CrystalSolid\""
-            << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\">\n";
+            << " startphi=\"0\" deltaphi=\"6.28318530717958623\" aunit=\"rad\" lunit=\"cm\">\n";
         for (const auto& p : profile) {
             out << "      <zplane rmin=\"" << fmt(p.rmin) << "\""
                 << " rmax=\"" << fmt(p.rmax) << "\""
@@ -595,7 +683,7 @@ void write_gdml(const Geometry& geom, const std::string& filename,
             << "    <tube name=\"CrystalOuterTube\""
             << " rmin=\"0\" rmax=\"" << fmt(R) << "\""
             << " z=\"" << fmt(L) << "\""
-            << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\"/>\n";
+            << " startphi=\"0\" deltaphi=\"6.28318530717958623\" aunit=\"rad\" lunit=\"cm\"/>\n";
     } else {
         // Box detector.
         out << "    <!-- Detector crystal box solid -->\n"
@@ -623,11 +711,11 @@ void write_gdml(const Geometry& geom, const std::string& filename,
             out << "    <tube name=\"AttOuterSolid" << i << "\""
                 << " rmin=\"0\" rmax=\"" << fmt(p.outer_r) << "\""
                 << " z=\"" << fmt(p.outer_z) << "\""
-                << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\"/>\n"
+                << " startphi=\"0\" deltaphi=\"6.28318530717958623\" aunit=\"rad\" lunit=\"cm\"/>\n"
                 << "    <tube name=\"AttInnerSolid" << i << "\""
                 << " rmin=\"0\" rmax=\"" << fmt(p.inner_r) << "\""
                 << " z=\"" << fmt(p.inner_z) << "\""
-                << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\"/>\n"
+                << " startphi=\"0\" deltaphi=\"6.28318530717958623\" aunit=\"rad\" lunit=\"cm\"/>\n"
                 << "    <subtraction name=\"AttSolid" << i << "\">\n"
                 << "      <first ref=\"AttOuterSolid" << i << "\"/>\n"
                 << "      <second ref=\"AttInnerSolid" << i << "\"/>\n"
@@ -639,211 +727,89 @@ void write_gdml(const Geometry& geom, const std::string& filename,
                 << " rmin=\"" << fmt(p.inner_r) << "\""
                 << " rmax=\"" << fmt(p.outer_r) << "\""
                 << " z=\"" << fmt(p.outer_z) << "\""
-                << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\"/>\n";
+                << " startphi=\"0\" deltaphi=\"6.28318530717958623\" aunit=\"rad\" lunit=\"cm\"/>\n";
         }
     }
 
-    // Source shielding solids.
+    // Source region solids.  One nested chain per concentric shape: every
+    //  volume is a FULL solid at its own outer boundary and the next one in is
+    //  its daughter, which displaces its material exactly.  No hollow shells,
+    //  no boolean subtractions, no coincident-surface epsilon - see SrcVolume.
     if (has_source_geom) {
-        const auto& shields = source_geom->shields();
         using SShape = SourceGeometry::Shape;
 
-        if (source_geom->shape() == SShape::Point) {
-            // Spherical shells centered at the point source position.
-            // Build nested spheres: innermost shield layer first.
-            // Use a small rmin (1e-4 cm) for the innermost sphere to avoid
-            // G4 navigation issues when GPS generates a particle at the exact
-            // center of a solid sphere (rmin=0). The thin vacuum core has
-            // negligible effect on physics.
-            double r_inner = 0.0;
-            for (size_t i = 0; i < shields.size(); ++i) {
-                double r_outer = r_inner + shields[i].scalar_thickness();
-                double gdml_rmin = (r_inner < 1e-6) ? 1e-4 : r_inner;
-                out << "\n    <!-- Source shield " << i << " ("
-                    << (shields[i].material ? shields[i].material->name() : "unknown")
-                    << ", t=" << fmt(shields[i].scalar_thickness(),4) << " cm) -->\n"
-                    << "    <sphere name=\"SrcShieldSolid" << i << "\""
-                    << " rmin=\"" << fmt(gdml_rmin) << "\""
-                    << " rmax=\"" << fmt(r_outer) << "\""
-                    << " startphi=\"0\" deltaphi=\"6.2831853\""
-                    << " starttheta=\"0\" deltatheta=\"3.1415927\""
-                    << " aunit=\"rad\" lunit=\"cm\"/>\n";
-                r_inner = r_outer;
-            }
-
-            // Source material: point sources have no volume, skip.
-        } else if (source_geom->shape() == SShape::Cylindrical) {
-            double inner_r = source_geom->cyl_radius();
-            double inner_half_z = source_geom->cyl_half_length();
-
-            // Source material fill (if present): tube matching source volume.
-            // rmin = inner bore radius (0 = solid; a hollow/annular tube has a
-            // non-attenuating void core).
-            if (source_geom->source_material()) {
-                out << "\n    <!-- Source material fill -->\n"
-                    << "    <tube name=\"SrcMaterialSolid\""
-                    << " rmin=\"" << fmt(source_geom->cyl_inner_radius()) << "\""
-                    << " rmax=\"" << fmt(inner_r) << "\""
-                    << " z=\"" << fmt(2.0 * inner_half_z) << "\""
-                    << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\"/>\n";
-            }
-
-            // Cylindrical shielding shells.
-            for (size_t i = 0; i < shields.size(); ++i) {
-                double t_r = shields[i].tx;  // radial (tx == ty)
-                double t_e = shields[i].tz;  // end caps
-                double outer_r = inner_r + t_r;
-                double outer_half_z = inner_half_z + t_e;
-
-                // Inflate the subtracted solid by a tiny epsilon on both axes so
-                // the shell's inner surface never coincides with the surface it
-                // wraps (source material or previous shell). Coincident G4
-                // boolean surfaces stall navigation and inflate the electron-
-                // entry diagnostic; the 1e-4 cm gap thins the wall ~1 micron
-                // (negligible) and, on a zero-thickness axis, lies outside the
-                // outer solid so the open-face shape is unchanged.
-                constexpr double kZeroDimEps = 1e-4;  // cm
-                double sub_r = inner_r + kZeroDimEps;
-                double sub_half_z = inner_half_z + kZeroDimEps;
-
-                // Cup-shaped subtraction: outer full cylinder minus inner full cylinder.
-                out << "\n    <!-- Source shield " << i << " ("
-                    << (shields[i].material ? shields[i].material->name() : "unknown")
-                    << ", t_radial=" << fmt(t_r,4) << " cm, t_end=" << fmt(t_e,4) << " cm) -->\n"
-                    << "    <tube name=\"SrcShieldOuterSolid" << i << "\""
-                    << " rmin=\"0\" rmax=\"" << fmt(outer_r) << "\""
-                    << " z=\"" << fmt(2.0 * outer_half_z) << "\""
-                    << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\"/>\n"
-                    << "    <tube name=\"SrcShieldInnerSolid" << i << "\""
-                    << " rmin=\"0\" rmax=\"" << fmt(sub_r) << "\""
-                    << " z=\"" << fmt(2.0 * sub_half_z) << "\""
-                    << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\"/>\n"
-                    << "    <subtraction name=\"SrcShieldSolid" << i << "\">\n"
-                    << "      <first ref=\"SrcShieldOuterSolid" << i << "\"/>\n"
-                    << "      <second ref=\"SrcShieldInnerSolid" << i << "\"/>\n"
-                    << "    </subtraction>\n";
-
-                inner_r = outer_r;
-                inner_half_z = outer_half_z;
-            }
-        } else if (source_geom->shape() == SShape::Rectangular) {
-            const auto& hd = source_geom->rect_half_dims();
-            double inner_hx = hd.x();
-            double inner_hy = hd.y();
-            double inner_hz = hd.z();
-
-            // Source material fill (if present): box matching source volume.
-            // A hollow box shell becomes a subtraction solid (outer box minus
-            // inner void box); the void is strictly interior, so no
-            // coincident-surface epsilon is needed. GPS `/gps/pos/confine
-            // SrcMaterialPV` then rejects positions in the void.
-            if (source_geom->source_material()) {
-                const Eigen::Vector3d& ihd = source_geom->rect_inner_half_dims();
-                if (ihd.minCoeff() > 1e-10) {
-                    out << "\n    <!-- Source material fill (hollow box shell) -->\n"
-                        << "    <box name=\"SrcMaterialOuterSolid\""
-                        << " x=\"" << fmt(2.0 * inner_hx) << "\""
-                        << " y=\"" << fmt(2.0 * inner_hy) << "\""
-                        << " z=\"" << fmt(2.0 * inner_hz) << "\""
-                        << " lunit=\"cm\"/>\n"
-                        << "    <box name=\"SrcMaterialVoidSolid\""
-                        << " x=\"" << fmt(2.0 * ihd.x()) << "\""
-                        << " y=\"" << fmt(2.0 * ihd.y()) << "\""
-                        << " z=\"" << fmt(2.0 * ihd.z()) << "\""
-                        << " lunit=\"cm\"/>\n"
-                        << "    <subtraction name=\"SrcMaterialSolid\">\n"
-                        << "      <first ref=\"SrcMaterialOuterSolid\"/>\n"
-                        << "      <second ref=\"SrcMaterialVoidSolid\"/>\n"
-                        << "    </subtraction>\n";
-                } else {
-                    out << "\n    <!-- Source material fill -->\n"
-                        << "    <box name=\"SrcMaterialSolid\""
-                        << " x=\"" << fmt(2.0 * inner_hx) << "\""
-                        << " y=\"" << fmt(2.0 * inner_hy) << "\""
-                        << " z=\"" << fmt(2.0 * inner_hz) << "\""
+        if (source_geom->shape() != SShape::Marinelli) {
+            const std::vector<SrcVolume> chain = source_chain(*source_geom);
+            for (std::size_t k = 0; k < chain.size(); ++k) {
+                const SrcVolume& v = chain[k];
+                // Comment kept in the long-standing format so a geometry that
+                //  did not actually change does not show up as a diff.
+                if (v.prefix == "SrcShield" || v.prefix == "SrcCore") {
+                    out << "\n    <!-- Source "
+                        << (v.prefix == "SrcCore" ? "core " : "shield ") << v.index
+                        << " (" << (v.material ? v.material->name() : "unknown");
+                    if (v.uniform)
+                        out << ", t=" << fmt(v.thick[0], 4) << " cm) -->\n";
+                    else
+                        out << ", t_x=" << fmt(v.thick[0], 4)
+                            << " cm, t_y=" << fmt(v.thick[1], 4)
+                            << " cm, t_z=" << fmt(v.thick[2], 4) << " cm) -->\n";
+                }
+                else if (v.prefix == "SrcVoid")
+                    out << "\n    <!-- Source cavity (unfilled - vacuum) -->\n";
+                else
+                    out << "\n    <!-- Source material fill"
+                        << (v.material ? "" : " (no material: non-attenuating)")
+                        << " -->\n";
+                switch (source_geom->shape()) {
+                case SShape::Point:
+                case SShape::Sphere: {
+                    // NB the full-precision deltatheta/deltaphi below are not
+                    //  decoration.  Writing pi as 3.1415927 EXCEEDS it by 4.6e-8
+                    //  rad, so the G4Sphere wraps past the pole and self-
+                    //  overlaps: G4 then reports "Likely geometry overlap" and
+                    //  pushes the track to get unstuck (33 pushes per 20k events
+                    //  measured; 0 after this fix).  Measured at 6M events the
+                    //  pushes did not bias the result - FEP z = -0.95, total
+                    //  z = -0.16 - but a geometry that needs rescuing is not one
+                    //  to generate references on.
+                    // The innermost solid keeps a 1e-4 cm hole at the centre:
+                    //  G4 navigation misbehaves for a GPS particle generated at
+                    //  the exact centre of a solid sphere (config 11).  Outer
+                    //  members of the chain have a daughter covering r = 0, so
+                    //  they need no hole.
+                    const double rmin = (k == 0) ? 1e-4 : 0.0;
+                    out << "    <sphere name=\"" << v.name("Solid") << "\""
+                        << " rmin=\"" << fmt(rmin) << "\""
+                        << " rmax=\"" << fmt(v.dims[0]) << "\""
+                        << " startphi=\"0\" deltaphi=\"6.28318530717958623\""
+                        << " starttheta=\"0\" deltatheta=\"3.14159265358979312\""
+                        << " aunit=\"rad\" lunit=\"cm\"/>\n";
+                    break;
+                }
+                case SShape::Cylindrical:
+                    // A closed inner cavity is just a shorter daughter tube, so
+                    //  the nested stack InterSpec needs falls out for free -
+                    //  the old export could only ever write a through-bore.
+                    out << "    <tube name=\"" << v.name("Solid") << "\""
+                        << " rmin=\"0\" rmax=\"" << fmt(v.dims[0]) << "\""
+                        << " z=\"" << fmt(2.0 * v.dims[1]) << "\""
+                        << " startphi=\"0\" deltaphi=\"6.28318530717958623\""
+                        << " aunit=\"rad\" lunit=\"cm\"/>\n";
+                    break;
+                default:  //Rectangular
+                    out << "    <box name=\"" << v.name("Solid") << "\""
+                        << " x=\"" << fmt(2.0 * v.dims[0]) << "\""
+                        << " y=\"" << fmt(2.0 * v.dims[1]) << "\""
+                        << " z=\"" << fmt(2.0 * v.dims[2]) << "\""
                         << " lunit=\"cm\"/>\n";
+                    break;
                 }
             }
-
-            // Rectangular shielding shells: box subtraction solids.
-            for (size_t i = 0; i < shields.size(); ++i) {
-                double outer_hx = inner_hx + shields[i].tx;
-                double outer_hy = inner_hy + shields[i].ty;
-                double outer_hz = inner_hz + shields[i].tz;
-
-                // Inflate the subtracted solid by a tiny epsilon on ALL axes so
-                // the shell's inner face never coincides with the face it wraps
-                // (the source-material box, or the previous shell). Coincident
-                // G4 boolean surfaces stall navigation ("track stuck") and, for
-                // extended sources with a shield, spuriously inflate the
-                // crystal electron-entry diagnostic. The 1e-4 cm gap thins the
-                // wall by ~1 micron (negligible) and, on zero-thickness axes,
-                // lies outside the outer solid so the open-face shape is kept.
-                constexpr double kZeroDimEps = 1e-4;  // cm
-                double sub_hx = inner_hx + kZeroDimEps;
-                double sub_hy = inner_hy + kZeroDimEps;
-                double sub_hz = inner_hz + kZeroDimEps;
-
-                out << "\n    <!-- Source shield " << i << " ("
-                    << (shields[i].material ? shields[i].material->name() : "unknown")
-                    << ", t_x=" << fmt(shields[i].tx,4) << " cm, t_y=" << fmt(shields[i].ty,4)
-                    << " cm, t_z=" << fmt(shields[i].tz,4) << " cm) -->\n"
-                    << "    <box name=\"SrcShieldOuterSolid" << i << "\""
-                    << " x=\"" << fmt(2.0 * outer_hx) << "\""
-                    << " y=\"" << fmt(2.0 * outer_hy) << "\""
-                    << " z=\"" << fmt(2.0 * outer_hz) << "\""
-                    << " lunit=\"cm\"/>\n"
-                    << "    <box name=\"SrcShieldInnerSolid" << i << "\""
-                    << " x=\"" << fmt(2.0 * sub_hx) << "\""
-                    << " y=\"" << fmt(2.0 * sub_hy) << "\""
-                    << " z=\"" << fmt(2.0 * sub_hz) << "\""
-                    << " lunit=\"cm\"/>\n"
-                    << "    <subtraction name=\"SrcShieldSolid" << i << "\">\n"
-                    << "      <first ref=\"SrcShieldOuterSolid" << i << "\"/>\n"
-                    << "      <second ref=\"SrcShieldInnerSolid" << i << "\"/>\n"
-                    << "    </subtraction>\n";
-
-                inner_hx = outer_hx;
-                inner_hy = outer_hy;
-                inner_hz = outer_hz;
-            }
-        } else if (source_geom->shape() == SShape::Sphere) {
-            double inner_r = source_geom->sphere_radius();
-            constexpr double kZeroDimEps = 1e-4;  // cm
-
-            // Source material: ball or hollow shell. rmin = inner void radius
-            // (clamped to >= 1e-4 cm to avoid G4 GPS issues for a particle at the
-            // exact center of a solid sphere).
-            if (source_geom->source_material()) {
-                double rmin = std::max(source_geom->sphere_inner_radius(), 1e-4);
-                out << "\n    <!-- Source material fill (sphere) -->\n"
-                    << "    <sphere name=\"SrcMaterialSolid\""
-                    << " rmin=\"" << fmt(rmin) << "\""
-                    << " rmax=\"" << fmt(inner_r) << "\""
-                    << " startphi=\"0\" deltaphi=\"6.2831853\""
-                    << " starttheta=\"0\" deltatheta=\"3.1415927\""
-                    << " aunit=\"rad\" lunit=\"cm\"/>\n";
-            }
-
-            // Spherical shielding shells. Each is a G4Sphere shell [rmin, rmax];
-            // rmin is inflated by a tiny epsilon so the shell's inner face does
-            // not coincide with the surface it wraps (source material or previous
-            // shell) — coincident G4 boolean surfaces stall navigation. The
-            // ~1 micron gap is negligible.
-            for (size_t i = 0; i < shields.size(); ++i) {
-                double outer_r = inner_r + shields[i].scalar_thickness();
-                out << "\n    <!-- Source shield " << i << " ("
-                    << (shields[i].material ? shields[i].material->name() : "unknown")
-                    << ", t=" << fmt(shields[i].scalar_thickness(),4) << " cm) -->\n"
-                    << "    <sphere name=\"SrcShieldSolid" << i << "\""
-                    << " rmin=\"" << fmt(inner_r + kZeroDimEps) << "\""
-                    << " rmax=\"" << fmt(outer_r) << "\""
-                    << " startphi=\"0\" deltaphi=\"6.2831853\""
-                    << " starttheta=\"0\" deltatheta=\"3.1415927\""
-                    << " aunit=\"rad\" lunit=\"cm\"/>\n";
-                inner_r = outer_r;
-            }
-        } else if (source_geom->shape() == SShape::Marinelli) {
+        } else {  // Marinelli: an L-shaped fill on absolute z-planes, decomposed
+                  //  into four tubes per wall layer.  Not a concentric stack, so
+                  //  it keeps its own flat placement.
+            const auto& shields = source_geom->shields();
             double well_r = source_geom->marinelli_well_inner_radius();
             double outer_r_src = source_geom->marinelli_outer_radius();
             double z_bk = source_geom->marinelli_z_bk();
@@ -859,11 +825,11 @@ void write_gdml(const Geometry& geom, const std::string& filename,
                     << "    <tube name=\"SrcOuterCyl\""
                     << " rmin=\"0\" rmax=\"" << fmt(outer_r_src) << "\""
                     << " z=\"" << fmt(total_h) << "\""
-                    << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\"/>\n"
+                    << " startphi=\"0\" deltaphi=\"6.28318530717958623\" aunit=\"rad\" lunit=\"cm\"/>\n"
                     << "    <tube name=\"SrcWellCyl\""
                     << " rmin=\"0\" rmax=\"" << fmt(well_r) << "\""
                     << " z=\"" << fmt(ring_d) << "\""
-                    << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\"/>\n"
+                    << " startphi=\"0\" deltaphi=\"6.28318530717958623\" aunit=\"rad\" lunit=\"cm\"/>\n"
                     << "    <subtraction name=\"SrcMaterialSolid\">\n"
                     << "      <first ref=\"SrcOuterCyl\"/>\n"
                     << "      <second ref=\"SrcWellCyl\"/>\n"
@@ -886,20 +852,20 @@ void write_gdml(const Geometry& geom, const std::string& filename,
                     << " rmin=\"" << fmt(outer_r_src) << "\""
                     << " rmax=\"" << fmt(outer_r_src + t) << "\""
                     << " z=\"" << fmt(total_h) << "\""
-                    << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\"/>\n";
+                    << " startphi=\"0\" deltaphi=\"6.28318530717958623\" aunit=\"rad\" lunit=\"cm\"/>\n";
 
                 // Bottom disk
                 out << "    <tube name=\"SrcShieldBottom" << i << "\""
                     << " rmin=\"0\" rmax=\"" << fmt(outer_r_src + t) << "\""
                     << " z=\"" << fmt(t) << "\""
-                    << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\"/>\n";
+                    << " startphi=\"0\" deltaphi=\"6.28318530717958623\" aunit=\"rad\" lunit=\"cm\"/>\n";
 
                 // Well inner wall
                 out << "    <tube name=\"SrcShieldWellWall" << i << "\""
                     << " rmin=\"" << fmt(well_r - t) << "\""
                     << " rmax=\"" << fmt(well_r) << "\""
                     << " z=\"" << fmt(ring_d) << "\""
-                    << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\"/>\n";
+                    << " startphi=\"0\" deltaphi=\"6.28318530717958623\" aunit=\"rad\" lunit=\"cm\"/>\n";
 
                 // Well bottom annulus (separates well cavity from sample below).
                 // rmin = detector outer bounding radius to avoid overlapping the crystal.
@@ -908,7 +874,7 @@ void write_gdml(const Geometry& geom, const std::string& filename,
                 out << "    <tube name=\"SrcShieldWellBottom" << i << "\""
                     << " rmin=\"" << fmt(wb_rmin) << "\" rmax=\"" << fmt(well_r - t) << "\""
                     << " z=\"" << fmt(t) << "\""
-                    << " startphi=\"0\" deltaphi=\"6.2831853\" aunit=\"rad\" lunit=\"cm\"/>\n";
+                    << " startphi=\"0\" deltaphi=\"6.28318530717958623\" aunit=\"rad\" lunit=\"cm\"/>\n";
             }
         }
     }
@@ -960,19 +926,24 @@ void write_gdml(const Geometry& geom, const std::string& filename,
             << "    </volume>\n\n";
     }
 
-    // Source geometry logical volumes.
+    // Source geometry logical volumes.  For a concentric source these form one
+    //  NESTED chain: each volume carries the next one in as a daughter, placed
+    //  at the origin of its mother (every member shares the source centre).
+    //  Only the outermost is placed in the world, below.
     if (has_source_geom) {
-        if (source_geom->source_material()) {
-            std::string src_mat = sanitize_name(source_geom->source_material()->name());
-            out << "    <volume name=\"SrcMaterialLV\">\n"
-                << "      <materialref ref=\"" << src_mat << "\"/>\n"
-                << "      <solidref ref=\"SrcMaterialSolid\"/>\n"
-                << "    </volume>\n\n";
-        }
-
         const auto& shields = source_geom->shields();
         using SShape2 = SourceGeometry::Shape;
         if (source_geom->shape() == SShape2::Marinelli) {
+            // Marinelli's fill is a single L-shaped solid, and it is what
+            //  `/gps/pos/confine SrcMaterialPV` names - it must be emitted here
+            //  too, not only on the concentric path below.
+            if (source_geom->source_material()) {
+                std::string src_mat = sanitize_name(source_geom->source_material()->name());
+                out << "    <volume name=\"SrcMaterialLV\">\n"
+                    << "      <materialref ref=\"" << src_mat << "\"/>\n"
+                    << "      <solidref ref=\"SrcMaterialSolid\"/>\n"
+                    << "    </volume>\n\n";
+            }
             // Marinelli: separate logical volumes for each wall piece
             for (size_t i = 0; i < shields.size(); ++i) {
                 std::string shield_mat = shields[i].material
@@ -995,13 +966,24 @@ void write_gdml(const Geometry& geom, const std::string& filename,
                     << "    </volume>\n\n";
             }
         } else {
-            for (size_t i = 0; i < shields.size(); ++i) {
-                std::string shield_mat = shields[i].material
-                    ? sanitize_name(shields[i].material->name()) : "Air";
-                out << "    <volume name=\"SrcShieldLV" << i << "\">\n"
-                    << "      <materialref ref=\"" << shield_mat << "\"/>\n"
-                    << "      <solidref ref=\"SrcShieldSolid" << i << "\"/>\n"
-                    << "    </volume>\n\n";
+            const std::vector<SrcVolume> chain = source_chain(*source_geom);
+            for (std::size_t k = 0; k < chain.size(); ++k) {
+                const SrcVolume& v = chain[k];
+                // A void keeps the MC's non-attenuating cavity: Vacuum, not the
+                //  world material, so the two agree whatever the world is.
+                const std::string mat = v.material
+                    ? sanitize_name(v.material->name()) : std::string("Vacuum");
+                out << "    <volume name=\"" << v.name("LV") << "\">\n"
+                    << "      <materialref ref=\"" << mat << "\"/>\n"
+                    << "      <solidref ref=\"" << v.name("Solid") << "\"/>\n";
+                if (k > 0) {
+                    // The daughter is concentric with this volume, so it sits at
+                    //  the mother's origin - no position element needed.
+                    out << "      <physvol name=\"" << chain[k-1].name("PV") << "\">\n"
+                        << "        <volumeref ref=\"" << chain[k-1].name("LV") << "\"/>\n"
+                        << "      </physvol>\n";
+                }
+                out << "    </volume>\n\n";
             }
         }
     }
@@ -1093,22 +1075,13 @@ void write_gdml(const Geometry& geom, const std::string& filename,
                 src_center = source_geom->rect_center();
             }
 
-            // Source material fill.
-            if (source_geom->source_material() && source_geom->shape() != SShape::Point) {
-                out << "\n      <physvol name=\"SrcMaterialPV\">\n"
-                    << "        <volumeref ref=\"SrcMaterialLV\"/>\n"
-                    << "        <position x=\"" << fmt(src_center.x()) << "\""
-                    << " y=\"" << fmt(src_center.y()) << "\""
-                    << " z=\"" << fmt(src_center.z()) << "\""
-                    << " unit=\"cm\"/>\n"
-                    << "      </physvol>\n";
-            }
-
-            // Shield layers.
-            const auto& shields = source_geom->shields();
-            for (size_t i = 0; i < shields.size(); ++i) {
-                out << "\n      <physvol name=\"SrcShieldPV" << i << "\">\n"
-                    << "        <volumeref ref=\"SrcShieldLV" << i << "\"/>\n"
+            // The chain is nested, so ONLY its outermost member is a daughter
+            //  of the world; everything else is already inside it.
+            const std::vector<SrcVolume> chain = source_chain(*source_geom);
+            if (!chain.empty()) {
+                const SrcVolume& outermost = chain.back();
+                out << "\n      <physvol name=\"" << outermost.name("PV") << "\">\n"
+                    << "        <volumeref ref=\"" << outermost.name("LV") << "\"/>\n"
                     << "        <position x=\"" << fmt(src_center.x()) << "\""
                     << " y=\"" << fmt(src_center.y()) << "\""
                     << " z=\"" << fmt(src_center.z()) << "\""
