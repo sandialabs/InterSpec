@@ -14,7 +14,11 @@
 #ifndef ROOT_RHYSD_SPAN_H
 #define ROOT_RHYSD_SPAN_H
 
-#if __cplusplus >= 202002
+// MSVC reports __cplusplus as 199711L unless /Zc:__cplusplus is passed, so also
+//  consult _MSVC_LANG (the language standard MSVC is actually compiling to).  Without
+//  this the real <span> is never included and the fallback shim below defines a
+//  conflicting std::span, breaking every Minuit2 header that takes std::span params.
+#if __cplusplus >= 202002L || (defined(_MSVC_LANG) && _MSVC_LANG >= 202002L)
 # if __has_include(<span>)
 #  include <span>
 # endif

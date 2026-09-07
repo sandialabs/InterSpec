@@ -72,7 +72,11 @@ RowStretchTreeView::RowStretchTreeView()
     m_rowWidthChanged( this, "widthchanged", true )
 {
 #if( (WT_VERSION < 0x3030100 || WT_VERSION > 0x3030400) && (WT_VERSION != 0x3070100) )
+#if defined(_MSC_VER)
+#pragma message("The RowStretchTreeView JavaScript has only been verified for Wt 3.3.1 through 3.3.4")
+#else
 #warning The RowStretchTreeView JavaScript has only been verified for Wt 3.3.1 through 3.3.4
+#endif
 #endif
   
   setLayoutSizeAware( true );

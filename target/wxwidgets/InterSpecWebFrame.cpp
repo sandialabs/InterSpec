@@ -271,13 +271,15 @@ InterSpecWebFrame::InterSpecWebFrame(const wxString& url, const bool no_restore,
   //  for documentation on specifying proxies
 
   //m_url will look something like "http://127.0.0.1:55793"
-  std::string bypassurl = m_url;
+  //  wxString has no implicit conversion to std::string on MSVC, so convert explicitly.
+  const std::string url = m_url.ToStdString();
+  std::string bypassurl = url;
   if( SpecUtils::istarts_with( bypassurl, "http://" ) )
     bypassurl = bypassurl.substr( 7 );
 
   bypassurl = " --proxy-bypass-list=\"" + bypassurl 
     // We dont any of the following URLs, but throwing them in for the moment just to be really sure.
-    + ";" + m_url
+    + ";" + url
     + ";127.0.0.1:" + std::to_string( InterSpecWxApp::server_port() )
     + ";http://127.0.0.1:" + std::to_string( InterSpecWxApp::server_port() )
     + ";localhost;localhost:*;local;127.0.0.1:*;127.0.0.1;http://127.0.0.1;http://127.0.0.1:*"
