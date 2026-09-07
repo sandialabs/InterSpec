@@ -238,6 +238,14 @@ void write_gdml_air(std::ostream& out) {
 void write_gdml(const Geometry& geom, const std::string& filename,
                 const SourceGeometry* source_geom,
                 bool vacuum_world) {
+    // Source cores (attenuating layers inside a hollow source) are not emitted
+    //  below, and a GDML that silently omits them would be a validation geometry
+    //  that does not match what CeeLo simulated - worse than no export at all.
+    if (source_geom && !source_geom->cores().empty()) {
+        throw std::runtime_error("write_gdml: source cores are not exported yet;"
+            " the GDML would omit them and misrepresent the simulated scene.");
+    }
+
     std::ofstream out(filename);
     if (!out) {
         throw std::runtime_error("write_gdml: cannot open file: " + filename);

@@ -331,17 +331,20 @@ void EfficiencyCalculator::set_cylindrical_source(
     const Eigen::Vector3d& center,
     double radius, double half_length,
     const Eigen::Matrix3d& rotation,
-    double inner_radius)
+    double inner_radius, double inner_half_length)
 {
     source_type_ = SourceType::Cylindrical;
     cyl_src_.center = center;
     cyl_src_.radius = radius;
     cyl_src_.inner_radius = inner_radius;
+    // Negative = through-bore (a pipe): the hollow region runs the full length.
+    cyl_src_.inner_half_length =
+        (inner_half_length < 0.0) ? half_length : inner_half_length;
     cyl_src_.half_length = half_length;
     cyl_src_.rotation = rotation;
     source_position_ = center;
     source_geometry_.configure_cylindrical(center, radius, half_length, rotation,
-                                           inner_radius);
+                                           inner_radius, cyl_src_.inner_half_length);
 }
 
 void EfficiencyCalculator::set_spherical_source(
@@ -458,6 +461,18 @@ void EfficiencyCalculator::add_source_shield(const Material* mat, double t_radia
 
 void EfficiencyCalculator::add_source_shield(const Material* mat, double t_x, double t_y, double t_z) {
     source_geometry_.add_shield(mat, t_x, t_y, t_z);
+}
+
+void EfficiencyCalculator::add_source_core(const Material* mat, double thickness) {
+    source_geometry_.add_core(mat, thickness);
+}
+
+void EfficiencyCalculator::add_source_core(const Material* mat, double t_radial, double t_end) {
+    source_geometry_.add_core(mat, t_radial, t_end);
+}
+
+void EfficiencyCalculator::add_source_core(const Material* mat, double t_x, double t_y, double t_z) {
+    source_geometry_.add_core(mat, t_x, t_y, t_z);
 }
 
 // --- Position biasing ---
@@ -764,6 +779,33 @@ Eigen::Vector3d EfficiencyCalculator::sample_source_position(std::mt19937_64& rn
     std::uniform_real_distribution<double> uniform(0.0, 1.0);
 
     if (source_type_ == SourceType::Cylindrical) {
+        // A CLOSED inner cavity (inner_half_length < half_length, i.e. a nested
+        // cylinder rather than a through-bore) is not an annulus at every z: the
+        // material fills the full radius beyond the cavity's ends. Rejection-
+        // sample the outer cylinder there, exactly as the hollow box below does.
+        // A through-bore or a solid cylinder keeps the closed-form annular draw,
+        // bit-identical to before this case existed.
+        const bool closed_cavity = (cyl_src_.inner_radius > 0.0)
+                    && (cyl_src_.inner_half_length < cyl_src_.half_length);
+        if (closed_cavity) {
+            Eigen::Vector3d local_pos;
+            do {
+                double z_local;
+                if (depth_distribution_ == DepthDistribution::Exponential) {
+                    double D = 2.0 * cyl_src_.half_length;
+                    double d = sample_exponential_depth(D, uniform(rng));
+                    z_local = cyl_src_.half_length - d;
+                } else {
+                    z_local = 2.0 * cyl_src_.half_length * (uniform(rng) - 0.5);
+                }
+                const double r = cyl_src_.radius * std::sqrt(uniform(rng));
+                const double phi = kTwoPi * uniform(rng);
+                local_pos = Eigen::Vector3d(r * std::cos(phi), r * std::sin(phi), z_local);
+            } while (std::hypot(local_pos.x(), local_pos.y()) < cyl_src_.inner_radius
+                     && std::abs(local_pos.z()) < cyl_src_.inner_half_length);
+            return cyl_src_.rotation.transpose() * local_pos + cyl_src_.center;
+        }
+
         // Annular (uniform in area between inner bore and outer radius);
         // inner_radius == 0 reduces to r = radius·sqrt(U).
         double r_in2  = cyl_src_.inner_radius * cyl_src_.inner_radius;

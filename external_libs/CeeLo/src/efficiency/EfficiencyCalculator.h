@@ -552,6 +552,10 @@ struct CylindricalSourceConfig {
     Eigen::Vector3d center{0.0, 0.0, -10.0};  ///< Source center in detector frame (cm)
     double radius{1.0};                         ///< Source cylinder (outer) radius (cm)
     double inner_radius{0.0};                   ///< Inner bore radius (0 = solid); annular tube/pipe/ring when > 0
+    /// Half-length of the hollow region (cm). Equal to half_length for a
+    /// through-bore (a pipe); smaller for a closed inner cavity, which is what
+    /// a stack of nested cylinders needs. Only read when inner_radius > 0.
+    double inner_half_length{0.0};
     double half_length{1.0};                    ///< Source half-length along its axis (cm)
     Eigen::Matrix3d rotation{Eigen::Matrix3d::Identity()};  ///< detector → source local
 };
@@ -670,12 +674,19 @@ public:
     /// @param rotation     Rotation from detector frame to source local frame.
     ///                     Identity means source axis is coaxial with detector axis.
     /// @param inner_radius Inner bore radius (cm) for a hollow/annular cylinder
-    ///                     (tube, pipe, ring); 0 = solid. The bore is an inactive,
-    ///                     non-attenuating void.
+    ///                     (tube, pipe, ring); 0 = solid. The bore is inactive,
+    ///                     and non-attenuating unless filled with add_source_core().
+    /// @param inner_half_length  Half-length of the hollow region (cm). Negative
+    ///                     (the default) means a through-bore: the same
+    ///                     half-length as the source, i.e. a pipe. A smaller
+    ///                     value gives a closed inner cavity, which is what a
+    ///                     stack of nested cylinders needs. Ignored when
+    ///                     inner_radius == 0.
     void set_cylindrical_source(const Eigen::Vector3d& center,
                                 double radius, double half_length,
                                 const Eigen::Matrix3d& rotation = Eigen::Matrix3d::Identity(),
-                                double inner_radius = 0.0);
+                                double inner_radius = 0.0,
+                                double inner_half_length = -1.0);
 
     /// Configure a spherical extended source (solid ball or hollow shell).
     ///
@@ -684,7 +695,8 @@ public:
     /// @param rotation      Stored for API symmetry; physically irrelevant (a
     ///                      sphere is rotation-invariant).
     /// @param inner_radius  Inner void radius (cm) for a hollow spherical shell;
-    ///                      0 = solid ball. The void center is non-attenuating.
+    ///                      0 = solid ball. The centre is inactive, and
+    ///                      non-attenuating unless filled with add_source_core().
     void set_spherical_source(const Eigen::Vector3d& center, double radius,
                               const Eigen::Matrix3d& rotation = Eigen::Matrix3d::Identity(),
                               double inner_radius = 0.0);
@@ -769,6 +781,26 @@ public:
     /// may be zero (but not all three). Only valid for rectangular sources;
     /// call after set_rectangular_source().
     void add_source_shield(const Material* mat, double t_x, double t_y, double t_z);
+
+    /// Add an attenuating layer INSIDE a hollow extended source - a "core".
+    ///
+    /// The mirror of add_source_shield(): shields grow outward from the source's
+    /// outer surface, cores fill inward from its inner surface, so a source shell
+    /// can sit anywhere in a full concentric stack. Cores never emit and never
+    /// change the source volume or the per-emitted-photon normalization; they
+    /// only attenuate. Layers are given OUTERMOST FIRST (the one immediately
+    /// inside the source shell first), with add_source_shield()'s thickness
+    /// conventions subtracted going inward.
+    ///
+    /// Requires a hollow extended source. Normally the cores fill the cavity
+    /// exactly; anything left at the centre stays a non-attenuating void.
+    ///
+    /// Without this, the inside of a hollow source was always void, so a shell
+    /// around a dense core over-reported its efficiency - the far half of the
+    /// shell was not shadowed at all.
+    void add_source_core(const Material* mat, double thickness);
+    void add_source_core(const Material* mat, double t_radial, double t_end);
+    void add_source_core(const Material* mat, double t_x, double t_y, double t_z);
 
     // --- Source Depth Distribution ---
 

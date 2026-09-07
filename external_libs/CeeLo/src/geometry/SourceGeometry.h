@@ -84,23 +84,59 @@ public:
 
     const std::vector<SourceShieldLayer>& shields() const { return shields_; }
 
+    /// Add an attenuating layer INSIDE a hollow extended source - a "core".
+    ///
+    /// The mirror of add_shield(): shields grow outward from the source's outer
+    /// surface, cores fill inward from its inner surface, so the two together
+    /// describe a full concentric stack with the emitting shell somewhere in the
+    /// middle. Cores never emit; they are attenuator only, and they do not
+    /// change the source volume or any emission normalization.
+    ///
+    /// Layers are given OUTERMOST FIRST: the first call is the layer immediately
+    /// inside the source shell. Thickness conventions are exactly add_shield()'s
+    /// (uniform / radial+end / per-axis), but subtracted going inward. Requires
+    /// a hollow extended source (configure_* with a nonzero inner extent); the
+    /// summed core thicknesses may not exceed that inner extent. Any space left
+    /// over at the centre stays a genuine non-attenuating void, which is how an
+    /// air gap or an empty cavity is expressed.
+    ///
+    /// Before this existed the inner region of a hollow source was always a
+    /// non-attenuating void, so a source shell around a dense core over-reported
+    /// its efficiency: the far half of the shell was not shadowed by the core at
+    /// all. Only ray tracing changes - see trace_source_segments().
+    void add_core(const Material* mat, double thickness);
+
+    /// Cylindrical-source core with independent radial and end thicknesses (cm).
+    void add_core(const Material* mat, double t_radial, double t_end);
+
+    /// Rectangular-source core with independent x/y/z thicknesses (cm).
+    void add_core(const Material* mat, double t_x, double t_y, double t_z);
+
+    const std::vector<SourceShieldLayer>& cores() const { return cores_; }
+
     /// Configure for a point source.
     void configure_point(const Eigen::Vector3d& position);
 
     /// Configure for a cylindrical extended source.
     /// @param inner_radius  Inner (bore) radius for a hollow/annular cylinder
     ///   (tube, pipe, ring). 0 = solid cylinder. The active material occupies the
-    ///   annulus [inner_radius, radius]; the central bore is an inactive,
-    ///   non-attenuating void.
+    ///   annulus [inner_radius, radius]; the central bore is inactive, and
+    ///   non-attenuating unless filled with add_core().
+    /// @param inner_half_length  Half-length of the hollow region. Negative (the
+    ///   default) means a through-bore, i.e. the same half-length as the source:
+    ///   a pipe. A smaller value gives a closed inner cavity, which is what a
+    ///   stack of nested cylinders needs. Ignored when inner_radius == 0.
     void configure_cylindrical(const Eigen::Vector3d& center, double radius,
                                double half_length, const Eigen::Matrix3d& rotation,
-                               double inner_radius = 0.0);
+                               double inner_radius = 0.0,
+                               double inner_half_length = -1.0);
 
     /// Configure for a rectangular extended source.
     /// @param inner_half_dims  Inner void half-dimensions for a hollow box
     ///   shell (crate, container wall). All-zero = solid box. The active
     ///   material occupies the outer box minus the inner box (both centered,
-    ///   same rotation); the inner box is an inactive, non-attenuating void.
+    ///   same rotation); the inner box is inactive, and non-attenuating unless
+    ///   filled with add_core().
     ///   Must satisfy 0 <= inner < outer componentwise, or be all zero.
     void configure_rectangular(const Eigen::Vector3d& center,
                                const Eigen::Vector3d& half_dims,
@@ -116,7 +152,8 @@ public:
     /// @param outer_radius  Outer radius.
     /// @param inner_radius  Inner (void) radius for a hollow spherical shell.
     ///   0 = solid ball. The active material occupies the shell
-    ///   [inner_radius, outer_radius]; the central void is non-attenuating.
+    ///   [inner_radius, outer_radius]; the centre is inactive, and
+    ///   non-attenuating unless filled with add_core().
     /// @param rotation  Stored for API symmetry; physically irrelevant for a
     ///   sphere (the volume is rotation-invariant).
     void configure_spherical(const Eigen::Vector3d& center, double outer_radius,
@@ -304,9 +341,9 @@ public:
     /// Enable/disable geometric pre-check (electron ray must hit detector bounding cylinder).
     void set_source_electron_geom_check(bool enable) { source_electron_geom_check_ = enable; }
 
-    /// Whether any source material or shields are configured.
+    /// Whether any source material, shields or cores are configured.
     bool has_source_effects() const {
-        return source_material_ != nullptr || !shields_.empty();
+        return source_material_ != nullptr || !shields_.empty() || !cores_.empty();
     }
 
     bool is_configured() const { return configured_; }
@@ -320,6 +357,7 @@ public:
     const Eigen::Vector3d& cyl_center() const { return cyl_center_; }
     double cyl_radius() const { return cyl_radius_; }
     double cyl_inner_radius() const { return cyl_inner_r_; }
+    double cyl_inner_half_length() const { return cyl_inner_half_length_; }
     double cyl_half_length() const { return cyl_half_length_; }
     const Eigen::Vector3d& rect_center() const { return rect_center_; }
     const Eigen::Vector3d& rect_half_dims() const { return rect_half_dims_; }
@@ -338,6 +376,12 @@ public:
 private:
     const Material* source_material_ = nullptr;
     std::vector<SourceShieldLayer> shields_;
+
+    /// Attenuating layers filling inward from the source's inner surface,
+    /// OUTERMOST FIRST (the mirror of shields_).  Empty for every source that
+    /// existed before add_core(): when it is empty every code path below is the
+    /// one it always was, byte for byte.  See add_core().
+    std::vector<SourceShieldLayer> cores_;
 
     bool configured_ = false;
 
@@ -376,6 +420,12 @@ private:
     Eigen::Vector3d cyl_center_{0, 0, 0};
     double cyl_radius_ = 0.0;
     double cyl_inner_r_ = 0.0;   ///< Inner bore radius (0 = solid); annular when > 0
+    /// Inner half-length of the hollow region.  Equal to cyl_half_length_ for a
+    /// through-bore (a pipe, which is what configure_cylindrical() gives), and
+    /// SHORTER for a closed inner cavity - which is how a stack of nested
+    /// cylinders (InterSpec's shielding model nests in radius AND length) is
+    /// expressed.  Only meaningful when cyl_inner_r_ > 0.
+    double cyl_inner_half_length_ = 0.0;
     double cyl_half_length_ = 0.0;
     Eigen::Matrix3d cyl_rotation_ = Eigen::Matrix3d::Identity();
 
@@ -485,7 +535,15 @@ public:
         std::size_t max_segments = SIZE_MAX) const;
 
 private:
-
+    /// Ordered ray march through the whole concentric stack (cores, source
+    /// shell, shields).  Used INSTEAD of the per-layer loops whenever cores_ is
+    /// non-empty, because an attenuating inner region makes segment ORDER
+    /// matter - see the comment on trace_concentric() in the .cpp.  Appends to
+    /// `out` (which the caller has cleared) and honours `max_segments`.
+    void trace_cored_segments(const Eigen::Vector3d& position,
+                              const Eigen::Vector3d& direction,
+                              std::vector<SourcePathSegment>& out,
+                              std::size_t max_segments) const;
 };
 
 } // namespace ceelo
