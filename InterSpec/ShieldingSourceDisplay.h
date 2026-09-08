@@ -44,6 +44,7 @@
 #include <Wt/WAbstractItemModel.h>
 #include <Wt/Core/observing_ptr.hpp>
 
+#include "InterSpec/InterSpecUser.h"
 #include "InterSpec/DetectorPeakResponse.h"
 #include "InterSpec/ShieldingSourceFitPlot.h"
 #include "InterSpec/ShieldingSourceFitCalc.h"
@@ -62,7 +63,6 @@ class PopupDivMenu;
 class SwitchCheckbox;
 class DetectorDisplay;
 class PopupDivMenuItem;
-struct ShieldingSourceModel;
 #if( INCLUDE_ANALYSIS_TEST_SUITE )
 class SpectrumViewerTester;
 #endif

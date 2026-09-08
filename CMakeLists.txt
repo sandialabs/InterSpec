@@ -282,7 +282,7 @@ else( InterSpec_FETCH_DEPENDENCIES )
   set( Boost_USE_MULTITHREADED ON )
   find_package( Boost 1.78 REQUIRED COMPONENTS thread date_time system filesystem program_options regex random )
 
-  find_package( Eigen3 3.4...6.0 REQUIRED NO_MODULE )
+  find_package( Eigen3 REQUIRED NO_MODULE )
   find_package( Ceres REQUIRED )
 
   # Find Wt 4 via its installed CMake config
